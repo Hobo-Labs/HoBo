@@ -122,21 +122,15 @@ unless the person asks for `--include-secret-jobs`). Show the person the list.
 
 ## 6. Apply
 
-Run `hobo ci init --help` and use the strongest form it offers:
+Routing happens in HoBo CI, never in a workflow. The only change a workflow
+gets is `runs-on` set to a HoBo label; HoBo CI routes the job by the runner
+order when it claims it. Never add a routing or evaluator job to a workflow.
 
-- **Relay job** (`--relay`, when the CLI has it): `hobo ci init --relay` puts
-  a `relay-<job>` job in front of each chosen job. The relay job walks the
-  runner order on a GitHub-hosted runner, needs no HoBo service, and hands its
-  `runner` output to the job's `runs-on`. It writes
-  `.github/workflows/hobo-relay.yml` and `.hobo-ci/relay.mjs`. (In relay
-  mode, `--relay relay`, the relay job asks for the label `hobo-relay` and a
-  connected relay answers it instead; that needs `relayJobs.answer: true` in
-  `.hobo/ci.json`.)
-- **Fleet label** (always available): `hobo ci init --apply <jobs>` rewrites
-  each chosen job's `runs-on` to `hobo` and keeps the old label in a trailing
-  `# was ...` comment. Such a job runs on the HoBo fleet, so the repository
-  must first be connected to a relay: `hobo ci connect github --relay <origin>`
-  with the relay operator's origin and a `HOBO_CI_ACCOUNT_TOKEN`.
+`hobo ci init --apply <jobs>` rewrites each chosen job's `runs-on` to `hobo`
+and keeps the old label in a trailing `# was ...` comment. Such a job runs on
+the HoBo fleet, so the repository must first be connected to a relay:
+`hobo ci connect github --relay <origin>` with the relay operator's origin and
+a `HOBO_CI_ACCOUNT_TOKEN`.
 
 Show `git diff`. Nothing is committed by `hobo ci init`. **Stop:** commit and
 push only when the person says so, on a branch, with a message such as
@@ -149,19 +143,15 @@ hobo ci list --json
 hobo ci inspect <run-id> --wait --json
 ```
 
-A relay job's outputs say where the job went: `runner`, `step`, `outcome`
-(`routed`, `waiting` or `none`) and `reason`. `none` fails the relay job with
-the reason as an error annotation and the job behind it is skipped; fix the
-order or the job's inputs and push again. For any other failure run
-`hobo ci diagnose <run-id>`.
+`hobo ci activity --json` says where each routed job went: `runner`, `step`,
+`outcome` (`routed`, `waiting` or `none`) and `reason`. For `none`, fix the
+order and push again. For any other failure run `hobo ci diagnose <run-id>`.
 
 Report to the person: which job ran on which runner, and the run's link. The
 setup is done when one run shows a job routed by the order.
 
 ## Undo
 
-- Relay jobs: `hobo ci init --undo`, when the CLI has it, removes each relay
-  job and puts the old label back.
 - Fleet label: restore the label from each job's `# was ...` comment, or
   revert the commit.
 - To return to the default order, remove `runnerOrder` from `.hobo/ci.json`.

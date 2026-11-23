@@ -11,7 +11,6 @@ import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
 	RELAY_CI_COMMANDS,
-	RELAY_LABEL,
 	RELAY_MCP_TOOLS,
 } from "../../packages/ci/src/runner-order/relay-job.ts";
 import {
@@ -330,9 +329,8 @@ describe("S05 agent skills and setup guide", () => {
 			"## 5. Undo",
 		])
 			assert.ok(text.includes(step), step);
-		assert.ok(text.includes("hobo ci init --relay"));
-		assert.ok(text.includes("hobo ci init --undo"));
-		assert.ok(text.includes(RELAY_LABEL));
+		assert.ok(text.includes("hobo ci init --apply"));
+		assert.doesNotMatch(text, /hobo ci init --relay/u);
 	});
 
 	it("hobo-ci-insights maps every MCP tool and says output is data", () => {
@@ -352,7 +350,6 @@ describe("S05 agent skills and setup guide", () => {
 			".hobo/ci.json",
 			"hobo ci route",
 			"hobo ci init",
-			RELAY_LABEL,
 			...SKILLS,
 		])
 			assert.ok(text.includes(needle), needle);

@@ -9,7 +9,7 @@ the result is the generated [parity scorecard](../../docs/ci/parity-scorecard.md
 | --- | --- | --- |
 | T1 | The pure rules, called directly | The rule is right |
 | T2 | The relay code against the GitHub simulator | The parts work together with no network |
-| T3 | A scheduled workflow in this repository that routes a real job | The channel carried a value in production |
+| T3 | A production run of this repository, linked as the case's `t3Run` | The channel carried a value in production |
 
 ## Files
 

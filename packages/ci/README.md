@@ -743,7 +743,7 @@ stateDiagram-v2
 ## Relay job seams
 
 The records, frozen names and ports a relay job is answered through, and
-`answerRelayJob`, the one function job mode and relay mode both call
+`answerRelayJob`, the one function a relay node calls
 are described in [RELAY-JOB.md](RELAY-JOB.md). In-memory fakes of
 every port and their conformance functions are exported as
 `@hobo/ci/runner-order/testing`.

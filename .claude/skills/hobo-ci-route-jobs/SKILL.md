@@ -1,12 +1,15 @@
 ---
 name: hobo-ci-route-jobs
-description: Use when moving a repository's GitHub Actions jobs onto HoBo CI routing — writing or changing the runnerOrder in .hobo/ci.json, putting jobs on the fleet label or behind a relay job, checking the first routed run, or taking it all back out. Five steps in order: plan, review, apply, confirm, undo. Never commits or pushes unless asked; every change is a diff the person reviews.
+description: Use when moving a repository's GitHub Actions jobs onto HoBo CI routing — writing or changing the runnerOrder in .hobo/ci.json, putting jobs on the fleet label, checking the first routed run, or taking it all back out. Five steps in order: plan, review, apply, confirm, undo. Never commits or pushes unless asked; every change is a diff the person reviews.
 ---
 
 # Route a repository's jobs through HoBo CI
 
 A job is routed by the repository's committed **runner order**
-(`runnerOrder` in `.hobo/ci.json`, ADR-0183). Routing changes are commits a
+(`runnerOrder` in `.hobo/ci.json`, ADR-0183). Routing happens in HoBo CI, never
+in a workflow: the only change a workflow gets is `runs-on` set to a HoBo label,
+and HoBo CI routes the job when it claims it. Never add a routing or evaluator
+job to a workflow. Routing changes are commits a
 team reviews, so this skill only ever produces a diff. Commands are explained
 in the `hobo-ci` skill; codes are in `docs/ci/errors.md`.
 
@@ -58,30 +61,18 @@ Show the person, in plain sentences:
 - that a machine never takes a public repository's job or a fork's pull
   request, and the fleet takes them only when it isolates such jobs;
 - that a runner type a job does not name is never used for it;
-- what happens when nothing fits: the relay job fails with one sentence and
-  the job behind it is skipped, rather than queued for a runner that will
-  never come.
+- what happens when nothing fits: HoBo CI records the reason in one sentence
+  rather than leaving the job queued for a runner that will never come.
 
 Moving jobs that use secrets needs `--include-secret-jobs`; ask before using
 it. **Stop:** apply nothing until the person agrees with the plan.
 
 ## 3. Apply
 
-Pick the form the CLI the person runs supports (check `hobo ci init --help`):
-
-- **Fleet label (available now):** `hobo ci init --apply <jobs>` (job,
-  `file:job` or `all`) rewrites each job's `runs-on` to the fleet label
-  (`hobo`, or `--fleet-label`) and keeps the old label in a trailing `# was ...` comment.
-- **Relay job (arriving):** `hobo ci init --relay` (job mode, the default)
-  or `hobo ci init --relay relay` adds a `relay-<job>` job in front of each
-  moved job. It calls `./.github/workflows/hobo-relay.yml` with the job's old
-  label as its `github` input, adds itself to the job's `needs`, and sets
-  `runs-on: ${{ needs.relay-<job>.outputs.runner }}`. A matrix job gets one
-  relay for all its legs. It also writes `.github/workflows/hobo-relay.yml`
-  and `.hobo-ci/relay.mjs` (the job-mode evaluator); `--check` says when
-  those are stale. In relay mode the relay job asks for the label
-  `hobo-relay` and a connected relay answers it; that needs
-  `relayJobs.answer: true` in `.hobo/ci.json`.
+`hobo ci init --apply <jobs>` (job, `file:job` or `all`) rewrites each job's
+`runs-on` to the fleet label (`hobo`, or `--fleet-label`) and keeps the old
+label in a trailing `# was ...` comment. That is the whole workflow change;
+the runner order in `.hobo/ci.json` decides where each job runs.
 
 Then show `git diff` of exactly what changed (`.hobo/ci.json` and the workflow
 files). **Stop:** commit, push or open a pull request only when asked, with a
@@ -93,22 +84,17 @@ After the change is pushed (by the person, or by you when asked):
 
 1. Find the run: `hobo ci list --json`, then
    `hobo ci inspect <run> --wait --json`.
-2. A relay job's outputs say where the job went: `runner`, `step`,
-   `outcome` (`routed`, `waiting` or `none`) and `reason`. In job mode its
-   log holds one `hobo-ci-relay` notice with the whole decision.
+2. `hobo ci activity --json` says where each routed job went and why:
+   `runner`, `step`, `outcome` (`routed`, `waiting` or `none`) and `reason`.
 3. `waiting` is normal: every runner that fits was busy, and the job queued on
    that runner's label.
-4. `none` fails the relay job with the reason as an error annotation. Read it,
-   fix the order or the job's inputs, and push again. `hobo ci diagnose <run>`
-   explains any other failure.
+4. `none` carries the reason. Read it, fix the order, and push again.
+   `hobo ci diagnose <run>` explains any other failure.
 5. Report what ran where, with the run's link. A routing change is not
    confirmed until a run shows it.
 
 ## 5. Undo
 
-- **Relay job (arriving):** `hobo ci init --undo` removes each relay job and
-  its `needs` entry and restores the label from the relay's `github` input. It
-  refuses a file edited since in a way it cannot reverse, and names the lines.
 - **Fleet label:** put back the label kept in each rewritten job's trailing
   `# was ...` comment. If nothing was committed yet, `git checkout -- <files>`
   discards the edit; if it was, `git revert` the commit.

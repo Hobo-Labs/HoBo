@@ -392,7 +392,7 @@ export function registerRelayMcpInsightTools(
 						workflowRef:
 							input.ref === undefined
 								? ""
-								: `${name}/.github/workflows/hobo-relay.yml@${input.ref}`,
+								: `${name}/.github/workflows/ci.yml@${input.ref}`,
 						inputs: RELAY_JOB_INPUTS.flatMap((key) => {
 							const value = inputs[key];
 							return value === undefined ? [] : [{ name: key, value }];

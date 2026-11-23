@@ -22,5 +22,5 @@ Feature: Runner-less check parity with RelayRunner
   @parity @C03 @t1 @t2 @pending
   Scenario: C03 A broken runnerOrder fails the relay job with the parser's sentence
     Given ".hobo/ci.json" holds a runnerOrder with no steps
-    When a relay job for the repository is answered in job mode
+    When a relay job for the repository is answered
     Then the relay job fails with the parser's sentence as its annotation

@@ -132,17 +132,11 @@ Feature: Routing parity with RelayRunner
     When two poll intervals pass
     Then the relay job is completed
 
-  @parity @R14 @t2 @t3 @pending
-  Scenario: R14 One relay output routes a three-leg matrix
-    Given a workflow whose matrix job of three legs needs one relay job
-    When the relay job is answered
-    Then all three legs run on the relay's runner
-
-  @parity @R15 @t3 @pending
-  Scenario: R15 Job mode routes a job with no relay reachable
-    Given a repository with the job-mode relay workflow and no relay deployed
-    When a run starts
-    Then the relay job decides on a GitHub-hosted runner and the job runs where it said
+  @parity @R14 @t2 @pending
+  Scenario: R14 Each leg of a matrix job on a HoBo label is routed when HoBo CI claims it
+    Given a workflow whose matrix job of three legs has runs-on set to a HoBo label
+    When HoBo CI claims each leg
+    Then each leg runs where the runner order sends it
 
   @parity @R16 @t2
   Scenario: R16 With the hosted relay down, a second node answers the relay job

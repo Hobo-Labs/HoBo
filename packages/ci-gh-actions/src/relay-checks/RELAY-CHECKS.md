@@ -17,10 +17,8 @@ C01's T3 part is owed, and C01 reads `built-not-proven` in
 it is linked. The T3 run C01 expects: the closing package of the CI parity
 work turns relay mode on for this repository alone on the deployed relay, and
 a title check job (`hobo-labs/hobo/checks/pr-title`) asked of the relay label
-by the scheduled probe
-[`.github/workflows/parity-probe.yml`](../../../../.github/workflows/parity-probe.yml)
-is completed by that relay with no runner and no billed minute. That probe
-run's URL is what gets linked as C01's `t3Run` in
+is completed by that relay with no runner and no billed minute. That run's URL
+is what gets linked as C01's `t3Run` in
 `features/hobo-ci-parity/cases.json`. No such run exists yet. C02 is T2 only.
 
 ## Files

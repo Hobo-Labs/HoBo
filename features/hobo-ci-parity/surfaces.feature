@@ -18,10 +18,10 @@ Feature: Surface parity with RelayRunner
     And the answer is a sentence for people and data for --json
 
   @parity @S03 @t1 @pending
-  Scenario: S03 init plans and applies workflow changes, never commits, and --relay writes relay jobs
+  Scenario: S03 init plans and applies workflow changes, never commits, and only sets runs-on
     Given a repository with one workflow
-    When "hobo ci init --relay" runs
-    Then it writes ".github/workflows/hobo-relay.yml" and the relay job
+    When "hobo ci init --apply all" runs
+    Then each moved job's runs-on is a HoBo label and no job is added
     And it makes no commit
 
   @parity @S04 @t2 @pending
@@ -50,8 +50,8 @@ Feature: Surface parity with RelayRunner
 
   @parity @S09 @t1 @pending
   Scenario: S09 A clean way to remove it
-    Given a repository set up by "hobo ci init --relay"
-    When "hobo ci init --undo" runs
+    Given a repository set up by "hobo ci init --apply all"
+    When each moved job's label is restored from its "# was" comment
     Then the repository's workflows are as they were before
 
   @parity @S10 @t2

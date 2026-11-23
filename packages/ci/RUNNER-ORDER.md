@@ -159,10 +159,9 @@ relay is left alone.
 ## What is not here
 
 - The hosts. A relay job is answered by `answerRelayJob`
-  ([RELAY-JOB.md](RELAY-JOB.md)): in job mode by the evaluator `hobo ci init
-  --relay` writes into a repository, in relay mode by a HoBo node in
-  `@hobo/ci-gh-actions`. Both gather the facts and journal the decision; the
-  walk here stays pure. Relay mode is off unless `relayJobs.answer` is
+  ([RELAY-JOB.md](RELAY-JOB.md)) on a HoBo node in `@hobo/ci-gh-actions`,
+  which gathers the facts and journals the decision; the walk here stays
+  pure. No workflow routes: a workflow only sets `runs-on` to a HoBo label. Relay mode is off unless `relayJobs.answer` is
   written, and has not yet answered a job in production.
 - Billing reads. `MinutesUsage` and the monthly spend are inputs. They are
   filled by `LedgerSpendReader` ([`src/runner-order/spend.ts`](src/runner-order/spend.ts))

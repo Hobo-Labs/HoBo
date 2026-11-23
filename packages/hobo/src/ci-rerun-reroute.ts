@@ -192,7 +192,7 @@ async function run(context: CiCommandContext): Promise<CommandResult> {
 				? `Run ${parsed.runId} has no relay job, so there is nothing to route again.`
 				: `Run ${parsed.runId} has no relay job named ${parsed.job}.`,
 			[
-				"Use hobo ci rerun for a plain re-run, or add a relay job with hobo ci init --relay.",
+				"Use hobo ci rerun for a plain re-run.",
 			],
 		);
 	if (relays.length > 1)

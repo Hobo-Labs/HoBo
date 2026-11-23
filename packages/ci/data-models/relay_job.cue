@@ -47,7 +47,7 @@ import "list"
 	accountId: string & !=""
 	atMs:      int & >0
 	request:   #RunnerRouteRequest
-	mode:      "job" | "relay"
+	mode:      "relay"
 	node:      string & !=""
 	jobId?:    string & !=""
 	{type: "runner.route.Requested"} | {type: "runner.route.Decided", decision: #RunnerRouteDecision}

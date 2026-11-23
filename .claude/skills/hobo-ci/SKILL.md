@@ -1,6 +1,6 @@
 ---
 name: hobo-ci
-description: Use when running or explaining `hobo ci` commands for a repository on GitHub Actions — connecting the HoBo CI relay, previewing where a job would run (`hobo ci route`), moving workflow jobs onto the fleet or behind a relay job (`hobo ci init`), reading runs, logs, signals and failure diagnoses, managing connected machines, adopted runners and provider health, or looking up a HOBO_CI_* error code. Reads before it writes, uses --json, never commits, and says when a command has not landed yet.
+description: Use when running or explaining `hobo ci` commands for a repository on GitHub Actions — connecting the HoBo CI relay, previewing where a job would run (`hobo ci route`), moving workflow jobs onto the fleet label (`hobo ci init`), reading runs, logs, signals and failure diagnoses, managing connected machines, adopted runners and provider health, or looking up a HOBO_CI_* error code. Reads before it writes, uses --json, never commits, and says when a command has not landed yet.
 ---
 
 # HoBo CI commands
@@ -10,7 +10,9 @@ HoBo CI routes GitHub Actions jobs. A repository commits a **runner order** in
 fleet, connected machines, GitHub-hosted, hosted providers). A **relay job**
 names the runner types one job may use; the order is walked top to bottom and
 the job takes the first runner that can run it now, waits for a busy one, or
-fails with one sentence saying why. The rules are ADR-0183
+fails with one sentence saying why. Routing happens in HoBo CI, never in a
+workflow: a workflow only sets `runs-on` to a HoBo label, and HoBo CI routes
+the job when it claims it. The rules are ADR-0183
 (`docs/ci/runner-order.md`) and `packages/ci/RUNNER-ORDER.md`.
 
 For the step-by-step of moving a repository's workflows, use the
@@ -73,7 +75,6 @@ the part of the relay it reads.
 | `hobo ci performance` | Times by workflow, job and runner type | `hobo ci signals` |
 | `hobo ci provider-health` (`clear <provider> <label>`) | Which hosted runner types are skipped as unhealthy, and clear one by hand | Nothing; health is not recorded yet |
 | `hobo ci relay` | The relay-job side of a connected relay | `hobo ci status` |
-| `hobo ci init --relay [job\|relay]`, `hobo ci init --undo` | Put a relay job in front of each moved job, and take it out again byte for byte | `hobo ci init --apply`; undo by restoring the `# was ...` label |
 | `hobo ci rerun <run> --reroute` | Re-run the relay job so the order decides again | `hobo ci rerun` (re-uses the old decision) |
 
 ## Frozen names you may see
@@ -83,7 +84,6 @@ the part of the relay it reads.
 | Relay label (relay mode) | `hobo-relay` |
 | Relay job inputs | `fleet`, `machine`, `github`, `blacksmith`, `depot`, `namespace`, `warpbuild`, `ubicloud`, `boat`, `runs-on`, `size`, `first` |
 | Relay job outputs | `runner`, `step`, `outcome` (`routed`, `waiting`, `none`), `reason` |
-| Files written into a repository | `.github/workflows/hobo-relay.yml`, `.hobo-ci/relay.mjs` |
 | Project config | `runnerOrder`, and `relayJobs: { answer, label }` in `.hobo/ci.json` (`answer` is off by default) |
 
 An input left out of a relay job means that runner type is never used for the

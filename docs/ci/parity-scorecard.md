@@ -19,9 +19,9 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | pass | 26 |
 | built-not-proven | 3 |
 | partial | 19 |
-| not-built | 9 |
+| not-built | 8 |
 | met-differently | 1 |
-| Total | 58 |
+| Total | 57 |
 
 ## Routing
 
@@ -41,8 +41,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | R11 | `auto` picks a size; a job can have its own size and a runner type to try first ([site/reference/relay-inputs.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/relay-inputs.md)) | Same through relay inputs `size` and `first` | T1, T2 | partial: `auto` built | 11 |
 | R12 | Re-running failed jobs routes them again without re-running the relay ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | A re-run of failed jobs returns to its label; `hobo ci rerun --reroute` and the retry policy re-run the relay so it decides again | T2 | not-built | 15 |
 | R13 **B** | A sweep rescues relays queued over five minutes, but not one whose webhook never arrived ([docs/architecture/pick-runner.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/architecture/pick-runner.md)) | A relay job whose webhook never arrived is answered within two poll intervals | T2 | pass | 12 |
-| R14 **B** | Matrix jobs and reusable workflows cannot be routed ([site/reference/faq.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/faq.md)) | One relay output routes a three-leg matrix | T2, T3 | not-built | 11 |
-| R15 **B** | n/a | Job mode routes a job with no relay reachable | T3 | not-built | 11 |
+| R14 **B** | Matrix jobs and reusable workflows cannot be routed ([site/reference/faq.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/faq.md)) | Each leg of a matrix job whose runs-on is a HoBo label is routed when HoBo CI claims it | T2 | not-built | 11 |
 | R16 **B** | n/a | With the hosted relay down, a second node answers the relay job | T2 | pass | 12 |
 
 ## Machines
@@ -51,7 +50,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | --- | --- | --- | --- | --- | --- |
 | M01 | One command connects a machine; Ctrl-C takes it offline and its jobs go to the next runner with no workflow change ([site/get-started/quickstart.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/get-started/quickstart.md)) | `hobo ci machine connect` on a clean machine; after it stops, the next decision skips it within 60 s | T2 | partial: only from a checkout, with a relay | 14 |
 | M02 | Each job gets a fresh one-job runner; the machine needs no permanent runner ([site/runners/self-hosted.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/runners/self-hosted.mdx)) | Same | T2 | partial | 14 |
-| M03 | A machine must hold every label asked for; `self-hosted` means any ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | Same in the choice; job mode names one machine label | T1 | pass | done |
+| M03 | A machine must hold every label asked for; `self-hosted` means any ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | Same in the choice | T1 | pass | done |
 | M04 | A machine runs several jobs at once up to its slots ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | Same | T1, T2 | partial: rule built | 07 |
 | M05 | A machine can be paused; running jobs finish ([site/reference/cli.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/cli.md)) | `hobo ci machine pause` and `resume` | T2 | not-built | 07 |
 | M06 | Sharing is only-me or anyone, and "anyone" still needs the owner to be able to read the repository ([site/guides/team-machines.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/guides/team-machines.md)) | Same | T1, T2 | partial: rule built | 07 |
@@ -98,13 +97,13 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | --- | --- | --- | --- | --- | --- |
 | S01 | A dashboard with Runners, Router, History, Performance and Signals ([README.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/README.md)) | Five read-only views | T2 | pass | 21 |
 | S02 | The CLI reads well for people, has `--json` for agents and is safe to retry ([site/reference/cli.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/cli.md)) | Every command | T1 | pass | done |
-| S03 | `init` plans and applies workflow changes and never commits ([site/get-started/quickstart.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/get-started/quickstart.md)) | Same, and `--relay` writes relay jobs | T1 | partial: writes the fleet label only | 13 |
+| S03 | `init` plans and applies workflow changes and never commits ([site/get-started/quickstart.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/get-started/quickstart.md)) | Same, and the only workflow change is `runs-on` set to a HoBo label | T1 | partial: writes the fleet label only | 13 |
 | S04 | A read-only MCP server ([site/reference/mcp.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/mcp.md)) | Tools for the order, a route explanation, activity, signals, job times and failures | T2 | partial: leases and events only | 18 |
 | S05 | Agent skills and a one-prompt setup guide ([site/get-started/agents.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/get-started/agents.md)) | Three skills and a guide | T1 | not-built | 10 |
 | S06 | A read API with an OpenAPI description ([site/reference/api.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/api.md)) | Same | T2 | partial | 17 |
 | S07 | An error catalog with stable codes ([site/reference/errors.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/errors.mdx)) | One generated page | T1 | partial: codes exist, no page | 10 |
 | S08 | Workspaces, roles and membership from GitHub ([site/dashboard/workspaces.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/workspaces.md)) | Accounts and scoped tokens | n/a | met-differently: no human roles: access is GitHub membership plus scoped tokens | done |
-| S09 | A clean way to remove it ([site/dashboard/remove.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/remove.md)) | `hobo ci init --undo` and a removal page | T1 | not-built | 13 |
+| S09 | A clean way to remove it ([site/dashboard/remove.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/remove.md)) | Restoring each moved job's `# was ...` label, and a removal page | T1 | not-built | 13 |
 | S10 **B** | n/a | A routing change is a reviewed commit; the dashboard's edit opens a pull request | T2 | pass | 21 |
 
 ## Security

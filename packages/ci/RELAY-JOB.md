@@ -5,12 +5,12 @@ which runner it should run on. Its answer is a `runner` output the next job
 reads in `runs-on`. This file describes the seams that answer it; the walk
 itself is in [RUNNER-ORDER.md](RUNNER-ORDER.md).
 
-There are two ways to answer one, over one engine:
-
-| Mode | Who answers | How the answer gets back |
-| --- | --- | --- |
-| `job` | A vendored evaluator running as the relay job on a GitHub-hosted runner | The job's own outputs |
-| `relay` | A HoBo node that claims the job, labelled `hobo-relay`, over the runner protocol | It completes the job with outputs, and no runner minute is billed |
+A HoBo node answers one (mode `relay`): it claims the job, labelled
+`hobo-relay`, over the runner protocol and completes it with outputs, and no
+runner minute is billed. Routing happens in HoBo CI, never in a workflow:
+HoBo ships no workflow that runs a routing or evaluator job, and no command
+writes one into a repository. The only HoBo CI change a workflow gets is
+`runs-on` set to a HoBo label.
 
 ## Records
 
@@ -42,7 +42,6 @@ repository.
 | Project config | `relayJobs: { answer, label }` in `.hobo/ci.json`, `answer` false unless written | `DEFAULT_RELAY_JOBS`, `RelayJobsConfig` |
 | Inputs | one per runner type, then `size` and `first` | `RELAY_JOB_INPUTS` |
 | Outputs | `runner`, `step`, `outcome`, `reason` | `RELAY_JOB_OUTPUTS` |
-| Files written into a repository | `.github/workflows/hobo-relay.yml`, `.hobo-ci/relay.mjs` | `RELAY_WORKFLOW_FILE`, `RELAY_EVALUATOR_FILE` |
 | Check steps | a `uses:` ending in `/checks/pr-title` or `/checks/lint` | `RELAY_CHECK_STEP_SUFFIXES` |
 | Events | `runner.route.*`, `machine.*`, `job.retried`, `check.completed` | `RELAY_EVENT_TYPES` |
 | Commands | `hobo ci machine`, `runners`, `activity`, `usage`, `performance`, `provider-health`, `relay` | `RELAY_CI_COMMANDS` |
@@ -85,7 +84,7 @@ be read.
 
 `answerRelayJob(message, deps)` in
 [`src/runner-order/answer.ts`](src/runner-order/answer.ts) is the one function
-both modes call. In order, it:
+a relay node calls. In order, it:
 
 1. Reads the message. One it cannot read still gets a failed answer naming the
    broken rule, so the job is completed rather than left queued.

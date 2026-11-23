@@ -62,8 +62,8 @@ machines refuse. The relay's inputs come from the `inputs` context a called
 workflow's job is given; names that are not relay inputs are left out. Each
 step becomes its `uses:` and `with:`.
 
-A routing job must contain the pinned setup steps and evaluator command from
-the generated relay workflow, with no additional shell options, containers,
+A routing job must contain the pinned checkout and setup-node steps and the
+fixed routing command (`ROUTING_SCRIPT` in `wire.ts`), with no additional shell options, containers,
 job-level environment or unexpected step environment. A check job must
 contain only the supported
 `hobo-labs/hobo/checks/pr-title@v1` or `checks/lint@v1` steps.

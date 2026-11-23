@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-139 codes.
+138 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -102,7 +102,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_GITHUB_OWNER_UNKNOWN`](#hobo_ci_github_owner_unknown) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_GITHUB_SETUP`](#hobo_ci_github_setup) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_HANDOFF_SILENT`](#hobo_ci_handoff_silent) | `packages/hobo-ci/src/prepare.ts` |
-| [`HOBO_CI_INIT_NOTHING_APPLIED`](#hobo_ci_init_nothing_applied) | `packages/hobo/src/ci-init-relay.ts`, `packages/hobo/src/ci-init.ts` |
+| [`HOBO_CI_INIT_NOTHING_APPLIED`](#hobo_ci_init_nothing_applied) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_INIT_PARTIAL`](#hobo_ci_init_partial) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_INSTALLATION_MISMATCH`](#hobo_ci_installation_mismatch) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_INSTALL_REQUIRED`](#hobo_ci_install_required) | `packages/hobo/src/ci-command.ts`, `packages/hobo/src/ci-github-connect.ts` |
@@ -124,10 +124,9 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_MCP_SCOPE_REQUIRED`](#hobo_ci_mcp_scope_required) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
 | [`HOBO_CI_NOT_STORED_HERE`](#hobo_ci_not_stored_here) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-usage.ts` |
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
-| [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init-relay.ts`, `packages/hobo/src/ci-init.ts` |
+| [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
 | [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
-| [`HOBO_CI_RELAY_FILES_STALE`](#hobo_ci_relay_files_stale) | `packages/hobo/src/ci-init-relay.ts` |
 | [`HOBO_CI_RERUN_AMBIGUOUS`](#hobo_ci_rerun_ambiguous) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_RERUN_NOT_FOUND`](#hobo_ci_rerun_not_found) | `packages/hobo/src/ci-rerun-reroute.ts` |
 | [`HOBO_CI_RERUN_NO_RELAY`](#hobo_ci_rerun_no_relay) | `packages/hobo/src/ci-rerun-reroute.ts` |
@@ -165,7 +164,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_UP_SOURCE_UNAVAILABLE`](#hobo_ci_up_source_unavailable) | `packages/hobo/src/ci-up-relay.ts` |
 | [`HOBO_CI_UP_VERCEL_NOT_CONNECTED`](#hobo_ci_up_vercel_not_connected) | `packages/hobo/src/ci-up-relay.ts` |
 | [`HOBO_CI_WAIT_TIMEOUT`](#hobo_ci_wait_timeout) | `packages/hobo/src/ci-runs.ts` |
-| [`HOBO_CI_WORKFLOWS_UNREADABLE`](#hobo_ci_workflows_unreadable) | `packages/hobo/src/ci-init-relay.ts`, `packages/hobo/src/ci-init.ts` |
+| [`HOBO_CI_WORKFLOWS_UNREADABLE`](#hobo_ci_workflows_unreadable) | `packages/hobo/src/ci-init.ts` |
 
 ## Codes
 
@@ -1276,7 +1275,7 @@ What to do:
 
 ### HOBO_CI_INIT_NOTHING_APPLIED
 
-Returned from `packages/hobo/src/ci-init-relay.ts`, `packages/hobo/src/ci-init.ts`.
+Returned from `packages/hobo/src/ci-init.ts`.
 
 Message: composed when the command runs.
 
@@ -1559,7 +1558,7 @@ What to do:
 
 ### HOBO_CI_NO_WORKFLOWS
 
-Returned from `packages/hobo/src/ci-init-relay.ts`, `packages/hobo/src/ci-init.ts`.
+Returned from `packages/hobo/src/ci-init.ts`.
 
 Message:
 
@@ -1609,21 +1608,6 @@ CI relay request failed ({error.status}). {guidance}
 
 What to do: follow the message.
 
-### HOBO_CI_RELAY_FILES_STALE
-
-Returned from `packages/hobo/src/ci-init-relay.ts`.
-
-Message:
-
-```text
-The relay files are not the ones this hobo writes.
-{…}
-```
-
-What to do:
-
-- Run hobo ci init --relay job --apply all (or --relay relay) to write them again, and review the diff.
-
 ### HOBO_CI_RERUN_AMBIGUOUS
 
 Returned from `packages/hobo/src/ci-runs.ts`.
@@ -1671,7 +1655,7 @@ Run {parsed.runId} has no relay job named {parsed.job}.
 
 What to do:
 
-- Use hobo ci rerun for a plain re-run, or add a relay job with hobo ci init --relay.
+- Use hobo ci rerun for a plain re-run.
 
 ### HOBO_CI_RERUN_NO_TOKEN
 
@@ -2126,7 +2110,7 @@ What to do: follow the message.
 
 ### HOBO_CI_WORKFLOWS_UNREADABLE
 
-Returned from `packages/hobo/src/ci-init-relay.ts`, `packages/hobo/src/ci-init.ts`.
+Returned from `packages/hobo/src/ci-init.ts`.
 
 Message:
 

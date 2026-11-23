@@ -57,11 +57,6 @@ export const RELAY_JOB_OUTPUTS = [
 ] as const;
 export type RelayJobOutputName = (typeof RELAY_JOB_OUTPUTS)[number];
 
-// public-contract: the files `hobo ci init --relay` writes into a user's repository.
-export const RELAY_WORKFLOW_FILE = ".github/workflows/hobo-relay.yml";
-// public-contract: the vendored job-mode evaluator `hobo ci init --relay` writes.
-export const RELAY_EVALUATOR_FILE = ".hobo-ci/relay.mjs";
-
 // public-contract: a `uses:` ending in one of these is a HoBo check step.
 export const RELAY_CHECK_STEP_SUFFIXES = [
 	"/checks/pr-title",
@@ -91,7 +86,7 @@ export const RELAY_EVENT_TYPES = [
 export type RelayEventType = (typeof RELAY_EVENT_TYPES)[number];
 
 // public-contract: how a relay job is answered.
-export const RELAY_MODES = ["job", "relay"] as const;
+export const RELAY_MODES = ["relay"] as const;
 export type RelayMode = (typeof RELAY_MODES)[number];
 
 // public-contract: how a relay job ends.
@@ -306,7 +301,7 @@ export function defineRunnerRouteEvent(
 		(event.type === "runner.route.Decided") === (event.decision !== undefined),
 		"a decision is on runner.route.Decided and nowhere else",
 	);
-	need(oneOf(RELAY_MODES, event.mode), 'mode is "job" or "relay"');
+	need(oneOf(RELAY_MODES, event.mode), 'mode is "relay"');
 	need(event.node.length > 0, "a route event names the node that answered");
 	return branded(Object.freeze(event));
 }

@@ -102,7 +102,7 @@ describe("relay job records", () => {
 						runAttempt: 1,
 						job: "j",
 					},
-					mode: "job",
+					mode: "relay",
 					node: "n",
 					decision: { outcome: "none", reason: "x" },
 				}),

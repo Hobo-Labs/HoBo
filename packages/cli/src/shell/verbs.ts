@@ -377,7 +377,6 @@ Usage:
   hobo ci activity                 Each relay job from the relay's journal: where it ran and why (--since, --runner, --outcome)
   hobo ci usage                    Billed minutes, short jobs, minutes kept off GitHub and the included minutes left (--source github)
   hobo ci performance              Workflow, job and runner times against ubuntu-latest, and the signals by slice and day
-  hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
   hobo ci secret-store plan       Choose the relay's config/secret store for this deployment
@@ -490,9 +489,6 @@ Init options (hobo ci init; reads and edits .github/workflows, commits nothing):
                                 comma-separated); the old label is kept as a trailing comment
   --fleet-label <label>         The label to write (default: hobo)
   --include-secret-jobs         Also move jobs that use secrets, an environment or an OIDC token
-  --relay job|relay             Put jobs behind a relay-<job> job instead and write .github/workflows/hobo-relay.yml
-                                (job: answered on a GitHub-hosted runner by .hobo-ci/relay.mjs; relay: a HoBo relay
-                                answers it); runner-type flags (--machine, --depot, ...) become every relay's inputs
 
 Route options (hobo ci route; reads runnerOrder in .hobo/ci.json, contacts nothing):
   --fleet, --machine, --github <label>   The label the job would ask that runner type for

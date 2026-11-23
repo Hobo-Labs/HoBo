@@ -150,19 +150,8 @@
 			"better": true,
 			"claim": "Matrix jobs and reusable workflows cannot be routed",
 			"source": "site/reference/faq.md",
-			"bar": "One relay output routes a three-leg matrix",
-			"tiers": ["t2", "t3"],
-			"packages": ["11"],
-			"today": { "state": "not-built", "note": "" }
-		},
-		{
-			"id": "R15",
-			"area": "Routing",
-			"better": true,
-			"claim": "n/a",
-			"source": "",
-			"bar": "Job mode routes a job with no relay reachable",
-			"tiers": ["t3"],
+			"bar": "Each leg of a matrix job whose runs-on is a HoBo label is routed when HoBo CI claims it",
+			"tiers": ["t2"],
 			"packages": ["11"],
 			"today": { "state": "not-built", "note": "" }
 		},
@@ -202,7 +191,7 @@
 			"area": "Machines",
 			"claim": "A machine must hold every label asked for; `self-hosted` means any",
 			"source": "site/concepts/routing.md",
-			"bar": "Same in the choice; job mode names one machine label",
+			"bar": "Same in the choice",
 			"tiers": ["t1"],
 			"packages": [],
 			"today": { "state": "pass", "note": "" }
@@ -475,7 +464,7 @@
 			"area": "Surfaces",
 			"claim": "`init` plans and applies workflow changes and never commits",
 			"source": "site/get-started/quickstart.md",
-			"bar": "Same, and `--relay` writes relay jobs",
+			"bar": "Same, and the only workflow change is `runs-on` set to a HoBo label",
 			"tiers": ["t1"],
 			"packages": ["13"],
 			"today": { "state": "partial", "note": "writes the fleet label only" }
@@ -535,7 +524,7 @@
 			"area": "Surfaces",
 			"claim": "A clean way to remove it",
 			"source": "site/dashboard/remove.md",
-			"bar": "`hobo ci init --undo` and a removal page",
+			"bar": "Restoring each moved job's `# was ...` label, and a removal page",
 			"tiers": ["t1"],
 			"packages": ["13"],
 			"today": { "state": "not-built", "note": "" }
