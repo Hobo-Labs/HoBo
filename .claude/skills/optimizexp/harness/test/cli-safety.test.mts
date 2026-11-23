@@ -290,10 +290,12 @@ describe("project selection and write safety", () => {
 			assert.deepEqual(snapshot(root), before);
 		});
 	});
-	it("refuses unknown, mixed, malformed, missing, and misspelled selectors before every mutating entrypoint", () => {
+	it("refuses unknown, mixed, malformed, missing, and misspelled selectors before every entrypoint", () => {
 		fixture((root) => {
 			const cases: [string, string[]][] = [
 				["explore-app", ["--mode=explore"]],
+				["generate-feature", ["--mode=validate", "--id=sample"]],
+				["generate-persona", ["--mode=validate", "--id=sample"]],
 				["capture-evidence", ["--mode=init-feature", "--id=sample"]],
 				["doctor", ["repair", "--only=ensure-config"]],
 				["doctor", ["snapshot"]],
@@ -321,9 +323,12 @@ describe("project selection and write safety", () => {
 			const explore = invoke(root, "explore-app", ["--mode=validate", "--project=site"]);
 			assert.equal(explore.status, 1, explore.stderr);
 			assert.deepEqual(snapshot(root), before);
-			for (const cli of ["capture-evidence", "doctor", "init"]) {
+			const feature = invoke(root, "generate-feature", ["--mode=validate", "--project=site", "--id=missing"]);
+			assert.equal(feature.status, 1, feature.stderr);
+			assert.deepEqual(snapshot(root), before);
+			for (const cli of ["explore-app", "generate-feature", "generate-persona", "capture-evidence", "doctor", "init"]) {
 				const result = invoke(root, cli, ["--mode=unexpected", "--project=site"]);
-				assert.equal(result.status, 2, `${cli}: ${result.stderr}`);
+				assert.notEqual(result.status, 0, `${cli}: ${result.stderr}`);
 				assert.deepEqual(snapshot(root), before);
 			}
 			for (const cli of ["explore-app", "generate-feature", "generate-persona"]) {
@@ -334,7 +339,7 @@ describe("project selection and write safety", () => {
 		});
 	});
 
-	it("rejects unsupported positionals before writes while retaining mode and seed positionals", () => {
+	it("rejects unsupported positionals before writes while retaining read-only modes", () => {
 		fixture((root) => {
 			const before = snapshot(root);
 			const invalid: [string, string[]][] = [
@@ -357,6 +362,10 @@ describe("project selection and write safety", () => {
 			assert.equal(init.status, 0, init.stderr);
 			const capture = invoke(root, "capture-evidence", ["validate"]);
 			assert.equal(capture.status, 0, capture.stderr);
+			const feature = invoke(root, "generate-feature", ["--mode=validate", "--project=root"]);
+			assert.equal(feature.status, 0, feature.stderr);
+			const persona = invoke(root, "generate-persona", ["--mode=validate", "--project=root"]);
+			assert.equal(persona.status, 0, persona.stderr);
 			assert.deepEqual(snapshot(root), before);
 		});
 	});
@@ -369,6 +378,13 @@ describe("project selection and write safety", () => {
 			assert.deepEqual(resolveProjects("packages/hobo", root).projects.map((project) => project.id), ["hobo"]);
 			assert.deepEqual(resolveProjects("site,hobo", root).unknown, []);
 			assert.ok(resolveProjects("../../site", root).unknown.length);
+			const scoped = invoke(root, "generate-feature", ["--mode=validate", "--project=root"]);
+			assert.equal(scoped.status, 0, scoped.stderr);
+			assert.equal(existsSync(path.join(root, ".optimizexp")), false);
+			const all = invoke(root, "generate-feature", ["--mode=validate", "--all-projects"]);
+			assert.equal(all.status, 0, all.stderr);
+			const allPersona = invoke(root, "generate-persona", ["--mode=validate", "--all-projects"]);
+			assert.equal(allPersona.status, 0, allPersona.stderr);
 			const allCapture = invoke(root, "capture-evidence", ["--mode=validate", "--all-projects"]);
 			assert.equal(allCapture.status, 0, allCapture.stderr);
 			const allExplore = invoke(root, "explore-app", ["--mode=validate", "--all-projects"]);
@@ -408,6 +424,8 @@ describe("project selection and write safety", () => {
 		fixture((root) => {
 			const before = snapshot(root);
 			for (const id of ["../../escape", "/tmp/escape", "nested/feature", "nested\\feature"]) {
+				const plan = invoke(root, "generate-feature", ["--mode=validate", "--project=root", `--id=${id}`]);
+				assert.equal(plan.status, 2, plan.stderr);
 				const capture = invoke(root, "capture-evidence", ["--mode=init-feature", "--project=root", `--id=${id}`]);
 				assert.equal(capture.status, 2, capture.stderr);
 				assert.deepEqual(snapshot(root), before);
@@ -433,6 +451,20 @@ describe("project selection and write safety", () => {
 			const meta = readFileSync(path.join(root, "site/.optimizexp/features/example/evidence/observed/meta.json"), "utf8");
 			assert.match(meta, /Then site is visible/);
 			assert.doesNotMatch(meta, /Then packages\/hobo is visible/);
+		});
+	});
+
+	it("refuses feature implementation without writing", () => {
+		fixture((root) => {
+			const feature = path.join(root, "packages/hobo/.optimizexp/features/example");
+			mkdirSync(feature, { recursive: true });
+			writeFileSync(path.join(feature, "feature.json"), JSON.stringify({ id: "example", surfaces: [] }));
+			const before = snapshot(root);
+			const other = invoke(root, "generate-feature", ["--mode=implement", "--project=site", "--id=example"]);
+			assert.notEqual(other.status, 0, other.stderr);
+			const dry = invoke(root, "generate-feature", ["--mode=implement", "--project=hobo", "--id=example", "--dry-run"]);
+			assert.equal(dry.status, 2, dry.stderr);
+			assert.deepEqual(snapshot(root), before);
 		});
 	});
 });

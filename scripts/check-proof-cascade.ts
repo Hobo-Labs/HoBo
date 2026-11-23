@@ -372,13 +372,13 @@ function loadAggregators(root: string): Aggregator[] {
 			const manifestPath = path.join(root, workspace, "proof.json");
 			if (existsSync(manifestPath)) {
 				try {
-					const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+					const manifest: {
 						references?: {
 							technicalProofs?: string[];
 							expProofs?: string[];
 							epicProofs?: string[];
 						};
-					};
+					} = JSON.parse(readFileSync(manifestPath, "utf8"));
 					for (const list of [
 						manifest.references?.technicalProofs,
 						manifest.references?.expProofs,
@@ -425,9 +425,9 @@ function cascadeWaived(workspace: string): boolean {
 	const manifestPath = path.join(repoRoot, workspace, "proof.json");
 	if (!existsSync(manifestPath)) return false;
 	try {
-		const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+		const manifest: {
 			waivers?: Array<{ requirement?: string }>;
-		};
+		} = JSON.parse(readFileSync(manifestPath, "utf8"));
 		return (manifest.waivers ?? []).some(
 			(waiver) => waiver.requirement === "cascade",
 		);
@@ -450,16 +450,10 @@ function main() {
 		return;
 	}
 
-	const grandfathered = new Set(
-		(
-			JSON.parse(
-				readFileSync(
-					path.join(repoRoot, "src/draft/_grandfathered.json"),
-					"utf8",
-				),
-			) as { packages: string[] }
-		).packages,
+	const grandfatheredRegistry: { packages: string[] } = JSON.parse(
+		readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
 	);
+	const grandfathered = new Set(grandfatheredRegistry.packages);
 	const aggregators = loadAggregators(repoRoot);
 
 	let failures = 0;

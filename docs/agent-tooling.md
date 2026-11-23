@@ -26,7 +26,8 @@ artifacts. For renamed files, it compares against the original path so existing
 comments remain allowed while newly added comments are checked. During a staged
 merge it compares against every parent, so content inherited unchanged from
 either side is not treated as a new merge edit, while a multiline comment
-assembled from changes on both sides is still checked.
+assembled from changes on both sides is still checked. The PR check still examines the
+full diff against its base.
 
 The anti-slop installer leaves its comment-required assertion rule disabled so
 the lint configuration follows the same source policy.
@@ -60,11 +61,6 @@ Capture records the command's selected working directory and respects the caller
 CLI output is bounded to 8 MiB per stream; truncated or interrupted captures are marked degraded and cannot support a complete review. A deliberate negative review revokes acceptance, while invalid inputs and artifact mismatches leave the previous review intact. Terminal replay uses recorded event times and safely embeds captured output.
 
 > **Note:** this is *tooling* config, not part of the HoBo product design (`urn:hobo:requirement:`). It was added on request to make the agents productive in this repo.
-
-For `sdlc --finish`, run the local staged check before each commit, then follow
-GitHub's required checks and merge queue until each authorized PR is merged.
-Use the time to complete independent work when possible; a queued PR is not yet
-merged.
 
 The [default dev container](../.devcontainer/devcontainer.json) installs **mise** (pinned Node, pnpm, cue, gitleaks, turbo from [`../mise.toml`](../mise.toml)) on a **digest-pinned** Node 24 Bookworm base (see
 [`.devcontainer/Dockerfile`](../.devcontainer/Dockerfile)), plus GitHub CLI, Docker in Docker, native Actions runner dependencies and pinned act. Personal dotfiles install via [`../scripts/bootstrap-dev.sh`](../scripts/bootstrap-dev.sh) (see [`dev-env/mise.md`](dev-env/mise.md)).
@@ -162,13 +158,19 @@ A **skill + always-on rule** that compresses the agent's **output** (~65–87% f
 - **It is ON by default.** To disable: delete `.cursor/rules/caveman.mdc`, remove the `<!-- caveman:begin … end -->` block from `AGENTS.md`, and run `npx -y github:JuliusBrussee/caveman -- --uninstall`.
 
 ### impeccable — `pbakaus/impeccable` (Apache-2.0)
+A **design skill** for AI harnesses (npm `impeccable`, homepage
+[impeccable.style](https://impeccable.style)). The checked-in skill supports
+visual review and implementation across Claude Code, Codex, Cursor, and Copilot.
+**Standing duty on visual work** (TUI, dashboard, Evidence and `site/`): run
+`critique` then `audit` (and `polish` on P0/P1) and `pnpm run design:lint`
+without being asked. See `AGENTS.md` “Visual quality”.
 
-The checked-in skill supports visual review and implementation across Claude
-Code, Codex, Cursor, and Copilot. Its context command uses existing source and
-does not contact the network. The image generator and concept-seed helper make
-network requests only when explicitly invoked. The common source-policy hooks
-apply to every harness. Surface-brief and critique-file writers reject writes;
-visual work uses the implemented styles and components instead.
+Its context command uses existing source and does not contact the network. The
+image generator and concept-seed helper make network requests only when
+explicitly invoked. The common source-policy hooks apply to every harness.
+Surface-brief and critique-file writers reject writes; visual work uses the
+implemented styles and components instead. Do not invoke commands that create
+planning or design documents.
 The visual doctor reports existing design documents and sidecars so their
 outstanding behavior can be completed before removal; its automatic fixes do
 not move or regenerate those artifacts. The checked-in visual agents report
@@ -178,8 +180,17 @@ Live preview sessions recover browser checkpoints after a reload or when local
 browser storage is missing, provided the live server is still running. Browser
 checkpoints and publication progress are tracked independently.
 
-Upstream installs or updates can replace repository-specific skill rules. Check
-those rules and run the agent policy tests after updating the skill.
+- **Install:** `npx impeccable install` from the repo root; it auto-detects
+  harnesses and compiles **per harness** into `.claude`, `.agents`, `.cursor`
+  and `.github`. `npx impeccable check` reports drift, `npx impeccable update`
+  applies it. Committed, like the other skills. Upstream installs or updates can
+  replace repository-specific skill rules. Check those rules and run the agent
+  policy tests after updating the skill.
+- **Mirror-gate exemption:** impeccable is listed in `VENDORED_SKILLS` in
+  [`../scripts/check-skill-mirrors.ts`](../scripts/check-skill-mirrors.ts). The
+  byte-identical rule fits skills this repo authors; impeccable deliberately
+  emits Codex-only `agents/*.toml` and `agents/openai.yaml`, so forcing the
+  trees equal would corrupt the install and be undone by the next update.
 
 ### Higgsfield MCP — `mcp.higgsfield.ai` (hosted, official)
 The **official hosted** MCP connector for Higgsfield AI image/video generation

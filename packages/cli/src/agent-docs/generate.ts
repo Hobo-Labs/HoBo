@@ -1,11 +1,16 @@
 import { normalizeText } from "../codegen/text.js";
 import { CANONICAL_VERBS, GLOBAL_FLAGS, type Verb } from "../shell/verbs.js";
 
+// public-contract: schema id written into docs.json and read by agents.
 export const AGENT_DOCS_SCHEMA_VERSION = "hobo.agent-docs/v1";
+// public-contract: generator id recorded in docs.json.
 export const AGENT_DOCS_GENERATOR = "@hobo/cli/agent-docs";
+// public-contract: product name recorded in docs.json.
 export const AGENT_DOCS_PRODUCT = "hobo";
 
+// public-contract: MCP capability port that @hobo/mcp derives the same way.
 export const AGENT_DOCS_MCP_PORT = "hobo:mcp";
+// public-contract: MCP capability verb that @hobo/mcp derives the same way.
 export const AGENT_DOCS_MCP_CALL_VERB = "call";
 
 export const AGENT_DOCS_ARTIFACTS = {
@@ -23,12 +28,14 @@ export interface AgentDocsToolInput {
 	};
 }
 
+// domain-view: wire form is AgentDocCapability in data-models/agent_docs.proto.
 export interface AgentDocCapability {
 	readonly port: string;
 	readonly resource: string;
 	readonly verb: string;
 }
 
+// domain-view: wire form is AgentDocEntry in data-models/agent_docs.proto.
 export interface AgentDocEntry {
 	readonly name: string;
 	readonly role: string;
@@ -38,6 +45,7 @@ export interface AgentDocEntry {
 	readonly capability: AgentDocCapability;
 }
 
+// domain-view: wire form is AgentDocsManifest in data-models/agent_docs.proto.
 export interface AgentDocsManifest {
 	readonly schemaVersion: string;
 	readonly generator: string;
@@ -47,6 +55,7 @@ export interface AgentDocsManifest {
 	readonly artifacts: readonly string[];
 }
 
+// domain-view: wire form is AgentDocsArtifact in data-models/agent_docs.proto.
 export interface AgentDocsArtifact {
 	readonly path: string;
 	readonly content: string;

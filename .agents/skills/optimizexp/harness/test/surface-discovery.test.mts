@@ -360,7 +360,7 @@ describe("persona experience selection", () => {
 		});
 	});
 
-	it("exploration validation refuses stale maps", () => {
+	it("surface validation refuses stale maps", () => {
 		fixture((root) => {
 			mkdirSync(path.join(root, ".git"));
 			const dir = path.join(root, "packages/hobo");
@@ -377,11 +377,6 @@ describe("persona experience selection", () => {
 			);
 			const map = buildSurfaceMap({ project: hobo, root, skipProbes: true });
 			writeSurfaceMap(map, hobo, root);
-			writeExperienceCatalog(
-				buildExperienceCatalog({ project: hobo, root, surfaceMap: map }),
-				hobo,
-				root,
-			);
 			writeFileSync(path.join(dir, "package.json"), "not json");
 			const explorer = fileURLToPath(new URL("../explore-app.mts", import.meta.url));
 			const validation = spawnSync(process.execPath, [explorer, "--mode", "validate", "--project", "hobo"], { cwd: root, encoding: "utf8" });
@@ -562,7 +557,7 @@ describe("discovery evidence boundaries", () => {
 		});
 	});
 
-	it("preserves saved observations and catalogs during repair and creates only a missing map", () => {
+	it("preserves saved observations and catalogs during repair and creates only missing maps", () => {
 		fixture((root, dir) => {
 			packageWithBin(dir);
 			const marker = path.join(root, "ran");
@@ -594,6 +589,11 @@ describe("discovery evidence boundaries", () => {
 				assert.equal(readFileSync(catalogPath, "utf8"), JSON.stringify({ experiences: [null] }));
 				assert.ok(invalid.findings.some((finding) => /invalid or unreadable/.test(finding.message) && !finding.repairable));
 			}
+			writeFileSync(mapPath, originalMap);
+			const invalidCatalog = JSON.stringify({ ...catalog, experiences: [null] });
+			writeFileSync(catalogPath, invalidCatalog);
+			runDoctorRepair({ root, selection, only });
+			assert.equal(readFileSync(catalogPath, "utf8"), invalidCatalog);
 			rmSync(mapPath);
 			rmSync(catalogPath);
 			rmSync(marker);
@@ -647,6 +647,28 @@ describe("discovery evidence boundaries", () => {
 			const changed = buildSurfaceMap({ project: hobo, root, probeBinary: true });
 			writeSurfaceMap(changed, hobo, root);
 			assert.match(validateCatalogCoverage(catalog, ["herdr"], changed, { root, freshProbe: true }).join("; "), /stale/);
+		});
+	});
+
+	it("preserves independently documented web and script experiences in a no-bin package", () => {
+		fixture((root) => {
+			mkdirSync(path.join(root, ".git"));
+			const dir = path.join(root, "packages/hobo");
+			mkdirSync(dir, { recursive: true });
+			const hobo = { id: "hobo", path: "packages/hobo", kind: "package" as const, label: "hobo" };
+			writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "sample", scripts: { start: "node server.js" } }));
+			const personaDir = path.join(root, ".optimizexp/personas");
+			mkdirSync(personaDir, { recursive: true });
+			writeFileSync(path.join(personaDir, "developer.md"), '---\nid: developer\nexperiences: [dx]\ninterfaces: [cli, web]\n---\nUses the documented app.\n');
+			const map = buildSurfaceMap({ project: hobo, root });
+			const catalog = buildExperienceCatalog({ project: hobo, root, personaIds: ["developer"], surfaceMap: map });
+			const common = { personaId: "developer", observableSuccess: "The app responds", observableFailure: "No response", confusionRisks: [], priority: "P0" as const, source: ["documented project README"] };
+			catalog.experiences.push({ ...common, experienceId: "web-visit", featureId: "web-visit", intent: "Visit the documented app", entryCommand: "http://localhost:3000", driver: "web" });
+			catalog.experiences.push({ ...common, experienceId: "script-start", featureId: "script-start", intent: "Start using the documented script", entryCommand: "npm run start", driver: "cli" });
+			catalog.experiences.push({ ...common, experienceId: "unknown-bin", featureId: "unknown-bin", intent: "Try an unverified executable", entryCommand: "no-such-binary", driver: "cli" });
+			assert.deepEqual(validateCatalogCoverage(catalog, ["developer"], map), []);
+			writeSurfaceMap(map, hobo, root);
+			writeExperienceCatalog(catalog, hobo, root);
 		});
 	});
 

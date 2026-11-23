@@ -67,15 +67,15 @@ function NewTaskForm({
     tasks: [
       {
         name: "Respond to emails",
-        priority: "high" as TaskPriority,
+        priority: "high",
       },
       {
         name: "Learn WASP",
-        priority: "low" as TaskPriority,
+        priority: "low",
       },
       {
         name: "Read a book",
-        priority: "medium" as TaskPriority,
+        priority: "medium",
       },
     ],
     taskItems: [

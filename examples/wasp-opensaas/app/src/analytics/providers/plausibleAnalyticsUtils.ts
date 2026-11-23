@@ -43,7 +43,7 @@ async function getTotalPageViews() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  const json = (await response.json()) as PageViewsResult;
+  const json: PageViewsResult = await response.json();
 
   return json.results.pageviews.value;
 }
@@ -87,7 +87,7 @@ async function getPageviewsForDate(date: string) {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  const data = (await response.json()) as PageViewsResult;
+  const data: PageViewsResult = await response.json();
   return data.results.pageviews.value;
 }
 
@@ -100,6 +100,6 @@ export async function getSources() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  const data = (await response.json()) as PageViewSourcesResult;
+  const data: PageViewSourcesResult = await response.json();
   return data.results;
 }

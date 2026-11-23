@@ -304,8 +304,6 @@ export function createLifecycleFamilyCommand(
 						);
 				}
 
-				// `status` and every `--what-if` are the read-only plan: the change set,
-				// computed, printed, never applied.
 				const module =
 					action === "status" || (action === "up" && flags.whatIf)
 						? spec.plan
@@ -323,7 +321,6 @@ export function createLifecycleFamilyCommand(
 					...(prepared.length > 0 ? { prepared } : undefined),
 				});
 			} finally {
-				// The run's credentials end with the run.
 				credentials?.clear();
 			}
 		},

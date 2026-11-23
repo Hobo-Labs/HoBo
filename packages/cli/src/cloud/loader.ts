@@ -278,7 +278,12 @@ export function targetFromBindleDefinition(
 			? { identityLedger: resourceIdentityLedger(definition) }
 			: undefined),
 		dependencies: definition.edges
-			.filter((edge) => !edge.to.startsWith("connector:"))
+			.filter(
+				(edge) =>
+					!edge.to.startsWith("connector:") &&
+					resourceIds.has(edge.from) &&
+					resourceIds.has(edge.to),
+			)
 			.map((edge) => ({
 				from: resourceId(edge.from),
 				to: resourceId(edge.to),

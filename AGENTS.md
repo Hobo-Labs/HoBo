@@ -121,7 +121,7 @@ The repo-local **optimizexp** skill reviews real UX, DX, and AX behavior, implem
 
 ### Retiring draft proofs
 
-Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Complete missing behavior in its owning package, verify it there, and remove the obsolete proof with its references. Do not create replacement proofs or synthetic evidence. Two gates check changes to remaining proofs and their dependents:
+Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Complete missing behavior in its owning package, verify it there, and remove the obsolete proof with its references. Do not create planning documents, replacement or placeholder proofs, or synthetic evidence. Two gates run automatically through `agent:check` on changes to remaining proofs and their dependents:
 
 - `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior.
 - `pnpm run draft:cascade` — a changed technical/exp proof must update every referencing epic/project rollup in the same diff (references resolve from `proof.json` graphs + import/ledger scans).

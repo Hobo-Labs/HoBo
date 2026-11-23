@@ -188,6 +188,9 @@ describe("OptimizeXP write containment", () => {
 			const result = invoke(root, "explore-app", ["--project=site"]);
 			assert.equal(result.status, 0, result.stderr);
 			assert.equal(existsSync(path.join(root, "site/.optimizexp/surface-map.json")), true);
+			const config = invoke(root, "init", ["--mode=ensure-config", "--project=site"]);
+			assert.equal(config.status, 0, config.stderr);
+			assert.equal(existsSync(path.join(root, "site/.optimizexp/config.json")), true);
 		});
 	});
 

@@ -140,7 +140,7 @@ const ActionBodySchema = z.object({
 
 type ActionBody = z.infer<typeof ActionBodySchema>;
 
-function parseActionBody(text: string): ActionBody | undefined {
+export function parseActionBody(text: string): ActionBody | undefined {
 	let json: z.core.util.JSONType;
 	try {
 		json = JSON.parse(text);

@@ -189,10 +189,10 @@ export function checkWorkspace(
 				const notebook = readFileSync(notebookPath, "utf8");
 				if (/Hardened notebook scaffold/iu.test(notebook))
 					problems.push("notebook only reports proof identity");
-				const nb = JSON.parse(notebook) as {
+				const nb: {
 					nbformat?: number;
 					cells?: Array<{ cell_type?: string; outputs?: unknown[] }>;
-				};
+				} = JSON.parse(notebook);
 				const codeCells = (nb.cells ?? []).filter(
 					(c) => c.cell_type === "code",
 				);
@@ -319,16 +319,10 @@ export function checkWorkspace(
 
 function main() {
 	const argv = process.argv.slice(2);
-	const grandfathered = new Set(
-		(
-			JSON.parse(
-				readFileSync(
-					path.join(repoRoot, "src/draft/_grandfathered.json"),
-					"utf8",
-				),
-			) as { packages: string[] }
-		).packages,
+	const grandfatheredRegistry: { packages: string[] } = JSON.parse(
+		readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
 	);
+	const grandfathered = new Set(grandfatheredRegistry.packages);
 	const positional = argv.filter((arg) => !arg.startsWith("--"));
 	const workspaces = [
 		...new Set(

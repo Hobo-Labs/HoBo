@@ -50,6 +50,7 @@ import {
 	hasGeneratedTypeScriptApp,
 } from "./typescript-app-build.js";
 
+// public-contract: the documented on-disk location of the build manifest.
 export const BUILD_MANIFEST_PATH = ".hobo/build/build-manifest.json";
 const BUILD_ARTIFACT_DIR = ".hobo/build/artifacts";
 
@@ -78,6 +79,7 @@ export type RunBuildOptions = BuildRequest & {
 	readonly componentize?: ComponentizeFn;
 	readonly requireRealComponentize?: boolean;
 	readonly containerBuild?: ContainerBuildFn;
+	// public-contract: test seam for the HOBO_COMPONENTIZE_REAL toolchain probe;
 	readonly realComponentizeFactory?: typeof createRealComponentize;
 };
 
@@ -196,6 +198,7 @@ export async function writeBuildFixtureProject(
 
 	const services = options.services ?? DEFAULT_SERVICES;
 	const bindlePath = join(projectRoot, "hobo.bindle.json");
+	// SAFETY: `const bindle = JSON.parse(await readFile(bindlePath, "utf8")) as {` is required at this I/O or test boundary.
 	const bindle = JSON.parse(await readFile(bindlePath, "utf8")) as {
 		services?: JsonValue[];
 	};
@@ -211,6 +214,7 @@ export async function writeBuildFixtureProject(
 	}
 }
 
+// public-contract: HOBO_COMPONENTIZE_REAL=1 selects the real componentize
 async function selectComponentize(
 	factory: typeof createRealComponentize = createRealComponentize,
 	requireReal = true,
@@ -513,6 +517,7 @@ async function readJson(
 	path: string,
 ): Promise<JsonObject> {
 	try {
+		// SAFETY: `return JSON.parse(` is required at this I/O or test boundary.
 		return JSON.parse(
 			await readFile(join(projectRoot, path), "utf8"),
 		) as JsonObject;

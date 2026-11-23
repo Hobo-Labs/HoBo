@@ -147,7 +147,7 @@ async function handleSubscriptionCreated(
         lemonSqueezyId,
         userId,
         subscriptionPlan: planId,
-        subscriptionStatus: status as SubscriptionStatus,
+        subscriptionStatus: SubscriptionStatus.Active,
         datePaid: new Date(),
       },
       prismaUserDelegate,
@@ -177,7 +177,10 @@ async function handleSubscriptionUpdated(
         lemonSqueezyId,
         userId,
         subscriptionPlan: planId,
-        subscriptionStatus: status as SubscriptionStatus,
+        subscriptionStatus:
+          status === "active"
+            ? SubscriptionStatus.Active
+            : SubscriptionStatus.PastDue,
         ...(status === "active" && { datePaid: new Date() }),
       },
       prismaUserDelegate,
@@ -198,7 +201,7 @@ async function handleSubscriptionCancelled(
     {
       lemonSqueezyId,
       userId,
-      subscriptionStatus: "cancel_at_period_end" as SubscriptionStatus,
+      subscriptionStatus: SubscriptionStatus.CancelAtPeriodEnd,
     },
     prismaUserDelegate,
   );

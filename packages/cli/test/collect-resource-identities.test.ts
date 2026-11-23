@@ -1,7 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	loadProjectCollectionTarget,
@@ -23,9 +22,7 @@ async function project(): Promise<string> {
 	projects.push(dir);
 	await mkdir(path.join(dir, "src"));
 	await writeFile(path.join(dir, "hobo.bindle.json"), "{}\n");
-	const bindles = pathToFileURL(
-		path.resolve("packages/bindles/dist/index.js"),
-	).href;
+	const bindles = new URL("../../bindles/dist/index.js", import.meta.url).href;
 	await writeFile(
 		path.join(dir, "src", "bindle.mjs"),
 		`import { bindle } from ${JSON.stringify(bindles)};\nexport default bindle("shop", (builder) => { const cache = builder.kv(); return { cache, api: builder.api().dependsOn(cache) }; });\n`,

@@ -58,11 +58,9 @@ export function ExamplesCarousel({ examples }: { examples: ExampleApp[] }) {
     scrollTimeoutRef.current = setTimeout(() => {
       if (scrollContainerRef.current) {
         const scrollContainer = scrollContainerRef.current;
-        const targetCard = scrollContainer.children[currentExample] as
-          | HTMLElement
-          | undefined;
+        const targetCard = scrollContainer.children.item(currentExample);
 
-        if (targetCard) {
+        if (targetCard instanceof HTMLElement) {
           const containerRect = scrollContainer.getBoundingClientRect();
           const cardRect = targetCard.getBoundingClientRect();
           const scrollLeft =

@@ -13,6 +13,6 @@ Run `pnpm run draft:experiences` to list the current experience proofs, or add `
 
 ## Validation
 
-Each proof manifest identifies its layer and actual references. The artifact gate runs examples against committed output and checks the required evidence; the cascade gate identifies affected dependent packages. Run the narrow package tests first, then `pnpm run agent:check -- --staged` for the changed scope. Record a reason only when a requirement does not apply; do not waive unfinished behavior.
+Each proof manifest identifies its layer and actual references. The artifact gate (`pnpm run draft:artifacts`) runs examples against committed output and checks the required evidence; the cascade gate (`pnpm run draft:cascade`) identifies affected dependent packages. Both read `_grandfathered.json` and report its packages as advisory only. Run the narrow package tests first, then `pnpm run agent:check -- --staged` for the changed scope. Record a reason only when a requirement does not apply; do not waive unfinished behavior.
 
 Use `git mv` for tracked moves. Keep operator and user documentation tied to behavior that exists, and capture visual evidence from the running interface when needed.

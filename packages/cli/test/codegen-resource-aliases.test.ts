@@ -1,7 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { bindle, resourceIdentityLedger } from "@hobo/bindles";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -14,9 +13,8 @@ describe("generated resource aliases", () => {
 		try {
 			await writeFixtureProject(root);
 			await mkdir(path.join(root, "src"), { recursive: true });
-			const bindles = pathToFileURL(
-				path.resolve("packages/bindles/dist/index.js"),
-			).href;
+			const bindles = new URL("../../bindles/dist/index.js", import.meta.url)
+				.href;
 			await writeFile(
 				path.join(root, "src", "bindle.mjs"),
 				`import { bindle } from ${JSON.stringify(bindles)};\nexport default bindle("shop", (builder) => { const cache = builder.kv(); return { cache, api: builder.api().dependsOn(cache) }; });\n`,

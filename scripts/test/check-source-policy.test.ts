@@ -1528,6 +1528,95 @@ f: /* TODO: remove block */`;
 		assert.equal(guard(repo, `--base=${base}`).status, 0);
 	});
 
+	it("rejects ignored agent planning and design documents in the worktree", () => {
+		const repo = fixture();
+		write(repo, ".gitignore", ".sdlc/\n.impeccable/\n");
+		write(repo, ".sdlc/feature/sdlc-state.md", "# Plan\n");
+		write(repo, ".impeccable/critique/example.md", "# Critique\n");
+		const result = guard(repo, "--worktree");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /\.sdlc\/feature\/sdlc-state\.md/u);
+		assert.match(result.stderr, /\.impeccable\/critique\/example\.md/u);
+	});
+
+	it("rejects ignored planning artifacts in nested agent workspaces", () => {
+		const repo = fixture();
+		write(repo, ".gitignore", "**/.optimizexp/\n**/.impeccable/\n**/.sdlc/\n");
+		const artifacts = [
+			".optimizexp/backlog/experiments.json",
+			"packages/demo/.optimizexp/features/example/SEED.md",
+			"packages/demo/.optimizexp/experience-catalog.json",
+			"site/.impeccable/critique/example.md",
+			"packages/demo/.sdlc/example/state.md",
+		];
+		for (const artifact of artifacts) write(repo, artifact, "{}\n");
+		const result = guard(repo, "--worktree");
+		assert.equal(result.status, 1, result.stderr);
+		for (const artifact of artifacts)
+			assert.ok(result.stderr.includes(artifact), artifact);
+	});
+
+	it("preserves experience evidence while rejecting synthetic planning files", () => {
+		for (const file of [
+			".optimizexp/INIT.md",
+			".optimizexp/init-report.json",
+			".optimizexp/personas/generated.md",
+			".optimizexp/features/example/EXPERIENCE.md",
+			".optimizexp/features/example/README.md",
+			".optimizexp/runs/run/backlog.json",
+			".optimizexp/runs/run/INCOMPLETE.md",
+		])
+			assert.ok(documentViolation(file, "{}"), file);
+		assert.equal(
+			documentViolation(
+				".optimizexp/features/example/evidence/manifest.json",
+				"{}",
+			),
+			undefined,
+		);
+	});
+
+	it("checks generated source templates and their underlying syntax", () => {
+		for (const [file, text] of [
+			["snippet.ts.tpl", "const value = {{name}}; // explanation"],
+			["view.tsx.tpl", "const view = <p>{{name}}{/* explanation */}</p>"],
+			["style.css.tpl", "p { color: red; } /* explanation */"],
+			["schema.cue.tpl", 'name: "{{name}}" // explanation'],
+		] as const) {
+			assert.equal(commentViolations(file, text, new Set([1])).length, 1, file);
+		}
+		assert.equal(
+			commentViolations(
+				"snippet.ts.tpl",
+				'const url = "https://example.test";',
+				new Set([1]),
+			).length,
+			0,
+		);
+		assert.ok(documentViolation("docs/design/example.md.tpl", "# Example"));
+		assert.ok(documentViolation("notes/DESIGN.md.tpl", "# Example"));
+		assert.ok(documentViolation(".impeccable/design.json.tpl", "{}"));
+	});
+
+	it("rejects staged comments and planning documents in templates", () => {
+		const repo = fixture();
+		write(repo, "snippet.ts.tpl", "export const value = 1; // explanation\n");
+		write(repo, "view.tsx.tpl", "const view = <p>{/* explanation */}</p>;\n");
+		write(repo, "schema.cue.tpl", 'name: "example" // explanation\n');
+		write(repo, "docs/design/example.md.tpl", "# Design\n");
+		git(repo, "add", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		for (const file of [
+			"snippet.ts.tpl",
+			"view.tsx.tpl",
+			"schema.cue.tpl",
+			"docs/design/example.md.tpl",
+		]) {
+			assert.ok(result.stderr.includes(file), file);
+		}
+	});
+
 	it("checks the staged snapshot rather than the working tree", () => {
 		const repo = fixture();
 		write(
@@ -1667,6 +1756,7 @@ f: /* TODO: remove block */`;
 		const incoming = "// already on incoming\nexport const incoming = 1;\n";
 		write(repo, "incoming.ts", incoming);
 		write(repo, "docs/design/existing.md", "# Existing design\n");
+		write(repo, ".optimizexp/experience-catalog.json", "{}\n");
 		git(repo, "add", "--all");
 		git(
 			repo,
@@ -1791,6 +1881,19 @@ f: /* TODO: remove block */`;
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /combined\.ts:1/u);
+	});
+
+	it("rejects new Astro comments in the staged snapshot", () => {
+		const repo = fixture();
+		write(
+			repo,
+			"page.astro",
+			"---\nconst x = 1;\n---\n<p>{x}</p>\n<!-- explanation -->\n",
+		);
+		git(repo, "add", "page.astro");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /page\.astro:5/u);
 	});
 
 	it("checks filenames containing Git pathspec metacharacters literally", () => {

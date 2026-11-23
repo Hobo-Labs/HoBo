@@ -46,7 +46,7 @@ export function throttleWithTrailingInvocation(
     }
   };
 
-  throttledFn.cancel = () => {
+  const cancel = () => {
     if (trailingInvocationTimeoutId) {
       clearTimeout(trailingInvocationTimeoutId);
       trailingInvocationTimeoutId = null;
@@ -54,5 +54,5 @@ export function throttleWithTrailingInvocation(
     isTrailingInvocationPending = false;
   };
 
-  return throttledFn as typeof throttledFn & { cancel: () => void };
+  return Object.assign(throttledFn, { cancel });
 }

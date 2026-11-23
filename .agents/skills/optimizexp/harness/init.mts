@@ -1,12 +1,11 @@
 #!/usr/bin/env node
+import process from "node:process";
 import { repoRoot, relFromRepo } from "./lib/paths.mts";
-import { normalizeCliOptions } from "./lib/cli-options.mts";
 import { listProjects, projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
 import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import { ensureGlobalConfig, ensureProjectConfig, loadConfigFile, resolveConfig, globalConfigPath, projectConfigPath } from "./lib/config.mts";
 import { ensureGlobalGitignore, ensureProjectGitignore } from "./lib/gitignore.mts";
-
-const MODES = ["list-projects", "validate-config", "ensure-config"];
 
 function parseArgs(argv: string[]): Record<string, string> {
 	const args: Record<string, string> = {};
@@ -18,7 +17,9 @@ function parseArgs(argv: string[]): Record<string, string> {
 		else if (key === "--all-projects") projects.push("all");
 		else if (key === "--force") args.force = "1";
 		else if (key === "--help" || key === "-h") args.help = "1";
-		else if (key && MODES.includes(key)) args.mode = key;
+		else if (key === "list-projects" || key === "--list-projects") args.mode = "list-projects";
+		else if (key === "validate-config" || key === "--validate-config") args.mode = "validate-config";
+		else if (key === "ensure-config" || key === "--ensure-config") args.mode = "ensure-config";
 	}
 	if (projects.length) args.projects = projects.join(",");
 	return args;
@@ -27,16 +28,17 @@ function parseArgs(argv: string[]): Record<string, string> {
 function main() {
 	const input = normalizeCliOptions(process.argv.slice(2), {
 		values: ["--mode", "--project", "--projects"],
-		flags: ["--help", "-h", "--force", "--all-projects"],
+		flags: ["--help", "-h", "--force", "--all-projects", "--list-projects", "--validate-config", "--ensure-config"],
 	});
 	if (input.error) {
 		console.error(input.error);
 		process.exit(2);
 	}
+	const modeOptions = ["--mode", "--list-projects", "--validate-config", "--ensure-config"];
 	if (
 		input.positionals.length > 1 ||
-		input.positionals.some((value) => !MODES.includes(value)) ||
-		(input.positionals.length > 0 && input.argv.includes("--mode"))
+		input.positionals.some((value) => !["list-projects", "validate-config", "ensure-config"].includes(value)) ||
+		(input.positionals.length > 0 && modeOptions.some((option) => input.argv.includes(option)))
 	) {
 		console.error("Expected at most one positional init mode");
 		process.exit(2);
@@ -47,14 +49,14 @@ function main() {
 		return;
 	}
 	const root = repoRoot();
-	const requested = resolveProjects(args.projects ?? "all", root);
-	const problem = projectSelectionProblem(requested);
-	if (problem || !MODES.includes(args.mode ?? "")) {
-		console.error(problem ?? `Unknown mode: ${args.mode}. Synthetic experience scaffolding is prohibited; implement and verify the requested improvements directly.`);
+	const selection = resolveProjects(args.projects, root);
+	const problem = projectSelectionProblem(selection);
+	if (problem) {
+		console.error(problem);
 		process.exit(2);
 	}
 	if (args.mode === "ensure-config") {
-		const writeProblem = optimizexpWriteProblem(root, ["", ...requested.projects.map((project) => project.path)]);
+		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
 		if (writeProblem) {
 			console.error(writeProblem);
 			process.exit(2);
@@ -191,7 +193,11 @@ function main() {
 				2,
 			),
 		);
+		return;
 	}
+
+	console.error("Synthetic experience scaffolding is prohibited. Implement and verify the requested improvements directly.");
+	process.exitCode = 1;
 }
 
 main();

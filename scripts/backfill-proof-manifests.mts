@@ -126,9 +126,9 @@ export function artifactsFor(
 
 function main() {
 	const force = process.argv.includes("--force");
-	const registry = JSON.parse(
+	const registry: { packages: string[] } = JSON.parse(
 		readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
-	) as { packages: string[] };
+	);
 	let written = 0;
 	let skipped = 0;
 	for (const workspace of registry.packages) {

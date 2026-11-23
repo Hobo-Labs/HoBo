@@ -10,7 +10,6 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -280,8 +279,8 @@ for (const scenario of [
 			});
 			app.listen(0, "127.0.0.1");
 			await once(app, "listening");
-			const address = app.address() as AddressInfo | null;
-			assert(address);
+			const address = app.address();
+			assert(address instanceof Object);
 			browser = await chromium.launch({ headless: true });
 			const page = await browser.newPage();
 			const vendor = readFileSync(

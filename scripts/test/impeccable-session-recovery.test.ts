@@ -9,7 +9,6 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -168,8 +167,8 @@ for (const withWrapper of [true, false]) {
 			});
 			app.listen(0, "127.0.0.1");
 			await once(app, "listening");
-			const address = app.address() as AddressInfo | null;
-			assert(address);
+			const address = app.address();
+			assert(address instanceof Object);
 			browser = await chromium.launch({ headless: true });
 			const page = await browser.newPage();
 			await page.goto(`http://127.0.0.1:${address.port}/`);
@@ -184,14 +183,14 @@ for (const withWrapper of [true, false]) {
 			assert.equal(recovered.browserCheckpointRevision, 10);
 			assert.equal(recovered.publicationCheckpointRevision, 25);
 			assert.notEqual(recovered.activeOwner, "old");
-			const status = (await fetch(
-				`http://localhost:${info.port}/status?token=${info.token}`,
-			).then((response) => response.json())) as {
+			const status: {
 				activeSessions: Array<{
 					checkpointRevision: number;
 					browserCheckpointRevision: number;
 				}>;
-			};
+			} = await fetch(
+				`http://localhost:${info.port}/status?token=${info.token}`,
+			).then((response) => response.json());
 			const summary = status.activeSessions[0];
 			assert(summary);
 			assert.equal(summary.checkpointRevision, 10);
