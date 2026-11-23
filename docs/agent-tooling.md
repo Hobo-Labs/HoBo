@@ -326,8 +326,7 @@ remote box whose host shows form elicitation; elsewhere the result is
 status (`established`, `sign-in-needed` with a code, `shown`, `link` with its
 URL, `decline`, `invalid`, `secure-form-unavailable`) and the store's name,
 never project or vault IDs, hosts, or references. Once established, `hobo deploy` resolves
-credential locators `owner://<NAME>` (and `env://<NAME>` absent from the
-environment) from that session's CD location (Infisical folder `/hobo-cd`), so provider resolvers such as Hostinger's get
+credential locators `owner://<NAME>` (`env://<NAME>` is refused) from that session's CD location (Infisical folder `/hobo-cd`), so provider resolvers such as Hostinger's get
 `HOSTINGER_API_TOKEN` from the owner's store without the value reaching the
 agent; `hobo ci fleet status|restart|start` (the `ci` tool with
 `args: ["fleet", ...]`) reads the same `owner://HOSTINGER_API_TOKEN` to list and
