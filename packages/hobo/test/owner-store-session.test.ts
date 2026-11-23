@@ -36,8 +36,7 @@ function ownerStoreFor(input: {
 		id,
 		chosen: input.chosen,
 		missing: [],
-		canAwaitEgressCredential: false,
-		egressCredentialHost: undefined,
+		handOffSignIn: undefined,
 		opened:
 			input.port === undefined
 				? undefined
@@ -80,7 +79,6 @@ describe("owner store session", () => {
 				}),
 			),
 			kept,
-			env: {},
 		});
 		expect(sessions.status(CWD)).toEqual({ established: false });
 		const state = await sessions.establish(CWD);
@@ -104,7 +102,6 @@ describe("owner store session", () => {
 				message: `Open https://app.infisical.com/project/${PRIVATE_PROJECT}`,
 				remediation: [PRIVATE_PROJECT],
 			}),
-			env: {},
 		});
 		const state = await refused.establish(CWD);
 		expect(state).toEqual({
@@ -117,13 +114,11 @@ describe("owner store session", () => {
 
 		const unchosen = createOwnerStoreSessions({
 			signIn: signedIn(ownerStoreFor({ chosen: false })),
-			env: {},
 		});
 		expect(await unchosen.establish(CWD)).toEqual({ status: "unchosen" });
 
 		const unopened = createOwnerStoreSessions({
 			signIn: signedIn(ownerStoreFor({ chosen: true, id: "bitwarden" })),
-			env: {},
 		});
 		expect(await unopened.establish(CWD)).toEqual({
 			status: "sign-in-needed",
@@ -135,14 +130,13 @@ describe("owner store session", () => {
 			signIn: async () => {
 				throw new Error(`cannot reach ${PRIVATE_PROJECT}`);
 			},
-			env: {},
 		});
 		const failure = await thrown.establish(CWD);
 		expect(failure).toMatchObject({ status: "sign-in-needed" });
 		expect(JSON.stringify(failure)).not.toContain(PRIVATE_PROJECT);
 	});
 
-	it("resolves owner:// and env:// locators from the session, never naming the store", async () => {
+	it("resolves only owner:// locators from the session and refuses env:// ones, never naming the store", async () => {
 		const sessions = createOwnerStoreSessions({
 			signIn: signedIn(
 				ownerStoreFor({
@@ -150,7 +144,6 @@ describe("owner store session", () => {
 					port: await storeHolding({ HOSTINGER_API_TOKEN: HOSTINGER_TOKEN }),
 				}),
 			),
-			env: { AMBIENT_TOKEN: "ambient-value" },
 		});
 		const credentials = sessions.credentials(CWD);
 		await expect(
@@ -164,12 +157,17 @@ describe("owner store session", () => {
 		expect(
 			await credentials.resolve("owner://HOSTINGER_API_TOKEN", "test"),
 		).toEqual({ token: HOSTINGER_TOKEN });
-		expect(
-			await credentials.resolve("env://HOSTINGER_API_TOKEN", "test"),
-		).toEqual({ token: HOSTINGER_TOKEN });
-		expect(await credentials.resolve("env://AMBIENT_TOKEN", "test")).toEqual({
-			token: "ambient-value",
-		});
+		for (const ref of ["HOSTINGER_API_TOKEN", "AMBIENT_TOKEN"].map((name) =>
+			["env", name].join("://"),
+		)) {
+			const refusal = await credentials
+				.resolve(ref, "test")
+				.catch((error) => error);
+			expect(refusal).toBeInstanceOf(OwnerCredentialUnavailable);
+			expect(refusal).toMatchObject({ reason: "environment-ref" });
+			expect(String(refusal)).toMatch(/choose_secret_store/u);
+			expect(String(refusal)).not.toContain(HOSTINGER_TOKEN);
+		}
 		for (const ref of [
 			"owner://NOT_STORED",
 			"vault://elsewhere/token",
@@ -200,7 +198,6 @@ describe("owner store session", () => {
 					port: await storeHolding({ HOSTINGER_API_TOKEN: HOSTINGER_TOKEN }),
 				}),
 			),
-			env: {},
 		});
 		await sessions.establish(CWD);
 		const credentials = sessions.credentials(CWD);
@@ -249,7 +246,6 @@ describe("owner store session", () => {
 					port: await storeHolding({ HOSTINGER_API_TOKEN: HOSTINGER_TOKEN }),
 				}),
 			),
-			env: {},
 		});
 		await sessions.establish(CWD);
 		let resolved: Readonly<Record<string, string>> | undefined;

@@ -29,5 +29,6 @@ fi
 run generated:guard
 run plans:guard -- --staged
 run secrets:staged
+run secrets:guard -- --staged
 run source:guard -- --staged
 run check:relevant:staged -- --base="$BASE"

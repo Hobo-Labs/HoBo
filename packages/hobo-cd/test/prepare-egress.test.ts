@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 
 import { prepareVercelConnection } from "../src/prepare.js";
 
-it("routes the CD store probe through the configured egress proxy", async () => {
+it("routes the CD store probe, signed in with the handed-over Connect token, through the configured egress proxy", async () => {
 	let connects = 0;
 	const proxy = createServer();
 	proxy.on("connect", (_request, socket) => {
@@ -37,7 +37,14 @@ it("routes the CD store probe through the configured egress proxy", async () => 
 				HTTPS_PROXY: `http://127.0.0.1:${address.port}`,
 			},
 			locator: { read: async () => ({}), write: async () => undefined },
-			handOffTimeoutMs: 0,
+			ownerChannel: {
+				openUrl: async () => undefined,
+				captureSecret: async ({ name }) =>
+					name === "OP_CONNECT_TOKEN"
+						? "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJob2JvIn0.c2lnbmF0dXJl"
+						: undefined,
+				holds: (name) => name === "OP_CONNECT_TOKEN",
+			},
 		});
 		expect(connects).toBeGreaterThan(0);
 	} finally {

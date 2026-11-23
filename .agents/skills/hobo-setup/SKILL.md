@@ -54,6 +54,19 @@ for status `link` the URL to show the owner. The owner's store choice is
 theirs alone.
 Do not ask for store settings, identifiers, or credentials in chat or put them
 in commands or the repository.
+Agents never store secrets: no environment variables holding credentials or
+store settings, no `.env` or other local secret files, no GitHub Actions
+secrets or variables, no credential stores of their own, and no
+`request_credential` (it stores a key in the cloud environment, outside HoBo).
+When a run needs the store's own sign-in (an Infisical access token, a
+1Password Connect token, or a Bitwarden personal API key), HoBo asks the owner
+for it with its own secret capture: the lifecycle tool's form, or
+`capture_secret` for each `HOBO_OWNER_CAPTURE` line it returns. The value goes
+to the waiting run in memory only.
+Credentials are `owner://<NAME>` entries in the store the owner connects
+through `choose_secret_store`; HoBo refuses `env://<NAME>` locators. This is
+the [repository rule](../../../AGENTS.md#repository-rules-for-every-agent)
+and admits no exceptions.
 
 - `established`: the session is ready. HoBo verbs read the provider
   credentials they need (for example `owner://HOSTINGER_API_TOKEN`) from it;
