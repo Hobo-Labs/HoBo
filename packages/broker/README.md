@@ -44,18 +44,16 @@ Mismatched receipts are reported as uncertain;
 after a claim, the authority must revalidate that the exact hold remains active.
 These checks rely on the host's durable authority and do not prove its behavior.
 Liability evidence must cover each distinct provider-account ID exactly once;
-the input order of those account records does not affect the scope check. New
-evidence carries the exact integer `maximumMicrosExact` as a ProtoJSON decimal
-string bounded by the runtime's nonnegative safe-integer range; admission also
-decodes legacy fixed64 `maximumMicros` evidence in that range. Normalized claim
+the input order of those account records does not affect the scope check.
+Evidence carries the exact integer `maximumMicrosExact` as a ProtoJSON decimal
+string bounded by the runtime's nonnegative safe-integer range. Normalized claim
 scope includes kind, bucket and unit, while the latest observation across each
 kind and bucket lineage fences stale unit migrations, including A→B→A restores.
 Every snapshot, quote and reservation names an explicit entitlement kind, and a
 reservation replays only with the digest of the exact quote it was made for. The
 policy proof must carry that quote digest; an empty or different digest denies
 admission before a hold.
-Fenced reservations pin their settlement payload version through journal replay;
-v1 signs kindless claims and v2 signs explicit kinds.
+The fenced settlement statement signs every claim with its explicit kind.
 The admission request accepts only its declared own data fields; unknown fields,
 accessors, proxies and inventory fields outside the exact schema are denied
 before financial authority calls. Enumerating JavaScript object keys can itself
@@ -1130,10 +1128,8 @@ and separately enrolled receiver and financial authority keys. A later claim
 cannot change that scope.
 The hold remains reserved until the receiver signs the exact committed route and
 the financial authority independently signs the final usage and source-stop
-evidence. Current reservations use the `hobo.budget-fence-settlement/v2` canonical
-payload, which includes entitlement kinds. Reservations persisted before kinds
-were introduced retain v1 signature verification; current reservations cannot
-select that legacy payload. Both proofs and the guard are checked again when
+evidence. The `hobo.budget-fence-settlement` canonical payload includes
+entitlement kinds. Both proofs and the guard are checked again when
 replaying the journal. Keep historical public enrollments available while their
 records remain in the journal. An unsigned or uncertain result leaves the hold in
 place.

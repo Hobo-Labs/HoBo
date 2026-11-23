@@ -545,14 +545,6 @@ export function createHostingBudgetAuthorityBridge(options: {
 					{
 						...actual,
 						entitlementClaims: (actual.entitlementClaims ?? []).map((claim) => {
-							const legacyFence =
-								!!row.fenceSettlementGuard &&
-								row.fenceSettlementPayloadVersion === "";
-							if (legacyFence) {
-								if (claim.kind !== "" && claim.kind !== hostingFreeTierKind)
-									throw new Error("unsupported hosting entitlement kind");
-								return create(EntitlementClaimSchema, { ...claim, kind: "" });
-							}
 							const normalized =
 								claim.kind === "" ? hostingFreeTierKind : claim.kind;
 							if (normalized !== hostingFreeTierKind)

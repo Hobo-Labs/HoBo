@@ -492,7 +492,6 @@ export function validFinancialMetadata(
 						: /^sha256:[a-f0-9]{64}$/u.test(item)),
 				financialPlanHash: text,
 				fenceSettlementGuard: (item) => item === undefined,
-				fenceSettlementPayloadVersion: (item) => item === "" || item === "v2",
 				unboundedExposure: flag,
 
 				unpricedPolicyProof: () => true,

@@ -14,8 +14,8 @@ import { inMemoryState, Resource, Stack } from "alchemy";
 import { layer } from "alchemy/Alchemist";
 import { map } from "alchemy/Output";
 import {
-	collection,
 	type Provider as AlchemyProvider,
+	collection,
 	succeed,
 } from "alchemy/Provider";
 import { gen, isEffect, sync } from "effect/Effect";
@@ -29,6 +29,7 @@ import {
 	createIacFinancialServices,
 	createSqliteBudgetAdmissionAuthority,
 	HostingPolicyProofSchema,
+	hostingQuoteDigest,
 	type IacFinancialPlan,
 	IacTargetLiabilityEvidenceSchema,
 } from "../packages/broker/src/index.js";
@@ -295,7 +296,7 @@ function setup(
 				inventoryHash: priced.inventoryHash,
 				modelHash: priced.modelHash,
 				quoteHash: priced.quote.quoteHash,
-				maximumMicros: options.liabilityMicros ?? 1_500_000,
+				maximumMicrosExact: BigInt(options.liabilityMicros ?? 1_500_000),
 				observedAt: "2026-01-01T00:00:00Z",
 				validUntil: END,
 				providerAccounts: [
@@ -311,6 +312,7 @@ function setup(
 			proof: create(HostingPolicyProofSchema, {
 				requestDigest,
 				quoteId: quote.quoteId,
+				quoteDigest: hostingQuoteDigest(quote),
 				identity,
 				effect: "allow",
 				policyHash: "policy:1",

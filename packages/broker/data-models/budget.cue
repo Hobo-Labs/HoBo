@@ -123,17 +123,16 @@ import (
 	if entitlementClaims != _|_ {
 		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
 	}
-	usageEvidenceRef?:              string
-	sourceStoppedEvidenceRef?:      string
-	settlementEvidence?:            #BudgetSettlementEvidence
-	executionDigest?:               string
-	financialPlanHash?:             string
-	fenceSettlementGuard?:          #BudgetFenceSettlementGuard
-	fenceSettlementPayloadVersion?: "v2"
-	unboundedExposure?:             bool
-	unpricedPolicyProof?:           #IacUnpricedPolicyProof
-	unpricedScopeProof?:            #IacUnpricedScopeProof
-	iacPricingPin?:                 #IacPricingPin
+	usageEvidenceRef?:         string
+	sourceStoppedEvidenceRef?: string
+	settlementEvidence?:       #BudgetSettlementEvidence
+	executionDigest?:          string
+	financialPlanHash?:        string
+	fenceSettlementGuard?:     #BudgetFenceSettlementGuard
+	unboundedExposure?:        bool
+	unpricedPolicyProof?:      #IacUnpricedPolicyProof
+	unpricedScopeProof?:       #IacUnpricedScopeProof
+	iacPricingPin?:            #IacPricingPin
 	if unboundedExposure == _|_ {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
 	if unboundedExposure != _|_ {
 		if unboundedExposure == false {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
@@ -158,32 +157,23 @@ import (
 #BudgetAuthorityEvent: {type: string & !="", snapshot: #BudgetLedgerSnapshot, reservations: [...#BudgetReservation], reconciliationEvidenceRef?: string}
 
 #IacTargetLiabilityEvidence: {
-	evidenceRef:         string & !=""
-	targetId:            string & !=""
-	tenantId:            string & !=""
-	planDigest:          string & =~"^sha256:[a-f0-9]{64}$"
-	inventoryHash:       string & =~"^sha256:[a-f0-9]{64}$"
-	modelHash:           string & =~"^sha256:[a-f0-9]{64}$"
-	quoteHash:           string & =~"^sha256:[a-f0-9]{64}$"
-	maximumMicros?:      #Micros
-	maximumMicrosExact?: #ProtoJSONMicros
-	observedAt:          string & !=""
-	validUntil:          string & !=""
+	evidenceRef:        string & !=""
+	targetId:           string & !=""
+	tenantId:           string & !=""
+	planDigest:         string & =~"^sha256:[a-f0-9]{64}$"
+	inventoryHash:      string & =~"^sha256:[a-f0-9]{64}$"
+	modelHash:          string & =~"^sha256:[a-f0-9]{64}$"
+	quoteHash:          string & =~"^sha256:[a-f0-9]{64}$"
+	maximumMicrosExact: #ProtoJSONMicros
+	observedAt:         string & !=""
+	validUntil:         string & !=""
 	providerAccounts: [#ProviderAccountExposure, ...#ProviderAccountExposure]
 	entitlementClaims?: [...#EntitlementClaim]
 	if entitlementClaims != _|_ {
 		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
 	}
-	if maximumMicros != _|_ && maximumMicrosExact != _|_ {
-		maximumMicros: strconv.Atoi(maximumMicrosExact) & #Micros
-	}
-	if maximumMicrosExact != _|_ {
-		_exactBound: strconv.Atoi(maximumMicrosExact) & #Micros
-		_exactTotal: _exactBound & list.Sum([for account in providerAccounts {account.liabilityMicros}])
-	}
-	if maximumMicrosExact == _|_ {
-		maximumMicros: list.Sum([for account in providerAccounts {account.liabilityMicros}])
-	}
+	_exactBound: strconv.Atoi(maximumMicrosExact) & #Micros
+	_exactTotal: _exactBound & list.Sum([for account in providerAccounts {account.liabilityMicros}])
 	_limit: true & (len(providerAccounts) <= 256)
 	_unique: {
 		for i, left in providerAccounts
@@ -278,7 +268,7 @@ import (
 	iacEvidence?: #IacTargetLiabilityEvidence
 	iacDecision?: #IacTargetAdmissionDecision
 	if iacDecision != _|_ && iacDecision.status == "admitted" && iacDecision.budget.evaluation == "allowed" {
-		_admittedQuote:       iacDecision.quote & #HostingQuote
+		_admittedQuote: iacDecision.quote & #HostingQuote
 		_admittedReservation: iacDecision.reservation & #BudgetReservation & {iacPricingPin: #IacPricingPin}
 		iacEvidence: #IacTargetLiabilityEvidence & {
 			targetId:      iacDecision.targetId
@@ -288,12 +278,7 @@ import (
 			modelHash:     iacDecision.modelHash
 			quoteHash:     iacDecision.quoteHash
 		}
-		if iacEvidence.maximumMicrosExact != _|_ {
-			iacEvidence: {maximumMicrosExact: strconv.FormatInt(iacDecision.quote.liabilityBoundMicros, 10)}
-		}
-		if iacEvidence.maximumMicrosExact == _|_ {
-			iacEvidence: {maximumMicros: iacDecision.quote.liabilityBoundMicros}
-		}
+		iacEvidence: {maximumMicrosExact: strconv.FormatInt(iacDecision.quote.liabilityBoundMicros, 10)}
 		iacEvidence: {entitlementClaims: [...#EntitlementClaim]}
 		_evidenceQuoteAccounts: #ProviderAccountRowsMatch & {
 			left:  iacEvidence.providerAccounts

@@ -10,7 +10,6 @@ import {
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
 	createSqliteBudgetAdmissionAuthority,
-	EntitlementClaimSchema,
 	ProviderAccountExposureSchema,
 } from "@hobo/broker";
 import {
@@ -34,7 +33,6 @@ import {
 	createRuntimeLocalEventStore,
 } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
-import { BudgetFenceSettlementGuardSchema } from "../../broker/src/_generated/yard_placement_pb.js";
 import { createHostingBudgetAuthorityBridge } from "../src/hosting-budget-authority.js";
 
 const NOW = Date.parse("2026-10-29T12:00:00.000Z"),
@@ -618,56 +616,6 @@ describe("durable core hosting financial authority composition", () => {
 		expect((await reserve(fx.bridge(custom), "legacy", commitment)).ok).toBe(
 			true,
 		);
-	});
-	it.each([
-		"",
-		"allowance",
-	] as const)("canonicalizes %s entitlement evidence for a legacy v1 fence", async (kind) => {
-		const fx = fixture(),
-			commitment = proposal(input(fx.authority));
-		await reserve(fx.bridge(), "one", commitment);
-		const existing = fx.authority.lookup("one");
-		if (!existing) throw new Error("reservation missing");
-		const legacy = {
-			...existing,
-			fenceSettlementGuard: create(BudgetFenceSettlementGuardSchema, {}),
-			fenceSettlementPayloadVersion: "",
-		};
-		let observedKind: string | undefined;
-		const authority: BudgetAdmissionAuthority = {
-			...fx.authority,
-			lookup: () => legacy,
-			settle: (_id, _actual, evidence) => {
-				observedKind = evidence?.entitlementClaims?.[0]?.kind;
-				return legacy;
-			},
-		};
-		const bridge = fx.bridge(authority, {
-			settlement: async (request) => ({
-				actualMicros: request.settledMicros,
-				usageEvidenceRef: request.evidenceRef,
-				sourceStoppedEvidenceRef: request.sourceStoppedEvidenceRef,
-				entitlementClaims: [
-					create(EntitlementClaimSchema, {
-						bucketId: "legacy",
-						unit: "request",
-						units: 1,
-						kind,
-					}),
-				],
-			}),
-		});
-		expect(
-			(
-				await bridge.settle({
-					...ref("one", commitment),
-					settledMicros: 40,
-					evidenceRef: "usage",
-					sourceStoppedEvidenceRef: "retired",
-				})
-			).ok,
-		).toBe(true);
-		expect(observedKind).toBe("");
 	});
 	it("rejects cross-tenant evidence and understated financial allocations", async () => {
 		const fx = fixture(),

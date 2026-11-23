@@ -129,7 +129,7 @@ function fixture(withPricing: boolean) {
 				inventoryHash: priced.inventoryHash,
 				modelHash: priced.modelHash,
 				quoteHash: priced.quote.quoteHash,
-				maximumMicros: 1_500_000,
+				maximumMicrosExact: 1_500_000n,
 				observedAt: "2026-01-01T00:00:00Z",
 				validUntil: END,
 				providerAccounts: [

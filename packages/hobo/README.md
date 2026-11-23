@@ -57,8 +57,7 @@ and cost class remain part of the pinned plan. Hosting free-tier snapshots,
 claims and settlement evidence use the explicit `allowance` entitlement kind;
 older hosting snapshots and settlement evidence without a kind retain that same
 meaning, including snapshots supplied by custom durable authorities.
-Legacy v1 fenced settlement evidence stays kindless for signature verification;
-the bridge does not inject a kind into that signed payload.
+Fenced settlement evidence is signed with each claim's explicit kind.
 
 Execution adopts the gateway's existing reservation through an atomic claim.
 Another transition cannot spend the same authorization. A lost provider response

@@ -1503,7 +1503,6 @@ describe("provider-neutral IaC target budget admission", () => {
 		const ledger = authority();
 		try {
 			const request = fixture();
-			request.evidence.maximumMicros = 1_500_000;
 			request.evidence.maximumMicrosExact = maximumMicrosExact;
 			const deps = dependencies(ledger);
 			const verifyLiability = vi.fn(deps.verifyLiability);
@@ -1521,57 +1520,6 @@ describe("provider-neutral IaC target budget admission", () => {
 			expect(verifyLiability).not.toHaveBeenCalled();
 			expect(authorize).not.toHaveBeenCalled();
 			expect(ledger.read(NOW).reservedMicros).toBe(0);
-		} finally {
-			ledger.close();
-		}
-	});
-
-	it("admits legacy fixed64 maximumMicros evidence after binary decoding", async () => {
-		const ledger = authority();
-		try {
-			const request = fixture();
-			request.evidence.maximumMicrosExact = undefined;
-			request.evidence.maximumMicros = 1_500_000;
-			const legacyBytes = toBinary(
-				IacTargetLiabilityEvidenceSchema,
-				request.evidence,
-			);
-			expect(legacyBytes.includes(0x41)).toBe(true);
-			expect(legacyBytes.includes(0x40)).toBe(false);
-			const legacyEvidence = fromBinary(
-				IacTargetLiabilityEvidenceSchema,
-				legacyBytes,
-			);
-			expect(legacyEvidence.maximumMicros).toBe(1_500_000);
-			expect(legacyEvidence.maximumMicrosExact).toBeUndefined();
-			await expect(
-				admitIacTarget(
-					{ requestId: "legacy-fixed64", ...request, evidence: legacyEvidence },
-					dependencies(ledger),
-				),
-			).resolves.toMatchObject({
-				status: "admitted",
-				quote: { liabilityBoundMicros: 1_500_000 },
-			});
-		} finally {
-			ledger.close();
-		}
-	});
-
-	it("rejects disagreeing maximumMicros and maximumMicrosExact", async () => {
-		const ledger = authority();
-		try {
-			const request = fixture();
-			request.evidence.maximumMicros = 1;
-			await expect(
-				admitIacTarget(
-					{ requestId: "exact-precedence", ...request },
-					dependencies(ledger),
-				),
-			).resolves.toMatchObject({
-				status: "denied",
-				code: "LIABILITY_EVIDENCE_INVALID",
-			});
 		} finally {
 			ledger.close();
 		}
@@ -1595,43 +1543,6 @@ describe("provider-neutral IaC target budget admission", () => {
 		expect(decoded.maximumMicrosExact).toBe(evidence.maximumMicrosExact);
 		expect(decoded.entitlementClaims).toHaveLength(1);
 		expect(decoded.entitlementClaims[0]?.kind).toBe("allowance");
-	});
-
-	it.each([
-		["missing", undefined],
-		["NaN", Number.NaN],
-		["positive infinity", Number.POSITIVE_INFINITY],
-		["negative infinity", Number.NEGATIVE_INFINITY],
-		["fractional", 1_500_000.5],
-		["negative fractional", -0.5],
-		["negative", -1],
-		["non-safe integer", Number.MAX_SAFE_INTEGER + 1],
-		["huge finite", Number.MAX_VALUE],
-	] as const)("denies malformed legacy maximumMicros (%s) without throwing", async (label, maximumMicros) => {
-		const ledger = authority();
-		try {
-			const request = fixture();
-			request.evidence.maximumMicrosExact = undefined;
-			request.evidence.maximumMicros = maximumMicros;
-			const deps = dependencies(ledger);
-			const verifyLiability = vi.fn(deps.verifyLiability);
-			const authorize = vi.fn(deps.authorize);
-			await expect(
-				admitIacTarget(
-					{ requestId: `malformed-legacy-${label}`, ...request },
-					{ ...deps, verifyLiability, authorize },
-				),
-			).resolves.toMatchObject({
-				status: "denied",
-				code: "LIABILITY_EVIDENCE_INVALID",
-				budget: { evaluation: "unavailable", reservation: "not-created" },
-			});
-			expect(verifyLiability).not.toHaveBeenCalled();
-			expect(authorize).not.toHaveBeenCalled();
-			expect(ledger.read(NOW).reservedMicros).toBe(0);
-		} finally {
-			ledger.close();
-		}
 	});
 
 	it.each([

@@ -29,8 +29,6 @@ import {
 } from "./budget-fence-settlement.js";
 import { compareFinancialTime, validFinancialTime } from "./financial-time.js";
 
-const currentBudgetFenceSettlementPayloadVersion = "v2";
-
 export type {
 	BudgetEntitlement,
 	BudgetProviderAccount,
@@ -139,11 +137,7 @@ function validEntitlementKind(kind: string): boolean {
 type EntitlementScope = { kind: string; bucketId: string; unit: string };
 
 function entitlementScopeKey(row: EntitlementScope): string {
-	return JSON.stringify([
-		row.kind,
-		row.bucketId,
-		row.unit,
-	]);
+	return JSON.stringify([row.kind, row.bucketId, row.unit]);
 }
 
 function sameEntitlementScope(
@@ -424,10 +418,7 @@ export function validateBudgetSnapshot(
 		throw new TypeError("budget snapshot is stale or future-dated");
 }
 
-export function validateHostingQuote(
-	quote: HostingQuote,
-	now: string,
-): void {
+export function validateHostingQuote(quote: HostingQuote, now: string): void {
 	if (
 		!quote.quoteId ||
 		!quote.yardId ||
@@ -608,12 +599,7 @@ export function createBudgetAdmissionAuthority(options: {
 				.sort(),
 			entitlements: snapshot.entitlements
 				.map((row) =>
-					[
-						row.kind,
-						row.bucketId,
-						row.unit,
-						row.periodId,
-					].join("\u0000"),
+					[row.kind, row.bucketId, row.unit, row.periodId].join("\u0000"),
 				)
 				.sort(),
 		});
@@ -641,12 +627,7 @@ export function createBudgetAdmissionAuthority(options: {
 		]);
 	const entitlementLineageKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	) =>
-		JSON.stringify([
-			bucket.kind,
-			bucket.periodId,
-			bucket.bucketId,
-		]);
+	) => JSON.stringify([bucket.kind, bucket.periodId, bucket.bucketId]);
 	function resolveEntitlementPrevious(
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
 	): EntitlementHistory | undefined {
@@ -741,15 +722,6 @@ export function createBudgetAdmissionAuthority(options: {
 		throw new TypeError("reservation history required for held exposure");
 	for (const persistedEvent of options.priorEvents ?? []) {
 		const event = clone(BudgetAuthorityEventSchema, persistedEvent);
-		for (const reservation of event.reservations) {
-			if (
-				reservation.fenceSettlementGuard !== undefined &&
-				reservation.fenceSettlementPayloadVersion === "" &&
-				reservation.entitlementClaims.some((claim) => claim.kind !== "")
-			)
-				reservation.fenceSettlementPayloadVersion =
-					currentBudgetFenceSettlementPayloadVersion;
-		}
 		if (!event.snapshot?.identity || !current.identity)
 			throw new Error("budget journal snapshot identity missing");
 		if (
@@ -887,8 +859,6 @@ export function createBudgetAdmissionAuthority(options: {
 			}
 			if (
 				!next.fenceSettlementGuard ||
-				old.fenceSettlementPayloadVersion !==
-					next.fenceSettlementPayloadVersion ||
 				toJsonString(
 					BudgetFenceSettlementGuardSchema,
 					old.fenceSettlementGuard,
@@ -1703,8 +1673,6 @@ export function createBudgetAdmissionAuthority(options: {
 				ledgerSeq: current.seq + 1,
 			});
 			if (input.fenceSettlementGuard) {
-				reservation.fenceSettlementPayloadVersion =
-					currentBudgetFenceSettlementPayloadVersion;
 				reservation.fenceSettlementGuard = fenced.createGuard(
 					reservation,
 					input.fenceSettlementGuard,
@@ -2089,10 +2057,7 @@ export function createBudgetAdmissionAuthority(options: {
 				}
 			for (const bucket of snapshot.entitlements) {
 				const old = current.entitlements.find(
-					(row) =>
-						row.bucketId === bucket.bucketId &&
-						row.kind ===
-							bucket.kind,
+					(row) => row.bucketId === bucket.bucketId && row.kind === bucket.kind,
 				);
 				if (
 					old &&

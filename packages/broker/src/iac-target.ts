@@ -196,28 +196,9 @@ function exactInt64Micros(value: bigint): number | undefined {
 function exactEvidenceMaximumMicros(
 	evidence: IacTargetLiabilityEvidence,
 ): number | undefined {
-	const legacyMicros = evidence.maximumMicros;
-	const exactMicros =
-		evidence.maximumMicrosExact !== undefined
-			? exactInt64Micros(evidence.maximumMicrosExact)
-			: undefined;
-	if (evidence.maximumMicrosExact !== undefined && exactMicros === undefined)
-		return undefined;
-	if (exactMicros !== undefined) {
-		if (
-			legacyMicros !== undefined &&
-			Number.isSafeInteger(legacyMicros) &&
-			legacyMicros >= 0 &&
-			legacyMicros !== exactMicros
-		)
-			return undefined;
-		return exactMicros;
-	}
-	return legacyMicros !== undefined &&
-		Number.isSafeInteger(legacyMicros) &&
-		legacyMicros >= 0
-		? legacyMicros
-		: undefined;
+	return evidence.maximumMicrosExact === undefined
+		? undefined
+		: exactInt64Micros(evidence.maximumMicrosExact);
 }
 
 function exactProviderAccountMicros(
