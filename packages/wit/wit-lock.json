@@ -259,7 +259,7 @@
       "version": "0.1.0",
       "stability": "experimental",
       "path": "wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
-      "sha256": "sha256:0c4f573eeed24f766fae6ebf46cb5a55a7b04b834c51047a4112c1791eca1dd0"
+      "sha256": "sha256:00c1615d2f9026355c153917ef4d4c4826b2a11855d9b3568c965461905a98e5"
     },
     {
       "id": "hobo:durable-messaging-jspi/messaging@0.1.0@experimental",
@@ -269,7 +269,7 @@
       "version": "0.1.0",
       "stability": "experimental",
       "path": "wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
-      "sha256": "sha256:2c0c09d4d2f6a9b5bec7e837617c09a977652014c98c81ad2366cd768c49990e"
+      "sha256": "sha256:dd8882114dbd34a419ea4939effdc29dd313df3dbb741db075aa908a087b741d"
     },
     {
       "id": "hobo:scheduler/scheduler@0.1.0@experimental",

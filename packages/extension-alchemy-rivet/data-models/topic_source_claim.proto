@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.alchemy_rivet_topic.v1;
 
-// Portable portion of the Alchemy source claim. Runtime actor, registry,
-// verifier and pool capabilities remain in-process and are never serialized.
 message TopicSourceClaim {
   string resource_id = 1;
   string resource_type = 2;

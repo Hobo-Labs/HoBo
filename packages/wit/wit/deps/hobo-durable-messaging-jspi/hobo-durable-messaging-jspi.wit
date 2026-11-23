@@ -1,11 +1,5 @@
 package hobo:durable-messaging-jspi@0.1.0;
 
-/// Compatibility ABI for JSPI hosts; methods suspend via the host, while
-/// the native async component interface remains independently versioned.
-
-/// Durable messaging outcomes are explicit. The host must authenticate the
-/// tenant and preserve committed and rejected receipts through operation expiry.
-/// stability: experimental
 interface messaging {
   record messaging-limits {
     name-bytes: u32,

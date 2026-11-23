@@ -534,6 +534,12 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 			"bind an objectStore provider with a resolver for delivered storage",
 		),
 		refused(
+			"agent37",
+			"@hobo/provider-agent37",
+			"Agent37 sandboxes supply overflow CI runner capacity; CD never delivers to them (any CI may feed Freight).",
+			"deliver to a hosting provider; runners are selected by @hobo/ci",
+		),
+		refused(
 			"blacksmith",
 			"@hobo/runner-blacksmith",
 			"A CI runner executes builds; CD never delivers to it (any CI may feed Freight).",

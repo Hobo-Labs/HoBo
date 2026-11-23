@@ -13,9 +13,6 @@ export const file_topic_source_claim: GenFile = /*@__PURE__*/
   fileDesc("Chh0b3BpY19zb3VyY2VfY2xhaW0ucHJvdG8SG2hvYm8uYWxjaGVteV9yaXZldF90b3BpYy52MSLdAQoQVG9waWNTb3VyY2VDbGFpbRITCgtyZXNvdXJjZV9pZBgBIAEoCRIVCg1yZXNvdXJjZV90eXBlGAIgASgJEhMKC2JpbmRsZV9uYW1lGAMgASgJEhgKEGFwcGxpY2F0aW9uX25hbWUYBCABKAkSEwoLc291cmNlX2tpbmQYBSABKAkSEwoLc291cmNlX3BhdGgYBiABKAkSFQoNc291cmNlX2RpZ2VzdBgHIAEoCRIaChJlbnZpcm9ubWVudF9kaWdlc3QYCCABKAkSEQoJcHJvb2ZfcmVmGAkgASgJYgZwcm90bzM");
 
 /**
- * Portable portion of the Alchemy source claim. Runtime actor, registry,
- * verifier and pool capabilities remain in-process and are never serialized.
- *
  * @generated from message hobo.alchemy_rivet_topic.v1.TopicSourceClaim
  */
 export type TopicSourceClaim = Message<"hobo.alchemy_rivet_topic.v1.TopicSourceClaim"> & {

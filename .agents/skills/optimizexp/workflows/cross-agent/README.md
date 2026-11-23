@@ -40,7 +40,7 @@ node --import tsx .agents/skills/optimizexp/workflows/cross-agent/consensus-loop
   --mode close --run <run> --review <review> --result blocked
 ```
 
-Policy-aware SDLC design-review runs set `designerConsensusPolicy: "required-when-design-relevant"` in `scope.json` and persist a `designerConsensus` decision. A required decision supplies `reviewId`, `baseSha`, `headSha`, `proposalPath`, and optionally the effective `baseRef` (default `origin/main`); completion compares those values with the actual checkout. A `required: false` decision is accepted only with `changedPaths`, optional `acceptanceTags`, `explicitlyRequested`, `priorCouncilCycle`, and a machine-validated `internal-no-public-behavior` exemption; persisted council state also forces `priorCouncilCycle` true. Legacy non-SDLC runs remain unchanged.
+Policy-aware SDLC design-review runs set `designerConsensusPolicy: "required-when-design-relevant"` in `scope.json` and persist a `designerConsensus` decision. A required decision supplies `reviewId`, `baseSha`, `headSha`, `proposalPath`, and optionally the effective `baseRef` (default `origin/main`); completion compares those values with the actual checkout. A `required: false` decision is accepted only with `changedPaths`, optional `acceptanceTags`, `explicitlyRequested`, `priorCouncilCycle`, and a machine-validated `no-visual-design-change` exemption (or the legacy `internal-no-public-behavior` code); persisted council state also forces `priorCouncilCycle` true. Legacy non-SDLC runs remain unchanged.
 
 Optional WDK notes: `../../references/cross-agent/vercel-wdk.md`.
 Plain runner has **zero** extra dependencies beyond repo `tsx`.

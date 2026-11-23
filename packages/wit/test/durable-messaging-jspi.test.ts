@@ -21,7 +21,7 @@ describe("durable messaging JSPI compatibility ABI", () => {
 		const expected = native
 			.replace(
 				"package hobo:durable-messaging@0.1.0;",
-				"package hobo:durable-messaging-jspi@0.1.0;\n\n/// Compatibility ABI for JSPI hosts; methods suspend via the host, while\n/// the native async component interface remains independently versioned.",
+				"package hobo:durable-messaging-jspi@0.1.0;",
 			)
 			.replaceAll(": async func(", ": func(")
 			.replace(
