@@ -10,6 +10,7 @@ import {
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
 	createSqliteBudgetAdmissionAuthority,
+	EntitlementClaimSchema,
 	ProviderAccountExposureSchema,
 } from "@hobo/broker";
 import {
@@ -590,33 +591,6 @@ describe("durable core hosting financial authority composition", () => {
 				?.reservedUnits,
 		).toBe(1);
 	});
-	it("matches kindless allowance snapshots from a custom durable authority", async () => {
-		const initial = snapshot();
-		initial.entitlements = [
-			create(BudgetEntitlementSchema, {
-				bucketId: "legacy",
-				kind: "allowance",
-				unit: "request",
-				periodId: "period",
-				remainingUnits: 1,
-				observedAt: new Date(NOW).toISOString(),
-				validUntil: new Date(VALID).toISOString(),
-			}),
-		];
-		const fx = fixture(initial);
-		const kindless = fx.authority.read(new Date(NOW).toISOString());
-		const entitlement = kindless.entitlements[0];
-		if (!entitlement) throw new Error("legacy entitlement missing");
-		entitlement.kind = "";
-		const custom: BudgetAdmissionAuthority = {
-			...fx.authority,
-			read: () => create(BudgetLedgerSnapshotSchema, kindless),
-		};
-		const commitment = proposal(input(custom));
-		expect((await reserve(fx.bridge(custom), "legacy", commitment)).ok).toBe(
-			true,
-		);
-	});
 	it("rejects cross-tenant evidence and understated financial allocations", async () => {
 		const fx = fixture(),
 			valid = proposal(input(fx.authority));
@@ -808,6 +782,51 @@ describe("durable core hosting financial authority composition", () => {
 			).ok,
 		).toBe(true);
 		expect(fx.authority.read(new Date(NOW).toISOString()).spentMicros).toBe(40);
+	});
+	it("refuses settlement evidence whose entitlement claim has no kind", async () => {
+		const fx = fixture(),
+			commitment = proposal(input(fx.authority));
+		await reserve(fx.bridge(), "one", commitment);
+		let settled = 0;
+		const authority: BudgetAdmissionAuthority = {
+			...fx.authority,
+			settle: (...args) => {
+				settled++;
+				return fx.authority.settle(...args);
+			},
+		};
+		const bridge = fx.bridge(authority, {
+			settlement: async (request) => ({
+				actualMicros: request.settledMicros,
+				usageEvidenceRef: request.evidenceRef,
+				sourceStoppedEvidenceRef: request.sourceStoppedEvidenceRef,
+				providerAccounts: [
+					create(ProviderAccountExposureSchema, {
+						providerAccountId: "account:host",
+						liabilityMicros: request.settledMicros,
+					}),
+				],
+				entitlementClaims: [
+					create(EntitlementClaimSchema, {
+						bucketId: "free",
+						unit: "request",
+						units: 1,
+						kind: "",
+					}),
+				],
+			}),
+		});
+		expect(
+			(
+				await bridge.settle({
+					...ref("one", commitment),
+					settledMicros: 40,
+					evidenceRef: "usage",
+					sourceStoppedEvidenceRef: "retired",
+				})
+			).ok,
+		).toBe(false);
+		expect(settled).toBe(0);
 	});
 	it("records an actual overrun even when the caller understates the settlement", async () => {
 		const fx = fixture(),

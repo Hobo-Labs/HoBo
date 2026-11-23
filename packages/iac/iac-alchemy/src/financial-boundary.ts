@@ -205,12 +205,9 @@ const entitlement: Check = (value) =>
 			unit: named,
 			units: nonnegative,
 			kind: (item) =>
-				item === "" ||
-				item === "allowance" ||
-				item === "credit" ||
-				item === "commitment",
+				item === "allowance" || item === "credit" || item === "commitment",
 		},
-		["bucketId", "unit", "units"],
+		["bucketId", "unit", "units", "kind"],
 	);
 const accounts: Check = (value) => list(value, account);
 const entitlements: Check = (value) => list(value, entitlement);
@@ -317,13 +314,8 @@ function scopedIdentity(
 	identityKey: string | readonly string[],
 ): string | undefined {
 	const keys = typeof identityKey === "string" ? [identityKey] : identityKey;
-	const values = keys.map((key) => {
-		const value = ownData(row, key);
-		return key === "kind" && (value === undefined || value === "")
-			? "allowance"
-			: value;
-	});
-	return values.every((value) => typeof value === "string")
+	const values = keys.map((key) => ownData(row, key));
+	return values.every((value) => typeof value === "string" && value !== "")
 		? JSON.stringify(values)
 		: undefined;
 }

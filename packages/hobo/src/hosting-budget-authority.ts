@@ -197,7 +197,7 @@ export function createHostingBudgetAuthorityBridge(options: {
 			const normalized = scaleFor(entitlement, input),
 				bucket = snapshot.entitlements.find(
 					(row) =>
-						(row.kind === hostingFreeTierKind || row.kind === "") &&
+						row.kind === hostingFreeTierKind &&
 						row.bucketId === entitlement.id &&
 						row.unit === normalized.unit,
 				);
@@ -545,14 +545,9 @@ export function createHostingBudgetAuthorityBridge(options: {
 					{
 						...actual,
 						entitlementClaims: (actual.entitlementClaims ?? []).map((claim) => {
-							const normalized =
-								claim.kind === "" ? hostingFreeTierKind : claim.kind;
-							if (normalized !== hostingFreeTierKind)
+							if (claim.kind !== hostingFreeTierKind)
 								throw new Error("unsupported hosting entitlement kind");
-							return create(EntitlementClaimSchema, {
-								...claim,
-								kind: hostingFreeTierKind,
-							});
+							return create(EntitlementClaimSchema, claim);
 						}),
 					},
 				);

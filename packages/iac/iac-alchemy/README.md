@@ -71,8 +71,7 @@ admission and route authority. A host may explicitly authorize an unpriced
 operation only through the broker's unpriced policy and durable exposure hold.
 An invalid or incomplete model cannot use that path. Financial receipt parsing
 accepts the broker's explicit entitlement kinds and compares claims by kind,
-bucket and unit so separate units in one bucket do not collide. Legacy kindless claims normalize to `allowance` for duplicate
-detection and receipt comparison. Priced and explicitly bypassed apply receipts
+bucket and unit so separate units in one bucket do not collide. A claim without a kind is refused. Priced and explicitly bypassed apply receipts
 must carry a SHA-256 `executionDigest` on the held reservation, which the
 adapter preserves through revalidation; a reservation-only receipt cannot
 authorize execution.

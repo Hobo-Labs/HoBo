@@ -55,8 +55,7 @@ and shared credits are reserved together before deployment facts are published.
 Each charge stays with its source or destination billing account; credit scope
 and cost class remain part of the pinned plan. Hosting free-tier snapshots,
 claims and settlement evidence use the explicit `allowance` entitlement kind;
-older hosting snapshots and settlement evidence without a kind retain that same
-meaning, including snapshots supplied by custom durable authorities.
+a snapshot row or settlement claim without a kind is refused.
 Fenced settlement evidence is signed with each claim's explicit kind.
 
 Execution adopts the gateway's existing reservation through an atomic claim.

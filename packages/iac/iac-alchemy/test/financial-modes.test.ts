@@ -1058,6 +1058,7 @@ describe("financial admission modes", () => {
 		"foreign-priced-policy",
 		"empty-policy-quote-digest",
 		"quote-work-digest",
+		"kindless-claims",
 	] as const)("rejects malformed or conflicting %s evidence instead of discarding it", async (kind) => {
 		const route = routeFixture();
 		const f = fixture(
@@ -1192,6 +1193,10 @@ describe("financial admission modes", () => {
 					decision.policyProof.identity.tenantId = "other";
 				if (kind === "empty-policy-quote-digest" && decision.policyProof)
 					decision.policyProof.quoteDigest = "";
+				if (kind === "kindless-claims" && decision.quote) {
+					for (const claim of decision.quote.entitlementClaims) claim.kind = "";
+					for (const claim of reservation.entitlementClaims) claim.kind = "";
+				}
 				if (kind === "quote-work-digest" && decision.quote)
 					decision.quote.workDigest = `sha256:${"9".repeat(64)}`;
 				return decision;
