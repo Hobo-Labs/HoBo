@@ -2885,6 +2885,9 @@ importers:
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../../provider-redaction
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
     devDependencies:
       '@hobo/redaction-test-harness':
         specifier: workspace:*
