@@ -14,7 +14,6 @@ import {
 	envRelayConfigSource,
 	infisicalRelayConfigSource,
 	parseCommittedStoreCoordinates,
-	parseRelayCacheBindings,
 	parseRelayRuntimeConfig,
 	type RelayConfigSource,
 	RelayRuntimeConfigError,
@@ -120,17 +119,6 @@ describe("parseRelayRuntimeConfig", () => {
 		expect(
 			errorOf(() => parseRelayRuntimeConfig({ ...entries, STRAY: "x" })).gaps,
 		).toBeUndefined();
-	});
-
-	it("parses a folder's cache bindings on their own, leaving out a refused one", () => {
-		expect(
-			parseRelayCacheBindings({
-				HOBO_CI_PUBLIC_URL: "https://hobo-ci.vercel.app",
-				VALKEY_URL: "rediss://:valkey-password@valkey.example:6379",
-				BLOB_STORE_ID: "not a store id",
-				TURSO_AUTH_TOKEN: "",
-			}),
-		).toEqual({ VALKEY_URL: "rediss://:valkey-password@valkey.example:6379" });
 	});
 
 	it("accepts a complete configuration and freezes it", () => {

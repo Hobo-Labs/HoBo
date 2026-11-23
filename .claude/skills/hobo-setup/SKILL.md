@@ -44,14 +44,10 @@ When HoBo is connected, connect the owner's store as part of that connection:
 call HoBo's `choose_secret_store` with the project directory as `cwd` and no
 store settings or credentials in its arguments. It reuses an established owner
 store session, or asks the owner directly through a host-rendered form (MCP
-form elicitation) or HoBo's store picker widget (MCP Apps). Where the host
-shows neither, or answers HoBo's form with cancel or decline faster than a
-person could (within 1.5 seconds), HoBo issues a one-time private link on the
-project's HoBo CI relay instead. The owner's answers go to HoBo, are saved in
-their own HoBo settings outside the repository, and HoBo signs in to the store
-with what they gave. Its results carry only a status, the store's name, and
-for status `link` the URL to show the owner. The owner's store choice is
-theirs alone.
+form elicitation) or HoBo's store picker widget (MCP Apps); their answers go
+to HoBo, are saved in their own HoBo settings outside the repository, and HoBo
+signs in to the store through the same private channel. Its results carry
+only a status and the store's name. The owner's store choice is theirs alone.
 Do not ask for store settings, identifiers, or credentials in chat or put them
 in commands or the repository.
 
@@ -67,25 +63,10 @@ in commands or the repository.
   is connected.
 - `shown`: HoBo's widget is with the owner; it connects the store when they
   submit it.
-- `link` (with `url`): show the owner the URL exactly as given and tell them
-  to open it on any device. The page there asks them to choose Infisical,
-  1Password or Bitwarden, enter that store's settings and sign in; their
-  answer is encrypted in their browser for this HoBo process alone, and the
-  link works once, for about ten minutes. Then call `choose_secret_store`
-  again with the same `cwd`; it waits up to 30 seconds for their answer and
-  returns `link` with `waiting: true` until it arrives. Never ask the owner
-  for anything the page asks, and never open or submit the page yourself. A
-  link that expired or was used is replaced by a new one on the next call.
 - `decline` or `invalid`: nothing was recorded; ask again only when the owner
   wants to.
-- `secure-form-unavailable`: this host has no working private form and the
-  link could not be issued; its `reason` says why
-  (`owner-link-relay-unconfigured`: no `HOBO_CI_RELAY_URL` and no
-  `relayOrigin` in the project's `.hobo/ci.json`; `owner-link-relay-unreachable`;
-  `owner-link-relay-not-ready`: the relay has no hand-off mailbox store;
-  `owner-link-relay-refused`; `no-private-owner-form` where no link channel
-  is wired). Report that this host cannot provide a secure HoBo owner
-  hand-off, with that reason.
+- `secure-form-unavailable`: this host renders neither form elicitation nor
+  MCP Apps. Report that this host cannot provide a secure HoBo owner hand-off.
 
 Pass `reselect: true` only when the owner wants a different store.
 
