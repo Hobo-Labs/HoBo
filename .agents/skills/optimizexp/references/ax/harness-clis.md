@@ -54,7 +54,7 @@ Deep host wiring: [agents-config.md](agents-config.md).
 2. Doctor agent-tooling section (fail critical files; warn optional bins).  
 3. Impact-scoped `agent:check`; success line.  
 4. optimizexp discovery demotes live egress scripts for offline seeds.  
-5. Document `/sdlc --finish` for commit→PR→squash-merge session land.
+5. Document `/sdlc --finish` for commit→PR→merge-commit session land.
 
 ## Evidence
 

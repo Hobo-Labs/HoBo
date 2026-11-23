@@ -11,8 +11,8 @@
 
 - **Stale PR** — open >24h, or draft with green CI but unmerged
 - **Superseded PR** — branch work already landed on `main`; merge would regress or duplicate
-- **Zero-out** — force-push `origin/main` to PR head branch; GitHub auto-closes when diff empty
-- **Squash merge** — default merge style for agent PRs
+- **Superseded close** — close with `Superseded by #N` when the head is an ancestor of another open PR's head or already in `origin/main`; keep the branch, never force-push it
+- **Merge commit** — the only merge style for agent PRs (`gh pr merge <n> --merge`); never squash, never rebase-merge
 
 ## HoBo repo patterns
 

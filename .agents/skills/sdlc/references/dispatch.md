@@ -64,7 +64,8 @@ The COORDINATOR owns all Linear state. Per issue, in order:
    (b) the independent review pass succeeds (including rubber-duck + adversarial thinking on
    the parent for stack closeout),
    (c) all PR comments and review threads are addressed,
-   (d) the PR is squash-merged (stack-aware merge when part of a stack).
+   (d) the PR is merged with a merge commit (never squash); a stack layer counts once the
+   stack's top PR lands and its commits are in `main`.
    For design-relevant work, also require current-head exact-six unanimous
    designer consensus, no unresolved hard blocker, and deterministic
    `assert-yay`. Billing exceptions apply only to CI and never waive consensus.
@@ -116,7 +117,7 @@ Every implementer brief **must** require incremental commits (see SKILL.md and
 - Conventional, scoped messages.
 - Push/hand back often enough that a dead subagent does not lose the layer.
 
-Parent owns stack submit/sync/merge. Subagents do not restructure stacks.
+Parent owns the workstream PR, stack updates, and the merge. Subagents do not restructure stacks.
 
 ## Stack topology (multi-issue / multi-phase)
 
@@ -125,31 +126,36 @@ When the plan has 2+ dependent issues or phases, the coordinator opens a **GitHu
 
 1. Plan branch names `sdlc/<id>-NN-<slug>` in dependency order (foundations bottom).
 2. `gh stack init` / `gh stack add` for layers; dispatch each implementer onto its branch.
-3. `gh stack submit --auto --open` when layers are ready for review.
-4. Record stack number + PR URLs in `sdlc-state.md`.
-5. On mid-stack fixes: lower branch commit → `gh stack rebase --upstack` → push/sync.
+3. After the supersession check, open **one** PR for the top of the stack against `main`,
+   ready for review (not a PR per layer, not a long-lived draft). WIP limit: one open PR per
+   workstream; add commits to it.
+4. Record branch order + the PR URL in `sdlc-state.md`.
+5. On mid-stack fixes: lower branch commit → merge it up (`gh stack rebase --upstack` only for
+   unpushed layers) → push. Never rebase a pushed branch or force-push.
 
 Single-issue work may stay a single PR. Multi-step work **must** stack.
 
 ## Closeout (parent, after implementation)
 
-The Done rule is not complete until the parent finishes **bottom-up closeout** for every PR it
-opened (`stacked-prs.md` § Bottom-up closeout):
+The Done rule is not complete until the parent finishes **stack closeout** for every workstream
+it opened (`stacked-prs.md` § Stack closeout). The stack lands as one unit:
 
-1. Bottom PR first: rubber-duck + adversarial review + independent reviewer.
+1. Review the whole stack's combined diff against trunk (top-of-stack vs `main`) once:
+   rubber-duck + adversarial review + independent reviewer.
 2. Refresh acceptance evidence and run the designer council when relevance
    detection requires it. Any nay becomes the next implementer handback;
    re-review and reconvene after the fix.
 3. Address **all** PR comments and review threads.
 4. Fix required status checks that actually ran and failed for code reasons. If checks are red
    only for **billing/budget/quota** (jobs never started / spending limit), document on the PR
-   and **still squash-merge** — do not wait for green CI.
+   and **still merge** — do not wait for green CI.
 5. Re-run current-head `assert-yay` for relevant work. Any post-council
    commit/effective-diff change invalidates approval.
-6. Squash-merge that PR (`gh stack merge <pr> --yes --squash` or `gh pr merge <pr> --squash`;
-   `--admin` if protection blocks on billing-red checks), then `gh stack sync`.
-7. Repeat upward until the stack is fully merged. Recompute each upper layer's
-   effective proposal digest after lower-layer merge/rebase and reconvene if it changed.
+6. Land the top PR with a merge commit (`gh pr edit <top> --base main` if needed, then
+   `gh pr merge <top> --merge`; `--admin` if protection blocks on billing-red checks). Never
+   `--squash` or `--rebase`.
+7. Lower-layer PRs, if any, are marked merged automatically because their commits are in
+   `main`; close any still open with `Superseded by #N`.
 
 Never mark the initiative Done while open PRs remain with unresolved comments, failing
-**non-billing** checks, or missing squash-merge. Billing-red CI alone is not a Done blocker.
+**non-billing** checks, or a missing merge-commit landing. Billing-red CI alone is not a Done blocker.
