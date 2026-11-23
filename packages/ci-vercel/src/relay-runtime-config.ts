@@ -128,6 +128,7 @@ export function parseRelayRuntimeConfig(
 export type RelayConfigSource = Readonly<{
 	kind: "infisical" | "env";
 	read(): Promise<Readonly<Record<string, string>>>;
+	binding?: ParsedInfisicalBinding;
 }>;
 
 /** The relay's keys from an environment; everything else in it is ignored. */
@@ -153,6 +154,7 @@ export function infisicalRelayConfigSource(
 ): RelayConfigSource {
 	return Object.freeze({
 		kind: "infisical",
+		binding: client.binding,
 		async read() {
 			const entries: Record<string, string> = {};
 			for (const secret of await client.listSecrets())

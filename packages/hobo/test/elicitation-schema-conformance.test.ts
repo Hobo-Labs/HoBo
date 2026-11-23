@@ -2,6 +2,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { relaySetupForm } from "@hobo/ci-gh-actions";
+import { RELAY_SETUP_ENTRIES } from "@hobo/ci-vercel";
 import type { SettingsStore } from "@hobo/connect-ui";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -207,6 +209,24 @@ describe("every elicitation/create form HoBo sends conforms to MCP 2025-11-25", 
 			expect(sent).toHaveLength(2);
 			expectConformant(sent);
 		}
+	});
+
+	it("asks for the hosted relay's missing configuration in a conformant form", () => {
+		const form = z
+			.record(z.string(), z.json())
+			.parse(relaySetupForm(RELAY_SETUP_ENTRIES));
+		expectConformant([form]);
+		expect(
+			Object.keys(
+				z
+					.object({
+						requestedSchema: z.object({
+							properties: z.record(z.string(), z.json()),
+						}),
+					})
+					.parse(form).requestedSchema.properties,
+			),
+		).toHaveLength(RELAY_SETUP_ENTRIES.length + 2);
 	});
 
 	it("asks the owner to confirm a link in a conformant form", async () => {

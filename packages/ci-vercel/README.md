@@ -918,6 +918,44 @@ an MCP client waits by default. `test/function-limits.test.ts` fails if the
 two numbers differ. The server reads through the store's `observer()`, and
 `wait_for_events` reads the store's change ring.
 
+### Setup mode
+
+While the relay cannot start (its config-service folder is incomplete, or the
+store refuses or does not answer), `/mcp` is served by the relay's
+[setup-mode MCP server](../ci-gh-actions/README.md#setup-mode) instead of 503,
+so an MCP client such as a claude.ai custom connector can connect without
+credentials, read `relay_setup_status` and let the owner fill the folder with
+`relay_setup_provide`. `/.well-known/*` answers 404 (no OAuth: the connector
+connects without authorization), and `/readyz`, webhooks, the account API and
+every other route still answer 503, so CI traffic is refused exactly as before.
+Setup mode needs the production host name Vercel sets
+(`VERCEL_PROJECT_PRODUCTION_URL`) for its origin; without it `/mcp` answers 503.
+Once the relay starts, `/mcp` is the account-authenticated server again.
+
+- **What it offers** (`src/relay-setup.ts`): every entry of the relay
+  runtime configuration schema except the keys derived from the App private
+  key, each checked by that entry's own parser before anything is written
+  (a pasted private key whose line breaks were lost is restored first).
+- **Who may write.** The relay's own identity is Viewer and stays so. Values
+  are written with the store's `hobo-secret-writer` identity (Universal Auth,
+  the identity HoBo's MCP capture already uses): the owner creates a client
+  secret limited to one use and a few minutes in the store and types its
+  client ID and secret into the same form. The relay logs in once (no retry),
+  writes each accepted entry to the folder its loader reads, and revokes the
+  token. Possession of that one-use secret is the owner's authentication: the
+  relay stores no credential and verifies nothing itself. Without an Infisical
+  config source (the `env` source of local runs and previews), nothing is
+  writable and the status says so.
+- **What leaves the relay**: names and outcome codes only. The form's values go
+  from the owner's client to the relay and on to the store; they are never in a
+  tool result, an error or a log line (`test/relay-setup.test.ts`,
+  `../ci-gh-actions/test/relay-setup-mcp.test.ts`). The boundary is
+  [`contracts/relay-setup-mcp.pact.json`](contracts/relay-setup-mcp.pact.json).
+- **Statelessness.** A form's answer is a separate HTTP request that must
+  reach the function instance that asked. Vercel usually routes a single
+  owner's requests to one warm instance; when it does not, the form times out
+  as `form-unavailable` and the owner asks again with a new one-use secret.
+
 Queue messages and configuration follow **parse, don't validate**:
 `parseRelayQueueMessage` parses a queue payload into the derived types
 `RelayQueuedDelivery` and `RelayQueuedStep` (records `HostedQueueDelivery` and

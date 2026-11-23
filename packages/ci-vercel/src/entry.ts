@@ -6,6 +6,10 @@ import {
 	ciEventSinkFromEnv,
 	createCiEventEmitter,
 	createNodeRelayHandler,
+	createRelaySetupMcp,
+	isRelayMcpPath,
+	type RelaySetupGaps,
+	type RelaySetupMcp,
 	reportRelayFailure,
 	setRelayFailureEvents,
 } from "@hobo/ci-gh-actions";
@@ -32,6 +36,11 @@ import {
 	type RelayRuntimeConfigLoader,
 	relayConfigSourceFromEnv,
 } from "./relay-runtime-config.js";
+import {
+	acceptRelaySetupValue,
+	createInfisicalRelaySetupWriter,
+	RELAY_SETUP_ENTRIES,
+} from "./relay-setup.js";
 import { streamsBody } from "./relay-streams.js";
 import { composeStatelessRelay } from "./stateless-composition.js";
 
@@ -57,7 +66,11 @@ setRelayFailureEvents(
 /** When the config service last failed a refresh; cleared by the next success. */
 let configStaleSince: number | undefined;
 let loader:
-	| { kind: RelayConfigSource["kind"]; config: RelayRuntimeConfigLoader }
+	| {
+			kind: RelayConfigSource["kind"];
+			binding: RelayConfigSource["binding"];
+			config: RelayRuntimeConfigLoader;
+	  }
 	| undefined;
 /**
  * The relay's configuration and secrets, from the config service the
@@ -77,6 +90,7 @@ function configLoader() {
 	};
 	loader = {
 		kind: source.kind,
+		binding: source.binding,
 		config: createRelayRuntimeConfigLoader({
 			source: tracked,
 			onRefreshFailed: (error) => {
@@ -189,6 +203,64 @@ function application() {
 	return startup;
 }
 
+export type RelaySetupHost = Readonly<{
+	origin: string;
+	handle: (request: Request) => Promise<Response>;
+}>;
+
+export async function relaySetupGaps<Loaded>(
+	load: () => Promise<Loaded>,
+): Promise<RelaySetupGaps> {
+	try {
+		await load();
+		return { state: "configured", missing: [], invalid: [] };
+	} catch (error) {
+		const failure = error instanceof Error ? error : undefined;
+		const gaps = failure === undefined ? undefined : relayStartGaps(failure);
+		return {
+			state:
+				failure === undefined
+					? RELAY_START_STATES.startFailed
+					: relayStartState(failure),
+			missing: gaps?.missing ?? [],
+			invalid: gaps?.invalid ?? [],
+		};
+	}
+}
+
+export function relaySetupOrigin(
+	env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+	const host = env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ?? "";
+	if (!/^[a-z0-9.-]{1,253}$/u.test(host)) return undefined;
+	return `https://${host}`;
+}
+
+let setupMcp: RelaySetupMcp | undefined;
+function relaySetup(): RelaySetupHost | undefined {
+	const origin = relaySetupOrigin(process.env);
+	if (origin === undefined) return undefined;
+	if (setupMcp === undefined) {
+		let binding: RelayConfigSource["binding"];
+		try {
+			binding = configLoader().binding;
+		} catch {
+			binding = undefined;
+		}
+		setupMcp = createRelaySetupMcp({
+			publicOrigin: origin,
+			gaps: () => relaySetupGaps(application),
+			entries: RELAY_SETUP_ENTRIES,
+			accept: acceptRelaySetupValue,
+			write:
+				binding === undefined
+					? undefined
+					: createInfisicalRelaySetupWriter(binding),
+		});
+	}
+	return { origin, handle: setupMcp.handle };
+}
+
 /**
  * Vercel Node Function HTTP entrypoint. `/healthz` answers 200 whatever the
  * relay's state (the process is up) and names the build's commit; everything
@@ -200,14 +272,17 @@ export function createHttpEntry(
 		origin: string;
 		handle: (request: Request) => Promise<Response>;
 	}>,
-	options: Readonly<{ commit?: string | null }> = {},
+	options: Readonly<{
+		commit?: string | null;
+		setup?: () => RelaySetupHost | undefined;
+	}> = {},
 ) {
 	const commit = options.commit ?? null;
 	return async (
 		request: IncomingMessage,
 		response: ServerResponse,
 	): Promise<void> => {
-		const path = (request.url ?? "/").split("?")[0];
+		const path = (request.url ?? "/").split("?")[0] ?? "/";
 		if (request.method === "GET" && path === "/healthz") {
 			response.writeHead(200, {
 				"Content-Type": "application/json",
@@ -226,6 +301,25 @@ export function createHttpEntry(
 		} catch (error) {
 			if (response.headersSent) {
 				response.end();
+				return;
+			}
+			const setup =
+				isRelayMcpPath(path) || path.startsWith("/.well-known/")
+					? options.setup?.()
+					: undefined;
+			if (setup !== undefined) {
+				if (isRelayMcpPath(path)) {
+					await createNodeRelayHandler({
+						origin: setup.origin,
+						handle: setup.handle,
+					})(request, response);
+					return;
+				}
+				response.writeHead(404, {
+					"Content-Type": "application/json",
+					"Cache-Control": "no-store",
+				});
+				response.end(JSON.stringify({ error: "not found" }));
 				return;
 			}
 			if (request.method === "GET" && path === "/readyz") {
@@ -259,6 +353,7 @@ export function createHttpEntry(
 }
 export const http = createHttpEntry(application, {
 	commit: buildCommit(process.env),
+	setup: relaySetup,
 });
 
 let queueBindingReported = false;
