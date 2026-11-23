@@ -110,6 +110,10 @@ import {
 	yardTopology,
 } from "./cd-topology.js";
 import {
+	OWNER_CREDENTIAL_SCHEME,
+	OwnerCredentialUnavailable,
+} from "./owner-store-session.js";
+import {
 	CATALOG_REALIZED_PRODUCTS,
 	type CatalogCampBinding,
 	type CatalogFreight,
@@ -220,6 +224,29 @@ export function envCredentials(
 	};
 }
 
+// public-contract: the locator of a GitHub Actions job's own GITHUB_TOKEN, which GitHub mints per job and nobody stores.
+export const GITHUB_JOB_TOKEN_REF = "github-job://GITHUB_TOKEN";
+
+export function hostCredentials(
+	env: Readonly<Record<string, string | undefined>>,
+): CredentialResolver {
+	return {
+		async resolve(ref: string) {
+			const jobToken =
+				env.GITHUB_ACTIONS === "true" ? env.GITHUB_TOKEN : undefined;
+			if (ref === GITHUB_JOB_TOKEN_REF && jobToken) return { token: jobToken };
+			throw new OwnerCredentialUnavailable(
+				ref,
+				ref.startsWith(OWNER_CREDENTIAL_SCHEME)
+					? "no-session"
+					: ref.startsWith("env:")
+						? "environment-ref"
+						: "unsupported-ref",
+			);
+		},
+	};
+}
+
 /** Telemetry when no OTLP endpoint is configured: nothing leaves the process. */
 export const DISABLED_TELEMETRY: TelemetrySink = Object.freeze({
 	spans: async () => {},
@@ -312,7 +339,7 @@ export async function openCdRuntime(
 	const http =
 		options.http ??
 		createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	const credentials = options.credentials ?? envCredentials(options.env);
+	const credentials = options.credentials ?? hostCredentials(options.env);
 	const kube = await openKubeFleet({
 		env: options.env,
 		cwd: options.cwd,

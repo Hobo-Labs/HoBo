@@ -128,7 +128,7 @@ So OIDC trusted publishing of a scoped name is refused up front
 (`RESOLVER_PRODUCT_UNSUPPORTED`): use token auth for scoped packages until the
 guard can carry an escaped scope separator. HoBo's own release does exactly
 that: its `hobo-release/npm-candidate` Camp binds the hobodev token
-(`env://NPM_TOKEN`) for the scoped `@hobo-labs/*` names. A successful unescaped publish or
+(`owner://NPM_TOKEN`, from the owner's secret store) for the scoped `@hobo-labs/*` names. A successful unescaped publish or
 dist-tag move has not been captured; the opt-in live write lane
 (`HOBO_NPM_LIVE_PROMOTE_TAG`) moves one real dist-tag on a scoped package to
 close that gap. Verdaccio rewrites `/@scope/name` to the escaped form itself;

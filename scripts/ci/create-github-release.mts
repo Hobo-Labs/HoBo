@@ -344,8 +344,16 @@ const ARTIFACT_KIND = {
  * Test seams (recorded fixtures, offline): the `HttpTransport` the realizers,
  * Freight verification and probes use; the CD clock; how a promotion is driven.
  */
+export type ReleaseCredentials = Readonly<{
+	resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>>;
+}>;
+
 export type ReleaseCdSeams = Readonly<{
 	http?: ReleaseHttpTransport;
+	credentials?: ReleaseCredentials;
 	now?: () => number;
 	drive?: { readonly passes: number; readonly intervalMs: number };
 }>;
@@ -419,13 +427,6 @@ export function githubApiProbeTransport(
 	});
 }
 
-/**
- * Open the `hobo deploy` composition (SQLite journal and filesystem artifact
- * store under `home`) with `release/hobo-release.delivery.ts` as its topology,
- * the same file `hobo deploy --yard` loads. Credentials resolve through the
- * host's CredentialResolver (`env://NAME` locators the Camps declare), at call
- * time, for that call only.
- */
 export async function openReleaseCd(options: {
 	readonly home: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -469,6 +470,9 @@ export async function openReleaseCd(options: {
 		topologyFiles: [RELEASE_DELIVERY_MODULE],
 		http,
 		...(options.seams?.now ? { now: options.seams.now } : undefined),
+		...(options.seams?.credentials
+			? { credentials: options.seams.credentials }
+			: undefined),
 	});
 	if (!opened.ok)
 		throw new Error(

@@ -1,19 +1,4 @@
 /** public-contract: HoBo release train delivery-as-code. */
-// One Yard, `hobo-release`, with a candidate and a stable Camp per artifact
-// family. Every CD command reads it as topology:
-//   hobo deploy camp list --yard release/hobo-release.delivery.ts
-//   hobo deploy pipeline apply --file release/hobo-release.delivery.ts
-// Each Camp is realized by the catalogued resolver of its provider
-// (packages/hobo/src/provider-hosting-catalog.ts, "Resolver realizers"). The
-// labels bind where a Camp publishes and which credential locator it may use;
-// what it publishes (artifacts by digest, tags, dist-tag, commit message) is
-// the Freight's. Locators are names, never values: `env://GITHUB_TOKEN` is the
-// workflow's token, resolved at call time by the CD host and never recorded.
-//
-// The repository defaults to Hobo-Labs/HoBo; GITHUB_REPOSITORY (set on every
-// Actions run) names it on a fork, so Pages and GHCR follow the repository the
-// workflow runs in, exactly as the workflow steps they replace did.
-
 const repository = process.env.GITHUB_REPOSITORY?.trim() || "Hobo-Labs/HoBo";
 
 const RELEASE_YARD = "hobo-release";
@@ -53,21 +38,21 @@ const BINDING = {
 		"hobo.cd/npm.registry": "npmjs",
 		"hobo.cd/npm.auth": "token",
 		"hobo.cd/npm.provenance": "required",
-		"hobo.cd/credential-ref": "env://NPM_TOKEN",
+		"hobo.cd/credential-ref": "owner://NPM_TOKEN",
 	},
 	// GHCR with the workflow's GITHUB_TOKEN (packages: write).
 	oci: {
 		"hobo.cd/oci.registry": "ghcr.io",
 		"hobo.cd/oci.auth-realm": "https://ghcr.io/token",
 		"hobo.cd/oci.username": "hobo-release",
-		"hobo.cd/credential-ref": "env://GITHUB_TOKEN",
+		"hobo.cd/credential-ref": "github-job://GITHUB_TOKEN",
 	},
 	// The Pages site of this repository, built from gh-pages (contents: write).
 	pages: {
 		"hobo.cd/github.repository": repository,
 		"hobo.cd/github.pages.branch": "gh-pages",
 		"hobo.cd/github.pages.path": "/",
-		"hobo.cd/credential-ref": "env://GITHUB_TOKEN",
+		"hobo.cd/credential-ref": "github-job://GITHUB_TOKEN",
 	},
 } as const satisfies Record<Family, Readonly<Record<string, string>>>;
 

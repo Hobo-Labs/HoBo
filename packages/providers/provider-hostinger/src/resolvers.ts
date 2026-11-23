@@ -503,7 +503,7 @@ async function resolveToken(
 	if (ref.trim().length === 0) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_MISSING",
-			'hostinger resolver: credentialRef is empty. Supply a locator such as "env://HOSTINGER_API_TOKEN" or "secret://camp/hostinger-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
+			'hostinger resolver: credentialRef is empty. Supply a locator such as "owner://HOSTINGER_API_TOKEN" or "secret://camp/hostinger-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
 		);
 	}
 	const trimmed = ref.trim();
@@ -516,7 +516,7 @@ async function resolveToken(
 	if (!CREDENTIAL_REF_PATTERN.test(trimmed)) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_NOT_A_REF",
-			`hostinger resolver: credentialRef ${JSON.stringify(redactHostingerText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "env://HOSTINGER_API_TOKEN"`,
+			`hostinger resolver: credentialRef ${JSON.stringify(redactHostingerText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "owner://HOSTINGER_API_TOKEN"`,
 		);
 	}
 	let material: string;

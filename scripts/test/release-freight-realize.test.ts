@@ -28,6 +28,7 @@ import {
 	qualifyReleaseCandidate,
 	RELEASE_DELIVERY_MODULE,
 	type ReleaseCdSeams,
+	type ReleaseCredentials,
 	recordReleaseFreight,
 	releaseCampId,
 	releaseDriveFor,
@@ -132,10 +133,20 @@ function seams(http: HttpTransport, passes = 40): ReleaseCdSeams {
 
 const env = {
 	HOBO_RELEASE_REVISION: COMMIT,
+	GITHUB_ACTIONS: "true",
 	GITHUB_REPOSITORY: `${OWNER}/${REPO}`,
 	GITHUB_RUN_ID: "42",
 	GITHUB_TOKEN: GHCR_TOKEN,
 };
+
+function ownerNpmToken(token: string): ReleaseCredentials {
+	return {
+		async resolve(ref) {
+			if (ref !== "owner://NPM_TOKEN") throw new Error(`no entry for ${ref}`);
+			return { token };
+		},
+	};
+}
 
 /** Every byte the release journal and artifact store hold, as text. */
 function journalText(home: string): string {
@@ -673,7 +684,10 @@ describe.skipIf(!built)(
 			const { npm, signer, sigstore } = fx;
 			const world = npm.registryWorld({ publicReads: true });
 			const seen: TransportRequest[] = [];
-			const fixtures = seams(withProbes(world.transport, seen));
+			const fixtures = {
+				...seams(withProbes(world.transport, seen)),
+				credentials: ownerNpmToken(npm.TOKEN),
+			};
 			const build = signer.githubActionsBuild({
 				GITHUB_SERVER_URL: "https://github.com",
 				GITHUB_REPOSITORY: `${OWNER}/${REPO}`,
@@ -702,7 +716,7 @@ describe.skipIf(!built)(
 			const { verdict } = await qualifyReleaseCandidate({
 				home,
 				family: "npm",
-				env: { ...env, NPM_TOKEN: npm.TOKEN },
+				env,
 				seams: fixtures,
 				stored: [
 					{
@@ -763,8 +777,11 @@ describe.skipIf(!built)(
 				qualifyReleaseCandidate({
 					home,
 					family: "npm",
-					env: { ...env, NPM_TOKEN: "npm_fixtureToken" },
-					seams: seams(http),
+					env,
+					seams: {
+						...seams(http),
+						credentials: ownerNpmToken("npm_fixtureToken"),
+					},
 					stored: [
 						{
 							name: `@hobo-labs/core@${VERSION}`,
