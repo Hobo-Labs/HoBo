@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { type RelayJobMessage, RelayJobAnswerSchema } from "@hobo/ci";
+import { RelayJobAnswerSchema, type RelayJobMessage } from "@hobo/ci";
 import { createMemoryMesh, createMeshCoordinator } from "@hobo/ci/mesh";
 import { describe, expect, it } from "vitest";
 import type { GithubTransport } from "../src/github.js";

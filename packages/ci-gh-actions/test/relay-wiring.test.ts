@@ -128,9 +128,7 @@ function queueRelay(sim: GithubSimulator): number {
 		repository: REPO,
 		name: "title",
 		labels: ["hobo-relay"],
-		steps: [
-			{ uses: "hobo-labs/hobo/checks/pr-title@v1", with: new Map() },
-		],
+		steps: [{ uses: "hobo-labs/hobo/checks/pr-title@v1", with: new Map() }],
 	});
 	return relay.runId;
 }

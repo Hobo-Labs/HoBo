@@ -869,12 +869,7 @@ describe("relay mode answers check jobs (C01, C02 at T2)", () => {
 		const requests: string[] = [];
 		const events: RelayCheckCompleted[] = [];
 		const transport = checksTransport(sim, "chore: tidy", requests);
-		const { answerer } = relayWithChecks(
-			sim,
-			transport,
-			undefined,
-			events,
-		);
+		const { answerer } = relayWithChecks(sim, transport, undefined, events);
 		const queued = sim.queueJob({
 			repository: REPO,
 			name: "title",
