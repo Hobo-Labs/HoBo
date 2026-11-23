@@ -1,5 +1,10 @@
 import type { DeviceClock } from "@hobo/hobo-cd";
-import { applyEgressToProcess, isRemoteBox } from "@hobo/hobo-ci";
+import {
+	applyEgressToProcess,
+	isRemoteBox,
+	machineRunner,
+	whichOnPath,
+} from "@hobo/hobo-ci";
 import { type AuthContext, createHoboMcpServer } from "@hobo/mcp";
 
 import { createComposedHoboCli } from "./cli.js";
@@ -27,6 +32,11 @@ import {
 } from "./mcp-stdio.js";
 import { createStoreChoiceApp } from "./mcp-store-choice.js";
 import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
+import {
+	createOwnerStoreSessions,
+	type OwnerSignIn,
+	ownerChannelSignIn,
+} from "./owner-store-session.js";
 
 /**
  * The full `hobo-mcp` server, loaded by `bin/hobo-mcp.ts` once it has
@@ -50,6 +60,7 @@ export function composeHoboMcp(options: {
 	readonly clock?: DeviceClock;
 	readonly audit?: ReturnType<typeof openMcpAuditJournal>;
 	readonly auth?: AuthContext;
+	readonly ownerSignIn?: OwnerSignIn;
 }) {
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
@@ -95,9 +106,22 @@ export function composeHoboMcp(options: {
 	});
 	const audit = options.audit;
 	const auth = options.auth;
+	const sessions = createOwnerStoreSessions({
+		signIn:
+			options.ownerSignIn ??
+			ownerChannelSignIn({
+				owner,
+				deps: {
+					runCommand: machineRunner(),
+					which: (bin) => whichOnPath(bin),
+				},
+			}),
+		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
+	});
 	const server = createHoboMcpServer({
 		cli: createComposedHoboCli({
 			ownerChannel: owner,
+			ownerSession: sessions,
 			...(options.clock !== undefined ? { clock: options.clock } : undefined),
 		}),
 		...(audit !== undefined
@@ -130,15 +154,17 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
-	session = createMcpStdioSession(capture, createStoreChoiceApp());
+	session = createMcpStdioSession(capture, createStoreChoiceApp({ sessions }));
 	const ready = capture;
 	return {
 		owner,
 		server,
 		session,
+		sessions,
 		/** Stop whatever still waits on the owner and close open captures. */
 		async close() {
 			owner.jobs.close();
+			sessions.close();
 			await ready.close();
 		},
 	};

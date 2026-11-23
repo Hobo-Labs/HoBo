@@ -78,6 +78,20 @@ that have already started.
 durable journal. `hobo inspect quarantines --json` returns their source and
 record locations, fold, and reason. If the report contains a `nextPosition`,
 pass it to `hobo inspect quarantines <position>` to continue the scan.
+### Owner store session over MCP
+
+`hobo-mcp`'s `choose_secret_store` connects the owner's secret store when an agent
+connects (`src/mcp-store-choice.ts`, `src/owner-store-session.ts`). It asks the owner
+through MCP form elicitation or the `ui://hobo/store-choice` MCP App, never through tool
+arguments, writes the choice to the owner's locator for the project `cwd`
+(`ownerLocator` in `@hobo/hobo-ci`), and signs in with `signInOwnerStore` over the MCP
+owner channel. The opened store stays in the server's memory, keyed by project. Its
+`credentials(cwd)` is the `@hobo/cd` `CredentialResolver` that `hobo deploy` passes to
+the CD runtime: `owner://<NAME>` reads the store's CD entry, and `env://<NAME>` falls
+back to it when the environment lacks the name, so Hostinger's resolvers receive the
+owner's `HOSTINGER_API_TOKEN` only in their request header. Results, `doctor`'s
+`ownerStoreSession`, and refusals carry a status and the store's label only. A host
+without form elicitation or MCP Apps gets `secure-form-unavailable`.
 
 ## CLI verification and remote deployment safety
 

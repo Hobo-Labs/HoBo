@@ -85,6 +85,7 @@ import { createBrokerAwareLoginCommand } from "./login-command.js";
 import { createLogsCommand } from "./logs-command.js";
 import { createMessagingCommand } from "./messaging-command.js";
 import { createOfferCommand } from "./offer-command.js";
+import type { OwnerStoreSessions } from "./owner-store-session.js";
 import { createProviderCeremonyUp } from "./provider-ceremony.js";
 import { createRecipesCommand } from "./recipes-command.js";
 import { createRegistryCommand } from "./registry-command.js";
@@ -113,6 +114,7 @@ export interface ComposedHoboCliOptions {
 	 * server's channel); without it, a remote run says where to run instead.
 	 */
 	readonly ownerChannel?: OwnerChannel;
+	readonly ownerSession?: Pick<OwnerStoreSessions, "credentials" | "status">;
 	/**
 	 * The clock steps that wait on a provider use (the Vercel device grant's
 	 * polling, RFC 8628): the system's by default; a spec drives it virtually.
@@ -242,7 +244,12 @@ export function createComposedHoboCli(
 		interactive: false,
 	});
 	const ci = createCiCommand({ runtime });
-	const deploy = createDeployCommand({ hosting: options.hosting?.supervisor });
+	const deploy = createDeployCommand({
+		hosting: options.hosting?.supervisor,
+		...(options.ownerSession !== undefined
+			? { credentialsFor: options.ownerSession.credentials }
+			: undefined),
+	});
 
 	return createHoboCli({
 		commands: {
@@ -381,7 +388,14 @@ export function createComposedHoboCli(
 			deploy,
 			incident: createIncidentCommand(),
 			down,
-			doctor: createDoctorCommand({ store: runtime.store }),
+			doctor: createDoctorCommand(
+				options.ownerSession !== undefined
+					? {
+							store: runtime.store,
+							ownerSession: options.ownerSession.status,
+						}
+					: { store: runtime.store },
+			),
 			messaging: createMessagingCommand(),
 			verify: createVerifyCommand(),
 			"can-deploy": createCanDeployCommand(),

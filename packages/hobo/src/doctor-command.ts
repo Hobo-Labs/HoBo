@@ -22,6 +22,7 @@ import {
 import { loadHoboProfile } from "./hobo-profile.js";
 import { isJsonString } from "./json.js";
 import { buildMessagingDoctorSection } from "./messaging-doctor.js";
+import type { OwnerSessionStatus } from "./owner-store-session.js";
 import { buildProjectionDoctorSection } from "./projection-diagnostics.js";
 import { quarantineDiagnostics } from "./quarantine-diagnostics.js";
 
@@ -41,6 +42,7 @@ export interface DoctorCommandDeps {
 	// use the same filtered process environment as the composed deploy path.
 	readonly env?: Record<string, string | undefined>;
 	readonly store?: EventStore;
+	readonly ownerSession?: (cwd: string) => OwnerSessionStatus;
 }
 
 // Plain ambient tokens are ignored by the composed deploy path; recommend an
@@ -67,7 +69,7 @@ export function createDoctorCommand(
 	deps: DoctorCommandDeps = {},
 ): CommandModule {
 	return {
-		run: async ({ emitProgress }) => {
+		run: async ({ emitProgress, context }) => {
 			const env = deployEnvironment(deps.env);
 			const target = describeDeployTarget(env);
 			emitProgress(target.summary);
@@ -121,6 +123,13 @@ export function createDoctorCommand(
 			}
 
 			const remediation = remediationFor(target);
+			const ownerStoreSession: OwnerSessionStatus = deps.ownerSession?.(
+				isJsonString(context.cwd) ? context.cwd : process.cwd(),
+			) ?? { established: false };
+			if (deps.ownerSession !== undefined && !ownerStoreSession.established)
+				remediation.push(
+					"Connect the owner's secret store with HoBo MCP's choose_secret_store so verbs can use the credentials it holds.",
+				);
 			if (!stationReport.present) {
 				remediation.push(
 					"Run `hobo station init` for Station occupancy setup.",
@@ -276,6 +285,7 @@ export function createDoctorCommand(
 					quarantine: quarantine.available
 						? { available: true, report: quarantine.json }
 						: quarantine,
+					ownerStoreSession,
 				},
 			};
 		},
