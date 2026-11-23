@@ -21,9 +21,7 @@ def snapshot(s):
 \t\t\t\t\t\t\tprojectDir,
 \t\t\t\t\t\t\thoboHome,
 \t\t\t\t\t\t);
-\t\t\t\t\t} catch {
-\t\t\t\t\t\t/* A local fallback refuses if inputs cannot be read. */
-\t\t\t\t\t}
+\t\t\t\t\t} catch {}
 \t\t\t\t}
 '''
     s=replace(s,a,'')

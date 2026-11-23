@@ -63,7 +63,6 @@ export interface ReplayCommandTree {
 
 const snapshot = snapshotJournalData;
 
-/** Parse command provenance before reusing recorded results. */
 export function readReplayCommandTree(
 	events: readonly EventEnvelope[],
 	runId: string,

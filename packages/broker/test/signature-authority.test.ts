@@ -13,7 +13,7 @@ const receipt: ResolutionReceipt = {
 	requestId: "request",
 	brokerId: "broker",
 	catalogHash: "sha256:catalog",
-	// SAFETY: the test fixture is an intentionally branded policy hash.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test fixture is an intentionally branded policy hash.
 	policyHash: "sha256:policy" as PolicyHash,
 	placementPolicyId: "policy",
 	stationId: "station",

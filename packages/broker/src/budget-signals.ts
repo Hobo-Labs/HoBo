@@ -1,16 +1,3 @@
-// Budget signal plane: turns the static spend-cap check (planes.ts /
-// metering.ts) into a stream. The same `meter.UsageRecorded` facts the metered
-// billing plane folds are folded here into per-tenant budget state, and
-// threshold transitions emit `budget.ThresholdCrossed` / `budget.Recovered`
-// facts a routing control loop can subscribe to (the "decide" trigger the
-// FinOps control-plane design defers — only the threshold evaluator is lifted,
-// not the Pareto pipeline).
-//
-// On replay, the fold reconstructs each signal from financial facts and
-// suppresses only an identical recorded signal. Conflicts with a reconstructed
-// signal or a journal idempotency key require reconciliation. The caller must
-// provide a complete target stream including its metadata; `budgetSignalEventInputs`
-// carries the signalKey as `meta.idempotencyKey` for journal deduplication.
 import { createHash } from "node:crypto";
 import {
 	type BudgetScopeIdentity,
@@ -153,7 +140,6 @@ function thresholdAmount(budgetUsd: number, fraction: number): Decimal {
 	return multiplyDecimal(budget, threshold);
 }
 
-/** Numeric wire projection of the exact serialized-decimal threshold. */
 export function budgetSignalThresholdUsd(
 	budgetUsd: number,
 	fraction: number,
@@ -272,8 +258,6 @@ export function foldBudgetSignals(
 					);
 			}
 		}
-		// The journal deduplicates idempotency keys within a stream, regardless
-		// of event type or scope. A conflicting row must not hide the signal.
 		const keys = new Set<string>();
 		if (
 			isSignal &&

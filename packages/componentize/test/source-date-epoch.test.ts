@@ -32,7 +32,6 @@ const invalidEpochs = [
 
 describe("component build epoch", () => {
 	it("round-trips generated nonnegative whole-second values exactly", () => {
-		// Include the upper limit as well as a deterministic spread across the range.
 		let state = 0x1a2b3c4d;
 		const samples = [0, 1, MAX_SECONDS - 1, MAX_SECONDS];
 		for (let i = 0; i < 300; i++) {

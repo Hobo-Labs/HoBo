@@ -51,8 +51,6 @@ def check(case):
             append_guard = '#append(event: ComponentHostEvent): void {\n\t\tthis.#requireAvailable();'
             if changed.count(append_guard) != 1:
                 raise RuntimeError('propagate-uncertainty: expected append guard')
-            # Either direct propagation or the append guard prevents a second
-            # event after uncertainty; remove both to exercise that property.
             changed = changed.replace(append_guard, '#append(event: ComponentHostEvent): void {', 1)
         target.write_text(changed)
         env = {**os.environ, 'COMPONENT_FAILURE_VERIFY_PACKAGE_ROOT': str(scratch)}

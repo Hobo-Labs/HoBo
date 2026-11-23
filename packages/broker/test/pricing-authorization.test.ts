@@ -17,7 +17,6 @@ import {
 	type BillingAuthorizationInput,
 } from "../src/pricing-authorization.js";
 
-// These fixtures model a trusted host that attests the quote amount as a bound.
 function authorizeBillingSpend(input: BillingAuthorizationInput) {
 	return authorizeWithAuthority({
 		...input,

@@ -136,7 +136,7 @@ describe("event history ownership", () => {
 				const event = view[0];
 				if (!event) throw new Error("missing event");
 				expect(event.payload.detail).toBe(detail);
-				// SAFETY: the test mutates a returned snapshot to verify isolation.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test mutates a returned snapshot to verify isolation.
 				(event.payload as Record<string, string>).detail = "changed in view";
 				view.splice(0, view.length);
 				expect(model.events).toHaveLength(1);
@@ -160,7 +160,7 @@ describe("event history ownership", () => {
 	it("rejects non-string payloads before changing state or history", () => {
 		const model = new ControlModel();
 		const before = model.serialize();
-		// SAFETY: these cases deliberately cross the typed event boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these cases deliberately cross the typed event boundary.
 		for (const invalid of [
 			null,
 			[],
@@ -302,9 +302,9 @@ describe("oracle state view ownership", () => {
 					const found = model.findByKey(TENANT, "k1");
 					if (!slot || !capability || !resource || !found)
 						throw new Error("missing state");
-					// SAFETY: these edits deliberately mutate returned snapshots.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these edits deliberately mutate returned snapshots.
 					(slot as { manifestHash: string }).manifestHash = "changed";
-					// SAFETY: this exercises a runtime caller mutating a readonly list.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this exercises a runtime caller mutating a readonly list.
 					(capability.verbs as string[]).push("query");
 					resource.applyCount += 10;
 					found.status = fail ? "ready" : "failed";
@@ -620,7 +620,7 @@ describe("capability input and replay", () => {
 		model.addCapability(TENANT, "c1", ["read", "write"]);
 		const before = model.serialize();
 		const history = structuredClone(model.events);
-		// SAFETY: these cases deliberately cross the typed input boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these cases deliberately cross the typed input boundary.
 		for (const invalid of [["read", "admin"], null, "read"] as never[]) {
 			expect(() => model.addCapability(TENANT, "c1", invalid)).toThrow(
 				"fuzz.invalid_verbs",

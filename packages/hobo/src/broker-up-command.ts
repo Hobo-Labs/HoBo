@@ -86,10 +86,10 @@ async function importApprovedBindleModule(path: string): Promise<object> {
 	const url = pathToFileURL(path).href;
 	if (/\.(?:ts|mts)$/u.test(path)) {
 		const { tsImport } = await import("tsx/esm/api");
-		// SAFETY: an ESM namespace loaded from the verified execution tree.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: an ESM namespace loaded from the verified execution tree.
 		return (await tsImport(url, import.meta.url)) as object;
 	}
-	// SAFETY: an ESM namespace loaded from the verified execution tree.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: an ESM namespace loaded from the verified execution tree.
 	return (await import(url)) as object;
 }
 
@@ -119,7 +119,6 @@ export interface BrokerAwareUpCommandDeps {
 	readonly persistentLocal?: boolean;
 	/** Starts the persistent local deployment (default: the real worker process). */
 	readonly startLocalDeployment?: typeof startLocalDeployment;
-	/** Supplies a local port for placement and startup. */
 	readonly allocateLocalPort?: () => Promise<number>;
 }
 
@@ -166,11 +165,8 @@ export function createBrokerAwareUpCommand(
 							projectDir,
 							hoboHome,
 						);
-					} catch {
-						/* A local fallback refuses if inputs cannot be read. */
-					}
+					} catch {}
 				}
-				// Snapshot local inputs before a boundary check imports the Bindle.
 				const boundary = await externalBoundaryRefusal(projectDir, "up");
 				if (boundary !== undefined) return boundary;
 				const financialManifest = await loadProjectManifest(projectDir);

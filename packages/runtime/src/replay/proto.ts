@@ -20,7 +20,6 @@ import { captureProtoJson } from "./proto-json.js";
 import type { ReplayDivergenceRecord, ReplayReport } from "./types.js";
 import { checkReplayWire } from "./wire.js";
 
-/** Decode protobuf JSON, including omitted repeated fields and uint64 strings. */
 export function parseReplayReportProtoJson(raw: JsonValue): ReplayReport {
 	const captured = captureProtoJson(raw);
 	checkJsonObject(captured);
@@ -28,7 +27,6 @@ export function parseReplayReportProtoJson(raw: JsonValue): ReplayReport {
 	return reportFromMessage(fromJson(ReplayReportSchema, captured));
 }
 
-/** Decode the binary protobuf representation into a validated domain report. */
 export function parseReplayReportBinary(bytes: Uint8Array): ReplayReport {
 	const captured = new Uint8Array(bytes);
 	checkReplayWire(captured, "report");

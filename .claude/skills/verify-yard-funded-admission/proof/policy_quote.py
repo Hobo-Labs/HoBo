@@ -10,9 +10,7 @@ selected, approved = Const('selected', Quote), Const('approved', Quote)
 digest = Int('proof_digest')
 issued, has_digest, id_matches = (Bool(name) for name in ('issued', 'has_digest', 'id_matches'))
 mutation = os.environ.get('YARD_POLICY_PROOF_MUTATION', '')
-# A proof's digest honestly names the quote that the host approved.
 proof_binding = Implies(has_digest, digest == hash_of(approved))
-# Only the pair in this decision needs collision resistance.
 collision_resistance = Implies(hash_of(selected) == hash_of(approved), selected == approved)
 requirements = []
 if mutation != 'presence': requirements.append(has_digest)

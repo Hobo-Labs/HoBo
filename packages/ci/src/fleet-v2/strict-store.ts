@@ -57,7 +57,6 @@ export interface CompleteExecutionInput {
 	teardownConfirmed: boolean;
 }
 
-/** A trusted controller asserts teardown evidence before resolving uncertainty. */
 export interface RunnerSlotTransitionOptions {
 	teardownConfirmed?: boolean;
 }

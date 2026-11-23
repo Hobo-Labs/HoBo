@@ -224,7 +224,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 			catalog,
 			trustLegacyEstimates: true,
 		});
-		// SAFETY: assertion required at this I/O or test boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: assertion required at this I/O or test boundary.
 		const result = await command.run({
 			args: ["up"],
 			flags: { cwd: project, ...stationFlags(project) },
@@ -244,7 +244,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 				spendEstimateUsd: 500,
 			}),
 		);
-		// SAFETY: assertion required at this I/O or test boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: assertion required at this I/O or test boundary.
 		const estimated = await command.run({
 			args: ["up"],
 			flags: { cwd: project, request: requestPath, ...stationFlags(project) },

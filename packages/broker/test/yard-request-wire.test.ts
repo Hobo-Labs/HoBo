@@ -31,7 +31,6 @@ import {
 import { cloneAsJson } from "../src/json.js";
 import { approveLocalHosting } from "./helpers/local-hosting.js";
 
-// This name is part of the existing protobuf JSON contract.
 const YARD_LAYOUT_FIELD = "requestedShape";
 
 it("preserves Yard placement inputs through a protobuf round trip", () => {
@@ -341,7 +340,6 @@ describe("complete Yard placement request wire binding", () => {
 
 	it("refuses unknown root and nested placement fields", () => {
 		const encoded = encodeBindleDeploymentRequest(completeRequest());
-		// Unknown field 99, varint value 1.
 		const extra = [0x98, 0x06, 0x01];
 		expect(() =>
 			decodeBindleDeploymentRequest(Uint8Array.from([...encoded, ...extra])),
@@ -657,7 +655,6 @@ describe("Yard request CUE contract", () => {
 			} catch {
 				parserAccepted = false;
 			}
-			// CUE 0.14 rejects a literal U+FEFF in JSON but accepts its escape.
 			const encoded = JSON.stringify(
 				toJson(BindleDeploymentRequestSchema, message, {
 					alwaysEmitImplicit: true,

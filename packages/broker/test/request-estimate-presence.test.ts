@@ -65,11 +65,11 @@ describe("broker estimate presence", () => {
 			"spendEstimateUsd",
 			0,
 		);
-		// SAFETY: Both values come from protobuf's JSON encoder and parser.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Both values come from protobuf's JSON encoder and parser.
 		const absentDocument = JSON.parse(
 			JSON.stringify(toJson(BrokerRequestSchema, absent)),
 		) as JsonValue;
-		// SAFETY: Both values come from protobuf's JSON encoder and parser.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Both values come from protobuf's JSON encoder and parser.
 		const zeroDocument = JSON.parse(
 			JSON.stringify(toJson(BrokerRequestSchema, zero)),
 		) as JsonValue;

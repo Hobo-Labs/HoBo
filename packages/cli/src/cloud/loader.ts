@@ -51,7 +51,6 @@ export const DEFAULT_COMPONENT_HOST = {
 } as const;
 
 export interface BindleLoaderOptions {
-	/** Import a candidate by absolute path (for loaders that create modules at runtime). */
 	readonly importModule?: (path: string) => Promise<object>;
 }
 

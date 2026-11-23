@@ -91,7 +91,6 @@ async function walkLocalDeploymentInputs(
 	return `sha256:${hash.digest("hex")}`;
 }
 
-/** Hash executable project inputs and packaged artifacts, excluding local control state. */
 export async function fingerprintLocalDeployment(
 	projectDir: string,
 	hoboHome: string,
@@ -115,11 +114,6 @@ export function localDeploymentSnapshotDirectory(
 	);
 }
 
-/**
- * Copy the exact approved input bytes into a content-addressed execution tree.
- * The copy's digest, rather than a later observation of the mutable source,
- * is the handoff between placement and execution.
- */
 export async function materializeLocalDeploymentSnapshot(
 	projectDir: string,
 	hoboHome: string,

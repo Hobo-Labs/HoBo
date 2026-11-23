@@ -150,7 +150,6 @@ export interface WorkflowEngineOptions {
 	store?: EventStoreWriter;
 	seed?: string;
 	clock?: RuntimeClock;
-	/** Wait for a duration before rechecking the clock; defaults to a Node timer. */
 	wait?: (delayMs: number) => Promise<void>;
 	actorHost?: ActorHost;
 	tokenBroker?: TokenBroker;
@@ -158,14 +157,11 @@ export interface WorkflowEngineOptions {
 
 export interface WorkflowEngine {
 	readonly store: EventStoreWriter;
-	/** Fresh run: atomically claims a new journal before running user steps.
-	 * Input must round-trip as JSON. Supply runId for crash recovery. */
 	start<A, R>(
 		def: WorkflowDefinition<A, R>,
 		args: A,
 		options?: { runId?: string },
 	): Promise<WorkflowRunHandle<R>>;
-	/** Resume after a host restart with the same JSON-normalized input. */
 	resume<A, R>(
 		def: WorkflowDefinition<A, R>,
 		runId: string,
@@ -195,8 +191,6 @@ type WorkflowExecutionLease = {
 	releaseIfDrained(): void;
 };
 
-// Local coordination is keyed by the writer object, not by an underlying
-// database identity. Separate wrappers, workers and processes need host fencing.
 const ACTIVE_WORKFLOW_RUNS = new WeakMap<
 	EventStoreWriter,
 	Map<string, WorkflowExecutionLease>
@@ -323,7 +317,6 @@ export function createWorkflowEngine(
 
 		let appendTail: Promise<void> = Promise.resolve();
 		let appendFailed = false;
-		// Stores may reject with any thrown value; preserve it for the caller.
 		type JournalAppendFailure = unknown;
 		let appendFailure: JournalAppendFailure;
 		function poison(error: JournalAppendFailure): never {
@@ -565,7 +558,6 @@ export function createWorkflowEngine(
 				);
 			}
 			if (!outcome.ok) {
-				// A failed append is an infrastructure failure, even inside a step.
 				if (appendFailed)
 					throw new WorkflowExecutionAborted("workflow journal append failed");
 				throw outcome.error;
@@ -590,9 +582,8 @@ export function createWorkflowEngine(
 					const { command: treeStep, recorded } = nextTreeStep(scope, name);
 					const index = treeStep.index;
 					if (treeStep.terminal?.kind === "completed") {
-						// Journaled on a prior attempt — short-circuit, do NOT re-run.
 						const result = treeStep.terminal.result;
-						// SAFETY: the journal stores the JSON-normalized step result.
+						// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the journal stores the JSON-normalized step result.
 						return (
 							result === undefined ? undefined : cloneAsJson(result)
 						) as T;
@@ -844,8 +835,6 @@ export function createWorkflowEngine(
 				const definition = captureWorkflowDefinition(def);
 				const input = captureWorkflowInput(args);
 				const streamId = `run/${runId}`;
-				// Claim the new run before any user step. No shared idempotency key is
-				// used here: two fresh callers must not deduplicate into one run.
 				const started = nextEnvelope(
 					streamId,
 					1,

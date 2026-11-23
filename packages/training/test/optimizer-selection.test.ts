@@ -92,7 +92,7 @@ it("retains the first candidate when all proposal scores tie", async () => {
 	const program = parseTrainingArtifactProgram(
 		candidate.body.value.programJson,
 	);
-	// SAFETY: this fixture parses the payload written by the optimizer under test.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fixture parses the payload written by the optimizer under test.
 	const payload = JSON.parse(program.enginePayloadJson) as {
 		winnerDigest: string;
 		winnerScore: number;
@@ -129,7 +129,7 @@ it("keeps the first highest-scoring candidate for generated runs", async () => {
 		const program = parseTrainingArtifactProgram(
 			candidate.body.value.programJson,
 		);
-		// SAFETY: this fixture parses the payload written by the optimizer under test.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fixture parses the payload written by the optimizer under test.
 		const payload = JSON.parse(program.enginePayloadJson) as {
 			winnerDigest: string;
 			winnerScore: number;

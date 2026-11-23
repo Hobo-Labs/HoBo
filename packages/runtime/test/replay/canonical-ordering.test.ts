@@ -79,9 +79,9 @@ it("orders distinct Map entries consistently when their keys encode alike", () =
 		[{ x: 1 }, "b"],
 	]);
 	const b = new Map([...a.entries()].reverse());
-	// SAFETY: this deliberately exercises the runtime's Map branch beyond its JSON type.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this deliberately exercises the runtime's Map branch beyond its JSON type.
 	const first = stableValue(a as never);
-	// SAFETY: this deliberately exercises the runtime's Map branch beyond its JSON type.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this deliberately exercises the runtime's Map branch beyond its JSON type.
 	const second = stableValue(b as never);
 	expect(JSON.stringify(first)).toBe(JSON.stringify(second));
 });

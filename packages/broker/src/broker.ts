@@ -64,14 +64,6 @@ import {
 	type ScaleDirective,
 } from "./types.js";
 
-// The HoBo Broker actor. It consumes brokering commands (resolve, scale,
-// deliver), selects work and obtains trusted pricing before the gate and
-// billing planes, and emits decision facts. Explicit legacy estimate mode
-// retains the prior gate, billing, placement order. It coordinates durable state through those events; it never
-// mutates a query read model directly. Read models are folds over the emitted
-// facts (see foldBrokerDecisions), with snapshot/restore for the read store.
-
-/** Maximum complete placement plans evaluated by quote-backed routing. */
 export const MAX_BROKER_QUOTE_PLANS = 128;
 
 export interface BrokerResolution {
@@ -84,7 +76,6 @@ export interface BrokerResolution {
 	events: BrokerEvent[];
 }
 
-/** Immutable work selected before host pricing and policy evaluation. */
 export interface BrokerQuoteContext {
 	readonly request: Readonly<BrokerRequest>;
 	readonly placements: readonly Readonly<PlacementDecision>[];
@@ -96,8 +87,6 @@ export interface BrokerQuoteContext {
 	readonly bindingDigest: string;
 }
 
-/** The host authenticates the quote and guarantees that its bound covers this
- * exact work and its provider-side liability. Calls must not perform effects. */
 export interface BrokerPricingAuthority {
 	quote(
 		context: BrokerQuoteContext,
@@ -116,7 +105,6 @@ export interface HoboBrokerDeps {
 	gateOptions?: GatePlaneOptions;
 	billingPlane?: BillingPlane;
 	pricingAuthority?: BrokerPricingAuthority;
-	/** Explicit compatibility mode: the host accepts caller-supplied estimates. */
 	trustLegacyEstimates?: boolean;
 	deliveryPlane?: DeliveryPlane;
 	signingKey?: ResolutionSigningKey;
@@ -168,8 +156,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 	const deliveryPlane = deps.deliveryPlane ?? createDeliveryPlane();
 	const stationId = deps.stationId;
 	const railHash = deps.railHash;
-	// A receipt can only be handed to delivery by the broker instance that
-	// issued it. A durable, shared claim store is needed across restarts.
 	const resolvingRequests = new Set<string>();
 	const issuedResolutions = new Map<
 		string,
@@ -705,10 +691,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 						events,
 					);
 
-				// Plane 1 — the Gatekeeper composition (policy pack + contract
-				// compatibility + obligations + quota), imported and RUN from
-				// @hobo/contracts. Its policy.Decided / gatekeeper.Decided facts are
-				// appended to this resolution's event list.
 				const gate = await gatePlane.evaluate({
 					request: toPolicyDecisionRequest(policies.brokerId, {
 						...request,
@@ -744,8 +726,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 
 				if (environmentChanged()) return rejectEnvironment();
 
-				// The gate can await external policy. Recheck evidence and the catalog
-				// before creating a hold; the authority must refuse expired evidence.
 				if (pricing && selectedQuote && selectedContext) {
 					const context = selectedContext;
 					if (deps.catalog.catalogHash !== catalogHash)
@@ -781,8 +761,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 						);
 				}
 
-				// Attestation itself is host code, so check its side effects before
-				// asking billing to create a hold.
 				if (environmentChanged()) return rejectEnvironment();
 				if (pricing && deps.catalog.catalogHash !== catalogHash)
 					return reject(
@@ -797,7 +775,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 						events,
 					);
 
-				// Plane 2 — billing enforcement beyond quota: budget + spend cap.
 				const billing = billingPlane.authorize({
 					spendEstimateUsd: authorizedEstimate,
 					billing: { ...policies.billing },
@@ -897,8 +874,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					);
 				}
 
-				// Billing is synchronous but host code can take time or change its
-				// evidence. Revalidate before a receipt can authorize effects.
 				if (pricing && selectedQuote && selectedContext) {
 					const context = selectedContext;
 					const checked = authorizeBillingSpend({
@@ -950,8 +925,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					}
 				}
 
-				// Legacy estimate mode retains its prior placement order. The quoted
-				// path already pinned these placements before authorizing the liability.
 				if (!placements) {
 					const plan = selectPlacements(request, effective);
 					if (plan.reasons.length) {
@@ -1054,8 +1027,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					"delivery-already-claimed: reconcile the previous delivery attempt",
 				);
 			}
-			// Claim before host callbacks, which can reenter delivery. A failure
-			// before dispatch is retryable; after dispatch it is uncertain.
 			issued.state = "claimed";
 			let snapshot: ResolutionReceipt;
 			try {
@@ -1419,7 +1390,6 @@ function placeRequirement(
 	return { placements };
 }
 
-// Tie breaks use a stable code-unit order, independent of host locale.
 function compareIdentity(a: string, b: string): number {
 	return a < b ? -1 : a > b ? 1 : 0;
 }

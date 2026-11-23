@@ -126,7 +126,6 @@ describe("durable generation quota cancellation", () => {
 				a.maxConcurrentGenerations,
 				a.maxYardsPerTenant,
 			);
-			// A failed scope check must not install guards on another legacy store.
 			expect(() =>
 				createSqliteYardGenerationQuotaAuthority({
 					...options,
@@ -141,7 +140,6 @@ describe("durable generation quota cancellation", () => {
 				expect(authority.lookup(a.idempotencyKey)?.executionClaimed).toBe(true);
 				expect(() => authority.cancelUnclaimed(a)).toThrow(/claimed/u);
 				expect(authority.claimExecution(a).kind).toBe("existing");
-				// This connection was opened before migration, like a running old process.
 				expect(() =>
 					db
 						.prepare(

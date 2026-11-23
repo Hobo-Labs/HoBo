@@ -2196,9 +2196,6 @@ export function createPromotionService(
 			const freight = latest
 				? await d.freight.get(asFreight(latest.request.freightId))
 				: undefined;
-			// Only the writer whose unique token is durably claimed may start an
-			// external rollback effect. A retry cannot infer an unfinished claim is
-			// unused, even when the current Set has not changed (for example Rail).
 			const executionToken = randomUUID();
 			const executionFact = createSagaStepEmittedEvent({
 				sagaId: sagaIdOf(rollbackId),
@@ -2236,9 +2233,7 @@ export function createPromotionService(
 					stored.length === 1 &&
 					matchesExecution(claimed) &&
 					matchesExecution(stored[0]);
-			} catch {
-				// A lost acknowledgement or unreadable claim cannot authorize effects.
-			}
+			} catch {}
 			if (!executionVerified) {
 				const completed = await load(rollbackId);
 				if (completed?.trigger.meta?.rollbackRequestFingerprint === fingerprint)

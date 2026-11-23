@@ -92,7 +92,6 @@ export interface LocalHostingAuthorizationContext {
 
 class GenerationQuotaAdmissionError extends Error {}
 
-/** Inputs a host uses to quote the exact resource work a Yard will execute. */
 export interface YardHostingWorkInput {
 	readonly request: BindleDeploymentRequest;
 	readonly brokerId: string;
@@ -120,7 +119,6 @@ function hostingWorkDigest(input: {
 	});
 }
 
-/** Plan quoteable Yard work using the same selection and binding as admission. */
 export function prepareYardHostingWork(input: YardHostingWorkInput):
 	| {
 			readonly workDigest: ContentHash;
@@ -185,7 +183,6 @@ export interface YardFirstPlacementDeps {
 	readonly ownerTenantId?: string;
 	readonly runtimeCatalog?: ReturnType<typeof createYardRuntimeCatalog>;
 	readonly generationPolicy?: YardGenerationPolicy;
-	/** Shared durable generation and tenant-Yard capacity authority. */
 	readonly generationQuota?: YardGenerationQuotaAuthority;
 	readonly connectors?: ReadonlyMap<string, YardGenerationConnector>;
 	/** Seed a ready local yard when inventory is empty (zero-config path). */
@@ -209,8 +206,6 @@ export interface YardFirstPlacementDeps {
 	}) =>
 		| { gate: GateDecision; proof: HostingPolicyProof }
 		| Promise<{ gate: GateDecision; proof: HostingPolicyProof }>;
-	/** Host policy approval and an enforceable zero-liability assertion for
-	 * this exact local work. No local generation is authorized by this hook. */
 	readonly authorizeLocalHosting?: (
 		input: LocalHostingAuthorizationContext,
 	) => LocalHostingProof | undefined | Promise<LocalHostingProof | undefined>;
@@ -372,7 +367,6 @@ export async function resolveBindleDeployment(
 							"normalized provider registration does not match the generation plan",
 						);
 				}
-				// The broker owns stream sequencing; keep a private normalized snapshot.
 				pending.push(
 					Object.freeze({
 						type,
@@ -397,8 +391,6 @@ export async function resolveBindleDeployment(
 		);
 	}
 
-	// Callers may retain and mutate their input while host callbacks run. Work
-	// from a validated private snapshot, including unique resource identities.
 	try {
 		request = parseBindleDeploymentRequest(cloneAsJson(request));
 	} catch (error) {
@@ -1134,7 +1126,7 @@ export async function resolveBindleDeployment(
 		const selectedProvision = selectedConnector.provision;
 		const selectedInspect = selectedConnector.inspect;
 		const selectedCompensate = selectedConnector.compensate;
-		// SAFETY: connectors may expose this optional provider-signal extension.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: connectors may expose this optional provider-signal extension.
 		const selectedSignals = (
 			selectedConnector as YardGenerationConnector & {
 				signalsFor?: (
@@ -1159,8 +1151,6 @@ export async function resolveBindleDeployment(
 				const nowConnector = connectors.get(
 					genDecision.plan.generatorConnectorId,
 				);
-				// Registry and snapshot callbacks can themselves change authority.
-				// Recheck their inputs after invoking them before allowing an effect.
 				return (
 					nowConnector === selectedConnector &&
 					nowConnector.id === selectedId &&
@@ -1169,7 +1159,7 @@ export async function resolveBindleDeployment(
 					nowConnector.provision === selectedProvision &&
 					nowConnector.inspect === selectedInspect &&
 					nowConnector.compensate === selectedCompensate &&
-					// SAFETY: compare the same optional extension captured above.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: compare the same optional extension captured above.
 					(nowConnector as YardGenerationConnector & { signalsFor?: unknown })
 						.signalsFor === selectedSignals &&
 					deps.generationPolicy === generationPolicyInput &&
@@ -1269,8 +1259,6 @@ export async function resolveBindleDeployment(
 				try {
 					reservation = quotaReserve.call(quota, quotaRequest);
 				} catch (error) {
-					// A typed denial promises no reservation was written. Other
-					// errors can follow a committed write with a lost response.
 					if (error instanceof YardGenerationQuotaDeniedError)
 						quotaReservationOutcomeUnknown = false;
 					throw error;
@@ -1475,8 +1463,6 @@ export async function resolveBindleDeployment(
 			}),
 		);
 
-		// Pin the actual callable methods so a registry lookup cannot redirect an
-		// already authorized provider operation between the final check and call.
 		const checkProviderBoundary = () => {
 			if (generationAuthorityCurrent?.() !== true)
 				throw new Error(
@@ -1602,7 +1588,6 @@ export async function resolveBindleDeployment(
 			);
 		}
 
-		// Feed the pinned connector's progress signals through the provider fold.
 		try {
 			if (selectedSignals) {
 				appendProviderSignals(
@@ -1654,7 +1639,6 @@ export async function resolveBindleDeployment(
 			);
 		}
 
-		// A non-ready result needs a ready signal for this exact attempt and Yard.
 		const readyAttempt =
 			foldState.generationAttempts[genDecision.plan.attemptId];
 		const readySignalMatches =
@@ -1679,7 +1663,6 @@ export async function resolveBindleDeployment(
 				"provider has not reported a ready Yard",
 			);
 		}
-		// If the connector reports ready without signals, complete registration.
 		if (
 			!foldState.yards[genResult.yardId]?.status ||
 			foldState.yards[genResult.yardId]?.status !== "ready"

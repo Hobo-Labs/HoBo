@@ -149,7 +149,6 @@ export function collectRequiredRuntimes(
 	return requiredRuntimesForResources(definition.resources);
 }
 
-/** Runtime hosts implied by the actual resources and dependency annotations. */
 export function requiredRuntimesForResources(
 	resources: BindleDefinition["resources"],
 ): readonly RequiredRuntimeKind[] {

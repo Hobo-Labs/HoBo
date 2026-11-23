@@ -41,7 +41,6 @@ def check(case):
         shutil.copytree(source, scratch, ignore=shutil.ignore_patterns('node_modules', 'dist', '.turbo', 'coverage'))
         (scratch / 'node_modules').symlink_to(source / 'node_modules', target_is_directory=True)
         (scratch / 'tsconfig.json').unlink()
-        # SQLite tests import the sibling runtime-local build by relative path.
         runtimes = Path(temp) / 'runtimes'
         runtimes.mkdir()
         (runtimes / 'runtime-local').symlink_to(repo / 'packages/runtimes/runtime-local', target_is_directory=True)

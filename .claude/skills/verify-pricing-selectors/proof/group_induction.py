@@ -7,7 +7,6 @@ assumptions=[price_a >= 0, price_b >= 0, total_a >= 0, total_b >= 0, quantity >=
 base=price_a*total_a+price_b*total_b
 mutated=os.environ.get('PRICING_SELECTOR_PROOF_MUTATION') == 'wrong-group'
 after_a=(price_b if mutated else price_a)*(total_a+quantity)+price_b*total_b
-# In the mutation the existing A total must still be valued correctly.
 if mutated: after_a=base+price_b*quantity
 after_b=price_a*total_a+price_b*(total_b+quantity)
 witness=Solver();witness.add(*assumptions,price_a != price_b,quantity > 0)

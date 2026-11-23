@@ -27,6 +27,7 @@ import type {
 } from "./types.js";
 import { contentHashOf, YARD_INSTANCE_SCHEMA } from "./types.js";
 
+// public-contract: the resolver slot id that @hobo/broker callers and Yard registrations bind event stores to.
 export const EVENT_STORE_SLOT = "event-store" as const;
 
 export interface ProviderNativeSignal {

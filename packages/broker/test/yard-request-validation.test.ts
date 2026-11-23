@@ -234,7 +234,7 @@ describe("Yard deployment request validation", () => {
 			},
 		};
 		let authorizations = 0;
-		// SAFETY: exercise the untyped boundary with an intentionally invalid request.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: exercise the untyped boundary with an intentionally invalid request.
 		const result = await resolveBindleDeployment(input as never, {
 			brokerId: "broker:test",
 			catalog: createLocalHostCatalog(),

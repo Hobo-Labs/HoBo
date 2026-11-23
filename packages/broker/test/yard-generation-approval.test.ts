@@ -42,7 +42,7 @@ function decide(
 		ownerTenantId: "tenant",
 		requestedLayout: parseYardLayout({ providerId: "local" }),
 		runtimeCatalog: runtimes.snapshot(),
-		// SAFETY: exercise malformed policy values at the public runtime boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: exercise malformed policy values at the public runtime boundary.
 		policy: policy as never,
 		allowGenerationRequested: true,
 		attemptId: "attempt:1",

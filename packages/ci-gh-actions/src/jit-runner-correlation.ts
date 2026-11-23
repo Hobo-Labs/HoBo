@@ -16,7 +16,6 @@ export const RUNNER_HELD_JOB_STATUSES = new Set([
 	"requested",
 ]);
 
-/** GitHub statuses that mean the runner is executing work, not merely registered. */
 export const RUNNER_EXECUTING_JOB_STATUSES = new Set([
 	"in_progress",
 	"waiting",
@@ -24,7 +23,6 @@ export const RUNNER_EXECUTING_JOB_STATUSES = new Set([
 	"requested",
 ]);
 
-/** A new or malformed status is not evidence that a runner has finished. */
 export function isUnknownRunnerJobStatus(status: string): boolean {
 	return status !== "completed" && !RUNNER_HELD_JOB_STATUSES.has(status);
 }
@@ -33,7 +31,6 @@ export type ResolvedRunnerAssignment = Readonly<{
 	jobId: number;
 	runId: number;
 	status: string;
-	/** A queued or unknown match was found, but a later scan was incomplete. */
 	incomplete?: true;
 }>;
 
@@ -62,8 +59,6 @@ export function correlateRunnerOnRun(
 		runnerMatchesJob(job, runnerName, runnerId),
 	);
 	if (served.length === 0) return { kind: "unassigned" };
-	// A runner may have a completed reservation and another job still running.
-	// Pick confirmed execution first, then unknown work, then queued records.
 	const executing = served.filter((job) =>
 		RUNNER_EXECUTING_JOB_STATUSES.has(job.status),
 	);
@@ -124,7 +119,6 @@ export function runnerMatchesGitHubJob(
 		runner_name?: string | null | undefined;
 	}>,
 ): boolean {
-	// A name is only a fallback when one side has no usable GitHub runner ID.
 	if (lease.runnerId > 0 && (job.runner_id ?? 0) > 0)
 		return job.runner_id === lease.runnerId;
 	const name = job.runner_name?.trim();
@@ -187,11 +181,6 @@ export async function evaluateRunnerTeardownGuard(
 		nowMs: number;
 	}>,
 	opts?: Readonly<{
-		/**
-		 * When true and GitHub cannot be read, defer teardown.
-		 * When false (`forceStop` paths), unreadable GitHub does not block — a
-		 * confirmed or possibly executing assignment still blocks teardown.
-		 */
 		failClosed?: boolean;
 		queuedBoundGraceMs?: number;
 		/** When false, defer only on resolved assignment (no served-job getJob). */
@@ -327,8 +316,6 @@ export async function resolveRunnerAssignedJob(
 		}
 		if (incomplete) throw new Error("GitHub runner assignment scan incomplete");
 	} catch (error) {
-		// Preserve an observed uncertain or queued binding while signaling that
-		// later runs could not be checked before a teardown decision.
 		if (unknown) return { ...unknown, incomplete: true };
 		if (queued) return { ...queued, incomplete: true };
 		throw error;

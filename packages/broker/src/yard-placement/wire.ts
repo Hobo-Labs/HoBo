@@ -15,7 +15,6 @@ import {
 } from "./types.js";
 
 const REQUEST_DIGEST = /^sha256:[0-9a-f]{64}$/;
-// Keep the original protobuf JSON field name for compatibility.
 const YARD_LAYOUT_FIELD = "requestedShape";
 
 function selectionMode(value: string): value is YardSelectionMode {
@@ -103,22 +102,14 @@ export function encodeBindleDeploymentRequest(
 		}),
 	);
 	const bytes = toBinary(BindleDeploymentRequestSchema, message);
-	// Reject values that protobuf cannot represent without changing the digest
-	// (for example, an unpaired UTF-16 surrogate in a JavaScript string).
 	decodeBindleDeploymentRequest(bytes);
 	return bytes;
 }
 
-/**
- * Decode only complete, internally consistent work snapshots. Callers must
- * compare the resulting request digest with separately authenticated authority.
- */
 export function decodeBindleDeploymentRequest(
 	bytes: Uint8Array,
 ): BindleDeploymentRequest {
 	const message = fromBinary(BindleDeploymentRequestSchema, bytes);
-	// Unknown fields in ordinary protobuf messages are retained recursively.
-	// Refuse to discard fields introduced by a newer request schema.
 	const withUnknown = toBinary(BindleDeploymentRequestSchema, message);
 	const withoutUnknown = toBinary(BindleDeploymentRequestSchema, message, {
 		writeUnknownFields: false,

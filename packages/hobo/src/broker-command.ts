@@ -64,9 +64,7 @@ export interface BrokerCommandDeps {
 	// supplied. The composed Yard runtime's PlannerRegistry satisfies this
 	// structurally; tests inject fixtures.
 	readonly catalog: BrokerCatalog;
-	/** Host-provided pricing for registry-backed work. */
 	readonly pricingAuthority?: BrokerPricingAuthority;
-	/** Explicit compatibility for a host that trusts caller estimates. */
 	readonly trustLegacyEstimates?: boolean;
 	// Injectable for tests; defaults to global fetch for OPA/Cedar engines.
 	readonly fetchFn?: FetchLike;

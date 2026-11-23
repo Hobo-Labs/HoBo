@@ -256,7 +256,6 @@ export class ControlModel {
 	}
 
 	restore(raw: string): void {
-		// Parse and verify detached rows before changing the live model.
 		const blob = parseSnapshot(raw);
 		const candidate = new ControlModel();
 		for (const [id, row] of blob.bindles) candidate.#bindles.set(id, row);
@@ -744,19 +743,19 @@ function snapshotRecord(value: SnapshotJson | undefined): SnapshotObject {
 	) {
 		return invalidSnapshot();
 	}
-	// SAFETY: JSON objects are the only non-array object values in SnapshotJson.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: JSON objects are the only non-array object values in SnapshotJson.
 	return value as SnapshotObject;
 }
 
 function snapshotString(value: SnapshotJson | undefined): string {
 	if (value?.constructor !== String) return invalidSnapshot();
-	// SAFETY: JSON has no boxed strings; constructor identity selects a string.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: JSON has no boxed strings; constructor identity selects a string.
 	return value as string;
 }
 
 function snapshotInteger(value: SnapshotJson | undefined): number {
 	if (value?.constructor !== Number) return invalidSnapshot();
-	// SAFETY: JSON has no boxed numbers; constructor identity selects a number.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: JSON has no boxed numbers; constructor identity selects a number.
 	const number = value as number;
 	if (!Number.isSafeInteger(number) || number < 0) {
 		return invalidSnapshot();
@@ -827,7 +826,7 @@ function isResourceStatus(
 function parseSnapshot(raw: string): SnapshotBlob {
 	let input: SnapshotJson;
 	try {
-		// SAFETY: JSON.parse produces a value in the SnapshotJson union.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: JSON.parse produces a value in the SnapshotJson union.
 		input = JSON.parse(raw) as SnapshotJson;
 	} catch {
 		return invalidSnapshot();

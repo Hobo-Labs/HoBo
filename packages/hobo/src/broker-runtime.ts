@@ -103,7 +103,6 @@ export interface PlacementResult {
 	readonly yardPlacement?: YardPlacementReceipt;
 	readonly message: string;
 	readonly remediation?: readonly string[];
-	/** Project input digest included in the request, when supplied by the caller. */
 	readonly workloadDigest?: `sha256:${string}`;
 }
 
@@ -489,7 +488,6 @@ export async function resolveBindlePlacement(options: {
 	/** Where a runtime host comes from; defaults to the composition's registry. */
 	readonly runtimeHost?: (kind: ComponentHostKind) => HoboRuntimeHost;
 }): Promise<PlacementResult> {
-	// Startup can invoke caller callbacks; retain the Camp that was requested.
 	const requestedCampId = options.campId;
 	const hoboHome = options.hoboHome ?? defaultHoboHome();
 	const emit = options.emitProgress ?? (() => {});
@@ -704,10 +702,6 @@ export async function resolveBindlePlacement(options: {
 		ownerTenantId: "local",
 		seedLocalYard: true,
 		authorizeLocalHosting(input) {
-			// This embedded policy covers only the HoBo local-process service fee.
-			// The host's infrastructure and third-party costs need separate funding.
-			// OCI or Wasm requirements select another execution host and need their
-			// own authorization rather than this local-process assertion.
 			if (
 				input.ownerTenantId !== "local" ||
 				input.providerId !== LOCAL_PROCESS_PROVIDER_ID ||

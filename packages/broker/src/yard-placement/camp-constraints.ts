@@ -1,6 +1,5 @@
 import type { BindleDeploymentRequest, YardLayout } from "./types.js";
 
-/** The broker has no evidence that these requested Camp constraints hold. */
 export function hasUnverifiedCampConstraints(
 	request: BindleDeploymentRequest,
 ): boolean {
@@ -14,7 +13,6 @@ export function hasUnverifiedCampConstraints(
 	);
 }
 
-/** Nested Camp layouts are not yet matched or established by generation. */
 export function hasUnverifiedYardCamps(layout: YardLayout): boolean {
 	return layout.camps.length > 0;
 }

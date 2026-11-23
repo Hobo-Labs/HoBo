@@ -308,7 +308,7 @@ function seededUnit(input: string): number {
 }
 
 function stableObject<T extends JsonObject>(value: T): T {
-	// SAFETY: sorting and rebuilding preserves the object's own JSON entries.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: sorting and rebuilding preserves the object's own JSON entries.
 	return Object.fromEntries(
 		Object.entries(value).sort(([left], [right]) =>
 			compareCanonicalStrings(left, right),

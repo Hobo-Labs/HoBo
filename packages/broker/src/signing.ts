@@ -36,8 +36,6 @@ export interface ResolutionSignature {
 	payloadDigest: string;
 }
 
-// Canonical JSON: recursively sort keys by UTF-16 code units without locale
-// collation or whitespace. The same document serializes to the same bytes.
 export function canonicalResolutionJson<T>(value: T): string {
 	return canonicalJsonValue(cloneAsJson(value));
 }

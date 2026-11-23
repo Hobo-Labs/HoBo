@@ -7,7 +7,6 @@
 export interface SeededPrng {
 	/** Next float in [0, 1). */
 	next(): number;
-	/** Next integer in [0, bound), for a positive safe-integer bound. */
 	nextInt(bound: number): number;
 }
 

@@ -1,25 +1,3 @@
-/**
- * The embedded broker's catalog, policy set, and persisted state.
- *
- * The embedded broker is what makes `hobo up` work with no account and no
- * network: it offers the host runtimes this machine actually has, prices them
- * so the cheapest capable one wins, and remembers the choice in
- * `broker-runtime.json` so later commands agree with the deploy that just ran.
- *
- * **The catalog reflects what is installed, not what is possible.** A wasm or
- * oci entry offered on a machine without the toolchain would win on price and
- * then fail at serve time, after the user was told placement succeeded. That
- * is why `includeWasmSandbox` and `includeOci` are inputs rather than probes
- * made here.
- *
- * **Prices describe service fees.** The local process and wasm service fees
- * are zero; runtime preference is selected from installed hosts separately.
- *
- * **Persisted state that cannot be trusted reads as absent.** A
- * `broker-runtime.json` from an older schema, or a truncated one, must not be
- * partially believed — the next `ensureEmbeddedBroker` rebuilds it, and that
- * is strictly better than placing against a half-understood document.
- */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -122,8 +100,6 @@ describe("createYardBrokerCatalog", () => {
 	});
 
 	it("records zero service fees for local process and wasm", () => {
-		// Local runtime preference is chosen explicitly rather than encoded as a
-		// fictitious positive service charge.
 		const catalog = createYardBrokerCatalog({
 			includeWasmSandbox: true,
 			includeOci: true,
@@ -268,7 +244,7 @@ describe("persisted broker state", () => {
 		// is not.
 		const dir = home();
 		saveEmbeddedBrokerState(
-			// SAFETY: This fixture deliberately represents an unsupported schema.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: This fixture deliberately represents an unsupported schema.
 			state({ schemaVersion: "hobo.broker-runtime/v0" as never }),
 			dir,
 		);
@@ -320,7 +296,7 @@ describe("defaultComponentHostFromBroker", () => {
 		// every command on a machine that has simply not re-run `yard init`.
 		const dir = home();
 		saveEmbeddedBrokerState(
-			// SAFETY: This fixture deliberately represents a legacy host value.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: This fixture deliberately represents a legacy host value.
 			state({ preferredComponentHost: "isolated-wasm" as never }),
 			dir,
 		);
@@ -332,7 +308,7 @@ describe("defaultComponentHostFromBroker", () => {
 		// The default is always serviceable, which an invented host is not.
 		const dir = home();
 		saveEmbeddedBrokerState(
-			// SAFETY: This fixture deliberately represents a corrupt host value.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: This fixture deliberately represents a corrupt host value.
 			state({ preferredComponentHost: "frobnicate" as never }),
 			dir,
 		);
@@ -350,10 +326,7 @@ describe("defaultComponentHostFromBroker", () => {
 
 describe("collectExplicitProviderPins", () => {
 	it("returns nothing for a Bindle that names no provider", () => {
-		// Bindles are provider-agnostic by construction (ADR-0144); Yard
-		// selection owns provider context. The deprecated helper survives only
-		// to assert that, so an empty result is the whole contract.
-		// SAFETY: This minimal Bindle fixture supplies all fields the check reads.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: This minimal Bindle fixture supplies all fields the check reads.
 		const pins = collectExplicitProviderPins({
 			name: "app",
 			resources: {},

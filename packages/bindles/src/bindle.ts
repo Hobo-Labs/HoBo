@@ -345,8 +345,6 @@ export function bindle(
 		}
 	}
 
-	// Generic handlers can run on more than one host. Explicit runtime needs
-	// and runtimes implied by resources must both survive authoring.
 	const inferredRequirements = inferRequirementsFromResources(resources);
 	if (isEmptyRequirements(requirements)) {
 		requirements = inferredRequirements;

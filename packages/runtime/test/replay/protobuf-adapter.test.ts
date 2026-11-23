@@ -124,7 +124,6 @@ it("refuses overflowing wire integers before decoding", () => {
 	const base = toBinary(ReplayReportSchema, create(ReplayReportSchema, report));
 	const concat = (...parts: Uint8Array[]) =>
 		Uint8Array.from(parts.flatMap((part) => [...part]));
-	// A nested sequence entry whose unsigned varint is too wide for uint64.
 	const overflowSeq = Uint8Array.from([
 		18,
 		14,
@@ -157,7 +156,6 @@ it("refuses overflowing integers and groups in divergence wire records", () => {
 
 it("preserves forward-compatible ordinary unknown binary fields", () => {
 	const base = toBinary(ReplayReportSchema, create(ReplayReportSchema, report));
-	// Unknown field 100, encoded as a varint, is ignored by protobuf.
 	const bytes = Uint8Array.from([...base, 160, 6, 1]);
 	expect(parseReplayReportBinary(bytes).runId).toBe("run");
 });

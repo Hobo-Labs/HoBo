@@ -314,7 +314,7 @@ export default bindle('sample', b => ({web: b.web(() => () => new Response('appr
 				type: "ready",
 				receipt: { contentFingerprint },
 			});
-			// SAFETY: the preceding assertion checks the worker's ready receipt shape.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the preceding assertion checks the worker's ready receipt shape.
 			const ready = response as {
 				readonly receipt: { readonly primaryUrl: string };
 			};

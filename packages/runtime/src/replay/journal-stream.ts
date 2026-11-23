@@ -69,7 +69,6 @@ export function snapshotJournalData(
 	}
 }
 
-/** Capture and reject facts returned from a different run's stream. */
 export function captureJournalStream(
 	events: readonly EventEnvelope[],
 	streamId: string,

@@ -1,7 +1,6 @@
 import { FleetRejectionCode } from "../_generated/fleet_v2_pb.js";
 import { rejectFleet } from "./state-machine.js";
 
-/** WorkerDelivery.fence is uint32 on the wire; never reuse a token. */
 export function nextEffectFence(previous: number): number {
 	if (!Number.isSafeInteger(previous) || previous < 0 || previous >= 0xffffffff)
 		rejectFleet(

@@ -488,8 +488,6 @@ describe("yard event-store folds + provider resolvers", () => {
 			attemptId: `gen-${request.requestId}`,
 		});
 		if (!generation.allowed) throw new Error("fixture generation denied");
-		// Reconstruct a self-consistent plan from an older peer that did not
-		// validate residency, so the request preflight is still exercised.
 		const generationPlan = (() => {
 			if (mode !== "invalid-residency-before-generation")
 				return generation.plan;
@@ -591,7 +589,6 @@ describe("yard event-store folds + provider resolvers", () => {
 						: generationPlan.planHash,
 			});
 		else {
-			// Simulate a quote from a peer that skipped the relevant request check.
 			const work = prepareYardHostingWork({
 				request: baseRequest,
 				brokerId: "broker:azure-gen",

@@ -115,7 +115,7 @@ function componentDescriptor(
 		const webRes = await handler(webReq);
 		return {
 			status: webRes.status,
-			// SAFETY: assertion required at this I/O or test boundary.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: assertion required at this I/O or test boundary.
 			headers: [...webRes.headers.entries()] as [string, string][],
 			body: Buffer.from(await webRes.arrayBuffer()).toString("latin1"),
 		};
@@ -126,8 +126,7 @@ function componentDescriptor(
 		imports: [],
 		exports: {
 			[HTTP_INCOMING_HANDLER]: {
-				// SAFETY: the heterogeneous export table is read back through the
-				// matching HttpIncomingHandler contract by runtime-local.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the heterogeneous export table is read back through the matching HttpIncomingHandler contract by runtime-local.
 				handle: handle as never,
 			},
 		},

@@ -8,12 +8,6 @@ trap 'rm -rf -- "$scratch_dir"' EXIT
 java_tmpdir="${scratch_dir//\'/\'\"\'\"\'}"
 export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djava.io.tmpdir='$java_tmpdir'"
 
-# TLC extracts standard modules into java.io.tmpdir. Give every runner its own
-# directory so concurrent checks cannot overwrite each other's module files.
-# JAVA_TOOL_OPTIONS accepts adjacent quoted fragments, including for apostrophes.
-java_tmpdir="${scratch_dir//\'/\'\"\'\"\'}"
-export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djava.io.tmpdir='$java_tmpdir'"
-
 jar="${TLA2TOOLS:-$scratch_dir/tla2tools.jar}"
 if [[ -z "${TLA2TOOLS:-}" ]]; then
 	if ! curl -fsSL --retry 2 --max-time 60 \

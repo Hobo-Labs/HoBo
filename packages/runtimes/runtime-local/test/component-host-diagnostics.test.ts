@@ -14,8 +14,7 @@ const component = (id: string): ParsedComponentDescriptor => ({
 });
 
 function readMirror(host: ComponentHostPort): ComponentHostEvent[] {
-	// SAFETY: The concrete host exposes this method at runtime; the mutable
-	// test view deliberately exercises JavaScript callers outside its readonly type.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: The concrete host exposes this method at runtime; the mutable test view deliberately exercises JavaScript callers outside its readonly type.
 	return (
 		host as ComponentHostPort & { eventMirror(): ComponentHostEvent[] }
 	).eventMirror();

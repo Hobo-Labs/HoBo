@@ -9,7 +9,6 @@ scratch_parent = Path(tempfile.mkdtemp(prefix='hobo-yard-funded-mutants-'))
 scratch = scratch_parent / 'broker'
 shutil.copytree(repo / 'packages/broker', scratch, ignore=shutil.ignore_patterns('node_modules', 'dist', '.turbo', 'coverage'))
 (scratch / 'node_modules').symlink_to(repo / 'packages/broker/node_modules', target_is_directory=True)
-# The package tsconfig extends the repository root and is invalid outside the repo.
 (scratch / 'tsconfig.json').unlink()
 target = scratch / 'src/yard-placement/deploy.ts'
 config = skill / 'models/vitest.config.mts'

@@ -18,22 +18,18 @@ import {
 import { isJsonString } from "./json.js";
 import type { BillingPolicy, RejectionReason } from "./types.js";
 
-/** A trusted host must authenticate and bind the quote to the work before
- * returning a conservative upper bound on the resulting USD liability. */
 export interface TrustedQuoteAttestation {
 	readonly liabilityBoundUsd: string;
 }
 
 export interface BillingAuthorizationInput {
 	readonly spendEstimateUsd?: number;
-	/** Legacy quote amounts require the complete quote as evidence. */
 	readonly quoteIncrementalUsd?: number;
 	readonly quoteIncrementalDecimal?: string;
 	readonly quote?: QuoteVector;
 	readonly attestQuote?: (
 		quote: QuoteVector,
 	) => TrustedQuoteAttestation | undefined;
-	/** Explicit compatibility mode for a host that trusts the raw estimate. */
 	readonly trustEstimate?: boolean;
 	readonly billing: BillingPolicy;
 }
@@ -52,11 +48,6 @@ function reject(code: string, message: string): BillingAuthorizationResult {
 	};
 }
 
-/**
- * Authorizes a complete quote only after a trusted host attests its provenance,
- * work binding and conservative liability, or an explicitly trusted estimate.
- * A quote hash detects changed contents; it does not authenticate the provider.
- */
 export function authorizeBillingSpend(
 	input: BillingAuthorizationInput,
 ): BillingAuthorizationResult {

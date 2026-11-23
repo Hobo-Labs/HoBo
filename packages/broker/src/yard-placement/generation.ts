@@ -243,7 +243,6 @@ export interface YardGenerationSaga {
 
 export function createYardGenerationSaga(options: {
 	readonly connectors: ReadonlyMap<string, YardGenerationConnector>;
-	/** Trusted host decision bound to the complete plan; it must be side-effect free. */
 	readonly authorizePlan?: (plan: YardGenerationPlan) => boolean;
 }): YardGenerationSaga {
 	const attempts = new Map<
@@ -261,8 +260,6 @@ export function createYardGenerationSaga(options: {
 		planDigest: ContentHash,
 	) => {
 		try {
-			// The host may retain its argument. Do not expose the private plan
-			// that will subsequently be handed to an asynchronous provider.
 			const decisionPlan = structuredClone(plan);
 			return (
 				options.authorizePlan === authorize &&
@@ -278,8 +275,6 @@ export function createYardGenerationSaga(options: {
 
 	return {
 		async run(inputPlan) {
-			// Capture the work before any asynchronous provider operation. A caller
-			// retaining its original object cannot change what the connector sees.
 			const plan = structuredClone(inputPlan);
 			if (!hasValidYardResidency(plan.requestedLayout)) {
 				return fail(
@@ -309,9 +304,6 @@ export function createYardGenerationSaga(options: {
 					"generation-authorization-denied",
 					"host authorization denied or changed the generation plan",
 				);
-			// A provider may finish after the host revokes this caller's decision.
-			// Keep its outcome in the saga for later reconciliation, but do not
-			// return the result or provider error to a no-longer-authorized caller.
 			const deliveryPlan = structuredClone(plan);
 			const awaitAuthorized = async (
 				operation: Promise<YardGenerationResult>,
@@ -354,8 +346,6 @@ export function createYardGenerationSaga(options: {
 			) {
 				return existing.result;
 			}
-			// Keep authorization evidence apart from both the original caller and
-			// the provider, which may retain or modify its own plan argument.
 			const recordedPlan = existing?.plan ?? structuredClone(plan);
 
 			const connector = options.connectors.get(plan.generatorConnectorId);
@@ -388,9 +378,6 @@ export function createYardGenerationSaga(options: {
 			const provision = connector.provision;
 			const inspect = connector.inspect;
 
-			// Schedule after publishing the in-flight promise, including for a
-			// connector that synchronously reenters the saga. Failed calls retain
-			// the started record so a later retry inspects rather than provisions.
 			const operation = Promise.resolve().then(async () => {
 				if (!authorized(authorize, plan, planDigest))
 					return fail(
@@ -438,7 +425,6 @@ function snapshotGenerationResult(
 	value: YardGenerationResult,
 ): YardGenerationResult {
 	const result = structuredClone(value);
-	// A provisioned Yard is not usable until its registration path completes.
 	const snapshot = {
 		...result,
 		status: result.status === "provisioned" ? "registered" : result.status,

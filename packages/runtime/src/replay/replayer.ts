@@ -120,7 +120,7 @@ export async function replayRun<S, A>(
 			}
 			treeCursor += 1;
 			const result = command.terminal.result;
-			// SAFETY: the recorded JSON result has the workflow step's result type.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the recorded JSON result has the workflow step's result type.
 			return (result === undefined ? undefined : cloneAsJson(result)) as T;
 		},
 		async sleep(delayMs) {

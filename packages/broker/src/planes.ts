@@ -65,9 +65,7 @@ export interface BillingPlane {
 	}): {
 		ok: boolean;
 		reasons: RejectionReason[];
-		/** True only when this call created a new hold; false means a replay. */
 		reservationCreated?: boolean;
-		/** True only when this denial created no reservation or external effect. */
 		noReservationCreated?: true;
 	};
 	/** Only before a side effect has begun; uncertain effects retain funds. */
@@ -149,9 +147,6 @@ export function createGatekeeperGatePlane(
 }
 
 export function createBillingPlane(): BillingPlane {
-	// No meter is configured here, so successful holds remain reserved until
-	// their caller confirms they were unused. Use a live metering plane to
-	// retire them after final usage is recorded.
 	return createMeteredBillingPlane([]);
 }
 

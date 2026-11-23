@@ -31,9 +31,6 @@ for name, filename, before, after in cases:
             history_guard = 'validateJournalHistory(events, id);'
             if changed.count(history_guard) != 1:
                 raise RuntimeError('replay-before-callback: expected history validation site')
-            # Either early guard independently refuses an unsafe journal. Remove
-            # both to exercise the before-callback property rather than a
-            # redundant individual implementation check.
             changed = changed.replace(history_guard, '', 1)
             marker = 'const report: ReplayReport = Object.freeze({'
             if changed.count(marker) != 1:

@@ -16,7 +16,6 @@ export type {
 	FoldEvent,
 } from "@hobo/core";
 
-/** Clock seam used to establish and recheck persisted sleep deadlines. */
 export interface RuntimeClock {
 	now(): string;
 	nowMs(): number;

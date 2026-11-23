@@ -262,7 +262,6 @@ function residencyFailure(
 ): string | undefined {
 	try {
 		const jurisdiction = parseYardResidencyTag(entry);
-		// A repeated attestation cannot make an unknown residency tag valid.
 		if (yard.layout.residency.includes(entry)) return undefined;
 		if (yard.layout.regions.length === 0) {
 			return `residency-unattested:${entry}`;
@@ -338,7 +337,6 @@ function countExactProperties(
 	return n;
 }
 
-/** Compare JSON values structurally; object insertion order is not meaningful. */
 function jsonValuesEqual(
 	left: JsonValue | undefined,
 	right: JsonValue | undefined,

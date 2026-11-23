@@ -83,8 +83,6 @@ export function createLocalHostCatalog(
 	};
 }
 
-// This attests only the built-in local test host's service fee. It does not
-// cover infrastructure or third-party costs incurred by running that host.
 export function createLocalHostPricingAuthority(): BrokerPricingAuthority {
 	const isLocalWork = (context: BrokerQuoteContext) =>
 		context.placements.length > 0 &&

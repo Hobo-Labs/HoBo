@@ -79,10 +79,6 @@ const sections = {
 	"21": ["Primary references linked"],
 } as const satisfies Record<string, readonly string[]>;
 
-/** Rows with no wired implementation behind them. Stated plainly instead of
- * inherited "pass": the lookup and start handler are not wired into the
- * production controller, and the hook template is not installed by it,
- * and the Kubernetes/Dagger paths are planner/shape only. */
 const notImplementedRows = new Map<string, string>([
 	[
 		"Strict v2 at-most-once start authorization",

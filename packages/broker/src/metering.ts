@@ -180,7 +180,6 @@ export function createMeteredBillingPlane(
 								},
 							],
 						};
-			// The input was checked above, so it has a finite decimal form.
 			const estimate = decimalFromNumber(spendEstimateUsd);
 			if (estimate === undefined) throw new Error("invalid spend estimate");
 			if (

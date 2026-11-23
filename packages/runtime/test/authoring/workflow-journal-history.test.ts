@@ -83,7 +83,6 @@ it("rejects broken journal structure before a terminal result or replay callback
 		);
 		expect(calls).toBe(0);
 		expect(writes).toBe(0);
-		// Diagnostic reads remain available for reconciliation.
 		expect(await engine.journal("history")).toHaveLength(events.length);
 	}
 });

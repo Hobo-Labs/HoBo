@@ -2,9 +2,6 @@ import { DatabaseSync } from "node:sqlite";
 import { isJsonNumber, isJsonString } from "../json.js";
 import { type ContentHash, contentHashOf } from "./types.js";
 
-/** A Yard known to exist before this authority was initialized. The host is
- * responsible for supplying a complete baseline and routing later creation
- * through the same authority. */
 export interface YardQuotaBaselineEntry {
 	readonly yardId: string;
 	readonly ownerTenantId: string;
@@ -22,15 +19,12 @@ export interface YardGenerationQuotaRequest {
 
 export interface YardGenerationQuotaClaim extends YardGenerationQuotaRequest {
 	readonly status: "pending" | "ready";
-	/** A durable execution fence has been claimed for this attempt. */
 	readonly executionClaimed: boolean;
 	readonly readyEvidenceRef?: string;
 }
 
 export interface YardGenerationQuotaAuthority {
 	readonly persistence: "durable-sqlite";
-	/** A typed denial means this call did not create a reservation. An untyped
-	 * error may follow a committed write whose acknowledgement was lost. */
 	reserve(request: YardGenerationQuotaRequest): {
 		readonly kind: "reserved" | "existing";
 		readonly claim: YardGenerationQuotaClaim;
@@ -130,13 +124,6 @@ function requestDigest(request: YardGenerationQuotaRequest): ContentHash {
 	});
 }
 
-/**
- * One persistent SQLite authority for a single quota scope. BEGIN IMMEDIATE
- * serializes reservation checks and writes across connections to this file.
- * Pending claims remain counted on uncertainty. A trusted readiness verifier
- * must approve completion before a concurrent slot is released; the Yard
- * continues to count against its tenant limit afterward.
- */
 export function createSqliteYardGenerationQuotaAuthority(options: {
 	readonly path: string;
 	readonly scopeId: string;
@@ -247,8 +234,6 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 					"conflict",
 					"quota scope or initial inventory differs from the stored baseline",
 				);
-			// Transaction-local permits make already-open older writers fail closed.
-			// BEGIN IMMEDIATE prevents another connection from observing a permit.
 			database.exec(
 				"CREATE TABLE IF NOT EXISTS generation_quota_execution (idempotency_key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS generation_quota_cancelled (idempotency_key TEXT PRIMARY KEY, request_digest TEXT NOT NULL); CREATE TABLE IF NOT EXISTS generation_quota_write_permit (id INTEGER PRIMARY KEY CHECK(id=1)); CREATE TRIGGER IF NOT EXISTS generation_quota_guard_insert BEFORE INSERT ON generation_quota_claims WHEN NOT EXISTS(SELECT 1 FROM generation_quota_write_permit WHERE id=1) BEGIN SELECT RAISE(ABORT, 'quota execution fencing required'); END; CREATE TRIGGER IF NOT EXISTS generation_quota_guard_update BEFORE UPDATE ON generation_quota_claims WHEN NOT EXISTS(SELECT 1 FROM generation_quota_write_permit WHERE id=1) BEGIN SELECT RAISE(ABORT, 'quota execution fencing required'); END; CREATE TRIGGER IF NOT EXISTS generation_quota_guard_delete BEFORE DELETE ON generation_quota_claims WHEN NOT EXISTS(SELECT 1 FROM generation_quota_write_permit WHERE id=1) BEGIN SELECT RAISE(ABORT, 'quota execution fencing required'); END",
 			);
@@ -260,8 +245,6 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 				throw new Error("unexpected persistent generation quota write permit");
 			if (meta) {
 				if (meta.baseline_hash === legacyBaselineHash) {
-					// Old pending attempts may already have reached a provider. Fence
-					// every pre-upgrade claim before enabling cancellation.
 					database.exec(
 						"INSERT OR IGNORE INTO generation_quota_execution(idempotency_key) SELECT idempotency_key FROM generation_quota_claims",
 					);
@@ -324,12 +307,12 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 		)
 			throw new Error("invalid stored generation quota claim");
 		const claim: YardGenerationQuotaClaim = {
-			// SAFETY: hashes have been validated above.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: hashes have been validated above.
 			idempotencyKey: row.idempotency_key as ContentHash,
 			attemptId: row.attempt_id,
 			ownerTenantId: row.owner_tenant_id,
 			yardId: row.yard_id,
-			// SAFETY: hashes have been validated above.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: hashes have been validated above.
 			planHash: row.plan_hash as ContentHash,
 			maxConcurrentGenerations: row.max_concurrent,
 			maxYardsPerTenant: row.max_yards,
@@ -355,7 +338,7 @@ export function createSqliteYardGenerationQuotaAuthority(options: {
 		if (!row) return undefined;
 		if (!isJsonString(row.request_digest) || !validHash(row.request_digest))
 			throw new Error("invalid stored generation quota cancellation");
-		// SAFETY: the stored digest has been validated above.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the stored digest has been validated above.
 		return row.request_digest as ContentHash;
 	}
 

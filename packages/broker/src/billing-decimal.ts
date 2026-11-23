@@ -1,7 +1,6 @@
 import { compareDecimal, type Decimal, formatDecimal } from "@hobo/pricing";
 import type { BillingPolicy } from "./types.js";
 
-// Number-valued fields use their serialized decimal value as their contract.
 export function decimalFromNumber(value: number): Decimal | undefined {
 	if (!Number.isFinite(value) || value < 0) return undefined;
 	const [mantissa = "0", exponentText = "0"] = value.toString().split("e");

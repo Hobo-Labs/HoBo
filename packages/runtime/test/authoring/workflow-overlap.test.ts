@@ -103,7 +103,6 @@ it("keeps a run fenced after its parent exits while a durable command remains ac
 	expect(earlyCalls).toBe(1);
 	const recovered = await second.resume(wf, "pending-overlap", null);
 	expect(recovered.status).toBe("completed");
-	// A command whose completion was never recorded may still run again.
 	expect(calls).toBe(2);
 });
 

@@ -414,9 +414,7 @@ describe("broker delivery authorization", () => {
 							const before = calls;
 							try {
 								await broker.deliver(input);
-							} catch {
-								/* Refusal or uncertain dispatch. */
-							}
+							} catch {}
 							const shouldDispatch = step === "deliver" && fresh && !claimed;
 							expect(calls - before).toBe(shouldDispatch ? 1 : 0);
 							if (shouldDispatch) claimed = true;

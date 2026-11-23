@@ -52,7 +52,6 @@ export class RetryableError extends RuntimeAuthoringError {
 	}
 }
 
-/** An execution cannot safely continue; retrying a step cannot repair it. */
 export class WorkflowExecutionAborted extends RuntimeAuthoringError {
 	constructor(message: string) {
 		super(message);

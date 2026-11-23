@@ -95,8 +95,6 @@ describe("required runtimes + broker hard-fail", () => {
 			const api = b.api().withReference(redis);
 			return { redis, api };
 		});
-		// A caller can supply a definition that omitted the derived runtime;
-		// placement must still inspect the actual resource.
 		const definition = {
 			...original,
 			requirements: { ...original.requirements, runtimes: [] },

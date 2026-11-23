@@ -19,7 +19,6 @@ async function withUncollectableBindle(
 	const hoboHome = join(cwd, "home");
 	try {
 		await mkdir(join(cwd, "src"));
-		// The loader accepts this Bindle, but collection refuses the missing edge.
 		await writeFile(
 			join(cwd, "src/bindle.mjs"),
 			`export default {name:'sample', resources:{web:{name:'web',kind:'web',stableId:'web:web',annotations:[],dependsOn:[],declaredAllow:[]}},edges:[{from:'web',to:'missing'}],requirements:{require:[],prefer:[],runtimes:[],labels:{}},entrypoint:()=>undefined};`,
@@ -57,7 +56,7 @@ function request(
 
 function command(runtime: BudgetRuntimeFixture, onStart: () => never) {
 	return createBrokerAwareUpCommand({
-		// SAFETY: collection returns a stub before the Yard reads any other runtime fields.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: collection returns a stub before the Yard reads any other runtime fields.
 		runtime: runtime as never,
 		env: {},
 		persistentLocal: true,
@@ -156,7 +155,6 @@ it("refuses a budget introduced while the local preview loads", async () => {
 		Object.defineProperty(input.flags, "budgetId", {
 			get() {
 				reads++;
-				// The fourth observation is the guard just before the awaited load.
 				if (reads === 4)
 					queueMicrotask(() => {
 						appeared = true;

@@ -12,7 +12,6 @@ const RUNTIME_EVENT_TYPES = new Set([
 	"run.SleepCompleted",
 ]);
 
-/** Validate the visible prefix before trusting it for execution or replay. */
 export function validateJournalHistory(
 	events: readonly EventEnvelope[],
 	runId = "workflow",

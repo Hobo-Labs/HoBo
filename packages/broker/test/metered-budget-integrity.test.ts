@@ -191,7 +191,7 @@ describe("metered budget integrity", () => {
 				billing: policy,
 			}).ok,
 		).toBe(true);
-		// SAFETY: Exercise the runtime boundary with a deliberately invalid caller.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Exercise the runtime boundary with a deliberately invalid caller.
 		expect(() => plane.release?.("a", false as true)).toThrow();
 		expect(
 			plane.authorize({

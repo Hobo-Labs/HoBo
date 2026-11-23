@@ -3,7 +3,6 @@ import type {
 	LocalHostingProof,
 } from "../../src/yard-placement/index.js";
 
-// Test-only authority: generated catalog prices exercise ordering, not billing.
 export function approveLocalHosting(
 	input: LocalHostingAuthorizationContext,
 ): LocalHostingProof {

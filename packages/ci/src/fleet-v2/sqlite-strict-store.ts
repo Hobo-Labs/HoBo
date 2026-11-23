@@ -821,8 +821,6 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				);
 			if (resolvingUncertainty) releaseRunnerSlotAfterTeardown(expected, true);
 			else transitionRunnerSlot(expected, next);
-			// Uncertainty retains capacity. A confirmed unclaimed release gives
-			// it back; claimed slots release only via completeExecution.
 			if (
 				next === "released" &&
 				["reserved", "provisioning", "registered", "uncertain"].includes(

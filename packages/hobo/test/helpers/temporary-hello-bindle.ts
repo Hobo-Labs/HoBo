@@ -9,7 +9,6 @@ import {
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Keep a loadable example copy inside this package, outside workspace globs. */
 export async function temporaryHelloBindle(sourceDir: string): Promise<string> {
 	const projectDir = await mkdtemp(
 		join(

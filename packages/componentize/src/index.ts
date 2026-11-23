@@ -29,4 +29,5 @@ export {
 } from "./real-componentize.js";
 export { sourceDateEpochToUnixSeconds } from "./source-date-epoch.js";
 
+// public-contract: package identity used by generated manifests and tooling.
 export const HOBO_COMPONENTIZE_PACKAGE = "@hobo/componentize";

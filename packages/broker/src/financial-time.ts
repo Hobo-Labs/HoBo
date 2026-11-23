@@ -2,7 +2,6 @@ import { isJsonString } from "./json.js";
 
 type FinancialInstant = Readonly<{ secondMillis: number; fraction: string }>;
 
-// Require an explicit offset; ambiguous local dates depend on the host timezone.
 const TIMESTAMP =
 	/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
 
@@ -37,7 +36,6 @@ export function compareFinancialTime(left: string, right: string): number {
 	return a.fraction < b.fraction ? -1 : a.fraction > b.fraction ? 1 : 0;
 }
 
-/** Add a whole number of milliseconds without losing finer timestamp precision. */
 export function addFinancialMilliseconds(
 	value: string,
 	milliseconds: number,
@@ -59,7 +57,6 @@ export function addFinancialMilliseconds(
 	return result;
 }
 
-/** Round an exact elapsed interval up to whole minutes. */
 export function ceilFinancialMinutes(start: string, finish: string): number {
 	if (
 		!validFinancialTime(start) ||

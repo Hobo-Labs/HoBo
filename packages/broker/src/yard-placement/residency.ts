@@ -2,7 +2,6 @@ import { parseDataClassification, parseJurisdictionId } from "@hobo/core";
 import { isJsonString, type JsonValue } from "../json.js";
 import type { YardLayout } from "./types.js";
 
-/** Parse the tag before an attestation or generation can rely on it. */
 export function parseYardResidencyTag(entry: JsonValue | undefined) {
 	if (!isJsonString(entry))
 		throw new TypeError("residency tag must be a string");
@@ -13,7 +12,6 @@ export function parseYardResidencyTag(entry: JsonValue | undefined) {
 	);
 }
 
-/** Direct generation callers must supply a valid residency list as well. */
 export function hasValidYardResidency(layout: YardLayout): boolean {
 	if (!layout || !Array.isArray(layout.residency)) return false;
 	try {

@@ -16,9 +16,7 @@ try {
 			throw new Error("fold failed");
 		},
 	});
-} catch {
-	// This process deliberately makes the random intrinsic impossible to restore.
-}
+} catch {}
 if (Date.now !== originalClock) {
 	process.stderr.write(
 		"clock was not restored after random restoration failed\n",

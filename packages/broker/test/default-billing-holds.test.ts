@@ -33,7 +33,7 @@ describe("default billing holds", () => {
 		expect(denied.ok).toBe(false);
 		expect(denied.noReservationCreated).toBe(true);
 		expect(authorize("a", 7).reservationCreated).toBe(false);
-		// SAFETY: Deliberately exercise the runtime boundary with an invalid caller.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Deliberately exercise the runtime boundary with an invalid caller.
 		expect(() => plane.release?.("a", false as true)).toThrow();
 		expect(authorize("b", 7).ok).toBe(false);
 		plane.release?.("a", true);

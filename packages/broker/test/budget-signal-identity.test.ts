@@ -23,7 +23,6 @@ describe("budget signal replay identity", () => {
 		const first = expected[0];
 		if (!first) throw new Error("fixture signal missing");
 		const foreign = { ...first, data: { ...first.data, tenantId: "tenant-b" } };
-		// Its copied key could already occupy the journal's idempotency slot.
 		expect(() => foldBudgetSignals([...facts, foreign], policy)).toThrow(
 			/signal.*conflict/iu,
 		);

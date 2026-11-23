@@ -1,9 +1,7 @@
-// The largest timestamp accepted by the ECMAScript Date TimeClip operation.
 const MAX_EPOCH_SECONDS = 8_640_000_000_000;
 const ISO_EPOCH =
 	/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2}))?$/u;
 
-/** Accept nonnegative Unix seconds or an unambiguous ISO date/time. */
 export function parseSourceDateEpochMs(sourceDateEpoch: string): number {
 	const raw = sourceDateEpoch.trim();
 	if (!raw) return Number.NaN;
@@ -15,8 +13,6 @@ export function parseSourceDateEpochMs(sourceDateEpoch: string): number {
 		return seconds * 1000;
 	}
 
-	// Date.parse also accepts local times, non-ISO strings and some invalid
-	// calendar dates. Those inputs can vary by host or silently roll forward.
 	const match = ISO_EPOCH.exec(raw);
 	if (!match) return Number.NaN;
 	const year = Number(match[1]);

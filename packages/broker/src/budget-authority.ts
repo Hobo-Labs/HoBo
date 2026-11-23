@@ -61,7 +61,6 @@ export type {
 	IacUnpricedPolicyProof,
 	IacUnpricedScopeProof,
 };
-/** SHA-256 of the protobuf JSON representation used by durable reservations. */
 export function hostingQuoteDigest(quote: HostingQuote): string {
 	return createHash("sha256")
 		.update(toJsonString(HostingQuoteSchema, quote))

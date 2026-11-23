@@ -7,22 +7,22 @@ from z3 import And, Bool, Implies, Int, Not, Or, Solver, sat, unsat
 phase, after, count, next_count = (Int(n) for n in ('phase','after','count','next_count'))
 authentic, fresh, context = (Bool(n) for n in ('authentic','fresh','context'))
 mutation=os.environ.get('BROKER_DELIVERY_PROOF_MUTATION','')
-# 0 ready, 1 validating, 2 submitting, 3 completed, 4 uncertain.
+READY, VALIDATING, SUBMITTING, COMPLETED, UNCERTAIN = range(5)
 def inv(p,n):
-    return And(p >= 0, p <= 4, n >= 0, n <= 1, Implies(n == 1, Or(p == 2,p == 3,p == 4)))
+    return And(p >= READY, p <= UNCERTAIN, n >= 0, n <= 1, Implies(n == 1, Or(p == SUBMITTING,p == COMPLETED,p == UNCERTAIN)))
 transition=Or(
-    And(phase == 0, after == 1, next_count == count),
-    And(phase == 1, after == 0, next_count == count),
-    And(phase == 1, after == 2, next_count == count + 1),
-    And(phase == 2, Or(after == 3, after == 4), next_count == count),
+    And(phase == READY, after == VALIDATING, next_count == count),
+    And(phase == VALIDATING, after == READY, next_count == count),
+    And(phase == VALIDATING, after == SUBMITTING, next_count == count + 1),
+    And(phase == SUBMITTING, Or(after == COMPLETED, after == UNCERTAIN), next_count == count),
     And(phase == after, next_count == count),
-    And(mutation == 'retry', Or(phase == 3, phase == 4), after == 0, next_count == count),
+    And(mutation == 'retry', Or(phase == COMPLETED, phase == UNCERTAIN), after == READY, next_count == count),
 )
 guard=And(authentic if mutation != 'origin' else True,
           fresh if mutation != 'fresh' else True,
           context if mutation != 'context' else True)
 obligations=[
-    ('initial state', And(phase == 0,count == 0), inv(phase,count)),
+    ('initial state', And(phase == READY,count == 0), inv(phase,count)),
     ('count and claim preserved', And(inv(phase,count),transition), inv(after,next_count)),
     ('dispatch origin', guard, authentic),
     ('dispatch freshness', guard, fresh),

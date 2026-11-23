@@ -62,10 +62,8 @@ export interface StatusPageRow {
 	readonly scopeKey: string;
 	readonly components: Readonly<Record<string, ComponentRow>>;
 	readonly incidents: Readonly<Record<string, IncidentRecord>>;
-	/** Incidents first seen in an update or resolution and still awaiting an open. */
 	readonly pendingIncidentOpens?: Readonly<Record<string, true>>;
 	readonly maintenances: Readonly<Record<string, MaintenanceRecord>>;
-	/** Updates received before their maintenance schedule, consumed on schedule. */
 	readonly pendingMaintenanceStates?: Readonly<
 		Record<string, MaintenanceState>
 	>;

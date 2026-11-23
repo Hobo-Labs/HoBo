@@ -6,7 +6,6 @@ interface Varint {
 	next: number;
 }
 
-/** Check fields whose truncation would change the meaning of replay evidence. */
 export function checkReplayWire(bytes: Uint8Array, kind: MessageKind): void {
 	let offset = 0;
 	while (offset < bytes.length) {
@@ -45,7 +44,6 @@ export function checkReplayWire(bytes: Uint8Array, kind: MessageKind): void {
 				checkReplayWire(bytes.subarray(offset, end), "entry");
 			offset = end;
 		} else {
-			// Deprecated groups are refused rather than interpreted recursively.
 			throw new ReplayParseError("unsupported protobuf wire type");
 		}
 	}

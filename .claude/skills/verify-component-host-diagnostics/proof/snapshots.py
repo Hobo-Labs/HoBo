@@ -14,7 +14,6 @@ owner, returned, replacement = Int('owner'), Int('returned'), Int('replacement')
 changed = Select(Store(heap, returned, replacement), owner) != Select(heap, owner)
 check('writing a separate cell cannot change the owner cell', [owner != returned, changed], unsat)
 check('writing an aliased cell can change the owner cell', [owner == returned, changed], sat)
-# Distinct containers alone do not establish distinct records inside them.
 owner_array, returned_array = Int('owner_array'), Int('returned_array')
 check('distinct arrays can still contain an aliased mutable record',
       [owner_array != returned_array, owner == returned, changed], sat)

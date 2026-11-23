@@ -45,8 +45,6 @@ it("keeps new dispatch, replay, v2 ordering and credit consumption stable across
 	expect(swedish.rejectedOrder).toEqual(english.rejectedOrder);
 	expect(english.consumed).toEqual(["z"]);
 	expect(swedish.consumed).toEqual(english.consumed);
-	// Unversioned histories preserve the old local collation; they need their
-	// original locale for the same result.
 	expect(english.legacySelected).toBe("ä");
 	expect(swedish.legacySelected).toBe("z");
 });

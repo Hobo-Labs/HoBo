@@ -7,7 +7,6 @@ import {
 } from "../json.js";
 import { ReplayParseError } from "./parse.js";
 
-/** Snapshot ordinary JSON data without invoking accessors or proxy traps. */
 export function captureProtoJson(raw: JsonValue): JsonValue {
 	return copyJson(raw, new Set(), 0);
 }

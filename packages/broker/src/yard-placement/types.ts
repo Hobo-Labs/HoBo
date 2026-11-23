@@ -325,7 +325,6 @@ export interface ExecutionUnit {
 	readonly residualDefinitions: readonly string[];
 }
 
-/** Trusted host policy and zero-liability assertion for this exact local work. */
 export interface LocalHostingProof {
 	readonly schemaVersion: "hobo.local-hosting-proof/v1";
 	readonly bindingDigest: ContentHash;

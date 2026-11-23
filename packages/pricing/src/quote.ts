@@ -44,6 +44,7 @@ import { validateScenarioTimes } from "./time-order.js";
 import type { PricingRejectionCode, QuoteResult } from "./types.js";
 
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
+// public-contract: rating algorithm id stamped on every quote and checked by broker pricing authorities.
 export const RATING_ALGORITHM_VERSION = "pricing-rating/v1";
 
 export function quoteHashOf(quote: QuoteVector): string {
