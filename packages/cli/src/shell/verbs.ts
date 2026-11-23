@@ -475,6 +475,9 @@ Usage:
   hobo ci secret-store provision  Provision it and hand it to the owner by claim (hobo claim open)
   hobo ci secret-store connect    Record an Infisical the owner connected by hand (OIDC Auth)
   hobo ci secret-store verify     Sign in as each identity it can here; pass/fail by name
+  hobo ci fleet status            List the CI fleet's Hostinger VPS (id, hostname, state, plan)
+  hobo ci fleet restart|start <vm> Restart or start an owned VPS by id or hostname; never buys one
+                                   (token: owner://HOSTINGER_API_TOKEN via choose_secret_store)
 
 Role: ${verb.role}
 ${statusLine}

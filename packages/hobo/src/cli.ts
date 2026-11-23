@@ -243,7 +243,12 @@ export function createComposedHoboCli(
 		candidates: installableProvidersFor,
 		interactive: false,
 	});
-	const ci = createCiCommand({ runtime });
+	const ci = createCiCommand({
+		runtime,
+		...(options.ownerSession !== undefined
+			? { fleetCredentials: options.ownerSession.credentials }
+			: undefined),
+	});
 	const deploy = createDeployCommand({
 		hosting: options.hosting?.supervisor,
 		...(options.ownerSession !== undefined
