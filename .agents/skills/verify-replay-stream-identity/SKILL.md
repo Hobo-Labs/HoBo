@@ -9,11 +9,11 @@ description: Verify primitive replay identifiers and workflow journal stream bin
 
 **Why:** Boxed strings can disguise duplicate stream names, and a reader returning another run's events can make work or a stored outcome appear to belong to the wrong run.
 
-**Review baseline:** `341aec477b2a62d49678fa1df7a89de00e17a87c`.
+**Review baseline:** `e9c20aea41e67c779a47d169e25de38ce28552fa`.
 
 ## Covered code and checks
 
-- `packages/runtime/src/workflow-boundary.ts` classifies primitive strings. `replay/parse.ts` rejects nonprimitive evidence strings; `replay/equivalence.ts` validates report and stream identities, and `replay/divergence.ts` validates divergence run IDs.
+- `packages/runtime/src/workflow-value.ts` classifies primitive strings. `replay/parse.ts` rejects nonprimitive evidence strings; `replay/equivalence.ts` validates report and stream identities, and `replay/divergence.ts` validates divergence run IDs.
 - `packages/runtime/src/replay/journal-stream.ts` captures journal events and checks their stream IDs. `workflow.ts` and `replay/replayer.ts` use that capture before resume, terminal reuse, replay or journal reads.
 - `packages/runtime/test/replay/stream-identity.test.ts` checks boxed and impostor strings, empty IDs, foreign start and terminal records, direct report construction and journal changes during replay and resume. Seed 614618 samples 100 special and Unicode stream names.
 
@@ -61,7 +61,7 @@ stateDiagram-v2
 
 A boxed stream name and its primitive equivalent previously evaded duplicate detection. A foreign start or terminal event could be accepted for another run. Without a detached journal capture, a caller can change a replay read set or a cached step result after it is read. Real-code tests reproduce these cases. Four weakened TLC configurations and four weakened Z3 assumptions produce counterexamples. Z3 proves abstract classification and captured-stream implications, not TypeScript refinement.
 
-The models assume faithful primitive classification, cloning and event stream IDs, and bound each case to one modeled event or identity. `structuredClone` may invoke accessors in the supplied journal; the reader and JavaScript intrinsics remain trusted. These checks do not authenticate a journal, establish its completeness or order, prove callback purity, eliminate hash collisions, or guarantee cross-process fencing and liveness. Empty or nonprimitive report identities that older code accepted are now refused.
+The models assume faithful primitive classification, cloning and event stream IDs, and bound each case to one modeled event or identity. `structuredClone` may invoke accessors in the supplied journal; the reader and JavaScript intrinsics remain trusted. These checks do not authenticate a journal, establish its completeness or order, prove callback purity, eliminate hash collisions, or guarantee cross-process fencing and liveness. Empty or nonprimitive report identities are refused.
 
 ## Keep in sync
 

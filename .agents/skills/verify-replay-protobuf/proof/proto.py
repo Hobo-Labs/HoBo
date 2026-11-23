@@ -27,12 +27,6 @@ accepted = Not(And(wire_checked, wire_overflow))
 check('checked overflow cannot be accepted', [wire_checked, wire_overflow], Not(accepted), unsat)
 check('unchecked wire overflow can appear acceptable', [Not(wire_checked), wire_overflow], Not(accepted), sat)
 
-present = Bool('marker_present')
-version = Int('version')
-valid_marker = Or(And(Not(present), version == 1), And(present, Or(version == 1, version == 2)))
-check('legacy default and known marker retain their meaning', [valid_marker], Or(version == 1, version == 2), unsat)
-check('unvalidated marked version can be unsupported', [present], Or(version == 1, version == 2), sat)
-
 input_empty = Bool('input_empty')
 copy_empty = Bool('copy_empty')
 output_empty = And(input_empty, copy_empty)

@@ -57,7 +57,9 @@ export function billed(
 					status: "active",
 					term: TERM,
 					billingPeriod: { interval: "monthly", anchor: AT, timeZone: "UTC" },
-					quantities: {},
+					quantities: Object.fromEntries(
+						Object.keys(quantities).map((dimension) => [dimension, "0"]),
+					),
 					cancellation: {
 						allowed: false,
 						refund: "none",

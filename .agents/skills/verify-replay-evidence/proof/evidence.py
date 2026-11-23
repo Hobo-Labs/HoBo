@@ -6,7 +6,7 @@ replacement = Int('replacement')
 detached = Bool('detached')
 vector_changed = Bool('vector_changed')
 entry_changed = Bool('entry_changed')
-marker_changed = Bool('marker_changed')
+seed_changed = Bool('seed_changed')
 input_after = replacement
 reported = If(vector_changed, replacement,
               If(entry_changed, replacement,
@@ -25,5 +25,5 @@ check('detached immutable position remains the validated value', base + [detache
 check('aliased input can change the reported position', base + [Not(vector_changed), Not(entry_changed)], reported == original, sat)
 check('writable vector can change the reported position', base + [detached, Not(entry_changed)], reported == original, sat)
 check('writable entry can change the reported position', base + [detached, Not(vector_changed)], reported == original, sat)
-check('protected marker stays unchanged', [Not(marker_changed)], Not(marker_changed), unsat)
-check('unprotected marker can be changed', [], Not(marker_changed), sat)
+check('protected seed stays unchanged', [Not(seed_changed)], Not(seed_changed), unsat)
+check('unprotected seed can be changed', [], Not(seed_changed), sat)

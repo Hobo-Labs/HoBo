@@ -13,7 +13,7 @@ cases = [
     ('target-capture', 'const capturedTarget = Object.fromEntries(\n\t\tObject.getOwnPropertyNames(requestedTarget).map((streamId) => {\n\t\t\tif (!isNonEmptyPrimitiveString(streamId))\n\t\t\t\tthrow new TypeError("target stream must be a non-empty string");\n\t\t\tconst sequence = must(\n\t\t\t\trequestedTarget[streamId],\n\t\t\t\t`target sequence for ${streamId}`,\n\t\t\t);\n\t\t\tif (!Number.isSafeInteger(sequence) || sequence < 0)\n\t\t\t\tthrow new RangeError(\n\t\t\t\t\t"target sequence must be a non-negative safe integer",\n\t\t\t\t);\n\t\t\treturn [streamId, sequence];\n\t\t}),\n\t);', 'const capturedTarget = requestedTarget;'),
     ('target-hidden', 'Object.getOwnPropertyNames(requestedTarget)', 'Object.keys(requestedTarget)'),
     ('target-selection', 'isAtOrBefore(event, capturedTarget)', 'isAtOrBefore(event, requestedTarget)'),
-    ('target-report', 'seqVector: toSeqVectorEntries(capturedTarget, version)', 'seqVector: toSeqVectorEntries(requestedTarget, version)'),
+    ('target-report', 'seqVector: toSeqVectorEntries(capturedTarget)', 'seqVector: toSeqVectorEntries(requestedTarget)'),
 ]
 
 for name, before, after in cases:

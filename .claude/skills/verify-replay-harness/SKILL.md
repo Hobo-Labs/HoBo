@@ -9,13 +9,13 @@ description: Verify replay cleanup, sequence boundaries, input snapshots and num
 
 **Why:** A failed verification must not change later code’s clock or randomness; an incomplete, changing or imprecise input must not silently omit events or misstate the boundary of a replay check.
 
-**Review baseline:** `341aec477b2a62d49678fa1df7a89de00e17a87c`.
+**Review baseline:** `e9c20aea41e67c779a47d169e25de38ce28552fa`.
 
 ## Covered code and checks
 
 - `packages/runtime/src/replay/equivalence.ts` installs and restores temporary globals and computes sequence vectors and target boundaries used by `assertReplayEqualsLive`; `replayer.ts` checks journal positions before callbacks and `parse.ts` validates report positions.
 - `packages/runtime/test/replay/equivalence-cleanup.test.ts` checks nonwritable setup, accessor refusal, callback exceptions and changed descriptors. Seed 614609 generates 80 setup and callback-failure combinations. A child process deliberately makes the random descriptor unrestorable and checks the independent clock cleanup without permanently modifying the test process.
-- `packages/runtime/test/replay/sequence-safety.test.ts` checks unsafe events, target limits, report positions, and legacy replay before callbacks; seeds 614612 and 614613 each generate 100 safe or unsafe positions.
+- `packages/runtime/test/replay/sequence-safety.test.ts` checks unsafe events, target limits, report positions, and workflow replay before callbacks; seeds 614612 and 614613 each generate 100 safe or unsafe positions.
 - `packages/runtime/test/replay/target-snapshot.test.ts` checks hidden own targets, getters, and caller edits to targets and events; seed 614611 generates 100 target edits.
 - `packages/runtime/test/replay/sequence-vector.test.ts` checks special property names, inherited target entries including the captured target’s prototype, and 150 generated event histories (seed 614610).
 - `packages/runtime/test/replay/equivalence.test.ts` exercises the existing deterministic-fold and divergence checks.
@@ -104,7 +104,7 @@ stateDiagram-v2
   s3 --> s4: report captured read set
 ```
 
-`ReplaySequenceSafety` explores 174 states and 273 steps for fold, legacy replay and report parsing with zero, maximum, negative, fractional and unsafe position classes. It requires safe event and target values before callbacks and safe parsed positions. Its four-state projection hides 174 same-state steps. Removing any of three checks yields a TLC counterexample; Z3 proves the stated integer-bound implication and finds counterexamples when either bound is removed. The model assumes JavaScript's safe-integer classification is faithful; it does not establish TypeScript refinement, stream authenticity, journal ordering or values beyond the modeled classes.
+`ReplaySequenceSafety` explores 174 states and 273 steps for fold, workflow replay and report parsing with zero, maximum, negative, fractional and unsafe position classes. It requires safe event and target values before callbacks and safe parsed positions. Its four-state projection hides 174 same-state steps. Removing any of three checks yields a TLC counterexample; Z3 proves the stated integer-bound implication and finds counterexamples when either bound is removed. The model assumes JavaScript's safe-integer classification is faithful; it does not establish TypeScript refinement, stream authenticity, journal ordering or values beyond the modeled classes.
 
 ```mermaid
 stateDiagram-v2

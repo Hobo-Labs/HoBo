@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 const jar = process.env.TLA2TOOLS;
 if (!jar) throw new Error('TLA2TOOLS must point to the checked TLC jar');
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'hobo-replay-proto-model-'));
-const cases = [[['CheckNumeric', 'CheckDecoded'], 'ExactPosition'], [['CheckDecoded'], 'ExactPosition'], [['CheckWire'], 'ExactPosition'], [['CheckMarker'], 'CorrectVersion'], [['PreserveEmpty'], 'EmptyPreserved']] as const;
+const cases = [[['CheckNumeric', 'CheckDecoded'], 'ExactPosition'], [['CheckDecoded'], 'ExactPosition'], [['CheckWire'], 'ExactPosition'], [['PreserveEmpty'], 'EmptyPreserved']] as const;
 try {
   copyFileSync(fileURLToPath(new URL('../models/ReplayProtoAdapter.tla', import.meta.url)), path.join(scratch, 'ReplayProtoAdapter.tla'));
   for (const [broken, invariant] of cases) {
-    const constants = ['CheckNumeric', 'CheckDecoded', 'CheckWire', 'CheckMarker', 'PreserveEmpty'].map((name) => `${name} = ${broken.some((entry) => entry === name) ? 'FALSE' : 'TRUE'}`).join('\n          ');
+    const constants = ['CheckNumeric', 'CheckDecoded', 'CheckWire', 'PreserveEmpty'].map((name) => `${name} = ${broken.some((entry) => entry === name) ? 'FALSE' : 'TRUE'}`).join('\n          ');
     writeFileSync(path.join(scratch, 'Mutant.cfg'), `CONSTANTS ${constants}\nSPECIFICATION Spec\nINVARIANT ${invariant}\n`);
     const result = spawnSync('java', ['-XX:+UseParallelGC', '-cp', jar, 'tlc2.TLC', '-workers', '1', '-config', 'Mutant.cfg', 'ReplayProtoAdapter.tla'], { cwd: scratch, encoding: 'utf8' });
     if (result.error) throw result.error;

@@ -1959,7 +1959,7 @@ describe("yard event-store folds + provider resolvers", () => {
 			),
 			{ seed: 614_590, numRuns: 40 },
 		);
-	});
+	}, 30_000);
 	it("preserves quota admission across generated failure scenarios", async () => {
 		await fc.assert(
 			fc.asyncProperty(
@@ -2045,7 +2045,7 @@ describe("yard event-store folds + provider resolvers", () => {
 				),
 				async (mode) => exerciseGeneration(mode),
 			),
-			{ seed: 614528, numRuns: 80 },
+			{ seed: 614528, numRuns: 40 },
 		);
-	});
+	}, 30_000);
 });

@@ -1,5 +1,5 @@
 ---------------------- MODULE WorkflowReplayBinding ----------------------
-\* Version-three replay with captured input and callbacks. Journal content,
+\* Replay with captured input and callbacks. Journal content,
 \* equality, and the recorded identity are trusted abstract values.
 CONSTANTS CheckInput, CheckName, CheckSeed, SnapshotInput, SnapshotCode
 VARIABLES inputOK, nameOK, seedOK, caller, captured, codeChanged,

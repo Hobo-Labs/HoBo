@@ -11,10 +11,10 @@ test = 'test/authoring/workflow-result-snapshot.test.ts'
 cases = [
     ('step result', 'src/workflow.ts', 'const result = captureWorkflowResult(value, name);', 'const result = value;'),
     ('workflow result', 'src/workflow.ts', 'const result = captureWorkflowResult(value);', 'const result = value;'),
-    ('result validation', 'src/workflow-value.ts', 'if (!isReproducibleJsonValue(value, new Set())) throw new TypeError();', 'if (false) throw new TypeError();'),
+    ('result validation', 'src/workflow-value.ts', 'if (!isReproducibleJsonValue(value, new Set()))', 'if (false)'),
     ('result capture', 'src/workflow-value.ts', 'const captured = cloneAsJson(value);', 'const captured = value;'),
-    ('completed step replay', 'src/workflow.ts', 'if (completed && isRecord(completed.data))', 'if (false && completed && isRecord(completed.data))'),
-    ('terminal replay', 'src/workflow.ts', 'if (terminal) {', 'if (false && terminal) {'),
+    ('completed step replay', 'src/workflow.ts', 'if (treeStep.terminal?.kind === "completed") {', 'if (false && treeStep.terminal?.kind === "completed") {'),
+    ('terminal replay', 'src/workflow.ts', 'terminal &&\n\t\t\t(terminal.type === "run.Completed" || terminal.type === "run.Failed")', 'false &&\n\t\t\t(terminal.type === "run.Completed" || terminal.type === "run.Failed")'),
 ]
 
 def run(root):

@@ -184,6 +184,11 @@ const DEFAULT_TOKEN_BROKER: TokenBroker = (request: WitTokenRequest) =>
 		ref: `stub://${request.provider}/${request.scope}`,
 	}) satisfies WitTokenHandle;
 
+type TreeCommandSelection<C extends ReplayCommand> = {
+	command: C;
+	recorded: boolean;
+};
+
 type WorkflowExecutionLease = {
 	pending: number;
 	finished: boolean;
@@ -427,7 +432,7 @@ export function createWorkflowEngine(
 		function nextTreeStep(
 			scope: CommandScope,
 			name: string,
-		): { command: ReplayStepCommand; recorded: boolean } {
+		): TreeCommandSelection<ReplayStepCommand> {
 			const previous = scope.commands[scope.cursor];
 			if (previous) {
 				if (previous.kind !== "step" || previous.name !== name) {
@@ -453,7 +458,7 @@ export function createWorkflowEngine(
 			scope: CommandScope,
 			delayMs: number,
 			label: string | undefined,
-		): { command: ReplaySleepCommand; recorded: boolean } {
+		): TreeCommandSelection<ReplaySleepCommand> {
 			const previous = scope.commands[scope.cursor];
 			if (previous) {
 				if (

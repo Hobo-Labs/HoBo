@@ -13,11 +13,9 @@ cases = [
     ('first-start', 'src/replay/journal-history.ts', 'index === 0 && event.type !== "run.Started"', 'false'),
     ('duplicate-start', 'src/replay/journal-history.ts', 'index > 0 && event.type === "run.Started"', 'false'),
     ('terminal-order', 'src/replay/journal-history.ts', 'if (terminal)\n', 'if (false)\n'),
-    ('known-current-type', 'src/replay/journal-history.ts', 'event.type.startsWith("run.") && !runtimeTypes.has(event.type)', 'false'),
-    ('resume-history', 'src/workflow.ts', 'validateJournalHistory(journal);', ''),
-    ('resume-current-type', 'src/workflow.ts', 'if (version === 3) validateCurrentJournalTypes(journal);', ''),
-    ('replay-history', 'src/replay/replayer.ts', 'validateJournalHistory(events);', ''),
-    ('replay-current-type', 'src/replay/replayer.ts', 'if (version === 3) validateCurrentJournalTypes(events);', ''),
+    ('known-runtime-type', 'src/replay/journal-history.ts', 'event.type.startsWith("run.") && !RUNTIME_EVENT_TYPES.has(event.type)', 'false'),
+    ('resume-history', 'src/workflow.ts', 'validateJournalHistory(journal, runId);', ''),
+    ('replay-history', 'src/replay/replayer.ts', 'validateJournalHistory(events, id);', ''),
 ]
 
 for name, filename, before, after in cases:

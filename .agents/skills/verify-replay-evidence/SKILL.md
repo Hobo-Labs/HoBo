@@ -5,11 +5,11 @@ description: Verify that validated replay reports and divergence records remain 
 
 # Replay evidence integrity
 
-**Property:** Parsed and newly produced replay reports retain their validated positions and version; divergence records retain their captured event orders despite later caller edits.
+**Property:** Parsed and newly produced replay reports retain their validated positions and seed; divergence records retain their captured event orders despite later caller edits.
 
 **Why:** Mutable evidence can describe different replay boundaries or event orders after it has already been checked.
 
-**Review baseline:** `341aec477b2a62d49678fa1df7a89de00e17a87c`.
+**Review baseline:** `e9c20aea41e67c779a47d169e25de38ce28552fa`.
 
 ## Covered code and checks
 
@@ -35,7 +35,7 @@ python3 .agents/skills/verify-replay-evidence/mutations/full.py
 
 ## Model and evidence
 
-`ReplayEvidence` explores three states and four non-stuttering steps for one valid parsed report and a caller edit. It requires the checked position, vector and marker to remain intact. Its two-state projection has one arrow and hides three same-label steps, including input edits. Read each TLC result with `/statechart`; the maintained view supplies the projection.
+`ReplayEvidence` explores three states and four non-stuttering steps for one valid parsed report and a caller edit. It requires the checked position, vector and seed to remain intact. Its two-state projection has one arrow and hides three same-label steps, including input edits. Read each TLC result with `/statechart`; the maintained view supplies the projection.
 
 ```mermaid
 stateDiagram-v2
@@ -45,9 +45,9 @@ stateDiagram-v2
   s0 --> s1: parse and protect the evidence
 ```
 
-Without a frozen vector, a caller replaces an accepted sequence entry after parsing; this failure is reproduced against the real parser and both protobuf adapters. Without a detached entry, an edit to the input changes the recorded position; without frozen entries or a frozen report, callers can edit a position or its marker. Four weakened TLC configurations and four weakened Z3 assumptions produce counterexamples. The model abstracts one parsed report; real-code tests additionally cover the harness, workflow and divergence producers.
+Without a frozen vector, a caller replaces an accepted sequence entry after parsing; this failure is reproduced against the real parser and both protobuf adapters. Without a detached entry, an edit to the input changes the recorded position; without frozen entries or a frozen report, callers can edit a position or the report's seed. Four weakened TLC configurations and four weakened Z3 assumptions produce counterexamples. The model abstracts one parsed report; real-code tests additionally cover the harness, workflow and divergence producers.
 
-The model assumes faithful cloning and JavaScript property freezing, with one modeled position and marker. The Z3 obligations prove abstract equality implications; neither tool proves TypeScript refinement, authentication, cryptographic integrity, arbitrary external mutation of host intrinsics or liveness. The error object's diagnostic `liveOrder` and `replayOrder` fields are separate mutable copies; its `divergence` evidence has its own frozen order arrays. Callers that previously mutated returned reports or records must create a new object instead.
+The model assumes faithful cloning and JavaScript property freezing, with one modeled position and seed. The Z3 obligations prove abstract equality implications; neither tool proves TypeScript refinement, authentication, cryptographic integrity, arbitrary external mutation of host intrinsics or liveness. The error object's diagnostic `liveOrder` and `replayOrder` fields are separate mutable copies; its `divergence` evidence has its own frozen order arrays. Callers that previously mutated returned reports or records must create a new object instead.
 
 ## Keep in sync
 

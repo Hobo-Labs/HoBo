@@ -31,6 +31,15 @@ it("requires a start at the beginning of the validated prefix", () => {
 	).toThrow(/journal.*begin/i);
 });
 
+it("refuses any record after the terminal outcome in the validated prefix", () => {
+	expect(() =>
+		validateJournalHistory([start(), terminal(2), terminal(3)]),
+	).toThrow(/duplicate terminal/i);
+	expect(() =>
+		validateJournalHistory([start(), terminal(2), event(3, "app.Recorded")]),
+	).toThrow(/after terminal/i);
+});
+
 it("rejects broken journal structure before a terminal result or replay callback", async () => {
 	for (const events of [
 		[start(), terminal(3)],

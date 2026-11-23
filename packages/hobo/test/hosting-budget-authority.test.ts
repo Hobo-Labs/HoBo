@@ -301,6 +301,7 @@ describe("durable core hosting financial authority composition", () => {
 		const initial = snapshot();
 		initial.entitlements = [
 			create(BudgetEntitlementSchema, {
+				kind: "allowance",
 				bucketId: "credit",
 				unit: "request",
 				periodId: "period",
@@ -349,6 +350,7 @@ describe("durable core hosting financial authority composition", () => {
 		const initial = snapshot();
 		initial.entitlements = [
 			create(BudgetEntitlementSchema, {
+				kind: "allowance",
 				bucketId: "credit",
 				unit: "request",
 				periodId: "period",

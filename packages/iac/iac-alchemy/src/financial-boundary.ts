@@ -247,6 +247,9 @@ const pricedPolicy: Check = (value) =>
 			effect: (item) => item === "allow" || item === "allow-degraded",
 			evidenceRef: named,
 			obligationsSatisfied: (item) => item === true,
+			quoteDigest: (item) =>
+				item === "" ||
+				(typeof item === "string" && /^[a-f0-9]{64}$/u.test(item)),
 		},
 		[
 			"requestDigest",
@@ -284,6 +287,7 @@ const quote: Check = (value) =>
 			providerAccounts: accounts,
 			entitlementClaims: entitlements,
 			financialPlanHash: named,
+			workDigest: (item) => item === "",
 		},
 		[
 			"quoteId",

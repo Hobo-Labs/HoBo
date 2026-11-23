@@ -11,7 +11,7 @@ const cases = [['UseMap', 'RecordedMaximum'], ['OwnOnly', 'SelectedOwnEntries']]
 try {
   copyFileSync(fileURLToPath(new URL('../models/ReplaySequenceVector.tla', import.meta.url)), path.join(scratch, 'ReplaySequenceVector.tla'));
   for (const [broken, invariant] of cases) {
-    const constants = `Streams = {"ordinary", "__proto__"}\n          LegacySpecial = {"__proto__"}\n          MaxEvents = 2\n          MaxSeq = 2\n          UseMap = ${broken === 'UseMap' ? 'FALSE' : 'TRUE'}\n          OwnOnly = ${broken === 'OwnOnly' ? 'FALSE' : 'TRUE'}`;
+    const constants = `Streams = {"ordinary", "__proto__"}\n          SpecialNames = {"__proto__"}\n          MaxEvents = 2\n          MaxSeq = 2\n          UseMap = ${broken === 'UseMap' ? 'FALSE' : 'TRUE'}\n          OwnOnly = ${broken === 'OwnOnly' ? 'FALSE' : 'TRUE'}`;
     writeFileSync(path.join(scratch, 'Mutant.cfg'), `CONSTANTS ${constants}\nSPECIFICATION Spec\nINVARIANT ${invariant}\n`);
     const result = spawnSync('java', ['-XX:+UseParallelGC', '-cp', jar, 'tlc2.TLC', '-workers', '1', '-config', 'Mutant.cfg', 'ReplaySequenceVector.tla'], { cwd: scratch, encoding: 'utf8' });
     if (result.error) throw result.error;

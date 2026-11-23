@@ -11,8 +11,8 @@ cases = [
     ('event-guard', 'src/replay/equivalence.ts', 'if (!Number.isSafeInteger(event.seq) || event.seq < 0)', 'if (false)'),
     ('target-guard', 'src/replay/equivalence.ts', 'if (!Number.isSafeInteger(sequence) || sequence < 0)', 'if (false)'),
     ('parse-guard', 'src/replay/parse.ts', 'if (!Number.isSafeInteger(value))', 'if (false)'),
-    ('explicit-event-validation', 'src/replay/equivalence.ts', 'const defaultTarget = seqVectorForVersion(capturedEvents, version);', 'const defaultTarget = targetSeq === undefined ? seqVectorForVersion(capturedEvents, version) : {};'),
-    ('replay-before-callback', 'src/replay/replayer.ts', 'const recordedVector = seqVectorForVersion(events, digestVersion);', ''),
+    ('explicit-event-validation', 'src/replay/equivalence.ts', 'const defaultTarget = seqVector(capturedEvents);', 'const defaultTarget = targetSeq === undefined ? seqVector(capturedEvents) : {};'),
+    ('replay-before-callback', 'src/replay/replayer.ts', 'const recordedVector = seqVector(events);', ''),
 ]
 
 for name, filename, before, after in cases:
@@ -28,7 +28,7 @@ for name, filename, before, after in cases:
             raise RuntimeError(f'{name}: expected one mutation site, found {original.count(before)}')
         changed = original.replace(before, after, 1)
         if name == 'replay-before-callback':
-            history_guard = 'validateJournalHistory(events);'
+            history_guard = 'validateJournalHistory(events, id);'
             if changed.count(history_guard) != 1:
                 raise RuntimeError('replay-before-callback: expected history validation site')
             # Either early guard independently refuses an unsafe journal. Remove
@@ -38,7 +38,7 @@ for name, filename, before, after in cases:
             marker = 'const report: ReplayReport = Object.freeze({'
             if changed.count(marker) != 1:
                 raise RuntimeError('replay-before-callback: expected report site')
-            changed = changed.replace(marker, 'const recordedVector = seqVectorForVersion(events, digestVersion);\n\t' + marker, 1)
+            changed = changed.replace(marker, 'const recordedVector = seqVector(events);\n\t' + marker, 1)
         target.write_text(changed)
         env = {**os.environ, 'REPLAY_HARNESS_VERIFY_PACKAGE_ROOT': str(scratch)}
         result = subprocess.run(['bash', 'scripts/verify-state-machine.sh', skill], cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=600)

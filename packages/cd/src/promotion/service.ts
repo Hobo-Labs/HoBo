@@ -4,8 +4,9 @@
 // ports allow; the compensation path runs ON_FAILURE hooks and rolls the
 // environment group back (D12). Every step is a recorded fact, so `tick`
 // resumes any promotion from its journal after a crash.
-import { create } from "@bufbuild/protobuf";
+
 import { randomUUID } from "node:crypto";
+import { create } from "@bufbuild/protobuf";
 import {
 	createResolvedDeploymentSet,
 	DEPLOYMENT_PLAN_SCHEMA,
@@ -109,9 +110,9 @@ import {
 	type PromotionView,
 	recordOf,
 	SAGA_FACT,
-	sagaIdOf,
 	STEP,
 	type StepName,
+	sagaIdOf,
 	startedFact,
 	stepFact,
 } from "./state.js";

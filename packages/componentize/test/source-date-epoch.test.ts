@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { componentizeHelloBindle } from "../src/componentize.js";
 import {
@@ -81,6 +84,14 @@ describe("component build epoch", () => {
 		}
 	});
 
+	let sourceRoot = "";
+	beforeAll(() => {
+		sourceRoot = mkdtempSync(join(tmpdir(), "hobo-source-date-epoch-"));
+	});
+	afterAll(() => {
+		rmSync(sourceRoot, { recursive: true, force: true });
+	});
+
 	it("both build paths reject invalid epochs before invoking the build", async () => {
 		let calls = 0;
 		const impl: RealComponentizeImpl = async () => {
@@ -90,10 +101,10 @@ describe("component build epoch", () => {
 		const real = await createRealComponentize({ componentizeImpl: impl });
 		for (const sourceDateEpoch of invalidEpochs) {
 			await expect(
-				componentizeHelloBindle({ sourceRoot: "/missing", sourceDateEpoch }),
+				componentizeHelloBindle({ sourceRoot, sourceDateEpoch }),
 			).rejects.toThrow(/invalid_source_date_epoch/);
 			await expect(
-				real.componentize({ sourceRoot: "/missing", sourceDateEpoch }),
+				real.componentize({ sourceRoot, sourceDateEpoch }),
 			).rejects.toThrow(/invalid_source_date_epoch/);
 		}
 		expect(calls).toBe(0);

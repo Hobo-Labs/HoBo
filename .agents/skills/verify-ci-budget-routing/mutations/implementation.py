@@ -25,8 +25,8 @@ cases = [
     ),
     (
         "unknown observation time",
-        "!Number.isFinite(observed) ||\n\t\tcompleted >= observed",
-        "completed >= observed",
+        "!validFinancialTime(observedAt) ||\n\t\tcompareFinancialTime(completed, observedAt) >= 0",
+        "compareFinancialTime(completed, observedAt) >= 0",
         "counts completed usage when the observation time is unknown",
     ),
     (

@@ -1290,7 +1290,8 @@ jobs:
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo --filter=@hobo/dispatcher
           --filter=@hobo/ci --filter=@hobo/cd --filter=@hobo/identity
-          --filter=@hobo/storage-sqlite --filter=@hobo/runtime --concurrency=1
+          --filter=@hobo/storage-sqlite --filter=@hobo/runtime
+          --filter=@hobo/adapter-hono --concurrency=1
           --output-logs=new-only
       - name: Check state machines
         timeout-minutes: 20

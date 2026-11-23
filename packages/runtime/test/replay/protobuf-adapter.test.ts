@@ -141,6 +141,20 @@ it("refuses overflowing wire integers before decoding", () => {
 	}
 });
 
+it("refuses overflowing integers and groups in divergence wire records", () => {
+	const base = toBinary(
+		ReplayDivergenceSchema,
+		create(ReplayDivergenceSchema, divergence),
+	);
+	const overflowUnknown = Uint8Array.from([160, 6, ...Array(9).fill(128), 2]);
+	const group = Uint8Array.from([163, 6, 164, 6]);
+	for (const suffix of [overflowUnknown, group]) {
+		expect(() =>
+			parseReplayDivergenceBinary(Uint8Array.from([...base, ...suffix])),
+		).toThrow();
+	}
+});
+
 it("preserves forward-compatible ordinary unknown binary fields", () => {
 	const base = toBinary(ReplayReportSchema, create(ReplayReportSchema, report));
 	// Unknown field 100, encoded as a varint, is ignored by protobuf.
