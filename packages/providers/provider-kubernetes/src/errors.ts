@@ -21,6 +21,8 @@ export const KUBERNETES_ERROR_CODES = [
 	"PLACEMENT_REJECTED",
 	"ROLLOUT_FAILED",
 	"CLEANUP_INCOMPLETE",
+	"ROUTE_REFUSED",
+	"KUBECONFIG_UNSUPPORTED",
 ] as const;
 
 export type KubernetesErrorCode = (typeof KUBERNETES_ERROR_CODES)[number];

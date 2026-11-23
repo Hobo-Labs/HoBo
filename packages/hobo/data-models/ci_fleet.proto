@@ -23,3 +23,31 @@ message CiFleetPowerAction {
   string action_id = 4;
   string action_state = 5;
 }
+
+message CiFleetCachePatchOperation {
+  string op = 1;
+  string path = 2;
+  string value_json = 3;
+}
+
+message CiFleetCachePrewarm {
+  string job = 1;
+  string ref = 2;
+  string state = 3;
+}
+
+message CiFleetCacheScaleSet {
+  string name = 1;
+  string namespace = 2;
+  bool caches_mounted = 3;
+  string patch_state = 4;
+  repeated CiFleetCachePatchOperation patch = 5;
+  CiFleetCachePrewarm prewarm = 6;
+}
+
+message CiFleetCaches {
+  string cluster = 1;
+  string namespace = 2;
+  string mode = 3;
+  repeated CiFleetCacheScaleSet scale_sets = 4;
+}
