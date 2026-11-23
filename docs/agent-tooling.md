@@ -9,9 +9,15 @@ tags: [hobo, agent-tooling.md]
 
 Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
-design documents. The shared pre-commit hook and CI run `source:guard` on new
-JavaScript, TypeScript, shell, Python, CSS, and HTML comments and added or
-changed planning or design documents. It reads the staged content for commits
+design documents. The shared pre-commit hook and CI run `source:guard`
+([`scripts/check-source-policy.mts`](../scripts/check-source-policy.mts)) on new
+comments and added or changed planning or design documents in the languages it
+recognizes: JavaScript, TypeScript, shell, Python, CSS, and HTML; YAML, Rust,
+Go, C, C++, Java, Kotlin, Ruby, Lua, and Swift through ast-grep; and the
+contract languages — Prisma, CUE, Protobuf, WIT, SQL, and TOML — lexed by
+[`scripts/source-comment-lexer.mts`](../scripts/source-comment-lexer.mts), whose
+dialect-aware lexer keeps triple-quoted strings and raw-string hash delimiters
+out of the comment set. It reads the staged content for commits
 and the PR diff for CI; it does not inspect other languages or unchanged content.
 For renamed files, it compares against the original path so existing comments
 remain allowed while newly added comments are checked. During a staged merge it
@@ -431,7 +437,7 @@ The **sdlc** skill is mirrored in `.agents/skills/sdlc` and `.claude/skills/sdlc
 
 The **gh-stack** skill is mirrored in `.agents/skills/gh-stack` and `.claude/skills/gh-stack`. Non-interactive CLI rules for `github/gh-stack` (`gh stack init|add|submit|sync|merge|view --json`). Install: `gh extension install github/gh-stack` (also `scripts/setup-agent-tools.sh` common layer). Docs: https://gh.io/stacks
 
-The **optimizexp** skill is mirrored in `.agents/skills/optimizexp` and `.claude/skills/optimizexp`. Its designer council is an additional append-only protocol for design-relevant SDLC work: exactly `steve-jobs`, `jony-ive`, `walt-disney`, `hayao-miyazaki`, `naoto-fukasawa`, and `shigeru-miyamoto`; one equal binary vote each; unanimous current-head approval only. Synthetic investment decays subjective preference debate without removing objective blockers. `consensus-loop.mts` reconstructs every transition from proposal-rooted bus history, emits rework on any nay, and rejects stale effective bases, heads, manifests, exemptions, or snapshots. Policy-aware SDLC runs must persist either the required council inputs or a deterministic `no-visual-design-change` exemption; the legacy `internal-no-public-behavior` code covers internal paths only, not CLI, SDK, documentation, example or feature paths. See `references/design-council.md` in either mirror.
+The **optimizexp** skill is mirrored in `.agents/skills/optimizexp` and `.claude/skills/optimizexp`. Its designer council is an additional append-only protocol for design-relevant SDLC work: exactly `steve-jobs`, `jony-ive`, `walt-disney`, `hayao-miyazaki`, `naoto-fukasawa`, and `shigeru-miyamoto`; one equal binary vote each; unanimous current-head approval only. Synthetic investment decays subjective preference debate without removing objective blockers. `consensus-loop.mts` reconstructs every transition from proposal-rooted bus history, emits rework on any nay, and rejects stale effective bases, heads, manifests, exemptions, or snapshots. Only visual or interactive surfaces, design-related acceptance tags, explicit requests, or a prior council cycle require the council; policy-aware SDLC runs persist either the required council inputs or a justified `no-visual-design-change` exemption. See `references/design-council.md` in either mirror.
 
 Repo-local skills keep Codex-valid `SKILL.md` frontmatter. Bundled `references/` directories are Open Knowledge Format concept bundles with OKF metadata in the reference files. `pnpm run docs:okf` validates the docs OKF bundle and the `repo`, `draft`, and `sdlc` skill reference bundles in both mirrors, accepting LF or CRLF frontmatter line endings so Windows-authored docs use the same gate.
 

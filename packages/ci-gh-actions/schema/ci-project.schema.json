@@ -1344,7 +1344,7 @@
     },
     "__schema99": {
       "default": {
-        "reusePrFabric": false
+        "reusePrFabric": true
       },
       "type": "object",
       "properties": {

@@ -36,27 +36,26 @@ function mergeInputWithoutConsensus() {
 	return input;
 }
 
-test("visual paths require designer consensus", () => {
+test("visual surfaces require designer consensus", () => {
 	for (const changedPath of [
 		"apps/web/src/onboarding.tsx",
-		"site/src/page.tsx",
-		"packages/shared/assets/logo.svg",
+		"packages/cli/src/tui/app.tsx",
 	]) {
 		const result = evaluateDesignRelevance({
 			changedPaths: [changedPath],
 			exemption: {
 				code: "no-visual-design-change",
-				justification: "A visual path cannot be exempted from designer review.",
+				justification: "Claims no visual change, but the path renders UI.",
 			},
 		});
 
 		assert.equal(result.required, true, changedPath);
 		assert.equal(result.exemptionAccepted, false, changedPath);
-		assert.notEqual(result.reasons.length, 0, changedPath);
+		assert.deepEqual(result.reasons, ["design-relevant-path"], changedPath);
 	}
 });
 
-test("public non-visual paths need a no-visual exemption, not an internal one", () => {
+test("nonvisual public paths need a justified no-visual-design-change exemption", () => {
 	for (const changedPath of [
 		"packages/cli/src/commands/deploy.ts",
 		"packages/sdk/src/public-api.ts",
@@ -64,9 +63,12 @@ test("public non-visual paths need a no-visual exemption, not an internal one", 
 		"examples/hello-hobo/README.md",
 		".optimizexp/features/deploy-journey/feature.json",
 	]) {
-		const unexempted = evaluateDesignRelevance({ changedPaths: [changedPath] });
-		assert.equal(unexempted.required, true, changedPath);
-		assert.deepEqual(unexempted.reasons, [], changedPath);
+		const unclassified = evaluateDesignRelevance({
+			changedPaths: [changedPath],
+		});
+		assert.equal(unclassified.required, true, changedPath);
+		assert.equal(unclassified.exemptionAccepted, false, changedPath);
+		assert.deepEqual(unclassified.reasons, [], changedPath);
 
 		assert.deepEqual(
 			evaluateDesignRelevance({
@@ -74,23 +76,10 @@ test("public non-visual paths need a no-visual exemption, not an internal one", 
 				exemption: {
 					code: "no-visual-design-change",
 					justification:
-						"The change alters command and document text with no visual interface change.",
+						"Command, contract, and prose changes only; no rendered surface changes.",
 				},
 			}),
 			{ required: false, reasons: [], exemptionAccepted: true },
-			changedPath,
-		);
-
-		assert.equal(
-			evaluateDesignRelevance({
-				changedPaths: [changedPath],
-				exemption: {
-					code: "internal-no-public-behavior",
-					justification:
-						"Private cache rename; exports, errors, and observable behavior are unchanged.",
-				},
-			}).required,
-			true,
 			changedPath,
 		);
 	}

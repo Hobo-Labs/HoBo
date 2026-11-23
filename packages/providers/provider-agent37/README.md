@@ -65,10 +65,6 @@ try {
 
 The wrapper runs the same server on `node:24-alpine`. Docker unavailability is an error by default. `allowInProcessFallback: true` explicitly enables the in-process fallback, while `requireContainer: true` forbids it. The default tests force Docker off and exercise fallback selection and real HTTP behavior without requiring a Docker daemon.
 
-## Hosting delivery
-
-Agent37 is a CI runner provider, not a hosting target. `PROVIDER_DELIVERY_COVERAGE` in `@hobo/hobo` lists it as refused: deliver to a hosting provider, and select Agent37 runners through `@hobo/ci`.
-
 ## Contracts and validation
 
 `data-models/agent37_fake.proto` and `data-models/agent37_fake.cue` describe fake instance, exec, webhook, usage, and error records. Valid and invalid JSON fixtures accompany the schema. `contracts/pacts/agent37_sandbox_fake.pact.json` records hand-authored consumer expectations for create, exec, usage, and authentication failures; no provider has verified them.
@@ -82,3 +78,5 @@ pnpm --filter @hobo/provider-agent37 build
 ```
 
 Reconcile `pnpm-lock.yaml` with `origin/main` before CI runs on the PR merge tree; HoBo CI Fabric installs with `--frozen-lockfile` against that merge ref.
+
+CD never delivers to Agent37: `PROVIDER_DELIVERY_COVERAGE` in `@hobo/hobo` lists it as a refused row, like the CI runner packages, because its sandboxes only supply overflow runner capacity.
