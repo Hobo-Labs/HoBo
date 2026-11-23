@@ -500,6 +500,13 @@ already bound to the project (Turso through its existing integration, or
 
 ## What the folder holds
 
+A folder the relay reads but cannot use is named at `/readyz`: `state:
+"not-configured"` with `missing` (required entries that are absent) and
+`invalid` (entries their parser refuses), names only. A production deploy that
+finds the relay in that state, serving its commit and its owner hand-off, keeps
+it live as `HOBO_CI_DEPLOYED_AWAITING_OWNER` instead of rolling back
+([README](README.md#owner-hand-off-page)).
+
 One entry per key, named as the relay's environment variable; the loader
 refuses a folder holding any other key, and names it (never its value).
 

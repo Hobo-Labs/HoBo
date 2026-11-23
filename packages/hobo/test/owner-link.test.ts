@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { loadCiProjectFromDirectory } from "@hobo/ci-gh-actions/cli-serve";
 import { ownerHandoffSealing } from "@hobo/ci-vercel/owner-handoff";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -144,24 +146,23 @@ describe("the owner's one-time link", () => {
 
 	it("finds the relay from HOBO_CI_RELAY_URL, else the project's committed CI config", async () => {
 		expect(
-			await projectRelayOrigin("/nowhere", {
+			await projectRelayOrigin(tmpdir(), {
 				HOBO_CI_RELAY_URL: "https://relay.example/",
 			}),
 		).toBe("https://relay.example");
 		const repoRoot = new URL("../../../", import.meta.url).pathname;
-		const committed = z
-			.object({
-				defaultEnvironment: z.string(),
-				environments: z.record(
-					z.string(),
-					z.object({ relayOrigin: z.string() }).loose(),
-				),
-			})
-			.loose()
-			.parse(JSON.parse(readFileSync(`${repoRoot}.hobo/ci.json`, "utf8")));
+		const committed = await loadCiProjectFromDirectory({
+			repositoryRoot: repoRoot,
+		});
+		expect(committed.environmentName).toBe("ci");
 		expect(await projectRelayOrigin(`${repoRoot}packages/hobo`, {})).toBe(
-			committed.environments[committed.defaultEnvironment]?.relayOrigin,
+			committed.environment.relayOrigin,
 		);
+		expect(
+			await projectRelayOrigin(`${repoRoot}packages/hobo`, {
+				HOBO_CI_ENVIRONMENT: "local",
+			}),
+		).toBeUndefined();
 	});
 });
 
