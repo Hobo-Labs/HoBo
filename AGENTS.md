@@ -77,7 +77,7 @@ Use fast approximate tools first.
 Use exact/slow compatibility tools last.
 ```
 
-The skill defaults to local hybrid retrieval: OKF `index.md` files, `tgrep` when available, `rg`, `fd`, `ast-grep`, `git grep`, and memory/semantic tools only after exact or structural search narrows the question. It does not use Google ingestion or querying products by default. It also repeats core repo rules: preserve user work, use `git mv` for tracked moves, avoid broad install/codegen/test commands as diagnostics, rebase on `origin/main`, run the narrowest relevant `agent:check` scope, and open or update an auto-merge squash PR only after checks and comments are clean. No-arg `agent:check` validates the latest commit against `HEAD~1`; use `agent:check -- --staged` before committing staged fixes and `agent:check -- --base=origin/main` only when intentionally validating the whole PR branch. `agent:check` must stay impact-scoped: direct draft workspace tests use `pnpm --prefix <workspace> test`, broad root unit/contract sweeps are explicit final/all validation, and concurrent checks are bounded by `HOBO_RELEVANT_CHECK_CONCURRENCY`.
+The skill defaults to local hybrid retrieval: OKF `index.md` files, `tgrep` when available, `rg`, `fd`, `ast-grep`, `git grep`, and memory/semantic tools only after exact or structural search narrows the question. It does not use Google ingestion or querying products by default. It also repeats core repo rules: preserve user work, use `git mv` for tracked moves, avoid broad install/codegen/test commands as diagnostics, merge `origin/main` into the branch (never rebase a pushed branch or force-push), run the narrowest relevant `agent:check` scope, and open or update one merge-commit auto-merge PR per workstream only after checks and comments are clean (never squash or rebase-merge). No-arg `agent:check` validates the latest commit against `HEAD~1`; use `agent:check -- --staged` before committing staged fixes and `agent:check -- --base=origin/main` only when intentionally validating the whole PR branch. `agent:check` must stay impact-scoped: direct draft workspace tests use `pnpm --prefix <workspace> test`, broad root unit/contract sweeps are explicit final/all validation, and concurrent checks are bounded by `HOBO_RELEVANT_CHECK_CONCURRENCY`.
 
 ## Repo-local sdlc skill + implementer/reviewer subagents
 
@@ -245,7 +245,7 @@ Before finishing a whole PR branch:
 
 ```bash
 git fetch origin
-git rebase origin/main
+git merge origin/main
 pnpm agent:check -- --base=origin/main
 ```
 
@@ -450,9 +450,10 @@ Local and CI gates enforce this with `pnpm run docs:freshness`: code changes und
 The repository does not keep plans, roadmaps, or design documents. Implement
 their outstanding work before removing existing artifacts. The existing
 `plans:guard` checks tracked plan documents. `source:guard` checks added or
-changed planning and design documents and new comments in the languages listed
-above, including ignored `.sdlc` planning documents; the common rule applies to
-every language.
+changed planning and design documents (a change that only removes lines is
+allowed, so existing ones can be retired) and new comments in the languages
+listed above, including ignored `.sdlc` planning documents; the common rule
+applies to every language.
 Both run through the shared pre-commit and CI checks.
 
 ## Legal hygiene rules

@@ -414,6 +414,14 @@ function isExperiencePlanningArtifact(file: string): boolean {
 	);
 }
 
+function addsLines(args: readonly string[], file: string): boolean {
+	return (
+		addedLineNumbers(
+			git([...args, "--no-color", "--no-ext-diff", "--unified=0", "--", file]),
+		).size > 0
+	);
+}
+
 export function documentViolation(
 	file: string,
 	text: string,
@@ -460,7 +468,8 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		if (
 			((isExperiencePlanningArtifact(sourceFile) ||
 				/\.mdx?$/iu.test(sourceFile)) &&
-				parents.every((parent) => parent.files.has(file))) ||
+				parents.every((parent) => parent.files.has(file)) &&
+				(untracked.includes(file) || addsLines(args, file))) ||
 			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(sourceFile)
 		) {
 			const reason = documentViolation(file, contents(mode, file));
