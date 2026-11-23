@@ -42,7 +42,6 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 		<meta name="twitter:card" content="summary" />
 		<meta name="color-scheme" content="light dark" />
 		<script is:inline>
-			// Theme boot: runs before paint to avoid a flash. Kept tiny on purpose.
 			(() => {
 				const stored = localStorage.getItem("hobo-theme");
 				const theme =
@@ -52,9 +51,6 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 							? "dark"
 							: "light";
 				document.documentElement.dataset.theme = theme;
-				// Design is the second axis — layout, type and surface, not just
-				// colour. Absent or unknown => ink, the canonical rubberhose, so a
-				// bad stored value cannot strand anyone in a half-applied theme.
 				const dsn = localStorage.getItem("hobo-design");
 				if (dsn && ["broadsheet", "titlecard", "ledger", "cutout"].includes(dsn)) {
 					document.documentElement.dataset.design = dsn;
@@ -70,12 +66,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 		</main>
 		<Footer />
 		<script is:inline>
-			// The site's entire client-side behavior: theme + menu toggles.
 			const themeToggle = document.querySelector(".theme-toggle");
-			// The markup ships `aria-pressed="false"`, but the boot script runs in
-			// <head> — before this button exists — so it cannot sync there. Without
-			// this the button reports "not pressed" while night is active, which is
-			// worse than omitting the attribute.
 			const syncPressed = () =>
 				themeToggle?.setAttribute(
 					"aria-pressed",
@@ -89,10 +80,6 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 				localStorage.setItem("hobo-theme", next);
 				syncPressed();
 			});
-			// Design picker. `ink` clears the attribute rather than setting a
-			// value, so the default stays the absence of a choice. The current
-			// choice is marked with aria-current so the open menu answers "which
-			// one am I in?" — without it, knowing required memorising the designs.
 			const markCurrent = () => {
 				const cur = document.documentElement.dataset.design ?? "ink";
 				for (const b of document.querySelectorAll("[data-set-design]"))
@@ -115,8 +102,6 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 					b.closest("details")?.removeAttribute("open");
 				});
 			}
-			// Click-away and Escape close the picker; a disclosure that only
-			// closes by clicking its own summary reads as broken.
 			document.addEventListener("click", (e) => {
 				const d = document.querySelector(".palette-picker[open]");
 				if (d && !d.contains(e.target)) d.removeAttribute("open");
@@ -135,11 +120,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 					el.setAttribute("aria-expanded", String(Boolean(open)));
 				});
 			}
-			// Horizontally scrollable tables must be keyboard-reachable.
 			for (const t of document.querySelectorAll(".prose table")) {
 				t.tabIndex = 0;
 			}
-			// Every code block gets a copy button — for humans and agents alike.
 			for (const pre of document.querySelectorAll("pre")) {
 				const wrap = document.createElement("div");
 				wrap.className = "code-block";

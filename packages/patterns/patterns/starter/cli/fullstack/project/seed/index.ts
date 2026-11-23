@@ -1,7 +1,11 @@
-// generated hobo new bindings seed
-// Checked in by hobo new so hobo dev can start before real codegen runs.
-
 type Template = "todo" | "api" | "agent" | "fullstack";
+type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| JsonValue[]
+	| { [key: string]: JsonValue };
 type StoreValue = Record<string, string>;
 type StoreRecord = { key: string; value: StoreValue };
 
@@ -27,7 +31,7 @@ interface HandlerResponse {
 	body: {
 		template: Template;
 		path: string;
-		[key: string]: unknown;
+		[key: string]: JsonValue;
 	};
 }
 

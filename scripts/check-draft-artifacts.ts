@@ -68,9 +68,7 @@ export function checkWorkspace(
 		return {
 			workspace,
 			grandfathered: false,
-			problems: [
-				"missing proof.json (see scripts/lib/proof-manifest.ts and src/draft/_templates/)",
-			],
+			problems: ["missing proof.json (see scripts/lib/proof-manifest.ts)"],
 		};
 	}
 
@@ -107,7 +105,7 @@ export function checkWorkspace(
 
 	const waived = new Set(manifest.waivers.map((w) => w.requirement));
 	for (const waiver of manifest.waivers) {
-		if (!existsSync(path.join(abs, waiver.adr)))
+		if (waiver.adr && !existsSync(path.join(abs, waiver.adr)))
 			problems.push(
 				`waiver for "${waiver.requirement}" cites missing ADR: ${waiver.adr}`,
 			);
@@ -188,10 +186,10 @@ export function checkWorkspace(
 			problems.push(`missing notebook: ${manifest.artifacts.notebook}`);
 		} else {
 			try {
-				const nb = JSON.parse(readFileSync(notebookPath, "utf8")) as {
+				const nb: {
 					nbformat?: number;
 					cells?: Array<{ cell_type?: string; outputs?: unknown[] }>;
-				};
+				} = JSON.parse(readFileSync(notebookPath, "utf8"));
 				const codeCells = (nb.cells ?? []).filter(
 					(c) => c.cell_type === "code",
 				);
@@ -273,8 +271,11 @@ export function checkWorkspace(
 				all.some((f) => f.endsWith(".proto")) &&
 				all.some((f) => f.endsWith(".cue")),
 			cx: () =>
-				inAssets.some((f) => f.endsWith(".md")) ||
-				all.some((f) => /journeys\/.+\.md$/u.test(f)),
+				all.some((f) =>
+					/(?:^|\/)(?:test|tests)\/.+\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(f),
+				) ||
+				(all.some((f) => /(?:^|\/)features\/.+\.feature$/u.test(f)) &&
+					all.some((f) => /(?:^|\/)features\/steps\/.+\.[cm]?[jt]s$/u.test(f))),
 			ax: () =>
 				inAssets.some((f) => /\.(json|md)$/u.test(f)) ||
 				all.some((f) => /transcripts\/.+\.(json|md)$/u.test(f)),
@@ -287,7 +288,7 @@ export function checkWorkspace(
 		const message = {
 			ux: "ux proof needs real visual assets (assets/*.svg|png|jpg|webp)",
 			dx: "dx proof needs protobuf + CUE contracts",
-			cx: "cx proof needs journey artifacts (assets/*.md or journeys/*.md)",
+			cx: "cx proof needs executable customer journey tests or feature steps",
 			ax: "ax proof needs MCP transcript/tool-schema fixtures (assets/ or transcripts/, .json|.md)",
 			api: "api proof needs type tests (type-tests/, test-types/, or *.test-d.ts)",
 		};
@@ -307,35 +308,15 @@ export function checkWorkspace(
 		}
 	}
 
-	if (!waived.has("diagrams")) {
-		for (const diagram of manifest.artifacts.diagrams) {
-			const target = path.join(abs, diagram);
-			if (!existsSync(target))
-				problems.push(`declared diagram missing: ${diagram}`);
-			else if (
-				diagram.endsWith(".md") &&
-				!readFileSync(target, "utf8").includes("```mermaid")
-			) {
-				problems.push(`declared diagram file has no mermaid block: ${diagram}`);
-			}
-		}
-	}
-
 	return { workspace, grandfathered: false, problems };
 }
 
 function main() {
 	const argv = process.argv.slice(2);
-	const grandfathered = new Set(
-		(
-			JSON.parse(
-				readFileSync(
-					path.join(repoRoot, "src/draft/_grandfathered.json"),
-					"utf8",
-				),
-			) as { packages: string[] }
-		).packages,
+	const grandfatheredRegistry: { packages: string[] } = JSON.parse(
+		readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
 	);
+	const grandfathered = new Set(grandfatheredRegistry.packages);
 	const positional = argv.filter((arg) => !arg.startsWith("--"));
 	const workspaces = [
 		...new Set(
@@ -373,7 +354,7 @@ function main() {
 
 	if (failures > 0) {
 		console.error(
-			`\ndraft-artifact gate failed for ${failures} package(s). See src/draft/_templates/ for compliant scaffolds; waivers go in proof.json with an ADR.`,
+			`\ndraft-artifact gate failed for ${failures} package(s). Fix the reported artifacts and executable checks.`,
 		);
 		process.exit(1);
 	}

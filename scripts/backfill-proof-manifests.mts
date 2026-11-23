@@ -13,12 +13,6 @@ const repoRoot = path.resolve(
 	path.dirname(fileURLToPath(import.meta.url)),
 	"..",
 );
-const force = process.argv.includes("--force");
-
-const registry = JSON.parse(
-	readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
-) as { packages: string[] };
-
 function firstHeading(readme: string): string | undefined {
 	const match = readme.match(/^#\s+(.+?)\s*$/m);
 	return match?.[1]?.replace(/`/g, "").trim();
@@ -41,16 +35,18 @@ function listFilesRecursive(dir: string): string[] {
 	return out;
 }
 
-function referencesFor(workspace: string): ProofManifest["references"] {
-	const absolute = path.join(repoRoot, workspace);
+export function referencesFor(
+	workspace: string,
+	root = repoRoot,
+): ProofManifest["references"] {
+	const absolute = path.join(root, workspace);
 	const technical = new Set<string>();
 	const epics = new Set<string>();
 	const exp = new Set<string>();
-	const designDocs = new Set<string>();
 
 	const record = (candidate: string) => {
 		const normalized = candidate.replace(/\\/g, "/");
-		if (!existsSync(path.join(repoRoot, normalized))) return;
+		if (!existsSync(path.join(root, normalized))) return;
 		if (normalized === workspace) return;
 		if (/^src\/draft\/technical-proofs\/[^/]+$/.test(normalized)) {
 			technical.add(normalized);
@@ -58,20 +54,18 @@ function referencesFor(workspace: string): ProofManifest["references"] {
 			epics.add(normalized);
 		} else if (/^src\/draft\/exp-proofs\/[^/]+\/[^/]+$/.test(normalized)) {
 			exp.add(normalized);
-		} else if (/^docs\/.+\.md$/.test(normalized)) {
-			designDocs.add(normalized);
 		}
 	};
 
 	for (const file of listFilesRecursive(absolute)) {
-		const rel = path.relative(repoRoot, file).replace(/\\/g, "/");
+		const rel = path.relative(root, file).replace(/\\/g, "/");
 		if (/\.(ts|mts|js|mjs)$/.test(file)) {
 			const content = readFileSync(file, "utf8");
 			for (const match of content.matchAll(
-				/from\s+["']((?:\.\.\/)+[^"']+)["']/g,
+				/(?:\bfrom\s+|\bimport\s*)["']((?:\.\.\/)+[^"']+)["']/g,
 			)) {
 				const resolved = path
-					.relative(repoRoot, path.resolve(path.dirname(file), match[1]!))
+					.relative(root, path.resolve(path.dirname(file), match[1]!))
 					.replace(/\\/g, "/");
 				const pkg = resolved.match(
 					/^(src\/draft\/(?:technical-proofs|epic-proofs)\/[^/]+|src\/draft\/exp-proofs\/[^/]+\/[^/]+)/,
@@ -85,9 +79,8 @@ function referencesFor(workspace: string): ProofManifest["references"] {
 				const target = match[1]!;
 				if (/^(https?:|mailto:)/.test(target)) continue;
 				const resolved = path
-					.relative(repoRoot, path.resolve(path.dirname(file), target))
+					.relative(root, path.resolve(path.dirname(file), target))
 					.replace(/\\/g, "/");
-				if (/^docs\/.+\.md$/.test(resolved)) record(resolved);
 				const pkg = resolved.match(
 					/^(src\/draft\/(?:technical-proofs|epic-proofs)\/[^/]+|src\/draft\/exp-proofs\/[^/]+\/[^/]+)/,
 				);
@@ -100,20 +93,20 @@ function referencesFor(workspace: string): ProofManifest["references"] {
 		technicalProofs: [...technical].sort(),
 		epicProofs: [...epics].sort(),
 		expProofs: [...exp].sort(),
-		designDocs: [...designDocs].sort(),
+		designDocs: [],
 	};
 }
 
-function artifactsFor(
+export function artifactsFor(
 	workspace: string,
 	layer: ProofManifest["layer"],
-	readme: string,
+	root = repoRoot,
 ): ProofManifest["artifacts"] {
-	const absolute = path.join(repoRoot, workspace);
+	const absolute = path.join(root, workspace);
 	const artifacts: ProofManifest["artifacts"] = {
 		examples: "examples",
 		notebook: "notebook.ipynb",
-		diagrams: /```mermaid/.test(readme) ? ["README.md"] : [],
+		diagrams: [],
 	};
 	if (
 		layer === "epic" ||
@@ -132,57 +125,71 @@ function artifactsFor(
 	return artifacts;
 }
 
-let written = 0;
-let skipped = 0;
-for (const workspace of registry.packages) {
-	const absolute = path.join(repoRoot, workspace);
-	if (!existsSync(absolute)) {
-		console.warn(`missing on disk (stale registry entry?): ${workspace}`);
-		continue;
-	}
-	const manifestPath = path.join(absolute, "proof.json");
-	if (existsSync(manifestPath) && !force) {
-		skipped += 1;
-		continue;
+function main() {
+	const force = process.argv.includes("--force");
+	const registry: { packages: string[] } = JSON.parse(
+		readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
+	);
+	let written = 0;
+	let skipped = 0;
+	for (const workspace of registry.packages) {
+		const absolute = path.join(repoRoot, workspace);
+		if (!existsSync(absolute)) {
+			console.warn(`missing on disk (stale registry entry?): ${workspace}`);
+			continue;
+		}
+		const manifestPath = path.join(absolute, "proof.json");
+		if (existsSync(manifestPath) && !force) {
+			skipped += 1;
+			continue;
+		}
+
+		const layer = layerForWorkspace(workspace);
+		if (!layer) {
+			console.warn(`cannot determine layer: ${workspace}`);
+			continue;
+		}
+		const slug = path.basename(workspace);
+		const readmePath = path.join(absolute, "README.md");
+		const readme = existsSync(readmePath)
+			? readFileSync(readmePath, "utf8")
+			: "";
+		const experienceType = experienceTypeForWorkspace(workspace);
+		const linear = linearId(readme);
+
+		type ProofBackfill = {
+			layer: typeof layer;
+			slug: string;
+			experienceType?: string;
+			title: string;
+			linear?: string;
+			references: ReturnType<typeof referencesFor>;
+			artifacts: ReturnType<typeof artifactsFor>;
+			waivers: [];
+		};
+		const manifest: ProofBackfill = {
+			layer,
+			slug,
+			title: firstHeading(readme) ?? slug,
+			references: referencesFor(workspace),
+			artifacts: artifactsFor(workspace, layer),
+			waivers: [],
+		};
+		if (experienceType !== undefined) manifest.experienceType = experienceType;
+		if (linear !== undefined) manifest.linear = linear;
+
+		const parsed = proofManifestSchema.parse(manifest);
+		writeFileSync(manifestPath, `${JSON.stringify(parsed, null, 2)}\n`);
+		written += 1;
 	}
 
-	const layer = layerForWorkspace(workspace);
-	if (!layer) {
-		console.warn(`cannot determine layer: ${workspace}`);
-		continue;
-	}
-	const slug = path.basename(workspace);
-	const readmePath = path.join(absolute, "README.md");
-	const readme = existsSync(readmePath) ? readFileSync(readmePath, "utf8") : "";
-	const experienceType = experienceTypeForWorkspace(workspace);
-	const linear = linearId(readme);
-
-	type ProofBackfill = {
-		layer: typeof layer;
-		slug: string;
-		experienceType?: string;
-		title: string;
-		linear?: string;
-		references: ReturnType<typeof referencesFor>;
-		artifacts: ReturnType<typeof artifactsFor>;
-		waivers: [];
-	};
-	const manifest: ProofBackfill = {
-		layer,
-		slug,
-		title: firstHeading(readme) ?? slug,
-		references: referencesFor(workspace),
-		artifacts: artifactsFor(workspace, layer, readme),
-		waivers: [],
-	};
-	if (experienceType !== undefined) manifest.experienceType = experienceType;
-	if (linear !== undefined) manifest.linear = linear;
-
-	const parsed = proofManifestSchema.parse(manifest);
-	writeFileSync(manifestPath, `${JSON.stringify(parsed, null, 2)}\n`);
-	written += 1;
+	console.log(
+		`proof.json backfill: ${written} written, ${skipped} already present.`,
+	);
 }
 
-console.log(
-	`proof.json backfill: ${written} written, ${skipped} already present.`,
-);
+if (
+	process.argv[1] &&
+	path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+)
+	main();

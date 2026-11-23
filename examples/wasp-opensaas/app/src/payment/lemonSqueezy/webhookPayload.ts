@@ -19,7 +19,6 @@ export async function parseWebhookPayload(rawPayload: string) {
         return { eventName: meta.event_name, meta, data: subscriptionData };
       }
       default:
-        // If you'd like to handle more events, you can add more cases above.
         throw new UnhandledWebhookEventError(meta.event_name);
     }
   } catch (e: unknown) {
@@ -36,9 +35,6 @@ export type SubscriptionData = z.infer<typeof subscriptionDataSchema>;
 
 export type OrderData = z.infer<typeof orderDataSchema>;
 
-/**
- * This schema is based on LemonSqueezyResponse type
- */
 const genericEventSchema = z.object({
   meta: z.object({
     event_name: z.string(),
@@ -49,11 +45,6 @@ const genericEventSchema = z.object({
   data: z.unknown(),
 });
 
-/**
- * This schema is based on
- * @type import('@lemonsqueezy/lemonsqueezy.js').Order
- * specifically Order['data'].
- */
 const orderDataSchema = z.object({
   attributes: z.object({
     customer_id: z.number(),
@@ -65,11 +56,6 @@ const orderDataSchema = z.object({
   }),
 });
 
-/**
- * This schema is based on
- * @type import('@lemonsqueezy/lemonsqueezy.js').Subscription
- * specifically Subscription['data'].
- */
 const subscriptionDataSchema = z.object({
   attributes: z.object({
     customer_id: z.number(),

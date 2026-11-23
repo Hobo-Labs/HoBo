@@ -1,3 +1,3 @@
-# Cursor — OptimizeXP review workflow
+# Experience improvement
 
-Cursor uses `.agents/skills/` + rules. Drive the loop from `review.md`. Always-on caveman rules may compress output; keep bus JSON complete (do not caveman-truncate JSON fields).
+Follow [SKILL.md](../../SKILL.md). Inspect real behavior, implement the requested improvements, and run relevant tests. Do not create synthetic personas, plans, design documents, or review backlogs.

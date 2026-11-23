@@ -1,16 +1,3 @@
-/**
- * Proof-cascade gate.
- *
- * When a technical or experience proof changes, every epic proof or project that REFERENCES it
- * must change in the same diff (the epic rollup, ledger, and simulation must absorb the change),
- * or the changed proof must carry an explicit waiver in its `proof.json`. References are resolved
- * from two sources:
- *   1. `proof.json` reference graphs of epic/project packages (authoritative once populated), and
- *   2. a fallback scan for grandfathered packages: relative-import lines and rollup-ledger path
- *      cells that mention the changed workspace path.
- * Referencing packages that are still grandfathered produce warnings, not failures.
- * Modes mirror the other gates: `--staged`, `--base=<ref>`, default `HEAD~1`.
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -51,13 +38,13 @@ function loadAggregators(root: string): Aggregator[] {
 			const manifestPath = path.join(root, workspace, "proof.json");
 			if (existsSync(manifestPath)) {
 				try {
-					const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+					const manifest: {
 						references?: {
 							technicalProofs?: string[];
 							expProofs?: string[];
 							epicProofs?: string[];
 						};
-					};
+					} = JSON.parse(readFileSync(manifestPath, "utf8"));
 					for (const list of [
 						manifest.references?.technicalProofs,
 						manifest.references?.expProofs,
@@ -104,9 +91,9 @@ function cascadeWaived(workspace: string): boolean {
 	const manifestPath = path.join(repoRoot, workspace, "proof.json");
 	if (!existsSync(manifestPath)) return false;
 	try {
-		const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+		const manifest: {
 			waivers?: Array<{ requirement?: string }>;
-		};
+		} = JSON.parse(readFileSync(manifestPath, "utf8"));
 		return (manifest.waivers ?? []).some(
 			(waiver) => waiver.requirement === "cascade",
 		);
@@ -129,16 +116,10 @@ function main() {
 		return;
 	}
 
-	const grandfathered = new Set(
-		(
-			JSON.parse(
-				readFileSync(
-					path.join(repoRoot, "src/draft/_grandfathered.json"),
-					"utf8",
-				),
-			) as { packages: string[] }
-		).packages,
+	const grandfatheredRegistry: { packages: string[] } = JSON.parse(
+		readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
 	);
+	const grandfathered = new Set(grandfatheredRegistry.packages);
 	const aggregators = loadAggregators(repoRoot);
 
 	let failures = 0;
@@ -170,7 +151,7 @@ function main() {
 
 	if (failures > 0) {
 		console.error(
-			"\nproof-cascade gate failed: update the referencing epic/project rollups (ledger + simulation + ADR beside the change), or add a cascade waiver with an ADR in the changed proof's proof.json.",
+			"\nproof-cascade gate failed: update and test the affected referencing packages.",
 		);
 		process.exit(1);
 	}

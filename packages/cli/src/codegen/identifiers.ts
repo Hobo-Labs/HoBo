@@ -1,4 +1,3 @@
-
 const PLAIN_IDENTIFIER = /^[A-Za-z_$][\w$]*$/u;
 
 const RESERVED = new Set([

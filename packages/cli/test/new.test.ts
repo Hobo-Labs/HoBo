@@ -18,6 +18,7 @@ import {
 	VALID_TEMPLATES,
 	validateScaffoldProject,
 } from "../src/index.js";
+import { parseProjectName, parseTemplateId } from "../src/types/scaffold.js";
 
 const expectedCreatedFiles = [
 	".gitignore",
@@ -56,7 +57,7 @@ describe("hobo new scaffold", () => {
 			expect(result.exitCode).toBe(0);
 			expect(result.stderr).toBe("");
 
-			const envelope = JSON.parse(result.stdout) as {
+			const envelope: {
 				ok: boolean;
 				verb: string;
 				data: {
@@ -66,7 +67,7 @@ describe("hobo new scaffold", () => {
 					nextSteps: string[];
 					createdFiles: string[];
 				};
-			};
+			} = JSON.parse(result.stdout);
 			expect(envelope.ok).toBe(true);
 			expect(envelope.verb).toBe("new");
 			expect(envelope.data.name).toBe("snapshop");
@@ -91,6 +92,55 @@ describe("hobo new scaffold", () => {
 		});
 	});
 
+	it("rejects generated bindings that do not implement the required exports", async () => {
+		await withScratch(async (cwd) => {
+			const { projectDir } = await scaffoldHoboProject({
+				cwd,
+				name: parseProjectName("missing-bindings"),
+				template: parseTemplateId("api"),
+			});
+			await writeFile(
+				path.join(projectDir, "src/_generated/index.ts"),
+				'const example = "export function createHobo() {}";\nexport function createTestRuntime() {}\nexport declare function createApiStore(): void;\n',
+			);
+			const report = await validateScaffoldProject(projectDir);
+			expect(report.ok).toBe(false);
+			if (!("violations" in report))
+				throw new Error("expected contract violations");
+			expect(report.violations).toEqual(
+				expect.arrayContaining([
+					"generated bindings must export createHobo",
+					"generated bindings must export createApiStore",
+				]),
+			);
+		});
+	});
+
+	it("accepts runnable generated bindings exported as arrow functions", async () => {
+		await withScratch(async (cwd) => {
+			const { projectDir } = await scaffoldHoboProject({
+				cwd,
+				name: parseProjectName("arrow-bindings"),
+				template: parseTemplateId("api"),
+			});
+			const generatedPath = path.join(projectDir, "src/_generated/index.ts");
+			const generated = await readFile(generatedPath, "utf8");
+			const original =
+				'export function createApiStore(): Store {\n\treturn createMemoryStore("api");\n}';
+			expect(generated).toContain(original);
+			await writeFile(
+				generatedPath,
+				generated.replace(
+					original,
+					'export const createApiStore = (): Store => createMemoryStore("api");',
+				),
+			);
+			expect((await validateScaffoldProject(projectDir)).ok).toBe(true);
+			assertGeneratedProjectRuns(projectDir);
+			assertGeneratedProjectTypechecks(projectDir);
+		});
+	});
+
 	it(
 		"creates all four templates as runnable SDK project stubs",
 		{ timeout: 120_000 },
@@ -101,7 +151,7 @@ describe("hobo new scaffold", () => {
 				for (const template of VALID_TEMPLATES) {
 					const { projectDir, createdFiles } = await scaffoldHoboProject({
 						cwd,
-						name: `sample-${template}` as never,
+						name: parseProjectName(`sample-${template}`),
 						template,
 					});
 
@@ -168,11 +218,11 @@ describe("hobo new scaffold", () => {
 			expect(result.exitCode).toBe(2);
 			expect(result.stderr).toBe("");
 
-			const envelope = JSON.parse(result.stdout) as {
+			const envelope: {
 				ok: boolean;
 				code: string;
 				remediation: string[];
-			};
+			} = JSON.parse(result.stdout);
 			expect(envelope.ok).toBe(false);
 			expect(envelope.code).toMatch(/^HOBO_/);
 			expect(envelope.remediation.length).toBeGreaterThanOrEqual(1);
@@ -235,9 +285,9 @@ describe("hobo new scaffold", () => {
 				"coverage/\n.hobo/\n.hobo-codegen.lock\n.hobo-codegen.lock-*\n.hobo-codegen-*\nnode_modules/\ndist/\n",
 			);
 
-			const envelope = JSON.parse(result.stdout) as {
+			const envelope: {
 				data: { createdFiles: string[] };
-			};
+			} = JSON.parse(result.stdout);
 			expect(envelope.data.createdFiles).toEqual(expectedCreatedFiles);
 			await assertFile(projectDir, "package.json");
 		});

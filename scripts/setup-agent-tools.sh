@@ -231,14 +231,12 @@ fi
 
 say "skills CLI installs -> selected Claude Code/Cursor/Codex skill dirs"
 if have npx; then
-  for spec in "DietrichGebert/ponytail" "mattpocock/skills"; do
-    for ag in claude-code cursor codex; do
-      want_agent "$ag" || continue
-      NPX --yes skills add "$spec" --project --copy -a "$ag" -s '*' -y \
-        && echo "  $spec installed for $ag" || echo "  $spec FAILED for $ag"
-    done
+  for ag in claude-code cursor codex; do
+    want_agent "$ag" || continue
+    NPX --yes skills add "DietrichGebert/ponytail" --project --copy -a "$ag" -s '*' -y \
+      && echo "  ponytail installed for $ag" || echo "  ponytail FAILED for $ag"
   done
-  echo "  NEXT (optional): run /setup-matt-pocock-skills in your agent for issue-tracker/domain-doc layout."
+  echo "  Repository engineering skills are already checked in."
 else echo "  SKIP: npx missing"; fi
 
 say "caveman (JuliusBrussee/caveman) -> selected repo rule files"
@@ -250,11 +248,6 @@ if have npx; then
   if [ "${#CAVEMAN_ARGS[@]}" -gt 0 ]; then
     NPX -y "github:JuliusBrussee/caveman" "${CAVEMAN_ARGS[@]}" --with-init --no-hooks \
       && echo "  installed" || echo "  FAILED"
-    rm -rf .windsurf .clinerules .opencode
-    if ! git ls-files --error-unmatch .github/copilot-instructions.md >/dev/null 2>&1; then
-      rm -f .github/copilot-instructions.md
-      rmdir .github 2>/dev/null || true
-    fi
   else echo "  SKIP: no selected caveman-capable agent"; fi
 else echo "  SKIP: npx missing"; fi
 

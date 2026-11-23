@@ -14,7 +14,10 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { gitEnvironment } from "../ci/local-attest.mts";
 import { nodeTestArguments } from "../lib/node-test-arguments.ts";
-import { isNodeTestFile } from "../lib/unit-test-selection.ts";
+import {
+	isNodeTestFile,
+	isNodeTestSource,
+} from "../lib/unit-test-selection.ts";
 import { selectRelevantChecks } from "../relevant-check-policy.ts";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -23,6 +26,32 @@ const runnerFor = (file: string) =>
 	isNodeTestFile(join(root, file)) ? "node --test" : "vitest";
 
 describe("script test runners", () => {
+	it("classifies runtime imports without treating fixture strings or type imports as tests", () => {
+		for (const source of [
+			'import { test } from "node:test";',
+			'import "node:test";',
+			'const test = require("node:test");',
+			"const test = require(`node:test`);",
+			'const test = await import("node:test");',
+			'import test = require("node:test");',
+			'export { test } from "node:test";',
+		])
+			assert.equal(isNodeTestSource(source), true, source);
+		for (const source of [
+			"const fixture = 'import { test } from \"node:test\";';",
+			'// import { test } from "node:test";',
+			'const fixture = `from "node:test"`;',
+			'const pattern = /from "node:test"/;',
+			'import type { TestContext } from "node:test";',
+			'import type TestContext = require("node:test");',
+			'import { type TestContext } from "node:test";',
+			'export type { TestContext } from "node:test";',
+			'export { type TestContext } from "node:test";',
+			'import { test } from "vitest";',
+		])
+			assert.equal(isNodeTestSource(source), false, source);
+	});
+
 	it("runs and reports a node-only scripts shard without requiring Vitest", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-node-only-shard-"));
 		try {

@@ -10,7 +10,6 @@ export default defineConfig({
 	trailingSlash: "ignore",
 	vite: {
 		plugins: [temporaryStationApiPlugin()],
-		// @intent from @hobo/runtime). Vite's esbuild otherwise passes standard
 		esbuild: {
 			supported: { decorators: false },
 		},

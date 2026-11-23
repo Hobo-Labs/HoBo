@@ -61,6 +61,7 @@ export default defineNuxtPlugin(() => {
   script.src = liveSrc;
   script.async = true;
   script.dataset.impeccableLiveNuxt = '';
+  script.dataset.impeccableLiveFramework = 'nuxt';
   document.head.appendChild(script);
 
   import.meta.hot?.dispose(() => {

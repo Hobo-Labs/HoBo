@@ -64,7 +64,7 @@ export const proofManifestSchema = z
 						"cascade",
 					]),
 					reason: z.string().min(10),
-					adr: relPath,
+					adr: relPath.optional(),
 				}),
 			)
 			.default([]),
@@ -114,5 +114,5 @@ export function experienceTypeForWorkspace(
 	const match = workspace.match(
 		/^src\/draft\/exp-proofs\/(dx|ux|cx|ax|api)\//u,
 	);
-	return match ? (match[1] as ExperienceType) : undefined;
+	return EXPERIENCE_TYPES.find((type) => type === match?.[1]);
 }

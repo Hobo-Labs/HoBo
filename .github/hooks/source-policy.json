@@ -4,8 +4,8 @@
     "postToolUse": [
       {
         "type": "command",
-        "bash": "node \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
-        "powershell": "node (Join-Path (git rev-parse --show-toplevel) 'scripts/agent-source-policy.mts')",
+        "bash": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
+        "powershell": "node --experimental-strip-types (Join-Path (git rev-parse --show-toplevel) 'scripts/agent-source-policy.mts')",
         "timeoutSec": 60
       }
     ]

@@ -14,6 +14,7 @@ import {
 import type { PatternCatalog } from "./catalog.js";
 import { PatternParseError, parseApplicationRequest } from "./parse.js";
 import { renderPattern } from "./render.js";
+import { mergeYardTopology } from "./yard-merge.js";
 
 function assertSafe(root: string, rel: string): string {
 	if (rel.startsWith("/") || rel.includes("..")) {
@@ -467,19 +468,27 @@ export function applyPatternPlan<P>(input: {
 		} catch {
 			previous = "";
 		}
+		if (previous.trim() === "" && pattern.requires.includes("yard.topology")) {
+			throw new PatternParseError(
+				"yard topology is required before applying this pattern",
+			);
+		}
 		const merged =
 			index === 0 &&
 			(file.contents.includes("bindle(") || previous.includes("bindle("))
 				? applyStructural(previous, file.contents)
-				: previous.includes(file.contents.trim())
-					? previous
-					: previous.trim() === ""
-						? file.contents
-						: (() => {
-								throw new PatternParseError(
-									"unsupported language or non-TypeScript merge",
-								);
-							})();
+				: previous.trim() !== "" &&
+						(file.contents.includes("yard(") || previous.includes("yard("))
+					? mergeYardTopology(previous, file.contents)
+					: previous.includes(file.contents.trim())
+						? previous
+						: previous.trim() === ""
+							? file.contents
+							: (() => {
+									throw new PatternParseError(
+										"unsupported language or non-TypeScript merge",
+									);
+								})();
 		if (merged !== previous) {
 			writeFileSync(target, merged);
 			changed.push(rel);
