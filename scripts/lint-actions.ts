@@ -51,6 +51,7 @@ const PROBE_RUNS_ON = new Set(["hobo", "hobo-trunk", "hobo-local-host"]);
  * `ci-health`, that runs the monitor and nothing on the fleet it watches.
  */
 const healthFile = "ci-health.yml";
+const supersessionFile = "pr-supersession.yml";
 /** A manually dispatched, read-only identity observation on a hosted runner. */
 const hostingEvidenceFile = "hosting-evidence.yml";
 /** A manually dispatched, scoped Vercel credential observation. */
@@ -69,6 +70,7 @@ const allowedEnabled = new Set([
 	parityProbeFile,
 	probeFile,
 	healthFile,
+	supersessionFile,
 	hostingEvidenceFile,
 	vercelEvidenceFile,
 	...activeCiFiles,
@@ -354,6 +356,10 @@ function isAlwaysHostedJob(
 	if (/^  ci-health:$/.test(jobLine))
 		return block.some((line) =>
 			/^\s*-?\s*run: node scripts\/ci\/ci-health\.mts$/.test(line),
+		);
+	if (/^  supersession:$/.test(jobLine))
+		return block.some((line) =>
+			/^\s*-?\s*run: node scripts\/ci\/pr-supersession\.mts$/.test(line),
 		);
 	const stepsAt = block.findIndex((line) => line === "    steps:");
 	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
