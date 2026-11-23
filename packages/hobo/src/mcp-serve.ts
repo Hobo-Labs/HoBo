@@ -17,6 +17,7 @@ import {
 import {
 	createMcpOwnerChannel,
 	createOwnerCaptureApp,
+	OWNER_HANDOFF_SPECS,
 } from "./mcp-owner-channel.js";
 import {
 	createInfisicalCaptureConnector,
@@ -28,8 +29,9 @@ import {
 	type McpStdioSession,
 	serveMcpStdio,
 } from "./mcp-stdio.js";
-import { createStoreChoiceApp } from "./mcp-store-choice.js";
+import { createFormHealth, createStoreChoiceApp } from "./mcp-store-choice.js";
 import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
+import { createOwnerLinkChannel, type OwnerLinkChannel } from "./owner-link.js";
 import {
 	createOwnerStoreSessions,
 	type OwnerSignIn,
@@ -57,12 +59,18 @@ export function composeHoboMcp(options: {
 	/** The device grant's clock (evals pass a virtual one). */
 	readonly clock?: DeviceClock;
 	readonly ownerSignIn?: OwnerSignIn;
+	readonly ownerLink?: OwnerLinkChannel;
 }) {
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
 	// The session exists once the transport starts; prompts go through it.
 	let session: McpStdioSession | undefined;
 	let capture: ReturnType<typeof createOwnerCaptureApp> | undefined;
+	const formHealth = createFormHealth();
+	const watchedRequest = () => {
+		const request = session?.request;
+		return request === undefined ? undefined : formHealth.watch(request);
+	};
 	/**
 	 * The host's forms, when it said at initialize that it shows them and a
 	 * capture would really be one: an MCP Apps host gets HoBo's App, and an
@@ -79,7 +87,9 @@ export function composeHoboMcp(options: {
 		// Every step that needs the owner is a form in their host, asked in
 		// the call that needs it: nothing is relayed through the agent.
 		form: (params) =>
-			forms()?.request?.("elicitation/create", params) ?? undefined,
+			forms() === undefined
+				? undefined
+				: watchedRequest()?.("elicitation/create", params),
 		ask: async (name) => {
 			const host = forms();
 			if (host === undefined || capture === undefined) return false;
@@ -128,7 +138,7 @@ export function composeHoboMcp(options: {
 		owner,
 		remote: options.remote,
 		elicit: (params) => {
-			const request = session?.request;
+			const request = watchedRequest();
 			if (request === undefined)
 				return Promise.reject(new Error("the transport is not connected"));
 			return request("elicitation/create", params);
@@ -142,7 +152,28 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
-	session = createMcpStdioSession(capture, createStoreChoiceApp({ sessions }));
+	const link = options.ownerLink ?? createOwnerLinkChannel();
+	session = createMcpStdioSession(
+		capture,
+		createStoreChoiceApp({
+			sessions,
+			link,
+			formHealth,
+			handOver: (name, value) => {
+				const spec = OWNER_HANDOFF_SPECS.find((entry) => entry.name === name);
+				const bytes = Buffer.byteLength(value, "utf8");
+				if (
+					spec === undefined ||
+					bytes < spec.minBytes ||
+					bytes > spec.maxBytes ||
+					/[\r\n]/u.test(value) ||
+					(spec.pattern !== undefined && !spec.pattern.test(value))
+				)
+					return;
+				owner.deposit(name, value);
+			},
+		}),
+	);
 	const ready = capture;
 	return {
 		owner,
@@ -152,6 +183,7 @@ export function composeHoboMcp(options: {
 		/** Stop whatever still waits on the owner and close open captures. */
 		async close() {
 			owner.jobs.close();
+			link.close();
 			sessions.close();
 			await ready.close();
 		},

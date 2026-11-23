@@ -301,8 +301,23 @@ asks the owner privately: through MCP form elicitation (a store picker, then
 only that store's non-secret IDs) when the host declares
 `capabilities.elicitation` form mode, or through HoBo's store picker widget
 (`ui://hobo/store-choice`, whose app-only `submit_store_choice` the model does
-not call) when the host renders MCP Apps. A host with neither gets
-`secure-form-unavailable` and nothing is collected. The choice is written to the
+not call) when the host renders MCP Apps. A host with neither, or one that
+declares form elicitation but answers it with cancel or decline within 1.5
+seconds (Claude Code in a claude.ai cloud session does), gets status `link`
+instead: a one-time URL on the project's HoBo CI relay (`HOBO_CI_RELAY_URL`,
+else the default environment's `relayOrigin` in `.hobo/ci.json`,
+`https://hobo-ci.vercel.app` here) whose fragment carries only a single-use
+ticket. The agent shows the owner that URL; on any device the page asks for
+the store, its non-secret settings and its sign-in (Infisical's copied
+session, 1Password's email, Secret Key and password, or Bitwarden's personal
+API key), seals the answer in the browser to a P-256 key held only in the HoBo
+MCP process's memory, and the relay keeps only ciphertext for ten minutes, one
+deposit and one collection. The next `choose_secret_store` call with the same
+`cwd` collects it, records the choice, hands the sign-in to the owner channel
+and establishes the session. Without a reachable relay with a mailbox store
+the result is `secure-form-unavailable` with a `reason`
+(`owner-link-relay-unconfigured`, `-unreachable`, `-not-ready` or
+`-refused`), and nothing is collected. The choice is written to the
 owner's locator outside the repository
 (`~/.config/hobo/projects/<project>-<hash>/secret-store.json`), and HoBo then
 signs in through the owner channel (the sign-in link inside a host form, the
@@ -310,9 +325,9 @@ Infisical session, 1Password or Bitwarden hand-offs) and keeps the store's
 sign-in in the server's memory. The sign-in completes inside the call on a
 remote box whose host shows form elicitation; elsewhere the result is
 `sign-in-needed`. Every result the agent sees carries only a
-status (`established`, `sign-in-needed` with a code, `shown`, `decline`,
-`invalid`, `secure-form-unavailable`) and the store's name, never project or
-vault IDs, hosts, or references. Once established, `hobo deploy` resolves
+status (`established`, `sign-in-needed` with a code, `shown`, `link` with its
+URL, `decline`, `invalid`, `secure-form-unavailable`) and the store's name,
+never project or vault IDs, hosts, or references. Once established, `hobo deploy` resolves
 credential locators `owner://<NAME>` (and `env://<NAME>` absent from the
 environment) from that session's CD location (Infisical folder `/hobo-cd`), so provider resolvers such as Hostinger's get
 `HOSTINGER_API_TOKEN` from the owner's store without the value reaching the

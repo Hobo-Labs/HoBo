@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 
@@ -13,6 +14,8 @@ export const LIVE_ENGINE_IMAGES_PATH =
 export const STALE_AFTER_MS = 30 * 60 * 1000;
 
 export const SERVER_LIFETIME_SECONDS = 25 * 60;
+
+export const FIXTURE_OPEN_FILES = 65_536;
 
 export const LIVE_PACKAGES: readonly string[] = [
 	"@hobo/data-core",
@@ -87,6 +90,8 @@ function fixtureFlags(name: string): readonly string[] {
 		"1024m",
 		"--memory-swap",
 		"1024m",
+		"--ulimit",
+		`nofile=${FIXTURE_OPEN_FILES}:${FIXTURE_OPEN_FILES}`,
 		"--entrypoint",
 		"timeout",
 	];
@@ -404,15 +409,53 @@ function version(io: LaneIo, args: readonly string[]): string {
 	return result.status === 0 ? result.stdout.trim() : "unknown";
 }
 
+export function cachedImageArchive(cacheDir: string, image: string): string {
+	const digest = /@sha256:([0-9a-f]{64})$/u.exec(image)?.[1];
+	if (digest === undefined) {
+		throw new Error(`${image} is not digest-pinned; it cannot be cached`);
+	}
+	return join(cacheDir, `${digest}.tar`);
+}
+
+export function ensureCachedImage(
+	io: LaneIo,
+	image: string,
+	cacheDir: string | undefined,
+): "present" | "loaded" | "pulled" | "uncached" {
+	if (
+		io.docker(["image", "inspect", "--format", "{{.Id}}", image]).status === 0
+	)
+		return "present";
+	if (cacheDir === undefined || !isAbsolute(cacheDir)) return "uncached";
+	const archive = cachedImageArchive(cacheDir, image);
+	if (existsSync(archive)) {
+		if (io.docker(["load", "--input", archive], 600_000).status === 0)
+			return "loaded";
+		rmSync(archive, { force: true });
+	}
+	must(io, ["pull", image], 600_000);
+	const partial = `${archive}.${process.pid}.partial`;
+	if (io.docker(["save", "--output", partial, image], 600_000).status === 0)
+		renameSync(partial, archive);
+	else rmSync(partial, { force: true });
+	return "pulled";
+}
+
 export async function startLiveServers(
 	io: LaneIo,
 	names: LiveContainerNames,
 	images: LiveEngineImages,
 	attempts = 90,
+	imageCacheDir: string | undefined = undefined,
 ): Promise<LiveUrls> {
 	sweep(io, [names.postgres, names.mongodb]);
 	remove(io, [names.postgres, names.mongodb]);
 	try {
+		for (const image of [images.postgres16, images.mongo8]) {
+			io.note(
+				`data-live: ${image.split("@")[0]} ${ensureCachedImage(io, image, imageCacheDir)}`,
+			);
+		}
 		must(io, postgresRunArgv(names.postgres, images.postgres16), 600_000);
 		must(io, mongoRunArgv(names.mongodb, images.mongo8), 600_000);
 		const psql = [
@@ -485,6 +528,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			io,
 			names,
 			parseLiveEngineImages(readFileSync(LIVE_ENGINE_IMAGES_PATH, "utf8")),
+			90,
+			process.env.HOBO_CI_IMAGE_CACHE_DIR?.trim() || undefined,
 		);
 	} else if (command === "verify") {
 		const verdict = liveRunVerdict(

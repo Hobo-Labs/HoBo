@@ -1113,6 +1113,38 @@ stops a run.
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
 [runner queue runbook](../ci/RUNNER-QUEUE.md)).
 
+### Owner hand-off page
+
+`/owner-handoff` and `/v1/owner-handoff/mailboxes` (`src/owner-handoff.ts`) let
+the HoBo MCP server reach an owner whose agent host shows no working private
+form. They are routed in `src/entry.ts` before the relay starts, so they work
+while `/readyz` reports `not-configured`; they need only a cache: the first one
+the deployment's environment binds (else the config service's cache binding).
+Without one, every hand-off route answers 503 `{ "state": "no-mailbox-store" }`.
+
+- `POST /v1/owner-handoff/mailboxes` registers a mailbox: its id, a P-256
+  public key, an opaque binding, an expiry at most 15 minutes away, an HMAC
+  proof of the key under the ticket, and the digest of a collect token. At most
+  600 registrations a minute.
+- `GET /v1/owner-handoff/mailboxes/<id>` gives the page the offer (never the
+  collect digest) while the mailbox is open; `410` once used, `404` unknown or
+  expired.
+- `PUT …/<id>/envelope` takes one sealed answer; any later one is `410`.
+- `POST …/<id>/collect` with `Authorization: Bearer <collect token>` answers
+  `202` until the answer arrives, then `200` with it once, then `410`.
+
+The page reads the ticket from the URL fragment, which no server receives,
+removes it from the address bar, checks the offer's proof, and seals the
+owner's answer with Web Crypto (`src/owner-handoff-seal.ts`, embedded verbatim
+in the page). Its CSP admits only its own script and style by hash and
+connects only to its own origin. The relay stores the registration and the
+ciphertext; it never sees the ticket, the collect token or the answer.
+`../hobo/contracts/owner-handoff-relay.pact.json` is the contract with HoBo's
+MCP server, verified here by `contracts/owner-handoff.provider.test.ts`.
+
+The page ships with the relay: owners can use it only once a relay built from
+this code serves the production origin.
+
 ### Failure log
 
 Every path that refuses a request with a fixed 503 body also writes one JSON line to stderr, so the
