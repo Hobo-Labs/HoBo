@@ -8,14 +8,25 @@ import { type ComposedYardOptions, composeYard } from "./compose.js";
 
 export {
 	blob,
+	cron,
+	delayedQueue,
 	edgeConfig,
 	edgeFunction,
+	gitFunction,
 	project,
+	queue,
+	sandboxHost,
+	schedule,
 	staticDeployment,
 	type VercelBlobSlotOptions,
+	type VercelCronSlotOptions,
 	type VercelEdgeConfigSlotOptions,
 	type VercelEdgeFunctionSlotOptions,
+	type VercelGitFunctionSlotOptions,
 	type VercelProjectSlotOptions,
+	type VercelQueueSlotOptions,
+	type VercelSandboxHostSlotOptions,
+	type VercelScheduleSlotOptions,
 	type VercelStaticDeploySlotOptions,
 } from "@hobo/provider-vercel";
 

@@ -46,10 +46,7 @@ it.each([
 	const send = createIsolatedOwnerFetch(
 		test.proxy ? { HTTPS_PROXY: "http://127.0.0.1:8080" } : {},
 		launch,
-		{
-			allowedOrigins: [new URL(test.url).origin],
-			allowInsecureLoopback: test.allow,
-		},
+		{ allowInsecureLoopback: test.allow },
 	);
 	const failure = await send(test.url, {
 		method: "POST",
@@ -69,7 +66,6 @@ it.each([
 	const send = createIsolatedOwnerFetch(
 		{ HTTPS_PROXY: proxy, NO_PROXY: "*" },
 		launch,
-		{ allowedOrigins: ["https://fixture.invalid"] },
 	);
 	const failure = await send("https://fixture.invalid/", {
 		method: "POST",
@@ -99,12 +95,6 @@ it("revalidates proxy credentials in the child before connecting", async () => {
 				run: {
 					id: crypto.randomUUID(),
 					secret: "A".repeat(43),
-				},
-				policy: {
-					allowedOrigins: ["https://fixture.invalid"],
-					allowInsecureLoopback: false,
-					allowProxy: true,
-					allowExtraCa: false,
 				},
 				url: "https://fixture.invalid/",
 				method: "POST",
@@ -167,15 +157,9 @@ it("bounds a proxy that repeatedly drops its CONNECT socket", async () => {
 	await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
 	try {
 		const signal = AbortSignal.timeout(15_000);
-		const failure = await isolatedOwnerFetch(
-			{
-				HTTPS_PROXY: `http://127.0.0.1:${address.parse(proxy.address()).port}`,
-			},
-			{
-				allowedOrigins: ["https://fixture.invalid"],
-				allowProxy: true,
-			},
-		)("https://fixture.invalid/", {
+		const failure = await isolatedOwnerFetch({
+			HTTPS_PROXY: `http://127.0.0.1:${address.parse(proxy.address()).port}`,
+		})("https://fixture.invalid/", {
 			method: "POST",
 			body: marker,
 			signal,
@@ -209,15 +193,11 @@ it("keeps opted-in loopback HTTP redirects on their original origin", async () =
 		),
 	);
 	try {
-		const sourceOrigin = `http://127.0.0.1:${address.parse(source.address()).port}`;
 		await expect(
-			isolatedOwnerFetch(
-				{},
-				{
-					allowedOrigins: [sourceOrigin],
-					allowInsecureLoopback: true,
-				},
-			)(`${sourceOrigin}/`, { headers: { "x-fixture-credential": marker } }),
+			isolatedOwnerFetch({}, { allowInsecureLoopback: true })(
+				`http://127.0.0.1:${address.parse(source.address()).port}/`,
+				{ headers: { "x-fixture-credential": marker } },
+			),
 		).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
 		expect(destinationRequests).toBe(0);
 	} finally {
@@ -294,11 +274,7 @@ it("contains credentials across redirects and permits same-origin HTTPS", async 
 	const origin = `https://127.0.0.1:${address.parse(source.address()).port}`;
 	const send = isolatedOwnerFetch(
 		{ SSL_CERT_FILE: cert },
-		{
-			allowedOrigins: [origin],
-			allowInsecureLoopback: true,
-			allowExtraCa: true,
-		},
+		{ allowInsecureLoopback: true },
 	);
 	const request: RequestInit = {
 		method: "POST",

@@ -25,17 +25,9 @@ import {
 	SUBMIT_STORE_CHOICE_TOOL,
 } from "../../src/mcp-store-choice.js";
 
-// EVAL: when a handed-off `hobo cd up` stops with HOBO_CD_STORE_CHOICE, the
-// owner chooses in a real picker, never in a question typed back in prose.
-// The agent calls the HoBo MCP server's `choose_secret_store`; the owner sees
-// what their host can render: a form elicitation, an MCP App widget, or (in
-// neither) the agent is told to use its own picker and record the answer. The
-// form asks for no secret, and the answer is kept in the owner's settings.
-
 const message = z.record(z.string(), z.json());
 type Message = z.infer<typeof message>;
 
-/** What a tool call answers, parsed. */
 const toolResultSchema = z.object({
 	content: z.array(z.object({ text: z.string() })),
 	structuredContent: message.optional(),
@@ -63,7 +55,6 @@ const resourceSchema = z.object({
 });
 const toolResult = (m: Message) => toolResultSchema.parse(m.result);
 
-/** A client on the other end of the stdio transport. */
 function connect(capabilities: JsonObject) {
 	const toServer = new PassThrough();
 	const fromServer = new PassThrough();
@@ -156,7 +147,6 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 			name: CHOOSE_SECRET_STORE_TOOL,
 			arguments: { family: "cd" },
 		});
-		// The server asks the client to show the owner a form.
 		const elicit = await client.next((m) => m.method === "elicitation/create");
 		const params = elicitSchema.parse(elicit.params);
 		expect(params.requestedSchema.properties.store?.enumNames).toEqual([
@@ -164,7 +154,6 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 			"1Password",
 			"Bitwarden",
 		]);
-		// Form elicitation never asks for a secret.
 		for (const [name, field] of Object.entries(
 			params.requestedSchema.properties,
 		)) {
@@ -172,14 +161,12 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 			expect(field.format).not.toBe("password");
 		}
 		expect(JSON.stringify(params)).not.toMatch(/Vaultwarden/u);
-		// The first form is the store alone: no other store's fields.
 		expect(Object.keys(params.requestedSchema.properties)).toEqual(["store"]);
 		client.send({
 			jsonrpc: "2.0",
 			id: elicit.id ?? null,
 			result: { action: "accept", content: { store: "infisical" } },
 		});
-		// Then only Infisical's own field; nothing about 1Password or Bitwarden.
 		const follow = await client.next((m) => m.method === "elicitation/create");
 		const fields = elicitSchema.parse(follow.params);
 		expect(Object.keys(fields.requestedSchema.properties)).toEqual([
@@ -294,7 +281,6 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 		expect(shown._meta).toMatchObject({
 			"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
 		});
-		// The widget records the owner's choice.
 		await client.rpc("tools/call", {
 			name: SUBMIT_STORE_CHOICE_TOOL,
 			arguments: {

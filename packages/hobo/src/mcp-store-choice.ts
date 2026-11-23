@@ -16,26 +16,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-/**
- * The secret-store choice as an MCP experience, not a question in prose.
- *
- * A handed-off `hobo ci|cd up` stops with `HOBO_*_STORE_CHOICE` until the
- * owner chooses Infisical, 1Password or Bitwarden. The agent calls
- * `choose_secret_store`, and the owner answers in whatever the host renders:
- *
- * - **form elicitation** (`elicitation/create`, MCP 2025-06-18) where the
- *   client declared `capabilities.elicitation`: a picker of the three stores
- *   and the store's non-secret ids. Form elicitation must never ask for a
- *   secret, and this one does not: every sign-in is asked for separately,
- *   through the session's credential form;
- * - an **MCP App widget** (`ui://hobo/store-choice`) where the host renders
- *   MCP Apps: the same picker, which records the choice with
- *   `submit_store_choice`;
- *
- * The answer is parsed where it enters and written to the owner's locator in
- * their HoBo settings, never the repository; the next run reads it.
- */
-
 // public-contract: the MCP tool that asks the owner to choose their secret store.
 export const CHOOSE_SECRET_STORE_TOOL = "choose_secret_store";
 // public-contract: the app-only tool for recording the owner's store choice.
@@ -334,7 +314,6 @@ const familyArg: JsonObject = {
 export function createStoreChoiceApp(
 	options: {
 		readonly cwd?: string;
-		/** Where a project's choice is kept; the owner's HoBo settings by default. */
 		readonly locatorFor?: (
 			cwd: string,
 			family: "ci" | "cd",
@@ -533,7 +512,6 @@ export function createStoreChoiceApp(
 						`The owner ${action === "decline" ? "declined" : "closed"} the store picker; nothing was recorded. Ask again with ${CHOOSE_SECRET_STORE_TOOL} when they are ready.`,
 						{ status: action },
 					);
-				// First the store, alone.
 				const first = elicitResult.safeParse(
 					await request("elicitation/create", {
 						message: `Choose where HoBo keeps this project's secrets (hobo ${family} up). Its sign-in is asked for separately, in the session's credential form.`,
@@ -546,7 +524,6 @@ export function createStoreChoiceApp(
 				if (!picked.success) return record(ticket, undefined);
 				const store = picked.data.store;
 				const label = STORE_OPTIONS.find((o) => o.id === store)?.label ?? store;
-				// Then only that store's own fields.
 				const second = elicitResult.safeParse(
 					await request("elicitation/create", {
 						message: `${label}: ${STORE_OPTIONS.find((o) => o.id === store)?.needs ?? ""}.`,
@@ -590,7 +567,6 @@ export function createStoreChoiceApp(
 	};
 }
 
-/** The MCP App: three stores, their non-secret ids, one submit. No network. */
 export function renderStoreChoiceHtml(): string {
 	const options = STORE_OPTIONS.map(
 		(o) =>

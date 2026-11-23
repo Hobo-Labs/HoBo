@@ -25,15 +25,22 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 	},
 	queue: {
 		port: "queue",
-		resourceClass: "vercel:queue",
+		resourceClass: "vercel:deployment-queue",
 		providerService: "Vercel Queues",
-		features: ["queue", "at-least-once", "delay", "managed"],
+		features: [
+			"queue",
+			"at-least-once",
+			"delay",
+			"managed",
+			"enqueue",
+			"dequeue",
+		],
 	},
 	schedule: {
 		port: "schedule",
-		resourceClass: "vercel:cron-job",
-		providerService: "Vercel Cron Jobs",
-		features: ["cron", "http-trigger", "managed"],
+		resourceClass: "vercel:deployment-schedule",
+		providerService: "Vercel Schedules",
+		features: ["schedule", "managed"],
 	},
 } as const);
 

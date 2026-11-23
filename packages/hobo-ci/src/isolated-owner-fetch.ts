@@ -41,11 +41,9 @@ export type PrivateOwnerChildLauncher = (input: {
 }) => PrivateOwnerChild;
 
 export interface IsolatedOwnerFetchOptions {
-	readonly allowedOrigins?: readonly string[];
-	readonly allowInsecureLoopback?: boolean;
-	readonly allowProxy?: boolean;
-	readonly allowExtraCa?: boolean;
 	readonly maxResponseBytes?: number;
+	readonly allowInsecureLoopback?: boolean;
+	readonly allowedOrigins?: readonly string[];
 }
 
 const OWNER_PHASE_TIMEOUT_MS = 120_000;

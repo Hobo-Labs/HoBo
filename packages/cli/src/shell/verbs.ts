@@ -359,6 +359,12 @@ Usage:
   hobo ci logs [run]               Read run logs
   hobo ci grep <text>              Search recent run logs
   hobo ci rerun [run]              Retry a completed run
+  hobo ci init                     Show which workflow jobs can move to the fleet; --apply rewrites their runs-on
+                                   (see init options)
+  hobo ci signals                  Where recent runs lost time or money: waits, flaky and short jobs, extra runs
+  hobo ci diagnose [run]           Why a run's jobs failed, and whether a re-run is likely to help
+  hobo ci route                    Answer one relay job against the runner order and show the walk
+                                   (see route options)
   hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deliver the hosted relay to Vercel (see deploy options)
@@ -469,6 +475,27 @@ Connect options (hobo ci secret-store connect; identifiers, none is a secret):
   --site-url <origin>         Infisical origin (default https://app.infisical.com)
   --yes                       Replace an existing binding
 
+Init options (hobo ci init; reads and edits .github/workflows, commits nothing):
+  --plan                        Show each job: ready, already on the fleet, or skipped and why (default)
+  --apply <jobs>                Rewrite runs-on for these jobs: job, file:job or all (repeatable,
+                                comma-separated); the old label is kept as a trailing comment
+  --fleet-label <label>         The label to write (default: hobo)
+  --include-secret-jobs         Also move jobs that use secrets, an environment or an OIDC token
+
+Route options (hobo ci route; reads runnerOrder in .hobo/ci.json, contacts nothing):
+  --fleet, --machine, --github <label>   The label the job would ask that runner type for
+  --blacksmith, --depot, --namespace, --warpbuild, --ubicloud, --boat, --runs-on <label>
+                                A hosted provider's label; "auto" asks for the order's size
+                                (no runner-type flag at all: any type, at that size)
+  --public                      The repository is public (machines never take it)
+  --fork                        The run's head is a fork
+  --event <name>                The GitHub event (default: push)
+  --facts <file.json>           What is true now: fleet {enabled,taking,isolated}, machines,
+                                minutes {usedMinutes,includedMinutes,burnPerHour}, spendUsd,
+                                unhealthy, publicOptIn, first, retry. Without it the fleet
+                                and machines are absent and no limit is measured.
+  Exits non-zero with HOBO_CI_NO_RUNNER and the reason when nothing can take the job.
+
 Run options:
   --git-branch, --branch <name>  Filter list/grep by branch
   --all-branches                Search list/grep across branches
@@ -482,6 +509,7 @@ Run options:
   --task <name>                 Select an exact job name for logs (repeatable)
   --grep <text>                 Filter log lines by text
   --runs <count>                Search this many recent runs with grep (1-50)
+                                For signals: read this many recent runs (1-100, default 50)
 
 --follow, --level and --next are unsupported. GitHub Actions logs are
 unstructured; use --grep for text filtering.

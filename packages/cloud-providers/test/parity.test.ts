@@ -226,16 +226,25 @@ describe("vercel's widened catalog", () => {
 		expect(caught.message).toContain("vercel.project/v1");
 	});
 
-	it("default is four offerings; full catalog adds project() for five", () => {
+	it("the full catalog includes the opt-in project and deployment components", () => {
 		expect(catalogIdsOf(vercel.Yard())).toHaveLength(4);
-		const full = catalogIdsOf(vercel.Yard({ project: {} }));
-		expect(full).toHaveLength(5);
-		expect(full).toContain("vercel.project/v1");
+		const full = catalogIdsOf(PARITY_SOURCES.vercel.catalog());
+		expect(full).toHaveLength(10);
+		expect(full).toEqual(
+			expect.arrayContaining([
+				"vercel.project/v1",
+				"vercel.function/v1",
+				"vercel.queues/v1",
+				"vercel.schedules/v1",
+				"vercel.cron/v1",
+				"vercel.sandbox-host/v1",
+			]),
+		);
 	});
 
-	it("providerParity() reports vercel as 4/5", () => {
+	it("providerParity() reports vercel as 9/10", () => {
 		const row = providerParity().find((r) => r.provider === "vercel");
-		expect(row?.denominator).toBe("4/5");
+		expect(row?.denominator).toBe("9/10");
 	});
 });
 

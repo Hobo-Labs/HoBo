@@ -222,9 +222,6 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			trail.push(`cd: ${fourth.slice(0, 900)}`);
 			expect(fourth).not.toContain(copied);
 			expect(world.blocked).toEqual([]);
-			// Every provider call went through the box's proxy: a call that
-			// bypassed it (Node's global fetch ignores HTTPS_PROXY) would reach
-			// the internet directly, or fail on an enterprise network.
 			expect(world.requests).not.toContainEqual(
 				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
 			);
@@ -237,6 +234,18 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					/^api\.vercel\.com POST \/v13\/deployments\b/u.test(request),
 				),
 			).toHaveLength(1);
+			expect(world.requests).toContainEqual(
+				expect.stringMatching(
+					/^app\.infisical\.com POST \/api\/v1\/projects\/proj-1\/identities$/u,
+				),
+			);
+			expect(
+				world.requests.filter((request) =>
+					/^api\.vercel\.com POST \/v10\/projects\/hobo-cd\/env\b/u.test(
+						request,
+					),
+				),
+			).toHaveLength(5);
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);
