@@ -5,8 +5,10 @@ import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
 import {
 	type InstallSpawner,
+	latestProgress,
 	parseInstallTimeoutSeconds,
 	runPnpmInstall,
+	withFleetPnpmStore,
 } from "../ci/pnpm-install.mts";
 
 class FakeInstallProcess extends EventEmitter {
@@ -39,8 +41,10 @@ function createHarness(timeoutSeconds = "1") {
 	const signals: { pid: number; signal: NodeJS.Signals }[] = [];
 	const traces: string[] = [];
 	const output: string[] = [];
+	const envs: NodeJS.ProcessEnv[] = [];
 	const spawn: InstallSpawner = (command, args, options) => {
 		calls.push({ command, args, detached: options.detached });
+		envs.push(options.env);
 		const child = new FakeInstallProcess(1000 + children.length);
 		children.push(child);
 		return child;
@@ -69,6 +73,9 @@ function createHarness(timeoutSeconds = "1") {
 
 	return {
 		children,
+		envs,
+		pendingDelays: () =>
+			tasks.filter((task) => !task.cancelled).map((task) => task.delayMs),
 		calls,
 		signals,
 		traces,
@@ -135,6 +142,86 @@ describe("bounded pnpm install", () => {
 		assert.equal(await result, 0);
 		assert.equal(JSON.parse(harness.traces[0] ?? "").outcome, "timeout");
 		assert.equal(JSON.parse(harness.traces[1] ?? "").outcome, "success");
+	});
+
+	it("keeps an install alive while pnpm reports progress and kills it only once it stalls", async () => {
+		const harness = createHarness();
+		const result = runPnpmInstall(["--frozen-lockfile"], harness.options);
+		const child = harness.children[0];
+		child?.stdout.write(
+			"Progress: resolved 818, reused 0, downloaded 1, added 0\n",
+		);
+		await flushAttempts();
+		child?.stdout.write(
+			"Progress: resolved 818, reused 0, downloaded 2, added 0\n",
+		);
+		await flushAttempts();
+		assert.deepEqual(harness.pendingDelays(), [1_000]);
+		child?.stdout.write(
+			"Progress: resolved 818, reused 0, downloaded 2, added 0\n",
+		);
+		await flushAttempts();
+		assert.deepEqual(harness.signals, []);
+		harness.runNext();
+		assert.deepEqual(harness.signals, [{ pid: 1000, signal: "SIGTERM" }]);
+		child?.finish(null);
+		await flushAttempts();
+		harness.children[1]?.finish(0);
+		assert.equal(await result, 0);
+		assert.equal(JSON.parse(harness.traces[0] ?? "").outcome, "timeout");
+	});
+
+	it("reads the last pnpm progress counters in a chunk", () => {
+		assert.equal(
+			latestProgress(
+				"Progress: resolved 1, reused 0, downloaded 0, added 0\nProgress: resolved 818, reused 406, downloaded 410, added 219\n",
+			),
+			"818,406,410,219",
+		);
+		assert.equal(
+			latestProgress(" WARN  Tarball download average speed"),
+			undefined,
+		);
+	});
+
+	it("installs into the node-shared fleet store when the runner names a writable one", async () => {
+		const harness = createHarness();
+		const result = runPnpmInstall([], {
+			...harness.options,
+			env: {
+				...harness.options.env,
+				HOBO_CI_PNPM_STORE_DIR: "/pnpm-store",
+			},
+			storeWritable: (path) => path === "/pnpm-store",
+		});
+		assert.equal(harness.envs[0]?.npm_config_store_dir, "/pnpm-store");
+		harness.children[0]?.finish(0);
+		assert.equal(await result, 0);
+	});
+
+	it("leaves an explicit, relative or unwritable store alone", () => {
+		const writable = () => true;
+		assert.equal(
+			withFleetPnpmStore(
+				{ npm_config_store_dir: "/box", HOBO_CI_PNPM_STORE_DIR: "/pnpm-store" },
+				writable,
+			).npm_config_store_dir,
+			"/box",
+		);
+		assert.equal(
+			withFleetPnpmStore({ HOBO_CI_PNPM_STORE_DIR: "pnpm-store" }, writable)
+				.npm_config_store_dir,
+			undefined,
+		);
+		assert.equal(
+			withFleetPnpmStore({ HOBO_CI_PNPM_STORE_DIR: "/pnpm-store" }, () => false)
+				.npm_config_store_dir,
+			undefined,
+		);
+		assert.equal(
+			withFleetPnpmStore({}, writable).npm_config_store_dir,
+			undefined,
+		);
 	});
 
 	it("returns the second failure status after exactly one retry", async () => {

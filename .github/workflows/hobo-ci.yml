@@ -2431,7 +2431,6 @@ jobs:
         with:
           tools: betterleaks
       - name: Scan git history for secrets
-        run: |
-          set -euo pipefail
-          betterleaks git --config .betterleaks.toml --redact --exit-code 1 \
-            --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
+        run: >-
+          node --experimental-strip-types --no-warnings scripts/ci/betterleaks-main-scan.mts
+          --range "${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
