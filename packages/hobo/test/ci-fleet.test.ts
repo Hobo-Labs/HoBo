@@ -94,7 +94,6 @@ async function session(
 	};
 	const sessions = createOwnerStoreSessions({
 		signIn: async () => ({ kind: "owner", owner }),
-		env: {},
 	});
 	await sessions.establish(CWD);
 	return sessions;
