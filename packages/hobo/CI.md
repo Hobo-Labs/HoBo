@@ -262,6 +262,77 @@ JSON output uses HoBo's envelope;
 `--format json` and `-F json` are aliases of `--json`. Unsupported filters report
 a usage error rather than silently changing their meaning.
 
+## Inspect and repair the fleet's Hostinger hosts
+
+```sh
+hobo ci fleet status
+hobo ci fleet restart hobo-arc.example.com
+hobo ci fleet start 1201
+```
+
+The self-hosted fleet's machines are Hostinger VPS the owner already bought.
+`hobo ci fleet status` lists the account's machines (id, hostname, state, plan,
+first IPv4, and whether an action is in progress); `--json` carries them as
+`data.fleet`. `restart` and `start` take a machine id or hostname, refuse a
+machine the account does not own or one with an action already in progress,
+and return Hostinger's action id and state as `data.fleetAction`; run
+`status` again to watch the machine settle. Nothing else is reachable: the
+fleet's transport allows only the machine list and those two power actions,
+so purchase, setup, recreate, stop and every `/api/billing/v1/` route are
+refused before a request leaves the process (`HOSTINGER_FLEET_ROUTE_REFUSED`).
+
+The Hostinger API token comes from the owner's store session, as
+`owner://HOSTINGER_API_TOKEN`, resolved through the session's credential
+resolver; the CLI reads
+no token from its environment, and no output, error included, carries the
+token or a store reference. Without an established session, or with no such
+entry in the store, the command refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`: call HoBo MCP's `choose_secret_store`
+for the project, then ask again. An agent runs it through HoBo MCP as the `ci`
+tool with `args: ["fleet", "status"]` (or `["fleet", "restart", "<vm>"]`) and
+the project directory as `cwd`. The verb manages machines only; it does not
+register runners or the `hobo-arc` scale set on them.
+
+## Give the fleet's ARC pods node caches
+
+```sh
+hobo ci fleet caches --plan
+hobo ci fleet caches --apply --prewarm 4da35cfd92854b07ea368680fcc19a621faa928f
+hobo ci fleet caches --status --scale-set hobo-trunk
+```
+
+ARC runner pods start with an empty pnpm store and image cache. `hobo ci fleet
+caches` patches each `AutoscalingRunnerSet` so its pods mount the node's
+`/var/lib/hobo-ci/pnpm-store` and `/var/lib/hobo-ci/images` and name them in
+`HOBO_CI_PNPM_STORE_DIR` and `HOBO_CI_IMAGE_CACHE_DIR`, and with
+`--prewarm <sha>` creates a Job that fills the node store from that commit's
+lockfile. `--plan` (the default) shows the JSON patch and the Job without
+sending them; `--apply` sends them and is idempotent; `--status` reports
+whether each scale set has the caches mounted and whether its newest prewarm
+Job succeeded. `--json` carries the `CiFleetCaches` record as
+`data.fleetCaches`.
+
+The cluster is the kubernetes pool with a scale set in `.hobo/ci.json`'s
+default environment (`hostinger-arc`, namespace `arc-runners`); `--cluster
+<pool>` picks one when several exist, `--namespace` overrides the namespace,
+and `--scale-set <name>` (repeatable) narrows the default of every scale set
+in it. The verb reaches the API server directly over HTTPS with the pool's
+kubeconfig, which the owner keeps in their store under the pool's
+`connectionRef` upper-cased with `_KUBECONFIG` appended:
+`owner://HOSTINGER_ARC_KUBECONFIG`, and from nowhere else. It verifies the server against the kubeconfig's
+`certificate-authority-data` and authenticates with its `token` or inline
+client certificate; it reads no kubeconfig file and refuses exec plugins,
+file paths and skipped TLS verification
+(`HOBO_CI_FLEET_KUBECONFIG_UNSUPPORTED`). Without an established owner store
+session or that entry it refuses with `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`
+before any network call. The client can only list, read and JSON-patch
+`autoscalingrunnersets.actions.github.com` and create and list `jobs.batch`;
+anything else is refused before a request leaves the process. No output,
+error included, carries the kubeconfig, its token or its key. An agent runs it
+through HoBo MCP as the `ci` tool with
+`args: ["fleet", "caches", "--apply", "--prewarm", "<sha>"]` and the project
+directory as `cwd`.
+
 ## Move workflow jobs to the fleet
 
 ```sh
@@ -449,7 +520,7 @@ hobo ci connect boat --org Hobo-Labs --launch           # runs `boat ci connect`
 Secrets never pass through HoBo:
 
 - The config holds **references only**. `auth.secretRef` must be `github-secret:NAME` or `env:NAME`. The JSON schema, the CUE model (`#RunnerIntegration`) and the loader reject anything else, including credential-shaped or high-entropy strings in any field, and their errors never echo the value.
-- The CLI never prompts for, reads or prints a credential. For `secret-ref` you store the value yourself (`gh secret set NAME` prompts).
+- The CLI never prompts for, reads or prints a credential. A `secret-ref` only names where the provider's integration reads the value; HoBo creates no such entry, and agents never store one ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)).
 - `--launch` runs the provider CLI with credential-like environment variables (`*TOKEN*`, `*SECRET*`, `*API_KEY*` …) removed, and output is redacted.
 - `packages/hobo/test/ci-connect-leak.test.ts` generates synthetic, real-looking tokens at runtime (never written to disk) and asserts that none appear in CLI output, progress or the written config.
 
@@ -648,9 +719,11 @@ scope response fails closed, and every issued session is revoked. The
 deploy-token read itself never signs in as the writer.
 
 The GitHub App's converted credentials never touch a person or this CLI.
-Provision GitHub's one-time manifest code as the `HOBO_APP_MANIFEST_CODE`
-Actions secret, then dispatch `app-credentials.yml` with only the relay origin
-and owner id. Its call to the `app-credentials` job in `relay-deploy.yml`
+`app-credentials.yml` reads GitHub's one-time manifest code from the
+`HOBO_APP_MANIFEST_CODE` Actions secret and takes only the relay origin and
+owner id as dispatch inputs; agents never provision that secret
+([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)), and
+`hobo ci app create` below converts the code without one. The workflow's call to the `app-credentials` job in `relay-deploy.yml`
 passes the code as a required reusable-workflow secret, refuses a missing or
 empty value, masks it, and runs `hobo ci app deposit`, which converts, verifies
 the App and writes the credentials as `hobo-ci-writer` over GitHub OIDC. The
@@ -677,15 +750,16 @@ and stores its credentials straight in the relay's config service, Infisical
 (ADR-0179, phase 3). Nothing is written to disk or printed.
 
 ```sh
-export INFISICAL_PROJECT_ID=<project id> INFISICAL_ENVIRONMENT=prod \
-  INFISICAL_SECRET_PATH=/hobo-ci-relay INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=<id>
-read -rs INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 hobo ci app create --relay https://<relay-host> --owner-id "$(gh api user --jq .id)"
 ```
 
-1. It signs in to Infisical first, with Universal Auth credentials from the
-   environment (`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `_SECRET`, the names the
-   Infisical CLI reads) or an access token in `INFISICAL_TOKEN`, and lists the
+1. It signs in to Infisical first. The command reads the folder's coordinates
+   (`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`) and
+   a sign-in (`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `_SECRET`, or
+   `INFISICAL_TOKEN`) from its process environment, the names the Infisical CLI
+   reads. Agents never set or store these
+   ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)); the owner
+   runs the command from their own Infisical session. It then lists the
    folder's names. If App credentials are already there it stops unless `--yes`.
 2. It serves a page on `127.0.0.1` and opens it (the URL is also printed). The
    page posts the manifest (`createGithubAppManifest`, the reviewed permissions

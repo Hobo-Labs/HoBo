@@ -32,11 +32,6 @@ import {
 	defaultCodegenLayout,
 } from "./types.js";
 
-// The default project codegen engine: reads the WIT/Zod/allow/bindle sources
-// from the layout, normalizes them into a deterministic source model, and
-// renders executable resource APIs, schema-derived types, and the manifest.
-// Runtime effects use the existing EventStore and workflow ports.
-
 export interface ProjectCodegenEngineOptions {
 	readonly layout?: CodegenLayout;
 }
@@ -97,10 +92,6 @@ export function createProjectCodegenEngine(
 	};
 }
 
-/**
- * Read and normalize a project's codegen sources into the deterministic
- * source model shared by the renderers and the `hobo stub` descriptor list.
- */
 export async function loadSourceModel(
 	projectRoot: string,
 	sources: CodegenSourceLayout,
@@ -161,7 +152,6 @@ async function readJsonSource(
 	}
 }
 
-// Raw JSON views (post-toStableValue everything is plain objects/arrays).
 interface RawZod {
 	readonly resources?: Record<string, JsonValue>;
 	readonly definitions?: Record<string, JsonValue>;
@@ -185,7 +175,6 @@ interface RawBindleFile {
 export interface SourceModelField {
 	readonly name: string;
 	readonly type: string;
-	/** Deterministic example value used for contract-backed trainable stubs. */
 	readonly example: JsonValue | undefined;
 	readonly schema?: CodegenFieldSchema;
 	readonly optional?: boolean;

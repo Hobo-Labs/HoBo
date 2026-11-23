@@ -43,14 +43,12 @@ async function getTotalPageViews() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  // SAFETY: assertion to `(await response.json()) as PageViewsResult` is required at this boundary.
-  const json = (await response.json()) as PageViewsResult;
+  const json: PageViewsResult = await response.json();
 
   return json.results.pageviews.value;
 }
 
 async function getPrevDayViewsChangePercent() {
-  // Calculate today, yesterday, and the day before yesterday's dates
   const today = new Date();
   const yesterday = new Date(today.setDate(today.getDate() - 1))
     .toISOString()
@@ -61,7 +59,6 @@ async function getPrevDayViewsChangePercent() {
     .toISOString()
     .split("T")[0];
 
-  // Fetch page views for yesterday and the day before yesterday
   const pageViewsYesterday = await getPageviewsForDate(yesterday);
   const pageViewsDayBeforeYesterday =
     await getPageviewsForDate(dayBeforeYesterday);
@@ -90,8 +87,7 @@ async function getPageviewsForDate(date: string) {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  // SAFETY: assertion to `(await response.json()) as PageViewsResult` is required at this boundary.
-  const data = (await response.json()) as PageViewsResult;
+  const data: PageViewsResult = await response.json();
   return data.results.pageviews.value;
 }
 
@@ -104,7 +100,6 @@ export async function getSources() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  // SAFETY: assertion to `(await response.json()) as PageViewSourcesResult` is required at this boundary.
-  const data = (await response.json()) as PageViewSourcesResult;
+  const data: PageViewSourcesResult = await response.json();
   return data.results;
 }

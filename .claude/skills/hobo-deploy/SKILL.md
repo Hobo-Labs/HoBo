@@ -70,7 +70,7 @@ owner's response. Do not relay private fields from a raw progress line.
 
 **When the host can render the required secure form, every owner-facing line
 gets a structured ask, never a question in prose.** A choice goes to a picker
-the host renders, a credential to the session's credential form. If an ask
+the host renders, a value the run waits for to HoBo's secret capture. If an ask
 does not complete (interrupted, the session restarted, the form closed),
 issue it again as the first thing you do, before any other reply. Ending a
 turn with a choice or credential still unasked is a failure when that form is
@@ -99,10 +99,14 @@ channel as described above; a displayed form alone does not establish privacy.
    at an owner step and report the missing secure hand-off if necessary.
 2. On `HOBO_*_STORE_CHOICE` (the owner has not chosen a store): use the
    HoBo MCP server's **`choose_secret_store`** (`mcp__hobo__choose_secret_store`,
-   `family` ci or cd) only when the connected implementation keeps the choice
+   `family` ci or cd, the same `cwd`, no store settings in its arguments)
+   only when the connected implementation keeps the choice
    in the temporary owner session and excludes store coordinates from every
-   agent-visible response. If that privacy cannot be established, report the
-   missing secure hand-off and do not collect the choice's fields. A supported
+   agent-visible response. HoBo's implementation saves the owner's answer in
+   their own HoBo settings, establishes the owner store session, and returns
+   only a status and the store's name. On `secure-form-unavailable`, or if
+   that privacy cannot be established, report the missing secure hand-off and
+   do not collect the choice's fields. A supported
    host shows the owner a picker of **Infisical**,
    **1Password** and **Bitwarden** and a secure owner form for its settings.
    The owner supplies the information directly to HoBo, never to the agent.
@@ -117,13 +121,18 @@ channel as described above; a displayed form alone does not establish privacy.
    token is present. Never ask the owner to set environment variables, never
    send them to a terminal, and never ask them to create identities or
    tokens by hand. Ask nothing about the other stores.
-3. On `HOBO_OWNER_CREDENTIAL`: the run is waiting for a credential. Use a
-   privacy-verified owner form that presents any host, guide, and steps directly
-   to the owner without returning them to the agent. For a username and password
-   form, use `suggested_type: "basic"` when the host supports it. Once the owner
-   saves it, the run continues by itself; do not rerun it. If that private form
-   is unavailable, report the missing secure hand-off. Do not relay a host,
-   guide, or raw steps from the progress line into chat.
+3. On `HOBO_*_STORE_NEEDS_SIGN_IN` or `HOBO_*_BITWARDEN_NEEDS_API_KEY`
+   naming the HoBo MCP route: the owner's store opens only with a sign-in the
+   owner hands to the run (an Infisical access token, a 1Password Connect
+   token, or a Bitwarden personal API key). A shell run has no owner channel
+   to take it, so run the same lifecycle through the HoBo MCP server's `ci` or
+   `cd` tool (step 4): HoBo's secret form takes the value straight to the
+   waiting run, which holds it in memory only and never writes it to a file,
+   the session's environment or a store of the agent's own. Never use
+   `request_credential` or any other agent credential store for it: the
+   repository's agent hooks deny it and `eval:hand-off-transcript` flags it.
+   If no privacy-verified HoBo MCP form is available, report the missing
+   secure hand-off. Do not relay a guide or raw steps from a refusal into chat.
 4. **Through a privacy-verified HoBo MCP server, the run asks the owner itself.**
    A compatible `cd` (or `ci`) call must show every step as a
    form in the owner's host, its link inside it: Infisical's sign-in link
@@ -137,8 +146,8 @@ channel as described above; a displayed form alone does not establish privacy.
    withdrawn and the call ends the same way, so it never hangs. If the owner
    cannot see a privacy-verified form, report that capability gap; do not
    relay a dynamic link or value through chat. Never ask for a value in chat,
-   and never use `request_credential` for a value the lifecycle is waiting on
-   (that form feeds the network proxy, not the run).
+   and never use `request_credential`: it stores a key in the cloud
+   environment, outside HoBo, and the repository's agent hooks deny it.
    On `HOBO_OWNER_CAPTURE`, when the lifecycle has returned and calls for a
    separate capture, use `capture_secret` once per requested name through a
    privacy-verified form. Its guide is shown directly to the owner; do not
@@ -182,7 +191,14 @@ setup page (`HOBO_OWNER_PAGE`) in their browser. That page is for their own
 machine only, never a remote box.
 
 Never fetch or submit a page, approve a code, or read a secret yourself.
-Secret variables in the agent's environment are ignored on purpose.
+Secret variables in the agent's environment are ignored on purpose. Agents never
+store secrets: no environment variables holding credentials or store settings,
+no `.env` or local secret files, no GitHub Actions secrets or variables
+(`gh secret set`, `gh variable set`), no `vercel env add`, and no credential
+store of their own. Every credential is an `owner://<NAME>` entry in the
+owner's store session; `env://<NAME>` locators are refused. This is the
+[repository rule](../../../AGENTS.md#repository-rules-for-every-agent), with no
+exceptions.
 
 ## Reporting
 

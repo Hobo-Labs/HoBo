@@ -22,7 +22,6 @@ export async function getSources() {
         endDate: "today",
       },
     ],
-    // for a list of dimensions and metrics see https://developers.google.com/analytics/devguides/reporting/data/v1/api-schema
     dimensions: [
       {
         name: "source",
@@ -67,7 +66,7 @@ async function getTotalPageViews() {
     property: `properties/${env.GOOGLE_ANALYTICS_PROPERTY_ID}`,
     dateRanges: [
       {
-        startDate: "2020-01-01", // go back to earliest date of your app
+        startDate: "2020-01-01",
         endDate: "today",
       },
     ],

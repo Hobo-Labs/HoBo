@@ -237,7 +237,7 @@ function parseMainGate(
 function parseMergeGroup(
 	value: JsonValue | undefined,
 ): RunnerRouting["mergeGroup"] | undefined {
-	if (value === undefined) return { reusePrFabric: false };
+	if (value === undefined) return { reusePrFabric: true };
 	const reusePrFabric = asBoolean(
 		exactly(value, ["reusePrFabric"])?.reusePrFabric,
 	);

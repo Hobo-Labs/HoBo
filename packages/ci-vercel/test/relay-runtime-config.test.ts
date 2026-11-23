@@ -97,6 +97,30 @@ describe("the relay runtime config record", () => {
 });
 
 describe("parseRelayRuntimeConfig", () => {
+	it("separates the entries a folder lacks from those it holds in a refused shape", () => {
+		const {
+			HOBO_CI_GITHUB_APP_PRIVATE_KEY: _key,
+			HOBO_CI_SESSION_KEY: _session,
+			CRON_SECRET: _cron,
+			HOBO_CI_GITHUB_APP_ID: _app,
+			...partial
+		} = entries;
+		const error = errorOf(() =>
+			parseRelayRuntimeConfig({
+				...partial,
+				HOBO_CI_WEBHOOK_SECRET: "short-webhook-value",
+			}),
+		);
+		expect(error.gaps).toEqual({
+			missing: ["HOBO_CI_GITHUB_APP_ID", "HOBO_CI_GITHUB_APP_PRIVATE_KEY"],
+			invalid: ["HOBO_CI_WEBHOOK_SECRET"],
+		});
+		expect(JSON.stringify(error.gaps)).not.toContain("short-webhook-value");
+		expect(
+			errorOf(() => parseRelayRuntimeConfig({ ...entries, STRAY: "x" })).gaps,
+		).toBeUndefined();
+	});
+
 	it("accepts a complete configuration and freezes it", () => {
 		const config = parseRelayRuntimeConfig(entries);
 		expect(config.HOBO_CI_GITHUB_APP_ID).toBe("123456");

@@ -354,10 +354,12 @@ and on `workflow_dispatch`:
    ([above](#deploying-the-relay-with-hobo)). Vercel's Git integration is
    never connected. Each command's exit status is its step's.
 
-To deposit GitHub App credentials, provision the one-time manifest code as the
-`HOBO_APP_MANIFEST_CODE` Actions secret, then manually run
 [`.github/workflows/app-credentials.yml`](../../.github/workflows/app-credentials.yml)
-with the relay origin and owner id. The code is never a dispatch or reusable-
+deposits GitHub App credentials: it reads the one-time manifest code from the
+`HOBO_APP_MANIFEST_CODE` Actions secret and takes the relay origin and owner id
+as inputs. Agents never provision that secret
+([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)); `hobo ci app
+create` converts the code and writes the store entries without it. The code is never a dispatch or reusable-
 workflow input. The caller passes it as a required secret to only the
 `app-credentials` job in `relay-deploy.yml`, which refuses a missing or empty
 value, masks it, and runs `hobo ci app deposit` to convert it and write the App's
@@ -418,7 +420,7 @@ in the journal (its compensation restores the predecessor Set there):
 | Code | The production domain said | Remediation in the message |
 |---|---|---|
 | `HOBO_CI_DEPLOY_COMMIT_MISMATCH` | `/healthz` names another commit, or none | which deployment Vercel aliased to production; the right origin |
-| `HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED` | `/readyz` `state: "not-configured"` | fill the store `deploy/secret-store.binding.json` names ([folder](CONFIG-SERVICE.md#what-the-folder-holds)) |
+| `HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED` | `/readyz` `state: "not-configured"` (with the `missing` and `invalid` entries it names) | fill the store `deploy/secret-store.binding.json` names ([folder](CONFIG-SERVICE.md#what-the-folder-holds)) |
 | `HOBO_CI_DEPLOY_RELAY_NOT_READY` | `/readyz` `config-service-denied`, `config-service-unavailable`, `start-failed`, a started relay's false parts, or `/healthz` not 200 | per reason |
 | `HOBO_CI_DEPLOY_VERIFICATION_FAILED` | anything else | — |
 
@@ -659,7 +661,11 @@ binding) `/readyz` answers 503 `{ready: false, started: false, state}` and
 every other route 503. `state` names why, never a value: `not-configured` (the
 store holds no valid relay configuration, or none is bound), `config-service-denied`
 (the store refused the relay's OIDC identity), `config-service-unavailable`,
-or `start-failed` (the log's `hobo_ci_relay_init_failed` says more).
+or `start-failed` (the log's `hobo_ci_relay_init_failed` says more). When the
+store's folder is read but incomplete, `not-configured` also names the relay's
+own entries by name: `missing` (required and absent; the keys derived from the
+App private key are not listed while that key is missing) and `invalid` (held
+but refused by their parser). Entries the relay does not use are never named.
 
 **What the deployment needs.**
 
@@ -916,6 +922,44 @@ pass already assumes), `src/function-limits.ts` holds the same number, and
 an MCP client waits by default. `test/function-limits.test.ts` fails if the
 two numbers differ. The server reads through the store's `observer()`, and
 `wait_for_events` reads the store's change ring.
+
+### Setup mode
+
+While the relay cannot start (its config-service folder is incomplete, or the
+store refuses or does not answer), `/mcp` is served by the relay's
+[setup-mode MCP server](../ci-gh-actions/README.md#setup-mode) instead of 503,
+so an MCP client such as a claude.ai custom connector can connect without
+credentials, read `relay_setup_status` and let the owner fill the folder with
+`relay_setup_provide`. `/.well-known/*` answers 404 (no OAuth: the connector
+connects without authorization), and `/readyz`, webhooks, the account API and
+every other route still answer 503, so CI traffic is refused exactly as before.
+Setup mode needs the production host name Vercel sets
+(`VERCEL_PROJECT_PRODUCTION_URL`) for its origin; without it `/mcp` answers 503.
+Once the relay starts, `/mcp` is the account-authenticated server again.
+
+- **What it offers** (`src/relay-setup.ts`): every entry of the relay
+  runtime configuration schema except the keys derived from the App private
+  key, each checked by that entry's own parser before anything is written
+  (a pasted private key whose line breaks were lost is restored first).
+- **Who may write.** The relay's own identity is Viewer and stays so. Values
+  are written with the store's `hobo-secret-writer` identity (Universal Auth,
+  the identity HoBo's MCP capture already uses): the owner creates a client
+  secret limited to one use and a few minutes in the store and types its
+  client ID and secret into the same form. The relay logs in once (no retry),
+  writes each accepted entry to the folder its loader reads, and revokes the
+  token. Possession of that one-use secret is the owner's authentication: the
+  relay stores no credential and verifies nothing itself. Without an Infisical
+  config source (the `env` source of local runs and previews), nothing is
+  writable and the status says so.
+- **What leaves the relay**: names and outcome codes only. The form's values go
+  from the owner's client to the relay and on to the store; they are never in a
+  tool result, an error or a log line (`test/relay-setup.test.ts`,
+  `../ci-gh-actions/test/relay-setup-mcp.test.ts`). The boundary is
+  [`contracts/relay-setup-mcp.pact.json`](contracts/relay-setup-mcp.pact.json).
+- **Statelessness.** A form's answer is a separate HTTP request that must
+  reach the function instance that asked. Vercel usually routes a single
+  owner's requests to one warm instance; when it does not, the form times out
+  as `form-unavailable` and the owner asks again with a new one-use secret.
 
 Queue messages and configuration follow **parse, don't validate**:
 `parseRelayQueueMessage` parses a queue payload into the derived types

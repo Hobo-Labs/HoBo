@@ -34,14 +34,6 @@ const year = new Date().getFullYear();
 				</p>
 			</div>
 			{
-				/*
-				 * One column per section, listing that section's groups — not
-				 * every page. The footer used to render all 109 nav items, which
-				 * was byte-identical to the docs sidebar: a reader on any docs
-				 * page saw the same 109 links twice on one screen, and on mobile
-				 * the footer alone was a ~110-link single column thousands of
-				 * pixels tall. A footer is for orientation, not an index.
-				 */
 				sections.map((section) => (
 					<nav aria-label={`Footer: ${section.label}`}>
 						<p class="nav-label">
@@ -59,9 +51,6 @@ const year = new Date().getFullYear();
 			}
 		</div>
 		<div class="footer-note">
-			{/* The APPROVED idle sheet. A generated "stand" variant replaced it
-			    for a while — unapproved, and the owner rejected it. Approved art
-			    is not swapped without approval, full stop. */}
 			<BoIdle size="3.25rem" class="footer-bo" />
 			<span>
 				HoBo is <strong>pre-release</strong> — the surfaces documented here are

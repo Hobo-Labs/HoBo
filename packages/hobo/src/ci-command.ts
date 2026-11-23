@@ -7,6 +7,7 @@ import { createInterface } from "node:readline/promises";
 import { parseArgs, promisify } from "node:util";
 import type { JsonValue } from "@bufbuild/protobuf";
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
+import type { CredentialResolver } from "@hobo/cd";
 import { loadCiProjectFromDirectory } from "@hobo/ci-gh-actions/cli-serve";
 import {
 	CiRelayClientError,
@@ -30,10 +31,17 @@ import {
 	redirectReceiverFrom,
 	withoutSecretEnv,
 } from "@hobo/hobo-ci";
+import type { KubernetesTlsMaterial } from "@hobo/provider-kubernetes";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
+import { runCiFleet } from "./ci-fleet.js";
+import {
+	defaultKubernetesTransport,
+	loadFleetClusters,
+	runCiFleetCaches,
+} from "./ci-fleet-caches.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
 import { runCiInit } from "./ci-init.js";
@@ -57,6 +65,7 @@ import { type CiServeOptions, runCiServe } from "./ci-serve.js";
 import { fleetViews } from "./fleet-command.js";
 import { createFleetRuntime } from "./fleet-runtime.js";
 import { type NamedFleetView, renderFleetStatus } from "./fleet-status.js";
+import { createFetchHttpTransport } from "./resolver-iac-provider.js";
 import type { VercelFetch } from "./vercel-client.js";
 import type { VercelBuildRunner } from "./vercel-prebuilt.js";
 
@@ -466,6 +475,9 @@ export function createCiCommand(
 		probeHttp?: HttpTransport;
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
+		fleetCredentials?: (cwd: string) => CredentialResolver;
+		hostingerHttp?: HttpTransport;
+		kubernetesHttp?: (tls: KubernetesTlsMaterial) => HttpTransport;
 		fleetStatus?: CiFleetStatus;
 	} = {},
 ): CommandModule {
@@ -473,6 +485,28 @@ export function createCiCommand(
 		implemented: true,
 		async run({ args, flags, emitProgress }) {
 			if (args.length === 0) return { message: CI_HELP };
+			if (args[0] === "fleet") {
+				const [, verb, ...rest] = args;
+				if (verb === "caches") {
+					const local = await localRepository(deps, flags.cwd, {});
+					return runCiFleetCaches({
+						args: rest,
+						repository: local.repository,
+						clusters: () => loadFleetClusters(local.root),
+						credentials: deps.fleetCredentials?.(flags.cwd),
+						transport: deps.kubernetesHttp ?? defaultKubernetesTransport,
+					});
+				}
+				const option = args.find((arg) => arg.startsWith("-"));
+				if (option !== undefined)
+					return usage(`${option} does not apply to hobo ci fleet.`);
+				return runCiFleet({
+					positionals: args.slice(1),
+					credentials: deps.fleetCredentials?.(flags.cwd),
+					transport:
+						deps.hostingerHttp ?? createFetchHttpTransport(globalThis.fetch),
+				});
+			}
 			let parsed: ReturnType<typeof parseCiArgs>;
 			try {
 				parsed = parseCiArgs(args);
@@ -515,6 +549,7 @@ export function createCiCommand(
 					"init",
 					"signals",
 					"diagnose",
+					"fleet",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");

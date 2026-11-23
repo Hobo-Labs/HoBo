@@ -1,37 +1,29 @@
 {
   "schemaVersion": 1,
   "id": "agent-check-staged",
-  "title": "Staged agent check is narrow and actionable after a skill edit",
+  "title": "Staged agent checks",
   "experiences": [
     "dx"
   ],
   "personas": [
-    "developer",
-    "coding-agent",
-    "junior-typescript-developer"
+    "developer"
   ],
   "interfaces": [
-    "cli",
-    "docs",
-    "mcp",
-    "config"
+    "cli"
   ],
   "driver": "cli",
   "surfaces": [
-    "pnpm run agent:check -- --staged"
+    "pnpm run agent:check -- --staged --explain"
   ],
   "tags": [
     "@optimizexp",
     "@dx"
   ],
-  "generatedFromSeed": true,
-  "seedDigest": "5eaf1998e33e5181",
-  "personaResolution": "explicit --personas",
   "bindings": {
     "steps": "steps/bindings.steps.ts",
     "implementations": "steps/implementations.ts",
     "tests": "test/agent-check-staged.bindings.test.ts"
   },
   "implementationStatus": "wired",
-  "primaryCommand": "pnpm run agent:check -- --staged"
+  "primaryCommand": "pnpm run agent:check -- --staged --explain"
 }

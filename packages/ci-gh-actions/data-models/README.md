@@ -12,7 +12,10 @@ invalid fixtures run through schema-tools. Generated TypeScript lives under
 
 `relay_mcp.proto` owns what the relay's MCP server returns: the lease, queued
 job and event views, their lists, the relay status (with whether the host
-reads a mesh) and the quarantine views.
+reads a mesh), the quarantine views, and setup mode's
+`RelayMcpSetupStatus` and `RelayMcpSetupResult` (entry names and outcome codes;
+the `relay-mcp-setup-*` invalid fixtures pin that neither carries a value or a
+store reference).
 Each is a deliberate subset built field by field; `onboarding.cue` closes them,
 and the `relay-mcp-*` fixtures pin that an event's stored `detail` or a lease's
 sandbox identity does not fit a view, and that a cursor is an opaque token,

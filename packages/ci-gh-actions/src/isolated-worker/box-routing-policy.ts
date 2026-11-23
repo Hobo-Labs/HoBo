@@ -63,7 +63,7 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 	boxRunner: false,
 	mainWorkspaceParallelCap: 4,
 	mainGate: { reuseMergeQueue: true },
-	mergeGroup: { reusePrFabric: false },
+	mergeGroup: { reusePrFabric: true },
 	verdict: {
 		minFreeRunners: DEFAULT_FLEET_MIN_FREE_RUNNERS,
 		enterMs: ROUTING_HOLD_ENTER_MS,

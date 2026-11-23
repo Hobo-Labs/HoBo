@@ -99,6 +99,9 @@ import "list"
 #RelayMcpQuarantinedDelivery: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", event: string & !="", installationId: int & >0, repositoryId: int & >0, receivedAt: string & !="", attempts?: int & >=0}
 #RelayMcpQuarantine: {deliveries?: [...#RelayMcpQuarantinedDelivery]}
 #RelayMcpRetry: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", status: "queued"}
+#RelayMcpSetupEntry: string & =~"^[A-Z][A-Z0-9_]{0,63}$"
+#RelayMcpSetupStatus: {state: "configured" | "not-configured" | "config-service-denied" | "config-service-unavailable" | "start-failed", missing?: [...#RelayMcpSetupEntry], invalid?: [...#RelayMcpSetupEntry], providable?: [...#RelayMcpSetupEntry], writable?: bool}
+#RelayMcpSetupResult: {outcome: "written" | "declined" | "cancelled" | "nothing-to-provide" | "nothing-valid" | "form-unavailable" | "store-not-writable" | "writer-refused" | "store-unavailable", written?: [...#RelayMcpSetupEntry], refused?: [...#RelayMcpSetupEntry], remaining?: [...#RelayMcpSetupEntry]}
 // The routing slip (ADR-0181): the box relay's current routing answer for one
 // repository, kept as the message of a parentless commit at
 // `refs/hobo/routing-slip`. Times are the relay's `toISOString()` (fixed
@@ -181,4 +184,4 @@ import "list"
 #RelayCacheAppState:{purpose: "register" | "install", accountId: #RelayCacheAccountId, subject: string & !="", expiresAtMs: number & >0}
 #RelayCacheVerifiedInstallations: {accountId: #RelayCacheAccountId, appId: number & >0, verifiedIds?: [...(number & >0)] & list.MaxItems(100)}
 #RelayCacheProxyMeter: {leaseId: #RelayCacheLeaseId, proxySessionId: string & =~"^sbx_[A-Za-z0-9_-]+$", bytes?: number & >=0, calls?: number & >=0, readAt: string & !=""}
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #RoutingSlip | #RunnerRouting | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #RelayMcpSetupStatus | #RelayMcpSetupResult | #RoutingSlip | #RunnerRouting | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter

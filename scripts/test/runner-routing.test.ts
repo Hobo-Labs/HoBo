@@ -140,23 +140,23 @@ describe("the dependency-free routing reader", () => {
 		assert.equal(readRunnerRouting(undefined), undefined);
 	});
 
-	it("reads mergeGroup.reusePrFabric in both parsers, off when absent", () => {
+	it("reads mergeGroup.reusePrFabric in both parsers, on when absent", () => {
 		const fixturePolicy = JSON.parse(fixture("valid", "runner-routing.json"));
 		const { mergeGroup: _committed, ...absent } = fixturePolicy;
 		assert.ok(committed);
-		assert.deepEqual(committed.mergeGroup, { reusePrFabric: false });
+		assert.deepEqual(committed.mergeGroup, { reusePrFabric: true });
 		for (const source of [absent, committed]) {
 			const mine = parseRunnerRouting(source);
 			const theirs = parseWithZod(source);
 			assert.deepEqual(mine, theirs);
-			assert.deepEqual(mine?.mergeGroup, { reusePrFabric: false });
+			assert.deepEqual(mine?.mergeGroup, { reusePrFabric: true });
 		}
 		assert.deepEqual(
 			parseRunnerRouting({
 				...absent,
-				mergeGroup: { reusePrFabric: true },
+				mergeGroup: { reusePrFabric: false },
 			})?.mergeGroup,
-			{ reusePrFabric: true },
+			{ reusePrFabric: false },
 		);
 	});
 });

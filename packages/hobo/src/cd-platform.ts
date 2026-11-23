@@ -1,6 +1,7 @@
 export {
 	CD_NO_MANAGED_CAMPS,
 	type CdHost,
+	type CdJournalPass,
 	type CdPassCampReport,
 	type CdPassReport,
 	type CdReadiness,
