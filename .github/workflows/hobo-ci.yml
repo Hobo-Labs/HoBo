@@ -235,7 +235,11 @@ jobs:
           name: ci-runner-oci-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/hobo-ci-job-logs/ci-runner-oci-build.log
           if-no-files-found: ignore
-      # Published from main only; a pull request's image is tried on the box, not shipped.
+      - name: Share this pull request's runner image through GHCR
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success' && steps.ci_runner_image_build.outcome == 'success' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/push-ci-runner-image-ghcr.mts --pull-request
       - name: Push runner image to GHCR (optional)
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
         env:
@@ -2167,8 +2171,8 @@ jobs:
 
   dev-cold-loop-gate:
     name: hobo dev cold loop (offline <=60s)
-    needs: route
-    if: github.event_name == 'pull_request'
+    needs: [route, ci-runner-image]
+    if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     # The 60 s budget is the cold loop's own; an ARC pod first pulls the worker image,
     # or builds it (build.sh has a 600 s budget) when GHCR has none for this key.
