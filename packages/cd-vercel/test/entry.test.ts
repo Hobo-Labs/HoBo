@@ -337,7 +337,7 @@ describe("the owner's store, and the journal fleet in it", () => {
 		relayIdentityId: "00000000-0000-4000-8000-000000000002",
 	};
 
-	it("reads the committed coordinates, and refuses a malformed binding", () => {
+	it("reads the bundled coordinates, and refuses a malformed binding", () => {
 		const parsed = parseCdStoreCoordinates(JSON.stringify(binding));
 		expect(parsed.binding.siteUrl).toBe("https://app.infisical.com");
 		expect(parsed.binding.projectId).toBe(binding.projectId);
@@ -358,10 +358,17 @@ describe("the owner's store, and the journal fleet in it", () => {
 		);
 	});
 
-	it("says no binding is committed until hobo cd up writes one", () => {
+	it("refuses a deployment that bundles no binding, naming the owner's store", () => {
 		expect(() =>
 			readCdStoreCoordinates(new URL("file:///nowhere/binding.json")),
-		).toThrow(expect.objectContaining({ code: "cd-store-binding-missing" }));
+		).toThrow(
+			expect.objectContaining({
+				code: "cd-store-binding-missing",
+				message: expect.stringMatching(
+					/owner's secret store.*none is committed/u,
+				),
+			}),
+		);
 	});
 
 	it("names each composition by deployment and a fresh holder id", () => {

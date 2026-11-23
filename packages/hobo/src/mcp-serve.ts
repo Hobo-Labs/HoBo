@@ -14,7 +14,7 @@ import {
 	whichOnPath,
 } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
-
+import { ownerSecretStoreBindingStore } from "./ci-secret-store.js";
 import { createComposedHoboCli, ownerForFamily } from "./cli.js";
 import {
 	relaunchInputFor,
@@ -766,7 +766,9 @@ export function composeHoboMcp(options: {
 			return request("elicitation/create", params);
 		},
 		connector: createInfisicalCaptureConnector({
-			projectDir: options.projectDir,
+			bindingStore: ownerSecretStoreBindingStore(
+				sessions.entries(options.projectDir),
+			),
 		}),
 		notify: (method, params) => {
 			options.output.write(

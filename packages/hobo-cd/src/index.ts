@@ -80,10 +80,11 @@ export {
 } from "./vercel-device.js";
 export {
 	CD_DEPLOY_ENVIRONMENT,
-	CD_DEPLOY_SETTINGS,
+	CD_STORE_COORDINATES_HANDOFF,
 	CD_WORKLOAD_IDENTITY_ENTRY,
 	type CdDeployEnvironment,
 	type CdWorkloadDeps,
+	cdStoreCoordinatesText,
 	ensureCdWorkloadIdentity,
 	vercelProjectTrust,
 } from "./workload-identity.js";

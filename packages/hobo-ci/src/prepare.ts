@@ -616,7 +616,7 @@ async function prepareGithubWithVault(
 			[
 				"Run hobo ci up --hand-off through the HoBo MCP server (its ci tool): it brings each step to you as a link or a form, wherever you are, and keeps what you give it in your secret store.",
 				"An agent can run hobo ci up --hand-off with a preconnected store and GitHub App; otherwise the run reports the available owner actions.",
-				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID, a non-secret setting) so the run signs in with its own OIDC token.`,
+				"For CI, run with the owner's store session (HoBo MCP's choose_secret_store): the store's coordinates stay in the owner's secret store and are never set as environment variables.",
 			],
 		);
 

@@ -104,7 +104,7 @@ export function memoryConnector(
 			if (options.connected === false)
 				return {
 					connected: false,
-					reason: "deploy/secret-store.binding.json is missing",
+					reason: "the owner's secret store holds no relay binding",
 					nextStep:
 						"Use the secure HoBo owner hand-off to open the selected store, then capture again.",
 				};

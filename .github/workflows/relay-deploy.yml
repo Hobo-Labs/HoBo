@@ -19,12 +19,6 @@ name: HoBo relay deploy
 # run in the protected deploy job, in order, and fail closed. The unprotected
 # gate job decides whether that job starts. A final step probes the production
 # origin again and fails the job on anything but a serving relay.
-#
-# No secret and no repository variable configures relay deployment. The store's
-# coordinates (ids and an origin, no credential) are committed to
-# packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself
-# reads in production. A missing or malformed binding fails the gate; a valid
-# binding without a deploy credential skips deployment with an explicit notice.
 
 on:
   push:

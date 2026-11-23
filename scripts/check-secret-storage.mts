@@ -94,6 +94,93 @@ const ENV_DESTRUCTURE =
 const SHELL_READ = /\$\{?([A-Z_][A-Z0-9_]*)\b/gu;
 const ENVIRONMENT_LOCATOR = /\benv:\/\/([A-Za-z_][A-Za-z0-9_.-]*)/gu;
 
+export const STORE_COORDINATE_KEYS: readonly string[] = [
+	"projectId",
+	"relayIdentityId",
+	"deployIdentityId",
+	"deployCredentialIdentityId",
+	"deployProjectId",
+	"vercelTeamId",
+	"teamId",
+	"deployOidcSubject",
+	"claimBundleId",
+];
+const COORDINATE_ASSIGNMENT = new RegExp(
+	`(?<![A-Za-z0-9_])["']?(${STORE_COORDINATE_KEYS.join("|")})["']?\\s*[:=]\\s*["'\`]?([A-Za-z0-9_-]+)`,
+	"gu",
+);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const VERCEL_ID = /^(?:team|prj)_([A-Za-z0-9]+)$/u;
+const COORDINATE_TOKEN =
+	/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\b(?:team|prj)_[A-Za-z0-9]+/giu;
+const FIXTURE_SEGMENTS = new Set([
+	"fixtures",
+	"__fixtures__",
+	"test",
+	"tests",
+	"testdata",
+	"__tests__",
+]);
+const BINDING_FILE = /\.binding\.json$/u;
+const BUNDLED_BINDING = /(?:^|\/)deploy\/secret-store\.binding\.json$/u;
+export const STORE_COORDINATES_PRIVATE =
+	"Store coordinates (store project, identity, team and deploy project ids, OIDC subjects, claim bundle ids) are the owner's private settings: they live only in the owner's secret store, which HoBo reads through the owner store session (HoBo MCP's choose_secret_store), and are never committed, printed, or set as environment variables. Fixtures use obviously synthetic values such as all-zero UUIDs.";
+
+export function isRealLookingCoordinate(value: string): boolean {
+	if (UUID.test(value)) {
+		const digits = value.replace(/-/gu, "").toLowerCase();
+		return new Set(digits).size >= 6 && digits.replace(/0/gu, "").length >= 12;
+	}
+	const suffix = VERCEL_ID.exec(value)?.[1];
+	return (
+		suffix !== undefined && suffix.length >= 16 && new Set(suffix).size >= 10
+	);
+}
+
+export function isFixturePath(file: string): boolean {
+	return file.split("/").some((segment) => FIXTURE_SEGMENTS.has(segment));
+}
+
+function realLookingTokens(text: string): string[] {
+	return [...text.matchAll(COORDINATE_TOKEN)]
+		.map((match) => match[0])
+		.filter(isRealLookingCoordinate);
+}
+
+function coordinateViolations(change: Change): Violation[] {
+	const { file, content } = change;
+	const found: Violation[] = [];
+	if (change.created && BUNDLED_BINDING.test(file))
+		found.push({
+			file,
+			line: 1,
+			message: `adds the store binding HoBo bundles into a deployment it builds. That file exists only inside a build and is never committed. ${STORE_COORDINATES_PRIVATE}`,
+		});
+	else if (
+		change.created &&
+		BINDING_FILE.test(basename(file)) &&
+		!isFixturePath(file) &&
+		realLookingTokens(content).length > 0
+	)
+		found.push({
+			file,
+			line: 1,
+			message: `adds a binding file with real-looking store coordinates. ${STORE_COORDINATES_PRIVATE}`,
+		});
+	for (const added of change.lines)
+		for (const match of added.text.matchAll(COORDINATE_ASSIGNMENT)) {
+			const key = match[1] ?? "";
+			const value = match[2] ?? "";
+			if (isRealLookingCoordinate(value))
+				found.push({
+					file,
+					line: added.line,
+					message: `adds a real-looking store coordinate under ${key}. ${STORE_COORDINATES_PRIVATE}`,
+				});
+		}
+	return found;
+}
+
 const CODE_EXTENSIONS = new Set([
 	".ts",
 	".tsx",
@@ -287,6 +374,7 @@ export function secretStorageViolations(
 				line: 1,
 				message: `adds a secret or credential file. Agents keep no .env files, keys, kubeconfigs or other local secret files, not even examples. ${OWNER_STORE_PATH}`,
 			});
+		violations.push(...coordinateViolations(change));
 		const code = isCode(file, content);
 		const shell = isShell(file, content);
 		const fenced = MARKDOWN.test(file) ? fencedLines(content) : undefined;

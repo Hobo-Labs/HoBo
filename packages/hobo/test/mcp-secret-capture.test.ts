@@ -31,6 +31,10 @@ import {
 	type JsonRpcResponse,
 	localOperatorAuth,
 } from "../src/mcp-stdio.js";
+import {
+	OWNER_STORE_BINDING,
+	ownerStoreStandIn,
+} from "./support/owner-store-stand-in.js";
 
 // The relay's secret capture end to end over the hobo-mcp JSON-RPC surface:
 // a host that negotiated MCP Apps, the capture form's own sealing source, the
@@ -124,9 +128,9 @@ let emptyDir: string;
 beforeAll(() => {
 	projectDir = mkdtempSync(path.join(tmpdir(), "hobo-capture-"));
 	emptyDir = mkdtempSync(path.join(tmpdir(), "hobo-capture-empty-"));
-	mkdirSync(path.join(projectDir, "deploy"));
+	mkdirSync(path.join(projectDir, "owner-store"), { recursive: true });
 	writeFileSync(
-		path.join(projectDir, "deploy", "secret-store.binding.json"),
+		path.join(projectDir, OWNER_STORE_BINDING),
 		`${JSON.stringify(
 			{
 				kind: "infisical-cloud-attach",
@@ -165,7 +169,7 @@ function harness(dir: string) {
 	const capture = createSecretCaptureApp({
 		specs: RELAY_SECRET_CAPTURE_SPECS,
 		connector: createInfisicalCaptureConnector({
-			projectDir: dir,
+			bindingStore: ownerStoreStandIn(dir),
 			fetch: infisical.fetcher,
 		}),
 	});
@@ -373,13 +377,10 @@ describe("hobo-mcp secret capture without a store or without MCP Apps", () => {
 			path.join(tmpdir(), "hobo-capture-invalid-"),
 		);
 		try {
-			mkdirSync(path.join(invalidDir, "deploy"));
-			writeFileSync(
-				path.join(invalidDir, "deploy", "secret-store.binding.json"),
-				"invalid",
-			);
+			mkdirSync(path.join(invalidDir, "owner-store"), { recursive: true });
+			writeFileSync(path.join(invalidDir, OWNER_STORE_BINDING), "invalid");
 			const status = await createInfisicalCaptureConnector({
-				projectDir: invalidDir,
+				bindingStore: ownerStoreStandIn(invalidDir),
 			}).status();
 			expect(status).toMatchObject({
 				connected: false,
@@ -429,6 +430,18 @@ describe("hobo-mcp secret capture without a store or without MCP Apps", () => {
 	});
 });
 
+describe("the connector without the owner's store session", () => {
+	it("reports the store as not connected, naming choose_secret_store", async () => {
+		const status = await createInfisicalCaptureConnector({
+			bindingStore: undefined,
+		}).status();
+		expect(status).toMatchObject({ connected: false });
+		expect(status.connected === false ? status.reason : "").toContain(
+			"choose_secret_store",
+		);
+	});
+});
+
 describe("the connector's deploy-credential path", () => {
 	const deploySpec = secretCaptureSpec({
 		name: "VERCEL_TOKEN",
@@ -442,9 +455,9 @@ describe("the connector's deploy-credential path", () => {
 
 	function attachProjectDir(): string {
 		const dir = mkdtempSync(path.join(tmpdir(), "hobo-capture-attach-"));
-		mkdirSync(path.join(dir, "deploy"));
+		mkdirSync(path.join(dir, "owner-store"), { recursive: true });
 		writeFileSync(
-			path.join(dir, "deploy", "secret-store.binding.json"),
+			path.join(dir, OWNER_STORE_BINDING),
 			`${JSON.stringify(
 				{
 					kind: "infisical-cloud-attach",
@@ -471,7 +484,7 @@ describe("the connector's deploy-credential path", () => {
 	async function authorizeAndStore(dir: string, value: string) {
 		const infisical = fakeInfisical();
 		const connector = createInfisicalCaptureConnector({
-			projectDir: dir,
+			bindingStore: ownerStoreStandIn(dir),
 			fetch: infisical.fetcher,
 		});
 		await connector.authorizeWriter({
@@ -500,19 +513,19 @@ describe("the connector's deploy-credential path", () => {
 	it("refuses to capture for a binding with no deploy project, naming the repair instead of writing into the relay's project", async () => {
 		const dir = attachProjectDir();
 		try {
-			const file = path.join(dir, "deploy", "secret-store.binding.json");
+			const file = path.join(dir, OWNER_STORE_BINDING);
 			const binding = JSON.parse(readFileSync(file, "utf8"));
 			delete binding.deployProjectId;
 			writeFileSync(file, `${JSON.stringify(binding, null, "\t")}\n`);
 			const infisical = fakeInfisical();
 			const connector = createInfisicalCaptureConnector({
-				projectDir: dir,
+				bindingStore: ownerStoreStandIn(dir),
 				fetch: infisical.fetcher,
 			});
 			const status = await connector.status();
 			expect(status.connected).toBe(false);
 			if (!status.connected)
-				expect(status.reason).toContain("--deploy-project-id");
+				expect(status.reason).toContain("hobo ci secret-store connect");
 			await expect(
 				connector.authorizeWriter({
 					clientId: WRITER_CLIENT,
@@ -541,7 +554,7 @@ describe("the connector's deploy-credential path", () => {
 		try {
 			const value = `deploy-${randomBytes(16).toString("hex")}`;
 			const { infisical, stored } = await authorizeAndStore(dir, value);
-			expect(stored.ref).toBe("infisical://proj-deploy/prod/VERCEL_TOKEN");
+			expect(stored.ref).toBe("owner-store://hobo-ci-deploy/VERCEL_TOKEN");
 			expect(infisical.stored.get("proj-deploy|/|VERCEL_TOKEN")).toBe(value);
 			expect(infisical.stored.get("proj-1|/|VERCEL_TOKEN")).toBeUndefined();
 			expect(

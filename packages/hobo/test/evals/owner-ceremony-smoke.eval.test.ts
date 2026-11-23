@@ -25,7 +25,12 @@ import {
 	copiedSession,
 	startFakeInfisical,
 } from "./support/fake-infisical-api.js";
-import { fakeNeon, fakeVercel } from "./support/fake-providers.js";
+import {
+	fakeNeon,
+	fakeVercel,
+	fakeVercelCli,
+	readStagedBuilds,
+} from "./support/fake-providers.js";
 import { startTlsWorld } from "./support/tls-world.js";
 
 // SMOKE: the real `hobo-mcp` binary, as the owner's host runs it on a remote
@@ -165,7 +170,17 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 		// bypasses the proxy, fails instead of passing silently.
 		const api = await startFakeInfisical("org-1");
 		api.seedJournalFleet();
-		const vercel = fakeVercel();
+		const vercelCli = fakeVercelCli(
+			mkdtempSync(path.join(tmpdir(), "hobo-smoke-vercel-cli-")),
+			path.join(
+				REPO,
+				"packages",
+				"cd-vercel",
+				"deploy",
+				"secret-store.binding.json",
+			),
+		);
+		const vercel = fakeVercel(vercelCli.staged);
 		const neon = fakeNeon();
 		const world = await startTlsWorld({
 			"app.infisical.com": api.handle,
@@ -185,6 +200,7 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			...process.env,
 			XDG_CONFIG_HOME: config,
 			CLAUDE_CODE_REMOTE: "true",
+			HOBO_VERCEL_CLI: vercelCli.cli,
 			HTTPS_PROXY: world.proxyUrl,
 			https_proxy: world.proxyUrl,
 			HTTP_PROXY: world.proxyUrl,
@@ -279,7 +295,11 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				world.requests.filter((request) =>
 					/^api\.vercel\.com POST \/v13\/deployments\b/u.test(request),
 				),
-			).toHaveLength(1);
+			).toHaveLength(0);
+			expect(readStagedBuilds(vercelCli.staged)).toEqual([
+				expect.objectContaining({ bundled: true }),
+			]);
+			expect(vercel.promoted).toEqual(["dpl_staged0"]);
 			expect(world.requests).toContainEqual(
 				expect.stringMatching(
 					/^app\.infisical\.com POST \/api\/v1\/projects\/proj-1\/identities$/u,
@@ -287,11 +307,9 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			);
 			expect(
 				world.requests.filter((request) =>
-					/^api\.vercel\.com POST \/v10\/projects\/hobo-cd\/env\b/u.test(
-						request,
-					),
+					/^api\.vercel\.com \w+ \/v\d+\/projects\/[^/]+\/env\b/u.test(request),
 				),
-			).toHaveLength(5);
+			).toHaveLength(0);
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);

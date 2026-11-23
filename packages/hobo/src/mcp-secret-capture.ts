@@ -1,11 +1,3 @@
-// The hosted relay's secret capture, composed for the `hobo-mcp` server
-// (ADR-0179 amendment "Deploy secrets captured by an MCP App into the secret
-// store"). `@hobo/mcp` owns the MCP App, the fallback page and the sealing;
-// this module supplies what is relay-specific: which secrets a relay
-// deployment captures (with their size and shape), and the connector that
-// writes them to the store the committed binding names
-// (`packages/ci-vercel/deploy/secret-store.binding.json`).
-//
 // Write authorization (the decision the amendment records): the MCP server
 // keeps no credential for the store. The owner creates a machine identity
 // `hobo-secret-writer` whose custom role may create and edit secrets in the
@@ -31,7 +23,6 @@ import {
 	createInfisicalClient,
 	type InfisicalClient,
 	InfisicalError,
-	infisicalSecretRef,
 	parseInfisicalBinding,
 } from "@hobo/adapter-infisical";
 import {
@@ -45,7 +36,9 @@ import type { ParsedSecretStoreBinding } from "@hobo/secret-store-claim";
 
 import {
 	loadSecretStoreBinding,
+	SECRET_STORE_SESSION_REQUIRED,
 	SecretStoreBindingRefusal,
+	type SecretStoreBindingStore,
 } from "./ci-secret-store.js";
 
 // public-contract: the capture name of the writer identity's one-use client secret.
@@ -130,30 +123,23 @@ type Session = {
 	readonly expiresAtMs: number;
 };
 
-function folderRef(binding: ParsedSecretStoreBinding): string {
-	const folders = binding.secretPath === "/" ? "" : binding.secretPath;
-	return `infisical://${binding.projectId}/${binding.environment}${folders}`;
-}
+// public-contract: how a capture names the relay's folder and the deploy project without their coordinates.
+export const OWNER_STORE_FOLDER_REF = "owner-store://hobo-ci-relay";
+const OWNER_STORE_DEPLOY_REF = "owner-store://hobo-ci-deploy";
 
-/**
- * The connector for the store the relay project's committed binding names.
- * The binding is read on every status check, so a binding the owner commits
- * mid-session is picked up without a restart.
- */
 export function createInfisicalCaptureConnector(options: {
-	/** The relay's project directory (`packages/ci-vercel`). */
-	readonly projectDir: string;
+	readonly bindingStore: SecretStoreBindingStore | undefined;
 	readonly fetch?: typeof fetch;
 	readonly now?: () => number;
 }): SecretStoreConnector {
 	const now = options.now ?? Date.now;
 	let session: Session | undefined;
 
-	function binding():
-		| { binding: ParsedSecretStoreBinding }
-		| { reason: string } {
+	async function binding(): Promise<
+		{ binding: ParsedSecretStoreBinding } | { reason: string }
+	> {
 		try {
-			const found = loadSecretStoreBinding(options.projectDir);
+			const found = await loadSecretStoreBinding(options.bindingStore);
 			if (found === undefined)
 				return {
 					reason: "The relay capture adapter has no configured store binding.",
@@ -170,6 +156,14 @@ export function createInfisicalCaptureConnector(options: {
 		} catch (error) {
 			if (
 				error instanceof SecretStoreBindingRefusal &&
+				error.code === SECRET_STORE_SESSION_REQUIRED
+			)
+				return {
+					reason:
+						"The owner's secret store session is not established: connect it with choose_secret_store.",
+				};
+			if (
+				error instanceof SecretStoreBindingRefusal &&
 				error.code === "HOBO_CI_SECRET_STORE_RUNTIME_UNBUILT"
 			)
 				return { reason: "The relay capture adapter cannot use this store." };
@@ -179,7 +173,7 @@ export function createInfisicalCaptureConnector(options: {
 			)
 				return {
 					reason:
-						"The relay capture adapter's store binding predates the deploy credential project and reader: re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id, then re-capture VERCEL_TOKEN into the deploy project (CONFIG-SERVICE.md).",
+						"The relay capture adapter's store binding predates the deploy credential project and reader: re-run hobo ci secret-store connect through the owner hand-off to record them, then re-capture VERCEL_TOKEN into the deploy project (CONFIG-SERVICE.md).",
 				};
 			return {
 				reason: "The relay capture adapter's store binding is unavailable.",
@@ -213,7 +207,7 @@ export function createInfisicalCaptureConnector(options: {
 
 	return {
 		async status(): Promise<SecretStoreStatus> {
-			const found = binding();
+			const found = await binding();
 			if ("reason" in found)
 				return {
 					connected: false,
@@ -222,13 +216,13 @@ export function createInfisicalCaptureConnector(options: {
 				};
 			return {
 				connected: true,
-				storeRef: folderRef(found.binding),
+				storeRef: OWNER_STORE_FOLDER_REF,
 				writable: live() !== undefined,
 				writerSpec: WRITER_SECRET_NAME,
 			};
 		},
 		async authorizeWriter({ clientId, secret }) {
-			const found = binding();
+			const found = await binding();
 			if ("reason" in found)
 				throw new SecretStoreConnectorError("not-connected");
 			await end().catch(() => undefined);
@@ -281,7 +275,9 @@ export function createInfisicalCaptureConnector(options: {
 			const client = target === "deploy" ? held.deploy : held.runtime;
 			try {
 				await client.putSecret(secret.name, secret.reveal());
-				return { ref: infisicalSecretRef(client.binding, secret.name) };
+				return {
+					ref: `${target === "deploy" ? OWNER_STORE_DEPLOY_REF : OWNER_STORE_FOLDER_REF}/${secret.name}`,
+				};
 			} catch (error) {
 				throw new SecretStoreConnectorError(
 					error instanceof InfisicalError ? error.code : "unavailable",
