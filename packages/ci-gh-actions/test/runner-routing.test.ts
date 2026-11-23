@@ -65,17 +65,17 @@ describe("committed runner routing", () => {
 		expect(parseCiRunnerRouting("[]")).toBeUndefined();
 	});
 
-	it("commits mergeGroup.reusePrFabric as false, and absence means the same", () => {
+	it("commits mergeGroup.reusePrFabric as true, and absence means the same", () => {
 		const policy = parseCiRunnerRouting(committed);
-		expect(policy?.mergeGroup).toEqual({ reusePrFabric: false });
+		expect(policy?.mergeGroup).toEqual({ reusePrFabric: true });
 		const fixturePolicy = JSON.parse(fixture("valid/runner-routing.json"));
 		const { mergeGroup: _dropped, ...absent } = fixturePolicy;
 		expect(parseRunnerRouting(absent)?.mergeGroup).toEqual({
-			reusePrFabric: false,
+			reusePrFabric: true,
 		});
 		expect(
-			parseRunnerRouting({ ...absent, mergeGroup: { reusePrFabric: true } })
+			parseRunnerRouting({ ...absent, mergeGroup: { reusePrFabric: false } })
 				?.mergeGroup,
-		).toEqual({ reusePrFabric: true });
+		).toEqual({ reusePrFabric: false });
 	});
 });
