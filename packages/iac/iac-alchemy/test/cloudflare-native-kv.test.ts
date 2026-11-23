@@ -12,7 +12,7 @@ import * as Provider from "alchemy/Provider";
 import type { ResourceClass } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
@@ -1377,6 +1377,52 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			if (before === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = before;
 			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("bounds a native mutation wait without claiming the timed-out write stopped", async () => {
+		vi.useFakeTimers();
+		vi.resetModules();
+		try {
+			const { cloudflareKvProxy: timedProxy } = await import(
+				"../src/cloudflare-kv-proxy.js"
+			);
+			const native = nativeNamespace();
+			let finish: (() => void) | undefined;
+			let completed = false;
+			let started: () => void = () => {};
+			const putStarted = new Promise<void>((resolve) => {
+				started = resolve;
+			});
+			const result = timedProxy.fetch(
+				new Request("https://hobo-kv.internal/set", {
+					method: "POST",
+					headers: { "x-hobo-kv-key": "key" },
+				}),
+				{
+					HOBO_KV_MODE: "write-only",
+					HOBO_KV_ALLOW: "set",
+					HOBO_KV_NAMESPACE: {
+						...native.binding,
+						async put() {
+							started();
+							await new Promise<void>((resolve) => {
+								finish = resolve;
+							});
+							completed = true;
+						},
+					},
+				},
+			);
+			await putStarted;
+			await vi.advanceTimersByTimeAsync(10_001);
+			expect((await result).status).toBe(502);
+			expect(completed).toBe(false);
+			finish?.();
+			await vi.runAllTicks();
+			expect(completed).toBe(true);
+		} finally {
+			vi.useRealTimers();
 		}
 	});
 });

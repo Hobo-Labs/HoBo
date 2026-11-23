@@ -90,6 +90,9 @@ describe("Rivet source-aware primitive capabilities", () => {
 		expect(rows.find((row) => row.kind === "topic")?.reason).toContain(
 			"No verified Rivet durable topic mapping",
 		);
+		expect(rows.find((row) => row.kind === "topic")?.reason).toContain(
+			"consumer-group leases",
+		);
 		expect(
 			rows.find((row) => row.kind === "topic")?.unsupportedOperations,
 		).toEqual(["publish", "subscribe"]);

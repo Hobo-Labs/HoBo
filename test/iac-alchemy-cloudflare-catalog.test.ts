@@ -3,8 +3,8 @@ import {
 	bindle,
 	continuity,
 	sessionReplay,
-} from "../packages/bindles/src/index.js";
-import { CATALOG_ROWS } from "../packages/bindles/src/types.js";
+} from "../packages/bindles/dist/index.js";
+import { CATALOG_ROWS } from "../packages/bindles/dist/types.js";
 import { mapBindleToAlchemy } from "../packages/iac/iac-alchemy/src/bindle.js";
 import {
 	cloudflareBindleMappers,
