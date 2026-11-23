@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Start Serena's MCP server for this checkout.
-# Shared by Claude Code / Cursor / Codex so a missing binary prints remediation
-# instead of a bare host "command not found".
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

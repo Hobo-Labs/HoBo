@@ -123,7 +123,6 @@ the merge-commit landing of the top PR.
 **Subagents** only commit incrementally on their assigned layer branch. See:
 
 - `.agents/skills/sdlc/SKILL.md`
-- `.agents/skills/sdlc/references/stacked-prs.md`
 
 Do not use interactive `gh stack modify` from agents; restructure via `unstack` + re-`init` with
 explicit branch lists when needed.

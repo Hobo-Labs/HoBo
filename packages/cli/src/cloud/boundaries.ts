@@ -3,11 +3,6 @@ import { externalBoundaryViolations } from "@hobo/bindles";
 import type { CommandResult } from "../types/envelope.js";
 import { loadBindleDefinition } from "./loader.js";
 
-// Placement refuses a Bindle whose externals a Yard would hold (a Yard holds
-// nothing external: @hobo/bindles externalBoundaryViolations). Every verb that
-// places — `plan`, `up` and every family lifecycle — runs this first.
-
-/** The refusal for a project whose Bindle declares an unmanaged external. */
 export async function externalBoundaryRefusal(
 	projectDir: string,
 	command: string,

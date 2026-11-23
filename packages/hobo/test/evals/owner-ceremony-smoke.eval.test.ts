@@ -467,10 +467,17 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					content: { INFISICAL_PROJECT_ID: "synthetic-private-project" },
 				},
 			});
-			const selected = await server.answer(choice);
-			expect(JSON.stringify(selected)).not.toContain(
-				"synthetic-private-project",
+			const choiceSignIn = await server.next(
+				(m) => m.method === "elicitation/create",
 			);
+			server.send({
+				jsonrpc: "2.0",
+				id: choiceSignIn.id ?? null,
+				result: { action: "decline" },
+			});
+			const selected = JSON.stringify(await server.answer(choice));
+			expect(selected).toContain("sign-in-needed");
+			expect(selected).not.toContain("synthetic-private-project");
 			const retry = server.tool("cd", {
 				args: ["up", "--hand-off"],
 				cwd: project,

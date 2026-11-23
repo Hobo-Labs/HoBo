@@ -41,8 +41,6 @@ export const lemonSqueezyPaymentProcessor: PaymentProcessor = {
         lemonSqueezyCustomerPortalUrl: true,
       },
     });
-    // Note that Lemon Squeezy assigns a unique URL to each user after the first successful payment.
-    // This is handled in the Lemon Squeezy webhook.
     return user.lemonSqueezyCustomerPortalUrl;
   },
   webhook: lemonSqueezyWebhook,
@@ -73,7 +71,6 @@ export const lemonSqueezyPaymentProcessor: PaymentProcessor = {
       currentPage++;
     }
 
-    // Revenue is in cents so we convert to dollars (or your main currency unit)
     return totalRevenue / 100;
   },
 };

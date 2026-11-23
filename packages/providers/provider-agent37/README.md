@@ -78,3 +78,5 @@ pnpm --filter @hobo/provider-agent37 build
 ```
 
 Reconcile `pnpm-lock.yaml` with `origin/main` before CI runs on the PR merge tree; HoBo CI Fabric installs with `--frozen-lockfile` against that merge ref.
+
+CD never delivers to Agent37: `PROVIDER_DELIVERY_COVERAGE` in `@hobo/hobo` lists it as a refused row, like the CI runner packages, because its sandboxes only supply overflow runner capacity.

@@ -32,7 +32,7 @@ values empty when the corresponding service or document is unavailable.
 
 ### Verification
 
-Run `npm run test:unit` for the local browser-state, message indicator, payment-boundary, and profile settings tests. Set `TEST_DATABASE_URL` to an isolated PostgreSQL database with the application schema applied to include the message and profile operation tests.
+Run `npm run test:unit` for the local browser-state, message indicator, payment-boundary, and profile settings tests. Set `TEST_DATABASE_URL` to an isolated PostgreSQL database with the application schema applied to include the message and profile operation tests; these database cases are skipped when it is unset.
 HoBo `agent:check` uses `npm run ci:test:unit` here: `scripts/ensure-vitest-install.mts`
 creates `file:.wasp/spec` only when missing, then
 `scripts/ci-test-unit.mts` installs dev dependencies only when `node_modules`

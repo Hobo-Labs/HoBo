@@ -45,13 +45,23 @@ export function prettyPaymentPlanName(planId: PaymentPlanId): string {
 }
 
 export function parsePaymentPlanId(planId: string): PaymentPlanId {
-  // SAFETY: assertion to `Object.values(PaymentPlanId) as string[]` is required at this boundary.
-  if ((Object.values(PaymentPlanId) as string[]).includes(planId)) {
-    // SAFETY: assertion to `planId as PaymentPlanId` is required at this boundary.
-    return planId as PaymentPlanId;
-  } else {
+  const paymentPlanId = Object.values(PaymentPlanId).find(
+    (knownPlanId) => knownPlanId === planId,
+  );
+  if (paymentPlanId === undefined) {
     throw new Error(`Invalid PaymentPlanId: ${planId}`);
   }
+  return paymentPlanId;
+}
+
+export function parseSubscriptionStatus(status: string): SubscriptionStatus {
+  const subscriptionStatus = Object.values(SubscriptionStatus).find(
+    (knownStatus) => knownStatus === status,
+  );
+  if (subscriptionStatus === undefined) {
+    throw new Error(`Invalid subscription status: ${status}`);
+  }
+  return subscriptionStatus;
 }
 
 export function getSubscriptionPaymentPlanIds(): PaymentPlanId[] {

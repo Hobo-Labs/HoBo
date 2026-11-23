@@ -179,10 +179,6 @@ import { useEffect } from 'react';
 const LIVE_SRC = '${liveSrc}';
 const LIVE_SELECTOR = 'script[data-impeccable-live-tanstack]';
 
-// Dev-only mount for Impeccable Live. TanStack Start server-renders the root
-// document, so this appends the live-mode bundle from the client after
-// hydration (mirrors the Nuxt/SvelteKit adapters). Renders nothing on the
-// server, so there is no hydration mismatch.
 export default function ImpeccableLiveRoot() {
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -196,6 +192,7 @@ export default function ImpeccableLiveRoot() {
     script.async = true;
     script.setAttribute('data-impeccable-live-tanstack', '');
     script.setAttribute('data-impeccable-live-script', 'true');
+    script.setAttribute('data-impeccable-live-framework', 'tanstack-start');
     document.head.appendChild(script);
 
     return () => {

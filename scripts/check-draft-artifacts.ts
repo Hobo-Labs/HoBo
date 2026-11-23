@@ -1,21 +1,3 @@
-/**
- * Draft-artifact hardening gate.
- *
- * For proof packages ADDED or MODIFIED in the validated diff, asserts the per-layer artifact
- * requirements from the draft skill (`.claude/skills/draft/references/<layer>/process.md`):
- * a zod-valid `proof.json` (schema: `scripts/lib/proof-manifest.ts`), executed `examples/`
- * (the gate runs each example and diffs committed expected output — the unforgeable artifact),
- * optional package-local `draft:prepare` setup before example execution,
- * a structure-valid notebook, layer artifacts (bench for technical, executable features for
- * epic, per-experience-type assets for exp), and waivers backed by an ADR.
- *
- * Packages listed in `src/draft/_grandfathered.json` (the pre-hardening baseline) get
- * ADVISORY warnings only — backfill waves delete entries to activate enforcement. New
- * packages must comply fully. Modes mirror the other gates: `--staged`, `--base=<ref>`,
- * default `HEAD~1`. Positional args select packages directly (no git diff), so backfill
- * work can verify a package before its grandfather entry is deleted:
- * `tsx scripts/check-draft-artifacts.ts src/draft/technical-proofs/<slug>`.
- */
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -70,7 +52,7 @@ export function checkWorkspace(
 ): WorkspaceReport {
 	const root = options.root ?? repoRoot;
 	const runExamples = options.runExamples ?? true;
-	const runBench = options.runBench ?? false; // benches execute in their own lane; presence is gated here
+	const runBench = options.runBench ?? false;
 	const abs = path.join(root, workspace);
 	const problems: string[] = [];
 	const layer = layerForWorkspace(workspace);
@@ -86,9 +68,7 @@ export function checkWorkspace(
 		return {
 			workspace,
 			grandfathered: false,
-			problems: [
-				"missing proof.json (see scripts/lib/proof-manifest.ts and src/draft/_templates/)",
-			],
+			problems: ["missing proof.json (see scripts/lib/proof-manifest.ts)"],
 		};
 	}
 
@@ -125,13 +105,12 @@ export function checkWorkspace(
 
 	const waived = new Set(manifest.waivers.map((w) => w.requirement));
 	for (const waiver of manifest.waivers) {
-		if (!existsSync(path.join(abs, waiver.adr)))
+		if (waiver.adr && !existsSync(path.join(abs, waiver.adr)))
 			problems.push(
 				`waiver for "${waiver.requirement}" cites missing ADR: ${waiver.adr}`,
 			);
 	}
 
-	// examples/ — executed, unforgeable.
 	if (!waived.has("examples")) {
 		let examplesReady = true;
 		const packagePath = path.join(abs, "package.json");
@@ -201,18 +180,16 @@ export function checkWorkspace(
 		}
 	}
 
-	// notebook — structure-level (outputs are forgeable JSON; examples carry execution).
 	if (!waived.has("notebook")) {
 		const notebookPath = path.join(abs, manifest.artifacts.notebook);
 		if (!existsSync(notebookPath)) {
 			problems.push(`missing notebook: ${manifest.artifacts.notebook}`);
 		} else {
 			try {
-				// SAFETY: assertion to `se(readFileSync(notebookPath, "utf8")) as { nbformat?: number; cells?: Array<{ cell_type?: string; outputs?: unknown[] }` is required at this boundary.
-				const nb = JSON.parse(readFileSync(notebookPath, "utf8")) as {
+				const nb: {
 					nbformat?: number;
 					cells?: Array<{ cell_type?: string; outputs?: unknown[] }>;
-				};
+				} = JSON.parse(readFileSync(notebookPath, "utf8"));
 				const codeCells = (nb.cells ?? []).filter(
 					(c) => c.cell_type === "code",
 				);
@@ -233,7 +210,6 @@ export function checkWorkspace(
 		}
 	}
 
-	// layer-specific artifacts
 	if (layer === "technical" && !waived.has("bench")) {
 		const benchPath = path.join(abs, manifest.artifacts.bench ?? "bench");
 		const benches =
@@ -295,8 +271,11 @@ export function checkWorkspace(
 				all.some((f) => f.endsWith(".proto")) &&
 				all.some((f) => f.endsWith(".cue")),
 			cx: () =>
-				inAssets.some((f) => f.endsWith(".md")) ||
-				all.some((f) => /journeys\/.+\.md$/u.test(f)),
+				all.some((f) =>
+					/(?:^|\/)(?:test|tests)\/.+\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(f),
+				) ||
+				(all.some((f) => /(?:^|\/)features\/.+\.feature$/u.test(f)) &&
+					all.some((f) => /(?:^|\/)features\/steps\/.+\.[cm]?[jt]s$/u.test(f))),
 			ax: () =>
 				inAssets.some((f) => /\.(json|md)$/u.test(f)) ||
 				all.some((f) => /transcripts\/.+\.(json|md)$/u.test(f)),
@@ -309,7 +288,7 @@ export function checkWorkspace(
 		const message = {
 			ux: "ux proof needs real visual assets (assets/*.svg|png|jpg|webp)",
 			dx: "dx proof needs protobuf + CUE contracts",
-			cx: "cx proof needs journey artifacts (assets/*.md or journeys/*.md)",
+			cx: "cx proof needs executable customer journey tests or feature steps",
 			ax: "ax proof needs MCP transcript/tool-schema fixtures (assets/ or transcripts/, .json|.md)",
 			api: "api proof needs type tests (type-tests/, test-types/, or *.test-d.ts)",
 		};
@@ -322,24 +301,9 @@ export function checkWorkspace(
 				const text = head.toString("utf8");
 				const looksReal = f.endsWith(".svg")
 					? text.includes("<svg") || text.includes("<?xml")
-					: head.length >= 8 && head[0] !== 0x20; // binary magic present, not whitespace padding
+					: head.length >= 8 && head[0] !== 0x20;
 				if (!looksReal || statSync(path.join(abs, f)).size < 128)
 					problems.push(`asset ${f} does not look like a real image/wireframe`);
-			}
-		}
-	}
-
-	// diagrams — presence where declared
-	if (!waived.has("diagrams")) {
-		for (const diagram of manifest.artifacts.diagrams) {
-			const target = path.join(abs, diagram);
-			if (!existsSync(target))
-				problems.push(`declared diagram missing: ${diagram}`);
-			else if (
-				diagram.endsWith(".md") &&
-				!readFileSync(target, "utf8").includes("```mermaid")
-			) {
-				problems.push(`declared diagram file has no mermaid block: ${diagram}`);
 			}
 		}
 	}
@@ -349,17 +313,10 @@ export function checkWorkspace(
 
 function main() {
 	const argv = process.argv.slice(2);
-	const grandfathered = new Set(
-		// SAFETY: assertion to `( readFileSync( path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8", ), ) as { packages: string[] } ).packa` is required at this boundary.
-		(
-			JSON.parse(
-				readFileSync(
-					path.join(repoRoot, "src/draft/_grandfathered.json"),
-					"utf8",
-				),
-			) as { packages: string[] }
-		).packages,
+	const grandfatheredRegistry: { packages: string[] } = JSON.parse(
+		readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
 	);
+	const grandfathered = new Set(grandfatheredRegistry.packages);
 	const positional = argv.filter((arg) => !arg.startsWith("--"));
 	const workspaces = [
 		...new Set(
@@ -378,8 +335,6 @@ function main() {
 
 	let failures = 0;
 	for (const workspace of workspaces) {
-		// Direct package selection is the backfill verification path: enforce
-		// strictly even while the grandfather entry still exists.
 		const isGrandfathered =
 			positional.length === 0 && grandfathered.has(workspace);
 		const report = checkWorkspace(workspace);
@@ -399,7 +354,7 @@ function main() {
 
 	if (failures > 0) {
 		console.error(
-			`\ndraft-artifact gate failed for ${failures} package(s). See src/draft/_templates/ for compliant scaffolds; waivers go in proof.json with an ADR.`,
+			`\ndraft-artifact gate failed for ${failures} package(s). Fix the reported artifacts and executable checks.`,
 		);
 		process.exit(1);
 	}

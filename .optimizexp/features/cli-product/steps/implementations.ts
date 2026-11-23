@@ -1,24 +1,8 @@
-/**
- * Step implementations for `cli-product`.
- * Runs the REAL product CLI (`hobo` from @hobo/cli, and the composed `hobo`
- * from @hobo/hobo) and captures exit code / stdout / stderr / parsed JSON
- * envelope so Then-steps assert observable behavior, not vibes.
- *
- * Invocation strategy:
- * - `hobo`: prefers the built bin `packages/cli/dist/bin/hobo.js`; falls
- *   back to `pnpm exec tsx packages/cli/src/bin/hobo.ts`. Both need the
- *   workspace dependencies built once (`pnpm --filter @hobo/cli... build`).
- * - composed `hobo` (real verb handlers incl. doctor): prefers
- *   `packages/hobo/dist/bin/hobo.js`; falls back to tsx on the source entry.
- *
- * Do not call live third-party services from default tests.
- */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { OptimizexpWorld } from "./world.ts";
 
-/** Discovery snapshot — real product CLIs, confidence high. */
 export const DISCOVERY_PRIMARY = {
   command: "hobo --help" as string | null,
   confidence: "high",
@@ -56,27 +40,11 @@ function hoboCommand(args: string): string {
   return `pnpm exec tsx ${HOBO_SRC_BIN} ${args}`;
 }
 
-/**
- * The composed CLI (`@hobo/hobo`) wires the real verb handlers (doctor,
- * messaging, …). Use this for scenarios that assert real product behavior;
- * the bare `@hobo/cli` bin intentionally serves stub envelopes for un-wired
- * verbs.
- */
 function hoboComposedCommand(args: string): string {
   if (existsSync(path.join(process.cwd(), HOBO_COMPOSED_DIST_BIN))) {
     return `node ${HOBO_COMPOSED_DIST_BIN} ${args}`;
   }
   return `pnpm exec tsx ${HOBO_COMPOSED_SRC_ENTRY} ${args}`;
-}
-
-export function setPersona(world: OptimizexpWorld, personaId: string): void {
-  world.personaId = personaId;
-  world.notes.push(`persona active: ${personaId}`);
-}
-
-export function setFeatureContext(world: OptimizexpWorld, featureId: string): void {
-  world.featureId = featureId;
-  world.notes.push(`feature under review: ${featureId}`);
 }
 
 function runShell(world: OptimizexpWorld, command: string): void {
@@ -181,9 +149,4 @@ export function assertJsonEnvelopeShape(world: OptimizexpWorld): void {
       );
     }
   }
-}
-
-export function markEvidenceCapturable(world: OptimizexpWorld): void {
-  world.evidencePath = `.optimizexp/features/${world.featureId}/evidence/`;
-  world.notes.push(`evidence capturable under ${world.evidencePath}`);
 }

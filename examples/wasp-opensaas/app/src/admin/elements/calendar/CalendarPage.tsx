@@ -41,7 +41,6 @@ export function CalendarPage({ user }: { user: AuthUser }) {
             </tr>
           </thead>
           <tbody>
-            {/* <!-- Line 1 --> */}
             <tr className="grid grid-cols-7">
               <td className="ease border-border text-accent hover:bg-accent hover:text-accent-foreground md:h-25 xl:h-31 relative h-20 cursor-pointer border p-2 transition duration-500 md:p-6">
                 <span className="font-medium">1</span>
@@ -78,8 +77,6 @@ export function CalendarPage({ user }: { user: AuthUser }) {
                 <span className="font-medium">7</span>
               </td>
             </tr>
-            {/* <!-- Line 1 --> */}
-            {/* <!-- Line 2 --> */}
             <tr className="grid grid-cols-7">
               <td className="ease border-border text-accent hover:bg-accent hover:text-accent-foreground md:h-25 xl:h-31 relative h-20 cursor-pointer border p-2 transition duration-500 md:p-6">
                 <span className="font-medium">8</span>
@@ -103,7 +100,6 @@ export function CalendarPage({ user }: { user: AuthUser }) {
                 <span className="font-medium">14</span>
               </td>
             </tr>
-            {/* <!-- Line 2 --> */}
             <tr className="grid grid-cols-7">
               <td className="ease border-border text-accent hover:bg-accent hover:text-accent-foreground md:h-25 xl:h-31 relative h-20 cursor-pointer border p-2 transition duration-500 md:p-6">
                 <span className="font-medium">15</span>
@@ -127,7 +123,6 @@ export function CalendarPage({ user }: { user: AuthUser }) {
                 <span className="font-medium">21</span>
               </td>
             </tr>
-            {/* <!-- Line 3 --> */}
             <tr className="grid grid-cols-7">
               <td className="ease border-border text-accent hover:bg-accent hover:text-accent-foreground md:h-25 xl:h-31 relative h-20 cursor-pointer border p-2 transition duration-500 md:p-6">
                 <span className="font-medium">22</span>
@@ -164,7 +159,6 @@ export function CalendarPage({ user }: { user: AuthUser }) {
                 <span className="font-medium">28</span>
               </td>
             </tr>
-            {/* <!-- Line 4 --> */}
             <tr className="grid grid-cols-7">
               <td className="ease border-border text-accent hover:bg-accent hover:text-accent-foreground md:h-25 xl:h-31 relative h-20 cursor-pointer border p-2 transition duration-500 md:p-6">
                 <span className="font-medium">29</span>
@@ -188,7 +182,6 @@ export function CalendarPage({ user }: { user: AuthUser }) {
                 <span className="font-medium">4</span>
               </td>
             </tr>
-            {/* <!-- Line 5 --> */}
           </tbody>
         </table>
       </div>

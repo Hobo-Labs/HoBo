@@ -30,6 +30,11 @@ pnpm --filter @hobo/patterns run build:index
 pnpm --filter @hobo/patterns run generate:vscode
 ```
 
+The trainable greeting and yard merge tests link the built `@hobo/runtime`,
+`@hobo/camps` and `@hobo/yards` into a rendered project, then type-check and
+run it, so those packages must be built first; `turbo run test` builds them
+through the package's workspace devDependencies.
+
 Programmatic use goes through `loadPatternCatalog`, `searchPatterns`,
 `renderPattern` and `applyPatternPlan`; `hobo new` reaches the CLI starters
 through `renderCliStarterFiles`.

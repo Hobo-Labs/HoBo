@@ -40,16 +40,31 @@ supports it; for example, a missing host tool alone does not establish a trust
 failure. The repository's supported registrations and startup steps are in
 [agent tooling](../../../docs/agent-tooling.md#hobo--hobos-own-mcp-server-this-repo).
 
-When HoBo is connected, use its owner setup flow to establish or reuse the
-owner's store session. Before the owner enters anything, verify that the host
-and HoBo keep settings, identifiers, connection references, and credentials in
-a private temporary session and exclude them from agent-visible calls, results,
-traces, and diagnostics. Do not ask for these values in chat or put them in
-commands or the repository. The owner's store choice is theirs alone.
-After verifying that private channel, invoke HoBo's `choose_secret_store`
-without passing store settings or credentials in its arguments, and follow
-its owner-facing steps. If the tool reports setup unavailable, do not claim a
-store session was established.
+When HoBo is connected, connect the owner's store as part of that connection:
+call HoBo's `choose_secret_store` with the project directory as `cwd` and no
+store settings or credentials in its arguments. It reuses an established owner
+store session, or asks the owner directly through a host-rendered form (MCP
+form elicitation) or HoBo's store picker widget (MCP Apps); their answers go
+to HoBo, are saved in their own HoBo settings outside the repository, and HoBo
+signs in to the store through the same private channel. Its results carry
+only a status and the store's name. The owner's store choice is theirs alone.
+Do not ask for store settings, identifiers, or credentials in chat or put them
+in commands or the repository.
+
+- `established`: the session is ready. HoBo verbs read the provider
+  credentials they need (for example `owner://HOSTINGER_API_TOKEN`) from it;
+  values never reach you. `doctor` reports `ownerStoreSession`.
+- `sign-in-needed` (with a code): the choice is kept; call
+  `choose_secret_store` again when the owner is ready. Do not claim the store
+  is connected.
+- `shown`: HoBo's widget is with the owner; it connects the store when they
+  submit it.
+- `decline` or `invalid`: nothing was recorded; ask again only when the owner
+  wants to.
+- `secure-form-unavailable`: this host renders neither form elicitation nor
+  MCP Apps. Report that this host cannot provide a secure HoBo owner hand-off.
+
+Pass `reselect: true` only when the owner wants a different store.
 
 If the host or HoBo cannot provide that private flow, report which capability
 is missing. Continue safe implementation and verification authorized by the

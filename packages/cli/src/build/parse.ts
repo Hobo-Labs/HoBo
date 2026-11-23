@@ -222,10 +222,6 @@ function normalizeLanguage(language: string): string {
 }
 
 function inferLanguage(entrypoint: string): string {
-	// `lastIndexOf` returns -1 with no dot, and `slice(-1)` then yields the last
-	// *character* — so an extensionless entrypoint like `Makefile` inferred the
-	// language "e". Guard the no-dot case explicitly instead, which is also what
-	// makes the "unknown" fallback below reachable at all.
 	const dot = entrypoint.lastIndexOf(".");
 	const extension = dot < 0 ? "" : entrypoint.slice(dot).toLowerCase();
 	if (extension === ".ts") return "ts";
