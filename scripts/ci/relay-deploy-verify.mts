@@ -68,7 +68,7 @@ const START_STATES: Readonly<
 	"config-service-denied": {
 		code: "HOBO_RELAY_CONFIG_SERVICE_DENIED",
 		message:
-			"/readyz reports config-service-denied: the store refused the relay's identity; the relay identity in deploy/secret-store.binding.json must trust this project's Vercel production OIDC tokens",
+			"/readyz reports config-service-denied: the store refused the relay's identity; the relay identity the owner's store binding names must trust this project's Vercel production OIDC tokens",
 	},
 	"config-service-unavailable": {
 		code: "HOBO_RELAY_CONFIG_SERVICE_UNAVAILABLE",
@@ -231,7 +231,7 @@ export function classifyRelayProbes(input: {
 				ok: true,
 				awaitingOwner: true,
 				code: "HOBO_RELAY_AWAITING_OWNER",
-				message: `/healthz names ${sha} and ${OWNER_HANDOFF_PAGE_PATH} serves with its mailbox store; /readyz waits for the owner's entries (${gaps}) in the store deploy/secret-store.binding.json names (packages/ci-vercel/CONFIG-SERVICE.md)`,
+				message: `/healthz names ${sha} and ${OWNER_HANDOFF_PAGE_PATH} serves with its mailbox store; /readyz waits for the owner's entries (${gaps}) in the relay folder of the owner's own secret store (packages/ci-vercel/CONFIG-SERVICE.md)`,
 			};
 		return {
 			ok: false,

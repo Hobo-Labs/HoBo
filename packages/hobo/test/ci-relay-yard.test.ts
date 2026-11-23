@@ -299,11 +299,16 @@ describe("loadRelayYard", () => {
 			"production",
 			joined,
 		);
-		expect(production.inputs).toEqual([
-			"INFISICAL_IDENTITY_ID",
-			"INFISICAL_PROJECT_ID",
-			"INFISICAL_SITE_URL",
-		]);
+		expect(production.inputs).toEqual([]);
+		expect([...production.settings.keys()]).toEqual([]);
+		expect(production.bindings).toContainEqual(
+			expect.objectContaining({
+				profile: CONFIG,
+				selected: true,
+				settings: [],
+				inputs: [],
+			}),
+		);
 		expect(production.attachments).toEqual([
 			{
 				profile: CACHE,

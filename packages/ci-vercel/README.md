@@ -312,22 +312,27 @@ Delivering through HoBo CD changed the verb for anyone who runs it by hand:
 | a 15-minute wait | a 20-minute wait; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
 | — | new codes: `HOBO_CI_DEPLOY_INCOMPLETE`, `HOBO_CI_DEPLOY_VERIFICATION_FAILED`, `HOBO_CI_DEPLOY_NOT_QUALIFIED`, `HOBO_CI_DEPLOY_SOURCE_UNPINNED`, `HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`, `HOBO_CI_DEPLOY_DELIVERY_INVALID`, `HOBO_CI_DEPLOY_FREIGHT_REFUSED`, `HOBO_CI_DEPLOY_PROMOTION_REFUSED` |
 
-**Production is deployed by CI, not by hand**:
+**Production is deployed through `hobo cd` with the owner's store session.**
+The relay's store coordinates live only in the owner's own secret store (the
+`HOBO_CI_SECRET_STORE_BINDING` entry), never in the repository, an Actions
+secret or variable, or an environment variable, so
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
-runs on every push to `main` that changes this package or a workspace package
-it is built from (its pnpm-lock closure, `scripts/ci/relay-deploy-gate.mts`),
-and on `workflow_dispatch`:
+deploys nothing on a push. On a push that changes this package or a workspace
+package it is built from (its pnpm-lock closure,
+`scripts/ci/relay-deploy-gate.mts`) its gate posts a notice to deploy through
+`hobo cd` (`hobo ci deploy --build prebuilt`, see [BOOTSTRAP.md](BOOTSTRAP.md))
+after HoBo MCP's `choose_secret_store`. A `workflow_dispatch` run starts the
+protected job, whose `hobo` commands stop with
+`HOBO_CI_SECRET_STORE_SESSION_REQUIRED` unless an owner store session is
+established for them:
 
 0. A `route` job picks the runner first, as `hobo-ci.yml` does (the fleet
    while it takes jobs, an enrolled box, else GitHub-hosted).
-1. An unprotected `gate` job reads `deploy/secret-store.binding.json`,
-   coordinates only, before the protected deploy job can start. A missing or
-   malformed binding fails the canonical `main` gate. A valid binding without a
-   deploy credential skips deployment with an explicit notice; a half-configured
-   credential fails closed. The protected `deploy` job starts only when its
-   `run` output is true. No repository variable or secret configures the relay.
-   The binding comes from `hobo ci secret-store provision` after the owner claims
-   the chosen store, or from `hobo ci secret-store connect`
+1. An unprotected `gate` job reads no binding: it decides from the event and
+   the changed paths, and the protected `deploy` job starts only on a manual
+   run. No repository variable or secret configures the relay. The binding
+   lives in the owner's store, written there by `hobo ci secret-store provision`
+   after the owner claims the chosen store, or by `hobo ci secret-store connect`
    ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
 2. *Verify the protected environment and secret store connection*: both jobs
@@ -428,7 +433,7 @@ in the journal (its compensation restores the predecessor Set there):
 | Code | The production domain said | Remediation in the message |
 |---|---|---|
 | `HOBO_CI_DEPLOY_COMMIT_MISMATCH` | `/healthz` names another commit, or none | which deployment Vercel aliased to production; the right origin |
-| `HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED` | `/readyz` `state: "not-configured"` (with the `missing` and `invalid` entries it names) | fill the store `deploy/secret-store.binding.json` names ([folder](CONFIG-SERVICE.md#what-the-folder-holds)) |
+| `HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED` | `/readyz` `state: "not-configured"` (with the `missing` and `invalid` entries it names) | fill the relay folder of the owner's own secret store ([folder](CONFIG-SERVICE.md#what-the-folder-holds)) |
 | `HOBO_CI_DEPLOY_RELAY_NOT_READY` | `/readyz` `config-service-denied`, `config-service-unavailable`, `start-failed`, a started relay's false parts, or `/healthz` not 200 | per reason |
 | `HOBO_CI_DEPLOY_VERIFICATION_FAILED` | anything else | — |
 

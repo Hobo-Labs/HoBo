@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/** Read only names from the committed Infisical binding using GitHub OIDC. */
-import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import {
@@ -416,20 +414,13 @@ export async function inspectHostingEvidence(input: {
 	}
 }
 
-async function main() {
-	let report = unavailable();
-	try {
-		report = await inspectHostingEvidence({
-			env: process.env,
-			bindingText: await readFile(
-				"packages/ci-vercel/deploy/secret-store.binding.json",
-				"utf8",
-			),
-		});
-	} catch {}
-	process.stdout.write(`${JSON.stringify(report)}\n`);
-	if (report.status !== "observed") process.exitCode = 1;
+function main() {
+	process.stdout.write(`${JSON.stringify(unavailable())}\n`);
+	process.stderr.write(
+		"hosting-evidence: the store coordinates live only in the owner's secret store and are never committed, so this job has none to observe with; observe through an owner store session (HoBo MCP's choose_secret_store).\n",
+	);
+	process.exitCode = 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
-	await main();
+	main();

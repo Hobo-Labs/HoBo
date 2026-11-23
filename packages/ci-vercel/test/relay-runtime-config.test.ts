@@ -13,7 +13,7 @@ import {
 	createRelayRuntimeConfigLoader,
 	envRelayConfigSource,
 	infisicalRelayConfigSource,
-	parseCommittedStoreCoordinates,
+	parseBundledStoreCoordinates,
 	parseRelayCacheBindings,
 	parseRelayRuntimeConfig,
 	type RelayConfigSource,
@@ -433,7 +433,7 @@ describe("secretless first: keys the relay derives (ADR-0179 amendment)", () => 
 	});
 });
 
-describe("secretless first: the committed store coordinates", () => {
+describe("secretless first: the store coordinates HoBo bundles into the build", () => {
 	const binding = {
 		kind: "infisical-cloud-attach",
 		endpoint: "https://app.infisical.com",
@@ -443,13 +443,13 @@ describe("secretless first: the committed store coordinates", () => {
 		secretPath: "/hobo-ci-relay",
 		relayIdentityId: "relay-identity",
 		deployIdentityId: "ci-identity",
-		vercelTeamId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+		vercelTeamId: "team_000000000000000000000000",
 		claimBundleId: "secret-store:hobo-ci-relay:connect-1",
 		claimState: "claimed",
 	};
 
-	it("reads the relay's folder and identity from the committed binding", () => {
-		const coordinates = parseCommittedStoreCoordinates(JSON.stringify(binding));
+	it("reads the relay's folder and identity from the bundled binding", () => {
+		const coordinates = parseBundledStoreCoordinates(JSON.stringify(binding));
 		expect(coordinates?.identityId).toBe("relay-identity");
 		expect(coordinates?.binding).toMatchObject({
 			siteUrl: "https://app.infisical.com",
@@ -458,24 +458,23 @@ describe("secretless first: the committed store coordinates", () => {
 			secretPath: "/hobo-ci-relay",
 		});
 		expect(
-			parseCommittedStoreCoordinates(
+			parseBundledStoreCoordinates(
 				JSON.stringify({ ...binding, kind: "cloudflare-temporary" }),
 			),
 		).toBeUndefined();
 		expect(() =>
-			parseCommittedStoreCoordinates(
+			parseBundledStoreCoordinates(
 				JSON.stringify({ ...binding, projectId: "../other" }),
 			),
 		).toThrow(RelayRuntimeConfigError);
 	});
 
-	it("signs a production deployment in from the committed binding, with no environment variable set", async () => {
+	it("signs a production deployment in from the bundled binding, with no environment variable set", async () => {
 		const requests: string[] = [];
 		const source = relayConfigSourceFromEnv(
 			{ VERCEL_ENV: "production" },
 			{
-				committed: () =>
-					parseCommittedStoreCoordinates(JSON.stringify(binding)),
+				bundled: () => parseBundledStoreCoordinates(JSON.stringify(binding)),
 				jwt: async () => "header.payload.signature",
 				fetch: async (input) => {
 					const url = new URL(String(input));
@@ -500,21 +499,20 @@ describe("secretless first: the committed store coordinates", () => {
 	});
 
 	it("leaves previews and an explicit HOBO_CI_CONFIG_SERVICE as they were", () => {
-		const committed = () =>
-			parseCommittedStoreCoordinates(JSON.stringify(binding));
+		const bundled = () => parseBundledStoreCoordinates(JSON.stringify(binding));
 		expect(
-			relayConfigSourceFromEnv({ VERCEL_ENV: "preview" }, { committed }).kind,
+			relayConfigSourceFromEnv({ VERCEL_ENV: "preview" }, { bundled }).kind,
 		).toBe("env");
 		expect(
 			relayConfigSourceFromEnv(
 				{ VERCEL_ENV: "production", HOBO_CI_CONFIG_SERVICE: "env" },
-				{ committed },
+				{ bundled },
 			).kind,
 		).toBe("env");
 		expect(
 			relayConfigSourceFromEnv(
 				{ VERCEL_ENV: "production" },
-				{ committed: () => undefined },
+				{ bundled: () => undefined },
 			).kind,
 		).toBe("env");
 	});

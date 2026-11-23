@@ -22,13 +22,20 @@ import {
 } from "../../secret-store-claim/test/support/stub-infisical.js";
 import {
 	loadSecretStoreBinding,
+	ownerSecretStoreBindingStore,
+	SECRET_STORE_SESSION_REQUIRED,
 	runCiSecretStore,
-	secretStoreDeployInputs,
 	secretStoreOwnershipVerifier,
 } from "../src/ci-secret-store.js";
 import { runClaimCeremony } from "../src/claim-ceremony.js";
 import { claimStreamFor } from "../src/claim-plane.js";
 import { createDefaultYardRuntime } from "../src/compose.js";
+import { OwnerCredentialUnavailable } from "../src/owner-store-session.js";
+import {
+	keepInOwnerStore,
+	OWNER_STORE_BINDING,
+	ownerStoreStandIn,
+} from "./support/owner-store-stand-in.js";
 
 const PASSWORD_PATTERN = /password=/u;
 const NOW = Date.parse("2026-11-12T10:00:00.000Z");
@@ -174,6 +181,7 @@ describe("provision → claim open → claim finalize → deploy inputs", () => 
 			now: () => NOW,
 			allowLoopback: true,
 			fetch: withGithub,
+			bindingStore: ownerStoreStandIn(cwd),
 		});
 		expect(provisioned.ok).toBe(true);
 		// The deploy identity trusts the subject GitHub issues for the
@@ -196,15 +204,18 @@ describe("provision → claim open → claim finalize → deploy inputs", () => 
 		expect(JSON.stringify(provisioned)).not.toMatch(PASSWORD_PATTERN);
 		expect(JSON.stringify(provisioned)).not.toContain("stub-admin-token");
 
-		// The binding is coordinates only; the deploy fills its inputs from it.
-		const file = path.join(cwd, "deploy", "secret-store.binding.json");
+		const file = path.join(cwd, OWNER_STORE_BINDING);
 		expect(existsSync(file)).toBe(true);
+		expect(existsSync(path.join(cwd, "deploy"))).toBe(false);
 		const text = readFileSync(file, "utf8");
 		expect(text).not.toMatch(PASSWORD_PATTERN);
 		expect(text).not.toContain("stub-admin-token");
-		// The committed file must be an HTTPS origin; the stand-in is loopback,
-		// so reading it back is refused, which is the rule this asserts.
-		expect(() => loadSecretStoreBinding(cwd)).toThrow(/not a valid/u);
+		const stored = JSON.parse(text);
+		for (const coordinate of [stored.projectId, stored.relayIdentityId])
+			expect(JSON.stringify(provisioned)).not.toContain(coordinate);
+		await expect(
+			loadSecretStoreBinding(ownerStoreStandIn(cwd)),
+		).rejects.toThrow(/not valid/u);
 
 		// Nothing secret reached the durable claim journal.
 		const journal = JSON.stringify(
@@ -242,25 +253,49 @@ describe("provision → claim open → claim finalize → deploy inputs", () => 
 		).toBe(false);
 	});
 
-	it("fills the deploy's config-service inputs from a committed binding", async () => {
+	it("reads the binding from the owner's store only, and fails closed without the owner's session", async () => {
 		const cwd = await tempDir("hobo-secret-store-");
-		await mkdir(path.join(cwd, "deploy"), { recursive: true });
 		const fixture = fileURLToPath(
 			new URL(
 				"../../secret-store-claim/data-models/fixtures/valid/self-hosted-infisical-binding.json",
 				import.meta.url,
 			),
 		);
+		await mkdir(path.join(cwd, "deploy"), { recursive: true });
 		await writeFile(
 			path.join(cwd, "deploy", "secret-store.binding.json"),
 			readFileSync(fixture, "utf8"),
 		);
-		const binding = loadSecretStoreBinding(cwd);
-		if (binding === undefined) throw new Error("no binding");
-		expect(Object.fromEntries(secretStoreDeployInputs(binding))).toEqual({
-			INFISICAL_SITE_URL: "https://secrets.hobo-fleet.example",
-			INFISICAL_IDENTITY_ID: "relay-identity",
-			INFISICAL_PROJECT_ID: "proj-1",
+		await expect(loadSecretStoreBinding(undefined)).rejects.toMatchObject({
+			code: SECRET_STORE_SESSION_REQUIRED,
+			message: expect.stringContaining("choose_secret_store"),
+		});
+		await expect(
+			loadSecretStoreBinding(ownerStoreStandIn(cwd)),
+		).resolves.toBeUndefined();
+		keepInOwnerStore(cwd, readFileSync(fixture, "utf8"));
+		const binding = await loadSecretStoreBinding(ownerStoreStandIn(cwd));
+		expect(binding).toMatchObject({
+			endpoint: "https://secrets.hobo-fleet.example",
+			relayIdentityId: "relay-identity",
+			projectId: "proj-1",
+		});
+	});
+
+	it("maps a missing owner session to the session-required refusal", async () => {
+		const store = ownerSecretStoreBindingStore({
+			read: async (name) => {
+				throw new OwnerCredentialUnavailable(`owner://${name}`, "no-session");
+			},
+			write: async (name) => {
+				throw new OwnerCredentialUnavailable(`owner://${name}`, "no-session");
+			},
+		});
+		await expect(store.read()).rejects.toMatchObject({
+			code: SECRET_STORE_SESSION_REQUIRED,
+		});
+		await expect(store.write("{}")).rejects.toMatchObject({
+			code: SECRET_STORE_SESSION_REQUIRED,
 		});
 	});
 });

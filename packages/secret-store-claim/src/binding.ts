@@ -1,10 +1,3 @@
-/**
- * The committed binding: where the relay and the deploy workflow find the
- * store once it exists (`packages/ci-vercel/deploy/secret-store.binding.json`).
- * Coordinates only, constrained by `#SecretStoreBinding` in
- * `data-models/secret_store_claim.cue`; a value shaped like a credential
- * cannot be represented.
- */
 import {
 	create,
 	fromJsonString,
@@ -18,8 +11,11 @@ import {
 import { secretStoreError } from "./errors.js";
 import { parseSecretStoreKind, type SecretStoreKind } from "./offers.js";
 
-// public-contract: where `hobo ci secret-store provision` writes the binding, relative to the relay project.
-export const SECRET_STORE_BINDING_FILE = "deploy/secret-store.binding.json";
+// public-contract: the owner-store entry that holds the binding; HoBo never commits it.
+export const SECRET_STORE_BINDING_ENTRY = "HOBO_CI_SECRET_STORE_BINDING";
+// public-contract: where HoBo bundles the binding inside a deployment it builds, relative to the project; never committed.
+export const BUNDLED_SECRET_STORE_BINDING_FILE =
+	"deploy/secret-store.binding.json";
 // public-contract: the relay's folder path in its project (the layout `provision` creates).
 export const RELAY_SECRET_PATH = "/hobo-ci-relay";
 
@@ -134,7 +130,6 @@ export function parseSecretStoreBinding(
 	return Object.freeze(parsed);
 }
 
-/** Read the committed file's text. The error never quotes it. */
 export function readSecretStoreBinding(
 	text: string,
 	options: { readonly allowLoopback?: boolean } = {},
@@ -177,7 +172,6 @@ export function readSecretStoreBindingForRepair(
 	return bindingFields(record, kind, claimState);
 }
 
-/** The file's text: stable field order, a trailing newline. */
 export function formatSecretStoreBinding(
 	binding: ParsedSecretStoreBinding,
 ): string {

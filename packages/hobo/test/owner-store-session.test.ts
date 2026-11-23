@@ -191,6 +191,35 @@ describe("owner store session", () => {
 		expect(sessions.status(CWD)).toEqual({ established: false });
 	});
 
+	it("reads and writes owner store entries only inside an established session", async () => {
+		const port = await storeHolding({});
+		const sessions = createOwnerStoreSessions({
+			signIn: signedIn(ownerStoreFor({ chosen: true, port })),
+		});
+		const entries = sessions.entries(CWD);
+		await expect(entries.read("HOBO_CI_SECRET_STORE_BINDING")).rejects.toEqual(
+			new OwnerCredentialUnavailable(
+				"owner://HOBO_CI_SECRET_STORE_BINDING",
+				"no-session",
+			),
+		);
+		await expect(
+			entries.write("HOBO_CI_SECRET_STORE_BINDING", "{}"),
+		).rejects.toBeInstanceOf(OwnerCredentialUnavailable);
+		await sessions.establish(CWD);
+		await expect(
+			entries.read("HOBO_CI_SECRET_STORE_BINDING"),
+		).resolves.toBeUndefined();
+		await entries.write("HOBO_CI_SECRET_STORE_BINDING", '{"kind":"x"}');
+		await expect(entries.read("HOBO_CI_SECRET_STORE_BINDING")).resolves.toBe(
+			'{"kind":"x"}',
+		);
+		expect(port.names()).toEqual(["HOBO_CI_SECRET_STORE_BINDING"]);
+		await expect(entries.read("not a name")).rejects.toBeInstanceOf(
+			OwnerCredentialUnavailable,
+		);
+	});
+
 	it("gives Hostinger's resolvers the owner's token through the session, only in the request header", async () => {
 		const sessions = createOwnerStoreSessions({
 			signIn: signedIn(

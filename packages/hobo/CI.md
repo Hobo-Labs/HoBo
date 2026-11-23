@@ -543,9 +543,12 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… --dry-run
 would send, and sends none. A real run reads `VERCEL_TOKEN` from the bound
 secret store as the dedicated deploy reader and deploys to **preview** unless
 `--target production` is given. Production
-chooses the config-service binding, which asks for the store's origin and two
-ids; `hobo ci deploy` reads them, and the team, from the committed
-`deploy/secret-store.binding.json`:
+chooses the config-service binding. Its coordinates and the team live only in
+the owner's own secret store (`HOBO_CI_SECRET_STORE_BINDING`); `hobo ci deploy`
+reads them through the owner store session (HoBo MCP's `choose_secret_store`)
+and fails closed with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` without one.
+They never become Vercel variables: `--build prebuilt` bundles the relay's
+coordinates into the build only (a `--dry-run` plans without a session):
 
 ```sh
 hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
@@ -555,32 +558,27 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 | Option | Means |
 |---|---|
 | `--repo`, `--project` | Override the Yard's `repository` and `project` (a fork, a scratch project) |
-| `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or an `INFISICAL_*` name other than the five coordinates |
+| `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or an `INFISICAL_*` name |
 | `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
 | `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
 | `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration. `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`), unless the relay serves the commit and its owner hand-off and `/readyz` names only the owner's missing or refused entries: then production keeps the build, unqualified, and the command answers `HOBO_CI_DEPLOYED_AWAITING_OWNER` naming them. Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
 
-Nobody runs this against production by hand: the
-[relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
-every merge to `main` that changes the relay, reading the Vercel token from the
-relay's secret store with GitHub OIDC. Production's config-service inputs
-(`INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_ID`) and the
-team come from `deploy/secret-store.binding.json` in the relay's project; a
-`--set` still overrides one. See
+Production deploys only through `hobo cd` with the owner's store session (the
+[relay bootstrap](../ci-vercel/BOOTSTRAP.md) gives the two commands). The
+[relay deploy workflow](../../.github/workflows/relay-deploy.yml) holds no
+store coordinates, so a push deploys nothing and its gate posts that notice.
+See
 [`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
 and [the README](README.md) for the plan record and its gates. It has been
-exercised against fakes only. The committed binding has neither a
-`deployProjectId` nor a `deployCredentialIdentityId` yet: the owner must create
-protected GitHub environments for the reader and writer, create the
-`hobo-ci-deploy` project and exactly-Viewer `hobo-ci-deploy-reader` identity,
-deposit `VERCEL_TOKEN` at its root, and re-run `connect` to record the complete
-binding. Until then the workflow gate fails closed instead of reporting a
-successful deployment skip. Read-only hosting evidence can still inspect the
-legacy relay coordinates without admitting the binding to deployment.
-Token-free `--dry-run` planning can read the legacy coordinates through the
-confined repair parser; every real deploy uses strict parsing and refuses
-before OIDC sign-in. The ordered operator sequence is
+exercised against fakes only. A binding without a `deployProjectId` and a
+`deployCredentialIdentityId` cannot deploy: the owner must create protected
+GitHub environments for the reader and writer, create the `hobo-ci-deploy`
+project and exactly-Viewer `hobo-ci-deploy-reader` identity, deposit
+`VERCEL_TOKEN` at its root, and re-run `connect` to record the complete binding
+in their store. Token-free `--dry-run` planning can read a legacy binding
+through the confined repair parser; every real deploy uses strict parsing and
+refuses before OIDC sign-in. The ordered operator sequence is
 [the cutover runbook](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 This channel is **built, not proven**: after repair, link a successful
 `relay-deploy` run whose preview step records the token read as the dedicated
@@ -615,9 +613,10 @@ hobo claim finalize secret-store
 | `--team`, `--vercel-team-slug`, `--vercel-project-id` | The Vercel team and project the relay's identity trusts (OIDC issuer, subject and pinned `owner_id`/`project_id`) |
 | `--allow-designed` | Route to a store whose relay binding is designed only (the Cloudflare Worker, an auth.md store; for the hosted relay the Worker is an experiment, not its store) |
 
-`plan` contacts nothing but the `--auth-md` candidates. `provision` writes
-`deploy/secret-store.binding.json` (coordinates only) when the relay can read
-the store, attaches the claim bundle to the deployment's claim journal, and
+`plan` contacts nothing but the `--auth-md` candidates. `provision` writes the
+binding (coordinates only) to the owner's own secret store as
+`HOBO_CI_SECRET_STORE_BINDING` through the owner store session when the relay
+can read the store, never to the repository, and never shows it, attaches the claim bundle to the deployment's claim journal, and
 prints the owner's next steps; it never prints a claim link, a password or a
 token. `INFISICAL_TOKEN` (from the owner's own `infisical login`) selects the
 attach-only offer for an Infisical Cloud organization the owner already has.
