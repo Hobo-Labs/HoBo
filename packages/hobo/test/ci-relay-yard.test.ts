@@ -31,7 +31,7 @@ const configService: YardBindingInput = {
 	connectivityId: "infisical.oidc-auth/v1",
 	properties: {
 		settings: { HOBO_CI_CONFIG_SERVICE: "infisical" },
-		inputs: ["INFISICAL_PROJECT_ID", "INFISICAL_IDENTITY_ID"],
+		inputs: ["HOBO_CI_EVENTS_URL", "HOBO_CI_EVENTS_TENANT"],
 	},
 };
 
@@ -53,7 +53,7 @@ function relayYard(
 			envType: "production",
 			require: [CACHE, CONFIG],
 			resolverConfig: {
-				properties: { settings: { INFISICAL_ENVIRONMENT: "prod" } },
+				properties: { settings: { HOBO_CI_SANDBOX_PLAN: "prod" } },
 			},
 		}),
 		camp("preview", { envType: "preview", require: [CACHE] }),
@@ -90,7 +90,7 @@ describe("resolveRelayPlacement", () => {
 			providerId: "vercel",
 			project: "relay",
 			repository: "example/relay",
-			inputs: ["INFISICAL_IDENTITY_ID", "INFISICAL_PROJECT_ID"],
+			inputs: ["HOBO_CI_EVENTS_TENANT", "HOBO_CI_EVENTS_URL"],
 			attachments: [
 				{
 					profile: CACHE,
@@ -101,7 +101,7 @@ describe("resolveRelayPlacement", () => {
 		});
 		expect([...placement.settings]).toEqual([
 			["HOBO_CI_CONFIG_SERVICE", "infisical"],
-			["INFISICAL_ENVIRONMENT", "prod"],
+			["HOBO_CI_SANDBOX_PLAN", "prod"],
 		]);
 		expect(
 			placement.bindings.map((binding) => [binding.profile, binding.selected]),
@@ -123,7 +123,7 @@ describe("resolveRelayPlacement", () => {
 		expect(placement.bindings.find((b) => b.profile === CONFIG)).toMatchObject({
 			selected: false,
 			settings: ["HOBO_CI_CONFIG_SERVICE"],
-			inputs: ["INFISICAL_IDENTITY_ID", "INFISICAL_PROJECT_ID"],
+			inputs: ["HOBO_CI_EVENTS_TENANT", "HOBO_CI_EVENTS_URL"],
 		});
 	});
 
@@ -212,6 +212,26 @@ describe("resolveRelayPlacement", () => {
 		}
 	});
 
+	it("refuses a store coordinate as a row's setting or input", () => {
+		for (const properties of [
+			{
+				settings: {
+					INFISICAL_PROJECT_ID: "00000000-0000-0000-0000-000000000000",
+				},
+			},
+			{ inputs: ["INFISICAL_IDENTITY_ID"] },
+			{ inputs: ["VERCEL_TEAM_ID"] },
+		]) {
+			const error = refusal(() =>
+				resolveRelayPlacement(relayYard([marketplace]), "production", [
+					configYardWith({ ...configService, properties }),
+				]),
+			);
+			expect(error.code).toBe("HOBO_CI_DEPLOY_SETTING_REFUSED");
+			expect(error.message).not.toContain("00000000");
+		}
+	});
+
 	it("refuses an input that names a credential", () => {
 		const error = refusal(() =>
 			resolveRelayPlacement(relayYard([marketplace]), "production", [
@@ -250,7 +270,7 @@ describe("resolveRelayPlacement", () => {
 							envType: "production",
 							require: [CACHE, CONFIG],
 							resolverConfig: {
-								properties: { settings: { INFISICAL_PROJECT_ID: "x" } },
+								properties: { settings: { HOBO_CI_EVENTS_URL: "x" } },
 							},
 						}),
 					],
@@ -299,11 +319,16 @@ describe("loadRelayYard", () => {
 			"production",
 			joined,
 		);
-		expect(production.inputs).toEqual([
-			"INFISICAL_IDENTITY_ID",
-			"INFISICAL_PROJECT_ID",
-			"INFISICAL_SITE_URL",
-		]);
+		expect(production.inputs).toEqual([]);
+		expect([...production.settings.keys()]).toEqual([]);
+		expect(production.bindings).toContainEqual(
+			expect.objectContaining({
+				profile: CONFIG,
+				selected: true,
+				settings: [],
+				inputs: [],
+			}),
+		);
 		expect(production.attachments).toEqual([
 			{
 				profile: CACHE,

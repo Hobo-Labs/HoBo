@@ -1,26 +1,27 @@
 import { env } from "wasp/server";
+import * as z from "zod";
 
 const headers = {
   "Content-Type": "application/json",
   Authorization: `Bearer ${env.PLAUSIBLE_API_KEY}`,
 };
 
-type PageViewsResult = {
-  results: {
-    [key: string]: {
-      value: number;
-    };
-  };
-};
+const pageViewsResultSchema = z.object({
+  results: z.object({
+    pageviews: z.object({
+      value: z.number(),
+    }),
+  }),
+});
 
-type PageViewSourcesResult = {
-  results: [
-    {
-      source: string;
-      visitors: number;
-    },
-  ];
-};
+const pageViewSourcesResultSchema = z.object({
+  results: z.array(
+    z.object({
+      source: z.string(),
+      visitors: z.number(),
+    }),
+  ),
+});
 
 export async function getDailyPageViews() {
   const totalViews = await getTotalPageViews();
@@ -43,7 +44,7 @@ async function getTotalPageViews() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  const json: PageViewsResult = await response.json();
+  const json = pageViewsResultSchema.parse(await response.json());
 
   return json.results.pageviews.value;
 }
@@ -87,7 +88,7 @@ async function getPageviewsForDate(date: string) {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  const data: PageViewsResult = await response.json();
+  const data = pageViewsResultSchema.parse(await response.json());
   return data.results.pageviews.value;
 }
 
@@ -100,6 +101,6 @@ export async function getSources() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  const data: PageViewSourcesResult = await response.json();
+  const data = pageViewSourcesResultSchema.parse(await response.json());
   return data.results;
 }

@@ -197,10 +197,6 @@ export const SecretStoreSelectionSchema: GenMessage<SecretStoreSelection> = /*@_
   messageDesc(file_secret_store_claim, 3);
 
 /**
- * Where the relay and the deploy workflow read config once the store exists:
- * non-secret coordinates only, committed as
- * `packages/ci-vercel/deploy/secret-store.binding.json`.
- *
  * @generated from message hobo.secret_store_claim.v1.SecretStoreBinding
  */
 export type SecretStoreBinding = Message<"hobo.secret_store_claim.v1.SecretStoreBinding"> & {

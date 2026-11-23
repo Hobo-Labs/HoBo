@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
+import * as z from "zod";
 
 const harnesses = [".agents", ".claude", ".cursor", ".github"];
 
@@ -167,8 +168,7 @@ for (const withWrapper of [true, false]) {
 			});
 			app.listen(0, "127.0.0.1");
 			await once(app, "listening");
-			const address = app.address();
-			assert(address instanceof Object);
+			const address = z.object({ port: z.number() }).parse(app.address());
 			browser = await chromium.launch({ headless: true });
 			const page = await browser.newPage();
 			await page.goto(`http://127.0.0.1:${address.port}/`);
@@ -183,14 +183,20 @@ for (const withWrapper of [true, false]) {
 			assert.equal(recovered.browserCheckpointRevision, 10);
 			assert.equal(recovered.publicationCheckpointRevision, 25);
 			assert.notEqual(recovered.activeOwner, "old");
-			const status: {
-				activeSessions: Array<{
-					checkpointRevision: number;
-					browserCheckpointRevision: number;
-				}>;
-			} = await fetch(
-				`http://localhost:${info.port}/status?token=${info.token}`,
-			).then((response) => response.json());
+			const status = z
+				.object({
+					activeSessions: z.array(
+						z.object({
+							checkpointRevision: z.number(),
+							browserCheckpointRevision: z.number(),
+						}),
+					),
+				})
+				.parse(
+					await fetch(
+						`http://localhost:${info.port}/status?token=${info.token}`,
+					).then((response) => response.json()),
+				);
 			const summary = status.activeSessions[0];
 			assert(summary);
 			assert.equal(summary.checkpointRevision, 10);

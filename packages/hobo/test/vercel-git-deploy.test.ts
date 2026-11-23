@@ -23,6 +23,7 @@ import {
 } from "../src/vercel-deploy-provider.js";
 import {
 	isRefusedEnvKey,
+	refusedEnvKeyReason,
 	refusedEnvValueReason,
 } from "../src/vercel-env-policy.js";
 
@@ -615,8 +616,6 @@ describe("createVercelClient.setProjectEnv (scripted transport, no network)", ()
 	it.each([
 		"HOBO_CI_PUBLIC_URL",
 		"HOBO_CI_SANDBOX_ENABLED",
-		"HOBO_CI_SANDBOX_TEAM_ID",
-		"HOBO_CI_SANDBOX_PROJECT_ID",
 		"HOBO_CI_SANDBOX_ISSUER",
 		"HOBO_CI_SANDBOX_DOMAINS_JSON",
 		"HOBO_CI_SANDBOX_PLAN",
@@ -624,14 +623,30 @@ describe("createVercelClient.setProjectEnv (scripted transport, no network)", ()
 		"HOBO_CI_GITHUB_APP_ID",
 		"HOBO_CI_GITHUB_APP_CLIENT_ID",
 		"HOBO_CI_CONFIG_SERVICE",
-		// The config service's coordinates: where to sign in, not with what.
+	])("takes the relay's non-secret setting %s", (key) => {
+		expect(isRefusedEnvKey(key)).toBe(false);
+	});
+
+	it.each([
 		"INFISICAL_SITE_URL",
 		"INFISICAL_IDENTITY_ID",
 		"INFISICAL_PROJECT_ID",
 		"INFISICAL_ENVIRONMENT",
 		"INFISICAL_SECRET_PATH",
-	])("takes the relay's non-secret setting %s", (key) => {
-		expect(isRefusedEnvKey(key)).toBe(false);
+		"HOBO_CI_SANDBOX_TEAM_ID",
+		"HOBO_CI_SANDBOX_PROJECT_ID",
+		"VERCEL_TEAM_ID",
+		"VERCEL_ORG_ID",
+		"HOBO_CD_WORKLOAD_IDENTITY_ID",
+		"HOBO_CI_DEPLOY_OIDC_SUBJECT",
+		"HOBO_CI_SECRET_STORE_BINDING",
+	])("refuses the store coordinate %s: coordinates are never Vercel variables", async (key) => {
+		const { fetch, sent } = scripted({});
+		expect(refusedEnvKeyReason(key)).toMatch(/coordinate/u);
+		await expect(
+			set(fetch, { ...SETTING, [key]: "plain-looking-value" }),
+		).rejects.toThrow(VercelEnvRefusal);
+		expect(sent).toEqual([]);
 	});
 
 	it.each([
