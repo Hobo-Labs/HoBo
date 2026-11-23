@@ -9,9 +9,15 @@ tags: [hobo, agent-tooling.md]
 
 Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
-design documents. The shared pre-commit hook and CI run `source:guard` on new
-JavaScript, TypeScript, shell, Python, CSS, and HTML comments and added or
-changed planning or design documents. It reads the staged content for commits
+design documents. The shared pre-commit hook and CI run `source:guard`
+([`scripts/check-source-policy.mts`](../scripts/check-source-policy.mts)) on new
+comments and added or changed planning or design documents in the languages it
+recognizes: JavaScript, TypeScript, shell, Python, CSS, and HTML; YAML, Rust,
+Go, C, C++, Java, Kotlin, Ruby, Lua, and Swift through ast-grep; and the
+contract languages — Prisma, CUE, Protobuf, WIT, SQL, and TOML — lexed by
+[`scripts/source-comment-lexer.mts`](../scripts/source-comment-lexer.mts), whose
+dialect-aware lexer keeps triple-quoted strings and raw-string hash delimiters
+out of the comment set. It reads the staged content for commits
 and the PR diff for CI; it does not inspect other languages or unchanged content.
 For renamed files, it compares against the original path so existing comments
 remain allowed while newly added comments are checked. During a staged merge it
