@@ -40,7 +40,6 @@ function invalid(message: string): never {
 	);
 }
 
-/** Read ordinary tar entries without extracting peer-selected paths onto disk. */
 function tarEntries(bytes: Buffer): Map<string, Buffer> {
 	const entries = new Map<string, Buffer>();
 	for (let offset = 0; offset + 512 <= bytes.length; ) {
@@ -82,7 +81,6 @@ function tarEntries(bytes: Buffer): Map<string, Buffer> {
 	return entries;
 }
 
-/** Verify the index, every referenced manifest/config/layer, and their actual bytes. */
 export function validateContainerArchive(bytes: Buffer): void {
 	const files = tarEntries(bytes);
 	function json(content: Buffer | undefined, label: string): JsonObject {
@@ -176,7 +174,6 @@ export function validateContainerArchive(bytes: Buffer): void {
 	if (images === 0) invalid("archive contains no runnable image");
 }
 
-/** Build through the operator's local/self-hosted Docker Buildx or BuildKit daemon. */
 export const buildContainerImage: ContainerBuildFn = async (input) => {
 	const root = resolve(input.projectRoot);
 	const context = resolve(root, input.service.sourceRoot);

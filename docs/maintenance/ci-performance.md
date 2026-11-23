@@ -160,8 +160,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   accepts them; anything short of a verified match is `reuse=false` and the merge group runs its
   gate jobs as before. The plan job, secret scan, merge-only required checks and the gate itself
   are untouched. Committed policy gates it: `runnerRouting.mergeGroup.reusePrFabric` in
-  `.hobo/ci.json` (`false`, and an absent block means the same, until a merge group has produced
-  the first production observation of the route step logging a verified reuse).
+  `.hobo/ci.json` (`true`, and an absent block means the same; an unreadable or invalid policy
+  turns reuse off).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes

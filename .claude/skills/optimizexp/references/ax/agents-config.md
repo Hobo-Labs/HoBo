@@ -25,10 +25,10 @@ MCP detail: [mcp.md](mcp.md).
 
 | Agent | Role |
 |---|---|
-| `implementer` | One issue, worktree, TDD, incremental commits, `.sdlc/report.json` |
-| `reviewer` | Read-only re-run gates + acceptance checklist |
+| `implementer` | Implement assigned behavior, update dependencies, and verify the result |
+| `reviewer` | Review the implementation and independently verify relevant checks |
 
-Same one-shot issue contract for cloud coding agents (handback `sdlc-report` fence).
+Report changes and evidence in the response or pull request; do not create planning or status files.
 
 ## CLI ergonomics to score
 

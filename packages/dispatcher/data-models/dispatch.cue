@@ -1,6 +1,5 @@
 package data_models
 
-// Ledger sequences travel through JavaScript numbers and must remain exact.
 #SafeSequence: int & >=0 & <=9007199254740991
 
 #CreditGrantRecord: {

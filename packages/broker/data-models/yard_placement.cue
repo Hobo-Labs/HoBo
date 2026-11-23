@@ -2,7 +2,6 @@ package broker
 
 // CUE constraints for yard_placement.proto wire forms.
 
-// ECMAScript String.trim whitespace: preserve nonblank input without normalizing it.
 #PlacementNonblank: string & !~"^[\\x{0009}-\\x{000D}\\x{0020}\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}]*$"
 #CampNonblank:      #PlacementNonblank
 #YardIdNonblank:    #PlacementNonblank

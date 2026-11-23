@@ -350,34 +350,22 @@ export function discoverCode(input: {
 		});
 	}
 
-	// Experience-proof navigation: classification manifest is the critical path (not gate:s1).
-	if (/exp-proofs|experience proof|experience-proof/i.test(text)) {
-		const classification = "src/draft/exp-proofs/_classification.md";
-		const abs = path.join(root, classification);
-		if (existsSync(abs)) {
-			const cmd =
-				"bash -lc 'test -f src/draft/exp-proofs/_classification.md && ls src/draft/exp-proofs && head -n 40 src/draft/exp-proofs/_classification.md'";
-			bindings.unshift({
-				kind: "shell-command",
-				id: "shell:exp-proofs-classification",
-				command: cmd,
-				confidence: "high",
-				reason:
-					"seed targets exp-proofs navigation; _classification.md is the type map (dx/ux/cx/ax/api)",
-				implementsSteps: [
-					"I exercise the surface as this persona would",
-					"I am on the critical path described by the feature seed",
-				],
-			});
-			bindings.push({
-				kind: "file",
-				id: `file:${classification}`,
-				path: classification,
-				confidence: "high",
-				reason: "classification manifest exists for experience-type folders",
-				implementsSteps: ["I am on the critical path described by the feature seed"],
-			});
-		}
+	if (
+		/exp-proofs|experience proof|experience-proof/i.test(text) &&
+		scripts["draft:experiences"] &&
+		existsSync(path.join(root, "scripts/list-experience-proofs.mts"))
+	) {
+		const existing = bindings.findIndex((binding) => binding.id === "script:draft:experiences");
+		if (existing !== -1) bindings.splice(existing, 1);
+		bindings.unshift({
+			kind: "package-script",
+			id: "script:draft:experiences",
+			scriptName: "draft:experiences",
+			command: "pnpm run draft:experiences",
+			confidence: "high",
+			reason: "Lists the current experience proofs by audience",
+			implementsSteps: ["I exercise the surface as this persona would"],
+		});
 	}
 
 	// Known HoBo agent-check surface
@@ -469,7 +457,7 @@ export function pickPrimaryCommand(
 	if (productCli) return productCli;
 	// Prefer journey-specific offline surfaces when present
 	const preferredIds = [
-		"shell:exp-proofs-classification",
+		"script:draft:experiences",
 		"script:doctor",
 	];
 	for (const id of preferredIds) {

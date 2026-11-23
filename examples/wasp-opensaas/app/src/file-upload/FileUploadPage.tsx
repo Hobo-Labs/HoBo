@@ -38,8 +38,6 @@ export function FileUploadPage() {
   > | null>(null);
 
   const allUserFiles = useQuery(getAllFilesByUser, undefined, {
-    // We disable automatic refetching because otherwise files would be refetched after `createFile` is called and the S3 URL is returned,
-    // which happens before the file is actually fully uploaded. Instead, we manually (re)fetch on mount and after the upload is complete.
     enabled: false,
   });
   const { isLoading: isDownloadUrlLoading, refetch: refetchDownloadUrl } =

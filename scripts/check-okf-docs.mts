@@ -9,8 +9,6 @@ const bundleRoots = [
 	path.join(root, ".claude", "skills", "repo", "references"),
 	path.join(root, ".agents", "skills", "draft", "references"),
 	path.join(root, ".claude", "skills", "draft", "references"),
-	path.join(root, ".agents", "skills", "sdlc", "references"),
-	path.join(root, ".claude", "skills", "sdlc", "references"),
 ];
 const problems: string[] = [];
 

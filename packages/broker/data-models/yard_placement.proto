@@ -116,7 +116,6 @@ message BindleDeploymentRequest {
   CampPlacementInput camp = 11;
   reserved 12;
   reserved "work_binding_version";
-  // SHA-256 of the canonical domain request; this is not a signature.
   string request_digest = 13;
 }
 
@@ -264,7 +263,6 @@ message HostingQuote {
   repeated ProviderAccountExposure provider_accounts = 12;
   repeated EntitlementClaim entitlement_claims = 13;
   string financial_plan_hash = 14;
-  // Yard-specific binding of the quoted request, selected work and generation plan.
   string work_digest = 15;
 }
 
@@ -313,7 +311,6 @@ message HostingPolicyProof {
   string effect = 5;
   string evidence_ref = 6;
   bool obligations_satisfied = 7;
-  // SHA-256 of the protobuf JSON serialization of HostingQuote, in lowercase hex.
   string quote_digest = 8;
 }
 

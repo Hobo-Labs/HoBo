@@ -88,7 +88,7 @@ it("returns a matching receipt only after binding and a fresh assignment recheck
 	expect(response.status).toBe(200);
 	expect(response.headers.get("cache-control")).toBe("no-store");
 	expect(await response.json()).toEqual({
-		ok: true,
+		authorized: true,
 		slotId: body.slotId,
 		claimId: body.claimId,
 		accountId: body.accountId,
@@ -132,7 +132,7 @@ it("does not issue a receipt when binding fails or is ambiguous", async () => {
 	f.bindStart.mockRejectedValueOnce(new Error("lost response"));
 	const response = await f.handle(request(body));
 	expect(response.status).toBe(503);
-	expect(await response.json()).toEqual({ ok: false });
+	expect(await response.json()).toEqual({ authorized: false });
 });
 it("refuses a mismatched or terminal stored claim", async () => {
 	const f = fixture();
@@ -152,7 +152,7 @@ it("keeps a committed claim without issuing a receipt if assignment changes afte
 	const response = await f.handle(request(body));
 	expect(response.status).toBe(503);
 	expect(f.bindStart).toHaveBeenCalledOnce();
-	expect(await response.json()).toEqual({ ok: false });
+	expect(await response.json()).toEqual({ authorized: false });
 });
 it("withholds a receipt when the claim becomes terminal during the GitHub recheck", async () => {
 	const f = fixture();
@@ -163,7 +163,7 @@ it("withholds a receipt when the claim becomes terminal during the GitHub rechec
 	expect(response.status).toBe(503);
 	expect(f.bindStart).toHaveBeenCalledOnce();
 	expect(f.lookupAssignment).toHaveBeenCalledTimes(2);
-	expect(await response.json()).toEqual({ ok: false });
+	expect(await response.json()).toEqual({ authorized: false });
 });
 it("rejects an oversized request before querying the store", async () => {
 	const f = fixture();

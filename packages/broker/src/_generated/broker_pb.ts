@@ -402,8 +402,6 @@ export type BrokerRequest = Message<"hobo.broker.v1.BrokerRequest"> & {
   requirements: ResourceRequirement[];
 
   /**
-   * Presence distinguishes an explicit free estimate from an unknown cost.
-   *
    * @generated from field: optional double spend_estimate_usd = 5;
    */
   spendEstimateUsd?: number | undefined;
@@ -593,9 +591,6 @@ export type ResolutionReceipt = Message<"hobo.broker.v1.ResolutionReceipt"> & {
   guest?: GuestResolutionEvidence | undefined;
 
   /**
-   * Host-attested quote and the work and upper liability it authorized.
-   * All three are absent on explicitly trusted legacy-estimate resolutions.
-   *
    * @generated from field: optional string quote_hash = 11;
    */
   quoteHash?: string | undefined;

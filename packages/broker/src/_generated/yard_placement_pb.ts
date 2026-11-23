@@ -493,8 +493,6 @@ export type BindleDeploymentRequest = Message<"hobo.broker.yard.v1.BindleDeploym
   camp?: CampPlacementInput | undefined;
 
   /**
-   * SHA-256 of the canonical domain request; this is not a signature.
-   *
    * @generated from field: string request_digest = 13;
    */
   requestDigest: string;
@@ -1159,8 +1157,6 @@ export type HostingQuote = Message<"hobo.broker.yard.v1.HostingQuote"> & {
   financialPlanHash: string;
 
   /**
-   * Yard-specific binding of the quoted request, selected work and generation plan.
-   *
    * @generated from field: string work_digest = 15;
    */
   workDigest: string;
@@ -1369,8 +1365,6 @@ export type HostingPolicyProof = Message<"hobo.broker.yard.v1.HostingPolicyProof
   obligationsSatisfied: boolean;
 
   /**
-   * SHA-256 of the protobuf JSON serialization of HostingQuote, in lowercase hex.
-   *
    * @generated from field: string quote_digest = 8;
    */
   quoteDigest: string;

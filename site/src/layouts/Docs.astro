@@ -14,24 +14,12 @@ interface Props {
 const { frontmatter, rawContent } = Astro.props;
 const path = Astro.url.pathname;
 const normalize = (p: string) => p.replace(/\/$/, "");
-// The sidebar shows ONE section, not all fourteen groups. Rendering every
-// group on every page produced a 109-link, ~4000px column in a 236px rail —
-// byte-identical to the footer, so a docs page showed the same 109 links
-// twice. `sectionFor` resolves cross-listed pages by namespace root rather
-// than by who lists them, so /reference/session-replay/ — listed under both
-// Observability and Reference — is badged Reference, the namespace it lives in.
 const navSection = sectionFor(path.replace(href("/"), "/"), nav);
 const sectionGroups = navSection ? groupsOf(navSection, nav) : [];
-// A page can legitimately belong to no section — /legal/ is one. It used to
-// fall back to Learn, which badged a legal notice "Learn" and rendered an empty
-// 236px rail beside a "Docs menu ▾" button that opened nothing. An empty rail
-// reads as broken, so a sectionless page drops the rail and says "Docs".
 const section = navSection;
 const current = (slug: string) =>
 	normalize(path) === normalize(href(slug)) ? "page" : undefined;
 
-// The page's own markdown, served to the copy button. Optimized for agents:
-// title + description up front, then the raw source with stable headings.
 const pageMarkdown = rawContent
 	? `# ${frontmatter.title}\n\n> ${frontmatter.description}\n\n${rawContent().replace(/^\s*#\s+.+\n/, "")}`.trim()
 	: null;
@@ -100,7 +88,6 @@ const pageMarkdown = rawContent
 		)
 	}
 	<script is:inline>
-		// Copy the page's markdown source — the agent-friendly form of this page.
 		(() => {
 			const btn = document.querySelector(".copy-md-btn");
 			const src = document.getElementById("page-markdown");

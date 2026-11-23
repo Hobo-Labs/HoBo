@@ -1,8 +1,11 @@
-import { spawn } from "node:child_process";
-import { createServer } from "node:http";
+import { execFileSync, spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer, type ServerOptions } from "node:https";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 const hook = fileURLToPath(
@@ -22,7 +25,7 @@ const executionKey = {
 	},
 };
 const receipt = {
-	ok: true,
+	authorized: true,
 	slotId: "slot-1",
 	claimId: "claim-1",
 	accountId: "account",
@@ -30,13 +33,47 @@ const receipt = {
 	runnerName: "hobo-slot-1",
 	executionKey,
 };
+let directory = "";
+let certificate = "";
+let tls: ServerOptions;
+beforeAll(() => {
+	directory = mkdtempSync(join(tmpdir(), "hobo-start-receipt-"));
+	const key = join(directory, "key.pem");
+	certificate = join(directory, "certificate.pem");
+	execFileSync(
+		"openssl",
+		[
+			"req",
+			"-x509",
+			"-newkey",
+			"rsa:2048",
+			"-sha256",
+			"-nodes",
+			"-days",
+			"1",
+			"-keyout",
+			key,
+			"-out",
+			certificate,
+			"-subj",
+			"/CN=localhost",
+			"-addext",
+			"subjectAltName=DNS:localhost,IP:127.0.0.1",
+		],
+		{ stdio: "ignore" },
+	);
+	tls = { key: readFileSync(key), cert: readFileSync(certificate) };
+});
+afterAll(() => {
+	rmSync(directory, { recursive: true, force: true });
+});
 async function runHook(
 	status: number,
 	responseBody: string,
 	overrides: Record<string, string> = {},
 ) {
 	let requestBody = "";
-	const server = createServer((request, response) => {
+	const server = createServer(tls, (request, response) => {
 		request.setEncoding("utf8");
 		request.on("data", (chunk: string) => {
 			requestBody += chunk;
@@ -52,7 +89,8 @@ async function runHook(
 		.parse(server.address());
 	const env = {
 		...process.env,
-		HOBO_START_FENCE_URL: `http://127.0.0.1:${address.port}/fence`,
+		NODE_EXTRA_CA_CERTS: certificate,
+		HOBO_START_FENCE_URL: `https://127.0.0.1:${address.port}/fence`,
 		HOBO_SLOT_ID: "slot-1",
 		HOBO_CLAIM_ID: "claim-1",
 		HOBO_BINDING_SECRET: secret,
@@ -105,9 +143,9 @@ describe("strict runner start-hook receipts", () => {
 	it.each([
 		{ status: 302, body: JSON.stringify(receipt) },
 		{ status: 204, body: "" },
-		{ status: 200, body: JSON.stringify({ ok: false }) },
-		{ status: 200, body: JSON.stringify({ ...receipt, ok: false }) },
-		{ status: 200, body: JSON.stringify({ ok: true }) },
+		{ status: 200, body: JSON.stringify({ authorized: false }) },
+		{ status: 200, body: JSON.stringify({ ...receipt, authorized: false }) },
+		{ status: 200, body: JSON.stringify({ authorized: true }) },
 		{ status: 200, body: "not-json" },
 		{ status: 200, body: JSON.stringify({ ...receipt, slotId: "different" }) },
 		{ status: 200, body: JSON.stringify({ ...receipt, claimId: "different" }) },
@@ -221,5 +259,5 @@ describe("strict runner start-hook receipts", () => {
 			),
 			{ seed: 614476, numRuns: 25 },
 		);
-	}, 20_000);
+	}, 60_000);
 });

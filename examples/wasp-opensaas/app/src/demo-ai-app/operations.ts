@@ -17,7 +17,6 @@ import { GeneratedSchedule, generatedScheduleSchema } from "./schedule";
 
 const openAi = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
-//#region Actions
 const generateGptResponseInputSchema = z.object({
   hours: z.number(),
 });
@@ -65,14 +64,6 @@ export const generateGptResponse: GenerateGptResponse<
 
   const transactions: PrismaPromise<GptResponse | User>[] = [createResponse];
 
-  // We decrement the credits for users without an active subscription
-  // after using up tokens to get a daily plan from Chat GPT.
-  //
-  // This way, users don't feel cheated if something goes wrong.
-  // On the flipside, users can theoretically abuse this and spend more
-  // credits than they have, but the damage should be pretty limited.
-  //
-  // Think about which option you prefer for your app and edit the code accordingly.
   if (!isUserSubscribed(context.user)) {
     if (context.user.credits > 0) {
       const decrementCredit = context.entities.User.update({
@@ -201,9 +192,7 @@ export const deleteTask: DeleteTask<DeleteTaskInput, Task> = async (
 
   return task;
 };
-//#endregion
 
-//#region Queries
 export const getGptResponses: GetGptResponses<void, GptResponse[]> = async (
   _args,
   context,
@@ -238,7 +227,6 @@ export const getAllTasksByUser: GetAllTasksByUser<void, Task[]> = async (
     },
   });
 };
-//#endregion
 
 async function generateScheduleWithGpt(
   tasks: Task[],
@@ -250,7 +238,7 @@ async function generateScheduleWithGpt(
   }));
 
   const completion = await openAi.chat.completions.create({
-    model: "gpt-3.5-turbo", // you can use any model here, e.g. 'gpt-3.5-turbo', 'gpt-4', etc.
+    model: "gpt-3.5-turbo",
     messages: [
       {
         role: "system",

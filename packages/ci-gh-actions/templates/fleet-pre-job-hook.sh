@@ -1,77 +1,117 @@
 #!/usr/bin/env bash
-# Immutable pre-job hook (design §9.3). Installed outside the workspace.
-# Every body field is an unverified claim: the controller authorizes only an
-# assignment its own GitHub lookup confirms for RUNNER_NAME, and any curl or
-# HTTP failure exits nonzero so the job never starts unfenced.
 set -euo pipefail
-: "${HOBO_START_FENCE_URL:?}"
-: "${HOBO_SLOT_ID:?}"
-: "${HOBO_CLAIM_ID:?}"
-: "${HOBO_BINDING_SECRET:?}"
-: "${HOBO_ACCOUNT_ID:?}"
-: "${HOBO_PROFILE_ID:?}"
-: "${HOBO_EXECUTION_KEY_JSON:?}"
-: "${GITHUB_REPOSITORY:?}"
-: "${GITHUB_RUN_ID:?}"
-: "${GITHUB_JOB:?}"
-: "${GITHUB_RUN_ATTEMPT:?}"
-: "${RUNNER_NAME:?}"
 
-payload="$(node - <<'NODE'
-try {
+node <<'NODE'
+const required = (name) => {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing ${name}`);
+  return value;
+};
+
+const readReceipt = async (response) => {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Missing receipt");
+  const decoder = new TextDecoder();
+  let text = "";
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > 16384) {
+      await reader.cancel();
+      throw new Error("Receipt too large");
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return JSON.parse(text + decoder.decode());
+};
+
+const authorize = async () => {
+  const url = new URL(required("HOBO_START_FENCE_URL"));
+  if (
+    url.protocol !== "https:" ||
+    url.username || url.password || url.search || url.hash
+  ) {
+    throw new Error("Invalid start-fence URL");
+  }
+  const timeoutSeconds = Number(
+    process.env.HOBO_START_FENCE_TIMEOUT_SEC ?? "30",
+  );
+  if (
+    !Number.isFinite(timeoutSeconds) ||
+    timeoutSeconds <= 0 || timeoutSeconds > 60
+  ) {
+    throw new Error("Invalid start-fence timeout");
+  }
+  const executionKey = JSON.parse(required("HOBO_EXECUTION_KEY_JSON"));
+  const object = (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  const job = executionKey?.githubJob;
+  const runId = required("GITHUB_RUN_ID");
+  const runAttempt = Number(required("GITHUB_RUN_ATTEMPT"));
+  const identityFields = [
+    "accountId", "engineId", "installationId", "repositoryId", "runId", "jobId",
+  ];
+  const fields = ["kind", ...identityFields, "runAttempt"];
+  const exactKey = (key) =>
+    object(key) && Object.keys(key).length === 1 && object(key.githubJob) &&
+    Object.keys(key.githubJob).length === fields.length;
+  if (
+    !exactKey(executionKey) || job.kind !== "github-job" ||
+    !identityFields.every((field) => typeof job[field] === "string" && job[field].length > 0) ||
+    !Number.isSafeInteger(runAttempt) || runAttempt < 1 ||
+    job.runId !== runId || job.runAttempt !== runAttempt
+  ) {
+    throw new Error("Runner job does not match the execution key");
+  }
+  required("GITHUB_REPOSITORY");
+  required("GITHUB_JOB");
   const payload = {
-    slotId: process.env.HOBO_SLOT_ID,
-    claimId: process.env.HOBO_CLAIM_ID,
-    bindingSecret: process.env.HOBO_BINDING_SECRET,
-    accountId: process.env.HOBO_ACCOUNT_ID,
-    runnerName: process.env.RUNNER_NAME,
-    profileId: process.env.HOBO_PROFILE_ID,
-    executionKey: JSON.parse(process.env.HOBO_EXECUTION_KEY_JSON),
+    slotId: required("HOBO_SLOT_ID"),
+    claimId: required("HOBO_CLAIM_ID"),
+    bindingSecret: required("HOBO_BINDING_SECRET"),
+    accountId: required("HOBO_ACCOUNT_ID"),
+    runnerName: required("RUNNER_NAME"),
+    profileId: required("HOBO_PROFILE_ID"),
+    executionKey,
   };
-  const job = payload.executionKey?.githubJob;
-  const fields = ['accountId', 'engineId', 'installationId', 'repositoryId', 'runId', 'jobId'];
-  const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-  if (!object(payload.executionKey) || Object.keys(payload.executionKey).length !== 1 ||
-      !object(job) || Object.keys(job).length !== 8 || job.kind !== 'github-job' ||
-      !fields.every((field) => typeof job[field] === 'string' && job[field].length > 0) ||
-      !Number.isSafeInteger(job.runAttempt) || job.runAttempt < 1 ||
-      job.accountId !== payload.accountId || job.runId !== process.env.GITHUB_RUN_ID ||
-      String(job.runAttempt) !== process.env.GITHUB_RUN_ATTEMPT) process.exit(43);
-  process.stdout.write(JSON.stringify(payload));
-} catch {
-  process.exit(43);
-}
-NODE
-)"
-
-receipt_file="$(mktemp "${TMPDIR:-/tmp}/hobo-start-fence.XXXXXX")"
-trap 'rm -f -- "$receipt_file"' EXIT
-if ! status="$(printf '%s' "$payload" | curl -fsS \
-  --max-time "${HOBO_START_FENCE_TIMEOUT_SEC:-30}" --max-filesize 65536 \
-  -H "Content-Type: application/json" -H "Cache-Control: no-store" \
-  -X POST "${HOBO_START_FENCE_URL}" --data-binary @- \
-  --output "$receipt_file" --write-out '%{http_code}')"; then
-  exit 43
-fi
-if [[ "$status" != 200 ]]; then exit 43; fi
-
-HOBO_FENCE_REQUEST="$payload" node - "$receipt_file" <<'NODE'
-try {
-  const fs = require('node:fs');
-  if (fs.statSync(process.argv[2]).size > 65536) process.exit(43);
-  const request = JSON.parse(process.env.HOBO_FENCE_REQUEST);
-  const receipt = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  const fields = ['kind', 'accountId', 'engineId', 'installationId', 'repositoryId', 'runId', 'jobId', 'runAttempt'];
-  const expected = request.executionKey.githubJob;
+  if (
+    job.accountId !== payload.accountId ||
+    payload.runnerName !== `hobo-${payload.slotId}`
+  ) {
+    throw new Error("Runner identity does not match the execution key");
+  }
+  const response = await fetch(url, {
+    method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(Math.ceil(timeoutSeconds * 1000)),
+    headers: {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+    },
+    body: JSON.stringify(payload),
+  });
+  const contentType = response.headers.get("content-type")?.split(";")[0]
+    .trim().toLowerCase();
+  if (response.status !== 200 || contentType !== "application/json") {
+    throw new Error("Start fence did not authorize the job");
+  }
+  const receipt = await readReceipt(response);
   const actual = receipt?.executionKey?.githubJob;
-  const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-  if (receipt?.ok !== true || receipt.slotId !== request.slotId ||
-      receipt.claimId !== request.claimId || receipt.accountId !== request.accountId ||
-      receipt.profileId !== request.profileId || receipt.runnerName !== request.runnerName ||
-      !object(receipt.executionKey) || Object.keys(receipt.executionKey).length !== 1 ||
-      !object(actual) || Object.keys(actual).length !== fields.length ||
-      !fields.every((field) => actual[field] === expected[field])) process.exit(43);
-} catch {
-  process.exit(43);
-}
+  if (
+    receipt?.authorized !== true || receipt.slotId !== payload.slotId ||
+    receipt.claimId !== payload.claimId || receipt.accountId !== payload.accountId ||
+    receipt.profileId !== payload.profileId || receipt.runnerName !== payload.runnerName ||
+    !exactKey(receipt.executionKey) ||
+    !fields.every((field) => actual[field] === job[field])
+  ) {
+    throw new Error("Start-fence receipt does not match the job");
+  }
+};
+
+authorize().catch(() => {
+  process.stderr.write("Start-fence authorization failed\n");
+  process.exitCode = 43;
+});
 NODE

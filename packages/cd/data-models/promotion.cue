@@ -117,7 +117,6 @@ import "strings"
 	"rollout" | "converged" | "after-converged" | "verification" | "qualified" |
 	"after-qualified" | "contracted" | "failed" | "compensated"
 
-// `saga.StepEmitted` on a promotion stream or a rollback execution-claim stream.
 #PromotionSagaStep: #PromotionProgressStep | #RollbackExecutionClaimStep
 
 #PromotionProgressStep: {

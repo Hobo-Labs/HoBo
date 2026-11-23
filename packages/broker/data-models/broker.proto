@@ -105,7 +105,6 @@ message BrokerRequest {
   string request_id = 2;
   TopologyScope scope = 3;
   repeated ResourceRequirement requirements = 4;
-  // Presence distinguishes an explicit free estimate from an unknown cost.
   optional double spend_estimate_usd = 5;
   // Anonymous/claimable resolution inputs (ADR-0151). Absent on a request
   // from an authenticated owner deploying into an owned Yard.
@@ -154,8 +153,6 @@ message ResolutionReceipt {
   string rail_hash = 9;
   // Anonymous/claimable evidence (ADR-0151). Absent for an owned deployment.
   GuestResolutionEvidence guest = 10;
-  // Host-attested quote and the work and upper liability it authorized.
-  // All three are absent on explicitly trusted legacy-estimate resolutions.
   optional string quote_hash = 11;
   optional string pricing_binding_digest = 12;
   optional double authorized_usd = 13;
