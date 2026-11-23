@@ -6,7 +6,7 @@ import {
 	whichOnPath,
 } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
-
+import { ownerSecretStoreBindingStore } from "./ci-secret-store.js";
 import { createComposedHoboCli } from "./cli.js";
 import {
 	relaunchInputFor,
@@ -14,7 +14,6 @@ import {
 	reportingCredentialRefusals,
 	wantsOpenSesameRelaunch,
 } from "./credentials-opensesame.js";
-import { ownerSecretStoreBindingStore } from "./ci-secret-store.js";
 import {
 	createMcpOwnerChannel,
 	createOwnerCaptureApp,

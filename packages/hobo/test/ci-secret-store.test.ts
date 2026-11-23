@@ -23,8 +23,8 @@ import {
 import {
 	loadSecretStoreBinding,
 	ownerSecretStoreBindingStore,
-	SECRET_STORE_SESSION_REQUIRED,
 	runCiSecretStore,
+	SECRET_STORE_SESSION_REQUIRED,
 	secretStoreOwnershipVerifier,
 } from "../src/ci-secret-store.js";
 import { runClaimCeremony } from "../src/claim-ceremony.js";
