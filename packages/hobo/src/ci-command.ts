@@ -62,10 +62,13 @@ import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
 import {
 	CI_SECRET_STORE_OPTIONS,
+	ownerSecretStoreBindingStore,
 	runCiSecretStore,
 	SECRET_STORE_ONLY_OPTIONS,
+	type SecretStoreBindingStore,
 } from "./ci-secret-store.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
+import type { OwnerStoreEntries } from "./owner-store-session.js";
 import { createFetchHttpTransport } from "./resolver-iac-provider.js";
 import type { VercelFetch } from "./vercel-client.js";
 import type { VercelBuildRunner } from "./vercel-prebuilt.js";
@@ -442,6 +445,15 @@ async function localRepository(
 	}
 }
 
+function bindingStoreFor(
+	ownerEntries: ((cwd: string) => OwnerStoreEntries) | undefined,
+	cwd: string,
+): { bindingStore?: SecretStoreBindingStore } {
+	return ownerEntries === undefined
+		? {}
+		: { bindingStore: ownerSecretStoreBindingStore(ownerEntries(cwd)) };
+}
+
 export function createCiCommand(
 	deps: {
 		env?: NodeJS.ProcessEnv;
@@ -469,6 +481,7 @@ export function createCiCommand(
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
 		ownerCredentials?: (cwd: string) => CredentialResolver;
+		ownerEntries?: (cwd: string) => OwnerStoreEntries;
 		hostingerHttp?: HttpTransport;
 		commands?: readonly CiCommand[];
 		kubernetesHttp?: (tls: KubernetesTlsMaterial) => HttpTransport;
@@ -612,6 +625,7 @@ export function createCiCommand(
 					cwd: flags.cwd,
 					values,
 					env: deps.env ?? process.env,
+					...bindingStoreFor(deps.ownerEntries, flags.cwd),
 					...(deps.deployCredentials !== undefined
 						? { credentials: deps.deployCredentials }
 						: undefined),
@@ -659,6 +673,7 @@ export function createCiCommand(
 					cwd: flags.cwd,
 					values,
 					env: deps.env ?? process.env,
+					...bindingStoreFor(deps.ownerEntries, flags.cwd),
 					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
 					...(deps.runtime !== undefined
 						? { runtime: deps.runtime }
@@ -691,6 +706,7 @@ export function createCiCommand(
 				if (positionals[1] === "deposit")
 					return runCiAppDeposit({
 						cwd: flags.cwd,
+						...bindingStoreFor(deps.ownerEntries, flags.cwd),
 						relay:
 							values.relay === undefined ? undefined : String(values.relay),
 						ownerId:

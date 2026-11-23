@@ -58,7 +58,12 @@ pre-commit hook and in `agent:check`, so CI checks each pull request's diff
 against its base; it rejects added Actions secret and variable references
 other than the per-job token, secret files, environment credential reads
 (code such as `process.env` lookups and uppercase shell variables),
-`env://` locators, and secret-storing commands. The source guard covers TypeScript, JavaScript, shell, Python,
+`env://` locators, and secret-storing commands. It also rejects committed store
+coordinates: real-looking project, identity, team and deploy project ids under
+binding keys, binding files holding them outside test fixtures, and any
+`deploy/secret-store.binding.json`. They are the owner's private settings and
+live only in the owner's secret store, read through the owner store session;
+fixtures use synthetic values such as all-zero UUIDs. The source guard covers TypeScript, JavaScript, shell, Python,
 CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
 Kotlin, Ruby, Lua, and Swift, including source templates; the same rule applies to every other language.
 

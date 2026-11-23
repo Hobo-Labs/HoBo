@@ -15,12 +15,11 @@ import { verifyEnvironmentProtection } from "../ci/relay-deploy-environment.mts"
 import {
 	decide,
 	deployDeadline,
+	OWNER_SESSION_DEPLOY,
 	RELAY_DEPLOY_JOB_MARGIN_MINUTES,
 	RELAY_DEPLOY_JOB_TIMEOUT_MINUTES,
 	RELAY_EXTRA_INPUTS,
-	RELAY_SECRET_STORE_BINDING,
 	relayInputDirs,
-	storeBindingState,
 	touchesRelay,
 } from "../ci/relay-deploy-gate.mts";
 import { lintActionsRepository } from "../lint-actions.ts";
@@ -34,7 +33,6 @@ const appCredentialsWorkflow = readFileSync(
 );
 const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
 const inputDirs = relayInputDirs(lockfile);
-const configured = "bound" as const;
 
 /** The block of one step, from its `- name:` line to the next step. */
 function step(name: string): string {
@@ -72,7 +70,7 @@ describe("the relay deploy gate", () => {
 			assert.ok(existsSync(join(root, file)), `${file} does not exist`);
 	});
 
-	it("deploys a push that changes the relay or a package it uses, and only that", () => {
+	it("recognises a push that changes the relay or a package it uses, and only that", () => {
 		assert.equal(
 			touchesRelay(["packages/ci-vercel/deploy/yard.ts"], inputDirs),
 			true,
@@ -90,152 +88,60 @@ describe("the relay deploy gate", () => {
 			touchesRelay(["docs/design/index.md", "site/src/x.ts"], inputDirs),
 			false,
 		);
-		// A sibling directory sharing a prefix is not an input.
 		assert.equal(
 			touchesRelay(["packages/ci-vercel-other/x.ts"], inputDirs),
 			false,
 		);
 	});
 
-	it("fails an absent or unreadable store closed", () => {
-		const missing = decide({
+	it("never deploys a push: the store coordinates live only in the owner's store, so the relay deploys through hobo cd", () => {
+		const relay = decide({
 			event: "push",
-			store: "absent",
 			changed: ["packages/ci-vercel/src/entry.ts"],
 			inputDirs,
 		});
-		assert.equal(missing.run, false);
-		assert.equal(missing.fatal, true);
-		assert.ok(missing.reason.includes(RELAY_SECRET_STORE_BINDING));
-		assert.match(missing.reason, /hobo ci secret-store provision/u);
-		const broken = decide({
-			event: "workflow_dispatch",
-			store: "unreadable",
-			inputDirs,
-		});
-		assert.equal(broken.run, false);
-		assert.equal(broken.fatal, true);
+		assert.equal(relay.run, false);
+		assert.ok(relay.reason.endsWith(OWNER_SESSION_DEPLOY));
+		assert.match(OWNER_SESSION_DEPLOY, /owner's secret store/u);
+		assert.match(OWNER_SESSION_DEPLOY, /hobo cd/u);
+		assert.match(OWNER_SESSION_DEPLOY, /choose_secret_store/u);
+		const unread = decide({ event: "push", inputDirs });
+		assert.equal(unread.run, false);
+		assert.ok(unread.reason.endsWith(OWNER_SESSION_DEPLOY));
+		const other = decide({ event: "push", changed: ["README.md"], inputDirs });
+		assert.equal(other.run, false);
+		assert.match(other.reason, /nothing the relay is built from/u);
 	});
 
-	it("admits only a complete HTTPS binding with an exact protected writer subject", () => {
-		assert.equal(storeBindingState(undefined), "absent");
-		assert.equal(storeBindingState("not json"), "unreadable");
-		assert.equal(
-			storeBindingState(
-				JSON.stringify({ kind: "infisical-self-hosted", endpoint: "http://x" }),
-			),
-			"unreadable",
-		);
-		const complete = {
-			kind: "infisical-self-hosted",
-			endpoint: "https://secrets.example",
-			projectId: "proj-runtime",
-			deployProjectId: "proj-deploy",
-			relayIdentityId: "relay-identity",
-			deployIdentityId: "deploy-identity",
-			deployCredentialIdentityId: "deploy-credential-identity",
-			deployOidcSubject:
-				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
-		};
-		assert.equal(storeBindingState(JSON.stringify(complete)), "bound");
-		for (const deployOidcSubject of [
-			"repo:untrusted@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
-			"repo:Hobo-Labs@344805935/untrusted@1274791462:environment:hobo-ci-app-credentials",
-			"repo:Hobo-Labs@1/HoBo@1274791462:environment:hobo-ci-app-credentials",
-			"repo:Hobo-Labs@344805935/HoBo@1:environment:hobo-ci-app-credentials",
-			"repo:Hobo-Labs/HoBo:environment:hobo-ci-app-credentials",
-			"repo:Hobo-Labs@*/HoBo@1274791462:environment:hobo-ci-app-credentials",
-			"repo:Hobo-Labs@344805935/HoBo@*:environment:hobo-ci-app-credentials",
-			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:*",
-			"prefix:repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
-		])
-			assert.equal(
-				storeBindingState(JSON.stringify({ ...complete, deployOidcSubject })),
-				"unreadable",
-			);
-	});
-
-	it("skips deployment explicitly for the committed credential-free binding without treating corruption as a skip", () => {
-		const legacy = JSON.stringify({
-			kind: "infisical-cloud-attach",
-			endpoint: "https://app.infisical.com",
-			projectId: "proj-runtime",
-			environment: "prod",
-			secretPath: "/hobo-ci-relay",
-			relayIdentityId: "relay-identity",
-			deployIdentityId: "deploy-identity",
-			vercelTeamId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
-			claimBundleId: "secret-store:hobo-ci-relay:connect-1",
-			claimState: "claimed",
-		});
-		assert.equal(storeBindingState(legacy), "unconfigured");
-		const committed = readFileSync(
-			join(root, RELAY_SECRET_STORE_BINDING),
+	it("reads no committed store binding, and none is committed", () => {
+		const gate = readFileSync(
+			join(root, "scripts", "ci", "relay-deploy-gate.mts"),
 			"utf8",
 		);
-		assert.equal(storeBindingState(committed), "unconfigured");
-		const skipped = decide({
-			event: "push",
-			store: storeBindingState(legacy),
-			changed: [RELAY_SECRET_STORE_BINDING],
-			inputDirs,
-		});
-		assert.equal(skipped.run, false);
-		assert.equal(skipped.fatal, undefined);
-		assert.match(skipped.reason, /production observation.*required/u);
-		for (const halfConfigured of [
-			{ ...JSON.parse(legacy), deployProjectId: "proj-deploy" },
-			{ ...JSON.parse(legacy), deployCredentialIdentityId: "reader" },
-			{
-				...JSON.parse(legacy),
-				deployOidcSubject:
-					"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:untrusted",
-			},
-		])
-			assert.equal(
-				storeBindingState(JSON.stringify(halfConfigured)),
-				"unreadable",
-			);
+		assert.doesNotMatch(gate, /secret-store\.binding\.json/u);
+		assert.doesNotMatch(gate, /environment:hobo-ci-app-credentials/u);
 		assert.equal(
-			storeBindingState(
-				JSON.stringify({
-					...JSON.parse(legacy),
-					deployOidcSubject:
-						"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
-				}),
+			existsSync(
+				join(
+					root,
+					"packages",
+					"ci-vercel",
+					"deploy",
+					"secret-store.binding.json",
+				),
 			),
-			"unconfigured",
+			false,
 		);
 	});
 
-	it("deploys a manual run, and a push whose range it cannot read", () => {
-		assert.equal(
-			decide({ event: "workflow_dispatch", store: configured, inputDirs }).run,
-			true,
-		);
-		assert.equal(
-			decide({ event: "push", store: configured, inputDirs }).run,
-			true,
-		);
-		assert.equal(
-			decide({
-				event: "push",
-				store: configured,
-				changed: ["README.md"],
-				inputDirs,
-			}).run,
-			false,
-		);
-		assert.equal(
-			decide({ event: "pull_request", store: configured, inputDirs }).run,
-			false,
-		);
+	it("runs a manual dispatch, which fails closed in the job without the owner's store session, and nothing else", () => {
+		assert.equal(decide({ event: "workflow_dispatch", inputDirs }).run, true);
+		assert.equal(decide({ event: "pull_request", inputDirs }).run, false);
 	});
 
 	it("treats a force_bootstrap run as an emergency bootstrap, whatever the diff", () => {
 		const forced = decide({
 			event: "workflow_dispatch",
-			store: configured,
 			inputDirs,
 			forceBootstrap: true,
 		});
@@ -243,7 +149,6 @@ describe("the relay deploy gate", () => {
 		assert.match(forced.reason, /emergency bootstrap/u);
 		const plain = decide({
 			event: "workflow_dispatch",
-			store: configured,
 			inputDirs,
 			forceBootstrap: false,
 		});
@@ -252,7 +157,6 @@ describe("the relay deploy gate", () => {
 		assert.equal(
 			decide({
 				event: "push",
-				store: configured,
 				changed: ["README.md"],
 				inputDirs,
 				forceBootstrap: true,

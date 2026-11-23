@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -17,6 +17,10 @@ import {
 	runCiAppDeposit,
 } from "../src/ci-app-create.js";
 import { createCiCommand } from "../src/ci-command.js";
+import {
+	keepInOwnerStore,
+	ownerStoreStandIn,
+} from "./support/owner-store-stand-in.js";
 
 const RELAY = "https://hobo-ci.example.com";
 const OWNER = 145080887;
@@ -386,9 +390,8 @@ describe("secretless first: the App's credentials go from GitHub to the store wi
 	it("app deposit converts in the workflow and writes as the CI writer over GitHub OIDC", async () => {
 		const dir = mkdtempSync(path.join(tmpdir(), "hobo-deposit-"));
 		try {
-			mkdirSync(path.join(dir, "deploy"));
-			writeFileSync(
-				path.join(dir, "deploy", "secret-store.binding.json"),
+			keepInOwnerStore(
+				dir,
 				JSON.stringify({
 					kind: "infisical-cloud-attach",
 					endpoint: "https://infisical.test",
@@ -445,6 +448,7 @@ describe("secretless first: the App's credentials go from GitHub to the store wi
 			const progress: string[] = [];
 			const result = await runCiAppDeposit({
 				cwd: dir,
+				bindingStore: ownerStoreStandIn(dir),
 				relay: RELAY,
 				ownerId: String(OWNER),
 				env: {
@@ -472,6 +476,21 @@ describe("secretless first: the App's credentials go from GitHub to the store wi
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+
+	it("app deposit fails closed without the owner's store session, naming choose_secret_store", async () => {
+		const result = await runCiAppDeposit({
+			cwd: process.cwd(),
+			relay: RELAY,
+			ownerId: String(OWNER),
+			env: { HOBO_APP_MANIFEST_CODE: "one-time-code" },
+			emitProgress: () => {},
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_SECRET_STORE_SESSION_REQUIRED",
+			message: expect.stringContaining("choose_secret_store"),
+		});
 	});
 
 	it("app deposit refuses without the code in the environment", async () => {

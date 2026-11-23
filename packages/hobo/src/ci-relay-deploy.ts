@@ -43,7 +43,7 @@
 
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { create, toJson } from "@bufbuild/protobuf";
@@ -60,16 +60,17 @@ import {
 } from "@hobo/cli";
 import type { IacOutputs, IacProgram } from "@hobo/cloud";
 import {
+	capability,
 	createBoundedFetchTransport,
 	createTrustedVault,
 	type HttpTransport,
 	type TrustedVault,
 } from "@hobo/core";
 import {
+	BUNDLED_SECRET_STORE_BINDING_FILE,
 	type ParsedSecretStoreBinding,
 	type RepairSecretStoreBinding,
 	readSecretStoreBindingForRepair,
-	SECRET_STORE_BINDING_FILE,
 } from "@hobo/secret-store-claim";
 import type { Yard } from "@hobo/yards";
 import {
@@ -95,11 +96,8 @@ import {
 import {
 	commitCheckingProbe,
 	deployedPreviewSuites,
-	probeOwnerHandoff,
-	RELAY_OWNER_HANDOFF_PATHS,
 	RelayDeploymentReadRefusal,
 	recordVerifiedPreviewRecords,
-	relayAwaitingOwner,
 	relayOrigin,
 	relayVerifyFailure,
 } from "./ci-relay-verify.js";
@@ -112,9 +110,11 @@ import {
 } from "./ci-relay-yard.js";
 import { validRepository } from "./ci-repository.js";
 import {
-	loadSecretStoreBinding,
+	parseOwnerStoreBinding,
+	readSecretStoreBindingText,
+	SECRET_STORE_SESSION_REQUIRED,
 	SecretStoreBindingRefusal,
-	secretStoreDeployInputs,
+	type SecretStoreBindingStore,
 } from "./ci-secret-store.js";
 import { defaultHoboHome } from "./hobo-home.js";
 import { isJsonNumber, isJsonObject, isJsonString } from "./json.js";
@@ -142,6 +142,31 @@ import {
 	vercelBuildEnvironment,
 	vercelBuildRunnerFrom,
 } from "./vercel-prebuilt.js";
+
+export function relayStoreCoordinates(
+	binding: Pick<
+		RepairSecretStoreBinding,
+		| "kind"
+		| "endpoint"
+		| "projectId"
+		| "environment"
+		| "secretPath"
+		| "relayIdentityId"
+	>,
+): string {
+	return `${JSON.stringify(
+		{
+			kind: binding.kind,
+			endpoint: binding.endpoint,
+			projectId: binding.projectId,
+			environment: binding.environment,
+			secretPath: binding.secretPath,
+			relayIdentityId: binding.relayIdentityId,
+		},
+		null,
+		"\t",
+	)}\n`;
+}
 
 // The options of `hobo ci deploy`, as `parseCiArgs` names them.
 export const CI_DEPLOY_OPTIONS = [
@@ -188,6 +213,7 @@ export interface CiRelayDeployInput {
 	// the token comes from the secret store, never the environment.
 	readonly env: NodeJS.ProcessEnv;
 	readonly credentials?: TrustedVault;
+	readonly bindingStore?: SecretStoreBindingStore;
 	readonly readDeployCredential?: typeof readRelayDeployToken;
 	// The Vercel transport; injected in tests, the global `fetch` otherwise.
 	readonly fetch?: VercelFetch;
@@ -573,27 +599,37 @@ export async function runCiRelayDeploy(
 	const buildTarget: "preview" | "production" = prebuilt
 		? "production"
 		: target;
-	// The secret store chosen when the relay was first deployed
-	// (`hobo ci secret-store provision`): its committed coordinates fill the
-	// config-service binding's inputs and name the team, so no repository
-	// variable or Vercel secret holds them.
+	let storeBindingText: string | undefined;
+	try {
+		storeBindingText = await readSecretStoreBindingText(input.bindingStore);
+	} catch (error) {
+		if (!(error instanceof SecretStoreBindingRefusal)) throw error;
+		if (
+			values["dry-run"] !== true ||
+			error.code !== SECRET_STORE_SESSION_REQUIRED
+		)
+			return refused(error.code, error.message);
+		storeBindingText = undefined;
+	}
 	let storeBinding:
 		| ParsedSecretStoreBinding
 		| RepairSecretStoreBinding
 		| undefined;
 	try {
-		storeBinding = loadSecretStoreBinding(input.cwd);
+		storeBinding =
+			storeBindingText === undefined
+				? undefined
+				: parseOwnerStoreBinding(storeBindingText);
 	} catch (error) {
 		if (!(error instanceof SecretStoreBindingRefusal)) throw error;
 		if (
 			values["dry-run"] !== true ||
-			error.code !== "HOBO_CI_SECRET_STORE_BINDING_INVALID"
+			error.code !== "HOBO_CI_SECRET_STORE_BINDING_INVALID" ||
+			storeBindingText === undefined
 		)
 			return refused(error.code, error.message);
 		try {
-			storeBinding = readSecretStoreBindingForRepair(
-				readFileSync(path.join(input.cwd, SECRET_STORE_BINDING_FILE), "utf8"),
-			);
+			storeBinding = readSecretStoreBindingForRepair(storeBindingText);
 		} catch {
 			return refused(error.code, error.message);
 		}
@@ -692,15 +728,26 @@ export async function runCiRelayDeploy(
 				`Refused --set number ${position}: ${reason}. Nothing was sent.`,
 			);
 	}
-	if (storeBinding !== undefined)
-		for (const [name, value] of secretStoreDeployInputs(storeBinding))
-			if (placement.inputs.includes(name) && !settings.has(name))
-				settings.set(name, value);
 	const missing = placement.inputs.filter((name) => !settings.has(name));
 	if (missing.length > 0)
 		return usage(
-			`Camp ${placement.camp} needs ${missing.map((name) => `--set ${name}=<value>`).join(" ")}: its bindings ask the deploy for these, and the Yard holds no value for them. The config service's coordinates come from ${SECRET_STORE_BINDING_FILE}, which hobo ci secret-store provision writes when it chooses the store.`,
+			`Camp ${placement.camp} needs ${missing.map((name) => `--set ${name}=<value>`).join(" ")}: its bindings ask the deploy for these, and the Yard holds no value for them.`,
 		);
+	const bundlesStoreBinding = placement.bindings.some(
+		(binding) =>
+			binding.selected &&
+			binding.profile === capability.secretRef.runtimeProjection,
+	);
+	if (
+		bundlesStoreBinding &&
+		storeBinding === undefined &&
+		values["dry-run"] !== true
+	)
+		return refused(
+			"HOBO_CI_SECRET_STORE_NOT_CONNECTED",
+			`Camp ${placement.camp} reads the relay's configuration from the owner's secret store, and that store holds no relay binding yet: connect it first (hobo ci secret-store connect through the owner hand-off).`,
+		);
+
 	// The Yard's settings and the command's, one map, sorted by name.
 	const configuration = new Map(
 		[...placement.settings, ...settings].sort(([a], [b]) =>
@@ -847,8 +894,6 @@ export async function runCiRelayDeploy(
 		(prebuilt || !HTTPS_ORIGIN.test(originGiven));
 
 	const vault = createTrustedVault();
-	let deployTokenRef: string | undefined;
-	let deployCredentialIdentityId: string | undefined;
 	let deployCredentialAudience: string | undefined;
 	if (storeBinding !== undefined && env.ACTIONS_ID_TOKEN_REQUEST_URL) {
 		try {
@@ -862,11 +907,9 @@ export async function runCiRelayDeploy(
 				},
 			});
 			vault.put("VERCEL_TOKEN", credential.token);
-			deployTokenRef = credential.secretRef;
-			deployCredentialIdentityId = credential.identityId;
 			deployCredentialAudience = credential.audience;
 			input.emitProgress(
-				`deploy token read from ${credential.secretRef} as deploy credential identity ${credential.identityId}, audience ${credential.audience}`,
+				`deploy token read from the deploy credential project as hobo-ci-deploy-reader, audience ${credential.audience}`,
 			);
 		} catch (error) {
 			return refused(
@@ -884,7 +927,7 @@ export async function runCiRelayDeploy(
 			status: "authentication-required",
 			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
 			message:
-				"The deploy token is read from the secret store, never the environment: run in GitHub Actions with id-token: write and the committed secret store binding, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.",
+				"The deploy token is read from the secret store, never the environment: run with the owner's store session (HoBo MCP's choose_secret_store) in GitHub Actions with id-token: write, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.",
 		};
 	// Whatever a result says, it does not say the token: a Vercel answer is
 	// redacted where it is read, and this is the last line before the terminal.
@@ -1011,6 +1054,14 @@ export async function runCiRelayDeploy(
 			freightId,
 			sha: pinned,
 			emit: input.emitProgress,
+			...(bundlesStoreBinding && storeBinding !== undefined
+				? {
+						bundle: {
+							file: path.join(input.cwd, BUNDLED_SECRET_STORE_BINDING_FILE),
+							text: relayStoreCoordinates(storeBinding),
+						},
+					}
+				: undefined),
 		});
 		if (!staged.ok) return staged;
 		created.deploymentId = staged.deployment.id;
@@ -1248,48 +1299,6 @@ export async function runCiRelayDeploy(
 		? delivered.report
 		: (delivered.report ?? undefined);
 	const deliveryData = delivery !== undefined ? { delivery } : undefined;
-	const awaiting =
-		!delivered.ok && verify !== undefined && sha !== undefined
-			? relayAwaitingOwner(verify.probe.findings())
-			: undefined;
-	if (awaiting !== undefined && verify !== undefined && sha !== undefined) {
-		const handoff = await probeOwnerHandoff(
-			input.probe ??
-				createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
-			verify.origin,
-		);
-		if (handoff.serving)
-			return {
-				code: "HOBO_CI_DEPLOYED_AWAITING_OWNER",
-				message: withoutToken(
-					[
-						`${verify.origin} serves ${definition.name} at commit ${sha.toLowerCase()} and its owner hand-off (${RELAY_OWNER_HANDOFF_PATHS.page}), but the relay's store does not yet hold a complete configuration, so the Freight is not qualified.`,
-						...(awaiting.missing.length > 0
-							? [`  missing: ${awaiting.missing.join(", ")}`]
-							: []),
-						...(awaiting.invalid.length > 0
-							? [`  refused: ${awaiting.invalid.join(", ")}`]
-							: []),
-						"  The owner supplies these entries to the store deploy/secret-store.binding.json names (packages/ci-vercel/CONFIG-SERVICE.md, What the folder holds); the next deploy then qualifies production.",
-					].join("\n"),
-				),
-				data: {
-					command: "ci deploy",
-					dryRun: false,
-					plan: planJson,
-					awaitingOwner: {
-						origin: verify.origin,
-						commit: sha.toLowerCase(),
-						missing: [...awaiting.missing],
-						invalid: [...awaiting.invalid],
-					},
-					...(prebuiltState.promoted !== undefined
-						? { deployment: prebuiltState.promoted }
-						: undefined),
-					...deliveryData,
-				},
-			};
-	}
 	if (
 		prebuilt &&
 		target === "production" &&
@@ -1376,10 +1385,6 @@ export async function runCiRelayDeploy(
 				dryRun: false,
 				plan: planJson,
 				outputs: safe,
-				...(deployTokenRef !== undefined ? { deployTokenRef } : undefined),
-				...(deployCredentialIdentityId !== undefined
-					? { deployCredentialIdentityId }
-					: undefined),
 				...(deployCredentialAudience !== undefined
 					? { deployCredentialAudience }
 					: undefined),
