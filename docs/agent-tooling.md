@@ -338,6 +338,15 @@ same way to mount and prewarm the scale sets' node pnpm store and image cache;
 `doctor` reports `ownerStoreSession` as `established` and the store's
 name only. Re-run `choose_secret_store` with `reselect: true` to choose a
 different store.
+When a handed-off `hobo ci up` or `hobo cd up` needs the store's own sign-in
+(an Infisical access token, a 1Password Connect token, or Bitwarden's
+personal API key), the `ci` or `cd` tool opens HoBo's secret capture form, or
+refuses with a `HOBO_OWNER_CAPTURE name=<NAME> guide=<url>` line for the agent
+to answer with `capture_secret`. The value goes to the waiting run in the
+server's memory only. A shell run has no owner channel and names the HoBo MCP
+route instead. Agents never use `request_credential` or another credential
+store of their own: the repository's pre-tool hook denies it and
+`eval:hand-off-transcript` reports it as `agent-stored-credential`.
 The relay's existing capture adapter reads a separately configured Infisical
 binding; a generic owner-store session is not yet wired to that adapter.
 Its `connected` status indicates that the binding was read; it does not verify

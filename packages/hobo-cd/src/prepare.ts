@@ -15,7 +15,6 @@ import {
 import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
 	adoptStoreSignIn,
-	awaitHandOffStore,
 	canReachOwner,
 	ensureBitwardenSignIn,
 	familySettings,
@@ -37,6 +36,7 @@ import {
 	storeFailureReason,
 	storeIdOf,
 	storeSignInGuidance,
+	takeHandOffSignIn,
 	withoutSecretEnv,
 	withoutStoreSignIn,
 	workloadOidcOf,
@@ -376,9 +376,21 @@ async function prepareVercelWithVault(
 			input.handOff === true &&
 			!input.whatIf &&
 			!(await storeAnswers(owner, "cd"));
+		if (needsOwner && owner.handOffSignIn !== undefined) {
+			const taken = await takeHandOffSignIn({
+				family: "cd",
+				owner,
+				open: openOwner,
+				vault,
+				channel: deps.ownerChannel,
+			});
+			if (taken.kind === "refused")
+				return refused(taken.code, taken.message, taken.remediation);
+			owner = taken.owner;
+		}
 		// Through the HoBo MCP server (--json, an owner channel) no progress
 		// line reaches anyone: say why the store did not open, never wait.
-		if (
+		else if (
 			needsOwner &&
 			deps.ownerChannel !== undefined &&
 			(input.run.flags.json || input.run.flags.quiet)
@@ -390,26 +402,6 @@ async function prepareVercelWithVault(
 					"Run again: HoBo signs in to the store afresh.",
 				],
 			);
-		if (
-			needsOwner &&
-			owner.canAwaitEgressCredential &&
-			(input.run.flags.json || input.run.flags.quiet)
-		)
-			return refused(
-				"HOBO_CD_HANDOFF_SILENT",
-				"The owner hand-off needs progress output. Omit --json and -q, then retry.",
-				["Run hobo cd up --hand-off without --json or -q."],
-			);
-		if (needsOwner && owner.canAwaitEgressCredential)
-			owner = await awaitHandOffStore({
-				family: "cd",
-				open: openOwner,
-				emit: (line) => input.run.emitProgress(line),
-				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
-				...(deps.handOffTimeoutMs !== undefined
-					? { timeoutMs: deps.handOffTimeoutMs }
-					: undefined),
-			});
 		else if (needsOwner) owner = { ...owner, opened: undefined };
 	} catch (error) {
 		if (!(error instanceof InvalidSecretStoreError)) throw error;
@@ -484,11 +476,6 @@ async function prepareVercelWithVault(
 			"The owner hand-off needs progress output. Omit --json and -q, then retry.",
 			["Run hobo cd up --hand-off without --json or -q."],
 		);
-	// Handed off, the owner may be anywhere: nothing is served here and
-	// nothing redirects back to this machine. Vercel is connected with the
-	// device grant (the owner approves on vercel.com); the store must already
-	// open without a page (a workload's OIDC, or a sign-in the agent's egress
-	// proxy injects: INFISICAL_SIGN_IN "egress-proxy" in the locator).
 	if (input.handOff === true) {
 		if (owner.opened === undefined)
 			return refused(

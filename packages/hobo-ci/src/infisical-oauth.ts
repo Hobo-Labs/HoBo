@@ -56,7 +56,7 @@ export class InfisicalReadOnlyError extends Error {
 	readonly code = "HOBO_INFISICAL_READ_ONLY";
 	constructor() {
 		super(
-			"This run signed in to Infisical with an OAuth application, whose tokens only read secrets. Writing needs a Token Auth access token (a terminal run's setup page, or an agent's egress proxy) or CI's OIDC identity.",
+			"This run signed in to Infisical with an OAuth application, whose tokens only read secrets. Writing needs a Token Auth access token (a terminal run's setup page, or the HoBo MCP App's secret form) or CI's OIDC identity.",
 		);
 		this.name = "InfisicalReadOnlyError";
 	}

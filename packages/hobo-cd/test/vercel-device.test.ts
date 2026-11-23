@@ -12,6 +12,7 @@ import {
 	vercelDeviceTeam,
 	vercelDeviceToken,
 } from "../src/index.js";
+import { fakeWorkload } from "./support/workload.js";
 
 // `hobo cd up --hand-off` from a box the owner cannot reach: Vercel is
 // connected with the device grant (the owner approves on vercel.com from any
@@ -200,7 +201,7 @@ function locator(values: SavedSettings) {
 }
 
 describe("hobo cd up --hand-off", () => {
-	it("connects Vercel with the device grant into a store the egress proxy signs in to, serving no page", async () => {
+	it("connects Vercel with the device grant into a store the handed-over token signs in to, serving no page", async () => {
 		const port = createMemorySecretsPort({ id: "memory" });
 		const store: OpenedSecretStore = {
 			id: "infisical",
@@ -210,15 +211,29 @@ describe("hobo cd up --hand-off", () => {
 		let signIn: string | undefined;
 		const lines: string[] = [];
 		const { http } = fakeVercel(["ok"]);
+		const held = new Map([["INFISICAL_TOKEN", "fixture-handed-over-token"]]);
 		const outcome = await prepareVercelConnection(handOffInput(lines), {
 			env: {},
 			locator: locator({
 				HOBO_SECRET_STORE: "infisical",
 				INFISICAL_PROJECT_ID: "proj",
-				INFISICAL_SIGN_IN: "egress-proxy",
 			}),
-			openStore: async (_id, coordinates): Promise<SecretStoreOpening> => {
-				signIn = coordinates.INFISICAL_SIGN_IN;
+			ownerChannel: {
+				openUrl: async () => undefined,
+				captureSecret: async ({ name }) => {
+					const value = held.get(name);
+					held.delete(name);
+					return value;
+				},
+				holds: (name) => held.has(name),
+			},
+			workload: fakeWorkload(),
+			openStore: async (
+				_id,
+				_coordinates,
+				vault,
+			): Promise<SecretStoreOpening> => {
+				signIn = vault.reveal("INFISICAL_TOKEN");
 				return { ok: true, store };
 			},
 			fetch: http,
@@ -227,9 +242,9 @@ describe("hobo cd up --hand-off", () => {
 				throw new Error("a handed-off run must not serve a page");
 			},
 		});
-		expect(signIn).toBe("egress-proxy");
-		expect(outcome.kind).toBe("ready");
-		if (outcome.kind !== "ready") throw new Error("not ready");
+		expect(signIn).toBe("fixture-handed-over-token");
+		expect(held.size).toBe(0);
+		if (outcome.kind !== "ready") throw new Error(JSON.stringify(outcome));
 		expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);
 		expect((await port.access("HOBO_CD_VERCEL_INSTALLATION_ID")).material).toBe(
 			"device-grant",
