@@ -12,15 +12,36 @@ import { z } from "zod";
 // public-contract: the owner store entry holding the CD workload Infisical identity id.
 export const CD_WORKLOAD_IDENTITY_ENTRY = "HOBO_CD_WORKLOAD_IDENTITY_ID";
 
-export const CD_DEPLOY_SETTINGS = Object.freeze({
-	INFISICAL_SITE_URL: "HOBO_CD_DEPLOY_INFISICAL_SITE_URL",
-	INFISICAL_PROJECT_ID: "HOBO_CD_DEPLOY_INFISICAL_PROJECT_ID",
-	INFISICAL_ENVIRONMENT: "HOBO_CD_DEPLOY_INFISICAL_ENVIRONMENT",
-	INFISICAL_SECRET_PATH: "HOBO_CD_DEPLOY_INFISICAL_SECRET_PATH",
-	INFISICAL_IDENTITY_ID: "HOBO_CD_DEPLOY_INFISICAL_IDENTITY_ID",
-} as const);
+// public-contract: the run-scoped vault entry carrying HoBo.CD's store coordinates from the owner's store session to the prebuilt build hobo cd up bundles them into.
+export const CD_STORE_COORDINATES_HANDOFF = "HOBO_CD_STORE_COORDINATES";
 
 const INFISICAL_CLOUD = "https://app.infisical.com";
+
+export function cdStoreCoordinatesText(
+	input: Readonly<{
+		siteUrl: string;
+		projectId: string;
+		environment: string;
+		secretPath: string;
+		identityId: string;
+	}>,
+): string {
+	return `${JSON.stringify(
+		{
+			kind:
+				input.siteUrl === INFISICAL_CLOUD
+					? "infisical-cloud-attach"
+					: "infisical-self-hosted",
+			endpoint: input.siteUrl,
+			projectId: input.projectId,
+			environment: input.environment,
+			secretPath: input.secretPath,
+			relayIdentityId: input.identityId,
+		},
+		null,
+		"\t",
+	)}\n`;
+}
 
 export type CdDeployEnvironment = "preview" | "production";
 
@@ -186,11 +207,10 @@ export async function ensureCdWorkloadIdentity(
 		}
 		outcome = "created";
 	}
-	vault.put(CD_DEPLOY_SETTINGS.INFISICAL_SITE_URL, binding.siteUrl);
-	vault.put(CD_DEPLOY_SETTINGS.INFISICAL_PROJECT_ID, binding.projectId);
-	vault.put(CD_DEPLOY_SETTINGS.INFISICAL_ENVIRONMENT, binding.environment);
-	vault.put(CD_DEPLOY_SETTINGS.INFISICAL_SECRET_PATH, binding.secretPath);
-	vault.put(CD_DEPLOY_SETTINGS.INFISICAL_IDENTITY_ID, identityId);
+	vault.put(
+		CD_STORE_COORDINATES_HANDOFF,
+		cdStoreCoordinatesText({ ...binding, identityId }),
+	);
 	return {
 		id: "cd-identity",
 		outcome,

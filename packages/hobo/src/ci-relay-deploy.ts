@@ -135,7 +135,9 @@ import {
 	refusedEnvValueReason,
 } from "./vercel-env-policy.js";
 import {
+	checkoutHeadOf,
 	promoteStagedBuild,
+	repositoryRoot,
 	servesProduction,
 	stageVercelBuild,
 	type VercelBuildRunner,
@@ -530,26 +532,9 @@ function prebuiltRequests(
 	];
 }
 
-function repositoryRoot(cwd: string): string | undefined {
-	let dir = path.resolve(cwd);
-	for (;;) {
-		if (existsSync(path.join(dir, ".git"))) return dir;
-		const parent = path.dirname(dir);
-		if (parent === dir) return undefined;
-		dir = parent;
-	}
-}
-
-function checkoutHeadOf(repoRoot: string): Promise<string> {
-	return new Promise((resolve) => {
-		execFile(
-			"git",
-			["rev-parse", "HEAD"],
-			{ cwd: repoRoot, timeout: 30_000, encoding: "utf8" },
-			(error, stdout) => resolve(error === null ? String(stdout).trim() : ""),
-		);
-	});
-}
+// public-contract: the refusal of a relay production deploy Vercel would build from git.
+export const RELAY_PRODUCTION_NEEDS_PREBUILT =
+	"HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT";
 
 export async function runCiRelayDeploy(
 	input: CiRelayDeployInput,
@@ -595,6 +580,11 @@ export async function runCiRelayDeploy(
 	if (prebuilt && text("sha") === undefined)
 		return usage(
 			"hobo ci deploy --build prebuilt needs --sha <commit>: HoBo builds only the checkout of the commit the Freight pins.",
+		);
+	if (target === "production" && !prebuilt)
+		return refused(
+			RELAY_PRODUCTION_NEEDS_PREBUILT,
+			"hobo ci deploy --target production --build git is refused: a git build carries none of the relay's store coordinates, so production could never read its configuration and never qualifies. Deploy production with --build prebuilt --sha <commit> and the owner's store session (HoBo MCP's choose_secret_store): HoBo bundles the coordinates into the build it makes and removes them afterwards.",
 		);
 	const buildTarget: "preview" | "production" = prebuilt
 		? "production"

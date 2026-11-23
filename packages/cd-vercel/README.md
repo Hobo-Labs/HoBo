@@ -67,20 +67,24 @@ non-secret declarations.
 
 ## Status
 
-`hobo cd up` delivers this directory as a git deployment of the current
+`hobo cd up` delivers this directory as a prebuilt build of the current
 commit to the `hobo-cd` project's **production** (`createCdVercelUpCommand`),
 because CD opens its journal only on a production deployment
 (`productionDeploymentRefusal`; a preview answers `/readyz` with
 `cd-non-production-deployment`). Before it deploys, it makes the CD workload
 identity (`@hobo/hobo-cd` `workload-identity.ts`): an Infisical identity that
 trusts this project's production OIDC tokens
-(`owner:<team>:project:hobo-cd:environment:production`). It then sets the
-store's coordinates, ids only, as the deployment's configuration
-(`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`,
-`INFISICAL_IDENTITY_ID`, `INFISICAL_SITE_URL`). The function does not read
-those variables: it reads its coordinates only from a binding bundled into the
-deployment, never from a committed file, so a Git deployment that carries none
-answers `/readyz` with `cd-store-binding-missing`.
+(`owner:<team>:project:hobo-cd:environment:production`). It then builds the
+checkout of the current commit once (`vercel pull`, `vercel build --prod`,
+`vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI`
+names), with the store's coordinates written from the owner's store session to
+`deploy/secret-store.binding.json` just before the build and removed once it is
+staged, and promotes that exact build (`createCdPrebuiltProvider`, the relay's
+prebuilt path). The coordinates are never Vercel variables, never committed and
+never printed. Without the owner's store session `hobo cd up` stops with
+`HOBO_CD_UP_STORE_SESSION_REQUIRED`; outside a git checkout, with
+`HOBO_CD_UP_NO_CHECKOUT`. A deployment without the bundled binding answers
+`/readyz` with `cd-store-binding-missing`.
 
 The scheduled pass (enqueued every five minutes) reconciles the managed Camps and runs one service
 tick (including its retention steps); the fleet pass lease makes the

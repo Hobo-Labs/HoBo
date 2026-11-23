@@ -30,12 +30,15 @@ afterAll(() => rmSync(work, { recursive: true, force: true }));
 type Staged = { uid: string; meta: Record<string, string> };
 
 function vercel(initial: Readonly<{ exists: boolean }>) {
+	const staged: Staged[] = [];
+	const sent: string[] = [];
+	const bodies: string[] = [];
 	const state = {
 		exists: initial.exists,
 		production: "dpl_live",
-		staged: [] as Staged[],
-		sent: [] as string[],
-		bodies: [] as string[],
+		staged,
+		sent,
+		bodies,
 	};
 	const answer = (status: number, body: JsonObject) => ({
 		ok: status >= 200 && status < 300,
