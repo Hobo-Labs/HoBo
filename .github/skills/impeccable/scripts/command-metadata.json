@@ -4,11 +4,11 @@
     "argumentHint": "[feature description]"
   },
   "init": {
-    "description": "Sets up a project for impeccable. Runs a multi-round discovery interview when context is missing and writes PRODUCT.md (strategic: users, brand, principles); offers DESIGN.md (visual: colors, typography, components) when code exists; pre-configures live mode; then recommends the best commands to run next. Every other command reads these files before doing work. Use once per project.",
+    "description": "Inspect the current product and implementation, then continue the requested work without creating planning artifacts.",
     "argumentHint": ""
   },
   "document": {
-    "description": "Generate a DESIGN.md file that captures the current visual design system. Auto-extracts colors, typography, spacing, radii, and component patterns from the codebase, then asks the user to confirm descriptive language for atmosphere and color character. Follows the Google Stitch DESIGN.md format so the file is tool-compatible. Use when you need a visual design spec an AI agent can follow to stay on-brand.",
+    "description": "Inspect implemented visual source and report findings inline without creating design documents.",
     "argumentHint": ""
   },
   "extract": {
@@ -72,7 +72,7 @@
     "argumentHint": "[target]"
   },
   "overdrive": {
-    "description": "Pushes interfaces past conventional limits with technically ambitious implementations — shaders, spring physics, scroll-driven reveals, 60fps animations. Use when the user wants to wow, impress, go all-out, or make something that feels extraordinary.",
+    "description": "Pushes interfaces past conventional limits with technically ambitious implementations \u2014 shaders, spring physics, scroll-driven reveals, 60fps animations. Use when the user wants to wow, impress, go all-out, or make something that feels extraordinary.",
     "argumentHint": "[target]"
   },
   "polish": {

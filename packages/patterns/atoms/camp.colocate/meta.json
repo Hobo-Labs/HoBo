@@ -11,9 +11,7 @@
 		"required": ["name"],
 		"properties": {
 			"name": { "type": "string", "minLength": 1 },
-			"provider": { "type": "string", "default": "" },
-			"peerCamp": { "type": "string", "default": "api" },
-			"network": { "type": "string", "default": "shared" }
+			"peerCamp": { "type": "string", "default": "api" }
 		}
 	},
 	"files": [{ "path": "src/yard.ts", "from": "body/yard.ts.tpl" }]

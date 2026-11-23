@@ -1,10 +1,21 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
 	bridgeAddress,
+	cachedImageArchive,
 	DATA_LIVE_LABEL,
 	type DockerResult,
+	ensureCachedImage,
+	FIXTURE_OPEN_FILES,
 	type LaneIo,
 	LIVE_ENGINE_IMAGES_PATH,
 	LIVE_PACKAGES,
@@ -94,7 +105,24 @@ describe("the containers", () => {
 			assert.ok(!argv.includes("--publish") && !argv.includes("-p"));
 			// The network a fleet job container is on, named and not defaulted.
 			assert.equal(argv[argv.indexOf("--network") + 1], "bridge");
+			assert.equal(
+				argv[argv.indexOf("--ulimit") + 1],
+				`nofile=${FIXTURE_OPEN_FILES}:${FIXTURE_OPEN_FILES}`,
+			);
 		}
+		assert.ok(FIXTURE_OPEN_FILES >= 64_000);
+	});
+
+	it("start locally with the same open-file limit CI gives them", () => {
+		const compose = readFileSync(
+			"packages/data-core/deploy/compose.live-engines.yml",
+			"utf8",
+		);
+		assert.equal(
+			compose.match(new RegExp(`nofile: ${FIXTURE_OPEN_FILES}\\n`, "gu"))
+				?.length,
+			2,
+		);
 	});
 
 	it("stop themselves, so a job that is killed does not leave servers running", () => {
@@ -637,5 +665,74 @@ describe("the workflow job and the script agree", () => {
 			/packages\/broker\/test\/budget-fleet-postgres\.test\.ts/u,
 		);
 		assert.match(job, /--filter=@hobo\/broker\.\.\./u);
+	});
+});
+
+describe("the node-local image cache", () => {
+	function cacheLane(present: boolean) {
+		const calls: (readonly string[])[] = [];
+		const io: LaneIo = {
+			docker: (args) => {
+				calls.push(args);
+				if (args[0] === "image")
+					return present ? ok("sha256:x\n") : failed("No such image");
+				if (args[0] === "save") {
+					writeFileSync(args[2] ?? "", "layers");
+					return ok("");
+				}
+				return ok("");
+			},
+			pause: async () => {},
+			out: () => {},
+			note: () => {},
+			now: () => 0,
+		};
+		return { io, calls };
+	}
+
+	it("names an archive by the image digest and refuses a tag", () => {
+		assert.equal(
+			cachedImageArchive("/cache", POSTGRES),
+			`/cache/${DIGEST}.tar`,
+		);
+		assert.throws(
+			() => cachedImageArchive("/cache", "postgres:16"),
+			/digest-pinned/u,
+		);
+	});
+
+	it("uses an image the engine already holds without touching the cache", () => {
+		const lane = cacheLane(true);
+		assert.equal(ensureCachedImage(lane.io, POSTGRES, tmpdir()), "present");
+		assert.equal(lane.calls.length, 1);
+	});
+
+	it("pulls once into an empty engine, saves the archive, then loads it on the next fresh engine", () => {
+		const dir = mkdtempSync(join(tmpdir(), "data-live-image-cache-"));
+		try {
+			const first = cacheLane(false);
+			assert.equal(ensureCachedImage(first.io, MONGO, dir), "pulled");
+			assert.deepEqual(first.calls[1], ["pull", MONGO]);
+			assert.ok(existsSync(cachedImageArchive(dir, MONGO)));
+			const second = cacheLane(false);
+			assert.equal(ensureCachedImage(second.io, MONGO, dir), "loaded");
+			assert.deepEqual(second.calls[1], [
+				"load",
+				"--input",
+				cachedImageArchive(dir, MONGO),
+			]);
+			assert.equal(
+				second.calls.some((args) => args[0] === "pull"),
+				false,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("leaves the pull to docker run when no cache directory is configured", () => {
+		const lane = cacheLane(false);
+		assert.equal(ensureCachedImage(lane.io, MONGO, undefined), "uncached");
+		assert.equal(lane.calls.length, 1);
 	});
 });

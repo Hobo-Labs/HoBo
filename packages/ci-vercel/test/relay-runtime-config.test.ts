@@ -14,6 +14,7 @@ import {
 	envRelayConfigSource,
 	infisicalRelayConfigSource,
 	parseCommittedStoreCoordinates,
+	parseRelayCacheBindings,
 	parseRelayRuntimeConfig,
 	type RelayConfigSource,
 	RelayRuntimeConfigError,
@@ -97,6 +98,41 @@ describe("the relay runtime config record", () => {
 });
 
 describe("parseRelayRuntimeConfig", () => {
+	it("separates the entries a folder lacks from those it holds in a refused shape", () => {
+		const {
+			HOBO_CI_GITHUB_APP_PRIVATE_KEY: _key,
+			HOBO_CI_SESSION_KEY: _session,
+			CRON_SECRET: _cron,
+			HOBO_CI_GITHUB_APP_ID: _app,
+			...partial
+		} = entries;
+		const error = errorOf(() =>
+			parseRelayRuntimeConfig({
+				...partial,
+				HOBO_CI_WEBHOOK_SECRET: "short-webhook-value",
+			}),
+		);
+		expect(error.gaps).toEqual({
+			missing: ["HOBO_CI_GITHUB_APP_ID", "HOBO_CI_GITHUB_APP_PRIVATE_KEY"],
+			invalid: ["HOBO_CI_WEBHOOK_SECRET"],
+		});
+		expect(JSON.stringify(error.gaps)).not.toContain("short-webhook-value");
+		expect(
+			errorOf(() => parseRelayRuntimeConfig({ ...entries, STRAY: "x" })).gaps,
+		).toBeUndefined();
+	});
+
+	it("parses a folder's cache bindings on their own, leaving out a refused one", () => {
+		expect(
+			parseRelayCacheBindings({
+				HOBO_CI_PUBLIC_URL: "https://hobo-ci.vercel.app",
+				VALKEY_URL: "rediss://:valkey-password@valkey.example:6379",
+				BLOB_STORE_ID: "not a store id",
+				TURSO_AUTH_TOKEN: "",
+			}),
+		).toEqual({ VALKEY_URL: "rediss://:valkey-password@valkey.example:6379" });
+	});
+
 	it("accepts a complete configuration and freezes it", () => {
 		const config = parseRelayRuntimeConfig(entries);
 		expect(config.HOBO_CI_GITHUB_APP_ID).toBe("123456");

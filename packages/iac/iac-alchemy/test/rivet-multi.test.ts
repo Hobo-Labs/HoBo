@@ -530,6 +530,26 @@ describe("Rivet multiple pool mapping", () => {
 		expect(api.deploys).toEqual([]);
 	});
 
+	it("pins each pool identity once before validation and host attestation", () => {
+		const web = app("web", "web", "1");
+		let reads = 0;
+		const source = {
+			...web,
+			get poolDigest() {
+				return ++reads === 1 ? web.poolDigest : "changed-after-validation";
+			},
+		};
+		let observed = "";
+		expect(() =>
+			createRivetMultiPoolPrimitiveMappers([source], (claim) => {
+				observed = claim.poolDigest;
+				return true;
+			}),
+		).toThrow("RIVET_POOL_UNVERIFIED");
+		expect(reads).toBe(0);
+		expect(observed).toBe("");
+	});
+
 	it("rejects a volatile pool identity without invoking its accessor", () => {
 		const web = app("web", "web", "1");
 		let reads = 0;

@@ -384,16 +384,33 @@ function configureExemptCouncil(
 	writeFileSync(scopePath, `${JSON.stringify(scope, null, 2)}\n`);
 }
 
-async function initRun(root: string): Promise<void> {
-	const result = await runReviewLoopCommand(root, [
-		"--mode",
-		"init",
-		"--run",
-		"run-1",
-		"--experiences",
-		"dx",
-	]);
-	assert.equal(result.code, 0, result.text);
+function initRun(root: string): void {
+	const runDir = path.join(root, ".optimizexp/runs/run-1");
+	mkdirSync(path.join(runDir, "iterations"), { recursive: true });
+	writeFileSync(
+		path.join(runDir, "scope.json"),
+		JSON.stringify({
+			runId: "run-1",
+			experiences: ["dx"],
+			personas: [],
+			features: [],
+			projects: [],
+			surfaces: [],
+			reportOnly: false,
+			passes: null,
+			cyclesCompleted: 0,
+			passesCompleted: 0,
+			status: "running",
+			regime: "harm_reduce",
+			regimesEntered: ["harm_reduce"],
+			stopPolicy: "infinite-until-pareto-equilibrium",
+			noDelight: false,
+			noSurvey: false,
+			delightPasses: null,
+			delightCyclesCompleted: 0,
+			surveyCompleted: false,
+		}),
+	);
 }
 
 function councilMissing(
@@ -453,7 +470,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 	test("assert-complete requires a configured council review", async () => {
 		const root = seedRepo();
 		const proposalPath = proposal(root);
-		await initRun(root);
+		initRun(root);
 		configureRequiredCouncil(root, proposalPath);
 		const result = await runReviewLoop(root, "assert-complete");
 		assert.notEqual(result.code, 0, result.text);
@@ -462,7 +479,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 
 	test("assert-complete rejects exemptions after an explicit request or prior council cycle", async () => {
 		const requestedRoot = seedRepo();
-		await initRun(requestedRoot);
+		initRun(requestedRoot);
 		configureExemptCouncil(requestedRoot, { explicitlyRequested: true });
 		const requested = await runReviewLoop(requestedRoot, "assert-complete");
 		assert.match(
@@ -471,7 +488,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 		);
 
 		const priorRoot = seedRepo();
-		await initRun(priorRoot);
+		initRun(priorRoot);
 		initCouncil(priorRoot, proposal(priorRoot));
 		configureExemptCouncil(priorRoot);
 		const prior = await runReviewLoop(priorRoot, "assert-complete");
@@ -484,7 +501,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 	test("assert-complete rejects nay, missing-voter, and open-blocker reviews", async () => {
 		const nayRoot = seedRepo();
 		const nayProposal = proposal(nayRoot);
-		await initRun(nayRoot);
+		initRun(nayRoot);
 		blockWithJony(nayRoot, nayProposal, { decide: true });
 		configureRequiredCouncil(nayRoot, nayProposal);
 		const nay = await runReviewLoop(nayRoot, "assert-complete");
@@ -493,7 +510,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 
 		const missingRoot = seedRepo();
 		const missingProposal = proposal(missingRoot);
-		await initRun(missingRoot);
+		initRun(missingRoot);
 		let state = initCouncil(missingRoot, missingProposal);
 		for (const persona of COUNCIL_PERSONAS.slice(0, 5)) {
 			state = appendPersona(missingRoot, state, persona, "submitted");
@@ -508,7 +525,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 
 		const blockerRoot = seedRepo();
 		const blockerProposal = proposal(blockerRoot);
-		await initRun(blockerRoot);
+		initRun(blockerRoot);
 		blockWithJony(blockerRoot, blockerProposal, { decide: false });
 		configureRequiredCouncil(blockerRoot, blockerProposal);
 		const blocker = await runReviewLoop(blockerRoot, "assert-complete");
@@ -522,7 +539,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 	test("assert-complete rejects stale approval and state-bus disagreement", async () => {
 		const staleRoot = seedRepo();
 		const staleProposal = proposal(staleRoot);
-		await initRun(staleRoot);
+		initRun(staleRoot);
 		approve(staleRoot, staleProposal);
 		configureRequiredCouncil(staleRoot, staleProposal, sha("c"));
 		const stale = await runReviewLoop(staleRoot, "assert-complete");
@@ -531,7 +548,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 
 		const mismatchRoot = seedRepo();
 		const mismatchProposal = proposal(mismatchRoot);
-		await initRun(mismatchRoot);
+		initRun(mismatchRoot);
 		approve(mismatchRoot, mismatchProposal);
 		configureRequiredCouncil(mismatchRoot, mismatchProposal);
 		const statePath = path.join(
@@ -563,7 +580,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 		git(root, "commit", "-m", "feature");
 		const approvedHead = git(root, "rev-parse", "HEAD");
 		const proposalPath = proposal(root);
-		await initRun(root);
+		initRun(root);
 		approve(root, proposalPath, baseSha, approvedHead);
 		configureRequiredCouncil(root, proposalPath, approvedHead, baseSha);
 
@@ -597,7 +614,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 		git(root, "add", "packages/cli/src/help.ts");
 		git(root, "commit", "-m", "feature");
 		const headSha = git(root, "rev-parse", "HEAD");
-		await initRun(root);
+		initRun(root);
 		configureExemptCouncil(root, {
 			baseSha,
 			headSha,
@@ -628,7 +645,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 		git(requiredRoot, "add", "src/internal/cache.ts");
 		git(requiredRoot, "commit", "-m", "feature");
 		const requiredHeadSha = git(requiredRoot, "rev-parse", "HEAD");
-		await initRun(requiredRoot);
+		initRun(requiredRoot);
 		const diff = gitProcess(
 			requiredRoot,
 			"diff",
@@ -659,7 +676,7 @@ describe("OptimizeXP review-loop designer council integration", () => {
 	test("current-subject exact-six unanimous yay clears council-specific blockers", async () => {
 		const root = seedRepo();
 		const proposalPath = proposal(root);
-		await initRun(root);
+		initRun(root);
 		approve(root, proposalPath);
 		configureRequiredCouncil(root, proposalPath);
 		const result = await runReviewLoop(root, "assert-complete");

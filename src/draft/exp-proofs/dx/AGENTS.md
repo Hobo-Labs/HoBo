@@ -1,9 +1,5 @@
-# dx experience proofs
+# Developer experience proof instructions
 
-Developer/operator experience. Artifacts: pseudo-code, protobuf + CUE contracts, mermaid diagrams. Model the developer persona and friction before shaping the interface.
+Follow the parent [experience proof instructions](../AGENTS.md). Implement and test the actual developer or operator workflow; keep its protobuf and CUE contracts aligned. Do not create pseudo-code, diagrams, ADRs, or planning documents.
 
-Everything else (proof.json, executed examples/, notebook, cascade rule, run commands) follows the
-parent [`src/draft/exp-proofs/AGENTS.md`](../AGENTS.md). Run a package with
-`pnpm exec turbo run test --filter ./src/draft/exp-proofs/dx/<slug>`; validate artifacts with
-`pnpm run draft:artifacts -- --staged`. Changing a proof here cascades into referencing epic
-rollups — update them in the same diff (`pnpm run draft:cascade -- --staged`).
+Run `pnpm exec turbo run test --filter ./src/draft/exp-proofs/dx/<slug>` and the relevant staged artifact and cascade checks.

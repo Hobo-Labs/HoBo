@@ -50,6 +50,16 @@
 			"why": "links packages/runtime and packages/core by a name it computes into a generated project's node_modules/@hobo, compiles the generated code against their dist/ types and imports it, which imports them by name"
 		},
 		{
+			"from": "packages/patterns/test/trainable-greeting.test.ts",
+			"needs": ["@hobo/runtime#build"],
+			"why": "links packages/runtime into a rendered project's node_modules/@hobo, type-checks the rendered source against its dist/ types and runs it, which imports it by name"
+		},
+		{
+			"from": "packages/patterns/test/yard-merge.test.ts",
+			"needs": ["@hobo/camps#build", "@hobo/yards#build"],
+			"why": "links packages/camps and packages/yards by a name it computes into a rendered project's node_modules/@hobo, type-checks the rendered fragment against their dist/ types and runs it, which imports them by name"
+		},
+		{
 			"from": "packages/hobo/test/persistent-local-deployment.test.ts",
 			"needs": ["@hobo/bindles#build"],
 			"why": "loads ../../bindles/dist/index.js by URL"

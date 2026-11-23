@@ -62,7 +62,7 @@ export function parseSurfaceBrief(text, filePath = null) {
       const raw = line.slice(colon + 1).trim();
       if (!key) continue;
       if (/^(?:\[|\{|\")/.test(raw) || /^(?:true|false|null|-?\d+(?:\.\d+)?)$/.test(raw)) {
-        try { meta[key] = JSON.parse(raw); continue; } catch { /* keep string */ }
+        try { meta[key] = JSON.parse(raw); continue; } catch {   }
       }
       meta[key] = raw.replace(/^['"]|['"]$/g, '');
     }
@@ -124,28 +124,6 @@ export function resolveSurfaceBrief(projectRoot = process.cwd(), target = null) 
   };
 }
 
-export function writeSurfaceBrief({
-  projectRoot = process.cwd(),
-  primaryTarget,
-  relatedTargets = [],
-  body,
-}) {
-  const normalizedPrimary = normalizeSurfaceTarget(primaryTarget, { projectRoot });
-  if (!normalizedPrimary) throw new Error('surface brief requires a concrete project-relative primary target or URL');
-  const normalizedRelated = [...new Set(relatedTargets
-    .map((target) => normalizeSurfaceTarget(target, { projectRoot }))
-    .filter((target) => target && target !== normalizedPrimary))];
-  const slug = slugFromTarget(normalizedPrimary, { cwd: projectRoot });
-  const filePath = surfaceBriefPathForTarget(normalizedPrimary, { projectRoot });
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const frontmatter = [
-    '---',
-    `version: ${SURFACE_BRIEF_VERSION}`,
-    `slug: ${JSON.stringify(slug)}`,
-    `primary_target: ${JSON.stringify(normalizedPrimary)}`,
-    `related_targets: ${JSON.stringify(normalizedRelated)}`,
-    '---',
-  ].join('\n');
-  fs.writeFileSync(filePath, `${frontmatter}\n\n${String(body || '').trim()}\n`, 'utf-8');
-  return filePath;
+export function writeSurfaceBrief() {
+  throw new Error('Repository policy forbids surface brief files');
 }

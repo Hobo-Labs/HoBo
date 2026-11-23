@@ -9,24 +9,31 @@ tags: [hobo, agent-tooling.md]
 
 Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
-design documents. The shared pre-commit hook and CI run `source:guard`
-([`scripts/check-source-policy.mts`](../scripts/check-source-policy.mts)) on new
+design documents. Agent edit hooks, the shared pre-commit hook, and CI run the
+common `source:guard` ([`scripts/check-source-policy.mts`](../scripts/check-source-policy.mts)) on new
 comments and added or changed planning or design documents in the languages it
 recognizes: JavaScript, TypeScript, shell, Python, CSS, and HTML; YAML, Rust,
 Go, C, C++, Java, Kotlin, Ruby, Lua, and Swift through ast-grep; and the
 contract languages — Prisma, CUE, Protobuf, WIT, SQL, and TOML — lexed by
 [`scripts/source-comment-lexer.mts`](../scripts/source-comment-lexer.mts), whose
 dialect-aware lexer keeps triple-quoted strings and raw-string hash delimiters
-out of the comment set. It reads the staged content for commits
-and the PR diff for CI; it does not inspect other languages or unchanged content.
-For renamed files, it compares against the original path so existing comments
-remain allowed while newly added comments are checked. During a staged merge it
-compares against every parent, so content inherited unchanged from either side
-is not treated as a new merge edit. A multiline comment assembled from changes
-on both sides is still checked. The PR check still examines the full diff against
-its base.
+out of the comment set. The languages and source templates listed in
+[`AGENTS.md`](../AGENTS.md) — Astro included — complete the coverage list.
+Commit checks read staged content, CI checks the PR diff, and the worktree
+check also finds ignored agent planning artifacts; it does not inspect other
+languages or unchanged content. For renamed files, it compares against the
+original path so existing comments remain allowed while newly added comments
+are checked. During a staged merge it compares against every parent, so content
+inherited unchanged from either side is not treated as a new merge edit. A
+multiline comment assembled from changes on both sides is still checked. The
+PR check still examines the full diff against its base.
 
-Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, and **Codex** (Superpowers also targets **GitHub Copilot CLI**). This page is the reference; the at-a-glance table + always-on caveman directive live in [`../AGENTS.md`](../AGENTS.md). Install the binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The repo-local `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills are mirrored in `.agents/skills/` and `.claude/skills/` (all configured agents: Claude Code, Cursor, Codex, Grok, etc.); use `repo` for lifecycle work, `draft` for draft taxonomy and gate-enforced proof artifacts, `sdlc` to coordinate the full development loop (brainstorm → implement → review), `gh-stack` for non-interactive `gh stack` CLI rules, and `optimizexp` for persona-driven UX/DX/AX experience optimization (write-ahead agent bus + **review→reduce experiment→verify** each pass by default; derived fixes must ship in-run; no iterations/pass budget; true plateau = flat scores **and** empty implementable backlog; `--report-only` to measure without edits; schema-v2 personas, evidence-checked scorecards (`evidenceChecks`/`justification`), product-CLI feature coverage under `.optimizexp/features/cli-product/`, drift gate `pnpm run optimizexp:check`; config under [`.optimizexp/`](../.optimizexp/README.md); **AX** progressive refs under [AX references](../.agents/skills/optimizexp/references/ax/index.md) — specs, MCP, skills, harness CLIs, model routing, token optimization, hooks, auth). Invoking OptimizeXP grants standing approval for safe, in-scope preflight repairs; destructive, networked, secret-bearing, and unrelated actions still require separate authority.
+The anti-slop installer leaves its comment-required assertion rule disabled so
+the lint configuration follows the same source policy.
+
+Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
+
+Run `bash scripts/setup-agent-tools.sh --help` to inspect the zero-key setup path. The optional gbrain MCP launcher refuses to start without a configured embedding provider and reports how to configure local Ollama.
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
@@ -53,12 +60,6 @@ Capture records the command's selected working directory and respects the caller
 CLI output is bounded to 8 MiB per stream; truncated or interrupted captures are marked degraded and cannot support a complete review. A deliberate negative review revokes acceptance, while invalid inputs and artifact mismatches leave the previous review intact. Terminal replay uses recorded event times and safely embeds captured output.
 
 > **Note:** this is *tooling* config, not part of the HoBo product design (`docs/design/`). It was added on request to make the agents productive in this repo.
-
-For `sdlc --finish`, run the local staged check before each commit, then follow
-GitHub's required checks and merge queue until each authorized PR is merged.
-Use the time to complete independent work when possible; a queued PR is not yet
-merged. The full closeout protocol lives in the mirrored `sdlc` skill's
-`references/finish.md`.
 
 The [default dev container](../.devcontainer/devcontainer.json) installs **mise** (pinned Node, pnpm, cue, gitleaks, turbo from [`../mise.toml`](../mise.toml)) on a **digest-pinned** Node 24 Bookworm base (see
 [`.devcontainer/Dockerfile`](../.devcontainer/Dockerfile)), plus GitHub CLI, Docker in Docker, native Actions runner dependencies and pinned act. Personal dotfiles install via [`../scripts/bootstrap-dev.sh`](../scripts/bootstrap-dev.sh) (see [`dev-env/mise.md`](dev-env/mise.md)).
@@ -137,7 +138,7 @@ Agents implementing HoBo code must follow the canonical architecture rules in [`
 
 The fail-fast check is `pnpm run architecture:guard` (`architecture:guard:staged` when the pre-commit gate selects it). It scans changed `src/draft/<kind>/<slug>` implementation packages for PACT, protobuf, CUE, parse-don't-validate, and event-architecture evidence before the slower test and CI gates run.
 
-The full compatibility gate is `pnpm run validate:final`, which runs standards and the same `test:unit` graph as `check:all`. [`../scripts/run-unit-tests.ts`](../scripts/run-unit-tests.ts) asks turbo for exactly the legacy root/draft Vitest set: four root shards selected by stable path hash and nine draft shards selected by a stable hash of each proof package directory (`src/draft/<kind>/<slug>` or `src/draft/exp-proofs/<type>/<slug>`). It does not run production `packages/**` suites (Workspace tests owns them) or `scripts/test/` (`test:scripts` owns them). Every shard uses [`../scripts/run-tests.ts`](../scripts/run-tests.ts) with the canonical root settings, and a shared turbo dependency supplies the builds the legacy pretest supplied. The coverage guard requires exact set equality, rejecting missing, extra, and duplicate files, and proves a proof directory never spans shards. `pnpm run test:unit:shards` regenerates the per-proof turbo inputs and draft shard scripts; `pnpm run test:unit:shards:check` rejects drift. Turbo parallelism follows `HOBO_TURBO_CONCURRENCY` (default `100%`); root runners honor `HOBO_TEST_MAX_WORKERS`, then `HOBO_RELEVANT_CHECK_CONCURRENCY` (default `4`). Package-scoped runs stay on `pnpm exec turbo run test --filter=./<workspace>`.
+The full compatibility gate is `pnpm run validate:final`, which runs standards and the same `test:unit` graph as `check:all`. [`../scripts/run-unit-tests.ts`](../scripts/run-unit-tests.ts) asks turbo for exactly the legacy root/draft Vitest set: four root shards selected by stable path hash and nine draft shards selected by a stable hash of each proof package directory (`src/draft/<kind>/<slug>` or `src/draft/exp-proofs/<type>/<slug>`). It does not run production `packages/**` suites (Workspace tests owns them) or `scripts/test/` (`test:scripts` owns them). Every shard uses [`../scripts/run-tests.ts`](../scripts/run-tests.ts) with the canonical root settings, and a shared turbo dependency supplies the builds the legacy pretest supplied. The runner identifies `node:test` imports from parsed source, so quoted fixtures do not change which test runner executes a file. The coverage guard requires exact set equality, rejecting missing, extra, and duplicate files, and proves a proof directory never spans shards. `pnpm run test:unit:shards` regenerates the per-proof turbo inputs and draft shard scripts; `pnpm run test:unit:shards:check` rejects drift. Turbo parallelism follows `HOBO_TURBO_CONCURRENCY` (default `100%`); root runners honor `HOBO_TEST_MAX_WORKERS`, then `HOBO_RELEVANT_CHECK_CONCURRENCY` (default `4`). Package-scoped runs stay on `pnpm exec turbo run test --filter=./<workspace>`.
 
 Agent edit loops should not use Node test suites for discovery or broad diagnostics. Use `pnpm run search <text>` for exact indexed search, `pnpm run search:structure --filter <rule>` or `pnpm exec ast-grep run -p <pattern> -l ts` for AST search, then the narrowest compatible test command: `pnpm run test:smoke <file>` when Bun can run it, `pnpm run test:file <file>` or `pnpm run test:name <name> <file>` for normal local feedback, `HOBO_CHECK_BASE=origin/main pnpm run test:changed` for changed-scope validation, and `pnpm run validate:final` only after implementation is complete. `scripts/run-tests.ts` refuses broad agent edit-loop categories when `CI_AGENT`, `CODEX`, `CLAUDECODE`, or `CURSOR_AGENT` is set unless `--final` is passed, and `scripts/run-relevant-checks.ts` refuses broad root unit/contract scripts unless the caller explicitly passes `--final` or `--all`. Root `pnpm run lint:code` formats **`scripts/` and `test/` only** (Biome); keep those trees format-clean when editing automation.
 
@@ -148,8 +149,7 @@ A **plugin** (skills library + methodology), v6.0.3, from the `obra/superpowers-
 - **Install (per agent):** Claude Code is wired repo-portably via [`../.claude/settings.json`](../.claude/settings.json) (`extraKnownMarketplaces` + `enabledPlugins`) — opening the repo auto-enables it. Codex / Copilot install per-machine: `<agent> plugin marketplace add obra/superpowers-marketplace && <agent> plugin install superpowers@superpowers-marketplace` (the setup script runs these when those CLIs are present). Unlike the skills tools, this is a **global plugin**, not committed skill files.
 
 ### mattpocock/skills — `mattpocock/skills` (MIT)
-A **skills collection** of engineering disciplines, installed via the `skills` CLI to `.claude/skills/` (Claude Code) and `.agents/skills/` (Cursor + Codex). Highlights: **`grill-with-docs`** ("a relentless interview to sharpen a plan or design, which also creates docs — ADRs and glossary — as we go"), `domain-modeling`, `codebase-design`, `design-an-interface`, `diagnosing-bugs`, `tdd`, `to-prd`, `to-issues`, `request-refactor-plan`, `prototype`, plus model-invoked `grilling`. **No API keys.**
-- **Configure (one-time):** run `/setup-matt-pocock-skills` in your agent to set up its issue-tracker / triage-label vocabulary / domain-doc layout (optional for a docs repo; skip if you don't use the issue-tracking skills).
+A checked-in collection of engineering skills lives in `.claude/skills/` and `.agents/skills/`. The skills cover domain modeling, code structure, diagnosis, testing, and implementation while following the common repository policy. They do not require API keys or generate planning or design documents.
 - Used in this repo to **close competitor gaps** — see [`docs/competitors/gap-analysis.md`](./competitors/gap-analysis.md) and the resulting design work.
 
 ### caveman — `JuliusBrussee/caveman` (MIT)
@@ -157,56 +157,30 @@ A **skill + always-on rule** that compresses the agent's **output** (~65–87% f
 - **It is ON by default.** To disable: delete `.cursor/rules/caveman.mdc`, remove the `<!-- caveman:begin … end -->` block from `AGENTS.md`, and run `npx -y github:JuliusBrussee/caveman -- --uninstall`.
 
 ### impeccable — `pbakaus/impeccable` (Apache-2.0)
-A **design skill** for AI harnesses (npm `impeccable`, v3.5.0, homepage
-[impeccable.style](https://impeccable.style)). 23 commands spanning the design
-workflow — `shape`, `critique`, `audit`, `polish`, plus dials like `bolder`,
-`quieter`, `colorize`. **Standing duty on visual work** (TUI, dashboard,
-Evidence and `site/`): run `critique` then `audit`
-(and `polish` on P0/P1) and `pnpm run design:lint` without being asked.
-See `AGENTS.md` “Visual quality”. **No API keys**, but it is **not**
-offline — see egress below.
-- **Network egress (three paths, one of them automatic):**
-  - `scripts/context.mjs` calls `impeccable.style/api/version` when it is run
-    **as a command** (`node scripts/context.mjs`, i.e. the skill's context
-    step) — on by default, throttled to once a day. The per-edit **hook does
-    not fetch**: `hook-lib.mjs` imports only `extractPlatform`/`loadContext`,
-    and the fetch sits behind `cli()`, which runs only when the file is invoked
-    as a script. Measured 0 requests from `hook.mjs` in both repo root and a
-    subdirectory, including the absolute-path Copilot variant. Disabled here
-    by **`IMPECCABLE_NO_UPDATE_CHECK=1`**, set in
-    [`../.claude/settings.json`](../.claude/settings.json) `env`. That is the
-    control that actually holds: upstream reads
-    [`../.impeccable/config.json`](../.impeccable/config.json)'s
-    `"updateCheck": false` relative to `process.cwd()`, so the file alone
-    covers repo-root sessions and **not** `cd site && …` — verified by driving
-    the real code path with a stubbed `fetch` (subdirectory: 1 request with the
-    config alone, 0 with the env var). Both are in place. Run
-    `npx impeccable check` deliberately instead.
-  - **Residual, stated rather than papered over:** `.claude/settings.json` is
-    Claude Code's file. A **Codex / Cursor / Copilot** session that runs an
-    impeccable command from a subdirectory gets neither control and will still
-    make that once-a-day request. `.codex/config.toml` has no env facility and
-    direnv is not used in this repo, so there is no mechanism here that would
-    close it without inventing one. The exposure is a version string, once a
-    day, from those harnesses only.
-  - `scripts/generate-image.mjs` posts to `api.openai.com` — opt-in, only when
-    you invoke it, and it needs your own key.
-  - `scripts/concept-seed.mjs` calls `impeccable.style/api/roll` — opt-in.
-- **Hooks (ON by default):** the install writes `PostToolUse` manifests to
-  `.codex/hooks.json`, `.cursor/hooks.json` and `.github/hooks/`, which run the
-  design detector after **every** `Edit`/`Write`/`apply_patch`. Each is guarded
-  (`[ ! -f <script> ] || node <script>`) so it no-ops when the skill is absent.
-  **Claude Code deliberately gets no hook** — this repo manages
-  `.claude/settings.json` itself and the installer does not write a `hooks` key
-  there. To remove the others, delete those files; `npx impeccable install`
-  rewrites them.
+A **design skill** for AI harnesses (npm `impeccable`, homepage
+[impeccable.style](https://impeccable.style)). The checked-in skill supports
+visual review and implementation across Claude Code, Codex, Cursor, and Copilot.
+**Standing duty on visual work** (TUI, dashboard, Evidence and `site/`): run
+`critique` then `audit` (and `polish` on P0/P1) and `pnpm run design:lint`
+without being asked. See `AGENTS.md` “Visual quality”.
+
+Its context command uses existing source and does not contact the network. The
+image generator and concept-seed helper make network requests only when
+explicitly invoked. The common source-policy hooks apply to every harness.
+Surface-brief and critique-file writers reject writes; visual work uses the
+implemented styles and components instead. Do not invoke commands that create
+planning or design documents.
+
+Live preview sessions recover browser checkpoints after a reload or when local
+browser storage is missing, provided the live server is still running. Browser
+checkpoints and publication progress are tracked independently.
+
 - **Install:** `npx impeccable install` from the repo root; it auto-detects
   harnesses and compiles **per harness** into `.claude`, `.agents`, `.cursor`
   and `.github`. `npx impeccable check` reports drift, `npx impeccable update`
-  applies it. Committed, like the other skills.
-- **Context:** `PRODUCT.md` records product behavior and implemented CSS and
-  components define the visual system. Do not invoke commands that create
-  design documents; repository rules apply to every plugin and skill.
+  applies it. Committed, like the other skills. Upstream installs or updates can
+  replace repository-specific skill rules. Check those rules and run the agent
+  policy tests after updating the skill.
 - **Mirror-gate exemption:** impeccable is listed in `VENDORED_SKILLS` in
   [`../scripts/check-skill-mirrors.ts`](../scripts/check-skill-mirrors.ts). The
   byte-identical rule fits skills this repo authors; impeccable deliberately
@@ -318,12 +292,52 @@ attach the server. Report which client worked and which connection or private
 session step remains unverified; do not infer the cause of a missing host tool
 without evidence.
 
-Store selection through **`choose_secret_store`** is temporarily unavailable
-until HoBo supports a verified, scoped owner session. Do not collect store
-identifiers in chat or tool arguments. Follow the **hobo-deploy** skill's
-privacy verification before using any owner form. When a verified private
-hand-off is available, use the same target project `cwd` throughout the
-ceremony; otherwise report the missing capability without collecting settings.
+Connecting an agent includes connecting the owner's secret store: call
+**`choose_secret_store`** with the target project directory as `cwd` (no store
+settings in its arguments). It reuses an established owner store session, or
+asks the owner privately: through MCP form elicitation (a store picker, then
+only that store's non-secret IDs) when the host declares
+`capabilities.elicitation` form mode, or through HoBo's store picker widget
+(`ui://hobo/store-choice`, whose app-only `submit_store_choice` the model does
+not call) when the host renders MCP Apps. A host with neither, or one that
+declares form elicitation but answers it with cancel or decline within 1.5
+seconds (Claude Code in a claude.ai cloud session does), gets status `link`
+instead: a one-time URL on the project's HoBo CI relay (`HOBO_CI_RELAY_URL`,
+else the default environment's `relayOrigin` in `.hobo/ci.json`,
+`https://hobo-ci.vercel.app` here) whose fragment carries only a single-use
+ticket. The agent shows the owner that URL; on any device the page asks for
+the store, its non-secret settings and its sign-in (Infisical's copied
+session, 1Password's email, Secret Key and password, or Bitwarden's personal
+API key), seals the answer in the browser to a P-256 key held only in the HoBo
+MCP process's memory, and the relay keeps only ciphertext for ten minutes, one
+deposit and one collection. The next `choose_secret_store` call with the same
+`cwd` collects it, records the choice, hands the sign-in to the owner channel
+and establishes the session. Without a reachable relay with a mailbox store
+the result is `secure-form-unavailable` with a `reason`
+(`owner-link-relay-unconfigured`, `-unreachable`, `-not-ready` or
+`-refused`), and nothing is collected. The choice is written to the
+owner's locator outside the repository
+(`~/.config/hobo/projects/<project>-<hash>/secret-store.json`), and HoBo then
+signs in through the owner channel (the sign-in link inside a host form, the
+Infisical session, 1Password or Bitwarden hand-offs) and keeps the store's
+sign-in in the server's memory. The sign-in completes inside the call on a
+remote box whose host shows form elicitation; elsewhere the result is
+`sign-in-needed`. Every result the agent sees carries only a
+status (`established`, `sign-in-needed` with a code, `shown`, `link` with its
+URL, `decline`, `invalid`, `secure-form-unavailable`) and the store's name,
+never project or vault IDs, hosts, or references. Once established, `hobo deploy` resolves
+credential locators `owner://<NAME>` (`env://<NAME>` is refused) from that session's CD location (Infisical folder `/hobo-cd`), so provider resolvers such as Hostinger's get
+`HOSTINGER_API_TOKEN` from the owner's store without the value reaching the
+agent; `hobo ci fleet status|restart|start` (the `ci` tool with
+`args: ["fleet", ...]`) reads the same `owner://HOSTINGER_API_TOKEN` to list and
+power-cycle the CI fleet's Hostinger VPS, and refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until the session holds it;
+`hobo ci fleet caches --plan|--apply|--status` (`args: ["fleet", "caches", ...]`)
+reads the ARC cluster's kubeconfig as `owner://HOSTINGER_ARC_KUBECONFIG` the
+same way to mount and prewarm the scale sets' node pnpm store and image cache;
+`doctor` reports `ownerStoreSession` as `established` and the store's
+name only. Re-run `choose_secret_store` with `reselect: true` to choose a
+different store.
 The relay's existing capture adapter reads a separately configured Infisical
 binding; a generic owner-store session is not yet wired to that adapter.
 Its `connected` status indicates that the binding was read; it does not verify
@@ -342,7 +356,7 @@ This is optional; see `headroom mcp --help`.
 
 ### gbrain — `garrytan/gbrain` (MIT)
 A **knowledge-graph memory MCP server** (+ CLI) on the **Bun** runtime: `gbrain capture` ingests notes, `gbrain search`/`query` does hybrid retrieval + synthesis. Repo MCP configs launch via the shared fail-closed wrapper [`../scripts/agent-mcp-gbrain.sh`](../scripts/agent-mcp-gbrain.sh) (not bare `gbrain serve`) so a missing binary or initialized provider prints remediation pointing at [`../AUTH.md`](../AUTH.md) instead of a host "command not found". The wrapper also reaps PGLite locks whose recorded PID resolves to a non-gbrain process in the current agent PID namespace while preserving real live gbrain holders; the agent-tooling Vitest covers this namespace-crossing case. Run `gbrain init --pglite` once; local Ollama is the zero-key/local-data path.
-- ⚠️ **Optional keys + data egress + cost:** remote providers use exactly one of `OPENAI_API_KEY` / `ZEROENTROPY_API_KEY` / `VOYAGE_API_KEY` (in `.env`) and receive embedding/query text. Don't point them at content you don't want shared. Local Ollama keeps embeddings local. The PGLite store is gitignored. To disable gbrain entirely, decline its MCP server or run setup with `--no-gbrain`.
+- ⚠️ **Optional keys + data egress + cost:** remote providers read exactly one of `OPENAI_API_KEY` / `ZEROENTROPY_API_KEY` / `VOYAGE_API_KEY` from gbrain's environment and receive embedding/query text; agents never store such a key (AGENTS.md), so use local Ollama. Don't point them at content you don't want shared. Local Ollama keeps embeddings local. The PGLite store is gitignored. To disable gbrain entirely, decline its MCP server or run setup with `--no-gbrain`.
 
 
 ### spriterrific — local CLI skill (**prefer this one**)
@@ -433,13 +447,17 @@ The **repo** skill is mirrored in `.agents/skills/repo` and `.claude/skills/repo
 
 The **draft** skill is mirrored in `.agents/skills/draft` and `.claude/skills/draft`. Use it when creating, moving, or reviewing draft proof material under `src/draft/<kind>/<slug>`, including technical proofs, experience proofs, epic proofs, and project MVP rollups.
 
-The **sdlc** skill is mirrored in `.agents/skills/sdlc` and `.claude/skills/sdlc`. Use it for the full development loop. Multi-step work is delivered as **GitHub Stacked PRs** via the official `gh stack` extension; the parent agent owns stack topology and lands each stack as **one unit**: one PR for the top layer (ready for review, not a draft; at most one open PR per workstream), a mandatory closeout on the stack's combined diff against trunk (rubber-duck + adversarial review, all PR comments, status checks), and a merge commit — never squash, never rebase-merge. Update pushed branches by merging `origin/main` in, never by rebase or force-push, and close any PR whose head is already in `main` or an ancestor of another open PR's head as `Superseded by #N`. Design-relevant stacks also require the exact-six OptimizeXP designer council and a current-head unanimous `assert-yay` immediately before merge; `/sdlc --finish` and billing-only CI exceptions cannot waive that gate. **`/sdlc --finish`** lands the current working session: commit remaining work, merge latest trunk in, resolve conflicts, close superseded PRs, open/update the workstream PR, push, and land all session work with a merge commit (`references/finish.md`). **Billing/spending-limit CI failures do not block merge** — document them and merge after all non-CI gates pass. Subagents implement one layer each with **incremental checkins**. Details: `references/finish.md`, `references/stacked-prs.md`, `references/dispatch.md`.
+The **sdlc** skill coordinates implementation, validation, incremental commits, and stacked pull requests. It does not create planning state or design documents. A workstream lands as one pull request (for a stack, the top layer against `main`) with a merge commit — never squash, never rebase-merge; pushed branches are updated by merging `origin/main` in, never by rebase or force-push, and a pull request whose head is already in `main` or an ancestor of another open pull request's head is closed as `Superseded by #N`. **`/sdlc --finish`** lands the current session the same way.
 
 The **gh-stack** skill is mirrored in `.agents/skills/gh-stack` and `.claude/skills/gh-stack`. Non-interactive CLI rules for `github/gh-stack` (`gh stack init|add|submit|sync|merge|view --json`). Install: `gh extension install github/gh-stack` (also `scripts/setup-agent-tools.sh` common layer). Docs: https://gh.io/stacks
 
-The **optimizexp** skill is mirrored in `.agents/skills/optimizexp` and `.claude/skills/optimizexp`. Its designer council is an additional append-only protocol for design-relevant SDLC work: exactly `steve-jobs`, `jony-ive`, `walt-disney`, `hayao-miyazaki`, `naoto-fukasawa`, and `shigeru-miyamoto`; one equal binary vote each; unanimous current-head approval only. Synthetic investment decays subjective preference debate without removing objective blockers. `consensus-loop.mts` reconstructs every transition from proposal-rooted bus history, emits rework on any nay, and rejects stale effective bases, heads, manifests, exemptions, or snapshots. Only visual or interactive surfaces, design-related acceptance tags, explicit requests, or a prior council cycle require the council; policy-aware SDLC runs persist either the required council inputs or a justified `no-visual-design-change` exemption. See `references/design-council.md` in either mirror.
+The **optimizexp** skill reviews actual UX, DX, and AX behavior, implements improvements, and verifies them with relevant evidence. It uses source code as the visual authority and does not create planning artifacts. Its legacy feature and persona commands retain validation and project inspection, but reject synthetic scaffolds, generated review plans, and backlogs. Doctor repairs do not fabricate persona or experience documents. The design-council classifier requires council review only for visual or interactive surfaces, design-related acceptance tags, explicit requests, or a prior council cycle; other changes record a `no-visual-design-change` exemption. `test/designer-council-sdlc.test.ts` checks both sides: visual paths still require the council, and nonvisual CLI, SDK, docs and example paths are exempt only with a justification.
 
-Repo-local skills keep Codex-valid `SKILL.md` frontmatter. Bundled `references/` directories are Open Knowledge Format concept bundles with OKF metadata in the reference files. `pnpm run docs:okf` validates the docs OKF bundle and the `repo`, `draft`, and `sdlc` skill reference bundles in both mirrors, accepting LF or CRLF frontmatter line endings so Windows-authored docs use the same gate.
+The **skill-creator-plus** initializer requires a complete description and
+instructions. It creates only the requested `SKILL.md`, without placeholder
+scripts or unfinished reference files.
+
+Repo-local skills keep Codex-valid `SKILL.md` frontmatter. `pnpm run docs:okf` validates the docs and the `repo` and `draft` reference bundles in both mirrors.
 
 ## Progressive setup
 
@@ -501,7 +519,7 @@ Agent-tooling changes count as repo behavior changes. Prefer cross-agent config 
 
 ## Fast local checks with Turborepo
 
-Pre-commit checks now route through `check:relevant:staged`, which discovers staged files and runs only the gates tied to those paths. Before it, the hook runs three guards on the staged files themselves: `generated:guard`, `plans:guard --staged`, and `source:guard --staged`, which refuses new explanatory comments and planning or design documents (AGENTS.md, "Plans are not committed"); `scripts/test/pre-commit-hook.test.ts` pins that order. Neither the hook nor that runner needs a package manager for root-script gates. Both start root scripts through [`scripts/run-script.mts`](../scripts/run-script.mts) (Node 22, which `engines` requires), which runs a package.json script from the repository root with `node_modules/.bin` first on PATH, as pnpm does, and hands it its arguments as positional parameters (`sh -c '<script> "$@"'`), never as shell text: `node --run` escapes `'` wrongly, so a base branch whose name held `'` and `;` could corrupt the base or run a command ([`scripts/test/run-script.test.ts`](../scripts/test/run-script.test.ts), [`scripts/test/pre-commit-hook.test.ts`](../scripts/test/pre-commit-hook.test.ts)). The runner starts each `pnpm run <script>` gate the policy names that way and each `pnpm exec <bin>` gate from `node_modules/.bin` (`withoutPackageManager` in `scripts/lib/env.ts`, tested in `scripts/test/without-package-manager.test.ts`); an exec of anything but a plain binary name that is installed (an option such as `--filter`, a path, `node`) is refused rather than guessed at, and a gate that cannot start fails with its reason ([`scripts/test/run-relevant-checks-start.test.ts`](../scripts/test/run-relevant-checks-start.test.ts)). Installs, scripts with `pre`/`post` scripts (which the launcher does not run), root scripts that call pnpm themselves (`install:check`, `test:schema`, `test:property`, `test:contract:*`), Windows, and the `turbo` package-test lanes (turbo runs each package's script through the package manager, so any commit touching a workspace package needs it) still need pnpm; without it those gates fail and the commit is refused. Before any gate, the hook checks that the base is a commit (`git rev-parse --verify`); when `fetch:pr-base` fails it shows the fetch's own error and names `HOBO_ARCHITECTURE_BASE=<ref>`, which skips the fetch; and with no `node_modules` it stops with one line naming the install step and `HOBO_SKIP_HOOKS=1`. No-arg `pnpm agent:check` defaults to `HEAD~1`, so a small committed rebase repair validates that latest change instead of replaying every package touched by the whole PR; pass `--base=origin/main` when intentionally validating the full branch against the PR base. Every gate is chosen from that changed-file list, so when git cannot produce it (an unknown or unfetched `--base`, `HEAD~1` in a depth-1 clone, no repository) `agent:check` exits 2 and names the base, instead of reading the failure as an empty scope and printing `ok` ([`scripts/test/run-relevant-checks-git-failure.test.ts`](../scripts/test/run-relevant-checks-git-failure.test.ts)); in a shallow clone it names `git fetch --deepen=1` for a `HEAD~n` base, and in staged mode a `--base` it is given must be a commit, since the gates receive it. `lint:docs:changed` and `lint:docs:staged` fail closed the same way ([`scripts/test/run-linters-git-failure.test.ts`](../scripts/test/run-linters-git-failure.test.ts)). A file list is only as good as the buffer that reads it: Node stops a child whose captured output passes 1 MiB (`ENOBUFS`), and main's `git ls-files` passed that, so `lint:docs` (`--all`) failed with "git could not list the tracked files" while the PR lane (`--base=origin/main`) still passed. The gates that capture a git file list without a bound of their own (`run-linters.ts`, `check-docs-freshness.ts`, `check-technical-standards.ts`) read it with `GIT_OUTPUT_MAX_BUFFER` (64 MiB, `scripts/lib/git-output.ts`), and [`scripts/test/git-output-bound.test.ts`](../scripts/test/git-output-bound.test.ts) feeds each a repository whose tracked and staged lists exceed the default. Draft proof packages under `src/draft/<kind>/<slug>` are treated as independent pnpm workspaces when package-test-relevant content changes under `src/`, `test/`, `tests/`, `type-tests/`, `features/`, `contracts/`, `simulation/`, `scripts/`, package metadata, protobuf, CUE, or Pact fixtures. The router batches all touched workspaces into one `pnpm exec turbo run test --filter=./<workspace> …` invocation: `turbo.json` runs with `envMode: "strict"` (so harness-injected `NODE_OPTIONS` never reaches test processes and cannot poison cache keys), task hashes cover only declared inputs (markdown excluded), and unchanged workspaces replay from `.turbo/cache` instead of re-executing. Move-only taxonomy churn and README/ADR-only edits still flow through architecture, docs, standards, and traceability gates, but they do not schedule every moved proof package. Taxonomy artifact folders without package manifests remain covered by architecture, docs, schema, and standards gates instead of being treated as runnable packages. Protobuf/CUE edits inside draft packages stay on that isolated workspace path; CUE-backed data-model folders must live inside the owning project/package, and root contract/schema edits outside `src/draft/<kind>/<slug>` run repository `test:schema` by default. Broad root unit and consumer/provider contract sweeps are final/all-validation lanes only: pass `--final` or `--all` when intentionally paying for that breadth. Root/shared Pact changes mark contract scope, but default relevant checks stay on architecture, docs, root-test, and schema lanes available from the touched paths; broad consumer/provider verification requires explicit final/all validation. Draft-local Pact changes are covered by the owning workspace test instead of escalating to the global `test:contract` sweep. Root scripts and tests are also type-checked: `pnpm exec turbo run typecheck:root` (root `tsc --noEmit` over `scripts/` and `test/`, with `turbo.json` building `@hobo/bindings`, `@hobo/bindles`, `@hobo/ci`, `@hobo/claims`, `@hobo/connectivity`, `@hobo/core`, `@hobo/dispatcher`, and `@hobo/kv-redis-compatible` first so imports resolve (the list must cover every workspace package root `scripts/`/`test/` type imports reach — clean ephemeral runners have no leftover `dist/` to mask a missing entry)) runs whenever those paths change. Independent relevant checks run after any package-install guard with bounded concurrency of four by default; set `HOBO_RELEVANT_CHECK_CONCURRENCY` when a CI worker can safely run more or less. Expensive global validators stay impact-scoped: traceability runs for traceability/design-proof edits, deployment-set validation runs for that proof, and agent evals run only for eval/prompt paths. Root `package.json` changes that only add or update scripts, lockfile importer-only updates, and root task-graph metadata still run install, root-test, standards, docs, architecture guards, and touched workspace tests, but they do not force the all-package `turbo run build typecheck lint test --filter=[HEAD^...HEAD]` lane unless the caller passes `--build` explicitly. The selector lives in `scripts/relevant-check-policy.ts` so root tests can assert gate choice without executing those gates. The runner has a second guardrail: if selector output includes broad root unit or contract scripts without `--final` or `--all`, it exits before launching them. The relevant-check path also runs `pnpm run case:check` (Windows case-collision preflight), `pnpm run lint:code` (Biome format check), and `pnpm run lint:slop:changed` (anti-slop Oxlint on touched TS/JS, warnings denied) for source or automation changes; tracked paths that differ only by case should be handled as separate Windows hygiene work instead of being folded into unrelated cleanup. The architecture guard enforces a single-lockfile rule on every run: it scans all tracked paths (not only the diff) and fails when any nested `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml` exists — only the root `pnpm-lock.yaml` is allowed (`single-lockfile`), because per-package npm installs drift from the workspace resolution pnpm actually uses. The workspace likewise carries one TypeScript: the root `typescript` devDependency. Package scripts call plain `tsc` (the root `.bin` is on `PATH` under pnpm), and tests that compile TypeScript consumers spawn `node` with the `typescript/bin/tsc` script under the repo's `node_modules` — never `npx`/`npm exec` with a pinned `typescript@x.y.z`, which fetched a second compiler from the network at test time. (Seven draft packages whose tests already fail on main keep their legacy pins until those pre-existing failures are fixed.) Turborepo stores cache entries under `.turbo/` and reuses them across Windows, macOS, Linux, and devcontainer runs when inputs are unchanged.
+Pre-commit checks now route through `check:relevant:staged`, which discovers staged files and runs only the gates tied to those paths. Before it, the hook runs its guards on the staged files themselves: `generated:guard`, `plans:guard --staged`, `secrets:staged` (Betterleaks), `secrets:guard --staged` (agents never store secrets: no added Actions secret or variable references beyond the per-job `GITHUB_TOKEN`, secret files, environment credential reads, `env://` locators, or secret-storing commands), and `source:guard --staged`, which refuses new explanatory comments and planning or design documents (AGENTS.md, "Plans are not committed"); `scripts/test/pre-commit-hook.test.ts` pins that order. Neither the hook nor that runner needs a package manager for root-script gates. Both start root scripts through [`scripts/run-script.mts`](../scripts/run-script.mts) (Node 22, which `engines` requires), which runs a package.json script from the repository root with `node_modules/.bin` first on PATH, as pnpm does, and hands it its arguments as positional parameters (`sh -c '<script> "$@"'`), never as shell text: `node --run` escapes `'` wrongly, so a base branch whose name held `'` and `;` could corrupt the base or run a command ([`scripts/test/run-script.test.ts`](../scripts/test/run-script.test.ts), [`scripts/test/pre-commit-hook.test.ts`](../scripts/test/pre-commit-hook.test.ts)). The runner starts each `pnpm run <script>` gate the policy names that way and each `pnpm exec <bin>` gate from `node_modules/.bin` (`withoutPackageManager` in `scripts/lib/env.ts`, tested in `scripts/test/without-package-manager.test.ts`); an exec of anything but a plain binary name that is installed (an option such as `--filter`, a path, `node`) is refused rather than guessed at, and a gate that cannot start fails with its reason ([`scripts/test/run-relevant-checks-start.test.ts`](../scripts/test/run-relevant-checks-start.test.ts)). Installs, scripts with `pre`/`post` scripts (which the launcher does not run), root scripts that call pnpm themselves (`install:check`, `test:schema`, `test:property`, `test:contract:*`), Windows, and the `turbo` package-test lanes (turbo runs each package's script through the package manager, so any commit touching a workspace package needs it) still need pnpm; without it those gates fail and the commit is refused. Before any gate, the hook checks that the base is a commit (`git rev-parse --verify`); when `fetch:pr-base` fails it shows the fetch's own error and names `HOBO_ARCHITECTURE_BASE=<ref>`, which skips the fetch; and with no `node_modules` it stops with one line naming the install step and `HOBO_SKIP_HOOKS=1`. No-arg `pnpm agent:check` defaults to `HEAD~1`, so a small committed rebase repair validates that latest change instead of replaying every package touched by the whole PR; pass `--base=origin/main` when intentionally validating the full branch against the PR base. Every gate is chosen from that changed-file list, so when git cannot produce it (an unknown or unfetched `--base`, `HEAD~1` in a depth-1 clone, no repository) `agent:check` exits 2 and names the base, instead of reading the failure as an empty scope and printing `ok` ([`scripts/test/run-relevant-checks-git-failure.test.ts`](../scripts/test/run-relevant-checks-git-failure.test.ts)); in a shallow clone it names `git fetch --deepen=1` for a `HEAD~n` base, and in staged mode a `--base` it is given must be a commit, since the gates receive it. `lint:docs:changed` and `lint:docs:staged` fail closed the same way ([`scripts/test/run-linters-git-failure.test.ts`](../scripts/test/run-linters-git-failure.test.ts)). A file list is only as good as the buffer that reads it: Node stops a child whose captured output passes 1 MiB (`ENOBUFS`), and main's `git ls-files` passed that, so `lint:docs` (`--all`) failed with "git could not list the tracked files" while the PR lane (`--base=origin/main`) still passed. The gates that capture a git file list without a bound of their own (`run-linters.ts`, `check-docs-freshness.ts`, `check-technical-standards.ts`) read it with `GIT_OUTPUT_MAX_BUFFER` (64 MiB, `scripts/lib/git-output.ts`), and [`scripts/test/git-output-bound.test.ts`](../scripts/test/git-output-bound.test.ts) feeds each a repository whose tracked and staged lists exceed the default. Draft proof packages under `src/draft/<kind>/<slug>` are treated as independent pnpm workspaces when package-test-relevant content changes under `src/`, `test/`, `tests/`, `type-tests/`, `features/`, `contracts/`, `simulation/`, `scripts/`, package metadata, protobuf, CUE, or Pact fixtures. The router batches all touched workspaces into one `pnpm exec turbo run test --filter=./<workspace> …` invocation: `turbo.json` runs with `envMode: "strict"` (so harness-injected `NODE_OPTIONS` never reaches test processes and cannot poison cache keys), task hashes cover only declared inputs (markdown excluded), and unchanged workspaces replay from `.turbo/cache` instead of re-executing. Move-only taxonomy churn and README/ADR-only edits still flow through architecture, docs, standards, and traceability gates, but they do not schedule every moved proof package. Taxonomy artifact folders without package manifests remain covered by architecture, docs, schema, and standards gates instead of being treated as runnable packages. Protobuf/CUE edits inside draft packages stay on that isolated workspace path; CUE-backed data-model folders must live inside the owning project/package, and root contract/schema edits outside `src/draft/<kind>/<slug>` run repository `test:schema` by default. Broad root unit and consumer/provider contract sweeps are final/all-validation lanes only: pass `--final` or `--all` when intentionally paying for that breadth. Root/shared Pact changes mark contract scope, but default relevant checks stay on architecture, docs, root-test, and schema lanes available from the touched paths; broad consumer/provider verification requires explicit final/all validation. Draft-local Pact changes are covered by the owning workspace test instead of escalating to the global `test:contract` sweep. Root scripts and tests are also type-checked: `pnpm exec turbo run typecheck:root` (root `tsc --noEmit` over `scripts/` and `test/`, with `turbo.json` building `@hobo/bindings`, `@hobo/bindles`, `@hobo/ci`, `@hobo/claims`, `@hobo/connectivity`, `@hobo/core`, `@hobo/dispatcher`, and `@hobo/kv-redis-compatible` first so imports resolve (the list must cover every workspace package root `scripts/`/`test/` type imports reach — clean ephemeral runners have no leftover `dist/` to mask a missing entry)) runs whenever those paths change. Independent relevant checks run after any package-install guard with bounded concurrency of four by default; set `HOBO_RELEVANT_CHECK_CONCURRENCY` when a CI worker can safely run more or less. Expensive global validators stay impact-scoped: traceability runs for traceability/design-proof edits, deployment-set validation runs for that proof, and agent evals run only for eval/prompt paths. Root `package.json` changes that only add or update scripts, lockfile importer-only updates, and root task-graph metadata still run install, root-test, standards, docs, architecture guards, and touched workspace tests, but they do not force the all-package `turbo run build typecheck lint test --filter=[HEAD^...HEAD]` lane unless the caller passes `--build` explicitly. The selector lives in `scripts/relevant-check-policy.ts` so root tests can assert gate choice without executing those gates. The runner has a second guardrail: if selector output includes broad root unit or contract scripts without `--final` or `--all`, it exits before launching them. The relevant-check path also runs `pnpm run case:check` (Windows case-collision preflight), `pnpm run lint:code` (Biome format check), and `pnpm run lint:slop:changed` (anti-slop Oxlint on touched TS/JS, warnings denied) for source or automation changes; tracked paths that differ only by case should be handled as separate Windows hygiene work instead of being folded into unrelated cleanup. The architecture guard enforces a single-lockfile rule on every run: it scans all tracked paths (not only the diff) and fails when any nested `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml` exists — only the root `pnpm-lock.yaml` is allowed (`single-lockfile`), because per-package npm installs drift from the workspace resolution pnpm actually uses. The workspace likewise carries one TypeScript: the root `typescript` devDependency. Package scripts call plain `tsc` (the root `.bin` is on `PATH` under pnpm), and tests that compile TypeScript consumers spawn `node` with the `typescript/bin/tsc` script under the repo's `node_modules` — never `npx`/`npm exec` with a pinned `typescript@x.y.z`, which fetched a second compiler from the network at test time. (Seven draft packages whose tests already fail on main keep their legacy pins until those pre-existing failures are fixed.) Turborepo stores cache entries under `.turbo/` and reuses them across Windows, macOS, Linux, and devcontainer runs when inputs are unchanged.
 
 On Windows, `scripts/run-relevant-checks.ts` invokes nested pnpm commands through `cmd.exe /d /c pnpm.cmd`.
 This keeps the staged hook path usable in shells where `pnpm` is not directly executable from

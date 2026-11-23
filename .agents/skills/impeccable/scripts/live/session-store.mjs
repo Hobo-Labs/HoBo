@@ -14,13 +14,6 @@ export const GENERATION_FENCED_PHASES = new Set(GENERATION_FENCED_SESSION_PHASES
 const META_JOURNAL_BYTES = '__journalBytes';
 const META_NEXT_SEQ = '__nextSeq';
 
-// TODO(revision-unification): `checkpointRevision`, `browserCheckpointRevision`,
-// and `publicationCheckpointRevision` are three counters for two domains.
-// `checkpointRevision` is a compatibility mirror of the browser counter kept for
-// older readers. Collapsing them means changing what a resumed browser compares
-// its local revision against, so it belongs in a pass that owns resume ordering,
-// not in a caching change.
-
 export function createLiveSessionStore({ cwd = process.cwd(), sessionId } = {}) {
   const rootDir = getLiveSessionsDir(cwd);
   const legacyRootDir = getLegacyLiveSessionsDir(cwd);
@@ -117,7 +110,7 @@ export function createLiveSessionStore({ cwd = process.cwd(), sessionId } = {}) 
       fs.appendFileSync(journalPath, JSON.stringify(entry) + '\n');
       const next = applyEvent(prior.snapshot, entry);
       persist(normalized.id, next, prior.nextSeq + 1);
-      return next;
+      return snapshotForReader(next);
     },
     /**
      * True when a journal exists for the id in either root. appendEvent
@@ -141,7 +134,7 @@ export function createLiveSessionStore({ cwd = process.cwd(), sessionId } = {}) 
       if (!id) throw new Error('session id required');
       const { snapshot } = readState(id);
       if (!opts.includeCompleted && COMPLETED_PHASES.has(snapshot.phase)) return null;
-      return snapshot;
+      return snapshotForReader(snapshot);
     },
     /**
      * Write the snapshot file for a session without appending an event. The
@@ -152,7 +145,7 @@ export function createLiveSessionStore({ cwd = process.cwd(), sessionId } = {}) 
       if (!id) throw new Error('session id required');
       const state = readState(id, { allowSnapshotFile: false });
       persist(id, state.snapshot, state.nextSeq);
-      return state.snapshot;
+      return snapshotForReader(state.snapshot);
     },
     listActiveSessions() {
       const ids = new Set();
@@ -203,7 +196,13 @@ function readSnapshotFile(snapshotPath, id, journalBytes) {
   // The journal owns identity; a snapshot file copied between session ids is
   // not a reason to answer with the wrong id.
   if (parsed.id !== id) return null;
+  parsed.browserCheckpointRevision = parsed.browserCheckpointRevision ?? parsed.checkpointRevision ?? 0;
+  delete parsed.checkpointRevision;
   return { snapshot: { ...baseSnapshot(id), ...parsed }, nextSeq };
+}
+
+function snapshotForReader(snapshot) {
+  return { ...snapshot, checkpointRevision: snapshot.browserCheckpointRevision };
 }
 
 function normalizeEvent(event, fallbackId) {
@@ -237,7 +236,6 @@ function baseSnapshot(id) {
     pendingEventSeq: null,
     pendingEvent: null,
     deliveryLease: null,
-    checkpointRevision: 0,
     browserCheckpointRevision: 0,
     publicationCheckpointRevision: 0,
     activeOwner: null,
@@ -444,14 +442,11 @@ function applyEvent(snapshot, entry) {
         const revisionField = revisionDomain === 'publication'
           ? 'publicationCheckpointRevision'
           : 'browserCheckpointRevision';
-        const currentRevision = next[revisionField]
-          ?? (revisionDomain === 'browser' ? next.checkpointRevision : 0)
-          ?? 0;
+        const currentRevision = next[revisionField] ?? 0;
         if ((event.revision ?? 0) >= currentRevision) {
           next.phase = event.phase ?? next.phase;
           next[revisionField] = event.revision ?? currentRevision;
           if (revisionDomain === 'browser') {
-            next.checkpointRevision = event.revision ?? next.checkpointRevision;
             next.activeOwner = event.owner ?? next.activeOwner;
           }
           next.arrivedVariants = event.arrivedVariants ?? next.arrivedVariants;

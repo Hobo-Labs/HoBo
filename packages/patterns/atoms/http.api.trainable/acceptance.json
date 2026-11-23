@@ -2,6 +2,6 @@
 	"params": { "name": "greeter" },
 	"expectFiles": ["src/api.ts"],
 	"expectContains": {
-		"src/api.ts": ["\"use training\"", "training.define", "greeter.greet"]
+		"src/api.ts": ["\"use training\"", "training(greet", "greeter.greet"]
 	}
 }
