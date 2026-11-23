@@ -1368,6 +1368,7 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		"packages/cli",
 		"packages/hobo",
 		"packages/iac/iac-alchemy",
+		"packages/providers/provider-agent37",
 		"packages/secret-store-claim",
 		"src/draft/technical-proofs/hobo-auth-authoring-surface",
 	];
