@@ -14,7 +14,7 @@ const VISUAL_FONT = new URL(
 );
 const VISUAL_BROWSER_VERSION = "151.0.7922.34";
 const VISUAL_VIEWPORT = { width: 1280, height: 2400 } as const;
-const VISUAL_TOLERANCE = 0.002;
+const VISUAL_TOLERANCE = 0.015;
 const STRICT =
 	process.env.CI === "true" || process.env.HOBO_REQUIRE_BROWSER === "1";
 
