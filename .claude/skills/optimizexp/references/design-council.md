@@ -275,8 +275,6 @@ review, or has a prior council cycle. Technical contracts, nonvisual documentati
 package metadata, and CLI/API implementation alone do not trigger the council.
 Use a machine-readable `no-visual-design-change` exemption with a justification
 for those changes, and include the actual acceptance tags in the decision.
-The legacy `internal-no-public-behavior` code covers only internal paths: a
-CLI, SDK, documentation, example or feature path needs `no-visual-design-change`.
 They still require independent review and validation of their
 behavior, contracts, usability, and documentation. Visual surfaces still require
 visual validation. The classifier includes the known TypeScript files that
