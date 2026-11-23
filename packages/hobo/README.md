@@ -57,7 +57,14 @@ resolves; an `env://<NAME>` locator is refused with a pointer to `choose_secret_
 because the process environment never holds credentials. Hostinger's resolvers receive
 the owner's `HOSTINGER_API_TOKEN` only in their request header. Results, `doctor`'s
 `ownerStoreSession`, and refusals carry a status and the store's label only. A host
-without form elicitation or MCP Apps gets `secure-form-unavailable`.
+without form elicitation or MCP Apps (a Claude Code cloud session, for one) gets
+`owner-page`: HoBo's own page (`mcp-owner-page.ts`), which the agent publishes as a
+claude.ai Artifact with the `db` capability. The page encrypts the owner's answer in
+their browser (ECDH P-256, HKDF-SHA256, AES-256-GCM) to a one-use key that only this
+server holds, saves the sealed text to `hobo-owner-page/<page>` in the artifact's
+database, and the agent passes that text unchanged to `submit_owner_page`. HoBo opens
+it once, within 30 minutes, records the store choice and hands the store's sign-in to
+the waiting run. The agent carries only ciphertext.
 
 ## CLI verification and remote deployment safety
 

@@ -10,6 +10,12 @@ import {
 import { z } from "zod";
 
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.js";
+import {
+	OWNER_PAGE_COLLECTION,
+	OWNER_PAGE_SECRET_FIELDS,
+	OwnerPageRefused,
+	type OwnerPages,
+} from "./mcp-owner-page.js";
 import type {
 	OwnerSessionState,
 	OwnerStoreLabel,
@@ -20,6 +26,8 @@ import type {
 export const CHOOSE_SECRET_STORE_TOOL = "choose_secret_store";
 // public-contract: the MCP App-only tool that records the owner's store choice from the picker widget.
 export const SUBMIT_STORE_CHOICE_TOOL = "submit_store_choice";
+// public-contract: the MCP tool that takes the sealed answer of HoBo's owner page.
+export const SUBMIT_OWNER_PAGE_TOOL = "submit_owner_page";
 // public-contract: the MCP App resource of the store picker.
 export const STORE_CHOICE_RESOURCE_URI = "ui://hobo/store-choice";
 const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
@@ -28,6 +36,7 @@ const MCP_APPS_EXTENSION_ID = "io.modelcontextprotocol/ui";
 export const STORE_CHOICE_TOOL_NAMES: readonly string[] = Object.freeze([
 	CHOOSE_SECRET_STORE_TOOL,
 	SUBMIT_STORE_CHOICE_TOOL,
+	SUBMIT_OWNER_PAGE_TOOL,
 ]);
 
 export type StoreChoiceSupport = Readonly<{
@@ -87,11 +96,14 @@ const STORE_FIELD: JsonObject = {
 	oneOf: STORE_OPTIONS.map((o) => ({ const: o.id, title: o.label })),
 };
 
-type StoreFieldName =
-	| "INFISICAL_PROJECT_ID"
-	| "OP_VAULT_ID"
-	| "OP_CONNECT_HOST"
-	| "BITWARDEN_SERVER_URL";
+const STORE_CHOICE_FIELD_NAMES = [
+	"INFISICAL_PROJECT_ID",
+	"OP_VAULT_ID",
+	"OP_CONNECT_HOST",
+	"BITWARDEN_SERVER_URL",
+] as const;
+
+type StoreFieldName = (typeof STORE_CHOICE_FIELD_NAMES)[number];
 
 const STORE_FIELDS = {
 	INFISICAL_PROJECT_ID: {
@@ -319,6 +331,32 @@ function labelFor(store: StoreChoice["store"]): OwnerStoreLabel {
 	return STORE_OPTIONS.find((o) => o.id === store)?.label ?? "Infisical";
 }
 
+const sealedArg = z.object({ sealed: z.string().min(1) });
+
+async function ownerPage(
+	cwd: string,
+	pages: OwnerPages,
+): Promise<CallToolResult> {
+	const opened = await pages.open(cwd);
+	return result(
+		[
+			"This host shows neither MCP forms nor MCP Apps, so HoBo made its own owner page.",
+			`1. Publish structuredContent.html unchanged as an Artifact with capabilities {"db":{}} and show it to the owner. Its key fingerprint is ${opened.fingerprint}.`,
+			"2. Wait until the owner says they sent it.",
+			`3. Read the document ${OWNER_PAGE_COLLECTION}/${opened.page} from that artifact's database and call ${SUBMIT_OWNER_PAGE_TOOL} with its "sealed" field, unchanged.`,
+			"The answer is encrypted to this HoBo server; you carry it but cannot read it. Do not ask the owner for any of it in chat.",
+		].join("\n"),
+		{
+			status: "owner-page",
+			page: opened.page,
+			fingerprint: opened.fingerprint,
+			document: `${OWNER_PAGE_COLLECTION}/${opened.page}`,
+			capabilities: { db: {} },
+			html: opened.html,
+		},
+	);
+}
+
 const UNAVAILABLE = result(
 	"This host renders neither MCP form elicitation nor MCP Apps, so HoBo cannot ask the owner privately. Nothing was collected or saved. Report that this host cannot provide a secure HoBo owner hand-off; do not ask the owner for store settings in chat.",
 	{ status: "secure-form-unavailable", reason: "no-private-owner-form" },
@@ -388,6 +426,8 @@ export function createStoreChoiceApp(
 		readonly cwd?: string;
 		readonly locatorFor?: (cwd: string) => SettingsStore;
 		readonly sessions?: OwnerStoreSessions;
+		readonly pages?: OwnerPages;
+		readonly deposit?: (name: string, value: string) => void;
 	} = {},
 ): StoreChoiceApp {
 	const locatorFor =
@@ -469,6 +509,43 @@ export function createStoreChoiceApp(
 		return record(cwd, isJsonObject(fields) ? { ...fields, store } : { store });
 	};
 
+	const submitOwnerPage = async (
+		args: JsonObject,
+		pages: OwnerPages,
+	): Promise<CallToolResult> => {
+		const sealed = sealedArg.safeParse(args);
+		if (!sealed.success)
+			return result(
+				"Pass the page's `sealed` text exactly as the artifact database holds it.",
+				{ status: "invalid", rule: "sealed-missing" },
+				true,
+			);
+		let opened: Awaited<ReturnType<OwnerPages["unseal"]>>;
+		try {
+			opened = await pages.unseal(sealed.data.sealed);
+		} catch (error) {
+			if (!(error instanceof OwnerPageRefused)) throw error;
+			return result(
+				`HoBo could not open the page's answer (${error.reason}); nothing was recorded. Call choose_secret_store for a new page.`,
+				{ status: "refused", reason: error.reason },
+				true,
+			);
+		}
+		const { answers } = opened;
+		for (const name of OWNER_PAGE_SECRET_FIELDS) {
+			const value = answers[name]?.trim();
+			if (value !== undefined && value !== "") options.deposit?.(name, value);
+		}
+		const choice: JsonObject = Object.fromEntries([
+			["store", answers.store],
+			...STORE_CHOICE_FIELD_NAMES.flatMap((name) => {
+				const value = answers[name];
+				return value === undefined ? [] : [[name, value]];
+			}),
+		]);
+		return record(opened.cwd, choice);
+	};
+
 	return {
 		handles: (tool) => STORE_CHOICE_TOOL_NAMES.includes(tool),
 		tools(support) {
@@ -491,7 +568,31 @@ export function createStoreChoiceApp(
 						}
 					: undefined),
 			};
-			if (!support.apps) return [choose];
+			if (!support.apps)
+				return support.formElicitation || options.pages === undefined
+					? [choose]
+					: [
+							choose,
+							{
+								name: SUBMIT_OWNER_PAGE_TOOL,
+								title: "Hand HoBo the owner page's sealed answer",
+								description:
+									"Pass the `sealed` text the owner's page saved, exactly as read from the artifact database. It is encrypted to this HoBo server; only HoBo can open it.",
+								inputSchema: {
+									type: "object",
+									properties: {
+										sealed: { type: "string" },
+										cwd: {
+											type: "string",
+											description:
+												"The project directory; the server's working directory by default.",
+										},
+									},
+									required: ["sealed"],
+									additionalProperties: false,
+								},
+							},
+						];
 			return [
 				choose,
 				{
@@ -546,6 +647,10 @@ export function createStoreChoiceApp(
 		},
 		async callTool(tool, args, support, request) {
 			const cwd = cwdOf(args);
+			if (tool === SUBMIT_OWNER_PAGE_TOOL) {
+				if (options.pages === undefined) return UNAVAILABLE;
+				return submitOwnerPage(args, options.pages);
+			}
 			if (tool === SUBMIT_STORE_CHOICE_TOOL) {
 				if (!support.apps || !awaitingWidget.has(cwd)) return UNAVAILABLE;
 				awaitingWidget.delete(cwd);
@@ -579,7 +684,8 @@ export function createStoreChoiceApp(
 					_meta: { "ui/resourceUri": STORE_CHOICE_RESOURCE_URI },
 				};
 			}
-			return UNAVAILABLE;
+			if (options.pages === undefined) return UNAVAILABLE;
+			return ownerPage(cwd, options.pages);
 		},
 	};
 }
