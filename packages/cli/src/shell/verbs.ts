@@ -385,6 +385,9 @@ Usage:
   hobo ci fleet status            List the CI fleet's Hostinger VPS (id, hostname, state, plan)
   hobo ci fleet restart|start <vm> Restart or start an owned VPS by id or hostname; never buys one
                                    (token: owner://HOSTINGER_API_TOKEN via choose_secret_store)
+  hobo ci fleet caches             Plan (--plan), apply (--apply) or report (--status) the ARC scale sets'
+                                   node pnpm store and image cache; --prewarm <sha> fetches that lockfile
+                                   (kubeconfig: owner://<CONNECTION_REF>_KUBECONFIG via choose_secret_store)
 
 Role: ${verb.role}
 ${statusLine}

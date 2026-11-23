@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-133 codes.
+139 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -57,6 +57,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_CONNECTION_UNCONFIRMED`](#hobo_ci_connection_unconfirmed) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_CONNECT_CEREMONY`](#hobo_ci_connect_ceremony) | `packages/hobo/src/ci-connect.ts` |
 | [`HOBO_CI_DEPLOYED`](#hobo_ci_deployed) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOYED_AWAITING_OWNER`](#hobo_ci_deployed_awaiting_owner) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_AUTH_REQUIRED`](#hobo_ci_deploy_auth_required) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_CONFLICT`](#hobo_ci_deploy_binding_conflict) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_MALFORMED`](#hobo_ci_deploy_binding_malformed) | `packages/hobo/src/ci-relay-yard.ts` |
@@ -92,8 +93,13 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`](#hobo_ci_deploy_verify_origin_unset) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_YARD_PROVIDER`](#hobo_ci_deploy_yard_provider) | `packages/hobo/src/ci-relay-adopt.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_YARD_UNREADABLE`](#hobo_ci_deploy_yard_unreadable) | `packages/hobo/src/ci-relay-yard.ts` |
-| [`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`](#hobo_ci_fleet_credential_unavailable) | `packages/hobo/src/ci-fleet.ts` |
+| [`HOBO_CI_FLEET_CACHES_FAILED`](#hobo_ci_fleet_caches_failed) | `packages/hobo/src/ci-fleet-caches.ts` |
+| [`HOBO_CI_FLEET_CACHES_NO_CLUSTER`](#hobo_ci_fleet_caches_no_cluster) | `packages/hobo/src/ci-fleet-caches.ts` |
+| [`HOBO_CI_FLEET_CACHES_UNEXPECTED_OBJECT`](#hobo_ci_fleet_caches_unexpected_object) | `packages/hobo/src/ci-fleet-caches.ts` |
+| [`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`](#hobo_ci_fleet_credential_unavailable) | `packages/hobo/src/ci-fleet-caches.ts`, `packages/hobo/src/ci-fleet.ts` |
 | [`HOBO_CI_FLEET_FAILED`](#hobo_ci_fleet_failed) | `packages/hobo/src/ci-fleet.ts` |
+| [`HOBO_CI_FLEET_KUBECONFIG_UNSUPPORTED`](#hobo_ci_fleet_kubeconfig_unsupported) | `packages/hobo/src/ci-fleet-caches.ts` |
+| [`HOBO_CI_FLEET_SCALE_SET_NOT_FOUND`](#hobo_ci_fleet_scale_set_not_found) | `packages/hobo/src/ci-fleet-caches.ts` |
 | [`HOBO_CI_GITHUB_AUTH`](#hobo_ci_github_auth) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_DEVICE`](#hobo_ci_github_device) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_FAILED`](#hobo_ci_github_failed) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
@@ -565,6 +571,14 @@ Deployed {definition.name} to Vercel project {project} ({safe.target}): {safe.ur
 
 What to do: follow the message.
 
+### HOBO_CI_DEPLOYED_AWAITING_OWNER
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+
+Message: composed when the command runs.
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_AUTH_REQUIRED
 
 Returned from `packages/hobo/src/ci-relay-deploy.ts`.
@@ -903,7 +917,7 @@ Returned from `packages/hobo/src/ci-relay-verify.ts`.
 Message:
 
 ```text
-{origin}/readyz says the relay is not configured: its config service holds no valid relay configuration yet
+{origin}/readyz says the relay is not configured: its config service holds no valid relay configuration yet{…}
 ```
 
 What to do:
@@ -1104,11 +1118,51 @@ Messages:
 
 What to do: follow the message.
 
-### HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE
+### HOBO_CI_FLEET_CACHES_FAILED
 
-Returned from `packages/hobo/src/ci-fleet.ts`.
+Returned from `packages/hobo/src/ci-fleet-caches.ts`.
+
+Message: composed when the command runs.
+
+What to do: follow the message.
+
+### HOBO_CI_FLEET_CACHES_NO_CLUSTER
+
+Returned from `packages/hobo/src/ci-fleet-caches.ts`.
+
+Messages:
+
+```text
+.hobo/ci.json has no kubernetes pool {wanted} with a scale set.
+```
+
+```text
+.hobo/ci.json declares no kubernetes pool with a scale set, so hobo ci fleet caches has no cluster to reach.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_FLEET_CACHES_UNEXPECTED_OBJECT
+
+Returned from `packages/hobo/src/ci-fleet-caches.ts`.
 
 Message:
+
+```text
+The apiserver returned an object that is not an AutoscalingRunnerSet or Job list.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE
+
+Returned from `packages/hobo/src/ci-fleet-caches.ts`, `packages/hobo/src/ci-fleet.ts`.
+
+Messages:
+
+```text
+hobo ci fleet caches needs owner://{entry} from the owner's store session, and none resolved. Run HoBo MCP's choose_secret_store to connect the owner's store, then ask again.
+```
 
 ```text
 hobo ci fleet needs owner://HOSTINGER_API_TOKEN from the owner's store session, and none resolved. Run HoBo MCP's choose_secret_store to connect the owner's store, then ask again.
@@ -1117,6 +1171,7 @@ hobo ci fleet needs owner://HOSTINGER_API_TOKEN from the owner's store session, 
 What to do:
 
 - Call the HoBo MCP tool choose_secret_store for this project directory.
+- Have the owner store the cluster's kubeconfig in that store under {entry}.
 - Have the owner store the Hostinger API token in that store under {…}.
 
 ### HOBO_CI_FLEET_FAILED
@@ -1124,6 +1179,30 @@ What to do:
 Returned from `packages/hobo/src/ci-fleet.ts`.
 
 Message: composed when the command runs.
+
+What to do: follow the message.
+
+### HOBO_CI_FLEET_KUBECONFIG_UNSUPPORTED
+
+Returned from `packages/hobo/src/ci-fleet-caches.ts`.
+
+Message: composed when the command runs.
+
+What to do: follow the message.
+
+### HOBO_CI_FLEET_SCALE_SET_NOT_FOUND
+
+Returned from `packages/hobo/src/ci-fleet-caches.ts`.
+
+Messages:
+
+```text
+No AutoscalingRunnerSet {input.namespace}/{input.name} on the cluster.
+```
+
+```text
+The cluster has no AutoscalingRunnerSet in namespace {namespace}.
+```
 
 What to do: follow the message.
 

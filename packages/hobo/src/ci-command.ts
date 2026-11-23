@@ -29,12 +29,18 @@ import {
 	redirectReceiverFrom,
 	withoutSecretEnv,
 } from "@hobo/hobo-ci";
+import type { KubernetesTlsMaterial } from "@hobo/provider-kubernetes";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { type CiCommand, findCiCommand } from "./ci-commands.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runCiFleet } from "./ci-fleet.js";
+import {
+	defaultKubernetesTransport,
+	loadFleetClusters,
+	runCiFleetCaches,
+} from "./ci-fleet-caches.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
 import { runCiInit } from "./ci-init.js";
@@ -465,12 +471,35 @@ export function createCiCommand(
 		fleetCredentials?: (cwd: string) => CredentialResolver;
 		hostingerHttp?: HttpTransport;
 		commands?: readonly CiCommand[];
+		kubernetesHttp?: (tls: KubernetesTlsMaterial) => HttpTransport;
 	} = {},
 ): CommandModule {
 	return {
 		implemented: true,
 		async run({ args, flags, emitProgress }) {
 			if (args.length === 0) return { message: CI_HELP };
+			if (args[0] === "fleet") {
+				const [, verb, ...rest] = args;
+				if (verb === "caches") {
+					const local = await localRepository(deps, flags.cwd, {});
+					return runCiFleetCaches({
+						args: rest,
+						repository: local.repository,
+						clusters: () => loadFleetClusters(local.root),
+						credentials: deps.fleetCredentials?.(flags.cwd),
+						transport: deps.kubernetesHttp ?? defaultKubernetesTransport,
+					});
+				}
+				const option = args.find((arg) => arg.startsWith("-"));
+				if (option !== undefined)
+					return usage(`${option} does not apply to hobo ci fleet.`);
+				return runCiFleet({
+					positionals: args.slice(1),
+					credentials: deps.fleetCredentials?.(flags.cwd),
+					transport:
+						deps.hostingerHttp ?? createFetchHttpTransport(globalThis.fetch),
+				});
+			}
 			const first = args[0] ?? "";
 			const tabled = BUILT_IN_CI_COMMANDS.some((name) => name === first)
 				? undefined
@@ -509,19 +538,6 @@ export function createCiCommand(
 			const command = positionals[0] ?? "";
 			if (!BUILT_IN_CI_COMMANDS.some((name) => name === command))
 				return usage("Unknown CI command. Run hobo ci --help.");
-			if (command === "fleet") {
-				const option = Object.entries(values).find(
-					([, value]) => value !== undefined,
-				);
-				if (option)
-					return usage(`--${option[0]} does not apply to hobo ci fleet.`);
-				return runCiFleet({
-					positionals: positionals.slice(1),
-					credentials: deps.fleetCredentials?.(flags.cwd),
-					transport:
-						deps.hostingerHttp ?? createFetchHttpTransport(globalThis.fetch),
-				});
-			}
 			if (command === "init") {
 				const local = await localRepository(deps, flags.cwd, values);
 				return runCiInit({
