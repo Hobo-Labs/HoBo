@@ -36,20 +36,52 @@ function mergeInputWithoutConsensus() {
 	return input;
 }
 
-test("public product paths require designer consensus", () => {
+test("visual surfaces require designer consensus", () => {
 	for (const changedPath of [
 		"apps/web/src/onboarding.tsx",
+		"packages/cli/src/tui/app.tsx",
+	]) {
+		const result = evaluateDesignRelevance({
+			changedPaths: [changedPath],
+			exemption: {
+				code: "no-visual-design-change",
+				justification: "Claims no visual change, but the path renders UI.",
+			},
+		});
+
+		assert.equal(result.required, true, changedPath);
+		assert.equal(result.exemptionAccepted, false, changedPath);
+		assert.deepEqual(result.reasons, ["design-relevant-path"], changedPath);
+	}
+});
+
+test("nonvisual public paths need a justified no-visual-design-change exemption", () => {
+	for (const changedPath of [
 		"packages/cli/src/commands/deploy.ts",
 		"packages/sdk/src/public-api.ts",
 		"docs/tutorials/first-deploy.md",
 		"examples/hello-hobo/README.md",
 		".optimizexp/features/deploy-journey/feature.json",
 	]) {
-		const result = evaluateDesignRelevance({ changedPaths: [changedPath] });
+		const unclassified = evaluateDesignRelevance({
+			changedPaths: [changedPath],
+		});
+		assert.equal(unclassified.required, true, changedPath);
+		assert.equal(unclassified.exemptionAccepted, false, changedPath);
+		assert.deepEqual(unclassified.reasons, [], changedPath);
 
-		assert.equal(result.required, true, changedPath);
-		assert.equal(result.exemptionAccepted, false, changedPath);
-		assert.notEqual(result.reasons.length, 0, changedPath);
+		assert.deepEqual(
+			evaluateDesignRelevance({
+				changedPaths: [changedPath],
+				exemption: {
+					code: "no-visual-design-change",
+					justification:
+						"Command, contract, and prose changes only; no rendered surface changes.",
+				},
+			}),
+			{ required: false, reasons: [], exemptionAccepted: true },
+			changedPath,
+		);
 	}
 });
 
