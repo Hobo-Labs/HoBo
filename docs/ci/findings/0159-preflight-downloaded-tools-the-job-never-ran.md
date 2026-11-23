@@ -1,7 +1,7 @@
 ---
 type: CI Performance Finding
 title: "Finding 159: preflight downloaded tools the job never ran"
-description: "On hobo-trunk, ci-runner-preflight spent 8–15 minutes of each 20-minute job downloading python, betterleaks and syft at about 15 KiB/s. Those tools are now job-scoped, preflight takes seconds, and four job limits drop to twice their longest measured run."
+description: "On hobo-trunk, ci-runner-preflight spent 8–15 minutes of each 20-minute job downloading python, betterleaks and syft at about 15 KiB/s. Those tools are now job-scoped, preflight takes seconds, and three job limits drop to twice their longest measured run."
 tags: [hobo, ci, performance, preflight, mise, runner-image, timeouts]
 ---
 
@@ -34,6 +34,5 @@ With preflight down to seconds, a job's limit can follow its own work. From the 
 | Scripts tests build | 5 min (35) | 20 min | 10 min |
 | Scripts tests | 3 min (140) | 20 min | 15 min (a 12-minute step) |
 | PR off-path checks | 3 min (20) | 20 min | 10 min |
-| Release Freight realize proof (offline) | 5 min (39) | 20 min | 10 min |
 
-Live data engines and state-machine verification keep 20 minutes, which their step budgets need. Most samples ran on GitHub-hosted machines. Re-measure on `hobo-trunk` once its image carries the current pins.
+Live data engines and state-machine verification keep 20 minutes, which their step budgets need. The release Freight realize proof also keeps 20 minutes: on `hobo-trunk` a cold build of the hobo CLI alone ran past six minutes, and the whole job past ten, which the GitHub-hosted samples did not show. Most samples ran on GitHub-hosted machines. Re-measure on `hobo-trunk` once its image carries the current pins.
