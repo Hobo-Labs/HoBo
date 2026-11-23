@@ -474,12 +474,6 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 			"createUpstashTemporaryRedisResolver",
 		),
 		refused(
-			"agent37",
-			"@hobo/provider-agent37",
-			"Agent37 is a CI runner provider bound by CI policy, not a hosting target.",
-			"deliver to a hosting provider; select Agent37 runners through @hobo/ci",
-		),
-		refused(
 			"agentv",
 			"@hobo/provider-agentv",
 			"agentV grades recorded agent trajectories; it is an evaluation engine, not a delivery target.",
