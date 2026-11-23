@@ -108,6 +108,7 @@ export function createMcpOwnerChannel(
 		},
 		async confirm({ url, message }) {
 			const answer = options.form?.({
+				mode: "form",
 				// One line, and the link as its own field (prefilled, marked as a
 				// link): an address in the text could be neither clicked nor
 				// copied.
