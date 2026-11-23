@@ -15,6 +15,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | Agent tooling | [`agent-tooling.md`](./agent-tooling.md) | Local agent-tooling setup, trust boundaries, data-egress notes, and maintenance expectations. |
 | CI performance | [`ci/performance.md`](./ci/performance.md) | Where HoBo CI Fabric wall time goes on the self-hosted box, the fixes landed, and what is left for a five-minute run. |
 | Fleet enrollment | [`ci/fleet-enrollment.md`](./ci/fleet-enrollment.md) | Enrolled execution fleet operations, strict v2 at-most-once claims, the generated [scorecard](./ci/fleet-enrollment-scorecard.md), and [`fleet-enrollment.yml`](../.github/workflows/fleet-enrollment.yml) CI lane on `hobo` runners (package-relative vitest paths under `@hobo/ci`). |
+| Provider pricing scorecard | [`pricing/provider-pricing-scorecard.md`](./pricing/provider-pricing-scorecard.md) | Acceptance rows for provider pricing; each `pass` row names the test that proves it, enforced by the `@hobo/pricing` design-scorecard eval. |
 | Automations | [`automations/hobo-issue-worker.md`](./automations/hobo-issue-worker.md) | How issue-worker automation should interpret design docs and report changes. |
 
 ## Reference directories outside `docs/`

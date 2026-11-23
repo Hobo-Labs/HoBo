@@ -18,7 +18,7 @@ on:
       - "packages/events/corpus/golden-replay-baseline.json"
       - "packages/dispatcher/**"
       - "docs/design/provider-pricing-commercial-terms.md"
-      - "docs/design/provider-pricing-scorecard.md"
+      - "docs/pricing/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
   push:
     branches: [main]
@@ -37,7 +37,7 @@ on:
       - "packages/events/corpus/golden-replay-baseline.json"
       - "packages/dispatcher/**"
       - "docs/design/provider-pricing-commercial-terms.md"
-      - "docs/design/provider-pricing-scorecard.md"
+      - "docs/pricing/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
   workflow_dispatch:
 

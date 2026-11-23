@@ -28,7 +28,7 @@ Update packages/pricing/test/design-scorecard-eval.test.ts:
 - Remove deferred-only test block
 - Add assertion that no row has status deferred or partial
 
-Update docs/design/provider-pricing-scorecard.md row §12.5 to pass with evidence_file packages/pricing/test/billing-sync.test.ts and evidence_test matching one of the §12 Phase 5 test names above.
+Update docs/pricing/provider-pricing-scorecard.md row §12.5 to pass with evidence_file packages/pricing/test/billing-sync.test.ts and evidence_test matching one of the §12 Phase 5 test names above.
 
 Match existing code style (PricingFault codes as strings in sync rejections, biome, no .mjs in src except design-scorecard.mts pattern - use .ts in sync/).
 

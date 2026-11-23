@@ -2,12 +2,12 @@
 type: Acceptance Scorecard
 title: "Provider pricing acceptance scorecard"
 description: "Acceptance rows for provider-pricing-commercial-terms.md; each pass row names the test that proves it, parsed by the pricing package design-scorecard eval."
-tags: [hobo, design, pricing, acceptance]
+tags: [hobo, pricing, acceptance]
 ---
 
 # Provider pricing acceptance scorecard
 
-Tracks acceptance of [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) on branch `cursor/hobo-pricing-81a7`. The CI eval in `packages/pricing/test/design-scorecard-eval.test.ts` parses the table below: every row must be `pass` with evidence; `partial`, `fail`, and `deferred` block merge.
+Tracks acceptance of [`provider-pricing-commercial-terms.md`](../design/provider-pricing-commercial-terms.md) on branch `cursor/hobo-pricing-81a7`. The CI eval in `packages/pricing/test/design-scorecard-eval.test.ts` parses the table below: every row must be `pass` with evidence; `partial`, `fail`, and `deferred` block merge.
 
 Each `pass` row is checked statically, without spawning another test runner. The evidence file must exist and its nearest `package.json` must declare `test: "vitest run"`. Because these packages use Vitest's default includes, the file must be under that package's `test/` or `contracts/` directory and have a default `.test`/`.spec` TypeScript or JavaScript suffix. TypeScript AST analysis verifies that an enabled `it`/`test` declaration matches the evidence pattern against the full name, including enclosing `describe` titles, and honors `.skip`, `.todo`, and `.only` selection. The owning package's test task still executes the evidence test behavior in the same gate.
 
