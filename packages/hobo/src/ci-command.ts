@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs, promisify } from "node:util";
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
+import type { CredentialResolver } from "@hobo/cd";
 import { loadCiProjectFromDirectory } from "@hobo/ci-gh-actions/cli-serve";
 import {
 	CiRelayClientError,
@@ -32,6 +33,7 @@ import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
+import { runCiFleet } from "./ci-fleet.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
 import { runCiInit } from "./ci-init.js";
@@ -57,6 +59,7 @@ import {
 	SECRET_STORE_ONLY_OPTIONS,
 } from "./ci-secret-store.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
+import { createFetchHttpTransport } from "./resolver-iac-provider.js";
 import type { VercelFetch } from "./vercel-client.js";
 import type { VercelBuildRunner } from "./vercel-prebuilt.js";
 
@@ -436,6 +439,8 @@ export function createCiCommand(
 		probeHttp?: HttpTransport;
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
+		fleetCredentials?: (cwd: string) => CredentialResolver;
+		hostingerHttp?: HttpTransport;
 	} = {},
 ): CommandModule {
 	return {
@@ -484,9 +489,23 @@ export function createCiCommand(
 					"init",
 					"signals",
 					"diagnose",
+					"fleet",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
+			if (command === "fleet") {
+				const option = Object.entries(values).find(
+					([, value]) => value !== undefined,
+				);
+				if (option)
+					return usage(`--${option[0]} does not apply to hobo ci fleet.`);
+				return runCiFleet({
+					positionals: positionals.slice(1),
+					credentials: deps.fleetCredentials?.(flags.cwd),
+					transport:
+						deps.hostingerHttp ?? createFetchHttpTransport(globalThis.fetch),
+				});
+			}
 			if (command === "init") {
 				const local = await localRepository(deps, flags.cwd, values);
 				return runCiInit({
