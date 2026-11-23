@@ -87,6 +87,7 @@ class CiLinkSaveError extends Error {}
 
 export const CI_HELP = verbHelpText("ci", { implemented: true });
 
+// public-contract: the owner-store entry hobo ci reads its CI account credential from.
 export const CI_ACCOUNT_TOKEN_REF = "owner://HOBO_CI_ACCOUNT_TOKEN";
 
 async function ciAccountToken(

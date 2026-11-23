@@ -140,6 +140,7 @@ export type GithubCredentialResolver = Readonly<{
 	): Promise<Readonly<Record<string, string>>>;
 }>;
 
+// public-contract: the owner-store entry the GitHub runner reads its installation token from.
 export const GITHUB_INSTALLATION_TOKEN_REF =
 	"owner://GITHUB_INSTALLATION_TOKEN";
 

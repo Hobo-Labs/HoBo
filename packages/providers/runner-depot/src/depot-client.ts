@@ -125,6 +125,7 @@ export type DepotCredentialResolver = Readonly<{
 	): Promise<Readonly<Record<string, string>>>;
 }>;
 
+// public-contract: the owner-store entry the Depot runner reads its project token from.
 export const DEPOT_PROJECT_TOKEN_REF = "owner://DEPOT_PROJECT_TOKEN";
 
 export function ownerDepotTokenProvider(

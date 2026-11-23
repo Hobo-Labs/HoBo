@@ -22,7 +22,7 @@ import {
 	type JsonObject,
 } from "../json.js";
 
-/** Default HMAC only allowed in development / explicit opt-in. */
+// public-contract: the development-only SVID HMAC key, used only when the caller opts in.
 export const DEFAULT_SVID_HMAC_SECRET = "hobo-local-svid-dev-only" as const;
 
 export function resolveSvidHmacSecret(input: {
