@@ -9,8 +9,8 @@ import {
 import { InMemorySpendReader } from "../../../packages/ci/src/runner-order/testing.js";
 import {
 	DepotUsageReader,
-	envCredentialResolver,
 	NamespaceUsageReader,
+	ownerStoreCredentialResolver,
 	PROVIDER_USAGE_MAX_AGE_MS,
 	PROVIDER_USAGE_TIMEOUT_MS,
 	type ProviderUsageReader,
@@ -32,7 +32,7 @@ const NOW = Date.UTC(2026, 10, 17, 12);
 const ACCOUNT = "acct-1";
 
 type UsageState = {
-	env: NodeJS.ProcessEnv;
+	stored: Map<string, string>;
 	subscriptions: ProviderUsageSubscription[];
 	ledger: Map<HostedRunnerProvider, number>;
 	fake: UsagePactFake;
@@ -67,18 +67,24 @@ function readersOver(
 }
 
 Before({ tags: "@P02" }, () => {
-	const env: NodeJS.ProcessEnv = {};
+	const stored = new Map<string, string>();
 	const fake = usagePactFake();
 	const subscriptions: ProviderUsageSubscription[] = [];
 	usage = {
-		env,
+		stored,
 		subscriptions,
 		ledger: new Map(),
 		fake,
 		sync: new ProviderUsageSync({
 			subscriptions: async () => subscriptions,
 			readers: readersOver(fake),
-			credentials: envCredentialResolver(env),
+			credentials: ownerStoreCredentialResolver({
+				resolve: async (ref) => {
+					const token = stored.get(ref);
+					if (token === undefined) throw new Error(`${ref} is not stored`);
+					return { token };
+				},
+			}),
 			now: () => NOW,
 		}),
 		outcomes: [],
@@ -87,13 +93,13 @@ Before({ tags: "@P02" }, () => {
 
 Given("read-only usage tokens for depot, namespace and warpbuild", () => {
 	for (const provider of ["depot", "namespace", "warpbuild"] as const) {
-		const variable = `${provider.toUpperCase()}_USAGE_TOKEN`;
-		usage.env[variable] = `${provider}-usage-token`;
+		const reference = `owner://${provider.toUpperCase()}_USAGE_TOKEN`;
+		usage.stored.set(reference, `${provider}-usage-token`);
 		usage.subscriptions.push(
 			parseProviderUsageSubscription({
 				accountId: ACCOUNT,
 				provider,
-				credential: `env:${variable}`,
+				credential: reference,
 			}),
 		);
 	}
@@ -117,8 +123,10 @@ When("provider usage is synced from the simulated provider APIs", async () => {
 When(
 	"the {string} token is revoked and provider usage is synced again",
 	async (provider: string) => {
-		usage.env[`${provider.toUpperCase()}_USAGE_TOKEN`] =
-			`${provider}-revoked-token`;
+		usage.stored.set(
+			`owner://${provider.toUpperCase()}_USAGE_TOKEN`,
+			`${provider}-revoked-token`,
+		);
 		usage.outcomes = await usage.sync.syncOnce();
 	},
 );
@@ -173,7 +181,7 @@ Then("no token value is kept by the sync", () => {
 		usage.sync.readings(ACCOUNT),
 		usage.subscriptions,
 	]);
-	for (const token of Object.values(usage.env))
+	for (const token of usage.stored.values())
 		assert.ok(!kept.includes(String(token)), "a token was kept");
 	for (const header of usage.fake.authorizations)
 		assert.match(header, /^Bearer (depot|namespace|warpbuild)-(usage|revoked)-token$/u);

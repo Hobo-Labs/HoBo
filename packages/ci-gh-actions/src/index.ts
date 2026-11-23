@@ -580,8 +580,10 @@ export {
 export {
 	type CredentialResolver,
 	DepotUsageReader,
-	envCredentialResolver,
 	NamespaceUsageReader,
+	type OwnerCredentialSource,
+	ownerStoreCredentialResolver,
+	PROVIDER_USAGE_CREDENTIAL_SCOPE,
 	PROVIDER_USAGE_MAX_AGE_MS,
 	PROVIDER_USAGE_SYNC_INTERVAL_MS,
 	type ProviderUsageReader,

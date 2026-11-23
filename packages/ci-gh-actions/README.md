@@ -1669,8 +1669,8 @@ built, not proven. A CLI for these operations is not yet included.
 `hobo ci machine connect --repo <owner/name>` makes the computer it runs on a
 machine a runner order can route jobs to (ADR-0183,
 [`docs/ci/runner-order.md`](../../docs/ci/runner-order.md)).
-It needs only an installed CLI and a GitHub sign-in (`gh auth login`, or a
-token in `GH_TOKEN`); it assumes no checkout. The command lives in
+It needs only an installed CLI and a GitHub sign-in (`gh auth login`; the
+token comes from `gh auth token`, the gh CLI's own session); it assumes no checkout. The command lives in
 `packages/hobo/src/ci-machine-connect.ts`; the worker it runs is in
 [`src/machine-worker/`](src/machine-worker/MACHINE-WORKER.md), exported as
 `@hobo/ci-gh-actions/machine-worker`.
@@ -1866,8 +1866,9 @@ and day each was read.
 - `DepotUsageReader`, `NamespaceUsageReader` and `WarpbuildUsageReader` make
   read calls only. A refusal, another shape or a network failure is
   "unmeasured"; a reader never throws.
-- A subscription holds a credential reference (`env:NAME`), never a token.
-  `envCredentialResolver` resolves it per sync, and no reading keeps it.
+- A subscription holds an owner-store credential reference
+  (`owner://NAME`), never a token. `ownerStoreCredentialResolver` resolves it
+  per sync through the owner store session, and no reading keeps it.
 - `ProviderUsageSync` syncs every subscription; `scheduleProviderUsageSync`
   runs it at start and hourly. `SyncedSpendReader` answers the ledger's
   figures with each fresh vendor reading in its place, from memory, so a

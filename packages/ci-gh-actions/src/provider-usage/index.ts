@@ -35,8 +35,10 @@ export {
 } from "./reader.js";
 export {
 	type CredentialResolver,
-	envCredentialResolver,
 	NAMESPACE_DEFAULT_REGION,
+	type OwnerCredentialSource,
+	ownerStoreCredentialResolver,
+	PROVIDER_USAGE_CREDENTIAL_SCOPE,
 	type ProviderUsageSubscription,
 	type ProviderUsageSubscriptionInput,
 	parseProviderUsageSubscription,

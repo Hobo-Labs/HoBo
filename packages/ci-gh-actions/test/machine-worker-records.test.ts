@@ -42,6 +42,19 @@ describe("the machine worker's records", () => {
 			);
 	});
 
+	it("refuses a stored machine that carries private key material", () => {
+		const pem = ["-----BEGIN", "PRIVATE", "KEY-----"].join(" ");
+		expect(() =>
+			parseStoredMachine(
+				JSON.stringify({
+					id: "m-7f3a0c2b9d41",
+					name: "studio",
+					privateKeyPem: pem,
+				}),
+			),
+		).toThrowError(MachineWorkerRecordRejection);
+	});
+
 	it("prints each worker event as the line it parses back from", () => {
 		const advertised = workerEvent({
 			type: "worker.advertised",

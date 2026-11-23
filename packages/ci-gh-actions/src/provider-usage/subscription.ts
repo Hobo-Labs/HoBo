@@ -1,4 +1,4 @@
-import { looksLikeSecret, SECRET_REFERENCE } from "../runner-integrations.js";
+import { looksLikeSecret } from "../runner-integrations.js";
 
 // public-contract: the hosted providers whose own usage API HoBo reads.
 export const USAGE_SYNC_PROVIDERS = [
@@ -26,6 +26,10 @@ export type ProviderUsageSubscriptionInput = Readonly<{
 }>;
 
 const REGION = /^[a-z]{2,8}$/u;
+const OWNER_REFERENCE = /^owner:\/\/[A-Z][A-Z0-9_]{0,63}$/u;
+
+// public-contract: the scope a provider usage credential is resolved for in the owner's store session.
+export const PROVIDER_USAGE_CREDENTIAL_SCOPE = "hobo-ci-provider-usage";
 
 function usageProvider(text: string): UsageSyncProvider | undefined {
 	const lower = text.trim().toLowerCase();
@@ -44,11 +48,11 @@ export function parseProviderUsageSubscription(
 			`usage is synced only from ${USAGE_SYNC_PROVIDERS.join(", ")}, not "${input.provider}"`,
 		);
 	const credential = input.credential.trim();
-	if (!SECRET_REFERENCE.test(credential))
+	if (!OWNER_REFERENCE.test(credential))
 		throw new Error(
 			looksLikeSecret(credential)
-				? `the ${provider} credential looks like a token; give a reference such as env:${provider.toUpperCase()}_USAGE_TOKEN, never a token value`
-				: `the ${provider} credential must be a reference such as env:${provider.toUpperCase()}_USAGE_TOKEN`,
+				? `the ${provider} credential looks like a token; give an owner-store reference such as owner://${provider.toUpperCase()}_USAGE_TOKEN, never a token value`
+				: `the ${provider} credential must be an owner-store reference such as owner://${provider.toUpperCase()}_USAGE_TOKEN`,
 		);
 	if (provider !== "namespace") {
 		if (input.region !== undefined)
@@ -72,13 +76,22 @@ export type CredentialResolver = (
 	reference: string,
 ) => Promise<string | undefined>;
 
-export function envCredentialResolver(
-	env: NodeJS.ProcessEnv,
+export type OwnerCredentialSource = Readonly<{
+	resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>>;
+}>;
+
+export function ownerStoreCredentialResolver(
+	source: OwnerCredentialSource,
 ): CredentialResolver {
 	return async (reference) => {
-		const match = /^env:([A-Z][A-Z0-9_]{0,63})$/u.exec(reference);
-		if (!match?.[1]) return undefined;
-		const value = env[match[1]]?.trim();
-		return value === undefined || value === "" ? undefined : value;
+		if (!OWNER_REFERENCE.test(reference)) return undefined;
+		const material = await source
+			.resolve(reference, PROVIDER_USAGE_CREDENTIAL_SCOPE)
+			.catch(() => undefined);
+		const token = material?.token?.trim();
+		return token === undefined || token === "" ? undefined : token;
 	};
 }

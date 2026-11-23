@@ -318,8 +318,8 @@ describe("a macOS machine", () => {
 			`actions-runner-osx-arm64-${RUNNER_VERSION}`,
 		);
 		const run = host.calls.find((call) => call.command.endsWith("run.sh"));
-		expect(run?.env.GH_TOKEN).toBeUndefined();
-		expect(run?.env.GITHUB_TOKEN).toBeUndefined();
+		expect(Object.keys(run?.env ?? {})).not.toContain("GH_TOKEN");
+		expect(Object.keys(run?.env ?? {})).not.toContain("GITHUB_TOKEN");
 		expect(run?.env.HOME).toBe("/Users/octocat");
 		expect(
 			(await readdir(cacheDir)).filter((name) => name.startsWith("job-")),

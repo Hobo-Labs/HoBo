@@ -33,12 +33,15 @@ Each figure has a known limit:
 ## Credentials
 
 A subscription (`parseProviderUsageSubscription`) names an account, a
-provider, Namespace's region where it applies, and a credential reference:
-`env:NAME`, or `github-secret:NAME` in the form runner integrations use. A
-value that looks like a token is refused with a sentence that does not repeat
-it. `envCredentialResolver` resolves `env:NAME` from the relay's environment
-for each sync; a `github-secret:` reference lives in a repository's Actions
-secrets, which a relay cannot read, so that provider stays on the ledger.
+provider, Namespace's region where it applies, and a credential reference in
+the owner's store: `owner://NAME`. Any other reference (`env:NAME`,
+`github-secret:NAME`) is refused, and a value that looks like a token is
+refused with a sentence that does not repeat it.
+`ownerStoreCredentialResolver` resolves `owner://NAME` for each sync through
+the owner store session's credential resolver (the one HoBo MCP's
+`choose_secret_store` connects), with the scope `hobo-ci-provider-usage`; it
+never reads the process environment. A reference the store does not hold
+leaves that provider on the ledger.
 Tokens are never stored: a reading holds an account, a provider, a month,
 dollars, the time it was read and the source page.
 

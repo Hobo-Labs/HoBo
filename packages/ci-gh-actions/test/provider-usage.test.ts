@@ -6,8 +6,9 @@ import {
 import { describe, expect, it } from "vitest";
 import {
 	DepotUsageReader,
-	envCredentialResolver,
 	namespacePeriod,
+	ownerStoreCredentialResolver,
+	PROVIDER_USAGE_CREDENTIAL_SCOPE,
 	PROVIDER_USAGE_MAX_AGE_MS,
 	PROVIDER_USAGE_SYNC_INTERVAL_MS,
 	type ProviderUsageReader,
@@ -30,21 +31,35 @@ describe("parseProviderUsageSubscription", () => {
 			parseProviderUsageSubscription({
 				accountId: "acct-1",
 				provider: "Namespace",
-				credential: "env:NAMESPACE_USAGE_TOKEN",
+				credential: "owner://NAMESPACE_USAGE_TOKEN",
 			}),
 		).toEqual({
 			accountId: "acct-1",
 			provider: "namespace",
-			credential: "env:NAMESPACE_USAGE_TOKEN",
+			credential: "owner://NAMESPACE_USAGE_TOKEN",
 			region: "us",
 		});
 		expect(
 			parseProviderUsageSubscription({
 				accountId: "acct-1",
 				provider: "depot",
-				credential: "github-secret:DEPOT_TOKEN",
+				credential: "owner://DEPOT_USAGE_TOKEN",
 			}).region,
 		).toBeUndefined();
+	});
+
+	it("refuses a reference outside the owner's store", () => {
+		for (const credential of [
+			"env:DEPOT_USAGE_TOKEN",
+			"github-secret:DEPOT_USAGE_TOKEN",
+		])
+			expect(() =>
+				parseProviderUsageSubscription({
+					accountId: "acct-1",
+					provider: "depot",
+					credential,
+				}),
+			).toThrow(/must be an owner-store reference/u);
 	});
 
 	it("refuses a token value without repeating it", () => {
@@ -55,7 +70,7 @@ describe("parseProviderUsageSubscription", () => {
 				provider: "warpbuild",
 				credential: token,
 			}),
-		).toThrow(/looks like a token; give a reference/u);
+		).toThrow(/looks like a token; give an owner-store reference/u);
 		try {
 			parseProviderUsageSubscription({
 				accountId: "acct-1",
@@ -72,14 +87,14 @@ describe("parseProviderUsageSubscription", () => {
 			parseProviderUsageSubscription({
 				accountId: "a",
 				provider: "blacksmith",
-				credential: "env:X",
+				credential: "owner://X",
 			}),
 		).toThrow(/only from depot, namespace, warpbuild/u);
 		expect(() =>
 			parseProviderUsageSubscription({
 				accountId: "a",
 				provider: "depot",
-				credential: "env:X",
+				credential: "owner://X",
 				region: "eu",
 			}),
 		).toThrow(/only a namespace subscription names a region/u);
@@ -87,7 +102,7 @@ describe("parseProviderUsageSubscription", () => {
 			parseProviderUsageSubscription({
 				accountId: "a",
 				provider: "namespace",
-				credential: "env:X",
+				credential: "owner://X",
 				region: "eu.evil.example",
 			}),
 		).toThrow(/not a Namespace region/u);
@@ -95,22 +110,42 @@ describe("parseProviderUsageSubscription", () => {
 			parseProviderUsageSubscription({
 				accountId: " ",
 				provider: "depot",
-				credential: "env:X",
+				credential: "owner://X",
 			}),
 		).toThrow(/account id/u);
 	});
 });
 
-describe("envCredentialResolver", () => {
-	it("reads env: references only", async () => {
-		const resolve = envCredentialResolver({
-			DEPOT_USAGE: " value ",
-			EMPTY: "",
-		});
-		expect(await resolve("env:DEPOT_USAGE")).toBe("value");
-		expect(await resolve("env:EMPTY")).toBeUndefined();
-		expect(await resolve("env:MISSING")).toBeUndefined();
+function ownerStore(stored: ReadonlyMap<string, string>) {
+	const scopes: string[] = [];
+	return {
+		scopes,
+		resolve: async (ref: string, scope: string) => {
+			scopes.push(scope);
+			const token = stored.get(ref);
+			if (token === undefined) throw new Error(`${ref} is not stored`);
+			return { token };
+		},
+	};
+}
+
+describe("ownerStoreCredentialResolver", () => {
+	it("reads owner:// references from the owner's store only", async () => {
+		const store = ownerStore(
+			new Map([
+				["owner://DEPOT_USAGE", " value "],
+				["owner://EMPTY", ""],
+			]),
+		);
+		const resolve = ownerStoreCredentialResolver(store);
+		expect(await resolve("owner://DEPOT_USAGE")).toBe("value");
+		expect(await resolve("owner://EMPTY")).toBeUndefined();
+		expect(await resolve("owner://MISSING")).toBeUndefined();
+		expect(await resolve("env:DEPOT_USAGE")).toBeUndefined();
 		expect(await resolve("github-secret:DEPOT_USAGE")).toBeUndefined();
+		expect(new Set(store.scopes)).toEqual(
+			new Set([PROVIDER_USAGE_CREDENTIAL_SCOPE]),
+		);
 	});
 });
 
@@ -225,27 +260,27 @@ function world(nowMs = NOW) {
 		{
 			accountId: "acct-1",
 			provider: "depot",
-			credential: "env:DEPOT",
+			credential: "owner://DEPOT",
 			region: undefined,
 		},
 		{
 			accountId: "acct-1",
 			provider: "namespace",
-			credential: "env:NAMESPACE",
+			credential: "owner://NAMESPACE",
 			region: "eu",
 		},
 		{
 			accountId: "acct-1",
 			provider: "warpbuild",
-			credential: "env:WARPBUILD",
+			credential: "owner://WARPBUILD",
 			region: undefined,
 		},
 	];
-	const env: NodeJS.ProcessEnv = {
-		DEPOT: "depot-secret-value",
-		NAMESPACE: "namespace-secret-value",
-		WARPBUILD: "warpbuild-secret-value",
-	};
+	const stored = new Map([
+		["owner://DEPOT", "depot-secret-value"],
+		["owner://NAMESPACE", "namespace-secret-value"],
+		["owner://WARPBUILD", "warpbuild-secret-value"],
+	]);
 	const sync = new ProviderUsageSync({
 		subscriptions: async () => subscriptions,
 		readers: new Map<UsageSyncProvider, ProviderUsageReader>([
@@ -253,7 +288,7 @@ function world(nowMs = NOW) {
 			["namespace", namespace],
 			["warpbuild", warpbuild],
 		]),
-		credentials: envCredentialResolver(env),
+		credentials: ownerStoreCredentialResolver(ownerStore(stored)),
 		now: () => clock.nowMs,
 	});
 	const ledger = new InMemorySpendReader(
@@ -280,7 +315,7 @@ function world(nowMs = NOW) {
 		namespace,
 		warpbuild,
 		subscriptions,
-		env,
+		stored,
 		sync,
 		ledger,
 		spend,
@@ -320,8 +355,7 @@ describe("ProviderUsageSync and SyncedSpendReader", () => {
 		const w = world();
 		const outcomes = await w.sync.syncOnce();
 		const kept = JSON.stringify([outcomes, w.sync.readings("acct-1")]);
-		for (const value of Object.values(w.env))
-			expect(kept).not.toContain(String(value));
+		for (const value of w.stored.values()) expect(kept).not.toContain(value);
 	});
 
 	it("drops a provider to the ledger when its read fails, its token goes or it throws", async () => {
@@ -329,7 +363,7 @@ describe("ProviderUsageSync and SyncedSpendReader", () => {
 		await w.sync.syncOnce();
 		w.warpbuild.answer = undefined;
 		w.depot.answer = "throw";
-		delete w.env.NAMESPACE;
+		w.stored.delete("owner://NAMESPACE");
 		const outcomes = await w.sync.syncOnce();
 		expect(outcomes.map((o) => o.outcome)).toEqual([
 			"unmeasured",
@@ -391,7 +425,7 @@ describe("ProviderUsageSync and SyncedSpendReader", () => {
 				{
 					accountId: "a",
 					provider: "depot",
-					credential: "env:X",
+					credential: "owner://X",
 					region: undefined,
 				},
 			],

@@ -204,5 +204,8 @@ Then("the job runs on the macOS machine", () => {
 	assert.match(unpack?.args[1] ?? "", /actions-runner-osx-arm64-/u);
 	const run = calls.find((call) => call.command.endsWith("run.sh"));
 	assert.ok(run, "the runner program ran on the host");
-	assert.equal(run.env.GH_TOKEN, undefined, "the CLI's token never reaches the job");
+	assert.ok(
+		!Object.keys(run.env).includes("GH_TOKEN"),
+		"the CLI's token never reaches the job",
+	);
 });
