@@ -6,7 +6,8 @@ over conflicting repository workflow guidance.
 - Write self-documenting code. Do not add explanatory comments, commented-out
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
-  directives consumed by compilers or tools.
+  directives consumed by compilers or tools, such as `/* @vite-ignore */` for
+  dynamic imports.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
 - Before ending an action request, compare the current user goal with the
@@ -90,7 +91,7 @@ The repo-local **sdlc** skill is mirrored in `.agents/skills/sdlc` and `.claude/
 The repo-local **draft** skill lives in both `.agents/skills/draft` and `.claude/skills/draft`. Use it when creating, moving, or reviewing draft proof material. It replaces the old one-level draft convention with the four-layer taxonomy:
 
 - `src/draft/technical-proofs/<slug>` for isolated atomic technical concepts.
-- `src/draft/exp-proofs/<type>/<slug>` for experience proofs, grouped by experience type (`dx` developer · `ux` user · `cx` customer · `ax` agent · `api` API/SDK surface) per [`src/draft/exp-proofs/_classification.md`](src/draft/exp-proofs/_classification.md).
+- `src/draft/exp-proofs/<type>/<slug>` for experience proofs, grouped by experience type (`dx` developer · `ux` user · `cx` customer · `ax` agent · `api` API/SDK surface). List them with `pnpm run draft:experiences`.
 - `src/draft/epic-proofs/<slug>` for isolated epic rollups that reuse technical and experience proofs.
 - `src/draft/projects/<slug>` for project MVP rollups that integrate epic proofs.
 
@@ -102,9 +103,9 @@ The repo-local **optimizexp** skill reviews real UX, DX, and AX behavior, implem
 
 ### Draft-proof hardening
 
-Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per exp type folder) and scaffolding templates under `src/draft/_templates/<layer>/`. New/changed proofs are validated by two gates that run automatically through `agent:check`:
+Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Implement the requested behavior and executable checks directly; do not create planning documents or placeholder proofs. New or changed proofs are validated by two gates that run automatically through `agent:check`:
 
-- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), per-type experience artifacts for exp proofs. Waivers need an ADR.
+- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior.
 - `pnpm run draft:cascade` — a changed technical/exp proof must update every referencing epic/project rollup in the same diff (references resolve from `proof.json` graphs + import/ledger scans).
 
 Packages predating the standard are listed in `src/draft/_grandfathered.json` (advisory-only until their backfill wave removes them; never add new packages there).

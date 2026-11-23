@@ -45,7 +45,6 @@ function declarationPath(
 	return `${generatedRoot}/runtime/types/${target}`;
 }
 
-/** Rewrite declaration imports with the same compiler resolution that produced the app. */
 function rewriteImports(
 	text: string,
 	source: ts.SourceFile,
@@ -107,7 +106,6 @@ function rewriteImports(
 	return text;
 }
 
-/** Compiler-emitted types accompany real bundled implementations without depending on authored source files. */
 export function emitSourceDeclarationGraph(
 	root: string,
 	program: ts.Program,
@@ -313,7 +311,6 @@ export function emitSourceDeclarationGraph(
 	};
 }
 
-/** Emit declarations for the generated executable wrappers and actual trainable registrations. */
 export function emitGeneratedDeclarations(
 	root: string,
 	program: ts.Program,

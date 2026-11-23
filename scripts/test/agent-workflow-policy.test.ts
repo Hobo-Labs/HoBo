@@ -4,10 +4,12 @@ import {
 	chmodSync,
 	copyFileSync,
 	existsSync,
+	globSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -83,5 +85,58 @@ test("agent setup preserves existing harness instructions and checked-in skills"
 		assert.doesNotMatch(calls, /mattpocock\/skills/u);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("draft and agent guidance requires implementation instead of planning artifacts", () => {
+	for (const harness of [".agents", ".claude"]) {
+		const draft = readFileSync(
+			resolve(harness, "skills/draft/SKILL.md"),
+			"utf8",
+		);
+		assert.match(draft, /Complete the requested behavior/u);
+		assert.doesNotMatch(draft, /scaffold from|waivers require an ADR/iu);
+		for (const layer of [
+			"technical-proofs",
+			"exp-proofs",
+			"epic-proofs",
+			"projects",
+		]) {
+			const reference = readFileSync(
+				resolve(harness, `skills/draft/references/${layer}/process.md`),
+				"utf8",
+			);
+			assert.doesNotMatch(
+				reference,
+				/scaffold from|ADRs? (?:is|are) (?:required|mandatory)/iu,
+			);
+		}
+		const architecture = readFileSync(
+			resolve(harness, "skills/improve-codebase-architecture/SKILL.md"),
+			"utf8",
+		);
+		assert.match(architecture, /implement the requested refactor/u);
+		assert.equal(
+			existsSync(
+				resolve(harness, "skills/improve-codebase-architecture/HTML-REPORT.md"),
+			),
+			false,
+		);
+	}
+	for (const name of ["implementer", "reviewer"]) {
+		const agent = readFileSync(resolve(`.claude/agents/${name}.md`), "utf8");
+		assert.match(agent, /AGENTS\.md/u);
+		assert.doesNotMatch(
+			agent,
+			/\.sdlc\/report\.json|never edit shared files/iu,
+		);
+	}
+	for (const entry of globSync("src/draft/_templates/**/*")) {
+		if (!statSync(entry).isFile()) continue;
+		assert.doesNotMatch(
+			readFileSync(entry, "utf8"),
+			/__SLUG__|replace with the real|assert\.ok\(true/iu,
+			entry,
+		);
 	}
 });

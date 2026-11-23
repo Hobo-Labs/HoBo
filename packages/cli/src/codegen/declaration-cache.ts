@@ -2,15 +2,6 @@ import { resolve } from "node:path";
 import ts from "typescript";
 import { digest } from "./text.js";
 
-/**
- * Parsed declarations shared by every program codegen builds, so the lib
- * files and installed packages' `.d.ts` are parsed once rather than once per
- * program (each pass builds two). An entry is keyed by path, the settings
- * that change how a file parses and its module format; its text digest is the
- * version, so an edited file is parsed again in place. At most `limit` entries
- * are held: past it the least recently used one is released to the registry,
- * and a long-lived process that reads many projects stays bounded.
- */
 export interface DeclarationCache {
 	acquire(
 		file: string,
@@ -37,7 +28,6 @@ export function createDeclarationCache(
 		ts.sys.useCaseSensitiveFileNames,
 		ts.sys.getCurrentDirectory(),
 	);
-	// Insertion order is recency: a hit is moved to the end.
 	const held = new Map<string, Held>();
 	const release = (entry: Held) =>
 		registry.releaseDocument(
@@ -59,17 +49,14 @@ export function createDeclarationCache(
 				ts.ScriptKind.TS,
 				languageVersion,
 			);
-			// The registry files the document under the module format it was parsed for.
 			const format = source.impliedNodeFormat;
 			const key = `${registry.getKeyForCompilationSettings(options)}\0${format ?? ""}\0${resolve(file)}`;
 			const previous = held.get(key);
 			held.delete(key);
-			// One registry reference per held entry: drop the one taken before.
 			if (previous) release(previous);
 			held.set(key, {
 				file,
 				options,
-				// Every declaration (.d.ts, .d.mts, .d.cts, lib.*.d.ts) is a TS script.
 				scriptKind: ts.ScriptKind.TS,
 				format,
 			});

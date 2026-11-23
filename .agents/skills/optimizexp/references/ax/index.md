@@ -49,7 +49,7 @@ offline probes (`pnpm run doctor`, setup `--help`, skill mirrors, local MCP laun
 | MCP launchers | `scripts/agent-mcp-{serena,headroom,gbrain}.sh` |
 | Skill mirrors | `pnpm run skills:mirror-check` |
 | Design tokens / UI | `site/src/styles/global.css`, `pnpm run design:lint` |
-| Experience proofs (ax) | `src/draft/exp-proofs/ax/`, `_classification.md` |
+| Experience proofs (ax) | `pnpm run draft:experiences --type ax` |
 
 ## Metrics mapping (AX-specific)
 

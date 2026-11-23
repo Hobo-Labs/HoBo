@@ -9,24 +9,31 @@ tags: [hobo, agent-tooling.md]
 
 Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
-design documents. The shared pre-commit hook and CI run `source:guard`
-([`scripts/check-source-policy.mts`](../scripts/check-source-policy.mts)) on new
+design documents. Agent edit hooks, the shared pre-commit hook, and CI run the
+common `source:guard` ([`scripts/check-source-policy.mts`](../scripts/check-source-policy.mts)) on new
 comments and added or changed planning or design documents in the languages it
 recognizes: JavaScript, TypeScript, shell, Python, CSS, and HTML; YAML, Rust,
 Go, C, C++, Java, Kotlin, Ruby, Lua, and Swift through ast-grep; and the
 contract languages — Prisma, CUE, Protobuf, WIT, SQL, and TOML — lexed by
 [`scripts/source-comment-lexer.mts`](../scripts/source-comment-lexer.mts), whose
 dialect-aware lexer keeps triple-quoted strings and raw-string hash delimiters
-out of the comment set. It reads the staged content for commits
-and the PR diff for CI; it does not inspect other languages or unchanged content.
-For renamed files, it compares against the original path so existing comments
-remain allowed while newly added comments are checked. During a staged merge it
-compares against every parent, so content inherited unchanged from either side
-is not treated as a new merge edit. A multiline comment assembled from changes
-on both sides is still checked. The PR check still examines the full diff against
-its base.
+out of the comment set. The languages and source templates listed in
+[`AGENTS.md`](../AGENTS.md) — Astro included — complete the coverage list.
+Commit checks read staged content, CI checks the PR diff, and the worktree
+check also finds ignored agent planning artifacts; it does not inspect other
+languages or unchanged content. For renamed files, it compares against the
+original path so existing comments remain allowed while newly added comments
+are checked. During a staged merge it compares against every parent, so content
+inherited unchanged from either side is not treated as a new merge edit. A
+multiline comment assembled from changes on both sides is still checked. The
+PR check still examines the full diff against its base.
+
+The anti-slop installer leaves its comment-required assertion rule disabled so
+the lint configuration follows the same source policy.
 
 Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
+
+Run `bash scripts/setup-agent-tools.sh --help` to inspect the zero-key setup path. The optional gbrain MCP launcher refuses to start without a configured embedding provider and reports how to configure local Ollama.
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
@@ -131,7 +138,7 @@ Agents implementing HoBo code must follow the canonical architecture rules in [`
 
 The fail-fast check is `pnpm run architecture:guard` (`architecture:guard:staged` when the pre-commit gate selects it). It scans changed `src/draft/<kind>/<slug>` implementation packages for PACT, protobuf, CUE, parse-don't-validate, and event-architecture evidence before the slower test and CI gates run.
 
-The full compatibility gate is `pnpm run validate:final`, which runs standards and the same `test:unit` graph as `check:all`. [`../scripts/run-unit-tests.ts`](../scripts/run-unit-tests.ts) asks turbo for exactly the legacy root/draft Vitest set: four root shards selected by stable path hash and nine draft shards selected by a stable hash of each proof package directory (`src/draft/<kind>/<slug>` or `src/draft/exp-proofs/<type>/<slug>`). It does not run production `packages/**` suites (Workspace tests owns them) or `scripts/test/` (`test:scripts` owns them). Every shard uses [`../scripts/run-tests.ts`](../scripts/run-tests.ts) with the canonical root settings, and a shared turbo dependency supplies the builds the legacy pretest supplied. The coverage guard requires exact set equality, rejecting missing, extra, and duplicate files, and proves a proof directory never spans shards. `pnpm run test:unit:shards` regenerates the per-proof turbo inputs and draft shard scripts; `pnpm run test:unit:shards:check` rejects drift. Turbo parallelism follows `HOBO_TURBO_CONCURRENCY` (default `100%`); root runners honor `HOBO_TEST_MAX_WORKERS`, then `HOBO_RELEVANT_CHECK_CONCURRENCY` (default `4`). Package-scoped runs stay on `pnpm exec turbo run test --filter=./<workspace>`.
+The full compatibility gate is `pnpm run validate:final`, which runs standards and the same `test:unit` graph as `check:all`. [`../scripts/run-unit-tests.ts`](../scripts/run-unit-tests.ts) asks turbo for exactly the legacy root/draft Vitest set: four root shards selected by stable path hash and nine draft shards selected by a stable hash of each proof package directory (`src/draft/<kind>/<slug>` or `src/draft/exp-proofs/<type>/<slug>`). It does not run production `packages/**` suites (Workspace tests owns them) or `scripts/test/` (`test:scripts` owns them). Every shard uses [`../scripts/run-tests.ts`](../scripts/run-tests.ts) with the canonical root settings, and a shared turbo dependency supplies the builds the legacy pretest supplied. The runner identifies `node:test` imports from parsed source, so quoted fixtures do not change which test runner executes a file. The coverage guard requires exact set equality, rejecting missing, extra, and duplicate files, and proves a proof directory never spans shards. `pnpm run test:unit:shards` regenerates the per-proof turbo inputs and draft shard scripts; `pnpm run test:unit:shards:check` rejects drift. Turbo parallelism follows `HOBO_TURBO_CONCURRENCY` (default `100%`); root runners honor `HOBO_TEST_MAX_WORKERS`, then `HOBO_RELEVANT_CHECK_CONCURRENCY` (default `4`). Package-scoped runs stay on `pnpm exec turbo run test --filter=./<workspace>`.
 
 Agent edit loops should not use Node test suites for discovery or broad diagnostics. Use `pnpm run search <text>` for exact indexed search, `pnpm run search:structure --filter <rule>` or `pnpm exec ast-grep run -p <pattern> -l ts` for AST search, then the narrowest compatible test command: `pnpm run test:smoke <file>` when Bun can run it, `pnpm run test:file <file>` or `pnpm run test:name <name> <file>` for normal local feedback, `HOBO_CHECK_BASE=origin/main pnpm run test:changed` for changed-scope validation, and `pnpm run validate:final` only after implementation is complete. `scripts/run-tests.ts` refuses broad agent edit-loop categories when `CI_AGENT`, `CODEX`, `CLAUDECODE`, or `CURSOR_AGENT` is set unless `--final` is passed, and `scripts/run-relevant-checks.ts` refuses broad root unit/contract scripts unless the caller explicitly passes `--final` or `--all`. Root `pnpm run lint:code` formats **`scripts/` and `test/` only** (Biome); keep those trees format-clean when editing automation.
 
@@ -150,51 +157,26 @@ A **skill + always-on rule** that compresses the agent's **output** (~65–87% f
 - **It is ON by default.** To disable: delete `.cursor/rules/caveman.mdc`, remove the `<!-- caveman:begin … end -->` block from `AGENTS.md`, and run `npx -y github:JuliusBrussee/caveman -- --uninstall`.
 
 ### impeccable — `pbakaus/impeccable` (Apache-2.0)
-A **design skill** for AI harnesses (npm `impeccable`, v3.5.0, homepage
-[impeccable.style](https://impeccable.style)). 23 commands spanning the design
-workflow — `shape`, `critique`, `audit`, `polish`, plus dials like `bolder`,
-`quieter`, `colorize`. The checked-in skill supports visual review and
-implementation across Claude Code, Codex, Cursor, and Copilot. **Standing duty
-on visual work** (TUI, dashboard, Evidence and `site/`): run `critique` then
-`audit` (and `polish` on P0/P1) and `pnpm run design:lint` without being asked.
-`design:lint` invokes `scripts/check-visual-tokens.mts`; the root
-`test/visual-tokens.test.ts` suite pins that wiring. See `AGENTS.md` “Visual
-quality”. **No API keys**, but it is **not** offline — see egress below. The
-common source-policy hooks apply to every harness. Surface-brief and
-critique-file writers reject writes; visual work uses the implemented styles and
-components instead. Do not invoke commands that create planning or design
-documents.
+A **design skill** for AI harnesses (npm `impeccable`, homepage
+[impeccable.style](https://impeccable.style)). The checked-in skill supports
+visual review and implementation across Claude Code, Codex, Cursor, and Copilot.
+**Standing duty on visual work** (TUI, dashboard, Evidence and `site/`): run
+`critique` then `audit` (and `polish` on P0/P1) and `pnpm run design:lint`
+without being asked. `design:lint` invokes `scripts/check-visual-tokens.mts`;
+the root `test/visual-tokens.test.ts` suite pins that wiring. See `AGENTS.md`
+“Visual quality”.
+
+Its context command uses existing source and does not contact the network. The
+image generator and concept-seed helper make network requests only when
+explicitly invoked. The common source-policy hooks apply to every harness.
+Surface-brief and critique-file writers reject writes; visual work uses the
+implemented styles and components instead. Do not invoke commands that create
+planning or design documents.
 
 Live preview sessions recover browser checkpoints after a reload or when local
 browser storage is missing, provided the live server is still running. Browser
 checkpoints and publication progress are tracked independently.
-- **Network egress (three paths, one of them automatic):**
-  - `scripts/context.mjs` calls `impeccable.style/api/version` when it is run
-    **as a command** (`node scripts/context.mjs`, i.e. the skill's context
-    step) — on by default, throttled to once a day. The per-edit **hook does
-    not fetch**: `hook-lib.mjs` imports only `extractPlatform`/`loadContext`,
-    and the fetch sits behind `cli()`, which runs only when the file is invoked
-    as a script. Measured 0 requests from `hook.mjs` in both repo root and a
-    subdirectory, including the absolute-path Copilot variant. Disabled here
-    by **`IMPECCABLE_NO_UPDATE_CHECK=1`**, set in
-    [`../.claude/settings.json`](../.claude/settings.json) `env`. That is the
-    control that actually holds: upstream reads
-    [`../.impeccable/config.json`](../.impeccable/config.json)'s
-    `"updateCheck": false` relative to `process.cwd()`, so the file alone
-    covers repo-root sessions and **not** `cd site && …` — verified by driving
-    the real code path with a stubbed `fetch` (subdirectory: 1 request with the
-    config alone, 0 with the env var). Both are in place. Run
-    `npx impeccable check` deliberately instead.
-  - **Residual, stated rather than papered over:** `.claude/settings.json` is
-    Claude Code's file. A **Codex / Cursor / Copilot** session that runs an
-    impeccable command from a subdirectory gets neither control and will still
-    make that once-a-day request. `.codex/config.toml` has no env facility and
-    direnv is not used in this repo, so there is no mechanism here that would
-    close it without inventing one. The exposure is a version string, once a
-    day, from those harnesses only.
-  - `scripts/generate-image.mjs` posts to `api.openai.com` — opt-in, only when
-    you invoke it, and it needs your own key.
-  - `scripts/concept-seed.mjs` calls `impeccable.style/api/roll` — opt-in.
+
 - **Hooks (ON by default):** the install writes `PostToolUse` manifests to
   `.codex/hooks.json`, `.cursor/hooks.json` and `.github/hooks/`, which run the
   design detector after **every** `Edit`/`Write`/`apply_patch`. Each is guarded

@@ -8,7 +8,6 @@ import "../styles/trail.css";
 
 const bindleSnippet = `import { bindle } from "@hobo/bindles";
 
-// One definition, any provider.
 export default bindle("hello-bindle", (b) => {
   const api = b.api(() => helloApi.fetch);
   const web = b.web(() => helloWeb.fetch).dependsOn(api);

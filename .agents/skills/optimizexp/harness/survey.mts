@@ -1,16 +1,7 @@
 #!/usr/bin/env node
-import {
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	writeFileSync,
-} from "node:fs";
-import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import process from "node:process";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
-import { isPathIdentifier } from "./lib/slug.mts";
-import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import {
 	validatePositive,
 	type PositiveScores,
@@ -70,17 +61,6 @@ type SurveyResponse = {
 	evidenceRefs?: string[];
 };
 
-function repoRoot(): string {
-	let dir = process.cwd();
-	for (;;) {
-		if (existsSync(path.join(dir, ".optimizexp"))) return dir;
-		if (existsSync(path.join(dir, ".git"))) return dir;
-		const parent = path.dirname(dir);
-		if (parent === dir) return process.cwd();
-		dir = parent;
-	}
-}
-
 function parseArgs(argv: string[]) {
 	const out: Record<string, string | boolean> = { mode: "help" };
 	for (let i = 0; i < argv.length; i++) {
@@ -101,9 +81,8 @@ function help() {
 
 Usage:
   survey.mts --mode validate --path <survey.json>
-  survey.mts --mode aggregate --run <id>
 
-Validate or aggregate existing survey evidence.
+Validate existing survey evidence.
 `);
 }
 
@@ -191,84 +170,6 @@ function modeValidate(filePath: string) {
 	if (!ok) process.exitCode = 1;
 }
 
-function loadSurveys(root: string, runId: string): SurveyResponse[] {
-	const dir = path.join(root, ".optimizexp", "runs", runId, "survey");
-	if (!existsSync(dir)) return [];
-	const out: SurveyResponse[] = [];
-	for (const f of readdirSync(dir).filter(
-		(x) => x.endsWith(".json") && !x.startsWith("_"),
-	)) {
-		try {
-			const body = JSON.parse(
-				readFileSync(path.join(dir, f), "utf8"),
-			) as SurveyResponse;
-			if (body.kind === "persona-survey") out.push(body);
-		} catch {}
-	}
-	return out;
-}
-
-function modeAggregate(root: string, runId: string) {
-	if (!runId) {
-		console.error("--run required");
-		process.exit(2);
-	}
-	const surveys = loadSurveys(root, runId);
-	const problems: string[] = [];
-	for (const s of surveys) {
-		problems.push(
-			...validateSurvey(s).map((p) => `${s.persona}: ${p}`),
-		);
-	}
-	const featureRequests: FeatureRequest[] = [];
-	let delight_total = 0;
-	let delight_min = 5;
-	let gap_max = 0;
-	let n = 0;
-	for (const s of surveys) {
-		n += 1;
-		delight_total += s.positive.total;
-		delight_min = Math.min(delight_min, s.positive.min);
-		gap_max = Math.max(gap_max, s.positive.gapMax);
-		for (const fr of s.featureRequests ?? []) {
-			featureRequests.push(fr);
-		}
-	}
-	const aggregate = {
-		schemaVersion: 1,
-		runId,
-		personaCount: surveys.length,
-		delight_total,
-		delight_min: surveys.length ? delight_min : 0,
-		delight_mean: surveys.length ? delight_total / (surveys.length * 3) : 0,
-		gap_max,
-		featureRequestCount: featureRequests.length,
-		featureRequests,
-		problems,
-		aggregatedAt: new Date().toISOString(),
-	};
-	const outDir = path.join(root, ".optimizexp", "runs", runId, "survey");
-	mkdirSync(outDir, { recursive: true });
-	const outPath = path.join(outDir, "aggregate.json");
-	writeFileSync(outPath, `${JSON.stringify(aggregate, null, 2)}\n`);
-	console.log(
-		JSON.stringify(
-			{
-				ok: problems.length === 0,
-				path: outPath,
-				personaCount: surveys.length,
-				featureRequestCount: featureRequests.length,
-				delight_min: aggregate.delight_min,
-				gap_max,
-				problems,
-			},
-			null,
-			2,
-		),
-	);
-	if (problems.length) process.exitCode = 1;
-}
-
 function main() {
 	const input = normalizeCliOptions(process.argv.slice(2), {
 		values: ["--mode", "--run", "--path", "--personas"],
@@ -280,30 +181,13 @@ function main() {
 		process.exit(2);
 	}
 	const args = parseArgs(input.argv);
-	const root = repoRoot();
 	const mode = String(args.mode || "help");
 	if (mode === "help") {
 		help();
 		return;
 	}
-	if (mode === "aggregate") {
-		const runId = String(args.run || "");
-		if (!isPathIdentifier(runId)) {
-			console.error("--run must be a valid run id");
-			process.exit(2);
-		}
-		const problem = optimizexpWriteProblem(root, [""]);
-		if (problem) {
-			console.error(problem);
-			process.exit(2);
-		}
-	}
 	if (mode === "validate") {
 		modeValidate(String(args.path || ""));
-		return;
-	}
-	if (mode === "aggregate") {
-		modeAggregate(root, String(args.run || ""));
 		return;
 	}
 	console.error(`unknown mode: ${mode}`);

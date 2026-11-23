@@ -1,41 +1,22 @@
 #!/usr/bin/env node
-/**
- * OptimizeXP cross-agent deterministic helpers.
- * Agents still write persona feelings; this validates bus shape, aggregates scores, detects plateau.
- *
- * Run with (any of):
- *   node --import tsx .agents/skills/optimizexp/workflows/cross-agent/review-loop.mts ...
- *   node --experimental-strip-types .agents/skills/optimizexp/workflows/cross-agent/review-loop.mts ...
- */
-import {
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	unlinkSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import {
 	validateComparison,
 	validateScorecard,
-	isParetoAdmissible,
 	type MetricScorecard,
 	type PrimaryScores,
-	type PositiveScores,
 } from "../../harness/lib/scorecard.mts";
 import { evaluateScorecardEvidence } from "../../harness/lib/evidence-checks.mts";
 import { validateEvidenceReview } from "../../harness/lib/evidence-review.mts";
 import { listProjects } from "../../harness/lib/projects.mts";
 import { normalizeCliOptions } from "../../harness/lib/cli-options.mts";
 import { isPathIdentifier } from "../../harness/lib/slug.mts";
-import { optimizexpWriteProblem } from "../../harness/lib/write-containment.mts";
 import { evaluateDesignRelevance } from "../../harness/lib/design-council.mts";
 import { inspectGitReviewSubject, runConsensusCommand } from "./consensus-loop.mts";
 
-/** Invocation terminals only — never "plateau" / "metrics-zero" alone. */
 const INVOCATION_STOP_REASONS = new Set([
 	"pareto-equilibrium",
 	"inverted-u-peak",
@@ -57,8 +38,6 @@ const FORBIDDEN_STOP_REASONS = new Set([
 	"product-green",
 	"",
 ]);
-
-type Experiences = "ux" | "dx" | "ax";
 
 type ScoreCell = {
 	persona: string;
@@ -91,117 +70,28 @@ function repoRoot(explicit?: string): string {
 
 function parseArgs(argv: string[]) {
 	const out: Record<string, string | boolean> = { mode: "help" };
+	const names: Record<string, string> = {
+		"--mode": "mode", "--root": "root", "--run": "run", "--run-id": "run",
+		"--persona": "persona", "--feature": "feature", "--scores": "scores",
+		"--prev-scores": "prevScores", "--limit": "limit",
+	};
 	for (let i = 0; i < argv.length; i++) {
-		const a = argv[i]!;
-		if (a === "--help" || a === "-h") out.mode = "help";
-		else if (a === "--mode") out.mode = argv[++i] ?? "help";
-		else if (a === "--root") out.root = argv[++i] ?? "";
-		else if (a === "--run") out.run = argv[++i] ?? "";
-		else if (a === "--experiences") out.experiences = argv[++i] ?? "";
-		else if (a === "--personas") out.personas = argv[++i] ?? "";
-		else if (a === "--persona") out.persona = argv[++i] ?? "";
-		else if (a === "--feature") out.feature = argv[++i] ?? "";
-		else if (a === "--scores") out.scores = argv[++i] ?? "";
-		else if (a === "--prev-scores") out.prevScores = argv[++i] ?? "";
-		else if (a === "--run-id") out.run = argv[++i] ?? "";
-		else if (a === "--report-only" || a === "--no-reduce")
-			out.reportOnly = "1";
-		else if (a === "--passes") out.passes = argv[++i] ?? "1";
-		else if (a === "--iteration") out.iteration = argv[++i] ?? "0";
-		else if (
-			a === "--implementable-findings" ||
-			a === "--implementable-findings-remaining"
-		)
-			out.implementableFindings = argv[++i] ?? "0";
-		else if (a === "--implementable-harm") out.implementableHarm = argv[++i] ?? "0";
-		else if (a === "--implementable-uplift")
-			out.implementableUplift = argv[++i] ?? "0";
-		else if (a === "--harm-regressed") out.harmRegressed = argv[++i] ?? "false";
-		else if (a === "--cognitive-breach")
-			out.cognitiveBreach = argv[++i] ?? "false";
-		else if (a === "--regime") out.regime = argv[++i] ?? "";
-		else if (a === "--limit") out.limit = argv[++i] ?? "20";
-		else if (a === "--mismatches-only") out.mismatchesOnly = "1";
-		else if (a === "--no-delight" || a === "--harm-only") out.noDelight = "1";
-		else if (a === "--no-survey") out.noSurvey = "1";
-		else if (a === "--delight-passes") out.delightPasses = argv[++i] ?? "infinite";
-		else if (a === "--stop-reason") out.stopReason = argv[++i] ?? "";
-		else if (a === "--features") out.features = argv[++i] ?? "";
-		else if (a === "--projects") out.projects = argv[++i] ?? "";
-		else if (a === "--force") out.force = "1";
-		else if (!a.startsWith("-") && out.mode === "help") out.mode = a;
+		const arg = argv[i]!;
+		if (arg === "--help" || arg === "-h") out.mode = "help";
+		else if (arg === "--mismatches-only") out.mismatchesOnly = true;
+		else if (names[arg]) out[names[arg]!] = argv[++i] ?? "";
+		else if (!arg.startsWith("-") && out.mode === "help") out.mode = arg;
 	}
 	return out;
 }
 
 function help() {
-	console.log(`optimizexp review-loop
-
-Usage:
-  review-loop.mts --mode init --run <id> [--experiences ux,dx,ax] [--personas a,b]
-      [--passes infinite|N] [--no-delight] [--no-survey] [--delight-passes infinite|N]
-      [--features id1,id2] [--projects a,b]
+	console.log(`Inspect historical OptimizeXP records:
+  review-loop.mts --mode validate-bus [--root <path>]
+  review-loop.mts --mode read-bus [--run <id>] [--limit N] [--mismatches-only]
   review-loop.mts --mode status --run <id>
-  review-loop.mts --mode assert-complete --run <id>
-  review-loop.mts --mode mark-complete --run <id> --stop-reason <reason>
-  review-loop.mts --mode validate-bus
-  review-loop.mts --mode read-bus [--run <runId>] [--limit N] [--mismatches-only]
-      [--persona id] [--feature id]
-  review-loop.mts --mode score --scores <cells.json>
-  review-loop.mts --mode aggregate-bus [--run <runId>]
-  review-loop.mts --mode plateau --scores <curr.json> --prev-scores <prev.json>
-  review-loop.mts --mode should-stop --run <id> --iteration N --scores c.json --prev-scores p.json
-      [--implementable-findings N]
-  review-loop.mts --mode equilibrium --run <id> --scores c.json --prev-scores p.json \\
-      --implementable-harm N --implementable-uplift N \\
-      [--harm-regressed false] [--cognitive-breach false] [--regime delight_maximize]
 
-COMPLETION CONTRACT (mandatory):
-  Product tests green / feature wired / one evidence capture ≠ optimizexp complete.
-  Only --mode assert-complete exit 0 authorizes claiming the skill finished.
-  should-stop plateau is a HARM CYCLE stop only (cycleStop) — not invocation complete.
-  Default infinite: harm floor switches to delight_maximize until pareto-equilibrium.
-
---passes infinite (default) = both regimes until Pareto equilibrium.
---passes N = cap harm_reduce cycles; still enter delight unless --no-delight.
---no-delight / --harm-only = early exit at harm floor (opt-out of equilibrium).
---implementable-findings N = open S/M findings (omit defaults to 1 = continue).
---implementable-harm / --implementable-uplift: omit = undeclared → cannot equilibrium-stop.
---report-only / --no-reduce = measure only (no experiments).
-
-Modes are deterministic file/JSON helpers. Persona judgment stays in the agent.
-Every expect/act/outcome bus entry must include a formal metric scorecard.
-Agents MUST apply a reduce experiment each pass unless report-only.
-Survey/backlog: harness/survey.mts (template|validate|aggregate|rank-backlog).
-`);
-}
-
-/**
- * Outer completion cycles. Default infinite.
- * Finite N (>=1) caps max outer cycles. Infinite: null.
- * Accepts: infinite|inf|∞|-1|0|null|undefined|"" → null
- */
-function parsePasses(raw: unknown): number | null {
-	if (raw === undefined || raw === null || raw === "") return null;
-	if (typeof raw === "boolean") return null;
-	const s = String(raw).trim().toLowerCase();
-	if (
-		s === "infinite" ||
-		s === "inf" ||
-		s === "infinity" ||
-		s === "∞" ||
-		s === "-1" ||
-		s === "0"
-	) {
-		return null;
-	}
-	const n = Number(s);
-	if (!Number.isFinite(n) || n < 1) return null;
-	return Math.floor(n);
-}
-
-function passesLabel(passes: number | null): string {
-	return passes === null ? "infinite" : String(passes);
+For new work, follow the OptimizeXP skill and implement improvements directly.`);
 }
 
 function runDirOf(root: string, runId: string): string {
@@ -215,103 +105,6 @@ function readScope(
 	const p = path.join(runDirOf(root, runId), "scope.json");
 	if (!existsSync(p)) return null;
 	return JSON.parse(readFileSync(p, "utf8")) as Record<string, unknown>;
-}
-
-function writeScope(root: string, runId: string, scope: Record<string, unknown>) {
-	const runDir = runDirOf(root, runId);
-	mkdirSync(runDir, { recursive: true });
-	writeFileSync(
-		path.join(runDir, "scope.json"),
-		`${JSON.stringify(scope, null, 2)}\n`,
-	);
-}
-
-function writeIncompleteMarker(runDir: string, runId: string) {
-	writeFileSync(
-		path.join(runDir, "INCOMPLETE.md"),
-		`# Incomplete optimizexp run: \`${runId}\`
-
-This run is **not** complete. Do not claim optimizexp finished.
-
-Legal completion requires:
-
-1. Dual-regime loop (harm_reduce → delight_maximize unless \`--no-delight\`)
-2. Write-ahead bus expect→act→outcome with scores
-3. \`review-loop.mts --mode assert-complete --run ${runId}\` exit 0
-4. \`summary.md\` + \`mark-complete\`
-
-Product tests green / feature wired / one evidence capture is **not** enough.
-`,
-	);
-}
-
-function initRun(
-	root: string,
-	runId: string,
-	experiences: string[],
-	personas: string[],
-	opts: {
-		reportOnly: boolean;
-		passes?: number | null | string;
-		noDelight?: boolean;
-		noSurvey?: boolean;
-		delightPasses?: number | null | string;
-		features?: string[];
-		projects?: string[];
-	},
-) {
-	const runDir = runDirOf(root, runId);
-	mkdirSync(path.join(runDir, "iterations"), { recursive: true });
-	mkdirSync(path.join(runDir, "artifacts"), { recursive: true });
-	mkdirSync(path.join(root, ".optimizexp", "bus", "entries"), {
-		recursive: true,
-	});
-	const passes = parsePasses(opts.passes);
-	const delightPasses = parsePasses(opts.delightPasses ?? "infinite");
-	const noDelight = Boolean(opts.noDelight);
-	const noSurvey = Boolean(opts.noSurvey);
-	const stopPolicy = noDelight
-		? passes === null
-			? "infinite-until-harm-floor"
-			: "finite-harm-cycles-then-floor"
-		: passes === null
-			? "infinite-until-pareto-equilibrium"
-			: "finite-harm-cycles-then-delight-to-equilibrium";
-	const scope = {
-		runId,
-		experiences,
-		personas,
-		features: opts.features ?? [],
-		projects: opts.projects ?? [],
-		surfaces: [] as string[],
-		reportOnly: opts.reportOnly,
-		/** Outer harm cycles: null = infinite until harm floor then delight (unless noDelight). */
-		passes,
-		passesLabel: passesLabel(passes),
-		cyclesCompleted: 0,
-		passesCompleted: 0,
-		status: "running" as const,
-		regime: "harm_reduce" as const,
-		regimesEntered: ["harm_reduce"] as string[],
-		stopPolicy,
-		stopReason: null as string | null,
-		noDelight,
-		noSurvey,
-		delightPasses,
-		delightPassesLabel: passesLabel(delightPasses),
-		delightCyclesCompleted: 0,
-		surveyCompleted: false,
-		equilibrium: null as Record<string, unknown> | null,
-		lastShouldStop: null as Record<string, unknown> | null,
-		lastEquilibrium: null as Record<string, unknown> | null,
-		outerCycles: "passes",
-		hostAgent: "cross-agent",
-		createdAt: new Date().toISOString(),
-		updatedAt: new Date().toISOString(),
-	};
-	writeScope(root, runId, scope);
-	writeIncompleteMarker(runDir, runId);
-	console.log(JSON.stringify({ ok: true, runDir, scope }, null, 2));
 }
 
 type BusEntry = {
@@ -365,7 +158,6 @@ function modeReadBus(args: Record<string, string | boolean>, root: string) {
 			body.file = f;
 			entries.push(body);
 		} catch {
-			/* skip bad */
 		}
 	}
 
@@ -416,7 +208,6 @@ function modeReadBus(args: Record<string, string | boolean>, root: string) {
 		});
 	}
 
-	// chronological; last N
 	const sliced = lessons.slice(-limit);
 	const correctedExpects = filtered.filter(
 		(e) => e.kind === "expect" && e.correctedFrom,
@@ -438,157 +229,12 @@ function modeReadBus(args: Record<string, string | boolean>, root: string) {
 					limit,
 				},
 				lessons: sliced,
-				guidance:
-					"Before next expect: if any lesson has matchedExpectation false, set correctedFrom to that outcomeId, copy suggestedPredict into scores.primary unless a real reduction landed, and add lessons[].",
+				guidance: "Historical records only; implement new improvements directly.",
 			},
 			null,
 			2,
 		),
 	);
-}
-
-function modeShouldStop(args: Record<string, string | boolean>, root: string) {
-	const runId = String(args.run || "");
-	const iteration = Number(args.iteration || 0);
-	const scoresPath = String(args.scores || "");
-	const prevPath = String(args.prevScores || "");
-	if (!runId || !iteration || !scoresPath || !prevPath) {
-		console.error(
-			"--run, --iteration, --scores, --prev-scores required for should-stop",
-		);
-		process.exit(2);
-	}
-
-	// Strict plateau: flat scores AND zero implementable findings.
-	// Default implementableFindings to 1 (continue) when omitted so agents cannot
-	// accidentally plateau without declaring an empty backlog.
-	const implementableFindings =
-		args.implementableFindings === undefined ||
-		args.implementableFindings === ""
-			? 1
-			: Math.max(0, Number(args.implementableFindings));
-	const backlogEmpty = implementableFindings === 0;
-
-	const curr = JSON.parse(readFileSync(scoresPath, "utf8")) as ScoresFile;
-	const prev = JSON.parse(readFileSync(prevPath, "utf8")) as ScoresFile;
-	const scoresFlat =
-		curr.metric_total >= prev.metric_total &&
-		curr.metric_max >= prev.metric_max;
-	const plateau = scoresFlat && backlogEmpty;
-
-	const scope = readScope(root, runId) ?? {};
-	const noDelight = Boolean(scope.noDelight);
-	const stopPolicy = String(
-		scope.stopPolicy || "infinite-until-pareto-equilibrium",
-	);
-	const regime = String(scope.regime || "harm_reduce");
-
-	// cycleStop = end of harm (or current) cycle. Never means invocation complete
-	// under infinite-until-pareto unless noDelight opt-out.
-	let cycleStop = false;
-	let reason = "continue";
-	let nextRegime = regime;
-	let invocationStop = false;
-
-	if (plateau) {
-		cycleStop = true;
-		if (!noDelight && stopPolicy.includes("pareto")) {
-			reason = "harm-floor-switch-to-delight";
-			nextRegime = "delight_maximize";
-			invocationStop = false;
-			// Record regime switch intent on scope
-			scope.regime = "delight_maximize";
-			const entered = Array.isArray(scope.regimesEntered)
-				? (scope.regimesEntered as string[])
-				: ["harm_reduce"];
-			if (!entered.includes("delight_maximize")) {
-				entered.push("delight_maximize");
-			}
-			scope.regimesEntered = entered;
-		} else if (noDelight || stopPolicy.includes("harm-floor")) {
-			reason = "harm-only-floor";
-			nextRegime = regime;
-			// Still not invocation-complete until assert-complete + mark-complete
-			invocationStop = false;
-		} else {
-			reason = "cycle-plateau";
-			invocationStop = false;
-		}
-	} else if (scoresFlat && !backlogEmpty) {
-		cycleStop = false;
-		reason = "continue-implementable-backlog";
-	}
-
-	// Deprecated alias: stop === cycleStop (NOT invocation complete)
-	const stop = cycleStop;
-
-	const lastShouldStop = {
-		at: new Date().toISOString(),
-		cycleStop,
-		invocationStop,
-		stop, // deprecated alias of cycleStop
-		reason,
-		nextRegime,
-		pass: iteration,
-		scoresFlat,
-		implementableFindings,
-		backlogEmpty,
-		plateau,
-		curr: {
-			metric_total: curr.metric_total,
-			metric_max: curr.metric_max,
-		},
-		prev: {
-			metric_total: prev.metric_total,
-			metric_max: prev.metric_max,
-		},
-	};
-
-	scope.passesCompleted = iteration;
-	scope.lastImplementableFindings = implementableFindings;
-	scope.lastShouldStop = lastShouldStop;
-	scope.updatedAt = new Date().toISOString();
-	if (existsSync(runDirOf(root, runId)) || Object.keys(scope).length > 0) {
-		if (!scope.runId) scope.runId = runId;
-		if (!scope.status) scope.status = "running";
-		writeScope(root, runId, scope);
-	}
-
-	const guidance = !plateau
-		? implementableFindings > 0
-			? "Open implementable findings remain — apply next reduction; do not stop."
-			: "Scores still improving — continue."
-		: invocationStop
-			? "Cycle plateau (check assert-complete for invocation)."
-			: noDelight
-				? "Harm floor under --no-delight. Write summary + assert-complete/mark-complete with stopReason harm-only-floor. NOT complete until assert-complete ok."
-				: "HARM CYCLE plateau only (cycleStop=true, invocationStop=false). Enter delight_maximize; survey+backlog; do NOT claim optimizexp complete.";
-
-	console.log(
-		JSON.stringify(
-			{
-				ok: true,
-				cycleStop,
-				invocationStop,
-				/** @deprecated Use cycleStop. Never means skill complete. */
-				stop,
-				reason,
-				nextRegime,
-				pass: iteration,
-				scoresFlat,
-				implementableFindings,
-				backlogEmpty,
-				plateau,
-				curr: lastShouldStop.curr,
-				prev: lastShouldStop.prev,
-				guidance,
-			},
-			null,
-			2,
-		),
-	);
-	// Exit 0 = cycleStop ok for scripts; invocation requires assert-complete.
-	process.exitCode = cycleStop ? 0 : 1;
 }
 
 function aggregate(cells: ScoreCell[]): ScoresFile {
@@ -642,7 +288,7 @@ function modePlateau(currPath: string, prevPath: string) {
 			2,
 		),
 	);
-	process.exitCode = plateau ? 0 : 1; // 0 = stop ok; 1 = keep iterating (also ok for scripts)
+	process.exitCode = plateau ? 0 : 1;
 }
 
 type BusBody = {
@@ -679,7 +325,6 @@ function sha256File(filePath: string): string {
 	return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
-/** Verify runner-captured experiment certificates; copied claims are not enough. */
 function validateExperimentCertificates(root: string, runId: string, reportOnly: boolean): string[] {
 	if (reportOnly) return [];
 	const runDir = runDirOf(root, runId);
@@ -703,7 +348,7 @@ function validateExperimentCertificates(root: string, runId: string, reportOnly:
 			try {
 				const b = JSON.parse(readFileSync(path.join(busDir, f), "utf8")) as BusBody;
 				if (b.runId === runId && b.kind === "outcome" && b.id) outcomeIds.add(b.id);
-			} catch { /* malformed bus is reported by the bus gate */ }
+			} catch {   }
 		}
 	}
 	for (const file of files) {
@@ -746,20 +391,25 @@ function modeValidateBus(root: string) {
 	const expects = new Map<string, BusBody>();
 	const acts = new Map<string, BusBody>();
 	const outcomes: BusBody[] = [];
+	const parsed = new Map<string, BusBody>();
 	for (const f of files) {
 		const p = path.join(dir, f);
 		let body: BusBody;
 		try {
-			body = JSON.parse(readFileSync(p, "utf8")) as BusBody;
+			const value: unknown = JSON.parse(readFileSync(p, "utf8"));
+			if (!value || typeof value !== "object" || Array.isArray(value)) {
+				problems.push(`${f}: expected a JSON object`);
+				continue;
+			}
+			body = value as BusBody;
 		} catch {
 			problems.push(`${f}: invalid JSON`);
 			continue;
 		}
+		parsed.set(f, body);
 		if (!body.id) problems.push(`${f}: missing id`);
 		const kind = body.kind;
-		// Council entries use their own append-only schema and state/history validator.
 		if (kind === "council") continue;
-		// Optional end-of-run survey bus mirror (no expect/act scorecard required).
 		if (kind === "survey") {
 			if (!body.runId) problems.push(`${f}: survey missing runId`);
 			continue;
@@ -786,12 +436,8 @@ function modeValidateBus(root: string) {
 			if (!body.expects) problems.push(`${f}: outcome missing expects`);
 		}
 	}
-	// Second pass: comparison against full maps (file order independent)
 	const comparisonProblems: string[] = [];
-	for (const f of files) {
-		const body = JSON.parse(
-			readFileSync(path.join(dir, f), "utf8"),
-		) as BusBody;
+	for (const [f, body] of parsed) {
 		if (body.kind !== "outcome") continue;
 		const expectPrimary = body.expects
 			? (expects.get(body.expects)?.scores?.primary as PrimaryScores | undefined)
@@ -853,200 +499,6 @@ function modeValidateBus(root: string) {
 	if (!ok) process.exitCode = 1;
 }
 
-/**
- * Pareto equilibrium helper for the infinite dual-regime loop.
- * Does not replace should-stop for harm-only cycles.
- * Omitted --implementable-harm / --implementable-uplift ⇒ undeclared ⇒ cannot stop.
- * stop=true is a *candidate* terminal; invocation complete requires assert-complete.
- */
-function modeEquilibrium(
-	args: Record<string, string | boolean>,
-	root: string,
-) {
-	const scoresPath = String(args.scores || "");
-	const prevPath = String(args.prevScores || "");
-	if (!scoresPath || !prevPath) {
-		console.error("--scores and --prev-scores required for equilibrium");
-		process.exit(2);
-	}
-	const runId = String(args.run || "");
-	const curr = JSON.parse(readFileSync(scoresPath, "utf8")) as ScoresFile & {
-		delight_total?: number;
-		delight_min?: number;
-		gap_max?: number;
-		positive?: PositiveScores;
-		primary?: PrimaryScores;
-		cells?: ScoreCell[];
-	};
-	const prev = JSON.parse(readFileSync(prevPath, "utf8")) as typeof curr;
-
-	const harmDeclared =
-		args.implementableHarm !== undefined && args.implementableHarm !== "";
-	const upliftDeclared =
-		args.implementableUplift !== undefined && args.implementableUplift !== "";
-	// Undeclared counts continue (cannot equilibrium-stop without explicit 0).
-	const harmN = harmDeclared ? Math.max(0, Number(args.implementableHarm)) : 1;
-	const upliftN = upliftDeclared
-		? Math.max(0, Number(args.implementableUplift))
-		: 1;
-	const harmRegressed =
-		String(args.harmRegressed || "false").toLowerCase() === "true";
-	const cognitiveBreach =
-		String(args.cognitiveBreach || "false").toLowerCase() === "true";
-
-	const scope = runId ? readScope(root, runId) : null;
-	const regime = String(
-		args.regime || scope?.regime || "delight_maximize",
-	);
-
-	const scoresFlat =
-		curr.metric_total >= prev.metric_total &&
-		curr.metric_max >= prev.metric_max;
-
-	const delightFlat =
-		(curr.gap_max ?? 0) >= (prev.gap_max ?? 0) &&
-		(curr.delight_total ?? 0) <= (prev.delight_total ?? 0);
-	const previousFlatIterations = Number(scope?.flatIterations ?? 0);
-	const flatIterations = scoresFlat ? previousFlatIterations + 1 : 0;
-	let readyBacklogItems = 0;
-	if (runId) {
-		const backlogPath = path.join(runDirOf(root, runId), "backlog.json");
-		if (existsSync(backlogPath)) {
-			try {
-				const backlog = JSON.parse(readFileSync(backlogPath, "utf8")) as { items?: Array<{ status?: string; effort?: string }> };
-				readyBacklogItems = (backlog.items ?? []).filter((item) => item.status === "ready" && (item.effort === "S" || item.effort === "M")).length;
-			} catch { readyBacklogItems = 1; }
-		}
-	}
-
-	let pareto: { ok: boolean; reasons: string[] } | null = null;
-	if (curr.positive && prev.positive && curr.primary && prev.primary) {
-		pareto = isParetoAdmissible({
-			prevHarm: prev.primary,
-			currHarm: curr.primary,
-			prevPositive: prev.positive,
-			currPositive: curr.positive,
-			cognitiveBreaches: cognitiveBreach ? ["breach"] : [],
-		});
-	}
-
-	const atHarmFloor = harmDeclared && harmN === 0;
-	const noUplift = upliftDeclared && upliftN === 0;
-	const equilibrium =
-		atHarmFloor &&
-		noUplift &&
-		!harmRegressed &&
-		!cognitiveBreach &&
-		flatIterations >= 2 &&
-		readyBacklogItems === 0 &&
-		(regime === "harm_reduce" || delightFlat || pareto?.ok === false);
-
-	let stop = false;
-	let reason = "continue";
-	let nextRegime = regime;
-	let invocationStopCandidate = false;
-
-	if (!harmDeclared || !upliftDeclared) {
-		reason = "continue-undeclared-implementable-counts";
-		stop = false;
-	} else if (regime === "harm_reduce" || regime === "") {
-		if (atHarmFloor && scoresFlat) {
-			nextRegime = "delight_maximize";
-			reason = "switch-to-delight";
-			stop = false;
-		} else {
-			reason = harmN > 0 ? "continue-harm-reduce" : "continue-harm-not-flat";
-			stop = false;
-		}
-	} else if (regime === "delight_maximize") {
-		if (harmRegressed || curr.metric_total > prev.metric_total) {
-			nextRegime = "harm_reduce";
-			reason = "harm-regressed-return";
-			stop = false;
-		} else if (equilibrium) {
-			stop = true;
-			reason = "pareto-equilibrium";
-			invocationStopCandidate = true;
-		} else if (upliftN > 0) {
-			reason = "continue-delight-uplift";
-			stop = false;
-		} else {
-			reason = delightFlat
-				? "continue-re-survey-uplift"
-				: "continue-delight-scores";
-			stop = false;
-		}
-	}
-
-	const result = {
-		ok: true,
-		/** Candidate equilibrium stop — NOT skill complete until assert-complete. */
-		stop,
-		invocationStopCandidate,
-		cycleStop: false,
-		reason,
-		regime,
-		nextRegime,
-		equilibrium,
-		implementableHarm: harmDeclared ? harmN : null,
-		implementableUplift: upliftDeclared ? upliftN : null,
-		harmDeclared,
-		upliftDeclared,
-		harmRegressed,
-		cognitiveBreach,
-		scoresFlat,
-		flatIterations,
-		readyBacklogItems,
-		delightFlat,
-		pareto,
-		curr: {
-			metric_total: curr.metric_total,
-			metric_max: curr.metric_max,
-			delight_total: curr.delight_total ?? null,
-			gap_max: curr.gap_max ?? null,
-		},
-		prev: {
-			metric_total: prev.metric_total,
-			metric_max: prev.metric_max,
-			delight_total: prev.delight_total ?? null,
-			gap_max: prev.gap_max ?? null,
-		},
-		guidance: stop
-			? "Candidate pareto-equilibrium. Write summary.md, then assert-complete + mark-complete. Do not claim done without assert-complete ok."
-			: !harmDeclared || !upliftDeclared
-				? "Pass explicit --implementable-harm N and --implementable-uplift N (use 0 only when S/M backlog empty)."
-				: nextRegime === "delight_maximize" && regime !== "delight_maximize"
-					? "Harm floor reached — switch regime to delight_maximize; keep measuring harm/cognitive."
-					: nextRegime === "harm_reduce" && regime === "delight_maximize"
-						? "Harm regressed during delight — return to harm_reduce."
-						: "Continue regime; apply next admissible experiment.",
-	};
-
-	if (runId && scope) {
-		scope.flatIterations = flatIterations;
-		scope.lastEquilibrium = { ...result, at: new Date().toISOString() };
-		scope.regime = nextRegime;
-		const entered = Array.isArray(scope.regimesEntered)
-			? (scope.regimesEntered as string[])
-			: ["harm_reduce"];
-		if (!entered.includes(nextRegime)) entered.push(nextRegime);
-		scope.regimesEntered = entered;
-		if (stop) {
-			scope.equilibrium = {
-				kind: "pareto",
-				reason: result.reason,
-				at: new Date().toISOString(),
-			};
-			scope.candidateStopReason = "pareto-equilibrium";
-		}
-		scope.updatedAt = new Date().toISOString();
-		writeScope(root, runId, scope);
-	}
-
-	console.log(JSON.stringify(result, null, 2));
-	process.exitCode = stop ? 0 : 1;
-}
-
 function listIterationDirs(runDir: string): string[] {
 	const iterRoot = path.join(runDir, "iterations");
 	if (!existsSync(iterRoot)) return [];
@@ -1056,7 +508,6 @@ function listIterationDirs(runDir: string): string[] {
 		.sort();
 }
 
-/** Value-level equality of the measured score payload (ignores provenance fields). */
 function scoresEquivalent(
 	a: ScoresFile & { justification?: string },
 	b: ScoresFile & { justification?: string },
@@ -1074,11 +525,6 @@ function scoresEquivalent(
 	return as.every((k, i) => k === bs[i]);
 }
 
-/**
- * Copied-scores lint: an iteration whose scores.json is byte-identical to
- * baseline.json — or carries the exact same score values — was copied, not
- * re-measured, unless the scorecard carries an explicit `justification`.
- */
 function lintCopiedScores(root: string, runId: string): string[] {
 	const runDir = runDirOf(root, runId);
 	const baselinePath = path.join(runDir, "baseline.json");
@@ -1155,7 +601,6 @@ function countBusTriples(root: string, runId: string): {
 	};
 }
 
-/** Run-scoped semantic bus gate used by completion (not just an ID counter). */
 function validateBusForRun(root: string, runId: string): string[] {
 	const dir = path.join(root, ".optimizexp", "bus", "entries");
 	if (!existsSync(dir)) return ["bus_missing"];
@@ -1293,7 +738,7 @@ function modeStatus(args: Record<string, string | boolean>, root: string) {
 					runId,
 					status: "missing",
 					missing: ["scope.json"],
-					guidance: "Run --mode init --run " + runId + " first.",
+					guidance: "No historical record exists for this run.",
 				},
 				null,
 				2,
@@ -1322,18 +767,12 @@ function modeStatus(args: Record<string, string | boolean>, root: string) {
 		incompleteMarker: incomplete,
 		lastShouldStop: scope.lastShouldStop ?? null,
 		lastEquilibrium: scope.lastEquilibrium ?? null,
-		guidance:
-			scope.status === "complete"
-				? "Run marked complete."
-				: "Run still open. Continue loop or assert-complete when ready.",
+		guidance: "Historical records only; implement new improvements directly.",
 	};
 	console.log(JSON.stringify(out, null, 2));
 	process.exitCode = scope.status === "complete" ? 0 : 1;
 }
 
-/**
- * Fail-closed completion certificate. Only legal way to claim optimizexp done.
- */
 function modeAssertComplete(
 	args: Record<string, string | boolean>,
 	root: string,
@@ -1354,8 +793,7 @@ function modeAssertComplete(
 					runId,
 					status: "missing",
 					missing: ["scope.json"],
-					guidance:
-						"No run. Product work alone is never optimizexp complete. Init a run and execute the dual-regime loop.",
+					guidance: "No historical record exists for this run.",
 				},
 				null,
 				2,
@@ -1380,7 +818,6 @@ function modeAssertComplete(
 	) {
 		missing.push("stopPolicy_not_recognized");
 	}
-	// Stale policies that encode old terminal
 	if (stopPolicy === "infinite-until-zero-or-irreducible") {
 		missing.push("stale_stopPolicy_metrics_zero_terminal");
 	}
@@ -1400,7 +837,6 @@ function modeAssertComplete(
 		missing.push("bus_complete_triples_lt_1");
 	}
 	missing.push(...lintCopiedScores(root, runId));
-	// Completion is run-scoped. Missing runId entries must never count for this run.
 	const busValidation = validateBusForRun(root, runId);
 	missing.push(...busValidation);
 	missing.push(...validateRequiredDesignerConsensus(root, runId, scope));
@@ -1437,7 +873,6 @@ function modeAssertComplete(
 			missing.push(`invalid_stopReason:${candidate || lastEq?.reason}`);
 		}
 	} else {
-		// harm-only path still needs harm floor marker
 		const lastSs = scope.lastShouldStop as
 			| { plateau?: boolean; reason?: string }
 			| null
@@ -1481,7 +916,6 @@ function modeAssertComplete(
 				!/harm-only-floor|stopReason|stop reason/i.test(summary) &&
 				reason !== "harm-only-floor"
 			) {
-				// require either explicit stopReason in scope or summary mention
 				if (!scope.stopReason) missing.push("summary_or_scope_stopReason");
 			}
 		} else {
@@ -1497,7 +931,6 @@ function modeAssertComplete(
 		}
 	}
 
-	// ── Feature-quality / exploration gates (critical path) ──
 	const featureIds = Array.isArray(scope.features)
 		? (scope.features as string[])
 		: [];
@@ -1505,7 +938,6 @@ function modeAssertComplete(
 		? (scope.projects as string[])
 		: [];
 
-	// Surface map required for non-root product projects when features are set
 	const projectPaths = new Map(listProjects(root).map((project) => [project.id, project.path]));
 	for (const pid of projectIds) {
 		if (pid === "root" || pid === "global") continue;
@@ -1515,7 +947,6 @@ function modeAssertComplete(
 		}
 	}
 
-	// Coverage is mandatory for every mutating run (and for explicitly scoped features).
 	const coveragePath = path.join(runDir, "feature-coverage.json");
 	const coverageRequired = !Boolean(scope.reportOnly) || featureIds.length > 0;
 	if (!existsSync(coveragePath) && coverageRequired) {
@@ -1547,7 +978,6 @@ function modeAssertComplete(
 		}
 	}
 
-	// Bus outcomes must point at existing evidence with harness stamp when path set
 	const busDir = path.join(root, ".optimizexp", "bus", "entries");
 	if (existsSync(busDir) && featureIds.length > 0) {
 		const outcomes = readdirSync(busDir).filter(
@@ -1583,7 +1013,6 @@ function modeAssertComplete(
 					} else if (meta.repro?.via === "capture-evidence") stamped += 1;
 				}
 			} catch {
-				/* ignore single bad entry */
 			}
 		}
 		if (outcomes.length > 0 && stamped === 0) {
@@ -1591,8 +1020,6 @@ function modeAssertComplete(
 		}
 	}
 
-	// Prefer mark-complete to set status complete; assert can pass while still running
-	// if all artifacts present (ready-to-mark). status complete is not required for ok.
 	const ready = missing.length === 0;
 	const result = {
 		ok: ready,
@@ -1610,120 +1037,12 @@ function modeAssertComplete(
 		bus,
 		iterations: iters,
 		missing,
-		guidance: ready
-			? "assert-complete OK. Run mark-complete --stop-reason <reason>, then paste this JSON when claiming optimizexp done."
-			: "Not complete. Product tests / one evidence / harm plateau alone are insufficient. Fix missing[] and continue the loop.",
+		guidance: "Historical records only; implement new improvements directly.",
 	};
 	console.log(JSON.stringify(result, null, 2));
 	process.exitCode = ready ? 0 : 1;
 }
 
-function modeMarkComplete(
-	args: Record<string, string | boolean>,
-	root: string,
-) {
-	const runId = String(args.run || "");
-	const stopReason = String(args.stopReason || "");
-	const force = args.force === "1" || args.force === true;
-	if (!runId) {
-		console.error("--run required for mark-complete");
-		process.exit(2);
-	}
-	if (!stopReason) {
-		console.error("--stop-reason required for mark-complete");
-		process.exit(2);
-	}
-	if (FORBIDDEN_STOP_REASONS.has(stopReason)) {
-		console.error(`forbidden stop reason: ${stopReason}`);
-		process.exit(2);
-	}
-	if (!INVOCATION_STOP_REASONS.has(stopReason)) {
-		console.error(
-			`invalid stop reason: ${stopReason}. Allowed: ${[...INVOCATION_STOP_REASONS].join(", ")}`,
-		);
-		process.exit(2);
-	}
-
-	// Re-run assert unless --force (force is for true external terminals only)
-	if (!force) {
-		// inline assert by calling logic via process would recurse; re-check core
-		const prevExit = process.exitCode;
-		modeAssertComplete({ run: runId }, root);
-		if (process.exitCode !== 0 && process.exitCode !== undefined) {
-			console.error(
-				"mark-complete refused: assert-complete failed (use only after artifacts ready)",
-			);
-			return;
-		}
-		process.exitCode = prevExit ?? 0;
-	}
-
-	const scope = readScope(root, runId);
-	if (!scope) {
-		console.error("scope.json missing");
-		process.exit(2);
-	}
-	const noDelight = Boolean(scope.noDelight);
-	if (stopReason === "harm-only-floor" && !noDelight) {
-		console.error(
-			"harm-only-floor requires scope.noDelight=true (--no-delight)",
-		);
-		process.exit(2);
-	}
-	if (
-		!noDelight &&
-		stopReason === "pareto-equilibrium" &&
-		!(scope.regimesEntered as string[] | undefined)?.includes(
-			"delight_maximize",
-		)
-	) {
-		console.error("pareto-equilibrium requires delight_maximize was entered");
-		process.exit(2);
-	}
-
-	scope.status = "complete";
-	scope.stopReason = stopReason;
-	scope.completedAt = new Date().toISOString();
-	scope.updatedAt = scope.completedAt;
-	writeScope(root, runId, scope);
-
-	const incomplete = path.join(runDirOf(root, runId), "INCOMPLETE.md");
-	if (existsSync(incomplete)) {
-		try {
-			unlinkSync(incomplete);
-		} catch {
-			// ignore
-		}
-	}
-	writeFileSync(
-		path.join(runDirOf(root, runId), "COMPLETE.md"),
-		`# Complete: \`${runId}\`
-
-stopReason: **${stopReason}**
-completedAt: ${scope.completedAt}
-
-Certified via mark-complete after assert-complete.
-`,
-	);
-
-	console.log(
-		JSON.stringify(
-			{
-				ok: true,
-				runId,
-				status: "complete",
-				stopReason,
-				guidance:
-					"Invocation complete. Paste assert-complete + this mark-complete result when reporting optimizexp done.",
-			},
-			null,
-			2,
-		),
-	);
-	process.exitCode = 0;
-}
-
-/** Aggregate judged outcome scorecards into run cells. */
 function modeAggregateBus(root: string, runId: string) {
 	const dir = path.join(root, ".optimizexp", "bus", "entries");
 	if (!existsSync(dir)) {
@@ -1776,60 +1095,6 @@ function main() {
 		console.error("--run must be a valid run id");
 		process.exit(2);
 	}
-	if (["init", "should-stop", "equilibrium", "mark-complete"].includes(mode)) {
-		const problem = optimizexpWriteProblem(root, [""]);
-		if (problem) {
-			console.error(problem);
-			process.exit(2);
-		}
-	}
-	if (mode === "init") {
-		const run = String(args.run || "");
-		if (!run) {
-			console.error("--run required");
-			process.exit(2);
-		}
-		const experiences = String(args.experiences || "ux,dx,ax")
-			.split(/[,\s]+/)
-			.filter(Boolean) as Experiences[];
-		const personas = String(args.personas || "")
-			.split(/[,\s]+/)
-			.filter(Boolean);
-		const features = String(args.features || "")
-			.split(/[,\s]+/)
-			.filter(Boolean);
-		const projects = String(args.projects || "")
-			.split(/[,\s]+/)
-			.filter(Boolean);
-		const reportOnly =
-			args.reportOnly === "1" ||
-			args.reportOnly === true ||
-			process.env.OPTIMIZEXP_REPORT_ONLY === "1";
-		const noDelight =
-			args.noDelight === "1" ||
-			args.noDelight === true ||
-			process.env.OPTIMIZEXP_NO_DELIGHT === "1";
-		const noSurvey =
-			args.noSurvey === "1" ||
-			args.noSurvey === true ||
-			process.env.OPTIMIZEXP_NO_SURVEY === "1";
-		const passes = parsePasses(
-			args.passes ?? process.env.OPTIMIZEXP_PASSES ?? "infinite",
-		);
-		const delightPasses = parsePasses(
-			args.delightPasses ?? process.env.OPTIMIZEXP_DELIGHT_PASSES ?? "infinite",
-		);
-		initRun(root, run, experiences, personas, {
-			reportOnly,
-			passes,
-			noDelight,
-			noSurvey,
-			delightPasses,
-			features,
-			projects,
-		});
-		return;
-	}
 	if (mode === "validate-bus") {
 		modeValidateBus(root);
 		return;
@@ -1838,24 +1103,12 @@ function main() {
 		modeReadBus(args as Record<string, string | boolean>, root);
 		return;
 	}
-	if (mode === "should-stop") {
-		modeShouldStop(args as Record<string, string | boolean>, root);
-		return;
-	}
-	if (mode === "equilibrium") {
-		modeEquilibrium(args as Record<string, string | boolean>, root);
-		return;
-	}
 	if (mode === "status") {
 		modeStatus(args as Record<string, string | boolean>, root);
 		return;
 	}
 	if (mode === "assert-complete") {
 		modeAssertComplete(args as Record<string, string | boolean>, root);
-		return;
-	}
-	if (mode === "mark-complete") {
-		modeMarkComplete(args as Record<string, string | boolean>, root);
 		return;
 	}
 	if (mode === "aggregate-bus") {
