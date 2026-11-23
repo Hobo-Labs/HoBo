@@ -496,11 +496,8 @@ describe("prepareGithubConnection", () => {
 						prepareGithubConnection(input, {
 							env: {},
 							fetch: async () => new Response(null, { status: 401 }),
-							// The owner chose the egress proxy: the run would wait for it.
 							locator: memorySettings({
 								HOBO_SECRET_STORE: "infisical",
-								INFISICAL_PROJECT_ID: "proj",
-								INFISICAL_SIGN_IN: "egress-proxy",
 							}),
 							startPage: () => {
 								throw new Error("the silent page must not be started");
@@ -535,11 +532,8 @@ describe("prepareGithubConnection", () => {
 				{
 					env: {},
 					fetch: async () => new Response(null, { status: 401 }),
-					// The owner chose the egress proxy: the run would wait for it.
 					locator: memorySettings({
 						HOBO_SECRET_STORE: "infisical",
-						INFISICAL_PROJECT_ID: "proj",
-						INFISICAL_SIGN_IN: "egress-proxy",
 					}),
 					startPage: () => {
 						throw new Error("the silent page must not be started");

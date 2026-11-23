@@ -18,8 +18,6 @@ import {
 
 // public-contract: the owner-store reference hobo ci fleet reads the Hostinger API token from; owners store it under this name.
 export const CI_FLEET_TOKEN_REF = "owner://HOSTINGER_API_TOKEN";
-// public-contract: the env-scheme alias of the same owner-store entry, accepted for owners who named it that way.
-export const CI_FLEET_TOKEN_ENV_REF = "env://HOSTINGER_API_TOKEN";
 const CREDENTIAL_SCOPE = "hobo-ci-fleet";
 const FLEET_PROVIDER = "hostinger";
 const MACHINE_TARGET = /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})$/u;
@@ -47,14 +45,11 @@ function credentialUnavailable(): CommandResult {
 async function resolveFleetToken(
 	credentials: CredentialResolver,
 ): Promise<string | undefined> {
-	for (const ref of [CI_FLEET_TOKEN_REF, CI_FLEET_TOKEN_ENV_REF]) {
-		const material = await credentials
-			.resolve(ref, CREDENTIAL_SCOPE)
-			.catch(() => undefined);
-		const token = material?.token;
-		if (token !== undefined && token !== "") return token;
-	}
-	return undefined;
+	const material = await credentials
+		.resolve(CI_FLEET_TOKEN_REF, CREDENTIAL_SCOPE)
+		.catch(() => undefined);
+	const token = material?.token;
+	return token === "" ? undefined : token;
 }
 
 function hostOf(machine: HostingerFleetMachine): CiFleetHost {

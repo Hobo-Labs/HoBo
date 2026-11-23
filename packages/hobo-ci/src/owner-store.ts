@@ -27,7 +27,7 @@ import type { provisionInfisicalAccess } from "./infisical-access.js";
 import { OAUTH_SIGN_IN } from "./infisical-oauth.js";
 import type { provisionOnePasswordAccess } from "./onepassword-access.js";
 import type { OwnerChannel } from "./owner-channel.js";
-import { type HttpsOrigin, parseHttpsOrigin } from "./parsed-values.js";
+import { parseHttpsOrigin } from "./parsed-values.js";
 import {
 	type Env,
 	type OpenedSecretStore,
@@ -98,12 +98,40 @@ export function hasSecretStoreLocator(
 // public-contract: the Infisical folder of the relay's own credentials, which hobo ci up reads and keeps.
 export const CI_RELAY_FOLDER = "/hobo-ci-relay";
 
-// public-contract: the locator's INFISICAL_SIGN_IN value for a sign-in the agent's egress proxy injects.
-export const EGRESS_PROXY_SIGN_IN = "egress-proxy";
-
 // public-contract: Infisical's guide to the Token Auth identity a remote agent's run signs in with.
 export const INFISICAL_TOKEN_AUTH_DOCS =
 	"https://infisical.com/docs/documentation/platform/identities/token-auth";
+// public-contract: 1Password's guide to the Connect server and the access token a handed-off run needs.
+export const ONE_PASSWORD_CONNECT_GUIDE = "https://www.1password.dev/connect/";
+// public-contract: the capture names of a store sign-in the owner hands to a waiting run.
+export const HAND_OFF_SIGN_IN_CAPTURES = [
+	"INFISICAL_TOKEN",
+	"OP_CONNECT_TOKEN",
+] as const;
+
+export interface HandOffSignIn {
+	readonly name: (typeof HAND_OFF_SIGN_IN_CAPTURES)[number];
+	readonly title: string;
+	readonly instructions: string;
+	readonly guide: string;
+}
+
+export const HAND_OFF_SIGN_INS = {
+	infisical: {
+		name: "INFISICAL_TOKEN",
+		title: "Infisical access token",
+		instructions:
+			"Your Infisical identity's Token Auth access token, as the guide shows it.",
+		guide: INFISICAL_TOKEN_AUTH_DOCS,
+	},
+	"1password": {
+		name: "OP_CONNECT_TOKEN",
+		title: "1Password Connect access token",
+		instructions:
+			"An access token of your 1Password Connect server with access to the vault, as the guide shows it.",
+		guide: ONE_PASSWORD_CONNECT_GUIDE,
+	},
+} as const satisfies Readonly<Record<"infisical" | "1password", HandOffSignIn>>;
 
 // public-contract: the progress line a handed-off run prints when the owner has not chosen a store.
 export const OWNER_STORE_CHOICE_LINE_PREFIX = "HOBO_OWNER_STORE_CHOICE";
@@ -140,7 +168,7 @@ export function storeSignInGuidance(
 		];
 	if (store === "bitwarden")
 		return [
-			`Your personal API key (${bitwardenApiKeyPage(bitwardenEndpoints("us"))}, or on bitwarden.eu or your own server the same page: Account settings → Security → Keys → View API key). The run asks for it in a form, never in chat: from a remote box, the agent session's credential form for Bitwarden's identity host (client_id as the username, client_secret as the password) or the HoBo MCP App's secret form. Then approve the one login request the run shows, in a Bitwarden app you are signed in to.`,
+			`Your personal API key (${bitwardenApiKeyPage(bitwardenEndpoints("us"))}, or on bitwarden.eu or your own server the same page: Account settings → Security → Keys → View API key). The run asks for it in a form, never in chat: from a remote box, the HoBo MCP App's secret form, which only this run reads. Then approve the one login request the run shows, in a Bitwarden app you are signed in to.`,
 		];
 	return [
 		`Sign in to Infisical once from any device when the run gives you its link; HoBo creates its own machine identity, access and project membership through Infisical's API. From a remote box, hand over what Infisical's "Copy to clipboard" copies in the HoBo MCP App's secret form (hobo ${verb} up through the HoBo MCP server).`,
@@ -222,8 +250,6 @@ export function familySettings(
 export interface OwnerStoreDeps extends SecretStoreDeps {
 	/** Non-secret environment: only non-secret settings are read from it. */
 	readonly env?: Env;
-	/** A fallback only when neither the environment nor locator chose a sign-in. */
-	readonly defaultInfisicalSignIn?: typeof EGRESS_PROXY_SIGN_IN;
 	/** Where the locator is committed; the working directory by default. */
 	readonly cwd?: string;
 	readonly locator?: SettingsStore;
@@ -278,10 +304,7 @@ export interface OwnerStore {
 	readonly chosen: boolean;
 	/** Locator fields the page must ask for, and the sign-in when none is in hand. */
 	readonly missing: readonly ConfigField[];
-	/** Whether supplying an egress-proxy credential can open the configured store. */
-	readonly canAwaitEgressCredential: boolean;
-	/** The host whose credential the egress proxy injects, when it can. */
-	readonly egressCredentialHost: HttpsOrigin | undefined;
+	readonly handOffSignIn: HandOffSignIn | undefined;
 	/** The store, opened without the page when the locator and a sign-in allow it. */
 	readonly opened: OpenedSecretStore | undefined;
 	/** Infisical only: the folder the store opens on (environment and path). */
@@ -356,13 +379,12 @@ export async function ownerStore(
 	vault: TrustedVault,
 	deps: OwnerStoreDeps = {},
 ): Promise<OwnerStore> {
-	const suppliedEnv = deps.env ?? {};
+	const env = deps.env ?? {};
 	const locator = ownerLocator({
 		...deps,
 		env: {
-			XDG_CONFIG_HOME:
-				suppliedEnv.XDG_CONFIG_HOME ?? process.env.XDG_CONFIG_HOME,
-			HOME: suppliedEnv.HOME ?? process.env.HOME,
+			XDG_CONFIG_HOME: env.XDG_CONFIG_HOME ?? process.env.XDG_CONFIG_HOME,
+			HOME: env.HOME ?? process.env.HOME,
 		},
 	});
 	const open =
@@ -370,12 +392,6 @@ export async function ownerStore(
 		((id: SecretStoreId, coordinates: Env, signIn: SecretHolder) =>
 			openSecretStore(id, coordinates, signIn, deps));
 	const saved = await locator.read();
-	const env =
-		!suppliedEnv.INFISICAL_SIGN_IN &&
-		!saved.INFISICAL_SIGN_IN &&
-		deps.defaultInfisicalSignIn !== undefined
-			? { ...suppliedEnv, INFISICAL_SIGN_IN: deps.defaultInfisicalSignIn }
-			: suppliedEnv;
 	const ownerChose = Boolean(env.HOBO_SECRET_STORE || saved.HOBO_SECRET_STORE);
 	// Only the owner chooses: a token in the environment says a provider is
 	// configured and reachable, never that the owner chose it.
@@ -409,17 +425,10 @@ export async function ownerStore(
 		id === "infisical" &&
 		Boolean(resolved.values.INFISICAL_IDENTITY_ID) &&
 		Boolean(deps.workloadOidc?.ACTIONS_ID_TOKEN_REQUEST_URL);
-	// The agent's egress proxy injects the owner's token into requests to
-	// Infisical: this run holds only a placeholder and asks for nothing.
-	const proxySignIn =
-		id === "infisical" &&
-		resolved.values.INFISICAL_SIGN_IN === EGRESS_PROXY_SIGN_IN;
 	// The OAuth application sign-in approves in the browser: no token, but
 	// the application's client id and secret.
 	const oauthSignIn =
 		id === "infisical" && resolved.values.INFISICAL_SIGN_IN === OAUTH_SIGN_IN;
-	// 1Password through the owner's Connect server: a bearer token the egress
-	// proxy injects on the way to it, so no desktop app and no token here.
 	// Parsed where it enters: a malformed host was already refused as missing.
 	const connectHost =
 		id === "1password" && resolved.values.OP_CONNECT_HOST
@@ -440,7 +449,7 @@ export async function ownerStore(
 		...resolved.missing.filter(
 			(field) =>
 				!(
-					((workloadSignIn || proxySignIn || oauthSignIn) &&
+					((workloadSignIn || oauthSignIn) &&
 						field.name === "INFISICAL_TOKEN") ||
 					((connectHost !== undefined ||
 						Boolean(vault.reveal("OP_SERVICE_ACCOUNT_TOKEN"))) &&
@@ -478,16 +487,20 @@ export async function ownerStore(
 		id,
 		chosen: ownerChose,
 		missing: [...choice.missing, ...missingSide],
-		canAwaitEgressCredential:
-			(proxySignIn || connectHost !== undefined) &&
-			choice.missing.length === 0 &&
-			missingSide.length === 0,
-		egressCredentialHost: proxySignIn
-			? parseHttpsOrigin(
-					"INFISICAL_SITE_URL",
-					resolved.values.INFISICAL_SITE_URL ?? "https://app.infisical.com",
-				)
-			: connectHost,
+		handOffSignIn:
+			choice.missing.length > 0
+				? undefined
+				: connectHost !== undefined &&
+						missingSide.length === 0 &&
+						!vault.has("OP_CONNECT_TOKEN")
+					? HAND_OFF_SIGN_INS["1password"]
+					: id === "infisical" &&
+							!workloadSignIn &&
+							!oauthSignIn &&
+							missingSide.length === 1 &&
+							missingSide[0]?.name === "INFISICAL_TOKEN"
+						? HAND_OFF_SIGN_INS.infisical
+						: undefined,
 		opened,
 		infisicalFolder:
 			id === "infisical"

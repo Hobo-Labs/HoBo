@@ -8,11 +8,16 @@ import {
 	type OpenedSecretStore,
 	prepareGithubConnection,
 } from "../../src/index.js";
-import { heldOwnerChannel, readOwnerTurn } from "../support/remote-owner.js";
+import {
+	handedOverInfisicalToken,
+	heldOwnerChannel,
+	readOwnerTurn,
+} from "../support/remote-owner.js";
 
 function throughMcp(): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: () => undefined,
+		// SAFETY: the preparation reads only progress and these output flags.
 		flags: { json: true, quiet: false } as CommandRunInput["flags"],
 	};
 	return {
@@ -21,6 +26,7 @@ function throughMcp(): PrepareInput {
 		whatIf: false,
 		yes: false,
 		handOff: true,
+		// SAFETY: prepareGithubConnection reads only progress and these output flags.
 		run: run as CommandRunInput,
 	};
 }
@@ -38,12 +44,12 @@ describe("SPEC hand-off through MCP: no progress lines, no silent refusals", () 
 	it("a store that will not open says why, never 'omit --json'", async () => {
 		const outcome = await prepareGithubConnection(throughMcp(), {
 			env: { CLAUDE_CODE_REMOTE: "true" },
+			vault: handedOverInfisicalToken(),
 			ownerChannel: heldOwnerChannel(),
 			locator: {
 				read: async () => ({
 					HOBO_SECRET_STORE: "infisical",
 					INFISICAL_PROJECT_ID: "proj",
-					INFISICAL_SIGN_IN: "egress-proxy",
 				}),
 				write: async () => undefined,
 			},
@@ -64,6 +70,46 @@ describe("SPEC hand-off through MCP: no progress lines, no silent refusals", () 
 			"Infisical refused this run's token (HTTP 401).",
 		);
 		expect(readOwnerTurn(false, shown).kind).not.toBe("dead-end");
+	});
+
+	it("a store missing only its token asks for it through HoBo's capture, never the session's credential form", async () => {
+		const owner = heldOwnerChannel();
+		const tokens: (string | undefined)[] = [];
+		const deps: Parameters<typeof prepareGithubConnection>[1] = {
+			env: { CLAUDE_CODE_REMOTE: "true" },
+			ownerChannel: owner,
+			locator: {
+				read: async () => ({
+					HOBO_SECRET_STORE: "infisical",
+					INFISICAL_PROJECT_ID: "proj",
+					INFISICAL_SIGN_IN: "typed",
+				}),
+				write: async () => undefined,
+			},
+			openStore: async (_id, _coordinates, signIn) => {
+				tokens.push(signIn.reveal("INFISICAL_TOKEN"));
+				return {
+					ok: true,
+					store: {
+						id: "infisical",
+						port: createMemorySecretsPort({ id: "memory" }),
+						reference: (name) => `infisical://proj/prod/hobo-ci/${name}`,
+					},
+				};
+			},
+			startPage: () => {
+				throw new Error("no page through MCP");
+			},
+		};
+		const shown = lines(await prepareGithubConnection(throughMcp(), deps));
+		expect(readOwnerTurn(false, shown)).toEqual({
+			kind: "act",
+			action: { kind: "capture", names: ["INFISICAL_TOKEN"] },
+		});
+		expect(shown.join("\n")).not.toMatch(/HOBO_OWNER_CREDENTIAL|egress/u);
+		owner.deposit("INFISICAL_TOKEN", "fixture-handed-over-access-token");
+		await prepareGithubConnection(throughMcp(), deps);
+		expect(tokens).toEqual(["fixture-handed-over-access-token"]);
 	});
 
 	it("a store missing a setting names it", async () => {

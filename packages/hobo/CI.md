@@ -283,8 +283,8 @@ so purchase, setup, recreate, stop and every `/api/billing/v1/` route are
 refused before a request leaves the process (`HOSTINGER_FLEET_ROUTE_REFUSED`).
 
 The Hostinger API token comes from the owner's store session, as
-`owner://HOSTINGER_API_TOKEN` (`env://HOSTINGER_API_TOKEN` is accepted for the
-same entry), resolved through the session's credential resolver; the CLI reads
+`owner://HOSTINGER_API_TOKEN`, resolved through the session's credential
+resolver; the CLI reads
 no token from its environment, and no output, error included, carries the
 token or a store reference. Without an established session, or with no such
 entry in the store, the command refuses with
@@ -521,7 +521,7 @@ hobo ci connect boat --org Hobo-Labs --launch           # runs `boat ci connect`
 Secrets never pass through HoBo:
 
 - The config holds **references only**. `auth.secretRef` must be `github-secret:NAME` or `env:NAME`. The JSON schema, the CUE model (`#RunnerIntegration`) and the loader reject anything else, including credential-shaped or high-entropy strings in any field, and their errors never echo the value.
-- The CLI never prompts for, reads or prints a credential. For `secret-ref` you store the value yourself (`gh secret set NAME` prompts).
+- The CLI never prompts for, reads or prints a credential. A `secret-ref` only names where the provider's integration reads the value; HoBo creates no such entry, and agents never store one ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)).
 - `--launch` runs the provider CLI with credential-like environment variables (`*TOKEN*`, `*SECRET*`, `*API_KEY*` …) removed, and output is redacted.
 - `packages/hobo/test/ci-connect-leak.test.ts` generates synthetic, real-looking tokens at runtime (never written to disk) and asserts that none appear in CLI output, progress or the written config.
 
@@ -559,7 +559,7 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 | `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
 | `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
-| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration. `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`), unless the relay serves the commit and its owner hand-off and `/readyz` names only the owner's missing or refused entries: then production keeps the build, unqualified, and the command answers `HOBO_CI_DEPLOYED_AWAITING_OWNER` naming them. Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
+| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration. `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
 
 Nobody runs this against production by hand: the
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
@@ -720,9 +720,11 @@ scope response fails closed, and every issued session is revoked. The
 deploy-token read itself never signs in as the writer.
 
 The GitHub App's converted credentials never touch a person or this CLI.
-Provision GitHub's one-time manifest code as the `HOBO_APP_MANIFEST_CODE`
-Actions secret, then dispatch `app-credentials.yml` with only the relay origin
-and owner id. Its call to the `app-credentials` job in `relay-deploy.yml`
+`app-credentials.yml` reads GitHub's one-time manifest code from the
+`HOBO_APP_MANIFEST_CODE` Actions secret and takes only the relay origin and
+owner id as dispatch inputs; agents never provision that secret
+([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)), and
+`hobo ci app create` below converts the code without one. The workflow's call to the `app-credentials` job in `relay-deploy.yml`
 passes the code as a required reusable-workflow secret, refuses a missing or
 empty value, masks it, and runs `hobo ci app deposit`, which converts, verifies
 the App and writes the credentials as `hobo-ci-writer` over GitHub OIDC. The
@@ -749,15 +751,16 @@ and stores its credentials straight in the relay's config service, Infisical
 (ADR-0179, phase 3). Nothing is written to disk or printed.
 
 ```sh
-export INFISICAL_PROJECT_ID=<project id> INFISICAL_ENVIRONMENT=prod \
-  INFISICAL_SECRET_PATH=/hobo-ci-relay INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=<id>
-read -rs INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 hobo ci app create --relay https://<relay-host> --owner-id "$(gh api user --jq .id)"
 ```
 
-1. It signs in to Infisical first, with Universal Auth credentials from the
-   environment (`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `_SECRET`, the names the
-   Infisical CLI reads) or an access token in `INFISICAL_TOKEN`, and lists the
+1. It signs in to Infisical first. The command reads the folder's coordinates
+   (`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`) and
+   a sign-in (`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `_SECRET`, or
+   `INFISICAL_TOKEN`) from its process environment, the names the Infisical CLI
+   reads. Agents never set or store these
+   ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)); the owner
+   runs the command from their own Infisical session. It then lists the
    folder's names. If App credentials are already there it stops unless `--yes`.
 2. It serves a page on `127.0.0.1` and opens it (the URL is also printed). The
    page posts the manifest (`createGithubAppManifest`, the reviewed permissions

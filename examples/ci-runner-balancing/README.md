@@ -93,14 +93,13 @@ pnpm --filter @hobo/example-ci-runner-balancing rebalance -- \
 # tests
 pnpm --filter @hobo/example-ci-runner-balancing test
 
-# live plan against a repository (read-only; needs GITHUB_TOKEN)
-HOBO_RB_REPO=owner/repo GITHUB_TOKEN=... \
-  pnpm --filter @hobo/example-ci-runner-balancing rebalance
-
-# live apply (patches repo variables; needs a PAT with Variables write)
-HOBO_RB_REPO=owner/repo VARS_ADMIN_TOKEN=... \
-  pnpm --filter @hobo/example-ci-runner-balancing rebalance -- --mode apply
+# live plan against a repository (read-only; reads GITHUB_TOKEN from its environment)
+HOBO_RB_REPO=owner/repo pnpm --filter @hobo/example-ci-runner-balancing rebalance
 ```
+
+Live `--mode apply` patches repository variables with `VARS_ADMIN_TOKEN` from
+its environment. Agents never store either token or write repository variables
+([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)).
 
 Operator levers (all optional):
 
@@ -116,9 +115,10 @@ Operator levers (all optional):
 | `HOBO_RB_ALLOW_PUBLIC` / `--allow-public` | Permit `host-runner` to register against a **public** repository (refused by default). |
 | `HOBO_RB_ENABLE_<PROVIDER>` (repo variable) | Capability guard: makes that provider's rung eligible. |
 
-Third-party rungs are **guarded off until you enable them**: set the repo
-variable `HOBO_RB_ENABLE_BLACKSMITH=1` (etc.) only after installing that
-provider's GitHub App or registering its runner pool. The `self-hosted` rung
+Third-party rungs are **guarded off** until the repo variable
+`HOBO_RB_ENABLE_BLACKSMITH=1` (etc.) is present, which only makes sense after
+that provider's GitHub App is installed or its runner pool registered. Agents
+never write repository variables. The `self-hosted` rung
 is guarded by `HOBO_RB_ENABLE_SELF_HOSTED`. All third-party prices and free
 tiers in `src/registry.ts` are `COST_TRUST_DECLARED_UNVERIFIED` snapshots of
 public pricing pages — override them with your negotiated rates.
