@@ -265,6 +265,14 @@ export function commentViolations(
 	});
 }
 
+function addsLines(args: readonly string[], file: string): boolean {
+	return (
+		addedLineNumbers(
+			git([...args, "--no-color", "--no-ext-diff", "--unified=0", "--", file]),
+		).size > 0
+	);
+}
+
 export function documentViolation(
 	file: string,
 	text: string,
@@ -300,7 +308,8 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		if (GENERATED_OR_VENDOR.test(file)) continue;
 		if (
 			/\.mdx?$/iu.test(file) &&
-			parents.every((parent) => parent.files.has(file))
+			parents.every((parent) => parent.files.has(file)) &&
+			(untracked.includes(file) || addsLines(args, file))
 		) {
 			const reason = documentViolation(file, contents(mode, file));
 			if (reason) violations.push({ file, line: 1, message: reason });
