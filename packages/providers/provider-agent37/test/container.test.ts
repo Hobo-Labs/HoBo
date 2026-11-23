@@ -30,6 +30,11 @@ describe("Agent37 fake container startup", () => {
 			try {
 				expect(started.mode).toBe("in-process");
 				expect(started.baseUrl.startsWith("http://127.0.0.1:")).toBe(true);
+				const response = await fetch(`${started.baseUrl}/v1/instances`, {
+					headers: { authorization: `Bearer ${started.apiKey}` },
+				});
+				expect(response.status).toBe(200);
+				expect(await response.json()).toEqual({ instances: [] });
 			} finally {
 				await started.close();
 			}

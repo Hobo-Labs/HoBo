@@ -281,7 +281,8 @@ effective-base change invalidates approval and returns to evidence/council.
 Billing-only CI exceptions waive only the CI condition, never council consensus.
 `/sdlc --finish` is authorization to land work, not an approval bypass.
 
-For stacks, review bottom-up. After merging/rebasing a lower layer, recompute the
-upper layer's effective proposal digest and reconvene whenever it changed.
+For stacks, review the whole stack's combined diff against trunk once, at the
+top of the stack. After merging trunk or a lower-layer fix in, recompute the
+proposal digest and reconvene whenever it changed.
 `sdlc-state.md` records the council review ID, cycle, result, consensus entry,
 proposal digest, reviewed head, and assertion time, but it is not authoritative.
