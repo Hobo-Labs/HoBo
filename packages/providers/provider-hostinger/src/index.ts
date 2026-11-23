@@ -107,6 +107,20 @@ export type {
 	ResourcePlan,
 } from "./types.js";
 export {
+	guardedHostingerFleetTransport,
+	HOSTINGER_FLEET_ERROR_CODES,
+	HOSTINGER_VM_POWER_ACTIONS,
+	type HostingerFleetActionReceipt,
+	HostingerFleetError,
+	type HostingerFleetErrorCode,
+	type HostingerFleetMachine,
+	type HostingerVmPowerAction,
+	type HostingerVpsFleet,
+	type HostingerVpsFleetOptions,
+	hostingerVpsFleet,
+	parseHostingerVmPowerAction,
+} from "./vps-fleet.js";
+export {
 	HOSTINGER_YARD_GENERATOR_CONNECTOR_ID,
 	HOSTINGER_YARD_RUNTIME_ID,
 	hostingerDefaultResolverPins,
