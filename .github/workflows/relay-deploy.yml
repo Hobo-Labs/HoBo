@@ -19,12 +19,6 @@ name: HoBo relay deploy
 # run in the protected deploy job, in order, and fail closed. The unprotected
 # gate job decides whether that job starts. A final step probes the production
 # origin again and fails the job on anything but a serving relay.
-#
-# No secret and no repository variable configures relay deployment. The store's
-# coordinates (ids and an origin, no credential) are committed to
-# packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself
-# reads in production. A missing or malformed binding fails the gate; a valid
-# binding without a deploy credential skips deployment with an explicit notice.
 
 on:
   push:
@@ -237,7 +231,6 @@ jobs:
           node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-production.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
       - name: Verify the relay at its production origin
-        id: verify
         if: needs.gate.outputs.run == 'true'
         run: |
           set -euo pipefail
@@ -251,7 +244,7 @@ jobs:
       # the signal to roll back in the order of "Roll back" under
       # "Fleet verdict operations" in packages/ci-vercel/README.md.
       - name: Probe the fleet verdict at the public origin
-        if: needs.gate.outputs.run == 'true' && steps.verify.outputs.awaiting-owner != 'true'
+        if: needs.gate.outputs.run == 'true'
         run: |
           set -uo pipefail
           origin="$(node -e '

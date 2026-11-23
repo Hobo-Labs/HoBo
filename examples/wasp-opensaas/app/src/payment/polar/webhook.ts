@@ -5,6 +5,7 @@ import { validateEvent } from "@polar-sh/sdk/webhooks";
 import express from "express";
 import { env, type MiddlewareConfigFn, type PrismaClient } from "wasp/server";
 import type { PaymentsWebhook } from "wasp/server/api";
+import * as z from "zod";
 import { assertUnreachable } from "../../shared/utils";
 import { UnhandledWebhookEventError } from "../errors";
 import { getPaymentPlanIdByPaymentProcessorPlanId } from "../paymentProcessorPlans";
@@ -27,6 +28,12 @@ export const polarMiddlewareConfigFn: MiddlewareConfigFn = (
   return middlewareConfig;
 };
 
+const polarWebhookHeadersSchema = z.object({
+  "webhook-id": z.string(),
+  "webhook-timestamp": z.string(),
+  "webhook-signature": z.string(),
+});
+
 export const polarWebhook: PaymentsWebhook = async (
   request,
   response,
@@ -36,12 +43,7 @@ export const polarWebhook: PaymentsWebhook = async (
   try {
     const event = validateEvent(
       request.body,
-      Object.fromEntries(
-        Object.entries(request.headers).map(([name, value]) => [
-          name,
-          String(value),
-        ]),
-      ),
+      polarWebhookHeadersSchema.parse(request.headers),
       env.POLAR_WEBHOOK_SECRET,
     );
 

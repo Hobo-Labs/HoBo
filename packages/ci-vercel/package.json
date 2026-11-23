@@ -16,10 +16,6 @@
     "./turbo-ci": {
       "types": "./dist/turbo-ci.d.ts",
       "default": "./dist/turbo-ci.js"
-    },
-    "./owner-handoff": {
-      "types": "./dist/owner-handoff.d.ts",
-      "default": "./dist/owner-handoff.js"
     }
   },
   "dependencies": {

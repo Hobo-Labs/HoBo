@@ -13,13 +13,12 @@ import {
 
 const repository = "Hobo-Labs/HoBo";
 const workflowRef = `${repository}/.github/workflows/vercel-credential-evidence.yml@refs/heads/main`;
-const teamId = "team_BRBUnG6uGhSsVV3EG5GFV3FM";
-const projectId = "prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO";
+const projectName = "hobo-ci";
 const projectSchema = z
 	.object({
-		id: z.literal(projectId),
-		accountId: z.literal(teamId),
-		name: z.literal("hobo-ci"),
+		id: z.string().regex(/^prj_[A-Za-z0-9]+$/u),
+		accountId: z.string().regex(/^team_[A-Za-z0-9]+$/u),
+		name: z.literal(projectName),
 	})
 	.passthrough();
 const candidates = [
@@ -99,7 +98,7 @@ export async function inspectVercelCredentials(input: {
 			);
 			const response = await transport.request({
 				method: "GET",
-				url: `https://api.vercel.com/v9/projects/${encodeURIComponent(projectId)}?teamId=${encodeURIComponent(teamId)}`,
+				url: `https://api.vercel.com/v9/projects/${encodeURIComponent(projectName)}`,
 				headers: {
 					authorization: `Bearer ${token.expose()}`,
 					accept: "application/json",
