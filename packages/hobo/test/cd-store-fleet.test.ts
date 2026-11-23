@@ -77,6 +77,8 @@ describe.skipIf(ADMIN === undefined)("CD journal on a PostgreSQL fleet", () => {
 				},
 			);
 			expect(opened.fleet?.().writer).toBe("vendor-a");
+			expect(opened.maintain).toBeTypeOf("function");
+			await Promise.all([opened.maintain?.(), opened.maintain?.()]);
 			expect(opened.fleet?.().shortfalls).toEqual(
 				expect.arrayContaining([
 					expect.stringContaining("failure-domain diversity is unverified"),

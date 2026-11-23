@@ -1,8 +1,5 @@
 package hobo:durable-messaging@0.1.0;
 
-/// Durable messaging outcomes are explicit. The host must authenticate the
-/// tenant and preserve committed and rejected receipts through operation expiry.
-/// stability: experimental
 interface messaging {
   record messaging-limits {
     name-bytes: u32,

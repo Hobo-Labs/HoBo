@@ -63,7 +63,7 @@ export async function runTick(deps: TickDeps = {}): Promise<void> {
 		);
 		return;
 	}
-	const { tick, reconciled } = report;
+	const { tick, reconciled, journal } = report;
 	const failed = reconciled.filter((camp) => !camp.ok);
 	write(
 		`${JSON.stringify({
@@ -71,6 +71,10 @@ export async function runTick(deps: TickDeps = {}): Promise<void> {
 			camps: reconciled.length,
 			failed: failed.map((camp) => camp.campId),
 			store: tick.store,
+			journal: journal.state,
+			...(journal.state === "failed"
+				? { journalDetail: journal.detail }
+				: undefined),
 		})}\n`,
 	);
 }

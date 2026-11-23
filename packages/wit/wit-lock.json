@@ -249,7 +249,7 @@
       "version": "0.1.0",
       "stability": "experimental",
       "path": "wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
-      "sha256": "sha256:ab89d6f717bace2975ce6300b4fec1b7d20994f432bea5a5a0b740a05a9640a2"
+      "sha256": "sha256:478beec23241a967f4b1518b16f5fd4c4ed5ae9fdc3aebcd36f18bd9d6d87ad0"
     },
     {
       "id": "hobo:scheduler/scheduler@0.1.0@experimental",
