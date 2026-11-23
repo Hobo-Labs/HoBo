@@ -30,8 +30,8 @@ Strict red/green (compose with the `tdd` skill / Superpowers test-driven-develop
 - After committing: no-arg `pnpm agent:check` validates the latest commit.
 - Whole-branch confidence (`--base=origin/main`) only at PR time; CI (docs.yml + hobo-ci pr-gate)
   is the arbiter the coordinator queries for the Done rule.
-- Multi-layer work: parent keeps the stack in sync (`gh stack sync` / `rebase --upstack`) after
-  lower-layer commits so upper-layer gates run on realistic bases.
+- Multi-layer work: parent merges lower-layer commits up the stack (`gh stack rebase --upstack`
+  only while layers are unpushed) so upper-layer gates run on realistic bases.
 - Design-relevant work: after independent review and current-head evidence,
   run the exact-six OptimizeXP council. Nay returns to the red/green loop;
   later commits or effective-base changes require refreshed evidence and a new
