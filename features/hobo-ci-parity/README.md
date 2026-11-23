@@ -4,6 +4,9 @@ The gauntlet turns each thing RelayRunner says it does into one case with a
 pass condition, and checks each case at the strongest tier that fits it. The
 decision record is ADR-0183 ([runner order](../../docs/ci/runner-order.md));
 the result is the generated [parity scorecard](../../docs/ci/parity-scorecard.md).
+The catalog holds 57 cases, and
+[`scripts/test/parity-scorecard.test.ts`](../../scripts/test/parity-scorecard.test.ts)
+fails when that count changes without the test.
 
 | Tier | What runs | Proves |
 | --- | --- | --- |

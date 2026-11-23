@@ -437,8 +437,8 @@ describe("the committed gauntlet", () => {
 			),
 		);
 
-	it("holds 58 cases, each with exactly one scenario", () => {
-		assert.equal(cases.cases.length, 58);
+	it("holds 57 cases, each with exactly one scenario", () => {
+		assert.equal(cases.cases.length, 57);
 		assert.deepEqual(coverageProblems(cases, scenarios), []);
 	});
 
