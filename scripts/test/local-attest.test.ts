@@ -1871,6 +1871,8 @@ describe("the secret scan and histories that end in the same tree", () => {
 	});
 });
 
+const runsAsRoot = process.getuid?.() === 0;
+
 describe("local gh-signoff", () => {
 	async function fixture(
 		hasEngine = true,
@@ -3131,7 +3133,9 @@ exec /usr/bin/git "$@"
 		);
 	});
 
-	it("reports possible publication when the isolated Git view cannot be removed", async () => {
+	it("reports possible publication when the isolated Git view cannot be removed", {
+		skip: runsAsRoot && "root ignores the chmod that breaks cleanup",
+	}, async () => {
 		const run = await fixture(false);
 		const result = run.command([], {
 			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
@@ -3151,7 +3155,9 @@ exec /usr/bin/git "$@"
 		}
 	});
 
-	it("preserves the publication failure when cleanup also fails", async () => {
+	it("preserves the publication failure when cleanup also fails", {
+		skip: runsAsRoot && "root ignores the chmod that breaks cleanup",
+	}, async () => {
 		const run = await fixture(false);
 		const result = run.command([], {
 			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",

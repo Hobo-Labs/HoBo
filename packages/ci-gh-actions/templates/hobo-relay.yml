@@ -1,0 +1,153 @@
+# The HoBo relay job, job mode (ADR-0183). `hobo ci init --relay` installs
+# this file with .hobo-ci/relay.mjs, the evaluator it runs; both are generated,
+# so refresh them with the command instead of editing them.
+#
+# A job asks it which runner to use and then runs there:
+#
+#   jobs:
+#     route:
+#       uses: ./.github/workflows/hobo-relay.yml
+#       with:
+#         machine: self-hosted
+#         github: ubuntu-24.04
+#     build:
+#       needs: route
+#       runs-on: ${{ needs.route.outputs.runner }}
+#
+# The caller grants `actions: read` and `contents: read`. The evaluator walks
+# the runnerOrder committed in .hobo/ci.json against what this run's token can
+# read on GitHub. With no runner that can take the job it fails with the reason,
+# and the jobs that need it are skipped. A fork's pull request is answered from
+# the base branch's files, never from the fork's.
+name: HoBo relay
+on:
+  workflow_call:
+    inputs:
+      fleet:
+        description: The HoBo fleet's label, or auto.
+        type: string
+        required: false
+        default: ""
+      machine:
+        description: Machine labels, comma separated, or auto.
+        type: string
+        required: false
+        default: ""
+      github:
+        description: A GitHub-hosted label, or auto.
+        type: string
+        required: false
+        default: ""
+      blacksmith:
+        description: A Blacksmith label, or auto.
+        type: string
+        required: false
+        default: ""
+      depot:
+        description: A Depot label, or auto.
+        type: string
+        required: false
+        default: ""
+      namespace:
+        description: A Namespace label, or auto.
+        type: string
+        required: false
+        default: ""
+      warpbuild:
+        description: A WarpBuild label, or auto.
+        type: string
+        required: false
+        default: ""
+      ubicloud:
+        description: An Ubicloud label, or auto.
+        type: string
+        required: false
+        default: ""
+      boat:
+        description: A Boat label, or auto.
+        type: string
+        required: false
+        default: ""
+      runs-on:
+        description: A RunsOn label, or auto.
+        type: string
+        required: false
+        default: ""
+      size:
+        description: The vCPUs auto asks for, for this job only.
+        type: string
+        required: false
+        default: ""
+      first:
+        description: A runner type to try before the committed order, for this job only.
+        type: string
+        required: false
+        default: ""
+    outputs:
+      runner:
+        description: The runs-on label for the jobs behind the relay.
+        value: ${{ jobs.relay.outputs.runner }}
+      step:
+        description: The runner type chosen.
+        value: ${{ jobs.relay.outputs.step }}
+      outcome:
+        description: routed, waiting or none.
+        value: ${{ jobs.relay.outputs.outcome }}
+      reason:
+        description: The decision in one sentence.
+        value: ${{ jobs.relay.outputs.reason }}
+permissions:
+  actions: read
+  contents: read
+jobs:
+  relay:
+    name: relay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      runner: ${{ steps.answer.outputs.runner }}
+      step: ${{ steps.answer.outputs.step }}
+      outcome: ${{ steps.answer.outputs.outcome }}
+      reason: ${{ steps.answer.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && github.base_ref || '' }}
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .hobo-ci/relay.mjs
+            .hobo/ci.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+      - id: answer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELAY_FLEET: ${{ inputs.fleet }}
+          RELAY_MACHINE: ${{ inputs.machine }}
+          RELAY_GITHUB: ${{ inputs.github }}
+          RELAY_BLACKSMITH: ${{ inputs.blacksmith }}
+          RELAY_DEPOT: ${{ inputs.depot }}
+          RELAY_NAMESPACE: ${{ inputs.namespace }}
+          RELAY_WARPBUILD: ${{ inputs.warpbuild }}
+          RELAY_UBICLOUD: ${{ inputs.ubicloud }}
+          RELAY_BOAT: ${{ inputs.boat }}
+          RELAY_RUNS_ON: ${{ inputs.runs-on }}
+          RELAY_SIZE: ${{ inputs.size }}
+          RELAY_FIRST: ${{ inputs.first }}
+          RELAY_PRIVATE: ${{ github.event.repository && (github.event.repository.private && 'true' || 'false') || 'unknown' }}
+          RELAY_FORK: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'true' || 'false' }}
+          RELAY_TRIGGERING_ACTOR_ID: ${{ github.triggering_actor == github.actor && github.actor_id || '' }}
+        # Every value reaches the evaluator as one quoted argument, never as shell text.
+        run: >-
+          node --no-warnings .hobo-ci/relay.mjs
+          --fleet "$RELAY_FLEET" --machine "$RELAY_MACHINE" --github "$RELAY_GITHUB"
+          --blacksmith "$RELAY_BLACKSMITH" --depot "$RELAY_DEPOT" --namespace "$RELAY_NAMESPACE"
+          --warpbuild "$RELAY_WARPBUILD" --ubicloud "$RELAY_UBICLOUD" --boat "$RELAY_BOAT"
+          --runs-on "$RELAY_RUNS_ON" --size "$RELAY_SIZE" --first "$RELAY_FIRST"
+          --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --job "$GITHUB_JOB" --event "$GITHUB_EVENT_NAME" --actor-id "$GITHUB_ACTOR_ID"
+          --triggering-actor-id "$RELAY_TRIGGERING_ACTOR_ID" --private "$RELAY_PRIVATE"
+          --fork "$RELAY_FORK" --workflow-ref "$GITHUB_WORKFLOW_REF"

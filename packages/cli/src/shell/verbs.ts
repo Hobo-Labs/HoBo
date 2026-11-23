@@ -359,12 +359,24 @@ Usage:
   hobo ci logs [run]               Read run logs
   hobo ci grep <text>              Search recent run logs
   hobo ci rerun [run]              Retry a completed run
+  hobo ci rerun <run> --reroute    Run the relay job again so the run's jobs are routed afresh
   hobo ci init                     Show which workflow jobs can move to the fleet; --apply rewrites their runs-on
                                    (see init options)
   hobo ci signals                  Where recent runs lost time or money: waits, flaky and short jobs, extra runs
   hobo ci diagnose [run]           Why a run's jobs failed, and whether a re-run is likely to help
   hobo ci route                    Answer one relay job against the runner order and show the walk
                                    (see route options)
+  hobo ci machine status [<id>]    Connected machines: online, paused, busy slots, sharing
+  hobo ci machine pause <id>       Take no new jobs on a machine; running jobs finish (resume undoes it)
+  hobo ci machine share <id> <who> Take jobs for only_me or anyone who may read the repository
+  hobo ci machine remove <id>      Forget a machine and its key at once
+  hobo ci machine connect --repo <owner/name>
+                                   Run jobs routed to this computer, each in a fresh container; Ctrl-C drains
+  hobo ci status                  Inspect the relay connection
+  hobo ci provider-health          Hosted runner types the relay stopped routing to; clear <provider> <label> lets one through
+  hobo ci activity                 Each relay job from the relay's journal: where it ran and why (--since, --runner, --outcome)
+  hobo ci usage                    Billed minutes, short jobs, minutes kept off GitHub and the included minutes left (--source github)
+  hobo ci performance              Workflow, job and runner times against ubuntu-latest, and the signals by slice and day
   hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
@@ -478,6 +490,9 @@ Init options (hobo ci init; reads and edits .github/workflows, commits nothing):
                                 comma-separated); the old label is kept as a trailing comment
   --fleet-label <label>         The label to write (default: hobo)
   --include-secret-jobs         Also move jobs that use secrets, an environment or an OIDC token
+  --relay job|relay             Put jobs behind a relay-<job> job instead and write .github/workflows/hobo-relay.yml
+                                (job: answered on a GitHub-hosted runner by .hobo-ci/relay.mjs; relay: a HoBo relay
+                                answers it); runner-type flags (--machine, --depot, ...) become every relay's inputs
 
 Route options (hobo ci route; reads runnerOrder in .hobo/ci.json, contacts nothing):
   --fleet, --machine, --github <label>   The label the job would ask that runner type for

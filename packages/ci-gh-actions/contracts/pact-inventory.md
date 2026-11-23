@@ -1,5 +1,14 @@
 # GitHub Actions boundary inventory
 
+## Runner service boundary
+
+`github-runner-service.pact.json` records hand-authored consumer expectations
+for the runner service. `../test/runner-protocol-pact.test.ts` executes them
+against the client with injected fixture responses. This is not provider-verified
+by GitHub, published to a Pact broker, or evidence of a live runner session.
+
+## GitHub App boundary
+
 The [local runner broker inventory](LOCAL-RUNNER-PACT.md) covers the generated
 31-interaction relay Pact and 16-interaction GitHub CLI consumer Pact, including
 real broker publication, provider verification and failure/version gates. The
@@ -67,3 +76,110 @@ are fixture strings the test binds to a test account; they are not credentials
 for anything. Sessions, streams and resource subscriptions are covered by
 `../test/relay-mcp.test.ts` with the SDK's client, not by this artifact, and no
 third-party MCP client is claimed as verified.
+
+Relay job facts boundary: `relay-job-facts.pact.json` holds hand-authored
+consumer expectations of the GitHub REST reads a relay job makes with its own
+token in job mode: the routing slip ref (present and missing), its commit, the
+run list and one run's jobs. `relay-job-facts.consumer.test.ts` drives
+`GithubRouteFacts` through every interaction with an injected Fetch. No
+provider verification or live GitHub call is claimed.
+
+Machine worker GitHub boundary: `github-machine-worker.pact.json` holds
+hand-authored consumer expectations of the REST requests `hobo ci machine
+connect` sends with its owner's own token: the signed-in user (and a revoked
+token's 401), whether a repository is private, its queued and in-progress
+runs, a run's latest jobs (one run from the repository, one from a fork),
+a one-job runner made with the machine's label (and the 403 a non-admin gets),
+and the removal of a runner still registered (204) or already removed (404).
+`github-machine-worker.consumer.test.ts` drives `userGithub`, `githubOwner`,
+`githubQueueJobSource`, `createOneJobRunner` and `removeOneJobRunner` through
+every interaction with an injected Fetch, matching method, path, query,
+headers and body exactly. No provider verification or live GitHub call is
+claimed.
+
+Relay mode boundary: `relay-answer.pact.json` holds hand-authored consumer
+expectations of the GitHub REST calls the relay-mode answerer makes (ADR-0183):
+`.hobo/ci.json` at the default branch and at a pull request's base branch, the
+pull request read, the job read (queued, 404 gone, and a 502 that is no
+answer), one-job runner creation on the repository, the 403 that falls back to
+the organization and the 409 that fences a job, runner deletion on either
+scope, the queued and in-progress run lists and a run's jobs, and the runner
+lists and run read of the sweep. `relay-answer-webhook.pact.json` holds the
+`workflow_job` deliveries it receives: a signed queued relay job (answered),
+an unsigned one (401), another event and a job asking for more than the relay
+label (both 202). Its signatures are HMAC-SHA256 with a fixture secret named in
+the artifact, not a credential. `relay-answer.consumer.test.ts` drives
+`createRelayAnswerer` through every interaction of both with a strict
+transport and the in-memory runner service. No provider verification, runner
+service traffic or live GitHub call is claimed.
+
+Runner protocol boundary: `github-runner-service.pact.json` holds
+hand-authored consumer expectations of the Actions runner protocol a one-job
+runner speaks in relay mode (ADR-0183), read from the open-source runner
+(`actions/runner`, MIT) at the commit its metadata names; each interaction
+names the files under `src/` it came from. Its eight interactions are the
+token exchange with an RS256 client assertion, opening a broker session, a
+long poll that offers a job and one that returns nothing, the acknowledgement,
+acquiring the job from the run service, completing it with a conclusion,
+outputs and annotations, and deleting the session.
+`../test/runner-protocol-pact.test.ts` drives `GithubRunnerServiceClient`
+through every interaction in order and checks the client assertion's
+signature with the JIT configuration's key. The relay-mode flag is off by
+default; no runner service traffic, provider verification or live GitHub call
+is claimed.
+
+Read API boundary: `read-api.pact.json` holds hand-authored consumer
+expectations of the relay's read API: the committed runner order, one
+repository's route decisions a page at a time, the account's machines, stored
+runs and a run attempt's jobs, signals, job times and usage, a token without
+the read scope (403), another account's repository (404) and a host that keeps
+no run history, which names the command that reads GitHub instead.
+`read-api.consumer.test.ts` drives `ReadApiClient` through every interaction
+and `read-api.provider.test.ts` answers every interaction from `createReadApi`
+over a fixture store. The dashboard's own pact against the same provider lives
+in `packages/ci-dashboard/contracts/`.
+
+MCP insight boundary: `mcp-insights.pact.json` holds hand-authored consumer
+expectations of the eight read-only insight tools: their list, the committed
+runner order, a route explanation that records nothing, route decisions with
+a cursor, machines, the nine signals, job times, a failed job's diagnosis and
+usage, plus a credential without the read scope, another account's repository
+and a stateless host with no route journal. `mcp-insights.provider.test.ts`
+executes every interaction against the registered tools. No third-party MCP
+client is claimed as verified.
+
+Runner adoption boundary: `github-runner-labels.pact.json` holds hand-authored
+consumer expectations, from GitHub's self-hosted runner and runner group REST
+reference, of what runner adoption (`../src/runner-adoption.ts`) sends: the
+signed-in user, the repository, its runners and runner groups, the organization's
+runners, and adding or removing the adoption label on a repository or
+organization runner. `github-runner-labels.consumer.test.ts` drives
+`listAdoptableRunners`, `adoptRunner` and `releaseRunner` through every
+interaction with an injected Fetch. No provider verification or live GitHub
+call is claimed.
+
+Actions minutes boundary: `github-billing-usage.pact.json` holds hand-authored
+consumer expectations of the plan and billing usage reads behind the minutes
+limit, for an organization and a user, a locked organization, the not-found
+answers when the account kind is wrong, and a read refused for want of the
+optional billing permission. `github-billing-usage.consumer.test.ts` drives
+`GithubMinutesReader` through every interaction. A refused or failed read
+leaves the limit unmeasured; it never blocks a step.
+
+Runner-less checks boundary: `relay-checks.pact.json` holds hand-authored
+consumer expectations of what the title and lint checks read of GitHub: the
+pull request a run's ref names, `.hobo/ci.json` at its base branch, a
+`pull_request_target` run from a fork and the open pull requests from its
+head, and the commit archive, whose 302 to codeload is followed with no
+Authorization header. `relay-checks.consumer.test.ts` drives the checks'
+GitHub source through every interaction. No provider verification or live
+GitHub call is claimed.
+
+Provider usage boundaries: `depot-usage.pact.json`,
+`namespace-usage.pact.json` and `warpbuild-usage.pact.json` hold hand-authored
+consumer expectations of each vendor's documented usage API: one month's usage
+and one refused credential each. `provider-usage.consumer.test.ts` drives
+`DepotUsageReader`, `NamespaceUsageReader` and `WarpbuildUsageReader` against
+a fake that answers only what the pacts declare
+(`../test/support/provider-usage-pact.ts`). No vendor verification or paid API
+call is claimed; a failing reader falls back to the ledger.

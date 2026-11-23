@@ -61,10 +61,12 @@ const appCredentialsFile = "app-credentials.yml";
  * it reads public action repositories only and runs no repository code.
  */
 const actionsLockFile = "actions-lock.yml";
+const parityProbeFile = "parity-probe.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
 	appCredentialsFile,
 	actionsLockFile,
+	parityProbeFile,
 	probeFile,
 	healthFile,
 	hostingEvidenceFile,

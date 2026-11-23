@@ -23,6 +23,7 @@ export type HostedRelayApplication = Readonly<{
 	ready(): Promise<boolean>;
 	/** The relay's MCP server (`createRelayMcp`); a host without one answers 404. */
 	mcp?(request: Request): Promise<Response>;
+	page?(request: Request): Promise<Response | undefined>;
 }>;
 
 /** An engine a host reports in health but this relay does not serve. */
@@ -300,6 +301,24 @@ export function createRelayHandler(options: {
 				reportRelayFailure(
 					"hobo_ci_mcp_failed",
 					{ method: request.method },
+					error instanceof Error ? error : undefined,
+				);
+				return json(503, { error: "service unavailable" });
+			}
+		}
+		if (
+			(request.method === "GET" || request.method === "HEAD") &&
+			options.application.page
+		) {
+			try {
+				const response = await options.application.page(
+					mounted === undefined ? request : remount(request, url, path),
+				);
+				if (response) return response;
+			} catch (error) {
+				reportRelayFailure(
+					"hobo_ci_page_failed",
+					{ method: request.method, route: failureRoute(path) },
 					error instanceof Error ? error : undefined,
 				);
 				return json(503, { error: "service unavailable" });
