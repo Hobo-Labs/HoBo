@@ -914,7 +914,7 @@ describe("prepareGithubConnection", () => {
 		);
 	});
 
-	it("without a person at a browser, refuses and points at workload OIDC", async () => {
+	it("without a person at a browser, refuses and points at the owner's store session, never a coordinate variable", async () => {
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {},
 			interactive: false,
@@ -925,7 +925,8 @@ describe("prepareGithubConnection", () => {
 			kind: "refused",
 			result: { code: "HOBO_CI_CONNECTION_NEEDS_OWNER" },
 		});
-		expect(JSON.stringify(outcome)).toContain("INFISICAL_IDENTITY_ID");
+		expect(JSON.stringify(outcome)).toContain("choose_secret_store");
+		expect(JSON.stringify(outcome)).not.toContain("INFISICAL_IDENTITY_ID");
 		expect(JSON.stringify(outcome)).not.toContain("HOBO_OWNER_PAGE");
 	});
 

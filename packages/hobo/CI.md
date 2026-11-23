@@ -562,21 +562,24 @@ the owner's own secret store (`HOBO_CI_SECRET_STORE_BINDING`); `hobo ci deploy`
 reads them through the owner store session (HoBo MCP's `choose_secret_store`)
 and fails closed with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` without one.
 They never become Vercel variables: `--build prebuilt` bundles the relay's
-coordinates into the build only (a `--dry-run` plans without a session):
+coordinates into the build only (a `--dry-run` plans without a session). A
+production deploy with `--build git` carries no coordinates and could never
+qualify, so it is refused, in a dry run too, with
+`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`:
 
 ```sh
 hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
-  --target production --provision --wait --dry-run
+  --target production --build prebuilt --provision --wait --dry-run
 ```
 
 | Option | Means |
 |---|---|
 | `--repo`, `--project` | Override the Yard's `repository` and `project` (a fork, a scratch project) |
-| `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or an `INFISICAL_*` name |
+| `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or a store coordinate (any `INFISICAL_*` name, `*_PROJECT_ID`, `*_TEAM_ID`, `*_ORG_ID`, `*_IDENTITY_ID`, OIDC, subject or binding name) |
 | `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
 | `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
-| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration. `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
+| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration; preview only, since production needs the bundled store binding (`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`). `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
 
 Production deploys only through `hobo cd` with the owner's store session (the
 [relay bootstrap](../ci-vercel/BOOTSTRAP.md) gives the two commands). The

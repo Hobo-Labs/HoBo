@@ -482,8 +482,10 @@ What it deliberately does not do:
   the Marketplace rows the Camp chooses (the relay's Upstash cache). A storage
   integration's variables (`DATABASE_*`, `POSTGRES_*`, `REDIS_*`, `KV_*`,
   `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) are written by the
-  integration, never set here, and so is any `INFISICAL_*` name other than the
-  config service's five coordinates (`CONFIG_SERVICE_COORDINATES`).
+  integration, never set here. No store coordinate is ever a Vercel variable:
+  every `INFISICAL_*` name, and any `*_PROJECT_ID`, `*_TEAM_ID`, `*_ORG_ID`,
+  `*_IDENTITY_ID`, OIDC, subject or binding name, is refused
+  (`src/vercel-env-policy.ts`).
 - **Override the Yard.** A `--set` naming a setting the chosen bindings already
   set is refused; the Yard is changed instead.
 - **Create the project, or reach production, unasked.**

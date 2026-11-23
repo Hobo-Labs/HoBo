@@ -282,14 +282,22 @@ describe("sources", () => {
 			});
 		};
 		const source = relayConfigSourceFromEnv(
+			{ HOBO_CI_CONFIG_SERVICE: "infisical" },
 			{
-				HOBO_CI_CONFIG_SERVICE: "infisical",
-				INFISICAL_IDENTITY_ID: "relay-identity",
-				INFISICAL_PROJECT_ID: "proj-1",
-				INFISICAL_ENVIRONMENT: "prod",
-				INFISICAL_SECRET_PATH: "/hobo-ci-relay",
+				jwt: async () => jwt,
+				fetch: fetchStub,
+				bundled: () =>
+					parseBundledStoreCoordinates(
+						JSON.stringify({
+							kind: "infisical-cloud-attach",
+							endpoint: "https://app.infisical.com",
+							projectId: "proj-1",
+							environment: "prod",
+							secretPath: "/hobo-ci-relay",
+							relayIdentityId: "relay-identity",
+						}),
+					),
 			},
-			{ jwt: async () => jwt, fetch: fetchStub },
 		);
 		expect(source.kind).toBe("infisical");
 		const config = parseRelayRuntimeConfig(await source.read());
@@ -311,8 +319,34 @@ describe("sources", () => {
 			relayConfigSourceFromEnv({ HOBO_CI_CONFIG_SERVICE: "vault" }),
 		).toThrow(/HOBO_CI_CONFIG_SERVICE/u);
 		expect(() =>
-			relayConfigSourceFromEnv({ HOBO_CI_CONFIG_SERVICE: "infisical" }),
-		).toThrow(/invalid-input/u);
+			relayConfigSourceFromEnv(
+				{ HOBO_CI_CONFIG_SERVICE: "infisical" },
+				{ bundled: () => undefined },
+			),
+		).toThrow(/deploy\/secret-store\.binding\.json/u);
+	});
+
+	it("never reads store coordinates from the environment", () => {
+		const coordinates = {
+			HOBO_CI_CONFIG_SERVICE: "infisical",
+			VERCEL_ENV: "production",
+			INFISICAL_IDENTITY_ID: "00000000-0000-0000-0000-000000000000",
+			INFISICAL_PROJECT_ID: "00000000-0000-0000-0000-000000000000",
+			INFISICAL_ENVIRONMENT: "prod",
+			INFISICAL_SECRET_PATH: "/hobo-ci-relay",
+			INFISICAL_SITE_URL: "https://app.infisical.com",
+		};
+		const error = errorOf(() =>
+			relayConfigSourceFromEnv(coordinates, { bundled: () => undefined }),
+		);
+		expect(error.keys).toEqual(["deploy/secret-store.binding.json"]);
+		expect(error.message).not.toContain("00000000");
+		expect(
+			relayConfigSourceFromEnv(
+				{ ...coordinates, HOBO_CI_CONFIG_SERVICE: undefined },
+				{ bundled: () => undefined },
+			).kind,
+		).toBe("env");
 	});
 });
 
