@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { fileSettingsStore } from "@hobo/connect-ui";
-import { createTrustedVault } from "@hobo/core";
 import {
 	captureAll,
 	OwnerStoreOperationUncertainError,
@@ -1350,7 +1349,7 @@ describe("MCP owner store session", () => {
 				let step = 0;
 				return app.callTool(
 					"choose_secret_store",
-					{ family: "cd", cwd: home },
+					{ family: "cd", cwd: home, reselect: true },
 					{ apps: false, formElicitation: true },
 					async () => ({
 						action: "accept",

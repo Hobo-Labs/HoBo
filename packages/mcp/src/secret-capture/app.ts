@@ -587,6 +587,7 @@ export function createSecretCaptureApp(
 				problem === undefined ? ticket.spec.purpose : `${problem} Try again.`;
 			const response = await (
 				elicit?.({
+					mode: "form",
 					message: link === undefined ? said : `${link.message} — ${said}`,
 					requestedSchema: {
 						type: "object",

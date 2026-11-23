@@ -366,6 +366,17 @@ export function selectRelevantChecks(
 		],
 		reason: "new code and documents must follow the common repository rules",
 	});
+	checks.push({
+		command: "pnpm",
+		args: [
+			"run",
+			"secrets:guard",
+			"--",
+			staged ? "--staged" : `--base=${options.base}`,
+		],
+		reason:
+			"agents never store secrets or read credentials from the environment",
+	});
 
 	if (rootConfigChanged) {
 		checks.push({

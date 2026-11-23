@@ -196,6 +196,7 @@ export type CdRuntime = Readonly<{
 	host: CdDeployHost;
 	store: DurableEventStore;
 	conductor(campIds: readonly CampId[], holderId?: string): CampReconciler;
+	maintainJournal?: () => Promise<void>;
 	close(): Promise<void>;
 }>;
 
@@ -691,6 +692,9 @@ async function openComposedCdRuntime(
 					});
 				},
 			},
+			...(opened?.maintain !== undefined
+				? { maintainJournal: opened.maintain }
+				: undefined),
 			close: async () => {
 				try {
 					agentIssuer?.close();

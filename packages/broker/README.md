@@ -1,7 +1,9 @@
 # @hobo/broker
 
-The finite TLA+ model in `model/IacBudget.tla` checks admission, fencing and
-disclosure invariants under its stated host-trust assumptions. The model also
+The finite TLA+ models in `model/IacBudget.tla`,
+`../dispatcher/model/IacRouting.tla`, and `../cloud/model/IacTransitions.tla`
+check admission, fencing, recovery, transition ordering and disclosure
+invariants under their stated host-trust assumptions. The budget model also
 checks enrollment or an authenticated guard at both reservation and execution
 claim, including a reopen with changed enrollment. It checks that each priced
 reservation fit the available budget when admitted, and demonstrates that

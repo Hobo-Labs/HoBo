@@ -95,7 +95,8 @@ async function readBody(req: IncomingMessage): Promise<Uint8Array> {
 	for await (const chunk of req) {
 		const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
 		size += buf.length;
-		if (size > MAX_BODY_BYTES) throw new CdRequestRefusal("request body exceeds 4 MiB");
+		if (size > MAX_BODY_BYTES)
+			throw new CdRequestRefusal("request body exceeds 4 MiB");
 		chunks.push(buf);
 	}
 	return new Uint8Array(Buffer.concat(chunks));

@@ -61,9 +61,17 @@ export type CdPassCampReport = Readonly<{
 	detail: string;
 }>;
 
+export type CdJournalPass =
+	| Readonly<{ state: "maintained" }>
+	| Readonly<{ state: "failed"; detail: string }>
+	| Readonly<{ state: "none" }>;
+
+const JOURNAL_NONE: CdJournalPass = Object.freeze({ state: "none" });
+
 export type CdPassReport = Readonly<{
 	tick: TickReport;
 	reconciled: readonly CdPassCampReport[];
+	journal: CdJournalPass;
 	skipped: boolean;
 	skipReason?: string;
 }>;
@@ -359,6 +367,20 @@ export async function composeCdHost(
 			.catch(() => undefined);
 	}
 
+	async function maintainJournal(): Promise<CdJournalPass> {
+		const maintain = runtime.maintainJournal;
+		if (maintain === undefined) return JOURNAL_NONE;
+		try {
+			await maintain();
+			return Object.freeze({ state: "maintained" });
+		} catch (error) {
+			return Object.freeze({
+				state: "failed",
+				detail: error instanceof Error ? error.message : String(error),
+			});
+		}
+	}
+
 	async function runPass(
 		signal: AbortSignal,
 		allowRecord: () => boolean,
@@ -373,6 +395,7 @@ export async function composeCdHost(
 					steps: Object.freeze([]),
 				}),
 				reconciled: Object.freeze([]),
+				journal: JOURNAL_NONE,
 				skipped: true,
 				...(fleet.skipReason !== undefined
 					? { skipReason: fleet.skipReason }
@@ -419,6 +442,8 @@ export async function composeCdHost(
 				reconciled.every((entry) => entry.ok);
 			const tick = reconcilesOk ? await service.tick() : undefined;
 			if (signal.aborted) throw abortErrorOf(signal);
+			const journal = await maintainJournal();
+			if (signal.aborted) throw abortErrorOf(signal);
 			const passCounts = reconcilesOk && tick?.store;
 			if (passCounts && allowRecord()) {
 				if (signal.aborted) throw abortErrorOf(signal);
@@ -433,6 +458,7 @@ export async function composeCdHost(
 						steps: Object.freeze([]),
 					}),
 				reconciled: Object.freeze(reconciled),
+				journal,
 				skipped: false,
 			});
 		} finally {

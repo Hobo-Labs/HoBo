@@ -25,14 +25,13 @@ import {
 } from "./ceremony-settings.js";
 import { lazyEgressFetch } from "./egress.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
-import { awaitHandOffStore, storeAnswers } from "./hand-off-store.js";
-import { provisionInfisicalAccess } from "./infisical-access.js";
-import { provisionOnePasswordAccess } from "./onepassword-access.js";
+import { storeAnswers, takeHandOffSignIn } from "./hand-off-store.js";
 import {
 	captureAll,
 	KEPT_STORE_SIGN_INS,
 	ownerCaptureLine,
 } from "./owner-channel.js";
+import { signInOwnerStore } from "./owner-sign-in.js";
 import {
 	familySettings,
 	InvalidSecretStoreError,
@@ -61,7 +60,6 @@ import {
 	withoutStoreSignIn,
 } from "./secret-custody.js";
 import type { Env, OpenedSecretStore } from "./secret-stores.js";
-import { hoboToolsDir } from "./store-cli.js";
 
 // `hobo ci up`'s prepare step (cli-spec.md "Lifecycle families"): make sure
 // the GitHub App exists and its credentials are in the owner's secret store
@@ -372,25 +370,21 @@ async function prepareGithubWithVault(
 		});
 	let owner: Awaited<ReturnType<typeof ownerStore>>;
 	try {
-		// A store sign-in an earlier run kept (the owner signed in once).
-		const kept = deps.ownerChannel?.vault;
-		const restored = KEPT_STORE_SIGN_INS.filter((name) => {
-			const value = kept?.reveal(name);
-			if (value === undefined || vault.has(name)) return false;
-			vault.put(name, value);
-			return true;
+		const signedIn = await signInOwnerStore({
+			family: "ci",
+			vault,
+			open: openOwner,
+			deps,
+			plainEnv,
+			workloadOidc,
+			whatIf: input.whatIf,
+			handOff: input.handOff === true,
+			silent: input.run.flags.json || input.run.flags.quiet,
+			emit: (line) => input.run.emitProgress(line),
 		});
-		owner = await openOwner();
-		// The store refused it (expired, revoked): forget it and go on as if
-		// it never was, so a stale token cannot wedge later runs.
-		if (owner.opened === undefined && restored.length > 0) {
-			for (const name of restored) {
-				vault.drop(name);
-				kept?.drop(name);
-			}
-			owner = await openOwner();
-		}
-		// The owner chooses their store; a handed-off run never assumes one.
+		if (signedIn.kind === "refused")
+			return refused(signedIn.code, signedIn.message, signedIn.remediation);
+		owner = signedIn.owner;
 		if (input.handOff === true && !input.whatIf && !owner.chosen)
 			return refused(
 				"HOBO_CI_STORE_CHOICE",
@@ -399,148 +393,27 @@ async function prepareGithubWithVault(
 					storeSignIn ? new Set(["bitwarden"] as const) : undefined,
 				),
 			);
-		// The owner chose Infisical: HoBo installs its CLI, uses the owner's
-		// session (or one browser sign-in) and creates its own identity and
-		// access through Infisical's API. Nothing is provisioned by hand.
-		if (
-			owner.id === "infisical" &&
-			// Only with the machine its caller hands it (the composed CLI).
-			deps.runCommand !== undefined &&
-			owner.chosen &&
-			!input.whatIf &&
-			owner.opened === undefined &&
-			!vault.has("INFISICAL_TOKEN") &&
-			workloadOidc === undefined &&
-			// A sign-in the owner chose explicitly (OAuth, the egress proxy) stands.
-			!plainEnv.INFISICAL_SIGN_IN &&
-			!(await ownerLocator(deps).read()).INFISICAL_SIGN_IN
-		) {
-			const locator = ownerLocator(deps);
-			const projectId =
-				plainEnv.INFISICAL_PROJECT_ID ??
-				(await locator.read()).INFISICAL_PROJECT_ID;
-			if (projectId !== undefined && projectId !== "") {
-				const access = await (deps.infisicalAccess ?? provisionInfisicalAccess)(
-					{
-						family: "ci",
-						projectId,
-						run: deps.runCommand,
-						which: deps.which ?? (async () => undefined),
-						toolsDir: hoboToolsDir(),
-						fetch: deps.fetch ?? fetch,
-						emit: (line) => input.run.emitProgress(line),
-						interactive: input.handOff !== true,
-						apiOrigin:
-							plainEnv.INFISICAL_SITE_URL ??
-							(await locator.read()).INFISICAL_SITE_URL ??
-							"https://app.infisical.com",
-						...(deps.ownerChannel !== undefined
-							? { owner: deps.ownerChannel }
-							: undefined),
-						...(owner.infisicalFolder !== undefined
-							? { folder: owner.infisicalFolder }
-							: undefined),
-					},
-				);
-				if (access.kind === "refused")
-					return refused(access.code, access.message, access.remediation);
-				if (access.token !== undefined)
-					vault.put("INFISICAL_TOKEN", access.token);
-				await locator.write({
-					...(await locator.read()),
-					INFISICAL_IDENTITY_ID: access.identityId,
-				});
-				owner = await openOwner();
-			}
-		}
-		// The owner chose 1Password: HoBo installs its CLI, uses the owner's
-		// session (or one sign-in their 1Password app approves) and creates its
-		// own vault-scoped service account. Nothing is provisioned by hand.
-		if (
-			owner.id === "1password" &&
-			// Only with the machine its caller hands it (the composed CLI).
-			deps.runCommand !== undefined &&
-			owner.chosen &&
-			!input.whatIf &&
-			owner.opened === undefined &&
-			!vault.has("OP_SERVICE_ACCOUNT_TOKEN") &&
-			// A sign-in the owner chose explicitly (desktop app, Connect) stands.
-			!plainEnv.OP_ACCOUNT &&
-			!plainEnv.OP_CONNECT_HOST
-		) {
-			const locator = ownerLocator(deps);
-			const saved = await locator.read();
-			const vaultId = plainEnv.OP_VAULT_ID ?? saved.OP_VAULT_ID;
-			if (
-				vaultId !== undefined &&
-				vaultId !== "" &&
-				!saved.OP_ACCOUNT &&
-				!saved.OP_CONNECT_HOST
-			) {
-				const access = await (
-					deps.onePasswordAccess ?? provisionOnePasswordAccess
-				)({
-					family: "ci",
-					vaultId,
-					run: deps.runCommand,
-					which: deps.which ?? (async () => undefined),
-					toolsDir: hoboToolsDir(),
-					emit: (line) => input.run.emitProgress(line),
-					interactive: input.handOff !== true,
-					...(deps.ownerChannel !== undefined
-						? { owner: deps.ownerChannel }
-						: undefined),
-					...((plainEnv.OP_SIGN_IN_ADDRESS ?? saved.OP_SIGN_IN_ADDRESS)
-						? {
-								signInAddress:
-									plainEnv.OP_SIGN_IN_ADDRESS ?? saved.OP_SIGN_IN_ADDRESS,
-							}
-						: undefined),
-				});
-				if (access.kind === "refused")
-					return refused(access.code, access.message, access.remediation);
-				vault.put("OP_SERVICE_ACCOUNT_TOKEN", access.token);
-				owner = await openOwner();
-			}
-		}
-		// The owner chose Bitwarden and gave no access token: with their
-		// personal API key the run creates its own, after one approval.
-		if (
-			owner.id === "bitwarden" &&
-			owner.chosen &&
-			!input.whatIf &&
-			owner.opened === undefined
-		) {
-			const refusal = await ensureBitwardenSignIn({
-				family: "ci",
-				vault,
-				env: plainEnv,
-				locator: ownerLocator(deps),
-				fetch: deps.fetch ?? fetch,
-				emit: (line) => input.run.emitProgress(line),
-				silent: input.run.flags.json || input.run.flags.quiet,
-				handOff: input.handOff === true,
-				...(deps.ownerChannel !== undefined
-					? { owner: deps.ownerChannel }
-					: undefined),
-				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
-				...(deps.handOffTimeoutMs !== undefined
-					? { timeoutMs: deps.handOffTimeoutMs }
-					: undefined),
-			});
-			if (refusal !== undefined)
-				return refused(refusal.code, refusal.message, refusal.remediation);
-			owner = await openOwner();
-		}
 		// The owner is needed only if the store does not answer yet: a silent
 		// run cannot ask, so it refuses before waiting.
 		const needsOwner =
 			input.handOff === true &&
 			!input.whatIf &&
 			!(await storeAnswers(owner, "ci"));
+		if (needsOwner && owner.handOffSignIn !== undefined) {
+			const taken = await takeHandOffSignIn({
+				family: "ci",
+				owner,
+				open: openOwner,
+				vault,
+				channel: deps.ownerChannel,
+			});
+			if (taken.kind === "refused")
+				return refused(taken.code, taken.message, taken.remediation);
+			owner = taken.owner;
+		}
 		// Through the HoBo MCP server (--json, an owner channel) no progress
 		// line reaches anyone: say why the store did not open, never wait.
-		if (
+		else if (
 			needsOwner &&
 			deps.ownerChannel !== undefined &&
 			(input.run.flags.json || input.run.flags.quiet)
@@ -552,26 +425,6 @@ async function prepareGithubWithVault(
 					"Run again: HoBo signs in to the store afresh.",
 				],
 			);
-		if (
-			needsOwner &&
-			owner.canAwaitEgressCredential &&
-			(input.run.flags.json || input.run.flags.quiet)
-		)
-			return refused(
-				"HOBO_CI_HANDOFF_SILENT",
-				"The owner hand-off needs progress output. Omit --json and -q, then retry.",
-				["Run hobo ci up --hand-off without --json or -q."],
-			);
-		if (needsOwner && owner.canAwaitEgressCredential)
-			owner = await awaitHandOffStore({
-				family: "ci",
-				open: openOwner,
-				emit: (line) => input.run.emitProgress(line),
-				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
-				...(deps.handOffTimeoutMs !== undefined
-					? { timeoutMs: deps.handOffTimeoutMs }
-					: undefined),
-			});
 		else if (needsOwner) owner = { ...owner, opened: undefined };
 	} catch (error) {
 		if (!(error instanceof InvalidSecretStoreError)) throw error;

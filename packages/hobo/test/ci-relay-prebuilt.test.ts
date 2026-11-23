@@ -24,6 +24,7 @@ import {
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
+	type JsonValue,
 	parseJsonObject,
 } from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
@@ -244,6 +245,30 @@ function relayAt(commit: string, ready = true) {
 				? JSON.stringify({ ok: true, commit })
 				: JSON.stringify({ ready }),
 		};
+	};
+	return { http, probed };
+}
+
+function unconfiguredRelay(commit: string) {
+	const probed: string[] = [];
+	const json = (status: number, body: JsonValue) => ({
+		status,
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+	const http: HttpTransport = async (request) => {
+		probed.push(request.url);
+		const { pathname } = new URL(request.url);
+		if (pathname === "/healthz") return json(200, { ok: true, commit });
+		if (pathname === "/readyz")
+			return json(503, {
+				ready: false,
+				started: false,
+				state: "not-configured",
+				missing: ["HOBO_CI_GITHUB_APP_ID", "HOBO_CI_GITHUB_APP_PRIVATE_KEY"],
+				invalid: ["HOBO_CI_CONFIG_JSON"],
+			});
+		return json(404, {});
 	};
 	return { http, probed };
 }
@@ -501,6 +526,30 @@ describe("hobo ci deploy --build prebuilt: promote the staged build to productio
 			rolledBackTo: "dpl_live",
 		});
 		expect(JSON.stringify(ran.envelope)).not.toContain(TOKEN);
+	});
+});
+
+describe("hobo ci deploy --build prebuilt: a relay whose store lacks entries", () => {
+	it("rolls back when /readyz names missing or refused entries", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+
+		const ran = await deploy(
+			[...PINNED, ...INPUTS, "--target", "production", "--wait"],
+			{
+				fetch: vercel.fetch,
+				build: fakeVercelBuild(vercel).run,
+				env: PRODUCTION_ENV,
+				hoboHome: home,
+				probe: unconfiguredRelay(SHA).http,
+				...clock,
+			},
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({ code: "HOBO_CI_DEPLOY_ROLLED_BACK" });
+		expect(vercel.state.production).toBe("dpl_live");
 	});
 });
 

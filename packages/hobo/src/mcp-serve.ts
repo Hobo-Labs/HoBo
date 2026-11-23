@@ -7,13 +7,15 @@ import type { DeviceClock } from "@hobo/hobo-cd";
 import {
 	applyEgressToProcess,
 	isOwnerStoreSetting,
+	machineRunner,
 	OwnerStoreOperationUncertainError,
 	scopeRunVault,
 	secretStoreLocatorPath,
+	whichOnPath,
 } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
 
-import { createComposedHoboCli } from "./cli.js";
+import { createComposedHoboCli, ownerForFamily } from "./cli.js";
 import {
 	relaunchInputFor,
 	relaunchMcpUnderOpenSesame,
@@ -36,6 +38,11 @@ import {
 } from "./mcp-stdio.js";
 import { createStoreChoiceApp } from "./mcp-store-choice.js";
 import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
+import {
+	createOwnerStoreSessions,
+	type OwnerSignIn,
+	ownerChannelSignIn,
+} from "./owner-store-session.js";
 import {
 	OwnerWriteGuardUnavailableError,
 	ownerWriteGuard,
@@ -132,6 +139,7 @@ export function composeHoboMcp(options: {
 	/** The device grant's clock (evals pass a virtual one). */
 	readonly clock?: DeviceClock;
 	readonly ownerWriteGuardFor?: typeof ownerWriteGuard;
+	readonly ownerSignIn?: OwnerSignIn;
 }) {
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
@@ -723,9 +731,23 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
+	const sessions = createOwnerStoreSessions({
+		signIn:
+			options.ownerSignIn ??
+			((input) =>
+				ownerChannelSignIn({
+					owner: ownerForFamily(owner, "cd", input.cwd) ?? owner,
+					deps: {
+						runCommand: machineRunner(),
+						which: (bin) => whichOnPath(bin),
+					},
+				})(input)),
+		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
+	});
 	const server = createHoboMcpServer({
 		cli: createComposedHoboCli({
 			ownerChannel: owner,
+			ownerSession: sessions,
 			...(options.clock !== undefined ? { clock: options.clock } : undefined),
 		}),
 	});
@@ -756,6 +778,7 @@ export function composeHoboMcp(options: {
 		capture,
 		createStoreChoiceApp({
 			locatorFor: (cwd, family) => storeSettingsFor(family, cwd),
+			sessions,
 		}),
 	);
 	const ready = capture;
@@ -763,6 +786,7 @@ export function composeHoboMcp(options: {
 		owner,
 		server,
 		session,
+		sessions,
 		/** Stop whatever still waits on the owner and close open captures. */
 		async close() {
 			closed = true;
@@ -782,6 +806,7 @@ export function composeHoboMcp(options: {
 			owner.vault?.clear();
 			owner.close();
 			owner.jobs.close();
+			sessions.close();
 			await ready.close();
 		},
 	};

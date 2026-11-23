@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 
+import { HAND_OFF_SIGN_IN_CAPTURES } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -441,6 +442,27 @@ describe("EVAL owner form reach: every hand-over reads at a glance", () => {
 			expect(spec.label.length, spec.name).toBeLessThanOrEqual(30);
 			expect(spec.label, spec.name).not.toMatch(/\(|“/u);
 			expect(spec.purpose.length, spec.name).toBeLessThanOrEqual(90);
+		}
+	});
+});
+
+describe("EVAL owner form reach: a store sign-in goes to the waiting run, never a store", () => {
+	it("takes only token-shaped Infisical and 1Password Connect tokens, as hand-overs", () => {
+		const token =
+			"eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJob2JvLWZpeHR1cmUifQ.c2lnbmF0dXJlLWZpeHR1cmU";
+		for (const name of HAND_OFF_SIGN_IN_CAPTURES) {
+			const spec = OWNER_HANDOFF_SPECS.find((entry) => entry.name === name);
+			if (spec === undefined) throw new Error(`no hand-over for ${name}`);
+			expect(spec.target).toBe("handoff");
+			expect(spec.pattern?.test(token)).toBe(true);
+			for (const wrong of [
+				"not a token",
+				"https://app.infisical.com",
+				`${token}\n`,
+				"a.b",
+			])
+				expect(spec.pattern?.test(wrong), wrong).toBe(false);
+			expect(Buffer.byteLength(token)).toBeGreaterThanOrEqual(spec.minBytes);
 		}
 	});
 });

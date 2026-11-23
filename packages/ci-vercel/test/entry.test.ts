@@ -10,6 +10,7 @@ import {
 	createHttpEntry,
 	RELAY_START_STATES,
 	RelayStartError,
+	relayStartGaps,
 	relayStartState,
 } from "../src/entry.js";
 import {
@@ -148,6 +149,37 @@ describe("Vercel HTTP entrypoint", () => {
 					},
 				);
 			}
+		});
+
+		it("names the entries an incomplete folder lacks at /readyz, never a value", async () => {
+			const gaps = {
+				missing: ["HOBO_CI_GITHUB_APP_ID"],
+				invalid: ["HOBO_CI_WEBHOOK_SECRET"],
+			};
+			const error = new RelayRuntimeConfigError(
+				"invalid relay configuration",
+				[...gaps.missing, ...gaps.invalid],
+				gaps,
+			);
+			expect(relayStartGaps(error)).toEqual(gaps);
+			await serve(
+				createHttpEntry(async () => {
+					throw new RelayStartError(
+						relayStartState(error),
+						relayStartGaps(error),
+					);
+				}),
+				async (base) => {
+					const ready = await fetch(`${base}/readyz`);
+					expect(ready.status).toBe(503);
+					expect(await ready.json()).toEqual({
+						ready: false,
+						started: false,
+						state: RELAY_START_STATES.notConfigured,
+						...gaps,
+					});
+				},
+			);
 		});
 
 		it("binds the production relay to the committed secret store (secretless first)", () => {

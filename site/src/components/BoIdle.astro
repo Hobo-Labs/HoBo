@@ -1,56 +1,10 @@
 ---
-// ==========================================================================
-// Bo, standing about.
-//
-// One strip, three independent states, so any number of Bos can idle on a
-// page without moving in lockstep:
-//
-//   frame 0      rest   — the still pose, what he shows when nothing is on
-//   frames 1-10  cycle  — one move, which lands back on the rest pose
-//   frame 11     blink  — eyes shut, on a body pose that matches rest
-//
-// Two sheets share that contract, so the machinery below is the same for both
-// and `variant` only swaps the image:
-//
-//   idle  — bo-idle.png, the original. The cycle is a hop; he is loitering.
-//   stand — bo-stand.png, a neutral stand. The cycle is a breath, anchored at
-//           the feet, so he never leaves the ground. Use this where Bo should
-//           be present without asking for attention — beside prose, in a
-//           header — and `idle` where a hop is welcome.
-//
-// The clips were chosen by silhouette, not by eye, so the outline works as a
-// pose key and a clip can start or stop without a visible pop.
-//
-// How closely alpha matches between rest and blink differs by sheet, and the
-// unqualified claim that used to sit here — "alpha is identical whether his
-// eyes are open or shut" — was only ever true of one of them:
-//
-//   bo-idle   4618 differing alpha px. Its blink is a separate drawing, so the
-//             silhouette shifts a little; near enough not to pop, not identical.
-//   bo-stand  0. Its blink is derived from its own rest frame by editing the
-//             colour channel only, so the outline cannot drift by construction.
-//
-// The original figures below are from the source animation and are recorded as
-// found: the bounce ends 1.78 units from the rest pose and the blink sits 6.38
-// from it, both under the 7.55 median step between neighbouring source frames.
-// The tool that produced those units is not in the repo and they have not been
-// reproduced. Treat them as provenance, not as a check. That
-// is why a clip can start and stop at any time without a visible pop.
-//
-// Every instance schedules itself, so two Bos on the same page blink apart.
-// `still` renders one frame and never animates.
-// ==========================================================================
-
 import { href } from "../lib/url";
 
 interface Props {
-	/** Rendered height. Anything CSS accepts. */
 	size?: string;
-	/** Which sheet: a loitering hop, or a neutral stand that only breathes. */
 	variant?: "idle" | "stand";
-	/** Freeze on one frame: "rest", "blink", or a frame index. */
 	still?: "rest" | "blink" | number;
-	/** Described to assistive tech; omit for a purely decorative Bo. */
 	label?: string;
 	class?: string;
 }
@@ -68,11 +22,10 @@ const SHEETS = {
 	stand: "/parallax/bo-stand.png",
 } as const;
 
-// Strip geometry, straight from the packer.
 const FRAMES = 12;
 const FRAME_W = 207;
 const FRAME_H = 230;
-const TICK = 0.095; // seconds a frame, the cadence the sheet was exported at
+const FRAME_SECONDS = 0.095;
 const REST = 0;
 const BLINK = 11;
 
@@ -88,7 +41,7 @@ const frozen =
 const style = [
 	`--bo-h:${size}`,
 	`--bo-frames:${FRAMES}`,
-	`--bo-tick:${TICK}s`,
+	`--bo-tick:${FRAME_SECONDS}s`,
 	`--bo-aspect:${FRAME_W / FRAME_H}`,
 	`--bo-sheet:url("${href(SHEETS[variant])}")`,
 	frozen !== null ? `--bo-still:${frozen}` : "",
@@ -123,13 +76,11 @@ const style = [
 		);
 	}
 
-	/* At night the soot silhouette takes the cream rim the SVG Bo has. */
 	:global(:root[data-theme="dark"]) .bo-idle {
 		filter: drop-shadow(1px 0 0 var(--ink)) drop-shadow(-1px 0 0 var(--ink))
 			drop-shadow(0 1px 0 var(--ink)) drop-shadow(0 -1px 0 var(--ink));
 	}
 
-	/* One hop, ten frames, landing back on rest. */
 	.bo-idle.is-bounce {
 		animation: bo-bounce calc(var(--bo-tick) * 10) steps(10) 1;
 	}
@@ -143,7 +94,6 @@ const style = [
 		}
 	}
 
-	/* Eyes shut, held for two ticks, then straight back to rest. */
 	.bo-idle.is-blink {
 		animation: bo-blink calc(var(--bo-tick) * 2) steps(1) 1;
 	}
@@ -165,8 +115,6 @@ const style = [
 </style>
 
 <script is:inline>
-	// Each Bo keeps his own clock. Nothing here is shared, so several on one
-	// page drift apart instead of blinking in unison.
 	(() => {
 		if (window.__boIdle) return;
 		window.__boIdle = true;
@@ -192,14 +140,12 @@ const style = [
 			};
 
 			const next = () => {
-				// Blinking is ordinary; a hop is a treat.
 				if (!asleep && !still.matches) {
 					play(Math.random() < 0.22 ? "is-bounce" : "is-blink");
 				}
 				timer = setTimeout(next, 2200 + Math.random() * 5600);
 			};
 
-			// Stagger the first move so instances never line up.
 			timer = setTimeout(next, 600 + Math.random() * 4000);
 
 			const sleep = (on) => {

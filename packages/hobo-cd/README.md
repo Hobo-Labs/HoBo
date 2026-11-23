@@ -105,7 +105,11 @@ Configuration is a **ceremony**, not a list of environment variables, and it
 survives the machine: the store is found through a locator of ids in
 the owner's HoBo settings (`~/.config/hobo/projects/<project>/secret-store.json`,
 never the repository) and signed in to on the page (the sign-in is held in
-the run's trusted vault, in memory); whatever `hobo cd up` is missing is asked
+the run's trusted vault, in memory). A handed-off run on a remote box shows
+no page: it takes an Infisical access token, a 1Password Connect token or a
+Bitwarden personal API key from HoBo's own secret capture (a
+`HOBO_OWNER_CAPTURE` line through the HoBo MCP server), never from the agent's
+session or environment, and holds it in memory only. Whatever `hobo cd up` is missing is asked
 for and kept **in the secret store** as `HOBO_CD_SETTINGS` (the Integration's
 slug and client id). The client secret is its own store entry, and the Vercel
 token reaches the deploy through the vault, never an environment variable.

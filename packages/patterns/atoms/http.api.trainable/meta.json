@@ -2,7 +2,7 @@
 	"id": "http.api.trainable",
 	"tier": 1,
 	"kind": "http",
-	"description": "Greeting handler as a trainable hole — first pass is syntax, not logic.",
+	"description": "Trainable HTTP greeting with a working baseline.",
 	"tags": ["http", "api", "trainable", "use training"],
 	"queries": ["use training greeting", "trainable hello", "trainable api"],
 	"requires": [],

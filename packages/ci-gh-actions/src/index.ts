@@ -54,6 +54,14 @@ export {
 	type VariableRetireOutcome,
 } from "./fleet-routes.js";
 export {
+	createGithubAssignmentLookup,
+	type GithubAssignmentScope,
+} from "./fleet-v2/github-assignment.js";
+export {
+	createStartFenceHandler,
+	type StartFencePolicy,
+} from "./fleet-v2/start-fence-handler.js";
+export {
 	agreedFleetBlocks,
 	countFleetVerdictAllowance,
 	createFleetVerdictStore,
@@ -540,6 +548,23 @@ export {
 	resolveExplicitCiEnvironmentName,
 	selectEnvironmentForWebhook,
 } from "./relay-routing.js";
+export {
+	createRelaySetupMcp,
+	RELAY_SETUP_PROVIDE_TOOL,
+	RELAY_SETUP_STATUS_TOOL,
+	RELAY_SETUP_WRITER_CLIENT_ID,
+	RELAY_SETUP_WRITER_CLIENT_SECRET,
+	type RelaySetupEntry,
+	type RelaySetupGaps,
+	type RelaySetupMcp,
+	type RelaySetupMcpOptions,
+	type RelaySetupState,
+	RelaySetupWriteError,
+	type RelaySetupWriteRefusal,
+	type RelaySetupWriter,
+	type RelaySetupWriterCredential,
+	relaySetupForm,
+} from "./relay-setup-mcp.js";
 export {
 	createRelayTrace,
 	githubRoute,
