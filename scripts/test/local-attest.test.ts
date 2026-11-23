@@ -66,6 +66,7 @@ for (const name of Object.keys(process.env)) {
 		delete process.env[name];
 }
 
+const rootIgnoresPermissions = process.getuid?.() === 0;
 const script = fileURLToPath(
 	new URL("../ci/local-attest.mts", import.meta.url),
 );
@@ -1871,8 +1872,6 @@ describe("the secret scan and histories that end in the same tree", () => {
 	});
 });
 
-const runsAsRoot = process.getuid?.() === 0;
-
 describe("local gh-signoff", () => {
 	async function fixture(
 		hasEngine = true,
@@ -3134,7 +3133,7 @@ exec /usr/bin/git "$@"
 	});
 
 	it("reports possible publication when the isolated Git view cannot be removed", {
-		skip: runsAsRoot && "root ignores the chmod that breaks cleanup",
+		skip: rootIgnoresPermissions,
 	}, async () => {
 		const run = await fixture(false);
 		const result = run.command([], {
@@ -3156,7 +3155,7 @@ exec /usr/bin/git "$@"
 	});
 
 	it("preserves the publication failure when cleanup also fails", {
-		skip: runsAsRoot && "root ignores the chmod that breaks cleanup",
+		skip: rootIgnoresPermissions,
 	}, async () => {
 		const run = await fixture(false);
 		const result = run.command([], {
