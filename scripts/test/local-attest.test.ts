@@ -66,6 +66,7 @@ for (const name of Object.keys(process.env)) {
 		delete process.env[name];
 }
 
+const rootIgnoresPermissions = process.getuid?.() === 0;
 const script = fileURLToPath(
 	new URL("../ci/local-attest.mts", import.meta.url),
 );
@@ -3171,7 +3172,9 @@ exec /usr/bin/git "$@"
 		);
 	});
 
-	it("reports possible publication when the isolated Git view cannot be removed", async () => {
+	it("reports possible publication when the isolated Git view cannot be removed", {
+		skip: rootIgnoresPermissions,
+	}, async () => {
 		const run = await fixture(false);
 		const result = run.command([], {
 			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
@@ -3191,7 +3194,9 @@ exec /usr/bin/git "$@"
 		}
 	});
 
-	it("preserves the publication failure when cleanup also fails", async () => {
+	it("preserves the publication failure when cleanup also fails", {
+		skip: rootIgnoresPermissions,
+	}, async () => {
 		const run = await fixture(false);
 		const result = run.command([], {
 			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
