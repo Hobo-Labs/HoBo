@@ -61,14 +61,10 @@ export const getGitHubUserFields = defineUserSignupFields({
   },
 });
 
-// We are using the first email from the list of emails returned by GitHub.
-// If you want to use a different email, you can modify this function.
 function getGithubEmailInfo(githubData: z.infer<typeof githubDataSchema>) {
   return githubData.profile.emails[0];
 }
 
-// NOTE: if we don't want to access users' emails, we can use scope ["user:read"]
-// instead of ["user"] and access args.profile.username instead
 export function getGitHubAuthConfig() {
   return {
     scopes: ["user:email"],
@@ -102,7 +98,7 @@ export const getGoogleUserFields = defineUserSignupFields({
 
 export function getGoogleAuthConfig() {
   return {
-    scopes: ["profile", "email"], // must include at least 'profile' for Google
+    scopes: ["profile", "email"],
   };
 }
 
@@ -117,7 +113,6 @@ const discordDataSchema = z.object({
 export const getDiscordUserFields = defineUserSignupFields({
   email: (data) => {
     const discordData = discordDataSchema.parse(data);
-    // Users need to have an email for payment processing.
     if (!discordData.profile.email) {
       throw new Error(
         "You need to have an email address associated with your Discord account to sign up.",

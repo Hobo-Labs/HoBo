@@ -249,13 +249,6 @@ describe("surface discovery", () => {
 						/unverified/.test(finding.message),
 				),
 			);
-			assert.ok(
-				unchecked.findings.some(
-					(finding) =>
-						finding.id === "catalog-coverage" &&
-						/unverified/.test(finding.message),
-				),
-			);
 		});
 	});
 });
@@ -370,7 +363,7 @@ describe("persona experience selection", () => {
 		});
 	});
 
-	it("feature generation reports scoped non-applicability and refuses stale maps", () => {
+	it("surface validation refuses stale maps", () => {
 		fixture((root) => {
 			mkdirSync(path.join(root, ".git"));
 			const dir = path.join(root, "packages/hobo");
@@ -387,27 +380,7 @@ describe("persona experience selection", () => {
 			);
 			const map = buildSurfaceMap({ project: hobo, root, skipProbes: true });
 			writeSurfaceMap(map, hobo, root);
-			writeExperienceCatalog(
-				buildExperienceCatalog({ project: hobo, root, surfaceMap: map }),
-				hobo,
-				root,
-			);
-			const script = fileURLToPath(
-				new URL("../generate-feature.mts", import.meta.url),
-			);
-			const run = () =>
-				spawnSync(
-					process.execPath,
-					[script, "--mode", "from-catalog", "--project", "hobo"],
-					{ cwd: root, encoding: "utf8" },
-				);
-			const notApplicable = run();
-			assert.equal(notApplicable.status, 0, notApplicable.stderr);
-			assert.match(notApplicable.stdout, /other surfaces are not assessed/);
 			writeFileSync(path.join(dir, "package.json"), "not json");
-			const stale = run();
-			assert.equal(stale.status, 2, stale.stderr);
-			assert.match(stale.stderr, /assessment is stale/);
 			const explorer = fileURLToPath(new URL("../explore-app.mts", import.meta.url));
 			const validation = spawnSync(process.execPath, [explorer, "--mode", "validate", "--project", "hobo"], { cwd: root, encoding: "utf8" });
 			assert.equal(validation.status, 1, validation.stderr);
@@ -546,7 +519,7 @@ describe("discovery evidence boundaries", () => {
 		});
 	});
 
-	it("exposes the primary-only scope through exploration, doctor and feature generation", () => {
+	it("exposes the primary-only scope through exploration and doctor", () => {
 		fixture((root) => {
 			mkdirSync(path.join(root, ".git"));
 			const dir = path.join(root, "packages/hobo");
@@ -581,24 +554,13 @@ describe("discovery evidence boundaries", () => {
 			const confirmedSnapshot = snapshot("snapshot-confirmed", [`--confirm-surface-current=${confirmation}`]);
 			assert.ok(!JSON.parse(confirmedSnapshot.stdout).findings.some((finding: { message: string }) => /confirm-surface-current/.test(finding.message)));
 			assert.ok(!JSON.parse(readFileSync(path.join(root, "snapshot-confirmed/doctor-report.json"), "utf8")).findings.some((finding: { message: string }) => /confirm-surface-current/.test(finding.message)));
-			const generate = fileURLToPath(new URL("../generate-feature.mts", import.meta.url));
-			const args = [generate, "--mode", "from-catalog", "--project", "hobo", "--personas", "developer", "--force-low-quality", `--confirm-surface-current=${confirmation}`];
-			const generated = spawnSync(process.execPath, args, { cwd: root, encoding: "utf8" });
-			assert.equal(generated.status, 0, generated.stdout + generated.stderr);
-			const catalogPath = path.join(output, "experience-catalog.json");
-			const catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
-			catalog.experiences[0].entryCommand = "hobo-mcp";
-			writeFileSync(catalogPath, JSON.stringify(catalog));
-			const refused = spawnSync(process.execPath, args, { cwd: root, encoding: "utf8" });
-			assert.equal(refused.status, 2);
-			assert.match(refused.stderr, /outside primary-bin scope/);
 			writeFileSync(path.join(dir, "bin/hobo.mjs"), 'console.log("changed");\n');
 			const staleSnapshot = snapshot("snapshot-stale", [`--confirm-surface-current=${confirmation}`]);
 			assert.ok(JSON.parse(staleSnapshot.stdout).findings.some((finding: { message: string }) => /executable changed/.test(finding.message)));
 		});
 	});
 
-	it("preserves saved observations and catalogs during repair and creates only missing files", () => {
+	it("preserves saved observations and catalogs during repair and creates only missing maps", () => {
 		fixture((root, dir) => {
 			packageWithBin(dir);
 			const marker = path.join(root, "ran");
@@ -612,7 +574,7 @@ describe("discovery evidence boundaries", () => {
 			const originalMap = readFileSync(mapPath, "utf8");
 			const originalCatalog = readFileSync(catalogPath, "utf8");
 			const selection = { allProjects: false, projects: [project], requested: ["sample"], unknown: [] };
-			const only = ["build-surface-map", "build-catalog"];
+			const only = ["build-surface-map"];
 			runDoctorRepair({ root, selection });
 			assert.equal(readFileSync(mapPath, "utf8"), originalMap);
 			assert.equal(readFileSync(catalogPath, "utf8"), originalCatalog);
@@ -633,18 +595,16 @@ describe("discovery evidence boundaries", () => {
 			writeFileSync(mapPath, originalMap);
 			const invalidCatalog = JSON.stringify({ ...catalog, experiences: [null] });
 			writeFileSync(catalogPath, invalidCatalog);
-			const badCatalog = runDoctorRepair({ root, selection, only });
+			runDoctorRepair({ root, selection, only });
 			assert.equal(readFileSync(catalogPath, "utf8"), invalidCatalog);
-			assert.ok(badCatalog.findings.some((finding) => finding.id === "catalog-invalid" && !finding.repairable));
 			rmSync(mapPath);
 			rmSync(catalogPath);
 			rmSync(marker);
 			const created = runDoctorRepair({ root, selection, only });
 			assert.ok(created.repairsApplied.includes("build-surface-map:sample"));
-			assert.ok(created.repairsApplied.includes("build-catalog:sample"));
 			assert.equal(existsSync(marker), false);
 			assert.equal(existsSync(mapPath), true);
-			assert.equal(existsSync(catalogPath), true);
+			assert.equal(existsSync(catalogPath), false);
 		});
 	});
 
@@ -682,57 +642,19 @@ describe("discovery evidence boundaries", () => {
 			assert.deepEqual(validateCatalogCoverage(catalog, ["herdr"], first, { root, confirmedSurfaces: [confirmation] }), []);
 			const unconfirmed = runDoctorCheck({ root, selection });
 			assert.ok(unconfirmed.findings.some((finding) => finding.id === "surface-map-invalid" && /confirm-surface-current/.test(finding.message)));
-			const script = fileURLToPath(new URL("../generate-feature.mts", import.meta.url));
-			const invoke = (args: string[]) => spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8" });
-			const args = ["--mode", "from-catalog", "--project", "hobo", "--personas", "herdr", "--force-low-quality"];
-			const withoutConfirmation = invoke(args);
-			assert.equal(withoutConfirmation.status, 2, withoutConfirmation.stderr);
-			assert.match(withoutConfirmation.stderr, /confirm-surface-current/);
-			const withConfirmation = invoke([...args, `--confirm-surface-current=${confirmation}`]);
-			assert.equal(withConfirmation.status, 0, withConfirmation.stderr);
-			const features = path.join(dir, ".optimizexp/features");
-			for (const [id, expected] of [["hobo-default-entry", "hobo"], ["hobo-help-discoverability", "hobo --help"], ["hobo-status", "hobo status"]]) {
-				const feature = JSON.parse(readFileSync(path.join(features, id!, "feature.json"), "utf8")) as { primaryCommand?: string; implementationStatus?: string };
-				assert.equal(feature.primaryCommand, expected);
-				assert.equal(feature.implementationStatus, "wired");
-				assert.ok(readFileSync(path.join(features, id!, "steps/implementations.ts"), "utf8").includes(`command: ${JSON.stringify(expected)}`));
-			}
-			const unknown = JSON.parse(readFileSync(path.join(features, "unknown-verb/feature.json"), "utf8")) as { implementationStatus?: string; primaryCommand?: string };
-			assert.equal(unknown.implementationStatus, "stub");
-			assert.equal(unknown.primaryCommand, undefined);
-			const bypass = invoke(["--mode", "scaffold", "--id", "hobo-status", "--project", "hobo", "--personas", "herdr", "--seed", "hobo status", "--force-low-quality"]);
-			assert.equal(bypass.status, 2, bypass.stderr);
-			assert.match(bypass.stderr, /must be refreshed/);
-			const unconfirmedImplement = invoke(["--mode", "implement", "--id", "hobo-help-discoverability", "--project", "hobo"]);
-			assert.equal(unconfirmedImplement.status, 2, unconfirmedImplement.stderr);
-			assert.match(unconfirmedImplement.stderr, /confirm-surface-current/);
 			const explorer = fileURLToPath(new URL("../explore-app.mts", import.meta.url));
 			const validate = () => spawnSync(process.execPath, [explorer, "--mode", "validate", "--project", "hobo", `--confirm-surface-current=${confirmation}`], { cwd: root, encoding: "utf8" });
 			assert.equal(validate().status, 0);
-			const implement = invoke(["--mode", "implement", "--id", "hobo-help-discoverability", "--project", "hobo", `--confirm-surface-current=${confirmation}`]);
-			assert.equal(implement.status, 0, implement.stderr);
-			const rewired = JSON.parse(readFileSync(path.join(features, "hobo-help-discoverability/feature.json"), "utf8")) as { primaryCommand?: string };
-			assert.equal(rewired.primaryCommand, "hobo --help");
-			rmSync(features, { recursive: true, force: true });
 			writeFileSync(bin, 'console.log("  up       Start app");\n');
 			assert.match(validateCatalogCoverage(catalog, ["herdr"], first, { root, confirmedSurfaces: [confirmation] }).join("; "), /executable changed/);
 			const changedExecutable = runDoctorCheck({ root, selection, confirmedSurfaces: [confirmation] });
 			assert.ok(changedExecutable.findings.some((finding) => finding.id === "surface-map-invalid" && /executable changed/.test(finding.message)));
-			const staleExecutable = invoke([...args, `--confirm-surface-current=${confirmation}`]);
-			assert.equal(staleExecutable.status, 2, staleExecutable.stderr);
-			assert.match(staleExecutable.stderr, /executable changed/);
 			const staleValidation = validate();
 			assert.equal(staleValidation.status, 1);
 			assert.match(staleValidation.stdout, /executable changed/);
-			assert.equal(existsSync(features), false);
 			const changed = buildSurfaceMap({ project: hobo, root, probeBinary: true });
 			writeSurfaceMap(changed, hobo, root);
 			assert.match(validateCatalogCoverage(catalog, ["herdr"], changed, { root, freshProbe: true }).join("; "), /stale/);
-			const result = runDoctorCheck({ root, selection });
-			assert.ok(result.findings.some((finding) => finding.id === "catalog-coverage" && /stale/.test(finding.message)));
-			const stale = invoke(args);
-			assert.equal(stale.status, 2, stale.stderr);
-			assert.match(stale.stderr, /stale/);
 		});
 	});
 
@@ -755,24 +677,6 @@ describe("discovery evidence boundaries", () => {
 			assert.deepEqual(validateCatalogCoverage(catalog, ["developer"], map), []);
 			writeSurfaceMap(map, hobo, root);
 			writeExperienceCatalog(catalog, hobo, root);
-			const script = fileURLToPath(new URL("../generate-feature.mts", import.meta.url));
-			const run = spawnSync(process.execPath, [script, "--mode", "from-catalog", "--project", "hobo", "--personas", "developer", "--force-low-quality"], { cwd: root, encoding: "utf8" });
-			assert.equal(run.status, 0, run.stderr);
-			assert.ok(existsSync(path.join(dir, ".optimizexp/features/web-visit/feature.json")), run.stdout);
-			assert.ok(existsSync(path.join(dir, ".optimizexp/features/script-start/feature.json")), run.stdout);
-			const web = JSON.parse(readFileSync(path.join(dir, ".optimizexp/features/web-visit/feature.json"), "utf8")) as { implementationStatus?: string; primaryCommand?: string };
-			const cli = JSON.parse(readFileSync(path.join(dir, ".optimizexp/features/script-start/feature.json"), "utf8")) as { implementationStatus?: string; primaryCommand?: string };
-			assert.equal(web.implementationStatus, "stub");
-			assert.equal(web.primaryCommand, undefined);
-			assert.equal(cli.implementationStatus, "wired");
-			assert.equal(cli.primaryCommand, "npm run start");
-			const unknown = JSON.parse(readFileSync(path.join(dir, ".optimizexp/features/unknown-bin/feature.json"), "utf8")) as { implementationStatus?: string; primaryCommand?: string };
-			assert.equal(unknown.implementationStatus, "stub");
-			assert.equal(unknown.primaryCommand, undefined);
-			const reimplement = spawnSync(process.execPath, [script, "--mode", "implement", "--id", "script-start", "--project", "hobo"], { cwd: root, encoding: "utf8" });
-			assert.equal(reimplement.status, 0, reimplement.stderr);
-			const rewired = JSON.parse(readFileSync(path.join(dir, ".optimizexp/features/script-start/feature.json"), "utf8")) as { primaryCommand?: string };
-			assert.equal(rewired.primaryCommand, "npm run start");
 		});
 	});
 

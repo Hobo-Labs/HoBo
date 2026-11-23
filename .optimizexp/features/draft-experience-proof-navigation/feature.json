@@ -1,44 +1,18 @@
 {
   "schemaVersion": 1,
   "id": "draft-experience-proof-navigation",
-  "title": "Draft experience proofs are navigable",
-  "experiences": [
-    "dx",
-    "ax"
-  ],
-  "personas": [
-    "product-app-developer",
-    "product-agent-operator",
-    "product-platform-engineer",
-    "product-coding-agent",
-    "role-developers",
-    "role-devsecops",
-    "role-finops",
-    "role-platform-engineers",
-    "role-sre"
-  ],
-  "interfaces": [
-    "cli",
-    "mcp",
-    "web"
-  ],
+  "title": "Find experience proof packages by audience",
+  "experiences": ["dx", "ax"],
+  "personas": ["product-coding-agent"],
+  "interfaces": ["cli"],
   "driver": "cli",
-  "surfaces": [
-    "bash -lc 'test -f src/draft/exp-proofs/_classification.md && ls src/draft/exp-proofs && head -n 40 src/draft/exp-proofs/_classification.md'"
-  ],
-  "tags": [
-    "@optimizexp",
-    "@dx",
-    "@ax"
-  ],
-  "generatedFromSeed": true,
-  "seedDigest": "43ca271d88717733",
-  "personaResolution": "explicit --personas",
+  "surfaces": ["pnpm run draft:experiences"],
+  "tags": ["@optimizexp", "@dx", "@ax"],
   "bindings": {
     "steps": "steps/bindings.steps.ts",
     "implementations": "steps/implementations.ts",
     "tests": "test/draft-experience-proof-navigation.bindings.test.ts"
   },
   "implementationStatus": "wired",
-  "primaryCommand": "bash -lc 'test -f src/draft/exp-proofs/_classification.md && ls src/draft/exp-proofs && head -n 40 src/draft/exp-proofs/_classification.md'"
+  "primaryCommand": "pnpm run draft:experiences"
 }
