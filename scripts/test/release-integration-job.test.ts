@@ -103,6 +103,19 @@ function jobName(workflow: Workflow, id: string): string | undefined {
 	return asText(asObject(asObject(workflow.document.jobs)?.[id])?.name);
 }
 
+const laneBuildDependencies = (
+	asList(
+		asObject(
+			asObject(
+				asObject(JSON.parse(readFileSync("turbo.json", "utf8")))?.tasks,
+			)?.["@hobo/hobo#test:release-integration"],
+		)?.dependsOn,
+	) ?? []
+).flatMap((entry) => {
+	const text = asText(entry);
+	return text?.endsWith("#build") ? [text.slice(0, -"#build".length)] : [];
+});
+
 const integrationJobs = [
 	["new workflow", pr, "release-integration"],
 	["release train", train, "release-hobo-integration"],
@@ -201,8 +214,19 @@ describe("release integration pull-request and merge-queue lane", () => {
 				/turbo run build --filter=@hobo\/hobo\.\.\./u,
 				label,
 			);
+			for (const dependency of laneBuildDependencies)
+				assert.ok(
+					build.run.includes(`--filter=${dependency}...`),
+					`${label}: ${dependency}`,
+				);
 			const lane = namedStep(entry, "HoBo slow integration suites");
 			assert.ok(entry.steps.indexOf(build) < entry.steps.indexOf(lane), label);
+			assert.match(
+				lane.run,
+				/^pnpm --filter @hobo\/hobo run test:release-integration /u,
+				label,
+			);
+			assert.doesNotMatch(lane.run, /turbo/u, label);
 			assert.equal(lane.env.SHARD_INDEX, "${{ matrix.shard }}", label);
 			assert.match(lane.run, /\$\(\(SHARD_INDEX \+ 1\)\)\/4/u, label);
 			assert.doesNotMatch(
