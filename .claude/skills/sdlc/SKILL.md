@@ -1,6 +1,6 @@
 ---
 name: sdlc
-description: Implement and validate repository changes, using incremental commits and stacked pull requests when appropriate.
+description: Implement and validate repository changes, using incremental commits and stacked pull requests when appropriate, and land each workstream through one pull request with a merge commit (never squash or rebase-merge). Supports --finish to land the current session.
 ---
 
 # SDLC coordinator
@@ -12,3 +12,19 @@ Follow the repository rules in `AGENTS.md` for every task and harness.
 3. Run the narrow relevant checks, then the repository-required staged checks. Fix failures before continuing.
 4. Use incremental commits. For dependent changes, use the repository's `gh-stack` skill to create and update a stack of reviewable pull requests.
 5. Report the implemented behavior, validation, and concrete blockers. Do not merge or deploy unless the user authorized it.
+
+## Landing
+
+- A workstream has at most one open pull request, ready for review. A stack lands as one unit through the pull request for its top layer, based on `main`; do not open a pull request per layer.
+- Update a pushed branch by merging `origin/main` in (`git merge origin/main`). Never rebase a pushed branch and never force-push; `gh stack rebase` and `gh stack sync` are only for unpushed local layers.
+- Never squash and never rebase-merge. Land with a merge commit (`gh pr merge <n> --merge`, or the merge queue with the merge-commit method); lower layers then show as merged because their commits are in `main`.
+- Before opening a pull request and before landing, run the supersession check: when a head is already in `origin/main` or is an ancestor of another open pull request's head, close that pull request with `Superseded by #N` and keep the branch.
+
+```bash
+git merge-base --is-ancestor <head> origin/main && echo landed
+git merge-base --is-ancestor <head> <other-open-pr-head> && echo superseded
+```
+
+## `--finish`
+
+`/sdlc --finish` authorizes landing the current session: commit remaining work, fetch and merge the latest `origin/main` in, resolve conflicts keeping both sides' work, run the supersession check, open or update the one workstream pull request, push, review its combined diff against `main`, resolve every actionable review thread, repair real check failures, and land it with a merge commit. Billing or quota failures that stop checks from running do not block the merge; real test, lint, or type failures do.

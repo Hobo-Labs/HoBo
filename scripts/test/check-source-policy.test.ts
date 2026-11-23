@@ -643,6 +643,41 @@ f: /* TODO: remove block */`;
 		);
 	});
 
+	it("allows removing lines from an existing design document but not adding any", () => {
+		const repo = fixture();
+		write(
+			repo,
+			"docs/design/index.md",
+			"# Index\n- [a](./a.md)\n- [b](./b.md)\n",
+		);
+		git(repo, "add", "docs/design/index.md");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"--no-verify",
+			"-m",
+			"index",
+		);
+		write(repo, "docs/design/index.md", "# Index\n- [a](./a.md)\n");
+		git(repo, "add", "docs/design/index.md");
+		const removed = guard(repo, "--staged");
+		assert.equal(removed.status, 0, removed.stderr);
+		write(
+			repo,
+			"docs/design/index.md",
+			"# Index\n- [a](./a.md)\n- [c](./c.md)\n",
+		);
+		git(repo, "add", "docs/design/index.md");
+		const added = guard(repo, "--staged");
+		assert.equal(added.status, 1, added.stderr);
+		assert.match(added.stderr, /docs\/design\/index\.md/u);
+	});
+
 	it("allows unchanged comments in renamed files but rejects new ones", () => {
 		const repo = fixture();
 		git(repo, "mv", "existing.ts", "renamed.ts");
