@@ -41,8 +41,6 @@ message ReservedConsumptionRecord {
   optional uint32 concurrency_slots = 4;
 }
 
-// Sequence fields are uint64 on the wire, but the current JavaScript ledger
-// accepts only integers through Number.MAX_SAFE_INTEGER.
 message ReservationRecord {
   string reservation_id = 1;
   string provider_id = 2;

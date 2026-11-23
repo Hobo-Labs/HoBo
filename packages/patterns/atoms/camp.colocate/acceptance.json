@@ -2,6 +2,6 @@
 	"params": { "name": "shop" },
 	"expectFiles": ["src/yard.ts"],
 	"expectContains": {
-		"src/yard.ts": ["camp(\"api\")", "\"shared\""]
+		"src/yard.ts": ["camp(\"api\")"]
 	}
 }

@@ -289,6 +289,72 @@ describe("composeCdHost", () => {
 		});
 	});
 
+	it("ticks the journal's fleet every pass, even when every camp fails", async () => {
+		await withRuntime(async (runtime) => {
+			let ticks = 0;
+			const failing: TestRuntime = {
+				...runtime,
+				maintainJournal: async () => {
+					ticks += 1;
+				},
+				conductor: () =>
+					fakeReconciler(
+						async () =>
+							({
+								reasons: [
+									{
+										code: "reconcile-failed",
+										message: "the provider refused",
+										remediation: "fix the camp",
+									},
+								],
+								status: 0,
+							}) as never,
+					),
+			};
+			const host = await composeCdHost({
+				runtime: failing,
+				holderId: "test-journal",
+				readiness: "composed",
+			});
+			expect((await host.pass()).journal).toEqual({ state: "maintained" });
+			expect((await host.pass()).journal).toEqual({ state: "maintained" });
+			expect(ticks).toBe(2);
+		});
+	});
+
+	it("reports a fleet tick that failed instead of failing the pass", async () => {
+		await withRuntime(async (runtime) => {
+			const host = await composeCdHost({
+				runtime: {
+					...runtime,
+					maintainJournal: async () => {
+						throw new Error("standby b unreachable");
+					},
+				},
+				holderId: "test-journal-failed",
+				readiness: "composed",
+			});
+			const report = await host.pass();
+			expect(report.skipped).toBe(false);
+			expect(report.journal).toEqual({
+				state: "failed",
+				detail: "standby b unreachable",
+			});
+		});
+	});
+
+	it("says no fleet was ticked when the journal is not a fleet", async () => {
+		await withRuntime(async (runtime) => {
+			const host = await composeCdHost({
+				runtime,
+				holderId: "test-journal-none",
+				readiness: "composed",
+			});
+			expect((await host.pass()).journal).toEqual({ state: "none" });
+		});
+	});
+
 	it("runs one bounded pass", async () => {
 		await withRuntime(async (runtime) => {
 			const host = await composeCdHost({

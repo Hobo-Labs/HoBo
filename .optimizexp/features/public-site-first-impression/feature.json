@@ -6,32 +6,25 @@
     "ux"
   ],
   "personas": [
-    "product-end-user",
-    "product-designer",
-    "role-finops",
-    "role-platform-engineers",
-    "role-sre"
+    "product-end-user"
   ],
   "interfaces": [
-    "mcp",
     "web"
   ],
   "driver": "web",
   "surfaces": [
-    "pnpm run docs:site-nav"
+    "site/src/pages/index.astro",
+    "/guide/getting-started/"
   ],
   "tags": [
     "@optimizexp",
     "@ux"
   ],
-  "generatedFromSeed": true,
-  "seedDigest": "31cefaea75366af0",
-  "personaResolution": "explicit --personas",
   "bindings": {
     "steps": "steps/bindings.steps.ts",
     "implementations": "steps/implementations.ts",
     "tests": "test/public-site-first-impression.bindings.test.ts"
   },
   "implementationStatus": "wired",
-  "primaryCommand": "pnpm run docs:site-nav"
+  "primaryCommand": "pnpm --dir site exec astro dev"
 }

@@ -165,9 +165,10 @@ stateDiagram-v2
 
 ## Strict-start hook receipt
 
-The fleet v2 pre-job hook template requires HTTP 200 and a JSON receipt with
-`ok: true`, `slotId`, `claimId`, `accountId`, `profileId`, `runnerName`, and
-the exact `executionKey` from its request. It checks the run ID and attempt
+The fleet v2 pre-job hook template requires an HTTPS endpoint, HTTP 200, and a
+JSON receipt with `authorized: true`, `slotId`, `claimId`, `accountId`,
+`profileId`, `runnerName`, and the exact `executionKey` from its request. Both
+start-fence handlers issue this receipt. It checks the run ID and attempt
 against the runner context before sending the request. Redirects, empty or
 malformed responses, mismatched identities, oversized receipts, and transport
 failures block the job. The binding secret is sent in the request body.
@@ -1814,3 +1815,19 @@ estimate of about 25 assumed one command per ring append and no routing reads.
   plus the last 50 ended leases per account.
 - Shared-budget settlement (`reconcileSharedBudget`,
   `releaseUnusedSharedBudget`): budget-policy accounts are never admitted.
+
+## Strict pre-job hook
+
+`templates/fleet-pre-job-hook.sh` sends the slot credential and execution key to
+an HTTPS start-fence endpoint before workflow steps run. It requires a bounded
+response with a matching JSON authorization receipt and rejects redirects,
+network failures, and mismatched runner context. `createGithubAssignmentLookup`
+verifies the repository, workflow attempt, assigned runner ID and group, job
+state, and required labels using the central GitHub App transport. Its scope
+must come from trusted controller configuration. An embedded relay can serve
+`POST /v1/fleet/start-fence` by passing an initialized `StrictFleetStore` and
+trusted `StartFencePolicy` entries as `strictFleet` to `createRelayHost`.
+The same option is available to callers of `startRelayFromEnvironment`.
+The endpoint verifies the slot credential and actual GitHub assignment, commits
+the binding, then returns the receipt. With no strict fleet configuration, the
+route is unavailable. The caller owns the strict store's lifecycle.

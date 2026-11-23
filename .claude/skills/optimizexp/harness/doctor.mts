@@ -56,24 +56,23 @@ Usage:
 
 Modes:
   check      Audit only (default). Exit 1 if any error-severity findings.
-  repair     Apply safe repairs (structure, config, gitignore, persona stubs,
-             EXPERIENCE.md skeletons, surface-map + experience-catalog).
+  repair     Apply safe structure, config, gitignore, and surface-map repairs.
   snapshot   Write a safe metadata snapshot under .optimizexp/snapshots/
-             (personas, feature.json, EXPERIENCE.md, catalogs — no large media).
+             (configuration, feature metadata, and Gherkin — no large media).
 
 Options:
   --project <id> | --projects a,b | --all-projects
   --json                 Machine-readable full report (default: summary + findings)
   --out <dir>            Snapshot output directory (snapshot mode)
-  --only action,action   Limit repair actions (e.g. ensure-config,build-catalog)
+  --only action,action   Limit repair actions (e.g. ensure-config,build-surface-map)
   --shallow              Skip deep per-feature Gherkin/rubberduck scan
   --confirm-surface-current=<project>:<map-sha256>  Assert saved observation still matches current imports, config, and environment (repeatable)
 
 What doctor audits:
   · Repo structure (.optimizexp dirs, config.json, managed .gitignore, bus/runs)
   · Persona formalization (schemaVersion, experiences binding, v2 KYC sections)
-  · Feature relevance/quality (template-only Gherkin ban, EXPERIENCE.md, discovery traps)
-  · Surface-map + experience-catalog (default entry / interactive coverage)
+  · Feature relevance/quality (template-only Gherkin ban and discovery traps)
+  · Surface-map (default entry / interactive coverage)
   · Safe initial-state snapshots for workspaces
 
 Does NOT:

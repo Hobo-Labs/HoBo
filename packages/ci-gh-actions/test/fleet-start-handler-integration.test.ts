@@ -232,7 +232,7 @@ it("routes a verified GitHub assignment through SQLite, with an idempotent recei
 		expect(first.status).toBe(200);
 		const receipt = await first.text();
 		expect(JSON.parse(receipt)).toMatchObject({
-			ok: true,
+			authorized: true,
 			slotId: body.slotId,
 			claimId: body.claimId,
 			executionKey,

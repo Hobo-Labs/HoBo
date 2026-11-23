@@ -13,6 +13,7 @@ import {
   PaymentPlanId,
   SubscriptionStatus,
   parsePaymentPlanId,
+  parseSubscriptionStatus,
   prettyPaymentPlanName,
 } from "../payment/plans";
 
@@ -113,8 +114,7 @@ function UserCurrentSubscriptionPlan({
     subscriptionPlanMessage = formatSubscriptionStatusMessage(
       parsePaymentPlanId(subscriptionPlan),
       datePaid,
-      // SAFETY: assertion to `subscriptionStatus as SubscriptionStatus` is required at this boundary.
-      subscriptionStatus as SubscriptionStatus,
+      parseSubscriptionStatus(subscriptionStatus),
     );
   }
 
@@ -155,7 +155,6 @@ function formatSubscriptionStatusMessage(
 function prettyPrintEndOfBillingPeriod(datePaid: Date) {
   const lastDayOfNextMonth = new Date(datePaid);
   lastDayOfNextMonth.setMonth(lastDayOfNextMonth.getMonth() + 2, 0);
-  // Clamped so e.g., Jan 31 + 1 month → Feb 28, not until March 3.
   const clampedDayOfMonth = Math.min(
     datePaid.getDate(),
     lastDayOfNextMonth.getDate(),

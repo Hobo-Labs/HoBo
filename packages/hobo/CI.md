@@ -263,6 +263,77 @@ JSON output uses HoBo's envelope;
 `--format json` and `-F json` are aliases of `--json`. Unsupported filters report
 a usage error rather than silently changing their meaning.
 
+## Inspect and repair the fleet's Hostinger hosts
+
+```sh
+hobo ci fleet status
+hobo ci fleet restart hobo-arc.example.com
+hobo ci fleet start 1201
+```
+
+The self-hosted fleet's machines are Hostinger VPS the owner already bought.
+`hobo ci fleet status` lists the account's machines (id, hostname, state, plan,
+first IPv4, and whether an action is in progress); `--json` carries them as
+`data.fleet`. `restart` and `start` take a machine id or hostname, refuse a
+machine the account does not own or one with an action already in progress,
+and return Hostinger's action id and state as `data.fleetAction`; run
+`status` again to watch the machine settle. Nothing else is reachable: the
+fleet's transport allows only the machine list and those two power actions,
+so purchase, setup, recreate, stop and every `/api/billing/v1/` route are
+refused before a request leaves the process (`HOSTINGER_FLEET_ROUTE_REFUSED`).
+
+The Hostinger API token comes from the owner's store session, as
+`owner://HOSTINGER_API_TOKEN` (`env://HOSTINGER_API_TOKEN` is accepted for the
+same entry), resolved through the session's credential resolver; the CLI reads
+no token from its environment, and no output, error included, carries the
+token or a store reference. Without an established session, or with no such
+entry in the store, the command refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`: call HoBo MCP's `choose_secret_store`
+for the project, then ask again. An agent runs it through HoBo MCP as the `ci`
+tool with `args: ["fleet", "status"]` (or `["fleet", "restart", "<vm>"]`) and
+the project directory as `cwd`. The verb manages machines only; it does not
+register runners or the `hobo-arc` scale set on them.
+
+## Give the fleet's ARC pods node caches
+
+```sh
+hobo ci fleet caches --plan
+hobo ci fleet caches --apply --prewarm 4da35cfd92854b07ea368680fcc19a621faa928f
+hobo ci fleet caches --status --scale-set hobo-trunk
+```
+
+ARC runner pods start with an empty pnpm store and image cache. `hobo ci fleet
+caches` patches each `AutoscalingRunnerSet` so its pods mount the node's
+`/var/lib/hobo-ci/pnpm-store` and `/var/lib/hobo-ci/images` and name them in
+`HOBO_CI_PNPM_STORE_DIR` and `HOBO_CI_IMAGE_CACHE_DIR`, and with
+`--prewarm <sha>` creates a Job that fills the node store from that commit's
+lockfile. `--plan` (the default) shows the JSON patch and the Job without
+sending them; `--apply` sends them and is idempotent; `--status` reports
+whether each scale set has the caches mounted and whether its newest prewarm
+Job succeeded. `--json` carries the `CiFleetCaches` record as
+`data.fleetCaches`.
+
+The cluster is the kubernetes pool with a scale set in `.hobo/ci.json`'s
+default environment (`hostinger-arc`, namespace `arc-runners`); `--cluster
+<pool>` picks one when several exist, `--namespace` overrides the namespace,
+and `--scale-set <name>` (repeatable) narrows the default of every scale set
+in it. The verb reaches the API server directly over HTTPS with the pool's
+kubeconfig, which the owner keeps in their store under the pool's
+`connectionRef` upper-cased with `_KUBECONFIG` appended:
+`owner://HOSTINGER_ARC_KUBECONFIG`, and from nowhere else. It verifies the server against the kubeconfig's
+`certificate-authority-data` and authenticates with its `token` or inline
+client certificate; it reads no kubeconfig file and refuses exec plugins,
+file paths and skipped TLS verification
+(`HOBO_CI_FLEET_KUBECONFIG_UNSUPPORTED`). Without an established owner store
+session or that entry it refuses with `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`
+before any network call. The client can only list, read and JSON-patch
+`autoscalingrunnersets.actions.github.com` and create and list `jobs.batch`;
+anything else is refused before a request leaves the process. No output,
+error included, carries the kubeconfig, its token or its key. An agent runs it
+through HoBo MCP as the `ci` tool with
+`args: ["fleet", "caches", "--apply", "--prewarm", "<sha>"]` and the project
+directory as `cwd`.
+
 ## Move workflow jobs to the fleet
 
 ```sh
@@ -488,7 +559,7 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 | `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
 | `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
-| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration. `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
+| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration. `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`), unless the relay serves the commit and its owner hand-off and `/readyz` names only the owner's missing or refused entries: then production keeps the build, unqualified, and the command answers `HOBO_CI_DEPLOYED_AWAITING_OWNER` naming them. Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
 
 Nobody runs this against production by hand: the
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on

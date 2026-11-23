@@ -15,6 +15,17 @@ import {
 	type RetryHandler,
 } from "@vercel/queue";
 import {
+	CacheBindingError,
+	cacheBindingEnv,
+	discoverCacheBackends,
+	type OpenedCacheBackend,
+	openCacheBackend,
+} from "./cache-backend.js";
+import {
+	createOwnerHandoffMailbox,
+	isOwnerHandoffPath,
+} from "./owner-handoff.js";
+import {
 	forwardQueueHandoff,
 	QueueHandoffError,
 	redeliverRefusedWakeup,
@@ -26,6 +37,8 @@ import {
 } from "./relay-queue.js";
 import {
 	createRelayRuntimeConfigLoader,
+	parseRelayCacheBindings,
+	type RelayConfigGaps,
 	type RelayConfigSource,
 	RelayRuntimeConfigError,
 	type RelayRuntimeConfigLoader,
@@ -56,7 +69,11 @@ setRelayFailureEvents(
 /** When the config service last failed a refresh; cleared by the next success. */
 let configStaleSince: number | undefined;
 let loader:
-	| { kind: RelayConfigSource["kind"]; config: RelayRuntimeConfigLoader }
+	| {
+			kind: RelayConfigSource["kind"];
+			source: RelayConfigSource;
+			config: RelayRuntimeConfigLoader;
+	  }
 	| undefined;
 /**
  * The relay's configuration and secrets, from the config service the
@@ -76,6 +93,7 @@ function configLoader() {
 	};
 	loader = {
 		kind: source.kind,
+		source,
 		config: createRelayRuntimeConfigLoader({
 			source: tracked,
 			onRefreshFailed: (error) => {
@@ -115,11 +133,19 @@ const DENIED_CODES: ReadonlySet<string> = new Set([
 /** The relay could not start; `state` is what `/readyz` reports. */
 export class RelayStartError extends Error {
 	readonly state: RelayStartState;
-	constructor(state: RelayStartState) {
+	readonly gaps: RelayConfigGaps | undefined;
+	constructor(state: RelayStartState, gaps?: RelayConfigGaps) {
 		super(`relay initialization failed (${state})`);
 		this.name = "RelayStartError";
 		this.state = state;
+		this.gaps = gaps;
 	}
+}
+
+export function relayStartGaps(error: Error): RelayConfigGaps | undefined {
+	if (error instanceof RelayStartError) return error.gaps;
+	if (error instanceof RelayRuntimeConfigError) return error.gaps;
+	return undefined;
 }
 
 /** The typed reason a startup failure gives at `/readyz`: a name, never a value. */
@@ -173,11 +199,9 @@ function application() {
 				error instanceof Error ? error : undefined,
 			);
 			startup = undefined;
-			throw new RelayStartError(
-				error instanceof Error
-					? relayStartState(error)
-					: RELAY_START_STATES.startFailed,
-			);
+			throw error instanceof Error
+				? new RelayStartError(relayStartState(error), relayStartGaps(error))
+				: new RelayStartError(RELAY_START_STATES.startFailed);
 		});
 	return startup;
 }
@@ -193,7 +217,13 @@ export function createHttpEntry(
 		origin: string;
 		handle: (request: Request) => Promise<Response>;
 	}>,
-	options: Readonly<{ commit?: string | null }> = {},
+	options: Readonly<{
+		commit?: string | null;
+		ownerHandoff?: (
+			request: IncomingMessage,
+			response: ServerResponse,
+		) => Promise<void>;
+	}> = {},
 ) {
 	const commit = options.commit ?? null;
 	return async (
@@ -207,6 +237,10 @@ export function createHttpEntry(
 				"Cache-Control": "no-store",
 			});
 			response.end(JSON.stringify({ ok: true, commit }));
+			return;
+		}
+		if (options.ownerHandoff !== undefined && isOwnerHandoffPath(path ?? "")) {
+			await options.ownerHandoff(request, response);
 			return;
 		}
 		try {
@@ -226,6 +260,7 @@ export function createHttpEntry(
 					"Content-Type": "application/json",
 					"Cache-Control": "no-store",
 				});
+				const gaps = error instanceof Error ? relayStartGaps(error) : undefined;
 				response.end(
 					JSON.stringify({
 						ready: false,
@@ -237,6 +272,9 @@ export function createHttpEntry(
 							error instanceof Error
 								? relayStartState(error)
 								: RELAY_START_STATES.startFailed,
+						...(gaps === undefined
+							? undefined
+							: { missing: gaps.missing, invalid: gaps.invalid }),
 					}),
 				);
 				return;
@@ -246,8 +284,99 @@ export function createHttpEntry(
 		}
 	};
 }
+export const OWNER_HANDOFF_STATES = Object.freeze({
+	noMailboxStore: "no-mailbox-store",
+	mailboxStoreUnavailable: "mailbox-store-unavailable",
+} as const);
+
+export async function ownerHandoffCacheBindings(
+	config: RelayRuntimeConfigLoader,
+	source: RelayConfigSource,
+) {
+	try {
+		return await config.load();
+	} catch (error) {
+		if (!(error instanceof RelayRuntimeConfigError)) throw error;
+		return parseRelayCacheBindings(await source.read());
+	}
+}
+
+function folderCacheBindings() {
+	const { config, source } = configLoader();
+	return ownerHandoffCacheBindings(config, source);
+}
+
+export async function openOwnerHandoffBackend(
+	env: Readonly<Record<string, string | undefined>>,
+	folder: () => Promise<
+		Parameters<typeof cacheBindingEnv>[1]
+	> = folderCacheBindings,
+): Promise<OpenedCacheBackend> {
+	let merged = env;
+	let bindings: ReturnType<typeof discoverCacheBackends> | undefined;
+	try {
+		bindings = discoverCacheBackends(env);
+	} catch (error) {
+		if (!(error instanceof CacheBindingError)) throw error;
+		merged = cacheBindingEnv(env, await folder()).env;
+		bindings = discoverCacheBackends(merged);
+	}
+	const first = bindings.members[0];
+	if (first === undefined)
+		throw new CacheBindingError("no cache is bound for the owner hand-off");
+	return openCacheBackend(first, merged);
+}
+
+export function createOwnerHandoffEntry(
+	env: Readonly<Record<string, string | undefined>>,
+	open: () => Promise<OpenedCacheBackend> = () => openOwnerHandoffBackend(env),
+) {
+	const host =
+		env.VERCEL_PROJECT_PRODUCTION_URL || env.VERCEL_URL || "relay.invalid";
+	const environment =
+		env.VERCEL_ENV === "production" ||
+		env.VERCEL_ENV === "preview" ||
+		env.VERCEL_ENV === "development"
+			? env.VERCEL_ENV
+			: "local";
+	let opened: Promise<(request: Request) => Promise<Response>> | undefined;
+	const mailbox = () => {
+		opened ??= open()
+			.then((backend) =>
+				createOwnerHandoffMailbox({ state: backend.state, environment }),
+			)
+			.catch((error) => {
+				opened = undefined;
+				throw error;
+			});
+		return opened;
+	};
+	const handler = createNodeRelayHandler({
+		origin: `https://${host}`,
+		handle: async (request) => {
+			try {
+				return await (await mailbox())(request);
+			} catch (error) {
+				return Response.json(
+					{
+						ready: false,
+						state:
+							error instanceof CacheBindingError ||
+							error instanceof RelayRuntimeConfigError
+								? OWNER_HANDOFF_STATES.noMailboxStore
+								: OWNER_HANDOFF_STATES.mailboxStoreUnavailable,
+					},
+					{ status: 503, headers: { "Cache-Control": "no-store" } },
+				);
+			}
+		},
+	});
+	return handler;
+}
+
 export const http = createHttpEntry(application, {
 	commit: buildCommit(process.env),
+	ownerHandoff: createOwnerHandoffEntry(process.env),
 });
 
 let queueBindingReported = false;

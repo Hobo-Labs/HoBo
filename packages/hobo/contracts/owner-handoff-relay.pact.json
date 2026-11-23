@@ -1,0 +1,182 @@
+{
+  "consumer": {
+    "name": "hobo-mcp-owner-link"
+  },
+  "provider": {
+    "name": "hobo-ci-relay-owner-handoff"
+  },
+  "metadata": {
+    "providerClockMs": 1800000000000
+  },
+  "interactions": [
+    {
+      "description": "registers a hand-off mailbox",
+      "providerState": "no mailbox",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-handoff/mailboxes",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "offer": {
+            "mailboxId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+            "recipientKey": "BArrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+            "binding": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "expiresAtMs": 1800000600000,
+            "keyProof": "ppppppppppppppppppppppppppppppppppppppppppp"
+          },
+          "collectDigest": "imUqv3USlZp-z3q-MqK7RjTAsD_JMAiwNl7WeTO_8Aw"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "mailboxId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+        }
+      }
+    },
+    {
+      "description": "collects before the owner answered",
+      "providerState": "an open mailbox",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-handoff/mailboxes/mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm/collect",
+        "headers": {
+          "authorization": "Bearer TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "state": "waiting",
+          "expiresAtMs": 1800000600000
+        }
+      }
+    },
+    {
+      "description": "the owner's page deposits a sealed answer once",
+      "providerState": "an open mailbox",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/owner-handoff/mailboxes/mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm/envelope",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "senderKey": "BBsssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+          "iv": "iiiiiiiiiiiiiiii",
+          "ciphertext": "cccccccccccccccccccccccccccccccccccccccc"
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "description": "the page cannot deposit twice",
+      "providerState": "a sealed mailbox",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/owner-handoff/mailboxes/mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm/envelope",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "senderKey": "BBsssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+          "iv": "iiiiiiiiiiiiiiii",
+          "ciphertext": "cccccccccccccccccccccccccccccccccccccccc"
+        }
+      },
+      "response": {
+        "status": 410,
+        "body": {
+          "error": "used"
+        }
+      }
+    },
+    {
+      "description": "collects the owner's sealed answer",
+      "providerState": "a sealed mailbox",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-handoff/mailboxes/mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm/collect",
+        "headers": {
+          "authorization": "Bearer TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "envelope": {
+            "senderKey": "BBsssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+            "iv": "iiiiiiiiiiiiiiii",
+            "ciphertext": "cccccccccccccccccccccccccccccccccccccccc"
+          }
+        }
+      }
+    },
+    {
+      "description": "refuses a second collection",
+      "providerState": "a collected mailbox",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-handoff/mailboxes/mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm/collect",
+        "headers": {
+          "authorization": "Bearer TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"
+        }
+      },
+      "response": {
+        "status": 410,
+        "body": {
+          "error": "used"
+        }
+      }
+    },
+    {
+      "description": "does not know an expired mailbox",
+      "providerState": "an expired mailbox",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-handoff/mailboxes/mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm/collect",
+        "headers": {
+          "authorization": "Bearer TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"
+        }
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "error": "not-found"
+        }
+      }
+    },
+    {
+      "description": "has no mailbox store",
+      "providerState": "no mailbox store",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-handoff/mailboxes",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "offer": {
+            "mailboxId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+            "recipientKey": "BArrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+            "binding": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "expiresAtMs": 1800000600000,
+            "keyProof": "ppppppppppppppppppppppppppppppppppppppppppp"
+          },
+          "collectDigest": "imUqv3USlZp-z3q-MqK7RjTAsD_JMAiwNl7WeTO_8Aw"
+        }
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "ready": false,
+          "state": "no-mailbox-store"
+        }
+      }
+    }
+  ]
+}

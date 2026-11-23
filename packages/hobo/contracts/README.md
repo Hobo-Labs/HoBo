@@ -69,3 +69,11 @@ Its dry-run record is `data-models/vercel_git_deployment.proto`
 valid fixtures that are the command's own output and invalid ones for a
 secret-named setting, a credentialed value, an implied or unknown target, a
 slug scope, another git host, a short sha, no requests and a path off the API.
+
+`owner-handoff-relay.pact.json` pins the owner hand-off mailbox on the CI relay
+that `src/owner-link.ts` uses when a host shows no working private form:
+registration, collection before and after the owner's page deposits a sealed
+answer, the single deposit, a used or expired mailbox and a relay with no mailbox
+store. `test/owner-link.test.ts` drives the consumer through every interaction,
+and `packages/ci-vercel/contracts/owner-handoff.provider.test.ts` replays each
+recorded request against the relay's handler.
