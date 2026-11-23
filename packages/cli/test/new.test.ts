@@ -18,6 +18,7 @@ import {
 	VALID_TEMPLATES,
 	validateScaffoldProject,
 } from "../src/index.js";
+import { parseProjectName, parseTemplateId } from "../src/types/scaffold.js";
 
 const expectedCreatedFiles = [
 	".gitignore",
@@ -91,6 +92,55 @@ describe("hobo new scaffold", () => {
 			// every other template, in "creates all four templates" below.
 			const report = await validateScaffoldProject(projectDir);
 			expect(report.ok).toBe(true);
+		});
+	});
+
+	it("rejects generated bindings that do not implement the required exports", async () => {
+		await withScratch(async (cwd) => {
+			const { projectDir } = await scaffoldHoboProject({
+				cwd,
+				name: parseProjectName("missing-bindings"),
+				template: parseTemplateId("api"),
+			});
+			await writeFile(
+				path.join(projectDir, "src/_generated/index.ts"),
+				'const example = "export function createHobo() {}";\nexport function createTestRuntime() {}\nexport declare function createApiStore(): void;\n',
+			);
+			const report = await validateScaffoldProject(projectDir);
+			expect(report.ok).toBe(false);
+			if (!("violations" in report))
+				throw new Error("expected contract violations");
+			expect(report.violations).toEqual(
+				expect.arrayContaining([
+					"generated bindings must export createHobo",
+					"generated bindings must export createApiStore",
+				]),
+			);
+		});
+	});
+
+	it("accepts runnable generated bindings exported as arrow functions", async () => {
+		await withScratch(async (cwd) => {
+			const { projectDir } = await scaffoldHoboProject({
+				cwd,
+				name: parseProjectName("arrow-bindings"),
+				template: parseTemplateId("api"),
+			});
+			const generatedPath = path.join(projectDir, "src/_generated/index.ts");
+			const generated = await readFile(generatedPath, "utf8");
+			const original =
+				'export function createApiStore(): Store {\n\treturn createMemoryStore("api");\n}';
+			expect(generated).toContain(original);
+			await writeFile(
+				generatedPath,
+				generated.replace(
+					original,
+					'export const createApiStore = (): Store => createMemoryStore("api");',
+				),
+			);
+			expect((await validateScaffoldProject(projectDir)).ok).toBe(true);
+			assertGeneratedProjectRuns(projectDir);
+			assertGeneratedProjectTypechecks(projectDir);
 		});
 	});
 

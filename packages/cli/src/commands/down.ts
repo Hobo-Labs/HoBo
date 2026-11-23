@@ -16,12 +16,6 @@ export interface DownCommandDeps {
 	readonly session?: YardSession;
 }
 
-// `hobo down` — tear down what up realized. With `runtime.delivery` wired it
-// is a teardown Delta (ADR-0182 D13): promotion intent `down` through the
-// same gate, converged by the in-process conductor, with progress streamed.
-// Without delivery wired it reconstructs the DeploymentPlan from the Bindle and
-// drives the @hobo/cloud compensation path (legacy). DownResult is unchanged.
-
 function progressLine(step: ProgressEvent): string {
 	return step.resourceId
 		? `${step.type} ${step.resourceId}: ${step.detail}`
@@ -42,8 +36,6 @@ export function createDownCommand(deps: DownCommandDeps = {}): CommandModule {
 				return stubResult("down");
 			}
 
-			// Fold any providers installed via `hobo add` from the durable registry
-			// stream so the reconstructed plan matches what `up` realized.
 			await runtime.registry.refresh?.();
 
 			const session =
@@ -51,7 +43,6 @@ export function createDownCommand(deps: DownCommandDeps = {}): CommandModule {
 				(await loadSession(projectDir)) ??
 				createFixtureSession();
 			const deploymentId = deploymentIdFor(projectDir);
-			// `down --what-if`: what teardown would destroy, destroying nothing.
 			if (flags.whatIf) {
 				const history = await collectStream(
 					runtime.store,

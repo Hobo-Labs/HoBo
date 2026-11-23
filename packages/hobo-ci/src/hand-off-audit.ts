@@ -6,7 +6,7 @@ const jsonArray = z.array(jsonValue);
 const jsonObject = z.record(z.string(), jsonValue);
 type JsonValue = z.infer<typeof jsonValue>;
 
-export type AskKind = "choice" | "credential" | "capture";
+export type AskKind = "choice" | "capture";
 
 export type TranscriptBlock =
 	| { readonly kind: "text"; readonly text: string }
@@ -55,7 +55,8 @@ export interface HandOffFinding {
 		| "form-before-link"
 		| "private-owner-line"
 		| "private-owner-request"
-		| "private-owner-exposure";
+		| "private-owner-exposure"
+		| "agent-stored-credential";
 	readonly ask: AskKind;
 	/** The owner-facing line that opened the obligation. */
 	readonly line: string;
@@ -67,17 +68,17 @@ export interface HandOffFinding {
 // public-contract: the tools that count as a structured ask, by kind.
 export const STRUCTURED_ASK_TOOLS = {
 	choice: /^(AskUserQuestion|mcp__[\w-]+__choose_secret_store)$/u,
-	credential: /^(mcp__[\w-]+__)?request_credential$/u,
 	// A value the waiting run itself reads: only HoBo's capture reaches it
 	// (the session's credential form feeds the network proxy, not the run).
 	capture: /^mcp__[\w-]+__capture_secret$/u,
 } satisfies Readonly<Record<AskKind, RegExp>>;
 
+const AGENT_CREDENTIAL_STORE = /^(?:mcp__[\w-]+__)?request_credential$/u;
+
 /** Owner-facing lines as the CLI prints them (not source code that names them). */
 const OWNER_LINES: readonly { readonly ask: AskKind; readonly re: RegExp }[] = [
 	{ ask: "choice", re: /^HOBO_C[ID]_STORE_CHOICE$/mu },
 	{ ask: "choice", re: /^HOBO_C[ID]_BITWARDEN_ORGANIZATION$/mu },
-	{ ask: "credential", re: /^HOBO_OWNER_CREDENTIAL host=\S+/mu },
 	{ ask: "capture", re: /HOBO_OWNER_SIGN_IN url=\S+ capture=\S+/u },
 	{ ask: "capture", re: /^HOBO_OWNER_CAPTURE name=\S+/mu },
 ];
@@ -85,8 +86,6 @@ const OWNER_LINES: readonly { readonly ask: AskKind; readonly re: RegExp }[] = [
 const ASK_DETAIL = {
 	choice:
 		"The turn ended without a completed structured choice (choose_secret_store or AskUserQuestion); asking in prose, or not re-asking after an interrupted picker, leaves the owner without the widget.",
-	credential:
-		"The turn ended without a privacy-verified owner credential channel. Use one or report the missing secure hand-off.",
 	capture:
 		"The turn ended without HoBo's secret capture (capture_secret) for the value the run is waiting for; the run reads it only from there, never from chat or the session's credential form.",
 } satisfies Readonly<Record<AskKind, string>>;
@@ -155,11 +154,6 @@ function privateOwnerParts(output: string): PrivateOwnerPart[] {
 			ask: "capture",
 		},
 		{
-			re: /^HOBO_OWNER_CREDENTIAL host=(\S+)(?: guide=(\S+))?/gmu,
-			line: "HOBO_OWNER_CREDENTIAL",
-			ask: "credential",
-		},
-		{
 			re: /^HOBO_OWNER_CAPTURE name=\S+ guide=(\S+)/gmu,
 			line: "HOBO_OWNER_CAPTURE",
 			ask: "capture",
@@ -172,7 +166,7 @@ function privateOwnerParts(output: string): PrivateOwnerPart[] {
 		{
 			re: /^HOBO_OWNER_BITWARDEN_APPROVE\s+server=(\S+)\s+phrase=(\S+)/gmu,
 			line: "HOBO_OWNER_BITWARDEN_APPROVE",
-			ask: "credential",
+			ask: "capture",
 		},
 		{
 			re: /^HOBO_OWNER_BITWARDEN_APPROVE[^\n]*? collection "[^"]+" of (.+?), and waits/gmu,
@@ -332,7 +326,7 @@ function privateFieldsPresent(
 }
 
 function isOwnerTool(name: string): boolean {
-	return /^mcp__[\w-]+__(?:ci|cd|choose_secret_store|submit_store_choice|capture_secret|secret_capture_status|request_credential)$/u.test(
+	return /^mcp__[\w-]+__(?:ci|cd|choose_secret_store|submit_store_choice|capture_secret|secret_capture_status)$/u.test(
 		name,
 	);
 }
@@ -658,6 +652,15 @@ export function auditHandOff(
 								"An owner identifier, setting, or secret appeared in an agent-visible tool input.",
 						});
 				}
+				if (AGENT_CREDENTIAL_STORE.test(b.name))
+					findings.push({
+						rule: "agent-stored-credential",
+						ask: "capture",
+						line: b.name,
+						at: event.at,
+						detail:
+							"request_credential stores a credential in the agent session's environment, outside the owner's secret store. Hand the value to the waiting run with HoBo's capture_secret instead.",
+					});
 				if (/^mcp__[\w-]+__capture_secret$/u.test(b.name)) {
 					captures.add(b.id);
 					if (signIn?.turn === turn && signIn.shownTurn === undefined)
@@ -689,7 +692,7 @@ export function auditHandOff(
 								detail: `The owner chose ${chosen}, but a later question asked about ${other.join(", ")}. Follow-ups are about the chosen store only.`,
 							});
 					}
-				for (const ask of ["choice", "credential", "capture"] as const)
+				for (const ask of ["choice", "capture"] as const)
 					if (STRUCTURED_ASK_TOOLS[ask].test(b.name)) {
 						pending.set(b.id, [...(pending.get(b.id) ?? []), ask]);
 						if (b.name !== "AskUserQuestion") {

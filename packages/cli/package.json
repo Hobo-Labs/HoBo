@@ -35,6 +35,7 @@
 		"typescript": "^5.9.3"
 	},
 	"devDependencies": {
+		"@hobo/broker": "workspace:*",
 		"@hobo/data": "workspace:*",
 		"@hobo/provider-cloudflare": "workspace:*",
 		"@hobo/runtime": "workspace:*",

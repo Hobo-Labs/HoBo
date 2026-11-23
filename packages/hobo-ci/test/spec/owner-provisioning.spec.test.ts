@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { credentialLine } from "../../src/hand-off-store.js";
+import { handOffSignInLines } from "../../src/hand-off-store.js";
 import {
+	HAND_OFF_SIGN_INS,
 	storeChoiceGuidance,
 	storeSignInGuidance,
 } from "../../src/owner-store.js";
@@ -32,13 +33,12 @@ const ENV_OR_TERMINAL =
 
 /** Every line a handed-off run can show the owner for one store. */
 function ownerFacingText(store: SecretStoreId): string[] {
-	const owner = { id: store, egressCredentialHost: undefined };
 	return [
 		...storeChoiceGuidance(),
 		...storeSignInGuidance(store, "cd"),
 		...(store === "bitwarden"
 			? []
-			: [credentialLine(owner, "cd", 15 * 60_000)]),
+			: handOffSignInLines(HAND_OFF_SIGN_INS[store])),
 	];
 }
 

@@ -5,12 +5,34 @@
       {
         "command": "[ ! -f \".cursor/skills/impeccable/scripts/hook-before-edit.mjs\" ] || node \".cursor/skills/impeccable/scripts/hook-before-edit.mjs\"",
         "timeout": 5
+      },
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-secret-policy.mts\" --format=cursor",
+        "timeout": 10
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-secret-policy.mts\" --format=cursor",
+        "timeout": 10
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-secret-policy.mts\" --format=cursor",
+        "timeout": 10
       }
     ],
     "sessionStart": [
       {
         "command": "sh \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/ensure-hooks-path.sh\" >/dev/null 2>&1; exit 0",
         "timeout": 10
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
+        "timeout": 60
       }
     ],
     "stop": [

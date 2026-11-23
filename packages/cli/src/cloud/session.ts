@@ -6,12 +6,6 @@ import type { PrincipalRef } from "@hobo/core";
 import { isJsonString } from "../json.js";
 import type { YardSession } from "./yard-client.js";
 
-// Mocked-lane session material. The Yard gateway (gateway.authorize) accepts any
-// attributable principal — a non-`system` kind with a non-empty id — so a
-// deterministic fixture principal is a sufficient dev identity until @hobo/
-// identity SVID brokering lands. `hobo login` mints one; `hobo up`/`down` consume
-// it. Persisted under `.hobo/session.json` (gitignored) so the verbs chain.
-
 export const SESSION_FILE = path.join(".hobo", "session.json");
 export const DEFAULT_TENANT = "hobo-dev"; // public-contract: tenant id recorded for a session opened without one
 export const ANONYMOUS_SUBJECT = "anonymous"; // public-contract: subject recorded for an unauthenticated session

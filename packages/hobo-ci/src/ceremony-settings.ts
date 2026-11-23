@@ -154,7 +154,7 @@ export function storeSettings(
 						name: "OP_CONNECT_HOST",
 						label: "1Password Connect server (optional)",
 						description:
-							"The https origin of your own 1Password Connect server. With it, a run on a remote box reaches your vault through Connect, and the agent's egress proxy adds your Connect token: no desktop app and no token in the run.",
+							"The https origin of your own 1Password Connect server. With it, a run on a remote box reaches your vault through Connect with a Connect access token you hand to the run in the HoBo MCP App's secret form: no desktop app.",
 						kind: "text",
 						required: false,
 					},
@@ -215,16 +215,12 @@ export function storeSettings(
 						name: "INFISICAL_SIGN_IN",
 						label: "How this machine signs in to Infisical",
 						description:
-							"typed: you type an access token on this page. egress-proxy: the run holds no token; the agent's egress proxy injects one you gave it out of band (for an agent's remote box you cannot reach). oauth: you approve in your browser; the store opens read-only.",
+							"typed: you type an access token on this page, or, for an agent's remote box you cannot reach, hand it to the run in the HoBo MCP App's secret form. oauth: you approve in your browser; the store opens read-only.",
 						kind: "choice",
 						required: false,
 						value: "typed",
 						options: [
 							{ value: "typed", label: "Type a token here" },
-							{
-								value: "egress-proxy",
-								label: "Injected by the agent's egress proxy",
-							},
 							{
 								value: "oauth",
 								label: "Approve in the browser (OAuth application, read-only)",

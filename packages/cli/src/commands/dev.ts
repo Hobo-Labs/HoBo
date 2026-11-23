@@ -32,7 +32,6 @@ export interface DevServeResult {
 	}[];
 	readonly serviceDiscovery: Readonly<Record<string, string>>;
 	readonly bindleEnv?: Readonly<Record<string, string>>;
-	/** Hierarchical DNS-valid named endpoints (HoBo-owned naming). */
 	readonly namedEndpoints?: readonly {
 		readonly resourceName: string;
 		readonly hostname: string;
@@ -42,9 +41,7 @@ export interface DevServeResult {
 		readonly external: boolean;
 		readonly serviceDiscoveryKey: string;
 	}[];
-	/** Preferred hierarchical HTTPS URL for the primary external endpoint. */
 	readonly primaryNamedUrl?: string | null;
-	/** Camp component-host backend (glossary: Component host). */
 	readonly componentHost?: string;
 	readonly probe: { readonly status: number; readonly body: string };
 	readonly close: () => Promise<void>;
@@ -52,15 +49,8 @@ export interface DevServeResult {
 }
 
 export interface DevCommandDeps {
-	// Injected runtime-local Camp (tests / dev wiring): the component host +
-	// Streamer the local loop boots on. Wins over `resolveRuntime`.
 	readonly runtime?: DevRuntime;
-	// Project-aware resolver (composition roots): boot the runtime from the
-	// invoked project's own bindle source (see cloud/loader.ts). Un-injected
-	// with no `runtime` either, `hobo dev` stays a shell stub.
 	readonly resolveRuntime?: (projectDir: string) => Promise<DevRuntime | null>;
-	// Preferred path: serve the project bindle through a real bare-metal Yard
-	// (camp routing + Aspire services__* injection + long-lived HTTP).
 	readonly serveProject?: (input: {
 		readonly projectDir: string;
 		readonly port?: number;
@@ -69,12 +59,6 @@ export interface DevCommandDeps {
 	}) => Promise<DevServeResult>;
 }
 
-// `hobo dev` (S1-19) — prefer the composed bare-metal Yard serve path when
-// injected; otherwise boot a one-shot runtime-local Camp probe. Fully offline
-// (no cloud account): NFR-002's ≤ 60 s cold budget applies to the probe.
-// Flags: `--once` probe-and-exit (tests/CI); `--serve` forces the long-lived
-// server even without a TTY (agents, supervisors); the interactive default
-// keeps listening until SIGINT. `--once` wins over `--serve`.
 export function createDevCommand(deps: DevCommandDeps = {}): CommandModule {
 	return {
 		implemented: Boolean(
@@ -82,18 +66,11 @@ export function createDevCommand(deps: DevCommandDeps = {}): CommandModule {
 		),
 		run: async ({ context, flags, emitProgress }) => {
 			const projectDir = context.projectDir ?? context.cwd;
-			// `--serve` is the explicit opt-in to the long-lived server for
-			// non-TTY callers (agents, supervisors, containers) that would
-			// otherwise probe-and-exit. `--once`/`--json` still win.
 			const forceServe = flags.serve === true;
-			// Long-running only for interactive terminals without --json/--once.
-			// Machine-readable and CI runs probe-and-exit so they don't hang.
 			const once =
 				flags.once === true ||
 				flags.json === true ||
 				(!forceServe && (!process.stdin.isTTY || !process.stdout.isTTY));
-			// Off-TTY runs probe-and-exit silently otherwise — say why, and how
-			// to get the long-lived server instead.
 			if (
 				once &&
 				flags.once !== true &&
@@ -179,9 +156,6 @@ export function createDevCommand(deps: DevCommandDeps = {}): CommandModule {
 						},
 					};
 				} catch (error) {
-					// No project bindle (or other serve failure): fall through to the
-					// one-shot runtime-local probe so composed `dev` never hard-fails
-					// projects that only have hobo.bindle.json / the default guest.
 					emitProgress(
 						`hobo dev: bare-metal serve unavailable (${error instanceof Error ? error.message : String(error)}); falling back to runtime-local probe`,
 					);

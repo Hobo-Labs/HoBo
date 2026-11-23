@@ -1,16 +1,14 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-
+import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-
 import {
-	awaitHandOffStore,
 	OWNER_CAPTURE_LINE_PREFIX,
-	OWNER_CREDENTIAL_LINE_PREFIX,
 	OWNER_PAGE_LINE_PREFIX,
 	OWNER_SIGN_IN_LINE_PREFIX,
 	type OwnerStore,
 	REMOTE_INFEASIBLE,
+	takeHandOffSignIn,
 } from "../../src/index.js";
 
 // EVAL: the hobo-deploy skill is what an agent in a remote box follows when it
@@ -78,7 +76,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(SKILL).toMatch(/a displayed form alone does not establish privacy/u);
 		const choice = HAND_OFF.slice(
 			HAND_OFF.indexOf("2. On `HOBO_*_STORE_CHOICE`"),
-			HAND_OFF.indexOf("3. On `HOBO_OWNER_CREDENTIAL"),
+			HAND_OFF.indexOf("3. On `HOBO_*_STORE_NEEDS_SIGN_IN`"),
 		);
 		expect(choice).toMatch(
 			/only when the connected implementation keeps the choice\s+in the temporary owner session/u,
@@ -117,11 +115,9 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 	it("asks the owner to choose among all three stores with a picker before anything else", () => {
 		const choice = HAND_OFF.indexOf("STORE_CHOICE");
 		expect(choice).toBeGreaterThan(-1);
-		expect(choice).toBeLessThan(HAND_OFF.indexOf(OWNER_CREDENTIAL_LINE_PREFIX));
-		const step = HAND_OFF.slice(
-			choice,
-			HAND_OFF.indexOf(OWNER_CREDENTIAL_LINE_PREFIX),
-		);
+		const signIn = HAND_OFF.indexOf("3. On `HOBO_*_STORE_NEEDS_SIGN_IN`");
+		expect(choice).toBeLessThan(signIn);
+		const step = HAND_OFF.slice(choice, signIn);
 		expect(step).toMatch(/AskUserQuestion/u);
 		for (const store of ["Infisical", "1Password", "Bitwarden"])
 			expect(step).toContain(`**${store}**`);
@@ -145,9 +141,8 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(step).toMatch(/the store \*\*alone\*\*, one question/u);
 		expect(step).toMatch(/nothing\s+about\s+the\s+other\s+stores/u);
 		expect(step).toMatch(/AskUserQuestion/u);
-		// Bitwarden: the API key through the credential form, then one approval.
 		expect(HAND_OFF).toMatch(/HOBO_OWNER_BITWARDEN_APPROVE/u);
-		expect(HAND_OFF).toMatch(/suggested_type: "basic"/u);
+		expect(HAND_OFF).not.toMatch(/suggested_type/u);
 		expect(HAND_OFF).not.toMatch(/BW_CLIENTID|Vaultwarden/u);
 		// The choice is the owner's: a present token never picks the store.
 		expect(step).toMatch(
@@ -155,18 +150,18 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		);
 	});
 
-	it("keeps credential guidance in the private owner form", () => {
-		const at = HAND_OFF.indexOf(OWNER_CREDENTIAL_LINE_PREFIX);
+	it("routes a store sign-in through HoBo's capture, never an agent credential store", () => {
+		const at = HAND_OFF.indexOf("3. On `HOBO_*_STORE_NEEDS_SIGN_IN`");
 		expect(at).toBeGreaterThan(-1);
 		const step = HAND_OFF.slice(
 			at,
 			HAND_OFF.indexOf("4. **Through a privacy-verified HoBo MCP server", at),
 		);
-		expect(step).toMatch(/privacy-verified owner form/u);
-		expect(step).toMatch(/without returning them to the agent/u);
-		expect(step).toMatch(/Do not relay a host,\s+guide, or raw steps/u);
-		expect(step).toMatch(/continues by itself; do\s+not rerun it/u);
-		expect(step).toMatch(/report the missing secure hand-off/u);
+		expect(step).toMatch(/through the HoBo MCP server's `ci` or\s+`cd` tool/u);
+		expect(step).toMatch(/holds it in memory only/u);
+		expect(step).toMatch(/Never use\s+`request_credential`/u);
+		expect(step).toMatch(/report the missing\s+secure hand-off/u);
+		expect(step).toMatch(/Do not relay a guide or raw steps/u);
 	});
 
 	it("routes the device line to the provider's own site from any device", () => {
@@ -191,30 +186,48 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		);
 	});
 
-	it("describes the credential line the run really prints", async () => {
-		const lines: string[] = [];
+	it("describes the capture line the run really prints for a store sign-in", async () => {
 		const unopened: OwnerStore = {
 			id: "infisical",
+			chosen: true,
 			missing: [],
-			canAwaitEgressCredential: true,
+			handOffSignIn: {
+				name: "INFISICAL_TOKEN",
+				title: "Infisical access token",
+				instructions: "Your Infisical identity's Token Auth access token.",
+				guide: "https://infisical.com/docs/token-auth",
+			},
 			opened: undefined,
+			infisicalFolder: undefined,
+			unopened: undefined,
 			stage: async () => {
 				throw new Error("no page");
 			},
 		};
-		await awaitHandOffStore({
+		const vault: TrustedVault = createTrustedVault();
+		const taken = await takeHandOffSignIn({
 			family: "ci",
+			owner: unopened,
 			open: async () => unopened,
-			emit: (line) => lines.push(line),
-			sleep: async () => undefined,
-			timeoutMs: 1,
+			vault,
+			channel: {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+			},
 		});
-		const [line] = lines;
-		expect(HAND_OFF).toContain("`HOBO_OWNER_CREDENTIAL`");
+		if (taken.kind !== "refused") throw new Error("expected a capture ask");
+		const [line] = taken.remediation;
+		expect(HAND_OFF).toContain(`\`${OWNER_CAPTURE_LINE_PREFIX}\``);
+		expect(HAND_OFF).toContain("`HOBO_*_STORE_NEEDS_SIGN_IN`");
+		expect(taken.code).toBe("HOBO_CI_STORE_NEEDS_SIGN_IN");
 		expect(line).toMatch(
-			/^HOBO_OWNER_CREDENTIAL host=app\.infisical\.com guide=https:\/\/\S+ — .+/u,
+			/^HOBO_OWNER_CAPTURE name=INFISICAL_TOKEN guide=https:\/\/\S+$/u,
 		);
-		expect(line).not.toMatch(/127\.0\.0\.1|localhost/u);
+		expect(taken.remediation.join("\n")).not.toMatch(
+			/127\.0\.0\.1|localhost|credential form|egress/u,
+		);
+		expect(vault.has("INFISICAL_TOKEN")).toBe(false);
 	});
 
 	it("requires a structured ask for every owner-facing line, re-issued after an interruption", () => {
@@ -248,7 +261,6 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		for (const prefix of [
 			OWNER_SIGN_IN_LINE_PREFIX,
 			OWNER_CAPTURE_LINE_PREFIX,
-			OWNER_CREDENTIAL_LINE_PREFIX,
 			DEVICE_PREFIX,
 			"HOBO_OWNER_BITWARDEN_APPROVE",
 		])

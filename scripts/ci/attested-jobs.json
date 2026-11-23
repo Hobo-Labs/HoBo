@@ -796,7 +796,7 @@
 				},
 				{
 					"name": "Scan git history for secrets",
-					"run": "set -euo pipefail\nbetterleaks git --config .betterleaks.toml --redact --exit-code 1 \\\n  --log-opts=\"${{ github.event.pull_request.base.sha }}..${{ github.sha }}\"\n",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/betterleaks-main-scan.mts --range \"${{ github.event.pull_request.base.sha }}..${{ github.sha }}\"",
 					"local": "run"
 				}
 			]

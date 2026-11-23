@@ -43,6 +43,22 @@ signal handler, so a host that embeds it keeps its own signal handling. SIGKILL 
 crash are out of reach.
 Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.ts`).
 
+### Owner store session over MCP
+
+`hobo-mcp`'s `choose_secret_store` connects the owner's secret store when an agent
+connects (`src/mcp-store-choice.ts`, `src/owner-store-session.ts`). It asks the owner
+through MCP form elicitation or the `ui://hobo/store-choice` MCP App, never through tool
+arguments, writes the choice to the owner's locator for the project `cwd`
+(`ownerLocator` in `@hobo/hobo-ci`), and signs in with `signInOwnerStore` over the MCP
+owner channel. The opened store stays in the server's memory, keyed by project. Its
+`credentials(cwd)` is the `@hobo/cd` `CredentialResolver` that `hobo deploy` passes to
+the CD runtime: `owner://<NAME>` reads the store's CD entry and is the only locator it
+resolves; an `env://<NAME>` locator is refused with a pointer to `choose_secret_store`,
+because the process environment never holds credentials. Hostinger's resolvers receive
+the owner's `HOSTINGER_API_TOKEN` only in their request header. Results, `doctor`'s
+`ownerStoreSession`, and refusals carry a status and the store's label only. A host
+without form elicitation or MCP Apps gets `secure-form-unavailable`.
+
 ## CLI verification and remote deployment safety
 
 ### Budgeted cloud hosting

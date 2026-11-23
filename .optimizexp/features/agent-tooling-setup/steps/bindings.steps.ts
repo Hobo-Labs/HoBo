@@ -1,96 +1,35 @@
-/**
- * Cucumber step bindings for OptimizeXP feature `agent-tooling-setup`.
- * Thin adapters → implementations.ts (keeps Gherkin text stable).
- */
-import { Given, Then, When } from "@cucumber/cucumber";
-import {
-  assertClearStatus,
-  assertErrorActionable,
-  assertNextActionObvious,
-  exerciseSurface,
-  markEvidenceCapturable,
-  observeFailure,
-  onCriticalPath,
-  setFeatureContext,
-  setPersona,
-} from "./implementations.ts";
-import { createWorld, type OptimizexpWorld } from "./world.ts";
+import assert from "node:assert/strict";
+import { Then, When } from "@cucumber/cucumber";
+import { agentSetupHelp, agentSetupMissingName, gbrainWithoutProvider } from "./implementations.ts";
+import type { AgentSetupWorld } from "./world.ts";
 
-// Cucumber World — attach helpers on `this`
-function w(world: OptimizexpWorld | undefined): OptimizexpWorld {
-  // cucumber may use World class; fall back to module singleton for simple runs
-  return world ?? getSingleton();
+function result(world: AgentSetupWorld) {
+  assert.ok(world.result, "run an agent setup command first");
+  return world.result;
 }
 
-let singleton: OptimizexpWorld | null = null;
-function getSingleton(): OptimizexpWorld {
-  singleton ??= createWorld("agent-tooling-setup");
-  return singleton;
-}
-
-Given("persona {string} is active", function (this: OptimizexpWorld, personaId: string) {
-  const world = this?.featureId ? this : getSingleton();
-  if (!world.featureId) Object.assign(world, createWorld("agent-tooling-setup"));
-  setPersona(world, personaId);
+When("I run agent setup help", function (this: AgentSetupWorld) {
+  this.result = agentSetupHelp();
 });
 
-Given(
-  "feature {string} is under optimizexp review",
-  function (this: OptimizexpWorld, featureId: string) {
-    const world = this?.featureId ? this : getSingleton();
-    setFeatureContext(world, featureId);
-  },
-);
-
-Given(
-  "I am on the critical path described by the feature seed",
-  function (this: OptimizexpWorld) {
-    onCriticalPath(w(this));
-  },
-);
-
-Given("something goes wrong on this journey", function (this: OptimizexpWorld) {
-  const world = w(this);
-  world.notes.push("failure path primed");
+When("I run agent setup without an agent name", function (this: AgentSetupWorld) {
+  this.result = agentSetupMissingName();
 });
 
-When("I exercise the surface as this persona would", function (this: OptimizexpWorld) {
-  exerciseSurface(w(this));
+When("I run the optional gbrain launcher without a provider", function (this: AgentSetupWorld) {
+  this.result = gbrainWithoutProvider();
 });
 
-When("I observe the failure as this persona", function (this: OptimizexpWorld) {
-  observeFailure(w(this));
+Then("the agent setup command exits with {int}", function (this: AgentSetupWorld, status: number) {
+  const observed = result(this);
+  assert.equal(observed.status, status, observed.stderr);
 });
 
-Then("I receive clear status about what happened", function (this: OptimizexpWorld) {
-  assertClearStatus(w(this));
+Then("the agent setup output contains {string}", function (this: AgentSetupWorld, expected: string) {
+  const observed = result(this);
+  assert.ok(`${observed.stdout}\n${observed.stderr}`.includes(expected));
 });
 
-Then(
-  "the next action is obvious without tribal knowledge",
-  function (this: OptimizexpWorld) {
-    assertNextActionObvious(w(this));
-  },
-);
-
-Then("evidence is capturable for this scenario", function (this: OptimizexpWorld) {
-  markEvidenceCapturable(w(this));
+Then("the optional server was not started", function (this: AgentSetupWorld) {
+  assert.equal(result(this).serverStarted, false);
 });
-
-Then("the error is non-blaming and actionable", function (this: OptimizexpWorld) {
-  assertErrorActionable(w(this));
-});
-
-Then(
-  "I am not forced into repeated artificial hurdles",
-  function (this: OptimizexpWorld) {
-    // Structural: a single command attempt is enough for scaffold; agent refines.
-    const world = w(this);
-    if (world.notes.filter((n) => n.includes("exerciseSurface")).length > 3) {
-      throw new Error("too many exercise attempts — friction signal");
-    }
-  },
-);
-
-// re-export for tests
-export { createWorld, getSingleton };

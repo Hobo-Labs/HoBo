@@ -18,8 +18,10 @@ import {
 	parseBitwardenDeviceId,
 	provisionBitwardenAccessToken,
 } from "../../src/bitwarden-provision.js";
-import { ensureBitwardenSignIn } from "../../src/bitwarden-sign-in.js";
-import { OWNER_CREDENTIAL_LINE_PREFIX } from "../../src/hand-off-store.js";
+import {
+	BITWARDEN_API_KEY_CAPTURES,
+	ensureBitwardenSignIn,
+} from "../../src/bitwarden-sign-in.js";
 import {
 	openSecretStore,
 	prepareGithubConnection,
@@ -36,6 +38,11 @@ import {
 	OWNER_EMAIL,
 	VAULTWARDEN_ORIGIN,
 } from "../support/fake-bitwarden.js";
+import {
+	heldOwnerChannel,
+	ownerLines,
+	readOwnerTurn,
+} from "../support/remote-owner.js";
 
 // EVAL: the owner chose Bitwarden and gave no Secrets Manager access token.
 // With their personal API key (in the environment's settings) the run does
@@ -528,28 +535,6 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 	});
 });
 
-/** The agent's remote session: its credential form and egress proxy. */
-function remoteSession(fetchImpl: typeof fetch) {
-	let saved: { username: string; password: string } | undefined;
-	const proxied: typeof fetch = async (input, init) => {
-		const url = new URL(String(input));
-		const headers = new Headers(init?.headers);
-		// The proxy injects the saved credential for its host, as HTTP Basic.
-		if (saved !== undefined && url.host === "identity.bitwarden.com")
-			headers.set(
-				"Authorization",
-				`Basic ${Buffer.from(`${saved.username}:${saved.password}`).toString("base64")}`,
-			);
-		return fetchImpl(input, { ...init, headers });
-	};
-	return {
-		fetch: proxied,
-		save(username: string, password: string) {
-			saved = { username, password };
-		},
-	};
-}
-
 function handedOff(see: (line: string) => void): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: see,
@@ -568,69 +553,66 @@ function handedOff(see: (line: string) => void): PrepareInput {
 }
 
 describe("EVAL remote box, no keys anywhere: the ceremony collects the API key", () => {
-	it("asks once through the session's credential form, never holds the secret, and opens the store", async () => {
+	it("asks once through HoBo's capture, keeps the key off every line, and opens the store", async () => {
 		const server = fakeBitwarden();
-		const session = remoteSession(server.fetch);
+		const owner = heldOwnerChannel();
 		const shown: string[] = [];
 		const opened = new Map<string, string>();
-		await prepareGithubConnection(
-			handedOff((line) => {
-				shown.push(line);
-				// The owner, outside the box, does what the line says.
-				if (
-					line.startsWith(
-						`${OWNER_CREDENTIAL_LINE_PREFIX} host=identity.bitwarden.com`,
-					)
-				)
-					session.save(API_KEY.clientId, API_KEY.clientSecret);
-			}),
-			{
-				env: { HOBO_SECRET_STORE: "bitwarden" },
-				vault: createTrustedVault(),
-				locator: { read: async () => ({}), write: async () => undefined },
-				openStore: async (
-					id,
-					_coordinates,
-					signIn,
-				): Promise<SecretStoreOpening> => {
-					const token = signIn.reveal("BWS_ACCESS_TOKEN");
-					if (id !== "bitwarden" || token === undefined)
-						return { ok: false, message: "no sign-in", remediation: [] };
-					opened.set("token", token);
-					return {
-						ok: true,
-						store: {
-							id: "bitwarden",
-							port: createMemorySecretsPort({ id: "memory" }),
-							reference: (name) => `bws://${name}`,
-						},
-					};
+		const run = () =>
+			prepareGithubConnection(
+				handedOff((line) => shown.push(line)),
+				{
+					env: { HOBO_SECRET_STORE: "bitwarden" },
+					vault: createTrustedVault(),
+					locator: { read: async () => ({}), write: async () => undefined },
+					ownerChannel: owner,
+					openStore: async (
+						id,
+						_coordinates,
+						signIn,
+					): Promise<SecretStoreOpening> => {
+						const token = signIn.reveal("BWS_ACCESS_TOKEN");
+						if (id !== "bitwarden" || token === undefined)
+							return { ok: false, message: "no sign-in", remediation: [] };
+						opened.set("token", token);
+						return {
+							ok: true,
+							store: {
+								id: "bitwarden",
+								port: createMemorySecretsPort({ id: "memory" }),
+								reference: (name) => `bws://${name}`,
+							},
+						};
+					},
+					fetch: server.fetch,
+					sleep: async () => undefined,
+					handOffTimeoutMs: 60_000,
+					startPage: () => {
+						throw new Error("a handed-off run serves no page");
+					},
 				},
-				fetch: session.fetch,
-				sleep: async () => undefined,
-				handOffTimeoutMs: 60_000,
-				startPage: () => {
-					throw new Error("a handed-off run serves no page");
-				},
-			},
-		);
+			);
+		const first = await run();
+		const asked = ownerLines(first, shown);
+		expect(readOwnerTurn(false, asked)).toEqual({
+			kind: "act",
+			action: { kind: "capture", names: [...BITWARDEN_API_KEY_CAPTURES] },
+		});
+		owner.deposit("BW_CLIENTID", API_KEY.clientId);
+		owner.deposit("BW_CLIENTSECRET", API_KEY.clientSecret);
+		await run();
 		expect(opened.get("token")).toMatch(/^0\.66666666-/u);
-		// One credential request, then one approval; no environment variable.
-		expect(
-			shown.filter((l) => l.startsWith(OWNER_CREDENTIAL_LINE_PREFIX)),
-		).toHaveLength(1);
+		expect(owner.holds("BW_CLIENTSECRET")).toBe(false);
 		expect(
 			shown.filter((l) => l.startsWith(OWNER_BITWARDEN_APPROVE_LINE_PREFIX)),
 		).toHaveLength(1);
-		// The run never sent (so never held) the client secret.
-		expect(server.signInBodies.join("&")).not.toContain(API_KEY.clientSecret);
-		const all = shown.join("\n");
+		const all = [...asked, ...shown].join("\n");
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain(OWNER_EMAIL);
-		expect(all).not.toMatch(/environment's settings|BW_CLIENTID/u);
+		expect(all).not.toMatch(/environment's settings|credential form|egress/u);
 	});
 
-	it("on a self-hosted server, says why the credential form cannot carry the key and names a route that can", async () => {
+	it("without an owner channel, names the HoBo MCP route that carries the key", async () => {
 		const shown: string[] = [];
 		const outcome = await prepareGithubConnection(
 			handedOff((l) => shown.push(l)),
