@@ -190,9 +190,9 @@ describe("waiting for a rollout", () => {
 		});
 		// The stderr is the only description of *why*. A bare "timeout" would
 		// make ImagePullBackOff and a crash-looping container look identical.
-		expect(String((result.body as { error?: string }).error)).toContain(
-			"ImagePullBackOff",
-		);
+		expect(result.body).toMatchObject({
+			error: expect.stringContaining("ImagePullBackOff"),
+		});
 	});
 
 	it("falls back to a generic message when the CLI said nothing", async () => {
@@ -209,9 +209,9 @@ describe("waiting for a rollout", () => {
 				timeoutMs: 700,
 			},
 		});
-		expect(String((result.body as { error?: string }).error)).toContain(
-			"timeout waiting for ready",
-		);
+		expect(result.body).toMatchObject({
+			error: expect.stringContaining("timeout waiting for ready"),
+		});
 	});
 
 	it("defaults the namespace when none is given", async () => {
@@ -341,9 +341,9 @@ describe("port-forwarding", () => {
 				service: "missing",
 			},
 		});
-		expect(String((result.body as { error?: string }).error)).toContain(
-			"not found",
-		);
+		expect(result.body).toMatchObject({
+			error: expect.stringContaining("not found"),
+		});
 	});
 
 	it("reports a 503 even when the child exits zero without forwarding", async () => {
@@ -511,8 +511,8 @@ describe("tearing a forward down", () => {
 			body: { service: "ghost", path: "/" },
 		});
 		expect(result.status).toBe(503);
-		expect(String((result.body as { error?: string }).error)).toContain(
-			"no active port-forward",
-		);
+		expect(result.body).toMatchObject({
+			error: expect.stringContaining("no active port-forward"),
+		});
 	});
 });
