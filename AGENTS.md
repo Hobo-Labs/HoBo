@@ -6,7 +6,8 @@ over conflicting repository workflow guidance.
 - Write self-documenting code. Do not add explanatory comments, commented-out
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
-  directives consumed by compilers or tools.
+  directives consumed by compilers or tools, such as `/* @vite-ignore */` for
+  dynamic imports.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
 - Before ending an action request, compare the current user goal with the
@@ -31,6 +32,14 @@ over conflicting repository workflow guidance.
 - HoBo manages deployment of its CI relay. Its Vercel project is intentionally
   not Git-linked; do not reconnect it or treat the missing link as a defect.
 
+Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
+and Copilot. Standalone documentation comments follow the same rule. Run
+`pnpm run source:guard -- --worktree` when checking manually, including ignored
+agent artifacts in nested projects;
+the pre-commit hook checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
+CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
+Kotlin, Ruby, Lua, and Swift, including source templates; the same rule applies to every other language.
+
 # Agent tooling for this repo
 
 This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub Copilot CLI** for Superpowers) with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
@@ -41,9 +50,9 @@ This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub
 | **hobo-setup** (repo-local) | skill | Guides HoBo MCP connection and private owner store setup independently of deployment. | automatic for HoBo MCP or owner-store setup |
 | **gh-stack** (repo-local) | skill + CLI ext | Non-interactive rules for official `github/gh-stack` (`gh extension install github/gh-stack`). | `gh stack init\|add\|submit\|sync\|merge` |
 | **superpowers** (`obra/Superpowers`) | plugin (skills library) | A development **methodology**: TDD, systematic debugging, and code-review workflows. Planning and design artifact workflows are prohibited by the repository rules above. No keys. | `requesting-code-review`, `systematic-debugging` |
-| **impeccable** (`pbakaus/impeccable`) | skill (design) | A **design language** for AI harnesses: 23 commands from `shape`/`critique`/`audit`/`polish` to dials like `bolder`/`quieter`/`colorize`. **Always-on for UI/TUI/dashboard work** — do not wait for the user to invoke it (see **Visual quality** below). No keys, but not offline: a daily update check to `impeccable.style` from `scripts/context.mjs` run as a command — the hook does **not** fetch (disabled here by `IMPECCABLE_NO_UPDATE_CHECK=1` in `.claude/settings.json`). `/impeccable init` writes `PRODUCT.md`; visual tokens and components are defined in source. Do not create design documents. | automatic on visual surfaces; `impeccable critique` / `audit` / `polish` |
+| **impeccable** (`pbakaus/impeccable`) | skill (visual work) | Reviews and improves implemented visual surfaces using the source styles and components. The checked-in harness copies follow the repository policy and do not generate planning or design documents. | automatic on visual surfaces; `impeccable critique` / `audit` / `polish` |
 | **Higgsfield MCP** (`mcp.higgsfield.ai`) | MCP (hosted, official) | Image/video generation across 30+ models. Account **OAuth**, no API key stored in-repo; project-scoped so it needs human approval before use. Sends prompts to Higgsfield. | `mcp__higgsfield__*` |
-| **mattpocock/skills** (`mattpocock/skills`) | skills collection | Engineering disciplines: **`grill-with-docs`** (relentless design interview that writes ADRs + glossary), `domain-modeling`, `codebase-design`, `diagnosing-bugs`, `tdd`, `to-prd`, `to-issues`, `prototype`, … No keys. | `/grill-with-docs`, `/ask-matt`, `/domain-modeling`, `/setup-matt-pocock-skills` (one-time config) |
+| **Engineering skills** | skills collection | Checked-in guidance for domain modeling, code structure, diagnosis, testing, and implementation under the repository rules. | `/ask-matt`, `/domain-modeling`, `/diagnosing-bugs`, `/tdd` |
 | **caveman** (`JuliusBrussee/caveman`) | skill + rules | Compresses **agent output** (~65–87% fewer tokens) while keeping technical accuracy. | active by default (see below); `/caveman [lite\|full\|ultra\|wenyan]`, `/caveman-commit`, `/caveman-review`, `/caveman-stats` |
 | **ponytail** (`DietrichGebert/ponytail`) | skill | Pushes the **minimalist solution** — YAGNI, stdlib/native before dependencies, one line before fifty; reviews/audits for over-engineering. No keys. | `/ponytail [lite\|full\|ultra]`, `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help` |
 | **tgrep** (`microsoft/tgrep`) | CLI | Fast trigram-indexed exact/regex search for repo discovery before tests or semantic search. Local, no keys. | `pnpm run search <pattern>` |
@@ -55,7 +64,7 @@ This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub
 | **SkillOpt** (`microsoft/SkillOpt`) | optimizer / research harness | Trains reusable markdown skills from scored rollouts and exports `best_skill.md` artifacts for multiple harnesses. Optional, not runtime config. | `skillopt-train`; `scripts/skillopt-sleep.sh status|dry-run|run|adopt`; installed from microsoft/SkillOpt |
 | **anti-slop** (`dmmulroy/anti-slop`) | vendored Oxlint plugin + skill | Opinionated lint rules rejecting low-evidence/low-signal TS patterns (chained assertions, `unknown` contracts, ad hoc `typeof`, module mocking, unjustified casts). Vendored at `tools/oxlint/anti-slop/`, configured in `oxlint.config.ts`. Local, no keys. Pre-commit / `agent:check` run `lint:slop:changed` on touched TS/JS (`--deny-warnings`); full-repo `lint:slop` is opt-in because of a large pre-existing backlog. Each copy (tools + both skill assets) carries `MANIFEST.sha256`; `scripts/test/anti-slop-vendor.test.ts` is the drift gate (ADR-0173). | `pnpm run lint:slop:changed`; `pnpm run lint:slop`; reinstall/refresh via the `install-anti-slop` skill (all agents) |
 
-How they fit together: **Serena** gives agents semantic code tools, **superpowers** and **mattpocock/skills** supply workflow and review techniques, **ponytail** keeps code minimal, **impeccable** and `pnpm run design:lint` support visual quality, **headroom**, **RTK**, and **caveman** reduce token use, **gbrain** supplies memory, and **SkillOpt** supports offline improvement of reusable skills. All remain subject to the repository rules above.
+How they fit together: **Serena** gives agents semantic code tools, **superpowers** and the checked-in engineering skills supply workflow and review techniques, **ponytail** keeps code minimal, **impeccable** and `pnpm run design:lint` support visual quality, **headroom**, **RTK**, and **caveman** reduce token use, **gbrain** supplies memory, and **SkillOpt** supports offline improvement of reusable skills. All remain subject to the repository rules above.
 
 ## Repo-local repo skill
 
@@ -82,21 +91,21 @@ The repo-local **sdlc** skill is mirrored in `.agents/skills/sdlc` and `.claude/
 The repo-local **draft** skill lives in both `.agents/skills/draft` and `.claude/skills/draft`. Use it when creating, moving, or reviewing draft proof material. It replaces the old one-level draft convention with the four-layer taxonomy:
 
 - `src/draft/technical-proofs/<slug>` for isolated atomic technical concepts.
-- `src/draft/exp-proofs/<type>/<slug>` for experience proofs, grouped by experience type (`dx` developer · `ux` user · `cx` customer · `ax` agent · `api` API/SDK surface) per [`src/draft/exp-proofs/_classification.md`](src/draft/exp-proofs/_classification.md).
+- `src/draft/exp-proofs/<type>/<slug>` for experience proofs, grouped by experience type (`dx` developer · `ux` user · `cx` customer · `ax` agent · `api` API/SDK surface). List them with `pnpm run draft:experiences`.
 - `src/draft/epic-proofs/<slug>` for isolated epic rollups that reuse technical and experience proofs.
 - `src/draft/projects/<slug>` for project MVP rollups that integrate epic proofs.
 
-Repo-local skills keep Codex-valid `SKILL.md` frontmatter and store Open Knowledge Format concept metadata in their `references/` bundles. `pnpm.cmd run docs:okf` validates the docs OKF bundle plus the `repo`, `draft`, `sdlc`, and `optimizexp` skill reference bundles in both agent mirrors. `pnpm run skills:mirror-check` asserts the `.claude`/`.agents` skill mirrors stay byte-identical (runs automatically via `agent:check` when skill files change).
+Repo-local skills keep Codex-valid `SKILL.md` frontmatter and store Open Knowledge Format concept metadata in their `references/` bundles. `pnpm.cmd run docs:okf` validates the docs OKF bundle plus the `repo` and `draft` skill reference bundles in both agent mirrors. `pnpm run skills:mirror-check` asserts the `.claude`/`.agents` skill mirrors stay byte-identical (runs automatically via `agent:check` when skill files change).
 
 ## Repo-local optimizexp skill
 
-The repo-local **optimizexp** skill (mirrored in `.agents/skills/optimizexp` and `.claude/skills/optimizexp`) optimizes **experiences** — UX, DX, and AX — using repo personas under [`.optimizexp/personas/`](.optimizexp/personas/), persona Gherkin **feature folders** under [`.optimizexp/features/`](.optimizexp/features/), **evidence** capture via `harness/capture-evidence.mts`, a write-ahead agent bus under [`.optimizexp/bus/`](.optimizexp/bus/), and iterative **measure → reduce experiment → verify** cycles that lower **harms**, **friction**, and **uncertainty** until **true** plateau (scores flat **and** no implementable S/M findings left; **no iterations flag / pass budget**; **`--report-only`** to measure without edits). Derived fixes must be **implemented in-run**, not parked as residual. PR delivery uses incremental commits and posts evidence (`harness/post-pr-evidence.mts`). Host workflows live under the skill's `workflows/` tree. See [`.optimizexp/README.md`](.optimizexp/README.md).
+The repo-local **optimizexp** skill reviews real UX, DX, and AX behavior, implements improvements, and verifies them with relevant evidence. It follows the common rule against planning and design documents.
 
 ### Draft-proof hardening
 
-Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per exp type folder) and scaffolding templates under `src/draft/_templates/<layer>/`. New/changed proofs are validated by two gates that run automatically through `agent:check`:
+Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Implement the requested behavior and executable checks directly; do not create planning documents or placeholder proofs. New or changed proofs are validated by two gates that run automatically through `agent:check`:
 
-- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), per-type experience artifacts for exp proofs. Waivers need an ADR.
+- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior.
 - `pnpm run draft:cascade` — a changed technical/exp proof must update every referencing epic/project rollup in the same diff (references resolve from `proof.json` graphs + import/ledger scans).
 
 Packages predating the standard are listed in `src/draft/_grandfathered.json` (advisory-only until their backfill wave removes them; never add new packages there).
@@ -433,7 +442,7 @@ Use broader build-impacting checks only when intentionally validating a branch/r
 
 ## Documentation maintenance rule
 
-Whenever a change touches code, automation, package metadata, CI, hooks, or agent tooling, update the matching documentation in the same change. At minimum, check whether `README.md`, `docs/design/index.md`, `docs/agent-tooling.md`, and the relevant proof/contract README still describe the current state. If no user-facing docs change is needed, add or update the closest maintenance note so reviewers can see that docs were considered.
+Whenever a change touches code, automation, package metadata, CI, hooks, or agent tooling, update the matching documentation in the same change. Check whether `README.md`, `docs/agent-tooling.md`, and the relevant proof/contract README still describe the current state. If no user-facing docs change is needed, add or update the closest maintenance note so reviewers can see that docs were considered.
 
 Local and CI gates enforce this with `pnpm run docs:freshness`: code changes under `src/`, `scripts/`, `test/`, package metadata, workflows, or agent config must be accompanied by a docs change. The repo hook in `.githooks/pre-commit` runs `check:relevant:staged` through `scripts/run-script.mts` (its root-script gates need no package manager; the turbo package-test lane a workspace-package change selects, and scripts that call pnpm themselves, still need pnpm and refuse the commit without it), which routes to the smallest relevant architecture, test, docs, traceability, and contract lanes; enable it with `pnpm run prepare-hooks` (the root `prepare` script does it on install, and the session-start hooks of Claude Code, Codex, Cursor and Copilot do it through `scripts/ensure-hooks-path.sh` whenever `core.hooksPath` is unset; see `docs/agent-tooling.md`).
 
@@ -442,9 +451,10 @@ Local and CI gates enforce this with `pnpm run docs:freshness`: code changes und
 The repository does not keep plans, roadmaps, or design documents. Implement
 their outstanding work before removing existing artifacts. The existing
 `plans:guard` checks tracked plan documents. `source:guard` checks added or
-changed planning and design documents (a change that only removes lines is allowed, so
-existing ones can be retired) and new comments in JavaScript, TypeScript,
-shell, Python, CSS, and HTML; the common rule above applies to every language.
+changed planning and design documents (a change that only removes lines is
+allowed, so existing ones can be retired) and new comments in the languages
+listed above, including ignored `.sdlc` planning documents; the common rule
+applies to every language.
 Both run through the shared pre-commit and CI checks.
 
 ## Legal hygiene rules

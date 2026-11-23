@@ -6,12 +6,6 @@ import Base from "../../layouts/Base.astro";
 	title="Try HoBo — station-first Examples"
 	description="1 Pool stations · 2 Ship bindles · 3 Live preview and logs — browser Home Station."
 >
-	<!--
-		THESIS: Film strip Pool → Ship → Live. Code lives on the board that owns it.
-		OWN-WORLD: HoBo Rubberhose; Chewy boards; thick ink; sticker shadows.
-		STORY: Stamp stations (policy + yard code), ship a bindle (app source), live preview ↔ logs + claim codes.
-		FORM: Seed 116fd7b0 / grounded candidate 3.
-	-->
 
 	<section class="ex-hero">
 		<div class="container">
@@ -273,7 +267,6 @@ import Base from "../../layouts/Base.astro";
 </Base>
 
 <style is:global>
-	/* Film-strip console — Rubberhose Operate. Keep data-* hooks for controller. */
 
 	.ex-hero {
 		padding: clamp(2rem, 5vw, 3.25rem) 0 1.5rem;
@@ -685,7 +678,6 @@ import Base from "../../layouts/Base.astro";
 		display: none !important;
 	}
 
-	/* Base.astro wraps <pre> in .code-block for copy buttons — must not expand boards. */
 	.ex-console .code-block {
 		min-width: 0;
 		max-width: 100%;

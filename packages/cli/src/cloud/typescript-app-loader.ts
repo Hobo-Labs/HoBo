@@ -45,7 +45,6 @@ interface RunPort {
 	): AppHttpResponse | Response | Promise<AppHttpResponse | Response>;
 }
 
-/** Runtime import boundary; each callable is checked before it is invoked. */
 export interface AppHttpModule {
 	readonly api?: RunPort;
 	readonly fetch?: AppFetchHandler;
@@ -113,7 +112,6 @@ function runHandler(port: RunPort): AppFetchHandler {
 	};
 }
 
-/** Reuse the Bindle DSL and its real entrypoint factories for application HTTP surfaces. */
 export function httpDefinitionFromModule(
 	name: string,
 	module: AppHttpModule,
@@ -143,7 +141,6 @@ async function importApp(file: string): Promise<AppHttpModule> {
 	return (await import(pathToFileURL(file).href)) as AppHttpModule;
 }
 
-/** Authored workspace metadata, rather than generated input paths, grants external read authority. */
 async function workspaceRoot(project: string): Promise<string> {
 	for (
 		let directory = realpathSync(project);
@@ -211,7 +208,6 @@ async function sourceSnapshot(project: string): Promise<{
 				);
 			files.push({
 				path,
-				// External compiler inputs are read only for digest verification, never executed from this path.
 				file: externalFile ?? projectFile(project, path),
 				expected,
 			});
@@ -220,12 +216,6 @@ async function sourceSnapshot(project: string): Promise<{
 	return { files, rawBytes: manifest.sourceDigestEncoding === "raw" };
 }
 
-/**
- * Whether every input the codegen manifest recorded still has the digest it
- * recorded. False when there is no manifest, it records nothing, an input is
- * missing or changed, or the manifest is malformed: the imprint is then not
- * evidence of anything, and only a codegen pass can say what the app is.
- */
 export async function recordedAppInputsMatch(
 	project: string,
 ): Promise<boolean> {
@@ -237,9 +227,6 @@ export async function recordedAppInputsMatch(
 	}
 	if (snapshot.files.length === 0) return false;
 	for (const { file, expected } of snapshot.files) {
-		// Any input that is gone, not a regular file (a directory, or a FIFO a
-		// read would block on) or unreadable is a mismatch: the freshness gate
-		// then decides, and reports it the way it reports any other drift.
 		let bytes: Buffer;
 		try {
 			if (!(await stat(file)).isFile()) return false;
@@ -304,7 +291,6 @@ async function packagedModule(
 	return selected;
 }
 
-/** Load the declared executable application source, or its verified build when source is unavailable. */
 export async function loadTypeScriptHttpDefinition(
 	project: string,
 ): Promise<BindleDefinition | null> {

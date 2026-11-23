@@ -21,7 +21,7 @@ Use git as the source of truth for state, ownership, and history.
 
 1. `git fetch origin`
 2. `git merge origin/main` — never rebase a pushed branch, never force-push (`gh stack rebase` /
-   `gh stack sync` only for unpushed local layers — see `sdlc` skill `references/stacked-prs.md`)
+   `gh stack sync` only for unpushed local layers — see the `sdlc` skill)
 3. Resolve conflicts without dropping either side's unrelated work.
 4. Run `pnpm run agent:check -- --base=origin/main` for final PR-base validation.
 5. Supersession check: if the head is already in `origin/main` or is an ancestor of another open
@@ -42,7 +42,7 @@ Use git as the source of truth for state, ownership, and history.
 
 Multi-step / multi-phase work uses GitHub's official stacked PRs (`gh extension install github/gh-stack`).
 Parent agent owns stack topology; subagents do incremental commits on their layer. Full protocol:
-`sdlc` skill → `references/stacked-prs.md` and companion skill `gh-stack`.
+`sdlc` skill and companion skill `gh-stack`.
 
 Local agent defaults (also applied by `scripts/install-hooks.mts` / `setup-agent-tools.sh`):
 

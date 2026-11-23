@@ -1,15 +1,16 @@
 {
 	"params": {
-		"name": "Corpus"
+		"name": "corpus-db"
 	},
 	"expectFiles": [
 		"src/storage.ts"
 	],
 	"expectContains": {
 		"src/storage.ts": [
-			"openCorpusStore",
-			"Litestream",
-			"JetStream"
+			"openStore",
+			"startReplication",
+			"syncReplica",
+			"restoreStore"
 		]
 	}
 }

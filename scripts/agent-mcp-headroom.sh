@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Start headroom's MCP server with fail-closed remediation when the binary is missing.
-# Shared by Claude Code / Cursor / Codex (.mcp.json, .cursor/mcp.json, .codex/config.toml).
 set -euo pipefail
 
 if ! command -v headroom >/dev/null 2>&1; then
