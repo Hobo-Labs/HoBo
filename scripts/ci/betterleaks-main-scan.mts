@@ -25,6 +25,7 @@ export const FULL_FETCH_TIMEOUT_SECONDS = 300;
 export const FULL_SCAN_TIMEOUT_SECONDS = 600;
 export const RANGE_WAIT_SECONDS = 105;
 export const FULL_WAIT_SECONDS = 720;
+export const PULL_REQUEST_SCAN_TIMEOUT_SECONDS = 300;
 export const BETTERLEAKS_BASELINE_REL = "docs/ci/betterleaks-main-baseline.sha";
 
 export type BetterleaksScanPlan =
@@ -128,17 +129,23 @@ export function planMainBetterleaksScan(input: {
 	};
 }
 
+const BETTERLEAKS_GIT_ARGS: readonly string[] = [
+	"git",
+	"--config",
+	".betterleaks.toml",
+	"--redact",
+	"--exit-code",
+	"1",
+];
+
+export function rangeScanArgs(logOpts: string): readonly string[] {
+	return [...BETTERLEAKS_GIT_ARGS, "--log-opts", logOpts];
+}
+
 export function betterleaksArgs(plan: BetterleaksScanPlan): readonly string[] {
-	const args = [
-		"git",
-		"--config",
-		".betterleaks.toml",
-		"--redact",
-		"--exit-code",
-		"1",
-	];
-	if (plan.mode === "range") args.push("--log-opts", plan.logOpts);
-	return args;
+	return plan.mode === "range"
+		? rangeScanArgs(plan.logOpts)
+		: [...BETTERLEAKS_GIT_ARGS];
 }
 
 export function gitFetchBlobArgs(): readonly string[] {
@@ -471,17 +478,58 @@ function runWait(dir: string): void {
 	tick();
 }
 
+export type RangeScanIo = Readonly<{
+	prefetch: (logOpts: string, timeoutMs: number) => number;
+	scan: (args: readonly string[], timeoutMs: number) => Promise<number>;
+	log: (line: string) => void;
+	now: () => number;
+}>;
+
+export async function runPullRequestRangeScan(
+	logOpts: string,
+	io: RangeScanIo,
+	timeoutSeconds: number = PULL_REQUEST_SCAN_TIMEOUT_SECONDS,
+): Promise<number> {
+	const deadline = io.now() + timeoutSeconds * 1_000;
+	try {
+		const count = io.prefetch(logOpts, timeoutSeconds * 1_000);
+		io.log(`prefetched ${count} blobs in secret scan range ${logOpts}`);
+		const remaining = deadline - io.now();
+		if (remaining <= 0)
+			throw new Error("secret scan range timed out before scanning");
+		return await io.scan(rangeScanArgs(logOpts), remaining);
+	} catch (error) {
+		io.log(
+			`::error::secret scan of ${logOpts} failed: ${error instanceof Error ? error.message : String(error)}`,
+		);
+		return 1;
+	}
+}
+
 const invokedPath = process.argv[1];
 if (
 	invokedPath &&
 	import.meta.url === pathToFileURL(resolve(invokedPath)).href
 ) {
 	const command = process.argv[2];
+	if (command === "--range") {
+		process.exit(
+			await runPullRequestRangeScan(process.argv[3] ?? "", {
+				prefetch: prefetchRangeBlobs,
+				scan: (args, timeoutMs) =>
+					runTimed("betterleaks", args, timeoutMs, (chunk) =>
+						process.stdout.write(chunk),
+					),
+				log: (line) => console.log(line),
+				now: Date.now,
+			}),
+		);
+	}
 	const dirFlag = process.argv.indexOf("--dir");
 	const dir = dirFlag >= 0 ? process.argv[dirFlag + 1] : undefined;
 	if ((command !== "--background" && command !== "--wait") || !dir) {
 		console.error(
-			"betterleaks-main-scan: --background [--range-only]|--wait --dir <path>",
+			"betterleaks-main-scan: --range <base>..<head> | --background [--range-only]|--wait --dir <path>",
 		);
 		process.exit(1);
 	}
