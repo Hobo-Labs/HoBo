@@ -23,7 +23,8 @@
 	},
 	"dependencies": {
 		"@hobo/core": "workspace:*",
-		"@hobo/provider-redaction": "workspace:*"
+		"@hobo/provider-redaction": "workspace:*",
+		"yaml": "2.9.0"
 	},
 	"devDependencies": {
 		"@hobo/redaction-test-harness": "workspace:*"
