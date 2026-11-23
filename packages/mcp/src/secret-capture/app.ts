@@ -600,6 +600,7 @@ export function createSecretCaptureApp(
 			const answer = parseFormAnswer(
 				await (
 					elicit?.({
+						mode: "form",
 						message: link === undefined ? said : `${link.message} — ${said}`,
 						requestedSchema: {
 							type: "object",

@@ -549,6 +549,23 @@ export {
 	selectEnvironmentForWebhook,
 } from "./relay-routing.js";
 export {
+	createRelaySetupMcp,
+	RELAY_SETUP_PROVIDE_TOOL,
+	RELAY_SETUP_STATUS_TOOL,
+	RELAY_SETUP_WRITER_CLIENT_ID,
+	RELAY_SETUP_WRITER_CLIENT_SECRET,
+	type RelaySetupEntry,
+	type RelaySetupGaps,
+	type RelaySetupMcp,
+	type RelaySetupMcpOptions,
+	type RelaySetupState,
+	RelaySetupWriteError,
+	type RelaySetupWriteRefusal,
+	type RelaySetupWriter,
+	type RelaySetupWriterCredential,
+	relaySetupForm,
+} from "./relay-setup-mcp.js";
+export {
 	createRelayTrace,
 	githubRoute,
 	otlpFileSink,

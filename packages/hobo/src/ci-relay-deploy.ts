@@ -95,11 +95,8 @@ import {
 import {
 	commitCheckingProbe,
 	deployedPreviewSuites,
-	probeOwnerHandoff,
-	RELAY_OWNER_HANDOFF_PATHS,
 	RelayDeploymentReadRefusal,
 	recordVerifiedPreviewRecords,
-	relayAwaitingOwner,
 	relayOrigin,
 	relayVerifyFailure,
 } from "./ci-relay-verify.js";
@@ -1248,48 +1245,6 @@ export async function runCiRelayDeploy(
 		? delivered.report
 		: (delivered.report ?? undefined);
 	const deliveryData = delivery !== undefined ? { delivery } : undefined;
-	const awaiting =
-		!delivered.ok && verify !== undefined && sha !== undefined
-			? relayAwaitingOwner(verify.probe.findings())
-			: undefined;
-	if (awaiting !== undefined && verify !== undefined && sha !== undefined) {
-		const handoff = await probeOwnerHandoff(
-			input.probe ??
-				createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
-			verify.origin,
-		);
-		if (handoff.serving)
-			return {
-				code: "HOBO_CI_DEPLOYED_AWAITING_OWNER",
-				message: withoutToken(
-					[
-						`${verify.origin} serves ${definition.name} at commit ${sha.toLowerCase()} and its owner hand-off (${RELAY_OWNER_HANDOFF_PATHS.page}), but the relay's store does not yet hold a complete configuration, so the Freight is not qualified.`,
-						...(awaiting.missing.length > 0
-							? [`  missing: ${awaiting.missing.join(", ")}`]
-							: []),
-						...(awaiting.invalid.length > 0
-							? [`  refused: ${awaiting.invalid.join(", ")}`]
-							: []),
-						"  The owner supplies these entries to the store deploy/secret-store.binding.json names (packages/ci-vercel/CONFIG-SERVICE.md, What the folder holds); the next deploy then qualifies production.",
-					].join("\n"),
-				),
-				data: {
-					command: "ci deploy",
-					dryRun: false,
-					plan: planJson,
-					awaitingOwner: {
-						origin: verify.origin,
-						commit: sha.toLowerCase(),
-						missing: [...awaiting.missing],
-						invalid: [...awaiting.invalid],
-					},
-					...(prebuiltState.promoted !== undefined
-						? { deployment: prebuiltState.promoted }
-						: undefined),
-					...deliveryData,
-				},
-			};
-	}
 	if (
 		prebuilt &&
 		target === "production" &&

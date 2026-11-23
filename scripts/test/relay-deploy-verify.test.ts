@@ -1,6 +1,3 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	classifyRelayProbes,
@@ -118,77 +115,6 @@ describe("classifyRelayProbes", () => {
 			code: "HOBO_RELAY_READY",
 			message: expect.any(String),
 		});
-	});
-
-	it("accepts a relay waiting for its owner's named entries only while the owner hand-off serves", () => {
-		const waiting = probe(
-			503,
-			JSON.stringify({
-				ready: false,
-				started: false,
-				state: "not-configured",
-				missing: ["HOBO_CI_GITHUB_APP_ID"],
-				invalid: ["HOBO_CI_CONFIG_JSON", "lower case"],
-			}),
-		);
-		const serving = {
-			page: probe(200, "<!doctype html>"),
-			mailbox: probe(404, JSON.stringify({ error: "not-found" })),
-		};
-		const accepted = classifyRelayProbes({
-			health: healthOk,
-			ready: waiting,
-			sha: SHA,
-			handoff: serving,
-		});
-		expect(accepted).toMatchObject({
-			ok: true,
-			awaitingOwner: true,
-			code: "HOBO_RELAY_AWAITING_OWNER",
-		});
-		expect(accepted.message).toContain(
-			"missing HOBO_CI_GITHUB_APP_ID; refused HOBO_CI_CONFIG_JSON)",
-		);
-		expect(
-			classifyRelayProbes({
-				health: healthOk,
-				ready: waiting,
-				sha: SHA,
-				handoff: {
-					...serving,
-					mailbox: probe(
-						503,
-						JSON.stringify({ ready: false, state: "no-mailbox-store" }),
-					),
-				},
-			}),
-		).toMatchObject({ ok: false, code: "HOBO_RELAY_OWNER_HANDOFF_DOWN" });
-		expect(
-			classifyRelayProbes({
-				health: healthOk,
-				ready: probe(
-					503,
-					JSON.stringify({
-						ready: false,
-						started: false,
-						state: "not-configured",
-					}),
-				),
-				sha: SHA,
-				handoff: serving,
-			}),
-		).toMatchObject({ ok: false, code: "HOBO_RELAY_NOT_CONFIGURED" });
-		expect(
-			classifyRelayProbes({
-				health: probe(
-					200,
-					JSON.stringify({ ok: true, commit: "f".repeat(40) }),
-				),
-				ready: waiting,
-				sha: SHA,
-				handoff: serving,
-			}),
-		).toMatchObject({ ok: false, code: "HOBO_RELAY_COMMIT_MISMATCH" });
 	});
 
 	it("fails on a healthz that does not answer 200, naming protection on 401", () => {
@@ -408,47 +334,6 @@ describe("main exit codes", () => {
 		const text = log.mock.calls.map((call) => call.join(" ")).join("\n");
 		expect(text).toMatch(/HOBO_RELAY_COMMIT_MISMATCH/);
 		expect(text).toMatch(/::error title=Relay deploy verification::/);
-	});
-
-	it("exits 0 and tells the workflow the relay awaits its owner", async () => {
-		vi.spyOn(console, "log").mockImplementation(() => {});
-		const directory = mkdtempSync(join(tmpdir(), "relay-verify-"));
-		const output = join(directory, "output");
-		writeFileSync(output, "");
-		const sha = "0123456789abcdef0123456789abcdef01234567";
-		const fetcher = fetcherFor(async (url) => {
-			const { pathname } = new URL(url);
-			if (pathname === "/healthz")
-				return new Response(JSON.stringify({ ok: true, commit: sha }));
-			if (pathname === "/readyz")
-				return new Response(
-					JSON.stringify({
-						ready: false,
-						started: false,
-						state: "not-configured",
-						missing: ["HOBO_CI_GITHUB_APP_PRIVATE_KEY"],
-						invalid: [],
-					}),
-					{ status: 503 },
-				);
-			if (pathname === "/owner-handoff") return new Response("<!doctype html>");
-			return new Response(JSON.stringify({ error: "not-found" }), {
-				status: 404,
-			});
-		});
-		try {
-			expect(
-				await main(
-					["--origin", "https://relay.example", "--sha", sha],
-					{ GITHUB_OUTPUT: output },
-					fetcher,
-					noSleep,
-				),
-			).toBe(0);
-			expect(readFileSync(output, "utf8")).toBe("awaiting-owner=true\n");
-		} finally {
-			rmSync(directory, { recursive: true, force: true });
-		}
 	});
 
 	it("exits 1 when the origin cannot be reached at all", async () => {

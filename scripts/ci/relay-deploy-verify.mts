@@ -4,11 +4,9 @@ import { resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
-	isJsonArray,
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
-	type JsonValue,
 } from "../../packages/hobo/src/json.ts";
 
 export const DEFAULT_PRODUCTION_ORIGIN = "https://hobo-ci.vercel.app";
@@ -37,18 +35,7 @@ export type RelayVerifyVerdict = Readonly<{
 	ok: boolean;
 	code: string;
 	message: string;
-	awaitingOwner?: boolean;
 }>;
-
-export type RelayOwnerHandoffProbes = Readonly<{
-	page: RelayProbe;
-	mailbox: RelayProbe;
-}>;
-
-export const OWNER_HANDOFF_PAGE_PATH = "/owner-handoff";
-export const OWNER_HANDOFF_PROBE_PATH = `/v1/owner-handoff/mailboxes/${"A".repeat(43)}`;
-
-const ENTRY_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
 
 export class RelayVerifyArgsError extends Error {
 	constructor(message: string) {
@@ -158,23 +145,6 @@ function jsonObject(text: string): JsonObject | undefined {
 	}
 }
 
-function entryNames(value: JsonValue | undefined): string[] {
-	return isJsonArray(value)
-		? value.filter(
-				(name): name is string => isJsonString(name) && ENTRY_NAME.test(name),
-			)
-		: [];
-}
-
-function ownerHandoffServes(handoff: RelayOwnerHandoffProbes): boolean {
-	const mailbox = jsonObject(handoff.mailbox.bodyText);
-	return (
-		handoff.page.status === 200 &&
-		handoff.mailbox.status === 404 &&
-		mailbox?.error === "not-found"
-	);
-}
-
 function mentions(bodyText: string): string[] {
 	const lowered = bodyText.toLowerCase();
 	const found: string[] = [];
@@ -187,7 +157,6 @@ export function classifyRelayProbes(input: {
 	readonly health: RelayProbe;
 	readonly ready: RelayProbe;
 	readonly sha: string;
-	readonly handoff?: RelayOwnerHandoffProbes;
 }): RelayVerifyVerdict {
 	const { health, ready } = input;
 	if (!health.ok)
@@ -215,30 +184,6 @@ export function classifyRelayProbes(input: {
 		};
 	const body = jsonObject(ready.bodyText);
 	const state = isJsonString(body?.state) ? body.state : undefined;
-	const missing = entryNames(body?.missing);
-	const invalid = entryNames(body?.invalid);
-	if (
-		state === "not-configured" &&
-		missing.length + invalid.length > 0 &&
-		input.handoff !== undefined
-	) {
-		const gaps = [
-			...(missing.length > 0 ? [`missing ${missing.join(", ")}`] : []),
-			...(invalid.length > 0 ? [`refused ${invalid.join(", ")}`] : []),
-		].join("; ");
-		if (ownerHandoffServes(input.handoff))
-			return {
-				ok: true,
-				awaitingOwner: true,
-				code: "HOBO_RELAY_AWAITING_OWNER",
-				message: `/healthz names ${sha} and ${OWNER_HANDOFF_PAGE_PATH} serves with its mailbox store; /readyz waits for the owner's entries (${gaps}) in the store deploy/secret-store.binding.json names (packages/ci-vercel/CONFIG-SERVICE.md)`,
-			};
-		return {
-			ok: false,
-			code: "HOBO_RELAY_OWNER_HANDOFF_DOWN",
-			message: `/readyz waits for the owner's entries (${gaps}), and the owner hand-off does not serve: ${OWNER_HANDOFF_PAGE_PATH} answered HTTP ${input.handoff.page.status}, its mailbox HTTP ${input.handoff.mailbox.status}`,
-		};
-	}
 	if (state !== undefined && START_STATES[state] !== undefined) {
 		const named = START_STATES[state] ?? {
 			code: "HOBO_RELAY_NOT_READY",
@@ -319,46 +264,15 @@ export async function main(
 	}
 	const health = await probe(`${args.origin}/healthz`, fetcher, sleep);
 	const ready = await probe(`${args.origin}/readyz`, fetcher, sleep);
-	const handoff = ready.ok
-		? undefined
-		: {
-				page: await probe(
-					`${args.origin}${OWNER_HANDOFF_PAGE_PATH}`,
-					fetcher,
-					sleep,
-				),
-				mailbox: await probe(
-					`${args.origin}${OWNER_HANDOFF_PROBE_PATH}`,
-					fetcher,
-					async () => undefined,
-				),
-			};
-	const verdict = classifyRelayProbes({
-		health,
-		ready,
-		...args,
-		...(handoff !== undefined ? { handoff } : undefined),
-	});
+	const verdict = classifyRelayProbes({ health, ready, ...args });
 	const lines = [
 		"### Relay deploy verification",
 		"",
 		`- origin: ${args.origin}`,
 		`- /healthz: HTTP ${health.status}`,
 		`- /readyz: HTTP ${ready.status}`,
-		...(handoff !== undefined
-			? [
-					`- ${OWNER_HANDOFF_PAGE_PATH}: HTTP ${handoff.page.status}`,
-					`- owner hand-off mailbox: HTTP ${handoff.mailbox.status}`,
-				]
-			: []),
 		`- verdict: ${verdict.code}`,
 	];
-	if (env.GITHUB_OUTPUT)
-		appendFileSync(
-			env.GITHUB_OUTPUT,
-			`awaiting-owner=${verdict.awaitingOwner === true}\n`,
-			"utf8",
-		);
 	if (env.GITHUB_STEP_SUMMARY)
 		appendFileSync(env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n\n`, "utf8");
 	console.log(lines.join("\n"));

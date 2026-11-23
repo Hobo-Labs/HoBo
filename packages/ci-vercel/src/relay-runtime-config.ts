@@ -25,14 +25,12 @@ import {
 } from "@hobo/adapter-infisical";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { z } from "zod";
-import { CACHE_CONFIG_KEYS } from "./cache-backend.js";
 import {
 	RELAY_DERIVED_KEYS,
 	withDerivedRelayKeys,
 } from "./relay-derived-keys.js";
 import {
 	RELAY_RUNTIME_CONFIG_KEYS,
-	RELAY_RUNTIME_CONFIG_SETTINGS,
 	RelayRuntimeConfigSchema,
 } from "./relay-runtime-config-schema.js";
 
@@ -88,23 +86,6 @@ function configGaps(
 	};
 }
 
-export function parseRelayCacheBindings(
-	entries: Readonly<Record<string, string>>,
-): Readonly<Partial<Record<(typeof CACHE_CONFIG_KEYS)[number], string>>> {
-	const bindings: Partial<Record<(typeof CACHE_CONFIG_KEYS)[number], string>> =
-		{};
-	for (const key of CACHE_CONFIG_KEYS) {
-		const value = entries[key];
-		if (
-			value !== undefined &&
-			value !== "" &&
-			RELAY_RUNTIME_CONFIG_SETTINGS[key].safeParse(value).success
-		)
-			bindings[key] = value;
-	}
-	return Object.freeze(bindings);
-}
-
 export function parseRelayRuntimeConfig(
 	entries: Readonly<Record<string, string>>,
 ): RelayRuntimeConfig {
@@ -147,6 +128,7 @@ export function parseRelayRuntimeConfig(
 export type RelayConfigSource = Readonly<{
 	kind: "infisical" | "env";
 	read(): Promise<Readonly<Record<string, string>>>;
+	binding?: ParsedInfisicalBinding;
 }>;
 
 /** The relay's keys from an environment; everything else in it is ignored. */
@@ -172,6 +154,7 @@ export function infisicalRelayConfigSource(
 ): RelayConfigSource {
 	return Object.freeze({
 		kind: "infisical",
+		binding: client.binding,
 		async read() {
 			const entries: Record<string, string> = {};
 			for (const secret of await client.listSecrets())
