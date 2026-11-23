@@ -1,5 +1,5 @@
 
-import type { Outcome } from "@hobo/cd";
+import type { CredentialResolver, Outcome } from "@hobo/cd";
 import type { CommandModule, CommandResult } from "@hobo/cli";
 import { HostingTransitionPhase } from "@hobo/cloud";
 import {
@@ -25,6 +25,7 @@ export type CdHostOpener = (
 		env: Readonly<Record<string, string | undefined>>;
 		home: string;
 		topologyFiles?: readonly string[];
+		credentials?: CredentialResolver;
 	}>,
 ) => Promise<Outcome<OpenedCdHost>>;
 
@@ -35,6 +36,7 @@ export interface DeployCommandDeps {
 	readonly env?: NodeJS.ProcessEnv;
 	readonly hoboHome?: string;
 	readonly openCd?: CdHostOpener;
+	readonly credentialsFor?: (cwd: string) => CredentialResolver;
 }
 
 export function cdTopologyFiles(
@@ -68,6 +70,9 @@ export const openDefaultCdHost: CdHostOpener = async (input) => {
 		simulate: input.simulate,
 		...(input.topologyFiles
 			? { topologyFiles: input.topologyFiles }
+			: undefined),
+		...(input.credentials !== undefined
+			? { credentials: input.credentials }
 			: undefined),
 	});
 	if (!runtime.ok) return runtime;
@@ -157,12 +162,16 @@ export function createDeployCommand(
 			const env = deps.env ?? process.env;
 			const simulate = isSimulate(f);
 			const format = parseCdFormat(f);
+			const cwd = (isJsonString(f.cwd) && f.cwd) || context.cwd;
 			const opened = await (deps.openCd ?? openDefaultCdHost)({
 				simulate,
-				cwd: (isJsonString(f.cwd) && f.cwd) || context.cwd,
+				cwd,
 				env,
 				home: deps.hoboHome ?? defaultHoboHome(env),
 				topologyFiles: cdTopologyFiles(args, f, env),
+				...(deps.credentialsFor !== undefined
+					? { credentials: deps.credentialsFor(cwd) }
+					: undefined),
 			});
 			if (!opened.ok)
 				return cdRefused({

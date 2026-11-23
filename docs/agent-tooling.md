@@ -294,12 +294,35 @@ attach the server. Report which client worked and which connection or private
 session step remains unverified; do not infer the cause of a missing host tool
 without evidence.
 
-Store selection through **`choose_secret_store`** is temporarily unavailable
-until HoBo supports a verified, scoped owner session. Do not collect store
-identifiers in chat or tool arguments. Follow the **hobo-deploy** skill's
-privacy verification before using any owner form. When a verified private
-hand-off is available, use the same target project `cwd` throughout the
-ceremony; otherwise report the missing capability without collecting settings.
+Connecting an agent includes connecting the owner's secret store: call
+**`choose_secret_store`** with the target project directory as `cwd` (no store
+settings in its arguments). It reuses an established owner store session, or
+asks the owner privately: through MCP form elicitation (a store picker, then
+only that store's non-secret IDs) when the host declares
+`capabilities.elicitation` form mode, or through HoBo's store picker widget
+(`ui://hobo/store-choice`, whose app-only `submit_store_choice` the model does
+not call) when the host renders MCP Apps. A host with neither gets
+`secure-form-unavailable` and nothing is collected. The choice is written to the
+owner's locator outside the repository
+(`~/.config/hobo/projects/<project>-<hash>/secret-store.json`), and HoBo then
+signs in through the owner channel (the sign-in link inside a host form, the
+Infisical session, 1Password or Bitwarden hand-offs) and keeps the store's
+sign-in in the server's memory. The sign-in completes inside the call on a
+remote box whose host shows form elicitation; elsewhere the result is
+`sign-in-needed`. Every result the agent sees carries only a
+status (`established`, `sign-in-needed` with a code, `shown`, `decline`,
+`invalid`, `secure-form-unavailable`) and the store's name, never project or
+vault IDs, hosts, or references. Once established, `hobo deploy` resolves
+credential locators `owner://<NAME>` (and `env://<NAME>` absent from the
+environment) from that session's CD location (Infisical folder `/hobo-cd`), so provider resolvers such as Hostinger's get
+`HOSTINGER_API_TOKEN` from the owner's store without the value reaching the
+agent; `hobo ci fleet status|restart|start` (the `ci` tool with
+`args: ["fleet", ...]`) reads the same `owner://HOSTINGER_API_TOKEN` to list and
+power-cycle the CI fleet's Hostinger VPS, and refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until the session holds it;
+`doctor` reports `ownerStoreSession` as `established` and the store's
+name only. Re-run `choose_secret_store` with `reselect: true` to choose a
+different store.
 The relay's existing capture adapter reads a separately configured Infisical
 binding; a generic owner-store session is not yet wired to that adapter.
 Its `connected` status indicates that the binding was read; it does not verify

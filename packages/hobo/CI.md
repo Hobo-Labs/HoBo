@@ -263,6 +263,37 @@ JSON output uses HoBo's envelope;
 `--format json` and `-F json` are aliases of `--json`. Unsupported filters report
 a usage error rather than silently changing their meaning.
 
+## Inspect and repair the fleet's Hostinger hosts
+
+```sh
+hobo ci fleet status
+hobo ci fleet restart hobo-arc.example.com
+hobo ci fleet start 1201
+```
+
+The self-hosted fleet's machines are Hostinger VPS the owner already bought.
+`hobo ci fleet status` lists the account's machines (id, hostname, state, plan,
+first IPv4, and whether an action is in progress); `--json` carries them as
+`data.fleet`. `restart` and `start` take a machine id or hostname, refuse a
+machine the account does not own or one with an action already in progress,
+and return Hostinger's action id and state as `data.fleetAction`; run
+`status` again to watch the machine settle. Nothing else is reachable: the
+fleet's transport allows only the machine list and those two power actions,
+so purchase, setup, recreate, stop and every `/api/billing/v1/` route are
+refused before a request leaves the process (`HOSTINGER_FLEET_ROUTE_REFUSED`).
+
+The Hostinger API token comes from the owner's store session, as
+`owner://HOSTINGER_API_TOKEN` (`env://HOSTINGER_API_TOKEN` is accepted for the
+same entry), resolved through the session's credential resolver; the CLI reads
+no token from its environment, and no output, error included, carries the
+token or a store reference. Without an established session, or with no such
+entry in the store, the command refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`: call HoBo MCP's `choose_secret_store`
+for the project, then ask again. An agent runs it through HoBo MCP as the `ci`
+tool with `args: ["fleet", "status"]` (or `["fleet", "restart", "<vm>"]`) and
+the project directory as `cwd`. The verb manages machines only; it does not
+register runners or the `hobo-arc` scale set on them.
+
 ## Move workflow jobs to the fleet
 
 ```sh
