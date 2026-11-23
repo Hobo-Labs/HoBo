@@ -503,10 +503,13 @@ already bound to the project (Turso through its existing integration, or
 
 A folder the relay reads but cannot use is named at `/readyz`: `state:
 "not-configured"` with `missing` (required entries that are absent) and
-`invalid` (entries their parser refuses), names only. A production deploy that
-finds the relay in that state, serving its commit and its owner hand-off, keeps
-it live as `HOBO_CI_DEPLOYED_AWAITING_OWNER` instead of rolling back
-([README](README.md#owner-hand-off-page)).
+`invalid` (entries their parser refuses), names only.
+
+While the folder is incomplete the relay serves its
+[setup mode](README.md#setup-mode) at `/mcp`: the owner reads the same names
+with `relay_setup_status` and fills them with `relay_setup_provide`, which
+writes as `hobo-secret-writer` with a one-use client secret the owner enters
+in the form, never through a workflow input or an Actions secret.
 
 One entry per key, named as the relay's environment variable; the loader
 refuses a folder holding any other key, and names it (never its value).
