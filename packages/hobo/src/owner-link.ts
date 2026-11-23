@@ -9,10 +9,11 @@ import {
 	type KeyObject,
 	randomBytes,
 } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 
 import { fromJson, type JsonValue as ProtoJson } from "@bufbuild/protobuf";
+import { loadCiProjectFromDirectory } from "@hobo/ci-gh-actions/cli-serve";
 import { z } from "zod";
 
 import {
@@ -233,18 +234,7 @@ function relayOriginOf(raw: string | undefined): string | undefined {
 		: undefined;
 }
 
-const CiProjectRelays = z
-	.object({
-		defaultEnvironment: z.string(),
-		environments: z.record(
-			z.string(),
-			z.object({ relayOrigin: z.string().optional() }).loose(),
-		),
-	})
-	.loose();
-
 const CI_PROJECT_PATH = ".hobo/ci.json";
-const CI_PROJECT_MAX_BYTES = 256 * 1024;
 
 export async function projectRelayOrigin(
 	cwd: string,
@@ -252,25 +242,22 @@ export async function projectRelayOrigin(
 ): Promise<string | undefined> {
 	const fromEnv = relayOriginOf(env.HOBO_CI_RELAY_URL);
 	if (fromEnv !== undefined) return fromEnv;
+	const configPath = env.HOBO_CI_PROJECT_CONFIG?.trim() || CI_PROJECT_PATH;
 	let directory = path.resolve(cwd);
 	for (;;) {
-		const text = await readFile(
-			path.join(
-				directory,
-				env.HOBO_CI_PROJECT_CONFIG?.trim() || CI_PROJECT_PATH,
-			),
-			"utf8",
-		).catch(() => undefined);
-		if (text !== undefined) {
-			if (text.length > CI_PROJECT_MAX_BYTES) return undefined;
-			const json = JsonText.safeParse(text);
-			const project = json.success
-				? CiProjectRelays.safeParse(json.data)
-				: undefined;
-			if (project?.success !== true) return undefined;
-			const name =
-				env.HOBO_CI_ENVIRONMENT?.trim() || project.data.defaultEnvironment;
-			return relayOriginOf(project.data.environments[name]?.relayOrigin);
+		const found = await stat(path.join(directory, configPath)).then(
+			(entry) => entry.isFile(),
+			() => false,
+		);
+		if (found) {
+			const project = await loadCiProjectFromDirectory({
+				repositoryRoot: directory,
+				configPath,
+				env: {
+					HOBO_CI_ENVIRONMENT: env.HOBO_CI_ENVIRONMENT?.trim() || undefined,
+				},
+			}).catch(() => undefined);
+			return relayOriginOf(project?.environment.relayOrigin);
 		}
 		const parent = path.dirname(directory);
 		if (parent === directory) return undefined;
