@@ -13,11 +13,6 @@ export const file_cd_vercel: GenFile = /*@__PURE__*/
   fileDesc("Cg9jZF92ZXJjZWwucHJvdG8SEWhvYm8uY2QudmVyY2VsLnYxIokBCg5DZFN0b3JlQmluZGluZxIMCgRraW5kGAEgASgJEhAKCGVuZHBvaW50GAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkSEwoLZW52aXJvbm1lbnQYBCABKAkSEwoLc2VjcmV0X3BhdGgYBSABKAkSGQoRcmVsYXlfaWRlbnRpdHlfaWQYBiABKAkiOgoKQ2ROb3RSZWFkeRINCgVyZWFkeRgBIAEoCBIPCgdzdGFydGVkGAIgASgIEgwKBGNvZGUYAyABKAkiJgoIQ2RIZWFsdGgSCgoCb2sYASABKAgSDgoGY29tbWl0GAIgASgJYgZwcm90bzM");
 
 /**
- * The committed store coordinates HoBo.CD on Vercel signs in with
- * (deploy/secret-store.binding.json): the fields of SecretStoreBinding it
- * reads. Ids only; no value. relay_identity_id is the record's name for the
- * workload identity.
- *
  * @generated from message hobo.cd.vercel.v1.CdStoreBinding
  */
 export type CdStoreBinding = Message<"hobo.cd.vercel.v1.CdStoreBinding"> & {

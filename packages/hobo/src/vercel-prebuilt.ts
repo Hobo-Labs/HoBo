@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { rmSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { isJsonNumber } from "./json.js";
@@ -66,6 +66,7 @@ type StageInput = Readonly<{
 	sha: string;
 	emit: (message: string) => void;
 	removeOutput?: (directory: string) => void;
+	bundle?: Readonly<{ file: string; text: string }>;
 }>;
 
 const CREDENTIAL_NAME =
@@ -149,8 +150,11 @@ export async function stageVercelBuild(
 	const removeOutput = input.removeOutput ?? removeDirectory;
 	removeOutput(output);
 	try {
+		if (input.bundle !== undefined)
+			writeFileSync(input.bundle.file, input.bundle.text, { mode: 0o600 });
 		return await buildAndUpload(input, sha);
 	} finally {
+		if (input.bundle !== undefined) rmSync(input.bundle.file, { force: true });
 		removeOutput(output);
 	}
 }

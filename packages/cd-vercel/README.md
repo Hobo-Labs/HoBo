@@ -20,8 +20,9 @@ public needs a secret to call it.
 Each instance composes CD once, on its first request or delivery
 (`src/compose.ts`):
 
-1. It reads the committed store binding (`deploy/secret-store.binding.json`,
-   ids only) and opens the owner's store. It signs in with the deployment's
+1. It reads the store binding bundled with the deployment
+   (`deploy/secret-store.binding.json`, ids only; the coordinates live only in
+   the owner's secret store and the file is never committed) and opens the owner's store. It signs in with the deployment's
    own Vercel OIDC token (Infisical OIDC Auth), so no token is kept in Vercel's
    environment or in a file.
 2. It reads the journal fleet `hobo cd up` keeps in that store: the roster in
@@ -41,8 +42,8 @@ probe succeeds. Until then it answers 503 with a `code`:
 
 - `cd-non-production-deployment`: `VERCEL_ENV` is not `production` (preview,
   development, or unset); it never opens the production journal.
-- `cd-store-binding-missing`: no binding is committed yet.
-- `cd-store-binding-invalid`: the committed binding is malformed.
+- `cd-store-binding-missing`: no binding is bundled with this deployment.
+- `cd-store-binding-invalid`: the bundled binding is malformed.
 - `cd-journal-not-provisioned`: the owner's store holds no journal fleet.
 - `cd-store-unavailable`: the journal could not be opened.
 - `cd-no-managed-camps`: the topology declares Camps but none are
@@ -76,8 +77,10 @@ trusts this project's production OIDC tokens
 (`owner:<team>:project:hobo-cd:environment:production`). It then sets the
 store's coordinates, ids only, as the deployment's configuration
 (`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`,
-`INFISICAL_IDENTITY_ID`, `INFISICAL_SITE_URL`). A committed
-`deploy/secret-store.binding.json` takes precedence when there is one.
+`INFISICAL_IDENTITY_ID`, `INFISICAL_SITE_URL`). The function does not read
+those variables: it reads its coordinates only from a binding bundled into the
+deployment, never from a committed file, so a Git deployment that carries none
+answers `/readyz` with `cd-store-binding-missing`.
 
 The scheduled pass (enqueued every five minutes) reconciles the managed Camps and runs one service
 tick (including its retention steps); the fleet pass lease makes the
@@ -107,10 +110,10 @@ connection strings the owner's store holds.
 - **PACT at the boundary:** `contracts/cd-probes.pact.json` records what
   `hobo cd up`'s verification reads from `/healthz` and `/readyz`.
   `contracts/cd-probes.consumer.test.ts` holds the function's own entry to it.
-- **Protobuf and CUE:** `data-models/cd_vercel.proto` defines the committed
+- **Protobuf and CUE:** `data-models/cd_vercel.proto` defines the bundled
   store binding and the probe bodies; `data-models/cd_vercel.cue` constrains
   them.
-- **Parse, don't validate:** the committed binding is parsed once into a
+- **Parse, don't validate:** the bundled binding is parsed once into a
   derived type, `CdStoreCoordinates` (a parsed Infisical binding plus an
   identity id that OIDC Auth's own parser accepted). A malformed binding is
   refused by name and never quoted. Nothing downstream re-checks it.

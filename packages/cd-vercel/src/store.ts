@@ -49,7 +49,7 @@ export function isPermanentComposeError(error: unknown): boolean {
 
 export const vercelOidcJwtSource: JwtSource = () => getVercelOidcToken();
 
-// public-contract: the committed store coordinates HoBo.CD on Vercel reads (ids only).
+// public-contract: the store coordinates bundled into HoBo.CD's deployment from the owner's store session; never committed.
 export const CD_STORE_BINDING_URL = new URL(
 	"../deploy/secret-store.binding.json",
 	import.meta.url,
@@ -120,7 +120,7 @@ export function readCdStoreCoordinates(
 		)
 			throw new CdStoreBindingError(
 				"cd-store-binding-missing",
-				"No store binding is committed for HoBo.CD (deploy/secret-store.binding.json). hobo cd up writes it once the CD workload identity exists.",
+				"No store binding is bundled with this HoBo.CD deployment (deploy/secret-store.binding.json). The coordinates live only in the owner's secret store; a deployment built from the owner's store session carries them, and none is committed.",
 			);
 		throw new CdStoreBindingError(
 			"cd-store-binding-unreadable",
@@ -128,44 +128,6 @@ export function readCdStoreCoordinates(
 		);
 	}
 	return parseCdStoreCoordinates(text);
-}
-
-type Env = Readonly<Record<string, string | undefined>>;
-
-export function cdStoreCoordinatesFromEnv(
-	env: Env,
-): CdStoreCoordinates | undefined {
-	const identityId = env.INFISICAL_IDENTITY_ID;
-	const projectId = env.INFISICAL_PROJECT_ID;
-	if (identityId === undefined || projectId === undefined) return undefined;
-	return parseCdStoreCoordinates(
-		JSON.stringify({
-			kind: "infisical-cloud-attach",
-			endpoint: env.INFISICAL_SITE_URL ?? "https://app.infisical.com",
-			projectId,
-			environment: env.INFISICAL_ENVIRONMENT ?? "prod",
-			secretPath: env.INFISICAL_SECRET_PATH ?? "/hobo-cd",
-			relayIdentityId: identityId,
-		}),
-	);
-}
-
-export function cdStoreCoordinates(
-	env: Env,
-	url: URL = CD_STORE_BINDING_URL,
-): CdStoreCoordinates {
-	try {
-		return readCdStoreCoordinates(url);
-	} catch (error) {
-		if (
-			!(error instanceof CdStoreBindingError) ||
-			error.code !== "cd-store-binding-missing"
-		)
-			throw error;
-		const configured = cdStoreCoordinatesFromEnv(env);
-		if (configured === undefined) throw error;
-		return configured;
-	}
 }
 
 export function openCdStore(

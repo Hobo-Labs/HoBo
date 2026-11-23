@@ -8,6 +8,8 @@ import { afterEach, describe, it } from "node:test";
 import {
 	type Change,
 	isCredentialName,
+	isFixturePath,
+	isRealLookingCoordinate,
 	isSecretFile,
 	secretStorageViolations,
 } from "../check-secret-storage.mts";
@@ -28,6 +30,10 @@ const words = (...parts: string[]) => parts.join(" ");
 const envRead = (name: string) =>
 	`const value = ${["process", "env", name].join(".")};`;
 const locator = (name: string) => ["env", name].join("://");
+const realUuid = ["3f2a9c4e", "7b1d", "4e8a", "9c3f", "2d7e8b1a5c6f"].join("-");
+const realTeam = ["team", "Q7xK2mP9vR4tL8nW3yZ6bC1d"].join("_");
+const realProject = ["prj", "H5jN8qT2wE6rY9uI3oP1aS4dF7gK"].join("_");
+const syntheticUuid = "00000000-0000-0000-0000-000000000001";
 
 afterEach(() => {
 	for (const directory of scratch.splice(0))
@@ -273,6 +279,119 @@ describe("secrets:guard patterns", () => {
 		assert.deepEqual(
 			messages([change("scripts/setup.sh", words("export", "PORT=3000"))]),
 			[],
+		);
+	});
+});
+
+describe("secrets:guard store coordinates", () => {
+	it("tells real-looking coordinates from obviously synthetic ones", () => {
+		for (const value of [realUuid, realTeam, realProject])
+			assert.equal(isRealLookingCoordinate(value), true);
+		for (const value of [
+			syntheticUuid,
+			"00000000-0000-4000-8000-000000000002",
+			"11111111-1111-1111-1111-111111111111",
+			"team_synthetic",
+			"team_000000000000000000000000",
+			"prj_0000000000000000000000000000",
+			"relay-identity",
+			"secret-store:hobo-ci-relay:connect-1",
+		])
+			assert.equal(isRealLookingCoordinate(value), false, value);
+		assert.equal(isFixturePath("packages/a/data-models/fixtures/x.json"), true);
+		assert.equal(isFixturePath("packages/a/test/x.ts"), true);
+		assert.equal(isFixturePath("packages/a/deploy/x.binding.json"), false);
+	});
+
+	it("rejects real-looking coordinates under store coordinate keys in JSON, YAML and TypeScript, fixtures included", () => {
+		for (const key of [
+			"projectId",
+			"relayIdentityId",
+			"deployIdentityId",
+			"deployCredentialIdentityId",
+			"deployProjectId",
+		])
+			for (const { file, text } of [
+				{
+					file: "packages/a/deploy/store.json",
+					text: `{ "${key}": "${realUuid}" }`,
+				},
+				{ file: "packages/a/deploy/store.yaml", text: `${key}: ${realUuid}` },
+				{
+					file: "packages/a/src/store.ts",
+					text: `const binding = { ${key}: "${realUuid}" };`,
+				},
+				{
+					file: "packages/a/test/fixtures/store.json",
+					text: `{ "${key}": "${realUuid}" }`,
+				},
+			]) {
+				const found = messages([change(file, text)]);
+				assert.equal(found.length, 1, `${file} ${key}`);
+				assert.match(found[0] ?? "", /real-looking store coordinate/u);
+				assert.match(found[0] ?? "", /owner's secret store/u);
+				assert.equal(found[0]?.includes(realUuid), false);
+			}
+		assert.equal(
+			messages([
+				change("packages/a/src/team.ts", `vercelTeamId: "${realTeam}"`),
+			]).length,
+			1,
+		);
+		assert.equal(
+			messages([
+				change(
+					"packages/a/src/project.ts",
+					`deployProjectId: "${realProject}"`,
+				),
+			]).length,
+			1,
+		);
+	});
+
+	it("admits synthetic coordinates and unrelated identifiers", () => {
+		assert.deepEqual(
+			messages([
+				change(
+					"packages/a/test/fixtures/store.json",
+					`{ "projectId": "${syntheticUuid}", "vercelTeamId": "team_synthetic", "claimBundleId": "secret-store:hobo-ci-relay:connect-1" }`,
+				),
+				change("packages/a/src/other.ts", `const traceId = "${realUuid}";`),
+			]),
+			[],
+		);
+	});
+
+	it("rejects binding files with real-looking ids outside fixtures, and the bundled binding anywhere", () => {
+		const binding = JSON.stringify({
+			kind: "infisical-cloud-attach",
+			relay: realUuid,
+		});
+		assert.match(
+			messages([
+				change("packages/a/deploy/store.binding.json", binding, true),
+			]).join("\n"),
+			/binding file with real-looking store coordinates/u,
+		);
+		assert.deepEqual(
+			messages([
+				change(
+					"packages/a/data-models/fixtures/valid/store.binding.json",
+					binding,
+					true,
+				),
+			]).filter((line) => line.includes("binding file")),
+			[],
+		);
+		assert.match(
+			messages([
+				change(
+					"packages/ci-vercel/deploy/secret-store.binding.json",
+					JSON.stringify({ projectId: syntheticUuid }),
+					true,
+				),
+			]).join("\n"),
+			/bundles into a deployment/u,
 		);
 	});
 });
