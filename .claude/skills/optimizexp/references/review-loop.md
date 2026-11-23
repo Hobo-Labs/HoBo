@@ -381,5 +381,5 @@ Policy-aware SDLC runs also set
 `designerConsensusPolicy: "required-when-design-relevant"`.
 `assert-complete` replays council history, recomputes the proposal digest from
 `proposalPath`, and asserts unanimous approval for the effective `baseSha` and
-`headSha`. A `required: false` policy decision needs a deterministic internal
-exemption; legacy non-SDLC runs keep their existing completion contract.
+`headSha`. A `required: false` policy decision needs a deterministic
+`no-visual-design-change` exemption; legacy non-SDLC runs keep their existing completion contract.
