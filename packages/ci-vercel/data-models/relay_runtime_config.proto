@@ -42,10 +42,6 @@ message RelayRuntimeConfig {
   // A RelayCacheOffers record (cache_offers.proto) as JSON: what each cache
   // backend costs and allows, its budget cap, and the switch marks.
   optional string hobo_ci_cache_offers_json = 26 [json_name = "HOBO_CI_CACHE_OFFERS_JSON"];
-  // Retired with the hosted relay's fleet verdict routes (ADR-0181, plan
-  // 0026 section 3.9): the reporter enrollment, the verdict kill switch and
-  // the daily block allowance. The loader ignores these keys when a store
-  // still holds them, so a stale entry never stops the relay.
   reserved 27, 28, 29;
   reserved "hobo_ci_fleet_reporters_json", "hobo_ci_fleet_verdict_serving", "hobo_ci_fleet_verdict_daily_block_minutes";
 }

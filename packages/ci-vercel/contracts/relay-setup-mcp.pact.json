@@ -1,0 +1,114 @@
+{
+  "consumer": {
+    "name": "McpConnectorClient"
+  },
+  "provider": {
+    "name": "HoboCiRelaySetup"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "answer OAuth protected resource discovery with 404 while the relay is in setup mode",
+      "request": {
+        "method": "GET",
+        "path": "/.well-known/oauth-protected-resource/mcp",
+        "headers": {}
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "error": "not found"
+        }
+      }
+    },
+    {
+      "description": "refuse a browser request from another origin in setup mode",
+      "request": {
+        "method": "POST",
+        "path": "/mcp",
+        "headers": {
+          "Accept": "application/json, text/event-stream",
+          "Content-Type": "application/json",
+          "Origin": "https://attacker.example"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "ping"
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "error": "origin not allowed"
+        }
+      }
+    },
+    {
+      "description": "ask a client holding an unknown setup session to initialize again",
+      "request": {
+        "method": "POST",
+        "path": "/mcp",
+        "headers": {
+          "Accept": "application/json, text/event-stream",
+          "Content-Type": "application/json",
+          "Mcp-Session-Id": "00000000-0000-4000-8000-000000000000"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "tools/list"
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "error": {
+            "code": -32001,
+            "message": "Session not found"
+          },
+          "id": null
+        }
+      }
+    },
+    {
+      "description": "keep readiness fail-closed while the relay is in setup mode",
+      "request": {
+        "method": "GET",
+        "path": "/readyz",
+        "headers": {}
+      },
+      "response": {
+        "status": 503,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "ready": false,
+          "started": false,
+          "state": "not-configured",
+          "missing": ["HOBO_CI_CONFIG_JSON"],
+          "invalid": []
+        }
+      }
+    }
+  ]
+}

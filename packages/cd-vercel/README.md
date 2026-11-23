@@ -20,8 +20,9 @@ public needs a secret to call it.
 Each instance composes CD once, on its first request or delivery
 (`src/compose.ts`):
 
-1. It reads the committed store binding (`deploy/secret-store.binding.json`,
-   ids only) and opens the owner's store. It signs in with the deployment's
+1. It reads the store binding bundled with the deployment
+   (`deploy/secret-store.binding.json`, ids only; the coordinates live only in
+   the owner's secret store and the file is never committed) and opens the owner's store. It signs in with the deployment's
    own Vercel OIDC token (Infisical OIDC Auth), so no token is kept in Vercel's
    environment or in a file.
 2. It reads the journal fleet `hobo cd up` keeps in that store: the roster in
@@ -41,8 +42,8 @@ probe succeeds. Until then it answers 503 with a `code`:
 
 - `cd-non-production-deployment`: `VERCEL_ENV` is not `production` (preview,
   development, or unset); it never opens the production journal.
-- `cd-store-binding-missing`: no binding is committed yet.
-- `cd-store-binding-invalid`: the committed binding is malformed.
+- `cd-store-binding-missing`: no binding is bundled with this deployment.
+- `cd-store-binding-invalid`: the bundled binding is malformed.
 - `cd-journal-not-provisioned`: the owner's store holds no journal fleet.
 - `cd-store-unavailable`: the journal could not be opened.
 - `cd-no-managed-camps`: the topology declares Camps but none are
@@ -66,16 +67,24 @@ non-secret declarations.
 
 ## Status
 
-The deployable and its tests (`test/`) exist. Two pieces are not done yet:
-
-- `hobo cd up` does not deliver it yet; it will, by a git deployment of this
-  directory, the way `hobo ci up` delivers the relay.
-- No store binding is committed, because the CD workload identity (an
-  Infisical identity that trusts this Vercel project's OIDC tokens) is not
-  created yet.
-
-Until both land, a deployment answers `/readyz` with
-`cd-store-binding-missing`.
+`hobo cd up` delivers this directory as a prebuilt build of the current
+commit to the `hobo-cd` project's **production** (`createCdVercelUpCommand`),
+because CD opens its journal only on a production deployment
+(`productionDeploymentRefusal`; a preview answers `/readyz` with
+`cd-non-production-deployment`). Before it deploys, it makes the CD workload
+identity (`@hobo/hobo-cd` `workload-identity.ts`): an Infisical identity that
+trusts this project's production OIDC tokens
+(`owner:<team>:project:hobo-cd:environment:production`). It then builds the
+checkout of the current commit once (`vercel pull`, `vercel build --prod`,
+`vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI`
+names), with the store's coordinates written from the owner's store session to
+`deploy/secret-store.binding.json` just before the build and removed once it is
+staged, and promotes that exact build (`createCdPrebuiltProvider`, the relay's
+prebuilt path). The coordinates are never Vercel variables, never committed and
+never printed. Without the owner's store session `hobo cd up` stops with
+`HOBO_CD_UP_STORE_SESSION_REQUIRED`; outside a git checkout, with
+`HOBO_CD_UP_NO_CHECKOUT`. A deployment without the bundled binding answers
+`/readyz` with `cd-store-binding-missing`.
 
 The scheduled pass (enqueued every five minutes) reconciles the managed Camps and runs one service
 tick (including its retention steps); the fleet pass lease makes the
@@ -83,12 +92,17 @@ queue's `maxConcurrency: 1` a second layer, so a backlog of deliveries
 waits its turn instead of overlapping passes. A permanent refusal — a
 missing or malformed store binding, an unprovisioned journal fleet, a
 non-production deployment — is logged with its stable `reason` code and
-acked, never retried forever. The journal fleet's copy and backup timer
-(`hobo cd up`'s continuity plan) is process-local: on serverless it runs
-only while an instance happens to be warm, so the scheduled pass does
-not yet drive the fleet's copies or backups — that coverage gap is
-tracked, and the five-minute recovery point must not be assumed from a
-green `/readyz`.
+acked, never retried forever.
+
+Each pass that holds the fleet pass also ticks the journal fleet once
+(`CdRuntime.maintainJournal`): copies to the standbys, and a backup when
+the fleet's backup catalog says one is due. It runs whatever the Camps
+did, so the copies keep the schedule's cadence (every five minutes) even
+when no instance stays warm; a warm instance's own timer only adds ticks
+between passes, and both share one tick at a time. The pass logs the
+outcome as `journal` (`maintained`, `failed` with `journalDetail`, or
+`none` off a fleet). A failed tick does not fail the pass or `/readyz`:
+read the `cd.pass` log for the journal's recovery point.
 
 Sign-in spans two OIDC majors: the Vercel project's OIDC token (issued
 by Vercel) is exchanged with Infisical OIDC Auth for the CD workload
@@ -100,10 +114,10 @@ connection strings the owner's store holds.
 - **PACT at the boundary:** `contracts/cd-probes.pact.json` records what
   `hobo cd up`'s verification reads from `/healthz` and `/readyz`.
   `contracts/cd-probes.consumer.test.ts` holds the function's own entry to it.
-- **Protobuf and CUE:** `data-models/cd_vercel.proto` defines the committed
+- **Protobuf and CUE:** `data-models/cd_vercel.proto` defines the bundled
   store binding and the probe bodies; `data-models/cd_vercel.cue` constrains
   them.
-- **Parse, don't validate:** the committed binding is parsed once into a
+- **Parse, don't validate:** the bundled binding is parsed once into a
   derived type, `CdStoreCoordinates` (a parsed Infisical binding plus an
   identity id that OIDC Auth's own parser accepted). A malformed binding is
   refused by name and never quoted. Nothing downstream re-checks it.

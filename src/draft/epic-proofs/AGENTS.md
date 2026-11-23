@@ -1,23 +1,7 @@
-# Epic proofs — agent instructions
+# Epic proof instructions
 
-Epic rollups that REUSE technical/experience proofs (import, never copy). Layer reference:
-`.claude/skills/draft/references/epic-proofs/process.md` (use the **draft** skill).
+Follow `src/draft/AGENTS.md` and the repository-wide rules. Implement the requested integrated behavior using its owning packages, and keep `proof.json` references aligned with actual imports. Update and test affected lower-level packages when contracts change.
 
-## Run
+Run `pnpm --prefix src/draft/epic-proofs/<slug> test` and the relevant staged checks. Epic features must have executable step definitions; run `pnpm run test:behavior` when relevant. The artifact gate also checks runnable examples and the required executed notebook.
 
-- Tests: `pnpm --prefix src/draft/epic-proofs/<slug> test`
-- Simulation: `pnpm --prefix src/draft/epic-proofs/<slug> run simulate` (offline, mocked fixtures)
-- **Feature suites are executable**: `pnpm run test:behavior` runs every `features/*.feature`
-  through cucumber (`cucumber.yaml`); step definitions live in `features/steps/*.ts`.
-
-## Modify
-
-- Keep `proof.json` `references` and `poc-rollup-ledger.md` in lockstep with the actual imports —
-  the cascade gate resolves the rollup graph from them.
-- Propagate compatibility changes DOWNWARD: if this epic needs a lower proof to change, change the
-  lower proof and add the ADR there (see the layer reference's propagation rule).
-- When a referenced technical/exp proof changes underneath you, `pnpm run draft:cascade` fails
-  until this epic absorbs it: update the ledger row, simulation fixtures, features, and imports.
-- Prose Gherkin in READMEs is documentation only; behavior claims belong in `features/`.
-
-New packages: scaffold from `src/draft/_templates/epic/`.
+Do not create ADRs, planning documents, or placeholder features.

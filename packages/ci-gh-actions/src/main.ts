@@ -5,9 +5,11 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { create } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
+import type { StrictFleetStore } from "@hobo/ci/fleet-v2";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { relayInstallAssets } from "./assets.js";
 import { createControlAuthenticator } from "./control-auth.js";
+import type { StartFencePolicy } from "./fleet-v2/start-fence-handler.js";
 import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
 import { type JoinedMesh, joinMeshFromEnv } from "./mesh-join.js";
 import { createGithubOidcVerifier } from "./oidc.js";
@@ -41,6 +43,10 @@ export async function startRelayFromEnvironment(
 	/** A host embedding the relay may supply its own GitHub App transport. */
 	ports: {
 		github?: GithubAppTransport;
+		strictFleet?: {
+			store: StrictFleetStore;
+			policies: readonly StartFencePolicy[];
+		};
 		/**
 		 * The App's private key and webhook secret, held in memory by a host
 		 * that read them from the owner's secret store into its trusted vault.
@@ -167,6 +173,7 @@ export async function startRelayFromEnvironment(
 			}
 		const { service, runtime } = createRelayHost({
 			store,
+			strictFleet: ports.strictFleet,
 			agent,
 			meshNodes: mesh?.node.reports,
 			github:

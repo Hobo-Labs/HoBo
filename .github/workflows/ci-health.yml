@@ -1,10 +1,5 @@
 name: CI health
 
-# Reads what the last window of workflow runs left behind (route notices and
-# fallbacks, fleet waits, paid minutes) and opens or comments on one
-# `ci-health` issue per breached signal, so a fallback to a default never
-# stays silent. It asks no relay. See docs/ci/health-monitor.md.
-#
 # GitHub-hosted on purpose: it reads the fleet's record, so it must not wait
 # on the fleet. It checks out only the monitor, which loads no package.
 on:

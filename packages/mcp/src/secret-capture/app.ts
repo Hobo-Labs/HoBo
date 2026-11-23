@@ -157,12 +157,6 @@ export type SecretStoreStatus =
 			writerSpec: string;
 	  }>;
 
-/**
- * Where captured values go. The composition supplies it (`@hobo/hobo` binds
- * the committed secret-store binding and Infisical); tests use a memory store.
- * Implementations throw `SecretStoreConnectorError` with a short code; any
- * other error is reported as `unavailable`, and its message is never read.
- */
 export interface SecretStoreConnector {
 	status(): Promise<SecretStoreStatus>;
 	/**
@@ -600,6 +594,7 @@ export function createSecretCaptureApp(
 			const answer = parseFormAnswer(
 				await (
 					elicit?.({
+						mode: "form",
 						message: link === undefined ? said : `${link.message} — ${said}`,
 						requestedSchema: {
 							type: "object",

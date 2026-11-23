@@ -496,11 +496,8 @@ describe("prepareGithubConnection", () => {
 						prepareGithubConnection(input, {
 							env: {},
 							fetch: async () => new Response(null, { status: 401 }),
-							// The owner chose the egress proxy: the run would wait for it.
 							locator: memorySettings({
 								HOBO_SECRET_STORE: "infisical",
-								INFISICAL_PROJECT_ID: "proj",
-								INFISICAL_SIGN_IN: "egress-proxy",
 							}),
 							startPage: () => {
 								throw new Error("the silent page must not be started");
@@ -535,11 +532,8 @@ describe("prepareGithubConnection", () => {
 				{
 					env: {},
 					fetch: async () => new Response(null, { status: 401 }),
-					// The owner chose the egress proxy: the run would wait for it.
 					locator: memorySettings({
 						HOBO_SECRET_STORE: "infisical",
-						INFISICAL_PROJECT_ID: "proj",
-						INFISICAL_SIGN_IN: "egress-proxy",
 					}),
 					startPage: () => {
 						throw new Error("the silent page must not be started");
@@ -920,7 +914,7 @@ describe("prepareGithubConnection", () => {
 		);
 	});
 
-	it("without a person at a browser, refuses and points at workload OIDC", async () => {
+	it("without a person at a browser, refuses and points at the owner's store session, never a coordinate variable", async () => {
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {},
 			interactive: false,
@@ -931,7 +925,8 @@ describe("prepareGithubConnection", () => {
 			kind: "refused",
 			result: { code: "HOBO_CI_CONNECTION_NEEDS_OWNER" },
 		});
-		expect(JSON.stringify(outcome)).toContain("INFISICAL_IDENTITY_ID");
+		expect(JSON.stringify(outcome)).toContain("choose_secret_store");
+		expect(JSON.stringify(outcome)).not.toContain("INFISICAL_IDENTITY_ID");
 		expect(JSON.stringify(outcome)).not.toContain("HOBO_OWNER_PAGE");
 	});
 

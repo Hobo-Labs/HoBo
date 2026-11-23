@@ -1,6 +1,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
   "defaultEnvironment": "ci",
+  "agent": {
+    "mode": "apply",
+    "engines": [
+      { "id": "primary", "kind": "harness", "model": "claude-code" },
+      { "id": "fallback", "kind": "anthropic", "model": "claude-sonnet-5-5", "credential": "env:ANTHROPIC_API_KEY" }
+    ],
+    "queue": { "label": "hobo-queue", "maxDepth": 50, "maxBatchSize": 20, "maxWaitMinutes": 240, "priorityLabels": ["hotfix"] },
+    "resolution": { "maxConflictedFiles": 25, "maxConflictRegions": 100 }
+  },
   "runnerRouting": {
     "pin": "auto",
     "queue": { "maxWaitSeconds": 120, "maxQueued": 4 },
@@ -15,7 +24,7 @@
     "boxRunner": false,
     "mainWorkspaceParallelCap": 4,
     "mainGate": { "reuseMergeQueue": true },
-    "mergeGroup": { "reusePrFabric": false },
+    "mergeGroup": { "reusePrFabric": true },
     "verdict": {
       "minFreeRunners": 1,
       "enterMs": 60000,
@@ -190,7 +199,7 @@
       "relayOrigin": "https://hobo-ci.vercel.app",
       "jobAdmission": "push",
       "policy": {
-        "accountId": "hobo-labs",
+        "accountId": "hobo-labs-release",
         "tenantId": "hobo-labs",
         "pool": { "label": "hobo", "os": "linux", "architecture": "x64" },
         "providers": [

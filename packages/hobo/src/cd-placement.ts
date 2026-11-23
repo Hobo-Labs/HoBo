@@ -7,17 +7,20 @@ import {
 	createInProcessExecutor,
 	createRegistryFromProviders,
 	type Executor,
+	type IacOutputs,
 	type IacProgram,
 	type IacProvider,
 	type PlannerRegistry,
 } from "@hobo/cloud";
 import type { TrustedVault } from "@hobo/core";
 import {
-	CD_DEPLOY_SETTINGS,
+	CD_DEPLOY_ENVIRONMENT,
 	CD_PLACEMENT_YARDS,
+	CD_STORE_COORDINATES_HANDOFF,
 	cdConfigYard,
 	cdJournalYard,
 } from "@hobo/hobo-cd";
+import { BUNDLED_SECRET_STORE_BINDING_FILE } from "@hobo/secret-store-claim";
 import type { Yard } from "@hobo/yards";
 
 import { relayYardRegistryProvider } from "./ci-relay-delivery.js";
@@ -29,9 +32,24 @@ import {
 } from "./ci-relay-yard.js";
 import { gitHead } from "./ci-up-relay.js";
 import {
+	createVercelClient,
+	isProjectNotFound,
+	type VercelClient,
+	type VercelFetch,
+} from "./vercel-client.js";
+import {
 	createVercelDeployProvider,
 	type VercelDeployProviderOptions,
 } from "./vercel-deploy-provider.js";
+import {
+	checkoutHeadOf,
+	promoteStagedBuild,
+	repositoryRoot,
+	stageVercelBuild,
+	type VercelBuildRunner,
+	vercelBuildEnvironment,
+	vercelBuildRunnerFrom,
+} from "./vercel-prebuilt.js";
 
 // `hobo cd plan|up` place the CD project with this machine's providers plus
 // the Yards `hobo cd up` makes for it (`@hobo/hobo-cd` `placement.ts`): the
@@ -209,6 +227,164 @@ function refusedUp(
 	};
 }
 
+// public-contract: typed refusals of hobo cd up's prebuilt delivery.
+export const CD_UP_REFUSAL = Object.freeze({
+	storeSessionRequired: "HOBO_CD_UP_STORE_SESSION_REQUIRED",
+	noCheckout: "HOBO_CD_UP_NO_CHECKOUT",
+} as const);
+
+export type CdPrebuiltDelivery = Readonly<{
+	token: string;
+	teamId?: string;
+	project: string;
+	rootDirectory?: string;
+	repoRoot: string;
+	sha: string;
+	bundle: Readonly<{ file: string; text: string }>;
+	emit: (message: string) => void;
+}>;
+
+export type CdPrebuiltDeps = Readonly<{
+	env?: Readonly<Record<string, string | undefined>>;
+	fetch?: VercelFetch;
+	runVercelBuild?: (projectId: string) => VercelBuildRunner;
+	checkoutHead?: (repoRoot: string) => Promise<string>;
+}>;
+
+export class CdPrebuiltRefusal extends Error {
+	readonly code: string;
+	constructor(code: string, message: string) {
+		super(message);
+		this.name = "CdPrebuiltRefusal";
+		this.code = code;
+	}
+}
+
+async function readOrCreateProject(
+	client: VercelClient,
+	delivery: CdPrebuiltDelivery,
+): Promise<Readonly<{ id: string; created: boolean }>> {
+	try {
+		return {
+			id: (await client.readProject(delivery.project)).id,
+			created: false,
+		};
+	} catch (error) {
+		if (!(error instanceof Error) || !isProjectNotFound(error)) throw error;
+	}
+	const made = await client.createProject(
+		delivery.project,
+		delivery.rootDirectory === undefined
+			? {}
+			: { rootDirectory: delivery.rootDirectory },
+	);
+	return {
+		id: made.created
+			? made.id
+			: (await client.readProject(delivery.project)).id,
+		created: made.created,
+	};
+}
+
+export function createCdPrebuiltProvider(
+	delivery: CdPrebuiltDelivery,
+	deps: CdPrebuiltDeps = {},
+): IacProvider {
+	const teamId =
+		delivery.teamId !== undefined && delivery.teamId !== ""
+			? delivery.teamId
+			: undefined;
+	const client = createVercelClient({
+		token: delivery.token,
+		...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+		...(teamId !== undefined ? { teamId } : undefined),
+	});
+	const env = deps.env ?? {};
+	const runnerFor =
+		deps.runVercelBuild ??
+		((projectId: string) =>
+			vercelBuildRunnerFrom(
+				env.HOBO_VERCEL_CLI || "vercel",
+				vercelBuildEnvironment(env, {
+					VERCEL_TOKEN: delivery.token,
+					VERCEL_PROJECT_ID: projectId,
+					...(teamId !== undefined ? { VERCEL_ORG_ID: teamId } : undefined),
+				}),
+			));
+	const freightId = `hobo-cd-${delivery.sha.toLowerCase()}`;
+	const delivered = new Map<string, IacOutputs>();
+	const summary = `vercel prebuilt ${delivery.project} target=production sha=${delivery.sha} (store binding bundled into the build, no project variables)`;
+	return {
+		id: `vercel-prebuilt:${delivery.project}`,
+		preview: async () => ({ summary, changes: 1 }),
+		async apply(program) {
+			const cached = delivered.get(program.deploymentId);
+			if (cached !== undefined) return cached;
+			const project = await readOrCreateProject(client, delivery);
+			const staged = await stageVercelBuild({
+				run: runnerFor(project.id),
+				client,
+				project: project.id,
+				cwd: delivery.repoRoot,
+				head: await (deps.checkoutHead ?? checkoutHeadOf)(delivery.repoRoot),
+				freightId,
+				sha: delivery.sha,
+				emit: delivery.emit,
+				bundle: delivery.bundle,
+			});
+			if (!staged.ok) throw new CdPrebuiltRefusal(staged.code, staged.message);
+			const promoted = await promoteStagedBuild({
+				client,
+				project: project.id,
+				freightId,
+				sha: delivery.sha,
+				emit: delivery.emit,
+			});
+			if (!promoted.ok)
+				throw new CdPrebuiltRefusal(promoted.code, promoted.message);
+			const outputs: IacOutputs = {
+				url: promoted.deployment.url,
+				deploymentId: promoted.deployment.id,
+				provider: "vercel",
+				target: "production",
+				build: "prebuilt",
+				projectCreated: String(project.created),
+				scope: teamId ?? "token-default",
+				gitSha: delivery.sha,
+				...(promoted.previousDeploymentId !== undefined
+					? { promotedFrom: promoted.previousDeploymentId }
+					: undefined),
+			};
+			delivered.set(program.deploymentId, outputs);
+			return outputs;
+		},
+		async destroy(program) {
+			const receipt = delivered.get(program.deploymentId);
+			const deploymentId = receipt?.deploymentId;
+			if (deploymentId === undefined || deploymentId === "")
+				throw new Error(
+					"a prebuilt CD deployment is removed only with the receipt of the run that made it",
+				);
+			await client.deleteDeployment(deploymentId);
+			delivered.delete(program.deploymentId);
+		},
+		async refresh(program) {
+			const receipt = delivered.get(program.deploymentId);
+			const deploymentId = receipt?.deploymentId;
+			if (deploymentId === undefined || deploymentId === "")
+				return { drift: true, observed: { contentVerified: "false" } };
+			const observed = await client.getDeployment(deploymentId);
+			return {
+				drift: true,
+				observed: {
+					exists: String(observed !== undefined),
+					contentVerified: "false",
+				},
+			};
+		},
+	};
+}
+
 export type CdVercelUpDeps<R extends YardRuntime> = Readonly<{
 	credentials: TrustedVault;
 	runtime: R;
@@ -219,6 +395,8 @@ export type CdVercelUpDeps<R extends YardRuntime> = Readonly<{
 	vercelDeployProvider?: (
 		options: Omit<VercelDeployProviderOptions, "fetch">,
 	) => IacProvider;
+	prebuiltProvider?: (delivery: CdPrebuiltDelivery) => IacProvider;
+	prebuilt?: CdPrebuiltDeps;
 }>;
 
 function convergeCdUpWithoutBundledVercelYard<R extends YardRuntime>(
@@ -266,7 +444,11 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 				return refusedUp("HOBO_CD_UP_NO_YARD", "CD declares no Yard.", []);
 			let placement: ReturnType<typeof resolveRelayPlacement>;
 			try {
-				placement = resolveRelayPlacement(cdYard, "preview", joined);
+				placement = resolveRelayPlacement(
+					cdYard,
+					CD_DEPLOY_ENVIRONMENT,
+					joined,
+				);
 			} catch (error) {
 				if (error instanceof RelayPlacementRefusal)
 					return refusedUp(error.code, error.message, []);
@@ -287,36 +469,44 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 						"Declare project and repository in the Yard's properties (packages/cd-vercel/deploy/yard.ts).",
 					],
 				);
+			const coordinates = deps.credentials.reveal(CD_STORE_COORDINATES_HANDOFF);
+			if (coordinates === undefined)
+				return refusedUp(
+					CD_UP_REFUSAL.storeSessionRequired,
+					"HoBo.CD reads its journal with store coordinates that live only in the owner's secret store, and this run read none: hobo cd up bundles them into the build it makes and never sets them as Vercel variables.",
+					[
+						"Run hobo cd up --hand-off with the owner's store session (HoBo MCP's choose_secret_store) on an Infisical store the run can sign in to.",
+					],
+				);
+			const repoRoot = repositoryRoot(dir);
+			if (repoRoot === undefined)
+				return refusedUp(
+					CD_UP_REFUSAL.noCheckout,
+					`${dir} is not inside a git checkout: hobo cd up builds the checkout of the commit it deploys.`,
+					["Run hobo cd up from a git checkout of the commit to deploy."],
+				);
 			const teamId = team();
-			const configuration = Object.fromEntries(
-				Object.entries(CD_DEPLOY_SETTINGS).flatMap(([setting, held]) => {
-					const value = deps.credentials.reveal(held);
-					return value === undefined ? [] : [[setting, value]];
-				}),
-			);
 			const provider = (
-				deps.vercelDeployProvider ?? createVercelDeployProvider
+				deps.prebuiltProvider ??
+				((delivery: CdPrebuiltDelivery) =>
+					createCdPrebuiltProvider(delivery, deps.prebuilt))
 			)({
 				token: token(),
 				...(teamId !== undefined ? { teamId } : undefined),
-				projectName: placement.project,
-				target: "preview",
-				createMissingProject: true,
-				...(Object.keys(configuration).length > 0
-					? { configuration }
+				project: placement.project,
+				...(placement.rootDirectory !== undefined
+					? { rootDirectory: placement.rootDirectory }
 					: undefined),
-				gitArtifact: {
-					org,
-					repo,
-					ref: head.ref,
-					sha: head.sha,
-					...(placement.rootDirectory !== undefined
-						? { rootDirectory: placement.rootDirectory }
-						: undefined),
+				repoRoot,
+				sha: head.sha,
+				bundle: {
+					file: path.join(dir, BUNDLED_SECRET_STORE_BINDING_FILE),
+					text: coordinates,
 				},
+				emit: input.emitProgress,
 			});
 			input.emitProgress(
-				`delivering ${head.ref}@${head.sha.slice(0, 12)} to CD's preview on Vercel (project ${placement.project})`,
+				`building ${head.ref}@${head.sha.slice(0, 12)} with HoBo.CD's store binding bundled in, then promoting it to CD's ${CD_DEPLOY_ENVIRONMENT} on Vercel (project ${placement.project})`,
 			);
 			return deps
 				.upWith({

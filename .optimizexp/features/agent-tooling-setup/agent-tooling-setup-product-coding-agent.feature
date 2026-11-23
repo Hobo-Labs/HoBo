@@ -1,28 +1,21 @@
 @optimizexp @ax @dx @persona:product-coding-agent @interface:cli
-Feature: agent-tooling-setup (product coding agent)
-  As product coding agent
-  I want a real product path I can exercise and capture
-  So that review scores come from evidence, not template vibes
+Feature: Zero-key agent setup
 
-  Background:
-    Given persona "product-coding-agent" is active
-    And feature "agent-tooling-setup" is under optimizexp review
+  Scenario: Setup help shows the zero-key path
+    When I run agent setup help
+    Then the agent setup command exits with 0
+    And the agent setup output contains "--no-gbrain"
+    And the agent setup output contains "AUTH.md"
 
-  Scenario: Primary path works for product-coding-agent
-    Given I am on the critical path described by the feature seed
-    When I run `bash scripts/setup-agent-tools.sh --help`
-    Then I see product chrome or structured status for this surface
-    And the next action is obvious without tribal knowledge
-    And evidence is capturable for this scenario
+  Scenario: A missing agent name produces actionable usage
+    When I run agent setup without an agent name
+    Then the agent setup command exits with 2
+    And the agent setup output contains "missing value for --agent"
+    And the agent setup output contains "Usage:"
 
-  Scenario: Help or status remains usable for product-coding-agent
-    Given I am on the critical path described by the feature seed
-    When I run `bash scripts/setup-agent-tools.sh --help`
-    Then help lists verbs or usage or the surface documents next steps
-    And evidence is capturable for this scenario
-
-  Scenario: Failure is actionable for product-coding-agent
-    Given something goes wrong on this journey
-    When I run `bash --not-a-real-flag-zz`
-    Then the error is non-blaming and actionable
-    And evidence of what I saw is stored under evidence/
+  Scenario: An unconfigured optional provider cannot start
+    When I run the optional gbrain launcher without a provider
+    Then the agent setup command exits with 1
+    And the agent setup output contains "no embedding provider configured"
+    And the agent setup output contains "gbrain init --pglite"
+    And the optional server was not started

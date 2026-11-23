@@ -20,22 +20,36 @@ Use git as the source of truth for state, ownership, and history.
 ## Final PR Loop
 
 1. `git fetch origin`
-2. `git rebase origin/main` (for stacks: `gh stack sync` / `gh stack rebase` — see `sdlc` skill `references/stacked-prs.md`)
+2. `git merge origin/main` — never rebase a pushed branch, never force-push (`gh stack rebase` /
+   `gh stack sync` only for unpushed local layers — see the `sdlc` skill)
 3. Resolve conflicts without dropping either side's unrelated work.
+   Before pushing, confirm `git fetch origin main && git merge-tree --write-tree origin/main HEAD`
+   exits 0. GitHub runs no `pull_request` workflows on a head that conflicts with its base, or on a
+   branch moved by the update-branch API, so that head never gets checks or reaches the queue.
+   Update PR branches with a local `git merge` and push, never the update-branch API.
+   When several agents share one machine, commit with `HOBO_TURBO_CONCURRENCY=1` and
+   `HOBO_RELEVANT_CHECK_CONCURRENCY=1` so the pre-commit hook runs the same checks one at a time
+   instead of failing on load-induced test timeouts.
 4. Run `pnpm run agent:check -- --base=origin/main` for final PR-base validation.
-5. Open or update the PR (multi-layer work: `gh stack submit --auto --open`).
-6. Request squash auto-merge only when mergeability and required checks are clean — or, for
-   stacked multi-phase work, use the parent **bottom-up squash-merge** protocol in the `sdlc`
-   skill (`gh stack merge <pr> --yes --squash` per layer after review).
-7. Resolve requested changes and actionable comments — leave no open actionable threads.
-8. Re-run the narrow relevant gate after repairs, then repeat PR-base validation only when the repair changes branch-level risk.
-9. Clean the worktree and archive the thread only when supported by the active client tooling.
+5. Supersession check: if the head is already in `origin/main` or is an ancestor of another open
+   PR's head (`git merge-base --is-ancestor <head> <other-head>`), do not open or keep a separate
+   PR — close it with `Superseded by #N` (keep the branch).
+6. Open or update **one** PR per workstream, ready for review, not a long-lived draft (multi-layer
+   work: one PR for the top of the stack against `main`, not a PR per layer). A workstream has at
+   most one open PR; add commits to it instead of opening another.
+7. Request merge-commit auto-merge (`gh pr merge <n> --merge --auto`, or the merge queue with the
+   merge-commit method) only when mergeability and required checks are clean. **Never squash,
+   never rebase-merge.** Stacked work lands as one unit through the top PR — see the `sdlc`
+   skill stack closeout.
+8. Resolve requested changes and actionable comments — leave no open actionable threads.
+9. Re-run the narrow relevant gate after repairs, then repeat PR-base validation only when the repair changes branch-level risk.
+10. Clean the worktree and archive the thread only when supported by the active client tooling.
 
 ## Stacked PRs
 
 Multi-step / multi-phase work uses GitHub's official stacked PRs (`gh extension install github/gh-stack`).
 Parent agent owns stack topology; subagents do incremental commits on their layer. Full protocol:
-`sdlc` skill → `references/stacked-prs.md` and companion skill `gh-stack`.
+`sdlc` skill and companion skill `gh-stack`.
 
 Local agent defaults (also applied by `scripts/install-hooks.mts` / `setup-agent-tools.sh`):
 
@@ -49,12 +63,12 @@ git config --local remote.pushDefault origin
 Do not claim completion, mark a PR ready, or merge while required checks are failing or pending
 **for real code reasons** (tests, lint, architecture, secret findings that executed).
 
-**Billing / spending-limit / quota failures do not block squash-merge.** When jobs never start
+**Billing / spending-limit / quota failures do not block merge.** When jobs never start
 (no runner, empty steps, "payments have failed", "spending limit needs to be increased"):
-document the exception on the PR, then **squash-merge immediately** (`gh pr merge --squash` /
-`gh stack merge --yes --squash`; `--admin` if protection still requires green checks). Tell the
+document the exception on the PR, then **merge immediately** with a merge commit
+(`gh pr merge <n> --merge`; `--admin` if protection still requires green checks). Tell the
 user billing needs repair asynchronously — do not leave reviewed PRs open waiting on CI that
 cannot run.
 
-Address all review comments before squash-merge. If another merge worker owns the final merge,
+Address all review comments before merge. If another merge worker owns the final merge,
 report the exact remaining state instead of pretending it shipped.

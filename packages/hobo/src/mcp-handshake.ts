@@ -32,6 +32,6 @@ export function initializeResult(
 	return {
 		...result,
 		instructions:
-			"A HoBo MCP connection does not by itself connect an owner secret store. On initial connection, establish or reuse the owner's store session through HoBo's private owner setup. If setup is unavailable, do not claim it succeeded. Keep store settings, connection references, and credentials out of chat and agent-visible tool arguments. Only use an owner form after its privacy is verified.",
+			"A HoBo MCP connection does not by itself connect an owner secret store. On initial connection, establish or reuse the owner's store session through HoBo's private owner setup: call choose_secret_store with the project directory as cwd. It reuses an established session, or asks the owner privately (a host form or HoBo's widget, never the agent) to choose their store and sign in, and returns only a status and the store's name. HoBo verbs then read the provider credentials they need from that session; credential values never reach the agent. If it reports secure-form-unavailable or sign-in-needed, do not claim the store is connected. Keep store settings, connection references, and credentials out of chat and agent-visible tool arguments.",
 	};
 }

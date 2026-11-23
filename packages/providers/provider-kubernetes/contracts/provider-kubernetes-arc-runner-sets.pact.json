@@ -1,0 +1,1091 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-kubernetes"
+	},
+	"provider": {
+		"name": "KubernetesApiServer"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"source": {
+			"url": "https://kubernetes.io/docs/reference/kubernetes-api/",
+			"apiVersions": [
+				"actions.github.com/v1alpha1",
+				"batch/v1"
+			],
+			"checkedAt": "2026-11-23"
+		}
+	},
+	"interactions": [
+		{
+			"description": "list the runner scale sets in the fleet namespace",
+			"request": {
+				"method": "GET",
+				"path": "/apis/actions.github.com/v1alpha1/namespaces/arc-runners/autoscalingrunnersets",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "actions.github.com/v1alpha1",
+					"kind": "AutoscalingRunnerSetList",
+					"metadata": {
+						"resourceVersion": "918290"
+					},
+					"items": [
+						{
+							"apiVersion": "actions.github.com/v1alpha1",
+							"kind": "AutoscalingRunnerSet",
+							"metadata": {
+								"name": "hobo-trunk",
+								"namespace": "arc-runners",
+								"uid": "7a4c1e2b-0000-4000-8000-000000000101",
+								"resourceVersion": "918273",
+								"generation": 3,
+								"creationTimestamp": "2026-11-02T09:14:00Z",
+								"labels": {
+									"actions.github.com/scale-set-name": "hobo-trunk",
+									"actions.github.com/scale-set-namespace": "arc-runners",
+									"app.kubernetes.io/component": "autoscaling-runner-set"
+								}
+							},
+							"spec": {
+								"githubConfigUrl": "https://github.com/Hobo-Labs/HoBo",
+								"githubConfigSecret": "hobo-trunk-gha-rs-github-secret",
+								"runnerScaleSetName": "hobo-trunk",
+								"minRunners": 0,
+								"maxRunners": 4,
+								"template": {
+									"spec": {
+										"restartPolicy": "Never",
+										"serviceAccountName": "hobo-trunk-gha-rs-no-permission",
+										"containers": [
+											{
+												"name": "runner",
+												"image": "ghcr.io/actions/actions-runner:2.329.0",
+												"command": [
+													"/home/runner/run.sh"
+												]
+											}
+										]
+									}
+								}
+							},
+							"status": {
+								"currentRunners": 0,
+								"pendingEphemeralRunners": 0,
+								"runningEphemeralRunners": 0
+							}
+						},
+						{
+							"apiVersion": "actions.github.com/v1alpha1",
+							"kind": "AutoscalingRunnerSet",
+							"metadata": {
+								"name": "hobo-runner",
+								"namespace": "arc-runners",
+								"uid": "7a4c1e2b-0000-4000-8000-000000000102",
+								"resourceVersion": "918280",
+								"generation": 3,
+								"creationTimestamp": "2026-11-02T09:14:00Z",
+								"labels": {
+									"actions.github.com/scale-set-name": "hobo-runner",
+									"actions.github.com/scale-set-namespace": "arc-runners",
+									"app.kubernetes.io/component": "autoscaling-runner-set"
+								}
+							},
+							"spec": {
+								"githubConfigUrl": "https://github.com/Hobo-Labs/HoBo",
+								"githubConfigSecret": "hobo-runner-gha-rs-github-secret",
+								"runnerScaleSetName": "hobo-runner",
+								"minRunners": 0,
+								"maxRunners": 4,
+								"template": {
+									"spec": {
+										"restartPolicy": "Never",
+										"serviceAccountName": "hobo-runner-gha-rs-no-permission",
+										"containers": [
+											{
+												"name": "runner",
+												"image": "ghcr.io/actions/actions-runner:2.329.0",
+												"command": [
+													"/home/runner/run.sh"
+												]
+											}
+										]
+									}
+								}
+							},
+							"status": {
+								"currentRunners": 0,
+								"pendingEphemeralRunners": 0,
+								"runningEphemeralRunners": 0
+							}
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "read one runner scale set",
+			"request": {
+				"method": "GET",
+				"path": "/apis/actions.github.com/v1alpha1/namespaces/arc-runners/autoscalingrunnersets/hobo-trunk",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "actions.github.com/v1alpha1",
+					"kind": "AutoscalingRunnerSet",
+					"metadata": {
+						"name": "hobo-trunk",
+						"namespace": "arc-runners",
+						"uid": "7a4c1e2b-0000-4000-8000-000000000101",
+						"resourceVersion": "918273",
+						"generation": 3,
+						"creationTimestamp": "2026-11-02T09:14:00Z",
+						"labels": {
+							"actions.github.com/scale-set-name": "hobo-trunk",
+							"actions.github.com/scale-set-namespace": "arc-runners",
+							"app.kubernetes.io/component": "autoscaling-runner-set"
+						}
+					},
+					"spec": {
+						"githubConfigUrl": "https://github.com/Hobo-Labs/HoBo",
+						"githubConfigSecret": "hobo-trunk-gha-rs-github-secret",
+						"runnerScaleSetName": "hobo-trunk",
+						"minRunners": 0,
+						"maxRunners": 4,
+						"template": {
+							"spec": {
+								"restartPolicy": "Never",
+								"serviceAccountName": "hobo-trunk-gha-rs-no-permission",
+								"containers": [
+									{
+										"name": "runner",
+										"image": "ghcr.io/actions/actions-runner:2.329.0",
+										"command": [
+											"/home/runner/run.sh"
+										]
+									}
+								]
+							}
+						}
+					},
+					"status": {
+						"currentRunners": 0,
+						"pendingEphemeralRunners": 0,
+						"runningEphemeralRunners": 0
+					}
+				}
+			}
+		},
+		{
+			"description": "report NotFound for a scale set the cluster does not have",
+			"request": {
+				"method": "GET",
+				"path": "/apis/actions.github.com/v1alpha1/namespaces/arc-runners/autoscalingrunnersets/hobo-gone",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "Status",
+					"apiVersion": "v1",
+					"metadata": {},
+					"status": "Failure",
+					"message": "autoscalingrunnersets.actions.github.com \"hobo-gone\" not found",
+					"reason": "NotFound",
+					"code": 404,
+					"details": {
+						"name": "hobo-gone",
+						"group": "actions.github.com",
+						"kind": "autoscalingrunnersets"
+					}
+				}
+			}
+		},
+		{
+			"description": "JSON-patch the node caches into the runner template, guarded by resourceVersion",
+			"request": {
+				"method": "PATCH",
+				"path": "/apis/actions.github.com/v1alpha1/namespaces/arc-runners/autoscalingrunnersets/hobo-trunk",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json-patch+json"
+				},
+				"body": [
+					{
+						"op": "test",
+						"path": "/metadata/resourceVersion",
+						"value": "918273"
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/volumes",
+						"value": [
+							{
+								"name": "hobo-pnpm-store",
+								"hostPath": {
+									"path": "/var/lib/hobo-ci/pnpm-store",
+									"type": "DirectoryOrCreate"
+								}
+							},
+							{
+								"name": "hobo-image-cache",
+								"hostPath": {
+									"path": "/var/lib/hobo-ci/images",
+									"type": "DirectoryOrCreate"
+								}
+							}
+						]
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/initContainers",
+						"value": [
+							{
+								"name": "hobo-cache-owner",
+								"image": "ghcr.io/actions/actions-runner:2.329.0",
+								"command": [
+									"install",
+									"-d",
+									"-o",
+									"1000",
+									"-g",
+									"1000",
+									"/pnpm-store",
+									"/var/cache/hobo-ci/images"
+								],
+								"securityContext": {
+									"runAsUser": 0,
+									"runAsGroup": 0
+								},
+								"volumeMounts": [
+									{
+										"name": "hobo-pnpm-store",
+										"mountPath": "/pnpm-store"
+									},
+									{
+										"name": "hobo-image-cache",
+										"mountPath": "/var/cache/hobo-ci/images"
+									}
+								]
+							}
+						]
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/containers/0/volumeMounts",
+						"value": [
+							{
+								"name": "hobo-pnpm-store",
+								"mountPath": "/pnpm-store"
+							},
+							{
+								"name": "hobo-image-cache",
+								"mountPath": "/var/cache/hobo-ci/images"
+							}
+						]
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/containers/0/env",
+						"value": [
+							{
+								"name": "HOBO_CI_PNPM_STORE_DIR",
+								"value": "/pnpm-store"
+							},
+							{
+								"name": "HOBO_CI_IMAGE_CACHE_DIR",
+								"value": "/var/cache/hobo-ci/images"
+							}
+						]
+					}
+				]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "actions.github.com/v1alpha1",
+					"kind": "AutoscalingRunnerSet",
+					"metadata": {
+						"name": "hobo-trunk",
+						"namespace": "arc-runners",
+						"uid": "7a4c1e2b-0000-4000-8000-000000000101",
+						"resourceVersion": "918301",
+						"generation": 4,
+						"creationTimestamp": "2026-11-02T09:14:00Z",
+						"labels": {
+							"actions.github.com/scale-set-name": "hobo-trunk",
+							"actions.github.com/scale-set-namespace": "arc-runners",
+							"app.kubernetes.io/component": "autoscaling-runner-set"
+						}
+					},
+					"spec": {
+						"githubConfigUrl": "https://github.com/Hobo-Labs/HoBo",
+						"githubConfigSecret": "hobo-trunk-gha-rs-github-secret",
+						"runnerScaleSetName": "hobo-trunk",
+						"minRunners": 0,
+						"maxRunners": 4,
+						"template": {
+							"spec": {
+								"restartPolicy": "Never",
+								"serviceAccountName": "hobo-trunk-gha-rs-no-permission",
+								"containers": [
+									{
+										"name": "runner",
+										"image": "ghcr.io/actions/actions-runner:2.329.0",
+										"command": [
+											"/home/runner/run.sh"
+										],
+										"volumeMounts": [
+											{
+												"name": "hobo-pnpm-store",
+												"mountPath": "/pnpm-store"
+											},
+											{
+												"name": "hobo-image-cache",
+												"mountPath": "/var/cache/hobo-ci/images"
+											}
+										],
+										"env": [
+											{
+												"name": "HOBO_CI_PNPM_STORE_DIR",
+												"value": "/pnpm-store"
+											},
+											{
+												"name": "HOBO_CI_IMAGE_CACHE_DIR",
+												"value": "/var/cache/hobo-ci/images"
+											}
+										]
+									}
+								],
+								"volumes": [
+									{
+										"name": "hobo-pnpm-store",
+										"hostPath": {
+											"path": "/var/lib/hobo-ci/pnpm-store",
+											"type": "DirectoryOrCreate"
+										}
+									},
+									{
+										"name": "hobo-image-cache",
+										"hostPath": {
+											"path": "/var/lib/hobo-ci/images",
+											"type": "DirectoryOrCreate"
+										}
+									}
+								],
+								"initContainers": [
+									{
+										"name": "hobo-cache-owner",
+										"image": "ghcr.io/actions/actions-runner:2.329.0",
+										"command": [
+											"install",
+											"-d",
+											"-o",
+											"1000",
+											"-g",
+											"1000",
+											"/pnpm-store",
+											"/var/cache/hobo-ci/images"
+										],
+										"securityContext": {
+											"runAsUser": 0,
+											"runAsGroup": 0
+										},
+										"volumeMounts": [
+											{
+												"name": "hobo-pnpm-store",
+												"mountPath": "/pnpm-store"
+											},
+											{
+												"name": "hobo-image-cache",
+												"mountPath": "/var/cache/hobo-ci/images"
+											}
+										]
+									}
+								]
+							}
+						}
+					},
+					"status": {
+						"currentRunners": 0,
+						"pendingEphemeralRunners": 0,
+						"runningEphemeralRunners": 0
+					}
+				}
+			}
+		},
+		{
+			"description": "refuse a patch whose resourceVersion test no longer holds",
+			"request": {
+				"method": "PATCH",
+				"path": "/apis/actions.github.com/v1alpha1/namespaces/arc-runners/autoscalingrunnersets/hobo-trunk",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json-patch+json"
+				},
+				"body": [
+					{
+						"op": "test",
+						"path": "/metadata/resourceVersion",
+						"value": "918273"
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/volumes",
+						"value": [
+							{
+								"name": "hobo-pnpm-store",
+								"hostPath": {
+									"path": "/var/lib/hobo-ci/pnpm-store",
+									"type": "DirectoryOrCreate"
+								}
+							},
+							{
+								"name": "hobo-image-cache",
+								"hostPath": {
+									"path": "/var/lib/hobo-ci/images",
+									"type": "DirectoryOrCreate"
+								}
+							}
+						]
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/initContainers",
+						"value": [
+							{
+								"name": "hobo-cache-owner",
+								"image": "ghcr.io/actions/actions-runner:2.329.0",
+								"command": [
+									"install",
+									"-d",
+									"-o",
+									"1000",
+									"-g",
+									"1000",
+									"/pnpm-store",
+									"/var/cache/hobo-ci/images"
+								],
+								"securityContext": {
+									"runAsUser": 0,
+									"runAsGroup": 0
+								},
+								"volumeMounts": [
+									{
+										"name": "hobo-pnpm-store",
+										"mountPath": "/pnpm-store"
+									},
+									{
+										"name": "hobo-image-cache",
+										"mountPath": "/var/cache/hobo-ci/images"
+									}
+								]
+							}
+						]
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/containers/0/volumeMounts",
+						"value": [
+							{
+								"name": "hobo-pnpm-store",
+								"mountPath": "/pnpm-store"
+							},
+							{
+								"name": "hobo-image-cache",
+								"mountPath": "/var/cache/hobo-ci/images"
+							}
+						]
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/containers/0/env",
+						"value": [
+							{
+								"name": "HOBO_CI_PNPM_STORE_DIR",
+								"value": "/pnpm-store"
+							},
+							{
+								"name": "HOBO_CI_IMAGE_CACHE_DIR",
+								"value": "/var/cache/hobo-ci/images"
+							}
+						]
+					}
+				]
+			},
+			"response": {
+				"status": 422,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "Status",
+					"apiVersion": "v1",
+					"metadata": {},
+					"status": "Failure",
+					"message": "the server rejected our request due to an error in our request",
+					"reason": "Invalid",
+					"code": 422,
+					"details": {
+						"name": "hobo-trunk",
+						"group": "actions.github.com",
+						"kind": "autoscalingrunnersets"
+					}
+				}
+			}
+		},
+		{
+			"description": "refuse a patch the caller is not authorized for",
+			"request": {
+				"method": "PATCH",
+				"path": "/apis/actions.github.com/v1alpha1/namespaces/arc-runners/autoscalingrunnersets/hobo-trunk",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json-patch+json"
+				},
+				"body": [
+					{
+						"op": "test",
+						"path": "/metadata/resourceVersion",
+						"value": "918273"
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/volumes",
+						"value": [
+							{
+								"name": "hobo-pnpm-store",
+								"hostPath": {
+									"path": "/var/lib/hobo-ci/pnpm-store",
+									"type": "DirectoryOrCreate"
+								}
+							},
+							{
+								"name": "hobo-image-cache",
+								"hostPath": {
+									"path": "/var/lib/hobo-ci/images",
+									"type": "DirectoryOrCreate"
+								}
+							}
+						]
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/initContainers",
+						"value": [
+							{
+								"name": "hobo-cache-owner",
+								"image": "ghcr.io/actions/actions-runner:2.329.0",
+								"command": [
+									"install",
+									"-d",
+									"-o",
+									"1000",
+									"-g",
+									"1000",
+									"/pnpm-store",
+									"/var/cache/hobo-ci/images"
+								],
+								"securityContext": {
+									"runAsUser": 0,
+									"runAsGroup": 0
+								},
+								"volumeMounts": [
+									{
+										"name": "hobo-pnpm-store",
+										"mountPath": "/pnpm-store"
+									},
+									{
+										"name": "hobo-image-cache",
+										"mountPath": "/var/cache/hobo-ci/images"
+									}
+								]
+							}
+						]
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/containers/0/volumeMounts",
+						"value": [
+							{
+								"name": "hobo-pnpm-store",
+								"mountPath": "/pnpm-store"
+							},
+							{
+								"name": "hobo-image-cache",
+								"mountPath": "/var/cache/hobo-ci/images"
+							}
+						]
+					},
+					{
+						"op": "add",
+						"path": "/spec/template/spec/containers/0/env",
+						"value": [
+							{
+								"name": "HOBO_CI_PNPM_STORE_DIR",
+								"value": "/pnpm-store"
+							},
+							{
+								"name": "HOBO_CI_IMAGE_CACHE_DIR",
+								"value": "/var/cache/hobo-ci/images"
+							}
+						]
+					}
+				]
+			},
+			"response": {
+				"status": 403,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "Status",
+					"apiVersion": "v1",
+					"metadata": {},
+					"status": "Failure",
+					"message": "autoscalingrunnersets.actions.github.com \"hobo-trunk\" is forbidden: User \"system:serviceaccount:arc-runners:hobo-fleet\" cannot patch resource \"autoscalingrunnersets\" in API group \"actions.github.com\" in the namespace \"arc-runners\"",
+					"reason": "Forbidden",
+					"code": 403,
+					"details": {
+						"name": "hobo-trunk",
+						"group": "actions.github.com",
+						"kind": "autoscalingrunnersets"
+					}
+				}
+			}
+		},
+		{
+			"description": "create the store prewarm Job",
+			"request": {
+				"method": "POST",
+				"path": "/apis/batch/v1/namespaces/arc-runners/jobs",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "batch/v1",
+					"kind": "Job",
+					"metadata": {
+						"name": "hobo-trunk-store-prewarm-4da35cfd9285",
+						"namespace": "arc-runners",
+						"labels": {
+							"hobo.ci/store-prewarm": "hobo-trunk",
+							"hobo.ci/store-prewarm-ref": "4da35cfd92854b07ea368680fcc19a621faa928f"
+						}
+					},
+					"spec": {
+						"backoffLimit": 2,
+						"template": {
+							"spec": {
+								"restartPolicy": "Never",
+								"securityContext": {
+									"runAsUser": 1000,
+									"runAsGroup": 1000
+								},
+								"initContainers": [
+									{
+										"name": "hobo-cache-owner",
+										"image": "ghcr.io/actions/actions-runner:2.329.0",
+										"command": [
+											"install",
+											"-d",
+											"-o",
+											"1000",
+											"-g",
+											"1000",
+											"/pnpm-store"
+										],
+										"securityContext": {
+											"runAsUser": 0,
+											"runAsGroup": 0
+										},
+										"volumeMounts": [
+											{
+												"name": "hobo-pnpm-store",
+												"mountPath": "/pnpm-store"
+											}
+										]
+									}
+								],
+								"containers": [
+									{
+										"name": "prewarm",
+										"image": "ghcr.io/actions/actions-runner:2.329.0",
+										"workingDir": "/tmp",
+										"command": [
+											"sh",
+											"-ec",
+											"mkdir -p /tmp/lock && curl -fsSL --retry 3 https://raw.githubusercontent.com/Hobo-Labs/HoBo/4da35cfd92854b07ea368680fcc19a621faa928f/pnpm-lock.yaml -o /tmp/lock/pnpm-lock.yaml && cd /tmp/lock && pnpm fetch --frozen-lockfile --store-dir /pnpm-store"
+										],
+										"volumeMounts": [
+											{
+												"name": "hobo-pnpm-store",
+												"mountPath": "/pnpm-store"
+											}
+										]
+									}
+								],
+								"volumes": [
+									{
+										"name": "hobo-pnpm-store",
+										"hostPath": {
+											"path": "/var/lib/hobo-ci/pnpm-store",
+											"type": "DirectoryOrCreate"
+										}
+									}
+								]
+							}
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 201,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "batch/v1",
+					"kind": "Job",
+					"metadata": {
+						"name": "hobo-trunk-store-prewarm-4da35cfd9285",
+						"namespace": "arc-runners",
+						"labels": {
+							"hobo.ci/store-prewarm": "hobo-trunk",
+							"hobo.ci/store-prewarm-ref": "4da35cfd92854b07ea368680fcc19a621faa928f"
+						},
+						"uid": "5b9d0f31-0000-4000-8000-000000000201",
+						"resourceVersion": "918320",
+						"creationTimestamp": "2026-11-23T18:00:00Z",
+						"generation": 1
+					},
+					"spec": {
+						"backoffLimit": 2,
+						"template": {
+							"spec": {
+								"restartPolicy": "Never",
+								"securityContext": {
+									"runAsUser": 1000,
+									"runAsGroup": 1000
+								},
+								"initContainers": [
+									{
+										"name": "hobo-cache-owner",
+										"image": "ghcr.io/actions/actions-runner:2.329.0",
+										"command": [
+											"install",
+											"-d",
+											"-o",
+											"1000",
+											"-g",
+											"1000",
+											"/pnpm-store"
+										],
+										"securityContext": {
+											"runAsUser": 0,
+											"runAsGroup": 0
+										},
+										"volumeMounts": [
+											{
+												"name": "hobo-pnpm-store",
+												"mountPath": "/pnpm-store"
+											}
+										]
+									}
+								],
+								"containers": [
+									{
+										"name": "prewarm",
+										"image": "ghcr.io/actions/actions-runner:2.329.0",
+										"workingDir": "/tmp",
+										"command": [
+											"sh",
+											"-ec",
+											"mkdir -p /tmp/lock && curl -fsSL --retry 3 https://raw.githubusercontent.com/Hobo-Labs/HoBo/4da35cfd92854b07ea368680fcc19a621faa928f/pnpm-lock.yaml -o /tmp/lock/pnpm-lock.yaml && cd /tmp/lock && pnpm fetch --frozen-lockfile --store-dir /pnpm-store"
+										],
+										"volumeMounts": [
+											{
+												"name": "hobo-pnpm-store",
+												"mountPath": "/pnpm-store"
+											}
+										]
+									}
+								],
+								"volumes": [
+									{
+										"name": "hobo-pnpm-store",
+										"hostPath": {
+											"path": "/var/lib/hobo-ci/pnpm-store",
+											"type": "DirectoryOrCreate"
+										}
+									}
+								]
+							}
+						}
+					},
+					"status": {}
+				}
+			}
+		},
+		{
+			"description": "report AlreadyExists when that commit's prewarm Job is already there",
+			"request": {
+				"method": "POST",
+				"path": "/apis/batch/v1/namespaces/arc-runners/jobs",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "batch/v1",
+					"kind": "Job",
+					"metadata": {
+						"name": "hobo-trunk-store-prewarm-4da35cfd9285",
+						"namespace": "arc-runners",
+						"labels": {
+							"hobo.ci/store-prewarm": "hobo-trunk",
+							"hobo.ci/store-prewarm-ref": "4da35cfd92854b07ea368680fcc19a621faa928f"
+						}
+					},
+					"spec": {
+						"backoffLimit": 2,
+						"template": {
+							"spec": {
+								"restartPolicy": "Never",
+								"securityContext": {
+									"runAsUser": 1000,
+									"runAsGroup": 1000
+								},
+								"initContainers": [
+									{
+										"name": "hobo-cache-owner",
+										"image": "ghcr.io/actions/actions-runner:2.329.0",
+										"command": [
+											"install",
+											"-d",
+											"-o",
+											"1000",
+											"-g",
+											"1000",
+											"/pnpm-store"
+										],
+										"securityContext": {
+											"runAsUser": 0,
+											"runAsGroup": 0
+										},
+										"volumeMounts": [
+											{
+												"name": "hobo-pnpm-store",
+												"mountPath": "/pnpm-store"
+											}
+										]
+									}
+								],
+								"containers": [
+									{
+										"name": "prewarm",
+										"image": "ghcr.io/actions/actions-runner:2.329.0",
+										"workingDir": "/tmp",
+										"command": [
+											"sh",
+											"-ec",
+											"mkdir -p /tmp/lock && curl -fsSL --retry 3 https://raw.githubusercontent.com/Hobo-Labs/HoBo/4da35cfd92854b07ea368680fcc19a621faa928f/pnpm-lock.yaml -o /tmp/lock/pnpm-lock.yaml && cd /tmp/lock && pnpm fetch --frozen-lockfile --store-dir /pnpm-store"
+										],
+										"volumeMounts": [
+											{
+												"name": "hobo-pnpm-store",
+												"mountPath": "/pnpm-store"
+											}
+										]
+									}
+								],
+								"volumes": [
+									{
+										"name": "hobo-pnpm-store",
+										"hostPath": {
+											"path": "/var/lib/hobo-ci/pnpm-store",
+											"type": "DirectoryOrCreate"
+										}
+									}
+								]
+							}
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "Status",
+					"apiVersion": "v1",
+					"metadata": {},
+					"status": "Failure",
+					"message": "jobs.batch \"hobo-trunk-store-prewarm-4da35cfd9285\" already exists",
+					"reason": "AlreadyExists",
+					"code": 409,
+					"details": {
+						"name": "hobo-trunk-store-prewarm-4da35cfd9285",
+						"group": "batch",
+						"kind": "jobs"
+					}
+				}
+			}
+		},
+		{
+			"description": "list a scale set's store prewarm Jobs by label",
+			"request": {
+				"method": "GET",
+				"path": "/apis/batch/v1/namespaces/arc-runners/jobs",
+				"query": "labelSelector=hobo.ci%2Fstore-prewarm%3Dhobo-trunk",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "batch/v1",
+					"kind": "JobList",
+					"metadata": {
+						"resourceVersion": "918790"
+					},
+					"items": [
+						{
+							"apiVersion": "batch/v1",
+							"kind": "Job",
+							"metadata": {
+								"name": "hobo-trunk-store-prewarm-4da35cfd9285",
+								"namespace": "arc-runners",
+								"labels": {
+									"hobo.ci/store-prewarm": "hobo-trunk",
+									"hobo.ci/store-prewarm-ref": "4da35cfd92854b07ea368680fcc19a621faa928f"
+								},
+								"uid": "5b9d0f31-0000-4000-8000-000000000201",
+								"resourceVersion": "918777",
+								"creationTimestamp": "2026-11-23T18:00:00Z",
+								"generation": 1
+							},
+							"spec": {
+								"backoffLimit": 2,
+								"template": {
+									"spec": {
+										"restartPolicy": "Never",
+										"securityContext": {
+											"runAsUser": 1000,
+											"runAsGroup": 1000
+										},
+										"initContainers": [
+											{
+												"name": "hobo-cache-owner",
+												"image": "ghcr.io/actions/actions-runner:2.329.0",
+												"command": [
+													"install",
+													"-d",
+													"-o",
+													"1000",
+													"-g",
+													"1000",
+													"/pnpm-store"
+												],
+												"securityContext": {
+													"runAsUser": 0,
+													"runAsGroup": 0
+												},
+												"volumeMounts": [
+													{
+														"name": "hobo-pnpm-store",
+														"mountPath": "/pnpm-store"
+													}
+												]
+											}
+										],
+										"containers": [
+											{
+												"name": "prewarm",
+												"image": "ghcr.io/actions/actions-runner:2.329.0",
+												"workingDir": "/tmp",
+												"command": [
+													"sh",
+													"-ec",
+													"mkdir -p /tmp/lock && curl -fsSL --retry 3 https://raw.githubusercontent.com/Hobo-Labs/HoBo/4da35cfd92854b07ea368680fcc19a621faa928f/pnpm-lock.yaml -o /tmp/lock/pnpm-lock.yaml && cd /tmp/lock && pnpm fetch --frozen-lockfile --store-dir /pnpm-store"
+												],
+												"volumeMounts": [
+													{
+														"name": "hobo-pnpm-store",
+														"mountPath": "/pnpm-store"
+													}
+												]
+											}
+										],
+										"volumes": [
+											{
+												"name": "hobo-pnpm-store",
+												"hostPath": {
+													"path": "/var/lib/hobo-ci/pnpm-store",
+													"type": "DirectoryOrCreate"
+												}
+											}
+										]
+									}
+								}
+							},
+							"status": {
+								"startTime": "2026-11-23T18:00:02Z",
+								"completionTime": "2026-11-23T18:06:41Z",
+								"succeeded": 1,
+								"ready": 0,
+								"terminating": 0,
+								"uncountedTerminatedPods": {},
+								"conditions": [
+									{
+										"type": "SuccessCriteriaMet",
+										"status": "True",
+										"lastProbeTime": "2026-11-23T18:06:41Z",
+										"lastTransitionTime": "2026-11-23T18:06:41Z"
+									},
+									{
+										"type": "Complete",
+										"status": "True",
+										"lastProbeTime": "2026-11-23T18:06:41Z",
+										"lastTransitionTime": "2026-11-23T18:06:41Z"
+									}
+								]
+							}
+						}
+					]
+				}
+			}
+		}
+	]
+}

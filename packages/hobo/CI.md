@@ -263,6 +263,77 @@ JSON output uses HoBo's envelope;
 `--format json` and `-F json` are aliases of `--json`. Unsupported filters report
 a usage error rather than silently changing their meaning.
 
+## Inspect and repair the fleet's Hostinger hosts
+
+```sh
+hobo ci fleet status
+hobo ci fleet restart hobo-arc.example.com
+hobo ci fleet start 1201
+```
+
+The self-hosted fleet's machines are Hostinger VPS the owner already bought.
+`hobo ci fleet status` lists the account's machines (id, hostname, state, plan,
+first IPv4, and whether an action is in progress); `--json` carries them as
+`data.fleet`. `restart` and `start` take a machine id or hostname, refuse a
+machine the account does not own or one with an action already in progress,
+and return Hostinger's action id and state as `data.fleetAction`; run
+`status` again to watch the machine settle. Nothing else is reachable: the
+fleet's transport allows only the machine list and those two power actions,
+so purchase, setup, recreate, stop and every `/api/billing/v1/` route are
+refused before a request leaves the process (`HOSTINGER_FLEET_ROUTE_REFUSED`).
+
+The Hostinger API token comes from the owner's store session, as
+`owner://HOSTINGER_API_TOKEN`, resolved through the session's credential
+resolver; the CLI reads
+no token from its environment, and no output, error included, carries the
+token or a store reference. Without an established session, or with no such
+entry in the store, the command refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`: call HoBo MCP's `choose_secret_store`
+for the project, then ask again. An agent runs it through HoBo MCP as the `ci`
+tool with `args: ["fleet", "status"]` (or `["fleet", "restart", "<vm>"]`) and
+the project directory as `cwd`. The verb manages machines only; it does not
+register runners or the `hobo-arc` scale set on them.
+
+## Give the fleet's ARC pods node caches
+
+```sh
+hobo ci fleet caches --plan
+hobo ci fleet caches --apply --prewarm 4da35cfd92854b07ea368680fcc19a621faa928f
+hobo ci fleet caches --status --scale-set hobo-trunk
+```
+
+ARC runner pods start with an empty pnpm store and image cache. `hobo ci fleet
+caches` patches each `AutoscalingRunnerSet` so its pods mount the node's
+`/var/lib/hobo-ci/pnpm-store` and `/var/lib/hobo-ci/images` and name them in
+`HOBO_CI_PNPM_STORE_DIR` and `HOBO_CI_IMAGE_CACHE_DIR`, and with
+`--prewarm <sha>` creates a Job that fills the node store from that commit's
+lockfile. `--plan` (the default) shows the JSON patch and the Job without
+sending them; `--apply` sends them and is idempotent; `--status` reports
+whether each scale set has the caches mounted and whether its newest prewarm
+Job succeeded. `--json` carries the `CiFleetCaches` record as
+`data.fleetCaches`.
+
+The cluster is the kubernetes pool with a scale set in `.hobo/ci.json`'s
+default environment (`hostinger-arc`, namespace `arc-runners`); `--cluster
+<pool>` picks one when several exist, `--namespace` overrides the namespace,
+and `--scale-set <name>` (repeatable) narrows the default of every scale set
+in it. The verb reaches the API server directly over HTTPS with the pool's
+kubeconfig, which the owner keeps in their store under the pool's
+`connectionRef` upper-cased with `_KUBECONFIG` appended:
+`owner://HOSTINGER_ARC_KUBECONFIG`, and from nowhere else. It verifies the server against the kubeconfig's
+`certificate-authority-data` and authenticates with its `token` or inline
+client certificate; it reads no kubeconfig file and refuses exec plugins,
+file paths and skipped TLS verification
+(`HOBO_CI_FLEET_KUBECONFIG_UNSUPPORTED`). Without an established owner store
+session or that entry it refuses with `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`
+before any network call. The client can only list, read and JSON-patch
+`autoscalingrunnersets.actions.github.com` and create and list `jobs.batch`;
+anything else is refused before a request leaves the process. No output,
+error included, carries the kubeconfig, its token or its key. An agent runs it
+through HoBo MCP as the `ci` tool with
+`args: ["fleet", "caches", "--apply", "--prewarm", "<sha>"]` and the project
+directory as `cwd`.
+
 ## Move workflow jobs to the fleet
 
 ```sh
@@ -450,7 +521,7 @@ hobo ci connect boat --org Hobo-Labs --launch           # runs `boat ci connect`
 Secrets never pass through HoBo:
 
 - The config holds **references only**. `auth.secretRef` must be `github-secret:NAME` or `env:NAME`. The JSON schema, the CUE model (`#RunnerIntegration`) and the loader reject anything else, including credential-shaped or high-entropy strings in any field, and their errors never echo the value.
-- The CLI never prompts for, reads or prints a credential. For `secret-ref` you store the value yourself (`gh secret set NAME` prompts).
+- The CLI never prompts for, reads or prints a credential. A `secret-ref` only names where the provider's integration reads the value; HoBo creates no such entry, and agents never store one ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)).
 - `--launch` runs the provider CLI with credential-like environment variables (`*TOKEN*`, `*SECRET*`, `*API_KEY*` …) removed, and output is redacted.
 - `packages/hobo/test/ci-connect-leak.test.ts` generates synthetic, real-looking tokens at runtime (never written to disk) and asserts that none appear in CLI output, progress or the written config.
 
@@ -472,44 +543,45 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… --dry-run
 would send, and sends none. A real run reads `VERCEL_TOKEN` from the bound
 secret store as the dedicated deploy reader and deploys to **preview** unless
 `--target production` is given. Production
-chooses the config-service binding, which asks for the store's origin and two
-ids; `hobo ci deploy` reads them, and the team, from the committed
-`deploy/secret-store.binding.json`:
+chooses the config-service binding. Its coordinates and the team live only in
+the owner's own secret store (`HOBO_CI_SECRET_STORE_BINDING`); `hobo ci deploy`
+reads them through the owner store session (HoBo MCP's `choose_secret_store`)
+and fails closed with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` without one.
+They never become Vercel variables: `--build prebuilt` bundles the relay's
+coordinates into the build only (a `--dry-run` plans without a session). A
+production deploy with `--build git` carries no coordinates and could never
+qualify, so it is refused, in a dry run too, with
+`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`:
 
 ```sh
 hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
-  --target production --provision --wait --dry-run
+  --target production --build prebuilt --provision --wait --dry-run
 ```
 
 | Option | Means |
 |---|---|
 | `--repo`, `--project` | Override the Yard's `repository` and `project` (a fork, a scratch project) |
-| `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or an `INFISICAL_*` name other than the five coordinates |
+| `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or a store coordinate (any `INFISICAL_*` name, `*_PROJECT_ID`, `*_TEAM_ID`, `*_ORG_ID`, `*_IDENTITY_ID`, OIDC, subject or binding name) |
 | `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
 | `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
-| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration. `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
+| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration; preview only, since production needs the bundled store binding (`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`). `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
 
-Nobody runs this against production by hand: the
-[relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
-every merge to `main` that changes the relay, reading the Vercel token from the
-relay's secret store with GitHub OIDC. Production's config-service inputs
-(`INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_ID`) and the
-team come from `deploy/secret-store.binding.json` in the relay's project; a
-`--set` still overrides one. See
+Production deploys only through `hobo cd` with the owner's store session (the
+[relay bootstrap](../ci-vercel/BOOTSTRAP.md) gives the two commands). The
+[relay deploy workflow](../../.github/workflows/relay-deploy.yml) holds no
+store coordinates, so a push deploys nothing and its gate posts that notice.
+See
 [`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
 and [the README](README.md) for the plan record and its gates. It has been
-exercised against fakes only. The committed binding has neither a
-`deployProjectId` nor a `deployCredentialIdentityId` yet: the owner must create
-protected GitHub environments for the reader and writer, create the
-`hobo-ci-deploy` project and exactly-Viewer `hobo-ci-deploy-reader` identity,
-deposit `VERCEL_TOKEN` at its root, and re-run `connect` to record the complete
-binding. Until then the workflow gate fails closed instead of reporting a
-successful deployment skip. Read-only hosting evidence can still inspect the
-legacy relay coordinates without admitting the binding to deployment.
-Token-free `--dry-run` planning can read the legacy coordinates through the
-confined repair parser; every real deploy uses strict parsing and refuses
-before OIDC sign-in. The ordered operator sequence is
+exercised against fakes only. A binding without a `deployProjectId` and a
+`deployCredentialIdentityId` cannot deploy: the owner must create protected
+GitHub environments for the reader and writer, create the `hobo-ci-deploy`
+project and exactly-Viewer `hobo-ci-deploy-reader` identity, deposit
+`VERCEL_TOKEN` at its root, and re-run `connect` to record the complete binding
+in their store. Token-free `--dry-run` planning can read a legacy binding
+through the confined repair parser; every real deploy uses strict parsing and
+refuses before OIDC sign-in. The ordered operator sequence is
 [the cutover runbook](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 This channel is **built, not proven**: after repair, link a successful
 `relay-deploy` run whose preview step records the token read as the dedicated
@@ -544,9 +616,10 @@ hobo claim finalize secret-store
 | `--team`, `--vercel-team-slug`, `--vercel-project-id` | The Vercel team and project the relay's identity trusts (OIDC issuer, subject and pinned `owner_id`/`project_id`) |
 | `--allow-designed` | Route to a store whose relay binding is designed only (the Cloudflare Worker, an auth.md store; for the hosted relay the Worker is an experiment, not its store) |
 
-`plan` contacts nothing but the `--auth-md` candidates. `provision` writes
-`deploy/secret-store.binding.json` (coordinates only) when the relay can read
-the store, attaches the claim bundle to the deployment's claim journal, and
+`plan` contacts nothing but the `--auth-md` candidates. `provision` writes the
+binding (coordinates only) to the owner's own secret store as
+`HOBO_CI_SECRET_STORE_BINDING` through the owner store session when the relay
+can read the store, never to the repository, and never shows it, attaches the claim bundle to the deployment's claim journal, and
 prints the owner's next steps; it never prints a claim link, a password or a
 token. `INFISICAL_TOKEN` (from the owner's own `infisical login`) selects the
 attach-only offer for an Infisical Cloud organization the owner already has.
@@ -649,9 +722,11 @@ scope response fails closed, and every issued session is revoked. The
 deploy-token read itself never signs in as the writer.
 
 The GitHub App's converted credentials never touch a person or this CLI.
-Provision GitHub's one-time manifest code as the `HOBO_APP_MANIFEST_CODE`
-Actions secret, then dispatch `app-credentials.yml` with only the relay origin
-and owner id. Its call to the `app-credentials` job in `relay-deploy.yml`
+`app-credentials.yml` reads GitHub's one-time manifest code from the
+`HOBO_APP_MANIFEST_CODE` Actions secret and takes only the relay origin and
+owner id as dispatch inputs; agents never provision that secret
+([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)), and
+`hobo ci app create` below converts the code without one. The workflow's call to the `app-credentials` job in `relay-deploy.yml`
 passes the code as a required reusable-workflow secret, refuses a missing or
 empty value, masks it, and runs `hobo ci app deposit`, which converts, verifies
 the App and writes the credentials as `hobo-ci-writer` over GitHub OIDC. The
@@ -678,15 +753,16 @@ and stores its credentials straight in the relay's config service, Infisical
 (ADR-0179, phase 3). Nothing is written to disk or printed.
 
 ```sh
-export INFISICAL_PROJECT_ID=<project id> INFISICAL_ENVIRONMENT=prod \
-  INFISICAL_SECRET_PATH=/hobo-ci-relay INFISICAL_UNIVERSAL_AUTH_CLIENT_ID=<id>
-read -rs INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET && export INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET
 hobo ci app create --relay https://<relay-host> --owner-id "$(gh api user --jq .id)"
 ```
 
-1. It signs in to Infisical first, with Universal Auth credentials from the
-   environment (`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `_SECRET`, the names the
-   Infisical CLI reads) or an access token in `INFISICAL_TOKEN`, and lists the
+1. It signs in to Infisical first. The command reads the folder's coordinates
+   (`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`) and
+   a sign-in (`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `_SECRET`, or
+   `INFISICAL_TOKEN`) from its process environment, the names the Infisical CLI
+   reads. Agents never set or store these
+   ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)); the owner
+   runs the command from their own Infisical session. It then lists the
    folder's names. If App credentials are already there it stops unless `--yes`.
 2. It serves a page on `127.0.0.1` and opens it (the URL is also printed). The
    page posts the manifest (`createGithubAppManifest`, the reviewed permissions

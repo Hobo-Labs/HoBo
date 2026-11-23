@@ -5,6 +5,7 @@ import { validateEvent } from "@polar-sh/sdk/webhooks";
 import express from "express";
 import { env, type MiddlewareConfigFn, type PrismaClient } from "wasp/server";
 import type { PaymentsWebhook } from "wasp/server/api";
+import * as z from "zod";
 import { assertUnreachable } from "../../shared/utils";
 import { UnhandledWebhookEventError } from "../errors";
 import { getPaymentPlanIdByPaymentProcessorPlanId } from "../paymentProcessorPlans";
@@ -15,9 +16,6 @@ import {
 } from "../plans";
 import { updateUserCredits, updateUserSubscription } from "../user";
 
-/**
- * Polar requires a raw request to construct events successfully.
- */
 export const polarMiddlewareConfigFn: MiddlewareConfigFn = (
   middlewareConfig,
 ) => {
@@ -30,6 +28,12 @@ export const polarMiddlewareConfigFn: MiddlewareConfigFn = (
   return middlewareConfig;
 };
 
+const polarWebhookHeadersSchema = z.object({
+  "webhook-id": z.string(),
+  "webhook-timestamp": z.string(),
+  "webhook-signature": z.string(),
+});
+
 export const polarWebhook: PaymentsWebhook = async (
   request,
   response,
@@ -39,8 +43,7 @@ export const polarWebhook: PaymentsWebhook = async (
   try {
     const event = validateEvent(
       request.body,
-      // SAFETY: assertion to `request.headers as Record<string, string>` is required at this boundary.
-      request.headers as Record<string, string>,
+      polarWebhookHeadersSchema.parse(request.headers),
       env.POLAR_WEBHOOK_SECRET,
     );
 
@@ -57,14 +60,12 @@ export const polarWebhook: PaymentsWebhook = async (
     return response.status(204).send();
   } catch (error) {
     if (error instanceof UnhandledWebhookEventError) {
-      // In development, it is likely that we will receive events that we are not handling.
       if (process.env.NODE_ENV === "development") {
         console.info("Unhandled Polar webhook event in development: ", error);
       } else if (process.env.NODE_ENV === "production") {
         console.error("Unhandled Polar webhook event in production: ", error);
       }
 
-      // We must return a 2XX status code, otherwise Polar will keep retrying the event.
       return response.status(200).json({ error: error.message });
     }
 

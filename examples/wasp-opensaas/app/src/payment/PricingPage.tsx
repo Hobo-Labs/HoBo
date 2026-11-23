@@ -87,7 +87,7 @@ export function PricingPage() {
       } else {
         setErrorMessage("Error processing payment. Please try again later.");
       }
-      setIsPaymentLoading(false); // We only set this to false here and not in the try block because we redirect to the checkout url within the same window
+      setIsPaymentLoading(false);
     }
   }
 

@@ -12,6 +12,9 @@ migration logic.
 
 One SQLite database file (partition) is owned by one active storage owner at a
 time. Scale by partitions, not multi-writer WAL over shared network filesystems.
+`createNodeSqliteDriver` requires an actual persistent SQLite file and rejects
+memory databases and temporary paths, including SQLite memory URIs. Use
+`createMemoryNodeSqliteDriver` explicitly for ephemeral tests and views.
 
 ## Schema version
 

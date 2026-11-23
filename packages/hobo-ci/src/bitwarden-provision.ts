@@ -15,7 +15,6 @@ import {
 	symmetricKey,
 	wipe,
 } from "./bitwarden-crypto.js";
-import { OWNER_CREDENTIAL_LINE_PREFIX } from "./hand-off-store.js";
 import { type HttpsOrigin, SettingParseError } from "./parsed-values.js";
 
 /**
@@ -90,8 +89,6 @@ export interface BitwardenEndpoints {
 	readonly api: string;
 	readonly identity: string;
 	readonly vault: string;
-	/** Whether this is a self-hosted server (`BITWARDEN_SERVER_URL`). */
-	readonly selfHosted: boolean;
 }
 
 export function bitwardenEndpoints(
@@ -103,9 +100,8 @@ export function bitwardenEndpoints(
 			api: `${serverUrl}/api`,
 			identity: `${serverUrl}/identity`,
 			vault: serverUrl,
-			selfHosted: true,
 		};
-	return { ...SERVERS[region], selfHosted: false };
+	return SERVERS[region];
 }
 
 /** Where the owner copies their personal API key. */
@@ -123,21 +119,10 @@ export type BitwardenApiKey = {
 	readonly clientId: string;
 	readonly clientSecret: string;
 } & { readonly [apiKeyBrand]: true };
-/**
- * The API key as the agent session's egress proxy holds it: the owner saved
- * it in the session's credential form as a username (client id) and password
- * (client secret), and the proxy sends it as HTTP Basic client
- * authentication (RFC 6749 §2.3.1) on the way to Bitwarden's identity
- * server. This run never holds it.
- */
-export type BitwardenProxySignIn = { readonly kind: "egress-proxy" };
-/** How a run signs in to the Bitwarden API. */
-export type BitwardenSignInKey = BitwardenApiKey | BitwardenProxySignIn;
-
 /** Sign in with a personal API key (client credentials); this device becomes known. */
 export function bitwardenSignIn(
 	endpoints: BitwardenEndpoints,
-	key: BitwardenSignInKey,
+	key: BitwardenApiKey,
 	deviceId: BitwardenDeviceId,
 	fetchImpl: typeof fetch,
 ): Promise<Response> {
@@ -148,10 +133,8 @@ export function bitwardenSignIn(
 		deviceIdentifier: deviceId,
 		deviceName: "HoBo",
 	});
-	if (key.kind === "api-key") {
-		form.set("client_id", key.clientId);
-		form.set("client_secret", key.clientSecret);
-	}
+	form.set("client_id", key.clientId);
+	form.set("client_secret", key.clientSecret);
 	return fetchImpl(`${endpoints.identity}/connect/token`, {
 		method: "POST",
 		headers: {
@@ -224,7 +207,7 @@ export function parseBitwardenServer(
 export interface BitwardenProvisionOptions {
 	readonly family: "ci" | "cd";
 	readonly endpoints: BitwardenEndpoints;
-	readonly apiKey: BitwardenSignInKey;
+	readonly apiKey: BitwardenApiKey;
 	readonly deviceId: BitwardenDeviceId;
 	readonly organizationId?: BitwardenId;
 	readonly projectId?: BitwardenId;
@@ -387,45 +370,23 @@ export async function provisionBitwardenAccessToken(
 	let requestKey: Buffer | undefined;
 	try {
 		// 1. Sign in with the personal API key: this device becomes known.
-		// Through the egress proxy, the owner may not have saved it yet: say
-		// what to give, once, and wait for it in this run.
 		const sleep =
 			options.sleep ??
 			((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 		const now = options.now ?? Date.now;
 		const timeoutMs = options.timeoutMs ?? 15 * 60_000;
-		const identityHost = new URL(server.identity).host;
-		let signIn = await bitwardenSignIn(
+		const signIn = await bitwardenSignIn(
 			server,
 			options.apiKey,
 			options.deviceId,
 			options.fetch,
 		);
-		if (!signIn.ok && options.apiKey.kind === "egress-proxy") {
-			options.emit(
-				`${OWNER_CREDENTIAL_LINE_PREFIX} host=${identityHost} guide=${bitwardenApiKeyPage(server)} — in Bitwarden: Account settings → Security → Keys → View API key. Give it to the agent's session in its credential form for ${identityHost} as a username and password: username = client_id, password = client_secret; never in chat. This run waits ${Math.round(timeoutMs / 60_000)} minutes and continues on its own.`,
-			);
-			const deadline = now() + timeoutMs;
-			while (!signIn.ok && now() < deadline) {
-				await sleep(options.intervalMs ?? 10_000);
-				signIn = await bitwardenSignIn(
-					server,
-					options.apiKey,
-					options.deviceId,
-					options.fetch,
-				);
-			}
-		}
 		if (!signIn.ok)
 			throw new ProvisionRefusal(
 				`HOBO_${fam}_BITWARDEN_API_KEY_REJECTED`,
-				options.apiKey.kind === "egress-proxy"
-					? "Bitwarden did not accept a personal API key from the session's credential form in time."
-					: `Bitwarden refused the personal API key (HTTP ${signIn.status}).`,
+				`Bitwarden refused the personal API key (HTTP ${signIn.status}).`,
 				[
-					options.apiKey.kind === "egress-proxy"
-						? `Save your personal API key from ${bitwardenApiKeyPage(server)} in the agent session's credential form for ${identityHost} (username = client_id, password = client_secret), then run again.`
-						: `Enter your personal API key again (${bitwardenApiKeyPage(server)}: Account settings → Security → Keys → View API key) when the run asks for it.`,
+					`Enter your personal API key again (${bitwardenApiKeyPage(server)}: Account settings → Security → Keys → View API key) when the run asks for it.`,
 				],
 			);
 		const bearer = tokenResponse.parse(await signIn.json()).access_token;

@@ -104,7 +104,7 @@ export function memoryConnector(
 			if (options.connected === false)
 				return {
 					connected: false,
-					reason: "deploy/secret-store.binding.json is missing",
+					reason: "the owner's secret store holds no relay binding",
 					nextStep:
 						"Connect Infisical with OIDC Auth (the hobo-deploy skill walks through it), then capture again.",
 				};

@@ -59,18 +59,6 @@ import {
 } from "@hobo/cloud";
 import type { PrincipalRef } from "@hobo/core";
 
-// The Yard-client seam (S2-08): the single in-process call path the four cloud
-// verbs (login/plan/up/down) share. The CLI dispatch layer is the source of
-// truth for the CLI<->Yard boundary; MCP parity (S3-01) reuses this same seam.
-//
-// `src/` stays adapter-free: the concrete EventStore/ActorHost/Executor/
-// IacProvider and provider registry are INJECTED via YardRuntime (tests populate
-// them from @hobo/runtime-local + @hobo/provider-cloudflare + an in-memory
-// IacProvider). Un-injected, the cloud verbs fall back to their shell stubs.
-
-// A dev/mocked-lane session. The gateway accepts any attributable (non-system,
-// non-empty-id) principal (gateway.authorize), so a fixture principal suffices
-// for the mocked lane; @hobo/identity SVID brokering is a later slice.
 export interface YardSession {
 	readonly tenant: string;
 	readonly principal: PrincipalRef;
@@ -78,8 +66,6 @@ export interface YardSession {
 	readonly issuedAt: string;
 }
 
-// The env-specific runtime the Yard drives. Every field is sourced structurally
-// from @hobo/cloud re-exports so `src/` never imports an infra adapter directly.
 export interface YardRuntime {
 	readonly store: GatewayDeps["store"];
 	readonly actorHost: GatewayDeps["actorHost"];
@@ -172,9 +158,7 @@ export interface UpRealized {
 	readonly plan: DeploymentPlan;
 	readonly provisioned: string[];
 	readonly progress: ProgressEvent[];
-	/** The what-if this `up` started from (orchestrator lane). */
 	readonly changes?: DeploymentChangeSet;
-	/** Undeclared resources `complete` mode destroyed. */
 	readonly pruned?: string[];
 	readonly pendingOperations?: OrchestratorResult["pendingOperations"];
 	readonly transitionBlock?: OrchestratorResult["transitionBlock"];
@@ -183,46 +167,11 @@ export interface UpRealized {
 export type UpResult = UpRejected | UpRealized;
 
 export interface DownResult {
-	// CLI-facing teardown status: "destroyed" when the compensation/destroy path
-	// tore everything down, "needs-human" when a destroy failed mid-rollback.
 	readonly status: "destroyed" | "needs-human";
 	readonly deploymentId: string;
 	readonly destroyed: string[];
 	readonly progress: ProgressEvent[];
 }
-
-// ── Desired-state delivery (ADR-0182 D13) ───────────────────────────────────
-// With `runtime.delivery` wired, `hobo up` declares desired state instead of
-// driving the orchestrator imperatively: it records LOCAL_BUILD Freight,
-// promotes it into the deployment Camp, and an in-process conductor converges
-// it with bounded `reconcileOnce` passes. `down` is a teardown Delta through
-// the same gate. UpResult/DownResult are unchanged; CD detail travels in the
-// DeliveryReceipt beside them.
-//
-// Runbook (handed to WP21 for packages/hobo/CD.md):
-// - `HOBO_FREIGHT_STALE` / `HOBO_FREIGHT_FOREIGN`: `.hobo/freight.json` was
-//   built for another declaration or project. Run `hobo build`, then `hobo up`.
-// - `HOBO_FREIGHT_INVALID`: delete `.hobo/freight.json`, run `hobo build`.
-// - `HOBO_FREIGHT_ARTIFACT_MISSING`: the configured artifact store lacks the
-//   built bytes (store changed or swept). Run `hobo build` against it.
-// - `HOBO_FREIGHT_DECLARATION_MISMATCH`: the artifact store does not address
-//   bytes by sha256; fix the store configuration.
-// - `HOBO_FREIGHT_UNKNOWN`: `--to` names nothing recorded; list Freight with
-//   `hobo deploy freight list`.
-// - `HOBO_ROLLBACK_UNAVAILABLE`: the Camp has no predecessor Set (first deploy,
-//   or torn down); pin a revision with `--to`.
-// - `HOBO_PROMOTION_REFUSED`: the gate, lineage or authorization refused; the
-//   remediations carry the CD reasons verbatim.
-// - `HOBO_PROMOTION_HELD`: approval or a closed change window parks the
-//   promotion; `hobo deploy status` shows it, rerun `hobo up` afterwards.
-// - `HOBO_UP_INCOMPLETE` with status `needs-human`: the reconciler reported
-//   BLOCKED; its reasons are in the `deployment.ReconcileBlocked` progress
-//   line. With status `waiting`: convergence outlived the bounded passes
-//   (`YardDelivery.maxPasses`, default 16); rerun `hobo up` (idempotent) or
-//   let `hobo serve cd` finish it.
-// - `HOBO_DELIVERY_UNAVAILABLE`: `--to`/`--rollback` on a lane without CD.
-// Metrics: `hobo.cli.delivery.{outcome,passes,duration}` by verb and outcome;
-// a failing TelemetrySink shows as a `telemetry.Unavailable` progress line.
 
 // public-contract: where `hobo build` writes the hobo.freight-manifest/v1 document.
 export const FREIGHT_FILE = ".hobo/freight.json";
@@ -259,13 +208,11 @@ export const DELIVERY_METRIC = Object.freeze({
 	duration: "hobo.cli.delivery.duration",
 } as const);
 
-/** `@hobo/cd/freight` `writeFreightManifest` / `parseFreightManifest`, injected (WP18 binds them). */
 export interface FreightManifestCodec {
 	write(manifest: FreightManifestRecord): Uint8Array;
 	parse(bytes: Uint8Array): Outcome<FreightManifestRecord>;
 }
 
-/** The slice of the composed `ContinuousDelivery` facade `hobo up`/`down`/`build` drive. */
 export type DeliveryPorts = Pick<
 	ContinuousDelivery,
 	"freight" | "artifacts" | "desired" | "promotions" | "createReconciler"
@@ -274,17 +221,14 @@ export type DeliveryPorts = Pick<
 export interface YardDelivery {
 	readonly cd: DeliveryPorts;
 	readonly freightManifest: FreightManifestCodec;
-	/** Deployment Camp for a project; defaults to the deployment id. */
 	readonly campFor?: (deploymentId: string) => string;
 	readonly telemetry?: TelemetrySink;
-	/** Injected clock (epoch ms); defaults to the wall clock at this edge. */
 	readonly now?: () => number;
 	readonly maxPasses?: number;
 }
 
 export type DeliveryMode = "up" | "to" | "rollback" | "anonymous" | "down";
 
-/** What `up`/`down` delivered, beside the unchanged UpResult/DownResult. */
 export type DeliveryReceipt = Readonly<{
 	campId: string;
 	mode: DeliveryMode;
@@ -301,13 +245,10 @@ export interface DeliverOptions {
 	readonly deploymentId: string;
 	readonly session: YardSession;
 	readonly config?: DeployConfig | undefined;
-	/** Bytes of `.hobo/freight.json` when `hobo build` wrote one. */
 	readonly freightManifest?: Uint8Array | undefined;
-	/** `--to <freight id | alias>`. */
 	readonly to?: string | undefined;
 	readonly rollback?: boolean | undefined;
 	readonly anonymous?: boolean | undefined;
-	/** Streamed while the conductor loop runs. */
 	readonly onProgress?: ((event: ProgressEvent) => void) | undefined;
 }
 
@@ -336,12 +277,10 @@ export interface YardClient {
 		bindle: ManifestV1,
 		options: { deploymentId: string; session: YardSession },
 	) => Promise<DownResult>;
-	/** `up` with its DeliveryReceipt (present when delivery is wired). */
 	readonly deliver: (
 		bindle: ManifestV1,
 		options: DeliverOptions,
 	) => Promise<Readonly<{ result: UpResult; receipt?: DeliveryReceipt }>>;
-	/** `down` with its DeliveryReceipt (present when delivery is wired). */
 	readonly teardown: (
 		bindle: ManifestV1,
 		options: Readonly<{
@@ -352,7 +291,6 @@ export interface YardClient {
 	) => Promise<Readonly<{ result: DownResult; receipt?: DeliveryReceipt }>>;
 }
 
-/** The config the gateway records on `deployment.Requested` and plans with. */
 type GatewayDeployConfig = NonNullable<Parameters<typeof deploy>[1]["config"]>;
 
 function progressFrom(events: OrchestratorResult["events"]): ProgressEvent[] {
@@ -603,9 +541,7 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 						remediations: [],
 					},
 				};
-			// D13: without budgeted hosting, `up` declares desired state.
 			if (!requiresHosting && driver) return driver.up(bindle, options);
-			// Revision selection exists only on desired state; never ignore it.
 			if (options.to !== undefined || options.rollback) {
 				const refused = refusal(
 					DELIVERY_REFUSAL.deliveryUnavailable,
@@ -629,9 +565,6 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 				actor: session.principal,
 				correlationId: `deploy:${deploymentId}`,
 			};
-			// A retryable error does not establish whether apply took effect. Plan
-			// around preexisting availability information only; do not infer an
-			// outage from an apply failure and silently create elsewhere.
 			const { unavailableProviders: initiallyDown, ...baseConfig } =
 				config ?? {};
 			const unavailable = new Set<string>(initiallyDown ?? []);
@@ -735,7 +668,6 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					}),
 				};
 			}
-			// D13: `down` is a teardown Delta through the same gate.
 			if (driver) return driver.down(options);
 			const planResult = pureplan(bindle, deploymentId);
 			if (!planResult.ok) {
@@ -782,8 +714,6 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 	return client;
 }
 
-// ── Desired-state driver ────────────────────────────────────────────────────
-
 type DriverUp = Readonly<{ result: UpResult; receipt: DeliveryReceipt }>;
 type DriverDown = Readonly<{ result: DownResult; receipt: DeliveryReceipt }>;
 
@@ -811,9 +741,7 @@ type Converged = Readonly<{
 	set?: SetRecord | undefined;
 	observation?: ReconcileObservationRecord | undefined;
 	promotion?: PromotionRecord | undefined;
-	/** The promotion parked before applying (approval or window). */
 	held?: PromotionRecord;
-	/** The promotion ended without applying. */
 	failed?: PromotionRecord;
 }>;
 
@@ -943,7 +871,6 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 		try {
 			await delivery.telemetry.metrics(points);
 		} catch (error) {
-			// Telemetry never decides a delivery, but its loss is visible.
 			emit({
 				type: "telemetry.Unavailable",
 				detail: error instanceof Error ? error.message : String(error),
@@ -1021,8 +948,6 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				labels,
 			});
 		}
-		// The declaration is stored under its own hash so promotion can resolve
-		// the Freight on any Camp, including `--to` an earlier revision.
 		const stored = await cd.artifacts.put(
 			encoder.encode(serializeManifest(bindle)),
 			{
@@ -1161,7 +1086,6 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				(resource) => !declared.has(resource.name),
 			);
 		} catch {
-			// Let promotion's normal declaration validation reject corrupt data.
 			return true;
 		}
 	}
@@ -1277,8 +1201,6 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 					type: "freight.Recorded",
 					detail: `${freight.freightId} (${freight.alias}) ${FreightOrigin[freight.origin]}`,
 				});
-				// Re-running `up` on an estate already declaring this Freight only
-				// converges: no new promotion, Set or Freight (idempotent).
 				const alreadyDesired =
 					before !== undefined &&
 					before.freightId === freight.freightId &&
@@ -1419,7 +1341,6 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				return finish(nothing(), { passes: 0, setId: before.setId });
 
 			const baseline = resourceNames(status);
-			// Dependents tear down before their dependencies.
 			const order = tornDown
 				? baseline
 				: [...(await planOf(before)).dependencyOrder].reverse();
@@ -1498,7 +1419,6 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 	};
 }
 
-// Brands are minted only from ids the CD ports returned or the caller named.
 export function campIdOf(value: string): CampId {
 	// SAFETY: a Camp id is an opaque string; the brand marks where it came from.
 	return value as CampId;

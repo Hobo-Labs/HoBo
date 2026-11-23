@@ -3,22 +3,17 @@ package hobo
 // The package's fixture gate accepts the git-deployment plan record.
 #VercelGitDeployment: #VercelGitDeploymentPlan
 
-// The config service's coordinates: where a deployment signs in and what it
-// reads, never what it signs in with. Plain configuration, so a plan may carry
-// them (CONFIG_SERVICE_COORDINATES in src/vercel-env-policy.ts).
-#ConfigServiceCoordinate: "INFISICAL_ENVIRONMENT" | "INFISICAL_IDENTITY_ID" | "INFISICAL_PROJECT_ID" | "INFISICAL_SECRET_PATH" | "INFISICAL_SITE_URL"
-
-// A name that says it holds a credential, that a storage integration owns, or
-// that belongs to the config service without being one of its coordinates.
-// The plan must never carry one as a setting (src/vercel-env-policy.ts refuses
-// it before the record is formed; this is the same rule, restated on the wire).
 #PlainSettingName: =~"^[A-Za-z_][A-Za-z0-9_]{0,255}$" &
 	!~"(?i)(TOKEN|SECRET|PASSWORD|PRIVATE|CREDENTIAL|APIKEY)" &
 	!~"(?i)(^|_)(PASSWD|PASSPHRASE|PWD|CREDS|KEYS?|AUTH|AUTHORIZATION|BEARER|COOKIE|DSN|SIGNATURE|SALT|CERT|PEM)(_|$)" &
 	!~"(?i)^(DATABASE|POSTGRES|PG[A-Z]*|REDIS|MONGO[A-Z]*|MYSQL|KV|BLOB|EDGE_CONFIG|TURSO|LIBSQL|UPSTASH|VALKEY|INFISICAL)(_|$)" &
-	!~"^ConnectionStrings__"
+	!~"^ConnectionStrings__" &
+	!~"(?i)(^|_)(PROJECT|TEAM|ORG|IDENTITY|WORKSPACE|VAULT)_IDS?$" &
+	!~"(?i)(^|_)OIDC(_|$)" &
+	!~"(?i)(^|_)SUBJECT$" &
+	!~"(?i)(^|_)(STORE_)?BINDING$"
 
-#NonSecretSettingName: #ConfigServiceCoordinate | #PlainSettingName
+#NonSecretSettingName: #PlainSettingName
 
 // A value with credentials in a URL, a bearer header or a private key is not
 // configuration.
