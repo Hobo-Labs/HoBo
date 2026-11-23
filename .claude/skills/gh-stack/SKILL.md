@@ -3,8 +3,9 @@ name: gh-stack
 description: >
   Manage stacked branches and pull requests with GitHub's official gh-stack CLI extension
   (github/gh-stack). Use for stacked diffs, dependent PRs, branch chains, cascading rebases,
-  stack submit/sync/merge. Prefer non-interactive flags only. For full HoBo SDLC parent protocol
-  (subagents, bottom-up review, squash-merge closeout) also load the sdlc skill.
+  local stack sync. Prefer non-interactive flags only. In HoBo a stack lands as one unit: one PR
+  for the top layer, merged with a merge commit (never squash or rebase-merge). For the full SDLC
+  parent protocol (subagents, combined-diff review, closeout) also load the sdlc skill.
 metadata:
   author: github + hobo
   version: "0.1.0"
@@ -37,16 +38,22 @@ main (trunk)
 
 Bottom = closest to trunk. `up` moves away from trunk; `down` toward it.
 
+In HoBo, layers organize commits and checkins; the stack lands as **one unit**. Open one PR for
+the top layer against `main` (ready for review, not a draft), review its combined diff once,
+and land it with a merge commit. Lower layers are then merged automatically because their
+commits are in `main`. Do not open a PR per layer.
+
 ## Non-interactive rules (never hang)
 
 | Always | Never |
 |---|---|
 | `gh stack init <branches...>` | bare `gh stack init` |
 | `gh stack add <branch>` | bare `gh stack add` |
-| `gh stack submit --auto` (+ `--open` when ready) | `submit` without `--auto` |
+| `gh pr create --base main --head <top-branch>` | `gh stack submit` (opens a PR per layer) |
 | `gh stack view --json` | `view` / `view --short` |
 | `gh stack checkout <pr\|url\|branch\|stack#>` | bare `checkout` |
-| `gh stack merge <pr\|stack#> --yes --squash` | interactive merge / wrong bare `gh pr merge` on stacks |
+| `gh pr merge <top-pr> --merge` | `--squash` / `--rebase` / merging layers one at a time |
+| `git merge origin/main` on pushed layers | `gh stack rebase` / `gh stack sync` on pushed layers, force-push |
 
 If local vs remote stack compositions conflict on checkout: `gh stack unstack --local` then retry checkout.
 
@@ -57,13 +64,13 @@ gh stack init sdlc/feat-01-schema
 # commits on layer...
 gh stack add sdlc/feat-02-impl
 # commits...
-gh stack submit --auto --open
 gh stack view --json
-gh stack sync
-gh stack sync --prune
-gh stack rebase --upstack          # after mid-stack fix
+gh stack sync                      # unpushed local layers only
+gh stack rebase --upstack          # after mid-stack fix, unpushed layers only
 gh stack rebase --continue         # after resolving conflicts
-gh stack merge 42 --yes --squash   # merge through PR #42
+git merge origin/main              # update a pushed layer with trunk
+gh pr create --base main --head sdlc/feat-02-impl   # one PR: the top of the stack
+gh pr merge 42 --merge             # land the whole stack through top PR #42
 gh stack top | bottom | up | down | trunk
 ```
 
@@ -76,7 +83,8 @@ gh stack init layer-a
 git add -p && git commit -m "feat(scope): layer a"
 gh stack add layer-b
 git add -p && git commit -m "feat(scope): layer b"
-gh stack submit --auto --open
+git push -u origin layer-a layer-b
+gh pr create --base main --head layer-b --title "feat(scope): …" --body "…"
 ```
 
 **Fix lower layer while on upper**
@@ -84,9 +92,10 @@ gh stack submit --auto --open
 ```bash
 gh stack checkout layer-a
 # fix + commit
-gh stack rebase --upstack
-gh stack push
 gh stack top
+git merge layer-a                  # pushed layers: merge the fix up
+# unpushed layers only: gh stack rebase --upstack
+git push
 ```
 
 **Parse status**
@@ -108,8 +117,9 @@ gh stack view --json | jq -r '.branches[] | "\(.name) \(.pr.number // "-") \(.pr
 
 ## HoBo integration
 
-In this repo, **parent agents** running the `sdlc` skill own stack topology, bottom-up
-rubber-duck/adversarial review, comment resolution, status-check repair, and per-PR squash-merge.
+In this repo, **parent agents** running the `sdlc` skill own stack topology, the one workstream
+PR, combined-diff rubber-duck/adversarial review, comment resolution, status-check repair, and
+the merge-commit landing of the top PR.
 **Subagents** only commit incrementally on their assigned layer branch. See:
 
 - `.agents/skills/sdlc/SKILL.md`
