@@ -25,6 +25,7 @@ function stringBagFrom(value: JsonObject) {
 	return bag;
 }
 
+// public-contract: version id of the native messaging port contract providers advertise.
 export const MESSAGING_PORT_CONTRACT_VERSION = "hobo.messaging-port/v2";
 
 export type DeliveryGuarantee =

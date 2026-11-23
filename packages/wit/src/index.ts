@@ -20,6 +20,7 @@ const IMPORT_EXPORT_RE = /^\s*(import|export)\s+([^;]+)\s*;/gm;
 const FUNC_RE =
 	/^\s*([\w-]+):\s*(async\s+)?func\s*\(([^)]*)\)\s*(?:->\s*([^;]+))?;/gm;
 
+// public-contract: package name that owns the HoBo WIT definitions.
 export const HOBO_WIT_PACKAGE = "@hobo/wit";
 
 export type StabilityTier =

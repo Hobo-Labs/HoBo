@@ -1,9 +1,14 @@
 import { MESSAGING_PORT_CONTRACT_VERSION } from "@hobo/core";
 
+// public-contract: capability-manifest bundle schema id (registry parity).
 export const MANIFEST_SCHEMA = "hobo.capability-manifest/v1";
+// public-contract: capabilities document schema id.
 export const CAPABILITIES_SCHEMA = "hobo.capabilities/v1";
+// public-contract: auth document schema id.
 export const AUTH_SCHEMA = "hobo.provider-auth/v1";
+// public-contract: cost document schema id.
 export const COST_SCHEMA = "hobo.cost/v1";
+// public-contract: the provider id every published document carries.
 export const KAFKA_PROVIDER_ID = "@hobo/provider-kafka";
 
 export interface PublishedManifestDocuments {
