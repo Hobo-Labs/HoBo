@@ -293,7 +293,7 @@ export function createComposedHoboCli(
 	const ci = createCiCommand({
 		runtime,
 		...(options.ownerSession !== undefined
-			? { fleetCredentials: options.ownerSession.credentials }
+			? { ownerCredentials: options.ownerSession.credentials }
 			: undefined),
 	});
 	const deploy = createDeployCommand({
