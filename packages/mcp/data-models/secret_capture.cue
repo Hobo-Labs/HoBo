@@ -10,7 +10,7 @@ import "strings"
 #Ticket:  string & =~"^cap_[A-Za-z0-9_-]{22}$"
 #Time:    string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,3})?Z$"
 #B64u:    string & =~"^[A-Za-z0-9_-]+$"
-#Ref: string & =~"^(infisical|secref|hobo-writer-session)://[A-Za-z0-9._~/:@-]{1,512}$"
+#Ref: string & =~"^(infisical|secref|hobo-writer-session|handoff)://[A-Za-z0-9._~/:@-]{1,512}$"
 
 #SecretCaptureSpec: close({
 	name:     #Name

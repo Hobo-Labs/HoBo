@@ -293,15 +293,11 @@ function describeReasons(reasons: readonly ReasonRecord[]): string {
 		.join("; ");
 }
 
-/**
- * The relay Yard's declared catalog as a planner provider: the ports its
- * binding rows cover, in its regions, and nothing else. Realized only by the
- * relay's git deployment.
- */
 export function relayYardRegistryProvider(
 	yard: Yard,
-	joinedSecretProjection = false,
+	projectedInto?: Yard,
 ): RegistrableProvider {
+	const joinedSecretProjection = projectedInto !== undefined;
 	const productIds = [
 		...new Set(
 			yard.bindings
@@ -345,7 +341,7 @@ export function relayYardRegistryProvider(
 		offered.push({ port: "secretRef", features: ["access"] });
 	return {
 		id: `yard:${yard.name}`,
-		regions: [...yard.regions],
+		regions: [...(projectedInto ?? yard).regions],
 		capabilities: offered.map(({ port, features }) => ({
 			port,
 			satisfies(request) {
@@ -791,7 +787,7 @@ async function deliverWith(
 	const joined = await loadRelayJoinedYards(input.cwd, input.yard);
 	const registry = createRegistryFromProviders([
 		relayYardRegistryProvider(input.yard),
-		...joined.map((yard) => relayYardRegistryProvider(yard, true)),
+		...joined.map((member) => relayYardRegistryProvider(member, input.yard)),
 	]);
 	let realizer: ReturnType<typeof relayRealizer> | undefined;
 	const suites = input.suites;

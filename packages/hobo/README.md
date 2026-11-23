@@ -444,7 +444,8 @@ currently adopts and verifies a Git-sourced deployment; it does not run this
 deploy command.
 
 Delivery planning also reads declared secret projections from Yards in the
-relay's own Junction, keeping each projection under its source Yard. A declared
+relay's own Junction, keeping each projection under its source Yard and
+offering it in the relay Yard's regions, where the relay reads it. A declared
 Junction is not evidence that provider ownership or connectivity has been
 verified; the changed cross-Yard path still needs that evidence.
 

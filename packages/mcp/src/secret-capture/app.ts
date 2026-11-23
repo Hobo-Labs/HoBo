@@ -291,7 +291,7 @@ function parseFormAnswer(answer: JsonValue | undefined): FormAnswer {
 
 const CLIENT_ID = /^[A-Za-z0-9-]{1,64}$/u;
 const STORE_REF =
-	/^(?:infisical|secref|hobo-writer-session):\/\/[A-Za-z0-9._~/:@-]{1,512}$/u;
+	/^(?:infisical|secref|hobo-writer-session|handoff):\/\/[A-Za-z0-9._~/:@-]{1,512}$/u;
 const MAX_EVENTS = 1000;
 
 function digest(token: string): Buffer {

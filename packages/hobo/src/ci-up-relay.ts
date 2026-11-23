@@ -88,7 +88,7 @@ export function createCiRelayPlanCommand(
 			const joined = await loadRelayJoinedYards(relayDir, relay);
 			const registry = createRegistryFromProviders([
 				relayYardRegistryProvider(relay),
-				...joined.map((yard) => relayYardRegistryProvider(yard, true)),
+				...joined.map((yard) => relayYardRegistryProvider(yard, relay)),
 			]);
 			input.emitProgress(
 				`placing on the relay's Yards: ${[relay, ...joined].map((yard) => yard.name).join(", ")}`,

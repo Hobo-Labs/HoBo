@@ -274,8 +274,9 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 			(member) => member.providerId === "infisical",
 		);
 		if (!configYard) throw new Error("missing joined config Yard");
-		const provider = relayYardRegistryProvider(configYard, true);
+		const provider = relayYardRegistryProvider(configYard, yard);
 		expect(provider.id).toBe("yard:hobo-ci-relay-config");
+		expect(provider.regions).toEqual([...yard.regions]);
 		expect(provider.capabilities.map((entry) => entry.port)).toEqual([
 			"secretRef",
 		]);
@@ -295,7 +296,7 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 					(row) => row.profile !== capability.secretRef.runtimeProjection,
 				),
 			},
-			true,
+			yard,
 		);
 		expect(
 			noProjection.capabilities.some((entry) => entry.port === "secretRef"),
@@ -305,7 +306,7 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 			bindings: [...configYard.bindings, ...yard.bindings],
 		};
 		expect(
-			relayYardRegistryProvider(withOtherBindings, true).capabilities.map(
+			relayYardRegistryProvider(withOtherBindings, yard).capabilities.map(
 				(entry) => entry.port,
 			),
 		).toEqual(["secretRef"]);
