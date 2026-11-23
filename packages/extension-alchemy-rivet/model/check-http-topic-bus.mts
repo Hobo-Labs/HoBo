@@ -9,11 +9,11 @@ import {
 } from "../../../scripts/lib/bounded-tlc.ts";
 
 const configured = process.env.HOBO_TLA_TOOLS;
-if (!configured) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.8.0");
+if (!configured) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.7.4");
 const jar = resolve(configured);
 if (
 	createHash("sha256").update(readFileSync(jar)).digest("hex") !==
-	"7e53aa636dac8a3cb0533f343115c0548e03fc0ce5edc7739becf58d3d0fb84f"
+	"936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
 )
 	throw new Error("TLA+ tool digest does not match the pinned release");
 const root = dirname(fileURLToPath(import.meta.url));
