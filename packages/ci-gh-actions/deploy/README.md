@@ -412,8 +412,10 @@ every box job, ARC pod and GitHub-hosted runner can replay what another already
 built. It is separate from the relay and optional; nothing uses it until
 `.hobo/ci.json` names the server's URL in `turboCache.api` (committed
 configuration, read by `.github/actions/turbo-cache` from the checkout; no
-repository variable carries it), and the repository has the variable
-`TURBO_TEAM` (any slug) and the secret `TURBO_TOKEN` (the token below).
+repository variable carries it), and the workflows find the variable
+`TURBO_TEAM` (any slug) and the secret `TURBO_TOKEN` (the token below). Agents
+never create that variable or secret
+([AGENTS.md](../../../AGENTS.md#repository-rules-for-every-agent)).
 
 ```sh
 docker compose --env-file /abs/path/to/turbo-cache.env \
