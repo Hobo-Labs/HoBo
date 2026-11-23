@@ -36,8 +36,7 @@ function ownerStoreFor(input: {
 		id,
 		chosen: input.chosen,
 		missing: [],
-		canAwaitEgressCredential: false,
-		egressCredentialHost: undefined,
+		handOffSignIn: undefined,
 		opened:
 			input.port === undefined
 				? undefined

@@ -44,8 +44,6 @@ import {
 import type { CommandResult } from "@hobo/cli";
 import {
 	type AppHandOffMode,
-	EGRESS_PROXY_PLACEHOLDER,
-	EGRESS_PROXY_SIGN_IN,
 	type OpenTunnel,
 	type RedirectReceiver,
 	RedirectReceiverError,
@@ -360,13 +358,7 @@ function configServiceFromEnv(
 ): ConfigServiceResolution {
 	let auth: ReturnType<typeof ownerAuthFromEnv>;
 	try {
-		// With the agent's egress proxy signing in (INFISICAL_SIGN_IN), this run
-		// sends a placeholder the proxy replaces with the owner's own token.
-		auth = ownerAuthFromEnv(
-			env.INFISICAL_SIGN_IN === EGRESS_PROXY_SIGN_IN
-				? { INFISICAL_TOKEN: EGRESS_PROXY_PLACEHOLDER }
-				: env,
-		);
+		auth = ownerAuthFromEnv(env);
 	} catch {
 		return {
 			ok: false,
