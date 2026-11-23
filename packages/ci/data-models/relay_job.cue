@@ -2,11 +2,9 @@ package ci
 
 import "list"
 
-// A relay job's input or output name: lower case, as a workflow writes it.
 #RelayJobValueName: string & =~"^[a-z][a-z0-9_-]{0,63}$"
 #RelayJobValue: {name: #RelayJobValueName, value?: string}
 
-// A step's `with:` keys are the action's own, so any case is allowed.
 #RelayJobStepInput: {name: string & =~"^[A-Za-z_][A-Za-z0-9_-]{0,99}$", value?: string}
 #RelayJobStep: {
 	uses?: string
@@ -32,7 +30,6 @@ import "list"
 
 #RelayJobAnnotation: {level: "error" | "warning" | "notice", message: string & !=""}
 
-// A failed answer always says why.
 #RelayJobAnswer: {
 	jobId:  string & !=""
 	planId: string & !=""
@@ -46,7 +43,6 @@ import "list"
 	}
 }
 
-// A request is journaled alone; a decision always carries its answer.
 #RunnerRouteEvent: {
 	accountId: string & !=""
 	atMs:      int & >0
@@ -135,6 +131,4 @@ import "list"
 }
 
 #RelayJobRecord: #RelayJobMessage | #RelayJobAnswer | #RunnerRouteEvent | #MachineAdvert | #ProviderHealthRecord | #RunFact
-// Fixtures under fixtures/relay_job are relay-job records; the package-wide
-// fixtures are #Ci records and are vetted against this definition too.
 #RelayJob: *#RelayJobRecord | #Ci

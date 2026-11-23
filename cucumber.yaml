@@ -7,13 +7,7 @@ default:
   paths:
     - "src/draft/epic-proofs/*/features/**/*.feature"
     - "src/draft/projects/*/features/**/*.feature"
-    # Shipped-package acceptance suites live at the repo root. Listed file by
-    # file on purpose: the other root features/*.feature files are design
-    # specs with no step definitions yet, and a glob would fail the lane.
     - "features/control-yard-core-loop.feature"
-    # The HoBo CI parity gauntlet (ADR-0183). Its scenarios tagged @pending
-    # wait for the package that builds them and @met-differently ones have
-    # nothing to run; no other suite uses either tag.
     - "features/hobo-ci-parity/*.feature"
   import:
     - "src/draft/epic-proofs/*/features/steps/**/*.ts"

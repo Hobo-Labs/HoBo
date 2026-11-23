@@ -1,7 +1,3 @@
-# The parity gauntlet on its own (scripts/ci/parity-scorecard.mts runs it).
-# Paths are from the repository root. @pending scenarios wait for the work
-# package that builds them; @met-differently ones are met another way and
-# have nothing to run.
 default:
   paths:
     - "features/hobo-ci-parity/*.feature"

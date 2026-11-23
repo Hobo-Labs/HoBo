@@ -13,16 +13,10 @@ export const file_job_retried: GenFile = /*@__PURE__*/
   fileDesc("ChFqb2JfcmV0cmllZC5wcm90bxIKaG9iby5jaS52MSKwAgoKSm9iUmV0cmllZBIMCgR0eXBlGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSEgoKcmVwb3NpdG9yeRgDIAEoCRIOCgZydW5faWQYBCABKAESDwoHYXR0ZW1wdBgFIAEoDRIUCgxyZWxheV9qb2JfaWQYBiABKAESEQoJcmVsYXlfam9iGAcgASgJEg4KBmpvYl9pZBgIIAEoARIQCghqb2JfbmFtZRgJIAEoCRIMCgRraW5kGAogASgJEg4KBnRhcmdldBgLIAEoCRITCgtmYWlsZWRfc3RlcBgMIAEoCRIZChFmYWlsZWRfbWFjaGluZV9pZBgNIAEoCRINCgVhdF9tcxgOIAEoARINCgVyZXJ1bhgPIAEoCRIUCgxyZXJ1bl9zdGF0dXMYECABKA1iBnByb3RvMw");
 
 /**
- * One automatic retry of a routed job (ADR-0183, case R10): the `job.retried`
- * row the relay writes before it asks GitHub to re-run the relay job, and the
- * event it sends. One row per repository, run and attempt.
- *
  * @generated from message hobo.ci.v1.JobRetried
  */
 export type JobRetried = Message<"hobo.ci.v1.JobRetried"> & {
   /**
-   * Always `job.retried`.
-   *
    * @generated from field: string type = 1;
    */
   type: string;
@@ -43,29 +37,21 @@ export type JobRetried = Message<"hobo.ci.v1.JobRetried"> & {
   runId: number;
 
   /**
-   * The attempt that failed. The retry runs as the next one.
-   *
    * @generated from field: uint32 attempt = 5;
    */
   attempt: number;
 
   /**
-   * GitHub's id of the relay job that is run again.
-   *
    * @generated from field: double relay_job_id = 6;
    */
   relayJobId: number;
 
   /**
-   * The relay job's id in its workflow file.
-   *
    * @generated from field: string relay_job = 7;
    */
   relayJob: string;
 
   /**
-   * GitHub's id and name of the failed job.
-   *
    * @generated from field: double job_id = 8;
    */
   jobId: number;
@@ -76,52 +62,36 @@ export type JobRetried = Message<"hobo.ci.v1.JobRetried"> & {
   jobName: string;
 
   /**
-   * `runner_start`, `machine_lost` or `runner_lost`.
-   *
    * @generated from field: string kind = 10;
    */
   kind: string;
 
   /**
-   * `any`, `same` or `other`.
-   *
    * @generated from field: string target = 11;
    */
   target: string;
 
   /**
-   * The step the failed job was routed to; empty when not known.
-   *
    * @generated from field: string failed_step = 12;
    */
   failedStep: string;
 
   /**
-   * The machine it ran on; empty when it was not a machine.
-   *
    * @generated from field: string failed_machine_id = 13;
    */
   failedMachineId: string;
 
   /**
-   * Epoch milliseconds.
-   *
    * @generated from field: double at_ms = 14;
    */
   atMs: number;
 
   /**
-   * What became of the re-run: `pending` (written, not yet asked), `started`
-   * (GitHub accepted it), `failed` (no answer or a server error, so a
-   * redelivery may ask again) or `refused` (GitHub said no; final).
-   *
    * @generated from field: string rerun = 15;
    */
   rerun: string;
 
   /**
-   * GitHub's HTTP status for the last ask; zero when there was no answer.
-   *
    * @generated from field: uint32 rerun_status = 16;
    */
   rerunStatus: number;

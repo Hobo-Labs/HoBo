@@ -1,52 +1,31 @@
 syntax = "proto3";
 
-// The records the dashboard owns. Everything it shows is a record the relay's
-// read API owns (`RunnerRouteEvent`, `MachineAdvert`, `RunFact`, `JobFact`,
-// `RunnerOrder` in @hobo/ci's data-models, and the read API's reports); these
-// two are what crosses into the page from the person: the address and the
-// what-if panel. Neither is stored or sent anywhere.
 package hobo.cidashboard.v1;
 
-// One run attempt opened in the History view.
 message DashboardRunRef {
-  // owner/name
   string repository = 1;
   double id = 2;
   uint32 attempt = 3;
 }
 
-// Where the person is, parsed from the address fragment and the repository
-// picker by `parseDashboardLocation`.
 message DashboardLocation {
-  // runners | router | history | performance | signals
   string view = 1;
-  // owner/name; absent for every connected repository.
   optional string repository = 2;
-  // History only.
   DashboardRunRef run = 3;
 }
 
-// The labels a what-if question names for one runner step, as a relay input
-// holds them (`a, b`).
 message WhatIfLabels {
-  // A runner step key: fleet | machine | github | blacksmith | depot |
-  // namespace | warpbuild | ubicloud | boat
   string key = 1;
   string labels = 2;
 }
 
-// The what-if panel's question: a relay job the person describes, walked in
-// the browser against the committed order. Nothing is sent to the relay.
 message WhatIfQuestion {
   string repository = 1;
   repeated WhatIfLabels labels = 2;
   bool public = 3;
   bool fork = 4;
-  // The GitHub user id that starts the run; empty when unknown.
   string started_by = 5;
   bool fleet_taking = 6;
-  // Runner steps to treat as having stopped starting jobs.
   repeated string unhealthy = 7;
-  // Share of included GitHub minutes used, 0 to 100; absent when unmeasured.
   optional double minutes_used_percent = 8;
 }

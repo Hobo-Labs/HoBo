@@ -1,24 +1,3 @@
-# The HoBo relay job, job mode (ADR-0183). `hobo ci init --relay` installs
-# this file with .hobo-ci/relay.mjs, the evaluator it runs; both are generated,
-# so refresh them with the command instead of editing them.
-#
-# A job asks it which runner to use and then runs there:
-#
-#   jobs:
-#     route:
-#       uses: ./.github/workflows/hobo-relay.yml
-#       with:
-#         machine: self-hosted
-#         github: ubuntu-24.04
-#     build:
-#       needs: route
-#       runs-on: ${{ needs.route.outputs.runner }}
-#
-# The caller grants `actions: read` and `contents: read`. The evaluator walks
-# the runnerOrder committed in .hobo/ci.json against what this run's token can
-# read on GitHub. With no runner that can take the job it fails with the reason,
-# and the jobs that need it are skipped. A fork's pull request is answered from
-# the base branch's files, never from the fork's.
 name: HoBo relay
 on:
   workflow_call:
@@ -140,7 +119,6 @@ jobs:
           RELAY_PRIVATE: ${{ github.event.repository && (github.event.repository.private && 'true' || 'false') || 'unknown' }}
           RELAY_FORK: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'true' || 'false' }}
           RELAY_TRIGGERING_ACTOR_ID: ${{ github.triggering_actor == github.actor && github.actor_id || '' }}
-        # Every value reaches the evaluator as one quoted argument, never as shell text.
         run: >-
           node --no-warnings .hobo-ci/relay.mjs
           --fleet "$RELAY_FLEET" --machine "$RELAY_MACHINE" --github "$RELAY_GITHUB"

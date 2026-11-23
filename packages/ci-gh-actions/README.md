@@ -2000,6 +2000,8 @@ The edits are pure functions over a workflow's bytes in
   and `.hobo-ci/relay.mjs` from `@hobo/ci-gh-actions/relay-job-assets`; in
   relay mode only the workflow, with its job on the `hobo-relay` label, so a
   HoBo relay claims it over the runner protocol and its steps never run.
+  The workflow's `name:` line tells the two apart: `HoBo relay` in job mode,
+  `HoBo relay (relay mode)` in relay mode.
   `checkRelayFiles` compares a repository's copies by SHA-256 and reports
   each as `current`, `stale`, `edited`, `missing` or `not_needed`.
 

@@ -13,24 +13,15 @@ export const file_machine_worker: GenFile = /*@__PURE__*/
   fileDesc("ChRtYWNoaW5lX3dvcmtlci5wcm90bxIVaG9iby5jaS5naF9hY3Rpb25zLnYxIikKDVN0b3JlZE1hY2hpbmUSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCSLiAgoLV29ya2VyRXZlbnQSDAoEdHlwZRgBIAEoCRISCgptYWNoaW5lX2lkGAIgASgJEg0KBWF0X21zGAMgASgBEhMKBmRldGFpbBgEIAEoCUgAiAEBEhEKBGJ1c3kYBSABKA1IAYgBARISCgVzbG90cxgGIAEoDUgCiAEBEhMKBnBhdXNlZBgHIAEoCEgDiAEBEhMKBnJlYXNvbhgIIAEoCUgEiAEBEhMKBmpvYl9pZBgJIAEoAUgFiAEBEhcKCnJlcG9zaXRvcnkYCiABKAlIBogBARITCgZydW5uZXIYCyABKAlIB4gBARIUCgdydW5uaW5nGAwgASgNSAiIAQFCCQoHX2RldGFpbEIHCgVfYnVzeUIICgZfc2xvdHNCCQoHX3BhdXNlZEIJCgdfcmVhc29uQgkKB19qb2JfaWRCDQoLX3JlcG9zaXRvcnlCCQoHX3J1bm5lckIKCghfcnVubmluZ2IGcHJvdG8z");
 
 /**
- * What `machine.json` under HOBO_HOME's `ci/machine/` holds: the machine's id
- * and the name people see. The id never changes once made; the machine's
- * private key is kept beside it in its own owner-only file, never here.
- *
  * @generated from message hobo.ci.gh_actions.v1.StoredMachine
  */
 export type StoredMachine = Message<"hobo.ci.gh_actions.v1.StoredMachine"> & {
   /**
-   * `m-` and 12 lower-case hex digits when HoBo made it; at most 63
-   * characters of `[a-z0-9-]`, starting with a letter or digit.
-   *
    * @generated from field: string id = 1;
    */
   id: string;
 
   /**
-   * 1 to 100 characters.
-   *
    * @generated from field: string name = 2;
    */
   name: string;
@@ -44,26 +35,6 @@ export const StoredMachineSchema: GenMessage<StoredMachine> = /*@__PURE__*/
   messageDesc(file_machine_worker, 0);
 
 /**
- * One thing the worker did, as `--events` prints it: one JSON object per
- * line, for agents and scripts. The registry's own `machine.*` events are
- * printed beside these and are not this message.
- *
- * `type` is one of:
- *   worker.advertised    the registry kept a renewal (busy, slots, paused);
- *   worker.refused       the registry refused a renewal (reason, detail);
- *   worker.job_started   a one-job runner took a job (job_id, repository,
- *                        runner, detail);
- *   worker.job_finished  its runner exited (the same fields);
- *   worker.job_failed    the job could not run or was stopped (the same,
- *                        runner absent when none was made);
- *   worker.job_refused   a public repository's or a fork's job, refused
- *                        before any runner was made (job_id, repository,
- *                        detail);
- *   worker.draining      the first stop (running, detail);
- *   worker.handing_off   the second stop, or a refusal for good (running,
- *                        detail).
- * No field ever holds a token or a runner configuration.
- *
  * @generated from message hobo.ci.gh_actions.v1.WorkerEvent
  */
 export type WorkerEvent = Message<"hobo.ci.gh_actions.v1.WorkerEvent"> & {
@@ -78,8 +49,6 @@ export type WorkerEvent = Message<"hobo.ci.gh_actions.v1.WorkerEvent"> & {
   machineId: string;
 
   /**
-   * Epoch milliseconds.
-   *
    * @generated from field: double at_ms = 3;
    */
   atMs: number;
@@ -105,36 +74,26 @@ export type WorkerEvent = Message<"hobo.ci.gh_actions.v1.WorkerEvent"> & {
   paused?: boolean | undefined;
 
   /**
-   * The registry's refusal reason, as `MachineAdvertVerdict` names it.
-   *
    * @generated from field: optional string reason = 8;
    */
   reason?: string | undefined;
 
   /**
-   * GitHub's workflow job id.
-   *
    * @generated from field: optional double job_id = 9;
    */
   jobId?: number | undefined;
 
   /**
-   * `owner/name`.
-   *
    * @generated from field: optional string repository = 10;
    */
   repository?: string | undefined;
 
   /**
-   * The one-job runner's name, `hobo-machine-<id>-<job id>`.
-   *
    * @generated from field: optional string runner = 11;
    */
   runner?: string | undefined;
 
   /**
-   * Jobs still running when the worker began to stop.
-   *
    * @generated from field: optional uint32 running = 12;
    */
   running?: number | undefined;

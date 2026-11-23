@@ -118,8 +118,8 @@ const YAML_KEYWORDS: ReadonlySet<string> = new Set([
 
 const HEADER_END = "// --- end of header ---\n";
 const HEADER_SHA = /^\/\/ sha256: ([0-9a-f]{64})$/mu;
-const WORKFLOW_HEAD = "# The HoBo relay job, job mode (ADR-0183).";
-const RELAY_WORKFLOW_HEAD = "# The HoBo relay job, relay mode (ADR-0183).";
+const WORKFLOW_HEAD = "name: HoBo relay\n";
+const RELAY_WORKFLOW_HEAD = "name: HoBo relay (relay mode)\n";
 const JOB_MODE_RUNS_ON = "\n    runs-on: ubuntu-24.04\n";
 
 type Splice = Readonly<{

@@ -1,7 +1,5 @@
 package ci
 
-// A retry row names the failed job's repository, run and attempt; the re-run's
-// state says whether GitHub has been asked and what it answered.
 #JobRetriedRecord: {
 	type:             "job.retried"
 	accountId:        string & !=""
@@ -31,6 +29,4 @@ package ci
 	}
 }
 
-// Fixtures under fixtures/job_retried are retry rows; the package-wide
-// fixtures are #Ci records and are vetted against this definition too.
 #JobRetried: *#JobRetriedRecord | #Ci

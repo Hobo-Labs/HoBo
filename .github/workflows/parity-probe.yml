@@ -1,19 +1,5 @@
 name: Parity probe
 
-# Routes real jobs with the relay job's job mode (ADR-0183) and records what
-# happened, so the parity scorecard (docs/ci/parity-scorecard.md) can link a
-# production run for gauntlet cases R04, R14 and R15. It needs no relay and
-# nothing it does depends on the fleet: every relay here names only
-# GitHub-hosted runners or a machine label nothing holds.
-#
-# Each relay job runs the evaluator generated into
-# packages/ci-gh-actions/src/_generated-assets/relay-job-assets.ts, after
-# checking its digest, with the arguments templates/hobo-relay.yml passes.
-# Every result is one `hobo-ci-parity` notice holding JSON: the case, what
-# was expected and what happened.
-#
-# R04 needs a relay job that fails, which fails the run, so it runs only when
-# dispatched with `expect-failure`; such a run is red by design.
 on:
   schedule:
     - cron: "23 5 * * *"
@@ -27,7 +13,6 @@ on:
 permissions: {}
 
 jobs:
-  # A relay that names GitHub-hosted runners: it feeds one job and a matrix.
   relay:
     name: relay routes
     runs-on: ubuntu-24.04
@@ -97,8 +82,6 @@ jobs:
         run: >-
           echo "::notice title=hobo-ci-parity::{\"case\":\"R14\",\"leg\":${LEG},\"expected\":\"${WANTED}\",\"ranOn\":\"${RUNNER_NAME}\"}"
 
-  # A relay that names only a machine label nothing holds: it must fail with
-  # its reason, and the job behind it must be skipped.
   relay-none:
     name: relay finds no runner
     if: ${{ inputs.expect-failure }}

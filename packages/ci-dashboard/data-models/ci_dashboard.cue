@@ -1,7 +1,3 @@
-// CUE constraints for every protobuf type in data-models/ci_dashboard.proto:
-// the dashboard's address and its what-if question. Closed view names, the
-// read API's repository and run-attempt rules, and the runner step keys the
-// walk knows (RUNNER_STEP_KEYS in @hobo/ci).
 package ci_dashboard
 
 #Repository: =~"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"

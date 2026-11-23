@@ -15,9 +15,6 @@ export const file_relay_job: GenFile = /*@__PURE__*/
   fileDesc("Cg9yZWxheV9qb2IucHJvdG8SCmhvYm8uY2kudjEiLAoNUmVsYXlKb2JWYWx1ZRIMCgRuYW1lGAEgASgJEg0KBXZhbHVlGAIgASgJIkcKDFJlbGF5Sm9iU3RlcBIMCgR1c2VzGAEgASgJEikKBmlucHV0cxgCIAMoCzIZLmhvYm8uY2kudjEuUmVsYXlKb2JWYWx1ZSK/AgoPUmVsYXlKb2JNZXNzYWdlEg4KBmpvYl9pZBgBIAEoCRIPCgdwbGFuX2lkGAIgASgJEhIKCnJlcG9zaXRvcnkYAyABKAkSDgoGcnVuX2lkGAQgASgBEhMKC3J1bl9hdHRlbXB0GAUgASgNEgsKA2pvYhgGIAEoCRINCgVldmVudBgHIAEoCRIQCghhY3Rvcl9pZBgIIAEoCRIbChN0cmlnZ2VyaW5nX2FjdG9yX2lkGAkgASgJEg8KB3ByaXZhdGUYCiABKAgSDAoEZm9yaxgLIAEoCBIUCgx3b3JrZmxvd19yZWYYDCABKAkSKQoGaW5wdXRzGA0gAygLMhkuaG9iby5jaS52MS5SZWxheUpvYlZhbHVlEicKBXN0ZXBzGA4gAygLMhguaG9iby5jaS52MS5SZWxheUpvYlN0ZXAiNAoSUmVsYXlKb2JBbm5vdGF0aW9uEg0KBWxldmVsGAEgASgJEg8KB21lc3NhZ2UYAiABKAkipgEKDlJlbGF5Sm9iQW5zd2VyEg4KBmpvYl9pZBgBIAEoCRIPCgdwbGFuX2lkGAIgASgJEhIKCmNvbmNsdXNpb24YAyABKAkSKgoHb3V0cHV0cxgEIAMoCzIZLmhvYm8uY2kudjEuUmVsYXlKb2JWYWx1ZRIzCgthbm5vdGF0aW9ucxgFIAMoCzIeLmhvYm8uY2kudjEuUmVsYXlKb2JBbm5vdGF0aW9uItMBChBSdW5uZXJSb3V0ZUV2ZW50EgwKBHR5cGUYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRINCgVhdF9tcxgDIAEoARIvCgdyZXF1ZXN0GAQgASgLMh4uaG9iby5jaS52MS5SdW5uZXJSb3V0ZVJlcXVlc3QSMQoIZGVjaXNpb24YBSABKAsyHy5ob2JvLmNpLnYxLlJ1bm5lclJvdXRlRGVjaXNpb24SDAoEbW9kZRgGIAEoCRIMCgRub2RlGAcgASgJEg4KBmpvYl9pZBgIIAEoCSLMAgoNTWFjaGluZUFkdmVydBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB3J1bnNfb24YAyABKAkSDgoGbGFiZWxzGAQgAygJEgoKAm9zGAUgASgJEgwKBGFyY2gYBiABKAkSDQoFc2xvdHMYByABKA0SDAoEYnVzeRgIIAEoDRIOCgZwYXVzZWQYCSABKAgSDwoHc2hhcmluZxgKIAEoCRIQCghvd25lcl9pZBgLIAEoCRITCgtvd25lcl9sb2dpbhgMIAEoCRISCgpyZXBvc2l0b3J5GA0gASgJEhQKDGxhc3Rfc2Vlbl9tcxgOIAEoARIVCg1zaWduZXJfa2V5X2lkGA8gASgJEhEKCWlzb2xhdGlvbhgQIAEoCRIZChFsYXN0X3BpY2tlZF9hdF9tcxgRIAEoARISCgphY2NvdW50X2lkGBIgASgJIjcKFVByb3ZpZGVyT3V0Y29tZVJlY29yZBINCgVhdF9tcxgBIAEoARIPCgdzdGFydGVkGAIgASgIIogCChRQcm92aWRlckhlYWx0aFJlY29yZBILCgNrZXkYASABKAkSMwoIb3V0Y29tZXMYAiADKAsyIS5ob2JvLmNpLnYxLlByb3ZpZGVyT3V0Y29tZVJlY29yZBIaCg10cmlwcGVkX2F0X21zGAMgASgBSACIAQESEgoKYmFja29mZl9tcxgEIAEoARIdChBuZXh0X3RyaWFsX2F0X21zGAUgASgBSAGIAQESIAoTdHJpYWxfc3RhcnRlZF9hdF9tcxgGIAEoAUgCiAEBQhAKDl90cmlwcGVkX2F0X21zQhMKEV9uZXh0X3RyaWFsX2F0X21zQhYKFF90cmlhbF9zdGFydGVkX2F0X21zIpwBCghTdGVwRmFjdBIMCgRuYW1lGAEgASgJEg4KBm51bWJlchgCIAEoDRISCgpjb25jbHVzaW9uGAMgASgJEhoKDXN0YXJ0ZWRfYXRfbXMYBCABKAFIAIgBARIcCg9jb21wbGV0ZWRfYXRfbXMYBSABKAFIAYgBAUIQCg5fc3RhcnRlZF9hdF9tc0ISChBfY29tcGxldGVkX2F0X21zIuYCCgdKb2JGYWN0EgoKAmlkGAEgASgBEgwKBG5hbWUYAiABKAkSDgoGbGFiZWxzGAMgAygJEhgKC3J1bm5lcl9uYW1lGAQgASgJSACIAQESGQoMcnVubmVyX2dyb3VwGAUgASgJSAGIAQESEgoKY29uY2x1c2lvbhgGIAEoCRIUCgxxdWV1ZWRfYXRfbXMYByABKAESGgoNc3RhcnRlZF9hdF9tcxgIIAEoAUgCiAEBEhwKD2NvbXBsZXRlZF9hdF9tcxgJIAEoAUgDiAEBEiMKBXN0ZXBzGAogAygLMhQuaG9iby5jaS52MS5TdGVwRmFjdBINCgVuZWVkcxgLIAMoCRIOCgZiaWxsZWQYDCABKAgSDQoFcmVsYXkYDSABKAhCDgoMX3J1bm5lcl9uYW1lQg8KDV9ydW5uZXJfZ3JvdXBCEAoOX3N0YXJ0ZWRfYXRfbXNCEgoQX2NvbXBsZXRlZF9hdF9tcyLwAgoHUnVuRmFjdBIKCgJpZBgBIAEoARIPCgdhdHRlbXB0GAIgASgNEhIKCnJlcG9zaXRvcnkYAyABKAkSEAoId29ya2Zsb3cYBCABKAkSFQoNd29ya2Zsb3dfcGF0aBgFIAEoCRINCgVldmVudBgGIAEoCRIOCgZicmFuY2gYByABKAkSFgoOZGVmYXVsdF9icmFuY2gYCCABKAkSEAoIaGVhZF9zaGEYCSABKAkSDQoFYWN0b3IYCiABKAkSEgoKY29uY2x1c2lvbhgLIAEoCRIVCg1jcmVhdGVkX2F0X21zGAwgASgBEhwKD2NvbXBsZXRlZF9hdF9tcxgNIAEoAUgAiAEBEiEKBGpvYnMYDiADKAsyEy5ob2JvLmNpLnYxLkpvYkZhY3QSFQoNY2hhbmdlZF9wYXRocxgPIAMoCRISCgV0aXRsZRgQIAEoCUgBiAEBQhIKEF9jb21wbGV0ZWRfYXRfbXNCCAoGX3RpdGxlYgZwcm90bzM", [file_runner_route]);
 
 /**
- * One name and its value: a relay job's input or output, or a step's `with:`
- * entry. Kept as a list so a record never holds a free-form dictionary.
- *
  * @generated from message hobo.ci.v1.RelayJobValue
  */
 export type RelayJobValue = Message<"hobo.ci.v1.RelayJobValue"> & {
@@ -40,8 +37,6 @@ export const RelayJobValueSchema: GenMessage<RelayJobValue> = /*@__PURE__*/
   messageDesc(file_relay_job, 0);
 
 /**
- * One step of the job behind a relay message: what it `uses:` and its `with:`.
- *
  * @generated from message hobo.ci.v1.RelayJobStep
  */
 export type RelayJobStep = Message<"hobo.ci.v1.RelayJobStep"> & {
@@ -64,16 +59,10 @@ export const RelayJobStepSchema: GenMessage<RelayJobStep> = /*@__PURE__*/
   messageDesc(file_relay_job, 1);
 
 /**
- * A relay job as its answerer receives it: from the runner service in relay
- * mode, from the workflow's own context in job mode.
- *
  * @generated from message hobo.ci.v1.RelayJobMessage
  */
 export type RelayJobMessage = Message<"hobo.ci.v1.RelayJobMessage"> & {
   /**
-   * The runner service's job and plan ids. In job mode they are the GitHub job
-   * id and the run id.
-   *
    * @generated from field: string job_id = 1;
    */
   jobId: string;
@@ -99,8 +88,6 @@ export type RelayJobMessage = Message<"hobo.ci.v1.RelayJobMessage"> & {
   runAttempt: number;
 
   /**
-   * The relay job's id in its workflow file.
-   *
    * @generated from field: string job = 6;
    */
   job: string;
@@ -126,8 +113,6 @@ export type RelayJobMessage = Message<"hobo.ci.v1.RelayJobMessage"> & {
   private: boolean;
 
   /**
-   * The run's head is a fork of the repository.
-   *
    * @generated from field: bool fork = 11;
    */
   fork: boolean;
@@ -138,8 +123,6 @@ export type RelayJobMessage = Message<"hobo.ci.v1.RelayJobMessage"> & {
   workflowRef: string;
 
   /**
-   * The relay job's `with:` inputs, in the order the workflow wrote them.
-   *
    * @generated from field: repeated hobo.ci.v1.RelayJobValue inputs = 13;
    */
   inputs: RelayJobValue[];
@@ -158,14 +141,10 @@ export const RelayJobMessageSchema: GenMessage<RelayJobMessage> = /*@__PURE__*/
   messageDesc(file_relay_job, 2);
 
 /**
- * One line the answer shows on the job.
- *
  * @generated from message hobo.ci.v1.RelayJobAnnotation
  */
 export type RelayJobAnnotation = Message<"hobo.ci.v1.RelayJobAnnotation"> & {
   /**
-   * `error`, `warning` or `notice`.
-   *
    * @generated from field: string level = 1;
    */
   level: string;
@@ -184,8 +163,6 @@ export const RelayJobAnnotationSchema: GenMessage<RelayJobAnnotation> = /*@__PUR
   messageDesc(file_relay_job, 3);
 
 /**
- * What an answerer does with a relay job: complete it, with outputs.
- *
  * @generated from message hobo.ci.v1.RelayJobAnswer
  */
 export type RelayJobAnswer = Message<"hobo.ci.v1.RelayJobAnswer"> & {
@@ -200,8 +177,6 @@ export type RelayJobAnswer = Message<"hobo.ci.v1.RelayJobAnswer"> & {
   planId: string;
 
   /**
-   * `succeeded` or `failed`.
-   *
    * @generated from field: string conclusion = 3;
    */
   conclusion: string;
@@ -225,14 +200,10 @@ export const RelayJobAnswerSchema: GenMessage<RelayJobAnswer> = /*@__PURE__*/
   messageDesc(file_relay_job, 4);
 
 /**
- * One entry in the route journal: a relay job was asked, or answered.
- *
  * @generated from message hobo.ci.v1.RunnerRouteEvent
  */
 export type RunnerRouteEvent = Message<"hobo.ci.v1.RunnerRouteEvent"> & {
   /**
-   * `runner.route.Requested` or `runner.route.Decided`.
-   *
    * @generated from field: string type = 1;
    */
   type: string;
@@ -243,8 +214,6 @@ export type RunnerRouteEvent = Message<"hobo.ci.v1.RunnerRouteEvent"> & {
   accountId: string;
 
   /**
-   * Epoch milliseconds.
-   *
    * @generated from field: double at_ms = 3;
    */
   atMs: number;
@@ -255,30 +224,21 @@ export type RunnerRouteEvent = Message<"hobo.ci.v1.RunnerRouteEvent"> & {
   request?: RunnerRouteRequest | undefined;
 
   /**
-   * Only on `runner.route.Decided`.
-   *
    * @generated from field: hobo.ci.v1.RunnerRouteDecision decision = 5;
    */
   decision?: RunnerRouteDecision | undefined;
 
   /**
-   * `job`: a vendored evaluator answered on a GitHub-hosted runner. `relay`: a
-   * HoBo node answered over the runner protocol.
-   *
    * @generated from field: string mode = 6;
    */
   mode: string;
 
   /**
-   * The node that answered.
-   *
    * @generated from field: string node = 7;
    */
   node: string;
 
   /**
-   * The relay job's id at the runner service, so a redelivery is one entry.
-   *
    * @generated from field: string job_id = 8;
    */
   jobId: string;
@@ -292,8 +252,6 @@ export const RunnerRouteEventSchema: GenMessage<RunnerRouteEvent> = /*@__PURE__*
   messageDesc(file_relay_job, 5);
 
 /**
- * A connected machine as it advertises itself.
- *
  * @generated from message hobo.ci.v1.MachineAdvert
  */
 export type MachineAdvert = Message<"hobo.ci.v1.MachineAdvert"> & {
@@ -308,8 +266,6 @@ export type MachineAdvert = Message<"hobo.ci.v1.MachineAdvert"> & {
   name: string;
 
   /**
-   * The `runs-on` label that lands a job on this machine and no other.
-   *
    * @generated from field: string runs_on = 3;
    */
   runsOn: string;
@@ -320,15 +276,11 @@ export type MachineAdvert = Message<"hobo.ci.v1.MachineAdvert"> & {
   labels: string[];
 
   /**
-   * `linux`, `macos` or `windows`.
-   *
    * @generated from field: string os = 5;
    */
   os: string;
 
   /**
-   * `x64`, `arm64` or `arm`.
-   *
    * @generated from field: string arch = 6;
    */
   arch: string;
@@ -349,8 +301,6 @@ export type MachineAdvert = Message<"hobo.ci.v1.MachineAdvert"> & {
   paused: boolean;
 
   /**
-   * `only_me` or `anyone`.
-   *
    * @generated from field: string sharing = 10;
    */
   sharing: string;
@@ -366,43 +316,31 @@ export type MachineAdvert = Message<"hobo.ci.v1.MachineAdvert"> & {
   ownerLogin: string;
 
   /**
-   * Set for a runner registered on one repository.
-   *
    * @generated from field: string repository = 13;
    */
   repository: string;
 
   /**
-   * Epoch milliseconds.
-   *
    * @generated from field: double last_seen_ms = 14;
    */
   lastSeenMs: number;
 
   /**
-   * The key the advert is signed with.
-   *
    * @generated from field: string signer_key_id = 15;
    */
   signerKeyId: string;
 
   /**
-   * `container` (a fresh container per job) or `host`.
-   *
    * @generated from field: string isolation = 16;
    */
   isolation: string;
 
   /**
-   * When it last took a job (epoch ms); zero when it never has.
-   *
    * @generated from field: double last_picked_at_ms = 17;
    */
   lastPickedAtMs: number;
 
   /**
-   * The HoBo account whose jobs it serves.
-   *
    * @generated from field: string account_id = 18;
    */
   accountId: string;
@@ -416,8 +354,6 @@ export const MachineAdvertSchema: GenMessage<MachineAdvert> = /*@__PURE__*/
   messageDesc(file_relay_job, 6);
 
 /**
- * One job's outcome at a hosted runner type.
- *
  * @generated from message hobo.ci.v1.ProviderOutcomeRecord
  */
 export type ProviderOutcomeRecord = Message<"hobo.ci.v1.ProviderOutcomeRecord"> & {
@@ -440,14 +376,10 @@ export const ProviderOutcomeRecordSchema: GenMessage<ProviderOutcomeRecord> = /*
   messageDesc(file_relay_job, 7);
 
 /**
- * Whether a hosted runner type is still starting jobs, as stored.
- *
  * @generated from message hobo.ci.v1.ProviderHealthRecord
  */
 export type ProviderHealthRecord = Message<"hobo.ci.v1.ProviderHealthRecord"> & {
   /**
-   * `providerHealthKey`: provider and label.
-   *
    * @generated from field: string key = 1;
    */
   key: string;
@@ -486,8 +418,6 @@ export const ProviderHealthRecordSchema: GenMessage<ProviderHealthRecord> = /*@_
   messageDesc(file_relay_job, 8);
 
 /**
- * One step of a job, field for field what the insight reports read.
- *
  * @generated from message hobo.ci.v1.StepFact
  */
 export type StepFact = Message<"hobo.ci.v1.StepFact"> & {
@@ -525,8 +455,6 @@ export const StepFactSchema: GenMessage<StepFact> = /*@__PURE__*/
   messageDesc(file_relay_job, 9);
 
 /**
- * One job of a run attempt.
- *
  * @generated from message hobo.ci.v1.JobFact
  */
 export type JobFact = Message<"hobo.ci.v1.JobFact"> & {
@@ -581,8 +509,6 @@ export type JobFact = Message<"hobo.ci.v1.JobFact"> & {
   steps: StepFact[];
 
   /**
-   * Empty when not known.
-   *
    * @generated from field: repeated string needs = 11;
    */
   needs: string[];
@@ -606,8 +532,6 @@ export const JobFactSchema: GenMessage<JobFact> = /*@__PURE__*/
   messageDesc(file_relay_job, 10);
 
 /**
- * One attempt of a workflow run.
- *
  * @generated from message hobo.ci.v1.RunFact
  */
 export type RunFact = Message<"hobo.ci.v1.RunFact"> & {
@@ -682,8 +606,6 @@ export type RunFact = Message<"hobo.ci.v1.RunFact"> & {
   jobs: JobFact[];
 
   /**
-   * Empty when not known.
-   *
    * @generated from field: repeated string changed_paths = 15;
    */
   changedPaths: string[];

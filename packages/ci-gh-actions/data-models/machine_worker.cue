@@ -1,12 +1,9 @@
 package ghactions
 
-// The machine worker's records (machine_worker.proto, ADR-0183).
 
 #MachineId:   string & =~"^[a-z0-9][a-z0-9-]{0,62}$"
 #MachineTime: number & >=0
 
-// machine.json: the id and name only. A key, a token or anything else is not
-// a stored machine.
 #StoredMachine: {
 	id:   #MachineId
 	name: string & =~"^.{1,100}$"
@@ -53,7 +50,4 @@ package ghactions
 }
 
 #MachineWorkerRecord: #StoredMachine | #WorkerEvent
-// Fixtures under fixtures/machine_worker are machine worker records; the
-// package-wide fixtures are #Onboarding records and are vetted against this
-// definition too.
 #MachineWorker: *#MachineWorkerRecord | #Onboarding

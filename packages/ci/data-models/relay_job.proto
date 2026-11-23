@@ -3,120 +3,84 @@ package hobo.ci.v1;
 
 import "runner_route.proto";
 
-// One name and its value: a relay job's input or output, or a step's `with:`
-// entry. Kept as a list so a record never holds a free-form dictionary.
 message RelayJobValue {
   string name = 1;
   string value = 2;
 }
 
-// One step of the job behind a relay message: what it `uses:` and its `with:`.
 message RelayJobStep {
   string uses = 1;
   repeated RelayJobValue inputs = 2;
 }
 
-// A relay job as its answerer receives it: from the runner service in relay
-// mode, from the workflow's own context in job mode.
 message RelayJobMessage {
-  // The runner service's job and plan ids. In job mode they are the GitHub job
-  // id and the run id.
   string job_id = 1;
   string plan_id = 2;
   string repository = 3;
   double run_id = 4;
   uint32 run_attempt = 5;
-  // The relay job's id in its workflow file.
   string job = 6;
   string event = 7;
   string actor_id = 8;
   string triggering_actor_id = 9;
   bool private = 10;
-  // The run's head is a fork of the repository.
   bool fork = 11;
   string workflow_ref = 12;
-  // The relay job's `with:` inputs, in the order the workflow wrote them.
   repeated RelayJobValue inputs = 13;
   repeated RelayJobStep steps = 14;
 }
 
-// One line the answer shows on the job.
 message RelayJobAnnotation {
-  // `error`, `warning` or `notice`.
   string level = 1;
   string message = 2;
 }
 
-// What an answerer does with a relay job: complete it, with outputs.
 message RelayJobAnswer {
   string job_id = 1;
   string plan_id = 2;
-  // `succeeded` or `failed`.
   string conclusion = 3;
   repeated RelayJobValue outputs = 4;
   repeated RelayJobAnnotation annotations = 5;
 }
 
-// One entry in the route journal: a relay job was asked, or answered.
 message RunnerRouteEvent {
-  // `runner.route.Requested` or `runner.route.Decided`.
   string type = 1;
   string account_id = 2;
-  // Epoch milliseconds.
   double at_ms = 3;
   RunnerRouteRequest request = 4;
-  // Only on `runner.route.Decided`.
   RunnerRouteDecision decision = 5;
-  // `job`: a vendored evaluator answered on a GitHub-hosted runner. `relay`: a
-  // HoBo node answered over the runner protocol.
   string mode = 6;
-  // The node that answered.
   string node = 7;
-  // The relay job's id at the runner service, so a redelivery is one entry.
   string job_id = 8;
 }
 
-// A connected machine as it advertises itself.
 message MachineAdvert {
   string id = 1;
   string name = 2;
-  // The `runs-on` label that lands a job on this machine and no other.
   string runs_on = 3;
   repeated string labels = 4;
-  // `linux`, `macos` or `windows`.
   string os = 5;
-  // `x64`, `arm64` or `arm`.
   string arch = 6;
   uint32 slots = 7;
   uint32 busy = 8;
   bool paused = 9;
-  // `only_me` or `anyone`.
   string sharing = 10;
   string owner_id = 11;
   string owner_login = 12;
-  // Set for a runner registered on one repository.
   string repository = 13;
-  // Epoch milliseconds.
   double last_seen_ms = 14;
-  // The key the advert is signed with.
   string signer_key_id = 15;
-  // `container` (a fresh container per job) or `host`.
   string isolation = 16;
-  // When it last took a job (epoch ms); zero when it never has.
   double last_picked_at_ms = 17;
-  // The HoBo account whose jobs it serves.
   string account_id = 18;
 }
 
-// One job's outcome at a hosted runner type.
 message ProviderOutcomeRecord {
   double at_ms = 1;
   bool started = 2;
 }
 
-// Whether a hosted runner type is still starting jobs, as stored.
 message ProviderHealthRecord {
-  // `providerHealthKey`: provider and label.
   string key = 1;
   repeated ProviderOutcomeRecord outcomes = 2;
   optional double tripped_at_ms = 3;
@@ -125,7 +89,6 @@ message ProviderHealthRecord {
   optional double trial_started_at_ms = 6;
 }
 
-// One step of a job, field for field what the insight reports read.
 message StepFact {
   string name = 1;
   uint32 number = 2;
@@ -134,7 +97,6 @@ message StepFact {
   optional double completed_at_ms = 5;
 }
 
-// One job of a run attempt.
 message JobFact {
   double id = 1;
   string name = 2;
@@ -146,13 +108,11 @@ message JobFact {
   optional double started_at_ms = 8;
   optional double completed_at_ms = 9;
   repeated StepFact steps = 10;
-  // Empty when not known.
   repeated string needs = 11;
   bool billed = 12;
   bool relay = 13;
 }
 
-// One attempt of a workflow run.
 message RunFact {
   double id = 1;
   uint32 attempt = 2;
@@ -168,7 +128,6 @@ message RunFact {
   double created_at_ms = 12;
   optional double completed_at_ms = 13;
   repeated JobFact jobs = 14;
-  // Empty when not known.
   repeated string changed_paths = 15;
   optional string title = 16;
 }
