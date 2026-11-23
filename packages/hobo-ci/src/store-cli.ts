@@ -49,7 +49,7 @@ export interface StoreCli {
 }
 
 // public-contract: the Infisical CLI release HoBo installs (npm @infisical/cli).
-export const INFISICAL_CLI_VERSION = "0.45.8";
+export const INFISICAL_CLI_VERSION = "0.45.14";
 
 export const INFISICAL_CLI: StoreCli = {
 	bin: "infisical",

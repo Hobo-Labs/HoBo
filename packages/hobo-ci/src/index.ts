@@ -1,4 +1,15 @@
 export {
+	type AgentVaultProxyLaunch,
+	type AgentVaultProxyProcess,
+	type AgentVaultProxyRoute,
+	AgentVaultProxyStartError,
+	agentVaultProxyAgentOptions,
+	agentVaultProxyArguments,
+	agentVaultProxyFetch,
+	agentVaultProxyLauncher,
+	type LaunchAgentVaultProxy,
+} from "./agent-vault-proxy.js";
+export {
 	GITHUB_APP_HOSTS,
 	type GithubAppHost,
 	type GithubAppHostResolution,
@@ -229,6 +240,7 @@ export {
 	BITWARDEN_SERVERS,
 	type Env,
 	type OpenedSecretStore,
+	type OwnerAgentVault,
 	openSecretStore,
 	type SecretStoreDeps,
 	type SecretStoreId,
