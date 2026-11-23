@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Start gbrain's MCP server for this checkout with fail-closed remediation.
-# Shared by Claude Code / Cursor / Codex (.mcp.json, .cursor/mcp.json, .codex/config.toml)
-# so a missing binary or provider prints AUTH.md guidance instead of a bare "command not found".
 set -euo pipefail
 
 if ! command -v gbrain >/dev/null 2>&1; then

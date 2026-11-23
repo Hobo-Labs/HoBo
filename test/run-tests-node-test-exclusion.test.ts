@@ -5,12 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { expect } from "vitest";
 import { nodeTestArguments } from "../scripts/lib/node-test-arguments.ts";
-
-// scripts/run-tests.ts runs every --category lane under Vitest, which cannot
-// load node:test-style files. The script excludes files that import node:test;
-// this test pins the invariant that every such excluded file remains covered
-// by a package-level `node --test` contract lane (the turbo part of the root
-// test:contract:* commands).
+import { isNodeTestFile } from "../scripts/lib/unit-test-selection.ts";
 
 const categoryGlobs = [
 	"src/draft/*/*/contracts/consumer/*test.ts",
@@ -29,12 +24,6 @@ function gitLsFiles(globs: string[]): string[] {
 	return result.stdout.split(/\r?\n/).filter(Boolean);
 }
 
-function importsNodeTest(file: string): boolean {
-	return /from\s+["']node:test["']|require\(\s*["']node:test["']\s*\)|import\s+["']node:test["']/.test(
-		readFileSync(file, "utf8"),
-	);
-}
-
 function nearestPackageDir(file: string): string {
 	let dir = path.dirname(file);
 	while (dir !== "." && !existsSync(path.join(dir, "package.json"))) {
@@ -45,7 +34,7 @@ function nearestPackageDir(file: string): string {
 }
 
 test("node:test-style contract files stay covered by package node --test lanes", () => {
-	const excluded = gitLsFiles(categoryGlobs).filter(importsNodeTest);
+	const excluded = gitLsFiles(categoryGlobs).filter(isNodeTestFile);
 	expect(excluded.length).toBeGreaterThan(0);
 
 	for (const file of excluded) {
@@ -53,10 +42,9 @@ test("node:test-style contract files stay covered by package node --test lanes",
 			? "test:contract:consumer"
 			: "test:contract:provider";
 		const packageDir = nearestPackageDir(file);
-		// SAFETY: assertion to `JSON.parse( readFileSync(path.join(packageDir, "package.json"), "utf8"), ) as { scripts?: Record<string, string> }` is required at this boundary.
-		const manifest = JSON.parse(
+		const manifest: { scripts?: { [name: string]: string } } = JSON.parse(
 			readFileSync(path.join(packageDir, "package.json"), "utf8"),
-		) as { scripts?: { [name: string]: string } };
+		);
 		const script = manifest.scripts?.[lane] ?? "";
 		assert.ok(
 			script.includes("--test"),

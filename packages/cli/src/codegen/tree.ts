@@ -24,10 +24,6 @@ import {
 	DriftEntrySchema,
 } from "./types.js";
 
-// Validate the whole artifact set before touching an owned root. Generate into
-// sibling staging directories, then move old roots aside until every swap has
-// succeeded. A failed swap restores all earlier roots before propagating.
-
 function safePath(path: string): string {
 	const normalized = normalizePath(path);
 	const first = normalized.split("/")[0]?.toLowerCase();
@@ -158,12 +154,10 @@ async function validateTree(
 }
 
 export interface GeneratedTreeOptions {
-	/** Exact leaf ownership is additive to directory ownership, never inferred. */
 	readonly ownedFiles?: readonly string[] | undefined;
 }
 
 export interface GeneratedTreeWriteOptions extends GeneratedTreeOptions {
-	/** Filesystem rename port; production uses the Node filesystem directly. */
 	readonly rename?: typeof rename;
 }
 
@@ -172,7 +166,6 @@ interface RecoveryEntry {
 	readonly hadOriginal: boolean;
 }
 
-/** SQLite's process-owned lock releases on exit, including SIGKILL. Never unlink its inode. */
 async function acquireTreeLock(base: string): Promise<DatabaseSync> {
 	await rejectSymlinks(base, ".hobo-codegen.lock");
 	const lock = new DatabaseSync(join(base, ".hobo-codegen.lock"));
@@ -223,7 +216,6 @@ function commitRecovery(staging: string): void {
 	}
 }
 
-/** Restore the previous complete tree before a new writer/checker observes an interrupted swap. */
 async function recoverInterruptedTrees(
 	base: string,
 	roots: readonly string[],
@@ -243,7 +235,6 @@ async function recoverInterruptedTrees(
 		if (await pathExists(journalPath)) {
 			const journal = new DatabaseSync(journalPath);
 			try {
-				// A crash before preparation commits cannot have started filesystem swaps.
 				const prepared = journal
 					.prepare(
 						"SELECT name FROM sqlite_master WHERE type='table' AND name='state'",
@@ -300,7 +291,6 @@ async function recoverInterruptedTrees(
 	}
 }
 
-/** Recover before compiler/engine selection can inspect an interrupted generated import graph. */
 export async function recoverGeneratedTree(
 	projectRoot: string,
 	ownership: {
@@ -440,8 +430,6 @@ export async function compareGeneratedTree(
 			if (artifact === undefined) {
 				if (actualBytes === undefined) continue;
 				const decoded = Buffer.from(actualBytes).toString("utf8");
-				// Extra files carry no descriptor: retain text normalization for text
-				// and hash non-UTF8 or NUL-containing output as its actual byte stream.
 				const text =
 					Buffer.from(decoded).equals(Buffer.from(actualBytes)) &&
 					!decoded.includes("\0");

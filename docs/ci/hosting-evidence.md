@@ -1,5 +1,5 @@
 ---
-type: Reference
+type: Evidence
 title: "Hosting evidence observation"
 description: "Read-only observations of secret-store access by the main-branch Actions identity."
 tags: [hobo, ci, hosting, evidence]

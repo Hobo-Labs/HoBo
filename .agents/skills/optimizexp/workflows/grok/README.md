@@ -1,6 +1,3 @@
-# Grok Build — OptimizeXP review workflow
+# Experience improvement
 
-- `review.rhai` — native Grok workflow when Rhai orchestration is available
-- `review.md` — fallback step list if Rhai is not used
-
-See Grok `create-workflow` skill for Rhai conventions. Generation rules: `../../references/workflow-generation.md`.
+Follow [SKILL.md](../../SKILL.md). Inspect real behavior, implement the requested improvements, and run relevant tests. Do not create synthetic personas, plans, design documents, or review backlogs.

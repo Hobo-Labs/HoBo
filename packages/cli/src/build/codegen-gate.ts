@@ -8,12 +8,6 @@ import { compareGeneratedTree, recoverGeneratedTree } from "../codegen/tree.js";
 import { type CodegenEngine, DriftEntrySchema } from "../codegen/types.js";
 import { BuildError } from "./errors.js";
 
-/**
- * The build-time freshness gate: `hobo build` refuses to package a project
- * whose checked-in generated tree has drifted from its sources. Uses the
- * same (injectable) engine as `hobo codegen`, so the two agree by
- * construction.
- */
 export async function assertGeneratedFresh(
 	projectRoot: string,
 	engine?: CodegenEngine,

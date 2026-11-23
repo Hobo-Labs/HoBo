@@ -46,13 +46,11 @@ export function DemoAppPage() {
           to return a structured JSON object. Try it out, enter your day's
           tasks, and let AI do the rest!
         </p>
-        {/* begin AI-powered Todo List */}
         <Card className="bg-muted/10 my-8">
           <CardContent className="mx-auto my-8 space-y-10 px-6 py-10 sm:w-[90%] md:w-[70%] lg:w-[50%]">
             <NewTaskForm handleCreateTask={createTask} />
           </CardContent>
         </Card>
-        {/* end AI-powered Todo List */}
       </div>
     </div>
   );
@@ -69,18 +67,15 @@ function NewTaskForm({
     tasks: [
       {
         name: "Respond to emails",
-        // SAFETY: assertion to `"high" as TaskPriority` is required at this boundary.
-        priority: "high" as TaskPriority,
+        priority: "high",
       },
       {
         name: "Learn WASP",
-        // SAFETY: assertion to `"low" as TaskPriority` is required at this boundary.
-        priority: "low" as TaskPriority,
+        priority: "low",
       },
       {
         name: "Read a book",
-        // SAFETY: assertion to `"medium" as TaskPriority` is required at this boundary.
-        priority: "medium" as TaskPriority,
+        priority: "medium",
       },
     ],
     taskItems: [

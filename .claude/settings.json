@@ -1,5 +1,4 @@
 {
-  "$comment": "Repo-portable Claude Code plugin config. Makes obra/Superpowers (MIT; no keys) available + enabled for anyone who opens this repo. Codex/Copilot install via their own plugin marketplace \u2014 see scripts/setup-agent-tools.sh and docs/agent-tooling.md. Opt out by setting enabledPlugins.superpowers... to false or removing this block. The SessionStart hook runs scripts/ensure-hooks-path.sh (shared with the Codex, Cursor and Copilot session-start hooks), which points core.hooksPath at .githooks when it is unset; see that script and docs/agent-tooling.md.",
   "env": {
     "IMPECCABLE_NO_UPDATE_CHECK": "1"
   },
@@ -22,6 +21,18 @@
             "type": "command",
             "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/scripts/ensure-hooks-path.sh\" >/dev/null 2>&1; exit 0",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
+            "timeout": 60
           }
         ]
       }
