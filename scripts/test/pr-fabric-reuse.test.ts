@@ -121,7 +121,7 @@ describe("the committed reuse policy", () => {
 		});
 	};
 
-	it("is off unless the trusted policy says otherwise", () => {
+	it("is off for an unreadable policy and on for a policy without the block", () => {
 		assert.equal(DEFAULT_REUSE_PR_FABRIC, false);
 		assert.equal(
 			PR_FABRIC_REUSE_SETTING,
@@ -130,7 +130,7 @@ describe("the committed reuse policy", () => {
 		assert.equal(reusePrFabricSetting(undefined), false);
 		assert.equal(reusePrFabricSetting("not json"), false);
 		assert.equal(reusePrFabricSetting("{}"), false);
-		assert.equal(reusePrFabricSetting(policyText(undefined)), false);
+		assert.equal(reusePrFabricSetting(policyText(undefined)), true);
 		assert.equal(
 			reusePrFabricSetting(policyText({ reusePrFabric: "true" })),
 			false,
@@ -147,8 +147,8 @@ describe("the committed reuse policy", () => {
 
 	it("is the committed file's answer, and the block parses as policy", () => {
 		const committed = readFileSync(".hobo/ci.json", "utf8");
-		assert.equal(readRunnerRouting(committed)?.mergeGroup.reusePrFabric, false);
-		assert.equal(reusePrFabricSetting(committed), false);
+		assert.equal(readRunnerRouting(committed)?.mergeGroup.reusePrFabric, true);
+		assert.equal(reusePrFabricSetting(committed), true);
 	});
 });
 
@@ -608,7 +608,7 @@ describe("the route job entry point", () => {
 				GITHUB_OUTPUT: output,
 			});
 			assert.equal(decision.reuse, false);
-			assert.equal(decision.reason, `${PR_FABRIC_REUSE_SETTING} is false`);
+			assert.equal(decision.reason, UNREAD_RUNS_REASON);
 			assert.equal(readFileSync(output, "utf8"), "reuse=false\nreuse-run=\n");
 		} finally {
 			rmSync(directory, { recursive: true, force: true });

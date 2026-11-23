@@ -151,10 +151,10 @@ and each is a GitHub answer, not an event or branch value taken on faith:
 Whether reuse is on is committed policy, never a variable (ADR-0181):
 `runnerRouting.mergeGroup.reusePrFabric` in `.hobo/ci.json` (the committed
 `true` enables it; `false` makes every merge group re-run its gate jobs). The
-block is optional: a policy without it means `false`. It is read beside the
+block is optional: a valid policy without it means `true`. It is read beside the
 script in the trusted checkout, mirroring `runnerRouting.mainGate.reuseMergeQueue`.
 An unreadable file, invalid JSON, or schema-invalid or incomplete routing
-policy disables reuse; none falls back to an implicit enabled default.
+policy disables reuse.
 
 ### What is skipped, and what still runs
 
@@ -180,9 +180,10 @@ job ids, so nothing else is accepted for it. Everything else is untouched:
 
 ## Expected savings
 
-Committed `.hobo/ci.json` ships `runnerRouting.mergeGroup.reusePrFabric: false`
-until a merge group produces the first production observation below; savings in
-this section apply only after that flag flips to `true`.
+Committed `.hobo/ci.json` ships `runnerRouting.mergeGroup.reusePrFabric: true`.
+It was turned on on 2026-11-23, when GitHub-hosted runners had 43 jobs waiting and
+took up to 39 minutes to pick one up, so merge groups were timing out in the queue
+while re-running gate jobs their PRs had already passed on the same tree.
 
 The 2026-11-20 read-only latency analysis measured the typical merge (the
 average of #2019/#2020) at 10.8 minutes enqueue-to-merged, of which the S0
