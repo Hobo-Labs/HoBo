@@ -1,25 +1,6 @@
 ---
-// ==========================================================================
-// Four WORLDS, not four skins.
-//
-// The owner's rejection of the token-only axis was architectural and correct:
-// CSS custom properties can restyle a page but cannot change what it SAYS,
-// what it SHOWS, or how it BEHAVES. Each design is therefore its own world on
-// the marketing surface — its own copy in its own voice, its own generated
-// art, its own signature interaction — switched by the same picker.
-//
-// All variants are statically rendered and gated by `:root[data-design]`
-// (see worlds.css); the ink hero and parallax band hide when a world is
-// active. Hidden variants cost DOM, not pixels — their images are
-// loading="lazy" so browsers skip them until shown.
-//
-// Copy rules: same product truth as ink (PRODUCT.md binds — no invented
-// customers, no fake claims), different register per world.
-// ==========================================================================
 import { href } from "../lib/url";
 ---
-
-<!-- ============ HERALD — the front page of a 1930s newspaper ============ -->
 <section class="world-hero world-herald" aria-label="HoBo, as a newspaper front page">
 	<div class="container">
 		<header class="herald-masthead">
@@ -90,7 +71,6 @@ import { href } from "../lib/url";
 	</div>
 </section>
 
-<!-- ============ PHOTOPLAY — a silent film, told in intertitles ============ -->
 <section class="world-hero world-photoplay" aria-label="HoBo, as a silent film">
 	<div class="container photoplay-stage">
 		<div class="photoplay-frame" data-photoplay>
@@ -134,7 +114,6 @@ import { href } from "../lib/url";
 	</div>
 </section>
 
-<!-- ============ DISPATCH — the yard operations board ============ -->
 <section class="world-hero world-dispatch" aria-label="HoBo, as a dispatch board">
 	<div class="container">
 		<div class="dispatch-board">
@@ -177,7 +156,6 @@ import { href } from "../lib/url";
 	</div>
 </section>
 
-<!-- ============ SCRAPBOOK — postcards home from the road ============ -->
 <section class="world-hero world-scrapbook" aria-label="HoBo, as a scrapbook">
 	<div class="container">
 		<h1 class="scrapbook-title">Notes from the open road.</h1>
@@ -226,8 +204,6 @@ import { href } from "../lib/url";
 </section>
 
 <script>
-	// Photoplay: intertitle cards advance on click — the silent film's one
-	// interaction. Reduced motion sees no flicker (CSS) but cards still cycle.
 	for (const frame of document.querySelectorAll("[data-photoplay]")) {
 		const cards = [...frame.querySelectorAll("[data-card]")];
 		let i = 0;
@@ -237,8 +213,6 @@ import { href } from "../lib/url";
 			cards[i].classList.add("is-active");
 		});
 	}
-	// Dispatch: log lines type on when the board is the active world. Reduced
-	// motion renders everything settled.
 	const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 	const board = document.querySelector("[data-dispatch]");
 	if (board && !still) {

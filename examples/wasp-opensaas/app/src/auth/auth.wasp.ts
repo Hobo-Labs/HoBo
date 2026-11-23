@@ -41,8 +41,6 @@ const emailAuthMethod: NonNullable<AuthMethods["email"]> = {
   userSignupFields: getEmailUserFields,
 };
 
-// Plug the following authentication methods in the `authConfig` below to enable them.
-// Do note that `email` and `usernameAndPassword` are mutually exclusive.
 // @ts-expect-error Demo purposes
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const usernameAndPasswordAuthMethod: NonNullable<
@@ -67,17 +65,10 @@ const discordAuthMethod: NonNullable<AuthMethods["discord"]> = {
   configFn: getDiscordAuthConfig,
 };
 
-// 🔐 Auth out of the box! https://wasp.sh/docs/auth/overview
 export const authConfig: Auth = {
   userEntity: "User",
   methods: {
-    // NOTE: If you decide to not use email auth, make sure to also delete the related routes below.
-    //       (RequestPasswordResetRoute, PasswordResetRoute, EmailVerificationRoute)
     email: emailAuthMethod,
-    // usernameAndPassword: usernameAndPasswordAuthMethod,
-    // google: googleAuthMethod,
-    // gitHub: gitGubAuthMethod,
-    // discord: discordAuthMethod,
   },
   onAuthFailedRedirectTo: "/login",
   onAuthSucceededRedirectTo: "/demo-app",

@@ -25,9 +25,14 @@ import {
 } from "@hobo/adapter-infisical";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { z } from "zod";
-import { withDerivedRelayKeys } from "./relay-derived-keys.js";
+import { CACHE_CONFIG_KEYS } from "./cache-backend.js";
+import {
+	RELAY_DERIVED_KEYS,
+	withDerivedRelayKeys,
+} from "./relay-derived-keys.js";
 import {
 	RELAY_RUNTIME_CONFIG_KEYS,
+	RELAY_RUNTIME_CONFIG_SETTINGS,
 	RelayRuntimeConfigSchema,
 } from "./relay-runtime-config-schema.js";
 
@@ -40,17 +45,65 @@ export type RelayRuntimeConfig = Readonly<
 	z.infer<typeof RelayRuntimeConfigSchema>
 > & { readonly [relayConfigBrand]: "RelayRuntimeConfig" };
 
+export type RelayConfigGaps = Readonly<{
+	missing: readonly string[];
+	invalid: readonly string[];
+}>;
+
 /** Raised when entries do not form a valid configuration. Names keys, never values. */
 export class RelayRuntimeConfigError extends Error {
 	readonly keys: readonly string[];
-	constructor(message: string, keys: readonly string[] = []) {
+	readonly gaps: RelayConfigGaps | undefined;
+	constructor(
+		message: string,
+		keys: readonly string[] = [],
+		gaps?: RelayConfigGaps,
+	) {
 		super(keys.length ? `${message}: ${keys.join(", ")}` : message);
 		this.name = "RelayRuntimeConfigError";
 		this.keys = Object.freeze([...keys]);
+		this.gaps =
+			gaps === undefined
+				? undefined
+				: Object.freeze({
+						missing: Object.freeze([...gaps.missing]),
+						invalid: Object.freeze([...gaps.invalid]),
+					});
 	}
 }
 
 const KNOWN = new Set(RELAY_RUNTIME_CONFIG_KEYS);
+const DERIVED: ReadonlySet<string> = new Set(RELAY_DERIVED_KEYS);
+
+function configGaps(
+	keys: readonly string[],
+	present: Readonly<Record<string, string>>,
+): RelayConfigGaps {
+	const named = keys.filter((key) => KNOWN.has(key));
+	return {
+		missing: named.filter(
+			(key) => !Object.hasOwn(present, key) && !DERIVED.has(key),
+		),
+		invalid: named.filter((key) => Object.hasOwn(present, key)),
+	};
+}
+
+export function parseRelayCacheBindings(
+	entries: Readonly<Record<string, string>>,
+): Readonly<Partial<Record<(typeof CACHE_CONFIG_KEYS)[number], string>>> {
+	const bindings: Partial<Record<(typeof CACHE_CONFIG_KEYS)[number], string>> =
+		{};
+	for (const key of CACHE_CONFIG_KEYS) {
+		const value = entries[key];
+		if (
+			value !== undefined &&
+			value !== "" &&
+			RELAY_RUNTIME_CONFIG_SETTINGS[key].safeParse(value).success
+		)
+			bindings[key] = value;
+	}
+	return Object.freeze(bindings);
+}
 
 export function parseRelayRuntimeConfig(
 	entries: Readonly<Record<string, string>>,
@@ -80,7 +133,11 @@ export function parseRelayRuntimeConfig(
 				),
 			),
 		].sort();
-		throw new RelayRuntimeConfigError("invalid relay configuration", keys);
+		throw new RelayRuntimeConfigError(
+			"invalid relay configuration",
+			keys,
+			configGaps(keys, present),
+		);
 	}
 	// SAFETY: the schema above accepted exactly these entries.
 	return Object.freeze(parsed.data) as RelayRuntimeConfig;

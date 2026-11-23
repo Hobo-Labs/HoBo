@@ -240,6 +240,14 @@ is the only builder, and the Vercel project is never connected to Git.
   /v1/projects/{project}/rollback/{deployment}`), and the command fails with
   `HOBO_CI_DEPLOY_ROLLED_BACK` (or `HOBO_CI_DEPLOY_ROLLBACK_FAILED`, naming
   the deployment to restore by hand).
+- **A relay that waits only for its owner stays live.** When `/healthz` names
+  the commit, `/readyz` answers `not-configured` with the relay's own entries
+  the store lacks (`missing`) or refuses (`invalid`), and the owner hand-off
+  serves (`/owner-handoff` answers 200 and a probe of an unknown mailbox
+  reaches its store and answers 404), the command keeps the new build in
+  production and answers `HOBO_CI_DEPLOYED_AWAITING_OWNER`, naming those
+  entries. The Freight is not qualified; the next deploy after the owner fills
+  the store qualifies it. A hand-off that does not serve still rolls back.
 
 `--build git` (the default for other callers) still realizes from a git ref
 through `createVercelDeployProvider`'s git-artifact mode, which needs
@@ -422,7 +430,7 @@ in the journal (its compensation restores the predecessor Set there):
 | Code | The production domain said | Remediation in the message |
 |---|---|---|
 | `HOBO_CI_DEPLOY_COMMIT_MISMATCH` | `/healthz` names another commit, or none | which deployment Vercel aliased to production; the right origin |
-| `HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED` | `/readyz` `state: "not-configured"` | fill the store `deploy/secret-store.binding.json` names ([folder](CONFIG-SERVICE.md#what-the-folder-holds)) |
+| `HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED` | `/readyz` `state: "not-configured"` (with the `missing` and `invalid` entries it names) | fill the store `deploy/secret-store.binding.json` names ([folder](CONFIG-SERVICE.md#what-the-folder-holds)) |
 | `HOBO_CI_DEPLOY_RELAY_NOT_READY` | `/readyz` `config-service-denied`, `config-service-unavailable`, `start-failed`, a started relay's false parts, or `/healthz` not 200 | per reason |
 | `HOBO_CI_DEPLOY_VERIFICATION_FAILED` | anything else | — |
 
@@ -660,10 +668,14 @@ reported but still ready, and `workers: "starting"` (no evidence yet: a new
 deployment, or a lost cache) is ready too. While the relay cannot start (the
 config service unreachable on a cold start, an invalid configuration or cache
 binding) `/readyz` answers 503 `{ready: false, started: false, state}` and
-every other route 503. `state` names why, never a value: `not-configured` (the
+every other route 503 except the [owner hand-off](#owner-hand-off-page). `state` names why, never a value: `not-configured` (the
 store holds no valid relay configuration, or none is bound), `config-service-denied`
 (the store refused the relay's OIDC identity), `config-service-unavailable`,
-or `start-failed` (the log's `hobo_ci_relay_init_failed` says more).
+or `start-failed` (the log's `hobo_ci_relay_init_failed` says more). When the
+store's folder is read but incomplete, `not-configured` also names the relay's
+own entries by name: `missing` (required and absent; the keys derived from the
+App private key are not listed while that key is missing) and `invalid` (held
+but refused by their parser). Entries the relay does not use are never named.
 
 **What the deployment needs.**
 
@@ -1103,6 +1115,16 @@ embedded hosted bridge still supplies and enforces its lease timeout.
 service, the cache, the execution host and the repair evidence (see the probes
 in [The stateless relay](#the-stateless-relay)).
 
+Step *Verify the relay at its production origin* (`scripts/ci/relay-deploy-verify.mts`)
+passes a relay whose `/healthz` names the run's commit and whose `/readyz`
+answers 200. It also passes, as `HOBO_RELAY_AWAITING_OWNER`, a relay whose
+`/readyz` names the owner's `missing` or `invalid` entries while
+`/owner-handoff` answers 200 and an unknown mailbox answers 404 from its store;
+it then sets the step output `awaiting-owner=true` and the fleet verdict probe
+below is skipped, since that route needs the full configuration. A relay that
+waits for its owner without a working hand-off fails as
+`HOBO_RELAY_OWNER_HANDOFF_DOWN`.
+
 After Vercel promotes a deploy, `relay-deploy.yml` also probes the relay at its
 **public origin** (the default environment's `relayOrigin` in `.hobo/ci.json`,
 `https://hobo-ci.vercel.app`), not the deployment URL, which may be protected
@@ -1116,6 +1138,42 @@ stops a run.
 
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
 [runner queue runbook](../ci/RUNNER-QUEUE.md)).
+
+### Owner hand-off page
+
+`/owner-handoff` and `/v1/owner-handoff/mailboxes` (`src/owner-handoff.ts`) let
+the HoBo MCP server reach an owner whose agent host shows no working private
+form. They are routed in `src/entry.ts` before the relay starts, so they work
+while `/readyz` reports `not-configured`; they need only a cache: the first one
+the deployment's environment binds (the Marketplace resource `--provision`
+connects), else a cache binding in the config service's folder
+(`VALKEY_URL`, `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`, `BLOB_STORE_ID`).
+The folder's bindings are parsed on their own, so they open the mailbox even
+while the rest of the folder is incomplete. Without one, every hand-off route
+answers 503 `{ "state": "no-mailbox-store" }`.
+
+- `POST /v1/owner-handoff/mailboxes` registers a mailbox: its id, a P-256
+  public key, an opaque binding, an expiry at most 15 minutes away, an HMAC
+  proof of the key under the ticket, and the digest of a collect token. At most
+  600 registrations a minute.
+- `GET /v1/owner-handoff/mailboxes/<id>` gives the page the offer (never the
+  collect digest) while the mailbox is open; `410` once used, `404` unknown or
+  expired.
+- `PUT …/<id>/envelope` takes one sealed answer; any later one is `410`.
+- `POST …/<id>/collect` with `Authorization: Bearer <collect token>` answers
+  `202` until the answer arrives, then `200` with it once, then `410`.
+
+The page reads the ticket from the URL fragment, which no server receives,
+removes it from the address bar, checks the offer's proof, and seals the
+owner's answer with Web Crypto (`src/owner-handoff-seal.ts`, embedded verbatim
+in the page). Its CSP admits only its own script and style by hash and
+connects only to its own origin. The relay stores the registration and the
+ciphertext; it never sees the ticket, the collect token or the answer.
+`../hobo/contracts/owner-handoff-relay.pact.json` is the contract with HoBo's
+MCP server, verified here by `contracts/owner-handoff.provider.test.ts`.
+
+The page ships with the relay: owners can use it only once a relay built from
+this code serves the production origin.
 
 ### Failure log
 

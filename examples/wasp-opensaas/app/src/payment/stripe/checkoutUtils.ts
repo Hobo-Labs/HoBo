@@ -3,10 +3,6 @@ import { User } from "wasp/entities";
 import { CHECKOUT_CANCELED_URL, CHECKOUT_SUCCESS_URL } from "../paths";
 import { stripeClient } from "./stripeClient";
 
-/**
- * Returns a Stripe customer for the given User email, creating a customer if none exist.
- * Implements email uniqueness logic since Stripe doesn't enforce unique emails.
- */
 export async function ensureStripeCustomer(
   userEmail: NonNullable<User["email"]>,
 ): Promise<Stripe.Customer> {
@@ -54,11 +50,6 @@ export function createStripeCheckoutSession({
   });
 }
 
-/**
- * Stripe automatically creates invoices for subscriptions.
- * For one-time payments, we must enable them manually.
- * However, enabling invoices for subscriptions will throw an error.
- */
 function getInvoiceCreationConfig(
   mode: Stripe.Checkout.Session.Mode,
 ): Stripe.Checkout.SessionCreateParams["invoice_creation"] {

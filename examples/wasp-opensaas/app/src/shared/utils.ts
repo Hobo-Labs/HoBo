@@ -1,7 +1,3 @@
-/**
- * Used purely to help compiler check for exhaustiveness in switch statements,
- * will never execute. See https://stackoverflow.com/a/39419171.
- */
 export function assertUnreachable(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _: never,
@@ -9,9 +5,6 @@ export function assertUnreachable(
   throw Error("This code should be unreachable");
 }
 
-/**
- * Allows for throttling a function call while still allowing the last invocation to be executed after the throttle delay ends.
- */
 export function throttleWithTrailingInvocation(
   fn: () => void,
   delayInMilliseconds: number,
@@ -53,7 +46,7 @@ export function throttleWithTrailingInvocation(
     }
   };
 
-  throttledFn.cancel = () => {
+  const cancel = () => {
     if (trailingInvocationTimeoutId) {
       clearTimeout(trailingInvocationTimeoutId);
       trailingInvocationTimeoutId = null;
@@ -61,6 +54,5 @@ export function throttleWithTrailingInvocation(
     isTrailingInvocationPending = false;
   };
 
-  // SAFETY: assertion to `throttledFn as typeof throttledFn & { cancel: () => void }` is required at this boundary.
-  return throttledFn as typeof throttledFn & { cancel: () => void };
+  return Object.assign(throttledFn, { cancel });
 }

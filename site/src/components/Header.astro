@@ -4,15 +4,6 @@ import { nav, sections, sectionFor } from "../nav";
 import { href } from "../lib/url";
 
 const path = Astro.url.pathname;
-// The header shows sections, not groups. `aria-current="page"` is the spec
-// value — "true" is not a valid token and screen readers ignore it.
-//
-// `sectionFor` is the *sole* authority here. It used to be backed up by a
-// `path.startsWith(section.slug)` fallback, which marked a second link on any
-// page where the two disagreed — `/agents/` came out with both "Learn" and
-// "Agents" current. `aria-current="page"` identifies one element, so two is an
-// invalid state, not a redundant one. Now that `sectionFor` resolves section
-// slugs as namespace roots, the fallback only ever added the wrong answer.
 const here = sectionFor(path.replace(href("/"), "/"), nav);
 ---
 
@@ -23,10 +14,6 @@ const here = sectionFor(path.replace(href("/"), "/"), nav);
 			<span>HoBo</span>
 		</a>
 		<nav class="site-nav" id="site-nav" aria-label="Main">
-			{/* The ink nav — and beneath it, each world's own. A world does not
-			    rename these links; it re-frames them: a newspaper has sections,
-			    a photoplay has acts, a dispatch board has tracks, a scrapbook
-			    has tabs. Same five destinations, five vocabularies. */}
 			<span class="ink-world nav-links">
 				{
 					sections.map((section) => (
@@ -91,11 +78,6 @@ const here = sectionFor(path.replace(href("/"), "/"), nav);
 					</svg>
 				</summary>
 				<div class="palette-menu" role="group" aria-label="Design">
-					{/* Captions say what you GET, not the CSS that makes it — "paper
-					    planes, hard shadows" was judged tokens-speak by the persona
-					    review. And the current choice is marked: an unlabeled menu
-					    with no state forced people to memorise what each design looks
-					    like to know where they were. */}
 					<button type="button" data-set-design="ink">
 						Ink <span>the classic — black ink on white paper</span>
 					</button>

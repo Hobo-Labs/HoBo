@@ -43,6 +43,38 @@ signal handler, so a host that embeds it keeps its own signal handling. SIGKILL 
 crash are out of reach.
 Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.ts`).
 
+### Owner store session over MCP
+
+`hobo-mcp`'s `choose_secret_store` connects the owner's secret store when an agent
+connects (`src/mcp-store-choice.ts`, `src/owner-store-session.ts`). It asks the owner
+through MCP form elicitation or the `ui://hobo/store-choice` MCP App, never through tool
+arguments, writes the choice to the owner's locator for the project `cwd`
+(`ownerLocator` in `@hobo/hobo-ci`), and signs in with `signInOwnerStore` over the MCP
+owner channel. The opened store stays in the server's memory, keyed by project. Its
+`credentials(cwd)` is the `@hobo/cd` `CredentialResolver` that `hobo deploy` passes to
+the CD runtime: `owner://<NAME>` reads the store's CD entry, and `env://<NAME>` falls
+back to it when the environment lacks the name, so Hostinger's resolvers receive the
+owner's `HOSTINGER_API_TOKEN` only in their request header. Results, `doctor`'s
+`ownerStoreSession`, and refusals carry a status and the store's label only.
+
+A host without form elicitation or MCP Apps, or one whose form is answered with
+cancel or decline within `FAST_FORM_ANSWER_MS` (1.5 s, measured by
+`createFormHealth` on every elicitation the server sends), gets status `link`
+from `src/owner-link.ts`: a one-time URL `<relay>/owner-handoff#<ticket>` on the
+project's CI relay (`HOBO_CI_RELAY_URL`, else `relayOrigin` of the default
+environment in `.hobo/ci.json`). The process registers a mailbox derived from the
+ticket with a fresh P-256 public key, an HMAC proof binding that key to the
+ticket, an opaque digest of the `cwd`, a ten-minute expiry and the digest of a
+collect token; the relay never sees the ticket. The page (`@hobo/ci-vercel`)
+checks the proof, seals the owner's answer to that key (ECDH, HKDF-SHA256,
+AES-256-GCM, with the mailbox and binding as associated data), and the next
+`choose_secret_store` call collects and opens it, drops the key, records the
+choice, deposits the sign-in values into the owner channel and establishes the
+session. A replayed, expired, misbound or second answer is refused. The wire
+records are `data-models/owner_handoff.proto` and `.cue`, pinned by
+`contracts/owner-handoff-relay.pact.json`. Without a usable relay the result is
+`secure-form-unavailable` with an `owner-link-relay-*` reason.
+
 ## CLI verification and remote deployment safety
 
 ### Budgeted cloud hosting
