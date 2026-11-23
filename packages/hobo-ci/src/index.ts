@@ -249,6 +249,7 @@ export {
 export {
 	type CommandEnv,
 	type CommandResult,
+	ensureInfisicalAgentVaultCli,
 	ensureStoreCli,
 	hoboToolsDir,
 	INFISICAL_CLI,
