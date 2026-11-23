@@ -29,10 +29,12 @@ registered host once exhausted.
 - **Replay lane (default):** the `fetch` transport is injected; tests
   exercise exact request formation + response parsing against the
   PACT-recorded responses with no network.
-- **Live lane (credential-gated):** set `HOBO_GITHUB_LIVE=1`,
-  `GITHUB_INSTALLATION_TOKEN` (a broker-minted short-lived installation
-  token — no PATs), `HOBO_GITHUB_OWNER`, `HOBO_GITHUB_REPO` and optionally
-  `HOBO_GITHUB_WORKFLOW` to dispatch and track a real run.
+- **Live lane (credential-gated):** a caller holding the owner store session
+  passes `ownerTokenProvider(credentials)`, which resolves
+  `owner://GITHUB_INSTALLATION_TOKEN` (a short-lived installation token — no
+  PATs; the environment is never read), with `HOBO_GITHUB_OWNER`,
+  `HOBO_GITHUB_REPO` and optionally `HOBO_GITHUB_WORKFLOW`, to dispatch and
+  track a real run.
 
 ## Install
 

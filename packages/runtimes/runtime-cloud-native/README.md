@@ -25,9 +25,11 @@ info. For remote providers the handler cannot run the component in-process,
 so the seam is proven by **request formation + credential gating**, not by
 faking execution:
 
-- **`ensure` is credential-gated and fails closed.** Without
-  `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` (presence-only checks;
-  values are never logged) it returns `ready: false` with
+- **`ensure` is credential-gated and fails closed.** Without the API token
+  the host passes in (`defaultCloudNativeProviders({ apiToken })`, resolved from
+  the owner's store as `owner://CLOUDFLARE_API_TOKEN`; the environment is never
+  read for it) or `CLOUDFLARE_ACCOUNT_ID` (presence-only checks; values are
+  never logged) it returns `ready: false` with
   `details.credentialGated: true` and the exact `missing` env-var names.
   With credentials it verifies the token via
   `GET https://api.cloudflare.com/client/v4/user/tokens/verify` through an

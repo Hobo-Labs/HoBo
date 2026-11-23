@@ -17,15 +17,17 @@ export {
 	createDepotClient,
 	DEPOT_API_ERROR,
 	DEPOT_CREDENTIALS_MISSING,
+	DEPOT_PROJECT_TOKEN_REF,
 	DepotApiError,
 	type DepotBuildHandle,
 	type DepotBuildStatus,
 	type DepotClient,
 	type DepotClientOptions,
+	type DepotCredentialResolver,
 	DepotCredentialsMissingError,
 	type DepotFetch,
 	type DepotFetchResponse,
-	envDepotTokenProvider,
+	ownerDepotTokenProvider,
 } from "./depot-client.js";
 export {
 	AUTH_SCHEMA,

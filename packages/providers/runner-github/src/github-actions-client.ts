@@ -66,7 +66,7 @@ export class GithubCredentialsMissingError extends Error {
 	readonly code = GITHUB_CREDENTIALS_MISSING;
 	constructor() {
 		super(
-			"runner-github: no brokered GitHub installation token available — wire a token provider (the Yard broker) or set GITHUB_INSTALLATION_TOKEN for the live lane.",
+			"runner-github: no brokered GitHub installation token available — wire a token provider (the Yard broker) or resolve owner://GITHUB_INSTALLATION_TOKEN through the owner store session (HoBo MCP choose_secret_store); the environment is never read.",
 		);
 		this.name = "GithubCredentialsMissingError";
 	}
@@ -133,17 +133,25 @@ const globalFetch: GithubFetch = (url, init) => {
 	return fetchImpl(url, init);
 };
 
-// The env-fallback token provider for the credential-gated LIVE lane only:
-// GITHUB_INSTALLATION_TOKEN carries a broker-minted expiring token into the
-// process; absence throws the typed gate instead of limping into 401s.
-export function envTokenProvider(
-	env: Record<string, string | undefined> = process.env,
+export type GithubCredentialResolver = Readonly<{
+	resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>>;
+}>;
+
+export const GITHUB_INSTALLATION_TOKEN_REF =
+	"owner://GITHUB_INSTALLATION_TOKEN";
+
+export function ownerTokenProvider(
+	credentials: GithubCredentialResolver,
 ): BrokeredTokenProvider {
 	return async () => {
-		const token = env.GITHUB_INSTALLATION_TOKEN;
-		if (!token) {
-			throw new GithubCredentialsMissingError();
-		}
+		const material = await credentials
+			.resolve(GITHUB_INSTALLATION_TOKEN_REF, "github.actions")
+			.catch(() => undefined);
+		const token = material?.token;
+		if (!token) throw new GithubCredentialsMissingError();
 		return token;
 	};
 }
