@@ -86,8 +86,11 @@ fi
 repository="${GITHUB_REPOSITORY:-Hobo-Labs/HoBo}"
 repository="${repository,,}"
 published="ghcr.io/${repository}/hobo-ci-worker:${version}"
+base_cache="ghcr.io/${repository}/${base_image}:buildcache"
+ghcr_ready=0
 if [[ -n "${GHCR_TOKEN:-}" ]]; then
   if printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR:-github-actions}" --password-stdin; then
+    ghcr_ready=1
     if docker pull "${published}"; then
       docker tag "${published}" "${candidate}"
       if promote_candidate; then
@@ -122,8 +125,18 @@ if [[ "${HOBO_CI_SKIP_PLAYWRIGHT_STAGING:-}" != "1" ]]; then
 fi
 mkdir -p "${runner_ctx}/base/playwright-cache"
 # The legacy builder (Debian's docker.io CLI) does not set TARGETARCH.
-docker build --build-arg "TARGETARCH=${target_arch}" \
+cache_args=()
+if [[ "${ghcr_ready}" = 1 ]]; then
+  cache_args=(--cache-from "${base_cache}")
+fi
+docker build --build-arg "TARGETARCH=${target_arch}" --build-arg BUILDKIT_INLINE_CACHE=1 \
+  ${cache_args[@]+"${cache_args[@]}"} \
   -f "${base_dockerfile}" -t "${base_image}:local" "${runner_ctx}"
+if [[ "${ghcr_ready}" = 1 && "${GITHUB_EVENT_NAME:-}" = push && "${GITHUB_REF:-}" = refs/heads/main ]]; then
+  docker tag "${base_image}:local" "${base_cache}"
+  docker push "${base_cache}" || echo "base layer cache push failed; the next build starts without it" >&2
+  docker image rm --no-prune "${base_cache}" >/dev/null 2>&1 || true
+fi
 
 start_registry() {
   # Any free loopback port: a fixed 5000 collides with whatever else the host runs there.
