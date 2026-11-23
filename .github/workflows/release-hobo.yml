@@ -574,7 +574,7 @@ jobs:
       !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') &&
       (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
