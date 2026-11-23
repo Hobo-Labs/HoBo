@@ -1,0 +1,14 @@
+{
+	"id": "i_invalid",
+	"template": "agent37-ubuntu",
+	"type": "default",
+	"region": "eu",
+	"resources": { "cpu": 3, "memory": 5, "disk": 0 },
+	"status": "unknown",
+	"auto_sleep": false,
+	"idle_timeout_seconds": 30,
+	"public_ports": [70000],
+	"network": "open",
+	"created_at": "",
+	"updated_at": ""
+}
