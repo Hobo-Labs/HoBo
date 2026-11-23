@@ -1111,6 +1111,16 @@ embedded hosted bridge still supplies and enforces its lease timeout.
 service, the cache, the execution host and the repair evidence (see the probes
 in [The stateless relay](#the-stateless-relay)).
 
+Step *Verify the relay at its production origin* (`scripts/ci/relay-deploy-verify.mts`)
+passes a relay whose `/healthz` names the run's commit and whose `/readyz`
+answers 200. It also passes, as `HOBO_RELAY_AWAITING_OWNER`, a relay whose
+`/readyz` names the owner's `missing` or `invalid` entries while
+`/owner-handoff` answers 200 and an unknown mailbox answers 404 from its store;
+it then sets the step output `awaiting-owner=true` and the fleet verdict probe
+below is skipped, since that route needs the full configuration. A relay that
+waits for its owner without a working hand-off fails as
+`HOBO_RELAY_OWNER_HANDOFF_DOWN`.
+
 After Vercel promotes a deploy, `relay-deploy.yml` also probes the relay at its
 **public origin** (the default environment's `relayOrigin` in `.hobo/ci.json`,
 `https://hobo-ci.vercel.app`), not the deployment URL, which may be protected

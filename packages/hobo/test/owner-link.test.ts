@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { loadCiProjectFromDirectory } from "@hobo/ci-gh-actions/cli-serve";
 import { ownerHandoffSealing } from "@hobo/ci-vercel/owner-handoff";
 import { describe, expect, it } from "vitest";
@@ -145,7 +146,7 @@ describe("the owner's one-time link", () => {
 
 	it("finds the relay from HOBO_CI_RELAY_URL, else the project's committed CI config", async () => {
 		expect(
-			await projectRelayOrigin("/nowhere", {
+			await projectRelayOrigin(tmpdir(), {
 				HOBO_CI_RELAY_URL: "https://relay.example/",
 			}),
 		).toBe("https://relay.example");
