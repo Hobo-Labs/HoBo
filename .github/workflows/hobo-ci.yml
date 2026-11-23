@@ -2027,7 +2027,7 @@ jobs:
     needs: [route]
     if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
     concurrency:
@@ -2070,7 +2070,7 @@ jobs:
         if: steps.deps-layer.outputs.match != 'true'
         run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build every package
-        timeout-minutes: 25
+        timeout-minutes: 15
         run: pnpm exec turbo run build --continue --output-logs=errors-only --concurrency=100%
       - name: Prune Turbo cache
         id: turbo-prune

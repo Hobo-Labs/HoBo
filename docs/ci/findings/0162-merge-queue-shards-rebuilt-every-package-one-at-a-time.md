@@ -43,3 +43,4 @@ With main's cache restored, an unchanged package's build replays in well under a
 - A merge group whose base is a main commit whose build cache is still being saved restores the previous main build, so packages that commit changed rebuild.
 - Each main push that changes a package saves a new main build cache. GitHub evicts the least recently used caches when the repository passes its 10 GB cache limit, and older main build caches are never read again, so they go first.
 - On the box the turbo cache is a shared host directory, so the job neither prunes nor saves there. Only a push to main routed to GitHub-hosted runners seeds the `actions/cache` entry hosted pull request and merge-group jobs read.
+- The main build job stays inside the 20-minute job limit every `hobo-ci.yml` job keeps (15 minutes for the build step), so a cold full build that runs longer saves no cache and the next push retries from what the previous one saved.
