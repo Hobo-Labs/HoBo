@@ -2127,6 +2127,9 @@ importers:
       '@hobo/events':
         specifier: workspace:*
         version: link:../events
+      '@hobo/provider-agent37':
+        specifier: workspace:*
+        version: link:../providers/provider-agent37
       '@hobo/redaction-test-harness':
         specifier: workspace:*
         version: link:../redaction-test-harness

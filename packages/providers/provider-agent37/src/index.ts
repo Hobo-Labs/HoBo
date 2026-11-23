@@ -1,17 +1,21 @@
 export {
+	AGENT37_API_KEY_REF,
 	type Agent37Client,
 	type Agent37ClientOptions,
 	type Agent37CreateInstanceInput,
+	type Agent37CredentialResolver,
 	Agent37Error,
 	type Agent37ErrorOptions,
 	type Agent37ExecInput,
 	type Agent37ExecResult,
 	type Agent37Instance,
 	type Agent37RegisteredWebhook,
+	type Agent37ResolvedClientOptions,
 	type Agent37Usage,
 	type Agent37UsageQuery,
 	type Agent37Webhook,
 	createAgent37Client,
+	createAgent37ClientFromCredentials,
 	redactAgent37Text,
 } from "./client.js";
 export {

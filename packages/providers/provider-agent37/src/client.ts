@@ -177,6 +177,41 @@ function parseApiKey(value: string): string {
 	return value;
 }
 
+// public-contract: the owner-store reference the Agent37 client reads its API key from; owners store it under this name.
+export const AGENT37_API_KEY_REF = "owner://AGENT37_API_KEY";
+const AGENT37_CREDENTIAL_SCOPE = "provider-agent37";
+
+export type Agent37CredentialResolver = {
+	resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>>;
+};
+
+export type Agent37ResolvedClientOptions = Omit<
+	Agent37ClientOptions,
+	"apiKey"
+> & {
+	readonly credentials: Agent37CredentialResolver;
+};
+
+export async function createAgent37ClientFromCredentials(
+	options: Agent37ResolvedClientOptions,
+): Promise<Agent37Client> {
+	const { credentials, ...rest } = options;
+	const material = await credentials.resolve(
+		AGENT37_API_KEY_REF,
+		AGENT37_CREDENTIAL_SCOPE,
+	);
+	const apiKey = material.token;
+	if (apiKey === undefined || apiKey === "") {
+		throw new Agent37Error(
+			`Agent37 needs ${AGENT37_API_KEY_REF} from the owner's store session`,
+		);
+	}
+	return createAgent37Client({ ...rest, apiKey });
+}
+
 export function createAgent37Client(
 	options: Agent37ClientOptions,
 ): Agent37Client {

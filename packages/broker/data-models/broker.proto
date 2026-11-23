@@ -61,8 +61,6 @@ message DeliveryPolicy {
   DeliveryPublisher publisher = 7;
 }
 
-// One connector registration in the broker's connector registry
-// (github-app | pulumi | azure | vercel | cloudflare | agent37 | custom).
 message ConnectorConfig {
   string id = 1;
   string kind = 2;

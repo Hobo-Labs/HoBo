@@ -87,7 +87,7 @@ pnpm --filter @hobo/provider-agent37 build
 
 ## Explicit live read-only smoke
 
-`pnpm --filter @hobo/provider-agent37 test:live` calls only `listInstances`. It fails unless `AGENT37_API_KEY` is explicitly supplied. The default package test configuration excludes this file, so normal and CI tests make no live Agent37 calls.
+`createAgent37ClientFromCredentials({ credentials })` reads the API key as `owner://AGENT37_API_KEY` (`AGENT37_API_KEY_REF`) through a `CredentialResolver`, such as HoBo's owner store session; it never reads the process environment. `pnpm --filter @hobo/hobo test:live` runs `packages/hobo/test/live-agent37.test.ts`, which establishes the owner store session and calls only `listInstances`. It is skipped, naming HoBo MCP's `choose_secret_store`, when no session is established. The default `@hobo/hobo` test configuration excludes `test/live-*.test.ts`, so normal and CI tests make no live Agent37 calls.
 
 Reconcile `pnpm-lock.yaml` with `origin/main` before CI runs on the PR merge tree; HoBo CI Fabric installs with `--frozen-lockfile` against that merge ref.
 

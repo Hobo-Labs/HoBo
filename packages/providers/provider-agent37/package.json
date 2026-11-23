@@ -31,8 +31,7 @@
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
-		"test": "vitest run test/",
-		"test:live": "vitest run --config vitest.live.config.ts"
+		"test": "vitest run test/"
 	},
 	"dependencies": {
 		"@hobo/core": "workspace:*",
