@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -77,7 +78,7 @@ function runHook(
 	dir: string,
 	env: Readonly<Record<string, string>>,
 ): Promise<number> {
-	const path = join(dir, "pre-job.sh");
+	const path = join(dir, `pre-job-${randomUUID()}.sh`);
 	writeFileSync(path, script, { mode: 0o555 });
 	return new Promise((resolve, reject) => {
 		const child = spawn("sh", [path], {

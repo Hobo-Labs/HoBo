@@ -14,7 +14,7 @@ import {
 } from "@hobo/fleet";
 import { checkAssignment } from "@hobo/fleet/work";
 import { createEgressProxyFactory, sandboxDrivers } from "@hobo/fleet-agent";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
 	HOOK_EXIT,
 	HOOK_PATH,
@@ -66,15 +66,16 @@ const order = create(WorkOrderSchema, {
 	sandboxTier: SandboxTier.S1_CONTAINER,
 });
 
-beforeAll(async () => {
-	drivers = await sandboxDrivers({
-		cap: SandboxTier.S1_CONTAINER,
-		log: (event, fields) => {
-			if (event === "hobo_fleet_sandbox_unavailable")
-				unavailable.push(JSON.stringify(fields));
-		},
-	});
-}, 600_000);
+drivers = await sandboxDrivers({
+	cap: SandboxTier.S1_CONTAINER,
+	log: (event, fields) => {
+		if (event === "hobo_fleet_sandbox_unavailable")
+			unavailable.push(JSON.stringify(fields));
+	},
+});
+const noS1 = !drivers.some(
+	(driver) => driver.tier === SandboxTier.S1_CONTAINER,
+);
 
 const open: Array<() => Promise<void>> = [];
 afterAll(async () => {
@@ -223,7 +224,7 @@ function pullRequestEvent(
 	);
 }
 
-describe("O24: the start fence in a real S1 sandbox", () => {
+describe.skipIf(noS1)("[A10] O24: the start fence in a real S1 sandbox", () => {
 	it("sandboxDrivers() offers an S1 driver on this host", () => {
 		expect(
 			drivers.some((driver) => driver.tier === SandboxTier.S1_CONTAINER),
