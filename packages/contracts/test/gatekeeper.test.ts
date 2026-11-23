@@ -1,4 +1,3 @@
-
 import { describeConcern } from "@hobo/contract-harness";
 import {
 	createBoundaryContract,

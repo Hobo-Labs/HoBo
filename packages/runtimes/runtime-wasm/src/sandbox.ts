@@ -1,4 +1,3 @@
-
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -294,8 +293,7 @@ function resolveJcoBin(): string {
 		const jcoPkg = require.resolve("@bytecodealliance/jco/package.json");
 		const bin = join(dirname(jcoPkg), "src", "jco.js");
 		if (existsSync(bin)) return bin;
-	} catch {
-	}
+	} catch {}
 	let dir = packageRoot();
 	for (let i = 0; i < 6; i += 1) {
 		const candidate = join(
@@ -326,8 +324,7 @@ function resolveJcoTool(): JcoTool {
 				version?: string;
 			};
 			if (isJsonString(pkg.version)) version = pkg.version;
-		} catch {
-		}
+		} catch {}
 	}
 	return { binPath, version, source: "package" };
 }

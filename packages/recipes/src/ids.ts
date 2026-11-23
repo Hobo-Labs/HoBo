@@ -1,4 +1,3 @@
-
 declare const recipeIdBrand: unique symbol;
 
 export type RecipeId = string & { readonly [recipeIdBrand]: "RecipeId" };

@@ -1,4 +1,3 @@
-
 import {
 	catalogHashOf,
 	parseDecimal,

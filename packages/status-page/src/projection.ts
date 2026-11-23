@@ -1,4 +1,3 @@
-
 import type { EventEnvelope } from "@hobo/core";
 import { defineProjection, type Projection } from "@hobo/data";
 

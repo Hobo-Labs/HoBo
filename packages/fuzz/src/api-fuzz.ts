@@ -1,4 +1,3 @@
-
 import type { FuzzValue } from "./manifest.js";
 import { hasPrototypePollution } from "./manifest.js";
 import type { ControlModel } from "./model.js";

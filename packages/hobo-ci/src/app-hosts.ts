@@ -1,4 +1,3 @@
-
 export type GithubOwnerKind = "User" | "Organization";
 
 export interface GithubAppOwner {

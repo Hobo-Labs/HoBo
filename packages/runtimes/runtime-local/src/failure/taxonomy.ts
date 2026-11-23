@@ -1,4 +1,3 @@
-
 import { isJsonNumber, isJsonString, type JsonValue } from "../json.js";
 
 export type RuntimeErrorKind =

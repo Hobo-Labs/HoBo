@@ -46,7 +46,7 @@ export function prettyPaymentPlanName(planId: PaymentPlanId): string {
 
 export function parsePaymentPlanId(planId: string): PaymentPlanId {
   const paymentPlanId = Object.values(PaymentPlanId).find(
-    (knownPlanId) => knownPlanId === planId,
+    (candidate) => candidate === planId,
   );
   if (paymentPlanId === undefined) {
     throw new Error(`Invalid PaymentPlanId: ${planId}`);
@@ -56,10 +56,10 @@ export function parsePaymentPlanId(planId: string): PaymentPlanId {
 
 export function parseSubscriptionStatus(status: string): SubscriptionStatus {
   const subscriptionStatus = Object.values(SubscriptionStatus).find(
-    (knownStatus) => knownStatus === status,
+    (candidate) => candidate === status,
   );
   if (subscriptionStatus === undefined) {
-    throw new Error(`Invalid subscription status: ${status}`);
+    throw new Error(`Invalid SubscriptionStatus: ${status}`);
   }
   return subscriptionStatus;
 }

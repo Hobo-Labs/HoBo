@@ -1,4 +1,3 @@
-
 import { CoreParseError } from "../errors.js";
 import {
 	isJsonBoolean,
@@ -159,10 +158,9 @@ export function parsePhaseScopeFromEnv(
 export function phaseForCapability(
 	capability: PhaseScopedCapability,
 ): DeploymentPhase {
-	const phase =
-		(
-			CAPABILITY_PHASES as Readonly<Record<string, DeploymentPhase | undefined>>
-		)[capability];
+	const phase = (
+		CAPABILITY_PHASES as Readonly<Record<string, DeploymentPhase | undefined>>
+	)[capability];
 	if (phase === undefined) {
 		throw new PhaseParseError(
 			"capability",

@@ -1,4 +1,3 @@
-
 import { isJsonString } from "../json.js";
 
 const REQUIRED_GROUNDINGS = ["intent", "contract", "rubric"] as const;

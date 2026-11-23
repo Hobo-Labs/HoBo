@@ -1,4 +1,3 @@
-
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { WorkspaceRecord } from "./workspace.js";
@@ -43,8 +42,7 @@ export function readEvents(riftDir: string): readonly WorkspaceEvent[] {
 		if (line.trim().length === 0) continue;
 		try {
 			events.push(JSON.parse(line) as WorkspaceEvent);
-		} catch {
-		}
+		} catch {}
 	}
 	return events;
 }

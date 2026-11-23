@@ -1,4 +1,3 @@
-
 export type MeshOutcome = "delivered" | "dropped";
 
 export type MeshReliability = Readonly<{

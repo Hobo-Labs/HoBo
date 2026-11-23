@@ -1,4 +1,3 @@
-
 import type { MarketplaceAttachment, RelayTarget } from "./ci-relay-yard.js";
 import { isJsonArray, isJsonObject, type JsonValue } from "./json.js";
 

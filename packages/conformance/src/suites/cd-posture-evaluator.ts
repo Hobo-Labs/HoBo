@@ -1,4 +1,3 @@
-
 import { isJsonArray, isJsonObject } from "../json.js";
 import {
 	type CdConformanceReport,

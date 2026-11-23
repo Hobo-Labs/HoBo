@@ -1,4 +1,3 @@
-
 import {
 	parseSchemaIr,
 	SCHEMA_IR_CONTRACT,
@@ -320,11 +319,9 @@ function extraConfigEntries(
 	}
 	const record = asRecord(produced);
 	if (record === undefined) return undefined;
-	return (
-		Object.keys(record)
-			.sort()
-			.map((key) => [key, record[key] ?? null] as const)
-	);
+	return Object.keys(record)
+		.sort()
+		.map((key) => [key, record[key] ?? null] as const);
 }
 
 function describe<T>(value: T): string {

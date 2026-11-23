@@ -1,4 +1,3 @@
-
 import { runDaprKafkaPath } from "../src/scenarios.js";
 
 const result = await runDaprKafkaPath("demo");

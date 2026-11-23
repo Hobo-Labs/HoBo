@@ -1,4 +1,3 @@
-
 import { readFileSync } from "node:fs";
 import { cpus, loadavg } from "node:os";
 import { memoryAdmitHeadroom } from "@hobo/ci";

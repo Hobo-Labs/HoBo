@@ -1,4 +1,3 @@
-
 import type { BootstrapClass } from "@hobo/claims";
 import { isJsonNumber, type JsonValue } from "../../json.js";
 

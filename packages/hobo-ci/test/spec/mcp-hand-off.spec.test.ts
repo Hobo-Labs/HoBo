@@ -17,7 +17,6 @@ import {
 function throughMcp(): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: () => undefined,
-		// SAFETY: the preparation reads only progress and these output flags.
 		flags: { json: true, quiet: false } as CommandRunInput["flags"],
 	};
 	return {
@@ -26,7 +25,6 @@ function throughMcp(): PrepareInput {
 		whatIf: false,
 		yes: false,
 		handOff: true,
-		// SAFETY: prepareGithubConnection reads only progress and these output flags.
 		run: run as CommandRunInput,
 	};
 }

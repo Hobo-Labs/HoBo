@@ -1,4 +1,3 @@
-
 import type { JunctionDefinition } from "./types.js";
 
 export const JUNCTION_MESSAGING_FEDERATED_EVENT =

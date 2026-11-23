@@ -1,4 +1,3 @@
-
 import type { SQLInputValue } from "node:sqlite";
 import {
 	compareDigests,

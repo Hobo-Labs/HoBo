@@ -1,4 +1,3 @@
-
 import type { WorkerFileSystemStats } from "./storage-admission.js";
 
 export type HostStorageSample = Readonly<{

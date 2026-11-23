@@ -1,4 +1,3 @@
-
 // public-contract: the runner execution-host category token.
 export const RUNNER_CATEGORY = "runner";
 // public-contract: the build-machine execution-host category token.

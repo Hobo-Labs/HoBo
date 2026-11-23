@@ -1,4 +1,3 @@
-
 export type LibsqlCell = null | string | number | bigint | ArrayBuffer;
 
 const tagOf = Object.prototype.toString;

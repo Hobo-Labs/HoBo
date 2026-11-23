@@ -1,4 +1,3 @@
-
 import { isJsonString, type JsonObject } from "./json.js";
 import type { DeliveryTicket } from "./planes.js";
 import { LEGACY_ARGO_PUBLISHER } from "./types.js";

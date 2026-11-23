@@ -1,4 +1,3 @@
-
 import type { PolicyRequest } from "@hobo/core";
 import { isJsonString } from "../json.js";
 import { verifyElevatedAccessCapability } from "./elevated-capability.js";

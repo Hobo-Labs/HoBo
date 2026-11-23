@@ -1,4 +1,3 @@
-
 import type { CampId, PromotionId } from "../ports.js";
 import { canonicalJson, sha256Hex } from "./journal.js";
 

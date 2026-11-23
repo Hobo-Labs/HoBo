@@ -1,4 +1,3 @@
-
 import { z } from "zod";
 import type { GithubTransport } from "../github.js";
 import {
@@ -426,8 +425,7 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 			firstLead = false;
 			try {
 				await options.onFirstLead?.();
-			} catch {
-			}
+			} catch {}
 		}
 		const targets = await options.targets();
 		for (const target of targets) {

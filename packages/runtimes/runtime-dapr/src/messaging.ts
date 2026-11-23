@@ -1,4 +1,3 @@
-
 import {
 	type ConsumedMessage,
 	createInMemoryMessaging,

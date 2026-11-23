@@ -1,4 +1,3 @@
-
 export function memoryAdmitHeadroom(
 	availableMb: number | undefined,
 	requiredMb: number,

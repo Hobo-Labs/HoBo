@@ -1,4 +1,3 @@
-
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -106,8 +105,7 @@ if (command === "compile" && rest[0] === "--check") {
 				process.once(signal, () => {
 					try {
 						if (browserPid !== undefined) process.kill(-browserPid, "SIGTERM");
-					} catch {
-					}
+					} catch {}
 					process.exit(code);
 				});
 			}

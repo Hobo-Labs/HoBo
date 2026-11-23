@@ -1,4 +1,3 @@
-
 import {
 	componentResolvers,
 	type LoadedResolverComponent,

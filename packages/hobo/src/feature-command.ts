@@ -1,4 +1,3 @@
-
 import type { CommandModule } from "@hobo/cli";
 import {
 	createContractAssertedHarnessFixtures,

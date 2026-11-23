@@ -1,4 +1,3 @@
-
 import type { CommandModule, CommandResult } from "@hobo/cli";
 import { createControlApiServer } from "@hobo/control-api";
 import { defaultHoboHome } from "./bare-metal-yard.js";

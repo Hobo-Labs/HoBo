@@ -1,4 +1,3 @@
-
 import { type ErrorSignal, isJsonString } from "./json.js";
 
 export type { ErrorSignal } from "./json.js";

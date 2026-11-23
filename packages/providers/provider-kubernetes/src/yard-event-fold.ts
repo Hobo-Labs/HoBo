@@ -1,4 +1,3 @@
-
 import { asJsonObject, type JsonObject, type JsonValue } from "./json.js";
 
 // public-contract: the event-store fold this provider is addressed by. Stored

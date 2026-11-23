@@ -1,4 +1,3 @@
-
 import type { DeliveryGuarantee, MessagingCapabilities } from "@hobo/core";
 import { assertDeliverySupported, MessagingCapabilityError } from "@hobo/core";
 

@@ -1,4 +1,3 @@
-
 // public-contract: the profile record schema id consumers pin.
 export const CAPABILITY_PROFILE_SCHEMA = "hobo.capability-profile/v1";
 

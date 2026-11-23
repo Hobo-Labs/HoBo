@@ -1,4 +1,3 @@
-
 export type LocalDateTime = Readonly<{
 	year: number;
 	month: number;

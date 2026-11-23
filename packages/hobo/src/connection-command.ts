@@ -1,4 +1,3 @@
-
 import type { CommandModule } from "@hobo/cli";
 import type { ConnectionService } from "@hobo/identity";
 import {
@@ -92,11 +91,7 @@ export function createConnectionCommand(
 			const ctx = createManagementContext({ hoboHome });
 			const tenant =
 				isJsonString(f.tenant) && f.tenant.length > 0 ? f.tenant : undefined;
-			const stationId = resolveStationId(
-				hoboHome,
-				flags as JsonObject,
-				env,
-			);
+			const stationId = resolveStationId(hoboHome, flags as JsonObject, env);
 
 			if (sub === "create") {
 				const provider = args[1];

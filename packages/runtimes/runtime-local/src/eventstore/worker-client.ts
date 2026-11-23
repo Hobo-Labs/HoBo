@@ -1,4 +1,3 @@
-
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type {
@@ -177,8 +176,7 @@ export class StorageWorkerClient {
 		if (!this.worker) return;
 		try {
 			await this.call({ id: this.nextId(), op: "shutdown" });
-		} catch {
-		}
+		} catch {}
 		await this.worker.terminate();
 		this.worker = null;
 	}

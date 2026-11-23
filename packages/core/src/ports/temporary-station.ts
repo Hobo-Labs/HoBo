@@ -1,4 +1,3 @@
-
 // public-contract: temporary Environment Station schema id consumers pin.
 import {
 	isJsonNumber,

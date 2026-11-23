@@ -1,4 +1,3 @@
-
 export interface PriorPlacement {
 	readonly deploymentId: string;
 	readonly resource: string;

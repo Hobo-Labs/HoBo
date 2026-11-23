@@ -1,4 +1,3 @@
-
 import {
 	isJsonBoolean,
 	isJsonObject,

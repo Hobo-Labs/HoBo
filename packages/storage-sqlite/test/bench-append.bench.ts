@@ -1,4 +1,3 @@
-
 import { bench, describe } from "vitest";
 
 import { createMemoryNodeSqliteDriver, SqliteJournal } from "../src/index.js";

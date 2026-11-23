@@ -13,7 +13,6 @@ import { fakeWorkload, handedOverInfisicalToken } from "../support/workload.js";
 function throughMcp(): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: () => undefined,
-		// SAFETY: the preparation reads only progress and these output flags.
 		flags: { json: true, quiet: false } as CommandRunInput["flags"],
 	};
 	return {
@@ -22,7 +21,6 @@ function throughMcp(): PrepareInput {
 		whatIf: false,
 		yes: false,
 		handOff: true,
-		// SAFETY: prepareVercelConnection reads only progress and these output flags.
 		run: run as CommandRunInput,
 	};
 }
@@ -74,7 +72,6 @@ function vercel(script: readonly ("pending" | "slow_down" | "denied")[] = []) {
 		return new Response("{}", { status: 404 });
 	};
 	return {
-		// SAFETY: the fake answers every request the device grant makes, by URL.
 		fetch: fetchImpl as typeof fetch,
 		approve: () => {
 			approved = true;

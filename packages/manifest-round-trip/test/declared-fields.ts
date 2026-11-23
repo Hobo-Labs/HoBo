@@ -1,4 +1,3 @@
-
 export class DeclarationNotFoundError extends Error {
 	constructor(name: string) {
 		super(`no exported declaration named ${name}`);

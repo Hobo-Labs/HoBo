@@ -1,4 +1,3 @@
-
 export type StopIds = { readonly id: string; readonly inner: readonly string[] };
 
 export function hashTarget(hash: string): string {

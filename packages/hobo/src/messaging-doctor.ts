@@ -1,4 +1,3 @@
-
 import { diagnoseKafkaReadiness } from "@hobo/provider-kafka";
 import { diagnoseDaprReadiness } from "@hobo/runtime-dapr";
 

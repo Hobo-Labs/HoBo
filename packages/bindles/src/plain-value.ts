@@ -1,4 +1,3 @@
-
 import { isJsonObject, isJsonString, type JsonObject } from "./json.js";
 
 export function isRecord<T>(value: T): value is T & JsonObject {

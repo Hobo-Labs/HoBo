@@ -1,4 +1,3 @@
-
 export const REMOTE_INFEASIBLE =
 	/\b(on|at) your own (machine|terminal|computer)\b|\bin a terminal\b|\byour terminal\b|\bon this machine\b|\bbrowser on this machine\b|\brun it yourself\b|\byourself in a\b|https?:\/\/(127\.0\.0\.1|localhost|\[::1\])\b/iu;
 

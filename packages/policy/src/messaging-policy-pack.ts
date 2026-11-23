@@ -1,4 +1,3 @@
-
 export const MESSAGING_POLICY_PACK_ID = "hobo.policy.messaging/v1";
 
 export interface MessagingPolicyPack {

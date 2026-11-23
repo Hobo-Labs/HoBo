@@ -1,4 +1,3 @@
-
 import type { JsonObject } from "./json.js";
 
 export const BROKER_EVENTS = {

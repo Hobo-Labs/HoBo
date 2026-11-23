@@ -1,4 +1,3 @@
-
 export const DECIMAL128_MAX_DIGITS = 34;
 export const DECIMAL128_MIN_EXPONENT = -6176;
 export const DECIMAL128_MAX_EXPONENT = 6111;

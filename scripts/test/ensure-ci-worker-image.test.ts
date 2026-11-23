@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
 	DEFAULT_WORKER_PULL_BUDGET_SEC,
 	materializeCiWorkerImageOnly,
+	pullRequestWorkerTag,
 	pullWorkerFromGhcr,
 	releaseWorkerEnsurePath,
 	remoteWorkerTag,
@@ -20,6 +27,13 @@ describe("ensure-ci-worker-image", () => {
 		assert.equal(
 			remoteWorkerTag("Hobo-Labs/HoBo", "vdeadbeefcafe"),
 			"ghcr.io/hobo-labs/hobo/hobo-ci-worker:vdeadbeefcafe",
+		);
+	});
+
+	it("names a pull request's worker by its number and content key", () => {
+		assert.equal(
+			pullRequestWorkerTag("Hobo-Labs/HoBo", 2953, "v749d8677addb"),
+			"ghcr.io/hobo-labs/hobo/hobo-ci-worker:pr-2953-v749d8677addb",
 		);
 	});
 
@@ -462,6 +476,89 @@ describe("ensure-ci-worker-image", () => {
 				/docker manifest inspect ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:v/u,
 			);
 		}
+	});
+
+	function materializeForPullRequest(headRepository: string) {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-ensure-worker-pr-"));
+		const calls = join(bin, "calls");
+		const event = join(bin, "event.json");
+		writeFileSync(
+			event,
+			JSON.stringify({
+				pull_request: {
+					number: 2953,
+					head: { repo: { full_name: headRepository } },
+					base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+				},
+			}),
+		);
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				`echo "docker $*" >> "${calls}"`,
+				'if [ "$1 $2" = "image inspect" ]; then exit 1; fi',
+				'if [ "$1" = login ]; then cat > /dev/null; exit 0; fi',
+				'if [ "$1 $2" = "manifest inspect" ]; then case "$3" in *:pr-2953-v*) exit 0 ;; *) exit 1 ;; esac; fi',
+				"exit 0",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const keys = [
+			"PATH",
+			"GITHUB_REPOSITORY",
+			"GITHUB_TOKEN",
+			"GITHUB_EVENT_NAME",
+			"GITHUB_EVENT_PATH",
+			"HOBO_CI_SKIP_GHCR_PULL",
+			"HOBO_CI_WORKER_IMAGE_REF",
+		] as const;
+		const prev = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+		try {
+			process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
+			process.env.GITHUB_REPOSITORY = "Hobo-Labs/HoBo";
+			process.env.GITHUB_TOKEN = "token-for-test";
+			process.env.GITHUB_EVENT_NAME = "pull_request";
+			process.env.GITHUB_EVENT_PATH = event;
+			delete process.env.HOBO_CI_SKIP_GHCR_PULL;
+			delete process.env.HOBO_CI_WORKER_IMAGE_REF;
+			const image = materializeCiWorkerImageOnly();
+			return {
+				image,
+				recorded: existsSync(calls) ? readFileSync(calls, "utf8") : "",
+			};
+		} finally {
+			for (const key of keys) {
+				const value = prev[key];
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
+	it("pulls the image this pull request's image job shared when GHCR has no main build of the key", () => {
+		const { image, recorded } = materializeForPullRequest("Hobo-Labs/HoBo");
+		assert.match(image ?? "", /^hobo-ci-worker:v[0-9a-f]{12}$/u);
+		assert.match(
+			recorded,
+			/^docker manifest inspect ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:v[0-9a-f]{12}$/mu,
+		);
+		assert.match(
+			recorded,
+			/^docker pull ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:pr-2953-v[0-9a-f]{12}$/mu,
+		);
+		assert.match(
+			recorded,
+			/^docker tag ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:pr-2953-v\S+ hobo-ci-worker:local$/mu,
+		);
+	});
+
+	it("never pulls another repository's pull request image for a fork", () => {
+		const { image, recorded } = materializeForPullRequest("someone/HoBo");
+		assert.equal(image, null);
+		assert.doesNotMatch(recorded, /pr-2953-/u);
 	});
 
 	function publishedStatus(stub: { host: boolean; manifest: boolean }) {

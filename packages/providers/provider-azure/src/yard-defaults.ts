@@ -1,4 +1,3 @@
-
 // public-contract: the Yard runtime this provider registers under. Stations and
 export const AZURE_YARD_RUNTIME_ID = "azure.yard-runtime/v1" as const;
 // public-contract: the connector id Broker policy is written against. Generation

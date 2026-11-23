@@ -1,4 +1,3 @@
-
 // public-contract: zone label that namespaces all HoBo hierarchical names.
 export const HOBO_ZONE_LABEL = "hobo" as const;
 

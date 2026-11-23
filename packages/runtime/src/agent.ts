@@ -1,4 +1,3 @@
-
 import { type Capability, tokenCapability, toolCapability } from "./ctx.js";
 import type { JsonValue } from "./json.js";
 import {

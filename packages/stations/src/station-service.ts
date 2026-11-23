@@ -1,4 +1,3 @@
-
 import { STATION_EVENTS, type StationEvent, stationEvent } from "./events.js";
 import { asJsonObject, isJsonNumber, type JsonObject } from "./json.js";
 import { createBootstrapRail, createRail, parseRail } from "./rail.js";

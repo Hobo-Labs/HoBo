@@ -1,4 +1,3 @@
-
 export type JitEmptyExitState = Readonly<{
 	count: number;
 	nextLaunchMs: number;

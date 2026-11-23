@@ -1,4 +1,3 @@
-
 import type { JsonValue } from "../json.js";
 export type BoundaryServed = "live" | "mock" | "bridge" | "replay" | "fault";
 

@@ -1,4 +1,3 @@
-
 const objectTag = Object.prototype.toString;
 
 export type JsonValue =

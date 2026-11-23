@@ -1,4 +1,3 @@
-
 // public-contract: SSE event names of the delivery feed.
 export const FEED_SSE_EVENTS = Object.freeze({
 	frame: "frame",

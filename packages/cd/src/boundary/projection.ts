@@ -1,4 +1,3 @@
-
 import { type DescMessage, fromJson, toJson } from "@bufbuild/protobuf";
 import type { EventEnvelope, JsonObject, JsonValue } from "@hobo/core";
 import {

@@ -1,4 +1,3 @@
-
 export type YardDeploySource = {
 	readonly targetId: string;
 	readonly sourcePath: string;

@@ -1,4 +1,3 @@
-
 import type { CapabilitySlot, SlotBinding } from "@hobo/core";
 
 import { type JsonObject, parseJsonObject } from "./json.js";

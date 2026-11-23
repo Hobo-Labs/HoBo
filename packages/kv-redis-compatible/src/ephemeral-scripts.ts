@@ -1,4 +1,3 @@
-
 export type EphemeralScriptName =
 	| "putIfAbsent"
 	| "compareAndSet"

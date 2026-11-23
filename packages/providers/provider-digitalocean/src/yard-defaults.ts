@@ -1,4 +1,3 @@
-
 // public-contract: the Yard runtime this provider registers under. Stations and
 export const DIGITALOCEAN_YARD_RUNTIME_ID =
 	"digitalocean.yard-runtime/v1" as const;

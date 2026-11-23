@@ -1,4 +1,3 @@
-
 import { isJsonArray, type JsonObject } from "./json.js";
 
 // public-contract: the event-store fold this provider is addressed by. Stored

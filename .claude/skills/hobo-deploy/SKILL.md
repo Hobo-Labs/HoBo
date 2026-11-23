@@ -32,7 +32,12 @@ the lifecycle itself. If that cannot be established, do not open the form;
 report the missing secure hand-off.
 
 For the hosted relay, HoBo CD delivers the selected Git commit to Vercel;
-the Vercel project does not need a connected Git repository. A managed deploy
+the Vercel project does not need a connected Git repository. Production of the
+relay (`hobo ci deploy --target production --build prebuilt`) and HoBo.CD
+(`hobo cd up`) are prebuilt builds: HoBo bundles their store coordinates into
+the build from the owner's store session and removes them afterwards. Never set
+a coordinate as a Vercel variable, and never deploy relay production with
+`--build git` (`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`). A managed deploy
 uses the owner's existing CD connection. A headless runner must have an
 authorized owner-store session or workload identity and owner-selected store
 settings outside the repository. Report a missing session accurately.

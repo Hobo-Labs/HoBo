@@ -1,4 +1,3 @@
-
 import type { ActorPlacementMode } from "@hobo/core";
 import { parseActorPlacementMode } from "@hobo/core";
 import type { JsonValue } from "./json.js";

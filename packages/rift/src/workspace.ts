@@ -1,4 +1,3 @@
-
 import { spawn, spawnSync } from "node:child_process";
 import {
 	existsSync,
@@ -400,8 +399,7 @@ function parkDebris(base: string): string | null {
 			rmSync(base, { recursive: true, force: true });
 			return null;
 		}
-	} catch {
-	}
+	} catch {}
 	for (let n = 0; n < 1000; n += 1) {
 		const target = `${base}.debris${n === 0 ? "" : `-${n}`}`;
 		if (existsSync(target)) continue;

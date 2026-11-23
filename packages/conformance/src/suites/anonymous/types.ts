@@ -1,4 +1,3 @@
-
 import type { EvidenceCheckOutcome } from "@hobo/trust";
 import type { JsonValue } from "../../json.js";
 

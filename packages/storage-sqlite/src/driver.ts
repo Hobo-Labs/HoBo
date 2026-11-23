@@ -1,4 +1,3 @@
-
 import { isJsonBigInt, isJsonNumber, isJsonString } from "./json.js";
 
 export type SqliteValue =

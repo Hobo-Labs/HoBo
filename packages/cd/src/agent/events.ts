@@ -1,4 +1,3 @@
-
 // public-contract: agent-identity event names appended by `@hobo/cd/agent`.
 export const AGENT_EVENTS = Object.freeze({
 	BootstrapTokenIssued: "reconciler.BootstrapTokenIssued",

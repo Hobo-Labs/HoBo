@@ -1,4 +1,3 @@
-
 import type { BindleDefinition } from "@hobo/bindles";
 import {
 	applySessionReplayToEntrypoints,

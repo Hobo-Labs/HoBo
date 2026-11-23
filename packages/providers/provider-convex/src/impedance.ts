@@ -1,4 +1,3 @@
-
 // public-contract: the impedance record schema id consumers pin.
 export const CONVEX_IMPEDANCE_SCHEMA = "hobo.provider-impedance/v1";
 

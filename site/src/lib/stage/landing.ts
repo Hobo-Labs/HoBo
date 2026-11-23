@@ -1,4 +1,3 @@
-
 import contract from "../../../public/cast/cast.json";
 import { isPaused, isStill, onMotionChange, prefersStill, restoreMotion, setPaused } from "./motion";
 import {

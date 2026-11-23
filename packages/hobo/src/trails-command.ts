@@ -1,4 +1,3 @@
-
 import type { CommandModule } from "@hobo/cli";
 import {
 	createContractAssertedTrailFixtures,
@@ -68,11 +67,7 @@ export function createTrailsCommand(
 				};
 			}
 
-			const tenant = resolveTenant(
-				hoboHome,
-				flags as JsonObject,
-				env,
-			);
+			const tenant = resolveTenant(hoboHome, flags as JsonObject, env);
 			const target = resolveTarget(flags as JsonObject, env);
 			const fixtures =
 				deps.fixtures ??

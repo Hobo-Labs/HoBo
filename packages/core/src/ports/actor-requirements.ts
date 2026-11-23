@@ -1,4 +1,3 @@
-
 import { CoreParseError } from "../errors.js";
 import {
 	isJsonBoolean,

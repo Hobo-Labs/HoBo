@@ -1,4 +1,3 @@
-
 import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
@@ -68,13 +67,11 @@ export function removeOverlayProbe(probe: string): void {
 	try {
 		const merged = join(probe, "merged");
 		run("umount", [merged]);
-	} catch {
-	}
+	} catch {}
 	try {
 		restoreOwnerAccess(probe);
 		removeCopyOnWriteTree(probe);
-	} catch {
-	}
+	} catch {}
 }
 
 export function probeOverlayfs(dir: string = tmpdir()): boolean {

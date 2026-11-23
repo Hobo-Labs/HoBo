@@ -1,4 +1,3 @@
-
 import type { FuzzValue } from "./manifest.js";
 import { hasPrototypePollution } from "./manifest.js";
 import { type InvariantVerdict, verdict } from "./model.js";

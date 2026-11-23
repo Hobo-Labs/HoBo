@@ -1,4 +1,3 @@
-
 import { isJsonString } from "./json.js";
 
 export type ConnectionRequirement = Readonly<{

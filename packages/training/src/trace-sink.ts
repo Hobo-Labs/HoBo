@@ -1,4 +1,3 @@
-
 // public-contract: OpenInference semantic-convention attribute key for the span kind.
 export const OPENINFERENCE_SPAN_KIND_ATTRIBUTE = "openinference.span.kind";
 

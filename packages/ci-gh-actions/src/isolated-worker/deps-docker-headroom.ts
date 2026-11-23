@@ -1,4 +1,3 @@
-
 export type DepsHeadroomPathEnv = Readonly<{
 	hostJobDirectory?: string;
 	githubWorkspace?: string;

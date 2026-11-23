@@ -1,4 +1,3 @@
-
 import { type CampId, PromotionState } from "@hobo/cd";
 import type { CommandModule, CommandResult } from "@hobo/cli";
 import {

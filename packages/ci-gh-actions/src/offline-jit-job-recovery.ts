@@ -1,4 +1,3 @@
-
 import {
 	type GithubTransport,
 	getJob,
@@ -174,8 +173,7 @@ export function createOfflineJitJobRecovery(options: {
 					rerunWindowMs,
 				);
 				await applyRerunPolicy(record, policy, run);
-			} catch {
-			}
+			} catch {}
 		}
 	}
 

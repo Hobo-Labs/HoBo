@@ -1,4 +1,3 @@
-
 // public-contract: environment network isolation class labels.
 import { isJsonString } from "../json.js";
 

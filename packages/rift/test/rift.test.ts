@@ -1,4 +1,3 @@
-
 import { execSync, spawnSync } from "node:child_process";
 import {
 	chmodSync,

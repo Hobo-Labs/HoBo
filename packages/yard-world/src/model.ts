@@ -1,4 +1,3 @@
-
 export type PrimitiveKind = "bindle" | "crew" | "actor";
 
 export type AgentState = "idle" | "working" | "reading" | "stuck";

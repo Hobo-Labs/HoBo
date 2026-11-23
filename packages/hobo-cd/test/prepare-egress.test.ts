@@ -17,7 +17,6 @@ it("routes the CD store probe, signed in with the handed-over Connect token, thr
 	if (!address || !(address instanceof Object))
 		throw new Error("proxy did not bind");
 	try {
-		// SAFETY: preparation reads only progress and these output flags.
 		const input: PrepareInput = {
 			action: "up",
 			projectDir: "/box/project",

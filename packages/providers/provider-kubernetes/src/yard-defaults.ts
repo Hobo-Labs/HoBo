@@ -1,4 +1,3 @@
-
 // public-contract: the Yard runtime this provider registers under. Stations and
 export const KUBERNETES_YARD_RUNTIME_ID = "kubernetes.yard-runtime/v1" as const;
 // public-contract: the connector id Broker policy is written against. Generation

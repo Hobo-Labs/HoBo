@@ -1,4 +1,3 @@
-
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";

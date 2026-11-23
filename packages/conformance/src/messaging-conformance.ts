@@ -1,4 +1,3 @@
-
 import type { Messaging } from "@hobo/core";
 import {
 	assertDeliverySupported,

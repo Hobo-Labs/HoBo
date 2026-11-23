@@ -1,4 +1,3 @@
-
 import {
 	allowDecision,
 	denyDecision,

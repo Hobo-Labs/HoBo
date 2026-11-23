@@ -1,4 +1,3 @@
-
 import type { JsonObject } from "./json.js";
 import type { TrailRunResult } from "./runner.js";
 

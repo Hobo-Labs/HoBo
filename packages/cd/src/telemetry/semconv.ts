@@ -1,4 +1,3 @@
-
 // public-contract: the pinned semantic-conventions release.
 export const SEMCONV = Object.freeze({
 	version: "1.41.0",

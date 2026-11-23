@@ -1,4 +1,3 @@
-
 import { join } from "node:path";
 
 import type { EventEnvelope, SnapshotRecord } from "@hobo/core";

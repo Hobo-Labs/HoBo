@@ -1,4 +1,3 @@
-
 import {
 	isJsonObject,
 	type JsonObject,

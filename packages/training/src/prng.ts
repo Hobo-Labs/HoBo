@@ -1,4 +1,3 @@
-
 export interface SeededPrng {
 	next(): number;
 	nextInt(bound: number): number;

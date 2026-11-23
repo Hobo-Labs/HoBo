@@ -1,4 +1,3 @@
-
 import { column, table } from "./fixtures.js";
 
 export const accounts = table("accounts", {

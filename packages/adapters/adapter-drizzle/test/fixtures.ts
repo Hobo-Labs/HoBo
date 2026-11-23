@@ -1,4 +1,3 @@
-
 import type { JsonObject, JsonValue } from "../src/json.js";
 import type { DrizzleColumnLike, ExtraConfigBuilder } from "../src/shape.js";
 

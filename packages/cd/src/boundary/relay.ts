@@ -1,4 +1,3 @@
-
 import type { DurableEventStore, EventPosition } from "@hobo/core";
 import type { OtelMetricPoint, TelemetrySink } from "../ports.js";
 import type { CdEvent } from "./cdevents.js";
@@ -37,8 +36,7 @@ export function createCdEventsRelay(
 	const metrics = async (points: readonly OtelMetricPoint[]): Promise<void> => {
 		try {
 			await options.telemetry?.metrics(points);
-		} catch {
-		}
+		} catch {}
 	};
 
 	return {

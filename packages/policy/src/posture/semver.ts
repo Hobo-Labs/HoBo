@@ -1,4 +1,3 @@
-
 export type Semver = Readonly<{
 	major: number;
 	minor: number;

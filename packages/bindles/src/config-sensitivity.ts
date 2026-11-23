@@ -1,4 +1,3 @@
-
 export const CONFIG_SENSITIVITY = ["public", "internal", "sensitive"] as const;
 export type ConfigSensitivity = (typeof CONFIG_SENSITIVITY)[number];
 

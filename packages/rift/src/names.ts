@@ -1,4 +1,3 @@
-
 declare const brand: unique symbol;
 
 export type WorkspaceName = string & { readonly [brand]: "WorkspaceName" };

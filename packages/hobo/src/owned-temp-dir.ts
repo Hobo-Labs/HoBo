@@ -1,4 +1,3 @@
-
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,8 +22,7 @@ export interface DirOwner {
 function removeDir(dir: string): void {
 	try {
 		rmSync(dir, { recursive: true, force: true });
-	} catch {
-	}
+	} catch {}
 }
 
 function removeAll(dirs: Set<string>): void {

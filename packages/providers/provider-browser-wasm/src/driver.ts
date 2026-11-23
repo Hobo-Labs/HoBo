@@ -1,4 +1,3 @@
-
 import type { HostAssetClient } from "./client.js";
 import { BrowserWasmProviderError } from "./errors.js";
 import type { GuestRuntimePort } from "./host-runtime.js";

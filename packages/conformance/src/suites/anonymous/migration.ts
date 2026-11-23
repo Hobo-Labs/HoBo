@@ -1,4 +1,3 @@
-
 import type { MigrationState } from "@hobo/claims";
 import { DIGEST_PATTERN } from "@hobo/trust";
 import type { JsonValue } from "../../json.js";

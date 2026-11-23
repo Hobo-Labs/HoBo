@@ -1,4 +1,3 @@
-
 import { type BoundaryContract, effectiveEffects } from "./contract-ir.js";
 import {
 	createEffectTracer,

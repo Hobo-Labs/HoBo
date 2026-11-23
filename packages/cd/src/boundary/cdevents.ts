@@ -1,4 +1,3 @@
-
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "@hobo/core";
 import { BoundaryError } from "./errors.js";

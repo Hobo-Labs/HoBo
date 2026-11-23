@@ -1,4 +1,3 @@
-
 import type { BootstrapClass, Instant } from "./types.js";
 import { ClaimError } from "./types.js";
 

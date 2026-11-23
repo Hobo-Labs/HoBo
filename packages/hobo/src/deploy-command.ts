@@ -1,4 +1,3 @@
-
 import type { CredentialResolver, Outcome } from "@hobo/cd";
 import type { CommandModule, CommandResult } from "@hobo/cli";
 import { HostingTransitionPhase } from "@hobo/cloud";

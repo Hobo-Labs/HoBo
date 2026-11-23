@@ -1,4 +1,3 @@
-
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 export function createUlidGenerator(

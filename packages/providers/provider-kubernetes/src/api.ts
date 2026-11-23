@@ -1,4 +1,3 @@
-
 import { contractChanged, redactClusterText } from "./errors.js";
 import {
 	isJsonNumber,

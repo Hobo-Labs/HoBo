@@ -1,4 +1,3 @@
-
 function missing(what: string | undefined): Error {
 	return new Error(
 		what ? `missing required value: ${what}` : "missing required value",

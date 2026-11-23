@@ -1,4 +1,3 @@
-
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -467,8 +466,7 @@ describe("parse boundaries fail closed", () => {
 	it("rejects a provider result that names no instance", async () => {
 		const stack = createScratchStack({
 			provider: brokenProvider({
-				create: (): ScratchProviderResult =>
-					({}) as ScratchProviderResult,
+				create: (): ScratchProviderResult => ({}) as ScratchProviderResult,
 			}),
 		});
 		await expect(stack.deploy(DESIRED)).rejects.toThrow(

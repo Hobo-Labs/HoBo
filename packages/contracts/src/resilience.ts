@@ -1,4 +1,3 @@
-
 import type { EffectSpec } from "./effects.js";
 import { requiresNetwork } from "./effects.js";
 import {

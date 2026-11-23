@@ -1,4 +1,3 @@
-
 export type FleetBackend = "hobo" | "arc" | "local" | "github";
 
 export type FleetMember = Readonly<{

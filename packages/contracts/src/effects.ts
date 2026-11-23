@@ -1,4 +1,3 @@
-
 // public-contract: schema version for EffectSpec declarations (ADR-0136).
 import {
 	cloneAsJson,

@@ -1,4 +1,3 @@
-
 import { isJsonObject } from "./json.js";
 
 export interface HonoFetchApp {

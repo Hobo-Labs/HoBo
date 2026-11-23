@@ -1,4 +1,3 @@
-
 // public-contract: schema tag on every status-page snapshot/model record.
 export const STATUS_PAGE_SCHEMA = "hobo.status-page/v1" as const;
 

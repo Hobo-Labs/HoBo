@@ -1,4 +1,3 @@
-
 import type { JsonObject } from "../json.js";
 import type { TenantId } from "./tenant.js";
 

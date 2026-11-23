@@ -1,4 +1,3 @@
-
 export type AnonymousStationInput = {
 	readonly stationId: string;
 	readonly targetId: string;

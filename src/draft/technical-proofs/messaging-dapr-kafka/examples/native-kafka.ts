@@ -1,4 +1,3 @@
-
 import { runNativeKafkaPath } from "../src/scenarios.js";
 
 const result = await runNativeKafkaPath("demo");

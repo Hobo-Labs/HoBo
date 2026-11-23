@@ -1,4 +1,3 @@
-
 // public-contract: versions provider impedance reports.
 export const VERCEL_IMPEDANCE_SCHEMA = "hobo.provider-impedance/v1";
 

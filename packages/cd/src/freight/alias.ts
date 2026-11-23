@@ -1,4 +1,3 @@
-
 // public-contract: alias adjectives (order is load-bearing).
 export const ALIAS_ADJECTIVES: readonly string[] = Object.freeze(
 	(

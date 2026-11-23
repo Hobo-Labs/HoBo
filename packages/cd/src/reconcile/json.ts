@@ -1,4 +1,3 @@
-
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: canonical serializer over arbitrary JSON; it only reads and never narrows the domain.
 export function stableJson(value: unknown): string {
 	if (value === undefined) return "null";

@@ -1,4 +1,3 @@
-
 const SERVER_NOW_MS =
 	"CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
 

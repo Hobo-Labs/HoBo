@@ -1,4 +1,3 @@
-
 const STORE = "hobo-motion";
 const EVENT = "hobo:motion";
 

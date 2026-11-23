@@ -1,4 +1,3 @@
-
 export type InjectionVector = "input" | "output";
 
 export interface InjectionCase {

@@ -1,4 +1,3 @@
-
 export { parseOciReference, parsePurl } from "./coordinates.js";
 export { parseDigest, sha256Digest } from "./digest.js";
 export {

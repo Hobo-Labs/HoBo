@@ -1,4 +1,3 @@
-
 import type { ConnectivityRegistry } from "@hobo/bindings";
 import type {
 	CapabilityProfileRegistry,

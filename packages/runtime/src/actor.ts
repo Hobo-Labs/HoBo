@@ -1,4 +1,3 @@
-
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.js";
 import type { ActorHost, ActorLease, FoldEvent } from "./ports.js";
 

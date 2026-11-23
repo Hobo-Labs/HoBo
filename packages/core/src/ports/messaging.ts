@@ -1,4 +1,3 @@
-
 import { CoreParseError } from "../errors.js";
 import {
 	cloneAsJson,
@@ -265,10 +264,7 @@ export function parseSubscriptionName(value: string): SubscriptionName {
 export function parseDeliveryGuarantee(
 	value: JsonValue | undefined,
 ): DeliveryGuarantee {
-	if (
-		!isJsonString(value) ||
-		!DELIVERY_SET.has(value as DeliveryGuarantee)
-	) {
+	if (!isJsonString(value) || !DELIVERY_SET.has(value as DeliveryGuarantee)) {
 		throw new MessagingParseError(
 			"delivery",
 			"at-least-once|exactly-once|at-most-once",

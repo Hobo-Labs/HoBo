@@ -1,4 +1,3 @@
-
 export type Formula<E> = (trace: readonly E[], at: number) => boolean;
 
 export function atom<E>(holds: (event: E) => boolean): Formula<E> {

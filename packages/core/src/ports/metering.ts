@@ -1,4 +1,3 @@
-
 import type { TenantId } from "./tenant.js";
 
 export type UsageEventType =

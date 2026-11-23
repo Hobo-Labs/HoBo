@@ -30,10 +30,16 @@ export type OwnerSessionStatus = Readonly<{
 	store?: OwnerStoreLabel;
 }>;
 
+export interface OwnerStoreEntries {
+	read(name: string): Promise<string | undefined>;
+	write(name: string, value: string): Promise<void>;
+}
+
 export interface OwnerStoreSessions {
 	establish(cwd: string): Promise<OwnerSessionState>;
 	status(cwd: string): OwnerSessionStatus;
 	credentials(cwd: string): CredentialResolver;
+	entries(cwd: string): OwnerStoreEntries;
 	close(): void;
 }
 
@@ -203,6 +209,30 @@ export function createOwnerStoreSessions(options: {
 					)
 						throw new OwnerCredentialUnavailable(ref, "not-in-store");
 					return { token: read.material };
+				},
+			};
+		},
+		entries(cwd) {
+			const key = keyOf(cwd);
+			const opened = (name: string) => {
+				const ref = `${OWNER_CREDENTIAL_SCHEME}${entryOf(`${OWNER_CREDENTIAL_SCHEME}${name}`)}`;
+				const current = held.get(key);
+				if (current === undefined)
+					throw new OwnerCredentialUnavailable(ref, "no-session");
+				return current.store.port;
+			};
+			return {
+				async read(name) {
+					const port = opened(name);
+					const read = await port.access(name).catch(() => undefined);
+					return read?.status === "ok" &&
+						read.material !== undefined &&
+						read.material !== ""
+						? read.material
+						: undefined;
+				},
+				async write(name, value) {
+					await opened(name).put(name, value);
 				},
 			};
 		},

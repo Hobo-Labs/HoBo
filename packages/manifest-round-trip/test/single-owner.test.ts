@@ -1,4 +1,3 @@
-
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as profiles from "@hobo/capability-profiles";
