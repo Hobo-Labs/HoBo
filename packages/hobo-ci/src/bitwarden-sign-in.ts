@@ -1,7 +1,7 @@
 import type { TrustedVault } from "@hobo/core";
 
 import {
-	type BitwardenSignInKey,
+	type BitwardenApiKey,
 	bitwardenApiKeyPage,
 	bitwardenEndpoints,
 	newBitwardenDeviceId,
@@ -43,7 +43,6 @@ export interface EnsureBitwardenSignInOptions {
 	readonly locator: OwnerSettingsStore;
 	readonly fetch: typeof fetch;
 	readonly emit: (line: string) => void;
-	/** A handed-off run (a remote box): the API key may come through the egress proxy. */
 	readonly handOff: boolean;
 	/** Whether the run prints progress; the approval line needs it. */
 	readonly silent: boolean;
@@ -89,9 +88,6 @@ export async function ensureBitwardenSignIn(
 				? parseHttpsOrigin("BITWARDEN_SERVER_URL", serverUrlText)
 				: undefined;
 		const endpoints = bitwardenEndpoints(region, serverUrl);
-		// The API key the ceremony collected (the setup page, or the
-		// environment), else, from a remote box, the one the session's egress
-		// proxy injects as HTTP Basic client authentication.
 		const clientId = vault.reveal("BW_CLIENTID") ?? setting("BW_CLIENTID");
 		const clientSecret = vault.reveal("BW_CLIENTSECRET");
 		const page = bitwardenApiKeyPage(endpoints);
@@ -124,17 +120,17 @@ export async function ensureBitwardenSignIn(
 			vault.put("BW_CLIENTSECRET", parsed.clientSecret);
 			return parsed;
 		};
-		let apiKey: BitwardenSignInKey;
+		let apiKey: BitwardenApiKey;
 		if (clientId !== undefined && clientSecret !== undefined)
 			apiKey = parseBitwardenApiKey(clientId, clientSecret);
 		else if (!options.handOff) return undefined;
-		else if (endpoints.selfHosted) {
+		else {
 			const supplied = await captureApiKey();
 			if (supplied === undefined)
 				return {
 					code: `HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
 					message:
-						"Bitwarden needs your personal API key through the secure owner form.",
+						"A handed-off run signs in to Bitwarden with your personal API key; hand it to this run once.",
 					remediation:
 						options.owner === undefined
 							? [
@@ -144,7 +140,9 @@ export async function ensureBitwardenSignIn(
 									...BITWARDEN_API_KEY_CAPTURES.map((name) =>
 										ownerCaptureLine(
 											name,
-											"https://bitwarden.com/help/personal-api-key/",
+											serverUrl !== undefined
+												? "https://bitwarden.com/help/personal-api-key/"
+												: page,
 										),
 									),
 									"In your Bitwarden vault: Account settings → Security → Keys → View API key. Hand over client_id and client_secret in the HoBo MCP App's secret form; they go only to this run.",
@@ -152,7 +150,7 @@ export async function ensureBitwardenSignIn(
 								],
 				};
 			apiKey = supplied;
-		} else apiKey = { kind: "egress-proxy" };
+		}
 		// Called only when the store did not open: a token in hand was refused
 		// (revoked or expired), so the API key replaces it with a new one.
 		vault.drop("BWS_ACCESS_TOKEN");

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { InfisicalError } from "@hobo/adapter-infisical";
 import { describe, expect, it } from "vitest";
@@ -10,11 +10,12 @@ import {
 	createHttpEntry,
 	RELAY_START_STATES,
 	RelayStartError,
+	relayStartGaps,
 	relayStartState,
 } from "../src/entry.js";
 import {
-	COMMITTED_STORE_BINDING_URL,
-	parseCommittedStoreCoordinates,
+	BUNDLED_STORE_BINDING_URL,
+	parseBundledStoreCoordinates,
 	RelayRuntimeConfigError,
 } from "../src/relay-runtime-config.js";
 
@@ -163,9 +164,48 @@ describe("Vercel HTTP entrypoint", () => {
 			}
 		});
 
-		it("binds the production relay to the committed secret store (secretless first)", () => {
-			const coordinates = parseCommittedStoreCoordinates(
-				readFileSync(COMMITTED_STORE_BINDING_URL, "utf8"),
+		it("names the entries an incomplete folder lacks at /readyz, never a value", async () => {
+			const gaps = {
+				missing: ["HOBO_CI_GITHUB_APP_ID"],
+				invalid: ["HOBO_CI_WEBHOOK_SECRET"],
+			};
+			const error = new RelayRuntimeConfigError(
+				"invalid relay configuration",
+				[...gaps.missing, ...gaps.invalid],
+				gaps,
+			);
+			expect(relayStartGaps(error)).toEqual(gaps);
+			await serve(
+				createHttpEntry(async () => {
+					throw new RelayStartError(
+						relayStartState(error),
+						relayStartGaps(error),
+					);
+				}),
+				async (base) => {
+					const ready = await fetch(`${base}/readyz`);
+					expect(ready.status).toBe(503);
+					expect(await ready.json()).toEqual({
+						ready: false,
+						started: false,
+						state: RELAY_START_STATES.notConfigured,
+						...gaps,
+					});
+				},
+			);
+		});
+
+		it("commits no store binding: a build HoBo makes from the owner's store session bundles it (secretless first)", () => {
+			expect(existsSync(BUNDLED_STORE_BINDING_URL)).toBe(false);
+			const coordinates = parseBundledStoreCoordinates(
+				JSON.stringify({
+					kind: "infisical-cloud-attach",
+					endpoint: "https://app.infisical.com",
+					projectId: "00000000-0000-0000-0000-000000000001",
+					environment: "prod",
+					secretPath: "/hobo-ci-relay",
+					relayIdentityId: "00000000-0000-0000-0000-000000000002",
+				}),
 			);
 			expect(coordinates?.binding.environment).toBe("prod");
 			expect(coordinates?.binding.secretPath).toBe("/hobo-ci-relay");

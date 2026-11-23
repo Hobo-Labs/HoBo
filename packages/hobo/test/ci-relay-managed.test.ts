@@ -11,6 +11,7 @@ import {
 } from "../src/ci-relay-managed.js";
 import { isJsonString } from "../src/json.js";
 import { createReleaseJournal } from "../src/release-journal.js";
+import { syntheticRelayBinding } from "./support/owner-store-stand-in.js";
 
 const RELAY = resolve(import.meta.dirname, "../../ci-vercel");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -236,6 +237,10 @@ async function harness(
 				: undefined),
 		},
 		credentials: vault,
+		bindingStore: {
+			read: async () => syntheticRelayBinding(),
+			write: async () => undefined,
+		},
 		...(options.store || options.storeDenied
 			? {
 					openOwnerStore: async () => ({

@@ -160,7 +160,7 @@ export const relayConfig = config({
 	HOBO_CI_CONFIG_SERVICE: env
 		.string()
 		.docs(
-			"Which config-service binding supplies runtime config and secrets: the binding's kind, or `env` (the default) to read the environment. The config service's own coordinates are its binding's settings, declared at Camp scope, not here.",
+			"Which config service supplies runtime config and secrets: `env` reads the environment; any other supported value requires the store binding HoBo bundles into a prebuilt production build from the owner's store session, which a production build that carries one uses unless this says `env`. The store's coordinates are never configuration.",
 		),
 
 	CRON_SECRET: secret

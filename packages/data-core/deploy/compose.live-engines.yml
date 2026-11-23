@@ -25,6 +25,8 @@ services:
       - max_wal_senders=20
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust
+    ulimits:
+      nofile: 65536
     ports:
       - "127.0.0.1:55432:5432"
     healthcheck:
@@ -44,6 +46,8 @@ services:
     # owns rseq; see scripts/ci/data-live-servers.mts.
     environment:
       GLIBC_TUNABLES: glibc.pthread.rseq=1
+    ulimits:
+      nofile: 65536
     ports:
       - "127.0.0.1:57017:27017"
     healthcheck:

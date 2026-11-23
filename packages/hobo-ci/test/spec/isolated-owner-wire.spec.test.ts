@@ -32,12 +32,12 @@ describe("private owner wire policy", () => {
 	it("accepts an authenticated run", () => {
 		const parsed = ownerRequest.parse(request);
 		expect(authenticatedOwnerRun(parsed, run)).toBe(true);
-		expect(authenticatedOwnerRun(parsed, { ...run, secret: "B".repeat(43) })).toBe(
-			false,
-		);
-		expect(authenticatedOwnerRun(parsed, { ...run, id: crypto.randomUUID() })).toBe(
-			false,
-		);
+		expect(
+			authenticatedOwnerRun(parsed, { ...run, secret: "B".repeat(43) }),
+		).toBe(false);
+		expect(
+			authenticatedOwnerRun(parsed, { ...run, id: crypto.randomUUID() }),
+		).toBe(false);
 	});
 
 	it.each([
@@ -48,7 +48,9 @@ describe("private owner wire policy", () => {
 		{ maxResponseBytes: -1 },
 		{ trustedCertificates: ["x".repeat(70_000)] },
 	])("refuses a malformed owner request", (change) => {
-		expect(ownerRequest.safeParse({ ...request, ...change }).success).toBe(false);
+		expect(ownerRequest.safeParse({ ...request, ...change }).success).toBe(
+			false,
+		);
 	});
 
 	it("permits proxy and extra CA settings in the wire request", () => {

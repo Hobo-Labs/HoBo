@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 import { z } from "zod";
 
@@ -34,6 +36,48 @@ function parseVercelProjectCreate(body: string): VercelProjectCreate {
 	}
 }
 
+const stagedBuild = z.object({
+	meta: z.record(z.string(), z.string()),
+	bundled: z.boolean(),
+});
+
+export type StagedBuild = z.infer<typeof stagedBuild>;
+
+export function readStagedBuilds(file: string): readonly StagedBuild[] {
+	if (!existsSync(file)) return [];
+	return readFileSync(file, "utf8")
+		.split("\n")
+		.filter((line) => line !== "")
+		.map((line) => stagedBuild.parse(JSON.parse(line)));
+}
+
+export type FakeVercelCli = Readonly<{ cli: string; staged: string }>;
+
+export function fakeVercelCli(dir: string, bundleFile: string): FakeVercelCli {
+	const staged = path.join(dir, "staged.jsonl");
+	const cli = path.join(dir, "vercel");
+	writeFileSync(
+		cli,
+		[
+			"#!/usr/bin/env node",
+			'const { appendFileSync, existsSync, writeFileSync } = require("node:fs");',
+			"const args = process.argv.slice(2);",
+			`const staged = ${JSON.stringify(staged)};`,
+			`const bundle = ${JSON.stringify(bundleFile)};`,
+			'if (args[0] === "build") writeFileSync(staged + ".bundled", String(existsSync(bundle)));',
+			'if (args[0] === "deploy") {',
+			"\tconst meta = {};",
+			'\targs.forEach((arg, i) => { if (arg === "--meta") { const [k, ...v] = args[i + 1].split("="); meta[k] = v.join("="); } });',
+			'\tconst bundled = existsSync(staged + ".bundled") && require("node:fs").readFileSync(staged + ".bundled", "utf8") === "true";',
+			'\tappendFileSync(staged, JSON.stringify({ meta, bundled }) + "\\n");',
+			"}",
+			"",
+		].join("\n"),
+	);
+	chmodSync(cli, 0o755);
+	return { cli, staged };
+}
+
 function parseVercelEnvCreate(body: string): Omit<VercelProjectEnv, "id"> {
 	try {
 		const parsed = vercelEnvCreateBody.parse(JSON.parse(body || "{}"));
@@ -48,8 +92,10 @@ function parseVercelEnvCreate(body: string): Omit<VercelProjectEnv, "id"> {
 	}
 }
 
-export function fakeVercel() {
+export function fakeVercel(stagedFile?: string) {
 	const calls: string[] = [];
+	const promoted: string[] = [];
+	let production: string | undefined;
 	const grants = new Map<
 		string,
 		{ code: string; approved: boolean; denied: boolean }
@@ -130,6 +176,44 @@ export function fakeVercel() {
 			return team[1] === "team_owner"
 				? json(response, 200, { id: "team_owner", slug: "owner" })
 				: json(response, 404, { error: { code: "not_found" } });
+		const read = /^\/v9\/projects\/([^/]+)$/u.exec(url.pathname);
+		if (method === "GET" && read !== null) {
+			const asked = decodeURIComponent(read[1] ?? "");
+			const name = asked.replace(/^prj_/u, "");
+			return projects.has(name)
+				? json(response, 200, {
+						id: `prj_${name}`,
+						name,
+						...(production !== undefined
+							? { targets: { production: { id: production } } }
+							: undefined),
+					})
+				: json(response, 404, {
+						error: { code: "not_found", message: "Project not found" },
+					});
+		}
+		if (method === "GET" && url.pathname === "/v6/deployments")
+			return json(response, 200, {
+				deployments: (stagedFile === undefined
+					? []
+					: readStagedBuilds(stagedFile)
+				).map((build, index) => ({
+					uid: `dpl_staged${index}`,
+					url: `hobo-cd-staged${index}.vercel.app`,
+					readyState: "READY",
+					target: "production",
+					created: 1_794_600_000_000 + index,
+					meta: build.meta,
+				})),
+			});
+		const promote = /^\/v10\/projects\/[^/]+\/promote\/([^/]+)$/u.exec(
+			url.pathname,
+		);
+		if (method === "POST" && promote !== null) {
+			production = promote[1];
+			promoted.push(promote[1] ?? "");
+			return json(response, 201, {});
+		}
 		const patched = /^\/v9\/projects\/([^/]+)$/u.exec(url.pathname);
 		if (method === "PATCH" && patched !== null)
 			return projects.has(decodeURIComponent(patched[1] ?? ""))
@@ -155,6 +239,7 @@ export function fakeVercel() {
 		handle,
 		calls,
 		deployments,
+		promoted,
 		deny(link: string) {
 			const code = new URL(link).searchParams.get("user_code");
 			for (const grant of grants.values())

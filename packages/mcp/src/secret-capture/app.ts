@@ -127,12 +127,6 @@ export type SecretStoreStatus =
 			writerSpec: string;
 	  }>;
 
-/**
- * Where captured values go. The composition supplies it (`@hobo/hobo` binds
- * the committed secret-store binding and Infisical); tests use a memory store.
- * Implementations throw `SecretStoreConnectorError` with a short code; any
- * other error is reported as `unavailable`, and its message is never read.
- */
 export interface SecretStoreConnector {
 	status(): Promise<SecretStoreStatus>;
 	/**
@@ -595,6 +589,7 @@ export function createSecretCaptureApp(
 				problem === undefined ? ticket.spec.purpose : `${problem} Try again.`;
 			const response = await (
 				elicit?.({
+					mode: "form",
 					message: link === undefined ? said : `${link.message} — ${said}`,
 					requestedSchema: {
 						type: "object",
@@ -678,7 +673,8 @@ export function createSecretCaptureApp(
 			return new SecretCaptureError(
 				"SECRET_STORE_NOT_CONNECTED",
 				`No secret store is connected (${status.reason}), so ${spec.name} has nowhere to go.`,
-				status.nextStep ?? "Start HoBo's private owner setup for the selected store.",
+				status.nextStep ??
+					"Start HoBo's private owner setup for the selected store.",
 			);
 		if (spec.target !== "writer" && !status.writable)
 			return new SecretCaptureError(
@@ -961,7 +957,8 @@ export function createSecretCaptureApp(
 					if (ticket.handoff) await ticket.handoff.receive(secret);
 					else await options.handoff?.(secret);
 					ref = `handoff://${ticket.spec.name}`;
-				} else ({ ref } = await options.connector.store(ticket.spec.target, secret));
+				} else
+					({ ref } = await options.connector.store(ticket.spec.target, secret));
 				state = "stored";
 			}
 		} catch (error) {

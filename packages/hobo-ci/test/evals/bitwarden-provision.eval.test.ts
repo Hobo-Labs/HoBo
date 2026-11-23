@@ -18,8 +18,10 @@ import {
 	parseBitwardenDeviceId,
 	provisionBitwardenAccessToken,
 } from "../../src/bitwarden-provision.js";
-import { ensureBitwardenSignIn } from "../../src/bitwarden-sign-in.js";
-import { OWNER_CREDENTIAL_LINE_PREFIX } from "../../src/hand-off-store.js";
+import {
+	BITWARDEN_API_KEY_CAPTURES,
+	ensureBitwardenSignIn,
+} from "../../src/bitwarden-sign-in.js";
 import {
 	openSecretStore,
 	prepareGithubConnection,
@@ -36,6 +38,11 @@ import {
 	OWNER_EMAIL,
 	VAULTWARDEN_ORIGIN,
 } from "../support/fake-bitwarden.js";
+import {
+	heldOwnerChannel,
+	ownerLines,
+	readOwnerTurn,
+} from "../support/remote-owner.js";
 
 // EVAL: the owner chose Bitwarden and gave no Secrets Manager access token.
 // With their personal API key (in the environment's settings) the run does
@@ -240,38 +247,14 @@ describe("EVAL Bitwarden provisioning: one approval, no copied token", () => {
 });
 
 describe("EVAL Bitwarden sign-in: from the environment's API key to the run's vault", () => {
-	it("uses the cloud egress proxy without capturing credentials in the run", async () => {
-		const server = fakeBitwarden();
-		let now = 0;
-		const refusal = await ensureBitwardenSignIn({
-			family: "cd",
-			vault: createTrustedVault(),
-			env: {},
-			locator: { read: async () => ({}), write: async () => undefined },
-			fetch: server.fetch,
-			emit: () => undefined,
-			silent: true,
-			handOff: true,
-			timeoutMs: 0,
-			now: () => now++,
-			owner: {
-				openUrl: async () => undefined,
-				captureSecret: async () => undefined,
-				holds: () => false,
-				canConfirm: () => true,
-				confirm: async () => true,
-			},
-		});
-		expect(refusal?.code).toBe("HOBO_CD_BITWARDEN_API_KEY_REJECTED");
-		expect(server.calls).toEqual(["POST /connect/token"]);
-	});
-
 	it("does not ask for credentials when the cloud sign-in service is unavailable", async () => {
-		const vault = createTrustedVault();
 		let prompts = 0;
+		const keyed = createTrustedVault();
+		keyed.put("BW_CLIENTID", API_KEY.clientId);
+		keyed.put("BW_CLIENTSECRET", API_KEY.clientSecret);
 		const refusal = await ensureBitwardenSignIn({
 			family: "cd",
-			vault,
+			vault: keyed,
 			env: {},
 			locator: { read: async () => ({}), write: async () => undefined },
 			fetch: async () => new Response(null, { status: 503 }),
@@ -295,9 +278,12 @@ describe("EVAL Bitwarden sign-in: from the environment's API key to the run's va
 
 	it("does not mistake an invalid OAuth request for a missing API key", async () => {
 		let prompts = 0;
+		const keyed = createTrustedVault();
+		keyed.put("BW_CLIENTID", API_KEY.clientId);
+		keyed.put("BW_CLIENTSECRET", API_KEY.clientSecret);
 		const refusal = await ensureBitwardenSignIn({
 			family: "cd",
-			vault: createTrustedVault(),
+			vault: keyed,
 			env: {},
 			locator: { read: async () => ({}), write: async () => undefined },
 			fetch: async () =>
@@ -364,7 +350,7 @@ describe("EVAL Bitwarden sign-in: from the environment's API key to the run's va
 		const result = await provisionBitwardenAccessToken({
 			family: "cd",
 			endpoints: bitwardenEndpoints("us"),
-			apiKey: { kind: "egress-proxy" },
+			apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
 			deviceId: DEVICE,
 			fetch: async () => {
 				calls += 1;
@@ -387,7 +373,7 @@ describe("EVAL Bitwarden sign-in: from the environment's API key to the run's va
 		const result = await provisionBitwardenAccessToken({
 			family: "cd",
 			endpoints: bitwardenEndpoints("us"),
-			apiKey: { kind: "egress-proxy" },
+			apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
 			deviceId: DEVICE,
 			fetch: async () =>
 				new Response(
@@ -411,7 +397,7 @@ describe("EVAL Bitwarden sign-in: from the environment's API key to the run's va
 		expect(lines).toEqual([]);
 	});
 
-	it("does not wait for a stalled 401 body cancellation before polling", async () => {
+	it("does not wait for a stalled 401 body cancellation before refusing the key", async () => {
 		const unauthorized = () =>
 			new Response(
 				new ReadableStream({
@@ -423,7 +409,7 @@ describe("EVAL Bitwarden sign-in: from the environment's API key to the run's va
 		const poll = await provisionBitwardenAccessToken({
 			family: "cd",
 			endpoints: bitwardenEndpoints("us"),
-			apiKey: { kind: "egress-proxy" },
+			apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
 			deviceId: DEVICE,
 			fetch: async () =>
 				++calls === 1 ? unauthorized() : new Response(null, { status: 503 }),
@@ -433,50 +419,10 @@ describe("EVAL Bitwarden sign-in: from the environment's API key to the run's va
 		});
 		expect(poll).toMatchObject({
 			kind: "refused",
-			code: "HOBO_CD_BITWARDEN_API",
+			code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED",
 		});
-		expect(calls).toBe(2);
+		expect(calls).toBe(1);
 	}, 3000);
-
-	it("reuses a working cloud proxy without requesting the owner API key", async () => {
-		const server = fakeBitwarden();
-		const vault = createTrustedVault();
-		let prompts = 0;
-		const proxy: typeof fetch = async (input, init) => {
-			const headers = new Headers(init?.headers);
-			if (new URL(String(input)).pathname === "/connect/token")
-				headers.set(
-					"Authorization",
-					`Basic ${Buffer.from(`${API_KEY.clientId}:${API_KEY.clientSecret}`).toString("base64")}`,
-				);
-			return server.fetch(input, { ...init, headers });
-		};
-		const refusal = await ensureBitwardenSignIn({
-			family: "ci",
-			vault,
-			env: {},
-			locator: { read: async () => ({}), write: async () => undefined },
-			fetch: proxy,
-			emit: () => undefined,
-			silent: true,
-			handOff: true,
-			owner: {
-				openUrl: async () => undefined,
-				captureSecret: async () => undefined,
-				holds: () => false,
-				requestCaptures: async () => {
-					prompts += 1;
-				},
-				canConfirm: () => true,
-				confirm: async () => true,
-			},
-			sleep: async () => undefined,
-			timeoutMs: 60_000,
-		});
-		expect(refusal).toBeUndefined();
-		expect(prompts).toBe(0);
-		expect(vault.has("BWS_ACCESS_TOKEN")).toBe(true);
-	});
 
 	it("serializes provider mutations against owner selection and marks uncertain failures", async () => {
 		const server = fakeBitwarden();
@@ -1126,26 +1072,6 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 	});
 });
 
-function remoteSession(fetchImpl: typeof fetch) {
-	let saved: { username: string; password: string } | undefined;
-	const proxied: typeof fetch = async (input, init) => {
-		const url = new URL(String(input));
-		const headers = new Headers(init?.headers);
-		if (saved !== undefined && url.host === "identity.bitwarden.com")
-			headers.set(
-				"Authorization",
-				`Basic ${Buffer.from(`${saved.username}:${saved.password}`).toString("base64")}`,
-			);
-		return fetchImpl(input, { ...init, headers });
-	};
-	return {
-		fetch: proxied,
-		save(username: string, password: string) {
-			saved = { username, password };
-		},
-	};
-}
-
 function handedOff(see: (line: string) => void): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: see,
@@ -1164,104 +1090,75 @@ function handedOff(see: (line: string) => void): PrepareInput {
 }
 
 describe("EVAL remote box, no keys anywhere: the ceremony collects the API key", () => {
-	it("uses egress-proxy injection without holding or transmitting the client secret in the run", async () => {
+	it("asks once through HoBo's capture, keeps the key off every line, and opens the store", async () => {
 		const server = fakeBitwarden();
-		const session = remoteSession(server.fetch);
-		const shown: string[] = [];
 		const approvals: { url: string; message: string }[] = [];
-		const captures: string[] = [];
-		const runWires: string[] = [];
-		const opened = new Map<string, string>();
-		const saved = new Map<string, string>();
-		const vault = createTrustedVault();
-		const env = { HOBO_SECRET_STORE: "bitwarden" };
-		const owner = privateOwner(approvals);
-		const fetch: typeof globalThis.fetch = async (input, init) => {
-			const headers = new Headers(init?.headers);
-			runWires.push(
-				[
-					String(input),
-					String(init?.body),
-					...[...headers.entries()].flat(),
-				].join("\n"),
-			);
-			return session.fetch(input, init);
-		};
-		await prepareGithubConnection(
-			handedOff((line) => {
-				shown.push(line);
-				if (
-					line.startsWith(
-						`${OWNER_CREDENTIAL_LINE_PREFIX} host=identity.bitwarden.com`,
-					)
-				)
-					session.save(API_KEY.clientId, API_KEY.clientSecret);
-			}),
-			{
-				ownerChannel: {
-					...owner,
-					captureSecret: async (request) => {
-						captures.push(request.name);
-						return owner.captureSecret(request);
-					},
-				},
-				env,
-				vault,
-				locator: {
-					read: async () => Object.fromEntries(saved),
-					write: async (values) => {
-						saved.clear();
-						for (const [name, value] of Object.entries(values))
-							saved.set(name, value);
-					},
-				},
-				openStore: async (
-					id,
-					_coordinates,
-					signIn,
-				): Promise<SecretStoreOpening> => {
-					const token = signIn.reveal("BWS_ACCESS_TOKEN");
-					if (id !== "bitwarden" || token === undefined)
-						return { ok: false, message: "no sign-in", remediation: [] };
-					opened.set("token", token);
-					return {
-						ok: true,
-						store: {
-							id: "bitwarden",
-							port: createMemorySecretsPort({ id: "memory" }),
-							reference: (name) => `bws://${name}`,
-						},
-					};
-				},
-				fetch,
-				sleep: async () => undefined,
-				handOffTimeoutMs: 60_000,
-				startPage: () => {
-					throw new Error("a handed-off run serves no page");
-				},
+		const owner = {
+			...heldOwnerChannel(),
+			canConfirm: () => true,
+			confirm: async (request: { url: string; message: string }) => {
+				approvals.push(request);
+				return true;
 			},
-		);
+		};
+		const shown: string[] = [];
+		const opened = new Map<string, string>();
+		const run = () =>
+			prepareGithubConnection(
+				handedOff((line) => shown.push(line)),
+				{
+					env: { HOBO_SECRET_STORE: "bitwarden" },
+					vault: createTrustedVault(),
+					locator: { read: async () => ({}), write: async () => undefined },
+					ownerChannel: owner,
+					openStore: async (
+						id,
+						_coordinates,
+						signIn,
+					): Promise<SecretStoreOpening> => {
+						const token = signIn.reveal("BWS_ACCESS_TOKEN");
+						if (id !== "bitwarden" || token === undefined)
+							return { ok: false, message: "no sign-in", remediation: [] };
+						opened.set("token", token);
+						return {
+							ok: true,
+							store: {
+								id: "bitwarden",
+								port: createMemorySecretsPort({ id: "memory" }),
+								reference: (name) => `bws://${name}`,
+							},
+						};
+					},
+					fetch: server.fetch,
+					sleep: async () => undefined,
+					handOffTimeoutMs: 60_000,
+					startPage: () => {
+						throw new Error("a handed-off run serves no page");
+					},
+				},
+			);
+		const first = await run();
+		const asked = ownerLines(first, shown);
+		expect(readOwnerTurn(false, asked)).toEqual({
+			kind: "act",
+			action: { kind: "capture", names: [...BITWARDEN_API_KEY_CAPTURES] },
+		});
+		owner.deposit("BW_CLIENTID", API_KEY.clientId);
+		owner.deposit("BW_CLIENTSECRET", API_KEY.clientSecret);
+		await run();
 		expect(opened.get("token")).toMatch(/^0\.66666666-/u);
+		expect(owner.holds("BW_CLIENTSECRET")).toBe(false);
 		expect(approvals).toHaveLength(1);
-		expect(captures).toEqual([]);
-		expect(runWires.join("\n")).not.toContain(API_KEY.clientSecret);
-		expect(server.signInBodies.join("&")).not.toContain(API_KEY.clientSecret);
 		expect(
-			shown.filter((line) => line.startsWith(OWNER_CREDENTIAL_LINE_PREFIX)),
-		).toHaveLength(1);
-		expect(server.strayHosts).toEqual([]);
-		expect(env).toEqual({ HOBO_SECRET_STORE: "bitwarden" });
-		expect(vault.names()).toEqual([]);
-		expect(JSON.stringify(Object.fromEntries(saved))).not.toContain(
-			API_KEY.clientSecret,
-		);
-		const all = shown.join("\n");
+			shown.filter((l) => l.startsWith(OWNER_BITWARDEN_APPROVE_LINE_PREFIX)),
+		).toHaveLength(0);
+		const all = [...asked, ...shown].join("\n");
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain(OWNER_EMAIL);
-		expect(all).not.toMatch(/environment's settings/u);
+		expect(all).not.toMatch(/environment's settings|credential form|egress/u);
 	});
 
-	it("on a self-hosted server, says why the credential form cannot carry the key and names a route that can", async () => {
+	it("without an owner channel, names the HoBo MCP route that carries the key", async () => {
 		const shown: string[] = [];
 		const outcome = await prepareGithubConnection(
 			handedOff((l) => shown.push(l)),

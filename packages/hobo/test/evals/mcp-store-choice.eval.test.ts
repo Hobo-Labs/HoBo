@@ -57,7 +57,9 @@ const elicitSchema = z.object({
 			z.string(),
 			z.object({
 				enum: z.array(z.string()).optional(),
-				enumNames: z.array(z.string()).optional(),
+				oneOf: z
+					.array(z.object({ const: z.string(), title: z.string() }))
+					.optional(),
 				format: z.string().optional(),
 			}),
 		),
@@ -275,10 +277,10 @@ describe("EVAL choose_secret_store: a private owner ceremony", () => {
 			const first = await client.elicitation();
 			const picker = elicitSchema.parse(first.params);
 			expect(Object.keys(picker.requestedSchema.properties)).toEqual(["store"]);
-			expect(picker.requestedSchema.properties.store?.enumNames).toEqual([
-				"Infisical",
-				"1Password",
-				"Bitwarden",
+			expect(picker.requestedSchema.properties.store?.oneOf).toEqual([
+				{ const: "infisical", title: "Infisical" },
+				{ const: "1password", title: "1Password" },
+				{ const: "bitwarden", title: "Bitwarden" },
 			]);
 			client.reply(first, {
 				action: "accept",
@@ -576,7 +578,9 @@ const relayElicitSchema = z.object({
 			z.string(),
 			z.object({
 				enum: z.array(z.string()).optional(),
-				enumNames: z.array(z.string()).optional(),
+				oneOf: z
+					.array(z.object({ const: z.string(), title: z.string() }))
+					.optional(),
 				format: z.string().optional(),
 			}),
 		),
@@ -681,11 +685,9 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 		});
 		const elicit = await client.next((m) => m.method === "elicitation/create");
 		const params = relayElicitSchema.parse(elicit.params);
-		expect(params.requestedSchema.properties.store?.enumNames).toEqual([
-			"Infisical",
-			"1Password",
-			"Bitwarden",
-		]);
+		expect(
+			params.requestedSchema.properties.store?.oneOf?.map((o) => o.title),
+		).toEqual(["Infisical", "1Password", "Bitwarden"]);
 		for (const [name, field] of Object.entries(
 			params.requestedSchema.properties,
 		)) {

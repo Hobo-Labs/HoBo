@@ -35,11 +35,11 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
   useEffect(() => {
     const clickHandler = ({ target }: PointerEvent) => {
       if (!sidebar.current || !trigger.current) return;
-      const targetNode = target instanceof Node ? target : null;
       if (
         !sidebarOpen ||
-        sidebar.current.contains(targetNode) ||
-        trigger.current.contains(targetNode)
+        !(target instanceof Node) ||
+        sidebar.current.contains(target) ||
+        trigger.current.contains(target)
       )
         return;
       setSidebarOpen(false);

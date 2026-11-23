@@ -86,16 +86,21 @@ export const STORE_OPTIONS = [
 	},
 ] as const;
 
-/** The elicitation's form: the choice and non-secret ids only. */
-export const STORE_CHOICE_PROPERTIES: JsonObject = {
-	store: {
-		type: "string",
-		title: "Secret store",
-		description:
-			"Where HoBo keeps this project's credentials. Its sign-in is asked for separately, never here.",
-		enum: STORE_OPTIONS.map((o) => o.id),
-		enumNames: STORE_OPTIONS.map((o) => o.label),
-	},
+const STORE_FIELD: JsonObject = {
+	type: "string",
+	title: "Secret store",
+	description:
+		"Where HoBo keeps this project's credentials. Its sign-in is asked for separately, never here.",
+	oneOf: STORE_OPTIONS.map((o) => ({ const: o.id, title: o.label })),
+};
+
+type StoreFieldName =
+	| "INFISICAL_PROJECT_ID"
+	| "OP_VAULT_ID"
+	| "OP_CONNECT_HOST"
+	| "BITWARDEN_SERVER_URL";
+
+const STORE_FIELDS = {
 	INFISICAL_PROJECT_ID: {
 		type: "string",
 		title: "Infisical project ID (Infisical only)",
@@ -111,6 +116,11 @@ export const STORE_CHOICE_PROPERTIES: JsonObject = {
 		title: "Self-hosted server (Bitwarden only, optional)",
 		format: "uri",
 	},
+} satisfies Readonly<Record<StoreFieldName, JsonObject>>;
+
+export const STORE_CHOICE_PROPERTIES: JsonObject = {
+	store: STORE_FIELD,
+	...STORE_FIELDS,
 };
 
 /**
@@ -120,7 +130,7 @@ export const STORE_CHOICE_PROPERTIES: JsonObject = {
  */
 export const STORE_CHOICE_SCHEMA: JsonObject = {
 	type: "object",
-	properties: { store: STORE_CHOICE_PROPERTIES.store ?? null },
+	properties: { store: STORE_FIELD },
 	required: ["store"],
 };
 
@@ -128,10 +138,8 @@ export const STORE_CHOICE_SCHEMA: JsonObject = {
 export function storeFieldsSchema(
 	store: "infisical" | "1password" | "bitwarden",
 ): JsonObject {
-	const pick = (names: readonly string[]): JsonObject =>
-		Object.fromEntries(
-			names.map((name) => [name, STORE_CHOICE_PROPERTIES[name] ?? null]),
-		);
+	const pick = (names: readonly StoreFieldName[]): JsonObject =>
+		Object.fromEntries(names.map((name) => [name, STORE_FIELDS[name]]));
 	switch (store) {
 		case "infisical":
 			return {
@@ -500,6 +508,7 @@ export function createStoreChoiceApp(
 			);
 		const first = elicitResult.safeParse(
 			await request("elicitation/create", {
+				mode: "form",
 				message: `Choose where HoBo keeps this project's credentials (hobo ${ticket.family} up). Its sign-in is asked for separately; nothing you enter here is shown to the agent.`,
 				requestedSchema: STORE_CHOICE_SCHEMA,
 			}),
@@ -512,6 +521,7 @@ export function createStoreChoiceApp(
 		const option = STORE_OPTIONS.find((o) => o.id === store);
 		const second = elicitResult.safeParse(
 			await request("elicitation/create", {
+				mode: "form",
 				message: `${option?.label ?? store}: ${option?.needs ?? ""}. Only HoBo reads this.`,
 				requestedSchema: storeFieldsSchema(store),
 			}),

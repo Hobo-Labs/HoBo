@@ -15,7 +15,6 @@ export type OwnerAction =
 			readonly url: URL;
 			readonly capture: string;
 	  }
-	| { readonly kind: "credential"; readonly host: string }
 	/** HoBo MCP App secret forms, one per value the waiting run named. */
 	| { readonly kind: "capture"; readonly names: readonly string[] }
 	| { readonly kind: "device"; readonly line: string }
@@ -37,7 +36,6 @@ export type OwnerStep =
 	  };
 
 const SIGN_IN = /HOBO_OWNER_SIGN_IN url=(\S+) capture=(\S+)/u;
-const CREDENTIAL = /^HOBO_OWNER_CREDENTIAL host=(\S+)/u;
 const CAPTURE = /^HOBO_OWNER_CAPTURE name=(\S+) guide=(\S+)/u;
 const STORE_CHOICE = /^HOBO_C[ID]_STORE_CHOICE$|HOBO_OWNER_STORE_CHOICE/u;
 const DEVICE = /^HOBO_OWNER_DEVICE\b/u;
@@ -121,12 +119,6 @@ export function readOwnerTurn(
 				action: { kind: "sign-in", url, capture: signIn[2] ?? "" },
 			};
 		}
-		const credential = CREDENTIAL.exec(line);
-		if (credential !== null)
-			return {
-				kind: "act",
-				action: { kind: "credential", host: credential[1] ?? "" },
-			};
 		if (STORE_CHOICE.test(line))
 			return { kind: "act", action: { kind: "store-choice" } };
 		if (DEVICE.test(line))

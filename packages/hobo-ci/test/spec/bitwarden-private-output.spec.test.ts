@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
 	bitwardenEndpoints,
+	parseBitwardenApiKey,
 	parseBitwardenDeviceId,
 	provisionBitwardenAccessToken,
 } from "../../src/bitwarden-provision.js";
@@ -105,7 +106,7 @@ describe("Bitwarden owner hand-off privacy", () => {
 		const result = await provisionBitwardenAccessToken({
 			family: "cd",
 			endpoints: bitwardenEndpoints("us"),
-			apiKey: { kind: "egress-proxy" },
+			apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
 			deviceId: parseBitwardenDeviceId("8d0f3c2e-1b4a-4c5d-9e6f-7a8b9c0d1e2f"),
 			fetch: provider.fetch,
 			emit: (line) => lines.push(line),

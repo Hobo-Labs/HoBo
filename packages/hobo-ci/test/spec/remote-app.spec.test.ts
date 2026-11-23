@@ -13,6 +13,7 @@ import {
 import { pactGithub } from "../support/fake-github.js";
 import {
 	driveRemoteOwner,
+	handedOverInfisicalToken,
 	heldOwnerChannel,
 	ownerLines,
 	readOwnerTurn,
@@ -98,7 +99,8 @@ async function remoteCi(
 	const run = async () => {
 		const progress: string[] = [];
 		const outcome = await prepareGithubConnection(handOff(progress), {
-			env: { CLAUDE_CODE_REMOTE: "true", INFISICAL_SIGN_IN: "egress-proxy" },
+			env: { CLAUDE_CODE_REMOTE: "true" },
+			vault: handedOverInfisicalToken(),
 			locator,
 			openStore: async () => ({ ok: true, store }),
 			ownerChannel: owner,
@@ -275,7 +277,8 @@ describe("SPEC remote GitHub App: created from the owner's own browser", () => {
 		);
 		const progress: string[] = [];
 		const outcome = await prepareGithubConnection(handOff(progress), {
-			env: { CLAUDE_CODE_REMOTE: "true", INFISICAL_SIGN_IN: "egress-proxy" },
+			env: { CLAUDE_CODE_REMOTE: "true" },
+			vault: handedOverInfisicalToken(),
 			locator: memoryLocator(),
 			openStore: async () => ({ ok: true, store }),
 			fetch: github().fetch,

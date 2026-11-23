@@ -73,7 +73,8 @@ export function authenticatedOwnerRun(
 	const supplied = Buffer.from(request.run.secret);
 	const authorized = Buffer.from(expected.secret);
 	return (
-		supplied.length === authorized.length && timingSafeEqual(supplied, authorized)
+		supplied.length === authorized.length &&
+		timingSafeEqual(supplied, authorized)
 	);
 }
 

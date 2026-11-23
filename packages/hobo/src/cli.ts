@@ -117,7 +117,10 @@ export interface ComposedHoboCliOptions {
 	 * server's channel); without it, a remote run says where to run instead.
 	 */
 	readonly ownerChannel?: OwnerChannel;
-	readonly ownerSession?: Pick<OwnerStoreSessions, "credentials" | "status">;
+	readonly ownerSession?: Pick<
+		OwnerStoreSessions,
+		"credentials" | "status" | "entries"
+	>;
 	/**
 	 * The clock steps that wait on a provider use (the Vercel device grant's
 	 * polling, RFC 8628): the system's by default; a spec drives it virtually.
@@ -308,6 +311,12 @@ export function createComposedHoboCli(
 	const ci = createCiCommand({
 		runtime,
 		ownerFor: (cwd) => familyOwner("ci", cwd),
+		...(options.ownerSession !== undefined
+			? {
+					fleetCredentials: options.ownerSession.credentials,
+					ownerEntries: options.ownerSession.entries,
+				}
+			: undefined),
 	});
 	const deploy = createDeployCommand({
 		hosting: options.hosting?.supervisor,
@@ -404,6 +413,7 @@ export function createComposedHoboCli(
 						: createCdVercelUpCommand({
 								credentials,
 								runtime,
+								prebuilt: { env: process.env },
 								upWith: (placed) =>
 									createBrokerAwareUpCommand({
 										runtime: placed,

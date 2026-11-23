@@ -6,6 +6,7 @@ import {
 	BITWARDEN_API_KEY_CAPTURES,
 	createOwnerJobs,
 	GITHUB_APP_CODE_CAPTURE,
+	HAND_OFF_SIGN_IN_CAPTURES,
 	INFISICAL_CLI_SESSION_CAPTURE,
 	ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
 	type OwnerChannel,
@@ -280,6 +281,7 @@ export function createMcpOwnerChannel(
 		},
 		async confirm({ url, message }) {
 			const answer = options.form?.({
+				mode: "form",
 				// One line, and the link as its own field (prefilled, marked as a
 				// link): an address in the text could be neither clicked nor
 				// copied.
@@ -403,6 +405,26 @@ export const OWNER_HANDOFF_SPECS: readonly ParsedSecretCaptureSpec[] =
 			"existing 1Password token",
 			"Use an existing vault-scoped credential for this session.",
 			{ minBytes: 1, maxBytes: 16384, pattern: "" },
+		),
+		handoff(
+			HAND_OFF_SIGN_IN_CAPTURES[0],
+			"Infisical access token",
+			"A Token Auth access token for your Infisical identity.",
+			{
+				minBytes: 40,
+				maxBytes: 8192,
+				pattern: "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+			},
+		),
+		handoff(
+			HAND_OFF_SIGN_IN_CAPTURES[1],
+			"1Password Connect token",
+			"A Connect server access token with access to the vault.",
+			{
+				minBytes: 40,
+				maxBytes: 8192,
+				pattern: "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+			},
 		),
 		handoff(
 			"HOBO_CI_PUBLIC_URL",

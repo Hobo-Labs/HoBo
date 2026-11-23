@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { clone, create } from "@bufbuild/protobuf";
 import {
 	PipelineRecordSchema,
@@ -9,6 +11,7 @@ import { HOBO_CI_COMPONENTS } from "@hobo/cd/compose";
 import { type CommandResult, compileProjectManifest } from "@hobo/cli";
 import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import { lazyEgressFetch } from "@hobo/hobo-ci";
+import { BUNDLED_SECRET_STORE_BINDING_FILE } from "@hobo/secret-store-claim";
 import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { relayAdoptDeadline } from "./ci-relay-adopt.js";
 import {
@@ -25,8 +28,10 @@ import {
 	resolveRelayPlacement,
 } from "./ci-relay-yard.js";
 import {
-	loadSecretStoreBinding,
-	secretStoreDeployInputs,
+	parseOwnerStoreBinding,
+	readSecretStoreBindingText,
+	SecretStoreBindingRefusal,
+	type SecretStoreBindingStore,
 } from "./ci-secret-store.js";
 import {
 	createGithubReleaseJournal,
@@ -101,6 +106,7 @@ export interface CiRelayManagedInput {
 	>;
 	readonly env: NodeJS.ProcessEnv;
 	readonly credentials?: TrustedVault;
+	readonly bindingStore?: SecretStoreBindingStore;
 	readonly ownerSession?: TrustedVault;
 	readonly ownerSettings?: Parameters<
 		typeof loadOwnerDeployCredentials
@@ -177,7 +183,18 @@ export async function runCiRelayManaged(
 		const loaded = await loadDeliveryFile(RELAY_DELIVERY_FILE, {
 			cwd: snapshot.dir,
 		});
-		const binding = loadSecretStoreBinding(snapshot.dir);
+		let bindingText: string | undefined;
+		try {
+			bindingText = await readSecretStoreBindingText(input.bindingStore);
+		} catch (error) {
+			if (error instanceof SecretStoreBindingRefusal)
+				return refused(error.code, error.message);
+			throw error;
+		}
+		const binding =
+			bindingText === undefined
+				? undefined
+				: parseOwnerStoreBinding(bindingText);
 		if (yard?.providerId !== "vercel" || !declaration || !loaded.ok || !binding)
 			return refused(
 				"HOBO_CI_MANAGED_CONFIG_INVALID",
@@ -383,27 +400,17 @@ export async function runCiRelayManaged(
 						};
 					}
 					if (target === "production") {
-						const inputs = secretStoreDeployInputs(binding);
-						const missing = production.inputs.filter(
-							(name) => !inputs.has(name),
-						);
-						if (missing.length > 0)
+						if (production.inputs.length > 0)
 							return {
 								ok: false,
 								code: "HOBO_CI_MANAGED_SETTINGS_MISSING",
 								message:
-									"A production binding has no non-secret setting in the store binding.",
+									"A production binding asks for store coordinates, which never become Vercel variables.",
 							};
 						await client.setProjectEnv({
 							project: projectId,
 							target,
-							variables: Object.fromEntries(
-								[...production.settings, ...inputs].filter(
-									([name]) =>
-										production.settings.has(name) ||
-										production.inputs.includes(name),
-								),
-							),
+							variables: Object.fromEntries(production.settings),
 						});
 					}
 					const deployment = await deployVercelSource({
@@ -414,7 +421,23 @@ export async function runCiRelayManaged(
 						repository,
 						ref,
 						rootDirectory,
-						source,
+						source:
+							target === "production" && bindingText !== undefined
+								? {
+										...source,
+										files: [
+											...source.files,
+											{
+												path: path.posix.join(
+													rootDirectory,
+													BUNDLED_SECRET_STORE_BINDING_FILE,
+												),
+												mode: "100644",
+												content: Buffer.from(bindingText),
+											},
+										],
+									}
+								: source,
 						target,
 						buildSettings: {
 							installCommand: "pnpm install --frozen-lockfile --ignore-scripts",

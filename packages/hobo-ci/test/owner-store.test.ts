@@ -46,7 +46,9 @@ describe("owner store continuity", () => {
 			},
 			reference: (name) => `infisical://project/prod/hobo-cd/${name}`,
 		};
-		const opened = await ownerStore("cd", createTrustedVault(), {
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "synthetic-infisical-token");
+		const opened = await ownerStore("cd", vault, {
 			locator: {
 				hasSessionChoice: () => true,
 				assertCurrent: () => {
@@ -55,7 +57,6 @@ describe("owner store continuity", () => {
 				read: async () => ({
 					HOBO_SECRET_STORE: "infisical",
 					INFISICAL_PROJECT_ID: "project",
-					INFISICAL_SIGN_IN: "egress-proxy",
 				}),
 				write: async () => undefined,
 				runStoreWrite: async <T>(operation: () => Promise<T>): Promise<T> =>

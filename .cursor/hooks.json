@@ -5,6 +5,22 @@
       {
         "command": "[ ! -f \".cursor/skills/impeccable/scripts/hook-before-edit.mjs\" ] || node \".cursor/skills/impeccable/scripts/hook-before-edit.mjs\"",
         "timeout": 5
+      },
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-secret-policy.mts\" --format=cursor",
+        "timeout": 10
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-secret-policy.mts\" --format=cursor",
+        "timeout": 10
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-secret-policy.mts\" --format=cursor",
+        "timeout": 10
       }
     ],
     "sessionStart": [

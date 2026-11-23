@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import type { EventEmitter } from "node:events";
-import { resolve } from "node:path";
+import { accessSync, constants, mkdirSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import process from "node:process";
 import type { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
@@ -28,6 +29,7 @@ export type InstallSpawner = (
 
 export type InstallRunOptions = Readonly<{
 	env?: NodeJS.ProcessEnv;
+	storeWritable?: (path: string) => boolean;
 	spawn?: InstallSpawner;
 	now?: () => number;
 	schedule?: (callback: () => void, delayMs: number) => () => void;
@@ -62,6 +64,37 @@ export function parseInstallTimeoutSeconds(value: string | undefined): number {
 		);
 	}
 	return seconds;
+}
+
+const PROGRESS_LINE =
+	/Progress: resolved (\d+), reused (\d+), downloaded (\d+), added (\d+)/gu;
+
+export function latestProgress(text: string): string | undefined {
+	let latest: string | undefined;
+	for (const match of text.matchAll(PROGRESS_LINE)) {
+		latest = `${match[1]},${match[2]},${match[3]},${match[4]}`;
+	}
+	return latest;
+}
+
+function defaultStoreWritable(path: string): boolean {
+	try {
+		mkdirSync(path, { recursive: true });
+		accessSync(path, constants.W_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export function withFleetPnpmStore(
+	env: NodeJS.ProcessEnv,
+	storeWritable: (path: string) => boolean = defaultStoreWritable,
+): NodeJS.ProcessEnv {
+	if (env.npm_config_store_dir?.trim()) return env;
+	const shared = env.HOBO_CI_PNPM_STORE_DIR?.trim() ?? "";
+	if (!isAbsolute(shared) || !storeWritable(shared)) return env;
+	return { ...env, npm_config_store_dir: shared };
 }
 
 const defaultSpawn: InstallSpawner = (command, args, options) =>
@@ -124,9 +157,16 @@ async function runAttempt(
 		let timedOut = false;
 		let cancelDeadline = () => {};
 		let cancelKill: (() => void) | undefined;
+		let progress: string | undefined;
 		const capture = (stream: "stdout" | "stderr", text: string) => {
 			options.writeOutput(stream, text);
 			diagnostics = `${diagnostics}${text}`.slice(-DIAGNOSTIC_LIMIT);
+			const latest = latestProgress(text);
+			if (latest !== undefined && latest !== progress && !timedOut) {
+				progress = latest;
+				cancelDeadline();
+				armDeadline();
+			}
 		};
 		child.stdout.on("data", (chunk: Buffer | string) =>
 			capture("stdout", chunk.toString()),
@@ -182,14 +222,17 @@ async function runAttempt(
 			finish(null);
 		});
 		child.once("close", (code: number | null) => finish(code));
-		cancelDeadline = options.schedule(() => {
-			if (settled) return;
-			timedOut = true;
-			if (!signalGroup("SIGTERM")) return;
-			cancelKill = options.schedule(() => {
-				if (!settled) signalGroup("SIGKILL");
-			}, KILL_GRACE_MS);
-		}, timeoutMs);
+		function armDeadline(): void {
+			cancelDeadline = options.schedule(() => {
+				if (settled) return;
+				timedOut = true;
+				if (!signalGroup("SIGTERM")) return;
+				cancelKill = options.schedule(() => {
+					if (!settled) signalGroup("SIGKILL");
+				}, KILL_GRACE_MS);
+			}, timeoutMs);
+		}
+		armDeadline();
 	});
 	options.log(
 		JSON.stringify({
@@ -206,7 +249,10 @@ export async function runPnpmInstall(
 	args: readonly string[],
 	runOptions: InstallRunOptions = {},
 ): Promise<number> {
-	const env = runOptions.env ?? process.env;
+	const env = withFleetPnpmStore(
+		runOptions.env ?? process.env,
+		runOptions.storeWritable,
+	);
 	const timeoutSeconds = parseInstallTimeoutSeconds(
 		env.HOBO_PNPM_INSTALL_TIMEOUT_S,
 	);

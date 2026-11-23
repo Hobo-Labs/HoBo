@@ -668,7 +668,9 @@ describe("isolated owner fetch", () => {
 		await Promise.all(
 			[source, destination].map(
 				(server) =>
-					new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)),
+					new Promise<void>((resolve) =>
+						server.listen(0, "127.0.0.1", resolve),
+					),
 			),
 		);
 		try {
@@ -689,5 +691,4 @@ describe("isolated owner fetch", () => {
 			);
 		}
 	});
-
 });

@@ -59,10 +59,15 @@ locator) signs in with the job's own OIDC token. Bitwarden has no workload OIDC
 sign-in, so a relay on Bitwarden reads back with its own machine account
 token, kept by the platform; Infisical stays the default for that reason.
 Selecting the Infisical OAuth application sign-in keeps the store read-only
-even if another credential is available. Selecting the egress proxy sends its
-placeholder rather than a token retained from another sign-in choice. Owner-selection
-currency is checked again after reading the locator. A selection change immediately
-after a store mutation marks that write uncertain instead of hiding its committed outcome.
+even if another credential is available. Owner-selection currency is checked
+again after reading the locator. A selection change immediately after a store
+mutation marks that write uncertain instead of hiding its committed outcome.
+A handed-off run on a remote box
+shows no page: when the store's only missing piece is its sign-in token (an
+Infisical access token or a 1Password Connect token), or Bitwarden needs your
+personal API key, the run refuses with a `HOBO_OWNER_CAPTURE` line and takes
+the value from HoBo's own secret capture (the HoBo MCP App's form), holding it
+in memory only. Nothing is stored in the agent's session or environment.
 The intended relay connection reads credentials with its own workload identity
 (OIDC); it still needs an end-to-end observation with the configured store.
 For a remote owner hand-off, an existing 1Password service account can be
@@ -78,8 +83,7 @@ cannot route through those controls. Transport failures refuse rather than
 falling back to an unvalidated token. A configured desktop account does not bypass these checks when a
 service-account token is held; the Connect path uses its own bearer token.
 Local owner-terminal setup continues to use the owner's CLI session.
-Remote Bitwarden cloud sign-in keeps the personal API key in the session's
-egress proxy: the run neither captures nor transmits its client secret. Private
+Private
 owner-channel failures return an explicit refusal without exposing channel
 errors.
 
