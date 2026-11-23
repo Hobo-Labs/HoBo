@@ -27,6 +27,7 @@ export type RelevantCheckPolicyOptions = {
 	workspacePackageExists?: (workspace: string) => boolean;
 	/** Whether a changed TypeScript file under packages/ names a ts-autocode module (default: reads it). */
 	importsTsAutocode?: (file: string) => boolean;
+	releaseIntegrationTestFiles?: (workspace: string) => readonly string[];
 };
 
 export type RelevantCheckPolicy = {
@@ -73,6 +74,19 @@ function workspaceTestRelevant(file: string) {
 
 function defaultWorkspacePackageExists(workspace: string) {
 	return existsSync(`${workspace}/package.json`);
+}
+
+const RELEASE_INTEGRATION_CONFIG = "vitest.release-integration.config.ts";
+
+function defaultReleaseIntegrationTestFiles(
+	workspace: string,
+): readonly string[] {
+	const list = `${workspace}/test/support/release-integration-test-files.ts`;
+	if (!existsSync(`${workspace}/${RELEASE_INTEGRATION_CONFIG}`)) return [];
+	if (!existsSync(list)) return [];
+	return [...readFileSync(list, "utf8").matchAll(/"(test\/[^"]+)"/gu)].map(
+		(match) => match[1] ?? "",
+	);
 }
 
 function defaultWorkspaceTestInfo(
@@ -189,6 +203,8 @@ export function selectRelevantChecks(
 	const includeBroadSweeps = Boolean(options.includeBroadSweeps || options.all);
 	const workspacePackageExists =
 		options.workspacePackageExists ?? defaultWorkspacePackageExists;
+	const releaseIntegrationTestFiles =
+		options.releaseIntegrationTestFiles ?? defaultReleaseIntegrationTestFiles;
 	const importsTsAutocode =
 		options.importsTsAutocode ?? defaultImportsTsAutocode;
 
@@ -532,14 +548,41 @@ export function selectRelevantChecks(
 	}
 
 	for (const {
+		workspace,
 		packageName,
 		vitestPaths,
 	} of options.workspaceTestsCoveredExternally ? [] : narrowWorkspaceTests) {
-		checks.push({
-			command: "pnpm",
-			args: ["--filter", packageName, "exec", "vitest", "run", ...vitestPaths],
-			reason: `staged changes are test-only; run ${vitestPaths.length} changed test file(s) directly`,
-		});
+		const releaseOwned = new Set(releaseIntegrationTestFiles(workspace));
+		const defaultPaths = vitestPaths.filter((file) => !releaseOwned.has(file));
+		const releasePaths = vitestPaths.filter((file) => releaseOwned.has(file));
+		if (defaultPaths.length > 0)
+			checks.push({
+				command: "pnpm",
+				args: [
+					"--filter",
+					packageName,
+					"exec",
+					"vitest",
+					"run",
+					...defaultPaths,
+				],
+				reason: `staged changes are test-only; run ${defaultPaths.length} changed test file(s) directly`,
+			});
+		if (releasePaths.length > 0)
+			checks.push({
+				command: "pnpm",
+				args: [
+					"--filter",
+					packageName,
+					"exec",
+					"vitest",
+					"run",
+					"--config",
+					RELEASE_INTEGRATION_CONFIG,
+					...releasePaths,
+				],
+				reason: `staged changes are test-only; run ${releasePaths.length} changed release-integration test file(s) under their own config`,
+			});
 	}
 
 	if (workspaces.includes("site")) {

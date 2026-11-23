@@ -344,14 +344,17 @@ function verdictsOf(run: Awaited<ReturnType<typeof runSchedule>>) {
 		.filter((verdict) => !verdict.holds);
 }
 
-function expectedPause(run: Awaited<ReturnType<typeof runSchedule>>): boolean {
+function expectedOutcome(
+	schedule: Schedule,
+	run: Awaited<ReturnType<typeof runSchedule>>,
+): boolean {
+	const reached = check(REACHES_FRONTIER, run.events).holds;
+	if (schedule.denyVercel === 0) return reached;
 	const result = run.events.filter((event) => event.kind === "result").at(-1);
 	return (
 		result?.kind === "result" &&
-		["HOBO_CD_VERCEL_DEVICE_DENIED", "HOBO_UP_INCOMPLETE"].includes(
-			result.code ?? "",
-		) &&
-		!check(REACHES_FRONTIER, run.events).holds
+		result.code === "HOBO_CD_VERCEL_DEVICE_DENIED" &&
+		!reached
 	);
 }
 
@@ -397,8 +400,8 @@ describe("EVAL ceremony explorer: every owner choice and provider fault, end to 
 			failed: [],
 		});
 		expect(run.blocked).toEqual([]);
-		expect(run.story.at(-1)).toBe("cd: HOBO_UP_INCOMPLETE");
-		expect(expectedPause(run)).toBe(true);
+		expect(run.story.at(-1)).toBe("cd: HOBO_OK");
+		expect(check(REACHES_FRONTIER, run.events).holds).toBe(true);
 	}, 120_000);
 
 	it("stops after the owner explicitly denies Vercel approval", async () => {
@@ -410,7 +413,7 @@ describe("EVAL ceremony explorer: every owner choice and provider fault, end to 
 		expect(check(REACHES_FRONTIER, run.events).holds).toBe(false);
 	}, 120_000);
 
-	it("bounded exhaustive: all 72 schedules preserve safety and stop at an explicit outcome", async () => {
+	it("bounded exhaustive: all 72 schedules preserve safety and reach the frontier unless the owner denies Vercel", async () => {
 		const failures: {
 			schedule: Schedule;
 			failed: string[];
@@ -424,7 +427,8 @@ describe("EVAL ceremony explorer: every owner choice and provider fault, end to 
 			);
 			if (run.blocked.length > 0)
 				failed.push(`egress outside the proxy: ${run.blocked.join(", ")}`);
-			if (!expectedPause(run)) failed.push("unexpected terminal outcome");
+			if (!expectedOutcome(schedule, run))
+				failed.push("unexpected terminal outcome");
 			if (failed.length > 0)
 				failures.push({ schedule, failed, story: run.story });
 		}
@@ -463,7 +467,7 @@ describe("EVAL ceremony explorer: every owner choice and provider fault, end to 
 					const run = await runSchedule(schedule);
 					expect(verdictsOf(run)).toEqual([]);
 					expect(run.blocked).toEqual([]);
-					expect(expectedPause(run)).toBe(true);
+					expect(expectedOutcome(schedule, run)).toBe(true);
 				},
 			),
 			{ numRuns: 25 },
