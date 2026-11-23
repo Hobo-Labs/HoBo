@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import * as z from "zod";
 import { test } from "node:test";
 
 const tsx = resolve("node_modules/.bin/tsx");
@@ -246,7 +247,9 @@ for (const harness of [".agents", ".claude"]) {
 				{ cwd: directory, encoding: "utf8" },
 			);
 			assert(result.stdout, result.stderr);
-			const report: { repairsApplied: string[] } = JSON.parse(result.stdout);
+			const report = z
+				.object({ repairsApplied: z.array(z.string()) })
+				.parse(JSON.parse(result.stdout));
 			assert.deepEqual(report.repairsApplied, []);
 			assert.equal(existsSync(join(feature, "EXPERIENCE.md")), false);
 			assert.equal(
@@ -267,9 +270,11 @@ for (const harness of [".agents", ".claude"]) {
 				{ cwd: directory, encoding: "utf8" },
 			);
 			assert(snapshotResult.stdout, snapshotResult.stderr);
-			const manifest: { files: Array<{ rel: string }> } = JSON.parse(
-				readFileSync(join(snapshot, "manifest.json"), "utf8"),
-			);
+			const manifest = z
+				.object({ files: z.array(z.object({ rel: z.string() })) })
+				.parse(
+					JSON.parse(readFileSync(join(snapshot, "manifest.json"), "utf8")),
+				);
 			const copied = manifest.files.map((file) => file.rel);
 			assert(copied.includes(".optimizexp/features/example/feature.json"));
 			assert(

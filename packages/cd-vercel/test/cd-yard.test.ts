@@ -79,7 +79,7 @@ describe("HoBo.CD on Vercel: Yard, platform and Bindle agree", () => {
 		expect(CD_PLATFORM.maxConcurrency).toBe(1);
 	});
 
-	it("gives each entry the Yard's duration and the committed store binding", () => {
+	it("gives each entry the Yard's duration and the bundled store binding", () => {
 		for (const entry of [CD_PLATFORM.httpEntry, CD_PLATFORM.tickEntry]) {
 			expect(platform.functions[entry]?.maxDuration).toBe(
 				CD_PLATFORM.maxDuration,

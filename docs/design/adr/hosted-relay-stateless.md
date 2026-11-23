@@ -371,8 +371,6 @@ narrows the previous amendment in four ways.
 ### The deploy target does not change
 
 The relay deploys to the owner's Vercel project `hobo-ci`
-(`prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO`, team `tyler-r-kendricks-projects`,
-`team_BRBUnG6uGhSsVV3EG5GFV3FM`), placed by the Yard `hobo-ci-relay`
 (`packages/ci-vercel/deploy/yard.ts`), **through Vercel's Git integration**:
 a push to `main` builds and promotes it, as every production deployment of
 `hobo-ci` so far has been (its latest, `dpl_9WSb8PKdF666xLVczNBabrjcoTEp`,

@@ -32,23 +32,8 @@ const CREDENTIAL_INFIX = /TOKEN|SECRET|PASSWORD|PRIVATE|CREDENTIAL|APIKEY/u;
 const STORAGE_NAME =
 	/^(?:DATABASE|POSTGRES|PG[A-Z]*|REDIS|MONGO[A-Z]*|MYSQL|KV|BLOB|EDGE_CONFIG|TURSO|LIBSQL|UPSTASH|VALKEY)(?:_|$)/u;
 
-/**
- * The config service's coordinates: where a deployment signs in and what it
- * reads, never what it signs in with (`@hobo/adapter-infisical`,
- * `infisicalBindingFromEnv`; ADR-0179). These are plain configuration, so a
- * deploy may set them; every other `INFISICAL_*` name (an access token, a
- * Universal Auth client id or secret, anything new) is refused.
- */
-export const CONFIG_SERVICE_COORDINATES: ReadonlySet<string> = new Set([
-	"INFISICAL_ENVIRONMENT",
-	"INFISICAL_IDENTITY_ID",
-	"INFISICAL_PROJECT_ID",
-	"INFISICAL_SECRET_PATH",
-	"INFISICAL_SITE_URL",
-]);
-
-// Names the config service's own tooling reads.
-const CONFIG_SERVICE_NAME = /^INFISICAL(?:_|$)/u;
+const STORE_COORDINATE_NAME =
+	/^INFISICAL(?:_|$)|(?:^|_)(?:PROJECT|TEAM|ORG|IDENTITY|WORKSPACE|VAULT)_IDS?$|(?:^|_)OIDC(?:_|$)|(?:^|_)SUBJECT$|(?:^|_)(?:STORE_)?BINDING$/u;
 
 // The most of a value this path sends; Vercel's own limit is far higher.
 const ENV_VALUE_LIMIT = 4096;
@@ -64,12 +49,9 @@ const CONTROL_CHAR = /\p{Cc}/u;
 export function refusedEnvKeyReason(key: string): string | undefined {
 	if (!ENV_KEY.test(key))
 		return "is not an environment variable name (letters, digits and _, not starting with a digit)";
-	// A coordinate is checked before the credential words: `SECRET` in
-	// `INFISICAL_SECRET_PATH` names a folder, not a secret.
-	if (CONFIG_SERVICE_COORDINATES.has(key)) return undefined;
 	const upper = key.toUpperCase();
-	if (CONFIG_SERVICE_NAME.test(upper))
-		return "names a config-service credential, or a config-service setting that is not one of its coordinates";
+	if (STORE_COORDINATE_NAME.test(upper))
+		return "names a secret-store coordinate or a config-service setting: coordinates live only in the owner's secret store and reach a deployment only inside a build HoBo makes from the owner's store session";
 	if (isForbiddenSecretEnvKey(key) || STORAGE_NAME.test(upper))
 		return "names a connection string or a storage integration's variable";
 	if (

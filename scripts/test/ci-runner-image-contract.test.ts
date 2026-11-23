@@ -715,11 +715,33 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(end).toBeGreaterThan(start);
 		const ghcr = script.slice(start, end);
 		expect(ghcr).toContain(
-			'if printf \'%s\' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR:-github-actions}" --password-stdin; then\n    if docker pull "${published}"; then',
+			'if printf \'%s\' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR:-github-actions}" --password-stdin; then\n    ghcr_ready=1\n    if docker pull "${published}"; then',
 		);
 		expect(ghcr).toContain('echo "GHCR login failed; building natively" >&2');
 		expect(ghcr).toContain(
 			'echo "GHCR_TOKEN is unavailable; skipping published runner image pull"',
+		);
+	});
+
+	it("reuses base layers from main's registry cache and writes it from main only", () => {
+		const script = readFileSync(join(root, CI_RUNNER_BUILD_SCRIPT), "utf8");
+		expect(script).toContain(
+			'base_cache="ghcr.io/${repository}/${base_image}:buildcache"',
+		);
+		const build = script.slice(
+			script.indexOf("cache_args=()"),
+			script.indexOf("start_registry() {"),
+		);
+		expect(build).toContain(
+			'if [[ "${ghcr_ready}" = 1 ]]; then\n  cache_args=(--cache-from "${base_cache}")\nfi',
+		);
+		expect(build).toContain("--build-arg BUILDKIT_INLINE_CACHE=1");
+		expect(build).toContain(
+			'if [[ "${ghcr_ready}" = 1 && "${GITHUB_EVENT_NAME:-}" = push && "${GITHUB_REF:-}" = refs/heads/main ]]; then',
+		);
+		expect(build).toContain('docker push "${base_cache}" ||');
+		expect(script.indexOf("ghcr_ready=1")).toBeLessThan(
+			script.indexOf("cache_args=()"),
 		);
 	});
 

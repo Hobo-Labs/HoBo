@@ -42,8 +42,8 @@ function scripted(answers: readonly VercelFetchResponse[]) {
 }
 
 const TOKEN = "synthetic-vercel-token-for-tests";
-const TEAM = "team_BRBUnG6uGhSsVV3EG5GFV3FM";
-const PROJECT = "prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO";
+const TEAM = "team_000000000000000000000000";
+const PROJECT = "prj_0000000000000000000000000000";
 
 describe("promote and rollback", () => {
 	it("promotes a deployment by id with no body, team-scoped", async () => {

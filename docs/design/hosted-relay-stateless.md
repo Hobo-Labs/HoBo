@@ -787,8 +787,6 @@ For the store the relay can read today (self-hosted Infisical on the fleet):
 4. The owner (or the agent) runs `hobo claim finalize secret-store`. HoBo
    redeems its sealed instance-admin token, deletes its own bootstrap identity
    with it, and passes only when Infisical answers 401 to that token.
-5. The agent commits `deploy/secret-store.binding.json` in a PR. From then on
-   `hobo ci deploy` and the workflow on `main` read it.
 
 For a Cloudflare temporary account (once its Worker is built), step 2 asks the
 owner, in their terminal, to accept Cloudflare's Terms of Service and Privacy
