@@ -39,11 +39,25 @@ type NativeBindValue = Exclude<SqliteValue, boolean>;
 export function createNodeSqliteDriver(
 	options: NodeSqliteDriverOptions,
 ): SqliteDriver {
-	mkdirSync(dirname(options.path), { recursive: true });
+	const path = options.path;
+	mkdirSync(dirname(path), { recursive: true });
 	const openOptions: DatabaseSyncOpenOptions = { readBigInts: true };
-	const db = new DatabaseSync(options.path, openOptions);
-	disableExtensions(db, options.disableExtensions);
-	return wrapDatabaseSync(db, "node");
+	const db = new DatabaseSync(path, openOptions);
+	try {
+		const main = db
+			.prepare("PRAGMA database_list")
+			.all()
+			.find((entry) => entry.name === "main");
+		if (!isJsonString(main?.file) || main.file.length === 0)
+			throw new TypeError(
+				"native SQLite driver requires a persistent file; use the memory driver for ephemeral storage",
+			);
+		disableExtensions(db, options.disableExtensions);
+		return wrapDatabaseSync(db, "node");
+	} catch (error) {
+		db.close();
+		throw error;
+	}
 }
 
 export function createMemoryNodeSqliteDriver(

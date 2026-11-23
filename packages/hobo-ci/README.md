@@ -59,8 +59,12 @@ locator) signs in with the job's own OIDC token. Bitwarden has no workload OIDC
 sign-in, so a relay on Bitwarden reads back with its own machine account
 token, kept by the platform; Infisical stays the default for that reason.
 Selecting the Infisical OAuth application sign-in keeps the store read-only
-even if another credential is available. Selecting the egress proxy sends its
-placeholder rather than a token retained from another sign-in choice.
+even if another credential is available. A handed-off run on a remote box
+shows no page: when the store's only missing piece is its sign-in token (an
+Infisical access token or a 1Password Connect token), or Bitwarden needs your
+personal API key, the run refuses with a `HOBO_OWNER_CAPTURE` line and takes
+the value from HoBo's own secret capture (the HoBo MCP App's form), holding it
+in memory only. Nothing is stored in the agent's session or environment.
 The intended relay connection reads credentials with its own workload identity
 (OIDC); it still needs an end-to-end observation with the configured store.
 When updating an existing 1Password item, HoBo preserves its other metadata and
