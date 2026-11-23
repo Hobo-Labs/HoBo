@@ -323,7 +323,10 @@ export interface VercelClient {
 	// name is taken: someone made it meanwhile) answers `created: false`, with
 	// its reason, rather than failing. Any other refusal, another 409 included,
 	// is a VercelApiError.
-	createProject(name: string): Promise<VercelProjectResult>;
+	createProject(
+		name: string,
+		settings?: Readonly<{ rootDirectory?: string }>,
+	): Promise<VercelProjectResult>;
 	readProject(
 		project: string,
 	): Promise<Readonly<{ id: string; productionDeploymentId?: string }>>;
@@ -1305,11 +1308,18 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 				);
 		},
 
-		async createProject(name: string): Promise<VercelProjectResult> {
+		async createProject(
+			name: string,
+			settings: Readonly<{ rootDirectory?: string }> = {},
+		): Promise<VercelProjectResult> {
 			const made = await post(
 				"create project",
 				"/v9/projects",
-				JSON.stringify({ name }),
+				JSON.stringify(
+					settings.rootDirectory === undefined
+						? { name }
+						: { name, rootDirectory: settings.rootDirectory },
+				),
 			);
 			if (!made.ok) {
 				const refusal = await failure("create project", made, secrets);

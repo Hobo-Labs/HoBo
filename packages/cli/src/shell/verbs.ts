@@ -335,6 +335,11 @@ changes nothing.
 
 Project: --project <dir>, then HOBO_CD_PROJECT, then the bundled CD project,
 then the working directory.
+
+up builds HoBo.CD's current commit once with its store binding bundled from the
+owner's store session (removed once staged), then promotes that build to
+production; the coordinates are never Vercel variables. Without the owner's
+store session it stops with HOBO_CD_UP_STORE_SESSION_REQUIRED.
 `;
 	}
 
@@ -448,6 +453,10 @@ Deploy options (hobo ci deploy; run in the relay's project directory, or pass --
   --set <NAME=value>          Non-secret setting to apply first (repeatable); secrets are refused
   --root-directory <dir>      Project root directory to save on the project
   --create-project            Create the project when Vercel has none by that name
+  --build git|prebuilt        git (default; preview only) or prebuilt: HoBo builds --sha once
+                              with the store binding bundled from the owner's store session,
+                              then promotes that build. Production needs prebuilt
+                              (HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT)
   --dry-run                   Print what would be sent; reads no token, sends nothing
                               A real run reads the team and the config service's
                               coordinates from the owner's store session (HoBo MCP's

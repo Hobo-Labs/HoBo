@@ -384,6 +384,7 @@ export function createComposedHoboCli(
 						: createCdVercelUpCommand({
 								credentials,
 								runtime,
+								prebuilt: { env: process.env },
 								upWith: (placed) =>
 									createBrokerAwareUpCommand({
 										runtime: placed,
