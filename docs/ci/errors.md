@@ -206,7 +206,7 @@ Returned from `packages/hobo/src/ci-relay-adopt.ts`.
 Message:
 
 ```text
---adopt reads GitHub's Deployments API with the token env://GITHUB_TOKEN names (in a workflow, GITHUB_TOKEN: ${{ github.token }} with deployments: read). No Vercel token is read.
+--adopt reads GitHub's Deployments API with the workflow job's own per-job GITHUB_TOKEN (GITHUB_TOKEN: ${{ github.token }} with deployments: read), and the job gave none. No Vercel token is read.
 ```
 
 What to do: follow the message.
@@ -456,18 +456,25 @@ The CI account token file {tokenFile} could not be read. Check the path given by
 ```
 
 ```text
-Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.
+The relay account credential comes from owner://HOBO_CI_ACCOUNT_TOKEN in the owner's store session, and none resolved. Run HoBo MCP's choose_secret_store to connect the owner's store, then ask again. Human hobo login sessions are separate from CI account credentials.
 ```
 
 ```text
-The CI relay did not accept the account credential. Check HOBO_CI_ACCOUNT_TOKEN.
+The CI relay did not accept the account credential. Check the HOBO_CI_ACCOUNT_TOKEN entry in the owner's store.
 ```
 
 ```text
 The CI account credential cannot read this relay's records: it needs the policy:read scope.
 ```
 
-What to do: follow the message.
+```text
+Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.
+```
+
+What to do:
+
+- Call the HoBo MCP tool choose_secret_store for this project directory.
+- Have the owner store the relay account credential in that store under {…}.
 
 ### HOBO_CI_CONFIG_INVALID
 
@@ -1486,7 +1493,7 @@ Sign in to GitHub before connecting this machine.
 
 What to do:
 
-- Run gh auth login, or set GH_TOKEN to a token that can manage the named repositories' self-hosted runners.
+- Run gh auth login as an account that can manage the named repositories' self-hosted runners.
 
 ### HOBO_CI_MACHINE_UNSUPPORTED
 

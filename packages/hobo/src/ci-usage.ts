@@ -115,9 +115,11 @@ export async function readGithubHistory(
 		env: NodeJS.ProcessEnv;
 	}>,
 ): Promise<GithubHistory> {
-	const env = { ...input.env };
-	delete env.HOBO_CI_ACCOUNT_TOKEN;
-	delete env.HOBO_CI_ACCOUNT_TOKEN_FILE;
+	const env = Object.fromEntries(
+		Object.entries(input.env).filter(
+			([name]) => !name.startsWith("HOBO_CI_ACCOUNT_TOKEN"),
+		),
+	);
 	const api = async (path: string): Promise<string> =>
 		(
 			await input.exec("gh", ["api", path], {

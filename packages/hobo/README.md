@@ -830,7 +830,9 @@ then `.hobo/ci.json` at the checkout's root (so they work from any
 subdirectory), then `HOBO_CI_RELAY_URL`, then the link `hobo ci setup` saved
 for the checkout. Only a project file that sets `allowInsecureLoopback` may
 name a loopback `http://` relay. They read it with the account
-credential (`HOBO_CI_ACCOUNT_TOKEN` or `--token-file`), and ask only the
+credential, `owner://HOBO_CI_ACCOUNT_TOKEN` from the owner's store session
+(connected with HoBo MCP's `choose_secret_store`; without it they stop with
+`HOBO_CI_AUTH_REQUIRED`) or a mounted file named by `--token-file`, and ask only the
 read API's frozen `GET /v1/accounts/self/...` paths. Each takes `--json`.
 
 | Command | Read API path | What it shows |

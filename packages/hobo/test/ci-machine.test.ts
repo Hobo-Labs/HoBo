@@ -260,6 +260,7 @@ describe("the local registry", () => {
 			env,
 			fetch,
 			now: () => NOW,
+			credentials: undefined,
 			localRepository: async () => ({ root: home, repository: undefined }),
 		});
 		const empty = await command.run(context(["status"]));

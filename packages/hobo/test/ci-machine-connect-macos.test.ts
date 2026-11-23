@@ -45,7 +45,7 @@ async function mac(
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: { HOBO_HOME: home, GH_TOKEN: "gho_owner" },
+				env: { HOBO_HOME: home },
 				now: () => 1_763_337_600_000,
 				commands: [
 					createCiMachineConnectCommand({

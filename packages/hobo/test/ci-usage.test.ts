@@ -18,16 +18,13 @@ import {
 import {
 	FAKE_GITHUB_RATE,
 	FAKE_RELAY_ORIGIN,
-	FAKE_RELAY_TOKEN,
 	type FakeReadApi,
+	fakeOwnerCredentials,
 	fakeReadApiFetch,
 } from "./support/ci-read-api-fake.js";
 
 const NOW = 1_763_337_600_000;
-const RELAY_ENV = {
-	HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN,
-	HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN,
-};
+const RELAY_ENV = { HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN };
 
 async function readApi(init: Partial<FakeReadApi> = {}): Promise<FakeReadApi> {
 	const insights = new InMemoryInsightStore();
@@ -58,6 +55,7 @@ async function run(
 		commands: {
 			ci: createCiCommand({
 				env: options.env ?? RELAY_ENV,
+				ownerCredentials: fakeOwnerCredentials(),
 				now: () => NOW,
 				fetch: options.fetch ?? fakeReadApiFetch(api),
 				git: async () => tmpdir(),

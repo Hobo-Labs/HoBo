@@ -468,7 +468,7 @@ export function createCiCommand(
 		probeHttp?: HttpTransport;
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
-		fleetCredentials?: (cwd: string) => CredentialResolver;
+		ownerCredentials?: (cwd: string) => CredentialResolver;
 		hostingerHttp?: HttpTransport;
 		commands?: readonly CiCommand[];
 		kubernetesHttp?: (tls: KubernetesTlsMaterial) => HttpTransport;
@@ -486,7 +486,7 @@ export function createCiCommand(
 						args: rest,
 						repository: local.repository,
 						clusters: () => loadFleetClusters(local.root),
-						credentials: deps.fleetCredentials?.(flags.cwd),
+						credentials: deps.ownerCredentials?.(flags.cwd),
 						transport: deps.kubernetesHttp ?? defaultKubernetesTransport,
 					});
 				}
@@ -495,7 +495,7 @@ export function createCiCommand(
 					return usage(`${option} does not apply to hobo ci fleet.`);
 				return runCiFleet({
 					positionals: args.slice(1),
-					credentials: deps.fleetCredentials?.(flags.cwd),
+					credentials: deps.ownerCredentials?.(flags.cwd),
 					transport:
 						deps.hostingerHttp ?? createFetchHttpTransport(globalThis.fetch),
 				});
@@ -512,6 +512,7 @@ export function createCiCommand(
 					env: deps.env ?? process.env,
 					fetch: deps.fetch ?? fetch,
 					now: deps.now ?? Date.now,
+					credentials: deps.ownerCredentials?.(flags.cwd),
 					localRepository: (repo) => localRepository(deps, flags.cwd, { repo }),
 				});
 			let parsed: ReturnType<typeof parseCiArgs>;

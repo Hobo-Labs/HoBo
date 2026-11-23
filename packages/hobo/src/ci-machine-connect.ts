@@ -62,7 +62,7 @@ const HELP = [
 	"    --image <ref>            The job container's image.",
 	"    --events                 Print each event as one JSON object per line.",
 	"    --account <id>           The account (or HOBO_CI_ACCOUNT_ID; default local).",
-	"    Press p to pause or resume. Sign in with gh auth login, or set GH_TOKEN.",
+	"    Press p to pause or resume. Sign in with gh auth login.",
 ].join("\n");
 
 const MAX_CONCURRENCY = 32;
@@ -117,8 +117,6 @@ export async function defaultGithubToken(
 	env: NodeJS.ProcessEnv,
 	exec: CiRunExec = runCiProcess,
 ): Promise<string | undefined> {
-	const named = env.GH_TOKEN || env.GITHUB_TOKEN;
-	if (named) return named;
 	try {
 		const { stdout } = await exec("gh", ["auth", "token"], {
 			cwd: tmpdir(),
@@ -317,7 +315,7 @@ async function connect(
 				? "GitHub did not accept the token this machine was given."
 				: "Sign in to GitHub before connecting this machine.",
 			remediation: [
-				"Run gh auth login, or set GH_TOKEN to a token that can manage the named repositories' self-hosted runners.",
+				"Run gh auth login as an account that can manage the named repositories' self-hosted runners.",
 			],
 		};
 	const home = join(defaultHoboHome(context.env), "ci", "machine");

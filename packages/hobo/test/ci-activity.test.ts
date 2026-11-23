@@ -25,9 +25,10 @@ import {
 import { createCiCommand } from "../src/ci-command.js";
 import { CI_COMMANDS } from "../src/ci-commands.js";
 import {
+	FAKE_OWNER_STORE,
 	FAKE_RELAY_ORIGIN,
-	FAKE_RELAY_TOKEN,
 	type FakeReadApi,
+	fakeOwnerCredentials,
 	fakeReadApiFetch,
 } from "./support/ci-read-api-fake.js";
 
@@ -113,10 +114,7 @@ function api(init: Partial<FakeReadApi> = {}): FakeReadApi {
 	};
 }
 
-const RELAY_ENV = {
-	HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN,
-	HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN,
-};
+const RELAY_ENV = { HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN };
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -140,11 +138,13 @@ async function run(
 	args: readonly string[],
 	env: NodeJS.ProcessEnv = RELAY_ENV,
 	cwd: string = tmpdir(),
+	store: Readonly<Record<string, string>> = FAKE_OWNER_STORE,
 ) {
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
 				env: { HOBO_HOME: EMPTY_HOBO_HOME, ...env },
+				ownerCredentials: fakeOwnerCredentials(store),
 				now: () => NOW,
 				fetch: fakeReadApiFetch(readApi),
 				commands: [CI_ACTIVITY_COMMAND],
@@ -359,7 +359,7 @@ describe("hobo ci activity", () => {
 		const result = await run(
 			api({ journal: await journalOf([decided({ atMs: NOW, jobId: "j1" })]) }),
 			["--json"],
-			{ HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN },
+			{},
 			subdirectory,
 		);
 		expect(result.exitCode, result.output).toBe(0);
@@ -375,7 +375,6 @@ describe("hobo ci activity", () => {
 			["--json"],
 			{
 				HOBO_CI_RELAY_URL: "https://elsewhere.example.test",
-				HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN,
 			},
 			subdirectory,
 		);
@@ -401,7 +400,7 @@ describe("hobo ci activity", () => {
 				repository: "octo/app",
 			}),
 		);
-		const env = { HOBO_HOME: home, HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN };
+		const env = { HOBO_HOME: home };
 		const linked = await run(
 			api(),
 			["--repo", "octo/app", "--json"],
@@ -491,23 +490,32 @@ describe("hobo ci activity", () => {
 		const noRelay = await run(readApi, [], {});
 		expect(noRelay.exitCode).not.toBe(0);
 		expect(noRelay.output).toContain("--relay");
-		const noToken = await run(readApi, [], {
-			HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN,
+		const noToken = await run(
+			readApi,
+			["--json"],
+			{ HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN },
+			tmpdir(),
+			{},
+		);
+		expect(JSON.parse(noToken.stdout)).toMatchObject({
+			code: "HOBO_CI_AUTH_REQUIRED",
 		});
-		expect(noToken.output).toContain("HOBO_CI_ACCOUNT_TOKEN");
-		const refused = await run(readApi, ["--json"], {
-			HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN,
-			HOBO_CI_ACCOUNT_TOKEN: "wrong",
-		});
+		expect(noToken.output).toContain("owner://HOBO_CI_ACCOUNT_TOKEN");
+		expect(noToken.output).toContain("choose_secret_store");
+		const refused = await run(
+			readApi,
+			["--json"],
+			{ HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN },
+			tmpdir(),
+			{ HOBO_CI_ACCOUNT_TOKEN: "wrong" },
+		);
 		expect(JSON.parse(refused.stdout).code).toBe("HOBO_CI_AUTH_REQUIRED");
 		const unreachable = await run(readApi, ["--json"], {
 			HOBO_CI_RELAY_URL: "https://elsewhere.example.test",
-			HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN,
 		});
 		expect(JSON.parse(unreachable.stdout).code).toBe("HOBO_CI_RELAY_ERROR");
 		const plain = await run(readApi, [], {
 			HOBO_CI_RELAY_URL: "http://relay.example.test",
-			HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN,
 		});
 		expect(plain.output).toContain("HTTPS relay origin");
 	});

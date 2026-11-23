@@ -1,3 +1,4 @@
+import type { CredentialResolver } from "@hobo/cd";
 import type { CommandResult, CommandRunInput } from "@hobo/cli";
 import { CI_ACTIVITY_COMMAND } from "./ci-activity.js";
 import { CI_MACHINE_CONNECT_COMMAND } from "./ci-machine-connect.js";
@@ -17,6 +18,7 @@ export type CiCommandContext = Readonly<{
 	env: NodeJS.ProcessEnv;
 	fetch: typeof fetch;
 	now: () => number;
+	credentials: CredentialResolver | undefined;
 
 	localRepository: (repo: string | undefined) => Promise<CiLocalRepository>;
 }>;

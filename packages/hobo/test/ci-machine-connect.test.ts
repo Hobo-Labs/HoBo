@@ -121,7 +121,7 @@ async function harness(
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: { HOBO_HOME: home, GH_TOKEN: "gho_owner" },
+				env: { HOBO_HOME: home },
 				now: () => NOW,
 				commands: [createCiMachineConnectCommand(deps)],
 			}),
@@ -273,10 +273,10 @@ describe("hobo ci machine connect", () => {
 		expect(token).toBe("gho_signed_in");
 		expect(calls).toEqual(["gh auth token"]);
 		expect(
-			await defaultGithubToken({ GH_TOKEN: "gho_named" }, async () => {
-				throw new Error("gh is not asked when a token is named");
+			await defaultGithubToken({ HOME: missing }, async () => {
+				throw new Error("gh is not signed in");
 			}),
-		).toBe("gho_named");
+		).toBeUndefined();
 	});
 
 	it("connects Linux machines only, for now", async () => {

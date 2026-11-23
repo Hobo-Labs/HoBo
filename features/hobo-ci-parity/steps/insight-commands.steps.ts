@@ -24,8 +24,8 @@ import {
 } from "../../../packages/hobo/test/support/ci-insight-history.js";
 import {
 	FAKE_RELAY_ORIGIN,
-	FAKE_RELAY_TOKEN,
 	type FakeReadApi,
+	fakeOwnerCredentials,
 	fakeReadApiFetch,
 } from "../../../packages/hobo/test/support/ci-read-api-fake.js";
 
@@ -211,10 +211,8 @@ async function runHobo(command: string): Promise<void> {
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: {
-					HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN,
-					HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN,
-				},
+				env: { HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN },
+				ownerCredentials: fakeOwnerCredentials(),
 				now: () => NOW,
 				fetch: fakeReadApiFetch(state.api),
 				commands: [

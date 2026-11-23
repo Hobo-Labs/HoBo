@@ -1,4 +1,5 @@
 import { toJson } from "@bufbuild/protobuf";
+import type { CredentialResolver } from "@hobo/cd";
 import {
 	type InsightStore,
 	type MinutesReader,
@@ -16,6 +17,24 @@ import { type MinuteRate, usageReport } from "@hobo/ci/insights/usage";
 
 export const FAKE_RELAY_ORIGIN = "https://relay.example.test";
 export const FAKE_RELAY_TOKEN = "hobo_ci_test_token";
+export const FAKE_OWNER_STORE = {
+	HOBO_CI_ACCOUNT_TOKEN: FAKE_RELAY_TOKEN,
+} satisfies Readonly<Record<string, string>>;
+
+export function fakeOwnerCredentials(
+	entries: Readonly<Record<string, string>> = FAKE_OWNER_STORE,
+): (cwd: string) => CredentialResolver {
+	return () => ({
+		resolve: async (ref) => {
+			const value = ref.startsWith("owner://")
+				? entries[ref.slice("owner://".length)]
+				: undefined;
+			if (value === undefined)
+				throw new Error(`${ref} is not in the owner's store`);
+			return { token: value };
+		},
+	});
+}
 export const FAKE_GITHUB_RATE: MinuteRate = {
 	usdPerMinute: 0.006,
 	source:

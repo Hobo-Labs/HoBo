@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fromJsonString } from "@bufbuild/protobuf";
+import type { CredentialResolver } from "@hobo/cd";
 import {
 	ACTIVITY_OUTCOMES,
 	type ActivityCursor,
@@ -21,6 +22,10 @@ import { defaultHoboHome } from "./hobo-home.js";
 
 const DAY_MS = 86_400_000;
 
+// public-contract: the owner-store reference the relay read commands take the CI account credential from; owners store it under this name.
+export const CI_ACCOUNT_TOKEN_REF = "owner://HOBO_CI_ACCOUNT_TOKEN";
+const CREDENTIAL_SCOPE = "hobo-ci-relay-read";
+
 // public-contract: how far back `hobo ci activity` reads when --since is not given: the journal's retention.
 export const ACTIVITY_DEFAULT_WINDOW_MS = 90 * DAY_MS;
 const REQUEST_SLACK_MS = 60 * 60_000;
@@ -36,7 +41,7 @@ const ACTIVITY_HELP = [
 	"  --since    90d, 12h, 30m or a date (default 90d, the journal's retention)",
 	"  --runner   the order step that took the job: machine, github, blacksmith, depot, ...",
 	`  --outcome  ${ACTIVITY_OUTCOMES.join(", ")}`,
-	"Relay: --relay <https-origin>, else .hobo/ci.json, HOBO_CI_RELAY_URL, then the hobo ci setup link; credential: HOBO_CI_ACCOUNT_TOKEN or --token-file.",
+	"Relay: --relay <https-origin>, else .hobo/ci.json, HOBO_CI_RELAY_URL, then the hobo ci setup link; credential: owner://HOBO_CI_ACCOUNT_TOKEN from the owner store session (choose_secret_store), or --token-file.",
 ].join("\n");
 
 export class CiCommandStop extends Error {
@@ -128,6 +133,16 @@ async function savedLinkOrigin(
 	return link.relayOrigin;
 }
 
+async function storedAccountToken(
+	credentials: CredentialResolver | undefined,
+): Promise<string> {
+	if (credentials === undefined) return "";
+	const material = await credentials
+		.resolve(CI_ACCOUNT_TOKEN_REF, CREDENTIAL_SCOPE)
+		.catch(() => undefined);
+	return material?.token ?? "";
+}
+
 export async function selectRelay(
 	context: CiCommandContext,
 	options: Readonly<{
@@ -168,12 +183,7 @@ export async function selectRelay(
 	}
 	if (origin === undefined) return undefined;
 	const tokenFile = options.tokenFile ?? context.env.HOBO_CI_ACCOUNT_TOKEN_FILE;
-	if (tokenFile && context.env.HOBO_CI_ACCOUNT_TOKEN)
-		throw ciUsage(
-			"Choose one CI credential source: a token file or HOBO_CI_ACCOUNT_TOKEN.",
-			"",
-		);
-	let token = context.env.HOBO_CI_ACCOUNT_TOKEN ?? "";
+	let token = "";
 	if (tokenFile) {
 		try {
 			token = (await readFile(resolve(context.flags.cwd, tokenFile), "utf8"))
@@ -187,14 +197,17 @@ export async function selectRelay(
 				message: `The CI account token file ${tokenFile} could not be read. Check the path given by --token-file or HOBO_CI_ACCOUNT_TOKEN_FILE.`,
 			});
 		}
-	}
+	} else token = await storedAccountToken(context.credentials);
 	if (!token)
 		throw new CiCommandStop({
 			ok: false,
 			status: "authentication-required",
 			code: "HOBO_CI_AUTH_REQUIRED",
-			message:
-				"Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.",
+			message: `The relay account credential comes from ${CI_ACCOUNT_TOKEN_REF} in the owner's store session, and none resolved. Run HoBo MCP's choose_secret_store to connect the owner's store, then ask again. Human hobo login sessions are separate from CI account credentials.`,
+			remediation: [
+				"Call the HoBo MCP tool choose_secret_store for this project directory.",
+				`Have the owner store the relay account credential in that store under ${CI_ACCOUNT_TOKEN_REF.slice("owner://".length)}.`,
+			],
 		});
 	return { origin, token };
 }
@@ -248,7 +261,7 @@ export async function readRelayApi(
 			code: "HOBO_CI_AUTH_REQUIRED",
 			message:
 				response.status === 401
-					? "The CI relay did not accept the account credential. Check HOBO_CI_ACCOUNT_TOKEN."
+					? "The CI relay did not accept the account credential. Check the HOBO_CI_ACCOUNT_TOKEN entry in the owner's store."
 					: "The CI account credential cannot read this relay's records: it needs the policy:read scope.",
 		});
 	throw new CiCommandStop({

@@ -37,8 +37,10 @@ itself, use `hobo-deploy`.
    named and frozen but may not be in the CLI the person runs. Check
    `hobo ci --help`; if the command is missing, say so and use the fallback
    given, never an invented flag.
-6. **Secrets never go on a command line.** The relay credential is
-   `HOBO_CI_ACCOUNT_TOKEN` or `HOBO_CI_ACCOUNT_TOKEN_FILE`; never echo either.
+6. **Secrets never go on a command line.** The read commands take the relay
+   credential from `owner://HOBO_CI_ACCOUNT_TOKEN` in the owner's store session
+   (run HoBo MCP's `choose_secret_store` when they stop with
+   `HOBO_CI_AUTH_REQUIRED`); never set, store or echo it.
 
 ## Commands that exist today
 
