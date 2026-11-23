@@ -18,7 +18,6 @@ export interface NodeAppBuiltArtifact {
 	readonly bytes: Buffer;
 }
 
-/** Retarget compiler-emitted declarations to the public executable .mjs entries. */
 function packageDeclaration(
 	content: string,
 	source: string,
@@ -73,12 +72,6 @@ function packageDeclaration(
 	return output;
 }
 
-/**
- * Whether the project's generated output says it is a plain TypeScript app.
- * It reads generated files, so it is evidence only when they are fresh:
- * `runBuild` acts on it before the freshness gate only when every recorded
- * input still matches (`recordedAppInputsMatch`), and otherwise after the gate.
- */
 export async function hasGeneratedTypeScriptApp(
 	projectRoot: string,
 ): Promise<boolean> {
@@ -93,8 +86,6 @@ export async function hasGeneratedTypeScriptApp(
 				`Cannot parse hobo.bindle.json: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
-		// An explicit service declaration owns placement, including invalid or
-		// empty declarations: never route around its refusal into Node.
 		if (isJsonObject(metadata) && Object.hasOwn(metadata, "services"))
 			return false;
 	}
@@ -118,7 +109,6 @@ export async function hasGeneratedTypeScriptApp(
 	);
 }
 
-/** Package actual compiler-derived app code without evaluating any application module. */
 export async function buildTypeScriptApp(
 	projectRoot: string,
 ): Promise<readonly NodeAppBuiltArtifact[]> {
@@ -140,8 +130,6 @@ export async function buildTypeScriptApp(
 			bundle: true,
 			splitting: true,
 			packages: "external",
-			// Preserve the compiler's executable module graph and asset-relative
-			// URLs rather than relocating dependencies inside its .mjs files.
 			external: ["./runtime/*"],
 			format: "esm",
 			platform: "node",
@@ -178,9 +166,6 @@ export async function buildTypeScriptApp(
 						"HOBO_BUILD_PATH_INVALID",
 						"Generated runtime packaging requires ordinary files",
 					);
-				// Declaration files are compiler output, including the complete
-				// authored type graph. Keep their relative imports beside the
-				// executable runtime so consumers need no original source tree.
 				if (!runtime && !/\.d\.[cm]?ts$/u.test(entry.name)) continue;
 				let target = relative(generatedRoot, source);
 				const publicEntry = entryNames.find(

@@ -164,31 +164,31 @@ describe("Agent37 transport retries", () => {
 		expect(calls).toBe(1);
 	});
 
-	it.each(["POST", "DELETE"] as const)(
-		"never automatically replays %s",
-		async (method) => {
-			let calls = 0;
-			const transport = createAgent37Transport({
-				fetchImpl: async () => {
-					calls += 1;
-					return jsonResponse(503, "no_capacity");
-				},
-				sleep: async () => {
-					throw new Error("unexpected retry");
-				},
-			});
-			const response = await transport({
-				...request,
-				method,
-				url:
-					method === "POST"
-						? "https://sandbox.agent37.app/v1/instances/i_one/exec"
-						: request.url,
-			});
-			expect(response.status).toBe(503);
-			expect(calls).toBe(1);
-		},
-	);
+	it.each([
+		"POST",
+		"DELETE",
+	] as const)("never automatically replays %s", async (method) => {
+		let calls = 0;
+		const transport = createAgent37Transport({
+			fetchImpl: async () => {
+				calls += 1;
+				return jsonResponse(503, "no_capacity");
+			},
+			sleep: async () => {
+				throw new Error("unexpected retry");
+			},
+		});
+		const response = await transport({
+			...request,
+			method,
+			url:
+				method === "POST"
+					? "https://sandbox.agent37.app/v1/instances/i_one/exec"
+					: request.url,
+		});
+		expect(response.status).toBe(503);
+		expect(calls).toBe(1);
+	});
 
 	it("does not retry ambiguous network failures", async () => {
 		let calls = 0;

@@ -100,7 +100,6 @@ export const stripePaymentProcessor: PaymentProcessor = {
       }
     }
 
-    // Revenue is in cents so we convert to dollars (or your main currency unit)
     return totalRevenue / 100;
   },
 };

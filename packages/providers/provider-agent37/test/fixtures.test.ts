@@ -80,14 +80,14 @@ describe("Agent37 schema and PACT fixtures", () => {
 			provider: { name: "Agent37SandboxApiFake" },
 			metadata: { pactSpecification: { version: "3.0.0" } },
 		});
-		expect(pact.interactions.map((interaction) => interaction.description)).toEqual(
-			[
-				"client creates a vm runner box",
-				"client runs a named synchronous exec on the sandbox plane",
-				"wrong sandbox key is refused",
-				"wrong bearer key is refused",
-				"client reads a bounded usage window",
-			],
-		);
+		expect(
+			pact.interactions.map((interaction) => interaction.description),
+		).toEqual([
+			"client creates a vm runner box",
+			"client runs a named synchronous exec on the sandbox plane",
+			"wrong sandbox key is refused",
+			"wrong bearer key is refused",
+			"client reads a bounded usage window",
+		]);
 	});
 });

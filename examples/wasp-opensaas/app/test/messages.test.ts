@@ -11,9 +11,9 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeDatabase = databaseUrl ? describe : describe.skip;
 
 describeDatabase("contact messages", () => {
-  const prisma = new PrismaClient({
-    datasources: { db: { url: databaseUrl } },
-  });
+  const prisma = new PrismaClient(
+    databaseUrl ? { datasources: { db: { url: databaseUrl } } } : undefined,
+  );
   const fixtureId = crypto.randomUUID();
   const fixtureEmail = `${fixtureId}@example.test`;
   let adminContext: Parameters<typeof listContactMessages>[0];

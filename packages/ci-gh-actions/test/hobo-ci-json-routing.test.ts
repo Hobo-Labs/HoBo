@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { defineCiProjectConfig } from "../src/project-config.js";
+import { parseCiProjectConfig } from "../src/project-config.js";
 import { CiProjectDocumentSchema } from "../src/project-schema.js";
 import {
 	type CiWebhookRoutingContext,
@@ -14,12 +14,18 @@ describe("committed .hobo/ci.json routing", () => {
 	const raw = readFileSync(`${repoRoot}/.hobo/ci.json`, "utf8");
 	const document = CiProjectDocumentSchema.parse(JSON.parse(raw));
 	const selection = parseCiProjectSelection(document);
-	const config = defineCiProjectConfig({
-		defaultEnvironment: "ci",
-		environments: {
-			local: document.environments?.local,
-			ci: document.environments?.ci,
-		},
+	const config = parseCiProjectConfig(raw);
+
+	it("loads every committed environment, each relay billing a distinct account", () => {
+		expect(Object.keys(config.environments).sort()).toEqual([
+			"ci",
+			"local",
+			"production",
+		]);
+		const targets = Object.values(config.environments).map((environment) =>
+			JSON.stringify([environment.relayOrigin, environment.policy.accountId]),
+		);
+		expect(new Set(targets).size).toBe(targets.length);
 	});
 
 	it("commits main-branch selection to ci, not local", () => {
@@ -84,5 +90,22 @@ describe("committed .hobo/ci.json routing", () => {
 				maxRunners: 4,
 			},
 		]);
+	});
+
+	it("routes tag pushes to production on the same relay", () => {
+		const context: CiWebhookRoutingContext = {
+			repositoryFullName: "Hobo-Labs/HoBo",
+			repositoryId: 1,
+			installationId: 1,
+			workflowRunId: 1,
+			eventName: "push",
+			headBranch: "v1.0.0",
+			headRef: "refs/tags/v1.0.0",
+			isForkPullRequest: false,
+			configRef: "e".repeat(40),
+		};
+		const route = resolveCiRelayRoute({ config, selection, context });
+		expect(route.environment.name).toBe("production");
+		expect(route.relayOrigin).toBe("https://hobo-ci.vercel.app");
 	});
 });

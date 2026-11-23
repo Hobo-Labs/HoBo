@@ -18,7 +18,7 @@ export async function createLemonSqueezyCheckoutSession({
     checkoutData: {
       email: userEmail,
       custom: {
-        user_id: userId, // You app's unique user ID is sent on checkout, and it's returned in the webhook so we can easily identify the user.
+        user_id: userId,
       },
     },
     productOptions: {

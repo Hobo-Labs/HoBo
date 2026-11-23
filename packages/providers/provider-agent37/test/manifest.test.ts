@@ -86,7 +86,9 @@ describe("Agent37 capability manifest", () => {
 		expect(new Set(paths).size).toBe(paths.length);
 		for (const document of index.documents) {
 			expect(document.digest).toMatch(/^sha256:[a-f0-9]{64}$/u);
-			if (document.path === "/.well-known/capability-manifest/capabilities.json")
+			if (
+				document.path === "/.well-known/capability-manifest/capabilities.json"
+			)
 				expect(document.digest).toBe(stableDigest(capabilities));
 			else if (document.path === "/.well-known/capability-manifest/auth.json")
 				expect(document.digest).toBe(stableDigest(auth));

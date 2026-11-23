@@ -21,6 +21,7 @@ import {
 import { loadHoboProfile } from "./hobo-profile.js";
 import { isJsonString } from "./json.js";
 import { buildMessagingDoctorSection } from "./messaging-doctor.js";
+import type { OwnerSessionStatus } from "./owner-store-session.js";
 
 interface StationDoctorReport {
 	present: boolean;
@@ -37,6 +38,7 @@ export interface DoctorCommandDeps {
 	// Explicit environment snapshot for tests or an embedding host. Without one,
 	// use the same filtered process environment as the composed deploy path.
 	readonly env?: Record<string, string | undefined>;
+	readonly ownerSession?: (cwd: string) => OwnerSessionStatus;
 }
 
 // Turn the deploy-target description into operator-facing remediation lines.
@@ -70,7 +72,7 @@ export function createDoctorCommand(
 	deps: DoctorCommandDeps = {},
 ): CommandModule {
 	return {
-		run: async ({ emitProgress }) => {
+		run: async ({ emitProgress, context }) => {
 			const env = deployEnvironment(deps.env);
 			const target = describeDeployTarget(env);
 			emitProgress(target.summary);
@@ -124,6 +126,13 @@ export function createDoctorCommand(
 			}
 
 			const remediation = remediationFor(target);
+			const ownerStoreSession: OwnerSessionStatus = deps.ownerSession?.(
+				isJsonString(context.cwd) ? context.cwd : process.cwd(),
+			) ?? { established: false };
+			if (deps.ownerSession !== undefined && !ownerStoreSession.established)
+				remediation.push(
+					"Connect the owner's secret store with HoBo MCP's choose_secret_store so verbs can use the credentials it holds.",
+				);
 			if (!stationReport.present) {
 				remediation.push(
 					"Run `hobo station init` for Station occupancy setup.",
@@ -240,6 +249,7 @@ export function createDoctorCommand(
 					trails: trailsReport,
 					bindingDelivery: bindingDelivery.report,
 					messaging: messaging.report,
+					ownerStoreSession,
 				},
 			};
 		},

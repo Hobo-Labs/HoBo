@@ -22,6 +22,8 @@ Promotes:
 `hobo new -t todo|api|agent|fullstack` is a compatibility adapter. File bodies
 come from `@hobo/patterns` `starter.cli.*` catalog trees (ADR-0153). Aliases
 stay the public contract; do not fork starter text back into this package.
+Scaffold validation checks the generated runtime and template-specific store
+exports as well as the project files.
 - `src/draft/technical-proofs/hobo-build-cli-contract/` (`hobo build` orchestration, HOBO-613 / S1-23)
 - `src/draft/epic-proofs/cli-mcp-developer-experience/` (CLI↔MCP parity boundary)
 
@@ -46,6 +48,10 @@ Canonical verbs: **43**, defined in `src/shell/verbs.ts` — including lifecycle
 
 Global flags: `--json`, `--camp <camp>`, `--cwd <path>`, `--verbose`, `-q`, `--help`.
 
+The composed `hobo doctor --offline --json` command reports the selected local
+backend and actionable setup guidance without contacting cloud providers. Use
+`hobo --help` to discover the doctor command and other canonical verbs.
+
 Yard desired-state delivery retains resources omitted from a declaration by
 default; use `--mode complete` to remove them through the deployment gate.
 Broker placement and budgeted hosting refuse an explicit `--mode` until their
@@ -55,11 +61,18 @@ require the current CD Set to have a converged observation. `--dry-run` and
 `--preview` are aliases for `--what-if` on these two commands. Revision selectors
 and rollback cannot be combined with `--what-if`; rollback restores the prior
 Set exactly and cannot be combined with `--mode`.
+An uncertain provider apply returns `needs-human` immediately and does not
+route the resource to another provider while reconciliation is required.
 
 Budgeted hosting plans require a trusted Yard binding before reading budget
 evidence and reject target selectors that the hosting authority cannot verify.
 `up --what-if` uses the same session selection as `up`, including an anonymous
 session when `--anonymous` or `--temporary` is selected.
+
+If a provider call may have changed infrastructure, `up` reports
+`needs-human` and stops retries or routing to another provider until the
+uncertain effect is reconciled. Any existing budget hold remains reserved.
+`waiting` means the bounded convergence passes have not completed.
 
 Subcommand flags: `deploy`, `incident` and `serve` subcommands declare their
 own flags in `src/shell/subcommands.ts` (`DEPLOY_SUBCOMMANDS`,

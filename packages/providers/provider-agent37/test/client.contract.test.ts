@@ -230,27 +230,27 @@ describe("Agent37 response parsing", () => {
 			maxAttempts: 1,
 		});
 
-	it.each(["deleteInstance", "deleteWebhook"] as const)(
-		"%s requires deleted:true on 200 and empty 204",
-		async (method) => {
-			for (const body of [
-				"",
-				JSON.stringify({ id: "resource", deleted: false }),
-			]) {
-				await expect(clientFor(200, body)[method]("resource")).rejects.toThrow(
-					"response did not match",
-				);
-			}
-			for (const [status, body] of [
-				[200, JSON.stringify({ id: "resource", deleted: true })],
-				[204, ""],
-			] as const) {
-				await expect(
-					clientFor(status, body)[method]("resource"),
-				).resolves.toBeUndefined();
-			}
-		},
-	);
+	it.each([
+		"deleteInstance",
+		"deleteWebhook",
+	] as const)("%s requires deleted:true on 200 and empty 204", async (method) => {
+		for (const body of [
+			"",
+			JSON.stringify({ id: "resource", deleted: false }),
+		]) {
+			await expect(clientFor(200, body)[method]("resource")).rejects.toThrow(
+				"response did not match",
+			);
+		}
+		for (const [status, body] of [
+			[200, JSON.stringify({ id: "resource", deleted: true })],
+			[204, ""],
+		] as const) {
+			await expect(
+				clientFor(status, body)[method]("resource"),
+			).resolves.toBeUndefined();
+		}
+	});
 
 	it("rejects malformed JSON success bodies", async () => {
 		await expect(clientFor(200, "{").listInstances()).rejects.toThrow(

@@ -66,16 +66,18 @@ non-secret declarations.
 
 ## Status
 
-The deployable and its tests (`test/`) exist. Two pieces are not done yet:
-
-- `hobo cd up` does not deliver it yet; it will, by a git deployment of this
-  directory, the way `hobo ci up` delivers the relay.
-- No store binding is committed, because the CD workload identity (an
-  Infisical identity that trusts this Vercel project's OIDC tokens) is not
-  created yet.
-
-Until both land, a deployment answers `/readyz` with
-`cd-store-binding-missing`.
+`hobo cd up` delivers this directory as a git deployment of the current
+commit to the `hobo-cd` project's **production** (`createCdVercelUpCommand`),
+because CD opens its journal only on a production deployment
+(`productionDeploymentRefusal`; a preview answers `/readyz` with
+`cd-non-production-deployment`). Before it deploys, it makes the CD workload
+identity (`@hobo/hobo-cd` `workload-identity.ts`): an Infisical identity that
+trusts this project's production OIDC tokens
+(`owner:<team>:project:hobo-cd:environment:production`). It then sets the
+store's coordinates, ids only, as the deployment's configuration
+(`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`,
+`INFISICAL_IDENTITY_ID`, `INFISICAL_SITE_URL`). A committed
+`deploy/secret-store.binding.json` takes precedence when there is one.
 
 The scheduled pass (enqueued every five minutes) reconciles the managed Camps and runs one service
 tick (including its retention steps); the fleet pass lease makes the
@@ -83,12 +85,17 @@ queue's `maxConcurrency: 1` a second layer, so a backlog of deliveries
 waits its turn instead of overlapping passes. A permanent refusal — a
 missing or malformed store binding, an unprovisioned journal fleet, a
 non-production deployment — is logged with its stable `reason` code and
-acked, never retried forever. The journal fleet's copy and backup timer
-(`hobo cd up`'s continuity plan) is process-local: on serverless it runs
-only while an instance happens to be warm, so the scheduled pass does
-not yet drive the fleet's copies or backups — that coverage gap is
-tracked, and the five-minute recovery point must not be assumed from a
-green `/readyz`.
+acked, never retried forever.
+
+Each pass that holds the fleet pass also ticks the journal fleet once
+(`CdRuntime.maintainJournal`): copies to the standbys, and a backup when
+the fleet's backup catalog says one is due. It runs whatever the Camps
+did, so the copies keep the schedule's cadence (every five minutes) even
+when no instance stays warm; a warm instance's own timer only adds ticks
+between passes, and both share one tick at a time. The pass logs the
+outcome as `journal` (`maintained`, `failed` with `journalDetail`, or
+`none` off a fleet). A failed tick does not fail the pass or `/readyz`:
+read the `cd.pass` log for the journal's recovery point.
 
 Sign-in spans two OIDC majors: the Vercel project's OIDC token (issued
 by Vercel) is exchanged with Infisical OIDC Auth for the CD workload

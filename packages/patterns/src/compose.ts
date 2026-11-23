@@ -8,15 +8,17 @@ import {
 	SearchDecision,
 } from "./_generated/patterns_pb.js";
 import type { PatternCatalog } from "./catalog.js";
+import { PatternParseError } from "./parse.js";
 import { renderPattern } from "./render.js";
 import { searchPatterns } from "./retrieve.js";
 import type { HoboVocabulary } from "./vocabulary.js";
+import { mergeYardTopology } from "./yard-merge.js";
 
-export function composePatterns(input: {
+export function composePatterns<P>(input: {
 	readonly catalog: PatternCatalog;
 	readonly vocabulary: HoboVocabulary;
 	readonly query: string;
-	readonly params?: Readonly<Record<string, unknown>>;
+	readonly params?: Readonly<Record<string, P>>;
 }): PatternCompositionReceipt {
 	const search = searchPatterns({
 		catalog: input.catalog,
@@ -81,15 +83,45 @@ export function composePatterns(input: {
 		ordered.push(next);
 		remaining.splice(remaining.indexOf(next), 1);
 	}
-	const bodies = ordered.map(
-		(pattern) =>
-			renderPattern({
-				catalog: input.catalog,
-				pattern,
-				...(input.params ? { params: input.params } : {}),
-			}).files[0]?.contents ?? "",
-	);
-	const digest = createHash("sha256").update(bodies.join("\n")).digest("hex");
+	const files = new Map<string, string>();
+	for (const pattern of ordered) {
+		const rendered = input.params
+			? renderPattern({ catalog: input.catalog, pattern, params: input.params })
+			: renderPattern({ catalog: input.catalog, pattern });
+		for (const file of rendered.files) {
+			const previous = files.get(file.path);
+			if (previous === undefined) {
+				files.set(file.path, file.contents);
+				continue;
+			}
+			if (previous === file.contents) continue;
+			try {
+				if (!file.path.endsWith(".ts") || !previous.includes("yard("))
+					throw new PatternParseError("same-path patterns cannot be merged");
+				files.set(file.path, mergeYardTopology(previous, file.contents));
+			} catch (error) {
+				if (!(error instanceof PatternParseError)) throw error;
+				return create(PatternCompositionReceiptSchema, {
+					requestedFeatures: [],
+					chosenIds: ordered.map((item) => item.id),
+					rejectedIds: [],
+					unsatisfied: [],
+					conflicts: [file.path],
+					effectOrder: [],
+					outputDigest: "",
+					decision: SearchDecision.INCOMPATIBLE,
+					reasonCode: "conflict",
+					llmCalls: 0,
+					llmInputTokens: 0,
+					llmOutputTokens: 0,
+					status: ReceiptStatus.REJECTED,
+				});
+			}
+		}
+	}
+	const digest = createHash("sha256")
+		.update([...files.values()].join("\n"))
+		.digest("hex");
 	return create(PatternCompositionReceiptSchema, {
 		requestedFeatures: [],
 		chosenIds: ordered.map((item) => item.id),
