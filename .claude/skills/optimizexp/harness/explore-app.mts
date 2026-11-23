@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-/**
- * Explore a product project → surface-map.json (+ optional experience-catalog).
- *
- * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --project hobo
- * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode validate --project hobo
- * node --import tsx .agents/skills/optimizexp/harness/explore-app.mts --mode catalog --project hobo --personas developer
- */
 import process from "node:process";
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
@@ -21,11 +14,7 @@ import {
 	validateCurrentSurface,
 	writeSurfaceMap,
 } from "./lib/surface-map.mts";
-import {
-	buildExperienceCatalog,
-	validateCatalogCoverage,
-	writeExperienceCatalog,
-} from "./lib/experience-catalog.mts";
+
 
 function parseArgs(argv: string[]) {
 	const out: Record<string, string> = { mode: "explore" };
@@ -56,16 +45,11 @@ function help() {
 
   --mode explore          Build surface-map.json (default)
   --mode validate         Validate existing surface-map
-  --mode catalog          Build experience-catalog from map + personas
   --project <id>          Project id (e.g. hobo, site, cli)
-  --personas a,b          Limit catalog personas
   --skip-probes           No live CLI probes (tests)
   --probe-bin             Run the primary binary with --help (trusted code; inherits environment and may change state)
   --primary-bin-only      Limit coverage to the primary binary; other binaries remain unassessed
   --confirm-surface-current=<project>:<map-sha256>  Assert saved observation still matches current imports, config, and environment (repeatable)
-  --with-catalog          Compatibility flag; explore always writes the experience catalog
-
-Feeds critical-path feature generation (see references/feature-quality.md).
 `);
 }
 
@@ -118,9 +102,10 @@ function main() {
 		help();
 		return;
 	}
-	if (!["explore", "validate", "catalog"].includes(args.mode ?? "")) {
-		console.error(`Unknown mode: ${args.mode}`);
-		process.exit(2);
+	if ((args.mode !== "explore" && args.mode !== "validate") || args.withCatalog === "1") {
+		console.error("Only source exploration and validation are supported. Implement and verify requested improvements directly.");
+		process.exitCode = 1;
+		return;
 	}
 	if (args.primaryBinOnly === "1" && args.mode !== "explore") {
 		console.error("--primary-bin-only applies when building a surface map");
@@ -170,9 +155,6 @@ function main() {
 	}
 
 	const confirmedSurfaces = (args.confirmedSurfaces || "").split(",").filter(Boolean);
-	const personaIds = (args.personas || "")
-		.split(/[,\s]+/)
-		.filter(Boolean);
 
 	for (const project of targets) {
 		if (args.mode === "validate") {
@@ -204,47 +186,6 @@ function main() {
 			continue;
 		}
 
-		if (args.mode === "catalog") {
-			const map = readSurfaceMap(project, root);
-			const catalog = buildExperienceCatalog({
-				project,
-				root,
-				surfaceMap: map,
-				personaIds: personaIds.length ? personaIds : undefined,
-			});
-			const current = assessPackageCli(path.join(root, project.path || "."), root);
-			if (map && JSON.stringify(map.cliAssessment) !== JSON.stringify(current)) {
-				catalog.surfaceProblems?.push("package-bin assessment is stale; re-explore the current manifest");
-			}
-			const pathOut = writeExperienceCatalog(catalog, project, root);
-			const cov = validateCatalogCoverage(
-				catalog,
-				personaIds.length
-					? personaIds
-					: [...new Set(catalog.experiences.map((e) => e.personaId))],
-				map ?? undefined,
-				{ root, confirmedSurfaces },
-			);
-			console.log(
-				JSON.stringify(
-					{
-						ok: cov.length === 0,
-						projectId: project.id,
-						path: pathOut,
-						experienceCount: catalog.experiences.length,
-						cliAssessment: catalog.cliAssessment,
-						coverageScope: map?.coverageScope === "primary-bin" ? "primary package binary only; secondary binaries and other surfaces are not assessed" : "package.json bin only; other surfaces are not assessed",
-						coverageProblems: cov,
-					},
-					null,
-					2,
-				),
-			);
-			if (cov.length) process.exitCode = 1;
-			continue;
-		}
-
-		// explore
 		const map = buildSurfaceMap({
 			project,
 			root,
@@ -254,30 +195,10 @@ function main() {
 		});
 		const pathOut = writeSurfaceMap(map, project, root);
 		const problems = validateSurfaceMap(map);
-		let catalogPath: string | undefined;
-		let catalogProblems: string[] = [];
-		if (args.withCatalog === "1" || args.mode === "explore") {
-			// always build catalog after explore for critical path
-			const catalog = buildExperienceCatalog({
-				project,
-				root,
-				surfaceMap: map,
-				personaIds: personaIds.length ? personaIds : undefined,
-			});
-			catalogPath = writeExperienceCatalog(catalog, project, root);
-			catalogProblems = validateCatalogCoverage(
-				catalog,
-				personaIds.length
-					? personaIds
-					: [...new Set(catalog.experiences.map((e) => e.personaId))],
-				map,
-				{ root, confirmedSurfaces, freshProbe: args.probeBin === "1" && args.skipProbes !== "1" },
-			);
-		}
 		console.log(
 			JSON.stringify(
 				{
-					ok: problems.length === 0 && catalogProblems.length === 0,
+					ok: problems.length === 0,
 					projectId: project.id,
 					surfaceMap: pathOut,
 					productName: map.productName,
@@ -289,14 +210,12 @@ function main() {
 					requiredJourneys: map.requiredJourneys,
 					interactive: map.defaultEntry?.interactive ?? null,
 					problems,
-					catalogPath,
-					catalogProblems,
 				},
 				null,
 				2,
 			),
 		);
-		if (problems.length || catalogProblems.length) process.exitCode = 1;
+		if (problems.length) process.exitCode = 1;
 	}
 }
 

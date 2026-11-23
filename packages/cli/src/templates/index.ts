@@ -7,7 +7,6 @@ import {
 
 import type { ParsedTemplateId, ProjectName } from "../types/scaffold.js";
 
-/** Compatibility alias → catalog starter id. */
 export function catalogStarterId(template: ParsedTemplateId): string {
 	// SAFETY: `return patternStarterId(template as CliStarterAlias);` is required at this I/O or test boundary.
 	return patternStarterId(template as CliStarterAlias);

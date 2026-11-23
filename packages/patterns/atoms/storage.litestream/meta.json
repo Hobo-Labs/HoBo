@@ -2,7 +2,7 @@
 	"id": "storage.litestream",
 	"tier": 2,
 	"kind": "storage",
-	"description": "One-writer SQLite plus Litestream/NATS JetStream Object Store replica comment.",
+	"description": "SQLite storage with Litestream replication and restoration.",
 	"tags": [
 		"litestream",
 		"sqlite",

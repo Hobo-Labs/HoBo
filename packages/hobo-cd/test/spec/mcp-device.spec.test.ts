@@ -8,6 +8,7 @@ import {
 	VERCEL_DEVICE_AUTHORIZATION_URL,
 	VERCEL_DEVICE_TOKEN_URL,
 } from "../../src/index.js";
+import { fakeWorkload, handedOverInfisicalToken } from "../support/workload.js";
 
 // SPEC: `hobo cd up --hand-off` through the HoBo MCP server. The server runs
 // the CLI with --json, so no progress line reaches anyone, and no tool call
@@ -121,12 +122,13 @@ function harness(
 	const run = () =>
 		prepareVercelConnection(throughMcp(), {
 			env: {},
+			vault: handedOverInfisicalToken(),
+			workload: fakeWorkload(),
 			ownerChannel: owner,
 			locator: {
 				read: async () => ({
 					HOBO_SECRET_STORE: "infisical",
 					INFISICAL_PROJECT_ID: "proj",
-					INFISICAL_SIGN_IN: "egress-proxy",
 				}),
 				write: async () => undefined,
 			},

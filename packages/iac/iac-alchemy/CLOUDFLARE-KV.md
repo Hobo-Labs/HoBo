@@ -1,0 +1,161 @@
+# Cloudflare eventual KV for JavaScript Workers
+
+This opt-in target mapping supports a limited, eventual-consistency subset of
+KV for JavaScript Worker entrypoints. It does not implement HoBo's WASI guest
+store or the `kv.key-value/v1` conformance profile. A target cannot accept a
+Bindle that requires WASI or the complete KV profile on the strength of this
+mapping. In particular, HoBo's inferred HTTP requirement includes `wasm`; use
+explicit requirements that a trusted host can assess truthfully.
+
+An application can declare a provider-neutral Bindle and construct a
+Cloudflare-specific adapter view. Apply the choice with
+`withCloudflareEventualKv`; Bindles do not accept provider annotations:
+
+```ts
+import { bindle, sessionReplay, type BindleRuntimeContext } from "@hobo/bindles";
+import {
+  bindleCloudflareWorker,
+  cloudflareBindings,
+  withCloudflareEventualKv,
+} from "@hobo/iac-alchemy/cloudflare/runtime";
+
+const app = bindle(
+  "catalog",
+  // This host-defined capability name must be registered and assessed by the
+  // host as eventual, read-only KV; it does not stand for full HoBo KV.
+  { require: ["http", "kv-eventual-read"], runtimes: ["javascript"] },
+  (b) => {
+    const cache = b.kv().allow("get");
+    const web = b.web((context?: BindleRuntimeContext) => async () => {
+      const bytes = await cloudflareBindings(context).kv("cache").get("title");
+      return new Response(bytes === undefined ? "missing" : new TextDecoder().decode(bytes));
+    }).with(sessionReplay({ enabled: false })).dependsOn(cache);
+    return { cache, web };
+  },
+);
+
+// Supplied by the host's durable grant registry. This illustrative value must
+// be unique to this grant incarnation and stable on retries.
+const grantEpoch = `sha256:${"1".repeat(64)}`;
+// Stable for this namespace's lifetime; a new namespace gets a fresh epoch.
+const namespaceEpoch = `sha256:${"4".repeat(64)}`;
+// Keep `app` for other targets. This view is only for the Cloudflare mapping.
+export const cloudflareApp = withCloudflareEventualKv(app, {
+  cache: { mode: "read-only", grantEpoch, namespaceEpoch },
+});
+export default bindleCloudflareWorker(cloudflareApp, "web");
+```
+
+The imported Worker module and the mapping must use the same namespace and
+grant epochs; a mismatch is refused before deployment.
+
+The trusted deployment host constructs its stack from that same adapter view:
+
+```ts
+import { mapBindleToAlchemy } from "@hobo/iac-alchemy";
+import {
+  cloudflareKvNamespaceClaim,
+  cloudflareKvProxySource,
+  cloudflareNativeKvBindleMappers,
+} from "@hobo/iac-alchemy/cloudflare/kv";
+
+// Establish sourceFence before importing the application module. It must
+// authenticate and fence both the app graph and the installed proxy graph.
+const mapped = mapBindleToAlchemy(
+  cloudflareApp,
+  cloudflareNativeKvBindleMappers({
+    workerModules: { web: absoluteAppModulePath },
+    sourceFence,
+    verifyNamespace: trustedVerifyNamespace,
+    verifyGrant: trustedVerifyGrant,
+  }),
+  { assessRequirements: trustedAssessRequirements },
+);
+
+const sourceRequirements = [
+  {
+    resourceId: "web", resourceType: "Cloudflare.Worker",
+    bindleName: "catalog", applicationName: "web", sourceKind: "worker",
+    sourcePath: absoluteAppModulePath,
+  },
+  cloudflareKvProxySource("catalog", "cache", {
+    mode: "read-only", grantEpoch, namespaceEpoch, allow: ["get"],
+  }),
+];
+// Supply sourceRequirements to the composite guard and mapped to the Alchemy
+// stack. The host independently verifies the generated proxy identity.
+// Scope cloudflareKvNamespaceClaim("catalog", "cache", namespaceEpoch)
+// as a Cloudflare.KV.Namespace in the financial target inventory.
+```
+
+To inspect this opt-in mapping, call `describeAlchemyPrimitiveSupport(catalog,
+cloudflareNativeKvBindleMappers(options))`. Its KV entry is `partial` and
+reports the JavaScript, eventual-consistency and grant limitations. The default
+`describeCloudflarePrimitiveSupport` describes the infrastructure-only mapper.
+
+An explicit `read-only` choice requires precisely `.allow("get")` and exposes
+`get` and `exists`; reads may be stale or non-monotonic. A `write-only` choice
+requires a nonempty subset of `.allow("set", "delete")` and exposes only
+those mutations. Read and write grants cannot be combined on one resource:
+Cloudflare KV cannot guarantee HoBo's read-your-writes semantics. Missing grants
+are refused rather than interpreted as deny-all because HoBo treats an empty
+allow list as inferred permissions. The adapter never retries mutations; a
+`KV_MUTATION_OUTCOME_UNKNOWN` requires reconciliation before retry. A failed
+read yields `KV_READ_UNAVAILABLE`, not a missing value. Keys are limited to 512
+UTF-8 bytes and values to 1 MiB. Both are validated before a mutation. Reads
+require a BYOB-compatible byte stream; an incompatible stream fails closed.
+The adapter bounds its own stream buffers; the host must account for provider
+buffering and concurrency. Cloudflare limits writes to one per second for a
+given key. Concurrent writers can race; this subset offers no compare-and-swap,
+transaction, or ordered-writer guarantee.
+
+An eventual read cannot establish that a timed-out mutation failed or will not
+complete later. Before retrying an unknown mutation or retiring a grant, the
+host must either prove definitive completion of every old invocation or enforce
+a permanent platform-specific fence preventing those operations from completing.
+Deleting a Worker, aborting fetch, or waiting for a timeout is not such proof.
+
+The mapper creates a native Alchemy `Cloudflare.KV.Namespace` and a separate
+private `Cloudflare.Worker` per KV resource. The application receives a Worker
+service binding only; the proxy holds the namespace and enforces the exact
+verbs. `workersDev: false`, `domain: null`, and empty routes are requested for
+the proxy. The host must independently verify and fence the deployed bindings,
+account IAM, network routes, service access and control-plane changes so the
+application cannot acquire the namespace or credentials outside the proxy and
+no untrusted caller can reach the proxy. The host must verify the exact proxy
+source, its complete transitive imports, module cache, toolchain and final upload
+artifact along with the application, keep those guarantees in force through
+provider completion, and attest every executable source requirement. A digest
+or callback alone does not provide isolation.
+
+Proxy identities bind the resource, namespace incarnation, canonical verbs,
+mode and `grantEpoch`.
+The host must authenticate its durable epoch registry, issue a fresh epoch for
+every new grant incarnation (including a return to an earlier grant), and reuse
+that epoch on retries. Its independent `verifyGrant` authority must bind the
+exact namespace, proxy, mode, verbs and epoch to the authenticated tenant,
+target, stack, stage and provider account; it must remain valid through
+provider completion. The composite guard independently checks that scope and
+the resulting proxy identity during plan authorization. On an update, the reviewed and
+financially scoped plan must cover the old and new proxies until the old one is
+retired, and the host must fence and drain old application and proxy invocations
+before claiming revocation. Retain exposure if any invocation remains unknown.
+
+Namespace identities bind the Bindle and resource to `namespaceEpoch`, so
+different Bindles cannot alias the same Alchemy namespace through a common
+resource name. The trusted `verifyNamespace` authority must authenticate the
+exact claim against its captured tenant, target, stack, stage and provider
+account, enforce unique physical ownership even in a hash collision, and keep
+that guarantee in force through provider completion. The composite environment
+and plan verifiers must independently match the actual target and financial
+inventory to that same authenticated scope. The authority must refuse an allocation
+or deletion that would replace a previously owned namespace until data and
+ownership migration have been independently completed and authorized. This
+mapper does not migrate old namespaces or make a deletion safe automatically.
+
+The financial target inventory must include the namespace, proxy Worker, app
+Worker, and every other billable effect. A supplied pricing model must account
+for proxy invocations and the underlying KV operations as well as worker and
+storage costs; otherwise the normal unknown-pricing policy applies. The host
+is responsible for enforcing any usage bounds assumed by a quote. This adapter
+view does not change the application's normal routing or budget policy.

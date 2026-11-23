@@ -101,6 +101,8 @@ node .agents/skills/impeccable/scripts/live-insert.mjs --id EVENT_ID --count EVE
 
 `event.screenshotPath` is sent **only when the user annotated before Go**; it is a PNG of the element with annotations baked in. Read it before planning. When absent, do not ask for one or screenshot the page yourself: without annotations a screenshot anchors you on the existing design and fights the three-distinct-directions brief; work from `element.outerHTML`, the computed styles, and the prompt.
 
+React, Vue, Svelte, and Astro previews capture the painted ancestor and crop it to the selected element. Live controls are hidden during capture and restored afterward; capture falls back to the selected element if the ancestor cannot be rendered.
+
 Annotation semantics: a comment's `{x, y}` is element-local and binds the text to the child under that point (a comment near the title is about the title). Comments and strokes are independent unless clearly paired. Strokes read by shape: closed loop = "this thing" (emphasis, not a clipping region); arrow = direction or movement; cross/slash = delete; scribble = emphasis or delete by context. If a stroke's intent is genuinely ambiguous and it changes the brief, ask one short question before generating; otherwise state your reading in one sentence.
 
 ### 2. Wrap the element

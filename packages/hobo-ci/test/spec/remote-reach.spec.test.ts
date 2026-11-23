@@ -12,7 +12,10 @@ import {
 	remoteInfeasible,
 	storeSignInGuidance,
 } from "../../src/index.js";
-import { readOwnerTurn } from "../support/remote-owner.js";
+import {
+	handedOverInfisicalToken,
+	readOwnerTurn,
+} from "../support/remote-owner.js";
 
 // SPEC: every refusal a handed-off run can give a remote owner is one they
 // can act on from where they are. They have a browser on their own device
@@ -217,12 +220,12 @@ describe("SPEC remote reach: the store opens at the owner's own Infisical", () =
 		const sites: (string | undefined)[] = [];
 		await prepareGithubConnection(handOff(), {
 			env: {},
+			vault: handedOverInfisicalToken(),
 			locator: {
 				read: async () => ({
 					HOBO_SECRET_STORE: "infisical",
 					INFISICAL_PROJECT_ID: "proj",
 					INFISICAL_SITE_URL: "https://eu.infisical.com",
-					INFISICAL_SIGN_IN: "egress-proxy",
 				}),
 				write: async () => undefined,
 			},

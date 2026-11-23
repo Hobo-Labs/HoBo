@@ -97,6 +97,24 @@
           "reconcileTwiceAction": "noop"
         }
       }
+    },
+    {
+      "description": "restart an owned VPS by hostname through the fleet, never a purchase route",
+      "request": {
+        "method": "POST",
+        "path": "/providers/hostinger/fleet/power",
+        "body": {
+          "target": "hobo-arc-1.example.test",
+          "action": "restart"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "machineId": "1201",
+          "mutatingCalls": 1
+        }
+      }
     }
   ]
 }

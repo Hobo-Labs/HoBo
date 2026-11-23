@@ -20,7 +20,6 @@ function invalid(path: string, message: string): never {
 	});
 }
 
-/** Parse schema input once into the generated recursive Protobuf contract. */
 export function parseFieldSchema(
 	raw: JsonValue | undefined,
 	path = "schema",
@@ -304,7 +303,6 @@ type RuntimeSchemaParser = (
 	definitions: Record<string, JsonValue>,
 ) => JsonValue;
 let exampleParser: RuntimeSchemaParser | undefined;
-/** Compile only our fixed validator, never application code, and reuse it for contract examples. */
 function parserForExamples(): RuntimeSchemaParser {
 	if (exampleParser) return exampleParser;
 	const compiled = ts.transpileModule(schemaRuntimeSource(), {
@@ -381,7 +379,6 @@ export function serializedSchema(schema: CodegenFieldSchema): JsonValue {
 	return toJson(CodegenFieldSchemaSchema, schema) as JsonValue;
 }
 
-/** Shared executable validator emitted beside generated resource APIs. */
 export function schemaRuntimeSource(): string {
 	return `
 export type FieldSchema = {

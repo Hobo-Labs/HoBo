@@ -1,9 +1,6 @@
 syntax = "proto3";
 
 // Wire records for the provider-connection page's loopback boundary
-// (browser client <-> connect page server). The step's generated view
-// (view.ts StepView) is carried as a google.protobuf.Struct; the browser
-// renders it with vercel-labs/ui (UI SDK) parts.
 package hobo.connectui.v1;
 
 import "google/protobuf/struct.proto";
@@ -40,7 +37,6 @@ message ConnectViewRecord {
 message ConnectedReferences {
   // github | vercel
   string provider = 1;
-  // infisical | 1password | bitwarden
   string store = 2;
   repeated string references = 3;
 }

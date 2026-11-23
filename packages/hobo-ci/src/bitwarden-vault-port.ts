@@ -7,10 +7,10 @@ import {
 	symmetricKey,
 } from "./bitwarden-crypto.js";
 import {
+	type BitwardenApiKey,
 	type BitwardenDeviceId,
 	type BitwardenEndpoints,
 	type BitwardenId,
-	type BitwardenSignInKey,
 	bitwardenSignIn,
 } from "./bitwarden-provision.js";
 
@@ -29,7 +29,7 @@ import {
 
 export interface BitwardenVaultPortOptions {
 	readonly endpoints: BitwardenEndpoints;
-	readonly apiKey: BitwardenSignInKey;
+	readonly apiKey: BitwardenApiKey;
 	readonly deviceId: BitwardenDeviceId;
 	readonly organizationId: BitwardenId;
 	readonly collectionId: BitwardenId;

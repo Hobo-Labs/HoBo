@@ -1,12 +1,4 @@
-/**
- * Cucumber step bindings for OptimizeXP feature `cli-product`.
- * Thin adapters → implementations.ts (keeps Gherkin text stable).
- *
- * These bindings are shared: `cli-help-and-doctor` re-uses them via a
- * side-effect import so both folders exercise the same real-CLI steps
- * without duplicate step definitions.
- */
-import { Given, Then, When } from "@cucumber/cucumber";
+import { Then, When } from "@cucumber/cucumber";
 import {
   assertExitCode,
   assertJsonEnvelopeShape,
@@ -14,17 +6,12 @@ import {
   assertJsonFieldNonEmptyArray,
   assertStdoutContains,
   assertStdoutMatches,
-  markEvidenceCapturable,
   runHoboCli,
   runHoboComposedCli,
-  setFeatureContext,
-  setPersona,
 } from "./implementations.ts";
 import { createWorld, type OptimizexpWorld } from "./world.ts";
 
 function w(world: OptimizexpWorld | undefined): OptimizexpWorld {
-  // Cucumber passes its own World instance as `this`; use ours (singleton)
-  // unless the caller already carries our shape.
   return world && Array.isArray(world.notes) ? world : getSingleton();
 }
 
@@ -33,20 +20,6 @@ function getSingleton(): OptimizexpWorld {
   singleton ??= createWorld("cli-product");
   return singleton;
 }
-
-Given("persona {string} is active", function (this: OptimizexpWorld, personaId: string) {
-  const world = this?.featureId ? this : getSingleton();
-  if (!world.featureId) Object.assign(world, createWorld("cli-product"));
-  setPersona(world, personaId);
-});
-
-Given(
-  "feature {string} is under optimizexp review",
-  function (this: OptimizexpWorld, featureId: string) {
-    const world = this?.featureId ? this : getSingleton();
-    setFeatureContext(world, featureId);
-  },
-);
 
 When(
   "I run the hobo CLI with arguments {string}",
@@ -98,9 +71,4 @@ Then("the stdout is a JSON envelope with the standard shape", function (this: Op
   assertJsonEnvelopeShape(w(this));
 });
 
-Then("evidence is capturable for this scenario", function (this: OptimizexpWorld) {
-  markEvidenceCapturable(w(this));
-});
-
-// re-export for tests
 export { createWorld, getSingleton };

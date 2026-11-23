@@ -1,28 +1,27 @@
 # Contributing to HoBo
 
-HoBo is design-first. A useful contribution either clarifies the design, proves a design claim with an executable draft contract, or improves the maintenance system that keeps those two aligned.
+Contributions implement and verify useful behavior. Keep code self-documenting and keep documentation focused on behavior that exists.
 
 ## Before you start
 
 1. Read [`README.md`](./README.md) for project purpose and current state.
 2. Read [`AGENTS.md`](./AGENTS.md) before using an AI coding agent in this repo.
-3. Find the relevant design area in [`docs/design/index.md`](./docs/design/index.md).
-4. For implementation-facing work, find the matching proof note under [`docs/design/proofs/`](./docs/design/proofs/) or draft package under [`src/draft/`](./src/draft/README.md).
+3. Inspect the affected implementation and its tests.
+4. Complete the requested behavior and verify the relevant user-facing path.
 
 ## What belongs here
 
 Good changes usually fall into one of these buckets:
 
-- Design docs, ADRs, glossary entries, CLI/spec changes, or traceability updates.
-- `src/draft/<kind>/<slug>` proof/contract packages that make a design claim executable.
-- Validation scripts, CI gates, and repository-maintenance automation.
-- Reference notes in `docs/standards/`, `docs/technologies/`, `docs/patterns/`, or `docs/competitors/` that support a design decision.
+- Working product code, examples, and fixes.
+- Tests and validation that exercise observable behavior.
+- Current reference documentation, operational guidance, and repository automation.
 
 Out of scope for now:
 
 - Claiming HoBo is production-ready.
-- Adding production product code without a linked design claim and proof path.
 - Adding provider credentials, static secrets, or live cloud dependencies to default tests.
+- Adding design or planning documents, deferred tasks, or explanatory code comments.
 
 ## Required local checks
 
@@ -35,12 +34,9 @@ pnpm exec turbo run build --filter @hobo/adapter-hono --filter @hobo/hobo
 pnpm test
 pnpm run standards:check
 pnpm run docs:cli-lint
-pnpm run docs:design-lint
 pnpm run docs:coverage
 pnpm run docs:freshness
-pnpm exec node --import tsx scripts/validate-traceability.ts
 pnpm exec node --import tsx scripts/validate-sdk-contracts.ts
-pnpm exec node --import tsx scripts/validate-deployment-set-delta.ts
 ```
 
 Optional local hook:
@@ -49,6 +45,10 @@ Optional local hook:
 pnpm run prepare-hooks
 ```
 
+For Impeccable live-preview changes, install Playwright Chromium and run
+`node --import tsx --test scripts/test/impeccable-framework-capture.test.ts`.
+The test exercises framework-mounted previews and capture fallback in a browser.
+
 ## Documentation rule
 
 Docs must move with code. If you touch code, draft packages, tests, scripts, workflows, package metadata, hooks, or agent tooling, update the closest relevant documentation in the same pull request.
@@ -56,12 +56,9 @@ Docs must move with code. If you touch code, draft packages, tests, scripts, wor
 Use this checklist:
 
 - README still describes the repo accurately.
-- `docs/design/index.md` still describes current design organization.
-- Relevant design doc, ADR, proof README, or draft package README changed with the implementation.
+- Reference documentation describes the behavior that ships.
 - New public commands or examples pass `pnpm run docs:cli-lint`.
-- New ADR references are indexed and pass traceability validation.
-- New event families are added to `docs/design/event-families.md` before use.
-- New JavaScript-family implementation files are TypeScript `.ts` sources, and `pnpm run standards:check` passes or the exception is recorded in an ADR/proof note.
+- New JavaScript-family implementation files follow the repository's TypeScript standards.
 
 ## Licensing of contributions
 
@@ -97,9 +94,9 @@ Every PR should include:
 
 - Commits signed off with the DCO (`git commit -s`), per [Licensing of contributions](#licensing-of-contributions).
 - Purpose and scope.
-- Files or design areas changed.
+- Affected behavior and components.
 - Tests and validators run.
 - Documentation updated, or a clear reason no docs were needed.
-- Known limitations, especially environment limitations or intentionally deferred work.
+- Known limitations and environment constraints.
 
-Prefer small PRs tied to one design claim or one backlog slice.
+Prefer small, stacked PRs with complete, verifiable behavior.

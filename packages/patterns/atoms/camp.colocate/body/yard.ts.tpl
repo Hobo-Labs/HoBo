@@ -1,17 +1,6 @@
 import { camp } from "@hobo/camps";
-import { yard } from "@hobo/yards";
 
-/* @hobo.entity yard:{{name}} */
-export const topology = yard("{{name}}-yard", {
-	provider: /* @hobo.slot provider strategy=once *//* @hobo.end */,
-	network: [
-/* @hobo.slot network strategy=append */
-		"{{network}}",
-/* @hobo.end */
-	],
-	camps: [
-/* @hobo.slot camps strategy=append */
-		camp("{{peerCamp}}"),
-/* @hobo.end */
-	],
-});
+export const placement = {
+	yardName: "{{name}}-yard",
+	camps: [camp("{{peerCamp}}")],
+};

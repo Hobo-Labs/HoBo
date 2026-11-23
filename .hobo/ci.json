@@ -24,7 +24,7 @@
     "boxRunner": false,
     "mainWorkspaceParallelCap": 4,
     "mainGate": { "reuseMergeQueue": true },
-    "mergeGroup": { "reusePrFabric": false },
+    "mergeGroup": { "reusePrFabric": true },
     "verdict": {
       "minFreeRunners": 1,
       "enterMs": 60000,
@@ -199,7 +199,7 @@
       "relayOrigin": "https://hobo-ci.vercel.app",
       "jobAdmission": "push",
       "policy": {
-        "accountId": "hobo-labs",
+        "accountId": "hobo-labs-release",
         "tenantId": "hobo-labs",
         "pool": { "label": "hobo", "os": "linux", "architecture": "x64" },
         "providers": [
