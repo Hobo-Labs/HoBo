@@ -1,6 +1,7 @@
 import type { CommandRunInput, PrepareInput, PrepareOutcome } from "@hobo/cli";
 import {
-	OWNER_CREDENTIAL_LINE_PREFIX,
+	OWNER_CAPTURE_LINE_PREFIX,
+	type OwnerChannel,
 	type SecretStoreOpening,
 } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
@@ -13,17 +14,27 @@ import {
 	VERCEL_DEVICE_TOKEN_URL,
 } from "../../src/index.js";
 
-// EVAL: the owner chooses their secret store (Infisical, 1Password or
-// Bitwarden), and a handed-off `hobo cd up` on a box they cannot reach does
-// what that store allows: it asks for the choice when none was made, signs in
-// to 1Password through the owner's Connect server with a token the egress
-// proxy injects (the run never holds it), and uses Bitwarden Secrets
-// Manager through its API with the access token the environment provides,
-// moved into the run's vault: no owner credential, no terminal.
-
 const LOOPBACK = /\b(127\.0\.0\.1|localhost)\b/u;
 const CONNECT = "https://connect.owner.example";
 const OWNER_TOKEN = "owner-connect-token";
+
+function heldChannel() {
+	const held = new Map<string, string>();
+	const channel: OwnerChannel & { deposit(name: string, value: string): void } =
+		{
+			openUrl: async () => undefined,
+			captureSecret: async ({ name }) => {
+				const value = held.get(name);
+				held.delete(name);
+				return value;
+			},
+			holds: (name) => held.has(name),
+			deposit(name, value) {
+				held.set(name, value);
+			},
+		};
+	return channel;
+}
 
 function handOff(see: (line: string) => void): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
@@ -81,13 +92,7 @@ describe("EVAL store choice: a handed-off run asks, never assumes", () => {
 	});
 });
 
-/**
- * The owner's 1Password Connect server behind the agent's egress proxy: the
- * proxy replaces the run's placeholder bearer with the owner's token once
- * the owner saved it in the session's credential form.
- */
-function connectBehindProxy() {
-	let saved: string | undefined;
+function connectServer() {
 	const items = new Map<
 		string,
 		{ id: string; title: string; value: string; version: number }
@@ -96,8 +101,7 @@ function connectBehindProxy() {
 	const http = async (input: string | URL | Request, init?: RequestInit) => {
 		const url = new URL(String(input));
 		if (url.origin === CONNECT) {
-			const bearer =
-				saved ?? new Headers(init?.headers).get("authorization")?.slice(7);
+			const bearer = new Headers(init?.headers).get("authorization")?.slice(7);
 			if (bearer !== OWNER_TOKEN) return new Response(null, { status: 401 });
 			const base = "/v1/vaults/k2l3m4n5o6p7q8r9s0t1u2v3w4/items";
 			if (url.pathname === base && (init?.method ?? "GET") === "GET")
@@ -179,40 +183,37 @@ function connectBehindProxy() {
 			},
 		],
 	});
-	return {
-		http,
-		items,
-		save: (token: string) => {
-			saved = token;
-		},
-	};
+	return { http, items };
 }
 
 describe("EVAL store choice: 1Password through the owner's Connect server", () => {
-	it("waits for the Connect token in the credential form, then connects Vercel into the owner's vault", async () => {
+	it("asks for the Connect token through HoBo's capture, then connects Vercel into the owner's vault", async () => {
 		const shown: string[] = [];
-		const connect = connectBehindProxy();
-		const outcome = await prepareVercelConnection(
-			handOff((line) => {
-				shown.push(line);
-				if (line.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `)) {
-					expect(line).toContain("host=connect.owner.example");
-					connect.save(OWNER_TOKEN);
-				}
-			}),
-			{
-				env: {
-					HOBO_SECRET_STORE: "1password",
-					OP_VAULT_ID: "k2l3m4n5o6p7q8r9s0t1u2v3w4",
-					OP_CONNECT_HOST: CONNECT,
+		const connect = connectServer();
+		const channel = heldChannel();
+		const run = () =>
+			prepareVercelConnection(
+				handOff((line) => shown.push(line)),
+				{
+					env: {
+						HOBO_SECRET_STORE: "1password",
+						OP_VAULT_ID: "k2l3m4n5o6p7q8r9s0t1u2v3w4",
+						OP_CONNECT_HOST: CONNECT,
+					},
+					locator: { read: async () => ({}), write: async () => undefined },
+					ownerChannel: channel,
+					fetch: connect.http,
+					sleep: async () => undefined,
+					startPage: noPage,
 				},
-				locator: { read: async () => ({}), write: async () => undefined },
-				fetch: connect.http,
-				sleep: async () => undefined,
-				handOffTimeoutMs: 200,
-				startPage: noPage,
-			},
+			);
+		const asked = text(shown, await run());
+		expect(asked).toContain(
+			`${OWNER_CAPTURE_LINE_PREFIX} name=OP_CONNECT_TOKEN guide=https://`,
 		);
+		expect(asked).not.toMatch(/credential form|egress/u);
+		channel.deposit("OP_CONNECT_TOKEN", OWNER_TOKEN);
+		const outcome = await run();
 		if (outcome.kind !== "ready")
 			throw new Error(`refused: ${JSON.stringify(outcome)}`);
 		expect(
@@ -311,13 +312,13 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 		expect((await port.access("HOBO_CD_VERCEL_TOKEN")).status).toBe("ok");
 		const all = shown.join("\n");
 		expect(
-			shown.some((l) => l.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `)),
+			shown.some((l) => l.startsWith(`${OWNER_CAPTURE_LINE_PREFIX} `)),
 		).toBe(false);
 		expect(all).not.toMatch(/terminal/u);
 		expect(all).not.toContain("0.machine.secret:key");
 	});
 
-	it("without a token or API key asks for the API key through the session's credential form, never env or a terminal", async () => {
+	it("without a token or API key asks for the API key through HoBo's capture, never env or a terminal", async () => {
 		const shown: string[] = [];
 		const asked: string[] = [];
 		const outcome = await prepareVercelConnection(
@@ -325,36 +326,30 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 			{
 				env: { HOBO_SECRET_STORE: "bitwarden" },
 				locator: { read: async () => ({}), write: async () => undefined },
-				// Bitwarden as the box reaches it: the owner has not saved the
-				// key in the session's credential form, so nothing is injected.
-				fetch: async (input, init) => {
+				ownerChannel: heldChannel(),
+				fetch: async (input) => {
 					asked.push(String(input));
-					expect(String(init?.body)).not.toMatch(/client_secret/u);
 					return Response.json({ error: "invalid_client" }, { status: 400 });
 				},
 				sleep: async () => undefined,
-				handOffTimeoutMs: 1,
 				startPage: noPage,
 			},
 		);
 		expect(outcome).toMatchObject({
 			kind: "refused",
-			result: { code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED" },
+			result: { code: "HOBO_CD_BITWARDEN_NEEDS_API_KEY" },
 		});
-		const credential = shown.find((l) =>
-			l.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `),
-		);
-		expect(credential).toContain("host=identity.bitwarden.com");
-		expect(credential).toMatch(/security-keys/u);
-		expect(credential).toMatch(
-			/username = client_id, password = client_secret/u,
-		);
-		expect(
-			asked.every((url) => url.startsWith("https://identity.bitwarden.com/")),
-		).toBe(true);
 		const all = text(shown, outcome);
+		for (const name of ["BW_CLIENTID", "BW_CLIENTSECRET"])
+			expect(all).toMatch(
+				new RegExp(
+					`^${OWNER_CAPTURE_LINE_PREFIX} name=${name} guide=https://vault\\.bitwarden\\.com/\\S*security-keys$`,
+					"mu",
+				),
+			);
+		expect(asked).toEqual([]);
 		expect(all).not.toMatch(/terminal/u);
-		expect(all).not.toMatch(/environment's settings/u);
+		expect(all).not.toMatch(/environment's settings|credential form|egress/u);
 	});
 });
 

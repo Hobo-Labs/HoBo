@@ -79,8 +79,7 @@ async function session(
 		id: "infisical",
 		chosen: true,
 		missing: [],
-		canAwaitEgressCredential: false,
-		egressCredentialHost: undefined,
+		handOffSignIn: undefined,
 		opened: {
 			id: "infisical",
 			port,

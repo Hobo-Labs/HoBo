@@ -25,7 +25,7 @@ import {
 } from "./ceremony-settings.js";
 import { lazyEgressFetch } from "./egress.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
-import { awaitHandOffStore, storeAnswers } from "./hand-off-store.js";
+import { storeAnswers, takeHandOffSignIn } from "./hand-off-store.js";
 import {
 	captureAll,
 	KEPT_STORE_SIGN_INS,
@@ -378,9 +378,21 @@ async function prepareGithubWithVault(
 			input.handOff === true &&
 			!input.whatIf &&
 			!(await storeAnswers(owner, "ci"));
+		if (needsOwner && owner.handOffSignIn !== undefined) {
+			const taken = await takeHandOffSignIn({
+				family: "ci",
+				owner,
+				open: openOwner,
+				vault,
+				channel: deps.ownerChannel,
+			});
+			if (taken.kind === "refused")
+				return refused(taken.code, taken.message, taken.remediation);
+			owner = taken.owner;
+		}
 		// Through the HoBo MCP server (--json, an owner channel) no progress
 		// line reaches anyone: say why the store did not open, never wait.
-		if (
+		else if (
 			needsOwner &&
 			deps.ownerChannel !== undefined &&
 			(input.run.flags.json || input.run.flags.quiet)
@@ -392,26 +404,6 @@ async function prepareGithubWithVault(
 					"Run again: HoBo signs in to the store afresh.",
 				],
 			);
-		if (
-			needsOwner &&
-			owner.canAwaitEgressCredential &&
-			(input.run.flags.json || input.run.flags.quiet)
-		)
-			return refused(
-				"HOBO_CI_HANDOFF_SILENT",
-				"The owner hand-off needs progress output. Omit --json and -q, then retry.",
-				["Run hobo ci up --hand-off without --json or -q."],
-			);
-		if (needsOwner && owner.canAwaitEgressCredential)
-			owner = await awaitHandOffStore({
-				family: "ci",
-				open: openOwner,
-				emit: (line) => input.run.emitProgress(line),
-				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
-				...(deps.handOffTimeoutMs !== undefined
-					? { timeoutMs: deps.handOffTimeoutMs }
-					: undefined),
-			});
 		else if (needsOwner) owner = { ...owner, opened: undefined };
 	} catch (error) {
 		if (!(error instanceof InvalidSecretStoreError)) throw error;
