@@ -141,8 +141,8 @@ channel as described above; a displayed form alone does not establish privacy.
    withdrawn and the call ends the same way, so it never hangs. If the owner
    cannot see a privacy-verified form, report that capability gap; do not
    relay a dynamic link or value through chat. Never ask for a value in chat,
-   and never use `request_credential` for a value the lifecycle is waiting on
-   (that form feeds the network proxy, not the run).
+   and never use `request_credential`: it stores a key in the cloud
+   environment, outside HoBo, and the repository's agent hooks deny it.
    On `HOBO_OWNER_CAPTURE`, when the lifecycle has returned and calls for a
    separate capture, use `capture_secret` once per requested name through a
    privacy-verified form. Its guide is shown directly to the owner; do not
@@ -186,7 +186,14 @@ setup page (`HOBO_OWNER_PAGE`) in their browser. That page is for their own
 machine only, never a remote box.
 
 Never fetch or submit a page, approve a code, or read a secret yourself.
-Secret variables in the agent's environment are ignored on purpose.
+Secret variables in the agent's environment are ignored on purpose. Agents never
+store secrets: no environment variables holding credentials or store settings,
+no `.env` or local secret files, no GitHub Actions secrets or variables
+(`gh secret set`, `gh variable set`), no `vercel env add`, and no credential
+store of their own. Every credential is an `owner://<NAME>` entry in the
+owner's store session; `env://<NAME>` locators are refused. This is the
+[repository rule](../../../AGENTS.md#repository-rules-for-every-agent), with no
+exceptions.
 
 ## Reporting
 
