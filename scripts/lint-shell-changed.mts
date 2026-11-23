@@ -41,7 +41,14 @@ function changedFiles(staged: boolean, base: string): string[] {
 		);
 		process.exit(2);
 	}
-	return listed.split(/\r?\n/).filter((file) => SHELL.test(file));
+	const shells = listed.split(/\r?\n/).filter((file) => SHELL.test(file));
+	const outsideCheckout = new Set(
+		(git(["ls-files", "-t", "--", ...shells]) ?? "")
+			.split(/\r?\n/)
+			.filter((line) => line.startsWith("S "))
+			.map((line) => line.slice(2)),
+	);
+	return shells.filter((file) => !outsideCheckout.has(file));
 }
 
 function run(cmd: string, args: string[], cwd = process.cwd()): number {
