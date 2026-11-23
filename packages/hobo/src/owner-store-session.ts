@@ -14,6 +14,14 @@ import {
 	withoutSecretEnv,
 } from "@hobo/hobo-ci";
 
+import {
+	type AgentVaultBroker,
+	type AgentVaultProxyDeps,
+	type AgentVaultRouter,
+	type AgentVaultStatus,
+	createAgentVaultBroker,
+} from "./agent-vault-broker.js";
+
 export type OwnerStoreLabel = "Infisical" | "1Password" | "Bitwarden";
 
 export type OwnerSessionState =
@@ -28,6 +36,7 @@ export type OwnerSessionState =
 export type OwnerSessionStatus = Readonly<{
 	established: boolean;
 	store?: OwnerStoreLabel;
+	agentVault?: AgentVaultStatus;
 }>;
 
 export interface OwnerStoreEntries {
@@ -40,7 +49,8 @@ export interface OwnerStoreSessions {
 	status(cwd: string): OwnerSessionStatus;
 	credentials(cwd: string): CredentialResolver;
 	entries(cwd: string): OwnerStoreEntries;
-	close(): void;
+	agentVault(cwd: string): AgentVaultRouter | undefined;
+	close(): Promise<void>;
 }
 
 export class OwnerCredentialUnavailable extends Error {
@@ -92,6 +102,7 @@ type Held = Readonly<{
 	store: OpenedSecretStore;
 	vault: TrustedVault;
 	label: OwnerStoreLabel;
+	broker: AgentVaultBroker | undefined;
 }>;
 
 export type OwnerSignIn = (input: {
@@ -131,13 +142,28 @@ export function ownerChannelSignIn(options: {
 export function createOwnerStoreSessions(options: {
 	readonly signIn: OwnerSignIn;
 	readonly kept?: TrustedVault;
+	readonly agentVault?: AgentVaultProxyDeps;
 }): OwnerStoreSessions {
 	const held = new Map<string, Held>();
+	const closing = new Set<Promise<void>>();
 	const keyOf = (cwd: string) => path.resolve(cwd);
 	const drop = (key: string) => {
-		held.get(key)?.vault.clear();
+		const current = held.get(key);
+		current?.vault.clear();
 		held.delete(key);
+		const ending = current?.broker?.close().catch(() => undefined);
+		if (ending !== undefined) {
+			closing.add(ending);
+			void ending.finally(() => closing.delete(ending));
+		}
 	};
+	const brokerFor = (store: OpenedSecretStore) =>
+		store.agentVault !== undefined && options.agentVault !== undefined
+			? createAgentVaultBroker({
+					vault: store.agentVault,
+					...options.agentVault,
+				})
+			: undefined;
 	return {
 		async establish(cwd) {
 			const key = keyOf(cwd);
@@ -181,14 +207,41 @@ export function createOwnerStoreSessions(options: {
 				if (value !== undefined) options.kept?.put(name, value);
 			}
 			drop(key);
-			held.set(key, { store: owner.opened, vault, label });
+			held.set(key, {
+				store: owner.opened,
+				vault,
+				label,
+				broker: brokerFor(owner.opened),
+			});
 			return { status: "established", store: label };
 		},
 		status(cwd) {
 			const current = held.get(keyOf(cwd));
-			return current === undefined
-				? { established: false }
-				: { established: true, store: current.label };
+			if (current === undefined) return { established: false };
+			const agentVault = current.broker?.status();
+			return agentVault === undefined
+				? { established: true, store: current.label }
+				: { established: true, store: current.label, agentVault };
+		},
+		agentVault(cwd) {
+			const key = keyOf(cwd);
+			if (held.get(key)?.broker === undefined) return undefined;
+			return async (host) => {
+				const broker = held.get(key)?.broker;
+				return broker === undefined
+					? {
+							ok: false,
+							refusal: {
+								code: "HOBO_AGENT_VAULT_UNAVAILABLE",
+								message:
+									"The owner's store session closed before Agent Vault was reached.",
+								remediation: [
+									"Run HoBo MCP's choose_secret_store again, then ask again.",
+								],
+							},
+						}
+					: broker.route(host);
+			};
 		},
 		credentials(cwd) {
 			const key = keyOf(cwd);
@@ -236,8 +289,9 @@ export function createOwnerStoreSessions(options: {
 				},
 			};
 		},
-		close() {
+		async close() {
 			for (const key of held.keys()) drop(key);
+			await Promise.all(closing);
 		},
 	};
 }

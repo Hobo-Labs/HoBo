@@ -119,7 +119,7 @@ export interface ComposedHoboCliOptions {
 	readonly ownerChannel?: OwnerChannel;
 	readonly ownerSession?: Pick<
 		OwnerStoreSessions,
-		"credentials" | "status" | "entries"
+		"credentials" | "status" | "entries" | "agentVault"
 	>;
 	/**
 	 * The clock steps that wait on a provider use (the Vercel device grant's
@@ -298,6 +298,7 @@ export function createComposedHoboCli(
 		...(options.ownerSession !== undefined
 			? {
 					fleetCredentials: options.ownerSession.credentials,
+					fleetAgentVault: options.ownerSession.agentVault,
 					ownerEntries: options.ownerSession.entries,
 				}
 			: undefined),

@@ -190,7 +190,8 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 				read: async () => undefined,
 				write: async () => undefined,
 			}),
-			close: () => undefined,
+			agentVault: () => undefined,
+			close: async () => undefined,
 		};
 		const pages = createOwnerPages();
 		const app = createStoreChoiceApp({
