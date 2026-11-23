@@ -5,11 +5,15 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { config } from "../api/relay.js";
+import { CacheBindingError } from "../src/cache-backend.js";
 import {
 	buildCommit,
 	createHttpEntry,
+	openOwnerHandoffBackend,
+	ownerHandoffCacheBindings,
 	RELAY_START_STATES,
 	RelayStartError,
+	relayStartGaps,
 	relayStartState,
 } from "../src/entry.js";
 import {
@@ -148,6 +152,74 @@ describe("Vercel HTTP entrypoint", () => {
 					},
 				);
 			}
+		});
+
+		it("names the entries an incomplete folder lacks at /readyz, never a value", async () => {
+			const gaps = {
+				missing: ["HOBO_CI_GITHUB_APP_ID"],
+				invalid: ["HOBO_CI_WEBHOOK_SECRET"],
+			};
+			const error = new RelayRuntimeConfigError(
+				"invalid relay configuration",
+				[...gaps.missing, ...gaps.invalid],
+				gaps,
+			);
+			expect(relayStartGaps(error)).toEqual(gaps);
+			await serve(
+				createHttpEntry(async () => {
+					throw new RelayStartError(
+						relayStartState(error),
+						relayStartGaps(error),
+					);
+				}),
+				async (base) => {
+					const ready = await fetch(`${base}/readyz`);
+					expect(ready.status).toBe(503);
+					expect(await ready.json()).toEqual({
+						ready: false,
+						started: false,
+						state: RELAY_START_STATES.notConfigured,
+						...gaps,
+					});
+				},
+			);
+		});
+
+		it("opens the owner hand-off's store from the folder's cache bindings while the relay's configuration is incomplete", async () => {
+			const folder = {
+				HOBO_CI_PUBLIC_URL: "https://hobo-ci.vercel.app",
+				VALKEY_URL: "rediss://:valkey-password@valkey.example:6379",
+			};
+			const incomplete = {
+				async load(): Promise<never> {
+					throw new RelayRuntimeConfigError("invalid relay configuration", [
+						"HOBO_CI_GITHUB_APP_ID",
+					]);
+				},
+				invalidate() {},
+			};
+			expect(
+				await ownerHandoffCacheBindings(incomplete, {
+					kind: "env",
+					read: async () => folder,
+				}),
+			).toEqual({ VALKEY_URL: folder.VALKEY_URL });
+			await expect(
+				ownerHandoffCacheBindings(
+					{
+						async load(): Promise<never> {
+							throw new InfisicalError("login", "login-denied", {
+								status: 401,
+							});
+						},
+						invalidate() {},
+					},
+					{ kind: "env", read: async () => folder },
+				),
+			).rejects.toBeInstanceOf(InfisicalError);
+			await expect(
+				openOwnerHandoffBackend({ VERCEL_ENV: "production" }, async () => ({})),
+			).rejects.toBeInstanceOf(CacheBindingError);
 		});
 
 		it("binds the production relay to the committed secret store (secretless first)", () => {
