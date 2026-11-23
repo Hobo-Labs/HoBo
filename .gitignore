@@ -133,3 +133,5 @@ reports/mutation/
 /docs/plans/
 # An interrupted Control Yard capture must remain invalid until it is rerun.
 src/draft/exp-proofs/ux/control-yard/assets/evidence/.capture-incomplete
+
+**/deploy/secret-store.binding.json

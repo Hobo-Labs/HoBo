@@ -433,11 +433,10 @@ verified; the changed cross-Yard path still needs that evidence.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
   --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# From an authorized GitHub Actions job with id-token: write and a committed
-# secret-store binding: production, with the cache attached first.
+# With the owner's store session (HoBo MCP's choose_secret_store): production,
+# built by HoBo with the store coordinates bundled in, the cache attached first.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
-  --sha <40-hex commit> --team team_… --target production \
-  --set INFISICAL_IDENTITY_ID=… --set INFISICAL_PROJECT_ID=… --provision --wait
+  --sha <40-hex commit> --target production --build prebuilt --provision --wait
 ```
 
 | Option | Meaning |
@@ -456,8 +455,9 @@ hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--dry-run` | print the plan and send nothing |
 
 A real run reads the deploy token from the owner's secret store as the
-dedicated deploy reader. A GitHub Actions job with `id-token: write` reads it
-through the committed secret-store binding; a token preloaded in an embedding
+dedicated deploy reader, with the store coordinates from the owner store
+session (`HOBO_CI_SECRET_STORE_SESSION_REQUIRED` without one; none is
+committed); a token preloaded in an embedding
 caller's vault never bypasses that reader. A `VERCEL_TOKEN` supplied in the
 command's environment is ignored. When `--provision` runs the Vercel CLI, HoBo
 passes that child the token from the run's fresh vault. The target project must
