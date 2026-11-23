@@ -17,7 +17,6 @@ import { readFileSync } from "node:fs";
 import {
 	createInfisicalClient,
 	type InfisicalClient,
-	infisicalBindingFromEnv,
 	type JwtSource,
 	oidcAuth,
 	type ParsedInfisicalBinding,
@@ -171,9 +170,11 @@ export function infisicalRelayConfigSource(
  */
 export const vercelOidcJwtSource: JwtSource = () => getVercelOidcToken();
 
+const BUNDLED_STORE_BINDING_FILE = "deploy/secret-store.binding.json";
+
 // public-contract: the store coordinates HoBo bundles into the production build from the owner's store session; never committed.
 export const BUNDLED_STORE_BINDING_URL = new URL(
-	"../deploy/secret-store.binding.json",
+	`../${BUNDLED_STORE_BINDING_FILE}`,
 	import.meta.url,
 );
 
@@ -205,7 +206,7 @@ export function parseBundledStoreCoordinates(
 	const record = BundledBindingSchema.safeParse(json);
 	if (!record.success)
 		throw new RelayRuntimeConfigError("invalid bundled store binding", [
-			"deploy/secret-store.binding.json",
+			BUNDLED_STORE_BINDING_FILE,
 		]);
 	if (
 		record.data.kind !== "infisical-cloud-attach" &&
@@ -225,7 +226,7 @@ export function parseBundledStoreCoordinates(
 		return Object.freeze({ binding, identityId });
 	} catch {
 		throw new RelayRuntimeConfigError("invalid bundled store binding", [
-			"deploy/secret-store.binding.json",
+			BUNDLED_STORE_BINDING_FILE,
 		]);
 	}
 }
@@ -240,6 +241,25 @@ function readBundledStoreCoordinates(): BundledStoreCoordinates | undefined {
 	return parseBundledStoreCoordinates(text);
 }
 
+function bundledRelayConfigSource(
+	bundled: BundledStoreCoordinates,
+	options: Readonly<{ jwt?: JwtSource; fetch?: typeof fetch }>,
+): RelayConfigSource {
+	const auth = oidcAuth({
+		identityId: bundled.identityId,
+		jwt: options.jwt ?? vercelOidcJwtSource,
+	});
+	return infisicalRelayConfigSource(
+		options.fetch === undefined
+			? createInfisicalClient({ binding: bundled.binding, auth })
+			: createInfisicalClient({
+					binding: bundled.binding,
+					auth,
+					fetch: options.fetch,
+				}),
+	);
+}
+
 export function relayConfigSourceFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
 	options: Readonly<{
@@ -249,39 +269,19 @@ export function relayConfigSourceFromEnv(
 	}> = {},
 ): RelayConfigSource {
 	const declared = env.HOBO_CI_CONFIG_SERVICE;
-	if (declared === undefined && env.VERCEL_ENV === "production") {
-		const bundled = (options.bundled ?? readBundledStoreCoordinates)();
-		if (bundled !== undefined) {
-			const auth = oidcAuth({
-				identityId: bundled.identityId,
-				jwt: options.jwt ?? vercelOidcJwtSource,
-			});
-			return infisicalRelayConfigSource(
-				options.fetch === undefined
-					? createInfisicalClient({ binding: bundled.binding, auth })
-					: createInfisicalClient({
-							binding: bundled.binding,
-							auth,
-							fetch: options.fetch,
-						}),
-			);
-		}
-	}
-	const service = declared ?? "env";
-	if (service === "env") return envRelayConfigSource(env);
-	if (service !== "infisical")
+	if (declared === "env") return envRelayConfigSource(env);
+	if (declared !== undefined && declared !== "infisical")
 		throw new RelayRuntimeConfigError("unknown config service", [
 			"HOBO_CI_CONFIG_SERVICE",
 		]);
-	const binding = infisicalBindingFromEnv(env);
-	const auth = oidcAuth({
-		identityId: env.INFISICAL_IDENTITY_ID,
-		jwt: options.jwt ?? vercelOidcJwtSource,
-	});
-	return infisicalRelayConfigSource(
-		options.fetch === undefined
-			? createInfisicalClient({ binding, auth })
-			: createInfisicalClient({ binding, auth, fetch: options.fetch }),
+	if (declared === undefined && env.VERCEL_ENV !== "production")
+		return envRelayConfigSource(env);
+	const bundled = (options.bundled ?? readBundledStoreCoordinates)();
+	if (bundled !== undefined) return bundledRelayConfigSource(bundled, options);
+	if (declared === undefined) return envRelayConfigSource(env);
+	throw new RelayRuntimeConfigError(
+		"no store binding is bundled with this deployment; HoBo bundles it into a prebuilt build from the owner's store session",
+		[BUNDLED_STORE_BINDING_FILE],
 	);
 }
 

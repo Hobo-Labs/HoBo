@@ -107,7 +107,7 @@ owner handles no secret value on the default path:
   owner store session (HoBo MCP's `choose_secret_store`). They are never
   committed, printed, put in a document or pull request, set as an environment
   variable or Actions secret, or asked for in a chat. In production
-  (`VERCEL_ENV=production`, no `HOBO_CI_CONFIG_SERVICE`), the loader reads the
+  (`VERCEL_ENV=production`), the loader reads the
   store's origin, project, environment, folder and the relay's identity from
   `deploy/secret-store.binding.json` inside the function bundle
   (`vercel.json` `includeFiles`). That file exists only in a build HoBo makes:
@@ -115,7 +115,10 @@ owner handles no secret value on the default path:
   session just before `vercel build`, and removes the file once the build is
   staged. The path is ignored by git, and `secrets:guard` rejects a commit of
   it. A command that needs the coordinates without an owner store session
-  stops with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED`.
+  stops with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED`. The loader never reads a
+  coordinate from the environment: `HOBO_CI_CONFIG_SERVICE=infisical` without
+  the bundled file fails, and a `--build git` production deploy, which could
+  carry none, is refused (`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`).
 - **Connecting** (once): the `hobo-deploy` skill walks the owner through the
   dashboard one step at a time, every value prefilled: projects `hobo-ci`
   (folder `/hobo-ci-relay`, `prod`) and `hobo-ci-deploy` (`prod`);

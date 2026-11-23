@@ -192,13 +192,13 @@ Yard is the binding authority). It is the one place the provider is named.
 
 A row's `properties.settings` are the non-secret settings it projects onto the
 deployment, and `properties.inputs` the names the deploy must be given. The
-config-service row projects `HOBO_CI_CONFIG_SERVICE=infisical`,
-`INFISICAL_SITE_URL` and `INFISICAL_SECRET_PATH=/hobo-ci-relay`, and asks for
-`INFISICAL_IDENTITY_ID` and `INFISICAL_PROJECT_ID` (the owner's ids, from
-repository variables in CI); the production Camp adds
-`INFISICAL_ENVIRONMENT=prod`. Preview does not choose the config service: the
-relay's Infisical identity trusts production tokens only, so a preview keeps
-`HOBO_CI_CONFIG_SERVICE` at its default, `env`. The rows the Camps do not choose
+config-service row projects no setting and asks for no input: the store's
+coordinates live only in the owner's secret store, and `hobo ci deploy --build
+prebuilt` bundles them into the production build as
+`deploy/secret-store.binding.json` from the owner's store session. No
+coordinate is ever a Vercel variable. Preview does not choose the config
+service: the relay's Infisical identity trusts production tokens only, so a
+preview reads its environment. The rows the Camps do not choose
 are the catalog: to move the cache to Valkey, a Camp requires `kv.valkey/v1`
 instead (the relay's config loader must then accept `VALKEY_URL`, which it does
 not yet). No row holds a credential: the Marketplace integrations write their
@@ -560,8 +560,10 @@ means promoting an earlier deployment.
 **How it is composed.**
 
 1. **Config and secrets**: `RelayRuntimeConfig` from the config service the
-   deployment names (`HOBO_CI_CONFIG_SERVICE=infisical`, or `env`, the default,
-   which reads the same keys from the environment for local runs and tests),
+   deployment carries (the store binding bundled into a prebuilt production
+   build; `HOBO_CI_CONFIG_SERVICE=infisical` requires it, and `env`, the
+   default without one, reads the same keys from the environment for local
+   runs and tests; no coordinate is ever read from the environment),
    loaded once per instance and refreshed at most once a minute; a failed
    refresh keeps the last good copy and is logged as
    `hobo_ci_config_refresh_failed`. The config document (`HOBO_CI_CONFIG_JSON`)
@@ -676,8 +678,8 @@ but refused by their parser). Entries the relay does not use are never named.
 
 | Name | Where | What |
 |---|---|---|
-| `HOBO_CI_CONFIG_SERVICE` | project env | `infisical` in production |
-| `INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH` | project env (the config-service binding) | [Config service](CONFIG-SERVICE.md) |
+| `deploy/secret-store.binding.json` | bundled into the prebuilt production build from the owner's store session, removed once staged; never committed | the store's coordinates ([Config service](CONFIG-SERVICE.md)) |
+| `HOBO_CI_CONFIG_SERVICE` | optional | `env` to ignore the bundled binding; `infisical` to require it |
 | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, or `KV_REST_API_URL` + `KV_REST_API_TOKEN`; `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`; `BLOB_STORE_ID` | injected by each cache's Marketplace integration or store connection | cache-fleet members (or `VALKEY_URL` / `REDIS_URL` for Aiven or a self-hosted Valkey) |
 | `VALKEY_URL`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `BLOB_STORE_ID` | the config service, optional | members the environment does not bind (an Aiven Valkey URL is stored here) |
 | `HOBO_CI_CACHE_OFFERS_JSON` | the config service or project env, optional | the declared offers, budget caps and switch marks ([below](#the-cache-fleet)) |
