@@ -53,5 +53,5 @@ export function validateFile(file: File): FileWithValidType {
 }
 
 function isFileWithAllowedFileType(file: File): file is FileWithValidType {
-  return ALLOWED_FILE_TYPES.includes(file.type as AllowedFileTypes);
+  return ALLOWED_FILE_TYPES.some((allowedType) => allowedType === file.type);
 }

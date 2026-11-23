@@ -37,8 +37,9 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
       if (!sidebar.current || !trigger.current) return;
       if (
         !sidebarOpen ||
-        sidebar.current.contains(target as Node) ||
-        trigger.current.contains(target as Node)
+        !(target instanceof Node) ||
+        sidebar.current.contains(target) ||
+        trigger.current.contains(target)
       )
         return;
       setSidebarOpen(false);

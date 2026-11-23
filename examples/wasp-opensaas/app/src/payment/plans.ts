@@ -45,11 +45,23 @@ export function prettyPaymentPlanName(planId: PaymentPlanId): string {
 }
 
 export function parsePaymentPlanId(planId: string): PaymentPlanId {
-  if ((Object.values(PaymentPlanId) as string[]).includes(planId)) {
-    return planId as PaymentPlanId;
-  } else {
+  const paymentPlanId = Object.values(PaymentPlanId).find(
+    (candidate) => candidate === planId,
+  );
+  if (paymentPlanId === undefined) {
     throw new Error(`Invalid PaymentPlanId: ${planId}`);
   }
+  return paymentPlanId;
+}
+
+export function parseSubscriptionStatus(status: string): SubscriptionStatus {
+  const subscriptionStatus = Object.values(SubscriptionStatus).find(
+    (candidate) => candidate === status,
+  );
+  if (subscriptionStatus === undefined) {
+    throw new Error(`Invalid SubscriptionStatus: ${status}`);
+  }
+  return subscriptionStatus;
 }
 
 export function getSubscriptionPaymentPlanIds(): PaymentPlanId[] {
