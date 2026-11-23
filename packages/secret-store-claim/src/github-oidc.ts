@@ -181,7 +181,7 @@ export function githubSubjectMismatch(
 	if (trusted !== "")
 		return tokenSub === trusted
 			? undefined
-			: `the token's subject differs from the subject the deploy identity trusts (${trusted})`;
+			: "the token's subject differs from the subject the deploy identity trusts";
 	return IMMUTABLE_SUB.test(tokenSub)
 		? "the token carries GitHub's immutable subject format (owner and repository suffixed with their ids); a trust bound to the legacy repo:<owner>/<repo> subject refuses it"
 		: undefined;

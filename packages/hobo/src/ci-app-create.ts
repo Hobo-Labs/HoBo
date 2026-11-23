@@ -44,8 +44,6 @@ import {
 import type { CommandResult } from "@hobo/cli";
 import {
 	type AppHandOffMode,
-	EGRESS_PROXY_PLACEHOLDER,
-	EGRESS_PROXY_SIGN_IN,
 	type OpenTunnel,
 	type RedirectReceiver,
 	RedirectReceiverError,
@@ -55,7 +53,9 @@ import { z } from "zod";
 import { openBrowser } from "./ci-github-connect.js";
 import {
 	loadSecretStoreBinding,
+	SECRET_STORE_SESSION_REQUIRED,
 	SecretStoreBindingRefusal,
+	type SecretStoreBindingStore,
 } from "./ci-secret-store.js";
 
 /** Entries in deposit order: the App id last, so its presence means complete. */
@@ -358,13 +358,7 @@ function configServiceFromEnv(
 ): ConfigServiceResolution {
 	let auth: ReturnType<typeof ownerAuthFromEnv>;
 	try {
-		// With the agent's egress proxy signing in (INFISICAL_SIGN_IN), this run
-		// sends a placeholder the proxy replaces with the owner's own token.
-		auth = ownerAuthFromEnv(
-			env.INFISICAL_SIGN_IN === EGRESS_PROXY_SIGN_IN
-				? { INFISICAL_TOKEN: EGRESS_PROXY_PLACEHOLDER }
-				: env,
-		);
+		auth = ownerAuthFromEnv(env);
 	} catch {
 		return {
 			ok: false,
@@ -895,17 +889,9 @@ async function convertAndDeposit(options: {
 	};
 }
 
-/**
- * `hobo ci app deposit`: the App-credentials job of the relay deploy workflow.
- * Reads GitHub's one-time manifest code from `HOBO_APP_MANIFEST_CODE`,
- * converts it, checks the App against the reviewed configuration, and writes
- * the credentials into the relay's folder named by the committed binding,
- * signed in as the binding's CI identity (`hobo-ci-writer`, stored in its
- * `deployIdentityId` field) with this job's GitHub OIDC token. No credential
- * is configured anywhere for it.
- */
 export async function runCiAppDeposit(options: {
 	readonly cwd: string;
+	readonly bindingStore?: SecretStoreBindingStore;
 	readonly relay: string | undefined;
 	readonly ownerId: string | undefined;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -925,11 +911,11 @@ export async function runCiAppDeposit(options: {
 		);
 	let service: ConfigServiceHandle;
 	try {
-		const store = loadSecretStoreBinding(options.cwd);
+		const store = await loadSecretStoreBinding(options.bindingStore);
 		if (store === undefined)
 			return failed(
 				"HOBO_CI_SECRET_STORE_NOT_CONNECTED",
-				"No deploy/secret-store.binding.json: connect the store first (hobo ci secret-store connect).",
+				"Your secret store holds no relay binding: connect the store first (hobo ci secret-store connect through the owner hand-off).",
 			);
 		const client = createInfisicalClient({
 			binding: parseInfisicalBinding({
@@ -951,11 +937,16 @@ export async function runCiAppDeposit(options: {
 		});
 		service = { client, port: createInfisicalSecretsPort({ client }) };
 	} catch (error) {
+		if (
+			error instanceof SecretStoreBindingRefusal &&
+			error.code === SECRET_STORE_SESSION_REQUIRED
+		)
+			return failed(error.code, error.message);
 		return failed(
 			"HOBO_CI_CONFIG_SERVICE_UNCONFIGURED",
 			error instanceof SecretStoreBindingRefusal
 				? error.message
-				: "The committed binding does not name a store this job can sign in to.",
+				: "The owner store's binding does not name a store this job can sign in to.",
 		);
 	}
 	return convertAndDeposit({

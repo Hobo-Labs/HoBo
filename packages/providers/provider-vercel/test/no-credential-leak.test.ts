@@ -60,7 +60,7 @@ function assertNoCredentials(label: string, serialized: string): void {
 const NOW = Date.UTC(2026, 7, 8, 12, 0, 0);
 const FENCE = "fence-1";
 const DEADLINE = NOW + PROJECT_TRANSFER_CODE_TTL_MS;
-const PROJECT_SUBJECT = "hobo://camp/vercel/prj_FAKEsponsoredproject000000";
+const PROJECT_SUBJECT = "hobo://camp/vercel/prj_00000000000000000000000000";
 const RESOURCE_SUBJECT = "hobo://resource/prisma-postgres/FAKEresource000000";
 
 describe("nothing this package serializes carries credential material", () => {
@@ -187,7 +187,7 @@ describe("nothing this package serializes carries credential material", () => {
 		);
 		const action = buildClaimAction({
 			transferCode: code,
-			projectId: "prj_FAKEsponsoredproject000000",
+			projectId: "prj_00000000000000000000000000",
 			returnUrl: "https://example.invalid/done",
 		});
 		assertNoCredentials("claim action toString", String(action));

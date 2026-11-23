@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file relay_mcp.proto.
  */
 export const file_relay_mcp: GenFile = /*@__PURE__*/
-  fileDesc("Cg9yZWxheV9tY3AucHJvdG8SFWhvYm8uY2kuZ2hfYWN0aW9ucy52MSKvAwoNUmVsYXlNY3BMZWFzZRIKCgJpZBgBIAEoCRINCgVzdGF0ZRgCIAEoCRIOCgZhY3RpdmUYAyABKAgSEgoKcmVwb3NpdG9yeRgEIAEoCRIOCgZqb2JfaWQYBSABKAESEAoIam9iX25hbWUYBiABKAkSDgoGcnVuX2lkGAcgASgBEhMKC3J1bl9hdHRlbXB0GAggASgNEhAKCHByb3ZpZGVyGAkgASgJEhAKCG9mZmVyX2lkGAogASgJEhMKC3J1bm5lcl9uYW1lGAsgASgJEhIKCmNyZWF0ZWRfYXQYDCABKAkSFgoOZGlzcGF0Y2hpbmdfYXQYDSABKAkSEgoKc2V0dGxlZF9hdBgOIAEoCRIZChFxdWV1ZV9kZWFkbGluZV9hdBgPIAEoCRITCgtob3N0X3J1bl9pZBgQIAEoARIVCg1hY3R1YWxfam9iX2lkGBEgASgBEhYKDmJpbGxlZF9taW51dGVzGBIgASgBEhMKC3BhaWRfbWljcm9zGBMgASgBEhQKDG1lbW9yeV9jbGFzcxgUIAEoCRIVCg1zYW5kYm94X3N0YWdlGBUgASgJIrwBCgtSZWxheU1jcEpvYhIKCgJpZBgBIAEoARIOCgZydW5faWQYAiABKAESEwoLcnVuX2F0dGVtcHQYAyABKA0SEgoKcmVwb3NpdG9yeRgEIAEoCRIMCgRuYW1lGAUgASgJEg4KBmxhYmVscxgGIAMoCRIZChFpc29sYXRlZF9yZXF1aXJlZBgHIAEoCBIUCgxtZW1vcnlfY2xhc3MYCCABKAkSGQoRcXVldWVfZGVhZGxpbmVfYXQYCSABKAkitQEKDVJlbGF5TWNwRXZlbnQSDgoGY3Vyc29yGAEgASgJEgwKBHR5cGUYAiABKAkSCgoCYXQYAyABKAkSEAoIbGVhc2VfaWQYBCABKAkSDQoFc3RhdGUYBSABKAkSEgoKcmVwb3NpdG9yeRgGIAEoCRIOCgZqb2JfaWQYByABKAESEAoIam9iX25hbWUYCCABKAkSDgoGcnVuX2lkGAkgASgBEhMKC3J1bl9hdHRlbXB0GAogASgNIlkKDlJlbGF5TWNwTGVhc2VzEjQKBmxlYXNlcxgBIAMoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcExlYXNlEhEKCXRydW5jYXRlZBgCIAEoCCKAAQoTUmVsYXlNY3BMZWFzZURldGFpbBIzCgVsZWFzZRgBIAEoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcExlYXNlEjQKBmV2ZW50cxgCIAMoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcEV2ZW50IlMKDFJlbGF5TWNwSm9icxIwCgRqb2JzGAEgAygLMiIuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwSm9iEhEKCXRydW5jYXRlZBgCIAEoCCKKAQoOUmVsYXlNY3BFdmVudHMSNAoGZXZlbnRzGAEgAygLMiQuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwRXZlbnQSDgoGY3Vyc29yGAIgASgJEhEKCXRpbWVkX291dBgDIAEoCBIMCgRtb3JlGAQgASgIEhEKCXRydW5jYXRlZBgFIAEoCCIrCg5SZWxheU1jcEVuZ2luZRIKCgJpZBgBIAEoCRINCgVyZWFkeRgCIAEoCCL8AQoOUmVsYXlNY3BTdGF0dXMSDQoFcmVhZHkYASABKAgSNgoHZW5naW5lcxgCIAMoCzIlLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcEVuZ2luZRIVCg1zdWJzY3JpcHRpb25zGAMgASgIEhwKFHdhaXRfZGVmYXVsdF9zZWNvbmRzGAQgASgNEhgKEHdhaXRfbWF4X3NlY29uZHMYBSABKA0SFQoNYWNjb3VudF9jYWxscxgGIAEoDRIVCg1hY2NvdW50X3dhaXRzGAcgASgNEhgKEHJlcXVlc3RfbWVzc2FnZXMYCCABKA0SDAoEbWVzaBgJIAEoCSKYAQobUmVsYXlNY3BRdWFyYW50aW5lZERlbGl2ZXJ5EhMKC2RlbGl2ZXJ5X2lkGAEgASgJEg0KBWV2ZW50GAIgASgJEhcKD2luc3RhbGxhdGlvbl9pZBgDIAEoARIVCg1yZXBvc2l0b3J5X2lkGAQgASgBEhMKC3JlY2VpdmVkX2F0GAUgASgJEhAKCGF0dGVtcHRzGAYgASgNIlwKElJlbGF5TWNwUXVhcmFudGluZRJGCgpkZWxpdmVyaWVzGAEgAygLMjIuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwUXVhcmFudGluZWREZWxpdmVyeSI0Cg1SZWxheU1jcFJldHJ5EhMKC2RlbGl2ZXJ5X2lkGAEgASgJEg4KBnN0YXR1cxgCIAEoCWIGcHJvdG8z");
+  fileDesc("Cg9yZWxheV9tY3AucHJvdG8SFWhvYm8uY2kuZ2hfYWN0aW9ucy52MSKvAwoNUmVsYXlNY3BMZWFzZRIKCgJpZBgBIAEoCRINCgVzdGF0ZRgCIAEoCRIOCgZhY3RpdmUYAyABKAgSEgoKcmVwb3NpdG9yeRgEIAEoCRIOCgZqb2JfaWQYBSABKAESEAoIam9iX25hbWUYBiABKAkSDgoGcnVuX2lkGAcgASgBEhMKC3J1bl9hdHRlbXB0GAggASgNEhAKCHByb3ZpZGVyGAkgASgJEhAKCG9mZmVyX2lkGAogASgJEhMKC3J1bm5lcl9uYW1lGAsgASgJEhIKCmNyZWF0ZWRfYXQYDCABKAkSFgoOZGlzcGF0Y2hpbmdfYXQYDSABKAkSEgoKc2V0dGxlZF9hdBgOIAEoCRIZChFxdWV1ZV9kZWFkbGluZV9hdBgPIAEoCRITCgtob3N0X3J1bl9pZBgQIAEoARIVCg1hY3R1YWxfam9iX2lkGBEgASgBEhYKDmJpbGxlZF9taW51dGVzGBIgASgBEhMKC3BhaWRfbWljcm9zGBMgASgBEhQKDG1lbW9yeV9jbGFzcxgUIAEoCRIVCg1zYW5kYm94X3N0YWdlGBUgASgJIrwBCgtSZWxheU1jcEpvYhIKCgJpZBgBIAEoARIOCgZydW5faWQYAiABKAESEwoLcnVuX2F0dGVtcHQYAyABKA0SEgoKcmVwb3NpdG9yeRgEIAEoCRIMCgRuYW1lGAUgASgJEg4KBmxhYmVscxgGIAMoCRIZChFpc29sYXRlZF9yZXF1aXJlZBgHIAEoCBIUCgxtZW1vcnlfY2xhc3MYCCABKAkSGQoRcXVldWVfZGVhZGxpbmVfYXQYCSABKAkitQEKDVJlbGF5TWNwRXZlbnQSDgoGY3Vyc29yGAEgASgJEgwKBHR5cGUYAiABKAkSCgoCYXQYAyABKAkSEAoIbGVhc2VfaWQYBCABKAkSDQoFc3RhdGUYBSABKAkSEgoKcmVwb3NpdG9yeRgGIAEoCRIOCgZqb2JfaWQYByABKAESEAoIam9iX25hbWUYCCABKAkSDgoGcnVuX2lkGAkgASgBEhMKC3J1bl9hdHRlbXB0GAogASgNIlkKDlJlbGF5TWNwTGVhc2VzEjQKBmxlYXNlcxgBIAMoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcExlYXNlEhEKCXRydW5jYXRlZBgCIAEoCCKAAQoTUmVsYXlNY3BMZWFzZURldGFpbBIzCgVsZWFzZRgBIAEoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcExlYXNlEjQKBmV2ZW50cxgCIAMoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcEV2ZW50IlMKDFJlbGF5TWNwSm9icxIwCgRqb2JzGAEgAygLMiIuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwSm9iEhEKCXRydW5jYXRlZBgCIAEoCCKKAQoOUmVsYXlNY3BFdmVudHMSNAoGZXZlbnRzGAEgAygLMiQuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwRXZlbnQSDgoGY3Vyc29yGAIgASgJEhEKCXRpbWVkX291dBgDIAEoCBIMCgRtb3JlGAQgASgIEhEKCXRydW5jYXRlZBgFIAEoCCIrCg5SZWxheU1jcEVuZ2luZRIKCgJpZBgBIAEoCRINCgVyZWFkeRgCIAEoCCL8AQoOUmVsYXlNY3BTdGF0dXMSDQoFcmVhZHkYASABKAgSNgoHZW5naW5lcxgCIAMoCzIlLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcEVuZ2luZRIVCg1zdWJzY3JpcHRpb25zGAMgASgIEhwKFHdhaXRfZGVmYXVsdF9zZWNvbmRzGAQgASgNEhgKEHdhaXRfbWF4X3NlY29uZHMYBSABKA0SFQoNYWNjb3VudF9jYWxscxgGIAEoDRIVCg1hY2NvdW50X3dhaXRzGAcgASgNEhgKEHJlcXVlc3RfbWVzc2FnZXMYCCABKA0SDAoEbWVzaBgJIAEoCSKYAQobUmVsYXlNY3BRdWFyYW50aW5lZERlbGl2ZXJ5EhMKC2RlbGl2ZXJ5X2lkGAEgASgJEg0KBWV2ZW50GAIgASgJEhcKD2luc3RhbGxhdGlvbl9pZBgDIAEoARIVCg1yZXBvc2l0b3J5X2lkGAQgASgBEhMKC3JlY2VpdmVkX2F0GAUgASgJEhAKCGF0dGVtcHRzGAYgASgNIlwKElJlbGF5TWNwUXVhcmFudGluZRJGCgpkZWxpdmVyaWVzGAEgAygLMjIuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwUXVhcmFudGluZWREZWxpdmVyeSI0Cg1SZWxheU1jcFJldHJ5EhMKC2RlbGl2ZXJ5X2lkGAEgASgJEg4KBnN0YXR1cxgCIAEoCSJsChNSZWxheU1jcFNldHVwU3RhdHVzEg0KBXN0YXRlGAEgASgJEg8KB21pc3NpbmcYAiADKAkSDwoHaW52YWxpZBgDIAMoCRISCgpwcm92aWRhYmxlGAQgAygJEhAKCHdyaXRhYmxlGAUgASgIIlsKE1JlbGF5TWNwU2V0dXBSZXN1bHQSDwoHb3V0Y29tZRgBIAEoCRIPCgd3cml0dGVuGAIgAygJEg8KB3JlZnVzZWQYAyADKAkSEQoJcmVtYWluaW5nGAQgAygJYgZwcm90bzM");
 
 /**
  * A lease as an agent needs it to triage a job.
@@ -547,4 +547,73 @@ export type RelayMcpRetry = Message<"hobo.ci.gh_actions.v1.RelayMcpRetry"> & {
  */
 export const RelayMcpRetrySchema: GenMessage<RelayMcpRetry> = /*@__PURE__*/
   messageDesc(file_relay_mcp, 11);
+
+/**
+ * @generated from message hobo.ci.gh_actions.v1.RelayMcpSetupStatus
+ */
+export type RelayMcpSetupStatus = Message<"hobo.ci.gh_actions.v1.RelayMcpSetupStatus"> & {
+  /**
+   * @generated from field: string state = 1;
+   */
+  state: string;
+
+  /**
+   * @generated from field: repeated string missing = 2;
+   */
+  missing: string[];
+
+  /**
+   * @generated from field: repeated string invalid = 3;
+   */
+  invalid: string[];
+
+  /**
+   * @generated from field: repeated string providable = 4;
+   */
+  providable: string[];
+
+  /**
+   * @generated from field: bool writable = 5;
+   */
+  writable: boolean;
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayMcpSetupStatus.
+ * Use `create(RelayMcpSetupStatusSchema)` to create a new message.
+ */
+export const RelayMcpSetupStatusSchema: GenMessage<RelayMcpSetupStatus> = /*@__PURE__*/
+  messageDesc(file_relay_mcp, 12);
+
+/**
+ * @generated from message hobo.ci.gh_actions.v1.RelayMcpSetupResult
+ */
+export type RelayMcpSetupResult = Message<"hobo.ci.gh_actions.v1.RelayMcpSetupResult"> & {
+  /**
+   * @generated from field: string outcome = 1;
+   */
+  outcome: string;
+
+  /**
+   * @generated from field: repeated string written = 2;
+   */
+  written: string[];
+
+  /**
+   * @generated from field: repeated string refused = 3;
+   */
+  refused: string[];
+
+  /**
+   * @generated from field: repeated string remaining = 4;
+   */
+  remaining: string[];
+};
+
+/**
+ * Describes the message hobo.ci.gh_actions.v1.RelayMcpSetupResult.
+ * Use `create(RelayMcpSetupResultSchema)` to create a new message.
+ */
+export const RelayMcpSetupResultSchema: GenMessage<RelayMcpSetupResult> = /*@__PURE__*/
+  messageDesc(file_relay_mcp, 13);
 

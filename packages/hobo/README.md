@@ -43,6 +43,22 @@ signal handler, so a host that embeds it keeps its own signal handling. SIGKILL 
 crash are out of reach.
 Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.ts`).
 
+### Owner store session over MCP
+
+`hobo-mcp`'s `choose_secret_store` connects the owner's secret store when an agent
+connects (`src/mcp-store-choice.ts`, `src/owner-store-session.ts`). It asks the owner
+through MCP form elicitation or the `ui://hobo/store-choice` MCP App, never through tool
+arguments, writes the choice to the owner's locator for the project `cwd`
+(`ownerLocator` in `@hobo/hobo-ci`), and signs in with `signInOwnerStore` over the MCP
+owner channel. The opened store stays in the server's memory, keyed by project. Its
+`credentials(cwd)` is the `@hobo/cd` `CredentialResolver` that `hobo deploy` passes to
+the CD runtime: `owner://<NAME>` reads the store's CD entry and is the only locator it
+resolves; an `env://<NAME>` locator is refused with a pointer to `choose_secret_store`,
+because the process environment never holds credentials. Hostinger's resolvers receive
+the owner's `HOSTINGER_API_TOKEN` only in their request header. Results, `doctor`'s
+`ownerStoreSession`, and refusals carry a status and the store's label only. A host
+without form elicitation or MCP Apps gets `secure-form-unavailable`.
+
 ## CLI verification and remote deployment safety
 
 ### Budgeted cloud hosting
@@ -417,11 +433,10 @@ verified; the changed cross-Yard path still needs that evidence.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
   --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# From an authorized GitHub Actions job with id-token: write and a committed
-# secret-store binding: production, with the cache attached first.
+# With the owner's store session (HoBo MCP's choose_secret_store): production,
+# built by HoBo with the store coordinates bundled in, the cache attached first.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
-  --sha <40-hex commit> --team team_… --target production \
-  --set INFISICAL_IDENTITY_ID=… --set INFISICAL_PROJECT_ID=… --provision --wait
+  --sha <40-hex commit> --target production --build prebuilt --provision --wait
 ```
 
 | Option | Meaning |
@@ -440,8 +455,9 @@ hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--dry-run` | print the plan and send nothing |
 
 A real run reads the deploy token from the owner's secret store as the
-dedicated deploy reader. A GitHub Actions job with `id-token: write` reads it
-through the committed secret-store binding; a token preloaded in an embedding
+dedicated deploy reader, with the store coordinates from the owner store
+session (`HOBO_CI_SECRET_STORE_SESSION_REQUIRED` without one; none is
+committed); a token preloaded in an embedding
 caller's vault never bypasses that reader. A `VERCEL_TOKEN` supplied in the
 command's environment is ignored. When `--provision` runs the Vercel CLI, HoBo
 passes that child the token from the run's fresh vault. The target project must
@@ -466,8 +482,10 @@ What it deliberately does not do:
   the Marketplace rows the Camp chooses (the relay's Upstash cache). A storage
   integration's variables (`DATABASE_*`, `POSTGRES_*`, `REDIS_*`, `KV_*`,
   `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) are written by the
-  integration, never set here, and so is any `INFISICAL_*` name other than the
-  config service's five coordinates (`CONFIG_SERVICE_COORDINATES`).
+  integration, never set here. No store coordinate is ever a Vercel variable:
+  every `INFISICAL_*` name, and any `*_PROJECT_ID`, `*_TEAM_ID`, `*_ORG_ID`,
+  `*_IDENTITY_ID`, OIDC, subject or binding name, is refused
+  (`src/vercel-env-policy.ts`).
 - **Override the Yard.** A `--set` naming a setting the chosen bindings already
   set is refused; the Yard is changed instead.
 - **Create the project, or reach production, unasked.**

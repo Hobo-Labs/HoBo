@@ -21,6 +21,8 @@ import {
 	pollScanWait,
 	prefetchRangeBlobs,
 	RANGE_WAIT_SECONDS,
+	rangeScanArgs,
+	runPullRequestRangeScan,
 	writeExitFile,
 	ZERO_SHA,
 } from "../ci/betterleaks-main-scan.mts";
@@ -42,6 +44,10 @@ const mainGatePlan = workflow.slice(
 	workflow.indexOf("\n  main-gate-plan:"),
 	workflow.indexOf("\n  main-gate:"),
 );
+const pullRequestSecretScan =
+	workflow
+		.slice(workflow.indexOf("\n  secret-scan:"))
+		.split(/\n {2}[a-z0-9_-]+:\n/u)[1] ?? "";
 
 describe("planMainBetterleaksScan", () => {
 	it("bounds a main push to the landed range without fetching every blob", () => {
@@ -253,6 +259,72 @@ describe("range scan blob prefetch", () => {
 		}
 	});
 
+	it("scans a reused blob:none workspace whose scanner never lazily fetches", async () => {
+		const f = fixture();
+		try {
+			const scanned: string[] = [];
+			const status = await runPullRequestRangeScan(f.range, {
+				prefetch: (logOpts, timeoutMs) =>
+					prefetchRangeBlobs(logOpts, timeoutMs, f.clone, f.env),
+				scan: async (args) => {
+					const logOpts = args[args.indexOf("--log-opts") + 1] ?? "";
+					scanned.push(
+						execFileSync("git", ["log", "-p", "--no-ext-diff", logOpts], {
+							cwd: f.clone,
+							encoding: "utf8",
+							env: { ...f.env, GIT_NO_LAZY_FETCH: "1" },
+							stdio: ["ignore", "pipe", "pipe"],
+						}),
+					);
+					return 0;
+				},
+				log: () => {},
+				now: Date.now,
+			});
+			assert.equal(status, 0);
+			assert.match(scanned.join(""), /old scan content/u);
+			assert.match(scanned.join(""), /intermediate scan content/u);
+		} finally {
+			rmSync(f.root, { recursive: true, force: true });
+		}
+	});
+
+	it("fails the pull request scan instead of scanning a range it could not complete", async () => {
+		const lines: string[] = [];
+		let scans = 0;
+		const status = await runPullRequestRangeScan("a..b", {
+			prefetch: () => {
+				throw new Error("could not fetch every blob in secret scan range");
+			},
+			scan: async () => {
+				scans += 1;
+				return 0;
+			},
+			log: (line) => lines.push(line),
+			now: Date.now,
+		});
+		assert.equal(status, 1);
+		assert.equal(scans, 0);
+		assert.match(lines.join("\n"), /::error::secret scan of a\.\.b failed/u);
+	});
+
+	it("passes the scanner's own exit status and the explicit range through", async () => {
+		const range = `${"a".repeat(40)}..${"b".repeat(40)}`;
+		const seen: Array<readonly string[]> = [];
+		const status = await runPullRequestRangeScan(range, {
+			prefetch: () => 2,
+			scan: async (args) => {
+				seen.push(args);
+				return 1;
+			},
+			log: () => {},
+			now: Date.now,
+		});
+		assert.equal(status, 1);
+		assert.deepEqual(seen, [rangeScanArgs(range)]);
+		assert.deepEqual(rangeScanArgs(range).slice(-2), ["--log-opts", range]);
+	});
+
 	it("rejects anything other than an explicit commit range", () => {
 		assert.throws(
 			() => prefetchRangeBlobs("--all", 1_000),
@@ -423,5 +495,15 @@ describe("main-gate wiring", () => {
 			step.indexOf("--background") < step.indexOf("--wait"),
 			"the scan starts before it is waited for",
 		);
+	});
+});
+
+describe("pull request secret scan wiring", () => {
+	it("prefetches the PR range before betterleaks so a reused partial clone cannot scan zero bytes", () => {
+		assert.match(
+			pullRequestSecretScan,
+			/scripts\/ci\/betterleaks-main-scan\.mts\s+--range "\$\{\{ github\.event\.pull_request\.base\.sha \}\}\.\.\$\{\{ github\.sha \}\}"/u,
+		);
+		assert.equal(pullRequestSecretScan.includes("betterleaks git"), false);
 	});
 });

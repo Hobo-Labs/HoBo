@@ -1,26 +1,27 @@
 import { env } from "wasp/server";
+import * as z from "zod";
 
 const headers = {
   "Content-Type": "application/json",
   Authorization: `Bearer ${env.PLAUSIBLE_API_KEY}`,
 };
 
-type PageViewsResult = {
-  results: {
-    [key: string]: {
-      value: number;
-    };
-  };
-};
+const pageViewsResultSchema = z.object({
+  results: z.object({
+    pageviews: z.object({
+      value: z.number(),
+    }),
+  }),
+});
 
-type PageViewSourcesResult = {
-  results: [
-    {
-      source: string;
-      visitors: number;
-    },
-  ];
-};
+const pageViewSourcesResultSchema = z.object({
+  results: z.array(
+    z.object({
+      source: z.string(),
+      visitors: z.number(),
+    }),
+  ),
+});
 
 export async function getDailyPageViews() {
   const totalViews = await getTotalPageViews();
@@ -43,14 +44,12 @@ async function getTotalPageViews() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  // SAFETY: assertion to `(await response.json()) as PageViewsResult` is required at this boundary.
-  const json = (await response.json()) as PageViewsResult;
+  const json = pageViewsResultSchema.parse(await response.json());
 
   return json.results.pageviews.value;
 }
 
 async function getPrevDayViewsChangePercent() {
-  // Calculate today, yesterday, and the day before yesterday's dates
   const today = new Date();
   const yesterday = new Date(today.setDate(today.getDate() - 1))
     .toISOString()
@@ -61,7 +60,6 @@ async function getPrevDayViewsChangePercent() {
     .toISOString()
     .split("T")[0];
 
-  // Fetch page views for yesterday and the day before yesterday
   const pageViewsYesterday = await getPageviewsForDate(yesterday);
   const pageViewsDayBeforeYesterday =
     await getPageviewsForDate(dayBeforeYesterday);
@@ -90,8 +88,7 @@ async function getPageviewsForDate(date: string) {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  // SAFETY: assertion to `(await response.json()) as PageViewsResult` is required at this boundary.
-  const data = (await response.json()) as PageViewsResult;
+  const data = pageViewsResultSchema.parse(await response.json());
   return data.results.pageviews.value;
 }
 
@@ -104,7 +101,6 @@ export async function getSources() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
-  // SAFETY: assertion to `(await response.json()) as PageViewSourcesResult` is required at this boundary.
-  const data = (await response.json()) as PageViewSourcesResult;
+  const data = pageViewSourcesResultSchema.parse(await response.json());
   return data.results;
 }

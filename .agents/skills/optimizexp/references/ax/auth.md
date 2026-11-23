@@ -74,7 +74,7 @@ not a redefinition of the WorkOS protocol.
 | Concern | Where |
 |---|---|
 | WorkOS auth.md protocol (product agents ↔ apps) | This section (primary) |
-| Local MCP/tool keys for humans hacking on HoBo | Root `AUTH.md` residual tables + `.env.example` |
+| Local MCP/tool keys for humans hacking on HoBo | Root `AUTH.md` residual tables (agents store no keys) |
 | Full tooling narrative | `docs/agent-tooling.md` |
 
 ### Local residual goals

@@ -312,11 +312,8 @@ describe("prepareVercelConnection", () => {
 				{
 					env: {},
 					fetch: async () => new Response(null, { status: 401 }),
-					// The owner chose the egress proxy: the run would wait for it.
 					locator: memorySettings({
 						HOBO_SECRET_STORE: "infisical",
-						INFISICAL_PROJECT_ID: "proj",
-						INFISICAL_SIGN_IN: "egress-proxy",
 					}),
 					startPage: () => {
 						throw new Error("the silent page must not be started");
@@ -1030,7 +1027,7 @@ describe("prepareVercelConnection", () => {
 		expect(JSON.stringify(outcome)).toMatch(/would sign in to infisical/);
 	});
 
-	it("without a person at a browser, refuses and points at workload OIDC", async () => {
+	it("without a person at a browser, refuses and points at the owner's store session, never a coordinate variable", async () => {
 		const { store } = await memoryStore();
 		const outcome = await prepareVercelConnection(prepareInput(), {
 			env: {},
@@ -1042,7 +1039,8 @@ describe("prepareVercelConnection", () => {
 			kind: "refused",
 			result: { code: "HOBO_CD_CONNECTION_NEEDS_OWNER" },
 		});
-		expect(JSON.stringify(outcome)).toContain("INFISICAL_IDENTITY_ID");
+		expect(JSON.stringify(outcome)).toContain("choose_secret_store");
+		expect(JSON.stringify(outcome)).not.toContain("INFISICAL_IDENTITY_ID");
 		expect(JSON.stringify(outcome)).not.toContain("HOBO_OWNER_PAGE");
 	});
 
@@ -1052,6 +1050,7 @@ describe("prepareVercelConnection", () => {
 		const port = await freePort();
 		const seen: string[] = [];
 		let browsing: Promise<unknown> = Promise.resolve();
+		const trusted: string[] = [];
 		const outcome = await prepareVercelConnection(prepareInput(), {
 			env: {
 				HOBO_CD_VERCEL_REDIRECT_URI: `http://127.0.0.1:${port}/vercel/callback`,
@@ -1070,7 +1069,9 @@ describe("prepareVercelConnection", () => {
 					createProjectIdentity: async () => ({
 						identityId: "00000000-0000-4000-8000-000000000001",
 					}),
-					attachOidcAuth: async () => {},
+					attachOidcAuth: async (_id, trust) => {
+						trusted.push(trust.subject);
+					},
 					updateOidcAuth: async () => {},
 					deleteIdentity: async () => {},
 					probeToken: async () => "valid",
@@ -1119,6 +1120,9 @@ describe("prepareVercelConnection", () => {
 				{ id: "cd-identity", outcome: "created" },
 			],
 		});
+		expect(trusted).toEqual([
+			"owner:acme:project:hobo-cd:environment:production",
+		]);
 		if (outcome.kind === "ready")
 			expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);
 		// The client secret went to the store and was used for the exchange.

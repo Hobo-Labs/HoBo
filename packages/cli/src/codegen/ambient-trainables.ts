@@ -10,33 +10,17 @@ import { MARKERS, mayHoldMarkedClass } from "./marker-prefilter.js";
 import { projectPath, scannedSources } from "./source-files.js";
 import { CodegenError, type CodegenLayout } from "./types.js";
 
-// Ambient `@trainable declare class` discovery for codegen (Plan 2 Syntax 0,
-// ADR-0128). An ambient class is erased at compile time, so no decorator ever
-// registers it, and codegen emits its registrations instead. A decorated class
-// with a body registers itself when it is evaluated: codegen only notes its
-// name. Each ambient class is scanned on its own by ts-autocode-grounding's
-// scanner, so what that scanner refuses in a decorated class (overloads) never
-// fails codegen, wherever the class sits.
-
-/** An ambient `@trainable declare class` found in authored source. */
 export interface AmbientTrainableClass {
-	/** Project-relative source file (posix separators). */
 	readonly file: string;
 	readonly declared: DeclaredTrainableClass;
 }
 
-/** A class carrying one of ts-autocode-grounding's marker decorators, not yet scanned. */
 interface MarkedClass {
 	readonly className: string;
 	readonly ambient: boolean;
-	/** The class's own source, decorators included. */
 	readonly text: string;
 }
 
-/**
- * File names Windows reserves for devices whatever the extension, so an
- * ambient class named one has no `declared/<Class>.ts` to be written to.
- */
 const WINDOWS_DEVICE =
 	/^(?:con|prn|aux|nul|com[0-9]|lpt[0-9]|conin\$|conout\$)$/iu;
 function isMarked(node: ts.ClassDeclaration | ts.ClassExpression): boolean {
@@ -50,11 +34,6 @@ function isMarked(node: ts.ClassDeclaration | ts.ClassExpression): boolean {
 	);
 }
 
-/**
- * Whether a node compiles away around the expression it wraps: parentheses,
- * and TypeScript's `as`, `satisfies`, `!`, `<T>x` and `x<T>`, as TypeScript's
- * own `skipOuterExpressions` takes them.
- */
 function isOuterExpression(
 	node: ts.Node,
 ): node is
@@ -80,7 +59,6 @@ function skipOuterExpressions(node: ts.Expression): ts.Expression {
 	return inner;
 }
 
-/** The assignment operators NamedEvaluation applies to: `=`, `&&=`, `||=`, `??=`. */
 const NAMING_ASSIGNMENTS: ReadonlySet<ts.SyntaxKind> = new Set([
 	ts.SyntaxKind.EqualsToken,
 	ts.SyntaxKind.AmpersandAmpersandEqualsToken,
@@ -88,13 +66,6 @@ const NAMING_ASSIGNMENTS: ReadonlySet<ts.SyntaxKind> = new Set([
 	ts.SyntaxKind.QuestionQuestionEqualsToken,
 ]);
 
-/**
- * The name a property name gives a function or class it holds: an
- * identifier's text, a string literal's value, a number's canonical string,
- * a private name with its `#`, or a computed key that is one of those
- * literals. Undefined for any other computed key, whose value only the run
- * time knows.
- */
 function propertyKeyName(name: ts.PropertyName): string | undefined {
 	const key = ts.isComputedPropertyName(name)
 		? skipOuterExpressions(name.expression)
@@ -110,19 +81,6 @@ function propertyKeyName(name: ts.PropertyName): string | undefined {
 	return ts.isNumericLiteral(key) ? String(Number(key.text)) : undefined;
 }
 
-/**
- * The name ECMAScript's NamedEvaluation gives the anonymous function or class
- * `value` from `holder`, the node it sits in once outer expressions are
- * skipped: the binding of a variable, binding element or parameter it
- * initializes (a pattern names nothing); the identifier an assignment (`=`,
- * `&&=`, `||=`, `??=`) or a shorthand default writes; the key of an object
- * property or of a class field or auto-accessor; and `default` for
- * `export default`. Where esbuild names a class the spec leaves anonymous,
- * the name it gives is taken too, so a clash under either compiler is seen:
- * an assignment target wrapped in parentheses or a type assertion, and a
- * `__proto__: value` property (which the spec excepts, since it sets the
- * prototype).
- */
 function namedEvaluation(holder: ts.Node, value: ts.Node): string | undefined {
 	if (
 		(ts.isVariableDeclaration(holder) ||
@@ -157,16 +115,6 @@ function namedEvaluation(holder: ts.Node, value: ts.Node): string | undefined {
 	return undefined;
 }
 
-/**
- * The name a class registers under, which grounding's
- * `finalizeTrainableClass` reads as `cls.name` when the class decorator runs:
- * its own name; `default` for an anonymous `export default class`; or, for an
- * anonymous class expression, the name NamedEvaluation gives it from where it
- * sits (see namedEvaluation). Undefined when nothing names it, or only a
- * computed key the run time evaluates. A class that defines a static `name`
- * method or getter decides its own `cls.name` at run time, which no scan of
- * its source can read.
- */
 function registeredName(
 	node: ts.ClassDeclaration | ts.ClassExpression,
 ): string | undefined {
@@ -183,16 +131,6 @@ function registeredName(
 	return namedEvaluation(value.parent, value);
 }
 
-/**
- * The marked classes of one file, found as ts-autocode-grounding's scanner
- * finds them (a class declaration or expression with a marker decorator,
- * ambient when it has `declare`), each named as it registers: an anonymous
- * class expression takes the name NamedEvaluation gives it, which the scanner
- * does not see but the run time does. Unlike the scanner, the search goes on
- * inside a marked class with a body: a decorated class in one of its static
- * fields or methods registers too, once that code runs. An ambient class can
- * hold no code, so the search stops at one.
- */
 function markedClasses(source: string): readonly MarkedClass[] {
 	const sourceFile = ts.createSourceFile(
 		"source.ts",
@@ -227,7 +165,6 @@ function markedClasses(source: string): readonly MarkedClass[] {
 	return found;
 }
 
-/** One ambient class through ts-autocode-grounding's scanner; what it refuses is a codegen error. */
 function scanAmbient(
 	file: string,
 	marked: MarkedClass,
@@ -256,7 +193,6 @@ function scanAmbient(
 		);
 	}
 	for (const { method } of declared.operations) {
-		// The emitter writes `export const <method> = defineGrounding(...)`.
 		const why = isReservedWord(method)
 			? "a reserved word"
 			: method === "defineGrounding"
@@ -273,16 +209,6 @@ function scanAmbient(
 	return declared;
 }
 
-/**
- * An ambient class's registrations are written to `declared/<Class>.ts`, and
- * its exports are named from the camelCase of `<Class>.<method>`, so its name
- * must be a plain ASCII identifier (camelCase keeps only ASCII letters and
- * digits, so any other letter would vanish from its exports; `_` and `$`
- * vanish too, and an export that then collides is refused) and a file name of
- * its own on every file system: not one
- * Windows reserves for a device, and not one another ambient class has in
- * another case (macOS and Windows compare names case-insensitively).
- */
 function refuseModuleName(
 	found: readonly AmbientTrainableClass[],
 	file: string,
@@ -317,15 +243,6 @@ function refuseModuleName(
 	);
 }
 
-/**
- * Scan the layout's source dir for ambient `@trainable declare class`
- * declarations. Refused: a class the scanner refuses (an overloaded or
- * non-identifier method name), two ambient classes of one name in any case
- * or one named like a Windows device (see refuseModuleName), and an
- * ambient class named like a decorated `@trainable` class, whose methods
- * register under the same `<Class>.<method>` refs (one registration would
- * silently replace the other).
- */
 export async function scanAmbientTrainableClasses(
 	projectRoot: string,
 	layout: CodegenLayout,
@@ -339,7 +256,6 @@ export async function scanAmbientTrainableClasses(
 	return scanAmbientTrainableSources(sources);
 }
 
-/** Compiler-selected source views use the same parser and collision checks as directory scans. */
 export function scanAmbientTrainableSources(
 	sources: readonly { readonly file: string; readonly source: string }[],
 ): readonly AmbientTrainableClass[] {

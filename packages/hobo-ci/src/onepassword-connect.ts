@@ -1,18 +1,3 @@
-/**
- * The owner's 1Password Connect server as an `OnePasswordSdkClient`, so the
- * `1password` SecretsPort works unchanged over it.
- *
- * Connect is a REST server the owner runs; it holds the link to 1Password
- * and returns item fields in plaintext. Every request carries only
- * `Authorization: Bearer <access token>`
- * (https://www.1password.dev/connect/api-reference/), so a run on a remote
- * box can hold a placeholder that the agent's egress proxy replaces with the
- * owner's token: the token never enters the run. The paths are the ones
- * 1Password's own Connect SDK calls: `/v1/vaults/{vault}/items` (list,
- * filtered by title; create) and `/v1/vaults/{vault}/items/{item}` (read,
- * replace).
- */
-
 import {
 	ONE_PASSWORD_VALUE_FIELD,
 	OnePasswordError,
@@ -104,10 +89,6 @@ function toConnectBody(
 export interface OnePasswordConnectOptions {
 	/** The owner's Connect server, parsed where it was read. */
 	readonly host: HttpsOrigin;
-	/**
-	 * The access token, or a placeholder the agent's egress proxy replaces
-	 * with the owner's token on the way to `host`.
-	 */
 	readonly token: string;
 	readonly fetch?: typeof fetch;
 }

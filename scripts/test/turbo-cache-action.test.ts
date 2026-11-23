@@ -110,6 +110,22 @@ describe("turbo-cache action on the box", () => {
 		assert.deepEqual(exported, ["HOBO_TURBO_CACHE_RUN_SHARED=1"]);
 	});
 
+	it("shares the turbo cache through an ARC node's pnpm store", () => {
+		const root = mkdtempSync(join(tmpdir(), "turbo-cache-arc-"));
+		roots.push(root);
+		const { exported } = configure({
+			SAME_REPO: "true",
+			HOBO_CI_PNPM_STORE_MOUNTED: "",
+			npm_config_store_dir: "",
+			HOBO_CI_PNPM_STORE_DIR: root,
+		});
+		assert.deepEqual(exported, [
+			`TURBO_CACHE_DIR=${join(root, "hobo-turbo-cache")}`,
+			"HOBO_TURBO_CACHE_SHARED=1",
+			"TURBO_CACHE=local:rw",
+		]);
+	});
+
 	it("keeps a pull request from another repository off the shared cache", () => {
 		const { exported, shared } = configure({
 			SAME_REPO: "false",

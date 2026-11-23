@@ -57,9 +57,13 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Pinned SBOM scanner.** `syft@1.56.0` is pinned through mise for the hermetic runner image, so runner and release SBOM generation use the same reproducible scanner version.
 - **Shared pnpm store.** The box worker bind-mounts one content-addressed store into every job container
   and sets `HOBO_CI_PNPM_STORE_MOUNTED=1`; `.github/actions/pnpm-store` reads that from the process env
-  (an `if: env.X` expression never sees container env) and skips `actions/cache`. A self-hosted runner
-  without the mount installs from the registry: a cold `pnpm install` measured ~21s, while restoring the
-  1.3 GB cache archive took 31–52s and main's save took 142s. Only GitHub-hosted runners use the cache.
+  (an `if: env.X` expression never sees container env) and skips `actions/cache`. An ARC pod gets its
+  node's store as a hostPath at `/pnpm-store` (`HOBO_CI_PNPM_STORE_DIR`, applied by
+  `hobo ci fleet caches --apply`), which `scripts/ci/pnpm-install.mts` installs into when it is
+  writable. A self-hosted runner with neither installs from the registry and the pnpm-store action warns
+  `hobo-ci-cold-pnpm-store`: on `hobo-trunk` ARC pods that downloaded at 2–17 KiB/s per tarball and never
+  finished ([finding 160](../ci/findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)). Only
+  GitHub-hosted runners use the `actions/cache` archive.
   **`hobo-ci-deps:local` must stay selectable after a worker toolchain promotion** — a label-only lag on
   `hobo.ci.toolchain` used to drop `HOBO_CI_DEPS_LAYER`, force a ~5m install, and leave S0 cold
   ([finding 83](../ci/findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)).
@@ -71,8 +75,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   exists but is not writable) does not throw: it is a mirror **miss** with the reason, and the job
   falls back to a plain checkout.
   The runner-image job's script-free `pnpm install` (root dependencies for shell lint) goes through
-  `scripts/ci/pnpm-install.mts` like every other workflow install, so a cold store stalls it for the
-  wrapper's bound (`HOBO_PNPM_INSTALL_TIMEOUT_S`, default 180 s) and a retry, not the job's limit.
+  `scripts/ci/pnpm-install.mts` like every other workflow install. The wrapper's bound
+  (`HOBO_PNPM_INSTALL_TIMEOUT_S`, default 180 s) is a stall bound: pnpm's progress counters restart it, so
+  an install that keeps downloading is never killed and restarted, and one that stops changing them for
+  that long is killed and retried once with `--prefer-offline` against the store it already filled.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
@@ -161,8 +167,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   accepts them; anything short of a verified match is `reuse=false` and the merge group runs its
   gate jobs as before. The plan job, secret scan, merge-only required checks and the gate itself
   are untouched. Committed policy gates it: `runnerRouting.mergeGroup.reusePrFabric` in
-  `.hobo/ci.json` (`false`, and an absent block means the same, until a merge group has produced
-  the first production observation of the route step logging a verified reuse).
+  `.hobo/ci.json` (`true`, and an absent block means the same; an unreadable or invalid policy
+  turns reuse off).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes

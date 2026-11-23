@@ -17,25 +17,9 @@ import type { CommandModule } from "../shell/registry.js";
 import { createPlanCommand } from "./plan.js";
 
 export interface UpCommandDeps {
-	// Injected Yard runtime (tests / dev wiring): in-memory/runtime-local
-	// EventStore + ActorHost, the in-process Executor with an injected
-	// IacProvider, credential broker, and provider registry. Adapter-free `src/`
-	// leaves it undefined, so the verb stays a shell stub until wired.
 	readonly runtime?: YardRuntime;
-	// Explicit session override (tests). Otherwise the persisted `hobo login`
-	// session is used, falling back to an anonymous fixture principal the gateway
-	// still accepts.
 	readonly session?: YardSession;
 }
-
-// `hobo up` — declare desired state (ADR-0182 D13). With `runtime.delivery`
-// wired it records LOCAL_BUILD Freight (the `.hobo/freight.json` that `hobo
-// build` wrote, else the declaration alone), promotes it into the deployment
-// Camp and converges it with an in-process conductor, streaming progress.
-// `--to <freight|alias>` re-promotes recorded Freight, `--rollback` re-applies
-// the predecessor Set, `--anonymous`/`--temporary` deploy as the anonymous
-// principal for a later claim. Without delivery wired it keeps the direct
-// gateway + orchestrator lane (legacy, until the composition root binds CD).
 
 function progressLine(step: ProgressEvent): string {
 	return step.resourceId
@@ -49,7 +33,6 @@ async function readFreightFile(
 	try {
 		return await readFile(path.join(projectDir, FREIGHT_FILE));
 	} catch {
-		// No build output: `up` records the declaration alone.
 		return undefined;
 	}
 }
@@ -62,7 +45,6 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 			if (!runtime) {
 				return stubResult("up");
 			}
-			// `up --what-if` is the plan: the change set, never applied.
 			if (flags.whatIf) {
 				const session =
 					flags.anonymous || flags.temporary
@@ -92,17 +74,12 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 				return stubResult("up");
 			}
 
-			// A Yard holds nothing external: refuse before planning.
 			const boundary = await externalBoundaryRefusal(projectDir, "up");
 			if (boundary !== undefined) return boundary;
 
-			// Fold any providers installed via `hobo add` from the durable registry
-			// stream into the matchable snapshot before planning.
 			await runtime.registry.refresh?.();
 
 			const anonymous = flags.anonymous || flags.temporary;
-			// `--anonymous` never borrows a persisted login: the deploy is
-			// attributed to the anonymous principal until it is claimed.
 			const session = anonymous
 				? createFixtureSession()
 				: (deps.session ??
@@ -152,8 +129,6 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 				};
 			}
 
-			// The CD lane streamed progress while it converged; the legacy lane
-			// reports it once the orchestrator returns.
 			if (!streamed)
 				for (const step of result.progress) emitProgress(progressLine(step));
 

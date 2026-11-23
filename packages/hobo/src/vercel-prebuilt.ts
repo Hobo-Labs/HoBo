@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { isJsonNumber } from "./json.js";
@@ -66,6 +66,7 @@ type StageInput = Readonly<{
 	sha: string;
 	emit: (message: string) => void;
 	removeOutput?: (directory: string) => void;
+	bundle?: Readonly<{ file: string; text: string }>;
 }>;
 
 const CREDENTIAL_NAME =
@@ -121,6 +122,27 @@ export function vercelBuildRunnerFrom(
 		});
 }
 
+export function repositoryRoot(cwd: string): string | undefined {
+	let dir = path.resolve(cwd);
+	for (;;) {
+		if (existsSync(path.join(dir, ".git"))) return dir;
+		const parent = path.dirname(dir);
+		if (parent === dir) return undefined;
+		dir = parent;
+	}
+}
+
+export function checkoutHeadOf(repoRoot: string): Promise<string> {
+	return new Promise((resolve) => {
+		execFile(
+			"git",
+			["rev-parse", "HEAD"],
+			{ cwd: repoRoot, timeout: 30_000, encoding: "utf8" },
+			(error, stdout) => resolve(error === null ? String(stdout).trim() : ""),
+		);
+	});
+}
+
 function lastLines(text: string, lines = 12): string {
 	return text.trim().split("\n").slice(-lines).join("\n");
 }
@@ -149,8 +171,11 @@ export async function stageVercelBuild(
 	const removeOutput = input.removeOutput ?? removeDirectory;
 	removeOutput(output);
 	try {
+		if (input.bundle !== undefined)
+			writeFileSync(input.bundle.file, input.bundle.text, { mode: 0o600 });
 		return await buildAndUpload(input, sha);
 	} finally {
+		if (input.bundle !== undefined) rmSync(input.bundle.file, { force: true });
 		removeOutput(output);
 	}
 }

@@ -6,8 +6,9 @@ description: >-
   GitHub-hosted runner then shares. The address is read from the checkout
   here, never passed in as a repository variable. On the box worker the local cache
   is a host directory every same-repository job shares (inside the bind-mounted
-  pnpm store, HOBO_CI_PNPM_STORE_MOUNTED=1), so main replays what a pull request
-  already ran on the same tree. A pull request from another repository (a fork)
+  pnpm store, HOBO_CI_PNPM_STORE_MOUNTED=1), and on an ARC pod it is the node's
+  shared store named by HOBO_CI_PNPM_STORE_DIR, so main replays what a pull
+  request already ran on the same tree. A pull request from another repository (a fork)
   never uses it. Elsewhere a free actions/cache fallback: `restore`
   (default) at job start; `save` as an `if: always()` step at job end. Opt-in
   merge-group jobs also restore and save independent caches within one run. Run
@@ -56,11 +57,17 @@ runs:
         # Read the process env here: an `if: env.X` expression only sees
         # workflow-level and GITHUB_ENV values, never the variables the box
         # worker sets on the job container.
+        store=""
         if [ "${HOBO_CI_PNPM_STORE_MOUNTED:-}" = "1" ] && [ -n "${npm_config_store_dir:-}" ]; then
+          store="${npm_config_store_dir}"
+        elif [ -n "${HOBO_CI_PNPM_STORE_DIR:-}" ] && [ -d "${HOBO_CI_PNPM_STORE_DIR}" ] && [ -w "${HOBO_CI_PNPM_STORE_DIR}" ]; then
+          store="${HOBO_CI_PNPM_STORE_DIR}"
+        fi
+        if [ -n "${store}" ]; then
           if [ "${SAME_REPO}" = "true" ]; then
             # Entries are content-addressed and turbo stores only successful tasks;
             # a truncated archive (two jobs writing one hash) reads as a miss.
-            shared="${npm_config_store_dir}/hobo-turbo-cache"
+            shared="${store}/hobo-turbo-cache"
             mkdir -p "${shared}"
             {
               echo "TURBO_CACHE_DIR=${shared}"

@@ -1,7 +1,12 @@
 import type { DeviceClock } from "@hobo/hobo-cd";
-import { applyEgressToProcess, isRemoteBox } from "@hobo/hobo-ci";
+import {
+	applyEgressToProcess,
+	isRemoteBox,
+	machineRunner,
+	whichOnPath,
+} from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
-
+import { ownerSecretStoreBindingStore } from "./ci-secret-store.js";
 import { createComposedHoboCli } from "./cli.js";
 import {
 	relaunchInputFor,
@@ -25,6 +30,11 @@ import {
 } from "./mcp-stdio.js";
 import { createStoreChoiceApp } from "./mcp-store-choice.js";
 import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
+import {
+	createOwnerStoreSessions,
+	type OwnerSignIn,
+	ownerChannelSignIn,
+} from "./owner-store-session.js";
 
 /**
  * The full `hobo-mcp` server, loaded by `bin/hobo-mcp.ts` once it has
@@ -46,6 +56,7 @@ export function composeHoboMcp(options: {
 	readonly remote: boolean;
 	/** The device grant's clock (evals pass a virtual one). */
 	readonly clock?: DeviceClock;
+	readonly ownerSignIn?: OwnerSignIn;
 }) {
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
@@ -89,9 +100,22 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
+	const sessions = createOwnerStoreSessions({
+		signIn:
+			options.ownerSignIn ??
+			ownerChannelSignIn({
+				owner,
+				deps: {
+					runCommand: machineRunner(),
+					which: (bin) => whichOnPath(bin),
+				},
+			}),
+		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
+	});
 	const server = createHoboMcpServer({
 		cli: createComposedHoboCli({
 			ownerChannel: owner,
+			ownerSession: sessions,
 			...(options.clock !== undefined ? { clock: options.clock } : undefined),
 		}),
 	});
@@ -110,7 +134,9 @@ export function composeHoboMcp(options: {
 			return request("elicitation/create", params);
 		},
 		connector: createInfisicalCaptureConnector({
-			projectDir: options.projectDir,
+			bindingStore: ownerSecretStoreBindingStore(
+				sessions.entries(options.projectDir),
+			),
 		}),
 		notify: (method, params) => {
 			options.output.write(
@@ -118,15 +144,17 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
-	session = createMcpStdioSession(capture, createStoreChoiceApp());
+	session = createMcpStdioSession(capture, createStoreChoiceApp({ sessions }));
 	const ready = capture;
 	return {
 		owner,
 		server,
 		session,
+		sessions,
 		/** Stop whatever still waits on the owner and close open captures. */
 		async close() {
 			owner.jobs.close();
+			sessions.close();
 			await ready.close();
 		},
 	};

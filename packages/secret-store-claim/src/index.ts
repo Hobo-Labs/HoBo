@@ -25,6 +25,7 @@ export {
 	provisionAuthMdStore,
 } from "./auth-md.js";
 export {
+	BUNDLED_SECRET_STORE_BINDING_FILE,
 	formatSecretStoreBinding,
 	type ParsedSecretStoreBinding,
 	parseSecretStoreBinding,
@@ -32,7 +33,7 @@ export {
 	type RepairSecretStoreBinding,
 	readSecretStoreBinding,
 	readSecretStoreBindingForRepair,
-	SECRET_STORE_BINDING_FILE,
+	SECRET_STORE_BINDING_ENTRY,
 } from "./binding.js";
 export {
 	type ClaimScope,

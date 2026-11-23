@@ -472,7 +472,7 @@ export function discoverProduct(
 				seed: `A platform engineer or agent locates experience proofs under src/draft/exp-proofs/ for ${productName} and understands classification (ux/dx/ax/…) without guessing.`,
 				experiences: ["dx", "ax"],
 				driver: "cli",
-				surfaces: ["file:src/draft/exp-proofs/_classification.md"],
+				surfaces: ["pnpm run draft:experiences"],
 				source: ["src/draft/exp-proofs/"],
 				personaExperiences: ["dx", "ax"],
 				projects: ["root"],

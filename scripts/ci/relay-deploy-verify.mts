@@ -55,7 +55,7 @@ const START_STATES: Readonly<
 	"config-service-denied": {
 		code: "HOBO_RELAY_CONFIG_SERVICE_DENIED",
 		message:
-			"/readyz reports config-service-denied: the store refused the relay's identity; the relay identity in deploy/secret-store.binding.json must trust this project's Vercel production OIDC tokens",
+			"/readyz reports config-service-denied: the store refused the relay's identity; the relay identity the owner's store binding names must trust this project's Vercel production OIDC tokens",
 	},
 	"config-service-unavailable": {
 		code: "HOBO_RELAY_CONFIG_SERVICE_UNAVAILABLE",

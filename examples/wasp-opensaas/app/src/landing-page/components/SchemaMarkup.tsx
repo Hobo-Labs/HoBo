@@ -1,6 +1,3 @@
-// JSON-LD structured data for SEO. Helps search engines and LLMs understand
-// your app so it can appear in rich results and AI answers. Customize the
-// placeholders below to match your product. See https://schema.org for types.
 const schema = {
   "@context": "https://schema.org",
   "@graph": [

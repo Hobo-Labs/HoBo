@@ -106,6 +106,7 @@ retired `DESIGN.md` is an authority.
   sheet and is never mirrored from east, enforced by `test/control-yard.test.ts`
   → `"asset index resolves Bo idle/walk by stable id; west is not mirror flag"`.
   Character-sheet provenance remains in `site/public/parallax/README.md`.
+- **[Chewy](https://github.com/google/fonts/tree/7af0d90b4d532ffa4b041937b560c6df4e7b1e95/apache/chewy)** is bundled locally under the Apache 2.0 license in `public/fonts/LICENSE.txt`.
 
 Delivery frames (site plates):
 

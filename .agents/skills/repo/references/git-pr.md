@@ -21,8 +21,15 @@ Use git as the source of truth for state, ownership, and history.
 
 1. `git fetch origin`
 2. `git merge origin/main` — never rebase a pushed branch, never force-push (`gh stack rebase` /
-   `gh stack sync` only for unpushed local layers — see `sdlc` skill `references/stacked-prs.md`)
+   `gh stack sync` only for unpushed local layers — see the `sdlc` skill)
 3. Resolve conflicts without dropping either side's unrelated work.
+   Before pushing, confirm `git fetch origin main && git merge-tree --write-tree origin/main HEAD`
+   exits 0. GitHub runs no `pull_request` workflows on a head that conflicts with its base, or on a
+   branch moved by the update-branch API, so that head never gets checks or reaches the queue.
+   Update PR branches with a local `git merge` and push, never the update-branch API.
+   When several agents share one machine, commit with `HOBO_TURBO_CONCURRENCY=1` and
+   `HOBO_RELEVANT_CHECK_CONCURRENCY=1` so the pre-commit hook runs the same checks one at a time
+   instead of failing on load-induced test timeouts.
 4. Run `pnpm run agent:check -- --base=origin/main` for final PR-base validation.
 5. Supersession check: if the head is already in `origin/main` or is an ancestor of another open
    PR's head (`git merge-base --is-ancestor <head> <other-head>`), do not open or keep a separate
@@ -42,7 +49,7 @@ Use git as the source of truth for state, ownership, and history.
 
 Multi-step / multi-phase work uses GitHub's official stacked PRs (`gh extension install github/gh-stack`).
 Parent agent owns stack topology; subagents do incremental commits on their layer. Full protocol:
-`sdlc` skill → `references/stacked-prs.md` and companion skill `gh-stack`.
+`sdlc` skill and companion skill `gh-stack`.
 
 Local agent defaults (also applied by `scripts/install-hooks.mts` / `setup-agent-tools.sh`):
 

@@ -68,13 +68,7 @@ export interface BuildCommandOptions
 		| "requireRealComponentize"
 		| "containerBuild"
 	> {
-	/**
-	 * @hobo/cd delivery (ADR-0182 D13). When present, `hobo build` stores
-	 * every artifact's bytes in the configured artifact store and writes
-	 * `.hobo/freight.json` with the injected `writeFreightManifest`.
-	 */
 	readonly delivery?: YardDelivery | undefined;
-	/** Principal attributed in the artifact store; defaults to the persisted session. */
 	readonly session?: YardSession | undefined;
 }
 
@@ -88,12 +82,6 @@ type FreightEmitted =
 			detail: JsonObject;
 	  }>;
 
-/**
- * Store the build's bytes and declaration, then write the Freight manifest.
- * Nothing is written to `.hobo/freight.json` unless every artifact stored
- * under the digest the build recorded (fail closed: bytes are identical
- * everywhere, D2).
- */
 async function emitFreight(
 	projectRoot: string,
 	build: BuildResult,
