@@ -543,17 +543,14 @@ describe("hobo ci deploy --build prebuilt: a relay whose store lacks entries", (
 		const vercel = prebuiltVercel();
 		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
 
-		const ran = await deploy(
-			[...PINNED, "--target", "production", "--wait"],
-			{
-				fetch: vercel.fetch,
-				build: fakeVercelBuild(vercel).run,
-				env: PRODUCTION_ENV,
-				hoboHome: home,
-				probe: unconfiguredRelay(SHA).http,
-				...clock,
-			},
-		);
+		const ran = await deploy([...PINNED, "--target", "production", "--wait"], {
+			fetch: vercel.fetch,
+			build: fakeVercelBuild(vercel).run,
+			env: PRODUCTION_ENV,
+			hoboHome: home,
+			probe: unconfiguredRelay(SHA).http,
+			...clock,
+		});
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({ code: "HOBO_CI_DEPLOY_ROLLED_BACK" });
 		expect(vercel.state.production).toBe("dpl_live");
