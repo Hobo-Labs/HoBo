@@ -1308,7 +1308,7 @@
     },
     "__schema118": {
       "default": {
-        "reusePrFabric": false
+        "reusePrFabric": true
       },
       "type": "object",
       "properties": {

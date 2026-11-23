@@ -474,12 +474,6 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 			"createUpstashTemporaryRedisResolver",
 		),
 		refused(
-			"agent37",
-			"@hobo/provider-agent37",
-			"Agent37 is a CI runner provider bound by CI policy, not a hosting target.",
-			"deliver to a hosting provider; select Agent37 runners through @hobo/ci",
-		),
-		refused(
 			"agentv",
 			"@hobo/provider-agentv",
 			"agentV grades recorded agent trajectories; it is an evaluation engine, not a delivery target.",
@@ -538,6 +532,12 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 			"@hobo/provider-vercel-blob",
 			"The Vercel Blob EphemeralStatePort binding backs the hosted relay's cache; it is not a delivery target.",
 			"bind an objectStore provider with a resolver for delivered storage",
+		),
+		refused(
+			"agent37",
+			"@hobo/provider-agent37",
+			"Agent37 sandboxes supply overflow CI runner capacity; CD never delivers to them (any CI may feed Freight).",
+			"deliver to a hosting provider; runners are selected by @hobo/ci",
 		),
 		refused(
 			"blacksmith",

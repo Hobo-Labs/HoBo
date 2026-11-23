@@ -88,3 +88,7 @@ pnpm --filter @hobo/provider-agent37 build
 ## Explicit live read-only smoke
 
 `pnpm --filter @hobo/provider-agent37 test:live` calls only `listInstances`. It fails unless `AGENT37_API_KEY` is explicitly supplied. The default package test configuration excludes this file, so normal and CI tests make no live Agent37 calls.
+
+Reconcile `pnpm-lock.yaml` with `origin/main` before CI runs on the PR merge tree; HoBo CI Fabric installs with `--frozen-lockfile` against that merge ref.
+
+CD never delivers to Agent37: `PROVIDER_DELIVERY_COVERAGE` in `@hobo/hobo` lists it as a refused row, like the CI runner packages, because its sandboxes only supply overflow runner capacity.
