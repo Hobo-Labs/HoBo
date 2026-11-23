@@ -80,8 +80,10 @@ further useful work. Status questions do not cancel an active task.
 
 A human status message resets the retry allowance without erasing ready work.
 The prompt hook recognizes common, explicit English requests to stop the whole
-task, clears the record, and allows the response without forcing a continuation.
-It handles these phrases conservatively: ambiguous wording and scope changes
+task or an activity such as monitoring PRs, clears the record, and allows the
+response without forcing a continuation. Negated, quoted, and deferred stop
+phrases retain the record. It handles these phrases conservatively: ambiguous
+wording and scope changes
 still require the agent to follow the human's instructions and clear an obsolete
 record. An interruption or Cursor abort clears pending state; a Cursor error
 preserves ready work for a later turn.
