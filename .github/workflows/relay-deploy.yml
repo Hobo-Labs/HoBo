@@ -19,12 +19,6 @@ name: HoBo relay deploy
 # run in the protected deploy job, in order, and fail closed. The unprotected
 # gate job decides whether that job starts. A final step probes the production
 # origin again and fails the job on anything but a serving relay.
-#
-# No secret and no repository variable configures relay deployment. The store's
-# coordinates (ids and an origin, no credential) are committed to
-# packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself
-# reads in production. A missing or malformed binding fails the gate; a valid
-# binding without a deploy credential skips deployment with an explicit notice.
 
 on:
   push:
@@ -236,12 +230,6 @@ jobs:
             --json > "$RUNNER_TEMP/relay-production.json" || status=$?
           node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-production.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
-      # The deploy is done only when the production origin serves the relay
-      # this run built: /healthz must answer 200 naming GITHUB_SHA, /readyz
-      # must answer 200. The step fails the job — never `|| true` — with a
-      # distinct verdict for what the relay said (config service unreachable
-      # or unfilled, a start failure, a body mentioning the cache or a quota
-      # or Neon, another commit served).
       - name: Verify the relay at its production origin
         if: needs.gate.outputs.run == 'true'
         run: |

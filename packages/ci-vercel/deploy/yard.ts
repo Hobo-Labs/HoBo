@@ -80,14 +80,9 @@ export const RELAY_PLATFORM = Object.freeze({
 /** The Marketplace resource the cache binding attaches, one per team. */
 export const RELAY_CACHE_RESOURCE = "hobo-ci-cache";
 
-/**
- * The relay's folder in the config service (`CONFIG-SERVICE.md`). The store
- * itself is chosen when the deployment runs; its coordinates are committed
- * to `bindingFile`.
- */
 export const RELAY_CONFIG_SERVICE = Object.freeze({
 	capability: "secrets.config-service/v1",
-	bindingFile: "deploy/secret-store.binding.json",
+	bundledBindingFile: "deploy/secret-store.binding.json",
 	secretPath: "/hobo-ci-relay",
 	productionEnvironment: "prod",
 } as const);
@@ -198,18 +193,9 @@ const RELAY_YARD = yard("hobo-ci-relay", {
 		},
 	],
 	camps: [
-		// A merge to `main` deploys here. The relay reads Infisical's `prod`
-		// environment, whose machine identity trusts production tokens only.
 		camp("production", {
 			envType: "production",
 			require: [...COMMON_REQUIREMENTS, capability.secretRef.runtimeProjection],
-			resolverConfig: {
-				properties: {
-					settings: {
-						INFISICAL_ENVIRONMENT: RELAY_CONFIG_SERVICE.productionEnvironment,
-					},
-				},
-			},
 		}),
 		// A deploy run by hand lands here unless it asks for production. No
 		// config-service binding: the relay identity trusts production tokens
@@ -224,19 +210,6 @@ const RELAY_YARD = yard("hobo-ci-relay", {
 
 export default RELAY_YARD;
 
-/**
- * The config service's Yard. Infisical runs the store the relay reads with its
- * own Vercel OIDC token (Infisical OIDC Auth); it is not Vercel's, so it is
- * internal to a Yard whose provider is Infisical.
- */
-// The config service, read with the deployment's own Vercel OIDC token
-// through Infisical OIDC Auth. WHICH store it is is not declared here:
-// HoBo routes `secrets.config-service/v1` when the deployment runs
-// (`hobo ci secret-store provision`, ADR-0179 amendment "Secret store
-// chosen at deploy, provisioned by claim") and commits the store's
-// coordinates to `deploy/secret-store.binding.json`, which fills the
-// three inputs. Nothing is pre-provisioned by hand, and nothing is a
-// Vercel or GitHub secret or variable.
 export const relayConfigYard = yard("hobo-ci-relay-config", {
 	provider: "infisical",
 	bindings: [
@@ -246,16 +219,7 @@ export const relayConfigYard = yard("hobo-ci-relay-config", {
 			connectivityId: "infisical.oidc-auth/v1",
 			properties: {
 				capability: RELAY_CONFIG_SERVICE.capability,
-				bindingFile: RELAY_CONFIG_SERVICE.bindingFile,
-				settings: {
-					HOBO_CI_CONFIG_SERVICE: "infisical",
-					INFISICAL_SECRET_PATH: RELAY_CONFIG_SERVICE.secretPath,
-				},
-				inputs: [
-					"INFISICAL_IDENTITY_ID",
-					"INFISICAL_PROJECT_ID",
-					"INFISICAL_SITE_URL",
-				],
+				bundledBindingFile: RELAY_CONFIG_SERVICE.bundledBindingFile,
 			},
 		},
 	],

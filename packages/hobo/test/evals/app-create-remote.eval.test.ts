@@ -8,7 +8,6 @@ import {
 } from "@hobo/adapter-infisical";
 import { createGithubAppManifest } from "@hobo/ci-gh-actions";
 import {
-	EGRESS_PROXY_PLACEHOLDER,
 	openTunnel,
 	type RedirectReceiver,
 	redirectReceiverFrom,
@@ -410,7 +409,7 @@ describe("EVAL remote box: hobo ci app create through the owner's tunnel", () =>
 });
 
 describe("EVAL remote box: hobo ci app create with no receiver (owner hand-off)", () => {
-	it("routes Infisical through the selected fetch and sends only the proxy marker", async () => {
+	it("routes Infisical through the selected fetch with the run's own sign-in", async () => {
 		const requests: Array<{ url: string; authorization: string | null }> = [];
 		const routed: typeof fetch = async (input, init) => {
 			requests.push({
@@ -430,8 +429,7 @@ describe("EVAL remote box: hobo ci app create with no receiver (owner hand-off)"
 				INFISICAL_PROJECT_ID: "proj-1",
 				INFISICAL_ENVIRONMENT: "prod",
 				INFISICAL_SECRET_PATH: "/hobo-ci-relay",
-				INFISICAL_SIGN_IN: "egress-proxy",
-				INFISICAL_TOKEN: "stale-token-from-another-sign-in",
+				INFISICAL_TOKEN: "owner-access-token",
 			},
 			fetch: routed,
 			emitProgress: () => {},
@@ -441,9 +439,7 @@ describe("EVAL remote box: hobo ci app create with no receiver (owner hand-off)"
 		expect(requests[0]?.url).toMatch(
 			/^http:\/\/127\.0\.0\.1:1\/api\/v4\/secrets\?/u,
 		);
-		expect(requests[0]?.authorization).toBe(
-			`Bearer ${EGRESS_PROXY_PLACEHOLDER}`,
-		);
+		expect(requests[0]?.authorization).toBe("Bearer owner-access-token");
 	});
 
 	it("paste: the owner carries GitHub's single-use code back, and nothing connects to the box", async () => {

@@ -10,30 +10,44 @@ if (repository.status !== 0 || !repository.stdout.trim()) {
 	process.stderr.write("Source policy could not locate the repository.\n");
 	process.exitCode = 2;
 } else {
-	const guard = fileURLToPath(
-		new URL("./check-source-policy.mts", import.meta.url),
-	);
-	const result = spawnSync(
-		process.execPath,
-		["--import", import.meta.resolve("tsx"), guard, "--worktree"],
+	const guards = [
 		{
-			cwd: repository.stdout.trim(),
-			encoding: "utf8",
-			env: { ...process.env, NODE_OPTIONS: "" },
-			maxBuffer: 4 * 1024 * 1024,
-			stdio: ["ignore", "pipe", "pipe"],
-			timeout: 45_000,
+			script: "./check-source-policy.mts",
+			loader: ["--import", import.meta.resolve("tsx")],
+			heading:
+				"Source policy requires self-documenting code and completed work.\n",
 		},
-	);
-	if (result.status !== 0) {
-		process.stderr.write(
-			"Source policy requires self-documenting code and completed work.\n",
+		{
+			script: "./check-secret-storage.mts",
+			loader: ["--experimental-strip-types"],
+			heading: "Secret policy: agents never store secrets.\n",
+		},
+	];
+	for (const guard of guards) {
+		const result = spawnSync(
+			process.execPath,
+			[
+				...guard.loader,
+				fileURLToPath(new URL(guard.script, import.meta.url)),
+				"--worktree",
+			],
+			{
+				cwd: repository.stdout.trim(),
+				encoding: "utf8",
+				env: { ...process.env, NODE_OPTIONS: "" },
+				maxBuffer: 4 * 1024 * 1024,
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: 45_000,
+			},
 		);
-		process.stderr.write(
-			result.stderr ||
-				result.error?.message ||
-				`Guard exited ${result.status}.\n`,
-		);
-		process.exitCode = 2;
+		if (result.status !== 0) {
+			process.stderr.write(guard.heading);
+			process.stderr.write(
+				result.stderr ||
+					result.error?.message ||
+					`Guard exited ${result.status}.\n`,
+			);
+			process.exitCode = 2;
+		}
 	}
 }

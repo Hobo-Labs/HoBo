@@ -8,15 +8,15 @@ on:
       - "packages/cloud/**"
       - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
-      - "scripts/check-iac-models.ts"
-      - "scripts/lib/bounded-tlc.ts"
-      - "scripts/test/bounded-tlc.test.ts"
-      - "scripts/test/pricing-workflow-model-trigger.test.ts"
       - "packages/broker/test/pricing-authorization.test.ts"
       - "packages/events/src/pricing-event-contracts.ts"
       - "packages/events/test/pricing-upcaster-gate.test.ts"
       - "packages/events/corpus/golden-replay-baseline.json"
       - "packages/dispatcher/**"
+      - "scripts/check-iac-models.ts"
+      - "scripts/lib/bounded-tlc.ts"
+      - "scripts/test/bounded-tlc.test.ts"
+      - "scripts/test/pricing-workflow-model-trigger.test.ts"
       - "docs/design/provider-pricing-commercial-terms.md"
       - "docs/pricing/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
@@ -28,14 +28,15 @@ on:
       - "packages/cloud/**"
       - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
+      - "packages/broker/test/pricing-authorization.test.ts"
+      - "packages/events/src/pricing-event-contracts.ts"
+      - "packages/events/test/pricing-upcaster-gate.test.ts"
+      - "packages/events/corpus/golden-replay-baseline.json"
+      - "packages/dispatcher/**"
       - "scripts/check-iac-models.ts"
       - "scripts/lib/bounded-tlc.ts"
       - "scripts/test/bounded-tlc.test.ts"
       - "scripts/test/pricing-workflow-model-trigger.test.ts"
-      - "packages/broker/test/pricing-authorization.test.ts"
-      - "packages/events/src/pricing-event-contracts.ts"
-      - "packages/events/corpus/golden-replay-baseline.json"
-      - "packages/dispatcher/**"
       - "docs/design/provider-pricing-commercial-terms.md"
       - "docs/pricing/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
@@ -149,7 +150,7 @@ jobs:
           mode: save
 
   pricing-models:
-    name: Check bounded IaC models
+    name: Check bounded IaC budget, routing, grant and pricing models
     needs: route
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 10

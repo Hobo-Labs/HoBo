@@ -9,7 +9,7 @@ Zero-key default (recommended): decline the gbrain MCP server in your agent UI, 
   bash scripts/setup-agent-tools.sh --common-only --no-gbrain
 
 To enable later: install Bun, re-run setup without --no-gbrain, then `gbrain init`.
-Keys + data egress: AUTH.md  |  .env.example  |  docs/agent-tooling.md
+Keys + data egress: AUTH.md  |  docs/agent-tooling.md
 EOF
   exit 1
 fi
@@ -20,9 +20,10 @@ if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${ZEROENTROPY_API_KEY:-}" ] && [ -z "${
   cat >&2 <<'EOF'
 gbrain MCP: no embedding provider configured.
 
-Run `gbrain init --pglite` and select local Ollama, or set exactly one of:
-  OPENAI_API_KEY | ZEROENTROPY_API_KEY | VOYAGE_API_KEY
-(copy .env.example → .env). Embedding and query text leave the machine (cost + egress).
+Run `gbrain init --pglite` and select local Ollama (no key). gbrain also reads one of
+OPENAI_API_KEY | ZEROENTROPY_API_KEY | VOYAGE_API_KEY from its own environment, but agents
+never store a key in an environment variable or a .env file (AGENTS.md). Remote providers
+receive embedding and query text (cost + egress).
 
 Or decline this MCP server to keep gbrain disabled. See AUTH.md.
 EOF

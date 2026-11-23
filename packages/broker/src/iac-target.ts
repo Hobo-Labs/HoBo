@@ -712,7 +712,6 @@ export async function admitIacTarget(
 				error.message,
 				error.code === "budget.settlement-unavailable",
 			);
-
 		return uncertain(
 			requestId,
 			targetId,

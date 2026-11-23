@@ -273,7 +273,7 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 		);
 	});
 
-	it("allows an unavailable choice after an unrelated credential form succeeded", () => {
+	it("allows an unavailable choice after an unrelated capture form succeeded", () => {
 		const events = parseClaudeTranscript(
 			jsonl([
 				user("go"),
@@ -281,12 +281,12 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 				user([
 					toolResult(
 						"run",
-						"HOBO_OWNER_CREDENTIAL host=private-fixture.example guide=https://private-fixture.example/help",
+						"HOBO_OWNER_CAPTURE name=INFISICAL_TOKEN guide=https://private-fixture.example/help",
 					),
 				]),
-				assistant([toolUse("credential", "mcp__host__request_credential")]),
+				assistant([toolUse("capture", "mcp__hobo__capture_secret")]),
 				user([
-					toolResult("credential", '{"channel":"mcp-app","status":"stored"}'),
+					toolResult("capture", '{"channel":"mcp-app","status":"stored"}'),
 				]),
 				assistant([toolUse("next", "Bash")]),
 				user([toolResult("next", STORE_CHOICE_OUTPUT)]),
@@ -496,7 +496,7 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 		}
 	});
 
-	it("does not include a private credential host in a finding", () => {
+	it("does not include a private guide host in a finding", () => {
 		const host = "private-fixture.example";
 		const events = parseClaudeTranscript(
 			jsonl([
@@ -505,14 +505,14 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 				user([
 					toolResult(
 						"run",
-						`HOBO_OWNER_CREDENTIAL host=${host} guide=https://${host}/help`,
+						`HOBO_OWNER_CAPTURE name=INFISICAL_TOKEN guide=https://${host}/help`,
 					),
 				]),
 				assistant([text("No secure form was opened.")]),
 			]),
 		);
 		const findings = auditHandOff(events);
-		expect(findings).toMatchObject([{ line: "HOBO_OWNER_CREDENTIAL" }]);
+		expect(findings).toMatchObject([{ line: "HOBO_OWNER_CAPTURE" }]);
 		expect(JSON.stringify(findings)).not.toContain(host);
 	});
 
@@ -658,11 +658,6 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 	it("flags relayed private owner fields without putting them in findings", () => {
 		for (const [line, field, code] of [
 			[
-				"HOBO_OWNER_CREDENTIAL host=private-fixture.example guide=https://private-fixture.example/help",
-				"private-fixture.example",
-				"HOBO_OWNER_CREDENTIAL",
-			],
-			[
 				"HOBO_OWNER_CAPTURE name=FIXTURE guide=https://private-fixture.example/help",
 				"https://private-fixture.example/help",
 				"HOBO_OWNER_CAPTURE",
@@ -715,7 +710,7 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 						JSON.stringify({
 							output: JSON.stringify({
 								remediation: [
-									`HOBO_OWNER_CREDENTIAL host=${host} guide=https://${host}/help`,
+									`HOBO_OWNER_CAPTURE name=INFISICAL_TOKEN guide=https://${host}/help`,
 								],
 							}),
 						}),
@@ -723,7 +718,7 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 				]),
 				assistant([
 					text(
-						`This host cannot provide a secure HoBo owner hand-off. ${host}`,
+						`This host cannot provide a secure HoBo owner hand-off. https://${host}/help`,
 					),
 				]),
 			]),
@@ -732,13 +727,13 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 		expect(findings).toContainEqual(
 			expect.objectContaining({
 				rule: "private-owner-line",
-				line: "HOBO_OWNER_CREDENTIAL",
+				line: "HOBO_OWNER_CAPTURE",
 			}),
 		);
 		expect(JSON.stringify(findings)).not.toContain(host);
 	});
 
-	it("does not treat secret capture as the egress credential channel", () => {
+	it("takes HoBo's capture for a store sign-in the run asks for", () => {
 		const events = parseClaudeTranscript(
 			jsonl([
 				user("go"),
@@ -746,7 +741,7 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 				user([
 					toolResult(
 						"run",
-						"HOBO_OWNER_CREDENTIAL host=private-fixture.example guide=https://private-fixture.example/help",
+						"HOBO_OWNER_CAPTURE name=INFISICAL_TOKEN guide=https://private-fixture.example/help",
 					),
 				]),
 				assistant([toolUse("capture", "mcp__hobo__capture_secret")]),
@@ -754,49 +749,47 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 				assistant([text("Continuing.")]),
 			]),
 		);
-		expect(auditHandOff(events)).toContainEqual(
-			expect.objectContaining({ rule: "structured-ask", ask: "credential" }),
-		);
+		expect(auditHandOff(events)).toEqual([]);
 	});
 
-	it("requires the credential form for a credential line; a picker is not enough", () => {
-		const credential = jsonl([
+	it("flags request_credential for a store sign-in; it never settles the capture", () => {
+		for (const name of [
+			"mcp__claude-code-remote__request_credential",
+			"request_credential",
+		]) {
+			const transcript = jsonl([
+				user("go"),
+				assistant([toolUse("run", "Bash")]),
+				user([
+					toolResult(
+						"run",
+						"HOBO_OWNER_CAPTURE name=BW_CLIENTID guide=https://vault.bitwarden.com/#/settings/security/security-keys",
+					),
+				]),
+				assistant([toolUse("cred", name)]),
+				user([toolResult("cred", "saved")]),
+				assistant([text("Saved; the run continues.")]),
+				user("next"),
+			]);
+			expect(auditHandOff(parseClaudeTranscript(transcript))).toMatchObject([
+				{ rule: "agent-stored-credential", ask: "capture", line: name },
+				{ rule: "structured-ask", ask: "capture", line: "HOBO_OWNER_CAPTURE" },
+			]);
+		}
+	});
+
+	it("flags request_credential even when no run asked for anything", () => {
+		const transcript = jsonl([
 			user("go"),
-			assistant([toolUse("run", "Bash")]),
-			user([
-				toolResult(
-					"run",
-					"HOBO_OWNER_CREDENTIAL host=identity.bitwarden.com guide=https://vault.bitwarden.com/#/settings/security/security-keys — …",
-				),
-			]),
-			assistant([toolUse("ask", "AskUserQuestion")]),
-			user([toolResult("ask", "answered")]),
-			assistant([text("Thanks.")]),
-			user("next"),
-		]);
-		expect(auditHandOff(parseClaudeTranscript(credential))).toMatchObject([
-			{
-				ask: "credential",
-				line: "HOBO_OWNER_CREDENTIAL",
-			},
-		]);
-		const asked = jsonl([
-			user("go"),
-			assistant([toolUse("run", "Bash")]),
-			user([
-				toolResult(
-					"run",
-					"HOBO_OWNER_CREDENTIAL host=identity.bitwarden.com guide=x",
-				),
-			]),
 			assistant([
 				toolUse("cred", "mcp__claude-code-remote__request_credential"),
 			]),
 			user([toolResult("cred", "saved")]),
-			assistant([text("Saved; the run continues.")]),
-			user("next"),
+			assistant([text("Saved.")]),
 		]);
-		expect(auditHandOff(parseClaudeTranscript(asked))).toEqual([]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toMatchObject([
+			{ rule: "agent-stored-credential" },
+		]);
 	});
 
 	it("ignores source code that merely names the codes", () => {
@@ -941,6 +934,7 @@ describe("EVAL hand-off transcript: a remote sign-in goes through the capture fo
 			user("next"),
 		]);
 		expect(auditHandOff(parseClaudeTranscript(transcript))).toMatchObject([
+			{ rule: "agent-stored-credential", ask: "capture" },
 			{ rule: "structured-ask", ask: "capture" },
 		]);
 	});

@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, request } from "node:http";
 import { type AddressInfo, connect } from "node:net";
 
 import type { PrepareOutcome } from "@hobo/cli";
+import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import { readOwnerTurn } from "../../src/owner-actions.js";
 import type { OwnerChannel } from "../../src/owner-channel.js";
 
@@ -43,7 +44,6 @@ export function ownerLines(
 /** What the simulated owner does for each action; absent means they cannot. */
 export interface RemoteOwnerHands {
 	readonly signIn?: (url: URL, capture: string) => Promise<void>;
-	readonly credential?: (host: string) => Promise<void>;
 	readonly capture?: (name: string) => Promise<void>;
 	/** The agent switches to the HoBo MCP server's tools (they bring the owner a channel). */
 	readonly useMcp?: () => Promise<void>;
@@ -92,13 +92,11 @@ export async function driveRemoteOwner(options: {
 							? await act(hands.capture, async (f) => {
 									for (const name of action.names) await f(name);
 								})
-							: action.kind === "credential"
-								? await act(hands.credential, (f) => f(action.host))
-								: action.kind === "store-choice"
-									? await act(hands.chooseStore, (f) => f())
-									: action.kind === "device"
-										? await act(hands.device, (f) => f(action.line))
-										: await act(hands.approveBitwarden, (f) => f(action.line));
+							: action.kind === "store-choice"
+								? await act(hands.chooseStore, (f) => f())
+								: action.kind === "device"
+									? await act(hands.device, (f) => f(action.line))
+									: await act(hands.approveBitwarden, (f) => f(action.line));
 		if (!done)
 			return {
 				kind: "dead-end",
@@ -241,4 +239,10 @@ export async function startForwardProxy(options: {
 				server.close(() => resolve());
 			}),
 	};
+}
+
+export function handedOverInfisicalToken(): TrustedVault {
+	const vault = createTrustedVault();
+	vault.put("INFISICAL_TOKEN", "fixture-handed-over-access-token");
+	return vault;
 }
