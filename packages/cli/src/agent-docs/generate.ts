@@ -1,11 +1,16 @@
 import { normalizeText } from "../codegen/text.js";
 import { CANONICAL_VERBS, GLOBAL_FLAGS, type Verb } from "../shell/verbs.js";
 
+// public-contract: schema id written into docs.json and read by agents.
 export const AGENT_DOCS_SCHEMA_VERSION = "hobo.agent-docs/v1";
+// public-contract: generator id recorded in docs.json.
 export const AGENT_DOCS_GENERATOR = "@hobo/cli/agent-docs";
+// public-contract: product name recorded in docs.json.
 export const AGENT_DOCS_PRODUCT = "hobo";
 
+// public-contract: MCP capability port that @hobo/mcp derives the same way.
 export const AGENT_DOCS_MCP_PORT = "hobo:mcp";
+// public-contract: MCP capability verb that @hobo/mcp derives the same way.
 export const AGENT_DOCS_MCP_CALL_VERB = "call";
 
 export const AGENT_DOCS_ARTIFACTS = {
