@@ -36,20 +36,63 @@ function mergeInputWithoutConsensus() {
 	return input;
 }
 
-test("public product paths require designer consensus", () => {
+test("visual paths require designer consensus", () => {
 	for (const changedPath of [
 		"apps/web/src/onboarding.tsx",
+		"site/src/page.tsx",
+		"packages/shared/assets/logo.svg",
+	]) {
+		const result = evaluateDesignRelevance({
+			changedPaths: [changedPath],
+			exemption: {
+				code: "no-visual-design-change",
+				justification: "A visual path cannot be exempted from designer review.",
+			},
+		});
+
+		assert.equal(result.required, true, changedPath);
+		assert.equal(result.exemptionAccepted, false, changedPath);
+		assert.notEqual(result.reasons.length, 0, changedPath);
+	}
+});
+
+test("public non-visual paths need a no-visual exemption, not an internal one", () => {
+	for (const changedPath of [
 		"packages/cli/src/commands/deploy.ts",
 		"packages/sdk/src/public-api.ts",
 		"docs/tutorials/first-deploy.md",
 		"examples/hello-hobo/README.md",
 		".optimizexp/features/deploy-journey/feature.json",
 	]) {
-		const result = evaluateDesignRelevance({ changedPaths: [changedPath] });
+		const unexempted = evaluateDesignRelevance({ changedPaths: [changedPath] });
+		assert.equal(unexempted.required, true, changedPath);
+		assert.deepEqual(unexempted.reasons, [], changedPath);
 
-		assert.equal(result.required, true, changedPath);
-		assert.equal(result.exemptionAccepted, false, changedPath);
-		assert.notEqual(result.reasons.length, 0, changedPath);
+		assert.deepEqual(
+			evaluateDesignRelevance({
+				changedPaths: [changedPath],
+				exemption: {
+					code: "no-visual-design-change",
+					justification:
+						"The change alters command and document text with no visual interface change.",
+				},
+			}),
+			{ required: false, reasons: [], exemptionAccepted: true },
+			changedPath,
+		);
+
+		assert.equal(
+			evaluateDesignRelevance({
+				changedPaths: [changedPath],
+				exemption: {
+					code: "internal-no-public-behavior",
+					justification:
+						"Private cache rename; exports, errors, and observable behavior are unchanged.",
+				},
+			}).required,
+			true,
+			changedPath,
+		);
 	}
 });
 
