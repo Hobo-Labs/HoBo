@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
     branches: [main]
     types: [checks_requested]
@@ -1214,6 +1214,16 @@ jobs:
         timeout-minutes: 12
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo...
+          --filter=@hobo/adapter-hono...
+          --filter=@hobo/provider-agentv...
+          --filter=@hobo/provider-ax...
+          --filter=@hobo/provider-browser-wasm...
+          --filter=@hobo/provider-config...
+          --filter=@hobo/provider-convex...
+          --filter=@hobo/provider-flux...
+          --filter=@hobo/provider-turso...
+          --filter=@hobo/provider-vercel-blob...
+          --filter=@hobo/provider-webernetes...
           --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       - name: HoBo slow integration suites
         if: steps.scope.outputs.run == 'true'
@@ -1221,9 +1231,8 @@ jobs:
         env:
           SHARD_INDEX: ${{ matrix.shard }}
         run: >-
-          pnpm exec turbo run test:release-integration --filter=@hobo/hobo
-          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
-          -- --shard="$((SHARD_INDEX + 1))/4"
+          pnpm --filter @hobo/hobo run test:release-integration
+          --shard="$((SHARD_INDEX + 1))/4"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''

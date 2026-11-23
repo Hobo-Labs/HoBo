@@ -1,15 +1,16 @@
 ---
 type: Agent Skill Reference
 title: "SDLC stacked PRs"
-description: "Parent-owned GitHub stacked PRs via gh stack: layer planning, subagent incremental checkins, sync, bottom-up rubber-duck/adversarial review, comment and check repair, squash-merge per PR."
+description: "Parent-owned gh stack layers landed as one unit: layer planning, subagent incremental checkins, one workstream PR, supersession check, combined-diff rubber-duck/adversarial review, comment and check repair, merge-commit landing (never squash)."
 tags: [hobo, sdlc, stacked-prs, gh-stack, review, merge]
 timestamp: 2026-07-30T00:00:00Z
 ---
 
 # Stacked PRs (parent protocol)
 
-Multi-step / multi-phase / multi-task work in this repo ships as a **stack of pull requests**
-managed with GitHub's official extension:
+Multi-step / multi-phase / multi-task work in this repo is organized as a **stack of layer
+branches** managed with GitHub's official extension, and lands as **one unit** through **one
+PR** — the top of the stack:
 
 ```bash
 gh extension install github/gh-stack   # once; setup-agent-tools.sh installs it in common layer
@@ -19,6 +20,20 @@ Docs: https://gh.io/stacks · Companion agent skill: `gh-stack` (CLI non-interac
 
 The **parent/coordinator** owns stack topology. Subagents commit on the branch for their layer;
 they do not restructure or merge the stack.
+
+## Landing policy
+
+- **Never squash. Never rebase-merge.** Land with a merge commit (`gh pr merge <n> --merge`, or
+  the merge queue with the merge-commit method). History is preserved, so descendants of a
+  landed branch stay conflict-free and GitHub marks contained PRs merged automatically.
+- **A stack lands as one unit.** Layers organize commits and checkins; review covers the whole
+  stack's combined diff against trunk (top-of-stack vs `main`), done once.
+- **Update with trunk by merging it in** (`git merge origin/main`). Never rebase a pushed
+  branch; never force-push. `gh stack rebase` / `gh stack sync` are for unpushed local layers only.
+- **One PR per workstream**, opened ready for review — not a PR per layer, not a long-lived
+  draft. **WIP limit:** a workstream has at most one open PR; add commits to it instead of
+  opening another.
+- **Supersession check** before opening a PR and at finish (§ Supersession check).
 
 ## When to stack
 
@@ -57,10 +72,10 @@ Never hang on a TUI or prompt:
 |---|---|
 | `gh stack init branch-a` | bare `gh stack init` |
 | `gh stack add branch-b` | bare `gh stack add` |
-| `gh stack submit --auto` (`--open` when ready) | `gh stack submit` without `--auto` |
+| `gh pr create --base main --head <top-branch>` (ready, not draft) | `gh stack submit` (opens a PR per layer) / `--draft` |
 | `gh stack view --json` | `gh stack view` / `--short` |
 | `gh stack checkout <pr\|branch\|stack#>` | bare `gh stack checkout` |
-| `gh stack merge <pr#> --yes --squash` | bare interactive `gh stack merge` / wrong `gh pr merge` on stacks |
+| `gh pr merge <top-pr> --merge` | `--squash`, `--rebase`, or merging lower layers one by one |
 
 Git defaults (local):
 
@@ -103,68 +118,98 @@ Instruct every implementer:
 2. `pnpm agent:check -- --staged` before every commit.
 3. Conventional commits; multiple commits per layer expected.
 4. Never edit coordinator-owned shared files; report `cascadeDeltas`.
-5. Do not run `gh stack merge` / `gh stack unstack` / restructure.
+5. Do not open PRs, merge, `gh stack unstack` / restructure, rebase pushed branches, or force-push.
 6. Hand back `.sdlc/report.json` (and `sdlc-report` block if PR-facing).
 
-Parent may `gh stack push` periodically so layers are remote-backed.
+Parent may push layer branches periodically so layers are remote-backed; pushing a branch
+does not open a PR for it.
 
-### 4. Submit the stack
+### 4. Open the workstream PR
+
+Run the supersession check, then open **one** PR for the top of the stack against `main`,
+ready for review:
 
 ```bash
-gh stack submit --auto --open
+git push -u origin sdlc/<id>-NN-<slug>
+gh pr create --base main --head sdlc/<id>-NN-<slug> --title "…" --body "…"
 gh stack view --json
 ```
 
-Edit PR bodies after submit if needed (`gh pr edit`) — include initiative link, layer purpose,
-acceptance summary, and for cloud handbacks the `sdlc-report` fence.
+The PR body lists the layers in order — include initiative link, each layer's purpose,
+acceptance summary, and for cloud handbacks the `sdlc-report` fence. If the workstream already
+has an open PR, push new commits to it instead of opening another.
 
-Update `sdlc-state.md` with stack number, branch order, PR URLs.
+Update `sdlc-state.md` with branch order and the PR URL.
 
 ### 5. Mid-stack fixes
 
 If an upper layer needs a lower-layer change:
 
 ```bash
-gh stack checkout <lower-branch-or-pr>
+gh stack checkout <lower-branch>
 # fix + commit
+# unpushed layers only:
 gh stack rebase --upstack
-gh stack push
-# or: gh stack sync
+# pushed layers: merge the fix up instead
+git checkout <upper-branch> && git merge <lower-branch>
+git push
 ```
 
 Do **not** land lower-layer fixes as commits on the upper branch.
 
-### 6. Sync after trunk or merges
+### 6. Update after trunk moves
 
 ```bash
-gh stack sync
-# after merges, prune local merged branches when safe:
-gh stack sync --prune
+git fetch origin
+git checkout <top-branch>
+git merge origin/main
+git push
 ```
 
-Exit code 3 = rebase conflict: resolve files, `git add`, `gh stack rebase --continue`
-(or `--abort`). Exit code 9 = stacks not enabled on the repo — stop and tell the user.
+Never rebase a pushed branch and never force-push. `gh stack sync` / `gh stack rebase` apply
+only while every affected layer is still unpushed. Exit code 3 = rebase conflict: resolve
+files, `git add`, `gh stack rebase --continue` (or `--abort`). Exit code 9 = stacks not enabled
+on the repo — stop and tell the user.
 
-## Bottom-up closeout (required)
+### Supersession check
 
-When implementation for the initiative is complete, the parent **must** close every opened PR
-from the **bottom up**. This is not optional.
+Before opening a PR and again at finish, for each candidate branch head:
 
-### Per-PR checklist (bottom → top)
+```bash
+git fetch origin
+git merge-base --is-ancestor <head> origin/main && echo "already landed"
+gh pr list --state open --json number,headRefOid,headRefName
+git merge-base --is-ancestor <head> <other-open-pr-head> && echo "superseded"
+```
 
-For PR at index `i` (bottom first):
+If the head is in `origin/main` or is an ancestor of another open PR's head, do not open or keep
+a separate PR — close it with `Superseded by #N` and keep the branch:
 
-1. **Checkout the layer**
+```bash
+gh pr close <n> --comment "Superseded by #N"
+```
+
+## Stack closeout (required)
+
+When implementation for the initiative is complete, the parent **must** review and land the
+stack as **one unit**. This is not optional. Review the combined diff once; do not review or
+merge layers one at a time.
+
+### Closeout checklist (whole stack)
+
+1. **Checkout the top of the stack**
    ```bash
-   gh stack checkout <pr-number>
+   gh stack top
    gh stack view --json
+   git fetch origin
+   git diff origin/main...HEAD
    ```
 
 2. **Rubber-duck mode**
-   - State the problem this layer solves.
-   - Walk the change file-by-file: what, why, how tested.
+   - State the problem the stack solves and what each layer contributes.
+   - Walk the combined change file-by-file: what, why, how tested.
    - Name invariants, contracts (PACT/proto/CUE), and rollback.
-   - Any step you cannot explain plainly → fix or split before merge.
+   - Any step you cannot explain plainly → fix before merge.
 
 3. **Adversarial thinking**
    - Abuse / tenancy / secret leakage.
@@ -183,7 +228,7 @@ For PR at index `i` (bottom first):
      exemption is machine-readable and justified; a prior council cycle always
      makes the layer relevant.
    - Refresh current-head acceptance/evidence manifests, compute the proposal
-     digest against the layer's effective base, then run or resume the exact six
+     digest against `main`, then run or resume the exact six
      personas through the append-only OptimizeXP council.
    - Any nay appends a rework packet and returns to implementation. Repeat
      independent review → evidence → council after fixes. No majority, quorum,
@@ -201,7 +246,7 @@ For PR at index `i` (bottom first):
 
 7. **Status checks**
    - Wait for required checks **when runners can start**.
-   - On real (code) failure: fix on this layer, commit, `gh stack push` / `gh stack sync`, re-check.
+   - On real (code) failure: fix on the owning layer, merge it up to the top, push, re-check.
    - **Billing / budget / quota — do not block merge:**
      Signals: jobs fail in seconds with **no runner**, empty steps, annotations like
      "spending limit needs to be increased", "recent account payments have failed",
@@ -209,39 +254,38 @@ For PR at index `i` (bottom first):
      Actions:
      1. Comment the exact billing message + check names on the PR.
      2. Record `billing-budget` in `sdlc-state.md` / dispatch-log.
-     3. **Proceed to squash-merge now.** Do not wait for green CI. Do not treat this as a
-        "user decision" gate for the merge — the agent **is still expected to squash-merge**
+     3. **Proceed to merge now.** Do not wait for green CI. Do not treat this as a
+        "user decision" gate for the merge — the agent **is still expected to merge**
         when review + comments are clean and the only red checks are billing.
-     4. Prefer `gh stack merge <n> --yes --squash` or `gh pr merge <n> --squash`. Use
+     4. Use `gh pr merge <n> --merge` (never `--squash`). Use
         `--admin` only if branch protection still demands green checks and the token can
         override. If even admin merge is denied, report the protection block; never leave the
         PR indefinitely open "waiting on CI that cannot run."
      5. This exception **never** covers failing tests, lint, architecture, secret-scan content
         findings, or any check that actually executed and found a defect.
 
-8. **Assert and squash-merge this PR**
+8. **Assert and land the stack with a merge commit**
    - For design-relevant work, run deterministic `assert-yay` against the exact
      current HEAD and proposal manifest immediately before merge. A comment fix,
-     check repair, rebase, changed acceptance/evidence digest, or effective-base
+     check repair, trunk merge, changed acceptance/evidence digest, or effective-base
      change after approval makes it stale and requires refreshed evidence plus a
      new council cycle. Billing-only CI exceptions do not waive this assertion.
    ```bash
-   gh stack merge <pr-number> --yes --squash
-   # single PR: gh pr merge <pr-number> --squash --delete-branch
-   # billing-red + protection: gh pr merge <pr-number> --squash --delete-branch --admin
-   gh stack sync --prune
+   gh pr edit <top-pr> --base main      # if it is not already based on main
+   gh pr merge <top-pr> --merge
+   # billing-red + protection: gh pr merge <top-pr> --merge --admin
    ```
-   Prefer merging **one PR at a time** after its review so the next layer rebases onto real trunk
-   history (especially after squash-merge). Do not leave comments unresolved "for later."
+   Never `--squash`, never `--rebase`. Do not leave comments unresolved "for later."
 
-9. Advance to the next PR up the stack. After each lower squash-merge and sync,
-   recompute every affected upper layer's effective proposal digest and rerun
-   council review if it changed. Repeat until none remain.
+9. **Confirm contained PRs closed.** Lower layers' commits are now in `main`, so GitHub marks
+   any lower-layer PRs merged automatically. Close any that remain open with
+   `Superseded by #N`.
 
 ### Stack-complete criteria
 
-- Every PR the parent opened is MERGED (squash) or explicitly closed with user approval.
-- `gh stack view --json` shows no open unmerged work (or stack fully pruned).
+- The workstream PR is MERGED with a merge commit; every other PR the parent opened is merged
+  automatically, closed as superseded, or explicitly closed with user approval.
+- `gh stack view --json` shows no open unmerged work.
 - Linear/issue tracker: each issue Done only under the Done rule (checks + review + merge).
 - `.sdlc/dispatch-log.md` and `sdlc-state.md` updated with outcomes.
 - Each design-relevant layer records its council review ID, consensus entry,
@@ -252,10 +296,10 @@ For PR at index `i` (bottom first):
 
 A layer is Done only when **all** hold:
 
-1. Independent review pass succeeds (rubber-duck + adversarial + reviewer).
+1. Independent review pass of the stack's combined diff succeeds (rubber-duck + adversarial + reviewer).
 2. All PR review comments/threads addressed.
 3. Required status checks green **or** only billing/budget failures remain, documented on the PR.
-4. PR **squash-merged** (stack-aware merge when in a stack). Billing-red CI is not a leave-open state.
+4. Its commits are in `main` through a **merge commit** (never squash). Billing-red CI is not a leave-open state.
 5. Cascade deltas applied by the coordinator.
 6. Issue tracker moved to Done by the coordinator (never by the implementer).
 7. For design-relevant work, exact-six unanimous approval binds the current
@@ -266,11 +310,12 @@ A layer is Done only when **all** hold:
 
 | Class | Meaning | Next action |
 |---|---|---|
-| `stack-disabled` | exit 9 / stacks not enabled | User enables stacks or fall back to sequential PRs with manual base branches |
-| `rebase-conflict` | exit 3 | Parent resolves; re-dispatch only if logic conflict needs implementer |
+| `stack-disabled` | exit 9 / stacks not enabled | User enables stacks or fall back to plain layer branches merged up into one top branch |
+| `merge-conflict` | conflict merging trunk or a lower layer in (exit 3 for unpushed `gh stack rebase`) | Parent resolves; re-dispatch only if logic conflict needs implementer |
+| `superseded` | head in `origin/main` or ancestor of another open PR's head | Close `Superseded by #N`; keep the branch |
 | `review-fail` | adversarial/rubber-duck/reviewer found defects | Re-dispatch fix on same layer |
 | `checks-fail` | CI red (non-billing) | Fix on layer, push, re-wait |
-| `billing-budget` | quota/minutes/spending limit; jobs never ran | Document on PR + state; **squash-merge now**; notify user that account billing needs repair (async) |
+| `billing-budget` | quota/minutes/spending limit; jobs never ran | Document on PR + state; **merge now** (`--merge`); notify user that account billing needs repair (async) |
 | `comments-open` | unresolved threads | Address before merge |
 | `handback-missing` | no `sdlc-report` / report.json | Demand report; do not Done |
 
@@ -279,13 +324,13 @@ A layer is Done only when **all** hold:
 When layers are implemented by cloud coding agents that open their own branches/PRs:
 
 1. Prefer giving them the **pre-created stack branch** as the head.
-2. If they open free-standing PRs, parent `gh stack link`s them in dependency order (or
-   re-bases onto the stack) before closeout.
-3. Handback remains the fenced `sdlc-report` block; parent still owns bottom-up merge.
+2. If they open free-standing PRs, parent merges their branches up into the stack in
+   dependency order, then closes the free-standing PRs with `Superseded by #N` (branches kept).
+3. Handback remains the fenced `sdlc-report` block; parent still owns the one merge-commit landing.
 
 ## Related
 
-- `finish.md` — `/sdlc --finish` session land (commit + all session PRs through squash-merge)
+- `finish.md` — `/sdlc --finish` session land (commit + all session work through merge-commit landing)
 - `dispatch.md` — backend matrix, claim protocol, handback schema
 - `loops-and-gates.md` — red/green and agent:check ladder
 - `repo` skill `references/git-pr.md` — single-PR hygiene (stacks supersede for multi-layer)
