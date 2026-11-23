@@ -547,6 +547,7 @@ jobs:
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
+          main-build: "true"
           turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
@@ -686,6 +687,7 @@ jobs:
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
+          main-build: "true"
           turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
@@ -793,6 +795,7 @@ jobs:
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
+          main-build: "true"
           turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
@@ -914,6 +917,7 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: $/.github/actions/turbo-cache
         with:
+          main-build: "true"
           preferred-job: scripts-tests
           turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -1057,6 +1061,7 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: $/.github/actions/turbo-cache
         with:
+          main-build: "true"
           preferred-job: scripts-tests-build
           turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -2016,6 +2021,73 @@ jobs:
         uses: $/.github/actions/ci-trace
         with:
           disambiguator: ${{ matrix.shard }}
+
+  main_build_cache:
+    name: Main build cache
+    needs: [route]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-main-build-cache
+      cancel-in-progress: false
+    steps:
+      - name: Resolve repo-local actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          clean: false
+      - uses: $/.github/actions/hobo-repo-checkout
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          submodules: recursive
+          marker: scripts/ci/ci-trace.mts
+          bootstrap-composite-actions: "false"
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: $/.github/actions/turbo-cache
+        with:
+          main-build: "true"
+      - name: Check the sibling pins (gitlink against checkout, offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - uses: $/.github/actions/pnpm-store
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build every package
+        timeout-minutes: 25
+        run: pnpm exec turbo run build --continue --output-logs=errors-only --concurrency=100%
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
+        continue-on-error: true
+        env:
+          HOBO_TURBO_CACHE_KEEP_DAYS: "0"
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.turbo-prune.outputs.save == 'true'
+        uses: $/.github/actions/turbo-cache
+        with:
+          mode: save
+          cache-name: main-build
+      - name: CI trace
+        if: always()
+        uses: $/.github/actions/ci-trace
 
   main_gate_finish:
     name: Main full gate (finish)
