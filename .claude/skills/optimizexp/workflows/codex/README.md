@@ -1,3 +1,3 @@
-# Codex — OptimizeXP review workflow
+# Experience improvement
 
-Codex has no Rhai workflow runtime in-repo. Use `review.md` as the step script the agent follows, and optionally `../cross-agent/review-loop.mts` for deterministic scoring helpers.
+Follow [SKILL.md](../../SKILL.md). Inspect real behavior, implement the requested improvements, and run relevant tests. Do not create synthetic personas, plans, design documents, or review backlogs.

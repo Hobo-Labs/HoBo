@@ -1,6 +1,6 @@
 # control-yard UX proof — agent instructions
 
-Experience proof for the control-plane game UI (ADR-0135).
+Experience proof for the control-plane game UI.
 
 ## Evidence required (Playwright screenshots + MP4)
 
@@ -28,5 +28,5 @@ Source of truth capture lives in
 1. After changing yard UX or assets, re-run evidence capture and re-sync
    `assets/evidence/`.
 2. Read PNGs (and extract MP4 frames if needed) before declaring done.
-3. Update `proof.json` `artifacts.diagrams` / evidence list when paths change.
+3. Update the evidence manifest when paths change.
 4. Follow parent [`../AGENTS.md`](../AGENTS.md) for general UX proof rules.

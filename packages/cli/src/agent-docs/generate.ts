@@ -1,38 +1,24 @@
 import { normalizeText } from "../codegen/text.js";
 import { CANONICAL_VERBS, GLOBAL_FLAGS, type Verb } from "../shell/verbs.js";
 
-// S3-05 — the agent-docs surface (ai-native-agent-auth.md §6.4 +
-// developer-experience.md). HoBo publishes llms.txt / llms-full.txt / docs.json
-// so any agent can self-serve the operations surface without a human pasting
-// docs. The SINGLE source of truth is CANONICAL_VERBS + its 1:1 MCP tool surface;
-// every artifact here is a pure, deterministic projection over that source — no
-// timestamps, no wall-clock, no ordering beyond CANONICAL_VERBS order — so the
-// output is drift-gated exactly like `hobo codegen --check` (see gate.ts).
-//
-// @hobo/cli owns codegen + the verb table, so the generator lives here and is
-// exported for @hobo/mcp to call with its own authoritative MCP_TOOL_SURFACE.
-
+// public-contract: schema id written into docs.json and read by agents.
 export const AGENT_DOCS_SCHEMA_VERSION = "hobo.agent-docs/v1";
+// public-contract: generator id recorded in docs.json.
 export const AGENT_DOCS_GENERATOR = "@hobo/cli/agent-docs";
+// public-contract: product name recorded in docs.json.
 export const AGENT_DOCS_PRODUCT = "hobo";
 
-// The MCP capability convention (ai-native-agent-auth.md §6.2): a tool's required
-// grant is { port: "hobo:mcp", resource: "tool:<name>", verb: "call" }. Kept as
-// cli-local constants so the generator is a leaf — @hobo/mcp derives the SAME
-// triple in its tool-surface.ts, so the two agree by construction.
+// public-contract: MCP capability port that @hobo/mcp derives the same way.
 export const AGENT_DOCS_MCP_PORT = "hobo:mcp";
+// public-contract: MCP capability verb that @hobo/mcp derives the same way.
 export const AGENT_DOCS_MCP_CALL_VERB = "call";
 
-// The generated artifact file names (output-directory-relative).
 export const AGENT_DOCS_ARTIFACTS = {
 	concise: "llms.txt",
 	full: "llms-full.txt",
 	manifest: "docs.json",
 } as const;
 
-// The structural view of one MCP tool the generator consumes. Kept structural
-// (not an @hobo/mcp import) so @hobo/cli stays a leaf package; @hobo/mcp passes
-// its MCP_TOOL_SURFACE, which is itself derived from CANONICAL_VERBS.
 export interface AgentDocsToolInput {
 	readonly name: string;
 	readonly capability: {
@@ -42,7 +28,6 @@ export interface AgentDocsToolInput {
 	};
 }
 
-// The required-capability triple, mirroring @hobo/identity's ScopeEntry.
 // domain-view: wire form is AgentDocCapability in data-models/agent_docs.proto.
 export interface AgentDocCapability {
 	readonly port: string;
@@ -50,7 +35,6 @@ export interface AgentDocCapability {
 	readonly verb: string;
 }
 
-// One documented capability (a canonical verb + its 1:1 MCP tool).
 // domain-view: wire form is AgentDocEntry in data-models/agent_docs.proto.
 export interface AgentDocEntry {
 	readonly name: string;
@@ -61,7 +45,6 @@ export interface AgentDocEntry {
 	readonly capability: AgentDocCapability;
 }
 
-// The structured docs manifest emitted as docs.json.
 // domain-view: wire form is AgentDocsManifest in data-models/agent_docs.proto.
 export interface AgentDocsManifest {
 	readonly schemaVersion: string;
@@ -72,7 +55,6 @@ export interface AgentDocsManifest {
 	readonly artifacts: readonly string[];
 }
 
-// One emitted artifact file (llms.txt / llms-full.txt / docs.json).
 // domain-view: wire form is AgentDocsArtifact in data-models/agent_docs.proto.
 export interface AgentDocsArtifact {
 	readonly path: string;
@@ -90,7 +72,6 @@ export interface AgentDocsResult {
 	readonly artifacts: readonly AgentDocsArtifact[];
 }
 
-// The default MCP capability for a verb, mirroring @hobo/mcp's capabilityForTool.
 function defaultCapabilityFor(name: string): AgentDocCapability {
 	return {
 		port: AGENT_DOCS_MCP_PORT,
@@ -99,10 +80,6 @@ function defaultCapabilityFor(name: string): AgentDocCapability {
 	};
 }
 
-// Build the manifest entries: one per canonical verb, in CANONICAL_VERBS order.
-// When an MCP tool surface is supplied its capability is authoritative; otherwise
-// the standard convention is derived — both agree because both derive from
-// CANONICAL_VERBS.
 function buildEntries(
 	verbs: readonly Verb[],
 	tools: readonly AgentDocsToolInput[] | undefined,
@@ -191,18 +168,9 @@ function renderFull(manifest: AgentDocsManifest): string {
 }
 
 function renderManifest(manifest: AgentDocsManifest): string {
-	// Plain JSON.stringify preserves insertion order (deterministic because the
-	// manifest is built deterministically) — unlike stableStringify, which would
-	// sort the entries array and destroy CANONICAL_VERBS order.
 	return normalizeText(JSON.stringify(manifest, null, 2));
 }
 
-/**
- * Generate the agent-docs surface — llms.txt (concise), llms-full.txt (full),
- * and docs.json (structured, machine-readable) — from CANONICAL_VERBS + the MCP
- * tool surface. Pure and deterministic: same inputs always yield byte-identical
- * artifacts, so the output is drift-gated like `hobo codegen --check`.
- */
 export function generateAgentDocs(
 	input: GenerateAgentDocsInput = {},
 ): AgentDocsResult {

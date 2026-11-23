@@ -47,7 +47,6 @@ import {
 import { listPersonaMetas, type PersonaMeta } from "./persona-resolve.mts";
 import {
 	checkGherkinQuality,
-	checkRubberduckFile,
 } from "./feature-quality.mts";
 import {
 	readSurfaceMap,
@@ -58,13 +57,6 @@ import {
 	assessPackageCli,
 	writeSurfaceMap,
 } from "./surface-map.mts";
-import {
-	buildExperienceCatalog,
-	catalogPath,
-	readExperienceCatalog,
-	validateCatalogCoverage,
-	writeExperienceCatalog,
-} from "./experience-catalog.mts";
 
 export type DoctorSeverity = "error" | "warn" | "info";
 
@@ -162,7 +154,7 @@ function auditPersonaFile(
 				"error",
 				meta.scopeId,
 				`Persona ${meta.id}: schemaVersion must be 1 or 2`,
-				{ path: meta.relPath, repairable: true, repairAction: "persona-schema-v2" },
+				{ path: meta.relPath, repairable: false },
 			),
 		);
 	}
@@ -173,7 +165,7 @@ function auditPersonaFile(
 				"error",
 				meta.scopeId,
 				`Persona ${meta.id}: ${meta.experienceProblems.join("; ")}`,
-				{ path: meta.relPath, repairable: true, repairAction: "persona-experiences-default" },
+				{ path: meta.relPath, repairable: false },
 			),
 		);
 	}
@@ -184,7 +176,7 @@ function auditPersonaFile(
 				"error",
 				meta.scopeId,
 				`Persona ${meta.id}: experiences: binding empty — will never be selected`,
-				{ path: meta.relPath, repairable: true, repairAction: "persona-experiences-default" },
+				{ path: meta.relPath, repairable: false },
 			),
 		);
 	}
@@ -229,8 +221,7 @@ function auditPersonaFile(
 						`Persona ${meta.id}: schema v2 expects "${sec}"`,
 						{
 							path: meta.relPath,
-							repairable: true,
-							repairAction: "persona-v2-sections",
+							repairable: false,
 						},
 					),
 				);
@@ -243,7 +234,7 @@ function auditPersonaFile(
 					"error",
 					meta.scopeId,
 					`Persona ${meta.id}: schemaVersion 2 requires segmentIds`,
-					{ path: meta.relPath, repairable: true, repairAction: "persona-segmentIds" },
+					{ path: meta.relPath, repairable: false },
 				),
 			);
 		}
@@ -372,22 +363,6 @@ function auditFeatureDir(
 		}
 	}
 
-	const rd = checkRubberduckFile(dir);
-	if (!rd.ok) {
-		out.push(
-			find(
-				"feature-rubberduck",
-				"error",
-				scopeId,
-				`Feature ${featureId}: EXPERIENCE.md rubber-duck/adversarial incomplete — ${rd.problems[0]}`,
-				{
-					path: path.join(rel, "EXPERIENCE.md"),
-					repairable: true,
-					repairAction: "feature-experience-skeleton",
-				},
-			),
-		);
-	}
 
 	for (const req of ["steps/bindings.steps.ts", "steps/implementations.ts", "steps/world.ts"]) {
 		if (!existsSync(path.join(dir, req))) {
@@ -553,42 +528,6 @@ function auditProjectMaps(
 			);
 		}
 	}
-	const catalog = readExperienceCatalog(project, root);
-	if (!catalog) {
-		const exists = existsSync(catalogPath(project, root));
-		out.push(
-			find(
-				exists ? "catalog-invalid" : "catalog-missing",
-				exists || map?.cliAssessment?.status !== "not-applicable" ? "error" : "info",
-				project.id,
-				exists ? "Experience catalog is invalid or unreadable; inspect it before rebuilding" : "No experience-catalog.json — feature gen critical path incomplete for CLI products",
-				exists ? {} : { repairable: true, repairAction: "build-catalog" },
-			),
-		);
-	} else if (map) {
-		if (JSON.stringify(catalog.cliAssessment) !== JSON.stringify(map.cliAssessment)) {
-			out.push(find("catalog-coverage", "error", project.id, "Catalog and surface-map package-bin assessments differ; rebuild the catalog"));
-		}
-		const personas = [
-			...new Set(catalog.experiences.map((e) => e.personaId)),
-		];
-		for (const p of validateCatalogCoverage(catalog, personas, map, { root, confirmedSurfaces })) {
-			out.push(find("catalog-coverage", "error", project.id, p));
-		}
-		if (
-			map.cliAssessment?.status === "present" &&
-			!catalog.experiences.some((e) => e.experienceId.startsWith("cold-start"))
-		) {
-			out.push(
-				find(
-					"catalog-no-default-entry",
-					"error",
-					project.id,
-					"Catalog missing cold-start default-entry experiences",
-				),
-			);
-		}
-	}
 	return out;
 }
 
@@ -694,163 +633,6 @@ export function runDoctorCheck(input: {
 	};
 }
 
-function repairPersonaExperiences(filePath: string): void {
-	let text = readFileSync(filePath, "utf8");
-	if (!/^---/m.test(text)) return;
-	if (!/^experiences:/m.test(text.split("---")[1] ?? "")) {
-		text = text.replace(
-			/^---\r?\n/,
-			"---\nexperiences: [dx, ax]\n",
-		);
-	} else {
-		text = text.replace(
-			/^experiences:\s*\[[^\]]*\]/m,
-			"experiences: [dx, ax]",
-		);
-		text = text.replace(
-			/^experiences:\s*$/m,
-			"experiences: [dx, ax]",
-		);
-	}
-	if (!/^schemaVersion:/m.test(text)) {
-		text = text.replace(/^---\r?\n/, "---\nschemaVersion: 2\n");
-	}
-	writeFileSync(filePath, text, "utf8");
-}
-
-function repairPersonaV2Stubs(filePath: string): void {
-	let text = readFileSync(filePath, "utf8");
-	const stubs: [RegExp, string][] = [
-		[
-			/## Market segment/i,
-			`## Market segment
-
-- segmentIds: [product-stakeholder]
-- primary job: complete critical path without tribal knowledge
-- secondary jobs: report friction with evidence
-- non-jobs: unrelated product areas
-`,
-		],
-		[
-			/## Demographic model/i,
-			`## Demographic model
-
-- roleFamily: stakeholder
-- seniority: mid
-- orgArchetype: product-team
-- domainFamiliarity: intermediate
-- localeContext: en-primary
-- deviceContext: desktop-first
-- timeBudget: minutes
-- accessibilityProfile: text-first
-`,
-		],
-		[
-			/## Psychographic model/i,
-			`## Psychographic model
-
-- values: [clarity, autonomy, safety]
-- riskTolerance: medium
-- noveltySeeking: medium
-- trustInAutomation: medium
-- documentationPreference: examples-first
-- errorEmotion: frustrated-when-opaque
-- socialProofNeed: low
-- aestheticSensitivity: medium
-- controlNeed: medium
-`,
-		],
-		[
-			/## Cognitive thresholds/i,
-			`## Cognitive thresholds
-
-- featureSprawl: 3
-- visualClutter: 3
-- interactiveClutter: 3
-- choiceOverload: 3
-- informationDensity: 3
-- noveltyTax: 3
-- contextSwitchTax: 2
-- workingMemoryLoad: 2
-- interruptionFragility: 2
-`,
-		],
-	];
-	for (const [re, block] of stubs) {
-		if (!re.test(text)) {
-			// insert before ## Review instructions or at end
-			if (/## Review instructions/i.test(text)) {
-				text = text.replace(/## Review instructions/i, `${block}\n## Review instructions`);
-			} else {
-				text = `${text.trimEnd()}\n\n${block}`;
-			}
-		}
-	}
-	if (!/^segmentIds:/m.test(text.split("---")[1] ?? "")) {
-		text = text.replace(/^---\r?\n/, "---\nsegmentIds: [product-stakeholder]\n");
-	}
-	if (!/^schemaVersion:\s*2/m.test(text)) {
-		if (/^schemaVersion:/m.test(text)) {
-			text = text.replace(/^schemaVersion:\s*\d+/m, "schemaVersion: 2");
-		} else {
-			text = text.replace(/^---\r?\n/, "---\nschemaVersion: 2\n");
-		}
-	}
-	writeFileSync(filePath, text, "utf8");
-}
-
-function repairFeatureExperienceSkeleton(dir: string, featureId: string): void {
-	const p = path.join(dir, "EXPERIENCE.md");
-	if (existsSync(p) && checkRubberduckFile(dir).ok) return;
-	const seed = existsSync(path.join(dir, "SEED.md"))
-		? readFileSync(path.join(dir, "SEED.md"), "utf8").slice(0, 200)
-		: featureId;
-	const body = `# EXPERIENCE: ${featureId}
-
-- entryCommand: \`${featureId.includes("hobo") ? "hobo --help" : "TODO"}\`
-- driver: cli
-- intent: ${seed.replace(/\n/g, " ").slice(0, 160)}
-
-## Rubber-duck (explain to a new teammate)
-
-1. Who is the persona and what are they trying to finish in the next 2 minutes?
-   - TODO — fill before review
-2. What exact command / UI path do they take from a clean machine?
-   - TODO
-3. What do they see first? (quote expected chrome, not vibes)
-   - TODO
-4. What would make them think they opened the wrong product?
-   - TODO
-5. Happy path: step-by-step (Given/When/Then in prose first).
-   - TODO
-6. Failure path: how do they break it, what must the product say?
-   - TODO
-7. What evidence will prove a human/agent actually ran this? (driver + command)
-   - TODO
-8. What is deliberately out of scope for this feature folder?
-   - TODO
-
-## Adversarial critique (must check all)
-
-- [ ] Did not skip default entry because a secondary verb is easier to automate
-- [ ] Not testing a monorepo script instead of the product binary
-- [ ] No When-step is only “exercise the surface” without a real command
-- [ ] Scores cannot be invented without reading stdout/TUI
-- [ ] Persona vocabulary/asserts considered for shared paths
-- [ ] Security: secrets, destructive promote, network—fail-closed
-- [ ] Cognitive load: journey stays within persona thresholds
-- [ ] Confusion twin: stock UI / wrong binary / wrong verb—covered
-- [ ] If this feature were the only one we ship, the persona would not still be lost
-
-## Verdict
-
-- revise
-- primaryCommand: TODO
-- driver: cli
-`;
-	writeFileSync(p, body, "utf8");
-}
-
 export function runDoctorRepair(input: {
 	root?: string;
 	selection?: ProjectSelection;
@@ -934,30 +716,6 @@ export function runDoctorRepair(input: {
 		ensureGlobalGitignore(skillBuiltinGitignoreConfig("global"), root);
 	});
 
-	// Persona repairs
-	const personas = listPersonaMetas(root, input.selection);
-	for (const p of personas) {
-		const needsExp = check.findings.some(
-			(f) =>
-				f.path === p.relPath &&
-				(f.repairAction === "persona-experiences-default" ||
-					f.repairAction === "persona-schema-v2"),
-		);
-		if (needsExp) {
-			apply(`persona-experiences:${p.id}`, () => repairPersonaExperiences(p.path));
-		}
-		const needsV2 = check.findings.some(
-			(f) =>
-				f.path === p.relPath &&
-				(f.repairAction === "persona-v2-sections" ||
-					f.repairAction === "persona-segmentIds"),
-		);
-		if (needsV2) {
-			apply(`persona-v2:${p.id}`, () => repairPersonaV2Stubs(p.path));
-		}
-	}
-
-	// Feature EXPERIENCE skeletons — same project-focus filter as check deep scan
 	const allFeatures = listFeatures(root, input.selection);
 	const focusProject =
 		input.selection &&
@@ -973,17 +731,6 @@ export function runDoctorRepair(input: {
 		);
 	});
 	for (const loc of features) {
-		const needs = check.findings.some(
-			(f) =>
-				f.repairAction === "feature-experience-skeleton" &&
-				(f.path?.includes(loc.id) || f.message.includes(loc.id)),
-		);
-		if (needs || !existsSync(path.join(loc.dir, "EXPERIENCE.md"))) {
-			apply(`feature-experience:${loc.id}`, () =>
-				repairFeatureExperienceSkeleton(loc.dir, loc.id),
-			);
-		}
-		// Fix feature.json id mismatch
 		const fj = path.join(loc.dir, "feature.json");
 		if (existsSync(fj)) {
 			try {
@@ -1012,17 +759,7 @@ export function runDoctorRepair(input: {
 				writeSurfaceMap(map, p, root);
 			});
 		}
-		if (!existsSync(catalogPath(p, root))) {
-			apply(`build-catalog:${p.id}`, () => {
-				const map = readSurfaceMap(p, root);
-				const catalog = buildExperienceCatalog({
-					project: p,
-					root,
-					surfaceMap: map,
-				});
-				writeExperienceCatalog(catalog, p, root);
-			});
-		}
+
 	}
 
 	// Re-check after repairs
@@ -1087,37 +824,19 @@ export function runDoctorSnapshot(input: {
 
 	// Snapshot key metadata only
 	const g = globalOptimizexpRoot(root);
-	for (const name of ["config.json", "INIT.md", "init-report.json"]) {
+	for (const name of ["config.json"]) {
 		copyIf(path.join(g, name), path.join(".optimizexp", name));
 	}
-	// personas + feature.json + EXPERIENCE.md + SEED.md
 	for (const scope of scopesForSelection(selection, root)) {
 		const baseRel = relFromRepo(scope.optimizexpDir, root);
 		copyIf(path.join(scope.optimizexpDir, "config.json"), path.join(baseRel, "config.json"));
 		copyIf(path.join(scope.optimizexpDir, "surface-map.json"), path.join(baseRel, "surface-map.json"));
-		copyIf(
-			path.join(scope.optimizexpDir, "experience-catalog.json"),
-			path.join(baseRel, "experience-catalog.json"),
-		);
-		const pDir = personasDir(scope);
-		if (existsSync(pDir)) {
-			for (const f of readdirSync(pDir)) {
-				if (f.endsWith(".md")) {
-					copyIf(path.join(pDir, f), path.join(baseRel, "personas", f));
-				}
-			}
-		}
 		const fRoot = featuresRoot(scope);
 		if (existsSync(fRoot)) {
 			for (const id of readdirSync(fRoot)) {
 				const fd = path.join(fRoot, id);
 				if (!statSync(fd).isDirectory()) continue;
-				for (const name of [
-					"feature.json",
-					"EXPERIENCE.md",
-					"SEED.md",
-					"README.md",
-				]) {
+				for (const name of ["feature.json"]) {
 					copyIf(path.join(fd, name), path.join(baseRel, "features", id, name));
 				}
 				// small gherkin only

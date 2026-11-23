@@ -1,6 +1,5 @@
 import { bindle } from "@hobo/bindles";
 
-/** Connector symbol — Station resolves the Connection and issues a token. */
 export default bindle("{{name}}-connector", (b) => {
 	const search = b.connector({ name: "{{name}}", kind: "http" }).allow("search");
 	const api = b

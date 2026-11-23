@@ -427,6 +427,38 @@ To serve ARC pods or another box, bind the private address they reach this host
 on; do not expose it publicly without TLS in front. Fork pull requests receive
 no token, so they neither read nor write the cache.
 
+## ARC runner node caches
+
+An ARC runner pod (`hobo-trunk-runner-*`, `hobo-runner-*`) starts with an empty
+pnpm store and an empty Docker engine, so every job downloaded every package
+and image again over the node's slow link ([finding 160](../../../docs/ci/findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)).
+`scripts/ci/arc-runner-caches.mts` gives the scale set node-local caches that
+outlive the pod:
+
+```sh
+node --experimental-strip-types scripts/ci/arc-runner-caches.mts \
+  --scale-set hobo-trunk --namespace <namespace> --apply \
+  --prewarm Hobo-Labs/HoBo "$(git rev-parse origin/main)"
+```
+
+It reads the `AutoscalingRunnerSet`, prints and applies an idempotent JSON
+patch that mounts `/var/lib/hobo-ci/pnpm-store` at `/pnpm-store` and
+`/var/lib/hobo-ci/images` at `/var/cache/hobo-ci/images` (hostPath,
+`DirectoryOrCreate`, owned by UID 1000 through the `hobo-cache-owner` init
+container), and sets `HOBO_CI_PNPM_STORE_DIR` and `HOBO_CI_IMAGE_CACHE_DIR` on
+the runner container. Without `--apply` it only prints. `--prewarm` also
+applies a Job that runs `pnpm fetch --frozen-lockfile` for the whole
+workspace's lockfile at that commit into the node store, so the first job on
+the node is warm too. Run it once per scale set, and again after a
+`helm upgrade` of the scale set, which replaces the pod template.
+
+Inside the pod, `scripts/ci/pnpm-install.mts` installs into the store named by
+`HOBO_CI_PNPM_STORE_DIR` when it is writable, `.github/actions/turbo-cache`
+keeps the Turbo local cache in `hobo-turbo-cache` inside it, and
+`scripts/ci/data-live-servers.mts up` loads the digest-pinned PostgreSQL and
+MongoDB images from `HOBO_CI_IMAGE_CACHE_DIR` (`<digest>.tar`), saving them
+there after the first pull.
+
 ## Backup, restore and stop
 
 The SQLite database, WAL and shared-memory files live together in the persistent

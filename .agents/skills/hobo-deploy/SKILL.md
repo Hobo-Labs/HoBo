@@ -99,10 +99,17 @@ channel as described above; a displayed form alone does not establish privacy.
    at an owner step and report the missing secure hand-off if necessary.
 2. On `HOBO_*_STORE_CHOICE` (the owner has not chosen a store): use the
    HoBo MCP server's **`choose_secret_store`** (`mcp__hobo__choose_secret_store`,
-   `family` ci or cd) only when the connected implementation keeps the choice
+   `family` ci or cd, the same `cwd`, no store settings in its arguments)
+   only when the connected implementation keeps the choice
    in the temporary owner session and excludes store coordinates from every
-   agent-visible response. If that privacy cannot be established, report the
-   missing secure hand-off and do not collect the choice's fields. A supported
+   agent-visible response. HoBo's implementation saves the owner's answer in
+   their own HoBo settings, establishes the owner store session, and returns
+   only a status and the store's name. On `link`, show the owner the URL
+   as given and call `choose_secret_store` again with the same `cwd` until it
+   reports `established` (the [setup skill](../hobo-setup/SKILL.md) describes
+   the link). On `secure-form-unavailable`, or if that privacy cannot
+   be established, report the missing secure hand-off and
+   do not collect the choice's fields. A supported
    host shows the owner a picker of **Infisical**,
    **1Password** and **Bitwarden** and a secure owner form for its settings.
    The owner supplies the information directly to HoBo, never to the agent.

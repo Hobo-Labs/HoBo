@@ -1,16 +1,4 @@
 ---
-/**
- * three.js viewer for the GLB.
- *
- * Bundled, not CDN-loaded: the published page runs under a strict CSP that
- * blocks every external host, so an import-map pointing at unpkg would render
- * an empty box in production and work perfectly in dev — the worst failure
- * shape. Astro bundles the module below into the page's own asset graph.
- *
- * It renders only when the canvas scrolls into view and stops when it leaves,
- * because an idle WebGL context spinning a render loop is a laptop fan for no
- * reason on a page that is mostly flat images.
- */
 import { href } from "../lib/url";
 
 interface Props {
@@ -54,8 +42,6 @@ const posterUrl = poster ? href(poster) : undefined;
 	}
 	.viewer:active { cursor: grabbing; }
 	.viewer-canvas { display: block; width: 100%; height: 100%; }
-	/* The poster is what you see until the mesh is ready — swapped out, not
-	   layered under a transparent canvas, so there is never a double image. */
 	.viewer-poster {
 		position: absolute;
 		inset: 0;
@@ -90,8 +76,7 @@ const posterUrl = poster ? href(poster) : undefined;
 	import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 	for (const host of document.querySelectorAll<HTMLElement>(".viewer")) {
-		// SAFETY: `const canvas = host.querySelector("canvas") as HTMLCanvasElement;` is required at this I/O or test boundary.
-		const canvas = host.querySelector("canvas") as HTMLCanvasElement;
+		const canvas = host.querySelector("canvas");
 		const url = host.dataset.model;
 		if (!canvas || !url) continue;
 
@@ -104,8 +89,6 @@ const posterUrl = poster ? href(poster) : undefined;
 		controls.enableDamping = true;
 		controls.enablePan = false;
 
-		// Neutral studio light. The mesh carries a baked black-and-white texture,
-		// so coloured or dramatic lighting would only misrepresent it.
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2.2));
 		const key = new THREE.DirectionalLight(0xffffff, 1.6);
 		key.position.set(2, 3, 2);
@@ -125,8 +108,6 @@ const posterUrl = poster ? href(poster) : undefined;
 			url,
 			(gltf) => {
 				const model = gltf.scene;
-				// Frame it from its own bounds rather than guessing a camera
-				// distance: the lift's scale is whatever the generator chose.
 				const box = new THREE.Box3().setFromObject(model);
 				const size = box.getSize(new THREE.Vector3());
 				const centre = box.getCenter(new THREE.Vector3());
@@ -144,13 +125,10 @@ const posterUrl = poster ? href(poster) : undefined;
 			},
 			undefined,
 			() => {
-				// Loading failed: leave the poster up rather than showing a void.
 				host.classList.remove("is-ready");
 			},
 		);
 
-		// Only run the loop while on screen, and respect reduced motion by not
-		// auto-spinning — the user can still orbit by hand.
 		const still = matchMedia("(prefers-reduced-motion: reduce)");
 		let running = false;
 		const tick = () => {

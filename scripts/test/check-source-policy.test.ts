@@ -16,6 +16,7 @@ import {
 	commentViolations,
 	documentViolation,
 } from "../check-source-policy.mts";
+import { lexComments } from "../source-comment-lexer.mts";
 
 const script = resolve("scripts/check-source-policy.mts");
 const scratch: string[] = [];
@@ -105,6 +106,35 @@ describe("source policy", () => {
 		);
 	});
 
+	it("accepts Vite dynamic import directives without exempting deferred work or lookalikes", () => {
+		const text = [
+			"export const loaded = import(/* @vite-ignore */ modulePath);",
+			"export const deferred = import(/* @vite-ignore TODO replace */ modulePath);",
+			"export const lookalike = import(/* @vite-ignored */ modulePath);",
+			"export const extra = import(/* @vite-ignore explanation */ modulePath);",
+			"// @vite-ignore",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("x.ts", text, new Set([1, 2, 3, 4, 5])).map(
+				(item) => item.line,
+			),
+			[2, 3, 4, 5],
+		);
+	});
+
+	it("rejects a standalone documentation comment", () => {
+		assert.equal(
+			commentViolations("example.ts", "/** explanation */", new Set([1]))
+				.length,
+			1,
+		);
+		assert.equal(
+			commentViolations("example.astro", "{/* explanation */}", new Set([1]))
+				.length,
+			1,
+		);
+	});
+
 	it("checks added lines inside an existing multiline comment", () => {
 		const text = "/* existing\nnew explanation\n*/\nexport const value = 1;\n";
 		assert.equal(commentViolations("x.ts", text, new Set([2])).length, 1);
@@ -146,6 +176,309 @@ describe("source policy", () => {
 		);
 	});
 
+	it("checks contract and configuration comments without treating string contents as comments", () => {
+		const cue = String.raw`a: "https://example.test" // outside
+b: #"literal // and \(not interpolation)"#
+c: """
+  // multiline string
+  """
+d: "value: \(1 + // interpolation
+  2)"
+e: ##"raw \##(2 + // raw interpolation
+  3) // literal"##
+f: /* TODO: remove block */`;
+		assert.deepEqual(
+			commentViolations("x.cue", cue, new Set([1, 3, 6, 8, 9, 10])).map(
+				(item) => item.line,
+			),
+			[1, 6, 8, 10],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.cue",
+				"g: /* see http://inside.example.test */",
+				new Set([1]),
+			).map((item) => item.message),
+			["make the code self-documenting instead of adding a comment"],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.cue",
+				"a: /* glob: pkg/* */\n// TODO: follow up\n",
+				new Set([1, 2]),
+			).map((item) => ({ line: item.line, message: item.message })),
+			[
+				{
+					line: 1,
+					message: "make the code self-documenting instead of adding a comment",
+				},
+				{
+					line: 2,
+					message: "finish deferred work instead of adding a marker",
+				},
+			],
+		);
+		const proto =
+			'option x = "https://example.test/* data */"; /* explanation */\n// todo: implement';
+		assert.deepEqual(
+			commentViolations("x.proto", proto, new Set([1, 2])).map(
+				(item) => item.line,
+			),
+			[1, 2],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"schema.prisma",
+				"/* TODO: inside */\n/* relation pkg/* */ TODO: outside */\n",
+				new Set([1, 2]),
+			).map((item) => ({ line: item.line, message: item.message })),
+			[
+				{
+					line: 1,
+					message: "finish deferred work instead of adding a marker",
+				},
+				{
+					line: 2,
+					message: "make the code self-documenting instead of adding a comment",
+				},
+			],
+		);
+		const wit = "/* outer /* inner */ outer */\n/// explanation";
+		assert.deepEqual(
+			commentViolations("x.wit", wit, new Set([1, 2])).map((item) => item.line),
+			[1, 2],
+		);
+		const sql =
+			"SELECT 'it''s -- data # data', $$-- data # data$$; -- explanation\n/* explanation */";
+		assert.deepEqual(
+			commentViolations("x.sql", sql, new Set([1, 2])).map((item) => item.line),
+			[1, 2],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.sql",
+				"/* relation pkg/* nested */ TODO: follow up */\n-- explanation\n",
+				new Set([1, 2]),
+			).map((item) => ({ line: item.line, message: item.message })),
+			[
+				{
+					line: 1,
+					message: "finish deferred work instead of adding a marker",
+				},
+				{
+					line: 2,
+					message: "make the code self-documenting instead of adding a comment",
+				},
+			],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.sql",
+				"SELECT payload #>> '{a}' FROM events;",
+				new Set([1]),
+			),
+			[],
+		);
+		const toml = `a = '# data' # explanation\nb = """\n# data\n""" # explanation`;
+		assert.deepEqual(
+			commentViolations("x.toml", toml, new Set([1, 3, 4])).map(
+				(item) => item.line,
+			),
+			[1, 4],
+		);
+		for (const text of [
+			'a = """# data"""" # explanation',
+			'a = """# data""""" # explanation',
+			"a = '''# data'''' # explanation",
+			"a = '''# data''''' # explanation",
+		])
+			assert.deepEqual(
+				commentViolations("x.toml", text, new Set([1])).map(
+					(item) => item.line,
+				),
+				[1],
+			);
+		assert.equal(
+			commentViolations(
+				"x.yaml",
+				'url: "https://host/#data" # explanation',
+				new Set([1]),
+			).length,
+			1,
+		);
+		assert.equal(
+			commentViolations(
+				"x.prisma",
+				'url = "https://example.test" // explanation',
+				new Set([1]),
+			).length,
+			1,
+		);
+	});
+
+	it("handles MySQL backslash escapes in strings and quoted identifiers", () => {
+		const sql = [
+			"SELECT 'it\\'s -- not a comment', `column\\` -- still an identifier`; -- explanation",
+			'SELECT "a\\" -- still a string"; -- explanation',
+		].join("\n");
+		assert.deepEqual(
+			lexComments(sql, "sql").map((comment) => comment.text),
+			["-- explanation", "-- explanation"],
+		);
+	});
+
+	it("requires whitespace or a control character after MySQL line comment delimiters", () => {
+		const sql = [
+			"SELECT 1--2;",
+			"SELECT 3--4;",
+			"SELECT 5 -- explanation",
+			"SELECT 6 --\tcontrolled",
+			"SELECT 7 --",
+		].join("\n");
+		assert.deepEqual(
+			lexComments(sql, "sql").map((comment) => comment.text),
+			["-- explanation", "--\tcontrolled"],
+		);
+	});
+
+	it("handles Rust and Kotlin line and block comments", () => {
+		for (const file of ["example.rs", "example.kt"]) {
+			assert.deepEqual(
+				commentViolations(file, "// line\n/* block */", new Set([1, 2])).map(
+					(item) => item.line,
+				),
+				[1, 2],
+			);
+		}
+	});
+
+	it("checks Astro frontmatter, markup, expressions, attributes, scripts, and styles", () => {
+		const text = [
+			"---",
+			'const url = "https://example.test/*literal*/";',
+			"const count = 1; // frontmatter",
+			"---",
+			'<section title="<!-- literal -->">你好',
+			"<!-- markup",
+			"more markup -->",
+			"<div data-count={",
+			"  /* attribute */ count",
+			"} {...( /* spread */ props )} title=`literal ${/* template */ count}`>",
+			"{count ? <strong>{/* nested */ count}</strong> : /* alternate */ 0}",
+			'<script>const url = "https://example.test"; // script',
+			"</script>",
+			'<style>.x::after { content: "/* literal */" } /* style */</style>',
+			"</div></section>",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations(
+				"example.astro",
+				text,
+				new Set(text.split("\n").map((_, index) => index + 1)),
+			).map((item) => item.line),
+			[3, 6, 9, 10, 10, 11, 11, 12, 14],
+		);
+		assert.deepEqual(
+			commentViolations("example.astro", text, new Set([7])).map(
+				(item) => item.line,
+			),
+			[6],
+		);
+	});
+
+	it("reports Swift line and block comments", () => {
+		assert.deepEqual(
+			commentViolations(
+				"example.swift",
+				"// line\n/* block */",
+				new Set([1, 2]),
+			).map((item) => item.line),
+			[1, 2],
+		);
+	});
+
+	it("preserves actual licensing and tool directives without exempting arbitrary banner comments", () => {
+		assert.equal(
+			commentViolations("x.ts", "/*! @license MIT */\n", new Set([1])).length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.ts", "/*! explanation */\n", new Set([1])).length,
+			1,
+		);
+		assert.equal(
+			commentViolations(
+				"x.proto",
+				"// buf:lint:ignore FIELD_NOT_REQUIRED\n",
+				new Set([1]),
+			).length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.proto", "// buf: retry later\n", new Set([1]))
+				.length,
+			1,
+		);
+		assert.equal(
+			commentViolations("x.ts", "//go:embed schema.json\n", new Set([1]))
+				.length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.ts", "// go: retry later\n", new Set([1])).length,
+			1,
+		);
+		assert.equal(
+			commentViolations("x.cue", "//cue:generate cue get go\n", new Set([1]))
+				.length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.sql", "-- atlas:nolint DS101\n", new Set([1]))
+				.length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.sql", "-- atlas: retry later\n", new Set([1]))
+				.length,
+			1,
+		);
+	});
+
+	it("allows Go compiler directives without exempting lookalike comments", () => {
+		const directives = [
+			"//go:generate stringer -type=Value",
+			"//line parser.go:10",
+			"// #cgo CFLAGS: -DNDEBUG",
+			"//export Run",
+			"//extern run",
+			"// +build linux,amd64",
+		];
+		for (const directive of directives)
+			assert.equal(
+				commentViolations("x.go", `${directive}\n`, new Set([1])).length,
+				0,
+				directive,
+			);
+
+		const comments = [
+			"// go:generate stringer -type=Value",
+			"// line parser.go:10",
+			"//#cgo CFLAGS: -DNDEBUG",
+			"// export Run",
+			"// extern run",
+			"//+build linux,amd64",
+		];
+		assert.deepEqual(
+			commentViolations(
+				"x.go",
+				comments.join("\n"),
+				new Set(comments.map((_, index) => index + 1)),
+			).map((item) => item.line),
+			comments.map((_, index) => index + 1),
+		);
+	});
+
 	it("recognizes additions in zero-context patches", () => {
 		const patch =
 			"@@ -1,2 +1,3 @@\n-old\n+one\n+two\n@@ -8,0 +10,1 @@\n+three\n";
@@ -158,9 +491,104 @@ describe("source policy", () => {
 			["packages/example/DESIGN.md", "# New"],
 			["notes/implementation-plan.md", "# New"],
 			["notes/new.md", "---\ntype: Design\n---\n"],
+			[".impeccable/design.json", "{}"],
+			[".impeccable/surfaces/example.json", "{}"],
+			["site/.impeccable/surfaces/example.md", "# Example"],
+			["site/.impeccable/surfaces/example.json", "{}"],
+			[".impeccable/critique/example.md", "# Example"],
+			[".sdlc/example/sdlc-state.md", "# State"],
 		] as const)
 			assert.ok(documentViolation(file, text), file);
 		assert.equal(documentViolation("docs/usage.md", "# Usage"), undefined);
+	});
+
+	it("rejects ignored agent planning and design documents in the worktree", () => {
+		const repo = fixture();
+		write(repo, ".gitignore", ".sdlc/\n.impeccable/\n");
+		write(repo, ".sdlc/feature/sdlc-state.md", "# Plan\n");
+		write(repo, ".impeccable/critique/example.md", "# Critique\n");
+		const result = guard(repo, "--worktree");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /\.sdlc\/feature\/sdlc-state\.md/u);
+		assert.match(result.stderr, /\.impeccable\/critique\/example\.md/u);
+	});
+
+	it("rejects ignored planning artifacts in nested agent workspaces", () => {
+		const repo = fixture();
+		write(repo, ".gitignore", "**/.optimizexp/\n**/.impeccable/\n**/.sdlc/\n");
+		const artifacts = [
+			".optimizexp/backlog/experiments.json",
+			"packages/demo/.optimizexp/features/example/SEED.md",
+			"packages/demo/.optimizexp/experience-catalog.json",
+			"site/.impeccable/critique/example.md",
+			"packages/demo/.sdlc/example/state.md",
+		];
+		for (const artifact of artifacts) write(repo, artifact, "{}\n");
+		const result = guard(repo, "--worktree");
+		assert.equal(result.status, 1, result.stderr);
+		for (const artifact of artifacts)
+			assert.ok(result.stderr.includes(artifact), artifact);
+	});
+
+	it("preserves experience evidence while rejecting synthetic planning files", () => {
+		for (const file of [
+			".optimizexp/INIT.md",
+			".optimizexp/init-report.json",
+			".optimizexp/personas/generated.md",
+			".optimizexp/features/example/EXPERIENCE.md",
+			".optimizexp/features/example/README.md",
+			".optimizexp/runs/run/backlog.json",
+			".optimizexp/runs/run/INCOMPLETE.md",
+		])
+			assert.ok(documentViolation(file, "{}"), file);
+		assert.equal(
+			documentViolation(
+				".optimizexp/features/example/evidence/manifest.json",
+				"{}",
+			),
+			undefined,
+		);
+	});
+
+	it("checks generated source templates and their underlying syntax", () => {
+		for (const [file, text] of [
+			["snippet.ts.tpl", "const value = {{name}}; // explanation"],
+			["view.tsx.tpl", "const view = <p>{{name}}{/* explanation */}</p>"],
+			["style.css.tpl", "p { color: red; } /* explanation */"],
+			["schema.cue.tpl", 'name: "{{name}}" // explanation'],
+		] as const) {
+			assert.equal(commentViolations(file, text, new Set([1])).length, 1, file);
+		}
+		assert.equal(
+			commentViolations(
+				"snippet.ts.tpl",
+				'const url = "https://example.test";',
+				new Set([1]),
+			).length,
+			0,
+		);
+		assert.ok(documentViolation("docs/design/example.md.tpl", "# Example"));
+		assert.ok(documentViolation("notes/DESIGN.md.tpl", "# Example"));
+		assert.ok(documentViolation(".impeccable/design.json.tpl", "{}"));
+	});
+
+	it("rejects staged comments and planning documents in templates", () => {
+		const repo = fixture();
+		write(repo, "snippet.ts.tpl", "export const value = 1; // explanation\n");
+		write(repo, "view.tsx.tpl", "const view = <p>{/* explanation */}</p>;\n");
+		write(repo, "schema.cue.tpl", 'name: "example" // explanation\n');
+		write(repo, "docs/design/example.md.tpl", "# Design\n");
+		git(repo, "add", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		for (const file of [
+			"snippet.ts.tpl",
+			"view.tsx.tpl",
+			"schema.cue.tpl",
+			"docs/design/example.md.tpl",
+		]) {
+			assert.ok(result.stderr.includes(file), file);
+		}
 	});
 
 	it("checks the staged snapshot rather than the working tree", () => {
@@ -191,6 +619,28 @@ describe("source policy", () => {
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /docs\/design\/new\.md/u);
+	});
+
+	it("enforces contract and design artifact rules on staged files", () => {
+		const repo = fixture();
+		write(
+			repo,
+			"schema.cue",
+			'endpoint: "https://example.test" // explanation\n',
+		);
+		write(repo, ".impeccable/design.json", "{}\n");
+		write(repo, ".impeccable/surfaces/example.json", "{}\n");
+		write(repo, "site/.impeccable/surfaces/nested/widget.txt", "notes\n");
+		git(repo, "add", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /schema\.cue:1/u);
+		assert.match(result.stderr, /\.impeccable\/design\.json:1/u);
+		assert.match(result.stderr, /\.impeccable\/surfaces\/example\.json:1/u);
+		assert.match(
+			result.stderr,
+			/site\/\.impeccable\/surfaces\/nested\/widget\.txt:1/u,
+		);
 	});
 
 	it("allows removing lines from an existing design document but not adding any", () => {
@@ -252,6 +702,7 @@ describe("source policy", () => {
 		const incoming = "// already on incoming\nexport const incoming = 1;\n";
 		write(repo, "incoming.ts", incoming);
 		write(repo, "docs/design/existing.md", "# Existing design\n");
+		write(repo, ".optimizexp/experience-catalog.json", "{}\n");
 		git(repo, "add", "--all");
 		git(
 			repo,
@@ -376,6 +827,19 @@ describe("source policy", () => {
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /combined\.ts:1/u);
+	});
+
+	it("rejects new Astro comments in the staged snapshot", () => {
+		const repo = fixture();
+		write(
+			repo,
+			"page.astro",
+			"---\nconst x = 1;\n---\n<p>{x}</p>\n<!-- explanation -->\n",
+		);
+		git(repo, "add", "page.astro");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /page\.astro:5/u);
 	});
 
 	it("checks filenames containing Git pathspec metacharacters literally", () => {

@@ -1,7 +1,3 @@
-/**
- * OptimizeXP World for feature `cli-product`.
- * Shared mutable state for Cucumber steps — no live external services.
- */
 export type OptimizexpWorld = {
   featureId: string;
   personaId: string | null;
