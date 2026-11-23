@@ -70,7 +70,10 @@ the waiting run. The agent carries only ciphertext.
 (`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`,
 `GITHUB_RELEASE_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
 each value checked for shape and written with the session's `entries(cwd).write`,
-never returned. It needs form elicitation and an established session.
+never returned. It needs form elicitation and an established session. The server
+declares `tools.listChanged` and sends `notifications/tools/list_changed` after
+`notifications/initialized`, so a host that reconnects to a restarted server lists
+its current tools.
 
 ## CLI verification and remote deployment safety
 
