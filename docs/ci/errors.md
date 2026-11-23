@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-131 codes.
+133 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -92,6 +92,8 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`](#hobo_ci_deploy_verify_origin_unset) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_YARD_PROVIDER`](#hobo_ci_deploy_yard_provider) | `packages/hobo/src/ci-relay-adopt.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_YARD_UNREADABLE`](#hobo_ci_deploy_yard_unreadable) | `packages/hobo/src/ci-relay-yard.ts` |
+| [`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`](#hobo_ci_fleet_credential_unavailable) | `packages/hobo/src/ci-fleet.ts` |
+| [`HOBO_CI_FLEET_FAILED`](#hobo_ci_fleet_failed) | `packages/hobo/src/ci-fleet.ts` |
 | [`HOBO_CI_GITHUB_AUTH`](#hobo_ci_github_auth) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_DEVICE`](#hobo_ci_github_device) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_FAILED`](#hobo_ci_github_failed) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
@@ -1099,6 +1101,29 @@ Messages:
 ```text
 {candidate} does not export a Yard as its default export (export default yard(...)).
 ```
+
+What to do: follow the message.
+
+### HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE
+
+Returned from `packages/hobo/src/ci-fleet.ts`.
+
+Message:
+
+```text
+hobo ci fleet needs owner://HOSTINGER_API_TOKEN from the owner's store session, and none resolved. Run HoBo MCP's choose_secret_store to connect the owner's store, then ask again.
+```
+
+What to do:
+
+- Call the HoBo MCP tool choose_secret_store for this project directory.
+- Have the owner store the Hostinger API token in that store under {…}.
+
+### HOBO_CI_FLEET_FAILED
+
+Returned from `packages/hobo/src/ci-fleet.ts`.
+
+Message: composed when the command runs.
 
 What to do: follow the message.
 
