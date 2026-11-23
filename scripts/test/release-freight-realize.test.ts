@@ -127,16 +127,33 @@ function withProbes(
 	};
 }
 
-function seams(http: HttpTransport, passes = 40): ReleaseCdSeams {
-	return { http, now: clock(), drive: { passes, intervalMs: 0 } };
+function ownerReleaseToken(token: string): ReleaseCredentials {
+	return {
+		async resolve(ref) {
+			if (ref !== "owner://GITHUB_RELEASE_TOKEN")
+				throw new Error(`no entry for ${ref}`);
+			return { token };
+		},
+	};
+}
+
+function seams(
+	http: HttpTransport,
+	passes = 40,
+	token = GHCR_TOKEN,
+): ReleaseCdSeams {
+	return {
+		http,
+		now: clock(),
+		drive: { passes, intervalMs: 0 },
+		credentials: ownerReleaseToken(token),
+	};
 }
 
 const env = {
 	HOBO_RELEASE_REVISION: COMMIT,
-	GITHUB_ACTIONS: "true",
 	GITHUB_REPOSITORY: `${OWNER}/${REPO}`,
 	GITHUB_RUN_ID: "42",
-	GITHUB_TOKEN: GHCR_TOKEN,
 };
 
 function ownerNpmToken(token: string): ReleaseCredentials {
@@ -549,8 +566,8 @@ describe.skipIf(!built)(
 			await qualifySiteRelease({
 				dist,
 				home,
-				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
-				seams: seams(withProbes(github, [], world), 700),
+				env,
+				seams: seams(withProbes(github, [], world), 700, fx.TOKEN),
 			});
 			const head = world.commits.get(world.head("gh-pages"));
 			expect(head?.message).toBe(`deploy: ${COMMIT}`);
@@ -605,11 +622,12 @@ describe.skipIf(!built)(
 			await qualifySiteRelease({
 				dist,
 				home,
-				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
+				env,
 				seams: {
 					http: withProbes(github, [], world),
 					now,
 					drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
+					credentials: ownerReleaseToken(fx.TOKEN),
 				},
 			});
 			expect(buildDelayMs).toBeGreaterThan(480_000);
@@ -629,11 +647,12 @@ describe.skipIf(!built)(
 				qualifySiteRelease({
 					dist,
 					home,
-					env: { ...env, GITHUB_TOKEN: fx.TOKEN },
+					env,
 					seams: {
 						http: withProbes(world.transport, [], world),
 						now: clock(60_000),
 						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
+						credentials: ownerReleaseToken(fx.TOKEN),
 					},
 				}),
 			).rejects.toThrow(/blocked/u);
@@ -666,11 +685,12 @@ describe.skipIf(!built)(
 				qualifySiteRelease({
 					dist,
 					home,
-					env: { ...env, GITHUB_TOKEN: fx.TOKEN },
+					env,
 					seams: {
 						http: withProbes(github, [], world),
 						now: clock(60_000),
 						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
+						credentials: ownerReleaseToken(fx.TOKEN),
 					},
 				}),
 			).rejects.toThrow(/blocked/u);

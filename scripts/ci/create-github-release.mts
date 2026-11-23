@@ -368,11 +368,27 @@ type PagesBuildBody = {
 };
 type GitRefBody = { readonly object?: { readonly sha?: string } };
 
+export const RELEASE_GITHUB_TOKEN_REF = "owner://GITHUB_RELEASE_TOKEN";
+
+async function releaseGithubToken(
+	credentials: ReleaseCredentials | undefined,
+): Promise<string | undefined> {
+	if (credentials === undefined) return undefined;
+	try {
+		const resolved = await credentials.resolve(
+			RELEASE_GITHUB_TOKEN_REF,
+			"release-probe",
+		);
+		return resolved.token?.trim() || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 export function githubApiProbeTransport(
-	env: Readonly<Record<string, string | undefined>>,
+	token: string | undefined,
 	inner: ReleaseHttpTransport,
 ): ReleaseHttpTransport {
-	const token = env.GITHUB_TOKEN?.trim();
 	return withLatin1MarkerWhenPresent(inner, async (request) => {
 		if (!request.url.startsWith("https://api.github.com/"))
 			return inner(request);
@@ -461,7 +477,10 @@ export async function openReleaseCd(options: {
 		);
 		baseHttp = createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
 	}
-	const http = githubApiProbeTransport(options.env, baseHttp);
+	const http = githubApiProbeTransport(
+		await releaseGithubToken(options.seams?.credentials),
+		baseHttp,
+	);
 	const opened = await runtimeModule.openCdRuntime({
 		simulate: false,
 		cwd: repoRoot,

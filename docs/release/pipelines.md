@@ -11,6 +11,8 @@ Three release pipelines ship independently: **ts-autocode**, **HoBo SDK**, and *
 
 HoBo's own release Freight topology is [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts): each artifact family (npm, oci, pages) owns a provider Yard (`hobo-release-npm`, `hobo-release-oci`, `hobo-release-pages`) while Camp `logicalId` values keep the `hobo-release/<family>-<channel>` identity for pipelines and journal. [`test/release-provider-yards.test.ts`](../../test/release-provider-yards.test.ts) asserts that split.
 
+The Camps resolve credentials only through the owner store session: npm takes `owner://NPM_TOKEN`, and OCI and Pages take `owner://GITHUB_RELEASE_TOKEN`, which also authorizes the Pages build probe. Nothing is read from the job's environment, so a run without an owner session refuses the write and probes GitHub anonymously.
+
 Most release jobs have a **10-minute hard timeout** and a **5-minute target duration**; the pull-request jobs that build images, and the publishing jobs, use their explicitly documented larger budgets (for example **30 minutes** for `release-hobo` / `release-contract`). Jobs use **`runs-on: hobo`** and the hermetic worker image. Every third-party GitHub Action is pinned to a **full commit SHA**; mutable version tags are not sufficient.
 
 ### Main train version policy (Nerdbank.GitVersioning)

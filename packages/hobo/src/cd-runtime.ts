@@ -224,17 +224,9 @@ export function envCredentials(
 	};
 }
 
-// public-contract: the locator of a GitHub Actions job's own GITHUB_TOKEN, which GitHub mints per job and nobody stores.
-export const GITHUB_JOB_TOKEN_REF = "github-job://GITHUB_TOKEN";
-
-export function hostCredentials(
-	env: Readonly<Record<string, string | undefined>>,
-): CredentialResolver {
+export function hostCredentials(): CredentialResolver {
 	return {
 		async resolve(ref: string) {
-			const jobToken =
-				env.GITHUB_ACTIONS === "true" ? env.GITHUB_TOKEN : undefined;
-			if (ref === GITHUB_JOB_TOKEN_REF && jobToken) return { token: jobToken };
 			throw new OwnerCredentialUnavailable(
 				ref,
 				ref.startsWith(OWNER_CREDENTIAL_SCHEME)
@@ -339,7 +331,7 @@ export async function openCdRuntime(
 	const http =
 		options.http ??
 		createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	const credentials = options.credentials ?? hostCredentials(options.env);
+	const credentials = options.credentials ?? hostCredentials();
 	const kube = await openKubeFleet({
 		env: options.env,
 		cwd: options.cwd,

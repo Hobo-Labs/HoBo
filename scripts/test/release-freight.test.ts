@@ -134,10 +134,7 @@ describe("release topology names", () => {
 				};
 			return { status: 200, headers: {}, body: "{}" };
 		};
-		const probe = githubApiProbeTransport(
-			{ GITHUB_TOKEN: "release-probe-token" },
-			inner,
-		);
+		const probe = githubApiProbeTransport("release-probe-token", inner);
 		const latestBuild = () =>
 			probe({
 				method: "GET",
@@ -178,7 +175,7 @@ describe("release topology names", () => {
 				body: JSON.stringify({ status: "building", commit: COMMIT }),
 			};
 		};
-		const probe = githubApiProbeTransport({}, inner);
+		const probe = githubApiProbeTransport(undefined, inner);
 
 		const response = await probe({
 			method: "GET",

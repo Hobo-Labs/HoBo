@@ -40,19 +40,18 @@ const BINDING = {
 		"hobo.cd/npm.provenance": "required",
 		"hobo.cd/credential-ref": "owner://NPM_TOKEN",
 	},
-	// GHCR with the workflow's GITHUB_TOKEN (packages: write).
 	oci: {
 		"hobo.cd/oci.registry": "ghcr.io",
 		"hobo.cd/oci.auth-realm": "https://ghcr.io/token",
 		"hobo.cd/oci.username": "hobo-release",
-		"hobo.cd/credential-ref": "github-job://GITHUB_TOKEN",
+		"hobo.cd/credential-ref": "owner://GITHUB_RELEASE_TOKEN",
 	},
 	// The Pages site of this repository, built from gh-pages (contents: write).
 	pages: {
 		"hobo.cd/github.repository": repository,
 		"hobo.cd/github.pages.branch": "gh-pages",
 		"hobo.cd/github.pages.path": "/",
-		"hobo.cd/credential-ref": "github-job://GITHUB_TOKEN",
+		"hobo.cd/credential-ref": "owner://GITHUB_RELEASE_TOKEN",
 	},
 } as const satisfies Record<Family, Readonly<Record<string, string>>>;
 
