@@ -1,0 +1,336 @@
+{
+	"consumer": {
+		"name": "HoboAgentVaultBroker"
+	},
+	"provider": {
+		"name": "InfisicalAgentVaultApi"
+	},
+	"interactions": [
+		{
+			"description": "List the Agent Vault projects",
+			"providerState": "the owner is an Agent Vault admin of one project",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/projects?type=agent-vault&limit=100&offset=0",
+				"headers": {
+					"authorization": "Bearer fixture-owner-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"projects": [
+						{
+							"id": "00000000-0000-4000-8000-000000000001",
+							"name": "Agents",
+							"slug": "agents",
+							"type": "agent-vault",
+							"orgId": "00000000-0000-4000-8000-000000000009"
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "List the project's services",
+			"providerState": "the owner is an Agent Vault admin of one project",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/agent-vault/services?projectId=00000000-0000-4000-8000-000000000001&limit=100&offset=0",
+				"headers": {
+					"authorization": "Bearer fixture-owner-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"services": [
+						{
+							"id": "00000000-0000-4000-8000-000000000004",
+							"name": "hostinger",
+							"description": null,
+							"type": "http",
+							"hostPattern": "developers.hostinger.com",
+							"accessBundles": []
+						},
+						{
+							"id": "00000000-0000-4000-8000-000000000005",
+							"name": "db",
+							"description": null,
+							"type": "postgres",
+							"hostPattern": null,
+							"accessBundles": []
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "List the project's proxies",
+			"providerState": "the owner is an Agent Vault admin of one project",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/agent-vault/proxies?projectId=00000000-0000-4000-8000-000000000001&limit=100&offset=0",
+				"headers": {
+					"authorization": "Bearer fixture-owner-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"proxies": []
+				}
+			}
+		},
+		{
+			"description": "Register HoBo's proxy",
+			"providerState": "the owner is an Agent Vault admin of one project",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/agent-vault/proxies",
+				"headers": {
+					"authorization": "Bearer fixture-owner-access-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"projectId": "00000000-0000-4000-8000-000000000001",
+					"name": "hobo",
+					"trafficPolicy": "service-hosts",
+					"pollInterval": 10
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"proxy": {
+						"id": "00000000-0000-4000-8000-000000000002",
+						"name": "hobo",
+						"description": "HoBo runs this proxy for its verbs.",
+						"heartbeat": null,
+						"isHealthy": false,
+						"rootCaFingerprint": null,
+						"rootCaExpiresAt": null,
+						"trafficPolicy": "service-hosts",
+						"allowedHosts": null,
+						"pollInterval": 10,
+						"createdAt": "2026-11-23T00:00:00.000Z"
+					},
+					"proxyToken": "fixture-proxy-token"
+				}
+			}
+		},
+		{
+			"description": "Rotate the proxy's token",
+			"providerState": "the owner is an Agent Vault admin of one project",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/agent-vault/proxies/00000000-0000-4000-8000-000000000002/token-auth/proxy-token",
+				"headers": {
+					"authorization": "Bearer fixture-owner-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"proxy": {
+						"id": "00000000-0000-4000-8000-000000000002",
+						"name": "hobo",
+						"description": "HoBo runs this proxy for its verbs.",
+						"heartbeat": null,
+						"isHealthy": false,
+						"rootCaFingerprint": null,
+						"rootCaExpiresAt": null,
+						"trafficPolicy": "service-hosts",
+						"allowedHosts": null,
+						"pollInterval": 10,
+						"createdAt": "2026-11-23T00:00:00.000Z"
+					},
+					"proxyToken": "fixture-rotated-proxy-token"
+				}
+			}
+		},
+		{
+			"description": "Read the proxy's certificate authority",
+			"providerState": "the owner is an Agent Vault admin of one project",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/agent-vault/proxies/00000000-0000-4000-8000-000000000002/ca",
+				"headers": {
+					"authorization": "Bearer fixture-owner-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"ca": {
+						"certificate": "-----BEGIN CERTIFICATE-----\nMIIBfixture\n-----END CERTIFICATE-----\n",
+						"fingerprint": "AA:BB",
+						"expiresAt": "2027-11-23T00:00:00.000Z"
+					}
+				}
+			}
+		},
+		{
+			"description": "Start a session for one service",
+			"providerState": "the owner is an Agent Vault admin of one project",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/agent-vault/sessions",
+				"headers": {
+					"authorization": "Bearer fixture-owner-access-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"projectId": "00000000-0000-4000-8000-000000000001",
+					"services": [
+						"hostinger"
+					],
+					"ttl": "1h",
+					"label": "hobo"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"session": {
+						"id": "00000000-0000-4000-8000-000000000003",
+						"projectId": "00000000-0000-4000-8000-000000000001",
+						"label": "hobo",
+						"metadata": {},
+						"token": "agv_fixture-session-token",
+						"expiresAt": "2026-11-23T01:00:00.000Z",
+						"createdAt": "2026-11-23T00:00:00.000Z",
+						"accessBundle": null,
+						"services": []
+					}
+				}
+			}
+		},
+		{
+			"description": "Read what the session's services need",
+			"providerState": "the owner is an Agent Vault admin of one project",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/agent-vault/session/services",
+				"headers": {
+					"authorization": "Bearer agv_fixture-session-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"agentVault": {
+						"proxy": null,
+						"version": null,
+						"trafficPolicy": null
+					},
+					"session": {
+						"expiresAt": "2026-11-23T01:00:00.000Z",
+						"accessBundle": null
+					},
+					"services": [
+						{
+							"name": "hostinger",
+							"description": null,
+							"type": "http",
+							"hosts": [
+								"developers.hostinger.com"
+							],
+							"url": "https://developers.hostinger.com",
+							"status": "ready",
+							"credential": {
+								"type": "bearer",
+								"header": "Authorization",
+								"addedByProxy": true,
+								"memberProvided": false
+							},
+							"customHeaders": [],
+							"placeholders": [],
+							"allowedMethods": null,
+							"allowedPathPrefixes": null,
+							"allowedTools": null,
+							"howToUse": "Call the API; the proxy adds the credential."
+						}
+					],
+					"notes": []
+				}
+			}
+		},
+		{
+			"description": "Revoke the session",
+			"providerState": "the owner is an Agent Vault admin of one project",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/agent-vault/sessions/00000000-0000-4000-8000-000000000003/revoke",
+				"headers": {
+					"authorization": "Bearer fixture-owner-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"session": {
+						"id": "00000000-0000-4000-8000-000000000003",
+						"label": "hobo",
+						"metadata": {}
+					}
+				}
+			}
+		},
+		{
+			"description": "A member without Agent Vault access is refused",
+			"providerState": "the owner may not manage the project's proxies",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/agent-vault/proxies?projectId=00000000-0000-4000-8000-000000000008&limit=100&offset=0",
+				"headers": {
+					"authorization": "Bearer fixture-owner-access-token"
+				}
+			},
+			"response": {
+				"status": 403,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"reqId": "req-forbidden",
+					"statusCode": 403,
+					"error": "PermissionDenied"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"documentation": "Shapes from Infisical's OpenAPI document (https://app.infisical.com/api/docs/json, read 2026-11-23). Replayed by contracts/consumer/infisical-agent-vault.consumer.contract.test.ts against the pact mock; not verified against Infisical itself. Every token, id and certificate is a fixture."
+	}
+}

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file adapter_infisical.proto.
  */
 export const file_adapter_infisical: GenFile = /*@__PURE__*/
-  fileDesc("ChdhZGFwdGVyX2luZmlzaWNhbC5wcm90bxIZaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MSJiChBJbmZpc2ljYWxCaW5kaW5nEhAKCHNpdGVfdXJsGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkSEwoLZW52aXJvbm1lbnQYAyABKAkSEwoLc2VjcmV0X3BhdGgYBCABKAkihwEKFkluZmlzaWNhbExvZ2luUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKA0SLwoUYWNjZXNzX3Rva2VuX21heF90dGwYAyABKA1SEWFjY2Vzc1Rva2VuTWF4VFRMEhIKCnRva2VuX3R5cGUYBCABKAkiaQoPSW5maXNpY2FsU2VjcmV0EhIKCnNlY3JldF9rZXkYASABKAkSFAoMc2VjcmV0X3ZhbHVlGAIgASgJEg8KB3ZlcnNpb24YAyABKA0SGwoTc2VjcmV0X3ZhbHVlX2hpZGRlbhgEIAEoCCJSChNJbmZpc2ljYWxTZWNyZXRMaXN0EjsKB3NlY3JldHMYASADKAsyKi5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbFNlY3JldCIfChFJbmZpc2ljYWxBcHByb3ZhbBIKCgJpZBgBIAEoCSKVAQoXSW5maXNpY2FsU2VjcmV0RW52ZWxvcGUSOgoGc2VjcmV0GAEgASgLMiouaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxTZWNyZXQSPgoIYXBwcm92YWwYAiABKAsyLC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEFwcHJvdmFsIkwKFkluZmlzaWNhbEVycm9yRW52ZWxvcGUSDgoGcmVxX2lkGAEgASgJEhMKC3N0YXR1c19jb2RlGAIgASgNEg0KBWVycm9yGAMgASgJIj0KGUluZmlzaWNhbE9pZGNMb2dpblJlcXVlc3QSEwoLaWRlbnRpdHlfaWQYASABKAkSCwoDand0GAIgASgJIk4KIkluZmlzaWNhbFVuaXZlcnNhbEF1dGhMb2dpblJlcXVlc3QSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkiMwobSW5maXNpY2FsVG9rZW5SZXZva2VSZXF1ZXN0EhQKDGFjY2Vzc190b2tlbhgBIAEoCSIvChxJbmZpc2ljYWxUb2tlblJldm9rZVJlc3BvbnNlEg8KB21lc3NhZ2UYASABKAkifwobSW5maXNpY2FsU2VjcmV0V3JpdGVSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEwoLZW52aXJvbm1lbnQYAiABKAkSEwoLc2VjcmV0X3BhdGgYAyABKAkSFAoMc2VjcmV0X3ZhbHVlGAQgASgJEgwKBHR5cGUYBSABKAkiJQoUR2l0aHViQWN0aW9uc0lkVG9rZW4SDQoFdmFsdWUYASABKAkiUgoZSW5maXNpY2FsQm9vdHN0cmFwUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxvcmdhbml6YXRpb24YAyABKAkiSAoWSW5maXNpY2FsQm9vdHN0cmFwVXNlchIKCgJpZBgBIAEoCRINCgVlbWFpbBgCIAEoCRITCgtzdXBlcl9hZG1pbhgDIAEoCCI/ChVJbmZpc2ljYWxPcmdhbml6YXRpb24SCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRzbHVnGAMgASgJIi0KHEluZmlzaWNhbElkZW50aXR5Q3JlZGVudGlhbHMSDQoFdG9rZW4YASABKAkihAEKGkluZmlzaWNhbEJvb3RzdHJhcElkZW50aXR5EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSTAoLY3JlZGVudGlhbHMYAyABKAsyNy5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5Q3JlZGVudGlhbHMi/wEKGkluZmlzaWNhbEJvb3RzdHJhcFJlc3BvbnNlEg8KB21lc3NhZ2UYASABKAkSPwoEdXNlchgCIAEoCzIxLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQm9vdHN0cmFwVXNlchJGCgxvcmdhbml6YXRpb24YAyABKAsyMC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbE9yZ2FuaXphdGlvbhJHCghpZGVudGl0eRgEIAEoCzI1LmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQm9vdHN0cmFwSWRlbnRpdHkidQodSW5maXNpY2FsQ3JlYXRlUHJvamVjdFJlcXVlc3QSFAoMcHJvamVjdF9uYW1lGAEgASgJEgwKBHNsdWcYAiABKAkSDAoEdHlwZRgDIAEoCRIiChpzaG91bGRfY3JlYXRlX2RlZmF1bHRfZW52cxgEIAEoCCI8ChBJbmZpc2ljYWxQcm9qZWN0EgoKAmlkGAEgASgJEgwKBHNsdWcYAiABKAkSDgoGb3JnX2lkGAMgASgJIl4KHkluZmlzaWNhbENyZWF0ZVByb2plY3RSZXNwb25zZRI8Cgdwcm9qZWN0GAEgASgLMisuaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxQcm9qZWN0ImUKHEluZmlzaWNhbENyZWF0ZUZvbGRlclJlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEhMKC2Vudmlyb25tZW50GAIgASgJEgwKBG5hbWUYAyABKAkSDAoEcGF0aBgEIAEoCSIrCg9JbmZpc2ljYWxGb2xkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCSJbCh1JbmZpc2ljYWxDcmVhdGVGb2xkZXJSZXNwb25zZRI6CgZmb2xkZXIYASABKAsyKi5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEZvbGRlciIkChRJbmZpc2ljYWxQcm9qZWN0Um9sZRIMCgRyb2xlGAEgASgJInUKJUluZmlzaWNhbENyZWF0ZVByb2plY3RJZGVudGl0eVJlcXVlc3QSDAoEbmFtZRgBIAEoCRI+CgVyb2xlcxgCIAMoCzIvLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsUHJvamVjdFJvbGUiQQoRSW5maXNpY2FsSWRlbnRpdHkSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJIlsKGUluZmlzaWNhbElkZW50aXR5UmVzcG9uc2USPgoIaWRlbnRpdHkYASABKAsyLC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5Ir0BCiZJbmZpc2ljYWxQcm9qZWN0SWRlbnRpdHlMaXN0TWVtYmVyc2hpcBITCgtpZGVudGl0eV9pZBgBIAEoCRI+CgVyb2xlcxgCIAMoCzIvLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsUHJvamVjdFJvbGUSPgoIaWRlbnRpdHkYAyABKAsyLC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5IocBCiRJbmZpc2ljYWxQcm9qZWN0SWRlbnRpdHlMaXN0UmVzcG9uc2USXwoUaWRlbnRpdHlfbWVtYmVyc2hpcHMYASADKAsyQS5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbFByb2plY3RJZGVudGl0eUxpc3RNZW1iZXJzaGlwIvMCCh5JbmZpc2ljYWxBdHRhY2hPaWRjQXV0aFJlcXVlc3QSGgoSb2lkY19kaXNjb3ZlcnlfdXJsGAEgASgJEhQKDGJvdW5kX2lzc3VlchgCIAEoCRIXCg9ib3VuZF9hdWRpZW5jZXMYAyABKAkSYAoMYm91bmRfY2xhaW1zGAQgAygLMkouaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxBdHRhY2hPaWRjQXV0aFJlcXVlc3QuQm91bmRDbGFpbXNFbnRyeRIVCg1ib3VuZF9zdWJqZWN0GAUgASgJEigKEGFjY2Vzc190b2tlbl90dGwYBiABKA1SDmFjY2Vzc1Rva2VuVFRMEi8KFGFjY2Vzc190b2tlbl9tYXhfdHRsGAcgASgNUhFhY2Nlc3NUb2tlbk1heFRUTBoyChBCb3VuZENsYWltc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiPAoZSW5maXNpY2FsSWRlbnRpdHlPaWRjQXV0aBIKCgJpZBgBIAEoCRITCgtpZGVudGl0eV9pZBgCIAEoCSJzCh9JbmZpc2ljYWxBdHRhY2hPaWRjQXV0aFJlc3BvbnNlElAKEmlkZW50aXR5X29pZGNfYXV0aBgBIAEoCzI0LmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsSWRlbnRpdHlPaWRjQXV0aGIGcHJvdG8z");
+  fileDesc("ChdhZGFwdGVyX2luZmlzaWNhbC5wcm90bxIZaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MSJiChBJbmZpc2ljYWxCaW5kaW5nEhAKCHNpdGVfdXJsGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkSEwoLZW52aXJvbm1lbnQYAyABKAkSEwoLc2VjcmV0X3BhdGgYBCABKAkihwEKFkluZmlzaWNhbExvZ2luUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKA0SLwoUYWNjZXNzX3Rva2VuX21heF90dGwYAyABKA1SEWFjY2Vzc1Rva2VuTWF4VFRMEhIKCnRva2VuX3R5cGUYBCABKAkiaQoPSW5maXNpY2FsU2VjcmV0EhIKCnNlY3JldF9rZXkYASABKAkSFAoMc2VjcmV0X3ZhbHVlGAIgASgJEg8KB3ZlcnNpb24YAyABKA0SGwoTc2VjcmV0X3ZhbHVlX2hpZGRlbhgEIAEoCCJSChNJbmZpc2ljYWxTZWNyZXRMaXN0EjsKB3NlY3JldHMYASADKAsyKi5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbFNlY3JldCIfChFJbmZpc2ljYWxBcHByb3ZhbBIKCgJpZBgBIAEoCSKVAQoXSW5maXNpY2FsU2VjcmV0RW52ZWxvcGUSOgoGc2VjcmV0GAEgASgLMiouaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxTZWNyZXQSPgoIYXBwcm92YWwYAiABKAsyLC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEFwcHJvdmFsIkwKFkluZmlzaWNhbEVycm9yRW52ZWxvcGUSDgoGcmVxX2lkGAEgASgJEhMKC3N0YXR1c19jb2RlGAIgASgNEg0KBWVycm9yGAMgASgJIj0KGUluZmlzaWNhbE9pZGNMb2dpblJlcXVlc3QSEwoLaWRlbnRpdHlfaWQYASABKAkSCwoDand0GAIgASgJIk4KIkluZmlzaWNhbFVuaXZlcnNhbEF1dGhMb2dpblJlcXVlc3QSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkiMwobSW5maXNpY2FsVG9rZW5SZXZva2VSZXF1ZXN0EhQKDGFjY2Vzc190b2tlbhgBIAEoCSIvChxJbmZpc2ljYWxUb2tlblJldm9rZVJlc3BvbnNlEg8KB21lc3NhZ2UYASABKAkifwobSW5maXNpY2FsU2VjcmV0V3JpdGVSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEwoLZW52aXJvbm1lbnQYAiABKAkSEwoLc2VjcmV0X3BhdGgYAyABKAkSFAoMc2VjcmV0X3ZhbHVlGAQgASgJEgwKBHR5cGUYBSABKAkiJQoUR2l0aHViQWN0aW9uc0lkVG9rZW4SDQoFdmFsdWUYASABKAkiUgoZSW5maXNpY2FsQm9vdHN0cmFwUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRIUCgxvcmdhbml6YXRpb24YAyABKAkiSAoWSW5maXNpY2FsQm9vdHN0cmFwVXNlchIKCgJpZBgBIAEoCRINCgVlbWFpbBgCIAEoCRITCgtzdXBlcl9hZG1pbhgDIAEoCCI/ChVJbmZpc2ljYWxPcmdhbml6YXRpb24SCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRzbHVnGAMgASgJIi0KHEluZmlzaWNhbElkZW50aXR5Q3JlZGVudGlhbHMSDQoFdG9rZW4YASABKAkihAEKGkluZmlzaWNhbEJvb3RzdHJhcElkZW50aXR5EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSTAoLY3JlZGVudGlhbHMYAyABKAsyNy5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5Q3JlZGVudGlhbHMi/wEKGkluZmlzaWNhbEJvb3RzdHJhcFJlc3BvbnNlEg8KB21lc3NhZ2UYASABKAkSPwoEdXNlchgCIAEoCzIxLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQm9vdHN0cmFwVXNlchJGCgxvcmdhbml6YXRpb24YAyABKAsyMC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbE9yZ2FuaXphdGlvbhJHCghpZGVudGl0eRgEIAEoCzI1LmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQm9vdHN0cmFwSWRlbnRpdHkidQodSW5maXNpY2FsQ3JlYXRlUHJvamVjdFJlcXVlc3QSFAoMcHJvamVjdF9uYW1lGAEgASgJEgwKBHNsdWcYAiABKAkSDAoEdHlwZRgDIAEoCRIiChpzaG91bGRfY3JlYXRlX2RlZmF1bHRfZW52cxgEIAEoCCI8ChBJbmZpc2ljYWxQcm9qZWN0EgoKAmlkGAEgASgJEgwKBHNsdWcYAiABKAkSDgoGb3JnX2lkGAMgASgJIl4KHkluZmlzaWNhbENyZWF0ZVByb2plY3RSZXNwb25zZRI8Cgdwcm9qZWN0GAEgASgLMisuaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxQcm9qZWN0ImUKHEluZmlzaWNhbENyZWF0ZUZvbGRlclJlcXVlc3QSFAoMd29ya3NwYWNlX2lkGAEgASgJEhMKC2Vudmlyb25tZW50GAIgASgJEgwKBG5hbWUYAyABKAkSDAoEcGF0aBgEIAEoCSIrCg9JbmZpc2ljYWxGb2xkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCSJbCh1JbmZpc2ljYWxDcmVhdGVGb2xkZXJSZXNwb25zZRI6CgZmb2xkZXIYASABKAsyKi5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEZvbGRlciIkChRJbmZpc2ljYWxQcm9qZWN0Um9sZRIMCgRyb2xlGAEgASgJInUKJUluZmlzaWNhbENyZWF0ZVByb2plY3RJZGVudGl0eVJlcXVlc3QSDAoEbmFtZRgBIAEoCRI+CgVyb2xlcxgCIAMoCzIvLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsUHJvamVjdFJvbGUiQQoRSW5maXNpY2FsSWRlbnRpdHkSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJIlsKGUluZmlzaWNhbElkZW50aXR5UmVzcG9uc2USPgoIaWRlbnRpdHkYASABKAsyLC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5Ir0BCiZJbmZpc2ljYWxQcm9qZWN0SWRlbnRpdHlMaXN0TWVtYmVyc2hpcBITCgtpZGVudGl0eV9pZBgBIAEoCRI+CgVyb2xlcxgCIAMoCzIvLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsUHJvamVjdFJvbGUSPgoIaWRlbnRpdHkYAyABKAsyLC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbElkZW50aXR5IocBCiRJbmZpc2ljYWxQcm9qZWN0SWRlbnRpdHlMaXN0UmVzcG9uc2USXwoUaWRlbnRpdHlfbWVtYmVyc2hpcHMYASADKAsyQS5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbFByb2plY3RJZGVudGl0eUxpc3RNZW1iZXJzaGlwIvMCCh5JbmZpc2ljYWxBdHRhY2hPaWRjQXV0aFJlcXVlc3QSGgoSb2lkY19kaXNjb3ZlcnlfdXJsGAEgASgJEhQKDGJvdW5kX2lzc3VlchgCIAEoCRIXCg9ib3VuZF9hdWRpZW5jZXMYAyABKAkSYAoMYm91bmRfY2xhaW1zGAQgAygLMkouaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxBdHRhY2hPaWRjQXV0aFJlcXVlc3QuQm91bmRDbGFpbXNFbnRyeRIVCg1ib3VuZF9zdWJqZWN0GAUgASgJEigKEGFjY2Vzc190b2tlbl90dGwYBiABKA1SDmFjY2Vzc1Rva2VuVFRMEi8KFGFjY2Vzc190b2tlbl9tYXhfdHRsGAcgASgNUhFhY2Nlc3NUb2tlbk1heFRUTBoyChBCb3VuZENsYWltc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiPAoZSW5maXNpY2FsSWRlbnRpdHlPaWRjQXV0aBIKCgJpZBgBIAEoCRITCgtpZGVudGl0eV9pZBgCIAEoCSJzCh9JbmZpc2ljYWxBdHRhY2hPaWRjQXV0aFJlc3BvbnNlElAKEmlkZW50aXR5X29pZGNfYXV0aBgBIAEoCzI0LmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsSWRlbnRpdHlPaWRjQXV0aCJEChpJbmZpc2ljYWxBZ2VudFZhdWx0UHJvamVjdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHR5cGUYAyABKAkiaQoeSW5maXNpY2FsQWdlbnRWYXVsdFByb2plY3RMaXN0EkcKCHByb2plY3RzGAEgAygLMjUuaG9iby5hZGFwdGVyX2luZmlzaWNhbC52MS5JbmZpc2ljYWxBZ2VudFZhdWx0UHJvamVjdCJOChpJbmZpc2ljYWxBZ2VudFZhdWx0U2VydmljZRIMCgRuYW1lGAEgASgJEgwKBHR5cGUYAiABKAkSFAoMaG9zdF9wYXR0ZXJuGAMgASgJImkKHkluZmlzaWNhbEFnZW50VmF1bHRTZXJ2aWNlTGlzdBJHCghzZXJ2aWNlcxgBIAMoCzI1LmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQWdlbnRWYXVsdFNlcnZpY2UiSAoYSW5maXNpY2FsQWdlbnRWYXVsdFByb3h5EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKaXNfaGVhbHRoeRgDIAEoCCJkChxJbmZpc2ljYWxBZ2VudFZhdWx0UHJveHlMaXN0EkQKB3Byb3hpZXMYASADKAsyMy5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEFnZW50VmF1bHRQcm94eSKNAQolSW5maXNpY2FsQWdlbnRWYXVsdENyZWF0ZVByb3h5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSFgoOdHJhZmZpY19wb2xpY3kYBCABKAkSFQoNcG9sbF9pbnRlcnZhbBgFIAEoDSKAAQolSW5maXNpY2FsQWdlbnRWYXVsdFByb3h5VG9rZW5SZXNwb25zZRJCCgVwcm94eRgBIAEoCzIzLmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQWdlbnRWYXVsdFByb3h5EhMKC3Byb3h5X3Rva2VuGAIgASgJIlMKJ0luZmlzaWNhbEFnZW50VmF1bHRDZXJ0aWZpY2F0ZUF1dGhvcml0eRITCgtjZXJ0aWZpY2F0ZRgBIAEoCRITCgtmaW5nZXJwcmludBgCIAEoCSKBAQovSW5maXNpY2FsQWdlbnRWYXVsdENlcnRpZmljYXRlQXV0aG9yaXR5UmVzcG9uc2USTgoCY2EYASABKAsyQi5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEFnZW50VmF1bHRDZXJ0aWZpY2F0ZUF1dGhvcml0eSJrCidJbmZpc2ljYWxBZ2VudFZhdWx0Q3JlYXRlU2Vzc2lvblJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghzZXJ2aWNlcxgCIAMoCRILCgN0dGwYAyABKAkSDQoFbGFiZWwYBCABKAkiSwoaSW5maXNpY2FsQWdlbnRWYXVsdFNlc3Npb24SCgoCaWQYASABKAkSDQoFdG9rZW4YAiABKAkSEgoKZXhwaXJlc19hdBgDIAEoCSJsCiJJbmZpc2ljYWxBZ2VudFZhdWx0U2Vzc2lvblJlc3BvbnNlEkYKB3Nlc3Npb24YASABKAsyNS5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEFnZW50VmF1bHRTZXNzaW9uIlwKJEluZmlzaWNhbEFnZW50VmF1bHRTZXNzaW9uQ3JlZGVudGlhbBIMCgR0eXBlGAEgASgJEg4KBmhlYWRlchgCIAEoCRIWCg5hZGRlZF9ieV9wcm94eRgDIAEoCCJHCh5JbmZpc2ljYWxBZ2VudFZhdWx0UGxhY2Vob2xkZXISEwoLcGxhY2Vob2xkZXIYASABKAkSEAoIc3VyZmFjZXMYAiADKAki9AEKIUluZmlzaWNhbEFnZW50VmF1bHRTZXNzaW9uU2VydmljZRIMCgRuYW1lGAEgASgJEgwKBHR5cGUYAiABKAkSDQoFaG9zdHMYAyADKAkSUwoKY3JlZGVudGlhbBgEIAEoCzI/LmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQWdlbnRWYXVsdFNlc3Npb25DcmVkZW50aWFsEk8KDHBsYWNlaG9sZGVycxgFIAMoCzI5LmhvYm8uYWRhcHRlcl9pbmZpc2ljYWwudjEuSW5maXNpY2FsQWdlbnRWYXVsdFBsYWNlaG9sZGVyIncKJUluZmlzaWNhbEFnZW50VmF1bHRTZXNzaW9uU2VydmljZUxpc3QSTgoIc2VydmljZXMYASADKAsyPC5ob2JvLmFkYXB0ZXJfaW5maXNpY2FsLnYxLkluZmlzaWNhbEFnZW50VmF1bHRTZXNzaW9uU2VydmljZWIGcHJvdG8z");
 
 /**
  * Where a deployment reads its configuration and secrets: the Infisical site,
@@ -900,4 +900,413 @@ export type InfisicalAttachOidcAuthResponse = Message<"hobo.adapter_infisical.v1
  */
 export const InfisicalAttachOidcAuthResponseSchema: GenMessage<InfisicalAttachOidcAuthResponse> = /*@__PURE__*/
   messageDesc(file_adapter_infisical, 33);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultProject
+ */
+export type InfisicalAgentVaultProject = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultProject"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string type = 3;
+   */
+  type: string;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultProject.
+ * Use `create(InfisicalAgentVaultProjectSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultProjectSchema: GenMessage<InfisicalAgentVaultProject> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 34);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultProjectList
+ */
+export type InfisicalAgentVaultProjectList = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultProjectList"> & {
+  /**
+   * @generated from field: repeated hobo.adapter_infisical.v1.InfisicalAgentVaultProject projects = 1;
+   */
+  projects: InfisicalAgentVaultProject[];
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultProjectList.
+ * Use `create(InfisicalAgentVaultProjectListSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultProjectListSchema: GenMessage<InfisicalAgentVaultProjectList> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 35);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultService
+ */
+export type InfisicalAgentVaultService = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultService"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string type = 2;
+   */
+  type: string;
+
+  /**
+   * @generated from field: string host_pattern = 3;
+   */
+  hostPattern: string;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultService.
+ * Use `create(InfisicalAgentVaultServiceSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultServiceSchema: GenMessage<InfisicalAgentVaultService> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 36);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultServiceList
+ */
+export type InfisicalAgentVaultServiceList = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultServiceList"> & {
+  /**
+   * @generated from field: repeated hobo.adapter_infisical.v1.InfisicalAgentVaultService services = 1;
+   */
+  services: InfisicalAgentVaultService[];
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultServiceList.
+ * Use `create(InfisicalAgentVaultServiceListSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultServiceListSchema: GenMessage<InfisicalAgentVaultServiceList> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 37);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultProxy
+ */
+export type InfisicalAgentVaultProxy = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultProxy"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: bool is_healthy = 3;
+   */
+  isHealthy: boolean;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultProxy.
+ * Use `create(InfisicalAgentVaultProxySchema)` to create a new message.
+ */
+export const InfisicalAgentVaultProxySchema: GenMessage<InfisicalAgentVaultProxy> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 38);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultProxyList
+ */
+export type InfisicalAgentVaultProxyList = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultProxyList"> & {
+  /**
+   * @generated from field: repeated hobo.adapter_infisical.v1.InfisicalAgentVaultProxy proxies = 1;
+   */
+  proxies: InfisicalAgentVaultProxy[];
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultProxyList.
+ * Use `create(InfisicalAgentVaultProxyListSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultProxyListSchema: GenMessage<InfisicalAgentVaultProxyList> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 39);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultCreateProxyRequest
+ */
+export type InfisicalAgentVaultCreateProxyRequest = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultCreateProxyRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * @generated from field: string traffic_policy = 4;
+   */
+  trafficPolicy: string;
+
+  /**
+   * @generated from field: uint32 poll_interval = 5;
+   */
+  pollInterval: number;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultCreateProxyRequest.
+ * Use `create(InfisicalAgentVaultCreateProxyRequestSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultCreateProxyRequestSchema: GenMessage<InfisicalAgentVaultCreateProxyRequest> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 40);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultProxyTokenResponse
+ */
+export type InfisicalAgentVaultProxyTokenResponse = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultProxyTokenResponse"> & {
+  /**
+   * @generated from field: hobo.adapter_infisical.v1.InfisicalAgentVaultProxy proxy = 1;
+   */
+  proxy?: InfisicalAgentVaultProxy | undefined;
+
+  /**
+   * @generated from field: string proxy_token = 2;
+   */
+  proxyToken: string;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultProxyTokenResponse.
+ * Use `create(InfisicalAgentVaultProxyTokenResponseSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultProxyTokenResponseSchema: GenMessage<InfisicalAgentVaultProxyTokenResponse> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 41);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultCertificateAuthority
+ */
+export type InfisicalAgentVaultCertificateAuthority = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultCertificateAuthority"> & {
+  /**
+   * @generated from field: string certificate = 1;
+   */
+  certificate: string;
+
+  /**
+   * @generated from field: string fingerprint = 2;
+   */
+  fingerprint: string;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultCertificateAuthority.
+ * Use `create(InfisicalAgentVaultCertificateAuthoritySchema)` to create a new message.
+ */
+export const InfisicalAgentVaultCertificateAuthoritySchema: GenMessage<InfisicalAgentVaultCertificateAuthority> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 42);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultCertificateAuthorityResponse
+ */
+export type InfisicalAgentVaultCertificateAuthorityResponse = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultCertificateAuthorityResponse"> & {
+  /**
+   * @generated from field: hobo.adapter_infisical.v1.InfisicalAgentVaultCertificateAuthority ca = 1;
+   */
+  ca?: InfisicalAgentVaultCertificateAuthority | undefined;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultCertificateAuthorityResponse.
+ * Use `create(InfisicalAgentVaultCertificateAuthorityResponseSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultCertificateAuthorityResponseSchema: GenMessage<InfisicalAgentVaultCertificateAuthorityResponse> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 43);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultCreateSessionRequest
+ */
+export type InfisicalAgentVaultCreateSessionRequest = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultCreateSessionRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: repeated string services = 2;
+   */
+  services: string[];
+
+  /**
+   * @generated from field: string ttl = 3;
+   */
+  ttl: string;
+
+  /**
+   * @generated from field: string label = 4;
+   */
+  label: string;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultCreateSessionRequest.
+ * Use `create(InfisicalAgentVaultCreateSessionRequestSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultCreateSessionRequestSchema: GenMessage<InfisicalAgentVaultCreateSessionRequest> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 44);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultSession
+ */
+export type InfisicalAgentVaultSession = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultSession"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string token = 2;
+   */
+  token: string;
+
+  /**
+   * @generated from field: string expires_at = 3;
+   */
+  expiresAt: string;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultSession.
+ * Use `create(InfisicalAgentVaultSessionSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultSessionSchema: GenMessage<InfisicalAgentVaultSession> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 45);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultSessionResponse
+ */
+export type InfisicalAgentVaultSessionResponse = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultSessionResponse"> & {
+  /**
+   * @generated from field: hobo.adapter_infisical.v1.InfisicalAgentVaultSession session = 1;
+   */
+  session?: InfisicalAgentVaultSession | undefined;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultSessionResponse.
+ * Use `create(InfisicalAgentVaultSessionResponseSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultSessionResponseSchema: GenMessage<InfisicalAgentVaultSessionResponse> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 46);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultSessionCredential
+ */
+export type InfisicalAgentVaultSessionCredential = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultSessionCredential"> & {
+  /**
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * @generated from field: string header = 2;
+   */
+  header: string;
+
+  /**
+   * @generated from field: bool added_by_proxy = 3;
+   */
+  addedByProxy: boolean;
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultSessionCredential.
+ * Use `create(InfisicalAgentVaultSessionCredentialSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultSessionCredentialSchema: GenMessage<InfisicalAgentVaultSessionCredential> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 47);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultPlaceholder
+ */
+export type InfisicalAgentVaultPlaceholder = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultPlaceholder"> & {
+  /**
+   * @generated from field: string placeholder = 1;
+   */
+  placeholder: string;
+
+  /**
+   * @generated from field: repeated string surfaces = 2;
+   */
+  surfaces: string[];
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultPlaceholder.
+ * Use `create(InfisicalAgentVaultPlaceholderSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultPlaceholderSchema: GenMessage<InfisicalAgentVaultPlaceholder> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 48);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultSessionService
+ */
+export type InfisicalAgentVaultSessionService = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultSessionService"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string type = 2;
+   */
+  type: string;
+
+  /**
+   * @generated from field: repeated string hosts = 3;
+   */
+  hosts: string[];
+
+  /**
+   * @generated from field: hobo.adapter_infisical.v1.InfisicalAgentVaultSessionCredential credential = 4;
+   */
+  credential?: InfisicalAgentVaultSessionCredential | undefined;
+
+  /**
+   * @generated from field: repeated hobo.adapter_infisical.v1.InfisicalAgentVaultPlaceholder placeholders = 5;
+   */
+  placeholders: InfisicalAgentVaultPlaceholder[];
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultSessionService.
+ * Use `create(InfisicalAgentVaultSessionServiceSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultSessionServiceSchema: GenMessage<InfisicalAgentVaultSessionService> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 49);
+
+/**
+ * @generated from message hobo.adapter_infisical.v1.InfisicalAgentVaultSessionServiceList
+ */
+export type InfisicalAgentVaultSessionServiceList = Message<"hobo.adapter_infisical.v1.InfisicalAgentVaultSessionServiceList"> & {
+  /**
+   * @generated from field: repeated hobo.adapter_infisical.v1.InfisicalAgentVaultSessionService services = 1;
+   */
+  services: InfisicalAgentVaultSessionService[];
+};
+
+/**
+ * Describes the message hobo.adapter_infisical.v1.InfisicalAgentVaultSessionServiceList.
+ * Use `create(InfisicalAgentVaultSessionServiceListSchema)` to create a new message.
+ */
+export const InfisicalAgentVaultSessionServiceListSchema: GenMessage<InfisicalAgentVaultSessionServiceList> = /*@__PURE__*/
+  messageDesc(file_adapter_infisical, 50);
 
