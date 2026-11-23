@@ -4,7 +4,7 @@ import path from "node:path";
 import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-
+import { STORE_OWNER_ENTRIES_TOOL } from "../src/mcp-owner-entries.js";
 import {
 	createOwnerPages,
 	OWNER_PAGE_COLLECTION,
@@ -208,6 +208,7 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		expect(app.tools(NO_STORE_CHOICE_SUPPORT).map((t) => t.name)).toEqual([
 			CHOOSE_SECRET_STORE_TOOL,
 			SUBMIT_OWNER_PAGE_TOOL,
+			STORE_OWNER_ENTRIES_TOOL,
 		]);
 		const shown = await app.callTool(
 			CHOOSE_SECRET_STORE_TOOL,

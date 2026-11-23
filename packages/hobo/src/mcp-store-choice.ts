@@ -11,6 +11,13 @@ import { z } from "zod";
 
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.js";
 import {
+	STORE_OWNER_ENTRIES_DESCRIPTION,
+	STORE_OWNER_ENTRIES_INPUT,
+	STORE_OWNER_ENTRIES_TITLE,
+	STORE_OWNER_ENTRIES_TOOL,
+	storeOwnerEntries,
+} from "./mcp-owner-entries.js";
+import {
 	OWNER_PAGE_COLLECTION,
 	OWNER_PAGE_SECRET_FIELDS,
 	OwnerPageRefused,
@@ -37,6 +44,7 @@ export const STORE_CHOICE_TOOL_NAMES: readonly string[] = Object.freeze([
 	CHOOSE_SECRET_STORE_TOOL,
 	SUBMIT_STORE_CHOICE_TOOL,
 	SUBMIT_OWNER_PAGE_TOOL,
+	STORE_OWNER_ENTRIES_TOOL,
 ]);
 
 export type StoreChoiceSupport = Readonly<{
@@ -331,6 +339,13 @@ function labelFor(store: StoreChoice["store"]): OwnerStoreLabel {
 	return STORE_OPTIONS.find((o) => o.id === store)?.label ?? "Infisical";
 }
 
+const entriesDefinition: StoreChoiceToolDefinition = {
+	name: STORE_OWNER_ENTRIES_TOOL,
+	title: STORE_OWNER_ENTRIES_TITLE,
+	description: STORE_OWNER_ENTRIES_DESCRIPTION,
+	inputSchema: STORE_OWNER_ENTRIES_INPUT,
+};
+
 const sealedArg = z.object({ sealed: z.string().min(1) });
 
 async function ownerPage(
@@ -546,74 +561,82 @@ export function createStoreChoiceApp(
 		return record(opened.cwd, choice);
 	};
 
+	const baseTools = (
+		support: StoreChoiceSupport,
+	): readonly StoreChoiceToolDefinition[] => {
+		const choose: StoreChoiceToolDefinition = {
+			name: CHOOSE_SECRET_STORE_TOOL,
+			title: "Connect the owner's secret store",
+			description:
+				"Connect the owner's secret store to this HoBo session: reuse an established session, or ask the owner privately (a host form or HoBo's widget) which store to use and sign in. Takes no store settings; returns only a status and the store's name.",
+			inputSchema: {
+				type: "object",
+				properties: chooseArgs,
+				additionalProperties: false,
+			},
+			...(support.apps
+				? {
+						_meta: {
+							ui: { resourceUri: STORE_CHOICE_RESOURCE_URI },
+							"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
+						},
+					}
+				: undefined),
+		};
+		if (!support.apps)
+			return support.formElicitation || options.pages === undefined
+				? [choose]
+				: [
+						choose,
+						{
+							name: SUBMIT_OWNER_PAGE_TOOL,
+							title: "Hand HoBo the owner page's sealed answer",
+							description:
+								"Pass the `sealed` text the owner's page saved, exactly as read from the artifact database. It is encrypted to this HoBo server; only HoBo can open it.",
+							inputSchema: {
+								type: "object",
+								properties: {
+									sealed: { type: "string" },
+									cwd: {
+										type: "string",
+										description:
+											"The project directory; the server's working directory by default.",
+									},
+								},
+								required: ["sealed"],
+								additionalProperties: false,
+							},
+						},
+					];
+		return [
+			choose,
+			{
+				name: SUBMIT_STORE_CHOICE_TOOL,
+				title: "Record the store choice",
+				description:
+					"Called only by HoBo's store picker widget with the owner's answer.",
+				inputSchema: {
+					type: "object",
+					properties: { ...familyArg, ...STORE_CHOICE_PROPERTIES },
+					required: ["store"],
+					additionalProperties: false,
+				},
+				_meta: {
+					ui: {
+						resourceUri: STORE_CHOICE_RESOURCE_URI,
+						visibility: ["app"],
+					},
+				},
+			},
+		];
+	};
+
 	return {
 		handles: (tool) => STORE_CHOICE_TOOL_NAMES.includes(tool),
 		tools(support) {
-			const choose: StoreChoiceToolDefinition = {
-				name: CHOOSE_SECRET_STORE_TOOL,
-				title: "Connect the owner's secret store",
-				description:
-					"Connect the owner's secret store to this HoBo session: reuse an established session, or ask the owner privately (a host form or HoBo's widget) which store to use and sign in. Takes no store settings; returns only a status and the store's name.",
-				inputSchema: {
-					type: "object",
-					properties: chooseArgs,
-					additionalProperties: false,
-				},
-				...(support.apps
-					? {
-							_meta: {
-								ui: { resourceUri: STORE_CHOICE_RESOURCE_URI },
-								"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
-							},
-						}
-					: undefined),
-			};
-			if (!support.apps)
-				return support.formElicitation || options.pages === undefined
-					? [choose]
-					: [
-							choose,
-							{
-								name: SUBMIT_OWNER_PAGE_TOOL,
-								title: "Hand HoBo the owner page's sealed answer",
-								description:
-									"Pass the `sealed` text the owner's page saved, exactly as read from the artifact database. It is encrypted to this HoBo server; only HoBo can open it.",
-								inputSchema: {
-									type: "object",
-									properties: {
-										sealed: { type: "string" },
-										cwd: {
-											type: "string",
-											description:
-												"The project directory; the server's working directory by default.",
-										},
-									},
-									required: ["sealed"],
-									additionalProperties: false,
-								},
-							},
-						];
-			return [
-				choose,
-				{
-					name: SUBMIT_STORE_CHOICE_TOOL,
-					title: "Record the store choice",
-					description:
-						"Called only by HoBo's store picker widget with the owner's answer.",
-					inputSchema: {
-						type: "object",
-						properties: { ...familyArg, ...STORE_CHOICE_PROPERTIES },
-						required: ["store"],
-						additionalProperties: false,
-					},
-					_meta: {
-						ui: {
-							resourceUri: STORE_CHOICE_RESOURCE_URI,
-							visibility: ["app"],
-						},
-					},
-				},
-			];
+			return options.sessions === undefined
+				? baseTools(support)
+				: [...baseTools(support), entriesDefinition];
 		},
 		resources(support) {
 			return support.apps
@@ -647,6 +670,18 @@ export function createStoreChoiceApp(
 		},
 		async callTool(tool, args, support, request) {
 			const cwd = cwdOf(args);
+			if (tool === STORE_OWNER_ENTRIES_TOOL) {
+				const outcome = await storeOwnerEntries({
+					cwd,
+					args,
+					sessions: options.sessions,
+					ask:
+						support.formElicitation && request !== undefined
+							? (params) => request("elicitation/create", params)
+							: undefined,
+				});
+				return result(outcome.text, outcome.structured, outcome.isError);
+			}
 			if (tool === SUBMIT_OWNER_PAGE_TOOL) {
 				if (options.pages === undefined) return UNAVAILABLE;
 				return submitOwnerPage(args, options.pages);

@@ -75,6 +75,13 @@ and admits no exceptions.
   with the cluster kubeconfig `owner://HOSTINGER_ARC_KUBECONFIG`; never run
   kubectl for it. On `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`, call
   `choose_secret_store` first.
+- After `established`, call `store_owner_entries` (same `cwd`) so HoBo asks
+  the owner, one private host form per entry, for the GitHub and Hostinger
+  entries it needs (`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`,
+  `HOBO_CI_ACCOUNT_TOKEN`, `GITHUB_RELEASE_TOKEN`) and writes each straight
+  into the store. Entries the store already holds are kept unless
+  `replace: true`. Its result lists entry names only (`stored`, `kept`,
+  `skipped`, `failed`).
 - `sign-in-needed` (with a code): the choice is kept; call
   `choose_secret_store` again when the owner is ready. Do not claim the store
   is connected.

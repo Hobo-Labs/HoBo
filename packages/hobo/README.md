@@ -66,6 +66,12 @@ database, and the agent passes that text unchanged to `submit_owner_page`. HoBo 
 it once, within 30 minutes, records the store choice and hands the store's sign-in to
 the waiting run. The agent carries only ciphertext.
 
+`store_owner_entries` fills the store with the provider entries HoBo reads
+(`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`,
+`GITHUB_RELEASE_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
+each value checked for shape and written with the session's `entries(cwd).write`,
+never returned. It needs form elicitation and an established session.
+
 ## CLI verification and remote deployment safety
 
 ### Budgeted cloud hosting

@@ -324,7 +324,7 @@ remote box whose host shows form elicitation; elsewhere the result is
 `sign-in-needed`. Every result the agent sees carries only a
 status (`established`, `sign-in-needed` with a code, `shown`, `owner-page`,
 `decline`, `invalid`, `refused`, `secure-form-unavailable`) and the store's name, never project or
-vault IDs, hosts, or references. Once established, `hobo deploy` resolves
+vault IDs, hosts, or references. Once established, `store_owner_entries` asks the owner, in one private host form per entry, for the GitHub and Hostinger entries HoBo needs (`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG` as one base64 line, `HOBO_CI_ACCOUNT_TOKEN`, `GITHUB_RELEASE_TOKEN`) and writes each straight into the connected store; it keeps entries already there unless `replace: true`, and returns entry names only. Once established, `hobo deploy` resolves
 credential locators `owner://<NAME>` (`env://<NAME>` is refused) from that session's CD location (Infisical folder `/hobo-cd`), so provider resolvers such as Hostinger's get
 `HOSTINGER_API_TOKEN` from the owner's store without the value reaching the
 agent; `hobo ci fleet status|restart|start` (the `ci` tool with
