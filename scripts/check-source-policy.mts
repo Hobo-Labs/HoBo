@@ -78,7 +78,7 @@ const AST_GREP = join(
 	process.platform === "win32" ? "ast-grep.exe" : "ast-grep",
 );
 const DIRECTIVE =
-	/^(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*|@?rem\s+|::\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma|buf|go|atlas):|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b)/iu;
+	/^(?:\/\/go:[A-Za-z][A-Za-z0-9_]*\b|\/\/(?:line|export|extern)\s|\/\/ (?:#cgo|\+build)\s|(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*|@?rem\s+|::\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|buf:(?:lint|breaking):|atlas:(?:nolint|lint|txmode|delimiter|assert)\b|cue:generate\b|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b))/iu;
 const TYPESCRIPT_DIRECTIVE =
 	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?)@ts-(?:check|nocheck|ignore|expect-error)\b/iu;
 const CONCISE_TYPESCRIPT_DIRECTIVE =
@@ -141,7 +141,7 @@ function mergeParentDiffs(mode: Mode): string[][] {
 function names(args: string[], filter: string): string[] {
 	return git([
 		...args,
-		"--no-renames",
+		"--find-renames",
 		"--name-only",
 		`--diff-filter=${filter}`,
 		"-z",
@@ -149,6 +149,25 @@ function names(args: string[], filter: string): string[] {
 	])
 		.split("\0")
 		.filter(Boolean);
+}
+
+function renameSources(args: string[]): Map<string, string> {
+	const entries = git([
+		...args,
+		"--find-renames",
+		"--name-status",
+		"--diff-filter=R",
+		"-z",
+		"--",
+	]).split("\0");
+	const sources = new Map<string, string>();
+	for (let index = 0; index + 2 < entries.length; index += 3) {
+		const source = entries[index + 1];
+		const destination = entries[index + 2];
+		if (source !== undefined && destination !== undefined)
+			sources.set(destination, source);
+	}
+	return sources;
 }
 
 function untrackedFiles(mode: Mode): string[] {
@@ -308,9 +327,11 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 	const kinds =
 		language === "kotlin"
 			? ["line_comment", "multiline_comment"]
-			: ["rust", "java"].includes(language)
-				? ["line_comment", "block_comment"]
-				: ["comment"];
+			: language === "swift"
+				? ["comment", "multiline_comment"]
+				: ["rust", "java"].includes(language)
+					? ["line_comment", "block_comment"]
+					: ["comment"];
 	return kinds.flatMap((kind) =>
 		astGrepMatches(file, text, language, kind).map(matchLocation),
 	);
@@ -1260,18 +1281,19 @@ function changedLines(
 	file: string,
 	text: string,
 	untracked: boolean,
+	source?: string,
 ): Set<number> {
 	if (untracked)
 		return new Set(text.split(/\r?\n/u).map((_, index) => index + 1));
 	return addedLineNumbers(
 		git([
 			...args,
-			"--no-renames",
+			"--find-renames",
 			"--no-color",
 			"--no-ext-diff",
 			"--unified=0",
 			"--",
-			file,
+			...(source === undefined ? [file] : [source, file]),
 		]),
 	);
 }
@@ -1301,9 +1323,11 @@ export function proofArtifactViolations(
 export function checkSourcePolicy(mode: Mode): Violation[] {
 	const args = diffArgs(mode);
 	const untracked = untrackedFiles(mode);
+	const renamed = renameSources(args);
 	const parents = mergeParentDiffs(mode).map((parentArgs) => ({
 		args: parentArgs,
 		files: new Set(names(parentArgs, "ACMRT")),
+		renamed: renameSources(parentArgs),
 	}));
 	const changedFromEveryParent = (file: string) =>
 		parents.every((parent) => parent.files.has(file));
@@ -1376,10 +1400,16 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			!text.startsWith("#!")
 		)
 			continue;
-		const added = changedLines(args, file, text, untracked.includes(file));
+		const added = changedLines(
+			args,
+			file,
+			text,
+			untracked.includes(file),
+			renamed.get(file),
+		);
 		const parentAdditions = parents.map((parent) =>
 			parent.files.has(file)
-				? changedLines(parent.args, file, text, false)
+				? changedLines(parent.args, file, text, false, parent.renamed.get(file))
 				: new Set<number>(),
 		);
 		violations.push(...commentViolations(file, text, added, parentAdditions));

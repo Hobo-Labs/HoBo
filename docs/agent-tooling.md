@@ -10,17 +10,23 @@ tags: [hobo, agent-tooling.md]
 Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
 design documents. Agent edit hooks, the shared pre-commit hook, and CI run the
-common `source:guard` for the languages and source templates listed in
-`AGENTS.md`. Hooks check the worktree and commits since their last clean
+common `source:guard` ([`scripts/check-source-policy.mts`](../scripts/check-source-policy.mts))
+for the languages and source templates listed in `AGENTS.md`; the contract
+languages — Prisma, CUE, Protobuf, WIT, SQL, and TOML — are lexed by
+[`scripts/source-comment-lexer.mts`](../scripts/source-comment-lexer.mts), whose
+dialect-aware lexer keeps strings, raw-string hash delimiters, and triple-quoted
+strings out of the comment set. Hooks check the worktree and commits since their last clean
 checkpoint on each branch. New branches inherit a recent ancestor checkpoint;
 otherwise hooks check the latest commit to start a session or resume after 12
 hours of inactivity. A failing committed check, including an explicit `--base`
 check, keeps its checkpoint until the fix is committed. Checkpoints live in the
 system temporary directory, or in `HOBO_AGENT_POLICY_STATE_DIR` when set. Commit checks read staged content, CI
 checks the PR diff, and the worktree check also finds ignored agent planning
-artifacts. During a staged merge it compares against every parent, so content
-inherited unchanged from either side is not treated as a new merge edit, while a
-multiline comment assembled from changes on both sides is still checked.
+artifacts. For renamed files, it compares against the original path so existing
+comments remain allowed while newly added comments are checked. During a staged
+merge it compares against every parent, so content inherited unchanged from
+either side is not treated as a new merge edit, while a multiline comment
+assembled from changes on both sides is still checked.
 
 The anti-slop installer leaves its comment-required assertion rule disabled so
 the lint configuration follows the same source policy.

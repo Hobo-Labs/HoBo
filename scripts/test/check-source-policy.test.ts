@@ -16,6 +16,7 @@ import {
 	commentViolations,
 	documentViolation,
 } from "../check-source-policy.mts";
+import { lexComments } from "../source-comment-lexer.mts";
 
 const script = resolve("scripts/check-source-policy.mts");
 const scratch: string[] = [];
@@ -860,12 +861,38 @@ c: """
 d: "value: \(1 + // interpolation
   2)"
 e: ##"raw \##(2 + // raw interpolation
-  3) // literal"##`;
+  3) // literal"##
+f: /* TODO: remove block */`;
 		assert.deepEqual(
-			commentViolations("x.cue", cue, new Set([1, 3, 6, 8, 9])).map(
+			commentViolations("x.cue", cue, new Set([1, 3, 6, 8, 9, 10])).map(
 				(item) => item.line,
 			),
-			[1, 6, 8],
+			[1, 6, 8, 10],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.cue",
+				"g: /* see http://inside.example.test */",
+				new Set([1]),
+			).map((item) => item.message),
+			["make the code self-documenting instead of adding a comment"],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.cue",
+				"a: /* glob: pkg/* */\n// TODO: follow up\n",
+				new Set([1, 2]),
+			).map((item) => ({ line: item.line, message: item.message })),
+			[
+				{
+					line: 1,
+					message: "make the code self-documenting instead of adding a comment",
+				},
+				{
+					line: 2,
+					message: "finish deferred work instead of adding a marker",
+				},
+			],
 		);
 		const proto =
 			'option x = "https://example.test/* data */"; /* explanation */\n// todo: implement';
@@ -875,16 +902,58 @@ e: ##"raw \##(2 + // raw interpolation
 			),
 			[1, 2],
 		);
+		assert.deepEqual(
+			commentViolations(
+				"schema.prisma",
+				"/* TODO: inside */\n/* relation pkg/* */ TODO: outside */\n",
+				new Set([1, 2]),
+			).map((item) => ({ line: item.line, message: item.message })),
+			[
+				{
+					line: 1,
+					message: "finish deferred work instead of adding a marker",
+				},
+				{
+					line: 2,
+					message: "make the code self-documenting instead of adding a comment",
+				},
+			],
+		);
 		const wit = "/* outer /* inner */ outer */\n/// explanation";
 		assert.deepEqual(
 			commentViolations("x.wit", wit, new Set([1, 2])).map((item) => item.line),
 			[1, 2],
 		);
 		const sql =
-			"SELECT 'it''s -- data', $$-- data$$; -- explanation\n/* explanation */";
+			"SELECT 'it''s -- data # data', $$-- data # data$$; -- explanation\n/* explanation */";
 		assert.deepEqual(
 			commentViolations("x.sql", sql, new Set([1, 2])).map((item) => item.line),
 			[1, 2],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.sql",
+				"/* relation pkg/* nested */ TODO: follow up */\n-- explanation\n",
+				new Set([1, 2]),
+			).map((item) => ({ line: item.line, message: item.message })),
+			[
+				{
+					line: 1,
+					message: "finish deferred work instead of adding a marker",
+				},
+				{
+					line: 2,
+					message: "make the code self-documenting instead of adding a comment",
+				},
+			],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"x.sql",
+				"SELECT payload #>> '{a}' FROM events;",
+				new Set([1]),
+			),
+			[],
 		);
 		const toml = `a = '# data' # explanation\nb = """\n# data\n""" # explanation`;
 		assert.deepEqual(
@@ -893,6 +962,18 @@ e: ##"raw \##(2 + // raw interpolation
 			),
 			[1, 4],
 		);
+		for (const text of [
+			'a = """# data"""" # explanation',
+			'a = """# data""""" # explanation',
+			"a = '''# data'''' # explanation",
+			"a = '''# data''''' # explanation",
+		])
+			assert.deepEqual(
+				commentViolations("x.toml", text, new Set([1])).map(
+					(item) => item.line,
+				),
+				[1],
+			);
 		assert.equal(
 			commentViolations(
 				"x.yaml",
@@ -1029,6 +1110,31 @@ e: ##"raw \##(2 + // raw interpolation
 		);
 	});
 
+	it("handles MySQL backslash escapes in strings and quoted identifiers", () => {
+		const sql = [
+			"SELECT 'it\\'s -- not a comment', `column\\` -- still an identifier`; -- explanation",
+			'SELECT "a\\" -- still a string"; -- explanation',
+		].join("\n");
+		assert.deepEqual(
+			lexComments(sql, "sql").map((comment) => comment.text),
+			["-- explanation", "-- explanation"],
+		);
+	});
+
+	it("requires whitespace or a control character after MySQL line comment delimiters", () => {
+		const sql = [
+			"SELECT 1--2;",
+			"SELECT 3--4;",
+			"SELECT 5 -- explanation",
+			"SELECT 6 --\tcontrolled",
+			"SELECT 7 --",
+		].join("\n");
+		assert.deepEqual(
+			lexComments(sql, "sql").map((comment) => comment.text),
+			["-- explanation", "--\tcontrolled"],
+		);
+	});
+
 	it("handles Rust and Kotlin line and block comments", () => {
 		for (const file of ["example.rs", "example.kt"]) {
 			assert.deepEqual(
@@ -1104,6 +1210,17 @@ e: ##"raw \##(2 + // raw interpolation
 		);
 	});
 
+	it("reports Swift line and block comments", () => {
+		assert.deepEqual(
+			commentViolations(
+				"example.swift",
+				"// line\n/* block */",
+				new Set([1, 2]),
+			).map((item) => item.line),
+			[1, 2],
+		);
+	});
+
 	it("preserves actual licensing and tool directives without exempting arbitrary banner comments", () => {
 		assert.equal(
 			commentViolations("x.ts", "/*! @license MIT */\n", new Set([1])).length,
@@ -1120,6 +1237,69 @@ e: ##"raw \##(2 + // raw interpolation
 				new Set([1]),
 			).length,
 			0,
+		);
+		assert.equal(
+			commentViolations("x.proto", "// buf: retry later\n", new Set([1]))
+				.length,
+			1,
+		);
+		assert.equal(
+			commentViolations("x.ts", "//go:embed schema.json\n", new Set([1]))
+				.length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.ts", "// go: retry later\n", new Set([1])).length,
+			1,
+		);
+		assert.equal(
+			commentViolations("x.cue", "//cue:generate cue get go\n", new Set([1]))
+				.length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.sql", "-- atlas:nolint DS101\n", new Set([1]))
+				.length,
+			0,
+		);
+		assert.equal(
+			commentViolations("x.sql", "-- atlas: retry later\n", new Set([1]))
+				.length,
+			1,
+		);
+	});
+
+	it("allows Go compiler directives without exempting lookalike comments", () => {
+		const directives = [
+			"//go:generate stringer -type=Value",
+			"//line parser.go:10",
+			"// #cgo CFLAGS: -DNDEBUG",
+			"//export Run",
+			"//extern run",
+			"// +build linux,amd64",
+		];
+		for (const directive of directives)
+			assert.equal(
+				commentViolations("x.go", `${directive}\n`, new Set([1])).length,
+				0,
+				directive,
+			);
+
+		const comments = [
+			"// go:generate stringer -type=Value",
+			"// line parser.go:10",
+			"//#cgo CFLAGS: -DNDEBUG",
+			"// export Run",
+			"// extern run",
+			"//+build linux,amd64",
+		];
+		assert.deepEqual(
+			commentViolations(
+				"x.go",
+				comments.join("\n"),
+				new Set(comments.map((_, index) => index + 1)),
+			).map((item) => item.line),
+			comments.map((_, index) => index + 1),
 		);
 	});
 
@@ -1159,6 +1339,7 @@ e: ##"raw \##(2 + // raw interpolation
 			["site/.impeccable/surfaces/example.json", "{}"],
 			[".impeccable/critique/example.md", "# Example"],
 			[".sdlc/example/sdlc-state.md", "# State"],
+			[".impeccable/surfaces/example.json", "{}"],
 		] as const)
 			assert.ok(documentViolation(file, text), file);
 		assert.equal(documentViolation("docs/usage.md", "# Usage"), undefined);
@@ -1375,6 +1556,45 @@ e: ##"raw \##(2 + // raw interpolation
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /docs\/design\/new\.md/u);
+	});
+
+	it("enforces contract and design artifact rules on staged files", () => {
+		const repo = fixture();
+		write(
+			repo,
+			"schema.cue",
+			'endpoint: "https://example.test" // explanation\n',
+		);
+		write(repo, ".impeccable/design.json", "{}\n");
+		write(repo, ".impeccable/surfaces/example.json", "{}\n");
+		write(repo, "site/.impeccable/surfaces/nested/widget.txt", "notes\n");
+		git(repo, "add", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /schema\.cue:1/u);
+		assert.match(result.stderr, /\.impeccable\/design\.json:1/u);
+		assert.match(result.stderr, /\.impeccable\/surfaces\/example\.json:1/u);
+		assert.match(
+			result.stderr,
+			/site\/\.impeccable\/surfaces\/nested\/widget\.txt:1/u,
+		);
+	});
+
+	it("allows unchanged comments in renamed files but rejects new ones", () => {
+		const repo = fixture();
+		git(repo, "mv", "existing.ts", "renamed.ts");
+		const moved = guard(repo, "--staged");
+		assert.equal(moved.status, 0, moved.stderr);
+		write(
+			repo,
+			"renamed.ts",
+			"// existing comment\nexport const value = 1;\n// new comment\n",
+		);
+		git(repo, "add", "renamed.ts");
+		const changed = guard(repo, "--staged");
+		assert.equal(changed.status, 1, changed.stderr);
+		assert.match(changed.stderr, /renamed\.ts:3/u);
+		assert.doesNotMatch(changed.stderr, /renamed\.ts:1/u);
 	});
 
 	it("allows removing lines from an existing design document but not adding any", () => {
