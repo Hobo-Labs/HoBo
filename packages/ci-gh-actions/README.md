@@ -1882,11 +1882,13 @@ reader yet: built, not proven.
 
 ## Relay job, relay mode
 
-`createRelayAnswerer` (`src/relay-answer/`) lets a HoBo node answer a relay
-job itself, over the runner protocol, when the job asks only for the
-`hobo-relay` label and relay mode is on both for the node and in the
-repository's `.hobo/ci.json`. The job runs on no runner, bills no minute and
-runs no job code. A rescue poll answers relay jobs whose webhook never
+`createRelayAnswerer` (`src/relay-answer/`) lets a HoBo node claim a check job
+itself, over the runner protocol, when the job asks only for the `hobo-relay`
+label, is made only of HoBo check steps, and relay mode is on both for the
+node and in the repository's `.hobo/ci.json`. The job runs on no runner, bills
+no minute and runs no job code. Relay mode never routes: routing happens in
+HoBo CI, never in a workflow, and a job on the relay label that asks to be
+routed is failed. A rescue poll answers relay jobs whose webhook never
 arrived, and a sweep deletes leftover `hobo-relay-*` runners. Of a repository
 it reads only `.hobo/ci.json`. It is built, not proven: it is tested against
 the GitHub simulator and the hand-authored pacts
@@ -1895,7 +1897,7 @@ the GitHub simulator and the hand-authored pacts
 and no run against GitHub's runner service is linked yet. See
 [`src/relay-answer/RELAY-MODE.md`](src/relay-answer/RELAY-MODE.md).
 
-## Automatic retry and rerun --reroute
+## Automatic retry
 
 A routed job that failed for a reason outside its own steps is run again
 without anyone asking, under the retry policy in the runner order
@@ -1945,27 +1947,20 @@ with a failure:
 A relay job is one asking `hobo-relay`, or named `relay` or `route` alone or
 with a matrix suffix (`route (linux)`); `route-lint` or `relay-tests` is not.
 `isRelayJob` in [`src/insight-ingest.ts`](src/insight-ingest.ts) is the one
-rule; `isRelayJobOf` is the same function.
+rule.
 
-`hobo ci rerun <run> --reroute` (`packages/hobo/src/ci-rerun-reroute.ts`)
-makes the same re-run by hand. `hobo ci rerun` with `--reroute` goes to it;
-without, it is the plain re-run it always was. It reads every page of the
-finished run's jobs, finds the relay job (jobs asking `hobo-relay` win over
-jobs matched by name; `--job` picks one of several) and re-runs it with the
-token in `GH_TOKEN` or `GITHUB_TOKEN`. A plain re-run of failed jobs keeps
-the relay's old answer and lands the job on the label it had.
-
-The loop is tested against the GitHub simulator: a job that failed before its
-steps, a `workflow_run` webhook delivered twice, one re-run, and a fresh
-decision that moves the job to the other runner type. The simulator has no
-"re-run a job" route, so the test adapts it to a whole-run re-run where every
-job needs the relay. No relay runs this in production yet, so the channel is
-built, not proven.
+**Inert until HoBo CI routes on claim.** Retry acts only on a run with a
+route decision in the journal and a relay job to re-run. Routing happens in
+HoBo CI, never in a workflow, and relay mode answers only check jobs, so no
+production path journals a route decision today and `autoRetryRun` answers
+`no_relay_decision`. `test/auto-retry.test.ts` exercises the rules with a
+journal it fills itself; `test/relay-wiring.test.ts` shows the wired relay
+re-runs nothing.
 
 ## Runner-less checks: title, then lint
 
 `createRelayChecks` (`src/relay-checks/`) is the `checks` handler relay mode
-passes to `answerRelayJob` (ADR-0183, F9). A relay job whose steps are all
+calls (ADR-0183, F9). A relay job whose steps are all
 HoBo check steps (a `uses:` ending in `/checks/pr-title` or `/checks/lint`)
 is completed by the relay itself, passed or failed with annotations, so no
 runner starts and no minute is billed. Every step must be a check step with
@@ -2012,22 +2007,21 @@ nothing more and serves no new path. The project schema accepts the
 
 What is not wired, and why:
 
-- Runner-less checks (`RelayChecks`) are not passed to the answerer, so every
-  relay job is routed; the lint sandbox needs its own configuration first.
-- Relay mode's decisions here leave the fleet step, spend, provider health and
-  minutes unmeasured, and so does the read API's usage report for minutes:
-  the host has no fleet slots, ledger sum, health feed or billing reader to
-  give them. A missing measurement never blocks a step. Nothing on this host
-  writes machine adverts or machine events yet, so the machine registry is
-  empty and a retry sees no machine disconnect.
+- Runner-less checks (`RelayChecks`) are not passed to the answerer, so a
+  check job it claims fails with a sentence saying its checks did not run;
+  the lint sandbox needs its own configuration first.
+- The read API's usage report leaves minutes unmeasured: the host has no
+  billing reader. Nothing on this host writes machine adverts or machine
+  events yet, so the machine registry is empty and a retry sees no machine
+  disconnect. No route decision is journaled, so retry re-runs nothing.
 - Relay mode answers through the pull-admission poller. A relay on push
   admission runs no poller, so it does not answer relay jobs.
 - With the CI agent on, `hobo ci serve` starts the relay through the agent's
   entry, which takes no dashboard route: the dashboard is not served then.
 
 Built, not proven. `test/relay-wiring.test.ts` drives the wiring against the
-GitHub simulator (a lost relay job answered after a poll, a failed run re-run
-once for a webhook delivered twice, nothing with each flag off);
+GitHub simulator (a lost check job claimed after a poll, a failed run with no
+route decision re-run by nothing, nothing with each flag off);
 `test/relay-wiring-entry.test.ts` drives `startRelayFromEnvironment` over
 HTTP (a webhook folded into run history, the page, the read API behind its
 token, and none of it with the flags off); `packages/hobo/test/ci-serve.test.ts` drives `hobo ci serve` and its

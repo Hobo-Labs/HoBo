@@ -4,16 +4,11 @@ import {
 	RelayJobMessageSchema,
 	type RelayJobStep,
 } from "@hobo/ci";
-import {
-	InMemoryMachineRegistry,
-	InMemoryRouteJournal,
-} from "@hobo/ci/runner-order/testing";
 import { describe, expect, it } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import {
 	createRelayAnswerer,
 	RELAY_CONFIG_PATH,
-	StoreRouteFacts,
 } from "../src/relay-answer/index.js";
 import {
 	checkStepsOf,
@@ -834,25 +829,12 @@ function relayWithChecks(
 	sandbox: LintSandbox | undefined,
 	events: RelayCheckCompleted[],
 ) {
-	const journal = new InMemoryRouteJournal();
 	const answerer = createRelayAnswerer({
 		relayJobs: { answer: true, label: "hobo-relay" },
 		github: transport,
 		runnerService: new SimulatedRunnerService(sim),
 		readJitConfig: (_encoded, runnerName) => testJitConfig(runnerName),
 		account: async () => "acct-1",
-		facts: (accountId) =>
-			new StoreRouteFacts({
-				accountId,
-				fleet: undefined,
-				machines: new InMemoryMachineRegistry(),
-				readers: undefined,
-				spend: undefined,
-				health: undefined,
-				minutes: undefined,
-				onWarning: undefined,
-			}),
-		journal,
 		node: "node-a",
 		checks: createRelayChecks({
 			source: new GithubRelayCheckSource(
@@ -870,7 +852,7 @@ function relayWithChecks(
 		webhookSecret: sim.webhookSecret,
 		nowMs: () => sim.nowMs(),
 	});
-	return { answerer, journal };
+	return { answerer };
 }
 
 describe("relay mode answers check jobs (C01, C02 at T2)", () => {
@@ -887,7 +869,7 @@ describe("relay mode answers check jobs (C01, C02 at T2)", () => {
 		const requests: string[] = [];
 		const events: RelayCheckCompleted[] = [];
 		const transport = checksTransport(sim, "chore: tidy", requests);
-		const { answerer, journal } = relayWithChecks(
+		const { answerer } = relayWithChecks(
 			sim,
 			transport,
 			undefined,
@@ -910,14 +892,6 @@ describe("relay mode answers check jobs (C01, C02 at T2)", () => {
 		expect(events.map((event) => event.checks)).toEqual([
 			[{ name: "pr-title", passed: false }],
 		]);
-		expect(
-			await journal.decisions({
-				accountId: "acct-1",
-				repository: undefined,
-				sinceMs: 0,
-				limit: 10,
-			}),
-		).toEqual([]);
 		expect(requests.some((path) => path.includes("tarball"))).toBe(false);
 		expect(requests.some((path) => path.includes("logs"))).toBe(false);
 	});

@@ -126,19 +126,11 @@ function turnOn(sim: GithubSimulator): void {
 function queueRelay(sim: GithubSimulator): number {
 	const relay = sim.queueJob({
 		repository: REPO,
-		name: "route",
+		name: "title",
 		labels: ["hobo-relay"],
-		inputs: new Map([
-			["github", "ubuntu-24.04"],
-			["blacksmith", "blacksmith-2vcpu-ubuntu-2404"],
-		]),
-	});
-	sim.queueJob({
-		repository: REPO,
-		name: "build",
-		runId: relay.runId,
-		labels: ["${{ needs.route.outputs.runner }}"],
-		needs: ["route"],
+		steps: [
+			{ uses: "hobo-labs/hobo/checks/pr-title@v1", with: new Map() },
+		],
 	});
 	return relay.runId;
 }
@@ -218,7 +210,7 @@ describe("with every flag off", () => {
 });
 
 describe("relay mode after a poll", () => {
-	it("answers a relay job whose webhook never arrived, then sweeps", async () => {
+	it("answers a check job whose webhook never arrived, then sweeps", async () => {
 		const sim = new GithubSimulator();
 		turnOn(sim);
 		const wiring = wire(sim, flags({ answer: true }), simulatorTransport(sim));
@@ -227,20 +219,22 @@ describe("relay mode after a poll", () => {
 		expect(pass?.rescue.queued).toBe(1);
 		expect(pass?.rescue.outcomes[0]?.kind).toBe("answered");
 		expect(pass?.sweep.deleted).toEqual([]);
-		const route = sim
+		const title = sim
 			.jobs()
-			.find((one) => one.name === "route" && one.runId === runId);
-		expect(route).toMatchObject({ status: "completed", conclusion: "success" });
-		expect(route?.outputs.get("runner")).toBe("ubuntu-24.04");
-		const decided = await wiring.journal?.decisions({
-			accountId: ACCOUNT,
-			repository: REPO,
-			sinceMs: 0,
-			limit: 10,
-		});
+			.find((one) => one.name === "title" && one.runId === runId);
+		expect(title).toMatchObject({ status: "completed", conclusion: "failure" });
+		expect(title?.annotations).toEqual([
+			"No relay check handler answered this job; its checks did not run.",
+		]);
+		expect(title?.outputs.size).toBe(0);
 		expect(
-			decided?.filter((event) => event.type === "runner.route.Decided"),
-		).toMatchObject([{ mode: "relay", node: "node-a" }]);
+			await wiring.journal?.decisions({
+				accountId: ACCOUNT,
+				repository: REPO,
+				sinceMs: 0,
+				limit: 10,
+			}),
+		).toEqual([]);
 	});
 
 	it("skips a poll's pass while the last one is still running", async () => {
@@ -263,7 +257,7 @@ describe("relay mode after a poll", () => {
 		expect(await wiring.afterPoll(CONNECTIONS)).toBeUndefined();
 		expect(sim.requests()).toHaveLength(before);
 		expect(
-			sim.jobs().find((one) => one.name === "route" && one.runId === runId)
+			sim.jobs().find((one) => one.name === "title" && one.runId === runId)
 				?.status,
 		).toBe("queued");
 	});
@@ -274,7 +268,11 @@ async function failedBeforeSteps(
 	wiring: RelayWiring,
 ): Promise<number> {
 	sim.registerRunner({ name: "gh-1", labels: ["ubuntu-24.04"] });
-	const runId = queueRelay(sim);
+	const { runId } = sim.queueJob({
+		repository: REPO,
+		name: "build",
+		labels: ["ubuntu-24.04"],
+	});
 	await wiring.afterPoll(CONNECTIONS);
 	const build = sim.claim("gh-1");
 	expect(build?.name).toBe("build");
@@ -287,7 +285,7 @@ async function failedBeforeSteps(
 }
 
 describe("automatic retry on a failed workflow_run", () => {
-	it("re-runs the relay job once, for a webhook delivered twice", async () => {
+	it("re-runs nothing for a run no route decision was journaled for", async () => {
 		const sim = new GithubSimulator();
 		turnOn(sim);
 		const { transport, reruns } = simulatorWithRerun(sim);
@@ -298,15 +296,7 @@ describe("automatic retry on a failed workflow_run", () => {
 		);
 		await failedBeforeSteps(sim, wiring);
 		await sim.deliver(intake(wiring));
-		const relay = sim.jobs().find((one) => one.name === "route");
-		expect(reruns).toEqual([`/repos/${REPO}/actions/jobs/${relay?.id}/rerun`]);
-
-		const completed = sim
-			.deliveries()
-			.filter((delivery) => delivery.event === "workflow_run");
-		sim.redeliver(completed[0]?.id ?? "");
-		await sim.deliver(intake(wiring));
-		expect(reruns).toHaveLength(1);
+		expect(reruns).toEqual([]);
 	});
 
 	it("re-runs nothing with retry off", async () => {
@@ -380,7 +370,7 @@ describe("the dashboard", () => {
 		).toBeUndefined();
 	});
 
-	it("reads the relay's own decisions and run history through the read API, behind its token", async () => {
+	it("reads the relay's run history through the read API, behind its token", async () => {
 		const sim = new GithubSimulator();
 		turnOn(sim);
 		const wiring = wire(
@@ -393,7 +383,11 @@ describe("the dashboard", () => {
 			},
 		);
 		sim.registerRunner({ name: "gh-1", labels: ["ubuntu-24.04"] });
-		const runId = queueRelay(sim);
+		const { runId } = sim.queueJob({
+			repository: REPO,
+			name: "build",
+			labels: ["ubuntu-24.04"],
+		});
 		await wiring.afterPoll(CONNECTIONS);
 		const build = sim.claim("gh-1");
 		sim.complete(build?.id ?? 0, { conclusion: "success" });
@@ -412,14 +406,7 @@ describe("the dashboard", () => {
 		expect(await runs?.json()).toMatchObject({ runs: [{ id: runId }] });
 		const routes = await read(`/routes?repository=${REPO}`);
 		expect(routes?.status).toBe(200);
-		expect(await routes?.json()).toMatchObject({
-			routes: expect.arrayContaining([
-				expect.objectContaining({
-					type: "runner.route.Decided",
-					mode: "relay",
-				}),
-			]),
-		});
+		expect(await routes?.json()).toMatchObject({ routes: [] });
 		expect((await read("/runs", "Bearer wrong"))?.status).toBe(401);
 		expect(await read("/policy")).toBeUndefined();
 	});

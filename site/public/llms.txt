@@ -50,7 +50,7 @@ The full docs dump is at https://tyler-r-kendrick.github.io/HoBo/llms-full.txt.
 - [Providers](https://tyler-r-kendrick.github.io/HoBo/ci/providers/)
 - [Fleet balancing](https://tyler-r-kendrick.github.io/HoBo/ci/fleet-balancing/)
 - [Route table](https://tyler-r-kendrick.github.io/HoBo/ci/route-table/)
-- [Runner order and relay jobs](https://tyler-r-kendrick.github.io/HoBo/ci/runner-order/)
+- [Runner order](https://tyler-r-kendrick.github.io/HoBo/ci/runner-order/)
 - [Host health](https://tyler-r-kendrick.github.io/HoBo/ci/host-health/)
 
 ## HoBo CD

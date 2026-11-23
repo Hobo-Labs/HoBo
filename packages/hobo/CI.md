@@ -110,7 +110,8 @@ separate package, `@hobo/ci-agent`, loaded only when a block is present; a
 is passed.
 
 Three relay pieces of [ADR-0183](../../docs/design/adr/runner-order.md) are
-off until turned on. **Relay mode** answers relay jobs only when the
+off until turned on. **Relay mode** claims runner-less check jobs (it never
+routes; routing happens in HoBo CI, never in a workflow) only when the
 project's `.hobo/ci.json` says `"relayJobs": { "answer": true }`; a value in
 the shell does not count. Its rescue and leftover-runner sweep then run after
 each pull-admission poll, never holding the poll up. **Automatic retry**

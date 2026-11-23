@@ -1,10 +1,15 @@
 # Relay mode
 
-In relay mode ([ADR-0183](../../../../docs/ci/runner-order.md)) a relay
-job asks for the label `hobo-relay`, and a HoBo node answers it over the
-runner protocol. No runner program starts, so the relay job runs no job code
-and bills no runner minute. The decision is made by
-`answerRelayJob` from `@hobo/ci` (see [`packages/ci/RELAY-JOB.md`](../../../ci/RELAY-JOB.md)).
+In relay mode ([ADR-0183](../../../../docs/ci/runner-order.md)) a check job
+made only of HoBo check steps (`checks/pr-title`, `checks/lint`) asks for the
+label `hobo-relay`, and a HoBo node claims it over the runner protocol and
+completes it with the checks' result. No runner program starts, so the job
+runs no job code and bills no runner minute.
+
+Relay mode never routes. Routing happens in HoBo CI, never in a workflow: a
+workflow only sets `runs-on` to a HoBo label, and no job hands another a
+runner through its outputs. A job on the relay label that is anything other
+than check steps is completed as failed.
 
 **It is built, not proven.** Everything here is tested against the GitHub
 simulator (`test/support/github-simulator/`). No relay has answered a job
@@ -15,8 +20,8 @@ live run is linked.
 
 | File | What it holds |
 | --- | --- |
-| [`answerer.ts`](answerer.ts) | `createRelayAnswerer`: answer one queued relay job, the signed webhook that wakes it, the rescue poll and the leftover-runner sweep |
-| [`store-facts.ts`](store-facts.ts) | `StoreRouteFacts`: the facts the walk uses, from the relay's own records |
+| [`answerer.ts`](answerer.ts) | `createRelayAnswerer`: answer one queued check job, the signed webhook that wakes it, the rescue poll and the leftover-runner sweep |
+| [`store-facts.ts`](store-facts.ts) | `StoreRouteFacts`: the facts the runner-order walk uses, from the relay's own records; relay mode does not use them |
 | [`ci-file.ts`](ci-file.ts) | `GithubCiFile`, `GithubCiOrderSource` and `parseRelayJobs`: the one file relay mode reads |
 
 ## Answering one job
@@ -42,8 +47,9 @@ For a queued job whose only label is the relay label:
    runner left behind by a node that died fences the job only until the sweep
    removes it (see below).
 5. It opens a session, waits up to four minutes for GitHub to offer a job,
-   answers it with `answerRelayJob` (mode `relay`), completes it, closes the
-   session and deletes the runner.
+   hands it to the check handler (`checks` in its options), completes it with
+   the handler's answer, closes the session and deletes the runner. With no
+   handler, the job fails with a sentence saying its checks did not run.
 
 GitHub hands a runner any waiting job with its label, oldest first, not
 necessarily the one that woke the answerer. A job it was offered instead is
@@ -56,16 +62,15 @@ whether the original is still queued once the offered job is completed.
 A runner created on the organization can be offered a relay job of any
 repository there. Such a job is answered only as its own repository asks:
 its `.hobo/ci.json` must turn `relayJobs.answer` on for the label and the node
-must serve its account, whose facts and journal the answer then uses.
-Otherwise the job fails with a sentence saying relay mode is not on for that
-repository; it is never routed with another account's machines or spend.
+must serve its account. Otherwise the job fails with a sentence saying relay
+mode is not on for that repository.
 A known limit of this fallback: in a mesh where another node serves that
 repository's account, this node still fails the job, since it cannot hand an
 offer over. The failure says to run the job again, so that node can answer it.
 
-A job that asked for the relay label but names no relay
-input, and is not made only of check steps, fails with a sentence saying a
-relay never runs a job's steps.
+A job that asked for the relay label but is not made only of check steps,
+including one that asks the relay to route it, fails with a sentence saying a
+relay never runs a job's steps or routes it.
 
 ## Rescue and sweep
 
@@ -90,7 +95,9 @@ otherwise fence their jobs for good.
 
 ## Facts
 
-`StoreRouteFacts` reads, for the job's account:
+`StoreRouteFacts` is the facts source the runner-order walk can use on a node.
+Relay mode answers no routing question, so nothing in it reads these facts. It
+reads, for an account:
 
 | Part | From |
 | --- | --- |
@@ -105,11 +112,12 @@ fails the decision.
 
 ## What it reads
 
-Of a repository it reads `.hobo/ci.json` and nothing else: at the default
-branch, or at a pull request's base branch, never at the commit a run is
-testing, so a branch cannot route its own jobs or turn relay mode on for
-itself. Beyond that it reads job and run status, lists runners and creates and
-deletes its own one-job runners. It asks for no log, secret, variable or
+Of a repository the answerer reads `.hobo/ci.json` and nothing else, at the
+default branch, never at the commit a run is testing, so a branch cannot turn
+relay mode on for itself. Beyond that it reads job and run status, lists
+runners and creates and deletes its own one-job runners. The check handler
+reads what its checks need (see
+[`RELAY-CHECKS.md`](../relay-checks/RELAY-CHECKS.md)). It asks for no log, secret, variable or
 other content (gauntlet case X01), and nothing it loads can start a process
 (case X03, `test/relay-answer-safety.test.ts`).
 
@@ -120,18 +128,16 @@ with the same strict shapes, so a project that sets them still loads in
 
 ## Tests
 
-`test/relay-answer.test.ts` runs the T2 cases against the simulator: R01 (an
-answer within five seconds of the webhook, on no runner), R04 (nothing fits:
-the relay job fails with the reason and the job behind it is skipped), R05
-(a busy machine is waited on and cancelling frees the job), R06b (the fleet
-takes a public repository's job only when it isolates), R13 (a lost webhook
-is rescued), R16 (with the first node down, the second answers exactly once)
-and X01. It also covers a failed read of the job (answered on the next
+`test/relay-answer.test.ts` runs the T2 cases against the simulator with a
+check job: R01 (an answer within five seconds of the webhook, on no runner),
+R13 (a lost webhook is rescued), R16 (with the first node down, the second
+answers exactly once) and X01. It also fails a job on the relay label that is
+not made of check steps. It also covers a failed read of the job (answered on the next
 rescue), a leftover runner from a node that died (swept, then the job is
 answered), a peer's online organization runner for a repository this node
 does not serve (kept), an organization runner offered another repository's job (failed
-when that repository left relay mode off, answered with its own account when
-it turned it on) and an original job whose display name is not its id. `test/relay-answer-facts.test.ts` covers the facts and the file.
+when that repository left relay mode off, answered when it turned it on) and an
+original job whose display name is not its id. `test/relay-answer-facts.test.ts` covers the facts and the file.
 The parity scenarios for R01, R13, R16, X01 and X03
 (`features/hobo-ci-parity/steps/relay-mode.steps.ts`) run the same answerer
 against the simulator; the X03 one also replaces Node's process-starting
@@ -146,6 +152,6 @@ for the `workflow_job` deliveries it receives.
 interaction of both.
 
 The run that would prove relay mode: turn `relayJobs.answer` on for one
-repository on a deployed relay, push a workflow whose relay job asks for
-`hobo-relay`, and link the run showing the relay job completed with no billed
-minute and the job behind it on the runner the relay named.
+repository on a deployed relay, push a workflow whose check job asks for
+`hobo-relay`, and link the run showing the check job completed with no billed
+minute and no runner.

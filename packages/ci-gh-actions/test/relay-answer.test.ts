@@ -1,10 +1,6 @@
-import type { RunnerRouteEvent } from "@hobo/ci";
+import { create } from "@bufbuild/protobuf";
+import { type RelayJobMessage, RelayJobAnswerSchema } from "@hobo/ci";
 import { createMemoryMesh, createMeshCoordinator } from "@hobo/ci/mesh";
-import {
-	InMemoryMachineRegistry,
-	InMemoryRouteJournal,
-	testMachineAdvert,
-} from "@hobo/ci/runner-order/testing";
 import { describe, expect, it } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import {
@@ -15,13 +11,10 @@ import {
 	type RelayAnswererOptions,
 	type RelayTurn,
 	relayRunnerRun,
-	StoreRouteFacts,
-	type StoreRouteFactsDeps,
 } from "../src/relay-answer/index.js";
 import { testJitConfig } from "../src/runner-protocol/port.js";
 import {
 	GithubSimulator,
-	SIMULATED_ACTOR_ID,
 	SimulatedRunnerService,
 	simulatorTransport,
 } from "./support/github-simulator/index.js";
@@ -30,85 +23,64 @@ import type { SimulatedJob } from "./support/github-simulator-port.js";
 const REPO = "octo/app";
 const ACCOUNT = "acct-1";
 const CONNECTIONS = [{ installationId: 1, repository: REPO }];
+const TITLE_CHECK = "hobo-labs/hobo/checks/pr-title@v1";
 
 type NodeSetup = Readonly<{
 	node?: string;
 	answer?: boolean;
-	facts?: Partial<StoreRouteFactsDeps>;
 	turn?: RelayTurn;
 	transport?: GithubTransport;
 }>;
 
 type RelayNode = Readonly<{
 	answerer: RelayAnswerer;
-	journal: InMemoryRouteJournal;
-	registry: InMemoryMachineRegistry;
+	checked: RelayJobMessage[];
 }>;
 
+function passingChecks(checked: RelayJobMessage[]) {
+	return async (message: RelayJobMessage) => {
+		checked.push(message);
+		return create(RelayJobAnswerSchema, {
+			jobId: message.jobId,
+			planId: message.planId,
+			conclusion: "succeeded",
+		});
+	};
+}
+
 function relayNode(sim: GithubSimulator, setup: NodeSetup = {}): RelayNode {
-	const journal = new InMemoryRouteJournal();
-	const registry = new InMemoryMachineRegistry();
+	const checked: RelayJobMessage[] = [];
 	const options: RelayAnswererOptions = {
 		relayJobs: { answer: setup.answer ?? true, label: "hobo-relay" },
 		github: setup.transport ?? simulatorTransport(sim),
 		runnerService: new SimulatedRunnerService(sim),
 		readJitConfig: (_encoded, runnerName) => testJitConfig(runnerName),
 		account: async () => ACCOUNT,
-		facts: (accountId) =>
-			new StoreRouteFacts({
-				accountId,
-				fleet: undefined,
-				machines: registry,
-				readers: async () => new Set([SIMULATED_ACTOR_ID]),
-				spend: undefined,
-				health: undefined,
-				minutes: undefined,
-				onWarning: undefined,
-				...setup.facts,
-			}),
-		journal,
 		node: setup.node ?? "node-a",
 		turn: setup.turn,
+		checks: passingChecks(checked),
 		webhookSecret: sim.webhookSecret,
 		nowMs: () => sim.nowMs(),
 	};
-	return { answerer: createRelayAnswerer(options), journal, registry };
+	return { answerer: createRelayAnswerer(options), checked };
 }
 
-function turnOn(
-	sim: GithubSimulator,
-	steps: readonly string[] = ["github"],
-	repository = REPO,
-): void {
+function turnOn(sim: GithubSimulator, repository = REPO): void {
 	sim.putFile(
 		repository,
 		RELAY_CONFIG_PATH,
-		JSON.stringify({
-			relayJobs: { answer: true },
-			runnerOrder: { steps: steps.map((key) => ({ key })) },
-		}),
+		JSON.stringify({ relayJobs: { answer: true } }),
 	);
 }
 
 type QueuedRelay = Readonly<{ relay: SimulatedJob; runId: number }>;
 
-function queueRelay(
-	sim: GithubSimulator,
-	inputs: ReadonlyMap<string, string> = new Map([["github", "ubuntu-24.04"]]),
-	repository = REPO,
-): QueuedRelay {
+function queueRelay(sim: GithubSimulator, repository = REPO): QueuedRelay {
 	const relay = sim.queueJob({
 		repository,
-		name: "route",
+		name: "title",
 		labels: ["hobo-relay"],
-		inputs,
-	});
-	sim.queueJob({
-		repository,
-		name: "build",
-		runId: relay.runId,
-		labels: ["${{ needs.route.outputs.runner }}"],
-		needs: ["route"],
+		steps: [{ uses: TITLE_CHECK, with: new Map([["types", "feat,fix"]]) }],
 	});
 	return { relay, runId: relay.runId };
 }
@@ -121,27 +93,8 @@ function job(sim: GithubSimulator, name: string, runId: number): SimulatedJob {
 	return found;
 }
 
-function decided(
-	events: readonly RunnerRouteEvent[],
-): readonly RunnerRouteEvent[] {
-	return events.filter((event) => event.type === "runner.route.Decided");
-}
-
-async function decisions(
-	node: RelayNode,
-): Promise<readonly RunnerRouteEvent[]> {
-	return decided(
-		await node.journal.decisions({
-			accountId: ACCOUNT,
-			repository: undefined,
-			sinceMs: 0,
-			limit: 100,
-		}),
-	);
-}
-
-describe("relay mode (R01): a queued relay job is answered by the relay", () => {
-	it("answers within five seconds of the queued webhook, on no runner, and the job behind it runs where it said", async () => {
+describe("relay mode (R01): a queued check job is answered by the relay", () => {
+	it("answers within five seconds of the queued webhook, on no runner, through the checks", async () => {
 		const sim = new GithubSimulator();
 		turnOn(sim);
 		const node = relayNode(sim);
@@ -154,24 +107,18 @@ describe("relay mode (R01): a queued relay job is answered by the relay", () => 
 			reason: "",
 			message: "",
 		});
-		const route = job(sim, "route", runId);
-		expect(route).toMatchObject({ status: "completed", conclusion: "success" });
-		expect(route.completedAtMs ?? 0).toBeLessThanOrEqual(
-			route.queuedAtMs + 5_000,
+		const title = job(sim, "title", runId);
+		expect(title).toMatchObject({ status: "completed", conclusion: "success" });
+		expect(title.completedAtMs ?? 0).toBeLessThanOrEqual(
+			title.queuedAtMs + 5_000,
 		);
 		expect(elapsed).toBeLessThan(5_000);
-		expect(route.outputs.get("runner")).toBe("ubuntu-24.04");
-		expect(route.outputs.get("step")).toBe("github");
-		expect(route.outputs.get("outcome")).toBe("routed");
-		expect(route.runnerName).toMatch(/^hobo-relay-\d+-\d+-1$/u);
+		expect(title.outputs.size).toBe(0);
+		expect(title.runnerName).toMatch(/^hobo-relay-\d+-\d+-1$/u);
 		expect(sim.runners()).toEqual([]);
-		expect(job(sim, "build", runId)).toMatchObject({
-			status: "queued",
-			labels: ["ubuntu-24.04"],
-		});
-		const journaled = await decisions(node);
-		expect(journaled).toHaveLength(1);
-		expect(journaled[0]).toMatchObject({ mode: "relay", node: "node-a" });
+		expect(node.checked.map((message) => message.steps[0]?.uses)).toEqual([
+			TITLE_CHECK,
+		]);
 	});
 
 	it("answers a redelivered webhook once", async () => {
@@ -191,8 +138,8 @@ describe("relay mode (R01): a queued relay job is answered by the relay", () => 
 		const before = generated();
 		await sim.deliver(node.answerer.webhook);
 		expect(generated()).toBe(before);
-		expect(job(sim, "route", runId).conclusion).toBe("success");
-		expect(await decisions(node)).toHaveLength(1);
+		expect(job(sim, "title", runId).conclusion).toBe("success");
+		expect(node.checked).toHaveLength(1);
 	});
 
 	it("refuses a webhook that is not signed with the relay's secret", async () => {
@@ -229,7 +176,7 @@ describe("relay mode is off unless turned on", () => {
 		});
 		expect(sim.requests()).toEqual([]);
 		expect(sim.runners()).toEqual([]);
-		expect(job(sim, "route", runId).status).toBe("queued");
+		expect(job(sim, "title", runId).status).toBe("queued");
 	});
 
 	it("registers nothing for a repository whose .hobo/ci.json leaves it off", async () => {
@@ -247,7 +194,7 @@ describe("relay mode is off unless turned on", () => {
 			jobId: relay.id,
 			runId: relay.runId,
 			runAttempt: 1,
-			name: "route",
+			name: "title",
 			labels: ["hobo-relay"],
 			queuedAtMs: relay.queuedAtMs,
 		});
@@ -278,86 +225,6 @@ describe("relay mode is off unless turned on", () => {
 	});
 });
 
-describe("relay mode decides with the relay's own facts", () => {
-	it("R04: with nothing that fits, the relay job fails with the reason and the job behind it is skipped", async () => {
-		const sim = new GithubSimulator();
-		turnOn(sim, ["machine"]);
-		const node = relayNode(sim);
-		const { runId } = queueRelay(sim, new Map([["machine", "self-hosted"]]));
-		await sim.deliver(node.answerer.webhook);
-		const route = job(sim, "route", runId);
-		expect(route.conclusion).toBe("failure");
-		expect(route.outputs.get("outcome")).toBe("none");
-		expect(route.annotations).toHaveLength(1);
-		expect(route.annotations[0]).toBe(route.outputs.get("reason"));
-		expect(route.annotations[0]).toMatch(/machine/u);
-		expect(job(sim, "build", runId).conclusion).toBe("skipped");
-	});
-
-	it("R05: a busy machine is waited on, the job queues on its label, and cancelling frees it", async () => {
-		const sim = new GithubSimulator();
-		turnOn(sim, ["machine"]);
-		const node = relayNode(sim);
-		await node.registry.put(
-			testMachineAdvert({
-				id: "m-1",
-				accountId: ACCOUNT,
-				slots: 1,
-				busy: 1,
-				ownerId: SIMULATED_ACTOR_ID,
-				lastSeenMs: sim.nowMs(),
-			}),
-		);
-		const { runId } = queueRelay(sim, new Map([["machine", "self-hosted"]]));
-		await sim.deliver(node.answerer.webhook);
-		const route = job(sim, "route", runId);
-		expect(route.conclusion).toBe("success");
-		expect(route.outputs.get("outcome")).toBe("waiting");
-		expect(route.outputs.get("runner")).toBe("hobo-machine-m-1");
-		expect(job(sim, "build", runId)).toMatchObject({
-			status: "queued",
-			labels: ["hobo-machine-m-1"],
-		});
-		sim.cancelRun(runId);
-		expect(job(sim, "build", runId)).toMatchObject({
-			status: "completed",
-			conclusion: "cancelled",
-		});
-	});
-
-	it("R06b: the fleet takes a public repository's relay job only when it isolates such jobs", async () => {
-		const sim = new GithubSimulator();
-		sim.addRepository("octo/public", false);
-		turnOn(sim, ["fleet", "github"], "octo/public");
-		const leases = { activeLeases: async () => [] };
-		const shared = relayNode(sim, {
-			facts: { fleet: { slots: 4, isolated: false, leases } },
-		});
-		const inputs = new Map([
-			["fleet", "hobo"],
-			["github", "ubuntu-24.04"],
-		]);
-		const first = queueRelay(sim, inputs, "octo/public");
-		await sim.deliver(shared.answerer.webhook);
-		expect(job(sim, "route", first.runId).outputs.get("runner")).toBe(
-			"ubuntu-24.04",
-		);
-		const [decision] = await decisions(shared);
-		expect(
-			decision?.decision?.skipped.map((skip) => [skip.key, skip.reason]),
-		).toEqual([["fleet", "needs_isolation"]]);
-
-		const isolated = relayNode(sim, {
-			node: "node-b",
-			facts: { fleet: { slots: 4, isolated: true, leases } },
-		});
-		const second = queueRelay(sim, inputs, "octo/public");
-		await sim.deliver(isolated.answerer.webhook);
-		expect(job(sim, "route", second.runId).outputs.get("runner")).toBe("hobo");
-		expect(job(sim, "route", second.runId).outputs.get("step")).toBe("fleet");
-	});
-});
-
 describe("relay mode keeps a relay job from waiting forever", () => {
 	it("R13: a relay job whose webhook never arrived is answered by the next rescue poll", async () => {
 		const sim = new GithubSimulator();
@@ -366,13 +233,12 @@ describe("relay mode keeps a relay job from waiting forever", () => {
 		sim.dropNextWebhook();
 		const { runId } = queueRelay(sim);
 		await sim.deliver(node.answerer.webhook);
-		expect(job(sim, "route", runId).status).toBe("queued");
+		expect(job(sim, "title", runId).status).toBe("queued");
 		sim.advance(30_000);
 		const rescue = await node.answerer.rescue(CONNECTIONS);
 		expect(rescue.queued).toBe(1);
 		expect(rescue.outcomes[0]?.kind).toBe("answered");
-		expect(job(sim, "route", runId).conclusion).toBe("success");
-		expect(job(sim, "build", runId).labels).toEqual(["ubuntu-24.04"]);
+		expect(job(sim, "title", runId).conclusion).toBe("success");
 		expect((await node.answerer.rescue(CONNECTIONS)).queued).toBe(0);
 	});
 
@@ -390,7 +256,7 @@ describe("relay mode keeps a relay job from waiting forever", () => {
 			jobId: newer.relay.id,
 			runId: newer.runId,
 			runAttempt: 1,
-			name: "route",
+			name: "title",
 			labels: ["hobo-relay"],
 			queuedAtMs: newer.relay.queuedAtMs,
 		});
@@ -399,9 +265,9 @@ describe("relay mode keeps a relay job from waiting forever", () => {
 			older.runId,
 			newer.runId,
 		]);
-		expect(job(sim, "route", older.runId).conclusion).toBe("success");
-		expect(job(sim, "route", newer.runId).conclusion).toBe("success");
-		expect(job(sim, "route", newer.runId).runnerName).toMatch(/-2$/u);
+		expect(job(sim, "title", older.runId).conclusion).toBe("success");
+		expect(job(sim, "title", newer.runId).conclusion).toBe("success");
+		expect(job(sim, "title", newer.runId).runnerName).toMatch(/-2$/u);
 		expect(sim.runners()).toEqual([]);
 	});
 
@@ -419,7 +285,7 @@ describe("relay mode keeps a relay job from waiting forever", () => {
 		const done = sim.jobs().find((entry) => entry.id === stray.id);
 		expect(done?.conclusion).toBe("failure");
 		expect(done?.annotations[0]).toMatch(/never runs a job's steps/u);
-		expect(await decisions(node)).toHaveLength(0);
+		expect(node.checked).toHaveLength(0);
 	});
 
 	it("creates the runner on the organization when the repository refuses", async () => {
@@ -442,7 +308,7 @@ describe("relay mode keeps a relay job from waiting forever", () => {
 		});
 		const { runId } = queueRelay(sim);
 		await sim.deliver(node.answerer.webhook);
-		expect(job(sim, "route", runId).conclusion).toBe("success");
+		expect(job(sim, "title", runId).conclusion).toBe("success");
 		expect(
 			sim
 				.requests()
@@ -513,7 +379,7 @@ function flakyTransport(
 	};
 }
 
-function queuedOf(relay: SimulatedJob, name = "route") {
+function queuedOf(relay: SimulatedJob, name = "title") {
 	return {
 		installationId: 1,
 		repository: relay.repository,
@@ -546,11 +412,11 @@ describe("relay mode recovers from GitHub's errors and a node that died", () => 
 		expect(first.outcomes).toEqual([
 			{ kind: "skipped", reason: "read-failed", answered: [] },
 		]);
-		expect(job(sim, "route", runId).status).toBe("queued");
+		expect(job(sim, "title", runId).status).toBe("queued");
 		sim.advance(30_000);
 		const second = await node.answerer.rescue(CONNECTIONS);
 		expect(second.outcomes[0]?.kind).toBe("answered");
-		expect(job(sim, "route", runId).conclusion).toBe("success");
+		expect(job(sim, "title", runId).conclusion).toBe("success");
 	});
 
 	it("still remembers a job GitHub says is gone, so a redelivery costs one read", async () => {
@@ -587,7 +453,7 @@ describe("relay mode recovers from GitHub's errors and a node that died", () => 
 		const rounds: unknown[] = [];
 		for (
 			let poll = 0;
-			poll < 4 && job(sim, "route", runId).status === "queued";
+			poll < 4 && job(sim, "title", runId).status === "queued";
 			poll += 1
 		) {
 			const rescue = await node.answerer.rescue(CONNECTIONS);
@@ -604,7 +470,7 @@ describe("relay mode recovers from GitHub's errors and a node that died", () => 
 			["runner-exists"],
 			["answered"],
 		]);
-		expect(job(sim, "route", runId).conclusion).toBe("success");
+		expect(job(sim, "title", runId).conclusion).toBe("success");
 		expect(sim.runners()).toEqual([]);
 	});
 
@@ -629,7 +495,7 @@ describe("relay mode recovers from GitHub's errors and a node that died", () => 
 				ephemeral: true,
 				online: isOnline,
 			});
-		queueRelay(sim, undefined);
+		queueRelay(sim);
 		const session = await new SimulatedRunnerService(sim).open(
 			testJitConfig(busy ?? ""),
 		);
@@ -658,7 +524,7 @@ describe("relay mode recovers from GitHub's errors and a node that died", () => 
 		const node = relayNode(sim);
 		const waiting = sim.queueJob({
 			repository: "octo/other",
-			name: "route",
+			name: "title",
 			labels: ["hobo-relay"],
 		});
 		const name = `hobo-relay-${waiting.runId}-${waiting.id}-1`;
@@ -673,7 +539,7 @@ describe("relay mode recovers from GitHub's errors and a node that died", () => 
 			sim.advance(RELAY_STALE_RUNNER_MS);
 		}
 		expect(sim.runners().map((runner) => runner.name)).toEqual([name]);
-		expect(job(sim, "route", waiting.runId).status).toBe("queued");
+		expect(job(sim, "title", waiting.runId).status).toBe("queued");
 	});
 });
 
@@ -684,8 +550,7 @@ describe("relay mode answers each repository only as it asks", () => {
 		looked: string[],
 	): RelayNode {
 		const transport = simulatorTransport(sim);
-		const journal = new InMemoryRouteJournal();
-		const registry = new InMemoryMachineRegistry();
+		const checked: RelayJobMessage[] = [];
 		const answerer = createRelayAnswerer({
 			relayJobs: { answer: true, label: "hobo-relay" },
 			github: {
@@ -706,23 +571,12 @@ describe("relay mode answers each repository only as it asks", () => {
 				looked.push(queued.repository);
 				return accounts.get(queued.repository);
 			},
-			facts: (accountId) =>
-				new StoreRouteFacts({
-					accountId,
-					fleet: undefined,
-					machines: registry,
-					readers: undefined,
-					spend: undefined,
-					health: undefined,
-					minutes: undefined,
-					onWarning: undefined,
-				}),
-			journal,
+			checks: passingChecks(checked),
 			node: "node-a",
 			webhookSecret: sim.webhookSecret,
 			nowMs: () => sim.nowMs(),
 		});
-		return { answerer, journal, registry };
+		return { answerer, checked };
 	}
 
 	it("fails another repository's relay job an organization runner was offered when that repository left relay mode off", async () => {
@@ -732,7 +586,7 @@ describe("relay mode answers each repository only as it asks", () => {
 		const looked: string[] = [];
 		const node = orgRunnerNode(sim, new Map([[REPO, ACCOUNT]]), looked);
 		sim.dropNextWebhook();
-		const other = queueRelay(sim, undefined, "octo/other");
+		const other = queueRelay(sim, "octo/other");
 		sim.advance(1_000);
 		sim.dropNextWebhook();
 		const mine = queueRelay(sim);
@@ -743,22 +597,21 @@ describe("relay mode answers each repository only as it asks", () => {
 			REPO,
 		]);
 		expect(looked).toEqual([REPO, "octo/other"]);
-		const refused = job(sim, "route", other.runId);
+		const refused = job(sim, "title", other.runId);
 		expect(refused.conclusion).toBe("failure");
 		expect(refused.annotations[0]).toMatch(
 			/Relay mode is not on for octo\/other/u,
 		);
 		expect(refused.annotations[0]).toMatch(/Run the job again/u);
-		expect(refused.outputs.get("runner")).toBeUndefined();
-		expect(job(sim, "route", mine.runId).conclusion).toBe("success");
-		expect(await decisions(node)).toHaveLength(1);
+		expect(job(sim, "title", mine.runId).conclusion).toBe("success");
+		expect(node.checked.map((message) => message.repository)).toEqual([REPO]);
 	});
 
 	it("answers another repository's relay job with that repository's own account when it turned relay mode on", async () => {
 		const sim = new GithubSimulator();
 		sim.addRepository("octo/other", true);
 		turnOn(sim);
-		turnOn(sim, ["github"], "octo/other");
+		turnOn(sim, "octo/other");
 		const looked: string[] = [];
 		const node = orgRunnerNode(
 			sim,
@@ -769,23 +622,18 @@ describe("relay mode answers each repository only as it asks", () => {
 			looked,
 		);
 		sim.dropNextWebhook();
-		const other = queueRelay(sim, undefined, "octo/other");
+		const other = queueRelay(sim, "octo/other");
 		sim.advance(1_000);
 		sim.dropNextWebhook();
 		const mine = queueRelay(sim);
 		expect((await node.answerer.answer(queuedOf(mine.relay))).kind).toBe(
 			"answered",
 		);
-		expect(job(sim, "route", other.runId).conclusion).toBe("success");
-		const theirs = await node.journal.decisions({
-			accountId: "acct-other",
-			repository: undefined,
-			sinceMs: 0,
-			limit: 100,
-		});
-		expect(decided(theirs)).toHaveLength(1);
-		expect(decided(theirs)[0]).toMatchObject({ accountId: "acct-other" });
-		expect(await decisions(node)).toHaveLength(1);
+		expect(job(sim, "title", other.runId).conclusion).toBe("success");
+		expect(node.checked.map((message) => message.repository)).toEqual([
+			"octo/other",
+			REPO,
+		]);
 	});
 
 	it("recognises the original job when its display name is not its id in the workflow", async () => {
@@ -798,7 +646,7 @@ describe("relay mode answers each repository only as it asks", () => {
 		);
 		expect(outcome.kind).toBe("answered");
 		expect(outcome.answered).toHaveLength(1);
-		expect(job(sim, "route", runId).conclusion).toBe("success");
+		expect(job(sim, "title", runId).conclusion).toBe("success");
 		expect(
 			sim
 				.requests()
@@ -844,14 +692,14 @@ describe("R16: any mesh node may answer, and only one does", () => {
 		const { runId } = queueRelay(sim);
 		await sim.deliver(async () => new Response("unavailable", { status: 503 }));
 		let polls = 0;
-		while (job(sim, "route", runId).status === "queued" && polls < 6) {
+		while (job(sim, "title", runId).status === "queued" && polls < 6) {
 			await box.node.answerer.rescue(CONNECTIONS);
 			polls += 1;
-			if (job(sim, "route", runId).status === "queued") sim.advance(20_000);
+			if (job(sim, "title", runId).status === "queued") sim.advance(20_000);
 		}
-		expect(job(sim, "route", runId).conclusion).toBe("success");
-		expect(await decisions(box.node)).toHaveLength(1);
-		expect(await decisions(hosted.node)).toHaveLength(0);
+		expect(job(sim, "title", runId).conclusion).toBe("success");
+		expect(box.node.checked).toHaveLength(1);
+		expect(hosted.node.checked).toHaveLength(0);
 		expect((await hosted.node.answerer.rescue(CONNECTIONS)).queued).toBe(0);
 		expect((await box.node.answerer.rescue(CONNECTIONS)).queued).toBe(0);
 		expect(
@@ -876,7 +724,7 @@ describe("R16: any mesh node may answer, and only one does", () => {
 			jobId: relay.id,
 			runId,
 			runAttempt: 1,
-			name: "route",
+			name: "title",
 			labels: ["hobo-relay"],
 			queuedAtMs: relay.queuedAtMs,
 		};
@@ -891,7 +739,7 @@ describe("R16: any mesh node may answer, and only one does", () => {
 		expect(
 			outcomes.find((outcome) => outcome.kind === "skipped"),
 		).toMatchObject({ reason: "claimed-elsewhere" });
-		expect(job(sim, "route", runId).conclusion).toBe("success");
+		expect(job(sim, "title", runId).conclusion).toBe("success");
 	});
 });
 
@@ -916,7 +764,7 @@ describe("X01: the answerer asks GitHub for no log, secret or repository content
 			if (request.path.includes("/contents/"))
 				expect(request.path).toBe(`/repos/${REPO}/contents/.hobo%2Fci.json`);
 		}
-		const answered = sim.jobs().filter((entry) => entry.name === "route");
+		const answered = sim.jobs().filter((entry) => entry.name === "title");
 		expect(answered.every((entry) => entry.conclusion === "success")).toBe(
 			true,
 		);

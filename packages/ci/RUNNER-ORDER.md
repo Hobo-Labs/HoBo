@@ -113,7 +113,7 @@ step; otherwise a measured limit or runway refusal is enforced by the walk.
    takes the job after all (`unhealthyFallback`). A slow runner beats no
    runner.
 3. Otherwise the outcome is `none` and `reason` is one sentence a person can
-   act on. The relay job fails with it instead of leaving a job queued for a
+   act on. The decision fails with it instead of leaving a job queued for a
    runner that will never come.
 
 ## Machines
@@ -158,11 +158,11 @@ relay is left alone.
 
 ## What is not here
 
-- The hosts. A relay job is answered by `answerRelayJob`
-  ([RELAY-JOB.md](RELAY-JOB.md)) on a HoBo node in `@hobo/ci-gh-actions`,
-  which gathers the facts and journals the decision; the walk here stays
-  pure. No workflow routes: a workflow only sets `runs-on` to a HoBo label. Relay mode is off unless `relayJobs.answer` is
-  written, and has not yet answered a job in production.
+- The hosts. `answerRelayJob` ([RELAY-JOB.md](RELAY-JOB.md)) gathers the
+  facts and journals the decision for a job HoBo CI decides for; the walk here
+  stays pure. Routing happens in HoBo CI, never in a workflow: a workflow only
+  sets `runs-on` to a HoBo label, and HoBo CI routes the job when it claims it.
+  No claim path calls the walk for a fleet job yet.
 - Billing reads. `MinutesUsage` and the monthly spend are inputs. They are
   filled by `LedgerSpendReader` ([`src/runner-order/spend.ts`](src/runner-order/spend.ts))
   and by `GithubMinutesReader` in `@hobo/ci-gh-actions`; a reader that cannot

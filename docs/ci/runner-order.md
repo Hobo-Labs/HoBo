@@ -1,15 +1,15 @@
 ---
 type: Architecture Decision Record
 title: "A Runner Order Is Committed Configuration, Walked First-Fit"
-description: "A repository's ordered preference of runner types (the HoBo fleet, connected machines, GitHub-hosted, hosted providers) is a RunnerOrder record committed as runnerOrder in .hobo/ci.json. One pure walk answers a relay job with a runner label, a label to queue on, or a reason. CI insight reports are pure functions over run history."
+description: "A repository's ordered preference of runner types (the HoBo fleet, connected machines, GitHub-hosted, hosted providers) is a RunnerOrder record committed as runnerOrder in .hobo/ci.json. One pure walk decides a job with a runner label, a label to queue on, or a reason. CI insight reports are pure functions over run history."
 tags: [hobo, design, adr, ci, relay, routing, fleet]
 ---
 
 # ADR-0183 — A Runner Order Is Committed Configuration, Walked First-Fit {#adr-0183}
 
 **Status:** Accepted. Built: the records, the parser, the walk and its rules,
-the committed `runnerOrder` block, the insight reports, the relay job in relay
-mode, machines, limit readers, provider health, retries,
+the committed `runnerOrder` block, the insight reports, runner-less check jobs
+in relay mode, machines, limit readers, provider health, retries,
 runner-less checks, stored history, the read API, the MCP tools and the
 dashboard. Proven in production: failure diagnosis only. Relay mode stays off
 by default ("Relay-mode default" below); what is still owed is in "Not built
@@ -91,13 +91,15 @@ cases are scored on the generated [parity scorecard](parity-scorecard.md).
 ## Consequences
 
 - **The route job and relay admission are unchanged.** This repository's
-  route job and the allocation router do not read `runnerOrder`. A HoBo node
-  walks it when it answers a relay job and `relayJobs.answer` is on for the
-  node and for the repository.
+  route job and the allocation router do not read `runnerOrder`. The walk runs
+  in `hobo ci route`, the `explain_route` MCP tool and the parity gauntlet; no
+  claim path calls it for a fleet job yet. Relay mode claims only check jobs
+  and answers no routing question.
 - **Routing happens in HoBo CI, never in a workflow.** The only HoBo CI change
   a workflow gets is `runs-on` set to a HoBo label; HoBo CI routes the job when
-  it claims it. HoBo ships no workflow that runs a routing or evaluator job and
-  no command that writes one into a repository.
+  it claims it. No workflow job routes another through its outputs: HoBo ships
+  no workflow that runs a routing or evaluator job, no command that writes one
+  into a repository, and relay mode fails a job that asks it to route.
 - **Two routing vocabularies exist.** Offers and budgets for admission; steps
   and limits for the order. The order's `fleet` step is where they meet.
 - **Hosted provider labels are facts with a date.** The label catalog names
@@ -111,21 +113,21 @@ cases are scored on the generated [parity scorecard](parity-scorecard.md).
 
 Relay mode stays off: `relayJobs.answer` is false unless a repository and a
 node both write it. The default changes only after one production run shows a
-relay job answered with no billed minute (case R01), and that run has not
-been made. Turning it on for this repository on the deployed relay changes
-production routing, so it was not done from the build session.
+check job claimed with no billed minute (case R01), and that run has not been
+made. Turning it on for this repository on the deployed relay changes
+production state, so it was not done from the build session.
 
 ## Not built or not proven
 
 The [parity scorecard](parity-scorecard.md) is the record; on
-2026-11-17 it shows 26 of 57 cases `pass`, three built but not proven and
+2026-11-17 it shows 27 of 57 cases `pass`, two built but not proven and
 one met differently. The
 [capture](../competitors/relayrunner.md#parity-scorecard) lists every
 owed case with the run that would prove it. In short:
 
 - **Owed production runs.** Relay mode (R01) and the runner-less title check
-  (C01) need relay mode turned on for one repository on a deployed relay, and
-  so does the failure case (R04). The runner-protocol client, machine connect, runner adoption, the billing
+  (C01) need relay mode turned on for one repository on a deployed relay.
+  The runner-protocol client, machine connect, runner adoption, the billing
   reader and provider usage sync have run only against the GitHub simulator
   and their pacts.
 - **Owed gauntlet scenarios.** Twenty-six cases have package tests, but

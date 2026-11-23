@@ -95,8 +95,8 @@
           "plan": { "planId": "22222222-2222-4222-8222-222222222222", "planType": "actions", "version": 1 },
           "timeline": { "id": "33333333-3333-4333-8333-333333333333" },
           "jobId": "44444444-4444-4444-8444-444444444444",
-          "jobDisplayName": "relay",
-          "jobName": "relay",
+          "jobDisplayName": "title",
+          "jobName": "title",
           "requestId": 9,
           "billingOwnerId": "owner-1",
           "contextData": {
@@ -106,7 +106,7 @@
                 { "k": "repository", "v": "octo/app" },
                 { "k": "run_id", "v": "9001" },
                 { "k": "run_attempt", "v": "1" },
-                { "k": "job", "v": "relay" },
+                { "k": "job", "v": "title" },
                 { "k": "event_name", "v": "pull_request" },
                 { "k": "actor_id", "v": "42" },
                 { "k": "workflow_ref", "v": "octo/app/.github/workflows/ci.yml@refs/pull/7/merge" },
@@ -136,32 +136,13 @@
                   }
                 }
               ]
-            },
-            "inputs": {
-              "t": 2,
-              "d": [
-                { "k": "github", "v": "ubuntu-24.04" },
-                { "k": "fleet", "v": "hobo" },
-                { "k": "size", "v": 4 },
-                { "k": "not-a-relay-input", "v": "ignored" }
-              ]
             }
           },
           "steps": [
             {
               "type": "action",
-              "reference": { "type": "repository", "name": "actions/checkout", "ref": "3d3c42e5aac5ba805825da76410c181273ba90b1" },
-              "inputs": { "type": 2, "map": [{ "Key": "sparse-checkout", "Value": ".hobo" }] }
-            },
-            {
-              "type": "action",
-              "reference": { "type": "repository", "name": "actions/setup-node", "ref": "949feb2413d6458794dcd2491c4babbbce0c15c1" },
-              "inputs": { "type": 2, "map": [{ "Key": "node-version", "Value": "24" }] }
-            },
-            {
-              "type": "action",
-              "reference": { "type": "script" },
-              "inputs": { "type": 2, "map": [{ "Key": "script", "Value": "node --no-warnings .hobo-ci/relay.mjs --fleet \"$RELAY_FLEET\" --machine \"$RELAY_MACHINE\" --github \"$RELAY_GITHUB\" --blacksmith \"$RELAY_BLACKSMITH\" --depot \"$RELAY_DEPOT\" --namespace \"$RELAY_NAMESPACE\" --warpbuild \"$RELAY_WARPBUILD\" --ubicloud \"$RELAY_UBICLOUD\" --boat \"$RELAY_BOAT\" --runs-on \"$RELAY_RUNS_ON\" --size \"$RELAY_SIZE\" --first \"$RELAY_FIRST\" --repository \"$GITHUB_REPOSITORY\" --run-id \"$GITHUB_RUN_ID\" --run-attempt \"$GITHUB_RUN_ATTEMPT\" --job \"$GITHUB_JOB\" --event \"$GITHUB_EVENT_NAME\" --actor-id \"$GITHUB_ACTOR_ID\" --triggering-actor-id \"$RELAY_TRIGGERING_ACTOR_ID\" --private \"$RELAY_PRIVATE\" --fork \"$RELAY_FORK\" --workflow-ref \"$GITHUB_WORKFLOW_REF\"" }] }
+              "reference": { "type": "repository", "name": "hobo-labs/hobo", "path": "checks/pr-title", "ref": "v1" },
+              "inputs": { "type": 2, "map": [{ "Key": "types", "Value": "feat,fix" }] }
             }
           ]
         }
@@ -169,7 +150,7 @@
       "source": "Sdk/RSWebApi/RunServiceHttpClient.cs GetJobMessageAsync, Sdk/RSWebApi/Contracts/AcquireJobRequest.cs, Sdk/DTPipelines/Pipelines/AgentJobRequestMessage.cs, ContextData/PipelineContextDataJsonConverter.cs, ObjectTemplating/Tokens/TemplateTokenJsonConverter.cs, ActionStep.cs, ActionStepDefinitionReference.cs"
     },
     {
-      "description": "complete the job with a conclusion, outputs and annotations",
+      "description": "complete the job with a conclusion and annotations",
       "request": {
         "method": "POST",
         "path": "/42/completejob",
@@ -178,14 +159,9 @@
           "planId": "22222222-2222-4222-8222-222222222222",
           "jobId": "44444444-4444-4444-8444-444444444444",
           "conclusion": "succeeded",
-          "outputs": {
-            "runner": { "value": "hobo", "isSecret": false },
-            "step": { "value": "fleet", "isSecret": false },
-            "outcome": { "value": "routed", "isSecret": false },
-            "reason": { "value": "fleet has room", "isSecret": false }
-          },
+          "outputs": {},
           "stepResults": [],
-          "annotations": [{ "level": "notice", "message": "routed to the fleet" }],
+          "annotations": [{ "level": "notice", "message": "the title is a feat" }],
           "billingOwnerId": "owner-1"
         }
       },

@@ -17,7 +17,8 @@ Feature: Security parity with RelayRunner
 
   @parity @X03 @t2
   Scenario: X03 The relay never runs code from the job
-    Given a relay job with a step that would run a script
+    Given relay mode is on for "octo/app"
+    And a relay job with a step that would run a script
     When the relay answers it
     Then the relay started no process
 

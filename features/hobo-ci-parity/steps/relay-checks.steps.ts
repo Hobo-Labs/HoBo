@@ -1,15 +1,10 @@
 import assert from "node:assert/strict";
 import { Before, Given, Then, When } from "@cucumber/cucumber";
-import {
-	InMemoryMachineRegistry,
-	InMemoryRouteJournal,
-} from "../../../packages/ci/src/runner-order/testing.js";
 import type { GithubTransport } from "../../../packages/ci-gh-actions/src/github.js";
 import {
 	createRelayAnswerer,
 	RELAY_CONFIG_PATH,
 	type RelayAnswerer,
-	StoreRouteFacts,
 } from "../../../packages/ci-gh-actions/src/relay-answer/index.js";
 import {
 	createRelayChecks,
@@ -47,7 +42,6 @@ type ChecksState = {
 	sandbox: RecordingSandbox;
 	events: RelayCheckCompleted[];
 	answerer: RelayAnswerer;
-	journal: InMemoryRouteJournal;
 	steps: { uses: string; with: ReadonlyMap<string, string> }[];
 	jobId: number;
 	tools: readonly string[];
@@ -55,7 +49,7 @@ type ChecksState = {
 
 let world: ChecksState;
 
-type RelayParts = Pick<ChecksState, "answerer" | "journal">;
+type RelayParts = Pick<ChecksState, "answerer">;
 type Scene = Omit<ChecksState, keyof RelayParts>;
 
 function transport(scene: Scene): GithubTransport {
@@ -90,25 +84,12 @@ function archives(scene: Scene): RelayArchiveAccess {
 
 function relay(scene: Scene): RelayParts {
 	const github = transport(scene);
-	const journal = new InMemoryRouteJournal();
 	const answerer = createRelayAnswerer({
 		relayJobs: { answer: true, label: "hobo-relay" },
 		github,
 		runnerService: new SimulatedRunnerService(scene.sim),
 		readJitConfig: (_encoded, runnerName) => testJitConfig(runnerName),
 		account: async () => ACCOUNT,
-		facts: (accountId) =>
-			new StoreRouteFacts({
-				accountId,
-				fleet: undefined,
-				machines: new InMemoryMachineRegistry(),
-				readers: undefined,
-				spend: undefined,
-				health: undefined,
-				minutes: undefined,
-				onWarning: undefined,
-			}),
-		journal,
 		node: "hosted",
 		checks: createRelayChecks({
 			source: new GithubRelayCheckSource(
@@ -126,7 +107,7 @@ function relay(scene: Scene): RelayParts {
 		webhookSecret: scene.sim.webhookSecret,
 		nowMs: () => scene.sim.nowMs(),
 	});
-	return { answerer, journal };
+	return { answerer };
 }
 
 function ciFile(checks: string): void {
@@ -223,19 +204,10 @@ Then(
 	},
 );
 
-Then("no runner took the job", async () => {
+Then("no runner took the job", () => {
 	const job = checkJob();
 	assert.match(job.runnerName ?? "", /^hobo-relay-/u);
 	assert.deepEqual(world.sim.runners(), []);
-	assert.deepEqual(
-		await world.journal.decisions({
-			accountId: ACCOUNT,
-			repository: undefined,
-			sinceMs: 0,
-			limit: 10,
-		}),
-		[],
-	);
 });
 
 Then("each tool ran in a HoBo sandbox with no network", () => {

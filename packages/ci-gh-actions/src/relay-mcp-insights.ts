@@ -352,7 +352,7 @@ export function registerRelayMcpInsightTools(
 		{
 			title: "Explain a route",
 			description:
-				"Where a relay job with these inputs would run now, and why: the committed order walked with the facts true at this moment (machines, minutes, spend, provider health). It records nothing and changes nothing.",
+				"Where a job naming these runner types would run now if HoBo CI decided for it, and why: the committed order walked with the facts true at this moment (machines, minutes, spend, provider health). It records nothing and changes nothing.",
 			inputSchema: {
 				repository: Repository,
 				inputs: RelayInputs,

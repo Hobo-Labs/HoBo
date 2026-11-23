@@ -1,9 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import {
-	RELAY_JOB_INPUTS,
-	type RelayJobMessage,
-	RelayJobMessageSchema,
-} from "@hobo/ci";
+import { type RelayJobMessage, RelayJobMessageSchema } from "@hobo/ci";
 import { z } from "zod";
 
 export const SESSION = z.object({ sessionid: z.string().min(1) });
@@ -207,8 +203,6 @@ function stepInputs(
 	}));
 }
 
-const RELAY_INPUT_NAMES: ReadonlySet<string> = new Set(RELAY_JOB_INPUTS);
-
 export function relayJobMessageOf(job: JobMessage): RelayJobMessage {
 	const context = new Map(Object.entries(job.contextdata));
 	const github = (path: readonly string[]) =>
@@ -222,7 +216,6 @@ export function relayJobMessageOf(job: JobMessage): RelayJobMessage {
 		"repo",
 	]);
 	const headName = text(entry(headRepo, "full_name"));
-	const inputs = context.get("inputs");
 	return create(RelayJobMessageSchema, {
 		jobId: job.jobid,
 		planId: job.plan.planid,
@@ -238,12 +231,6 @@ export function relayJobMessageOf(job: JobMessage): RelayJobMessage {
 			text(entry(headRepo, "fork")) === "true" ||
 			(headName !== "" && headName.toLowerCase() !== repository.toLowerCase()),
 		workflowRef: github(["workflow_ref"]),
-		inputs:
-			inputs?.kind === "map"
-				? [...inputs.entries]
-						.filter(([name]) => RELAY_INPUT_NAMES.has(name))
-						.map(([name, value]) => ({ name, value: text(value) }))
-				: [],
 		steps: job.steps.map((step) => ({
 			uses: uses(step),
 			inputs: stepInputs(step),
@@ -251,68 +238,22 @@ export function relayJobMessageOf(job: JobMessage): RelayJobMessage {
 	});
 }
 
-const ROUTING_CHECKOUT =
-	"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
-const ROUTING_SETUP_NODE =
-	"actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1";
 const SUPPORTED_CHECK_STEPS: ReadonlySet<string> = new Set([
 	"hobo-labs/hobo/checks/pr-title@v1",
 	"hobo-labs/hobo/checks/lint@v1",
 ]);
-const ROUTING_ENVIRONMENT: ReadonlySet<string> = new Set([
-	"GITHUB_TOKEN",
-	"RELAY_FLEET",
-	"RELAY_MACHINE",
-	"RELAY_GITHUB",
-	"RELAY_BLACKSMITH",
-	"RELAY_DEPOT",
-	"RELAY_NAMESPACE",
-	"RELAY_WARPBUILD",
-	"RELAY_UBICLOUD",
-	"RELAY_BOAT",
-	"RELAY_RUNS_ON",
-	"RELAY_SIZE",
-	"RELAY_FIRST",
-	"RELAY_PRIVATE",
-	"RELAY_FORK",
-	"RELAY_TRIGGERING_ACTOR_ID",
-]);
-const ROUTING_SCRIPT = [
-	"node --no-warnings .hobo-ci/relay.mjs",
-	'--fleet "$RELAY_FLEET" --machine "$RELAY_MACHINE" --github "$RELAY_GITHUB"',
-	'--blacksmith "$RELAY_BLACKSMITH" --depot "$RELAY_DEPOT" --namespace "$RELAY_NAMESPACE"',
-	'--warpbuild "$RELAY_WARPBUILD" --ubicloud "$RELAY_UBICLOUD" --boat "$RELAY_BOAT"',
-	'--runs-on "$RELAY_RUNS_ON" --size "$RELAY_SIZE" --first "$RELAY_FIRST"',
-	'--repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"',
-	'--job "$GITHUB_JOB" --event "$GITHUB_EVENT_NAME" --actor-id "$GITHUB_ACTOR_ID"',
-	'--triggering-actor-id "$RELAY_TRIGGERING_ACTOR_ID" --private "$RELAY_PRIVATE"',
-	'--fork "$RELAY_FORK" --workflow-ref "$GITHUB_WORKFLOW_REF"',
-].join(" ");
 
-function allowedEnvironment(
-	environment: TemplateValue | null | undefined,
-	allowed: ReadonlySet<string>,
-): boolean {
+function noEnvironment(environment: TemplateValue | null | undefined): boolean {
 	if (environment == null) return true;
-	if (environment.kind !== "map") return false;
-	const seen = new Set<string>();
-	return environment.entries.every(([key]) => {
-		if (key.kind !== "text" || !allowed.has(key.text) || seen.has(key.text))
-			return false;
-		seen.add(key.text);
-		return true;
-	});
+	return environment.kind === "map" && environment.entries.length === 0;
 }
 
-const NO_ENVIRONMENT: ReadonlySet<string> = new Set();
-
-export function namesRelayWork(message: RelayJobMessage): boolean {
+export function isRelayCheckJob(message: RelayJobMessage): boolean {
 	return (
-		message.inputs.length > 0 ||
-		(message.steps.length > 0 &&
-			message.steps.every((step) =>
-				SUPPORTED_CHECK_STEPS.has(step.uses.toLowerCase()),
-			))
+		message.steps.length > 0 &&
+		message.steps.every((step) =>
+			SUPPORTED_CHECK_STEPS.has(step.uses.toLowerCase()),
+		)
 	);
 }
 
@@ -322,7 +263,7 @@ export function isRelayJob(message: RelayJobMessage, job: JobMessage): boolean {
 		job.jobservicecontainers != null ||
 		(job.defaults?.length ?? 0) > 0 ||
 		(job.environmentvariables ?? []).some(
-			(environment) => !allowedEnvironment(environment, NO_ENVIRONMENT),
+			(environment) => !noEnvironment(environment),
 		) ||
 		job.steps.some(
 			(step) =>
@@ -333,31 +274,9 @@ export function isRelayJob(message: RelayJobMessage, job: JobMessage): boolean {
 		)
 	)
 		return false;
-	if (
-		message.steps.length > 0 &&
-		message.steps.every((step) =>
-			SUPPORTED_CHECK_STEPS.has(step.uses.toLowerCase()),
-		) &&
-		job.steps.every((step) =>
-			allowedEnvironment(step.environment, NO_ENVIRONMENT),
-		)
-	)
-		return true;
-	if (message.inputs.length === 0 || message.steps.length !== 3) return false;
-	const [checkout, setup, run] = message.steps;
-	if (
-		checkout?.uses.toLowerCase() !== ROUTING_CHECKOUT ||
-		setup?.uses.toLowerCase() !== ROUTING_SETUP_NODE ||
-		run?.uses !== "" ||
-		!allowedEnvironment(job.steps[0]?.environment, NO_ENVIRONMENT) ||
-		!allowedEnvironment(job.steps[1]?.environment, NO_ENVIRONMENT) ||
-		!allowedEnvironment(job.steps[2]?.environment, ROUTING_ENVIRONMENT)
-	)
-		return false;
 	return (
-		run.inputs.length === 1 &&
-		run.inputs[0]?.name === "script" &&
-		run.inputs[0].value.trim().replace(/\s+/gu, " ") === ROUTING_SCRIPT
+		isRelayCheckJob(message) &&
+		job.steps.every((step) => noEnvironment(step.environment))
 	);
 }
 

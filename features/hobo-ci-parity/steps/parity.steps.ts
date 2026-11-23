@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { Before, Given, Then, When } from "@cucumber/cucumber";
 import {
+	type FleetState,
 	HOSTED_RUNNER_PROVIDERS,
 	type MachineCandidate,
 	NO_ROUTE_FACTS,
@@ -31,6 +32,7 @@ type ParityState = {
 	inputs: Array<readonly [string, string]>;
 	origin: Readonly<{ private: boolean; fork: boolean; event: string }>;
 	machines: MachineCandidate[];
+	fleet: FleetState | undefined;
 	answer: RelayJobAnswer | undefined;
 	runs: CommandResult[];
 	downloads: Array<Readonly<{ url: string; sha256: string }>>;
@@ -46,6 +48,7 @@ Before({ tags: "@parity" }, () => {
 		inputs: [],
 		origin: { private: true, fork: false, event: "push" },
 		machines: [],
+		fleet: undefined,
 		answer: undefined,
 		runs: [],
 		downloads: [],
@@ -127,6 +130,35 @@ Given(
 	},
 );
 
+Given(
+	"a busy connected machine {string} with labels {string}",
+	(id: string, labels: string) => {
+		state.machines.push({
+			id,
+			name: id,
+			runsOn: `hobo-machine-${id}`,
+			labels: list(labels),
+			online: true,
+			paused: false,
+			slots: 1,
+			busy: 1,
+			sharing: "only_me",
+			ownerId: "42",
+			ownerCanRead: true,
+			lastPickedAtMs: 0,
+			repository: undefined,
+		});
+	},
+);
+
+Given("the fleet is taking jobs but does not isolate them", () => {
+	state.fleet = { enabled: true, taking: true, isolated: false };
+});
+
+Given("the fleet isolates each job", () => {
+	state.fleet = { enabled: true, taking: true, isolated: true };
+});
+
 Given("the relay job comes from a public repository", () => {
 	state.origin = { private: false, fork: false, event: "push" };
 });
@@ -136,7 +168,11 @@ Given("the relay job comes from a fork's pull request", () => {
 });
 
 When("the relay answers the relay job", async () => {
-	state.driver.setFacts({ ...NO_ROUTE_FACTS, machines: [...state.machines] });
+	state.driver.setFacts({
+		...NO_ROUTE_FACTS,
+		fleet: state.fleet,
+		machines: [...state.machines],
+	});
 	state.answer = await state.driver.answer(message());
 });
 
@@ -144,6 +180,16 @@ Then(
 	"the relay job succeeds on {string} from the {string} step",
 	(runner: string, step: string) => {
 		assert.equal(state.answer?.conclusion, "succeeded", output(state.answer, "reason"));
+		assert.equal(output(state.answer, "runner"), runner);
+		assert.equal(output(state.answer, "step"), step);
+	},
+);
+
+Then(
+	"the relay job waits on {string} from the {string} step",
+	(runner: string, step: string) => {
+		assert.equal(state.answer?.conclusion, "succeeded");
+		assert.equal(output(state.answer, "outcome"), "waiting");
 		assert.equal(output(state.answer, "runner"), runner);
 		assert.equal(output(state.answer, "step"), step);
 	},

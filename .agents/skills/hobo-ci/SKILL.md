@@ -7,12 +7,12 @@ description: Use when running or explaining `hobo ci` commands for a repository 
 
 HoBo CI routes GitHub Actions jobs. A repository commits a **runner order** in
 `.hobo/ci.json` (`runnerOrder`): an ordered list of runner types (the HoBo
-fleet, connected machines, GitHub-hosted, hosted providers). A **relay job**
-names the runner types one job may use; the order is walked top to bottom and
-the job takes the first runner that can run it now, waits for a busy one, or
-fails with one sentence saying why. Routing happens in HoBo CI, never in a
-workflow: a workflow only sets `runs-on` to a HoBo label, and HoBo CI routes
-the job when it claims it. The rules are ADR-0183
+fleet, connected machines, GitHub-hosted, hosted providers). The order is
+walked top to bottom and a job takes the first runner that can run it now,
+waits for a busy one, or fails with one sentence saying why. Routing happens in
+HoBo CI, never in a workflow: a workflow only sets `runs-on` to a HoBo label,
+and HoBo CI routes the job when it claims it. No workflow job routes another
+through its outputs, and none is ever added for that. The rules are ADR-0183
 (`docs/ci/runner-order.md`) and `packages/ci/RUNNER-ORDER.md`.
 
 For the step-by-step of moving a repository's workflows, use the
@@ -46,7 +46,7 @@ itself, use `hobo-deploy`.
 | --- | --- | --- |
 | `hobo ci connect --relay <origin>` (alias `enable`) | Link this repository to a relay; `hobo ci connect github` runs the GitHub App ceremony | The link, after confirmation |
 | `hobo ci status` | The relay connection as the CLI sees it | No |
-| `hobo ci route` | Answer one relay job against the committed order and print the walk: every step passed over and why. Flags name the label per runner type (`--github ubuntu-24.04`, `--fleet hobo`, `--blacksmith auto`), `--public`, `--fork`, `--event`, `--facts <file.json>` | No; contacts nothing |
+| `hobo ci route` | Decide one job against the committed order and print the walk: every step passed over and why. Flags name the label per runner type (`--github ubuntu-24.04`, `--fleet hobo`, `--blacksmith auto`), `--public`, `--fork`, `--event`, `--facts <file.json>` | No; contacts nothing |
 | `hobo ci init` | Plan (default, `--plan`) which workflow jobs can move to the fleet; `--apply <jobs>` rewrites their `runs-on`, keeping the old label as a trailing comment | Workflow files, only with `--apply` |
 | `hobo ci signals` | Where recent runs lost time or money: waits, flaky and short jobs, extra runs (`--runs 1-100`) | No |
 | `hobo ci diagnose [run]` | Why a run's jobs failed, the matched evidence, and whether a re-run is likely to help | No |
@@ -75,19 +75,18 @@ the part of the relay it reads.
 | `hobo ci performance` | Times by workflow, job and runner type | `hobo ci signals` |
 | `hobo ci provider-health` (`clear <provider> <label>`) | Which hosted runner types are skipped as unhealthy, and clear one by hand | Nothing; health is not recorded yet |
 | `hobo ci relay` | The relay-job side of a connected relay | `hobo ci status` |
-| `hobo ci rerun <run> --reroute` | Re-run the relay job so the order decides again | `hobo ci rerun` (re-uses the old decision) |
 
 ## Frozen names you may see
 
 | Thing | Value |
 | --- | --- |
-| Relay label (relay mode) | `hobo-relay` |
-| Relay job inputs | `fleet`, `machine`, `github`, `blacksmith`, `depot`, `namespace`, `warpbuild`, `ubicloud`, `boat`, `runs-on`, `size`, `first` |
-| Relay job outputs | `runner`, `step`, `outcome` (`routed`, `waiting`, `none`), `reason` |
+| Relay label (relay mode: runner-less check jobs only) | `hobo-relay` |
+| Runner types a request may name | `fleet`, `machine`, `github`, `blacksmith`, `depot`, `namespace`, `warpbuild`, `ubicloud`, `boat`, `runs-on`, `size`, `first` |
+| Decision fields | `runner`, `step`, `outcome` (`routed`, `waiting`, `none`), `reason` |
 | Project config | `runnerOrder`, and `relayJobs: { answer, label }` in `.hobo/ci.json` (`answer` is off by default) |
 
-An input left out of a relay job means that runner type is never used for the
-job, whatever the order says. `auto` asks for the order's size and becomes the
+A runner type a request leaves out is never used for the job, whatever the
+order says. `auto` asks for the order's size and becomes the
 provider's smallest machine at or above it. A machine never takes a public
 repository's job or a fork's pull request.
 

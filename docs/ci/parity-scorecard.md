@@ -16,8 +16,8 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | State | Cases |
 | --- | --- |
-| pass | 26 |
-| built-not-proven | 3 |
+| pass | 27 |
+| built-not-proven | 2 |
 | partial | 19 |
 | not-built | 8 |
 | met-differently | 1 |
@@ -27,22 +27,22 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | Case | RelayRunner's claim | HoBo's bar | Tier | State | Package |
 | --- | --- | --- | --- | --- | --- |
-| R01 | The relay is answered in about a second and bills no minutes ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | Relay mode answers within 5 s of the queued webhook in the simulator; a live run shows zero billed minutes for the relay job | T2, T3 | built-not-proven: T3 owed: no production run is linked yet | 12 |
+| R01 | The relay is answered in about a second and bills no minutes ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | A check job on the `hobo-relay` label is claimed and completed within 5 s of the queued webhook in the simulator; a live run shows zero billed minutes for it | T2, T3 | built-not-proven: T3 owed: no production run is linked yet | 12 |
 | R02 | A job goes to the first runner in the order that can take it now ([docs/architecture/pick-runner.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/architecture/pick-runner.md)) | Same | T1 | pass | done |
 | R03 | A runner type the job did not name, or the order leaves out, is never used ([site/concepts/runner-order.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/runner-order.mdx)) | Same, and the decision lists it | T1 | pass | done |
-| R04 | When nothing fits, the relay fails with the reason and the job does not start ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | The relay job fails with the one-sentence reason as an annotation and the dependent job is skipped | T2, T3 | built-not-proven: T3 owed: no production run is linked yet | 11, 12 |
-| R05 | When machines are only busy the job waits in line; a cancelled job leaves it ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | A `waiting` decision queues the job on the busy step's label; cancelling frees it | T2 | pass | 11, 12 |
+| R04 | When nothing fits, the relay fails with the reason and the job does not start ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | When HoBo CI decides for a job and nothing fits, the decision fails with the one-sentence reason as an annotation | T1 | pass | 11, 12 |
+| R05 | When machines are only busy the job waits in line; a cancelled job leaves it ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | A `waiting` decision names the busy step's label | T1 | pass | 11, 12 |
 | R06 | Public repositories never run on machines ([site/reference/security.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/security.md)) | Same, and forks too | T1 | pass | done |
-| R06b **B** | n/a | The fleet takes a public repo or a fork's pull request only when it isolates such jobs | T1, T2 | pass | 12 |
+| R06b **B** | n/a | The fleet takes a public repo or a fork's pull request only when it isolates such jobs | T1 | pass | 12 |
 | R07 | GitHub-hosted is used while under N% of included minutes, with a two-hour runway ([site/concepts/runner-order.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/runner-order.mdx)) | Same on measured usage; unmeasured usage never blocks | T1, T2 | partial: rule built, no reader | 08 |
 | R08 | A provider is used while under $X this month ([site/guides/spend-controls.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/guides/spend-controls.md)) | Same, from the ledger | T1, T2 | partial: rule built, no sum | 08 |
 | R09 | A provider that misses three jobs in thirty minutes is skipped, retried with back-off, and can be cleared by hand ([docs/github-app.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/github-app.md)) | Same; the record survives a restart; a command clears it | T1, T2 | partial: state machine built, nothing feeds it | 08 |
 | R10 | A job that failed before its own steps, or lost its runner, is retried on the same, another or any runner, at most twice, never twice for one delivery ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | Same | T2 | partial: classification and policy built | 15 |
-| R11 | `auto` picks a size; a job can have its own size and a runner type to try first ([site/reference/relay-inputs.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/relay-inputs.md)) | Same through relay inputs `size` and `first` | T1, T2 | partial: `auto` built | 11 |
-| R12 | Re-running failed jobs routes them again without re-running the relay ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | A re-run of failed jobs returns to its label; `hobo ci rerun --reroute` and the retry policy re-run the relay so it decides again | T2 | not-built | 15 |
-| R13 **B** | A sweep rescues relays queued over five minutes, but not one whose webhook never arrived ([docs/architecture/pick-runner.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/architecture/pick-runner.md)) | A relay job whose webhook never arrived is answered within two poll intervals | T2 | pass | 12 |
+| R11 | `auto` picks a size; a job can have its own size and a runner type to try first ([site/reference/relay-inputs.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/relay-inputs.md)) | Same through `size` and `first` on the routed request | T1, T2 | partial: `auto` built | 11 |
+| R12 | Re-running failed jobs routes them again without re-running the relay ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | A re-run of failed jobs is routed again when HoBo CI claims it; no workflow job is re-run to route | T2 | not-built | 15 |
+| R13 **B** | A sweep rescues relays queued over five minutes, but not one whose webhook never arrived ([docs/architecture/pick-runner.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/architecture/pick-runner.md)) | A check job whose webhook never arrived is answered within two poll intervals | T2 | pass | 12 |
 | R14 **B** | Matrix jobs and reusable workflows cannot be routed ([site/reference/faq.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/faq.md)) | Each leg of a matrix job whose runs-on is a HoBo label is routed when HoBo CI claims it | T2 | not-built | 11 |
-| R16 **B** | n/a | With the hosted relay down, a second node answers the relay job | T2 | pass | 12 |
+| R16 **B** | n/a | With the hosted relay down, a second node answers the check job | T2 | pass | 12 |
 
 ## Machines
 
@@ -77,7 +77,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | --- | --- | --- | --- | --- | --- |
 | C01 | A pull request title check runs with no runner and no minutes ([site/concepts/optimized-checks.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/optimized-checks.md)) | The relay completes the job; the allowed types are configurable | T2, T3 | built-not-proven: T3 owed: no production run is linked yet | 20 |
 | C02 | Linters run in a sandbox with one result per tool ([site/concepts/optimized-checks.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/optimized-checks.md)) | Same, in a HoBo sandbox with no network | T2 | pass | 20 |
-| C03 | The repository config file is strict, and a bad one shows as a failed check ([site/reference/repo-config.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/repo-config.md)) | `.hobo/ci.json` is strict already; a broken `runnerOrder` fails the relay job with the parser's sentence | T1, T2 | partial | 11 |
+| C03 | The repository config file is strict, and a bad one shows as a failed check ([site/reference/repo-config.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/repo-config.md)) | `.hobo/ci.json` is strict already; a broken `runnerOrder` is refused with the parser's sentence | T1 | partial | 11 |
 
 ## Insights
 
@@ -112,7 +112,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | --- | --- | --- | --- | --- | --- |
 | X01 | Code, secrets and logs never pass through the gateway ([site/reference/privacy.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/privacy.md)) | The answerer requests no log, secret or repository content | T2 | pass | 12 |
 | X02 | Webhooks are signature-checked ([README.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/README.md)) | Same | T1 | pass | done |
-| X03 | The relay never runs code from the job ([docs/architecture/pick-runner.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/architecture/pick-runner.md)) | The answerer reads the job message and completes it; it starts no process | T2 | pass | 12 |
+| X03 | The relay never runs code from the job ([docs/architecture/pick-runner.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/architecture/pick-runner.md)) | The answerer reads the job message and completes it; it starts no process and fails a job that is not made of check steps | T2 | pass | 12 |
 | X04 | Agent access is read-only ([site/reference/mcp.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/mcp.md)) | New MCP tools need only the read scope | T2 | partial: the existing tools are read-only; the new tools are owed | 18 |
 
 A source starting `site/` is under `apps/site/src/content/docs/docs/` in RelayRunner's repository.

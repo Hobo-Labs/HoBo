@@ -838,4 +838,4 @@ the serve supplies the `@hobo/ci-dashboard` route. See
 [CI.md](CI.md#host-a-local-relay) and the
 [relay wiring](../ci-gh-actions/README.md#wiring-turning-the-built-pieces-on).
 `test/ci-serve.test.ts` drives the serve and its poller with each flag on
-and off. Built, not proven: no serve has answered a relay job from GitHub yet.
+and off. Built, not proven: no serve has claimed a check job from GitHub yet.

@@ -56,7 +56,7 @@
           "id": 70001,
           "run_id": 5001,
           "run_attempt": 1,
-          "name": "route",
+          "name": "title",
           "status": "queued",
           "labels": [
             "hobo-relay"
@@ -104,55 +104,6 @@
             ]
           },
           "encoded_jit_config": "e30="
-        }
-      }
-    },
-    {
-      "description": "read the pull request a run's ref names, for its base branch",
-      "providerStates": [
-        {
-          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/repos/octo/app/pulls/7"
-      },
-      "response": {
-        "status": 200,
-        "headers": {
-          "Content-Type": "application/json; charset=utf-8"
-        },
-        "body": {
-          "number": 7,
-          "base": {
-            "ref": "main"
-          }
-        }
-      }
-    },
-    {
-      "description": "read .hobo/ci.json at the pull request's base branch",
-      "providerStates": [
-        {
-          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/repos/octo/app/contents/.hobo%2Fci.json",
-        "query": "ref=main"
-      },
-      "response": {
-        "status": 200,
-        "headers": {
-          "Content-Type": "application/json; charset=utf-8"
-        },
-        "body": {
-          "type": "file",
-          "path": ".hobo/ci.json",
-          "encoding": "base64",
-          "content": "eyJyZWxheUpvYnMiOnsiYW5zd2VyIjp0cnVlfSwicnVubmVyT3JkZXIiOnsic3RlcHMiOlt7ImtleSI6ImdpdGh1YiJ9XX19"
         }
       }
     },
@@ -246,7 +197,7 @@
               "id": 70001,
               "run_id": 5001,
               "run_attempt": 1,
-              "name": "route",
+              "name": "title",
               "status": "queued",
               "labels": [
                 "hobo-relay"

@@ -267,7 +267,7 @@ describe("GithubSimulator", () => {
 		await session.close();
 	});
 
-	it("routes a three-leg matrix from one relay output", () => {
+	it("substitutes one needed output into the runs-on of a three-leg matrix", () => {
 		const sim = new GithubSimulator();
 		const relay = sim.queueJob({
 			repository: REPO,

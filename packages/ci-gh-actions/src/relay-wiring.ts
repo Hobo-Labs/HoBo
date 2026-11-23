@@ -17,7 +17,6 @@ import {
 	githubCheckRunAnnotations,
 	githubRerunJob,
 	machineEventDisconnects,
-	RetryRouteFacts,
 	SqliteRetryLedger,
 } from "./auto-retry.js";
 import {
@@ -38,7 +37,6 @@ import {
 	type RelayConnection,
 	type RelayRescueSummary,
 	type RelaySweepSummary,
-	StoreRouteFacts,
 } from "./relay-answer/index.js";
 import { GithubRunnerServiceClient } from "./runner-protocol/client.js";
 import { parseJitConfig } from "./runner-protocol/jit-config.js";
@@ -217,7 +215,7 @@ export function createRelayWiring(options: RelayWiringOptions): RelayWiring {
 			: undefined;
 
 	let answerer: RelayAnswerer | undefined;
-	if (journal && flags.relayJobs.answer) {
+	if (flags.relayJobs.answer) {
 		answerer = createRelayAnswerer({
 			relayJobs: flags.relayJobs,
 			github,
@@ -229,24 +227,6 @@ export function createRelayWiring(options: RelayWiringOptions): RelayWiring {
 				((encoded, runnerName) => parseJitConfig(encoded, { runnerName })),
 			account: async (job) =>
 				(await account(job.installationId, job.repository))?.accountId,
-			facts: (accountId) => {
-				const facts = new StoreRouteFacts({
-					accountId,
-					fleet: undefined,
-					machines,
-					readers: undefined,
-					spend: undefined,
-					health: undefined,
-					minutes: undefined,
-					onWarning: (warning) =>
-						log("hobo_ci_relay_facts_warning", {
-							part: warning.part,
-							message: warning.message,
-						}),
-				});
-				return ledger ? new RetryRouteFacts(facts, ledger) : facts;
-			},
-			journal,
 			node: options.node,
 			nowMs,
 		});

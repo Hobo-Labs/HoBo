@@ -7,7 +7,7 @@
 			"area": "Routing",
 			"claim": "The relay is answered in about a second and bills no minutes",
 			"source": "site/concepts/routing.md",
-			"bar": "Relay mode answers within 5 s of the queued webhook in the simulator; a live run shows zero billed minutes for the relay job",
+			"bar": "A check job on the `hobo-relay` label is claimed and completed within 5 s of the queued webhook in the simulator; a live run shows zero billed minutes for it",
 			"tiers": ["t2", "t3"],
 			"packages": ["12"],
 			"today": { "state": "not-built", "note": "" }
@@ -37,8 +37,8 @@
 			"area": "Routing",
 			"claim": "When nothing fits, the relay fails with the reason and the job does not start",
 			"source": "site/concepts/routing.md",
-			"bar": "The relay job fails with the one-sentence reason as an annotation and the dependent job is skipped",
-			"tiers": ["t2", "t3"],
+			"bar": "When HoBo CI decides for a job and nothing fits, the decision fails with the one-sentence reason as an annotation",
+			"tiers": ["t1"],
 			"packages": ["11", "12"],
 			"today": { "state": "partial", "note": "the reason exists, no job shows it" }
 		},
@@ -47,8 +47,8 @@
 			"area": "Routing",
 			"claim": "When machines are only busy the job waits in line; a cancelled job leaves it",
 			"source": "site/concepts/routing.md",
-			"bar": "A `waiting` decision queues the job on the busy step's label; cancelling frees it",
-			"tiers": ["t2"],
+			"bar": "A `waiting` decision names the busy step's label",
+			"tiers": ["t1"],
 			"packages": ["11", "12"],
 			"today": { "state": "partial", "note": "" }
 		},
@@ -69,9 +69,9 @@
 			"claim": "n/a",
 			"source": "",
 			"bar": "The fleet takes a public repo or a fork's pull request only when it isolates such jobs",
-			"tiers": ["t1", "t2"],
+			"tiers": ["t1"],
 			"packages": ["12"],
-			"today": { "state": "partial", "note": "passes at T1; T2 owed" }
+			"today": { "state": "partial", "note": "passes at T1" }
 		},
 		{
 			"id": "R07",
@@ -118,7 +118,7 @@
 			"area": "Routing",
 			"claim": "`auto` picks a size; a job can have its own size and a runner type to try first",
 			"source": "site/reference/relay-inputs.md",
-			"bar": "Same through relay inputs `size` and `first`",
+			"bar": "Same through `size` and `first` on the routed request",
 			"tiers": ["t1", "t2"],
 			"packages": ["11"],
 			"today": { "state": "partial", "note": "`auto` built" }
@@ -128,7 +128,7 @@
 			"area": "Routing",
 			"claim": "Re-running failed jobs routes them again without re-running the relay",
 			"source": "site/concepts/routing.md",
-			"bar": "A re-run of failed jobs returns to its label; `hobo ci rerun --reroute` and the retry policy re-run the relay so it decides again",
+			"bar": "A re-run of failed jobs is routed again when HoBo CI claims it; no workflow job is re-run to route",
 			"tiers": ["t2"],
 			"packages": ["15"],
 			"today": { "state": "not-built", "note": "" }
@@ -139,7 +139,7 @@
 			"better": true,
 			"claim": "A sweep rescues relays queued over five minutes, but not one whose webhook never arrived",
 			"source": "docs/architecture/pick-runner.md",
-			"bar": "A relay job whose webhook never arrived is answered within two poll intervals",
+			"bar": "A check job whose webhook never arrived is answered within two poll intervals",
 			"tiers": ["t2"],
 			"packages": ["12"],
 			"today": { "state": "not-built", "note": "" }
@@ -161,7 +161,7 @@
 			"better": true,
 			"claim": "n/a",
 			"source": "",
-			"bar": "With the hosted relay down, a second node answers the relay job",
+			"bar": "With the hosted relay down, a second node answers the check job",
 			"tiers": ["t2"],
 			"packages": ["12"],
 			"today": { "state": "not-built", "note": "" }
@@ -362,8 +362,8 @@
 			"area": "Checks",
 			"claim": "The repository config file is strict, and a bad one shows as a failed check",
 			"source": "site/reference/repo-config.md",
-			"bar": "`.hobo/ci.json` is strict already; a broken `runnerOrder` fails the relay job with the parser's sentence",
-			"tiers": ["t1", "t2"],
+			"bar": "`.hobo/ci.json` is strict already; a broken `runnerOrder` is refused with the parser's sentence",
+			"tiers": ["t1"],
 			"packages": ["11"],
 			"today": { "state": "partial", "note": "" }
 		},
@@ -565,7 +565,7 @@
 			"area": "Security",
 			"claim": "The relay never runs code from the job",
 			"source": "docs/architecture/pick-runner.md",
-			"bar": "The answerer reads the job message and completes it; it starts no process",
+			"bar": "The answerer reads the job message and completes it; it starts no process and fails a job that is not made of check steps",
 			"tiers": ["t2"],
 			"packages": ["12"],
 			"today": { "state": "not-built", "note": "" }

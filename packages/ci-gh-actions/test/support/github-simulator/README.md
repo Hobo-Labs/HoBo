@@ -6,15 +6,14 @@ An in-memory GitHub that the relay tests and the HoBo CI parity scenarios run ag
 import { GithubSimulator, SimulatedRunnerService } from "./support/github-simulator/index.js";
 
 const github = new GithubSimulator();
-const relay = github.queueJob({ repository: "octo/app", name: "route", labels: ["hobo-relay"] });
 github.queueJob({
 	repository: "octo/app",
-	name: "build",
-	runId: relay.runId,
-	labels: ["${{ needs.route.outputs.runner }}"],
-	needs: ["route"],
+	name: "title",
+	labels: ["hobo-relay"],
+	steps: [{ uses: "hobo-labs/hobo/checks/pr-title@v1", with: new Map() }],
 });
-await github.deliver(relayWebhookHandler); // the signed workflow_job webhooks
+github.queueJob({ repository: "octo/app", name: "build", labels: ["hobo"] });
+await github.deliver(relayWebhookHandler);
 ```
 
 ## What it serves
@@ -39,7 +38,7 @@ All of it is reached through `github.fetch` under `github.baseUrl`. Every reques
 
 ## Jobs and runners
 
-GitHub's matching rule decides who gets a job: a queued job is offered only to an online, free runner that holds every label the job asks for (compared without case) and serves the job's repository. `claim(runner)` takes the oldest such job and `complete(job, result)` finishes it with a conclusion, outputs, annotations, a log and steps. A job with `needs` stays off GitHub's lists until the jobs it needs finish. It is then queued, with `${{ needs.<job>.outputs.<name> }}` in its `runs-on` replaced by that output, or skipped when a needed job did not succeed. This is how one relay output routes several jobs or a matrix.
+GitHub's matching rule decides who gets a job: a queued job is offered only to an online, free runner that holds every label the job asks for (compared without case) and serves the job's repository. `claim(runner)` takes the oldest such job and `complete(job, result)` finishes it with a conclusion, outputs, annotations, a log and steps. A job with `needs` stays off GitHub's lists until the jobs it needs finish. It is then queued, with `${{ needs.<job>.outputs.<name> }}` in its `runs-on` replaced by that output, or skipped when a needed job did not succeed, as GitHub does. HoBo routes no job this way; the simulator models it only because GitHub does.
 
 `registerRunner` adds a runner as an administrator would. `generate-jitconfig` adds an ephemeral runner that stays offline until a session opens. Its `encoded_jit_config` uses the format the open-source runner (`actions/runner`) reads: base64 JSON of the `.runner`, `.credentials` and `.credentials_rsaparams` files. An ephemeral runner is removed after its one job.
 

@@ -1,14 +1,11 @@
 import { create } from "@bufbuild/protobuf";
 import {
-	answerRelayJob,
-	type ParsedRelayRecord,
+	defineRelayJobAnswer,
 	type RelayChecks,
 	type RelayJobAnswer,
 	RelayJobAnswerSchema,
 	type RelayJobMessage,
 	type RelayJobsConfig,
-	type RouteFactsSource,
-	type RouteJournal,
 } from "@hobo/ci";
 import { z } from "zod";
 import type { GithubTransport } from "../github.js";
@@ -18,14 +15,9 @@ import type {
 	RunnerServiceClient,
 	RunnerSession,
 } from "../runner-protocol/port.js";
-import { namesRelayWork } from "../runner-protocol/wire.js";
+import { isRelayCheckJob } from "../runner-protocol/wire.js";
 import { verifyWebhookSignature } from "../webhook-signature.js";
-import {
-	GithubCiFile,
-	GithubCiOrderSource,
-	parseRelayJobs,
-	RELAY_CONFIG_PATH,
-} from "./ci-file.js";
+import { GithubCiFile, parseRelayJobs, RELAY_CONFIG_PATH } from "./ci-file.js";
 
 export const RELAY_OFFER_WAIT_MS = 4 * 60_000;
 export const RELAY_MAX_ATTEMPTS = 4;
@@ -68,9 +60,6 @@ export type AnsweredRelayJob = Readonly<{
 	runId: number;
 	job: string;
 	conclusion: string;
-	runner: string;
-	outcome: string;
-	reason: string;
 }>;
 
 export const RELAY_SKIP_REASONS = [
@@ -110,8 +99,6 @@ export type RelayAnswererOptions = Readonly<{
 	runnerService: RunnerServiceClient;
 	readJitConfig?: (encoded: string, runnerName: string) => ParsedJitConfig;
 	account: (job: QueuedRelayJob) => Promise<string | undefined>;
-	facts: (accountId: string) => RouteFactsSource;
-	journal: RouteJournal;
 	node: string;
 	turn?: RelayTurn | undefined;
 	checks?: RelayChecks | undefined;
@@ -196,7 +183,7 @@ type RegisteredRunner = Readonly<{
 type JobState = "queued" | "gone" | "unknown";
 
 type AnswerContext =
-	| Readonly<{ kind: "answer"; accountId: string; order: GithubCiOrderSource }>
+	| Readonly<{ kind: "answer" }>
 	| Readonly<{ kind: "refuse"; reason: string }>;
 
 type Registration =
@@ -213,10 +200,6 @@ function timeOf(text: string | undefined, fallback: number): number {
 	return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function outputOf(answer: RelayJobAnswer, name: string): string {
-	return answer.outputs.find((output) => output.name === name)?.value ?? "";
-}
-
 function answered(
 	message: RelayJobMessage,
 	answer: RelayJobAnswer,
@@ -226,9 +209,6 @@ function answered(
 		runId: message.runId,
 		job: message.job,
 		conclusion: answer.conclusion,
-		runner: outputOf(answer, "runner"),
-		outcome: outputOf(answer, "outcome"),
-		reason: outputOf(answer, "reason"),
 	});
 }
 
@@ -257,7 +237,7 @@ function failedAnswer(message: RelayJobMessage, text: string): RelayJobAnswer {
 function notRelayAnswer(message: RelayJobMessage): RelayJobAnswer {
 	return failedAnswer(
 		message,
-		`Job ${message.job} asked for the relay label but names no relay input; a relay answers relay jobs and never runs a job's steps. Give it a runs-on label of a runner instead.`,
+		`Job ${message.job} asked for the relay label but is not made only of HoBo check steps; a relay runs check jobs and never runs a job's steps or routes it. Give it a runs-on label of a runner instead.`,
 	);
 }
 
@@ -376,8 +356,6 @@ class Answerer {
 				};
 			const taken = await this.take(job, registration.runner, label, {
 				kind: "answer",
-				accountId,
-				order: new GithubCiOrderSource(file),
 			});
 			if (!taken)
 				return { kind: "skipped", reason: "no-job-offered", answered: done };
@@ -488,20 +466,11 @@ class Answerer {
 			const context = sameRepository(message.repository, job.repository)
 				? own
 				: await this.otherRepository(job, message, label);
-			const answer: ParsedRelayRecord<RelayJobAnswer> | RelayJobAnswer =
+			const answer =
 				context.kind === "refuse"
 					? failedAnswer(message, context.reason)
-					: namesRelayWork(message)
-						? await answerRelayJob(message, {
-								order: context.order,
-								facts: this.options.facts(context.accountId),
-								journal: this.options.journal,
-								nowMs: this.now(),
-								mode: "relay",
-								node: this.options.node,
-								accountId: context.accountId,
-								checks: this.options.checks,
-							})
+					: isRelayCheckJob(message)
+						? await this.check(message)
 						: notRelayAnswer(message);
 			await session.complete(answer);
 			const original =
@@ -515,6 +484,16 @@ class Answerer {
 			);
 			this.holding.delete(runner.name);
 		}
+	}
+
+	private async check(message: RelayJobMessage): Promise<RelayJobAnswer> {
+		const checked = await this.options.checks?.(message);
+		return checked
+			? defineRelayJobAnswer(checked)
+			: failedAnswer(
+					message,
+					"No relay check handler answered this job; its checks did not run.",
+				);
 	}
 
 	private async otherRepository(
@@ -550,7 +529,7 @@ class Answerer {
 				kind: "refuse",
 				reason: `Relay mode is not on for ${repository}: its ${RELAY_CONFIG_PATH} does not turn relayJobs.answer on for the label ${label}. Turn it on there, or give the job a runs-on label of a runner.`,
 			};
-		return { kind: "answer", accountId, order: new GithubCiOrderSource(file) };
+		return { kind: "answer" };
 	}
 
 	private async deleteRunner(

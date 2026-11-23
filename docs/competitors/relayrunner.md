@@ -122,14 +122,14 @@ Refreshed 2026-11-17, after the relay job, machines, checks and the dashboard we
 | RelayRunner | HoBo CI | Honest correspondence |
 | ----------- | ------- | --------------------- |
 | Runner order | `RunnerOrder` in `@hobo/ci`, committed as `runnerOrder` in `.hobo/ci.json` | **Close in rules, different in home.** The same walk, limits, health and retry rules, plus a `fleet` step RelayRunner has no equivalent of. HoBo's order is committed configuration; a change is a pull request. |
-| Relay job | A HoBo node answers a job labelled `hobo-relay` | **Different by rule.** Routing happens in HoBo CI, never in a workflow: the only HoBo CI change a workflow gets is `runs-on` set to a HoBo label, and HoBo CI routes the job when it claims it. HoBo writes no routing or evaluator workflow into a repository. |
-| Pick runner | Relay mode: a one-job runner a HoBo node registers and completes over the runner protocol | **Built, not proven.** It runs against the GitHub simulator and ships off (`relayJobs.answer` is false unless written); no production run is linked. |
+| Relay job | None: a workflow sets `runs-on` to a HoBo label | **Different by rule.** Routing happens in HoBo CI, never in a workflow: the only HoBo CI change a workflow gets is `runs-on` set to a HoBo label, and HoBo CI routes the job when it claims it. No job hands another a runner through its outputs, and HoBo writes no routing or evaluator workflow into a repository. No claim path runs the order for a fleet job yet. |
+| Pick runner | Relay mode: a one-job runner a HoBo node registers to claim a check job and complete it over the runner protocol | **Built, not proven.** It runs against the GitHub simulator and ships off (`relayJobs.answer` is false unless written); no production run is linked. |
 | Connected machine | `hobo ci machine connect`, with `pause`, `resume`, `share` and `remove` | **Close.** One job per fresh container by default, slots, signed adverts; Linux and macOS (`--host` or `--vm`). Run against the simulator only. |
 | Adopted runner | `adoptRunner` in `@hobo/ci-gh-actions` | **Library only.** It adds one label through GitHub's runner-labels API; the `hobo ci runners` command that would call it is not wired. |
 | Hosted provider label | Runner-order catalog with dated labels and list prices | **Close.** Seven providers by label; RunsOn carries a reason instead of a price. |
 | Minutes and spend limits | `GithubMinutesReader` (billing usage), `LedgerSpendReader` (the ledger, then list prices) | **Close, different source.** Spend is summed from what HoBo reserved and settled; unmeasured values never block. |
 | Provider health | `ProviderHealthStore` in SQLite, `hobo ci provider-health` | **Same rule.** Fed from webhooks in relay mode. |
-| Automatic retry | `auto-retry.ts` on `workflow_run` completed, `hobo ci rerun --reroute` | **Same rule**, with the journal row written before GitHub is asked. Only where a relay with a journal runs. |
+| Automatic retry | `auto-retry.ts` on `workflow_run` completed | **Same rule, inert.** It re-runs a run's relay job after a journaled route decision, and no production path journals one now that no workflow routes. |
 | Optimized checks | Runner-less `pr-title` and `lint` check steps in relay mode | **Close.** Lint runs in a container with no network. Relay mode only. |
 | Signals, performance, diagnosis | `@hobo/ci/insights`, `hobo ci signals`, `diagnose`, `activity`, `usage`, `performance` | **Close.** Stored in the relay's journal and history; diagnosis has no model. |
 | Dashboard | `@hobo/ci-dashboard`, served by the relay over the read API | **Close, read-only.** Five views; "edit" opens a pull request. |
@@ -145,9 +145,9 @@ page is written by `scripts/ci/parity-scorecard.mts` from the case catalog and t
 scenarios under [`features/hobo-ci-parity`](../../features/hobo-ci-parity/README.md), and
 `--check` fails when it is stale.
 
-On 2026-11-17 the scorecard shows 26 `pass`, 3 `built-not-proven`, 19 `partial`, 8
+On 2026-11-17 the scorecard shows 27 `pass`, 2 `built-not-proven`, 19 `partial`, 8
 `not-built` and 1 `met-differently` (S08: no human roles; access is GitHub membership plus
-scoped tokens). The 30 cases that are neither `pass` nor `met-differently` are owed. Each
+scoped tokens). The 29 cases that are neither `pass` nor `met-differently` are owed. Each
 is listed below with the run that would prove it.
 
 ### Owed production runs (T3)
@@ -157,9 +157,8 @@ because each changes production state or needs a workflow on the default branch.
 
 | Case | Built | The run that would prove it |
 | ---- | ----- | --------------------------- |
-| R01 | Relay mode answers in the simulator | Turn `relayJobs.answer` on for this repository alone on the deployed relay, push a workflow whose relay job asks for `hobo-relay`, and link the run: the relay job completed, no billed minute, the job behind it on the named runner |
+| R01 | Relay mode claims a check job in the simulator | Turn `relayJobs.answer` on for this repository alone on the deployed relay, push a workflow whose check job asks for `hobo-relay`, and link the run: the check job completed, no billed minute, no runner |
 | C01 | The `pr-title` check step in relay mode | The same relay-mode setup, with a pull request whose title breaks the rule: the check job fails with the annotation and no runner ran it |
-| R04 | The relay job fails with the reason as an annotation and the job behind it is skipped, in relay mode (its scenario), against the simulator | The same relay-mode setup as R01, with an order nothing can satisfy |
 
 I06 has its production run: `hobo ci diagnose` read
 [run 44044299552](https://github.com/Hobo-Labs/HoBo/actions/runs/44044299552) of this
@@ -179,7 +178,7 @@ The run that proves each is its scenario, written over the test named here and t
 | R07 | `packages/ci-gh-actions/test/billing-usage.test.ts` | |
 | R08, P04 | `packages/ci/test/runner-order-spend.test.ts` | RunsOn has a reason, not a price |
 | R09 | `packages/ci/test/runner-order-provider-health-sqlite.test.ts`, `packages/hobo/test/ci-provider-health.test.ts` | |
-| R10, R12 | `packages/ci-gh-actions/test/auto-retry.test.ts`, `packages/hobo/test/ci-rerun-reroute.test.ts` | |
+| R10 | `packages/ci-gh-actions/test/auto-retry.test.ts` | Inert in production: no route decision is journaled |
 | M01, M02, M07 | `packages/ci-gh-actions/test/machine-worker-session.test.ts`, `packages/hobo/test/ci-machine-connect.test.ts` | |
 | M04, M05, M06, M08, M09 | `packages/ci/test/runner-order-machine-registry.test.ts`, `packages/hobo/test/ci-machine.test.ts` | M08's email is met by the `machine.taken_over` event |
 | M10 | `packages/ci-gh-actions/test/runner-adoption.test.ts` | The `hobo ci runners` command is not wired, so the bar's command does not exist |
@@ -208,7 +207,7 @@ Each point with a case id is a **B** case at `pass` on the
 points are not scorecard cases.
 
 - **More than one answerer, and a rescue for a lost webhook** (R16 and R13, `pass` at T2).
-  Any mesh node may answer a relay job, and the job poller answers one whose webhook never
+  Any mesh node may claim a check job, and the job poller claims one whose webhook never
   arrived.
 - **A fleet step** (R06b, `pass`). The top of an order can be isolated capacity that takes
   public repositories and fork pull requests. RelayRunner's machines refuse public
@@ -261,15 +260,14 @@ state does not allow the claim yet. Each is claimed only once it reaches `pass`.
 
 ## Threats and lessons
 
-1. **The relay job is the product.** HoBo answers one in relay mode, and that claim waits on
-   one live run. HoBo never routes inside a workflow: a workflow only sets `runs-on` to a
-   HoBo label.
+1. **The relay job is the product.** HoBo has none by rule: it never routes inside a
+   workflow, a workflow only sets `runs-on` to a HoBo label, and routing on claim is not
+   built yet. Relay mode claims only check jobs, and that claim waits on one live run.
 2. **Onboarding is a feature.** One command on a laptop is the bar. `hobo ci machine
    connect` meets it in the simulator; the relay-mode path is still longer.
 3. **Reasons beat status.** "No runner available: the machine is paused" is what makes
-   fail-fast acceptable. HoBo's relay job fails with that sentence as an annotation in
-   the simulator, in relay mode; R04 stays built, not proven, until a
-   production run shows it.
+   fail-fast acceptable. HoBo's walk fails with that sentence as an annotation (R04, T1);
+   no job shows it in production until HoBo CI routes on claim.
 4. **Parity is a scorecard, not a list.** A capability counts when its scenario passes at its
    tier; the [scorecard](../ci/parity-scorecard.md) is regenerated, not edited.
 

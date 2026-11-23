@@ -404,7 +404,7 @@ A runner order is the preference a person writes down: an ordered list of
 runner types (the HoBo fleet, connected machines, GitHub-hosted, and the
 hosted providers Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat and
 RunsOn), with an included-minutes limit on `github` and a monthly spend limit
-on a provider. A relay job names the label it would ask each type for, and
+on a provider. A request names the label the job would ask each type for, and
 `decideRunnerRoute(order, request, facts)` walks the order and returns a
 `RunnerRouteDecision`: the label to run on, the label to queue on when every
 runner that fits is busy, or one sentence saying why nothing can take the

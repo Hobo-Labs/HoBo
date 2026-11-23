@@ -24,7 +24,6 @@ import {
 	githubCheckRunAnnotations,
 	githubRerunJob,
 	InMemoryRetryLedger,
-	isRelayJobOf,
 	jobRetriedJson,
 	machineEventDisconnects,
 	parseJobRetried,
@@ -611,16 +610,15 @@ describe("retry ledger", () => {
 
 describe("GitHub reads and writes", () => {
 	it("recognises a relay job as insight ingest does", () => {
-		expect(isRelayJobOf("build", ["hobo-relay"])).toBe(true);
-		expect(isRelayJobOf("route", ["ubuntu-latest"])).toBe(true);
-		expect(isRelayJobOf("router-tests", ["ubuntu-latest"])).toBe(false);
-		expect(isRelayJobOf("route (linux)", ["ubuntu-latest"])).toBe(true);
-		expect(isRelayJobOf("Relay", ["ubuntu-latest"])).toBe(true);
-		expect(isRelayJobOf("route-lint", ["ubuntu-latest"])).toBe(false);
-		expect(isRelayJobOf("relay-tests", ["ubuntu-latest"])).toBe(false);
-		expect(isRelayJobOf("relay_build", ["ubuntu-latest"])).toBe(false);
-		expect(isRelayJobOf("route / docs", ["ubuntu-latest"])).toBe(false);
-		expect(isRelayJobOf).toBe(isRelayJob);
+		expect(isRelayJob("build", ["hobo-relay"])).toBe(true);
+		expect(isRelayJob("route", ["ubuntu-latest"])).toBe(true);
+		expect(isRelayJob("router-tests", ["ubuntu-latest"])).toBe(false);
+		expect(isRelayJob("route (linux)", ["ubuntu-latest"])).toBe(true);
+		expect(isRelayJob("Relay", ["ubuntu-latest"])).toBe(true);
+		expect(isRelayJob("route-lint", ["ubuntu-latest"])).toBe(false);
+		expect(isRelayJob("relay-tests", ["ubuntu-latest"])).toBe(false);
+		expect(isRelayJob("relay_build", ["ubuntu-latest"])).toBe(false);
+		expect(isRelayJob("route / docs", ["ubuntu-latest"])).toBe(false);
 	});
 
 	it("reads no annotations from a failed read, and status 0 from a network failure", async () => {

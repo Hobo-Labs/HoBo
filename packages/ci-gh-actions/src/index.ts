@@ -27,7 +27,6 @@ export {
 	githubCheckRunAnnotations,
 	githubRerunJob,
 	InMemoryRetryLedger,
-	isRelayJobOf,
 	JOB_RETRIED_EVENT,
 	type JobRetried,
 	type JobRetriedFields,

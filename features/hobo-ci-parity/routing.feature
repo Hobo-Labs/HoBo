@@ -1,12 +1,13 @@
 Feature: Routing parity with RelayRunner
-  The runner order decides where each relay job runs. One scenario per
-  gauntlet case; the case catalog is cases.json beside this file. A scenario
-  tagged @pending waits for the work package that builds it.
+  The runner order decides where a job runs when HoBo CI claims it; no
+  workflow job routes another. One scenario per gauntlet case; the case
+  catalog is cases.json beside this file. A scenario tagged @pending waits
+  for the work package that builds it.
 
   @parity @R01 @t2 @t3
-  Scenario: R01 Relay mode answers a relay job within five seconds and bills no minutes
+  Scenario: R01 Relay mode claims a check job within five seconds and bills no minutes
     Given relay mode is on for "octo/app"
-    And a relay job labelled "hobo-relay" is queued for "octo/app"
+    And a check job labelled "hobo-relay" is queued for "octo/app"
     When the queued webhook reaches the relay
     Then the relay job is completed within 5 seconds of the webhook
     And the relay job ran on no runner and billed no minutes
@@ -36,24 +37,25 @@ Feature: Routing parity with RelayRunner
     Then the relay job succeeds on "ubuntu-24.04" from the "github" step
     And the journaled decision lists "namespace" as not in the runner order
 
-  @parity @R04 @t2 @t3
-  Scenario: R04 When nothing fits, the relay job fails with the reason and the job behind it is skipped
-    Given relay mode is on for "octo/app" with the runner order "machine"
-    And a relay job for "octo/app" names only "machine" and no machine is connected
-    And a job "build" needs the relay job
-    When the relay job is answered in relay mode
-    Then the relay job fails with the one-sentence reason as an annotation
-    And GitHub skips the job "build"
+  @parity @R04 @t1
+  Scenario: R04 When nothing fits, the decision fails with the one-sentence reason
+    Given the runner order of "octo/app" is "machine"
+    And a relay job for "octo/app" names these runner types:
+      | type    | labels      |
+      | machine | self-hosted |
+    And no machine is connected
+    When the relay answers the relay job
+    Then the relay job fails with a reason naming "machine"
 
-  @parity @R05 @t2
-  Scenario: R05 When machines are only busy the job waits on the busy step's label, and a cancel frees it
-    Given relay mode is on for "octo/app" with the runner order "machine"
-    And every machine that fits the relay job is busy
-    When the relay job is answered in relay mode
-    Then the relay job succeeds with outcome "waiting" and the busy step's label as its runner
-    And the job behind it queues on that label
-    When the run is cancelled
-    Then the queued job leaves the queue and holds no slot
+  @parity @R05 @t1
+  Scenario: R05 When machines are only busy the job waits on the busy step's label
+    Given the runner order of "octo/app" is "machine"
+    And a relay job for "octo/app" names these runner types:
+      | type    | labels      |
+      | machine | self-hosted |
+    And a busy connected machine "m-1" with labels "self-hosted, Linux, X64"
+    When the relay answers the relay job
+    Then the relay job waits on "hobo-machine-m-1" from the "machine" step
 
   @parity @R06 @t1
   Scenario Outline: R06 Public repositories and forks never run on machines
@@ -73,14 +75,21 @@ Feature: Routing parity with RelayRunner
       | a public repository     | public_repository  |
       | a fork's pull request   | fork_pull_request  |
 
-  @parity @R06b @t1 @t2
+  @parity @R06b @t1
   Scenario: R06b The fleet takes a public repository or a fork's pull request only when it isolates such jobs
-    Given relay mode is on for the public repository "octo/public" with the runner order "fleet, github"
+    Given the runner order of "octo/public" is "fleet, github"
+    And a relay job for "octo/public" names these runner types:
+      | type   | labels       |
+      | fleet  | hobo         |
+      | github | ubuntu-24.04 |
+    And the relay job comes from a public repository
     And the fleet is taking jobs but does not isolate them
-    When a public repository's relay job is answered in relay mode
-    Then the relay node's journaled decision passed over "fleet" because "needs_isolation"
-    When the fleet isolates each job
-    Then the next public relay job routes to the fleet
+    When the relay answers the relay job
+    Then the relay job succeeds on "ubuntu-24.04" from the "github" step
+    And the journaled decision passed over "fleet" because "needs_isolation"
+    Given the fleet isolates each job
+    When the relay answers the relay job
+    Then the relay job succeeds on "hobo" from the "fleet" step
 
   @parity @R07 @t1 @t2 @pending
   Scenario: R07 GitHub-hosted runners are used while under the minutes limit with a two-hour runway
@@ -112,23 +121,21 @@ Feature: Routing parity with RelayRunner
     And no job is retried more than twice
 
   @parity @R11 @t1 @t2 @pending
-  Scenario: R11 A job picks its own size and a runner type to try first through relay inputs
-    Given a relay job with the inputs "size: 8" and "first: depot"
+  Scenario: R11 A job picks its own size and a runner type to try first
+    Given a job asking for "size: 8" and "first: depot"
     When the relay job is answered
     Then the depot step is tried first with an 8 vCPU label
 
   @parity @R12 @t2 @pending
-  Scenario: R12 A re-run of failed jobs returns to its label, and a reroute decides again
-    Given a run whose routed job failed
+  Scenario: R12 A re-run of failed jobs is routed again when HoBo CI claims it
+    Given a run whose job on a HoBo label failed
     When the failed jobs are re-run
-    Then the job queues on the label it had
-    When "hobo ci rerun --reroute" runs for the run
-    Then the relay job is answered again with the facts of now
+    Then HoBo CI claims the job again and routes it with the facts of now
 
   @parity @R13 @t2
-  Scenario: R13 A relay job whose webhook never arrived is answered within two poll intervals
+  Scenario: R13 A check job whose webhook never arrived is answered within two poll intervals
     Given the next webhook is lost
-    And a relay job labelled "hobo-relay" is queued for "octo/app"
+    And a check job labelled "hobo-relay" is queued for "octo/app"
     When two poll intervals pass
     Then the relay job is completed
 
@@ -139,8 +146,8 @@ Feature: Routing parity with RelayRunner
     Then each leg runs where the runner order sends it
 
   @parity @R16 @t2
-  Scenario: R16 With the hosted relay down, a second node answers the relay job
+  Scenario: R16 With the hosted relay down, a second node answers the check job
     Given two relay nodes and the hosted one is down
-    And a relay job labelled "hobo-relay" is queued for "octo/app"
+    And a check job labelled "hobo-relay" is queued for "octo/app"
     When the queued webhook is delivered
     Then the second node completes the relay job exactly once

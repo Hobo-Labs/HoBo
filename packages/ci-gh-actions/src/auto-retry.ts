@@ -27,7 +27,6 @@ import {
 import { type InsightJob, type InsightRun, ranSteps } from "@hobo/ci/insights";
 import { z } from "zod";
 import { type GithubTransport, rerunWorkflowJob } from "./github.js";
-import { isRelayJob } from "./insight-ingest.js";
 
 // public-contract: the event type a retry row is sent as.
 export const JOB_RETRIED_EVENT = "job.retried";
@@ -606,8 +605,6 @@ export function githubRerunJob(
 		}
 	};
 }
-
-export const isRelayJobOf = isRelayJob;
 
 const FAILED = new Set(["failure", "timed_out"]);
 

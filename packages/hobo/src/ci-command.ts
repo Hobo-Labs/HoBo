@@ -50,7 +50,6 @@ import {
 } from "./ci-relay-deploy.js";
 import type { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
-import { CI_RERUN_REROUTE_COMMAND, wantsReroute } from "./ci-rerun-reroute.js";
 import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
 import {
@@ -468,12 +467,9 @@ export function createCiCommand(
 		async run({ args, flags, emitProgress }) {
 			if (args.length === 0) return { message: CI_HELP };
 			const first = args[0] ?? "";
-			const tabled =
-				first === "rerun" && wantsReroute(args.slice(1))
-					? CI_RERUN_REROUTE_COMMAND
-					: BUILT_IN_CI_COMMANDS.some((name) => name === first)
-						? undefined
-						: findCiCommand(first, deps.commands);
+			const tabled = BUILT_IN_CI_COMMANDS.some((name) => name === first)
+				? undefined
+				: findCiCommand(first, deps.commands);
 			if (tabled)
 				return tabled.run({
 					args: args.slice(1),

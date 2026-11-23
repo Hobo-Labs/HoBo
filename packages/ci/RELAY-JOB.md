@@ -1,16 +1,19 @@
 # Relay job
 
-A relay job is the small job a workflow puts in front of the real one to ask
-which runner it should run on. Its answer is a `runner` output the next job
-reads in `runs-on`. This file describes the seams that answer it; the walk
-itself is in [RUNNER-ORDER.md](RUNNER-ORDER.md).
-
-A HoBo node answers one (mode `relay`): it claims the job, labelled
-`hobo-relay`, over the runner protocol and completes it with outputs, and no
-runner minute is billed. Routing happens in HoBo CI, never in a workflow:
+Routing happens in HoBo CI, never in a workflow. The only HoBo CI change a
+workflow gets is `runs-on` set to a HoBo label; HoBo CI decides where the job
+runs when it claims it. No workflow job routes another through its outputs,
 HoBo ships no workflow that runs a routing or evaluator job, and no command
-writes one into a repository. The only HoBo CI change a workflow gets is
-`runs-on` set to a HoBo label.
+writes one into a repository.
+
+This file describes the records and the one function, `answerRelayJob`, that
+make that decision for a job HoBo CI is deciding for; the walk itself is in
+[RUNNER-ORDER.md](RUNNER-ORDER.md). The one job a HoBo node claims over the
+runner protocol today is a check job on the `hobo-relay` label (see
+`@hobo/ci-gh-actions` relay mode), and it carries no routing answer. No claim
+path in HoBo CI calls `answerRelayJob` for a fleet job yet: it runs in the
+`explain_route` MCP tool and the parity gauntlet, and `hobo ci route` runs the
+walk itself.
 
 ## Records
 
@@ -83,8 +86,8 @@ be read.
 ## Answering a relay job
 
 `answerRelayJob(message, deps)` in
-[`src/runner-order/answer.ts`](src/runner-order/answer.ts) is the one function
-a relay node calls. In order, it:
+[`src/runner-order/answer.ts`](src/runner-order/answer.ts) decides for one job.
+In order, it:
 
 1. Reads the message. One it cannot read still gets a failed answer naming the
    broken rule, so the job is completed rather than left queued.
@@ -105,6 +108,5 @@ a relay node calls. In order, it:
 | `waiting` | `succeeded` | The busy step's label as `runner` | A notice that the job is queued |
 | `none` | `failed` | `outcome: none` and the `reason` | An error with the reason |
 
-The job behind a failed relay is skipped by GitHub, so it never waits for a
-runner that will not come. A redelivered relay job is journaled once: the
-journal keeps one entry per job id and event type.
+A redelivered job is journaled once: the journal keeps one entry per job id and
+event type.

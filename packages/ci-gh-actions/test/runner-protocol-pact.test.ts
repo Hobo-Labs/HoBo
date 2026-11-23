@@ -136,7 +136,7 @@ it("executes every interaction of the GitHub runner service pact in order", asyn
 		repository: "octo/app",
 		runId: 9001,
 		runAttempt: 1,
-		job: "relay",
+		job: "title",
 		event: "pull_request",
 		actorId: "42",
 		triggeringActorId: "43",
@@ -144,47 +144,19 @@ it("executes every interaction of the GitHub runner service pact in order", asyn
 		fork: false,
 		workflowRef: "octo/app/.github/workflows/ci.yml@refs/pull/7/merge",
 	});
-	expect(message?.inputs.map((input) => [input.name, input.value])).toEqual([
-		["github", "ubuntu-24.04"],
-		["fleet", "hobo"],
-		["size", "4"],
-	]);
+	expect(message?.inputs).toEqual([]);
 	expect(
 		message?.steps.map((step) => [
 			step.uses,
 			step.inputs.map((input) => [input.name, input.value]),
 		]),
-	).toEqual([
-		[
-			"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-			[["sparse-checkout", ".hobo"]],
-		],
-		[
-			"actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
-			[["node-version", "24"]],
-		],
-		[
-			"",
-			[
-				[
-					"script",
-					expect.stringContaining("node --no-warnings .hobo-ci/relay.mjs"),
-				],
-			],
-		],
-	]);
+	).toEqual([["hobo-labs/hobo/checks/pr-title@v1", [["types", "feat,fix"]]]]);
 	await session.complete(
 		create(RelayJobAnswerSchema, {
 			jobId: "44444444-4444-4444-8444-444444444444",
 			planId: "22222222-2222-4222-8222-222222222222",
 			conclusion: "succeeded",
-			outputs: [
-				{ name: "runner", value: "hobo" },
-				{ name: "step", value: "fleet" },
-				{ name: "outcome", value: "routed" },
-				{ name: "reason", value: "fleet has room" },
-			],
-			annotations: [{ level: "notice", message: "routed to the fleet" }],
+			annotations: [{ level: "notice", message: "the title is a feat" }],
 		}),
 	);
 	expect(await session.nextJob(0)).toBeUndefined();

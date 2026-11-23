@@ -1,10 +1,10 @@
 # Runner protocol client
 
 In relay mode (ADR-0183, [`docs/ci/runner-order.md`](../../../../docs/ci/runner-order.md))
-a HoBo node answers a relay job itself: it signs in to GitHub's runner service
-as a one-job runner labelled `hobo-relay`, takes the job, decides with
-`answerRelayJob` from `@hobo/ci` (see [`packages/ci/RELAY-JOB.md`](../../../ci/RELAY-JOB.md)),
-and completes the job with outputs. No runner program starts, so the job uses
+a HoBo node claims a check job itself: it signs in to GitHub's runner service
+as a one-job runner labelled `hobo-relay`, takes the job, runs its HoBo checks
+(see [`../relay-checks/RELAY-CHECKS.md`](../relay-checks/RELAY-CHECKS.md)) and
+completes the job with their result. No runner program starts, so the job uses
 no runner minute and no job code runs.
 
 This folder holds that client. **It is built, not proven.** It was written
@@ -58,17 +58,15 @@ The run's facts come from the job's `github` context: `repository`, `run_id`,
 event payload `repository.private`, `sender.id` and the pull request's head
 repository (a fork when it says so or names another repository). A payload
 that does not say whether the repository is private is read as public, which
-machines refuse. The relay's inputs come from the `inputs` context a called
-workflow's job is given; names that are not relay inputs are left out. Each
-step becomes its `uses:` and `with:`.
+machines refuse. The message carries no relay inputs: a job's inputs are never
+read. Each step becomes its `uses:` and `with:`.
 
-A routing job must contain the pinned checkout and setup-node steps and the
-fixed routing command (`ROUTING_SCRIPT` in `wire.ts`), with no additional shell options, containers,
-job-level environment or unexpected step environment. A check job must
-contain only the supported
-`hobo-labs/hobo/checks/pr-title@v1` or `checks/lint@v1` steps.
+The client takes only a check job: one made only of the supported
+`hobo-labs/hobo/checks/pr-title@v1` or `checks/lint@v1` steps, with no
+container, service, defaults, job-level environment or step environment. A
+routing job is refused: routing happens in HoBo CI, never in a workflow.
 The client fails anything else with an annotation and keeps waiting: a relay
-runs no other job code, even if an unrelated job has a matching input name.
+runs no other job code.
 
 ## Behaviour
 
@@ -114,9 +112,9 @@ case X03).
 
 The channel stays "built, not proven" until one live run is linked: a relay
 with `relayJobs.answer` on creates a one-job runner with the `hobo-relay`
-label on a test repository, a workflow queues a relay job, the client answers
-it, and the run shows the job completed with its `runner` output and no billed
-minutes (gauntlet case R01 at T3). Two things only that run can show: whether
+label on a test repository, a workflow queues a check job, the client takes
+it, and the run shows the job completed and no billed minutes (gauntlet case
+R01 at T3). Two things only that run can show: whether
 the broker hands a message to a long poll that the client ended early, and
 whether the run service needs anything beyond `completejob` (such as a
 timeline update) for the job page to read well.
