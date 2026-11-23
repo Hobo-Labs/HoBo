@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-139 codes.
+138 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -57,7 +57,6 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_CONNECTION_UNCONFIRMED`](#hobo_ci_connection_unconfirmed) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_CONNECT_CEREMONY`](#hobo_ci_connect_ceremony) | `packages/hobo/src/ci-connect.ts` |
 | [`HOBO_CI_DEPLOYED`](#hobo_ci_deployed) | `packages/hobo/src/ci-relay-deploy.ts` |
-| [`HOBO_CI_DEPLOYED_AWAITING_OWNER`](#hobo_ci_deployed_awaiting_owner) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_AUTH_REQUIRED`](#hobo_ci_deploy_auth_required) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_CONFLICT`](#hobo_ci_deploy_binding_conflict) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_MALFORMED`](#hobo_ci_deploy_binding_malformed) | `packages/hobo/src/ci-relay-yard.ts` |
@@ -145,7 +144,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_SECRET_STORE_CONNECTED`](#hobo_ci_secret_store_connected) | `packages/hobo/src/ci-secret-store-connect.ts` |
 | [`HOBO_CI_SECRET_STORE_CONNECT_IN_DASHBOARD`](#hobo_ci_secret_store_connect_in_dashboard) | `packages/hobo/src/ci-secret-store.ts` |
 | [`HOBO_CI_SECRET_STORE_INVALID`](#hobo_ci_secret_store_invalid) | `packages/hobo-ci/src/prepare.ts` |
-| [`HOBO_CI_SECRET_STORE_NOT_CONNECTED`](#hobo_ci_secret_store_not_connected) | `packages/hobo/src/ci-app-create.ts`, `packages/hobo/src/ci-secret-store-connect.ts` |
+| [`HOBO_CI_SECRET_STORE_NOT_CONNECTED`](#hobo_ci_secret_store_not_connected) | `packages/hobo/src/ci-app-create.ts`, `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/ci-secret-store-connect.ts` |
 | [`HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED`](#hobo_ci_secret_store_oidc_subject_unresolved) | `packages/hobo/src/ci-secret-store-connect.ts` |
 | [`HOBO_CI_SECRET_STORE_PLANNED`](#hobo_ci_secret_store_planned) | `packages/hobo/src/ci-secret-store.ts` |
 | [`HOBO_CI_SECRET_STORE_PROVISIONED`](#hobo_ci_secret_store_provisioned) | `packages/hobo/src/ci-secret-store.ts` |
@@ -534,7 +533,7 @@ What to do:
 
 - Run hobo ci up --hand-off through the HoBo MCP server (its ci tool): it brings each step to you as a link or a form, wherever you are, and keeps what you give it in your secret store.
 - An agent can run hobo ci up --hand-off with a preconnected store and GitHub App; otherwise the run reports the available owner actions.
-- For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID, a non-secret setting) so the run signs in with its own OIDC token.
+- For CI, run with the owner's store session (HoBo MCP's choose_secret_store): the store's coordinates stay in the owner's secret store and are never set as environment variables.
 
 ### HOBO_CI_CONNECTION_UNCONFIRMED
 
@@ -578,14 +577,6 @@ Deployed {definition.name} to Vercel project {project} ({safe.target}): {safe.ur
 
 What to do: follow the message.
 
-### HOBO_CI_DEPLOYED_AWAITING_OWNER
-
-Returned from `packages/hobo/src/ci-relay-deploy.ts`.
-
-Message: composed when the command runs.
-
-What to do: follow the message.
-
 ### HOBO_CI_DEPLOY_AUTH_REQUIRED
 
 Returned from `packages/hobo/src/ci-relay-deploy.ts`.
@@ -593,7 +584,7 @@ Returned from `packages/hobo/src/ci-relay-deploy.ts`.
 Message:
 
 ```text
-The deploy token is read from the secret store, never the environment: run in GitHub Actions with id-token: write and the committed secret store binding, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.
+The deploy token is read from the secret store, never the environment: run with the owner's store session (HoBo MCP's choose_secret_store) in GitHub Actions with id-token: write, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.
 ```
 
 What to do: follow the message.
@@ -929,7 +920,7 @@ Message:
 
 What to do:
 
-- Put the relay's configuration in the store deploy/secret-store.binding.json names (packages/ci-vercel/CONFIG-SERVICE.md): the GitHub App's credentials go in with hobo ci app create --via-workflow, the owner's entries as its section What the folder holds lists. Re-run this workflow once they are there.
+- Put the relay's configuration in the relay folder of the owner's own secret store (packages/ci-vercel/CONFIG-SERVICE.md): the GitHub App's credentials go in with hobo ci app create --via-workflow, the owner's entries as its section What the folder holds lists. Re-run this workflow once they are there.
 
 ### HOBO_CI_DEPLOY_RELAY_NOT_READY
 
@@ -959,7 +950,7 @@ Messages:
 
 What to do:
 
-- The relay identity named in deploy/secret-store.binding.json must trust this project's Vercel production OIDC tokens (OIDC Auth; packages/ci-vercel/CONFIG-SERVICE.md). hobo ci secret-store verify checks the deploy identity by name.
+- The relay identity the owner's store binding names must trust this project's Vercel production OIDC tokens (OIDC Auth; packages/ci-vercel/CONFIG-SERVICE.md). hobo ci secret-store verify checks the deploy identity by name.
 - Check the store's status; the relay retries on every request, so re-run this workflow once it answers.
 - Read the deployment's runtime log (hobo_ci_relay_init_failed names the stage).
 - cache: the cache binding (deploy/yard.ts) is not reachable; executionHost: the Sandbox execution host is not configured; configService: the store stopped answering. packages/ci-vercel/README.md lists each.
@@ -1776,7 +1767,7 @@ Returned from `packages/hobo/src/ci-secret-store-connect.ts`.
 Message:
 
 ```text
-{SECRET_STORE_BINDING_FILE} already exists for other ids. Pass --yes to replace it, or re-run without ids to repair its deploy trust.
+Your secret store already holds a binding for other ids. Pass --yes to replace it, or re-run without ids to repair its deploy trust.
 ```
 
 What to do: follow the message.
@@ -1796,7 +1787,7 @@ Those ids do not make a valid binding: distinct relay, writer and deploy-credent
 ```
 
 ```text
-{SECRET_STORE_BINDING_FILE} is not a valid secret store binding (coordinates only). A deploy credential needs both a deploy project other than the relay's, a deployCredentialIdentityId distinct from the relay and writer identities, and deployOidcSubject; re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id to configure one.
+The owner store's secret store binding is not valid (coordinates only). A deploy credential needs both a deploy project other than the relay's, a deploy credential identity distinct from the relay and writer identities, and the writer's deploy subject; re-run hobo ci secret-store connect through the owner hand-off to configure one.
 ```
 
 What to do: follow the message.
@@ -1820,7 +1811,7 @@ Returned from `packages/hobo/src/ci-secret-store-connect.ts`.
 Message:
 
 ```text
-Wrote {written} (coordinates only). {writerTrustLine}{readerTrustLine} Commit it; then run hobo ci secret-store verify where each identity can sign in.
+Wrote the coordinates to your secret store as {written}; they are never committed or shown. {trustLine} Then run hobo ci secret-store verify where each identity can sign in.
 ```
 
 What to do: follow the message.
@@ -1850,16 +1841,20 @@ What to do:
 
 ### HOBO_CI_SECRET_STORE_NOT_CONNECTED
 
-Returned from `packages/hobo/src/ci-app-create.ts`, `packages/hobo/src/ci-secret-store-connect.ts`.
+Returned from `packages/hobo/src/ci-app-create.ts`, `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/ci-secret-store-connect.ts`.
 
 Messages:
 
 ```text
-No deploy/secret-store.binding.json: connect the store first (hobo ci secret-store connect).
+Your secret store holds no relay binding: connect the store first (hobo ci secret-store connect through the owner hand-off).
 ```
 
 ```text
-No {SECRET_STORE_BINDING_FILE}: connect a store first (hobo ci secret-store connect).
+Camp {placement.camp} reads the relay's configuration from the owner's secret store, and that store holds no relay binding yet: connect it first (hobo ci secret-store connect through the owner hand-off).
+```
+
+```text
+Your secret store holds no relay binding: connect a store first (hobo ci secret-store connect through the owner hand-off).
 ```
 
 What to do: follow the message.
@@ -1902,7 +1897,7 @@ Returned from `packages/hobo/src/ci-secret-store.ts`.
 Message:
 
 ```text
-{SECRET_STORE_BINDING_FILE} binds a {binding.kind} store, which the relay cannot read yet.
+The owner store's binding names a {binding.kind} store, which the relay cannot read yet.
 ```
 
 What to do: follow the message.
