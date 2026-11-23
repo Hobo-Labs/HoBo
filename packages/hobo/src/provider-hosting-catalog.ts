@@ -476,8 +476,8 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 		refused(
 			"agent37",
 			"@hobo/provider-agent37",
-			"provider-agent37 is an offline Agent37 Sandbox API fake for contract tests; it has no live client, manifest or delivery.",
-			NOT_A_TARGET,
+			"Agent37 is a CI runner provider bound by CI policy, not a hosting target.",
+			"deliver to a hosting provider; select Agent37 runners through @hobo/ci",
 		),
 		refused(
 			"agentv",
