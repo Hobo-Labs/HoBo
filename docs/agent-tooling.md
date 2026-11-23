@@ -335,6 +335,9 @@ agent; `hobo ci fleet status|restart|start` (the `ci` tool with
 `args: ["fleet", ...]`) reads the same `owner://HOSTINGER_API_TOKEN` to list and
 power-cycle the CI fleet's Hostinger VPS, and refuses with
 `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until the session holds it;
+`hobo ci fleet caches --plan|--apply|--status` (`args: ["fleet", "caches", ...]`)
+reads the ARC cluster's kubeconfig as `owner://HOSTINGER_ARC_KUBECONFIG` the
+same way to mount and prewarm the scale sets' node pnpm store and image cache;
 `doctor` reports `ownerStoreSession` as `established` and the store's
 name only. Re-run `choose_secret_store` with `reselect: true` to choose a
 different store.

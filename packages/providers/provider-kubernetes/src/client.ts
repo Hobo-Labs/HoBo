@@ -50,7 +50,10 @@ export interface KubernetesApiClient {
 
 export function errorForApiResponse(
 	response: TransportResponse,
-	context: { readonly method: TransportMethod; readonly what: string },
+	context: {
+		readonly method: TransportMethod | "PATCH";
+		readonly what: string;
+	},
 ): KubernetesProviderError {
 	let reason = "";
 	let message = "";

@@ -200,10 +200,6 @@ const ALLOWANCES = {
 		literals: { "/nowhere": 3 },
 		why: "PATH entries filtered by trustedPath against the in-memory memoryTrust nodes (src/trust.ts:201, test/support/trust-fs.ts); no real filesystem is touched",
 	},
-	"packages/hobo/test/owner-link.test.ts": {
-		literals: { "/nowhere": 1 },
-		why: "a cwd projectRelayOrigin never reads because HOBO_CI_RELAY_URL answers first (src/owner-link.ts:253-254)",
-	},
 } satisfies Readonly<Record<string, Allowance>>;
 
 const ALLOWED: ReadonlyMap<string, Allowance> = new Map(

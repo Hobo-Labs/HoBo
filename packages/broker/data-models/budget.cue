@@ -276,7 +276,7 @@ import (
 	iacEvidence?: #IacTargetLiabilityEvidence
 	iacDecision?: #IacTargetAdmissionDecision
 	if iacDecision != _|_ && iacDecision.status == "admitted" && iacDecision.budget.evaluation == "allowed" {
-		_admittedQuote:       iacDecision.quote & #HostingQuote
+		_admittedQuote: iacDecision.quote & #HostingQuote
 		_admittedReservation: iacDecision.reservation & #BudgetReservation & {iacPricingPin: #IacPricingPin}
 		iacEvidence: #IacTargetLiabilityEvidence & {
 			targetId:      iacDecision.targetId

@@ -53,6 +53,20 @@ implements.
 - **Teardown that stops at what it created.** `cleanupWorkload` deletes only a
   namespace this driver created, and reports `deleting` — not `deleted` — until
   it has observed the namespace gone.
+- **ARC runner scale sets.** `createArcRunnerSetClient` reads, lists and
+  JSON-patches Actions Runner Controller `AutoscalingRunnerSet`s
+  (`actions.github.com/v1alpha1`) and creates or lists `batch/v1` Jobs, and
+  nothing else: it refuses any other method or path before a request leaves the
+  process (`ROUTE_REFUSED`), and a failed `resourceVersion` test reads as
+  `PROVISIONING_CONFLICT`. `hobo ci fleet caches` drives it.
+- **Kubeconfig-shaped credentials, parsed in memory.** `parseKubeconfig` reads
+  the current context's server, `certificate-authority-data` and either a
+  bearer `token` or inline client certificate data from a kubeconfig string
+  (YAML or JSON) a host resolved for it; it refuses file paths, exec and
+  auth-provider plugins and skipped TLS verification
+  (`KUBECONFIG_UNSUPPORTED`). `createKubernetesHttpsTransport` is the
+  `node:https` transport that verifies the apiserver against that CA and
+  presents the client certificate.
 - **Temporary/agent Environment Stations:**
   `supportsAnonymousTemporaryDeploy = true`, provisioned through an
   injectable/local transport with no permanent API tokens.
@@ -107,9 +121,11 @@ which maps capability ports onto a provider's headline products.
 
 ## What it does not do
 
-- **No kubeconfig, no credential handling.** The host supplies a
-  `KubernetesTransport` that already authenticates. Nothing here reads
-  `~/.kube/config`, and nothing here holds a bearer token.
+- **No kubeconfig files, no credential storage.** The host supplies a
+  `KubernetesTransport` that already authenticates, or hands
+  `parseKubeconfig` a kubeconfig it resolved from the owner's store. Nothing
+  here reads `~/.kube/config` or any other file, and nothing here keeps a
+  bearer token beyond the call it was handed for.
 - **No ingress, no LoadBalancer, no external address.** The receipt carries an
   in-cluster `http://<svc>.<ns>.svc.cluster.local:80` URL, because that is the
   only object this provider created. Advertising an external hostname would be

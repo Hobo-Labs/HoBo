@@ -432,25 +432,47 @@ no token, so they neither read nor write the cache.
 An ARC runner pod (`hobo-trunk-runner-*`, `hobo-runner-*`) starts with an empty
 pnpm store and an empty Docker engine, so every job downloaded every package
 and image again over the node's slow link ([finding 160](../../../docs/ci/findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)).
-`scripts/ci/arc-runner-caches.mts` gives the scale set node-local caches that
-outlive the pod:
+`hobo ci fleet caches` gives the scale sets node-local caches that outlive the
+pod:
 
 ```sh
-node --experimental-strip-types scripts/ci/arc-runner-caches.mts \
-  --scale-set hobo-trunk --namespace <namespace> --apply \
-  --prewarm Hobo-Labs/HoBo "$(git rev-parse origin/main)"
+hobo ci fleet caches --plan
+hobo ci fleet caches --apply --prewarm "$(git rev-parse origin/main)"
+hobo ci fleet caches --status
 ```
 
-It reads the `AutoscalingRunnerSet`, prints and applies an idempotent JSON
-patch that mounts `/var/lib/hobo-ci/pnpm-store` at `/pnpm-store` and
+An agent runs the same verb through HoBo MCP: the `ci` tool with
+`args: ["fleet", "caches", "--apply", "--prewarm", "<sha>"]` and the project
+directory as `cwd`. Nobody runs kubectl against the cluster for this.
+
+It reads the `hostinger-arc` kubernetes pool in `.hobo/ci.json` for the
+namespace (`arc-runners`) and, by default, acts on every
+`AutoscalingRunnerSet` there (`hobo-trunk` and `hobo-runner`; `--scale-set`
+narrows it, `--namespace` overrides it). It reaches the cluster's API server
+with the kubeconfig the owner keeps in their store as
+`HOSTINGER_ARC_KUBECONFIG` (the pool's `connectionRef`, upper-cased, with
+`_KUBECONFIG`), resolved through the owner's store session; without it the
+verb refuses with `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` before any network
+call. The kubeconfig must carry the server, `certificate-authority-data` and
+a `token` or inline client certificate data; file paths, exec plugins and
+skipped TLS verification are refused. The identity needs `get`, `list` and
+`patch` on `autoscalingrunnersets.actions.github.com` and `create` and `list`
+on `jobs.batch` in that namespace, and nothing else.
+
+`--plan` (the default) prints the idempotent JSON patch that mounts `/var/lib/hobo-ci/pnpm-store` at `/pnpm-store` and
 `/var/lib/hobo-ci/images` at `/var/cache/hobo-ci/images` (hostPath,
 `DirectoryOrCreate`, owned by UID 1000 through the `hobo-cache-owner` init
 container), and sets `HOBO_CI_PNPM_STORE_DIR` and `HOBO_CI_IMAGE_CACHE_DIR` on
-the runner container. Without `--apply` it only prints. `--prewarm` also
-applies a Job that runs `pnpm fetch --frozen-lockfile` for the whole
-workspace's lockfile at that commit into the node store, so the first job on
-the node is warm too. Run it once per scale set, and again after a
-`helm upgrade` of the scale set, which replaces the pod template.
+the runner container; `--apply` sends it, guarded by the object's
+`resourceVersion`, and changes nothing on a scale set that already has the
+caches. `--prewarm <sha>` also creates a Job (`<scale set>-store-prewarm-<sha
+prefix>`) that runs `pnpm fetch --frozen-lockfile` for the whole workspace's
+lockfile at that commit into the node store, so the first job on the node is
+warm too; a second run for the same commit finds the Job already there.
+`--status` reports, for each scale set, whether the caches are mounted and
+whether its newest prewarm Job succeeded, failed or is still running;
+`--json` carries the record as `data.fleetCaches`. Run `--apply` again after
+a `helm upgrade` of a scale set, which replaces the pod template.
 
 Inside the pod, `scripts/ci/pnpm-install.mts` installs into the store named by
 `HOBO_CI_PNPM_STORE_DIR` when it is writable, `.github/actions/turbo-cache`
