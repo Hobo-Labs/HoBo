@@ -320,8 +320,7 @@ and `--scale-set <name>` (repeatable) narrows the default of every scale set
 in it. The verb reaches the API server directly over HTTPS with the pool's
 kubeconfig, which the owner keeps in their store under the pool's
 `connectionRef` upper-cased with `_KUBECONFIG` appended:
-`owner://HOSTINGER_ARC_KUBECONFIG` (`env://HOSTINGER_ARC_KUBECONFIG` is
-accepted for the same entry). It verifies the server against the kubeconfig's
+`owner://HOSTINGER_ARC_KUBECONFIG`, and from nowhere else. It verifies the server against the kubeconfig's
 `certificate-authority-data` and authenticates with its `token` or inline
 client certificate; it reads no kubeconfig file and refuses exec plugins,
 file paths and skipped TLS verification

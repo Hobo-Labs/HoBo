@@ -125,14 +125,11 @@ async function resolveKubeconfig(
 	credentials: CredentialResolver,
 	entry: string,
 ): Promise<string | undefined> {
-	for (const ref of [`owner://${entry}`, `env://${entry}`]) {
-		const material = await credentials
-			.resolve(ref, CREDENTIAL_SCOPE)
-			.catch(() => undefined);
-		const kubeconfig = material?.token;
-		if (kubeconfig !== undefined && kubeconfig !== "") return kubeconfig;
-	}
-	return undefined;
+	const material = await credentials
+		.resolve(`owner://${entry}`, CREDENTIAL_SCOPE)
+		.catch(() => undefined);
+	const kubeconfig = material?.token;
+	return kubeconfig !== undefined && kubeconfig !== "" ? kubeconfig : undefined;
 }
 
 function parseCachesArgs(args: readonly string[]) {
