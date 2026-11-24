@@ -377,7 +377,7 @@ describe("the relay deploy workflow", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-relay-result-report-"));
 		try {
 			const json = join(dir, "result.json");
-			const secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+			const secret = "ghs_relayDeployFixtureToken";
 			writeFileSync(
 				json,
 				JSON.stringify({
@@ -401,7 +401,7 @@ describe("the relay deploy workflow", () => {
 			);
 			assert.equal(redacted.status, 1);
 			assert.match(redacted.stdout, /\[redacted\]/u);
-			assert.doesNotMatch(redacted.stdout, /ghp_/u);
+			assert.doesNotMatch(redacted.stdout, /ghs_/u);
 
 			const missing = spawnSync(
 				process.execPath,

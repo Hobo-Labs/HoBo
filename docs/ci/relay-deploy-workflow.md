@@ -43,7 +43,9 @@ bearer/JWT/credential redaction, including percent-encoded bearer tokens, before
 report script exits nonzero unless the command's
 envelope is a validated success envelope (`ok: true`) with a valid exit
 status — an absent, malformed, or error envelope is a failure even when the
-recorded status is 0. A success envelope may omit `code` (`hobo ci app
+recorded status is 0. The workflow test feeds that script an error envelope
+whose message carries a GitHub App installation-token-shaped value and asserts
+the summary shows `[redacted]` and no `ghs_` prefix. A success envelope may omit `code` (`hobo ci app
 deposit` succeeds with a message only); the report names that case `HOBO_OK`
 (the workflow test runs the delivery step's script
 against a fake `hobo.js` that answers with a credential-shaped message and
