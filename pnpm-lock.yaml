@@ -2334,12 +2334,6 @@ importers:
         specifier: 8.21.0
         version: 8.21.0
 
-  packages/iac/iac-crossplane:
-    dependencies:
-      '@hobo/core':
-        specifier: workspace:*
-        version: link:../../core
-
   packages/iac/iac-pulumi:
     dependencies:
       '@hobo/core':
@@ -2348,12 +2342,6 @@ importers:
       '@pulumi/pulumi':
         specifier: 3.130.0
         version: 3.130.0(typescript@5.9.3)
-
-  packages/iac/iac-terraform:
-    dependencies:
-      '@hobo/core':
-        specifier: workspace:*
-        version: link:../../core
 
   packages/identity:
     dependencies:

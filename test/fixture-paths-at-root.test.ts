@@ -136,17 +136,9 @@ const ALLOWANCES = {
 		literals: { "/nonexistent/elsewhere": 1 },
 		why: "a decoy HOBO_HOME that is compared, never opened: run() always passes hoboHome (test :59), so `deps.hoboHome ??` at src/station-command.ts:43 short-circuits before deps.env",
 	},
-	"packages/iac/iac-crossplane/test/kubectl-cluster.test.ts": {
-		literals: { "/nonexistent/kubectl": 2 },
-		why: "an executable handed to execFileSync, which must fail to launch (src/kubectl-cluster.ts:72)",
-	},
 	"packages/iac/iac-pulumi/test/pulumi-automation-api-engine.test.ts": {
 		literals: { "/nonexistent": 1 },
 		why: "a PATH value so the engine binary cannot be found; the engine reports PULUMI_CLI_MISSING (src/pulumi-automation-api-engine.ts:175)",
-	},
-	"packages/iac/iac-terraform/test/terraform-cli-engine.test.ts": {
-		literals: { "/nonexistent/hcl-binary": 1 },
-		why: "an executable handed to execFileSync, which must fail to launch (src/terraform-cli-engine.ts:287)",
 	},
 	"packages/management/test/projections.test.ts": {
 		literals: { "/nowhere": 1 },
