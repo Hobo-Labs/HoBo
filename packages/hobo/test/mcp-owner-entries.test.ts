@@ -39,7 +39,8 @@ function fakeSessions(
 				held.set(name, value);
 			},
 		}),
-		close: () => undefined,
+		agentVault: () => undefined,
+		close: async () => undefined,
 	};
 }
 

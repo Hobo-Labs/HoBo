@@ -235,3 +235,95 @@ message InfisicalIdentityOidcAuth {
 message InfisicalAttachOidcAuthResponse {
   InfisicalIdentityOidcAuth identity_oidc_auth = 1;
 }
+
+message InfisicalAgentVaultProject {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+}
+
+message InfisicalAgentVaultProjectList {
+  repeated InfisicalAgentVaultProject projects = 1;
+}
+
+message InfisicalAgentVaultService {
+  string name = 1;
+  string type = 2;
+  string host_pattern = 3;
+}
+
+message InfisicalAgentVaultServiceList {
+  repeated InfisicalAgentVaultService services = 1;
+}
+
+message InfisicalAgentVaultProxy {
+  string id = 1;
+  string name = 2;
+  bool is_healthy = 3;
+}
+
+message InfisicalAgentVaultProxyList {
+  repeated InfisicalAgentVaultProxy proxies = 1;
+}
+
+message InfisicalAgentVaultCreateProxyRequest {
+  string project_id = 1;
+  string name = 2;
+  string description = 3;
+  string traffic_policy = 4;
+  uint32 poll_interval = 5;
+}
+
+message InfisicalAgentVaultProxyTokenResponse {
+  InfisicalAgentVaultProxy proxy = 1;
+  string proxy_token = 2;
+}
+
+message InfisicalAgentVaultCertificateAuthority {
+  string certificate = 1;
+  string fingerprint = 2;
+}
+
+message InfisicalAgentVaultCertificateAuthorityResponse {
+  InfisicalAgentVaultCertificateAuthority ca = 1;
+}
+
+message InfisicalAgentVaultCreateSessionRequest {
+  string project_id = 1;
+  repeated string services = 2;
+  string ttl = 3;
+  string label = 4;
+}
+
+message InfisicalAgentVaultSession {
+  string id = 1;
+  string token = 2;
+  string expires_at = 3;
+}
+
+message InfisicalAgentVaultSessionResponse {
+  InfisicalAgentVaultSession session = 1;
+}
+
+message InfisicalAgentVaultSessionCredential {
+  string type = 1;
+  string header = 2;
+  bool added_by_proxy = 3;
+}
+
+message InfisicalAgentVaultPlaceholder {
+  string placeholder = 1;
+  repeated string surfaces = 2;
+}
+
+message InfisicalAgentVaultSessionService {
+  string name = 1;
+  string type = 2;
+  repeated string hosts = 3;
+  InfisicalAgentVaultSessionCredential credential = 4;
+  repeated InfisicalAgentVaultPlaceholder placeholders = 5;
+}
+
+message InfisicalAgentVaultSessionServiceList {
+  repeated InfisicalAgentVaultSessionService services = 1;
+}
