@@ -17,6 +17,7 @@
 // promotion gate decides (I7). No default ever passes on absent evidence.
 import { createHash } from "node:crypto";
 import { create, type JsonValue, toJson } from "@bufbuild/protobuf";
+import { parseTrafficRoutingOfferingId } from "@hobo/core";
 import {
 	DeltaRecordSchema,
 	type ObligationRef,
@@ -205,9 +206,11 @@ export function createRolloutOrchestrator(
 		unit: string,
 		attributes: OtelAttributes,
 	) => {
-		d.telemetry
-			.metrics([{ name, kind, value, unit, atMs: d.now(), attributes }])
-			.catch(() => undefined);
+		try {
+			d.telemetry
+				.metrics([{ name, kind, value, unit, atMs: d.now(), attributes }])
+				.catch(() => undefined);
+		} catch {}
 	};
 
 	async function load(
@@ -465,8 +468,7 @@ export function createRolloutOrchestrator(
 				];
 			}
 			if (zero.observed) continue;
-			const status = await d.traffic.status(asCamp(campId), planId);
-			if (status?.active === true && status.realized === "full")
+			if (await trafficObserved(asCamp(campId), planId))
 				return [
 					await append(
 						state,
@@ -638,6 +640,12 @@ export function createRolloutOrchestrator(
 				{ campId, plan, signal: ctx.signal ?? new AbortController().signal },
 				ctx,
 			);
+			const reported = result.realized;
+			const realized =
+				result.planId === plan.planId &&
+				(reported === "full" || reported === "partial" || reported === "none")
+					? reported
+					: "unknown";
 			metric(
 				"hobo.cd.rollout.shifts",
 				"counter",
@@ -646,18 +654,44 @@ export function createRolloutOrchestrator(
 				attrs(state, {
 					"hobo.camp.id": campId,
 					"hobo.rollout.percent": percent,
-					"hobo.traffic.realized": result.realized,
+					"hobo.traffic.realized": realized,
 				}),
 			);
-			return { realized: result.realized, notes: result.notes };
-		} catch (error) {
+			return {
+				realized,
+				notes:
+					realized === "full"
+						? []
+						: realized === "unknown"
+							? [
+									"Traffic shift outcome is unavailable; reconcile by observation.",
+								]
+							: ["Traffic shift was not fully acknowledged."],
+			};
+		} catch {
 			// Ambiguous outcome: never retried blindly, resolved by observation (I5).
 			return {
 				realized: "unknown",
 				notes: [
-					`shift threw: ${error instanceof Error ? error.message : String(error)}`,
+					"Traffic shift outcome is unavailable; reconcile by observation.",
 				],
 			};
+		}
+	}
+
+	async function trafficObserved(
+		campId: CampId,
+		planId: Parameters<TrafficShifter["status"]>[1],
+	): Promise<boolean> {
+		try {
+			const status = await d.traffic.status(campId, planId);
+			return (
+				status?.planId === planId &&
+				status.active === true &&
+				status.realized === "full"
+			);
+		} catch {
+			return false;
 		}
 	}
 
@@ -1131,11 +1165,12 @@ export function createRolloutOrchestrator(
 					),
 					"progressed",
 				];
-			const status = await d.traffic.status(
-				campId,
-				stagePlanId(state.rolloutId, campId, percent),
-			);
-			if (status?.active === true && status.realized === "full")
+			if (
+				await trafficObserved(
+					campId,
+					stagePlanId(state.rolloutId, campId, percent),
+				)
+			)
 				return [
 					await append(
 						state,
@@ -1318,9 +1353,18 @@ export function createRolloutOrchestrator(
 			const stages = stagePercentsFor(strategy, input.stagePercents);
 			if (!stages.ok) return stages;
 			const targets = promotion.targetCampIds.map(asCamp);
-			const offerings = await Promise.all(
-				targets.map((camp) => d.traffic.offerings(camp)),
-			);
+			let offerings: Awaited<ReturnType<TrafficShifter["offerings"]>>[];
+			try {
+				offerings = await Promise.all(
+					targets.map(async (camp) =>
+						(await d.traffic.offerings(camp)).map((id) =>
+							parseTrafficRoutingOfferingId(id),
+						),
+					),
+				);
+			} catch {
+				throw new Error("Traffic offerings are unavailable.");
+			}
 			const rolloutId = rolloutIdFor({
 				tenant: d.tenant,
 				promotion,

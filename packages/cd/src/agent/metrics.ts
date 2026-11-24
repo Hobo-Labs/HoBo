@@ -18,8 +18,10 @@ export function createMeter(
 ): Meter {
 	return (name, value, attributes = {}, kind = "counter", unit = "1") => {
 		if (!sink) return;
-		sink
-			.metrics([{ name, kind, value, unit, atMs: now(), attributes }])
-			.catch(() => undefined);
+		try {
+			sink
+				.metrics([{ name, kind, value, unit, atMs: now(), attributes }])
+				.catch(() => undefined);
+		} catch {}
 	};
 }
