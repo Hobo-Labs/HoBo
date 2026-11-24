@@ -205,6 +205,7 @@ export type MergeGroupHostedProbe = Readonly<{
 	summary: string;
 	trunkIdle?: boolean | undefined;
 	trunkSummary?: string | undefined;
+	runnerPageIdleTrunk?: boolean | undefined;
 }>;
 
 export type RouteDecision = Readonly<{
@@ -966,6 +967,17 @@ function idleRunnerUnavailable(
 ): string | undefined {
 	if (runners !== undefined && runners.online > runners.busy) return undefined;
 	return `no idle ${label} runner was verified on the fetched runner page`;
+}
+
+export function idleRunnerOnPage(
+	runnersPage: JsonValue,
+	labels: readonly string[],
+): string | undefined {
+	return labels.find(
+		(label) =>
+			idleRunnerUnavailable(fleetPoolRunners(runnersPage, label), label) ===
+			undefined,
+	);
 }
 
 function agent37OverflowUnavailable(
@@ -1961,7 +1973,8 @@ export async function main(
 			});
 		let hostedIdle = false;
 		let hostedSummary = "";
-		let hostedProbe = {
+		let runnerPageIdleTrunk = false;
+		let hostedProbe: MergeGroupHostedProbe = {
 			idle: false,
 			summary: "GitHub-hosted queue unreadable",
 			trunkIdle: false,
@@ -1974,6 +1987,13 @@ export async function main(
 			const hostedLoad = labelLoad(hostedView.jobs, githubLabel, probeAtMs);
 			hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
 			hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
+			if (!hostedIdle) {
+				const runnersPage = await requireRead()(
+					`/repos/${repository}/actions/runners?per_page=100`,
+				).catch(() => null);
+				runnerPageIdleTrunk =
+					idleRunnerOnPage(runnersPage, [trunkLabel]) === trunkLabel;
+			}
 			decision = await chooseRunner({
 				observe: observeTrunk,
 				now,
@@ -2003,9 +2023,10 @@ export async function main(
 				summary: hostedSummary,
 				trunkIdle: decision.tier === "fleet" && decision.runner === trunkLabel,
 				trunkSummary: decision.reason,
+				runnerPageIdleTrunk,
 			};
 			console.log(
-				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${decision.reason}; trunkIdle=${hostedProbe.trunkIdle}`,
+				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${decision.reason}; trunkIdle=${hostedProbe.trunkIdle}; runnerPageIdleTrunk=${runnerPageIdleTrunk}`,
 			);
 		} catch (error) {
 			const detail = error instanceof Error ? error.message : "probe-error";
@@ -2068,7 +2089,7 @@ export async function main(
 				workflowFile(env),
 				io.verifyPrBatchCapacity,
 			))
-		)
+		) {
 			return report(
 				{
 					tier: "github",
@@ -2080,6 +2101,7 @@ export async function main(
 				},
 				env,
 			);
+		}
 		return report(
 			{
 				...decision,
