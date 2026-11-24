@@ -342,7 +342,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   and checks that both real entries scope without giving up. #1652 (ci-gh-actions) and #1653
   (`scripts/run-tests.ts`) would have skipped both jobs: 1–3 slot-minutes each per run, excluding stalls.
 - **State-machine verification runs only when the diff reaches the verification skills.** The four
-  `state-machine-verification` shards held a runner for 5 to 7 minutes each on every pull request and
+  former `state-machine-verification` shards held a runner for 5 to 7 minutes each on every pull request and
   merge group. The PR impact plan's "Decide whether state-machine verification is needed" step pipes the
   event's diff (the PR merge commit's first parent, or the merge group's base, proven-tree delta
   included) into `scripts/ci/state-machine-scope.mts` and outputs `state_machines`. It is `false` only
@@ -360,7 +360,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   merge group when `pr-fabric-green` is `true`; `pr-gate` accepts a skipped run only in those two
   cases. A skipped plan (a signed local run) leaves the output empty, so the job runs. The job is not
   an attestation-covered job: a local run would need Java and TLC. Its build step uses
-  `--concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}`
+  `--concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}`. It is one job rather than a four-shard
+  matrix: it builds once and runs `pnpm run verify:state-machines -- "--jobs=$(nproc)"`, which checks
+  up to that many skills at a time, each in its own scratch and Java temporary directory, and reports
+  them in sorted order. On four vCPUs the 20 skills took 165 seconds against 375 serially, and each run
+  saves three runner pickups and their queue waits
   ([finding 169](../ci/findings/0169-state-machine-verification-ran-on-every-change.md)).
   `scripts/test/state-machine-scope.test.ts` pins the walk on an in-memory tree and checks that the
   repository's own skills scope without giving up.

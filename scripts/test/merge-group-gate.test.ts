@@ -70,8 +70,11 @@ describe("merge-group required gate", () => {
 			verification,
 			/needs: \[route, ci-runner-image, pr_gate_plan\]/u,
 		);
-		assert.match(verification, /shard: \[0, 1, 2, 3\]/u);
-		assert.match(verification, /--shard=\$\{FORMAL_SHARD\}\/4/u);
+		assert.doesNotMatch(verification, /matrix:|--shard=|FORMAL_SHARD/u);
+		assert.match(
+			verification,
+			/verify:state-machines -- "--jobs=\$\(nproc\)"/u,
+		);
 		assert.match(
 			verification,
 			/--concurrency=\$\{HOBO_TURBO_BUILD_CONCURRENCY:-100%\}/u,

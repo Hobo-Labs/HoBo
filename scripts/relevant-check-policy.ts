@@ -717,6 +717,26 @@ export function selectRelevantChecks(
 	if (
 		files.some(
 			(file) =>
+				file === "scripts/verify-all-state-machines.sh" ||
+				file === "scripts/test/verify-all-state-machines.test.ts",
+		)
+	) {
+		checks.push({
+			command: "node",
+			args: [
+				"--import",
+				"tsx",
+				"--test",
+				"scripts/test/verify-all-state-machines.test.ts",
+			],
+			reason:
+				"the aggregate state-machine verifier must keep its selection, shards and bounded parallel jobs",
+		});
+	}
+
+	if (
+		files.some(
+			(file) =>
 				file === "external/ts-autocode" ||
 				file === "pnpm-workspace.yaml" ||
 				file === "tools/pins/siblings.json" ||
