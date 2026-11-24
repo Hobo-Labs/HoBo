@@ -7,11 +7,10 @@ import { describe, expect, it } from "vitest";
 import { createCiCommand } from "../src/ci-command.js";
 import { CI_COMMANDS } from "../src/ci-commands.js";
 import {
-	createCiPerformanceCommand,
+	CI_PERFORMANCE_COMMAND,
 	runnersAgainstBaseline,
 	signalThreshold,
 } from "../src/ci-performance.js";
-import type { CiRunExec } from "../src/ci-runs.js";
 import {
 	fakeGithub,
 	HISTORY_REPOSITORY,
@@ -23,6 +22,7 @@ import {
 	fakeOwnerCredentials,
 	fakeReadApiFetch,
 } from "./support/ci-read-api-fake.js";
+import { routeGithub, withInstallation } from "./support/github-app-fake.js";
 
 const NOW = 1_763_337_600_000;
 const RELAY_ENV = { HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN };
@@ -47,23 +47,24 @@ async function run(
 	options: Readonly<{
 		api?: FakeReadApi;
 		env?: NodeJS.ProcessEnv;
-		execFile?: CiRunExec;
+		github?: typeof fetch;
 	}> = {},
 ) {
 	const api = options.api ?? (await readApi());
+	const relay = fakeReadApiFetch(api);
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
 				env: options.env ?? RELAY_ENV,
-				ownerCredentials: fakeOwnerCredentials(),
+				ownerCredentials: (cwd) =>
+					withInstallation(fakeOwnerCredentials()(cwd)),
 				now: () => NOW,
-				fetch: fakeReadApiFetch(api),
+				fetch:
+					options.github === undefined
+						? relay
+						: routeGithub(options.github, relay),
 				git: async () => tmpdir(),
-				commands: [
-					createCiPerformanceCommand(
-						options.execFile ? { execFile: options.execFile } : {},
-					),
-				],
+				commands: [CI_PERFORMANCE_COMMAND],
 			}),
 		},
 	});
@@ -131,7 +132,7 @@ describe("hobo ci performance", () => {
 		const github = fakeGithub(twoWeeksOfRuns(NOW));
 		const fromGithub = await runJson(
 			["--source", "github", "--repo", HISTORY_REPOSITORY],
-			{ env: {}, execFile: github.execFile },
+			{ env: {}, github: github.fetch },
 		);
 		expect(fromGithub.exitCode).toBe(0);
 		const fromRelay = await runJson([]);
@@ -162,7 +163,7 @@ describe("hobo ci performance", () => {
 					ownerCredentials: fakeOwnerCredentials(),
 					now: () => NOW,
 					fetch: async () => Response.json({ workflows: "many" }),
-					commands: [createCiPerformanceCommand()],
+					commands: [CI_PERFORMANCE_COMMAND],
 				}),
 			},
 		});

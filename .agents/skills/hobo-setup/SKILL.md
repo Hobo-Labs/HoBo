@@ -118,6 +118,24 @@ and admits no exceptions.
 
 Pass `reselect: true` only when the owner wants a different store.
 
+## Working with the owner
+
+- Show a form through the channel that actually displays it: when MCP forms
+  do not appear, use `channel: "page"` and publish the owner page. Open the
+  published page yourself and confirm it renders before pointing the owner at
+  it.
+- Never ask the owner to test, sign in again or re-submit. Verify results
+  yourself. Ask again only when `sign-in-needed` carries a `reason`, and quote
+  it; a Stop hook blocks other asks.
+- Never kill or restart HoBo's MCP server while an owner page or form is open:
+  it holds the one-use key and the sealed answer in memory. The pre-tool hook
+  refuses those commands; let the form finish.
+- Before building a credential, flow or provider, search the code and ADRs for
+  the existing one (HoBo's GitHub App, the owner store session, the owner
+  page). List the hard constraints (no stored secrets, GitHub only through the
+  App, `hobo login --relay` after a restart) against the goal and report a
+  contradiction before building.
+
 If the host or HoBo cannot provide that private flow, report which capability
 is missing. Continue safe implementation and verification authorized by the
 task; do not substitute provider-specific manual setup or claim that the store

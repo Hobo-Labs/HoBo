@@ -284,6 +284,11 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
+					"name": "Test from a detached HEAD, as the merge queue does",
+					"run": "git checkout --quiet --detach HEAD",
+					"local": "run"
+				},
+				{
 					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
@@ -329,7 +334,7 @@
 				},
 				{
 					"name": "Workspace tests",
-					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  merge_group) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\n  *) echo \"Unexpected event: $EVENT_NAME\" >&2; exit 1 ;;\nesac\nif [ \"$EVENT_NAME\" = \"merge_group\" ] && [ -n \"$MERGE_TREE\" ]; then\n  proven=\"$(node --experimental-strip-types --no-warnings scripts/ci/proven-tree.mts \\\n    --proven=\"$MERGE_BASE\" --tree=\"$MERGE_TREE\" --base=\"$MERGE_GROUP_BASE\")\" || proven=\"\"\n  if [ \"$proven\" != \"$MERGE_BASE\" ]; then BASE=\"$MERGE_GROUP_BASE\"; TESTS=\"all\"; fi\nfi\ncase \"$TESTS\" in\n  affected)\n    # Changed packages run whole; their dependents run only the tests\n    # whose import closure reaches a change. A missing base is an error.\n    if [ -z \"$BASE\" ] || ! git cat-file -e \"${BASE}^{commit}\"; then\n      echo \"Merge-group base is missing or unreachable\" >&2\n      exit 1\n    fi\n    git diff --name-only \"$BASE\" HEAD |\n      node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n        --base=\"$BASE\" --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  all)\n    printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  *) echo \"Invalid or missing merge-group test scope: $TESTS\" >&2; exit 1 ;;\nesac\n",
+					"run": "set -euo pipefail\nunset GITHUB_HEAD_REF GITHUB_BASE_REF\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  merge_group) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\n  *) echo \"Unexpected event: $EVENT_NAME\" >&2; exit 1 ;;\nesac\nif [ \"$EVENT_NAME\" = \"merge_group\" ] && [ -n \"$MERGE_TREE\" ]; then\n  proven=\"$(node --experimental-strip-types --no-warnings scripts/ci/proven-tree.mts \\\n    --proven=\"$MERGE_BASE\" --tree=\"$MERGE_TREE\" --base=\"$MERGE_GROUP_BASE\")\" || proven=\"\"\n  if [ \"$proven\" != \"$MERGE_BASE\" ]; then BASE=\"$MERGE_GROUP_BASE\"; TESTS=\"all\"; fi\nfi\ncase \"$TESTS\" in\n  affected)\n    # Changed packages run whole; their dependents run only the tests\n    # whose import closure reaches a change. A missing base is an error.\n    if [ -z \"$BASE\" ] || ! git cat-file -e \"${BASE}^{commit}\"; then\n      echo \"Merge-group base is missing or unreachable\" >&2\n      exit 1\n    fi\n    git diff --name-only \"$BASE\" HEAD |\n      node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n        --base=\"$BASE\" --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  all)\n    printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  *) echo \"Invalid or missing merge-group test scope: $TESTS\" >&2; exit 1 ;;\nesac\n",
 					"env": {
 						"EVENT_NAME": "${{ github.event_name }}",
 						"PR_BASE": "${{ needs.pr_gate_plan.outputs.pr_base }}",
@@ -509,6 +514,11 @@
 					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
+					"name": "Test from a detached HEAD, as the merge queue does",
+					"run": "git checkout --quiet --detach HEAD",
+					"local": "run"
+				},
+				{
 					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
@@ -563,13 +573,13 @@
 				{
 					"name": "Build the packages the scripts tests import",
 					"if": "steps.scope.outputs.run == 'true'",
-					"run": "set -euo pipefail\nBASE=\"$(git rev-parse --verify HEAD^1 2>/dev/null || true)\"\nif [ -z \"$BASE\" ]; then\n  echo \"Scripts-test build base is empty\" >&2\n  exit 1\nfi\nnode --import tsx scripts/ci/scripts-test-imports.mts \\\n  > \"$RUNNER_TEMP/scripts-tests-import-filters\"\nmapfile -t IMPORTED < \"$RUNNER_TEMP/scripts-tests-import-filters\"\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$BASE\" \\\n    > \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\nmapfile -t AFFECTED < \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\npnpm exec turbo run build \\\n  \"${IMPORTED[@]}\" \\\n  \"${AFFECTED[@]}\" \\\n  --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\n",
+					"run": "set -euo pipefail\nBASE=\"$(git rev-parse --verify HEAD^1 2>/dev/null || true)\"\nif [ -z \"$BASE\" ]; then\n  echo \"Scripts-test build base is empty\" >&2\n  exit 1\nfi\nnode --import tsx scripts/ci/scripts-test-imports.mts \\\n  > \"$RUNNER_TEMP/scripts-tests-import-filters\"\nmapfile -t IMPORTED < \"$RUNNER_TEMP/scripts-tests-import-filters\"\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$BASE\" \\\n    > \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\nmapfile -t AFFECTED < \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\npnpm exec turbo run build \\\n  \"${IMPORTED[@]}\" \\\n  \"${AFFECTED[@]}\" \\\n  --output-logs=new-only --concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}\n",
 					"local": "run"
 				},
 				{
 					"name": "Scripts tests",
 					"if": "steps.scope.outputs.run == 'true'",
-					"run": "pnpm run test:scripts --shard=\"$SHARD/$SHARD_TOTAL\"",
+					"run": "env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF pnpm run test:scripts --shard=\"$SHARD/$SHARD_TOTAL\"",
 					"env": {
 						"SHARD": "${{ strategy.job-index }}",
 						"SHARD_TOTAL": "${{ strategy.job-total }}"

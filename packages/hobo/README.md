@@ -861,12 +861,16 @@ A relay that keeps no journal or run history (the stateless hosted relay)
 answers `not-stored-here`, and the commands report `HOBO_CI_NOT_STORED_HERE`.
 `activity` has nothing else to read: no history of route decisions exists
 outside the journal. `usage` and `performance` take `--source github`
-instead: they read the repository's recent runs with the GitHub CLI (`--runs`,
+instead: they read the repository's recent runs from the GitHub REST API with
+an installation token of HoBo's GitHub App on that repository (`--runs`,
 default 50), fold each run and job through the same webhook parser a relay
 uses (`parseInsightWebhook`, `foldInsightWebhook`), and compute the same
-reports, so both sources print and answer alike. With `--source github` the
-included minutes come from GitHub's billing usage API with the CLI's token and
-read "not measured" when it may not see billing. Kept minutes are priced at
+reports, so both sources print and answer alike. Without the owner's store
+session (HoBo MCP `choose_secret_store`) or the App installed on the repository
+(`hobo ci app create`), they answer `HOBO_CI_GITHUB_APP_NEEDED`. With
+`--source github` the included minutes come from GitHub's billing usage API
+with the same installation token and read "not measured" when it may not see
+billing. Kept minutes are priced at
 GitHub's standard Linux rate (`GITHUB_STANDARD_RATE`, with the page and day it
 was read).
 

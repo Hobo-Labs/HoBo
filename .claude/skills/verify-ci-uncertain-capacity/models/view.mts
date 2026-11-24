@@ -1,0 +1,3 @@
+export const title = 'Recover capacity after an uncertain runner';
+export const state = v => v.phase === 'released' ? 'Capacity released' : v.phase !== 'uncertain' ? 'Capacity reserved for runner' : !v.confirmed ? 'Runner uncertain; capacity held' : v.claimed && !v.settled ? 'Teardown confirmed; settlement pending' : 'Teardown confirmed; ready to release';
+export const step = (action, from, to) => to.phase === 'released' ? 'release reserved capacity' : to.phase === 'uncertain' && from.phase !== 'uncertain' ? 'runner status becomes uncertain' : to.confirmed && !from.confirmed ? 'teardown confirmed' : to.settled && !from.settled ? 'execution outcome recorded' : 'runner registers or starts';
