@@ -136,7 +136,8 @@ export function selectWorkerRepoDigest(
 		.map((entry) => validatedWorkerDigestRef(repo, entry.trim()))
 		.filter((ref): ref is string => ref !== null);
 	const image = `ghcr.io/${repo.toLowerCase()}/hobo-ci-worker`;
-	if (matches.length === 1) return matches[0];
+	const [match] = matches;
+	if (matches.length === 1 && match !== undefined) return match;
 	if (matches.length === 0) {
 		throw new Error(
 			`local worker digest unavailable for ${image}; no matching RepoDigests entry`,

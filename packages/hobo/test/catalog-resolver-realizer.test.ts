@@ -21,11 +21,7 @@ import {
 	SetRecordSchema,
 } from "@hobo/cd";
 import { sanitizeObservation } from "@hobo/cd/reconcile";
-import {
-	RESOLVER_ERROR_CODES,
-	type ResolverErrorCode,
-	type TransportRequest,
-} from "@hobo/core";
+import { RESOLVER_ERROR_CODES, type TransportRequest } from "@hobo/core";
 import { isLatin1Transport } from "@hobo/provider-oci-registry";
 import { describe, expect, it } from "vitest";
 import {
@@ -78,7 +74,7 @@ const SURFACED_RESOLVER_CODES = [
 	"RESOLVER_PROVIDER_REJECTED",
 	"RESOLVER_PRODUCT_UNSUPPORTED",
 	"RESOLVER_OUTPUT_UNPARSEABLE",
-] as const satisfies readonly ResolverErrorCode[];
+] as const;
 
 it.each(SURFACED_RESOLVER_CODES)(
 	"surfaces resolver code %s with the provider message",
