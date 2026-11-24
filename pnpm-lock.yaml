@@ -19,7 +19,7 @@ importers:
     devDependencies:
       '@alchemy.run/rivet':
         specifier: 2.0.0-beta.87
-        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.21.0)
+        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(effect@4.1.4)(encoding@0.1.13)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(sql.js@1.14.1)(ws@8.21.0)
       '@ast-grep/cli':
         specifier: ^0.44.0
         version: 0.44.0
@@ -916,6 +916,9 @@ importers:
 
   packages/ci:
     dependencies:
+      '@alchemy.run/domain':
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(06409a3308fa0f0002bb020544ca00d3)
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
@@ -934,6 +937,9 @@ importers:
       '@hobo/pricing':
         specifier: workspace:*
         version: link:../pricing
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -1252,7 +1258,7 @@ importers:
         version: 6.2.4
       vercel:
         specifier: 65.2.0
-        version: 65.2.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(encoding@0.1.13)(rollup@4.62.2)
+        version: 65.2.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(encoding@0.1.13)(rollup@4.62.2)
 
   packages/claims:
     dependencies:
@@ -2296,7 +2302,7 @@ importers:
         version: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)(pg@8.22.0)(typescript@6.0.3)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
       '@alchemy.run/rivet':
         specifier: 2.0.0-beta.87
-        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.21.0)
+        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(effect@4.1.4)(encoding@0.1.13)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(sql.js@1.14.1)(ws@8.21.0)
       '@effect/platform-node':
         specifier: 4.1.4
         version: 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
@@ -2314,7 +2320,7 @@ importers:
         version: 4.20260722.0
       rivetkit:
         specifier: 3.0.0
-        version: 3.0.0(drizzle-kit@0.31.11)(pg@8.22.0)(ws@8.21.0)
+        version: 3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0)
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
@@ -5618,6 +5624,31 @@ packages:
       effect: ^4.1.4
     peerDependenciesMeta:
       '@effect/platform-bun':
+        optional: true
+
+  '@alchemy.run/domain@2.0.0-beta.87':
+    resolution: {integrity: sha512-kgnSf8k0qOBSh9Yisc/SxtkdmR7a5DRVvqq7VW9cGeSwyHg7YtmL1ai35tvXPHfSk+wiEfTOjm87wsArrrHI5Q==}
+    peerDependencies:
+      '@alchemy.run/cloudflare': 2.0.0-beta.87
+      '@alchemy.run/effect-cluster': 2.0.0-beta.87
+      '@alchemy.run/rivet': 2.0.0-beta.87
+      '@distilled.cloud/cloudflare': 1.0.0-rc.20
+      '@effect/sql-pg': ^4.1.4
+      alchemy: 2.0.0-beta.87
+      effect: ^4.1.4
+      foldkit: ^0.170.0
+    peerDependenciesMeta:
+      '@alchemy.run/cloudflare':
+        optional: true
+      '@alchemy.run/effect-cluster':
+        optional: true
+      '@alchemy.run/rivet':
+        optional: true
+      '@distilled.cloud/cloudflare':
+        optional: true
+      '@effect/sql-pg':
+        optional: true
+      foldkit:
         optional: true
 
   '@alchemy.run/node-utils@2.0.0-beta.87':
@@ -17902,6 +17933,13 @@ snapshots:
       alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0)
       effect: 4.1.4
 
+  '@alchemy.run/acme@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)':
+    dependencies:
+      '@distilled.cloud/acme': 1.0.0-rc.20(effect@4.1.4)
+      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
+      effect: 4.1.4
+    optional: true
+
   '@alchemy.run/cloudflare-runtime@2.0.0-beta.87(@distilled.cloud/cloudflare@1.0.0-rc.20(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(effect@4.1.4)(rolldown@1.2.16)(typescript@6.0.3)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))':
     dependencies:
       '@alchemy.run/node-utils': 2.0.0-beta.87
@@ -17924,6 +17962,30 @@ snapshots:
       - '@types/node'
       - proxy-agent
       - typescript
+
+  '@alchemy.run/cloudflare-runtime@2.0.0-beta.87(@distilled.cloud/cloudflare@1.0.0-rc.20(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@26.0.1)(effect@4.1.4)(rolldown@1.2.16)(typescript@6.0.3)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))':
+    dependencies:
+      '@alchemy.run/node-utils': 2.0.0-beta.87
+      '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261026.1)
+      '@distilled.cloud/cloudflare': 1.0.0-rc.20(effect@4.1.4)
+      '@puppeteer/browsers': 3.2.7(yauzl@3.4.0)
+      capnp-es: 0.0.16(typescript@6.0.3)
+      effect: 4.1.4
+      magic-string: 0.30.21
+      mime: 4.1.2
+      sharp: 0.35.5(@types/node@26.0.1)
+      unenv: 2.0.0-rc.24
+      workerd: 1.20261026.1
+      yauzl: 3.4.0
+    optionalDependencies:
+      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
+      rolldown: 1.2.16
+      vite: 8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1)
+    transitivePeerDependencies:
+      - '@types/node'
+      - proxy-agent
+      - typescript
+    optional: true
 
   '@alchemy.run/cloudflare@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)(pg@8.22.0)(typescript@6.0.3)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))':
     dependencies:
@@ -17956,25 +18018,73 @@ snapshots:
       - proxy-agent
       - typescript
 
+  '@alchemy.run/cloudflare@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@26.0.1)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)(pg@8.22.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))':
+    dependencies:
+      '@alchemy.run/acme': 2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)
+      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.87(@distilled.cloud/cloudflare@1.0.0-rc.20(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@26.0.1)(effect@4.1.4)(rolldown@1.2.16)(typescript@6.0.3)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+      '@alchemy.run/docker': 2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)
+      '@alchemy.run/sql': 2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)(pg@8.22.0)
+      '@distilled.cloud/aws': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/aws4signer': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/cloudflare': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/iceberg': 1.0.0-rc.20(effect@4.1.4)
+      '@effect/sql-d1': 4.1.4(effect@4.1.4)
+      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
+      effect: 4.1.4
+      pathe: 2.0.3
+      picomatch: 4.0.7
+      rolldown: 1.2.16
+      tinyglobby: 0.2.17
+    optionalDependencies:
+      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
+      vite: 8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1)
+    transitivePeerDependencies:
+      - '@effect/sql-libsql'
+      - '@effect/sql-mysql2'
+      - '@effect/sql-pg'
+      - '@types/node'
+      - mysql2
+      - pg
+      - proxy-agent
+      - typescript
+    optional: true
+
   '@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)':
     dependencies:
       alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0)
       effect: 4.1.4
       rolldown: 1.2.16
 
+  '@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)':
+    dependencies:
+      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
+      effect: 4.1.4
+      rolldown: 1.2.16
+    optional: true
+
+  '@alchemy.run/domain@2.0.0-beta.87(06409a3308fa0f0002bb020544ca00d3)':
+    dependencies:
+      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
+      effect: 4.1.4
+    optionalDependencies:
+      '@alchemy.run/cloudflare': 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@26.0.1)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)(pg@8.22.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+      '@alchemy.run/rivet': 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4))(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.23.0)
+      '@distilled.cloud/cloudflare': 1.0.0-rc.20(effect@4.1.4)
+
   '@alchemy.run/node-utils@2.0.0-beta.87':
     dependencies:
       chokidar: 5.0.0
       rolldown: 1.2.16
 
-  '@alchemy.run/rivet@2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.21.0)':
+  '@alchemy.run/rivet@2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(effect@4.1.4)(encoding@0.1.13)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(sql.js@1.14.1)(ws@8.21.0)':
     dependencies:
       '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
       '@distilled.cloud/rivet': 1.0.0-rc.20(effect@4.1.4)
       '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
       alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0)
       effect: 4.1.4
-      rivetkit: 3.0.0(drizzle-kit@0.31.11)(pg@8.22.0)(ws@8.21.0)
+      rivetkit: 3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0)
     optionalDependencies:
       '@alchemy.run/docker': 2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)
     transitivePeerDependencies:
@@ -18014,6 +18124,54 @@ snapshots:
       - utf-8-validate
       - ws
 
+  '@alchemy.run/rivet@2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4))(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.23.0)':
+    dependencies:
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/rivet': 1.0.0-rc.20(effect@4.1.4)
+      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
+      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
+      effect: 4.1.4
+      rivetkit: 3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.23.0)
+    optionalDependencies:
+      '@alchemy.run/docker': 2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)
+    transitivePeerDependencies:
+      - '@aws-sdk/client-rds-data'
+      - '@cloudflare/workers-types'
+      - '@electric-sql/pglite'
+      - '@libsql/client'
+      - '@libsql/client-wasm'
+      - '@neondatabase/serverless'
+      - '@op-engineering/op-sqlite'
+      - '@planetscale/database'
+      - '@prisma/client'
+      - '@tidbcloud/serverless'
+      - '@types/better-sqlite3'
+      - '@types/pg'
+      - '@types/sql.js'
+      - '@upstash/redis'
+      - '@vercel/postgres'
+      - '@xata.io/client'
+      - better-sqlite3
+      - bufferutil
+      - bun-types
+      - drizzle-kit
+      - encoding
+      - eventsource
+      - expo-sqlite
+      - gel
+      - knex
+      - kysely
+      - mysql2
+      - pg
+      - postgres
+      - prisma
+      - redis
+      - sql.js
+      - sqlite3
+      - utf-8-validate
+      - ws
+    optional: true
+
   '@alchemy.run/sigil@0.1.0-alpha.4(@types/react@19.2.18)':
     optionalDependencies:
       '@types/react': 19.2.18
@@ -18024,6 +18182,14 @@ snapshots:
       effect: 4.1.4
     optionalDependencies:
       pg: 8.22.0
+
+  '@alchemy.run/sql@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)(pg@8.22.0)':
+    dependencies:
+      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
+      effect: 4.1.4
+    optionalDependencies:
+      pg: 8.22.0
+    optional: true
 
   '@alloc/quick-lru@5.2.0': {}
 
@@ -19017,30 +19183,9 @@ snapshots:
       es-module-lexer: 1.7.0
       oxc-parser: 0.76.0
 
-  '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
-    dependencies:
-      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
-      '@bytecodealliance/wizer': 10.0.0
-      es-module-lexer: 1.7.0
-      oxc-parser: 0.76.0
-    transitivePeerDependencies:
-      - '@emnapi/core'
-      - '@emnapi/runtime'
-
-  '@bytecodealliance/componentize-js@0.21.0':
-    dependencies:
-      '@bytecodealliance/jco': 1.24.3
-      '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
-      '@bytecodealliance/wizer': 10.0.0
-      es-module-lexer: 1.7.0
-      oxc-parser: 0.76.0
-    transitivePeerDependencies:
-      - '@emnapi/core'
-      - '@emnapi/runtime'
-
   '@bytecodealliance/componentize-js@0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
-      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
+      '@bytecodealliance/jco': 1.24.3
       '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@bytecodealliance/wizer': 10.0.0
       es-module-lexer: 1.7.0
@@ -19057,24 +19202,8 @@ snapshots:
 
   '@bytecodealliance/jco@1.24.3':
     dependencies:
-      '@bytecodealliance/componentize-js': 0.21.0
-      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3'
-      '@bytecodealliance/jco-transpile': 0.3.9
-      '@bytecodealliance/preview2-shim': 0.17.9
-      '@bytecodealliance/preview3-shim': 0.1.2
-      binaryen: 130.0.0
-      commander: 14.0.3
-      mkdirp: 3.0.1
-      ora: 8.2.0
-      terser: 5.48.0
-    transitivePeerDependencies:
-      - '@emnapi/core'
-      - '@emnapi/runtime'
-
-  '@bytecodealliance/jco@1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
-    dependencies:
       '@bytecodealliance/componentize-js': 0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
-      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)'
+      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3'
       '@bytecodealliance/jco-transpile': 0.3.9
       '@bytecodealliance/preview2-shim': 0.17.9
       '@bytecodealliance/preview3-shim': 0.1.2
@@ -22045,9 +22174,9 @@ snapshots:
   '@oxc-parser/binding-openharmony-arm64@0.121.0':
     optional: true
 
-  '@oxc-parser/binding-wasm32-wasi@0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+  '@oxc-parser/binding-wasm32-wasi@0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
-      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -22131,9 +22260,9 @@ snapshots:
   '@oxc-transform/binding-openharmony-arm64@0.111.0':
     optional: true
 
-  '@oxc-transform/binding-wasm32-wasi@0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+  '@oxc-transform/binding-wasm32-wasi@0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
-      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -22569,9 +22698,9 @@ snapshots:
   '@rolldown/binding-openharmony-arm64@1.2.16':
     optional: true
 
-  '@rolldown/binding-wasm32-wasi@1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+  '@rolldown/binding-wasm32-wasi@1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
-      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23454,18 +23583,18 @@ snapshots:
 
   '@ungap/structured-clone@1.3.3': {}
 
-  '@vercel/backends@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/backends@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       execa: 3.2.0
       fs-extra: 11.1.0
       get-port: 5.1.1
-      oxc-transform: 0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      oxc-transform: 0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       path-to-regexp: 8.3.0
       resolve.exports: 2.0.3
-      rolldown: 1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      rolldown: 1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       srvx: 0.11.16
       ts-morph: 12.0.0
       tsx: 4.21.0
@@ -23500,9 +23629,9 @@ snapshots:
       cjs-module-lexer: 1.2.3
       es-module-lexer: 1.5.0
 
-  '@vercel/cervel@0.1.87(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/cervel@0.1.87(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
-      '@vercel/backends': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/backends': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23543,11 +23672,11 @@ snapshots:
 
   '@vercel/detect-agent@1.2.7': {}
 
-  '@vercel/elysia@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/elysia@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23557,13 +23686,13 @@ snapshots:
 
   '@vercel/error-utils@2.2.1': {}
 
-  '@vercel/express@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/express@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/cervel': 0.1.87(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/cervel': 0.1.87(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       fs-extra: 11.1.0
       path-to-regexp: 8.3.0
       ts-morph: 12.0.0
@@ -23575,11 +23704,11 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/fastify@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/fastify@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23625,11 +23754,11 @@ snapshots:
     dependencies:
       '@vercel/build-utils': 15.0.1
 
-  '@vercel/h3@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/h3@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23637,12 +23766,12 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/hono@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/hono@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       fs-extra: 11.1.0
       path-to-regexp: 8.3.0
       ts-morph: 12.0.0
@@ -23654,20 +23783,20 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/hydrogen@23.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)':
+  '@vercel/hydrogen@23.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       ts-morph: 12.0.0
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
 
-  '@vercel/koa@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/koa@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23675,11 +23804,11 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/nestjs@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/nestjs@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23715,7 +23844,7 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/node@27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/node@27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@edge-runtime/node-utils': 2.3.0
       '@edge-runtime/primitives': 4.1.0
@@ -23724,7 +23853,7 @@ snapshots:
       '@vercel/build-utils': 15.0.1
       '@vercel/error-utils': 2.2.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       async-listen: 3.0.0
       cjs-module-lexer: 1.2.3
       edge-runtime: 2.5.9
@@ -23785,11 +23914,11 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
 
-  '@vercel/redwood@24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/redwood@24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       semver: 6.3.1
       ts-morph: 12.0.0
     transitivePeerDependencies:
@@ -23799,12 +23928,12 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/remix-builder@27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/remix-builder@27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/error-utils': 2.2.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       path-to-regexp: 6.3.0
       path-to-regexp-updated: path-to-regexp@6.3.0
       ts-morph: 12.0.0
@@ -23863,22 +23992,22 @@ snapshots:
       - bare-abort-controller
       - react-native-b4a
 
-  '@vercel/static-build@24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)':
+  '@vercel/static-build@24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/gatsby-plugin-vercel-analytics': 1.0.12
       '@vercel/gatsby-plugin-vercel-builder': 2.2.79
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       ts-morph: 12.0.0
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
 
-  '@vercel/static-config@3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+  '@vercel/static-config@3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
       ajv: 8.6.3
       json-schema-to-ts: 1.6.4
-      oxc-parser: 0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      oxc-parser: 0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       ts-morph: 12.0.0
     transitivePeerDependencies:
       - '@emnapi/core'
@@ -24300,6 +24429,26 @@ snapshots:
       '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
       vite: 8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1)
       ws: 8.21.0
+    transitivePeerDependencies:
+      - '@types/react'
+      - react-devtools-core
+
+  alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0):
+    dependencies:
+      '@alchemy.run/node-utils': 2.0.0-beta.87
+      '@alchemy.run/sigil': 0.1.0-alpha.4(@types/react@19.2.18)
+      capnweb: 0.12.0
+      effect: 4.1.4
+      fflate: 0.8.3
+      pathe: 2.0.3
+      picomatch: 4.0.7
+      rolldown: 1.2.16
+      tinyglobby: 0.2.17
+      yaml: 2.9.1
+    optionalDependencies:
+      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
+      vite: 8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1)
+      ws: 8.23.0
     transitivePeerDependencies:
       - '@types/react'
       - react-devtools-core
@@ -28100,7 +28249,7 @@ snapshots:
       object-keys: 1.1.1
       safe-push-apply: 1.0.0
 
-  oxc-parser@0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1):
+  oxc-parser@0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3):
     dependencies:
       '@oxc-project/types': 0.121.0
     optionalDependencies:
@@ -28120,7 +28269,7 @@ snapshots:
       '@oxc-parser/binding-linux-x64-gnu': 0.121.0
       '@oxc-parser/binding-linux-x64-musl': 0.121.0
       '@oxc-parser/binding-openharmony-arm64': 0.121.0
-      '@oxc-parser/binding-wasm32-wasi': 0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@oxc-parser/binding-wasm32-wasi': 0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@oxc-parser/binding-win32-arm64-msvc': 0.121.0
       '@oxc-parser/binding-win32-ia32-msvc': 0.121.0
       '@oxc-parser/binding-win32-x64-msvc': 0.121.0
@@ -28148,7 +28297,7 @@ snapshots:
       '@oxc-parser/binding-win32-arm64-msvc': 0.76.0
       '@oxc-parser/binding-win32-x64-msvc': 0.76.0
 
-  oxc-transform@0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1):
+  oxc-transform@0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3):
     optionalDependencies:
       '@oxc-transform/binding-android-arm-eabi': 0.111.0
       '@oxc-transform/binding-android-arm64': 0.111.0
@@ -28166,7 +28315,7 @@ snapshots:
       '@oxc-transform/binding-linux-x64-gnu': 0.111.0
       '@oxc-transform/binding-linux-x64-musl': 0.111.0
       '@oxc-transform/binding-openharmony-arm64': 0.111.0
-      '@oxc-transform/binding-wasm32-wasi': 0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@oxc-transform/binding-wasm32-wasi': 0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@oxc-transform/binding-win32-arm64-msvc': 0.111.0
       '@oxc-transform/binding-win32-ia32-msvc': 0.111.0
       '@oxc-transform/binding-win32-x64-msvc': 0.111.0
@@ -29088,6 +29237,63 @@ snapshots:
 
   reusify@1.1.0: {}
 
+  rivetkit@3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0):
+    dependencies:
+      '@hono/zod-openapi': 1.6.0(hono@4.12.27)(zod@4.4.3)
+      '@opentelemetry/api': 1.9.1
+      '@rivetkit/bare-ts': 0.6.2
+      '@rivetkit/engine-api-full': 3.0.0(encoding@0.1.13)
+      '@rivetkit/engine-cli': 3.0.0
+      '@rivetkit/engine-envoy-protocol': 3.0.0
+      '@rivetkit/on-change': 6.0.1
+      '@rivetkit/rivetkit-napi': 3.0.0
+      '@rivetkit/rivetkit-wasm': 3.0.0
+      '@rivetkit/traces': 3.0.0
+      '@rivetkit/virtual-websocket': 3.0.0
+      '@rivetkit/workflow-engine': 3.0.0
+      cbor-x: 1.6.5
+      drizzle-orm: 0.45.2(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
+      hono: 4.12.27
+      invariant: 2.2.4
+      p-retry: 6.2.1
+      pino: 9.14.0
+      uuid: 12.0.1
+      vbare: 0.0.4
+      zod: 4.4.3
+    optionalDependencies:
+      drizzle-kit: 0.31.11
+      ws: 8.21.0
+    transitivePeerDependencies:
+      - '@aws-sdk/client-rds-data'
+      - '@cloudflare/workers-types'
+      - '@electric-sql/pglite'
+      - '@libsql/client'
+      - '@libsql/client-wasm'
+      - '@neondatabase/serverless'
+      - '@op-engineering/op-sqlite'
+      - '@planetscale/database'
+      - '@prisma/client'
+      - '@tidbcloud/serverless'
+      - '@types/better-sqlite3'
+      - '@types/pg'
+      - '@types/sql.js'
+      - '@upstash/redis'
+      - '@vercel/postgres'
+      - '@xata.io/client'
+      - better-sqlite3
+      - bun-types
+      - encoding
+      - expo-sqlite
+      - gel
+      - knex
+      - kysely
+      - mysql2
+      - pg
+      - postgres
+      - prisma
+      - sql.js
+      - sqlite3
+
   rivetkit@3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.23.0):
     dependencies:
       '@hono/zod-openapi': 1.6.0(hono@4.12.27)(zod@4.4.3)
@@ -29145,63 +29351,6 @@ snapshots:
       - sql.js
       - sqlite3
 
-  rivetkit@3.0.0(drizzle-kit@0.31.11)(pg@8.22.0)(ws@8.21.0):
-    dependencies:
-      '@hono/zod-openapi': 1.6.0(hono@4.12.27)(zod@4.4.3)
-      '@opentelemetry/api': 1.9.1
-      '@rivetkit/bare-ts': 0.6.2
-      '@rivetkit/engine-api-full': 3.0.0(encoding@0.1.13)
-      '@rivetkit/engine-cli': 3.0.0
-      '@rivetkit/engine-envoy-protocol': 3.0.0
-      '@rivetkit/on-change': 6.0.1
-      '@rivetkit/rivetkit-napi': 3.0.0
-      '@rivetkit/rivetkit-wasm': 3.0.0
-      '@rivetkit/traces': 3.0.0
-      '@rivetkit/virtual-websocket': 3.0.0
-      '@rivetkit/workflow-engine': 3.0.0
-      cbor-x: 1.6.5
-      drizzle-orm: 0.45.2(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
-      hono: 4.12.27
-      invariant: 2.2.4
-      p-retry: 6.2.1
-      pino: 9.14.0
-      uuid: 12.0.1
-      vbare: 0.0.4
-      zod: 4.4.3
-    optionalDependencies:
-      drizzle-kit: 0.31.11
-      ws: 8.21.0
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/sql.js'
-      - '@upstash/redis'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - encoding
-      - expo-sqlite
-      - gel
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - sql.js
-      - sqlite3
-
   rolldown-plugin-dts@0.13.14(@typescript/native-preview@7.0.0-dev.20260630.1)(rolldown@1.2.16)(typescript@6.0.3):
     dependencies:
       '@babel/generator': 7.29.8
@@ -29220,7 +29369,7 @@ snapshots:
       - oxc-resolver
       - supports-color
 
-  rolldown@1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1):
+  rolldown@1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3):
     dependencies:
       '@oxc-project/types': 0.110.0
       '@rolldown/pluginutils': 1.0.0-rc.1
@@ -29235,7 +29384,7 @@ snapshots:
       '@rolldown/binding-linux-x64-gnu': 1.0.0-rc.1
       '@rolldown/binding-linux-x64-musl': 1.0.0-rc.1
       '@rolldown/binding-openharmony-arm64': 1.0.0-rc.1
-      '@rolldown/binding-wasm32-wasi': 1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@rolldown/binding-wasm32-wasi': 1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@rolldown/binding-win32-arm64-msvc': 1.0.0-rc.1
       '@rolldown/binding-win32-x64-msvc': 1.0.0-rc.1
     transitivePeerDependencies:
@@ -29555,6 +29704,40 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
       '@types/node': 24.13.2
+
+  sharp@0.35.5(@types/node@26.0.1):
+    dependencies:
+      '@img/colour': 1.1.0
+      detect-libc: 2.1.2
+      semver: 7.8.5
+    optionalDependencies:
+      '@img/sharp-darwin-arm64': 0.35.5
+      '@img/sharp-darwin-x64': 0.35.5
+      '@img/sharp-freebsd-wasm32': 0.35.5
+      '@img/sharp-libvips-darwin-arm64': 1.3.4
+      '@img/sharp-libvips-darwin-x64': 1.3.4
+      '@img/sharp-libvips-linux-arm': 1.3.4
+      '@img/sharp-libvips-linux-arm64': 1.3.4
+      '@img/sharp-libvips-linux-ppc64': 1.3.4
+      '@img/sharp-libvips-linux-riscv64': 1.3.4
+      '@img/sharp-libvips-linux-s390x': 1.3.4
+      '@img/sharp-libvips-linux-x64': 1.3.4
+      '@img/sharp-libvips-linuxmusl-arm64': 1.3.4
+      '@img/sharp-libvips-linuxmusl-x64': 1.3.4
+      '@img/sharp-linux-arm': 0.35.5
+      '@img/sharp-linux-arm64': 0.35.5
+      '@img/sharp-linux-ppc64': 0.35.5
+      '@img/sharp-linux-riscv64': 0.35.5
+      '@img/sharp-linux-s390x': 0.35.5
+      '@img/sharp-linux-x64': 0.35.5
+      '@img/sharp-linuxmusl-arm64': 0.35.5
+      '@img/sharp-linuxmusl-x64': 0.35.5
+      '@img/sharp-webcontainers-wasm32': 0.35.5
+      '@img/sharp-win32-arm64': 0.35.5
+      '@img/sharp-win32-ia32': 0.35.5
+      '@img/sharp-win32-x64': 0.35.5
+      '@types/node': 26.0.1
+    optional: true
 
   shebang-command@1.2.0:
     dependencies:
@@ -30530,35 +30713,35 @@ snapshots:
 
   vbare@0.0.4: {}
 
-  vercel@65.2.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(encoding@0.1.13)(rollup@4.62.2):
+  vercel@65.2.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(encoding@0.1.13)(rollup@4.62.2):
     dependencies:
-      '@vercel/backends': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/backends': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/blob': 2.8.0
       '@vercel/build-utils': 15.0.1
       '@vercel/cli-auth': 0.3.12
       '@vercel/cli-config': 0.3.3
       '@vercel/container': 22.0.1(@vercel/build-utils@15.0.1)
       '@vercel/detect-agent': 1.2.7
-      '@vercel/elysia': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/express': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/fastify': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/elysia': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/express': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/fastify': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/fun': 1.3.6(encoding@0.1.13)
       '@vercel/go': 25.0.1(@vercel/build-utils@15.0.1)
-      '@vercel/h3': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/hono': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/hydrogen': 23.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)
-      '@vercel/koa': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/nestjs': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/h3': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/hono': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/hydrogen': 23.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)
+      '@vercel/koa': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/nestjs': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/next': 26.0.1(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/prepare-flags-definitions': 0.6.1
       '@vercel/python': 28.0.1(@vercel/build-utils@15.0.1)
       '@vercel/python-analysis': 0.15.2
-      '@vercel/redwood': 24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/remix-builder': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/redwood': 24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/remix-builder': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/ruby': 24.0.1(@vercel/build-utils@15.0.1)
       '@vercel/rust': 23.0.1(@vercel/build-utils@15.0.1)
-      '@vercel/static-build': 24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)
+      '@vercel/static-build': 24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)
       chokidar: 4.0.0
       esbuild: 0.27.0
       jose: 5.9.6

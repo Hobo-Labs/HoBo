@@ -909,3 +909,13 @@ yet, and no relay writes the provider-health file today. The wiring, in
   over the relay's finished job facts for the owner since the window start;
 - build `LedgerSpendReader` from the ledger's settled leases and the same
   finished job facts.
+
+## Alchemy Domain: `CiFleet` (`@hobo/ci/domain`)
+
+`@hobo/ci/domain` models multi-tier CI runner balancing as an `@alchemy.run/domain` bounded context:
+
+- **Aggregates**: `StationFleet` balances traffic across `local`, `hostinger`, `agent37`, and `github` runner tiers by role, lowest utilization ratio, lowest cost per minute, and deterministic tier priority while enforcing station and payer budget ceilings; `JobDispatch` enforces immutable start-binding (`StartBindingConflict`) and queue expiry.
+- **Saga & External System**: `DispatchJob` executes multi-tier failover across tiers through the `RunnerBackend` `Domain.ExternalSystem` with compensation-safe slot release (`ReleaseBalancedSlot`) on provisioning or bind failures.
+- **Views & API**: `FleetCapacityView`, `RoutingAuditView`, and `CiFleetApi` expose typed read models and in-process/hosted command dispatch.
+- **Superseded persistence removed**: `PostgresStrictFleetStore` and its Testcontainers harness were removed from `fleet-v2` in favor of the `CiFleet` domain model.
+
