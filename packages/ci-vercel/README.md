@@ -929,6 +929,38 @@ an MCP client waits by default. `test/function-limits.test.ts` fails if the
 two numbers differ. The server reads through the store's `observer()`, and
 `wait_for_events` reads the store's change ring.
 
+### Owner sign-in
+
+`/v1/owner-login/*` lets a restarted HoBo process reconnect to this relay with
+one GitHub confirmation instead of the owner setup form
+(`createRelayOwnerLogin` in `@hobo/ci-gh-actions`, mounted by
+`src/stateless-composition.ts`). `POST /v1/owner-login/device` starts GitHub's
+device flow with the App's client id and returns GitHub's user code with a
+device code the relay sealed (AES-256-GCM, key derived by HKDF from
+`HOBO_CI_SESSION_KEY`), so only the relay can redeem it. `POST
+/v1/owner-login/token` redeems it at GitHub, checks the GitHub account against
+the installations of `HOBO_CI_BOOTSTRAP_ACCOUNT_ID`'s control credentials
+(`relayOwnerAccount`: the installation's user, or an active administrator of its
+organization, through the App's `members: read`), revokes the user token with the
+App's client secret and returns an eight-hour sealed session. `POST
+/v1/owner-login/credentials` takes that session as a bearer and resolves
+`github-app://<owner>/<repo>` to an installation token for a repository the
+account binds, or `owner://HOBO_CI_ACCOUNT_TOKEN` to a 15-minute sealed
+account credential that the account API (and the relay's MCP server) accept
+with the account's scopes. Any other entry is `not_resolvable`: the relay never
+returns its App private key or a stored entry. Nothing is written to the cache
+or the config service; every value is sealed and checked statelessly, and a
+configuration that drops the account ends its sessions. Refusals follow RFC 8628
+(`authorization_pending`, `slow_down`, `access_denied`, `expired_token`) plus
+`not_owner`, `not_configured`, `device_flow_unavailable`, `session_required`,
+`not_bound`, `not_resolvable`, `invalid_request` and `github_refused`. The
+messages are `relay_owner_login.proto` with `relay_owner_login.cue` in
+`@hobo/ci-gh-actions`; `contracts/relay-owner-login.provider.test.ts` verifies
+HoBo's consumer pact (`packages/hobo/contracts/relay-owner-login.pact.json`)
+against the composed relay, and `test/stateless-owner-login.test.ts` checks that
+the account credential reaches the account API and expires. A live GitHub
+confirmation is a release check.
+
 ### Setup mode
 
 While the relay cannot start (its config-service folder is incomplete, or the
