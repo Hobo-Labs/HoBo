@@ -39,7 +39,7 @@ on. A run that could not read its window (rate limit, request budget, API failur
 **Requests.** At most 100 runs, newest first (`truncated` in the report when more fell in the window); each
 run's jobs (one page); the annotations of two check runs per run, the route job (**Route runners**) and, on
 main-gate runs, **Main workspace plan**, whose `reroute` step prints the same titles. With the artifact, the
-relay freshness reads and the issue calls, a run makes at most 317 requests against a hard budget of 350. A rate-limit answer ends the run as failed (exit 2) without opening an issue.
+relay freshness reads and the issue calls, a run makes at most 315 requests against a hard budget of 350. A rate-limit answer ends the run as failed (exit 2) without opening an issue.
 
 **Relay freshness.** `GET /healthz` on the same origin names the commit the relay serves; the repository's
 default branch is compared with it (`GET /repos/{owner}/{repo}` and one `compare`), and the files changed since

@@ -1007,7 +1007,6 @@ export type MainIo = Readonly<{
 	fetch: typeof fetch;
 	now: () => number;
 	log: (line: string) => void;
-	/** The contents of `.hobo/ci.json`. */
 	relayConfig: string;
 	relayInputs: string;
 }>;
