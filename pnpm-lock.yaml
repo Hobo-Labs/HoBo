@@ -649,6 +649,9 @@ importers:
 
   packages/backend-routing:
     dependencies:
+      '@alchemy.run/domain':
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(6a2b1c1a98d880b220f9fa05857a5eaf)
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
@@ -658,6 +661,9 @@ importers:
       '@hobo/fleet':
         specifier: workspace:*
         version: link:../fleet
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
     devDependencies:
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
@@ -811,7 +817,7 @@ importers:
     dependencies:
       '@alchemy.run/domain':
         specifier: 2.0.0-beta.87
-        version: 2.0.0-beta.87(02c6a16fa1fc84c2aea0df96e864b99d)
+        version: 2.0.0-beta.87(013b5688d7b13a4cfcf1fc1d3158d62d)
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
@@ -945,7 +951,7 @@ importers:
     dependencies:
       '@alchemy.run/domain':
         specifier: 2.0.0-beta.87
-        version: 2.0.0-beta.87(02c6a16fa1fc84c2aea0df96e864b99d)
+        version: 2.0.0-beta.87(013b5688d7b13a4cfcf1fc1d3158d62d)
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
@@ -19296,7 +19302,7 @@ snapshots:
       rolldown: 1.2.16
     optional: true
 
-  '@alchemy.run/domain@2.0.0-beta.87(02c6a16fa1fc84c2aea0df96e864b99d)':
+  '@alchemy.run/domain@2.0.0-beta.87(013b5688d7b13a4cfcf1fc1d3158d62d)':
     dependencies:
       alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
       effect: 4.1.4

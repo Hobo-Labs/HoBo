@@ -12,15 +12,21 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./domain": {
+			"types": "./dist/domain/index.d.ts",
+			"default": "./dist/domain/index.js"
 		}
 	},
 	"publishConfig": {
 		"access": "public"
 	},
 	"dependencies": {
+		"@alchemy.run/domain": "2.0.0-beta.87",
 		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/core": "workspace:*",
-		"@hobo/fleet": "workspace:*"
+		"@hobo/fleet": "workspace:*",
+		"effect": "4.1.4"
 	},
 	"devDependencies": {
 		"@hobo/kv-redis-compatible": "workspace:*",
