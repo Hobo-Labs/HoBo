@@ -9,8 +9,8 @@ to a store, provisions it and hands it to the owner by claim
 The relay reads it through [`@hobo/adapter-infisical`](../adapters/adapter-infisical/README.md).
 
 What exists now: the loader (`src/relay-runtime-config.ts`), the adapter,
-`hobo ci app create`, and (phase 6) the relay's Yard and the deploy workflow on
-`main` ([below](#the-deploy-workflow-on-main)). Since phase 4b `entry.ts` loads the relay's configuration
+`hobo ci app create`, and (phase 6) the relay's Yard and its delivery through
+HoBo with the owner's store session ([below](#the-deploy-workflow-on-main)). Since phase 4b `entry.ts` loads the relay's configuration
 through this loader (see [The stateless relay](README.md#the-stateless-relay)),
 and the queue consumers read the handoff origin and `CRON_SECRET` from it.
 Nothing here has been run against Infisical, GitHub or Vercel; the tests use
@@ -197,32 +197,27 @@ owner handles no secret value on the default path:
   ever typed by a person, into the HoBo MCP App (`capture_secret` on
   `hobo-mcp`), never into the chat; it goes sealed from the form to the MCP
   server to the store. See [`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
-- **Verifying**, by identity name: `hobo-ci-deploy-reader` in the deploy
-  workflow's *Verify the secret store connection* step (`hobo ci secret-store
-  verify --identity reader`) must read `VERCEL_TOKEN` without logging it, have
-  exactly Viewer, and receive HTTP **403** for relay-folder listing and direct
-  token read plus HTTP **404** for relay-project membership. `hobo-ci-writer` is
-  verified separately by `verify --identity writer` in `hobo-ci-app-credentials`:
-  it must sign in and receive the same read/membership refusals for the deploy
-  project. The relay identity receives those checks wherever its Vercel token is
-  available and is also checked by `/readyz` after deployment. Verification never
-  writes a probe secret, and every issued session is revoked. An unfiltered
-  `verify` requires every applicable identity to pass; missing GitHub or Vercel
-  OIDC fails closed. Branch protection can require named workflow jobs, not
-  these verification steps. `Decide whether to deploy` is the canonical push
-  check; its credential-free skip is explicit and leaves the reader unverified.
-  Once the binding is complete, require `Deploy the hosted CI relay
-  (production)` when reader and relay verification are required on that path.
+- **Verifying**, by identity name: `hobo ci secret-store verify --identity
+  reader` checks that `hobo-ci-deploy-reader` reads `VERCEL_TOKEN` without
+  logging it, has exactly Viewer, and receives HTTP **403** for relay-folder
+  listing and direct token read plus HTTP **404** for relay-project membership;
+  no workflow runs it since the relay deploys only from an owner store session.
+  `hobo-ci-writer` is verified by `verify --identity writer` in
+  `hobo-ci-app-credentials`: it must sign in and receive the same
+  read/membership refusals for the deploy project. The relay identity receives
+  those checks wherever its Vercel token is available and is also checked by
+  `/readyz` after deployment. Verification never writes a probe secret, and
+  every issued session is revoked. An unfiltered `verify` requires every
+  applicable identity to pass; missing GitHub or Vercel OIDC fails closed.
   `Deposit the GitHub App's credentials` runs only through the manual
   `app-credentials.yml` caller and is not a push check. A skipped job is never
-  successful reader, writer, or relay verification. Failures print only
-  `oidc_aud`, never an identity id, an OIDC subject, an access token or a
-  secret value. Both workflow
-  verification steps run `scripts/ci/relay-deploy-secret-store-verify-report.mts` so empty stdout or
-  stderr-only crashes fail loudly. Before either job installs or signs in,
-  `scripts/ci/relay-deploy-environment.mts` uses the job's scoped `GITHUB_TOKEN`
-  to require an exact `main`-only custom deployment branch policy. The
-  deploy-token read never signs in as the writer.
+  successful writer verification. Failures print only `oidc_aud`, never an
+  identity id, an OIDC subject, an access token or a secret value. The writer
+  verification step runs `scripts/ci/relay-deploy-secret-store-verify-report.mts`
+  so empty stdout or stderr-only crashes fail loudly. Before the job installs
+  or signs in, `scripts/ci/relay-deploy-environment.mts` uses the job's scoped
+  `GITHUB_TOKEN` to require an exact `main`-only custom deployment branch
+  policy.
 
 ### Least privilege on Infisical Cloud Free (attach)
 
@@ -278,21 +273,17 @@ project at its root, read by the dedicated `deployCredentialIdentityId`, never
 the writer in `deployIdentityId`. The owner must create `hobo-ci-deploy`, its
 read-only `hobo-ci-deploy-reader` identity, and deposit the token at its root
 through the MCP capture connector's `deploy` target (or `hobo-secret-writer`).
-A binding without `deployProjectId`, `deployCredentialIdentityId`, and
-`deployOidcSubject` is credential-free: a direct real deploy fails closed before
-requesting GitHub OIDC or authenticating to Infisical, while `--dry-run` can
-inspect the plan. A missing project or token stops preview after repair.
-**Built, not proven**: owner provisioning of that project, identity and token is
-still required, and no qualifying production run is linked yet. After
-provisioning, link both observations here:
+`hobo ci deploy` no longer reads the deploy project: it reads the Vercel deploy
+token through the owner's store session (`owner://HOBO_CD_VERCEL_TOKEN`, kept
+by `hobo cd up`), and no GitHub Actions job deploys the relay. The deploy
+project and reader remain part of the binding `connect` records.
+**Built, not proven**: no qualifying production run is linked yet. Link both
+observations here:
 
-- A successful production `relay-deploy` run whose *Verify the protected deploy
-  environment* step attests the exact `main`-only policy; whose *Verify the
-  secret store connection* step passes the reader with exactly Viewer, HTTP 403
-  for the relay-folder listing and direct token read, and HTTP 404 for relay-
-  project membership; whose preview step records `deploy token read from the
-  deploy credential project as hobo-ci-deploy-reader`; and
-  whose production deploy and origin verification succeed.
+- A successful `hobo ci deploy --target production --build prebuilt --wait`
+  run from an owner store session whose progress records `deploy token read
+  from the owner's store session`, and whose production deploy and origin
+  verification (`/healthz` naming the commit, `/readyz` 200) succeed.
 - A successful `app-credentials` run whose *Verify the protected writer
   environment* step attests the exact `main`-only policy and whose writer check
   passes sign-in, HTTP 403 deploy-project read isolation, and HTTP 404 deploy-
@@ -302,9 +293,8 @@ An OIDC-only verification or skipped deploy is not evidence. Record only run
 links, secret references and outcomes, never the token or OIDC JWT.
 
 **Cutover sequence** (fail closed while incomplete): `hobo ci deploy --dry-run`
-can still plan; every real deploy refuses a
-credential-free binding before GitHub OIDC or Infisical authentication. The
-owner (Tyler) completes provisioning before enabling deployment:
+can still plan; every real deploy refuses without the owner's store session.
+The owner (Tyler) completes provisioning of the writer's protected environment:
 
 1. In GitHub, create protected environments `hobo-ci-deploy` and
    `hobo-ci-app-credentials`. Each must have exactly one custom deployment branch
@@ -419,22 +409,17 @@ production `/readyz` stays not ready and HoBo never qualifies it.
 
 ## The deploy workflow on `main`
 
+No GitHub Actions workflow deploys the relay. The relay deploys only through
+HoBo with the owner's store session: `hobo ci deploy --build prebuilt` (or
+`hobo ci up` for preview) after HoBo MCP's `choose_secret_store`, which reads
+the relay's coordinates (`HOBO_CI_SECRET_STORE_BINDING`) and the Vercel deploy
+token (`owner://HOBO_CD_VERCEL_TOKEN`) from that session and fails closed with
+`HOBO_CI_SECRET_STORE_SESSION_REQUIRED` without one. No identifier is
+committed, and none is an Actions secret or variable.
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
-holds no store coordinates: none is committed, and none is an Actions secret or
-variable. Its unprotected gate therefore deploys nothing on a push. On a push
-that changes the relay it posts a notice that the relay deploys through
-`hobo cd` with the owner's store session (`hobo ci deploy --build prebuilt`
-after HoBo MCP's `choose_secret_store`). A manual run (Actions → HoBo relay
-deploy → Run workflow) starts the protected deploy job, whose `hobo` commands
-stop with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` unless an owner store session
-is established for them. With one, the protected deploy job signs in
-with its GitHub Actions OIDC token as `hobo-ci-deploy-reader` from
-`deployCredentialIdentityId` and reads `VERCEL_TOKEN` from the deploy project's
-root, masked in the log. A direct deploy with no configured credential stops
-before sign-in. A `route` job picks the
-runner first, as `hobo-ci.yml` does (the fleet while it takes jobs, an
-enrolled box, else GitHub-hosted), so a busy fleet no longer holds the deploy
-and every later one in its concurrency group.
+has no push or manual trigger: it keeps only the reusable `app-credentials`
+job that [`app-credentials.yml`](../../.github/workflows/app-credentials.yml)
+calls, and a `route` job that picks its runner.
 
 How `VERCEL_TOKEN` gets into the store is a claim step, designed and not built
 (the amendment's [deploy credential](../../docs/design/adr/hosted-relay-stateless.md#the-deploy-credential)
@@ -472,9 +457,8 @@ because preview qualified it, sets the production Camp's non-secret
 configuration, waits for READY and verifies `/healthz` and `/readyz` (each must
 answer 200). Production is not deployed until preview qualifies the commit; a
 production deployment that fails verification stays live on Vercel (nothing
-rolls it back) and is not qualified. The workflow does not run it today: it
-holds no Vercel token (secretless first), so Vercel's Git integration deploys
-and the workflow records no relay Freight. The cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
+rolls it back) and is not qualified. No workflow runs it: only an owner store
+session holds the Vercel token. The cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
 deploy token in its environment: it lists the project's `upstash` resources,
 and, when `hobo-ci-cache` is missing, connects the team's resource of that name
 for production or provisions one (`vercel integration add upstash/upstash-kv

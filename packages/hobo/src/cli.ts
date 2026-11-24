@@ -337,7 +337,19 @@ export function createComposedHoboCli(
 				// The relay is placed through its own Yards (the Vercel project
 				// hobo-ci and the Yards its junction joins), and `up` delivers it.
 				plan: createCiRelayPlanCommand(runtime, plan),
-				upWith: (credentials) => createCiRelayUpCommand(credentials, up),
+				upWith: (credentials) =>
+					createCiRelayUpCommand(
+						credentials,
+						up,
+						options.ownerSession !== undefined
+							? {
+									owner: {
+										credentials: options.ownerSession.credentials,
+										entries: options.ownerSession.entries,
+									},
+								}
+							: {},
+					),
 				status: ci,
 				fallback: ci,
 			}),

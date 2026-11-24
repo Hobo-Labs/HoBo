@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
 
 /** The signals, in the order the report lists them. */
-export const SIGNALS = ["H1", "H2", "H3", "H6", "H8"] as const;
+export const SIGNALS = ["H1", "H2", "H3", "H6", "H8", "H11"] as const;
 export type Signal = (typeof SIGNALS)[number];
 
 export const SIGNAL_NAMES = {
@@ -14,6 +14,7 @@ export const SIGNAL_NAMES = {
 	H3: "no routing slip",
 	H6: "stall",
 	H8: "paid minutes",
+	H11: "relay stale",
 } as const satisfies Readonly<Record<Signal, string>>;
 
 /** Runs read per window; past this the report says `truncated`. */
@@ -28,6 +29,7 @@ export const REQUEST_TIMEOUT_MS = 15_000;
 export const ARTIFACT_NAME = "ci-health-report";
 export const REPORT_FILE = "ci-health-report.json";
 export const ISSUE_LABEL = "ci-health";
+export const RELAY_INPUTS_FILE = "relay-inputs.json";
 
 /** The route job of every routed workflow, and the main gate's plan job that asks again. */
 export const ROUTE_JOB = "Route runners";
@@ -143,6 +145,16 @@ export type Annotation = Readonly<{
 	message: string;
 }>;
 
+export type RelayFreshness =
+	| Readonly<{
+			kind: "known";
+			served: string;
+			branch: string;
+			behindBy: number;
+			relayFiles: readonly string[];
+	  }>
+	| Readonly<{ kind: "unknown"; why: string }>;
+
 /** One run of the window: the run, its jobs, and the route annotations by job id. */
 export type RunPages = Readonly<{
 	run: WorkflowRun;
@@ -153,6 +165,7 @@ export type RunPages = Readonly<{
 /** Everything one window's runs left behind. */
 export type WindowData = Readonly<{
 	runs: readonly RunPages[];
+	relay: RelayFreshness;
 }>;
 
 /** The runs of a `GET /repos/{r}/actions/runs` page. */
@@ -245,6 +258,7 @@ export type Signals = Readonly<{
 	H3: SignalResult;
 	H6: SignalResult;
 	H8: SignalResult;
+	H11: SignalResult;
 }>;
 
 export type HealthReport = Readonly<{
@@ -500,6 +514,23 @@ export function signalH8(
 	};
 }
 
+export function signalH11(relay: RelayFreshness): SignalResult {
+	if (relay.kind === "unknown")
+		return { state: "unknown", summary: relay.why, evidence: [] };
+	const served = relay.served.slice(0, 12);
+	if (relay.relayFiles.length === 0)
+		return {
+			state: "clear",
+			summary: `the relay serves ${served}; ${plural(relay.behindBy, "later commit")} on ${relay.branch} changed none of its sources`,
+			evidence: [],
+		};
+	return {
+		state: "breach",
+		summary: `the relay serves ${served}, behind ${relay.branch}: ${plural(relay.relayFiles.length, "relay source")} changed since; deploy it through HoBo with the owner's store session (hobo ci deploy)`,
+		evidence: cap(relay.relayFiles),
+	};
+}
+
 export type EvaluateInput = Readonly<{
 	repository: string;
 	data: WindowData;
@@ -522,6 +553,7 @@ export function evaluate(input: EvaluateInput): HealthReport {
 		H3: signalH3(evidence),
 		H6: signalH6(input.data.runs, input.nowMs, input.thresholds.stallMinutes),
 		H8: h8.result,
+		H11: signalH11(input.data.relay),
 	};
 	const breach = SIGNALS.some((signal) => signals[signal].state === "breach");
 	return {
@@ -594,6 +626,24 @@ export function issueBody(
 		"",
 		"See docs/ci/health-monitor.md for what this signal means and what to do.",
 	].join("\n");
+}
+
+export function parseRelayOrigin(text: string): string | undefined {
+	const project = asObject(parseJson(text));
+	const environment = asObject(
+		asObject(project?.environments)?.[
+			asText(project?.defaultEnvironment) ?? ""
+		],
+	);
+	let url: URL;
+	try {
+		url = new URL(asText(environment?.relayOrigin) ?? "");
+	} catch {
+		return undefined;
+	}
+	if (url.protocol !== "https:" || url.username || url.password)
+		return undefined;
+	return url.origin;
 }
 
 // --- The previous report, from the newest uploaded artifact ---
@@ -773,6 +823,80 @@ export async function readWindow(
 	return { runs, truncated: total > MAX_RUNS };
 }
 
+const COMMIT = /^[0-9a-f]{40}$/u;
+const COMPARE_FILE_LIMIT = 300;
+
+export function parseRelayInputs(text: string): readonly string[] {
+	return asList(parseJson(text)).flatMap((entry) => {
+		const dir = asText(entry);
+		return dir ? [dir] : [];
+	});
+}
+
+export function touchesRelayInput(
+	file: string,
+	inputDirs: readonly string[],
+): boolean {
+	return inputDirs.some((dir) => file === dir || file.startsWith(`${dir}/`));
+}
+
+export async function readRelayFreshness(
+	http: Http,
+	repository: string,
+	origin: string | undefined,
+	inputDirs: readonly string[],
+): Promise<RelayFreshness> {
+	if (!origin)
+		return { kind: "unknown", why: "no relay named in .hobo/ci.json" };
+	if (inputDirs.length === 0)
+		return {
+			kind: "unknown",
+			why: "the relay's source directories are unknown",
+		};
+	try {
+		const health = await http.raw(`${origin}/healthz`, {
+			Accept: "application/json",
+		});
+		if (!health.ok)
+			return { kind: "unknown", why: `/healthz answered ${health.status}` };
+		const served = asText(asObject(parseJson(await health.text()))?.commit);
+		if (!served || !COMMIT.test(served))
+			return { kind: "unknown", why: "/healthz names no commit" };
+		const branch = asText(
+			asObject(await http.github(`/repos/${repository}`))?.default_branch,
+		);
+		if (!branch)
+			return { kind: "unknown", why: "the default branch is unknown" };
+		const compare = asObject(
+			await http.github(
+				`/repos/${repository}/compare/${served}...${encodeURIComponent(branch)}`,
+			),
+		);
+		const behindBy = asNumber(compare?.ahead_by);
+		if (behindBy === undefined)
+			return { kind: "unknown", why: "the comparison answered something else" };
+		const files = asList(compare?.files).flatMap((entry) => {
+			const name = asText(asObject(entry)?.filename);
+			return name ? [name] : [];
+		});
+		const relayFiles = files.filter((file) =>
+			touchesRelayInput(file, inputDirs),
+		);
+		if (relayFiles.length === 0 && files.length >= COMPARE_FILE_LIMIT)
+			return {
+				kind: "unknown",
+				why: `${served.slice(0, 12)} is ${plural(behindBy, "commit")} behind ${branch}, more files than one comparison lists`,
+			};
+		return { kind: "known", served, branch, behindBy, relayFiles };
+	} catch (error) {
+		if (error instanceof BudgetSpent) throw error;
+		return {
+			kind: "unknown",
+			why: `relay freshness unread (${error instanceof Error ? error.message : String(error)})`,
+		};
+	}
+}
+
 export type IssueOptions = Readonly<{ assignee: string; runUrl: string }>;
 
 /** Opens an issue per breached signal, or comments on the open one with its prefix. Never closes. */
@@ -865,6 +989,14 @@ function repositoryFrom(env: NodeJS.ProcessEnv): string {
 	return match[1];
 }
 
+function readText(path: string): string {
+	try {
+		return readFileSync(path, "utf8");
+	} catch {
+		return "";
+	}
+}
+
 const NOT_COMPUTED: SignalResult = {
 	state: "unknown",
 	summary: "not computed",
@@ -875,12 +1007,16 @@ export type MainIo = Readonly<{
 	fetch: typeof fetch;
 	now: () => number;
 	log: (line: string) => void;
+	relayConfig: string;
+	relayInputs: string;
 }>;
 
 const defaultIo = (): MainIo => ({
 	fetch,
 	now: Date.now,
 	log: (line) => console.log(line),
+	relayConfig: readText(".hobo/ci.json"),
+	relayInputs: readText(RELAY_INPUTS_FILE),
 });
 
 /**
@@ -917,9 +1053,15 @@ export async function main(
 		previous = await readPreviousReport(http, repository, nowMs, io.log);
 		if (previous) windowStart = previous.windowEnd;
 		const window = await readWindow(http, repository, windowStart, windowEnd);
+		const relay = await readRelayFreshness(
+			http,
+			repository,
+			parseRelayOrigin(io.relayConfig),
+			parseRelayInputs(io.relayInputs),
+		);
 		report = evaluate({
 			repository,
-			data: { runs: window.runs },
+			data: { runs: window.runs, relay },
 			windowStart,
 			windowEnd,
 			nowMs,
@@ -954,6 +1096,7 @@ export async function main(
 				H3: NOT_COMPUTED,
 				H6: NOT_COMPUTED,
 				H8: NOT_COMPUTED,
+				H11: NOT_COMPUTED,
 			},
 			paidMinutes: {
 				total: 0,
