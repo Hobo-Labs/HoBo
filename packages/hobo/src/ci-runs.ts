@@ -197,9 +197,7 @@ export async function runCiRuns(input: {
 }): Promise<CommandResult> {
 	const { command, repository, cwd, args, options } = input;
 	const exec = input.execFile ?? runCiProcess;
-	const env = { ...(input.env ?? process.env) };
-	delete env.HOBO_CI_ACCOUNT_TOKEN;
-	delete env.HOBO_CI_ACCOUNT_TOKEN_FILE;
+	const env = input.env ?? process.env;
 	const now = input.now ?? Date.now;
 	const sleep =
 		input.sleep ??

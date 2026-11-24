@@ -141,7 +141,7 @@ async function setup(options: Options = {}) {
 		commands: {
 			ci: createCiCommand({
 				env: {},
-				fleetCredentials: sessions.credentials,
+				ownerCredentials: sessions.credentials,
 				fleetAgentVault: sessions.agentVault,
 				hostingerHttp: async () => ({
 					status: 200,

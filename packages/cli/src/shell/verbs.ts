@@ -395,7 +395,6 @@ Connection options:
   --remote <name>              Select the Git remote
   --repo <owner/repository>    Select a GitHub repository explicitly
   --relay <https-origin>      Select the HoBo CI relay
-  --token-file <path>         Read the account credential from a file
   --installation-id <id>      Select an installed GitHub App
   --accept-all-matching-jobs  Allow isolated runners for matching repository jobs
   -y, --yes                   Skip the connection confirmation
@@ -420,7 +419,7 @@ Integration options (hobo ci connect <provider>):
   --runs-on <label>           Runner label (repeatable)
   --org <github-org>          GitHub organization the provider app is installed on
   --project-id <id>           Depot project for OIDC trust relationships
-  --secret-ref <ref>          github-secret:NAME or env:NAME (a reference, never a value)
+  --secret-ref <ref>          owner://NAME in the owner's store (a reference, never a value)
   --id <name>                 Integration id (default: provider)
   --config <path>             Alternate ci.json path
   --dry-run                   Print the entry without writing
@@ -530,7 +529,8 @@ Run options:
 unstructured; use --grep for text filtering.
 
 Use runs-on: hobo in a GitHub Actions workflow, then push a commit.
-Authentication: HOBO_CI_ACCOUNT_TOKEN, HOBO_CI_ACCOUNT_TOKEN_FILE or --token-file.
+Authentication: owner://HOBO_CI_ACCOUNT_TOKEN from the owner's store session
+(HoBo MCP choose_secret_store); no token file or environment variable is read.
 Relay selection: --relay or HOBO_CI_RELAY_URL on first connection. Run commands
 use the authenticated GitHub CLI (gh). Credentials are never written to the
 repository. Use --json, --format json or -F json for machine-readable output.

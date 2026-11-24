@@ -365,9 +365,7 @@ export async function runCiInsights(input: {
 	if (!validRepository(input.repository))
 		return failure(new InsightUsage("--repo must be a GitHub owner/name."));
 	const exec = input.execFile ?? runCiProcess;
-	const env = { ...(input.env ?? process.env) };
-	delete env.HOBO_CI_ACCOUNT_TOKEN;
-	delete env.HOBO_CI_ACCOUNT_TOKEN_FILE;
+	const env = input.env ?? process.env;
 	const repo = `repos/${input.repository}`;
 	const apiResult = (path: string, maxBuffer = 16 * 1024 * 1024) =>
 		exec("gh", ["api", path], {

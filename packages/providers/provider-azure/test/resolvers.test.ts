@@ -55,7 +55,7 @@ import {
 
 const SUBSCRIPTION_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 const RESOURCE_GROUP = "hobo-rg";
-const CREDENTIAL_REF = "env://AZURE_ARM_ACCESS_TOKEN";
+const CREDENTIAL_REF = "owner://AZURE_ARM_ACCESS_TOKEN";
 /** The resolved material. It must appear in exactly one place: a header. */
 const TOKEN = "hobo.arm.bearer.token.0123456789abcdefghij";
 /** A 40-character token-shaped string, as ARM echoes request context. */

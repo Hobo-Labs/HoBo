@@ -15,9 +15,13 @@ to Git for automatic deployment.
 
 ## Connect once
 
-Your relay operator supplies an HTTPS origin and a CI account credential. Export
-`HOBO_CI_ACCOUNT_TOKEN`, or set `HOBO_CI_ACCOUNT_TOKEN_FILE` to a mounted credential
-file. Tokens are never accepted as CI command-line values or stored in the link.
+Your relay operator supplies an HTTPS origin and a CI account credential. The
+owner keeps the credential in their own secret store as `HOBO_CI_ACCOUNT_TOKEN`
+and connects that store with HoBo MCP's `choose_secret_store`; `hobo ci` resolves
+`owner://HOBO_CI_ACCOUNT_TOKEN` through the owner store session. It reads no token
+file or environment variable, and without the session it refuses with
+`HOBO_CI_ACCOUNT_CREDENTIAL_UNAVAILABLE` (`status` reports offline instead).
+Tokens are never accepted as CI command-line values or stored in the link.
 Human `hobo login` credentials do not authorize the CI account API.
 
 ```sh
@@ -214,8 +218,8 @@ root. The default home is outside the repository; an explicit `--home` or
 `HOBO_HOME` inside the checkout stores the link there. It records only the origin,
 account ID, and repository. Future setup/status calls reuse that origin for the same repository
 and check account continuity. `--relay` and `--repo` explicitly reconnect a target.
-`HOBO_CI_RELAY_URL` can select the relay instead. Each invocation reads and pins
-its credential so token-file rotation cannot switch accounts halfway through
+`HOBO_CI_RELAY_URL` can select the relay instead. Each invocation resolves and pins
+its credential once so a store rotation cannot switch accounts halfway through
 setup. The HTTP client rejects redirects and uses revision checks on writes.
 If saving the local link fails after connecting, the CLI reports that separately;
 repeating setup with the same explicit relay/repository reuses the connection.
@@ -563,8 +567,8 @@ hobo ci connect boat --org Hobo-Labs --launch           # runs `boat ci connect`
 
 Secrets never pass through HoBo:
 
-- The config holds **references only**. `auth.secretRef` must be `github-secret:NAME` or `env:NAME`. The JSON schema, the CUE model (`#RunnerIntegration`) and the loader reject anything else, including credential-shaped or high-entropy strings in any field, and their errors never echo the value.
-- The CLI never prompts for, reads or prints a credential. A `secret-ref` only names where the provider's integration reads the value; HoBo creates no such entry, and agents never store one ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)).
+- The config holds **references only**. `auth.secretRef` must be `owner://NAME`, an entry in the owner's secret store that HoBo resolves through the owner store session (`choose_secret_store`). The JSON schema, the CUE model (`#RunnerIntegration`) and the loader reject anything else, including credential-shaped or high-entropy strings in any field, and their errors never echo the value.
+- The CLI never prompts for, reads or prints a credential. A `secret-ref` only names the owner's store entry; HoBo creates no such entry, and agents never store one ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)).
 - `--launch` runs the provider CLI with credential-like environment variables (`*TOKEN*`, `*SECRET*`, `*API_KEY*` …) removed, and output is redacted.
 - `packages/hobo/test/ci-connect-leak.test.ts` generates synthetic, real-looking tokens at runtime (never written to disk) and asserts that none appear in CLI output, progress or the written config.
 
@@ -678,10 +682,14 @@ with workload identity
 today that is Infisical (OIDC Auth). 1Password and Bitwarden offers are
 listed with `runtimeAuth: "stored-token"` and never chosen for the relay's
 runtime store. The `hobo-deploy` skill walks the owner through the
-dashboard's OIDC trust one step at a time, then records the ids:
+dashboard's OIDC trust one step at a time, then records the ids. The
+command reads the repository's GitHub OIDC subject with an installation token
+of HoBo's GitHub App (`github-app://<owner>/<name>`, minted through the owner
+store session from the App `hobo ci app create` made); without that session or
+App it refuses with `HOBO_CI_SECRET_STORE_GITHUB_APP_REQUIRED`:
 
 ```sh
-GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
+hobo ci secret-store connect --cwd packages/ci-vercel \
   --repo <owner/name> --project-id <hobo-ci> --deploy-project-id <hobo-ci-deploy> \
   --relay-identity-id <hobo-ci-relay> \
   --deploy-identity-id <hobo-ci-writer> \
@@ -719,7 +727,7 @@ one for other ids without `--yes`. The deploy project and the read-only
 `hobo-ci-deploy-reader` in it are required, the reader distinct from the
 writer in `--deploy-identity-id`.
 `connect` resolves GitHub OIDC trust for `hobo-ci-writer` and
-`hobo-ci-deploy-reader` from GitHub (with `GH_TOKEN` or `GITHUB_TOKEN`): the
+`hobo-ci-deploy-reader` from GitHub (with HoBo's GitHub App installation token for the repository, from the owner store session): the
 repository's `sub_claim_prefix` (or the immutable
 `repo:<owner>@<ownerId>/<repo>@<repoId>` form from its ids when the template
 says `use_immutable_subject`), then the writer's

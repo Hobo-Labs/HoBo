@@ -28,16 +28,17 @@ export {
 export {
 	type BrokeredTokenProvider,
 	createGithubActionsClient,
-	envTokenProvider,
 	GITHUB_API_ERROR,
 	GITHUB_API_VERSION,
 	GITHUB_CREDENTIALS_MISSING,
 	type GithubActionsClient,
 	type GithubActionsClientOptions,
 	GithubApiError,
+	type GithubCredentialResolver,
 	GithubCredentialsMissingError,
 	type GithubFetch,
 	type GithubFetchResponse,
+	githubAppTokenProvider,
 	type WorkflowDispatchInput,
 	type WorkflowRun,
 } from "./github-actions-client.js";

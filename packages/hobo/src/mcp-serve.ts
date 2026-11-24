@@ -38,6 +38,7 @@ import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 import {
 	createOwnerStoreSessions,
 	type OwnerSignIn,
+	ownerChannelRelayFolder,
 	ownerChannelSignIn,
 } from "./owner-store-session.js";
 
@@ -116,6 +117,13 @@ export function composeHoboMcp(options: {
 					which: (bin) => whichOnPath(bin),
 				},
 			}),
+		relayFolder: ownerChannelRelayFolder({
+			owner,
+			deps: {
+				runCommand: machineRunner(),
+				which: (bin) => whichOnPath(bin),
+			},
+		}),
 		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
 		agentVault: options.agentVault ?? {
 			launch: agentVaultProxyLauncher(),

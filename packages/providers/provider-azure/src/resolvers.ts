@@ -43,14 +43,6 @@
  *     running, the outcome says so in `diagnostics` — accepted, not confirmed —
  *     rather than reading as done.
  *
- * Credentials are locators, never material. A resolver is constructed with an
- * injected `resolveCredential(ref)`; `ResolveRequest.credentialRef` must look
- * like a reference (`env://AZURE_ARM_ACCESS_TOKEN`, `secret://…`) and a value
- * that looks like the bearer token itself is refused, because a raw token in a
- * request record is a token in the event log. The resolved token appears in
- * exactly one place — the `authorization` request header — and never in an
- * outcome, a diagnostic, or a message.
- *
  * Nothing here reaches for a global `fetch`, and nothing reads a clock, an
  * environment variable, or a random source: request bodies are a pure function
  * of the request.
@@ -1009,7 +1001,7 @@ async function resolveToken(
 	if (ref.trim().length === 0) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_MISSING",
-			'azure resolver: credentialRef is empty. Supply a locator such as "env://AZURE_ARM_ACCESS_TOKEN" or "secret://camp/azure-arm-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
+			'azure resolver: credentialRef is empty. Supply a locator such as "owner://AZURE_ARM_ACCESS_TOKEN" or "secret://camp/azure-arm-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
 		);
 	}
 	const trimmed = ref.trim();
@@ -1022,7 +1014,7 @@ async function resolveToken(
 	if (!CREDENTIAL_REF_PATTERN.test(trimmed)) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_NOT_A_REF",
-			`azure resolver: credentialRef ${JSON.stringify(redactAzureText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "env://AZURE_ARM_ACCESS_TOKEN"`,
+			`azure resolver: credentialRef ${JSON.stringify(redactAzureText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "owner://AZURE_ARM_ACCESS_TOKEN"`,
 		);
 	}
 	let material: string;
