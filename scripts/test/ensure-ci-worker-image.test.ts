@@ -223,6 +223,12 @@ describe("ensure-ci-worker-image", () => {
 				[
 					"#!/bin/sh",
 					'if [ "$1" = login ]; then cat > /dev/null; exit 0; fi',
+					'if [ "$1" = pull ]; then',
+					manifest ? "  exit 0" : "  exit 1",
+					"fi",
+					'if [ "$1 $2" = "manifest inspect" ]; then',
+					manifest ? "  exit 0" : "  exit 1",
+					"fi",
 					'if [ "$1 $2 $3" = "manifest inspect -v" ]; then',
 					manifest
 						? `  printf '%s\\n' '[{"Descriptor":{"digest":"${digest}"}}]'`
