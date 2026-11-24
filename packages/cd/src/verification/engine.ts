@@ -36,6 +36,7 @@ import type {
 	VerificationId,
 	VerifyPort,
 } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { evaluateVerification, thresholdCohort } from "./evaluate.js";
 import {
 	evidenceBody,
@@ -151,9 +152,10 @@ export function createVerificationEngine(
 		unit: string,
 		attributes: OtelAttributes,
 	) => {
-		d.telemetry
-			?.metrics([{ name, kind, value, unit, atMs: d.now(), attributes }])
-			.catch(() => undefined);
+		if (!d.telemetry) return;
+		emitMetrics(d.telemetry, [
+			{ name, kind, value, unit, atMs: d.now(), attributes },
+		]);
 	};
 	const subject = (
 		state: Pick<VerificationState, "campId" | "freightId">,

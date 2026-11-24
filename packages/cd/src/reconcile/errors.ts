@@ -2,7 +2,10 @@
 // and every blocked observation carries a stable code plus a remediation an
 // operator or agent can act on.
 import { create } from "@bufbuild/protobuf";
+import { RESOLVER_ERROR_CODES } from "@hobo/core";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
+import { AGENT_FAILURES } from "../agent/errors.js";
+import { FEED_FAILURES } from "../feed/errors.js";
 import type { Refusal } from "../ports.js";
 
 // public-contract: reason codes the reconcile module writes.
@@ -22,9 +25,17 @@ export const RECONCILE_FAILURES = Object.freeze({
 	"resolved-set-mismatch":
 		"The resolved set does not match the Set's content hash; promotion never rebuilds (I1). Restore the original blob or re-promote the Freight.",
 	"realize-failed":
-		"The realizer failed; inspect the reason, fix the provider or credentials, and the next pass retries by observation.",
+		"Check provider access, credentials, and the realizer configuration; the next pass retries by observation.",
+	"realize-outcome-unknown":
+		"Observe the target before retrying; the dispatched operation may have completed.",
+	"reconcile-cancelled":
+		"Retry reconciliation when cancellation is cleared; no new target mutation was dispatched by this pass.",
 	"realize-blocked":
-		"The realizer refused the change; read the reason and fix the declaration or the provider capability.",
+		"The realizer refused the change; check the declaration and provider capability before retrying.",
+	"realizer-detail-redacted":
+		"Check the realizer and provider configuration for the reported condition.",
+	"transport-detail-redacted":
+		"Check the reconciler transport and Station connection for the reported condition.",
 	"attestation-refused":
 		"The apply worker could not be attested; check the host attestor keys and the code digest before retrying.",
 	"report-refused":
@@ -64,6 +75,124 @@ export const RECONCILE_FAILURES = Object.freeze({
 } as const);
 
 export type ReconcileFailureCode = keyof typeof RECONCILE_FAILURES;
+
+const SAFE_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
+	...Object.entries(RECONCILE_FAILURES),
+	...Object.entries(AGENT_FAILURES).map(
+		([code, spec]) => [code, spec.remediation] as const,
+	),
+	...Object.entries(FEED_FAILURES).map(
+		([code, spec]) => [code, spec.remediation] as const,
+	),
+]);
+
+const SAFE_TRANSPORT_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
+	...Object.entries(AGENT_FAILURES).map(
+		([code, spec]) => [code, spec.remediation] as const,
+	),
+	...Object.entries(FEED_FAILURES).map(
+		([code, spec]) => [code, spec.remediation] as const,
+	),
+	...(["invalid-observation", "transport-detail-redacted"] as const).map(
+		(code) => [code, RECONCILE_FAILURES[code]] as const,
+	),
+]);
+
+const SAFE_REALIZER_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
+	...RESOLVER_ERROR_CODES.map(
+		(code) =>
+			[code, "Check the resolver configuration and provider access."] as const,
+	),
+	...[
+		"runner-host-ambiguous",
+		"runner-host-camp-unbound",
+		"runner-host-config-unsupported",
+		"runner-host-desired-invalid",
+		"runner-host-drain-deadline",
+		"runner-host-id-invalid",
+		"runner-host-image-unresolved",
+		"runner-host-interface-missing",
+		"runner-host-product-unsupported",
+		"runner-host-pull-failed",
+		"runner-host-release-unresolved",
+		"runner-host-retire-unobserved",
+		"runner-host-rollback-failed",
+		"runner-host-rollback-unobserved",
+		"runner-host-scope-mismatch",
+		"runner-host-slot-unsupported",
+		"runner-host-stage-failed",
+		"runner-host-swap-failed",
+		"runner-host-target-unobserved",
+		"runner-host-verify-failed",
+	].map(
+		(code) =>
+			[
+				code,
+				"Inspect the runner-host runbook and host state before retrying.",
+			] as const,
+	),
+	...[
+		"HOBO_CLI_USAGE",
+		"HOBO_CI_DEPLOY_FAILED",
+		"HOBO_CI_DEPLOY_NO_ANSWER",
+		"HOBO_CI_DEPLOY_NOT_READY",
+		"HOBO_CI_DEPLOY_SETTING_REFUSED",
+		"HOBO_CI_DEPLOY_SOURCE_UNPINNED",
+		"HOBO_CI_DEPLOY_VERCEL_REFUSED",
+		"HOBO_CI_DEPLOY_VERIFICATION_FAILED",
+		"relay-not-deployed",
+		"relay-readiness-unobserved",
+	].map(
+		(code) =>
+			[code, "Check the relay deployment and its configuration."] as const,
+	),
+	["catalog-camp-unknown", "Declare the Camp in the topology."],
+	[
+		"compose-realizer-missing",
+		"Bind the Camp to a supported catalog realizer.",
+	],
+	["catalog-freight-missing", "Record the Freight before promoting it."],
+	[
+		"catalog-freight-empty",
+		"Record the artifacts this Camp publishes in the Freight.",
+	],
+	["catalog-binding-invalid", "Check the Camp binding and Freight artifacts."],
+	[
+		"npm-oidc-scoped-unsupported",
+		"Bind token authentication for scoped packages.",
+	],
+	[
+		"npm-provenance-bundle-missing",
+		"Record the package's Sigstore bundle in the Freight.",
+	],
+]);
+
+export function sanitizeReasons(
+	entries: readonly ReasonRecord[],
+	subject: string,
+	source: "realizer" | "transport",
+): ReasonRecord[] {
+	return entries.map((entry) => {
+		const remediation =
+			source === "realizer"
+				? (SAFE_REMEDIATIONS.get(entry.code) ??
+					SAFE_REALIZER_REMEDIATIONS.get(entry.code))
+				: SAFE_TRANSPORT_REMEDIATIONS.get(entry.code);
+		const fallback =
+			source === "realizer"
+				? "realizer-detail-redacted"
+				: "transport-detail-redacted";
+		return create(ReasonRecordSchema, {
+			code: remediation === undefined ? fallback : entry.code,
+			message:
+				source === "realizer"
+					? "The realizer reported a condition."
+					: "The reconciler transport reported a condition.",
+			remediation: remediation ?? RECONCILE_FAILURES[fallback],
+			subject,
+		});
+	});
+}
 
 export function reason(
 	code: ReconcileFailureCode,

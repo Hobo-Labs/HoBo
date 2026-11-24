@@ -73,7 +73,9 @@ function actorHost(): ActorLeaseHost {
 	};
 }
 
-function harness(opts: { badAttestor?: boolean } = {}) {
+function harness(
+	opts: { badAttestor?: boolean; throwAttestor?: boolean } = {},
+) {
 	const clock = createClock();
 	const store = createFakeStore(clock);
 	const { iac, calls, programs, drift } = countingIac();
@@ -84,9 +86,16 @@ function harness(opts: { badAttestor?: boolean } = {}) {
 		actorHost: actorHost(),
 		executor: createInProcessExecutor({ iac }),
 		broker: createInProcessCredentialBroker(),
-		attestor: opts.badAttestor
-			? { createDocument: attestor.createDocument, publicKeys: () => [] }
-			: attestor,
+		attestor: opts.throwAttestor
+			? {
+					createDocument: () => {
+						throw new Error("synthetic-private-provider.invalid");
+					},
+					publicKeys: attestor.publicKeys,
+				}
+			: opts.badAttestor
+				? { createDocument: attestor.createDocument, publicKeys: () => [] }
+				: attestor,
 		hostId: "host-a",
 		refresh: iac,
 		now: clock.now,
@@ -112,6 +121,7 @@ function harness(opts: { badAttestor?: boolean } = {}) {
 		clock,
 		store,
 		realizer,
+		iac,
 		calls,
 		programs,
 		drift,
@@ -176,6 +186,30 @@ describe("createOrchestratorRealizer", () => {
 		expect(obs.status).toBe(ReconcileStatus.BLOCKED);
 		expect(obs.reasons[0]?.code).toBe("attestation-refused");
 		expect(h.calls).toEqual([]);
+	});
+
+	it("redacts an attestor failure from the blocked observation", async () => {
+		const h = harness({ throwAttestor: true });
+		const obs = await h.realizer.converge(h.input([DB_V1], 1), h.ctx);
+		expect(obs.status).toBe(ReconcileStatus.BLOCKED);
+		expect(obs.reasons[0]?.code).toBe("attestation-refused");
+		expect(JSON.stringify(obs)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
+	});
+
+	it("redacts a failed provider destroy from the blocked observation", async () => {
+		const h = harness();
+		await h.realizer.converge(h.input([DB_V1], 1), h.ctx);
+		h.iac.destroy = async () => {
+			throw new Error("synthetic-private-provider.invalid");
+		};
+		const obs = await h.realizer.converge(h.input([], 2), h.ctx);
+		expect(obs.status).toBe(ReconcileStatus.BLOCKED);
+		expect(obs.reasons[0]?.code).toBe("realize-failed");
+		expect(JSON.stringify(obs)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
 	});
 
 	it("I1: a resolved set that does not match the Set's content hash is refused", async () => {
