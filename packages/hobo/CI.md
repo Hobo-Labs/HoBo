@@ -639,10 +639,14 @@ with workload identity
 today that is Infisical (OIDC Auth). 1Password and Bitwarden offers are
 listed with `runtimeAuth: "stored-token"` and never chosen for the relay's
 runtime store. The `hobo-deploy` skill walks the owner through the
-dashboard's OIDC trust one step at a time, then records the ids:
+dashboard's OIDC trust one step at a time, then records the ids. The
+command reads the repository's GitHub OIDC subject with an installation token
+of HoBo's GitHub App (`github-app://<owner>/<name>`, minted through the owner
+store session from the App `hobo ci app create` made); without that session or
+App it refuses with `HOBO_CI_SECRET_STORE_GITHUB_APP_REQUIRED`:
 
 ```sh
-GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
+hobo ci secret-store connect --cwd packages/ci-vercel \
   --repo <owner/name> --project-id <hobo-ci> --deploy-project-id <hobo-ci-deploy> \
   --relay-identity-id <hobo-ci-relay> \
   --deploy-identity-id <hobo-ci-writer> \
@@ -680,7 +684,7 @@ one for other ids without `--yes`. The deploy project and the read-only
 `hobo-ci-deploy-reader` in it are required, the reader distinct from the
 writer in `--deploy-identity-id`.
 `connect` resolves GitHub OIDC trust for `hobo-ci-writer` and
-`hobo-ci-deploy-reader` from GitHub (with `GH_TOKEN` or `GITHUB_TOKEN`): the
+`hobo-ci-deploy-reader` from GitHub (with HoBo's GitHub App installation token for the repository, from the owner store session): the
 repository's `sub_claim_prefix` (or the immutable
 `repo:<owner>@<ownerId>/<repo>@<repoId>` form from its ids when the template
 says `use_immutable_subject`), then the writer's

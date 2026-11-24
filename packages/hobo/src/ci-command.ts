@@ -676,11 +676,15 @@ export function createCiCommand(
 					return usage(
 						`--${unsupported[0]} does not apply to hobo ci secret-store.`,
 					);
+				const ownerCredentials = deps.ownerCredentials?.(flags.cwd);
 				return runCiSecretStore({
 					subcommand: positionals[1] ?? "",
 					cwd: flags.cwd,
 					values,
 					env: deps.env ?? process.env,
+					...(ownerCredentials !== undefined
+						? { credentials: ownerCredentials }
+						: undefined),
 					...bindingStoreFor(deps.ownerEntries, flags.cwd),
 					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
 					...(deps.runtime !== undefined
