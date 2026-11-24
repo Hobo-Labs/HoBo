@@ -1,5 +1,7 @@
 export * from "./_generated/ci_pb.js";
+export * from "./_generated/job_retried_pb.js";
 export * from "./_generated/policy_pb.js";
+export * from "./_generated/relay_job_pb.js";
 export * from "./_generated/runner_route_pb.js";
 export { allocationQuote } from "./accounting.js";
 export { parseConfiguration, positiveId } from "./config.js";
@@ -34,6 +36,12 @@ export {
 	supportsPipeline,
 } from "./execution.js";
 export * from "./fleet/index.js";
+export {
+	HOSTED_LIST_PRICES,
+	type HostedListPrice,
+	type HostedListRate,
+	hostedListRate,
+} from "./fleet/models.js";
 export {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetBackend,
@@ -105,7 +113,52 @@ export {
 	providerOffer,
 	route,
 } from "./routing.js";
+export {
+	ACTIVITY_JOURNAL_READ_LIMIT,
+	ACTIVITY_OUTCOMES,
+	ACTIVITY_PAGE_MAX,
+	ACTIVITY_PAGE_SIZE,
+	type ActivityCursor,
+	type ActivityEntry,
+	type ActivityFilter,
+	type ActivityOutcome,
+	type ActivityPage,
+	activityFeed,
+	journalActivity,
+} from "./runner-order/activity.js";
 export * from "./runner-order/index.js";
+export {
+	findMachine,
+	MACHINE_ADVERT_SIGNING_CONTEXT,
+	MACHINE_ADVERT_TTL_MS,
+	type MachineAdvertRefusal,
+	type MachineAdvertVerdict,
+	type MachineChange,
+	type MachineEvent,
+	type MachineEventType,
+	MachineRegistryError,
+	type MachineRegistryRefusal,
+	machineAdvertSigningPayload,
+	machineCandidates,
+	machineOnline,
+	receiveMachineAdvert,
+	registryMachineCandidates,
+	removeMachine,
+	type SignedMachineAdvert,
+	setMachinePaused,
+	setMachineSharing,
+	signMachineAdvert,
+	verifyMachineAdvert,
+} from "./runner-order/machine-registry.js";
+export {
+	billedMinutes,
+	type FinishedJobSource,
+	LedgerSpendReader,
+	type LedgerSpendReaderDeps,
+	listPriceOfJob,
+	monthStartMs,
+	type SpendLedger,
+} from "./runner-order/spend.js";
 export {
 	sandboxProxyOnlyUsageQuote,
 	sandboxReservationMicros,

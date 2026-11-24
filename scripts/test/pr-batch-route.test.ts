@@ -14,6 +14,15 @@ const routing = (pin: string) =>
 		...config,
 		runnerRouting: { ...config.runnerRouting, pin },
 	});
+const routingWithTrunkLend = (trunkLend: 0 | 1) =>
+	JSON.stringify({
+		...config,
+		runnerRouting: {
+			...config.runnerRouting,
+			pin: "auto",
+			box: { ...config.runnerRouting.box, trunkLend },
+		},
+	});
 const env = {
 	GITHUB_WORKSPACE: root,
 	GITHUB_EVENT_NAME: "pull_request",
@@ -232,22 +241,52 @@ describe("PR batch routing", () => {
 		assert.match(decision.reason, /stays on ubuntu-24\.04/u);
 	});
 
-	it("diverts a saturated same-repository PR batch to hobo-trunk when trunk is taking jobs", async () => {
-		const trunkPickup = {
-			run_id: 40,
-			status: "completed",
-			labels: ["hobo-trunk"],
-			runner_name: "runner-1",
-			created_at: new Date(Date.now() - 65_000).toISOString(),
-			started_at: new Date(Date.now() - 60_000).toISOString(),
-		};
+	const trunkPickup = () => ({
+		run_id: 40,
+		status: "completed",
+		labels: ["hobo-trunk"],
+		runner_name: "runner-1",
+		created_at: new Date(Date.now() - 65_000).toISOString(),
+		started_at: new Date(Date.now() - 60_000).toISOString(),
+	});
+
+	it("diverts a saturated same-repository PR batch to hobo-trunk when trunkLend lends it and trunk is taking jobs", async () => {
 		const decision = await main([], env, {
-			routingConfig: routing("auto"),
+			routingConfig: routingWithTrunkLend(1),
 			eventPayload: sameRepositoryPayload,
-			fetch: hostedQueueFetch([...saturatedHostedJobs, trunkPickup]),
+			fetch: hostedQueueFetch([...saturatedHostedJobs, trunkPickup()]),
 		});
 		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
 		assert.match(decision.reason, /no idle capacity/u);
+	});
+
+	it("keeps a saturated same-repository PR batch off hobo-trunk when trunkLend is 0", async () => {
+		const asked: string[] = [];
+		const decision = await main([], env, {
+			routingConfig: routingWithTrunkLend(0),
+			eventPayload: sameRepositoryPayload,
+			fetch: hostedQueueFetch([...saturatedHostedJobs, trunkPickup()], asked),
+		});
+		assert.notEqual(decision.runner, "hobo-trunk");
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(decision.reason, /no idle capacity/u);
+		assert.ok(
+			asked.some((path) => path.includes("/actions/runners?")),
+			asked.join("\n"),
+		);
+	});
+
+	it("keeps the committed policy's PR batches off hobo-trunk", async () => {
+		assert.equal(config.runnerRouting.box.trunkLend, 0);
+		const decision = await main([], env, {
+			routingConfig: routing("auto"),
+			eventPayload: sameRepositoryPayload,
+			fetch: hostedQueueFetch([...saturatedHostedJobs, trunkPickup()]),
+		});
+		assert.notEqual(decision.runner, "hobo-trunk");
 	});
 
 	it("fails closed when PR-batch hosted queue probe has no token", async () => {
