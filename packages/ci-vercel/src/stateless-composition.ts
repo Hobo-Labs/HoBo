@@ -19,10 +19,11 @@
  *   evidence on the cache (`worker-health-cache.ts`).
  */
 import { createHash, createPrivateKey } from "node:crypto";
-import { create } from "@bufbuild/protobuf";
+import { create, fromJsonString } from "@bufbuild/protobuf";
 import {
 	type Configuration,
 	ConfigurationStateSchema,
+	ControlCredentialsSchema,
 	parseConfiguration,
 } from "@hobo/ci";
 import {
@@ -35,11 +36,14 @@ import {
 	createQueuedJobRepair,
 	createRelayHandler,
 	createRelayMcp,
+	createRelayOwnerLogin,
 	createStatelessAppOnboarding,
 	createWebhookRepair,
 	type GithubAppTransport,
 	HostedRelay,
 	type IdentityVerifier,
+	RELAY_OWNER_LOGIN_PREFIX,
+	type RelayOwnerAccount,
 	reportRelayFailure,
 } from "@hobo/ci-gh-actions";
 import {
@@ -102,7 +106,7 @@ import type {
 import { runtimeDiagnostic } from "./runtime-diagnostic.js";
 import {
 	createSandboxComposition,
-	type VERCEL_SANDBOX_DRIVERS,
+	type SandboxDrivers,
 } from "./sandbox-composition.js";
 import { createSandboxProxyQuotaHandler } from "./sandbox-proxy-quota.js";
 import { createScheduledRepairHandler } from "./scheduled-repair.js";
@@ -150,7 +154,7 @@ export type StatelessRelayOptions = Readonly<{
 	>;
 	github?: GithubAppTransport;
 	identity?: IdentityVerifier;
-	sandboxDrivers?: typeof VERCEL_SANDBOX_DRIVERS;
+	sandboxDrivers?: SandboxDrivers;
 	fetch?: typeof fetch;
 	now?: () => string;
 	log?: StatelessRelayLog;
@@ -205,6 +209,24 @@ function publicOrigin(value: string): string {
 	return url.origin;
 }
 
+export function relayOwnerAccount(
+	controlTokensJson: string,
+	accountId: string,
+): RelayOwnerAccount | undefined {
+	const credentials = fromJsonString(
+		ControlCredentialsSchema,
+		controlTokensJson,
+	).tokens.filter((credential) => credential.accountId === accountId);
+	if (credentials.length === 0) return undefined;
+	return {
+		accountId,
+		installationIds: [
+			...new Set(credentials.flatMap((entry) => entry.installationIds)),
+		],
+		scopes: [...new Set(credentials.flatMap((entry) => entry.scopes))],
+	};
+}
+
 /** A revision for a config document: stable across instances, nonzero, uint32. */
 function documentRevision(json: string): number {
 	const digest = createHash("sha256").update(json).digest();
@@ -255,9 +277,14 @@ export async function composeStatelessRelay(
 	let parsedFrom: RelayRuntimeConfig | undefined;
 	let snapshot: RelayConfigSnapshot | undefined;
 	let authenticator: ControlAuthenticator | undefined;
+	let ownerAccount: RelayOwnerAccount | undefined;
 	async function current() {
 		const config = await options.config.load();
 		if (config !== parsedFrom || !snapshot || !authenticator) {
+			ownerAccount = relayOwnerAccount(
+				config.HOBO_CI_CONTROL_TOKENS_JSON,
+				config.HOBO_CI_BOOTSTRAP_ACCOUNT_ID,
+			);
 			const configuration: Configuration = parseConfiguration(
 				config.HOBO_CI_CONFIG_JSON,
 			);
@@ -275,7 +302,7 @@ export async function composeStatelessRelay(
 			);
 			parsedFrom = config;
 		}
-		return { snapshot, authenticator };
+		return { snapshot, authenticator, ownerAccount };
 	}
 	await current();
 	const configured: ControlAuthenticator = async (header) =>
@@ -372,12 +399,12 @@ export async function composeStatelessRelay(
 		onDiagnostic: (event, detail) => log({ event, ...detail }),
 	});
 
-	const github =
-		options.github ??
-		createGithubAppTransport({
-			appId: initial.HOBO_CI_GITHUB_APP_ID,
-			privateKey: initial.HOBO_CI_GITHUB_APP_PRIVATE_KEY,
-		});
+	const app = createGithubAppTransport({
+		appId: initial.HOBO_CI_GITHUB_APP_ID,
+		privateKey: initial.HOBO_CI_GITHUB_APP_PRIVATE_KEY,
+		...(options.fetch !== undefined ? { fetch: options.fetch } : undefined),
+	});
+	const github = options.github ?? app;
 	const identity = options.identity ?? createGithubOidcVerifier(origin);
 	const nowMs = () => Date.parse(now());
 
@@ -415,8 +442,21 @@ export async function composeStatelessRelay(
 		fetch: options.fetch ?? fetch,
 		now: nowMs,
 	});
-	const authenticate: ControlAuthenticator = (header) =>
-		onboarding.authenticate(header);
+	const ownerLogin = createRelayOwnerLogin({
+		publicOrigin: origin,
+		clientId: initial.HOBO_CI_GITHUB_APP_CLIENT_ID,
+		clientSecret: initial.HOBO_CI_GITHUB_APP_CLIENT_SECRET,
+		sealingKey: Buffer.from(initial.HOBO_CI_SESSION_KEY, "base64url"),
+		github,
+		installationToken: (installationId) =>
+			app.installationToken(installationId),
+		account: async () => (await current()).ownerAccount,
+		fetch: options.fetch ?? fetch,
+		now: nowMs,
+	});
+	const authenticate: ControlAuthenticator = async (header) =>
+		(await ownerLogin.authenticate(header)) ??
+		(await onboarding.authenticate(header));
 	const delegateOwnerControl = createOwnerControlDelegation({
 		publicOrigin: origin,
 		resolve: onboarding.trustedBootstrapControl,
@@ -758,6 +798,11 @@ export async function composeStatelessRelay(
 			const deniedEgress = denyDirectSandboxEgress(request);
 			if (deniedEgress) return deniedEgress;
 			if (pathname === "/internal/tick") return scheduledRepair(request);
+			if (pathname.startsWith(RELAY_OWNER_LOGIN_PREFIX))
+				return (
+					(await ownerLogin.handle(request)) ??
+					Response.json({ error: "not found" }, { status: 404 })
+				);
 			// The owner's invitation; the relay's handler routes no such path.
 			if (pathname.startsWith("/v1/app-bootstrap/"))
 				try {

@@ -11,14 +11,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHoboCli } from "@hobo/cli";
 import type { HttpTransport } from "@hobo/core";
-import { createTrustedVault } from "@hobo/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
-import {
-	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-	type readRelayDeployToken,
-} from "../src/ci-relay-deploy-credential.js";
+import { RELAY_DEPLOY_TOKEN_REF } from "../src/ci-relay-deploy-credential.js";
 import {
 	isJsonArray,
 	isJsonObject,
@@ -274,25 +270,17 @@ async function deploy(
 		readonly credentialFetch?: typeof fetch;
 	},
 ) {
-	const deployCredentials = createTrustedVault();
-	deployCredentials.put("VERCEL_TOKEN", TOKEN);
-	const readDeployCredential: typeof readRelayDeployToken = async () => ({
-		token: TOKEN,
-		secretRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
-		identityId: "ci-deploy-reader-identity",
-		audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-	});
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: {
-					...options.env,
-					ACTIONS_ID_TOKEN_REQUEST_URL:
-						"https://token.actions.example.test/token?api-version=2.0",
-					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
-				},
-				deployCredentials,
-				readDeployCredential,
+				env: options.env,
+				ownerCredentials: () => ({
+					async resolve(ref) {
+						if (ref !== RELAY_DEPLOY_TOKEN_REF)
+							throw new Error(`unexpected credential ${ref}`);
+						return { token: TOKEN };
+					},
+				}),
 				ownerEntries: () => ownerStoreEntries(OWNER_STORE),
 				vercelFetch: options.fetch,
 				vercelBuild: options.build,
@@ -737,6 +725,9 @@ describe("hobo ci deploy --build prebuilt: staged production recovery", () => {
 		HOBO_CI_RELAY_STAGED_PRODUCTION: "true",
 		HOBO_CI_RELAY_PUBLIC_URL: PRODUCTION_ORIGIN,
 		HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "false",
+		ACTIONS_ID_TOKEN_REQUEST_URL:
+			"https://token.actions.example.test/token?api-version=2.0",
+		ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
 	};
 	const credentialFetch: typeof fetch = async () =>
 		new Response(
@@ -850,6 +841,37 @@ describe("hobo ci deploy --build prebuilt: staged production recovery", () => {
 		expect(vercel.state.sent.some((line) => line.includes("/promote/"))).toBe(
 			false,
 		);
+	});
+
+	it("fails and restores the previous production deployment when no GitHub OIDC token can reach the staged probe", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		const {
+			ACTIONS_ID_TOKEN_REQUEST_URL: _url,
+			ACTIONS_ID_TOKEN_REQUEST_TOKEN: _token,
+			...ownerSessionEnv
+		} = STAGED_ENV;
+		const ran = await deploy([...PINNED, "--target", "production", "--wait"], {
+			fetch: vercel.fetch,
+			build: fakeVercelBuild(vercel).run,
+			env: ownerSessionEnv,
+			hoboHome: home,
+			probe: relayAt(SHA).http,
+			credentialFetch,
+			...clock,
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_ROLLED_BACK",
+		});
+		expect(vercel.state.sent).toContain(
+			`POST /v1/projects/${PROJECT_ID}/rollback/dpl_live`,
+		);
+		expect(vercel.state.production).toBe("dpl_live");
+		expect(JSON.stringify(ran.envelope)).not.toContain(TOKEN);
 	});
 
 	it("fails with explicit manual recovery when the staged build is already live and the public relay is unhealthy", async () => {

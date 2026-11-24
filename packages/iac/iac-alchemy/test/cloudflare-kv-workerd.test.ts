@@ -5,6 +5,11 @@ import { expect, it } from "vitest";
 import { CLOUDFLARE_KV_MAX_VALUE_BYTES } from "../src/cloudflare-kv-protocol.js";
 
 it("runs the actual proxy over workerd service bindings and native KV byte streams", async () => {
+	const source = (name: string) =>
+		stripTypeScriptTypes(
+			readFileSync(new URL(`../src/${name}.ts`, import.meta.url), "utf8"),
+			{ mode: "transform" },
+		);
 	const proxy = stripTypeScriptTypes(
 		readFileSync(
 			new URL("../src/cloudflare-kv-proxy.ts", import.meta.url),
@@ -21,12 +26,50 @@ it("runs the actual proxy over workerd service bindings and native KV byte strea
 	);
 	const app = `export default { async fetch(request, env) {
 		const url = new URL(request.url);
+		if (url.pathname === '/probe') return env.PROBE.fetch('https://probe.internal/');
 		const binding = url.pathname.startsWith('/reader/') ? env.READER : env.WRITER;
 		const operation = url.pathname.split('/')[2];
 		const headers = { 'x-hobo-kv-key': url.searchParams.get('key') ?? 'key' };
 		const init = { method: 'POST', headers };
 		if (operation === 'set') init.body = new Uint8Array([0, 255, 7]);
 		return await binding.fetch(new Request('https://hobo-kv.internal/' + operation, init));
+	} }`;
+	const probeSetup = `globalThis.probeClones = 0;
+	for (const type of [Request, Response]) {
+		const clone = type.prototype.clone;
+		type.prototype.clone = function (...args) {
+			globalThis.probeClones++;
+			return Reflect.apply(clone, this, args);
+		};
+	}`;
+	const probe = `import './probe-setup.js';
+	import { cloudflareProtectResponse, cloudflareResponseStatus, cloudflareRequestUrl } from './cloudflare-web-options.js';
+	export default { fetch() {
+		let traps = 0;
+		let cancellations = 0;
+		const real = new Response(null, { status: 203 });
+		const accepted = cloudflareProtectResponse(real);
+		Object.defineProperty(real, 'status', { configurable: true, value: 204 });
+		const snapshot = cloudflareResponseStatus(real);
+		const hostile = new Response(null, { status: 203 });
+		Object.defineProperty(hostile, 'status', { configurable: true, get() { traps++; return 200; } });
+		const hostileAccepted = cloudflareProtectResponse(hostile);
+		const fake = Object.create(null);
+		Object.defineProperties(fake, { status: { value: 203 }, headers: { value: new Headers() }, body: { value: null } });
+		const fakeAccepted = cloudflareProtectResponse(fake);
+		const stalledBody = new ReadableStream({ cancel() { cancellations++; return new Promise(() => {}); } });
+		const stalledResponse = new Response(stalledBody);
+		const stalledAccepted = cloudflareProtectResponse(stalledResponse);
+		const nativeRequest = new Request('https://original.internal/');
+		const url = cloudflareRequestUrl(nativeRequest);
+		Object.defineProperty(nativeRequest, 'url', { configurable: true, value: 'https://replaced.internal/' });
+		const urlSnapshot = cloudflareRequestUrl(nativeRequest);
+		const badRequest = new Request('https://original.internal/');
+		Object.defineProperty(badRequest, 'url', { configurable: true, get() { traps++; return 'https://replaced.internal/'; } });
+		let badAccepted = true;
+		try { cloudflareRequestUrl(badRequest); } catch { badAccepted = false; }
+		return Response.json({ accepted, snapshot, hostileAccepted, fakeAccepted, stalledAccepted,
+			clones: globalThis.probeClones, cancellations, url, urlSnapshot, badAccepted, traps });
 	} }`;
 	const modules = [
 		{ type: "ESModule" as const, path: "proxy.js", contents: proxy },
@@ -35,6 +78,18 @@ it("runs the actual proxy over workerd service bindings and native KV byte strea
 			path: "cloudflare-kv-protocol.js",
 			contents: protocol,
 		},
+		...[
+			"async-boundary",
+			"cloudflare-capacity",
+			"cloudflare-native-promise",
+			"cloudflare-native-await",
+			"cloudflare-byte-stream",
+			"cloudflare-web-options",
+		].map((name) => ({
+			type: "ESModule" as const,
+			path: `${name}.js`,
+			contents: source(name),
+		})),
 	];
 	const workerd = new Miniflare({
 		compatibilityDate: "2026-01-01",
@@ -43,7 +98,16 @@ it("runs the actual proxy over workerd service bindings and native KV byte strea
 				name: "app",
 				modules: true,
 				script: app,
-				serviceBindings: { READER: "reader", WRITER: "writer" },
+				serviceBindings: { READER: "reader", WRITER: "writer", PROBE: "probe" },
+			},
+			{
+				name: "probe",
+				compatibilityFlags: ["streams_enable_constructors"],
+				modules: [
+					{ type: "ESModule", path: "probe.js", contents: probe },
+					{ type: "ESModule", path: "probe-setup.js", contents: probeSetup },
+					...modules.slice(2),
+				],
 			},
 			{
 				name: "reader",
@@ -69,8 +133,24 @@ it("runs the actual proxy over workerd service bindings and native KV byte strea
 		);
 		const get = (path: string) =>
 			workerd.dispatchFetch(`http://localhost/${path}`);
+		const probeResponse = await get("probe");
+		const probeText = await probeResponse.text();
+		expect(probeResponse.status, probeText).toBe(200);
+		expect(JSON.parse(probeText)).toEqual({
+			accepted: true,
+			snapshot: 203,
+			hostileAccepted: false,
+			fakeAccepted: false,
+			stalledAccepted: true,
+			clones: 0,
+			cancellations: 0,
+			url: "https://original.internal/",
+			urlSnapshot: "https://original.internal/",
+			badAccepted: false,
+			traps: 0,
+		});
 		const response = await get("reader/get?key=binary");
-		expect(response.status).toBe(200);
+		expect(response.status, await response.clone().text()).toBe(200);
 		expect(new Uint8Array(await response.arrayBuffer())).toEqual(
 			new Uint8Array([0, 255, 7]),
 		);

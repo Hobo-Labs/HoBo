@@ -67,18 +67,10 @@ const dryRunSchema = z.object({
 		.min(1),
 });
 
-const extraFileSchema = z
-	.string()
-	.regex(/^(?:scripts|packages)\/[A-Za-z0-9._/-]+\.(?:mts|ts|mjs|js|json)$/u)
-	.refine(
-		(file) => posix.normalize(file) === file && !file.split("/").includes(".."),
-	);
-
 const manifestSchema = z.object({
 	schema: z.literal("hobo.release-cli-bundle/v1"),
 	revision: z.string().regex(/^[0-9a-f]{40}$/u),
 	packages: z.array(entrySchema).min(1),
-	files: z.array(extraFileSchema).default([]),
 });
 type Manifest = Readonly<z.infer<typeof manifestSchema>>;
 
@@ -134,7 +126,6 @@ export function packCliBundle(options: {
 	plan: readonly CliBundleEntry[];
 	revision: string;
 	out: string;
-	files?: readonly string[];
 }): PackedCliBundle {
 	if (!/^[0-9a-f]{40}$/u.test(options.revision))
 		throw new Error(
@@ -147,22 +138,12 @@ export function packCliBundle(options: {
 				`${entry.package} was not built: ${entry.directory}/dist is missing`,
 			);
 	}
-	const files = (options.files ?? []).map((file) => {
-		const parsed = extraFileSchema.safeParse(file);
-		if (!parsed.success)
-			throw new Error(`bundle file is not an allowed repo path: ${file}`);
-		const abs = join(options.root, parsed.data);
-		if (!existsSync(abs) || !statSync(abs).isFile())
-			throw new Error(`bundle file is missing: ${file}`);
-		return parsed.data;
-	});
 	const staging = mkdtempSync(join(tmpdir(), "hobo-release-cli-"));
 	try {
 		const manifest: Manifest = {
 			schema: "hobo.release-cli-bundle/v1",
 			revision: options.revision,
 			packages: [...options.plan],
-			files,
 		};
 		writeFileSync(join(staging, MANIFEST), `${JSON.stringify(manifest)}\n`);
 		run(
@@ -180,7 +161,6 @@ export function packCliBundle(options: {
 				"-C",
 				options.root,
 				...options.plan.map((entry) => `${entry.directory}/dist`),
-				...files,
 			],
 			options.root,
 		);
@@ -229,7 +209,6 @@ export function restoreCliBundle(options: {
 			`the CLI bundle was built from revision ${manifest.revision}, not this checkout's ${options.revision}`,
 		);
 	const allowed = manifest.packages.map((entry) => `${entry.directory}/dist`);
-	const allowedFiles = manifest.files;
 	const entries = run("tar", ["-tzf", options.bundle], options.root)
 		.split("\n")
 		.map((line) => line.trim().replace(/^\.\//u, ""))
@@ -246,13 +225,10 @@ export function restoreCliBundle(options: {
 	for (const entry of entries) {
 		if (entry === MANIFEST) continue;
 		const path = entry.replace(/\/$/u, "");
-		if (path.split("/").includes(".."))
-			throw new Error(`the CLI bundle writes ${entry}, outside the bundle`);
-		const insideDist = allowed.some(
-			(dist) => path === dist || path.startsWith(`${dist}/`),
-		);
-		const insideFile = allowedFiles.includes(path);
-		if (!insideDist && !insideFile)
+		const inside =
+			!path.split("/").includes("..") &&
+			allowed.some((dist) => path === dist || path.startsWith(`${dist}/`));
+		if (!inside)
 			throw new Error(
 				`the CLI bundle writes ${entry}, outside every planned package's dist/`,
 			);
@@ -261,23 +237,12 @@ export function restoreCliBundle(options: {
 		rmSync(join(options.root, dist), { recursive: true, force: true });
 	run(
 		"tar",
-		[
-			"-xzf",
-			options.bundle,
-			"--no-same-owner",
-			"-C",
-			options.root,
-			...allowed,
-			...allowedFiles,
-		],
+		["-xzf", options.bundle, "--no-same-owner", "-C", options.root, ...allowed],
 		options.root,
 	);
 	for (const dist of allowed)
 		if (!existsSync(join(options.root, dist)))
 			throw new Error(`the CLI bundle did not restore ${dist}`);
-	for (const file of allowedFiles)
-		if (!existsSync(join(options.root, file)))
-			throw new Error(`the CLI bundle did not restore ${file}`);
 	return manifest;
 }
 
@@ -291,11 +256,6 @@ function main(argv: readonly string[]): void {
 		const at = rest.indexOf(name);
 		return at === -1 ? undefined : rest[at + 1];
 	};
-	const flags = (name: string): string[] =>
-		rest.flatMap((value, index) => {
-			const next = rest[index + 1];
-			return value === name && next !== undefined ? [next] : [];
-		});
 	if (command === "pack" && path) {
 		const plan = cliBundlePlan(
 			run(
@@ -312,14 +272,7 @@ function main(argv: readonly string[]): void {
 			),
 		);
 		const revision = headRevision();
-		const files = flags("--include");
-		const { digest } = packCliBundle({
-			root,
-			plan,
-			revision,
-			out: path,
-			files,
-		});
+		const { digest } = packCliBundle({ root, plan, revision, out: path });
 		console.log(
 			`hobo CLI bundle: ${plan.length} packages at ${revision}, ${digest}`,
 		);

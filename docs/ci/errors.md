@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-144 codes.
+145 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -58,7 +58,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_CONNECTION_UNCONFIRMED`](#hobo_ci_connection_unconfirmed) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_CONNECT_CEREMONY`](#hobo_ci_connect_ceremony) | `packages/hobo/src/ci-connect.ts` |
 | [`HOBO_CI_DEPLOYED`](#hobo_ci_deployed) | `packages/hobo/src/ci-relay-deploy.ts` |
-| [`HOBO_CI_DEPLOY_AUTH_REQUIRED`](#hobo_ci_deploy_auth_required) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_AUTH_REQUIRED`](#hobo_ci_deploy_auth_required) | `packages/hobo/src/ci-relay-deploy-credential.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_CONFLICT`](#hobo_ci_deploy_binding_conflict) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_MALFORMED`](#hobo_ci_deploy_binding_malformed) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_UNAVAILABLE`](#hobo_ci_deploy_binding_unavailable) | `packages/hobo/src/ci-relay-yard.ts` |
@@ -155,6 +155,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_SECRET_STORE_PLANNED`](#hobo_ci_secret_store_planned) | `packages/hobo/src/ci-secret-store.ts` |
 | [`HOBO_CI_SECRET_STORE_PROVISIONED`](#hobo_ci_secret_store_provisioned) | `packages/hobo/src/ci-secret-store.ts` |
 | [`HOBO_CI_SECRET_STORE_RUNTIME_UNBUILT`](#hobo_ci_secret_store_runtime_unbuilt) | `packages/hobo/src/ci-secret-store.ts` |
+| [`HOBO_CI_SECRET_STORE_SESSION_REQUIRED`](#hobo_ci_secret_store_session_required) | `packages/hobo/src/ci-relay-deploy-credential.ts` |
 | [`HOBO_CI_SECRET_STORE_UNAVAILABLE`](#hobo_ci_secret_store_unavailable) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_SECRET_STORE_USAGE`](#hobo_ci_secret_store_usage) | `packages/hobo/src/ci-secret-store-connect.ts`, `packages/hobo/src/ci-secret-store.ts` |
 | [`HOBO_CI_SECRET_STORE_VERIFIED`](#hobo_ci_secret_store_verified) | `packages/hobo/src/ci-secret-store-connect.ts` |
@@ -596,12 +597,16 @@ What to do: follow the message.
 
 ### HOBO_CI_DEPLOY_AUTH_REQUIRED
 
-Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+Returned from `packages/hobo/src/ci-relay-deploy-credential.ts`.
 
-Message:
+Messages:
 
 ```text
-The deploy token is read from the secret store, never the environment: run with the owner's store session (HoBo MCP's choose_secret_store) in GitHub Actions with id-token: write, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.
+The owner's store session holds no Vercel deploy token at {RELAY_DEPLOY_TOKEN_REF}. Run hobo cd up once: it connects HoBo's Vercel account and keeps the token there, where hobo ci deploy reads it.
+```
+
+```text
+{RELAY_DEPLOY_TOKEN_REF} in the owner's store is not a single-line Vercel token. Run hobo cd up again to reconnect HoBo's Vercel account.
 ```
 
 What to do: follow the message.
@@ -752,7 +757,7 @@ deploy/delivery.ts declares the relay:finalize-promotion hook on {…}: that ref
 ```
 
 ```text
-Pipeline {pipeline}/{node} already carries the relay:finalize-promotion hook a staged run injected (pipeline records are append-once, so it stays), and this run has no finalizer: production would deploy, verify and then stop unfinalized. Run with HOBO_CI_RELAY_STAGED_PRODUCTION=true (the relay deploy workflow), which finalizes the promotion it drove.
+Pipeline {pipeline}/{node} already carries the relay:finalize-promotion hook a staged run injected (pipeline records are append-once, so it stays), and this run has no finalizer: production would deploy, verify and then stop unfinalized. Run with HOBO_CI_RELAY_STAGED_PRODUCTION=true, which finalizes the promotion it drove.
 ```
 
 ```text
@@ -2039,6 +2044,18 @@ Message:
 
 ```text
 The owner store's binding names a {binding.kind} store, which the relay cannot read yet.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_SECRET_STORE_SESSION_REQUIRED
+
+Returned from `packages/hobo/src/ci-relay-deploy-credential.ts`.
+
+Message:
+
+```text
+hobo ci deploy reads the Vercel deploy token only through the owner's store session ({RELAY_DEPLOY_TOKEN_REF}), never from the environment or a CI job's identity. Connect the store with HoBo MCP's choose_secret_store (cwd: this project), then run again; --dry-run shows what would be sent without it.
 ```
 
 What to do: follow the message.

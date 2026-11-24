@@ -24,7 +24,8 @@
 				"merge_tests": "${{ steps.merge-group-base.outputs.tests }}",
 				"merge_scope": "${{ steps.merge-group-base.outputs.scope }}",
 				"pr_base": "${{ steps.scm-base.outputs.base }}",
-				"shards": "${{ steps.shard-plan.outputs.shards }}"
+				"shards": "${{ steps.shard-plan.outputs.shards }}",
+				"state_machines": "${{ steps.state-machine-scope.outputs.needed }}"
 			},
 			"steps": [
 				{
@@ -80,6 +81,17 @@
 						"EVENT_NAME": "${{ github.event_name }}",
 						"PR_BASE": "${{ steps.scm-base.outputs.base }}",
 						"MERGE_TESTS": "${{ steps.merge-group-base.outputs.tests }}",
+						"MERGE_BASE": "${{ steps.merge-group-base.outputs.base }}"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Decide whether state-machine verification is needed",
+					"id": "state-machine-scope",
+					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) BASE=\"$PR_BASE\" ;;\n  *) BASE=\"$MERGE_BASE\" ;;\nesac\nneeded=true\nif [ -n \"$BASE\" ] && git cat-file -e \"${BASE}^{commit}\" 2>/dev/null; then\n  answer=\"$(git diff --name-only \"$BASE\" HEAD |\n    node --experimental-strip-types --no-warnings scripts/ci/state-machine-scope.mts)\" || answer=\"\"\n  if [ \"$answer\" = \"false\" ]; then needed=false; fi\nfi\necho \"state-machine verification needed: ${needed}\"\necho \"needed=${needed}\" >> \"$GITHUB_OUTPUT\"\n",
+					"env": {
+						"EVENT_NAME": "${{ github.event_name }}",
+						"PR_BASE": "${{ steps.scm-base.outputs.base }}",
 						"MERGE_BASE": "${{ steps.merge-group-base.outputs.base }}"
 					},
 					"local": "run"

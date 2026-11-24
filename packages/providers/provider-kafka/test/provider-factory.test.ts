@@ -20,11 +20,11 @@
  * makes a terse topic list authorable without inviting a topic that belongs to
  * a different cluster than the one it was declared under.
  */
-import { MESSAGING_WIT_INTERFACE } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import { createKafkaProvider } from "../src/provider.js";
 import { localRedpandaCluster } from "../src/realize.js";
+import { createInMemoryKafkaTransport } from "../src/transport.js";
 
 const CLUSTER = {
 	name: "events",
@@ -45,13 +45,9 @@ describe("provider identity", () => {
 		expect(Object.isFrozen(provider)).toBe(true);
 	});
 
-	it("declares both WIT exports it implements", () => {
-		// The messaging interface *and* the queue interface. Matching binds on
-		// these strings, so an omitted one silently makes the provider
-		// unselectable for that port.
+	it("does not advertise component imports it does not implement", () => {
 		const provider = createKafkaProvider({ env: {} });
-		expect(provider.witExports).toContain(MESSAGING_WIT_INTERFACE);
-		expect(provider.witExports).toContain("hobo:queue/queue@0.1.0");
+		expect(provider.witExports).toEqual([]);
 	});
 
 	it("publishes a capability manifest naming itself", () => {
@@ -183,7 +179,7 @@ describe("realize", () => {
 		// have to infer it from the provider that produced the plan.
 		const result = provider.realize({});
 		expect(result.messagingBackend).toBe("native-kafka");
-		expect(result.witExports).toContain(MESSAGING_WIT_INTERFACE);
+		expect(result.witExports).toEqual([]);
 		expect(Object.isFrozen(result)).toBe(true);
 	});
 
@@ -223,7 +219,7 @@ describe("createMessaging", () => {
 	it("accepts a per-call transport override", () => {
 		// So a test or a conformance run can inject a transport without
 		// reconstructing the provider.
-		const transport = { kind: "injected" } as never;
+		const transport = createInMemoryKafkaTransport();
 		const messaging = createKafkaProvider({
 			cluster: CLUSTER,
 			env: {},
@@ -255,13 +251,13 @@ describe("createMessaging", () => {
 		expect(
 			provider.createMessaging({
 				live: true,
-				transport: { kind: "injected" } as never,
+				transport: createInMemoryKafkaTransport(),
 			}),
 		).toBeDefined();
 	});
 
 	it("uses the provider's transport when a call names none", () => {
-		const transport = { kind: "constructed" } as never;
+		const transport = createInMemoryKafkaTransport();
 		const provider = createKafkaProvider({
 			cluster: CLUSTER,
 			transport,
@@ -273,7 +269,7 @@ describe("createMessaging", () => {
 	it("does not let a per-call transport persist into the next call", () => {
 		// Same argument-not-mutation property as the cluster override.
 		const provider = createKafkaProvider({ cluster: CLUSTER, env: {} });
-		provider.createMessaging({ transport: { kind: "once" } as never });
+		provider.createMessaging({ transport: createInMemoryKafkaTransport() });
 		expect(provider.createMessaging()).toBeDefined();
 	});
 });

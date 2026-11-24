@@ -50,6 +50,7 @@ import {
 	retainPreparedOnDown,
 } from "./cd-placement.js";
 import { createCiCommand } from "./ci-command.js";
+import { openBrowser } from "./ci-github-connect.js";
 import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
 import {
 	createCiRelayPlanCommand,
@@ -88,6 +89,7 @@ import type { OwnerStoreSessions } from "./owner-store-session.js";
 import { createProviderCeremonyUp } from "./provider-ceremony.js";
 import { createRecipesCommand } from "./recipes-command.js";
 import { createRegistryCommand } from "./registry-command.js";
+import type { RelayOwnerSessions } from "./relay-owner-session.js";
 import { createReplayCommand } from "./replay-command.js";
 import { createRunbookCommand } from "./runbook-command.js";
 import {
@@ -121,6 +123,7 @@ export interface ComposedHoboCliOptions {
 		OwnerStoreSessions,
 		"credentials" | "status" | "entries" | "agentVault"
 	>;
+	readonly relaySessions?: RelayOwnerSessions;
 	/**
 	 * The clock steps that wait on a provider use (the Vercel device grant's
 	 * polling, RFC 8628): the system's by default; a spec drives it virtually.
@@ -337,7 +340,19 @@ export function createComposedHoboCli(
 				// The relay is placed through its own Yards (the Vercel project
 				// hobo-ci and the Yards its junction joins), and `up` delivers it.
 				plan: createCiRelayPlanCommand(runtime, plan),
-				upWith: (credentials) => createCiRelayUpCommand(credentials, up),
+				upWith: (credentials) =>
+					createCiRelayUpCommand(
+						credentials,
+						up,
+						options.ownerSession !== undefined
+							? {
+									owner: {
+										credentials: options.ownerSession.credentials,
+										entries: options.ownerSession.entries,
+									},
+								}
+							: {},
+					),
 				status: ci,
 				fallback: ci,
 			}),
@@ -457,7 +472,14 @@ export function createComposedHoboCli(
 			// Identity plane: persist profile + optional default broker association.
 			// The composition root injects the platform fetch — the login/grant
 			// modules never reach for the global, so tests drive them offline.
-			login: createBrokerAwareLoginCommand({ fetchImpl: fetch }),
+			login: createBrokerAwareLoginCommand({
+				fetchImpl: fetch,
+				...(options.ownerChannel !== undefined
+					? { relay: "owner-channel" as const }
+					: options.relaySessions !== undefined
+						? { relay: { sessions: options.relaySessions, openBrowser } }
+						: undefined),
+			}),
 			// Durable Connections: authorize once, mint short-lived tokens thereafter.
 			connection: createConnectionCommand(),
 			// Continuous identity migration observe surface (Matching/policy-driven; zero Bindle config).

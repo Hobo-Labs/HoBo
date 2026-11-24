@@ -16,6 +16,12 @@
  * partition count it reports is likewise a plausible default rather than a
  * measurement, because there is no cluster to measure.
  */
+import {
+	parseConsumerGroupId,
+	parseSubscriptionName,
+	parseTenantId,
+	parseTopicName,
+} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import { createKafkaProvider } from "../src/provider.js";
@@ -34,8 +40,14 @@ function messaging() {
 	return createKafkaProvider({ cluster: CLUSTER, env: {} }).createMessaging();
 }
 
-const TOPIC = "orders" as never;
-const GROUP = "workers" as never;
+const TOPIC = parseTopicName("orders");
+const GROUP = parseConsumerGroupId("workers");
+const TENANT = parseTenantId("acme");
+const topicSpec = () => ({
+	name: TOPIC,
+	tenantId: TENANT,
+	delivery: "at-least-once" as const,
+});
 
 describe("fidelity is stated, never inferred", () => {
 	it("reports simulated fidelity and a null transport", () => {
@@ -67,10 +79,7 @@ describe("fidelity is stated, never inferred", () => {
 describe("ensureTopic", () => {
 	it("creates a topic and reports it back", async () => {
 		const client = messaging();
-		const ensured = await client.ensureTopic({
-			name: TOPIC,
-			tenantId: "acme",
-		} as never);
+		const ensured = await client.ensureTopic(topicSpec());
 		expect(ensured.name).toBeDefined();
 	});
 
@@ -78,14 +87,8 @@ describe("ensureTopic", () => {
 		// Ensuring twice must not produce two topics, because the whole point of
 		// an `ensure` is that a caller can run it on every start-up.
 		const client = messaging();
-		const first = await client.ensureTopic({
-			name: TOPIC,
-			tenantId: "acme",
-		} as never);
-		const second = await client.ensureTopic({
-			name: TOPIC,
-			tenantId: "acme",
-		} as never);
+		const first = await client.ensureTopic(topicSpec());
+		const second = await client.ensureTopic(topicSpec());
 		expect(second.name).toBe(first.name);
 	});
 
@@ -94,10 +97,7 @@ describe("ensureTopic", () => {
 		// measure. Reporting 0 would make a partition-aware consumer believe the
 		// topic could not be read.
 		const client = messaging();
-		const ensured = await client.ensureTopic({
-			name: TOPIC,
-			tenantId: "acme",
-		} as never);
+		const ensured = await client.ensureTopic(topicSpec());
 		expect(client.partitionsFor(ensured.name)).toBeGreaterThan(0);
 	});
 });
@@ -107,28 +107,22 @@ describe("partitionsFor", () => {
 		// Not zero and not a throw. A caller computing a partition key before
 		// ensuring the topic is normal, and either alternative would make that a
 		// special case.
-		expect(messaging().partitionsFor("never-ensured" as never)).toBeGreaterThan(
-			0,
-		);
+		expect(
+			messaging().partitionsFor(parseTopicName("never-ensured")),
+		).toBeGreaterThan(0);
 	});
 
 	it("reports the recorded count once a topic has been ensured", async () => {
 		const client = messaging();
-		const ensured = await client.ensureTopic({
-			name: TOPIC,
-			tenantId: "acme",
-		} as never);
-		expect(typeof client.partitionsFor(ensured.name)).toBe("number");
+		const ensured = await client.ensureTopic(topicSpec());
+		expect(client.partitionsFor(ensured.name)).toEqual(expect.any(Number));
 	});
 });
 
 describe("publish and consume", () => {
 	async function withTopic() {
 		const client = messaging();
-		const ensured = await client.ensureTopic({
-			name: TOPIC,
-			tenantId: "acme",
-		} as never);
+		const ensured = await client.ensureTopic(topicSpec());
 		return { client, topic: ensured.name };
 	}
 
@@ -161,7 +155,7 @@ describe("publish and consume", () => {
 	it("accepts publish options", async () => {
 		const { client, topic } = await withTopic();
 		await expect(
-			client.publish(topic, { order: 1 }, { key: "order-1" } as never),
+			client.publish(topic, { order: 1 }, { key: "order-1" }),
 		).resolves.toBeDefined();
 	});
 });
@@ -169,10 +163,7 @@ describe("publish and consume", () => {
 describe("ack and nack", () => {
 	async function consumeOne() {
 		const client = messaging();
-		const ensured = await client.ensureTopic({
-			name: TOPIC,
-			tenantId: "acme",
-		} as never);
+		const ensured = await client.ensureTopic(topicSpec());
 		await client.publish(ensured.name, { order: 1 });
 		const [message] = await client.consume(ensured.name, GROUP);
 		expect(message).toBeDefined();
@@ -181,13 +172,10 @@ describe("ack and nack", () => {
 	}
 
 	it("acks a consumed message", async () => {
-		// Synchronous on the simulated path — there is no broker round trip to
-		// await. Pinned because the live client's `ack` returns a promise, so
-		// code written against one and run against the other must not depend on
-		// the return being thenable. `await` on a non-promise is a no-op, which
-		// is what keeps the shared shape usable.
 		const { client, message } = await consumeOne();
-		expect(() => client.ack(message.messageId, message.leaseId)).not.toThrow();
+		await expect(
+			client.ack(message.messageId, message.leaseId),
+		).resolves.toBeUndefined();
 	});
 
 	it("nacks a consumed message", async () => {
@@ -195,33 +183,18 @@ describe("ack and nack", () => {
 		// say so rather than letting the lease expire. A simulated client without
 		// it would make that code path untestable offline.
 		const { client, message } = await consumeOne();
-		expect(() => client.nack(message.messageId, message.leaseId)).not.toThrow();
+		await expect(
+			client.nack(message.messageId, message.leaseId),
+		).resolves.toBeUndefined();
 	});
 
 	it("carries a nack reason through", async () => {
 		// The reason is what a dead-letter policy dispatches on, so dropping it
 		// would make every nack look the same to whatever routes them.
 		const { client, message } = await consumeOne();
-		expect(() =>
+		await expect(
 			client.nack(message.messageId, message.leaseId, "schema-mismatch"),
-		).not.toThrow();
-	});
-});
-
-describe("flush", () => {
-	it("resolves immediately, because nothing is buffered", async () => {
-		// Pinned rather than assumed. The simulated path buffers nothing, so
-		// `flush` is a no-op — but it must still *exist* and resolve, or code
-		// written against the live client would break when run offline. That
-		// symmetry is the whole reason the method is there.
-		await expect(messaging().flush()).resolves.toBeUndefined();
-	});
-
-	it("is safe to call repeatedly and before any publish", async () => {
-		const client = messaging();
-		await client.flush();
-		await client.flush();
-		await expect(client.flush()).resolves.toBeUndefined();
+		).resolves.toBeUndefined();
 	});
 });
 
@@ -236,7 +209,7 @@ describe("events", () => {
 		// recorded nothing would produce an empty receipt for work that visibly
 		// happened.
 		const client = messaging();
-		await client.ensureTopic({ name: TOPIC, tenantId: "acme" } as never);
+		await client.ensureTopic(topicSpec());
 		expect(client.events().length).toBeGreaterThan(0);
 	});
 });
@@ -244,16 +217,16 @@ describe("events", () => {
 describe("ensureSubscription", () => {
 	it("registers a subscription", async () => {
 		const client = messaging();
-		await client.ensureTopic({ name: TOPIC, tenantId: "acme" } as never);
+		await client.ensureTopic(topicSpec());
 		await expect(
 			client.ensureSubscription({
-				name: "orders-workers",
+				name: parseSubscriptionName("orders-workers"),
 				topic: TOPIC,
 				consumerGroup: GROUP,
-				tenantId: "acme",
+				tenantId: TENANT,
 				delivery: "at-least-once",
 				maxDeliveryAttempts: 3,
-			} as never),
+			}),
 		).resolves.toBeDefined();
 	});
 });
@@ -261,10 +234,7 @@ describe("ensureSubscription", () => {
 describe("subscribe", () => {
 	it("delivers a published message to a handler", async () => {
 		const client = messaging();
-		const ensured = await client.ensureTopic({
-			name: TOPIC,
-			tenantId: "acme",
-		} as never);
+		const ensured = await client.ensureTopic(topicSpec());
 		const seen: unknown[] = [];
 		await client.publish(ensured.name, { order: 1 });
 		await client.subscribe(

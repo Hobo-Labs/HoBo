@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package hobo.alchemy_rivet_topic.v1;
+
+message TopicSourceClaim {
+  string resource_id = 1;
+  string resource_type = 2;
+  string bindle_name = 3;
+  string application_name = 4;
+  string source_kind = 5;
+  string source_path = 6;
+  string source_digest = 7;
+  string environment_digest = 8;
+  string proof_ref = 9;
+}

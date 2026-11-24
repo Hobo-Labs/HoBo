@@ -341,6 +341,10 @@ describe("bounded private Cloudflare R2 proxy", () => {
 
 	it("times out and cancels a stalled byte stream", async () => {
 		vi.useFakeTimers();
+		vi.resetModules();
+		const { readCloudflareR2Bytes: timedRead } = await import(
+			"../src/cloudflare-r2-protocol.js"
+		);
 		let cancelled = false;
 		const stream = new ReadableStream<Uint8Array>({
 			type: "bytes",
@@ -349,7 +353,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 				cancelled = true;
 			},
 		});
-		const result = expect(readCloudflareR2Bytes(stream)).rejects.toMatchObject({
+		const result = expect(timedRead(stream)).rejects.toMatchObject({
 			code: "R2_STREAM_TIMEOUT",
 		});
 		await vi.advanceTimersByTimeAsync(10_001);
@@ -359,28 +363,30 @@ describe("bounded private Cloudflare R2 proxy", () => {
 
 	it("bounds and validates the native digest operation", async () => {
 		vi.useFakeTimers();
+		vi.resetModules();
+		const { cloudflareR2Digest: timedDigest } = await import(
+			"../src/cloudflare-r2-protocol.js"
+		);
 		const digest = vi
 			.spyOn(crypto.subtle, "digest")
 			.mockImplementation(() => new Promise(() => {}));
 		const outcome = expect(
-			cloudflareR2Digest(new Uint8Array([1]).buffer),
+			timedDigest(new Uint8Array([1]).buffer),
 		).rejects.toMatchObject({ code: "R2_DIGEST_UNAVAILABLE" });
 		await vi.advanceTimersByTimeAsync(10_001);
 		await outcome;
 		const malformedDigest = new ArrayBuffer(3);
 		Object.defineProperty(malformedDigest, "byteLength", { value: 32 });
 		digest.mockResolvedValue(malformedDigest);
+		await expect(timedDigest(new Uint8Array([1]).buffer)).rejects.toMatchObject(
+			{ code: "R2_DIGEST_UNAVAILABLE" },
+		);
 		await expect(
-			cloudflareR2Digest(new Uint8Array([1]).buffer),
-		).rejects.toMatchObject({ code: "R2_DIGEST_UNAVAILABLE" });
-		await expect(
-			cloudflareR2Digest(
-				new Uint8Array(CLOUDFLARE_R2_MAX_OBJECT_BYTES + 1).buffer,
-			),
+			timedDigest(new Uint8Array(CLOUDFLARE_R2_MAX_OBJECT_BYTES + 1).buffer),
 		).rejects.toMatchObject({ code: "R2_OBJECT_INVALID" });
 		const spoofed = new ArrayBuffer(CLOUDFLARE_R2_MAX_OBJECT_BYTES + 1);
 		Object.defineProperty(spoofed, "byteLength", { value: 1 });
-		await expect(cloudflareR2Digest(spoofed)).rejects.toMatchObject({
+		await expect(timedDigest(spoofed)).rejects.toMatchObject({
 			code: "R2_OBJECT_INVALID",
 		});
 		expect(digest).toHaveBeenCalledTimes(2);
@@ -393,9 +399,14 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		});
 		let observed: BufferSource | undefined;
 		let finish: (digest: ArrayBuffer) => void = () => {};
+		let markStarted: () => void = () => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
 		vi.spyOn(crypto.subtle, "digest").mockImplementation(
 			(_algorithm, bytes) => {
 				observed = bytes;
+				markStarted();
 				return new Promise((resolve) => {
 					finish = resolve;
 				});
@@ -403,6 +414,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		);
 		const pending = cloudflareR2Digest(original.buffer);
 		original.fill(9);
+		await started;
 		expect(observed).not.toBe(original.buffer);
 		expect(observed).toEqual(new Uint8Array([1, 2, 3]).buffer);
 		finish(new ArrayBuffer(32));
@@ -451,6 +463,10 @@ describe("bounded private Cloudflare R2 proxy", () => {
 
 	it("bounds a stalled native read and cancels its late object body", async () => {
 		vi.useFakeTimers();
+		vi.resetModules();
+		const { cloudflareR2Proxy: timedProxy } = await import(
+			"../src/cloudflare-r2-proxy.js"
+		);
 		const n = native();
 		let finish: (value: Awaited<ReturnType<typeof n.binding.get>>) => void =
 			() => {};
@@ -462,7 +478,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 					finish = resolve;
 				}),
 		};
-		const outcome = cloudflareR2Proxy.fetch(request("read"), env(binding));
+		const outcome = timedProxy.fetch(request("read"), env(binding));
 		await vi.advanceTimersByTimeAsync(10_001);
 		const response = await outcome;
 		expect(response.status).toBe(502);
@@ -485,6 +501,10 @@ describe("bounded private Cloudflare R2 proxy", () => {
 
 	it("reports unknown on native write and delete timeouts even if they complete late", async () => {
 		vi.useFakeTimers();
+		vi.resetModules();
+		const { cloudflareR2Proxy: timedProxy } = await import(
+			"../src/cloudflare-r2-proxy.js"
+		);
 		const n = native();
 		let completeWrite: () => void = () => {};
 		let completeDelete: () => void = () => {};
@@ -519,7 +539,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		};
 		const body = new Uint8Array([7]);
 		const digest = await cloudflareR2Digest(body.buffer);
-		const write = cloudflareR2Proxy.fetch(
+		const write = timedProxy.fetch(
 			request(
 				"write",
 				"key",
@@ -542,7 +562,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		await Promise.resolve();
 		expect(n.items.get("key")?.bytes).toEqual(body);
 		expect(n.calls).toEqual(["put:key"]);
-		const deleted = cloudflareR2Proxy.fetch(request("delete"), env(binding));
+		const deleted = timedProxy.fetch(request("delete"), env(binding));
 		await deleteStarted;
 		await vi.advanceTimersByTimeAsync(10_001);
 		expect((await deleted).headers.get("x-hobo-r2-error")).toBe(

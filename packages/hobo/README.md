@@ -2,8 +2,8 @@
 
 For repository CI, run `hobo ci connect`; see [CI setup and command reference](CI.md)
 for Git remote detection, isolated runner consent, account credentials, run logs,
-retries, relay deployment OIDC attestation, redacted workflow reporting, and the
-documented Vercel CLI parity.
+retries, staged relay production delivery from the owner's store session, and
+the documented Vercel CLI parity.
 
 **Product composition root** for the end-user `hobo` CLI (and `hobo-mcp`).
 This package is the composed product binary; **`@hobo/cli`** is the shell,
@@ -78,6 +78,18 @@ the waiting run. The agent carries only ciphertext. `choose_secret_store` with
 for hosts that declare it but never show the form. The page takes the store choice and
 the store's sign-in (Infisical's copied session) only. A `sign-in-needed` result carries
 the refusal's `reason` with links and identifiers redacted (`publicReason`).
+
+`relay_login` reconnects a restarted server to the owner's already configured
+HoBo CI relay instead of the store form (`src/mcp-relay-login.ts`,
+`src/relay-owner-session.ts`): the owner gives the relay address in a host form or
+on the sealed owner page (`openRelay`/`unsealRelay`), confirms one GitHub device
+code, and the relay's session stays in this server's memory. While no store
+session is established for a project, the composed CLI resolves
+`owner://HOBO_CI_ACCOUNT_TOKEN` and `github-app://<owner>/<repo>` through it
+(`withRelaySession`); other entries are refused because the relay hands out only
+short-lived values. The `hobo` binary does the same per process with
+`hobo login --relay <origin>` and `--relay` on `hobo ci` and `hobo cd`; nothing is
+written ([CI.md](CI.md#reconnect-after-a-restart-hobo-login---relay)).
 
 `store_owner_entries` is the optional later step that joins a Hostinger fleet: it fills the store with the provider entries HoBo reads
 (`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
@@ -447,9 +459,9 @@ non-secret settings), and realizes it as one git-source Vercel deployment
 through the git-artifact mode above: the non-secret settings first, then each of
 the Bindle's resources applied through the provider the Yard names, which
 deploys once. Only Vercel Yards are realized (`HOBO_CI_DEPLOY_YARD_PROVIDER`
-otherwise). The workflow on `main` (`.github/workflows/relay-deploy.yml`)
-verifies the secret store, then runs this deploy command for preview and
-production with `id-token: write` and `--sha "$GITHUB_SHA"`.
+otherwise). No workflow runs this deploy command: it reads the Vercel token
+`owner://HOBO_CD_VERCEL_TOKEN` through the owner's store session, which no
+GitHub Actions job holds.
 
 Delivery planning also reads declared secret projections from Yards in the
 relay's own Junction, keeping each projection under its source Yard. A declared
@@ -595,7 +607,7 @@ found outside OpenSesame, which only brokers Vercel's token.
 
 Related execution paths:
 
-- **`hobo login`** — fixture/OIDC session under `HOBO_HOME`; full production OIDC/SPIRE is not the default (`src/login-command.ts` `HONEST SCOPE`).
+- **`hobo login`** — fixture/OIDC session under `HOBO_HOME`; full production OIDC/SPIRE is not the default (`src/login-command.ts` `HONEST SCOPE`). `hobo login --relay <origin>` signs in to the owner's CI relay for the process only and writes nothing.
 - **Build paths** — compiler-backed app imprints produce real Node bundles with
   runtime assets. Product WASM builds require the real componentizer; product
   container builds use a service Dockerfile with Docker Buildx or self-hosted

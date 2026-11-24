@@ -30,6 +30,48 @@ const declaration = (
 });
 
 describe("Cloudflare worker binding", () => {
+	it("invokes the native service using captured intrinsics", async () => {
+		const entrypoint = (context?: CloudflareBindleContext) => async () =>
+			cloudflareBindings(context)
+				.service("catalog")
+				.fetch(new Request("https://service.test/"));
+		const app = {
+			name: "shop",
+			resources: {
+				web: declaration("web", "web", [], ["service"]),
+				catalog: declaration("service", "catalog", []),
+			},
+			edges: [{ from: "web", to: "catalog" }],
+			requirements: {},
+			entrypoint: (name: string) => (name === "web" ? entrypoint : undefined),
+		};
+		const worker = bindleCloudflareWorker(app, "web");
+		let receiverCorrect = false;
+		const service = {
+			fetch() {
+				receiverCorrect = this === service;
+				return new Response("original");
+			},
+		};
+		const original = Reflect.apply;
+		let substituted = 0;
+		Reflect.apply = () => {
+			substituted++;
+			throw new Error("substituted intrinsic");
+		};
+		let pending: Promise<Response>;
+		try {
+			pending = worker.fetch(new Request("https://app.test/"), {
+				HOBO_RESOURCE_0: service,
+			});
+		} finally {
+			Reflect.apply = original;
+		}
+		expect(await (await pending).text()).toBe("original");
+		expect(receiverCorrect).toBe(true);
+		expect(substituted).toBe(0);
+	});
+
 	it("invokes the bindle handler with only its declared service binding", async () => {
 		const entrypoint = (context?: CloudflareBindleContext) => async () => {
 			const services = cloudflareBindings(context);

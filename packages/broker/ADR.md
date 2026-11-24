@@ -55,11 +55,13 @@ policies, wraps policy enforcement (OPA-shaped), contract enforcement
    `@hobo/cd-gitops`; the legacy `argo` engine maps to its `argo-cd`
    publisher.
 6. **Connector registry stores configuration, never credentials.**
-   Well-known kinds (`github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`)
-   have required-setting parsers; `credentialRef` points into the token broker
-   (ADR-0008). The HoBo Broker stays distinct from the token broker and the
-   connector runtime broker, per the meta-cloud-broker adversarial
-   requirement that the terms never conflate.
+   Well-known kinds (`github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`,
+   `agent37`) have required-setting parsers; Agent37 requires `workspaceId`
+   and fixes its optional API/exec origins to the documented HTTPS hosts.
+   `credentialRef` points into the token broker (ADR-0008). The HoBo Broker
+   stays distinct from the token broker and the connector runtime broker,
+   per the meta-cloud-broker adversarial requirement that the terms never
+   conflate.
 
 7. **Rego is the external policy language; the adapter fails closed.**
    `createOpaGatePlane` lowers the Policy IR request onto the OPA Data API

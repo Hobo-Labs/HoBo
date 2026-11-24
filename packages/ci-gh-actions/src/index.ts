@@ -616,6 +616,12 @@ export {
 	registerRelayMcpInsightTools,
 } from "./relay-mcp-insights.js";
 export {
+	createRelayOwnerLogin,
+	type RelayOwnerAccount,
+	type RelayOwnerLogin,
+} from "./relay-owner-login.js";
+export * from "./relay-owner-login-protocol.js";
+export {
 	assertRelayOriginAllowed,
 	CI_PROJECT_LOCAL_OVERRIDE_PATH,
 	type CiJobAdmission,

@@ -1012,7 +1012,7 @@ async function deliverWith(
 		return {
 			ok: false,
 			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
-			message: `Pipeline ${pipeline}/${node} already carries the ${RELAY_FINALIZATION_SUITE} hook a staged run injected (pipeline records are append-once, so it stays), and this run has no finalizer: production would deploy, verify and then stop unfinalized. Run with HOBO_CI_RELAY_STAGED_PRODUCTION=true (the relay deploy workflow), which finalizes the promotion it drove.`,
+			message: `Pipeline ${pipeline}/${node} already carries the ${RELAY_FINALIZATION_SUITE} hook a staged run injected (pipeline records are append-once, so it stays), and this run has no finalizer: production would deploy, verify and then stop unfinalized. Run with HOBO_CI_RELAY_STAGED_PRODUCTION=true, which finalizes the promotion it drove.`,
 		};
 	const reuseStoredFinalizationHook =
 		storedFinalizationHook && finalizePromotion !== undefined;

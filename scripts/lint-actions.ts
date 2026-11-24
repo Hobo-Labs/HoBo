@@ -33,14 +33,12 @@ const activeCiFiles = new Set([
 	"dev-env-smoke.yml",
 	"fleet-enrollment.yml",
 	"pricing-ci.yml",
-	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
 	"relay-deploy.yml",
 	"release-hobo.yml",
 	"release-hobo-pr.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);
-const hostedReleaseCiFiles = new Set(["release-hobo-pr.yml"]);
 /**
  * The probe: one job per self-hosted label, there only to be picked up, so the
  * route job can tell which labels have a runner behind them.
@@ -292,353 +290,6 @@ function lintTemplates(errors: string[], repoRoot: string): void {
 
 /** The one GitHub-hosted machine type; never `ubuntu-latest`. */
 const HOSTED_RUNS_ON = "ubuntu-24.04";
-
-const HOSTED_RELAY_JOBS = new Set([
-	"deploy-build",
-	"deploy",
-	"app-credentials",
-]);
-const RELAY_CHECKOUT_SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1";
-const RELAY_UPLOAD_SHA = "cf430e030ddbb5b0abf93d22962f4752f3646cd9";
-const RELAY_DOWNLOAD_SHA = "9000827ccba6bdab643e8b6fd33ac0654aef8333";
-const RELAY_DIGEST_ENV =
-	"HOBO_RELAY_CLI_DIGEST: ${{ needs.deploy-build.outputs.digest }}";
-
-function stepLines(block: readonly string[], at: number): readonly string[] {
-	let end = at + 1;
-	while (end < block.length && !/^ {6}- /u.test(block[end] ?? "")) end += 1;
-	return block.slice(at, end);
-}
-
-function jobSteps(block: readonly string[]): readonly (readonly string[])[] {
-	return block
-		.reduce<number[]>((starts, line, index) => {
-			if (/^ {6}- /u.test(line)) starts.push(index);
-			return starts;
-		}, [])
-		.map((start) =>
-			stepLines(block, start).filter((line) => !/^\s*#/u.test(line)),
-		);
-}
-
-function envEntries(step: readonly string[]): readonly string[] {
-	const at = step.findIndex((line) => line.trim() === "env:");
-	if (at < 0) return [];
-	const entries: string[] = [];
-	for (const line of step.slice(at + 1)) {
-		if (!/^ {10}\S/u.test(line)) break;
-		entries.push(line.trim());
-	}
-	return entries;
-}
-
-function cliLine(line: string): boolean {
-	return (
-		line.includes("packages/hobo/dist/bin/hobo.js") &&
-		!/^\s*(?:name|uses|id|if|timeout-minutes|working-directory|shell|env|with):/u.test(
-			line,
-		)
-	);
-}
-
-const DANGEROUS_CHECKOUT_KEYS =
-	/^(repository|ref|github-server-url|token|ssh-key|ssh-known-hosts|ssh-strict):/u;
-
-function attestedRelayCheckout(block: readonly string[]): boolean {
-	const checkouts = block.reduce<number[]>((found, line, index) => {
-		if (/^ {6}- uses: actions\/checkout@/u.test(line)) found.push(index);
-		return found;
-	}, []);
-	if (checkouts.length === 0) return false;
-	return checkouts.every((at) => {
-		if (block[at] !== `      - uses: actions/checkout@${RELAY_CHECKOUT_SHA}`)
-			return false;
-		const values = stepLines(block, at)
-			.filter((line) => /^ {8}/u.test(line))
-			.map((line) => line.trim());
-		return (
-			values.filter((value) => value === "clean: true").length === 1 &&
-			!values.includes("clean: false") &&
-			values.includes("submodules: recursive") &&
-			values.includes("persist-credentials: false") &&
-			!values.some((value) => value.startsWith("path:")) &&
-			!values.some((value) => DANGEROUS_CHECKOUT_KEYS.test(value))
-		);
-	});
-}
-
-function attestedRelayCredentialCheckout(block: readonly string[]): boolean {
-	const checkouts = block.reduce<number[]>((found, line, index) => {
-		if (/^ {6}- uses: actions\/checkout@/u.test(line)) found.push(index);
-		return found;
-	}, []);
-	if (checkouts.length === 0) return false;
-	return checkouts.every((at) => {
-		if (block[at] !== `      - uses: actions/checkout@${RELAY_CHECKOUT_SHA}`)
-			return false;
-		const values = stepLines(block, at)
-			.filter((line) => /^ {8}/u.test(line))
-			.map((line) => line.trim());
-		return (
-			values.filter((value) => value === "clean: false").length === 1 &&
-			!values.includes("clean: true") &&
-			values.some((value) => value.startsWith("fetch-depth:")) &&
-			values.includes("persist-credentials: false") &&
-			!values.some((value) => value.startsWith("path:")) &&
-			!values.some((value) => DANGEROUS_CHECKOUT_KEYS.test(value))
-		);
-	});
-}
-
-function attestedRelayPermissions(
-	block: readonly string[],
-	expected: readonly string[],
-): boolean {
-	const at = block.findIndex((line) => line === "    permissions:");
-	if (at < 0) return false;
-	const actual: string[] = [];
-	for (const line of block.slice(at + 1)) {
-		if (!/^ {6}\S/u.test(line)) break;
-		actual.push(line.trim());
-	}
-	return (
-		actual.length === expected.length &&
-		[...actual].sort().join(",") === [...expected].sort().join(",")
-	);
-}
-
-function attestedHostedRelayJob(
-	file: string,
-	jobLine: string,
-	block: readonly string[],
-	runsOn: string | undefined,
-): boolean {
-	const job = jobLine.trim().replace(/:$/u, "");
-	if (
-		file !== "relay-deploy.yml" ||
-		!HOSTED_RELAY_JOBS.has(job) ||
-		runsOn !== HOSTED_RUNS_ON ||
-		!attestedRelayCheckout(block) ||
-		block.some((line) => line.includes("route-runner")) ||
-		needsRoute(block)
-	)
-		return false;
-	const build = job === "deploy-build";
-	if (
-		!attestedRelayPermissions(
-			block,
-			build ? ["contents: read"] : ["contents: read", "id-token: write"],
-		)
-	)
-		return false;
-	if (build)
-		return (
-			block.some((line) => line.includes("release-freight-cli.mts pack")) &&
-			block.some(
-				(line) => line.trim() === "digest: ${{ steps.pack.outputs.digest }}",
-			) &&
-			block.some(
-				(line) =>
-					line.trim() === `uses: actions/upload-artifact@${RELAY_UPLOAD_SHA}`,
-			)
-		);
-	const steps = jobSteps(block);
-	const checkoutAt = steps.reduce(
-		(found, step, index) =>
-			step.some(
-				(line) =>
-					line.trim().replace(/^- /u, "") ===
-					`uses: actions/checkout@${RELAY_CHECKOUT_SHA}`,
-			)
-				? index
-				: found,
-		-1,
-	);
-	const downloadAt = steps.findIndex((step) =>
-		step.some(
-			(line) =>
-				line.trim() === `uses: actions/download-artifact@${RELAY_DOWNLOAD_SHA}`,
-		),
-	);
-	const restoreAt = steps.findIndex((step) =>
-		step.some(
-			(line) =>
-				line.trim().startsWith("run:") &&
-				line.includes("release-freight-cli.mts restore") &&
-				line.includes('--digest "$HOBO_RELAY_CLI_DIGEST"'),
-		),
-	);
-	const restoreEnv = restoreAt >= 0 ? envEntries(steps[restoreAt] ?? []) : [];
-	const cliAt = steps.findIndex((step) => step.some(cliLine));
-	return (
-		checkoutAt >= 0 &&
-		downloadAt > checkoutAt &&
-		restoreAt > downloadAt &&
-		cliAt > restoreAt &&
-		restoreEnv.length === 1 &&
-		restoreEnv[0] === RELAY_DIGEST_ENV
-	);
-}
-
-function attestedRoutedRelayJob(
-	file: string,
-	jobLine: string,
-	block: readonly string[],
-	runsOn: string | undefined,
-): boolean {
-	const job = jobLine.trim().replace(/:$/u, "");
-	if (
-		file !== "relay-deploy.yml" ||
-		(job !== "deploy" && job !== "app-credentials") ||
-		runsOn !== ROUTED_RUNS_ON ||
-		!needsRoute(block) ||
-		!attestedRelayCredentialCheckout(block) ||
-		block.some((line) => line.includes("route-runner"))
-	)
-		return false;
-	if (!attestedRelayPermissions(block, ["contents: read", "id-token: write"]))
-		return false;
-	const steps = jobSteps(block);
-	const checkoutAt = steps.reduce(
-		(found, step, index) =>
-			step.some(
-				(line) =>
-					line.trim().replace(/^- /u, "") ===
-					`uses: actions/checkout@${RELAY_CHECKOUT_SHA}`,
-			)
-				? index
-				: found,
-		-1,
-	);
-	const downloadAt = steps.findIndex((step) =>
-		step.some(
-			(line) =>
-				line.trim() === `uses: actions/download-artifact@${RELAY_DOWNLOAD_SHA}`,
-		),
-	);
-	const restoreAt = steps.findIndex(
-		(step) =>
-			step.some((line) => line.includes("bootstrap-restore.mjs")) &&
-			step.some((line) => line.includes("HOBO_RELAY_CLI_DIGEST")),
-	);
-	const restoreEnv = restoreAt >= 0 ? envEntries(steps[restoreAt] ?? []) : [];
-	const cliAt = steps.findIndex((step) => step.some(cliLine));
-	return (
-		checkoutAt >= 0 &&
-		downloadAt > checkoutAt &&
-		restoreAt > downloadAt &&
-		cliAt > restoreAt &&
-		restoreEnv.length === 1 &&
-		restoreEnv[0] === RELAY_DIGEST_ENV
-	);
-}
-
-function lintHostedRelayTriggers(
-	errors: string[],
-	file: string,
-	text: string,
-): void {
-	if (file !== "relay-deploy.yml") return;
-	const onBlock = /^on:\n((?: {2}[^\n]*\n)+)/mu.exec(text)?.[1] ?? "";
-	for (const trigger of onBlock.matchAll(/^ {2}([a-z_]+):/gmu)) {
-		const name = trigger[1] ?? "";
-		if (
-			name !== "push" &&
-			name !== "workflow_dispatch" &&
-			name !== "workflow_call"
-		)
-			errors.push(
-				`${file}: the relay's OIDC jobs trust an oidc_sub pinned to main; the ${name} trigger is not a protected ref`,
-			);
-	}
-	const push = / {2}push:\n((?: {4}[^\n]*\n)+)/u.exec(onBlock)?.[1];
-	if (
-		/^ {2}push:$/mu.test(onBlock) &&
-		(push === undefined || !/branches: \[main\]/u.test(push))
-	)
-		errors.push(
-			`${file}: a push that mints the relay's OIDC token must filter branches to [main]`,
-		);
-	const lines = text.split(/\r?\n/);
-	const jobsIndex = lines.findIndex((line) => line === "jobs:");
-	const jobStarts = lines.reduce<number[]>((starts, line, index) => {
-		if (index > jobsIndex && /^ {2}[A-Za-z0-9_-]+:$/u.test(line))
-			starts.push(index);
-		return starts;
-	}, []);
-	const oidcJobs = jobStarts
-		.map((start) => ({
-			block: lines.slice(
-				start,
-				jobStarts[jobStarts.indexOf(start) + 1] ?? lines.length,
-			),
-		}))
-		.filter(({ block }) =>
-			block.some((line) => line.includes("id-token: write")),
-		);
-	const hasJobMainGate = (block: readonly string[]): boolean => {
-		const stepsAt = block.findIndex((line) => line === "    steps:");
-		const header = stepsAt < 0 ? block : block.slice(0, stepsAt);
-		return header.some(
-			(line) =>
-				/^ {4}if:/u.test(line) &&
-				line.includes("github.ref == 'refs/heads/main'"),
-		);
-	};
-	if (
-		/workflow_call:/u.test(onBlock) &&
-		oidcJobs.some(({ block }) => !hasJobMainGate(block))
-	)
-		errors.push(
-			`${file}: the relay's OIDC jobs trust an oidc_sub pinned to main; a workflow_call job must be gated to refs/heads/main`,
-		);
-}
-
-const RELAY_CREDENTIAL_JOBS = new Set(["deploy", "app-credentials"]);
-
-function lintRelayJobAttestation(
-	errors: string[],
-	file: string,
-	blockAt: readonly number[],
-	lines: readonly string[],
-): boolean {
-	if (file !== "relay-deploy.yml" || blockAt.length === 0) return false;
-	let sawRelayJob = false;
-	let allAttested = true;
-	for (const start of blockAt) {
-		const jobLine = lines[start] ?? "";
-		const job = jobLine.trim().replace(/:$/u, "");
-		if (
-			job.startsWith("deploy") &&
-			job !== "deploy-build" &&
-			!RELAY_CREDENTIAL_JOBS.has(job)
-		) {
-			allAttested = false;
-			errors.push(
-				`${file}:${start + 1}: relay credential job ${job} is not an allowed id (deploy or app-credentials)`,
-			);
-		}
-		if (!HOSTED_RELAY_JOBS.has(job)) continue;
-		sawRelayJob = true;
-		const block = lines.slice(
-			start,
-			blockAt[blockAt.indexOf(start) + 1] ?? lines.length,
-		);
-		const runsOn = block
-			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
-			.find((value) => value !== undefined);
-		const attested =
-			attestedHostedRelayJob(file, jobLine, block, runsOn) ||
-			attestedRoutedRelayJob(file, jobLine, block, runsOn);
-		if (!attested) {
-			allAttested = false;
-			errors.push(
-				`${file}:${start + 1}: relay job ${job} does not meet the hosted/routed attestation contract`,
-			);
-		}
-	}
-	return sawRelayJob && allAttested;
-}
 
 /**
  * For the PR-only job that validates a deps image without promoting it. Use
@@ -1138,9 +789,6 @@ function lintWorkflowYaml(
 			runsOn,
 		);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
-		const hostedRelayJob =
-			attestedHostedRelayJob(file, jobLine, block, runsOn) ||
-			attestedRoutedRelayJob(file, jobLine, block, runsOn);
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
 			runsOn === DEPS_IMAGE_RUNS_ON &&
@@ -1155,9 +803,8 @@ function lintWorkflowYaml(
 			runsOn !== SHARD_RUNS_ON &&
 			!depsRoute &&
 			!npmOidcHosted &&
-			!alwaysHosted &&
-			!hostedRelayJob &&
-			!releaseIntegrationHosted
+			!releaseIntegrationHosted &&
+			!alwaysHosted
 		) {
 			errors.push(
 				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed or shard label expression`,
@@ -1271,14 +918,9 @@ function lintWorkflowYaml(
 	if (firstSetupNode !== -1 && !/node-version:\s*['"]?24['"]?/.test(text)) {
 		errors.push(`${file}: Node version must be explicit and set to 24`);
 	}
-	const hostedRelayFileAttested =
-		file !== "relay-deploy.yml" ||
-		lintRelayJobAttestation(errors, file, jobStarts, lines);
-	if (file === "relay-deploy.yml") lintHostedRelayTriggers(errors, file, text);
 	if (
 		activeCiFiles.has(file) &&
-		!hostedRelayFileAttested &&
-		!hostedReleaseCiFiles.has(file) &&
+		file !== "release-hobo-pr.yml" &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
 		!text.includes(ROUTED_RUNS_ON) &&

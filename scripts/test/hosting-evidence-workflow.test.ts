@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { inspectHostingEvidence } from "../ci/hosting-evidence.mts";
-import { decide, relayInputDirs } from "../ci/relay-deploy-gate.mts";
+import { relayInputDirs, touchesRelay } from "../ci/relay-inputs.mts";
 
 const legacyBindingText = `${JSON.stringify(
 	{
@@ -378,17 +378,16 @@ describe("trusted-main hosting evidence", () => {
 		);
 		const inputDirs = relayInputDirs(readFileSync("pnpm-lock.yaml", "utf8"));
 		assert.equal(
-			decide({
-				event: "push",
-				inputDirs,
-				changed: [
+			touchesRelay(
+				[
 					".github/workflows/hosting-evidence.yml",
 					"scripts/ci/hosting-evidence.mts",
 					"scripts/test/hosting-evidence-workflow.test.ts",
 					"scripts/lint-actions.ts",
 					"docs/ci/hosting-evidence.md",
 				],
-			}).run,
+				inputDirs,
+			),
 			false,
 		);
 	});

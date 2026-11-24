@@ -49,6 +49,9 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
+	type Agent37PoolObservation,
+	type Agent37PoolPolicy,
+	agent37Capacity,
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetMember,
 	LOCAL_HOST_RUNNER_LABEL,
@@ -61,6 +64,7 @@ import {
 	type RoutingSlipRefusal,
 	RUNNER_ROUTING_PATH,
 	type RunnerRouting,
+	type RunnerRoutingPool,
 	readRoutingSlip,
 	readRunnerRouting,
 	routingLabels,
@@ -98,7 +102,7 @@ export const MAX_PROBE_LOOKUPS = 3;
 export const PROBE_WAIT_SECONDS = 60;
 export const PROBE_POLL_SECONDS = 10;
 
-export type RouteTier = "fleet" | "local" | "github";
+export type RouteTier = "fleet" | "local" | "github" | "agent37";
 
 /** A job has waited this long for a label: that backend is not taking jobs. */
 export const DEFAULT_MAX_WAIT_SECONDS = 120;
@@ -1196,6 +1200,7 @@ export type RouteSettings = Readonly<{
 	 * job keeps the fleet label.
 	 */
 	boxRunner: string;
+	externalPools: readonly RunnerRoutingPool[];
 	trunkLend: boolean;
 	/** `false` when `.hobo/ci.json` held no valid `runnerRouting`. */
 	committed: boolean;
@@ -1211,6 +1216,7 @@ export function routeSettings(
 			labels: policy.labels,
 			localRunner: policy.localRunner,
 			boxRunner: policy.boxRunner ? policy.labels.box : "",
+			externalPools: policy.externalPools,
 			trunkLend: policy.box.trunkLend === 1,
 			committed: true,
 		};
@@ -1223,6 +1229,7 @@ export function routeSettings(
 		labels: DEFAULT_RUNNER_LABELS,
 		localRunner: DEFAULT_LOCAL_RUNNER,
 		boxRunner: DEFAULT_BOX_RUNNER ? DEFAULT_RUNNER_LABELS.box : "",
+		externalPools: [],
 		trunkLend: DEFAULT_TRUNK_LEND,
 		committed: false,
 	};
@@ -1269,6 +1276,10 @@ export type PrBatchCapacityVerifier = (
 		maxQueueWaitSeconds: number;
 	}>,
 ) => Promise<boolean>;
+
+export type Agent37PoolObserver = (
+	pool: Agent37PoolPolicy,
+) => Promise<Agent37PoolObservation>;
 
 function prBatchScope(
 	env: NodeJS.ProcessEnv,
@@ -1588,6 +1599,7 @@ export async function main(
 		now?: () => number;
 		/** A trusted host may install the real durable full-run claim verifier. */
 		verifyPrBatchCapacity?: PrBatchCapacityVerifier | undefined;
+		observeAgent37Pool?: Agent37PoolObserver;
 	}> = {},
 ): Promise<RouteDecision> {
 	const args = parseRouteArgs(argv);
@@ -1714,13 +1726,65 @@ export async function main(
 				},
 				env,
 			);
+		const eventPayload =
+			"eventPayload" in io ? io.eventPayload : readEventPayload(env);
+		const pullRequest = asObject(asObject(eventPayload)?.pull_request);
+		const baseRepository = asText(
+			asObject(asObject(pullRequest?.base)?.repo)?.full_name,
+		);
+		const headRepository = asText(
+			asObject(asObject(pullRequest?.head)?.repo)?.full_name,
+		);
+		const callerRepository = env.GITHUB_REPOSITORY ?? "";
+		const agent37Trusted =
+			callerRepository.length > 0 &&
+			baseRepository?.toLowerCase() === callerRepository.toLowerCase() &&
+			headRepository?.toLowerCase() === callerRepository.toLowerCase() &&
+			routeClass(event, eventPayload) === "pr";
+		const refuseAgent37 = (
+			pool: Agent37PoolPolicy,
+			reason: "observer-missing" | "observer-failed",
+		) => {
+			console.log(
+				`::warning title=hobo-ci-agent37-refusal::${escapeCommand(
+					JSON.stringify({
+						v: 1,
+						pool: pool.labels[0] ?? "unknown",
+						runId: env.GITHUB_RUN_ID ?? "unknown",
+						runAttempt: env.GITHUB_RUN_ATTEMPT ?? "unknown",
+						reason,
+						fallback: "public",
+					}),
+				)}`,
+			);
+		};
+		for (const pool of agent37Trusted ? settings.externalPools : []) {
+			if (!io.observeAgent37Pool) {
+				refuseAgent37(pool, "observer-missing");
+				continue;
+			}
+			let observation: Agent37PoolObservation;
+			try {
+				observation = await io.observeAgent37Pool(pool);
+			} catch {
+				refuseAgent37(pool, "observer-failed");
+				continue;
+			}
+			const capacity = agent37Capacity(pool, observation);
+			if (!capacity) continue;
+			return report(
+				{
+					tier: "agent37",
+					runner: capacity.runsOn,
+					reason: `the full PR batch has no verified fleet capacity and Broker claim; the agent37 external pool ${capacity.runsOn} reports ${capacity.freeRunners} free runner(s)`,
+					refusedBy: "none",
+					slip: { kind: "unasked", why: "batch" },
+				},
+				env,
+			);
+		}
 		let hostedFallbackReason: string | undefined;
-		if (
-			routeClass(
-				event,
-				"eventPayload" in io ? io.eventPayload : readEventPayload(env),
-			) !== "fork"
-		) {
+		if (routeClass(event, eventPayload) !== "fork") {
 			const token = env.GITHUB_TOKEN ?? "";
 			const probeRead = token
 				? githubReader(

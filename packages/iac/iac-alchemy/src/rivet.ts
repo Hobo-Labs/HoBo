@@ -1,4 +1,6 @@
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: source values cross an external provider boundary and are validated before use. */
 import { isAbsolute, resolve } from "node:path";
+import { types } from "node:util";
 import { DurableObject, type Providers } from "@alchemy.run/rivet";
 import { PoolHost } from "@alchemy.run/rivet/Host";
 import type { ResourceLike } from "alchemy/Resource";
@@ -11,6 +13,8 @@ import {
 	type RivetHttpBinding,
 	type RivetHttpEntrypoint,
 } from "./rivet-runtime.js";
+import { inspectRivetRegistry, rivetOwnData } from "./rivet-source-boundary.js";
+import { isRivetSynchronousTrue } from "./rivet-synchronous-authority.js";
 import {
 	type AlchemySourceClaim,
 	type AlchemySourceFence,
@@ -24,6 +28,12 @@ export {
 	type RivetPrimitiveSupport,
 } from "./rivet-catalog.js";
 
+const hasOwnDescriptor = Object.hasOwn;
+const isProxy = types.isProxy;
+const getOwnDescriptor = Object.getOwnPropertyDescriptor;
+const objectKeys = Object.keys;
+const freeze = Object.freeze;
+
 export interface RivetRegistry {
 	readonly config: {
 		readonly use: Readonly<Record<string, AnyActorDefinition>>;
@@ -35,10 +45,13 @@ export interface RivetHttpSource<Entrypoint extends RivetHttpEntrypoint> {
 	readonly resourceName: string;
 	readonly kind: "api" | "web" | "service";
 	readonly actorName: string;
+
 	readonly sourceDigest: string;
+
 	readonly sourceFence: AlchemySourceFence;
 	readonly registry: RivetRegistry;
 	readonly binding: RivetHttpBinding<Entrypoint>;
+
 	readonly verifySource: (source: {
 		readonly main: string;
 		readonly sourceDigest: string;
@@ -61,14 +74,57 @@ function name(value: string): boolean {
 export function bindRivetHttpSource<Entrypoint extends RivetHttpEntrypoint>(
 	input: RivetHttpSource<Entrypoint>,
 ): RivetHttpSource<Entrypoint> {
-	const snapshot = Object.freeze({ ...input });
-	const fence = captureAlchemySourceFence(snapshot.sourceFence);
-	if (fence === undefined || fence.sourceDigest !== snapshot.sourceDigest)
+	const main = rivetOwnData<string>(input, "main");
+	const resourceName = rivetOwnData<string>(input, "resourceName");
+	const kind = rivetOwnData<RivetHttpSource<Entrypoint>["kind"]>(input, "kind");
+	const actorName = rivetOwnData<string>(input, "actorName");
+	const sourceDigest = rivetOwnData<string>(input, "sourceDigest");
+	const sourceFence = rivetOwnData<AlchemySourceFence>(input, "sourceFence");
+	const registry = rivetOwnData<RivetRegistry>(input, "registry");
+	const binding = rivetOwnData<RivetHttpBinding<Entrypoint>>(input, "binding");
+	const verifySource = rivetOwnData<
+		RivetHttpSource<Entrypoint>["verifySource"]
+	>(input, "verifySource");
+	if (
+		typeof main !== "string" ||
+		typeof resourceName !== "string" ||
+		typeof kind !== "string" ||
+		typeof actorName !== "string" ||
+		typeof sourceDigest !== "string" ||
+		registry === undefined ||
+		binding === undefined ||
+		typeof verifySource !== "function" ||
+		isProxy(verifySource) ||
+		isProxy(sourceFence)
+	)
+		throw new AlchemyIacError(
+			"RIVET_SOURCE_INVALID",
+			"source fields must be bounded own data",
+		);
+	const verifyFence = rivetOwnData<AlchemySourceFence["verify"]>(
+		sourceFence,
+		"verify",
+	);
+	const fence =
+		typeof verifyFence === "function" && !isProxy(verifyFence)
+			? captureAlchemySourceFence(sourceFence)
+			: undefined;
+	if (fence === undefined || fence.sourceDigest !== sourceDigest)
 		throw new AlchemyIacError(
 			"RIVET_SOURCE_UNVERIFIED",
 			"an immutable source fence bound to the reviewed digest is required",
 		);
-	const source = Object.freeze({ ...snapshot, sourceFence: fence });
+	const source = freeze({
+		main,
+		resourceName,
+		kind,
+		actorName,
+		sourceDigest,
+		sourceFence: fence,
+		registry,
+		binding,
+		verifySource,
+	});
 	if (
 		!isAbsolute(source.main) ||
 		source.main.length > 4096 ||
@@ -82,12 +138,12 @@ export function bindRivetHttpSource<Entrypoint extends RivetHttpEntrypoint>(
 			"RIVET_SOURCE_INVALID",
 			"a bounded absolute program source and digest are required",
 		);
+	const actors = inspectRivetRegistry(source.registry);
 	if (
 		!isRivetHttpBinding(source.binding) ||
 		source.resourceName !== source.actorName ||
 		source.actorName !== source.binding.actorName ||
-		!Object.hasOwn(source.registry.config.use, source.actorName) ||
-		source.registry.config.use[source.actorName] !== source.binding.actor
+		actors?.actor(source.actorName) !== source.binding.actor
 	)
 		throw new AlchemyIacError(
 			"RIVET_SOURCE_MISMATCH",
@@ -95,14 +151,16 @@ export function bindRivetHttpSource<Entrypoint extends RivetHttpEntrypoint>(
 		);
 	let verified = false;
 	try {
-		verified = source.verifySource({
-			main: source.main,
-			sourceDigest: source.sourceDigest,
-			resourceName: source.resourceName,
-			actorName: source.actorName,
-			registry: source.registry,
-			binding: source.binding,
-		});
+		verified = isRivetSynchronousTrue(
+			source.verifySource({
+				main: source.main,
+				sourceDigest: source.sourceDigest,
+				resourceName: source.resourceName,
+				actorName: source.actorName,
+				registry: source.registry,
+				binding: source.binding,
+			}),
+		);
 	} catch {
 		throw new AlchemyIacError(
 			"RIVET_SOURCE_UNVERIFIED",
@@ -112,7 +170,8 @@ export function bindRivetHttpSource<Entrypoint extends RivetHttpEntrypoint>(
 	if (
 		verified !== true ||
 		!isRivetHttpBinding(source.binding) ||
-		source.registry.config.use[source.actorName] !== source.binding.actor
+		inspectRivetRegistry(source.registry)?.actor(source.actorName) !==
+			source.binding.actor
 	)
 		throw new AlchemyIacError(
 			"RIVET_SOURCE_UNVERIFIED",
@@ -139,7 +198,7 @@ export function createRivetPrimitiveMappers<
 	const sourceClaim = (
 		input: ValidationInput<Entrypoint, Requirements>,
 	): AlchemySourceClaim =>
-		Object.freeze({
+		freeze({
 			resourceId: input.declaration.name,
 			resourceType: "Rivet.DurableObject",
 			bindleName: input.bindleName,
@@ -175,7 +234,7 @@ export function createRivetPrimitiveMappers<
 			);
 		if (
 			input.declaration.dependsOn.length > 0 ||
-			Object.keys(input.dependencyDeclarations).length > 0
+			objectKeys(input.dependencyDeclarations).length > 0
 		)
 			throw new AlchemyIacError(
 				"RIVET_DEPENDENCY_UNSUPPORTED",
@@ -190,13 +249,10 @@ export function createRivetPrimitiveMappers<
 					"PRIMITIVE_UNSUPPORTED",
 					"annotation is not supported by the Rivet application mapping",
 				);
-			const enabled = Object.getOwnPropertyDescriptor(
-				annotation.config,
-				"enabled",
-			);
+			const enabled = getOwnDescriptor(annotation.config, "enabled");
 			if (
 				enabled === undefined ||
-				!("value" in enabled) ||
+				!hasOwnDescriptor(enabled, "value") ||
 				enabled.value !== false
 			)
 				throw new AlchemyIacError(
@@ -205,12 +261,12 @@ export function createRivetPrimitiveMappers<
 				);
 		}
 	};
-	const mapper = Object.freeze({
-		resourceTypes: Object.freeze(["Rivet.DurableObject"]),
-		operations: Object.freeze<string[]>([]),
-		annotations: Object.freeze(["hobo:session-replay"]),
+	const mapper = freeze({
+		resourceTypes: freeze(["Rivet.DurableObject"]),
+		operations: freeze<string[]>([]),
+		annotations: freeze(["hobo:session-replay"]),
 		bindsEntrypoint: true,
-		limitations: Object.freeze([
+		limitations: freeze([
 			"Only the attested source kind, actor name and entrypoint are mapped.",
 			"Resource dependencies and enabled session replay are unsupported; the host must fence the source and exclusive pool.",
 		]),
@@ -231,7 +287,7 @@ export function createRivetPrimitiveMappers<
 		> =>
 			Effect.gen(function* () {
 				validate(input);
-				if (Object.keys(input.dependencies).length !== 0)
+				if (objectKeys(input.dependencies).length !== 0)
 					throw new AlchemyIacError(
 						"RIVET_DEPENDENCY_UNSUPPORTED",
 						"external RivetKit programs do not have Alchemy resource bindings",
@@ -260,7 +316,7 @@ export function createRivetPrimitiveMappers<
 									verifyAlchemySourceFence(source.sourceFence, value),
 							});
 							registered = resource;
-							yield* host.deployExternal(Object.freeze({ id, main, resource }));
+							yield* host.deployExternal(freeze({ id, main, resource }));
 							checkSource(claim);
 						}),
 					deployCrate: (object) => host.deployCrate(object),
@@ -292,9 +348,9 @@ export function createRivetPrimitiveMappers<
 				};
 			}),
 	});
-	const unavailable: typeof mapper = Object.freeze({
+	const unavailable: typeof mapper = freeze({
 		...mapper,
-		resourceTypes: Object.freeze<string[]>([]),
+		resourceTypes: freeze<string[]>([]),
 		validate: () => {
 			throw new AlchemyIacError(
 				"PRIMITIVE_UNSUPPORTED",
@@ -308,7 +364,7 @@ export function createRivetPrimitiveMappers<
 			);
 		},
 	});
-	return Object.freeze({
+	return freeze({
 		api: source.kind === "api" ? mapper : unavailable,
 		web: source.kind === "web" ? mapper : unavailable,
 		service: source.kind === "service" ? mapper : unavailable,

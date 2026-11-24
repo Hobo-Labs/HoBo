@@ -22,8 +22,8 @@ const stack = () => ({
 });
 
 function execute<A, E, R>(effect: Effect.Effect<A, E, R>, target = stack()) {
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test supplies the Alchemy stack and PoolHost used by these constructors.
 	return Effect.runPromise(
-		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test supplies the Alchemy stack and PoolHost used by these constructors.
 		effect.pipe(Effect.provideService(StackContext, target)) as Effect.Effect<
 			A,
 			E,
@@ -46,6 +46,7 @@ function mapped(name: string, kind: "api" | "service" | "web") {
 		kind,
 		actorName: "web",
 		sourceDigest,
+
 		sourceFence: {
 			sourceDigest,
 			environmentDigest: `sha256:${"b".repeat(64)}`,

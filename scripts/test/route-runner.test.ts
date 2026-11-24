@@ -1288,12 +1288,24 @@ const notice = (fields: {
 
 describe("the committed routing policy the route job reads", () => {
 	it("holds the code's defaults, so moving them out of variables changed nothing", () => {
-		const { committed, ...fromFile } = routeSettings(
+		const { committed, externalPools, ...fromFile } = routeSettings(
 			readRunnerRouting(COMMITTED),
 		);
-		const { committed: fromCode, ...defaults } = routeSettings(undefined);
+		const {
+			committed: fromCode,
+			externalPools: fallbackPools,
+			...defaults
+		} = routeSettings(undefined);
 		assert.deepEqual([committed, fromCode], [true, false]);
 		assert.deepEqual(fromFile, defaults);
+		assert.deepEqual(fallbackPools, []);
+		assert.deepEqual(externalPools, [
+			{
+				labels: ["hobo-agent37"],
+				runnerNamePrefix: "hobo-a37-",
+				maxRunners: 4,
+			},
+		]);
 		assert.equal(defaults.localRunner, DEFAULT_LOCAL_RUNNER);
 	});
 

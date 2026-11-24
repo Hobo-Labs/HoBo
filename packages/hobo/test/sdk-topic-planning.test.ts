@@ -13,42 +13,36 @@ describe("SDK topic planning", () => {
 	) as {
 		capabilities: { port: string; features: string[] }[];
 	};
-	// SAFETY: this fixture reads the cost manifest produced by the same provider.
-	const cost = JSON.parse(
-		docs["/.well-known/capability-manifest/cost.json"],
-	) as {
-		facts: { port: string; sku: string; unit: string; marginalPrice: string }[];
-	};
-	const topic = caps.capabilities.find((entry) => entry.port === "topic");
-	const topicCost = cost.facts.find((entry) => entry.port === "topic");
-	if (!topic || !topicCost)
-		throw new Error("Kafka topic definition is unavailable");
 	const definitions = parseRegisteredDefinitions({
 		providerId: provider.id,
-		definitions: [{ ...topic, cost: topicCost, regions: ["local"] }],
+		definitions: caps.capabilities.map((entry) => ({
+			...entry,
+			regions: ["local"],
+		})),
 	});
 	const registry = {
-		catalogHash: "kafka-topic",
+		catalogHash: "kafka-native-messaging",
 		providers: () => [provider.id],
 		definitions: () => definitions,
 	};
-	it("plans a declared topic using Kafka's published topic capability and price", () => {
+
+	it("publishes no Component-WIT topic or queue offer from Kafka", () => {
+		expect(caps.capabilities).toEqual([]);
+	});
+
+	it("refuses to plan a declared topic against Kafka's native messaging catalog", () => {
 		const app = bindle("topic-test", (b) => ({
 			events: b.topic().allow("publish", "subscribe"),
 		}));
 		const manifest = collectBindleManifest(
 			targetFromBindleDefinition(app),
 		).manifest;
-		const result = plan(manifest, { deploymentId: "topic-test" }, registry);
-		expect(result.ok).toBe(true);
-		if (!result.ok) throw new Error(result.reason);
-		expect(result.plan.resources[0]).toMatchObject({
-			name: "events",
-			port: "topic",
-			provider: provider.id,
-		});
+		expect(plan(manifest, { deploymentId: "topic-test" }, registry).ok).toBe(
+			false,
+		);
 	});
-	it("does not select a topic-only offer for a queue", () => {
+
+	it("refuses to plan a queue against Kafka's native messaging catalog", () => {
 		const app = bindle("queue-test", (b) => ({
 			jobs: b.queue().allow("enqueue", "dequeue"),
 		}));
