@@ -75,6 +75,13 @@ and admits no exceptions.
   with the cluster kubeconfig `owner://HOSTINGER_ARC_KUBECONFIG`; never run
   kubectl for it. On `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`, call
   `choose_secret_store` first.
+- Setup ends at `established`. Joining a Hostinger fleet is optional and
+  comes later, during development, when the owner asks for it: then call
+  `store_owner_entries` (same `cwd`) so HoBo asks the owner, one private host
+  form per entry, for `HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG` or
+  `HOBO_CI_ACCOUNT_TOKEN` and writes each straight into the store. Entries the store already holds are kept unless
+  `replace: true`. Its result lists entry names only (`stored`, `kept`,
+  `skipped`, `failed`).
 - Infisical Agent Vault: with an Infisical store that has no
   `HOSTINGER_API_TOKEN` entry, the fleet verbs use the owner's Agent Vault
   instead. HoBo runs the proxy itself; never start
@@ -101,6 +108,11 @@ and admits no exceptions.
   `sealed` field, unchanged. The answer is encrypted to HoBo; never ask for
   any of it in chat. `refused` means the page expired, was already used, or
   was altered: call `choose_secret_store` for a new one.
+- If the host declares forms but the owner never sees them (a form times
+  out or comes back cancelled at once), call `choose_secret_store` with
+  `channel: "page"`. HoBo's owner page then also takes the store's sign-in
+  (Infisical's copied session) and nothing else. A `sign-in-needed` result
+  carries a `reason` with links and identifiers redacted.
 - `secure-form-unavailable`: no private channel is wired. Report that this
   host cannot provide a secure HoBo owner hand-off.
 

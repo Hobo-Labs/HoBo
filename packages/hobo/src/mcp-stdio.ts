@@ -474,6 +474,12 @@ export async function serveMcpStdio(options: {
 				if (requestId.success) cancelled(requestId.data);
 				continue;
 			}
+			if (
+				options.session !== undefined &&
+				isJsonObject(parsed) &&
+				parsed.method === "notifications/initialized"
+			)
+				write({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
 			const own = new Set<string>();
 			const parsedId = REQUEST_ID.safeParse(
 				isJsonObject(parsed) ? parsed.id : undefined,

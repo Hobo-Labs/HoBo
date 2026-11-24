@@ -31,6 +31,7 @@ export type OwnerSessionState =
 			status: "sign-in-needed";
 			store: OwnerStoreLabel;
 			code: string;
+			reason?: string;
 	  }>;
 
 export type OwnerSessionStatus = Readonly<{
@@ -42,6 +43,17 @@ export type OwnerSessionStatus = Readonly<{
 export interface OwnerStoreEntries {
 	read(name: string): Promise<string | undefined>;
 	write(name: string, value: string): Promise<void>;
+}
+
+const LINK = /\bhttps?:\/\/\S+/gu;
+const IDENTIFIER =
+	/\b(?:(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{12,}|[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+){2,})\b/gu;
+
+export function publicReason(message: string): string {
+	return message
+		.replace(LINK, "<link>")
+		.replace(IDENTIFIER, "<id>")
+		.slice(0, 300);
 }
 
 export interface OwnerStoreSessions {
@@ -127,7 +139,11 @@ export function ownerChannelSignIn(options: {
 		return signInOwnerStore({
 			family: "cd",
 			vault,
-			open: () => ownerStore("cd", vault, deps),
+			open: (resolved) =>
+				ownerStore("cd", vault, {
+					...deps,
+					env: { ...plainEnv, ...resolved },
+				}),
 			deps,
 			plainEnv,
 			workloadOidc: undefined,
@@ -186,6 +202,7 @@ export function createOwnerStoreSessions(options: {
 					status: "sign-in-needed",
 					store: current?.label ?? "Infisical",
 					code: outcome.code,
+					reason: publicReason(outcome.message),
 				};
 			}
 			const owner = outcome.owner;

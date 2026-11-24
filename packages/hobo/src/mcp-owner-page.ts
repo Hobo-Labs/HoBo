@@ -1,4 +1,4 @@
-import { createHash, randomUUID, webcrypto } from "node:crypto";
+import { createHash, randomInt, randomUUID, webcrypto } from "node:crypto";
 
 import { z } from "zod";
 
@@ -12,6 +12,7 @@ export const OWNER_PAGE_INFO = "hobo-owner-page/v1";
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
 
 export const OWNER_PAGE_SECRET_FIELDS = [
+	"INFISICAL_CLI_SESSION",
 	"INFISICAL_TOKEN",
 	"OP_CONNECT_TOKEN",
 	"BW_CLIENTID",
@@ -33,6 +34,7 @@ const answersSchema = z
 		OP_CONNECT_TOKEN: answerField,
 		BW_CLIENTID: answerField,
 		BW_CLIENTSECRET: answerField,
+		INFISICAL_CLI_SESSION: answerField,
 	})
 	.strict();
 
@@ -144,7 +146,11 @@ async function aesKey(
 }
 
 export function createOwnerPages(
-	options: { readonly now?: () => number; readonly ttlMs?: number } = {},
+	options: {
+		readonly now?: () => number;
+		readonly ttlMs?: number;
+		readonly infisicalOrigin?: string;
+	} = {},
 ): OwnerPages {
 	const now = options.now ?? Date.now;
 	const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
@@ -169,7 +175,13 @@ export function createOwnerPages(
 			return {
 				page,
 				fingerprint,
-				html: renderOwnerPageHtml({ page, x, y, fingerprint }),
+				html: renderOwnerPageHtml({
+					page,
+					x,
+					y,
+					fingerprint,
+					signInUrl: `${options.infisicalOrigin ?? "https://app.infisical.com"}/login?callback_port=${randomInt(20_000, 60_000)}`,
+				}),
 			};
 		},
 		async unseal(sealed) {
@@ -210,10 +222,21 @@ export function createOwnerPages(
 
 const STORE_SECTIONS = {
 	infisical: [
-		{ name: "INFISICAL_PROJECT_ID", label: "Project ID", secret: false },
+		{
+			name: "INFISICAL_PROJECT_ID",
+			label:
+				"Project ID (optional; HoBo finds or creates its Secrets Management project)",
+			secret: false,
+		},
+		{
+			name: "INFISICAL_CLI_SESSION",
+			label:
+				"Infisical sign-in: open the link above, sign in, and paste what Infisical copies",
+			secret: true,
+		},
 		{
 			name: "INFISICAL_TOKEN",
-			label: "Token Auth access token",
+			label: "Or a Token Auth access token",
 			secret: true,
 		},
 	],
@@ -247,6 +270,7 @@ export function renderOwnerPageHtml(input: {
 	readonly x: string;
 	readonly y: string;
 	readonly fingerprint: string;
+	readonly signInUrl: string;
 }): string {
 	const options = STORE_OPTIONS.map(
 		(o) =>
@@ -259,7 +283,11 @@ export function renderOwnerPageHtml(input: {
 					`<label for="${f.name}">${escapeHtml(f.label)}</label><input id="${f.name}" name="${f.name}" type="${f.secret ? "password" : "text"}" autocomplete="off" spellcheck="false">`,
 			)
 			.join("");
-		return `<fieldset data-for="${o.id}" hidden><legend>${escapeHtml(o.label)}</legend>${inputs}</fieldset>`;
+		const link =
+			o.id === "infisical"
+				? `<p><a href="${escapeHtml(input.signInUrl)}" target="_blank" rel="noopener noreferrer">Sign in to Infisical</a>. When it says Unable to reach CLI, click Copy to clipboard and paste it below.</p>`
+				: "";
+		return `<fieldset data-for="${o.id}" hidden><legend>${escapeHtml(o.label)}</legend>${link}${inputs}</fieldset>`;
 	}).join("");
 	const config = JSON.stringify({
 		page: input.page,

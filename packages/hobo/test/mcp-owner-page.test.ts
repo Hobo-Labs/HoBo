@@ -4,7 +4,7 @@ import path from "node:path";
 import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-
+import { STORE_OWNER_ENTRIES_TOOL } from "../src/mcp-owner-entries.js";
 import {
 	createOwnerPages,
 	OWNER_PAGE_COLLECTION,
@@ -13,7 +13,9 @@ import {
 import {
 	CHOOSE_SECRET_STORE_TOOL,
 	createStoreChoiceApp,
+	locatorSettings,
 	NO_STORE_CHOICE_SUPPORT,
+	parseStoreChoice,
 	SUBMIT_OWNER_PAGE_TOOL,
 } from "../src/mcp-store-choice.js";
 import type { OwnerStoreSessions } from "../src/owner-store-session.js";
@@ -209,6 +211,7 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		expect(app.tools(NO_STORE_CHOICE_SUPPORT).map((t) => t.name)).toEqual([
 			CHOOSE_SECRET_STORE_TOOL,
 			SUBMIT_OWNER_PAGE_TOOL,
+			STORE_OWNER_ENTRIES_TOOL,
 		]);
 		const shown = await app.callTool(
 			CHOOSE_SECRET_STORE_TOOL,
@@ -247,6 +250,85 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		expect(written).toEqual([
 			{ HOBO_SECRET_STORE: "infisical", INFISICAL_PROJECT_ID: PROJECT },
 		]);
+	});
+
+	it("on request, takes the store and its sign-in through the page even where the host declares forms, and asks for no provider entry", async () => {
+		const deposited = new Map<string, string>();
+		const written = new Map<string, string>();
+		let established = false;
+		const sessions: OwnerStoreSessions = {
+			establish: async () => {
+				established = deposited.has("INFISICAL_CLI_SESSION");
+				return established
+					? { status: "established", store: "Infisical" }
+					: { status: "sign-in-needed", store: "Infisical", code: "X" };
+			},
+			status: () =>
+				established
+					? { established: true, store: "Infisical" }
+					: { established: false },
+			credentials: () => ({
+				resolve: async () => {
+					throw new Error("unused");
+				},
+			}),
+			entries: () => ({
+				read: async (name) => written.get(name),
+				write: async (name, value) => {
+					written.set(name, value);
+				},
+			}),
+			close: () => undefined,
+		};
+		const app = createStoreChoiceApp({
+			cwd: "/synthetic/project",
+			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+			sessions,
+			pages: createOwnerPages(),
+			deposit: (name, value) => deposited.set(name, value),
+		});
+		const support = { formElicitation: true, apps: false };
+		const shown = await app.callTool(
+			CHOOSE_SECRET_STORE_TOOL,
+			{ channel: "page" },
+			support,
+			async () => {
+				throw new Error("no form expected");
+			},
+		);
+		const page = z
+			.object({ status: z.literal("owner-page"), html: z.string() })
+			.parse(shown.structuredContent);
+		expect(page.html).toContain("/login?callback_port=");
+		const out = await submitInBrowser(
+			page.html,
+			{
+				INFISICAL_PROJECT_ID: PROJECT,
+				INFISICAL_CLI_SESSION: "c2Vzc2lvbi1maXh0dXJl",
+			},
+			"infisical",
+		);
+		expect(page.html).not.toContain("HOSTINGER");
+		expect(out.data.sealed).not.toContain("c2Vzc2lvbi1maXh0dXJl");
+		const done = await app.callTool(
+			SUBMIT_OWNER_PAGE_TOOL,
+			{ sealed: out.data.sealed },
+			support,
+			undefined,
+		);
+		expect(done.structuredContent).toEqual({
+			status: "established",
+			store: "Infisical",
+		});
+		expect(deposited.get("INFISICAL_CLI_SESSION")).toBe("c2Vzc2lvbi1maXh0dXJl");
+		expect(written.size).toBe(0);
+		expect(JSON.stringify(done)).not.toContain("c2Vzc2lvbi1maXh0dXJl");
+	});
+
+	it("takes Infisical without a project ID, leaving the project for HoBo to resolve", () => {
+		const choice = parseStoreChoice({ store: "infisical" });
+		expect(choice).toEqual({ store: "infisical", projectId: undefined });
+		expect(locatorSettings(choice)).toEqual({ HOBO_SECRET_STORE: "infisical" });
 	});
 
 	it("still reports no private form when no owner page is wired", async () => {
