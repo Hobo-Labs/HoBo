@@ -29,6 +29,7 @@ import type {
 	ArtifactStoreConfig,
 	CampId,
 	CampInventory,
+	CampMembers,
 	CampPolicy,
 	CampReconciler,
 	CdAuthorizer,
@@ -39,6 +40,7 @@ import type {
 	CiEventReader,
 	ContinuousDelivery,
 	CredentialResolver,
+	DeliveryFleet,
 	DeltaLedger,
 	DeployGate,
 	DesiredStateReader,
@@ -176,6 +178,8 @@ export type CdComposeInput = Readonly<{
 	telemetry?: TelemetrySink;
 	telemetryEndpoint?: string;
 	telemetryHeaders?: Readonly<Record<string, string>>;
+	members?: CampMembers;
+	fleet?: DeliveryFleet;
 }>;
 
 export type ComposedContinuousDelivery = ContinuousDelivery &
@@ -334,6 +338,7 @@ export function wireContinuousDelivery(
 			desired,
 			authorizer,
 			telemetry: sink,
+			members: input.members,
 		}),
 	);
 	const placement = put(
@@ -485,6 +490,7 @@ export function wireContinuousDelivery(
 		authorizer,
 		rails,
 		inventory,
+		fleet: input.fleet,
 	});
 	const feed = f.createDeliveryFeedHandler({
 		...base,

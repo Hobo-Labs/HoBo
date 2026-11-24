@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { Before, Given, Then, When } from "@cucumber/cucumber";
 import {
-	type FleetState,
 	HOSTED_RUNNER_PROVIDERS,
 	type MachineCandidate,
 	NO_ROUTE_FACTS,
 	type RelayJobAnswer,
 	type RelayJobMessage,
+	type RunnerFleetState,
 	runnerProviderOfLabel,
 } from "../../../packages/ci/src/index.js";
 import { testRelayJobMessage } from "../../../packages/ci/src/runner-order/testing.js";
@@ -32,7 +32,7 @@ type ParityState = {
 	inputs: Array<readonly [string, string]>;
 	origin: Readonly<{ private: boolean; fork: boolean; event: string }>;
 	machines: MachineCandidate[];
-	fleet: FleetState | undefined;
+	fleet: RunnerFleetState | undefined;
 	answer: RelayJobAnswer | undefined;
 	runs: CommandResult[];
 	downloads: Array<Readonly<{ url: string; sha256: string }>>;

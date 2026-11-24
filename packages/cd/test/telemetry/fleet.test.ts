@@ -28,14 +28,14 @@ import type {
 	TelemetrySink,
 } from "../../src/ports.js";
 import {
+	type CampMetricSources,
 	CD_ALERT_RULES,
 	CD_METRICS,
 	CD_SLOS,
 	campInventoryPoints,
-	collectFleetMetrics,
+	collectCampMetrics,
 	compliancePoints,
 	createCdTelemetry,
-	type FleetSources,
 	failoverCountPoints,
 	fanoutCampsPoints,
 } from "../../src/telemetry/index.js";
@@ -287,7 +287,7 @@ describe("inventory gauges", () => {
 	});
 });
 
-function sources(): FleetSources & { divergenceQueries: unknown[] } {
+function sources(): CampMetricSources & { divergenceQueries: unknown[] } {
 	const divergenceQueries: unknown[] = [];
 	return {
 		divergenceQueries,
@@ -337,7 +337,7 @@ function sources(): FleetSources & { divergenceQueries: unknown[] } {
 describe("hobo.cd.policy.shadow_divergence and the collector", () => {
 	it("sums a candidate Rail's divergences over the INFORM window", async () => {
 		const s = sources();
-		const points = await collectFleetMetrics(s, T0);
+		const points = await collectCampMetrics(s, T0);
 		expect(
 			value(
 				points.filter((p) => p.name === CD_METRICS.policyShadowDivergence),

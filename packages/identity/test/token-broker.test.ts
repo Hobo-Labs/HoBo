@@ -46,7 +46,7 @@ async function issuedSvid(): Promise<{
 		genesisKeyId: "yard-genesis-2026-07",
 	});
 	const attestor = createFixtureHostAttestor({ hostId: "host-firecracker-1" });
-	const document = attestor.createDocument({
+	const document = await attestor.createDocument({
 		launchMeasurement: launchMeasurement(),
 	});
 	const result = await service.issueSvidFromAttestation({
@@ -398,7 +398,7 @@ describe("rotation narrows scope (accepts an equal-or-narrower scope)", () => {
 		const attestor = createFixtureHostAttestor({
 			hostId: "host-firecracker-1",
 		});
-		const document = attestor.createDocument({
+		const document = await attestor.createDocument({
 			launchMeasurement: launchMeasurement(),
 		});
 		const issued = await service.issueSvidFromAttestation({

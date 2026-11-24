@@ -8,22 +8,25 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { railEnablesPam } from "../src/index.js";
+import { createTestElevatedIssuer } from "./support/elevated-issuer.js";
+
+const ISSUER = createTestElevatedIssuer();
 
 describe("Privileged Access Gateway (full secretless)", () => {
 	it("Teleport path requires real elevated JWT for production and mints verifiable session", async () => {
-		const elevated = mintElevatedAccessCapability({
+		const elevated = await mintElevatedAccessCapability({
 			subject: "user:alice",
 			isolationClass: "production",
 			issuedBy: "cp-admin",
 			evidence: { kind: "dual-approval", ref: "apr-1" },
 			priorAuthnClass: "development",
-			allowDefaultSecret: true,
+			issuer: ISSUER,
 			ttlSeconds: 600,
 		});
 
 		const gw = createTeleportPamGateway({
 			isolationClass: "production",
-			elevatedHmacSecret: "hobo-local-svid-dev-only",
+			elevatedTrust: ISSUER.trust,
 		});
 		await gw.start({
 			stationId: "station-prod",
@@ -119,16 +122,16 @@ describe("Privileged Access Gateway (full secretless)", () => {
 
 	it("remote transport issues HTTP authorize when endpoint configured", async () => {
 		const calls: Array<{ url: string; method: string }> = [];
-		const elevated = mintElevatedAccessCapability({
+		const elevated = await mintElevatedAccessCapability({
 			subject: "user:alice",
 			isolationClass: "staging",
 			issuedBy: "cp",
 			evidence: { kind: "lower-env-authn", ref: "x" },
-			allowDefaultSecret: true,
+			issuer: ISSUER,
 		});
 		const gw = createBoundaryPamGateway({
 			isolationClass: "staging",
-			elevatedHmacSecret: "hobo-local-svid-dev-only",
+			elevatedTrust: ISSUER.trust,
 			transport: {
 				endpoint: "https://boundary.example.test",
 				authToken: "test-token",

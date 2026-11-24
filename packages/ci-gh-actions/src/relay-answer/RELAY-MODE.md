@@ -32,9 +32,14 @@ For a queued job whose only label is the relay label:
    configuration) and for the repository (`relayJobs.answer` in its
    `.hobo/ci.json`, whose `label` must be the job's label). With the node's
    flag off the answerer makes no request and registers nothing.
-2. When the node is part of a mesh, it takes the mesh turn for the job id
-   (`MeshCoordinator.shouldStart`), so one node answers. A node that is not
-   first waits its turn and answers on a later poll if the job is still queued.
+2. When the node is given a turn (`turn` in its options), it takes the turn for
+   the job id, so one node answers. `createRelayTurn` (`src/relay-turn.ts`) builds that turn from
+   HoBo Fleet's ranking and claim turn (`rankMembers` and `claimTurn` in
+   `@hobo/fleet/observation`, over the `relay-job` work digest of the job id)
+   and a claims port: a healthy member with a free slot and the job's label is
+   ranked, a member that is not first waits its turn and answers on a later
+   poll if the job is still queued, a job another member holds is skipped as
+   `claimed-elsewhere`, and an unreachable claims port lets the node go on.
 3. It checks GitHub still has the job queued, so a redelivered webhook costs
    no runner. Only a readable status or a 404 counts as an answer: a job GitHub
    says is gone is remembered and never asked about again, while a 5xx, a rate
@@ -43,7 +48,7 @@ For a queued job whose only label is the relay label:
 4. It creates a one-job runner named `hobo-relay-<run>-<job>-<try>` on the
    job's repository, or on the organization when the repository refuses
    (403 or 404). A second node asking for the same name gets a 409 and stops,
-   which fences the job even when the mesh's claim store is unreachable. A
+   which fences the job even when the claims port is unreachable. A
    runner left behind by a node that died fences the job only until the sweep
    removes it (see below).
 5. It opens a session, waits up to four minutes for GitHub to offer a job,
@@ -64,7 +69,7 @@ repository there. Such a job is answered only as its own repository asks:
 its `.hobo/ci.json` must turn `relayJobs.answer` on for the label and the node
 must serve its account. Otherwise the job fails with a sentence saying relay
 mode is not on for that repository.
-A known limit of this fallback: in a mesh where another node serves that
+A known limit of this fallback: when another node serves that
 repository's account, this node still fails the job, since it cannot hand an
 offer over. The failure says to run the job again, so that node can answer it.
 

@@ -6,12 +6,12 @@ import type {
 	ImmutableJournalMember,
 	ImmutableJournalSeal,
 	SealableImmutableJournalReplica,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import { isJsonString } from "@hobo/data-core";
 import { sqlAssignmentReplica } from "./assignment.js";
 import { type FleetLayout, parseFleetLayout } from "./layout.js";
 import {
-	type FleetBackend,
+	type PostgresBackend,
 	parseFleetIdentifier,
 	type SqlExecutor,
 	type SqlParameter,
@@ -31,7 +31,7 @@ export type ImmutableJournalCharge = Readonly<{
 
 export interface PostgresImmutableJournalOptions {
 	readonly member: ImmutableJournalMember;
-	readonly backend: FleetBackend;
+	readonly backend: PostgresBackend;
 	readonly anchorDigest: string;
 	readonly initializationId: string;
 	readonly controlPrefix: string;
@@ -287,7 +287,7 @@ export function createPostgresImmutableJournalReplica(
 			);
 		}
 	}
-	const scopedBackend: FleetBackend = {
+	const scopedBackend: PostgresBackend = {
 		id: member.id,
 		executor: {
 			async query(sql: string, parameters?: readonly SqlParameter[]) {
@@ -310,9 +310,11 @@ export function createPostgresImmutableJournalReplica(
 			session: executor.session.bind(executor),
 		},
 	};
-	const assignmentsReplica = sqlAssignmentReplica(scopedBackend, layout);
+	const assignmentsReplica = sqlAssignmentReplica(scopedBackend, layout, {
+		members: false,
+	});
 	const replica: SealableImmutableJournalReplica = {
-		id: member.id,
+		id: assignmentsReplica.id,
 		async read(max) {
 			if (
 				max !== undefined &&

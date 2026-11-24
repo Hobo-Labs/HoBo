@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+	copyFileSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
@@ -12,7 +13,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
+import { parseFleetVerdict } from "../../packages/fleet/src/verdict-wire.ts";
 import {
 	ABSENT_SLIP_WHYS,
 	AGENT37_OVERFLOW_RUNNER_LABEL,
@@ -2793,17 +2795,17 @@ describe("the script reading the slip", () => {
 
 	it("takes nothing about routing from the environment", async () => {
 		await withGithub(fleetUpPages, async (apiUrl) => {
+			const retired: readonly string[] =
+				JSON.parse(COMMITTED).runnerRouting.retiredVariables;
+			assert.ok(retired.length > 0);
 			const { decision } = await route(apiUrl, undefined, {
+				...Object.fromEntries(retired.map((name) => [name, "github"])),
 				HOBO_CI_ROUTE: "github",
-				HOBO_CI_LOCAL_RUNNER: "true",
 				HOBO_CI_TRUNK_RUNNER: "false",
 				HOBO_CI_ROUTE_MAX_WAIT_SECONDS: "1",
 				HOBO_CI_ROUTE_MAX_QUEUED: "1",
 				HOBO_CI_INCLUDE_OWN_RUN: "true",
 				HOBO_CI_ATTESTED: "true",
-				HOBO_CI_FLEET_STATE: JSON.stringify({
-					labels: { hobo: { nodes: 0, freeSlots: 0 } },
-				}),
 			});
 			assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
 		});
@@ -3944,6 +3946,228 @@ describe("the routing step without a decision", () => {
 	});
 });
 
+describe("a slip whose reasons came from the fleet's verdict (O32)", () => {
+	const REASON_OF_VERDICT = {
+		OPEN: { tier: "fleet", reason: "fleet-open" },
+		BUSY: { tier: "fleet", reason: "fleet-busy" },
+		NO_MEMBER: { tier: "github", reason: "no-node" },
+		NO_CAPACITY: { tier: "github", reason: "no-capacity" },
+	} as const;
+	type VerdictState = keyof typeof REASON_OF_VERDICT;
+	const labels = DEFAULT_RUNNER_LABELS;
+	const verdictJson = (state: VerdictState) =>
+		JSON.stringify({
+			fleetId: "flt_hobo",
+			label: "hobo",
+			state: `VERDICT_STATE_${state}`,
+			freeSlots: state === "OPEN" ? 2 : 0,
+			asOf: new Date(SLIP_NOW - 30_000).toISOString(),
+			expiresAt: new Date(SLIP_NOW + 240_000).toISOString(),
+		});
+	const slipFrom = (state: VerdictState) => {
+		const verdict = parseFleetVerdict(verdictJson(state), SLIP_NOW);
+		assert.ok(verdict, `the ${state} verdict parses`);
+		const { tier, reason } = REASON_OF_VERDICT[verdict.state];
+		const runner = (fleetRunner: string) =>
+			tier === "fleet" ? fleetRunner : labels.github;
+		return JSON.stringify({
+			version: 1,
+			repository: "hobo-labs/hobo",
+			issuedAt: new Date(SLIP_NOW - 60_000).toISOString(),
+			expiresAt: new Date(SLIP_NOW + 540_000).toISOString(),
+			classes: {
+				pr: { runner: runner(labels.fleet), tier, reason },
+				fork: { runner: runner(labels.fleet), tier, reason },
+				trunk: { runner: runner(labels.trunk), tier, reason },
+			},
+			relay: { nodeId: "oracle-box-1", commit: "c7ec8d449" },
+		});
+	};
+	const takingQueue = (path: string): JsonValue =>
+		path.includes("/jobs")
+			? {
+					jobs: [labels.fleet, labels.trunk].map((label) => ({
+						run_id: 40,
+						status: "completed",
+						labels: [label],
+						runner_name: "runner-1",
+						created_at: new Date(SLIP_NOW - 65_000).toISOString(),
+						started_at: new Date(SLIP_NOW - 60_000).toISOString(),
+					})),
+				}
+			: {
+					workflow_runs: [
+						{
+							id: 40,
+							path: PROBE_WORKFLOW_PATH,
+							status: "completed",
+							created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+							updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+						},
+					],
+				};
+	const route = (message: string | undefined, event = "pull_request") =>
+		withGithub(takingQueue, (apiUrl) =>
+			printedBy(() =>
+				main(
+					[],
+					{
+						GITHUB_EVENT_NAME: event,
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_RUN_ID: "51",
+						GITHUB_API_URL: apiUrl,
+					},
+					{
+						routingConfig: COMMITTED,
+						eventPayload: undefined,
+						fetch: slipApi(message),
+						now: () => SLIP_NOW,
+					},
+				),
+			),
+		);
+
+	it("decides from a valid slip an OPEN verdict produced", async () => {
+		const { decision, lines } = await route(slipFrom("OPEN"));
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", labels.fleet, "none"],
+		);
+		assert.deepEqual(warningsIn(lines), []);
+		assert.deepEqual(noticesIn(lines), [
+			notice({
+				tier: "fleet",
+				runner: labels.fleet,
+				slip: "used",
+				why: "fleet-open",
+				refusedBy: "none",
+			}),
+		]);
+	});
+
+	it("routes a BUSY fleet as fleet-busy and never refuses it (R4)", async () => {
+		for (const event of ["pull_request", "push"]) {
+			const { decision, lines } = await route(slipFrom("BUSY"), event);
+			const runner = event === "push" ? labels.trunk : labels.fleet;
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["fleet", runner, "none"],
+				event,
+			);
+			assert.match(decision.reason, /, fleet-busy(?:;|$)/);
+			assert.deepEqual(noticesIn(lines), [
+				notice({
+					tier: "fleet",
+					runner,
+					slip: "used",
+					why: "fleet-busy",
+					refusedBy: "none",
+				}),
+			]);
+		}
+	});
+
+	for (const [state, why] of [
+		["NO_MEMBER", "no-node"],
+		["NO_CAPACITY", "no-capacity"],
+	] as const)
+		it(`refuses the fleet at once on ${state}, without reading the queue`, async () => {
+			const { decision, lines } = await route(slipFrom(state));
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", labels.github, "slip"],
+			);
+			assert.deepEqual(warningsIn(lines), []);
+			assert.deepEqual(noticesIn(lines), [
+				notice({
+					tier: "github",
+					runner: labels.github,
+					slip: "used",
+					why,
+					refusedBy: "slip",
+				}),
+			]);
+		});
+
+	it("changes nothing when there is no slip: the queue rule decides", async () => {
+		const quiet = (path: string): JsonValue =>
+			path.includes("/jobs") ? { jobs: [] } : { workflow_runs: [] };
+		await withGithub(quiet, async (apiUrl) => {
+			const run = (fetchSlip: typeof fetch) =>
+				printedBy(() =>
+					main(
+						[],
+						{
+							GITHUB_EVENT_NAME: "pull_request",
+							GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+							GITHUB_RUN_ID: "51",
+							GITHUB_API_URL: apiUrl,
+						},
+						{
+							routingConfig: COMMITTED,
+							eventPayload: undefined,
+							fetch: fetchSlip,
+							now: () => SLIP_NOW,
+						},
+					),
+				);
+			const { decision, lines } = await run(slipApi(undefined));
+			const queue = routeRunner({
+				mode: "auto",
+				fleetLabel: labels.fleet,
+				localEnrolled: false,
+				limits,
+				fleet: labelLoad([], labels.fleet, NOW),
+				local: labelLoad([], labels.local, NOW),
+				undecidedAhead: 0,
+			});
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				[queue.tier, queue.runner, queue.refusedBy],
+			);
+			assert.deepEqual(warningsIn(lines), [
+				`::warning title=hobo-ci-route-fallback::routing slip not used (${NO_ROUTING_SLIP}); the queue rule decides`,
+			]);
+		});
+	});
+
+	it("runs with nothing installed, from the files the workflows check out", () => {
+		const root = resolve(import.meta.dirname, "..", "..");
+		const tree = mkdtempSync(join(tmpdir(), "hobo-route-bare-"));
+		try {
+			for (const path of [
+				"scripts/ci/route-runner.mts",
+				"scripts/ci/runner-routing.mts",
+				RUNNER_ROUTING_PATH,
+			]) {
+				mkdirSync(dirname(join(tree, path)), { recursive: true });
+				copyFileSync(join(root, path), join(tree, path));
+			}
+			const outputs = join(tree, "github-output");
+			writeFileSync(outputs, "");
+			const run = spawnSync(
+				process.execPath,
+				["--no-warnings", "scripts/ci/route-runner.mts", "--route", "github"],
+				{
+					cwd: tree,
+					encoding: "utf8",
+					env: {
+						PATH: "",
+						GITHUB_EVENT_NAME: "pull_request",
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_OUTPUT: outputs,
+					},
+				},
+			);
+			assert.equal(run.status, 0, run.stderr);
+			assert.match(run.stdout, /^runner: ubuntu-24\.04 \(github\)/m);
+			assert.match(readFileSync(outputs, "utf8"), /^tier=github$/m);
+		} finally {
+			rmSync(tree, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("the workflows that route", () => {
 	const root = resolve(import.meta.dirname, "..", "..");
 	const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -3985,7 +4209,6 @@ describe("the workflows that route", () => {
 	it("check out every file the routing script loads", () => {
 		const needed = loadedBy("scripts/ci/route-runner.mts");
 		assert.deepEqual([...needed].sort(), [
-			"packages/ci/src/fleet-overflow.ts",
 			"scripts/ci/route-runner.mts",
 			"scripts/ci/runner-routing.mts",
 		]);
@@ -3998,6 +4221,33 @@ describe("the workflows that route", () => {
 			);
 			for (const file of needed)
 				assert.ok(lines.has(file), `${path} does not sparse-checkout ${file}`);
+			for (const line of lines)
+				assert.doesNotMatch(
+					line,
+					/^packages\/ci\/src\/(fleet\/|runner-routing\/)/,
+					path,
+				);
+		}
+	});
+
+	it("check out the overflow module, still imported by a base before the fleet consolidation, only at the trusted routing base", () => {
+		for (const path of routed) {
+			const text = read(path);
+			const base = text.indexOf("ref: ${{ steps.routing-base.outputs.sha }}");
+			const overflow = text.indexOf("packages/ci/src/fleet-overflow.ts");
+			if (base === -1) {
+				assert.equal(overflow, -1, path);
+				continue;
+			}
+			assert.ok(
+				overflow > base,
+				`${path} lists the overflow module outside the trusted checkout`,
+			);
+			assert.equal(
+				text.indexOf("packages/ci/src/fleet-overflow.ts", overflow + 1),
+				-1,
+				path,
+			);
 		}
 	});
 

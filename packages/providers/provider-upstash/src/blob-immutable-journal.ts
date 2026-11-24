@@ -4,10 +4,11 @@ import {
 	AtomicObjectJournalError,
 	createAtomicObjectJournalReplica,
 	type ImmutableJournalMember,
-	parseFleetAssignment,
 	type SealableImmutableJournalReplica,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import type { HttpTransport } from "@hobo/core";
+import { parseMemberName } from "@hobo/fleet";
+import { parseAssignmentEntry } from "@hobo/fleet/assignment";
 import { createR2ObjectClient } from "@hobo/r2-object";
 import {
 	createUpstashBlobCredentials,
@@ -326,7 +327,7 @@ export function createUpstashBlobImmutableJournalReplica(
 		throw error;
 	}
 	const replica: SealableImmutableJournalReplica = {
-		id: member.id,
+		id: parseMemberName(member.id),
 		read: (limit) => invoke(() => atomic.replica.read(limit)),
 		readDocument: (digest) => invoke(() => atomic.replica.readDocument(digest)),
 		async writeDocument(digest, body) {
@@ -335,9 +336,9 @@ export function createUpstashBlobImmutableJournalReplica(
 			return invoke(() => atomic.replica.writeDocument(digest, body));
 		},
 		async accept(input) {
-			let parsed: ReturnType<typeof parseFleetAssignment>;
+			let parsed: ReturnType<typeof parseAssignmentEntry>;
 			try {
-				parsed = parseFleetAssignment(input);
+				parsed = parseAssignmentEntry(input);
 			} catch {
 				throw new UpstashBlobImmutableJournalError("invalid-assignment");
 			}

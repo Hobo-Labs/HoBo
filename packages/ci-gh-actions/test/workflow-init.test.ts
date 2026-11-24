@@ -5,7 +5,7 @@ import {
 	DEFAULT_FLEET_LABEL,
 	describeWorkflowSkip,
 	describeWorkflowWarning,
-	FLEET_RUNNER_LABELS,
+	HOBO_RUNNER_LABELS,
 	planWorkflow,
 	WORKFLOW_SKIP_REASONS,
 	WORKFLOW_WARNINGS,
@@ -1113,7 +1113,7 @@ describe("planWorkflow warnings", () => {
 describe("planWorkflow options", () => {
 	it("defaults to the fleet's own label", () => {
 		expect(DEFAULT_FLEET_LABEL).toBe("hobo");
-		expect(FLEET_RUNNER_LABELS).toContain(DEFAULT_FLEET_LABEL);
+		expect(HOBO_RUNNER_LABELS).toContain(DEFAULT_FLEET_LABEL);
 	});
 
 	it("counts a job on a custom fleet label as routed", () => {

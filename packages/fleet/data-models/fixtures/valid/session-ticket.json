@@ -1,0 +1,8 @@
+{
+  "ticketId": "tk_01",
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "tenant": "acme",
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "expiresAt": "2026-11-12T10:20:00.000Z",
+  "authorityIncarnation": 1
+}

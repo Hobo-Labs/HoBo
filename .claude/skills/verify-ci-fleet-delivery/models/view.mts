@@ -1,3 +1,0 @@
-export const title = 'Deliver a CI fleet effect';
-export const state = v => v.phase === 'confirmed' ? 'Effect confirmed' : v.phase === 'dispatching' ? (v.active === 0 ? 'Dispatch uncertain; reconciliation needed' : 'Effect dispatching') : v.active !== 0 ? 'Worker holds delivery' : v.fence === 2 ? 'Delivery fence exhausted' : v.fence === 0 ? 'Effect ready for delivery' : 'Delivery expired; retry available';
-export const step = (action, from, to) => to.phase === 'confirmed' ? 'active worker confirms effect' : to.phase === 'dispatching' && to.active === 0 ? 'delivery expires during dispatch' : to.phase === 'dispatching' ? 'worker starts external dispatch' : to.active !== 0 ? 'claim delivery with a new fence' : 'delivery expires';

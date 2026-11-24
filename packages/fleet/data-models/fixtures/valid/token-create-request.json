@@ -1,0 +1,10 @@
+{
+  "fleet": "ci",
+  "name": "box-a",
+  "displayName": "Box A",
+  "deviceClass": "DEVICE_CLASS_DEDICATED",
+  "roles": [
+    "ROLE_EXECUTOR"
+  ],
+  "ttlSeconds": 900
+}

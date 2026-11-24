@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
 	createImmutableJournal,
 	type ImmutableJournalMember,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
