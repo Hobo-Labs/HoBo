@@ -80,6 +80,13 @@ and admits no exceptions.
   with the cluster kubeconfig `owner://HOSTINGER_ARC_KUBECONFIG`; never run
   kubectl for it. On `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`, call
   `choose_secret_store` first.
+- Setup ends at `established`. Joining a Hostinger fleet is optional and
+  comes later, during development, when the owner asks for it: then call
+  `store_owner_entries` (same `cwd`) so HoBo asks the owner, one private host
+  form per entry, for `HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG` or
+  `HOBO_CI_ACCOUNT_TOKEN` and writes each straight into the store. Entries the store already holds are kept unless
+  `replace: true`. Its result lists entry names only (`stored`, `kept`,
+  `skipped`, `failed`).
 - `sign-in-needed` (with a code): the choice is kept; call
   `choose_secret_store` again when the owner is ready. Do not claim the store
   is connected.
@@ -87,8 +94,22 @@ and admits no exceptions.
   submit it.
 - `decline` or `invalid`: nothing was recorded; ask again only when the owner
   wants to.
-- `secure-form-unavailable`: this host renders neither form elicitation nor
-  MCP Apps. Report that this host cannot provide a secure HoBo owner hand-off.
+- `owner-page`: this host renders neither form elicitation nor MCP Apps, so
+  HoBo made its own page. Write `structuredContent.html` unchanged to a file
+  and publish it as an Artifact with `capabilities: {"db": {}}`; tell the
+  owner its key fingerprint. Ask them with your host's question prompt
+  whether they sent it. Then read the document `structuredContent.document`
+  from that artifact's database and call `submit_owner_page` with its
+  `sealed` field, unchanged. The answer is encrypted to HoBo; never ask for
+  any of it in chat. `refused` means the page expired, was already used, or
+  was altered: call `choose_secret_store` for a new one.
+- If the host declares forms but the owner never sees them (a form times
+  out or comes back cancelled at once), call `choose_secret_store` with
+  `channel: "page"`. HoBo's owner page then also takes the store's sign-in
+  (Infisical's copied session) and nothing else. A `sign-in-needed` result
+  carries a `reason` with links and identifiers redacted.
+- `secure-form-unavailable`: no private channel is wired. Report that this
+  host cannot provide a secure HoBo owner hand-off.
 
 Pass `reselect: true` only when the owner wants a different store.
 

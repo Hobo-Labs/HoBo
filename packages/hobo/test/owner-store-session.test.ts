@@ -108,8 +108,24 @@ describe("owner store session", () => {
 			status: "sign-in-needed",
 			store: "Infisical",
 			code: "HOBO_OWNER_SIGN_IN",
+			reason: "Open <link>",
 		});
 		expect(JSON.stringify(state)).not.toContain(PRIVATE_PROJECT);
+		const api = createOwnerStoreSessions({
+			signIn: async () => ({
+				kind: "refused",
+				code: "HOBO_CD_INFISICAL_API",
+				message: `Infisical refused creating this run's token (HTTP 400) for ${PRIVATE_PROJECT}.`,
+				remediation: [],
+			}),
+		});
+		const apiState = await api.establish(CWD);
+		expect(apiState).toMatchObject({
+			code: "HOBO_CD_INFISICAL_API",
+			reason:
+				"Infisical refused creating this run's token (HTTP 400) for <id>.",
+		});
+		expect(JSON.stringify(apiState)).not.toContain(PRIVATE_PROJECT);
 		expect(refused.status(CWD)).toEqual({ established: false });
 
 		const unchosen = createOwnerStoreSessions({
