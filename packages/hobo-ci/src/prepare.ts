@@ -337,10 +337,10 @@ async function prepareGithubWithVault(
 	}
 	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
-	const openOwner = () =>
+	const openOwner = (resolved?: Env) =>
 		ownerStore("ci", vault, {
 			...deps,
-			env: plainEnv,
+			env: { ...plainEnv, ...resolved },
 			// The setup page collected Bitwarden's API key: provision from it
 			// (one approved login request) before the store opens.
 			beforeOpen: async (id, values) => {

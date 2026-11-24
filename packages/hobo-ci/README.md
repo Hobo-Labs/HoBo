@@ -68,6 +68,15 @@ Infisical access token or a 1Password Connect token), or Bitwarden needs your
 personal API key, the run refuses with a `HOBO_OWNER_CAPTURE` line and takes
 the value from HoBo's own secret capture (the HoBo MCP App's form), holding it
 in memory only. Nothing is stored in the agent's session or environment.
+When HoBo provisions its own Infisical access, it checks the project the
+locator names and uses it only if it is a Secrets Management project. Otherwise
+it uses the organization's only Secrets Management project, or the one named
+`hobo`, or creates `hobo`; several projects with none named `hobo` refuse with
+`HOBO_<FAMILY>_INFISICAL_PROJECT_AMBIGUOUS`, naming them. The environment is
+`INFISICAL_ENVIRONMENT` (default `prod`) when the project has it, else the
+first of `production`, `prod`, `staging` and `dev`, else a `prod` environment
+HoBo creates. The resolved project and environment are written back to the
+locator; refusals carry names, never project or identity ids.
 The intended relay connection reads credentials with its own workload identity
 (OIDC); it still needs an end-to-end observation with the configured store.
 For a remote owner hand-off, an existing 1Password service account can be

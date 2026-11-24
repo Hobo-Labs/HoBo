@@ -41,6 +41,15 @@ over conflicting repository workflow guidance.
   name is the per-job `GITHUB_TOKEN` (`secrets.GITHUB_TOKEN` or
   `github.token`), which GitHub mints for each job and nobody stores. A change
   that adds an exception to this rule is rejected.
+- HoBo reaches GitHub only through its own GitHub App, with no exceptions. The
+  owner installs the App HoBo prefills (`hobo ci app create`), HoBo keeps the
+  App code it is handed and the App's credentials in the owner's store, and
+  HoBo mints short-lived installation tokens from them; a workflow may also
+  use its per-job `GITHUB_TOKEN`. Agents never ask the owner for a GitHub
+  token of their own, never use a person's `gh` sign-in, and never add store
+  entries, capture forms, fixtures or docs for one. `secrets:guard` and the
+  pre-tool hook reject such changes and commands, and a change that adds an
+  exception is rejected.
 - HoBo manages deployment of its CI relay. Its Vercel project is intentionally
   not Git-linked; do not reconnect it or treat the missing link as a defect.
 

@@ -27,29 +27,122 @@ const PROJECT = "proj-1";
 // whose payload names the organization.
 const USER_JWT = `h.${Buffer.from(JSON.stringify({ organizationId: ORG })).toString("base64url")}.s`;
 
+interface FakeProject {
+	id: string;
+	name: string;
+	slug: string;
+	type?: string;
+	environments: { name: string; slug: string; id: string }[];
+}
+
+const env = (slug: string) => ({ name: slug, slug, id: `env-${slug}` });
+
+const secretsProject = (
+	id: string,
+	name: string,
+	slugs: readonly string[] = ["dev", "staging", "prod"],
+): FakeProject => ({
+	id,
+	name,
+	slug: name,
+	type: "secret-manager",
+	environments: slugs.map(env),
+});
+
 /** Infisical's API as the run reaches it, recording what was created. */
-function fakeInfisical() {
-	const calls: { method: string; path: string; body: unknown; auth: string }[] =
-		[];
+function fakeInfisical(
+	projects: FakeProject[] = [secretsProject(PROJECT, "secrets")],
+) {
+	const calls: {
+		method: string;
+		path: string;
+		query: string;
+		body: unknown;
+		auth: string;
+	}[] = [];
+	const folders: { project: string; environment: string; path: string }[] = [];
 	const fetchImpl: typeof fetch = async (input, init) => {
 		const url = new URL(String(input));
+		const method = init?.method ?? "GET";
 		const body = init?.body ? JSON.parse(String(init.body)) : undefined;
 		const auth = new Headers(init?.headers).get("authorization") ?? "";
-		calls.push({
-			method: init?.method ?? "GET",
-			path: url.pathname,
-			body,
-			auth,
-		});
+		calls.push({ method, path: url.pathname, query: url.search, body, auth });
 		if (auth !== `Bearer ${USER_JWT}`)
 			return Response.json({ message: "unauthorized" }, { status: 401 });
-		// Nothing provisioned yet: no identity, no project member.
+		const byId = (id: string | null) =>
+			projects.find((project) => project.id === id);
+		if (url.pathname === "/api/v1/projects" && method === "GET")
+			return Response.json({
+				projects: projects.filter(
+					(project) =>
+						url.searchParams.get("type") === null ||
+						project.type === url.searchParams.get("type"),
+				),
+			});
+		if (url.pathname === "/api/v1/projects" && method === "POST") {
+			const made = secretsProject("proj-made", body.projectName);
+			projects.push(made);
+			return Response.json({ project: made });
+		}
+		const projectPath = /^\/api\/v1\/projects\/([^/]+)(\/.*)?$/u.exec(
+			url.pathname,
+		);
+		if (projectPath !== null) {
+			const project = byId(projectPath[1] ?? null);
+			if (project === undefined)
+				return Response.json(
+					{ message: `Project with ${projectPath[1]} not found` },
+					{ status: 404 },
+				);
+			const rest = projectPath[2] ?? "";
+			if (rest === "" && method === "GET") return Response.json({ project });
+			if (rest === "/environments" && method === "POST") {
+				project.environments.push(env(body.slug));
+				return Response.json({ environment: env(body.slug) });
+			}
+			if (rest === "/memberships/identities" && method === "GET")
+				return Response.json({ identityMemberships: [], totalCount: 0 });
+			if (rest === "/memberships/identities/ident-1")
+				return Response.json({ identityMembership: { id: "m-1" } });
+		}
+		if (url.pathname === "/api/v1/folders") {
+			const workspace =
+				method === "GET"
+					? url.searchParams.get("workspaceId")
+					: body.workspaceId;
+			const environment =
+				method === "GET"
+					? url.searchParams.get("environment")
+					: body.environment;
+			const project = byId(workspace);
+			if (project === undefined)
+				return Response.json(
+					{ message: `Project with ${workspace} not found` },
+					{ status: 404 },
+				);
+			if (project.type !== "secret-manager")
+				return Response.json(
+					{
+						message: `The project is of type ${project.type}. Operations of type secret-manager are not allowed.`,
+					},
+					{ status: 400 },
+				);
+			if (!project.environments.some((e) => e.slug === environment))
+				return Response.json(
+					{ message: `Environment with slug '${environment}' not found` },
+					{ status: 404 },
+				);
+			if (method === "POST") {
+				folders.push({
+					project: project.id,
+					environment: String(environment),
+					path: `${body.path === "/" ? "" : body.path}/${body.name}`,
+				});
+				return Response.json({ folder: { id: "f-1", name: body.name } });
+			}
+			return Response.json({ folders: [] });
+		}
 		if (url.pathname === `/api/v2/organizations/${ORG}/identity-memberships`)
-			return Response.json({ identityMemberships: [], totalCount: 0 });
-		if (
-			url.pathname === `/api/v1/projects/${PROJECT}/memberships/identities` &&
-			(init?.method ?? "GET") === "GET"
-		)
 			return Response.json({ identityMemberships: [], totalCount: 0 });
 		if (url.pathname === "/api/v1/identities")
 			return Response.json({ identity: { id: "ident-1", name: body.name } });
@@ -59,14 +152,9 @@ function fakeInfisical() {
 			return Response.json({ identityOidcAuth: { id: "oa-1" } });
 		if (url.pathname === "/api/v1/auth/token-auth/identities/ident-1/tokens")
 			return Response.json({ accessToken: "identity-token", expiresIn: 3600 });
-		if (
-			url.pathname ===
-			`/api/v1/projects/${PROJECT}/memberships/identities/ident-1`
-		)
-			return Response.json({ identityMembership: { id: "m-1" } });
 		return Response.json({ message: "not found" }, { status: 404 });
 	};
-	return { calls, fetch: fetchImpl };
+	return { calls, folders, projects, fetch: fetchImpl };
 }
 
 /** A machine: which commands exist, whether the CLI is signed in. */
@@ -175,6 +263,7 @@ describe("SPEC R1 + R4: HoBo creates the identity through the API", () => {
 			base(fakeMachine({ cliOnPath: true, signedIn: true }), api),
 		);
 		expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+			`GET /api/v1/projects/${PROJECT}`,
 			`GET /api/v2/organizations/${ORG}/identity-memberships`,
 			"POST /api/v1/identities",
 			"POST /api/v1/auth/token-auth/identities/ident-1",
@@ -182,15 +271,37 @@ describe("SPEC R1 + R4: HoBo creates the identity through the API", () => {
 			`POST /api/v1/projects/${PROJECT}/memberships/identities/ident-1`,
 			"POST /api/v1/auth/token-auth/identities/ident-1/tokens",
 		]);
-		expect(api.calls[1]?.body).toMatchObject({
+		expect(api.calls[2]?.body).toMatchObject({
 			organizationId: ORG,
 			role: "no-access",
 		});
 		expect(result).toMatchObject({
 			kind: "ready",
 			identityId: "ident-1",
+			projectId: PROJECT,
+			environment: "prod",
 			auth: "token",
 			token: "identity-token",
+		});
+	});
+
+	it("says what Infisical answered when it refuses a step", async () => {
+		const api = fakeInfisical();
+		const refusing: typeof fetch = async (input, init) =>
+			new URL(String(input)).pathname.endsWith("/identity-memberships")
+				? new Response(
+						JSON.stringify({ message: "Environment with slug prod not found" }),
+						{ status: 400 },
+					)
+				: api.fetch(input, init);
+		const result = await provisionInfisicalAccess({
+			...base(fakeMachine({ cliOnPath: true, signedIn: true }), api),
+			fetch: refusing,
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			message:
+				"Infisical refused listing the organization's identities (HTTP 400): Environment with slug prod not found.",
 		});
 	});
 
@@ -348,5 +459,181 @@ describe("SPEC R8: a remote box signs in through the owner channel", () => {
 			expect(result.remediation[0]).toMatch(
 				/^HOBO_OWNER_SIGN_IN url=https:\/\/app\.infisical\.com\/login\?callback_port=\d+ capture=INFISICAL_CLI_SESSION$/u,
 			);
+	});
+});
+
+describe("SPEC R9: HoBo resolves its own project and environment", () => {
+	const folder = { environment: "prod", path: "/hobo-cd" };
+	const signedIn = () => fakeMachine({ cliOnPath: true, signedIn: true });
+	const said = (
+		result: Awaited<ReturnType<typeof provisionInfisicalAccess>>,
+	) =>
+		result.kind === "refused"
+			? [result.message, ...result.remediation].join("\n")
+			: "";
+
+	it("passes over an Agent Vault project for the one Secrets Management project", async () => {
+		const api = fakeInfisical([
+			{
+				id: PROJECT,
+				name: "agents",
+				slug: "agents",
+				type: "agent-vault",
+				environments: [env("prod")],
+			},
+			secretsProject("proj-sm", "secrets", ["dev", "prod"]),
+		]);
+		const result = await provisionInfisicalAccess({
+			...base(signedIn(), api),
+			folder,
+		});
+		expect(result).toMatchObject({
+			kind: "ready",
+			projectId: "proj-sm",
+			environment: "prod",
+		});
+		expect(api.calls.find((c) => c.path === "/api/v1/projects")?.query).toBe(
+			"?type=secret-manager",
+		);
+		const folderCalls = api.calls.filter((c) => c.path === "/api/v1/folders");
+		expect(folderCalls.length).toBeGreaterThan(0);
+		for (const call of folderCalls.filter((c) => c.method === "GET")) {
+			const query = new URLSearchParams(call.query);
+			expect(query.get("workspaceId")).toBe("proj-sm");
+			expect(query.get("environment")).toBe("prod");
+		}
+		expect(api.folders).toEqual([
+			{ project: "proj-sm", environment: "prod", path: "/hobo-cd" },
+		]);
+		expect(
+			api.calls.some((c) =>
+				c.path.startsWith(`/api/v1/projects/${PROJECT}/memberships`),
+			),
+		).toBe(false);
+		expect(api.calls.map((c) => `${c.method} ${c.path}`)).toContain(
+			"POST /api/v1/projects/proj-sm/memberships/identities/ident-1",
+		);
+	});
+
+	it("uses production where the project has no prod environment", async () => {
+		const api = fakeInfisical([
+			secretsProject(PROJECT, "secrets", ["dev", "production"]),
+		]);
+		const result = await provisionInfisicalAccess({
+			...base(signedIn(), api),
+			folder,
+		});
+		expect(result).toMatchObject({
+			kind: "ready",
+			projectId: PROJECT,
+			environment: "production",
+		});
+		expect(api.folders).toEqual([
+			{ project: PROJECT, environment: "production", path: "/hobo-cd" },
+		]);
+		expect(api.calls.some((c) => c.path.endsWith("/environments"))).toBe(false);
+	});
+
+	it("creates a prod environment where the project has none it can use", async () => {
+		const api = fakeInfisical([secretsProject(PROJECT, "secrets", ["qa"])]);
+		const result = await provisionInfisicalAccess({
+			...base(signedIn(), api),
+			folder,
+		});
+		expect(result).toMatchObject({ kind: "ready", environment: "prod" });
+		expect(
+			api.calls.find(
+				(c) => c.path === `/api/v1/projects/${PROJECT}/environments`,
+			)?.body,
+		).toEqual({ name: "Production", slug: "prod" });
+	});
+
+	it("creates its own hobo project where there is no Secrets Management project", async () => {
+		const api = fakeInfisical([]);
+		const result = await provisionInfisicalAccess({
+			...base(signedIn(), api),
+			projectId: undefined,
+			folder,
+		});
+		expect(
+			api.calls.find(
+				(c) => c.method === "POST" && c.path === "/api/v1/projects",
+			)?.body,
+		).toEqual({
+			projectName: "hobo",
+			slug: "hobo",
+			type: "secret-manager",
+			shouldCreateDefaultEnvs: true,
+		});
+		expect(result).toMatchObject({
+			kind: "ready",
+			projectId: "proj-made",
+			environment: "prod",
+		});
+		expect(api.folders).toEqual([
+			{ project: "proj-made", environment: "prod", path: "/hobo-cd" },
+		]);
+	});
+
+	it("prefers the project named hobo among several", async () => {
+		const api = fakeInfisical([
+			secretsProject("proj-a", "billing"),
+			secretsProject("proj-h", "HoBo"),
+		]);
+		const result = await provisionInfisicalAccess({
+			...base(signedIn(), api),
+			projectId: "missing-project",
+			folder,
+		});
+		expect(result).toMatchObject({ kind: "ready", projectId: "proj-h" });
+	});
+
+	it("refuses several projects with none named hobo, naming them without ids", async () => {
+		const api = fakeInfisical([
+			{
+				...secretsProject("proj-a", "billing"),
+				id: "1f0c2a4e-1111-4a6b-9c3d-0e8f7a6b5c4d",
+			},
+			{
+				...secretsProject("proj-b", "payments"),
+				id: "2f0c2a4e-2222-4a6b-9c3d-0e8f7a6b5c4d",
+			},
+		]);
+		const result = await provisionInfisicalAccess({
+			...base(signedIn(), api),
+			folder,
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_INFISICAL_PROJECT_AMBIGUOUS",
+		});
+		const text = said(result);
+		expect(text).toContain("billing");
+		expect(text).toContain("payments");
+		expect(text).not.toMatch(/1f0c2a4e|2f0c2a4e|proj-1/u);
+		expect(api.calls.some((c) => c.method === "POST")).toBe(false);
+	});
+
+	it("never repeats an id Infisical quotes in a refusal", async () => {
+		const id = "3f0c2a4e-3333-4a6b-9c3d-0e8f7a6b5c4d";
+		const api = fakeInfisical([secretsProject(id, "secrets")]);
+		const refusing: typeof fetch = async (input, init) =>
+			new URL(String(input)).pathname === "/api/v1/folders"
+				? Response.json(
+						{ message: `Project with ${id} not found` },
+						{ status: 404 },
+					)
+				: api.fetch(input, init);
+		const result = await provisionInfisicalAccess({
+			...base(signedIn(), api),
+			projectId: id,
+			fetch: refusing,
+			folder,
+		});
+		expect(result).toMatchObject({ kind: "refused" });
+		const text = said(result);
+		expect(text).toContain("Infisical refused listing the folders in /");
+		expect(text).not.toContain(id);
+		expect(text).not.toContain("3f0c2a4e");
 	});
 });

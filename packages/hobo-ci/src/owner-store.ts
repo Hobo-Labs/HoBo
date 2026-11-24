@@ -23,7 +23,10 @@ import {
 	bitwardenEndpoints,
 } from "./bitwarden-provision.js";
 import { storeLabel, storeSettings } from "./ceremony-settings.js";
-import type { provisionInfisicalAccess } from "./infisical-access.js";
+import {
+	DEFAULT_INFISICAL_ENVIRONMENT,
+	type provisionInfisicalAccess,
+} from "./infisical-access.js";
 import { OAUTH_SIGN_IN } from "./infisical-oauth.js";
 import {
 	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
@@ -151,7 +154,7 @@ export function storeChoiceGuidance(
 		configured.has(store) ? " (configured here: its sign-in is provided)" : "";
 	return [
 		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — choose your store in HoBo's secure owner form.`,
-		`infisical${note("infisical")}: use your existing store and sign-in.`,
+		`infisical${note("infisical")}: use your existing store and sign-in; HoBo finds or creates its Secrets Management project and environment.`,
 		`1password${note("1password")}: use your existing store and sign-in.`,
 		`bitwarden${note("bitwarden")}: use your existing store and sign-in.`,
 	];
@@ -607,7 +610,9 @@ export async function ownerStore(
 		infisicalFolder:
 			id === "infisical"
 				? {
-						environment: resolved.values.INFISICAL_ENVIRONMENT ?? "prod",
+						environment:
+							resolved.values.INFISICAL_ENVIRONMENT ??
+							DEFAULT_INFISICAL_ENVIRONMENT,
 						path: resolved.values.INFISICAL_SECRET_PATH ?? folder,
 					}
 				: undefined,

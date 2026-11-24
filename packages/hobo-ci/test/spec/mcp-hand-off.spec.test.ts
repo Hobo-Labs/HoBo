@@ -222,6 +222,8 @@ describe("SPEC hand-off through MCP: one sign-in serves every later run", () => 
 				return {
 					kind: "ready" as const,
 					identityId: "ident-1",
+					projectId: "proj",
+					environment: "prod",
 					auth: "token" as const,
 					token: "identity-token",
 				};
@@ -249,5 +251,70 @@ describe("SPEC hand-off through MCP: one sign-in serves every later run", () => 
 		expect(JSON.stringify(await deps.locator.read())).not.toContain(
 			"identity-token",
 		);
+	});
+});
+
+describe("SPEC hand-off through MCP: the store opens where HoBo provisioned", () => {
+	it("records the project and environment provisioning resolved, and opens the store there", async () => {
+		const saved = new Map([
+			["HOBO_SECRET_STORE", "infisical"],
+			["INFISICAL_PROJECT_ID", "typed-project"],
+			["INFISICAL_ENVIRONMENT", "prod"],
+		]);
+		const opened: (string | undefined)[][] = [];
+		const offered: (string | undefined)[] = [];
+		const store: OpenedSecretStore = {
+			id: "infisical",
+			port: createMemorySecretsPort({ id: "memory" }),
+			reference: (name) => `infisical://secrets/production/hobo-ci/${name}`,
+		};
+		await prepareGithubConnection(throughMcp(), {
+			env: {
+				CLAUDE_CODE_REMOTE: "true",
+				INFISICAL_PROJECT_ID: "typed-project",
+			},
+			ownerChannel: heldOwnerChannel(),
+			locator: {
+				read: async () => Object.fromEntries(saved),
+				write: async (values) => {
+					saved.clear();
+					for (const [name, value] of Object.entries(values))
+						saved.set(name, value);
+				},
+			},
+			runCommand: async () => ({ code: 127, stdout: "", stderr: "" }),
+			infisicalAccess: async (options: InfisicalAccessOptions) => {
+				offered.push(options.projectId);
+				return {
+					kind: "ready" as const,
+					identityId: "ident-1",
+					projectId: "resolved-project",
+					environment: "production",
+					auth: "token" as const,
+					token: "identity-token",
+				};
+			},
+			openStore: async (_id, coordinates, vault) => {
+				opened.push([
+					coordinates.INFISICAL_PROJECT_ID,
+					coordinates.INFISICAL_ENVIRONMENT,
+				]);
+				return vault.reveal("INFISICAL_TOKEN") === undefined
+					? { ok: false, message: "Not signed in.", remediation: [] }
+					: { ok: true, store };
+			},
+			sleep: async () => undefined,
+			handOffTimeoutMs: 1,
+			startPage: () => {
+				throw new Error("no page through MCP");
+			},
+		});
+		expect(offered).toEqual(["typed-project"]);
+		expect(Object.fromEntries(saved)).toMatchObject({
+			INFISICAL_IDENTITY_ID: "ident-1",
+			INFISICAL_PROJECT_ID: "resolved-project",
+			INFISICAL_ENVIRONMENT: "production",
+		});
+		expect(opened.at(-1)).toEqual(["resolved-project", "production"]);
 	});
 });
