@@ -16,6 +16,7 @@ export const RunnerTier = Schema.Literals([
 	"local",
 	"hostinger",
 	"agent37",
+	"boat",
 	"github",
 ]);
 export type RunnerTier = typeof RunnerTier.Type;

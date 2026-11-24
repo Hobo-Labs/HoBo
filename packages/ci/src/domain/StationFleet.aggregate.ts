@@ -230,7 +230,8 @@ const TIER_PRIORITY = {
 	local: 0,
 	hostinger: 1,
 	agent37: 2,
-	github: 3,
+	boat: 3,
+	github: 4,
 } as const satisfies Record<RunnerTier, number>;
 
 function payerExposureFor(state: StationFleetState, payer: string): number {

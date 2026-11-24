@@ -685,6 +685,8 @@ and clock correctness remain independently verified host responsibilities.
 - `@hobo/iac-alchemy/environments`: integrates `@alchemy.run/infisical` (`createHoboInfisicalSecrets`), disables ambient shell secrets via `Secrets.ProcessEnv({ disabled: true })`, provides `OwnerStoreSecretProvider` (`ConfigProvider.layerAdd`) for `owner://<NAME>` credentials as `Config.Redacted`, and validates Alchemy stages and profiles with redacted `ProviderDetails`.
 - `@hobo/iac-alchemy/sandboxes`: integrates `@alchemy.run/boat` (`Boat.Snapshot`, `Boat.Sandbox`) alongside a Boat-shaped custom Agent37 sandbox provider (`Agent37Snapshot`, `Agent37Sandbox`, snapshot setup hashing, and live sandbox forks) for CI/CD workloads.
 - `@hobo/iac-alchemy/test-harness`: provides a Vitest-compatible `createAlchemyTestHarness` following Alchemy's `Test.make` one-deploy-per-suite (`beforeAll(deploy)` / `afterAll(destroy)`) and provider-lifecycle session patterns.
+- `@hobo/iac-alchemy/cluster`: integrates `@alchemy.run/effect-cluster` (`Cluster.Database.fromUrl` with `Config.Redacted` credentials, `Cluster.providers()`, swappable `ClusterCloudflare.DurableObjectPool` / container pool topology validation) for HoBo CI fleet coordination.
 - Redundant `@hobo/iac-terraform` and `@hobo/iac-crossplane` packages and tests were removed as `@hobo/iac-alchemy` became the primary IaC substrate.
+
 
 
