@@ -126,8 +126,8 @@ Each subcommand takes exactly the flags its usage line names, plus `--format`,
 | Policy | `compliance show`; Rails promote with `promote` and Rail Freight |
 | Hosting | `hosting-status`, `hosting-resume`, `hosting-cancel`, `hosting-resume-mutation` (unchanged) |
 
-After a restart, `hobo cd <subcommand> --relay <https-origin>` (or HoBo MCP's
-`relay_login`) signs in to the owner's already configured CI relay with one
+After a restart, any `hobo cd` subcommand given `--relay` and the relay's https
+origin (or HoBo MCP's `relay_login`) signs in to the owner's already configured CI relay with one
 GitHub confirmation and resolves `github-app://<owner>/<repo>` and
 `owner://HOBO_CI_ACCOUNT_TOKEN` through it for that process only; `--relay` is
 taken off the arguments before the subcommand parses them. Long-lived provider
