@@ -1,0 +1,31 @@
+{
+  "accountId": "acme",
+  "tenantId": "acme",
+  "pool": { "label": "hobo", "os": "linux", "architecture": "x64" },
+  "providers": [
+    {
+      "id": "agent37-runners",
+      "kind": "agent37",
+      "connectionRef": "agent37-ci",
+      "runsOn": "hobo-agent37",
+      "enabled": false,
+      "pool": {
+        "minBoxes": 0,
+        "maxBoxes": 4,
+        "type": "performance",
+        "size": { "cpu": 16, "memory": 64, "disk": 20 },
+        "region": "us",
+        "template": "agent37-ubuntu@1",
+        "idleTtlSeconds": 600,
+        "jobTimeoutSeconds": 1800,
+        "labels": ["hobo-agent37"],
+        "network": { "allow": ["github.com"] },
+        "budget": { "limitMicros": 2000000, "period": "month", "maxCreatesPerHour": 60 },
+        "allowAboveFreeTier": true
+      }
+    }
+  ],
+  "budget": { "scope": "ci-account", "currency": "USD", "limitMicros": 2000000, "period": "manual", "timeZone": "UTC" },
+  "routing": { "strategy": "lowest-total-incremental-cost", "noEligibleProvider": "queue", "unknownAllocation": "zero" },
+  "thresholds": []
+}

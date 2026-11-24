@@ -21,6 +21,13 @@ and the `relay-mcp-*` fixtures pin that an event's stored `detail` or a lease's
 sandbox identity does not fit a view, and that a cursor is an opaque token,
 never a journal position.
 
+`relay_owner_login.proto` owns the relay's owner sign-in messages: the device
+authorization, token request, sealed session, credential request and
+short-lived credential, and the refusal. `relay_owner_login.cue` closes them;
+the `fixtures/relay_owner_login/` corpus pins that the verification URI is
+GitHub's, a session lasts at most eight hours, a credential at most an hour, a
+locator outside `owner://` and `github-app://` is not a request and an unknown refusal is not an error.
+
 The relay mesh's records (`mesh.proto`, the `#Mesh*` definitions and the
 `mesh-*` fixtures) are gone: the box worker is a HoBo Fleet member, and the
 fleet's records live in `packages/fleet/data-models/`. The hosted fleet verdict and its

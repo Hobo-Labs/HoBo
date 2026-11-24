@@ -73,6 +73,7 @@ export default mergeConfig(
 								...ISOLATED_TEST_FILES,
 								...RELEASE_INTEGRATION_TEST_FILES,
 							]),
+							"test/live-*.test.ts",
 						],
 					},
 				},

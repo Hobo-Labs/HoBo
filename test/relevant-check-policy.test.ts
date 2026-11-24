@@ -1006,11 +1006,35 @@ test("a changed-path stdin reader edit selects its regression tests", () => {
 		"scripts/test/read-stdin.test.ts",
 		"scripts/test/job-scope.test.ts",
 		"scripts/ci/job-scope.mts",
+		"scripts/ci/state-machine-scope.mts",
 		"scripts/ci/dependent-tests.mts",
 		"scripts/ci/impact-classifier.mts",
 	]) {
 		assert.ok(plan([file]).checks.some(isReadStdinTest), file);
 	}
+});
+
+const isStateMachineScopeTest = (check: {
+	command: string;
+	args: readonly string[];
+}) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/state-machine-scope.test.ts";
+
+test("a state-machine relevance input selects the scope tests", () => {
+	for (const file of [
+		"scripts/ci/state-machine-scope.mts",
+		"scripts/test/state-machine-scope.test.ts",
+		"scripts/ci/job-scope.mts",
+		"scripts/ci/affected-lanes.mts",
+		"scripts/verify-state-machine.sh",
+		".agents/skills/verify-cd-fanout/SKILL.md",
+	])
+		assert.ok(plan([file]).checks.some(isStateMachineScopeTest), file);
+	assert.ok(
+		!plan(["docs/ci/performance.md"]).checks.some(isStateMachineScopeTest),
+	);
 });
 
 test("unrelated changes do not select the stdin reader tests", () => {

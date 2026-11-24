@@ -23,6 +23,54 @@
 			"types": "./dist/cloudflare-runtime.d.ts",
 			"default": "./dist/cloudflare-runtime.js"
 		},
+		"./rivet": {
+			"types": "./dist/rivet.d.ts",
+			"default": "./dist/rivet.js"
+		},
+		"./rivet/namespace": {
+			"types": "./dist/rivet-namespace.d.ts",
+			"default": "./dist/rivet-namespace.js"
+		},
+		"./rivet/runtime": {
+			"types": "./dist/rivet-runtime.d.ts",
+			"default": "./dist/rivet-runtime.js"
+		},
+		"./rivet/queue": {
+			"types": "./dist/rivet-queue.d.ts",
+			"default": "./dist/rivet-queue.js"
+		},
+		"./rivet/queue/runtime": {
+			"types": "./dist/rivet-queue-runtime.d.ts",
+			"default": "./dist/rivet-queue-runtime.js"
+		},
+		"./rivet/kv": {
+			"types": "./dist/rivet-kv.d.ts",
+			"default": "./dist/rivet-kv.js"
+		},
+		"./rivet/kv/runtime": {
+			"types": "./dist/rivet-kv-runtime.d.ts",
+			"default": "./dist/rivet-kv-runtime.js"
+		},
+		"./rivet/composition": {
+			"types": "./dist/rivet-composition-support.d.ts",
+			"default": "./dist/rivet-composition-support.js"
+		},
+		"./rivet/standalone": {
+			"types": "./dist/rivet-standalone.d.ts",
+			"default": "./dist/rivet-standalone.js"
+		},
+		"./rivet/multi": {
+			"types": "./dist/rivet-multi.d.ts",
+			"default": "./dist/rivet-multi.js"
+		},
+		"./rivet/http-kv": {
+			"types": "./dist/rivet-http-kv.d.ts",
+			"default": "./dist/rivet-http-kv.js"
+		},
+		"./rivet/http-queue": {
+			"types": "./dist/rivet-http-queue.d.ts",
+			"default": "./dist/rivet-http-queue.js"
+		},
 		"./cloudflare/kv": {
 			"types": "./dist/cloudflare-native-kv.d.ts",
 			"default": "./dist/cloudflare-native-kv.js"
@@ -30,22 +78,6 @@
 		"./cloudflare/r2": {
 			"types": "./dist/cloudflare-native-r2.d.ts",
 			"default": "./dist/cloudflare-native-r2.js"
-		},
-		"./rivet": {
-			"types": "./dist/rivet.d.ts",
-			"default": "./dist/rivet.js"
-		},
-		"./rivet/runtime": {
-			"types": "./dist/rivet-runtime.d.ts",
-			"default": "./dist/rivet-runtime.js"
-		},
-		"./rivet/multi": {
-			"types": "./dist/rivet-multi.d.ts",
-			"default": "./dist/rivet-multi.js"
-		},
-		"./rivet/queue": {
-			"types": "./dist/rivet-queue.d.ts",
-			"default": "./dist/rivet-queue.js"
 		}
 	},
 	"dependencies": {
@@ -78,16 +110,16 @@
 		"effect": "4.1.4",
 		"@effect/platform-node": "4.1.4",
 		"rivetkit": "3.0.0",
-		"miniflare": "4.20260722.0",
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",
-		"@types/node": "^24.13.2"
+		"@types/node": "^24.13.2",
+		"miniflare": "4.20260722.0"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
-		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.capability-tests.json",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.kv-actor-tests.json && tsc --noEmit -p tsconfig.kv-tests.json && tsc --noEmit -p tsconfig.http-kv-tests.json && tsc --noEmit -p tsconfig.http-queue-tests.json && tsc --noEmit -p tsconfig.capability-tests.json",
 		"test": "vitest run",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	}

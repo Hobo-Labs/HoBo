@@ -40,19 +40,78 @@ const providers = new Set([
 	"azure-devops",
 	"dagger",
 	"cloudflare",
+	"agent37",
 ]);
 
 const kubernetesName = /^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/;
 const vercelLocations = new Set(["vercel", "local", "remote"]);
+const agent37Template = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}@[1-9][0-9]{0,19}$/u;
+const agent37Hostname =
+	/^(?=.{1,253}$)(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|\*\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){2,}[a-z]{2,63})$/u;
+const agent37Sizes = new Set(["2:4", "4:8", "4:16", "4:32", "8:64"]);
+const agent37RegistryWildcard = /^\*\.[^.]+\.[a-z]{2}\.[a-z]{2}$/u;
 
-/**
- * Kind-specific fields are closed: only kubernetes carries a scale set or an
- * engine, only vercel carries a location. An empty vercel location is the
- * protobuf default of policies persisted before locations existed; authored
- * `.hobo/ci.json` requires it.
- */
+function agent37PoolAllowed(provider: CiPolicyProvider): boolean {
+	if (provider.capacity.case !== "pool") return false;
+	const pool = provider.capacity.value;
+	const size = pool.size;
+	const network = pool.network;
+	const budget = pool.budget;
+	if (!size || !network || !budget) return false;
+	return (
+		Number.isInteger(pool.minBoxes) &&
+		Number.isInteger(pool.maxBoxes) &&
+		pool.minBoxes >= 0 &&
+		pool.maxBoxes >= pool.minBoxes &&
+		pool.maxBoxes > 0 &&
+		pool.maxBoxes <= 1000 &&
+		["default", "vm", "performance"].includes(pool.type) &&
+		agent37Sizes.has(`${size.cpu}:${size.memory}`) &&
+		(pool.type !== "default" || (pool.region === "us" && size.cpu !== 8)) &&
+		(pool.allowAboveFreeTier || pool.maxBoxes * size.memory <= 32) &&
+		Number.isInteger(size.disk) &&
+		size.disk >= 1 &&
+		size.disk <= 1024 &&
+		["us", "eu", "ap-south"].includes(pool.region) &&
+		pool.template.length <= 255 &&
+		agent37Template.test(pool.template) &&
+		Number.isInteger(pool.idleTtlSeconds) &&
+		pool.idleTtlSeconds >= 60 &&
+		pool.idleTtlSeconds <= 3600 &&
+		Number.isInteger(pool.jobTimeoutSeconds) &&
+		pool.jobTimeoutSeconds >= 1 &&
+		pool.jobTimeoutSeconds <= 19800 &&
+		pool.labels.length >= 1 &&
+		pool.labels.length <= 16 &&
+		new Set(pool.labels).size === pool.labels.length &&
+		pool.labels.every(
+			(label) => labelPattern.test(label) && label.toLowerCase() !== "hobo",
+		) &&
+		network.allow.length >= 1 &&
+		network.allow.length <= 100 &&
+		new Set(network.allow).size === network.allow.length &&
+		network.allow.every(
+			(entry) =>
+				agent37Hostname.test(entry) && !agent37RegistryWildcard.test(entry),
+		) &&
+		Number.isSafeInteger(budget.limitMicros) &&
+		budget.limitMicros >= 0 &&
+		budget.period === "month" &&
+		Number.isInteger(budget.maxCreatesPerHour) &&
+		budget.maxCreatesPerHour >= 1 &&
+		budget.maxCreatesPerHour <= 10000
+	);
+}
+
 function providerKindFieldsAllowed(provider: CiPolicyProvider): boolean {
 	const { capacity } = provider;
+	if (capacity.case === "pool")
+		return (
+			provider.kind === "agent37" &&
+			provider.location === "" &&
+			agent37PoolAllowed(provider)
+		);
+	if (provider.kind === "agent37") return false;
 	if (capacity.case !== undefined && provider.kind !== "kubernetes")
 		return false;
 	if (capacity.case === "scaleSet") {

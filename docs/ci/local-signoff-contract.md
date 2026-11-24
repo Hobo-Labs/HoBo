@@ -34,14 +34,19 @@ A slip choosing a fallback records a fleet refusal, but a fresh healthy fleet
 pickup takes precedence. A slip choosing an enrolled local runner does not
 establish that it is taking jobs; the queue must establish its availability or
 refusal. A GitHub slip does not rule out a local runner enrolled since the slip
-was issued. An unusable, expired, unreadable, or tier/label-contradictory slip
-leaves the queue rule to decide.
+was issued. An `agent37` slip is valid only when its runner matches a label in
+committed `runnerRouting.externalPools`; provider declarations alone and unknown
+tiers do not authorize a slip. An unusable, expired, unreadable, or
+tier/label-contradictory slip leaves the queue rule to decide.
 
 After pins and slips, availability means *observed* availability, not a
 reservation or a guarantee that a runner will still be free. The generic
 selector uses HoBo, ARC, local, then GitHub-hosted order. The checkout
 coordinator also considers enabled provider and external-pool inventory from the
-trusted base. Providers sharing a label remain separate observations. Capacity
+trusted base. Providers sharing a label remain separate observations. Agent37
+provider and external-pool declarations are opaque to this generic selection:
+a healthy Actions queue pickup cannot establish pool availability without the
+route action's trusted `observeAgent37Pool` observer. Capacity
 with no useful queue evidence remains unknown unless the operator independently
 observes its outage and names that enabled member with `--provider-unavailable=ID`.
 Unsupported inventory stays unknown. An Actions workflow continues

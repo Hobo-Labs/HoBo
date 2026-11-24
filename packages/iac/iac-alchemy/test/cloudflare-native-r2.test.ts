@@ -195,6 +195,36 @@ describe("Cloudflare R2 Bindle mapping", () => {
 		}
 	});
 
+	it.each([
+		"bucket",
+		"grant",
+	] as const)("rejects and observes an asynchronous R2 %s verifier", async (field) => {
+		const rejected = Promise.reject(new Error("authority unavailable"));
+		const verifiers = {
+			verifyBucket: () => true,
+			verifyGrant: () => true,
+		};
+		Object.defineProperty(
+			verifiers,
+			field === "bucket" ? "verifyBucket" : "verifyGrant",
+			{ value: () => rejected, enumerable: true },
+		);
+		expect(() =>
+			mapBindleToAlchemy(
+				application,
+				cloudflareNativeR2BindleMappers({
+					workerModules: { web: main },
+					sourceFence,
+					...verifiers,
+				}),
+				{ assessRequirements },
+			),
+		).toThrow(
+			field === "bucket" ? "R2_BUCKET_UNVERIFIED" : "R2_GRANT_UNVERIFIED",
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	});
+
 	it("scopes bucket generations and nonreused grant epochs, including A→B→A", () => {
 		const first = cloudflareR2ProxySource("r2-app", "assets", {
 			...grant,

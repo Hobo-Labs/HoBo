@@ -46,6 +46,7 @@ export interface CommandRunInput {
 		readonly budgetId?: string | null;
 		readonly whatIf?: boolean;
 		readonly mode?: string | null;
+		readonly relay?: string | null;
 		readonly subcommandOptions?: SubcommandOptions;
 	};
 	readonly args: readonly string[];

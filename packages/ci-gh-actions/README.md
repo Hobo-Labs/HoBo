@@ -760,19 +760,20 @@ schemas and never fetches the `$schema` URL while loading configuration.
 
 ### Provider shapes
 
-A policy provider is one of eight closed, kind-specific shapes defined in the
+A policy provider is one of nine closed, kind-specific shapes defined in the
 sibling [provider schema](schema/ci-project-providers.schema.json) (exported as
 `@hobo/ci-gh-actions/schema/ci-project-providers.schema.json`). The project
 schema's `Provider` is a relative `$ref` to that file, which is a `oneOf` with
 `additionalProperties: false` on every branch. Every kind carries the base
 fields `id`, `kind`, `connectionRef`, `runsOn` and optional `enabled`; existing
-five-field providers of every kind except `vercel` stay valid unchanged.
+providers of previously supported kinds other than `vercel` stay valid unchanged.
 
 | Kind | Extra fields |
 |---|---|
-| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
+| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine`, `pool` and `location` are rejected |
 | `kubernetes` | optional `scaleSet` **or** optional `engine` (never both); neither keeps the existing disposable-pod path |
-| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet` and `engine` are rejected |
+| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet`, `engine` and `pool` are rejected |
+| `agent37` | required `pool`: box type, documented size, region, immutable template, lifecycle, labels, egress allowlist and monthly create/budget limits |
 
 `scaleSet` names an [ARC](https://github.com/actions/actions-runner-controller)
 `AutoscalingRunnerSet`: `{ "name", "namespace", "maxRunners", "minRunners"? }`.
@@ -783,6 +784,20 @@ five-field providers of every kind except `vercel` stay valid unchanged.
 checks. HoBo never installs or upgrades ARC or Dagger. Neither shape accepts a
 kubeconfig, token or `githubConfigSecret`: cluster and Vercel credentials stay
 out of `.hobo/ci.json` and resolve through the `connectionRef`.
+
+Agent37 pools accept `default`, `vm` and `performance` types. Documented sizes are
+2 vCPU/4 GB, 4/8, 4/16 and 4/32, plus 8/64 for `vm` and `performance`; disk is
+1–1024 whole GB. Non-US regions require a non-default type. Templates require a
+positive numeric revision such as `agent37-ubuntu@1`; mutable names and tags are
+rejected. Idle TTL is 60–3600 seconds. Pools above 32 GB of concurrent memory
+require `allowAboveFreeTier: true`. Labels are unique. Network allowlists contain
+1–100 unique lowercase DNS hostnames or leading-label wildcards; IP addresses
+and wildcard bases with fewer than three DNS labels, including `*.com`, `*.co.uk`,
+and `*.github.io`, are rejected, with everything else denied. Monthly USD-microdollar caps and bounded create-per-hour limits are
+required. The committed `agent37-runners` example is disabled and stores no API
+key or webhook secret. The default `runnerRouting.externalPools` list remains
+empty. A project must explicitly configure an external pool to opt into externally
+hosted runners.
 
 ```json
 {
@@ -795,10 +810,10 @@ out of `.hobo/ci.json` and resolve through the `connectionRef`.
 ```
 
 The TypeScript types (`CiProjectProvider`, `CiKubernetesProvider`,
-`CiVercelProvider`, …) are inferred from the same discriminated union in
+`CiVercelProvider`, `CiAgent37Provider`, …) are inferred from the same discriminated union in
 `src/project-providers.ts`; `pnpm --filter @hobo/ci-gh-actions schema:check`
 fails when either shipped file drifts. The protobuf `CiPolicyProvider` carries
-the shapes as a `capacity` oneof (`scale_set` | `engine`) plus `location`, CUE
+the shapes as a `capacity` oneof (`scale_set` | `engine` | `pool`) plus `location`, CUE
 constrains them in `@hobo/ci`'s `ci.cue`, and `parseCiPolicy` rejects a shape on
 the wrong kind. A relay keeps reading persisted vercel policies whose protobuf
 `location` is empty; only authored files require it.

@@ -32,9 +32,19 @@ describe("Cloudflare coverage of the real HoBo catalog", () => {
 		expect(support.every((row) => row.reason.length > 0)).toBe(true);
 		expect(
 			support.filter((row) => row.status === "partial").map((row) => row.kind),
-		).toEqual(["api", "kv", "bucket", "queue", "web", "service"]);
+		).toEqual([
+			"api",
+			"kv",
+			"bucket",
+			"queue",
+			"secret",
+			"data",
+			"web",
+			"service",
+			"flag",
+		]);
 		expect(support.filter((row) => row.status === "unsupported")).toHaveLength(
-			CATALOG_ROWS.length - 6,
+			CATALOG_ROWS.length - 9,
 		);
 		expect(
 			support.find((row) => row.kind === "queue")?.unsupportedOperations,

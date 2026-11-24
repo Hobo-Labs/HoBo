@@ -308,60 +308,29 @@ An in-flight provider operation can outlast the budget. The relay does not
 durably fence it across lease expiry, processes or restarts, so inspect the
 provider and CD journal to establish its outcome before another deploy.
 
-**Production is deployed through `hobo cd` with the owner's store session.**
+**The relay deploys only through HoBo with the owner's store session.**
 The relay's store coordinates live only in the owner's own secret store (the
-`HOBO_CI_SECRET_STORE_BINDING` entry), never in the repository, an Actions
-secret or variable, or an environment variable, so
+`HOBO_CI_SECRET_STORE_BINDING` entry), and so does the Vercel deploy token
+(`owner://HOBO_CD_VERCEL_TOKEN`, kept by `hobo cd up`): never in the
+repository, an Actions secret or variable, or an environment variable. No
+GitHub Actions job can hold that session, so no workflow deploys the relay:
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
-deploys nothing on a push. On a push that changes this package or a workspace
-package it is built from (its pnpm-lock closure,
-`scripts/ci/relay-deploy-gate.mts`) its gate posts a notice to deploy through
-`hobo cd` (`hobo ci deploy --build prebuilt`, see [BOOTSTRAP.md](BOOTSTRAP.md))
-after HoBo MCP's `choose_secret_store`. A `workflow_dispatch` run starts the
-protected job, whose `hobo` commands stop with
-`HOBO_CI_SECRET_STORE_SESSION_REQUIRED` unless an owner store session is
-established for them:
+has no push or manual trigger and keeps only the reusable `app-credentials`
+job. Deploy from an owner session (HoBo MCP's `choose_secret_store`, then
+`hobo ci deploy --build prebuilt`, see [BOOTSTRAP.md](BOOTSTRAP.md)): preview
+builds the checkout of `--sha` once and stages it; production promotes that
+same build and is verified at the Yard's production domain (`/healthz` names
+the commit, `/readyz` answers 200), rolling back when that fails
+([above](#deploying-the-relay-with-hobo)). Without a session every real deploy
+refuses with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` before anything is sent;
+with a session whose store holds no token, with `HOBO_CI_DEPLOY_AUTH_REQUIRED`
+pointing at `hobo cd up`. Vercel's Git integration is never connected.
 
-0. A `route` job picks the runner first, as `hobo-ci.yml` does (the fleet
-   while it takes jobs, an enrolled box, else GitHub-hosted).
-1. An unprotected `gate` job reads no binding: it decides from the event and
-   the changed paths, and the protected `deploy` job starts only on a manual
-   run. No repository variable or secret configures the relay. The binding
-   lives in the owner's store, written there by `hobo ci secret-store provision`
-   after the owner claims the chosen store, or by `hobo ci secret-store connect`
-   ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
-   [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
-2. *Verify the protected environment and secret store connection*: both jobs
-   first require GitHub API proof of an exact `main`-only custom deployment
-   branch policy. The deploy job names
-   `hobo-ci-deploy` and selects only the reader check. With
-   `permissions: id-token: write`, it signs in as `hobo-ci-deploy-reader` at its
-   own audience, reads `VERCEL_TOKEN` without logging the value, requires exactly
-   Viewer membership in the deploy project, requires HTTP 403 from the relay-
-   folder listing and direct token read, and requires HTTP 404 for its own
-   relay-project membership. The app-credentials job names
-   `hobo-ci-app-credentials` and selects only writer verification before deposit:
-   sign-in at its own audience, HTTP 403 from deploy-project listing and token
-   reads, and HTTP 404 for its own deploy-project membership. Verification never
-   writes a probe secret. Each issued session is revoked and every other scope
-   answer fails closed. The deploy-token read never signs in as the writer.
-   Until the owner provisions and commits the complete binding, no deploy token
-   is read. Branch protection can require named jobs, not these steps.
-   `Decide whether to deploy` is the canonical push check; a credential-free
-   skip leaves the reader unverified. Once the binding is complete, require
-   `Deploy the hosted CI relay (production)` when reader and relay verification
-   are required on that path. The writer job runs only through the manual
-   `app-credentials.yml` caller and is not a push check. A skipped job is not
-   successful verification. See
-   [the production evidence obligation](CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
-3. *Deploy the relay*: `hobo ci deploy --build prebuilt --sha "$GITHUB_SHA"`,
-   preview then production, with the deploy token the job reads as
-   `hobo-ci-deploy-reader`. Preview builds this checkout once and stages it;
-   production promotes that same build and is verified at the Yard's
-   production domain (`/healthz` names the commit, `/readyz` answers 200),
-   rolling back when that fails
-   ([above](#deploying-the-relay-with-hobo)). Vercel's Git integration is
-   never connected. Each command's exit status is its step's.
+A relay left behind its sources is raised, not silent: the
+[CI health monitor](../../docs/ci/health-monitor.md) compares the commit the
+relay's `/healthz` names with the default branch and raises H11 when a later
+commit changed this package or a workspace package it is built from (its
+pnpm-lock closure, `scripts/ci/relay-inputs.mts`).
 
 [`.github/workflows/app-credentials.yml`](../../.github/workflows/app-credentials.yml)
 deposits GitHub App credentials: it reads the one-time manifest code from the
@@ -473,11 +442,8 @@ None of them changes anything on Vercel, and the deployment is not lost: the
 next push to `main`, or a re-run of the workflow for the same commit, adopts
 it (the CD journal keeps the in-flight promotion). The workflow prints the
 adoption result and records it in the job summary even when the command fails,
-then preserves its nonzero status. In the relay deploy
-workflow the gate step (`scripts/ci/relay-deploy-gate.mts`, right after
-checkout) sets the deadline to the job's 20 minutes less a 3-minute margin,
-so the install and build come out of the adopt budget. The adopt step's timeout
-can still fire if an in-flight operation does not return.
+then preserves its nonzero status. The adopt step's timeout can still fire if
+an in-flight operation does not return.
 
 Stated, not hidden: `/readyz` answers 503 until the relay can read its store,
 so production does not qualify until the store's folder is filled (the old
@@ -490,7 +456,7 @@ and the message says so. Exercised against recorded-shape GitHub answers, fake
 probes and a temporary journal (`packages/hobo/test/ci-relay-adopt.test.ts`);
 no live adoption has run.
 
-HoBo CD delivery with a deploy token stays the by-hand path below.
+HoBo CD delivery from the owner's store session is the by-hand path below.
 
 By hand, for a preview or to read a plan:
 
@@ -499,16 +465,18 @@ By hand, for a preview or to read a plan:
 hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… \
   --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# A real run reads VERCEL_TOKEN from the environment. Preview is the default.
-VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref <branch> --team team_…
+# A real run reads the deploy token through the owner's store session
+# (HoBo MCP's choose_secret_store first). Preview is the default.
+hobo ci deploy --cwd packages/ci-vercel --ref <branch> --team team_…
 
 # Verify and qualify it (needs HOBO_CI_RELAY_PREVIEW_URL), then promote it
 # (preview's qualification is read from the same CD journal, so keep HOBO_HOME).
-VERCEL_TOKEN=… HOBO_CI_RELAY_PREVIEW_URL=https://… hobo ci deploy \
+HOBO_CI_RELAY_PREVIEW_URL=https://… hobo ci deploy \
   --cwd packages/ci-vercel --ref main --sha <commit> --team team_… --wait
 ```
 
-It needs a Vercel access token for the project's scope and Vercel's GitHub
+It needs the owner's store session holding a Vercel access token for the
+project's scope (`hobo cd up` keeps it) and, for `--build git`, Vercel's GitHub
 integration able to read the repository. `--set` takes only the `env.*` fields
 of `relayConfig` and the inputs of the bindings the Camp chooses; a `secret.*`
 field, a setting the Yard already sets, an undeclared name, a storage
@@ -934,6 +902,38 @@ an MCP client waits by default. `test/function-limits.test.ts` fails if the
 two numbers differ. The server reads through the store's `observer()`, and
 `wait_for_events` reads the store's change ring.
 
+### Owner sign-in
+
+`/v1/owner-login/*` lets a restarted HoBo process reconnect to this relay with
+one GitHub confirmation instead of the owner setup form
+(`createRelayOwnerLogin` in `@hobo/ci-gh-actions`, mounted by
+`src/stateless-composition.ts`). `POST /v1/owner-login/device` starts GitHub's
+device flow with the App's client id and returns GitHub's user code with a
+device code the relay sealed (AES-256-GCM, key derived by HKDF from
+`HOBO_CI_SESSION_KEY`), so only the relay can redeem it. `POST
+/v1/owner-login/token` redeems it at GitHub, checks the GitHub account against
+the installations of `HOBO_CI_BOOTSTRAP_ACCOUNT_ID`'s control credentials
+(`relayOwnerAccount`: the installation's user, or an active administrator of its
+organization, through the App's `members: read`), revokes the user token with the
+App's client secret and returns an eight-hour sealed session. `POST
+/v1/owner-login/credentials` takes that session as a bearer and resolves
+`github-app://<owner>/<repo>` to an installation token for a repository the
+account binds, or `owner://HOBO_CI_ACCOUNT_TOKEN` to a 15-minute sealed
+account credential that the account API (and the relay's MCP server) accept
+with the account's scopes. Any other entry is `not_resolvable`: the relay never
+returns its App private key or a stored entry. Nothing is written to the cache
+or the config service; every value is sealed and checked statelessly, and a
+configuration that drops the account ends its sessions. Refusals follow RFC 8628
+(`authorization_pending`, `slow_down`, `access_denied`, `expired_token`) plus
+`not_owner`, `not_configured`, `device_flow_unavailable`, `session_required`,
+`not_bound`, `not_resolvable`, `invalid_request` and `github_refused`. The
+messages are `relay_owner_login.proto` with `relay_owner_login.cue` in
+`@hobo/ci-gh-actions`; `contracts/relay-owner-login.provider.test.ts` verifies
+HoBo's consumer pact (`packages/hobo/contracts/relay-owner-login.pact.json`)
+against the composed relay, and `test/stateless-owner-login.test.ts` checks that
+the account credential reaches the account API and expires. A live GitHub
+confirmation is a release check.
+
 ### Setup mode
 
 While the relay cannot start (its config-service folder is incomplete, or the
@@ -1080,13 +1080,30 @@ The isolated Sandbox runner integration is configured via
 `HOBO_CI_SANDBOX_ENABLED=1`, `HOBO_CI_SANDBOX_TEAM_ID`,
 `HOBO_CI_SANDBOX_PROJECT_ID`, `HOBO_CI_SANDBOX_ISSUER` (the pinned Vercel
 team issuer), and `HOBO_CI_SANDBOX_DOMAINS_JSON`
-(an explicit hostname allowlist). GitHub runner setup, checkout, Node setup,
+(an explicit hostname allowlist). `HOBO_CI_SANDBOX_PROVIDER=agent37` selects
+the Agent37 guest driver instead of Vercel Sandbox (the default). Agent37
+receives an injected client and fails closed when driver options are absent.
+Discovery adopts only a running instance whose lease identity, pinned template,
+type, region, resources, and network still match the requested pool.
+The driver copies the domains into `network.allow` only after validating 1–100
+unique lowercase DNS hostnames or leading-label wildcards; URLs, addresses,
+empty lists, `allow-all`, and `deny-all` are refused. Wildcard bases require at
+least three DNS labels, rejecting public-suffix patterns such as `*.com`,
+`*.co.uk`, and `*.github.io`. Agent37 interprets a leading `*.` entry as the apex
+and its subdomains. This path has no separate
+proxy VM. The single-use GitHub JIT travels only in the named staging exec's
+HTTPS body; the background start exec contains a constant script, deletes the
+0600 staging file before runner launch, and uses a scrubbed environment. Tests
+cover the full lifecycle through `@hobo/provider-agent37/fake`. No production
+Agent37 egress observation has been captured, so this channel is built and
+contract-tested, not production-proven.
+GitHub runner setup, checkout, Node setup,
 and artifact transfer can require `github.com`, `api.github.com`,
 `codeload.github.com`, `raw.githubusercontent.com`, `nodejs.org`,
 `release-assets.githubusercontent.com`, `*.actions.githubusercontent.com`,
 and `*.blob.core.windows.net`. Add the hosts used by each workflow's own
 dependencies and redirect targets; this list does not cover every workflow.
-The only permitted wildcard patterns are
+On the Vercel path, the only permitted wildcard patterns are
 `*.actions.githubusercontent.com` and `*.blob.core.windows.net`, which GitHub
 documents for runner traffic. The Azure Blob suffix includes third-party storage
 accounts; enabling it permits job traffic to those accounts as well.
@@ -1159,11 +1176,9 @@ embedded hosted bridge still supplies and enforces its lease timeout.
 service, the cache, the execution host and the repair evidence (see the probes
 in [The stateless relay](#the-stateless-relay)).
 
-After Vercel's Git integration builds a deploy, `relay-deploy.yml` adopts it
-with `hobo ci deploy --adopt` ("Token-free relay mode"), which requires the
-production domain's `/healthz` to name the commit and its `/readyz` to answer
-200. It probes no other route: the fleet verdict probe went with the verdict
-routes
+After a production deploy, `hobo ci deploy` requires the production domain's `/healthz`
+to name the commit and its `/readyz` to answer 200. It probes no other route: the fleet
+verdict probe went with the verdict routes
 ([Fleet verdict operations](#fleet-verdict-operations)).
 
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
