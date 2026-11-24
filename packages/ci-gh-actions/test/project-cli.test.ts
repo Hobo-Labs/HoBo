@@ -246,8 +246,6 @@ it("reads a repository file and applies the selected local or hosted account wit
 		},
 	};
 	await writeFile(join(directory, "ci.json"), JSON.stringify(config));
-	await writeFile(join(directory, "local-token"), "local-test-token\n");
-	await writeFile(join(directory, "hosted-token"), "hosted-test-token\n");
 	const output: string[] = [];
 	await runCiProjectCli(["inspect", "--config", "ci.json"], {
 		cwd: directory,
@@ -276,10 +274,12 @@ it("reads a repository file and applies the selected local or hosted account wit
 			"local-account",
 			"--trusted-policy-sha256",
 			await policyPin("local-account", 100000),
-			"--token-file",
-			"local-token",
 		],
-		{ env: { INIT_CWD: directory }, write: (text) => output.push(text) },
+		{
+			env: { INIT_CWD: directory },
+			accountToken: async () => "local-test-token",
+			write: (text) => output.push(text),
+		},
 	);
 	expect(requests).toEqual([
 		{
@@ -326,18 +326,61 @@ it("reads a repository file and applies the selected local or hosted account wit
 			"hosted-account",
 			"--trusted-policy-sha256",
 			await policyPin("hosted-account", 300000),
-			"--token-file",
-			"hosted-token",
 		],
 		{
 			cwd: directory,
 			env: {},
+			accountToken: async () => "hosted-test-token",
 			fetch: hostedFetch,
 			write: (text) => output.push(text),
 		},
 	);
 	expect(hostedFetch).toHaveBeenCalledTimes(2);
 	expect(output.join("")).not.toContain("test-token");
+});
+
+it("refuses apply without the owner store's account credential, before any request", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "hobo-ci-project-owner-"));
+	directories.push(directory);
+	await writeFile(
+		join(directory, "ci.json"),
+		JSON.stringify({
+			defaultEnvironment: "integration",
+			environments: {
+				integration: {
+					relayOrigin: "https://integration.example.test",
+					policy: policy("hosted-account", 300000),
+				},
+			},
+		}),
+	);
+	const send = vi.fn();
+	await expect(
+		runCiProjectCli(
+			[
+				"apply",
+				"--config",
+				"ci.json",
+				"--environment",
+				"integration",
+				"--trusted-origin",
+				"https://integration.example.test",
+				"--trusted-account",
+				"hosted-account",
+				"--trusted-policy-sha256",
+				await policyPin("hosted-account", 300000),
+			],
+			{ cwd: directory, env: {}, fetch: send },
+		),
+	).rejects.toThrow(/account credentials unavailable/);
+	await expect(
+		runCiProjectCli(["apply", "--token-file", "account-token"], {
+			cwd: directory,
+			env: {},
+			fetch: send,
+		}),
+	).rejects.toThrow();
+	expect(send).not.toHaveBeenCalled();
 });
 
 it("rejects untrusted or implicit write targets before accessing credentials or network", async () => {
@@ -373,8 +416,6 @@ it("rejects untrusted or implicit write targets before accessing credentials or 
 				"hosted-account",
 				"--trusted-policy-sha256",
 				await policyPin("hosted-account", 300000),
-				"--token-file",
-				"missing",
 			],
 			{ cwd: directory, env: {}, fetch: send },
 		),
@@ -391,8 +432,6 @@ it("rejects untrusted or implicit write targets before accessing credentials or 
 				"hosted-account",
 				"--trusted-policy-sha256",
 				await policyPin("hosted-account", 300000),
-				"--token-file",
-				"missing",
 			],
 			{ cwd: directory, env: {}, fetch: send },
 		),
@@ -411,8 +450,6 @@ it("rejects untrusted or implicit write targets before accessing credentials or 
 				"hosted-account",
 				"--trusted-policy-sha256",
 				await policyPin("hosted-account", 100000),
-				"--token-file",
-				"missing",
 			],
 			{ cwd: directory, env: {}, fetch: send },
 		),
@@ -456,7 +493,8 @@ it("refuses to apply when the authenticated relay resolves to a different accoun
 			],
 			{
 				cwd: directory,
-				env: { HOBO_CI_ACCOUNT_TOKEN: "fixture-token" },
+				env: {},
+				accountToken: async () => "fixture-token",
 				fetch: send,
 			},
 		),
@@ -546,8 +584,6 @@ it("loads organization profiles and uses an entire repository override without t
 				"organization-account",
 				"--trusted-policy-sha256",
 				await policyPin("repo-account", 300000),
-				"--token-file",
-				"missing",
 			],
 			{ cwd: directory, env: {}, fetch: send },
 		),

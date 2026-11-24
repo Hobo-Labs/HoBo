@@ -100,12 +100,7 @@ const COMMIT = /^[0-9a-f]{40}$/u;
 const INTERVAL_MS = 10_000;
 const REQUEST_TIMEOUT_MS = 20_000;
 
-// public-contract: how `hobo ci deploy --adopt` spends its time. The relay
-// deploy workflow's job timeout (20 minutes) holds the whole command; the
-// reserves fit the adopted verification windows (ci-relay-verify.ts,
-// RELAY_ADOPT_VERIFICATION: 30 s windows that give up after 90 s), and the
-// ceiling stays inside preview's convergence deadline there, so a build that
-// outlasts its share ends as the budget's refusal, not as a failed rollout.
+// public-contract: the adoption stage budgets.
 export const RELAY_ADOPT_BUDGET = Object.freeze({
 	/** The total when neither --deadline nor --budget is given. */
 	defaultMs: 12 * 60_000,
@@ -245,7 +240,6 @@ function githubReader(
 		maxResponseBytes: 1024 * 1024,
 	});
 	return async (path: string): Promise<GitHubRead> => {
-		// No request outlives the command's deadline by more than a second.
 		const timeoutMs = Math.max(
 			1_000,
 			Math.min(REQUEST_TIMEOUT_MS, remainingMs()),

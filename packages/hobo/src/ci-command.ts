@@ -93,6 +93,32 @@ class CiLinkSaveError extends Error {}
 
 export const CI_HELP = verbHelpText("ci", { implemented: true });
 
+// public-contract: the owner-store entry hobo ci reads its CI account credential from.
+export const CI_ACCOUNT_TOKEN_REF = "owner://HOBO_CI_ACCOUNT_TOKEN";
+
+async function ciAccountToken(
+	credentials: CredentialResolver | undefined,
+): Promise<string | undefined> {
+	const material = await credentials
+		?.resolve(CI_ACCOUNT_TOKEN_REF, "hobo-ci-account")
+		.catch(() => undefined);
+	const token = material?.token;
+	return token === "" ? undefined : token;
+}
+
+function ciAccountCredentialUnavailable(): CommandResult {
+	return {
+		ok: false,
+		status: "authentication-required",
+		code: "HOBO_CI_ACCOUNT_CREDENTIAL_UNAVAILABLE",
+		message: `hobo ci needs the relay account credential ${CI_ACCOUNT_TOKEN_REF} from the owner's store session, and none resolved. Run HoBo MCP's choose_secret_store for this project directory, then ask again. Human hobo login sessions are separate from CI account credentials.`,
+		remediation: [
+			"Call the HoBo MCP tool choose_secret_store for this project directory.",
+			`Have the owner keep the relay account credential in that store under ${CI_ACCOUNT_TOKEN_REF.slice("owner://".length)}.`,
+		],
+	};
+}
+
 async function promptOnTerminal(question: string): Promise<string> {
 	const terminal = createInterface({
 		input: process.stdin,
@@ -263,7 +289,6 @@ export function parseCiArgs(args: readonly string[]) {
 			environment: { type: "string" },
 			repo: { type: "string" },
 			remote: { type: "string" },
-			"token-file": { type: "string" },
 			home: { type: "string" },
 			"installation-id": { type: "string" },
 			"app-id": { type: "string" },
@@ -471,7 +496,7 @@ export function createCiCommand(
 		probeHttp?: HttpTransport;
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
-		fleetCredentials?: (cwd: string) => CredentialResolver;
+		ownerCredentials?: (cwd: string) => CredentialResolver;
 		ownerEntries?: (cwd: string) => OwnerStoreEntries;
 		hostingerHttp?: HttpTransport;
 		kubernetesHttp?: (tls: KubernetesTlsMaterial) => HttpTransport;
@@ -489,7 +514,7 @@ export function createCiCommand(
 						args: rest,
 						repository: local.repository,
 						clusters: () => loadFleetClusters(local.root),
-						credentials: deps.fleetCredentials?.(flags.cwd),
+						credentials: deps.ownerCredentials?.(flags.cwd),
 						transport: deps.kubernetesHttp ?? defaultKubernetesTransport,
 					});
 				}
@@ -498,7 +523,7 @@ export function createCiCommand(
 					return usage(`${option} does not apply to hobo ci fleet.`);
 				return runCiFleet({
 					positionals: args.slice(1),
-					credentials: deps.fleetCredentials?.(flags.cwd),
+					credentials: deps.ownerCredentials?.(flags.cwd),
 					transport:
 						deps.hostingerHttp ?? createFetchHttpTransport(globalThis.fetch),
 				});
@@ -696,11 +721,15 @@ export function createCiCommand(
 					return usage(
 						`--${unsupported[0]} does not apply to hobo ci secret-store.`,
 					);
+				const ownerCredentials = deps.ownerCredentials?.(flags.cwd);
 				return runCiSecretStore({
 					subcommand: positionals[1] ?? "",
 					cwd: flags.cwd,
 					values,
 					env: deps.env ?? process.env,
+					...(ownerCredentials !== undefined
+						? { credentials: ownerCredentials }
+						: undefined),
 					...bindingStoreFor(deps.ownerEntries, flags.cwd),
 					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
 					...(deps.runtime !== undefined
@@ -903,9 +932,6 @@ export function createCiCommand(
 				if (positionals.length !== 1)
 					return usage("hobo ci serve takes no positional arguments.");
 				const env = deps.env ?? process.env;
-				const gitEnv = { ...env };
-				delete gitEnv.HOBO_CI_ACCOUNT_TOKEN;
-				delete gitEnv.HOBO_CI_ACCOUNT_TOKEN_FILE;
 				const git =
 					deps.git ??
 					(async (gitArgs: readonly string[], cwd: string) => {
@@ -913,7 +939,7 @@ export function createCiCommand(
 							cwd,
 							timeout: 10000,
 							maxBuffer: 65536,
-							env: gitEnv,
+							env,
 						});
 						return result.stdout.trim();
 					});
@@ -996,7 +1022,6 @@ export function createCiCommand(
 				"relay",
 				"repo",
 				"remote",
-				"token-file",
 				"home",
 				"yes",
 				"non-interactive",
@@ -1014,7 +1039,7 @@ export function createCiCommand(
 					"installation-id",
 					"accept-all-matching-jobs",
 				];
-				if (command !== "status") setupOnly.push("relay", "token-file");
+				if (command !== "status") setupOnly.push("relay");
 				const ignored = Object.entries(values).find(
 					([key, value]) => setupOnly.includes(key) && value !== undefined,
 				);
@@ -1036,9 +1061,6 @@ export function createCiCommand(
 					"--installation-id must be a positive, safe integer GitHub App installation ID.",
 				);
 			const env = deps.env ?? process.env;
-			const gitEnv = { ...env };
-			delete gitEnv.HOBO_CI_ACCOUNT_TOKEN;
-			delete gitEnv.HOBO_CI_ACCOUNT_TOKEN_FILE;
 			const interactive =
 				(deps.interactive ??
 					Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
@@ -1068,7 +1090,7 @@ export function createCiCommand(
 						cwd,
 						timeout: 10000,
 						maxBuffer: 65536,
-						env: gitEnv,
+						env,
 					});
 					return result.stdout.trim();
 				});
@@ -1193,33 +1215,19 @@ export function createCiCommand(
 				const origin = allowInsecureLoopback
 					? relayOriginFromProject(relay, true)
 					: trustedOrigin(relay);
-				const tokenFile =
-					values["token-file"] ?? env.HOBO_CI_ACCOUNT_TOKEN_FILE;
-				if (tokenFile && env.HOBO_CI_ACCOUNT_TOKEN)
-					return usage(
-						"Choose one CI credential source: a token file or HOBO_CI_ACCOUNT_TOKEN.",
-					);
-				if (!tokenFile && !env.HOBO_CI_ACCOUNT_TOKEN)
+				const credential = await ciAccountToken(
+					deps.ownerCredentials?.(flags.cwd),
+				);
+				if (credential === undefined)
 					return (
 						(command === "status"
 							? await offlineStatus(
 									root,
 									env,
-									"No CI account credential is set, so the relay was not asked.",
+									"No CI account credential resolved from the owner's store session, so the relay was not asked.",
 								)
-							: undefined) ?? {
-							ok: false,
-							status: "authentication-required",
-							code: "HOBO_CI_AUTH_REQUIRED",
-							message:
-								"Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.",
-						}
+							: undefined) ?? ciAccountCredentialUnavailable()
 					);
-				// Pin authority for the invocation. A mounted token file may rotate
-				// between policy read and write; it must not silently select another account.
-				const credential = tokenFile
-					? (await boundedText(resolve(flags.cwd, tokenFile), 1024)).trimEnd()
-					: (env.HOBO_CI_ACCOUNT_TOKEN ?? "");
 				const clientOptions: Parameters<typeof createCiRelayClient>[0] = {
 					origin,
 					allowInsecureLoopback,

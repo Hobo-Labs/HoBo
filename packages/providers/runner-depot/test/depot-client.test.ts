@@ -1,31 +1,18 @@
-/**
- * The Depot BuildService client and the published capability manifest.
- *
- * The property this client exists to hold is **no static tokens**. Every RPC
- * asks the brokered provider for a token at call time rather than capturing one
- * at construction, so a token that expires mid-session is re-minted on the next
- * call instead of producing a run of 401s that look like a permissions problem.
- * The env-fallback provider throws a *typed* gate when `DEPOT_PROJECT_TOKEN` is
- * absent, for the same reason: limping into a 401 tells an operator the wrong
- * story about what is wrong.
- *
- * The other thing worth pinning is that `createBuild` refuses a 200 response
- * that is missing its identifiers. A build handle with an empty id and token
- * would be handed to the BuildKit executor, which would authenticate as nobody
- * against a build that does not exist — and the failure would surface far from
- * the response that caused it.
- */
 import { describe, expect, it } from "vitest";
 import { createDepotCatalogEntry } from "../src/catalog-entry.js";
 import {
 	createDepotClient,
 	DepotApiError,
 	DepotCredentialsMissingError,
-	envDepotTokenProvider,
+	type DepotFetch,
+	ownerDepotTokenProvider,
 } from "../src/depot-client.js";
 
+type DepotBody = Readonly<Record<string, string>>;
+type DepotRequest = Parameters<DepotFetch>[1];
+
 function response(
-	body: unknown,
+	body: DepotBody,
 	init: { ok?: boolean; status?: number; text?: string } = {},
 ) {
 	return {
@@ -37,81 +24,78 @@ function response(
 }
 
 /** A client whose transport records every call and answers with `body`. */
-function clientRecording(body: unknown, init?: Parameters<typeof response>[1]) {
-	const calls: Array<{ url: string; init: Record<string, unknown> }> = [];
+function clientRecording(
+	body: DepotBody,
+	init?: Parameters<typeof response>[1],
+) {
+	const calls: Array<{ url: string; init: DepotRequest }> = [];
 	const client = createDepotClient({
 		projectId: "proj-1",
 		token: async () => "brokered-token",
 		fetch: async (url, requestInit) => {
-			calls.push({ url, init: requestInit as Record<string, unknown> });
+			calls.push({ url, init: requestInit });
 			return response(body, init);
 		},
 	});
 	return { client, calls };
 }
 
-describe("envDepotTokenProvider", () => {
-	it("returns the token from the injected environment", async () => {
-		const provider = envDepotTokenProvider({
-			DEPOT_PROJECT_TOKEN: "from-env",
-		});
-		expect(await provider()).toBe("from-env");
+function owner(token: () => string | undefined, asked: string[] = []) {
+	return {
+		async resolve(ref: string) {
+			asked.push(ref);
+			const value = token();
+			if (value === undefined) throw new Error(`${ref} is not in the store`);
+			return { token: value };
+		},
+	};
+}
+
+describe("ownerDepotTokenProvider", () => {
+	it("resolves owner://DEPOT_PROJECT_TOKEN through the owner's store", async () => {
+		const asked: string[] = [];
+		const provider = ownerDepotTokenProvider(owner(() => "from-store", asked));
+		expect(await provider()).toBe("from-store");
+		expect(asked).toEqual(["owner://DEPOT_PROJECT_TOKEN"]);
 	});
 
-	it("throws a typed gate when the token is absent", async () => {
-		// Typed, not a bare Error. Absence of a credential and rejection of one
-		// demand different responses — wire the broker versus fix the token — and
-		// limping into a 401 would report the second when it is the first.
-		await expect(envDepotTokenProvider({})()).rejects.toBeInstanceOf(
-			DepotCredentialsMissingError,
+	it("throws a typed gate when the store has no token, naming the owner store", async () => {
+		const error = await ownerDepotTokenProvider(owner(() => undefined))().then(
+			() => undefined,
+			(caught: Error) => caught,
 		);
+		expect(error).toBeInstanceOf(DepotCredentialsMissingError);
+		expect(error).toMatchObject({
+			message: expect.stringMatching(
+				/owner:\/\/DEPOT_PROJECT_TOKEN.*choose_secret_store/u,
+			),
+		});
 	});
 
 	it("treats an empty token as absent", async () => {
-		// `!token`, so an exported-but-empty variable is the same as unset. An
-		// empty bearer would be sent and rejected by the API.
 		await expect(
-			envDepotTokenProvider({ DEPOT_PROJECT_TOKEN: "" })(),
+			ownerDepotTokenProvider(owner(() => ""))(),
 		).rejects.toBeInstanceOf(DepotCredentialsMissingError);
 	});
 
-	it("names the broker and the live-lane variable in its message", async () => {
-		// Both remedies, because which one applies depends on whether the caller
-		// is in the brokered path or the credential-gated live lane.
-		try {
-			await envDepotTokenProvider({})();
-			expect.unreachable("a missing token must be refused");
-		} catch (error) {
-			const message = (error as Error).message;
-			expect(message).toContain("Yard broker");
-			expect(message).toContain("DEPOT_PROJECT_TOKEN");
-			expect((error as { code?: string }).code).toBeDefined();
-		}
-	});
-
-	it("reads process.env when no environment is injected", async () => {
-		// The production path. Constructing with no argument must work rather
-		// than throwing on an undefined lookup.
+	it("never reads the token from the process environment", async () => {
 		const saved = process.env.DEPOT_PROJECT_TOKEN;
 		process.env.DEPOT_PROJECT_TOKEN = "ambient";
 		try {
-			expect(await envDepotTokenProvider()()).toBe("ambient");
+			await expect(
+				ownerDepotTokenProvider(owner(() => undefined))(),
+			).rejects.toBeInstanceOf(DepotCredentialsMissingError);
 		} finally {
 			if (saved === undefined) delete process.env.DEPOT_PROJECT_TOKEN;
 			else process.env.DEPOT_PROJECT_TOKEN = saved;
 		}
 	});
 
-	it("re-reads the environment on every call", async () => {
-		// Not captured at construction. A broker that rotates the variable
-		// mid-process must be picked up by the next call rather than requiring a
-		// new provider.
-		const env: Record<string, string | undefined> = {
-			DEPOT_PROJECT_TOKEN: "first",
-		};
-		const provider = envDepotTokenProvider(env);
+	it("re-resolves on every call", async () => {
+		let stored = "first";
+		const provider = ownerDepotTokenProvider(owner(() => stored));
 		expect(await provider()).toBe("first");
-		env.DEPOT_PROJECT_TOKEN = "second";
+		stored = "second";
 		expect(await provider()).toBe("second");
 	});
 });
@@ -157,9 +141,7 @@ describe("createBuild", () => {
 			build_token: "t-1",
 		});
 		await client.createBuild();
-		expect(
-			(calls[0]?.init.headers as Record<string, string>).authorization,
-		).toBe("Bearer brokered-token");
+		expect(calls[0]?.init.headers.authorization).toBe("Bearer brokered-token");
 	});
 
 	it("asks the token provider on every call, never caching", async () => {
@@ -201,10 +183,11 @@ describe("createBuild", () => {
 			await client.createBuild();
 			expect.unreachable("a missing build id must be refused");
 		} catch (error) {
-			expect((error as DepotApiError).status).toBe(200);
-			expect((error as Error).message).toContain(
-				"missing build_id/build_token",
-			);
+			expect(error).toBeInstanceOf(DepotApiError);
+			expect(error).toMatchObject({
+				status: 200,
+				message: expect.stringContaining("missing build_id/build_token"),
+			});
 		}
 	});
 });
@@ -256,7 +239,7 @@ describe("transport failures", () => {
 				expect.unreachable("a failed request must be reported");
 			} catch (error) {
 				expect(error).toBeInstanceOf(DepotApiError);
-				expect((error as DepotApiError).status).toBe(status);
+				expect(error).toMatchObject({ status });
 			}
 		}
 	});
@@ -272,7 +255,7 @@ describe("transport failures", () => {
 			await client.createBuild();
 			expect.unreachable("expected a failure");
 		} catch (error) {
-			const message = (error as Error).message;
+			const message = error instanceof Error ? error.message : "";
 			expect(message).toContain("project quota exceeded");
 			expect(message).toContain("CreateBuild");
 			expect(message).toContain("403");
@@ -355,7 +338,7 @@ describe("capability manifest", () => {
 		// `{ ...published }`. A caller that mutated the returned map could change
 		// what every later manifest reports.
 		const first = createDepotCatalogEntry().capabilityManifest();
-		(first.published as Record<string, string>)["/injected"] = "x";
+		Reflect.set(first.published, "/injected", "x");
 		const second = createDepotCatalogEntry().capabilityManifest();
 		expect(second.published).not.toHaveProperty("/injected");
 	});

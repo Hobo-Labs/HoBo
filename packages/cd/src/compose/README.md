@@ -18,6 +18,9 @@ delivery decision: every decision stays in the module that owns it.
 | `ci-bridge.ts` | `hoboCiSource` (HOBO_CI subscription, C15) and `hoboCiDogfoodSources` (HoBo's own CI relay and runner fleet). |
 | `errors.ts` | `COMPOSE_FAILURES`: every code with its remediation; `ComposeError`. |
 
+`conductorFor` uses the composed in-process transport unless the caller supplies
+an explicit `transport` override.
+
 ## Wiring order
 
 sink → authorizer → artifacts → artifact verifier → freight → publishers →

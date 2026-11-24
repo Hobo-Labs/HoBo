@@ -62,16 +62,50 @@ function tagExists(tag: string): boolean {
 	return result.status === 0;
 }
 
-/** The release signing key, checked against the published signing key when one is given. */
-export function releaseSigningKey(env: NodeJS.ProcessEnv): Ed25519Key {
-	const keyMaterial = env.HOBO_RELEASE_TAG_SSH_PRIVATE_KEY?.trim();
+export type ReleaseKeyEntries = Readonly<{
+	HOBO_RELEASE_TAG_SSH_PRIVATE_KEY?: string;
+	HOBO_RELEASE_TAG_SSH_SIGNING_KEY?: string;
+}>;
+
+export type ReleaseKeyCredentials = Readonly<{
+	resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>>;
+}>;
+
+export const RELEASE_TAG_KEY_REF = "owner://HOBO_RELEASE_TAG_SSH_PRIVATE_KEY";
+export const RELEASE_TAG_PUBLIC_KEY_REF =
+	"owner://HOBO_RELEASE_TAG_SSH_SIGNING_KEY";
+
+export const RELEASE_TAG_KEY_UNAVAILABLE = `the release tag signing key lives only in the owner's secret store (${RELEASE_TAG_KEY_REF}); it is never read from the environment, and this run has no owner store session, so no tag was signed. Sign the release tag through HoBo with the owner's store session (HoBo MCP choose_secret_store).`;
+
+export async function ownerReleaseSigningKey(
+	credentials: ReleaseKeyCredentials,
+): Promise<Ed25519Key> {
+	const read = async (ref: string) =>
+		(await credentials.resolve(ref, "release.tag").catch(() => undefined))
+			?.token;
+	const privateKey = await read(RELEASE_TAG_KEY_REF);
+	if (!privateKey) throw new Error(RELEASE_TAG_KEY_UNAVAILABLE);
+	const publishedKey = await read(RELEASE_TAG_PUBLIC_KEY_REF);
+	return releaseSigningKey({
+		HOBO_RELEASE_TAG_SSH_PRIVATE_KEY: privateKey,
+		...(publishedKey
+			? { HOBO_RELEASE_TAG_SSH_SIGNING_KEY: publishedKey }
+			: undefined),
+	});
+}
+
+export function releaseSigningKey(entries: ReleaseKeyEntries): Ed25519Key {
+	const keyMaterial = entries.HOBO_RELEASE_TAG_SSH_PRIVATE_KEY?.trim();
 	if (!keyMaterial) {
 		throw new Error(
 			"HOBO_RELEASE_TAG_SSH_PRIVATE_KEY is required (an unencrypted OpenSSH ed25519 private key)",
 		);
 	}
 	const key = parseOpenSshEd25519PrivateKey(keyMaterial);
-	const published = env.HOBO_RELEASE_TAG_SSH_SIGNING_KEY?.trim();
+	const published = entries.HOBO_RELEASE_TAG_SSH_SIGNING_KEY?.trim();
 	if (published) {
 		// Throws, naming the problem, unless it reads as an ssh-ed25519 public key.
 		const expected = parseEd25519PublicLine(published);
@@ -168,7 +202,16 @@ function main(): void {
 		console.log(`would create signed tag ${tag} at ${commitSha}`);
 		return;
 	}
-	const key = releaseSigningKey(process.env);
+	throw new Error(RELEASE_TAG_KEY_UNAVAILABLE);
+}
+
+export async function signAndPushReleaseTag(input: {
+	readonly tag: string;
+	readonly commitSha: string;
+	readonly credentials: ReleaseKeyCredentials;
+}): Promise<void> {
+	const { tag, commitSha } = input;
+	const key = await ownerReleaseSigningKey(input.credentials);
 	const payload = tagPayload({
 		commit: commitSha,
 		tag,

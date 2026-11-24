@@ -38,18 +38,22 @@ describe("GitHub App status permissions", () => {
 			const calls = join(root, "calls");
 			writeFileSync(
 				join(root, "gh"),
-				'#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\n[ "${FAIL:-}" = 1 ] && exit 1\nprintf "%s\\n" "$INSTALLATIONS"\n',
+				'#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\n[ "$1" = auth ] && { printf "github.com\\n  - Token: %s************\\n" "$SIGN_IN"; exit 0; }\n[ "${FAIL:-}" = 1 ] && exit 1\nprintf "%s\\n" "$INSTALLATIONS"\n',
 				{ mode: 0o755 },
 			);
 			const env = {
 				PATH: [root, process.env.PATH ?? ""].join(delimiter),
 				GH_HOST: "github.com",
 				GH_REPO: "github.com/HoBo-Labs/HoBo",
-				GH_TOKEN: "ghu_test",
+				SIGN_IN: "ghu_",
 				CALLS: calls,
 				INSTALLATIONS: JSON.stringify({ owner: "hobo-labs", statuses: "read" }),
 			};
 			assert.equal(githubAppStatusIsReadOnly({ cwd: root, env }), true);
+			assert.match(
+				readFileSync(calls, "utf8"),
+				/auth status --active --hostname github\.com/u,
+			);
 			assert.match(
 				readFileSync(calls, "utf8"),
 				/user\/installations\?per_page=100.*--paginate/u,
@@ -58,15 +62,17 @@ describe("GitHub App status permissions", () => {
 				githubAppStatusIsReadOnly({ cwd: root, env: { ...env, FAIL: "1" } }),
 				false,
 			);
-			const before = readFileSync(calls, "utf8");
+			const installationReads = () =>
+				readFileSync(calls, "utf8").split("user/installations").length;
+			const before = installationReads();
 			assert.equal(
 				githubAppStatusIsReadOnly({
 					cwd: root,
-					env: { ...env, GH_TOKEN: "gho_test" },
+					env: { ...env, SIGN_IN: "gho_" },
 				}),
 				false,
 			);
-			assert.equal(readFileSync(calls, "utf8"), before);
+			assert.equal(installationReads(), before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

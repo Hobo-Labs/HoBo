@@ -17,13 +17,6 @@
  * instead of something an operator has to reconcile by hand. `delete()` treats
  * "already gone" as success for the same reason.
  *
- * Credentials are locators, never material. A resolver is constructed with an
- * injected `resolveCredential(ref)`; `ResolveRequest.credentialRef` must look
- * like a reference (`env://CLOUDFLARE_API_TOKEN`, `secret://…`) and a value that
- * looks like the token itself is refused, because a raw token in a request
- * record is a token in the event log. A credential that cannot be resolved is
- * a typed refusal with remediation, never a silent skip.
- *
  * Nothing here reaches for a global `fetch`, and nothing reads a clock or a
  * random source: request bodies are a pure function of the request.
  *
@@ -496,7 +489,7 @@ async function resolveToken(
 	if (ref.trim().length === 0) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_MISSING",
-			'cloudflare resolver: credentialRef is empty. Supply a locator such as "env://CLOUDFLARE_API_TOKEN" or "secret://camp/cloudflare-api-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
+			'cloudflare resolver: credentialRef is empty. Supply a locator such as "owner://CLOUDFLARE_API_TOKEN" or "secret://camp/cloudflare-api-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
 		);
 	}
 	const trimmed = ref.trim();
@@ -509,7 +502,7 @@ async function resolveToken(
 	if (!CREDENTIAL_REF_PATTERN.test(trimmed)) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_NOT_A_REF",
-			`cloudflare resolver: credentialRef ${JSON.stringify(redactCloudflareText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "env://CLOUDFLARE_API_TOKEN"`,
+			`cloudflare resolver: credentialRef ${JSON.stringify(redactCloudflareText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "owner://CLOUDFLARE_API_TOKEN"`,
 		);
 	}
 	let material: string;

@@ -313,7 +313,7 @@ export function createComposedHoboCli(
 		ownerFor: (cwd) => familyOwner("ci", cwd),
 		...(options.ownerSession !== undefined
 			? {
-					fleetCredentials: options.ownerSession.credentials,
+					ownerCredentials: options.ownerSession.credentials,
 					ownerEntries: options.ownerSession.entries,
 				}
 			: undefined),

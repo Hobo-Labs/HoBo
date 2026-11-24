@@ -148,6 +148,7 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			XDG_CONFIG_HOME: config,
 			CLAUDE_CODE_REMOTE: "true",
 			HOBO_VERCEL_CLI: vercelCli.cli,
+			GITHUB_HEAD_REF: process.env.GITHUB_HEAD_REF || "hobo-smoke",
 			HTTPS_PROXY: world.proxyUrl,
 			https_proxy: world.proxyUrl,
 			HTTP_PROXY: world.proxyUrl,
