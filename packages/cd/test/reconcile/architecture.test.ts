@@ -93,7 +93,7 @@ describe("architecture", () => {
 			join(ROOT, "adapters", "hosting-transition.ts"),
 		];
 		const forbidden =
-			/from "@hobo\/(provider-|iac-|runtime-|ci|broker|cli|hobo|resolver-components)|from "(@kubernetes|kubernetes|@aws-sdk|@azure|@google-cloud|argo|flux)/u;
+			/from "@hobo\/(provider-(?!redaction)|iac-|runtime-|ci|broker|cli|hobo|resolver-components)|from "(@kubernetes|kubernetes|@aws-sdk|@azure|@google-cloud|argo|flux)/u;
 		const offenders = files.filter((file) =>
 			forbidden.test(readFileSync(file, "utf8")),
 		);

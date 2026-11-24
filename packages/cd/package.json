@@ -53,6 +53,7 @@
     "@hobo/fleet": "workspace:*",
     "@hobo/identity": "workspace:*",
     "@hobo/policy": "workspace:*",
+    "@hobo/provider-redaction": "workspace:*",
     "@hobo/registry": "workspace:*",
     "@hobo/stations": "workspace:*",
     "@hobo/trust": "workspace:*",

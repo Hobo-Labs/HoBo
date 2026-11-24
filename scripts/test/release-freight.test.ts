@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import {
 	mkdirSync,
 	mkdtempSync,
@@ -312,6 +313,42 @@ describe("classifyRelease", () => {
 				reasons: [{ code: "planning-camp-unknown", message: "" }],
 			}),
 		).toMatchObject({ outcome: "blocked", codes: ["planning-camp-unknown"] });
+	});
+
+	it("redacts runtime-generated credentials from blocked Freight messages", () => {
+		const payload = randomBytes(16).toString("base64url");
+		const synthetic = `eyJhbGciOiJIUzI1NiJ9.${payload}.${randomBytes(24).toString("base64url")}`;
+		const raw = `ghcr publish refused bearer ${synthetic}`;
+		const verdict = classifyRelease("p", {
+			state: "PROMOTION_STATE_ROLLING_OUT",
+			reasons: [],
+			observed: "RECONCILE_STATUS_BLOCKED",
+			observedReasons: [{ code: "RESOLVER_PROVIDER_REJECTED", message: raw }],
+		});
+		expect(verdict?.message).not.toContain(synthetic);
+		expect(verdict?.message).not.toContain(payload);
+		expect(verdict?.message).toMatch(/ghcr publish refused/i);
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			announceVerdict(
+				"oci",
+				"candidate",
+				"f",
+				verdict ?? {
+					outcome: "blocked",
+					codes: [],
+					message: "",
+					promotionId: "p",
+				},
+				{},
+			);
+			expect(error.mock.calls[0]?.[0]).toBeDefined();
+			const line = String(error.mock.calls[0]?.[0]);
+			expect(line).not.toContain(synthetic);
+			expect(line).not.toContain(payload);
+		} finally {
+			error.mockRestore();
+		}
 	});
 });
 

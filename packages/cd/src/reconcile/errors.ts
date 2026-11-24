@@ -3,6 +3,7 @@
 // operator or agent can act on.
 import { create } from "@bufbuild/protobuf";
 import { RESOLVER_ERROR_CODES, type ResolverErrorCode } from "@hobo/core";
+import { redactProviderText } from "@hobo/provider-redaction";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import { AGENT_FAILURES } from "../agent/errors.js";
 import { FEED_FAILURES } from "../feed/errors.js";
@@ -174,31 +175,20 @@ function isResolverErrorCode(code: string): code is ResolverErrorCode {
 	return false;
 }
 
-const SURFACE_RESOLVER_CODES: ReadonlySet<ResolverErrorCode> = new Set([
-	"RESOLVER_PROVIDER_REJECTED",
-	"RESOLVER_PRODUCT_UNSUPPORTED",
-	"RESOLVER_OUTPUT_UNPARSEABLE",
-]);
-
-function redactOperationalDetail(message: string): string {
-	return message
-		.replace(/\/\/[^/@\s:]+:[^/@\s]+@/gu, "//[redacted]@")
-		.replace(/\/\/[^/@\s]+@/gu, "//[redacted]@")
-		.replace(
-			/\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9._-]+\b/gu,
-			"[redacted]",
-		);
+export function redactRealizerConditionText(message: string): string {
+	return redactProviderText(message);
 }
 
 function surfaceRealizerConditionMessage(entry: ReasonRecord): string {
-	if (
-		isResolverErrorCode(entry.code) &&
-		SURFACE_RESOLVER_CODES.has(entry.code)
-	) {
-		const detail = redactOperationalDetail(entry.message.trim());
-		if (detail) return detail;
-	}
-	return "The realizer reported a condition.";
+	const raw = entry.message.trim();
+	if (!raw) return "The realizer reported a condition.";
+	const surface =
+		entry.code === "realize-failed" ||
+		(isResolverErrorCode(entry.code) &&
+			RESOLVER_ERROR_CODES.includes(entry.code));
+	if (!surface) return "The realizer reported a condition.";
+	const redacted = redactRealizerConditionText(raw);
+	return redacted.trim() || "The realizer reported a condition.";
 }
 
 export function sanitizeReasons(

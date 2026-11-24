@@ -32,8 +32,8 @@ import {
 	CATALOG_REALIZER_REFUSAL_CODES,
 	catalogCampBinding,
 	catalogRealizedProvider,
-	gitBlobDedupeTransport,
 	GHCR_BLOB_REDIRECT_HOSTS,
+	gitBlobDedupeTransport,
 	CATALOG_REALIZER_LABELS as L,
 } from "../src/provider-hosting-catalog.js";
 
@@ -42,103 +42,92 @@ const DIGEST = `sha256:${"c".repeat(64)}`;
 const CAMP_ID = "hobo-release/oci-candidate" as CampId;
 const noArtifacts = { get: async () => undefined };
 
-it.each(CATALOG_REALIZER_REFUSAL_CODES)(
-	"retains catalog code %s without private details",
-	(code) => {
-		const privateDetail = "synthetic-private-resolver.invalid";
-		const observation = sanitizeObservation({
-			observation: create(ReconcileObservationRecordSchema, {
-				status: ReconcileStatus.BLOCKED,
-				reasons: [
-					create(ReasonRecordSchema, {
-						code,
-						message: privateDetail,
-						remediation: privateDetail,
-						subject: privateDetail,
-					}),
-				],
-			}),
-			campId: CAMP_ID,
-			reconcilerId: "contract-test",
-			fence: 1n,
-			nowMs: 0,
-			observeFields: [],
-			management: CampManagement.MANAGED,
-		});
-		expect(observation.reasons[0]?.code).toBe(code);
-		expect(JSON.stringify(observation)).not.toContain(privateDetail);
-	},
-);
+it.each(
+	CATALOG_REALIZER_REFUSAL_CODES,
+)("retains catalog code %s without private details", (code) => {
+	const privateDetail = "synthetic-private-resolver.invalid";
+	const observation = sanitizeObservation({
+		observation: create(ReconcileObservationRecordSchema, {
+			status: ReconcileStatus.BLOCKED,
+			reasons: [
+				create(ReasonRecordSchema, {
+					code,
+					message: privateDetail,
+					remediation: privateDetail,
+					subject: privateDetail,
+				}),
+			],
+		}),
+		campId: CAMP_ID,
+		reconcilerId: "contract-test",
+		fence: 1n,
+		nowMs: 0,
+		observeFields: [],
+		management: CampManagement.MANAGED,
+	});
+	expect(observation.reasons[0]?.code).toBe(code);
+	expect(JSON.stringify(observation)).not.toContain(privateDetail);
+});
 
-const SURFACED_RESOLVER_CODES = [
-	"RESOLVER_PROVIDER_REJECTED",
-	"RESOLVER_PRODUCT_UNSUPPORTED",
-	"RESOLVER_OUTPUT_UNPARSEABLE",
-] as const;
+it.each(
+	RESOLVER_ERROR_CODES,
+)("surfaces resolver code %s with the provider message", (code) => {
+	const providerMessage =
+		"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
+	const observation = sanitizeObservation({
+		observation: create(ReconcileObservationRecordSchema, {
+			status: ReconcileStatus.BLOCKED,
+			reasons: [
+				create(ReasonRecordSchema, {
+					code,
+					message: providerMessage,
+					remediation: providerMessage,
+					subject: CAMP_ID,
+				}),
+			],
+		}),
+		campId: CAMP_ID,
+		reconcilerId: "contract-test",
+		fence: 1n,
+		nowMs: 0,
+		observeFields: [],
+		management: CampManagement.MANAGED,
+	});
+	expect(observation.reasons[0]?.code).toBe(code);
+	expect(observation.reasons[0]?.message).toBe(providerMessage);
+});
 
-it.each(SURFACED_RESOLVER_CODES)(
-	"surfaces resolver code %s with the provider message",
-	(code) => {
-		const providerMessage =
-			"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
-		const observation = sanitizeObservation({
-			observation: create(ReconcileObservationRecordSchema, {
-				status: ReconcileStatus.BLOCKED,
-				reasons: [
-					create(ReasonRecordSchema, {
-						code,
-						message: providerMessage,
-						remediation: providerMessage,
-						subject: CAMP_ID,
-					}),
-				],
-			}),
-			campId: CAMP_ID,
-			reconcilerId: "contract-test",
-			fence: 1n,
-			nowMs: 0,
-			observeFields: [],
-			management: CampManagement.MANAGED,
-		});
-		expect(observation.reasons[0]?.code).toBe(code);
-		expect(observation.reasons[0]?.message).toBe(providerMessage);
-	},
-);
-
-const surfaced = new Set<string>(SURFACED_RESOLVER_CODES);
-const REDACTED_RESOLVER_CODES = RESOLVER_ERROR_CODES.filter(
-	(code) => !surfaced.has(code),
-);
-
-it.each(REDACTED_RESOLVER_CODES)(
-	"redacts resolver code %s provider detail",
-	(code) => {
-		const providerMessage = "installation token missing for ghcr.io";
-		const observation = sanitizeObservation({
-			observation: create(ReconcileObservationRecordSchema, {
-				status: ReconcileStatus.BLOCKED,
-				reasons: [
-					create(ReasonRecordSchema, {
-						code,
-						message: providerMessage,
-						remediation: providerMessage,
-						subject: CAMP_ID,
-					}),
-				],
-			}),
-			campId: CAMP_ID,
-			reconcilerId: "contract-test",
-			fence: 1n,
-			nowMs: 0,
-			observeFields: [],
-			management: CampManagement.MANAGED,
-		});
-		expect(observation.reasons[0]?.code).toBe(code);
-		expect(observation.reasons[0]?.message).toBe(
-			"The realizer reported a condition.",
-		);
-	},
-);
+it.each(
+	RESOLVER_ERROR_CODES,
+)("redacts runtime synthetic credentials from surfaced resolver code %s", (code) => {
+	const tail = "credential-marker-not-in-repo";
+	const synthetic = `Bearer eyJhbGciOiJIUzI1NiJ9.${tail}.${"x".repeat(43)}`;
+	const providerMessage = `registry refused ${synthetic} for ghcr.io`;
+	const observation = sanitizeObservation({
+		observation: create(ReconcileObservationRecordSchema, {
+			status: ReconcileStatus.BLOCKED,
+			reasons: [
+				create(ReasonRecordSchema, {
+					code,
+					message: providerMessage,
+					remediation: providerMessage,
+					subject: CAMP_ID,
+				}),
+			],
+		}),
+		campId: CAMP_ID,
+		reconcilerId: "contract-test",
+		fence: 1n,
+		nowMs: 0,
+		observeFields: [],
+		management: CampManagement.MANAGED,
+	});
+	const message = observation.reasons[0]?.message ?? "";
+	expect(observation.reasons[0]?.code).toBe(code);
+	expect(message).not.toContain(synthetic);
+	expect(message).not.toContain(tail);
+	expect(message).toMatch(/registry refused/i);
+});
 
 function camp(provider: string, labels: Record<string, string>) {
 	return {

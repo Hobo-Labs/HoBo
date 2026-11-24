@@ -40,6 +40,7 @@ import {
 import { join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { redactRealizerConditionText } from "../../packages/cd/src/reconcile/errors.ts";
 
 // ── Release Freight ─────────────────────────────────────────────────────────
 
@@ -295,7 +296,9 @@ export function classifyRelease(
 		return {
 			outcome: "blocked",
 			codes,
-			message: (at.observedReasons ?? []).map((r) => r.message).join("; "),
+			message: redactRealizerConditionText(
+				(at.observedReasons ?? []).map((r) => r.message ?? "").join("; "),
+			),
 			promotionId,
 		};
 	}
@@ -305,11 +308,15 @@ export function classifyRelease(
 			codes: codesOf(at.reasons).length
 				? codesOf(at.reasons)
 				: [at.state.toLowerCase()],
-			message: (at.reasons ?? []).map((r) => r.message).join("; "),
+			message: redactRealizerConditionText(
+				(at.reasons ?? []).map((r) => r.message ?? "").join("; "),
+			),
 			promotionId,
 		};
 	return undefined;
 }
+
+export const redactReleaseFreightOperatorMessage = redactRealizerConditionText;
 
 /** The `hobo deploy` composition opened on one HOBO_HOME with the release topology. */
 export type ReleaseCd = Readonly<{

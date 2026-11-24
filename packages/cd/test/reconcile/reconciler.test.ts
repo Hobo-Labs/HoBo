@@ -293,9 +293,7 @@ describe("createCampReconciler", () => {
 		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
 		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
 		expect(observation.reasons[0]?.code).toBe("RESOLVER_CREDENTIAL_MISSING");
-		expect(observation.reasons[0]?.message).toBe(
-			"The realizer reported a condition.",
-		);
+		expect(observation.reasons[0]?.message).toBe(marker);
 	});
 
 	it("surfaces resolver refusal messages for release operators", () => {
@@ -316,12 +314,14 @@ describe("createCampReconciler", () => {
 		expect(reason?.message).toBe(detail);
 	});
 
-	it("still redacts resolver credential detail", () => {
+	it("redacts runtime-generated credentials from surfaced resolver detail", () => {
+		const marker = `runtime-${Date.now()}`;
+		const synthetic = `Bearer eyJhbGciOiJIUzI1NiJ9.${marker}.${"y".repeat(40)}`;
 		const [reason] = sanitizeReasons(
 			[
 				create(ReasonRecordSchema, {
 					code: "RESOLVER_CREDENTIAL_MISSING",
-					message: "Bearer eyJhbG.eyJz.Sig",
+					message: `token rejected: ${synthetic}`,
 					remediation: "x",
 					subject: CAMP,
 				}),
@@ -329,7 +329,9 @@ describe("createCampReconciler", () => {
 			CAMP,
 			"realizer",
 		);
-		expect(reason?.message).toBe("The realizer reported a condition.");
+		expect(reason?.message).not.toContain(synthetic);
+		expect(reason?.message).not.toContain(marker);
+		expect(reason?.message).toMatch(/token rejected/i);
 	});
 
 	it("still redacts runner-host detail", () => {
