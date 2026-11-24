@@ -699,6 +699,7 @@ export function selectRelevantChecks(
 	]);
 	const pixelProtocolChanged =
 		pixelManifestChanged || files.some((file) => pixelProtocolFiles.has(file));
+	const pixelChecks: Check[] = [];
 	if (
 		pixelProtocolChanged ||
 		files.some(
@@ -710,7 +711,7 @@ export function selectRelevantChecks(
 				file === "external/pixel-agents/scripts/build-hooks.cjs",
 		)
 	) {
-		checks.push({
+		pixelChecks.push({
 			command: "npm",
 			args: [
 				"--prefix",
@@ -729,7 +730,7 @@ export function selectRelevantChecks(
 			(file) => pixelSource(file, "core") || pixelSource(file, "webview-ui"),
 		)
 	) {
-		checks.push({
+		pixelChecks.push({
 			command: "npm",
 			args: [
 				"--prefix",
@@ -743,13 +744,32 @@ export function selectRelevantChecks(
 		});
 	}
 	if (pixelProtocolChanged) {
-		checks.push({
+		pixelChecks.push({
 			command: "npm",
 			args: ["--prefix", "external/pixel-agents", "run", "test:protocol"],
 			reason:
 				"Pixel Agents protocol changes must validate the schema and keep generated messages current",
 		});
 	}
+	if (pixelChecks.length > 0)
+		checks.push(
+			{
+				command: "npm",
+				args: [
+					"--prefix",
+					"external/pixel-agents",
+					"install",
+					"--no-audit",
+					"--no-fund",
+					"--ignore-scripts",
+					"--no-package-lock",
+				],
+				reason:
+					"Pixel Agents keeps its own npm workspaces, which the root pnpm install does not provide",
+				serial: true,
+			},
+			...pixelChecks,
+		);
 
 	if (uiChanged) {
 		checks.push({

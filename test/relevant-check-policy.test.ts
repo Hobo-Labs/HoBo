@@ -127,6 +127,20 @@ test("Pixel Agents changes select their own server and webview suites", () => {
 		);
 	}
 	assert.deepEqual(selected("external/pixel-agents/README.md"), []);
+	const installs = (file: string) =>
+		plan([file], { staged: true }).checks.filter(
+			(check) =>
+				check.command === "npm" &&
+				check.args.slice(0, 3).join(" ") ===
+					"--prefix external/pixel-agents install",
+		);
+	assert.deepEqual(
+		installs("external/pixel-agents/webview-ui/src/App.tsx").map(
+			(check) => check.serial,
+		),
+		[true],
+	);
+	assert.deepEqual(installs("external/pixel-agents/README.md"), []);
 });
 
 test("pr_gate_validation leaves workspace and scripts lanes to dedicated jobs; pr_gate_plan runs none", () => {

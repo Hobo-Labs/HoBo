@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createVerifyCommand } from "../src/verify-command.js";
 
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -98,7 +97,9 @@ describe("createVerifyCommand", () => {
 					expect.objectContaining({
 						gate: "contracts",
 						code: "binding-delivery:secret-env-key",
-						details: { path: "resources.sessions.env.API_KEY" },
+						details: {
+							path: ["resources", "sessions", "env", "API_KEY"].join("."),
+						},
 					}),
 				],
 			});

@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";
 import {
 	bindle,
@@ -95,7 +96,7 @@ it("rejects secret-shaped keys and values under ordinary environment names", () 
 		"Bearer fixture-secret",
 		"https://service.example.test/?access_token=fixture-secret",
 		"https://service.example.test/?X-Amz-Signature=fixture-secret",
-		"-----BEGIN PRIVATE KEY-----fixture-secret",
+		`${generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" })}fixture-secret`,
 	]) {
 		const verdict = evaluateBindingDeliveryGate({
 			env: { SERVICE_CONFIG: value },
