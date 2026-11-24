@@ -23,3 +23,4 @@ Granting `actions: read` was not enough: run 45340482933 (push of `162eea75f8`) 
 ## Evidence
 
 - `scripts/test/relay-deploy-workflow.test.ts`, including the repository's workflow lint; it now fails when the calling job sets a key a reusable-workflow caller does not accept.
+- `scripts/test/workflow-job-timeouts.test.ts` required `timeout-minutes` on every job, which is what put it on the caller job. It now requires it only on jobs that run steps, and requires its absence on a job that `uses:` a reusable workflow.
