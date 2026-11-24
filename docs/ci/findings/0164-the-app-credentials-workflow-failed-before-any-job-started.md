@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 163: the App credentials workflow failed before any job started"
+title: "Finding 164: the App credentials workflow failed before any job started"
 description: "app-credentials.yml calls relay-deploy.yml, whose route job reads actions, but the calling job granted only contents and id-token. GitHub refused the call before any job started, so every push to every branch recorded a failed run and a dispatch could not deposit the GitHub App's credentials. The calling job now grants actions: read."
 tags: [hobo, ci, github-app, workflows, permissions]
 ---
 
-# Finding 163: the App credentials workflow failed before any job started
+# Finding 164: the App credentials workflow failed before any job started
 
 ## Measurements
 
