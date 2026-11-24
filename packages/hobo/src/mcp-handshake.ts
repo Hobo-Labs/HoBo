@@ -22,7 +22,9 @@ export function initializeResult(
 ) {
 	const result = {
 		protocolVersion: requested ?? HOBO_MCP_PROTOCOL_VERSION,
-		capabilities: withSession ? { tools: {}, resources: {} } : { tools: {} },
+		capabilities: withSession
+			? { tools: { listChanged: true }, resources: {} }
+			: { tools: {} },
 		serverInfo: {
 			name: HOBO_MCP_SERVER_NAME,
 			version: HOBO_MCP_SERVER_VERSION,
