@@ -1,0 +1,203 @@
+{
+  "consumer": {
+    "name": "HoboCli"
+  },
+  "provider": {
+    "name": "HoboCiRelayOwnerLogin"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "start the owner's device sign-in",
+      "providerState": "the relay's account has a GitHub App installation",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-login/device",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        },
+        "body": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "device_code": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+          "user_code": "ABCD-EFGH",
+          "verification_uri": "https://github.com/login/device",
+          "expires_in": 900,
+          "interval": 5
+        }
+      }
+    },
+    {
+      "description": "poll before the owner confirmed",
+      "providerState": "the owner has not confirmed the code yet",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-login/token",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "device_code": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "error": "authorization_pending"
+        }
+      }
+    },
+    {
+      "description": "poll once the owner confirmed",
+      "providerState": "the owner confirmed the code and administers the installation",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-login/token",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "device_code": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "session_token": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+          "expires_in": 28800
+        }
+      }
+    },
+    {
+      "description": "resolve a GitHub App installation token",
+      "providerState": "the owner is signed in and the App is installed on Org/Repo for the account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-login/credentials",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+        },
+        "body": {
+          "ref": "github-app://Org/Repo",
+          "scope": "hobo ci status"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "token": "ghs_installation_token_for_org_repo",
+          "expires_in": 60
+        }
+      }
+    },
+    {
+      "description": "resolve the CI account credential",
+      "providerState": "the owner is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-login/credentials",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+        },
+        "body": {
+          "ref": "owner://HOBO_CI_ACCOUNT_TOKEN",
+          "scope": "hobo ci status"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "token": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+          "expires_in": 900
+        }
+      }
+    },
+    {
+      "description": "refuse a long-lived store entry",
+      "providerState": "the owner is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-login/credentials",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+        },
+        "body": {
+          "ref": "owner://HOSTINGER_API_TOKEN",
+          "scope": "hobo ci fleet"
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "error": "not_resolvable"
+        }
+      }
+    },
+    {
+      "description": "refuse a credential once the session expired",
+      "providerState": "the owner's session has expired",
+      "request": {
+        "method": "POST",
+        "path": "/v1/owner-login/credentials",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+        },
+        "body": {
+          "ref": "github-app://Org/Repo",
+          "scope": "hobo ci status"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "error": "session_required"
+        }
+      }
+    }
+  ]
+}

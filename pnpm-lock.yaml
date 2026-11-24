@@ -19,7 +19,7 @@ importers:
     devDependencies:
       '@alchemy.run/rivet':
         specifier: 2.0.0-beta.87
-        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.21.0)
+        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(effect@4.1.4)(encoding@0.1.13)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(sql.js@1.14.1)(ws@8.21.0)
       '@ast-grep/cli':
         specifier: ^0.44.0
         version: 0.44.0
@@ -644,7 +644,7 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
 
-  packages/backend-fleet:
+  packages/backend-routing:
     dependencies:
       '@bufbuild/protobuf':
         specifier: 2.12.1
@@ -652,6 +652,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
     devDependencies:
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
@@ -691,9 +694,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../backend-fleet
+        version: link:../backend-routing
       '@hobo/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -722,6 +725,9 @@ importers:
       '@hobo/data-postgres':
         specifier: workspace:*
         version: link:../data-postgres
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/storage-sqlite':
         specifier: workspace:*
         version: link:../storage-sqlite
@@ -812,6 +818,9 @@ importers:
       '@hobo/events':
         specifier: workspace:*
         version: link:../events
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
@@ -864,6 +873,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
 
   packages/cd-vercel:
     dependencies:
@@ -931,6 +943,9 @@ importers:
       '@hobo/dispatcher':
         specifier: workspace:*
         version: link:../dispatcher
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/pricing':
         specifier: workspace:*
         version: link:../pricing
@@ -1107,21 +1122,21 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@hobo/fleet-agent':
+        specifier: workspace:*
+        version: link:../fleet-agent
+      '@hobo/fleet-nats':
+        specifier: workspace:*
+        version: link:../fleet-nats
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../provider-redaction
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
         version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)
-      '@nats-io/jetstream':
-        specifier: 3.4.0
-        version: 3.4.0
-      '@nats-io/kv':
-        specifier: 3.4.0
-        version: 3.4.0
-      '@nats-io/transport-node':
-        specifier: 3.4.0
-        version: 3.4.0
       yaml:
         specifier: 2.9.0
         version: 2.9.0
@@ -1186,9 +1201,9 @@ importers:
       '@hobo/adapter-infisical':
         specifier: workspace:*
         version: link:../adapters/adapter-infisical
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../backend-fleet
+        version: link:../backend-routing
       '@hobo/ci':
         specifier: workspace:*
         version: link:../ci
@@ -1198,6 +1213,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/junctions':
         specifier: workspace:*
         version: link:../junctions
@@ -1235,6 +1253,9 @@ importers:
       '@hobo/pricing':
         specifier: workspace:*
         version: link:../pricing
+      '@hobo/provider-agent37':
+        specifier: workspace:*
+        version: link:../providers/provider-agent37
       '@hobo/provider-manifest':
         specifier: workspace:*
         version: link:../provider-manifest
@@ -1255,7 +1276,7 @@ importers:
         version: 6.2.4
       vercel:
         specifier: 65.2.0
-        version: 65.2.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(encoding@0.1.13)(rollup@4.62.2)
+        version: 65.2.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(encoding@0.1.13)(rollup@4.62.2)
 
   packages/claims:
     dependencies:
@@ -1527,6 +1548,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
     devDependencies:
       '@hobo/contract-harness':
         specifier: workspace:*
@@ -1810,15 +1834,18 @@ importers:
 
   packages/data-postgres:
     dependencies:
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../backend-fleet
+        version: link:../backend-routing
       '@hobo/capability-profiles':
         specifier: workspace:*
         version: link:../capability-profiles
       '@hobo/data-core':
         specifier: workspace:*
         version: link:../data-core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
     devDependencies:
       '@hobo/contract-harness':
         specifier: workspace:*
@@ -1890,6 +1917,192 @@ importers:
         specifier: workspace:*
         version: link:../runtimes/runtime-local
 
+  packages/extension-alchemy-rivet:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/iac-alchemy':
+        specifier: workspace:*
+        version: link:../iac/iac-alchemy
+      '@hobo/runtime-rivet':
+        specifier: workspace:*
+        version: link:../runtimes/runtime-rivet
+    devDependencies:
+      '@alchemy.run/rivet':
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(effect@4.1.4)(encoding@0.1.13)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(sql.js@1.14.1)(ws@8.21.0)
+      '@types/node':
+        specifier: ^24.13.2
+        version: 24.13.2
+      alchemy:
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0)
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
+      rivetkit:
+        specifier: 3.0.0
+        version: 3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0)
+      tsx:
+        specifier: ^4.20.3
+        version: 4.22.4
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+      ws:
+        specifier: 8.21.0
+        version: 8.21.0
+
+  packages/fleet:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+
+  packages/fleet-agent:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+
+  packages/fleet-authority:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/adapter-infisical':
+        specifier: workspace:*
+        version: link:../adapters/adapter-infisical
+      '@hobo/adapter-openbao':
+        specifier: workspace:*
+        version: link:../adapters/adapter-openbao
+      '@hobo/connectivity':
+        specifier: workspace:*
+        version: link:../connectivity
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@hobo/fleet-nats':
+        specifier: workspace:*
+        version: link:../fleet-nats
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@hobo/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../runtimes/runtime-local
+      '@hobo/status-page':
+        specifier: workspace:*
+        version: link:../status-page
+    devDependencies:
+      '@hobo/fleet-agent':
+        specifier: workspace:*
+        version: link:../fleet-agent
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+
+  packages/fleet-nats:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@nats-io/jetstream':
+        specifier: 3.4.0
+        version: 3.4.0
+      '@nats-io/jwt':
+        specifier: 0.0.11
+        version: 0.0.11
+      '@nats-io/kv':
+        specifier: 3.4.0
+        version: 3.4.0
+      '@nats-io/nkeys':
+        specifier: 2.0.3
+        version: 2.0.3
+      '@nats-io/transport-node':
+        specifier: 3.4.0
+        version: 3.4.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+
+  packages/fleet-p2p:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@number0/iroh':
+        specifier: 1.2.0
+        version: 1.2.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+
   packages/fuzz:
     dependencies:
       '@hobo/bindles':
@@ -1926,9 +2139,9 @@ importers:
       '@hobo/auth-md':
         specifier: workspace:*
         version: link:../auth-md
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../backend-fleet
+        version: link:../backend-routing
       '@hobo/bindings':
         specifier: workspace:*
         version: link:../bindings
@@ -1989,6 +2202,21 @@ importers:
       '@hobo/data':
         specifier: workspace:*
         version: link:../data
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@hobo/fleet-agent':
+        specifier: workspace:*
+        version: link:../fleet-agent
+      '@hobo/fleet-authority':
+        specifier: workspace:*
+        version: link:../fleet-authority
+      '@hobo/fleet-nats':
+        specifier: workspace:*
+        version: link:../fleet-nats
+      '@hobo/fleet-p2p':
+        specifier: workspace:*
+        version: link:../fleet-p2p
       '@hobo/hobo-cd':
         specifier: workspace:*
         version: link:../hobo-cd
@@ -2164,6 +2392,9 @@ importers:
       '@hobo/events':
         specifier: workspace:*
         version: link:../events
+      '@hobo/provider-agent37':
+        specifier: workspace:*
+        version: link:../providers/provider-agent37
       '@hobo/redaction-test-harness':
         specifier: workspace:*
         version: link:../redaction-test-harness
@@ -2219,9 +2450,9 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
     devDependencies:
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../backend-fleet
+        version: link:../backend-routing
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
@@ -2299,7 +2530,7 @@ importers:
         version: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)(pg@8.22.0)(typescript@6.0.3)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
       '@alchemy.run/rivet':
         specifier: 2.0.0-beta.87
-        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.21.0)
+        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(effect@4.1.4)(encoding@0.1.13)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(sql.js@1.14.1)(ws@8.21.0)
       '@effect/platform-node':
         specifier: 4.1.4
         version: 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
@@ -2317,7 +2548,7 @@ importers:
         version: 4.20260722.0
       rivetkit:
         specifier: 3.0.0
-        version: 3.0.0(drizzle-kit@0.31.11)(pg@8.22.0)(ws@8.21.0)
+        version: 3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0)
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
@@ -2351,6 +2582,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
     devDependencies:
       fast-check:
         specifier: ^4.3.0
@@ -2361,6 +2595,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/yards':
         specifier: workspace:*
         version: link:../yards
@@ -2704,6 +2941,16 @@ importers:
         version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
 
   packages/providers/provider-agent37:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^22.15.29
@@ -2820,9 +3067,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../../backend-fleet
+        version: link:../../backend-routing
       '@hobo/bindings':
         specifier: workspace:*
         version: link:../../bindings
@@ -2832,6 +3079,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../../fleet
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../../provider-redaction
@@ -3145,9 +3395,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../../backend-fleet
+        version: link:../../backend-routing
       '@hobo/bindings':
         specifier: workspace:*
         version: link:../../bindings
@@ -3157,6 +3407,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../../fleet
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../../kv-redis-compatible
@@ -3463,6 +3716,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../../fleet
     devDependencies:
       '@types/node':
         specifier: '>=24.0.0'
@@ -3529,6 +3785,12 @@ importers:
         specifier: 3.0.0
         version: 3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.23.0)
     devDependencies:
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../../conformance
+      '@hobo/wit':
+        specifier: workspace:*
+        version: link:../../wit
       '@types/node':
         specifier: '>=24.0.0'
         version: 24.13.2
@@ -3718,15 +3980,18 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../backend-fleet
+        version: link:../backend-routing
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
       '@hobo/data-postgres':
         specifier: workspace:*
         version: link:../data-postgres
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       pg:
         specifier: 8.22.0
         version: 8.22.0
@@ -3749,13 +4014,16 @@ importers:
 
   packages/storage-sqlite:
     dependencies:
-      '@hobo/backend-fleet':
+      '@hobo/backend-routing':
         specifier: workspace:*
-        version: link:../backend-fleet
+        version: link:../backend-routing
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -3900,9 +4168,15 @@ importers:
       '@bytecodealliance/jco':
         specifier: 1.24.3
         version: 1.24.3
+      '@bytecodealliance/jco-transpile':
+        specifier: 0.24.0
+        version: 0.24.0
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      componentize-qjs:
+        specifier: 0.5.0
+        version: 0.5.0
       tsx:
         specifier: ^4.20.3
         version: 4.22.4
@@ -5695,6 +5969,58 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
+  '@andreiltd/componentize-qjs-binding-darwin-arm64@0.5.0':
+    resolution: {integrity: sha512-JuFOac1TF2uo8IVD49EiChvOgUiKjN9euXFcQPcPnqW12Yqp2dWmyW1GQSFVoxtHJEh6AnvkJbpq1yaR/pW9RA==}
+    engines: {node: '>=18.0.0'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@andreiltd/componentize-qjs-binding-darwin-x64@0.5.0':
+    resolution: {integrity: sha512-kvF5qv8WXsH0z3N7FkI8BiaPA52+/e6Mz6mDSMgOm0JDO7mNtvcuRZkENrTol38R+4R7fr2TOq06GOq1gLhIQA==}
+    engines: {node: '>=18.0.0'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@andreiltd/componentize-qjs-binding-linux-arm64-gnu@0.5.0':
+    resolution: {integrity: sha512-7m4aCaM4eaPHO0/uI1nwSYcP9OwTiJBjw3IO6vle3ov3lipl+Jlqpu2nckxMM0tx5Q+RUnStIWWQhDsdJ35kmg==}
+    engines: {node: '>=18.0.0'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@andreiltd/componentize-qjs-binding-linux-arm64-musl@0.5.0':
+    resolution: {integrity: sha512-+nWPAPfmjM4BPEt0axyEwQbG26BhkmnxdvEjkvUa+7kVeVjyWlw7B3By+N+257WYDhwaIhp2mFnWYaSR8deyDg==}
+    engines: {node: '>=18.0.0'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@andreiltd/componentize-qjs-binding-linux-x64-gnu@0.5.0':
+    resolution: {integrity: sha512-eX+34TYDMRgKA1huyqax91PjG6HutJXcLqA+Dxa4hZEqL1xglHYUhhfVnVwgWrfMPejRTX8XiFKyvBqYP0DtqA==}
+    engines: {node: '>=18.0.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@andreiltd/componentize-qjs-binding-linux-x64-musl@0.5.0':
+    resolution: {integrity: sha512-5lRm08zbY6Bu78yTTSRnvYs1m4yXKISmNxXEPQO262Chp4JPMqnb2bYIrSwEmTVZWAEbqZuEEhHkX9p8kBpAMA==}
+    engines: {node: '>=18.0.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@andreiltd/componentize-qjs-binding-win32-arm64-msvc@0.5.0':
+    resolution: {integrity: sha512-c8fXs5sc5dOUp+cCLzYFRNcae7v/nXll3+FEGD7alIBoHkboTcwGumAnEoZY325ko1y3wyV4d6FVSNkU6a8W8w==}
+    engines: {node: '>=18.0.0'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@andreiltd/componentize-qjs-binding-win32-x64-msvc@0.5.0':
+    resolution: {integrity: sha512-xKxyDjKKpopKoEwY5lFjODqICv/LiPXtLsrSFB3TuXnF7XjcnzD2xhDCa2DnhjqNl7FOhOji19k6EO8H5nDB9A==}
+    engines: {node: '>=18.0.0'}
+    cpu: [x64]
+    os: [win32]
+
   '@anthropic-ai/sdk@0.129.0':
     resolution: {integrity: sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw==}
     hasBin: true
@@ -6436,6 +6762,65 @@ packages:
     resolution: {integrity: sha512-Av/XS3bJXE812P/bff3qtrJmehpgD0niK2A0fF3YIdM+jOD6E+mFrxOmuAgaIR0GNkpnm03+GE3ttt/+muqyCQ==}
     hasBin: true
 
+  '@bytecodealliance/jco-node-fs-darwin-arm64@0.3.2':
+    resolution: {integrity: sha512-WXQq1tRVUWhbK+ImH0G8Kni2AR0sdokLf/KyXRw5P6n4A9ZbgMHOuPfN/PEsYgw4eosuTAonutK0xILk/hA81A==}
+    engines: {node: '>=20'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@bytecodealliance/jco-node-fs-darwin-x64@0.3.2':
+    resolution: {integrity: sha512-Fy/OjHnto7hNE5ksewVkmAMXG/uXyj+RAKFZWQFTzFkp73UyT5vuPjKq3nvx9KolUGWBG37BudEMb4ZAoD9TbQ==}
+    engines: {node: '>=20'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@bytecodealliance/jco-node-fs-linux-arm64-gnu@0.3.2':
+    resolution: {integrity: sha512-OafRtRu3tfOFQARfkia/LDEqSo2R3yAL1xPwzf4RcRW6JqkOY7qKWsUS5+LPVo/aFaSkMX7F7bdFGpFPmcoZJg==}
+    engines: {node: '>=20'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@bytecodealliance/jco-node-fs-linux-arm64-musl@0.3.2':
+    resolution: {integrity: sha512-JblDiwD7+Y+w0d/tjaNDX4QdGvh5lyuDc+S/jDeT7sYA1caA9yiwIjLa8PC/lm2xudqSxD+Cuy4AosXvl+qI0g==}
+    engines: {node: '>=20'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@bytecodealliance/jco-node-fs-linux-x64-gnu@0.3.2':
+    resolution: {integrity: sha512-6FzmHoLOsa6b4X9AuFLsvlpNF66Dt4sRRftZHaT1I1pYzCWrJkkpgNJhRXxf67ZPmOwBZJT4dan/g752Rx4xRw==}
+    engines: {node: '>=20'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@bytecodealliance/jco-node-fs-linux-x64-musl@0.3.2':
+    resolution: {integrity: sha512-SbAJG2PDV8YAHBESHU9sVSckOitJyvlezdF4CGP5/mOp01JnijVkLVXzGK62yVSfa5TpAybbSd1rk+v36NAW/Q==}
+    engines: {node: '>=20'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@bytecodealliance/jco-node-fs-win32-arm64-msvc@0.3.2':
+    resolution: {integrity: sha512-nUWYdFysRQJGsIOCk0KAYN2smkNYiHG7rZ7m+0ZXqP+5wqWxKEjkDsORwXiBjdaWFLVww0anZ3SBxrju6P7hXQ==}
+    engines: {node: '>=20'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@bytecodealliance/jco-node-fs-win32-x64-msvc@0.3.2':
+    resolution: {integrity: sha512-RsPj2t8TvltsMWK7/Z7JcVC/IWPMi07/AJkNLiNTCuGTdT/sseqTThJJwhuz3sjFw7dJdxA+bSGT+23y/KT0fw==}
+    engines: {node: '>=20'}
+    cpu: [x64]
+    os: [win32]
+
+  '@bytecodealliance/jco-node-fs@0.3.2':
+    resolution: {integrity: sha512-yxvqQreNcOQdMsEKZomkSqThtkxrAz3f1Cmy8BsV0UHi9saa2/D1KDB14IAXPYwDq/maS6lCzS+MuMQx6QkUgA==}
+    engines: {node: '>=20'}
+
+  '@bytecodealliance/jco-transpile@0.24.0':
+    resolution: {integrity: sha512-ISCXvZc+TOX07L+V9WhO7tg8zv1zj9Ll48tT0tKZTUo5O5Cxwn2tCSAMvDtA6Ni6V0baosB3XCaBVFkLNpuBSA==}
+
   '@bytecodealliance/jco-transpile@0.3.9':
     resolution: {integrity: sha512-UFRNTdJJdHdPU3lUdXlnVGm8XTSYY49feehzXxansUWESMeJES3VO2NuocJ8BJ1wW5r2dYBNUyR9qXgjPoBnhg==}
 
@@ -6452,8 +6837,14 @@ packages:
   '@bytecodealliance/preview2-shim@0.17.9':
     resolution: {integrity: sha512-i0R3eQBe6PA/o/1EFE3Owe4In2rcccb6QxnjpntM/lPe3/duJ0bRQTVZM2Ufpo99X4eofGeltQUkape1C91FFA==}
 
+  '@bytecodealliance/preview2-shim@0.31.1':
+    resolution: {integrity: sha512-uDVB/IhExDW70TquqVx2l2Q5uwwpH7r5M2ltYccux+0YxXBm4TvqyNHTyYxcoLBsoAar28o7uZSj7GOKVx9uvA==}
+
   '@bytecodealliance/preview3-shim@0.1.2':
     resolution: {integrity: sha512-5twfO5h6zVkJ2QLxrLR21qyLS3jY35XvY0f+jZV4e9FkI6qa2RdPfNDgC50HYhGCtWmbH4TlN1puIyHfEemSNg==}
+
+  '@bytecodealliance/preview3-shim@0.14.1':
+    resolution: {integrity: sha512-rUFh6kIFQEjGbe/TwbGhQPQojOZFiXwk/qr9M21fik3CC/Kk1UJsP9OHNhcdPni6W1+P8ITx/6iJnno+me7Cig==}
 
   '@bytecodealliance/weval@0.4.1':
     resolution: {integrity: sha512-vJegSAkNjENhJcMUod76KUGAgQLdACDDCwB3JwyR14zDhyHVPAvArvtDDYEEi+c+ELzls62H6wxTvzRmaYTaqg==}
@@ -8908,6 +9299,9 @@ packages:
   '@nats-io/jetstream@3.4.0':
     resolution: {integrity: sha512-GzHQodNJ942+R5LRb8PuZ5ugVWVWMRiufxUYLLVWkXKfwDXYN+Owo0d7L/b9O7BPyrbYD7jQWAC6+ZVuXa9Gyw==}
 
+  '@nats-io/jwt@0.0.11':
+    resolution: {integrity: sha512-olBQaTjqKgsalKKWtOA2fzQrFV2aNPKz56oadujZLrT5IsFhWw07OrYS8+XDfgh8bSAXZuMmZEZJ8QxPZwF0tw==}
+
   '@nats-io/kv@3.4.0':
     resolution: {integrity: sha512-168pcRJxWcIRHwdyczI3DaGk5r3CAj3CyKXuk4Nmx5KKj7N1znQOJPIxCoV0TPlAvoTidVb7eBv41J9imapMeQ==}
 
@@ -9013,6 +9407,80 @@ packages:
   '@npmcli/run-script@8.1.0':
     resolution: {integrity: sha512-y7efHHwghQfk28G2z3tlZ67pLG0XdfYbcVG26r7YIXALRsrVQcTq4/tdenSmdOrEsNahIYA/eh8aEVROWGFUDg==}
     engines: {node: ^16.14.0 || >=18.0.0}
+
+  '@number0/iroh-android-arm-eabi@1.2.0':
+    resolution: {integrity: sha512-T8Hp4G1ewh/7AUI8DBHi596Rlr9zZZzPA3CpN58XSSQBxUEpiqxtZoYmEa3w6QgVw1o5IQrEgAUxLN7ogBtnig==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [android]
+
+  '@number0/iroh-android-arm64@1.2.0':
+    resolution: {integrity: sha512-etoVzrsoPAij+XhD+BECISJKYUG6eW+XS43I5P4SD+nqAIJ6XnMTy/Brwayuj8ERoRaFLClL8bb++v5883TcrA==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [android]
+
+  '@number0/iroh-darwin-arm64@1.2.0':
+    resolution: {integrity: sha512-91oxmPrYiCnU0APp/Ky0mgNOxaIukQDFUvxth32TDq38vJs0lDX9ppAsWrkCA+4A/kJnAt1hc7YhIKcIGD3xOA==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@number0/iroh-linux-arm-gnueabihf@1.2.0':
+    resolution: {integrity: sha512-PTi5YyxjkLluzVec5Q0NJqRUaYcVT76sZ0SaM10HFGlwlTIniYO7DYUGTLs+XcByUBcE7Ph5xkyvoLmB1mOF4A==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [linux]
+
+  '@number0/iroh-linux-arm-musleabihf@1.2.0':
+    resolution: {integrity: sha512-IwOPvWOEyX6ZMHjctDaZyWVV2kJSXx57DRN2l5Qg/cEQjY5zWO4IMFvjw075IKrQk+VpU6RrEEI++2w2Gci1dA==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [linux]
+
+  '@number0/iroh-linux-arm64-gnu@1.2.0':
+    resolution: {integrity: sha512-LEenFEMMWLnlyFy8++cYq+s7/nibFgFzs1kGDk7WvFDyxT3U2z0W0+hjENzDiS1iCtH8+zesdDdFxuQtxjJHYg==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@number0/iroh-linux-arm64-musl@1.2.0':
+    resolution: {integrity: sha512-YgCWpz80VOTJRtAUsTKFgLYtd7tfWwrRCD0uk3/xG4z+AjiY5c49toeDFTJJ/3SF5Q8qmjWGjpcUk6B1E55D4w==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@number0/iroh-linux-x64-gnu@1.2.0':
+    resolution: {integrity: sha512-SkZUe/dqv7J1kY3Af0Cu07ldfdstEDOz6F3yIKwMw/EpabhaE3fvdDbiDQoiMxbwgIiJMspChHRMZeC88Td3QQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@number0/iroh-linux-x64-musl@1.2.0':
+    resolution: {integrity: sha512-UnZHStWdFZgylftmX2IHF+VKkrkbEhK+amkOf7A9Z3JPrqkbF5em3UW3uyDK3qfhcc9Ijc3nnYKxym+BkOLPjQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@number0/iroh-win32-arm64-msvc@1.2.0':
+    resolution: {integrity: sha512-2srn9OquRffLD1bQiCDRLr3T1yxmc9xc3k4oLgEMWU+lZnaMONRS2r46cTXN1b/bGsSc82TjGCO/urauXZjQcQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@number0/iroh-win32-x64-msvc@1.2.0':
+    resolution: {integrity: sha512-3ltCadoaZzrRM9OmPcfwPpqwF/DBXlzhwsOIXITtpFEFfRISgvbqyhmMCaiumpyXxFeGTCfpwvUJ40i+sE0sVQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [win32]
+
+  '@number0/iroh@1.2.0':
+    resolution: {integrity: sha512-pZoVnL+8nK4DQG3owF5UQ/LcIjg7m2Ue1oeEUEhLsNt9RHtEFxiASNSPopOdsRfjRimJ/e6zjQ0k3iYE6N1hZQ==}
+    engines: {node: '>= 20.3.0'}
 
   '@openai/codex-sdk@0.136.0':
     resolution: {integrity: sha512-qrSirrVxrpVHR1YIQQ4WSouneaQrQrRAAlQWJYRflvMCcruFXorsmIPeIbDqFXOa8A9H9FHHyc+2U4tdbEGGiQ==}
@@ -9429,6 +9897,128 @@ packages:
 
   '@oslojs/encoding@1.1.0':
     resolution: {integrity: sha512-70wQhgYmndg4GCPxPPxPGevRKqTIJ2Nh4OkiMWmDAVYsTQ+Ta7Sq+rPevXyXGdzr30/qZBnyOalCszoMxlyldQ==}
+
+  '@oxc-minify/binding-android-arm-eabi@0.151.0':
+    resolution: {integrity: sha512-Y1kwFf+GCq62PWojA4u5ME99T1quxdM+VPB67kIC1x0wLmfGAWAhS9cwKIxe/bW95loAxGIruvkYDVMCrvOBvw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm]
+    os: [android]
+
+  '@oxc-minify/binding-android-arm64@0.151.0':
+    resolution: {integrity: sha512-IuRgG5pZ5Axv88yMK5nIeQHOQqrWkGd2Wcu4yUlGhV9NMr2C6N/HpJ7crLWwpflZSHgWXW5s/5AsmEN2CBJw0w==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [android]
+
+  '@oxc-minify/binding-darwin-arm64@0.151.0':
+    resolution: {integrity: sha512-Uuo84npyREYIOJ8ohYdc7eA+QKVcZnX4524U81+6nhdmxkMp19AZHaBGmd/tN6c7KDfsF3ATXQUOxKkCOGGxUQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@oxc-minify/binding-darwin-x64@0.151.0':
+    resolution: {integrity: sha512-XiWlF2PpwoiX6RcqWmFTvcxW5hH+C96l9km164vbM9wisSBoapo95dvZjEzG7lEmffHOGzb4BOAlAeeZ/WlRWw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [darwin]
+
+  '@oxc-minify/binding-freebsd-x64@0.151.0':
+    resolution: {integrity: sha512-fM6/wcqfGp1R+zxYxHXs+P+wBpTlhU1Nr7iiZyBoCg+mphrgyYS7drUiHWoWzAvUSpicnmFm6rag9bSSWTDUMA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@oxc-minify/binding-linux-arm-gnueabihf@0.151.0':
+    resolution: {integrity: sha512-s/aBPTyIMW9uAD0mP+xSz7UbuxXfEIi/1rEpqTd1gGjVCz2Sl58sbc65FauI4K26S9nDpk7fGc7y9C9rjK9L+A==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm]
+    os: [linux]
+
+  '@oxc-minify/binding-linux-arm-musleabihf@0.151.0':
+    resolution: {integrity: sha512-9t44xCPN7E93Pmxsov9qwEGcTc0UJa+z0ZJzvjCk0LqXdLNOQhd15k8KgVuzVbWitI19TvOX/fEC3ZVF6LB/kw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm]
+    os: [linux]
+
+  '@oxc-minify/binding-linux-arm64-gnu@0.151.0':
+    resolution: {integrity: sha512-a77EK4y+3fyD1GZiMnOUSr8x52Hx6eKjPnfIzeh4C9UgnUZBRYMsdHBbBDHLLOX1adjyluxtn4Tze7yTVByCeA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@oxc-minify/binding-linux-arm64-musl@0.151.0':
+    resolution: {integrity: sha512-2AjX1jJsj/guky9OuM1jKmuwRVvy+8UUChK3uvrRWV89I/FyrQj9wKPj8TkuL0Ay5yL2xvZj/Ti1Qg0qiRsP+w==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@oxc-minify/binding-linux-ppc64-gnu@0.151.0':
+    resolution: {integrity: sha512-l3iUa60pK2WenCy9jhO4UTK/yz9RjVIXPXqfzMdz7DA0QQZ9dxAk/p2p3ERf4KZq/MEIfvs9e4LuFVYg5PFYdQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [ppc64]
+    os: [linux]
+    libc: [glibc]
+
+  '@oxc-minify/binding-linux-riscv64-gnu@0.151.0':
+    resolution: {integrity: sha512-v+sdB36Rp8BxmQoP5Jt6ixz7G0aN9Nayh/LvdNBW/0nkKoLHFyEAcV/Uy+79R3oB0uBC1J6DM9XlDxCC1uMkbA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [riscv64]
+    os: [linux]
+    libc: [glibc]
+
+  '@oxc-minify/binding-linux-riscv64-musl@0.151.0':
+    resolution: {integrity: sha512-QER/ajZukltjbfFi4rGx6/jC5XEnImAma5P606Xnej0D3fyMC8rXPmae5Z3HyUJMt1Hd5POOkC3S5yQBNPppwQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [riscv64]
+    os: [linux]
+    libc: [musl]
+
+  '@oxc-minify/binding-linux-s390x-gnu@0.151.0':
+    resolution: {integrity: sha512-+r7s5IPrWPtdz/x5LiNSk0ySmzvdP0/VLwt23ULFvcU6jsMrw8DseylMfp4HxvGlJcYyKAUj7JSGxwEmEACUvw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [s390x]
+    os: [linux]
+    libc: [glibc]
+
+  '@oxc-minify/binding-linux-x64-gnu@0.151.0':
+    resolution: {integrity: sha512-O1Rs0HbgKvEhTiq1bVcZnsOY6q8f4LoPE6pgOieB19Coyz1XP/ugq7XILUD6evlszBGRKliRAwycRScbl2kjqg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@oxc-minify/binding-linux-x64-musl@0.151.0':
+    resolution: {integrity: sha512-RSbyV8xzLsvypVTo871IYAfL5We9/8JNyAQLMXiCRnQGD/daFm/bp+iLhtoy2jelgOa6kp4H3bkdl+ci5SSwDQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@oxc-minify/binding-openharmony-arm64@0.151.0':
+    resolution: {integrity: sha512-WHwdIt3Kj0TQSVey3RiWXgyeZpXUz3Hapq/mdCXyxVCBkvRk/KHIxmHE32EGE/PRx+EQFHVo1+gm627XOde/qg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [openharmony]
+
+  '@oxc-minify/binding-win32-arm64-msvc@0.151.0':
+    resolution: {integrity: sha512-mFL0B3HByMlBxspR+SeqyBR8b96QkoI2D8quQOwBXEUExR4Ozu3Ya0uyYR9MBdwvQHZZWQ2EWgum8bdHdTfl/w==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [win32]
+
+  '@oxc-minify/binding-win32-ia32-msvc@0.151.0':
+    resolution: {integrity: sha512-p6QBBxYsg0A0jUQu5NRqW/UuPtoLtmA72SE8N7Rkhn43m/gSLNTE/nFjsLSsX6T9yM8d8k5PfnYvFnSUf+IlRw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [ia32]
+    os: [win32]
+
+  '@oxc-minify/binding-win32-x64-msvc@0.151.0':
+    resolution: {integrity: sha512-lkP3SsNXm3JUrNX9c9Ijhl3Iipw0fWuCAOOxju+YjH2AolPUbTLE664KeEDdxt8kaLCh+wCBNyqnV67OLVHZWA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [win32]
 
   '@oxc-parser/binding-android-arm-eabi@0.121.0':
     resolution: {integrity: sha512-n07FQcySwOlzap424/PLMtOkbS7xOu8nsJduKL8P3COGHKgKoDYXwoAHCbChfgFpHnviehrLWIPX0lKGtbEk/A==}
@@ -12019,6 +12609,10 @@ packages:
     resolution: {integrity: sha512-XDrb+zql0RbFPKgj7MuH9zOc78R3Fa/P/VSGnnpdwYsvNZPWjcMYMdAkKCOQEL2A7yqgjSMTDRFp6gfSDW+/QQ==}
     hasBin: true
 
+  binaryen@132.0.0:
+    resolution: {integrity: sha512-4Usg7yEvwO3FMso3Oov6qkOOHSod1IEv+boKkh77kTljM+eNBouqCTbqWswGzbG+vDNO/b/v2C4gfEh1WgB9Lg==}
+    hasBin: true
+
   bindings@1.5.0:
     resolution: {integrity: sha512-p2q/t/mhvuOj/UeLlV6566GD/guowlr0hHxClI0W9m7MWYkL1F0hLo+0Aexs9HSPCtR1SXQ0TD3MMKrXZajbiQ==}
 
@@ -12374,6 +12968,11 @@ packages:
 
   common-ancestor-path@1.0.1:
     resolution: {integrity: sha512-L3sHRo1pXXEqX8VU28kfgUY+YGsk09hPqZiZmLacNib6XNTCM8ubYeT7ryXQw8asB1sKgcU5lkB7ONug08aB8w==}
+
+  componentize-qjs@0.5.0:
+    resolution: {integrity: sha512-vsuvlO1XZ+BwpaBXmwBBkrqY3eCXONG57cMn8EVJJ3o5R8yjnfMfbgtEMq8RaA4EO0BHVVXtb3ts+1UYaI/qdw==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
 
   compress-commons@6.0.2:
     resolution: {integrity: sha512-6FqVXeETqWPoGcfzrXb37E50NP0LXT8kAMu5ooZayhWWdgEY4lBEEcbQNXtkuKQsGduxiIcI4gOTsxTmuq/bSg==}
@@ -15136,6 +15735,10 @@ packages:
   own-keys@1.0.2:
     resolution: {integrity: sha512-19YVAg7T+WTrxggPukVq7DjTv6+PJ867TmhCvBsYwmbFCsZd344rq2Ld1p0wo8f8Qrrhgp82c6FJRqdXWtSEhg==}
     engines: {node: '>= 0.4'}
+
+  oxc-minify@0.151.0:
+    resolution: {integrity: sha512-fYdJw3+WYswBWedCl3G0ReJPlHIR1msz3uf5cGAgpHOlQOxfrVu5nOp2gLnccA91Vs7Yw2nH00lj8pc0rjZvYg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
 
   oxc-parser@0.121.0:
     resolution: {integrity: sha512-ek9o58+SCv6AV7nchiAcUJy1DNE2CC5WRdBcO0mF+W4oRjNQfPO7b3pLjTHSFECpHkKGOZSQxx3hk8viIL5YCg==}
@@ -17973,14 +18576,14 @@ snapshots:
       chokidar: 5.0.0
       rolldown: 1.2.16
 
-  '@alchemy.run/rivet@2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.21.0)':
+  '@alchemy.run/rivet@2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(effect@4.1.4)(encoding@0.1.13)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(sql.js@1.14.1)(ws@8.21.0)':
     dependencies:
       '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
       '@distilled.cloud/rivet': 1.0.0-rc.20(effect@4.1.4)
       '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
       alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0)
       effect: 4.1.4
-      rivetkit: 3.0.0(drizzle-kit@0.31.11)(pg@8.22.0)(ws@8.21.0)
+      rivetkit: 3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0)
     optionalDependencies:
       '@alchemy.run/docker': 2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)
     transitivePeerDependencies:
@@ -18032,6 +18635,30 @@ snapshots:
       pg: 8.22.0
 
   '@alloc/quick-lru@5.2.0': {}
+
+  '@andreiltd/componentize-qjs-binding-darwin-arm64@0.5.0':
+    optional: true
+
+  '@andreiltd/componentize-qjs-binding-darwin-x64@0.5.0':
+    optional: true
+
+  '@andreiltd/componentize-qjs-binding-linux-arm64-gnu@0.5.0':
+    optional: true
+
+  '@andreiltd/componentize-qjs-binding-linux-arm64-musl@0.5.0':
+    optional: true
+
+  '@andreiltd/componentize-qjs-binding-linux-x64-gnu@0.5.0':
+    optional: true
+
+  '@andreiltd/componentize-qjs-binding-linux-x64-musl@0.5.0':
+    optional: true
+
+  '@andreiltd/componentize-qjs-binding-win32-arm64-msvc@0.5.0':
+    optional: true
+
+  '@andreiltd/componentize-qjs-binding-win32-x64-msvc@0.5.0':
+    optional: true
 
   '@anthropic-ai/sdk@0.129.0(zod@4.4.3)':
     dependencies:
@@ -19055,6 +19682,48 @@ snapshots:
       - '@emnapi/core'
       - '@emnapi/runtime'
 
+  '@bytecodealliance/jco-node-fs-darwin-arm64@0.3.2':
+    optional: true
+
+  '@bytecodealliance/jco-node-fs-darwin-x64@0.3.2':
+    optional: true
+
+  '@bytecodealliance/jco-node-fs-linux-arm64-gnu@0.3.2':
+    optional: true
+
+  '@bytecodealliance/jco-node-fs-linux-arm64-musl@0.3.2':
+    optional: true
+
+  '@bytecodealliance/jco-node-fs-linux-x64-gnu@0.3.2':
+    optional: true
+
+  '@bytecodealliance/jco-node-fs-linux-x64-musl@0.3.2':
+    optional: true
+
+  '@bytecodealliance/jco-node-fs-win32-arm64-msvc@0.3.2':
+    optional: true
+
+  '@bytecodealliance/jco-node-fs-win32-x64-msvc@0.3.2':
+    optional: true
+
+  '@bytecodealliance/jco-node-fs@0.3.2':
+    optionalDependencies:
+      '@bytecodealliance/jco-node-fs-darwin-arm64': 0.3.2
+      '@bytecodealliance/jco-node-fs-darwin-x64': 0.3.2
+      '@bytecodealliance/jco-node-fs-linux-arm64-gnu': 0.3.2
+      '@bytecodealliance/jco-node-fs-linux-arm64-musl': 0.3.2
+      '@bytecodealliance/jco-node-fs-linux-x64-gnu': 0.3.2
+      '@bytecodealliance/jco-node-fs-linux-x64-musl': 0.3.2
+      '@bytecodealliance/jco-node-fs-win32-arm64-msvc': 0.3.2
+      '@bytecodealliance/jco-node-fs-win32-x64-msvc': 0.3.2
+
+  '@bytecodealliance/jco-transpile@0.24.0':
+    dependencies:
+      '@bytecodealliance/preview2-shim': 0.31.1
+      '@bytecodealliance/preview3-shim': 0.14.1
+      binaryen: 132.0.0
+      oxc-minify: 0.151.0
+
   '@bytecodealliance/jco-transpile@0.3.9':
     dependencies:
       '@bytecodealliance/preview2-shim': 0.17.9
@@ -19099,9 +19768,18 @@ snapshots:
 
   '@bytecodealliance/preview2-shim@0.17.9': {}
 
+  '@bytecodealliance/preview2-shim@0.31.1':
+    dependencies:
+      '@bytecodealliance/jco-node-fs': 0.3.2
+
   '@bytecodealliance/preview3-shim@0.1.2':
     dependencies:
       '@bytecodealliance/preview2-shim': 0.17.4
+
+  '@bytecodealliance/preview3-shim@0.14.1':
+    dependencies:
+      '@bytecodealliance/jco-node-fs': 0.3.2
+      '@bytecodealliance/preview2-shim': 0.31.1
 
   '@bytecodealliance/weval@0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
@@ -21290,6 +21968,10 @@ snapshots:
     dependencies:
       '@nats-io/nats-core': 3.4.0
 
+  '@nats-io/jwt@0.0.11':
+    dependencies:
+      '@nats-io/nkeys': 2.0.3
+
   '@nats-io/kv@3.4.0':
     dependencies:
       '@nats-io/jetstream': 3.4.0
@@ -21474,6 +22156,53 @@ snapshots:
     transitivePeerDependencies:
       - bluebird
       - supports-color
+
+  '@number0/iroh-android-arm-eabi@1.2.0':
+    optional: true
+
+  '@number0/iroh-android-arm64@1.2.0':
+    optional: true
+
+  '@number0/iroh-darwin-arm64@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-arm-gnueabihf@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-arm-musleabihf@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-arm64-gnu@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-arm64-musl@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-x64-gnu@1.2.0':
+    optional: true
+
+  '@number0/iroh-linux-x64-musl@1.2.0':
+    optional: true
+
+  '@number0/iroh-win32-arm64-msvc@1.2.0':
+    optional: true
+
+  '@number0/iroh-win32-x64-msvc@1.2.0':
+    optional: true
+
+  '@number0/iroh@1.2.0':
+    optionalDependencies:
+      '@number0/iroh-android-arm-eabi': 1.2.0
+      '@number0/iroh-android-arm64': 1.2.0
+      '@number0/iroh-darwin-arm64': 1.2.0
+      '@number0/iroh-linux-arm-gnueabihf': 1.2.0
+      '@number0/iroh-linux-arm-musleabihf': 1.2.0
+      '@number0/iroh-linux-arm64-gnu': 1.2.0
+      '@number0/iroh-linux-arm64-musl': 1.2.0
+      '@number0/iroh-linux-x64-gnu': 1.2.0
+      '@number0/iroh-linux-x64-musl': 1.2.0
+      '@number0/iroh-win32-arm64-msvc': 1.2.0
+      '@number0/iroh-win32-x64-msvc': 1.2.0
 
   '@openai/codex-sdk@0.136.0':
     dependencies:
@@ -21967,6 +22696,63 @@ snapshots:
 
   '@oslojs/encoding@1.1.0': {}
 
+  '@oxc-minify/binding-android-arm-eabi@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-android-arm64@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-darwin-arm64@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-darwin-x64@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-freebsd-x64@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-arm-gnueabihf@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-arm-musleabihf@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-arm64-gnu@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-arm64-musl@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-ppc64-gnu@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-riscv64-gnu@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-riscv64-musl@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-s390x-gnu@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-x64-gnu@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-linux-x64-musl@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-openharmony-arm64@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-win32-arm64-msvc@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-win32-ia32-msvc@0.151.0':
+    optional: true
+
+  '@oxc-minify/binding-win32-x64-msvc@0.151.0':
+    optional: true
+
   '@oxc-parser/binding-android-arm-eabi@0.121.0':
     optional: true
 
@@ -22051,9 +22837,9 @@ snapshots:
   '@oxc-parser/binding-openharmony-arm64@0.121.0':
     optional: true
 
-  '@oxc-parser/binding-wasm32-wasi@0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+  '@oxc-parser/binding-wasm32-wasi@0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
-      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -22137,9 +22923,9 @@ snapshots:
   '@oxc-transform/binding-openharmony-arm64@0.111.0':
     optional: true
 
-  '@oxc-transform/binding-wasm32-wasi@0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+  '@oxc-transform/binding-wasm32-wasi@0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
-      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -22575,9 +23361,9 @@ snapshots:
   '@rolldown/binding-openharmony-arm64@1.2.16':
     optional: true
 
-  '@rolldown/binding-wasm32-wasi@1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+  '@rolldown/binding-wasm32-wasi@1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
-      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23460,18 +24246,18 @@ snapshots:
 
   '@ungap/structured-clone@1.3.3': {}
 
-  '@vercel/backends@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/backends@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       execa: 3.2.0
       fs-extra: 11.1.0
       get-port: 5.1.1
-      oxc-transform: 0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      oxc-transform: 0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       path-to-regexp: 8.3.0
       resolve.exports: 2.0.3
-      rolldown: 1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      rolldown: 1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       srvx: 0.11.16
       ts-morph: 12.0.0
       tsx: 4.21.0
@@ -23506,9 +24292,9 @@ snapshots:
       cjs-module-lexer: 1.2.3
       es-module-lexer: 1.5.0
 
-  '@vercel/cervel@0.1.87(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/cervel@0.1.87(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
-      '@vercel/backends': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/backends': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23549,11 +24335,11 @@ snapshots:
 
   '@vercel/detect-agent@1.2.7': {}
 
-  '@vercel/elysia@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/elysia@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23563,13 +24349,13 @@ snapshots:
 
   '@vercel/error-utils@2.2.1': {}
 
-  '@vercel/express@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/express@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/cervel': 0.1.87(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/cervel': 0.1.87(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       fs-extra: 11.1.0
       path-to-regexp: 8.3.0
       ts-morph: 12.0.0
@@ -23581,11 +24367,11 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/fastify@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/fastify@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23631,11 +24417,11 @@ snapshots:
     dependencies:
       '@vercel/build-utils': 15.0.1
 
-  '@vercel/h3@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/h3@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23643,12 +24429,12 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/hono@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/hono@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       fs-extra: 11.1.0
       path-to-regexp: 8.3.0
       ts-morph: 12.0.0
@@ -23660,20 +24446,20 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/hydrogen@23.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)':
+  '@vercel/hydrogen@23.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       ts-morph: 12.0.0
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
 
-  '@vercel/koa@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/koa@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23681,11 +24467,11 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/nestjs@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/nestjs@22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -23721,7 +24507,7 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/node@27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/node@27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@edge-runtime/node-utils': 2.3.0
       '@edge-runtime/primitives': 4.1.0
@@ -23730,7 +24516,7 @@ snapshots:
       '@vercel/build-utils': 15.0.1
       '@vercel/error-utils': 2.2.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       async-listen: 3.0.0
       cjs-module-lexer: 1.2.3
       edge-runtime: 2.5.9
@@ -23791,11 +24577,11 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
 
-  '@vercel/redwood@24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/redwood@24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       semver: 6.3.1
       ts-morph: 12.0.0
     transitivePeerDependencies:
@@ -23805,12 +24591,12 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/remix-builder@27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
+  '@vercel/remix-builder@27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/error-utils': 2.2.1
       '@vercel/nft': 1.10.0(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       path-to-regexp: 6.3.0
       path-to-regexp-updated: path-to-regexp@6.3.0
       ts-morph: 12.0.0
@@ -23869,22 +24655,22 @@ snapshots:
       - bare-abort-controller
       - react-native-b4a
 
-  '@vercel/static-build@24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)':
+  '@vercel/static-build@24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)':
     dependencies:
       '@vercel/build-utils': 15.0.1
       '@vercel/gatsby-plugin-vercel-analytics': 1.0.12
       '@vercel/gatsby-plugin-vercel-builder': 2.2.79
-      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@vercel/static-config': 3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       ts-morph: 12.0.0
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
 
-  '@vercel/static-config@3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
+  '@vercel/static-config@3.4.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
       ajv: 8.6.3
       json-schema-to-ts: 1.6.4
-      oxc-parser: 0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      oxc-parser: 0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       ts-morph: 12.0.0
     transitivePeerDependencies:
       - '@emnapi/core'
@@ -24647,6 +25433,8 @@ snapshots:
 
   binaryen@130.0.0: {}
 
+  binaryen@132.0.0: {}
+
   bindings@1.5.0:
     dependencies:
       file-uri-to-path: 1.0.0
@@ -25002,6 +25790,17 @@ snapshots:
   commander@6.2.1: {}
 
   common-ancestor-path@1.0.1: {}
+
+  componentize-qjs@0.5.0:
+    optionalDependencies:
+      '@andreiltd/componentize-qjs-binding-darwin-arm64': 0.5.0
+      '@andreiltd/componentize-qjs-binding-darwin-x64': 0.5.0
+      '@andreiltd/componentize-qjs-binding-linux-arm64-gnu': 0.5.0
+      '@andreiltd/componentize-qjs-binding-linux-arm64-musl': 0.5.0
+      '@andreiltd/componentize-qjs-binding-linux-x64-gnu': 0.5.0
+      '@andreiltd/componentize-qjs-binding-linux-x64-musl': 0.5.0
+      '@andreiltd/componentize-qjs-binding-win32-arm64-msvc': 0.5.0
+      '@andreiltd/componentize-qjs-binding-win32-x64-msvc': 0.5.0
 
   compress-commons@6.0.2:
     dependencies:
@@ -28106,7 +28905,29 @@ snapshots:
       object-keys: 1.1.1
       safe-push-apply: 1.0.0
 
-  oxc-parser@0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1):
+  oxc-minify@0.151.0:
+    optionalDependencies:
+      '@oxc-minify/binding-android-arm-eabi': 0.151.0
+      '@oxc-minify/binding-android-arm64': 0.151.0
+      '@oxc-minify/binding-darwin-arm64': 0.151.0
+      '@oxc-minify/binding-darwin-x64': 0.151.0
+      '@oxc-minify/binding-freebsd-x64': 0.151.0
+      '@oxc-minify/binding-linux-arm-gnueabihf': 0.151.0
+      '@oxc-minify/binding-linux-arm-musleabihf': 0.151.0
+      '@oxc-minify/binding-linux-arm64-gnu': 0.151.0
+      '@oxc-minify/binding-linux-arm64-musl': 0.151.0
+      '@oxc-minify/binding-linux-ppc64-gnu': 0.151.0
+      '@oxc-minify/binding-linux-riscv64-gnu': 0.151.0
+      '@oxc-minify/binding-linux-riscv64-musl': 0.151.0
+      '@oxc-minify/binding-linux-s390x-gnu': 0.151.0
+      '@oxc-minify/binding-linux-x64-gnu': 0.151.0
+      '@oxc-minify/binding-linux-x64-musl': 0.151.0
+      '@oxc-minify/binding-openharmony-arm64': 0.151.0
+      '@oxc-minify/binding-win32-arm64-msvc': 0.151.0
+      '@oxc-minify/binding-win32-ia32-msvc': 0.151.0
+      '@oxc-minify/binding-win32-x64-msvc': 0.151.0
+
+  oxc-parser@0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3):
     dependencies:
       '@oxc-project/types': 0.121.0
     optionalDependencies:
@@ -28126,7 +28947,7 @@ snapshots:
       '@oxc-parser/binding-linux-x64-gnu': 0.121.0
       '@oxc-parser/binding-linux-x64-musl': 0.121.0
       '@oxc-parser/binding-openharmony-arm64': 0.121.0
-      '@oxc-parser/binding-wasm32-wasi': 0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@oxc-parser/binding-wasm32-wasi': 0.121.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@oxc-parser/binding-win32-arm64-msvc': 0.121.0
       '@oxc-parser/binding-win32-ia32-msvc': 0.121.0
       '@oxc-parser/binding-win32-x64-msvc': 0.121.0
@@ -28154,7 +28975,7 @@ snapshots:
       '@oxc-parser/binding-win32-arm64-msvc': 0.76.0
       '@oxc-parser/binding-win32-x64-msvc': 0.76.0
 
-  oxc-transform@0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1):
+  oxc-transform@0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3):
     optionalDependencies:
       '@oxc-transform/binding-android-arm-eabi': 0.111.0
       '@oxc-transform/binding-android-arm64': 0.111.0
@@ -28172,7 +28993,7 @@ snapshots:
       '@oxc-transform/binding-linux-x64-gnu': 0.111.0
       '@oxc-transform/binding-linux-x64-musl': 0.111.0
       '@oxc-transform/binding-openharmony-arm64': 0.111.0
-      '@oxc-transform/binding-wasm32-wasi': 0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@oxc-transform/binding-wasm32-wasi': 0.111.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@oxc-transform/binding-win32-arm64-msvc': 0.111.0
       '@oxc-transform/binding-win32-ia32-msvc': 0.111.0
       '@oxc-transform/binding-win32-x64-msvc': 0.111.0
@@ -29094,6 +29915,63 @@ snapshots:
 
   reusify@1.1.0: {}
 
+  rivetkit@3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0):
+    dependencies:
+      '@hono/zod-openapi': 1.6.0(hono@4.12.27)(zod@4.4.3)
+      '@opentelemetry/api': 1.9.1
+      '@rivetkit/bare-ts': 0.6.2
+      '@rivetkit/engine-api-full': 3.0.0(encoding@0.1.13)
+      '@rivetkit/engine-cli': 3.0.0
+      '@rivetkit/engine-envoy-protocol': 3.0.0
+      '@rivetkit/on-change': 6.0.1
+      '@rivetkit/rivetkit-napi': 3.0.0
+      '@rivetkit/rivetkit-wasm': 3.0.0
+      '@rivetkit/traces': 3.0.0
+      '@rivetkit/virtual-websocket': 3.0.0
+      '@rivetkit/workflow-engine': 3.0.0
+      cbor-x: 1.6.5
+      drizzle-orm: 0.45.2(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
+      hono: 4.12.27
+      invariant: 2.2.4
+      p-retry: 6.2.1
+      pino: 9.14.0
+      uuid: 12.0.1
+      vbare: 0.0.4
+      zod: 4.4.3
+    optionalDependencies:
+      drizzle-kit: 0.31.11
+      ws: 8.21.0
+    transitivePeerDependencies:
+      - '@aws-sdk/client-rds-data'
+      - '@cloudflare/workers-types'
+      - '@electric-sql/pglite'
+      - '@libsql/client'
+      - '@libsql/client-wasm'
+      - '@neondatabase/serverless'
+      - '@op-engineering/op-sqlite'
+      - '@planetscale/database'
+      - '@prisma/client'
+      - '@tidbcloud/serverless'
+      - '@types/better-sqlite3'
+      - '@types/pg'
+      - '@types/sql.js'
+      - '@upstash/redis'
+      - '@vercel/postgres'
+      - '@xata.io/client'
+      - better-sqlite3
+      - bun-types
+      - encoding
+      - expo-sqlite
+      - gel
+      - knex
+      - kysely
+      - mysql2
+      - pg
+      - postgres
+      - prisma
+      - sql.js
+      - sqlite3
+
   rivetkit@3.0.0(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.23.0):
     dependencies:
       '@hono/zod-openapi': 1.6.0(hono@4.12.27)(zod@4.4.3)
@@ -29151,63 +30029,6 @@ snapshots:
       - sql.js
       - sqlite3
 
-  rivetkit@3.0.0(drizzle-kit@0.31.11)(pg@8.22.0)(ws@8.21.0):
-    dependencies:
-      '@hono/zod-openapi': 1.6.0(hono@4.12.27)(zod@4.4.3)
-      '@opentelemetry/api': 1.9.1
-      '@rivetkit/bare-ts': 0.6.2
-      '@rivetkit/engine-api-full': 3.0.0(encoding@0.1.13)
-      '@rivetkit/engine-cli': 3.0.0
-      '@rivetkit/engine-envoy-protocol': 3.0.0
-      '@rivetkit/on-change': 6.0.1
-      '@rivetkit/rivetkit-napi': 3.0.0
-      '@rivetkit/rivetkit-wasm': 3.0.0
-      '@rivetkit/traces': 3.0.0
-      '@rivetkit/virtual-websocket': 3.0.0
-      '@rivetkit/workflow-engine': 3.0.0
-      cbor-x: 1.6.5
-      drizzle-orm: 0.45.2(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
-      hono: 4.12.27
-      invariant: 2.2.4
-      p-retry: 6.2.1
-      pino: 9.14.0
-      uuid: 12.0.1
-      vbare: 0.0.4
-      zod: 4.4.3
-    optionalDependencies:
-      drizzle-kit: 0.31.11
-      ws: 8.21.0
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/sql.js'
-      - '@upstash/redis'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - encoding
-      - expo-sqlite
-      - gel
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - sql.js
-      - sqlite3
-
   rolldown-plugin-dts@0.13.14(@typescript/native-preview@7.0.0-dev.20260630.1)(rolldown@1.2.16)(typescript@6.0.3):
     dependencies:
       '@babel/generator': 7.29.8
@@ -29226,7 +30047,7 @@ snapshots:
       - oxc-resolver
       - supports-color
 
-  rolldown@1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1):
+  rolldown@1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3):
     dependencies:
       '@oxc-project/types': 0.110.0
       '@rolldown/pluginutils': 1.0.0-rc.1
@@ -29241,7 +30062,7 @@ snapshots:
       '@rolldown/binding-linux-x64-gnu': 1.0.0-rc.1
       '@rolldown/binding-linux-x64-musl': 1.0.0-rc.1
       '@rolldown/binding-openharmony-arm64': 1.0.0-rc.1
-      '@rolldown/binding-wasm32-wasi': 1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@rolldown/binding-wasm32-wasi': 1.0.0-rc.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@rolldown/binding-win32-arm64-msvc': 1.0.0-rc.1
       '@rolldown/binding-win32-x64-msvc': 1.0.0-rc.1
     transitivePeerDependencies:
@@ -30536,35 +31357,35 @@ snapshots:
 
   vbare@0.0.4: {}
 
-  vercel@65.2.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(encoding@0.1.13)(rollup@4.62.2):
+  vercel@65.2.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(encoding@0.1.13)(rollup@4.62.2):
     dependencies:
-      '@vercel/backends': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/backends': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/blob': 2.8.0
       '@vercel/build-utils': 15.0.1
       '@vercel/cli-auth': 0.3.12
       '@vercel/cli-config': 0.3.3
       '@vercel/container': 22.0.1(@vercel/build-utils@15.0.1)
       '@vercel/detect-agent': 1.2.7
-      '@vercel/elysia': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/express': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/fastify': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/elysia': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/express': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/fastify': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/fun': 1.3.6(encoding@0.1.13)
       '@vercel/go': 25.0.1(@vercel/build-utils@15.0.1)
-      '@vercel/h3': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/hono': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/hydrogen': 23.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)
-      '@vercel/koa': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/nestjs': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/h3': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/hono': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/hydrogen': 23.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)
+      '@vercel/koa': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/nestjs': 22.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/next': 26.0.1(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/node': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/prepare-flags-definitions': 0.6.1
       '@vercel/python': 28.0.1(@vercel/build-utils@15.0.1)
       '@vercel/python-analysis': 0.15.2
-      '@vercel/redwood': 24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
-      '@vercel/remix-builder': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/redwood': 24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
+      '@vercel/remix-builder': 27.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(encoding@0.1.13)(rollup@4.62.2)
       '@vercel/ruby': 24.0.1(@vercel/build-utils@15.0.1)
       '@vercel/rust': 23.0.1(@vercel/build-utils@15.0.1)
-      '@vercel/static-build': 24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@vercel/build-utils@15.0.1)
+      '@vercel/static-build': 24.0.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)
       chokidar: 4.0.0
       esbuild: 0.27.0
       jose: 5.9.6

@@ -1,3 +1,5 @@
+import { cancelCloudflareByteStream } from "./cloudflare-byte-stream.js";
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: provider values cross the R2 boundary here. */
 import {
 	CLOUDFLARE_R2_MAX_OBJECT_BYTES,
 	CloudflareR2Error,
@@ -8,7 +10,23 @@ import {
 	encodeCloudflareR2Key,
 	readCloudflareR2Bytes,
 	validCloudflareR2Digest,
+	withCloudflareR2Deadline,
 } from "./cloudflare-r2-protocol.js";
+import {
+	cloudflareHeaders,
+	cloudflareR2PutOptions,
+	cloudflareRequestBody,
+	cloudflareRequestBodyUsed,
+	cloudflareRequestHeader,
+	cloudflareRequestMethod,
+	cloudflareRequestUrl,
+	cloudflareResponse,
+} from "./cloudflare-web-options.js";
+
+const applyCaptured = Reflect.apply;
+const stringSlice = String.prototype.slice;
+const NativeURL = URL;
+const NativeString = String;
 
 type NativeMetadata = {
 	readonly key: string;
@@ -39,12 +57,21 @@ export interface CloudflareR2ProxyEnvironment {
 }
 
 function failure(code: string, status: number): Response {
-	return new Response(null, { status, headers: { "x-hobo-r2-error": code } });
+	return cloudflareResponse(
+		null,
+		status,
+		cloudflareHeaders("x-hobo-r2-error", code),
+	);
 }
 
 function refuse(request: Request, code: string, status: number): Response {
-	if (request.body !== null && !request.bodyUsed)
-		void request.body.cancel().catch(() => {});
+	try {
+		const body = cloudflareRequestBody(request);
+		if (body !== null && !cloudflareRequestBodyUsed(request))
+			cancelCloudflareByteStream(body);
+	} catch {
+		return failure(code, status);
+	}
 	return failure(code, status);
 }
 
@@ -61,31 +88,7 @@ function size(input: string | null): number {
 }
 
 function cancel(body: ReadableStream<Uint8Array>): void {
-	void body.cancel().catch(() => {});
-}
-
-async function waitForNative<T>(
-	operation: Promise<T>,
-	onLateValue?: (value: T) => void,
-): Promise<T> {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let timedOut = false;
-	try {
-		return await Promise.race([
-			operation.then((value) => {
-				if (timedOut) onLateValue?.(value);
-				return value;
-			}),
-			new Promise<never>((_, reject) => {
-				timer = setTimeout(() => {
-					timedOut = true;
-					reject(new Error("native R2 timed out"));
-				}, 10_000);
-			}),
-		]);
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
-	}
+	cancelCloudflareByteStream(body);
 }
 
 export const cloudflareR2Proxy = {
@@ -93,52 +96,63 @@ export const cloudflareR2Proxy = {
 		request: Request,
 		environment: CloudflareR2ProxyEnvironment,
 	): Promise<Response> {
-		const url = new URL(request.url);
-		if (request.method !== "POST" || url.origin !== "https://hobo-r2.internal")
-			return refuse(request, "R2_REQUEST_INVALID", 400);
-		const operation = url.pathname.slice(1);
-		const allow = environment.HOBO_R2_ALLOW;
+		const url = new NativeURL(cloudflareRequestUrl(request));
 		if (
-			/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the deployed environment is an external boundary. */
-			typeof allow !== "string" ||
-			![
-				"delete",
-				"read",
-				"write",
-				"delete,read",
-				"delete,write",
-				"read,write",
-				"delete,read,write",
-			].includes(allow) ||
-			!["read", "write", "delete"].includes(operation) ||
-			!allow.split(",").includes(operation)
+			cloudflareRequestMethod(request) !== "POST" ||
+			url.origin !== "https://hobo-r2.internal"
 		)
-			return refuse(request, "R2_OPERATION_DENIED", 403);
+			return refuse(request, "R2_REQUEST_INVALID", 400);
+		const operation = applyCaptured(stringSlice, url.pathname, [1]);
+		const allow = environment.HOBO_R2_ALLOW;
+		const permitted =
+			(operation === "read" &&
+				(allow === "read" ||
+					allow === "delete,read" ||
+					allow === "read,write" ||
+					allow === "delete,read,write")) ||
+			(operation === "write" &&
+				(allow === "write" ||
+					allow === "delete,write" ||
+					allow === "read,write" ||
+					allow === "delete,read,write")) ||
+			(operation === "delete" &&
+				(allow === "delete" ||
+					allow === "delete,read" ||
+					allow === "delete,write" ||
+					allow === "delete,read,write"));
+		if (!permitted) return refuse(request, "R2_OPERATION_DENIED", 403);
 		let key: string;
 		try {
-			key = decodeCloudflareR2Key(request.headers.get("x-hobo-r2-key"));
+			key = decodeCloudflareR2Key(
+				cloudflareRequestHeader(request, "x-hobo-r2-key"),
+			);
 		} catch {
 			return refuse(request, "R2_KEY_INVALID", 400);
 		}
 		const keyHeader = encodeCloudflareR2Key(key);
-		if (operation !== "write" && request.body !== null)
+		if (operation !== "write" && cloudflareRequestBody(request) !== null)
 			return refuse(request, "R2_REQUEST_INVALID", 400);
 		try {
 			if (operation === "read") {
-				const object = await waitForNative(
-					environment.HOBO_R2_BUCKET.get(key),
-					(late) => {
-						if (late !== null && late.body instanceof ReadableStream)
-							cancel(late.body);
+				const result = await withCloudflareR2Deadline(
+					() => environment.HOBO_R2_BUCKET.get(key),
+					undefined,
+					(late, lease) => {
+						if (late === null) return "none";
+						if (typeof late.body !== "object" || late.body === null)
+							return "unavailable";
+						return cancelCloudflareByteStream(late.body, lease);
 					},
 				);
+				const object = result.value;
 				if (object === null)
-					return new Response(null, {
-						status: 404,
-						headers: { "x-hobo-r2-key": keyHeader },
-					});
+					return cloudflareResponse(
+						null,
+						404,
+						cloudflareHeaders("x-hobo-r2-key", keyHeader),
+					);
 				const body = object.body;
-				if (!(body instanceof ReadableStream))
+				if (typeof body !== "object" || body === null)
 					return failure("R2_READ_UNAVAILABLE", 502);
 				if (
 					object.key !== key ||
@@ -169,43 +183,48 @@ export const cloudflareR2Proxy = {
 					(storedDigest !== undefined && storedDigest !== digest)
 				)
 					return failure("R2_INTEGRITY_UNVERIFIED", 422);
-				return new Response(bytes, {
-					status: 200,
-					headers: {
-						"x-hobo-r2-key": keyHeader,
-						"x-hobo-r2-content-type": contentType,
-						"x-hobo-r2-size": String(bytes.byteLength),
-						"x-hobo-r2-digest": digest,
-					},
-				});
+				const headers = cloudflareHeaders("x-hobo-r2-key", keyHeader);
+				headers["x-hobo-r2-content-type"] = contentType;
+				headers["x-hobo-r2-size"] = NativeString(bytes.byteLength);
+				headers["x-hobo-r2-digest"] = digest;
+				return cloudflareResponse(bytes, 200, headers);
 			}
 			if (operation === "delete") {
-				await waitForNative(environment.HOBO_R2_BUCKET.delete(key));
-				return new Response(null, {
-					status: 204,
-					headers: { "x-hobo-r2-key": keyHeader },
-				});
+				await withCloudflareR2Deadline(() =>
+					environment.HOBO_R2_BUCKET.delete(key),
+				);
+				return cloudflareResponse(
+					null,
+					204,
+					cloudflareHeaders("x-hobo-r2-key", keyHeader),
+				);
 			}
 			const contentType = decodeCloudflareR2ContentType(
-				request.headers.get("x-hobo-r2-content-type"),
+				cloudflareRequestHeader(request, "x-hobo-r2-content-type"),
 			);
-			const expectedSize = size(request.headers.get("x-hobo-r2-size"));
-			const digest = request.headers.get("x-hobo-r2-digest");
+			const expectedSize = size(
+				cloudflareRequestHeader(request, "x-hobo-r2-size"),
+			);
+			const digest = cloudflareRequestHeader(request, "x-hobo-r2-digest");
 			if (digest === null || !validCloudflareR2Digest(digest))
 				return refuse(request, "R2_OBJECT_INVALID", 400);
-			const bytes = await readCloudflareR2Bytes(request.body);
+			const bytes = await readCloudflareR2Bytes(cloudflareRequestBody(request));
 			if (
 				bytes.byteLength !== expectedSize ||
 				(await cloudflareR2Digest(bytes)) !== digest
 			)
 				return failure("R2_INTEGRITY_UNVERIFIED", 422);
-			const object = await waitForNative(
-				environment.HOBO_R2_BUCKET.put(key, bytes, {
-					httpMetadata: { contentType },
-					customMetadata: { "hobo-sha256": digest },
-					sha256: digest.slice(7),
-				}),
+			const result = await withCloudflareR2Deadline(() =>
+				environment.HOBO_R2_BUCKET.put(
+					key,
+					bytes,
+					cloudflareR2PutOptions(
+						contentType,
+						applyCaptured(stringSlice, digest, [7]),
+					),
+				),
 			);
+			const object = result.value;
 			if (
 				object === null ||
 				object.key !== key ||
@@ -214,15 +233,12 @@ export const cloudflareR2Proxy = {
 				object.customMetadata?.["hobo-sha256"] !== digest
 			)
 				return failure("R2_MUTATION_OUTCOME_UNKNOWN", 502);
-			return new Response(null, {
-				status: 204,
-				headers: {
-					"x-hobo-r2-key": keyHeader,
-					"x-hobo-r2-content-type": encodeCloudflareR2ContentType(contentType),
-					"x-hobo-r2-size": String(bytes.byteLength),
-					"x-hobo-r2-digest": digest,
-				},
-			});
+			const headers = cloudflareHeaders("x-hobo-r2-key", keyHeader);
+			headers["x-hobo-r2-content-type"] =
+				encodeCloudflareR2ContentType(contentType);
+			headers["x-hobo-r2-size"] = NativeString(bytes.byteLength);
+			headers["x-hobo-r2-digest"] = digest;
+			return cloudflareResponse(null, 204, headers);
 		} catch (error) {
 			if (error instanceof CloudflareR2Error)
 				return refuse(request, error.code, 422);

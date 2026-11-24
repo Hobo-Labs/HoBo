@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import type { MachineIdentity } from "@hobo/ci";
 import {
 	defineMachineAdvert,
 	MACHINE_ADVERT_TTL_MS,
@@ -15,7 +16,6 @@ import {
 	setMachinePaused,
 	signMachineAdvert,
 } from "@hobo/ci";
-import type { MeshIdentity } from "@hobo/ci/mesh";
 
 // public-contract: a connected machine renews its advert this often.
 export const MACHINE_ADVERT_EVERY_MS = 30_000;
@@ -75,7 +75,7 @@ export function machineAdvert(
 export function signedMachineAdvert(
 	profile: MachineProfile,
 	state: MachineAdvertState,
-	identity: MeshIdentity,
+	identity: MachineIdentity,
 ): SignedMachineAdvert {
 	return signMachineAdvert(machineAdvert(profile, state), identity);
 }

@@ -28,6 +28,7 @@ export const AUTO_TAINTS = Object.freeze({
 	leaseLost: "hobo.cd/lease-lost",
 	credentialInvalid: "hobo.cd/credential-invalid",
 	claimsInconsistent: "hobo.cd/claims-inconsistent",
+	memberInactive: "hobo.cd/member-inactive",
 	/** NO_RUN added by a Rail-permitted rule; cleared only by an operator. */
 	failed: "hobo.cd/failed",
 });
@@ -44,6 +45,7 @@ const AUTO_NO_PLACE = new Set<string>([
 	AUTO_TAINTS.leaseLost,
 	AUTO_TAINTS.credentialInvalid,
 	AUTO_TAINTS.claimsInconsistent,
+	AUTO_TAINTS.memberInactive,
 ]);
 
 export function isAutomaticNoPlace(key: string): boolean {
@@ -76,14 +78,26 @@ export type ContactState = Readonly<{
 	credentialReportedMs?: number | undefined;
 }>;
 
+export type MemberLifecycle = Readonly<{
+	active: boolean;
+	reason: string;
+	observedLost?: boolean | undefined;
+}>;
+
 type Derived = Readonly<{
 	type: CampConditionType;
 	status: ConditionStatus;
 	reason: string;
 }>;
 
-function reachable(contact: ContactState, atMs: number): Derived {
+function reachable(
+	contact: ContactState,
+	atMs: number,
+	member: MemberLifecycle | undefined,
+): Derived {
 	const type = CampConditionType.REACHABLE;
+	if (member?.observedLost === true)
+		return { type, status: ConditionStatus.FALSE, reason: "fleet-member-lost" };
 	const last = contact.lastContactMs;
 	if (last === undefined)
 		return { type, status: ConditionStatus.UNKNOWN, reason: "never-contacted" };
@@ -299,6 +313,7 @@ export function deriveStatus(
 		contact: ContactState;
 		failover: RailFailoverRecord | undefined;
 		atMs: number;
+		member?: MemberLifecycle | undefined;
 	}>,
 ): CampStatusRecord {
 	const { previous, topology, contact, atMs } = input;
@@ -316,7 +331,7 @@ export function deriveStatus(
 			),
 	);
 	const derived = [
-		reachable(contact, atMs),
+		reachable(contact, atMs, input.member),
 		leased(contact, atMs),
 		credential(contact, atMs),
 		claimsConsistent(previous.claims, topology),
@@ -364,6 +379,10 @@ export function deriveStatus(
 			AUTO_TAINTS.claimsInconsistent,
 			reasonOf(CampConditionType.CLAIMS_CONSISTENT),
 		);
+	}
+
+	if (input.member !== undefined && !input.member.active) {
+		wanted.set(AUTO_TAINTS.memberInactive, input.member.reason);
 	}
 
 	const taints: TaintRecord[] = [];

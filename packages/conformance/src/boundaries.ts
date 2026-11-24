@@ -87,7 +87,8 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/bindings",
 	"packages/claims",
 	"packages/trust",
-	"packages/backend-fleet",
+	"packages/fleet",
+	"packages/backend-routing",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
 	"packages/r2-object",
@@ -197,7 +198,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/capability-profiles",
 	"packages/claims",
 	"packages/convex",
-	"packages/backend-fleet",
+	"packages/backend-routing",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
 	"packages/r2-object",
@@ -290,6 +291,11 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/data-core",
 	"packages/data-sqlite",
 	"packages/data-mongodb",
+	"packages/fleet",
+	"packages/fleet-nats",
+	"packages/fleet-p2p",
+	"packages/fleet-agent",
+	"packages/fleet-authority",
 ]);
 
 // Directories whose packages are adapters. One list, because two rules read
@@ -675,6 +681,10 @@ export function classifyPackage(path: string): PackageClassification {
 
 	if (ADAPTER_TIER_PREFIXES.some((prefix) => path.startsWith(prefix))) {
 		return { kind: "adapter", layer: 2 };
+	}
+
+	if (/^packages\/extension-[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path)) {
+		return { kind: "package", layer: 3 };
 	}
 
 	if (KNOWN_PACKAGE_PATHS.has(path)) {

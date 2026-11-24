@@ -11,7 +11,7 @@ export const RUNNER_INPUT_AUTO = "auto";
 // public-contract: the label `machine: auto` stands for.
 export const ANY_MACHINE_LABEL = "self-hosted";
 // public-contract: the label `fleet: auto` stands for.
-export const FLEET_LABEL = "hobo";
+export const HOBO_FLEET_LABEL = "hobo";
 
 export type RelayInputs = ReadonlyMap<RunnerStepKey, readonly string[]>;
 
@@ -43,7 +43,7 @@ function autoLabels(
 	runId: number | bigint,
 ): readonly string[] | undefined {
 	if (key === "machine") return [ANY_MACHINE_LABEL];
-	if (key === "fleet") return [FLEET_LABEL];
+	if (key === "fleet") return [HOBO_FLEET_LABEL];
 	const label = runnerLabelForSize(key, vcpus, runId);
 	return label ? [label] : undefined;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { decide, relayInputDirs } from "../ci/relay-deploy-gate.mts";
+import { relayInputDirs, touchesRelay } from "../ci/relay-inputs.mts";
 import { inspectVercelCredentials } from "../ci/vercel-credential-evidence.mts";
 
 const env = {
@@ -191,17 +191,16 @@ describe("trusted-main Vercel credential evidence", () => {
 			/\bcurl\b|hobo ci (?:up|deploy)|\/readyz|\/healthz/u,
 		);
 		assert.equal(
-			decide({
-				event: "push",
-				inputDirs: relayInputDirs(readFileSync("pnpm-lock.yaml", "utf8")),
-				changed: [
+			touchesRelay(
+				[
 					".github/workflows/vercel-credential-evidence.yml",
 					"scripts/ci/vercel-credential-evidence.mts",
 					"scripts/test/vercel-credential-evidence.test.ts",
 					"scripts/lint-actions.ts",
 					"docs/ci/vercel-credential-evidence.md",
 				],
-			}).run,
+				relayInputDirs(readFileSync("pnpm-lock.yaml", "utf8")),
+			),
 			false,
 		);
 	});

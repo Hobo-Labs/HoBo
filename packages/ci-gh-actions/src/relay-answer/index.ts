@@ -28,7 +28,7 @@ export {
 } from "./ci-file.js";
 export {
 	type ActiveLeaseSource,
-	type FleetRoom,
+	type RunnerFleetRoom,
 	repositoryOwner,
 	type StoreFactsWarning,
 	StoreRouteFacts,

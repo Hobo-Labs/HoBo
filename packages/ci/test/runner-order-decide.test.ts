@@ -11,7 +11,6 @@ import {
 	decideRunnerRoute,
 	describeDecision,
 	describeSkip,
-	type FleetState,
 	type MachineCandidate,
 	NO_ROUTE_FACTS,
 	noRunnerReason,
@@ -20,6 +19,7 @@ import {
 	providerHealthKey,
 	type RouteFacts,
 	RUNNER_SKIP_REASONS,
+	type RunnerFleetState,
 } from "../src/runner-order/index.js";
 
 const order = (...steps: readonly object[]): ParsedRunnerOrder =>
@@ -74,7 +74,7 @@ const facts = (partial: Partial<RouteFacts> = {}): RouteFacts => ({
 	...NO_ROUTE_FACTS,
 	...partial,
 });
-const fleet = (partial: Partial<FleetState> = {}): FleetState => ({
+const fleet = (partial: Partial<RunnerFleetState> = {}): RunnerFleetState => ({
 	enabled: true,
 	taking: true,
 	isolated: false,

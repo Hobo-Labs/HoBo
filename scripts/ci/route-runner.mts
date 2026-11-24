@@ -49,22 +49,56 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
-	DEFAULT_GITHUB_MACHINE_TYPE,
-	type FleetMember,
-	LOCAL_HOST_RUNNER_LABEL,
-	selectFleetVerification,
-} from "../../packages/ci/src/fleet-overflow.ts";
-import {
 	judgeRoutingSlip,
 	type ParsedRoutingSlip,
 	type RoutingSlipClassName,
 	type RoutingSlipRefusal,
 	RUNNER_ROUTING_PATH,
 	type RunnerRouting,
+	type RunnerRoutingPool,
 	readRoutingSlip,
 	readRunnerRouting,
 	routingLabels,
 } from "./runner-routing.mts";
+
+// public-contract: GitHub's machine type the route job falls back to.
+export const DEFAULT_GITHUB_MACHINE_TYPE = "ubuntu-24.04";
+// public-contract: the runs-on label a registered local box serves.
+export const LOCAL_HOST_RUNNER_LABEL = "hobo-local-host";
+
+export type Agent37PoolObservation = Readonly<{
+	activeRunners: number;
+}>;
+
+export type Agent37Capacity = Readonly<{
+	runsOn: string;
+	runnerNamePrefix: string;
+	freeRunners: number;
+}>;
+
+export function agent37Capacity(
+	pool: RunnerRoutingPool,
+	observation: Agent37PoolObservation,
+): Agent37Capacity | undefined {
+	const runsOn = pool.labels[0] ?? "";
+	if (
+		!Number.isSafeInteger(pool.maxRunners) ||
+		pool.maxRunners < 1 ||
+		pool.maxRunners > 10_000 ||
+		pool.labels.length < 1 ||
+		pool.labels.length > 16 ||
+		pool.labels.some((label) => label.trim().length === 0) ||
+		runsOn.length === 0 ||
+		pool.runnerNamePrefix.length < 1 ||
+		pool.runnerNamePrefix.length > 128 ||
+		!Number.isSafeInteger(observation.activeRunners) ||
+		observation.activeRunners < 0
+	)
+		return undefined;
+	const freeRunners = pool.maxRunners - observation.activeRunners;
+	if (freeRunners < 1) return undefined;
+	return { runsOn, runnerNamePrefix: pool.runnerNamePrefix, freeRunners };
+}
 
 /** `auto` falls back; the others pin one tier, `fleet` being the behaviour before routing. */
 export const ROUTE_MODES = ["auto", "fleet", "local", "github"] as const;
@@ -98,7 +132,7 @@ export const MAX_PROBE_LOOKUPS = 3;
 export const PROBE_WAIT_SECONDS = 60;
 export const PROBE_POLL_SECONDS = 10;
 
-export type RouteTier = "fleet" | "local" | "github";
+export type RouteTier = "fleet" | "local" | "github" | "agent37";
 
 /** A job has waited this long for a label: that backend is not taking jobs. */
 export const DEFAULT_MAX_WAIT_SECONDS = 120;
@@ -171,6 +205,7 @@ export type MergeGroupHostedProbe = Readonly<{
 	summary: string;
 	trunkIdle?: boolean | undefined;
 	trunkSummary?: string | undefined;
+	runnerPageIdleTrunk?: boolean | undefined;
 }>;
 
 export type RouteDecision = Readonly<{
@@ -317,37 +352,12 @@ export function routeRunner(input: {
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
 	const first = input.trunkPriority === true || input.undecidedAhead === 0;
-	const members = [
-		{
-			id: "fleet",
-			backend: "hobo",
-			enabled: true,
-			runsOn: fleetLabel,
-			freeSlots: first && takingJobs(input.fleet, limits) ? 1 : 0,
-		},
-		{
-			id: "local",
-			backend: "local",
-			enabled: input.localEnrolled,
-			runsOn: localLabel,
-			freeSlots: first && takingJobs(input.local, limits) ? 1 : 0,
-		},
-		{
-			id: "github",
-			backend: "github",
-			enabled: true,
-			runsOn: githubLabel,
-			freeSlots: 1,
-		},
-	] satisfies FleetMember[];
-	// The workflow needs an actual runner. The same fleet selector offers
-	// local signoff to the opted-in local coordinator, never as runs-on here.
-	const choice = selectFleetVerification({
-		members,
-		unknownMembers: [],
-		localSignoffEnabled: false,
-	});
-	const selected = choice.kind === "runner" ? choice.runner : undefined;
+	const selected: RouteTier =
+		first && takingJobs(input.fleet, limits)
+			? "fleet"
+			: input.localEnrolled && first && takingJobs(input.local, limits)
+				? "local"
+				: "github";
 	const loads = [
 		describeLoad("the fleet", input.fleet, input.slowPickupWindowSeconds),
 		input.localEnrolled
@@ -359,7 +369,7 @@ export function routeRunner(input: {
 					`${input.undecidedAhead} run(s) started in the ${BURST_SECONDS} s before this one and have not chosen a runner yet`,
 				]),
 	].join("; ");
-	if (!selected || selected.backend === "hobo")
+	if (selected === "fleet")
 		return {
 			tier: "fleet",
 			runner: fleetLabel,
@@ -367,8 +377,8 @@ export function routeRunner(input: {
 			refusedBy: "none",
 		};
 	return {
-		tier: selected.backend === "local" ? "local" : "github",
-		runner: selected.runsOn,
+		tier: selected,
+		runner: selected === "local" ? localLabel : githubLabel,
 		reason: `${loads}; the limits are ${limits.maxWaitSeconds} s and ${limits.maxQueued} waiting`,
 		refusedBy: "queue",
 	};
@@ -959,6 +969,17 @@ function idleRunnerUnavailable(
 	return `no idle ${label} runner was verified on the fetched runner page`;
 }
 
+export function idleRunnerOnPage(
+	runnersPage: JsonValue,
+	labels: readonly string[],
+): string | undefined {
+	return labels.find(
+		(label) =>
+			idleRunnerUnavailable(fleetPoolRunners(runnersPage, label), label) ===
+			undefined,
+	);
+}
+
 function agent37OverflowUnavailable(
 	runners: FleetPoolRunners | undefined,
 ): string | undefined {
@@ -1196,6 +1217,7 @@ export type RouteSettings = Readonly<{
 	 * job keeps the fleet label.
 	 */
 	boxRunner: string;
+	externalPools: readonly RunnerRoutingPool[];
 	trunkLend: boolean;
 	/** `false` when `.hobo/ci.json` held no valid `runnerRouting`. */
 	committed: boolean;
@@ -1211,6 +1233,7 @@ export function routeSettings(
 			labels: policy.labels,
 			localRunner: policy.localRunner,
 			boxRunner: policy.boxRunner ? policy.labels.box : "",
+			externalPools: policy.externalPools,
 			trunkLend: policy.box.trunkLend === 1,
 			committed: true,
 		};
@@ -1223,6 +1246,7 @@ export function routeSettings(
 		labels: DEFAULT_RUNNER_LABELS,
 		localRunner: DEFAULT_LOCAL_RUNNER,
 		boxRunner: DEFAULT_BOX_RUNNER ? DEFAULT_RUNNER_LABELS.box : "",
+		externalPools: [],
 		trunkLend: DEFAULT_TRUNK_LEND,
 		committed: false,
 	};
@@ -1269,6 +1293,10 @@ export type PrBatchCapacityVerifier = (
 		maxQueueWaitSeconds: number;
 	}>,
 ) => Promise<boolean>;
+
+export type Agent37PoolObserver = (
+	pool: RunnerRoutingPool,
+) => Promise<Agent37PoolObservation>;
 
 function prBatchScope(
 	env: NodeJS.ProcessEnv,
@@ -1588,6 +1616,7 @@ export async function main(
 		now?: () => number;
 		/** A trusted host may install the real durable full-run claim verifier. */
 		verifyPrBatchCapacity?: PrBatchCapacityVerifier | undefined;
+		observeAgent37Pool?: Agent37PoolObserver;
 	}> = {},
 ): Promise<RouteDecision> {
 	const args = parseRouteArgs(argv);
@@ -1714,13 +1743,65 @@ export async function main(
 				},
 				env,
 			);
+		const eventPayload =
+			"eventPayload" in io ? io.eventPayload : readEventPayload(env);
+		const pullRequest = asObject(asObject(eventPayload)?.pull_request);
+		const baseRepository = asText(
+			asObject(asObject(pullRequest?.base)?.repo)?.full_name,
+		);
+		const headRepository = asText(
+			asObject(asObject(pullRequest?.head)?.repo)?.full_name,
+		);
+		const callerRepository = env.GITHUB_REPOSITORY ?? "";
+		const agent37Trusted =
+			callerRepository.length > 0 &&
+			baseRepository?.toLowerCase() === callerRepository.toLowerCase() &&
+			headRepository?.toLowerCase() === callerRepository.toLowerCase() &&
+			routeClass(event, eventPayload) === "pr";
+		const refuseAgent37 = (
+			pool: RunnerRoutingPool,
+			reason: "observer-missing" | "observer-failed",
+		) => {
+			console.log(
+				`::warning title=hobo-ci-agent37-refusal::${escapeCommand(
+					JSON.stringify({
+						v: 1,
+						pool: pool.labels[0] ?? "unknown",
+						runId: env.GITHUB_RUN_ID ?? "unknown",
+						runAttempt: env.GITHUB_RUN_ATTEMPT ?? "unknown",
+						reason,
+						fallback: "public",
+					}),
+				)}`,
+			);
+		};
+		for (const pool of agent37Trusted ? settings.externalPools : []) {
+			if (!io.observeAgent37Pool) {
+				refuseAgent37(pool, "observer-missing");
+				continue;
+			}
+			let observation: Agent37PoolObservation;
+			try {
+				observation = await io.observeAgent37Pool(pool);
+			} catch {
+				refuseAgent37(pool, "observer-failed");
+				continue;
+			}
+			const capacity = agent37Capacity(pool, observation);
+			if (!capacity) continue;
+			return report(
+				{
+					tier: "agent37",
+					runner: capacity.runsOn,
+					reason: `the full PR batch has no verified fleet capacity and Broker claim; the agent37 external pool ${capacity.runsOn} reports ${capacity.freeRunners} free runner(s)`,
+					refusedBy: "none",
+					slip: { kind: "unasked", why: "batch" },
+				},
+				env,
+			);
+		}
 		let hostedFallbackReason: string | undefined;
-		if (
-			routeClass(
-				event,
-				"eventPayload" in io ? io.eventPayload : readEventPayload(env),
-			) !== "fork"
-		) {
+		if (routeClass(event, eventPayload) !== "fork") {
 			const token = env.GITHUB_TOKEN ?? "";
 			const probeRead = token
 				? githubReader(
@@ -1892,7 +1973,8 @@ export async function main(
 			});
 		let hostedIdle = false;
 		let hostedSummary = "";
-		let hostedProbe = {
+		let runnerPageIdleTrunk = false;
+		let hostedProbe: MergeGroupHostedProbe = {
 			idle: false,
 			summary: "GitHub-hosted queue unreadable",
 			trunkIdle: false,
@@ -1905,6 +1987,13 @@ export async function main(
 			const hostedLoad = labelLoad(hostedView.jobs, githubLabel, probeAtMs);
 			hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
 			hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
+			if (!hostedIdle) {
+				const runnersPage = await requireRead()(
+					`/repos/${repository}/actions/runners?per_page=100`,
+				).catch(() => null);
+				runnerPageIdleTrunk =
+					idleRunnerOnPage(runnersPage, [trunkLabel]) === trunkLabel;
+			}
 			decision = await chooseRunner({
 				observe: observeTrunk,
 				now,
@@ -1934,9 +2023,10 @@ export async function main(
 				summary: hostedSummary,
 				trunkIdle: decision.tier === "fleet" && decision.runner === trunkLabel,
 				trunkSummary: decision.reason,
+				runnerPageIdleTrunk,
 			};
 			console.log(
-				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${decision.reason}; trunkIdle=${hostedProbe.trunkIdle}`,
+				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${decision.reason}; trunkIdle=${hostedProbe.trunkIdle}; runnerPageIdleTrunk=${runnerPageIdleTrunk}`,
 			);
 		} catch (error) {
 			const detail = error instanceof Error ? error.message : "probe-error";
@@ -1999,7 +2089,7 @@ export async function main(
 				workflowFile(env),
 				io.verifyPrBatchCapacity,
 			))
-		)
+		) {
 			return report(
 				{
 					tier: "github",
@@ -2011,6 +2101,7 @@ export async function main(
 				},
 				env,
 			);
+		}
 		return report(
 			{
 				...decision,

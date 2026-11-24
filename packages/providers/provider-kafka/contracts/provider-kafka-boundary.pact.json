@@ -6,13 +6,13 @@
 	},
 	"interactions": [
 		{
-			"description": "realize kafka cluster and topic with wasi:messaging export",
+			"description": "realize kafka cluster and topic as a native messaging client",
 			"request": {
 				"method": "POST",
 				"path": "/providers/kafka/realize",
 				"body": {
 					"port": "topic",
-					"wit": "wasi:messaging/messaging@0.2.0",
+					"contract": "hobo.messaging-port/v2",
 					"features": ["consumer-groups", "exactly-once"]
 				}
 			},
@@ -22,7 +22,7 @@
 					"providerId": "@hobo/provider-kafka",
 					"secretless": true,
 					"messagingBackend": "native-kafka",
-					"witExports": ["wasi:messaging/messaging@0.2.0"]
+					"witExports": []
 				}
 			}
 		}

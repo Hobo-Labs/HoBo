@@ -118,7 +118,6 @@ jobs:
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             scripts/ci/merge-queue-reuse.mts
-            packages/ci/src/fleet-overflow.ts
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ steps.routing-base.outputs.sha }}
@@ -130,11 +129,11 @@ jobs:
             .github/actions/route-runner
             .hobo/ci.json
             scripts/ci/route-runner.mts
+            packages/ci/src/fleet-overflow.ts
             scripts/ci/runner-routing.mts
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             scripts/ci/pr-fabric-reuse.mts
-            packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
@@ -428,6 +427,7 @@ jobs:
       merge_scope: ${{ steps.merge-group-base.outputs.scope }}
       pr_base: ${{ steps.scm-base.outputs.base }}
       shards: ${{ steps.shard-plan.outputs.shards }}
+      state_machines: ${{ steps.state-machine-scope.outputs.needed }}
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
       PROVEN_BASE: ${{ needs.route.outputs.proven-base }}
@@ -544,6 +544,26 @@ jobs:
           fi
           echo "workspace test shards: ${shards}"
           echo "shards=${shards}" >> "$GITHUB_OUTPUT"
+      - name: Decide whether state-machine verification is needed
+        id: state-machine-scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ steps.scm-base.outputs.base }}
+          MERGE_BASE: ${{ steps.merge-group-base.outputs.base }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) BASE="$PR_BASE" ;;
+            *) BASE="$MERGE_BASE" ;;
+          esac
+          needed=true
+          if [ -n "$BASE" ] && git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            answer="$(git diff --name-only "$BASE" HEAD |
+              node --experimental-strip-types --no-warnings scripts/ci/state-machine-scope.mts)" || answer=""
+            if [ "$answer" = "false" ]; then needed=false; fi
+          fi
+          echo "state-machine verification needed: ${needed}"
+          echo "needed=${needed}" >> "$GITHUB_OUTPUT"
       - name: Impact classification (shadow)
         if: github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'
         continue-on-error: true
@@ -732,6 +752,8 @@ jobs:
           submodules: recursive
           marker: scripts/ci/ci-trace.mts
           bootstrap-composite-actions: "false"
+      - name: Test from a detached HEAD, as the merge queue does
+        run: git checkout --quiet --detach HEAD
       - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
@@ -773,6 +795,7 @@ jobs:
           # step-level pin would override it back to one task at a time.
         run: |
           set -euo pipefail
+          unset GITHUB_HEAD_REF GITHUB_BASE_REF
           case "$EVENT_NAME" in
             pull_request) TESTS=affected; BASE="$PR_BASE" ;;
             merge_group) TESTS="$MERGE_TESTS"; BASE="$MERGE_BASE" ;;
@@ -931,6 +954,8 @@ jobs:
           clean: false
           # Depth 2 holds a PR merge commit and its first parent (the base tip).
           fetch-depth: 2
+      - name: Test from a detached HEAD, as the merge queue does
+        run: git checkout --quiet --detach HEAD
       # The pinned toolchain from mise.toml (Node 24), on the fleet or a GitHub-hosted
       # machine. Under Node 22 pnpm prints an engine warning into turbo's JSON.
       - uses: $/.github/actions/ci-runner-preflight
@@ -1010,7 +1035,7 @@ jobs:
           pnpm exec turbo run build \
             "${IMPORTED[@]}" \
             "${AFFECTED[@]}" \
-            --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+            --output-logs=new-only --concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}
       - name: Scripts tests
         if: steps.scope.outputs.run == 'true'
         # The unsharded lane exceeded its 10-minute watchdog on a busy fleet
@@ -1019,7 +1044,7 @@ jobs:
         env:
           SHARD: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
-        run: pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"
+        run: env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
@@ -1175,14 +1200,10 @@ jobs:
 
   state-machine-verification:
     name: State-machine verification
-    needs: [route, ci-runner-image]
-    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    needs: [route, ci-runner-image, pr_gate_plan]
+    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.pr_gate_plan.result == 'success' && needs.pr_gate_plan.outputs.state_machines == 'false') && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
     permissions:
       contents: read
     steps:
@@ -1230,13 +1251,11 @@ jobs:
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo --filter=@hobo/dispatcher
           --filter=@hobo/ci --filter=@hobo/cd --filter=@hobo/identity
-          --filter=@hobo/storage-sqlite --filter=@hobo/runtime --concurrency=1
-          --output-logs=new-only
+          --filter=@hobo/storage-sqlite --filter=@hobo/runtime
+          --concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%} --output-logs=new-only
       - name: Check state machines
         timeout-minutes: 20
-        env:
-          FORMAL_SHARD: ${{ matrix.shard }}
-        run: pnpm run verify:state-machines -- "--shard=${FORMAL_SHARD}/4"
+        run: pnpm run verify:state-machines -- "--jobs=$(nproc)"
 
   pr-gate:
     name: PR impact gate
@@ -1262,6 +1281,7 @@ jobs:
           AFFECTED_RESULT: ${{ needs.pr_affected.result }}
           SCRIPTS_RESULT: ${{ needs.scripts-tests.result }}
           FORMAL_RESULT: ${{ needs.state-machine-verification.result }}
+          STATE_MACHINES: ${{ needs.pr_gate_plan.outputs.state_machines }}
           ROUTE_RESULT: ${{ needs.route.result }}
           ATTESTED: ${{ needs.route.outputs.attested }}
           ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
@@ -1278,17 +1298,12 @@ jobs:
             esac
             return 1
           }
-          # A skipped merge-group gate job also counts when the route job
-          # itself succeeded and reported a verified green pull-request
-          # Fabric run for this merge group's tree at its base
-          # (pr-fabric-reuse.mts). Only the three gate jobs an attestation
-          # may also cover for a merge group are accepted for it.
           pr_fabric() {
             [ "${EVENT_NAME:-}" = "merge_group" ] || return 1
             [ "${ROUTE_RESULT:-}" = "success" ] || return 1
             [ "${PR_FABRIC:-}" = "true" ] || return 1
             case "$1" in
-              pr_gate_validation|workspace_tests|scripts-tests) return 0 ;;
+              pr_gate_validation|workspace_tests|scripts-tests|state-machine-verification) return 0 ;;
             esac
             return 1
           }
@@ -1322,10 +1337,21 @@ jobs:
             echo "Scripts tests did not succeed: ${SCRIPTS_RESULT:-}" >&2
             exit 1
           fi
-          if [ "${FORMAL_RESULT:-}" != "success" ]; then
-            echo "State-machine verification did not succeed: ${FORMAL_RESULT:-}" >&2
-            exit 1
-          fi
+          formal_not_needed() {
+            [ "${ROUTE_RESULT:-}" = "success" ] || return 1
+            [ "${PLAN_RESULT:-}" = "success" ] || return 1
+            [ "${STATE_MACHINES:-}" = "false" ]
+          }
+          case "${FORMAL_RESULT:-}" in
+            success) ;;
+            skipped)
+              if ! formal_not_needed && ! pr_fabric state-machine-verification; then
+                echo "State-machine verification was skipped without a plan that ruled it out or a reused green run" >&2
+                exit 1
+              fi
+              ;;
+            *) echo "State-machine verification did not succeed: ${FORMAL_RESULT:-}" >&2; exit 1 ;;
+          esac
 
   pr-offpath:
     # Off the critical path: these used to run inside the PR impact gate.
@@ -1442,8 +1468,6 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 0
-      # After the full checkout: the route script, scripts/ci/runner-routing.mts,
-      # packages/ci/src/fleet-overflow.ts and .hobo/ci.json are not in the bootstrap checkout.
       # Only a run the route job kept on the fleet asks again; one already sent away is not
       # brought back to a fleet whose deps job was skipped. The routing slip is read again (it
       # may have changed); without one, this run's own jobs count (include-own-run): a plan job

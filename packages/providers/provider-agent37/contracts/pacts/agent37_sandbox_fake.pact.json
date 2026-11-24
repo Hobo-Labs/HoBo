@@ -50,11 +50,7 @@
 					"Content-Type": "application/json",
 					"X-Agent37-Key": "<runtime-api-key>"
 				},
-				"body": {
-					"command": "echo ready",
-					"user": "root",
-					"name": "prep-lease-fixture"
-				}
+				"body": { "command": "echo ready", "user": "root", "name": "prep-lease-fixture" }
 			},
 			"response": {
 				"status": 200,
@@ -76,20 +72,12 @@
 			"request": {
 				"method": "POST",
 				"path": "/v1/instances/i_fixture0001/exec",
-				"headers": {
-					"Content-Type": "application/json",
-					"X-Agent37-Key": "<wrong-runtime-api-key>"
-				},
+				"headers": { "Content-Type": "application/json", "X-Agent37-Key": "<wrong-runtime-api-key>" },
 				"body": { "command": "echo must-not-run", "user": "root" }
 			},
 			"response": {
 				"status": 401,
-				"body": {
-					"error": {
-						"code": "unauthorized",
-						"message": "missing or invalid X-Agent37-Key header"
-					}
-				}
+				"body": { "error": { "code": "unauthorized", "message": "missing or invalid X-Agent37-Key header" } }
 			}
 		},
 		{
@@ -101,12 +89,7 @@
 			},
 			"response": {
 				"status": 401,
-				"body": {
-					"error": {
-						"code": "unauthorized",
-						"message": "missing or invalid Authorization bearer key"
-					}
-				}
+				"body": { "error": { "code": "unauthorized", "message": "missing or invalid Authorization bearer key" } }
 			}
 		},
 		{
@@ -119,11 +102,7 @@
 			},
 			"response": {
 				"status": 200,
-				"body": {
-					"from": "2026-11-01",
-					"to": "2026-11-20",
-					"total_micros": 0
-				}
+				"body": { "from": "2026-11-01", "to": "2026-11-20", "total_micros": 0 }
 			}
 		}
 	],

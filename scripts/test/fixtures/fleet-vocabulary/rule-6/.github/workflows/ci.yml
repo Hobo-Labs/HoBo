@@ -1,0 +1,9 @@
+name: fixture
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      HOBO_CI_LOCAL_REPOSITORY: example/repo
+    steps:
+      - run: echo "$HOBO_FLEET_HOME"

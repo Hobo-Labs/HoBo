@@ -14,6 +14,33 @@ message CiPolicyKubernetesScaleSet {
 message CiPolicyDaggerEngine {
   string name = 1;
 }
+message CiPolicyAgent37Size {
+  uint32 cpu = 1;
+  uint32 memory = 2;
+  uint32 disk = 3;
+}
+message CiPolicyAgent37Network {
+  repeated string allow = 1;
+}
+message CiPolicyAgent37Budget {
+  double limit_micros = 1;
+  string period = 2;
+  uint32 max_creates_per_hour = 3;
+}
+message CiPolicyAgent37Pool {
+  uint32 min_boxes = 1;
+  uint32 max_boxes = 2;
+  string type = 3;
+  CiPolicyAgent37Size size = 4;
+  string region = 5;
+  string template = 6;
+  uint32 idle_ttl_seconds = 7;
+  uint32 job_timeout_seconds = 8;
+  repeated string labels = 9;
+  CiPolicyAgent37Network network = 10;
+  CiPolicyAgent37Budget budget = 11;
+  bool allow_above_free_tier = 12;
+}
 // Authored intent only. Financial observations and leases live in separate records.
 message CiPolicyProvider {
   string id = 1;
@@ -24,6 +51,7 @@ message CiPolicyProvider {
   oneof capacity {
     CiPolicyKubernetesScaleSet scale_set = 6;
     CiPolicyDaggerEngine engine = 7;
+    CiPolicyAgent37Pool pool = 9;
   }
   // Vercel only: "vercel", "local" or "remote".
   string location = 8;

@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Session } from "@vercel/sandbox";
 import { describe, expect, it, vi } from "vitest";
 import * as archive from "../src/sandbox-runner-archive.js";
 import {
@@ -19,6 +20,7 @@ import {
 	prepareSandboxRunner,
 	type SandboxRunnerBootstrapPort,
 	START_SANDBOX_RUNNER,
+	sandboxRunnerBootstrapPort,
 	startSandboxRunner,
 } from "../src/sandbox-runner-bootstrap.js";
 import * as icu from "../src/sandbox-runner-icu.js";
@@ -356,5 +358,15 @@ printf 'home\\n' > "$HOME/probe"
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("the bootstrap port", () => {
+	it("is the specific Session itself, never a Sandbox handle that could resume", () => {
+		const session: Session = Object.create(Session.prototype, {
+			sessionId: { value: "sbx_1" },
+		});
+		const port = sandboxRunnerBootstrapPort(session);
+		expect(port).toBe(session);
 	});
 });

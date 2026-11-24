@@ -70,6 +70,12 @@ export const CANONICAL_VERBS: readonly Verb[] = [
 			"Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy",
 	},
 	{
+		name: "fleet",
+		role: "control plane",
+		summary:
+			"Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)",
+	},
+	{
 		name: "incident",
 		role: "delivery",
 		summary: "CD failure disposition: A2H handoff or sandboxed self-heal",
@@ -245,6 +251,7 @@ export const projectScopedVerbs = new Set(
 
 				"ci",
 				"cd",
+				"fleet",
 				"claim",
 				"identity",
 				"trails",
@@ -578,8 +585,10 @@ Promotion:
   hobo deploy preview create <freight> --source-camp <camp> | preview list
   hobo deploy verify show <verification-id>
   hobo deploy metrics [--window-ms <ms>]
-Agents (double opt-in):
+Agents (double opt-in; a reconciler is a fleet device with role RECONCILER):
   hobo deploy agent token|enroll|approve-key|accept|run|revoke
+  aliases of hobo fleet token create|enroll --token-file|member approve|
+  member accept|run|member revoke; --token <value> is refused
 Fleet and policy:
   hobo deploy campset define|list
   hobo deploy camp list|show|taint|untaint|manage
@@ -736,6 +745,7 @@ Example:
 
 Usage:
   hobo login [global flags] [--home <path>] [--broker <uri>]
+  hobo login --relay <https-origin>
 
 Role: ${verb.role}
 ${statusLine}
@@ -743,8 +753,14 @@ Obtain a dev session/identity context and persist it to .hobo/session.json
 so hobo up / hobo down run under it. --broker targets a remote Conductor
 endpoint (--broker-uri is an accepted alias).
 
+--relay signs in to an already configured HoBo CI relay instead: the owner
+confirms one code at GitHub, and the session lives only in this process's
+memory; nothing is written. hobo ci and hobo cd take --relay <https-origin>
+to sign in the same way when a credential is first needed.
+
 Example:
   hobo login
+  hobo login --relay https://relay.example
 `;
 	}
 

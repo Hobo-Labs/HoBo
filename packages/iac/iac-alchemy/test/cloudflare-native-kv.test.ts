@@ -18,6 +18,10 @@ import {
 	mapBindleToAlchemy,
 } from "../src/bindle.js";
 import {
+	cloudflareEventualKv,
+	cloudflareKvGrant,
+} from "../src/cloudflare-kv-protocol.js";
+import {
 	type CloudflareKvProxyEnvironment,
 	cloudflareKvProxy,
 } from "../src/cloudflare-kv-proxy.js";
@@ -152,6 +156,185 @@ function assessRequirements(requirements: {
 }
 
 describe("Cloudflare eventual KV JavaScript subset", () => {
+	it("rejects inherited descriptor records and accessor grants", () => {
+		let traps = 0;
+		const fields = {
+			mode: "read-only",
+			grantEpoch: readGrant.grantEpoch,
+			namespaceEpoch: readGrant.namespaceEpoch,
+			allow: ["get"],
+		};
+		const previous = Object.entries(fields).map(
+			([key]) =>
+				[key, Object.getOwnPropertyDescriptor(Object.prototype, key)] as const,
+		);
+		const oldValue = Object.getOwnPropertyDescriptor(Object.prototype, "value");
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: intentionally malformed values exercise the untrusted input boundary.
+		const missingChoice = { x: 1, y: 2, z: 3 } as never;
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: intentionally malformed values exercise the untrusted input boundary.
+		const missingGrant = { x: 1, y: 2, z: 3, w: 4 } as never;
+		const choice = Object.defineProperty({ ...readGrant }, "mode", {
+			enumerable: true,
+			get() {
+				traps++;
+				throw new Error("getter");
+			},
+		});
+		for (const [key, value] of Object.entries(fields))
+			Object.defineProperty(Object.prototype, key, {
+				configurable: true,
+				writable: true,
+				value: { value, enumerable: true },
+			});
+		Object.defineProperty(Object.prototype, "value", {
+			configurable: true,
+			get() {
+				traps++;
+				throw new Error("inherited value");
+			},
+		});
+		const errors: unknown[] = [];
+		try {
+			for (const run of [
+				() => cloudflareEventualKv(missingChoice),
+				() => cloudflareKvProxySource("app", "cache", missingGrant),
+				() => cloudflareEventualKv(choice),
+			])
+				try {
+					run();
+				} catch (error) {
+					errors.push(error);
+				}
+		} finally {
+			if (oldValue === undefined)
+				Reflect.deleteProperty(Object.prototype, "value");
+			else Object.defineProperty(Object.prototype, "value", oldValue);
+			for (const [key, old] of previous) {
+				if (old === undefined) Reflect.deleteProperty(Object.prototype, key);
+				else Object.defineProperty(Object.prototype, key, old);
+			}
+		}
+		expect(errors).toHaveLength(3);
+		expect(traps).toBe(0);
+	});
+
+	it("rejects a proxied host grant without invoking its traps", () => {
+		let traps = 0;
+		const grant = new Proxy(
+			{ ...readGrant, allow: ["get"] },
+			{
+				ownKeys() {
+					traps++;
+					throw new Error("trap");
+				},
+			},
+		);
+		expect(() => cloudflareKvProxySource("app", "cache", grant)).toThrow(
+			"KV_GRANT_INVALID",
+		);
+		expect(traps).toBe(0);
+	});
+
+	it("rejects a proxied nested allow list before invoking its traps", () => {
+		let traps = 0;
+		const allow = new Proxy(["get"], {
+			get() {
+				traps++;
+				throw new Error("trap");
+			},
+			ownKeys() {
+				traps++;
+				throw new Error("trap");
+			},
+		});
+		const revoked = Proxy.revocable(["get"], {});
+		revoked.revoke();
+		for (const list of [allow, revoked.proxy])
+			expect(() =>
+				cloudflareKvProxySource("app", "cache", { ...readGrant, allow: list }),
+			).toThrow("KV_GRANT_INVALID");
+		expect(traps).toBe(0);
+	});
+
+	it("rejects sparse grant arrays even when an inherited descriptor claims their missing element", () => {
+		const sparse: string[] = [];
+		sparse.length = 1;
+		const old = Object.getOwnPropertyDescriptor(Object.prototype, "0");
+		Object.defineProperty(Object.prototype, "0", {
+			configurable: true,
+			writable: true,
+			value: { value: "get", enumerable: true },
+		});
+		Object.defineProperty(sparse, "extra", {
+			enumerable: true,
+			value: "ignored",
+		});
+		let error: unknown;
+		try {
+			cloudflareKvGrant(
+				"read-only",
+				readGrant.grantEpoch,
+				readGrant.namespaceEpoch,
+				sparse,
+			);
+		} catch (caught) {
+			error = caught;
+		} finally {
+			if (old === undefined) Reflect.deleteProperty(Object.prototype, "0");
+			else Object.defineProperty(Object.prototype, "0", old);
+		}
+		expect(error).toMatchObject({ code: "KV_GRANT_INVALID" });
+	});
+
+	it("uses captured service invocation intrinsics for an eventual KV request", async () => {
+		const native = nativeNamespace();
+		let traps = 0;
+		const app = appFor("read-only", ["get"], (context) => async () => {
+			const kv = cloudflareBindings(context).kv("cache");
+			await kv.get("key");
+			return new Response("ok");
+		});
+		const oldGet = Reflect.get;
+		const oldApply = Reflect.apply;
+		const restore = () => {
+			Reflect.get = oldGet;
+			Reflect.apply = oldApply;
+		};
+		const real = service({
+			HOBO_KV_MODE: "read-only",
+			HOBO_KV_ALLOW: "get",
+			HOBO_KV_NAMESPACE: native.binding,
+		});
+		const environment = Object.defineProperty({}, "HOBO_RESOURCE_0", {
+			get() {
+				Reflect.get = () => {
+					traps++;
+					throw new Error("get");
+				};
+				Reflect.apply = () => {
+					traps++;
+					throw new Error("apply");
+				};
+				return {
+					fetch(request: Request) {
+						restore();
+						return real.fetch(request);
+					},
+				};
+			},
+		});
+		try {
+			await bindleCloudflareWorker(app, "web").fetch(
+				new Request("https://app.test"),
+				environment,
+			);
+		} finally {
+			restore();
+		}
+		expect(native.calls).toEqual(["get:key:stream"]);
+		expect(traps).toBe(0);
+	});
+
 	it("keeps the real Bindle provider-neutral and rejects invalid target choices", () => {
 		expect(neutralApplication.resources.cache?.annotations).toEqual([]);
 		expect(neutralApplication.requirements).toMatchObject({
@@ -292,6 +475,41 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			),
 		).toThrow("KV_GRANT_UNVERIFIED");
 	});
+	it.each([
+		"namespace",
+		"grant",
+	] as const)("rejects and observes an asynchronous KV %s verifier", async (field) => {
+		const rejected = Promise.reject(new Error("authority unavailable"));
+		const verifiers = {
+			verifyNamespace: () => true,
+			verifyGrant: () => true,
+		};
+		Object.defineProperty(
+			verifiers,
+			field === "namespace" ? "verifyNamespace" : "verifyGrant",
+			{ value: () => rejected, enumerable: true },
+		);
+		expect(() =>
+			mapBindleToAlchemy(
+				application,
+				cloudflareNativeKvBindleMappers({
+					workerModules: { web: main },
+					sourceFence: {
+						sourceDigest: `sha256:${"a".repeat(64)}`,
+						environmentDigest: `sha256:${"b".repeat(64)}`,
+						proofRef: "test:host",
+						verify: () => true,
+					},
+					...verifiers,
+				}),
+				{ assessRequirements: () => ({ status: "supported" }) },
+			),
+		).toThrow(
+			field === "namespace" ? "KV_NAMESPACE_UNVERIFIED" : "KV_GRANT_UNVERIFIED",
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	});
+
 	it("reads binary, empty and missing values through an isolated read-only proxy", async () => {
 		const native = nativeNamespace();
 		native.values.set("bin\u0000雪", new Uint8Array([0, 255, 127]));
@@ -377,11 +595,11 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 							headers: { "x-hobo-kv-key": "key" },
 						}),
 						{
+							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test deliberately sends malformed external bindings.
 							HOBO_KV_MODE:
-								// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test deliberately sends malformed external bindings.
 								mode as CloudflareKvProxyEnvironment["HOBO_KV_MODE"],
+							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed grant strings are intentional negative cases.
 							HOBO_KV_ALLOW:
-								// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed grant strings are intentional negative cases.
 								grant as CloudflareKvProxyEnvironment["HOBO_KV_ALLOW"],
 							HOBO_KV_NAMESPACE: native.binding,
 						},
@@ -544,42 +762,6 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 		expect(canceled).toBe(true);
 	});
 
-	it("bounds a native mutation wait without claiming the timed-out write stopped", async () => {
-		vi.useFakeTimers();
-		try {
-			const native = nativeNamespace();
-			let finish: (() => void) | undefined;
-			let completed = false;
-			const result = cloudflareKvProxy.fetch(
-				new Request("https://hobo-kv.internal/set", {
-					method: "POST",
-					headers: { "x-hobo-kv-key": "key" },
-				}),
-				{
-					HOBO_KV_MODE: "write-only",
-					HOBO_KV_ALLOW: "set",
-					HOBO_KV_NAMESPACE: {
-						...native.binding,
-						async put() {
-							await new Promise<void>((resolve) => {
-								finish = resolve;
-							});
-							completed = true;
-						},
-					},
-				},
-			);
-			await vi.advanceTimersByTimeAsync(10_000);
-			expect((await result).status).toBe(502);
-			expect(completed).toBe(false);
-			finish?.();
-			await vi.runAllTicks();
-			expect(completed).toBe(true);
-		} finally {
-			vi.useRealTimers();
-		}
-	});
-
 	it.each([
 		["read-only", []],
 		["read-only", ["get", "set"]],
@@ -703,12 +885,13 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			});
 			/* oxlint-disable anti-slop/no-chained-type-assertions -- SAFETY: this provider is a narrowly scoped test double for beta.87's overloaded Worker class. */
 			const workerProvider = Provider.succeed(
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: beta.87's overloaded Worker class is narrower than Provider.succeed's test port.
 				Worker as unknown as ResourceClass<Worker>,
 				{
 					reconcile: ({ news, bindings, fqn }) =>
 						Effect.sync(() => {
 							created.push({ type: Worker.Type, news, bindings });
-							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this in-memory test provider only resolves the workerName
+							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this provider double supplies the workerName used by the service binding.
 							return {
 								...news,
 								workerName: fqn,
@@ -1194,6 +1377,52 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			if (before === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = before;
 			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("bounds a native mutation wait without claiming the timed-out write stopped", async () => {
+		vi.useFakeTimers();
+		vi.resetModules();
+		try {
+			const { cloudflareKvProxy: timedProxy } = await import(
+				"../src/cloudflare-kv-proxy.js"
+			);
+			const native = nativeNamespace();
+			let finish: (() => void) | undefined;
+			let completed = false;
+			let started: () => void = () => {};
+			const putStarted = new Promise<void>((resolve) => {
+				started = resolve;
+			});
+			const result = timedProxy.fetch(
+				new Request("https://hobo-kv.internal/set", {
+					method: "POST",
+					headers: { "x-hobo-kv-key": "key" },
+				}),
+				{
+					HOBO_KV_MODE: "write-only",
+					HOBO_KV_ALLOW: "set",
+					HOBO_KV_NAMESPACE: {
+						...native.binding,
+						async put() {
+							started();
+							await new Promise<void>((resolve) => {
+								finish = resolve;
+							});
+							completed = true;
+						},
+					},
+				},
+			);
+			await putStarted;
+			await vi.advanceTimersByTimeAsync(10_001);
+			expect((await result).status).toBe(502);
+			expect(completed).toBe(false);
+			finish?.();
+			await vi.runAllTicks();
+			expect(completed).toBe(true);
+		} finally {
+			vi.useRealTimers();
 		}
 	});
 });

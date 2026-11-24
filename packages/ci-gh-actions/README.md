@@ -165,86 +165,15 @@ stateDiagram-v2
 
 ## Strict-start hook receipt
 
-The fleet v2 pre-job hook template requires an HTTPS endpoint, HTTP 200, and a
-JSON receipt with `authorized: true`, `slotId`, `claimId`, `accountId`,
-`profileId`, `runnerName`, and the exact `executionKey` from its request. Both
-start-fence handlers issue this receipt. It checks the run ID and attempt
-against the runner context before sending the request. Redirects, empty or
-malformed responses, mismatched identities, oversized receipts, and transport
-failures block the job. The binding secret is sent in the request body.
-
-The strict GitHub assignment lookup accepts a trusted single-repository scope,
-scans in-progress runs, and requires an unambiguous match for the registered
-runner ID, name, runner group, and required labels. It re-reads the job and run
-before deriving the execution key. Incomplete scans or conflicting evidence
-fail the lookup. GitHub can change assignments or paginated listings during or
-after those reads; required-label matching alone does not establish the complete
-execution profile.
-
-The optional endpoint checks a slot credential before querying GitHub, commits
-the matching binding, then rechecks assignment and stored claim before issuing a
-receipt. The production controller does not configure this endpoint or install
-the hook. Assignment or claim state can change after those observations, so
-they do not guarantee the same state at receipt issuance. The hook cannot
-independently prove the assigned job or claim state; it also relies on an
-authenticated, fresh response.
-
-The receipt model explores 285 states with trusted receipt issuance. Its
-projection hides 114 same-state transitions.
-
-```mermaid
-stateDiagram-v2
-  s0: Hook invoked
-  s1: Workflow blocked
-  s2: Waiting for receipt
-  s3: Workflow may start
-  [*] --> s0
-  s0 --> s1: check runner context
-  s0 --> s2: check runner context
-  s2 --> s1: validate status and receipt
-  s2 --> s3: validate status and receipt
-```
-
-The endpoint model checks 142 bounded states; its projection hides 52 same-state
-transitions. Separate executable counterexamples show assignment or claim state
-can change between its final reads and receipt issuance.
-
-```mermaid
-stateDiagram-v2
-  s0: Start request received
-  s1: Request rejected
-  s2: Checking GitHub assignment
-  s3: Binding job to slot
-  s4: Rechecking assignment
-  s5: No receipt#59; reconcile
-  s6: Rechecking stored claim
-  s7: Receipt issued
-  [*] --> s0
-  s0 --> s1: verify slot credential
-  s0 --> s2: verify slot credential
-  s2 --> s1: check assignment
-  s2 --> s3: check assignment
-  s3 --> s4: commit binding
-  s3 --> s5: commit binding
-  s3 --> s1: commit binding
-  s4 --> s5: recheck assignment
-  s4 --> s6: recheck assignment
-  s6 --> s5: recheck stored claim
-  s6 --> s7: recheck stored claim
-```
-
-The assignment-evidence model checks 128 bounded states. Its projection hides
-64 same-state transitions.
-
-```mermaid
-stateDiagram-v2
-  s0: GitHub evidence observed
-  s1: Assignment unavailable
-  s2: Assignment verified
-  [*] --> s0
-  s0 --> s1: check scope, runner, group, labels and current job
-  s0 --> s2: check scope, runner, group, labels and current job
-```
+The pre-job hook template (`templates/fleet-pre-job-hook.sh`) requires an HTTPS
+endpoint, HTTP 200, and a JSON receipt with `authorized: true`, `slotId`,
+`claimId`, `accountId`, `profileId`, `runnerName`, and the exact
+`executionKey` from its request. It checks the run ID and attempt against the
+runner context before sending the request. Redirects, empty or malformed
+responses, mismatched identities, oversized receipts, and transport failures
+block the job. The binding secret is sent in the request body. No host in this
+repository serves the endpoint; fleet jobs use the `github-actions-job` work
+kind's start fence in [`src/fleet-work/`](src/fleet-work/README.md).
 
 ## Test this branch
 
@@ -389,10 +318,14 @@ Every host of the relay serves the same Fetch handler, `createRelayHandler`
 | `/engines/gh-actions/…` | The same routes as the root |
 | `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
 | `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
-| `GET`, `PUT /v1/fleet/verdicts/{owner}/{repo}` | The fleet verdict runner routing asks for ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)): read by anyone (no query string; the agreed verdict of every reporter enrolled for the repository's account, less any label whose daily allowance is spent), reported by an enrolled reporter's Ed25519 signature (`X-HoBo-Reporter`, `X-HoBo-Sequence`, `X-HoBo-Issued-At`, `X-HoBo-Signature`; no bearer). A refusal names its `reason`: `bad-request`, `unknown-reporter`, `bad-signature`, `clock-skew`, `replayed`, `not-found` or `invalid-report`. Handed to the host's control plane |
-| `GET /v1/fleet/reporters/{owner}/{repo}` | Each enrolled reporter's state and liveness and each label's allowance (`FleetReporterStatusList`), for a GitHub Actions OIDC token from a workflow of that repository (audience: the relay's origin; any event). Handed to the host's control plane |
+| `GET /v1/fleet/members` | The members of the fleet behind the relay, as its fleet authority signed them, for an account credential holding `policy:read`; 503 on a relay that reads no fleet. Handed to the host's control plane |
 | `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
 | `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
+
+No `/v1/fleet/` route is served: the fleet verdict and reporter status routes
+were retired with ADR-0180's hosted transport (ADR-0181), and
+any such path answers 404. Runner routing reads the box relay's routing slip
+instead.
 
 A delivery is authenticated by GitHub's `X-Hub-Signature-256`, or, when the host
 configures an ingress forward secret, by `X-Hobo-Ingress-Forward` from
@@ -484,8 +417,10 @@ Node adapter already resolves every request against the configured origin.
 | `list_pending_jobs` | `policy:read` | Jobs queued for the account's repositories that have no lease yet. Filter: `repository` |
 | `list_events` | `policy:read` | Events after `cursor`, oldest first; without a cursor, the newest. Filters: `leaseId`, `repository`, `types`. Returns `{events, cursor, more, truncated}` |
 | `wait_for_events` | `policy:read` | Blocks until an event after `cursor` matches the filters, or `timeoutSeconds` passes. Returns `{events, cursor, timedOut, more}` |
-| `get_relay_status` | `policy:read` | Readiness, engines, whether this host pushes resource updates, the wait default and ceiling, the per-account and per-request limits, and whether this host reads a relay mesh |
-| `list_mesh_nodes` | `policy:read` | The relay mesh's nodes: state and since when, free and total slots, memory, disk, platform, labels, reliability, trust, and a capacity summary. The relay's own, not one account's. `mesh: "not-configured"` on a host with no mesh |
+| `get_relay_status` | `policy:read` | Readiness, engines, whether this host pushes resource updates, the wait default and ceiling, the per-account and per-request limits, and whether this host reads a fleet (the field is still named `mesh` in `RelayMcpStatus`) |
+| `list_fleet_members` | `policy:read` | The members of the fleet behind the relay, as its authority recorded them: id, kind, name, state, memberships and roles, platform, attestation tier and agent version. The relay's own, not one account's. `configured: false` on a host with no fleet |
+| `get_fleet_view` | `policy:read` | The fleet's live view: each member's availability, health, slots, memory, disk, labels, sandbox tiers and reliability |
+| `get_fleet_verdict` | `policy:read` | Whether new work for one `label` should go to the fleet now: `OPEN`, `BUSY` (routing treats it as open), `NO_CAPACITY` or `NO_MEMBER` |
 | `reconcile_lease` | `operations:write` | `POST /v1/accounts/self/leases/{id}/reconcile`: settle a lease against a verified `hostRunId` |
 | `list_quarantined_webhooks` | `operations:write` | The account's quarantined deliveries (identity and attempts, never the body) |
 | `retry_quarantined_webhook` | `operations:write` | Put one quarantined delivery back in the inbox |
@@ -500,11 +435,11 @@ account API's `/v2/accounts/self/inbox/…` routes do.
 | `hobo-ci://leases` | The account's 100 newest leases |
 | `hobo-ci://leases/{leaseId}` | One lease and its latest 20 events, read by the lease's id |
 | `hobo-ci://events` | The account's 100 newest events, the cursor to read on from, and `truncated` when the account has older ones |
-| `hobo-ci://mesh/nodes` | The relay mesh's nodes and capacity summary: the same answer as `list_mesh_nodes`. Not subscribable: it changes with the board, not the journal |
+| `hobo-ci://fleet/members` | The fleet's members: the same answer as `list_fleet_members`. Not subscribable: it changes with the fleet, not the journal |
 
 Results are protobuf JSON of the `RelayMcp*` messages in
-[`data-models/relay_mcp.proto`](data-models/relay_mcp.proto) (and, for the mesh's
-nodes, `MeshNodeReports` in [`data-models/mesh.proto`](data-models/mesh.proto)), written with zero
+[`data-models/relay_mcp.proto`](data-models/relay_mcp.proto) (and, for the fleet
+reads, the records of `@hobo/fleet`), written with zero
 and empty fields present. Each view is assembled field by field: a lease view
 carries no sandbox identity or budget digest, an event view carries the
 event's type, time, lease, repository and job and never its stored detail,
@@ -825,19 +760,20 @@ schemas and never fetches the `$schema` URL while loading configuration.
 
 ### Provider shapes
 
-A policy provider is one of eight closed, kind-specific shapes defined in the
+A policy provider is one of nine closed, kind-specific shapes defined in the
 sibling [provider schema](schema/ci-project-providers.schema.json) (exported as
 `@hobo/ci-gh-actions/schema/ci-project-providers.schema.json`). The project
 schema's `Provider` is a relative `$ref` to that file, which is a `oneOf` with
 `additionalProperties: false` on every branch. Every kind carries the base
 fields `id`, `kind`, `connectionRef`, `runsOn` and optional `enabled`; existing
-five-field providers of every kind except `vercel` stay valid unchanged.
+providers of previously supported kinds other than `vercel` stay valid unchanged.
 
 | Kind | Extra fields |
 |---|---|
-| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
+| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine`, `pool` and `location` are rejected |
 | `kubernetes` | optional `scaleSet` **or** optional `engine` (never both); neither keeps the existing disposable-pod path |
-| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet` and `engine` are rejected |
+| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet`, `engine` and `pool` are rejected |
+| `agent37` | required `pool`: box type, documented size, region, immutable template, lifecycle, labels, egress allowlist and monthly create/budget limits |
 
 `scaleSet` names an [ARC](https://github.com/actions/actions-runner-controller)
 `AutoscalingRunnerSet`: `{ "name", "namespace", "maxRunners", "minRunners"? }`.
@@ -848,6 +784,20 @@ five-field providers of every kind except `vercel` stay valid unchanged.
 checks. HoBo never installs or upgrades ARC or Dagger. Neither shape accepts a
 kubeconfig, token or `githubConfigSecret`: cluster and Vercel credentials stay
 out of `.hobo/ci.json` and resolve through the `connectionRef`.
+
+Agent37 pools accept `default`, `vm` and `performance` types. Documented sizes are
+2 vCPU/4 GB, 4/8, 4/16 and 4/32, plus 8/64 for `vm` and `performance`; disk is
+1–1024 whole GB. Non-US regions require a non-default type. Templates require a
+positive numeric revision such as `agent37-ubuntu@1`; mutable names and tags are
+rejected. Idle TTL is 60–3600 seconds. Pools above 32 GB of concurrent memory
+require `allowAboveFreeTier: true`. Labels are unique. Network allowlists contain
+1–100 unique lowercase DNS hostnames or leading-label wildcards; IP addresses
+and wildcard bases with fewer than three DNS labels, including `*.com`, `*.co.uk`,
+and `*.github.io`, are rejected, with everything else denied. Monthly USD-microdollar caps and bounded create-per-hour limits are
+required. The committed `agent37-runners` example is disabled and stores no API
+key or webhook secret. The default `runnerRouting.externalPools` list remains
+empty. A project must explicitly configure an external pool to opt into externally
+hosted runners.
 
 ```json
 {
@@ -860,10 +810,10 @@ out of `.hobo/ci.json` and resolve through the `connectionRef`.
 ```
 
 The TypeScript types (`CiProjectProvider`, `CiKubernetesProvider`,
-`CiVercelProvider`, …) are inferred from the same discriminated union in
+`CiVercelProvider`, `CiAgent37Provider`, …) are inferred from the same discriminated union in
 `src/project-providers.ts`; `pnpm --filter @hobo/ci-gh-actions schema:check`
 fails when either shipped file drifts. The protobuf `CiPolicyProvider` carries
-the shapes as a `capacity` oneof (`scale_set` | `engine`) plus `location`, CUE
+the shapes as a `capacity` oneof (`scale_set` | `engine` | `pool`) plus `location`, CUE
 constrains them in `@hobo/ci`'s `ci.cue`, and `parseCiPolicy` rejects a shape on
 the wrong kind. A relay keeps reading persisted vercel policies whose protobuf
 `location` is empty; only authored files require it.
@@ -1203,84 +1153,39 @@ The publisher must supply complete snapshots and normalized prices for all bille
 components. Provider-native spending controls remain the external billing ceiling.
 Admission budgets do not migrate or terminate a running GitHub job mid-step.
 
-## Relay mesh
+## The relay's fleet
 
-Several box workers can share one queue with no central relay. Each reads GitHub's queue itself;
-NATS carries their advertisements and makes "one worker starts this job" exact. Without NATS they
-still agree by ranking, so NATS being down costs a duplicate runner start, not a stopped queue.
-The design is in [CI Relay Mesh](../../docs/design/ci-relay-mesh.md); settings and behaviour are in
-the [runner queue runbook](../ci/RUNNER-QUEUE.md).
+The relay mesh is gone. Box workers are enrolled `DEVICE` members
+of the fleet `hobo` in [`@hobo/fleet`](../fleet/README.md): each composes the
+fleet agent (`@hobo/fleet-agent`) with roles `DISPATCHER` and `EXECUTOR`, its
+memory, storage and host-health admission are its `CapacitySource`, and the
+GitHub job poller is its `github-actions-job` `WorkSource`
+(`src/fleet-work/`). The box reads its authority, fleet, tenant and region from
+the `fleet` block of `.hobo/ci.json` (`readBoxMemberSettings`); its environment
+carries only two file paths, `HOBO_FLEET_HOME` and
+`HOBO_FLEET_BOOTSTRAP_TOKEN_FILE` (ADR-0181 R2). A developer machine is an
+enrolled `PERSONAL` executor running `hobo fleet run`; the local runner
+controller is deleted (see [`LOCAL-DEVELOPMENT.md`](LOCAL-DEVELOPMENT.md)).
 
-**Try it on one machine.** No NATS needed for the first command:
-
-```sh
-pnpm --filter @hobo/ci-gh-actions run mesh:demo
-docker run --rm -p 4222:4222 nats:2 -js   # or: nats-server -js
-HOBO_CI_NATS_URL=nats://127.0.0.1:4222 pnpm --filter @hobo/ci-gh-actions run mesh:demo
-```
-
-The demo queues jobs across three nodes with 1, 2 and 5 free slots, then kills the largest and
-queues again. It prints who took what; every job is taken once.
-
-**Run the end-to-end test** against a real server (it is skipped when no binary is found):
-
-```sh
-HOBO_CI_NATS_SERVER_BIN="$(command -v nats-server)" \
-  pnpm --filter @hobo/ci-gh-actions exec vitest run test/mesh-nats.e2e.test.ts
-```
-
-**See the mesh.** Every node reports its availability, capacity and trust, and a relay host that is
-in the mesh serves one list of them:
+**See the fleet.** A relay composed with a fleet reads it through
+`@hobo/fleet/client`; it never writes it:
 
 | Where | How |
 |---|---|
-| HTTP | `GET /v1/mesh/nodes` on the relay, with an account credential holding `policy:read` |
-| MCP | the `list_mesh_nodes` tool and the `hobo-ci://mesh/nodes` resource |
-| CLI | `hobo ci status`: node, state, free/total slots, memory, disk, reliability, trust |
+| HTTP | `GET /v1/fleet/members` on the relay, with an account credential holding `policy:read` |
+| MCP | `list_fleet_members` (and the `hobo-ci://fleet/members` resource), `get_fleet_view`, `get_fleet_verdict` |
+| CLI | `hobo fleet status` (`hobo ci status` shows the same table) |
 
-- **Who is on it:** box workers; a relay host started with `HOBO_CI_NATS_URL` (no slots, its health is
-  its readiness); and a machine running `local:runner`, which advertises one slot under
-  `hobo-local-host`. Without `HOBO_CI_NATS_URL` a local runner still writes its own report to
-  `mesh-node.json` in its state directory, so `local:runner status` and `hobo ci status` answer offline.
-- **States:** `live`, `unhealthy` (draining or under pressure) and `lost` (its advertisement expired;
-  the relay keeps listing it for an hour).
-- **No mesh:** a relay without `HOBO_CI_NATS_URL` (the hosted relay on Vercel) answers
-  `mesh: "not-configured"`, not an error.
+A relay that reads no fleet (the hosted relay on Vercel) answers the HTTP read
+with 503 and the MCP tools with `configured: false`, not an error. Routing
+stays with the routing slip (ADR-0181): `routing-slip-decision.ts` evaluates
+it, and a member that is only busy with its own jobs is never refused (R4).
 
-- **Per account:** fleet workers and relay hosts are shown to every account; a machine running jobs
-  for one repository is shown in full only to the account that owns that repository, and to others
-  under an opaque id without its platform or key. One answer lists at most 256 nodes (`truncated`).
-
-**Trust.** Each node makes an Ed25519 key on first start (`mesh-node.key` beside its SQLite journal,
-mode `0600`, never published; refused in a directory others can write) and signs what it advertises.
-A reader calls a node `trusted` when its key is listed for its node id, `unverified` when it is not
-listed or the node does not sign, and `invalid` when the signature fails, the id is bound to another
-key, or the expiry is further ahead than any node advertises; an `invalid` node is never ranked. With
-no set, each node trusts only itself and ranking is unchanged. Bind keys to node ids; `--any-node` is
-needed to list one unbound, and a local runner's key (readable by jobs on its machine) must never be.
-
-```sh
-export HOBO_CI_NATS_URL=nats://127.0.0.1:4222
-pnpm --filter @hobo/ci-gh-actions run mesh:trust list                 # nodes, their keys, the set
-pnpm --filter @hobo/ci-gh-actions run mesh:trust add <publicKey> --node <nodeId>
-pnpm --filter @hobo/ci-gh-actions run mesh:trust require on           # rank listed keys only
-```
-
-A signature shows which key wrote an advertisement. It does not attest what software the node runs,
-and a node's figures remain its own word. Whoever can write the mesh's NATS config bucket decides
-whom the mesh trusts. The limits are in
-[the design](../../docs/design/ci-relay-mesh.md#trust-whose-advertisement-is-this).
-
-**Records.** The advertisement (`MeshAdvert`), the trusted set, a node's reliability record, the node
-report and the routing snapshot are protobuf messages in `data-models/mesh.proto`, constrained in
-`data-models/onboarding.cue`. An advertisement from a node on an older version still parses and is
-`unverified`.
-
-**Join a worker to a mesh.** Set `HOBO_CI_NATS_URL` on each worker and restart it. One server with
-`HOBO_CI_NATS_REPLICAS=1` is enough for two boxes on a LAN. For more, run three NATS servers as a
-cluster with `HOBO_CI_NATS_REPLICAS=3`, and connect boxes behind NAT as leaf nodes: they only dial
-out. `createNatsMesh` is exported from `@hobo/ci-gh-actions/mesh-nats`; `createMemoryMesh` in
-`@hobo/ci/mesh` is the same contract in one process.
+The relay mesh's fleet-state repository variable is no longer in the committed
+`runnerRouting.retiredVariables`, but the slip leader still deletes it at each
+start: `ALWAYS_RETIRED_VARIABLES` in `variable-retirement.ts` adds it to every
+retirement pass, so a repository that still holds the variable loses it
+without anyone listing it again.
 
 ## Tracing
 
@@ -1348,14 +1253,14 @@ or exhausted discovery windows retain reservations for authenticated reconciliat
 
 ## HoBo's runner fleet through HoBo CD
 
-HoBo's own runner hosts (box worker, mesh nodes, local runners on `hobo`,
+HoBo's own runner hosts (box workers, enrolled fleet devices and developer devices on `hobo`,
 `hobo-trunk` and `hobo-local-host`) are Camps of the `hobo-ci-runners` Yard,
 and the worker image is Freight that `@hobo/cd` discovers by polling GHCR.
 `src/runner-fleet-delivery.ts` builds the records from the declared hosts:
 `parseRunnerHosts`, `runnerFleetTopology` (one Camp per host),
 `runnerFleetDelivery` (Camp set `hobo-ci-runner-fleet`, the OCI source, a
 pilot-first Placement and a `PROGRESSIVE_PER_GROUP` fan-out with a failure
-budget and quorum) and `runnerFleetCampObservations` (mesh advertisements as
+budget and quorum) and `runnerFleetCampObservations` (fleet member observations as
 Camp inventory conditions and claims). Apply them with
 `hobo deploy pipeline apply --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`;
 each host runs `hobo deploy agent run` beside its controller. Job routing is
@@ -1374,7 +1279,7 @@ through a controller port and a job port the host wires.
 |---|---|---|
 | `containers` (a controller container) | `listWorkerContainers`, `inspectImage`, `create`, `start`, `stop`, `remove`, `isRunning`, `pull` | the isolated worker's `DockerDriver` plus the deps-image `pull` |
 | `process` (a controller process, in place of `containers`) | `stage`, `status`, `run` | the worker daemon's supervisor through its control files, `createControllerProcessPort` (below) |
-| `jobs` | `leases`, `runners`, `meshAdvert`, `pauseAdmission`, `resumeAdmission` | the worker's lease store (`ACTIVE_STATES`, `runnerCustody`), GitHub runner presence, the host's mesh advert, the worker's admission gate; across the process boundary, `createWorkerHostJobs` (below) |
+| `jobs` | `leases`, `runners`, `observation`, `pauseAdmission`, `resumeAdmission` | the worker's lease store (`ACTIVE_STATES`, `runnerCustody`), GitHub runner presence, the host's fleet `Observation`, the worker's admission gate; across the process boundary, `createWorkerHostJobs` (below) |
 
 A host missing any of them is refused with `RESOLVER_PRODUCT_UNSUPPORTED`
 and `runner-host-interface-missing: this host has no <port.method>, ...`
@@ -1403,7 +1308,7 @@ What a pass does:
 4. **Swap.** Stop and remove the old controller, create and start the new one,
    reopen admission.
 5. **Verify** by observation within five minutes: the controller running at
-   the target, a fresh healthy mesh advert from this host dated after the
+   the target, a fresh healthy fleet observation from this host dated after the
    swap (or carrying the target digest), and for a local runner one online
    registered runner. Only then is `create`/`update` reported (I5).
 6. **Roll back** on a failed swap or verification: restore the previous digest
@@ -1431,12 +1336,12 @@ carries. Traffic routing: none (`RUNNER_HOST_TRAFFIC_ROUTING_PROFILE`, kind
 `other`, every offering declared absent): jobs are routed by the relay.
 
 The report's claims also carry the host's health (`RUNNER_HOST_HEALTH_CLAIMS`:
-`hobo.ci/mesh-advert` fresh/expired/missing, `hobo.ci/mesh-advert-valid-until`,
+`hobo.ci/observation` fresh/expired/missing, `hobo.ci/observation-valid-until`,
 `hobo.ci/runner-host-ready`, and the served-label claims while the advert is
 fresh); `runnerHostAbsentReport` is the report for a host with no controller.
 The Station reads them back with `runnerHostHealthConditions(claims, now)`:
 health-source REACHABLE / LEASED / READY conditions at its own clock, the
-same table as the mesh board (`deploy/runner-fleet/README.md`).
+same table as the fleet board (`deploy/runner-fleet/README.md`).
 
 **Registration.** `hobo deploy agent run` registers this realizer when
 `HOBO_CD_RUNNER_HOST` names the host's agent config
@@ -1451,13 +1356,13 @@ are separate processes; they meet in the directory of the worker's journal
 (`HOBO_CI_WORKER_DB`, or the agent config's `worker.database`), which the
 controller container mounts from the host. `createWorkerHostJobs` reads it:
 `leases` opens the journal read-only (the worker stays its only writer),
-`meshAdvert` reads `mesh-advert.json`, which the worker rewrites with its own
-`MeshAdvert` after every mesh beat (`writeWorkerMeshAdvert`), and
+`observation` reads `fleet-observation.json`, which the worker rewrites with
+its fleet `Observation` (`writeWorkerObservation`), and
 `pauseAdmission` / `resumeAdmission` place and remove the `admission-paused`
 marker. While the marker exists the worker's tick runs with `admit: false`
 (running jobs are untouched) and it advertises itself unhealthy. JIT hosts
-(`box-worker`, `mesh-node`) answer `runners` with no standing registrations:
-each job's runner is counted through its lease. A `local-runner` (its state
+(`box-worker`, `fleet-device`) answer `runners` with no standing registrations:
+each job's runner is counted through its lease. A `developer-device` (its state
 directory is the data directory: agent config `worker.directory`) answers
 `runners` from `runner-presence.json`, which its controller rewrites with
 its registered runner's GitHub presence (`GET .../actions/runners/{id}`
@@ -1495,11 +1400,10 @@ hashes the staged release again and starts it as `node <release> ...args`,
 never through a shell, with `HOBO_CI_CONTROLLER_DIGEST` set; a release that
 no longer hashes to its digest is never started (`failed`). A child that
 exits on its own is restarted, up to three times in ten minutes, then
-`failed`. The worker writes its advert with `controllerDigest` beside the
-`MeshAdvert` fields (`writeWorkerMeshAdvert`; the field is never put on the
-board), and in process mode verification requires the advert to name the
-target digest, so an advert the old worker left behind is never taken for
-the new one's. The controller is running only once the status has caught up
+`failed`. The worker reports its controller digest in its observation
+(as its agent version), and in process mode verification requires the
+observation to name the target digest, so one the old worker left behind is
+never taken for the new one's. The controller is running only once the status has caught up
 with the generation the agent asked for. A swap is: stage, drain, ask for
 none and observe `stopped`, ask for the target, verify (status running at
 the target, a fresh healthy advert at the target digest, for a local runner
@@ -1537,7 +1441,7 @@ fleet's Freight source, assembled `SAME_VERSION` with the image (the release
 build is given the image's release tag as its version), and
 `runnerHostRealizationParameters(freight artifacts)` maps one Freight to the
 runner-host row: `image` (container hosts), `workerRelease` (box workers and
-mesh nodes in process mode) and `localRunnerRelease` (local runners),
+fleet devices in process mode) and `localRunnerRelease` (developer devices),
 each `<artifact>@sha256:<hex>`. The agent reads the parameter its host runs
 (`runnerHostReferenceParameter`); a process host whose Set has no release
 reports `runner-host-release-unresolved`.
@@ -1760,9 +1664,6 @@ the port's 30-day cap.
 | `app:installations:<accountId>`, `app:installation-owner:<installationId>` | `RelayCacheVerifiedInstallations`; owning account id | 24 h | `CacheVerifiedInstallations.bindInstallation` |
 | `invitation:<mac>`, `owner-session:<mac>` | redemption time; `RelayCacheOwnerSession` | until the invitation expires; 10 min | `CacheOwnerBootstrap` |
 | `worker-health:<deployment>:<component>` | `RelayWorkerHealth` (`@hobo/ci-vercel`) | 24 h | `@hobo/ci-vercel`'s `CacheWorkerHealth` |
-| `fleet-verdict:<owner>/<repo>:<reporter id>` | `FleetVerdict`: one reporter's last report as stamped (a shadow report blocks nothing) | Until the report expires (at most 180 s) | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
-| `fleet-reporter:<owner>/<repo>:<reporter id>` | `FleetReporterState`: last sequence, mode, last report, per label last blocked and cleared | 24 hours, refreshed on every accepted report | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
-| `fleet-allowance:<owner>/<repo>` | `FleetVerdictAllowance`: per label, the window's start and its blocked seconds | 24 hours from the latest window's start | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
 | `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | A lease's change of state; `ci.BudgetOverrun`, `ci.AssignmentUnknown`, `ci.LeaseRebuilt`; `ci.JobQueued`, `ci.JobExpired`, `ci.JobAssignmentCleared`, and `ci.JobCompleted` for a job no lease took. Not a write that leaves a lease's state alone (an observed job id, a Sandbox sub-stage) |
 
 ### Helpers on the cache (phase 5)
@@ -2284,13 +2185,4 @@ poller. No relay has run with a flag on against GitHub yet.
 `templates/fleet-pre-job-hook.sh` sends the slot credential and execution key to
 an HTTPS start-fence endpoint before workflow steps run. It requires a bounded
 response with a matching JSON authorization receipt and rejects redirects,
-network failures, and mismatched runner context. `createGithubAssignmentLookup`
-verifies the repository, workflow attempt, assigned runner ID and group, job
-state, and required labels using the central GitHub App transport. Its scope
-must come from trusted controller configuration. An embedded relay can serve
-`POST /v1/fleet/start-fence` by passing an initialized `StrictFleetStore` and
-trusted `StartFencePolicy` entries as `strictFleet` to `createRelayHost`.
-The same option is available to callers of `startRelayFromEnvironment`.
-The endpoint verifies the slot credential and actual GitHub assignment, commits
-the binding, then returns the receipt. With no strict fleet configuration, the
-route is unavailable. The caller owns the strict store's lifecycle.
+network failures, and mismatched runner context.

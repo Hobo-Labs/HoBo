@@ -2,7 +2,7 @@
 	"name": "@hobo/runtime-dapr",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "Optional Camp runtime / component-host adapter realizing ActorHost + wasi:messaging over Dapr sidecars (ADR-0138). In-process wasm remains default (ADR-0031).",
+	"description": "Optional Camp runtime with ActorHost and a TypeScript messaging client over Dapr sidecars.",
 	"type": "module",
 	"private": true,
 	"files": [

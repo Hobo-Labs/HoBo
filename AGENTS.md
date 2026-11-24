@@ -17,6 +17,12 @@ over conflicting repository workflow guidance.
   alternatives and independent work before reporting a blocker. Respect the
   latest explicit stop, pause, cancellation, scope change, and real permission
   or safety boundary; do not invent work or repeat futile attempts.
+- An action request is not done until the delivery goal in `PRODUCT.md` is met
+  by the evidence it names; merged pull requests are not that evidence.
+- Before adding a credential, flow or provider, search the code and ADRs for
+  an existing mechanism and use it. List the hard constraints against the goal
+  and report any contradiction before building. The `hobo-setup` skill covers
+  owner interaction and the `sdlc` skill covers landing pull requests.
 - Do not create or retain planning documents, roadmaps, or design documents.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
@@ -62,7 +68,10 @@ the pre-commit hook checks staged changes. The same edit hooks run
 each harness (`scripts/agent-secret-policy.mts`) refuses commands that store
 Actions secrets or variables, Vercel environment variables, `.env` writes,
 edits to secret files, and credential-storing tools such as
-`request_credential` before they run. `secrets:guard` also runs in the
+`request_credential` before they run. The same hook refuses stopping HoBo's MCP
+server or owner page driver, which holds the owner's open form, and a fourth
+unlanded pull request from one session's branches
+(`scripts/agent-session-policy.mts`; see `docs/agent-tooling.md`). `secrets:guard` also runs in the
 pre-commit hook and in `agent:check`, so CI checks each pull request's diff
 against its base; it rejects added Actions secret and variable references
 other than the per-job token, secret files, environment credential reads
@@ -141,7 +150,7 @@ The repo-local **optimizexp** skill reviews real UX, DX, and AX behavior, implem
 
 Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Implement the requested behavior and executable checks directly; do not create planning documents or placeholder proofs. New or changed proofs are validated by two gates that run automatically through `agent:check`:
 
-- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior.
+- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior. `agent:check` builds the workspace packages a changed proof imports (`turbo run build --filter=./<proof>^...`) before running its examples, so a clean CI runner has their `dist/` outputs. A proof whose examples import workspace packages also declares a `draft:prepare` script that builds them, because `check:all` runs `draft:artifacts` without that prior build; the gate runs `draft:prepare` before the examples and allows it ten minutes.
 - `pnpm run draft:cascade` — a changed technical/exp proof must update every referencing epic/project rollup in the same diff (references resolve from `proof.json` graphs + import/ledger scans).
 
 Packages predating the standard are listed in `src/draft/_grandfathered.json` (advisory-only until their backfill wave removes them; never add new packages there).

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { generateMeshIdentity } from "../src/mesh/trust.js";
+import { generateMachineIdentity } from "../src/runner-order/machine-identity.js";
 import {
 	receiveMachineAdvert,
 	signMachineAdvert,
@@ -88,8 +88,8 @@ describe("SqliteMachineRegistry", () => {
 		const directory = await mkdtemp(join(tmpdir(), "hobo-ci-machines-"));
 		directories.push(directory);
 		const path = join(directory, "relay.sqlite");
-		const key = generateMeshIdentity().identity;
-		const thief = generateMeshIdentity().identity;
+		const key = generateMachineIdentity().identity;
+		const thief = generateMachineIdentity().identity;
 		const now = 1_763_337_600_000;
 		const first = new DatabaseSync(path);
 		const before = new SqliteMachineRegistry(first);

@@ -11,7 +11,7 @@ import {
 	type ImmutableJournalEntry,
 	ImmutableJournalError,
 	type ImmutableJournalMember,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import {
 	type AppendResult,
 	type DurableCommitRequest,

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { types } from "node:util";
 import { Namespace } from "@alchemy.run/cloudflare/KV/Namespace";
 import type { Providers } from "@alchemy.run/cloudflare/Providers";
 import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
@@ -28,6 +29,10 @@ import {
 	registerAlchemySource,
 	verifyAlchemySourceFence,
 } from "./source-fence.js";
+import { acceptSynchronousTrue } from "./synchronous-result.js";
+
+const hasOwnDescriptor = Object.hasOwn;
+const isProxy = types.isProxy;
 
 export interface CloudflareKvNamespaceClaim {
 	readonly bindleName: string;
@@ -50,6 +55,12 @@ export function cloudflareKvNamespaceClaim(
 	namespaceEpoch: string,
 ): CloudflareKvNamespaceClaim {
 	if (
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: host-supplied identities must be strings before inspection. */
+		typeof namespaceEpoch !== "string" ||
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: host-supplied identities must be strings before inspection. */
+		typeof bindleName !== "string" ||
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: host-supplied identities must be strings before inspection. */
+		typeof resourceName !== "string" ||
 		!/^sha256:[a-f0-9]{64}$/u.test(namespaceEpoch) ||
 		bindleName.length === 0 ||
 		bindleName.length > 200 ||
@@ -76,26 +87,49 @@ export function cloudflareKvProxySource(
 	resourceName: string,
 	grant: CloudflareKvGrant & { readonly allow: readonly string[] },
 ): AlchemySourceRequirement {
+	/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this host-side grant must be inspected without invoking proxy traps. */
+	if (
+		typeof grant !== "object" ||
+		grant === null ||
+		isProxy(grant) ||
+		Array.isArray(grant)
+	)
+		throw new AlchemyIacError(
+			"KV_GRANT_INVALID",
+			"the proxy grant must be plain data",
+		);
+	/* oxlint-enable anti-slop/no-runtime-typeof */
 	const fields = Object.getOwnPropertyDescriptors(grant);
-	const mode = fields.mode;
-	const epoch = fields.grantEpoch;
-	const namespace = fields.namespaceEpoch;
-	const allow = fields.allow;
+	const mode = hasOwnDescriptor(fields, "mode") ? fields.mode : undefined;
+	const epoch = hasOwnDescriptor(fields, "grantEpoch")
+		? fields.grantEpoch
+		: undefined;
+	const namespace = hasOwnDescriptor(fields, "namespaceEpoch")
+		? fields.namespaceEpoch
+		: undefined;
+	const allow = hasOwnDescriptor(fields, "allow") ? fields.allow : undefined;
 	if (
 		Object.getOwnPropertySymbols(grant).length !== 0 ||
 		Object.keys(fields).length !== 4 ||
 		mode === undefined ||
-		!("value" in mode) ||
+		!hasOwnDescriptor(mode, "value") ||
+		(mode.value !== "read-only" && mode.value !== "write-only") ||
 		!mode.enumerable ||
 		epoch === undefined ||
-		!("value" in epoch) ||
+		!hasOwnDescriptor(epoch, "value") ||
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the host epoch is an external input. */
+		typeof epoch.value !== "string" ||
 		!epoch.enumerable ||
 		namespace === undefined ||
-		!("value" in namespace) ||
+		!hasOwnDescriptor(namespace, "value") ||
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the host namespace epoch is an external input. */
+		typeof namespace.value !== "string" ||
 		!namespace.enumerable ||
 		allow === undefined ||
-		!("value" in allow) ||
-		!allow.enumerable
+		!hasOwnDescriptor(allow, "value") ||
+		!allow.enumerable ||
+		isProxy(allow.value) ||
+		!Array.isArray(allow.value)
 	)
 		throw new AlchemyIacError(
 			"KV_GRANT_INVALID",
@@ -107,6 +141,7 @@ export function cloudflareKvProxySource(
 		namespace.value,
 		allow.value,
 	);
+	cloudflareKvNamespaceClaim(bindleName, resourceName, checked.namespaceEpoch);
 	const id = createHash("sha256")
 		.update(
 			JSON.stringify([
@@ -136,6 +171,7 @@ export function cloudflareKvProxySource(
 export function cloudflareNativeKvBindleMappers<Requirements>(
 	options: CloudflareBindleMappingOptions & {
 		readonly verifyNamespace: (claim: CloudflareKvNamespaceClaim) => boolean;
+
 		readonly verifyGrant: (claim: CloudflareKvGrantClaim) => boolean;
 	},
 ) {
@@ -159,7 +195,7 @@ export function cloudflareNativeKvBindleMappers<Requirements>(
 		);
 		const namespaceVerified = () => {
 			try {
-				return verifyNamespace(namespace) === true;
+				return acceptSynchronousTrue(verifyNamespace(namespace));
 			} catch {
 				return false;
 			}
@@ -188,7 +224,7 @@ export function cloudflareNativeKvBindleMappers<Requirements>(
 		});
 		const grantVerified = () => {
 			try {
-				return verifyGrant(grantClaim) === true;
+				return acceptSynchronousTrue(verifyGrant(grantClaim));
 			} catch {
 				return false;
 			}

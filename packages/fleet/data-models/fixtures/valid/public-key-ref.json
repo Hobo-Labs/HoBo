@@ -1,0 +1,6 @@
+{
+  "purpose": "KEY_PURPOSE_IDENTITY",
+  "keyId": "dev_0123456789abcdef0123456789abcdef#identity",
+  "algorithm": "KEY_ALGORITHM_EDDSA",
+  "value": "{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4\"}"
+}

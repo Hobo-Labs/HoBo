@@ -1,6 +1,21 @@
 # @hobo/wit
 
-Production WIT toolchain package for HoBo. Vendors and pins reused `wasi:*` interfaces, publishes first-party `hobo:runtime` primitives plus async capability ports (`hobo:queue`, `hobo:scheduler`, `hobo:blob-events`), and ships the import-only `hobo:sdk@0.1.0` aggregate world with deterministic jco bindings.
+Production WIT toolchain package for HoBo. Vendors and pins reused `wasi:*` interfaces, publishes first-party `hobo:runtime` primitives plus capability ports (`hobo:queue`, `hobo:durable-messaging`, `hobo:scheduler`, `hobo:blob-events`), and ships the import-only `hobo:sdk@0.1.0` aggregate world with deterministic jco bindings.
+
+`hobo:durable-messaging/messaging@0.1.0` declares asynchronous operations with
+explicit committed, rejected, unknown and expired outcomes. Its generated jco
+types return Promises. A component host must implement asynchronous suspension,
+authorization, durable receipts and the port's semantics before advertising it.
+The provider's advertised `name-bytes` limit also
+bounds lease identifiers, which must be nonempty control-free Unicode scalar
+strings. Operation IDs use their separately bounded format.
+
+Native async components can be built with `componentize-qjs@0.5.0` and
+transpiled with `@bytecodealliance/jco-transpile@0.24.0`. JSPI supplies the
+suspension mechanism for the JavaScript host; the component ABI remains native
+async. A host must independently authorize its component and messaging binding.
+The test components stub WASI imports; applications needing WASI must provide
+those imports through their host.
 
 ## Layout
 
@@ -13,6 +28,9 @@ Production WIT toolchain package for HoBo. Vendors and pins reused `wasi:*` inte
   `@hobo/wit/wasi-keyvalue-store` and `@hobo/wit/wasi-blobstore` subsets used by
   local test services. These are the vendored interfaces, not the full WASI APIs.
 - `data-models/` — protobuf + CUE records for lock, pins, surfaces, and parity reports.
+
+The SDK world includes the native asynchronous durable messaging interface.
+Hosts that do not implement its semantics must reject components requiring it.
 
 ## Commands
 

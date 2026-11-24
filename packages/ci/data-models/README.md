@@ -22,10 +22,16 @@ Account, leases and observed usage. `ci.cue` constrains policy fixtures.
 `parseCiPolicy` enforces cross-reference and duplicate checks at the protobuf
 JSON boundary; provider/Station authorization requires an external resolver.
 Only manual budget periods are accepted until automatic rollover is implemented.
-`CiPolicyProvider.capacity` is a oneof of a kubernetes-only ARC `scale_set` or
-Dagger `engine`; `location` is vercel-only. CUE and `parseCiPolicy` reject either
-on another kind; fixtures `desired-policy-kubernetes-shapes.json` and the
-`desired-policy-*-wrong-kind` / `scale-set-and-engine` invalids pin the rules.
+`CiPolicyProvider.capacity` is a oneof of a kubernetes-only ARC `scale_set`,
+Dagger `engine`, or Agent37 `pool`; `location` is vercel-only. CUE and
+`parseCiPolicy` reject either on another kind. Agent37 fixtures pin documented
+CPU/memory/disk shapes, region/type compatibility, immutable template revisions,
+idle TTL, the 32 GB memory ceiling and its explicit opt-in, 1–100 unique
+lowercase DNS network hostnames or leading-label wildcards (never IP addresses
+or wildcard bases with fewer than three DNS labels, including `*.com`, `*.co.uk`,
+and `*.github.io`), labels, and monthly budget/create limits.
+Agent37 offers pair with `backend: "gh-actions"`. Existing kubernetes fixtures
+cover the ARC/Dagger rules.
 
 Azure DevOps offers pair `provider: "azure-devops"` with `backend: "ado"`;
 desired policy accepts the same provider kind. CUE and runtime configuration
@@ -37,13 +43,9 @@ parsing can discard that declared binding. The CUE fixture and runtime construct
 enforce the same rule across all backends; literal values and ordinary names such
 as `constructor` keep their normal meaning.
 
-`fleet_v2.proto` owns strict execution identity, profiles, demands, runner slots,
-claims, capacity, effects, outbox/delivery fences, observations, incarnations, and
-secret-free audit events. `fleet_v2.cue` closes states and execution classes;
-valid/invalid fleet fixtures cover positive attempts, fixed-capacity limits, Linux
-x64 profiles, and rejection of raw binding credentials. Store conformance protects
-the transactional boundary with SQLite and opt-in Testcontainers PostgreSQL lanes;
-these gates do not claim live-provider production readiness.
+Execution claims, offers, orders and receipts are not CI records: they are
+`@hobo/fleet/work` (claims through the `FLEET_CLAIMS` stream in
+`@hobo/fleet-nats`), so this package keeps no fleet data model.
 
 `runner_route.proto` owns the runner order (`RunnerOrder`, its steps and retry
 policy), one relay job's question (`RunnerRouteRequest`) and the answer

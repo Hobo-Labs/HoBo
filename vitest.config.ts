@@ -60,6 +60,7 @@ export default defineConfig({
       "**/node_modules/**",
       "external/**",
       "**/dist/**",
+      ".claude/worktrees/**",
       "**/e2e/**",
       "**/*.spec.ts",
     ],

@@ -15,6 +15,7 @@ import relay, {
 	relayConfigService,
 } from "../src/bindle.js";
 import { RELAY_QUEUE_TOPICS } from "../src/relay-queue.js";
+import { RETIRED_RELAY_RUNTIME_CONFIG_KEYS } from "../src/relay-runtime-config-schema.js";
 
 // The relay's HoBo declaration (`src/bindle.ts`) against the relay itself: the
 // platform configuration Vercel reads (`vercel.json`), the entry files, and the
@@ -255,8 +256,11 @@ describe("the declared settings and the deployed code agree", () => {
 				pending.push(relative);
 		}
 	}
+	const retired = new Set(RETIRED_RELAY_RUNTIME_CONFIG_KEYS);
 	const read = new Set(
-		[...reached].flatMap((file) => text(file).match(SETTING) ?? []),
+		[...reached]
+			.flatMap((file) => text(file).match(SETTING) ?? [])
+			.filter((name) => !retired.has(name)),
 	);
 
 	it("reaches the stateless composition and reads no database URL", () => {
@@ -268,6 +272,11 @@ describe("the declared settings and the deployed code agree", () => {
 
 	it("declares exactly the settings the deployed code reads", () => {
 		expect(Object.keys(relayConfig.fields).sort()).toEqual([...read].sort());
+	});
+
+	it("declares none of the retired keys", () => {
+		for (const name of retired)
+			expect(Object.keys(relayConfig.fields)).not.toContain(name);
 	});
 
 	it("marks every credential a secret, and gives none a value", () => {

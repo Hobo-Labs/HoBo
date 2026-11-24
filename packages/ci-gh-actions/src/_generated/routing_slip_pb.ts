@@ -58,8 +58,6 @@ export const RoutingSlipClassSchema: GenMessage<RoutingSlipClass> = /*@__PURE__*
  */
 export type RoutingSlipRelay = Message<"hobo.ci.gh_actions.v1.RoutingSlipRelay"> & {
   /**
-   * The mesh node id, `^[A-Za-z0-9_-]{1,64}$`.
-   *
    * @generated from field: string node_id = 1;
    */
   nodeId: string;

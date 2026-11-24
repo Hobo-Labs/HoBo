@@ -11,7 +11,7 @@
 // re-delivers the Camp's current change when nothing newer exists; a cut-off
 // SSE response (no `end` event) resumes with `Last-Event-ID`, so changes are
 // neither skipped nor repeated.
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
 	fromJson,
 	type JsonValue as PbJsonValue,
@@ -26,6 +26,7 @@ import {
 	type TransportMethod,
 	type TransportRequest,
 } from "@hobo/core";
+import { mintDpopProof } from "@hobo/fleet/keys";
 import {
 	type DeliveryFeedFrame,
 	DeliveryFeedFrameSchema,
@@ -57,7 +58,6 @@ import type {
 	ReconcilerTransport,
 	Refusal,
 } from "../ports.js";
-import { createDpopProof, type DpopProofInput } from "./dpop.js";
 import {
 	AGENT_MAX_RESPONSE_BYTES,
 	AGENT_MAX_TIMEOUT_MS,
@@ -66,6 +66,7 @@ import {
 	stationTransport,
 } from "./egress.js";
 import { AGENT_FAILURES, agentRefusal, reasonOf } from "./errors.js";
+import { agentKeyFromJwk } from "./fleet-port.js";
 
 export type HttpTransportDeps = Readonly<{
 	baseUrl: string;
@@ -73,6 +74,7 @@ export type HttpTransportDeps = Readonly<{
 	reconcilerId: ReconcilerId;
 	privateJwk: JsonObject;
 	svid: string;
+	credential?: (() => Promise<string>) | undefined;
 	now: () => number;
 }>;
 
@@ -153,6 +155,7 @@ function expOf(svid: string): number {
 export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 	const origin = parseStationOrigin(d.baseUrl);
 	const http = stationTransport(origin, d.http);
+	const key = agentKeyFromJwk(d.privateJwk);
 	let svid = d.svid;
 	let svidExpiresAtMs = expOf(svid);
 	const inline = new Map<string, Readonly<{ text: string; bytes: number }>>();
@@ -199,18 +202,15 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 		try {
 			const url = `${origin.origin}${path}`;
 			const bearer = options.bearer !== false;
-			const proofBase = {
-				privateJwk: d.privateJwk,
-				method,
-				url,
-				iatSeconds: Math.floor(d.now() / 1000),
-				jti: randomUUID(),
-			};
-			const proofInput: DpopProofInput = bearer
-				? { ...proofBase, accessToken: svid }
-				: proofBase;
+			const proof = await mintDpopProof(
+				key.signer,
+				key.publicJwk,
+				bearer
+					? { htm: method, htu: url, accessToken: svid, nowMs: d.now() }
+					: { htm: method, htu: url, nowMs: d.now() },
+			);
 			const headers = new Map<string, string>([
-				["dpop", createDpopProof(proofInput)],
+				["dpop", proof],
 				["accept", "application/json, text/event-stream"],
 			]);
 			for (const [key, value] of Object.entries(options.headers ?? {}))
@@ -265,42 +265,28 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 				"station-unavailable",
 				"The Station request was cancelled.",
 			);
-		if (d.now() < svidExpiresAtMs - CD_DEFAULTS.svidRefreshBeforeExpiryMs)
-			return { ok: true, value: true };
-		const live = d.now() < svidExpiresAtMs;
-		const raw = live
-			? await send("POST", FEED_ROUTES.svidRefresh, { body: {} })
-			: await send("POST", FEED_ROUTES.svidRefresh, {
-					body: { reconcilerId: d.reconcilerId },
-					bearer: false,
-				});
-		if (signal?.aborted)
-			return agentRefusal(
-				"station-unavailable",
-				"The Station request was cancelled.",
-			);
-		if (!raw.ok) return raw;
-		const envelope = stationEnvelope(raw.value.body, raw.value.status);
-		if (!envelope.ok) {
-			// An SVID that expired between the check and the call is re-activated by key possession.
-			if (live && envelope.reasons[0]?.code === "svid-expired") {
-				svidExpiresAtMs = 0;
-				return ensureSvid(signal);
+		if (d.credential !== undefined) {
+			let current: string;
+			try {
+				current = (await d.credential()).trim();
+			} catch {
+				return agentRefusal(
+					"svid-required",
+					"The member SVID could not be obtained.",
+				);
 			}
-			return envelope;
+			if (signal?.aborted)
+				return agentRefusal(
+					"station-unavailable",
+					"The Station request was cancelled.",
+				);
+			if (current !== svid) {
+				svid = current;
+				svidExpiresAtMs = expOf(current);
+			}
 		}
-		const value = envelope.value;
-		if (
-			!isWireObject(value) ||
-			!isText(value.svid) ||
-			!isNumber(value.expiresAtMs)
-		)
-			return agentRefusal(
-				"response-invalid",
-				"svid response lacks svid/expiresAtMs",
-			);
-		svid = value.svid;
-		svidExpiresAtMs = value.expiresAtMs;
+		if (svidExpiresAtMs !== 0 && d.now() >= svidExpiresAtMs)
+			return agentRefusal("svid-expired", "The member SVID has expired.");
 		return { ok: true, value: true };
 	}
 

@@ -18,6 +18,70 @@ const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const LIVE_FIXTURE = fileURLToPath(
 	new URL("./fixtures/rivet3-live.mts", import.meta.url),
 );
+const DISTRIBUTED_LIVE_FIXTURE = fileURLToPath(
+	new URL("./fixtures/rivet3-live.mjs", import.meta.url),
+);
+
+async function runLiveFixture(fixture: string): Promise<void> {
+	assertRivetEngineSupported();
+	const directory = await mkdtemp(join(tmpdir(), "hobo-rivet-live-"));
+	try {
+		const result = await new Promise<{
+			status: number | null;
+			stdout: string;
+			stderr: string;
+			timedOut: boolean;
+		}>((resolve, reject) => {
+			const child = spawn(process.execPath, ["--import", TSX_LOADER, fixture], {
+				cwd: directory,
+				detached: process.platform !== "win32",
+				env: { PATH: process.env.PATH, NODE_ENV: "test" },
+			});
+			let stdout = "";
+			let stderr = "";
+			let timedOut = false;
+			const stopOwnedGroup = () => {
+				try {
+					if (process.platform !== "win32" && child.pid !== undefined)
+						process.kill(-child.pid, "SIGKILL");
+					else child.kill("SIGKILL");
+				} catch (error: unknown) {
+					if (
+						error instanceof Error &&
+						"code" in error &&
+						error.code === "ESRCH"
+					)
+						return;
+					throw error;
+				}
+			};
+			const timer = setTimeout(() => {
+				timedOut = true;
+				stopOwnedGroup();
+			}, 55_000);
+			child.stdout.on("data", (chunk) => {
+				stdout = (stdout + chunk).slice(-20_000);
+			});
+			child.stderr.on("data", (chunk) => {
+				stderr = (stderr + chunk).slice(-20_000);
+			});
+			child.once("exit", stopOwnedGroup);
+			child.once("error", (error) => {
+				clearTimeout(timer);
+				reject(error);
+			});
+			child.once("close", (status) => {
+				clearTimeout(timer);
+				resolve({ status, stdout, stderr, timedOut });
+			});
+		});
+		expect(result.timedOut, result.stderr).toBe(false);
+		expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+		expect(result.stdout).toContain("rivet3-live-ok");
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+}
 
 describe("rivetkit live baremetal", () => {
 	it("rejects the unavailable Windows engine before native loading", () => {
@@ -86,67 +150,12 @@ describe("rivetkit live baremetal", () => {
 	it("persists actor state across an isolated Rivet 3 engine restart", {
 		timeout: 65_000,
 	}, async () => {
-		assertRivetEngineSupported();
-		const directory = await mkdtemp(join(tmpdir(), "hobo-rivet-live-"));
-		try {
-			const result = await new Promise<{
-				status: number | null;
-				stdout: string;
-				stderr: string;
-				timedOut: boolean;
-			}>((resolve, reject) => {
-				const child = spawn(
-					process.execPath,
-					["--import", TSX_LOADER, LIVE_FIXTURE],
-					{
-						cwd: directory,
-						detached: process.platform !== "win32",
-						env: { PATH: process.env.PATH, NODE_ENV: "test" },
-					},
-				);
-				let stdout = "";
-				let stderr = "";
-				let timedOut = false;
-				const stopOwnedGroup = () => {
-					try {
-						if (process.platform !== "win32" && child.pid !== undefined)
-							process.kill(-child.pid, "SIGKILL");
-						else child.kill("SIGKILL");
-					} catch (error: unknown) {
-						if (
-							error instanceof Error &&
-							"code" in error &&
-							error.code === "ESRCH"
-						)
-							return;
-						throw error;
-					}
-				};
-				const timer = setTimeout(() => {
-					timedOut = true;
-					stopOwnedGroup();
-				}, 55_000);
-				child.stdout.on("data", (chunk) => {
-					stdout = (stdout + chunk).slice(-20_000);
-				});
-				child.stderr.on("data", (chunk) => {
-					stderr = (stderr + chunk).slice(-20_000);
-				});
-				child.once("exit", stopOwnedGroup);
-				child.once("error", (error) => {
-					clearTimeout(timer);
-					reject(error);
-				});
-				child.once("close", (status) => {
-					clearTimeout(timer);
-					resolve({ status, stdout, stderr, timedOut });
-				});
-			});
-			expect(result.timedOut, result.stderr).toBe(false);
-			expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-			expect(result.stdout).toContain("rivet3-live-ok");
-		} finally {
-			await rm(directory, { recursive: true, force: true });
-		}
+		await runLiveFixture(LIVE_FIXTURE);
+	});
+
+	it("runs the distributed journal on an isolated Rivet 3 engine", {
+		timeout: 65_000,
+	}, async () => {
+		await runLiveFixture(DISTRIBUTED_LIVE_FIXTURE);
 	});
 });

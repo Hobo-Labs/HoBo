@@ -1,8 +1,19 @@
+import { cancelCloudflareByteStream } from "./cloudflare-byte-stream.js";
 import {
 	CloudflareKvError,
 	decodeCloudflareKvKey,
 	readCloudflareKvBytes,
 } from "./cloudflare-kv-protocol.js";
+import { awaitCloudflareNative } from "./cloudflare-native-await.js";
+import {
+	cloudflareRequestBody,
+	cloudflareRequestHeader,
+	cloudflareRequestMethod,
+	cloudflareRequestUrl,
+	cloudflareResponse,
+} from "./cloudflare-web-options.js";
+
+const NativeURL = URL;
 
 export interface CloudflareKvProxyEnvironment {
 	readonly HOBO_KV_MODE: "read-only" | "write-only";
@@ -17,38 +28,17 @@ export interface CloudflareKvProxyEnvironment {
 	};
 }
 
-async function waitForNative<T>(
-	operation: Promise<T>,
-	onLateValue?: (value: T) => void,
-): Promise<T> {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let timedOut = false;
-	try {
-		return await Promise.race([
-			operation.then((value) => {
-				if (timedOut) onLateValue?.(value);
-				return value;
-			}),
-			new Promise<never>((_, reject) => {
-				timer = setTimeout(() => {
-					timedOut = true;
-					reject(new Error("native KV timed out"));
-				}, 10_000);
-			}),
-		]);
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
-	}
-}
-
 export const cloudflareKvProxy = {
 	async fetch(
 		request: Request,
 		environment: CloudflareKvProxyEnvironment,
 	): Promise<Response> {
-		const url = new URL(request.url);
-		if (request.method !== "POST" || url.origin !== "https://hobo-kv.internal")
-			return new Response(null, { status: 400 });
+		const url = new NativeURL(cloudflareRequestUrl(request));
+		if (
+			cloudflareRequestMethod(request) !== "POST" ||
+			url.origin !== "https://hobo-kv.internal"
+		)
+			return cloudflareResponse(null, 400);
 		const operation = url.pathname;
 		const mode = environment.HOBO_KV_MODE;
 		const allow = environment.HOBO_KV_ALLOW;
@@ -56,41 +46,51 @@ export const cloudflareKvProxy = {
 			(mode !== "read-only" && mode !== "write-only") ||
 			(mode === "read-only" && (allow !== "get" || operation !== "/get")) ||
 			(mode === "write-only" &&
-				(!["set", "delete", "delete,set"].includes(allow) ||
-					(operation !== "/set" && operation !== "/delete") ||
-					!allow.split(",").includes(operation.slice(1))))
+				((operation !== "/set" && operation !== "/delete") ||
+					(operation === "/set" && allow !== "set" && allow !== "delete,set") ||
+					(operation === "/delete" &&
+						allow !== "delete" &&
+						allow !== "delete,set")))
 		)
-			return new Response(null, { status: 403 });
+			return cloudflareResponse(null, 403);
 		let key: string;
 		try {
-			key = decodeCloudflareKvKey(request.headers.get("x-hobo-kv-key"));
+			key = decodeCloudflareKvKey(
+				cloudflareRequestHeader(request, "x-hobo-kv-key"),
+			);
 		} catch {
-			return new Response(null, { status: 400 });
+			return cloudflareResponse(null, 400);
 		}
 		try {
 			if (operation === "/get") {
-				const value = await waitForNative(
-					environment.HOBO_KV_NAMESPACE.get(key, "stream"),
-					(stream) => {
-						if (stream !== null) void stream.cancel().catch(() => {});
-					},
+				const result = await awaitCloudflareNative(
+					() => environment.HOBO_KV_NAMESPACE.get(key, "stream"),
+					undefined,
+					(stream, lease) =>
+						stream === null
+							? "none"
+							: cancelCloudflareByteStream(stream, lease),
 				);
-				if (value === null) return new Response(null, { status: 404 });
-				return new Response(await readCloudflareKvBytes(value), {
-					status: 200,
-				});
+				const value = result.value;
+				if (value === null) return cloudflareResponse(null, 404);
+				return cloudflareResponse(await readCloudflareKvBytes(value), 200);
 			}
 			if (operation === "/delete") {
-				await waitForNative(environment.HOBO_KV_NAMESPACE.delete(key));
-				return new Response(null, { status: 204 });
+				await awaitCloudflareNative(() =>
+					environment.HOBO_KV_NAMESPACE.delete(key),
+				);
+				return cloudflareResponse(null, 204);
 			}
-			const value = await readCloudflareKvBytes(request.body);
-			await waitForNative(environment.HOBO_KV_NAMESPACE.put(key, value));
-			return new Response(null, { status: 204 });
+			const value = await readCloudflareKvBytes(cloudflareRequestBody(request));
+			await awaitCloudflareNative(() =>
+				environment.HOBO_KV_NAMESPACE.put(key, value),
+			);
+			return cloudflareResponse(null, 204);
 		} catch (error) {
 			if (error instanceof CloudflareKvError)
-				return new Response(null, { status: 413 });
-			return new Response(null, { status: 502 });
+				return cloudflareResponse(null, 413);
+
+			return cloudflareResponse(null, 502);
 		}
 	},
 };
