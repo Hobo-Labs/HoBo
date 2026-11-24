@@ -213,6 +213,10 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.equal(build.if, "steps.scope.outputs.run == 'true'");
 		assert.equal(build.timeout, 6);
 		assert.match(build.run, /turbo run build\b/u);
+		assert.ok(
+			build.run.includes("--concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}"),
+		);
+		assert.ok(!build.run.includes("HOBO_TURBO_CONCURRENCY"));
 		assert.match(build.run, /git diff --name-only "\$BASE" HEAD/u);
 		assert.match(
 			build.run,

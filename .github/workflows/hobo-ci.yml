@@ -1015,7 +1015,7 @@ jobs:
           pnpm exec turbo run build \
             "${IMPORTED[@]}" \
             "${AFFECTED[@]}" \
-            --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+            --output-logs=new-only --concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}
       - name: Scripts tests
         if: steps.scope.outputs.run == 'true'
         # The unsharded lane exceeded its 10-minute watchdog on a busy fleet

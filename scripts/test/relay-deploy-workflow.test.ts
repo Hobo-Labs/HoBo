@@ -36,6 +36,11 @@ function stepBefore(first: string, second: string): void {
 }
 
 describe("the relay's inputs", () => {
+	it("probes no fleet verdict route: route jobs read the box relay's routing slip (ADR-0181)", () => {
+		assert.doesNotMatch(workflow, /\/v1\/fleet\//u);
+		assert.doesNotMatch(workflow, /Probe the fleet verdict/u);
+	});
+
 	it("takes the relay and every workspace package it is built from as its inputs", () => {
 		for (const dir of [
 			"packages/ci-vercel",
