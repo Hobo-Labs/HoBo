@@ -2297,9 +2297,15 @@ importers:
         specifier: 2.12.1
         version: 2.12.1
     devDependencies:
+      '@alchemy.run/boat':
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.87
         version: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)(pg@8.22.0)(typescript@6.0.3)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+      '@alchemy.run/infisical':
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)
       '@alchemy.run/rivet':
         specifier: 2.0.0-beta.87
         version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4))(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(effect@4.1.4)(encoding@0.1.13)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(sql.js@1.14.1)(ws@8.21.0)
@@ -5578,6 +5584,16 @@ packages:
       alchemy: 2.0.0-beta.87
       effect: ^4.1.4
 
+  '@alchemy.run/boat@2.0.0-beta.87':
+    resolution: {integrity: sha512-c/GEnWbZemW89oLevrUPLPdU0qURw8x+QNg+3g10zSG982YINfgAUm1JK50QmiVg8TU1hWsOymaTrPMDd336Bw==}
+    peerDependencies:
+      '@effect/platform-node': ^4.1.4
+      alchemy: 2.0.0-beta.87
+      effect: ^4.1.4
+    peerDependenciesMeta:
+      '@effect/platform-node':
+        optional: true
+
   '@alchemy.run/cloudflare-runtime@2.0.0-beta.87':
     resolution: {integrity: sha512-9nVPgg0czwEf4zdDB/FBNU+Fa4il0RoB+pspFZa96Z6Ve6MgTxau+PX5En7Vmw3amLzR0y+fQbgZFKKRHBgSQw==}
     peerDependencies:
@@ -5650,6 +5666,12 @@ packages:
         optional: true
       foldkit:
         optional: true
+
+  '@alchemy.run/infisical@2.0.0-beta.87':
+    resolution: {integrity: sha512-MtPvKLwjhYLGR8NbXGY4NtwaB9hsgLh68vk9RgDMobxBXSDCuruxqqjDbvRcvkflNC3UMMUog1eOvIbLC/Kyww==}
+    peerDependencies:
+      alchemy: 2.0.0-beta.87
+      effect: ^4.1.4
 
   '@alchemy.run/node-utils@2.0.0-beta.87':
     resolution: {integrity: sha512-GhQSAY89Sz0P046tuHnLqoCUj79PMu1WUAOnIRLCwO4E4yPZ76IkEDrdl3hjCb7YHuqYA1Da6ZfV59TIQgGkSg==}
@@ -6849,6 +6871,11 @@ packages:
     peerDependencies:
       effect: ^4.1.2
 
+  '@distilled.cloud/boat-dev@1.0.0-rc.20':
+    resolution: {integrity: sha512-j/hym+Kn9GrFuljkoWRbBMXGAxhKBI42P3P9yqatcwNbYLrEs1acPOav4rnIoLCysazzC8U26VQikFinw6ALCw==}
+    peerDependencies:
+      effect: ^4.1.2
+
   '@distilled.cloud/cloudflare@1.0.0-rc.20':
     resolution: {integrity: sha512-Vcb9hNRqlrec3pSaf9mOFHg5bKoUfpKytAH9w6+Y9L2HmU2Bval3zAXx4viQx9yqUeU5CbhaEH+/SdKywcaEZw==}
     peerDependencies:
@@ -6861,6 +6888,11 @@ packages:
 
   '@distilled.cloud/iceberg@1.0.0-rc.20':
     resolution: {integrity: sha512-m0JErahIw1Z+/EDYJRqDA0A8iW9Xv5xHGFeUqSn/ne8VdZX1GAqX4uxesAFQV0ZdoW2yPh4zoKj3JLWphYTtbw==}
+    peerDependencies:
+      effect: ^4.1.2
+
+  '@distilled.cloud/infisical@1.0.0-rc.20':
+    resolution: {integrity: sha512-12Wy9dCE2BmJPjT8KfI+AckkydsdyOqScmM90wXydtKFFEF0HSgr4IQdz9lKzp7oBRgjklJPm+mcdMDK8PPRNw==}
     peerDependencies:
       effect: ^4.1.2
 
@@ -17940,6 +17972,16 @@ snapshots:
       effect: 4.1.4
     optional: true
 
+  '@alchemy.run/boat@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)':
+    dependencies:
+      '@distilled.cloud/boat-dev': 1.0.0-rc.20(effect@4.1.4)
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0)
+      effect: 4.1.4
+      rolldown: 1.2.16
+    optionalDependencies:
+      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
+
   '@alchemy.run/cloudflare-runtime@2.0.0-beta.87(@distilled.cloud/cloudflare@1.0.0-rc.20(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(effect@4.1.4)(rolldown@1.2.16)(typescript@6.0.3)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))':
     dependencies:
       '@alchemy.run/node-utils': 2.0.0-beta.87
@@ -18071,6 +18113,12 @@ snapshots:
       '@alchemy.run/cloudflare': 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/node@26.0.1)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)(pg@8.22.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
       '@alchemy.run/rivet': 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4))(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.23.0)
       '@distilled.cloud/cloudflare': 1.0.0-rc.20(effect@4.1.4)
+
+  '@alchemy.run/infisical@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(effect@4.1.4)':
+    dependencies:
+      '@distilled.cloud/infisical': 1.0.0-rc.20(effect@4.1.4)
+      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0)
+      effect: 4.1.4
 
   '@alchemy.run/node-utils@2.0.0-beta.87':
     dependencies:
@@ -19183,9 +19231,30 @@ snapshots:
       es-module-lexer: 1.7.0
       oxc-parser: 0.76.0
 
-  '@bytecodealliance/componentize-js@0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
+  '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
+    dependencies:
+      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
+      '@bytecodealliance/wizer': 10.0.0
+      es-module-lexer: 1.7.0
+      oxc-parser: 0.76.0
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
+
+  '@bytecodealliance/componentize-js@0.21.0':
     dependencies:
       '@bytecodealliance/jco': 1.24.3
+      '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
+      '@bytecodealliance/wizer': 10.0.0
+      es-module-lexer: 1.7.0
+      oxc-parser: 0.76.0
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
+
+  '@bytecodealliance/componentize-js@0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
+    dependencies:
+      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@bytecodealliance/wizer': 10.0.0
       es-module-lexer: 1.7.0
@@ -19202,8 +19271,24 @@ snapshots:
 
   '@bytecodealliance/jco@1.24.3':
     dependencies:
-      '@bytecodealliance/componentize-js': 0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
+      '@bytecodealliance/componentize-js': 0.21.0
       '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3'
+      '@bytecodealliance/jco-transpile': 0.3.9
+      '@bytecodealliance/preview2-shim': 0.17.9
+      '@bytecodealliance/preview3-shim': 0.1.2
+      binaryen: 130.0.0
+      commander: 14.0.3
+      mkdirp: 3.0.1
+      ora: 8.2.0
+      terser: 5.48.0
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
+
+  '@bytecodealliance/jco@1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
+    dependencies:
+      '@bytecodealliance/componentize-js': 0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
+      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)'
       '@bytecodealliance/jco-transpile': 0.3.9
       '@bytecodealliance/preview2-shim': 0.17.9
       '@bytecodealliance/preview3-shim': 0.1.2
@@ -19706,6 +19791,11 @@ snapshots:
       '@distilled.cloud/s3': 1.0.0-rc.20(effect@4.1.4)
       effect: 4.1.4
 
+  '@distilled.cloud/boat-dev@1.0.0-rc.20(effect@4.1.4)':
+    dependencies:
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      effect: 4.1.4
+
   '@distilled.cloud/cloudflare@1.0.0-rc.20(effect@4.1.4)':
     dependencies:
       '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
@@ -19717,6 +19807,11 @@ snapshots:
       effect: 4.1.4
 
   '@distilled.cloud/iceberg@1.0.0-rc.20(effect@4.1.4)':
+    dependencies:
+      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
+      effect: 4.1.4
+
+  '@distilled.cloud/infisical@1.0.0-rc.20(effect@4.1.4)':
     dependencies:
       '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
       effect: 4.1.4

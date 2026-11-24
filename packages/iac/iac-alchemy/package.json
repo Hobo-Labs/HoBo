@@ -50,13 +50,27 @@
 		"./runners": {
 			"types": "./dist/runners/index.d.ts",
 			"default": "./dist/runners/index.js"
+		},
+		"./environments": {
+			"types": "./dist/environments/index.d.ts",
+			"default": "./dist/environments/index.js"
+		},
+		"./sandboxes": {
+			"types": "./dist/sandbox/index.d.ts",
+			"default": "./dist/sandbox/index.js"
+		},
+		"./test-harness": {
+			"types": "./dist/test-harness/index.d.ts",
+			"default": "./dist/test-harness/index.js"
 		}
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1"
 	},
 	"peerDependencies": {
+		"@alchemy.run/boat": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
+		"@alchemy.run/infisical": "2.0.0-beta.87",
 		"@alchemy.run/rivet": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "^4.1.4",
@@ -65,7 +79,13 @@
 		"ws": "^8.21.0"
 	},
 	"peerDependenciesMeta": {
+		"@alchemy.run/boat": {
+			"optional": true
+		},
 		"@alchemy.run/cloudflare": {
+			"optional": true
+		},
+		"@alchemy.run/infisical": {
 			"optional": true
 		},
 		"@alchemy.run/rivet": {
@@ -76,7 +96,9 @@
 		}
 	},
 	"devDependencies": {
+		"@alchemy.run/boat": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
+		"@alchemy.run/infisical": "2.0.0-beta.87",
 		"@alchemy.run/rivet": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "4.1.4",

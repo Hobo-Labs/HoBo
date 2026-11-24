@@ -680,3 +680,10 @@ and clock correctness remain independently verified host responsibilities.
 - `Hobo.LocalRunner` (`LocalRunnerProvider`): manages local machine runner slot registrations without network or secret requirements.
 - `createAlchemyRunnerBackend`: adapts `LocalRunner`, `HostingerRunner`, `Agent37Runner`, and GitHub-hosted runner dispatch into a unified multi-tier backend matching `@hobo/ci/domain`'s `RunnerBackend` contract.
 
+## Environments, Sandboxes & Test Harness
+
+- `@hobo/iac-alchemy/environments`: integrates `@alchemy.run/infisical` (`createHoboInfisicalSecrets`), disables ambient shell secrets via `Secrets.ProcessEnv({ disabled: true })`, provides `OwnerStoreSecretProvider` (`ConfigProvider.layerAdd`) for `owner://<NAME>` credentials as `Config.Redacted`, and validates Alchemy stages and profiles with redacted `ProviderDetails`.
+- `@hobo/iac-alchemy/sandboxes`: integrates `@alchemy.run/boat` (`Boat.Snapshot`, `Boat.Sandbox`) alongside a Boat-shaped custom Agent37 sandbox provider (`Agent37Snapshot`, `Agent37Sandbox`, snapshot setup hashing, and live sandbox forks) for CI/CD workloads.
+- `@hobo/iac-alchemy/test-harness`: provides a Vitest-compatible `createAlchemyTestHarness` following Alchemy's `Test.make` one-deploy-per-suite (`beforeAll(deploy)` / `afterAll(destroy)`) and provider-lifecycle session patterns.
+
+
