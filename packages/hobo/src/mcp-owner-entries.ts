@@ -11,8 +11,7 @@ const KUBECONFIG_MARKER = /^\s*apiVersion:/mu;
 export type OwnerEntryName =
 	| "HOSTINGER_API_TOKEN"
 	| "HOSTINGER_ARC_KUBECONFIG"
-	| "HOBO_CI_ACCOUNT_TOKEN"
-	| "GITHUB_RELEASE_TOKEN";
+	| "HOBO_CI_ACCOUNT_TOKEN";
 
 export type OwnerEntrySpec = Readonly<{
 	name: OwnerEntryName;
@@ -57,18 +56,9 @@ export const OWNER_ENTRY_SPECS: readonly OwnerEntrySpec[] = Object.freeze([
 	},
 	{
 		name: "HOBO_CI_ACCOUNT_TOKEN",
-		label: "GitHub token for HoBo CI",
+		label: "HoBo CI relay account credential",
 		purpose:
-			"A GitHub token for the account that owns this repository (fine-grained: Actions, Administration and Metadata on the repository). hobo ci uses it.",
-		minLength: 20,
-		maxLength: 1024,
-		parse: oneLine(20),
-	},
-	{
-		name: "GITHUB_RELEASE_TOKEN",
-		label: "GitHub token for releases",
-		purpose:
-			"A GitHub token with Contents and Packages write on this repository. HoBo's release OCI and Pages Camps use it.",
+			"The CI account credential your HoBo CI relay operator issued. hobo ci uses it to reach the relay; GitHub itself goes through HoBo's GitHub App (hobo ci app create).",
 		minLength: 20,
 		maxLength: 1024,
 		parse: oneLine(20),
@@ -77,10 +67,10 @@ export const OWNER_ENTRY_SPECS: readonly OwnerEntrySpec[] = Object.freeze([
 
 // public-contract: the title hosts show for store_owner_entries.
 export const STORE_OWNER_ENTRIES_TITLE =
-	"Ask the owner for HoBo's provider entries";
+	"Ask the owner for HoBo's Hostinger and relay entries";
 
 // public-contract: the description hosts and agents read for store_owner_entries.
-export const STORE_OWNER_ENTRIES_DESCRIPTION = `Ask the owner, in private host forms, for the GitHub and Hostinger entries HoBo needs (${OWNER_ENTRY_SPECS.map((s) => s.name).join(", ")}) and write each straight into their connected store. Needs an established store session (choose_secret_store). Returns entry names only.`;
+export const STORE_OWNER_ENTRIES_DESCRIPTION = `Ask the owner, in private host forms, for the Hostinger entries and HoBo CI relay credential HoBo needs (${OWNER_ENTRY_SPECS.map((s) => s.name).join(", ")}) and write each straight into their connected store. Needs an established store session (choose_secret_store). Returns entry names only.`;
 
 export const STORE_OWNER_ENTRIES_INPUT: JsonObject = {
 	type: "object",

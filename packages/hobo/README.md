@@ -67,14 +67,12 @@ it once, within 30 minutes, records the store choice and hands the store's sign-
 the waiting run. The agent carries only ciphertext. `choose_secret_store` with
 `channel: "page"` returns the page even where the host declares form elicitation,
 for hosts that declare it but never show the form. The page also takes Infisical's
-copied sign-in session and the GitHub and Hostinger entries
-(`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`,
-`GITHUB_RELEASE_TOKEN`), which `submit_owner_page` writes into the store once the
+copied sign-in session and the Hostinger entries and relay credential
+(`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`), which `submit_owner_page` writes into the store once the
 session is established.
 
 `store_owner_entries` fills the store with the provider entries HoBo reads
-(`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`,
-`GITHUB_RELEASE_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
+(`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
 each value checked for shape and written with the session's `entries(cwd).write`,
 never returned. It needs form elicitation and an established session. The server
 declares `tools.listChanged` and sends `notifications/tools/list_changed` after

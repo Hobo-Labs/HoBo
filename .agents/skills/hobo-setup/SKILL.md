@@ -76,9 +76,9 @@ and admits no exceptions.
   kubectl for it. On `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`, call
   `choose_secret_store` first.
 - After `established`, call `store_owner_entries` (same `cwd`) so HoBo asks
-  the owner, one private host form per entry, for the GitHub and Hostinger
+  the owner, one private host form per entry, for the Hostinger and relay
   entries it needs (`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`,
-  `HOBO_CI_ACCOUNT_TOKEN`, `GITHUB_RELEASE_TOKEN`) and writes each straight
+  `HOBO_CI_ACCOUNT_TOKEN`) and writes each straight
   into the store. Entries the store already holds are kept unless
   `replace: true`. Its result lists entry names only (`stored`, `kept`,
   `skipped`, `failed`).
@@ -101,7 +101,7 @@ and admits no exceptions.
 - If the host declares forms but the owner never sees them (a form times
   out or comes back cancelled at once), call `choose_secret_store` with
   `channel: "page"`. HoBo's owner page then also takes the store's sign-in
-  (Infisical's copied session) and the GitHub and Hostinger entries, and
+  (Infisical's copied session) and the Hostinger entries and relay credential, and
   `submit_owner_page` writes those entries into the store once signed in.
 - `secure-form-unavailable`: no private channel is wired. Report that this
   host cannot provide a secure HoBo owner hand-off.

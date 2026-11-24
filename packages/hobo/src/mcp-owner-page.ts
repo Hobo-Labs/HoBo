@@ -38,7 +38,6 @@ const answersSchema = z
 		HOSTINGER_API_TOKEN: answerField,
 		HOSTINGER_ARC_KUBECONFIG: z.string().max(65536).optional(),
 		HOBO_CI_ACCOUNT_TOKEN: answerField,
-		GITHUB_RELEASE_TOKEN: answerField,
 	})
 	.strict();
 
@@ -267,11 +266,7 @@ const ENTRY_FIELDS = [
 	},
 	{
 		name: "HOBO_CI_ACCOUNT_TOKEN",
-		label: "GitHub token for HoBo CI (Actions, Administration, Metadata)",
-	},
-	{
-		name: "GITHUB_RELEASE_TOKEN",
-		label: "GitHub token for releases (Contents and Packages write)",
+		label: "HoBo CI relay account credential (from your relay operator)",
 	},
 ] as const;
 
@@ -308,7 +303,7 @@ export function renderOwnerPageHtml(input: {
 				: "";
 		return `<fieldset data-for="${o.id}" hidden><legend>${escapeHtml(o.label)}</legend>${link}${inputs}</fieldset>`;
 	}).join("");
-	const entries = `<fieldset data-for="entries"><legend>GitHub and Hostinger</legend><p>HoBo writes these into the store you chose. Leave any you have already stored blank.</p>${ENTRY_FIELDS.map(
+	const entries = `<fieldset data-for="entries"><legend>Hostinger and HoBo CI</legend><p>HoBo writes these into the store you chose. Leave any you have already stored blank. GitHub is connected through HoBo's GitHub App, never a token here.</p>${ENTRY_FIELDS.map(
 		(f) =>
 			`<label for="${f.name}">${escapeHtml(f.label)}</label><input id="${f.name}" name="${f.name}" type="password" autocomplete="off" spellcheck="false">`,
 	).join("")}</fieldset>`;

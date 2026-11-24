@@ -441,7 +441,7 @@ const chooseArgs: JsonObject = {
 		type: "string",
 		enum: ["form", "page"],
 		description:
-			"page: HoBo's sealed owner page (an Artifact), also for the store's sign-in and the GitHub and Hostinger entries; use it when the host declares forms but the owner never sees them.",
+			"page: HoBo's sealed owner page (an Artifact), also for the store's sign-in, the Hostinger entries and the HoBo CI relay credential; use it when the host declares forms but the owner never sees them.",
 	},
 };
 

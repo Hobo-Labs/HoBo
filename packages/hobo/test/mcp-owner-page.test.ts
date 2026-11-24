@@ -249,7 +249,7 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		]);
 	});
 
-	it("on request, takes the sign-in and the GitHub and Hostinger entries through the page even where the host declares forms", async () => {
+	it("on request, takes the sign-in, the Hostinger entries and the relay credential through the page even where the host declares forms", async () => {
 		const deposited = new Map<string, string>();
 		const written = new Map<string, string>();
 		let established = false;
@@ -303,7 +303,7 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 				INFISICAL_PROJECT_ID: PROJECT,
 				INFISICAL_CLI_SESSION: "c2Vzc2lvbi1maXh0dXJl",
 				HOSTINGER_API_TOKEN: "hostinger-fixture-token-0123456789",
-				HOBO_CI_ACCOUNT_TOKEN: "github_pat_fixture0123456789",
+				HOBO_CI_ACCOUNT_TOKEN: "relay-account-fixture-0123456789",
 			},
 			"infisical",
 		);

@@ -16,7 +16,6 @@ import {
 import type { OwnerStoreSessions } from "../src/owner-store-session.js";
 
 const HOSTINGER = "hostinger-fixture-token-0123456789";
-const GITHUB = "github_pat_fixture0123456789";
 const KUBECONFIG = "apiVersion: v1\nkind: Config\nclusters: []\n";
 
 function fakeSessions(
@@ -59,11 +58,10 @@ function answers(values: readonly (string | undefined)[]) {
 
 describe("store_owner_entries", () => {
 	it("asks for each missing entry in a host form and writes it to the owner's store", async () => {
-		const held = new Map<string, string>([["GITHUB_RELEASE_TOKEN", "kept"]]);
+		const held = new Map<string, string>([["HOBO_CI_ACCOUNT_TOKEN", "kept"]]);
 		const { ask, asked } = answers([
 			HOSTINGER,
 			Buffer.from(KUBECONFIG).toString("base64"),
-			GITHUB,
 		]);
 		const outcome = await storeOwnerEntries({
 			cwd: "/p",
@@ -73,21 +71,16 @@ describe("store_owner_entries", () => {
 		});
 		expect(outcome.structured).toEqual({
 			status: "stored",
-			stored: [
-				"HOSTINGER_API_TOKEN",
-				"HOSTINGER_ARC_KUBECONFIG",
-				"HOBO_CI_ACCOUNT_TOKEN",
-			],
-			kept: ["GITHUB_RELEASE_TOKEN"],
+			stored: ["HOSTINGER_API_TOKEN", "HOSTINGER_ARC_KUBECONFIG"],
+			kept: ["HOBO_CI_ACCOUNT_TOKEN"],
 			skipped: [],
 			failed: [],
 		});
 		expect(held.get("HOSTINGER_API_TOKEN")).toBe(HOSTINGER);
 		expect(held.get("HOSTINGER_ARC_KUBECONFIG")).toBe(KUBECONFIG);
-		expect(held.get("HOBO_CI_ACCOUNT_TOKEN")).toBe(GITHUB);
+		expect(held.get("HOBO_CI_ACCOUNT_TOKEN")).toBe("kept");
 		expect(asked.every((p) => p.mode === "form")).toBe(true);
 		expect(JSON.stringify(outcome)).not.toContain(HOSTINGER);
-		expect(JSON.stringify(outcome)).not.toContain(GITHUB);
 	});
 
 	it("asks again with the reason when a value is malformed, and records a decline", async () => {
