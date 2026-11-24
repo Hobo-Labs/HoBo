@@ -17,6 +17,12 @@ over conflicting repository workflow guidance.
   alternatives and independent work before reporting a blocker. Respect the
   latest explicit stop, pause, cancellation, scope change, and real permission
   or safety boundary; do not invent work or repeat futile attempts.
+- An action request is not done until the delivery goal in `PRODUCT.md` is met
+  by the evidence it names; merged pull requests are not that evidence.
+- Before adding a credential, flow or provider, search the code and ADRs for
+  an existing mechanism and use it. List the hard constraints against the goal
+  and report any contradiction before building. The `hobo-setup` skill covers
+  owner interaction and the `sdlc` skill covers landing pull requests.
 - Do not create or retain planning documents, roadmaps, or design documents.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
