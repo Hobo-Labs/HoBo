@@ -156,9 +156,23 @@ wired the same way in Claude Code, Codex, Cursor and Copilot, also applies
   by every worktree, and an entry clears once its head commit is on
   `origin/main` after a fetch. Recreating a pull request for the same head is
   allowed. The refusal cites CLAUDE.md's one PR per workstream.
+- It refuses unfiltered repo-wide test and verification sweeps (`pnpm test`,
+  `pnpm run test:unit`, `pnpm run test:all`, `pnpm run check:all`,
+  `pnpm run verify:full`, `pnpm run verify:extended`, `pnpm run validate:final`,
+  `mise run test:unit`, unfiltered `turbo run test`, and unfiltered root
+  `vitest run`) so agents run only tests related to their changes (`pnpm --filter <pkg> exec vitest run <file>`,
+  `pnpm --filter <pkg> test`, `pnpm exec turbo run test --filter=./packages/<pkg>`,
+  `pnpm run test:changed`, `pnpm run test:affected`, or
+  `pnpm run agent:check -- --staged`). Prefixing the command with
+  `HOBO_ALLOW_BROAD_TESTS=1` opts in when the user explicitly requests a full
+  sweep. During an in-progress merge (`MERGE_HEAD`), `scripts/run-relevant-checks.ts --staged`
+  also intersects staged diffs across merge parents (`scripts/lib/staged-merge-files.mts`)
+  so merging `origin/main` checks only conflict-resolved or merge-introduced files
+  instead of unrelated upstream commits.
 
 [`scripts/test/agent-session-policy.test.ts`](../scripts/test/agent-session-policy.test.ts)
-covers each refusal, the allowed cases, and the ledger.
+and [`scripts/test/staged-merge-files.test.ts`](../scripts/test/staged-merge-files.test.ts)
+cover each refusal, the allowed cases, merge-commit scoping, and the ledger.
 
 A second Stop hook, [`scripts/agent-owner-ask-hook.mts`](../scripts/agent-owner-ask-hook.mts),
 runs beside the completion review in Claude Code (`Stop`), Codex (`Stop`),

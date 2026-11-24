@@ -58,6 +58,14 @@ over conflicting repository workflow guidance.
   exception is rejected.
 - HoBo manages deployment of its CI relay. Its Vercel project is intentionally
   not Git-linked; do not reconnect it or treat the missing link as a defect.
+- Always run only tests related to your changes — never full unrelated suites.
+  Use file-scoped, package-scoped, or impact-scoped commands (`pnpm --filter <pkg> exec vitest run <file>`,
+  `pnpm --filter <pkg> test`, `pnpm exec turbo run test --filter=./packages/<pkg>`,
+  `pnpm run test:changed`, `pnpm run test:affected`, `node --import tsx --test scripts/test/<file>.test.ts`,
+  or `pnpm run agent:check -- --staged`). Never run `pnpm test`, `pnpm run test:unit`,
+  `pnpm run test:all`, `pnpm run check:all`, `pnpm run verify:full`, `pnpm run validate:final`,
+  unfiltered `turbo run test`, or unfiltered root `vitest run` unless the user explicitly
+  requests a full-repo sweep (pass `HOBO_ALLOW_BROAD_TESTS=1` only when explicitly authorized).
 
 Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
 and Copilot. Standalone documentation comments follow the same rule. Run
@@ -69,8 +77,9 @@ each harness (`scripts/agent-secret-policy.mts`) refuses commands that store
 Actions secrets or variables, Vercel environment variables, `.env` writes,
 edits to secret files, and credential-storing tools such as
 `request_credential` before they run. The same hook refuses stopping HoBo's MCP
-server or owner page driver, which holds the owner's open form, and a fourth
-unlanded pull request from one session's branches
+server or owner page driver, which holds the owner's open form, refuses a fourth
+unlanded pull request from one session's branches, and refuses unfiltered
+full-repo test sweeps unless `HOBO_ALLOW_BROAD_TESTS=1` is explicitly set
 (`scripts/agent-session-policy.mts`; see `docs/agent-tooling.md`). `secrets:guard` also runs in the
 pre-commit hook and in `agent:check`, so CI checks each pull request's diff
 against its base; it rejects added Actions secret and variable references

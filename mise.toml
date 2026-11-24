@@ -42,8 +42,16 @@ run = "pnpm install --frozen-lockfile --config.confirmModulesPurge=false"
 description = "Build all production packages (turbo)"
 run = "pnpm run build"
 
+[tasks."test:changed"]
+description = "Run only tests related to changed files"
+run = "pnpm run test:changed"
+
+[tasks."test:affected"]
+description = "Run only Turbo-affected workspace tests"
+run = "pnpm run test:affected"
+
 [tasks."test:unit"]
-description = "Unit test lane"
+description = "Broad root/draft unit test sweep (opt-in only; prefer test:changed or test:affected)"
 run = "pnpm run test:unit"
 
 [tasks."agent:check"]
