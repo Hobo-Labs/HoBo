@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { After, Before, Given, Then, When } from "@cucumber/cucumber";
 import { runCiInsights } from "../../../packages/hobo/src/ci-insights.js";
 import {
-	CiProcessError,
-	type CiRunExec,
-} from "../../../packages/hobo/src/ci-runs.js";
+	githubRestFetch,
+	installationCredentials,
+} from "../../../packages/hobo/test/support/github-app-fake.js";
 
 const REPOSITORY = "octo/app";
 const RUN_ID = 4401;
@@ -128,23 +128,17 @@ Given("a failed job and the tail of its log", () => {
 
 When("{string} runs for it", async (command: string) => {
 	assert.equal(command, "hobo ci diagnose");
-	const execFile: CiRunExec = async (file, args) => {
-		assert.equal(file, "gh");
-		assert.equal(args[0], "api");
-		const path = args[1] ?? "";
-		world.asked.push(path);
-		const answer = world.responses.get(path);
-		if (answer === undefined) throw new CiProcessError("failed", "gh", 404);
-		return { stdout: answer, stderr: "" };
-	};
+	const github = githubRestFetch((request) => {
+		world.asked.push(request.path);
+		return world.responses.get(request.path);
+	});
 	const result = await runCiInsights({
 		command: "diagnose",
 		repository: REPOSITORY,
-		cwd: "/work",
 		args: [String(RUN_ID)],
 		options: {},
-		execFile,
-		env: {},
+		credentials: installationCredentials(),
+		fetch: github.fetch,
 	});
 	world.message = result.message ?? "";
 	const data: Readonly<{ jobs?: readonly Diagnosed[] }> = JSON.parse(

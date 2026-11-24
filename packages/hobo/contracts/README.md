@@ -24,9 +24,11 @@ resolution, retry admission and new-attempt fencing. It uses a process seam;
 live GitHub assignment, logs, and reruns remain release checks.
 
 `ci-insights-github.pact.json` pins the GitHub REST reads `hobo ci signals`
-and `hobo ci diagnose` make through `gh api`: the repository, the run list,
-one attempt's jobs, a job's log and its annotations through the distinct
-check-run ID from `check_run_url`, with the fields the insight reports read.
+and `hobo ci diagnose` make with an installation token of HoBo's GitHub App
+on the repository: the repository, the run list, one attempt's jobs, a job's
+log (a redirect, then a download sent without the token) and its annotations
+through the distinct check-run ID from `check_run_url`, with the fields the
+insight reports read.
 `test/ci-insights.test.ts` executes every interaction in order through
 `runCiInsights`. GitHub does not verify this
 consumer fixture; a read against a live repository remains a release check.

@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-139 codes.
+140 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -100,6 +100,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_FLEET_FAILED`](#hobo_ci_fleet_failed) | `packages/hobo/src/ci-fleet.ts` |
 | [`HOBO_CI_FLEET_KUBECONFIG_UNSUPPORTED`](#hobo_ci_fleet_kubeconfig_unsupported) | `packages/hobo/src/ci-fleet-caches.ts` |
 | [`HOBO_CI_FLEET_SCALE_SET_NOT_FOUND`](#hobo_ci_fleet_scale_set_not_found) | `packages/hobo/src/ci-fleet-caches.ts` |
+| [`HOBO_CI_GITHUB_APP_NEEDED`](#hobo_ci_github_app_needed) | `packages/hobo/src/ci-github-app.ts` |
 | [`HOBO_CI_GITHUB_AUTH`](#hobo_ci_github_auth) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_DEVICE`](#hobo_ci_github_device) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_FAILED`](#hobo_ci_github_failed) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
@@ -159,7 +160,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_STORE_CHOICE`](#hobo_ci_store_choice) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_STORE_NEEDS_SIGN_IN`](#hobo_ci_store_needs_sign_in) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_STORE_UNAVAILABLE`](#hobo_ci_store_unavailable) | `packages/hobo-ci/src/prepare.ts` |
-| [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
+| [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_UP_NO_BRANCH`](#hobo_ci_up_no_branch) | `packages/hobo/src/ci-up-relay.ts` |
 | [`HOBO_CI_UP_PLATFORM_DRIFT`](#hobo_ci_up_platform_drift) | `packages/hobo/src/ci-up-relay.ts` |
 | [`HOBO_CI_UP_SOURCE_UNAVAILABLE`](#hobo_ci_up_source_unavailable) | `packages/hobo/src/ci-up-relay.ts` |
@@ -1216,6 +1217,21 @@ The cluster has no AutoscalingRunnerSet in namespace {namespace}.
 
 What to do: follow the message.
 
+### HOBO_CI_GITHUB_APP_NEEDED
+
+Returned from `packages/hobo/src/ci-github-app.ts`.
+
+Message:
+
+```text
+HoBo reads GitHub Actions only through its GitHub App, and no installation token for this repository could be minted.
+```
+
+What to do:
+
+- Connect the owner's secret store through HoBo MCP's choose_secret_store.
+- Install HoBo's GitHub App (hobo ci app create) on the repository with Actions read permission, and Actions write permission for hobo ci rerun.
+
 ### HOBO_CI_GITHUB_AUTH
 
 Returned from `packages/hobo/src/ci-github-connect.ts`.
@@ -1263,7 +1279,7 @@ Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`
 Messages:
 
 ```text
-GitHub denied this read. Check gh auth status and repository Actions permissions.
+GitHub denied this read. Check that HoBo's GitHub App is installed on the repository with Actions read permission.
 ```
 
 ```text
@@ -1275,7 +1291,7 @@ GitHub rate limited this read. Wait before retrying.
 ```
 
 ```text
-GitHub could not be read, or answered with something that is not a run. Check gh auth status and repository Actions permissions.
+GitHub could not be read, or answered with something that is not a run. Check that HoBo's GitHub App is installed on the repository with Actions read permission.
 ```
 
 ```text
@@ -2031,13 +2047,9 @@ What to do: follow the message.
 
 ### HOBO_CI_TOOL_REQUIRED
 
-Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts`.
+Returned from `packages/hobo/src/ci-runs.ts`.
 
-Messages:
-
-```text
-Install the GitHub CLI (gh) and authenticate with gh auth login, then retry this CI command.
-```
+Message:
 
 ```text
 Install {…}, then retry this CI command.
