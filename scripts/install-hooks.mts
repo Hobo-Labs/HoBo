@@ -45,6 +45,11 @@ try {
 			console.log(`install-hooks: ${key}=${value}`);
 		}
 	}
+	const drivers = spawnSync("sh", ["scripts/ensure-hooks-path.sh"], {
+		stdio: "pipe",
+	});
+	if (drivers.status === 0)
+		console.log("install-hooks: merge drivers for generated pins and catalog");
 } catch (error) {
 	const message = error instanceof Error ? error.message : "git unavailable";
 	console.log(`install-hooks: skipped (${message}).`);

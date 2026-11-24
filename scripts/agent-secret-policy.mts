@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import * as z from "zod";
-
+import {
+	gitSessionContext,
+	sessionPolicyRefusal,
+} from "./agent-session-policy.mts";
 import {
 	isSecretFile,
 	OWNER_STORE_PATH,
@@ -24,6 +27,7 @@ const ToolInput = z
 		notebook_path: z.string().optional(),
 		patch: z.string().optional(),
 		input: z.string().optional(),
+		head: z.string().optional(),
 	})
 	.loose();
 
@@ -34,6 +38,7 @@ export const HookEvent = z
 		tool_input: z.union([ToolInput, z.string()]).optional(),
 		toolArgs: z.union([ToolInput, z.string()]).optional(),
 		command: z.string().optional(),
+		cwd: z.string().optional(),
 	})
 	.loose();
 
@@ -93,7 +98,9 @@ export function secretPolicyRefusal(event: HookEvent): string | undefined {
 	for (const file of files)
 		if (file !== undefined && isSecretFile(file.replaceAll("\\", "/")))
 			return `${file} is a secret or credential file, which agents never create or edit. ${OWNER_STORE_PATH}`;
-	return undefined;
+	return sessionPolicyRefusal(tool, input.head, commands, () =>
+		gitSessionContext(event.cwd ?? process.cwd()),
+	);
 }
 
 export function respond(
