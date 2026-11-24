@@ -39,8 +39,9 @@ reads the routing slip at `refs/hobo/routing-slip` with `contents: read`
 
 [`create-github-release.mts`](create-github-release.mts) opens release CD with
 `releaseWorkflowCredentials`: camps that declare `github-app://<owner>/<repo>`
-locators authorize through the workflow job `GITHUB_TOKEN` when that repository
-matches `GITHUB_REPOSITORY`. Hermetic checks live in
+locators authorize through the workflow job `GITHUB_TOKEN` only when
+`GITHUB_REPOSITORY` is set and matches the locator case-insensitively.
+Hermetic checks live in
 [`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
 Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
 

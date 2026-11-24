@@ -274,7 +274,7 @@ describe("createCampReconciler", () => {
 		).not.toContain(marker);
 	});
 
-	it("surfaces RESOLVER_CREDENTIAL_MISSING with the provider message", async () => {
+	it("redacts RESOLVER_CREDENTIAL_MISSING provider detail", async () => {
 		const h = harness();
 		const marker = "installation token missing for ghcr.io";
 		h.realizer.observe = async () =>
@@ -293,7 +293,9 @@ describe("createCampReconciler", () => {
 		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
 		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
 		expect(observation.reasons[0]?.code).toBe("RESOLVER_CREDENTIAL_MISSING");
-		expect(observation.reasons[0]?.message).toBe(marker);
+		expect(observation.reasons[0]?.message).toBe(
+			"The realizer reported a condition.",
+		);
 	});
 
 	it("surfaces resolver refusal messages for release operators", () => {
@@ -312,6 +314,22 @@ describe("createCampReconciler", () => {
 			"realizer",
 		);
 		expect(reason?.message).toBe(detail);
+	});
+
+	it("still redacts resolver credential detail", () => {
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "RESOLVER_CREDENTIAL_MISSING",
+					message: "Bearer eyJhbG.eyJz.Sig",
+					remediation: "x",
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message).toBe("The realizer reported a condition.");
 	});
 
 	it("still redacts runner-host detail", () => {

@@ -363,8 +363,12 @@ export function releaseWorkflowCredentials(
 				throw new Error(
 					`release Freight does not resolve credential ${ref} (${scope})`,
 				);
+			if (!repository)
+				throw new Error(
+					`release Freight needs GITHUB_REPOSITORY to authorize ${ref} (${scope})`,
+				);
 			const repo = ref.slice(GITHUB_APP_REF.length);
-			if (repository && repo.toLowerCase() !== repository.toLowerCase())
+			if (repo.toLowerCase() !== repository.toLowerCase())
 				throw new Error(
 					`release Freight refuses ${ref}: expected github-app://${repository}`,
 				);

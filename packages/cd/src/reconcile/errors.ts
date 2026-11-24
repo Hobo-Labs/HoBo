@@ -174,9 +174,28 @@ function isResolverErrorCode(code: string): code is ResolverErrorCode {
 	return false;
 }
 
+const SURFACE_RESOLVER_CODES: ReadonlySet<ResolverErrorCode> = new Set([
+	"RESOLVER_PROVIDER_REJECTED",
+	"RESOLVER_PRODUCT_UNSUPPORTED",
+	"RESOLVER_OUTPUT_UNPARSEABLE",
+]);
+
+function redactOperationalDetail(message: string): string {
+	return message
+		.replace(/\/\/[^/@\s:]+:[^/@\s]+@/gu, "//[redacted]@")
+		.replace(/\/\/[^/@\s]+@/gu, "//[redacted]@")
+		.replace(
+			/\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9._-]+\b/gu,
+			"[redacted]",
+		);
+}
+
 function surfaceRealizerConditionMessage(entry: ReasonRecord): string {
-	if (isResolverErrorCode(entry.code) || entry.code === "realize-failed") {
-		const detail = entry.message.trim();
+	if (
+		isResolverErrorCode(entry.code) &&
+		SURFACE_RESOLVER_CODES.has(entry.code)
+	) {
+		const detail = redactOperationalDetail(entry.message.trim());
 		if (detail) return detail;
 	}
 	return "The realizer reported a condition.";

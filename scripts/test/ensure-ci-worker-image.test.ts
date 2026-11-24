@@ -629,6 +629,60 @@ describe("ensure-ci-worker-image", () => {
 		}
 	}
 
+	function publishedStatus(stub: {
+		host: boolean;
+		manifest: boolean;
+		pull?: boolean;
+	}) {
+		const pullOk = stub.pull ?? stub.manifest;
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-status-cli-"));
+		try {
+			writeFileSync(
+				join(bin, "timeout"),
+				["#!/bin/sh", "shift", 'exec "$@"', ""].join("\n"),
+				{ mode: 0o755 },
+			);
+			writeFileSync(
+				join(bin, "docker"),
+				[
+					"#!/bin/sh",
+					`if [ "$1 $2" = "image inspect" ]; then exit ${stub.host ? 0 : 1}; fi`,
+					'if [ "$1" = "login" ]; then cat > /dev/null; exit 0; fi',
+					`if [ "$1 $2" = "manifest inspect" ]; then exit ${stub.manifest ? 0 : 1}; fi`,
+					`if [ "$1" = "pull" ]; then exit ${pullOk ? 0 : 1}; fi`,
+					"exit 0",
+					"",
+				].join("\n"),
+				{ mode: 0o755 },
+			);
+			const out = join(bin, "out");
+			writeFileSync(out, "");
+			const run = spawnSync(
+				process.execPath,
+				[
+					"--no-warnings",
+					"scripts/ci/ensure-ci-worker-image.mts",
+					"--published-status",
+				],
+				{
+					cwd: join(import.meta.dirname, "..", ".."),
+					encoding: "utf8",
+					env: {
+						...process.env,
+						PATH: `${bin}:${process.env.PATH ?? ""}`,
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_TOKEN: "token-for-test",
+						GITHUB_OUTPUT: out,
+					},
+				},
+			);
+			assert.equal(run.status, 0, run.stderr);
+			return readFileSync(out, "utf8");
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
 	it("needs nothing when the box and GHCR both have this tree's image", () => {
 		withWorkerPublishStub({ host: true, manifest: true, pull: true }, () => {
 			const status = ciWorkerImagePublished();
@@ -636,6 +690,10 @@ describe("ensure-ci-worker-image", () => {
 			assert.equal(status.ghcr, true);
 			assert.equal(status.host && status.ghcr, true);
 		});
+		assert.match(
+			publishedStatus({ host: true, manifest: true, pull: true }),
+			/^version=v[0-9a-f]+\nneeded=false\nghcr=true\n$/u,
+		);
 	});
 
 	it("reports an image the box has but GHCR lacks as unpublished", () => {
@@ -643,6 +701,10 @@ describe("ensure-ci-worker-image", () => {
 			const status = ciWorkerImagePublished();
 			assert.equal(status.ghcr, false);
 		});
+		assert.match(
+			publishedStatus({ host: true, manifest: false }),
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=false\n$/u,
+		);
 	});
 
 	it("reports an image only GHCR has as published", () => {
@@ -659,38 +721,16 @@ describe("ensure-ci-worker-image", () => {
 			assert.equal(status.host, false);
 			assert.equal(status.ghcr, true);
 		});
+		assert.match(
+			publishedStatus({ host: false, manifest: true, pull: true }),
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
+		);
 	});
 
 	it("treats a manifest without pullable layers as unpublished", () => {
 		withWorkerPublishStub({ host: false, manifest: true, pull: false }, () => {
 			const status = ciWorkerImagePublished();
 			assert.equal(status.ghcr, false);
-		});
-	});
-
-	it("exports needed=false from --published-status when host and GHCR are pullable", () => {
-		withWorkerPublishStub({ host: true, manifest: true, pull: true }, () => {
-			const out = mkdtempSync(join(tmpdir(), "hobo-worker-status-out-"));
-			const result = spawnSync(
-				process.execPath,
-				[
-					"--no-warnings",
-					"scripts/ci/ensure-ci-worker-image.mts",
-					"--published-status",
-				],
-				{
-					cwd: join(import.meta.dirname, "..", ".."),
-					encoding: "utf8",
-					env: {
-						...process.env,
-						GITHUB_OUTPUT: join(out, "gh-out"),
-					},
-				},
-			);
-			assert.equal(result.status, 0, result.stderr);
-			const output = readFileSync(join(out, "gh-out"), "utf8");
-			assert.match(output, /^needed=false$/m);
-			rmSync(out, { recursive: true, force: true });
 		});
 	});
 

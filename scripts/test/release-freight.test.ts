@@ -63,6 +63,12 @@ describe("releaseWorkflowCredentials", () => {
 				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
 			}).resolve("github-app://Hobo-Labs/HoBo", "release-probe"),
 		).rejects.toThrow(/needs GITHUB_TOKEN/u);
+		await expect(
+			releaseWorkflowCredentials({
+				GITHUB_REPOSITORY: "",
+				GITHUB_TOKEN: "synthetic-job-token",
+			}).resolve("github-app://Hobo-Labs/HoBo", "release-probe"),
+		).rejects.toThrow(/needs GITHUB_REPOSITORY/u);
 	});
 });
 
