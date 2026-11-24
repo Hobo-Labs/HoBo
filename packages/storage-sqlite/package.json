@@ -11,6 +11,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./domain-platform": {
+			"types": "./dist/domain-platform.d.ts",
+			"default": "./dist/domain-platform.js"
 		}
 	},
 	"publishConfig": {
