@@ -597,10 +597,10 @@ export function createCiCommand(
 				return runCiInsights({
 					command,
 					repository: local.repository,
-					cwd: local.root,
 					args: positionals.slice(1),
 					options: values,
-					env: deps.env ?? process.env,
+					credentials: deps.ownerCredentials?.(flags.cwd),
+					fetch: deps.fetch ?? fetch,
 				});
 			}
 			if (command === "route") {
@@ -1145,6 +1145,8 @@ export function createCiCommand(
 						args: positionals.slice(1),
 						options: runOptions,
 						env,
+						credentials: deps.ownerCredentials?.(flags.cwd),
+						fetch: deps.fetch ?? fetch,
 						emitProgress,
 					});
 				const link =
