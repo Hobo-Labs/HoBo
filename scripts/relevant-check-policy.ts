@@ -741,6 +741,7 @@ export function selectRelevantChecks(
 				// packages from source; their dependencies resolve through dist/.
 				"--filter=@hobo/conformance^...",
 				"--filter=@hobo/example-cd-conformance-kit^...",
+				"--filter=@hobo/fleet-authority...",
 				"--output-logs=new-only",
 				"--concurrency=100%",
 			],

@@ -54,7 +54,7 @@ files the script loads, and runs the script from a copy of only those files.
 ## Retired variables
 
 `scripts/lint-actions.ts` refuses, in every workflow, action and installable
-template, any repository variable read as `vars.HOBO_CI_*` and every name on
+template, any repository variable whose name starts with `HOBO_CI_`, and every name on
 ADR-0181's routing list as an input, output or environment variable. Whole
 families count as routing: every `HOBO_CI_FLEET_*` and `HOBO_CI_LOCAL_*` name,
 and the NATS and mesh settings of the retired relay mesh. The retired names

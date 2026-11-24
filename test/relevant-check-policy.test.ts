@@ -791,6 +791,7 @@ test("the behavior lane also builds what the root step definitions import", () =
 	assert.ok(
 		build?.args.includes("--filter=@hobo/example-cd-conformance-kit^..."),
 	);
+	assert.ok(build?.args.includes("--filter=@hobo/fleet-authority..."));
 });
 
 test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {

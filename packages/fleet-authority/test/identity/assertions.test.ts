@@ -152,7 +152,7 @@ describe("OIDC assertions", () => {
 describe("X.509 chains", () => {
 	const dir = join(import.meta.dirname, "../fixtures/x509");
 	const pem = (name: string) => readFileSync(join(dir, name), "utf8");
-	const leaf = new X509Certificate(pem("leaf.pem"));
+	const leaf = new X509Certificate(pem("leaf.crt"));
 	const identityJwk = JSON.stringify(leaf.publicKey.export({ format: "jwk" }));
 	const verifier = createIdentityAssertionVerifier({
 		issuers: [],
@@ -162,9 +162,9 @@ describe("X.509 chains", () => {
 
 	it("accepts a chain to a root whose leaf is the identity key", () => {
 		const outcome = verifier.verifyCertificateChain({
-			chainPem: [pem("leaf.pem"), pem("intermediate.pem")],
+			chainPem: [pem("leaf.crt"), pem("intermediate.crt")],
 			identityJwk,
-			rootsPem: [pem("root.pem")],
+			rootsPem: [pem("root.crt")],
 			nowMs: NOW,
 		});
 		expect(outcome).toEqual({
@@ -175,17 +175,17 @@ describe("X.509 chains", () => {
 
 	it("refuses another root, a missing intermediate, another key and an expired chain", () => {
 		const base = {
-			chainPem: [pem("leaf.pem"), pem("intermediate.pem")],
+			chainPem: [pem("leaf.crt"), pem("intermediate.crt")],
 			identityJwk,
-			rootsPem: [pem("root.pem")],
+			rootsPem: [pem("root.crt")],
 			nowMs: NOW,
 		};
 		const other = generateKeyPairSync("ec", {
 			namedCurve: "P-256",
 		}).publicKey.export({ format: "jwk" });
 		for (const input of [
-			{ ...base, rootsPem: [pem("other-root.pem")] },
-			{ ...base, chainPem: [pem("leaf.pem")] },
+			{ ...base, rootsPem: [pem("other-root.crt")] },
+			{ ...base, chainPem: [pem("leaf.crt")] },
 			{ ...base, identityJwk: JSON.stringify(other) },
 			{ ...base, nowMs: Date.parse("2200-01-01T00:00:00Z") },
 			{ ...base, rootsPem: [] },

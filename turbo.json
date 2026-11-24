@@ -84,6 +84,7 @@
         "@hobo/connectivity#build",
         "@hobo/core#build",
         "@hobo/dispatcher#build",
+        "@hobo/fleet-authority#build",
         "@hobo/kv-redis-compatible#build",
         "@hobo/provider-vercel#build",
         "@hobo/secret-store-claim#build"

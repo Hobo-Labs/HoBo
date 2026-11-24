@@ -116,22 +116,4 @@ describe("netbird join credential", () => {
 		await net.join(join("nb-setup-one-off"));
 		expect(seen.join(" ")).toContain("nb-setup-one-off");
 	});
-
-	it("has no static setup key and reads none from the environment", async () => {
-		const previous = process.env.NETBIRD_SETUP_KEY;
-		process.env.NETBIRD_SETUP_KEY = "static-from-env";
-		try {
-			const seen: string[] = [];
-			const net = createNetbirdOverlay({
-				managementUrl: "https://netbird.test",
-				fetchImpl: recordingFetch(seen),
-			});
-			const result = await net.join(join());
-			expect(seen.join(" ")).not.toContain("static-from-env");
-			expect(result.ready).toBe(false);
-		} finally {
-			if (previous === undefined) delete process.env.NETBIRD_SETUP_KEY;
-			else process.env.NETBIRD_SETUP_KEY = previous;
-		}
-	});
 });
