@@ -20,7 +20,7 @@ working directory: they act on the Station's journal and its declared topology.
 | Runner hosts | none | `HOBO_CD_RUNNER_HOST=<agent config.json>` on a runner host: `agent run` registers the runner-host realizer (packages/ci-gh-actions/deploy/runner-fleet/README.md) |
 | Kubernetes fleets | none | `HOBO_CD_KUBE_FLEET=<file.json>`: `{ "ocm": … }` or `{ "karmada": … }` realizer record, optional `clusterProfiles` import (OBSERVE_ONLY Camps) |
 | Service tick | 1 s | `HOBO_CD_TICK_MS` |
-| Credential locators | `owner://NAME` from the owner store session (HoBo MCP `choose_secret_store`), resolved for one use, never stored; anything else, `env://` locators included, is refused | any `CredentialResolver` |
+| Credential locators | `owner://NAME` from the owner store session (HoBo MCP `choose_secret_store`), and `github-app://<owner>/<repo>`: an installation token the session mints for that repository from HoBo's GitHub App (`HOBO_CI_GITHUB_APP_ID` and `HOBO_CI_GITHUB_APP_PRIVATE_KEY` in the store's relay folder, written by `hobo ci app create`); each resolved for one use, never stored; anything else, `env://` locators included, is refused | any `CredentialResolver` |
 
 Ports the host did not configure fail closed: RUNBOOK and SUITE hooks refuse,
 a Camp without Station cutover routing offers no traffic capability (a required
@@ -78,7 +78,7 @@ Camp's labels bind where (`CATALOG_REALIZER_LABELS` in
 
 | Provider | Camp labels | Freight |
 |---|---|---|
-| all | `hobo.cd/credential-ref`: the one locator the resolver may use (`owner://NAME`); nothing else is resolved for the Camp. Optional `hobo.cd/realize-mode`: `converge` (default) or `observe` (resolver `read` only, never a write) | |
+| all | `hobo.cd/credential-ref`: the one locator the resolver may use (`owner://NAME`, or `github-app://<owner>/<repo>` for GitHub); nothing else is resolved for the Camp. Optional `hobo.cd/realize-mode`: `converge` (default) or `observe` (resolver `read` only, never a write) | |
 | npm | `hobo.cd/npm.registry` (`npmjs`, `github-packages`, `https://` origin), `hobo.cd/npm.auth` (`token`, `oidc-trusted-publishing`, or `anonymous` for an observe-only Camp that resolves no credential), `hobo.cd/npm.provenance: required`, optional `hobo.cd/npm.dist-tag` | `PACKAGE` artifacts named `<package>@<version>`, optional `<name>.sigstore` bundle, label `hobo.cd/npm.dist-tag` |
 | oci-registry | `hobo.cd/oci.registry` (host), `hobo.cd/oci.auth-realm`, `hobo.cd/oci.username` (non-secret), optional `hobo.cd/oci.tags` | `OCI_IMAGE` artifacts with a `<host>/<repo>@<digest>` coordinate on that host (already there, or every blob in the artifact store: the realizer pushes them on a byte transport), label `hobo.cd/oci.tags`, optional `hobo.cd/oci.mount-from` (a repository on that host to cross-mount blobs from) |
 | github | `hobo.cd/github.repository` (`owner/repo`), `hobo.cd/github.pages.branch`, `hobo.cd/github.pages.path` | a `STATIC_ASSETS` `hobo.static-site-tree/v1` index (its file blobs in the store), label `hobo.cd/github.commit-message` |

@@ -30,9 +30,10 @@ registered host once exhausted.
   exercise exact request formation + response parsing against the
   PACT-recorded responses with no network.
 - **Live lane (credential-gated):** a caller holding the owner store session
-  passes `ownerTokenProvider(credentials)`, which resolves
-  `owner://GITHUB_INSTALLATION_TOKEN` (a short-lived installation token — no
-  PATs; the environment is never read), with `HOBO_GITHUB_OWNER`,
+  passes `githubAppTokenProvider(credentials, { owner, repo })`, which resolves
+  `github-app://<owner>/<repo>`: the session mints a short-lived installation
+  token from HoBo's GitHub App (`hobo ci app create`) for that repository — no
+  personal tokens; the environment is never read — with `HOBO_GITHUB_OWNER`,
   `HOBO_GITHUB_REPO` and optionally `HOBO_GITHUB_WORKFLOW`, to dispatch and
   track a real run.
 

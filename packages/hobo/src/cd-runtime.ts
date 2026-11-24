@@ -80,6 +80,7 @@ import {
 	type JsonObject as CdJsonObject,
 	createBoundedFetchTransport,
 	type DurableEventStore,
+	GITHUB_APP_CREDENTIAL_SCHEME,
 	type HttpTransport,
 	type PrincipalRef,
 	ResolverError,
@@ -229,7 +230,8 @@ export function hostCredentials(): CredentialResolver {
 		async resolve(ref: string) {
 			throw new OwnerCredentialUnavailable(
 				ref,
-				ref.startsWith(OWNER_CREDENTIAL_SCHEME)
+				ref.startsWith(OWNER_CREDENTIAL_SCHEME) ||
+					ref.startsWith(GITHUB_APP_CREDENTIAL_SCHEME)
 					? "no-session"
 					: ref.startsWith("env:")
 						? "environment-ref"

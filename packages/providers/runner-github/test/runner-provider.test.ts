@@ -11,7 +11,7 @@ import {
 	GITHUB_CREDENTIALS_MISSING,
 	GithubApiError,
 	type GithubFetch,
-	ownerTokenProvider,
+	githubAppTokenProvider,
 } from "../src/index.js";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -137,11 +137,14 @@ describe("GitHub Actions RunnerProvider (hobo:runner, replay lane)", () => {
 		const gated = createGithubActionsClient({
 			owner: "hobo-dev",
 			repo: "hobo-jobs",
-			token: ownerTokenProvider({
-				resolve: async () => {
-					throw new Error("not in the store");
+			token: githubAppTokenProvider(
+				{
+					resolve: async () => {
+						throw new Error("no App installation");
+					},
 				},
-			}),
+				{ owner: "hobo-dev", repo: "hobo-jobs" },
+			),
 			fetch: transport,
 		});
 		const provider = createGithubRunnerProvider({
@@ -153,6 +156,21 @@ describe("GitHub Actions RunnerProvider (hobo:runner, replay lane)", () => {
 			provider.run({ jobId: "job-3" }),
 			(error: { code?: string }) => error.code === GITHUB_CREDENTIALS_MISSING,
 		);
+	});
+
+	it("mints the brokered token from HoBo's GitHub App for the client's repository", async () => {
+		const asked: string[] = [];
+		const token = githubAppTokenProvider(
+			{
+				resolve: async (ref, scope) => {
+					asked.push(`${scope} ${ref}`);
+					return { token: "synthetic-installation-token" };
+				},
+			},
+			{ owner: "hobo-dev", repo: "hobo-jobs" },
+		);
+		assert.equal(await token(), "synthetic-installation-token");
+		assert.deepEqual(asked, ["github.actions github-app://hobo-dev/hobo-jobs"]);
 	});
 
 	it("surfaces non-2xx GitHub responses as typed GithubApiError", async () => {

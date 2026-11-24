@@ -1,3 +1,5 @@
+import { githubAppInstallationRef } from "@hobo/core";
+
 import {
 	isJsonArray,
 	isJsonNumber,
@@ -66,7 +68,7 @@ export class GithubCredentialsMissingError extends Error {
 	readonly code = GITHUB_CREDENTIALS_MISSING;
 	constructor() {
 		super(
-			"runner-github: no brokered GitHub installation token available — wire a token provider (the Yard broker) or resolve owner://GITHUB_INSTALLATION_TOKEN through the owner store session (HoBo MCP choose_secret_store); the environment is never read.",
+			"runner-github: no brokered GitHub installation token available — wire a token provider (the Yard broker) or mint one from HoBo's GitHub App through the owner store session (github-app://<owner>/<repo> after HoBo MCP choose_secret_store and hobo ci app create); the environment is never read.",
 		);
 		this.name = "GithubCredentialsMissingError";
 	}
@@ -140,16 +142,16 @@ export type GithubCredentialResolver = Readonly<{
 	): Promise<Readonly<Record<string, string>>>;
 }>;
 
-// public-contract: the owner-store entry the GitHub runner reads its installation token from.
-export const GITHUB_INSTALLATION_TOKEN_REF =
-	"owner://GITHUB_INSTALLATION_TOKEN";
-
-export function ownerTokenProvider(
+export function githubAppTokenProvider(
 	credentials: GithubCredentialResolver,
+	repository: Readonly<{ owner: string; repo: string }>,
 ): BrokeredTokenProvider {
 	return async () => {
+		const ref = githubAppInstallationRef(
+			`${repository.owner}/${repository.repo}`,
+		);
 		const material = await credentials
-			.resolve(GITHUB_INSTALLATION_TOKEN_REF, "github.actions")
+			.resolve(ref, "github.actions")
 			.catch(() => undefined);
 		const token = material?.token;
 		if (!token) throw new GithubCredentialsMissingError();

@@ -127,11 +127,11 @@ function withProbes(
 	};
 }
 
-function ownerReleaseToken(token: string): ReleaseCredentials {
+function githubAppInstallationToken(token: string): ReleaseCredentials {
 	return {
 		async resolve(ref) {
-			if (ref !== "owner://GITHUB_RELEASE_TOKEN")
-				throw new Error(`no entry for ${ref}`);
+			if (ref !== `github-app://${OWNER}/${REPO}`)
+				throw new Error(`no installation for ${ref}`);
 			return { token };
 		},
 	};
@@ -146,7 +146,7 @@ function seams(
 		http,
 		now: clock(),
 		drive: { passes, intervalMs: 0 },
-		credentials: ownerReleaseToken(token),
+		credentials: githubAppInstallationToken(token),
 	};
 }
 
@@ -627,7 +627,7 @@ describe.skipIf(!built)(
 					http: withProbes(github, [], world),
 					now,
 					drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
-					credentials: ownerReleaseToken(fx.TOKEN),
+					credentials: githubAppInstallationToken(fx.TOKEN),
 				},
 			});
 			expect(buildDelayMs).toBeGreaterThan(480_000);
@@ -652,7 +652,7 @@ describe.skipIf(!built)(
 						http: withProbes(world.transport, [], world),
 						now: clock(60_000),
 						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
-						credentials: ownerReleaseToken(fx.TOKEN),
+						credentials: githubAppInstallationToken(fx.TOKEN),
 					},
 				}),
 			).rejects.toThrow(/blocked/u);
@@ -690,7 +690,7 @@ describe.skipIf(!built)(
 						http: withProbes(github, [], world),
 						now: clock(60_000),
 						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
-						credentials: ownerReleaseToken(fx.TOKEN),
+						credentials: githubAppInstallationToken(fx.TOKEN),
 					},
 				}),
 			).rejects.toThrow(/blocked/u);

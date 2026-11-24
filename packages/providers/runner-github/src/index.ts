@@ -31,7 +31,6 @@ export {
 	GITHUB_API_ERROR,
 	GITHUB_API_VERSION,
 	GITHUB_CREDENTIALS_MISSING,
-	GITHUB_INSTALLATION_TOKEN_REF,
 	type GithubActionsClient,
 	type GithubActionsClientOptions,
 	GithubApiError,
@@ -39,7 +38,7 @@ export {
 	GithubCredentialsMissingError,
 	type GithubFetch,
 	type GithubFetchResponse,
-	ownerTokenProvider,
+	githubAppTokenProvider,
 	type WorkflowDispatchInput,
 	type WorkflowRun,
 } from "./github-actions-client.js";

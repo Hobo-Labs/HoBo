@@ -932,6 +932,12 @@ export {
 	TrajectoryRewardSchema,
 } from "./ports/training-engine.js";
 export {
+	GITHUB_APP_CREDENTIAL_SCHEME,
+	type GithubAppRepository,
+	githubAppInstallationRef,
+	parseGithubAppInstallationRef,
+} from "./ports/github-app-credential.js";
+export {
 	createTrustedVault,
 	TRUSTED_VAULT_DEFAULT_TTL_MS,
 	type TrustedVault,

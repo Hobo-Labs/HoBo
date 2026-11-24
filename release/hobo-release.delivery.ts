@@ -44,14 +44,14 @@ const BINDING = {
 		"hobo.cd/oci.registry": "ghcr.io",
 		"hobo.cd/oci.auth-realm": "https://ghcr.io/token",
 		"hobo.cd/oci.username": "hobo-release",
-		"hobo.cd/credential-ref": "owner://GITHUB_RELEASE_TOKEN",
+		"hobo.cd/credential-ref": `github-app://${repository}`,
 	},
 	// The Pages site of this repository, built from gh-pages (contents: write).
 	pages: {
 		"hobo.cd/github.repository": repository,
 		"hobo.cd/github.pages.branch": "gh-pages",
 		"hobo.cd/github.pages.path": "/",
-		"hobo.cd/credential-ref": "owner://GITHUB_RELEASE_TOKEN",
+		"hobo.cd/credential-ref": `github-app://${repository}`,
 	},
 } as const satisfies Record<Family, Readonly<Record<string, string>>>;
 

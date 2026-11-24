@@ -192,6 +192,19 @@ describe("release topology names", () => {
 		expect(seen[0]?.maxResponseBytes).toBeLessThan(64 * 1024);
 	});
 
+	it("binds the GitHub Camps to HoBo's GitHub App installation on the release repository", () => {
+		const githubCamps = camps.filter(
+			(camp) =>
+				camp.labels["hobo.release/family"] === "oci" ||
+				camp.labels["hobo.release/family"] === "pages",
+		);
+		expect(githubCamps).toHaveLength(4);
+		for (const camp of githubCamps)
+			expect(camp.labels["hobo.cd/credential-ref"]).toMatch(
+				/^github-app:\/\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/u,
+			);
+	});
+
 	it("probes the latest Pages build for every promotion node", () => {
 		const pagesCamp = camps.find(
 			(camp) => camp.logicalId === "hobo-release/pages-candidate",

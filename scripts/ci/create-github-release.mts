@@ -368,17 +368,13 @@ type PagesBuildBody = {
 };
 type GitRefBody = { readonly object?: { readonly sha?: string } };
 
-export const RELEASE_GITHUB_TOKEN_REF = "owner://GITHUB_RELEASE_TOKEN";
-
 async function releaseGithubToken(
 	credentials: ReleaseCredentials | undefined,
+	ref: string,
 ): Promise<string | undefined> {
 	if (credentials === undefined) return undefined;
 	try {
-		const resolved = await credentials.resolve(
-			RELEASE_GITHUB_TOKEN_REF,
-			"release-probe",
-		);
+		const resolved = await credentials.resolve(ref, "release-probe");
 		return resolved.token?.trim() || undefined;
 	} catch {
 		return undefined;
@@ -467,18 +463,17 @@ export async function openReleaseCd(options: {
 		HOBO_HOME: options.home,
 		HOBO_USER: options.env.HOBO_USER || "hobo-release",
 	};
-	const seamHttp = options.seams?.http;
-	let baseHttp: ReleaseHttpTransport;
-	if (seamHttp) {
-		baseHttp = seamHttp;
-	} else {
-		const { createBoundedFetchTransport } = await import(
-			pathToFileURL(CORE_DIST).href
-		);
-		baseHttp = createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	}
+	const core = await import(pathToFileURL(CORE_DIST).href);
+	const baseHttp: ReleaseHttpTransport =
+		options.seams?.http ??
+		core.createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
 	const http = githubApiProbeTransport(
-		await releaseGithubToken(options.seams?.credentials),
+		await releaseGithubToken(
+			options.seams?.credentials,
+			core.githubAppInstallationRef(
+				options.env.GITHUB_REPOSITORY?.trim() || "Hobo-Labs/HoBo",
+			),
+		),
 		baseHttp,
 	);
 	const opened = await runtimeModule.openCdRuntime({
