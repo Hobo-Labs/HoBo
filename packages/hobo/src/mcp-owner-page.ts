@@ -35,9 +35,6 @@ const answersSchema = z
 		BW_CLIENTID: answerField,
 		BW_CLIENTSECRET: answerField,
 		INFISICAL_CLI_SESSION: answerField,
-		HOSTINGER_API_TOKEN: answerField,
-		HOSTINGER_ARC_KUBECONFIG: z.string().max(65536).optional(),
-		HOBO_CI_ACCOUNT_TOKEN: answerField,
 	})
 	.strict();
 
@@ -254,22 +251,6 @@ const STORE_SECTIONS = {
 	],
 } as const;
 
-const ENTRY_FIELDS = [
-	{
-		name: "HOSTINGER_API_TOKEN",
-		label: "Hostinger API token (hPanel → Profile → API)",
-	},
-	{
-		name: "HOSTINGER_ARC_KUBECONFIG",
-		label:
-			"Hostinger ARC cluster kubeconfig, as one base64 line (base64 -w0 kubeconfig)",
-	},
-	{
-		name: "HOBO_CI_ACCOUNT_TOKEN",
-		label: "HoBo CI relay account credential (from your relay operator)",
-	},
-] as const;
-
 function escapeHtml(text: string): string {
 	return text
 		.replaceAll("&", "&amp;")
@@ -303,10 +284,6 @@ export function renderOwnerPageHtml(input: {
 				: "";
 		return `<fieldset data-for="${o.id}" hidden><legend>${escapeHtml(o.label)}</legend>${link}${inputs}</fieldset>`;
 	}).join("");
-	const entries = `<fieldset data-for="entries"><legend>Hostinger and HoBo CI</legend><p>HoBo writes these into the store you chose. Leave any you have already stored blank. GitHub is connected through HoBo's GitHub App, never a token here.</p>${ENTRY_FIELDS.map(
-		(f) =>
-			`<label for="${f.name}">${escapeHtml(f.label)}</label><input id="${f.name}" name="${f.name}" type="password" autocomplete="off" spellcheck="false">`,
-	).join("")}</fieldset>`;
 	const config = JSON.stringify({
 		page: input.page,
 		x: input.x,
@@ -341,7 +318,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style></head><body><main>
 <h1>Connect your secret store</h1>
 <p>HoBo keeps this project's credentials in your store. What you enter is encrypted in this page to the HoBo server running your session; the agent only carries the sealed result and cannot read it.</p>
-<form id="f">${options}${fields}${entries}
+<form id="f">${options}${fields}
 <button type="submit" id="go">Seal and send to HoBo</button>
 <div id="say" role="status"></div></form>
 <div class="key">HoBo key fingerprint <code>${escapeHtml(input.fingerprint)}</code></div>
@@ -353,7 +330,7 @@ var cfg=JSON.parse(document.getElementById("cfg").textContent);
 var f=document.getElementById("f"),say=document.getElementById("say"),go=document.getElementById("go");
 function status(text,kind){say.textContent=text;say.className=kind||""}
 function picked(){var r=f.querySelector("input[name=store]:checked");return r?r.value:""}
-function show(){var s=picked();Array.prototype.forEach.call(f.querySelectorAll("fieldset"),function(e){e.hidden=e.getAttribute("data-for")!==s&&e.getAttribute("data-for")!=="entries"})}
+function show(){var s=picked();Array.prototype.forEach.call(f.querySelectorAll("fieldset"),function(e){e.hidden=e.getAttribute("data-for")!==s})}
 f.addEventListener("change",show);show();
 function b64(buf){var s="",a=new Uint8Array(buf);for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")}
 async function seal(answers){
@@ -368,7 +345,7 @@ var ct=await subtle.encrypt({name:"AES-GCM",iv:iv,additionalData:enc.encode(cfg.
 var epk=await subtle.exportKey("jwk",mine.publicKey);
 return JSON.stringify({v:1,page:cfg.page,epk:{kty:"EC",crv:"P-256",x:epk.x,y:epk.y},iv:b64(iv),ct:b64(ct)})}
 f.addEventListener("submit",async function(e){e.preventDefault();var s=picked();if(!s){status("Choose a store.","bad");return}
-var answers={store:s};Array.prototype.forEach.call(f.querySelectorAll('fieldset[data-for="'+s+'"] input, fieldset[data-for="entries"] input'),function(i){var v=i.value.trim();if(v)answers[i.name]=v});
+var answers={store:s};Array.prototype.forEach.call(f.querySelectorAll('fieldset[data-for="'+s+'"] input'),function(i){var v=i.value.trim();if(v)answers[i.name]=v});
 go.disabled=true;status("Sealing…");
 try{var sealed=await seal(answers);
 Array.prototype.forEach.call(f.querySelectorAll("input[type=password],input[type=text]"),function(i){i.value=""});

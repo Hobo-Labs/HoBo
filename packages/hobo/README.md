@@ -66,12 +66,11 @@ database, and the agent passes that text unchanged to `submit_owner_page`. HoBo 
 it once, within 30 minutes, records the store choice and hands the store's sign-in to
 the waiting run. The agent carries only ciphertext. `choose_secret_store` with
 `channel: "page"` returns the page even where the host declares form elicitation,
-for hosts that declare it but never show the form. The page also takes Infisical's
-copied sign-in session and the Hostinger entries and relay credential
-(`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`), which `submit_owner_page` writes into the store once the
-session is established.
+for hosts that declare it but never show the form. The page takes the store choice and
+the store's sign-in (Infisical's copied session) only. A `sign-in-needed` result carries
+the refusal's `reason` with links and identifiers redacted (`publicReason`).
 
-`store_owner_entries` fills the store with the provider entries HoBo reads
+`store_owner_entries` is the optional later step that joins a Hostinger fleet: it fills the store with the provider entries HoBo reads
 (`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
 each value checked for shape and written with the session's `entries(cwd).write`,
 never returned. It needs form elicitation and an established session. The server

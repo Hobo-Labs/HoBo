@@ -249,7 +249,7 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		]);
 	});
 
-	it("on request, takes the sign-in, the Hostinger entries and the relay credential through the page even where the host declares forms", async () => {
+	it("on request, takes the store and its sign-in through the page even where the host declares forms, and asks for no provider entry", async () => {
 		const deposited = new Map<string, string>();
 		const written = new Map<string, string>();
 		let established = false;
@@ -302,12 +302,11 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 			{
 				INFISICAL_PROJECT_ID: PROJECT,
 				INFISICAL_CLI_SESSION: "c2Vzc2lvbi1maXh0dXJl",
-				HOSTINGER_API_TOKEN: "hostinger-fixture-token-0123456789",
-				HOBO_CI_ACCOUNT_TOKEN: "relay-account-fixture-0123456789",
 			},
 			"infisical",
 		);
-		expect(out.data.sealed).not.toContain("hostinger-fixture");
+		expect(page.html).not.toContain("HOSTINGER");
+		expect(out.data.sealed).not.toContain("c2Vzc2lvbi1maXh0dXJl");
 		const done = await app.callTool(
 			SUBMIT_OWNER_PAGE_TOOL,
 			{ sealed: out.data.sealed },
@@ -317,13 +316,10 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		expect(done.structuredContent).toEqual({
 			status: "established",
 			store: "Infisical",
-			stored: ["HOSTINGER_API_TOKEN", "HOBO_CI_ACCOUNT_TOKEN"],
 		});
 		expect(deposited.get("INFISICAL_CLI_SESSION")).toBe("c2Vzc2lvbi1maXh0dXJl");
-		expect(written.get("HOSTINGER_API_TOKEN")).toBe(
-			"hostinger-fixture-token-0123456789",
-		);
-		expect(JSON.stringify(done)).not.toContain("hostinger-fixture");
+		expect(written.size).toBe(0);
+		expect(JSON.stringify(done)).not.toContain("c2Vzc2lvbi1maXh0dXJl");
 	});
 
 	it("still reports no private form when no owner page is wired", async () => {

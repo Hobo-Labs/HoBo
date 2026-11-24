@@ -11,7 +11,6 @@ import { z } from "zod";
 
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.js";
 import {
-	OWNER_ENTRY_SPECS,
 	STORE_OWNER_ENTRIES_DESCRIPTION,
 	STORE_OWNER_ENTRIES_INPUT,
 	STORE_OWNER_ENTRIES_TITLE,
@@ -21,7 +20,6 @@ import {
 import {
 	OWNER_PAGE_COLLECTION,
 	OWNER_PAGE_SECRET_FIELDS,
-	type OwnerPageAnswers,
 	OwnerPageRefused,
 	type OwnerPages,
 } from "./mcp-owner-page.js";
@@ -404,8 +402,15 @@ function sessionResult(
 			);
 		case "sign-in-needed":
 			return result(
-				`The owner chose ${state.store}, and its sign-in has not completed (${state.code}). Call choose_secret_store again when the owner is ready; their choice is kept.`,
-				{ status: "sign-in-needed", store: state.store, code: state.code },
+				`The owner chose ${state.store}, and its sign-in has not completed (${state.code}${state.reason === undefined ? "" : `: ${state.reason}`}). Call choose_secret_store again when the owner is ready; their choice is kept.`,
+				{
+					status: "sign-in-needed",
+					store: state.store,
+					code: state.code,
+					...(state.reason === undefined
+						? undefined
+						: { reason: state.reason }),
+				},
 				true,
 			);
 		case "unchosen":
@@ -441,7 +446,7 @@ const chooseArgs: JsonObject = {
 		type: "string",
 		enum: ["form", "page"],
 		description:
-			"page: HoBo's sealed owner page (an Artifact), also for the store's sign-in, the Hostinger entries and the HoBo CI relay credential; use it when the host declares forms but the owner never sees them.",
+			"page: HoBo's sealed owner page (an Artifact), also for the store's sign-in; use it when the host declares forms but the owner never sees them.",
 	},
 };
 
@@ -533,26 +538,6 @@ export function createStoreChoiceApp(
 		return record(cwd, isJsonObject(fields) ? { ...fields, store } : { store });
 	};
 
-	const writeEntries = async (
-		cwd: string,
-		answers: OwnerPageAnswers,
-	): Promise<string[]> => {
-		const sessions = options.sessions;
-		if (sessions === undefined || !sessions.status(cwd).established) return [];
-		const entries = sessions.entries(cwd);
-		const stored: string[] = [];
-		for (const spec of OWNER_ENTRY_SPECS) {
-			const entry = answers[spec.name];
-			const value = entry === undefined ? undefined : spec.parse(entry);
-			if (value === undefined) continue;
-			try {
-				await entries.write(spec.name, value);
-				stored.push(spec.name);
-			} catch {}
-		}
-		return stored;
-	};
-
 	const submitOwnerPage = async (
 		args: JsonObject,
 		pages: OwnerPages,
@@ -587,20 +572,7 @@ export function createStoreChoiceApp(
 				return value === undefined ? [] : [[name, value]];
 			}),
 		]);
-		const recorded = await record(opened.cwd, choice);
-		const stored = await writeEntries(opened.cwd, answers);
-		return stored.length === 0
-			? recorded
-			: {
-					...recorded,
-					content: [
-						{
-							type: "text",
-							text: `${recorded.content[0]?.text ?? ""} Stored in the owner's store: ${stored.join(", ")}.`,
-						},
-					],
-					structuredContent: { ...recorded.structuredContent, stored },
-				};
+		return record(opened.cwd, choice);
 	};
 
 	const baseTools = (
