@@ -328,8 +328,15 @@ credential locators `owner://<NAME>` (`env://<NAME>` is refused) from that sessi
 `HOSTINGER_API_TOKEN` from the owner's store without the value reaching the
 agent; `hobo ci fleet status|restart|start` (the `ci` tool with
 `args: ["fleet", ...]`) reads the same `owner://HOSTINGER_API_TOKEN` to list and
-power-cycle the CI fleet's Hostinger VPS, and refuses with
-`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until the session holds it;
+power-cycle the CI fleet's Hostinger VPS, or, for an Infisical store without
+that entry, calls Hostinger through Infisical Agent Vault: HoBo runs the
+`infisical agent-vault proxy` itself on loopback for the owner's one Agent
+Vault project whose `http` service covers `developers.hostinger.com` (the
+signed-in identity must be an Agent Vault admin there or hold an access
+bundle with the service), so the token stays in Agent Vault; it refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until one of the two is in place, and
+with `HOBO_AGENT_VAULT_PROJECT_AMBIGUOUS` when the identity reaches several
+Agent Vault projects;
 `hobo ci fleet caches --plan|--apply|--status` (`args: ["fleet", "caches", ...]`)
 reads the ARC cluster's kubeconfig as `owner://HOSTINGER_ARC_KUBECONFIG` the
 same way to mount and prewarm the scale sets' node pnpm store and image cache;

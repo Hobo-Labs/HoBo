@@ -84,7 +84,8 @@ function fakeSessions(
 				throw new Error("not used");
 			},
 		}),
-		close: () => established.clear(),
+		agentVault: () => undefined,
+		close: async () => established.clear(),
 	};
 	return { sessions, establish };
 }
