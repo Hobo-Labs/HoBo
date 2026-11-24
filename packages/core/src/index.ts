@@ -471,6 +471,12 @@ export {
 	UnsupportedSchemaVersionError,
 } from "./ports/eventstore.js";
 export { createBoundedFetchTransport } from "./ports/fetch-http-transport.js";
+export {
+	GITHUB_APP_CREDENTIAL_SCHEME,
+	type GithubAppRepository,
+	githubAppInstallationRef,
+	parseGithubAppInstallationRef,
+} from "./ports/github-app-credential.js";
 export type {
 	HttpTransport,
 	TransportGuardErrorCode,

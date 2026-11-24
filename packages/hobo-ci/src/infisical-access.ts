@@ -33,6 +33,8 @@ import {
 export const OWNER_SIGN_IN_LINE_PREFIX = "HOBO_OWNER_SIGN_IN";
 // public-contract: the capture name of Infisical's copied CLI session.
 export const INFISICAL_CLI_SESSION_CAPTURE = "INFISICAL_CLI_SESSION";
+// public-contract: the environment slug a store uses when the owner names none.
+export const DEFAULT_INFISICAL_ENVIRONMENT = "prod";
 
 export interface WorkloadOidc {
 	readonly discoveryUrl: string;
@@ -43,7 +45,7 @@ export interface WorkloadOidc {
 
 export interface InfisicalAccessOptions {
 	readonly family: "ci" | "cd";
-	readonly projectId: string;
+	readonly projectId?: string;
 	readonly run: RunCommand;
 	readonly which: (bin: string) => Promise<string | undefined>;
 	readonly toolsDir: string;
@@ -72,6 +74,8 @@ export type InfisicalAccess =
 	| {
 			readonly kind: "ready";
 			readonly identityId: string;
+			readonly projectId: string;
+			readonly environment: string;
 			readonly auth: "oidc" | "token";
 			/** Token Auth only: this run's token, for its vault. */
 			readonly token: string | undefined;
@@ -84,7 +88,39 @@ export type InfisicalAccess =
 	  };
 
 /** A JSON request body: strings, numbers and nested objects of them. */
-type ApiBody = { readonly [key: string]: string | number | ApiBody };
+type ApiBody = {
+	readonly [key: string]: string | number | boolean | ApiBody;
+};
+
+const infisicalProject = z.object({
+	id: z.string().min(1),
+	name: z.string(),
+	slug: z.string().optional(),
+	type: z.string().optional(),
+	environments: z
+		.array(z.object({ name: z.string(), slug: z.string() }))
+		.default([]),
+});
+type InfisicalProject = z.infer<typeof infisicalProject>;
+const oneProject = z.object({ project: infisicalProject });
+const projectList = z.object({ projects: z.array(infisicalProject) });
+
+const SECRET_MANAGER = "secret-manager";
+const HOBO_PROJECT = "hobo";
+const PRODUCTION_SLUGS = ["production", "prod", "staging", "dev"] as const;
+
+const isSecretManager = (project: InfisicalProject) =>
+	(project.type ?? SECRET_MANAGER) === SECRET_MANAGER;
+
+const UUID_PATTERN =
+	/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu;
+
+function withoutIds(said: string, ids: readonly string[]): string {
+	return ids
+		.filter((id) => id !== "")
+		.reduce((text, id) => text.split(id).join("(id withheld)"), said)
+		.replace(UUID_PATTERN, "(id withheld)");
+}
 
 /** A project folder's subfolders (`GET /api/v1/folders`). */
 const projectFolders = z.object({
@@ -278,7 +314,12 @@ export async function provisionInfisicalAccess(
 		}
 		throw failure;
 	};
-	const provision = async (user: string, organizationId: string) => {
+	let projectName: string | undefined;
+	const knownIds: string[] = [options.projectId ?? ""];
+	const provision = async (
+		user: string,
+		organizationId: string,
+	): Promise<InfisicalAccess> => {
 		const call = async <T>(
 			what: string,
 			schema: z.ZodType<T>,
@@ -287,13 +328,93 @@ export async function provisionInfisicalAccess(
 			body?: ApiBody,
 		): Promise<T> => {
 			const response = await attempt(user, method, pathname, body);
-			if (!response.ok)
+			if (!response.ok) {
+				const said = refusalMessage.safeParse(
+					await response.json().catch(() => undefined),
+				);
 				throw new InfisicalApiRefusal(
-					`Infisical refused ${what} (HTTP ${response.status}).`,
+					`Infisical refused ${what} (HTTP ${response.status})${said.success ? `: ${withoutIds(said.data.message, knownIds)}` : ""}.`,
 					response.status,
 				);
+			}
 			return schema.parse(await response.json());
 		};
+		const configured = async (projectId: string | undefined) => {
+			if (projectId === undefined || projectId === "") return undefined;
+			try {
+				const { project } = await call(
+					"reading the project",
+					oneProject,
+					"GET",
+					`/api/v1/projects/${encodeURIComponent(projectId)}`,
+				);
+				return isSecretManager(project) ? project : undefined;
+			} catch (error) {
+				if (
+					error instanceof InfisicalApiRefusal &&
+					(error.status === 400 || error.status === 403 || error.status === 404)
+				)
+					return undefined;
+				throw error;
+			}
+		};
+		let project = await configured(options.projectId);
+		if (project === undefined) {
+			const { projects } = await call(
+				"listing the Secrets Management projects",
+				projectList,
+				"GET",
+				`/api/v1/projects?${new URLSearchParams({ type: SECRET_MANAGER })}`,
+			);
+			const candidates = projects.filter(isSecretManager);
+			const named = candidates.filter((candidate) =>
+				[candidate.name, candidate.slug].some(
+					(label) => label?.toLowerCase() === HOBO_PROJECT,
+				),
+			);
+			project = candidates.length === 1 ? candidates[0] : named[0];
+			if (project === undefined && candidates.length > 1)
+				return refused(
+					"PROJECT_AMBIGUOUS",
+					`Your Infisical organization has several Secrets Management projects (${candidates.map((candidate) => candidate.name).join(", ")}), and none is named ${HOBO_PROJECT}.`,
+					[
+						`In Infisical (${api}), rename the project HoBo should use to ${HOBO_PROJECT} (Project Settings → Project name).`,
+						"Run again: HoBo uses that project from then on.",
+					],
+				);
+			project ??= (
+				await call(
+					`creating the ${HOBO_PROJECT} project`,
+					oneProject,
+					"POST",
+					"/api/v1/projects",
+					{
+						projectName: HOBO_PROJECT,
+						slug: HOBO_PROJECT,
+						type: SECRET_MANAGER,
+						shouldCreateDefaultEnvs: true,
+					},
+				)
+			).project;
+		}
+		projectName = project.name;
+		const projectId = project.id;
+		knownIds.push(projectId);
+		const slugs = new Set(project.environments.map((env) => env.slug));
+		const preferred =
+			options.folder?.environment ?? DEFAULT_INFISICAL_ENVIRONMENT;
+		const present = [preferred, ...PRODUCTION_SLUGS].find((slug) =>
+			slugs.has(slug),
+		);
+		if (present === undefined)
+			await call(
+				`creating the ${DEFAULT_INFISICAL_ENVIRONMENT} environment in ${project.name}`,
+				z.unknown(),
+				"POST",
+				`/api/v1/projects/${projectId}/environments`,
+				{ name: "Production", slug: DEFAULT_INFISICAL_ENVIRONMENT },
+			);
+		const environment = present ?? DEFAULT_INFISICAL_ENVIRONMENT;
 		const name = `hobo-${options.family}`;
 		const listed = await call(
 			"listing the organization's identities",
@@ -319,6 +440,7 @@ export async function provisionInfisicalAccess(
 					},
 				)
 			).identity.id;
+		knownIds.push(identityId);
 		const methods = existing?.authMethods ?? [];
 		const oidc = options.workloadOidc;
 		if (oidc !== undefined && !methods.includes("oidc-auth"))
@@ -347,7 +469,7 @@ export async function provisionInfisicalAccess(
 			"listing the project's identities",
 			projectIdentities,
 			"GET",
-			`/api/v1/projects/${options.projectId}/memberships/identities`,
+			`/api/v1/projects/${projectId}/memberships/identities`,
 		);
 		if (
 			!members.identityMemberships.some(
@@ -358,12 +480,11 @@ export async function provisionInfisicalAccess(
 				"adding the identity to the project",
 				z.unknown(),
 				"POST",
-				`/api/v1/projects/${options.projectId}/memberships/identities/${identityId}`,
+				`/api/v1/projects/${projectId}/memberships/identities/${identityId}`,
 				{ role: "member" },
 			);
 		// The store's folder, each level created only if missing.
 		if (options.folder !== undefined) {
-			const { environment } = options.folder;
 			let parent = "/";
 			for (const name of options.folder.path.split("/").filter(Boolean)) {
 				const has = async () =>
@@ -372,7 +493,7 @@ export async function provisionInfisicalAccess(
 							`listing the folders in ${parent}`,
 							projectFolders,
 							"GET",
-							`/api/v1/folders?${new URLSearchParams({ workspaceId: options.projectId, environment, path: parent })}`,
+							`/api/v1/folders?${new URLSearchParams({ workspaceId: projectId, environment, path: parent })}`,
 						)
 					).folders.some((folder) => folder.name === name);
 				if (!(await has()))
@@ -383,7 +504,7 @@ export async function provisionInfisicalAccess(
 							"POST",
 							"/api/v1/folders",
 							{
-								workspaceId: options.projectId,
+								workspaceId: projectId,
 								environment,
 								name,
 								path: parent,
@@ -401,9 +522,11 @@ export async function provisionInfisicalAccess(
 			return {
 				kind: "ready",
 				identityId,
+				projectId,
+				environment,
 				auth: "oidc",
 				token: undefined,
-			} as const;
+			};
 		const token = await call(
 			"creating this run's token",
 			tokenCreated,
@@ -414,9 +537,11 @@ export async function provisionInfisicalAccess(
 		return {
 			kind: "ready",
 			identityId,
+			projectId,
+			environment,
 			auth: "token",
 			token: token.accessToken,
-		} as const;
+		};
 	};
 
 	for (;;) {
@@ -459,7 +584,7 @@ export async function provisionInfisicalAccess(
 			}
 			if (error instanceof InfisicalApiRefusal && error.status === 403)
 				return refused("API", error.message, [
-					`In Infisical (${api}), your account needs the Admin role in its organization (Organization Settings → Access Control) and in project ${options.projectId}, so HoBo can create its own machine identity there.`,
+					`In Infisical (${api}), your account needs the Admin role in its organization (Organization Settings → Access Control) and in ${projectName === undefined ? "its Secrets Management project" : `the project ${projectName}`}, so HoBo can create its own machine identity there.`,
 					"Run again once your role allows it.",
 				]);
 			if (
@@ -525,6 +650,10 @@ const projectIdentities = z.object({
 			identity: z.object({ id: z.string() }).optional(),
 		}),
 	),
+});
+
+const refusalMessage = z.object({
+	message: z.string().min(1).max(500),
 });
 
 class InfisicalApiRefusal extends Error {

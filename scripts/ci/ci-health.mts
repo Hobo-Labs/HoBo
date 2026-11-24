@@ -898,7 +898,7 @@ export async function main(
 	const dryRun = argv.includes("--dry-run") || env.CI_HEALTH_DRY_RUN === "true";
 	const repository = repositoryFrom(env);
 	const http = createHttp({
-		token: env.GITHUB_TOKEN || env.GH_TOKEN || "",
+		token: env.GITHUB_TOKEN || "",
 		apiUrl: env.GITHUB_API_URL || "https://api.github.com",
 		fetch: io.fetch,
 	});

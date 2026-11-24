@@ -3,6 +3,7 @@ import type { CredentialResolver } from "@hobo/cd";
 import type { CommandResult } from "@hobo/cli";
 import type { HttpTransport } from "@hobo/core";
 import {
+	HOSTINGER_API_HOST,
 	HostingerFleetError,
 	type HostingerFleetMachine,
 	hostingerVpsFleet,
@@ -15,6 +16,10 @@ import {
 	CiFleetPowerActionSchema,
 	CiFleetStatusSchema,
 } from "./_generated/ci_fleet_pb.js";
+import type {
+	AgentVaultRefusal,
+	AgentVaultRouter,
+} from "./agent-vault-broker.js";
 
 // public-contract: the owner-store reference hobo ci fleet reads the Hostinger API token from; owners store it under this name.
 export const CI_FLEET_TOKEN_REF = "owner://HOSTINGER_API_TOKEN";
@@ -29,17 +34,98 @@ function usage(message: string): CommandResult {
 	return { ok: false, status: "usage", code: "HOBO_CLI_USAGE", message };
 }
 
-function credentialUnavailable(): CommandResult {
+function credentialUnavailable(agentVault?: AgentVaultRefusal): CommandResult {
 	return {
 		ok: false,
 		status: "credential_unavailable",
 		code: "HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE",
-		message: `hobo ci fleet needs ${CI_FLEET_TOKEN_REF} from the owner's store session, and none resolved. Run HoBo MCP's choose_secret_store to connect the owner's store, then ask again.`,
+		message: `hobo ci fleet needs ${CI_FLEET_TOKEN_REF} from the owner's store session, or an Infisical Agent Vault service for ${HOSTINGER_API_HOST}, and neither resolved.${agentVault === undefined ? "" : ` Agent Vault: ${agentVault.message}`} Run HoBo MCP's choose_secret_store to connect the owner's store, then ask again.`,
 		remediation: [
 			"Call the HoBo MCP tool choose_secret_store for this project directory.",
-			`Have the owner store the Hostinger API token in that store under ${CI_FLEET_TOKEN_REF.slice("owner://".length)}.`,
+			`Have the owner store the Hostinger API token in that store under ${CI_FLEET_TOKEN_REF.slice("owner://".length)}, or keep it in an Infisical Agent Vault http service for ${HOSTINGER_API_HOST} that the signed-in Infisical identity can use.`,
+			...(agentVault?.remediation ?? []),
 		],
 	};
+}
+
+function agentVaultRefused(refusal: AgentVaultRefusal): CommandResult {
+	return {
+		ok: false,
+		status:
+			refusal.code === "HOBO_AGENT_VAULT_PROXY_FAILED" ||
+			refusal.code === "HOBO_AGENT_VAULT_FAILED"
+				? "provider_error"
+				: "refused",
+		code: refusal.code,
+		message: refusal.message,
+		remediation: [...refusal.remediation],
+	};
+}
+
+type FleetAccess = Readonly<{
+	transport: HttpTransport;
+	token: string;
+	source:
+		| Readonly<{ kind: "owner-store" }>
+		| Readonly<{
+				kind: "agent-vault";
+				service: string;
+				hosts: readonly string[];
+		  }>;
+}>;
+
+async function fleetAccess(input: {
+	readonly credentials: CredentialResolver | undefined;
+	readonly agentVault: AgentVaultRouter | undefined;
+	readonly transport: HttpTransport;
+}): Promise<
+	| Readonly<{ ok: true; access: FleetAccess }>
+	| Readonly<{ ok: false; result: CommandResult }>
+> {
+	const token =
+		input.credentials === undefined
+			? undefined
+			: await resolveFleetToken(input.credentials);
+	if (token !== undefined)
+		return {
+			ok: true,
+			access: {
+				transport: input.transport,
+				token,
+				source: { kind: "owner-store" },
+			},
+		};
+	if (input.agentVault === undefined)
+		return { ok: false, result: credentialUnavailable() };
+	const resolution = await input.agentVault(HOSTINGER_API_HOST);
+	if (!resolution.ok)
+		return {
+			ok: false,
+			result:
+				resolution.refusal.code === "HOBO_AGENT_VAULT_UNAVAILABLE" ||
+				resolution.refusal.code === "HOBO_AGENT_VAULT_NO_SERVICE"
+					? credentialUnavailable(resolution.refusal)
+					: agentVaultRefused(resolution.refusal),
+		};
+	const { route } = resolution;
+	return {
+		ok: true,
+		access: {
+			transport: route.transport,
+			token: route.credential ?? "",
+			source: {
+				kind: "agent-vault",
+				service: route.service,
+				hosts: route.hosts,
+			},
+		},
+	};
+}
+
+function sourceNote(access: FleetAccess): string {
+	return access.source.kind === "agent-vault"
+		? ` (through Infisical Agent Vault service ${access.source.service}: ${access.source.hosts.join(", ")})`
+		: "";
 }
 
 async function resolveFleetToken(
@@ -77,12 +163,13 @@ function hostLine(host: CiFleetHost): string {
 }
 
 function scrubbed(text: string, token: string): string {
-	return text.split(token).join("[redacted]");
+	return token === "" ? text : text.split(token).join("[redacted]");
 }
 
 export async function runCiFleet(input: {
 	readonly positionals: readonly string[];
 	readonly credentials: CredentialResolver | undefined;
+	readonly agentVault?: AgentVaultRouter | undefined;
 	readonly transport: HttpTransport;
 }): Promise<CommandResult> {
 	const [verb, target, ...rest] = input.positionals;
@@ -95,11 +182,24 @@ export async function runCiFleet(input: {
 		(target === undefined || !MACHINE_TARGET.test(target))
 	)
 		return usage(FLEET_USAGE);
-	if (input.credentials === undefined) return credentialUnavailable();
-	const token = await resolveFleetToken(input.credentials);
-	if (token === undefined) return credentialUnavailable();
-	const fleet = hostingerVpsFleet({
+	const granted = await fleetAccess({
+		credentials: input.credentials,
+		agentVault: input.agentVault,
 		transport: input.transport,
+	});
+	if (!granted.ok) return granted.result;
+	const { access } = granted;
+	const { token } = access;
+	const credentialSource =
+		access.source.kind === "agent-vault"
+			? {
+					kind: access.source.kind,
+					service: access.source.service,
+					hosts: [...access.source.hosts],
+				}
+			: { kind: access.source.kind };
+	const fleet = hostingerVpsFleet({
+		transport: access.transport,
 		resolveToken: async () => token,
 	});
 	try {
@@ -112,15 +212,16 @@ export async function runCiFleet(input: {
 			return {
 				message:
 					hosts.length === 0
-						? "The Hostinger account has no virtual machines."
+						? `The Hostinger account has no virtual machines${sourceNote(access)}.`
 						: [
-								`Hostinger fleet: ${hosts.length} machine${hosts.length === 1 ? "" : "s"}`,
+								`Hostinger fleet${sourceNote(access)}: ${hosts.length} machine${hosts.length === 1 ? "" : "s"}`,
 								...hosts.map(hostLine),
 							].join("\n"),
 				data: {
 					fleet: toJson(CiFleetStatusSchema, status, {
 						alwaysEmitImplicit: true,
 					}),
+					credentialSource,
 				},
 			};
 		}
@@ -133,11 +234,12 @@ export async function runCiFleet(input: {
 			actionState: receipt.actionState,
 		});
 		return {
-			message: `Hostinger accepted ${receipt.action} of machine ${receipt.machine.id} (${receipt.machine.hostname || "no hostname"}): action ${receipt.actionId} is ${receipt.actionState}. Run hobo ci fleet status to watch it settle.`,
+			message: `Hostinger accepted ${receipt.action} of machine ${receipt.machine.id} (${receipt.machine.hostname || "no hostname"})${sourceNote(access)}: action ${receipt.actionId} is ${receipt.actionState}. Run hobo ci fleet status to watch it settle.`,
 			data: {
 				fleetAction: toJson(CiFleetPowerActionSchema, record, {
 					alwaysEmitImplicit: true,
 				}),
+				credentialSource,
 			},
 		};
 	} catch (error) {

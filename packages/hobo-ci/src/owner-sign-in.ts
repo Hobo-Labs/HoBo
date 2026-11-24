@@ -1,7 +1,10 @@
 import type { TrustedVault } from "@hobo/core";
 
 import { ensureBitwardenSignIn } from "./bitwarden-sign-in.js";
-import { provisionInfisicalAccess } from "./infisical-access.js";
+import {
+	DEFAULT_INFISICAL_ENVIRONMENT,
+	provisionInfisicalAccess,
+} from "./infisical-access.js";
 import { provisionOnePasswordAccess } from "./onepassword-access.js";
 import { KEPT_STORE_SIGN_INS } from "./owner-channel.js";
 import {
@@ -31,7 +34,7 @@ export interface OwnerSignInDeps extends OwnerStoreDeps {
 export interface OwnerSignInInput {
 	readonly family: "ci" | "cd";
 	readonly vault: TrustedVault;
-	readonly open: () => Promise<OwnerStore>;
+	readonly open: (resolved?: Env) => Promise<OwnerStore>;
 	readonly deps: OwnerSignInDeps;
 	readonly plainEnv: Env;
 	readonly workloadOidc: OwnerStoreDeps["workloadOidc"];
@@ -79,37 +82,44 @@ export async function signInOwnerStore(
 	) {
 		const saved = await locator.read();
 		const projectId =
-			plainEnv.INFISICAL_PROJECT_ID ?? saved.INFISICAL_PROJECT_ID;
-		if (projectId !== undefined && projectId !== "") {
-			const access = await (deps.infisicalAccess ?? provisionInfisicalAccess)({
-				family,
-				projectId,
-				run: deps.runCommand,
-				which: deps.which ?? (async () => undefined),
-				toolsDir: hoboToolsDir(),
-				fetch: deps.fetch ?? fetch,
-				emit: input.emit,
-				interactive: !input.handOff,
-				apiOrigin:
-					plainEnv.INFISICAL_SITE_URL ??
-					saved.INFISICAL_SITE_URL ??
-					"https://app.infisical.com",
-				...(deps.ownerChannel !== undefined
-					? { owner: deps.ownerChannel }
-					: undefined),
-				...(owner.infisicalFolder !== undefined
-					? { folder: owner.infisicalFolder }
-					: undefined),
-			});
-			if (access.kind === "refused") return refusedWith(access);
-			if (access.token !== undefined)
-				vault.put("INFISICAL_TOKEN", access.token);
-			await locator.write({
-				...(await locator.read()),
-				INFISICAL_IDENTITY_ID: access.identityId,
-			});
-			owner = await input.open();
-		}
+			plainEnv.INFISICAL_PROJECT_ID || saved.INFISICAL_PROJECT_ID;
+		const access = await (deps.infisicalAccess ?? provisionInfisicalAccess)({
+			family,
+			...(projectId ? { projectId } : undefined),
+			run: deps.runCommand,
+			which: deps.which ?? (async () => undefined),
+			toolsDir: hoboToolsDir(),
+			fetch: deps.fetch ?? fetch,
+			emit: input.emit,
+			interactive: !input.handOff,
+			apiOrigin:
+				plainEnv.INFISICAL_SITE_URL ??
+				saved.INFISICAL_SITE_URL ??
+				"https://app.infisical.com",
+			...(deps.ownerChannel !== undefined
+				? { owner: deps.ownerChannel }
+				: undefined),
+			...(owner.infisicalFolder !== undefined
+				? { folder: owner.infisicalFolder }
+				: undefined),
+		});
+		if (access.kind === "refused") return refusedWith(access);
+		if (access.token !== undefined) vault.put("INFISICAL_TOKEN", access.token);
+		const { INFISICAL_ENVIRONMENT: _previous, ...settings } =
+			await locator.read();
+		const resolved = {
+			INFISICAL_PROJECT_ID: access.projectId,
+			INFISICAL_ENVIRONMENT: access.environment,
+		};
+		await locator.write({
+			...settings,
+			INFISICAL_IDENTITY_ID: access.identityId,
+			INFISICAL_PROJECT_ID: access.projectId,
+			...(access.environment !== DEFAULT_INFISICAL_ENVIRONMENT
+				? { INFISICAL_ENVIRONMENT: access.environment }
+				: undefined),
+		});
+		owner = await input.open(resolved);
 	}
 	if (
 		owner.id === "1password" &&

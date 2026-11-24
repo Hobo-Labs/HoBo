@@ -170,7 +170,9 @@ export function isolatedOwnerEgressFetch(
 	return fetchWithDispatcher(new OriginDispatcher(target, allowedOrigin));
 }
 
-function fetchWithDispatcher(dispatcher: Dispatcher | undefined): typeof fetch {
+export function fetchWithDispatcher(
+	dispatcher: Dispatcher | undefined,
+): typeof fetch {
 	if (dispatcher === undefined) return fetch;
 	// Node's fetch is undici's and takes its dispatcher as a request option.
 	return (input, init) => {

@@ -29,6 +29,7 @@ import type {
 	TelemetrySink,
 	TopologyReader,
 } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { composeRefusal } from "./errors.js";
 
 // public-contract: the Station Rail event types the readers fold (mirrors
@@ -297,8 +298,8 @@ export function createRailDeliveryReader(
 		if (!entry) return undefined;
 		const parsed = parseRailDelivery(entry.railDigest, entry.delivery);
 		if (parsed.ok) return parsed.value;
-		d.telemetry
-			?.metrics([
+		if (d.telemetry)
+			emitMetrics(d.telemetry, [
 				{
 					name: RAIL_READER_METRICS.deliveryInvalid,
 					kind: "counter",
@@ -310,10 +311,7 @@ export function createRailDeliveryReader(
 						"hobo.station.id": entry.stationId,
 					},
 				},
-			])
-			.catch(() => {
-				// Telemetry is best-effort.
-			});
+			]);
 		// Binds nothing: no Camp sets, failover off, enrollment by grants.
 		return create(RailDeliveryRecordSchema, { railDigest: entry.railDigest });
 	}

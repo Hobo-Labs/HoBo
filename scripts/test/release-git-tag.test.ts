@@ -7,6 +7,7 @@ import {
 	type ReleaseApiRequest,
 } from "../ci/create-github-release.mts";
 import {
+	ownerReleaseSigningKey,
 	RELEASE_TAGGER,
 	releaseSigningKey,
 	signedTagObject,
@@ -181,6 +182,33 @@ describe("release signing key", () => {
 				HOBO_RELEASE_TAG_SSH_SIGNING_KEY: other.publicLine,
 			}),
 		).toThrow(/not the public half/);
+	});
+
+	it("resolves the key from the owner's store and refuses without it", async () => {
+		const { pem, publicLine } = openSshKey();
+		const asked: string[] = [];
+		const store = (entries: Readonly<Record<string, string>>) => ({
+			async resolve(ref: string) {
+				asked.push(ref);
+				const token = entries[ref];
+				if (token === undefined) throw new Error(`${ref} is not stored`);
+				return { token };
+			},
+		});
+		const key = await ownerReleaseSigningKey(
+			store({
+				"owner://HOBO_RELEASE_TAG_SSH_PRIVATE_KEY": pem,
+				"owner://HOBO_RELEASE_TAG_SSH_SIGNING_KEY": publicLine,
+			}),
+		);
+		expect(ed25519PublicLine(key.publicKey)).toBe(publicLine);
+		expect(asked).toEqual([
+			"owner://HOBO_RELEASE_TAG_SSH_PRIVATE_KEY",
+			"owner://HOBO_RELEASE_TAG_SSH_SIGNING_KEY",
+		]);
+		await expect(ownerReleaseSigningKey(store({}))).rejects.toThrow(
+			/owner:\/\/HOBO_RELEASE_TAG_SSH_PRIVATE_KEY.*never read from the environment/,
+		);
 	});
 
 	it("names the missing secret, and refuses an encrypted key", () => {

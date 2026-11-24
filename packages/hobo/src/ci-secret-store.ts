@@ -17,6 +17,7 @@
 
 import { create } from "@bufbuild/protobuf";
 import { parseSessionBinding } from "@hobo/auth-md";
+import type { CredentialResolver } from "@hobo/cd";
 import type { ClaimBundle, ClaimItem } from "@hobo/claims";
 import { ClaimError } from "@hobo/claims";
 import type { CommandResult, YardRuntime } from "@hobo/cli";
@@ -302,6 +303,7 @@ export interface CiSecretStoreInput {
 	/** Tests: accept a loopback stand-in's http origin as a fleet host. */
 	readonly allowLoopback?: boolean;
 	readonly bindingStore?: SecretStoreBindingStore;
+	readonly credentials?: CredentialResolver;
 }
 
 async function gatherEvidence(input: CiSecretStoreInput) {
@@ -529,7 +531,7 @@ export async function runCiSecretStore(
 						: undefined),
 					github: await resolveDeploySubject({
 						repository,
-						env: input.env,
+						credentials: input.credentials,
 						fetch: send,
 					}),
 				});

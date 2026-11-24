@@ -308,8 +308,13 @@ asks the owner privately: through MCP form elicitation (a store picker, then
 only that store's non-secret IDs) when the host declares
 `capabilities.elicitation` form mode, or through HoBo's store picker widget
 (`ui://hobo/store-choice`, whose app-only `submit_store_choice` the model does
-not call) when the host renders MCP Apps. A host with neither gets
-`secure-form-unavailable` and nothing is collected. The choice is written to the
+not call) when the host renders MCP Apps. A host with neither (a Claude Code
+cloud session) gets `owner-page`: HoBo's own page, which the agent publishes as
+a claude.ai Artifact with the `db` capability so it renders in the session.
+The owner's answer, including the store's sign-in, is encrypted in their
+browser to a one-use key only the HoBo server holds; the agent reads the sealed
+text from the artifact's database and passes it unchanged to
+`submit_owner_page`, and never sees the values. The choice is written to the
 owner's locator outside the repository
 (`~/.config/hobo/projects/<project>-<hash>/secret-store.json`), and HoBo then
 signs in through the owner channel (the sign-in link inside a host form, the
@@ -317,15 +322,22 @@ Infisical session, 1Password or Bitwarden hand-offs) and keeps the store's
 sign-in in the server's memory. The sign-in completes inside the call on a
 remote box whose host shows form elicitation; elsewhere the result is
 `sign-in-needed`. Every result the agent sees carries only a
-status (`established`, `sign-in-needed` with a code, `shown`, `decline`,
-`invalid`, `secure-form-unavailable`) and the store's name, never project or
-vault IDs, hosts, or references. Once established, `hobo deploy` resolves
+status (`established`, `sign-in-needed` with a code, `shown`, `owner-page`,
+`decline`, `invalid`, `refused`, `secure-form-unavailable`) and the store's name, never project or
+vault IDs, hosts, or references. Once established, `store_owner_entries` asks the owner, in one private host form per entry, for the Hostinger entries and HoBo CI relay credential HoBo needs (`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG` as one base64 line, `HOBO_CI_ACCOUNT_TOKEN`) and writes each straight into the connected store; it keeps entries already there unless `replace: true`, and returns entry names only. Once established, `hobo deploy` resolves
 credential locators `owner://<NAME>` (`env://<NAME>` is refused) from that session's CD location (Infisical folder `/hobo-cd`), so provider resolvers such as Hostinger's get
 `HOSTINGER_API_TOKEN` from the owner's store without the value reaching the
 agent; `hobo ci fleet status|restart|start` (the `ci` tool with
 `args: ["fleet", ...]`) reads the same `owner://HOSTINGER_API_TOKEN` to list and
-power-cycle the CI fleet's Hostinger VPS, and refuses with
-`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until the session holds it;
+power-cycle the CI fleet's Hostinger VPS, or, for an Infisical store without
+that entry, calls Hostinger through Infisical Agent Vault: HoBo runs the
+`infisical agent-vault proxy` itself on loopback for the owner's one Agent
+Vault project whose `http` service covers `developers.hostinger.com` (the
+signed-in identity must be an Agent Vault admin there or hold an access
+bundle with the service), so the token stays in Agent Vault; it refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until one of the two is in place, and
+with `HOBO_AGENT_VAULT_PROJECT_AMBIGUOUS` when the identity reaches several
+Agent Vault projects;
 `hobo ci fleet caches --plan|--apply|--status` (`args: ["fleet", "caches", ...]`)
 reads the ARC cluster's kubeconfig as `owner://HOSTINGER_ARC_KUBECONFIG` the
 same way to mount and prewarm the scale sets' node pnpm store and image cache;
