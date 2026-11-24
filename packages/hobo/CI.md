@@ -648,7 +648,10 @@ session, or `hobo ci up`, which hands the same session to the deploy. Without
 a session the deploy refuses with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED`
 before anything is sent. No GitHub Actions workflow deploys the relay: the
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) keeps only
-the `app-credentials` job `app-credentials.yml` calls. See
+the `app-credentials` job `app-credentials.yml` calls. A relay left behind its
+sources does not go unnoticed: the [CI health monitor](../../docs/ci/health-monitor.md)
+raises H11 when the commit the relay's `/healthz` serves lags a later commit
+on the default branch that touched the relay's sources. See
 [`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
 and [the README](README.md) for the plan record and its gates. It has been
 exercised against fakes only; a live deploy from an owner session is the

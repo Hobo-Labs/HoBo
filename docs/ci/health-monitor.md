@@ -1,7 +1,7 @@
 ---
 type: CI Runbook
 title: "CI health monitor: loud fallbacks"
-description: "What the CI health monitor reads every two hours, the seven signals it raises (H1, H2, H3, H4, H6, H8, H10), its window and request budget, its issues, and what to do when one opens."
+description: "What the CI health monitor reads every two hours, the eight signals it raises (H1, H2, H3, H4, H6, H8, H10, H11), its window and request budget, its issues, and what to do when one opens."
 tags: [hobo, ci, relay, routing, fleet, monitoring]
 ---
 
@@ -22,8 +22,9 @@ routing slip ([ADR-0181](../design/adr/routing-slips.md#adr-0181)), which replac
 | Lint allowance: one GitHub-hosted job, `ci-health`, that runs the monitor and nothing else | `scripts/lint-actions.ts` (`lintHealthWorkflow`) |
 
 The workflow holds `actions: read`, `checks: read`, `issues: write`, `id-token: write`, and `contents: read`
-for its sparse checkout of the monitor and `.hobo/ci.json`. It needs no `pnpm install`: Node 24 runs the
-`.mts` file directly.
+for its sparse checkout of the monitor, `.hobo/ci.json`, `pnpm-lock.yaml` and the relay's input closure
+([`scripts/ci/relay-inputs.mts`](../../scripts/ci/relay-inputs.mts), which a step before the monitor writes to
+`relay-inputs.json`). It needs no `pnpm install`: Node 24 runs the `.mts` files directly.
 
 ## What it reads
 
@@ -35,13 +36,20 @@ on. A run that could not read its window (rate limit, request budget, API failur
 **Requests.** At most 100 runs, newest first (`truncated` in the report when more fell in the window); each
 run's jobs (one page); the annotations of two check runs per run, the route job (**Route runners**) and, on
 main-gate runs, **Main workspace plan**, whose `reroute` step prints the same titles. With the artifact, the
-OIDC token, the relay's status route and the issue calls, a run makes at most 320 requests against a hard
-budget of 350. A rate-limit answer ends the run as failed (exit 2) without opening an issue.
+OIDC token, the relay's status route, the relay freshness reads and the issue calls, a run makes at most 323
+requests against a hard budget of 350. A rate-limit answer ends the run as failed (exit 2) without opening an issue.
 
 **The relay.** `GET /v1/fleet/reporters/{owner}/{repo}` on the relay `.hobo/ci.json` names, with a GitHub
 Actions OIDC token whose audience is that origin. When the route cannot be reached or refuses the token, H4
 and H10 read `unknown`, which is not a breach on its own; an `unknown` after an `unknown` raises H2's issue
 with that note.
+
+**Relay freshness.** `GET /healthz` on the same origin names the commit the relay serves; the repository's
+default branch is compared with it (`GET /repos/{owner}/{repo}` and one `compare`), and the files changed since
+are matched against the relay's source directories in `relay-inputs.json` (`packages/ci-vercel` and every
+workspace package in its pnpm-lock closure). The relay deploys only through HoBo with the owner's store session,
+never from a workflow, so nothing else notices a relay left behind its sources. A `/healthz` without a commit,
+an unreadable comparison, or a comparison past GitHub's 300-file list with no relay file in it reads `unknown`.
 
 **Route notices.** Each route decision prints one `hobo-ci-route` notice, version 2:
 `{"v":2,"workflow","tier","runner","slip","why","refusedBy"}`, optionally with
@@ -67,6 +75,7 @@ fails the route job before it can emit a route notice or public-compute claim. F
 | **H6** stall | jobs on `hobo` or `hobo-trunk` that waited, or have been queued, more than `CI_HEALTH_STALL_MINUTES` (default 30) for a runner; **Main full gate** is left out (it waits on its concurrency group) | any | The box and ARC: a fleet that was refusing work the verdict did not block |
 | **H8** paid minutes | per job on `ubuntu-24.04`, started to completed rounded up to the minute, leaving out the route job, the fleet probe's `local box enrolled` gate, the gates and this monitor; split by what refused the fleet (`slip`, `queue`, `none`, `fallback`, `unrouted`) | more than `CI_HEALTH_PAID_MINUTES_PER_WINDOW` (default 150) | Which split carries the minutes |
 | **H10** allowance spent | status route | any label | The box: a label blocked for its whole daily allowance is a fleet stuck refusing |
+| **H11** relay stale | `/healthz` commit against the default branch, filtered to the relay's source directories | any relay source changed since the served commit | Deploy the relay from an owner store session: `hobo ci deploy --build prebuilt` after HoBo MCP's `choose_secret_store` ([CI.md](../../packages/hobo/CI.md#deploying-the-hosted-relay-with-hobo)) |
 
 `unrouted` minutes belong to runs with no route notice: workflows without a route job, and every run before
 the route step printed notices.

@@ -21,11 +21,13 @@ import {
 	parseRuns,
 	parseStatusList,
 	REQUEST_BUDGET,
+	type RelayFreshness,
 	type RunPages,
 	readJsonFromZip,
 	routeEvidence,
 	SLIP_FALLBACK_PREFIX,
 	type StatusReading,
+	signalH11,
 	type WindowData,
 } from "../ci/ci-health.mts";
 import {
@@ -76,18 +78,36 @@ function knownStatus(recorded: Recorded): StatusReading {
 	return { kind: "known", list };
 }
 
-function windowOf(recorded: Recorded, status: StatusReading): WindowData {
-	return { runs: pagesOf(recorded), status };
+const relayUnread: RelayFreshness = {
+	kind: "unknown",
+	why: "/healthz answered 404",
+};
+
+const relayStale: RelayFreshness = {
+	kind: "known",
+	served: "fb885802b7".padEnd(40, "0"),
+	branch: "main",
+	behindBy: 40,
+	relayFiles: ["packages/ci-vercel/src/entry.ts"],
+};
+
+function windowOf(
+	recorded: Recorded,
+	status: StatusReading,
+	relay: RelayFreshness,
+): WindowData {
+	return { runs: pagesOf(recorded), status, relay };
 }
 
 function report(
 	recorded: Recorded,
 	status: StatusReading = knownStatus(recorded),
 	previous: PreviousReport | undefined = undefined,
+	relay: RelayFreshness = relayUnread,
 ): HealthReport {
 	return evaluate({
 		repository: REPOSITORY,
-		data: windowOf(recorded, status),
+		data: windowOf(recorded, status, relay),
 		windowStart: "2026-11-12T10:00:00.000Z",
 		windowEnd: recorded.now,
 		nowMs: Date.parse(recorded.now),
@@ -104,7 +124,7 @@ const unread: StatusReading = {
 	why: "status route answered 401",
 };
 const clearReport = report(clear);
-const breachReport = report(breach);
+const breachReport = report(breach, knownStatus(breach), undefined, relayStale);
 
 describe("ci-health signals from recorded pages", () => {
 	it("H1 is clear when no route step fell back", () => {
@@ -206,6 +226,29 @@ describe("ci-health signals from recorded pages", () => {
 			breachReport.signals.H10.summary,
 			"block allowance spent for hobo-trunk",
 		);
+	});
+
+	it("H11 is unknown, not a breach, when the relay names no commit", () => {
+		assert.equal(clearReport.signals.H11.state, "unknown");
+		assert.equal(clearReport.outcome, "clear");
+	});
+	it("H11 is clear while no later commit changed the relay's sources", () => {
+		const result = signalH11({
+			kind: "known",
+			served: "a".repeat(40),
+			branch: "main",
+			behindBy: 3,
+			relayFiles: [],
+		});
+		assert.equal(result.state, "clear");
+		assert.match(result.summary, /3 later commits on main changed none/);
+	});
+	it("H11 breaches when the served commit lags a change to the relay's sources", () => {
+		const result = signalH11(relayStale);
+		assert.equal(result.state, "breach");
+		assert.match(result.summary, /^the relay serves fb885802b700, behind main/);
+		assert.match(result.summary, /hobo ci deploy/);
+		assert.deepEqual(result.evidence, ["packages/ci-vercel/src/entry.ts"]);
 	});
 
 	it("unknown twice: a second unread status route raises H2 with that note", () => {
@@ -374,6 +417,11 @@ type ApiOptions = Readonly<{
 	openIssues?: readonly JsonValue[];
 	statusAnswer?: number;
 	refuseAssignees?: boolean;
+	relay?: Readonly<{
+		served: string;
+		aheadBy: number;
+		files: readonly string[];
+	}>;
 }>;
 
 function json(value: JsonValue, status = 200): Response {
@@ -427,6 +475,19 @@ function fakeApi(
 			return options.statusAnswer
 				? json({ reason: "unauthorized" }, options.statusAnswer)
 				: json(recorded.status);
+		if (options.relay && url === "https://hobo-ci.vercel.app/healthz")
+			return json({ ok: true, commit: options.relay.served });
+		if (options.relay && path === "/repos/Hobo-Labs/HoBo")
+			return json({ default_branch: "main" });
+		if (
+			options.relay &&
+			path === `/repos/Hobo-Labs/HoBo/compare/${options.relay.served}...main`
+		)
+			return json({
+				status: options.relay.aheadBy > 0 ? "behind" : "identical",
+				ahead_by: options.relay.aheadBy,
+				files: options.relay.files.map((filename) => ({ filename })),
+			});
 		if (method === "GET" && path.includes("/issues?"))
 			return json(options.openIssues ?? []);
 		if (method === "POST" && /\/issues\/\d+\/comments$/.test(path))
@@ -480,6 +541,7 @@ async function runMain(
 				log: (line) => lines.push(line),
 				relayConfig:
 					'{"defaultEnvironment":"ci","environments":{"ci":{"relayOrigin":"https://hobo-ci.vercel.app"}}}',
+				relayInputs: '["packages/ci-vercel","packages/core"]',
 			},
 		);
 		return {
@@ -603,6 +665,31 @@ describe("ci-health run", () => {
 		);
 	});
 
+	it("raises H11 when the relay serves a commit behind a change to its sources, and only then", async () => {
+		const served = "fb885802b7".padEnd(40, "0");
+		const stale = await runMain(clear, {
+			relay: {
+				served,
+				aheadBy: 12,
+				files: ["docs/ci/health-monitor.md", "packages/core/src/index.ts"],
+			},
+		});
+		assert.equal(stale.code, 1);
+		assert.equal(stale.report.signals.H11.state, "breach");
+		assert.deepEqual(stale.report.signals.H11.evidence, [
+			"packages/core/src/index.ts",
+		]);
+		assert.deepEqual(
+			issuesOpened(stale.calls).map((issue) => issue.title.split(":")[0]),
+			["[ci-health] H11"],
+		);
+		const current = await runMain(clear, {
+			relay: { served, aheadBy: 2, files: ["docs/ci/health-monitor.md"] },
+		});
+		assert.equal(current.code, 0);
+		assert.equal(current.report.signals.H11.state, "clear");
+	});
+
 	it("opens the issue unassigned when GitHub refuses the assignee", async () => {
 		const result = await runMain(breach, { refuseAssignees: true }, [], {
 			CI_HEALTH_ASSIGNEE: "an-organization",
@@ -683,9 +770,8 @@ describe("ci-health run", () => {
 		const total = result.calls.length;
 		assert.ok(total <= REQUEST_BUDGET, `${total} requests`);
 		assert.equal(result.report.runs, 100);
-		assert.equal(result.report.requests, 305);
-		// 2 artifact + 1 run list + 100 jobs + 200 annotations + 2 status + 1 issue list + 1 issue.
-		assert.equal(total, 307);
+		assert.equal(result.report.requests, 306);
+		assert.equal(total, 308);
 	});
 
 	it("reports truncated when more than 100 runs fall in the window", async () => {
@@ -723,9 +809,13 @@ describe("ci-health workflow", () => {
 			assert.match(workflow, new RegExp(`^  ${permission}$`, "m"));
 		assert.match(
 			workflow,
-			/sparse-checkout: \|\n {12}scripts\/ci\/ci-health\.mts\n {12}\.hobo\/ci\.json\n/,
+			/sparse-checkout: \|\n {12}scripts\/ci\/ci-health\.mts\n {12}\.hobo\/ci\.json\n {12}scripts\/ci\/relay-inputs\.mts\n {12}scripts\/lib\/pnpm-lockfile\.mts\n {12}pnpm-lock\.yaml\n/,
 		);
 		assert.match(workflow, /run: node scripts\/ci\/ci-health\.mts$/m);
+		assert.match(
+			workflow,
+			/run: node scripts\/ci\/relay-inputs\.mts pnpm-lock\.yaml relay-inputs\.json$/m,
+		);
 		assert.match(
 			workflow,
 			/if: always\(\)\n {8}uses: actions\/upload-artifact@[0-9a-f]{40}\n {8}with:\n {10}name: \$\{\{ inputs\.dry-run && 'ci-health-dry-run' \|\| 'ci-health-report' \}\}\n {10}path: ci-health-report\.json/,

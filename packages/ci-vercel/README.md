@@ -326,6 +326,12 @@ refuses with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` before anything is sent;
 with a session whose store holds no token, with `HOBO_CI_DEPLOY_AUTH_REQUIRED`
 pointing at `hobo cd up`. Vercel's Git integration is never connected.
 
+A relay left behind its sources is raised, not silent: the
+[CI health monitor](../../docs/ci/health-monitor.md) compares the commit the
+relay's `/healthz` names with the default branch and raises H11 when a later
+commit changed this package or a workspace package it is built from (its
+pnpm-lock closure, `scripts/ci/relay-inputs.mts`).
+
 [`.github/workflows/app-credentials.yml`](../../.github/workflows/app-credentials.yml)
 deposits GitHub App credentials: it reads the one-time manifest code from the
 `HOBO_APP_MANIFEST_CODE` Actions secret and takes the relay origin and owner id

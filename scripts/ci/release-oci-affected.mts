@@ -19,12 +19,12 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 import process from "node:process";
-import type { ReleaseOciManifest } from "../lib/release-oci-contract.mts";
 import {
 	importerClosure,
 	type Lockfile,
 	parseLockfile,
 } from "../lib/pnpm-lockfile.mts";
+import type { ReleaseOciManifest } from "../lib/release-oci-contract.mts";
 import { OCI_IMAGES_MANIFEST } from "../lib/release-oci-contract.mts";
 import { RELEASE_OCI_STAGE_SPECS } from "./stage-release-oci-app.mts";
 import { SDK_PACKAGES } from "./stage-sdk-artifacts.mts";

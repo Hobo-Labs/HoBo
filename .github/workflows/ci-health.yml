@@ -50,9 +50,14 @@ jobs:
           sparse-checkout: |
             scripts/ci/ci-health.mts
             .hobo/ci.json
+            scripts/ci/relay-inputs.mts
+            scripts/lib/pnpm-lockfile.mts
+            pnpm-lock.yaml
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
+      - name: List the relay's source directories
+        run: node scripts/ci/relay-inputs.mts pnpm-lock.yaml relay-inputs.json
       - name: Read the window and raise breaches
         env:
           GITHUB_TOKEN: ${{ github.token }}
