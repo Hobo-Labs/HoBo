@@ -45,14 +45,20 @@ const authorize = async () => {
     throw new Error("Invalid start-fence timeout");
   }
   const executionKey = JSON.parse(required("HOBO_EXECUTION_KEY_JSON"));
+  const object = (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
   const job = executionKey?.githubJob;
   const runId = required("GITHUB_RUN_ID");
   const runAttempt = Number(required("GITHUB_RUN_ATTEMPT"));
   const identityFields = [
     "accountId", "engineId", "installationId", "repositoryId", "runId", "jobId",
   ];
+  const fields = ["kind", ...identityFields, "runAttempt"];
+  const exactKey = (key) =>
+    object(key) && Object.keys(key).length === 1 && object(key.githubJob) &&
+    Object.keys(key.githubJob).length === fields.length;
   if (
-    !job || job.kind !== "github-job" ||
+    !exactKey(executionKey) || job.kind !== "github-job" ||
     !identityFields.every((field) => typeof job[field] === "string" && job[field].length > 0) ||
     !Number.isSafeInteger(runAttempt) || runAttempt < 1 ||
     job.runId !== runId || job.runAttempt !== runAttempt
@@ -93,11 +99,12 @@ const authorize = async () => {
   }
   const receipt = await readReceipt(response);
   const actual = receipt?.executionKey?.githubJob;
-  const fields = ["kind", ...identityFields, "runAttempt"];
   if (
     receipt?.authorized !== true || receipt.slotId !== payload.slotId ||
-    receipt.claimId !== payload.claimId || receipt.runnerName !== payload.runnerName ||
-    !actual || !fields.every((field) => actual[field] === job[field])
+    receipt.claimId !== payload.claimId || receipt.accountId !== payload.accountId ||
+    receipt.profileId !== payload.profileId || receipt.runnerName !== payload.runnerName ||
+    !exactKey(receipt.executionKey) ||
+    !fields.every((field) => actual[field] === job[field])
   ) {
     throw new Error("Start-fence receipt does not match the job");
   }

@@ -3,6 +3,7 @@ import { ACTIVE_STATES, JobSchema, type Lease } from "@hobo/ci";
 import type { GithubTransport } from "./github.js";
 import type { HostedRelayStore } from "./hosted-relay.js";
 import {
+	isUnknownRunnerJobStatus,
 	type ResolvedRunnerAssignment,
 	RUNNER_EXECUTING_JOB_STATUSES,
 	resolveRunnerAssignedJob,
@@ -31,7 +32,6 @@ function reservedJobWithdraw(lease: Lease) {
 	});
 }
 
-/** Pin `actualJobId` / `originalRunId` to the job GitHub assigned this runner. */
 export async function adoptRunnerAssignment(
 	store: Pick<HostedRelayStore, "get" | "transition" | "withdrawQueuedJob">,
 	github: GithubTransport,
@@ -62,8 +62,12 @@ export async function adoptRunnerAssignment(
 		return { lease, holdsActive: false };
 	}
 	const holdsActive =
-		!!assignment && RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status);
+		!!assignment &&
+		(RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status) ||
+			isUnknownRunnerJobStatus(assignment.status));
 	if (!assignment) return { lease, holdsActive: false };
+	if (assignment.incomplete || isUnknownRunnerJobStatus(assignment.status))
+		return { lease, assignment, holdsActive };
 	const servedJobId = assignment.jobId;
 	const needsJobPin = lease.actualJobId !== servedJobId;
 	const needsRunPin =
