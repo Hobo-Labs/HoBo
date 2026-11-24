@@ -287,8 +287,15 @@ repeating setup with the same explicit relay/repository reuses the connection.
 
 ## Inspect and retry runs
 
-Run commands use the authenticated [GitHub CLI](https://cli.github.com/manual/gh_run)
-(`gh`), with an explicit repository target. They can inspect existing Actions
+Run commands call the GitHub REST API at `api.github.com` with a short-lived
+installation token of HoBo's GitHub App on the selected repository, which the
+owner store session mints (`github-app://owner/name`); no personal GitHub
+sign-in or token is read. Connect the owner's store with HoBo MCP's
+`choose_secret_store` and install the App (`hobo ci app create`) with Actions
+read permission, and Actions write permission for `rerun`; without them the
+commands answer `HOBO_CI_GITHUB_APP_NEEDED`. A job log is read from the
+short-lived download GitHub redirects to, which is fetched without the token;
+logs are bounded at 2 MiB per command. They can inspect existing Actions
 runs before connecting a relay. They report GitHub run IDs, separate from relay
 lease IDs; use `hobo ci status` to check the HoBo connection.
 
@@ -485,9 +492,9 @@ hobo ci diagnose               # the latest failed run
 hobo ci diagnose 123456789
 ```
 
-Both read GitHub's run history with the authenticated GitHub CLI and store
-nothing. `signals` reads up to `--runs` completed runs (1-100) with their jobs,
-and the attempt before the latest when a run was re-run. It prints signals
+Both read GitHub's run history through HoBo's GitHub App installation on the
+repository and store nothing. `signals` reads up to `--runs` completed runs
+(1-100) with their jobs, and the attempt before the latest when a run was re-run. It prints signals
 that cover at least 30 minutes and 1% of job time, grouped as cost,
 speed and complexity, with the worst offenders under each, and one line per
 runner: jobs, share started, median wait, median and p90 run time, share
@@ -498,8 +505,8 @@ each log and every annotation page of the check run identified by
 `check_run_url`, and prints the first failed step, what kind of failure it
 looks like, whether a re-run is likely to help, and the log lines leading up to
 the last error. A log, annotation, or check-run identity read failure fails the
-command rather than producing a partial diagnosis. If the GitHub CLI truncates
-a log, the diagnosis says it may be incomplete and sets `logTruncated` on that
+command rather than producing a partial diagnosis. If a log exceeds 16 MiB,
+the diagnosis says it may be incomplete and sets `logTruncated` on that
 job's JSON result. Human-readable reports remove terminal escape sequences,
 control characters, and bidirectional overrides from GitHub metadata, logs, and
 annotations. The rules are fixed pattern tables in `@hobo/ci/insights`; no log

@@ -17,9 +17,8 @@ import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
 import { noRelaySelected, selectRelay, stopping } from "./ci-activity.js";
 import type { CiCommand, CiCommandContext } from "./ci-commands.js";
-import { type CiRunExec, runCiProcess } from "./ci-runs.js";
 import {
-	type CiInsightCommandDeps,
+	contextGithubApp,
 	dayOf,
 	githubHistoryOrStop,
 	githubRepository,
@@ -35,7 +34,7 @@ const PERFORMANCE_HELP = [
 	"hobo ci performance --source github [--repo owner/name] [--since 30d] [--runs <n>] [--json]",
 	"Workflow, job and runner times, each runner against ubuntu-latest, and the nine signals with a breakdown and trend.",
 	"  --source relay   the connected relay's run history (default; --relay, .hobo/ci.json, HOBO_CI_RELAY_URL or the hobo ci setup link)",
-	"  --source github  the repository's recent runs, read with the GitHub CLI",
+	"  --source github  the repository's recent runs, read through HoBo's GitHub App installation on it",
 ].join("\n");
 
 const count = z.number().int().min(0);
@@ -308,9 +307,8 @@ function performanceData(times: JobTimesView, signals: SignalReportView) {
 async function performanceFromGithub(
 	context: CiCommandContext,
 	options: InsightArgs,
-	exec: CiRunExec,
 ): Promise<CommandResult> {
-	const { root, repository } = await githubRepository(
+	const { repository } = await githubRepository(
 		context,
 		options.repo,
 		PERFORMANCE_HELP,
@@ -318,11 +316,9 @@ async function performanceFromGithub(
 	const history = await githubHistoryOrStop(() =>
 		readGithubHistory({
 			repository,
-			cwd: root,
 			runs: options.runs,
 			sinceMs: options.sinceMs,
-			exec,
-			env: context.env,
+			github: contextGithubApp(context, repository, "hobo ci performance"),
 		}),
 	);
 	const head = { sinceMs: options.sinceMs, runs: history.runs.length };
@@ -354,17 +350,14 @@ async function performanceFromGithub(
 	};
 }
 
-async function performance(
-	context: CiCommandContext,
-	exec: CiRunExec,
-): Promise<CommandResult> {
+async function performance(context: CiCommandContext): Promise<CommandResult> {
 	const options = parseInsightArgs(
 		context.args,
 		context.now(),
 		PERFORMANCE_HELP,
 	);
 	if (options.source === "github")
-		return performanceFromGithub(context, options, exec);
+		return performanceFromGithub(context, options);
 	const target = await selectRelay(context, options);
 	if (!target) return noRelaySelected(", or pass --source github");
 	const query = { repository: options.repo, sinceMs: options.sinceMs };
@@ -399,16 +392,9 @@ async function performance(
 	};
 }
 
-export function createCiPerformanceCommand(
-	deps: CiInsightCommandDeps = {},
-): CiCommand {
-	const exec = deps.execFile ?? runCiProcess;
-	return {
-		name: "performance",
-		summary:
-			"Workflow, job and runner times, each runner against ubuntu-latest, and the nine signals with a breakdown and trend.",
-		run: (context) => stopping(() => performance(context, exec)),
-	};
-}
-
-export const CI_PERFORMANCE_COMMAND = createCiPerformanceCommand();
+export const CI_PERFORMANCE_COMMAND: CiCommand = {
+	name: "performance",
+	summary:
+		"Workflow, job and runner times, each runner against ubuntu-latest, and the nine signals with a breakdown and trend.",
+	run: (context) => stopping(() => performance(context)),
+};
