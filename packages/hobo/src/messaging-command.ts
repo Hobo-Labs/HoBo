@@ -4,6 +4,7 @@
  */
 
 import type { CommandModule } from "@hobo/cli";
+import { DURABLE_MESSAGING_WIT_INTERFACE } from "@hobo/core";
 import {
 	createKafkaProvider,
 	diagnoseKafkaReadiness,
@@ -106,11 +107,17 @@ export function createMessagingCommand(
 				status: "ok",
 				code: "HOBO_MESSAGING_STATUS",
 				message:
-					"Messaging plane: native Kafka + optional Dapr; app ports wasi:messaging / topic()",
+					"Messaging plane: async durable topic ABI; Kafka and Dapr provide TypeScript clients",
 				data: {
 					command: "messaging",
 					subcommand: "status",
-					wit: "wasi:messaging/messaging@0.2.0",
+					wit: DURABLE_MESSAGING_WIT_INTERFACE,
+					componentBindings: {
+						kafka: "unsupported",
+						dapr: "unsupported",
+						rivet: "requires-host-integration",
+						defaultRuntime: "unsupported",
+					},
 					defaultRuntime: "in-process-wasm",
 					daprOptional: true,
 					kafka,

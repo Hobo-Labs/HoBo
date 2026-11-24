@@ -14,8 +14,12 @@ import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import {
 	bindRivetHttpSource,
 	createRivetPrimitiveMappers,
+	describeRivetPrimitiveSupport,
 } from "../src/rivet.js";
-import { createRivetHttpActor } from "../src/rivet-runtime.js";
+import {
+	createRivetHttpActor,
+	isRivetHttpBinding,
+} from "../src/rivet-runtime.js";
 import { testStateOwnership } from "./route-fixture.js";
 
 const handler = () => (request: Request) =>
@@ -190,27 +194,319 @@ describe("Rivet native application binding", () => {
 				actorKey: ["tenant", "app"],
 			}),
 		);
-		expect(binding.actor.config.onRequest).toBe(binding.handle);
+		expect(binding.actor.config.onRequest).not.toBe(binding.handle);
+		expect(isRivetHttpBinding(binding)).toBe(true);
 	});
 
-	it("denies requests if host authorization rejects or fails", async () => {
-		for (const authorize of [
-			async () => false,
-			async () => {
-				throw new Error("unavailable");
-			},
-		]) {
+	it("distinguishes a definite policy denial from unavailable or malformed authority", async () => {
+		for (const [authorize, status] of [
+			[async () => false, 403],
+			[
+				async () => {
+					throw new Error("unavailable");
+				},
+				503,
+			],
+			[async () => "malformed", 503],
+		] as const) {
+			const entrypoint = vi.fn(handler);
 			const binding = createRivetHttpActor({
 				actorName: "web",
-				entrypoint: handler,
-				authorize,
+				entrypoint,
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the malformed case deliberately exercises the JavaScript boundary.
+				authorize: authorize as never,
 			});
 			const result = await binding.handle(
 				{ name: "web", key: ["tenant"], vars: {} },
 				new Request("https://example.test/"),
 			);
-			expect(result.status).toBe(403);
+			expect(result.status).toBe(status);
+			if (status === 503)
+				expect(await result.json()).toEqual({
+					error: "authorization-unavailable",
+					execution: "not-started",
+				});
+			expect(entrypoint).not.toHaveBeenCalled();
 		}
+	});
+
+	it("does not start an application when synchronous authorization exceeds its deadline", async () => {
+		const entrypoint = vi.fn(handler);
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint,
+			authorizationTimeoutMs: 300,
+			authorize: () => {
+				Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 600);
+				return true;
+			},
+		});
+		const result = await binding.handle(
+			{ name: "web", key: ["tenant"], vars: {} },
+			new Request("https://example.test/"),
+		);
+		expect(result.status).toBe(503);
+		expect(await result.json()).toEqual({
+			error: "authorization-unavailable",
+			execution: "not-started",
+		});
+		expect(entrypoint).not.toHaveBeenCalled();
+	});
+
+	it("does not claim no effect when the application factory outlives authorization", async () => {
+		let effects = 0;
+		const application = vi.fn(() => new Response("unexpected"));
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			authorizationTimeoutMs: 300,
+			authorize: () => true,
+			entrypoint: () => {
+				effects++;
+				Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 600);
+				return application;
+			},
+		});
+		const result = await binding.handle(
+			{ name: "web", key: ["tenant"], vars: {} },
+			new Request("https://example.test/"),
+		);
+		expect(result.status).toBe(503);
+		expect(await result.json()).toEqual({
+			error: "authorization-unavailable",
+			execution: "possibly-completed",
+		});
+		expect(effects).toBe(1);
+		expect(application).not.toHaveBeenCalled();
+	});
+
+	it("does not dispatch a fetch method whose getter outlives authorization", async () => {
+		let getters = 0;
+		let handled = 0;
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			authorizationTimeoutMs: 300,
+			authorize: () => true,
+			entrypoint: () => ({
+				get fetch() {
+					getters++;
+					Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 600);
+					return () => {
+						handled++;
+						return new Response("unexpected");
+					};
+				},
+			}),
+		});
+		const response = await binding.handle(
+			{ name: "web", key: ["tenant"], vars: {} },
+			new Request("https://example.test/"),
+		);
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({
+			error: "authorization-unavailable",
+			execution: "possibly-completed",
+		});
+		expect(getters).toBe(1);
+		expect(handled).toBe(0);
+	});
+
+	it.each([
+		"factory",
+		"fetch-getter",
+		"handler",
+		"malformed-response",
+		"proxied-response",
+	] as const)("reports possibly-completed when the application fails in %s", async (phase) => {
+		let effects = 0;
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			authorize: () => true,
+			entrypoint: () => {
+				if (phase === "factory") {
+					effects++;
+					throw new Error("factory failed after effect");
+				}
+				if (phase === "fetch-getter")
+					return {
+						get fetch() {
+							effects++;
+							throw new Error("getter failed after effect");
+						},
+					};
+				return async () => {
+					effects++;
+					if (phase === "handler")
+						throw new Error("handler failed after effect");
+					if (phase === "proxied-response")
+						return new Proxy(new Response("secret"), {
+							getPrototypeOf() {
+								effects++;
+								throw new Error("response trap");
+							},
+						});
+					return { malformed: true };
+				};
+			},
+		});
+		const response = await binding.handle(
+			{ name: "web", key: ["tenant"], vars: {} },
+			new Request("https://example.test/"),
+		);
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({
+			error: "application-failed",
+			execution: "possibly-completed",
+		});
+		expect(effects).toBe(1);
+	});
+
+	it("does not cache a factory that threw after a possible effect", async () => {
+		let factories = 0;
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			authorize: () => true,
+			entrypoint: () => {
+				if (++factories === 1) throw new Error("after possible effect");
+				return () => new Response("ready");
+			},
+		});
+		const context = { name: "web", key: ["tenant"], vars: {} };
+		const failed = await binding.handle(
+			context,
+			new Request("https://example.test/"),
+		);
+		expect(await failed.json()).toEqual({
+			error: "application-failed",
+			execution: "possibly-completed",
+		});
+
+		const later = await binding.handle(
+			context,
+			new Request("https://example.test/"),
+		);
+		expect(await later.text()).toBe("ready");
+		expect(factories).toBe(2);
+	});
+
+	it.each([
+		"malformed",
+		"getter",
+	] as const)("does not cache an initializer whose handler is %s", async (kind) => {
+		let factories = 0;
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			authorize: () => true,
+			entrypoint: () => {
+				if (++factories !== 1) return () => new Response("ready");
+				if (kind === "malformed") return {};
+				return {
+					get fetch() {
+						throw new Error("unavailable handler");
+					},
+				};
+			},
+		});
+		const context = { name: "web", key: ["tenant"], vars: {} };
+		const first = await binding.handle(
+			context,
+			new Request("https://example.test/"),
+		);
+		expect(await first.json()).toEqual({
+			error: "application-failed",
+			execution: "possibly-completed",
+		});
+
+		const second = await binding.handle(
+			context,
+			new Request("https://example.test/"),
+		);
+		expect(await second.text()).toBe("ready");
+		expect(factories).toBe(2);
+	});
+
+	it("observes an accidentally rejected native Promise from a synchronous factory", async () => {
+		let attempts = 0;
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			authorize: () => true,
+			entrypoint: () =>
+				++attempts === 1
+					? Promise.reject(new Error("factory failed"))
+					: () => new Response("ready"),
+		});
+		const context = { name: "web", key: ["tenant"], vars: {} };
+		const response = await binding.handle(
+			context,
+			new Request("https://example.test/"),
+		);
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({
+			error: "application-failed",
+			execution: "possibly-completed",
+		});
+		await new Promise<void>((resolve) => setImmediate(resolve));
+
+		const later = await binding.handle(
+			context,
+			new Request("https://example.test/"),
+		);
+		expect(await later.text()).toBe("ready");
+		expect(attempts).toBe(2);
+	});
+
+	it("bounds pending authorization and retains timed-out slots until the callbacks settle", async () => {
+		vi.useFakeTimers();
+		const resolve: ((value: boolean) => void)[] = [];
+		const entrypoint = vi.fn(handler);
+		try {
+			const binding = createRivetHttpActor({
+				actorName: "web",
+				entrypoint,
+				authorizationTimeoutMs: 5_000,
+				authorize: () => new Promise<boolean>((finish) => resolve.push(finish)),
+			});
+			const request = () =>
+				binding.handle(
+					{ name: "web", key: ["tenant"], vars: {} },
+					new Request("https://example.test/"),
+				);
+			const pending = Array.from({ length: 128 }, request);
+			await vi.advanceTimersByTimeAsync(5_001);
+			for (const response of await Promise.all(pending)) {
+				expect(response.status).toBe(503);
+				expect(await response.json()).toEqual({
+					error: "authorization-unavailable",
+					execution: "not-started",
+				});
+			}
+			expect(resolve).toHaveLength(128);
+			expect((await request()).status).toBe(503);
+			expect(resolve).toHaveLength(128);
+			resolve[0]?.(true);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(entrypoint).not.toHaveBeenCalled();
+			const next = request();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(resolve).toHaveLength(129);
+			resolve[128]?.(false);
+			expect((await next).status).toBe(403);
+			expect(entrypoint).not.toHaveBeenCalled();
+		} finally {
+			for (const finish of resolve) finish(false);
+			vi.useRealTimers();
+		}
+	});
+
+	it("rejects authorization deadlines outside the supported bounds", () => {
+		for (const authorizationTimeoutMs of [0, -1, 60_001, 1.5, Number.NaN])
+			expect(() =>
+				createRivetHttpActor({
+					actorName: "web",
+					entrypoint: handler,
+					authorize: () => true,
+					authorizationTimeoutMs,
+				}),
+			).toThrow();
 	});
 
 	it("captures actor options once before validating and authorizing", async () => {
@@ -368,6 +664,130 @@ describe("Rivet native application binding", () => {
 		);
 		expect(result.status).toBe(200);
 		expect(observed).toEqual(["tenant"]);
+	});
+
+	it("rejects proxied, revoked and accessor-backed actor contexts and keys without traps", async () => {
+		let traps = 0;
+		let authorizations = 0;
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint: handler,
+			authorize: () => {
+				authorizations++;
+				return true;
+			},
+		});
+		const key = ["tenant"];
+		const proxiedKey = new Proxy(key, {
+			get() {
+				traps++;
+				throw new Error("key trap");
+			},
+		});
+		const revokedKey = Proxy.revocable(["tenant"], {});
+		revokedKey.revoke();
+		const accessorKey = ["tenant"];
+		Object.defineProperty(accessorKey, "0", {
+			enumerable: true,
+			get() {
+				traps++;
+				throw new Error("key accessor");
+			},
+		});
+		const context = { name: "web", key, vars: {} };
+		const proxiedContext = new Proxy(context, {
+			getOwnPropertyDescriptor() {
+				traps++;
+				throw new Error("context trap");
+			},
+		});
+		const revokedContext = Proxy.revocable(context, {});
+		revokedContext.revoke();
+		const accessorContexts = ["name", "key", "vars"].map((field) =>
+			Object.defineProperty({ ...context }, field, {
+				enumerable: true,
+				get() {
+					traps++;
+					throw new Error("context accessor");
+				},
+			}),
+		);
+		const inheritedContext = Object.create({
+			get key() {
+				traps++;
+				throw new Error("inherited context accessor");
+			},
+		});
+		Object.assign(inheritedContext, { name: "web", vars: {} });
+		for (const input of [
+			{ ...context, key: proxiedKey },
+			{ ...context, key: revokedKey.proxy },
+			{ ...context, key: accessorKey },
+			{ ...context, key: Array(1) },
+			proxiedContext,
+			revokedContext.proxy,
+			...accessorContexts,
+			inheritedContext,
+		]) {
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed host contexts deliberately exercise the runtime boundary.
+			const result = await binding.handle(
+				input as never,
+				new Request("https://example.test/"),
+			);
+			expect(result.status).toBe(403);
+		}
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this exercises the native callback with deliberately malformed contexts.
+		const onRequest = binding.actor.config.onRequest as typeof binding.handle;
+		for (const input of [
+			proxiedContext,
+			revokedContext.proxy,
+			...accessorContexts,
+		]) {
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed host contexts deliberately exercise the runtime boundary.
+			const result = await onRequest(
+				input as never,
+				new Request("https://example.test/"),
+			);
+			expect(result.status).toBe(403);
+		}
+		expect(traps).toBe(0);
+		expect(authorizations).toBe(0);
+	});
+
+	it("accepts authenticated native context getters only through the actor callback", async () => {
+		let calls = 0;
+		const vars = {};
+		const context = {
+			get name() {
+				calls++;
+				return "web";
+			},
+			get key() {
+				calls++;
+				return ["tenant"];
+			},
+			get vars() {
+				calls++;
+				return vars;
+			},
+		};
+		const inherited = Object.create(context);
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint: handler,
+			authorize: () => true,
+		});
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fixture models the trusted Rivet native context adapter.
+		const onRequest = binding.actor.config.onRequest as typeof binding.handle;
+		expect(
+			(await binding.handle(inherited, new Request("https://example.test/")))
+				.status,
+		).toBe(403);
+		expect(calls).toBe(0);
+		expect(
+			(await onRequest(inherited, new Request("https://example.test/"))).status,
+		).toBe(200);
+		expect(calls).toBe(3);
 	});
 
 	it("moves a streaming body without a second unconsumed tee or unbounded prefetch", async () => {
@@ -602,5 +1022,32 @@ describe("Rivet native application binding", () => {
 				},
 			}),
 		).not.toThrow();
+	});
+
+	it("reports only the attested HTTP kind as mapped and leaves storage and messaging unsupported", () => {
+		const { source } = application();
+		const report = describeRivetPrimitiveSupport(
+			[
+				{ factory: "web", allowVerbs: [] },
+				{ factory: "api", allowVerbs: [] },
+				{ factory: "service", allowVerbs: [] },
+				{ factory: "kv", allowVerbs: ["get", "put"] },
+				{ factory: "bucket", allowVerbs: ["get", "put"] },
+				{ factory: "queue", allowVerbs: ["send", "receive"] },
+				{ factory: "topic", allowVerbs: ["publish", "subscribe"] },
+			],
+			createRivetPrimitiveMappers(source),
+		);
+		expect(report[0]).toMatchObject({
+			kind: "web",
+			status: "partial",
+			resourceTypes: ["Rivet.DurableObject"],
+			bindsEntrypoint: true,
+		});
+		for (const row of report.slice(1)) {
+			expect(row.status).toBe("unsupported");
+			expect(row.resourceTypes).toEqual([]);
+			expect(row.reason).not.toBe("");
+		}
 	});
 });

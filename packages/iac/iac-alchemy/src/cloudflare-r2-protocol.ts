@@ -1,3 +1,10 @@
+import { readCloudflareByteStream } from "./cloudflare-byte-stream.js";
+import type {
+	CloudflareNativeLease,
+	CloudflareRetirement,
+} from "./cloudflare-capacity.js";
+import { awaitCloudflareNative } from "./cloudflare-native-await.js";
+
 export const CLOUDFLARE_R2_MAX_KEY_BYTES = 512;
 export const CLOUDFLARE_R2_MAX_CONTENT_TYPE_BYTES = 512;
 export const CLOUDFLARE_R2_MAX_OBJECT_BYTES = 1_048_576;
@@ -15,6 +22,14 @@ export class CloudflareR2Error extends Error {
 		super(`${code}: ${message}`);
 		this.name = "CloudflareR2Error";
 	}
+}
+
+export function withCloudflareR2Deadline<T>(
+	start: () => Promise<T>,
+	onTimeout?: () => void,
+	onLate?: (value: T, lease: CloudflareNativeLease) => CloudflareRetirement,
+) {
+	return awaitCloudflareNative(start, onTimeout, onLate);
 }
 
 export function encodeCloudflareR2Key(key: string): string {
@@ -113,15 +128,12 @@ export async function cloudflareR2Digest(bytes: ArrayBuffer): Promise<string> {
 			"R2_OBJECT_INVALID",
 			"a bounded object body is required",
 		);
-	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
 		const snapshot = new Uint8Array(bytes).slice().buffer;
-		const digest = await Promise.race([
+		const digestResult = await withCloudflareR2Deadline(() =>
 			crypto.subtle.digest("SHA-256", snapshot),
-			new Promise<never>((_, reject) => {
-				timer = setTimeout(() => reject(new Error("digest timed out")), 10_000);
-			}),
-		]);
+		);
+		const digest = digestResult.value;
 		if (
 			!(digest instanceof ArrayBuffer) ||
 			new DataView(digest).byteLength !== 32
@@ -133,76 +145,38 @@ export async function cloudflareR2Digest(bytes: ArrayBuffer): Promise<string> {
 			"R2_DIGEST_UNAVAILABLE",
 			"the object digest could not be verified",
 		);
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
 	}
 }
 
-export async function readCloudflareR2Bytes(
+export function readCloudflareR2Bytes(
 	body: ReadableStream<Uint8Array> | null,
 ): Promise<ArrayBuffer> {
-	if (body === null) return new Uint8Array().buffer;
-	let reader: ReadableStreamBYOBReader;
-	try {
-		reader = body.getReader({ mode: "byob" });
-	} catch {
-		void body.cancel().catch(() => {});
-		throw new CloudflareR2Error(
-			"R2_STREAM_UNSUPPORTED",
-			"a bounded byte stream is required",
-		);
-	}
-	const chunks: Uint8Array[] = [];
-	let total = 0;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const deadline = new Promise<never>((_, reject) => {
-		timer = setTimeout(
-			() =>
-				reject(
-					new CloudflareR2Error("R2_STREAM_TIMEOUT", "object stream timed out"),
-				),
-			10_000,
-		);
-	});
-	try {
-		while (true) {
-			const size = Math.min(65_536, CLOUDFLARE_R2_MAX_OBJECT_BYTES - total + 1);
-			const result = await Promise.race([
-				reader.read(new Uint8Array(size)),
-				deadline,
-			]);
-			if (result.done) break;
-			if (
-				!(result.value instanceof Uint8Array) ||
-				result.value.byteLength === 0 ||
-				chunks.length >= 4096
-			)
-				throw new CloudflareR2Error(
-					"R2_OBJECT_INVALID",
-					"object stream is invalid",
+	return readCloudflareByteStream(
+		body,
+		CLOUDFLARE_R2_MAX_OBJECT_BYTES,
+		false,
+		(kind) => {
+			if (kind === "unsupported")
+				return new CloudflareR2Error(
+					"R2_STREAM_UNSUPPORTED",
+					"a bounded byte stream is required",
 				);
-			total += result.value.byteLength;
-			if (total > CLOUDFLARE_R2_MAX_OBJECT_BYTES)
-				throw new CloudflareR2Error(
+			if (kind === "large")
+				return new CloudflareR2Error(
 					"R2_OBJECT_TOO_LARGE",
 					"object exceeds the supported size",
 				);
-			chunks.push(new Uint8Array(result.value));
-		}
-	} catch (error) {
-		void reader.cancel().catch(() => {});
-		throw error;
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
-		reader.releaseLock();
-	}
-	const result = new Uint8Array(total);
-	let offset = 0;
-	for (const chunk of chunks) {
-		result.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	return result.buffer;
+			if (kind === "timeout")
+				return new CloudflareR2Error(
+					"R2_STREAM_TIMEOUT",
+					"object stream timed out",
+				);
+			return new CloudflareR2Error(
+				"R2_OBJECT_INVALID",
+				"object stream is invalid",
+			);
+		},
+	);
 }
 
 export function cloudflareR2Grant(

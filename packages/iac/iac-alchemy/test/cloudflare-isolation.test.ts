@@ -20,6 +20,7 @@ import {
 const options = {
 	assessRequirements: () => ({ status: "supported" as const }),
 };
+
 const sourceFence = {
 	sourceDigest: `sha256:${"a".repeat(64)}`,
 	environmentDigest: `sha256:${"b".repeat(64)}`,
@@ -51,8 +52,8 @@ const definition = (name: string, kind: string) => ({
 });
 
 function execute<A, E, R>(effect: Effect.Effect<A, E, R>, target = stack()) {
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test supplies the Alchemy stack used by the real constructors.
 	return Effect.runPromise(
-		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test supplies the Alchemy stack used by the real constructors.
 		effect.pipe(Effect.provideService(StackContext, target)) as Effect.Effect<
 			A,
 			E,
@@ -66,6 +67,7 @@ describe("Cloudflare Bindle identity isolation", () => {
 		"kv",
 		"bucket",
 		"queue",
+		"data",
 	] as const)("rejects same-named %s infrastructure in sequential and concurrent Bindles", async (kind) => {
 		for (const mode of ["sequential", "concurrent"] as const) {
 			const mappers = cloudflareBindleMappers({ workerModules: {} });
@@ -108,6 +110,7 @@ describe("Cloudflare Bindle identity isolation", () => {
 		"kv",
 		"bucket",
 		"queue",
+		"data",
 	] as const)("allows separately namespaced %s declarations in one stack", async (kind) => {
 		const mappers = cloudflareBindleMappers({ workerModules: {} });
 		const first = mapBindleToAlchemy(

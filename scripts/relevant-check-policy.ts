@@ -573,6 +573,21 @@ export function selectRelevantChecks(
 		checks.push({
 			command: "pnpm",
 			args: [
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				...draftWorkspaces.map((workspace) => `--filter=./${workspace}^...`),
+				"--output-logs=new-only",
+				turboConcurrencyArg(),
+			],
+			reason:
+				"build the workspace packages changed proofs import before running their examples",
+			serial: true,
+		});
+		checks.push({
+			command: "pnpm",
+			args: [
 				"run",
 				staged ? "draft:artifacts:staged" : "draft:artifacts",
 				"--",
