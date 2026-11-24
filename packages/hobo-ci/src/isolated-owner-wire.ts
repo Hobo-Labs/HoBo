@@ -6,6 +6,7 @@ export const OWNER_DEFAULT_RESPONSE_LIMIT = 1024 * 1024;
 export const OWNER_TRUST_LIMIT = 8 * 1024 * 1024;
 export const OWNER_MESSAGE_LIMIT =
 	Math.ceil((OWNER_BODY_LIMIT * 4) / 3) + OWNER_TRUST_LIMIT + 1024 * 1024;
+export const OWNER_RUN_FD = 3;
 
 const headers = z
 	.array(z.tuple([z.string().max(8192), z.string().max(65536)]))

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { isolatedOwnerEgressFetch } from "./egress.js";
 import {
 	assertPrivateOwnerProxy,
@@ -6,6 +7,7 @@ import {
 import {
 	authenticatedOwnerRun,
 	OWNER_MESSAGE_LIMIT,
+	OWNER_RUN_FD,
 	ownerRequest,
 	ownerRun,
 } from "./isolated-owner-wire.js";
@@ -22,10 +24,9 @@ async function respond(value: string): Promise<void> {
 }
 
 async function run(): Promise<void> {
-	const authorizedRun = ownerRun.parse({
-		id: process.env.HOBO_OWNER_RUN_ID,
-		secret: process.env.HOBO_OWNER_RUN_SECRET,
-	});
+	const authorizedRun = ownerRun.parse(
+		JSON.parse(readFileSync(OWNER_RUN_FD, "utf8")),
+	);
 	const pieces: Buffer[] = [];
 	let length = 0;
 	for await (const piece of process.stdin) {

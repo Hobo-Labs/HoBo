@@ -344,6 +344,9 @@ it("sends the supported request properties over the private pipe", async () => {
 		referrer: "https://fixture.invalid/private",
 		referrerPolicy: "no-referrer",
 	});
+	const [input] = launch.mock.calls[0] ?? [];
+	expect(JSON.parse(input?.run ?? "null")).toEqual(received?.run);
+	expect(JSON.stringify(input?.env)).not.toContain(received?.run.secret);
 });
 
 it("preserves a highly fragmented request body across the private pipe", async () => {

@@ -143,7 +143,10 @@ including streams, are fully buffered before the child starts; bodies over
 32 MiB are refused. URL, header, certificate and encoded-packet limits can also
 refuse a request before the child starts.
 It isolates request diagnostics from the parent process; it is not connected to
-a verified production owner session. Requests require HTTPS, and automatic
+a verified production owner session. Each request gets a fresh run id and
+secret, which the parent writes once to the child's descriptor 3 pipe, never to
+its environment or arguments. The child refuses a request packet that does not
+carry that run, and the parent refuses a response bound to another run. Requests require HTTPS, and automatic
 redirects stay within the original origin so credential headers do not cross
 origins. A caller can inspect a redirect with `redirect: "manual"`. For local
 synthetic tests only, `allowInsecureLoopback` permits HTTP to the literal

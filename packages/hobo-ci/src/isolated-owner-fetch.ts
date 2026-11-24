@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
+import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { egressFrom } from "./egress.js";
 import {
@@ -14,6 +15,7 @@ import {
 	OWNER_BODY_LIMIT,
 	OWNER_DEFAULT_RESPONSE_LIMIT,
 	OWNER_MESSAGE_LIMIT,
+	OWNER_RUN_FD,
 	ownerRequest,
 	ownerResponse,
 } from "./isolated-owner-wire.js";
@@ -38,6 +40,7 @@ export type PrivateOwnerChildLauncher = (input: {
 	readonly executable: string;
 	readonly childPath: string;
 	readonly env: Readonly<Record<string, string>>;
+	readonly run: string;
 }) => PrivateOwnerChild;
 
 export interface IsolatedOwnerFetchOptions {
@@ -48,12 +51,22 @@ export interface IsolatedOwnerFetchOptions {
 
 const OWNER_PHASE_TIMEOUT_MS = 120_000;
 
-const launchOwnerChild: PrivateOwnerChildLauncher = (input) =>
-	spawn(input.executable, [input.childPath], {
+const launchOwnerChild: PrivateOwnerChildLauncher = (input) => {
+	const child = spawn(input.executable, [input.childPath], {
 		env: input.env,
-		stdio: ["pipe", "pipe", "ignore"],
+		stdio: ["pipe", "pipe", "ignore", "pipe"],
 		windowsHide: true,
 	});
+	const { stdin, stdout } = child;
+	const run = child.stdio[OWNER_RUN_FD];
+	if (!stdin || !stdout || !(run instanceof Writable)) {
+		child.kill("SIGKILL");
+		throw new PrivateOwnerRequestError();
+	}
+	run.on("error", () => child.kill("SIGKILL"));
+	run.end(input.run);
+	return Object.assign(child, { stdin, stdout });
+};
 
 class IsolatedOwnerResponse extends Response {
 	readonly #responseUrl: string;
@@ -255,18 +268,16 @@ export function createIsolatedOwnerFetch(
 		if (performance.now() >= preparationDeadline)
 			throw new PrivateOwnerRequestError();
 		return new Promise<Response>((resolve, reject) => {
-			const childEnv = {
-				HOBO_OWNER_RUN_ID: run.id,
-				HOBO_OWNER_RUN_SECRET: run.secret,
-				...(process.platform === "win32" && process.env.SystemRoot
+			const childEnv =
+				process.platform === "win32" && process.env.SystemRoot
 					? { SystemRoot: process.env.SystemRoot }
-					: undefined),
-			};
+					: {};
 			const launch = () =>
 				launchChild({
 					executable: process.execPath,
 					childPath,
 					env: childEnv,
+					run: JSON.stringify(run),
 				});
 			let child: ReturnType<typeof launch>;
 			try {
