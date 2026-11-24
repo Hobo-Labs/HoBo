@@ -4,15 +4,14 @@ import {
 	readFileSync,
 	rmSync,
 	symlinkSync,
-	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CredentialResolver } from "@hobo/cd";
 import { createHoboCli } from "@hobo/cli";
 import { parsePactDocument } from "@hobo/contract-harness";
 import type { HttpTransport } from "@hobo/core";
-import { createTrustedVault } from "@hobo/core";
 import { at } from "@hobo/core/total-access";
 import { type PactLifecycle, pactBackedTransport } from "@hobo/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -20,22 +19,17 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadDeliveryFile } from "../src/cd-delivery-module.js";
 import { createCiCommand } from "../src/ci-command.js";
 import { RELAY_DELIVERY_FILE } from "../src/ci-relay-delivery.js";
-import {
-	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-	readRelayDeployToken,
-} from "../src/ci-relay-deploy-credential.js";
+import { RELAY_DEPLOY_TOKEN_REF } from "../src/ci-relay-deploy-credential.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
-import {
-	RELAY_VERIFY_REFUSAL,
-	recordVerifiedPreviewRecords,
-} from "../src/ci-relay-verify.js";
-import {
-	isJsonObject,
-	type JsonObject,
-	type JsonValue,
-	parseJsonObject,
-} from "../src/json.js";
+import { recordVerifiedPreviewRecords } from "../src/ci-relay-verify.js";
+import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
+import { OwnerCredentialUnavailable } from "../src/owner-store-session.js";
 import type { VercelFetch } from "../src/vercel-client.js";
+import {
+	keepInOwnerStore,
+	ownerStoreEntries,
+	syntheticRelayBinding,
+} from "./support/owner-store-stand-in.js";
 
 // `hobo ci deploy` against the REAL relay declaration
 // (packages/ci-vercel/src/bindle.ts), through the CLI shell. The dry run is
@@ -64,24 +58,11 @@ symlinkSync(
 	join(RELAY_DIR, "node_modules"),
 	join(relayFixtureDir, "node_modules"),
 );
-{
-	const file = join(relayFixtureDir, "deploy", "secret-store.binding.json");
-	const binding: Record<string, JsonValue> = Object.fromEntries(
-		Object.entries(
-			parseJsonObject(
-				readFileSync(
-					join(RELAY_DIR, "deploy", "secret-store.binding.json"),
-					"utf8",
-				),
-			),
-		),
-	);
-	binding.deployProjectId = "ci-deploy-project";
-	binding.deployCredentialIdentityId = "ci-deploy-reader-identity";
-	binding.deployOidcSubject =
-		"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials";
-	writeFileSync(file, `${JSON.stringify(binding, null, "\t")}\n`);
-}
+const OWNER_STORE = mkdtempSync(join(tmpdir(), "hobo-owner-store-"));
+keepInOwnerStore(OWNER_STORE, syntheticRelayBinding());
+const LEGACY_OWNER_STORE = mkdtempSync(join(tmpdir(), "hobo-owner-store-"));
+keepInOwnerStore(LEGACY_OWNER_STORE, syntheticRelayBinding("legacy"));
+const EMPTY_OWNER_STORE = mkdtempSync(join(tmpdir(), "hobo-owner-store-"));
 
 const legacyFixtureDir = mkdtempSync(
 	join(RELAY_DIR, "..", ".ci-relay-legacy-fixture-"),
@@ -165,37 +146,38 @@ async function deploy(
 		readonly now?: () => number;
 		readonly hoboHome?: string;
 		readonly probe?: HttpTransport;
-		readonly oidc?: boolean;
+		readonly ownerSession?: boolean;
+		readonly ownerStore?: string;
 	},
 ): Promise<Ran> {
-	const { VERCEL_TOKEN: storeToken, ...plainEnv } = options.env ?? {};
-	const oidc = storeToken !== undefined && options.oidc !== false;
-	const deployCredentials = createTrustedVault();
+	const { VERCEL_TOKEN: storeToken, ...env } = options.env ?? {};
 	let credentialReads = 0;
-	const readDeployCredential: typeof readRelayDeployToken = async (request) => {
-		credentialReads += 1;
-		if (storeToken === undefined) return readRelayDeployToken(request);
-		return {
-			token: storeToken,
-			secretRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
-			identityId: "ci-deploy-reader-identity",
-			audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-		};
+	const ownerCredentials: CredentialResolver = {
+		async resolve(ref) {
+			credentialReads += 1;
+			if (ref !== RELAY_DEPLOY_TOKEN_REF || storeToken === undefined)
+				throw new OwnerCredentialUnavailable(ref, "not-in-store");
+			return { token: storeToken };
+		},
 	};
-	if (storeToken !== undefined)
-		deployCredentials.put("VERCEL_TOKEN", storeToken);
-	const env = { ...plainEnv };
-	if (oidc) {
-		env.ACTIONS_ID_TOKEN_REQUEST_URL =
-			"https://token.actions.example.test/token?api-version=2.0";
-		env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "synthetic-request-token";
-	}
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
 				env,
-				deployCredentials,
-				readDeployCredential,
+				...(options.ownerSession === false
+					? undefined
+					: {
+							ownerCredentials: () => ownerCredentials,
+							ownerEntries: () =>
+								ownerStoreEntries(
+									options.ownerStore ??
+										(options.cwd === legacyFixtureDir
+											? LEGACY_OWNER_STORE
+											: options.cwd === RELAY_DIR
+												? EMPTY_OWNER_STORE
+												: OWNER_STORE),
+								),
+						}),
 				vercelFetch: options.fetch,
 				...(options.vercelCli !== undefined
 					? { vercelCli: options.vercelCli }
@@ -244,6 +226,8 @@ afterAll(() => {
 	for (const home of homes) rmSync(home, { recursive: true, force: true });
 	rmSync(relayFixtureDir, { recursive: true, force: true });
 	rmSync(legacyFixtureDir, { recursive: true, force: true });
+	for (const store of [OWNER_STORE, LEGACY_OWNER_STORE, EMPTY_OWNER_STORE])
+		rmSync(store, { recursive: true, force: true });
 });
 
 // The relay answering its probes, and the URLs it was asked for. Its
@@ -297,19 +281,8 @@ const RELAY = [
 	"hobo-ci",
 ];
 const SETTING = ["--set", "HOBO_CI_PUBLIC_URL=https://ci.example.test"];
-// The owner's Infisical ids the production config-service binding asks for:
-// identifiers, not credentials (synthetic here).
-const INPUTS = [
-	"--set",
-	"INFISICAL_IDENTITY_ID=3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c",
-	"--set",
-	"INFISICAL_PROJECT_ID=6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7",
-	"--set",
-	"INFISICAL_SITE_URL=https://app.infisical.com",
-];
-
 describe("hobo ci deploy --dry-run (the real relay declaration, no network)", () => {
-	it("plans a preview deployment with OIDC available but no credential read or request", async () => {
+	it("plans a preview deployment with the token in the owner store but no credential read or request", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
 			[...RELAY, "--team", TEAM, ...SETTING, "--dry-run"],
@@ -332,36 +305,35 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(sent).toEqual([]);
 	});
 
-	it("plans production only when asked, pinned to the commit", async () => {
+	it("refuses a production deploy Vercel would build from git, in a dry run too: it carries no store coordinates", async () => {
 		const { fetch, sent } = unreachable();
-		const ran = await deploy(
-			[
-				...RELAY,
-				"--sha",
-				SHA,
-				"--target",
-				"production",
-				"--root-directory",
-				"packages/ci-vercel",
-				"--create-project",
-				...INPUTS,
-				"--dry-run",
-			],
-			{ fetch },
-		);
-
-		expect(ran.exitCode).toBe(0);
-		expect(ran.data.plan).toEqual(fixture("relay-production-own-scope"));
-		expect(ran.data.plan).toMatchObject({
-			target: "production",
-			scope: TEAM,
-			createMissingProject: true,
-			placement: {
-				yard: "hobo-ci-relay",
-				camp: "hobo-ci-relay/production",
-				provider: "vercel",
-			},
-		});
+		for (const mode of [["--dry-run"], []]) {
+			const ran = await deploy(
+				[
+					...RELAY,
+					"--sha",
+					SHA,
+					"--target",
+					"production",
+					"--build",
+					"git",
+					...mode,
+				],
+				{ fetch, env: { VERCEL_TOKEN: TOKEN } },
+			);
+			expect(ran.exitCode).toBe(1);
+			expect(ran.envelope).toMatchObject({
+				ok: false,
+				code: "HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT",
+				message: expect.stringContaining("--build prebuilt"),
+			});
+			expect(ran.envelope.message).toEqual(
+				expect.stringContaining("choose_secret_store"),
+			);
+			expect(JSON.stringify(ran.envelope)).not.toContain(
+				"00000000-0000-0000-0000-000000000001",
+			);
+		}
 		expect(sent).toEqual([]);
 	});
 
@@ -375,9 +347,10 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 				SHA,
 				"--target",
 				"production",
+				"--build",
+				"prebuilt",
 				"--team",
 				TEAM,
-				...INPUTS,
 				"--dry-run",
 			],
 			{ fetch, json: false },
@@ -391,9 +364,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			`to Vercel project hobo-ci, scope ${TEAM}, target production`,
 		);
 		expect(ran.stdout).toContain("from github Hobo-Labs/HoBo@main");
-		expect(ran.stdout).toContain(
-			"Settings set for production first (non-secret): HOBO_CI_CONFIG_SERVICE=infisical INFISICAL_ENVIRONMENT=prod INFISICAL_IDENTITY_ID=3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c INFISICAL_PROJECT_ID=6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7 INFISICAL_SECRET_PATH=/hobo-ci-relay INFISICAL_SITE_URL=https://app.infisical.com",
-		);
+		expect(ran.stdout).not.toContain("INFISICAL_");
 		expect(ran.stdout).toContain(
 			"secret-ref.runtime-projection/v1 -> infisical.secrets/v1 via infisical.oidc-auth/v1",
 		);
@@ -419,11 +390,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(bindings).toContainEqual(
 			expect.objectContaining({
 				profile: "secret-ref.runtime-projection/v1",
-				inputs: [
-					"INFISICAL_IDENTITY_ID",
-					"INFISICAL_PROJECT_ID",
-					"INFISICAL_SITE_URL",
-				],
+				productId: "infisical.secrets/v1",
 			}),
 		);
 		expect(bindings).not.toContainEqual(
@@ -434,41 +401,64 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		);
 	});
 
-	it("fills production Infisical coordinates from deploy/secret-store.binding.json when present", async () => {
-		const binding = parseJsonObject(
-			readFileSync(
-				new URL(
-					"../../ci-vercel/deploy/secret-store.binding.json",
-					import.meta.url,
-				),
-				"utf8",
-			),
-		);
+	it("sets no store coordinate as a production setting: they reach the relay only inside a build HoBo makes", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
-			[...RELAY, "--target", "production", "--sha", SHA, "--dry-run"],
+			[
+				...RELAY,
+				"--target",
+				"production",
+				"--sha",
+				SHA,
+				"--build",
+				"prebuilt",
+				"--dry-run",
+			],
 			{ fetch },
 		);
 		expect(ran.exitCode).toBe(0);
 		const plan = isJsonObject(ran.data.plan) ? ran.data.plan : {};
-		const rawSettings = plan.settings;
-		const settings = Array.isArray(rawSettings) ? rawSettings : [];
-		expect(settings).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					key: "INFISICAL_PROJECT_ID",
-					value: binding.projectId,
-				}),
-				expect.objectContaining({
-					key: "INFISICAL_IDENTITY_ID",
-					value: binding.relayIdentityId,
-				}),
-				expect.objectContaining({
-					key: "INFISICAL_SITE_URL",
-					value: binding.endpoint,
-				}),
-			]),
+		expect(JSON.stringify(plan)).not.toContain("INFISICAL");
+		expect(JSON.stringify(ran.envelope)).not.toContain(
+			"00000000-0000-0000-0000-000000000001",
 		);
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses a real deploy when the owner's store session is not established, before any request", async () => {
+		const { fetch, sent } = unreachable();
+		const cli = createHoboCli({
+			commands: { ci: createCiCommand({ vercelFetch: fetch }) },
+		});
+		const result = await cli.run([
+			"ci",
+			"deploy",
+			...RELAY,
+			"--team",
+			TEAM,
+			"--cwd",
+			relayFixtureDir,
+			"--json",
+		]);
+		expect(result.exitCode).toBe(1);
+		expect(parseJsonObject(result.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_SECRET_STORE_SESSION_REQUIRED",
+			message: expect.stringContaining("choose_secret_store"),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses production when the owner's store holds no relay binding", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[...RELAY, "--target", "production", "--sha", SHA, "--build", "prebuilt"],
+			{ fetch, ownerStore: EMPTY_OWNER_STORE, env: { VERCEL_TOKEN: TOKEN } },
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_SECRET_STORE_NOT_CONNECTED",
+		});
 		expect(sent).toEqual([]);
 	});
 
@@ -486,48 +476,51 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(sent).toEqual([]);
 	});
 
-	it("rejects a credential-free legacy binding before any OIDC or deploy request", async () => {
+	it("refuses before any request when the owner store holds no deploy token, and points at hobo cd up", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy([...RELAY, ...SETTING], {
 			fetch,
 			cwd: legacyFixtureDir,
-			env: {
-				ACTIONS_ID_TOKEN_REQUEST_URL:
-					"https://token.actions.example.test/token?api-version=2.0",
-				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
-			},
 		});
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({
 			ok: false,
+			status: "authentication-required",
 			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
-			message: expect.stringContaining("no deploy credential identity"),
+			message: expect.stringContaining("hobo cd up"),
 		});
+		expect(ran.envelope.message).toContain(RELAY_DEPLOY_TOKEN_REF);
+		expect(ran.credentialReads).toBe(1);
 		expect(sent).toEqual([]);
 	});
 
-	it("refuses to override a setting the Yard's bindings set", async () => {
-		const { fetch, sent } = unreachable();
-		const ran = await deploy(
-			[
-				...RELAY,
-				"--target",
-				"production",
-				...INPUTS,
-				"--set",
-				"INFISICAL_ENVIRONMENT=dev",
-				"--dry-run",
-			],
-			{ fetch },
-		);
-		expect(ran.exitCode).toBe(1);
-		expect(ran.envelope).toMatchObject({
-			code: "HOBO_CI_DEPLOY_SETTING_REFUSED",
-			message: expect.stringContaining(
-				"Camp hobo-ci-relay/production's bindings set INFISICAL_ENVIRONMENT",
-			),
-		});
-		expect(sent).toEqual([]);
+	it("refuses a store coordinate as a Vercel setting: coordinates never become environment variables", async () => {
+		for (const setting of [
+			"INFISICAL_PROJECT_ID=00000000-0000-0000-0000-000000000001",
+			"INFISICAL_IDENTITY_ID=00000000-0000-0000-0000-000000000002",
+		]) {
+			const { fetch, sent } = unreachable();
+			const ran = await deploy(
+				[
+					...RELAY,
+					"--target",
+					"production",
+					"--sha",
+					SHA,
+					"--build",
+					"prebuilt",
+					"--set",
+					setting,
+					"--dry-run",
+				],
+				{ fetch },
+			);
+			expect(ran.exitCode).toBe(1);
+			expect(ran.envelope).toMatchObject({
+				code: "HOBO_CI_DEPLOY_SETTING_REFUSED",
+			});
+			expect(sent).toEqual([]);
+		}
 	});
 
 	it("plans what the workflow on main runs: production from the Yard, provisioning first", async () => {
@@ -540,16 +533,34 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 				SHA,
 				"--target",
 				"production",
+				"--build",
+				"prebuilt",
 				"--team",
 				TEAM,
 				"--provision",
-				...INPUTS,
 				"--dry-run",
 			],
 			{ fetch },
 		);
 		expect(ran.exitCode).toBe(0);
-		expect(ran.data.plan).toEqual(fixture("relay-production-provision"));
+		expect(ran.data.plan).toMatchObject({
+			target: "production",
+			scope: TEAM,
+			placement: { camp: "hobo-ci-relay/production" },
+			provisioning: expect.arrayContaining([
+				expect.objectContaining({
+					args: expect.arrayContaining(["integration", "list"]),
+				}),
+			]),
+			requests: expect.arrayContaining([
+				expect.objectContaining({
+					method: "POST",
+					path: expect.stringContaining("/promote/"),
+				}),
+			]),
+		});
+		expect(JSON.stringify(ran.data.plan)).not.toContain("/v13/deployments");
+		expect(JSON.stringify(ran.data.plan)).not.toContain("INFISICAL");
 		expect(sent).toEqual([]);
 	});
 
@@ -637,7 +648,10 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 					...RELAY,
 					"--target",
 					"production",
-					...INPUTS,
+					"--sha",
+					SHA,
+					"--build",
+					"prebuilt",
 					"--set",
 					setting,
 					...mode,
@@ -759,12 +773,36 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 		expect(sent).toEqual([]);
 	});
 
-	it("refuses a preloaded deploy token when the dedicated reader is unavailable", async () => {
+	it("refuses without the owner's store session, points at choose_secret_store, and reads nothing", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy([...RELAY, ...SETTING], {
 			fetch,
 			env,
-			oidc: false,
+			ownerSession: false,
+		});
+
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_SECRET_STORE_SESSION_REQUIRED",
+			message: expect.stringContaining("choose_secret_store"),
+		});
+		expect(ran.credentialReads).toBe(0);
+		expect(ran.stdout + ran.stderr).not.toContain(TOKEN);
+		expect(sent).toEqual([]);
+	});
+
+	it("never takes the deploy token from the environment or a CI job's OIDC request", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch,
+			env: {
+				VERCEL_TEAM_ID: TEAM,
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token?api-version=2.0",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+				HOBO_CD_VERCEL_TOKEN: TOKEN,
+			},
 		});
 
 		expect(ran.exitCode).toBe(1);
@@ -772,7 +810,7 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
 			status: "authentication-required",
 		});
-		expect(ran.credentialReads).toBe(0);
+		expect(ran.stdout + ran.stderr).not.toContain(TOKEN);
 		expect(sent).toEqual([]);
 	});
 
@@ -798,11 +836,11 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 		expect(vercel.fidelityViolations()).toEqual([]);
 		expect(ran.envelope).toMatchObject({ ok: true, code: "HOBO_CI_DEPLOYED" });
 		expect(ran.credentialReads).toBe(1);
-		expect(ran.data).toMatchObject({
-			deployTokenRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
-			deployCredentialIdentityId: "ci-deploy-reader-identity",
-			deployCredentialAudience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-		});
+		expect(ran.data).toMatchObject({ deployTokenSource: "owner-store" });
+		expect(ran.data).not.toHaveProperty("deployTokenRef");
+		expect(ran.data).not.toHaveProperty("deployCredentialIdentityId");
+		expect(ran.stdout + ran.stderr).not.toContain("ci-deploy-reader-identity");
+		expect(ran.stdout + ran.stderr).not.toContain("ci-deploy-project");
 		expect(ran.data.outputs).toEqual({
 			url: "https://hobo-ci-git-main.example.vercel.app",
 			deploymentId: "dpl_preview",
@@ -1183,14 +1221,14 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 
 	it("needs --sha for production: a ref alone names no commit to qualify", async () => {
 		const { fetch, sent } = unreachable();
-		const ran = await deploy([...RELAY, "--target", "production", ...INPUTS], {
-			fetch,
-			env,
-		});
+		const ran = await deploy(
+			[...RELAY, "--target", "production", "--build", "prebuilt"],
+			{ fetch, env },
+		);
 		expect(ran.exitCode).toBe(2);
 		expect(ran.envelope).toMatchObject({
 			code: "HOBO_CLI_USAGE",
-			message: expect.stringContaining("--target production needs --sha"),
+			message: expect.stringContaining("needs --sha"),
 		});
 		expect(sent).toEqual([]);
 	});
@@ -1204,7 +1242,8 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				"hobo-ci",
 				"--target",
 				"production",
-				...INPUTS,
+				"--build",
+				"prebuilt",
 				"--wait",
 			],
 			{
@@ -1369,7 +1408,8 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				"hobo-ci",
 				"--target",
 				"production",
-				...INPUTS,
+				"--build",
+				"prebuilt",
 				"--wait",
 			],
 			{ fetch, env, ...steppingClock() },
@@ -1382,62 +1422,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(sent).toEqual([]);
 	});
 
-	it("promotes to production the commit preview verified, in the same journal", async () => {
-		const home = freshHome();
-		const relay = healthyRelay();
-		// One clock across both runs: production comes after preview.
-		const clock = steppingClock();
-		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
-			fetch: scriptedVercel(["READY"]).fetch,
-			env,
-			hoboHome: home,
-			probe: relay.http,
-			...clock,
-		});
-		expect(first.exitCode).toBe(0);
-		expect(first.data.delivery).toMatchObject({
-			node: "preview",
-			state: "PROMOTED",
-		});
-
-		const second = await deploy(
-			[
-				...PINNED,
-				"--project",
-				"hobo-ci",
-				"--target",
-				"production",
-				...INPUTS,
-				"--wait",
-			],
-			{
-				fetch: scriptedVercel(["READY"]).fetch,
-				env,
-				hoboHome: home,
-				probe: relay.http,
-				...clock,
-			},
-		);
-		expect(second.exitCode, JSON.stringify(second.envelope)).toBe(0);
-		expect(second.envelope).toMatchObject({
-			ok: true,
-			code: "HOBO_CI_DEPLOYED",
-		});
-		const previewDelivery = first.data.delivery;
-		expect(second.data.delivery).toMatchObject({
-			node: "production",
-			campId: "hobo-ci-relay/hobo-ci-relay/production",
-			state: "PROMOTED",
-			freightId: isJsonObject(previewDelivery) ? previewDelivery.freightId : "",
-		});
-		expect(second.data.outputs).toMatchObject({
-			camp: "hobo-ci-relay/production",
-			readyState: "READY",
-		});
-		expect(relay.probed).toContain("https://relay.example.test/readyz");
-	});
-
-	it("does not qualify production while HOBO_CI_RELAY_URL serves another commit", async () => {
+	it("refuses git production even after preview verified the commit: only the prebuilt build carries the store binding", async () => {
 		const home = freshHome();
 		const clock = steppingClock();
 		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
@@ -1448,31 +1433,16 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			...clock,
 		});
 		expect(first.exitCode).toBe(0);
-		const stale = healthyRelay(200, "f".repeat(40));
+		const { fetch, sent } = unreachable();
 		const second = await deploy(
-			[
-				...PINNED,
-				"--project",
-				"hobo-ci",
-				"--target",
-				"production",
-				...INPUTS,
-				"--wait",
-			],
-			{
-				fetch: scriptedVercel(["READY"]).fetch,
-				env,
-				hoboHome: home,
-				probe: stale.http,
-				...clock,
-			},
+			[...PINNED, "--project", "hobo-ci", "--target", "production", "--wait"],
+			{ fetch, env, hoboHome: home, probe: healthyRelay().http, ...clock },
 		);
 		expect(second.exitCode).toBe(1);
 		expect(second.envelope).toMatchObject({
-			code: RELAY_VERIFY_REFUSAL.commitMismatch,
-			message: expect.stringContaining("f".repeat(40)),
+			code: "HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT",
 		});
-		expect(stale.probed).toContain("https://relay.example.test/healthz");
+		expect(sent).toEqual([]);
 	});
 
 	it("without --wait returns once the deployment exists, unverified and unqualified", async () => {
@@ -1500,7 +1470,8 @@ describe("hobo ci deploy --dry-run names its delivery through @hobo/cd", () => {
 				"production",
 				"--sha",
 				SHA,
-				...INPUTS,
+				"--build",
+				"prebuilt",
 				"--dry-run",
 			],
 			{ fetch },

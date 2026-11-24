@@ -1,4 +1,15 @@
 export {
+	type AgentVaultProxyLaunch,
+	type AgentVaultProxyProcess,
+	type AgentVaultProxyRoute,
+	AgentVaultProxyStartError,
+	agentVaultProxyAgentOptions,
+	agentVaultProxyArguments,
+	agentVaultProxyFetch,
+	agentVaultProxyLauncher,
+	type LaunchAgentVaultProxy,
+} from "./agent-vault-proxy.js";
+export {
 	GITHUB_APP_HOSTS,
 	type GithubAppHost,
 	type GithubAppHostResolution,
@@ -79,10 +90,10 @@ export {
 	type TranscriptEvent,
 } from "./hand-off-audit.js";
 export {
-	awaitHandOffStore,
-	INFISICAL_TOKEN_AUTH_GUIDE,
-	OWNER_CREDENTIAL_LINE_PREFIX,
+	type HandOffSignInOutcome,
+	handOffSignInLines,
 	storeAnswers,
+	takeHandOffSignIn,
 } from "./hand-off-store.js";
 export {
 	INFISICAL_CLI_SESSION_CAPTURE,
@@ -143,11 +154,14 @@ export {
 } from "./owner-sign-in.js";
 export {
 	CI_RELAY_FOLDER,
-	EGRESS_PROXY_SIGN_IN,
 	familySettings,
+	HAND_OFF_SIGN_IN_CAPTURES,
+	HAND_OFF_SIGN_INS,
+	type HandOffSignIn,
 	hasSecretStoreLocator,
 	INFISICAL_TOKEN_AUTH_DOCS,
 	InvalidSecretStoreError,
+	ONE_PASSWORD_CONNECT_GUIDE,
 	OWNER_STORE_CHOICE_LINE_PREFIX,
 	type OwnerStore,
 	type OwnerStoreDeps,
@@ -224,9 +238,9 @@ export {
 } from "./secret-custody.js";
 export {
 	BITWARDEN_SERVERS,
-	EGRESS_PROXY_PLACEHOLDER,
 	type Env,
 	type OpenedSecretStore,
+	type OwnerAgentVault,
 	openSecretStore,
 	type SecretStoreDeps,
 	type SecretStoreId,
@@ -235,6 +249,7 @@ export {
 export {
 	type CommandEnv,
 	type CommandResult,
+	ensureInfisicalAgentVaultCli,
 	ensureStoreCli,
 	hoboToolsDir,
 	INFISICAL_CLI,

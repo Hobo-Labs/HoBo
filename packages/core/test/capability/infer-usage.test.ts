@@ -23,4 +23,22 @@ describe("inferCapabilityUsage", () => {
 			}),
 		);
 	});
+
+	it("infers the asynchronous durable messaging port for a topic", () => {
+		const usage = inferCapabilityUsage({
+			sourceText: `
+        import { topic } from "@hobo/bindles";
+        const orders = topic("orders");
+        orders.publish("created");
+      `,
+		});
+		expect(usage.resources).toContainEqual(
+			expect.objectContaining({
+				resource: "orders",
+				factory: "topic",
+				port: "hobo:durable-messaging",
+				operations: ["publish"],
+			}),
+		);
+	});
 });

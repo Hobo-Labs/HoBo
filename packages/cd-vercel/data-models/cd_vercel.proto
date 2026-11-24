@@ -1,10 +1,6 @@
 syntax = "proto3";
 package hobo.cd.vercel.v1;
 
-// The committed store coordinates HoBo.CD on Vercel signs in with
-// (deploy/secret-store.binding.json): the fields of SecretStoreBinding it
-// reads. Ids only; no value. relay_identity_id is the record's name for the
-// workload identity.
 message CdStoreBinding {
   string kind = 1;
   string endpoint = 2;

@@ -63,22 +63,114 @@ describe("merge-group required gate", () => {
 	const affected = job("pr_affected");
 	const gate = job("pr-gate");
 
-	it("requires successful state-machine verification for pull requests and merge groups", () => {
+	it("runs state-machine verification unless the plan rules it out or a green PR run is reused", () => {
 		const verification = job("state-machine-verification");
 		assert.match(verification, /pnpm run verify:state-machines/u);
-		assert.match(verification, /github\.event_name == 'pull_request'/u);
-		assert.match(verification, /github\.event_name == 'merge_group'/u);
+		assert.match(
+			verification,
+			/needs: \[route, ci-runner-image, pr_gate_plan\]/u,
+		);
 		assert.match(verification, /shard: \[0, 1, 2, 3\]/u);
 		assert.match(verification, /--shard=\$\{FORMAL_SHARD\}\/4/u);
+		assert.match(
+			verification,
+			/--concurrency=\$\{HOBO_TURBO_BUILD_CONCURRENCY:-100%\}/u,
+		);
+		assert.doesNotMatch(verification, /--concurrency=1\b/u);
+		const condition = verification.match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
+		assert.ok(
+			condition.startsWith(
+				"${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')",
+			),
+			condition,
+		);
+		assert.ok(
+			condition.includes(
+				"&& !(needs.pr_gate_plan.result == 'success' && needs.pr_gate_plan.outputs.state_machines == 'false')",
+			),
+			condition,
+		);
+		assert.ok(
+			condition.endsWith(
+				"&& !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
+			),
+			condition,
+		);
+		assert.doesNotMatch(condition, /attested/u);
+		assert.match(
+			planner,
+			/state_machines: \$\{\{ steps\.state-machine-scope\.outputs\.needed \}\}/u,
+		);
+		assert.match(
+			gate,
+			/STATE_MACHINES: \$\{\{ needs\.pr_gate_plan\.outputs\.state_machines \}\}/u,
+		);
+	});
+
+	it("decides the plan's state-machine output from the event's base and keeps it true on any doubt", () => {
+		const decide = shellForStep(
+			planner,
+			"Decide whether state-machine verification is needed",
+		);
+		assert.match(decide, /needed=true/u);
+		assert.match(
+			decide,
+			/scripts\/ci\/state-machine-scope\.mts\)" \|\| answer=""/u,
+		);
+		assert.match(
+			decide,
+			/if \[ "\$answer" = "false" \]; then needed=false; fi/u,
+		);
+		const directory = mkdtempSync(join(tmpdir(), "hobo-state-machine-plan-"));
+		try {
+			const output = join(directory, "output");
+			for (const [event, prBase, mergeBase] of [
+				["pull_request", "", "HEAD"],
+				["merge_group", "HEAD", ""],
+				["pull_request", "0000000000000000000000000000000000000000", ""],
+			] as const) {
+				writeFileSync(output, "");
+				const run = spawnSync("bash", ["-c", decide], {
+					encoding: "utf8",
+					env: {
+						...process.env,
+						EVENT_NAME: event,
+						PR_BASE: prBase,
+						MERGE_BASE: mergeBase,
+						GITHUB_OUTPUT: output,
+					},
+				});
+				assert.equal(run.status, 0, run.stderr);
+				assert.equal(
+					readFileSync(output, "utf8"),
+					"needed=true\n",
+					`${event} pr=${prBase} merge=${mergeBase}`,
+				);
+			}
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("accepts skipped state-machine verification only for a successful plan that ruled it out or a reused green PR run", () => {
+		const verification = job("state-machine-verification");
 		assert.match(gate, /needs: \[[^\]]*state-machine-verification/u);
+		assert.match(verification, /github\.event_name == 'merge_group'/u);
 		const script = shellForStep(
 			gate,
 			"Require successful validation and workspace tests",
 		);
-		for (const [event, affectedResult] of [
-			["pull_request", "success"],
-			["merge_group", "skipped"],
-		] as const) {
+		type Case = Readonly<{
+			event: string;
+			result: string;
+			route: string;
+			plan: string;
+			needed: string;
+			fabric: string;
+			jobs: string;
+		}>;
+		const cases: Case[] = [];
+		for (const event of ["pull_request", "merge_group"])
 			for (const result of [
 				"success",
 				"failure",
@@ -86,29 +178,75 @@ describe("merge-group required gate", () => {
 				"skipped",
 				"timed_out",
 				"",
-			]) {
-				const run = spawnSync("bash", ["-c", script], {
-					env: {
-						...process.env,
-						EVENT_NAME: event,
-						PLAN_RESULT: "success",
-						VALIDATION_RESULT: "success",
-						WORKSPACE_RESULT: "success",
-						AFFECTED_RESULT: affectedResult,
-						SCRIPTS_BUILD_RESULT: "success",
-						SCRIPTS_RESULT: "success",
-						FORMAL_RESULT: result,
-						ROUTE_RESULT: "success",
-						ATTESTED: "true",
-						ATTESTED_JOBS: '["state-machine-verification"]',
-					},
-				});
-				assert.equal(
-					run.status === 0,
-					result === "success",
-					`${event}/${result}`,
-				);
+			])
+				for (const route of ["success", "failure"])
+					for (const plan of ["success", "skipped", "failure"])
+						for (const needed of ["false", "true", "", "FALSE"])
+							for (const fabric of ["true", "false"])
+								for (const jobs of [
+									'["state-machine-verification"]',
+									'["pr_gate_plan","state-machine-verification"]',
+								])
+									cases.push({
+										event,
+										result,
+										route,
+										plan,
+										needed,
+										fabric,
+										jobs,
+									});
+		const quote = (text: string) => `'${text}'`;
+		const driver = [
+			"gate() {",
+			'  ( export EVENT_NAME="$1" FORMAL_RESULT="$2" ROUTE_RESULT="$3" PLAN_RESULT="$4"',
+			'    export STATE_MACHINES="$5" PR_FABRIC="$6" ATTESTED=true ATTESTED_JOBS="$7"',
+			'    export AFFECTED_RESULT=$([ "$1" = pull_request ] && echo success || echo skipped)',
+			"    export VALIDATION_RESULT=success WORKSPACE_RESULT=success SCRIPTS_RESULT=success",
+			script,
+			"  ) >/dev/null 2>&1",
+			"  echo $?",
+			"}",
+			...cases.map(
+				(entry) =>
+					`gate ${[entry.event, entry.result, entry.route, entry.plan, entry.needed, entry.fabric, entry.jobs].map(quote).join(" ")}`,
+			),
+		].join("\n");
+		const directory = mkdtempSync(join(tmpdir(), "hobo-state-machine-gate-"));
+		try {
+			writeFileSync(join(directory, "table.sh"), driver);
+			const run = spawnSync("bash", [join(directory, "table.sh")], {
+				encoding: "utf8",
+				maxBuffer: 64 * 1024 * 1024,
+			});
+			assert.equal(run.status, 0, run.stderr);
+			const exits = run.stdout.trim().split("\n");
+			assert.equal(exits.length, cases.length);
+			let acceptedSkips = 0;
+			for (const [index, entry] of cases.entries()) {
+				const planPassed =
+					entry.plan === "success" ||
+					(entry.plan === "skipped" &&
+						entry.route === "success" &&
+						entry.jobs.includes('"pr_gate_plan"'));
+				const ruledOut =
+					entry.route === "success" &&
+					entry.plan === "success" &&
+					entry.needed === "false";
+				const reused =
+					entry.event === "merge_group" &&
+					entry.route === "success" &&
+					entry.fabric === "true";
+				const expected =
+					planPassed &&
+					(entry.result === "success" ||
+						(entry.result === "skipped" && (ruledOut || reused)));
+				assert.equal(exits[index] === "0", expected, JSON.stringify(entry));
+				if (expected && entry.result === "skipped") acceptedSkips += 1;
 			}
+			assert.ok(acceptedSkips > 0);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
 		}
 	});
 
@@ -176,7 +314,7 @@ describe("merge-group required gate", () => {
 		);
 		assert.match(
 			gate,
-			/needs: \[route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests-build, scripts-tests, state-machine-verification\]/u,
+			/needs: \[route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification\]/u,
 		);
 		assert.match(gate, /if: \$\{\{ always\(\)/u);
 	});
@@ -250,7 +388,6 @@ describe("merge-group required gate", () => {
 									VALIDATION_RESULT: validationResult,
 									WORKSPACE_RESULT: workspaceResult,
 									AFFECTED_RESULT: affectedResult,
-									SCRIPTS_BUILD_RESULT: "success",
 									SCRIPTS_RESULT: "success",
 									FORMAL_RESULT: "success",
 								},
@@ -331,7 +468,7 @@ describe("merge-group required gate", () => {
 			'  ( export EVENT_NAME="$1" PLAN_RESULT="$2" VALIDATION_RESULT="$3" WORKSPACE_RESULT="$4"',
 			'    export AFFECTED_RESULT="$5" ROUTE_RESULT="$6" ATTESTED="$7" ATTESTED_JOBS="$8"',
 			// The scripts job's own cases: scripts-tests-job.test.ts.
-			"    export SCRIPTS_BUILD_RESULT=success SCRIPTS_RESULT=success",
+			"    export SCRIPTS_RESULT=success",
 			"    export FORMAL_RESULT=success",
 			script,
 			"  ) >/dev/null 2>&1",
@@ -507,7 +644,7 @@ describe("merge-group required gate", () => {
 		const driver = [
 			"gate() {",
 			'  ( export EVENT_NAME="$1" ROUTE_RESULT="$2" PR_FABRIC="$3" VALIDATION_RESULT="$4"',
-			'    export WORKSPACE_RESULT="$5" SCRIPTS_BUILD_RESULT="$6" SCRIPTS_RESULT="$6" PLAN_RESULT="$7"',
+			'    export WORKSPACE_RESULT="$5" SCRIPTS_RESULT="$6" PLAN_RESULT="$7"',
 			'    export AFFECTED_RESULT=$([ "$1" = pull_request ] && echo success || echo skipped)',
 			"    export ATTESTED=false ATTESTED_JOBS=[] FORMAL_RESULT=success",
 			script,

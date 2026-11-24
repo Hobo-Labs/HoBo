@@ -36,11 +36,12 @@ function check(
 	modelSource: string,
 	modelConfig: string,
 	expectedViolation?: string,
+	moduleName = "DurableTopic",
 ): void {
 	const directory = join(scratch, label);
 	mkdirSync(directory);
-	writeFileSync(join(directory, "DurableTopic.tla"), modelSource);
-	writeFileSync(join(directory, "DurableTopic.cfg"), modelConfig);
+	writeFileSync(join(directory, `${moduleName}.tla`), modelSource);
+	writeFileSync(join(directory, `${moduleName}.cfg`), modelConfig);
 	const result = runBoundedTlc(
 		jar,
 		[
@@ -49,8 +50,8 @@ function check(
 			"-metadir",
 			join(directory, "states"),
 			"-config",
-			"DurableTopic.cfg",
-			"DurableTopic.tla",
+			`${moduleName}.cfg`,
+			`${moduleName}.tla`,
 		],
 		directory,
 	);
@@ -146,6 +147,54 @@ try {
 		source,
 		`${config}\nINVARIANT NeverFullFinal\n`,
 		"NeverFullFinal",
+	);
+	const declared = readFileSync(join(model, "DeclaredTopics.tla"), "utf8");
+	const declaredConfig = readFileSync(
+		join(model, "DeclaredTopics.cfg"),
+		"utf8",
+	);
+	check(
+		"declared-topics",
+		declared,
+		declaredConfig,
+		undefined,
+		"DeclaredTopics",
+	);
+	check(
+		"declared-without-authority",
+		replaceOnce(
+			declared,
+			'/\\ authority /\\ valid /\\ receipt = "none"',
+			'/\\ valid /\\ receipt = "none"',
+		),
+		declaredConfig,
+		"CreationAuthorized",
+		"DeclaredTopics",
+	);
+	check(
+		"declared-without-initialization",
+		replaceOnce(declared, "topics' = Declared", "topics' = {}"),
+		declaredConfig,
+		"EffectIncludesTopics",
+		"DeclaredTopics",
+	);
+	check(
+		"declared-duplicate-replay",
+		replaceOnce(
+			declared,
+			`  /\\ response' = receipt\n  /\\ UNCHANGED <<topics, effects, receipt, authority, valid, pinned, active,`,
+			`  /\\ response' = receipt\n  /\\ effects' = IF receipt = "committed" /\\ effects < 2 THEN effects + 1 ELSE effects\n  /\\ UNCHANGED <<topics, receipt, authority, valid, pinned, active,`,
+		),
+		"SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT NoDuplicateEffect\n",
+		"NoDuplicateEffect",
+		"DeclaredTopics",
+	);
+	check(
+		"declared-recovery-witness",
+		declared,
+		`${declaredConfig}\nINVARIANT NeverRecovered\n`,
+		"NeverRecovered",
+		"DeclaredTopics",
 	);
 } finally {
 	rmSync(scratch, { recursive: true, force: true });

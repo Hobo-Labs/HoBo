@@ -17,8 +17,9 @@ charges before settlement. Run them with
 `HOBO_TLA_TOOLS=/path/to/tla2tools-1.7.4.jar node --experimental-strip-types scripts/check-iac-models.ts`
 from the repository root. The tool is the immutable
 [TLA+ 1.7.4 release](https://github.com/tlaplus/tlaplus/releases/tag/v1.7.4) `tla2tools.jar`;
-the durable-topic, Rivet queue, KV and HTTP, Cloudflare grant and topic-bus
-model checkers require the same jar;
+the durable-topic, messaging settlement and exhaustion, Rivet queue, KV, HTTP
+and namespace, Cloudflare grant and secret, and topic-bus model checkers require
+the same jar;
 the runner verifies its pinned SHA256 digest and limits each checker invocation to
 60 seconds, a 512 MiB Java heap and 16 MiB per captured output stream. A timeout,
 resource failure or signal-terminated process fails the check. The host must

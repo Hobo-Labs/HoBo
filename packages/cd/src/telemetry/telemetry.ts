@@ -12,6 +12,7 @@ import type {
 	OtelMetricPoint,
 	TelemetrySink,
 } from "../ports.js";
+import { emitMetrics } from "./advisory.js";
 import {
 	computeDora,
 	computeReconcileLag,
@@ -66,7 +67,7 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 		if (ctx.tenant !== d.tenant)
 			throw new TelemetryError(
 				"telemetry-tenant-mismatch",
-				`telemetry serves tenant ${d.tenant}, request names ${ctx.tenant}`,
+				"The telemetry request names a different tenant.",
 			);
 	}
 
@@ -77,12 +78,15 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 				ok: true,
 				detail: `caught up (+${read} events)`,
 			});
-		} catch (error) {
+		} catch {
 			checks.set("journal", {
 				ok: false,
-				detail: `journal read failed: ${error instanceof Error ? error.message : String(error)}`,
+				detail: "The telemetry journal is unavailable.",
 			});
-			throw error;
+			throw new TelemetryError(
+				"telemetry-journal-unavailable",
+				"The telemetry journal is unavailable.",
+			);
 		}
 	}
 
@@ -173,10 +177,10 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 			try {
 				points.push(...(await collectFleetMetrics(d.fleet, atMs)));
 				checks.set("fleet-sources", { ok: true, detail: "collected" });
-			} catch (error) {
+			} catch {
 				checks.set("fleet-sources", {
 					ok: false,
-					detail: `fleet read failed: ${error instanceof Error ? error.message : String(error)}`,
+					detail: "The telemetry fleet sources are unavailable.",
 				});
 			}
 		}
@@ -201,23 +205,21 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 					ok: true,
 					detail: `exported ${points.length} points`,
 				});
-			} catch (error) {
+			} catch {
 				checks.set("exporter", {
 					ok: false,
-					detail: `export failed: ${error instanceof Error ? error.message : String(error)}`,
+					detail: "The telemetry exporter is unavailable.",
 				});
-				d.sink
-					.metrics([
-						{
-							name: CD_METRICS.exportFailures,
-							kind: "counter",
-							value: 1,
-							unit: "1",
-							atMs: ctx.now(),
-							attributes: {},
-						},
-					])
-					.catch(() => undefined);
+				emitMetrics(d.sink, [
+					{
+						name: CD_METRICS.exportFailures,
+						kind: "counter",
+						value: 1,
+						unit: "1",
+						atMs: ctx.now(),
+						attributes: {},
+					},
+				]);
 			}
 			return points.length;
 		},

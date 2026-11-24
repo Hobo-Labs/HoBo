@@ -27,8 +27,7 @@
 		"@alchemy.run/rivet": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "^4.1.4",
-		"rivetkit": "3.0.0",
-		"ws": "^8.21.0"
+		"rivetkit": "3.0.0"
 	},
 	"devDependencies": {
 		"@alchemy.run/rivet": "2.0.0-beta.87",

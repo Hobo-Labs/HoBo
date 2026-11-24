@@ -25,8 +25,8 @@ responsibility, as described in the runtime guide below.
 `RIVET_DURABLE_TOPIC_LOG_CAPABILITIES` profile supports topic creation,
 publication, retained-log reads, audit and compaction. Consumer groups, leases,
 acknowledgements and dead letters are unsupported. This partial asynchronous
-profile does not implement the HoBo Bindle topic, message bus, or legacy
-`wasi:messaging` contract; their capability reporting remains unsupported.
+profile does not implement the full HoBo Bindle topic or message bus contract;
+their capability reporting remains unsupported for the retained-log actor.
 
 Define the actor and its registry in a module that is safe for the IaC planner
 to import:
@@ -107,7 +107,7 @@ explicit policy decision.
 
 ## Durable topic bus
 
-Use `createRivetDurableTopicBusActor` with an independently verified `authorizeInstanceScope` callback, then pass its branded binding to `rivetDurableTopicBusResource`. The bus profile supports subscriptions, consumer groups, delivery leases, acknowledgement, dead letters, compaction, and audit within its advertised limits. It remains asynchronous and does not implement the legacy synchronous topic ABI. Its host must fence the complete instance, including all dead-letter destinations, and authenticate the same source and pool evidence as the retained log.
+Use `createRivetDurableTopicBusActor` with an independently verified `authorizeInstanceScope` callback, then pass its branded binding to `rivetDurableTopicBusResource`. The bus profile supports subscriptions, consumer groups, delivery leases, acknowledgement, dead letters, compaction, and audit within its advertised limits. Its host must fence the complete instance, including all dead-letter destinations, and authenticate the same source and pool evidence as the retained log.
 
 ## HTTP application with a topic bus
 
@@ -144,4 +144,4 @@ const mappers = createRivetHttpTopicBusMappers({
 });
 ```
 
-The host must fence the complete source, registry, transport and pool through each request and response. An unknown publish result can have committed and must be reconciled. This asynchronous API does not satisfy a legacy synchronous Bindle topic dependency. The finite model in `model/RivetHttpTopicBus.tla` checks a bounded authority and timeout abstraction; it does not prove the implementation or host.
+The host must fence the complete source, registry, transport and pool through each request and response. An unknown publish result can have committed and must be reconciled. This composition does not yet map a Bindle topic dependency. The finite model in `model/RivetHttpTopicBus.tla` checks a bounded authority and timeout abstraction; it does not prove the implementation or host.

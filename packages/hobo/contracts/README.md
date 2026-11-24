@@ -18,15 +18,21 @@ relay OAuth start remains covered by `@hobo/ci-gh-actions`' OAuth-session tests.
 GitHub is an external provider and does not verify this consumer fixture; live
 App registration, settings changes, and installation remain release checks.
 
-`test/ci-runs.test.ts` exercises the process contract to GitHub CLI with exact
-argument arrays, repository/host selection, bounded JSON parsing, current commit
-resolution, retry admission and new-attempt fencing. It uses a process seam;
-live GitHub assignment, logs, and reruns remain release checks.
+`test/ci-runs.test.ts` exercises the GitHub REST contract of `hobo ci list`,
+`inspect`, `logs`, `grep` and `rerun`: the exact `api.github.com` paths and
+query parameters, the installation token of HoBo's GitHub App minted once per
+command from `github-app://owner/name`, job logs followed through GitHub's
+redirect without that token, bounded JSON and log parsing, current commit
+resolution through Git, retry admission and new-attempt fencing, and the
+`HOBO_CI_GITHUB_APP_NEEDED` refusal without an owner store session. It uses a
+fetch seam; live GitHub assignment, logs, and reruns remain release checks.
 
 `ci-insights-github.pact.json` pins the GitHub REST reads `hobo ci signals`
-and `hobo ci diagnose` make through `gh api`: the repository, the run list,
-one attempt's jobs, a job's log and its annotations through the distinct
-check-run ID from `check_run_url`, with the fields the insight reports read.
+and `hobo ci diagnose` make with an installation token of HoBo's GitHub App
+on the repository: the repository, the run list, one attempt's jobs, a job's
+log (a redirect, then a download sent without the token) and its annotations
+through the distinct check-run ID from `check_run_url`, with the fields the
+insight reports read.
 `test/ci-insights.test.ts` executes every interaction in order through
 `runCiInsights`. GitHub does not verify this
 consumer fixture; a read against a live repository remains a release check.
@@ -69,11 +75,3 @@ Its dry-run record is `data-models/vercel_git_deployment.proto`
 valid fixtures that are the command's own output and invalid ones for a
 secret-named setting, a credentialed value, an implied or unknown target, a
 slug scope, another git host, a short sha, no requests and a path off the API.
-
-`owner-handoff-relay.pact.json` pins the owner hand-off mailbox on the CI relay
-that `src/owner-link.ts` uses when a host shows no working private form:
-registration, collection before and after the owner's page deposits a sealed
-answer, the single deposit, a used or expired mailbox and a relay with no mailbox
-store. `test/owner-link.test.ts` drives the consumer through every interaction,
-and `packages/ci-vercel/contracts/owner-handoff.provider.test.ts` replays each
-recorded request against the relay's handler.

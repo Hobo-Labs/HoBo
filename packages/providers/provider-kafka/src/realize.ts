@@ -1,4 +1,4 @@
-import { MESSAGING_WIT_INTERFACE } from "@hobo/core";
+import { MessagingCapabilityError } from "@hobo/core";
 
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 import { parseKafkaClusterSpec, parseKafkaTopicResource } from "./parse.js";
@@ -34,6 +34,10 @@ export function realizeKafkaResources(
 					: cluster.tenantId,
 		});
 	});
+	if (topics.some((topic) => topic.deadLetterTopic !== undefined))
+		throw new MessagingCapabilityError(
+			"Kafka realization cannot bind a dead-letter transfer",
+		);
 
 	const iacHints = [
 		`kafka.cluster:${cluster.kind}:${cluster.name}`,
@@ -48,7 +52,7 @@ export function realizeKafkaResources(
 		cluster,
 		topics,
 		messagingBackend: "native-kafka",
-		witExports: [MESSAGING_WIT_INTERFACE, "hobo:queue/queue@0.1.0"],
+		witExports: [],
 		iacHints,
 		secretless: true as const,
 	});

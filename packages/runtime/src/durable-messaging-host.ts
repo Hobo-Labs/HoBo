@@ -1062,18 +1062,17 @@ export function createDurableMessagingWitHost(
 	};
 	const host: DurableMessagingWitHost = Object.freeze({
 		limits: () => {
-			if (
-				!grant.active ||
-				!metadataCurrent() ||
-				lifecycle.unresolved ||
-				(lifecycle.startPending && performance.now() >= lifecycle.startDeadline)
-			)
-				throw new Error("durable_messaging.unauthorized");
-			return {
-				...bounds,
-				leaseMs: BigInt(bounds.leaseMs),
-				operationWindowMs: BigInt(bounds.operationWindowMs),
-			};
+			if (lifecycle.unresolved)
+				return Promise.reject(new Error("durable_messaging.unauthorized"));
+			return bounded(async (alive) => {
+				if (!grant.active || !metadataCurrent() || !alive())
+					throw new Error("durable_messaging.unauthorized");
+				return {
+					...bounds,
+					leaseMs: BigInt(bounds.leaseMs),
+					operationWindowMs: BigInt(bounds.operationWindowMs),
+				};
+			});
 		},
 		ensureTopic: (input) =>
 			guardedMutation(input, async (op) => {
@@ -1364,40 +1363,39 @@ export function createDurableMessagingWitImports(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
-// public-contract: the exact opt-in component interface identity authorized by the JSPI host.
-export const DURABLE_MESSAGING_JSPI_INTERFACE =
-	"hobo:durable-messaging-jspi/messaging@0.1.0";
-const JSPI_IMPORT_ALIAS = "hobo:durable-messaging-jspi/messaging";
+export { DURABLE_MESSAGING_WIT_INTERFACE };
 
-export type DurableMessagingJspiImports = Readonly<{
-	readonly [DURABLE_MESSAGING_JSPI_INTERFACE]: DurableMessagingWitHost;
-	readonly [JSPI_IMPORT_ALIAS]: DurableMessagingWitHost;
+const NATIVE_IMPORT_ALIAS = "hobo:durable-messaging/messaging";
+
+export type DurableMessagingAsyncImports = Readonly<{
+	readonly [DURABLE_MESSAGING_WIT_INTERFACE]: DurableMessagingWitHost;
+	readonly [NATIVE_IMPORT_ALIAS]: DurableMessagingWitHost;
 }>;
 
-export interface DurableMessagingJspiComponent<T> {
+export interface DurableMessagingAsyncComponent<T> {
 	readonly digest: string;
 	readonly imports: readonly string[];
 	readonly instantiate: (
-		imports: DurableMessagingJspiImports,
+		imports: DurableMessagingAsyncImports,
 	) => T | Promise<T>;
 }
 
-export interface DurableMessagingJspiOptions<T> {
-	readonly component: DurableMessagingJspiComponent<T>;
+export interface DurableMessagingAsyncOptions<T> {
+	readonly component: DurableMessagingAsyncComponent<T>;
 	readonly verify: (
-		component: DurableMessagingJspiComponent<T>,
+		component: DurableMessagingAsyncComponent<T>,
 		host: DurableMessagingWitHost,
 	) => boolean;
 	readonly timeoutMs?: number;
 }
 
-export type DurableMessagingJspiStart<T> =
+export type DurableMessagingAsyncStart<T> =
 	| { readonly status: "started"; readonly value: T }
 	| { readonly status: "busy" }
 	| { readonly status: "unknown" };
 
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this gate inspects optional runtime capabilities and untrusted component metadata before invoking either. */
-export function supportsDurableMessagingJspi(): boolean {
+export function supportsDurableMessagingAsync(): boolean {
 	if (typeof WebAssembly === "undefined" || types.isProxy(WebAssembly))
 		return false;
 	const suspending = Object.getOwnPropertyDescriptor(WebAssembly, "Suspending");
@@ -1414,12 +1412,12 @@ export function supportsDurableMessagingJspi(): boolean {
 	);
 }
 
-export async function instantiateDurableMessagingJspi<T>(
+export async function instantiateDurableMessagingAsync<T>(
 	host: DurableMessagingWitHost,
-	options: DurableMessagingJspiOptions<T>,
-): Promise<DurableMessagingJspiStart<T>> {
-	if (!supportsDurableMessagingJspi())
-		throw new Error("durable_messaging.jspi_unavailable");
+	options: DurableMessagingAsyncOptions<T>,
+): Promise<DurableMessagingAsyncStart<T>> {
+	if (!supportsDurableMessagingAsync())
+		throw new Error("durable_messaging.async_unavailable");
 	if (typeof host !== "object" || host === null || types.isProxy(host))
 		return invalid();
 	const lifecycle = readPrivate(hostLifecycles, host);
@@ -1439,10 +1437,10 @@ export async function instantiateDurableMessagingJspi<T>(
 	const imports = array(component.imports, 64).map((entry) => text(entry, 256));
 	if (new Set(imports).size !== imports.length) return invalid();
 	const matching = imports.filter(
-		(entry) => entry.split("@")[0] === JSPI_IMPORT_ALIAS,
+		(entry) => entry.split("@")[0] === NATIVE_IMPORT_ALIAS,
 	);
-	if (matching.length !== 1 || matching[0] !== DURABLE_MESSAGING_JSPI_INTERFACE)
-		throw new Error("durable_messaging.jspi_interface_unverified");
+	if (matching.length !== 1 || matching[0] !== DURABLE_MESSAGING_WIT_INTERFACE)
+		throw new Error("durable_messaging.async_interface_unverified");
 	if (
 		typeof component.instantiate !== "function" ||
 		types.isProxy(component.instantiate) ||
@@ -1452,7 +1450,7 @@ export async function instantiateDurableMessagingJspi<T>(
 		return invalid();
 	// SAFETY: the trusted host supplies a callable factory of the declared generic result.
 	const instantiate =
-		component.instantiate as DurableMessagingJspiComponent<T>["instantiate"];
+		component.instantiate as DurableMessagingAsyncComponent<T>["instantiate"];
 	const captured = Object.freeze({
 		digest,
 		imports: Object.freeze(imports),
@@ -1462,10 +1460,11 @@ export async function instantiateDurableMessagingJspi<T>(
 	try {
 		verified = settings.verify(captured, host) === true;
 	} catch {}
-	if (!verified) throw new Error("durable_messaging.jspi_component_unverified");
+	if (!verified)
+		throw new Error("durable_messaging.async_component_unverified");
 	const table = Object.freeze({
-		[DURABLE_MESSAGING_JSPI_INTERFACE]: host,
-		[JSPI_IMPORT_ALIAS]: host,
+		[DURABLE_MESSAGING_WIT_INTERFACE]: host,
+		[NATIVE_IMPORT_ALIAS]: host,
 	});
 	if (lifecycle.unresolved) return { status: "unknown" };
 	if (lifecycle.startPending || lifecycle.active !== 0)

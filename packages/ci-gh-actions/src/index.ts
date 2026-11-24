@@ -1,12 +1,4 @@
 export type {
-	FleetReporterState,
-	FleetReporterStatus,
-	FleetReporterStatusList,
-	FleetVerdict,
-	FleetVerdictAllowance,
-	FleetVerdictAllowanceUse,
-} from "./_generated/fleet_verdict_pb.js";
-export type {
 	RoutingSlip,
 	RoutingSlipClass,
 	RoutingSlipRelay,
@@ -14,6 +6,53 @@ export type {
 export { createActionsBackend } from "./actions-backend.js";
 export { createAdmissionOrder } from "./admission-order.js";
 export { relayInstallAssets } from "./assets.js";
+export {
+	type AutoRetryDeps,
+	type AutoRetryOutcome,
+	type AutoRetrySkip,
+	autoRetryRun,
+	type CheckRunAnnotations,
+	DECISION_LOOKBACK_MS,
+	DECISION_READ_LIMIT,
+	DECISION_READ_MAX,
+	defineJobRetried,
+	githubCheckRunAnnotations,
+	githubRerunJob,
+	InMemoryRetryLedger,
+	JOB_RETRIED_EVENT,
+	type JobRetried,
+	type JobRetriedFields,
+	jobRetriedJson,
+	type MachineDisconnects,
+	machineEventDisconnects,
+	parseJobRetried,
+	RETRY_RERUN_STATES,
+	type RerunJob,
+	type RerunReply,
+	type RetryLedger,
+	RetryLedgerConformanceError,
+	type RetryRerun,
+	RetryRouteFacts,
+	RetryRowRejection,
+	rerunStateOf,
+	retryLedgerConformance,
+	routeRetryFor,
+	SqliteRetryLedger,
+	testJobRetried,
+} from "./auto-retry.js";
+export {
+	actionsMinutesUsed,
+	GITHUB_BURN_WINDOW_HOURS,
+	GITHUB_INCLUDED_COMPUTE_OBSERVED_AT,
+	GITHUB_INCLUDED_COMPUTE_SOURCE,
+	GITHUB_INCLUDED_COMPUTE_USD,
+	GITHUB_LINUX_USD_PER_MINUTE,
+	GITHUB_MINUTES_CACHE_MS,
+	GithubMinutesReader,
+	type GithubMinutesReaderDeps,
+	githubBilledMinutes,
+	includedMinutesOfPlan,
+} from "./billing-usage.js";
 export {
 	inventoryCiEnginesFromRepository,
 	knownEngineIds,
@@ -62,67 +101,6 @@ export {
 	type StartFencePolicy,
 } from "./fleet-v2/start-fence-handler.js";
 export {
-	agreedFleetBlocks,
-	countFleetVerdictAllowance,
-	createFleetVerdictStore,
-	createMemoryFleetVerdictKv,
-	createMemoryFleetVerdicts,
-	FLEET_REPORTERS_PATH,
-	FLEET_REPORTERS_PER_ACCOUNT,
-	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
-	FLEET_VERDICT_MAX_TTL_SECONDS,
-	FLEET_VERDICT_MODES,
-	FLEET_VERDICT_REASONS,
-	FLEET_VERDICTS_PATH,
-	type FleetEnrollment,
-	type FleetReporter,
-	type FleetVerdictAcceptance,
-	type FleetVerdictKeys,
-	type FleetVerdictKv,
-	type FleetVerdictKvEntry,
-	type FleetVerdictMode,
-	type FleetVerdictReason,
-	type FleetVerdictRepository,
-	type FleetVerdictSettings,
-	type FleetVerdictStore,
-	type FleetVerdictSubmission,
-	fleetAllowanceSpent,
-	fleetEnrollmentFor,
-	fleetReporterStateJson,
-	fleetReporterStatusListJson,
-	fleetVerdictAllowanceJson,
-	fleetVerdictExpiresAtMs,
-	fleetVerdictJson,
-	fleetVerdictReportJson,
-	MEMORY_FLEET_VERDICT_KEYS,
-	nextFleetReporterState,
-	noFleetVerdict,
-	type ParsedFleetVerdictReport,
-	parseFleetReporterState,
-	parseFleetReporters,
-	parseFleetReportersPath,
-	parseFleetVerdict,
-	parseFleetVerdictAllowance,
-	parseFleetVerdictPath,
-	parseFleetVerdictReport,
-	reportedFleetVerdict,
-} from "./fleet-verdict.js";
-export {
-	FLEET_REPORTER_ID,
-	FLEET_REPORTER_PUBLIC_KEY,
-	FLEET_VERDICT_HEADERS,
-	FLEET_VERDICT_SIGNING_CONTEXT,
-	type FleetVerdictSigner,
-	type FleetVerdictSigningFields,
-	fleetVerdictSigningInput,
-	isFleetVerdictIssuedAt,
-	isFleetVerdictSequence,
-	type SignedFleetVerdictRequest,
-	signedFleetVerdictRequest,
-	signFleetVerdictReport,
-	verifyFleetVerdictReport,
-} from "./fleet-verdict-auth.js";
-export {
 	createGithubAppTransport,
 	type GithubAppTransport,
 	type GithubTransport,
@@ -137,8 +115,6 @@ export {
 export { withGithubReadCache } from "./github-read-cache.js";
 export {
 	createHostedControlPlane,
-	type FleetVerdictRefusal,
-	type FleetVerdictService,
 	isConfigWriteRoute,
 	MESH_NODES_PATH,
 } from "./hosted-control.js";
@@ -162,6 +138,16 @@ export {
 	type VerifiedWebhook,
 } from "./http-handler.js";
 export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
+export {
+	foldInsightWebhook,
+	type InsightAttemptStore,
+	InsightIngest,
+	type InsightWebhookFact,
+	type JobWebhookFact,
+	parseInsightWebhook,
+	type RunWebhookFact,
+	UNKNOWN_EVENT,
+} from "./insight-ingest.js";
 export {
 	isIsolatedContainerOffer,
 	isIsolatedHostOffer,
@@ -239,24 +225,11 @@ export {
 	fleetRunnerNamePrefix,
 } from "./isolated-worker/fleet-verdict-evaluator.js";
 export {
-	createFleetVerdictReporter,
-	FLEET_VERDICT_SEND_TIMEOUT_MS,
-	type FleetVerdictReporter,
-	type FleetVerdictReporterEvent,
-	type FleetVerdictReporterLog,
-	type FleetVerdictReporterOptions,
-	type FleetVerdictSequenceSource,
-} from "./isolated-worker/fleet-verdict-reporter.js";
-export {
 	createFleetPickupMemory,
 	createFleetVerdictHolds,
-	createFleetVerdictSchedule,
-	createFleetVerdictSequence,
 	FLEET_VERDICT_ENTER_MS,
 	FLEET_VERDICT_EXIT_MS,
-	FLEET_VERDICT_RESEND_MS,
 	FLEET_VERDICT_SAMPLE_MS,
-	FLEET_VERDICT_TTL_SECONDS,
 } from "./isolated-worker/fleet-verdict-state.js";
 export {
 	type BoxGitMirror,
@@ -520,7 +493,109 @@ export {
 	createCiSecretDirectoryResolver,
 	resolveCiSecrets,
 } from "./project-secrets.js";
+export {
+	type CredentialResolver,
+	DepotUsageReader,
+	NamespaceUsageReader,
+	type OwnerCredentialSource,
+	ownerStoreCredentialResolver,
+	PROVIDER_USAGE_CREDENTIAL_SCOPE,
+	PROVIDER_USAGE_MAX_AGE_MS,
+	PROVIDER_USAGE_SYNC_INTERVAL_MS,
+	type ProviderUsageReader,
+	type ProviderUsageReading,
+	type ProviderUsageSubscription,
+	ProviderUsageSync,
+	type ProviderUsageSyncOutcome,
+	parseProviderUsageSubscription,
+	providerUsageReaders,
+	SyncedSpendReader,
+	scheduleProviderUsageSync,
+	USAGE_SYNC_PROVIDERS,
+	type UsageSyncProvider,
+	WarpbuildUsageReader,
+} from "./provider-usage/index.js";
 export { createQueuedJobRepair } from "./queued-job-repair.js";
+export {
+	type AccountRepository,
+	createReadApi,
+	JobTimesReportJson,
+	READ_API_DEFAULT_LIMIT,
+	READ_API_LIST_WINDOW_MS,
+	READ_API_MAX_LIMIT,
+	READ_API_MAX_OFFSET,
+	READ_API_MAX_REPOSITORIES,
+	READ_API_PREFIX,
+	READ_API_REPORT_RUN_CAP,
+	READ_API_REPORT_WINDOW_MS,
+	READ_API_ROUTES,
+	READ_API_SCOPE,
+	ReadApiClient,
+	type ReadApiDeps,
+	ReadApiError,
+	ReadApiErrorJson,
+	type ReadApiJobTimesReport,
+	type ReadApiListOptions,
+	type ReadApiPage,
+	type ReadApiReportOptions,
+	type ReadApiRoute,
+	type ReadApiSignalReport,
+	type ReadApiUsageReport,
+	type RunnerOrderReply,
+	readApiOpenApi,
+	SignalReportJson,
+	UsageReportJson,
+} from "./read-api.js";
+export {
+	type ActiveLeaseSource,
+	type AnsweredRelayJob,
+	createRelayAnswerer,
+	type FleetRoom,
+	GithubCiFile,
+	GithubCiOrderSource,
+	parseRelayJobs,
+	pullRequestOfRef,
+	type QueuedRelayJob,
+	RELAY_CONFIG_PATH,
+	RELAY_MAX_ATTEMPTS,
+	RELAY_OFFER_WAIT_MS,
+	RELAY_RESCUE_CONCURRENCY,
+	RELAY_RUNNER_PREFIX,
+	RELAY_SKIP_REASONS,
+	RELAY_STALE_RUNNER_MS,
+	type RelayAnswerer,
+	type RelayAnswererOptions,
+	type RelayAnswerOutcome,
+	type RelayConnection,
+	type RelayRescueSummary,
+	type RelaySkipReason,
+	type RelaySweepSummary,
+	type RelayTurn,
+	relayRunnerName,
+	relayRunnerRun,
+	repositoryOwner,
+	type StoreFactsWarning,
+	StoreRouteFacts,
+	type StoreRouteFactsDeps,
+} from "./relay-answer/index.js";
+export {
+	CHECK_COMPLETED_EVENT,
+	createDockerLintSandbox,
+	createRelayChecks,
+	DEFAULT_RELAY_CHECKS,
+	GithubRelayCheckSource,
+	LINT_TOOLS,
+	type LintSandbox,
+	type LintTool,
+	parseRelayChecksConfig,
+	RELAY_CHECK_NAMES,
+	type RelayArchiveAccess,
+	type RelayCheckCompleted,
+	type RelayCheckName,
+	type RelayCheckSource,
+	type RelayChecksConfig,
+	type RelayChecksOptions,
+} from "./relay-checks/index.js";
 export { createRelayHost, type RelayAgent } from "./relay-host.js";
 export {
 	createRelayMcp,
@@ -529,6 +604,17 @@ export {
 	type RelayMcpOptions,
 	type RelayMcpSessions,
 } from "./relay-mcp.js";
+export {
+	type FailureLogReader,
+	RELAY_MCP_DIAGNOSED_JOBS,
+	RELAY_MCP_INSIGHT_DEFAULT_DAYS,
+	RELAY_MCP_INSIGHT_MAX_DAYS,
+	RELAY_MCP_INSIGHT_RUNS,
+	RELAY_MCP_INSIGHT_SCOPE,
+	type RelayMcpInsightServices,
+	type RepositoryVisibility,
+	registerRelayMcpInsightTools,
+} from "./relay-mcp-insights.js";
 export {
 	assertRelayOriginAllowed,
 	CI_PROJECT_LOCAL_OVERRIDE_PATH,
@@ -549,6 +635,23 @@ export {
 	selectEnvironmentForWebhook,
 } from "./relay-routing.js";
 export {
+	createRelaySetupMcp,
+	RELAY_SETUP_PROVIDE_TOOL,
+	RELAY_SETUP_STATUS_TOOL,
+	RELAY_SETUP_WRITER_CLIENT_ID,
+	RELAY_SETUP_WRITER_CLIENT_SECRET,
+	type RelaySetupEntry,
+	type RelaySetupGaps,
+	type RelaySetupMcp,
+	type RelaySetupMcpOptions,
+	type RelaySetupState,
+	RelaySetupWriteError,
+	type RelaySetupWriteRefusal,
+	type RelaySetupWriter,
+	type RelaySetupWriterCredential,
+	relaySetupForm,
+} from "./relay-setup-mcp.js";
+export {
 	createRelayTrace,
 	githubRoute,
 	otlpFileSink,
@@ -561,6 +664,18 @@ export {
 	toOtlpTraces,
 	traceGithubTransport,
 } from "./relay-trace.js";
+export {
+	createRelayWiring,
+	RELAY_WIRING_OFF,
+	type RelayModePass,
+	type RelayWiring,
+	type RelayWiringFlags,
+	type RelayWiringLog,
+	type RelayWiringOptions,
+	relayWiringFlags,
+	relayWiringOn,
+	type WiredConnection,
+} from "./relay-wiring.js";
 export {
 	judgeRoutingSlip,
 	type ParsedRoutingSlip,
@@ -583,6 +698,23 @@ export {
 	type RoutingSlipTier,
 	routingSlipJson,
 } from "./routing-slip.js";
+export {
+	exportRunTrace,
+	finishedRunSpans,
+	jobSpanId,
+	jobSpans,
+	journalRunRoutes,
+	ROUTE_LOOKBACK_MS,
+	ROUTE_READ_LIMIT,
+	RUNNER_WAIT_SPAN_NAME,
+	type RunRoutes,
+	RunTraceIngest,
+	routeForJob,
+	runAttemptSpanId,
+	runAttemptTraceId,
+	runSpan,
+	runTraceSpans,
+} from "./run-trace.js";
 export {
 	type ControllerChild,
 	type ControllerDesired,
@@ -695,6 +827,44 @@ export {
 	RunnerOrderDocumentSchema,
 } from "./runner-order-config.js";
 export {
+	GithubRunnerServiceClient,
+	type GithubRunnerServiceOptions,
+	RelayModeOffError,
+	RunnerProtocolError,
+	type RunnerProtocolEvent,
+} from "./runner-protocol/client.js";
+export {
+	agentJobRequestOf,
+	FAKE_BROKER_URL,
+	FAKE_RUN_SERVICE_URL,
+	type FakeCompletion,
+	FakeGithubRunnerService,
+	type FakeRunnerCall,
+	type FakeRunnerRequest,
+	type FakeRunnerServiceOptions,
+} from "./runner-protocol/fake-service.js";
+export {
+	isGithubServiceUrl,
+	type JitConfigExpectation,
+	JitConfigRejection,
+	parseJitConfig,
+} from "./runner-protocol/jit-config.js";
+export {
+	InMemoryRunnerService,
+	type JitCredentials,
+	type JitRunnerSettings,
+	type ParsedJitConfig,
+	type RunnerServiceClient,
+	type RunnerServiceUnderTest,
+	type RunnerSession,
+	runnerServiceClientConformance,
+	testJitConfig,
+} from "./runner-protocol/port.js";
+export {
+	RUNNER_PROTOCOL_SOURCE_COMMIT,
+	RUNNER_PROTOCOL_VERSION,
+} from "./runner-protocol/source.js";
+export {
 	GENERIC_RUNNER_LABELS,
 	parseRunnerRouting,
 	RUNNER_ROUTING_PINS,
@@ -746,8 +916,3 @@ export {
 	type WorkflowSkipReason,
 	type WorkflowWarning,
 } from "./workflow-init.js";
-export {
-	createGithubWorkflowVerifier,
-	type GithubWorkflowClaims,
-	type GithubWorkflowVerifier,
-} from "./workflow-oidc.js";

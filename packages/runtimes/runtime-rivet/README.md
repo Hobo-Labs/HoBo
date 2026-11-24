@@ -199,6 +199,9 @@ This is an abstraction, not a refinement proof of the actor. It does not model
 cyclic dead-letter chains, multiple groups, audit or sequence exhaustion,
 receipt and state-size exhaustion, batch rollback, clocks, authorization,
 storage isolation, host fencing or progress under persistent saturation.
+Run it from the repository root with
+`HOBO_TLA_TOOLS=/path/to/tla2tools-1.7.4.jar node --experimental-strip-types scripts/check-durable-topic-model.ts`;
+the checker refuses any jar other than the pinned TLA+ 1.7.4 release digest.
 
 The test-only `durable-topic-conformance` harness adapts host-supplied process,
 clock, fault and ownership controls to the generic durable-messaging suite. It

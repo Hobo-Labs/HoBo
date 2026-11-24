@@ -12,12 +12,24 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { inspectHostingEvidence } from "../ci/hosting-evidence.mts";
-import { decide, relayInputDirs } from "../ci/relay-deploy-gate.mts";
+import { relayInputDirs, touchesRelay } from "../ci/relay-inputs.mts";
 
-const legacyBindingText = readFileSync(
-	"packages/ci-vercel/deploy/secret-store.binding.json",
-	"utf8",
-);
+const legacyBindingText = `${JSON.stringify(
+	{
+		kind: "infisical-cloud-attach",
+		endpoint: "https://app.infisical.com",
+		projectId: "00000000-0000-0000-0000-000000000001",
+		environment: "prod",
+		secretPath: "/hobo-ci-relay",
+		relayIdentityId: "00000000-0000-0000-0000-000000000002",
+		deployIdentityId: "00000000-0000-0000-0000-000000000003",
+		vercelTeamId: "team_synthetic",
+		claimBundleId: "secret-store:hobo-ci-relay:connect-1",
+		claimState: "claimed",
+	},
+	null,
+	"\t",
+)}\n`;
 const bindingText = `${JSON.stringify(
 	{
 		...JSON.parse(legacyBindingText),
@@ -366,18 +378,16 @@ describe("trusted-main hosting evidence", () => {
 		);
 		const inputDirs = relayInputDirs(readFileSync("pnpm-lock.yaml", "utf8"));
 		assert.equal(
-			decide({
-				event: "push",
-				store: "bound",
-				inputDirs,
-				changed: [
+			touchesRelay(
+				[
 					".github/workflows/hosting-evidence.yml",
 					"scripts/ci/hosting-evidence.mts",
 					"scripts/test/hosting-evidence-workflow.test.ts",
 					"scripts/lint-actions.ts",
 					"docs/ci/hosting-evidence.md",
 				],
-			}).run,
+				inputDirs,
+			),
 			false,
 		);
 	});

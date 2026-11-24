@@ -7,12 +7,11 @@ import { describe, it } from "vitest";
 import {
 	createGithubActionsClient,
 	createGithubRunnerProvider,
-	envTokenProvider,
 	GITHUB_API_VERSION,
 	GITHUB_CREDENTIALS_MISSING,
 	GithubApiError,
 	type GithubFetch,
-	RUNNER_WORKFLOW_DEFAULT,
+	githubAppTokenProvider,
 } from "../src/index.js";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -138,7 +137,14 @@ describe("GitHub Actions RunnerProvider (hobo:runner, replay lane)", () => {
 		const gated = createGithubActionsClient({
 			owner: "hobo-dev",
 			repo: "hobo-jobs",
-			token: envTokenProvider({}),
+			token: githubAppTokenProvider(
+				{
+					resolve: async () => {
+						throw new Error("no App installation");
+					},
+				},
+				{ owner: "hobo-dev", repo: "hobo-jobs" },
+			),
 			fetch: transport,
 		});
 		const provider = createGithubRunnerProvider({
@@ -150,6 +156,21 @@ describe("GitHub Actions RunnerProvider (hobo:runner, replay lane)", () => {
 			provider.run({ jobId: "job-3" }),
 			(error: { code?: string }) => error.code === GITHUB_CREDENTIALS_MISSING,
 		);
+	});
+
+	it("mints the brokered token from HoBo's GitHub App for the client's repository", async () => {
+		const asked: string[] = [];
+		const token = githubAppTokenProvider(
+			{
+				resolve: async (ref, scope) => {
+					asked.push(`${scope} ${ref}`);
+					return { token: "synthetic-installation-token" };
+				},
+			},
+			{ owner: "hobo-dev", repo: "hobo-jobs" },
+		);
+		assert.equal(await token(), "synthetic-installation-token");
+		assert.deepEqual(asked, ["github.actions github-app://hobo-dev/hobo-jobs"]);
 	});
 
 	it("surfaces non-2xx GitHub responses as typed GithubApiError", async () => {
@@ -170,34 +191,3 @@ describe("GitHub Actions RunnerProvider (hobo:runner, replay lane)", () => {
 		);
 	});
 });
-
-// Credential-gated LIVE lane (opt-in; never runs in the sandbox): dispatches
-// the real workflow and tracks the real run. Requires a broker-minted
-// installation token plus repo coordinates.
-const live =
-	process.env.HOBO_GITHUB_LIVE === "1" &&
-	process.env.GITHUB_INSTALLATION_TOKEN &&
-	process.env.HOBO_GITHUB_OWNER &&
-	process.env.HOBO_GITHUB_REPO;
-
-describe.runIf(Boolean(live))(
-	"GitHub Actions RunnerProvider (live lane)",
-	() => {
-		it("dispatches and tracks a real workflow run", async () => {
-			const provider = createGithubRunnerProvider({
-				client: createGithubActionsClient({
-					owner: process.env.HOBO_GITHUB_OWNER ?? "",
-					repo: process.env.HOBO_GITHUB_REPO ?? "",
-					token: envTokenProvider(),
-				}),
-				workflow: process.env.HOBO_GITHUB_WORKFLOW ?? RUNNER_WORKFLOW_DEFAULT,
-			});
-			const result = await provider.run({
-				jobId: `live-${Date.now()}`,
-				command: "echo hobo-live-check",
-			});
-			assert.ok(result.runId > 0);
-			assert.ok(result.runUrl.startsWith("https://github.com/"));
-		}, 600_000);
-	},
-);

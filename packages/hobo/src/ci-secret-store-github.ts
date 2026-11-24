@@ -3,19 +3,19 @@
 // the repository's name: GitHub issues the immutable
 // `repo:<owner>@<ownerId>/<repo>@<repoId>` subject to repositories that use
 // it, and a trust bound to the legacy one is refused with HTTP 403).
-//
-// GitHub is read with the token in GH_TOKEN (or GITHUB_TOKEN), sent to
-// api.github.com only and never printed. Without an answer the command fails
-// closed with the remediation (`@hobo/secret-store-claim`'s
-// SECRET_STORE_OIDC_SUBJECT_UNRESOLVED).
 
+import type { CredentialResolver } from "@hobo/cd";
+import { githubAppInstallationRef } from "@hobo/core";
 import {
 	type GithubOidcSubject,
 	resolveGithubOidcSubject,
 } from "@hobo/secret-store-claim";
 
 import { loadRelayYard } from "./ci-relay-yard.js";
-import type { CiSecretStoreInput } from "./ci-secret-store.js";
+import {
+	type CiSecretStoreInput,
+	SecretStoreBindingRefusal,
+} from "./ci-secret-store.js";
 import { isJsonString } from "./json.js";
 
 /** `--repo`, else the relay Yard's repository, else undefined. */
@@ -29,15 +29,41 @@ export async function relayRepository(
 	return isJsonString(yardRepo) && yardRepo !== "" ? yardRepo : undefined;
 }
 
-export function resolveDeploySubject(input: {
+// public-contract: the refusal when the owner store session cannot mint HoBo's GitHub App token for the repository.
+export const SECRET_STORE_GITHUB_APP_REQUIRED =
+	"HOBO_CI_SECRET_STORE_GITHUB_APP_REQUIRED";
+
+async function githubAppToken(
+	repository: string,
+	credentials: CredentialResolver | undefined,
+): Promise<string> {
+	const refusal = new SecretStoreBindingRefusal(
+		SECRET_STORE_GITHUB_APP_REQUIRED,
+		`hobo ci secret-store reads ${repository} on GitHub only through HoBo's GitHub App: connect the owner's store with HoBo MCP's choose_secret_store, create and install the App with hobo ci app create, then re-run.`,
+	);
+	if (credentials === undefined) throw refusal;
+	let ref: string;
+	try {
+		ref = githubAppInstallationRef(repository);
+	} catch {
+		throw refusal;
+	}
+	const material = await credentials
+		.resolve(ref, "ci-secret-store")
+		.catch(() => undefined);
+	const token = material?.token;
+	if (!token) throw refusal;
+	return token;
+}
+
+export async function resolveDeploySubject(input: {
 	readonly repository: string;
-	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly credentials: CredentialResolver | undefined;
 	readonly fetch?: typeof fetch;
 }): Promise<GithubOidcSubject> {
-	const token = input.env.GH_TOKEN || input.env.GITHUB_TOKEN || undefined;
 	return resolveGithubOidcSubject({
 		repository: input.repository,
-		...(token !== undefined ? { token } : undefined),
+		token: await githubAppToken(input.repository, input.credentials),
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 	});
 }

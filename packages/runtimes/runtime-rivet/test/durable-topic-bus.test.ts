@@ -204,6 +204,216 @@ async function setup(f: Awaited<ReturnType<typeof fixture>>, attempts = 2) {
 	).toBe("committed");
 }
 
+describe("Rivet declared topics", () => {
+	it("initializes declared topics atomically with the first publish and replays a lost reply", async () => {
+		const f = await fixture();
+		const topics = ["orders", "dlq"];
+		const options = {
+			...f.options,
+			declaredTopics: topics,
+			authorizeDeclaredTopics: (claim: { topics: readonly string[] }) =>
+				claim.topics.join(",") === "dlq,orders",
+		};
+		let actor = createRivetDurableTopicBusActor(options);
+		expect(actor.declaredTopics).toEqual(["dlq", "orders"]);
+		expect(actor.semanticDigest).not.toBe(f.options.semanticDigest);
+		topics.push("changed-after-construction");
+		expect(actor.declaredTopics).toEqual(["dlq", "orders"]);
+		const operation = f.next();
+		const publish = () =>
+			actor.handle(
+				{ name: "bus", key: ["tenant"], db: f.db },
+				new Request("https://actor.test/publish", {
+					method: "POST",
+					headers: { authorization: "test" },
+					body: canonical({ operation, topic: "orders", message: message() }),
+				}),
+			);
+		f.loseNextCommitAck();
+		expect(await (await publish()).json()).toMatchObject({ status: "unknown" });
+		actor = createRivetDurableTopicBusActor({
+			...options,
+			declaredTopics: ["dlq", "orders"],
+		});
+		expect(await (await publish()).json()).toMatchObject({
+			status: "committed",
+			value: { messageId: "m", sequence: 1 },
+		});
+		expect(
+			f.sql
+				.prepare(
+					"SELECT json_array_length(value, '$.topics') AS topics, json_array_length(value, '$.messages') AS messages, json_array_length(value, '$.events') AS events FROM hobo_dm_topic_state",
+				)
+				.get(),
+		).toMatchObject({
+			topics: 2,
+			messages: 1,
+			events: 3,
+		});
+	});
+
+	it("does not persist initialization when authorization, the operation or receipt commit fails", async () => {
+		const f = await fixture();
+		let allowed = false;
+		const actor = createRivetDurableTopicBusActor({
+			...f.options,
+			declaredTopics: ["orders"],
+			authorizeDeclaredTopics: () => allowed,
+		});
+		const publish = (operation: ReturnType<typeof f.next>, payload: string) =>
+			actor.handle(
+				{ name: "bus", key: ["tenant"], db: f.db },
+				new Request("https://actor.test/publish", {
+					method: "POST",
+					headers: { authorization: "test" },
+					body: canonical({
+						operation,
+						topic: "orders",
+						message: { ...message(), payload },
+					}),
+				}),
+			);
+		const countState = () =>
+			f.sql.prepare("SELECT count(*) AS count FROM hobo_dm_topic_state").get();
+		expect((await publish(f.next(), "AAH/")).status).toBe(503);
+		expect(countState()).toMatchObject({ count: 0 });
+		allowed = true;
+		expect(await (await publish(f.next(), "not-base64")).json()).toMatchObject({
+			status: "rejected",
+		});
+		expect(countState()).toMatchObject({ count: 0 });
+		const operation = f.next();
+		f.failNextReceipt();
+		expect(await (await publish(operation, "AAH/")).json()).toMatchObject({
+			status: "unknown",
+		});
+		expect(countState()).toMatchObject({ count: 0 });
+		expect(await (await publish(operation, "AAH/")).json()).toMatchObject({
+			status: "committed",
+		});
+		expect(countState()).toMatchObject({ count: 1 });
+	});
+
+	it("rejects changed declarations against a previously pinned actor state", async () => {
+		const f = await fixture();
+		const options = { ...f.options, authorizeDeclaredTopics: () => true };
+		const first = createRivetDurableTopicBusActor({
+			...options,
+			declaredTopics: ["orders"],
+		});
+		const changed = createRivetDurableTopicBusActor({
+			...options,
+			declaredTopics: ["orders", "other"],
+		});
+		expect(first.semanticDigest).not.toBe(changed.semanticDigest);
+		const publish = (
+			actor: typeof first,
+			operation: ReturnType<typeof f.next>,
+		) =>
+			actor.handle(
+				{ name: "bus", key: ["tenant"], db: f.db },
+				new Request("https://actor.test/publish", {
+					method: "POST",
+					headers: { authorization: "test" },
+					body: canonical({ operation, topic: "orders", message: message() }),
+				}),
+			);
+		expect(await (await publish(first, f.next())).json()).toMatchObject({
+			status: "committed",
+		});
+		expect(await (await publish(changed, f.next())).json()).toMatchObject({
+			status: "unknown",
+		});
+		expect(
+			f.sql
+				.prepare(
+					"SELECT json_array_length(value, '$.topics') AS count FROM hobo_dm_topic_state",
+				)
+				.get(),
+		).toMatchObject({ count: 1 });
+	});
+
+	it("does not recreate a declared topic missing from persisted state", async () => {
+		const f = await fixture();
+		const actor = createRivetDurableTopicBusActor({
+			...f.options,
+			declaredTopics: ["orders"],
+			authorizeDeclaredTopics: () => true,
+		});
+		const request = (method: string, fields: Record<string, unknown>) =>
+			actor.handle(
+				{ name: "bus", key: ["tenant"], db: f.db },
+				new Request(`https://actor.test/${method}`, {
+					method: "POST",
+					headers: { authorization: "test" },
+					body: canonical({ operation: f.next(), ...fields }),
+				}),
+			);
+		expect(
+			await (await request("ensure-topic", { topic: "orders" })).json(),
+		).toMatchObject({ status: "committed" });
+		f.sql.exec(
+			"UPDATE hobo_dm_topic_state SET value = json_set(value, '$.topics', json('[]'))",
+		);
+		expect(
+			await (
+				await request("publish", { topic: "orders", message: message() })
+			).json(),
+		).toMatchObject({ status: "unknown" });
+		expect(
+			f.sql
+				.prepare(
+					"SELECT json_array_length(value, '$.topics') AS count FROM hobo_dm_topic_state",
+				)
+				.get(),
+		).toMatchObject({ count: 0 });
+	});
+
+	it("requires unique bounded own-data topics and an explicit authority", async () => {
+		const f = await fixture();
+		expect(() =>
+			createRivetDurableTopicBusActor({
+				...f.options,
+				declaredTopics: ["orders"],
+			}),
+		).toThrow(/authority/u);
+		expect(() =>
+			createRivetDurableTopicBusActor({
+				...f.options,
+				declaredTopics: ["orders", "orders"],
+				authorizeDeclaredTopics: () => true,
+			}),
+		).toThrow(/unique/u);
+		expect(() =>
+			createRivetDurableTopicBusActor({
+				...f.options,
+				declaredTopics: Array.from(
+					{ length: 33 },
+					(_, index) => `topic-${index}`,
+				),
+				authorizeDeclaredTopics: () => true,
+			}),
+		).toThrow(/bounded/u);
+		let accessed = false;
+		const topics = ["orders"];
+		Object.defineProperty(topics, "0", {
+			enumerable: true,
+			get() {
+				accessed = true;
+				return "orders";
+			},
+		});
+		expect(() =>
+			createRivetDurableTopicBusActor({
+				...f.options,
+				declaredTopics: topics,
+				authorizeDeclaredTopics: () => true,
+			}),
+		).toThrow(/own names/u);
+		expect(accessed).toBe(false);
+	});
+});
+
 describe("Rivet durable topic bus using a SQLite actor fixture", () => {
 	it("isolates groups, settles independently and compacts only complete obligations", async () => {
 		const f = await fixture();

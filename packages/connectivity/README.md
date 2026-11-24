@@ -274,7 +274,7 @@ const invoice = billing.closePeriod({
 | Route53 | Built-in **AWS SigV4** (no SDK); list + change RR sets |
 | DPoP | Real **ES256 P-256** mint + verify (RFC 9449); keys under `HOBO_HOME/keys/` |
 | JWT-SVID | Audience-bound short-lived SPIFFE JWTs (HS256 local / ES256 issuer keys) |
-| Tailscale MagicDNS | Control-plane **API** split DNS when `TS_API_KEY` set + local `--accept-dns` |
+| Tailscale MagicDNS | Control-plane **API** split DNS when the caller passes `apiKey` resolved from the owner's store (`owner://TS_API_KEY`; the environment is not read) + local `--accept-dns` |
 | Netbird | Management HTTP: enroll, peers, DNS nameserver groups |
 | Billing | Durable JSONL ledger + **Stripe PaymentIntent** REST provider |
 | Policy | OPA HTTP → `opa eval` → **rego-lite** JSON documents |
@@ -336,7 +336,7 @@ const elev = mintElevatedAccessCapability({
 });
 const gw = createTeleportPamGateway({
   isolationClass: "production",
-  elevatedHmacSecret: process.env.HOBO_SVID_HMAC_SECRET,
+  elevatedHmacSecret: (await ownerCredentials.resolve("owner://HOBO_SVID_HMAC_SECRET", "svid")).token,
 });
 await gw.start({ stationId: "s1", tenant: "acme", isolationClass: "production", trustDomain: "yard" });
 const session = await gw.brokerSession({

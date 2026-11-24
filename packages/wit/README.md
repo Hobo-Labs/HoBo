@@ -5,18 +5,17 @@ Production WIT toolchain package for HoBo. Vendors and pins reused `wasi:*` inte
 `hobo:durable-messaging/messaging@0.1.0` declares asynchronous operations with
 explicit committed, rejected, unknown and expired outcomes. Its generated jco
 types return Promises. A component host must implement asynchronous suspension,
-authorization, durable receipts and the port's semantics before advertising it;
-these declarations do not provide a runtime or a bridge from the legacy
-`wasi:messaging` interface. The provider's advertised `name-bytes` limit also
+authorization, durable receipts and the port's semantics before advertising it.
+The provider's advertised `name-bytes` limit also
 bounds lease identifiers, which must be nonempty control-free Unicode scalar
 strings. Operation IDs use their separately bounded format.
 
-`hobo:durable-messaging-jspi/messaging@0.1.0` is a separate opt-in
-compatibility ABI. It uses synchronous component functions with the same data
-shapes; a JSPI-enabled JCO host suspends those calls while the asynchronous
-provider runs. It is not the native async interface, and hosts must verify its
-exact interface version before linking it. The checked parity test keeps the two
-sets of records, variants and operation semantics aligned.
+Native async components can be built with `componentize-qjs@0.5.0` and
+transpiled with `@bytecodealliance/jco-transpile@0.24.0`. JSPI supplies the
+suspension mechanism for the JavaScript host; the component ABI remains native
+async. A host must independently authorize its component and messaging binding.
+The test components stub WASI imports; applications needing WASI must provide
+those imports through their host.
 
 ## Layout
 
@@ -30,7 +29,8 @@ sets of records, variants and operation semantics aligned.
   local test services. These are the vendored interfaces, not the full WASI APIs.
 - `data-models/` — protobuf + CUE records for lock, pins, surfaces, and parity reports.
 
-The durable messaging interfaces are opt-in. Native asynchronous components use `hobo:durable-messaging/messaging@0.1.0`; JSPI-compatible hosts use the distinct `hobo:durable-messaging-jspi/messaging@0.1.0` interface. The pinned component toolchain cannot instantiate native async imports, so neither interface is added to the existing SDK world implicitly.
+The SDK world includes the native asynchronous durable messaging interface.
+Hosts that do not implement its semantics must reject components requiring it.
 
 ## Commands
 

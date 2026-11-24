@@ -17,6 +17,8 @@ import {
 	dockerImagePresent,
 	ensureCiWorkerImage,
 	ghcrWorkerManifestReachable,
+	pullRequestWorkerTag,
+	sameRepositoryPullRequestNumber,
 } from "./ensure-ci-worker-image.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -196,6 +198,74 @@ export function pushCiRunnerImageGhcr(): number {
 	return 0;
 }
 
+export type PullRequestImageOutcome =
+	| Readonly<{ published: string }>
+	| Readonly<{
+			skipped: "not-a-same-repository-pull-request" | "absent" | "push-failed";
+	  }>;
+
+export function publishPullRequestWorkerImage(
+	input: Readonly<{
+		repository: string;
+		pullRequest: number | null;
+		version: string;
+		present: (ref: string) => boolean;
+		run: (cmd: string, args: string[]) => number;
+	}>,
+): PullRequestImageOutcome {
+	if (input.pullRequest === null)
+		return { skipped: "not-a-same-repository-pull-request" };
+	const candidate = `hobo-ci-worker:${input.version}`;
+	if (!input.present(candidate)) return { skipped: "absent" };
+	const remote = pullRequestWorkerTag(
+		input.repository,
+		input.pullRequest,
+		input.version,
+	);
+	if (
+		input.run("docker", ["tag", candidate, remote]) !== 0 ||
+		input.run("docker", ["push", remote]) !== 0
+	)
+		return { skipped: "push-failed" };
+	return { published: remote };
+}
+
+export function pushPullRequestWorkerImage(): number {
+	const token = process.env.GITHUB_TOKEN?.trim() ?? "";
+	const pullRequest = sameRepositoryPullRequestNumber();
+	if (!token || pullRequest === null) {
+		console.log(
+			"Not a same-repository pull request with a GHCR token; this pull request's jobs build the runner image themselves",
+		);
+		return 0;
+	}
+	const repository = process.env.GITHUB_REPOSITORY ?? "Hobo-Labs/HoBo";
+	if (dockerLogin(process.env.GITHUB_ACTOR ?? "github-actions", token) !== 0) {
+		console.log(
+			"::notice title=Pull request runner image not shared::GHCR login failed",
+		);
+		return 0;
+	}
+	const outcome = publishPullRequestWorkerImage({
+		repository,
+		pullRequest,
+		version: ciRunnerImageVersion(root),
+		present: dockerImagePresent,
+		run,
+	});
+	if ("published" in outcome)
+		console.log(`Published ${outcome.published} for this pull request's jobs`);
+	else
+		console.log(
+			`::notice title=Pull request runner image not shared::${outcome.skipped}; jobs that need the image build it themselves`,
+		);
+	return 0;
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-	process.exit(pushCiRunnerImageGhcr());
+	process.exit(
+		process.argv.includes("--pull-request")
+			? pushPullRequestWorkerImage()
+			: pushCiRunnerImageGhcr(),
+	);
 }

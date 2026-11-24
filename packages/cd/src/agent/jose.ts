@@ -58,10 +58,7 @@ export function parsePublicJwk(json: JsonObject): Outcome<PublicJwk> {
 			ok: true,
 			value: Object.freeze({ kty: "OKP", crv: "Ed25519", x }) as PublicJwk,
 		};
-	return agentRefusal(
-		"jwk-invalid",
-		`unsupported key type ${String(json.kty)}/${String(json.crv)}`,
-	);
+	return agentRefusal("jwk-invalid", "The key type or curve is unsupported.");
 }
 
 export function jwkThumbprint(jwk: PublicJwk): JwkThumbprint {

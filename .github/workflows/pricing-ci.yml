@@ -13,6 +13,7 @@ on:
       - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
       - "test/iac-alchemy-integration.test.ts"
+      - "test/iac-alchemy-cloudflare-catalog.test.ts"
       - "packages/extension-alchemy-rivet/**"
       - "packages/provider-manifest/**"
       - "packages/broker/test/pricing-authorization.test.ts"
@@ -41,6 +42,7 @@ on:
       - "packages/wit/**"
       - "packages/iac/iac-alchemy/**"
       - "test/iac-alchemy-integration.test.ts"
+      - "test/iac-alchemy-cloudflare-catalog.test.ts"
       - "packages/extension-alchemy-rivet/**"
       - "packages/provider-manifest/**"
       - "packages/broker/test/pricing-authorization.test.ts"
@@ -164,7 +166,7 @@ jobs:
       - name: Build Alchemy integration prerequisites
         run: pnpm exec turbo run build --filter=@hobo/bindles --filter=@hobo/runtime-local --concurrency=1
       - name: Exercise Alchemy pricing and routing
-        run: pnpm exec vitest run test/iac-alchemy-integration.test.ts
+        run: pnpm exec vitest run test/iac-alchemy-integration.test.ts test/iac-alchemy-cloudflare-catalog.test.ts
       - name: Check generated messaging component bindings
         run: pnpm --filter @hobo/wit run wit:check
       - name: Consumer contracts (pricing + dispatcher v2)
@@ -208,9 +210,13 @@ jobs:
         run: |
           node --experimental-strip-types scripts/check-iac-models.ts
           node --experimental-strip-types scripts/check-durable-topic-model.ts
+          node --experimental-strip-types packages/core/model/check-messaging-settlement.mts
+          node --experimental-strip-types packages/core/model/check-messaging-exhaustion.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-queue.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-kv.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-http-kv.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-http-queue.mts
+          node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-namespace.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-cloudflare-grants.mts
+          node --experimental-strip-types packages/iac/iac-alchemy/model/check-cloudflare-secret.mts
           node --experimental-strip-types packages/extension-alchemy-rivet/model/check-http-topic-bus.mts

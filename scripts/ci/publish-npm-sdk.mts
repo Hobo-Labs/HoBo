@@ -17,18 +17,16 @@
  * provenance is unverified by definition and the promotion trust gate refuses
  * unverified provenance (fail closed), while npm's per-package statement
  * carries no Bindle declaration hash for the verified attestation ingest.
- *
- * Auth is the hobodev automation token (NPM_TOKEN, resolved by the CD host
- * through the Camp's `env://NPM_TOKEN` locator, never recorded): npm's OIDC
- * trusted-publishing exchange routes only for the `%2f`-escaped scope, which
- * the transport guard refuses, so a scoped @hobo-labs name cannot use it.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseReleaseRef } from "../lib/release-version.mts";
-import { qualifyReleaseCandidate } from "./create-github-release.mts";
+import {
+	qualifyReleaseCandidate,
+	type ReleaseCredentials,
+} from "./create-github-release.mts";
 import {
 	orderedSdkTarballPaths,
 	type SdkArtifactManifest,
@@ -37,6 +35,8 @@ import {
 
 const root = join(import.meta.dirname, "..", "..");
 const EXPECTED_PUBLISHER = "hobodev";
+export const NPM_TOKEN_REF = "owner://NPM_TOKEN";
+const NPM_TOKEN_UNAVAILABLE = `npm publishes through hobo deploy with the hobodev token, which HoBo resolves as ${NPM_TOKEN_REF} from the owner's store session and never reads from the environment: run HoBo MCP's choose_secret_store and publish through HoBo (npm's OIDC exchange cannot serve a scoped @hobo-labs name)`;
 export const PINNED_NPM_CLI = "npm@11.21.1";
 /** The media type of the Sigstore bundle npm attaches (`<name>-<version>.sigstore`). */
 export const SIGSTORE_BUNDLE_MEDIA_TYPE =
@@ -64,7 +64,9 @@ function assertPublisher(token: string): void {
 		{ env, encoding: "utf8" },
 	);
 	if (result.status !== 0) {
-		throw new Error("npm whoami failed; check NPM_TOKEN for hobodev publisher");
+		throw new Error(
+			`npm whoami failed; check ${NPM_TOKEN_REF} for the hobodev publisher`,
+		);
 	}
 	const user = (result.stdout ?? "").trim();
 	if (user !== EXPECTED_PUBLISHER) {
@@ -129,7 +131,7 @@ export type NpmPublishDeps = {
 export async function publishNpmSdkArtifacts(
 	options: {
 		stagingDir: string;
-		token: string;
+		credentials?: ReleaseCredentials;
 		releaseRef: string;
 		/** HOBO_HOME of the release Freight journal (HOBO_RELEASE_CD_HOME). */
 		freightHome?: string;
@@ -145,12 +147,13 @@ export async function publishNpmSdkArtifacts(
 			"npm publish needs release Freight: set HOBO_RELEASE_CD_HOME to the hobo deploy journal directory",
 		);
 	}
-	const token = options.token.trim();
-	if (!token) {
-		throw new Error(
-			"npm publishes through hobo deploy with the hobodev token: set NPM_TOKEN (the npm Camp resolves env://NPM_TOKEN; npm's OIDC exchange cannot serve a scoped @hobo-labs name)",
-		);
-	}
+	const credentials = options.credentials;
+	const resolved = await credentials
+		?.resolve(NPM_TOKEN_REF, "npm.publish")
+		.catch(() => undefined);
+	const token = resolved?.token?.trim() ?? "";
+	if (credentials === undefined || token === "")
+		throw new Error(NPM_TOKEN_UNAVAILABLE);
 	(deps.whoami ?? assertPublisher)(token);
 	const manifest = (deps.stage ?? stageSdkArtifactsDir)(options.stagingDir);
 	const tarballs = (deps.tarballs ?? orderedSdkTarballPaths)(
@@ -194,6 +197,7 @@ export async function publishNpmSdkArtifacts(
 	const { verdict } = await (deps.qualify ?? qualifyReleaseCandidate)({
 		home: options.freightHome,
 		family: "npm",
+		seams: { credentials },
 		stored,
 		labels: {
 			"hobo.release/ref": options.releaseRef,
@@ -214,7 +218,6 @@ async function main(): Promise<void> {
 	}
 	await publishNpmSdkArtifacts({
 		stagingDir,
-		token: process.env.NPM_TOKEN ?? "",
 		releaseRef: process.env.HOBO_RELEASE_VERSION,
 		freightHome: process.env.HOBO_RELEASE_CD_HOME ?? "",
 	});

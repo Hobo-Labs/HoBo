@@ -1,4 +1,5 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
 	type InfisicalClient,
 	parseInfisicalBinding,
@@ -13,8 +14,7 @@ import {
 	createRelayRuntimeConfigLoader,
 	envRelayConfigSource,
 	infisicalRelayConfigSource,
-	parseCommittedStoreCoordinates,
-	parseRelayCacheBindings,
+	parseBundledStoreCoordinates,
 	parseRelayRuntimeConfig,
 	type RelayConfigSource,
 	RelayRuntimeConfigError,
@@ -23,6 +23,7 @@ import {
 import {
 	RELAY_RUNTIME_CONFIG_KEYS,
 	RELAY_RUNTIME_CONFIG_SETTINGS,
+	RETIRED_RELAY_RUNTIME_CONFIG_KEYS,
 } from "../src/relay-runtime-config-schema.js";
 
 const pem = generateKeyPairSync("rsa", { modulusLength: 2048 })
@@ -122,17 +123,6 @@ describe("parseRelayRuntimeConfig", () => {
 		).toBeUndefined();
 	});
 
-	it("parses a folder's cache bindings on their own, leaving out a refused one", () => {
-		expect(
-			parseRelayCacheBindings({
-				HOBO_CI_PUBLIC_URL: "https://hobo-ci.vercel.app",
-				VALKEY_URL: "rediss://:valkey-password@valkey.example:6379",
-				BLOB_STORE_ID: "not a store id",
-				TURSO_AUTH_TOKEN: "",
-			}),
-		).toEqual({ VALKEY_URL: "rediss://:valkey-password@valkey.example:6379" });
-	});
-
 	it("accepts a complete configuration and freezes it", () => {
 		const config = parseRelayRuntimeConfig(entries);
 		expect(config.HOBO_CI_GITHUB_APP_ID).toBe("123456");
@@ -159,43 +149,35 @@ describe("parseRelayRuntimeConfig", () => {
 		expect(error.message).not.toContain("valkey-password");
 	});
 
-	it("accepts the fleet verdict settings, and names a bad one without its value", () => {
-		const reporters = JSON.stringify({
-			reporters: [
-				{
-					id: "box-1",
-					publicKey: "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8",
-					accountId: "tenant",
-					labels: ["hobo", "hobo-trunk"],
-				},
-			],
-		});
-		const config = parseRelayRuntimeConfig({
-			...entries,
-			HOBO_CI_FLEET_REPORTERS_JSON: reporters,
-			HOBO_CI_FLEET_VERDICT_SERVING: "off",
-			HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES: "1440",
-		});
-		expect(config.HOBO_CI_FLEET_VERDICT_SERVING).toBe("off");
-		for (const [key, value] of [
-			// A private key in an enrollment is not an enrollment.
-			[
-				"HOBO_CI_FLEET_REPORTERS_JSON",
-				reporters.replace(
-					'"labels"',
-					'"privateKey":"secret-key-value","labels"',
-				),
-			],
-			["HOBO_CI_FLEET_VERDICT_SERVING", "maybe"],
-			["HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES", "1441"],
-			["HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES", "0"],
-		] as const) {
-			const error = errorOf(() =>
-				parseRelayRuntimeConfig({ ...entries, [key]: value }),
-			);
-			expect(error.keys).toEqual([key]);
-			expect(error.message).not.toContain("secret-key-value");
+	it("accepts and ignores the retired fleet verdict keys, whatever they hold", () => {
+		const retired = {
+			HOBO_CI_FLEET_REPORTERS_JSON:
+				'{"reporters":[{"privateKey":"secret-key-value"}]}',
+			HOBO_CI_FLEET_VERDICT_SERVING: "maybe",
+			HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES: "0",
+		};
+		expect([...RETIRED_RELAY_RUNTIME_CONFIG_KEYS].sort()).toEqual(
+			Object.keys(retired).sort(),
+		);
+		const config = parseRelayRuntimeConfig({ ...entries, ...retired });
+		for (const key of RETIRED_RELAY_RUNTIME_CONFIG_KEYS) {
+			expect(Object.keys(config)).not.toContain(key);
+			expect(RELAY_RUNTIME_CONFIG_KEYS).not.toContain(key);
 		}
+		expect(config).toEqual(parseRelayRuntimeConfig(entries));
+	});
+
+	it("keeps every retired key's protobuf field number and name reserved", () => {
+		const names = RelayRuntimeConfigProto.fields.map((field) => field.jsonName);
+		for (const key of RETIRED_RELAY_RUNTIME_CONFIG_KEYS)
+			expect(names).not.toContain(key);
+		const proto = readFileSync(
+			new URL("../data-models/relay_runtime_config.proto", import.meta.url),
+			"utf8",
+		);
+		expect(proto).toMatch(/reserved 27, 28, 29;/u);
+		for (const key of RETIRED_RELAY_RUNTIME_CONFIG_KEYS)
+			expect(proto).toContain(`"${key.toLowerCase()}"`);
 	});
 
 	it("treats an empty entry as unset", () => {
@@ -294,14 +276,22 @@ describe("sources", () => {
 			});
 		};
 		const source = relayConfigSourceFromEnv(
+			{ HOBO_CI_CONFIG_SERVICE: "infisical" },
 			{
-				HOBO_CI_CONFIG_SERVICE: "infisical",
-				INFISICAL_IDENTITY_ID: "relay-identity",
-				INFISICAL_PROJECT_ID: "proj-1",
-				INFISICAL_ENVIRONMENT: "prod",
-				INFISICAL_SECRET_PATH: "/hobo-ci-relay",
+				jwt: async () => jwt,
+				fetch: fetchStub,
+				bundled: () =>
+					parseBundledStoreCoordinates(
+						JSON.stringify({
+							kind: "infisical-cloud-attach",
+							endpoint: "https://app.infisical.com",
+							projectId: "proj-1",
+							environment: "prod",
+							secretPath: "/hobo-ci-relay",
+							relayIdentityId: "relay-identity",
+						}),
+					),
 			},
-			{ jwt: async () => jwt, fetch: fetchStub },
 		);
 		expect(source.kind).toBe("infisical");
 		const config = parseRelayRuntimeConfig(await source.read());
@@ -323,8 +313,34 @@ describe("sources", () => {
 			relayConfigSourceFromEnv({ HOBO_CI_CONFIG_SERVICE: "vault" }),
 		).toThrow(/HOBO_CI_CONFIG_SERVICE/u);
 		expect(() =>
-			relayConfigSourceFromEnv({ HOBO_CI_CONFIG_SERVICE: "infisical" }),
-		).toThrow(/invalid-input/u);
+			relayConfigSourceFromEnv(
+				{ HOBO_CI_CONFIG_SERVICE: "infisical" },
+				{ bundled: () => undefined },
+			),
+		).toThrow(/deploy\/secret-store\.binding\.json/u);
+	});
+
+	it("never reads store coordinates from the environment", () => {
+		const coordinates = {
+			HOBO_CI_CONFIG_SERVICE: "infisical",
+			VERCEL_ENV: "production",
+			INFISICAL_IDENTITY_ID: "00000000-0000-0000-0000-000000000000",
+			INFISICAL_PROJECT_ID: "00000000-0000-0000-0000-000000000000",
+			INFISICAL_ENVIRONMENT: "prod",
+			INFISICAL_SECRET_PATH: "/hobo-ci-relay",
+			INFISICAL_SITE_URL: "https://app.infisical.com",
+		};
+		const error = errorOf(() =>
+			relayConfigSourceFromEnv(coordinates, { bundled: () => undefined }),
+		);
+		expect(error.keys).toEqual(["deploy/secret-store.binding.json"]);
+		expect(error.message).not.toContain("00000000");
+		expect(
+			relayConfigSourceFromEnv(
+				{ ...coordinates, HOBO_CI_CONFIG_SERVICE: undefined },
+				{ bundled: () => undefined },
+			).kind,
+		).toBe("env");
 	});
 });
 
@@ -340,6 +356,22 @@ describe("the loader", () => {
 		};
 		return { source, reads: () => reads };
 	}
+
+	it("starts from a store that still holds the retired fleet verdict keys", async () => {
+		const loader = createRelayRuntimeConfigLoader({
+			source: infisicalRelayConfigSource(
+				stubClient(() => ({
+					...entries,
+					HOBO_CI_FLEET_REPORTERS_JSON: '{"reporters":[]}',
+					HOBO_CI_FLEET_VERDICT_SERVING: "on",
+					HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES: "240",
+				})),
+			),
+			ttlMs: 60_000,
+			now: () => 0,
+		});
+		expect((await loader.load()).HOBO_CI_GITHUB_APP_ID).toBe("123456");
+	});
 
 	it("reads once per TTL and shares a read between concurrent loads", async () => {
 		let clock = 0;
@@ -433,7 +465,7 @@ describe("secretless first: keys the relay derives (ADR-0179 amendment)", () => 
 	});
 });
 
-describe("secretless first: the committed store coordinates", () => {
+describe("secretless first: the store coordinates HoBo bundles into the build", () => {
 	const binding = {
 		kind: "infisical-cloud-attach",
 		endpoint: "https://app.infisical.com",
@@ -443,13 +475,13 @@ describe("secretless first: the committed store coordinates", () => {
 		secretPath: "/hobo-ci-relay",
 		relayIdentityId: "relay-identity",
 		deployIdentityId: "ci-identity",
-		vercelTeamId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+		vercelTeamId: "team_000000000000000000000000",
 		claimBundleId: "secret-store:hobo-ci-relay:connect-1",
 		claimState: "claimed",
 	};
 
-	it("reads the relay's folder and identity from the committed binding", () => {
-		const coordinates = parseCommittedStoreCoordinates(JSON.stringify(binding));
+	it("reads the relay's folder and identity from the bundled binding", () => {
+		const coordinates = parseBundledStoreCoordinates(JSON.stringify(binding));
 		expect(coordinates?.identityId).toBe("relay-identity");
 		expect(coordinates?.binding).toMatchObject({
 			siteUrl: "https://app.infisical.com",
@@ -458,24 +490,23 @@ describe("secretless first: the committed store coordinates", () => {
 			secretPath: "/hobo-ci-relay",
 		});
 		expect(
-			parseCommittedStoreCoordinates(
+			parseBundledStoreCoordinates(
 				JSON.stringify({ ...binding, kind: "cloudflare-temporary" }),
 			),
 		).toBeUndefined();
 		expect(() =>
-			parseCommittedStoreCoordinates(
+			parseBundledStoreCoordinates(
 				JSON.stringify({ ...binding, projectId: "../other" }),
 			),
 		).toThrow(RelayRuntimeConfigError);
 	});
 
-	it("signs a production deployment in from the committed binding, with no environment variable set", async () => {
+	it("signs a production deployment in from the bundled binding, with no environment variable set", async () => {
 		const requests: string[] = [];
 		const source = relayConfigSourceFromEnv(
 			{ VERCEL_ENV: "production" },
 			{
-				committed: () =>
-					parseCommittedStoreCoordinates(JSON.stringify(binding)),
+				bundled: () => parseBundledStoreCoordinates(JSON.stringify(binding)),
 				jwt: async () => "header.payload.signature",
 				fetch: async (input) => {
 					const url = new URL(String(input));
@@ -500,21 +531,20 @@ describe("secretless first: the committed store coordinates", () => {
 	});
 
 	it("leaves previews and an explicit HOBO_CI_CONFIG_SERVICE as they were", () => {
-		const committed = () =>
-			parseCommittedStoreCoordinates(JSON.stringify(binding));
+		const bundled = () => parseBundledStoreCoordinates(JSON.stringify(binding));
 		expect(
-			relayConfigSourceFromEnv({ VERCEL_ENV: "preview" }, { committed }).kind,
+			relayConfigSourceFromEnv({ VERCEL_ENV: "preview" }, { bundled }).kind,
 		).toBe("env");
 		expect(
 			relayConfigSourceFromEnv(
 				{ VERCEL_ENV: "production", HOBO_CI_CONFIG_SERVICE: "env" },
-				{ committed },
+				{ bundled },
 			).kind,
 		).toBe("env");
 		expect(
 			relayConfigSourceFromEnv(
 				{ VERCEL_ENV: "production" },
-				{ committed: () => undefined },
+				{ bundled: () => undefined },
 			).kind,
 		).toBe("env");
 	});

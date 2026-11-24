@@ -755,6 +755,37 @@ function transfer(
 	return { id, sequence };
 }
 
+export function reduceRivetTopicBusWithDeclaredTopics(
+	prior: string | undefined,
+	method: string,
+	input: unknown,
+	now: number,
+	topics: readonly string[],
+): Reduction {
+	let state = prior;
+	if (state === undefined) {
+		for (const topic of topics) {
+			const initialized = reduceRivetTopicBus(
+				state,
+				"ensure-topic",
+				{ operation: {}, topic },
+				now,
+			);
+			if (initialized.status !== "committed") return initialized;
+			state = initialized.state;
+		}
+	} else {
+		const existing = stateFromJson(state);
+		if (
+			topics.some(
+				(topic) => !existing.topics.some((entry) => entry.name === topic),
+			)
+		)
+			throw new Error("declared topic missing from persisted state");
+	}
+	return reduceRivetTopicBus(state, method, input, now);
+}
+
 export function reduceRivetTopicBus(
 	prior: string | undefined,
 	method: string,

@@ -16,7 +16,6 @@ import { cdPrincipal } from "../src/cd-runtime.js";
 import { createCiCommand } from "../src/ci-command.js";
 import {
 	RELAY_ADOPT_BUDGET,
-	RELAY_ADOPT_CREDENTIAL_REF,
 	RELAY_ADOPT_REFUSAL,
 	relayAdoptDeadline,
 	relayAdoptStages,
@@ -246,7 +245,7 @@ describe("hobo ci deploy --adopt", () => {
 			env: { HOBO_USER: "relay-adopt-test", VERCEL_TOKEN: "vercel-secret" },
 		});
 		expect(result.code).toBe(RELAY_ADOPT_REFUSAL.authRequired);
-		expect(result.message).toContain(RELAY_ADOPT_CREDENTIAL_REF);
+		expect(result.message).toContain("per-job GITHUB_TOKEN");
 		expect(h.github).toEqual([]);
 	});
 
@@ -414,7 +413,7 @@ describe("hobo ci deploy --adopt verification without Deployment Protection", ()
 		});
 		expect(result.ok).toBe(false);
 		expect(result.code).toBe(RELAY_ADOPT_REFUSAL.relayNotConfigured);
-		expect(result.message).toContain("deploy/secret-store.binding.json");
+		expect(result.message).toContain("the owner's own secret store");
 		expect(result.message).toContain("hobo ci app create --via-workflow");
 	}, 120_000);
 

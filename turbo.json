@@ -1,7 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": [
-    "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     "tsconfig.base.json",
     "scripts/visual-token-contract.json"

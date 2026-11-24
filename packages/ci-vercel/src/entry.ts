@@ -6,6 +6,10 @@ import {
 	ciEventSinkFromEnv,
 	createCiEventEmitter,
 	createNodeRelayHandler,
+	createRelaySetupMcp,
+	isRelayMcpPath,
+	type RelaySetupGaps,
+	type RelaySetupMcp,
 	reportRelayFailure,
 	setRelayFailureEvents,
 } from "@hobo/ci-gh-actions";
@@ -14,17 +18,6 @@ import {
 	QueueClient,
 	type RetryHandler,
 } from "@vercel/queue";
-import {
-	CacheBindingError,
-	cacheBindingEnv,
-	discoverCacheBackends,
-	type OpenedCacheBackend,
-	openCacheBackend,
-} from "./cache-backend.js";
-import {
-	createOwnerHandoffMailbox,
-	isOwnerHandoffPath,
-} from "./owner-handoff.js";
 import {
 	forwardQueueHandoff,
 	QueueHandoffError,
@@ -37,13 +30,17 @@ import {
 } from "./relay-queue.js";
 import {
 	createRelayRuntimeConfigLoader,
-	parseRelayCacheBindings,
 	type RelayConfigGaps,
 	type RelayConfigSource,
 	RelayRuntimeConfigError,
 	type RelayRuntimeConfigLoader,
 	relayConfigSourceFromEnv,
 } from "./relay-runtime-config.js";
+import {
+	acceptRelaySetupValue,
+	createInfisicalRelaySetupWriter,
+	RELAY_SETUP_ENTRIES,
+} from "./relay-setup.js";
 import { streamsBody } from "./relay-streams.js";
 import { composeStatelessRelay } from "./stateless-composition.js";
 
@@ -71,7 +68,7 @@ let configStaleSince: number | undefined;
 let loader:
 	| {
 			kind: RelayConfigSource["kind"];
-			source: RelayConfigSource;
+			binding: RelayConfigSource["binding"];
 			config: RelayRuntimeConfigLoader;
 	  }
 	| undefined;
@@ -93,7 +90,7 @@ function configLoader() {
 	};
 	loader = {
 		kind: source.kind,
-		source,
+		binding: source.binding,
 		config: createRelayRuntimeConfigLoader({
 			source: tracked,
 			onRefreshFailed: (error) => {
@@ -206,6 +203,64 @@ function application() {
 	return startup;
 }
 
+export type RelaySetupHost = Readonly<{
+	origin: string;
+	handle: (request: Request) => Promise<Response>;
+}>;
+
+export async function relaySetupGaps<Loaded>(
+	load: () => Promise<Loaded>,
+): Promise<RelaySetupGaps> {
+	try {
+		await load();
+		return { state: "configured", missing: [], invalid: [] };
+	} catch (error) {
+		const failure = error instanceof Error ? error : undefined;
+		const gaps = failure === undefined ? undefined : relayStartGaps(failure);
+		return {
+			state:
+				failure === undefined
+					? RELAY_START_STATES.startFailed
+					: relayStartState(failure),
+			missing: gaps?.missing ?? [],
+			invalid: gaps?.invalid ?? [],
+		};
+	}
+}
+
+export function relaySetupOrigin(
+	env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+	const host = env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ?? "";
+	if (!/^[a-z0-9.-]{1,253}$/u.test(host)) return undefined;
+	return `https://${host}`;
+}
+
+let setupMcp: RelaySetupMcp | undefined;
+function relaySetup(): RelaySetupHost | undefined {
+	const origin = relaySetupOrigin(process.env);
+	if (origin === undefined) return undefined;
+	if (setupMcp === undefined) {
+		let binding: RelayConfigSource["binding"];
+		try {
+			binding = configLoader().binding;
+		} catch {
+			binding = undefined;
+		}
+		setupMcp = createRelaySetupMcp({
+			publicOrigin: origin,
+			gaps: () => relaySetupGaps(application),
+			entries: RELAY_SETUP_ENTRIES,
+			accept: acceptRelaySetupValue,
+			write:
+				binding === undefined
+					? undefined
+					: createInfisicalRelaySetupWriter(binding),
+		});
+	}
+	return { origin, handle: setupMcp.handle };
+}
+
 /**
  * Vercel Node Function HTTP entrypoint. `/healthz` answers 200 whatever the
  * relay's state (the process is up) and names the build's commit; everything
@@ -219,10 +274,7 @@ export function createHttpEntry(
 	}>,
 	options: Readonly<{
 		commit?: string | null;
-		ownerHandoff?: (
-			request: IncomingMessage,
-			response: ServerResponse,
-		) => Promise<void>;
+		setup?: () => RelaySetupHost | undefined;
 	}> = {},
 ) {
 	const commit = options.commit ?? null;
@@ -230,17 +282,13 @@ export function createHttpEntry(
 		request: IncomingMessage,
 		response: ServerResponse,
 	): Promise<void> => {
-		const path = (request.url ?? "/").split("?")[0];
+		const path = (request.url ?? "/").split("?")[0] ?? "/";
 		if (request.method === "GET" && path === "/healthz") {
 			response.writeHead(200, {
 				"Content-Type": "application/json",
 				"Cache-Control": "no-store",
 			});
 			response.end(JSON.stringify({ ok: true, commit }));
-			return;
-		}
-		if (options.ownerHandoff !== undefined && isOwnerHandoffPath(path ?? "")) {
-			await options.ownerHandoff(request, response);
 			return;
 		}
 		try {
@@ -253,6 +301,25 @@ export function createHttpEntry(
 		} catch (error) {
 			if (response.headersSent) {
 				response.end();
+				return;
+			}
+			const setup =
+				isRelayMcpPath(path) || path.startsWith("/.well-known/")
+					? options.setup?.()
+					: undefined;
+			if (setup !== undefined) {
+				if (isRelayMcpPath(path)) {
+					await createNodeRelayHandler({
+						origin: setup.origin,
+						handle: setup.handle,
+					})(request, response);
+					return;
+				}
+				response.writeHead(404, {
+					"Content-Type": "application/json",
+					"Cache-Control": "no-store",
+				});
+				response.end(JSON.stringify({ error: "not found" }));
 				return;
 			}
 			if (request.method === "GET" && path === "/readyz") {
@@ -284,99 +351,9 @@ export function createHttpEntry(
 		}
 	};
 }
-export const OWNER_HANDOFF_STATES = Object.freeze({
-	noMailboxStore: "no-mailbox-store",
-	mailboxStoreUnavailable: "mailbox-store-unavailable",
-} as const);
-
-export async function ownerHandoffCacheBindings(
-	config: RelayRuntimeConfigLoader,
-	source: RelayConfigSource,
-) {
-	try {
-		return await config.load();
-	} catch (error) {
-		if (!(error instanceof RelayRuntimeConfigError)) throw error;
-		return parseRelayCacheBindings(await source.read());
-	}
-}
-
-function folderCacheBindings() {
-	const { config, source } = configLoader();
-	return ownerHandoffCacheBindings(config, source);
-}
-
-export async function openOwnerHandoffBackend(
-	env: Readonly<Record<string, string | undefined>>,
-	folder: () => Promise<
-		Parameters<typeof cacheBindingEnv>[1]
-	> = folderCacheBindings,
-): Promise<OpenedCacheBackend> {
-	let merged = env;
-	let bindings: ReturnType<typeof discoverCacheBackends> | undefined;
-	try {
-		bindings = discoverCacheBackends(env);
-	} catch (error) {
-		if (!(error instanceof CacheBindingError)) throw error;
-		merged = cacheBindingEnv(env, await folder()).env;
-		bindings = discoverCacheBackends(merged);
-	}
-	const first = bindings.members[0];
-	if (first === undefined)
-		throw new CacheBindingError("no cache is bound for the owner hand-off");
-	return openCacheBackend(first, merged);
-}
-
-export function createOwnerHandoffEntry(
-	env: Readonly<Record<string, string | undefined>>,
-	open: () => Promise<OpenedCacheBackend> = () => openOwnerHandoffBackend(env),
-) {
-	const host =
-		env.VERCEL_PROJECT_PRODUCTION_URL || env.VERCEL_URL || "relay.invalid";
-	const environment =
-		env.VERCEL_ENV === "production" ||
-		env.VERCEL_ENV === "preview" ||
-		env.VERCEL_ENV === "development"
-			? env.VERCEL_ENV
-			: "local";
-	let opened: Promise<(request: Request) => Promise<Response>> | undefined;
-	const mailbox = () => {
-		opened ??= open()
-			.then((backend) =>
-				createOwnerHandoffMailbox({ state: backend.state, environment }),
-			)
-			.catch((error) => {
-				opened = undefined;
-				throw error;
-			});
-		return opened;
-	};
-	const handler = createNodeRelayHandler({
-		origin: `https://${host}`,
-		handle: async (request) => {
-			try {
-				return await (await mailbox())(request);
-			} catch (error) {
-				return Response.json(
-					{
-						ready: false,
-						state:
-							error instanceof CacheBindingError ||
-							error instanceof RelayRuntimeConfigError
-								? OWNER_HANDOFF_STATES.noMailboxStore
-								: OWNER_HANDOFF_STATES.mailboxStoreUnavailable,
-					},
-					{ status: 503, headers: { "Cache-Control": "no-store" } },
-				);
-			}
-		},
-	});
-	return handler;
-}
-
 export const http = createHttpEntry(application, {
 	commit: buildCommit(process.env),
-	ownerHandoff: createOwnerHandoffEntry(process.env),
+	setup: relaySetup,
 });
 
 let queueBindingReported = false;

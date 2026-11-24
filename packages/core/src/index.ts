@@ -498,6 +498,12 @@ export {
 	UnsupportedSchemaVersionError,
 } from "./ports/eventstore.js";
 export { createBoundedFetchTransport } from "./ports/fetch-http-transport.js";
+export {
+	GITHUB_APP_CREDENTIAL_SCHEME,
+	type GithubAppRepository,
+	githubAppInstallationRef,
+	parseGithubAppInstallationRef,
+} from "./ports/github-app-credential.js";
 export type {
 	HttpTransport,
 	TransportGuardErrorCode,
@@ -556,14 +562,16 @@ export type {
 	TopicSpec,
 } from "./ports/messaging.js";
 export {
+	assertDeadLetterSupported,
 	assertDeliverySupported,
 	createInMemoryMessaging,
 	createPublishResult,
 	MESSAGING_PORT_CONTRACT_VERSION,
-	MESSAGING_WIT_INTERFACE,
 	MessagingCapabilityError,
 	MessagingDeliveryError,
+	MessagingDeliveryExhaustedError,
 	MessagingParseError,
+	MessagingSettlementCommittedError,
 	PORTABLE_MESSAGING_CAPABILITIES,
 	parseActorPlacementMode,
 	parseConsumerGroupId,
@@ -578,6 +586,15 @@ export {
 	tenantScopedConsumerGroup,
 	tenantScopedTopicName,
 } from "./ports/messaging.js";
+export type { MessagingSettlementOperation } from "./ports/messaging-settlement.js";
+export {
+	createMessagingSettlementTracker,
+	MESSAGING_SETTLEMENT_ID_LIMIT,
+	MESSAGING_SETTLEMENT_LIMIT,
+	MESSAGING_SETTLEMENT_TIMEOUT_MS,
+	MessagingSettlementPendingError,
+	MessagingSettlementUnknownError,
+} from "./ports/messaging-settlement.js";
 export type {
 	MeteringBus,
 	MeteringSink,

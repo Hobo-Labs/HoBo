@@ -169,7 +169,6 @@ export {
 	CAMP_EVENTSTORE_RUNTIME_PORT_CONTRACT_VERSION,
 	runEventStoreConformance,
 } from "./suites/eventstore.js";
-export { MESSAGING_CONFORMANCE_SUITE } from "./suites/messaging.js";
 export type {
 	ProduceRealizationResult,
 	RealizationResultAssertion,

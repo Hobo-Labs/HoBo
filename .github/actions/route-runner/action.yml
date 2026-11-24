@@ -84,6 +84,23 @@ outputs:
       (pr-fabric-reuse.mts, run from the trusted base checkout), else `false`.
       Committed runnerRouting.mergeGroup.reusePrFabric `false` turns reuse off.
     value: ${{ steps.pr-fabric.outputs.reuse || 'false' }}
+  proven-base:
+    description: >-
+      On a merge group, the GitHub PR merge commit a green same-repo
+      pull_request run of this workflow recorded as the tree it tested, for the
+      entry's pull request at its current head (pr-fabric-reuse.mts). The
+      merge group's gate then tests only what changed since that commit.
+      Empty whenever it cannot be shown or the whole tree is reused.
+    value: ${{ steps.pr-fabric.outputs.proven-base || '' }}
+  proven-tree:
+    description: The tree of proven-base, or empty.
+    value: ${{ steps.pr-fabric.outputs.proven-tree || '' }}
+  proven-run:
+    description: The pull_request run that tested proven-base, or empty.
+    value: ${{ steps.pr-fabric.outputs.proven-run || '' }}
+  proven-pr:
+    description: The pull request number of proven-base, or empty.
+    value: ${{ steps.pr-fabric.outputs.proven-pr || '' }}
 runs:
   using: composite
   steps:

@@ -36,8 +36,7 @@ function ownerStoreFor(input: {
 		id,
 		chosen: input.chosen,
 		missing: [],
-		canAwaitEgressCredential: false,
-		egressCredentialHost: undefined,
+		handOffSignIn: undefined,
 		opened:
 			input.port === undefined
 				? undefined
@@ -109,8 +108,24 @@ describe("owner store session", () => {
 			status: "sign-in-needed",
 			store: "Infisical",
 			code: "HOBO_OWNER_SIGN_IN",
+			reason: "Open <link>",
 		});
 		expect(JSON.stringify(state)).not.toContain(PRIVATE_PROJECT);
+		const api = createOwnerStoreSessions({
+			signIn: async () => ({
+				kind: "refused",
+				code: "HOBO_CD_INFISICAL_API",
+				message: `Infisical refused creating this run's token (HTTP 400) for ${PRIVATE_PROJECT}.`,
+				remediation: [],
+			}),
+		});
+		const apiState = await api.establish(CWD);
+		expect(apiState).toMatchObject({
+			code: "HOBO_CD_INFISICAL_API",
+			reason:
+				"Infisical refused creating this run's token (HTTP 400) for <id>.",
+		});
+		expect(JSON.stringify(apiState)).not.toContain(PRIVATE_PROJECT);
 		expect(refused.status(CWD)).toEqual({ established: false });
 
 		const unchosen = createOwnerStoreSessions({
@@ -189,6 +204,35 @@ describe("owner store session", () => {
 
 		sessions.close();
 		expect(sessions.status(CWD)).toEqual({ established: false });
+	});
+
+	it("reads and writes owner store entries only inside an established session", async () => {
+		const port = await storeHolding({});
+		const sessions = createOwnerStoreSessions({
+			signIn: signedIn(ownerStoreFor({ chosen: true, port })),
+		});
+		const entries = sessions.entries(CWD);
+		await expect(entries.read("HOBO_CI_SECRET_STORE_BINDING")).rejects.toEqual(
+			new OwnerCredentialUnavailable(
+				"owner://HOBO_CI_SECRET_STORE_BINDING",
+				"no-session",
+			),
+		);
+		await expect(
+			entries.write("HOBO_CI_SECRET_STORE_BINDING", "{}"),
+		).rejects.toBeInstanceOf(OwnerCredentialUnavailable);
+		await sessions.establish(CWD);
+		await expect(
+			entries.read("HOBO_CI_SECRET_STORE_BINDING"),
+		).resolves.toBeUndefined();
+		await entries.write("HOBO_CI_SECRET_STORE_BINDING", '{"kind":"x"}');
+		await expect(entries.read("HOBO_CI_SECRET_STORE_BINDING")).resolves.toBe(
+			'{"kind":"x"}',
+		);
+		expect(port.names()).toEqual(["HOBO_CI_SECRET_STORE_BINDING"]);
+		await expect(entries.read("not a name")).rejects.toBeInstanceOf(
+			OwnerCredentialUnavailable,
+		);
 	});
 
 	it("gives Hostinger's resolvers the owner's token through the session, only in the request header", async () => {

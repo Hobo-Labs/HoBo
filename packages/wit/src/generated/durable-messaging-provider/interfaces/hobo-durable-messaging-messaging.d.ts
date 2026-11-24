@@ -1,5 +1,5 @@
 /** @module Interface hobo:durable-messaging/messaging@0.1.0 **/
-export function limits(): MessagingLimits;
+export function limits(): Promise<MessagingLimits>;
 export function ensureTopic(input: TopicRequest): Promise<TopicOutcome>;
 export function ensureSubscription(input: SubscriptionRequest): Promise<SubscriptionOutcome>;
 export function publish(input: PublishRequest): Promise<PublishOutcome>;

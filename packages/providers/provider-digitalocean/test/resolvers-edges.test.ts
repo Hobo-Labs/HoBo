@@ -54,7 +54,7 @@ import type { JsonObject, JsonValue } from "../src/json.js";
 
 type Rec = JsonObject;
 
-const CREDENTIAL_REF = "env://DIGITALOCEAN_TOKEN";
+const CREDENTIAL_REF = "owner://DIGITALOCEAN_TOKEN";
 const TOKEN = "dop_v1_fakedigitaloceantoken0123456789abcdefghij";
 const NOW_MS = Date.parse("2026-08-19T12:00:00.000Z");
 const SPACES_KEYS = Object.freeze({

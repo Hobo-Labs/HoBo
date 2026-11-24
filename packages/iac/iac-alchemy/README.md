@@ -303,6 +303,12 @@ financial admission checks the budget and creates the appropriate hold.
 `mapBindleToAlchemy` accepts provider-owned primitive mappers and assesses the
 Bindle's requirements, operations, annotations, dependencies and entrypoints.
 It refuses missing mappings and unbound dependencies.
+When two declarations share one Alchemy resource, a mapper can set
+`sharedDependency` to a declared dependency's name and return that dependency's
+exact primary resource. It must return no additional resources, actions or
+bindings. The shared resource appears once
+in the mapped inventory; the mapper and host remain responsible for proving the
+application binding and for accounting for all usage of that resource.
 `describeAlchemyPrimitiveSupport` reports the supplied mappers' operational
 coverage; it does not authenticate them, price their resources, or authorize
 routing. Hosts must attest the mapping and its execution environment.
@@ -594,9 +600,40 @@ or service entrypoint to an Alchemy Rivet `DurableObject`. The accompanying
 `rivet/runtime` entry point binds the application handler to a Rivet actor. The
 host must verify and fence the source, artifact and exclusive pool. This mapping
 does not bind resource dependencies or enabled session replay. Other primitive
-kinds remain unsupported; `describeRivetPrimitiveSupport` reports their gaps.
+kinds require additional mappers; `describeRivetPrimitiveSupport` reports their gaps.
 The package tests exercise an isolated local Rivet engine and Alchemy providers
 with test doubles; a live cloud deployment has not been verified.
+
+`@hobo/iac-alchemy/rivet/namespace` maps an infrastructure-only `project`
+declaration to an Alchemy `Rivet.Namespace`:
+
+```ts
+import * as Redacted from "effect/Redacted";
+import {
+  rivetNamespaceBindleMappers,
+  rivetNamespaceResourceId,
+} from "@hobo/iac-alchemy/rivet/namespace";
+
+const mappers = rivetNamespaceBindleMappers([{
+  bindleName: "shop",
+  resourceName: "project",
+  endpoint: host.rivetEndpoint,
+  namespaceName: "shop-prod",
+  token: Redacted.make(host.rivetAdminToken),
+}]);
+const resourceId = rivetNamespaceResourceId("shop", "project");
+// Include resourceId and resourceType "Rivet.Namespace" in the authenticated target inventory.
+```
+
+This mapping does not bind the project's resource ownership or dependencies.
+The host must independently authenticate the control plane, namespace ownership,
+inventory and pricing. Alchemy's Rivet provider cannot delete namespaces, so
+HoBo refuses uncertain creation retries and namespace update, replacement,
+rename, removal and destroy plans before admission. Reconcile an interrupted
+creation independently; a retained namespace may continue to incur costs. Credentials
+and provider state are sensitive; use a protected Alchemy state backend.
+`model/RivetNamespace.tla` checks a finite abstraction of these decisions and
+does not prove the TypeScript implementation or the Rivet provider.
 
 `@hobo/iac-alchemy/rivet/queue` additionally provides an opt-in asynchronous
 JSON queue backed by a Rivet actor and an Alchemy `DurableObject`. Its runtime
@@ -605,7 +642,7 @@ The host supplies authorization, a trusted clock, source fencing and exclusive
 pool verification. The actor retains at most 10,000 messages and rejects new
 ones at capacity. A timeout or lost response leaves the outcome unknown;
 consumers must reconcile leases and fence their own effects. This queue is not a
-mapping for HoBo's synchronous byte-and-attribute WIT queue or message bus, so
+mapping for HoBo's WIT queue or asynchronous durable topic ABI, so
 those Bindle capabilities remain unsupported.
 The finite `model/RivetQueue.tla` checks queue retry, lease and completion
 decisions for one key, two payloads, at most two leases and three clock values.
@@ -651,10 +688,23 @@ storage and authorization evidence is required for both.
 
 The optional `@hobo/iac-alchemy/cloudflare` entry point maps supported HoBo
 declarations to Alchemy Cloudflare components, including Workers, Vite websites,
-KV namespaces, R2 buckets, queues, D1 databases and Flagship flags. The support
+KV namespaces, R2 buckets, queues, Secrets Store secrets, D1 databases and
+Flagship flags. The support
 report distinguishes infrastructure provisioning from implemented runtime
 operations. Resource dependencies, consistency and identity must be validated
 against the exact mapping and independently attested host environment.
+
+For an infrastructure-only `secret` declaration, pass `secrets` to
+`cloudflareBindleMappers` with the Bindle and resource names, the existing
+Cloudflare account and store IDs, the secret name, and an Effect `Redacted`
+string value. `cloudflareSecretResourceId` gives the Alchemy resource ID for
+the target inventory. The host must verify the store, account, secret ownership
+and plan scope, and provide the authenticated secret fingerprint authority.
+Alchemy's local state persists secret values, so use a state backend that protects
+them. This mapping does not bind HoBo's runtime `put` or `access` operations.
+`model/CloudflareSecret.tla` checks a bounded mapping and preview decision under
+host-attested store, inventory and fingerprint assumptions; it does not prove
+the implementation or Cloudflare's behavior.
 
 The opt-in `@hobo/iac-alchemy/cloudflare/kv` and `cloudflare/r2` mappers bind
 Worker JavaScript to separately authorized KV and R2 proxy resources. KV grants

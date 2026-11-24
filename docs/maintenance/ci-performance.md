@@ -9,7 +9,7 @@ tags: [hobo, ci, performance, maintenance]
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
-- **Online overflow only.** After the queue rule or a fleet slip selects `hobo`, a saturated pool overflows to `hobo-agent37` only when the runner page fetched for that decision shows at least one online Agent37 runner. Absent, offline-only, or unreadable overflow runners keep the prior route, with the reason recorded in the fallback warning and route notice. A saturated same-repository PR batch diverts through the fleet ladder (`hobo-trunk`, `hobo`, `hobo-agent37`) before falling back to `ubuntu-24.04`; the fallback reason records why no fleet tier was verified. Merge-group Fabric never uses the general pool or Agent37 overflow. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md#hosted-saturation-and-hobo-overflow-agent37-on-demand).
+- **Online overflow only.** After the queue rule or a fleet slip selects `hobo`, a saturated pool overflows to `hobo-agent37` only when the runner page fetched for that decision shows at least one online Agent37 runner. Absent, offline-only, or unreadable overflow runners keep the prior route, with the reason recorded in the fallback warning and route notice. A saturated same-repository PR batch diverts through the fleet ladder (`hobo-trunk` only when `runnerRouting.box.trunkLend` is `1`, then `hobo`, `hobo-agent37`) before falling back to `ubuntu-24.04`; with the committed `trunkLend: 0` it never lands on the cold trunk pool ([finding 167](../ci/findings/0167-pr-batches-diverted-to-a-cold-trunk-pool.md)); the fallback reason records why no fleet tier was verified. Merge-group Fabric never uses the general pool or Agent37 overflow. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md#hosted-saturation-and-hobo-overflow-agent37-on-demand).
 - **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
   pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
   no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box
@@ -46,7 +46,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   idle JIT listeners release after three minutes when the fleet mesh already holds the
   job, or after ten minutes when GitHub never assigns work
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
-- **Scripts test shards build once.** `scripts-tests-build` restores older `scripts-tests` L1 Turbo archives, derives `--filter=<name>...` arguments through `scripts/ci/scripts-test-imports.mts` from the tests' complete relative-import graph (including nested workspace packages and `src/` or `dist/` imports), adds the `affected-lanes` filters from the `HEAD^1..HEAD` tree diff, and saves one same-run Turbo archive. It packs the built workspace and ts-autocode `dist` trees into one nonempty tarball in `$RUNNER_TEMP`; packing and upload each have a three-minute limit. The four deterministic `scripts-tests` shards need that job, restore its Turbo archive with `preferred-job: scripts-tests-build`, and download and extract the tarball before testing rather than rebuilding or saving competing archives. An empty build base, dist file list, or downloaded tarball fails closed. Neither job waits for `ci-deps-image`. The PR impact gate requires the build and all four shards.
+- **Scripts test shards build what they import.** Each of the four deterministic `scripts-tests` shards derives `--filter=<name>...` arguments through `scripts/ci/scripts-test-imports.mts` from the tests' complete relative-import graph (including nested workspace packages and `src/` or `dist/` imports), adds the `affected-lanes` filters from the `HEAD^1..HEAD` tree diff, and builds that union before testing at `HOBO_TURBO_BUILD_CONCURRENCY` (default `100%`, not the serial `HOBO_TURBO_CONCURRENCY` test knob), with a six-minute limit. The shards restore the `main-build` Turbo cache and then the `scripts-tests` archive, which only shard 0 prunes and saves. No build job or `dist` artifact sits between the route job and the shards ([finding 166](../ci/findings/0166-scripts-tests-waited-for-a-separate-build-job.md)). An empty build base fails closed. The shards do not wait for `ci-deps-image`. The PR impact gate requires all four shards.
 - **Hosted release-integration critical path.** `release-hobo-pr.yml` has unfiltered pull-request and merge-group triggers, four GitHub-hosted Vitest shards with an 8-minute job ceiling, and the `HoBo release integration PR gate`. Merge groups diff `github.event.merge_group.base_sha`; a missing base runs the lane, fetch or object-verification failure fails the scope step, and only a successfully computed out-of-scope diff skips install and tests successfully. The protected `HoBo release PR gate (required)` no longer needs integration. Fabric and the release train carry temporary hosted PR shards until the new workflow is on `main`; the Fabric shards are not a PR-impact-gate dependency. PR sidecar jobs have no shared `pr-sidecar` cancellation group.
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
@@ -93,6 +93,22 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   entries one run touched shrank main's cache to an affected-only run's handful of packages, and the next
   run rebuilt the rest cold. Saves from PRs stay scoped to the PR ref (no cross-PR poisoning);
   push-to-main saves are the ones every PR and merge group restores.
+- **Main seeds a whole-workspace build cache.** The `main_build_cache` job builds every package on
+  each push to main (on the routed runner, with the workspace shards' checkout and install, so the
+  build hashes match theirs; on the box the shared host cache already holds them) and saves `.turbo/cache` under `turbo-<os>-main-build-…`, pruned with
+  `HOBO_TURBO_CACHE_KEEP_DAYS=0` to that tree's builds. Turbo-cache input `main-build: "true"`
+  restores the newest one before the job's own caches; PR impact validation, the workspace shards,
+  PR affected package lanes and both scripts-test jobs set it. A merge-queue-reused push still runs
+  this job. `dependent-tests.mts --run` first runs the plan's `build` tasks in their own turbo call at
+  one per CPU, capped at 1024 MB per build after a 768 MB reserve (`HOBO_TURBO_BUILD_CONCURRENCY`
+  overrides it), then the unchanged test calls at the memory-derived `HOBO_TURBO_CONCURRENCY`
+  ([finding 162](../ci/findings/0162-merge-queue-shards-rebuilt-every-package-one-at-a-time.md)).
+- **A lockfile change rebuilds only the packages it touches.** `turbo.json` does not list
+  `pnpm-lock.yaml` in `globalDependencies`. Turbo hashes each package's resolved external dependencies
+  from the lockfile into that package's tasks, so bumping one package's dependency changes that package's
+  hashes and its dependents' and leaves the rest of the `main-build` cache usable. A change to the root
+  importer's resolutions still changes the global hash and every task
+  ([finding 168](../ci/findings/0168-a-lockfile-change-rebuilt-every-package.md)).
 - **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` filters the turbo lanes to the changed
   packages and examples, including the packages inside a pnpm-workspace group such as
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
@@ -162,12 +178,24 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   same-repo run, bound to the entry's PR, base tip matching the branch name and the event, tree
   SHAs from the commits API, base contained in the PR head by the compare API — and reports it
   as the route job's `pr-fabric-green` output. On a verified match, **PR impact validation**,
-  **Workspace test shards** and **Scripts tests** are skipped and the `pr-gate` required check
+  **Workspace test shards**, **Scripts tests** and **State-machine verification** are skipped and the `pr-gate` required check
   accepts them; anything short of a verified match is `reuse=false` and the merge group runs its
   gate jobs as before. The plan job, secret scan, merge-only required checks and the gate itself
   are untouched. Committed policy gates it: `runnerRouting.mergeGroup.reusePrFabric` in
   `.hobo/ci.json` (`true`, and an absent block means the same; an unreadable or invalid policy
   turns reuse off).
+- **Merge groups test only what changed since the tree the pull request run proved.** Every
+  `pull_request` run's route job records the merge commit it tested as the artifact name
+  `pr-fabric-tested-<merge sha>-<tree>`. In a merge group the route job's `pr-fabric` step
+  (`decideProvenTreeDelta`) finds the newest green same-repo run for the entry's current head with
+  that record, checks the commit through the API (recorded tree, pull request head as second parent,
+  first parent contained in the group's base) and outputs it as `proven-base`. The plan job,
+  PR impact validation and each workspace shard run `scripts/ci/proven-tree.mts`, which fetches it,
+  checks its tree and ancestry again, and checks out a local commit with the group's tree over it, so
+  the gate scope, the S0 gate set and the shard plan all diff from it. Anything missing or doubtful
+  keeps `merge_group.base_sha`; a later job that cannot repeat the proof widens to `check:all` or
+  every suite of its shard. The same `reusePrFabric` policy gates it
+  ([finding 163](../ci/findings/0163-merge-groups-retested-what-the-pull-request-run-proved.md)).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
@@ -313,6 +341,29 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   node builtins only, since it decides whether to install; `scripts/test/job-scope.test.ts` pins the walk
   and checks that both real entries scope without giving up. #1652 (ci-gh-actions) and #1653
   (`scripts/run-tests.ts`) would have skipped both jobs: 1–3 slot-minutes each per run, excluding stalls.
+- **State-machine verification runs only when the diff reaches the verification skills.** The four
+  `state-machine-verification` shards held a runner for 5 to 7 minutes each on every pull request and
+  merge group. The PR impact plan's "Decide whether state-machine verification is needed" step pipes the
+  event's diff (the PR merge commit's first parent, or the merge group's base, proven-tree delta
+  included) into `scripts/ci/state-machine-scope.mts` and outputs `state_machines`. It is `false` only
+  when no changed path lands in what the skills exercise: every `.agents/skills/verify-*` file, the two
+  `scripts/verify-*state-machine*.sh` drivers, the job's install scripts, `hobo-ci.yml`,
+  `.github/actions/`, the action pins, the job-scope CI inputs (pins, submodules, runner image, root
+  `vitest.config.*`), root `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `turbo.json`,
+  `mise.*`, `.npmrc`, `.node-version` and `tsconfig*.json`, every workspace-wide input `affected-lanes.mts`
+  knows, and the workspace closure (from package manifests) of the seven packages the job builds plus
+  every package, file or directory a skill file or a reached shell script names. Relative imports of
+  reached code are followed; a package-relative name such as `src/github.ts` counts when a reached
+  package holds it and otherwise widens to the nearest existing directory. An empty diff, a missing
+  base, an unreadable file, an unresolvable or out-of-tree relative import, a missing built package or
+  no skills at all keeps it `true`. The job is skipped when the plan succeeded with `false`, and in a
+  merge group when `pr-fabric-green` is `true`; `pr-gate` accepts a skipped run only in those two
+  cases. A skipped plan (a signed local run) leaves the output empty, so the job runs. The job is not
+  an attestation-covered job: a local run would need Java and TLC. Its build step uses
+  `--concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}`
+  ([finding 169](../ci/findings/0169-state-machine-verification-ran-on-every-change.md)).
+  `scripts/test/state-machine-scope.test.ts` pins the walk on an in-memory tree and checks that the
+  repository's own skills scope without giving up.
 
 ## The ci-gh-actions test suite
 
@@ -383,7 +434,7 @@ and the CLI's eager imports are left for later changes.
 
 ## Changed paths on stdin
 
-`job-scope.mts`, `dependent-tests.mts` and `impact-classifier.mts` read the changed paths that a
+`job-scope.mts`, `state-machine-scope.mts`, `dependent-tests.mts` and `impact-classifier.mts` read the changed paths that a
 `git diff --name-only …` pipe gives them through `scripts/lib/read-stdin.mts`, not `readFileSync(0)`.
 In Node 22, `import process from "node:process"` builds that module's exports from every property of
 `process`. That opens `process.stdin`, and on a pipe libuv sets O_NONBLOCK on fd 0. If node reaches
@@ -476,7 +527,7 @@ many files name is resolved once, and the comment strip no longer backtracks ove
 `pnpm-lock.yaml` plans the whole workspace only when it is the whole diff. Beside changed package
 paths it widens nothing: the plan is the one those paths give, so `packages/core/package.json` with
 the lockfile plans what `packages/core/package.json` alone does. That rule is `affected-lanes.mts`'s
-(a lockfile-only diff runs everything; Turbo still hashes the lockfile into every task), and the
+(a lockfile-only diff runs everything; Turbo hashes each package's lockfile resolutions into that package's tasks), and the
 planner takes it unchanged.
 
 `scripts/ci/plan-replay.mts` replays the planner over the last N main commits (`--count=100`), each

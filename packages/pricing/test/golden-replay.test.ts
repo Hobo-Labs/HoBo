@@ -9,15 +9,25 @@ import {
 import { quoteScenario } from "../src/quote.js";
 import { isQuoteVector } from "../src/types.js";
 
-const baseline = JSON.parse(
-	readFileSync(
-		join(import.meta.dirname, "../corpus/golden-replay-baseline.json"),
-		"utf8",
+const baselines = [
+	"golden-replay-baseline.json",
+	"golden-replay-v2.json",
+	"golden-replay-v3.json",
+	"golden-replay-v4.json",
+	"golden-replay-v5.json",
+	"golden-replay-v6.json",
+	"golden-replay-v7.json",
+	"golden-replay-v8.json",
+].map((name) =>
+	JSON.parse(
+		readFileSync(join(import.meta.dirname, "../corpus", name), "utf8"),
 	),
 );
 
 describe("pricing golden replay corpus", () => {
-	it("replays every pinned scenario to its exact quote and hash", () => {
+	it.each(
+		baselines,
+	)("replays every pinned scenario to its exact quote and hash", (baseline) => {
 		expect(baseline.schema).toBe("hobo.pricing.golden-replay-corpus/v1");
 		expect(baseline.entries.length).toBeGreaterThan(0);
 
@@ -26,7 +36,9 @@ describe("pricing golden replay corpus", () => {
 			if (scenario === undefined) {
 				throw new Error(`invalid pinned scenario: ${entry.key}`);
 			}
-			const result = quoteScenario(scenario);
+			const result = quoteScenario(scenario, {
+				ratingAlgorithmVersion: entry.quote.ratingAlgorithmVersion,
+			});
 			if (!isQuoteVector(result)) {
 				throw new Error(`${entry.key}: ${result.code}: ${result.message}`);
 			}

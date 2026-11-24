@@ -132,16 +132,6 @@
       "sha256": "sha256:72966da0fb2118685d590a5cac96bf9648350230e0ecef575913de0513924352"
     },
     {
-      "id": "wasi:messaging/messaging@0.2.0@preview",
-      "namespace": "wasi",
-      "package_name": "messaging",
-      "interface_name": "messaging",
-      "version": "0.2.0",
-      "stability": "preview",
-      "path": "wit/deps/wasi-messaging-messaging.wit",
-      "sha256": "sha256:2fffe459c0e4a254d366ce58b835198fbb0ae9a221b5e324c0d2a35b076e5df7"
-    },
-    {
       "id": "wasi:random/random@0.2.0@preview",
       "namespace": "wasi",
       "package_name": "random",
@@ -179,7 +169,7 @@
       "version": "0.1.0",
       "stability": "experimental",
       "path": "wit/hobo-sdk.wit",
-      "sha256": "sha256:30169e873df4d026138724e2c82c416f3551df81abb58a4d67b9e74ca6c86bbe"
+      "sha256": "sha256:cca81df86de465835ede86b603ce562e478c9f8128a776199b82818709956ac7"
     },
     {
       "id": "hobo:runtime/workflow@0.1.0@experimental",
@@ -259,17 +249,7 @@
       "version": "0.1.0",
       "stability": "experimental",
       "path": "wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
-      "sha256": "sha256:00c1615d2f9026355c153917ef4d4c4826b2a11855d9b3568c965461905a98e5"
-    },
-    {
-      "id": "hobo:durable-messaging-jspi/messaging@0.1.0@experimental",
-      "namespace": "hobo",
-      "package_name": "durable-messaging-jspi",
-      "interface_name": "messaging",
-      "version": "0.1.0",
-      "stability": "experimental",
-      "path": "wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
-      "sha256": "sha256:dd8882114dbd34a419ea4939effdc29dd313df3dbb741db075aa908a087b741d"
+      "sha256": "sha256:478beec23241a967f4b1518b16f5fd4c4ed5ae9fdc3aebcd36f18bd9d6d87ad0"
     },
     {
       "id": "hobo:scheduler/scheduler@0.1.0@experimental",

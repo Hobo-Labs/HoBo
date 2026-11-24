@@ -547,14 +547,14 @@ export function relayVerifyFailure(
 			code: RELAY_VERIFY_REFUSAL.relayNotConfigured,
 			reason: `${origin}/readyz says the relay is not configured: its config service holds no valid relay configuration yet${describeGaps(findings.configGaps)}`,
 			remediation:
-				"Put the relay's configuration in the store deploy/secret-store.binding.json names (packages/ci-vercel/CONFIG-SERVICE.md): the GitHub App's credentials go in with hobo ci app create --via-workflow, the owner's entries as its section What the folder holds lists. Re-run this workflow once they are there.",
+				"Put the relay's configuration in the relay folder of the owner's own secret store (packages/ci-vercel/CONFIG-SERVICE.md): the GitHub App's credentials go in with hobo ci app create --via-workflow, the owner's entries as its section What the folder holds lists. Re-run this workflow once they are there.",
 		};
 	if (findings.readyzState === "config-service-denied")
 		return {
 			code: RELAY_VERIFY_REFUSAL.relayNotReady,
 			reason: `${origin}/readyz says the relay's config service refused its identity`,
 			remediation:
-				"The relay identity named in deploy/secret-store.binding.json must trust this project's Vercel production OIDC tokens (OIDC Auth; packages/ci-vercel/CONFIG-SERVICE.md). hobo ci secret-store verify checks the deploy identity by name.",
+				"The relay identity the owner's store binding names must trust this project's Vercel production OIDC tokens (OIDC Auth; packages/ci-vercel/CONFIG-SERVICE.md). hobo ci secret-store verify checks the deploy identity by name.",
 		};
 	if (findings.readyzState === "config-service-unavailable")
 		return {
@@ -595,61 +595,4 @@ function describeGaps(gaps: RelayConfigGaps | undefined): string {
 		gaps.missing.length > 0 ? ` (missing: ${gaps.missing.join(", ")})` : "",
 		gaps.invalid.length > 0 ? ` (refused: ${gaps.invalid.join(", ")})` : "",
 	].join("");
-}
-
-// public-contract: the relay routes that serve before its configuration is complete.
-export const RELAY_OWNER_HANDOFF_PATHS = Object.freeze({
-	page: "/owner-handoff",
-	mailboxes: "/v1/owner-handoff/mailboxes",
-} as const);
-
-const OWNER_HANDOFF_PROBE_MAILBOX = "A".repeat(43);
-
-export type RelayOwnerHandoffProbe =
-	| Readonly<{ serving: true }>
-	| Readonly<{ serving: false; route: string; status: number }>;
-
-export async function probeOwnerHandoff(
-	transport: HttpTransport,
-	origin: string,
-): Promise<RelayOwnerHandoffProbe> {
-	const get = (path: string) =>
-		transport({
-			method: "GET",
-			url: `${origin}${path}`,
-			headers: { accept: "application/json, text/html" },
-			timeoutMs: 10_000,
-			maxResponseBytes: 256 * 1024,
-		});
-	const page = await get(RELAY_OWNER_HANDOFF_PATHS.page);
-	if (page.status !== 200)
-		return {
-			serving: false,
-			route: RELAY_OWNER_HANDOFF_PATHS.page,
-			status: page.status,
-		};
-	const mailboxPath = `${RELAY_OWNER_HANDOFF_PATHS.mailboxes}/${OWNER_HANDOFF_PROBE_MAILBOX}`;
-	const mailbox = await get(mailboxPath);
-	const body = bodyOf(mailbox);
-	if (
-		mailbox.status === 404 &&
-		isJsonObject(body) &&
-		body.error === "not-found"
-	)
-		return { serving: true };
-	return {
-		serving: false,
-		route: RELAY_OWNER_HANDOFF_PATHS.mailboxes,
-		status: mailbox.status,
-	};
-}
-
-export function relayAwaitingOwner(
-	findings: RelayProbeFindings,
-): RelayConfigGaps | undefined {
-	return findings.servedCommit === undefined &&
-		findings.healthStatus === undefined &&
-		findings.readyzState === "not-configured"
-		? findings.configGaps
-		: undefined;
 }
