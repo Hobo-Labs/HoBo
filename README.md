@@ -147,7 +147,7 @@ Canonical terminology lives in [`docs/design/glossary.md`](./docs/design/glossar
 
 - ADR index: [`docs/design/adr/index.md`](./docs/design/adr/index.md)
 - Traceability gate: [`docs/design/traceability.md`](./docs/design/traceability.md)
-- CLI surface: [`docs/design/cli-spec.md`](./docs/design/cli-spec.md)
+- CLI verbs: [`docs/cli-verbs.md`](./docs/cli-verbs.md); lifecycle semantics: [`docs/design/cli-spec.md`](./docs/design/cli-spec.md)
 - SDK contracts: [`docs/design/sdk-contracts.md`](./docs/design/sdk-contracts.md)
 - Package namespaces: [`docs/design/package-namespaces.md`](./docs/design/package-namespaces.md)
 - Influence lineage & credits: [`docs/design/lineage.md`](./docs/design/lineage.md)
@@ -275,7 +275,7 @@ Important rules for agents and humans:
 - **Design suite:** active and canonical under [`docs/design/`](./docs/design/index.md); influence credits in [`docs/design/lineage.md`](./docs/design/lineage.md).
 - **Ship targets:** OSS public vs local-first npm vs hosted beta/GA are distinguished in [`docs/design/launch-ship-targets.md`](./docs/design/launch-ship-targets.md) and [ADR-0140](./docs/design/adr/07-portability-extensibility.md#adr-0140). Known limitations: [`docs/design/known-limitations-register.md`](./docs/design/known-limitations-register.md).
 - **Executable proof material:** `src/draft/<kind>/<slug>` packages and repo validation scripts.
-- **Primary command surface:** product `hobo` binary from [`packages/hobo/`](./packages/hobo/) (`@hobo/hobo`); shell/factories in [`packages/cli/`](./packages/cli/) (`@hobo/cli`). Spec: [`docs/design/cli-spec.md`](./docs/design/cli-spec.md). The same verb surface is served over MCP stdio by the `hobo-mcp` binary (`@hobo/hobo`), with verb/tool parity enforced by contract test.
+- **Primary command surface:** product `hobo` binary from [`packages/hobo/`](./packages/hobo/) (`@hobo/hobo`); shell/factories in [`packages/cli/`](./packages/cli/) (`@hobo/cli`). Verbs: [`docs/cli-verbs.md`](./docs/cli-verbs.md). The same verb surface is served over MCP stdio by the `hobo-mcp` binary (`@hobo/hobo`), with verb/tool parity enforced by contract test.
 - **Behavior suite:** epic proofs carry executable Gherkin — `pnpm run test:behavior` runs the offline cucumber lane (feature files under `src/draft/`, plus shipped core acceptance). Live Cloudflare provisioning is explicit: `pnpm run test:behavior -- --profile live-cloudflare`; it requires the local site, Playwright Chromium, network access and authorization to provision a public temporary worker.
 
 ## License
