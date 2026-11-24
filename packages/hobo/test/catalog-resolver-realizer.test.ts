@@ -21,7 +21,11 @@ import {
 	SetRecordSchema,
 } from "@hobo/cd";
 import { sanitizeObservation } from "@hobo/cd/reconcile";
-import { RESOLVER_ERROR_CODES, type TransportRequest } from "@hobo/core";
+import {
+	RESOLVER_ERROR_CODES,
+	type ResolverErrorCode,
+	type TransportRequest,
+} from "@hobo/core";
 import { isLatin1Transport } from "@hobo/provider-oci-registry";
 import { describe, expect, it } from "vitest";
 import {
@@ -70,7 +74,13 @@ it.each(CATALOG_REALIZER_REFUSAL_CODES)(
 	},
 );
 
-it.each(RESOLVER_ERROR_CODES)(
+const SURFACED_RESOLVER_CODES = [
+	"RESOLVER_PROVIDER_REJECTED",
+	"RESOLVER_PRODUCT_UNSUPPORTED",
+	"RESOLVER_OUTPUT_UNPARSEABLE",
+] as const satisfies readonly ResolverErrorCode[];
+
+it.each(SURFACED_RESOLVER_CODES)(
 	"surfaces resolver code %s with the provider message",
 	(code) => {
 		const providerMessage =
@@ -96,6 +106,41 @@ it.each(RESOLVER_ERROR_CODES)(
 		});
 		expect(observation.reasons[0]?.code).toBe(code);
 		expect(observation.reasons[0]?.message).toBe(providerMessage);
+	},
+);
+
+const surfaced = new Set<string>(SURFACED_RESOLVER_CODES);
+const REDACTED_RESOLVER_CODES = RESOLVER_ERROR_CODES.filter(
+	(code) => !surfaced.has(code),
+);
+
+it.each(REDACTED_RESOLVER_CODES)(
+	"redacts resolver code %s provider detail",
+	(code) => {
+		const providerMessage = "installation token missing for ghcr.io";
+		const observation = sanitizeObservation({
+			observation: create(ReconcileObservationRecordSchema, {
+				status: ReconcileStatus.BLOCKED,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code,
+						message: providerMessage,
+						remediation: providerMessage,
+						subject: CAMP_ID,
+					}),
+				],
+			}),
+			campId: CAMP_ID,
+			reconcilerId: "contract-test",
+			fence: 1n,
+			nowMs: 0,
+			observeFields: [],
+			management: CampManagement.MANAGED,
+		});
+		expect(observation.reasons[0]?.code).toBe(code);
+		expect(observation.reasons[0]?.message).toBe(
+			"The realizer reported a condition.",
+		);
 	},
 );
 
