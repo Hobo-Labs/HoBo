@@ -731,6 +731,8 @@ jobs:
           submodules: recursive
           marker: scripts/ci/ci-trace.mts
           bootstrap-composite-actions: "false"
+      - name: Test from a detached HEAD, as the merge queue does
+        run: git checkout --quiet --detach HEAD
       - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
@@ -772,6 +774,7 @@ jobs:
           # step-level pin would override it back to one task at a time.
         run: |
           set -euo pipefail
+          unset GITHUB_HEAD_REF GITHUB_BASE_REF
           case "$EVENT_NAME" in
             pull_request) TESTS=affected; BASE="$PR_BASE" ;;
             merge_group) TESTS="$MERGE_TESTS"; BASE="$MERGE_BASE" ;;
@@ -930,6 +933,8 @@ jobs:
           clean: false
           # Depth 2 holds a PR merge commit and its first parent (the base tip).
           fetch-depth: 2
+      - name: Test from a detached HEAD, as the merge queue does
+        run: git checkout --quiet --detach HEAD
       # The pinned toolchain from mise.toml (Node 24), on the fleet or a GitHub-hosted
       # machine. Under Node 22 pnpm prints an engine warning into turbo's JSON.
       - uses: $/.github/actions/ci-runner-preflight
@@ -1018,7 +1023,7 @@ jobs:
         env:
           SHARD: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
-        run: pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"
+        run: env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''

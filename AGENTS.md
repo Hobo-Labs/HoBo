@@ -17,6 +17,12 @@ over conflicting repository workflow guidance.
   alternatives and independent work before reporting a blocker. Respect the
   latest explicit stop, pause, cancellation, scope change, and real permission
   or safety boundary; do not invent work or repeat futile attempts.
+- An action request is not done until the delivery goal in `PRODUCT.md` is met
+  by the evidence it names; merged pull requests are not that evidence.
+- Before adding a credential, flow or provider, search the code and ADRs for
+  an existing mechanism and use it. List the hard constraints against the goal
+  and report any contradiction before building. The `hobo-setup` skill covers
+  owner interaction and the `sdlc` skill covers landing pull requests.
 - Do not create or retain planning documents, roadmaps, or design documents.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
@@ -62,7 +68,10 @@ the pre-commit hook checks staged changes. The same edit hooks run
 each harness (`scripts/agent-secret-policy.mts`) refuses commands that store
 Actions secrets or variables, Vercel environment variables, `.env` writes,
 edits to secret files, and credential-storing tools such as
-`request_credential` before they run. `secrets:guard` also runs in the
+`request_credential` before they run. The same hook refuses stopping HoBo's MCP
+server or owner page driver, which holds the owner's open form, and a fourth
+unlanded pull request from one session's branches
+(`scripts/agent-session-policy.mts`; see `docs/agent-tooling.md`). `secrets:guard` also runs in the
 pre-commit hook and in `agent:check`, so CI checks each pull request's diff
 against its base; it rejects added Actions secret and variable references
 other than the per-job token, secret files, environment credential reads

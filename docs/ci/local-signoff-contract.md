@@ -17,6 +17,14 @@ only after they pass, calls [basecamp/gh-signoff](https://github.com/basecamp/gh
 The [runbook](../../packages/ci/RUNNER-QUEUE.md#sign-off-without-an-actions-runner)
 has setup and operational commands.
 
+The workspace test shards and the scripts test shards run their tests from a
+detached `HEAD` with `GITHUB_HEAD_REF` and `GITHUB_BASE_REF` unset on
+`pull_request` as on `merge_group`, and a local signoff runs them the same way
+at the detached merge commit, so a test that depends on the pull request's
+branch name fails before the merge queue rather than only inside it.
+`scripts/test/scripts-tests-job.test.ts` pins the scripts lane's
+`env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF` command.
+
 ## Selection contract
 
 A configured pin or valid pinned slip wins before availability is read. An
