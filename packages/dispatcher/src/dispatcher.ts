@@ -12,7 +12,6 @@ import {
 	addAvailable,
 	addUpper,
 	availableCredits,
-	chargeWithinBudget,
 	costForUnits,
 	exposureWithinBudget,
 	moneySumExceeds,
@@ -20,6 +19,7 @@ import {
 	subtractAvailable,
 	subtractUpper,
 } from "./money.js";
+import { compareCodeUnits } from "./order.js";
 
 // public-contract: consumers pin the dispatcher wire schema by this id.
 export const DISPATCHER_SCHEMA_VERSION = "hobo.dispatcher/v1";
@@ -195,7 +195,20 @@ export function createDispatcherRegistry(
 
 export type DispatcherRegistry = ReturnType<typeof createDispatcherRegistry>;
 
+type ReplayOrdering = "code-unit-v1" | "legacy-locale";
+const compareLocale = (left: string, right: string): number =>
+	left.localeCompare(right);
 export function decideDispatch(request) {
+	return decideDispatchWithOrdering(request, "code-unit-v1");
+}
+function decideDispatchWithOrdering(request, orderingVersion: ReplayOrdering) {
+	const compare =
+		orderingVersion === "legacy-locale" ? compareLocale : compareCodeUnits;
+	let comparedDistinctStrings = false;
+	const compareStrings = (left: string, right: string): number => {
+		if (left !== right) comparedDistinctStrings = true;
+		return compare(left, right);
+	};
 	assertObject(request, "request");
 	const category = requireCategory(request.category);
 	const objective = requireObjective(request.objective ?? "maximize-credits");
@@ -204,6 +217,11 @@ export function decideDispatch(request) {
 	const registry = parseRegistry(request.registry);
 	const candidates = registry.byCategory.get(category) ?? [];
 	const ledgerView = parseCreditLedgerView(request.ledgerView);
+	const estimatedCost = nonNegativeNumber(
+		request.estimatedCost,
+		"request.estimatedCost",
+		0,
+	);
 	const hysteresisInput = parseHysteresis(request.hysteresis);
 	const incumbentProviderId =
 		request.incumbentProviderId ?? hysteresisInput?.incumbentProviderId;
@@ -223,6 +241,8 @@ export function decideDispatch(request) {
 		candidates,
 		ledgerView,
 		units,
+		compareStrings,
+		minimumReservationCost: estimatedCost,
 		incumbentProviderId,
 	});
 	const eligible = ranked.filter((candidate) => candidate.eligible);
@@ -271,10 +291,13 @@ export function decideDispatch(request) {
 		hysteresis: hysteresis.public,
 		dispatchEvent,
 		replayInput: {
+			orderingVersion: comparedDistinctStrings ? orderingVersion : undefined,
 			category,
 			dispatchId,
 			objective,
 			units,
+			estimatedCost:
+				request.estimatedCost === undefined ? undefined : estimatedCost,
 			incumbentProviderId,
 			hysteresis: hysteresisInput,
 			reservationId,
@@ -341,7 +364,7 @@ export function createReservationLedger(initialLedgerView) {
 				reservation.units,
 			);
 		}
-		const committedSeq = next.seq + 1;
+		const committedSeq = advanceLedgerSequence(next.seq);
 		reservation.status =
 			eventType === DISPATCH_EVENTS.ReservationExpired ? "expired" : "released";
 		reservation.releaseReason = reason;
@@ -598,7 +621,7 @@ export function createReservationLedger(initialLedgerView) {
 				account.reservedCost = totalHeld;
 				account.reservedUnits = totalUnits;
 			}
-			const committedSeq = next.seq + 1;
+			const committedSeq = advanceLedgerSequence(next.seq);
 			const reservation: DispatchReservation = {
 				reservationId,
 				providerId,
@@ -699,8 +722,8 @@ export function createReservationLedger(initialLedgerView) {
 			const next = clone(current);
 			const started = findReservation(next, reservationId);
 			started.status = "running";
-			started.startedSeq = next.seq + 1;
-			next.seq += 1;
+			started.startedSeq = advanceLedgerSequence(next.seq);
+			next.seq = started.startedSeq;
 			current = next;
 			eventLog.push(
 				reservationFact(DISPATCH_EVENTS.ReservationStarted, started, {
@@ -759,7 +782,7 @@ export function createReservationLedger(initialLedgerView) {
 					ledgerView: clone(current),
 				};
 
-			const committedSeq = next.seq + 1;
+			const committedSeq = advanceLedgerSequence(next.seq);
 			const actualCost = nonNegativeNumber(
 				request.actualCost,
 				"request.actualCost",
@@ -852,13 +875,8 @@ export function createReservationLedger(initialLedgerView) {
 			const now = requireInstant(request.now, "request.now");
 			if (current.asOf && Date.parse(now) < Date.parse(current.asOf))
 				throw new TypeError("request.now must not precede ledger.asOf");
-			if (!current.asOf || Date.parse(now) > Date.parse(current.asOf)) {
-				current = { ...current, asOf: now, seq: current.seq + 1 };
-				eventLog.push({
-					type: DISPATCH_EVENTS.LedgerTimeAdvanced,
-					data: { asOf: now, ledgerSeq: current.seq },
-				});
-			}
+			const advancesTime =
+				!current.asOf || Date.parse(now) > Date.parse(current.asOf);
 			const expiredIds = (current.reservations ?? [])
 				.filter((reservation) => reservation.status === "pending")
 				.filter(
@@ -867,6 +885,21 @@ export function createReservationLedger(initialLedgerView) {
 						Date.parse(reservation.expiresAt) <= Date.parse(now),
 				)
 				.map((reservation) => reservation.reservationId);
+			advanceLedgerSequence(
+				current.seq,
+				expiredIds.length + (advancesTime ? 1 : 0),
+			);
+			if (advancesTime) {
+				current = {
+					...current,
+					asOf: now,
+					seq: advanceLedgerSequence(current.seq),
+				};
+				eventLog.push({
+					type: DISPATCH_EVENTS.LedgerTimeAdvanced,
+					data: { asOf: now, ledgerSeq: current.seq },
+				});
+			}
 			const releases = expiredIds.map((reservationId) =>
 				releaseReservation({
 					reservationId,
@@ -923,6 +956,19 @@ export function decideAndReserveDispatch(request) {
 		providers: registry.records.map((record) => record.source),
 	});
 	const existingSnapshot = reservationLedger.snapshot();
+	if (
+		(existingSnapshot.reservations ?? []).some(
+			(reservation) =>
+				reservation.status !== "released" &&
+				reservation.status !== "expired" &&
+				reservation.decisionInputJson !== undefined &&
+				!reservationMatchesReplay(reservation),
+		)
+	)
+		return failedDecision({
+			objective: request.objective ?? "maximize-credits",
+			reason: "ledger-reconciliation-required",
+		});
 	const existing = findReservation(
 		existingSnapshot,
 		request.reservationId ?? `reserve-${request.dispatchId}`,
@@ -949,6 +995,16 @@ export function decideAndReserveDispatch(request) {
 		const decision = replayDispatchDecision(
 			JSON.parse(existing.decisionInputJson),
 		);
+		if (
+			!decision.ok ||
+			!optionalNonNegativeNumber(existing.reservedCost) ||
+			existing.reservedCost <
+				nonNegativeNumber(request.estimatedCost, "request.estimatedCost", 0)
+		)
+			return failedDecision({
+				objective: request.objective ?? "maximize-credits",
+				reason: "reservation-replay-scope-or-cost-conflict",
+			});
 		return {
 			...decision,
 			reservation: {
@@ -988,15 +1044,27 @@ export function decideAndReserveDispatch(request) {
 			};
 		}
 
-		const selectedRecord = registry.records.find(
-			(record) => record.providerId === decision.selectedProvider,
-		);
+		const selectedCategory = decision.dispatchEvent.data.category;
+		const selectedRecord = registry.byCategory
+			.get(selectedCategory)
+			?.find(
+				(record) =>
+					record.category === selectedCategory &&
+					record.providerId === decision.selectedProvider &&
+					record.registered,
+			);
+		if (!selectedRecord)
+			return {
+				...failedDecision({
+					objective: decision.objective,
+					reason: "selected provider missing from dispatch category",
+				}),
+				attempts,
+			};
 		const selectedCost = decision.ranking.find(
 			(candidate) => candidate.providerId === decision.selectedProvider,
 		);
-		const dimension =
-			selectedRecord?.dimension ??
-			CATEGORY_DIMENSIONS[decision.dispatchEvent.data.category];
+		const dimension = selectedRecord.dimension;
 		const accountPrice = findLedgerAccount(
 			ledgerView,
 			decision.selectedProvider,
@@ -1011,7 +1079,7 @@ export function decideAndReserveDispatch(request) {
 			expiresAt: request.reservationExpiresAt,
 			unitCost: optionalNonNegativeNumber(accountPrice)
 				? accountPrice
-				: selectedRecord?.listUnitCost,
+				: selectedRecord.listUnitCost,
 			switchingCost: selectedCost?.switchingCost ?? 0,
 			estimatedCost: request.estimatedCost,
 			dispatchRequestHash: requestHash,
@@ -1057,10 +1125,47 @@ export function decideAndReserveDispatch(request) {
 
 export function replayDispatchDecision(replayInput) {
 	assertObject(replayInput, "replayInput");
-	return decideDispatch({
-		...clone(replayInput),
-		registry: createDispatcherRegistry(replayInput.candidates ?? []),
-	});
+	const orderingVersion =
+		replayInput.orderingVersion === undefined
+			? "legacy-locale"
+			: replayInput.orderingVersion;
+	if (orderingVersion !== "code-unit-v1" && orderingVersion !== "legacy-locale")
+		throw new TypeError("unknown replay ordering version");
+	return decideDispatchWithOrdering(
+		{
+			...clone(replayInput),
+			registry: createDispatcherRegistry(replayInput.candidates ?? []),
+		},
+		orderingVersion,
+	);
+}
+
+function reservationMatchesReplay(reservation: DispatchReservation): boolean {
+	try {
+		const decision = replayDispatchDecision(
+			JSON.parse(reservation.decisionInputJson ?? ""),
+		);
+		if (!decision.ok) return false;
+		const selected = decision.ranking.find(
+			(candidate) => candidate.providerId === decision.selectedProvider,
+		);
+		const estimate = reservation.estimatedCost ?? 0;
+		return (
+			selected !== undefined &&
+			decision.selectedProvider === reservation.providerId &&
+			selected.dimension === reservation.dimension &&
+			decision.replayInput.units === reservation.units &&
+			decision.dispatchEvent.data.ledgerInput.reservationId ===
+				reservation.reservationId &&
+			decision.dispatchEvent.data.ledgerInput.seq === reservation.expectedSeq &&
+			optionalNonNegativeNumber(reservation.reservedCost) &&
+			optionalNonNegativeNumber(estimate) &&
+			reservation.reservedCost >= selected.totalCost &&
+			reservation.reservedCost >= estimate
+		);
+	} catch {
+		return false;
+	}
 }
 
 export function decidePlacement(request) {
@@ -1159,6 +1264,8 @@ function rankCreditCandidates({
 	candidates,
 	ledgerView,
 	units,
+	compareStrings = compareCodeUnits,
+	minimumReservationCost = 0,
 	incumbentProviderId,
 }) {
 	return candidates
@@ -1167,10 +1274,12 @@ function rankCreditCandidates({
 				candidate,
 				ledgerView,
 				units,
+				minimumReservationCost,
+				compareStrings,
 				incumbentProviderId,
 			}),
 		)
-		.sort(compareRankedCandidates)
+		.sort((left, right) => compareRankedCandidates(left, right, compareStrings))
 		.map((candidate, index) => ({
 			...candidate,
 			rank: index + 1,
@@ -1298,6 +1407,8 @@ function rankCreditCandidate({
 	incumbentProviderId,
 	chargeSwitching = false,
 	unitCostOverride = undefined,
+	minimumReservationCost = 0,
+	compareStrings = compareCodeUnits,
 }) {
 	const account = findLedgerAccount(
 		ledgerView,
@@ -1327,16 +1438,17 @@ function rankCreditCandidate({
 		optionalNonNegativeNumber(account.budgetCap) &&
 		optionalNonNegativeNumber(account.spendToDate ?? 0) &&
 		optionalNonNegativeNumber(account.reservedCost ?? 0)
-			? !chargeWithinBudget(
+			? !exposureWithinBudget(
 					units,
 					freeUnits,
 					listUnitCost,
 					switchingCost,
+					minimumReservationCost,
 					account.budgetCap,
 					account.spendToDate ?? 0,
 					account.reservedCost ?? 0,
 				)
-			: totalCost > credit.budgetHeadroom;
+			: Math.max(totalCost, minimumReservationCost) > credit.budgetHeadroom;
 	const hardBudgetInvalid =
 		account?.budgetCap !== undefined &&
 		(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0));
@@ -1360,7 +1472,7 @@ function rankCreditCandidate({
 	const freeButNotDepletable =
 		credit.valid && credit.freeHeadroom > 0 && freeUnits === 0;
 	const nextCreditExpiresAt = credit.valid
-		? nextCreditExpiry(account, ledgerView.asOf)
+		? nextCreditExpiry(account, ledgerView.asOf, compareStrings)
 		: null;
 	const concurrencyScore = Number.isFinite(credit.concurrencyHeadroom)
 		? credit.concurrencyHeadroom
@@ -1525,7 +1637,11 @@ function grantExpiry(credit: CreditGrant): string | undefined {
 		.sort((left, right) => Date.parse(left) - Date.parse(right))[0];
 }
 
-function nextCreditExpiry(account: CreditAccount | null, asOf?: string) {
+function nextCreditExpiry(
+	account: CreditAccount | null,
+	asOf: string | undefined,
+	compareStrings: (left: string, right: string) => number,
+) {
 	const expiries = (account?.credits ?? [])
 		.filter(
 			(credit) =>
@@ -1537,7 +1653,7 @@ function nextCreditExpiry(account: CreditAccount | null, asOf?: string) {
 		.filter((value) => isJsonString(value) && !Number.isNaN(Date.parse(value)))
 		.sort(
 			(left, right) =>
-				Date.parse(left) - Date.parse(right) || left.localeCompare(right),
+				Date.parse(left) - Date.parse(right) || compareStrings(left, right),
 		);
 	return expiries[0] ?? null;
 }
@@ -1561,7 +1677,11 @@ function budgetHeadroomFor(account: CreditAccount) {
 	return remainingMoney(budgetCap, spendToDate, reservedCost);
 }
 
-function compareRankedCandidates(left, right) {
+function compareRankedCandidates(
+	left,
+	right,
+	compareStrings: (left: string, right: string) => number,
+) {
 	for (
 		let index = 0;
 		index < Math.max(left.rankVector.length, right.rankVector.length);
@@ -1570,7 +1690,8 @@ function compareRankedCandidates(left, right) {
 		const leftValue = left.rankVector[index];
 		const rightValue = right.rankVector[index];
 		if (isJsonString(leftValue) || isJsonString(rightValue)) {
-			const comparison = String(leftValue ?? "").localeCompare(
+			const comparison = compareStrings(
+				String(leftValue ?? ""),
 				String(rightValue ?? ""),
 			);
 			if (comparison !== 0) return comparison;
@@ -1762,9 +1883,7 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 	if (ledgerView.view !== "CreditLedgerView") {
 		throw new TypeError("ledgerView.view must be CreditLedgerView");
 	}
-	if (!Number.isInteger(ledgerView.seq) || ledgerView.seq < 0) {
-		throw new TypeError("ledgerView.seq must be a non-negative integer");
-	}
+	requireNonNegativeInteger(ledgerView.seq, "ledgerView.seq");
 	if (!Array.isArray(ledgerView.accounts)) {
 		throw new TypeError("ledgerView.accounts must be an array");
 	}
@@ -1811,12 +1930,26 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 			reservation.committedSeq,
 			"reservation.committedSeq",
 		);
+		for (const key of [
+			"startedSeq",
+			"confirmedSeq",
+			"releasedSeq",
+			"providerUsageSeq",
+		]) {
+			if (reservation[key] !== undefined)
+				requireNonNegativeInteger(reservation[key], `reservation.${key}`);
+		}
 		if (
 			!["pending", "running", "confirmed", "released", "expired"].includes(
 				reservation.status,
 			)
 		)
 			throw new TypeError("invalid reservation status");
+		if (reservation.consumption !== undefined)
+			validateReservationConsumption(
+				reservation.consumption,
+				reservation.units,
+			);
 		if (reservation.reservedCost !== undefined)
 			nonNegativeNumber(
 				reservation.reservedCost,
@@ -1851,6 +1984,53 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 			);
 	}
 	return clone(ledgerView);
+}
+
+function validateReservationConsumption(consumption, units: number): void {
+	assertObject(consumption, "reservation.consumption");
+	for (const key of ["freeHeadroom", "rateUnits"]) {
+		const amount = consumption[key];
+		if (
+			amount !== undefined &&
+			(!optionalNonNegativeNumber(amount) || amount > units)
+		)
+			throw new TypeError(
+				`reservation.consumption.${key} exceeds reserved units or is invalid`,
+			);
+	}
+	if (
+		consumption.concurrencySlots !== undefined &&
+		(!Number.isInteger(consumption.concurrencySlots) ||
+			consumption.concurrencySlots < 0 ||
+			consumption.concurrencySlots > 1)
+	)
+		throw new TypeError(
+			"reservation.consumption.concurrencySlots must be zero or one",
+		);
+	if (consumption.credits === undefined) return;
+	if (!Array.isArray(consumption.credits))
+		throw new TypeError("reservation.consumption.credits must be an array");
+	const creditIds = new Set<string>();
+	let remaining = units;
+	for (const credit of consumption.credits) {
+		assertObject(credit, "reservation.consumption.credit");
+		const creditId = requireString(
+			credit.creditId,
+			"reservation.consumption.creditId",
+		);
+		if (creditIds.has(creditId))
+			throw new TypeError("duplicate reservation.consumption credit");
+		creditIds.add(creditId);
+		const used = requirePositiveNumber(
+			credit.units,
+			"reservation.consumption.credit units",
+		);
+		if (used > remaining)
+			throw new TypeError(
+				"reservation.consumption credits exceed reserved units",
+			);
+		remaining = subtractUpper(remaining, used);
+	}
 }
 
 function parseHysteresis(hysteresis): HysteresisInput | null {
@@ -1961,7 +2141,7 @@ function consumeReservedFreeHeadroom(
 			(left, right) =>
 				Date.parse(grantExpiry(left) ?? "9999-12-31") -
 					Date.parse(grantExpiry(right) ?? "9999-12-31") ||
-				left.creditId.localeCompare(right.creditId),
+				compareCodeUnits(left.creditId, right.creditId),
 		);
 	for (const credit of ordered) {
 		if (!optionalNonNegativeNumber(credit?.freeHeadroom)) continue;
@@ -2099,10 +2279,23 @@ function requirePositiveInteger(value, fieldName: string): number {
 }
 
 function requireNonNegativeInteger(value, fieldName: string): number {
-	if (!Number.isInteger(value) || value < 0) {
+	if (!Number.isInteger(value) || value < 0)
 		throw new TypeError(`${fieldName} must be a non-negative integer`);
-	}
+	if (!Number.isSafeInteger(value))
+		throw new TypeError(`${fieldName} must be a safe integer`);
 	return value;
+}
+
+function advanceLedgerSequence(seq: number, steps = 1): number {
+	if (
+		!Number.isSafeInteger(seq) ||
+		seq < 0 ||
+		!Number.isSafeInteger(steps) ||
+		steps < 0 ||
+		steps > Number.MAX_SAFE_INTEGER - seq
+	)
+		throw new RangeError("ledger sequence exhausted");
+	return seq + steps;
 }
 
 function nonNegativeNumber(value, fieldName: string, fallback: number): number {

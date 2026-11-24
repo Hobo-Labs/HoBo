@@ -198,15 +198,71 @@ paid/promotional credits, and provider-actual spend commitments. Baseline and
 candidate snapshots use the same pinned state; incremental amounts are
 `F(baseline + candidate) - F(baseline)`.
 
-Rating aggregates workloads by provider agreement. If two workloads in a
-snapshot have different values for a selector used by that agreement's rate
-card, the quote returns `PRICING_MODEL_UNSUPPORTED`: the kernel cannot yet
-rate those groups independently while preserving shared allowances and tiers.
-This check includes baseline and candidate workloads together. Unselected
-attributes may differ, and distinct provider agreements are checked separately.
 Every baseline and candidate workload must name its agreement's product;
 a mismatch returns `INVALID_PRICING_INPUT` rather than rating a different
-product's usage against that agreement.
+product's usage against that agreement. Through `pricing-rating/v5`, rating
+aggregated workloads by provider agreement and returned
+`PRICING_MODEL_UNSUPPORTED` when two workloads in a snapshot had different
+values for a selector used by that agreement's rate card. Versions 1–5
+retain that aggregated behavior; the v2 target and availability surfaces
+keep the check.
+
+New quotes use `pricing-rating/v9`. It orders ties by string code units,
+compares UTC instants without truncating fractional seconds, rejects impossible
+calendar dates, and requires each allowance, credit, and commitment to have a
+unique nonempty identity within its kind and the financial state's tenant. This
+also requires a provider account on each agreement and rejects financial sources
+in any state containing agreements for more than one account: grants currently
+have no field identifying their account. This conservative check includes unused
+and inactive agreements. It cannot establish that the supplied identities and
+tenant truly correspond to provider records. The change to the algorithm version
+and quote hash can change credit, rate-card,
+or latest-observation choices. To rerate an old record, pass its stored version, for example
+`quoteScenario(scenario, { ratingAlgorithmVersion: "pricing-rating/v1" })`.
+Version 1 used locale-sensitive ordering, so reproducing an old tied quote also
+requires its original locale. Versions 1 and 2 also retain their previous
+timestamp comparison and millisecond validation behavior. Versions 1–3 do not
+enforce the new source identity checks. Versions 1–4 also retain earlier source
+amount, basis and commitment-unit behavior. Versions 1–5 retain earlier
+workload-selector and meter behavior. Versions 1–6 also retain the earlier
+handling of conflicting latest measurements. Preserve the original quote as evidence
+rather than treating a new v9 quote as the old one, and reconcile affected old
+expiry, evidence, observation, and financial-source decisions before use.
+
+V9 marks quotes from explicitly allowed partial financial states as
+informational and ineligible for automatic selection. Unknown completeness
+values reject. Dispatcher v2 also requires explicit positive eligibility.
+Versions 1–8 retain their prior eligibility on replay; reconcile old quotes
+before using them for decisions. The broker's separate raw-estimate helper
+does not receive a quote or its eligibility and requires trusted caller checks.
+
+V8 requires graduated and volume tier schedules to begin at zero, increase,
+and have neither gaps nor overlaps. A missing intermediate end is inferred
+from the next tier's start. A finite final graduated tier cannot rate usage
+beyond its end; a finite volume tier excludes its upper endpoint. Versions 1–7
+retain the previous tier behavior for historical replay.
+
+V6 selects charges for each workload and groups matching measurements for each
+charge before applying its pricing model. A workload's product must match its
+agreement, each measurement must have a product meter, and meter dimensions and
+charge IDs must be present and unique. The earlier algorithm selected charges
+from the first workload and could apply its price to other workloads, or ignore
+an unmetered measurement entirely.
+
+V7 rejects a `latest` meter when different quantities share its latest instant.
+Equal quantities are accepted after unit conversion and event-level rounding;
+conflicts at older instants do not prevent selecting a later value. The input
+must supply enough ordering information to distinguish conflicting observations.
+
+V5 requires nonnegative source amounts and rate-card prices and compatible units.
+For allowances and credits it bounds used plus remaining by the declared amount plus rollover; for
+forfeiting commitments it bounds them by the declared amount. These checks treat
+used and remaining as belonging to the same grant and bucket. Derived credits
+must have no additional basis, and consumed credit basis cannot exceed recorded
+remaining basis. Paid-credit rollover and commitment rollover or true-up fail
+closed because their carried basis or bucket semantics are not represented.
+Commitment consumption is recorded in its currency. These checks do not verify
+that the provider's reported capacity, prior usage, or basis is authentic.
 
 - Exact decimal strings and scaled-integer arithmetic; no floating-point money.
 - Explicit unit identities/conversions; GB and GiB are never treated as aliases.
@@ -268,11 +324,157 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-`corpus/golden-replay-baseline.json` pins a complete quote output. The replay
-test parses its scenario through protobuf JSON, rerates it, and compares the
-stable JSON result, including the deterministic quote hash. The quote-boundary
+The replay corpus pins complete v1 through v8 quote outputs. The replay test parses
+each scenario through protobuf JSON, rerates it with the recorded version, and
+compares the stable JSON result, including the quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
 claimed.
+
+## Credit-order verification
+
+The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
+checks source admission and the equal-priority credit flow against real code,
+bounded TLA+ models, and abstract balance proofs. The credit model explores 72 states and hides eighteen
+same-state transitions; a separate counterexample shows that legacy v1 quotes
+can differ by locale.
+
+```mermaid
+stateDiagram-v2
+  s0: Same credit state
+  s1: One host rated
+  s2: Legacy quotes may differ
+  s3: New quotes agree
+  [*] --> s0
+  s0 --> s1: rate on Swedish host or rate on English host
+  s1 --> s2: rate on English host or rate on Swedish host
+  s1 --> s3: rate on English host or rate on Swedish host
+```
+
+The source-admission projection covers one abstract financial source. Its
+model explores 441 states and hides 192 same-state transitions; it assumes the
+source identity, tenant, and account classifications reflect the provider's
+actual records.
+
+```mermaid
+stateDiagram-v2
+  s0: Financial state received
+  s1: Sources accepted
+  s2: Quote rejected
+  s3: Source value applied
+  [*] --> s0
+  s0 --> s1: check tenant, identity and account
+  s0 --> s2: check tenant, identity and account
+  s1 --> s3: apply source once
+```
+
+The source-value model checks debit bounds, credit basis and commitment units
+over 2,004 states. This projection constrains inputs to 254 states and hides 96
+same-state transitions. The model treats remaining capacity after prior use as
+an input and assumes the source amounts and unit conversions are correct.
+
+```mermaid
+stateDiagram-v2
+  s0: Financial source received
+  s1: Source and charge accepted
+  s2: Quote rejected
+  s3: Source debited
+  [*] --> s0
+  s0 --> s1: check amount and basis
+  s0 --> s2: check amount and basis
+  s1 --> s3: debit or reject
+  s1 --> s2: debit or reject
+```
+
+## UTC verification
+
+The [pricing time skill](../../.agents/skills/verify-pricing-time/SKILL.md)
+checks UTC validity, evidence coverage and time ordering. Its model explores
+256 states and hides 64 same-state transitions. `parseUtc` returns milliseconds;
+use `compareUtcExact` when fractional ordering matters.
+
+```mermaid
+stateDiagram-v2
+  s0: Inputs loaded
+  s1: Expiry ordered
+  s2: Evidence checked
+  s3: Exact checks complete
+  s4: Legacy checks complete
+  [*] --> s0
+  s0 --> s1: order credit expiry
+  s0 --> s2: check evidence interval
+  s1 --> s3: check evidence interval
+  s1 --> s4: check evidence interval
+  s2 --> s3: order credit expiry
+  s2 --> s4: order credit expiry
+```
+
+The latest-measurement model checks both input orders for two abstract
+observations across 64 states and hides 32 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Measurements received
+  s1: Latest value selected
+  s2: Ambiguous latest rejected
+  [*] --> s0
+  s0 --> s1: compare latest instants and values
+  s0 --> s2: compare latest instants and values
+```
+
+## Workload selector verification
+
+The [pricing selector skill](../../.agents/skills/verify-pricing-selectors/SKILL.md)
+checks per-workload selection, grouped rating and meter binding. Its selector
+model checks 608 states; this constrained projection checks 152 and hides 64
+same-state transitions. A separate binding model checks 64 states.
+
+```mermaid
+stateDiagram-v2
+  s0: Workloads received
+  s1: Quote rejected
+  s2: Matching charges selected
+  s3: Groups rated
+  [*] --> s0
+  s0 --> s1: select per workload
+  s0 --> s2: select per workload
+  s2 --> s3: rate each group
+```
+
+The tier coverage model checks 192 states for two abstract ranges and hides 72
+same-state transitions. It assumes an unbounded final tier; implementation
+tests also cover finite endpoints and inferred intermediate ends.
+
+```mermaid
+stateDiagram-v2
+  s0: Tier schedule received
+  s1: Invalid tiers rejected
+  s2: Contiguous tiers accepted
+  s3: Usage rated once
+  [*] --> s0
+  s0 --> s2: check tier boundaries
+  s0 --> s1: check tier boundaries
+  s2 --> s3: rate covered usage
+```
+
+## Financial completeness verification
+
+The [pricing eligibility skill](../../.agents/skills/verify-pricing-eligibility/SKILL.md)
+checks the quote and dispatcher gates. Its model explores 62 states and hides
+24 same-state transitions; it assumes the reported completeness is truthful.
+
+```mermaid
+stateDiagram-v2
+  s0: Financial state received
+  s1: Quote produced
+  s2: Quote rejected
+  s3: Candidate not selected
+  s4: Candidate selected
+  [*] --> s0
+  s0 --> s1: check completeness and quote
+  s0 --> s2: check completeness and quote
+  s1 --> s4: check eligibility
+  s1 --> s3: check eligibility
+```
 
 ## Architecture boundaries
 

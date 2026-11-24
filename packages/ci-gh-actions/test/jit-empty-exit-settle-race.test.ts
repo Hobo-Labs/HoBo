@@ -15,7 +15,10 @@ import {
 	jitEmptyExitKey,
 	jitEmptyExitLaunchBlocked,
 } from "../src/jit-empty-exit-backoff.js";
-import { jitRunnerDeregisterGithub } from "./github-deregister-mock.js";
+import {
+	jitRunnerDeregisterGithub,
+	jitRunnerGithubWithoutAssignments,
+} from "./github-deregister-mock.js";
 
 function deniedGithub(): GithubTransport {
 	return jitRunnerDeregisterGithub();
@@ -204,7 +207,7 @@ describe("jit empty exit settle race", () => {
 		const log = vi.fn();
 		const controller = createIsolatedContainerController({
 			store,
-			github: deniedGithub(),
+			github: jitRunnerGithubWithoutAssignments(),
 			publicOrigin: "https://ci.example.test",
 			docker,
 			workerAccountId: "worker-a",

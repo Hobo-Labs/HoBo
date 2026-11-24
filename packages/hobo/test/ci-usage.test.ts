@@ -1,4 +1,5 @@
 import { tmpdir } from "node:os";
+import type { CredentialResolver } from "@hobo/cd";
 import type { MinutesUsage } from "@hobo/ci";
 import {
 	InMemoryInsightStore,
@@ -8,8 +9,7 @@ import { createHoboCli } from "@hobo/cli";
 import { describe, expect, it } from "vitest";
 import { createCiCommand } from "../src/ci-command.js";
 import { CI_COMMANDS } from "../src/ci-commands.js";
-import type { CiRunExec } from "../src/ci-runs.js";
-import { createCiUsageCommand, GITHUB_STANDARD_RATE } from "../src/ci-usage.js";
+import { CI_USAGE_COMMAND, GITHUB_STANDARD_RATE } from "../src/ci-usage.js";
 import {
 	fakeGithub,
 	HISTORY_REPOSITORY,
@@ -22,6 +22,13 @@ import {
 	fakeOwnerCredentials,
 	fakeReadApiFetch,
 } from "./support/ci-read-api-fake.js";
+import {
+	FAKE_INSTALLATION_TOKEN,
+	installationCredentials,
+	refusingCredentials,
+	routeGithub,
+	withInstallation,
+} from "./support/github-app-fake.js";
 
 const NOW = 1_763_337_600_000;
 const RELAY_ENV = { HOBO_CI_RELAY_URL: FAKE_RELAY_ORIGIN };
@@ -46,24 +53,28 @@ async function run(
 	options: Readonly<{
 		api?: FakeReadApi;
 		env?: NodeJS.ProcessEnv;
-		execFile?: CiRunExec;
-		fetch?: typeof fetch;
+		github?: typeof fetch;
+		installation?: CredentialResolver;
 	}> = {},
 ) {
 	const api = options.api ?? (await readApi());
+	const relay = fakeReadApiFetch(api);
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
 				env: options.env ?? RELAY_ENV,
-				ownerCredentials: fakeOwnerCredentials(),
-				now: () => NOW,
-				fetch: options.fetch ?? fakeReadApiFetch(api),
-				git: async () => tmpdir(),
-				commands: [
-					createCiUsageCommand(
-						options.execFile ? { execFile: options.execFile } : {},
+				ownerCredentials: (cwd) =>
+					withInstallation(
+						fakeOwnerCredentials()(cwd),
+						options.installation ?? installationCredentials(),
 					),
-				],
+				now: () => NOW,
+				fetch:
+					options.github === undefined
+						? relay
+						: routeGithub(options.github, relay),
+				git: async () => tmpdir(),
+				commands: [CI_USAGE_COMMAND],
 			}),
 		},
 	});
@@ -142,7 +153,7 @@ describe("hobo ci usage", () => {
 		const github = fakeGithub(twoWeeksOfRuns(NOW));
 		const fromGithub = await runJson(
 			["--source", "github", "--repo", HISTORY_REPOSITORY],
-			{ env: {}, execFile: github.execFile },
+			{ env: {}, github: github.fetch },
 		);
 		expect(fromGithub.exitCode).toBe(0);
 		expect(fromGithub.envelope.data.source).toBe("github");
@@ -150,50 +161,47 @@ describe("hobo ci usage", () => {
 		expect(fromGithub.envelope.data.report).toEqual(
 			fromRelay.envelope.data.report,
 		);
-		expect(github.asked).toContain(
-			"gh api repos/octo/app/actions/runs/1005/attempts/1/jobs?per_page=100",
+		expect(github.paths()).toContain(
+			"repos/octo/app/actions/runs/1005/attempts/1/jobs?per_page=100",
 		);
+		expect(fromGithub.stdout).not.toContain(FAKE_INSTALLATION_TOKEN);
 	});
 
-	it("reads the included minutes from GitHub's billing API with the CLI's token", async () => {
+	it("reads the included minutes from GitHub's billing API with the App installation token", async () => {
+		const installation = installationCredentials();
 		const github = fakeGithub(twoWeeksOfRuns(NOW), {
 			private: true,
-			token: "gho_test",
+			also: (request) => {
+				if (request.path === "orgs/octo")
+					return Response.json({ plan: { name: "team" } });
+				if (
+					request.path.startsWith("organizations/octo/settings/billing/usage")
+				)
+					return Response.json({
+						usageItems: [
+							{
+								date: "2025-11-01T00:00:00Z",
+								product: "actions",
+								sku: "Actions Linux",
+								quantity: 600,
+								unitType: "Minutes",
+								pricePerUnit: 0.006,
+								grossAmount: 3.6,
+								discountAmount: 0,
+								netAmount: 3.6,
+								repositoryName: "octo/app",
+							},
+						],
+					});
+				return undefined;
+			},
 		});
-		const billing: typeof fetch = async (input, init) => {
-			const request = new Request(input, init);
-			expect(request.headers.get("authorization")).toBe("Bearer gho_test");
-			const url = new URL(request.url);
-			if (url.pathname === "/orgs/octo")
-				return Response.json({ plan: { name: "team" } });
-			if (url.pathname === "/organizations/octo/settings/billing/usage")
-				return Response.json({
-					usageItems: [
-						{
-							date: "2025-11-01T00:00:00Z",
-							product: "actions",
-							sku: "Actions Linux",
-							quantity: 600,
-							unitType: "Minutes",
-							pricePerUnit: 0.006,
-							grossAmount: 3.6,
-							discountAmount: 0,
-							netAmount: 3.6,
-							repositoryName: "octo/app",
-						},
-					],
-				});
-			return new Response("{}", { status: 404 });
-		};
 		const result = await runJson(
 			["--source", "github", "--repo", HISTORY_REPOSITORY],
-			{
-				env: {},
-				execFile: github.execFile,
-				fetch: billing,
-			},
+			{ env: {}, github: github.fetch, installation },
 		);
 		expect(result.exitCode).toBe(0);
+		expect(installation.asked).toEqual(["github-app://octo/app"]);
 		expect(result.envelope.data.report.included.includedMinutes).toBe(3000);
 		expect(result.envelope.data.report.included.usedMinutes).toBe(600);
 	});
@@ -202,28 +210,27 @@ describe("hobo ci usage", () => {
 		const github = fakeGithub(twoWeeksOfRuns(NOW), { private: false });
 		const result = await runJson(
 			["--source", "github", "--repo", HISTORY_REPOSITORY],
-			{
-				env: {},
-				execFile: github.execFile,
-			},
+			{ env: {}, github: github.fetch },
 		);
 		expect(result.envelope.data.report.keptMinutes).toBeGreaterThan(0);
 		expect(result.envelope.data.report.keptUsd).toBe(0);
 	});
 
-	it("explains a GitHub CLI that is missing or refused", async () => {
-		const missing: CiRunExec = async () => {
-			const { CiProcessError } = await import("../src/ci-runs.js");
-			throw new CiProcessError("missing", "gh");
-		};
+	it("refuses to read GitHub without HoBo's GitHub App installation token", async () => {
+		const github = fakeGithub(twoWeeksOfRuns(NOW));
 		const result = await runJson(
 			["--source", "github", "--repo", HISTORY_REPOSITORY],
-			{
-				env: {},
-				execFile: missing,
-			},
+			{ env: {}, github: github.fetch, installation: refusingCredentials },
 		);
-		expect(result.envelope.code).toBe("HOBO_CI_TOOL_REQUIRED");
+		expect(result.exitCode).not.toBe(0);
+		expect(result.envelope.code).toBe("HOBO_CI_GITHUB_APP_NEEDED");
+		expect(result.envelope.remediation.join(" ")).toContain(
+			"choose_secret_store",
+		);
+		expect(result.envelope.remediation.join(" ")).toContain(
+			"hobo ci app create",
+		);
+		expect(github.requests).toEqual([]);
 	});
 
 	it("needs a relay unless it reads GitHub, and rejects options it does not take", async () => {
