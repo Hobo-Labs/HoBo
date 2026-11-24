@@ -22,6 +22,8 @@ detached `HEAD` with `GITHUB_HEAD_REF` and `GITHUB_BASE_REF` unset on
 `pull_request` as on `merge_group`, and a local signoff runs them the same way
 at the detached merge commit, so a test that depends on the pull request's
 branch name fails before the merge queue rather than only inside it.
+`scripts/test/scripts-tests-job.test.ts` pins the scripts lane's
+`env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF` command.
 
 ## Selection contract
 
