@@ -241,7 +241,7 @@ describe("the delivery module for the runner fleet", () => {
 				selection: "SELECTION_STRATEGY_LEXICAL",
 				allowPattern: RUNNER_IMAGE_RELEASE_TAG_PATTERN,
 				artifactKind: "ARTIFACT_KIND_OCI_IMAGE",
-				credentialRef: "env://HOBO_CI_GHCR_READ_TOKEN",
+				credentialRef: "owner://HOBO_CI_GHCR_READ_TOKEN",
 			}),
 		]);
 		expect(

@@ -39,7 +39,7 @@ import {
 } from "../_generated/cd_pb.js";
 import type { CdContext, RealizeInput, Realizer } from "../ports.js";
 import { keepOf } from "../reconcile/departure.js";
-import { messageOf, reason } from "../reconcile/errors.js";
+import { reason } from "../reconcile/errors.js";
 import { stableJson } from "../reconcile/json.js";
 
 // public-contract: private ledger stream and event of the orchestrator realizer.
@@ -296,8 +296,12 @@ export function createOrchestratorRealizer(
 			});
 			if (verdict.state === "attested") return undefined;
 			return reason("attestation-refused", verdict.reason, input.campId);
-		} catch (error) {
-			return reason("attestation-refused", messageOf(error), input.campId);
+		} catch {
+			return reason(
+				"attestation-refused",
+				"The apply worker could not be attested.",
+				input.campId,
+			);
 		}
 	}
 
@@ -482,7 +486,7 @@ export function createOrchestratorRealizer(
 							[
 								reason(
 									"realize-failed",
-									`destroy ${name}: ${destroyed.reason ?? "failed"}`,
+									"The resource could not be destroyed.",
 									name,
 								),
 							],
@@ -490,10 +494,16 @@ export function createOrchestratorRealizer(
 						);
 					next.delete(name);
 				}
-			} catch (error) {
+			} catch {
 				return blocked(
 					input,
-					[reason("realize-failed", messageOf(error), input.campId)],
+					[
+						reason(
+							"realize-failed",
+							"The orchestrator could not complete the operation.",
+							input.campId,
+						),
+					],
 					ledger.setId,
 				);
 			}

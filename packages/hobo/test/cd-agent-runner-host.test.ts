@@ -68,7 +68,7 @@ const BROKEN = imageAt("3");
 const CONFIG = {
 	hostId: "box",
 	hostKind: "box-worker",
-	credentialRef: "env://HOBO_CI_GHCR_READ_TOKEN",
+	credentialRef: "owner://HOBO_CI_GHCR_READ_TOKEN",
 };
 const ctx: CdContext = {
 	tenant: "local",
@@ -189,9 +189,22 @@ describe("runner-host agent config", () => {
 		});
 		expect(parsed.ok).toBe(false);
 		const message = parsed.ok ? "" : (parsed.reasons[0]?.message ?? "");
-		expect(message).toContain("credentialRef must be a credential locator");
+		expect(message).toContain(
+			"credentialRef must name an entry in the owner's secret store as owner://NAME",
+		);
 		expect(message).toContain("unknown field extra");
 		expect(message).not.toContain("ghp_notalocator");
+	});
+
+	it("refuses a credential locator that names the process environment or another store", () => {
+		for (const credentialRef of [
+			"op://vault/item/token",
+			"github-job://GITHUB_TOKEN",
+			"secret://camp/token",
+		]) {
+			const parsed = parseRunnerHostAgentConfig({ ...CONFIG, credentialRef });
+			expect(parsed.ok).toBe(false);
+		}
 	});
 });
 

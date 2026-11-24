@@ -39,7 +39,7 @@ import {
 	type ReconcilerRecord,
 	ReconcilerRecordSchema,
 } from "../_generated/cd_pb.js";
-import { messageOf } from "../agent/errors.js";
+import { AGENT_FAILURES, reasonOf } from "../agent/errors.js";
 import { createMeter } from "../agent/metrics.js";
 import {
 	CD_DEFAULTS,
@@ -65,7 +65,7 @@ import type {
 	TopologyReader,
 } from "../ports.js";
 import { asCamp } from "../rollout/journal.js";
-import { feedRefusal, statusFor } from "./errors.js";
+import { FEED_FAILURES, feedRefusal, statusFor } from "./errors.js";
 import { buildFrame, frameJson, verifiedBlob } from "./frames.js";
 import { createFeedJournal } from "./journal.js";
 import { headerOf, isNumber, texts } from "./json.js";
@@ -105,10 +105,36 @@ export type DeliveryFeedDeps = CdBase & {
 	readonly maxFramesPerResponse?: number;
 };
 
+const FEED_CLEANUP_TIMEOUT_MS = 5_000;
+
 type ChangesQuery = Parameters<DesiredStateReader["changes"]>[0];
 
 const DEFAULT_MAX_FRAMES = 64;
 const encoder = new TextEncoder();
+const SAFE_FAILURES = new Map([
+	...Object.entries(AGENT_FAILURES),
+	...Object.entries(FEED_FAILURES),
+]);
+const FEED_ROUTE_LABELS: ReadonlyMap<string, string> = new Map([
+	[FEED_ROUTES.enrollments, "enrollments"],
+	[FEED_ROUTES.svidRefresh, "svid"],
+	[FEED_ROUTES.leases, "leases"],
+	[FEED_ROUTES.leaseRenew, "leases"],
+	[FEED_ROUTES.leaseRelease, "leases"],
+	[FEED_ROUTES.observations, "observations"],
+	[FEED_ROUTES.checkpoints, "checkpoints"],
+	[FEED_ROUTES.feed, "feed"],
+]);
+
+function feedRouteLabel(path: string): string {
+	try {
+		const pathname = new URL(path, "https://station.invalid").pathname;
+		if (pathname.startsWith(FEED_ROUTES.blobs)) return "blobs";
+		return FEED_ROUTE_LABELS.get(pathname) ?? "unknown";
+	} catch {
+		return "unknown";
+	}
+}
 
 function respond(
 	status: number,
@@ -123,7 +149,29 @@ function respond(
 }
 
 function refuse(reasons: readonly ReasonRecord[]): FeedResponse {
-	return respond(statusFor(reasons[0]?.code ?? ""), refusalBody(reasons));
+	const safe = reasons.map((entry) => {
+		const spec = SAFE_FAILURES.get(entry.code);
+		return spec
+			? reasonOf(
+					entry.code,
+					"The Station refused the request.",
+					spec.remediation,
+				)
+			: reasonOf(
+					"store-unavailable",
+					"The Station could not complete the request.",
+					FEED_FAILURES["store-unavailable"].remediation,
+				);
+	});
+	if (safe.length === 0)
+		safe.push(
+			reasonOf(
+				"store-unavailable",
+				"The Station could not complete the request.",
+				FEED_FAILURES["store-unavailable"].remediation,
+			),
+		);
+	return respond(statusFor(safe[0]?.code ?? ""), refusalBody(safe));
 }
 
 function recordJson(record: ReconcilerRecord): PbJsonValue {
@@ -159,8 +207,7 @@ export function createDeliveryFeedHandler(
 		)
 			return feedRefusal(
 				"camp-not-accepted",
-				`${record.reconcilerId} is not accepted for Camp ${campId}`,
-				campId,
+				"The reconciler is not accepted for the requested Camp.",
 			);
 		// SAFETY: membership in the accepted Camps was checked above.
 		return { ok: true, value: campId as CampId };
@@ -173,8 +220,7 @@ export function createDeliveryFeedHandler(
 		if (lease.reconcilerId !== record.reconcilerId)
 			return feedRefusal(
 				"lease-mismatch",
-				`lease belongs to ${lease.reconcilerId}`,
-				lease.campId,
+				"The lease belongs to a different reconciler.",
 			);
 		const camp = servesCamp(record, lease.campId);
 		return camp.ok ? { ok: true, value: true } : camp;
@@ -325,9 +371,9 @@ export function createDeliveryFeedHandler(
 				body.observation ?? null,
 				{ ignoreUnknownFields: false },
 			);
-		} catch (error) {
+		} catch {
 			return refuse(
-				feedRefusal("request-invalid", `observation: ${messageOf(error)}`)
+				feedRefusal("request-invalid", "The supplied observation is invalid.")
 					.reasons,
 			);
 		}
@@ -351,8 +397,7 @@ export function createDeliveryFeedHandler(
 					return refuse(
 						feedRefusal(
 							"attribute-undeclared",
-							`attribute ${key} of ${resource.resource} is not a declared observe field`,
-							resource.resource,
+							"An observed attribute is not a declared observe field.",
 						).reasons,
 					);
 				bytes +=
@@ -362,8 +407,7 @@ export function createDeliveryFeedHandler(
 				return refuse(
 					feedRefusal(
 						"attribute-oversize",
-						`${resource.resource} reports ${bytes} attribute bytes`,
-						resource.resource,
+						"Observed attributes exceed the per-resource limit.",
 					).reasons,
 				);
 		}
@@ -412,8 +456,7 @@ export function createDeliveryFeedHandler(
 			return refuse(
 				feedRefusal(
 					"blob-not-referenced",
-					`${digest} is not referenced by a Set of ${campId}`,
-					digest,
+					"The requested blob is not referenced by a Set of the Camp.",
 				).reasons,
 			);
 		const blob = await verifiedBlob(d.artifacts, digest);
@@ -421,16 +464,14 @@ export function createDeliveryFeedHandler(
 			return refuse(
 				feedRefusal(
 					"blob-missing",
-					`${digest} is not in the artifact store`,
-					digest,
+					"The requested blob is unavailable in the artifact store.",
 				).reasons,
 			);
 		if (blob === "corrupt")
 			return refuse(
 				feedRefusal(
 					"blob-corrupt",
-					`${digest} does not match its bytes`,
-					digest,
+					"The requested blob does not match its digest.",
 				).reasons,
 			);
 		return {
@@ -492,15 +533,23 @@ export function createDeliveryFeedHandler(
 		reconcilerId: string;
 	}): AsyncIterable<Uint8Array> {
 		const controller = new AbortController();
-		const onAbort = () => controller.abort();
+		let notifyCancelled = () => {};
+		const cancelled = new Promise<"cancelled">((resolve) => {
+			notifyCancelled = () => resolve("cancelled");
+		});
+		const onAbort = () => {
+			controller.abort();
+			notifyCancelled();
+		};
 		input.signal.addEventListener("abort", onAbort, { once: true });
+		if (input.signal.aborted) onAbort();
 		const deadline = performance.now() + longPollMs;
 		const base = { campIds: [input.campId], signal: controller.signal };
 		const query: ChangesQuery =
 			input.redeliver || input.after === undefined
 				? base
 				: { ...base, after: input.after };
-		const iterator = d.desired.changes(query)[Symbol.asyncIterator]();
+		let iterator: AsyncIterator<DesiredStateChange> | undefined;
 		let frames = 0;
 		let current: DesiredStateChange | undefined;
 		let end: FeedEndReason = "long-poll";
@@ -511,21 +560,48 @@ export function createDeliveryFeedHandler(
 			posture: d.posture,
 			topology: d.topology,
 		};
-		async function frame(change: DesiredStateChange): Promise<Uint8Array> {
-			const built = await buildFrame(change, input.campId, sources);
+		async function frame(
+			change: DesiredStateChange,
+		): Promise<Uint8Array | undefined> {
+			const built = await Promise.race([
+				buildFrame(change, input.campId, sources),
+				cancelled,
+			]);
+			if (built === "cancelled" || input.signal.aborted) return undefined;
 			frames += 1;
 			meter("hobo.cd.feed.frames", 1, { inline: built.resolvedSetJson !== "" });
 			return encoder.encode(encodeFrame(built.position, frameJson(built)));
 		}
+		async function closeIterator(): Promise<void> {
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			try {
+				await Promise.race([
+					iterator?.return?.(),
+					new Promise<never>((_resolve, reject) => {
+						timer = setTimeout(
+							() => reject(new Error()),
+							FEED_CLEANUP_TIMEOUT_MS,
+						);
+					}),
+				]);
+			} catch {
+				throw new Error("The CD delivery feed stream failed.");
+			} finally {
+				clearTimeout(timer);
+			}
+		}
 		try {
+			if (input.signal.aborted) return;
+			iterator = d.desired.changes(query)[Symbol.asyncIterator]();
 			// Nothing newer than the checkpoint exists: re-deliver the current change once per lease.
 			const nothingNewer =
 				input.head === undefined ||
 				(input.after !== undefined && input.head <= input.after);
-			let pending = iterator.next();
+			let pending: Promise<IteratorResult<DesiredStateChange>> | undefined;
 			for (;;) {
 				const remaining = deadline - performance.now();
 				if (remaining <= 0 || input.signal.aborted) break;
+				pending ??= iterator.next();
 				let timer: ReturnType<typeof setTimeout> | undefined;
 				const tick = new Promise<"heartbeat">((resolve) => {
 					timer = setTimeout(
@@ -533,30 +609,43 @@ export function createDeliveryFeedHandler(
 						Math.min(heartbeatMs, remaining),
 					);
 				});
-				const next = await Promise.race([pending, tick]);
-				clearTimeout(timer);
+				let next:
+					| IteratorResult<DesiredStateChange>
+					| "heartbeat"
+					| "cancelled";
+				try {
+					next = await Promise.race([pending, tick, cancelled]);
+				} finally {
+					clearTimeout(timer);
+				}
+				if (next === "cancelled" || input.signal.aborted) break;
 				if (next === "heartbeat") {
 					yield encoder.encode(encodeHeartbeat());
 					continue;
 				}
+				pending = undefined;
 				if (next.done) {
-					if (input.redeliver && nothingNewer && current)
-						yield await frame(current);
+					if (input.redeliver && nothingNewer && current) {
+						const payload = await frame(current);
+						if (payload) yield payload;
+					}
 					end = "caught-up";
 					break;
 				}
 				const change = next.value;
-				pending = iterator.next();
 				if (input.after !== undefined && change.position <= input.after) {
 					current = change;
 					if (input.redeliver && nothingNewer && caughtUp(change.position)) {
-						yield await frame(change);
+						const payload = await frame(change);
+						if (payload) yield payload;
 						end = "caught-up";
 						break;
 					}
 					continue;
 				}
-				yield await frame(change);
+				const payload = await frame(change);
+				if (!payload) break;
+				yield payload;
 				if (
 					caughtUp(change.position) ||
 					input.head === undefined ||
@@ -570,13 +659,15 @@ export function createDeliveryFeedHandler(
 					break;
 				}
 			}
-			yield encoder.encode(encodeEnd(end));
+		} catch {
+			throw new Error("The CD delivery feed stream failed.");
 		} finally {
 			controller.abort();
 			input.signal.removeEventListener("abort", onAbort);
-			await iterator.return?.();
+			await closeIterator();
 			meter("hobo.cd.feed.responses", 1, { end, frames });
 		}
+		if (!input.signal.aborted) yield encoder.encode(encodeEnd(end));
 	}
 
 	// ── Dispatch ─────────────────────────────────────────────────────────
@@ -588,8 +679,10 @@ export function createDeliveryFeedHandler(
 		const path = url.pathname;
 		if (!path.startsWith("/v1/cd/"))
 			return refuse(
-				feedRefusal("route-unknown", `${path} is not a delivery-feed route`)
-					.reasons,
+				feedRefusal(
+					"route-unknown",
+					"The requested delivery-feed route is unknown.",
+				).reasons,
 			);
 		const method = request.method.toUpperCase();
 		const isPost = method === "POST";
@@ -606,13 +699,17 @@ export function createDeliveryFeedHandler(
 			path === FEED_ROUTES.feed || path.startsWith(FEED_ROUTES.blobs);
 		if (!knownPost.includes(path) && !knownGet)
 			return refuse(
-				feedRefusal("route-unknown", `${path} is not a delivery-feed route`)
-					.reasons,
+				feedRefusal(
+					"route-unknown",
+					"The requested delivery-feed route is unknown.",
+				).reasons,
 			);
 		if ((knownGet && method !== "GET") || (!knownGet && !isPost))
 			return refuse(
-				feedRefusal("method-not-allowed", `${method} ${path} is not allowed`)
-					.reasons,
+				feedRefusal(
+					"method-not-allowed",
+					"The method is not allowed for this delivery-feed route.",
+				).reasons,
 			);
 		let body: WireObject = {};
 		if (isPost) {
@@ -646,17 +743,18 @@ export function createDeliveryFeedHandler(
 			let response: FeedResponse;
 			try {
 				response = await route(request, signal);
-			} catch (error) {
+			} catch {
 				response = refuse(
-					feedRefusal("store-unavailable", messageOf(error)).reasons,
+					feedRefusal(
+						"store-unavailable",
+						"The CD delivery feed is unavailable.",
+					).reasons,
 				);
 			}
-			const routeName =
-				(new URL(request.path, "https://station.invalid").pathname
-					.slice("/v1/cd/".length)
-					.split("/")[0] ??
-					"") ||
-				"root";
+			let routeName = "unknown";
+			try {
+				routeName = feedRouteLabel(request.path);
+			} catch {}
 			meter("hobo.cd.feed.requests", 1, {
 				route: routeName,
 				status: response.status,

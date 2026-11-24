@@ -345,7 +345,7 @@ const invoice = billing.closePeriod({
 | DPoP | Not here: `@hobo/fleet/keys` is the one DPoP implementation (ES256 and EdDSA, RFC 9449) |
 | JWT-SVID | Not here: `@hobo/identity` `JwtSvidIssuer` and `verifyJwtWithJwks` are the one SVID implementation; elevated capabilities are minted and verified through them (no shared secret, no HS256) |
 | Overlay transport | `createOverlayTransport(overlay)`: the HoBo Fleet `overlay` `FleetTransport` (below) |
-| Tailscale MagicDNS | Control-plane **API** split DNS when `TS_API_KEY` set + local `--accept-dns` |
+| Tailscale MagicDNS | Control-plane **API** split DNS when the caller passes `apiKey` resolved from the owner's store (`owner://TS_API_KEY`; the environment is not read) + local `--accept-dns` |
 | Netbird | Management HTTP: enroll, peers, DNS nameserver groups |
 | Billing | Durable JSONL ledger + **Stripe PaymentIntent** REST provider |
 | Policy | OPA HTTP → `opa eval` → **rego-lite** JSON documents |

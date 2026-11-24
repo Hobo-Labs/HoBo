@@ -54,10 +54,7 @@ export function parsePublicJwkObject(json: JsonObject): Outcome<PublicJwk> {
 			value: Object.freeze({ kty: "OKP", crv: "Ed25519", x }),
 		};
 	}
-	return refuse(
-		"invalid-request",
-		`unsupported key type ${String(json.kty)}/${String(json.crv)}`,
-	);
+	return refuse("invalid-request", "The key type or curve is unsupported.");
 }
 
 function usable(jwk: PublicJwk): boolean {

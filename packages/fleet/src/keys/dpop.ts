@@ -107,10 +107,7 @@ export function verifyDpopClaims(
 	const jwk = parsePublicJwkObject(jwkJson);
 	if (!jwk.ok) return refuse("proof-invalid", jwk.error.message);
 	if (header.alg !== jwsAlgorithmOf(jwk.value))
-		return refuse(
-			"proof-invalid",
-			`alg ${String(header.alg)} does not fit the key`,
-		);
+		return refuse("proof-invalid", "The proof algorithm does not fit the key.");
 	if (!verifyCompactJws(decoded, jwk.value))
 		return refuse("proof-invalid", "the DPoP proof signature does not verify");
 	const { htm, htu, iat, jti, ath } = payload;
@@ -123,7 +120,10 @@ export function verifyDpopClaims(
 	)
 		return refuse("proof-invalid", "the proof lacks htm, htu, iat or jti");
 	if (htm !== expect.htm)
-		return refuse("proof-invalid", `htm ${htm} is not ${expect.htm}`);
+		return refuse(
+			"proof-invalid",
+			"The proof method does not match the request.",
+		);
 	const expectedPath = pathOf(expect.htu);
 	const proofPath = pathOf(htu);
 	const expectedHost = hostOf(expect.htu);
@@ -133,14 +133,14 @@ export function verifyDpopClaims(
 		/[?#]/u.test(htu) ||
 		(expectedHost !== undefined && hostOf(htu) !== expectedHost)
 	)
-		return refuse("proof-invalid", `htu ${htu} does not match ${expect.htu}`);
+		return refuse("proof-invalid", "The proof URL does not match the request.");
 	if (
 		!Number.isFinite(iat) ||
 		Math.abs(iat * 1000 - expect.nowMs) > DPOP_SKEW_MS
 	)
 		return refuse(
 			"proof-invalid",
-			`iat ${iat} is outside ±${DPOP_SKEW_MS} ms of the verifier clock`,
+			"The proof timestamp is outside the permitted clock skew.",
 		);
 	if (
 		expect.accessToken !== undefined &&

@@ -142,7 +142,7 @@ function fleetRefusal(
 ): Refusal {
 	return agentRefusal(
 		FLEET_CODES.get(failure.code) ?? fallback,
-		`fleet ${failure.code}: ${failure.message}`,
+		`The fleet authority refused the request (${failure.code}).`,
 		subject,
 	);
 }
@@ -763,12 +763,17 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		if (!dpop) return agentRefusal("dpop-required", "send a DPoP proof header");
 		const fleet = fleetOrRefuse();
 		if (!fleet.ok) return fleet;
-		const caller = await fleet.value.authenticate({
-			method: request.method,
-			url: feedUrl(request),
-			authorization,
-			dpop,
-		});
+		let caller: Awaited<ReturnType<DeliveryFleet["authenticate"]>>;
+		try {
+			caller = await fleet.value.authenticate({
+				method: request.method,
+				url: feedUrl(request),
+				authorization,
+				dpop,
+			});
+		} catch {
+			return agentRefusal("svid-invalid", "The SVID could not be verified.");
+		}
 		if (!caller.ok) return fleetRefusal("svid-invalid", caller.error);
 		if (caller.value.kind !== "member")
 			return agentRefusal(

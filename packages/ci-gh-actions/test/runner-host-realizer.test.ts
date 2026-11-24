@@ -52,7 +52,7 @@ const recordedAdvert = {
 	},
 	sinceMs: Number(recordedSelf.sinceMs),
 };
-const CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";
+const CREDENTIAL_REF = "owner://HOBO_CI_GHCR_READ_TOKEN";
 const transport: HttpTransport = async () => {
 	throw new Error("the runner-host realizer makes no HTTP call");
 };

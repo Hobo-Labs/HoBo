@@ -15,7 +15,12 @@ import {
 	CD_STREAMS,
 	ENROLLMENT_INCOMPLETE,
 } from "../../src/events.js";
-import type { FeedRequest, Outcome, ReconcilerId } from "../../src/ports.js";
+import type {
+	DeliveryFleet,
+	FeedRequest,
+	Outcome,
+	ReconcilerId,
+} from "../../src/ports.js";
 import {
 	asCamp,
 	createClock,
@@ -48,6 +53,7 @@ async function setup(
 	rail = railWith(),
 	deny: Parameters<typeof createFakeAuthorizer>[0] = [],
 	withFleet = true,
+	authenticate?: DeliveryFleet["authenticate"],
 ) {
 	const clock = createClock();
 	const store = createFakeStore(clock);
@@ -64,7 +70,11 @@ async function setup(
 			rails: createFakeRails(rail),
 			inventory,
 			telemetry,
-			fleet: withFleet ? fixture.fleet : undefined,
+			fleet: withFleet
+				? authenticate
+					? { ...fixture.fleet, authenticate }
+					: fixture.fleet
+				: undefined,
 			publicOrigin: "https://station.test",
 		});
 	return {
@@ -416,6 +426,21 @@ describe("double opt-in (I24)", () => {
 });
 
 describe("member SVIDs and DPoP through the fleet", () => {
+	it("redacts a fleet authority failure during SVID verification", async () => {
+		const s = await setup(railWith(), [], true, () => {
+			throw new Error("synthetic-private-provider.invalid");
+		});
+		const out = await s.enrollment.verify({
+			method: "GET",
+			path: "/v1/cd/feed",
+			headers: { authorization: "DPoP a.b.c", dpop: "fixture" },
+		});
+		expect(code(out)).toBe("svid-invalid");
+		expect(JSON.stringify(out)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
+	});
+
 	it("verify accepts the fleet's member SVID with a fresh proof and refuses a replay", async () => {
 		const s = await setup();
 		const a = await accepted(s);

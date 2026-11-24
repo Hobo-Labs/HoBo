@@ -299,7 +299,7 @@ export function createComposedHoboCli(
 		runtime,
 		...(options.ownerSession !== undefined
 			? {
-					fleetCredentials: options.ownerSession.credentials,
+					ownerCredentials: options.ownerSession.credentials,
 					ownerEntries: options.ownerSession.entries,
 				}
 			: undefined),

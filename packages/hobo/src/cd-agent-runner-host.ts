@@ -65,8 +65,7 @@ const HOST_KINDS: readonly RunnerHostKind[] = [
 	"fleet-device",
 	"developer-device",
 ];
-/** A credential locator (`env://NAME`, `op://…`), never a value. */
-const CREDENTIAL_LOCATOR = /^[a-z][a-z0-9+.-]*:\/\/[^\s]{1,256}$/u;
+const CREDENTIAL_LOCATOR = /^owner:\/\/[A-Za-z_][A-Za-z0-9_.-]{0,127}$/u;
 const DOCKER_BINARY = /^(?:docker|podman|\/[^\s\0]{1,255})$/u;
 const MAX_DRAIN_MS = 24 * 60 * 60_000;
 const ABSOLUTE_PATH = /^\/[^\0]{1,4095}$/u;
@@ -108,7 +107,7 @@ function refusal(code: string, message: string, remediation: string) {
 	};
 }
 
-const CONFIG_REMEDIATION = `Write the runner host's agent config as JSON {"hostId":"<device name in fleet hobo>","hostKind":"box-worker|fleet-device|developer-device","credentialRef":"env://<NAME>","docker":{"binary":"docker"},"worker":{"database":"/var/lib/hobo-ci/worker.sqlite"} or {"directory":"<local runner state directory>"},"controller":{"mode":"container"} or {"mode":"process","releases":"<absolute directory or https:// base URL>"},"drainDeadlineMs":7200000} and name it with ${CD_RUNNER_HOST_ENV} (packages/ci-gh-actions/deploy/runner-fleet/README.md).`;
+const CONFIG_REMEDIATION = `Write the runner host's agent config as JSON {"hostId":"<device name in fleet hobo>","hostKind":"box-worker|fleet-device|developer-device","credentialRef":"owner://<NAME>","docker":{"binary":"docker"},"worker":{"database":"/var/lib/hobo-ci/worker.sqlite"} or {"directory":"<local runner state directory>"},"controller":{"mode":"container"} or {"mode":"process","releases":"<absolute directory or https:// base URL>"},"drainDeadlineMs":7200000} and name it with ${CD_RUNNER_HOST_ENV} (packages/ci-gh-actions/deploy/runner-fleet/README.md).`;
 
 /** Parse the agent config once; every problem is listed, nothing partial is returned. */
 export function parseRunnerHostAgentConfig(
@@ -153,7 +152,7 @@ export function parseRunnerHostAgentConfig(
 		);
 	if (!isJsonString(credentialRef) || !CREDENTIAL_LOCATOR.test(credentialRef))
 		problems.push(
-			"credentialRef must be a credential locator such as env://NAME, never a secret value",
+			"credentialRef must name an entry in the owner's secret store as owner://NAME, never a secret value",
 		);
 	let binary: string | undefined;
 	if (docker !== undefined) {

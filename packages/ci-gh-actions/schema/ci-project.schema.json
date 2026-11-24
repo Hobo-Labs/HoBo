@@ -432,7 +432,7 @@
         },
         "secretRef": {
           "type": "string",
-          "pattern": "^(?:github-secret|env):[A-Z][A-Z0-9_]{0,63}$"
+          "pattern": "^owner:\\/\\/[A-Z][A-Z0-9_]{0,63}$"
         },
         "projectId": {
           "type": "string",

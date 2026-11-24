@@ -15,10 +15,13 @@ import {
 	type FreightId,
 	FreightManifestRecordSchema,
 	FreightRecordSchema,
+	ReasonRecordSchema,
+	ReconcileObservationRecordSchema,
 	ReconcileStatus,
 	SetRecordSchema,
 } from "@hobo/cd";
-import type { TransportRequest } from "@hobo/core";
+import { sanitizeObservation } from "@hobo/cd/reconcile";
+import { RESOLVER_ERROR_CODES, type TransportRequest } from "@hobo/core";
 import { isLatin1Transport } from "@hobo/provider-oci-registry";
 import { describe, expect, it } from "vitest";
 import {
@@ -26,6 +29,7 @@ import {
 	createCatalogResolverRealizer,
 } from "../src/cd-runtime.js";
 import {
+	CATALOG_REALIZER_REFUSAL_CODES,
 	catalogCampBinding,
 	catalogRealizedProvider,
 	gitBlobDedupeTransport,
@@ -36,6 +40,34 @@ const DIGEST = `sha256:${"c".repeat(64)}`;
 // SAFETY: a CampId is a branded topology id; this literal is a declared Camp id.
 const CAMP_ID = "hobo-release/oci-candidate" as CampId;
 const noArtifacts = { get: async () => undefined };
+
+it.each([
+	...CATALOG_REALIZER_REFUSAL_CODES,
+	...RESOLVER_ERROR_CODES,
+])("retains the catalog or resolver contract code %s without private details", (code) => {
+	const privateDetail = "synthetic-private-resolver.invalid";
+	const observation = sanitizeObservation({
+		observation: create(ReconcileObservationRecordSchema, {
+			status: ReconcileStatus.BLOCKED,
+			reasons: [
+				create(ReasonRecordSchema, {
+					code,
+					message: privateDetail,
+					remediation: privateDetail,
+					subject: privateDetail,
+				}),
+			],
+		}),
+		campId: CAMP_ID,
+		reconcilerId: "contract-test",
+		fence: 1n,
+		nowMs: 0,
+		observeFields: [],
+		management: CampManagement.MANAGED,
+	});
+	expect(observation.reasons[0]?.code).toBe(code);
+	expect(JSON.stringify(observation)).not.toContain(privateDetail);
+});
 
 function camp(provider: string, labels: Record<string, string>) {
 	return {

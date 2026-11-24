@@ -447,6 +447,32 @@ describe("createCdTelemetry collect/export/health", () => {
 			]),
 		);
 	});
+
+	it("redacts synchronous exporter and journal failures from health", async () => {
+		const marker = "synthetic-private-provider.invalid";
+		const store = new MemoryEventStore();
+		const sink: TelemetrySink = {
+			spans: async () => undefined,
+			metrics: () => {
+				throw new Error(marker);
+			},
+		};
+		const telemetry = createCdTelemetry({
+			store,
+			tenant: TENANT,
+			now: () => T0,
+			sink,
+		});
+		await expect(telemetry.export(context(() => T0))).resolves.toBeGreaterThan(
+			0,
+		);
+		expect(JSON.stringify(telemetry.health())).not.toContain(marker);
+		store.readAll = () => {
+			throw new Error(marker);
+		};
+		await expect(telemetry.export(context(() => T0))).resolves.toBe(0);
+		expect(JSON.stringify(telemetry.health())).not.toContain(marker);
+	});
 });
 
 describe("alert rules and SLOs", () => {

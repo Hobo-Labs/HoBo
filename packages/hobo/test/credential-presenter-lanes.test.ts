@@ -286,6 +286,17 @@ describe("agent lane", () => {
 		expect(verified.claims.sub).toBe(credential?.metadata?.spiffeId);
 	});
 
+	it("reads no HMAC secret from the environment", async () => {
+		const credential = await present(home(), {
+			HOBO_AGENT_ID: "agent:ci",
+			HOBO_SVID_HMAC_SECRET: "synthetic-env-hmac-secret",
+		});
+		expect(credential?.scheme).toBe("dpop-bound");
+		expect(JSON.stringify(credential)).not.toContain(
+			"synthetic-env-hmac-secret",
+		);
+	});
+
 	it("mints under the issuer HOBO_SVID_ISSUER names", async () => {
 		const credential = await present(home(), {
 			HOBO_AGENT_ID: "agent:ci",

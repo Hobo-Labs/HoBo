@@ -62,7 +62,7 @@ const pact = parseJsonObject(
 	),
 );
 
-const CREDENTIAL_REF = "env://HOSTINGER_API_TOKEN";
+const CREDENTIAL_REF = "owner://HOSTINGER_API_TOKEN";
 /** A token-shaped account token. Never expected anywhere but one header. */
 const TOKEN = "fakehostingeraccounttoken0123456789abcd";
 /** A 40-character token-shaped string, as providers echo them in error text. */
@@ -659,7 +659,7 @@ describe("the MySQL resolver converges a database inside a hosting account", () 
 		expect(() => databaseRequest({ password: "hunter2" })).toThrow(
 			/credential/i,
 		);
-		expect(() => databaseRequest({ passwordRef: "env://SOMETHING" })).toThrow(
+		expect(() => databaseRequest({ passwordRef: "owner://SOMETHING" })).toThrow(
 			/credential/i,
 		);
 	});

@@ -31,7 +31,7 @@ export function createNetbirdOverlay(options?: {
 	function client(): NetbirdApiClient | null {
 		if (options?.api) return options.api;
 		if (!managementUrl) return null;
-		const accessToken = options?.accessToken ?? process.env.NETBIRD_TOKEN;
+		const accessToken = options?.accessToken;
 		return createNetbirdApiClient({
 			managementUrl,
 			...(accessToken !== undefined && accessToken.length > 0
@@ -181,7 +181,7 @@ export function createNetbirdOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"netbird DNS requires management URL + access token (NETBIRD_TOKEN)",
+					"netbird DNS requires management URL + accessToken from the owner's store (owner://NETBIRD_TOKEN)",
 				);
 			}
 			await options?.metering?.emit(

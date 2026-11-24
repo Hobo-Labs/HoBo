@@ -25,15 +25,9 @@ export async function verifyDpopWithReplay(
 			verified.value.iatSeconds * 1000 + DPOP_SKEW_MS,
 		);
 		if (!first)
-			return refuse(
-				"proof-replayed",
-				`DPoP jti ${verified.value.jti} was already used`,
-			);
-	} catch (error) {
-		return refuse(
-			"unavailable",
-			error instanceof Error ? error.message : "the replay store failed",
-		);
+			return refuse("proof-replayed", "The DPoP proof was already used.");
+	} catch {
+		return refuse("unavailable", "The replay-protection store is unavailable.");
 	}
 	return verified;
 }

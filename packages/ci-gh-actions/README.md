@@ -741,18 +741,14 @@ pnpm --filter @hobo/ci-gh-actions project inspect --environment integration
 Inspection prints the selected account, origin, budget and canonical policy
 SHA-256. Review the selected policy in a trusted source and record its digest
 outside the repository. Applying requires an explicit environment, a separately
-trusted origin and account, the reviewed policy digest, and an account token:
+trusted origin and account, the reviewed policy digest, and the account
+credential `owner://HOBO_CI_ACCOUNT_TOKEN`. The account credential lives only in
+the owner's secret store: the standalone `project apply` reads no token file or
+environment variable and refuses until HoBo, holding the owner store session
+from HoBo MCP's `choose_secret_store`, passes it the resolved credential as
+`runCiProjectCli(args, { accountToken })`.
 
-```sh
-pnpm --filter @hobo/ci-gh-actions project apply \
-  --environment local \
-  --trusted-origin http://127.0.0.1:8787 \
-  --trusted-account local-ci \
-  --trusted-policy-sha256 "$REVIEWED_POLICY_SHA256" \
-  --token-file /path/to/local-account-token
-```
-
-Use a different trusted tuple and token for integration. The target and digest
+Use a different trusted tuple and store entry for integration. The target and digest
 are checked before obtaining credentials; the relay account and revision are
 checked before writing. Do not automatically approve a digest calculated from
 an untrusted pull request, or apply its configuration with privileged credentials.
@@ -848,9 +844,11 @@ policy revision as an ETag; writes require `If-Match` and return `409` on confli
 ```ts
 import { createCiRelayClient } from '@hobo/ci-gh-actions/client';
 
+const credentials = ownerSession.credentials(projectDirectory);
 const ci = createCiRelayClient({
-  origin: process.env.HOBO_CI_PUBLIC_URL!,
-  accountToken: () => process.env.HOBO_CI_ACCOUNT_TOKEN!,
+  origin: 'https://ci.example.test',
+  accountToken: async () =>
+    (await credentials.resolve('owner://HOBO_CI_ACCOUNT_TOKEN', 'hobo-ci-account')).token,
 });
 const setup = await ci.prepareRepository({
   repository: 'example/private-repository',

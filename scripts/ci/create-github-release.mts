@@ -344,8 +344,16 @@ const ARTIFACT_KIND = {
  * Test seams (recorded fixtures, offline): the `HttpTransport` the realizers,
  * Freight verification and probes use; the CD clock; how a promotion is driven.
  */
+export type ReleaseCredentials = Readonly<{
+	resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>>;
+}>;
+
 export type ReleaseCdSeams = Readonly<{
 	http?: ReleaseHttpTransport;
+	credentials?: ReleaseCredentials;
 	now?: () => number;
 	drive?: { readonly passes: number; readonly intervalMs: number };
 }>;
@@ -360,11 +368,23 @@ type PagesBuildBody = {
 };
 type GitRefBody = { readonly object?: { readonly sha?: string } };
 
+async function releaseGithubToken(
+	credentials: ReleaseCredentials | undefined,
+	ref: string,
+): Promise<string | undefined> {
+	if (credentials === undefined) return undefined;
+	try {
+		const resolved = await credentials.resolve(ref, "release-probe");
+		return resolved.token?.trim() || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 export function githubApiProbeTransport(
-	env: Readonly<Record<string, string | undefined>>,
+	token: string | undefined,
 	inner: ReleaseHttpTransport,
 ): ReleaseHttpTransport {
-	const token = env.GITHUB_TOKEN?.trim();
 	return withLatin1MarkerWhenPresent(inner, async (request) => {
 		if (!request.url.startsWith("https://api.github.com/"))
 			return inner(request);
@@ -419,13 +439,6 @@ export function githubApiProbeTransport(
 	});
 }
 
-/**
- * Open the `hobo deploy` composition (SQLite journal and filesystem artifact
- * store under `home`) with `release/hobo-release.delivery.ts` as its topology,
- * the same file `hobo deploy --yard` loads. Credentials resolve through the
- * host's CredentialResolver (`env://NAME` locators the Camps declare), at call
- * time, for that call only.
- */
 export async function openReleaseCd(options: {
 	readonly home: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -450,17 +463,19 @@ export async function openReleaseCd(options: {
 		HOBO_HOME: options.home,
 		HOBO_USER: options.env.HOBO_USER || "hobo-release",
 	};
-	const seamHttp = options.seams?.http;
-	let baseHttp: ReleaseHttpTransport;
-	if (seamHttp) {
-		baseHttp = seamHttp;
-	} else {
-		const { createBoundedFetchTransport } = await import(
-			pathToFileURL(CORE_DIST).href
-		);
-		baseHttp = createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	}
-	const http = githubApiProbeTransport(options.env, baseHttp);
+	const core = await import(pathToFileURL(CORE_DIST).href);
+	const baseHttp: ReleaseHttpTransport =
+		options.seams?.http ??
+		core.createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
+	const http = githubApiProbeTransport(
+		await releaseGithubToken(
+			options.seams?.credentials,
+			core.githubAppInstallationRef(
+				options.env.GITHUB_REPOSITORY?.trim() || "Hobo-Labs/HoBo",
+			),
+		),
+		baseHttp,
+	);
 	const opened = await runtimeModule.openCdRuntime({
 		simulate: false,
 		cwd: repoRoot,
@@ -469,6 +484,9 @@ export async function openReleaseCd(options: {
 		topologyFiles: [RELEASE_DELIVERY_MODULE],
 		http,
 		...(options.seams?.now ? { now: options.seams.now } : undefined),
+		...(options.seams?.credentials
+			? { credentials: options.seams.credentials }
+			: undefined),
 	});
 	if (!opened.ok)
 		throw new Error(

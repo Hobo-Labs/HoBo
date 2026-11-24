@@ -46,10 +46,6 @@ export function createTailscaleOverlay(options?: {
 	readonly run?: TailscaleRunner;
 	/** Default MagicDNS domains for hierarchical overlay names. */
 	readonly defaultMagicDnsDomains?: readonly string[];
-	/**
-	 * Tailscale API key for control-plane MagicDNS split DNS.
-	 * Also read from env TS_API_KEY / HOBO_TS_API_KEY when unset.
-	 */
 	readonly apiKey?: string;
 	readonly tailnet?: string;
 	readonly apiBase?: string;
@@ -278,10 +274,7 @@ export function createTailscaleOverlay(options?: {
 			}
 
 			// 2) Control-plane API: push split DNS for hierarchical hobo zones.
-			const apiKey =
-				options?.apiKey ??
-				process.env.TS_API_KEY ??
-				process.env.HOBO_TS_API_KEY;
+			const apiKey = options?.apiKey;
 			if (apiKey) {
 				try {
 					const { createTailscaleApiClient } = await import(
@@ -312,7 +305,7 @@ export function createTailscaleOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"controlPlaneApplied=false: TS_API_KEY/HOBO_TS_API_KEY unset",
+					"controlPlaneApplied=false: owner://TS_API_KEY unset (no apiKey from the owner's store)",
 				);
 			}
 

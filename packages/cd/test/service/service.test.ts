@@ -71,6 +71,17 @@ const deadline = (ms: number) => AbortSignal.timeout(ms);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("createCdService — tick loop", () => {
+	it("keeps synchronous telemetry failures from stopping delivery ticks", async () => {
+		const { service, sink } = setup();
+		sink.metrics = () => {
+			throw new Error("synthetic-private-exporter.invalid");
+		};
+		const report = await service.tick();
+		expect(report.steps.every((step) => step.ok)).toBe(true);
+		expect(JSON.stringify(report)).not.toContain(
+			"synthetic-private-exporter.invalid",
+		);
+	});
 	it("ticks every module in a fixed order, including inventory, fan-out, failover and posture", async () => {
 		const { service, cd } = setup();
 		const report = await service.tick();

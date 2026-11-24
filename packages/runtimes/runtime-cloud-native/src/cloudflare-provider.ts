@@ -82,8 +82,8 @@ export interface CloudflareCloudNativeProviderOptions {
 function parseTokenVerifyPayload(payload: JsonValue): string {
 	const remediation =
 		`Re-check the token at ${CLOUDFLARE_TOKEN_VERIFY_URL} (dash.cloudflare.com → ` +
-		"My Profile → API Tokens) and supply an active token via " +
-		`${CLOUDFLARE_API_TOKEN_ENV}.`;
+		"My Profile → API Tokens) and keep an active token in the owner's store as " +
+		`owner://${CLOUDFLARE_API_TOKEN_ENV}.`;
 	if (!isJsonObject(payload) || payload === null) {
 		throw new CloudflareCloudNativeError(
 			"cloudflare token verify returned a malformed payload (not an object)",
@@ -253,7 +253,7 @@ export function createCloudflareCloudNativeProvider(
 			if (!response.ok) {
 				throw new CloudflareCloudNativeError(
 					`cloudflare token verify failed (HTTP ${response.status})`,
-					`Check that ${CLOUDFLARE_API_TOKEN_ENV} is a valid API token with ` +
+					`Check that owner://${CLOUDFLARE_API_TOKEN_ENV} is a valid API token with ` +
 						"Workers permissions (dash.cloudflare.com → My Profile → API Tokens).",
 				);
 			}

@@ -177,8 +177,6 @@ async function main() {
 			providerVersionBranch: values.branch,
 			publishVerificationResult: true,
 		};
-		if (process.env.PACT_BROKER_TOKEN)
-			options.pactBrokerToken = process.env.PACT_BROKER_TOKEN;
 		await verifyLocalRunnerPact(options, values.fault);
 		return;
 	}
@@ -192,7 +190,7 @@ async function main() {
 			"Pass --version with the reviewed source version (letters, digits, dot, underscore or hyphen)",
 		);
 	const version = parsedVersion.data;
-	const broker = pactBrokerClient(address, process.env.PACT_BROKER_TOKEN);
+	const broker = pactBrokerClient(address);
 	if (values.gate) {
 		const local = await broker.matrix(version, version);
 		process.stdout.write(`${JSON.stringify({ local })}\n`);

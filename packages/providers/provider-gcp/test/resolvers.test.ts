@@ -48,7 +48,7 @@ import {
 } from "../src/json.js";
 
 const PROJECT_ID = "hobo-demo";
-const CREDENTIAL_REF = "env://GOOGLE_OAUTH_ACCESS_TOKEN";
+const CREDENTIAL_REF = "owner://GOOGLE_OAUTH_ACCESS_TOKEN";
 /** A token-shaped access token. Never expected anywhere but one header. */
 const TOKEN = "ya29fakeaccesstokenvalue0123456789ABCDEF";
 /** A 40-character token-shaped string, as Google echoes them in error text. */

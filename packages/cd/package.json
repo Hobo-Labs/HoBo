@@ -59,6 +59,7 @@
     "sigstore": "5.0.1"
   },
   "devDependencies": {
+    "@hobo/conformance": "workspace:*",
     "@hobo/runtime-local": "workspace:*",
     "fast-check": "^4.3.0"
   }

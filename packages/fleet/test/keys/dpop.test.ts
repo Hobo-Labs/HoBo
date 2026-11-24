@@ -6,9 +6,10 @@ import {
 	generateDpopKey,
 	jwkThumbprint,
 	mintDpopProof,
+	parsePublicJwk,
 	verifyDpopProof,
 } from "../../src/keys/index.js";
-import { decodeCompactJws } from "../../src/keys/jose.js";
+import { decodeCompactJws, publicJwkJson } from "../../src/keys/jose.js";
 import { createMemoryReplayStore } from "../../src/keys/replay.js";
 import { generateSigningKey, memorySigner } from "../../src/keys/signers.js";
 import type { ReplayStore } from "../../src/ports.js";
@@ -213,6 +214,46 @@ describe.each([
 	});
 });
 
+describe("verifyDpopProof refusals", () => {
+	it("do not echo untrusted proof fields", async () => {
+		const marker = "synthetic-private-proof.invalid";
+		const { signer, publicJwk } = generateDpopKey();
+		const mint = (htm: string, htu: string) =>
+			mintDpopProof(signer, publicJwk, { htm, htu, nowMs: NOW });
+		const check = (proof: string) =>
+			verifyDpopProof({
+				proof,
+				htm: "POST",
+				htu: URL_,
+				nowMs: NOW,
+				replay: replay(),
+			});
+		const [, payload, signature] = (await mint("POST", URL_)).split(".");
+		const altered = Buffer.from(
+			JSON.stringify({
+				typ: "dpop+jwt",
+				alg: marker,
+				jwk: publicJwkJson(publicJwk),
+			}),
+		).toString("base64url");
+		const results = [
+			await check(await mint(marker, URL_)),
+			await check(await mint("POST", `https://${marker}/wrong`)),
+			await check(`${altered}.${payload}.${signature}`),
+			parsePublicJwk(JSON.stringify({ kty: marker, crv: marker, x: "AAAA" })),
+		];
+		expect(
+			results.map((result) => (result.ok ? "ok" : result.error.code)),
+		).toEqual([
+			"proof-invalid",
+			"proof-invalid",
+			"proof-invalid",
+			"invalid-request",
+		]);
+		expect(JSON.stringify(results)).not.toContain(marker);
+	});
+});
+
 describe("verifyDpopProof replay", () => {
 	it("claims each jti once per key, until the proof could no longer pass", async () => {
 		const calls: Array<readonly [string, string, number]> = [];
@@ -251,11 +292,14 @@ describe("verifyDpopProof replay", () => {
 			nowMs: NOW,
 			replay: {
 				firstUse: async () => {
-					throw new Error("store down");
+					throw new Error("synthetic-private-journal.invalid");
 				},
 			},
 		});
 		expect(result.ok ? undefined : result.error.code).toBe("unavailable");
+		expect(JSON.stringify(result)).not.toContain(
+			"synthetic-private-journal.invalid",
+		);
 	});
 
 	it("forgets a jti once it has expired", async () => {

@@ -44,7 +44,7 @@ import "list"
 // secretRef names a GitHub secret or env var; raw credential values never fit.
 #RunnerIntegrationAuth: {
  method: "github-app" | "oidc" | "device" | "secret-ref"
- secretRef?: string & =~"^(github-secret|env):[A-Z][A-Z0-9_]{0,63}$"
+ secretRef?: string & =~"^owner://[A-Z][A-Z0-9_]{0,63}$"
  projectId?: string & =~"^[a-z0-9]{6,32}$"
  if method == "secret-ref" {secretRef: string}
  if method == "oidc" {projectId: string}

@@ -28,8 +28,8 @@ new one a host at a time.
   `@hobo/cd/compose`). Adding a host is a topology change, not a pipeline change.
 - **Freight source** `hobo-ci-runner-image`: an `OCI_REPOSITORY` subscription on
   `ghcr.io/hobo-labs/hobo/hobo-ci-worker`, `LEXICAL` selection of tags matching
-  `^release-[0-9]{14}-v[0-9a-f]{12}$`, read with `env://HOBO_CI_GHCR_READ_TOKEN`
-  on the Station. [`push-ci-runner-image-ghcr.mts`](../../../../scripts/ci/push-ci-runner-image-ghcr.mts)
+  `^release-[0-9]{14}-v[0-9a-f]{12}$`, read with `owner://HOBO_CI_GHCR_READ_TOKEN`
+  from the owner store session on the Station. [`push-ci-runner-image-ghcr.mts`](../../../../scripts/ci/push-ci-runner-image-ghcr.mts)
   pushes one such tag (`release-<UTC yyyymmddHHMMSS>-<content key>`) the first
   time it publishes a version, so publish order is lexical order and one
   version is one Freight. The content key alone (`v<12 hex>`) has no order.
