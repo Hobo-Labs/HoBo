@@ -23,7 +23,10 @@ import {
 	bitwardenEndpoints,
 } from "./bitwarden-provision.js";
 import { storeLabel, storeSettings } from "./ceremony-settings.js";
-import type { provisionInfisicalAccess } from "./infisical-access.js";
+import {
+	DEFAULT_INFISICAL_ENVIRONMENT,
+	type provisionInfisicalAccess,
+} from "./infisical-access.js";
 import { OAUTH_SIGN_IN } from "./infisical-oauth.js";
 import type { provisionOnePasswordAccess } from "./onepassword-access.js";
 import type { OwnerChannel } from "./owner-channel.js";
@@ -148,7 +151,7 @@ export function storeChoiceGuidance(
 		configured.has(store) ? " (configured here: its sign-in is provided)" : "";
 	return [
 		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — run again with HOBO_SECRET_STORE set to the owner's choice (a non-secret setting), and the store's ids:`,
-		`infisical${note("infisical")}: its project ID (INFISICAL_PROJECT_ID). Once chosen, HoBo installs Infisical's CLI if it is missing, uses your existing Infisical sign-in or has you sign in once in your browser, and creates its own machine identity, access and project membership through Infisical's API.`,
+		`infisical${note("infisical")}: its project ID (INFISICAL_PROJECT_ID). Once chosen, HoBo installs Infisical's CLI if it is missing, uses your existing Infisical sign-in or has you sign in once in your browser, and creates its own machine identity, access and project membership through Infisical's API. A project that is not a Secrets Management project, or an environment the project lacks, gives way to one HoBo finds or creates.`,
 		`1password${note("1password")}: the vault ID (OP_VAULT_ID). Once chosen, HoBo installs the 1Password CLI if it is missing, uses your existing 1Password sign-in or your 1Password app's approval, and creates its own service account for that vault.`,
 		`bitwarden${note("bitwarden")}: nothing to look up. Once chosen, the run asks for your personal API key and one approval in a Bitwarden app, and sets up the rest itself. Optional: BITWARDEN_SERVER_URL for a self-hosted server.`,
 	];
@@ -505,7 +508,9 @@ export async function ownerStore(
 		infisicalFolder:
 			id === "infisical"
 				? {
-						environment: resolved.values.INFISICAL_ENVIRONMENT ?? "prod",
+						environment:
+							resolved.values.INFISICAL_ENVIRONMENT ??
+							DEFAULT_INFISICAL_ENVIRONMENT,
 						path: resolved.values.INFISICAL_SECRET_PATH ?? folder,
 					}
 				: undefined,
