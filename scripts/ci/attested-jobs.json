@@ -561,27 +561,9 @@
 					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
-					"name": "Build current sources for local attestation",
-					"if": "steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS != 'true'",
-					"run": "set -euo pipefail\nBASE=\"$(git rev-parse --verify HEAD^1 2>/dev/null || true)\"\nif [ -z \"$BASE\" ]; then\n  echo \"Scripts-test build base is empty\" >&2\n  exit 1\nfi\nnode --import tsx scripts/ci/scripts-test-imports.mts \\\n  > \"$RUNNER_TEMP/scripts-tests-import-filters\"\nmapfile -t IMPORTED < \"$RUNNER_TEMP/scripts-tests-import-filters\"\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$BASE\" \\\n    > \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\nmapfile -t AFFECTED < \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\npnpm exec turbo run build \\\n  \"${IMPORTED[@]}\" \\\n  \"${AFFECTED[@]}\" \\\n  --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\n",
-					"local": "run"
-				},
-				{
-					"name": "Download scripts-test build outputs",
+					"name": "Build the packages the scripts tests import",
 					"if": "steps.scope.outputs.run == 'true'",
-					"uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
-					"with": {
-						"name": "scripts-tests-dist-${{ github.run_id }}",
-						"path": "${{ runner.temp }}"
-					},
-					"local": "skip",
-					"reason": "CI supplies the artifact; the preceding local step builds current sources"
-				},
-				{
-					"name": "Extract scripts-test build outputs",
-					"if": "steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS == 'true'",
-					"run": "set -euo pipefail\nARCHIVE=\"$RUNNER_TEMP/scripts-tests-dist.tar\"\ntest -s \"$ARCHIVE\"\ntar -xf \"$ARCHIVE\" -C .\n",
-					"timeout-minutes": 3,
+					"run": "set -euo pipefail\nBASE=\"$(git rev-parse --verify HEAD^1 2>/dev/null || true)\"\nif [ -z \"$BASE\" ]; then\n  echo \"Scripts-test build base is empty\" >&2\n  exit 1\nfi\nnode --import tsx scripts/ci/scripts-test-imports.mts \\\n  > \"$RUNNER_TEMP/scripts-tests-import-filters\"\nmapfile -t IMPORTED < \"$RUNNER_TEMP/scripts-tests-import-filters\"\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$BASE\" \\\n    > \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\nmapfile -t AFFECTED < \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\npnpm exec turbo run build \\\n  \"${IMPORTED[@]}\" \\\n  \"${AFFECTED[@]}\" \\\n  --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\n",
 					"local": "run"
 				},
 				{
@@ -593,6 +575,25 @@
 						"SHARD_TOTAL": "${{ strategy.job-total }}"
 					},
 					"local": "run"
+				},
+				{
+					"name": "Prune Turbo cache",
+					"id": "turbo-prune",
+					"if": "always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
+				},
+				{
+					"name": "Save Turbo cache",
+					"if": "always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'",
+					"uses": "$/.github/actions/turbo-cache",
+					"with": {
+						"mode": "save"
+					},
+					"local": "skip",
+					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
 					"name": "CI trace",
