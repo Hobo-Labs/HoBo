@@ -115,6 +115,10 @@ export function hoboReleaseSparseCones(repoRoot: string): readonly string[] {
 	]);
 }
 
+export const HOBO_RELEASE_PAGES_NESTED_FILES = [
+	"examples/browser-runtime/wit/station.wit",
+] as const;
+
 /** gh-pages release job (no root vitest). */
 export function hoboReleasePagesSparseCones(): readonly string[] {
 	return Object.freeze([
@@ -127,6 +131,7 @@ export function hoboReleasePagesSparseCones(): readonly string[] {
 		"external",
 		"examples",
 		"media",
+		...HOBO_RELEASE_PAGES_NESTED_FILES,
 		...PINS_SPARSE_CONES,
 		...MISE_LOCK_SPARSE_CONES,
 		...RELEASE_ROOT_FILES,

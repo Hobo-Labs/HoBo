@@ -210,6 +210,23 @@ export function ghcrWorkerManifestReachable(
 	return workerManifestReachable(remoteWorkerTag(repo, version), token);
 }
 
+const WORKER_PUBLISH_PROBE_BUDGET_SEC = 120;
+
+export function ghcrWorkerPullable(
+	repo: string,
+	version: string,
+	token: string,
+): boolean {
+	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
+	if (!dockerLoginGhcr(actor, token)) return false;
+	const remote = remoteWorkerTag(repo, version);
+	if (!workerManifestReachable(remote, token)) return false;
+	return pullWorkerFromGhcr(remote, {
+		attempts: 1,
+		budgetSec: WORKER_PUBLISH_PROBE_BUDGET_SEC,
+	});
+}
+
 export function digestFromVerboseManifest(stdout: string): string | null {
 	const digests = new Set<string>();
 	for (const match of stdout.matchAll(
@@ -279,6 +296,14 @@ export function materializeCiWorkerImageOnly(): string | null {
 			process.env.HOBO_CI_WORKER_IMAGE_REF === undefined
 		)
 			sources.push(pullRequestWorkerTag(repo, pullRequest, version));
+		const digestRef = process.env.HOBO_CI_WORKER_IMAGE_REF?.trim();
+		const versionTag = remoteWorkerTag(repo, version);
+		if (
+			digestRef &&
+			validatedWorkerDigestRef(repo, digestRef) &&
+			!sources.includes(versionTag)
+		)
+			sources.push(versionTag);
 		dockerLoginGhcr(actor, token);
 		for (const remote of sources) {
 			if (!workerManifestReachable(remote, token)) {
@@ -363,10 +388,7 @@ export function ciWorkerImagePublished(): CiWorkerImagePresence {
 	const token = ghcrAuthToken();
 	let ghcr = false;
 	if (repo && token) {
-		const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
-		ghcr =
-			dockerLoginGhcr(actor, token) &&
-			ghcrWorkerManifestReachable(repo, version, token);
+		ghcr = ghcrWorkerPullable(repo, version, token);
 	}
 	return { version, host, ghcr };
 }

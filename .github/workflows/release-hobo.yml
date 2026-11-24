@@ -221,6 +221,7 @@ env:
     release
     external
     examples
+    examples/browser-runtime/wit/station.wit
     media
     tools/pins
     .mise/locks
