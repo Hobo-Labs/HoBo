@@ -103,6 +103,12 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   one per CPU, capped at 1024 MB per build after a 768 MB reserve (`HOBO_TURBO_BUILD_CONCURRENCY`
   overrides it), then the unchanged test calls at the memory-derived `HOBO_TURBO_CONCURRENCY`
   ([finding 162](../ci/findings/0162-merge-queue-shards-rebuilt-every-package-one-at-a-time.md)).
+- **A lockfile change rebuilds only the packages it touches.** `turbo.json` does not list
+  `pnpm-lock.yaml` in `globalDependencies`. Turbo hashes each package's resolved external dependencies
+  from the lockfile into that package's tasks, so bumping one package's dependency changes that package's
+  hashes and its dependents' and leaves the rest of the `main-build` cache usable. A change to the root
+  importer's resolutions still changes the global hash and every task
+  ([finding 168](../ci/findings/0168-a-lockfile-change-rebuilt-every-package.md)).
 - **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` filters the turbo lanes to the changed
   packages and examples, including the packages inside a pnpm-workspace group such as
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
@@ -498,7 +504,7 @@ many files name is resolved once, and the comment strip no longer backtracks ove
 `pnpm-lock.yaml` plans the whole workspace only when it is the whole diff. Beside changed package
 paths it widens nothing: the plan is the one those paths give, so `packages/core/package.json` with
 the lockfile plans what `packages/core/package.json` alone does. That rule is `affected-lanes.mts`'s
-(a lockfile-only diff runs everything; Turbo still hashes the lockfile into every task), and the
+(a lockfile-only diff runs everything; Turbo hashes each package's lockfile resolutions into that package's tasks), and the
 planner takes it unchanged.
 
 `scripts/ci/plan-replay.mts` replays the planner over the last N main commits (`--count=100`), each
