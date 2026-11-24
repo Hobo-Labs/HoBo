@@ -15,6 +15,9 @@ import { describe, it } from "node:test";
 import { asList, asObject, asText } from "../ci/attestation.mts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
+const PROVEN_NONE =
+	"reuse=false\nreuse-run=\nproven-base=\nproven-tree=\nproven-run=\nproven-pr=\n";
+
 describe("base-controlled attestation verification", () => {
 	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
 		it(`${workflow} loads the route action and verifier from the event base`, () => {
@@ -349,7 +352,7 @@ describe("base-controlled attestation verification", () => {
 				policyOff.stdout,
 				/runnerRouting\.mergeGroup\.reusePrFabric is false/u,
 			);
-			assert.equal(policyOff.output, "reuse=false\nreuse-run=\n");
+			assert.equal(policyOff.output, PROVEN_NONE);
 			assert.equal(existsSync(marker), false);
 			writeFileSync(
 				join(workspace, ".ci-trusted", ".hobo", "ci.json"),
@@ -361,7 +364,7 @@ describe("base-controlled attestation verification", () => {
 				unreadRuns.stdout,
 				/the workflow's pull-request runs could not be read/u,
 			);
-			assert.equal(unreadRuns.output, "reuse=false\nreuse-run=\n");
+			assert.equal(unreadRuns.output, PROVEN_NONE);
 			assert.equal(existsSync(marker), false);
 			rmSync(join(trustedCi, "pr-fabric-reuse.mts"));
 			const missing = run();
