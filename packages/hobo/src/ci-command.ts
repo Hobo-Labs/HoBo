@@ -88,28 +88,6 @@ class CiLinkSaveError extends Error {}
 
 export const CI_HELP = verbHelpText("ci", { implemented: true });
 
-export const BUILT_IN_CI_COMMANDS = [
-	"enable",
-	"connect",
-	"status",
-	"list",
-	"ls",
-	"inspect",
-	"logs",
-	"grep",
-	"rerun",
-	"serve",
-	"github",
-	"deploy",
-	"app",
-	"secret-store",
-	"route",
-	"init",
-	"signals",
-	"diagnose",
-	"fleet",
-] as const;
-
 async function promptOnTerminal(question: string): Promise<string> {
 	const terminal = createInterface({
 		input: process.stdin,
@@ -453,6 +431,28 @@ function bindingStoreFor(
 		? {}
 		: { bindingStore: ownerSecretStoreBindingStore(ownerEntries(cwd)) };
 }
+
+export const BUILT_IN_CI_COMMANDS = [
+	"enable",
+	"connect",
+	"status",
+	"list",
+	"ls",
+	"inspect",
+	"logs",
+	"grep",
+	"rerun",
+	"serve",
+	"github",
+	"deploy",
+	"app",
+	"secret-store",
+	"route",
+	"init",
+	"signals",
+	"diagnose",
+	"fleet",
+] as const;
 
 export function createCiCommand(
 	deps: {
