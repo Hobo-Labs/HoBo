@@ -257,6 +257,7 @@ describe("CI deps image push scope", () => {
 	it("resolves base, scope, and shards before validation so shards overlap the S0 gate", () => {
 		expect(prPlan.outputs).toEqual({
 			merge_base: "${{ steps.merge-group-base.outputs.base }}",
+			merge_tree: "${{ steps.merge-group-base.outputs.tree }}",
 			merge_tests: "${{ steps.merge-group-base.outputs.tests }}",
 			merge_scope: "${{ steps.merge-group-base.outputs.scope }}",
 			pr_base: "${{ steps.scm-base.outputs.base }}",
