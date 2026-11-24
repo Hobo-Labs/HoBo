@@ -2,13 +2,9 @@
 
 Use these paths when the deployed relay is unavailable.
 
-After the fix is merged to `main`, dispatch the direct HoBo CD deployment:
+The relay's store coordinates live only in the owner's secret store and are never committed, so deploy through `hobo cd` with the owner's store session. First connect the store through HoBo MCP's `choose_secret_store` (cwd `packages/ci-vercel`); without that session every command below stops with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED`. The prebuilt build carries the relay's coordinates from that session inside the build only.
 
-```sh
-gh workflow run relay-deploy.yml -f force_bootstrap=true
-```
-
-Alternatively, on a development machine authenticated to the relay's secret store, set the intended revision once and use one `HOBO_HOME` for both commands. The second command is refused unless the first qualified that exact commit in this journal:
+After the fix is merged to `main`, set the intended revision once and use one `HOBO_HOME` for both commands. The second command is refused unless the first qualified that exact commit in this journal:
 
 ```sh
 export HOBO_HOME="${HOBO_HOME:-$HOME/.hobo}"

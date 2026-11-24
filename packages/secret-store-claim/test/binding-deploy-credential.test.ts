@@ -149,12 +149,14 @@ describe("the repair read's confinement", () => {
 	const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 
 	const SKIPPED_DIRS = new Set([".git", "dist", "node_modules", "_generated"]);
+	const pluginBundleDir = path.join(repoRoot, "plugins", "hobo", "bin");
 
 	function sourceFiles(dir: string, found: string[] = []): string[] {
 		for (const entry of readdirSync(dir, { withFileTypes: true })) {
 			if (entry.isDirectory()) {
-				if (!SKIPPED_DIRS.has(entry.name))
-					sourceFiles(path.join(dir, entry.name), found);
+				const child = path.join(dir, entry.name);
+				if (!SKIPPED_DIRS.has(entry.name) && child !== pluginBundleDir)
+					sourceFiles(child, found);
 			} else if (/\.(?:ts|mts|cts|tsx|js|mjs|cjs|jsx)$/u.test(entry.name))
 				found.push(path.join(dir, entry.name));
 		}

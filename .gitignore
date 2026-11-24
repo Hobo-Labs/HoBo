@@ -140,3 +140,4 @@ plugins/hobo/bin/
 plugins/hobo/fixtures/
 plugins/hobo/.agent-plugin-build.lock
 plugins/hobo/.agent-plugin-nonpublishing.json
+**/deploy/secret-store.binding.json

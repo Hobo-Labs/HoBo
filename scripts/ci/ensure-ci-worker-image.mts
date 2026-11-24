@@ -33,24 +33,49 @@ export function dockerImagePresent(ref: string): boolean {
 	);
 }
 
-export function sameRepositoryPullRequest(): boolean {
-	if (process.env.GITHUB_EVENT_NAME !== "pull_request") return false;
+type PullRequestEvent = Readonly<{
+	pull_request?: Readonly<{
+		number?: number;
+		head?: Readonly<{ repo?: Readonly<{ full_name?: string }> }>;
+		base?: Readonly<{ repo?: Readonly<{ full_name?: string }> }>;
+	}>;
+}>;
+
+function pullRequestEvent(): PullRequestEvent | null {
+	if (process.env.GITHUB_EVENT_NAME !== "pull_request") return null;
 	const path = process.env.GITHUB_EVENT_PATH;
-	if (!path) return false;
+	if (!path) return null;
 	try {
-		// SAFETY: GitHub Actions event payload is JSON with optional pull_request head/base repos.
-		const payload = JSON.parse(readFileSync(path, "utf8")) as {
-			pull_request?: {
-				head?: { repo?: { full_name?: string } };
-				base?: { repo?: { full_name?: string } };
-			};
-		};
-		const head = payload.pull_request?.head?.repo?.full_name;
-		const base = payload.pull_request?.base?.repo?.full_name;
-		return Boolean(head && base && head === base);
+		const payload: PullRequestEvent | null = JSON.parse(
+			readFileSync(path, "utf8"),
+		);
+		return payload;
 	} catch {
-		return false;
+		return null;
 	}
+}
+
+export function sameRepositoryPullRequest(): boolean {
+	const pullRequest = pullRequestEvent()?.pull_request;
+	const head = pullRequest?.head?.repo?.full_name;
+	const base = pullRequest?.base?.repo?.full_name;
+	return Boolean(head && base && head === base);
+}
+
+export function sameRepositoryPullRequestNumber(): number | null {
+	if (!sameRepositoryPullRequest()) return null;
+	const number = pullRequestEvent()?.pull_request?.number;
+	return number !== undefined && Number.isSafeInteger(number) && number > 0
+		? number
+		: null;
+}
+
+export function pullRequestWorkerTag(
+	repo: string,
+	pullRequest: number,
+	version: string,
+): string {
+	return `ghcr.io/${repo.toLowerCase()}/hobo-ci-worker:pr-${pullRequest}-${version}`;
 }
 
 export function releaseWorkerEnsurePath(): boolean {
@@ -247,21 +272,28 @@ export function materializeCiWorkerImageOnly(): string | null {
 		process.env.HOBO_CI_SKIP_GHCR_PULL !== "1";
 
 	if (mayPullFromGhcr && repo) {
-		const remote = resolveWorkerRemoteRef(repo, version);
+		const sources = [resolveWorkerRemoteRef(repo, version)];
+		const pullRequest = sameRepositoryPullRequestNumber();
+		if (
+			pullRequest !== null &&
+			process.env.HOBO_CI_WORKER_IMAGE_REF === undefined
+		)
+			sources.push(pullRequestWorkerTag(repo, pullRequest, version));
 		dockerLoginGhcr(actor, token);
-		const manifestOk = workerManifestReachable(remote, token);
-		if (!manifestOk) {
-			console.log(`GHCR manifest absent for ${remote}`);
-			return null;
+		for (const remote of sources) {
+			if (!workerManifestReachable(remote, token)) {
+				console.log(`GHCR manifest absent for ${remote}`);
+				continue;
+			}
+			console.log(`GHCR manifest present for ${remote}`);
+			if (pullWorkerFromGhcr(remote)) {
+				run("docker", ["tag", remote, candidate]);
+				run("docker", ["tag", remote, "hobo-ci-worker:local"]);
+				console.log(`pulled worker ${remote}`);
+				return candidate;
+			}
+			console.error(`GHCR pull failed for ${remote}`);
 		}
-		console.log(`GHCR manifest present for ${remote}`);
-		if (pullWorkerFromGhcr(remote)) {
-			run("docker", ["tag", remote, candidate]);
-			run("docker", ["tag", remote, "hobo-ci-worker:local"]);
-			console.log(`pulled worker ${remote}`);
-			return candidate;
-		}
-		console.error(`GHCR pull failed for ${remote}`);
 	}
 	return null;
 }
