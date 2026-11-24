@@ -1347,11 +1347,16 @@
     },
     "__schema118": {
       "default": {
-        "reusePrFabric": true
+        "reusePrFabric": true,
+        "admitIdleTrunkFromRunnerPage": true
       },
       "type": "object",
       "properties": {
         "reusePrFabric": {
+          "type": "boolean"
+        },
+        "admitIdleTrunkFromRunnerPage": {
+          "default": true,
           "type": "boolean"
         }
       },

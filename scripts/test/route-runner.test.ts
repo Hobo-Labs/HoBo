@@ -2358,6 +2358,43 @@ describe("the script reading the slip", () => {
 		assert.equal(decision.mergeGroupHostedProbe?.runnerPageIdleTrunk, false);
 	});
 
+	it("keeps a saturated merge-group batch hosted when runner-page idle trunk admission is disabled by policy", async () => {
+		const { decision } = await printedBy(() =>
+			main(
+				[],
+				{
+					...mergeGroupCi,
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					GITHUB_RUN_ID: "50",
+					GITHUB_API_URL: "https://api.github.com",
+				},
+				{
+					routingConfig: withRouting((routing) => {
+						routing.mergeGroup = {
+							...routing.mergeGroup,
+							admitIdleTrunkFromRunnerPage: false,
+						};
+					}),
+					eventPayload: SAME_REPOSITORY_PULL,
+					fetch: async (url) =>
+						publicRepoRead(url) ??
+						Response.json(
+							observedWithRunners(
+								saturatedHostedQueue(),
+								runnersPage("hobo-trunk", 4, 0),
+							)(String(url).replace("https://api.github.com", "")),
+						),
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(decision.reason, /policy/u);
+	});
+
 	it("keeps an automatic merge-group release on verified public compute", async () => {
 		const { decision } = await printedBy(() =>
 			main(

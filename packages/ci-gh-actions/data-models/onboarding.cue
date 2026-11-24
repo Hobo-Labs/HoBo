@@ -133,7 +133,7 @@ import "list"
 	boxRunner:                bool
 	mainWorkspaceParallelCap: int & >=1 & <=8
 	mainGate: {reuseMergeQueue: bool}
-	mergeGroup?: {reusePrFabric: bool}
+	mergeGroup?: {reusePrFabric: bool, admitIdleTrunkFromRunnerPage: bool | *true}
 	verdict: {minFreeRunners: int & >=1 & <=9999, enterMs: int & >=10000 & <=3600000, exitMs: int & >=10000 & <=3600000, stallMs: int & >=60000 & <=3600000}
 	box: {
 		slots:                     int & >=1 & <=8

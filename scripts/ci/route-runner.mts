@@ -1219,6 +1219,7 @@ export type RouteSettings = Readonly<{
 	boxRunner: string;
 	externalPools: readonly RunnerRoutingPool[];
 	trunkLend: boolean;
+	mergeGroup: RunnerRouting["mergeGroup"];
 	/** `false` when `.hobo/ci.json` held no valid `runnerRouting`. */
 	committed: boolean;
 }>;
@@ -1235,6 +1236,7 @@ export function routeSettings(
 			boxRunner: policy.boxRunner ? policy.labels.box : "",
 			externalPools: policy.externalPools,
 			trunkLend: policy.box.trunkLend === 1,
+			mergeGroup: policy.mergeGroup,
 			committed: true,
 		};
 	return {
@@ -1248,6 +1250,7 @@ export function routeSettings(
 		boxRunner: DEFAULT_BOX_RUNNER ? DEFAULT_RUNNER_LABELS.box : "",
 		externalPools: [],
 		trunkLend: DEFAULT_TRUNK_LEND,
+		mergeGroup: { reusePrFabric: true, admitIdleTrunkFromRunnerPage: true },
 		committed: false,
 	};
 }
@@ -1951,6 +1954,8 @@ export async function main(
 			...limits,
 			maxQueued: Number.MAX_SAFE_INTEGER,
 		};
+		const admitIdleTrunkFromRunnerPage =
+			settings.mergeGroup.admitIdleTrunkFromRunnerPage === true;
 		const observeHosted = (nowMs: number) =>
 			observeQueue({
 				read: requireRead(),
@@ -1974,6 +1979,7 @@ export async function main(
 		let hostedIdle = false;
 		let hostedSummary = "";
 		let runnerPageIdleTrunk = false;
+		let runnerPageIdleTrunkDetected = false;
 		let hostedProbe: MergeGroupHostedProbe = {
 			idle: false,
 			summary: "GitHub-hosted queue unreadable",
@@ -1991,8 +1997,10 @@ export async function main(
 				const runnersPage = await requireRead()(
 					`/repos/${repository}/actions/runners?per_page=100`,
 				).catch(() => null);
-				runnerPageIdleTrunk =
+				runnerPageIdleTrunkDetected =
 					idleRunnerOnPage(runnersPage, [trunkLabel]) === trunkLabel;
+				runnerPageIdleTrunk =
+					admitIdleTrunkFromRunnerPage && runnerPageIdleTrunkDetected;
 			}
 			decision = await chooseRunner({
 				observe: observeTrunk,
@@ -2070,21 +2078,30 @@ export async function main(
 					trunkSummary: decision.reason,
 				};
 			} else {
+				const policyBlocksIdleTrunk =
+					runnerPageIdleTrunkDetected &&
+					!hostedIdle &&
+					!admitIdleTrunkFromRunnerPage;
 				if (
 					githubLabel !== "ubuntu-24.04" ||
 					!(await isPublicCaller(env, io.fetch))
 				)
 					throw new Error(
-						`merge-group Fabric found no healthy ${trunkLabel} capacity; refusing general ${labels.fleet} overflow`,
+						policyBlocksIdleTrunk
+							? `merge-group Fabric runner-page idle ${trunkLabel} admission is disabled by committed policy; refusing general ${labels.fleet} overflow`
+							: `merge-group Fabric found no healthy ${trunkLabel} capacity; refusing general ${labels.fleet} overflow`,
 					);
+				const reason = policyBlocksIdleTrunk
+					? `merge-group Fabric found an idle ${trunkLabel} runner on the fetched runner page, but committed runnerRouting.mergeGroup.admitIdleTrunkFromRunnerPage policy is false; public standard-runner compute was verified`
+					: `merge-group Fabric found no healthy ${trunkLabel} capacity; public standard-runner compute was verified`;
 				console.log(
-					`::warning title=hobo-ci-route-fallback::${escapeCommand(`merge-group Fabric found no healthy ${trunkLabel} capacity; falling back to ${githubLabel}`)}`,
+					`::warning title=hobo-ci-route-fallback::${escapeCommand(policyBlocksIdleTrunk ? `merge-group Fabric idle ${trunkLabel} runner-page admission disabled by committed policy; falling back to ${githubLabel}` : `merge-group Fabric found no healthy ${trunkLabel} capacity; falling back to ${githubLabel}`)}`,
 				);
 				return report(
 					{
 						tier: "github",
 						runner: githubLabel,
-						reason: `merge-group Fabric found no healthy ${trunkLabel} capacity; public standard-runner compute was verified`,
+						reason,
 						refusedBy: "queue",
 						mergeGroupHostedProbe: hostedProbe,
 						slip: { kind: "unasked", why: "merge-group" },
@@ -2119,11 +2136,17 @@ export async function main(
 					env,
 				);
 			}
+			const policyBlocksIdleTrunk =
+				runnerPageIdleTrunkDetected &&
+				!hostedIdle &&
+				!admitIdleTrunkFromRunnerPage;
 			return report(
 				{
 					tier: "github",
 					runner: githubLabel,
-					reason: `merge-group Fabric has positive ${trunkLabel} pickup evidence but no verified capacity and Broker claim; the batch remains on ${githubLabel}`,
+					reason: policyBlocksIdleTrunk
+						? `merge-group Fabric has positive ${trunkLabel} pickup evidence but no verified capacity and Broker claim; the fetched runner page shows an idle ${trunkLabel} runner, but committed runnerRouting.mergeGroup.admitIdleTrunkFromRunnerPage policy is false, so the batch remains on ${githubLabel}`
+						: `merge-group Fabric has positive ${trunkLabel} pickup evidence but no verified capacity and Broker claim; the batch remains on ${githubLabel}`,
 					refusedBy: "queue",
 					mergeGroupHostedProbe: hostedProbe,
 					slip: { kind: "unasked", why: "merge-group" },
