@@ -217,5 +217,115 @@ package adapter_infisical
 	accessTokenMaxTTL: int & >=accessTokenTTL & <=86400
 }
 
+#agentVaultName: string & =~"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$"
+#agentVaultServiceType: "http" | "mcp" | "postgres" | "mysql" | "ssh"
+
+#InfisicalAgentVaultProject: {
+	id:   #id
+	name: string & !=""
+	type: "agent-vault"
+	...
+}
+
+#InfisicalAgentVaultProjectList: {
+	projects: [...#InfisicalAgentVaultProject]
+	...
+}
+
+#InfisicalAgentVaultService: {
+	name: #agentVaultName
+	type: #agentVaultServiceType
+	hostPattern?: string | null
+	...
+}
+
+#InfisicalAgentVaultServiceList: {
+	services: [...#InfisicalAgentVaultService]
+	...
+}
+
+#InfisicalAgentVaultProxy: {
+	id:        #id
+	name:      #agentVaultName
+	isHealthy: bool
+	...
+}
+
+#InfisicalAgentVaultProxyList: {
+	proxies: [...#InfisicalAgentVaultProxy]
+	...
+}
+
+#InfisicalAgentVaultCreateProxyRequest: {
+	projectId:     #id
+	name:          #agentVaultName
+	description?:  string & =~"^[^\\x00-\\x1f\\x7f]{0,256}$"
+	trafficPolicy: "service-hosts"
+	pollInterval:  int & >=10 & <=300
+}
+
+#InfisicalAgentVaultProxyTokenResponse: {
+	proxy:      #InfisicalAgentVaultProxy
+	proxyToken: string & =~"^[!-~]+$"
+	...
+}
+
+#InfisicalAgentVaultCertificateAuthority: {
+	certificate: string & =~"^-----BEGIN CERTIFICATE-----"
+	fingerprint: string & !=""
+	...
+}
+
+#InfisicalAgentVaultCertificateAuthorityResponse: {
+	ca: #InfisicalAgentVaultCertificateAuthority
+	...
+}
+
+#InfisicalAgentVaultCreateSessionRequest: {
+	projectId: #id
+	services: [#agentVaultName, ...#agentVaultName]
+	ttl:   string & =~"^[1-9][0-9]*[mhd]$"
+	label: string & =~"^[^\\x00-\\x1f\\x7f]{0,128}$"
+}
+
+#InfisicalAgentVaultSession: {
+	id:        #id
+	token:     string & =~"^[!-~]+$"
+	expiresAt: string | null
+	...
+}
+
+#InfisicalAgentVaultSessionResponse: {
+	session: #InfisicalAgentVaultSession
+	...
+}
+
+#InfisicalAgentVaultSessionCredential: {
+	type:         "bearer" | "oauth" | "basic" | "login" | "none"
+	header?:      string
+	addedByProxy: bool
+	...
+}
+
+#InfisicalAgentVaultPlaceholder: {
+	placeholder: string & =~"^[!-~]+$"
+	surfaces: [...("path" | "query" | "header" | "body")]
+	...
+}
+
+#InfisicalAgentVaultSessionService: {
+	name: #agentVaultName
+	type: #agentVaultServiceType
+	hosts: [...string]
+	credential: #InfisicalAgentVaultSessionCredential
+	placeholders: [...#InfisicalAgentVaultPlaceholder]
+	...
+}
+
+#InfisicalAgentVaultSessionServiceList: {
+	services: [...#InfisicalAgentVaultSessionService]
+	...
+}
+
 // The flat fixture corpus holds bindings.
 #AdapterInfisical: #InfisicalBinding
