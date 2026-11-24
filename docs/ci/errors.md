@@ -783,7 +783,7 @@ The promotion of {freight.alias} to {campId} is held ({…}); approve it or wait
 ```
 
 ```text
-The promotion of {freight.alias} to {campId} had not finished ({…}) when the wait ran out; run hobo ci deploy again (it is idempotent).
+The promotion of {freight.alias} to {campId} had not finished ({…}) when the wait ran out. Inspect the journal and provider operation before another deployment.
 ```
 
 What to do: follow the message.
