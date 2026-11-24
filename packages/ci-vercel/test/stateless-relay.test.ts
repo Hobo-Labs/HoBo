@@ -392,28 +392,25 @@ describe("the stateless relay's configuration is read-only", () => {
 		expect(body.error).toMatch(/read-only.*hobo ci.*config service/u);
 	});
 
-	it("keeps no fleet verdicts on the cache: the device fleet replaced them", async () => {
+	it("serves no fleet verdict or reporter status, and keeps nothing on the cache for one (ADR-0181)", async () => {
 		const h = await openStatelessRelay();
 		const before = h.cache.meter.usage().total;
-		const put = await h.relay.handle(
-			new Request(`${ORIGIN}/v1/fleet/verdicts/Org/Repo`, {
-				method: "PUT",
-				headers: { "content-type": "application/json" },
-				body: '{"blocked":{"hobo":{"reason":"no-capacity"}},"ttlSeconds":180,"mode":"report"}',
-			}),
-		);
-		expect(put.status).toBeGreaterThanOrEqual(400);
-		const read = await h.relay.handle(
-			new Request(`${ORIGIN}/v1/fleet/verdicts/Org/Repo`),
-		);
-		if (read.status === 200) expect((await read.json()).blocked).toEqual({});
-		else expect(read.status).toBe(404);
-		const status = await h.relay.handle(
-			new Request(`${ORIGIN}/v1/fleet/reporters/Org/Repo`, {
-				headers: { authorization: "Bearer workflow-token-of-org-repo" },
-			}),
-		);
-		expect(status.status).not.toBe(200);
+		const report = '{"blocked":{},"ttlSeconds":180,"mode":"report"}';
+		for (const [method, path, body] of [
+			["GET", "/v1/fleet/verdicts/x/y", null],
+			["GET", "/v1/fleet/verdicts/Org/Repo", null],
+			["PUT", "/v1/fleet/verdicts/Org/Repo", report],
+			["GET", "/v1/fleet/reporters/Org/Repo", null],
+		] as const) {
+			const response = await h.relay.handle(
+				new Request(`${ORIGIN}${path}`, {
+					method,
+					headers: { authorization: `Bearer ${h.token}` },
+					body,
+				}),
+			);
+			expect(response.status, `${method} ${path}`).toBe(404);
+		}
 		expect(h.cache.meter.usage().total).toBe(before);
 	});
 

@@ -689,6 +689,7 @@ but refused by their parser). Entries the relay does not use are never named.
 | `HOBO_CI_CACHE_OFFERS_JSON` | the config service or project env, optional | the declared offers, budget caps and switch marks ([below](#the-cache-fleet)) |
 | `HOBO_CI_CACHE_MONTHLY_COMMANDS` | project env, optional | Upstash's allowance in the default offers |
 | `HOBO_CI_EVENTS_URL`, `HOBO_CI_EVENTS_TENANT` | project env, optional | relay failures as CloudEvents |
+| `HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING`, `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` | retired | read by nothing; a config service that still holds one is accepted and the key ignored ([Fleet verdicts (retired)](#fleet-verdicts-retired)) |
 | Every `RelayRuntimeConfig` key | the config service | [Config service](CONFIG-SERVICE.md#what-the-folder-holds); `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` (32 random bytes, base64url) is required with `HOBO_CI_SANDBOX_ENABLED` |
 
 No `DATABASE_URL*` or Neon variable is read.
@@ -848,12 +849,11 @@ table is in [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#keys-values-and-t
   503.
 - **No fleet verdicts.** The relay keeps no verdict, reporter state or
   allowance: a runner's health is its own `Observation` as a member of fleet
-  `hobo`, read through `@hobo/fleet/client`
- . The keys
+  `hobo`, read through `@hobo/fleet/client`. The keys
   `HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING` and
-  `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` are not settings: remove them
-  from the config service before deploying this relay, because the strict
-  schema refuses a configuration that holds them.
+  `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` are retired, not settings: the
+  loader drops them before it parses the configuration, so a config service
+  that still holds one starts the relay as if it did not.
 - **Sessions, OAuth `state`, App installation**: `createStatelessAppOnboarding`
   from `@hobo/ci-gh-actions`. Records are named by an HMAC under a key derived
   from `HOBO_CI_SESSION_KEY` and, where they hold a credential, sealed with
@@ -1159,6 +1159,13 @@ embedded hosted bridge still supplies and enforces its lease timeout.
 service, the cache, the execution host and the repair evidence (see the probes
 in [The stateless relay](#the-stateless-relay)).
 
+After Vercel's Git integration builds a deploy, `relay-deploy.yml` adopts it
+with `hobo ci deploy --adopt` ("Token-free relay mode"), which requires the
+production domain's `/healthz` to name the commit and its `/readyz` to answer
+200. It probes no other route: the fleet verdict probe went with the verdict
+routes
+([Fleet verdict operations](#fleet-verdict-operations)).
+
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
 [runner queue runbook](../ci/RUNNER-QUEUE.md)).
 
@@ -1188,9 +1195,19 @@ error or its cause is a database refusal, the line also carries its five-charact
 
 ## Fleet verdict operations
 
-The fleet verdict channel is retired. This relay serves no
-`GET /v1/fleet/verdicts/{owner}/{repo}` and keeps no reporter state: routing
-reads each runner's own `Observation` as a member of fleet `hobo`, through
-`@hobo/fleet/client` (see [No fleet verdicts](#the-stateless-relay) above).
-Operating the fleet itself is covered by the
+This relay no longer serves fleet verdicts. `GET`/`PUT /v1/fleet/verdicts/{owner}/{repo}` and
+`GET /v1/fleet/reporters/{owner}/{repo}` answer 404, nothing is kept on the cache for them, and the
+reporter enrollment, kill switch and daily allowance are gone
+([ADR-0181](../../docs/design/adr/routing-slips.md#adr-0181), which supersedes ADR-0180's hosted
+transport). Routing reads each runner's own `Observation` as a member of fleet `hobo`, through
+`@hobo/fleet/client` (see [No fleet verdicts](#the-stateless-relay) above), and the box relay hands
+each run its route as a routing slip at `refs/hobo/routing-slip`, which the route job reads with its
+own `GITHUB_TOKEN`; nothing on this relay is asked. Operating the fleet itself is covered by the
 [fleet runbooks](../../docs/maintenance/fleet/index.md).
+
+`HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING` and
+`HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` are retired keys: their `RelayRuntimeConfig` fields are
+reserved, and the loader drops them before it parses the configuration, so a config service that still
+holds one starts the relay as if it did not. The history of the channel, gates G1 to G7 included, stays
+in [finding 145](../../docs/ci/findings/0145-fleet-verdict-channel-operating-record.md) and
+[ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180).

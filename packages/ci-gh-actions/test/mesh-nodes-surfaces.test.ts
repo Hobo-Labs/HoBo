@@ -513,3 +513,24 @@ describe("relayFleetReads", () => {
 		]);
 	});
 });
+
+describe("the retired fleet verdict routes on a relay host (ADR-0181)", () => {
+	it("answers 404 for the verdict and reporter paths, with or without a credential", async () => {
+		const fake = recordingFleetClient();
+		for (const h of [
+			await relay(),
+			await relay({ reads: fake.client, fleetId: HOBO }),
+		]) {
+			for (const path of [
+				"/v1/fleet/verdicts/x/y",
+				"/v1/fleet/verdicts/org/repo",
+				"/v1/fleet/reporters/org/repo",
+			]) {
+				expect((await h.get(path)).status, path).toBe(404);
+				expect((await h.get(path, OPERATOR)).status, path).toBe(404);
+				expect((await h.get(path, OPERATOR, "PUT")).status, path).toBe(404);
+			}
+		}
+		expect(fake.calls).toEqual([]);
+	});
+});

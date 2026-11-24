@@ -322,6 +322,11 @@ Every host of the relay serves the same Fetch handler, `createRelayHandler`
 | `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
 | `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
 
+No `/v1/fleet/` route is served: the fleet verdict and reporter status routes
+were retired with ADR-0180's hosted transport (ADR-0181), and
+any such path answers 404. Runner routing reads the box relay's routing slip
+instead.
+
 A delivery is authenticated by GitHub's `X-Hub-Signature-256`, or, when the host
 configures an ingress forward secret, by `X-Hobo-Ingress-Forward` from
 [`createWebhookIngressHandler`](src/webhook-ingress.ts). Both are the same

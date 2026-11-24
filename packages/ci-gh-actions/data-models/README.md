@@ -24,8 +24,10 @@ never a journal position.
 The relay mesh's records (`mesh.proto`, the `#Mesh*` definitions and the
 `mesh-*` fixtures) are gone: the box worker is a HoBo Fleet member, and the
 fleet's records live in `packages/fleet/data-models/`. The hosted fleet verdict and its
-reporters (`fleet_verdict.proto`, ADR-0180) are gone too: the slip's
-reasons come from `fleetVerdict` in `@hobo/fleet/observation`.
+reporters (`fleet_verdict.proto`, ADR-0180) are retired with the hosted verdict
+routes (ADR-0181): the file, its generated code, its CUE definitions and its
+`fleet-verdict*` and `fleet-reporter*` fixtures are gone. The slip's reasons
+come from `fleetVerdict` in `@hobo/fleet/observation`.
 
 `routing_slip.proto` owns the routing slip (ADR-0181): the box relay's
 current routing answer for one repository, one route per class (`pr`, `fork`,

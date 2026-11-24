@@ -183,6 +183,13 @@ export const RelayRuntimeConfigSchema = z
 	.strict()
 	.superRefine(onboardingBinding);
 
+export const RETIRED_RELAY_RUNTIME_CONFIG_KEYS: readonly string[] =
+	Object.freeze([
+		"HOBO_CI_FLEET_REPORTERS_JSON",
+		"HOBO_CI_FLEET_VERDICT_SERVING",
+		"HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES",
+	]);
+
 /** Every key the config service may hold for the relay, and nothing else. */
 export const RELAY_RUNTIME_CONFIG_KEYS: readonly string[] = Object.freeze(
 	Object.keys(RELAY_RUNTIME_CONFIG_SETTINGS),

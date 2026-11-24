@@ -1,4 +1,5 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
 	type InfisicalClient,
 	parseInfisicalBinding,
@@ -22,6 +23,7 @@ import {
 import {
 	RELAY_RUNTIME_CONFIG_KEYS,
 	RELAY_RUNTIME_CONFIG_SETTINGS,
+	RETIRED_RELAY_RUNTIME_CONFIG_KEYS,
 } from "../src/relay-runtime-config-schema.js";
 
 const pem = generateKeyPairSync("rsa", { modulusLength: 2048 })
@@ -147,21 +149,35 @@ describe("parseRelayRuntimeConfig", () => {
 		expect(error.message).not.toContain("valkey-password");
 	});
 
-	it("holds no fleet verdict settings: the device fleet replaced them", () => {
-		for (const key of [
-			"HOBO_CI_FLEET_REPORTERS_JSON",
-			"HOBO_CI_FLEET_VERDICT_SERVING",
-			"HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES",
-		]) {
+	it("accepts and ignores the retired fleet verdict keys, whatever they hold", () => {
+		const retired = {
+			HOBO_CI_FLEET_REPORTERS_JSON:
+				'{"reporters":[{"privateKey":"secret-key-value"}]}',
+			HOBO_CI_FLEET_VERDICT_SERVING: "maybe",
+			HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES: "0",
+		};
+		expect([...RETIRED_RELAY_RUNTIME_CONFIG_KEYS].sort()).toEqual(
+			Object.keys(retired).sort(),
+		);
+		const config = parseRelayRuntimeConfig({ ...entries, ...retired });
+		for (const key of RETIRED_RELAY_RUNTIME_CONFIG_KEYS) {
+			expect(Object.keys(config)).not.toContain(key);
 			expect(RELAY_RUNTIME_CONFIG_KEYS).not.toContain(key);
-			expect(
-				RelayRuntimeConfigProto.fields.some((field) => field.jsonName === key),
-			).toBe(false);
-			const error = errorOf(() =>
-				parseRelayRuntimeConfig({ ...entries, [key]: "on" }),
-			);
-			expect(error.keys).toEqual([key]);
 		}
+		expect(config).toEqual(parseRelayRuntimeConfig(entries));
+	});
+
+	it("keeps every retired key's protobuf field number and name reserved", () => {
+		const names = RelayRuntimeConfigProto.fields.map((field) => field.jsonName);
+		for (const key of RETIRED_RELAY_RUNTIME_CONFIG_KEYS)
+			expect(names).not.toContain(key);
+		const proto = readFileSync(
+			new URL("../data-models/relay_runtime_config.proto", import.meta.url),
+			"utf8",
+		);
+		expect(proto).toMatch(/reserved 27, 28, 29;/u);
+		for (const key of RETIRED_RELAY_RUNTIME_CONFIG_KEYS)
+			expect(proto).toContain(`"${key.toLowerCase()}"`);
 	});
 
 	it("treats an empty entry as unset", () => {
@@ -340,6 +356,22 @@ describe("the loader", () => {
 		};
 		return { source, reads: () => reads };
 	}
+
+	it("starts from a store that still holds the retired fleet verdict keys", async () => {
+		const loader = createRelayRuntimeConfigLoader({
+			source: infisicalRelayConfigSource(
+				stubClient(() => ({
+					...entries,
+					HOBO_CI_FLEET_REPORTERS_JSON: '{"reporters":[]}',
+					HOBO_CI_FLEET_VERDICT_SERVING: "on",
+					HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES: "240",
+				})),
+			),
+			ttlMs: 60_000,
+			now: () => 0,
+		});
+		expect((await loader.load()).HOBO_CI_GITHUB_APP_ID).toBe("123456");
+	});
 
 	it("reads once per TTL and shares a read between concurrent loads", async () => {
 		let clock = 0;
