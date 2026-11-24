@@ -17,6 +17,7 @@ import {
 	adoptStoreSignIn,
 	ClaimStoreUnavailableError,
 	canReachOwner,
+	type Env,
 	ensureBitwardenSignIn,
 	familySettings,
 	InvalidSecretStoreError,
@@ -353,10 +354,10 @@ async function prepareVercelWithVault(
 	}
 	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
-	const openOwner = () =>
+	const openOwner = (resolved?: Env) =>
 		ownerStore("cd", vault, {
 			...deps,
-			env: plainEnv,
+			env: { ...plainEnv, ...resolved },
 			// The setup page collected Bitwarden's API key: provision from it
 			// (one approved login request) before the store opens.
 			beforeOpen: async (id, values) => {

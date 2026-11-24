@@ -26,6 +26,7 @@ import {
 	createMcpOwnerChannel,
 	createOwnerCaptureApp,
 } from "./mcp-owner-channel.js";
+import { createOwnerPages } from "./mcp-owner-page.js";
 import {
 	createInfisicalCaptureConnector,
 	secretCaptureProjectDir,
@@ -781,6 +782,8 @@ export function composeHoboMcp(options: {
 		createStoreChoiceApp({
 			locatorFor: (cwd, family) => storeSettingsFor(family, cwd),
 			sessions,
+			pages: createOwnerPages(),
+			deposit: (name, value) => owner.deposit(name, value),
 		}),
 	);
 	const ready = capture;

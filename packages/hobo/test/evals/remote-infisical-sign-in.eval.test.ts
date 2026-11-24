@@ -77,6 +77,15 @@ function fakeInfisical() {
 			new Headers(init?.headers).get("authorization") !== `Bearer ${USER_JWT}`
 		)
 			return Response.json({ message: "unauthorized" }, { status: 401 });
+		if (url.pathname === `/api/v1/projects/${PROJECT}`)
+			return Response.json({
+				project: {
+					id: PROJECT,
+					name: "secrets",
+					type: "secret-manager",
+					environments: [{ name: "Production", slug: "prod", id: "env-1" }],
+				},
+			});
 		// Nothing provisioned yet: no identity, no project member.
 		if ((init?.method ?? "GET") === "GET")
 			return Response.json({ identityMemberships: [], totalCount: 0 });
@@ -204,6 +213,8 @@ describe("EVAL remote dev box: Infisical sign-in through the HoBo MCP App, end t
 		expect(second).toMatchObject({
 			kind: "ready",
 			identityId: "ident-1",
+			projectId: PROJECT,
+			environment: "prod",
 			token: "identity-token",
 		});
 		expect(api.calls).toContain("POST /api/v1/identities");
