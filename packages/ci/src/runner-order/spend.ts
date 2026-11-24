@@ -1,6 +1,9 @@
 import type { Lease } from "../_generated/ci_pb.js";
 import type { JobFact } from "../_generated/relay_job_pb.js";
-import { hostedListRate, type RunnerBilling } from "../fleet/models.js";
+import {
+	hostedListRate,
+	type RunnerBilling,
+} from "../runner-routing/models.js";
 import type { SpendReader } from "./ports.js";
 import {
 	HOSTED_RUNNER_PROVIDERS,

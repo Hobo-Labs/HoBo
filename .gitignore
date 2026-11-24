@@ -134,4 +134,6 @@ reports/mutation/
 # An interrupted Control Yard capture must remain invalid until it is rerun.
 src/draft/exp-proofs/ux/control-yard/assets/evidence/.capture-incomplete
 
+# fleet:verify run report (CI uploads it as an artifact)
+/fleet-verification.json
 **/deploy/secret-store.binding.json

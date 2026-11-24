@@ -2,8 +2,11 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
-import type { MeshIdentity } from "@hobo/ci/mesh";
-import { generateMeshIdentity, meshIdentityFromPem } from "@hobo/ci/mesh";
+import {
+	generateMachineIdentity,
+	type MachineIdentity,
+	machineIdentityFromPem,
+} from "@hobo/ci";
 import { z } from "zod";
 import type { MachineProfile } from "./advert.js";
 import { pause } from "./executor.js";
@@ -28,7 +31,7 @@ export const MACHINE_TICK_MS = 1_000;
 export type LoadedMachine = Readonly<{
 	id: string;
 	name: string;
-	identity: MeshIdentity;
+	identity: MachineIdentity;
 	created: boolean;
 }>;
 
@@ -57,7 +60,7 @@ export async function loadMachine(
 		return {
 			id: kept.id,
 			name,
-			identity: meshIdentityFromPem(pem),
+			identity: machineIdentityFromPem(pem),
 			created: false,
 		};
 	}
@@ -65,7 +68,7 @@ export async function loadMachine(
 		`m-${randomBytes(6).toString("hex")}`,
 		options.name ?? options.defaultName,
 	);
-	const generated = generateMeshIdentity();
+	const generated = generateMachineIdentity();
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	await writeFile(keyFile, generated.privateKeyPem, { mode: 0o600 });
 	await writeFile(file, storedMachineJson(machine), { mode: 0o600 });

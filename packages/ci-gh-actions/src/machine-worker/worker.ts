@@ -1,9 +1,9 @@
 import type {
 	MachineAdvert,
+	MachineIdentity,
 	MachineSharing,
 	SignedMachineAdvert,
 } from "@hobo/ci";
-import type { MeshIdentity } from "@hobo/ci/mesh";
 import {
 	JitConfigRejection,
 	parseJitConfig,
@@ -35,7 +35,7 @@ export type { MachineWorkerEvent };
 
 export type MachineWorkerOptions = Readonly<{
 	profile: MachineProfile;
-	identity: MeshIdentity;
+	identity: MachineIdentity;
 	sink: MachineAdvertSink;
 	jobs: MachineJobSource;
 	github: MachineGithub;

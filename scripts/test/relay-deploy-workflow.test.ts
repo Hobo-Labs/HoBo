@@ -354,6 +354,11 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
+	it("probes no hosted fleet verdict: the relay serves none", () => {
+		assert.doesNotMatch(workflow, /Probe the fleet verdict/u);
+		assert.doesNotMatch(workflow, /\/v1\/fleet\/verdicts\//u);
+	});
+
 	it("passes the repository's workflow lint, as an approved CI fabric workflow", async () => {
 		const previous = process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY;
 		process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY = "1";

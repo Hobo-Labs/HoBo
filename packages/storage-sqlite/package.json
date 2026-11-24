@@ -22,11 +22,12 @@
 	},
 	"dependencies": {
 		"@alchemy.run/domain": "2.0.0-beta.87",
-		"@hobo/backend-fleet": "workspace:*",
+		"@hobo/backend-routing": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"effect": "4.1.4"
 	},
 	"devDependencies": {
+		"@hobo/fleet": "workspace:*",
 		"@types/node": "^22.15.29",
 		"fast-check": "^4.3.0",
 		"typescript": "^6.0.3",

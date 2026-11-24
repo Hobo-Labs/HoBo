@@ -66,6 +66,9 @@
     "runnerOrder": {
       "$ref": "#/$defs/RunnerOrder"
     },
+    "fleet": {
+      "$ref": "#/$defs/BoxMemberSettings"
+    },
     "turboCache": {
       "$ref": "#/$defs/TurboCache"
     },
@@ -93,7 +96,7 @@
               "maxItems": 50,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema139"
+                "$ref": "#/$defs/__schema146"
               }
             }
           },
@@ -1648,11 +1651,83 @@
         }
       ]
     },
+    "BoxMemberSettings": {
+      "type": "object",
+      "properties": {
+        "authorityUrl": {
+          "$ref": "#/$defs/__schema138"
+        },
+        "fleet": {
+          "$ref": "#/$defs/__schema139"
+        },
+        "tenant": {
+          "$ref": "#/$defs/__schema140"
+        },
+        "region": {
+          "$ref": "#/$defs/__schema141"
+        },
+        "memberName": {
+          "$ref": "#/$defs/__schema142"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/__schema143"
+        }
+      },
+      "required": [
+        "authorityUrl",
+        "fleet",
+        "tenant",
+        "region"
+      ],
+      "additionalProperties": false
+    },
+    "__schema138": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^https:\\/\\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:\\/[A-Za-z0-9._~/-]*)?$"
+    },
+    "__schema139": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "__schema140": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+    },
+    "__schema141": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "__schema142": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "__schema143": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/__schema144"
+        },
+        "cache": {
+          "$ref": "#/$defs/__schema144"
+        },
+        "download": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "__schema144": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 1024,
+      "pattern": "^\\/[^\\0]*$"
+    },
     "TurboCache": {
       "type": "object",
       "properties": {
         "api": {
-          "$ref": "#/$defs/__schema138"
+          "$ref": "#/$defs/__schema145"
         }
       },
       "required": [
@@ -1660,7 +1735,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema138": {
+    "__schema145": {
       "anyOf": [
         {
           "type": "string",
@@ -1673,7 +1748,7 @@
         }
       ]
     },
-    "__schema139": {
+    "__schema146": {
       "type": "string",
       "pattern": "^[A-Za-z]{1,30}$"
     }

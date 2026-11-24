@@ -3,11 +3,6 @@ import { describe, expect, it } from "vitest";
 import { type Lease, LeaseSchema } from "../src/_generated/ci_pb.js";
 import { type JobFact, JobFactSchema } from "../src/_generated/relay_job_pb.js";
 import {
-	HOSTED_LIST_PRICES,
-	hostedListRate,
-	RUNNER_FINANCIAL_MODELS,
-} from "../src/fleet/models.js";
-import {
 	answerRelayJob,
 	HOSTED_RUNNER_PROVIDERS,
 	NO_ROUTE_FACTS,
@@ -27,6 +22,11 @@ import {
 	spendReaderConformance,
 	testRelayJobMessage,
 } from "../src/runner-order/testing.js";
+import {
+	HOSTED_LIST_PRICES,
+	hostedListRate,
+	RUNNER_FINANCIAL_MODELS,
+} from "../src/runner-routing/models.js";
 
 const NOW = Date.UTC(2026, 10, 17, 12);
 const MONTH = monthStartMs(NOW);

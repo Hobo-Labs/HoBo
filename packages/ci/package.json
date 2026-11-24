@@ -40,14 +40,6 @@
       "types": "./dist/sqlite-store.d.ts",
       "default": "./dist/sqlite-store.js"
     },
-    "./fleet-v2": {
-      "types": "./dist/fleet-v2/index.d.ts",
-      "default": "./dist/fleet-v2/index.js"
-    },
-    "./mesh": {
-      "types": "./dist/mesh/index.d.ts",
-      "default": "./dist/mesh/index.js"
-    },
     "./insights": {
       "types": "./dist/insights/index.d.ts",
       "default": "./dist/insights/index.js"
@@ -110,6 +102,7 @@
     "@hobo/broker": "workspace:*",
     "@hobo/core": "workspace:*",
     "@hobo/dispatcher": "workspace:*",
+    "@hobo/fleet": "workspace:*",
     "@hobo/pricing": "workspace:*",
     "effect": "4.1.4",
     "zod": "^4.1.13"

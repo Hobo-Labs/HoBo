@@ -26,6 +26,7 @@ RUN mise trust ./mise.toml \
   && mise exec -- pnpm --version \
   && mise exec -- python --version \
   && mise exec -- cue version \
+  && mise exec -- nats-server --version \
   && mise exec -- betterleaks version \
   && mise exec -- shellcheck --version \
   && mise exec -- syft version \

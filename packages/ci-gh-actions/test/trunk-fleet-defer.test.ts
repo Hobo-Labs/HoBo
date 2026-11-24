@@ -69,7 +69,7 @@ describe("evaluateMainTrunkFleetDefer", () => {
 			nowMs,
 			trunkSlots: 1,
 			localTrunkReserved: 0,
-			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 2 },
+			fleetWitness: { hoboFreeSlots: 0, fleetFreeSlots: 2 },
 		});
 		expect(decision.action).toBe("defer");
 		expect(decision.peerAbsorbSlots).toBe(2);
@@ -89,7 +89,7 @@ describe("evaluateMainTrunkFleetDefer", () => {
 				nowMs,
 				trunkSlots: 1,
 				localTrunkReserved: 0,
-				fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 1, meshFreeSlots: 0 },
+				fleetWitness: { hoboFreeSlots: 0, fleetFreeSlots: 1 },
 			});
 			expect(decision.action).toBe("defer");
 			expect(decision.waitReason).toBe("memory-headroom");
@@ -105,7 +105,7 @@ describe("evaluateMainTrunkFleetDefer", () => {
 			nowMs,
 			trunkSlots: 1,
 			localTrunkReserved: 1,
-			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 2, meshFreeSlots: 0 },
+			fleetWitness: { hoboFreeSlots: 0, fleetFreeSlots: 2 },
 		});
 		expect(decision.action).toBe("defer");
 		expect(decision.waitReason).toBe("cpu-contention");
@@ -122,7 +122,7 @@ describe("evaluateMainTrunkFleetDefer", () => {
 			nowMs,
 			trunkSlots: 2,
 			localTrunkReserved: 2,
-			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 1, meshFreeSlots: 0 },
+			fleetWitness: { hoboFreeSlots: 0, fleetFreeSlots: 1 },
 		});
 		expect(decision.action).toBe("defer");
 		expect(decision.holdReason).toBeUndefined();
@@ -141,7 +141,7 @@ describe("evaluateMainTrunkFleetDefer", () => {
 			trunkSlots: 1,
 			parallelTrunkLaunchCapacity,
 			localTrunkReserved,
-			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 2, meshFreeSlots: 2 },
+			fleetWitness: { hoboFreeSlots: 0, fleetFreeSlots: 2 },
 		}) as const;
 
 	it("treats parallel launch capacity as room beyond what is already reserved", () => {
@@ -168,7 +168,7 @@ describe("evaluateMainTrunkFleetDefer", () => {
 	it("still holds on no-peer-capacity even when local slots are full", () => {
 		const decision = evaluateMainTrunkFleetDefer({
 			...parallelInput(2, 0),
-			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 0, meshFreeSlots: 0 },
+			fleetWitness: { hoboFreeSlots: 0, fleetFreeSlots: 0 },
 		});
 		expect(decision.action).toBe("hold");
 		expect(decision.holdReason).toBe("no-peer-capacity");
@@ -183,10 +183,10 @@ describe("evaluateMainTrunkFleetDefer", () => {
 			nowMs,
 			trunkSlots: 1,
 			localTrunkReserved: 0,
-			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 0, meshFreeSlots: 0 },
+			fleetWitness: { hoboFreeSlots: 0, fleetFreeSlots: 0 },
 		});
 		expect(decision.action).toBe("hold");
 		expect(decision.holdReason).toBe("no-peer-capacity");
-		expect(decision.arcFreeSlots).toBe(0);
+		expect(decision.fleetFreeSlots).toBe(0);
 	});
 });

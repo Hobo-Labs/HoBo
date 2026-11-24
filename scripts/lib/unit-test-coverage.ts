@@ -66,7 +66,7 @@ export function unitTestCoverageProblems(): string[] {
 		encoding: "utf8",
 		shell: false,
 		env: sanitizeNodeOptions(),
-		maxBuffer: 64 * 1024 * 1024,
+		maxBuffer: 512 * 1024 * 1024,
 	});
 	if (result.status !== 0) {
 		return [`turbo dry run failed: ${result.stderr || result.error?.message}`];

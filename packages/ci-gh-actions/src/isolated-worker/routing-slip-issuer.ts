@@ -1,27 +1,3 @@
-/**
- * The box relay's routing slip issuer (ADR-0181, decisions 1-5).
- *
- * The relay decides routing (R1). Per connected repository it writes its
- * current answer, the routing slip (`../routing-slip.ts`), as the message of
- * a parentless commit at `refs/hobo/routing-slip`; the route job reads it
- * with its own token. This module holds the three parts of that:
- *
- * - `decideRoutingSlipClasses`: what the slip says for `pr`, `fork` and
- *   `trunk`, from what only the relay holds (3.3). Pure.
- * - `writeRoutingSlipCommit`: the Git Data API calls. A one-file tree made
- *   once and reused, `POST /git/commits` with no parent, then
- *   `PATCH /git/refs/hobo/routing-slip` with `force: true`, or
- *   `POST /git/refs` the first time.
- * - `createRoutingSlipIssuer`: when to write. On a change and as a
- *   heartbeat every 3 minutes, never more than 20 writes a minute or 300 an
- *   hour, 10 minutes of quiet after a 403 or 429, and only on the mesh
- *   leader (a box without a mesh is its own leader).
- *
- * A slip names no slot count and no memory figure; `reason` is a code.
- * Anything the issuer cannot do it logs and leaves: with no fresh slip the
- * route job falls back to the queue rule, as it did before slips (R3).
- */
-
 import { z } from "zod";
 import type { GithubTransport } from "../github.js";
 import {
@@ -33,7 +9,7 @@ import {
 	routingSlipJson,
 } from "../routing-slip.js";
 import type { RunnerRouting } from "../runner-routing.js";
-import type { FleetRunnersView } from "./fleet-verdict-evaluator.js";
+import type { RepositoryRunnersView } from "./routing-slip-decision.js";
 
 /** Hard caps on slip writes, whatever the decision does (ADR-0181, decisions 1-2). */
 export const ROUTING_SLIP_WRITES_PER_MINUTE = 20;
@@ -58,7 +34,6 @@ export type RoutingSlipClasses = Readonly<{
 
 export type RoutingSlipDecisionInput = Readonly<{
 	policy: Pick<RunnerRouting, "pin" | "labels" | "localRunner">;
-	/** Labels at least one live node (this box or a mesh peer) serves. */
 	served: ReadonlySet<string>;
 	/** Labels the held evaluation refuses: nothing can take a job (no-capacity). */
 	refused: ReadonlySet<string>;
@@ -250,7 +225,7 @@ export async function readRepositoryRunners(
 	github: GithubTransport,
 	target: Readonly<{ installationId: number; repository: string }>,
 	nowMs: number,
-): Promise<FleetRunnersView | undefined> {
+): Promise<RepositoryRunnersView | undefined> {
 	try {
 		const response = await github.request(
 			target.installationId,
@@ -365,9 +340,7 @@ export type RoutingSlipIssuerOptions = Readonly<{
 	github: GithubTransport;
 	/** The committed labels; every runner a slip names is one of them. */
 	labels: ReadonlySet<string>;
-	/** This relay: the mesh node id (or the box's own) and its commit. */
 	relay: Readonly<{ nodeId: string; commit: string }>;
-	/** Whether this box is the mesh leader right now. */
 	leader: () => Promise<boolean>;
 	/** The connected repositories, one slip each. */
 	targets: () => Promise<readonly RoutingSlipTarget[]>;
@@ -391,10 +364,6 @@ const classesKey = (classes: RoutingSlipClasses) =>
 		return `${name}=${route.runner}/${route.tier}/${route.reason}`;
 	}).join(";");
 
-/**
- * Writes each connected repository's slip when its decision changes and as a
- * heartbeat, within the budget, and only while this box leads the mesh.
- */
 export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 	const now = options.now ?? Date.now;
 	const log = options.log ?? (() => undefined);
@@ -492,7 +461,6 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 		try {
 			leads = await options.leader();
 		} catch {
-			// A mesh that cannot be read names no leader: no slip (R3).
 			leads = false;
 		}
 		if (leads !== leading) {

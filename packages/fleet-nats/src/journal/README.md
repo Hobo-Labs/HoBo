@@ -1,0 +1,72 @@
+# Journal event store
+
+`createJournalEventStore({ servers, credentials })` returns a `FleetEventStore`
+on the `FLEET_JOURNAL` stream, the event store of the high-availability
+profile (deployment, availability and operations). Several authority replicas can share it without a
+leader.
+
+## Layout
+
+| What | How |
+|---|---|
+| Stream | `FLEET_JOURNAL`, subjects `fleet.journal.>`, no expiry, `deny_delete`, `deny_purge`, discard new: `JOURNAL_STREAM_CONFIG` in `codec.ts`. Created with one replica only if it does not exist; `provisionTopology` creates it from the same constant with the deployment's replica count (L41: it used to provision `fleet.journal.*`, which the store refused) |
+| Subject | `fleet.journal.<token>`: the stream id with every character outside `[A-Za-z0-9_:-]` written as `%XX` per UTF-8 byte, so any stream id is one token and the mapping is reversible |
+| Message | One per append: `{ v: 1, ownerEpoch, events }`, the batch's full envelopes and the stream's fencing epoch after the append |
+| Compare-and-set | The publish carries `Nats-Expected-Last-Subject-Sequence` set to the stream sequence of the last message this store read on the subject; error 10071 becomes `OptimisticSequenceConflictError` |
+| Position | `readAll` positions are `(stream sequence << 20) + place in batch + 1`; at most `2^20 - 2` events per append |
+
+## Rules
+
+The same as `createMemoryEventStore` and the SQLite journal: per-stream
+`expectedSeq`; `meta.idempotencyKey` deduplicated per stream, also on a retry
+with a stale `expectedSeq` and across replicas; single-writer fencing through
+`fenceToken` (the epoch lives in the journal, so every replica enforces it);
+`read` and `readAll` parse every envelope and refuse a message filed under
+another stream. Before an append the store catches its cache of that stream up
+from the journal. `subscribe` delivers what is stored after it was called, in
+stream order, through an ordered consumer; an append from the same store waits
+until its subscriptions are listening. `snapshot` checks the sequence against
+the head and returns the record, as the core port's other stores do.
+`getStreamHead` answers the head this store last read or wrote.
+
+`credentials` is the text of a NATS credentials file; empty connects without
+authentication (tests only). The store connects exactly as the bus does (L42):
+`journalConnectionOptions` is the bus's `connectionOptions`, so TLS is
+required, the CA named by `HOBO_FLEET_NATS_CA` is trusted besides the system
+roots, and only `tls://` or `nats://` URLs are accepted. The store reconnects
+for the life of the process; an import fails fast.
+
+## Import for a high-availability restore (L41)
+
+`importJournalEvents({ servers, credentials }, items)` (internal, in
+`index.ts`; `importJournal(transport, items)` in `import.ts`) writes archived
+envelopes into `FLEET_JOURNAL` unchanged, in the archive's `readAll` order:
+every envelope id stays, and consecutive items of one stream whose positions
+share a stream sequence become one message again, so a journal archived with
+`readAll` comes back with the same positions. It checks everything before
+writing (envelopes parse, ids unique, each stream's `seq` runs 1, 2, 3, ...).
+The journal must be empty or hold exactly the first envelopes of the import,
+which is a partial import that it then finishes; anything else is
+`conflict`. Each message carries the subject's expected last sequence, so a
+concurrent writer fails the import rather than interleaving. Owner epochs
+are not part of an envelope: imported streams start unfenced and their next
+fenced append sets the epoch. Answers `Outcome<{ imported, present }>`.
+
+## Assumption A15
+
+A15 (`runEventStoreConformance` can host a network store through an adapter
+harness) **holds**: `test/journal/harness.ts` adapts the store to the suite's
+synchronous factory (every method awaits the opened store; a data directory
+names a reopened connection on the same stream; `fold` quarantines as
+`@hobo/runtime-local` does; the crash probe closes the connection with batches
+in flight). All eight assertions pass against the fake JetStream context in
+`journal.test.ts`, and `journal.integration.test.ts` runs the harness and
+`runJournalConformance` against `nats-server`. No fallback taken.
+
+## Tests
+
+- `test/journal/journal.test.ts`, `nats.test.ts`: isolated, against a fake
+  JetStream context (`fake-jetstream.ts`, `fake-jetstream-client.ts`).
+- `test/journal/journal.integration.test.ts` (O11): `nats-server` from
+  `HOBO_FLEET_NATS_SERVER_BIN` or `PATH`, with TLS required and a throwaway
+  CA; fails without it when `CI` is set, otherwise reports one `[A15]` skip.

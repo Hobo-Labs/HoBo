@@ -1,0 +1,16 @@
+export declare function createHostCapacity(options: Readonly<{
+    slots: number;
+    workRoot: string;
+    labels: readonly string[];
+}>): CapacitySource;
+export declare function createEgressProxyFactory(options: Readonly<{
+    fleetAllow: () => readonly string[];
+    log: FleetLog;
+}>): EgressProxyFactory;
+export declare function installService(platform: NodeJS.Platform, argv: readonly string[]): Promise<Outcome<string>>;
+export declare function createExternalSignerKeyStore(home: string, command: readonly string[]): KeyStore;
+export declare function createFileKeyStore(home: string): KeyStore;
+export declare function sandboxDrivers(options: Readonly<{
+    cap?: SandboxTier;
+    log: FleetLog;
+}>): Promise<readonly SandboxDriver[]>;
