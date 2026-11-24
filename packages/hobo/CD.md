@@ -20,7 +20,7 @@ working directory: they act on the Station's journal and its declared topology.
 | Runner hosts | none | `HOBO_CD_RUNNER_HOST=<agent config.json>` on a runner host: `agent run` registers the runner-host realizer (packages/ci-gh-actions/deploy/runner-fleet/README.md) |
 | Kubernetes fleets | none | `HOBO_CD_KUBE_FLEET=<file.json>`: `{ "ocm": … }` or `{ "karmada": … }` realizer record, optional `clusterProfiles` import (OBSERVE_ONLY Camps) |
 | Service tick | 1 s | `HOBO_CD_TICK_MS` |
-| Credential locators | `owner://NAME` from the owner store session (HoBo MCP `choose_secret_store`), and `github-app://<owner>/<repo>`: an installation token the session mints for that repository from HoBo's GitHub App (`HOBO_CI_GITHUB_APP_ID` and `HOBO_CI_GITHUB_APP_PRIVATE_KEY` in the store's relay folder, written by `hobo ci app create`); each resolved for one use, never stored; anything else, `env://` locators included, is refused | any `CredentialResolver` |
+| Credential locators | `owner://NAME` from the owner store session (HoBo MCP `choose_secret_store`), and `github-app://<owner>/<repo>`: an installation token the session mints for that repository from HoBo's GitHub App (`HOBO_CI_GITHUB_APP_ID` and `HOBO_CI_GITHUB_APP_PRIVATE_KEY` in the store's relay folder, written when the owner creates the App with its `ci app create` command); each resolved for one use, never stored; anything else, `env://` locators included, is refused | any `CredentialResolver` |
 
 Ports the host did not configure fail closed: RUNBOOK and SUITE hooks refuse,
 a Camp without Station cutover routing offers no traffic capability (a required
