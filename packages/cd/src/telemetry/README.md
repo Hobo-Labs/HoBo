@@ -73,7 +73,9 @@ Reconcile lag: from the latest `set.Created` for a Camp to the first
 | `telemetry-tenant-mismatch` | Query for another tenant. | Use that tenant's telemetry. |
 
 Telemetry is advisory: every CD module swallows sink errors, so an outage
-never fails a delivery command. `stats()` and `health()` make it visible.
+never fails a delivery command. Advisory emitters return promises that fulfill
+after sink failures are contained, so callers can await emission without
+handling exporter errors. `stats()` and `health()` make an outage visible.
 
 ## Metrics emitted
 

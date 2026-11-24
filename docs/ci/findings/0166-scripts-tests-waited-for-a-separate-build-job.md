@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 164: scripts tests waited for a separate build job"
+title: "Finding 166: scripts tests waited for a separate build job"
 description: "A pull-request run of HoBo CI Fabric built the scripts-test packages in a scripts-tests-build job, then waited for runners again before the four scripts-tests shards could start. Since every gate job restores the main build cache, each shard now builds what it imports itself, which removes one serial stage and one runner pickup."
 tags: [hobo, ci, performance, turbo, scripts-tests]
 ---
 
-# Finding 164: scripts tests waited for a separate build job
+# Finding 166: scripts tests waited for a separate build job
 
 ## Measurements
 

@@ -627,6 +627,30 @@ describe("the relay deploy workflow", () => {
 			appCredentialsWorkflow,
 			/uses: \.\/\.github\/workflows\/relay-deploy\.yml/u,
 		);
+		const callerKeys = [
+			...(
+				/\n {2}app-credentials:\n((?: {4}.*\n|\n)*)/u.exec(
+					appCredentialsWorkflow,
+				)?.[1] ?? ""
+			).matchAll(/^ {4}([\w-]+):/gmu),
+		].map((match) => match[1]);
+		assert.deepEqual(
+			callerKeys.filter(
+				(key) =>
+					![
+						"name",
+						"uses",
+						"with",
+						"secrets",
+						"needs",
+						"if",
+						"permissions",
+						"strategy",
+						"concurrency",
+					].includes(key ?? ""),
+			),
+			[],
+		);
 		for (const input of ["relay", "owner_id"])
 			assert.match(
 				appCredentialsWorkflow,

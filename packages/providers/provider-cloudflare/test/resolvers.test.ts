@@ -28,7 +28,7 @@ import {
 } from "../src/json.js";
 
 const ACCOUNT_ID = "acct-1234";
-const CREDENTIAL_REF = "env://CLOUDFLARE_API_TOKEN";
+const CREDENTIAL_REF = "owner://CLOUDFLARE_API_TOKEN";
 const TOKEN = "cf-token-value";
 
 // SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.

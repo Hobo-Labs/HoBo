@@ -264,6 +264,20 @@ describe("wireContinuousDelivery", () => {
 			expect(argsOf(calls, "createCampReconciler").transport).toBe(transport);
 		});
 
+		it("passes a conductor's explicit transport without changing its identity", () => {
+			const cd = wireContinuousDelivery(input(log, calls));
+			const transport = recordingModule<ReconcilerTransport>("bounded", log);
+			conductorFor(cd, { campIds: [asCamp("c1")], holderId: "h1", transport });
+			expect(calls.some((c) => c.factory === "createInProcessTransport")).toBe(
+				false,
+			);
+			const r = argsOf(calls, "createCampReconciler");
+			expect(r.mode).toBe(ReconcilerMode.CONDUCTOR);
+			expect(r.reconcilerId).toBe("conductor:h1");
+			expect(r.campIds).toEqual(["c1"]);
+			expect(r.transport).toBe(transport);
+		});
+
 		it("refuses a mode with no realizer with a typed code, remediation and metric", async () => {
 			const sink = recordingSink();
 			const cd = wireContinuousDelivery(

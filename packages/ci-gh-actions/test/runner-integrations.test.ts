@@ -39,14 +39,16 @@ describe("runner integrations", () => {
 		expect(
 			RunnerIntegrationSchema.safeParse({
 				...base,
-				auth: { method: "secret-ref", secretRef: "github-secret:DEPOT_TOKEN" },
+				auth: { method: "secret-ref", secretRef: "owner://DEPOT_TOKEN" },
 			}).success,
 		).toBe(true);
 		for (const secretRef of [
 			token("depot_org_"),
 			token("ghp_"),
 			"DEPOT_TOKEN",
-			"env:lower",
+			"github-secret:DEPOT_TOKEN",
+			"env:DEPOT_TOKEN",
+			"owner://lower",
 		])
 			expect(
 				RunnerIntegrationSchema.safeParse({
@@ -79,7 +81,7 @@ describe("runner integrations", () => {
 		const sha = "b0d24bd898725c42ccd8033fba2e878a2e27a16f";
 		for (const safe of [
 			sha,
-			"github-secret:DEPOT_TOKEN",
+			"owner://DEPOT_TOKEN",
 			"blacksmith-2vcpu-ubuntu-2404",
 		]) {
 			expect(looksLikeSecret(safe)).toBe(false);

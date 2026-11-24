@@ -14,6 +14,8 @@ import type { AddressInfo } from "node:net";
 type Answer = Parameters<typeof JSON.stringify>[0];
 
 export type InfisicalRoute =
+	| "read-project"
+	| "list-projects"
 	| "list-identities"
 	| "create-identity"
 	| "token-auth"
@@ -42,6 +44,9 @@ export const copiedSession = (jwt: string) =>
 	).toString("base64");
 
 function routeOf(method: string, path: string): InfisicalRoute | undefined {
+	if (method === "GET" && /^\/api\/v1\/projects\/[^/]+$/u.test(path))
+		return "read-project";
+	if (method === "GET" && path === "/api/v1/projects") return "list-projects";
 	if (
 		method === "GET" &&
 		/^\/api\/v2\/organizations\/[^/]+\/identity-memberships$/u.test(path)
@@ -118,7 +123,18 @@ export async function startFakeInfisical(organizationId = "org-1") {
 		if (fault !== undefined)
 			return send(fault, { message: `injected ${fault}` });
 		const segments = url.pathname.split("/");
+		const project = (id: string) => ({
+			id,
+			name: "secrets",
+			slug: "secrets",
+			type: "secret-manager",
+			environments: [{ name: "Production", slug: "prod", id: "env-prod" }],
+		});
 		switch (route) {
+			case "read-project":
+				return send(200, { project: project(segments.at(-1) ?? "") });
+			case "list-projects":
+				return send(200, { projects: [project("proj-1")] });
 			case "list-identities": {
 				const search = url.searchParams.get("search") ?? "";
 				return send(200, {

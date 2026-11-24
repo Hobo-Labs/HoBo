@@ -84,11 +84,19 @@ describe("GitHub Actions job timeouts", () => {
 	assert.ok(files.length > 0, "expected workflow files");
 
 	for (const file of files) {
-		it(`${file} gives every job an explicit timeout-minutes ≤20 (schedule exception on main-gate only)`, () => {
+		it(`${file} gives every job that runs steps an explicit timeout-minutes ≤20 (schedule exception on main-gate only)`, () => {
 			const text = readFileSync(join(workflowDir, file), "utf8");
 			const jobs = jobBlocks(text);
 			assert.ok(jobs.length > 0, `${file} has no jobs`);
 			for (const { id, block } of jobs) {
+				if (/^ {4}uses: /mu.test(block)) {
+					assert.equal(
+						jobTimeoutLine(block),
+						undefined,
+						`${file} job ${id} calls a reusable workflow, which accepts no timeout-minutes`,
+					);
+					continue;
+				}
 				assertJobTimeout(file, id, jobTimeoutLine(block));
 			}
 		});

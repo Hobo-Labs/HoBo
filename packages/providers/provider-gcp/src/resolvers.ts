@@ -691,7 +691,7 @@ async function resolveToken(
 	if (ref.trim().length === 0) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_MISSING",
-			'gcp resolver: credentialRef is empty. Supply a locator such as "env://GOOGLE_OAUTH_ACCESS_TOKEN" or "secret://camp/gcp-access-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
+			'gcp resolver: credentialRef is empty. Supply a locator such as "owner://GOOGLE_OAUTH_ACCESS_TOKEN" or "secret://camp/gcp-access-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
 		);
 	}
 	const trimmed = ref.trim();
@@ -704,7 +704,7 @@ async function resolveToken(
 	if (!CREDENTIAL_REF_PATTERN.test(trimmed)) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_NOT_A_REF",
-			`gcp resolver: credentialRef ${JSON.stringify(redactGcpText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "env://GOOGLE_OAUTH_ACCESS_TOKEN"`,
+			`gcp resolver: credentialRef ${JSON.stringify(redactGcpText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "owner://GOOGLE_OAUTH_ACCESS_TOKEN"`,
 		);
 	}
 	let material: string;
