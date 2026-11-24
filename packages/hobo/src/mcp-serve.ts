@@ -5,13 +5,17 @@ import { fileSettingsStore } from "@hobo/connect-ui";
 import { createTrustedVault } from "@hobo/core";
 import type { DeviceClock } from "@hobo/hobo-cd";
 import {
+	agentVaultProxyLauncher,
 	applyEgressToProcess,
+	ensureInfisicalAgentVaultCli,
+	hoboToolsDir,
 	machineRunner,
 	scopeRunVault,
 	secretStoreLocatorPath,
 	whichOnPath,
 } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
+import type { AgentVaultProxyDeps } from "./agent-vault-broker.js";
 import { ownerSecretStoreBindingStore } from "./ci-secret-store.js";
 import { createComposedHoboCli } from "./cli.js";
 import {
@@ -65,6 +69,7 @@ export function composeHoboMcp(options: {
 	/** The device grant's clock (evals pass a virtual one). */
 	readonly clock?: DeviceClock;
 	readonly ownerSignIn?: OwnerSignIn;
+	readonly agentVault?: AgentVaultProxyDeps;
 }) {
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
@@ -236,6 +241,15 @@ export function composeHoboMcp(options: {
 				},
 			})(input),
 		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
+		agentVault: options.agentVault ?? {
+			launch: agentVaultProxyLauncher(),
+			command: () =>
+				ensureInfisicalAgentVaultCli({
+					run: machineRunner(),
+					which: (bin) => whichOnPath(bin),
+					toolsDir: hoboToolsDir(),
+				}),
+		},
 	});
 	const server = createHoboMcpServer({
 		cli: createComposedHoboCli({
@@ -300,7 +314,7 @@ export function composeHoboMcp(options: {
 			owner.vault?.clear();
 			owner.close();
 			owner.jobs.close();
-			sessions.close();
+			await sessions.close();
 			await ready.close();
 		},
 	};

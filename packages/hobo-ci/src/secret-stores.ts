@@ -14,6 +14,7 @@ import {
 	createInfisicalClient,
 	createInfisicalSecretsPort,
 	githubActionsJwtSource,
+	type InfisicalAgentVaultApi,
 	infisicalBindingFromEnv,
 	infisicalSecretRef,
 	oidcAuth,
@@ -86,6 +87,7 @@ export interface OpenedSecretStore {
 	readonly port: SecretsPort;
 	readonly reference: (name: string) => string;
 	readonly withWriteLock?: <T>(operation: () => Promise<T>) => Promise<T>;
+	readonly agentVault?: OwnerAgentVault;
 }
 
 export function withStoreWriteLock<T>(
@@ -94,6 +96,11 @@ export function withStoreWriteLock<T>(
 ): Promise<T> {
 	return store.withWriteLock ? store.withWriteLock(operation) : operation();
 }
+
+export type OwnerAgentVault = Readonly<{
+	api: InfisicalAgentVaultApi;
+	siteUrl: string;
+}>;
 
 export type SecretStoreOpening =
 	| { readonly ok: true; readonly store: OpenedSecretStore }
@@ -432,6 +439,10 @@ export async function openSecretStore(
 							? readOnlySecretsPort(createInfisicalSecretsPort({ client }))
 							: createInfisicalSecretsPort({ client }),
 						reference: (name) => infisicalSecretRef(binding, name),
+						agentVault: {
+							api: client.agentVault(),
+							siteUrl: binding.siteUrl,
+						},
 					},
 				};
 			} catch {

@@ -298,6 +298,49 @@ tool with `args: ["fleet", "status"]` (or `["fleet", "restart", "<vm>"]`) and
 the project directory as `cwd`. The verb manages machines only; it does not
 register runners or the `hobo-arc` scale set on them.
 
+### Hostinger through Infisical Agent Vault
+
+When the owner's store is Infisical and holds no `HOSTINGER_API_TOKEN` entry,
+the fleet verbs use Infisical Agent Vault instead, so neither HoBo nor the
+agent ever holds the Hostinger token. The owner needs:
+
+- exactly one Agent Vault project that the identity they signed in with
+  reaches;
+- in it, an `http` service whose host pattern covers
+  `developers.hostinger.com` (exactly, or as a one-label `*.hostinger.com`
+  wildcard), with the Hostinger token as the credential the proxy adds, or as
+  a value the proxy fills into a header placeholder;
+- that identity as an Agent Vault admin of the project, or holding an access
+  bundle with the service.
+
+HoBo runs the proxy itself. On the first fleet call of an MCP server it
+starts a one-hour session for the service, registers a proxy named `hobo`
+(traffic policy `service-hosts`) or rotates the token of the existing one,
+and starts `infisical agent-vault proxy` on a free `127.0.0.1` port with
+that token only in the child's environment and a fresh temporary data
+directory. It installs `@infisical/cli` 0.45.14 into HoBo's tools directory
+when the CLI on `PATH` is older. Hostinger requests then go through the proxy
+with the session token as proxy credentials, trusting only the proxy's CA,
+and carry the service's header placeholder, or no `Authorization` header when
+the proxy adds the credential. The route is renewed five minutes before the
+session expires. When the MCP server or the owner's store session closes,
+HoBo revokes the session, stops the proxy and deletes its data directory.
+
+Results name the route only as service and hosts: `data.credentialSource` is
+`{kind: "agent-vault", service, hosts}` (or `{kind: "owner-store"}`), and
+`doctor`'s `ownerStoreSession.agentVault` reports the project name, its
+services with their hosts, and the proxy's name and whether HoBo's proxy is
+running, once a fleet call has reached Agent Vault. No project, proxy or
+session id and no token appears in any result or error. Refusals:
+
+| Code | When |
+|---|---|
+| `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` | No store entry, and Agent Vault is unreachable (no project, or Infisical refused the identity) or has no `http` service for the host; the message says which. |
+| `HOBO_AGENT_VAULT_PROJECT_AMBIGUOUS` | The identity reaches more than one Agent Vault project; the message names them. |
+| `HOBO_AGENT_VAULT_NO_CREDENTIAL` | The service neither adds a credential nor offers a header placeholder. |
+| `HOBO_AGENT_VAULT_PROXY_FAILED` | The Infisical CLI could not be installed or the proxy did not become healthy. |
+| `HOBO_AGENT_VAULT_FAILED` | Infisical's answer could not be used. |
+
 ## Give the fleet's ARC pods node caches
 
 ```sh
