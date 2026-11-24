@@ -1295,7 +1295,7 @@ GitHub could not be read, or answered with something that is not a run. Check th
 ```
 
 ```text
-GitHub CLI could not complete the CI run operation. Check gh auth status and repository Actions permissions; inspect the run before repeating a rerun because its outcome may be unconfirmed.
+GitHub could not complete the CI run operation. Check that HoBo's GitHub App is installed on the repository with Actions permissions; inspect the run before repeating a rerun because its outcome may be unconfirmed.
 ```
 
 ```text
@@ -1304,7 +1304,7 @@ GitHub found no such repository. Check --repo.
 
 What to do:
 
-- Check gh auth status and repository Actions permissions, then inspect the run before repeating a mutation.
+- Check that HoBo's GitHub App is installed on the repository with Actions read permission, and Actions write permission for hobo ci rerun, then inspect the run before repeating a mutation.
 
 ### HOBO_CI_GITHUB_KEY_ERROR
 
@@ -2052,7 +2052,7 @@ Returned from `packages/hobo/src/ci-runs.ts`.
 Message:
 
 ```text
-Install {…}, then retry this CI command.
+Install Git, then retry this CI command.
 ```
 
 What to do: follow the message.

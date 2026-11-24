@@ -1145,6 +1145,8 @@ export function createCiCommand(
 						args: positionals.slice(1),
 						options: runOptions,
 						env,
+						credentials: deps.ownerCredentials?.(flags.cwd),
+						fetch: deps.fetch ?? fetch,
 						emitProgress,
 					});
 				const link =

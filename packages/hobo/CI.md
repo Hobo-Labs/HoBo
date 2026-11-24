@@ -240,8 +240,15 @@ repeating setup with the same explicit relay/repository reuses the connection.
 
 ## Inspect and retry runs
 
-Run commands use the authenticated [GitHub CLI](https://cli.github.com/manual/gh_run)
-(`gh`), with an explicit repository target. They can inspect existing Actions
+Run commands call the GitHub REST API at `api.github.com` with a short-lived
+installation token of HoBo's GitHub App on the selected repository, which the
+owner store session mints (`github-app://owner/name`); no personal GitHub
+sign-in or token is read. Connect the owner's store with HoBo MCP's
+`choose_secret_store` and install the App (`hobo ci app create`) with Actions
+read permission, and Actions write permission for `rerun`; without them the
+commands answer `HOBO_CI_GITHUB_APP_NEEDED`. A job log is read from the
+short-lived download GitHub redirects to, which is fetched without the token;
+logs are bounded at 2 MiB per command. They can inspect existing Actions
 runs before connecting a relay. They report GitHub run IDs, separate from relay
 lease IDs; use `hobo ci status` to check the HoBo connection.
 
