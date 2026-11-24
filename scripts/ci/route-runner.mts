@@ -205,6 +205,7 @@ export type MergeGroupHostedProbe = Readonly<{
 	summary: string;
 	trunkIdle?: boolean | undefined;
 	trunkSummary?: string | undefined;
+	runnerPageIdleTrunk?: boolean | undefined;
 }>;
 
 export type RouteDecision = Readonly<{
@@ -966,6 +967,17 @@ function idleRunnerUnavailable(
 ): string | undefined {
 	if (runners !== undefined && runners.online > runners.busy) return undefined;
 	return `no idle ${label} runner was verified on the fetched runner page`;
+}
+
+export function idleRunnerOnPage(
+	runnersPage: JsonValue,
+	labels: readonly string[],
+): string | undefined {
+	return labels.find(
+		(label) =>
+			idleRunnerUnavailable(fleetPoolRunners(runnersPage, label), label) ===
+			undefined,
+	);
 }
 
 function agent37OverflowUnavailable(
@@ -1961,7 +1973,8 @@ export async function main(
 			});
 		let hostedIdle = false;
 		let hostedSummary = "";
-		let hostedProbe = {
+		let runnerPageIdleTrunk = false;
+		let hostedProbe: MergeGroupHostedProbe = {
 			idle: false,
 			summary: "GitHub-hosted queue unreadable",
 			trunkIdle: false,
@@ -1974,6 +1987,13 @@ export async function main(
 			const hostedLoad = labelLoad(hostedView.jobs, githubLabel, probeAtMs);
 			hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
 			hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
+			if (!hostedIdle) {
+				const runnersPage = await requireRead()(
+					`/repos/${repository}/actions/runners?per_page=100`,
+				).catch(() => null);
+				runnerPageIdleTrunk =
+					idleRunnerOnPage(runnersPage, [trunkLabel]) === trunkLabel;
+			}
 			decision = await chooseRunner({
 				observe: observeTrunk,
 				now,
@@ -2003,9 +2023,10 @@ export async function main(
 				summary: hostedSummary,
 				trunkIdle: decision.tier === "fleet" && decision.runner === trunkLabel,
 				trunkSummary: decision.reason,
+				runnerPageIdleTrunk,
 			};
 			console.log(
-				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${decision.reason}; trunkIdle=${hostedProbe.trunkIdle}`,
+				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${decision.reason}; trunkIdle=${hostedProbe.trunkIdle}; runnerPageIdleTrunk=${runnerPageIdleTrunk}`,
 			);
 		} catch (error) {
 			const detail = error instanceof Error ? error.message : "probe-error";
@@ -2036,27 +2057,41 @@ export async function main(
 			);
 		}
 		if (decision.tier !== "fleet" || decision.runner !== trunkLabel) {
-			if (
-				githubLabel !== "ubuntu-24.04" ||
-				!(await isPublicCaller(env, io.fetch))
-			)
-				throw new Error(
-					`merge-group Fabric found no healthy ${trunkLabel} capacity; refusing general ${labels.fleet} overflow`,
+			if (runnerPageIdleTrunk && !hostedIdle) {
+				decision = {
+					tier: "fleet",
+					runner: trunkLabel,
+					reason: `merge-group Fabric uses ${trunkLabel} because the fetched runner page shows an idle online ${trunkLabel} runner while GitHub-hosted has no idle capacity`,
+					refusedBy: "none",
+				};
+				hostedProbe = {
+					...hostedProbe,
+					trunkIdle: true,
+					trunkSummary: decision.reason,
+				};
+			} else {
+				if (
+					githubLabel !== "ubuntu-24.04" ||
+					!(await isPublicCaller(env, io.fetch))
+				)
+					throw new Error(
+						`merge-group Fabric found no healthy ${trunkLabel} capacity; refusing general ${labels.fleet} overflow`,
+					);
+				console.log(
+					`::warning title=hobo-ci-route-fallback::${escapeCommand(`merge-group Fabric found no healthy ${trunkLabel} capacity; falling back to ${githubLabel}`)}`,
 				);
-			console.log(
-				`::warning title=hobo-ci-route-fallback::${escapeCommand(`merge-group Fabric found no healthy ${trunkLabel} capacity; falling back to ${githubLabel}`)}`,
-			);
-			return report(
-				{
-					tier: "github",
-					runner: githubLabel,
-					reason: `merge-group Fabric found no healthy ${trunkLabel} capacity; public standard-runner compute was verified`,
-					refusedBy: "queue",
-					mergeGroupHostedProbe: hostedProbe,
-					slip: { kind: "unasked", why: "merge-group" },
-				},
-				env,
-			);
+				return report(
+					{
+						tier: "github",
+						runner: githubLabel,
+						reason: `merge-group Fabric found no healthy ${trunkLabel} capacity; public standard-runner compute was verified`,
+						refusedBy: "queue",
+						mergeGroupHostedProbe: hostedProbe,
+						slip: { kind: "unasked", why: "merge-group" },
+					},
+					env,
+				);
+			}
 		}
 		if (
 			!(await hasVerifiedBatchCapacity(
@@ -2068,7 +2103,22 @@ export async function main(
 				workflowFile(env),
 				io.verifyPrBatchCapacity,
 			))
-		)
+		) {
+			if (runnerPageIdleTrunk && !hostedIdle) {
+				const reason = `merge-group Fabric has no verified capacity and Broker claim for ${trunkLabel}; GitHub-hosted has no idle capacity and the fetched runner page shows an idle online ${trunkLabel} runner, so the claim is skipped and the batch uses ${trunkLabel}`;
+				console.log(
+					`::warning title=hobo-ci-route-fallback::${escapeCommand(reason)}`,
+				);
+				return report(
+					{
+						...decision,
+						reason,
+						mergeGroupHostedProbe: hostedProbe,
+						slip: { kind: "unasked", why: "merge-group" },
+					},
+					env,
+				);
+			}
 			return report(
 				{
 					tier: "github",
@@ -2080,6 +2130,7 @@ export async function main(
 				},
 				env,
 			);
+		}
 		return report(
 			{
 				...decision,

@@ -84,6 +84,43 @@ const saturatedHostedJobs: JsonValue[] = [10, 20, 30].map((wait) => ({
 	labels: ["ubuntu-24.04"],
 	created_at: new Date(Date.now() - wait * 1000).toISOString(),
 }));
+const fleetRunnerQueueFetch = (runners: JsonValue): typeof fetch => {
+	return async (url) => {
+		const path = String(url);
+		if (path === "https://api.github.com/repos/Hobo-Labs/HoBo")
+			return Response.json(publicRepo);
+		if (path.includes("/actions/runners")) return Response.json(runners);
+		if (path.includes("/actions/variables/"))
+			return Response.json({ message: "Not Found" });
+		if (path.includes("/actions/runs/") && path.includes("/jobs"))
+			return Response.json({ jobs: saturatedHostedJobs });
+		if (path.includes("/actions/runs"))
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: ".github/workflows/hobo-ci.yml",
+						status: "in_progress",
+						created_at: new Date().toISOString(),
+						updated_at: new Date().toISOString(),
+					},
+				],
+			});
+		throw new Error(`unexpected read ${path}`);
+	};
+};
+const runnerPage = (
+	label: string,
+	online: number,
+	busy: number,
+): JsonValue => ({
+	runners: Array.from({ length: online }, (_, index) => ({
+		name: `${label}-${index + 1}`,
+		status: "online",
+		busy: index < busy,
+		labels: [{ name: label }],
+	})),
+});
 const sameRepositoryPayload: JsonValue = {
 	pull_request: {
 		base: { repo: { full_name: "Hobo-Labs/HoBo" } },
@@ -277,6 +314,35 @@ describe("PR batch routing", () => {
 			asked.some((path) => path.includes("/actions/runners?")),
 			asked.join("\n"),
 		);
+	});
+
+	it("diverts a saturated PR batch with trunkLend 0 to hobo when the runner page shows an idle hobo runner", async () => {
+		const decision = await main([], env, {
+			routingConfig: routingWithTrunkLend(0),
+			eventPayload: sameRepositoryPayload,
+			fetch: fleetRunnerQueueFetch(runnerPage("hobo", 4, 3)),
+		});
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		assert.notEqual(decision.runner, "hobo-trunk");
+		assert.match(
+			decision.reason,
+			/GitHub-hosted runners have no idle capacity/u,
+		);
+		assert.match(decision.reason, /the same-repository PR batch diverts/u);
+	});
+
+	it("keeps a saturated PR batch with trunkLend 0 hosted when only hobo-trunk is idle on the runner page", async () => {
+		const decision = await main([], env, {
+			routingConfig: routingWithTrunkLend(0),
+			eventPayload: sameRepositoryPayload,
+			fetch: fleetRunnerQueueFetch(runnerPage("hobo-trunk", 4, 0)),
+		});
+		assert.notEqual(decision.runner, "hobo-trunk");
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(decision.reason, /batch stays on ubuntu-24\.04/u);
 	});
 
 	it("keeps the committed policy's PR batches off hobo-trunk", async () => {

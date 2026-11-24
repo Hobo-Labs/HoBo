@@ -33,6 +33,7 @@ import {
 	HOBO_POOL_CPU_SATURATED_ABOVE_PERCENT,
 	hasChosen,
 	hoboPoolSaturation,
+	idleRunnerOnPage,
 	type JsonValue,
 	type LabelLoad,
 	labelLoad,
@@ -1638,6 +1639,22 @@ describe("the script reading the slip", () => {
 		labels: [label],
 		created_at: new Date(SLIP_NOW - seconds * 1000).toISOString(),
 	});
+	const runnersPage = (
+		label: string,
+		online: number,
+		busy: number,
+	): JsonValue => ({
+		runners: Array.from({ length: online }, (_, index) => ({
+			name: `${label}-${index + 1}`,
+			status: "online",
+			busy: index < busy,
+			labels: [{ name: label }],
+		})),
+	});
+	const observedWithRunners =
+		(jobs: JsonValue[], page: JsonValue) =>
+		(path: string): JsonValue =>
+			path.includes("/actions/runners") ? page : observed(jobs)(path);
 	const mergeGroupIdentity = {
 		GITHUB_REPOSITORY_ID: "1274791462",
 		GITHUB_REPOSITORY_OWNER_ID: "344805935",
@@ -2257,7 +2274,36 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("keeps a healthy merge-group trunk batch hosted without a claim", async () => {
+	it("uses an idle hobo-trunk without a claim while GitHub-hosted is saturated", async () => {
+		await withGithub(
+			observedWithRunners(
+				[...saturatedHostedQueue(), pickup("hobo-trunk")],
+				runnersPage("hobo-trunk", 4, 0),
+			),
+			async (apiUrl) => {
+				const { decision, lines } = await route(
+					apiUrl,
+					undefined,
+					mergeGroupCi,
+				);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo-trunk", "none"],
+				);
+				assert.match(decision.reason, /the claim is skipped/u);
+				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, true);
+				assert.equal(decision.mergeGroupHostedProbe?.runnerPageIdleTrunk, true);
+				assert.ok(
+					warningsIn(lines).some((line) =>
+						line.includes("the claim is skipped"),
+					),
+					lines.join("\n"),
+				);
+			},
+		);
+	});
+
+	it("keeps a healthy merge-group trunk batch hosted without a claim when no idle trunk is verified", async () => {
 		await withGithub(
 			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
 			async (apiUrl) => {
@@ -2270,6 +2316,46 @@ describe("the script reading the slip", () => {
 				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, true);
 			},
 		);
+	});
+
+	it("diverts a saturated merge-group batch to an idle hobo-trunk with no queue pickup", async () => {
+		await withGithub(
+			observedWithRunners(
+				saturatedHostedQueue(),
+				runnersPage("hobo-trunk", 4, 0),
+			),
+			async (apiUrl) => {
+				const { decision } = await route(
+					apiUrl,
+					undefined,
+					mergeGroupCi,
+					[],
+					COMMITTED,
+					async () => true,
+				);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo-trunk", "none"],
+				);
+				assert.match(decision.reason, /idle online hobo-trunk runner/u);
+				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, true);
+			},
+		);
+	});
+
+	it("keeps a saturated merge-group batch hosted when every hobo-trunk runner is busy", async () => {
+		const { decision } = await mergeGroupRoute(
+			observedWithRunners(
+				saturatedHostedQueue(),
+				runnersPage("hobo-trunk", 4, 4),
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(decision.reason, /no healthy hobo-trunk capacity/u);
+		assert.equal(decision.mergeGroupHostedProbe?.runnerPageIdleTrunk, false);
 	});
 
 	it("keeps an automatic merge-group release on verified public compute", async () => {
@@ -2910,6 +2996,33 @@ describe("hobo pool saturation overflow", () => {
 		assert.equal(fleetPoolRunners({}, "hobo"), undefined);
 		assert.equal(
 			fleetPoolRunners({ runners: [{ status: "online" }] }, "hobo"),
+			undefined,
+		);
+	});
+
+	it("names the first label with an idle online runner on a fetched page", () => {
+		const runner = (
+			label: string,
+			busy: boolean,
+			status = "online",
+		): JsonValue => ({
+			name: `${label}-runner`,
+			status,
+			busy,
+			labels: [{ name: label }],
+		});
+		const page: JsonValue = {
+			runners: [
+				runner("hobo-trunk", true),
+				runner("hobo", false),
+				runner("hobo-agent37", false, "offline"),
+			],
+		};
+		assert.equal(idleRunnerOnPage(page, ["hobo-trunk", "hobo"]), "hobo");
+		assert.equal(idleRunnerOnPage(page, ["hobo-trunk"]), undefined);
+		assert.equal(idleRunnerOnPage(page, ["hobo-agent37"]), undefined);
+		assert.equal(
+			idleRunnerOnPage({ message: "forbidden" }, ["hobo", "hobo-trunk"]),
 			undefined,
 		);
 	});
