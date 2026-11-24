@@ -716,7 +716,7 @@ async function prepareVercelWithVault(
 			[
 				"Run hobo cd up once in a terminal; it asks for what is missing and keeps it in your secret store.",
 				"An agent can run hobo cd up --hand-off with a store that opens without a page; the owner approves Vercel using a device code.",
-				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID, a non-secret setting) so the run signs in with its own OIDC token.`,
+				"For CI, run with the owner's store session (HoBo MCP's choose_secret_store): the store's coordinates stay in the owner's secret store and are never set as environment variables.",
 			],
 		);
 

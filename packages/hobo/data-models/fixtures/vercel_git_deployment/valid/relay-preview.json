@@ -132,16 +132,7 @@
     {
       "profile": "secret-ref.runtime-projection/v1",
       "productId": "infisical.secrets/v1",
-      "connectivityId": "infisical.oidc-auth/v1",
-      "settings": [
-        "HOBO_CI_CONFIG_SERVICE",
-        "INFISICAL_SECRET_PATH"
-      ],
-      "inputs": [
-        "INFISICAL_IDENTITY_ID",
-        "INFISICAL_PROJECT_ID",
-        "INFISICAL_SITE_URL"
-      ]
+      "connectivityId": "infisical.oidc-auth/v1"
     },
     {
       "profile": "service.queue-consumer/v1",

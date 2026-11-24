@@ -3,6 +3,9 @@ import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+	BUILD_RESERVE_MB,
+	BUILD_TASK_MB,
+	buildTaskConcurrency,
 	createWalker,
 	exportTarget,
 	planCommands,
@@ -1316,6 +1319,144 @@ describe("planCommands", () => {
 		);
 	});
 
+	it("runs every build of the graph first at the build concurrency with the turbo arguments, then the same calls as before", () => {
+		const withoutPass = planCommands(
+			plan,
+			["--anon-profile=p.json"],
+			"1",
+			graph,
+		);
+		assert.deepEqual(
+			planCommands(plan, ["--anon-profile=p.json"], "1", graph, "4"),
+			[
+				[
+					"exec",
+					"turbo",
+					"run",
+					"@t/lib#build",
+					"@t/app#build",
+					"@t/extra#build",
+					"--continue",
+					"--concurrency=4",
+					"--anon-profile=p.json",
+				],
+				...withoutPass,
+			],
+		);
+	});
+
+	it("reads the graph for whole suites only to list their builds", () => {
+		const whole: TestPlan = {
+			mode: "scoped",
+			full: ["packages/lib"],
+			subsets: new Map(),
+			skipped: [],
+		};
+		assert.deepEqual(
+			planCommands(
+				whole,
+				[],
+				"1",
+				(dirs) => {
+					assert.deepEqual(dirs, ["packages/lib"]);
+					return [
+						{
+							taskId: "@t/core#build",
+							task: "build",
+							directory: "packages/core",
+						},
+						{
+							taskId: "@t/lib#build",
+							task: "build",
+							directory: "packages/lib",
+						},
+						{ taskId: "@t/lib#test", task: "test", directory: "packages/lib" },
+					];
+				},
+				"3",
+			),
+			[
+				[
+					"exec",
+					"turbo",
+					"run",
+					"@t/core#build",
+					"@t/lib#build",
+					"--continue",
+					"--concurrency=3",
+				],
+				[
+					"exec",
+					"turbo",
+					"run",
+					"test",
+					"--filter=./packages/lib",
+					"--continue",
+					"--concurrency=1",
+				],
+			],
+		);
+	});
+
+	it("adds no build pass for a repo-wide plan, an empty plan or a graph without builds", () => {
+		const unread: TestGraph = () => assert.fail("graph read");
+		assert.deepEqual(
+			planCommands({ mode: "all", reason: "lockfile" }, [], "1", unread, "4"),
+			[["exec", "turbo", "run", "test", "--concurrency=1"]],
+		);
+		assert.deepEqual(
+			planCommands(
+				{ mode: "scoped", full: [], subsets: new Map(), skipped: [] },
+				[],
+				"1",
+				unread,
+				"4",
+			),
+			[],
+		);
+		assert.deepEqual(
+			planCommands(
+				{
+					mode: "scoped",
+					full: ["packages/lib"],
+					subsets: new Map(),
+					skipped: [],
+				},
+				[],
+				"1",
+				() => [
+					{ taskId: "@t/lib#test", task: "test", directory: "packages/lib" },
+				],
+				"4",
+			),
+			[
+				[
+					"exec",
+					"turbo",
+					"run",
+					"test",
+					"--filter=./packages/lib",
+					"--continue",
+					"--concurrency=1",
+				],
+			],
+		);
+	});
+
+	it("leaves builds in the test calls under turbo --affected", () => {
+		const prior = process.env.HOBO_TURBO_USE_AFFECTED;
+		process.env.HOBO_TURBO_USE_AFFECTED = "1";
+		try {
+			assert.deepEqual(
+				planCommands(plan, [], "1", graph, "4"),
+				planCommands(plan, [], "1", graph),
+			);
+		} finally {
+			if (prior === undefined) delete process.env.HOBO_TURBO_USE_AFFECTED;
+			else process.env.HOBO_TURBO_USE_AFFECTED = prior;
+		}
+	});
+
 	it("the build-once call carries @hobo/hobo#test's extra dependsOn from the real turbo graph", () => {
 		const commands = planCommands(
 			{
@@ -1333,6 +1474,28 @@ describe("planCommands", () => {
 		assert.ok(build.includes("@hobo/hobo#build"));
 		assert.ok(!build.includes("@hobo/hobo#test"));
 		assert.ok(!build.includes("--"));
+	});
+});
+
+describe("buildTaskConcurrency", () => {
+	it("runs one build per CPU on a 16 GB hosted runner whose tests run one at a time", () => {
+		assert.equal(buildTaskConcurrency({ cpuCount: 4, limitMb: 16_384 }), 4);
+	});
+
+	it("holds BUILD_TASK_MB per build after BUILD_RESERVE_MB", () => {
+		assert.equal(
+			buildTaskConcurrency({
+				cpuCount: 32,
+				limitMb: BUILD_RESERVE_MB + 5 * BUILD_TASK_MB + BUILD_TASK_MB - 1,
+			}),
+			5,
+		);
+		assert.equal(buildTaskConcurrency({ cpuCount: 16, limitMb: 6144 }), 5);
+	});
+
+	it("never drops below one build", () => {
+		assert.equal(buildTaskConcurrency({ cpuCount: 8, limitMb: 512 }), 1);
+		assert.equal(buildTaskConcurrency({ cpuCount: 0, limitMb: 16_384 }), 1);
 	});
 });
 

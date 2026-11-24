@@ -8,8 +8,9 @@ import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
 import {
-	CD_DEPLOY_SETTINGS,
+	CD_STORE_COORDINATES_HANDOFF,
 	CD_WORKLOAD_IDENTITY_ENTRY,
+	cdStoreCoordinatesText,
 	ensureCdWorkloadIdentity,
 } from "../src/workload-identity.js";
 
@@ -63,6 +64,12 @@ function signedInVault() {
 	return vault;
 }
 
+function handedOff(
+	vault: ReturnType<typeof createTrustedVault>,
+): string | undefined {
+	return vault.reveal(CD_STORE_COORDINATES_HANDOFF);
+}
+
 const vercel = {
 	teamSlug: async () => "acme",
 	enableProjectOidc: async () => "enabled" as const,
@@ -96,16 +103,18 @@ describe("the CD workload identity", () => {
 		expect(kept.status === "ok" && kept.material).toBe(
 			"00000000-0000-4000-8000-000000000001",
 		);
-		expect(vault.reveal(CD_DEPLOY_SETTINGS.INFISICAL_PROJECT_ID)).toBe(
-			"proj-1",
+		expect(handedOff(vault)).toBe(
+			cdStoreCoordinatesText({
+				siteUrl: "https://app.infisical.com",
+				projectId: "proj-1",
+				environment: "prod",
+				secretPath: "/hobo-cd",
+				identityId: "00000000-0000-4000-8000-000000000001",
+			}),
 		);
-		expect(vault.reveal(CD_DEPLOY_SETTINGS.INFISICAL_ENVIRONMENT)).toBe("prod");
-		expect(vault.reveal(CD_DEPLOY_SETTINGS.INFISICAL_SECRET_PATH)).toBe(
-			"/hobo-cd",
-		);
-		expect(vault.reveal(CD_DEPLOY_SETTINGS.INFISICAL_IDENTITY_ID)).toBe(
-			"00000000-0000-4000-8000-000000000001",
-		);
+		expect(handedOff(vault)).toContain('"kind": "infisical-cloud-attach"');
+		expect(step.detail).not.toContain("00000000-0000-4000-8000-000000000001");
+		expect(step.detail).not.toContain("proj-1");
 	});
 
 	it("is reused on a re-run, its trust re-applied", async () => {
@@ -154,9 +163,7 @@ describe("the CD workload identity", () => {
 			deps: { ...vercel, admin: () => admin },
 		});
 		expect(calls).toContain("delete 00000000-0000-4000-8000-000000000001");
-		expect(vault.reveal(CD_DEPLOY_SETTINGS.INFISICAL_IDENTITY_ID)).toBe(
-			"00000000-0000-4000-8000-0000000000bb",
-		);
+		expect(handedOff(vault)).toContain("00000000-0000-4000-8000-0000000000bb");
 	});
 
 	it("says why it did nothing where it cannot apply", async () => {
