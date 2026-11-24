@@ -78,14 +78,12 @@ export function isCredentialAuditEvent(event: EventEnvelope): boolean {
 
 export type CredentialGrantStatus = "granted" | "used" | "revoked";
 
-// domain-view:
 export interface CredentialAuditScope {
 	port: string;
 	resource: string;
 	action: string;
 }
 
-// domain-view:
 export interface CredentialGrantAudit {
 	grantId: string;
 	svidSubject?: string;
@@ -99,7 +97,6 @@ export interface CredentialGrantAudit {
 	useCount: number;
 }
 
-// domain-view:
 export interface CredentialAuditTimelineEntry {
 	seq: number;
 	type: string;
@@ -121,7 +118,6 @@ export interface CredentialAuditTimelineEntry {
 	channel?: string;
 }
 
-// domain-view:
 export interface CredentialAuditRow {
 	tenant?: string;
 	correlationId: string;

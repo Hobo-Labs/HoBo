@@ -252,6 +252,7 @@ fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
 | `api` | `http` | Serve an explicitly supplied Fetch handler |
 | `kv` | `port` | Pinned WASI key-value subset; process-local bytes |
 | `bucket` | `port` | Pinned blob metadata subset; body inspection is test-only; no blob events |
+| `cache` | `placeholder` | `@hobo/kv-redis-compatible` `createMemoryEphemeralState` covers TTL-bound state; it is not wired into this graph |
 | `queue` | `port` | HoBo Queue and virtual clock; no provider protocol or durability |
 | `topic` | `port` | HoBo Messaging; no external broker |
 | `secret` | `port` | Identity SecretsPort with fixture material only |

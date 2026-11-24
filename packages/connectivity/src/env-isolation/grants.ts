@@ -10,11 +10,8 @@ import {
 	isExpired,
 } from "./types.js";
 
-// public-contract:
 export const CROSS_ENV_GRANT_SCHEMA = "hobo.cross-env-grant/v1" as const;
-// public-contract:
 export const ELEVATED_ACCESS_SCHEMA = "hobo.elevated-access/v1" as const;
-// public-contract:
 export const BREAK_GLASS_SCHEMA = "hobo.break-glass/v1" as const;
 
 export type CrossEnvGrant = Readonly<{

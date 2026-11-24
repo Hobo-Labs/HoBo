@@ -127,7 +127,6 @@ export interface ResourceCatalogEntry {
 	readonly allowVerbs: readonly string[];
 }
 
-// domain-view:
 export interface LoweringDescriptor {
 	readonly lowersTo: "hobo:sdk";
 	readonly kind: ResourceKind;
@@ -138,7 +137,6 @@ export interface LoweringDescriptor {
 	readonly args: readonly unknown[];
 }
 
-// domain-view:
 export interface ResourceDescriptor<K extends ResourceKind = ResourceKind> {
 	readonly kind: K;
 	readonly name: string;
@@ -189,7 +187,6 @@ export interface SecretRef {
 	readonly lowersTo: "hobo:sdk";
 }
 
-// domain-view:
 export interface ProviderAnnotation {
 	readonly provider: string;
 	readonly option: string;
@@ -245,13 +242,11 @@ export interface BindleRuntimeContext {
 	connector(binding: ConnectorBinding): ConnectionClient;
 }
 
-// domain-view:
 export interface BindleEdge {
 	readonly from: string;
 	readonly to: string;
 }
 
-// domain-view:
 export interface BindleResourceRecord<K extends ResourceKind = ResourceKind> {
 	readonly kind: K;
 	readonly name: string;

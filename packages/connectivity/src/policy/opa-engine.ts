@@ -22,7 +22,6 @@ import {
 	type RegoLiteDocument,
 } from "./rego-lite.js";
 
-// public-contract:
 export const OPA_POLICY_ENGINE_ID = "hobo.policy.opa-rego/v1" as const;
 
 export interface OpaPolicyEngineOptions {

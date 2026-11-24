@@ -21,7 +21,6 @@ import { type ManagementResult, okResult } from "./result.js";
 
 export type DeploymentViewSource = "yard-eventstore" | "none";
 
-// domain-view:
 export type DeploymentViewProjectionView = Readonly<{
 	available: boolean;
 	source: DeploymentViewSource;
@@ -37,7 +36,6 @@ export type CredentialAuditSource =
 	| "yard-eventstore"
 	| "mcp-audit";
 
-// domain-view:
 export type CredentialAuditProjectionView = Readonly<{
 	available: boolean;
 	sources: readonly CredentialAuditSource[];

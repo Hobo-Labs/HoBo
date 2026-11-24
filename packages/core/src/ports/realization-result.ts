@@ -9,7 +9,6 @@ import {
 } from "../json.js";
 import { deepFreeze } from "../parse-utils.js";
 
-// public-contract:
 export const REALIZATION_RESULT_SCHEMA = "hobo.realization-result/v1";
 
 export type RealizationResultRejection =
@@ -45,7 +44,6 @@ export class RealizationResultParseError extends CoreParseError {
 	}
 }
 
-// domain-view:
 export interface RealizedResourceRecord {
 	readonly name: string;
 	readonly resourceClass: string;
@@ -53,18 +51,15 @@ export interface RealizedResourceRecord {
 	readonly outputs: JsonObject;
 }
 
-// domain-view:
 export interface SecretRefRecord {
 	readonly secretRef: string;
 }
 
-// domain-view:
 export interface RealizationBindingRecord {
 	readonly key: string;
 	readonly value: JsonValue;
 }
 
-// domain-view:
 export interface RealizationResult {
 	readonly schema: typeof REALIZATION_RESULT_SCHEMA;
 	readonly resources: readonly RealizedResourceRecord[];

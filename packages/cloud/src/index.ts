@@ -386,5 +386,4 @@ export {
 } from "./registry/resource-definition-vnext.js";
 export { collectStream, currentFenceToken } from "./store/index.js";
 
-// public-contract:
 export const HOBO_CLOUD_PACKAGE = "@hobo/cloud";

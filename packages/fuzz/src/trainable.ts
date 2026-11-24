@@ -2,7 +2,6 @@ import type { FuzzValue } from "./manifest.js";
 import { hasPrototypePollution } from "./manifest.js";
 import { type InvariantVerdict, verdict } from "./model.js";
 
-// public-contract:
 export const TRAINABLE_FUZZ_SCHEMA = "hobo.fuzz.trainable-verdict/v1" as const;
 
 export type TrainableFn = (input: FuzzValue) => FuzzValue;

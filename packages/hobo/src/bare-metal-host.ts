@@ -35,7 +35,6 @@ export {
 	listServableEntrypointsWithReplay,
 };
 
-// public-contract:
 export const INTERNAL_MESH_HOST = "hobo.internal";
 
 export function internalMeshHost(bindleName: string): string {
@@ -50,9 +49,7 @@ export function isInternalMeshHostname(hostname: string): boolean {
 	return host === INTERNAL_MESH_HOST || host.endsWith(`.${INTERNAL_MESH_HOST}`);
 }
 
-// public-contract:
 export const HOBO_ENV_HEADER_PREFIX = "x-hobo-env-";
-// public-contract:
 export const HOBO_BINDLE_ENV_HEADER = "x-hobo-bindle-env";
 
 export function applyHoboMeshEnvHeaders(

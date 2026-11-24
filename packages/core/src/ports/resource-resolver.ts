@@ -12,10 +12,8 @@ import { deepFreeze } from "../parse-utils.js";
 import { CAPABILITY_SLOTS, type CapabilitySlot } from "./capability-slot.js";
 import type { HttpTransport } from "./http-transport.js";
 
-// public-contract:
 export const RESOLVER_CONTRACT = "hobo.resource-resolver/v1";
 
-// public-contract:
 export const RESOLVER_ACTIONS = Object.freeze([
 	"create",
 	"update",
@@ -38,7 +36,6 @@ const PEM_PATTERN = /-{3,}\s*BEGIN\b/u;
 const AUTH_SCHEME_PATTERN = /^(?:bearer|basic|digest)\s/iu;
 const JWT_PATTERN = /^eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\./u;
 
-// domain-view:
 export interface ResolvedResourceRef {
 	readonly slot: CapabilitySlot;
 	readonly productId: string;
@@ -46,7 +43,6 @@ export interface ResolvedResourceRef {
 	readonly physicalId?: string;
 }
 
-// domain-view:
 export interface ResolveRequest {
 	readonly ref: ResolvedResourceRef;
 	readonly desired: JsonObject;
@@ -54,7 +50,6 @@ export interface ResolveRequest {
 	readonly credentialRef: string;
 }
 
-// domain-view:
 export interface ResolveOutcome {
 	readonly contract: typeof RESOLVER_CONTRACT;
 	readonly action: ResolverAction;
@@ -85,7 +80,6 @@ export interface ResourceResolver {
 	): Promise<boolean>;
 }
 
-// public-contract:
 export const RESOLVER_ERROR_CODES = Object.freeze([
 	"RESOLVER_CREDENTIAL_MISSING",
 	"RESOLVER_CREDENTIAL_NOT_A_REF",

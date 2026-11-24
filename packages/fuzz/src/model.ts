@@ -1,6 +1,4 @@
-// public-contract:
 export const FUZZ_INVARIANT_SCHEMA = "hobo.fuzz.invariant-verdict/v1" as const;
-// public-contract:
 export const FUZZ_TRACE_SCHEMA = "hobo.fuzz.trace/v1" as const;
 
 export const ALL_VERBS = [
@@ -50,7 +48,6 @@ export interface ModelEvent {
 	readonly payload: Readonly<Record<string, string>>;
 }
 
-// domain-view:
 export interface InvariantVerdict {
 	readonly schema: typeof FUZZ_INVARIANT_SCHEMA;
 	readonly invariant: string;

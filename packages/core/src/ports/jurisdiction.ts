@@ -27,7 +27,6 @@ export type DataClassification =
 	| "pci"
 	| "secret";
 
-// domain-view:
 export interface JurisdictionRecord {
 	readonly id: JurisdictionId;
 	readonly name: string;
@@ -42,7 +41,6 @@ export interface ResidencyConstraint {
 
 export type TransferMechanismMode = "none" | "adequacy" | "adequacy-or-scc";
 
-// domain-view:
 export interface TransferMechanismEdge {
 	readonly fromJurisdiction: JurisdictionId;
 	readonly toJurisdiction: JurisdictionId;
@@ -50,7 +48,6 @@ export interface TransferMechanismEdge {
 	readonly legalBasis: readonly string[];
 }
 
-// domain-view:
 export interface TransferBasis {
 	readonly mechanism: "intra-jurisdiction" | "adequacy" | "scc";
 	readonly fromJurisdiction: JurisdictionId;

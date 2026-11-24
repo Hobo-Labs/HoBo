@@ -9,7 +9,6 @@ import {
 } from "../json.js";
 import { deepFreeze } from "../parse-utils.js";
 
-// public-contract:
 export const CAPABILITY_SLOTS = Object.freeze([
 	"web",
 	"api",
@@ -25,7 +24,6 @@ export const CAPABILITY_SLOTS = Object.freeze([
 ] as const);
 export type CapabilitySlot = (typeof CAPABILITY_SLOTS)[number];
 
-// public-contract:
 export const SLOT_BINDING_CONTRACT = "hobo.slot-binding/v1";
 
 const PROFILE_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\/v[1-9][0-9]*$/u;

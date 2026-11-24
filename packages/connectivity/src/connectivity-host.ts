@@ -12,7 +12,6 @@ import { createOpaPolicyEngine } from "./policy/opa-engine.js";
 import { HOBO_DEFAULT_POLICY_DOCUMENT } from "./policy/rego-lite.js";
 import { createTagAclPolicyEngine } from "./policy/tag-acl-engine.js";
 
-// public-contract:
 export const CONNECTIVITY_HOST_PROVIDER_NAME = "ConnectivityHost" as const;
 
 export interface ConnectivityHostRequest {

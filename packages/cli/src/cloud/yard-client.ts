@@ -174,18 +174,12 @@ export interface DownResult {
 	readonly progress: ProgressEvent[];
 }
 
-// public-contract:
 export const FREIGHT_FILE = ".hobo/freight.json";
-// public-contract:
 export const DECLARATION_MEDIA_TYPE = "application/vnd.hobo.bindle+json";
-// public-contract:
 export const DECLARATION_ARTIFACT = "declaration";
-// public-contract:
 export const ANONYMOUS_LABEL = "hobo.dev/anonymous";
-// public-contract:
 export const DELIVERY_MAX_PASSES = 16;
 
-// public-contract:
 export const DELIVERY_REFUSAL = Object.freeze({
 	freightInvalid: "HOBO_FREIGHT_INVALID",
 	freightStale: "HOBO_FREIGHT_STALE",
@@ -202,7 +196,6 @@ export const DELIVERY_REFUSAL = Object.freeze({
 export type DeliveryRefusalCode =
 	(typeof DELIVERY_REFUSAL)[keyof typeof DELIVERY_REFUSAL];
 
-// public-contract:
 export const DELIVERY_METRIC = Object.freeze({
 	outcome: "hobo.cli.delivery.outcome",
 	passes: "hobo.cli.delivery.passes",
@@ -776,7 +769,7 @@ const STATUS_EVENT = {
 } as const satisfies Readonly<Record<ReconcileStatus, string>>;
 
 const ANONYMOUS_CLAIM_HINT =
-	"Claim this deployment: `hobo login` then `hobo up` (local Yard), or `hobo claim <account> --broker <uri> --token <token>` (remote)."; // public-contract:
+	"Claim this deployment: `hobo login` then `hobo up` (local Yard), or `hobo claim <account> --broker <uri> --token <token>` (remote).";
 
 function remediationOf(
 	resource: string,

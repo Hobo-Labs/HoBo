@@ -7,8 +7,8 @@ import { isJsonString } from "../json.js";
 import type { YardSession } from "./yard-client.js";
 
 export const SESSION_FILE = path.join(".hobo", "session.json");
-export const DEFAULT_TENANT = "hobo-dev"; // public-contract:
-export const ANONYMOUS_SUBJECT = "anonymous"; // public-contract:
+export const DEFAULT_TENANT = "hobo-dev";
+export const ANONYMOUS_SUBJECT = "anonymous";
 
 function sessionPath(dir: string): string {
 	return path.join(dir, SESSION_FILE);

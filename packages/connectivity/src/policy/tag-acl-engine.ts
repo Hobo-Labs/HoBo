@@ -13,7 +13,6 @@ import {
 	evaluateEnvIsolation,
 } from "../env-isolation/evaluate.js";
 
-// public-contract:
 export const TAG_ACL_POLICY_ENGINE_ID = "hobo.policy.tag-acl/v1" as const;
 
 export type TagAclPolicyEngineOptions = Readonly<{

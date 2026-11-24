@@ -1,4 +1,3 @@
-// public-contract:
 import type { JsonObject } from "../json.js";
 
 export const ACCESS_EVENT_SCHEMA_VERSION = "hobo.access-events/v1" as const;

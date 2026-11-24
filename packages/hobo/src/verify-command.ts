@@ -31,14 +31,10 @@ export interface VerifyCommandDeps {
 
 const DEFAULT_COST_LIMIT = 100;
 
-// public-contract:
 export const HOBO_RESIDENCY_ALLOW_ENV = "HOBO_RESIDENCY_ALLOW";
-// public-contract:
 export const HOBO_RESIDENCY_DENY_ENV = "HOBO_RESIDENCY_DENY";
-// public-contract:
 export const HOBO_RESIDENCY_CLASSIFICATIONS_ENV =
 	"HOBO_RESIDENCY_CLASSIFICATIONS";
-// public-contract:
 export const HOBO_REGION_ENV = "HOBO_REGION";
 
 function splitList(value: string | undefined): string[] {

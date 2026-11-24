@@ -2,7 +2,6 @@ import type { IsolationClass } from "../env-isolation/types.js";
 import { ISOLATION_CLASSES } from "../env-isolation/types.js";
 import type { JsonValue } from "../json.js";
 
-// public-contract:
 export const ENV_ISOLATION_TAILSCALE_ACL_SCHEMA =
 	"hobo.env-isolation-tailscale-acl/v1" as const;
 

@@ -1,4 +1,3 @@
-// public-contract:
 import { isJsonString } from "../json.js";
 
 export const ISOLATION_CLASSES = Object.freeze([
@@ -12,7 +11,6 @@ export const ISOLATION_CLASSES = Object.freeze([
 
 export type IsolationClass = (typeof ISOLATION_CLASSES)[number];
 
-// public-contract:
 export const ISOLATION_TIERS = Object.freeze([
 	"soft",
 	"hard-overlay",
@@ -21,7 +19,6 @@ export const ISOLATION_TIERS = Object.freeze([
 
 export type IsolationTier = (typeof ISOLATION_TIERS)[number];
 
-// public-contract:
 export const ENV_TAG_PREFIX = "env:" as const;
 
 const ALIASES: Readonly<Record<string, IsolationClass>> = Object.freeze({

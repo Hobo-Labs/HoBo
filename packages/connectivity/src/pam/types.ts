@@ -1,9 +1,7 @@
 import type { IsolationClass } from "../env-isolation/types.js";
 
-// public-contract:
 export const PAM_GATEWAY_SCHEMA = "hobo.privileged-access-gateway/v1" as const;
 
-// public-contract:
 export const PAM_RAIL_CAPABILITY =
 	"capability:privileged-access-gateway" as const;
 

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { JsonValue } from "@bufbuild/protobuf";
-import { CoreParseError, diagnosticJson } from "@hobo/core";
+import { CoreParseError } from "@hobo/core";
+import { z } from "zod";
 
 export class TrajectoryCaptureParseError extends CoreParseError {
 	constructor(
@@ -27,18 +28,24 @@ export interface TraceContext {
 	readonly flags: string;
 }
 
-function fail(path: string, expected: string, received: unknown): never {
-	throw new TrajectoryCaptureParseError(
-		path,
-		expected,
-		diagnosticJson(received),
-	);
+const TRACEPARENT_STRING = z.string();
+
+function fail(
+	path: string,
+	expected: string,
+	received: JsonValue | undefined,
+): never {
+	throw new TrajectoryCaptureParseError(path, expected, received);
 }
 
-export function parseTraceContext(value: unknown): TraceContext {
-	if (typeof value !== "string") {
-		fail("traceparent", "W3C traceparent string", value);
+export function parseTraceContext(
+	received: JsonValue | undefined,
+): TraceContext {
+	const parsed = TRACEPARENT_STRING.safeParse(received);
+	if (!parsed.success) {
+		fail("traceparent", "W3C traceparent string", received);
 	}
+	const value = parsed.data;
 	const match = TRACEPARENT_PATTERN.exec(value);
 	if (!match) {
 		fail(

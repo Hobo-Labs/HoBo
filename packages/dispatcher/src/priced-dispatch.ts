@@ -334,18 +334,20 @@ export function decidePricedDispatch(
 				objective,
 				budget: BUDGET_DISCLOSURE,
 				selectedProvider: winner.providerId,
-				ranking: ranking.map((entry) => ({
-					providerId: entry.providerId,
-					rank: entry.rank,
-					incrementalBilled: {
-						decimal: entry.incrementalBilled.decimal,
-						currency: entry.incrementalBilled.currency,
-					},
-					quoteHash: entry.quote.quoteHash,
-					...(entry.pricingModel !== undefined
-						? { pricingModel: { ...entry.pricingModel } }
-						: {}),
-				})),
+				ranking: ranking.map((entry) => {
+					const eventRanking: PricedDispatchEventRanking = {
+						providerId: entry.providerId,
+						rank: entry.rank,
+						incrementalBilled: {
+							decimal: entry.incrementalBilled.decimal,
+							currency: entry.incrementalBilled.currency,
+						},
+						quoteHash: entry.quote.quoteHash,
+					};
+					if (entry.pricingModel !== undefined)
+						eventRanking.pricingModel = { ...entry.pricingModel };
+					return eventRanking;
+				}),
 				rejectedCandidates,
 			},
 		},

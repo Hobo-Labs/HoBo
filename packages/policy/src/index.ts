@@ -87,5 +87,4 @@ export {
 } from "./residency-policy-pack.js";
 export { GDPR_SEED_PACK, SOC2_SEED_PACK } from "./seed-packs.js";
 
-// public-contract:
 export const HOBO_POLICY_PACKAGE = "@hobo/policy";

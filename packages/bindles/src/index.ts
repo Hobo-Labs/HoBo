@@ -243,7 +243,6 @@ export {
 	service as wiringService,
 } from "./wiring/index.js";
 
-// public-contract:
 export const HOBO_BINDLES_PACKAGE = "@hobo/bindles";
 
 export type {

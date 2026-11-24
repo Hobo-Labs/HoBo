@@ -1,10 +1,8 @@
-// public-contract:
 import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
 
 export const ENV_NETWORK_ISOLATION_POLICY_PACK_ID =
 	"hobo.env-network-isolation/v1" as const;
 
-// public-contract:
 export const ENV_NETWORK_ISOLATION_POLICY_PACK_VERSION = "1.0.0" as const;
 
 export type EnvNetworkIsolationPolicyPack = Readonly<{

@@ -10,7 +10,6 @@ import {
 	SHORT_LIVED_MEMBERSHIP_TTL_SECONDS,
 } from "./types.js";
 
-// public-contract:
 export const ENV_MEMBERSHIP_SCHEMA = "hobo.env-membership/v1" as const;
 
 export type EnvMembership = Readonly<{

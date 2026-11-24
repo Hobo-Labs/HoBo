@@ -32,25 +32,15 @@ import {
 } from "./spec.js";
 import { CapturedSecret } from "./value.js";
 
-// public-contract:
 export const MCP_APPS_EXTENSION_ID = "io.modelcontextprotocol/ui";
-// public-contract:
 export const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
-// public-contract:
 export const MCP_APPS_SPEC_VERSION = "2026-01-26";
-// public-contract:
 export const SECRET_CAPTURE_RESOURCE_URI = "ui://hobo/secret-capture";
-// public-contract:
 export const CAPTURE_SECRET_TOOL = "capture_secret";
-// public-contract:
 export const SUBMIT_SECRET_VALUE_TOOL = "submit_secret_value";
-// public-contract:
 export const SECRET_CAPTURE_STATUS_TOOL = "secret_capture_status";
-// public-contract:
 export const END_SECRET_CAPTURE_TOOL = "end_secret_capture";
-// public-contract:
 export const URL_ELICITATION_REQUIRED = -32042;
-// public-contract:
 export const SECRET_CAPTURE_EVENTS_SCHEMA_VERSION = "hobo.secret-capture/v1";
 
 export const SECRET_CAPTURE_TOOL_NAMES: readonly string[] = Object.freeze([

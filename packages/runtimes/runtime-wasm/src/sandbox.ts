@@ -21,12 +21,9 @@ import { isJsonString } from "./json.js";
 
 export type FetchHandler = (input: Request) => Response | Promise<Response>;
 
-// public-contract:
 export const PINNED_WASMTIME_VERSION = "46.0.1";
 
-// public-contract:
 export const HOBO_ENV_HEADER_PREFIX = "x-hobo-env-";
-// public-contract:
 export const HOBO_BINDLE_ENV_HEADER = "x-hobo-bindle-env";
 
 export function applyHoboMeshEnvHeaders(

@@ -6,7 +6,7 @@ import type { JsonValue } from "../json.js";
 import type { CommandResult } from "../types/envelope.js";
 import { compileProjectManifest } from "./loader.js";
 
-export const BINDLE_MANIFEST_FILE = "hobo.bindle.json"; // public-contract:
+export const BINDLE_MANIFEST_FILE = "hobo.bindle.json";
 
 export function missingProjectBindle(
 	verb: string,
