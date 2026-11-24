@@ -32,8 +32,8 @@ import { createStoreChoiceApp } from "./mcp-store-choice.js";
 import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 import {
 	createOwnerStoreSessions,
-	ownerChannelRelayFolder,
 	type OwnerSignIn,
+	ownerChannelRelayFolder,
 	ownerChannelSignIn,
 } from "./owner-store-session.js";
 
