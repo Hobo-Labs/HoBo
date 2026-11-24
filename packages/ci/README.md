@@ -680,7 +680,11 @@ an owner, so its changes need code-owner review when the `main` ruleset
 requires it. Dependabot
 ([`.github/dependabot.yml`](../../.github/dependabot.yml)) proposes npm, Actions
 and Docker version updates only after a 7-day cooldown and regenerates the
-lockfile with each Actions bump. Secrets are scanned with Betterleaks (pinned
+lockfile with each Actions bump. The state-machine verification job in
+`hobo-ci.yml` and the pricing model checks in `pricing-ci.yml` install Temurin
+Java 21 with `actions/setup-java` v6.3.0
+(`d1374f8ac74474200d16ef8ecee22c7ae7a51880`), pinned in both workflows,
+`actions.lock` and `scripts/action-pin-allowlist.json`. Secrets are scanned with Betterleaks (pinned
 in `mise.toml`, config `.betterleaks.toml`): staged changes in the pre-commit
 hook (`pnpm run secrets:staged`), history in the main gate.
 
