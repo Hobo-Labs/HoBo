@@ -609,7 +609,10 @@ describe("the route job entry point", () => {
 			});
 			assert.equal(decision.reuse, false);
 			assert.equal(decision.reason, UNREAD_RUNS_REASON);
-			assert.equal(readFileSync(output, "utf8"), "reuse=false\nreuse-run=\n");
+			assert.equal(
+				readFileSync(output, "utf8"),
+				"reuse=false\nreuse-run=\nproven-base=\nproven-tree=\nproven-run=\nproven-pr=\n",
+			);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

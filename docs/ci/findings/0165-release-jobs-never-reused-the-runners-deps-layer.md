@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 164: release jobs never reused the runner's deps layer"
+title: "Finding 165: release jobs never reused the runner's deps layer"
 description: "release-hobo.yml linked HoBo's prebuilt dependency layer only when HOBO_CI_DEPS_LAYER was set, and no release job sets it, so every release job on an ARC pod ran a full pnpm install against the registry and timed out. deps-layer.mts already finds the layer from the payload's key marker; the release jobs now always try it and install only when it does not match."
 tags: [hobo, ci, performance, arc, release, deps-layer, pnpm]
 ---
 
-# Finding 164: release jobs never reused the runner's deps layer
+# Finding 165: release jobs never reused the runner's deps layer
 
 ## Measurements
 
