@@ -87,7 +87,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   rebuilt all 135 packages. Turbo caches only successful tasks, so a partial save is still correct.
   `scripts/ci/turbo-cache-prune.mts` (node builtins only) runs first as a workflow step: it keeps every
   entry a `.turbo/runs` summary from this job named and stamps it used, keeps other entries used within
-  `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7), and drops the rest. It outputs `save=false` when no task
+  `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7), and drops the rest. When
+  `HOBO_TURBO_CACHE_RUN_SHARED=1` and `TURBO_CACHE` has no `remote:` tier, it keeps only misses for
+  run-scoped `actions/cache` saves on merge-group shards. It outputs `save=false` when no task
   missed the cache and left an entry, and the save step is skipped, so a fully cached run never starts
   the save composite (whose `actions/cache/save` resolve once timed out for 2 minutes). Keeping only the
   entries one run touched shrank main's cache to an affected-only run's handful of packages, and the next

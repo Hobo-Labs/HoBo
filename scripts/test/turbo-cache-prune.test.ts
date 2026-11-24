@@ -17,6 +17,7 @@ import { after, describe, it } from "node:test";
 import {
 	cacheDirOf,
 	entryHash,
+	lacksRemoteTurboCacheTier,
 	localReadOnly,
 	parseRunTasks,
 	planPrune,
@@ -263,6 +264,15 @@ describe("turbo-cache-prune", () => {
 		assert.equal(localReadOnly({ TURBO_CACHE: "local:rw,remote:r" }), false);
 		assert.equal(localReadOnly({ TURBO_CACHE: "local:rw" }), false);
 		assert.equal(localReadOnly({}), false);
+	});
+
+	it("detects a remote tier in TURBO_CACHE", () => {
+		assert.equal(lacksRemoteTurboCacheTier({}), true);
+		assert.equal(lacksRemoteTurboCacheTier({ TURBO_CACHE: "local:rw" }), true);
+		assert.equal(
+			lacksRemoteTurboCacheTier({ TURBO_CACHE: "local:rw,remote:ro" }),
+			false,
+		);
 	});
 
 	it("prunes the shared host cache by the same rule and never asks to save it", () => {

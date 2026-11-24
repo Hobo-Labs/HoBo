@@ -160,6 +160,14 @@ export function localReadOnly(
 		.some((part) => part.trim() === "local:r");
 }
 
+export function lacksRemoteTurboCacheTier(
+	env: Readonly<Record<string, string | undefined>>,
+): boolean {
+	return !(env.TURBO_CACHE ?? "")
+		.split(",")
+		.some((part) => part.trim().startsWith("remote:"));
+}
+
 /** `undefined` when another job's prune deleted the file first. */
 function mtimeOf(path: string): number | undefined {
 	try {
@@ -213,7 +221,7 @@ function main(root: string): void {
 	const incremental =
 		process.env.HOBO_TURBO_CACHE_RUN_SHARED === "1" &&
 		!shared &&
-		!process.env.TURBO_TOKEN;
+		lacksRemoteTurboCacheTier(process.env);
 	const plan = planPrune(files, tasks, now, keepDays(), incremental);
 	const stamp = new Date(now);
 	for (const file of plan.keep) {
