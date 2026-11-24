@@ -213,9 +213,15 @@ describe("ensure-ci-worker-image", () => {
 				[
 					"#!/bin/sh",
 					`echo "timeout $*" >> "${calls}"`,
-					'seconds="$1"; shift; "$@"',
+					"shift",
+					'exec "$@"',
 					"",
 				].join("\n"),
+				{ mode: 0o755 },
+			);
+			writeFileSync(
+				join(bin, "sleep"),
+				["#!/bin/sh", "exit 0", ""].join("\n"),
 				{ mode: 0o755 },
 			);
 			writeFileSync(
@@ -229,11 +235,10 @@ describe("ensure-ci-worker-image", () => {
 					'if [ "$1 $2" = "manifest inspect" ]; then',
 					manifest ? "  exit 0" : "  exit 1",
 					"fi",
-					'if [ "$1 $2 $3" = "manifest inspect -v" ]; then',
+					'if [ "$1 $2" = "image inspect" ]; then',
 					manifest
-						? `  printf '%s\\n' '[{"Descriptor":{"digest":"${digest}"}}]'`
+						? `  printf '%s\\n' 'ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}'`
 						: "  exit 1",
-					"  exit 0",
 					"fi",
 					"exit 1",
 					"",
@@ -252,10 +257,11 @@ describe("ensure-ci-worker-image", () => {
 					encoding: "utf8",
 					env: {
 						...process.env,
-						PATH: `${bin}:${process.env.PATH ?? ""}`,
+						PATH: `${bin}:/usr/bin:/bin`,
 						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
 						GITHUB_TOKEN: "token-for-test",
 						GITHUB_OUTPUT: out,
+						HOBO_CI_WORKER_PULL_BUDGET_SEC: "5",
 					},
 				},
 			);
@@ -279,16 +285,15 @@ describe("ensure-ci-worker-image", () => {
 			resolved.output,
 			new RegExp(`^image_ref=${ref}\\nversion=v[0-9a-f]+\\n$`, "u"),
 		);
-		assert.match(
-			resolved.calls,
-			/^timeout 60 docker manifest inspect -v ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:v[0-9a-f]+$/mu,
-		);
 	});
 
 	it("fails clearly when the release toolchain manifest is absent", () => {
 		const resolved = resolveDigestWithStub(false);
 		assert.notEqual(resolved.result.status, 0);
-		assert.match(resolved.result.stderr, /GHCR manifest absent or unreadable/u);
+		assert.match(
+			resolved.result.stderr,
+			/timed out after 5s waiting for pullable worker image|GHCR manifest absent or unreadable/u,
+		);
 		assert.equal(resolved.output, "");
 	});
 

@@ -269,6 +269,30 @@ export function resolveWorkerDigestRef(repo: string, version: string): string {
 	return `${remote.slice(0, remote.lastIndexOf(":"))}@${digest}`;
 }
 
+export function resolveWorkerDigestRefFromPulledImage(
+	repo: string,
+	version: string,
+): string {
+	const remote = remoteWorkerTag(repo, version);
+	const inspected = spawnSync(
+		"docker",
+		["image", "inspect", remote, "--format", "{{index .RepoDigests 0}}"],
+		{ cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+	);
+	if (inspected.status !== 0) {
+		throw new Error(
+			`local worker inspect failed for ${remote} (status ${inspected.status ?? "unknown"})`,
+		);
+	}
+	const repoDigest = inspected.stdout.trim();
+	if (!repoDigest.includes("@sha256:")) {
+		throw new Error(
+			`local worker digest unavailable for ${remote}; docker returned ${repoDigest || "(empty)"}`,
+		);
+	}
+	return repoDigest;
+}
+
 function workerDigestWaitSleepSec(
 	attempt: number,
 	remainingSec: number,
@@ -304,7 +328,7 @@ export function resolveWorkerDigestRefWhenPullable(
 		attempt += 1;
 		if (ghcrWorkerPullable(repo, version, token)) {
 			try {
-				const imageRef = resolveWorkerDigestRef(repo, version);
+				const imageRef = resolveWorkerDigestRefFromPulledImage(repo, version);
 				if (
 					pullWorkerFromGhcr(imageRef, {
 						attempts: 1,
