@@ -45,6 +45,12 @@
             "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/agent_completion_hook.py\"",
             "timeout": 10,
             "statusMessage": "Reviewing task completion"
+          },
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-owner-ask-hook.mts\" --format=codex",
+            "timeout": 10,
+            "statusMessage": "Checking asks of the owner"
           }
         ]
       }

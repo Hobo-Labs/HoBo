@@ -30,6 +30,22 @@ type Draft = { files: Set<string>; messages: string[]; remediations: string[] };
 
 type Parsed = Readonly<{ path: string; file: ts.SourceFile }>;
 
+export function isCatalogSource(path: string): boolean {
+	const segments = path.split("/");
+	const name = segments.at(-1) ?? "";
+	return (
+		segments.length > 3 &&
+		segments[0] === "packages" &&
+		segments[2] === "src" &&
+		segments.every(
+			(segment) =>
+				segment !== "node_modules" && !segment.startsWith("_generated"),
+		) &&
+		name.endsWith(".ts") &&
+		!name.endsWith(".d.ts")
+	);
+}
+
 export function readSources(root: string): ReadonlyMap<string, string> {
 	const sources = new Map<string, string>();
 	const packages = join(root, "packages");
@@ -40,14 +56,11 @@ export function readSources(root: string): ReadonlyMap<string, string> {
 				continue;
 			const path = join(directory, entry.name);
 			if (entry.isDirectory()) walk(path);
-			else if (
-				entry.isFile() &&
-				entry.name.endsWith(".ts") &&
-				!entry.name.endsWith(".d.ts")
-			) {
+			else if (entry.isFile()) {
+				const file = relative(root, path).split(sep).join("/");
+				if (!isCatalogSource(file)) continue;
 				const text = readFileSync(path, "utf8");
-				if (text.includes("HOBO_CI_"))
-					sources.set(relative(root, path).split(sep).join("/"), text);
+				if (text.includes("HOBO_CI_")) sources.set(file, text);
 			}
 		}
 	};
