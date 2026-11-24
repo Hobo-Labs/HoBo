@@ -15,6 +15,40 @@ export const MISE_TOML = "mise.toml";
 export const MISE_LOCK = "mise.lock";
 export const MISE_PYTHON_TOOL = "python";
 export const MISE_PYTHON_VERSION = "3.12";
+export const JOB_TOOLS_ENV = "HOBO_CI_JOB_TOOLS";
+export const JOB_SCOPED_MISE_TOOLS: readonly string[] = [
+	"betterleaks",
+	MISE_PYTHON_TOOL,
+	"syft",
+];
+
+export function requestedJobTools(
+	env: NodeJS.ProcessEnv = process.env,
+): readonly string[] | "all" {
+	const requested = env[JOB_TOOLS_ENV];
+	if (requested === undefined || requested.trim() === "all") return "all";
+	return requested.split(/[\s,]+/u).filter(Boolean);
+}
+
+export function jobMiseTools(
+	configured: readonly string[],
+	env: NodeJS.ProcessEnv = process.env,
+): readonly string[] {
+	const requested = requestedJobTools(env);
+	if (requested === "all") return configured;
+	const extras = new Set(requested);
+	return configured.filter(
+		(tool) => !JOB_SCOPED_MISE_TOOLS.includes(tool) || extras.has(tool),
+	);
+}
+
+export function unknownJobTools(
+	env: NodeJS.ProcessEnv = process.env,
+): readonly string[] {
+	const requested = requestedJobTools(env);
+	if (requested === "all") return [];
+	return requested.filter((tool) => !JOB_SCOPED_MISE_TOOLS.includes(tool));
+}
 export const CI_RUNNER_IMAGE_VERSION_INPUTS = [
 	MISE_LOCK,
 	MISE_TOML,
@@ -423,8 +457,9 @@ export function syncMissingMiseTools(
 			`${commandFailure(listing, commandLine("mise", listArgs))}\n    ${MISE_TOOL_REMEDY}`,
 		);
 	}
-	const configuredTools = parseMiseToolNames(
-		readFileSync(join(root, MISE_TOML), "utf8"),
+	const configuredTools = jobMiseTools(
+		parseMiseToolNames(readFileSync(join(root, MISE_TOML), "utf8")),
+		env,
 	);
 	const configured = new Set(configuredTools);
 	const missing = [
@@ -467,7 +502,14 @@ export function syncMissingMiseTools(
 		return finish(false, missing, pathExport.detail);
 	}
 	if (missing.length === 0) {
-		return finish(true, [], "all mise.toml tools are already installed");
+		return finish(
+			true,
+			[],
+			configuredTools.length ===
+				parseMiseToolNames(readFileSync(join(root, MISE_TOML), "utf8")).length
+				? "all mise.toml tools are already installed"
+				: `all of this job's tools are already installed (${configuredTools.join(", ")})`,
+		);
 	}
 	return finish(
 		true,
@@ -518,7 +560,11 @@ function checkHeadlessShell(run: CommandRunner): ContractCheck {
 /** `run` defaults to spawning each probe; tests that only need check names pass a stub. */
 export function evaluateCiRunnerContract(
 	root: string,
-	options: { readonly live?: boolean; readonly run?: CommandRunner } = {},
+	options: {
+		readonly live?: boolean;
+		readonly run?: CommandRunner;
+		readonly env?: NodeJS.ProcessEnv;
+	} = {},
 ): ContractCheck[] {
 	const live = options.live ?? process.env.HOBO_CI_RUNNER_CONTRACT === "live";
 	const run = options.run ?? spawnCommand;
@@ -544,7 +590,8 @@ export function evaluateCiRunnerContract(
 	const miseToml = readFileSync(join(root, MISE_TOML), "utf8");
 	const miseLock = readFileSync(join(root, MISE_LOCK), "utf8");
 	const configuredTools = parseMiseToolNames(miseToml);
-	for (const tool of configuredTools) {
+	const jobTools = jobMiseTools(configuredTools, options.env ?? process.env);
+	for (const tool of jobTools) {
 		checks.push(probeMiseTool(tool, run, root));
 	}
 
@@ -563,8 +610,16 @@ export function evaluateCiRunnerContract(
 			detail: `${MISE_LOCK} must lock ${MISE_PYTHON_TOOL} ${MISE_PYTHON_VERSION}, got ${lockedPython ?? "(missing)"}`,
 		});
 	}
-	const python = runMiseToolVersion(run, root, MISE_PYTHON_TOOL);
-	if (python.ok && python.out.includes(`${MISE_PYTHON_VERSION}.`)) {
+	const python = jobTools.includes(MISE_PYTHON_TOOL)
+		? runMiseToolVersion(run, root, MISE_PYTHON_TOOL)
+		: undefined;
+	if (python === undefined) {
+		checks.push({
+			ok: true,
+			name: "python-version",
+			detail: `not requested by this job (${JOB_TOOLS_ENV})`,
+		});
+	} else if (python.ok && python.out.includes(`${MISE_PYTHON_VERSION}.`)) {
 		checks.push({
 			ok: true,
 			name: "python-version",

@@ -1,0 +1,1 @@
+{"type":"worker.job_started","machineId":"m-7f3a0c2b9d41","atMs":1793016000000,"jobId":70,"repository":"octo/app","runner":"hobo-machine-m-7f3a0c2b9d41-70","detail":"A one-job runner took job 70 of octo/app in a fresh container."}

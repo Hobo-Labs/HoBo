@@ -45,6 +45,7 @@ test("repository discovery checks the real site and every registered UI palette"
 	assert.deepEqual(
 		listWebUiProjects().map((project) => project.rel),
 		[
+			"packages/ci-dashboard",
 			"packages/connect-ui",
 			"packages/control-yard",
 			"packages/mcp",

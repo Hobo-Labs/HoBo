@@ -14,11 +14,14 @@ import {
 import {
 	createAdmissionOrder,
 	createGithubAppManifest,
+	createRelayWiring,
+	RELAY_WIRING_OFF,
+	type RelayWiring,
 } from "@hobo/ci-gh-actions";
 import { startRelayFromEnvironment } from "@hobo/ci-gh-actions/cli-serve";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { importGithubKey } from "../src/ci-github-keys.js";
 import {
@@ -621,6 +624,43 @@ describe("hobo ci serve with a CI agent", () => {
 		}
 	});
 
+	it("turns relay mode on only from the project's relayJobs.answer, and the dashboard only with HOBO_CI_DASHBOARD=1", async () => {
+		for (const { project, env, answering, dashboard } of [
+			{ project: minimalProject, env: {}, answering: false, dashboard: 404 },
+			{
+				project: minimalProject,
+				env: { HOBO_CI_RELAY_JOBS_ANSWER: "1" },
+				answering: false,
+				dashboard: 404,
+			},
+			{
+				project: { ...minimalProject, relayJobs: { answer: true } },
+				env: { HOBO_CI_DASHBOARD: "1" },
+				answering: true,
+				dashboard: 200,
+			},
+		]) {
+			const { input, home } = await serveInput(project);
+			const handle = await startCiServe({
+				...input,
+				env,
+				openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
+			});
+			try {
+				const origin = `http://127.0.0.1:${handle.plan.port}`;
+				expect((await fetch(`${origin}/readyz`)).status).toBe(200);
+				expect(
+					await exists(join(home, "ci", "serve", "relay-wiring.sqlite")),
+				).toBe(answering);
+				const page = await fetch(`${origin}/dashboard`);
+				expect(page.status).toBe(dashboard);
+				await page.body?.cancel();
+			} finally {
+				await handle.stop();
+			}
+		}
+	});
+
 	it("refuses to serve when the agent's model credential is not in the environment", async () => {
 		const { input } = await serveInput({ ...minimalProject, agent });
 		await expect(
@@ -868,7 +908,10 @@ describe("hobo ci serve pull admission", () => {
 			repositoryId: installationId * 100,
 			installationId,
 		});
-	function setup(connections: ReturnType<typeof connection>[]) {
+	function setup(
+		connections: ReturnType<typeof connection>[],
+		wiring?: Pick<RelayWiring, "afterPoll">,
+	) {
 		const reads: string[] = [];
 		const github = {
 			async request(installationId: number, path: string) {
@@ -923,6 +966,7 @@ describe("hobo ci serve pull admission", () => {
 							configuration: create(ConfigurationSchema, { connections }),
 						}),
 				},
+				wiring,
 			},
 			repository: "Example/Project",
 			installationId: 1,
@@ -961,6 +1005,54 @@ describe("hobo ci serve pull admission", () => {
 			]);
 		} finally {
 			h.admission.stop();
+		}
+	});
+
+	it("runs relay mode's pass after each poll, over the served repository only", async () => {
+		const passes: string[][] = [];
+		const h = setup(
+			[connection("example/project", 1), connection("example/other", 1)],
+			{
+				afterPoll: async (connections) => {
+					passes.push(
+						connections.map(
+							(served) => `${served.installationId} ${served.repository}`,
+						),
+					);
+					return undefined;
+				},
+			},
+		);
+		try {
+			await h.admission.poll();
+			await vi.waitFor(() => expect(passes).toEqual([["1 example/project"]]));
+		} finally {
+			h.admission.stop();
+		}
+	});
+
+	it("asks GitHub nothing more for relay mode when its flag is off", async () => {
+		const without = setup([connection("example/project", 1)]);
+		const wiring = createRelayWiring({
+			flags: RELAY_WIRING_OFF,
+			github: {
+				request: async () => {
+					throw new Error("relay mode is off: no request expected");
+				},
+			},
+			connections: async () => [],
+			database: ":memory:",
+			node: "test",
+		});
+		const withOff = setup([connection("example/project", 1)], wiring);
+		try {
+			await Promise.all([without.admission.poll(), withOff.admission.poll()]);
+			expect(withOff.reads).toEqual(without.reads);
+			expect(await wiring.afterPoll([])).toBeUndefined();
+		} finally {
+			without.admission.stop();
+			withOff.admission.stop();
+			wiring.close();
 		}
 	});
 

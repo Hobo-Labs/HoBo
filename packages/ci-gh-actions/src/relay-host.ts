@@ -19,7 +19,12 @@ import {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
 } from "./hosted-runtime.js";
-import { createRelayHandler, type StubEngine } from "./http-handler.js";
+import {
+	createRelayHandler,
+	type HostedRelayApplication,
+	type StubEngine,
+	type VerifiedWebhook,
+} from "./http-handler.js";
 import type { MeshNodesReader } from "./mesh-nodes-reader.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { createRelayMcp, isRelayMcpPath } from "./relay-mcp.js";
@@ -39,6 +44,12 @@ export type RelayAgent = Readonly<{
 	tick(): Promise<void>;
 	/** How often a pass starts; one minute when omitted. */
 	intervalMs?: number;
+}>;
+
+export type RelayHostWiring = Readonly<{
+	onWebhook(webhook: VerifiedWebhook): void;
+	page(request: Request): Promise<Response | undefined>;
+	control(request: Request): Promise<Response | undefined>;
 }>;
 
 /**
@@ -99,6 +110,7 @@ export function createRelayHost(options: {
 	workflowIdentity?: GithubWorkflowVerifier | undefined;
 	logger?: (entry: RelayServiceLog) => void;
 	now?: () => string;
+	wiring?: RelayHostWiring | undefined;
 }) {
 	const { store, github, identity, webhookSecret } = options;
 	const startFence = options.strictFleet
@@ -180,6 +192,22 @@ export function createRelayHost(options: {
 		sessions: "memory",
 		cursorSecret: webhookSecret,
 	});
+	const { wiring } = options;
+	const application: HostedRelayApplication = wiring
+		? {
+				...runtime,
+				mcp: mcp.handle,
+				async ingestWebhook(input) {
+					const status = await runtime.ingestWebhook(input);
+					wiring.onWebhook(input);
+					return status;
+				},
+				page: (request) => wiring.page(request),
+				async control(request) {
+					return (await wiring.control(request)) ?? runtime.control(request);
+				},
+			}
+		: { ...runtime, mcp: mcp.handle };
 	const service = createRelayService({
 		origin: options.publicOrigin,
 		allowLoopbackHttp: options.allowLoopbackHttp === true,
@@ -191,7 +219,7 @@ export function createRelayHost(options: {
 		drainTimeoutMs: options.drainTimeoutMs ?? 30_000,
 		handle: (ready) =>
 			createRelayHandler({
-				application: admitWhenReady({ ...runtime, mcp: mcp.handle }, ready),
+				application: admitWhenReady(application, ready),
 				webhookSecret,
 				ingressForwardSecret: options.ingressForwardSecret,
 				engineId: "gh-actions",
