@@ -656,6 +656,32 @@ describe("ensure-ci-worker-image", () => {
 		});
 	});
 
+	it("exports needed=false from --published-status when host and GHCR are pullable", () => {
+		withWorkerPublishStub({ host: true, manifest: true, pull: true }, () => {
+			const out = mkdtempSync(join(tmpdir(), "hobo-worker-status-out-"));
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--no-warnings",
+					"scripts/ci/ensure-ci-worker-image.mts",
+					"--published-status",
+				],
+				{
+					cwd: join(import.meta.dirname, "..", ".."),
+					encoding: "utf8",
+					env: {
+						...process.env,
+						GITHUB_OUTPUT: join(out, "gh-out"),
+					},
+				},
+			);
+			assert.equal(result.status, 0, result.stderr);
+			const output = readFileSync(join(out, "gh-out"), "utf8");
+			assert.match(output, /^needed=false$/m);
+			rmSync(out, { recursive: true, force: true });
+		});
+	});
+
 	it("does not treat ordinary CI as release worker ensure", () => {
 		const prev = {
 			ver: process.env.HOBO_RELEASE_VERSION,
