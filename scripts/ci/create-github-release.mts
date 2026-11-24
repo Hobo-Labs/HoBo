@@ -40,7 +40,7 @@ import {
 import { join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { redactRealizerConditionText } from "../../packages/cd/src/reconcile/errors.ts";
+import { redactRealizerConditionText } from "../lib/redact-operator-condition.mts";
 
 // ── Release Freight ─────────────────────────────────────────────────────────
 
@@ -315,8 +315,6 @@ export function classifyRelease(
 		};
 	return undefined;
 }
-
-export const redactReleaseFreightOperatorMessage = redactRealizerConditionText;
 
 /** The `hobo deploy` composition opened on one HOBO_HOME with the release topology. */
 export type ReleaseCd = Readonly<{
