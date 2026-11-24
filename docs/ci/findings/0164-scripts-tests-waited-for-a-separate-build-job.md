@@ -33,3 +33,5 @@ The scripts lane loses one serial stage and one runner pickup, about 3 to 5 minu
 ## Remaining limits
 
 - A change that reaches many packages the scripts tests import rebuilds them in all four shards rather than once; the main build cache only covers what main already built.
+
+`.github/workflows/actions.lock` no longer pins `actions/download-artifact` for `hobo-ci.yml`, which stopped using it with the build job.
