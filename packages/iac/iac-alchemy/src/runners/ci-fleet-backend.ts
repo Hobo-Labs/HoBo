@@ -1,0 +1,211 @@
+import { inMemoryState, Stack } from "alchemy";
+import * as Alchemist from "alchemy/Alchemist";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import {
+	Agent37Runner,
+	type Agent37RunnerInstanceType,
+	Agent37RunnerProvider,
+	type Agent37RunnerProviderOptions,
+	type Agent37RunnerRegion,
+} from "./agent37.js";
+import {
+	HostingerRunner,
+	HostingerRunnerProvider,
+	type HostingerRunnerProviderOptions,
+} from "./hostinger.js";
+import {
+	LocalRunner,
+	LocalRunnerProvider,
+	type LocalRunnerRegistry,
+} from "./local.js";
+
+export type AlchemyRunnerTier = "local" | "hostinger" | "agent37" | "github";
+
+export interface RunnerProvisionInput {
+	readonly jobId: string;
+	readonly poolId: string;
+	readonly tier: AlchemyRunnerTier;
+	readonly label: string;
+}
+
+export interface RunnerReleaseInput {
+	readonly runnerId: string;
+	readonly tier: AlchemyRunnerTier;
+}
+
+export interface AlchemyRunnerBackendAdapter {
+	readonly provisionRunner: (
+		input: RunnerProvisionInput,
+	) => Promise<{ readonly runnerId: string }>;
+	readonly releaseRunner: (input: RunnerReleaseInput) => Promise<void>;
+}
+
+export interface AlchemyRunnerBackendOptions {
+	readonly local?: {
+		readonly registry: LocalRunnerRegistry;
+		readonly maxConcurrency: number;
+	};
+	readonly hostinger?: HostingerRunnerProviderOptions & {
+		readonly machineIdForPool: (poolId: string) => string;
+		readonly credentialLocator: string;
+		readonly apiOrigin?: string;
+	};
+	readonly agent37?: Agent37RunnerProviderOptions & {
+		readonly template: string;
+		readonly instanceType: Agent37RunnerInstanceType;
+		readonly region: Agent37RunnerRegion;
+		readonly cpu: number;
+		readonly memoryGb: number;
+		readonly credentialLocator: string;
+	};
+	readonly github?: {
+		readonly dispatchHostedRunner: (
+			input: RunnerProvisionInput,
+		) => Promise<{ readonly runnerId: string }>;
+	};
+}
+
+function runRunnerStack<Output, Req, LayerError>(
+	stack: Alchemist.ConfiguredStack<Output, Req>,
+	runtimeLayer: Layer.Layer<Alchemist.Services | Req, LayerError, never>,
+	operation: "deploy" | "destroy",
+) {
+	return Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				const plan = yield* Alchemist.plan({
+					stack,
+					stage: "ci",
+					operation,
+				});
+				return yield* Alchemist.apply(plan);
+			}),
+		).pipe(Effect.provide(runtimeLayer)),
+	);
+}
+
+export function createAlchemyRunnerBackend(
+	options: AlchemyRunnerBackendOptions,
+): AlchemyRunnerBackendAdapter {
+	const stackStates = new Map<
+		string,
+		{
+			readonly tier: AlchemyRunnerTier;
+			readonly destroy: () => Promise<void>;
+		}
+	>();
+
+	return {
+		async provisionRunner(input) {
+			if (input.tier === "github") {
+				if (options.github === undefined) {
+					return { runnerId: `github:${input.poolId}:${input.jobId}` };
+				}
+				return options.github.dispatchHostedRunner(input);
+			}
+			const state = inMemoryState();
+			if (input.tier === "local") {
+				if (options.local === undefined) {
+					throw new Error("local runner provider not configured");
+				}
+				const local = options.local;
+				const providers = LocalRunnerProvider(local.registry);
+				const stack = Stack(
+					`runner-local-${input.jobId}`,
+					{ providers, state },
+					Effect.gen(function* () {
+						const resource = yield* LocalRunner(input.poolId, {
+							machineId: input.poolId,
+							labels: [input.label],
+							maxConcurrency: local.maxConcurrency,
+						});
+						return { runnerId: resource.runnerId };
+					}),
+				);
+				const runtimeLayer = Layer.merge(Alchemist.layer(), providers);
+				const deployed = await runRunnerStack(stack, runtimeLayer, "deploy");
+				const runnerId = deployed.runnerId;
+				stackStates.set(runnerId, {
+					tier: "local",
+					destroy: async () => {
+						await runRunnerStack(stack, runtimeLayer, "destroy");
+					},
+				});
+				return { runnerId };
+			}
+			if (input.tier === "hostinger") {
+				if (options.hostinger === undefined) {
+					throw new Error("hostinger runner provider not configured");
+				}
+				const hostinger = options.hostinger;
+				const providers = HostingerRunnerProvider(hostinger);
+				const machineId = hostinger.machineIdForPool(input.poolId);
+				const stack = Stack(
+					`runner-hostinger-${input.jobId}`,
+					{ providers, state },
+					Effect.gen(function* () {
+						const resource = yield* HostingerRunner(input.poolId, {
+							machineId,
+							hostname: `${input.poolId}.hostinger`,
+							labels: [input.label],
+							credentialLocator: hostinger.credentialLocator,
+							...(hostinger.apiOrigin !== undefined
+								? { apiOrigin: hostinger.apiOrigin }
+								: undefined),
+						});
+						return { runnerId: resource.runnerId };
+					}),
+				);
+				const runtimeLayer = Layer.merge(Alchemist.layer(), providers);
+				const deployed = await runRunnerStack(stack, runtimeLayer, "deploy");
+				const runnerId = deployed.runnerId;
+				stackStates.set(runnerId, {
+					tier: "hostinger",
+					destroy: async () => {
+						await runRunnerStack(stack, runtimeLayer, "destroy");
+					},
+				});
+				return { runnerId };
+			}
+			if (options.agent37 === undefined) {
+				throw new Error("agent37 runner provider not configured");
+			}
+			const agent37 = options.agent37;
+			const providers = Agent37RunnerProvider(agent37);
+			const stack = Stack(
+				`runner-agent37-${input.jobId}`,
+				{ providers, state },
+				Effect.gen(function* () {
+					const resource = yield* Agent37Runner(input.jobId, {
+						name: `${input.poolId}-${input.jobId}`,
+						template: agent37.template,
+						instanceType: agent37.instanceType,
+						region: agent37.region,
+						cpu: agent37.cpu,
+						memoryGb: agent37.memoryGb,
+						labels: [input.label],
+						credentialLocator: agent37.credentialLocator,
+					});
+					return { runnerId: resource.runnerId };
+				}),
+			);
+			const runtimeLayer = Layer.merge(Alchemist.layer(), providers);
+			const deployed = await runRunnerStack(stack, runtimeLayer, "deploy");
+			const runnerId = deployed.runnerId;
+			stackStates.set(runnerId, {
+				tier: "agent37",
+				destroy: async () => {
+					await runRunnerStack(stack, runtimeLayer, "destroy");
+				},
+			});
+			return { runnerId };
+		},
+		async releaseRunner(input) {
+			const tracked = stackStates.get(input.runnerId);
+			if (tracked === undefined) return;
+			stackStates.delete(input.runnerId);
+			await tracked.destroy();
+		},
+	};
+}

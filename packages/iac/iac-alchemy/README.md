@@ -670,3 +670,13 @@ or otherwise reconcile messages, and authorize destruction before deleting or
 recreating the actor: destroying its database destroys messages and deduplication
 history. Provider credentials, pool isolation, source identity, durable storage,
 and clock correctness remain independently verified host responsibilities.
+
+## Runner Provider Layers (`@hobo/iac-alchemy/runners`)
+
+`@hobo/iac-alchemy/runners` provides Alchemy v2 `Resource` definitions and `Provider` Layers for HoBo's self-hosted and burst CI runner targets:
+
+- `Hobo.HostingerRunner` (`HostingerRunnerProvider`): enforces HoBo's fleet-only Hostinger API route guard (`GET /api/vps/v1/virtual-machines`, `POST /api/vps/v1/virtual-machines/<id>/(start|restart)`), resolves credentials exclusively through `owner://<NAME>` locators, and never persists secrets into Alchemy state.
+- `Hobo.Agent37Runner` (`Agent37RunnerProvider`): manages Agent37 sandbox creation and teardown through `owner://<NAME>` credentials with zero secret persistence.
+- `Hobo.LocalRunner` (`LocalRunnerProvider`): manages local machine runner slot registrations without network or secret requirements.
+- `createAlchemyRunnerBackend`: adapts `LocalRunner`, `HostingerRunner`, `Agent37Runner`, and GitHub-hosted runner dispatch into a unified multi-tier backend matching `@hobo/ci/domain`'s `RunnerBackend` contract.
+

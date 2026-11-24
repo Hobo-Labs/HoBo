@@ -46,6 +46,10 @@
 		"./rivet/queue": {
 			"types": "./dist/rivet-queue.d.ts",
 			"default": "./dist/rivet-queue.js"
+		},
+		"./runners": {
+			"types": "./dist/runners/index.d.ts",
+			"default": "./dist/runners/index.js"
 		}
 	},
 	"dependencies": {
