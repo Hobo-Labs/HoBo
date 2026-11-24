@@ -85,6 +85,7 @@ function setup(
 		authorizer,
 		telemetry,
 		enrollment: make(),
+		issuer,
 		make,
 	};
 }
@@ -489,6 +490,22 @@ describe("double opt-in (I24)", () => {
 });
 
 describe("key-bound SVIDs and DPoP", () => {
+	it("redacts a signing-key provider failure during SVID verification", async () => {
+		const s = setup();
+		s.issuer.jwks = () => {
+			throw new Error("synthetic-private-provider.invalid");
+		};
+		const out = await s.enrollment.verify({
+			method: "GET",
+			path: "/v1/cd/feed",
+			headers: { authorization: "DPoP a.b.c", dpop: "fixture" },
+		});
+		expect(code(out)).toBe("svid-invalid");
+		expect(JSON.stringify(out)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
+	});
+
 	it("activation issues a JWT-SVID carrying cnf.jkt and reports CREDENTIAL_VALID to the inventory", async () => {
 		const s = setup();
 		const a = await activated(s);

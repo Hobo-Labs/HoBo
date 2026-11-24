@@ -118,6 +118,50 @@ describe("relay proof: outbound-only and SSRF rules for agent egress", () => {
 		expect(claimed.ok ? "ok" : claimed.reasons[0]?.code).toBe("egress-refused");
 	});
 
+	it.each([
+		{
+			error: new AgentEgressError("synthetic-private-provider.invalid"),
+			code: "egress-refused",
+		},
+		{
+			error: new Error("synthetic-private-provider.invalid"),
+			code: "station-unavailable",
+		},
+		{
+			error: new Proxy(
+				{},
+				{
+					getPrototypeOf() {
+						throw new Error("synthetic-private-provider.invalid");
+					},
+				},
+			),
+			code: "station-unavailable",
+		},
+	])("redacts a $code transport error", async ({ error, code }) => {
+		const transport = createHttpTransport({
+			baseUrl: "https://station.test",
+			http: async () => {
+				throw error;
+			},
+			reconcilerId: asReconciler("agent-x"),
+			privateJwk: generateAgentKey().privateJwk,
+			svid: "",
+			now: createClock().now,
+		});
+		const result = await transport.claim({
+			reconcilerId: asReconciler("agent-x"),
+			campId: asCamp("eu-1"),
+			holderId: "h",
+			ttlMs: 1,
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.reasons[0]?.code).toBe(code);
+		expect(JSON.stringify(result)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
+	});
+
 	it("the agent exposes no inbound surface: the transport is client-only", () => {
 		const transport = createHttpTransport({
 			baseUrl: "https://station.test",
