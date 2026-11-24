@@ -128,7 +128,11 @@ export function ownerChannelSignIn(options: {
 		return signInOwnerStore({
 			family: "cd",
 			vault,
-			open: () => ownerStore("cd", vault, deps),
+			open: (resolved) =>
+				ownerStore("cd", vault, {
+					...deps,
+					env: { ...plainEnv, ...resolved },
+				}),
 			deps,
 			plainEnv,
 			workloadOidc: undefined,
