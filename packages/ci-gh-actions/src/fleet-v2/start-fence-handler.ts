@@ -180,6 +180,8 @@ export function createStartFenceHandler(options: {
 					authorized: true,
 					slotId: verified.slotId,
 					claimId: verified.claimId,
+					accountId: verified.accountId,
+					profileId: verified.profileId,
 					runnerName: verified.runnerName,
 					executionKey: verified.executionKey,
 				},

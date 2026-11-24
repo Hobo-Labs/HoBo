@@ -21,8 +21,10 @@ export type HostedRelayApplication = Readonly<{
 	claim(leaseId: string, oidc: string): Promise<Response>;
 	control(request: Request): Promise<Response | undefined>;
 	ready(): Promise<boolean>;
+	startFence?(request: Request): Promise<Response>;
 	/** The relay's MCP server (`createRelayMcp`); a host without one answers 404. */
 	mcp?(request: Request): Promise<Response>;
+	page?(request: Request): Promise<Response | undefined>;
 }>;
 
 /** An engine a host reports in health but this relay does not serve. */
@@ -161,6 +163,15 @@ export function createRelayHandler(options: {
 		}
 		const mounted = engineSubPath(url.pathname, engineId);
 		const path = mounted ?? url.pathname;
+		if (path === "/v2/fleet/start-fence") {
+			if (request.method !== "POST") return json(405, { ok: false });
+			if (!options.application.startFence) return json(503, { ok: false });
+			try {
+				return noStore(await options.application.startFence(request));
+			} catch {
+				return json(503, { ok: false });
+			}
+		}
 		if (request.method === "GET" && path === "/healthz") {
 			const engines = new Map<string, HttpBody>([[engineId, { ok: true }]]);
 			for (const [id] of stubEngines) engines.set(id, { ok: true });
@@ -301,6 +312,24 @@ export function createRelayHandler(options: {
 				reportRelayFailure(
 					"hobo_ci_mcp_failed",
 					{ method: request.method },
+					error instanceof Error ? error : undefined,
+				);
+				return json(503, { error: "service unavailable" });
+			}
+		}
+		if (
+			(request.method === "GET" || request.method === "HEAD") &&
+			options.application.page
+		) {
+			try {
+				const response = await options.application.page(
+					mounted === undefined ? request : remount(request, url, path),
+				);
+				if (response) return response;
+			} catch (error) {
+				reportRelayFailure(
+					"hobo_ci_page_failed",
+					{ method: request.method, route: failureRoute(path) },
 					error instanceof Error ? error : undefined,
 				);
 				return json(503, { error: "service unavailable" });

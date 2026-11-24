@@ -1,0 +1,71 @@
+{
+  "consumer": { "name": "HoBoCiGithubMinutesReader" },
+  "provider": { "name": "GitHubBillingApi" },
+  "interactions": [
+    {
+      "description": "read an organization's plan",
+      "providerState": "test-org is an organization on the team plan",
+      "request": { "method": "GET", "path": "/orgs/test-org", "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" } },
+      "response": { "status": 200, "body": { "login": "test-org", "plan": { "name": "team" } } }
+    },
+    {
+      "description": "read an organization's billing usage this month",
+      "providerState": "test-org used 1000 Linux minutes of Actions this month",
+      "request": { "method": "GET", "path": "/organizations/test-org/settings/billing/usage", "query": { "year": ["2026"], "month": ["11"] }, "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" } },
+      "response": {
+        "status": 200,
+        "body": {
+          "usageItems": [
+            { "date": "2026-11-02T00:00:00Z", "product": "actions", "sku": "actions_linux", "quantity": 600, "unitType": "minutes", "pricePerUnit": 0.006, "grossAmount": 3.6, "discountAmount": 3.6, "netAmount": 0, "organizationName": "test-org", "repositoryName": "app" },
+            { "date": "2026-11-03T00:00:00Z", "product": "actions", "sku": "actions_linux", "quantity": 400, "unitType": "minutes", "pricePerUnit": 0.006, "grossAmount": 2.4, "discountAmount": 2.4, "netAmount": 0, "organizationName": "test-org", "repositoryName": "app" },
+            { "date": "2026-11-03T00:00:00Z", "product": "git_lfs", "sku": "git_lfs_storage", "quantity": 1, "unitType": "gigabytehours", "pricePerUnit": 0.07, "grossAmount": 0.07, "discountAmount": 0, "netAmount": 0.07, "organizationName": "test-org", "repositoryName": "app" }
+          ]
+        }
+      }
+    },
+    {
+      "description": "an organization plan read of a user account is not found",
+      "providerState": "test-user is a user, not an organization",
+      "request": { "method": "GET", "path": "/orgs/test-user", "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" } },
+      "response": { "status": 404, "body": { "message": "Not Found" } }
+    },
+    {
+      "description": "read a user's plan",
+      "providerState": "test-user is a user on the pro plan",
+      "request": { "method": "GET", "path": "/users/test-user", "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" } },
+      "response": { "status": 200, "body": { "login": "test-user", "plan": { "name": "pro" } } }
+    },
+    {
+      "description": "an organization usage read of a user account is not found",
+      "providerState": "test-user is a user, not an organization",
+      "request": { "method": "GET", "path": "/organizations/test-user/settings/billing/usage", "query": { "year": ["2026"], "month": ["11"] }, "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" } },
+      "response": { "status": 404, "body": { "message": "Not Found" } }
+    },
+    {
+      "description": "read a user's billing usage this month",
+      "providerState": "test-user used 200 Linux minutes of Actions this month",
+      "request": { "method": "GET", "path": "/users/test-user/settings/billing/usage", "query": { "year": ["2026"], "month": ["11"] }, "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" } },
+      "response": {
+        "status": 200,
+        "body": {
+          "usageItems": [
+            { "date": "2026-11-05T00:00:00Z", "product": "actions", "sku": "actions_linux", "quantity": 200, "unitType": "minutes", "pricePerUnit": 0.006, "grossAmount": 1.2, "discountAmount": 1.2, "netAmount": 0, "repositoryName": "dotfiles" }
+          ]
+        }
+      }
+    },
+    {
+      "description": "read a locked organization's plan",
+      "providerState": "locked-org is an organization on the enterprise plan",
+      "request": { "method": "GET", "path": "/orgs/locked-org", "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" } },
+      "response": { "status": 200, "body": { "login": "locked-org", "plan": { "name": "enterprise" } } }
+    },
+    {
+      "description": "a billing usage read without the billing permission is refused",
+      "providerState": "the token may not read locked-org's billing",
+      "request": { "method": "GET", "path": "/organizations/locked-org/settings/billing/usage", "query": { "year": ["2026"], "month": ["11"] }, "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" } },
+      "response": { "status": 403, "body": { "message": "Resource not accessible by integration" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

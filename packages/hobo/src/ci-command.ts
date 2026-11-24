@@ -34,6 +34,7 @@ import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import type { AgentVaultRouter } from "./agent-vault-broker.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
+import { type CiCommand, findCiCommand } from "./ci-commands.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runCiFleet } from "./ci-fleet.js";
 import {
@@ -457,6 +458,28 @@ function bindingStoreFor(
 		: { bindingStore: ownerSecretStoreBindingStore(ownerEntries(cwd)) };
 }
 
+export const BUILT_IN_CI_COMMANDS = [
+	"enable",
+	"connect",
+	"status",
+	"list",
+	"ls",
+	"inspect",
+	"logs",
+	"grep",
+	"rerun",
+	"serve",
+	"github",
+	"deploy",
+	"app",
+	"secret-store",
+	"route",
+	"init",
+	"signals",
+	"diagnose",
+	"fleet",
+] as const;
+
 export function createCiCommand(
 	deps: {
 		env?: NodeJS.ProcessEnv;
@@ -488,6 +511,7 @@ export function createCiCommand(
 		fleetAgentVault?: (cwd: string) => AgentVaultRouter | undefined;
 		ownerEntries?: (cwd: string) => OwnerStoreEntries;
 		hostingerHttp?: HttpTransport;
+		commands?: readonly CiCommand[];
 		kubernetesHttp?: (tls: KubernetesTlsMaterial) => HttpTransport;
 	} = {},
 ): CommandModule {
@@ -518,6 +542,21 @@ export function createCiCommand(
 						deps.hostingerHttp ?? createFetchHttpTransport(globalThis.fetch),
 				});
 			}
+			const first = args[0] ?? "";
+			const tabled = BUILT_IN_CI_COMMANDS.some((name) => name === first)
+				? undefined
+				: findCiCommand(first, deps.commands);
+			if (tabled)
+				return tabled.run({
+					args: args.slice(1),
+					flags,
+					emitProgress,
+					env: deps.env ?? process.env,
+					fetch: deps.fetch ?? fetch,
+					now: deps.now ?? Date.now,
+					credentials: deps.ownerCredentials?.(flags.cwd),
+					localRepository: (repo) => localRepository(deps, flags.cwd, { repo }),
+				});
 			let parsed: ReturnType<typeof parseCiArgs>;
 			try {
 				parsed = parseCiArgs(args);
@@ -540,29 +579,7 @@ export function createCiCommand(
 				? ["connect", ...parsed.positionals.slice(2)]
 				: parsed.positionals;
 			const command = positionals[0] ?? "";
-			if (
-				![
-					"enable",
-					"connect",
-					"status",
-					"list",
-					"ls",
-					"inspect",
-					"logs",
-					"grep",
-					"rerun",
-					"serve",
-					"github",
-					"deploy",
-					"app",
-					"secret-store",
-					"route",
-					"init",
-					"signals",
-					"diagnose",
-					"fleet",
-				].includes(command)
-			)
+			if (!BUILT_IN_CI_COMMANDS.some((name) => name === command))
 				return usage("Unknown CI command. Run hobo ci --help.");
 			if (command === "init") {
 				const local = await localRepository(deps, flags.cwd, values);
@@ -581,10 +598,10 @@ export function createCiCommand(
 				return runCiInsights({
 					command,
 					repository: local.repository,
-					cwd: local.root,
 					args: positionals.slice(1),
 					options: values,
-					env: deps.env ?? process.env,
+					credentials: deps.ownerCredentials?.(flags.cwd),
+					fetch: deps.fetch ?? fetch,
 				});
 			}
 			if (command === "route") {
@@ -1137,6 +1154,8 @@ export function createCiCommand(
 						args: positionals.slice(1),
 						options: runOptions,
 						env,
+						credentials: deps.ownerCredentials?.(flags.cwd),
+						fetch: deps.fetch ?? fetch,
 						emitProgress,
 					});
 				const link =

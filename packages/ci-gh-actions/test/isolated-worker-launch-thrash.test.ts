@@ -165,6 +165,13 @@ async function launchFixture(extras?: {
 function githubFixture(): GithubTransport {
 	return {
 		request: async (_installationId, path) => {
+			if (path.includes("/actions/runs?status=in_progress&"))
+				return Response.json({ workflow_runs: [] });
+			if (
+				path.includes("/actions/runs/") &&
+				path.includes("/jobs?filter=latest&")
+			)
+				return Response.json({ jobs: [] });
 			if (path === "/repos/Org/Repo/actions/jobs/100")
 				return Response.json({
 					id: 100,

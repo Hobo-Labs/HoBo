@@ -410,6 +410,8 @@ describe("strict start-fence controller", () => {
 			authorized: true,
 			slotId: "slot-1",
 			claimId: "claim-1",
+			accountId: "hobo-labs",
+			profileId: "trusted-linux-x64",
 			runnerName: "hobo-slot-1",
 			executionKey,
 		});

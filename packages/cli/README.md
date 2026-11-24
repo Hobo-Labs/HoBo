@@ -88,7 +88,8 @@ equal to its CD subcommands, and `test/cd-md-examples.test.ts` runs every
 
 `hobo ci` shows setup help. `hobo ci enable` (alias `connect`) connects a GitHub
 repository; `list`/`ls`, `inspect`, `logs`, `grep`, and `rerun` operate on its
-GitHub Actions runs using the authenticated GitHub CLI (`gh`). `status` inspects
+GitHub Actions runs through the GitHub REST API with installation tokens of
+HoBo's GitHub App, minted from the owner's store session. `status` inspects
 the relay connection. A sole Git remote is selected automatically; pass
 `--remote <name>` to select among several. After connection, use `runs-on: hobo`
 in an Actions workflow and push a commit. `hobo ci --help` also lists `hobo ci deploy` and its options: the composed product's verb for deploying the hosted relay to Vercel from a git ref (preview by default, `--dry-run` sends nothing); this package only owns its help text and passes its options through to the `ci` command untouched.
