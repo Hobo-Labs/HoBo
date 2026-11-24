@@ -112,8 +112,6 @@ import "list"
 // any self-hosted runner, so no policy or slip may name one.
 #RunnerRoutingLabel: string & =~"^[a-z0-9][a-z0-9_.-]{0,79}$" & !="self-hosted" & !="linux" & !="x64" & !="arm64" & !="windows" & !="macos"
 #RoutingSlipClass: {runner: #RunnerRoutingLabel, tier: "fleet", reason: "fleet-open" | "fleet-busy" | "pinned"} | {runner: #RunnerRoutingLabel, tier: "local" | "github", reason: "no-node" | "no-capacity" | "stalled" | "pinned"}
-// The writing dispatcher: the fleet member ranked first among the fleet's
-// DISPATCHER members (`leaderOf` in `@hobo/fleet/observation`).
 #RoutingSlipNodeId: string & =~"^[A-Za-z0-9_-]{1,64}$"
 #RoutingSlipRelay: {nodeId: #RoutingSlipNodeId, commit: string & =~"^[0-9a-f]{7,40}$"}
 #RoutingSlip: {

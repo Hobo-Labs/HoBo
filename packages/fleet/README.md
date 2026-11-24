@@ -171,7 +171,20 @@ Commands are the methods of `EnrollmentAuthority`. Each reads its stream, decide
 - **Integration lane:** `.github/workflows/fleet-integration.yml` runs
   `fleet:verify` and every fleet integration test on `hobo` (pull requests) or
   `hobo-trunk` (trunk events). No `vars.HOBO_CI_*` variable picks the runner:
-  routing is the relay's routing slip (ADR-0181).
+  routing is the relay's routing slip (ADR-0181). It provisions every binary
+  the integration tests need, and those tests fail when a binary is absent and
+  `CI` is set, so a missing tool is a red job, never a skip: `nats-server`
+  2.15.3 through `mise.toml`; iroh-relay 1.4.1, the release the pinned
+  `@number0/iroh` binding is built against, as a pinned checksum-verified
+  download; and gVisor `runsc` through the agent's own `sandbox-provision.ts`,
+  exactly as a device provisions it. The S1 sandbox driver writes its own OCI
+  bundles and pulls the probe image by digest, so nothing sandbox-related has
+  to be on the runner image. The job needs only a kernel that lets it run as
+  root or create unprivileged user namespaces; the provision step probes that,
+  lifts the user-namespace restriction once when passwordless sudo allows,
+  and otherwise fails naming the missing capability. Kata and macOS are not
+  provisioned (A11 and A12 in `fleet-fallbacks.json`). It runs on `fleet/**`
+  branches and on demand.
 
 ## Architecture placement
 

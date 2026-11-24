@@ -7,8 +7,6 @@ default:
   paths:
     - "src/draft/epic-proofs/*/features/**/*.feature"
     - "src/draft/projects/*/features/**/*.feature"
-    # HoBo Fleet acceptance: scenario titles first, steps under
-    # features/steps/fleet/ as the behaviour lane writes them.
     - "features/fleet/*.feature"
   import:
     - "src/draft/epic-proofs/*/features/steps/**/*.ts"

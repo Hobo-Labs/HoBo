@@ -13,10 +13,6 @@ export const file_fleet: GenFile = /*@__PURE__*/
   fileDesc("CgtmbGVldC5wcm90bxINaG9iby5mbGVldC52MSKJAQoMUHVibGljS2V5UmVmEioKB3B1cnBvc2UYASABKA4yGS5ob2JvLmZsZWV0LnYxLktleVB1cnBvc2USDgoGa2V5X2lkGAIgASgJEi4KCWFsZ29yaXRobRgDIAEoDjIbLmhvYm8uZmxlZXQudjEuS2V5QWxnb3JpdGhtEg0KBXZhbHVlGAQgASgJIoUBCg5TaWduZWRFbnZlbG9wZRIPCgdjb250ZXh0GAEgASgJEg4KBmtleV9pZBgCIAEoCRIuCglhbGdvcml0aG0YAyABKA4yGy5ob2JvLmZsZWV0LnYxLktleUFsZ29yaXRobRIPCgdwYXlsb2FkGAQgASgMEhEKCXNpZ25hdHVyZRgFIAEoDCJ1ChFXaXRuZXNzZWRFbnZlbG9wZRIwCglhdXRob3JpdHkYASABKAsyHS5ob2JvLmZsZWV0LnYxLlNpZ25lZEVudmVsb3BlEi4KB3dpdG5lc3MYAiABKAsyHS5ob2JvLmZsZWV0LnYxLlNpZ25lZEVudmVsb3BlIoEBCglLZXlCdW5kbGUSEQoJbWVtYmVyX2lkGAEgASgJEhAKCHNlcXVlbmNlGAIgASgNEikKBGtleXMYAyADKAsyGy5ob2JvLmZsZWV0LnYxLlB1YmxpY0tleVJlZhIRCglpc3N1ZWRfYXQYBCABKAkSEQoJbm90X2FmdGVyGAUgASgJImYKCVNlYWxlZEJveBIYChByZWNpcGllbnRfa2V5X2lkGAEgASgJEhwKFGVwaGVtZXJhbF9wdWJsaWNfa2V5GAIgASgJEg0KBW5vbmNlGAMgASgMEhIKCmNpcGhlcnRleHQYBCABKAwiJAoIUGxhdGZvcm0SCgoCb3MYASABKAkSDAoEYXJjaBgCIAEoCSJgCgpNZW1iZXJzaGlwEg0KBWZsZWV0GAEgASgJEgwKBG5hbWUYAiABKAkSIgoFcm9sZXMYAyADKA4yEy5ob2JvLmZsZWV0LnYxLlJvbGUSEQoJam9pbmVkX2F0GAQgASgJIvUGCgxNZW1iZXJSZWNvcmQSEQoJbWVtYmVyX2lkGAEgASgJEg4KBnRlbmFudBgCIAEoCRInCgRraW5kGAMgASgOMhkuaG9iby5mbGVldC52MS5NZW1iZXJLaW5kEhQKDGRpc3BsYXlfbmFtZRgEIAEoCRIpCgVzdGF0ZRgFIAEoDjIaLmhvYm8uZmxlZXQudjEuTWVtYmVyU3RhdGUSLgoLbWVtYmVyc2hpcHMYBiADKAsyGS5ob2JvLmZsZWV0LnYxLk1lbWJlcnNoaXASMAoMZGV2aWNlX2NsYXNzGAcgASgOMhouaG9iby5mbGVldC52MS5EZXZpY2VDbGFzcxI4ChBhdHRlc3RhdGlvbl90aWVyGAggASgOMh4uaG9iby5mbGVldC52MS5BdHRlc3RhdGlvblRpZXISGgoSYXR0ZXN0YXRpb25fZGlnZXN0GAkgASgJEhQKDGlkZW50aXR5X2p3axgKIAEoCRIbChNpZGVudGl0eV90aHVtYnByaW50GAsgASgJEhsKE3JldGlyZWRfdGh1bWJwcmludHMYDCADKAkSMQoKa2V5X2J1bmRsZRgNIAEoCzIdLmhvYm8uZmxlZXQudjEuU2lnbmVkRW52ZWxvcGUSKQoIcGxhdGZvcm0YDiABKAsyFy5ob2JvLmZsZWV0LnYxLlBsYXRmb3JtEg4KBnJlZ2lvbhgPIAEoCRIVCg1hZ2VudF92ZXJzaW9uGBAgASgJEg0KBW93bmVyGBEgASgJEhUKDW93bmVyX2FsaWFzZXMYEiADKAkSDwoHc3BvbnNvchgTIAEoCRIWCg5jcmVkZW50aWFsX3JlZhgUIAEoCRIXCg9lbmRwb2ludF9kaWdlc3QYFSABKAkSEgoKaW52aXRlZF9ieRgWIAEoCRIXCg9rZXlfYXBwcm92ZWRfYnkYFyABKAkSEwoLYWNjZXB0ZWRfYnkYGCABKAkSEwoLZW5yb2xsZWRfYXQYGSABKAkSGAoQc3RhdGVfY2hhbmdlZF9hdBgaIAEoCRIUCgxzdGF0ZV9yZWFzb24YGyABKAkSFwoPcmVjb3JkX3NlcXVlbmNlGBwgASgNEh0KFWF1dGhvcml0eV9pbmNhcm5hdGlvbhgdIAEoDRIRCglpc3N1ZWRfYXQYHiABKAkSEQoJbm90X2FmdGVyGB8gASgJIkwKDlJlcG9zaXRvcnlSdWxlEhIKCnJlcG9zaXRvcnkYASABKAkSDAoEcmVmcxgCIAMoCRIYChB3b3JrZmxvd19kaWdlc3RzGAMgAygJIu8BCg1PaWRjVHJ1c3RSdWxlEg4KBmlzc3VlchgBIAEoCRIXCg9zdWJqZWN0X3BhdHRlcm4YAiABKAkSSQoPcmVxdWlyZWRfY2xhaW1zGAMgAygLMjAuaG9iby5mbGVldC52MS5PaWRjVHJ1c3RSdWxlLlJlcXVpcmVkQ2xhaW1zRW50cnkSIgoFcm9sZXMYBCADKA4yEy5ob2JvLmZsZWV0LnYxLlJvbGUSDwoHc3BvbnNvchgFIAEoCBo1ChNSZXF1aXJlZENsYWltc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiZQoNUmVzaWRlbmN5UnVsZRIXCg9jbGFzc2lmaWNhdGlvbnMYASADKAkSHQoVYWxsb3dlZF9qdXJpc2RpY3Rpb25zGAIgAygJEhwKFGRlbmllZF9qdXJpc2RpY3Rpb25zGAMgAygJIuQGCgtGbGVldFBvbGljeRItCghhcHByb3ZhbBgBIAEoDjIbLmhvYm8uZmxlZXQudjEuQXBwcm92YWxNb2RlEjAKDWFsbG93ZWRfa2luZHMYAiADKA4yGS5ob2JvLmZsZWV0LnYxLk1lbWJlcktpbmQSKgoNYWxsb3dlZF9yb2xlcxgDIAMoDjITLmhvYm8uZmxlZXQudjEuUm9sZRIzCg9hbGxvd2VkX2NsYXNzZXMYBCADKA4yGi5ob2JvLmZsZWV0LnYxLkRldmljZUNsYXNzEjwKFG1pbl9hdHRlc3RhdGlvbl90aWVyGAUgASgOMh4uaG9iby5mbGVldC52MS5BdHRlc3RhdGlvblRpZXISMwoPb3JnX21pbl9zYW5kYm94GAYgASgOMhouaG9iby5mbGVldC52MS5TYW5kYm94VGllchISCgp3b3JrX2tpbmRzGAcgAygJEjMKDHJlcG9zaXRvcmllcxgIIAMoCzIdLmhvYm8uZmxlZXQudjEuUmVwb3NpdG9yeVJ1bGUSMAoKb2lkY190cnVzdBgJIAMoCzIcLmhvYm8uZmxlZXQudjEuT2lkY1RydXN0UnVsZRIbChNkZXZpY2VfY2Ffcm9vdHNfcGVtGAogAygJEhQKDGVncmVzc19hbGxvdxgLIAMoCRIiChptZW1iZXJfcXVvdGFfcGVyX3ByaW5jaXBhbBgMIAEoDRIZChFtaW5fYWdlbnRfdmVyc2lvbhgNIAEoCRIvCglyZXNpZGVuY3kYDiABKAsyHC5ob2JvLmZsZWV0LnYxLlJlc2lkZW5jeVJ1bGUSGQoRYWxsb3dfaG9zdF9kb2NrZXIYDyABKAgSNwoQc2Vzc2lvbl9wdXJwb3NlcxgQIAMoDjIdLmhvYm8uZmxlZXQudjEuU2Vzc2lvblB1cnBvc2USDgoGbGFiZWxzGBEgAygJEhgKEGtleV9idW5kbGVfaG91cnMYEiABKA0SGQoRZmFpbG92ZXJfYWZ0ZXJfbXMYEyABKA0SHgoRcmVjb3ZlcnlfcG9pbnRfbXMYFCABKA1IAIgBARIZChFtZW1iZXJzaGlwX2Vwb2NocxgWIAEoCEIUChJfcmVjb3ZlcnlfcG9pbnRfbXNKBAgVEBZSEnNpZ25lZF9hc3NpZ25tZW50cyKBAgoLRmxlZXRSZWNvcmQSEAoIZmxlZXRfaWQYASABKAkSDgoGdGVuYW50GAIgASgJEg0KBW93bmVyGAMgASgJEjUKDGNvb3JkaW5hdGlvbhgEIAEoDjIfLmhvYm8uZmxlZXQudjEuQ29vcmRpbmF0aW9uTW9kZRIqCgZwb2xpY3kYBSABKAsyGi5ob2JvLmZsZWV0LnYxLkZsZWV0UG9saWN5EhAKCHJldmlzaW9uGAYgASgNEhIKCnVwZGF0ZWRfYXQYByABKAkSEgoKdXBkYXRlZF9ieRgIIAEoCRIRCglpc3N1ZWRfYXQYCSABKAkSEQoJbm90X2FmdGVyGAogASgJIusBCgtUcnVzdFJlY29yZBIOCgZ0ZW5hbnQYASABKAkSEAoIc2VxdWVuY2UYAiABKA0SMwoOYXV0aG9yaXR5X2tleXMYAyADKAsyGy5ob2JvLmZsZWV0LnYxLlB1YmxpY0tleVJlZhIxCgx3aXRuZXNzX2tleXMYBCADKAsyGy5ob2JvLmZsZWV0LnYxLlB1YmxpY0tleVJlZhIdChVhdXRob3JpdHlfaW5jYXJuYXRpb24YBSABKA0SDgoGaXNzdWVyGAYgASgJEhAKCGp3a3NfdXJpGAcgASgJEhEKCWlzc3VlZF9hdBgIIAEoCSJRChJBdXRob3JpdHlEaXNjb3ZlcnkSDgoGaXNzdWVyGAEgASgJEhAKCGp3a3NfdXJpGAIgASgJEhkKEXNpZ25faW5fcHJvdmlkZXJzGAMgAygJIsEBCglEaXNjb3ZlcnkSDgoGdGVuYW50GAEgASgJEg4KBmlzc3VlchgCIAEoCRIRCgluYXRzX3VybHMYAyADKAkSIQoZbmF0c19zZW50aW5lbF9jcmVkZW50aWFscxgEIAEoCRISCgpyZWxheV91cmxzGAUgAygJEi8KBXRydXN0GAYgASgLMiAuaG9iby5mbGVldC52MS5XaXRuZXNzZWRFbnZlbG9wZRIZChFtaW5fYWdlbnRfdmVyc2lvbhgHIAEoCSLeAQoLU2lnbkluU3RhcnQSEAoIcHJvdmlkZXIYASABKAkSDgoGdGVuYW50GAIgASgJEhQKDHJlZGlyZWN0X3VyaRgDIAEoCRIWCg5jb2RlX2NoYWxsZW5nZRgEIAEoCRIXCg9kcG9wX3RodW1icHJpbnQYBSABKAkSEwoLZGV2aWNlX2Zsb3cYBiABKAgSEQoJaG9zdF9uYW1lGAcgASgJEhMKC2RldmljZV9uYW1lGAggASgJEikKCHBsYXRmb3JtGAkgASgLMhcuaG9iby5mbGVldC52MS5QbGF0Zm9ybSKSAQoPU2lnbkluQ2hhbGxlbmdlEg0KBXN0YXRlGAEgASgJEhUKDWF1dGhvcml6ZV91cmwYAiABKAkSEQoJdXNlcl9jb2RlGAMgASgJEhgKEHZlcmlmaWNhdGlvbl91cmwYBCABKAkSEgoKZXhwaXJlc19hdBgFIAEoCRIYChBpbnRlcnZhbF9zZWNvbmRzGAYgASgNIkQKDlNpZ25JbkNvbXBsZXRlEg0KBXN0YXRlGAEgASgJEgwKBGNvZGUYAiABKAkSFQoNY29kZV92ZXJpZmllchgDIAEoCSJ9ChBQZXJzb25DcmVkZW50aWFsEg0KBXRva2VuGAEgASgJEhIKCmV4cGlyZXNfYXQYAiABKAkSFQoNcmVmcmVzaF91bnRpbBgDIAEoCRIRCglwcmluY2lwYWwYBCABKAkSDgoGdGVuYW50GAUgASgJEgwKBHRhZ3MYBiADKAkiPAoOU2lnbkluQ2FsbGJhY2sSDQoFc3RhdGUYASABKAkSDAoEY29kZRgCIAEoCRINCgVlcnJvchgDIAEoCSIlChBTaWduSW5EZXZpY2VDb2RlEhEKCXVzZXJfY29kZRgBIAEoCSLHAQoMQXBwcm92YWxWaWV3Eg0KBXN0YXRlGAEgASgJEhEKCXByaW5jaXBhbBgCIAEoCRIRCglob3N0X25hbWUYAyABKAkSEwoLZGV2aWNlX25hbWUYBCABKAkSKQoIcGxhdGZvcm0YBSABKAsyFy5ob2JvLmZsZWV0LnYxLlBsYXRmb3JtEhkKEWZpbmdlcnByaW50X3dvcmRzGAYgAygJEhMKC2RldmljZV9mbG93GAcgASgIEhIKCmV4cGlyZXNfYXQYCCABKAkiMgoQQXBwcm92YWxEZWNpc2lvbhINCgVzdGF0ZRgBIAEoCRIPCgdhcHByb3ZlGAIgASgIIiYKDkFwcHJvdmFsUmVzdWx0EhQKDHJlZGlyZWN0X3VyaRgBIAEoCSIbCgpTaWduSW5Qb2xsEg0KBXN0YXRlGAEgASgJIg8KDVNpZ25JblJlZnJlc2gisgEKElRva2VuQ3JlYXRlUmVxdWVzdBINCgVmbGVldBgBIAEoCRIMCgRuYW1lGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRIwCgxkZXZpY2VfY2xhc3MYBCABKA4yGi5ob2JvLmZsZWV0LnYxLkRldmljZUNsYXNzEiIKBXJvbGVzGAUgAygOMhMuaG9iby5mbGVldC52MS5Sb2xlEhMKC3R0bF9zZWNvbmRzGAYgASgNIkwKE1Rva2VuQ3JlYXRlUmVzcG9uc2USDQoFdG9rZW4YASABKAkSEgoKdG9rZW5faGFzaBgCIAEoCRISCgpleHBpcmVzX2F0GAMgASgJItkBChRCb290c3RyYXBUb2tlblJlY29yZBISCgp0b2tlbl9oYXNoGAEgASgJEg0KBWZsZWV0GAIgASgJEgwKBG5hbWUYAyABKAkSMAoMZGV2aWNlX2NsYXNzGAQgASgOMhouaG9iby5mbGVldC52MS5EZXZpY2VDbGFzcxIiCgVyb2xlcxgFIAMoDjITLmhvYm8uZmxlZXQudjEuUm9sZRIRCglpc3N1ZWRfYnkYBiABKAkSEgoKZXhwaXJlc19hdBgHIAEoCRITCgtjb25zdW1lZF9ieRgIIAEoCSJACglUb2tlbkxpc3QSMwoGdG9rZW5zGAEgAygLMiMuaG9iby5mbGVldC52MS5Cb290c3RyYXBUb2tlblJlY29yZCLYAwoRRW5yb2xsbWVudFJlcXVlc3QSDgoGdGVuYW50GAEgASgJEg0KBWZsZWV0GAIgASgJEgwKBG5hbWUYAyABKAkSFAoMZGlzcGxheV9uYW1lGAQgASgJEhQKDGlkZW50aXR5X2p3axgFIAEoCRIxCgprZXlfYnVuZGxlGAYgASgLMh0uaG9iby5mbGVldC52MS5TaWduZWRFbnZlbG9wZRIpCghwbGF0Zm9ybRgHIAEoCzIXLmhvYm8uZmxlZXQudjEuUGxhdGZvcm0SDgoGcmVnaW9uGAggASgJEhUKDWFnZW50X3ZlcnNpb24YCSABKAkSMAoMZGV2aWNlX2NsYXNzGAogASgOMhouaG9iby5mbGVldC52MS5EZXZpY2VDbGFzcxIsCg9yZXF1ZXN0ZWRfcm9sZXMYCyADKA4yEy5ob2JvLmZsZWV0LnYxLlJvbGUSGQoPYm9vdHN0cmFwX3Rva2VuGAwgASgJSAASGAoOb2lkY19hc3NlcnRpb24YDSABKAlIABIWCgxwZXJzb25fdG9rZW4YDiABKAlIABIdChVjZXJ0aWZpY2F0ZV9jaGFpbl9wZW0YDyADKAkSEAoIaGVsZF9rZXkYECABKAhCBwoFcHJvb2YivQEKDkRlY2xhcmVSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRINCgVmbGVldBgCIAEoCRInCgRraW5kGAMgASgOMhkuaG9iby5mbGVldC52MS5NZW1iZXJLaW5kEgwKBG5hbWUYBCABKAkSFAoMZGlzcGxheV9uYW1lGAUgASgJEhYKDmNyZWRlbnRpYWxfcmVmGAYgASgJEhcKD2VuZHBvaW50X2RpZ2VzdBgHIAEoCRIOCgZyZWdpb24YCCABKAkiVQoLT3ZlcmxheUpvaW4SEAoIcHJvdmlkZXIYASABKAkSEgoKY3JlZGVudGlhbBgCIAEoCRISCgpleHBpcmVzX2F0GAMgASgJEgwKBHRhZ3MYBCADKAkiqgEKEkVucm9sbG1lbnRSZXNwb25zZRI0Cg1tZW1iZXJfcmVjb3JkGAEgASgLMh0uaG9iby5mbGVldC52MS5TaWduZWRFbnZlbG9wZRIxCg1vdmVybGF5X2pvaW5zGAIgAygLMhouaG9iby5mbGVldC52MS5PdmVybGF5Sm9pbhIrCglkaXNjb3ZlcnkYAyABKAsyGC5ob2JvLmZsZWV0LnYxLkRpc2NvdmVyeSIyChBMaWZlY3ljbGVSZXF1ZXN0Eg4KBnJlYXNvbhgBIAEoCRIOCgZmbGVldHMYAiADKAkiVAoRTWVtYmVyc2hpcFJlcXVlc3QSDQoFZmxlZXQYASABKAkSDAoEbmFtZRgCIAEoCRIiCgVyb2xlcxgDIAMoDjITLmhvYm8uZmxlZXQudjEuUm9sZSKbAQoRQ3JlZGVudGlhbFJlcXVlc3QSEgoKZ2VuZXJhdGlvbhgBIAEoDRIVCg1yZWZyZXNoX25vbmNlGAIgASgMEhEKCWF1ZGllbmNlcxgDIAMoCRIxCgprZXlfYnVuZGxlGAQgASgLMh0uaG9iby5mbGVldC52MS5TaWduZWRFbnZlbG9wZRIVCg1hZ2VudF92ZXJzaW9uGAUgASgJIosBCg1TZXNzaW9uVGlja2V0EhEKCXRpY2tldF9pZBgBIAEoCRIRCgltZW1iZXJfaWQYAiABKAkSDgoGdGVuYW50GAMgASgJEhEKCWlzc3VlZF9hdBgEIAEoCRISCgpleHBpcmVzX2F0GAUgASgJEh0KFWF1dGhvcml0eV9pbmNhcm5hdGlvbhgGIAEoDSIwCgxDb25uZWN0UHJvb2YSEQoJdGlja2V0X2lkGAEgASgJEg0KBW5vbmNlGAIgASgMImsKDENvbm5lY3RUb2tlbhItCgZ0aWNrZXQYASABKAsyHS5ob2JvLmZsZWV0LnYxLlNpZ25lZEVudmVsb3BlEiwKBXByb29mGAIgASgLMh0uaG9iby5mbGVldC52MS5TaWduZWRFbnZlbG9wZSLtAQoSQ3JlZGVudGlhbFJlc3BvbnNlEgwKBHN2aWQYASABKAkSFwoPc3ZpZF9leHBpcmVzX2F0GAIgASgJEjUKDnNlc3Npb25fdGlja2V0GAMgASgLMh0uaG9iby5mbGVldC52MS5TaWduZWRFbnZlbG9wZRISCgpnZW5lcmF0aW9uGAQgASgNEjQKDW1lbWJlcl9yZWNvcmQYBSABKAsyHS5ob2JvLmZsZWV0LnYxLlNpZ25lZEVudmVsb3BlEi8KBXRydXN0GAYgASgLMiAuaG9iby5mbGVldC52MS5XaXRuZXNzZWRFbnZlbG9wZSJMChFSb3RhdGlvblN0YXRlbWVudBIRCgltZW1iZXJfaWQYASABKAkSGAoQbmV3X2lkZW50aXR5X2p3axgCIAEoCRIKCgJhdBgDIAEoCSJ4ChJLZXlSb3RhdGlvblJlcXVlc3QSMQoKa2V5X2J1bmRsZRgBIAEoCzIdLmhvYm8uZmxlZXQudjEuU2lnbmVkRW52ZWxvcGUSLwoIcm90YXRpb24YAiABKAsyHS5ob2JvLmZsZWV0LnYxLlNpZ25lZEVudmVsb3BlIqQBCghDYXBhY2l0eRISCgpmcmVlX3Nsb3RzGAEgASgNEhgKC3RvdGFsX3Nsb3RzGAIgASgNSACIAQESGwoOZnJlZV9tZW1vcnlfbWIYAyABKA1IAYgBARIZCgxmcmVlX2Rpc2tfbWIYBCABKA1IAogBAUIOCgxfdG90YWxfc2xvdHNCEQoPX2ZyZWVfbWVtb3J5X21iQg8KDV9mcmVlX2Rpc2tfbWIiLgoQVXNhZ2VNZWFzdXJlbWVudBIMCgR1bml0GAEgASgJEgwKBHVzZWQYAiABKAEiOAoSUmVsaWFiaWxpdHlTYW1wbGVzEhEKCWRlbGl2ZXJlZBgBIAEoARIPCgdkcm9wcGVkGAIgASgBIvMECgtPYnNlcnZhdGlvbhIRCgltZW1iZXJfaWQYASABKAkSEwoLb2JzZXJ2ZXJfaWQYAiABKAkSDgoGZmxlZXRzGAMgAygJEiUKBmhlYWx0aBgEIAEoDjIVLmhvYm8uZmxlZXQudjEuSGVhbHRoEhYKDmZhaWxpbmdfZm9yX21zGAUgASgNEh0KEHByb2JlX2xhdGVuY3lfbXMYBiABKA1IAIgBARIpCghjYXBhY2l0eRgHIAEoCzIXLmhvYm8uZmxlZXQudjEuQ2FwYWNpdHkSEgoFcmVhZHkYCCABKAhIAYgBARITCgZsYWdfbXMYCSABKA1IAogBARIuCgV1c2FnZRgKIAMoCzIfLmhvYm8uZmxlZXQudjEuVXNhZ2VNZWFzdXJlbWVudBIOCgZsYWJlbHMYCyADKAkSKQoIcGxhdGZvcm0YDCABKAsyFy5ob2JvLmZsZWV0LnYxLlBsYXRmb3JtEjEKDXNhbmRib3hfdGllcnMYDSADKA4yGi5ob2JvLmZsZWV0LnYxLlNhbmRib3hUaWVyEhUKDWFnZW50X3ZlcnNpb24YDiABKAkSEgoKdHJhbnNwb3J0cxgPIAMoCRIOCgZyZWdpb24YECABKAkSFwoPYnVuZGxlX3NlcXVlbmNlGBEgASgNEg0KBXNpbmNlGBIgASgJEhEKCWlzc3VlZF9hdBgTIAEoCRITCgt2YWxpZF91bnRpbBgUIAEoCRInCgdyZWZ1c2FsGBUgASgOMhYuaG9iby5mbGVldC52MS5SZWZ1c2FsQhMKEV9wcm9iZV9sYXRlbmN5X21zQggKBl9yZWFkeUIJCgdfbGFnX21zIu0FCg9GbGVldE1lbWJlclZpZXcSEQoJbWVtYmVyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEicKBGtpbmQYBCABKA4yGS5ob2JvLmZsZWV0LnYxLk1lbWJlcktpbmQSKQoFc3RhdGUYBSABKA4yGi5ob2JvLmZsZWV0LnYxLk1lbWJlclN0YXRlEjEKDGF2YWlsYWJpbGl0eRgGIAEoDjIbLmhvYm8uZmxlZXQudjEuQXZhaWxhYmlsaXR5EiUKBmhlYWx0aBgHIAEoDjIVLmhvYm8uZmxlZXQudjEuSGVhbHRoEikKCGNhcGFjaXR5GAggASgLMhcuaG9iby5mbGVldC52MS5DYXBhY2l0eRIpCghwbGF0Zm9ybRgJIAEoCzIXLmhvYm8uZmxlZXQudjEuUGxhdGZvcm0SOAoQYXR0ZXN0YXRpb25fdGllchgKIAEoDjIeLmhvYm8uZmxlZXQudjEuQXR0ZXN0YXRpb25UaWVyEjEKDXNhbmRib3hfdGllcnMYCyADKA4yGi5ob2JvLmZsZWV0LnYxLlNhbmRib3hUaWVyEhgKC3JlbGlhYmlsaXR5GAwgASgBSACIAQESMgoHc2FtcGxlcxgNIAEoCzIhLmhvYm8uZmxlZXQudjEuUmVsaWFiaWxpdHlTYW1wbGVzEg0KBXNpbmNlGA4gASgJEhEKCWxhc3Rfc2VlbhgPIAEoCRIVCg1hZ2VudF92ZXJzaW9uGBAgASgJEg4KBmxhYmVscxgRIAMoCRIwCgxkZXZpY2VfY2xhc3MYEiABKA4yGi5ob2JvLmZsZWV0LnYxLkRldmljZUNsYXNzEiIKBXJvbGVzGBMgAygOMhMuaG9iby5mbGVldC52MS5Sb2xlEicKB3JlZnVzYWwYFSABKA4yFi5ob2JvLmZsZWV0LnYxLlJlZnVzYWxCDgoMX3JlbGlhYmlsaXR5SgQIFBAVUgZhY3RpdmUi4QEKDUZsZWV0Q2FwYWNpdHkSDAoEbGl2ZRgBIAEoDRIPCgdoZWFsdGh5GAIgASgNEhMKC3RvdGFsX3Nsb3RzGAMgASgNEhIKCmZyZWVfc2xvdHMYBCABKA0SGwoOZnJlZV9tZW1vcnlfbWIYBSABKA1IAIgBARIZCgxmcmVlX2Rpc2tfbWIYBiABKA1IAYgBARIaCg1tYXhfbWVtb3J5X21iGAcgASgNSAKIAQFCEQoPX2ZyZWVfbWVtb3J5X21iQg8KDV9mcmVlX2Rpc2tfbWJCEAoOX21heF9tZW1vcnlfbWIisAEKCUZsZWV0VmlldxINCgVmbGVldBgBIAEoCRIvCgdtZW1iZXJzGAIgAygLMh4uaG9iby5mbGVldC52MS5GbGVldE1lbWJlclZpZXcSLgoIY2FwYWNpdHkYAyABKAsyHC5ob2JvLmZsZWV0LnYxLkZsZWV0Q2FwYWNpdHkSEQoJdHJ1bmNhdGVkGAQgASgIEg0KBWFzX29mGAUgASgJEhEKCW5vdF9hZnRlchgGIAEoCSKgAQoMRmxlZXRWZXJkaWN0Eg0KBWZsZWV0GAEgASgJEg0KBWxhYmVsGAIgASgJEioKBXN0YXRlGAMgASgOMhsuaG9iby5mbGVldC52MS5WZXJkaWN0U3RhdGUSDwoHbWVtYmVycxgEIAEoDRISCgpmcmVlX3Nsb3RzGAUgASgNEg0KBWFzX29mGAYgASgJEhIKCmV4cGlyZXNfYXQYByABKAkizwEKCVdvcmtOZWVkcxIWCgltZW1vcnlfbWIYASABKA1IAIgBARIUCgdkaXNrX21iGAIgASgNSAGIAQESKQoIcGxhdGZvcm0YAyABKAsyFy5ob2JvLmZsZWV0LnYxLlBsYXRmb3JtEg4KBmxhYmVscxgEIAMoCRIOCgZkb2NrZXIYBSABKAgSLwoLbWluX3NhbmRib3gYBiABKA4yGi5ob2JvLmZsZWV0LnYxLlNhbmRib3hUaWVyQgwKCl9tZW1vcnlfbWJCCgoIX2Rpc2tfbWIi0wIKDldvcmtTdWJtaXNzaW9uEhUKDXN1Ym1pc3Npb25faWQYASABKAkSDgoGdGVuYW50GAIgASgJEg0KBWZsZWV0GAMgASgJEg4KBmF1dGhvchgEIAEoCRINCgVpbWFnZRgFIAEoCRIUCgxpbWFnZV9kaWdlc3QYBiABKAkSDAoEYXJndhgHIAMoCRIzCgNlbnYYCCADKAsyJi5ob2JvLmZsZWV0LnYxLldvcmtTdWJtaXNzaW9uLkVudkVudHJ5EicKBW5lZWRzGAkgASgLMhguaG9iby5mbGVldC52MS5Xb3JrTmVlZHMSFAoMZWdyZXNzX2FsbG93GAogAygJEhQKDHN1Ym1pdHRlZF9hdBgLIAEoCRISCgpleHBpcmVzX2F0GAwgASgJGioKCEVudkVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiywMKCVdvcmtPZmZlchIQCgh3b3JrX2tleRgBIAEoCRITCgt3b3JrX2RpZ2VzdBgCIAEoCRIMCgRraW5kGAMgASgJEg0KBWZsZWV0GAQgASgJEg0KBWxhYmVsGAUgASgJEicKBW5lZWRzGAYgASgLMhguaG9iby5mbGVldC52MS5Xb3JrTmVlZHMSLgoLdHJ1c3RfY2xhc3MYByABKA4yGS5ob2JvLmZsZWV0LnYxLlRydXN0Q2xhc3MSDgoGYXV0aG9yGAggASgJEikKBm9yaWdpbhgJIAEoDjIZLmhvYm8uZmxlZXQudjEuV29ya09yaWdpbhISCgpyZXBvc2l0b3J5GAogASgJEgsKA3JlZhgLIAEoCRIXCg93b3JrZmxvd19kaWdlc3QYDCABKAkSEQoJcXVldWVkX2F0GA0gASgJEhIKCmV4cGlyZXNfYXQYDiABKAkSEgoKZGlzcGF0Y2hlchgPIAEoCRIvCglyZXNpZGVuY3kYECABKAsyHC5ob2JvLmZsZWV0LnYxLlJlc2lkZW5jeVJ1bGUSMQoKc3VibWlzc2lvbhgRIAEoCzIdLmhvYm8uZmxlZXQudjEuU2lnbmVkRW52ZWxvcGUiwAEKBUNsYWltEhMKC3dvcmtfZGlnZXN0GAEgASgJEg0KBWZsZWV0GAIgASgJEhEKCW1lbWJlcl9pZBgDIAEoCRISCgpkaXNwYXRjaGVyGAQgASgJEhgKEG9mZmVyX2V4cGlyZXNfYXQYBSABKAkSDAoEcmFuaxgGIAEoDRIwCgxzYW5kYm94X3RpZXIYByABKA4yGi5ob2JvLmZsZWV0LnYxLlNhbmRib3hUaWVyEhIKCmNsYWltZWRfYXQYCCABKAki4wIKCVdvcmtPcmRlchIQCghvcmRlcl9pZBgBIAEoCRInCgVvZmZlchgCIAEoCzIYLmhvYm8uZmxlZXQudjEuV29ya09mZmVyEhEKCW1lbWJlcl9pZBgDIAEoCRIwCgxzYW5kYm94X3RpZXIYBCABKA4yGi5ob2JvLmZsZWV0LnYxLlNhbmRib3hUaWVyEhQKDGVncmVzc19hbGxvdxgFIAMoCRI8CgpwYXJhbWV0ZXJzGAYgAygLMiguaG9iby5mbGVldC52MS5Xb3JrT3JkZXIuUGFyYW1ldGVyc0VudHJ5EigKBnNlY3JldBgHIAEoCzIYLmhvYm8uZmxlZXQudjEuU2VhbGVkQm94EhEKCWlzc3VlZF9hdBgIIAEoCRISCgpleHBpcmVzX2F0GAkgASgJGjEKD1BhcmFtZXRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIr4CCgtXb3JrUmVjZWlwdBIQCghvcmRlcl9pZBgBIAEoCRITCgt3b3JrX2RpZ2VzdBgCIAEoCRIRCgltZW1iZXJfaWQYAyABKAkSLAoGc3RhdHVzGAQgASgOMhwuaG9iby5mbGVldC52MS5SZWNlaXB0U3RhdHVzEg4KBnJlYXNvbhgFIAEoCRIKCgJhdBgGIAEoCRIwCgxzYW5kYm94X3RpZXIYByABKA4yGi5ob2JvLmZsZWV0LnYxLlNhbmRib3hUaWVyEi4KC3RydXN0X2NsYXNzGAggASgOMhkuaG9iby5mbGVldC52MS5UcnVzdENsYXNzEhcKD3NhbmRib3hfc2Vjb25kcxgJIAEoDRIVCg1vdXRwdXRfZGlnZXN0GAogASgJEhkKEW9ic2VydmVkX3dvcmtfa2V5GAsgASgJIk4KDFdvcmtMb2dDaHVuaxIQCghvcmRlcl9pZBgBIAEoCRIQCghzZXF1ZW5jZRgCIAEoDRIMCgRkYXRhGAMgASgMEgwKBGxhc3QYBCABKAgilQIKFVdvcmtTdWJtaXNzaW9uUmVxdWVzdBINCgVmbGVldBgBIAEoCRINCgVpbWFnZRgCIAEoCRIUCgxpbWFnZV9kaWdlc3QYAyABKAkSDAoEYXJndhgEIAMoCRI6CgNlbnYYBSADKAsyLS5ob2JvLmZsZWV0LnYxLldvcmtTdWJtaXNzaW9uUmVxdWVzdC5FbnZFbnRyeRInCgVuZWVkcxgGIAEoCzIYLmhvYm8uZmxlZXQudjEuV29ya05lZWRzEhQKDGVncmVzc19hbGxvdxgHIAMoCRITCgt0dGxfc2Vjb25kcxgIIAEoDRoqCghFbnZFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIrQBCgpXb3JrU3RhdHVzEhUKDXN1Ym1pc3Npb25faWQYASABKAkSEwoLd29ya19kaWdlc3QYAiABKAkSEQoJbWVtYmVyX2lkGAMgASgJEiwKBnN0YXR1cxgEIAEoDjIcLmhvYm8uZmxlZXQudjEuUmVjZWlwdFN0YXR1cxIOCgZyZWFzb24YBSABKAkSFQoNb3V0cHV0X2RpZ2VzdBgGIAEoCRISCgp1cGRhdGVkX2F0GAcgASgJIkkKCFdvcmtMb2dzEisKBmNodW5rcxgBIAMoCzIbLmhvYm8uZmxlZXQudjEuV29ya0xvZ0NodW5rEhAKCGNvbXBsZXRlGAIgASgIInwKD1Zpb2xhdGlvblJlcG9ydBIMCgRraW5kGAEgASgJEiwKBW9mZmVyGAIgASgLMh0uaG9iby5mbGVldC52MS5TaWduZWRFbnZlbG9wZRItCgZjbGFpbXMYAyADKAsyHS5ob2JvLmZsZWV0LnYxLlNpZ25lZEVudmVsb3BlIucBCgpBc3NpZ25tZW50Eg0KBWVwb2NoGAEgASgEEhMKBmFjdGl2ZRgCIAEoCUgAiAEBEg4KBnNlYWxlZBgDIAEoCBITCgZ0YXJnZXQYBCABKAlIAYgBARIOCgZyZWFzb24YBSABKAkSGwoObG9zc193aW5kb3dfbXMYBiABKARIAogBARIVCg1kZWNpZGVkX2F0X21zGAcgASgEEhIKCmRlY2lkZWRfYnkYCCABKAkSDwoHbWVtYmVycxgJIAMoCUIJCgdfYWN0aXZlQgkKB190YXJnZXRCEQoPX2xvc3Nfd2luZG93X21zIksKDUFzc2lnbm1lbnRMb2cSDgoGZm9ybWF0GAEgASgNEioKB2VudHJpZXMYAiADKAsyGS5ob2JvLmZsZWV0LnYxLkFzc2lnbm1lbnQiaQoMU2Vzc2lvblBhcnR5EhEKCW1lbWJlcl9pZBgBIAEoCRIRCglwcmluY2lwYWwYAiABKAkSGgoSdHJhbnNwb3J0X2lkZW50aXR5GAMgASgJEhcKD3NlYWxfcHVibGljX2tleRgEIAEoCSLJAQoOU2Vzc2lvblJlcXVlc3QSDAoEcGVlchgBIAEoCRIuCgdwdXJwb3NlGAIgASgOMh0uaG9iby5mbGVldC52MS5TZXNzaW9uUHVycG9zZRIQCghvcmRlcl9pZBgDIAEoCRIMCgRwb3J0GAQgASgNEhQKDGJsb2JfZGlnZXN0cxgFIAMoCRIuCglpbml0aWF0b3IYBiABKAsyGy5ob2JvLmZsZWV0LnYxLlNlc3Npb25QYXJ0eRITCgt0dGxfc2Vjb25kcxgHIAEoDSKeAgoMU2Vzc2lvbkdyYW50EhIKCnNlc3Npb25faWQYASABKAkSDgoGdGVuYW50GAIgASgJEi4KCWluaXRpYXRvchgDIAEoCzIbLmhvYm8uZmxlZXQudjEuU2Vzc2lvblBhcnR5Ei0KCGFjY2VwdG9yGAQgASgLMhsuaG9iby5mbGVldC52MS5TZXNzaW9uUGFydHkSLgoHcHVycG9zZRgFIAEoDjIdLmhvYm8uZmxlZXQudjEuU2Vzc2lvblB1cnBvc2USEAoIb3JkZXJfaWQYBiABKAkSDAoEcG9ydBgHIAEoDRIUCgxibG9iX2RpZ2VzdHMYCCADKAkSEQoJaXNzdWVkX2F0GAkgASgJEhIKCmV4cGlyZXNfYXQYCiABKAkigAEKDFNlc3Npb25DbG9zZRISCgpzZXNzaW9uX2lkGAEgASgJEhEKCW1lbWJlcl9pZBgCIAEoCRIRCgl0cmFuc3BvcnQYAyABKAkSEgoKYnl0ZXNfc2VudBgEIAEoBBIWCg5ieXRlc19yZWNlaXZlZBgFIAEoBBIKCgJhdBgGIAEoCSJoCg1NZW1iZXJDb250cm9sEhEKCW1lbWJlcl9pZBgBIAEoCRIoCgRraW5kGAIgASgOMhouaG9iby5mbGVldC52MS5Db250cm9sS2luZBIOCgZyZWFzb24YAyABKAkSCgoCYXQYBCABKAkitgEKCkF1ZGl0RW50cnkSEAoIc2VxdWVuY2UYASABKA0SFQoNcHJldmlvdXNfaGFzaBgCIAEoCRISCgpldmVudF90eXBlGAMgASgJEhAKCGV2ZW50X2lkGAQgASgJEg8KB3N1YmplY3QYBSABKAkSDQoFYWN0b3IYBiABKAkSCgoCYXQYByABKAkSEwoLZGF0YV9kaWdlc3QYCCABKAkSGAoQc3ViamVjdF9zZXF1ZW5jZRgJIAEoDSJiCg9BdWRpdENoZWNrcG9pbnQSEAoIc2VxdWVuY2UYASABKA0SEgoKZW50cnlfaGFzaBgCIAEoCRIKCgJhdBgDIAEoCRIdChVhdXRob3JpdHlfaW5jYXJuYXRpb24YBCABKA0iOgoMQXVkaXRFbnRyaWVzEioKB2VudHJpZXMYASADKAsyGS5ob2JvLmZsZWV0LnYxLkF1ZGl0RW50cnkiSQoQQXVkaXRDaGVja3BvaW50cxI1CgtjaGVja3BvaW50cxgBIAMoCzIgLmhvYm8uZmxlZXQudjEuV2l0bmVzc2VkRW52ZWxvcGUiPAoKTWVtYmVyTGlzdBIuCgdtZW1iZXJzGAEgAygLMh0uaG9iby5mbGVldC52MS5TaWduZWRFbnZlbG9wZSI6CglGbGVldExpc3QSLQoGZmxlZXRzGAEgAygLMh0uaG9iby5mbGVldC52MS5TaWduZWRFbnZlbG9wZSKRAQoKRmxlZXRFcnJvchIMCgRjb2RlGAEgASgJEg8KB21lc3NhZ2UYAiABKAkSNQoGZGV0YWlsGAMgAygLMiUuaG9iby5mbGVldC52MS5GbGVldEVycm9yLkRldGFpbEVudHJ5Gi0KC0RldGFpbEVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEqXwoMS2V5QWxnb3JpdGhtEh0KGUtFWV9BTEdPUklUSE1fVU5TUEVDSUZJRUQQABIXChNLRVlfQUxHT1JJVEhNX0VTMjU2EAESFwoTS0VZX0FMR09SSVRITV9FRERTQRACKr4BCgpLZXlQdXJwb3NlEhsKF0tFWV9QVVJQT1NFX1VOU1BFQ0lGSUVEEAASGAoUS0VZX1BVUlBPU0VfSURFTlRJVFkQARIUChBLRVlfUFVSUE9TRV9TSUdOEAISFAoQS0VZX1BVUlBPU0VfU0VBTBADEhkKFUtFWV9QVVJQT1NFX1RSQU5TUE9SVBAEEhkKFUtFWV9QVVJQT1NFX0FVVEhPUklUWRAFEhcKE0tFWV9QVVJQT1NFX1dJVE5FU1MQBipyCgpNZW1iZXJLaW5kEhsKF01FTUJFUl9LSU5EX1VOU1BFQ0lGSUVEEAASFgoSTUVNQkVSX0tJTkRfREVWSUNFEAESFwoTTUVNQkVSX0tJTkRfQkFDS0VORBACEhYKEk1FTUJFUl9LSU5EX1RBUkdFVBADKsgBCgtNZW1iZXJTdGF0ZRIcChhNRU1CRVJfU1RBVEVfVU5TUEVDSUZJRUQQABIYChRNRU1CRVJfU1RBVEVfUEVORElORxABEhcKE01FTUJFUl9TVEFURV9BQ1RJVkUQAhIaChZNRU1CRVJfU1RBVEVfU1VTUEVOREVEEAMSFwoTTUVNQkVSX1NUQVRFX0xPQ0tFRBAEEhgKFE1FTUJFUl9TVEFURV9SRVZPS0VEEAUSGQoVTUVNQkVSX1NUQVRFX1JFSkVDVEVEEAYqfgoLRGV2aWNlQ2xhc3MSHAoYREVWSUNFX0NMQVNTX1VOU1BFQ0lGSUVEEAASGQoVREVWSUNFX0NMQVNTX1BFUlNPTkFMEAESGgoWREVWSUNFX0NMQVNTX0RFRElDQVRFRBACEhoKFkRFVklDRV9DTEFTU19FUEhFTUVSQUwQAyp/CgRSb2xlEhQKEFJPTEVfVU5TUEVDSUZJRUQQABIRCg1ST0xFX0VYRUNVVE9SEAESEwoPUk9MRV9ESVNQQVRDSEVSEAISEQoNUk9MRV9PQlNFUlZFUhADEhMKD1JPTEVfUkVDT05DSUxFUhAEEhEKDVJPTEVfSlVOQ1RJT04QBSrNAQoPQXR0ZXN0YXRpb25UaWVyEiAKHEFUVEVTVEFUSU9OX1RJRVJfVU5TUEVDSUZJRUQQABIkCiBBVFRFU1RBVElPTl9USUVSX1QwX1NPRlRXQVJFX0tFWRABEiAKHEFUVEVTVEFUSU9OX1RJRVJfVDFfSEVMRF9LRVkQAhIlCiFBVFRFU1RBVElPTl9USUVSX1QyX09SR19DRVJUSUZJRUQQAxIpCiVBVFRFU1RBVElPTl9USUVSX1QzX1BMQVRGT1JNX0lERU5USVRZEAQqiAEKC1NhbmRib3hUaWVyEhwKGFNBTkRCT1hfVElFUl9VTlNQRUNJRklFRBAAEh0KGVNBTkRCT1hfVElFUl9TMV9DT05UQUlORVIQARIfChtTQU5EQk9YX1RJRVJfUzJfVVNFUl9LRVJORUwQAhIbChdTQU5EQk9YX1RJRVJfUzNfTUlDUk9WTRADKm4KClRydXN0Q2xhc3MSGwoXVFJVU1RfQ0xBU1NfVU5TUEVDSUZJRUQQABITCg9UUlVTVF9DTEFTU19PV04QARITCg9UUlVTVF9DTEFTU19PUkcQAhIZChVUUlVTVF9DTEFTU19VTlRSVVNURUQQAyp6ChBDb29yZGluYXRpb25Nb2RlEiEKHUNPT1JESU5BVElPTl9NT0RFX1VOU1BFQ0lGSUVEEAASIQodQ09PUkRJTkFUSU9OX01PREVfTUFOWV9BQ1RJVkUQARIgChxDT09SRElOQVRJT05fTU9ERV9PTkVfQUNUSVZFEAIqfQoMQXBwcm92YWxNb2RlEh0KGUFQUFJPVkFMX01PREVfVU5TUEVDSUZJRUQQABIcChhBUFBST1ZBTF9NT0RFX0FVVE9fT1dORVIQARIYChRBUFBST1ZBTF9NT0RFX1NJTkdMRRACEhYKEkFQUFJPVkFMX01PREVfRFVBTBADKoMBCg5TZXNzaW9uUHVycG9zZRIfChtTRVNTSU9OX1BVUlBPU0VfVU5TUEVDSUZJRUQQABIZChVTRVNTSU9OX1BVUlBPU0VfU0hFTEwQARIbChdTRVNTSU9OX1BVUlBPU0VfRk9SV0FSRBACEhgKFFNFU1NJT05fUFVSUE9TRV9CTE9CEAMqugEKBkhlYWx0aBIWChJIRUFMVEhfVU5TUEVDSUZJRUQQABIUChBIRUFMVEhfUkVBQ0hBQkxFEAESEwoPSEVBTFRIX0RSQUlOSU5HEAISFAoQSEVBTFRIX1BSRVNTVVJFRBADEhYKEkhFQUxUSF9VTlJFQUNIQUJMRRAEEhoKFkhFQUxUSF9RVU9UQV9FWEhBVVNURUQQBRIPCgtIRUFMVEhfQVVUSBAGEhIKDkhFQUxUSF9VTktOT1dOEAcqiwEKB1JlZnVzYWwSFwoTUkVGVVNBTF9VTlNQRUNJRklFRBAAEhAKDFJFRlVTQUxfTk9ORRABEhQKEFJFRlVTQUxfT1dOX1dPUksQAhIUChBSRUZVU0FMX1BSRVNTVVJFEAMSEwoPUkVGVVNBTF9TVE9SQUdFEAQSFAoQUkVGVVNBTF9EUkFJTklORxAFKnYKDEF2YWlsYWJpbGl0eRIcChhBVkFJTEFCSUxJVFlfVU5TUEVDSUZJRUQQABIVChFBVkFJTEFCSUxJVFlfTElWRRABEhoKFkFWQUlMQUJJTElUWV9VTkhFQUxUSFkQAhIVChFBVkFJTEFCSUxJVFlfTE9TVBADKpkBCgxWZXJkaWN0U3RhdGUSHQoZVkVSRElDVF9TVEFURV9VTlNQRUNJRklFRBAAEhYKElZFUkRJQ1RfU1RBVEVfT1BFThABEhsKF1ZFUkRJQ1RfU1RBVEVfTk9fTUVNQkVSEAISHQoZVkVSRElDVF9TVEFURV9OT19DQVBBQ0lUWRADEhYKElZFUkRJQ1RfU1RBVEVfQlVTWRAEKnIKCldvcmtPcmlnaW4SGwoXV09SS19PUklHSU5fVU5TUEVDSUZJRUQQABIYChRXT1JLX09SSUdJTl9JTlRFUk5BTBABEhQKEFdPUktfT1JJR0lOX0ZPUksQAhIXChNXT1JLX09SSUdJTl9VTktOT1dOEAMq3AEKDVJlY2VpcHRTdGF0dXMSHgoaUkVDRUlQVF9TVEFUVVNfVU5TUEVDSUZJRUQQABIaChZSRUNFSVBUX1NUQVRVU19TVEFSVEVEEAESHAoYUkVDRUlQVF9TVEFUVVNfU1VDQ0VFREVEEAISGQoVUkVDRUlQVF9TVEFUVVNfRkFJTEVEEAMSHAoYUkVDRUlQVF9TVEFUVVNfQ0FOQ0VMTEVEEAQSHAoYUkVDRUlQVF9TVEFUVVNfQUJBTkRPTkVEEAUSGgoWUkVDRUlQVF9TVEFUVVNfUkVGVVNFRBAGKp0BCgtDb250cm9sS2luZBIcChhDT05UUk9MX0tJTkRfVU5TUEVDSUZJRUQQABIWChJDT05UUk9MX0tJTkRfRFJBSU4QARIcChhDT05UUk9MX0tJTkRfUkVGUkVTSF9OT1cQAhIYChRDT05UUk9MX0tJTkRfUkVWT0tFRBADEiAKHENPTlRST0xfS0lORF9VUERBVEVfUkVRVUlSRUQQBGIGcHJvdG8z");
 
 /**
- * `value` encoding by purpose: IDENTITY = RFC 7517 public JWK JSON;
- * SIGN, SEAL, AUTHORITY, WITNESS = raw key, base64url, no padding;
- * TRANSPORT = the transport adapter's endpoint id.
- *
  * @generated from message hobo.fleet.v1.PublicKeyRef
  */
 export type PublicKeyRef = Message<"hobo.fleet.v1.PublicKeyRef"> & {
@@ -26,8 +22,6 @@ export type PublicKeyRef = Message<"hobo.fleet.v1.PublicKeyRef"> & {
   purpose: KeyPurpose;
 
   /**
-   * "<MemberId>#<purpose>", "authority#<n>", "witness#<n>"
-   *
    * @generated from field: string key_id = 2;
    */
   keyId: string;
@@ -51,8 +45,6 @@ export const PublicKeyRefSchema: GenMessage<PublicKeyRef> = /*@__PURE__*/
   messageDesc(file_fleet, 0);
 
 /**
- * §7.4. `signature` is over  utf8(context) || 0x00 || payload.
- *
  * @generated from message hobo.fleet.v1.SignedEnvelope
  */
 export type SignedEnvelope = Message<"hobo.fleet.v1.SignedEnvelope"> & {
@@ -90,8 +82,6 @@ export const SignedEnvelopeSchema: GenMessage<SignedEnvelope> = /*@__PURE__*/
   messageDesc(file_fleet, 1);
 
 /**
- * Two signatures over the same payload bytes.
- *
  * @generated from message hobo.fleet.v1.WitnessedEnvelope
  */
 export type WitnessedEnvelope = Message<"hobo.fleet.v1.WitnessedEnvelope"> & {
@@ -123,15 +113,11 @@ export type KeyBundle = Message<"hobo.fleet.v1.KeyBundle"> & {
   memberId: string;
 
   /**
-   * strictly increasing per member
-   *
    * @generated from field: uint32 sequence = 2;
    */
   sequence: number;
 
   /**
-   * exactly one SIGN and one SEAL; at most one TRANSPORT
-   *
    * @generated from field: repeated hobo.fleet.v1.PublicKeyRef keys = 3;
    */
   keys: PublicKeyRef[];
@@ -155,8 +141,6 @@ export const KeyBundleSchema: GenMessage<KeyBundle> = /*@__PURE__*/
   messageDesc(file_fleet, 3);
 
 /**
- * X25519 + HKDF-SHA-256 + ChaCha20-Poly1305; parameters in §7.4.
- *
  * @generated from message hobo.fleet.v1.SealedBox
  */
 export type SealedBox = Message<"hobo.fleet.v1.SealedBox"> & {
@@ -166,22 +150,16 @@ export type SealedBox = Message<"hobo.fleet.v1.SealedBox"> & {
   recipientKeyId: string;
 
   /**
-   * raw X25519, base64url
-   *
    * @generated from field: string ephemeral_public_key = 2;
    */
   ephemeralPublicKey: string;
 
   /**
-   * 12 bytes
-   *
    * @generated from field: bytes nonce = 3;
    */
   nonce: Uint8Array;
 
   /**
-   * includes the 16-byte tag
-   *
    * @generated from field: bytes ciphertext = 4;
    */
   ciphertext: Uint8Array;
@@ -226,15 +204,11 @@ export type Membership = Message<"hobo.fleet.v1.Membership"> & {
   fleet: string;
 
   /**
-   * unique within the fleet
-   *
    * @generated from field: string name = 2;
    */
   name: string;
 
   /**
-   * empty for sponsored members
-   *
    * @generated from field: repeated hobo.fleet.v1.Role roles = 3;
    */
   roles: Role[];
@@ -253,9 +227,6 @@ export const MembershipSchema: GenMessage<Membership> = /*@__PURE__*/
   messageDesc(file_fleet, 6);
 
 /**
- * The registry value for key member.<MemberId>. Always stored inside a
- * SignedEnvelope with context hobo-fleet/member-record/v1.
- *
  * @generated from message hobo.fleet.v1.MemberRecord
  */
 export type MemberRecord = Message<"hobo.fleet.v1.MemberRecord"> & {
@@ -300,22 +271,16 @@ export type MemberRecord = Message<"hobo.fleet.v1.MemberRecord"> & {
   attestationTier: AttestationTier;
 
   /**
-   * sha256:<hex> of the evidence, or empty
-   *
    * @generated from field: string attestation_digest = 9;
    */
   attestationDigest: string;
 
   /**
-   * devices only
-   *
    * @generated from field: string identity_jwk = 10;
    */
   identityJwk: string;
 
   /**
-   * RFC 7638
-   *
    * @generated from field: string identity_thumbprint = 11;
    */
   identityThumbprint: string;
@@ -326,8 +291,6 @@ export type MemberRecord = Message<"hobo.fleet.v1.MemberRecord"> & {
   retiredThumbprints: string[];
 
   /**
-   * context hobo-fleet/key-bundle/v1, signed by the identity key
-   *
    * @generated from field: hobo.fleet.v1.SignedEnvelope key_bundle = 13;
    */
   keyBundle?: SignedEnvelope | undefined;
@@ -348,36 +311,26 @@ export type MemberRecord = Message<"hobo.fleet.v1.MemberRecord"> & {
   agentVersion: string;
 
   /**
-   * "<kind>:<id>" of a PrincipalRef
-   *
    * @generated from field: string owner = 17;
    */
   owner: string;
 
   /**
-   * the owner's linked identities, e.g. "github:<numeric id>"
-   *
    * @generated from field: repeated string owner_aliases = 18;
    */
   ownerAliases: string[];
 
   /**
-   * sponsored members: principal or MemberId
-   *
    * @generated from field: string sponsor = 19;
    */
   sponsor: string;
 
   /**
-   * sponsored members: a locator, never a secret
-   *
    * @generated from field: string credential_ref = 20;
    */
   credentialRef: string;
 
   /**
-   * sponsored members: sha256:<hex>
-   *
    * @generated from field: string endpoint_digest = 21;
    */
   endpointDigest: string;
@@ -413,8 +366,6 @@ export type MemberRecord = Message<"hobo.fleet.v1.MemberRecord"> & {
   stateReason: string;
 
   /**
-   * increases exactly when content other than issued_at/not_after changes; a re-sign keeps it
-   *
    * @generated from field: uint32 record_sequence = 28;
    */
   recordSequence: number;
@@ -430,8 +381,6 @@ export type MemberRecord = Message<"hobo.fleet.v1.MemberRecord"> & {
   issuedAt: string;
 
   /**
-   * at most 30 min after issued_at
-   *
    * @generated from field: string not_after = 31;
    */
   notAfter: string;
@@ -449,22 +398,16 @@ export const MemberRecordSchema: GenMessage<MemberRecord> = /*@__PURE__*/
  */
 export type RepositoryRule = Message<"hobo.fleet.v1.RepositoryRule"> & {
   /**
-   * "owner/name"
-   *
    * @generated from field: string repository = 1;
    */
   repository: string;
 
   /**
-   * glob over refs/...; empty means none
-   *
    * @generated from field: repeated string refs = 2;
    */
   refs: string[];
 
   /**
-   * sha256:<hex>; empty means any workflow at an allowed ref
-   *
    * @generated from field: repeated string workflow_digests = 3;
    */
   workflowDigests: string[];
@@ -487,8 +430,6 @@ export type OidcTrustRule = Message<"hobo.fleet.v1.OidcTrustRule"> & {
   issuer: string;
 
   /**
-   * anchored regular expression
-   *
    * @generated from field: string subject_pattern = 2;
    */
   subjectPattern: string;
@@ -504,8 +445,6 @@ export type OidcTrustRule = Message<"hobo.fleet.v1.OidcTrustRule"> & {
   roles: Role[];
 
   /**
-   * a workload matching this rule may declare BACKEND and TARGET members
-   *
    * @generated from field: bool sponsor = 5;
    */
   sponsor: boolean;
@@ -575,8 +514,6 @@ export type FleetPolicy = Message<"hobo.fleet.v1.FleetPolicy"> & {
   minAttestationTier: AttestationTier;
 
   /**
-   * S3 when unspecified
-   *
    * @generated from field: hobo.fleet.v1.SandboxTier org_min_sandbox = 6;
    */
   orgMinSandbox: SandboxTier;
@@ -602,8 +539,6 @@ export type FleetPolicy = Message<"hobo.fleet.v1.FleetPolicy"> & {
   deviceCaRootsPem: string[];
 
   /**
-   * exact host names
-   *
    * @generated from field: repeated string egress_allow = 11;
    */
   egressAllow: string[];
@@ -634,36 +569,26 @@ export type FleetPolicy = Message<"hobo.fleet.v1.FleetPolicy"> & {
   sessionPurposes: SessionPurpose[];
 
   /**
-   * runner labels this fleet serves
-   *
    * @generated from field: repeated string labels = 17;
    */
   labels: string[];
 
   /**
-   * 24 when zero; at most 720
-   *
    * @generated from field: uint32 key_bundle_hours = 18;
    */
   keyBundleHours: number;
 
   /**
-   * ONE_ACTIVE
-   *
    * @generated from field: uint32 failover_after_ms = 19;
    */
   failoverAfterMs: number;
 
   /**
-   * ONE_ACTIVE; unset: members hold no replicated state, lag is never considered
-   *
    * @generated from field: optional uint32 recovery_point_ms = 20;
    */
   recoveryPointMs?: number | undefined;
 
   /**
-   * ONE_ACTIVE: entries carry member sets and membership changes are decided epochs (§6.10)
-   *
    * @generated from field: bool membership_epochs = 22;
    */
   membershipEpochs: boolean;
@@ -677,9 +602,6 @@ export const FleetPolicySchema: GenMessage<FleetPolicy> = /*@__PURE__*/
   messageDesc(file_fleet, 11);
 
 /**
- * The registry value for key fleet.<FleetId>, inside an envelope with
- * context hobo-fleet/fleet-record/v1.
- *
  * @generated from message hobo.fleet.v1.FleetRecord
  */
 export type FleetRecord = Message<"hobo.fleet.v1.FleetRecord"> & {
@@ -709,8 +631,6 @@ export type FleetRecord = Message<"hobo.fleet.v1.FleetRecord"> & {
   policy?: FleetPolicy | undefined;
 
   /**
-   * increases exactly when content other than issued_at/not_after changes; a re-sign keeps it
-   *
    * @generated from field: uint32 revision = 6;
    */
   revision: number;
@@ -731,8 +651,6 @@ export type FleetRecord = Message<"hobo.fleet.v1.FleetRecord"> & {
   issuedAt: string;
 
   /**
-   * at most 30 min after issued_at; re-signed every 10 min
-   *
    * @generated from field: string not_after = 10;
    */
   notAfter: string;
@@ -746,9 +664,6 @@ export const FleetRecordSchema: GenMessage<FleetRecord> = /*@__PURE__*/
   messageDesc(file_fleet, 12);
 
 /**
- * ── Trust and discovery ────────────────────────────────────────────────────
- * Carried in a WitnessedEnvelope with context hobo-fleet/trust-record/v1.
- *
  * @generated from message hobo.fleet.v1.TrustRecord
  */
 export type TrustRecord = Message<"hobo.fleet.v1.TrustRecord"> & {
@@ -758,8 +673,6 @@ export type TrustRecord = Message<"hobo.fleet.v1.TrustRecord"> & {
   tenant: string;
 
   /**
-   * strictly increasing
-   *
    * @generated from field: uint32 sequence = 2;
    */
   sequence: number;
@@ -849,8 +762,6 @@ export type Discovery = Message<"hobo.fleet.v1.Discovery"> & {
   natsUrls: string[];
 
   /**
-   * public by design; permits nothing
-   *
    * @generated from field: string nats_sentinel_credentials = 4;
    */
   natsSentinelCredentials: string;
@@ -879,8 +790,6 @@ export const DiscoverySchema: GenMessage<Discovery> = /*@__PURE__*/
   messageDesc(file_fleet, 15);
 
 /**
- * ── People ─────────────────────────────────────────────────────────────────
- *
  * @generated from message hobo.fleet.v1.SignInStart
  */
 export type SignInStart = Message<"hobo.fleet.v1.SignInStart"> & {
@@ -895,22 +804,16 @@ export type SignInStart = Message<"hobo.fleet.v1.SignInStart"> & {
   tenant: string;
 
   /**
-   * loopback only; empty for the device flow
-   *
    * @generated from field: string redirect_uri = 3;
    */
   redirectUri: string;
 
   /**
-   * PKCE S256
-   *
    * @generated from field: string code_challenge = 4;
    */
   codeChallenge: string;
 
   /**
-   * the CLI's sign-in key
-   *
    * @generated from field: string dpop_thumbprint = 5;
    */
   dpopThumbprint: string;
@@ -921,22 +824,16 @@ export type SignInStart = Message<"hobo.fleet.v1.SignInStart"> & {
   deviceFlow: boolean;
 
   /**
-   * shown on the approval page
-   *
    * @generated from field: string host_name = 7;
    */
   hostName: string;
 
   /**
-   * shown on the approval page; enrollment sign-in only
-   *
    * @generated from field: string device_name = 8;
    */
   deviceName: string;
 
   /**
-   * shown on the approval page; enrollment sign-in only
-   *
    * @generated from field: hobo.fleet.v1.Platform platform = 9;
    */
   platform?: Platform | undefined;
@@ -964,15 +861,11 @@ export type SignInChallenge = Message<"hobo.fleet.v1.SignInChallenge"> & {
   authorizeUrl: string;
 
   /**
-   * device flow
-   *
    * @generated from field: string user_code = 3;
    */
   userCode: string;
 
   /**
-   * device flow
-   *
    * @generated from field: string verification_url = 4;
    */
   verificationUrl: string;
@@ -1027,8 +920,6 @@ export const SignInCompleteSchema: GenMessage<SignInComplete> = /*@__PURE__*/
  */
 export type PersonCredential = Message<"hobo.fleet.v1.PersonCredential"> & {
   /**
-   * DPoP-bound JWT
-   *
    * @generated from field: string token = 1;
    */
   token: string;
@@ -1067,8 +958,6 @@ export const PersonCredentialSchema: GenMessage<PersonCredential> = /*@__PURE__*
   messageDesc(file_fleet, 19);
 
 /**
- * GET /signin/callback query, from the sign-in provider's redirect.
- *
  * @generated from message hobo.fleet.v1.SignInCallback
  */
 export type SignInCallback = Message<"hobo.fleet.v1.SignInCallback"> & {
@@ -1078,15 +967,11 @@ export type SignInCallback = Message<"hobo.fleet.v1.SignInCallback"> & {
   state: string;
 
   /**
-   * the provider's code
-   *
    * @generated from field: string code = 2;
    */
   code: string;
 
   /**
-   * the provider's error, when it refused
-   *
    * @generated from field: string error = 3;
    */
   error: string;
@@ -1100,8 +985,6 @@ export const SignInCallbackSchema: GenMessage<SignInCallback> = /*@__PURE__*/
   messageDesc(file_fleet, 20);
 
 /**
- * POST /signin/device: the code the person typed at the verification page.
- *
  * @generated from message hobo.fleet.v1.SignInDeviceCode
  */
 export type SignInDeviceCode = Message<"hobo.fleet.v1.SignInDeviceCode"> & {
@@ -1119,8 +1002,6 @@ export const SignInDeviceCodeSchema: GenMessage<SignInDeviceCode> = /*@__PURE__*
   messageDesc(file_fleet, 21);
 
 /**
- * What the approval page shows before the person confirms.
- *
  * @generated from message hobo.fleet.v1.ApprovalView
  */
 export type ApprovalView = Message<"hobo.fleet.v1.ApprovalView"> & {
@@ -1130,8 +1011,6 @@ export type ApprovalView = Message<"hobo.fleet.v1.ApprovalView"> & {
   state: string;
 
   /**
-   * who signed in at the provider
-   *
    * @generated from field: string principal = 2;
    */
   principal: string;
@@ -1152,8 +1031,6 @@ export type ApprovalView = Message<"hobo.fleet.v1.ApprovalView"> & {
   platform?: Platform | undefined;
 
   /**
-   * four words from the dpop_thumbprint of SignInStart
-   *
    * @generated from field: repeated string fingerprint_words = 6;
    */
   fingerprintWords: string[];
@@ -1203,8 +1080,6 @@ export const ApprovalDecisionSchema: GenMessage<ApprovalDecision> = /*@__PURE__*
  */
 export type ApprovalResult = Message<"hobo.fleet.v1.ApprovalResult"> & {
   /**
-   * the loopback URI with the one-time authority code; empty for the device flow
-   *
    * @generated from field: string redirect_uri = 1;
    */
   redirectUri: string;
@@ -1235,8 +1110,6 @@ export const SignInPollSchema: GenMessage<SignInPoll> = /*@__PURE__*/
   messageDesc(file_fleet, 25);
 
 /**
- * Empty: the caller's DPoP-bound person token is the input.
- *
  * @generated from message hobo.fleet.v1.SignInRefresh
  */
 export type SignInRefresh = Message<"hobo.fleet.v1.SignInRefresh"> & {
@@ -1250,8 +1123,6 @@ export const SignInRefreshSchema: GenMessage<SignInRefresh> = /*@__PURE__*/
   messageDesc(file_fleet, 26);
 
 /**
- * ── Enrollment and credentials ─────────────────────────────────────────────
- *
  * @generated from message hobo.fleet.v1.TokenCreateRequest
  */
 export type TokenCreateRequest = Message<"hobo.fleet.v1.TokenCreateRequest"> & {
@@ -1281,8 +1152,6 @@ export type TokenCreateRequest = Message<"hobo.fleet.v1.TokenCreateRequest"> & {
   roles: Role[];
 
   /**
-   * 600 to 1800
-   *
    * @generated from field: uint32 ttl_seconds = 6;
    */
   ttlSeconds: number;
@@ -1300,15 +1169,11 @@ export const TokenCreateRequestSchema: GenMessage<TokenCreateRequest> = /*@__PUR
  */
 export type TokenCreateResponse = Message<"hobo.fleet.v1.TokenCreateResponse"> & {
   /**
-   * "hft_" + 43 base64url characters; shown once
-   *
    * @generated from field: string token = 1;
    */
   token: string;
 
   /**
-   * sha256 hex
-   *
    * @generated from field: string token_hash = 2;
    */
   tokenHash: string;
@@ -1366,8 +1231,6 @@ export type BootstrapTokenRecord = Message<"hobo.fleet.v1.BootstrapTokenRecord">
   expiresAt: string;
 
   /**
-   * MemberId, or empty
-   *
    * @generated from field: string consumed_by = 8;
    */
   consumedBy: string;
@@ -1422,8 +1285,6 @@ export type EnrollmentRequest = Message<"hobo.fleet.v1.EnrollmentRequest"> & {
   displayName: string;
 
   /**
-   * public JWK JSON: EC P-256 or OKP Ed25519
-   *
    * @generated from field: string identity_jwk = 5;
    */
   identityJwk: string;
@@ -1475,8 +1336,6 @@ export type EnrollmentRequest = Message<"hobo.fleet.v1.EnrollmentRequest"> & {
     case: "oidcAssertion";
   } | {
     /**
-     * the person signed in on this device's CLI
-     *
      * @generated from field: string person_token = 14;
      */
     value: string;
@@ -1484,15 +1343,11 @@ export type EnrollmentRequest = Message<"hobo.fleet.v1.EnrollmentRequest"> & {
   } | { case: undefined; value?: undefined };
 
   /**
-   * tier T2 evidence, leaf first
-   *
    * @generated from field: repeated string certificate_chain_pem = 15;
    */
   certificateChainPem: string[];
 
   /**
-   * tier T1 self-declaration
-   *
    * @generated from field: bool held_key = 16;
    */
   heldKey: boolean;
@@ -1520,8 +1375,6 @@ export type DeclareRequest = Message<"hobo.fleet.v1.DeclareRequest"> & {
   fleet: string;
 
   /**
-   * BACKEND or TARGET
-   *
    * @generated from field: hobo.fleet.v1.MemberKind kind = 3;
    */
   kind: MemberKind;
@@ -1564,15 +1417,11 @@ export const DeclareRequestSchema: GenMessage<DeclareRequest> = /*@__PURE__*/
  */
 export type OverlayJoin = Message<"hobo.fleet.v1.OverlayJoin"> & {
   /**
-   * "tailscale" | "netbird"
-   *
    * @generated from field: string provider = 1;
    */
   provider: string;
 
   /**
-   * single use
-   *
    * @generated from field: string credential = 2;
    */
   credential: string;
@@ -1632,8 +1481,6 @@ export type LifecycleRequest = Message<"hobo.fleet.v1.LifecycleRequest"> & {
   reason: string;
 
   /**
-   * accept: the memberships granted
-   *
    * @generated from field: repeated string fleets = 2;
    */
   fleets: string[];
@@ -1683,8 +1530,6 @@ export type CredentialRequest = Message<"hobo.fleet.v1.CredentialRequest"> & {
   generation: number;
 
   /**
-   * 16 random bytes, written to disk before sending
-   *
    * @generated from field: bytes refresh_nonce = 2;
    */
   refreshNonce: Uint8Array;
@@ -1695,8 +1540,6 @@ export type CredentialRequest = Message<"hobo.fleet.v1.CredentialRequest"> & {
   audiences: string[];
 
   /**
-   * optional renewal
-   *
    * @generated from field: hobo.fleet.v1.SignedEnvelope key_bundle = 4;
    */
   keyBundle?: SignedEnvelope | undefined;
@@ -1715,8 +1558,6 @@ export const CredentialRequestSchema: GenMessage<CredentialRequest> = /*@__PURE_
   messageDesc(file_fleet, 37);
 
 /**
- * Envelope context hobo-fleet/session-ticket/v1, signed by the authority.
- *
  * @generated from message hobo.fleet.v1.SessionTicket
  */
 export type SessionTicket = Message<"hobo.fleet.v1.SessionTicket"> & {
@@ -1759,8 +1600,6 @@ export const SessionTicketSchema: GenMessage<SessionTicket> = /*@__PURE__*/
   messageDesc(file_fleet, 38);
 
 /**
- * Envelope context hobo-fleet/nats-connect/v1, signed by the device's SIGN key.
- *
  * @generated from message hobo.fleet.v1.ConnectProof
  */
 export type ConnectProof = Message<"hobo.fleet.v1.ConnectProof"> & {
@@ -1770,8 +1609,6 @@ export type ConnectProof = Message<"hobo.fleet.v1.ConnectProof"> & {
   ticketId: string;
 
   /**
-   * the nonce the NATS server sent for this connection
-   *
    * @generated from field: bytes nonce = 2;
    */
   nonce: Uint8Array;
@@ -1785,8 +1622,6 @@ export const ConnectProofSchema: GenMessage<ConnectProof> = /*@__PURE__*/
   messageDesc(file_fleet, 39);
 
 /**
- * The NATS connect `auth_token`: base64url of this message's binary form.
- *
  * @generated from message hobo.fleet.v1.ConnectToken
  */
 export type ConnectToken = Message<"hobo.fleet.v1.ConnectToken"> & {
@@ -1838,8 +1673,6 @@ export type CredentialResponse = Message<"hobo.fleet.v1.CredentialResponse"> & {
   memberRecord?: SignedEnvelope | undefined;
 
   /**
-   * set when the trust record has changed
-   *
    * @generated from field: hobo.fleet.v1.WitnessedEnvelope trust = 6;
    */
   trust?: WitnessedEnvelope | undefined;
@@ -1853,8 +1686,6 @@ export const CredentialResponseSchema: GenMessage<CredentialResponse> = /*@__PUR
   messageDesc(file_fleet, 41);
 
 /**
- * Envelope context hobo-fleet/rotation/v1, signed by the OLD identity key.
- *
  * @generated from message hobo.fleet.v1.RotationStatement
  */
 export type RotationStatement = Message<"hobo.fleet.v1.RotationStatement"> & {
@@ -1886,15 +1717,11 @@ export const RotationStatementSchema: GenMessage<RotationStatement> = /*@__PURE_
  */
 export type KeyRotationRequest = Message<"hobo.fleet.v1.KeyRotationRequest"> & {
   /**
-   * signed by the identity key that will be current
-   *
    * @generated from field: hobo.fleet.v1.SignedEnvelope key_bundle = 1;
    */
   keyBundle?: SignedEnvelope | undefined;
 
   /**
-   * only when the identity key changes
-   *
    * @generated from field: hobo.fleet.v1.SignedEnvelope rotation = 2;
    */
   rotation?: SignedEnvelope | undefined;
@@ -1944,8 +1771,6 @@ export const CapacitySchema: GenMessage<Capacity> = /*@__PURE__*/
  */
 export type UsageMeasurement = Message<"hobo.fleet.v1.UsageMeasurement"> & {
   /**
-   * owned by the routing package that reads it
-   *
    * @generated from field: string unit = 1;
    */
   unit: string;
@@ -1986,9 +1811,6 @@ export const ReliabilitySamplesSchema: GenMessage<ReliabilitySamples> = /*@__PUR
   messageDesc(file_fleet, 46);
 
 /**
- * Envelope context hobo-fleet/observation/v1, signed by the observer's SIGN
- * key (authority mode). An absent optional is unknown, never zero.
- *
  * @generated from message hobo.fleet.v1.Observation
  */
 export type Observation = Message<"hobo.fleet.v1.Observation"> & {
@@ -1998,8 +1820,6 @@ export type Observation = Message<"hobo.fleet.v1.Observation"> & {
   memberId: string;
 
   /**
-   * the member itself, or its sponsor
-   *
    * @generated from field: string observer_id = 2;
    */
   observerId: string;
@@ -2015,8 +1835,6 @@ export type Observation = Message<"hobo.fleet.v1.Observation"> & {
   health: Health;
 
   /**
-   * 0 when REACHABLE
-   *
    * @generated from field: uint32 failing_for_ms = 5;
    */
   failingForMs: number;
@@ -2027,22 +1845,16 @@ export type Observation = Message<"hobo.fleet.v1.Observation"> & {
   probeLatencyMs?: number | undefined;
 
   /**
-   * devices
-   *
    * @generated from field: hobo.fleet.v1.Capacity capacity = 7;
    */
   capacity?: Capacity | undefined;
 
   /**
-   * standbys: prepared to become active
-   *
    * @generated from field: optional bool ready = 8;
    */
   ready?: boolean | undefined;
 
   /**
-   * standbys: time behind the active member
-   *
    * @generated from field: optional uint32 lag_ms = 9;
    */
   lagMs?: number | undefined;
@@ -2073,8 +1885,6 @@ export type Observation = Message<"hobo.fleet.v1.Observation"> & {
   agentVersion: string;
 
   /**
-   * "p2p" | "overlay" | "bus-relay"
-   *
    * @generated from field: repeated string transports = 15;
    */
   transports: string[];
@@ -2090,8 +1900,6 @@ export type Observation = Message<"hobo.fleet.v1.Observation"> & {
   bundleSequence: number;
 
   /**
-   * when the current health began
-   *
    * @generated from field: string since = 18;
    */
   since: string;
@@ -2107,8 +1915,6 @@ export type Observation = Message<"hobo.fleet.v1.Observation"> & {
   validUntil: string;
 
   /**
-   * why no new work is admitted (amendment 4, D60)
-   *
    * @generated from field: hobo.fleet.v1.Refusal refusal = 21;
    */
   refusal: Refusal;
@@ -2181,8 +1987,6 @@ export type FleetMemberView = Message<"hobo.fleet.v1.FleetMemberView"> & {
   sandboxTiers: SandboxTier[];
 
   /**
-   * measured by the authority; (0, 1]
-   *
    * @generated from field: optional double reliability = 12;
    */
   reliability?: number | undefined;
@@ -2223,8 +2027,6 @@ export type FleetMemberView = Message<"hobo.fleet.v1.FleetMemberView"> & {
   roles: Role[];
 
   /**
-   * the current observation's refusal (amendment 4, D60)
-   *
    * @generated from field: hobo.fleet.v1.Refusal refusal = 21;
    */
   refusal: Refusal;
@@ -2285,8 +2087,6 @@ export const FleetCapacitySchema: GenMessage<FleetCapacity> = /*@__PURE__*/
   messageDesc(file_fleet, 49);
 
 /**
- * Envelope context hobo-fleet/fleet-view/v1, signed by the authority.
- *
  * @generated from message hobo.fleet.v1.FleetView
  */
 export type FleetView = Message<"hobo.fleet.v1.FleetView"> & {
@@ -2296,15 +2096,11 @@ export type FleetView = Message<"hobo.fleet.v1.FleetView"> & {
   fleet: string;
 
   /**
-   * at most 256
-   *
    * @generated from field: repeated hobo.fleet.v1.FleetMemberView members = 2;
    */
   members: FleetMemberView[];
 
   /**
-   * covers every member, listed or not
-   *
    * @generated from field: hobo.fleet.v1.FleetCapacity capacity = 3;
    */
   capacity?: FleetCapacity | undefined;
@@ -2320,8 +2116,6 @@ export type FleetView = Message<"hobo.fleet.v1.FleetView"> & {
   asOf: string;
 
   /**
-   * at most 120 s after as_of
-   *
    * @generated from field: string not_after = 6;
    */
   notAfter: string;
@@ -2369,8 +2163,6 @@ export type FleetVerdict = Message<"hobo.fleet.v1.FleetVerdict"> & {
   asOf: string;
 
   /**
-   * at most 300 s after as_of
-   *
    * @generated from field: string expires_at = 7;
    */
   expiresAt: string;
@@ -2426,8 +2218,6 @@ export const WorkNeedsSchema: GenMessage<WorkNeeds> = /*@__PURE__*/
   messageDesc(file_fleet, 52);
 
 /**
- * Envelope context hobo-fleet/work-submission/v1, signed by the authority.
- *
  * @generated from message hobo.fleet.v1.WorkSubmission
  */
 export type WorkSubmission = Message<"hobo.fleet.v1.WorkSubmission"> & {
@@ -2447,8 +2237,6 @@ export type WorkSubmission = Message<"hobo.fleet.v1.WorkSubmission"> & {
   fleet: string;
 
   /**
-   * the authenticated submitter
-   *
    * @generated from field: string author = 4;
    */
   author: string;
@@ -2459,8 +2247,6 @@ export type WorkSubmission = Message<"hobo.fleet.v1.WorkSubmission"> & {
   image: string;
 
   /**
-   * sha256:<hex>
-   *
    * @generated from field: string image_digest = 6;
    */
   imageDigest: string;
@@ -2471,8 +2257,6 @@ export type WorkSubmission = Message<"hobo.fleet.v1.WorkSubmission"> & {
   argv: string[];
 
   /**
-   * non-secret
-   *
    * @generated from field: map<string, string> env = 8;
    */
   env: { [key: string]: string };
@@ -2506,21 +2290,15 @@ export const WorkSubmissionSchema: GenMessage<WorkSubmission> = /*@__PURE__*/
   messageDesc(file_fleet, 53);
 
 /**
- * Envelope context hobo-fleet/offer/v1, signed by a dispatcher's SIGN key.
- *
  * @generated from message hobo.fleet.v1.WorkOffer
  */
 export type WorkOffer = Message<"hobo.fleet.v1.WorkOffer"> & {
   /**
-   * kind-defined, unique per unit of work
-   *
    * @generated from field: string work_key = 1;
    */
   workKey: string;
 
   /**
-   * first 32 hex of sha256(kind || 0x00 || work_key)
-   *
    * @generated from field: string work_digest = 2;
    */
   workDigest: string;
@@ -2546,15 +2324,11 @@ export type WorkOffer = Message<"hobo.fleet.v1.WorkOffer"> & {
   needs?: WorkNeeds | undefined;
 
   /**
-   * the dispatcher's ceiling: ORG or UNTRUSTED, never OWN
-   *
    * @generated from field: hobo.fleet.v1.TrustClass trust_class = 7;
    */
   trustClass: TrustClass;
 
   /**
-   * "<provider>:<id>"
-   *
    * @generated from field: string author = 8;
    */
   author: string;
@@ -2590,8 +2364,6 @@ export type WorkOffer = Message<"hobo.fleet.v1.WorkOffer"> & {
   expiresAt: string;
 
   /**
-   * MemberId
-   *
    * @generated from field: string dispatcher = 15;
    */
   dispatcher: string;
@@ -2602,8 +2374,6 @@ export type WorkOffer = Message<"hobo.fleet.v1.WorkOffer"> & {
   residency?: ResidencyRule | undefined;
 
   /**
-   * submitted work only
-   *
    * @generated from field: hobo.fleet.v1.SignedEnvelope submission = 17;
    */
   submission?: SignedEnvelope | undefined;
@@ -2617,8 +2387,6 @@ export const WorkOfferSchema: GenMessage<WorkOffer> = /*@__PURE__*/
   messageDesc(file_fleet, 54);
 
 /**
- * Envelope context hobo-fleet/claim/v1, signed by the claimant's SIGN key.
- *
  * @generated from message hobo.fleet.v1.Claim
  */
 export type Claim = Message<"hobo.fleet.v1.Claim"> & {
@@ -2648,8 +2416,6 @@ export type Claim = Message<"hobo.fleet.v1.Claim"> & {
   offerExpiresAt: string;
 
   /**
-   * as the claimant computed it
-   *
    * @generated from field: uint32 rank = 6;
    */
   rank: number;
@@ -2673,14 +2439,10 @@ export const ClaimSchema: GenMessage<Claim> = /*@__PURE__*/
   messageDesc(file_fleet, 55);
 
 /**
- * Envelope context hobo-fleet/order/v1, signed by the dispatcher's SIGN key.
- *
  * @generated from message hobo.fleet.v1.WorkOrder
  */
 export type WorkOrder = Message<"hobo.fleet.v1.WorkOrder"> & {
   /**
-   * 32 random hex
-   *
    * @generated from field: string order_id = 1;
    */
   orderId: string;
@@ -2706,15 +2468,11 @@ export type WorkOrder = Message<"hobo.fleet.v1.WorkOrder"> & {
   egressAllow: string[];
 
   /**
-   * non-secret, kind-defined
-   *
    * @generated from field: map<string, string> parameters = 6;
    */
   parameters: { [key: string]: string };
 
   /**
-   * sealed with associated data order_id || 0x00 || member_id
-   *
    * @generated from field: hobo.fleet.v1.SealedBox secret = 7;
    */
   secret?: SealedBox | undefined;
@@ -2738,8 +2496,6 @@ export const WorkOrderSchema: GenMessage<WorkOrder> = /*@__PURE__*/
   messageDesc(file_fleet, 56);
 
 /**
- * Envelope context hobo-fleet/receipt/v1, signed by the executor's SIGN key.
- *
  * @generated from message hobo.fleet.v1.WorkReceipt
  */
 export type WorkReceipt = Message<"hobo.fleet.v1.WorkReceipt"> & {
@@ -2764,8 +2520,6 @@ export type WorkReceipt = Message<"hobo.fleet.v1.WorkReceipt"> & {
   status: ReceiptStatus;
 
   /**
-   * an error code from §7.6, or empty
-   *
    * @generated from field: string reason = 5;
    */
   reason: string;
@@ -2781,8 +2535,6 @@ export type WorkReceipt = Message<"hobo.fleet.v1.WorkReceipt"> & {
   sandboxTier: SandboxTier;
 
   /**
-   * as the device derived it
-   *
    * @generated from field: hobo.fleet.v1.TrustClass trust_class = 8;
    */
   trustClass: TrustClass;
@@ -2798,8 +2550,6 @@ export type WorkReceipt = Message<"hobo.fleet.v1.WorkReceipt"> & {
   outputDigest: string;
 
   /**
-   * what actually ran, when it differs from the offer
-   *
    * @generated from field: string observed_work_key = 11;
    */
   observedWorkKey: string;
@@ -2813,8 +2563,6 @@ export const WorkReceiptSchema: GenMessage<WorkReceipt> = /*@__PURE__*/
   messageDesc(file_fleet, 57);
 
 /**
- * Envelope context hobo-fleet/log/v1, signed by the executor's SIGN key.
- *
  * @generated from message hobo.fleet.v1.WorkLogChunk
  */
 export type WorkLogChunk = Message<"hobo.fleet.v1.WorkLogChunk"> & {
@@ -2829,8 +2577,6 @@ export type WorkLogChunk = Message<"hobo.fleet.v1.WorkLogChunk"> & {
   sequence: number;
 
   /**
-   * at most 64 KiB
-   *
    * @generated from field: bytes data = 3;
    */
   data: Uint8Array;
@@ -2915,15 +2661,11 @@ export type WorkStatus = Message<"hobo.fleet.v1.WorkStatus"> & {
   workDigest: string;
 
   /**
-   * empty until claimed
-   *
    * @generated from field: string member_id = 3;
    */
   memberId: string;
 
   /**
-   * UNSPECIFIED while waiting
-   *
    * @generated from field: hobo.fleet.v1.ReceiptStatus status = 4;
    */
   status: ReceiptStatus;
@@ -2974,14 +2716,10 @@ export const WorkLogsSchema: GenMessage<WorkLogs> = /*@__PURE__*/
   messageDesc(file_fleet, 61);
 
 /**
- * What a dispatcher sends when a device's own signature proves a violation.
- *
  * @generated from message hobo.fleet.v1.ViolationReport
  */
 export type ViolationReport = Message<"hobo.fleet.v1.ViolationReport"> & {
   /**
-   * "claim-not-entitled" | "claim-early"
-   *
    * @generated from field: string kind = 1;
    */
   kind: string;
@@ -2992,8 +2730,6 @@ export type ViolationReport = Message<"hobo.fleet.v1.ViolationReport"> & {
   offer?: SignedEnvelope | undefined;
 
   /**
-   * one, or the three early ones
-   *
    * @generated from field: repeated hobo.fleet.v1.SignedEnvelope claims = 3;
    */
   claims: SignedEnvelope[];
@@ -3007,11 +2743,6 @@ export const ViolationReportSchema: GenMessage<ViolationReport> = /*@__PURE__*/
   messageDesc(file_fleet, 62);
 
 /**
- * ── One-active assignment ──────────────────────────────────────────────────
- * Fields 1-8 are hobo.backend_fleet.v1.FleetAssignment exactly (names, numbers,
- * types, presence), so the protobuf JSON of a format-1 log is byte for byte
- * today's (§6.10). Unsigned: one-active fleets run in local mode only (D39).
- *
  * @generated from message hobo.fleet.v1.Assignment
  */
 export type Assignment = Message<"hobo.fleet.v1.Assignment"> & {
@@ -3021,8 +2752,6 @@ export type Assignment = Message<"hobo.fleet.v1.Assignment"> & {
   epoch: bigint;
 
   /**
-   * member name; unset means deliberately none
-   *
    * @generated from field: optional string active = 2;
    */
   active?: string | undefined;
@@ -3033,15 +2762,11 @@ export type Assignment = Message<"hobo.fleet.v1.Assignment"> & {
   sealed: boolean;
 
   /**
-   * set exactly when sealed
-   *
    * @generated from field: optional string target = 4;
    */
   target?: string | undefined;
 
   /**
-   * "bootstrap", "switch", "failover:<health>", "activate", "pin-members", "admit:<name>", "remove:<name>", …
-   *
    * @generated from field: string reason = 5;
    */
   reason: string;
@@ -3052,8 +2777,6 @@ export type Assignment = Message<"hobo.fleet.v1.Assignment"> & {
   lossWindowMs?: bigint | undefined;
 
   /**
-   * zero for the bootstrap entry
-   *
    * @generated from field: uint64 decided_at_ms = 7;
    */
   decidedAtMs: bigint;
@@ -3064,8 +2787,6 @@ export type Assignment = Message<"hobo.fleet.v1.Assignment"> & {
   decidedBy: string;
 
   /**
-   * format 2 only: sorted; the set that decides the next epoch
-   *
    * @generated from field: repeated string members = 9;
    */
   members: string[];
@@ -3079,14 +2800,10 @@ export const AssignmentSchema: GenMessage<Assignment> = /*@__PURE__*/
   messageDesc(file_fleet, 63);
 
 /**
- * Fields 1-2 are hobo.backend_fleet.v1.FleetAssignmentLog exactly.
- *
  * @generated from message hobo.fleet.v1.AssignmentLog
  */
 export type AssignmentLog = Message<"hobo.fleet.v1.AssignmentLog"> & {
   /**
-   * 1: no entry carries members (today's format); 2: entries may
-   *
    * @generated from field: uint32 format = 1;
    */
   format: number;
@@ -3105,14 +2822,10 @@ export const AssignmentLogSchema: GenMessage<AssignmentLog> = /*@__PURE__*/
   messageDesc(file_fleet, 64);
 
 /**
- * ── Transport ──────────────────────────────────────────────────────────────
- *
  * @generated from message hobo.fleet.v1.SessionParty
  */
 export type SessionParty = Message<"hobo.fleet.v1.SessionParty"> & {
   /**
-   * empty when the party is a person's CLI
-   *
    * @generated from field: string member_id = 1;
    */
   memberId: string;
@@ -3145,8 +2858,6 @@ export const SessionPartySchema: GenMessage<SessionParty> = /*@__PURE__*/
  */
 export type SessionRequest = Message<"hobo.fleet.v1.SessionRequest"> & {
   /**
-   * MemberId to reach
-   *
    * @generated from field: string peer = 1;
    */
   peer: string;
@@ -3172,15 +2883,11 @@ export type SessionRequest = Message<"hobo.fleet.v1.SessionRequest"> & {
   blobDigests: string[];
 
   /**
-   * transport identity and seal key of the caller
-   *
    * @generated from field: hobo.fleet.v1.SessionParty initiator = 6;
    */
   initiator?: SessionParty | undefined;
 
   /**
-   * at most 3600
-   *
    * @generated from field: uint32 ttl_seconds = 7;
    */
   ttlSeconds: number;
@@ -3194,8 +2901,6 @@ export const SessionRequestSchema: GenMessage<SessionRequest> = /*@__PURE__*/
   messageDesc(file_fleet, 66);
 
 /**
- * Envelope context hobo-fleet/session-grant/v1, signed by the authority.
- *
  * @generated from message hobo.fleet.v1.SessionGrant
  */
 export type SessionGrant = Message<"hobo.fleet.v1.SessionGrant"> & {
@@ -3258,8 +2963,6 @@ export const SessionGrantSchema: GenMessage<SessionGrant> = /*@__PURE__*/
   messageDesc(file_fleet, 67);
 
 /**
- * Envelope context hobo-fleet/session-close/v1, signed by a device's SIGN key.
- *
  * @generated from message hobo.fleet.v1.SessionClose
  */
 export type SessionClose = Message<"hobo.fleet.v1.SessionClose"> & {
@@ -3302,8 +3005,6 @@ export const SessionCloseSchema: GenMessage<SessionClose> = /*@__PURE__*/
   messageDesc(file_fleet, 68);
 
 /**
- * Envelope context hobo-fleet/control/v1, signed by the authority.
- *
  * @generated from message hobo.fleet.v1.MemberControl
  */
 export type MemberControl = Message<"hobo.fleet.v1.MemberControl"> & {
@@ -3345,8 +3046,6 @@ export type AuditEntry = Message<"hobo.fleet.v1.AuditEntry"> & {
   sequence: number;
 
   /**
-   * sha256 hex; 64 zeros for the first
-   *
    * @generated from field: string previous_hash = 2;
    */
   previousHash: string;
@@ -3362,8 +3061,6 @@ export type AuditEntry = Message<"hobo.fleet.v1.AuditEntry"> & {
   eventId: string;
 
   /**
-   * the registry key the event changes ("member.<MemberId>", "fleet.<FleetId>", "trust"), else the stream id
-   *
    * @generated from field: string subject = 5;
    */
   subject: string;
@@ -3379,15 +3076,11 @@ export type AuditEntry = Message<"hobo.fleet.v1.AuditEntry"> & {
   at: string;
 
   /**
-   * sha256 hex of the event data
-   *
    * @generated from field: string data_digest = 8;
    */
   dataDigest: string;
 
   /**
-   * events that change a registry record: its record_sequence, revision or sequence after the event; 0 otherwise
-   *
    * @generated from field: uint32 subject_sequence = 9;
    */
   subjectSequence: number;
@@ -3401,8 +3094,6 @@ export const AuditEntrySchema: GenMessage<AuditEntry> = /*@__PURE__*/
   messageDesc(file_fleet, 70);
 
 /**
- * Envelope context hobo-fleet/audit-checkpoint/v1; final in a WitnessedEnvelope.
- *
  * @generated from message hobo.fleet.v1.AuditCheckpoint
  */
 export type AuditCheckpoint = Message<"hobo.fleet.v1.AuditCheckpoint"> & {
@@ -3507,8 +3198,6 @@ export const FleetListSchema: GenMessage<FleetList> = /*@__PURE__*/
  */
 export type FleetError = Message<"hobo.fleet.v1.FleetError"> & {
   /**
-   * §7.6
-   *
    * @generated from field: string code = 1;
    */
   code: string;
@@ -3532,8 +3221,6 @@ export const FleetErrorSchema: GenMessage<FleetError> = /*@__PURE__*/
   messageDesc(file_fleet, 76);
 
 /**
- * ── Keys and signatures ────────────────────────────────────────────────────
- *
  * @generated from enum hobo.fleet.v1.KeyAlgorithm
  */
 export enum KeyAlgorithm {
@@ -3543,15 +3230,11 @@ export enum KeyAlgorithm {
   UNSPECIFIED = 0,
 
   /**
-   * ECDSA P-256, IEEE P1363 signature encoding
-   *
    * @generated from enum value: KEY_ALGORITHM_ES256 = 1;
    */
   ES256 = 1,
 
   /**
-   * Ed25519
-   *
    * @generated from enum value: KEY_ALGORITHM_EDDSA = 2;
    */
   EDDSA = 2,
@@ -3610,8 +3293,6 @@ export const KeyPurposeSchema: GenEnum<KeyPurpose> = /*@__PURE__*/
   enumDesc(file_fleet, 1);
 
 /**
- * ── Members ────────────────────────────────────────────────────────────────
- *
  * @generated from enum hobo.fleet.v1.MemberKind
  */
 export enum MemberKind {
@@ -3693,8 +3374,6 @@ export const MemberStateSchema: GenEnum<MemberState> = /*@__PURE__*/
  */
 export enum DeviceClass {
   /**
-   * sponsored members
-   *
    * @generated from enum value: DEVICE_CLASS_UNSPECIFIED = 0;
    */
   UNSPECIFIED = 0,
@@ -3861,8 +3540,6 @@ export const TrustClassSchema: GenEnum<TrustClass> = /*@__PURE__*/
   enumDesc(file_fleet, 8);
 
 /**
- * ── Fleets ─────────────────────────────────────────────────────────────────
- *
  * @generated from enum hobo.fleet.v1.CoordinationMode
  */
 export enum CoordinationMode {
@@ -3951,8 +3628,6 @@ export const SessionPurposeSchema: GenEnum<SessionPurpose> = /*@__PURE__*/
   enumDesc(file_fleet, 11);
 
 /**
- * ── Observations ───────────────────────────────────────────────────────────
- *
  * @generated from enum hobo.fleet.v1.Health
  */
 export enum Health {
@@ -4013,15 +3688,11 @@ export enum Refusal {
   UNSPECIFIED = 0,
 
   /**
-   * admits new work
-   *
    * @generated from enum value: REFUSAL_NONE = 1;
    */
   NONE = 1,
 
   /**
-   * full only with its own running work
-   *
    * @generated from enum value: REFUSAL_OWN_WORK = 2;
    */
   OWN_WORK = 2,
@@ -4104,8 +3775,6 @@ export enum VerdictState {
   NO_CAPACITY = 3,
 
   /**
-   * amendment 4 (D60): routing treats it as OPEN (`fleet-busy`)
-   *
    * @generated from enum value: VERDICT_STATE_BUSY = 4;
    */
   BUSY = 4,
@@ -4118,8 +3787,6 @@ export const VerdictStateSchema: GenEnum<VerdictState> = /*@__PURE__*/
   enumDesc(file_fleet, 15);
 
 /**
- * ── Many-active work ───────────────────────────────────────────────────────
- *
  * @generated from enum hobo.fleet.v1.WorkOrigin
  */
 export enum WorkOrigin {
@@ -4197,8 +3864,6 @@ export const ReceiptStatusSchema: GenEnum<ReceiptStatus> = /*@__PURE__*/
   enumDesc(file_fleet, 17);
 
 /**
- * ── Control, audit, lists, errors ──────────────────────────────────────────
- *
  * @generated from enum hobo.fleet.v1.ControlKind
  */
 export enum ControlKind {

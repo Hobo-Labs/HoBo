@@ -1,31 +1,5 @@
 name: Fleet integration
 
-# The HoBo Fleet integration lane. It provisions the binaries the
-# fleet's `*.integration.test.ts` need and runs them: `fleet:verify` (every
-# outcome, each of which names its integration tests) and every fleet
-# integration test besides. Those tests fail when a binary is absent and `CI`
-# is set, so a missing tool here is a red job, never a skip.
-#
-# Provisioning: `nats-server` 2.15.3 through mise.toml; the iroh relay of the
-# release the pinned `@number0/iroh` binding is built against (iroh-relay 1.4.1),
-# a pinned, checksum-verified download; the sandbox runtime through the
-# agent's own provisioning code (D58): `sandbox-provision.ts` downloads the
-# pinned gVisor `runsc` release, checks its SHA-512 and unpacks it into
-# $RUNNER_TEMP/hobo-sandbox, exactly as a device does. The S1 sandbox driver
-# writes its own OCI bundles and pulls the probe image by digest itself (no
-# Podman). Kata and macOS are not provisioned (A11, A12 in
-# fleet-fallbacks.json).
-#
-# Runners: scripts/lint-actions.ts requires every enabled workflow to run on the
-# self-hosted hobo labels. Nothing sandbox-related has to be on the runner
-# image: the job needs only a Linux kernel that lets the job user run as root
-# or create unprivileged user namespaces. The provision step probes that; when
-# it is refused and passwordless sudo is available it lifts the
-# user-namespace restriction once and probes again, and otherwise fails naming
-# the kernel capability.
-#
-# Runs on the integration branch (`fleet/**`) and on demand.
-
 on:
   push:
     branches:

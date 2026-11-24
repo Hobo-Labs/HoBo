@@ -1,4 +1,3 @@
-// CUE constraints for every protobuf type in data-models/fleet_nats.proto.
 package data_models
 
 import (
@@ -11,5 +10,4 @@ import (
 	replicas: 1 | 3
 }
 
-// Root definition for fixture vetting.
 #FleetNats: #FleetNatsConfig

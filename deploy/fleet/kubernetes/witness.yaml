@@ -1,7 +1,3 @@
-# The witness: co-signs audit checkpoints and proposed
-# trust records. In production it runs in another cluster or on another host
-# than the authority; it has its own service account, so its OpenBao token
-# reads only the witness key and its NATS credentials.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

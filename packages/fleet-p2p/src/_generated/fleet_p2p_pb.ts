@@ -2,10 +2,6 @@
 // @generated from file fleet_p2p.proto (package hobo.fleet_p2p.v1, syntax proto3)
 /* eslint-disable */
 
-// Local configuration record of @hobo/fleet-p2p. The fleet's
-// records, ports and signed envelopes are in @hobo/fleet; this package
-// keeps only its own settings here.
-
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
@@ -17,15 +13,10 @@ export const file_fleet_p2p: GenFile = /*@__PURE__*/
   fileDesc("Cg9mbGVldF9wMnAucHJvdG8SEWhvYm8uZmxlZXRfcDJwLnYxIiQKDkZsZWV0UDJwQ29uZmlnEhIKCnJlbGF5X3VybHMYASADKAliBnByb3RvMw");
 
 /**
- * Where the peer-to-peer transport finds its relays.
- *
  * @generated from message hobo.fleet_p2p.v1.FleetP2pConfig
  */
 export type FleetP2pConfig = Message<"hobo.fleet_p2p.v1.FleetP2pConfig"> & {
   /**
-   * iroh relay URLs: `https://`, or `http://` on a loopback address (a
-   * relay in development mode). The public relays are never used.
-   *
    * @generated from field: repeated string relay_urls = 1;
    */
   relayUrls: string[];

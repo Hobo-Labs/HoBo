@@ -62,6 +62,30 @@ describe("fleet:vocabulary rules", () => {
 		expect(details.some((detail) => detail.includes("ClaimSet"))).toBe(false);
 	});
 
+	it("rule 4 reads no declaration from a proto comment that names a fleet record", () => {
+		const tree = mkdtempSync(join(tmpdir(), "fleet-vocabulary-comment-"));
+		try {
+			mkdirSync(join(tree, "packages", "app", "data-models"), {
+				recursive: true,
+			});
+			writeFileSync(
+				join(tree, "packages", "app", "data-models", "app.proto"),
+				[
+					'syntax = "proto3";',
+					"",
+					"// message Claim is named in a comment.",
+					"message Account {",
+					"  string id = 1;",
+					"}",
+					"",
+				].join("\n"),
+			);
+			expect(scanVocabulary(tree)).toEqual([]);
+		} finally {
+			rmSync(tree, { recursive: true, force: true });
+		}
+	});
+
 	it("rule 5 refuses an identifier containing InternalMesh, and never scans the guard", () => {
 		expect(found("rule-5")).toEqual([
 			{ rule: 5, path: "packages/app/src/mesh.ts" },

@@ -1,20 +1,3 @@
-# HoBo Fleet, high-availability profile: three NATS servers in
-# one cluster (replicas 3), two authority replicas journalling to FLEET_JOURNAL
-# and answering auth callouts in one queue group, the witness, two
-# peer-to-peer relays, and the provisioning job.
-#
-#   docker compose -f deploy/fleet/compose.ha.yml up -d
-#   docker compose -f deploy/fleet/compose.ha.yml run --rm provision
-#
-# This file brings the whole profile up on one Docker host (the soak does). In
-# production the witness runs on another host and the relays in other regions:
-# split the services across hosts and keep the settings. deploy/fleet/README.md
-# lists the files to place under deploy/fleet/secrets/ (none is committed).
-#
-# Cluster routes use a private, internal network with fixed addresses and
-# mutual TLS; nothing outside the three servers can reach them. Monitoring is
-# on each server's loopback. The authority replicas speak plain HTTP on this
-# host's loopback (8443, 8444): put the TLS-terminating load balancer in front.
 name: hobo-fleet-ha
 
 x-hardening: &hardening
@@ -30,8 +13,6 @@ x-hardening: &hardening
 
 x-nats: &nats
   <<: *hardening
-  # NATS 2.15.3 or later. It runs as the image's root user
-  # holding no capability, so it can write its own volume and nothing else.
   image: nats:2.15.3-alpine
   command: ["-c", "/etc/nats/nats.conf"]
   healthcheck:
@@ -140,7 +121,6 @@ services:
 
   witness:
     <<: *hardening
-    # A separate host in production; here, another user.
     image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-witness:${HOBO_FLEET_VERSION:-candidate}
     user: "1001:1001"
     command: ["--config", "/etc/hobo-fleet/witness.json"]
@@ -168,8 +148,6 @@ services:
 
   provision:
     <<: *hardening
-    # `hobo fleet ops provision`: creates the fleet streams and buckets with
-    # replicas 3. Run by an operator, never by a service.
     image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-cli:${HOBO_FLEET_VERSION:-candidate}
     user: "1000:1000"
     profiles: [provision]

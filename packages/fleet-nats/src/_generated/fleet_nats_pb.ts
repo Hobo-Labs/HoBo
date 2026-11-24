@@ -2,10 +2,6 @@
 // @generated from file fleet_nats.proto (package hobo.fleet_nats.v1, syntax proto3)
 /* eslint-disable */
 
-// Local configuration record of @hobo/fleet-nats. The fleet's
-// records, ports and signed envelopes are in @hobo/fleet; this package
-// keeps only its own settings here.
-
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
@@ -17,28 +13,20 @@ export const file_fleet_nats: GenFile = /*@__PURE__*/
   fileDesc("ChBmbGVldF9uYXRzLnByb3RvEhJob2JvLmZsZWV0X25hdHMudjEiRAoPRmxlZXROYXRzQ29uZmlnEg8KB3NlcnZlcnMYASADKAkSDgoGdGVuYW50GAIgASgJEhAKCHJlcGxpY2FzGAMgASgNYgZwcm90bzM");
 
 /**
- * How this package reaches one tenant's NATS deployment.
- *
  * @generated from message hobo.fleet_nats.v1.FleetNatsConfig
  */
 export type FleetNatsConfig = Message<"hobo.fleet_nats.v1.FleetNatsConfig"> & {
   /**
-   * NATS server URLs, `tls://` or `wss://` only.
-   *
    * @generated from field: repeated string servers = 1;
    */
   servers: string[];
 
   /**
-   * The tenant whose account the connection uses.
-   *
    * @generated from field: string tenant = 2;
    */
   tenant: string;
 
   /**
-   * Stream and bucket replicas: 1 (standalone) or 3 (high availability).
-   *
    * @generated from field: uint32 replicas = 3;
    */
   replicas: number;

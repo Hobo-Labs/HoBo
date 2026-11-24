@@ -2,9 +2,6 @@ package data_models
 
 import "list"
 
-// Invariants for the Postgres-specific fleet records. Each mirrors a check the
-// TypeScript code makes, so a record it would not write is refused here too.
-
 #PostgresFleetBackendId: string & =~"^[a-z0-9][a-z0-9_-]{0,62}$"
 
 #PostgresFleetDigest: string & =~"^[0-9a-f]{64}$"
@@ -75,7 +72,6 @@ import "list"
 	target?: #PostgresFleetBackendId
 	reason:  string & =~"^[a-z0-9][a-z0-9:._ -]{0,199}$"
 
-	// Only sealing, for a switch or a failover, names a target.
 	if step != "seal" && step != "failover" {
 		target?: _|_
 	}

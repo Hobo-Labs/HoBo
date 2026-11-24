@@ -1197,16 +1197,6 @@ jobs:
 
   release-service-images:
     name: Fleet service images (build, provenance, bill of materials)
-    # The fleet authority, its witness and the peer-to-peer relay:
-    # built from deploy/release-images/hobo-fleet-*/,
-    # exported as OCI layouts and published as release Freight through
-    # hobo deploy like every other release image (the realizer is the only
-    # thing that pushes), then attested with build provenance and a CycloneDX
-    # bill of materials by the same action (R18). The full train only: an
-    # sdk-v or cli-v tag ships none of them. They are not in the train's image
-    # list, so their Freight journal is named hobo-service-freight-<image>,
-    # which the release tag and GitHub Release do not read. One at a time,
-    # because legs on one box share the `*:candidate` tags.
     if: >-
       !cancelled() &&
       needs.release-main-train-gate.result == 'success' &&
@@ -1270,7 +1260,6 @@ jobs:
         with:
           name: hobo-release-cli
           path: ${{ runner.temp }}/hobo-release-cli
-      # Refused unless it is the build job's archive (digest) of this commit.
       - name: Restore the hobo CLI (release Freight through hobo deploy)
         env:
           HOBO_RELEASE_CLI_DIGEST: ${{ needs.release-hobo-cli.outputs.digest }}

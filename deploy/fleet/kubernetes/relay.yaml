@@ -1,7 +1,3 @@
-# The peer-to-peer relay: iroh-relay from
-# deploy/fleet/relay/iroh-relay.toml. Run two or more, in different regions
-# (one Deployment per region in production). The relay's TLS certificate is
-# the secret hobo-fleet-relay-tls (relay.pem, relay.key).
 apiVersion: v1
 kind: Service
 metadata:

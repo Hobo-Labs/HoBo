@@ -1,8 +1,3 @@
-# The authority (high availability): two or more
-# replicas behind the ingress, all callout responders in one queue group,
-# journalling to FLEET_JOURNAL (no volume). Each replica reads its keys from
-# OpenBao with its own projected service-account token (audience `openbao`),
-# so only this workload identity can read the authority's secrets.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -103,7 +98,6 @@ spec:
   selector:
     matchLabels: { app.kubernetes.io/name: hobo-fleet-authority }
 ---
-# TLS for the issuer origin ends here; the authority speaks HTTP behind it.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

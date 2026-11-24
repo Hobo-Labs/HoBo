@@ -2,7 +2,6 @@ package vercel
 
 // Constraints on HOBO_CI_CACHE_OFFERS_JSON (../cache_offers.proto). The
 // TypeScript parser in src/cache-offers.ts applies the same ones, then the
-// fleet parsers of @hobo/backend-routing (parseFleetFinancialModel,
 // parseFleetOffer, parseFleetRoutingMarks).
 
 #RelayCacheBackend: "upstash" | "valkey" | "redis" | "turso" | "blob" | "memory"
@@ -50,6 +49,5 @@ package vercel
 #RelayCacheOffers: {
 	offers?: [...#RelayCacheOffer]
 	marks?: #RelayCacheMarks
-	// FleetPolicy.membership_epochs of the one-active cache fleet; false when unset.
 	membershipEpochs?: bool
 }

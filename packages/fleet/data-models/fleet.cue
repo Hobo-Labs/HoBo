@@ -6,24 +6,6 @@ import (
 	"strings"
 )
 
-// Constraints on every record of fleet.proto (design §7.2). One definition per
-// message and enum, and a root #Fleet that is their disjunction; the fixture
-// gate (`packages/schema-tools/src/cue.ts`) vets every fixture against #Fleet.
-//
-// Values are protobuf JSON as `toJson` writes it: lowerCamelCase field names,
-// enums by name, 64-bit integers as decimal strings, bytes as base64. A field
-// that holds its default value (empty string, zero, false, UNSPECIFIED, empty
-// list or map) is absent, so every field is optional here and "set" means
-// present. A field the record cannot do without is checked by a hidden
-// `_need*` list: `cue vet` without `-c` accepts a missing plain field, but not
-// a false presence test. `_x: [if x != _|_ {x}, <default>][0]` reads a field
-// with its protobuf default, so a rule on a default-valued field is concrete.
-//
-// Closed definitions are the "no secret field" rule: a field that is not in
-// fleet.proto (a private key, a seed, a password) makes a record invalid.
-
-// ── Scalars ─────────────────────────────────────────────────────────────────
-
 #U32: int & >=0 & <=4294967295
 #U64: string & =~"^(0|[1-9][0-9]{0,19})$"
 #Bytes: string & =~"^[A-Za-z0-9+/_-]*={0,2}$"
@@ -41,18 +23,14 @@ import (
 #Label: string & =~"^.{1,80}$"
 #Transport: "p2p" | "overlay" | "bus-relay"
 
-// ── Identifiers (§7.2) ──────────────────────────────────────────────────────
-
 #MemberId: string & =~"^(dev|bkd|tgt)_[0-9a-f]{32}$"
 #FleetId: string & =~"^[a-z0-9][a-z0-9_-]{0,62}$"
 #MemberName: string & =~"^[a-z0-9][a-z0-9_-]{0,62}$"
-// The core TenantId (`parseTenantId`): non-empty, stored trimmed.
 #Tenant: string & =~"^\\S(.*\\S)?$"
 #KeyId: string & =~"^((dev|bkd|tgt)_[0-9a-f]{32}#(identity|sign|seal|transport)|authority#[0-9]+|witness#[0-9]+)$"
 #WorkDigest: string & =~"^[0-9a-f]{32}$"
 #OrderId: string & =~"^[0-9a-f]{32}$"
 
-// §7.4: the only contexts an envelope may carry.
 #Context: "hobo-fleet/trust-record/v1" |
 	"hobo-fleet/key-bundle/v1" |
 	"hobo-fleet/rotation/v1" |
@@ -74,7 +52,6 @@ import (
 	"hobo-fleet/order/v1" |
 	"hobo-fleet/host-attestation/v1"
 
-// §7.6: the closed error union.
 #FleetErrorCode: "invalid-request" | "unauthenticated" | "proof-invalid" |
 	"proof-replayed" | "forbidden" | "token-invalid" | "token-used" |
 	"token-expired" | "fleet-unknown" | "member-unknown" | "work-unknown" |
@@ -85,8 +62,6 @@ import (
 	"sandbox-inadequate" | "order-invalid" | "assignment-mismatch" |
 	"session-denied" | "no-majority" | "undecided" | "sign-in-pending" |
 	"name-taken" | "unavailable"
-
-// ── Enums ───────────────────────────────────────────────────────────────────
 
 #KeyAlgorithm: "KEY_ALGORITHM_UNSPECIFIED" | "KEY_ALGORITHM_ES256" | "KEY_ALGORITHM_EDDSA"
 #KeyPurpose: "KEY_PURPOSE_UNSPECIFIED" | "KEY_PURPOSE_IDENTITY" | "KEY_PURPOSE_SIGN" |
@@ -130,15 +105,12 @@ import (
 #ControlKind: "CONTROL_KIND_UNSPECIFIED" | "CONTROL_KIND_DRAIN" | "CONTROL_KIND_REFRESH_NOW" |
 	"CONTROL_KIND_REVOKED" | "CONTROL_KIND_UPDATE_REQUIRED"
 
-// Sandbox tiers in order, for "at least this tier".
 #SandboxRank: {
 	"SANDBOX_TIER_UNSPECIFIED":    0
 	"SANDBOX_TIER_S1_CONTAINER":   1
 	"SANDBOX_TIER_S2_USER_KERNEL": 2
 	"SANDBOX_TIER_S3_MICROVM":     3
 }
-
-// ── Keys and signatures ─────────────────────────────────────────────────────
 
 #PublicKeyRef: {
 	purpose?:   #KeyPurpose & !="KEY_PURPOSE_UNSPECIFIED"
@@ -171,7 +143,6 @@ import (
 	notAfter?: #Timestamp
 	_need: [memberId != _|_, keys != _|_, issuedAt != _|_, notAfter != _|_] & [...true]
 
-	// Exactly one SIGN and one SEAL; at most one TRANSPORT; nothing else.
 	_keys: [if keys != _|_ {keys}, []][0]
 	_sign: [for k in _keys if k.purpose == "KEY_PURPOSE_SIGN" {k}] & [_]
 	_seal: [for k in _keys if k.purpose == "KEY_PURPOSE_SEAL" {k}] & [_]
@@ -182,13 +153,10 @@ import (
 #SealedBox: {
 	recipientKeyId?:     #KeyId
 	ephemeralPublicKey?: #Base64Url32
-	// 12 bytes.
 	nonce?:      string & =~"^[A-Za-z0-9+/_-]{16}$"
 	ciphertext?: #Bytes
 	_need: [recipientKeyId != _|_, ephemeralPublicKey != _|_, nonce != _|_, ciphertext != _|_] & [...true]
 }
-
-// ── Members ─────────────────────────────────────────────────────────────────
 
 #Platform: {
 	os?:   string & =~"^[a-z0-9_]{1,32}$"
@@ -265,11 +233,8 @@ import (
 	if _state == "MEMBER_STATE_ACTIVE" {
 		_activeMemberships: _memberships & list.MinItems(1)
 	}
-	// No two memberships name the same fleet.
 	_fleets: [for m in _memberships {m.fleet}] & list.UniqueItems()
 }
-
-// ── Fleets ──────────────────────────────────────────────────────────────────
 
 #RepositoryRule: {
 	repository?: string & =~"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
@@ -280,7 +245,6 @@ import (
 
 #OidcTrustRule: {
 	issuer?: #Url
-	// Anchored at both ends.
 	subjectPattern?: string & =~"^\\^.*\\$$"
 	requiredClaims?: {[string]: string}
 	roles?: [...#Role & !="ROLE_UNSPECIFIED"]
@@ -318,13 +282,11 @@ import (
 	membershipEpochs?: bool
 	_need: [approval != _|_] & [...true]
 
-	// Host docker only on a fleet of dedicated devices alone.
 	_allowHostDocker: [if allowHostDocker != _|_ {allowHostDocker}, false][0]
 	if _allowHostDocker {
 		allowedClasses?: ["DEVICE_CLASS_DEDICATED"]
 		_needClasses: [allowedClasses != _|_] & [...true]
 	}
-	// A floor below S3 only for named repositories (S3 when unspecified).
 	_orgMinSandbox: [if orgMinSandbox != _|_ {orgMinSandbox}, "SANDBOX_TIER_UNSPECIFIED"][0]
 	if _orgMinSandbox == "SANDBOX_TIER_S1_CONTAINER" || _orgMinSandbox == "SANDBOX_TIER_S2_USER_KERNEL" {
 		repositories?: list.MinItems(1)
@@ -359,8 +321,6 @@ import (
 	}
 }
 
-// ── Trust and discovery ─────────────────────────────────────────────────────
-
 #TrustRecord: {
 	tenant?:   #Tenant
 	sequence?: #U32
@@ -391,8 +351,6 @@ import (
 	_need: [tenant != _|_, issuer != _|_, trust != _|_] & [...true]
 }
 
-// ── People ──────────────────────────────────────────────────────────────────
-
 #SignInStart: {
 	provider?:       string & =~"^[a-z0-9][a-z0-9_-]{0,62}$"
 	tenant?:         #Tenant
@@ -405,7 +363,6 @@ import (
 	platform?:       #Platform
 	_need: [provider != _|_, codeChallenge != _|_, dpopThumbprint != _|_] & [...true]
 
-	// redirect_uri empty exactly when device_flow.
 	_deviceFlow: [if deviceFlow != _|_ {deviceFlow}, false][0]
 	if _deviceFlow {
 		redirectUri?: _|_
@@ -447,7 +404,6 @@ import (
 	code?:  #Text
 	error?: #Text
 	_need: [state != _|_] & [...true]
-	// The provider answers with a code or an error, not both.
 	_outcome: [if code != _|_ {code}, if error != _|_ {error}] & [_]
 }
 
@@ -485,8 +441,6 @@ import (
 }
 
 #SignInRefresh: {}
-
-// ── Enrollment and credentials ──────────────────────────────────────────────
 
 #TokenCreateRequest: {
 	fleet?:       #FleetId
@@ -539,7 +493,6 @@ import (
 	certificateChainPem?: [...string & =~"^-----BEGIN CERTIFICATE-----"]
 	heldKey?: bool
 	_need: [tenant != _|_, fleet != _|_, name != _|_, identityJwk != _|_, keyBundle != _|_, deviceClass != _|_] & [...true]
-	// The `proof` oneof: exactly one.
 	_proof: [if bootstrapToken != _|_ {1}, if oidcAssertion != _|_ {1}, if personToken != _|_ {1}] & [_]
 }
 
@@ -584,7 +537,6 @@ import (
 
 #CredentialRequest: {
 	generation?: #U32
-	// 16 bytes.
 	refreshNonce?: string & =~"^[A-Za-z0-9+/_-]{22}(==)?$"
 	audiences?: [...#Text]
 	keyBundle?:    #SignedEnvelope & {context?: "hobo-fleet/key-bundle/v1"}
@@ -636,8 +588,6 @@ import (
 	rotation?:  #SignedEnvelope & {context?: "hobo-fleet/rotation/v1"}
 	_need: [keyBundle != _|_] & [...true]
 }
-
-// ── Observations ────────────────────────────────────────────────────────────
 
 #Capacity: {
 	freeSlots?:    #U32
@@ -757,16 +707,12 @@ import (
 		freeSlots?: 0
 		_needMembers: [members != _|_] & [...true]
 	}
-	// Amendment 4 (D60): BUSY is full only with members' own work. Which
-	// members refuse is not on the verdict, so fleetVerdict checks that rule.
 	if _state == "VERDICT_STATE_BUSY" {
 		members?:   >0
 		freeSlots?: 0
 		_needMembers: [members != _|_] & [...true]
 	}
 }
-
-// ── Many-active work ────────────────────────────────────────────────────────
 
 #WorkNeeds: {
 	memoryMb?: #U32
@@ -848,7 +794,6 @@ import (
 	expiresAt?: #Timestamp
 	_need: [orderId != _|_, offer != _|_, memberId != _|_, issuedAt != _|_, expiresAt != _|_] & [...true]
 
-	// The order's tier is at least what the offer needs.
 	_tier: [if sandboxTier != _|_ {sandboxTier}, "SANDBOX_TIER_UNSPECIFIED"][0]
 	_minTier: [if offer.needs.minSandbox != _|_ {offer.needs.minSandbox}, "SANDBOX_TIER_UNSPECIFIED"][0]
 	_tierCovers: (#SandboxRank[_tier] >= #SandboxRank[_minTier]) & true
@@ -872,7 +817,6 @@ import (
 #WorkLogChunk: {
 	orderId?:  #OrderId
 	sequence?: #U32
-	// At most 64 KiB.
 	data?: #Bytes & strings.MaxRunes(87384)
 	last?: bool
 	_need: [orderId != _|_] & [...true]
@@ -922,9 +866,6 @@ import (
 	}
 }
 
-// ── One-active assignment ───────────────────────────────────────────────────
-
-// Fields 1-8 keep the patterns of hobo.backend_fleet.v1.FleetAssignment.
 #Assignment: {
 	epoch?:        #U64 & =~"^[1-9]"
 	active?:       #MemberName
@@ -937,7 +878,6 @@ import (
 	members?: [...#MemberName] & list.MinItems(1) & list.UniqueItems() & list.IsSorted(list.Ascending)
 	_need: [epoch != _|_, reason != _|_, decidedBy != _|_] & [...true]
 
-	// `sealed` exactly when `target` is set, and never to where it already is.
 	_sealed: [if sealed != _|_ {sealed}, false][0]
 	if _sealed {
 		_needTarget: [target != _|_] & [...true]
@@ -948,7 +888,6 @@ import (
 	if !_sealed {
 		target?: _|_
 	}
-	// A membership change names the set that decides the next epoch.
 	_reason: [if reason != _|_ {reason}, ""][0]
 	if _reason =~ "^(admit|remove):" {
 		_needMembers: [members != _|_] & [...true]
@@ -965,12 +904,9 @@ import (
 	if _format == 1 {
 		entries?: [...{members?: _|_}]
 	}
-	// Ascending by epoch with no gap.
 	_epochs: [for e in _entries {strconv.ParseUint(e.epoch, 10, 64)}]
 	_steps: [for i, n in _epochs if i > 0 {n - _epochs[i-1]}] & [...1]
 }
-
-// ── Transport ───────────────────────────────────────────────────────────────
 
 #SessionParty: {
 	memberId?:          #MemberId
@@ -978,7 +914,6 @@ import (
 	transportIdentity?: #Text
 	sealPublicKey?:     #Base64Url32
 	_need: [transportIdentity != _|_, sealPublicKey != _|_] & [...true]
-	// A member, or a person's CLI.
 	_party: [if memberId != _|_ {1}, if principal != _|_ {1}] & list.MinItems(1)
 }
 
@@ -1037,8 +972,6 @@ import (
 	_need: [sessionId != _|_, memberId != _|_, at != _|_] & [...true]
 }
 
-// ── Control, audit, lists, errors ───────────────────────────────────────────
-
 #MemberControl: {
 	memberId?: #MemberId
 	kind?:     #ControlKind & !="CONTROL_KIND_UNSPECIFIED"
@@ -1091,12 +1024,6 @@ import (
 	_need: [code != _|_] & [...true]
 }
 
-// ── Root ────────────────────────────────────────────────────────────────────
-
-// Every message and enum. Two messages can share an encoding byte for byte
-// (a refused ApprovalDecision is `{"state": …}`, the same as a SignInPoll;
-// an empty Capacity is `{}`, the same as a SignInRefresh); the two marked
-// defaults only break those ties, so `cue vet` can answer for such a value.
 #Fleet: #PublicKeyRef | #SignedEnvelope | #WitnessedEnvelope | #KeyBundle | #SealedBox |
 	#Platform | #Membership | #MemberRecord |
 	#RepositoryRule | #OidcTrustRule | #ResidencyRule | #FleetPolicy | #FleetRecord |

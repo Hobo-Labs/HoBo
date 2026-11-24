@@ -1,4 +1,3 @@
-// CUE constraints for every protobuf type in data-models/fleet_authority.proto.
 package data_models
 
 import (
@@ -84,5 +83,4 @@ import (
 	secretStore?:                   #SecretStoreConfig
 }
 
-// Root definition for fixture vetting.
 #FleetAuthority: #FleetAuthorityConfig

@@ -1,4 +1,3 @@
-// CUE constraints for every protobuf type in data-models/fleet_agent.proto.
 package data_models
 
 import (
@@ -13,5 +12,4 @@ import (
 	transports: [...("p2p" | "overlay" | "bus-relay")]
 }
 
-// Root definition for fixture vetting.
 #FleetAgent: #FleetAgentConfig

@@ -1,10 +1,5 @@
 package data_models
 
-// Invariants for every record in backend_routing.proto. Each mirrors a check the
-// TypeScript parsers in src/ make (parseFleetFinancialModel, parseFleetOffer,
-// parseFleetRoutingMarks), so a record they refuse is
-// refused here too. Field names are the protobuf JSON names.
-
 #FleetBackendId: string & =~"^[a-z0-9][a-z0-9_-]{0,62}$"
 
 #FleetUsageUnit: "operations" | "compute-hours" | "storage-bytes" | "commands" | "rows-read" | "rows-written" | "simple-operations" | "advanced-operations"

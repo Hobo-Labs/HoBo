@@ -1,9 +1,3 @@
-# HoBo Fleet on Kubernetes, high-availability profile.
-# The configuration maps come from the same files the Compose profiles use,
-# one directory up, so build with:
-#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/fleet/kubernetes
-# Pin the release by setting newTag below (the release workflow publishes
-# ghcr.io/hobo-labs/hobo/<image>:<version>).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: hobo-fleet

@@ -1,7 +1,6 @@
 [tools]
 betterleaks = "1.10.1"
 cue = "0.14.0"
-# HoBo Fleet integration tests; HOBO_FLEET_NATS_SERVER_BIN overrides it.
 nats-server = "2.15.3"
 node = "24"
 pnpm = "10.33.4"

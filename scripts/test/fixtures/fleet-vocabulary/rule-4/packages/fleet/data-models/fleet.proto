@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package fixture.fleet;
 
-// Allowlisted for rule 4 (packages/fleet/data-models/**).
 message MemberRecord {
   string id = 1;
 }

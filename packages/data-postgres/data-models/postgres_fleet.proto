@@ -1,13 +1,5 @@
-// Wire records for a fleet of interchangeable PostgreSQL backends: what is
-// Postgres about it.
 //
 // A fleet keeps one writer and any number of standbys. These are the records
-// it persists on the backends themselves (a standby's watermark, the usage
-// counters) and logs per tick (copies, transitions). The assignment log,
-// observations and health are `hobo.fleet.v1` records of `@hobo/fleet`, and
-// financial models and decisions are `hobo.backend_routing.v1` records of
-// `@hobo/backend-routing`. The parsed TypeScript values under `src/fleet/` are
-// narrowings of these records.
 //
 // A backend id is an opaque token. Nothing here names a product, a host, or a
 // credential, so every record is safe to log and to replay.
@@ -74,15 +66,12 @@ message PostgresFleetReplicationResult {
   PostgresFleetReplicationStatus status = 4;
   // e.g. target-is-writer, schema-mismatch, oversized, busy.
   optional string refusal = 5;
-  // Was the failure class; now `failure_health`.
   reserved 6;
   reserved "failure";
   optional uint64 rows = 7;
   // Row text rewritten. Zero when nothing had changed.
   optional uint64 bytes = 8;
   uint64 duration_ms = 9;
-  // A connection or statement failure, as the fleet's health: the name of a
-  // `hobo.fleet.v1.Health` value other than HEALTH_REACHABLE.
   optional string failure_health = 10;
 }
 
@@ -95,9 +84,7 @@ enum PostgresFleetTransitionStep {
   POSTGRES_FLEET_TRANSITION_STEP_ACTIVATE = 3;
   // Planned move undone: the old writer writes again.
   POSTGRES_FLEET_TRANSITION_STEP_UNSEAL = 4;
-  // Unplanned move, first half: sealed on the target with no writer.
   POSTGRES_FLEET_TRANSITION_STEP_FAILOVER = 5;
-  // A backend admitted to or removed from the deciding set, or the set pinned.
   POSTGRES_FLEET_TRANSITION_STEP_MEMBERSHIP = 6;
 }
 

@@ -1,18 +1,3 @@
-# HoBo Fleet, standalone profile: one NATS server (replicas 1),
-# one authority on SQLite, the witness on the same host under another user,
-# one peer-to-peer relay, and the provisioning job.
-#
-#   docker compose -f deploy/fleet/compose.standalone.yml up -d
-#   docker compose -f deploy/fleet/compose.standalone.yml run --rm provision
-#
-# Before the first start, deploy/fleet/README.md lists the files to place under
-# deploy/fleet/secrets/ (none of them is committed): the NATS operator.conf from
-# the key ceremony, TLS material for NATS and the relay, and one OpenBao
-# workload token per service. Every key lives in OpenBao, one secret each.
-#
-# The authority speaks plain HTTP on loopback; terminate TLS for its issuer
-# origin in front of it. Port 443 on this host belongs to the relay, so the
-# NATS WebSocket listener is published on 9443 here.
 name: hobo-fleet
 
 x-hardening: &hardening
@@ -29,8 +14,6 @@ x-hardening: &hardening
 services:
   nats:
     <<: *hardening
-    # NATS 2.15.3 or later. It runs as the image's root user
-    # holding no capability, so it can write its own volume and nothing else.
     image: nats:2.15.3-alpine
     command: ["-c", "/etc/nats/nats.conf"]
     environment:
@@ -75,7 +58,6 @@ services:
 
   witness:
     <<: *hardening
-    # Another operating-system account than the authority's.
     image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-witness:${HOBO_FLEET_VERSION:-candidate}
     user: "1001:1001"
     command: ["--config", "/etc/hobo-fleet/witness.json"]
@@ -107,8 +89,6 @@ services:
 
   provision:
     <<: *hardening
-    # `hobo fleet ops provision`: creates the fleet streams and buckets. Run
-    # by an operator, never by a service: `docker compose run --rm provision`.
     image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-cli:${HOBO_FLEET_VERSION:-candidate}
     user: "1000:1000"
     profiles: [provision]

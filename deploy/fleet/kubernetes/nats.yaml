@@ -1,14 +1,3 @@
-# Three NATS servers in one cluster (high availability),
-# from deploy/fleet/nats/ha.conf. Client 4222 and WebSocket 443 are TLS;
-# cluster routes bind each pod's own address and accept only the other NATS
-# pods (mutual TLS plus the NetworkPolicy below); monitoring is on loopback,
-# so the probes run inside the container.
-#
-# Secrets the operator creates (deploy/fleet/README.md):
-#   hobo-fleet-nats-operator   operator.conf (from the key ceremony)
-#   hobo-fleet-nats-tls        server.pem, server.key, ca.pem; the certificate
-#                              names nats.fleet.example.com and
-#                              *.hobo-fleet-nats.hobo-fleet.svc.cluster.local
 apiVersion: v1
 kind: Service
 metadata:
@@ -66,7 +55,6 @@ spec:
                 matchLabels: { app.kubernetes.io/name: hobo-fleet-nats }
       containers:
         - name: nats
-          # NATS 2.15.3 or later.
           image: nats:2.15.3-alpine
           command: ["nats-server"]
           args: ["-c", "/etc/nats/nats.conf"]
@@ -140,7 +128,6 @@ spec:
   selector:
     matchLabels: { app.kubernetes.io/name: hobo-fleet-nats }
 ---
-# Cluster routes accept only the other NATS servers; clients reach 4222 and 8443.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

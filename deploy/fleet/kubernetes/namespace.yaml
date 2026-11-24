@@ -1,5 +1,3 @@
-# The namespace enforces the restricted Pod Security Standard, so a workload
-# that is not non-root, read-only and capability-free is refused at admission.
 apiVersion: v1
 kind: Namespace
 metadata:
