@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +18,7 @@ import {
 	CI_MACHINE_CONNECT_COMMAND,
 	type CiMachineConnectDeps,
 	createCiMachineConnectCommand,
-	defaultGithubToken,
+	defaultInstallationToken,
 	type MachineExecutorChoice,
 } from "../src/ci-machine-connect.js";
 
@@ -36,11 +35,13 @@ function quietGithub(requests: string[], user = true): MachineGithub {
 	return {
 		async request(path) {
 			requests.push(path);
-			if (path === "/user")
+			if (path === "/repos/octo/app")
 				return user
-					? Response.json({ id: 42, login: "octocat" })
+					? Response.json({
+							private: true,
+							owner: { id: 42, login: "octocat" },
+						})
 					: new Response(null, { status: 401 });
-			if (path === "/repos/octo/app") return Response.json({ private: true });
 			if (path.includes("/actions/runs?"))
 				return Response.json({ workflow_runs: [] });
 			return new Response(null, { status: 404 });
@@ -65,7 +66,7 @@ type Harness = Readonly<{
 	lines: string[];
 	requests: string[];
 	choices: MachineExecutorChoice[];
-	tokensAsked: NodeJS.ProcessEnv[];
+	tokensAsked: string[];
 }>;
 
 async function harness(
@@ -82,11 +83,11 @@ async function harness(
 	const lines: string[] = [];
 	const requests: string[] = [];
 	const choices: MachineExecutorChoice[] = [];
-	const tokensAsked: NodeJS.ProcessEnv[] = [];
+	const tokensAsked: string[] = [];
 	const deps: CiMachineConnectDeps = {
-		githubToken: async (env) => {
-			tokensAsked.push(env);
-			return "token" in options ? options.token : "gho_owner";
+		installationToken: async (repository) => {
+			tokensAsked.push(repository);
+			return "token" in options ? options.token : "ghs_installation";
 		},
 		github: () => quietGithub(requests, options.user ?? true),
 		openRegistry: async () => ({
@@ -230,15 +231,13 @@ describe("hobo ci machine connect", () => {
 	it("reads only the named repositories' queues, as the owner", async () => {
 		const { run, requests } = await harness();
 		await run(["connect", "--repo", "octo/app"]);
-		expect(requests[0]).toBe("/user");
-		expect(
-			requests.every(
-				(path) => path === "/user" || path.startsWith("/repos/octo/app"),
-			),
-		).toBe(true);
+		expect(requests[0]).toBe("/repos/octo/app");
+		expect(requests.every((path) => path.startsWith("/repos/octo/app"))).toBe(
+			true,
+		);
 	});
 
-	it("asks for a sign-in when there is no GitHub token, or GitHub refuses it", async () => {
+	it("asks for the GitHub App when it mints no installation token, or GitHub refuses it", async () => {
 		const none = await harness({ token: undefined });
 		const missing = await none.run(["connect", "--repo", "octo/app", "--json"]);
 		expect(missing.exitCode).not.toBe(0);
@@ -257,24 +256,27 @@ describe("hobo ci machine connect", () => {
 		expect(await refused.registry.list("local")).toEqual([]);
 	});
 
-	it("reads the gh sign-in on a clean machine, before HOBO_HOME exists", async () => {
-		const missing = join(tmpdir(), `hobo-home-missing-${process.pid}`);
-		expect(existsSync(missing)).toBe(false);
-		const calls: string[] = [];
-		const token = await defaultGithubToken(
-			{ HOBO_HOME: missing, HOME: missing },
-			async (file, args, options) => {
-				calls.push([file, ...args].join(" "));
-				if (!existsSync(options.cwd))
-					throw new Error(`spawn ${file} ENOENT (cwd ${options.cwd})`);
-				return { stdout: "gho_signed_in\n", stderr: "" };
-			},
-		);
-		expect(token).toBe("gho_signed_in");
-		expect(calls).toEqual(["gh auth token"]);
+	it("mints installation tokens through the owner store session, never a person's sign-in", async () => {
+		const asked: Array<readonly [string, string]> = [];
 		expect(
-			await defaultGithubToken({ HOME: missing }, async () => {
-				throw new Error("gh is not signed in");
+			await defaultInstallationToken("octo/app", {
+				resolve: async (ref, scope) => {
+					asked.push([ref, scope]);
+					return { token: "ghs_minted" };
+				},
+			}),
+		).toBe("ghs_minted");
+		expect(asked).toEqual([
+			["github-app://octo/app", "hobo ci machine connect"],
+		]);
+		expect(
+			await defaultInstallationToken("octo/app", undefined),
+		).toBeUndefined();
+		expect(
+			await defaultInstallationToken("octo/app", {
+				resolve: async () => {
+					throw new Error("not installed");
+				},
 			}),
 		).toBeUndefined();
 	});

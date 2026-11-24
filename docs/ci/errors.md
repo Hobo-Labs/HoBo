@@ -1487,16 +1487,16 @@ Returned from `packages/hobo/src/ci-machine-connect.ts`.
 Messages:
 
 ```text
-GitHub did not accept the token this machine was given.
+HoBo's GitHub App gives this machine no token for {…}.
 ```
 
 ```text
-Sign in to GitHub before connecting this machine.
+GitHub did not accept the GitHub App token this machine was given.
 ```
 
 What to do:
 
-- Run gh auth login as an account that can manage the named repositories' self-hosted runners.
+- Connect the owner's secret store with HoBo MCP's choose_secret_store, then install HoBo's GitHub App (hobo ci app create) on the named repositories with permission to manage self-hosted runners.
 
 ### HOBO_CI_MACHINE_UNSUPPORTED
 

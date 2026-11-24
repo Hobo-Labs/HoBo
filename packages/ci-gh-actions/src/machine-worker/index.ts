@@ -30,6 +30,7 @@ export {
 	createOneJobRunner,
 	GITHUB_API_URL,
 	githubQueueJobSource,
+	installationGithub,
 	MACHINE_QUEUE_POLL_MS,
 	type MachineGithub,
 	type MachineJobOffer,
@@ -68,6 +69,7 @@ export {
 	type MachinePlatform,
 	type MachineSession,
 	machinePlatform,
+	repositoryOwner,
 	runMachineSession,
 } from "./session.js";
 export {

@@ -30,13 +30,10 @@ const CLI_ENV = {
 	HTTPS_PROXY: "http://proxy:3128",
 } satisfies NodeJS.ProcessEnv;
 
-const SECRET_NAMES = [
-	"GH_TOKEN",
-	"GITHUB_TOKEN",
-	"HOBO_CI_ACCOUNT_ID",
-	"HOBO_CI_CONTROL_TOKEN",
-	"AWS_SECRET_ACCESS_KEY",
-];
+const SAFE_NAMES = new Set(["PATH", "HOME", "HTTPS_PROXY"]);
+const SECRET_NAMES = Object.keys(CLI_ENV).filter(
+	(name) => !SAFE_NAMES.has(name),
+);
 
 let scratch: string | undefined;
 afterEach(async () => {

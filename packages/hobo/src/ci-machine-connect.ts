@@ -1,8 +1,9 @@
 import { mkdirSync } from "node:fs";
-import { hostname, tmpdir } from "node:os";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
+import type { CredentialResolver } from "@hobo/cd";
 import {
 	MACHINE_SHARING,
 	type MachineRegistry,
@@ -14,10 +15,10 @@ import {
 	containerExecutor,
 	createMachineWorker,
 	DEFAULT_MACHINE_IMAGE,
-	githubOwner,
 	githubQueueJobSource,
 	hostExecutor,
 	nodeHostProcess as hostProcess,
+	installationGithub,
 	type JobExecutor,
 	loadMachine,
 	type MachineGithub,
@@ -27,8 +28,8 @@ import {
 	machineWorkerEventJson,
 	pinnedRunnerProgram,
 	registryAdvertSink,
+	repositoryOwner,
 	runMachineSession,
-	userGithub,
 } from "@hobo/ci-gh-actions/machine-worker";
 import {
 	type AppleContainerStatus,
@@ -40,6 +41,7 @@ import {
 	pinnedMacosRunnerProgram,
 } from "@hobo/ci-gh-actions/machine-worker/macos";
 import type { CommandResult } from "@hobo/cli";
+import { githubAppInstallationRef } from "@hobo/core";
 import type { CiCommand, CiCommandContext } from "./ci-commands.js";
 import {
 	CI_MACHINE_COMMAND,
@@ -47,7 +49,6 @@ import {
 	localMachineRegistryPath,
 	type OpenedMachineRegistry,
 } from "./ci-machine.js";
-import { type CiRunExec, runCiProcess } from "./ci-runs.js";
 import { defaultHoboHome } from "./hobo-home.js";
 
 const HELP = [
@@ -62,7 +63,7 @@ const HELP = [
 	"    --image <ref>            The job container's image.",
 	"    --events                 Print each event as one JSON object per line.",
 	"    --account <id>           The account (or HOBO_CI_ACCOUNT_ID; default local).",
-	"    Press p to pause or resume. Sign in with gh auth login.",
+	"    Press p to pause or resume. GitHub access is HoBo's GitHub App, through the owner's store (choose_secret_store).",
 ].join("\n");
 
 const MAX_CONCURRENCY = 32;
@@ -90,8 +91,14 @@ export type MachineExecutorChoice = Readonly<{
 }>;
 
 export type CiMachineConnectDeps = Readonly<{
-	githubToken?: (env: NodeJS.ProcessEnv) => Promise<string | undefined>;
-	github?: (token: string, fetcher: typeof fetch) => MachineGithub;
+	installationToken?: (
+		repository: string,
+		credentials: CredentialResolver | undefined,
+	) => Promise<string | undefined>;
+	github?: (
+		token: (repository: string) => Promise<string>,
+		fetcher: typeof fetch,
+	) => MachineGithub;
 	openRegistry?: (context: CiCommandContext) => Promise<OpenedMachineRegistry>;
 	executor?: (choice: MachineExecutorChoice) => JobExecutor;
 	platform?: Readonly<{ platform: string; arch: string }>;
@@ -113,18 +120,20 @@ function usage(message: string): CommandResult {
 	};
 }
 
-export async function defaultGithubToken(
-	env: NodeJS.ProcessEnv,
-	exec: CiRunExec = runCiProcess,
+// public-contract: how long the connect command reuses one installation token before minting another.
+export const INSTALLATION_TOKEN_REUSE_MS = 45 * 60_000;
+
+export async function defaultInstallationToken(
+	repository: string,
+	credentials: CredentialResolver | undefined,
 ): Promise<string | undefined> {
+	if (credentials === undefined) return undefined;
 	try {
-		const { stdout } = await exec("gh", ["auth", "token"], {
-			cwd: tmpdir(),
-			timeout: 15_000,
-			maxBuffer: 64 * 1024,
-			env,
-		});
-		return stdout.trim() || undefined;
+		const resolved = await credentials.resolve(
+			githubAppInstallationRef(repository),
+			"hobo ci machine connect",
+		);
+		return resolved.token || undefined;
 	} catch {
 		return undefined;
 	}
@@ -298,24 +307,56 @@ async function connect(
 				"Connect a Linux machine (x64 or arm64), or a Mac with --host, or with --vm on Apple silicon with Apple's container tool running.",
 			],
 		};
-	const token = await (deps.githubToken ?? defaultGithubToken)(context.env);
-	const github = token
-		? (
-				deps.github ??
-				((value, fetcher) => userGithub({ fetch: fetcher, token: value }))
-			)(token, context.fetch)
-		: undefined;
-	const owner = github ? await githubOwner(github) : undefined;
+	const mint = deps.installationToken ?? defaultInstallationToken;
+	const minted = new Map<string, Readonly<{ token: string; atMs: number }>>();
+	const installationTokenFor = async (
+		repository: string,
+	): Promise<string | undefined> => {
+		const held = minted.get(repository);
+		if (
+			held !== undefined &&
+			context.now() - held.atMs < INSTALLATION_TOKEN_REUSE_MS
+		)
+			return held.token;
+		const token = await mint(repository, context.credentials);
+		if (token === undefined) minted.delete(repository);
+		else minted.set(repository, { token, atMs: context.now() });
+		return token;
+	};
+	const uncovered: string[] = [];
+	for (const repository of parsed.repositories)
+		if ((await installationTokenFor(repository)) === undefined)
+			uncovered.push(repository);
+	const [first] = parsed.repositories;
+	const github =
+		uncovered.length === 0
+			? (
+					deps.github ??
+					((token, fetcher) => installationGithub({ fetch: fetcher, token }))
+				)(async (repository) => {
+					const token = await installationTokenFor(repository);
+					if (token === undefined)
+						throw new Error(
+							`HoBo's GitHub App gave no installation token for ${repository}`,
+						);
+					return token;
+				}, context.fetch)
+			: undefined;
+	const owner =
+		github && first !== undefined
+			? await repositoryOwner(github, first)
+			: undefined;
 	if (!github || !owner)
 		return {
 			ok: false,
 			status: "unauthenticated",
 			code: "HOBO_CI_MACHINE_SIGN_IN",
-			message: token
-				? "GitHub did not accept the token this machine was given."
-				: "Sign in to GitHub before connecting this machine.",
+			message:
+				uncovered.length > 0
+					? `HoBo's GitHub App gives this machine no token for ${uncovered.join(", ")}.`
+					: "GitHub did not accept the GitHub App token this machine was given.",
 			remediation: [
-				"Run gh auth login as an account that can manage the named repositories' self-hosted runners.",
+				"Connect the owner's secret store with HoBo MCP's choose_secret_store, then install HoBo's GitHub App (hobo ci app create) on the named repositories with permission to manage self-hosted runners.",
 			],
 		};
 	const home = join(defaultHoboHome(context.env), "ci", "machine");

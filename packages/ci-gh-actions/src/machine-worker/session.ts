@@ -121,6 +121,23 @@ export async function githubOwner(
 		: undefined;
 }
 
+const RepositoryOwner = z.object({ owner: User });
+
+export async function repositoryOwner(
+	github: MachineGithub,
+	repository: string,
+): Promise<Pick<MachineProfile, "ownerId" | "ownerLogin"> | undefined> {
+	const response = await github.request(`/repos/${repository}`);
+	if (!response.ok) return undefined;
+	const parsed = RepositoryOwner.safeParse(await response.json());
+	return parsed.success
+		? {
+				ownerId: String(parsed.data.owner.id),
+				ownerLogin: parsed.data.owner.login,
+			}
+		: undefined;
+}
+
 export type MachineSession = Readonly<{
 	stop(): void;
 	togglePause(): Promise<boolean>;

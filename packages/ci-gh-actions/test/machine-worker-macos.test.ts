@@ -318,8 +318,9 @@ describe("a macOS machine", () => {
 			`actions-runner-osx-arm64-${RUNNER_VERSION}`,
 		);
 		const run = host.calls.find((call) => call.command.endsWith("run.sh"));
-		expect(Object.keys(run?.env ?? {})).not.toContain("GH_TOKEN");
-		expect(Object.keys(run?.env ?? {})).not.toContain("GITHUB_TOKEN");
+		expect(
+			Object.keys(run?.env ?? {}).filter((name) => /TOKEN/u.test(name)),
+		).toEqual([]);
 		expect(run?.env.HOME).toBe("/Users/octocat");
 		expect(
 			(await readdir(cacheDir)).filter((name) => name.startsWith("job-")),
@@ -419,7 +420,9 @@ describe("a macOS machine", () => {
 			expect(vm.deleted).toBe(true);
 			expect(vm.env.get("HOBO_CI_RUNNER_URL")).toContain("linux-arm64");
 			expect(vm.env.get("HTTPS_PROXY")).toBe("http://proxy:3128");
-			expect(vm.env.has("GH_TOKEN")).toBe(false);
+			expect([...vm.env.keys()].filter((name) => /TOKEN/u.test(name))).toEqual(
+				[],
+			);
 		}
 		const [advert] = await setup.registry.list("local");
 		expect(advert).toMatchObject({

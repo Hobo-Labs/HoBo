@@ -1696,8 +1696,12 @@ built, not proven. A CLI for these operations is not yet included.
 `hobo ci machine connect --repo <owner/name>` makes the computer it runs on a
 machine a runner order can route jobs to (ADR-0183,
 [`docs/ci/runner-order.md`](../../docs/ci/runner-order.md)).
-It needs only an installed CLI and a GitHub sign-in (`gh auth login`; the
-token comes from `gh auth token`, the gh CLI's own session); it assumes no checkout. The command lives in
+It needs only an installed CLI, the owner's store connected through HoBo MCP's
+`choose_secret_store`, and HoBo's GitHub App (`hobo ci app create`) installed on
+each named repository with permission to manage self-hosted runners. It reads
+GitHub only with installation tokens the owner store session mints for that App
+(`github-app://<owner>/<repo>`), reuses each for at most 45 minutes, and never
+asks for a person's GitHub token; it assumes no checkout. The command lives in
 `packages/hobo/src/ci-machine-connect.ts`; the worker it runs is in
 [`src/machine-worker/`](src/machine-worker/MACHINE-WORKER.md), exported as
 `@hobo/ci-gh-actions/machine-worker`.
@@ -1707,7 +1711,8 @@ token comes from `gh auth token`, the gh CLI's own session); it assumes no check
   advertises a signed advert every 30 seconds in the local node's machine
   registry, the one `hobo ci machine status` reads.
 - It reads the named repositories' queues for its own label
-  (`hobo-machine-<id>`) with the owner's token, at most every 15 seconds.
+  (`hobo-machine-<id>`) with that repository's installation token, at most every
+  15 seconds. The advert names the first repository's owner.
 - Each job gets a one-job runner on its repository; the configuration is
   checked with `parseJitConfig` before anything uses it, and the job runs in a
   fresh container (`--host`: on the machine, and the advert says so) with none
@@ -1721,8 +1726,8 @@ Tested against the GitHub simulator with a fake container driver
 (`test/machine-worker*.test.ts`) and, for the command, with fakes
 (`packages/hobo/test/ci-machine-connect.test.ts`). It is built, not proven:
 no run on a real machine against GitHub is linked yet. The run that would
-prove it, on a Linux machine with Docker and `gh auth login` done as a user
-with admin rights on a private test repository:
+prove it, on a Linux machine with Docker, the owner's store connected, and
+HoBo's GitHub App installed on a private test repository:
 
 1. `hobo ci machine connect --repo <owner>/<private-repo> --events`, and note
    the `runsOn` label in the first `machine.connected` line.

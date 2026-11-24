@@ -22,8 +22,11 @@ afterEach(async () => {
 
 const github: MachineGithub = {
 	async request(path) {
-		if (path === "/user") return Response.json({ id: 42, login: "octocat" });
-		if (path === "/repos/octo/app") return Response.json({ private: true });
+		if (path === "/repos/octo/app")
+			return Response.json({
+				private: true,
+				owner: { id: 42, login: "octocat" },
+			});
 		if (path.includes("/actions/runs?"))
 			return Response.json({ workflow_runs: [] });
 		return new Response(null, { status: 404 });
@@ -49,7 +52,7 @@ async function mac(
 				now: () => 1_763_337_600_000,
 				commands: [
 					createCiMachineConnectCommand({
-						githubToken: async () => "gho_owner",
+						installationToken: async () => "ghs_installation",
 						github: () => github,
 						openRegistry: opened,
 						executor: (choice) => {

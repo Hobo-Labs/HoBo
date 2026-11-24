@@ -47,6 +47,36 @@ export function userGithub(
 	};
 }
 
+const REPOSITORY_PATH = /^\/repos\/([^/?]+\/[^/?]+)/u;
+
+export function installationGithub(
+	options: Readonly<{
+		fetch: typeof fetch;
+		token: (repository: string) => Promise<string>;
+		baseUrl?: string;
+	}>,
+): MachineGithub {
+	return {
+		request: async (path, init) => {
+			const repository = REPOSITORY_PATH.exec(path)?.[1];
+			if (repository === undefined)
+				throw new Error(
+					`${path} names no repository, so no installation token covers it`,
+				);
+			const token = await options.token(repository);
+			const github =
+				options.baseUrl === undefined
+					? userGithub({ fetch: options.fetch, token })
+					: userGithub({
+							fetch: options.fetch,
+							token,
+							baseUrl: options.baseUrl,
+						});
+			return github.request(path, init);
+		},
+	};
+}
+
 export function assignedJobSource(): MachineJobSource &
 	Readonly<{ assign(offer: MachineJobOffer): void }> {
 	const waiting: MachineJobOffer[] = [];
