@@ -33,6 +33,7 @@ import {
 	catalogCampBinding,
 	catalogRealizedProvider,
 	gitBlobDedupeTransport,
+	GHCR_BLOB_REDIRECT_HOSTS,
 	CATALOG_REALIZER_LABELS as L,
 } from "../src/provider-hosting-catalog.js";
 
@@ -41,33 +42,62 @@ const DIGEST = `sha256:${"c".repeat(64)}`;
 const CAMP_ID = "hobo-release/oci-candidate" as CampId;
 const noArtifacts = { get: async () => undefined };
 
-it.each([
-	...CATALOG_REALIZER_REFUSAL_CODES,
-	...RESOLVER_ERROR_CODES,
-])("retains the catalog or resolver contract code %s without private details", (code) => {
-	const privateDetail = "synthetic-private-resolver.invalid";
-	const observation = sanitizeObservation({
-		observation: create(ReconcileObservationRecordSchema, {
-			status: ReconcileStatus.BLOCKED,
-			reasons: [
-				create(ReasonRecordSchema, {
-					code,
-					message: privateDetail,
-					remediation: privateDetail,
-					subject: privateDetail,
-				}),
-			],
-		}),
-		campId: CAMP_ID,
-		reconcilerId: "contract-test",
-		fence: 1n,
-		nowMs: 0,
-		observeFields: [],
-		management: CampManagement.MANAGED,
-	});
-	expect(observation.reasons[0]?.code).toBe(code);
-	expect(JSON.stringify(observation)).not.toContain(privateDetail);
-});
+it.each(CATALOG_REALIZER_REFUSAL_CODES)(
+	"retains catalog code %s without private details",
+	(code) => {
+		const privateDetail = "synthetic-private-resolver.invalid";
+		const observation = sanitizeObservation({
+			observation: create(ReconcileObservationRecordSchema, {
+				status: ReconcileStatus.BLOCKED,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code,
+						message: privateDetail,
+						remediation: privateDetail,
+						subject: privateDetail,
+					}),
+				],
+			}),
+			campId: CAMP_ID,
+			reconcilerId: "contract-test",
+			fence: 1n,
+			nowMs: 0,
+			observeFields: [],
+			management: CampManagement.MANAGED,
+		});
+		expect(observation.reasons[0]?.code).toBe(code);
+		expect(JSON.stringify(observation)).not.toContain(privateDetail);
+	},
+);
+
+it.each(RESOLVER_ERROR_CODES)(
+	"surfaces resolver code %s with the provider message",
+	(code) => {
+		const providerMessage =
+			"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
+		const observation = sanitizeObservation({
+			observation: create(ReconcileObservationRecordSchema, {
+				status: ReconcileStatus.BLOCKED,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code,
+						message: providerMessage,
+						remediation: providerMessage,
+						subject: CAMP_ID,
+					}),
+				],
+			}),
+			campId: CAMP_ID,
+			reconcilerId: "contract-test",
+			fence: 1n,
+			nowMs: 0,
+			observeFields: [],
+			management: CampManagement.MANAGED,
+		});
+		expect(observation.reasons[0]?.code).toBe(code);
+		expect(observation.reasons[0]?.message).toBe(providerMessage);
+	},
+);
 
 function camp(provider: string, labels: Record<string, string>) {
 	return {
@@ -132,6 +162,12 @@ describe("catalogCampBinding", () => {
 			tags: ["v1.2.3"],
 			copyReferrers: false,
 		});
+	});
+
+	it("allowlists GHCR blob redirects for cross-repository mounts", () => {
+		expect(GHCR_BLOB_REDIRECT_HOSTS).toEqual([
+			"pkg-containers.githubusercontent.com",
+		]);
 	});
 
 	it("pushes OCI content on a byte transport and mounts from the Freight's mount source on the Camp's registry", () => {

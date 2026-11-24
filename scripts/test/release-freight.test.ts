@@ -29,6 +29,7 @@ import {
 	releaseFreightManifest,
 	releasePagesWallBudgetMs,
 	releaseSource,
+	releaseWorkflowCredentials,
 	siteTree,
 	startReleasePagesWall,
 } from "../ci/create-github-release.mts";
@@ -43,6 +44,26 @@ const source = releaseSource({
 	HOBO_RELEASE_REVISION: COMMIT,
 	GITHUB_REF: "refs/heads/main",
 	GITHUB_RUN_ID: "42",
+});
+
+describe("releaseWorkflowCredentials", () => {
+	it("resolves github-app:// for the job repository from GITHUB_TOKEN only", async () => {
+		const credentials = releaseWorkflowCredentials({
+			GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+			GITHUB_TOKEN: "synthetic-job-token",
+		});
+		await expect(
+			credentials.resolve("github-app://Hobo-Labs/HoBo", "release-probe"),
+		).resolves.toEqual({ token: "synthetic-job-token" });
+		await expect(
+			credentials.resolve("github-app://Other/Repo", "release-probe"),
+		).rejects.toThrow(/refuses github-app:\/\/Other\/Repo/u);
+		await expect(
+			releaseWorkflowCredentials({
+				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+			}).resolve("github-app://Hobo-Labs/HoBo", "release-probe"),
+		).rejects.toThrow(/needs GITHUB_TOKEN/u);
+	});
 });
 
 describe("releaseFreightManifest", () => {

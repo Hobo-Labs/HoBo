@@ -34,3 +34,16 @@ reads the routing slip at `refs/hobo/routing-slip` with `contents: read`
   journals, do not count these images as part of the train.
 
 `scripts/test/fleet-release-workflow.test.ts` holds the job to this description.
+
+## Release Freight realize
+
+[`create-github-release.mts`](create-github-release.mts) opens release CD with
+`releaseWorkflowCredentials`: camps that declare `github-app://<owner>/<repo>`
+locators authorize through the workflow job `GITHUB_TOKEN` when that repository
+matches `GITHUB_REPOSITORY`. Hermetic checks live in
+[`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
+Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
+
+[`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
+resolution contracts are exercised in
+[`scripts/test/ensure-ci-worker-image.test.ts`](../test/ensure-ci-worker-image.test.ts).

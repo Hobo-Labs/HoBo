@@ -351,6 +351,33 @@ export type ReleaseCredentials = Readonly<{
 	): Promise<Readonly<Record<string, string>>>;
 }>;
 
+const GITHUB_APP_REF = "github-app://";
+
+export function releaseWorkflowCredentials(
+	env: Readonly<Record<string, string | undefined>>,
+): ReleaseCredentials {
+	const repository = env.GITHUB_REPOSITORY?.trim() ?? "";
+	return {
+		async resolve(ref, scope) {
+			if (!ref.startsWith(GITHUB_APP_REF))
+				throw new Error(
+					`release Freight does not resolve credential ${ref} (${scope})`,
+				);
+			const repo = ref.slice(GITHUB_APP_REF.length);
+			if (repository && repo.toLowerCase() !== repository.toLowerCase())
+				throw new Error(
+					`release Freight refuses ${ref}: expected github-app://${repository}`,
+				);
+			const token = env.GITHUB_TOKEN?.trim();
+			if (!token)
+				throw new Error(
+					`release Freight needs GITHUB_TOKEN to authorize ${ref} (${scope})`,
+				);
+			return { token };
+		},
+	};
+}
+
 export type ReleaseCdSeams = Readonly<{
 	http?: ReleaseHttpTransport;
 	credentials?: ReleaseCredentials;
@@ -484,9 +511,8 @@ export async function openReleaseCd(options: {
 		topologyFiles: [RELEASE_DELIVERY_MODULE],
 		http,
 		...(options.seams?.now ? { now: options.seams.now } : undefined),
-		...(options.seams?.credentials
-			? { credentials: options.seams.credentials }
-			: undefined),
+		credentials:
+			options.seams?.credentials ?? releaseWorkflowCredentials(options.env),
 	});
 	if (!opened.ok)
 		throw new Error(

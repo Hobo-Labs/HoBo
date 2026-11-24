@@ -40,6 +40,8 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	it("parses one positive pull budget and falls back on junk", () => {
+		const prev = process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC;
+		delete process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC;
 		assert.equal(
 			workerPullBudgetSec(undefined),
 			DEFAULT_WORKER_PULL_BUDGET_SEC,
@@ -56,6 +58,8 @@ describe("ensure-ci-worker-image", () => {
 			"999999999999999999999",
 		])
 			assert.equal(workerPullBudgetSec(junk), DEFAULT_WORKER_PULL_BUDGET_SEC);
+		if (prev === undefined) delete process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC;
+		else process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC = prev;
 	});
 
 	it("accepts only this repository's lowercase immutable worker ref", () => {
@@ -237,7 +241,10 @@ describe("ensure-ci-worker-image", () => {
 					"fi",
 					'if [ "$1 $2" = "image inspect" ]; then',
 					manifest
-						? `  printf '%s\\n' 'ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}'`
+						? [
+								`  printf '%s\\n' 'ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}'`,
+								"  exit 0",
+							].join("\n")
 						: "  exit 1",
 					"fi",
 					"exit 1",

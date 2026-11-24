@@ -21,6 +21,7 @@ import {
 	RECONCILE_EVENTS,
 	RECONCILE_METRICS,
 } from "../../src/reconcile/index.js";
+import { sanitizeReasons } from "../../src/reconcile/errors.js";
 import {
 	asCamp,
 	asReconciler,
@@ -273,6 +274,62 @@ describe("createCampReconciler", () => {
 		).not.toContain(marker);
 	});
 
+	it("surfaces RESOLVER_CREDENTIAL_MISSING with the provider message", async () => {
+		const h = harness();
+		const marker = "installation token missing for ghcr.io";
+		h.realizer.observe = async () =>
+			create(ReconcileObservationRecordSchema, {
+				status: ReconcileStatus.BLOCKED,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code: "RESOLVER_CREDENTIAL_MISSING",
+						message: marker,
+						remediation: marker,
+						subject: marker,
+					}),
+				],
+			});
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
+		expect(observation.reasons[0]?.code).toBe("RESOLVER_CREDENTIAL_MISSING");
+		expect(observation.reasons[0]?.message).toBe(marker);
+	});
+
+	it("surfaces resolver refusal messages for release operators", () => {
+		const detail =
+			"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "RESOLVER_PROVIDER_REJECTED",
+					message: detail,
+					remediation: detail,
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message).toBe(detail);
+	});
+
+	it("still redacts runner-host detail", () => {
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "runner-host-verify-failed",
+					message: "synthetic-secret",
+					remediation: "x",
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message).toBe("The realizer reported a condition.");
+	});
+
 	it.each([
 		["observe", "realize-blocked", "realize-blocked"],
 		["converge", "realize-blocked", "realize-blocked"],
@@ -286,7 +343,6 @@ describe("createCampReconciler", () => {
 		["converge", "runner-host-verify-failed", "runner-host-verify-failed"],
 		["observe", "runner-host-rollback-failed", "runner-host-rollback-failed"],
 		["converge", "HOBO_CI_DEPLOY_NOT_READY", "HOBO_CI_DEPLOY_NOT_READY"],
-		["observe", "RESOLVER_CREDENTIAL_MISSING", "RESOLVER_CREDENTIAL_MISSING"],
 		[
 			"observe",
 			"synthetic-private-provider.invalid",
