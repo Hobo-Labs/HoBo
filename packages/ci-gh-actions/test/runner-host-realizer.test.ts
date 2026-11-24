@@ -44,7 +44,7 @@ const TARGET: string = recorded.targetImage;
 const digestOf = (image: string) => image.slice(image.indexOf("@") + 1);
 const recordedAdvert = parseMeshAdvert(recorded.meshAdvert);
 if (!recordedAdvert) throw new Error("fixture mesh advert does not parse");
-const CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";
+const CREDENTIAL_REF = "owner://HOBO_CI_GHCR_READ_TOKEN";
 const transport: HttpTransport = async () => {
 	throw new Error("the runner-host realizer makes no HTTP call");
 };

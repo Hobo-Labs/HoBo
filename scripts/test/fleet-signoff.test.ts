@@ -1361,6 +1361,10 @@ if [ "$1" = signoff ] && [ "$2" = --help ]; then
   echo --commit; exit 0
 fi
 if [ "$1" = signoff ] && [ "$2" = create ]; then exit 0; fi
+if [ "$1" = auth ] && [ "$2" = status ]; then
+  [ -n "\${HOBO_GH_SIGN_IN:-}" ] || exit 1
+  printf '  - Token: %s************\\n' "$HOBO_GH_SIGN_IN"; exit 0
+fi
 if [ "$1" = api ] && [ "$2" = 'user/installations?per_page=100' ]; then
   [ -n "\${HOBO_STATUS_INSTALLATIONS:-}" ] || exit 1
   printf '%s\\n' "$HOBO_STATUS_INSTALLATIONS"; exit 0
@@ -2473,7 +2477,7 @@ exec /usr/bin/git "$@"
 			git(repo, ["update-ref", "refs/remotes/origin/main", baseA]);
 			const readOnly = command(
 				{
-					GH_TOKEN: "ghu_fixture",
+					HOBO_GH_SIGN_IN: "ghu_",
 					HOBO_STATUS_INSTALLATIONS: JSON.stringify({
 						owner: "acme",
 						statuses: "read",

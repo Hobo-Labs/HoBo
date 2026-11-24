@@ -44,7 +44,7 @@ import "list"
 // secretRef names a GitHub secret or env var; raw credential values never fit.
 #RunnerIntegrationAuth: {
  method: "github-app" | "oidc" | "device" | "secret-ref"
- secretRef?: string & =~"^(github-secret|env):[A-Z][A-Z0-9_]{0,63}$"
+ secretRef?: string & =~"^owner://[A-Z][A-Z0-9_]{0,63}$"
  projectId?: string & =~"^[a-z0-9]{6,32}$"
  if method == "secret-ref" {secretRef: string}
  if method == "oidc" {projectId: string}
@@ -99,6 +99,9 @@ import "list"
 #RelayMcpQuarantinedDelivery: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", event: string & !="", installationId: int & >0, repositoryId: int & >0, receivedAt: string & !="", attempts?: int & >=0}
 #RelayMcpQuarantine: {deliveries?: [...#RelayMcpQuarantinedDelivery]}
 #RelayMcpRetry: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", status: "queued"}
+#RelayMcpSetupEntry: string & =~"^[A-Z][A-Z0-9_]{0,63}$"
+#RelayMcpSetupStatus: {state: "configured" | "not-configured" | "config-service-denied" | "config-service-unavailable" | "start-failed", missing?: [...#RelayMcpSetupEntry], invalid?: [...#RelayMcpSetupEntry], providable?: [...#RelayMcpSetupEntry], writable?: bool}
+#RelayMcpSetupResult: {outcome: "written" | "declined" | "cancelled" | "nothing-to-provide" | "nothing-valid" | "form-unavailable" | "store-not-writable" | "writer-refused" | "store-unavailable", written?: [...#RelayMcpSetupEntry], refused?: [...#RelayMcpSetupEntry], remaining?: [...#RelayMcpSetupEntry]}
 #MeshRepository: string & =~"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$"
 #MeshNodeId: string & =~"^[A-Za-z0-9_-]{1,64}$"
 #MeshPublicKey: string & =~"^[A-Za-z0-9_-]{43}$"
@@ -250,4 +253,4 @@ import "list"
 #RelayCacheAppState:{purpose: "register" | "install", accountId: #RelayCacheAccountId, subject: string & !="", expiresAtMs: number & >0}
 #RelayCacheVerifiedInstallations: {accountId: #RelayCacheAccountId, appId: number & >0, verifiedIds?: [...(number & >0)] & list.MaxItems(100)}
 #RelayCacheProxyMeter: {leaseId: #RelayCacheLeaseId, proxySessionId: string & =~"^sbx_[A-Za-z0-9_-]+$", bytes?: number & >=0, calls?: number & >=0, readAt: string & !=""}
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #FleetVerdict | #FleetVerdictReport | #FleetReporterEnrollments | #FleetReporterState | #FleetVerdictAllowance | #FleetReporterStatusList | #RoutingSlip | #RunnerRouting | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #RelayMcpSetupStatus | #RelayMcpSetupResult | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #FleetVerdict | #FleetVerdictReport | #FleetReporterEnrollments | #FleetReporterState | #FleetVerdictAllowance | #FleetReporterStatusList | #RoutingSlip | #RunnerRouting | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter

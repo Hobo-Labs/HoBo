@@ -2,7 +2,7 @@ import type { SettingsStore } from "@hobo/connect-ui";
 import type { TrustedVault } from "@hobo/core";
 
 import {
-	type BitwardenSignInKey,
+	type BitwardenApiKey,
 	bitwardenApiKeyPage,
 	bitwardenEndpoints,
 	newBitwardenDeviceId,
@@ -41,7 +41,6 @@ export interface EnsureBitwardenSignInOptions {
 	readonly locator: SettingsStore;
 	readonly fetch: typeof fetch;
 	readonly emit: (line: string) => void;
-	/** A handed-off run (a remote box): the API key may come through the egress proxy. */
 	readonly handOff: boolean;
 	/** Whether the run prints progress; the approval line needs it. */
 	readonly silent: boolean;
@@ -76,19 +75,13 @@ export async function ensureBitwardenSignIn(
 				? parseHttpsOrigin("BITWARDEN_SERVER_URL", serverUrlText)
 				: undefined;
 		const endpoints = bitwardenEndpoints(region, serverUrl);
-		// The API key the ceremony collected (the setup page, or the
-		// environment), else, from a remote box, the one the session's egress
-		// proxy injects as HTTP Basic client authentication.
 		const clientId = vault.reveal("BW_CLIENTID") ?? setting("BW_CLIENTID");
 		const clientSecret = vault.reveal("BW_CLIENTSECRET");
-		let apiKey: BitwardenSignInKey;
+		let apiKey: BitwardenApiKey;
 		if (clientId !== undefined && clientSecret !== undefined)
 			apiKey = parseBitwardenApiKey(clientId, clientSecret);
 		else if (!options.handOff) return undefined;
-		else if (endpoints.selfHosted) {
-			// A self-hosted server reads the key only from the sign-in request's
-			// body, which the session's proxy cannot fill: the owner hands it to
-			// this run through the HoBo MCP App's secret capture instead.
+		else {
 			const page = bitwardenApiKeyPage(endpoints);
 			const given =
 				options.owner === undefined
@@ -109,7 +102,7 @@ export async function ensureBitwardenSignIn(
 				return {
 					code: `HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
 					message:
-						"Your self-hosted Bitwarden server reads your personal API key only from the sign-in request itself; hand it to this run once.",
+						"A handed-off run signs in to Bitwarden with your personal API key; hand it to this run once.",
 					remediation:
 						options.owner === undefined
 							? [
@@ -124,7 +117,9 @@ export async function ensureBitwardenSignIn(
 								],
 				};
 			apiKey = parseBitwardenApiKey(given[0] ?? "", given[1] ?? "");
-		} else apiKey = { kind: "egress-proxy" };
+			vault.put("BW_CLIENTID", apiKey.clientId);
+			vault.put("BW_CLIENTSECRET", apiKey.clientSecret);
+		}
 		// Called only when the store did not open: a token in hand was refused
 		// (revoked or expired), so the API key replaces it with a new one.
 		vault.drop("BWS_ACCESS_TOKEN");

@@ -64,8 +64,8 @@ describe("trusted-main Vercel credential evidence", () => {
 					"Bearer fake-provider-secret",
 				);
 				return Response.json({
-					id: "prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO",
-					accountId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+					id: "prj_0000000000000000000000000000",
+					accountId: "team_000000000000000000000000",
 					name: "hobo-ci",
 				});
 			},
@@ -77,7 +77,7 @@ describe("trusted-main Vercel credential evidence", () => {
 		});
 		assert.deepEqual(calls, [
 			{
-				url: "https://api.vercel.com/v9/projects/prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO?teamId=team_BRBUnG6uGhSsVV3EG5GFV3FM",
+				url: "https://api.vercel.com/v9/projects/hobo-ci",
 				method: "GET",
 				redirect: "manual",
 			},
@@ -124,8 +124,8 @@ describe("trusted-main Vercel credential evidence", () => {
 				return calls === 1
 					? new Response("denied", { status: 403 })
 					: Response.json({
-							id: "prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO",
-							accountId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+							id: "prj_0000000000000000000000000000",
+							accountId: "team_000000000000000000000000",
 							name: "hobo-ci",
 						});
 			},
@@ -139,13 +139,13 @@ describe("trusted-main Vercel credential evidence", () => {
 	it("does not infer access from a foreign project, provider denial, redirect or malformed token", async () => {
 		for (const response of [
 			Response.json({
-				id: "prj_other",
-				accountId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+				id: "not-a-project",
+				accountId: "team_000000000000000000000000",
 				name: "hobo-ci",
 			}),
 			Response.json({
-				id: "prj_J5YGgyIQm09MKI0uqyi0hl9cYrBO",
-				accountId: "team_other",
+				id: "prj_0000000000000000000000000000",
+				accountId: "not-a-team",
 				name: "hobo-ci",
 			}),
 			new Response("fake-provider-secret", { status: 403 }),
@@ -193,7 +193,6 @@ describe("trusted-main Vercel credential evidence", () => {
 		assert.equal(
 			decide({
 				event: "push",
-				store: "bound",
 				inputDirs: relayInputDirs(readFileSync("pnpm-lock.yaml", "utf8")),
 				changed: [
 					".github/workflows/vercel-credential-evidence.yml",

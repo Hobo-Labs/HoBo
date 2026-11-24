@@ -37,7 +37,7 @@ const IMMUTABLE_SUB = /^repo:[^/:@]+@\d+\/[^/:@]+@\d+:/u;
 function unresolved(repository: string, why: string): never {
 	return secretStoreError(
 		"SECRET_STORE_OIDC_SUBJECT_UNRESOLVED",
-		`GitHub did not say which OIDC subject ${repository}'s tokens carry (${why}), so no deploy trust was written. Check it with \`gh api repos/${repository}/actions/oidc/customization/sub\` (sub_claim_prefix), make GH_TOKEN a token that can read the repository and its Actions settings, then re-run hobo ci secret-store connect.`,
+		`GitHub did not say which OIDC subject ${repository}'s tokens carry (${why}), so no deploy trust was written. Check it with \`gh api repos/${repository}/actions/oidc/customization/sub\` (sub_claim_prefix), make sure HoBo's GitHub App (hobo ci app create) is installed on the repository with Actions read access, then re-run hobo ci secret-store connect.`,
 	);
 }
 
@@ -181,7 +181,7 @@ export function githubSubjectMismatch(
 	if (trusted !== "")
 		return tokenSub === trusted
 			? undefined
-			: `the token's subject differs from the subject the deploy identity trusts (${trusted})`;
+			: "the token's subject differs from the subject the deploy identity trusts";
 	return IMMUTABLE_SUB.test(tokenSub)
 		? "the token carries GitHub's immutable subject format (owner and repository suffixed with their ids); a trust bound to the legacy repo:<owner>/<repo> subject refuses it"
 		: undefined;

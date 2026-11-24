@@ -79,8 +79,7 @@ async function session(
 		id: "infisical",
 		chosen: true,
 		missing: [],
-		canAwaitEgressCredential: false,
-		egressCredentialHost: undefined,
+		handOffSignIn: undefined,
 		opened: {
 			id: "infisical",
 			port,
@@ -108,7 +107,7 @@ function cli(
 			ci: createCiCommand({
 				env: {},
 				...(sessions !== undefined
-					? { fleetCredentials: sessions.credentials }
+					? { ownerCredentials: sessions.credentials }
 					: undefined),
 				hostingerHttp: transport,
 			}),

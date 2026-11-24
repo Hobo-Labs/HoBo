@@ -22,7 +22,7 @@ import {
 	type JsonObject,
 } from "../json.js";
 
-/** Default HMAC only allowed in development / explicit opt-in. */
+// public-contract: the development-only SVID HMAC key, used only when the caller opts in.
 export const DEFAULT_SVID_HMAC_SECRET = "hobo-local-svid-dev-only" as const;
 
 export function resolveSvidHmacSecret(input: {
@@ -32,7 +32,7 @@ export function resolveSvidHmacSecret(input: {
 	readonly allowDefaultSecret?: boolean;
 }): string {
 	const env = input.env ?? process.env;
-	const provided = input.hmacSecret ?? env.HOBO_SVID_HMAC_SECRET ?? undefined;
+	const provided = input.hmacSecret;
 	if (provided !== undefined && provided.length > 0) {
 		if (
 			provided === DEFAULT_SVID_HMAC_SECRET &&
@@ -40,7 +40,7 @@ export function resolveSvidHmacSecret(input: {
 			isProductionLike(env)
 		) {
 			throw new Error(
-				"jwt-svid: default HMAC secret is not allowed in production; set HOBO_SVID_HMAC_SECRET to a strong secret or provide ES256 issuer keys",
+				"jwt-svid: default HMAC secret is not allowed in production; pass hmacSecret resolved from the owner's store (owner://HOBO_SVID_HMAC_SECRET) or provide ES256 issuer keys",
 			);
 		}
 		return provided;
@@ -49,7 +49,7 @@ export function resolveSvidHmacSecret(input: {
 		return DEFAULT_SVID_HMAC_SECRET;
 	}
 	throw new Error(
-		"jwt-svid: HOBO_SVID_HMAC_SECRET (or privateKey) required outside development",
+		"jwt-svid: hmacSecret resolved from the owner's store (owner://HOBO_SVID_HMAC_SECRET), or privateKey, required outside development",
 	);
 }
 

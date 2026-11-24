@@ -412,7 +412,7 @@ A runner order is the preference a person writes down: an ordered list of
 runner types (the HoBo fleet, connected machines, GitHub-hosted, and the
 hosted providers Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat and
 RunsOn), with an included-minutes limit on `github` and a monthly spend limit
-on a provider. A relay job names the label it would ask each type for, and
+on a provider. A request names the label the job would ask each type for, and
 `decideRunnerRoute(order, request, facts)` walks the order and returns a
 `RunnerRouteDecision`: the label to run on, the label to queue on when every
 runner that fits is busy, or one sentence saying why nothing can take the
@@ -751,3 +751,165 @@ stateDiagram-v2
   Authorized --> Waiting: execution finishes
   Rejected --> Waiting: execution finishes
 ```
+
+## Relay job seams
+
+The records, frozen names and ports a relay job is answered through, and
+`answerRelayJob`, the one function a relay node calls
+are described in [RELAY-JOB.md](RELAY-JOB.md). In-memory fakes of
+every port and their conformance functions are exported as
+`@hobo/ci/runner-order/testing`.
+
+## Route journal and activity
+
+The route journal keeps every relay job a node was asked and every answer it
+gave (`runner.route.Requested` and `runner.route.Decided`), so "where did this
+job run, and why" can be read after the run (ADR-0183).
+`SqliteRouteJournal`, exported as `@hobo/ci/runner-order/journal-sqlite`, is
+the `RouteJournal` port on SQLite (ADR-0135):
+
+- It takes the store's existing `DatabaseSync` handle as a constructor
+  argument and adds one `route_journal` table, so the journal sits in the
+  store's one partition with its one writer. It never begins a transaction of
+  its own; each write is one statement.
+- It is append-only. A redelivered event (the same account's same relay
+  job's same event type, held in separate columns under one unique key) keeps
+  the first entry.
+- It keeps entries for 90 days (`ROUTE_JOURNAL_RETENTION_MS`), measured
+  against a clock passed in as `nowMs`. Older entries are hidden from reads at
+  once and deleted on the next write or `prune()`.
+- It passes `routeJournalConformance` from `@hobo/ci/runner-order/testing`
+  when given a clock near the conformance events, such as
+  `{ nowMs: () => 10_000 }`; under the system clock those events are past
+  retention and are dropped on record.
+
+`activityFeed(events, filter)`, exported from `@hobo/ci`, reads journal
+entries back as one entry per relay job: where it went (`runner`, `step`,
+`machineId`), the outcome (`routed`, `waiting`, `none`, or `pending` when it
+was asked and has no answer yet), one sentence saying why, and every step the
+walk passed over in words, including steps the relay named that the order
+leaves out. It is a pure projection, so a feed rebuilt from the stored journal
+equals the one built from the same events as they happened. Like the journal,
+it keeps a job's first answer when the answer is redelivered.
+
+- Filters: `repository` (case ignored), `outcome`, `step` (the order step that
+  took the job), `machineId` and `sinceMs`.
+- Pages run newest first, 50 entries by default and at most 500. A page's
+  `next` cursor is passed back as `after`; it holds its place when newer jobs
+  arrive.
+- `journalActivity(journal, accountId, filter)` reads one account's entries
+  through the `RouteJournal` port, narrowed by repository only (a job asked
+  before `sinceMs` and answered after it keeps its request time), and
+  builds the page from at most `ACTIVITY_JOURNAL_READ_LIMIT` (20,000) of them.
+
+## Machine registry
+
+A connected machine is kept in a machine registry (ADR-0183). The rules are in
+`src/runner-order/machine-registry.ts`; `@hobo/ci/runner-order/machine-registry-sqlite`
+keeps them in the host's SQLite file (ADR-0135).
+
+- A machine signs each advert with its mesh identity key (Ed25519), and the
+  advert names that key. The key is pinned on first use (TOFU); it is not
+  checked against the mesh's trusted-key set. An advert for the same id under
+  another key, or from another account, is refused and gives a
+  `machine.taken_over` event; it stays refused until the owner removes the
+  machine. The SQLite store refuses such a move inside its own write.
+- The advert's account and owner (GitHub user id and login) must be the ones
+  the sender authenticated as, and a renewal keeps the owner the machine
+  connected with; otherwise it is refused as `wrong_account` or `wrong_owner`.
+- An advert not renewed for 90 seconds is offline, and the walk passes the
+  machine over. An advert dated ahead of the reader's clock is kept at the
+  reader's clock.
+- Pause and sharing are the owner's settings. A renewal from the machine never
+  undoes them. A paused machine takes no new job; its running jobs finish.
+- `machineCandidates` turns adverts into the walk's `MachineCandidate` values.
+  Whether each owner can read the job's repository is an argument, so a machine
+  shared with `anyone` still serves only repositories its owner can read.
+
+`hobo ci machine status|pause|resume|share|remove` acts on one account's
+machines. By default that is the SQLite file a local node keeps under
+`HOBO_HOME` (`ci/machines.sqlite`, or `HOBO_CI_MACHINE_REGISTRY`), account
+`local` unless `--account` or `HOBO_CI_ACCOUNT_ID` names one. Each change is
+safe to repeat, and `--json` gives the result and the machine event as data.
+
+## Limit readers and provider health
+
+A runner order's two limits and its provider-health rule need measurements
+from outside the walk (ADR-0183,
+[`docs/ci/runner-order.md`](../../docs/ci/runner-order.md)).
+These readers supply them. Each answers "unmeasured" rather than throwing when
+it cannot read, so a missing measurement never blocks a step.
+
+- **Minutes.** `GithubMinutesReader` in `@hobo/ci-gh-actions` reads an owner's
+  Actions usage this month from GitHub's billing usage API
+  (`/organizations/{org}/settings/billing/usage`, then the `/users/` form) and
+  sets it against the compute the owner's plan includes. GitHub lists included
+  compute in dollars per plan, so both sides are counted in minutes of the
+  standard Linux runner at $0.006 a minute: Free 2,000, Pro and Team 3,000,
+  Enterprise 50,000 (read from GitHub's Actions billing page on 2026-11-17).
+  The burn over the last two hours comes from the relay's own job facts
+  (`githubBilledMinutes`), because the billing API reports by day. A refused
+  read, an unknown plan or a reply in another shape is unmeasured; only a 404
+  moves on to the `/users/` form. One reading is reused for five minutes.
+  Used minutes come from each item's gross amount, which overcounts an owner
+  with public-repository CI: GitHub does not charge that usage against the
+  plan, but a usage item carries no repository visibility and the included
+  allowance is reported as the same discount, so it cannot be subtracted
+  here. Such an owner reads closer to its limit than it is.
+  `contracts/github-billing-usage.pact.json` in `@hobo/ci-gh-actions` holds
+  the plan and usage reads, the 404 fallback and the 403 refusal, and a
+  consumer test drives the reader through each of them.
+- **Spend.** `LedgerSpendReader` sums this calendar month (UTC) per hosted
+  provider: settled leases first, at what the ledger charged; then each
+  finished job no settled lease covers, at its label's list rate for the
+  minutes it ran (`listPriceOfJob`). A label with no list rate adds nothing.
+- **List prices.** `HOSTED_LIST_PRICES` in `src/fleet/models.ts` gives every
+  routable hosted provider a per-minute rate for each size the runner-order
+  catalog routes to, with the vendor page, the day it was read and how long it
+  holds. RunsOn has none: it charges a yearly licence and AWS bills the
+  machines to the owner, which the entry records as its reason. These rates
+  price spend only; they do not take part in fleet balancing.
+- **Provider health.** `SqliteProviderHealthStore`
+  (`@hobo/ci/runner-order/provider-health-sqlite`) keeps one
+  `ProviderHealthRecord` per runner type in a SQLite file, so a tripped type
+  stays tripped across a restart. `feedProviderHealth` records a start when a
+  runner took a job, or a miss when the job sat queued past ten minutes, for
+  each hosted label the job asked for; each job counts once per label and
+  outcome, so a redelivered webhook or a poller seeing the job again does not
+  count twice. While a type is tripped, only the trial job's miss doubles the
+  back-off: a miss of a job queued before the trial was let through was routed
+  before the trip, so a burst of misses leaves the first back-off. A start or
+  a miss older than the newest outcome or the trip is a late report (a poller
+  backfill, a job list read newest first): it neither clears the record nor
+  counts towards a trip, and the trip window runs from the earliest to the
+  latest miss, whatever order they were reported in. Marking the outcome counted and writing the record are one
+  SQLite transaction.
+- **Command.** `hobo ci provider-health` lists the kept records with their
+  state, misses and next trial; `hobo ci provider-health clear <provider>
+  <label>` forgets one so the next job may use it. Listing reads the file
+  read-only and never creates it. The file is `--db <path>`,
+  else `HOBO_CI_PROVIDER_HEALTH_DB`, else
+  `$HOBO_HOME/ci/serve/provider-health.sqlite`.
+
+Wiring these into a relay's route facts is the relay answerer's work; until
+then they are built and tested against the in-memory fakes and a stand-in
+GitHub, not proven against a live account. Nothing in the relay calls them
+yet, and no relay writes the provider-health file today. The wiring, in
+`cli-serve-entry`'s `StoreRouteFacts`:
+
+- open one `SqliteProviderHealthStore` at
+  `$HOBO_HOME/ci/serve/provider-health.sqlite` (the path the command reads,
+  or `HOBO_CI_PROVIDER_HEALTH_DB`), and let only that process write it.
+  The command's listing opens the file read-only and creates nothing
+  (`readProviderHealthRecords`); `clear` is the one sanctioned write from
+  outside the relay, a single delete made through SQLite's own locking
+  (busy timeout, WAL), so it never runs as a second writer alongside a
+  transaction (ADR-0135);
+- call `feedProviderHealth(store, jobFact, now)` from the `workflow_job`
+  webhook handler and from the job poller, for every queued, started and
+  completed job, and take `unhealthy` from `store.unhealthy(now)`;
+- build `GithubMinutesReader` with the App's installation token, `plan`
+  undefined (it is read), and `recentMinutes` summing `githubBilledMinutes`
+  over the relay's finished job facts for the owner since the window start;
+- build `LedgerSpendReader` from the ledger's settled leases and the same
+  finished job facts.

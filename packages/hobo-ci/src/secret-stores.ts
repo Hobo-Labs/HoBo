@@ -14,6 +14,7 @@ import {
 	createInfisicalClient,
 	createInfisicalSecretsPort,
 	githubActionsJwtSource,
+	type InfisicalAgentVaultApi,
 	infisicalBindingFromEnv,
 	infisicalSecretRef,
 	oidcAuth,
@@ -77,7 +78,13 @@ export interface OpenedSecretStore {
 	readonly id: SecretStoreId;
 	readonly port: SecretsPort;
 	readonly reference: (name: string) => string;
+	readonly agentVault?: OwnerAgentVault;
 }
+
+export type OwnerAgentVault = Readonly<{
+	api: InfisicalAgentVaultApi;
+	siteUrl: string;
+}>;
 
 export type SecretStoreOpening =
 	| { readonly ok: true; readonly store: OpenedSecretStore }
@@ -300,10 +307,6 @@ async function bitwardenSdkClient(
 	return client;
 }
 
-// public-contract: the bearer an egress-proxy sign-in sends; the proxy swaps in the owner's Infisical token.
-export const EGRESS_PROXY_PLACEHOLDER =
-	"hobo-egress-proxy-injects-the-infisical-token";
-
 /** Open the chosen store with the owner's own sign-in, or say how to sign in. */
 export async function openSecretStore(
 	id: SecretStoreId,
@@ -316,13 +319,9 @@ export async function openSecretStore(
 	const oauthSelected = coordinates.INFISICAL_SIGN_IN === OAUTH_SIGN_IN;
 	const env: Env = {
 		...coordinates,
-		// An explicit sign-in choice must not silently reuse a token from an
-		// earlier choice. OAuth is read-only; the proxy receives only its marker.
 		INFISICAL_TOKEN: oauthSelected
 			? undefined
-			: coordinates.INFISICAL_SIGN_IN === "egress-proxy"
-				? EGRESS_PROXY_PLACEHOLDER
-				: signIn.reveal("INFISICAL_TOKEN"),
+			: signIn.reveal("INFISICAL_TOKEN"),
 	};
 	switch (id) {
 		case "infisical": {
@@ -422,6 +421,10 @@ export async function openSecretStore(
 							? readOnlySecretsPort(createInfisicalSecretsPort({ client }))
 							: createInfisicalSecretsPort({ client }),
 						reference: (name) => infisicalSecretRef(binding, name),
+						agentVault: {
+							api: client.agentVault(),
+							siteUrl: binding.siteUrl,
+						},
 					},
 				};
 			} catch {
@@ -458,20 +461,29 @@ export async function openSecretStore(
 						"Choose the vault the credentials go to on the setup page.",
 					],
 				};
+			const connectToken = signIn.reveal("OP_CONNECT_TOKEN");
+			if (connectHost && !connectToken)
+				return {
+					ok: false,
+					message: "This run holds no 1Password Connect access token yet.",
+					remediation: [
+						"Hand over a Connect access token for the vault when the run asks, in the HoBo MCP App's secret form; the run holds it in memory only.",
+					],
+				};
 			try {
-				// The owner's Connect server, when named: a bearer token only,
-				// which the egress proxy injects when the run holds none.
-				const client = connectHost
-					? createOnePasswordConnectClient({
-							host: connectHost,
-							token:
-								signIn.reveal("OP_CONNECT_TOKEN") ?? EGRESS_PROXY_PLACEHOLDER,
-							...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
-						})
-					: await (deps.onePasswordClient ?? onePasswordSdkClient)(
-							coordinates,
-							signIn,
-						);
+				const client =
+					connectHost && connectToken
+						? createOnePasswordConnectClient({
+								host: connectHost,
+								token: connectToken,
+								...(deps.fetch !== undefined
+									? { fetch: deps.fetch }
+									: undefined),
+							})
+						: await (deps.onePasswordClient ?? onePasswordSdkClient)(
+								coordinates,
+								signIn,
+							);
 				const binding = onePasswordBinding({
 					vaultId,
 					authMode:
@@ -555,7 +567,7 @@ function openBitwardenVault(
 	const clientId = signIn.reveal("BW_CLIENTID");
 	const clientSecret = signIn.reveal("BW_CLIENTSECRET");
 	const organizationKey = signIn.reveal("BITWARDEN_ORG_KEY");
-	if (!organizationKey)
+	if (!organizationKey || !clientId || !clientSecret)
 		return {
 			ok: false,
 			message: "This run holds no sign-in for the Bitwarden vault yet.",
@@ -583,11 +595,7 @@ function openBitwardenVault(
 		);
 		const port = createBitwardenVaultSecretsPort({
 			endpoints,
-			// The key the ceremony collected, or the one the egress proxy injects.
-			apiKey:
-				clientId && clientSecret
-					? parseBitwardenApiKey(clientId, clientSecret)
-					: { kind: "egress-proxy" },
+			apiKey: parseBitwardenApiKey(clientId, clientSecret),
 			deviceId: parseBitwardenDeviceId(coordinates.BITWARDEN_DEVICE_ID ?? ""),
 			organizationId,
 			collectionId,

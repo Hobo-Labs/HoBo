@@ -53,7 +53,7 @@ repository`, `slip names a label not in runnerRouting.labels`, or the Git API fa
 `pinned`, `batch`, or `merge-group` on HoBo CI Fabric `merge_group` route jobs that skip the slip). `refusedBy` is `slip`, `queue` or `none`. A slip fallback also prints a
 `hobo-ci-route-fallback` warning that starts `routing slip not used`; the monitor reads the notice for it, and
 counts under H1 only the warnings that say the route did not run at all. An unreadable PR-batch hosted queue
-fails the route job before it can emit a route notice or public-compute claim. For a saturated same-repository batch, the route job tries the fleet ladder before falling back to `ubuntu-24.04`; when no fleet tier can be verified, the warning records the explicit hosted reason. Version-1 notices (the hosted relay's
+fails the route job before it can emit a route notice or public-compute claim. For a saturated same-repository batch, the route job tries the fleet ladder before falling back to `ubuntu-24.04`, skipping `hobo-trunk` unless `runnerRouting.box.trunkLend` is `1`; when no fleet tier can be verified, the warning records the explicit hosted reason. Version-1 notices (the hosted relay's
 `relay`/`verdict` fields) are no longer read.
 
 ## Signals

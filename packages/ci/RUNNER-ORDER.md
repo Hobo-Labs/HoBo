@@ -113,7 +113,7 @@ step; otherwise a measured limit or runway refusal is enforced by the walk.
    takes the job after all (`unhealthyFallback`). A slow runner beats no
    runner.
 3. Otherwise the outcome is `none` and `reason` is one sentence a person can
-   act on. The relay job fails with it instead of leaving a job queued for a
+   act on. The decision fails with it instead of leaving a job queued for a
    runner that will never come.
 
 ## Machines
@@ -158,11 +158,20 @@ relay is left alone.
 
 ## What is not here
 
-- The host that gathers facts and records decisions. `decideRunnerRoute` is
-  called by the `hobo ci route` command today; no relay endpoint or route job
-  walks an order yet.
-- Billing reads. `MinutesUsage` and the monthly spend are inputs.
-- Prices. The financial models are in [`src/fleet/models.ts`](src/fleet/models.ts).
+- The hosts. `answerRelayJob` ([RELAY-JOB.md](RELAY-JOB.md)) gathers the
+  facts and journals the decision for a job HoBo CI decides for; the walk here
+  stays pure. Routing happens in HoBo CI, never in a workflow: a workflow only
+  sets `runs-on` to a HoBo label, and HoBo CI routes the job when it claims it.
+  No claim path calls the walk for a fleet job yet.
+- Billing reads. `MinutesUsage` and the monthly spend are inputs. They are
+  filled by `LedgerSpendReader` ([`src/runner-order/spend.ts`](src/runner-order/spend.ts))
+  and by `GithubMinutesReader` in `@hobo/ci-gh-actions`; a reader that cannot
+  answer leaves the step allowed.
+- Prices. The financial models and the dated list prices
+  (`HOSTED_LIST_PRICES`) are in [`src/fleet/models.ts`](src/fleet/models.ts).
+
+What each RelayRunner claim reached is on the generated
+[parity scorecard](../../docs/ci/parity-scorecard.md) (ADR-0183).
 
 ## Gates
 

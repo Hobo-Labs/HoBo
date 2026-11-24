@@ -176,6 +176,8 @@ describe("openSecretStore with INFISICAL_SIGN_IN=oauth", () => {
 		await expect(opening.store.port.put("X", "y")).rejects.toBeInstanceOf(
 			InfisicalReadOnlyError,
 		);
+		expect(opening.store.agentVault?.siteUrl).toBe("https://app.infisical.com");
+		expect(opening.store.agentVault?.api.listProjects).toBeInstanceOf(Function);
 	});
 
 	it("never starts it without a browser (a handed-off run)", async () => {

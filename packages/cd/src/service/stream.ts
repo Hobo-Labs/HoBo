@@ -15,7 +15,7 @@ import type {
 	ReadAllOptions,
 } from "@hobo/core";
 import { CD_DEFAULTS } from "../events.js";
-import { messageOf, serviceReason } from "./errors.js";
+import { serviceReason } from "./errors.js";
 import { encode, stringify, type WireValue } from "./wire.js";
 
 /** Every @hobo/cd stream id starts with this prefix (CD_STREAMS). */
@@ -101,11 +101,11 @@ export async function* cdEventStream(
 		yield encode(
 			`event: end\ndata: ${stringify({ reason: "long-poll", lastEventId: cursor?.toString() ?? null })}\n\n`,
 		);
-	} catch (error) {
+	} catch {
 		// The journal is the only thing this generator reads, so any failure is a store failure.
 		const reason = serviceReason(
 			"store-unavailable",
-			messageOf(error),
+			"The CD journal is unavailable.",
 			"stream",
 		);
 		yield encode(

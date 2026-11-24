@@ -47,6 +47,7 @@
 		"@hobo/cd": "workspace:*",
 		"@hobo/cd-kube-fleet": "workspace:*",
 		"@hobo/ci": "workspace:*",
+		"@hobo/ci-dashboard": "workspace:*",
 		"@hobo/ci-gh-actions": "workspace:*",
 		"@hobo/claims": "workspace:*",
 		"@hobo/cli": "workspace:*",

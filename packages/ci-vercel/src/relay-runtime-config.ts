@@ -17,7 +17,6 @@ import { readFileSync } from "node:fs";
 import {
 	createInfisicalClient,
 	type InfisicalClient,
-	infisicalBindingFromEnv,
 	type JwtSource,
 	oidcAuth,
 	type ParsedInfisicalBinding,
@@ -25,14 +24,12 @@ import {
 } from "@hobo/adapter-infisical";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { z } from "zod";
-import { CACHE_CONFIG_KEYS } from "./cache-backend.js";
 import {
 	RELAY_DERIVED_KEYS,
 	withDerivedRelayKeys,
 } from "./relay-derived-keys.js";
 import {
 	RELAY_RUNTIME_CONFIG_KEYS,
-	RELAY_RUNTIME_CONFIG_SETTINGS,
 	RelayRuntimeConfigSchema,
 } from "./relay-runtime-config-schema.js";
 
@@ -88,23 +85,6 @@ function configGaps(
 	};
 }
 
-export function parseRelayCacheBindings(
-	entries: Readonly<Record<string, string>>,
-): Readonly<Partial<Record<(typeof CACHE_CONFIG_KEYS)[number], string>>> {
-	const bindings: Partial<Record<(typeof CACHE_CONFIG_KEYS)[number], string>> =
-		{};
-	for (const key of CACHE_CONFIG_KEYS) {
-		const value = entries[key];
-		if (
-			value !== undefined &&
-			value !== "" &&
-			RELAY_RUNTIME_CONFIG_SETTINGS[key].safeParse(value).success
-		)
-			bindings[key] = value;
-	}
-	return Object.freeze(bindings);
-}
-
 export function parseRelayRuntimeConfig(
 	entries: Readonly<Record<string, string>>,
 ): RelayRuntimeConfig {
@@ -147,6 +127,7 @@ export function parseRelayRuntimeConfig(
 export type RelayConfigSource = Readonly<{
 	kind: "infisical" | "env";
 	read(): Promise<Readonly<Record<string, string>>>;
+	binding?: ParsedInfisicalBinding;
 }>;
 
 /** The relay's keys from an environment; everything else in it is ignored. */
@@ -172,6 +153,7 @@ export function infisicalRelayConfigSource(
 ): RelayConfigSource {
 	return Object.freeze({
 		kind: "infisical",
+		binding: client.binding,
 		async read() {
 			const entries: Record<string, string> = {};
 			for (const secret of await client.listSecrets())
@@ -188,15 +170,15 @@ export function infisicalRelayConfigSource(
  */
 export const vercelOidcJwtSource: JwtSource = () => getVercelOidcToken();
 
-// public-contract: the committed store coordinates the production relay reads (ids only).
-export const COMMITTED_STORE_BINDING_URL = new URL(
-	"../deploy/secret-store.binding.json",
+const BUNDLED_STORE_BINDING_FILE = "deploy/secret-store.binding.json";
+
+// public-contract: the store coordinates HoBo bundles into the production build from the owner's store session; never committed.
+export const BUNDLED_STORE_BINDING_URL = new URL(
+	`../${BUNDLED_STORE_BINDING_FILE}`,
 	import.meta.url,
 );
 
-// The fields of `SecretStoreBinding` (@hobo/secret-store-claim) the relay
-// reads; the record's own parser runs when it is written.
-const CommittedBindingSchema = z
+const BundledBindingSchema = z
 	.object({
 		kind: z.string(),
 		endpoint: z.string(),
@@ -207,33 +189,24 @@ const CommittedBindingSchema = z
 	})
 	.passthrough();
 
-/** Where the production relay signs in, from the committed binding. */
-export type CommittedStoreCoordinates = Readonly<{
+export type BundledStoreCoordinates = Readonly<{
 	binding: ParsedInfisicalBinding;
 	identityId: string;
 }>;
 
-/**
- * The committed `deploy/secret-store.binding.json` (the `SecretStoreBinding`
- * record of `@hobo/secret-store-claim`; coordinates only), as the relay needs
- * it: the store's origin, the relay's project, environment and folder, and
- * the relay's identity. Parsed by the adapter's own binding parser, so a
- * malformed file is refused by name, never quoted. Undefined when the file is
- * absent or names a store the relay cannot read.
- */
-export function parseCommittedStoreCoordinates(
+export function parseBundledStoreCoordinates(
 	text: string,
-): CommittedStoreCoordinates | undefined {
+): BundledStoreCoordinates | undefined {
 	let json: unknown;
 	try {
 		json = JSON.parse(text);
 	} catch {
-		throw new RelayRuntimeConfigError("invalid committed store binding");
+		throw new RelayRuntimeConfigError("invalid bundled store binding");
 	}
-	const record = CommittedBindingSchema.safeParse(json);
+	const record = BundledBindingSchema.safeParse(json);
 	if (!record.success)
-		throw new RelayRuntimeConfigError("invalid committed store binding", [
-			"deploy/secret-store.binding.json",
+		throw new RelayRuntimeConfigError("invalid bundled store binding", [
+			BUNDLED_STORE_BINDING_FILE,
 		]);
 	if (
 		record.data.kind !== "infisical-cloud-attach" &&
@@ -252,80 +225,63 @@ export function parseCommittedStoreCoordinates(
 		oidcAuth({ identityId, jwt: vercelOidcJwtSource });
 		return Object.freeze({ binding, identityId });
 	} catch {
-		throw new RelayRuntimeConfigError("invalid committed store binding", [
-			"deploy/secret-store.binding.json",
+		throw new RelayRuntimeConfigError("invalid bundled store binding", [
+			BUNDLED_STORE_BINDING_FILE,
 		]);
 	}
 }
 
-function readCommittedStoreCoordinates():
-	| CommittedStoreCoordinates
-	| undefined {
+function readBundledStoreCoordinates(): BundledStoreCoordinates | undefined {
 	let text: string;
 	try {
-		text = readFileSync(COMMITTED_STORE_BINDING_URL, "utf8");
+		text = readFileSync(BUNDLED_STORE_BINDING_URL, "utf8");
 	} catch {
 		return undefined;
 	}
-	return parseCommittedStoreCoordinates(text);
+	return parseBundledStoreCoordinates(text);
 }
 
-/**
- * The source a deployment declares. `HOBO_CI_CONFIG_SERVICE=infisical` reads
- * the binding (`INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`,
- * `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`:
- * plain configuration, not secrets) and signs in with `jwt`, the Vercel OIDC
- * token by default. `env` reads the environment.
- *
- * Unset: a production deployment (`VERCEL_ENV=production`) reads the
- * committed `deploy/secret-store.binding.json` bundled with the function
- * (ADR-0179 amendment "Secretless first"), so the Vercel Git integration's
- * build needs no environment variable set through Vercel's API; anything
- * else reads the environment.
- */
+function bundledRelayConfigSource(
+	bundled: BundledStoreCoordinates,
+	options: Readonly<{ jwt?: JwtSource; fetch?: typeof fetch }>,
+): RelayConfigSource {
+	const auth = oidcAuth({
+		identityId: bundled.identityId,
+		jwt: options.jwt ?? vercelOidcJwtSource,
+	});
+	return infisicalRelayConfigSource(
+		options.fetch === undefined
+			? createInfisicalClient({ binding: bundled.binding, auth })
+			: createInfisicalClient({
+					binding: bundled.binding,
+					auth,
+					fetch: options.fetch,
+				}),
+	);
+}
+
 export function relayConfigSourceFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
 	options: Readonly<{
 		jwt?: JwtSource;
 		fetch?: typeof fetch;
-		/** The committed coordinates; read from the bundled file when absent. */
-		committed?: () => CommittedStoreCoordinates | undefined;
+		bundled?: () => BundledStoreCoordinates | undefined;
 	}> = {},
 ): RelayConfigSource {
 	const declared = env.HOBO_CI_CONFIG_SERVICE;
-	if (declared === undefined && env.VERCEL_ENV === "production") {
-		const committed = (options.committed ?? readCommittedStoreCoordinates)();
-		if (committed !== undefined) {
-			const auth = oidcAuth({
-				identityId: committed.identityId,
-				jwt: options.jwt ?? vercelOidcJwtSource,
-			});
-			return infisicalRelayConfigSource(
-				options.fetch === undefined
-					? createInfisicalClient({ binding: committed.binding, auth })
-					: createInfisicalClient({
-							binding: committed.binding,
-							auth,
-							fetch: options.fetch,
-						}),
-			);
-		}
-	}
-	const service = declared ?? "env";
-	if (service === "env") return envRelayConfigSource(env);
-	if (service !== "infisical")
+	if (declared === "env") return envRelayConfigSource(env);
+	if (declared !== undefined && declared !== "infisical")
 		throw new RelayRuntimeConfigError("unknown config service", [
 			"HOBO_CI_CONFIG_SERVICE",
 		]);
-	const binding = infisicalBindingFromEnv(env);
-	const auth = oidcAuth({
-		identityId: env.INFISICAL_IDENTITY_ID,
-		jwt: options.jwt ?? vercelOidcJwtSource,
-	});
-	return infisicalRelayConfigSource(
-		options.fetch === undefined
-			? createInfisicalClient({ binding, auth })
-			: createInfisicalClient({ binding, auth, fetch: options.fetch }),
+	if (declared === undefined && env.VERCEL_ENV !== "production")
+		return envRelayConfigSource(env);
+	const bundled = (options.bundled ?? readBundledStoreCoordinates)();
+	if (bundled !== undefined) return bundledRelayConfigSource(bundled, options);
+	if (declared === undefined) return envRelayConfigSource(env);
+	throw new RelayRuntimeConfigError(
+		"no store binding is bundled with this deployment; HoBo bundles it into a prebuilt build from the owner's store session",
+		[BUNDLED_STORE_BINDING_FILE],
 	);
 }
 

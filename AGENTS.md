@@ -41,6 +41,15 @@ over conflicting repository workflow guidance.
   name is the per-job `GITHUB_TOKEN` (`secrets.GITHUB_TOKEN` or
   `github.token`), which GitHub mints for each job and nobody stores. A change
   that adds an exception to this rule is rejected.
+- HoBo reaches GitHub only through its own GitHub App, with no exceptions. The
+  owner installs the App HoBo prefills (`hobo ci app create`), HoBo keeps the
+  App code it is handed and the App's credentials in the owner's store, and
+  HoBo mints short-lived installation tokens from them; a workflow may also
+  use its per-job `GITHUB_TOKEN`. Agents never ask the owner for a GitHub
+  token of their own, never use a person's `gh` sign-in, and never add store
+  entries, capture forms, fixtures or docs for one. `secrets:guard` and the
+  pre-tool hook reject such changes and commands, and a change that adds an
+  exception is rejected.
 - HoBo manages deployment of its CI relay. Its Vercel project is intentionally
   not Git-linked; do not reconnect it or treat the missing link as a defect.
 
@@ -58,7 +67,12 @@ pre-commit hook and in `agent:check`, so CI checks each pull request's diff
 against its base; it rejects added Actions secret and variable references
 other than the per-job token, secret files, environment credential reads
 (code such as `process.env` lookups and uppercase shell variables),
-`env://` locators, and secret-storing commands. The source guard covers TypeScript, JavaScript, shell, Python,
+`env://` locators, and secret-storing commands. It also rejects committed store
+coordinates: real-looking project, identity, team and deploy project ids under
+binding keys, binding files holding them outside test fixtures, and any
+`deploy/secret-store.binding.json`. They are the owner's private settings and
+live only in the owner's secret store, read through the owner store session;
+fixtures use synthetic values such as all-zero UUIDs. The source guard covers TypeScript, JavaScript, shell, Python,
 CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
 Kotlin, Ruby, Lua, and Swift, including source templates; the same rule applies to every other language.
 

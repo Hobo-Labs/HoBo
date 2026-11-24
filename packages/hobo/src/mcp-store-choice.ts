@@ -10,12 +10,19 @@ import {
 import { z } from "zod";
 
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.js";
-import type {
-	OwnerLinkAnswer,
-	OwnerLinkChannel,
-	OwnerLinkOutcome,
-	OwnerLinkUnavailableReason,
-} from "./owner-link.js";
+import {
+	STORE_OWNER_ENTRIES_DESCRIPTION,
+	STORE_OWNER_ENTRIES_INPUT,
+	STORE_OWNER_ENTRIES_TITLE,
+	STORE_OWNER_ENTRIES_TOOL,
+	storeOwnerEntries,
+} from "./mcp-owner-entries.js";
+import {
+	OWNER_PAGE_COLLECTION,
+	OWNER_PAGE_SECRET_FIELDS,
+	OwnerPageRefused,
+	type OwnerPages,
+} from "./mcp-owner-page.js";
 import type {
 	OwnerSessionState,
 	OwnerStoreLabel,
@@ -26,6 +33,8 @@ import type {
 export const CHOOSE_SECRET_STORE_TOOL = "choose_secret_store";
 // public-contract: the MCP App-only tool that records the owner's store choice from the picker widget.
 export const SUBMIT_STORE_CHOICE_TOOL = "submit_store_choice";
+// public-contract: the MCP tool that takes the sealed answer of HoBo's owner page.
+export const SUBMIT_OWNER_PAGE_TOOL = "submit_owner_page";
 // public-contract: the MCP App resource of the store picker.
 export const STORE_CHOICE_RESOURCE_URI = "ui://hobo/store-choice";
 const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
@@ -34,6 +43,8 @@ const MCP_APPS_EXTENSION_ID = "io.modelcontextprotocol/ui";
 export const STORE_CHOICE_TOOL_NAMES: readonly string[] = Object.freeze([
 	CHOOSE_SECRET_STORE_TOOL,
 	SUBMIT_STORE_CHOICE_TOOL,
+	SUBMIT_OWNER_PAGE_TOOL,
+	STORE_OWNER_ENTRIES_TOOL,
 ]);
 
 export type StoreChoiceSupport = Readonly<{
@@ -71,7 +82,7 @@ export const STORE_OPTIONS = [
 	{
 		id: "infisical",
 		label: "Infisical",
-		needs: "its project ID",
+		needs: "nothing to look up; HoBo finds or creates its project",
 	},
 	{
 		id: "1password",
@@ -85,19 +96,27 @@ export const STORE_OPTIONS = [
 	},
 ] as const;
 
-/** The elicitation's form: the choice and non-secret ids only. */
-export const STORE_CHOICE_PROPERTIES: JsonObject = {
-	store: {
-		type: "string",
-		title: "Secret store",
-		description:
-			"Where HoBo keeps this project's credentials. Its sign-in is asked for separately, never here.",
-		enum: STORE_OPTIONS.map((o) => o.id),
-		enumNames: STORE_OPTIONS.map((o) => o.label),
-	},
+const STORE_FIELD: JsonObject = {
+	type: "string",
+	title: "Secret store",
+	description:
+		"Where HoBo keeps this project's credentials. Its sign-in is asked for separately, never here.",
+	oneOf: STORE_OPTIONS.map((o) => ({ const: o.id, title: o.label })),
+};
+
+const STORE_CHOICE_FIELD_NAMES = [
+	"INFISICAL_PROJECT_ID",
+	"OP_VAULT_ID",
+	"OP_CONNECT_HOST",
+	"BITWARDEN_SERVER_URL",
+] as const;
+
+type StoreFieldName = (typeof STORE_CHOICE_FIELD_NAMES)[number];
+
+const STORE_FIELDS = {
 	INFISICAL_PROJECT_ID: {
 		type: "string",
-		title: "Infisical project ID (Infisical only)",
+		title: "Infisical project ID (optional; HoBo finds or creates its project)",
 	},
 	OP_VAULT_ID: { type: "string", title: "1Password vault ID (1Password only)" },
 	OP_CONNECT_HOST: {
@@ -110,6 +129,11 @@ export const STORE_CHOICE_PROPERTIES: JsonObject = {
 		title: "Self-hosted server (Bitwarden only, optional)",
 		format: "uri",
 	},
+} satisfies Readonly<Record<StoreFieldName, JsonObject>>;
+
+export const STORE_CHOICE_PROPERTIES: JsonObject = {
+	store: STORE_FIELD,
+	...STORE_FIELDS,
 };
 
 /**
@@ -119,7 +143,7 @@ export const STORE_CHOICE_PROPERTIES: JsonObject = {
  */
 export const STORE_CHOICE_SCHEMA: JsonObject = {
 	type: "object",
-	properties: { store: STORE_CHOICE_PROPERTIES.store ?? null },
+	properties: { store: STORE_FIELD },
 	required: ["store"],
 };
 
@@ -127,16 +151,14 @@ export const STORE_CHOICE_SCHEMA: JsonObject = {
 export function storeFieldsSchema(
 	store: "infisical" | "1password" | "bitwarden",
 ): JsonObject {
-	const pick = (names: readonly string[]): JsonObject =>
-		Object.fromEntries(
-			names.map((name) => [name, STORE_CHOICE_PROPERTIES[name] ?? null]),
-		);
+	const pick = (names: readonly StoreFieldName[]): JsonObject =>
+		Object.fromEntries(names.map((name) => [name, STORE_FIELDS[name]]));
 	switch (store) {
 		case "infisical":
 			return {
 				type: "object",
 				properties: pick(["INFISICAL_PROJECT_ID"]),
-				required: ["INFISICAL_PROJECT_ID"],
+				required: [],
 			};
 		case "1password":
 			return {
@@ -162,7 +184,7 @@ export class StoreChoiceInvalid extends Error {
 
 /** What the owner chose, parsed: one shape per store. */
 export type StoreChoice =
-	| { readonly store: "infisical"; readonly projectId: string }
+	| { readonly store: "infisical"; readonly projectId: string | undefined }
 	| {
 			readonly store: "1password";
 			readonly vaultId: string;
@@ -193,10 +215,6 @@ export function parseStoreChoice(answer: JsonValue | undefined): StoreChoice {
 	const a = parsed.data;
 	try {
 		if (a.store === "infisical") {
-			if (a.INFISICAL_PROJECT_ID === undefined)
-				throw new StoreChoiceInvalid(
-					"Infisical needs its project ID (Project Settings in Infisical).",
-				);
 			return { store: "infisical", projectId: a.INFISICAL_PROJECT_ID };
 		}
 		if (a.store === "1password")
@@ -228,7 +246,9 @@ export function locatorSettings(choice: StoreChoice) {
 		case "infisical":
 			return {
 				HOBO_SECRET_STORE: choice.store,
-				INFISICAL_PROJECT_ID: choice.projectId,
+				...(choice.projectId !== undefined
+					? { INFISICAL_PROJECT_ID: choice.projectId }
+					: undefined),
 			};
 		case "1password":
 			return {
@@ -268,46 +288,6 @@ export type ClientRequest = (
 	params: JsonObject,
 ) => Promise<JsonValue | undefined>;
 
-// public-contract: a form answered cancel or decline sooner than this was not answered by a person.
-export const FAST_FORM_ANSWER_MS = 1_500;
-
-export interface FormHealth {
-	watch(request: ClientRequest): ClientRequest;
-	broken(): boolean;
-}
-
-export function createFormHealth(
-	options: { readonly now?: () => number; readonly fastAnswerMs?: number } = {},
-): FormHealth {
-	const now = options.now ?? Date.now;
-	const fastAnswerMs = options.fastAnswerMs ?? FAST_FORM_ANSWER_MS;
-	let broken = false;
-	return {
-		watch: (request) => async (method, params) => {
-			if (method !== "elicitation/create") return request(method, params);
-			const started = now();
-			const answer = await request(method, params);
-			const parsed = elicitResult.safeParse(answer);
-			if (parsed.success && parsed.data.action === "accept") broken = false;
-			else if (parsed.success && now() - started < fastAnswerMs) broken = true;
-			return answer;
-		},
-		broken: () => broken,
-	};
-}
-
-export const SIGN_IN_FIELDS: Readonly<
-	Record<StoreChoice["store"], readonly string[]>
-> = Object.freeze({
-	infisical: ["INFISICAL_CLI_SESSION"],
-	"1password": [
-		"ONEPASSWORD_EMAIL",
-		"ONEPASSWORD_SECRET_KEY",
-		"ONEPASSWORD_PASSWORD",
-	],
-	bitwarden: ["BW_CLIENTID", "BW_CLIENTSECRET"],
-});
-
 export interface StoreChoiceApp {
 	handles(tool: string): boolean;
 	tools(support: StoreChoiceSupport): readonly StoreChoiceToolDefinition[];
@@ -334,6 +314,7 @@ const callArgs = z
 	.object({
 		cwd: z.string().trim().min(1).optional().catch(undefined),
 		reselect: z.boolean().optional().catch(undefined),
+		channel: z.enum(["form", "page"]).optional().catch(undefined),
 	})
 	.loose();
 
@@ -357,38 +338,37 @@ function labelFor(store: StoreChoice["store"]): OwnerStoreLabel {
 	return STORE_OPTIONS.find((o) => o.id === store)?.label ?? "Infisical";
 }
 
-function linkUnavailable(reason: OwnerLinkUnavailableReason): CallToolResult {
-	const why = {
-		"owner-link-relay-unconfigured":
-			"no HoBo CI relay is configured for this project (HOBO_CI_RELAY_URL or .hobo/ci.json)",
-		"owner-link-relay-unreachable": "HoBo's relay could not be reached",
-		"owner-link-relay-not-ready": "HoBo's relay has no hand-off mailbox ready",
-		"owner-link-relay-refused": "HoBo's relay refused the hand-off",
-	} satisfies Record<OwnerLinkUnavailableReason, string>;
-	return result(
-		`This host shows no working private form, and HoBo's private link is unavailable: ${why[reason]}. Nothing was collected or saved. Report that this host cannot provide a secure HoBo owner hand-off (${reason}); do not ask the owner for store settings in chat.`,
-		{ status: "secure-form-unavailable", reason },
-		true,
-	);
-}
+const entriesDefinition: StoreChoiceToolDefinition = {
+	name: STORE_OWNER_ENTRIES_TOOL,
+	title: STORE_OWNER_ENTRIES_TITLE,
+	description: STORE_OWNER_ENTRIES_DESCRIPTION,
+	inputSchema: STORE_OWNER_ENTRIES_INPUT,
+};
 
-function linkResult(
-	outcome: Extract<OwnerLinkOutcome, { kind: "issued" | "waiting" }>,
-	waitedMs: number,
-): CallToolResult {
-	const minutes = Math.max(
-		1,
-		Math.round((outcome.expiresAtMs - Date.now()) / 60_000),
+const sealedArg = z.object({ sealed: z.string().min(1) });
+
+async function ownerPage(
+	cwd: string,
+	pages: OwnerPages,
+): Promise<CallToolResult> {
+	const opened = await pages.open(cwd);
+	return result(
+		[
+			"This host shows neither MCP forms nor MCP Apps, so HoBo made its own owner page.",
+			`1. Publish structuredContent.html unchanged as an Artifact with capabilities {"db":{}} and show it to the owner. Its key fingerprint is ${opened.fingerprint}.`,
+			"2. Wait until the owner says they sent it.",
+			`3. Read the document ${OWNER_PAGE_COLLECTION}/${opened.page} from that artifact's database and call ${SUBMIT_OWNER_PAGE_TOOL} with its "sealed" field, unchanged.`,
+			"The answer is encrypted to this HoBo server; you carry it but cannot read it. Do not ask the owner for any of it in chat.",
+		].join("\n"),
+		{
+			status: "owner-page",
+			page: opened.page,
+			fingerprint: opened.fingerprint,
+			document: `${OWNER_PAGE_COLLECTION}/${opened.page}`,
+			capabilities: { db: {} },
+			html: opened.html,
+		},
 	);
-	const text =
-		outcome.kind === "issued"
-			? `This host shows no working private form, so HoBo opened a one-time private link for the owner. Show the owner this link and ask them to open it on any device: ${outcome.url} It carries only a single-use ticket, works for about ${minutes} minutes, and what they enter there is encrypted for this HoBo session alone. Then call choose_secret_store again with the same cwd; it waits for their answer.`
-			: `The owner has not finished the private link yet (waited ${Math.round(waitedMs / 1000)} seconds). If they have not opened it, show them this link again: ${outcome.url} Then call choose_secret_store again with the same cwd.`;
-	return result(text, {
-		status: "link",
-		url: outcome.url,
-		waiting: outcome.kind === "waiting",
-	});
 }
 
 const UNAVAILABLE = result(
@@ -420,8 +400,15 @@ function sessionResult(
 			);
 		case "sign-in-needed":
 			return result(
-				`The owner chose ${state.store}, and its sign-in has not completed (${state.code}). Call choose_secret_store again when the owner is ready; their choice is kept.`,
-				{ status: "sign-in-needed", store: state.store, code: state.code },
+				`The owner chose ${state.store}, and its sign-in has not completed (${state.code}${state.reason === undefined ? "" : `: ${state.reason}`}). Call choose_secret_store again when the owner is ready; their choice is kept.`,
+				{
+					status: "sign-in-needed",
+					store: state.store,
+					code: state.code,
+					...(state.reason === undefined
+						? undefined
+						: { reason: state.reason }),
+				},
 				true,
 			);
 		case "unchosen":
@@ -453,6 +440,12 @@ const chooseArgs: JsonObject = {
 		description:
 			"Ask the owner to choose again even when a store is already chosen.",
 	},
+	channel: {
+		type: "string",
+		enum: ["form", "page"],
+		description:
+			"page: HoBo's sealed owner page (an Artifact), also for the store's sign-in; use it when the host declares forms but the owner never sees them.",
+	},
 };
 
 export function createStoreChoiceApp(
@@ -460,16 +453,12 @@ export function createStoreChoiceApp(
 		readonly cwd?: string;
 		readonly locatorFor?: (cwd: string) => SettingsStore;
 		readonly sessions?: OwnerStoreSessions;
-		readonly link?: OwnerLinkChannel;
-		readonly handOver?: (name: string, value: string) => void;
-		readonly formHealth?: FormHealth;
-		readonly linkWaitMs?: number;
+		readonly pages?: OwnerPages;
+		readonly deposit?: (name: string, value: string) => void;
 	} = {},
 ): StoreChoiceApp {
 	const locatorFor =
 		options.locatorFor ?? ((cwd: string) => ownerLocator({ cwd }));
-	const health = options.formHealth ?? createFormHealth();
-	const linkWaitMs = options.linkWaitMs ?? 30_000;
 	const awaitingWidget = new Set<string>();
 	const cwdOf = (args: JsonObject) =>
 		path.resolve(callArgs.parse(args).cwd ?? options.cwd ?? process.cwd());
@@ -482,7 +471,6 @@ export function createStoreChoiceApp(
 	const record = async (
 		cwd: string,
 		answer: JsonValue | undefined,
-		signIn?: OwnerLinkAnswer,
 	): Promise<CallToolResult> => {
 		let choice: StoreChoice;
 		try {
@@ -504,48 +492,8 @@ export function createStoreChoiceApp(
 		} catch {
 			return NOT_SAVED;
 		}
-		if (signIn !== undefined)
-			for (const name of SIGN_IN_FIELDS[choice.store]) {
-				const value = signIn[name];
-				if (value !== undefined && value !== "")
-					options.handOver?.(name, value);
-			}
 		return establish(cwd, labelFor(choice.store));
 	};
-
-	const issueLink = async (cwd: string): Promise<CallToolResult> => {
-		const link = options.link;
-		if (link === undefined) return UNAVAILABLE;
-		const issued = await link.issue(cwd);
-		if (issued.kind === "issued") return linkResult(issued, 0);
-		if (issued.kind === "unavailable") return linkUnavailable(issued.reason);
-		return linkUnavailable("owner-link-relay-refused");
-	};
-
-	const collectLink = async (
-		cwd: string,
-	): Promise<CallToolResult | undefined> => {
-		const link = options.link;
-		if (link === undefined || !link.pending(cwd)) return undefined;
-		const started = Date.now();
-		const collected = await link.collect(cwd, linkWaitMs);
-		switch (collected.kind) {
-			case "answered": {
-				const answer: JsonObject = { ...collected.answer };
-				return record(cwd, answer, collected.answer);
-			}
-			case "waiting":
-				return linkResult(collected, Date.now() - started);
-			case "unavailable":
-				return linkUnavailable(collected.reason);
-			case "issued":
-			case "refused":
-				return undefined;
-		}
-	};
-
-	const hostCannotAsk = (support: StoreChoiceSupport) =>
-		!support.apps && (!support.formElicitation || health.broken());
 
 	const savedChoice = async (cwd: string) => {
 		const saved = chosenStore.safeParse(await locatorFor(cwd).read());
@@ -563,6 +511,7 @@ export function createStoreChoiceApp(
 			);
 		const first = elicitResult.safeParse(
 			await request("elicitation/create", {
+				mode: "form",
 				message:
 					"Choose where HoBo keeps this project's credentials. Its sign-in is asked for separately; nothing you enter here is shown to the agent.",
 				requestedSchema: STORE_CHOICE_SCHEMA,
@@ -576,6 +525,7 @@ export function createStoreChoiceApp(
 		const option = STORE_OPTIONS.find((o) => o.id === store);
 		const second = elicitResult.safeParse(
 			await request("elicitation/create", {
+				mode: "form",
 				message: `${option?.label ?? store}: ${option?.needs ?? ""}. Only HoBo reads this.`,
 				requestedSchema: storeFieldsSchema(store),
 			}),
@@ -586,50 +536,119 @@ export function createStoreChoiceApp(
 		return record(cwd, isJsonObject(fields) ? { ...fields, store } : { store });
 	};
 
+	const submitOwnerPage = async (
+		args: JsonObject,
+		pages: OwnerPages,
+	): Promise<CallToolResult> => {
+		const sealed = sealedArg.safeParse(args);
+		if (!sealed.success)
+			return result(
+				"Pass the page's `sealed` text exactly as the artifact database holds it.",
+				{ status: "invalid", rule: "sealed-missing" },
+				true,
+			);
+		let opened: Awaited<ReturnType<OwnerPages["unseal"]>>;
+		try {
+			opened = await pages.unseal(sealed.data.sealed);
+		} catch (error) {
+			if (!(error instanceof OwnerPageRefused)) throw error;
+			return result(
+				`HoBo could not open the page's answer (${error.reason}); nothing was recorded. Call choose_secret_store for a new page.`,
+				{ status: "refused", reason: error.reason },
+				true,
+			);
+		}
+		const { answers } = opened;
+		for (const name of OWNER_PAGE_SECRET_FIELDS) {
+			const value = answers[name]?.trim();
+			if (value !== undefined && value !== "") options.deposit?.(name, value);
+		}
+		const choice: JsonObject = Object.fromEntries([
+			["store", answers.store],
+			...STORE_CHOICE_FIELD_NAMES.flatMap((name) => {
+				const value = answers[name];
+				return value === undefined ? [] : [[name, value]];
+			}),
+		]);
+		return record(opened.cwd, choice);
+	};
+
+	const baseTools = (
+		support: StoreChoiceSupport,
+	): readonly StoreChoiceToolDefinition[] => {
+		const choose: StoreChoiceToolDefinition = {
+			name: CHOOSE_SECRET_STORE_TOOL,
+			title: "Connect the owner's secret store",
+			description:
+				"Connect the owner's secret store to this HoBo session: reuse an established session, or ask the owner privately (a host form or HoBo's widget) which store to use and sign in. Takes no store settings; returns only a status and the store's name.",
+			inputSchema: {
+				type: "object",
+				properties: chooseArgs,
+				additionalProperties: false,
+			},
+			...(support.apps
+				? {
+						_meta: {
+							ui: { resourceUri: STORE_CHOICE_RESOURCE_URI },
+							"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
+						},
+					}
+				: undefined),
+		};
+		if (!support.apps)
+			return support.formElicitation || options.pages === undefined
+				? [choose]
+				: [
+						choose,
+						{
+							name: SUBMIT_OWNER_PAGE_TOOL,
+							title: "Hand HoBo the owner page's sealed answer",
+							description:
+								"Pass the `sealed` text the owner's page saved, exactly as read from the artifact database. It is encrypted to this HoBo server; only HoBo can open it.",
+							inputSchema: {
+								type: "object",
+								properties: {
+									sealed: { type: "string" },
+									cwd: {
+										type: "string",
+										description:
+											"The project directory; the server's working directory by default.",
+									},
+								},
+								required: ["sealed"],
+								additionalProperties: false,
+							},
+						},
+					];
+		return [
+			choose,
+			{
+				name: SUBMIT_STORE_CHOICE_TOOL,
+				title: "Record the store choice",
+				description:
+					"Called only by HoBo's store picker widget with the owner's answer.",
+				inputSchema: {
+					type: "object",
+					properties: { ...familyArg, ...STORE_CHOICE_PROPERTIES },
+					required: ["store"],
+					additionalProperties: false,
+				},
+				_meta: {
+					ui: {
+						resourceUri: STORE_CHOICE_RESOURCE_URI,
+						visibility: ["app"],
+					},
+				},
+			},
+		];
+	};
+
 	return {
 		handles: (tool) => STORE_CHOICE_TOOL_NAMES.includes(tool),
 		tools(support) {
-			const choose: StoreChoiceToolDefinition = {
-				name: CHOOSE_SECRET_STORE_TOOL,
-				title: "Connect the owner's secret store",
-				description:
-					"Connect the owner's secret store to this HoBo session: reuse an established session, or ask the owner privately (a host form, HoBo's widget, or, where the host shows neither, a one-time private link to show the owner) which store to use and sign in. Takes no store settings; returns only a status, the store's name, and for status link the URL to show the owner. Call again with the same cwd after showing a link.",
-				inputSchema: {
-					type: "object",
-					properties: chooseArgs,
-					additionalProperties: false,
-				},
-				...(support.apps
-					? {
-							_meta: {
-								ui: { resourceUri: STORE_CHOICE_RESOURCE_URI },
-								"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
-							},
-						}
-					: undefined),
-			};
-			if (!support.apps) return [choose];
-			return [
-				choose,
-				{
-					name: SUBMIT_STORE_CHOICE_TOOL,
-					title: "Record the store choice",
-					description:
-						"Called only by HoBo's store picker widget with the owner's answer.",
-					inputSchema: {
-						type: "object",
-						properties: { ...familyArg, ...STORE_CHOICE_PROPERTIES },
-						required: ["store"],
-						additionalProperties: false,
-					},
-					_meta: {
-						ui: {
-							resourceUri: STORE_CHOICE_RESOURCE_URI,
-							visibility: ["app"],
-						},
-					},
-				},
-			];
+			return options.sessions === undefined
+				? baseTools(support)
+				: [...baseTools(support), entriesDefinition];
 		},
 		resources(support) {
 			return support.apps
@@ -663,14 +682,31 @@ export function createStoreChoiceApp(
 		},
 		async callTool(tool, args, support, request) {
 			const cwd = cwdOf(args);
+			if (tool === STORE_OWNER_ENTRIES_TOOL) {
+				const outcome = await storeOwnerEntries({
+					cwd,
+					args,
+					sessions: options.sessions,
+					ask:
+						support.formElicitation && request !== undefined
+							? (params) => request("elicitation/create", params)
+							: undefined,
+				});
+				return result(outcome.text, outcome.structured, outcome.isError);
+			}
+			if (tool === SUBMIT_OWNER_PAGE_TOOL) {
+				if (options.pages === undefined) return UNAVAILABLE;
+				return submitOwnerPage(args, options.pages);
+			}
 			if (tool === SUBMIT_STORE_CHOICE_TOOL) {
 				if (!support.apps || !awaitingWidget.has(cwd)) return UNAVAILABLE;
 				awaitingWidget.delete(cwd);
 				return record(cwd, args);
 			}
-			const reselect = callArgs.parse(args).reselect === true;
-			const fromLink = await collectLink(cwd);
-			if (fromLink !== undefined) return fromLink;
+			const parsedCall = callArgs.parse(args);
+			const reselect = parsedCall.reselect === true;
+			if (parsedCall.channel === "page" && options.pages !== undefined)
+				return ownerPage(cwd, options.pages);
 			if (!reselect) {
 				const held = options.sessions?.status(cwd);
 				if (held?.established === true && held.store !== undefined)
@@ -684,28 +720,10 @@ export function createStoreChoiceApp(
 				} catch {
 					return NOT_SAVED;
 				}
-				if (saved !== undefined) {
-					const established = await establish(cwd, labelFor(saved));
-					return established.structuredContent?.status === "sign-in-needed" &&
-						options.link !== undefined &&
-						hostCannotAsk(support)
-						? issueLink(cwd)
-						: established;
-				}
+				if (saved !== undefined) return establish(cwd, labelFor(saved));
 			}
-			if (
-				support.formElicitation &&
-				request !== undefined &&
-				!(health.broken() && options.link !== undefined)
-			) {
-				const asked = await elicitChoice(cwd, health.watch(request));
-				const status = asked.structuredContent?.status;
-				return (status === "cancel" || status === "decline") &&
-					health.broken() &&
-					options.link !== undefined
-					? issueLink(cwd)
-					: asked;
-			}
+			if (support.formElicitation && request !== undefined)
+				return elicitChoice(cwd, request);
 			if (support.apps) {
 				awaitingWidget.add(cwd);
 				return {
@@ -716,7 +734,8 @@ export function createStoreChoiceApp(
 					_meta: { "ui/resourceUri": STORE_CHOICE_RESOURCE_URI },
 				};
 			}
-			return issueLink(cwd);
+			if (options.pages === undefined) return UNAVAILABLE;
+			return ownerPage(cwd, options.pages);
 		},
 	};
 }

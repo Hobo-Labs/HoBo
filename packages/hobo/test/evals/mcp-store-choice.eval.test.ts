@@ -15,24 +15,14 @@ import {
 } from "../../src/mcp-stdio.js";
 import {
 	CHOOSE_SECRET_STORE_TOOL,
-	createFormHealth,
 	createStoreChoiceApp,
-	type FormHealth,
 	STORE_CHOICE_RESOURCE_URI,
 	SUBMIT_STORE_CHOICE_TOOL,
 } from "../../src/mcp-store-choice.js";
-import {
-	createOwnerLinkChannel,
-	type OwnerLinkChannel,
-} from "../../src/owner-link.js";
 import type {
 	OwnerSessionState,
 	OwnerStoreSessions,
 } from "../../src/owner-store-session.js";
-import {
-	OWNER_HANDOFF_RELAY,
-	ownerHandoffRelay,
-} from "../support/owner-handoff-relay.js";
 
 const message = z.record(z.string(), z.json());
 type Message = z.infer<typeof message>;
@@ -64,7 +54,9 @@ const elicitSchema = z.object({
 			z.string(),
 			z.object({
 				enum: z.array(z.string()).optional(),
-				enumNames: z.array(z.string()).optional(),
+				oneOf: z
+					.array(z.object({ const: z.string(), title: z.string() }))
+					.optional(),
 				format: z.string().optional(),
 			}),
 		),
@@ -92,7 +84,8 @@ function fakeSessions(
 				throw new Error("not used");
 			},
 		}),
-		close: () => established.clear(),
+		agentVault: () => undefined,
+		close: async () => established.clear(),
 	};
 	return { sessions, establish };
 }
@@ -103,9 +96,6 @@ function connect(
 		readonly saved?: Record<string, string>;
 		readonly sessions?: OwnerStoreSessions;
 		readonly failWrites?: boolean;
-		readonly link?: OwnerLinkChannel;
-		readonly formHealth?: FormHealth;
-		readonly handOver?: (name: string, value: string) => void;
 	} = {},
 ) {
 	const input = new PassThrough();
@@ -131,14 +121,6 @@ function connect(
 			...(options.sessions !== undefined
 				? { sessions: options.sessions }
 				: undefined),
-			...(options.link !== undefined ? { link: options.link } : undefined),
-			...(options.formHealth !== undefined
-				? { formHealth: options.formHealth }
-				: undefined),
-			...(options.handOver !== undefined
-				? { handOver: options.handOver }
-				: undefined),
-			linkWaitMs: 0,
 		}),
 	);
 	const serving = serveMcpStdio({
@@ -293,10 +275,10 @@ describe("EVAL choose_secret_store: a private owner ceremony", () => {
 			const first = await client.elicitation();
 			const picker = elicitSchema.parse(first.params);
 			expect(Object.keys(picker.requestedSchema.properties)).toEqual(["store"]);
-			expect(picker.requestedSchema.properties.store?.enumNames).toEqual([
-				"Infisical",
-				"1Password",
-				"Bitwarden",
+			expect(picker.requestedSchema.properties.store?.oneOf).toEqual([
+				{ const: "infisical", title: "Infisical" },
+				{ const: "1password", title: "1Password" },
+				{ const: "bitwarden", title: "Bitwarden" },
 			]);
 			client.reply(first, {
 				action: "accept",
@@ -564,219 +546,6 @@ describe("EVAL choose_secret_store: a private owner ceremony", () => {
 			});
 			expect(client.saved.HOBO_SECRET_STORE).toBe("infisical");
 			agentVisible(client.trace(), stderr());
-		} finally {
-			await client.close();
-		}
-	});
-});
-
-const SESSION_PASTE = "c3ludGhldGljLXByaXZhdGUtaW5maXNpY2FsLXNlc3Npb24=";
-
-function linkFixture() {
-	const clock = { now: 1_800_000_000_000 };
-	const relay = ownerHandoffRelay(clock);
-	const link = createOwnerLinkChannel({
-		relayOrigin: async () => OWNER_HANDOFF_RELAY,
-		fetch: relay.fetchRelay,
-		now: () => clock.now,
-		sleep: async (ms) => {
-			clock.now += ms;
-		},
-	});
-	const handedOver = new Map<string, string>();
-	const handOver = vi.fn((name: string, value: string) => {
-		handedOver.set(name, value);
-	});
-	return { clock, relay, link, handOver, handedOver };
-}
-
-const linkResult = z.object({
-	status: z.literal("link"),
-	url: z.string(),
-	waiting: z.boolean(),
-});
-
-describe("EVAL choose_secret_store: the one-time private link where the host cannot ask", () => {
-	it("treats a form cancelled faster than a person could answer as no form, and connects the store through the link", async () => {
-		const stderr = stderrSpy();
-		const { sessions, establish } = fakeSessions();
-		const fixture = linkFixture();
-		const client = connect(
-			{ elicitation: { form: {} } },
-			{
-				sessions,
-				link: fixture.link,
-				handOver: fixture.handOver,
-				formHealth: createFormHealth({ now: () => fixture.clock.now }),
-			},
-		);
-		try {
-			await client.init();
-			const pending = client.choose({ cwd: "/synthetic/project" });
-			client.reply(await client.elicitation(), { action: "cancel" });
-			const offered = toolResult.parse((await client.answer(pending)).result);
-			expect(offered.isError).toBeUndefined();
-			const link = linkResult.parse(offered.structuredContent);
-			expect(link.waiting).toBe(false);
-			expect(link.url).toMatch(
-				/^https:\/\/relay\.example\/owner-handoff#[A-Za-z0-9_-]{43}$/u,
-			);
-			expect(offered.content[0]?.text).toContain(link.url);
-			expect(establish).not.toHaveBeenCalled();
-
-			const early = toolResult.parse(
-				(await client.answer(client.choose({ cwd: "/synthetic/project" })))
-					.result,
-			);
-			expect(early.structuredContent).toEqual({ ...link, waiting: true });
-			expect(client.trace().match(/elicitation\/create/gu)).toHaveLength(1);
-
-			expect(
-				await fixture.relay.owner(link.url, {
-					store: "infisical",
-					INFISICAL_PROJECT_ID: PRIVATE,
-					INFISICAL_CLI_SESSION: SESSION_PASTE,
-				}),
-			).toBe(204);
-			const done = toolResult.parse(
-				(await client.answer(client.choose({ cwd: "/synthetic/project" })))
-					.result,
-			);
-			expect(done.structuredContent).toEqual({
-				status: "established",
-				store: "Infisical",
-			});
-			expect(client.saved).toEqual({
-				HOBO_SECRET_STORE: "infisical",
-				INFISICAL_PROJECT_ID: PRIVATE,
-			});
-			expect(fixture.handedOver).toEqual(
-				new Map([["INFISICAL_CLI_SESSION", SESSION_PASTE]]),
-			);
-			expect(establish).toHaveBeenCalledWith("/synthetic/project");
-
-			expect(
-				await fixture.relay.owner(link.url, {
-					store: "bitwarden",
-				}),
-			).toBe(410);
-			const reused = toolResult.parse(
-				(await client.answer(client.choose({ cwd: "/synthetic/project" })))
-					.result,
-			);
-			expect(reused.structuredContent).toEqual({
-				status: "established",
-				store: "Infisical",
-			});
-			expect(client.saved.HOBO_SECRET_STORE).toBe("infisical");
-
-			agentVisible(client.trace(), stderr());
-			expect(client.trace()).not.toContain(SESSION_PASTE);
-			const wire = fixture.relay.sent.join("\n");
-			for (const secret of [PRIVATE, SESSION_PASTE, link.url.split("#")[1]])
-				expect(wire).not.toContain(secret);
-		} finally {
-			await client.close();
-		}
-	});
-
-	it("does not mistake a person who closed the form for a host that cannot ask", async () => {
-		const { sessions } = fakeSessions();
-		const fixture = linkFixture();
-		let now = 0;
-		const client = connect(
-			{ elicitation: { form: {} } },
-			{
-				sessions,
-				link: fixture.link,
-				formHealth: createFormHealth({
-					now: () => {
-						now += 5_000;
-						return now;
-					},
-				}),
-			},
-		);
-		try {
-			await client.init();
-			const pending = client.choose();
-			client.reply(await client.elicitation(), { action: "cancel" });
-			expect(
-				toolResult.parse((await client.answer(pending)).result)
-					.structuredContent,
-			).toEqual({ status: "cancel" });
-			expect(fixture.link.pending("/synthetic/project")).toBe(false);
-		} finally {
-			await client.close();
-		}
-	});
-
-	it("offers the link at once to a host with no form, and names the reason when no relay can carry it", async () => {
-		const stderr = stderrSpy();
-		const { sessions } = fakeSessions();
-		const fixture = linkFixture();
-		const client = connect({}, { sessions, link: fixture.link });
-		const unconfigured = connect(
-			{},
-			{
-				sessions,
-				link: createOwnerLinkChannel({ relayOrigin: async () => undefined }),
-			},
-		);
-		try {
-			await client.init();
-			const offered = toolResult.parse(
-				(await client.answer(client.choose())).result,
-			);
-			expect(linkResult.parse(offered.structuredContent).waiting).toBe(false);
-			expect(client.trace()).not.toContain("elicitation/create");
-
-			await unconfigured.init();
-			const refused = toolResult.parse(
-				(await unconfigured.answer(unconfigured.choose())).result,
-			);
-			expect(refused).toMatchObject({
-				isError: true,
-				structuredContent: {
-					status: "secure-form-unavailable",
-					reason: "owner-link-relay-unconfigured",
-				},
-			});
-			agentVisible(client.trace() + unconfigured.trace(), stderr());
-		} finally {
-			await client.close();
-			await unconfigured.close();
-		}
-	});
-
-	it("sends the owner a link to sign in again when a chosen store needs it and the host's forms do not work", async () => {
-		const { sessions } = fakeSessions({
-			status: "sign-in-needed",
-			store: "1Password",
-			code: "HOBO_OWNER_SIGN_IN",
-		});
-		const fixture = linkFixture();
-		const formHealth = createFormHealth({ now: () => fixture.clock.now });
-		const client = connect(
-			{ elicitation: {} },
-			{
-				saved: { HOBO_SECRET_STORE: "1password", OP_VAULT_ID: VAULT_ID },
-				sessions,
-				link: fixture.link,
-				formHealth,
-			},
-		);
-		try {
-			await client.init();
-			await formHealth.watch(async () => ({ action: "cancel" }))(
-				"elicitation/create",
-				{},
-			);
-			const offered = toolResult.parse(
-				(await client.answer(client.choose())).result,
-			);
-			expect(linkResult.parse(offered.structuredContent).waiting).toBe(false);
-			expect(offered.content[0]?.text).not.toContain(VAULT_ID);
 		} finally {
 			await client.close();
 		}
