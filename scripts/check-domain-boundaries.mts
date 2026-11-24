@@ -11,7 +11,8 @@ export type DomainBoundaryViolation = Readonly<{
 	rule:
 		| "domain-no-raw-io"
 		| "domain-no-secret-fields"
-		| "domain-verify-required";
+		| "domain-verify-required"
+		| "domain-story-required";
 	message: string;
 }>;
 
@@ -169,8 +170,11 @@ export function checkDomainBoundaries(rootDir: string): DomainBoundaryReport {
 			const relPkg = toPosix(relative(rootDir, pkgDir));
 			checkedModels.push(relPkg);
 			const testFiles = listTsFiles(join(pkgDir, "test"));
-			const hasVerifyTest = testFiles.some((testFile) =>
-				readFileSync(testFile, "utf8").includes("Domain.verify("),
+			const testSources = testFiles.map((testFile) =>
+				readFileSync(testFile, "utf8"),
+			);
+			const hasVerifyTest = testSources.some((source) =>
+				source.includes("Domain.verify("),
 			);
 			if (!hasVerifyTest) {
 				violations.push({
@@ -178,6 +182,17 @@ export function checkDomainBoundaries(rootDir: string): DomainBoundaryReport {
 					rule: "domain-verify-required",
 					message:
 						"package declares Domain.Model(...) without a Domain.verify(...) test under test/",
+				});
+			}
+			const hasStoryTest = testSources.some((source) =>
+				source.includes("Story.make("),
+			);
+			if (!hasStoryTest) {
+				violations.push({
+					file: relPkg,
+					rule: "domain-story-required",
+					message:
+						"package declares Domain.Model(...) without an Alchemy Domain BDD Story.make(...) test under test/",
 				});
 			}
 		}

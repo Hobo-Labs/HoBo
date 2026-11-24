@@ -58,6 +58,14 @@ run = "pnpm run test:unit"
 description = "Impact-scoped agent validation"
 run = "pnpm run agent:check"
 
+[tasks."typecheck:effect"]
+description = "Run @effect/tsgo diagnostics on impacted Effect/Alchemy packages"
+run = "pnpm run typecheck:effect"
+
+[tasks."lint:domain-boundaries"]
+description = "Verify Alchemy Domain isolation, schema hygiene, Domain.verify, and Story BDD tests"
+run = "pnpm run lint:domain-boundaries"
+
 [tasks.doctor]
 description = "Environment doctor"
 run = "pnpm run doctor"

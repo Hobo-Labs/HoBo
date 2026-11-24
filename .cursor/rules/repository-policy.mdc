@@ -6,5 +6,9 @@ alwaysApply: true
 Follow the repository-wide rules at the start of `AGENTS.md`. They apply to
 Cursor and all plugins and skills, including the completion discipline, running
 only tests related to your changes (never unfiltered full-repo test sweeps unless
-explicitly requested with `HOBO_ALLOW_BROAD_TESTS=1`), and the prohibition on
-explanatory comments, deferred-work markers, and planning or design documents.
+explicitly requested with `HOBO_ALLOW_BROAD_TESTS=1`), using `@effect/tsgo`
+(`pnpm run typecheck:effect`) for Effect code, fetching `https://alchemy.run/llms.txt`
+before guessing Alchemy URLs (`llms-full.txt` only for specific per-resource API
+references), using `@alchemy.run/domain/Story` BDD stories for domain models,
+and the prohibition on explanatory comments, deferred-work markers, and planning
+or design documents.

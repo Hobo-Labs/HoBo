@@ -124,12 +124,10 @@ export function HostingerRunnerProvider(
 		reconcile: ({ news }) =>
 			Effect.gen(function* () {
 				if (!HOSTINGER_MACHINE_ID.test(news.machineId)) {
-					return yield* Effect.fail(
-						new HostingerRunnerError({
-							code: "HOSTINGER_MACHINE_INVALID",
-							message: `invalid Hostinger machine id: ${news.machineId}`,
-						}),
-					);
+					return yield* new HostingerRunnerError({
+						code: "HOSTINGER_MACHINE_INVALID",
+						message: `invalid Hostinger machine id: ${news.machineId}`,
+					});
 				}
 				const locator = parseOwnerCredentialLocator(news.credentialLocator);
 				const credential = yield* resolveOwnerCredential(
@@ -161,12 +159,10 @@ export function HostingerRunnerProvider(
 								}),
 				});
 				if (response.status < 200 || response.status >= 300) {
-					return yield* Effect.fail(
-						new HostingerRunnerError({
-							code: "HOSTINGER_TRANSPORT_FAILED",
-							message: `hostinger runner returned status ${response.status}`,
-						}),
-					);
+					return yield* new HostingerRunnerError({
+						code: "HOSTINGER_TRANSPORT_FAILED",
+						message: `hostinger runner returned status ${response.status}`,
+					});
 				}
 				return {
 					runnerId: `hostinger:${news.machineId}`,

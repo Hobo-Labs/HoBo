@@ -28,21 +28,21 @@ export const ClusterRunnerPoolSpec = Schema.Struct({
 });
 export type ClusterRunnerPoolSpec = typeof ClusterRunnerPoolSpec.Type;
 
-export class FleetNoCapacityError extends Schema.TaggedError<FleetNoCapacityError>()(
-	"FleetNoCapacityError",
-	{
-		reasons: Schema.Array(Schema.String),
-	},
-) {}
+export class FleetNoCapacityError extends Schema.TaggedError<
+	FleetNoCapacityError,
+	{ readonly brand: unique symbol }
+>()("FleetNoCapacityError", {
+	reasons: Schema.Array(Schema.String),
+}) {}
 
-export class FleetBudgetExceededError extends Schema.TaggedError<FleetBudgetExceededError>()(
-	"FleetBudgetExceededError",
-	{
-		exposureMicros: Schema.Int,
-		requestedMicros: Schema.Int,
-		ceilingMicros: Schema.Int,
-	},
-) {}
+export class FleetBudgetExceededError extends Schema.TaggedError<
+	FleetBudgetExceededError,
+	{ readonly brand: unique symbol }
+>()("FleetBudgetExceededError", {
+	exposureMicros: Schema.Int,
+	requestedMicros: Schema.Int,
+	ceilingMicros: Schema.Int,
+}) {}
 
 export const DispatchedLeaseSchema = Schema.Struct({
 	slotId: Schema.String,

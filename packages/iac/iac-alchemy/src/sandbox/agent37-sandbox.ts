@@ -169,13 +169,11 @@ function resolveAgent37AuthHeader(
 	return Effect.gen(function* () {
 		if (credentialLocator !== undefined) {
 			if (options.resolveCredential === undefined) {
-				return yield* Effect.fail(
-					new Agent37SandboxError({
-						code: "AGENT37_AUTH_MISSING",
-						message:
-							"owner credential resolver is required for owner:// locator",
-					}),
-				);
+				return yield* new Agent37SandboxError({
+					code: "AGENT37_AUTH_MISSING",
+					message:
+						"owner credential resolver is required for owner:// locator",
+				});
 			}
 			const validated = parseOwnerCredentialLocator(credentialLocator);
 			const value = yield* resolveOwnerCredential(

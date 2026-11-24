@@ -45,7 +45,7 @@ describe("checkDomainBoundaries", () => {
 		});
 	});
 
-	it("fails closed when Domain.Model lacks a Domain.verify test", () => {
+	it("fails closed when Domain.Model lacks Domain.verify or Story.make BDD tests", () => {
 		withTempWorkspace((root) => {
 			const domainDir = join(root, "packages", "sample", "src", "domain");
 			const testDir = join(root, "packages", "sample", "test");
@@ -61,8 +61,10 @@ describe("checkDomainBoundaries", () => {
 			);
 
 			const report = checkDomainBoundaries(root);
-			assert.equal(report.violations.length, 1);
-			assert.equal(report.violations[0]?.rule, "domain-verify-required");
+			assert.deepEqual(
+				report.violations.map((violation) => violation.rule),
+				["domain-verify-required", "domain-story-required"],
+			);
 		});
 	});
 

@@ -31,7 +31,9 @@ PR check still examines the full diff against its base.
 The anti-slop installer leaves its comment-required assertion rule disabled so
 the lint configuration follows the same source policy.
 
-Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
+Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `alchemy-domain`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
+
+For EffectTS and Alchemy v2 work, [`tsconfig.base.json`](../tsconfig.base.json) enables `@effect/language-service` through `@effect/tsgo` (`pnpm run typecheck:effect -- --staged` checks only impacted Effect/Alchemy packages), [`oxlint.config.ts`](../oxlint.config.ts) enables the vendored `anti-slop-effect` rule on Effect/Alchemy domain, cluster, and IaC paths, and `pnpm run lint:domain-boundaries` verifies that every `@alchemy.run/domain` model stays free of raw I/O and secret-shaped fields and ships both `Domain.verify` and `@alchemy.run/domain/Story` BDD story tests. Agents look up Alchemy docs from `https://alchemy.run/llms.txt` (fetching `https://alchemy.run/llms-full.txt` only for specific per-resource API references) and read version-matched Effect v4 docs in `node_modules/effect/AGENTS.md`.
 
 Run `bash scripts/setup-agent-tools.sh --help` to inspect the zero-key setup path. The optional gbrain MCP launcher refuses to start without a configured embedding provider and reports how to configure local Ollama.
 

@@ -122,12 +122,10 @@ export function createOwnerStoreSecretProvider(
 						}),
 				});
 				if (secretValue.trim().length === 0) {
-					return yield* Effect.fail(
-						new AlchemyEnvironmentConfigError({
-							code: "OWNER_SECRET_MISSING",
-							message: `owner credential ${validatedLocator} resolved empty`,
-						}),
-					);
+					return yield* new AlchemyEnvironmentConfigError({
+						code: "OWNER_SECRET_MISSING",
+						message: `owner credential ${validatedLocator} resolved empty`,
+					});
 				}
 				resolvedEntries[configKey] = secretValue;
 			}
@@ -149,9 +147,7 @@ export function createSecretlessStackSecrets(
 export function readRedactedConfigSecret(
 	key: string,
 ): Effect.Effect<Redacted.Redacted<string>, Config.ConfigError> {
-	return Effect.gen(function* () {
-		return yield* Config.Redacted(key);
-	});
+	return Config.Redacted(key);
 }
 
 export function redactForProfileDetails(value: string): string {

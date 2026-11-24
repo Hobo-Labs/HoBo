@@ -114,44 +114,43 @@ export function initSqliteDomainTables(driver: SqliteDriver): void {
 
 const ReceiptPayloadSchema = Schema.Struct({
 	stream: Schema.String,
-	version: Schema.Number,
+	version: Schema.Finite,
 	events: Schema.Array(Schema.Any),
 	reply: Schema.Any,
 });
 
-const AcceptedResultSchema = Schema.Struct({
-	_tag: Schema.Literal("Accepted"),
+const AcceptedResultSchema = Schema.TaggedStruct("Accepted", {
 	receipt: ReceiptPayloadSchema,
 });
 
 const ViewSnapshotSchema = Schema.Struct({
 	state: Schema.Any,
-	version: Schema.Number,
-	checkpoints: Schema.Record(Schema.String, Schema.Number),
-	seq: Schema.Number,
-	generation: Schema.optionalKey(Schema.Number),
+	version: Schema.Finite,
+	checkpoints: Schema.Record(Schema.String, Schema.Finite),
+	seq: Schema.Finite,
+	generation: Schema.optionalKey(Schema.Finite),
 });
 
 const ViewEntrySchema = Schema.Struct({
-	seq: Schema.Number,
+	seq: Schema.Finite,
 	event: Schema.Any,
 	envelope: EnvelopeJson,
 	state: Schema.Any,
 });
 
 const StreamMetaSchema = Schema.Struct({
-	seq: Schema.Number,
-	checkpoints: Schema.Record(Schema.String, Schema.Number),
-	origin: Schema.Tuple([Schema.Number, Schema.Number]),
+	seq: Schema.Finite,
+	checkpoints: Schema.Record(Schema.String, Schema.Finite),
+	origin: Schema.Tuple([Schema.Finite, Schema.Finite]),
 });
 
 const StreamEntrySchema = Schema.Struct({
-	seq: Schema.Number,
+	seq: Schema.Finite,
 	event: Schema.Any,
 	envelope: EnvelopeJson,
 });
 
-const CheckpointsSchema = Schema.Record(Schema.String, Schema.Number);
+const CheckpointsSchema = Schema.Record(Schema.String, Schema.Finite);
 
 const decodeEnvelope = Schema.decodeUnknownSync(EnvelopeJson);
 const decodeAccepted = Schema.decodeUnknownSync(AcceptedResultSchema);

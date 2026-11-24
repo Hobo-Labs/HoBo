@@ -64,13 +64,11 @@ export function LocalRunnerProvider(registry: LocalRunnerRegistry) {
 		reconcile: ({ news }) =>
 			Effect.gen(function* () {
 				if (news.machineId.trim().length === 0 || news.maxConcurrency < 1) {
-					return yield* Effect.fail(
-						new LocalRunnerError({
-							code: "LOCAL_MACHINE_INVALID",
-							message:
-								"local runner requires machineId and maxConcurrency >= 1",
-						}),
-					);
+					return yield* new LocalRunnerError({
+						code: "LOCAL_MACHINE_INVALID",
+						message:
+							"local runner requires machineId and maxConcurrency >= 1",
+					});
 				}
 				const registered = yield* Effect.tryPromise({
 					try: () =>

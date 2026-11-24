@@ -66,6 +66,16 @@ over conflicting repository workflow guidance.
   `pnpm run test:all`, `pnpm run check:all`, `pnpm run verify:full`, `pnpm run validate:final`,
   unfiltered `turbo run test`, or unfiltered root `vitest run` unless the user explicitly
   requests a full-repo sweep (pass `HOBO_ALLOW_BROAD_TESTS=1` only when explicitly authorized).
+- When writing or modifying EffectTS or Alchemy v2 code, use the `@effect/tsgo`
+  language service (`tsconfig.base.json` enables `@effect/language-service`; run
+  impact-scoped `pnpm run typecheck:effect -- --staged` or `--packages=<pkg>`),
+  consult version-matched `node_modules/effect/AGENTS.md`, fetch
+  `https://alchemy.run/llms.txt` first to locate Alchemy guide/concept pages
+  instead of guessing URLs (fetch `https://alchemy.run/llms-full.txt` only when
+  a specific per-resource API reference is needed), and use Alchemy Domain BDD
+  (`@alchemy.run/domain/Story` `Story.make` + `Domain.verify` +
+  `pnpm run lint:domain-boundaries`) for stateful domain models — not just
+  machine IaC.
 
 Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
 and Copilot. Standalone documentation comments follow the same rule. Run
@@ -96,13 +106,15 @@ Kotlin, Ruby, Lua, and Swift, including source templates; the same rule applies 
 
 # Agent tooling for this repo
 
-This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub Copilot CLI** for Superpowers) with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
+This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub Copilot CLI** for Superpowers) with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, `alchemy-domain`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
 
 | Tool | Type | What it does | Invoke |
 |---|---|---|---|
 | **sdlc** (repo-local) | skill | Coordinates implementation and review across harnesses under the repository rules above. | `sdlc`, `/sdlc --finish` |
+| **alchemy-domain** (repo-local) | skill | Guides EffectTS (`@effect/tsgo`), Alchemy v2 (`alchemy.run/llms.txt`), and `@alchemy.run/domain/Story` BDD modeling and verification. | automatic for Effect/Alchemy IaC or Domain BDD work |
 | **hobo-setup** (repo-local) | skill | Guides HoBo MCP connection and private owner store setup independently of deployment. | automatic for HoBo MCP or owner-store setup |
 | **gh-stack** (repo-local) | skill + CLI ext | Non-interactive rules for official `github/gh-stack` (`gh extension install github/gh-stack`). | `gh stack init\|add\|submit\|sync\|merge` |
+| **@effect/tsgo** | CLI + TS plugin | Effect Language Service for TypeScript-Go (`tsconfig.base.json` plugin + impact-scoped `pnpm run typecheck:effect`). Local, no keys. | `pnpm run typecheck:effect -- --staged` |
 | **superpowers** (`obra/Superpowers`) | plugin (skills library) | A development **methodology**: TDD, systematic debugging, and code-review workflows. Planning and design artifact workflows are prohibited by the repository rules above. No keys. | `requesting-code-review`, `systematic-debugging` |
 | **impeccable** (`pbakaus/impeccable`) | skill (visual work) | Reviews and improves implemented visual surfaces using the source styles and components. The checked-in harness copies follow the repository policy and do not generate planning or design documents. | automatic on visual surfaces; `impeccable critique` / `audit` / `polish` |
 | **Higgsfield MCP** (`mcp.higgsfield.ai`) | MCP (hosted, official) | Image/video generation across 30+ models. Account **OAuth**, no API key stored in-repo; project-scoped so it needs human approval before use. Sends prompts to Higgsfield. | `mcp__higgsfield__*` |
