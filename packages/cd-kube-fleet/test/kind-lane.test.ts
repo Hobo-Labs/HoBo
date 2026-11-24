@@ -1,5 +1,6 @@
 // Live lane: the realizers against real hubs running in
 // `kind`. Gated on availability; every skip names what is missing. Set up
+// with the runbook in README.md ("Live kind lane"):
 //   HOBO_KIND_OCM_API, HOBO_KIND_OCM_TOKEN, HOBO_KIND_OCM_CLUSTER
 //   HOBO_KIND_KARMADA_API, HOBO_KIND_KARMADA_TOKEN, HOBO_KIND_KARMADA_MEMBER
 // and NODE_EXTRA_CA_CERTS pointing at the kind clusters' CA bundle.
