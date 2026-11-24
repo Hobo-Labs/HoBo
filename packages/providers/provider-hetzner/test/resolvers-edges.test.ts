@@ -49,7 +49,7 @@ import type { JsonObject, JsonValue } from "../src/json.js";
 
 type Rec = JsonObject;
 
-const CREDENTIAL_REF = "env://HCLOUD_TOKEN";
+const CREDENTIAL_REF = "owner://HCLOUD_TOKEN";
 const TOKEN = "fakehetznerprojecttoken0123456789abcdefgh";
 const NOW_MS = Date.parse("2026-08-19T12:00:00.000Z");
 const OBJECT_STORAGE_KEYS = Object.freeze({

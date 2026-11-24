@@ -8,10 +8,16 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { CredentialResolver } from "@hobo/cd";
 import { createHoboCli } from "@hobo/cli";
 import { afterEach, describe, expect, it } from "vitest";
 import pact from "../contracts/ci-cli.pact.json";
-import { ciRepositoryFromRemote, createCiCommand } from "../src/ci-command.js";
+import {
+	CI_ACCOUNT_TOKEN_REF,
+	ciRepositoryFromRemote,
+	createCiCommand,
+} from "../src/ci-command.js";
+import { OwnerCredentialUnavailable } from "../src/owner-store-session.js";
 import { ownerStoreEntries } from "./support/owner-store-stand-in.js";
 
 /** The contract fixture of what a relay answers `GET /v1/mesh/nodes` with. */
@@ -29,6 +35,21 @@ afterEach(async () => {
 	);
 });
 
+function ownerAccount(
+	token: () => string | undefined,
+	resolved: string[] = [],
+): CredentialResolver {
+	return {
+		async resolve(ref) {
+			resolved.push(ref);
+			const value = ref === CI_ACCOUNT_TOKEN_REF ? token() : undefined;
+			if (value === undefined)
+				throw new OwnerCredentialUnavailable(ref, "not-in-store");
+			return { token: value };
+		},
+	};
+}
+
 async function fixture(
 	options: {
 		remotes?: string;
@@ -38,6 +59,7 @@ async function fixture(
 		fetch?: typeof fetch;
 		credentialFetch?: typeof fetch;
 		ownerStore?: boolean;
+		account?: CredentialResolver | "no-session";
 	} = {},
 ) {
 	const home = await mkdtemp(join(tmpdir(), "hobo-ci-command-"));
@@ -88,7 +110,6 @@ async function fixture(
 	const deps: Parameters<typeof createCiCommand>[0] = {
 		env: {
 			HOBO_HOME: home,
-			HOBO_CI_ACCOUNT_TOKEN: "cli-test-token",
 			...options.env,
 		},
 		interactive: options.interactive ?? false,
@@ -106,6 +127,8 @@ async function fixture(
 		},
 	};
 	if (options.prompt) deps.prompt = options.prompt;
+	const account = options.account ?? ownerAccount(() => "cli-test-token");
+	if (account !== "no-session") deps.ownerCredentials = () => account;
 	const cli = createHoboCli({ commands: { ci: createCiCommand(deps) } });
 	return { cli, home, requests };
 }
@@ -373,8 +396,11 @@ describe("hobo ci setup", () => {
 	});
 	it("answers status offline from this machine's own report when no relay can be asked", async () => {
 		const reports = await readFile(MESH_REPORTS_FIXTURE, "utf8");
-		const local = async (env: NodeJS.ProcessEnv, args: string[] = []) => {
-			const f = await fixture({ env });
+		const local = async (
+			account: "no-session" | undefined,
+			args: string[] = [],
+		) => {
+			const f = await fixture(account === undefined ? {} : { account });
 			// Where a local runner keeps its state: .hobo/ci-local in the repository.
 			await mkdir(join(f.home, ".hobo", "ci-local"), { recursive: true });
 			await writeFile(
@@ -387,13 +413,13 @@ describe("hobo ci setup", () => {
 			};
 		};
 		// No relay selected at all.
-		const unselected = await local({});
+		const unselected = await local(undefined);
 		expect(unselected.result.exitCode).toBe(0);
 		expect(unselected.result.stdout).toContain("No CI relay is selected.");
 		expect(unselected.result.stdout).toMatch(/^box-a\s+live\s+2\/4/m);
 		expect(unselected.requests).toEqual([]);
 		// A relay, but no credential to ask it with.
-		const unauthenticated = await local({ HOBO_CI_ACCOUNT_TOKEN: undefined }, [
+		const unauthenticated = await local("no-session", [
 			"--relay",
 			"https://relay.example",
 			"--json",
@@ -431,15 +457,25 @@ describe("hobo ci setup", () => {
 		const unselected = await none.cli.run(["ci", "status"], { cwd: none.home });
 		expect(unselected.exitCode).toBe(2);
 		expect(unselected.stdout).toContain("Select your CI relay");
-		const noToken = await fixture({
-			env: { HOBO_CI_ACCOUNT_TOKEN: undefined },
-		});
+		const noToken = await fixture({ account: "no-session" });
 		const unauthenticated = await noToken.cli.run(
 			["ci", "status", "--relay", "https://relay.example", "--json"],
 			{ cwd: noToken.home },
 		);
 		expect(unauthenticated.exitCode).not.toBe(0);
-		expect(unauthenticated.stdout).toContain("HOBO_CI_AUTH_REQUIRED");
+		expect(unauthenticated.stdout).toContain(
+			"HOBO_CI_ACCOUNT_CREDENTIAL_UNAVAILABLE",
+		);
+		expect(unauthenticated.stdout).toContain("choose_secret_store");
+		const notInStore = await fixture({
+			account: ownerAccount(() => undefined),
+		});
+		const missing = await notInStore.cli.run(
+			["ci", "enable", "--relay", "https://relay.example", ...consent],
+			{ cwd: notInStore.home },
+		);
+		expect(missing.exitCode).not.toBe(0);
+		expect(missing.stdout).toContain("owner://HOBO_CI_ACCOUNT_TOKEN");
 		// A report that is not one is no report.
 		await mkdir(join(none.home, ".hobo", "ci-local"), { recursive: true });
 		await writeFile(
@@ -693,15 +729,18 @@ describe("hobo ci setup", () => {
 			"https://relay.example/v1/app-registration/setup",
 		);
 	});
-	it("reads a bounded token file and keeps it out of JSON failures", async () => {
+	it("reads no account credential from the environment or a token file", async () => {
+		const resolved: string[] = [];
 		const { cli, home } = await fixture({
-			env: { HOBO_CI_ACCOUNT_TOKEN: undefined },
-			fetch: async () =>
-				new Response("sensitive response body", { status: 403 }),
+			env: { HOBO_CI_ACCOUNT_TOKEN: "environment-token" },
+			account: ownerAccount(() => undefined, resolved),
+			fetch: async () => {
+				throw new Error("no request without the owner's credential");
+			},
 		});
 		const token = join(home, "token");
-		await writeFile(token, "private-token\n");
-		const result = await cli.run(
+		await writeFile(token, "file-token");
+		const fromFile = await cli.run(
 			[
 				"ci",
 				"enable",
@@ -709,6 +748,33 @@ describe("hobo ci setup", () => {
 				"https://relay.example",
 				"--token-file",
 				token,
+				...consent,
+			],
+			{ cwd: home },
+		);
+		expect(fromFile.exitCode).toBe(2);
+		const fromEnvironment = await cli.run(
+			["ci", "enable", "--relay", "https://relay.example", ...consent],
+			{ cwd: home },
+		);
+		expect(fromEnvironment.exitCode).not.toBe(0);
+		expect(fromEnvironment.stdout).toContain(
+			"HOBO_CI_ACCOUNT_CREDENTIAL_UNAVAILABLE",
+		);
+		expect(resolved).toEqual([CI_ACCOUNT_TOKEN_REF]);
+	});
+	it("keeps the owner's account credential out of JSON failures", async () => {
+		const { cli, home } = await fixture({
+			account: ownerAccount(() => "private-token"),
+			fetch: async () =>
+				new Response("sensitive response body", { status: 403 }),
+		});
+		const result = await cli.run(
+			[
+				"ci",
+				"enable",
+				"--relay",
+				"https://relay.example",
 				...consent,
 				"--json",
 				"--verbose",
@@ -722,41 +788,29 @@ describe("hobo ci setup", () => {
 			"sensitive response body",
 		);
 	});
-	it("pins a token file for one invocation even when the mounted credential rotates", async () => {
-		let tokenFile = "";
+	it("pins the owner's credential for one invocation even when the store entry rotates", async () => {
 		let calls = 0;
+		let stored = "original-account-token";
+		const resolved: string[] = [];
 		const { cli, home } = await fixture({
-			env: { HOBO_CI_ACCOUNT_TOKEN: undefined },
+			account: ownerAccount(() => stored, resolved),
 			fetch: async (_url, init) => {
 				expect(new Headers(init?.headers).get("authorization")).toBe(
 					"Bearer original-account-token",
 				);
 				const interaction = pact.interactions[calls++];
 				if (!interaction) throw new Error("Unexpected request");
-				if (calls === 1)
-					await writeFile(tokenFile, "rotated-different-account-token");
+				if (calls === 1) stored = "rotated-different-account-token";
 				return Response.json(interaction.response.body);
 			},
 		});
-		tokenFile = join(home, "token");
-		await writeFile(tokenFile, "original-account-token");
 		const result = await cli.run(
-			[
-				"ci",
-				"enable",
-				"--relay",
-				"https://relay.example",
-				"--token-file",
-				tokenFile,
-				...consent,
-			],
+			["ci", "enable", "--relay", "https://relay.example", ...consent],
 			{ cwd: home },
 		);
 		expect(result.exitCode).toBe(0);
 		expect(calls).toBe(3);
-		expect(await readFile(tokenFile, "utf8")).toBe(
-			"rotated-different-account-token",
-		);
+		expect(resolved).toEqual([CI_ACCOUNT_TOKEN_REF]);
 	});
 	it("reports a committed connection separately from failure to save its local link", async () => {
 		const { cli, home, requests } = await fixture();
@@ -855,8 +909,16 @@ describe("hobo ci setup", () => {
 				});
 			return Response.json({ message: "Not Found" }, { status: 404 });
 		};
+		const resolved: string[] = [];
 		const { cli, home, requests } = await fixture({
-			env: { GH_TOKEN: "synthetic-github-token" },
+			account: {
+				async resolve(ref) {
+					resolved.push(ref);
+					if (ref !== "github-app://Hobo-Labs/HoBo")
+						throw new OwnerCredentialUnavailable(ref, "not-in-store");
+					return { token: "synthetic-installation-token" };
+				},
+			},
 			credentialFetch,
 			ownerStore: true,
 		});
@@ -881,6 +943,7 @@ describe("hobo ci setup", () => {
 		);
 		expect(result.exitCode).toBe(0);
 		expect(requests).toEqual([]);
+		expect(resolved).toEqual(["github-app://Hobo-Labs/HoBo"]);
 		expect(credentialSeen).toEqual([
 			"GET api.github.com/repos/Hobo-Labs/HoBo",
 			"GET api.github.com/repos/Hobo-Labs/HoBo/actions/oidc/customization/sub",

@@ -144,7 +144,9 @@ The job and the relay each authenticate to Infisical through OIDC:
   `Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main`.
   `job_workflow_ref` identifies the called implementation; `workflow_ref` pins
   the top-level caller. `app-credentials.yml` is the only supported reusable
-  caller of the writer job. This caller split is **built, not proven**: link
+  caller of the writer job; its calling job grants `actions: read`, which the
+  called workflow's `route` job needs, or GitHub refuses the call before any
+  job starts. This caller split is **built, not proven**: link
   its first successful run whose accepted writer token carries these two
   workflow claims. The writer's audience is `https://github.com/Hobo-Labs`;
   the reader's is `https://github.com/Hobo-Labs/hobo-ci-deploy-reader`. Audience is

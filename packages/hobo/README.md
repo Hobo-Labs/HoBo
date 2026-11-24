@@ -56,9 +56,36 @@ owner channel. The opened store stays in the server's memory, keyed by project. 
 the CD runtime: `owner://<NAME>` reads the store's CD entry and is the only locator it
 resolves; an `env://<NAME>` locator is refused with a pointer to `choose_secret_store`,
 because the process environment never holds credentials. Hostinger's resolvers receive
-the owner's `HOSTINGER_API_TOKEN` only in their request header. Results, `doctor`'s
-`ownerStoreSession`, and refusals carry a status and the store's label only. A host
-without form elicitation or MCP Apps gets `secure-form-unavailable`.
+the owner's `HOSTINGER_API_TOKEN` only in their request header. For an Infisical
+store without that entry, `hobo ci fleet` reaches Hostinger through Infisical Agent
+Vault instead (`agent-vault-broker.ts`): HoBo starts a one-hour session for the
+project's `http` service covering `developers.hostinger.com`, runs
+`infisical agent-vault proxy` itself on `127.0.0.1` with its proxy token only in
+the child's environment, routes the calls through it, and revokes the session and
+stops the proxy when the session closes ([CI.md](CI.md#hostinger-through-infisical-agent-vault)).
+Results, `doctor`'s `ownerStoreSession` (with `agentVault`: project, service and
+proxy names and hosts once reached), and refusals carry a status, the store's label
+and those names only. A host
+without form elicitation or MCP Apps (a Claude Code cloud session, for one) gets
+`owner-page`: HoBo's own page (`mcp-owner-page.ts`), which the agent publishes as a
+claude.ai Artifact with the `db` capability. The page encrypts the owner's answer in
+their browser (ECDH P-256, HKDF-SHA256, AES-256-GCM) to a one-use key that only this
+server holds, saves the sealed text to `hobo-owner-page/<page>` in the artifact's
+database, and the agent passes that text unchanged to `submit_owner_page`. HoBo opens
+it once, within 30 minutes, records the store choice and hands the store's sign-in to
+the waiting run. The agent carries only ciphertext. `choose_secret_store` with
+`channel: "page"` returns the page even where the host declares form elicitation,
+for hosts that declare it but never show the form. The page takes the store choice and
+the store's sign-in (Infisical's copied session) only. A `sign-in-needed` result carries
+the refusal's `reason` with links and identifiers redacted (`publicReason`).
+
+`store_owner_entries` is the optional later step that joins a Hostinger fleet: it fills the store with the provider entries HoBo reads
+(`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
+each value checked for shape and written with the session's `entries(cwd).write`,
+never returned. It needs form elicitation and an established session. The server
+declares `tools.listChanged` and sends `notifications/tools/list_changed` after
+`notifications/initialized`, so a host that reconnects to a restarted server lists
+its current tools.
 
 ## CLI verification and remote deployment safety
 
@@ -452,8 +479,12 @@ hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--root-directory <dir>` | sent as `projectSettings.rootDirectory`, which Vercel saves on the project |
 | `--create-project` | create the project when Vercel has none by that name, with the Yard's `rootDirectory`; without it a missing project is a refusal |
 | `--provision` | attach the Marketplace bindings the Camp chooses first, idempotently, with the Vercel CLI (`src/ci-relay-provision.ts`); a failure is reported, not fatal |
-| `--wait` | wait up to 15 minutes for READY and verify the relay; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR, CANCELED or timeout is `HOBO_CI_DEPLOY_NOT_READY` |
+| `--wait` | drive the deployment to READY and verify the relay with a 20-minute budget checked between passes; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR or CANCELED is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--dry-run` | print the plan and send nothing |
+
+An in-flight provider operation can outlast the wait budget. The relay path
+does not durably fence it across lease expiry, processes or restarts: inspect
+the provider and CD journal to establish its outcome before another deploy.
 
 A real run reads the deploy token from the owner's secret store as the
 dedicated deploy reader, with the store coordinates from the owner store

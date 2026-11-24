@@ -42,6 +42,7 @@
 // (`canonicalManifestHash`, the digest the Freight names) and the relay's
 // Yard-declared registry.
 
+import { randomUUID } from "node:crypto";
 import { create, toJson } from "@bufbuild/protobuf";
 import {
 	canonicalManifestHash,
@@ -87,6 +88,7 @@ import {
 	parseCdComposeConfig,
 	unconfiguredSuites,
 } from "@hobo/cd/compose";
+import { createInProcessTransport } from "@hobo/cd/reconcile";
 import {
 	createRegistryFromProviders,
 	type RegistrableProvider,
@@ -217,7 +219,6 @@ export type RelayDeliveryInput = Readonly<{
 	records?: DeliveryModule;
 	now?: () => number;
 	sleep?: (ms: number) => Promise<void>;
-	/** How long to drive the promotion before reporting it incomplete. */
 	limitMs?: number;
 	/** How often to drive it. */
 	intervalMs?: number;
@@ -579,6 +580,10 @@ export function relayRealizer(
 				return observation({
 					...base,
 					status: ReconcileStatus.BLOCKED,
+					handover: {
+						...done.outputs,
+						readRefusalStatus: String(error.status),
+					},
 					reasons: [
 						reason(
 							RELAY_DELIVERY_REFUSAL.verificationFailed,
@@ -1162,9 +1167,19 @@ async function deliverWith(
 	const promotionId = requested.value.promotionId as PromotionId;
 	emit(`promotion ${promotionId} of ${freight.alias} to ${campId}`);
 
+	const holderId = `hobo-ci-deploy:${process.pid}:${randomUUID()}`;
 	const conductor = conductorFor(cd, {
 		campIds: [campId],
-		holderId: `hobo-ci-deploy:${process.pid}`,
+		holderId,
+		transport: createInProcessTransport({
+			store,
+			tenant: config.tenant,
+			now,
+			desired: cd.desired,
+			posture: cd.posture,
+			topology,
+			feedTimeoutMs: input.feedWaitMs ?? DEFAULT_FEED_WAIT_MS,
+		}),
 	});
 	const limitMs =
 		input.limitMs === undefined ? DEFAULT_LIMIT_MS : Math.max(0, input.limitMs);
@@ -1272,13 +1287,7 @@ async function deliverWith(
 		}
 		const set = await cd.desired.current(campId);
 		if (set) {
-			// A bounded pass: the in-process feed long-polls for a change that
-			// may never come (a Delta opened but not applied), so each pass
-			// waits at most `feedWaitMs` for it.
-			last = await conductor.reconcileOnce(campId, {
-				...ctx,
-				signal: AbortSignal.timeout(input.feedWaitMs ?? DEFAULT_FEED_WAIT_MS),
-			});
+			last = await conductor.reconcileOnce(campId, ctx);
 			const refusal = realizationRefusal(promotion, set);
 			if (refusal !== undefined) return refusal;
 			const outputs = realizer?.deployed(set.setId);
@@ -1311,10 +1320,21 @@ async function deliverWith(
 			!(promotion && TERMINAL.has(promotion.state))
 		) {
 			const blocked = last.reasons[0];
+			const readyState = handover.readyState;
+			const readinessMessage =
+				blocked?.code === "HOBO_CI_DEPLOY_NOT_READY" &&
+				readyState !== undefined &&
+				VERCEL_GIT_BLOCKED_STATES.has(readyState)
+					? `The deployment ended ${readyState}, not READY.`
+					: blocked?.code === RELAY_DELIVERY_REFUSAL.verificationFailed &&
+							handover.readRefusalStatus !== undefined
+						? `Reading deployment ${handover.deploymentId ?? "the deployment"} failed (HTTP ${handover.readRefusalStatus}).`
+						: undefined;
 			return {
 				ok: false,
 				code: blocked?.code ?? RELAY_DELIVERY_REFUSAL.incomplete,
 				message:
+					readinessMessage ??
 					blocked?.message ??
 					`The conductor reported Set ${set.setId} blocked at ${campId}`,
 				report: report(promotion, set),
@@ -1336,7 +1356,7 @@ async function deliverWith(
 			return {
 				ok: false,
 				code: RELAY_DELIVERY_REFUSAL.incomplete,
-				message: `The promotion of ${freight.alias} to ${campId} had not finished (${promotion ? PromotionState[promotion.state] : "unknown"}) when the wait ran out; run hobo ci deploy again (it is idempotent).`,
+				message: `The promotion of ${freight.alias} to ${campId} had not finished (${promotion ? PromotionState[promotion.state] : "unknown"}) when the wait ran out. Inspect the journal and provider operation before another deployment.`,
 				report: report(promotion, set),
 				handover,
 			};

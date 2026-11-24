@@ -23,7 +23,7 @@ const request = parseResolveRequest({
 		physicalId: "17",
 	},
 	desired: { name: "api" },
-	credentialRef: "env://HOSTINGER_API_TOKEN",
+	credentialRef: "owner://HOSTINGER_API_TOKEN",
 });
 const json = (status: number, value: JsonValue): TransportResponse => ({
 	status,

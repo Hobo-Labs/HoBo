@@ -107,7 +107,7 @@ function cli(
 			ci: createCiCommand({
 				env: {},
 				...(sessions !== undefined
-					? { fleetCredentials: sessions.credentials }
+					? { ownerCredentials: sessions.credentials }
 					: undefined),
 				hostingerHttp: transport,
 			}),

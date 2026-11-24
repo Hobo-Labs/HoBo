@@ -902,6 +902,7 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(outcome.ok).toBe(false);
 		if (outcome.ok) return;
 		expect(outcome.code).toBe("HOBO_CI_DEPLOY_NOT_READY");
+		expect(outcome.message).toContain("ERROR");
 		expect(outcome.handover?.readyState).toBe("ERROR");
 	}, 60_000);
 
@@ -938,6 +939,124 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(outcome.code).toBe(RELAY_DELIVERY_REFUSAL.incomplete);
 		expect(reads).toBe(1);
 		expect(sleeps).toBe(0);
+	}, 60_000);
+
+	it("bounds the feed wait without cancelling a slow deployment", async () => {
+		const h = await harness();
+		const fixture = realization(h, { readyState: "ERROR" });
+		const outcome = await deliver(h, "preview", {
+			feedWaitMs: 100,
+			realization: {
+				...fixture,
+				async deploy(source) {
+					await new Promise((resolve) => setTimeout(resolve, 300));
+					return fixture.deploy(source);
+				},
+			},
+		});
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) return;
+		expect(outcome.code).toBe("HOBO_CI_DEPLOY_NOT_READY");
+		expect(outcome.handover?.readyState).toBe("ERROR");
+	}, 60_000);
+
+	it("keeps a pending deployment in flight past the wait budget", async () => {
+		const h = await harness();
+		let markStarted = () => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		let complete = () => {};
+		const pending = new Promise<
+			Awaited<ReturnType<RelayRealization["deploy"]>>
+		>((resolve) => {
+			complete = () =>
+				resolve({
+					ok: true,
+					outputs: { deploymentId: "dpl_pending", target: "preview" },
+				});
+		});
+		let calls = 0;
+		let returned = false;
+		const delivery = deliver(h, "preview", {
+			limitMs: 20_000,
+			realization: {
+				async deploy() {
+					calls += 1;
+					markStarted();
+					return pending;
+				},
+				async readyState() {
+					return "BUILDING";
+				},
+			},
+		}).then((outcome) => {
+			returned = true;
+			return outcome;
+		});
+		try {
+			await started;
+			h.clock.now += 25_000;
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			expect(returned).toBe(false);
+			expect(calls).toBe(1);
+		} finally {
+			complete();
+		}
+		const outcome = await delivery;
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) return;
+		expect(outcome.code).toBe(RELAY_DELIVERY_REFUSAL.incomplete);
+		expect(outcome.message).toContain(
+			"Inspect the journal and provider operation",
+		);
+		expect(calls).toBe(1);
+	}, 60_000);
+
+	it("does not dispatch a concurrent invocation while the first holds its lease", async () => {
+		const h = await harness();
+		let markStarted = () => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		let finish = () => {};
+		const pending = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		let calls = 0;
+		const first = deliver(h, "preview", {
+			realization: {
+				async deploy() {
+					calls += 1;
+					markStarted();
+					await pending;
+					return { ok: true, outputs: { deploymentId: "dpl_first" } };
+				},
+				async readyState() {
+					return "ERROR";
+				},
+			},
+		});
+		try {
+			await started;
+			const second = await deliver(h, "preview", {
+				limitMs: 0,
+				realization: {
+					async deploy() {
+						calls += 1;
+						return { ok: true, outputs: { deploymentId: "dpl_second" } };
+					},
+					async readyState() {
+						return "ERROR";
+					},
+				},
+			});
+			expect(second.ok).toBe(false);
+			expect(calls).toBe(1);
+		} finally {
+			finish();
+			await first;
+		}
 	}, 60_000);
 });
 

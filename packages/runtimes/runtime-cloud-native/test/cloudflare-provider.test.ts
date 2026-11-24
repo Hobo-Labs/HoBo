@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { mustGet } from "@hobo/core/total-access";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	CLOUDFLARE_REMOTE_HANDLER_UNBOUND,
 	CLOUDFLARE_TOKEN_VERIFY_URL,
@@ -386,6 +386,21 @@ describe("default registry with the real cloudflare entry", () => {
 			(await mustGet(serve.handlers, "api")(new Request("http://internal/")))
 				.status,
 		).toBe(501);
+	});
+
+	it("reads no Cloudflare API token from the process environment", async () => {
+		vi.stubEnv("CLOUDFLARE_API_TOKEN", "ambient-token");
+		try {
+			const cloudflare = defaultCloudNativeProviders({
+				accountId: "account",
+			}).find((p) => p.id === "cloudflare");
+			if (!cloudflare) throw new Error("cloudflare provider missing");
+			const result = await cloudflare.ensure(ensureCtx);
+			expect(result.ready).toBe(false);
+			expect(result.details?.missing).toEqual(["CLOUDFLARE_API_TOKEN"]);
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it.each([

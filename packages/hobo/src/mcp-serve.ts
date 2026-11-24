@@ -1,11 +1,15 @@
 import type { DeviceClock } from "@hobo/hobo-cd";
 import {
+	agentVaultProxyLauncher,
 	applyEgressToProcess,
+	ensureInfisicalAgentVaultCli,
+	hoboToolsDir,
 	isRemoteBox,
 	machineRunner,
 	whichOnPath,
 } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
+import type { AgentVaultProxyDeps } from "./agent-vault-broker.js";
 import { ownerSecretStoreBindingStore } from "./ci-secret-store.js";
 import { createComposedHoboCli } from "./cli.js";
 import {
@@ -18,6 +22,7 @@ import {
 	createMcpOwnerChannel,
 	createOwnerCaptureApp,
 } from "./mcp-owner-channel.js";
+import { createOwnerPages } from "./mcp-owner-page.js";
 import {
 	createInfisicalCaptureConnector,
 	secretCaptureProjectDir,
@@ -33,6 +38,7 @@ import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 import {
 	createOwnerStoreSessions,
 	type OwnerSignIn,
+	ownerChannelRelayFolder,
 	ownerChannelSignIn,
 } from "./owner-store-session.js";
 
@@ -57,6 +63,7 @@ export function composeHoboMcp(options: {
 	/** The device grant's clock (evals pass a virtual one). */
 	readonly clock?: DeviceClock;
 	readonly ownerSignIn?: OwnerSignIn;
+	readonly agentVault?: AgentVaultProxyDeps;
 }) {
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
@@ -110,7 +117,23 @@ export function composeHoboMcp(options: {
 					which: (bin) => whichOnPath(bin),
 				},
 			}),
+		relayFolder: ownerChannelRelayFolder({
+			owner,
+			deps: {
+				runCommand: machineRunner(),
+				which: (bin) => whichOnPath(bin),
+			},
+		}),
 		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
+		agentVault: options.agentVault ?? {
+			launch: agentVaultProxyLauncher(),
+			command: () =>
+				ensureInfisicalAgentVaultCli({
+					run: machineRunner(),
+					which: (bin) => whichOnPath(bin),
+					toolsDir: hoboToolsDir(),
+				}),
+		},
 	});
 	const server = createHoboMcpServer({
 		cli: createComposedHoboCli({
@@ -144,7 +167,14 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
-	session = createMcpStdioSession(capture, createStoreChoiceApp({ sessions }));
+	session = createMcpStdioSession(
+		capture,
+		createStoreChoiceApp({
+			sessions,
+			pages: createOwnerPages(),
+			deposit: (name, value) => owner.deposit(name, value),
+		}),
+	);
 	const ready = capture;
 	return {
 		owner,
@@ -154,7 +184,7 @@ export function composeHoboMcp(options: {
 		/** Stop whatever still waits on the owner and close open captures. */
 		async close() {
 			owner.jobs.close();
-			sessions.close();
+			await sessions.close();
 			await ready.close();
 		},
 	};

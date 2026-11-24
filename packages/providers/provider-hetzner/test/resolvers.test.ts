@@ -58,7 +58,7 @@ const pact = parseJsonObject(
 	),
 );
 
-const CREDENTIAL_REF = "env://HCLOUD_TOKEN";
+const CREDENTIAL_REF = "owner://HCLOUD_TOKEN";
 /** A token-shaped project token. Never expected anywhere but one header. */
 const TOKEN = "fakehetznerprojecttoken0123456789abcdefgh";
 /** A 40-character token-shaped string, as providers echo them in error text. */
@@ -535,9 +535,9 @@ describe("the Storage Box resolver converges on the unified API", () => {
 		expect(() => storageBoxRequest({ password: "hunter2" })).toThrow(
 			/credential/i,
 		);
-		expect(() => storageBoxRequest({ passwordRef: "env://SOMETHING" })).toThrow(
-			/credential/i,
-		);
+		expect(() =>
+			storageBoxRequest({ passwordRef: "owner://SOMETHING" }),
+		).toThrow(/credential/i);
 	});
 
 	it("refuses to create when the host wired no password custody", async () => {

@@ -236,6 +236,63 @@ describe("secrets:guard patterns", () => {
 		);
 	});
 
+	it("rejects personal GitHub tokens and accepts only the App and the per-job token", () => {
+		const fine = [
+			"github",
+			["p", "at"].join(""),
+			"11ABCDEFG0123456789abcdef",
+		].join("_");
+		const classic = ["gh", "p_", "a".repeat(36)].join("");
+		const rejected = [
+			change(
+				"src/release.ts",
+				`credentialRef: "owner://${["GITHUB", "RELEASE", "TOKEN"].join("_")}"`,
+			),
+			change(
+				"src/fleet.ts",
+				`const ref = "${["HOBO", "CI", "GITHUB", ["P", "AT"].join("")].join("_")}";`,
+			),
+			change("src/fixture.test.ts", `const token = "${fine}";`),
+			change("src/fixture.test.ts", `const token = "${classic}";`),
+			change("scripts/status.mts", `run("${words("gh", "auth", "token")}")`),
+			change(
+				"docs/setup.md",
+				words(
+					"Create",
+					"a",
+					"GitHub",
+					"personal",
+					"access",
+					"token",
+					"with",
+					"repo",
+					"scope.",
+				),
+			),
+			change(
+				"docs/setup.md",
+				words("Paste", "a", "fine-grained", "token", "for", "GitHub."),
+			),
+		];
+		for (const added of rejected)
+			assert.match(messages([added]).join(), /GitHub App/u, added.content);
+		assert.deepEqual(
+			messages([
+				change("src/app.ts", 'const id = "HOBO_CI_GITHUB_APP_ID";'),
+				change("src/job.ts", `const name = "${"GITHUB_TOKEN"}";`),
+				change(
+					".github/workflows/ci.yml",
+					"      GH_TOKEN: ${{ github.token }}",
+				),
+				change(
+					"docs/setup.md",
+					"Install HoBo's GitHub App and HoBo mints installation tokens.",
+				),
+			]),
+			[],
+		);
+	});
+
 	it("rejects commands that store secrets or variables", () => {
 		const commands = [
 			words("gh", "secret", "set", "NPM_TOKEN"),

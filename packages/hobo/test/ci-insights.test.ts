@@ -76,10 +76,9 @@ function run(
 
 function github(responses: ReadonlyMap<string, string | CiProcessError>) {
 	const asked: string[] = [];
-	const execFile: CiRunExec = async (file, args, options) => {
+	const execFile: CiRunExec = async (file, args) => {
 		expect(file).toBe("gh");
 		expect(args[0]).toBe("api");
-		expect(options.env?.HOBO_CI_ACCOUNT_TOKEN).toBeUndefined();
 		const path = args[1] ?? "";
 		asked.push(path);
 		const answer = responses.get(path);
@@ -111,7 +110,7 @@ const insights = (
 		args,
 		options,
 		execFile: fake.execFile,
-		env: { HOBO_CI_ACCOUNT_TOKEN: "never-sent-to-gh" },
+		env: {},
 		now: () => start + 24 * 60 * minute,
 	});
 

@@ -323,7 +323,7 @@ Delivering through HoBo CD changed the verb for anyone who runs it by hand:
 |---|---|
 | `--wait` waited for READY | `--wait` waits for READY, then verifies and qualifies; it needs the target's probe origin (`HOBO_CI_RELAY_PREVIEW_URL` or `HOBO_CI_RELAY_URL`), and for preview also `--sha` — it verifies exactly that commit's deployment (`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`, `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`) |
 | `--target production` deployed any ref | it needs `--sha`, and preview's qualification of that commit in the same journal (`HOBO_CI_DEPLOY_NOT_QUALIFIED`) |
-| a 15-minute wait | a 20-minute wait; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
+| a 15-minute wait | a 20-minute driving budget checked between passes; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
 | — | new codes: `HOBO_CI_DEPLOY_INCOMPLETE`, `HOBO_CI_DEPLOY_VERIFICATION_FAILED`, `HOBO_CI_DEPLOY_NOT_QUALIFIED`, `HOBO_CI_DEPLOY_SOURCE_UNPINNED`, `HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`, `HOBO_CI_DEPLOY_DELIVERY_INVALID`, `HOBO_CI_DEPLOY_FREIGHT_REFUSED`, `HOBO_CI_DEPLOY_PROMOTION_REFUSED` |
 
 **Migrating existing preview `--wait` CI jobs:** the verify step now requires
@@ -334,6 +334,10 @@ but without protected deployment OIDC probing and without record verification,
 refuses before creation with `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`
 instead of verifying a shared origin it cannot attest; add the two inputs, or
 drop `--wait` and accept that nothing is verified or qualified.
+
+An in-flight provider operation can outlast the budget. The relay does not
+durably fence it across lease expiry, processes or restarts, so inspect the
+provider and CD journal to establish its outcome before another deploy.
 
 **Production is deployed through `hobo cd` with the owner's store session.**
 The relay's store coordinates live only in the owner's own secret store (the
@@ -470,8 +474,9 @@ only. No `GITHUB_TOKEN`: `HOBO_CI_ADOPT_AUTH_REQUIRED` (it never reads
 
 ##### The adopt time budget
 
-The whole command runs against one deadline, so the deploy job fits the
-20-minute cap every workflow job has (`scripts/test/workflow-job-timeouts.test.ts`).
+The command uses one deadline for its stage budgets. The workflow also has a
+20-minute job cap (`scripts/test/workflow-job-timeouts.test.ts`); an in-flight
+operation can outlast its stage budget.
 `--deadline <ISO-8601 time with a zone>` names it, `--budget <minutes>` (1 to
 20) counts it from now, the earlier wins, the default is 12 minutes and no
 deadline lies more than 20 minutes away (`RELAY_ADOPT_BUDGET` in

@@ -71,6 +71,21 @@ export function hookPointName(point: HookPoint): string {
 	return POINT_NAME.get(point) ?? "unspecified";
 }
 
+function forwardedCodes(
+	reasons: readonly ReasonRecord[],
+	point: HookPoint,
+	subject: HookSubject,
+): ReasonRecord[] {
+	return reasons.map((forwarded) =>
+		reason(
+			forwarded.code,
+			`A hook reported ${forwarded.code} at ${hookPointName(point)}.`,
+			"Inspect the hook's own report for the cause.",
+			subject.campId,
+		),
+	);
+}
+
 export function createHookRunner(
 	d: Readonly<{
 		runbooks: RunbookExecutor;
@@ -100,11 +115,11 @@ export function createHookRunner(
 				return [
 					reason(
 						HOOK_REASON.runbookFailed,
-						`runbook ${hook.ref} failed at ${hookPointName(point)}: ${result.reasons.map((r) => r.message).join("; ")}`,
+						`A runbook hook failed at ${hookPointName(point)}.`,
 						"Fix the runbook or the condition it checks; the promotion retries the hook on its next tick.",
 						subject.campId,
 					),
-					...result.reasons,
+					...forwardedCodes(result.reasons, point, subject),
 				];
 			}
 			case HookKind.SUITE: {
@@ -120,11 +135,11 @@ export function createHookRunner(
 				return [
 					reason(
 						HOOK_REASON.suiteFailed,
-						`suite ${hook.ref} failed at ${hookPointName(point)}: ${result.reasons.map((r) => r.message).join("; ")}`,
+						`A verification suite hook failed at ${hookPointName(point)}.`,
 						"Inspect the suite report; promote Freight that passes it.",
 						subject.campId,
 					),
-					...result.reasons,
+					...forwardedCodes(result.reasons, point, subject),
 				];
 			}
 			case HookKind.NOTIFY: {
@@ -171,13 +186,13 @@ export function createHookRunner(
 				let failure: readonly ReasonRecord[] = [];
 				try {
 					failure = await runOne(hook, point, subject, ctx);
-				} catch (error) {
+				} catch {
 					failure = [
 						reason(
 							hook.kind === HookKind.SUITE
 								? HOOK_REASON.suiteFailed
 								: HOOK_REASON.runbookFailed,
-							`hook ${hook.ref} threw at ${hookPointName(point)}: ${error instanceof Error ? error.message : String(error)}`,
+							`A hook could not run at ${hookPointName(point)}.`,
 							"Fix the hook target; the promotion retries the hook on its next tick.",
 							subject.campId,
 						),
