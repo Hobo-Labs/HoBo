@@ -408,10 +408,9 @@ jobs:
       - name: Link deps layer or install
         run: |
           set -euo pipefail
-          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
-            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
             && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
-            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+            echo "reusing the runner's deps layer; skip pnpm install"
           else
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
@@ -598,10 +597,9 @@ jobs:
       - name: Link deps layer or install
         run: |
           set -euo pipefail
-          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
-            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
             && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
-            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+            echo "reusing the runner's deps layer; skip pnpm install"
           else
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
@@ -719,10 +717,9 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: |
           set -euo pipefail
-          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
-            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
             && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
-            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+            echo "reusing the runner's deps layer; skip pnpm install"
           else
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
@@ -827,7 +824,15 @@ jobs:
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Build the hobo CLI (release Freight through hobo deploy)
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo...
@@ -1083,7 +1088,15 @@ jobs:
         run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Resolve and validate release version
         env:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
@@ -1253,7 +1266,15 @@ jobs:
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Resolve and validate release version
         env:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
@@ -1489,7 +1510,15 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       # HoBo releases itself through HoBo: the release Freight steps run the
       # `hobo deploy` composition of @hobo/cd from the hobo package
       # release-hobo-cli built for this commit.
@@ -1573,7 +1602,15 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       # HoBo releases itself through HoBo: the release Freight steps run the
       # `hobo deploy` composition of @hobo/cd from the hobo package
       # release-hobo-cli built for this commit.
