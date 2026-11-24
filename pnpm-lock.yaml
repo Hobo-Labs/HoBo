@@ -1902,9 +1902,15 @@ importers:
 
   packages/dispatcher:
     dependencies:
+      '@alchemy.run/domain':
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(6a2b1c1a98d880b220f9fa05857a5eaf)
       '@hobo/pricing':
         specifier: workspace:*
         version: link:../pricing
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
     devDependencies:
       '@types/node':
         specifier: ^22.15.29

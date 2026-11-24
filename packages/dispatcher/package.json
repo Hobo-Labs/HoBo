@@ -23,13 +23,19 @@
 		"./recovery-sqlite": {
 			"types": "./dist/iac-route-recovery-sqlite.d.ts",
 			"default": "./dist/iac-route-recovery-sqlite.js"
+		},
+		"./domain": {
+			"types": "./dist/domain/index.d.ts",
+			"default": "./dist/domain/index.js"
 		}
 	},
 	"publishConfig": {
 		"access": "public"
 	},
 	"dependencies": {
-		"@hobo/pricing": "workspace:*"
+		"@alchemy.run/domain": "2.0.0-beta.87",
+		"@hobo/pricing": "workspace:*",
+		"effect": "4.1.4"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
@@ -38,7 +44,7 @@
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.domain.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts && tsc --noEmit -p tsconfig.iac-tests.json && tsc --noEmit -p tsconfig.iac-recovery-tests.json",
 		"test": "vitest run",

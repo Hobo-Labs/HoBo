@@ -23,6 +23,18 @@ stations routing control loop).
 - **`decideDispatchV2`** (schema `hobo.dispatcher/v2`) ranks registered providers
   by minimum incremental **billed** amount from `@hobo/pricing` quotes; v1
   `decideDispatch` continues to use credit ranking.
+- **`@hobo/dispatcher/domain` (`DispatchRouting`)** provides the EffectTS +
+  `@alchemy.run/domain` routing engine (`DispatchAccount` aggregate,
+  `DispatchAccountView`, `DispatchRoutingApi`, and `selectDispatchCandidate`)
+  with nominal category-scoped account IDs (`RunnerAccountId`,
+  `BuildMachineAccountId`, `TrafficBackendAccountId`), exact integer
+  micro-dollars (`NonNegativeMicros`), bounded `ActiveReservationHold` schemas,
+  discriminated tagged-union reservation states (`Pending`, `Running`,
+  `Confirmed`, `Released`, `Expired`) that omit releasable holds from terminal
+  states, and locale-independent UTF-16 code-unit tie-breaking. Static
+  enforcement eliminates five redundant TLA+/Z3 proof suites while keeping
+  `Domain.verify(DispatchRouting)`, executable `Story.make` BDD specs, and the
+  core `BudgetRouting` ceiling/overrun verification.
 
 ## Dispatcher v2
 
