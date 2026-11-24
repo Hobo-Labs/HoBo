@@ -158,7 +158,7 @@ describe("the scripts lane is a pull-request gate", () => {
 		const lane = step(scripts, LANE);
 		assert.equal(
 			lane.run.trim(),
-			'pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"',
+			'env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"',
 		);
 		assert.equal(lane.if, "steps.scope.outputs.run == 'true'");
 		// The pinned toolchain (Node 24 from mise.toml) is in place first:
@@ -213,6 +213,10 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.equal(build.if, "steps.scope.outputs.run == 'true'");
 		assert.equal(build.timeout, 6);
 		assert.match(build.run, /turbo run build\b/u);
+		assert.ok(
+			build.run.includes("--concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}"),
+		);
+		assert.ok(!build.run.includes("HOBO_TURBO_CONCURRENCY"));
 		assert.match(build.run, /git diff --name-only "\$BASE" HEAD/u);
 		assert.match(
 			build.run,

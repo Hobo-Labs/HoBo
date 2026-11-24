@@ -13,11 +13,10 @@ const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const LOCK_PATH = join(PACKAGE_ROOT, "wit-lock.json");
 
 describe("wasi:* round-trip shape identity", () => {
-	it("covers kv, blobstore, messaging, config, and logging fixtures", () => {
+	it("covers kv, blobstore, config, and logging fixtures", () => {
 		expect(EXPECTED_ROUND_TRIP_INTERFACES).toEqual([
 			"wasi:keyvalue/store@0.2.0",
 			"wasi:blobstore/blobstore@0.2.0",
-			"wasi:messaging/messaging@0.2.0",
 			"wasi:config/store@0.2.0",
 			"wasi:logging/logging@0.2.0",
 		]);
@@ -50,7 +49,7 @@ describe("wasi:* round-trip shape identity", () => {
 		const lock = await loadToolchainLock(LOCK_PATH);
 		const verification = await verifyVendoredWit(lock, PACKAGE_ROOT);
 		const wasiPins = lock.witDeps.filter((pin) => pin.namespace === "wasi");
-		expect(wasiPins).toHaveLength(15);
+		expect(wasiPins).toHaveLength(14);
 		expect(verification.verified).toBe(lock.witDeps.length);
 	});
 });

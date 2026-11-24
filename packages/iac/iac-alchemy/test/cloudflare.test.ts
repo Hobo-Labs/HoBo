@@ -51,6 +51,7 @@ const moduleWithoutWorker = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"fixtures/cloudflare-app.ts",
 );
+
 const sourceFence = {
 	sourceDigest: `sha256:${"a".repeat(64)}`,
 	environmentDigest: `sha256:${"b".repeat(64)}`,

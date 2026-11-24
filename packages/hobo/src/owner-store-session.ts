@@ -46,6 +46,7 @@ export type OwnerSessionStatus = Readonly<{
 	established: boolean;
 	store?: OwnerStoreLabel;
 	agentVault?: AgentVaultStatus;
+	relaySession?: Readonly<{ expiresInSeconds: number }>;
 }>;
 
 export interface OwnerStoreEntries {
@@ -83,7 +84,11 @@ export class OwnerCredentialUnavailable extends Error {
 			| "unsupported-ref"
 			| "github-app-missing"
 			| "github-app-not-installed"
-			| "github-app-refused",
+			| "github-app-refused"
+			| "relay-session-expired"
+			| "relay-not-resolvable"
+			| "relay-unreachable"
+			| "relay-sign-in-failed",
 	) {
 		super(OwnerCredentialUnavailable.explain(ref, reason));
 		this.name = "OwnerCredentialUnavailable";
@@ -95,7 +100,7 @@ export class OwnerCredentialUnavailable extends Error {
 	): string {
 		switch (reason) {
 			case "no-session":
-				return `credential ${ref} needs the owner's store session: run HoBo MCP's choose_secret_store first`;
+				return `credential ${ref} needs the owner's store session: run HoBo MCP's choose_secret_store first, or sign in to an already configured HoBo CI relay with hobo login --relay <origin> (HoBo MCP: relay_login)`;
 			case "not-in-store":
 				return `credential ${ref} is not in the owner's store`;
 			case "environment-ref":
@@ -106,6 +111,14 @@ export class OwnerCredentialUnavailable extends Error {
 				return `credential ${ref} needs HoBo's GitHub App installed on that repository: install the App hobo ci app create made`;
 			case "github-app-refused":
 				return `credential ${ref} could not be minted: GitHub refused HoBo's GitHub App (check the App made by hobo ci app create)`;
+			case "relay-session-expired":
+				return `credential ${ref} needs a HoBo CI relay session: it ended with its process or expired, so sign in again with hobo login --relay <origin> or HoBo MCP's relay_login`;
+			case "relay-not-resolvable":
+				return `credential ${ref} is not one the HoBo CI relay resolves: it hands out only short-lived values (GitHub App installation tokens and the CI account credential); connect the owner's store with HoBo MCP's choose_secret_store for this entry`;
+			case "relay-sign-in-failed":
+				return `credential ${ref} needs a HoBo CI relay session, and the relay sign-in did not complete: run the command again and confirm the code at GitHub`;
+			case "relay-unreachable":
+				return `credential ${ref} could not be resolved: the HoBo CI relay did not answer`;
 			case "unsupported-ref":
 				return `credential ${ref} is not resolvable on this host (use owner://<NAME> or ${GITHUB_APP_CREDENTIAL_SCHEME}<owner>/<repo> after HoBo MCP's choose_secret_store)`;
 		}
@@ -422,6 +435,48 @@ export function createOwnerStoreSessions(options: {
 		async close() {
 			for (const key of held.keys()) drop(key);
 			await Promise.all(closing);
+		},
+	};
+}
+
+export type RelayCredentialSource = Readonly<{
+	held():
+		| { readonly expiresAt: number; readonly credentials: CredentialResolver }
+		| undefined;
+	now(): number;
+}>;
+
+export function withRelaySession(
+	sessions: OwnerStoreSessions,
+	relay: RelayCredentialSource,
+): OwnerStoreSessions {
+	return {
+		...sessions,
+		status(cwd) {
+			const store = sessions.status(cwd);
+			const held = relay.held();
+			return held === undefined
+				? store
+				: {
+						...store,
+						relaySession: {
+							expiresInSeconds: Math.max(
+								0,
+								Math.floor((held.expiresAt - relay.now()) / 1000),
+							),
+						},
+					};
+		},
+		credentials(cwd) {
+			const store = sessions.credentials(cwd);
+			return {
+				async resolve(ref, scope) {
+					const held = relay.held();
+					return held === undefined || sessions.status(cwd).established
+						? store.resolve(ref, scope)
+						: held.credentials.resolve(ref, scope);
+				},
+			};
 		},
 	};
 }

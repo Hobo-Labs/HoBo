@@ -60,6 +60,53 @@ clusters must have a configured runner provider and relay access. Installing the
 App and connecting a repository does not prove that any runner is available or
 that a GitHub Actions job has executed.
 
+### Reconnect after a restart: `hobo login --relay`
+
+Once the relay is configured (its GitHub App installed and its account bound),
+a restarted container or machine reconnects with one GitHub confirmation and no
+setup form:
+
+```sh
+hobo login --relay https://ci.example.com          # checks the sign-in; the session ends with the process
+hobo ci status --relay https://ci.example.com      # signs in when the first credential is needed
+```
+
+The relay starts GitHub's device flow with HoBo's GitHub App
+(`POST /v1/owner-login/device`); the owner opens `https://github.com/login/device`
+and enters the code HoBo prints. HoBo polls `POST /v1/owner-login/token`; the
+relay redeems GitHub's code itself, checks that the GitHub account owns the App
+installation the relay's account binds (the installation's user, or an active
+administrator of its organization), drops the GitHub user token and returns an
+eight-hour session sealed with its session key. HoBo keeps that session only in
+the memory of the process that signed in: the `hobo` process for one command, the
+`hobo-mcp` server for an MCP session (its `relay_login` tool). Nothing is written:
+no token, relay origin, account or identifier on disk, in a keychain or in the
+environment, so the next process signs in again with one confirmation. Pass the
+origin each time (`--relay`); `hobo login --relay` never writes `profile.json`.
+
+With a session, `owner://HOBO_CI_ACCOUNT_TOKEN` resolves to a 15-minute account
+credential the relay seals and its account API accepts, and
+`github-app://<owner>/<repo>` to an installation token of HoBo's GitHub App for a
+repository the account binds (`POST /v1/owner-login/credentials`). Every other
+`owner://` entry is refused (`relay-not-resolvable`): the relay hands out
+short-lived values only, never its App private key or a stored entry, so verbs
+that need the owner's long-lived provider entries (a Hostinger or Vercel token)
+still need `choose_secret_store`. Refusals: `HOBO_RELAY_LOGIN_UNREACHABLE`,
+`HOBO_RELAY_LOGIN_NOT_CONFIGURED` (no account with an installation),
+`HOBO_RELAY_LOGIN_DEVICE_FLOW` (Device Flow is off in the App's settings),
+`HOBO_RELAY_LOGIN_DENIED`, `HOBO_RELAY_LOGIN_EXPIRED`, `HOBO_RELAY_LOGIN_NOT_OWNER`,
+`HOBO_RELAY_LOGIN_ORIGIN` (not an https origin) and, through `hobo-mcp`'s CLI
+`login` tool, `HOBO_RELAY_LOGIN_USE_MCP_TOOL`.
+
+In HoBo MCP, `relay_login` asks the owner for the relay address in a host form,
+or on HoBo's sealed owner page when the host shows no forms (`relay_login` again
+with the page's `sealed` text), then shows the GitHub code in a second host form
+or on a confirmation page the agent publishes. Its results carry a status only,
+never the address, the code or the session. `hobo ci` and `hobo cd` verbs in that
+server resolve through the relay session while no store session is established
+for the project (`withRelaySession` in `src/owner-store-session.ts`); `doctor`
+reports `relaySession.expiresInSeconds`.
+
 Prefer the committed **`.hobo/ci.json`** profile when present. It names each
 environment's `relayOrigin`, optional `jobAdmission` (`push` for hosted relays,
 `pull` for loopback laptops), and `selection` rules for branch/CD routing. Local
@@ -240,8 +287,15 @@ repeating setup with the same explicit relay/repository reuses the connection.
 
 ## Inspect and retry runs
 
-Run commands use the authenticated [GitHub CLI](https://cli.github.com/manual/gh_run)
-(`gh`), with an explicit repository target. They can inspect existing Actions
+Run commands call the GitHub REST API at `api.github.com` with a short-lived
+installation token of HoBo's GitHub App on the selected repository, which the
+owner store session mints (`github-app://owner/name`); no personal GitHub
+sign-in or token is read. Connect the owner's store with HoBo MCP's
+`choose_secret_store` and install the App (`hobo ci app create`) with Actions
+read permission, and Actions write permission for `rerun`; without them the
+commands answer `HOBO_CI_GITHUB_APP_NEEDED`. A job log is read from the
+short-lived download GitHub redirects to, which is fetched without the token;
+logs are bounded at 2 MiB per command. They can inspect existing Actions
 runs before connecting a relay. They report GitHub run IDs, separate from relay
 lease IDs; use `hobo ci status` to check the HoBo connection.
 
@@ -438,9 +492,9 @@ hobo ci diagnose               # the latest failed run
 hobo ci diagnose 123456789
 ```
 
-Both read GitHub's run history with the authenticated GitHub CLI and store
-nothing. `signals` reads up to `--runs` completed runs (1-100) with their jobs,
-and the attempt before the latest when a run was re-run. It prints signals
+Both read GitHub's run history through HoBo's GitHub App installation on the
+repository and store nothing. `signals` reads up to `--runs` completed runs
+(1-100) with their jobs, and the attempt before the latest when a run was re-run. It prints signals
 that cover at least 30 minutes and 1% of job time, grouped as cost,
 speed and complexity, with the worst offenders under each, and one line per
 runner: jobs, share started, median wait, median and p90 run time, share
@@ -451,8 +505,8 @@ each log and every annotation page of the check run identified by
 `check_run_url`, and prints the first failed step, what kind of failure it
 looks like, whether a re-run is likely to help, and the log lines leading up to
 the last error. A log, annotation, or check-run identity read failure fails the
-command rather than producing a partial diagnosis. If the GitHub CLI truncates
-a log, the diagnosis says it may be incomplete and sets `logTruncated` on that
+command rather than producing a partial diagnosis. If a log exceeds 16 MiB,
+the diagnosis says it may be incomplete and sets `logTruncated` on that
 job's JSON result. Human-readable reports remove terminal escape sequences,
 control characters, and bidirectional overrides from GitHub metadata, logs, and
 annotations. The rules are fixed pattern tables in `@hobo/ci/insights`; no log
@@ -601,9 +655,11 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… --dry-run
 ```
 
 `--dry-run` prints the placement, the chosen bindings and every request it
-would send, and sends none. A real run reads `VERCEL_TOKEN` from the bound
-secret store as the dedicated deploy reader and deploys to **preview** unless
-`--target production` is given. Production
+would send, and sends none. A real run reads the Vercel deploy token through
+the owner's store session (`owner://HOBO_CD_VERCEL_TOKEN`, the entry `hobo cd
+up` keeps; `HOBO_CI_DEPLOY_AUTH_REQUIRED` when the store holds none) and
+deploys to **preview** unless `--target production` is given. Neither the
+environment nor a CI job's GitHub OIDC token is ever a source of the token. Production
 chooses the config-service binding. Its coordinates and the team live only in
 the owner's own secret store (`HOBO_CI_SECRET_STORE_BINDING`); `hobo ci deploy`
 reads them through the owner store session (HoBo MCP's `choose_secret_store`)
@@ -632,28 +688,21 @@ An in-flight provider operation can outlast the budget. This relay path does
 not durably fence it across lease expiry, processes or restarts; inspect the
 provider and CD journal to establish its outcome before another deploy.
 
-Production deploys only through `hobo cd` with the owner's store session (the
-[relay bootstrap](../ci-vercel/BOOTSTRAP.md) gives the two commands). The
-[relay deploy workflow](../../.github/workflows/relay-deploy.yml) holds no
-store coordinates, so a push deploys nothing and its gate posts that notice.
-See
+Production deploys only through HoBo with the owner's store session (the
+[relay bootstrap](../ci-vercel/BOOTSTRAP.md) gives the two commands):
+`hobo ci deploy` run where HoBo MCP's `choose_secret_store` established the
+session, or `hobo ci up`, which hands the same session to the deploy. Without
+a session the deploy refuses with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED`
+before anything is sent. No GitHub Actions workflow deploys the relay: the
+[relay deploy workflow](../../.github/workflows/relay-deploy.yml) keeps only
+the `app-credentials` job `app-credentials.yml` calls. A relay left behind its
+sources does not go unnoticed: the [CI health monitor](../../docs/ci/health-monitor.md)
+raises H11 when the commit the relay's `/healthz` serves lags a later commit
+on the default branch that touched the relay's sources. See
 [`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
 and [the README](README.md) for the plan record and its gates. It has been
-exercised against fakes only. A binding without a `deployProjectId` and a
-`deployCredentialIdentityId` cannot deploy: the owner must create protected
-GitHub environments for the reader and writer, create the `hobo-ci-deploy`
-project and exactly-Viewer `hobo-ci-deploy-reader` identity, deposit
-`VERCEL_TOKEN` at its root, and re-run `connect` to record the complete binding
-in their store. Token-free `--dry-run` planning can read a legacy binding
-through the confined repair parser; every real deploy uses strict parsing and
-refuses before OIDC sign-in. The ordered operator sequence is
-[the cutover runbook](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
-This channel is **built, not proven**: after repair, link a successful
-`relay-deploy` run whose preview step records the token read as the dedicated
-reader, whose verification proves the value read, exact Viewer membership and
-HTTP 403 project isolation, and whose production `/healthz` and `/readyz` checks
-pass. See
-[the evidence obligation](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
+exercised against fakes only; a live deploy from an owner session is the
+evidence still owed.
 
 ## Choose the relay's secret store (`hobo ci secret-store`)
 

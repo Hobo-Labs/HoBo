@@ -16,7 +16,6 @@ export type {
 	FoldEvent,
 } from "@hobo/core";
 
-/** Deterministic clock seam; `sleep` is journaled, never a wall-clock wait. */
 export interface RuntimeClock {
 	now(): string;
 	nowMs(): number;

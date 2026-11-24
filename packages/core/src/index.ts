@@ -377,6 +377,33 @@ export {
 	type LifecycleParticipantKind,
 } from "./ports/durable-lifecycle-gate.js";
 export type {
+	DurableMessaging,
+	DurableMessagingAckReceipt,
+	DurableMessagingAttribute,
+	DurableMessagingCompactionReceipt,
+	DurableMessagingDeadLetter,
+	DurableMessagingDeadLetterCause,
+	DurableMessagingDelivery,
+	DurableMessagingEvent,
+	DurableMessagingLimits,
+	DurableMessagingMessage,
+	DurableMessagingNackReceipt,
+	DurableMessagingOperation,
+	DurableMessagingOutcome,
+	DurableMessagingPublishReceipt,
+	DurableMessagingRejectionCode,
+	DurableMessagingSubscription,
+	DurableMessagingSubscriptionReceipt,
+} from "./ports/durable-messaging.js";
+export {
+	DURABLE_MESSAGING_CONTRACT,
+	DURABLE_MESSAGING_LIMITS,
+	DURABLE_MESSAGING_WIT_INTERFACE,
+	durableMessagingOperation,
+	parseDurableMessagingLeaseId,
+	parseDurableMessagingOperation,
+} from "./ports/durable-messaging.js";
+export type {
 	EphemeralEntry,
 	EphemeralKey,
 	EphemeralLockLease,
@@ -535,14 +562,16 @@ export type {
 	TopicSpec,
 } from "./ports/messaging.js";
 export {
+	assertDeadLetterSupported,
 	assertDeliverySupported,
 	createInMemoryMessaging,
 	createPublishResult,
 	MESSAGING_PORT_CONTRACT_VERSION,
-	MESSAGING_WIT_INTERFACE,
 	MessagingCapabilityError,
 	MessagingDeliveryError,
+	MessagingDeliveryExhaustedError,
 	MessagingParseError,
+	MessagingSettlementCommittedError,
 	PORTABLE_MESSAGING_CAPABILITIES,
 	parseActorPlacementMode,
 	parseConsumerGroupId,
@@ -557,6 +586,15 @@ export {
 	tenantScopedConsumerGroup,
 	tenantScopedTopicName,
 } from "./ports/messaging.js";
+export type { MessagingSettlementOperation } from "./ports/messaging-settlement.js";
+export {
+	createMessagingSettlementTracker,
+	MESSAGING_SETTLEMENT_ID_LIMIT,
+	MESSAGING_SETTLEMENT_LIMIT,
+	MESSAGING_SETTLEMENT_TIMEOUT_MS,
+	MessagingSettlementPendingError,
+	MessagingSettlementUnknownError,
+} from "./ports/messaging-settlement.js";
 export type {
 	MeteringBus,
 	MeteringSink,

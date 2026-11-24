@@ -21,10 +21,12 @@ https://github.com/Hobo-Labs/HoBo/blob/main/docs/ci/runner-order.md
 ## 0. What you need
 
 - A GitHub repository with workflows under `.github/workflows/`.
-- The GitHub CLI, signed in: `gh auth status` must succeed.
+- The owner's secret store connected through HoBo MCP's `choose_secret_store`,
+  and HoBo's GitHub App installed on the repository (`hobo ci app create`).
+  HoBo reaches GitHub only with that App's installation tokens.
 - Node.js 22 or later and pnpm.
 
-Check: `gh auth status` and `node --version` both succeed.
+Check: `node --version` succeeds.
 
 ## 1. Install the three agent skills
 

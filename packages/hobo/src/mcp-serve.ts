@@ -23,6 +23,7 @@ import {
 	createOwnerCaptureApp,
 } from "./mcp-owner-channel.js";
 import { createOwnerPages } from "./mcp-owner-page.js";
+import { createRelayLoginTool } from "./mcp-relay-login.js";
 import {
 	createInfisicalCaptureConnector,
 	secretCaptureProjectDir,
@@ -40,7 +41,12 @@ import {
 	type OwnerSignIn,
 	ownerChannelRelayFolder,
 	ownerChannelSignIn,
+	withRelaySession,
 } from "./owner-store-session.js";
+import {
+	createRelayOwnerSessions,
+	type RelayLoginDeps,
+} from "./relay-owner-session.js";
 
 /**
  * The full `hobo-mcp` server, loaded by `bin/hobo-mcp.ts` once it has
@@ -64,6 +70,7 @@ export function composeHoboMcp(options: {
 	readonly clock?: DeviceClock;
 	readonly ownerSignIn?: OwnerSignIn;
 	readonly agentVault?: AgentVaultProxyDeps;
+	readonly relayLogin?: Partial<RelayLoginDeps> & { readonly waitMs?: number };
 }) {
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
@@ -135,10 +142,24 @@ export function composeHoboMcp(options: {
 				}),
 		},
 	});
+	const sleep =
+		options.relayLogin?.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+	const now = options.relayLogin?.now ?? Date.now;
+	const relay = createRelayOwnerSessions({
+		fetch: options.relayLogin?.fetch ?? fetch,
+		sleep,
+		now,
+	});
+	const ownerSession = withRelaySession(sessions, {
+		held: () => relay.held(),
+		now,
+	});
+	const pages = createOwnerPages();
 	const server = createHoboMcpServer({
 		cli: createComposedHoboCli({
 			ownerChannel: owner,
-			ownerSession: sessions,
+			ownerSession,
 			...(options.clock !== undefined ? { clock: options.clock } : undefined),
 		}),
 	});
@@ -171,8 +192,16 @@ export function composeHoboMcp(options: {
 		capture,
 		createStoreChoiceApp({
 			sessions,
-			pages: createOwnerPages(),
+			pages,
 			deposit: (name, value) => owner.deposit(name, value),
+			relayLogin: createRelayLoginTool({
+				relay,
+				pages,
+				sleep,
+				...(options.relayLogin?.waitMs !== undefined
+					? { waitMs: options.relayLogin.waitMs }
+					: undefined),
+			}),
 		}),
 	);
 	const ready = capture;
@@ -181,9 +210,11 @@ export function composeHoboMcp(options: {
 		server,
 		session,
 		sessions,
+		relay,
 		/** Stop whatever still waits on the owner and close open captures. */
 		async close() {
 			owner.jobs.close();
+			relay.close();
 			await sessions.close();
 			await ready.close();
 		},

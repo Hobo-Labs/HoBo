@@ -18,7 +18,7 @@ import {
 	verbHelpText,
 	type YardRuntime,
 } from "@hobo/cli";
-import type { HttpTransport, TrustedVault } from "@hobo/core";
+import type { HttpTransport } from "@hobo/core";
 import {
 	type AppHandOffMode,
 	egressFetch,
@@ -57,7 +57,6 @@ import {
 	CI_DEPLOY_OPTIONS,
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
-import type { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
 import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
@@ -492,8 +491,6 @@ export function createCiCommand(
 		now?: () => number;
 		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
 		vercelFetch?: VercelFetch;
-		deployCredentials?: TrustedVault;
-		readDeployCredential?: typeof readRelayDeployToken;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
 		vercelBuild?: VercelBuildRunner;
@@ -597,10 +594,10 @@ export function createCiCommand(
 				return runCiInsights({
 					command,
 					repository: local.repository,
-					cwd: local.root,
 					args: positionals.slice(1),
 					options: values,
-					env: deps.env ?? process.env,
+					credentials: deps.ownerCredentials?.(flags.cwd),
+					fetch: deps.fetch ?? fetch,
 				});
 			}
 			if (command === "route") {
@@ -654,11 +651,8 @@ export function createCiCommand(
 					values,
 					env: deps.env ?? process.env,
 					...bindingStoreFor(deps.ownerEntries, flags.cwd),
-					...(deps.deployCredentials !== undefined
-						? { credentials: deps.deployCredentials }
-						: undefined),
-					...(deps.readDeployCredential !== undefined
-						? { readDeployCredential: deps.readDeployCredential }
+					...(deps.ownerCredentials !== undefined
+						? { ownerCredentials: deps.ownerCredentials(flags.cwd) }
 						: undefined),
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
@@ -1145,6 +1139,8 @@ export function createCiCommand(
 						args: positionals.slice(1),
 						options: runOptions,
 						env,
+						credentials: deps.ownerCredentials?.(flags.cwd),
+						fetch: deps.fetch ?? fetch,
 						emitProgress,
 					});
 				const link =

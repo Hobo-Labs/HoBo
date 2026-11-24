@@ -8,6 +8,13 @@
         "powershell": "python scripts/agent_completion_hook.py",
         "cwd": ".",
         "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "node --experimental-strip-types scripts/agent-owner-ask-hook.mts --format=copilot",
+        "powershell": "node --experimental-strip-types scripts/agent-owner-ask-hook.mts --format=copilot",
+        "cwd": ".",
+        "timeoutSec": 10
       }
     ],
     "userPromptSubmitted": [

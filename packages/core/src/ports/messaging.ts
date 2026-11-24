@@ -1,11 +1,4 @@
-/**
- * Unified Messaging port — backend-agnostic publish/subscribe surface over
- * `wasi:messaging` / `topic()` (ADR-0138).
- *
- * App code targets this port; Kafka (native), Dapr pubsub, and local emulators
- * are adapters. Never import Kafka/Dapr clients from app Bindles.
- */
-
+import { randomUUID } from "node:crypto";
 import { CoreParseError } from "../errors.js";
 import {
 	cloneAsJson,
@@ -32,8 +25,8 @@ function stringBagFrom(value: JsonObject) {
 	return bag;
 }
 
-export const MESSAGING_PORT_CONTRACT_VERSION = "hobo.messaging-port/v1";
-export const MESSAGING_WIT_INTERFACE = "wasi:messaging/messaging@0.2.0";
+// public-contract: version id of the native messaging port contract providers advertise.
+export const MESSAGING_PORT_CONTRACT_VERSION = "hobo.messaging-port/v2";
 
 export type DeliveryGuarantee =
 	| "at-least-once"
@@ -130,6 +123,7 @@ export interface MessagingEvent {
 		| "messaging.nacked"
 		| "messaging.dead_lettered"
 		| "messaging.delivery.permanent_failure"
+		| "messaging.delivery.exhausted"
 		| "messaging.federated";
 	readonly topic: TopicName;
 	readonly messageId?: MessagingMessageId;
@@ -157,10 +151,6 @@ export interface Messaging {
 		options?: PublishOptions,
 	): Promise<PublishResult>;
 
-	/**
-	 * Pull-consume from a consumer group (aligned with wasi:messaging + queue
-	 * semantics). Push-style handlers use {@link subscribe}.
-	 */
 	consume(
 		topic: TopicName,
 		consumerGroup: ConsumerGroupId,
@@ -175,12 +165,12 @@ export interface Messaging {
 		options?: ConsumeOptions,
 	): Promise<{ handled: number; deadLettered: number }>;
 
-	ack(messageId: MessagingMessageId, leaseId: MessagingLeaseId): void;
+	ack(messageId: MessagingMessageId, leaseId: MessagingLeaseId): Promise<void>;
 	nack(
 		messageId: MessagingMessageId,
 		leaseId: MessagingLeaseId,
 		reason?: string,
-	): void;
+	): Promise<void>;
 
 	/** Audit / control-plane fact log (replayable). */
 	events(): readonly MessagingEvent[];
@@ -204,7 +194,7 @@ export const PORTABLE_MESSAGING_CAPABILITIES: MessagingCapabilities =
 		transactionalProduce: false,
 		idempotentProduce: false,
 		schemaRegistry: false,
-		deadLetter: true,
+		deadLetter: false,
 		partitionAware: false,
 		crossYardFederation: false,
 	});
@@ -229,12 +219,48 @@ export class MessagingDeliveryError extends Error {
 	}
 }
 
+export class MessagingDeliveryExhaustedError extends Error {
+	readonly code = "MESSAGING_DELIVERY_EXHAUSTED" as const;
+	constructor(
+		readonly delivery: ConsumedMessage,
+		readonly unprocessed: readonly ConsumedMessage[],
+		readonly handled: number,
+	) {
+		super("Delivery attempts exhausted; the message remains unsettled");
+		this.name = "MessagingDeliveryExhaustedError";
+	}
+}
+
+export class MessagingSettlementCommittedError extends Error {
+	readonly code = "MESSAGING_SETTLEMENT_COMMITTED" as const;
+	constructor(
+		readonly operation: "ack" | "nack",
+		readonly messageId: MessagingMessageId,
+		readonly leaseId: MessagingLeaseId,
+	) {
+		super(
+			`${operation} for ${messageId} committed but local observation failed`,
+		);
+		this.name = "MessagingSettlementCommittedError";
+	}
+}
+
 export class MessagingCapabilityError extends Error {
 	readonly code = "MESSAGING_CAPABILITY" as const;
 	constructor(message: string) {
 		super(message);
 		this.name = "MessagingCapabilityError";
 	}
+}
+
+export function assertDeadLetterSupported(
+	capabilities: MessagingCapabilities,
+	spec: { readonly deadLetterTopic?: TopicName },
+): void {
+	if (spec.deadLetterTopic !== undefined && !capabilities.deadLetter)
+		throw new MessagingCapabilityError(
+			"backend cannot transfer messages to a dead-letter topic",
+		);
 }
 
 const DELIVERY_SET = new Set<DeliveryGuarantee>([
@@ -501,6 +527,10 @@ interface GroupCursor {
 export function createInMemoryMessaging(
 	options: InMemoryMessagingOptions = {},
 ): Messaging {
+	if (options.capabilities?.deadLetter === true)
+		throw new MessagingCapabilityError(
+			"in-memory messaging cannot transfer messages to a dead-letter topic",
+		);
 	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = (options.tenantId ?? "local") as TenantId;
 	const now = options.now ?? (() => new Date().toISOString());
@@ -521,6 +551,7 @@ export function createInMemoryMessaging(
 	let offsetSeq = 0;
 	let msgSeq = 0;
 	let leaseSeq = 0;
+	const leasePrefix = randomUUID();
 
 	const emit = (
 		partial: Omit<MessagingEvent, "at" | "tenantId"> & {
@@ -554,6 +585,7 @@ export function createInMemoryMessaging(
 		capabilities,
 
 		async ensureTopic(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const scoped: TopicSpec = deepFreeze({
 				...spec,
 				name: tenantScopedTopicName(spec.tenantId, spec.name),
@@ -567,6 +599,7 @@ export function createInMemoryMessaging(
 		},
 
 		async ensureSubscription(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const topic = tenantScopedTopicName(spec.tenantId, spec.topic);
 			const group = tenantScopedConsumerGroup(
 				spec.tenantId,
@@ -684,7 +717,13 @@ export function createInMemoryMessaging(
 
 				const attempt = (cursor.attempts.get(msg.messageId) ?? 0) + 1;
 				cursor.attempts.set(msg.messageId, attempt);
-				const leaseId = parseMessagingLeaseId(`lease-${++leaseSeq}`);
+				if (leaseSeq >= Number.MAX_SAFE_INTEGER)
+					throw new MessagingDeliveryError(
+						"messaging lease sequence exhausted",
+					);
+				const leaseId = parseMessagingLeaseId(
+					`lease-${leasePrefix}-${++leaseSeq}`,
+				);
 				cursor.inflight.set(msg.messageId, {
 					leaseId,
 					expiresAtMs: nowMs + visibility,
@@ -717,7 +756,6 @@ export function createInMemoryMessaging(
 				...consumeOptions,
 			});
 			let handled = 0;
-			let deadLettered = 0;
 			const physical = tenantScopedTopicName(tenantId, topic);
 			const group = tenantScopedConsumerGroup(tenantId, consumerGroup);
 			const sub = [...subscriptions.values()].find(
@@ -725,76 +763,107 @@ export function createInMemoryMessaging(
 			);
 			const maxAttempts = sub?.maxDeliveryAttempts ?? 5;
 
-			for (const message of batch) {
+			for (const [index, message] of batch.entries()) {
+				const exhausted = (): never => {
+					emit({
+						type: "messaging.delivery.exhausted",
+						topic: physical,
+						messageId: message.messageId,
+						consumerGroup: group,
+						reason: "max_delivery_attempts",
+					});
+					throw new MessagingDeliveryExhaustedError(
+						message,
+						Object.freeze(batch.slice(index + 1)),
+						handled,
+					);
+				};
+				if (message.deliveryAttempt > maxAttempts) exhausted();
 				try {
 					await handler(message);
-					messaging.ack(message.messageId, message.leaseId);
-					handled += 1;
 				} catch (err) {
-					messaging.nack(
+					if (message.deliveryAttempt >= maxAttempts) exhausted();
+					await messaging.nack(
 						message.messageId,
 						message.leaseId,
 						err instanceof Error ? err.message : String(err),
 					);
-					if (message.deliveryAttempt >= maxAttempts) {
-						deadLettered += 1;
-						emit({
-							type: "messaging.dead_lettered",
-							topic: physical,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: "max_delivery_attempts",
-						});
-						emit({
-							type: "messaging.delivery.permanent_failure",
-							topic: physical,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: "max_delivery_attempts",
-						});
-						const cursor = getGroup(physical, group);
-						cursor.acked.add(message.messageId);
-						cursor.inflight.delete(message.messageId);
-					}
+					continue;
 				}
+				await messaging.ack(message.messageId, message.leaseId);
+				handled += 1;
 			}
-			return { handled, deadLettered };
+			return { handled, deadLettered: 0 };
 		},
 
-		ack(messageId, leaseId) {
+		async ack(messageId, leaseId) {
+			let found = false;
 			for (const [key, cursor] of groups) {
 				const inflight = cursor.inflight.get(messageId);
 				if (!inflight) continue;
+				found = true;
 				if (inflight.leaseId !== leaseId) {
-					throw new MessagingDeliveryError(`lease mismatch for ${messageId}`);
+					continue;
 				}
+				const current = Date.parse(now());
+				if (!Number.isFinite(current) || inflight.expiresAtMs <= current)
+					throw new MessagingDeliveryError(`lease expired for ${messageId}`);
 				cursor.acked.add(messageId);
 				cursor.inflight.delete(messageId);
 				const topic = parseTopicName(key.split("::")[0] ?? "unknown");
-				emit({ type: "messaging.acked", topic, messageId });
+				try {
+					emit({ type: "messaging.acked", topic, messageId });
+				} catch {
+					throw new MessagingSettlementCommittedError(
+						"ack",
+						messageId,
+						leaseId,
+					);
+				}
 				return;
 			}
-			throw new MessagingDeliveryError(`no inflight message ${messageId}`);
+			throw new MessagingDeliveryError(
+				found
+					? `lease mismatch for ${messageId}`
+					: `no inflight message ${messageId}`,
+			);
 		},
 
-		nack(messageId, leaseId, reason) {
+		async nack(messageId, leaseId, reason) {
+			let found = false;
 			for (const [key, cursor] of groups) {
 				const inflight = cursor.inflight.get(messageId);
 				if (!inflight) continue;
+				found = true;
 				if (inflight.leaseId !== leaseId) {
-					throw new MessagingDeliveryError(`lease mismatch for ${messageId}`);
+					continue;
 				}
+				const current = Date.parse(now());
+				if (!Number.isFinite(current) || inflight.expiresAtMs <= current)
+					throw new MessagingDeliveryError(`lease expired for ${messageId}`);
 				cursor.inflight.delete(messageId);
 				const topic = parseTopicName(key.split("::")[0] ?? "unknown");
-				emit({
-					type: "messaging.nacked",
-					topic,
-					messageId,
-					reason: reason ?? "nack",
-				});
+				try {
+					emit({
+						type: "messaging.nacked",
+						topic,
+						messageId,
+						reason: reason ?? "nack",
+					});
+				} catch {
+					throw new MessagingSettlementCommittedError(
+						"nack",
+						messageId,
+						leaseId,
+					);
+				}
 				return;
 			}
-			throw new MessagingDeliveryError(`no inflight message ${messageId}`);
+			throw new MessagingDeliveryError(
+				found
+					? `lease mismatch for ${messageId}`
+					: `no inflight message ${messageId}`,
+			);
 		},
 
 		events() {

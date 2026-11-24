@@ -393,6 +393,16 @@ can be admitted against current policy; interrupted running leases remain uncert
 The persisted queue deadline is exclusive: allocation is refused at or after that
 instant, including after asynchronous provider preflight. A claimed financial hold
 is retained until native final usage or valid unused-release evidence resolves it.
+For a shared fixed-window budget, the full approved work duration is checked
+again after both the parent reservation and execution claim return, including
+time spent waiting for the store. The trusted allocation coverage check is
+also repeated at return. If the window can no longer fund the work, the result
+is refused and the committed hold remains for evidence-based reconciliation.
+That post-commit failure is not a pre-commit denial eligible for offer fallback.
+Callback errors that use the admission-denial type are converted to a
+reconciliation error once the hold has committed. A financial authority must
+itself use that denial type only for definitive refusals before an admission
+write; an uncertain commit or transport failure must use a different error.
 
 The root entrypoint and scheduler target Node. Cloudflare Workers import the
 portable `@hobo/ci/execution` entrypoint, which has no Node ledger or Dispatcher
@@ -533,7 +543,11 @@ const policy = defineCiPolicy({
 });
 ```
 
-Optional fleet overflow stays disabled in [`.hobo/ci.json`](../../.hobo/ci.json). Enable `github-hosted` (`ubuntu-24.04`) or `hostinger-arc` (kubernetes scale set, `runsOn: hobo-arc`) only when a full hobo fleet should spill. The default machine type is `ubuntu-24.04`. Policy and `#CiPolicyProvider` CUE both reject `ubuntu-latest` (invalid fixture `desired-policy-github-latest.json`). Bound overflow labels are not re-relayed to hobo, and ARC leases are not aborted as isolated hosts. See [RUNNER-QUEUE.md](./RUNNER-QUEUE.md).
+Optional fleet overflow stays disabled in [`.hobo/ci.json`](../../.hobo/ci.json) unless committed policy turns it on. Enable `github-hosted` (`ubuntu-24.04`) or `hostinger-arc` (kubernetes scale set, `runsOn: hobo-arc`) only when a full hobo fleet should spill. The default machine type is `ubuntu-24.04`. Policy and `#CiPolicyProvider` CUE both reject `ubuntu-latest` (invalid fixture `desired-policy-github-latest.json`). Bound overflow labels are not re-relayed to hobo, and ARC leases are not aborted as isolated hosts. See [RUNNER-QUEUE.md](./RUNNER-QUEUE.md).
+
+The `agent37-runners` provider is enabled with a matching `runnerRouting.externalPools` entry (`hobo-agent37`, prefix `hobo-a37-`, `maxRunners` 4, the provider pool's own `maxBoxes`). A PR batch whose verified fleet claim fails spills to that pool before public hosted compute only when both head and base repositories match the caller and a host-installed observer (`observeAgent37Pool`) reports free capacity. Fork, missing, or malformed pull-request evidence never reaches the observer and uses the verified public fallback instead. The route job's own token cannot read the pool, so an absent or failing observer leaves the batch on that fallback and first emits a structured `hobo-ci-agent37-refusal` warning with the pool label, run ID, run attempt and refusal reason, without provider error text. Provider and external-pool declarations are unobservable to generic signoff selection, so an Actions queue pickup alone cannot stand in for the trusted pool observer. The pure `agent37Capacity` helper turns a committed pool plus an observation into that spill target and refuses off, saturated or malformed ones. The merge-group batch and every trunk event stay off agent37: the merge batch keeps its public-compute path, and trunk runs use the queue rule, which weighs only fleet, local and hosted members.
+
+Agent37 pools support `default`, `vm` and `performance` boxes; documented shapes are 2 vCPU/4 GB, 4/8, 4/16 and 4/32, plus 8/64 for VM and performance boxes. Disk is 1–1024 whole GB. Non-US regions require `vm` or `performance`. Templates require a positive numeric `@revision`, idle TTL is 60–3600 seconds, and concurrent memory above 32 GB requires `allowAboveFreeTier: true`. Network allowlists contain 1–100 unique lowercase DNS hostnames or leading-label wildcards; IP addresses, wildcard bases with fewer than three DNS labels, and registry-style wildcards such as `*.k12.ak.us` are rejected, while specific service wildcards such as `*.actions.githubusercontent.com` remain valid. Monthly USD-microdollar budgets and create-per-hour limits are required. Agent37 offers use the `gh-actions` backend and the injected `agent37-vm-4vcpu` financial model. Zod, CUE, protobuf round-trips and runtime parsers share valid/invalid fixtures for these rules. The declaration is configuration only: it does not provision boxes or capture credentials.
 
 Authoring does not itself create provider Connections or publish policy. A
 managed host must authorize each Connection, store operator intent separately
@@ -724,9 +738,36 @@ still authorized or running. Terminal and uncertain claims cannot authorize a
 new start. Eligibility is checked on the original authorization; a matching
 lost-response retry is a receipt for that committed authorization.
 
-The GitHub assignment lookup and hook endpoint are not yet wired into the
+The GitHub assignment lookup, optional start handler, and hook are not yet wired into the
 production controller, so these store guarantees alone do not make strict CI
-runner starts available. See the [fleet operator guide](../../docs/design/fleet-enrollment-operator.md).
+runner starts available. See the [fleet operator guide](../../docs/ci/fleet-enrollment.md).
+
+An unclaimed runner slot that becomes uncertain retains its reservation.
+After a trusted controller confirms teardown, it can retry the
+`uncertain` → `released` transition with `{ teardownConfirmed: true }`; an
+identical retry does not release capacity twice. A claimed uncertain slot is
+released through execution settlement instead. The store records the release,
+but trusts the controller's assertion and does not itself verify provider
+teardown evidence.
+
+Before enabling admission after an upgrade, quarantine and reconcile slots
+already marked uncertain by an older version. That version may have released
+their reservations; this change cannot reconstruct whether those runners still
+exist or restore the missing accounting automatically.
+
+Fleet capacity values and other fleet counters use the unsigned 32-bit wire
+range. PostgreSQL startup widens legacy signed columns under its schema lock;
+the database user must have permission to alter those tables. Capacity revisions never wrap: at
+the wire limit, further changes, including capacity releases, fail atomically.
+Do not reset a revision, because a stale reservation could become valid again.
+Recovering an exhausted group requires a future revision-format migration and
+operator reconciliation.
+
+Effect-delivery fences also stop at the wire limit and never wrap. An effect
+whose fence is exhausted cannot be claimed again; do not reset the fence,
+because an old worker token could then be reused. Observation sequences cannot
+advance beyond their wire limit either. These limits require future format
+migrations and reconciliation for continued operation.
 
 The [start-binding verification skill](../../.agents/skills/verify-ci-start-binding/SKILL.md)
 checks the store boundary and records its assumptions. This projection of its
@@ -746,6 +787,74 @@ stateDiagram-v2
   Authorized --> Rejected: request does not match or cannot start
   Authorized --> Waiting: execution finishes
   Rejected --> Waiting: execution finishes
+```
+
+The [capacity verification skill](../../.agents/skills/verify-ci-capacity/SKILL.md)
+checks stale reservations and revision exhaustion. The following projection
+shows two jobs using one capacity snapshot; it hides one same-label step from
+five modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> ReadCapacity
+  ReadCapacity --> ReservationRecorded: reserve one slot
+  ReservationRecorded --> StaleRefused: refuse stale capacity view
+```
+
+The [uncertain-capacity verification skill](../../.agents/skills/verify-ci-uncertain-capacity/SKILL.md)
+models recovery and checks the stores. The projection hides five same-label
+steps from 14 modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Reserved
+  Reserved --> Uncertain: runner status becomes uncertain
+  Uncertain --> Ready: teardown confirmed
+  Uncertain --> SettlementPending: teardown confirmed
+  SettlementPending --> Ready: execution status recorded
+  Ready --> Released: release reserved capacity
+```
+
+The [fleet-delivery verification skill](../../.agents/skills/verify-ci-fleet-delivery/SKILL.md)
+checks delivery fences and ambiguous dispatch. The projection hides 60
+same-label steps from 90 modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Ready
+  Ready --> Held: claim delivery with a new fence
+  Held --> Retry: delivery expires
+  Retry --> Held: claim delivery with a new fence
+  Held --> Exhausted: delivery expires at the fence limit
+  Held --> Dispatching: worker starts external dispatch
+  Dispatching --> Reconcile: delivery expires during dispatch
+  Dispatching --> Confirmed: active worker confirms effect
+```
+
+The [CI budget-window verification skill](../../.agents/skills/verify-ci-budget-window/SKILL.md)
+models the post-claim time check. This projection hides 13 same-label steps
+from 24 modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Fits
+  Fits --> Claiming: claim the financial hold
+  Claiming --> Committed: claim commits
+  Committed --> Allowed: work still fits the window
+  Committed --> Refused: work no longer fits the window; hold retained
+```
+
+The reservation projection also hides 13 same-label steps from 24 modeled
+steps. A refused committed reservation retains its hold and cannot be treated
+as a pre-commit fallback denial.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Fits
+  Fits --> Reserving: reserve the financial hold
+  Reserving --> Committed: hold commits
+  Committed --> Accepted: work still fits the window
+  Committed --> Refused: work no longer fits the window; hold retained
 ```
 
 ## Relay job seams

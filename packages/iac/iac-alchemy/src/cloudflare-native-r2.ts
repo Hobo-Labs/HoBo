@@ -33,12 +33,14 @@ import {
 	registerAlchemySource,
 	verifyAlchemySourceFence,
 } from "./source-fence.js";
+import { acceptSynchronousTrue } from "./synchronous-result.js";
 
 export interface CloudflareR2BucketClaim {
 	readonly bindleName: string;
 	readonly resourceName: string;
 	readonly bucketEpoch: string;
 	readonly resourceId: string;
+
 	readonly legacyResourceId: string;
 }
 
@@ -152,7 +154,9 @@ export function cloudflareR2ProxySource(
 export function cloudflareNativeR2BindleMappers<Requirements>(
 	options: CloudflareBindleMappingOptions & {
 		readonly verifyBucket: (claim: CloudflareR2BucketClaim) => boolean;
+
 		readonly verifyGrant: (claim: CloudflareR2GrantClaim) => boolean;
+
 		readonly kv?: {
 			readonly verifyNamespace: (claim: CloudflareKvNamespaceClaim) => boolean;
 			readonly verifyGrant: (claim: CloudflareKvGrantClaim) => boolean;
@@ -164,11 +168,16 @@ export function cloudflareNativeR2BindleMappers<Requirements>(
 	const kv = options.kv;
 	const fence = captureAlchemySourceFence(options.sourceFence);
 	const projectRoot = options.projectRoot;
+	const flagshipFlags = options.flagshipFlags;
+	const secrets = options.secrets;
 	let baseOptions: CloudflareBindleMappingOptions = {
 		workerModules: options.workerModules,
 	};
 	if (projectRoot !== undefined) baseOptions = { ...baseOptions, projectRoot };
 	if (fence !== undefined) baseOptions = { ...baseOptions, sourceFence: fence };
+	if (flagshipFlags !== undefined)
+		baseOptions = { ...baseOptions, flagshipFlags };
+	if (secrets !== undefined) baseOptions = { ...baseOptions, secrets };
 	const base =
 		kv === undefined
 			? cloudflareBindleMappers<Requirements>(baseOptions)
@@ -193,7 +202,7 @@ export function cloudflareNativeR2BindleMappers<Requirements>(
 		);
 		const bucketVerified = () => {
 			try {
-				return verifyBucket(bucket) === true;
+				return acceptSynchronousTrue(verifyBucket(bucket));
 			} catch {
 				return false;
 			}
@@ -221,7 +230,7 @@ export function cloudflareNativeR2BindleMappers<Requirements>(
 		});
 		const grantVerified = () => {
 			try {
-				return verifyGrant(grantClaim) === true;
+				return acceptSynchronousTrue(verifyGrant(grantClaim));
 			} catch {
 				return false;
 			}

@@ -19,6 +19,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createActionsBackend } from "../src/actions-backend.js";
 
 const directories: string[] = [];
+const publishPid =
+	'const fs=require("node:fs");fs.writeFileSync("pid.tmp",String(process.pid));fs.renameSync("pid.tmp","pid");';
 function workspace() {
 	const path = mkdtempSync(join(tmpdir(), "hobo-ci-actions-"));
 	directories.push(path);
@@ -259,7 +261,7 @@ describe("bound GitHub Actions pipeline backend", () => {
 		const promise = executePipeline(
 			createActionsBackend({ workspace: dir }),
 			pipeline(
-				'require("node:fs").writeFileSync("pid",String(process.pid));process.on("SIGTERM",()=>{});setInterval(()=>{},1000)',
+				`${publishPid}process.on("SIGTERM",()=>{});setInterval(()=>{},1000)`,
 			),
 			{ signal: controller.signal },
 		);
@@ -274,7 +276,7 @@ describe("bound GitHub Actions pipeline backend", () => {
 		const result = await executePipeline(
 			createActionsBackend({ workspace: dir }),
 			pipeline(
-				'require("node:fs").writeFileSync("pid",String(process.pid));process.on("SIGTERM",()=>{});setInterval(()=>{},1000)',
+				`${publishPid}process.on("SIGTERM",()=>{});setInterval(()=>{},1000)`,
 				{ timeoutSeconds: 1 },
 			),
 		);
@@ -322,9 +324,7 @@ describe("bound GitHub Actions pipeline backend", () => {
 	it("closes active work before a new session can use the workspace", async () => {
 		const dir = workspace();
 		const backend = createActionsBackend({ workspace: dir });
-		const input = pipeline(
-			'require("node:fs").writeFileSync("pid",String(process.pid));setInterval(()=>{},1000)',
-		);
+		const input = pipeline(`${publishPid}setInterval(()=>{},1000)`);
 		const signal = new AbortController().signal;
 		const session = await backend.open(input, signal);
 		const step = input.steps[0];

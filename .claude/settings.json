@@ -61,6 +61,11 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/scripts/agent_completion_hook.py\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types \"${CLAUDE_PROJECT_DIR:-.}/scripts/agent-owner-ask-hook.mts\" --format=claude",
+            "timeout": 10
           }
         ]
       }

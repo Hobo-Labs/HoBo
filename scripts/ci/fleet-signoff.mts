@@ -98,7 +98,7 @@ export type FleetOverflowMember = Readonly<{
 	/** Is this a directly observable GitHub Actions runner label? */
 	observable: boolean;
 	/** Keep configured local and hosted providers in their normal order. */
-	backend?: "arc" | "local" | "github";
+	backend?: "arc" | "local" | "github" | "agent37";
 }>;
 
 export type FleetVerificationPlan =
@@ -167,7 +167,15 @@ export async function planFleetVerification(input: {
 	if (slip.ok) {
 		const { tier, runner } = slip.decision;
 		const allowed =
-			tier === "fleet" ? [labels.fleet, labels.trunk] : [labels[tier]];
+			tier === "fleet"
+				? [labels.fleet, labels.trunk]
+				: tier === "local" || tier === "github"
+					? [labels[tier]]
+					: tier === "agent37"
+						? (input.overflow ?? [])
+								.filter((entry) => entry.id.startsWith("external-pool:"))
+								.map((entry) => entry.runsOn)
+						: [];
 		if (!allowed.some((label) => label.toLowerCase() === runner.toLowerCase()))
 			slip = { ok: false, why: "routing slip tier and label disagree" };
 	}
@@ -178,7 +186,7 @@ export async function planFleetVerification(input: {
 	)
 		return {
 			kind: "runner",
-			tier: slip.decision.tier,
+			tier: slip.decision.tier === "agent37" ? "overflow" : slip.decision.tier,
 			runner: slip.decision.runner,
 		};
 	if (!Number.isFinite(input.nowMs))
@@ -308,7 +316,8 @@ export async function planFleetVerification(input: {
 		tier:
 			selection.runner.backend === "hobo"
 				? "fleet"
-				: selection.runner.backend === "arc"
+				: selection.runner.backend === "arc" ||
+						selection.runner.backend === "agent37"
 					? "overflow"
 					: selection.runner.backend === "local"
 						? "local"
@@ -354,13 +363,14 @@ export function readFleetOverflowPolicy(
 		"kubernetes",
 		"hobo-box-worker",
 		"vercel",
+		"agent37",
 	]);
 	const extras: FleetOverflowMember[] = [];
 	const add = (
 		id: string,
 		runsOn: string,
 		observable: boolean,
-		backend?: "local" | "github",
+		backend?: "local" | "github" | "agent37",
 	) => {
 		if (backend === undefined) extras.push({ id, runsOn, observable });
 		else extras.push({ id, runsOn, observable, backend });
@@ -418,13 +428,16 @@ export function readFleetOverflowPolicy(
 			const allowed = ["id", "kind", "runsOn", "connectionRef", "enabled"];
 			if (kind === "kubernetes") allowed.push("scaleSet", "engine");
 			if (kind === "vercel") allowed.push("location");
+			if (kind === "agent37") allowed.push("pool");
 			if (Object.keys(provider).some((key) => !allowed.includes(key)))
 				return undefined;
 			const scaleSet = asObject(provider.scaleSet);
 			const engine = asObject(provider.engine);
+			const pool = asObject(provider.pool);
 			if (
 				(provider.scaleSet !== undefined && !scaleSet) ||
 				(provider.engine !== undefined && !engine) ||
+				(provider.pool !== undefined && !pool) ||
 				(scaleSet && engine) ||
 				(kind === "local" && runsOn !== "hobo-local-host") ||
 				(kind === "github" && runsOn.toLowerCase() === "ubuntu-latest") ||
@@ -466,14 +479,18 @@ export function readFleetOverflowPolicy(
 					`${environmentName}:${id}`,
 					runsOn,
 					directKinds.has(kind) || !!scaleSet,
-					kind === "local" || kind === "github" ? kind : undefined,
+					kind === "local" || kind === "github"
+						? kind
+						: kind === "agent37"
+							? "agent37"
+							: undefined,
 				);
 		}
 	}
 	for (const [index, pool] of routing.externalPools.entries()) {
 		if (pool.maxRunners === 0) continue;
 		for (const runsOn of pool.labels)
-			add(`external-pool:${index}:${runsOn}`, runsOn, true);
+			add(`external-pool:${index}:${runsOn}`, runsOn, false);
 	}
 	if (root.integrations !== undefined) {
 		if (!Array.isArray(root.integrations) || root.integrations.length > 16)

@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-139 codes.
+141 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -58,7 +58,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_CONNECTION_UNCONFIRMED`](#hobo_ci_connection_unconfirmed) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_CONNECT_CEREMONY`](#hobo_ci_connect_ceremony) | `packages/hobo/src/ci-connect.ts` |
 | [`HOBO_CI_DEPLOYED`](#hobo_ci_deployed) | `packages/hobo/src/ci-relay-deploy.ts` |
-| [`HOBO_CI_DEPLOY_AUTH_REQUIRED`](#hobo_ci_deploy_auth_required) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_AUTH_REQUIRED`](#hobo_ci_deploy_auth_required) | `packages/hobo/src/ci-relay-deploy-credential.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_CONFLICT`](#hobo_ci_deploy_binding_conflict) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_MALFORMED`](#hobo_ci_deploy_binding_malformed) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_UNAVAILABLE`](#hobo_ci_deploy_binding_unavailable) | `packages/hobo/src/ci-relay-yard.ts` |
@@ -100,6 +100,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_FLEET_FAILED`](#hobo_ci_fleet_failed) | `packages/hobo/src/ci-fleet.ts` |
 | [`HOBO_CI_FLEET_KUBECONFIG_UNSUPPORTED`](#hobo_ci_fleet_kubeconfig_unsupported) | `packages/hobo/src/ci-fleet-caches.ts` |
 | [`HOBO_CI_FLEET_SCALE_SET_NOT_FOUND`](#hobo_ci_fleet_scale_set_not_found) | `packages/hobo/src/ci-fleet-caches.ts` |
+| [`HOBO_CI_GITHUB_APP_NEEDED`](#hobo_ci_github_app_needed) | `packages/hobo/src/ci-github-app.ts` |
 | [`HOBO_CI_GITHUB_AUTH`](#hobo_ci_github_auth) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_DEVICE`](#hobo_ci_github_device) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_FAILED`](#hobo_ci_github_failed) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
@@ -150,6 +151,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_SECRET_STORE_PLANNED`](#hobo_ci_secret_store_planned) | `packages/hobo/src/ci-secret-store.ts` |
 | [`HOBO_CI_SECRET_STORE_PROVISIONED`](#hobo_ci_secret_store_provisioned) | `packages/hobo/src/ci-secret-store.ts` |
 | [`HOBO_CI_SECRET_STORE_RUNTIME_UNBUILT`](#hobo_ci_secret_store_runtime_unbuilt) | `packages/hobo/src/ci-secret-store.ts` |
+| [`HOBO_CI_SECRET_STORE_SESSION_REQUIRED`](#hobo_ci_secret_store_session_required) | `packages/hobo/src/ci-relay-deploy-credential.ts` |
 | [`HOBO_CI_SECRET_STORE_UNAVAILABLE`](#hobo_ci_secret_store_unavailable) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_SECRET_STORE_USAGE`](#hobo_ci_secret_store_usage) | `packages/hobo/src/ci-secret-store-connect.ts`, `packages/hobo/src/ci-secret-store.ts` |
 | [`HOBO_CI_SECRET_STORE_VERIFIED`](#hobo_ci_secret_store_verified) | `packages/hobo/src/ci-secret-store-connect.ts` |
@@ -159,7 +161,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_STORE_CHOICE`](#hobo_ci_store_choice) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_STORE_NEEDS_SIGN_IN`](#hobo_ci_store_needs_sign_in) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_STORE_UNAVAILABLE`](#hobo_ci_store_unavailable) | `packages/hobo-ci/src/prepare.ts` |
-| [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
+| [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_UP_NO_BRANCH`](#hobo_ci_up_no_branch) | `packages/hobo/src/ci-up-relay.ts` |
 | [`HOBO_CI_UP_PLATFORM_DRIFT`](#hobo_ci_up_platform_drift) | `packages/hobo/src/ci-up-relay.ts` |
 | [`HOBO_CI_UP_SOURCE_UNAVAILABLE`](#hobo_ci_up_source_unavailable) | `packages/hobo/src/ci-up-relay.ts` |
@@ -591,12 +593,16 @@ What to do: follow the message.
 
 ### HOBO_CI_DEPLOY_AUTH_REQUIRED
 
-Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+Returned from `packages/hobo/src/ci-relay-deploy-credential.ts`.
 
-Message:
+Messages:
 
 ```text
-The deploy token is read from the secret store, never the environment: run with the owner's store session (HoBo MCP's choose_secret_store) in GitHub Actions with id-token: write, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.
+The owner's store session holds no Vercel deploy token at {RELAY_DEPLOY_TOKEN_REF}. Run hobo cd up once: it connects HoBo's Vercel account and keeps the token there, where hobo ci deploy reads it.
+```
+
+```text
+{RELAY_DEPLOY_TOKEN_REF} in the owner's store is not a single-line Vercel token. Run hobo cd up again to reconnect HoBo's Vercel account.
 ```
 
 What to do: follow the message.
@@ -1216,6 +1222,21 @@ The cluster has no AutoscalingRunnerSet in namespace {namespace}.
 
 What to do: follow the message.
 
+### HOBO_CI_GITHUB_APP_NEEDED
+
+Returned from `packages/hobo/src/ci-github-app.ts`.
+
+Message:
+
+```text
+HoBo reads GitHub Actions only through its GitHub App, and no installation token for this repository could be minted.
+```
+
+What to do:
+
+- Connect the owner's secret store through HoBo MCP's choose_secret_store.
+- Install HoBo's GitHub App (hobo ci app create) on the repository with Actions read permission, and Actions write permission for hobo ci rerun.
+
 ### HOBO_CI_GITHUB_AUTH
 
 Returned from `packages/hobo/src/ci-github-connect.ts`.
@@ -1263,7 +1284,7 @@ Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`
 Messages:
 
 ```text
-GitHub denied this read. Check gh auth status and repository Actions permissions.
+GitHub denied this read. Check that HoBo's GitHub App is installed on the repository with Actions read permission.
 ```
 
 ```text
@@ -1275,11 +1296,11 @@ GitHub rate limited this read. Wait before retrying.
 ```
 
 ```text
-GitHub could not be read, or answered with something that is not a run. Check gh auth status and repository Actions permissions.
+GitHub could not be read, or answered with something that is not a run. Check that HoBo's GitHub App is installed on the repository with Actions read permission.
 ```
 
 ```text
-GitHub CLI could not complete the CI run operation. Check gh auth status and repository Actions permissions; inspect the run before repeating a rerun because its outcome may be unconfirmed.
+GitHub could not complete the CI run operation. Check that HoBo's GitHub App is installed on the repository with Actions permissions; inspect the run before repeating a rerun because its outcome may be unconfirmed.
 ```
 
 ```text
@@ -1288,7 +1309,7 @@ GitHub found no such repository. Check --repo.
 
 What to do:
 
-- Check gh auth status and repository Actions permissions, then inspect the run before repeating a mutation.
+- Check that HoBo's GitHub App is installed on the repository with Actions read permission, and Actions write permission for hobo ci rerun, then inspect the run before repeating a mutation.
 
 ### HOBO_CI_GITHUB_KEY_ERROR
 
@@ -1914,6 +1935,18 @@ The owner store's binding names a {binding.kind} store, which the relay cannot r
 
 What to do: follow the message.
 
+### HOBO_CI_SECRET_STORE_SESSION_REQUIRED
+
+Returned from `packages/hobo/src/ci-relay-deploy-credential.ts`.
+
+Message:
+
+```text
+hobo ci deploy reads the Vercel deploy token only through the owner's store session ({RELAY_DEPLOY_TOKEN_REF}), never from the environment or a CI job's identity. Connect the store with HoBo MCP's choose_secret_store (cwd: this project), then run again; --dry-run shows what would be sent without it.
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_SECRET_STORE_UNAVAILABLE
 
 Returned from `packages/hobo-ci/src/prepare.ts`.
@@ -2031,16 +2064,12 @@ What to do: follow the message.
 
 ### HOBO_CI_TOOL_REQUIRED
 
-Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts`.
+Returned from `packages/hobo/src/ci-runs.ts`.
 
-Messages:
-
-```text
-Install the GitHub CLI (gh) and authenticate with gh auth login, then retry this CI command.
-```
+Message:
 
 ```text
-Install {…}, then retry this CI command.
+Install Git, then retry this CI command.
 ```
 
 What to do: follow the message.

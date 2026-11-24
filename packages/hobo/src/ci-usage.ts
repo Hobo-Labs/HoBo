@@ -23,7 +23,14 @@ import {
 	stopping,
 } from "./ci-activity.js";
 import type { CiCommand, CiCommandContext } from "./ci-commands.js";
-import { CiProcessError, type CiRunExec, runCiProcess } from "./ci-runs.js";
+import {
+	GITHUB_APP_NEEDED_REFUSAL,
+	GITHUB_REST_ORIGIN,
+	GithubApiError,
+	GithubAppNeeded,
+	type GithubAppReader,
+	githubAppReader,
+} from "./ci-github-app.js";
 
 const DAY_MS = 86_400_000;
 
@@ -40,16 +47,12 @@ export const GITHUB_STANDARD_RATE: MinuteRate = {
 	readOn: GITHUB_INCLUDED_COMPUTE_OBSERVED_AT,
 };
 
-export type CiInsightCommandDeps = Readonly<{
-	execFile?: CiRunExec;
-}>;
-
 const USAGE_HELP = [
 	"hobo ci usage [--repo owner/name] [--since 30d] [--json]",
 	"hobo ci usage --source github [--repo owner/name] [--since 30d] [--runs <n>] [--json]",
 	"Billed minutes per runner and day, short jobs, minutes kept off GitHub-hosted runners and the included minutes left.",
 	"  --source relay   the connected relay's run history (default; --relay, .hobo/ci.json, HOBO_CI_RELAY_URL or the hobo ci setup link)",
-	"  --source github  the repository's recent runs, read with the GitHub CLI",
+	"  --source github  the repository's recent runs, read through HoBo's GitHub App installation on it",
 ].join("\n");
 
 const time = z.string().min(1).nullish();
@@ -108,27 +111,12 @@ function earlierAttempt(
 export async function readGithubHistory(
 	input: Readonly<{
 		repository: string;
-		cwd: string;
 		runs: number;
 		sinceMs: number;
-		exec: CiRunExec;
-		env: NodeJS.ProcessEnv;
+		github: GithubAppReader;
 	}>,
 ): Promise<GithubHistory> {
-	const env = Object.fromEntries(
-		Object.entries(input.env).filter(
-			([name]) => !name.startsWith("HOBO_CI_ACCOUNT_TOKEN"),
-		),
-	);
-	const api = async (path: string): Promise<string> =>
-		(
-			await input.exec("gh", ["api", path], {
-				cwd: input.cwd,
-				timeout: 30_000,
-				maxBuffer: 16 * 1024 * 1024,
-				env,
-			})
-		).stdout;
+	const api = (path: string): Promise<string> => input.github.read(path);
 	const repo = `repos/${input.repository}`;
 	const repository = GithubRepository.parse(JSON.parse(await api(repo)));
 	const listed = RunsPage.parse(
@@ -182,32 +170,25 @@ export async function readGithubHistory(
 }
 
 export function githubFailure(error: Error): CommandResult {
-	if (error instanceof CiProcessError && error.kind === "missing")
-		return {
-			ok: false,
-			status: "unavailable",
-			code: "HOBO_CI_TOOL_REQUIRED",
-			message:
-				"Install the GitHub CLI (gh) and authenticate with gh auth login, then retry this CI command.",
-		};
-	if (error instanceof CiProcessError && error.kind === "timeout")
+	if (error instanceof GithubAppNeeded) return GITHUB_APP_NEEDED_REFUSAL;
+	if (error instanceof GithubApiError && error.kind === "timeout")
 		return {
 			ok: false,
 			status: "unconfirmed",
 			code: "HOBO_CI_OPERATION_TIMEOUT",
 			message: "The GitHub request timed out. Nothing was changed; retry.",
 		};
-	const status = error instanceof CiProcessError ? error.httpStatus : undefined;
+	const status = error instanceof GithubApiError ? error.httpStatus : undefined;
 	return {
 		ok: false,
 		status: "error",
 		code: "HOBO_CI_GITHUB_FAILED",
 		message:
 			status === 401 || status === 403
-				? "GitHub denied this read. Check gh auth status and repository Actions permissions."
+				? "GitHub denied this read. Check that HoBo's GitHub App is installed on the repository with Actions read permission."
 				: status === 404
 					? "GitHub found no such repository. Check --repo."
-					: "GitHub could not be read, or answered with something that is not a run. Check gh auth status and repository Actions permissions.",
+					: "GitHub could not be read, or answered with something that is not a run. Check that HoBo's GitHub App is installed on the repository with Actions read permission.",
 	};
 }
 
@@ -434,51 +415,42 @@ export function parseInsightArgs(
 	};
 }
 
-async function githubToken(
-	exec: CiRunExec,
-	cwd: string,
-	env: NodeJS.ProcessEnv,
-): Promise<string | undefined> {
-	try {
-		const token = (
-			await exec("gh", ["auth", "token"], {
-				cwd,
-				timeout: 10_000,
-				maxBuffer: 4096,
-				env,
-			})
-		).stdout.trim();
-		return token.length > 0 ? token : undefined;
-	} catch {
-		return undefined;
-	}
+export function contextGithubApp(
+	context: CiCommandContext,
+	repository: string,
+	scope: string,
+): GithubAppReader {
+	return githubAppReader({
+		credentials: context.credentials,
+		repository,
+		fetch: context.fetch,
+		scope,
+	});
 }
 
 async function usageFromGithub(
 	context: CiCommandContext,
 	options: InsightArgs,
-	exec: CiRunExec,
 ): Promise<CommandResult> {
-	const { root, repository } = await githubRepository(
+	const { repository } = await githubRepository(
 		context,
 		options.repo,
 		USAGE_HELP,
 	);
+	const github = contextGithubApp(context, repository, "hobo ci usage");
 	const history = await githubHistoryOrStop(() =>
 		readGithubHistory({
 			repository,
-			cwd: root,
 			runs: options.runs,
 			sinceMs: options.sinceMs,
-			exec,
-			env: context.env,
+			github,
 		}),
 	);
 	const owner = history.repository.split("/")[0] ?? "";
 	const reader = new GithubMinutesReader({
 		fetch: context.fetch,
-		baseUrl: "https://api.github.com",
-		token: () => githubToken(exec, root, context.env),
+		baseUrl: GITHUB_REST_ORIGIN,
+		token: () => github.token().catch(() => undefined),
 		plan: undefined,
 		recentMinutes: undefined,
 		now: context.now,
@@ -507,13 +479,9 @@ async function usageFromGithub(
 	};
 }
 
-async function usage(
-	context: CiCommandContext,
-	exec: CiRunExec,
-): Promise<CommandResult> {
+async function usage(context: CiCommandContext): Promise<CommandResult> {
 	const options = parseInsightArgs(context.args, context.now(), USAGE_HELP);
-	if (options.source === "github")
-		return usageFromGithub(context, options, exec);
+	if (options.source === "github") return usageFromGithub(context, options);
 	const target = await selectRelay(context, options);
 	if (!target) return noRelaySelected(", or pass --source github");
 	const report = await readRelayReport(
@@ -538,16 +506,9 @@ async function usage(
 	};
 }
 
-export function createCiUsageCommand(
-	deps: CiInsightCommandDeps = {},
-): CiCommand {
-	const exec = deps.execFile ?? runCiProcess;
-	return {
-		name: "usage",
-		summary:
-			"Billed minutes per runner and day, short jobs, minutes kept off GitHub-hosted runners and the included minutes left.",
-		run: (context) => stopping(() => usage(context, exec)),
-	};
-}
-
-export const CI_USAGE_COMMAND = createCiUsageCommand();
+export const CI_USAGE_COMMAND: CiCommand = {
+	name: "usage",
+	summary:
+		"Billed minutes per runner and day, short jobs, minutes kept off GitHub-hosted runners and the included minutes left.",
+	run: (context) => stopping(() => usage(context)),
+};

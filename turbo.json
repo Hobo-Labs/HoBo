@@ -1,7 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": [
-    "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     "tsconfig.base.json",
     "scripts/visual-token-contract.json"
@@ -58,7 +57,8 @@
     "typecheck": { "dependsOn": ["^build"], "outputs": [] },
     "lint": { "outputs": [] },
     "test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
-    "@hobo/iac-alchemy#test": { "dependsOn": ["build", "@hobo/broker#build", "@hobo/dispatcher#build", "@hobo/pricing#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo/iac-alchemy#test": { "dependsOn": ["build", "@hobo/broker#build", "@hobo/dispatcher#build", "@hobo/pricing#build"], "passThroughEnv": ["RAYON_NUM_THREADS", "UV_THREADPOOL_SIZE"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo/ci-gh-actions#test": { "dependsOn": ["build"], "passThroughEnv": ["PACT_DO_NOT_TRACK"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/conformance#test": { "dependsOn": ["build", "@hobo/storage-sqlite#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/hobo#test": { "dependsOn": ["build", "@hobo/adapter-hono#build", "@hobo/provider-agentv#build", "@hobo/provider-ax#build", "@hobo/provider-browser-wasm#build", "@hobo/provider-config#build", "@hobo/provider-convex#build", "@hobo/provider-flux#build", "@hobo/provider-turso#build", "@hobo/provider-vercel-blob#build", "@hobo/provider-webernetes#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/cd#test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },

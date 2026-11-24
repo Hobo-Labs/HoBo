@@ -542,7 +542,8 @@ Use runs-on: hobo in a GitHub Actions workflow, then push a commit.
 Authentication: owner://HOBO_CI_ACCOUNT_TOKEN from the owner's store session
 (HoBo MCP choose_secret_store); no token file or environment variable is read.
 Relay selection: --relay or HOBO_CI_RELAY_URL on first connection. Run commands
-use the authenticated GitHub CLI (gh). Credentials are never written to the
+read GitHub with installation tokens of HoBo's GitHub App (hobo ci app create)
+minted from the owner's store session. Credentials are never written to the
 repository. Use --json, --format json or -F json for machine-readable output.
 HoBo runs existing Actions workflows; Vercel's Turbo task tags and invocation
 IDs do not apply.
@@ -735,6 +736,7 @@ Example:
 
 Usage:
   hobo login [global flags] [--home <path>] [--broker <uri>]
+  hobo login --relay <https-origin>
 
 Role: ${verb.role}
 ${statusLine}
@@ -742,8 +744,14 @@ Obtain a dev session/identity context and persist it to .hobo/session.json
 so hobo up / hobo down run under it. --broker targets a remote Conductor
 endpoint (--broker-uri is an accepted alias).
 
+--relay signs in to an already configured HoBo CI relay instead: the owner
+confirms one code at GitHub, and the session lives only in this process's
+memory; nothing is written. hobo ci and hobo cd take --relay <https-origin>
+to sign in the same way when a credential is first needed.
+
 Example:
   hobo login
+  hobo login --relay https://relay.example
 `;
 	}
 

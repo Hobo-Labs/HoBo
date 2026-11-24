@@ -1,0 +1,25 @@
+{
+	"consumer": { "name": "hobo-rivet-async-kv-client" },
+	"provider": { "name": "hobo-rivet-async-kv-actor" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" },
+		"documentation": "Application-level expectations exercised against the client and a real actor backed by SQLite. The fixture does not establish production host fencing or provider durability."
+	},
+	"interactions": [
+		{
+			"description": "a committed write can be read back byte for byte",
+			"request": { "scenario": "committed", "key": "profile", "bytes": [0, 128, 255] },
+			"response": { "body": { "writeStatus": "ok", "writeCode": null, "readStatus": "ok", "bytes": [0, 128, 255], "dispatches": 2 } }
+		},
+		{
+			"description": "a refused write leaves the value absent",
+			"request": { "scenario": "refused", "key": "profile", "bytes": [1, 2] },
+			"response": { "body": { "writeStatus": "denied", "writeCode": "forbidden", "readStatus": "ok", "bytes": null, "dispatches": 2 } }
+		},
+		{
+			"description": "a lost committed write reply is unknown and is not retried",
+			"request": { "scenario": "lost-reply", "key": "profile", "bytes": [3, 4] },
+			"response": { "body": { "writeStatus": "unknown", "writeCode": "outcome-unknown", "readStatus": "ok", "bytes": [3, 4], "dispatches": 2 } }
+		}
+	]
+}

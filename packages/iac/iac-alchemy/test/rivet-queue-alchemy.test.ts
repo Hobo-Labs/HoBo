@@ -9,7 +9,7 @@ import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { setup } from "rivetkit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import {
 	bindRivetAsyncQueueSource,
@@ -92,7 +92,9 @@ describe("Alchemy Rivet async queue resource", () => {
 		const source = {
 			...f.source,
 			poolHost: {
-				deployExternal: (input) =>
+				deployExternal: (
+					input: Parameters<PoolHost["Service"]["deployExternal"]>[0],
+				) =>
 					Effect.sync(() => {
 						deployed.push(input.main);
 					}),
@@ -114,6 +116,7 @@ describe("Alchemy Rivet async queue resource", () => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-rivet-queue-alchemy-"));
 		const previous = process.env.ALCHEMY_HOME;
 		process.env.ALCHEMY_HOME = join(directory, "auth");
+		let restoreApply = () => {};
 		try {
 			const provider = createAlchemyIacProvider({
 				stateOwnership: testStateOwnership,
@@ -165,6 +168,18 @@ describe("Alchemy Rivet async queue resource", () => {
 					uncertain: () => {},
 				},
 			});
+			const originalApply = Reflect.apply;
+			let redirected = 0;
+			const spy = vi
+				.spyOn(Reflect, "apply")
+				.mockImplementation((target, receiver, args) => {
+					if (target === source.poolHost.deployExternal) {
+						redirected++;
+						throw new Error("replaced global apply");
+					}
+					return originalApply(target, receiver, args);
+				});
+			restoreApply = () => spy.mockRestore();
 			const result = await provider.preview({
 				programId: "queue",
 				deploymentId: "d",
@@ -177,7 +192,9 @@ describe("Alchemy Rivet async queue resource", () => {
 			expect(result.changes).toBe(1);
 			expect(deployed).toEqual([f.source.main]);
 			expect(callAccesses).toBe(0);
+			expect(redirected).toBe(0);
 		} finally {
+			restoreApply();
 			if (previous === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = previous;
 			rmSync(directory, { recursive: true, force: true });
@@ -195,7 +212,19 @@ it("rechecks source and pool ownership before declaring a queue resource", async
 	};
 	const program = rivetAsyncQueueResource(source);
 	valid = false;
-	await expect(Effect.runPromise(program)).rejects.toThrow();
+	await expect(
+		Effect.runPromise(
+			program.pipe(
+				Effect.provideService(Providers, {
+					kind: "ProviderCollection",
+					get: () => undefined,
+					providers: {},
+				}),
+			),
+		),
+	).rejects.toThrow(
+		"the queue source, artifact and exclusive pool fence could not be verified",
+	);
 });
 
 it("rejects coercible pool and source digests without invoking conversion", () => {

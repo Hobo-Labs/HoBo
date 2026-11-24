@@ -27,6 +27,225 @@ claims a single-use JIT configuration with GitHub OIDC and starts the official
 Actions runner. GitHub assigns an original queued job to that runner. The
 original workflow, checkout, job token, logs and artifacts stay in GitHub Actions.
 
+## Runner teardown correlation
+
+When GitHub returns several jobs associated with a runner, correlation selects
+an executing job before a queued or finished reservation, including when the
+jobs belong to different observed runs. A matching job with an unknown status
+also retains the runner, but does not by itself transfer custody or withdraw the
+reserved job. Confirmed execution still takes priority over an unknown status.
+When both runner IDs are present, the IDs must match; runner names are a fallback
+only when an ID is missing. A name-only match can still be ambiguous.
+If a later lookup fails after a queued or unknown match, the result is marked
+incomplete and cannot transfer custody. Fail-closed teardown retains the runner
+on an incomplete or failed lookup; the force-stop path can continue after the
+queued grace period. A queued match retains the runner when its binding time,
+current time, or grace value is invalid; this rule also applies to a direct
+served-job lookup. At the valid grace boundary, teardown may proceed. Job
+listings are paginated up to 100 pages. Run listings
+are bounded, and reaching a limit while more work exists is treated as an
+incomplete scan. Duplicate or malformed pages fail the lookup. GitHub can
+change its listings between requests, so pagination is not an atomic snapshot
+and a changing listing can still omit an assignment. The maintained
+[runner-correlation verification skill](../../.agents/skills/verify-ci-runner-correlation/SKILL.md)
+records the checks and assumptions.
+
+The model explores 22 distinct states. This projection hides 13 internal
+transitions that do not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Matching jobs observed
+  s1: Executing job blocks teardown
+  s2: No executing job selected
+  s3: Runner may be stopped
+  [*] --> s0
+  s0 --> s1: select highest-priority job
+  s0 --> s2: select highest-priority job
+  s2 --> s3: allow teardown
+```
+
+The cross-run model explores 96 distinct states, including lookup failure and
+force-stop behavior. Its projection hides 48 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Checking runs
+  s1: Executing job observed
+  s2: No execution observed
+  s3: Lookup incomplete
+  s4: Teardown allowed
+  s5: Runner retained
+  [*] --> s0
+  s0 --> s1: check later runs
+  s0 --> s3: later lookup fails
+  s0 --> s2: check later runs
+  s1 --> s5: apply teardown policy
+  s2 --> s3: served-job lookup fails
+  s2 --> s4: apply teardown policy
+  s3 --> s4: apply teardown policy
+  s3 --> s5: apply teardown policy
+  s2 --> s5: apply teardown policy
+```
+
+The pagination model explores 170 distinct states, including exhausted and
+truncated scans in both teardown modes. Its projection hides 90 same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Scanning jobs
+  s1: Listing exhausted
+  s2: Executing job observed
+  s3: Teardown allowed
+  s4: Scan limit reached
+  s5: Runner retained
+  [*] --> s0
+  s0 --> s1: confirm listing exhausted
+  s0 --> s2: read next job
+  s1 --> s3: apply teardown policy
+  s0 --> s4: detect more work beyond limit
+  s2 --> s5: apply teardown policy
+  s4 --> s3: apply teardown policy
+  s4 --> s5: apply teardown policy
+```
+
+The unknown-status model checks two abstract observations, with queued grace
+already expired, in 300 distinct states. Its projection hides 150 same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Checking assignments
+  s1: No active job observed
+  s2: Executing job observed
+  s3: Status unknown
+  s4: Lookup incomplete
+  s5: Teardown allowed
+  s6: Runner retained
+  [*] --> s0
+  s0 --> s1: check later runs
+  s0 --> s4: later lookup fails
+  s0 --> s2: check later runs or later lookup fails
+  s0 --> s3: check later runs or later lookup fails
+  s1 --> s5: apply custody and teardown policy
+  s2 --> s6: apply custody and teardown policy
+  s3 --> s6: apply custody and teardown policy
+  s4 --> s5: apply custody and teardown policy
+  s4 --> s6: apply custody and teardown policy
+```
+
+The runner-identity model checks matching and custody permission in 36 states,
+including missing, equal, and conflicting IDs. Its projection hides 18 same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Runner and job observed
+  s1: Runner does not match
+  s2: Runner matches
+  [*] --> s0
+  s0 --> s1: compare IDs or available names
+  s0 --> s2: compare IDs or available names
+```
+
+The queued-grace model checks direct and scanned observations with invalid,
+recent, or expired timing in 12 states. Its projection hides six same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Queued job observed
+  s1: Teardown allowed
+  s2: Runner retained
+  [*] --> s0
+  s0 --> s1: evaluate grace period
+  s0 --> s2: evaluate grace period
+```
+
+## Strict-start hook receipt
+
+The fleet v2 pre-job hook template requires an HTTPS endpoint, HTTP 200, and a
+JSON receipt with `authorized: true`, `slotId`, `claimId`, `accountId`,
+`profileId`, `runnerName`, and the exact `executionKey` from its request. Both
+start-fence handlers issue this receipt. It checks the run ID and attempt
+against the runner context before sending the request. Redirects, empty or
+malformed responses, mismatched identities, oversized receipts, and transport
+failures block the job. The binding secret is sent in the request body.
+
+The strict GitHub assignment lookup accepts a trusted single-repository scope,
+scans in-progress runs, and requires an unambiguous match for the registered
+runner ID, name, runner group, and required labels. It re-reads the job and run
+before deriving the execution key. Incomplete scans or conflicting evidence
+fail the lookup. GitHub can change assignments or paginated listings during or
+after those reads; required-label matching alone does not establish the complete
+execution profile.
+
+The optional endpoint checks a slot credential before querying GitHub, commits
+the matching binding, then rechecks assignment and stored claim before issuing a
+receipt. The production controller does not configure this endpoint or install
+the hook. Assignment or claim state can change after those observations, so
+they do not guarantee the same state at receipt issuance. The hook cannot
+independently prove the assigned job or claim state; it also relies on an
+authenticated, fresh response.
+
+The receipt model explores 285 states with trusted receipt issuance. Its
+projection hides 114 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Hook invoked
+  s1: Workflow blocked
+  s2: Waiting for receipt
+  s3: Workflow may start
+  [*] --> s0
+  s0 --> s1: check runner context
+  s0 --> s2: check runner context
+  s2 --> s1: validate status and receipt
+  s2 --> s3: validate status and receipt
+```
+
+The endpoint model checks 142 bounded states; its projection hides 52 same-state
+transitions. Separate executable counterexamples show assignment or claim state
+can change between its final reads and receipt issuance.
+
+```mermaid
+stateDiagram-v2
+  s0: Start request received
+  s1: Request rejected
+  s2: Checking GitHub assignment
+  s3: Binding job to slot
+  s4: Rechecking assignment
+  s5: No receipt#59; reconcile
+  s6: Rechecking stored claim
+  s7: Receipt issued
+  [*] --> s0
+  s0 --> s1: verify slot credential
+  s0 --> s2: verify slot credential
+  s2 --> s1: check assignment
+  s2 --> s3: check assignment
+  s3 --> s4: commit binding
+  s3 --> s5: commit binding
+  s3 --> s1: commit binding
+  s4 --> s5: recheck assignment
+  s4 --> s6: recheck assignment
+  s6 --> s5: recheck stored claim
+  s6 --> s7: recheck stored claim
+```
+
+The assignment-evidence model checks 128 bounded states. Its projection hides
+64 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: GitHub evidence observed
+  s1: Assignment unavailable
+  s2: Assignment verified
+  [*] --> s0
+  s0 --> s1: check scope, runner, group, labels and current job
+  s0 --> s2: check scope, runner, group, labels and current job
+```
+
 ## Test this branch
 
 Run from the monorepo root with Node 24, Linux x64, bash and git:
@@ -170,10 +389,13 @@ Every host of the relay serves the same Fetch handler, `createRelayHandler`
 | `/engines/gh-actions/…` | The same routes as the root |
 | `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
 | `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
-| `GET`, `PUT /v1/fleet/verdicts/{owner}/{repo}` | The fleet verdict runner routing asks for ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)): read by anyone (no query string; the agreed verdict of every reporter enrolled for the repository's account, less any label whose daily allowance is spent), reported by an enrolled reporter's Ed25519 signature (`X-HoBo-Reporter`, `X-HoBo-Sequence`, `X-HoBo-Issued-At`, `X-HoBo-Signature`; no bearer). A refusal names its `reason`: `bad-request`, `unknown-reporter`, `bad-signature`, `clock-skew`, `replayed`, `not-found` or `invalid-report`. Handed to the host's control plane |
-| `GET /v1/fleet/reporters/{owner}/{repo}` | Each enrolled reporter's state and liveness and each label's allowance (`FleetReporterStatusList`), for a GitHub Actions OIDC token from a workflow of that repository (audience: the relay's origin; any event). Handed to the host's control plane |
 | `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
 | `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
+
+No `/v1/fleet/` route is served: the fleet verdict and reporter status routes
+were retired with ADR-0180's hosted transport (ADR-0181), and
+any such path answers 404. Runner routing reads the box relay's routing slip
+instead.
 
 A delivery is authenticated by GitHub's `X-Hub-Signature-256`, or, when the host
 configures an ingress forward secret, by `X-Hobo-Ingress-Forward` from
@@ -606,19 +828,20 @@ schemas and never fetches the `$schema` URL while loading configuration.
 
 ### Provider shapes
 
-A policy provider is one of eight closed, kind-specific shapes defined in the
+A policy provider is one of nine closed, kind-specific shapes defined in the
 sibling [provider schema](schema/ci-project-providers.schema.json) (exported as
 `@hobo/ci-gh-actions/schema/ci-project-providers.schema.json`). The project
 schema's `Provider` is a relative `$ref` to that file, which is a `oneOf` with
 `additionalProperties: false` on every branch. Every kind carries the base
 fields `id`, `kind`, `connectionRef`, `runsOn` and optional `enabled`; existing
-five-field providers of every kind except `vercel` stay valid unchanged.
+providers of previously supported kinds other than `vercel` stay valid unchanged.
 
 | Kind | Extra fields |
 |---|---|
-| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
+| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine`, `pool` and `location` are rejected |
 | `kubernetes` | optional `scaleSet` **or** optional `engine` (never both); neither keeps the existing disposable-pod path |
-| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet` and `engine` are rejected |
+| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet`, `engine` and `pool` are rejected |
+| `agent37` | required `pool`: box type, documented size, region, immutable template, lifecycle, labels, egress allowlist and monthly create/budget limits |
 
 `scaleSet` names an [ARC](https://github.com/actions/actions-runner-controller)
 `AutoscalingRunnerSet`: `{ "name", "namespace", "maxRunners", "minRunners"? }`.
@@ -629,6 +852,20 @@ five-field providers of every kind except `vercel` stay valid unchanged.
 checks. HoBo never installs or upgrades ARC or Dagger. Neither shape accepts a
 kubeconfig, token or `githubConfigSecret`: cluster and Vercel credentials stay
 out of `.hobo/ci.json` and resolve through the `connectionRef`.
+
+Agent37 pools accept `default`, `vm` and `performance` types. Documented sizes are
+2 vCPU/4 GB, 4/8, 4/16 and 4/32, plus 8/64 for `vm` and `performance`; disk is
+1–1024 whole GB. Non-US regions require a non-default type. Templates require a
+positive numeric revision such as `agent37-ubuntu@1`; mutable names and tags are
+rejected. Idle TTL is 60–3600 seconds. Pools above 32 GB of concurrent memory
+require `allowAboveFreeTier: true`. Labels are unique. Network allowlists contain
+1–100 unique lowercase DNS hostnames or leading-label wildcards; IP addresses
+and wildcard bases with fewer than three DNS labels, including `*.com`, `*.co.uk`,
+and `*.github.io`, are rejected, with everything else denied. Monthly USD-microdollar caps and bounded create-per-hour limits are
+required. The committed `agent37-runners` example is disabled and stores no API
+key or webhook secret. The default `runnerRouting.externalPools` list remains
+empty. A project must explicitly configure an external pool to opt into externally
+hosted runners.
 
 ```json
 {
@@ -641,10 +878,10 @@ out of `.hobo/ci.json` and resolve through the `connectionRef`.
 ```
 
 The TypeScript types (`CiProjectProvider`, `CiKubernetesProvider`,
-`CiVercelProvider`, …) are inferred from the same discriminated union in
+`CiVercelProvider`, `CiAgent37Provider`, …) are inferred from the same discriminated union in
 `src/project-providers.ts`; `pnpm --filter @hobo/ci-gh-actions schema:check`
 fails when either shipped file drifts. The protobuf `CiPolicyProvider` carries
-the shapes as a `capacity` oneof (`scale_set` | `engine`) plus `location`, CUE
+the shapes as a `capacity` oneof (`scale_set` | `engine` | `pool`) plus `location`, CUE
 constrains them in `@hobo/ci`'s `ci.cue`, and `parseCiPolicy` rejects a shape on
 the wrong kind. A relay keeps reading persisted vercel policies whose protobuf
 `location` is empty; only authored files require it.
@@ -1541,9 +1778,6 @@ the port's 30-day cap.
 | `app:installations:<accountId>`, `app:installation-owner:<installationId>` | `RelayCacheVerifiedInstallations`; owning account id | 24 h | `CacheVerifiedInstallations.bindInstallation` |
 | `invitation:<mac>`, `owner-session:<mac>` | redemption time; `RelayCacheOwnerSession` | until the invitation expires; 10 min | `CacheOwnerBootstrap` |
 | `worker-health:<deployment>:<component>` | `RelayWorkerHealth` (`@hobo/ci-vercel`) | 24 h | `@hobo/ci-vercel`'s `CacheWorkerHealth` |
-| `fleet-verdict:<owner>/<repo>:<reporter id>` | `FleetVerdict`: one reporter's last report as stamped (a shadow report blocks nothing) | Until the report expires (at most 180 s) | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
-| `fleet-reporter:<owner>/<repo>:<reporter id>` | `FleetReporterState`: last sequence, mode, last report, per label last blocked and cleared | 24 hours, refreshed on every accepted report | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
-| `fleet-allowance:<owner>/<repo>` | `FleetVerdictAllowance`: per label, the window's start and its blocked seconds | 24 hours from the latest window's start | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
 | `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | A lease's change of state; `ci.BudgetOverrun`, `ci.AssignmentUnknown`, `ci.LeaseRebuilt`; `ci.JobQueued`, `ci.JobExpired`, `ci.JobAssignmentCleared`, and `ci.JobCompleted` for a job no lease took. Not a write that leaves a lease's state alone (an observed job id, a Sandbox sub-stage) |
 
 ### Helpers on the cache (phase 5)
