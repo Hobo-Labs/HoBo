@@ -278,7 +278,8 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 					written.set(name, value);
 				},
 			}),
-			close: () => undefined,
+			agentVault: () => undefined,
+			close: async () => undefined,
 		};
 		const app = createStoreChoiceApp({
 			cwd: "/synthetic/project",
