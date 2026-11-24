@@ -23,6 +23,7 @@ export type OwnerSessionState =
 			status: "sign-in-needed";
 			store: OwnerStoreLabel;
 			code: string;
+			reason?: string;
 	  }>;
 
 export type OwnerSessionStatus = Readonly<{
@@ -30,24 +31,47 @@ export type OwnerSessionStatus = Readonly<{
 	store?: OwnerStoreLabel;
 }>;
 
+export interface OwnerStoreEntries {
+	read(name: string): Promise<string | undefined>;
+	write(name: string, value: string): Promise<void>;
+}
+
+const LINK = /\bhttps?:\/\/\S+/gu;
+const IDENTIFIER =
+	/\b(?:(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{12,}|[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+){2,})\b/gu;
+
+export function publicReason(message: string): string {
+	return message
+		.replace(LINK, "<link>")
+		.replace(IDENTIFIER, "<id>")
+		.slice(0, 300);
+}
+
 export interface OwnerStoreSessions {
 	establish(cwd: string): Promise<OwnerSessionState>;
 	status(cwd: string): OwnerSessionStatus;
 	credentials(cwd: string): CredentialResolver;
+	entries(cwd: string): OwnerStoreEntries;
 	close(): void;
 }
 
 export class OwnerCredentialUnavailable extends Error {
 	constructor(
 		readonly ref: string,
-		readonly reason: "no-session" | "not-in-store" | "unsupported-ref",
+		readonly reason:
+			| "no-session"
+			| "not-in-store"
+			| "environment-ref"
+			| "unsupported-ref",
 	) {
 		super(
 			reason === "no-session"
 				? `credential ${ref} needs the owner's store session: run HoBo MCP's choose_secret_store first`
 				: reason === "not-in-store"
 					? `credential ${ref} is not in the owner's store`
-					: `credential ${ref} is not resolvable on this host (use env://<NAME> or owner://<NAME>)`,
+					: reason === "environment-ref"
+						? `credential ${ref} names the process environment, which never holds credentials: store the entry in the owner's store, connect it with HoBo MCP's choose_secret_store, and use owner://<NAME>`
+						: `credential ${ref} is not resolvable on this host (use owner://<NAME> after HoBo MCP's choose_secret_store)`,
 		);
 		this.name = "OwnerCredentialUnavailable";
 	}
@@ -63,17 +87,17 @@ function labelOf(id: string): OwnerStoreLabel {
 	return label === "1Password" || label === "Bitwarden" ? label : "Infisical";
 }
 
-function entryOf(
-	ref: string,
-): Readonly<{ name: string; env: boolean }> | undefined {
-	const scheme = ref.startsWith("env://")
-		? "env://"
-		: ref.startsWith(OWNER_CREDENTIAL_SCHEME)
-			? OWNER_CREDENTIAL_SCHEME
-			: undefined;
-	if (scheme === undefined) return undefined;
-	const name = ref.slice(scheme.length);
-	return ENTRY_NAME.test(name) ? { name, env: scheme === "env://" } : undefined;
+const ENVIRONMENT_SCHEME = "env://";
+
+function entryOf(ref: string): string {
+	if (ref.startsWith(ENVIRONMENT_SCHEME))
+		throw new OwnerCredentialUnavailable(ref, "environment-ref");
+	const name = ref.startsWith(OWNER_CREDENTIAL_SCHEME)
+		? ref.slice(OWNER_CREDENTIAL_SCHEME.length)
+		: "";
+	if (!ENTRY_NAME.test(name))
+		throw new OwnerCredentialUnavailable(ref, "unsupported-ref");
+	return name;
 }
 
 type Held = Readonly<{
@@ -104,7 +128,11 @@ export function ownerChannelSignIn(options: {
 		return signInOwnerStore({
 			family: "cd",
 			vault,
-			open: () => ownerStore("cd", vault, deps),
+			open: (resolved) =>
+				ownerStore("cd", vault, {
+					...deps,
+					env: { ...plainEnv, ...resolved },
+				}),
 			deps,
 			plainEnv,
 			workloadOidc: undefined,
@@ -119,7 +147,6 @@ export function ownerChannelSignIn(options: {
 export function createOwnerStoreSessions(options: {
 	readonly signIn: OwnerSignIn;
 	readonly kept?: TrustedVault;
-	readonly env?: Readonly<Record<string, string | undefined>>;
 }): OwnerStoreSessions {
 	const held = new Map<string, Held>();
 	const keyOf = (cwd: string) => path.resolve(cwd);
@@ -149,6 +176,7 @@ export function createOwnerStoreSessions(options: {
 					status: "sign-in-needed",
 					store: current?.label ?? "Infisical",
 					code: outcome.code,
+					reason: publicReason(outcome.message),
 				};
 			}
 			const owner = outcome.owner;
@@ -181,20 +209,14 @@ export function createOwnerStoreSessions(options: {
 		},
 		credentials(cwd) {
 			const key = keyOf(cwd);
-			const env = options.env ?? process.env;
 			return {
 				async resolve(ref) {
-					const entry = entryOf(ref);
-					if (entry === undefined)
-						throw new OwnerCredentialUnavailable(ref, "unsupported-ref");
-					const ambient = entry.env ? env[entry.name] : undefined;
-					if (ambient !== undefined && ambient !== "")
-						return { token: ambient };
+					const name = entryOf(ref);
 					const current = held.get(key);
 					if (current === undefined)
 						throw new OwnerCredentialUnavailable(ref, "no-session");
 					const read = await current.store.port
-						.access(entry.name)
+						.access(name)
 						.catch(() => undefined);
 					if (
 						read === undefined ||
@@ -204,6 +226,30 @@ export function createOwnerStoreSessions(options: {
 					)
 						throw new OwnerCredentialUnavailable(ref, "not-in-store");
 					return { token: read.material };
+				},
+			};
+		},
+		entries(cwd) {
+			const key = keyOf(cwd);
+			const opened = (name: string) => {
+				const ref = `${OWNER_CREDENTIAL_SCHEME}${entryOf(`${OWNER_CREDENTIAL_SCHEME}${name}`)}`;
+				const current = held.get(key);
+				if (current === undefined)
+					throw new OwnerCredentialUnavailable(ref, "no-session");
+				return current.store.port;
+			};
+			return {
+				async read(name) {
+					const port = opened(name);
+					const read = await port.access(name).catch(() => undefined);
+					return read?.status === "ok" &&
+						read.material !== undefined &&
+						read.material !== ""
+						? read.material
+						: undefined;
+				},
+				async write(name, value) {
+					await opened(name).put(name, value);
 				},
 			};
 		},

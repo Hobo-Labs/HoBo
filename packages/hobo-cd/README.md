@@ -105,7 +105,11 @@ Configuration is a **ceremony**, not a list of environment variables, and it
 survives the machine: the store is found through a locator of ids in
 the owner's HoBo settings (`~/.config/hobo/projects/<project>/secret-store.json`,
 never the repository) and signed in to on the page (the sign-in is held in
-the run's trusted vault, in memory); whatever `hobo cd up` is missing is asked
+the run's trusted vault, in memory). A handed-off run on a remote box shows
+no page: it takes an Infisical access token, a 1Password Connect token or a
+Bitwarden personal API key from HoBo's own secret capture (a
+`HOBO_OWNER_CAPTURE` line through the HoBo MCP server), never from the agent's
+session or environment, and holds it in memory only. Whatever `hobo cd up` is missing is asked
 for and kept **in the secret store** as `HOBO_CD_SETTINGS` (the Integration's
 slug and client id). The client secret is its own store entry, and the Vercel
 token reaches the deploy through the vault, never an environment variable.
@@ -180,10 +184,14 @@ whatever this machine has registered:
 - `cd-journal` and `cd-config` go on the Yards `hobo cd up` makes for them (see
   [Where the journal and config are placed](#where-the-journal-and-config-are-placed)).
 
-`hobo cd up` then delivers `packages/cd-vercel` as one git deployment of the
-current commit to CD's preview on Vercel, and records the journal and config as
-made by prepare. Production stays an explicit promotion. The deployment signs
-in with the CD workload identity `hobo cd up` makes (see
-[The CD workload identity](#the-cd-workload-identity)). Until the CD workload
-identity exists and its store binding is committed, the deployment answers
-`/readyz` with `cd-store-binding-missing`.
+`hobo cd up` then delivers `packages/cd-vercel` as one prebuilt build of the
+current commit to CD's production on Vercel, and records the journal and config
+as made by prepare. The deployment signs in with the CD workload identity
+`hobo cd up` makes (see
+[The CD workload identity](#the-cd-workload-identity)). Its store coordinates
+reach it only inside that build: prepare hands them from the owner's store
+session to the run (`CD_STORE_COORDINATES_HANDOFF`, in memory), and the build
+bundles them as `deploy/secret-store.binding.json`, removed once the build is
+staged. They are never Vercel variables and are never committed. Without the
+owner's store session `hobo cd up` stops with
+`HOBO_CD_UP_STORE_SESSION_REQUIRED`.

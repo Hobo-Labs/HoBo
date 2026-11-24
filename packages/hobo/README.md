@@ -52,28 +52,31 @@ arguments, writes the choice to the owner's locator for the project `cwd`
 (`ownerLocator` in `@hobo/hobo-ci`), and signs in with `signInOwnerStore` over the MCP
 owner channel. The opened store stays in the server's memory, keyed by project. Its
 `credentials(cwd)` is the `@hobo/cd` `CredentialResolver` that `hobo deploy` passes to
-the CD runtime: `owner://<NAME>` reads the store's CD entry, and `env://<NAME>` falls
-back to it when the environment lacks the name, so Hostinger's resolvers receive the
-owner's `HOSTINGER_API_TOKEN` only in their request header. Results, `doctor`'s
-`ownerStoreSession`, and refusals carry a status and the store's label only.
+the CD runtime: `owner://<NAME>` reads the store's CD entry and is the only locator it
+resolves; an `env://<NAME>` locator is refused with a pointer to `choose_secret_store`,
+because the process environment never holds credentials. Hostinger's resolvers receive
+the owner's `HOSTINGER_API_TOKEN` only in their request header. Results, `doctor`'s
+`ownerStoreSession`, and refusals carry a status and the store's label only. A host
+without form elicitation or MCP Apps (a Claude Code cloud session, for one) gets
+`owner-page`: HoBo's own page (`mcp-owner-page.ts`), which the agent publishes as a
+claude.ai Artifact with the `db` capability. The page encrypts the owner's answer in
+their browser (ECDH P-256, HKDF-SHA256, AES-256-GCM) to a one-use key that only this
+server holds, saves the sealed text to `hobo-owner-page/<page>` in the artifact's
+database, and the agent passes that text unchanged to `submit_owner_page`. HoBo opens
+it once, within 30 minutes, records the store choice and hands the store's sign-in to
+the waiting run. The agent carries only ciphertext. `choose_secret_store` with
+`channel: "page"` returns the page even where the host declares form elicitation,
+for hosts that declare it but never show the form. The page takes the store choice and
+the store's sign-in (Infisical's copied session) only. A `sign-in-needed` result carries
+the refusal's `reason` with links and identifiers redacted (`publicReason`).
 
-A host without form elicitation or MCP Apps, or one whose form is answered with
-cancel or decline within `FAST_FORM_ANSWER_MS` (1.5 s, measured by
-`createFormHealth` on every elicitation the server sends), gets status `link`
-from `src/owner-link.ts`: a one-time URL `<relay>/owner-handoff#<ticket>` on the
-project's CI relay (`HOBO_CI_RELAY_URL`, else `relayOrigin` of the default
-environment in `.hobo/ci.json`). The process registers a mailbox derived from the
-ticket with a fresh P-256 public key, an HMAC proof binding that key to the
-ticket, an opaque digest of the `cwd`, a ten-minute expiry and the digest of a
-collect token; the relay never sees the ticket. The page (`@hobo/ci-vercel`)
-checks the proof, seals the owner's answer to that key (ECDH, HKDF-SHA256,
-AES-256-GCM, with the mailbox and binding as associated data), and the next
-`choose_secret_store` call collects and opens it, drops the key, records the
-choice, deposits the sign-in values into the owner channel and establishes the
-session. A replayed, expired, misbound or second answer is refused. The wire
-records are `data-models/owner_handoff.proto` and `.cue`, pinned by
-`contracts/owner-handoff-relay.pact.json`. Without a usable relay the result is
-`secure-form-unavailable` with an `owner-link-relay-*` reason.
+`store_owner_entries` is the optional later step that joins a Hostinger fleet: it fills the store with the provider entries HoBo reads
+(`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
+each value checked for shape and written with the session's `entries(cwd).write`,
+never returned. It needs form elicitation and an established session. The server
+declares `tools.listChanged` and sends `notifications/tools/list_changed` after
+`notifications/initialized`, so a host that reconnects to a restarted server lists
+its current tools.
 
 ## CLI verification and remote deployment safety
 
@@ -449,11 +452,10 @@ verified; the changed cross-Yard path still needs that evidence.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
   --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# From an authorized GitHub Actions job with id-token: write and a committed
-# secret-store binding: production, with the cache attached first.
+# With the owner's store session (HoBo MCP's choose_secret_store): production,
+# built by HoBo with the store coordinates bundled in, the cache attached first.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
-  --sha <40-hex commit> --team team_… --target production \
-  --set INFISICAL_IDENTITY_ID=… --set INFISICAL_PROJECT_ID=… --provision --wait
+  --sha <40-hex commit> --target production --build prebuilt --provision --wait
 ```
 
 | Option | Meaning |
@@ -472,8 +474,9 @@ hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--dry-run` | print the plan and send nothing |
 
 A real run reads the deploy token from the owner's secret store as the
-dedicated deploy reader. A GitHub Actions job with `id-token: write` reads it
-through the committed secret-store binding; a token preloaded in an embedding
+dedicated deploy reader, with the store coordinates from the owner store
+session (`HOBO_CI_SECRET_STORE_SESSION_REQUIRED` without one; none is
+committed); a token preloaded in an embedding
 caller's vault never bypasses that reader. A `VERCEL_TOKEN` supplied in the
 command's environment is ignored. When `--provision` runs the Vercel CLI, HoBo
 passes that child the token from the run's fresh vault. The target project must
@@ -498,8 +501,10 @@ What it deliberately does not do:
   the Marketplace rows the Camp chooses (the relay's Upstash cache). A storage
   integration's variables (`DATABASE_*`, `POSTGRES_*`, `REDIS_*`, `KV_*`,
   `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) are written by the
-  integration, never set here, and so is any `INFISICAL_*` name other than the
-  config service's five coordinates (`CONFIG_SERVICE_COORDINATES`).
+  integration, never set here. No store coordinate is ever a Vercel variable:
+  every `INFISICAL_*` name, and any `*_PROJECT_ID`, `*_TEAM_ID`, `*_ORG_ID`,
+  `*_IDENTITY_ID`, OIDC, subject or binding name, is refused
+  (`src/vercel-env-policy.ts`).
 - **Override the Yard.** A `--set` naming a setting the chosen bindings already
   set is refused; the Yard is changed instead.
 - **Create the project, or reach production, unasked.**

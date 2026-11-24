@@ -688,7 +688,7 @@ One-time org transfer steps:
 
 1. Re-register self-hosted **`hobo`** runners against **Hobo-Labs/HoBo** (runners tied to the old personal repo do not follow a transfer).
 2. Enable the merge queue on `main` branch protection and require the HoBo CI check names. **Main full gate** runs after merge (push to `main`), not on `merge_group`; to make it a required queue check, add `merge_group` back to its `if:` first, or the queue waits for a check that never reports.
-3. Set repository variables/secrets: `TURBO_TEAM` and `TURBO_TOKEN` (Vercel remote cache; fork PRs write read-only remotely).
+3. The workflows read `TURBO_TEAM` and `TURBO_TOKEN` (Vercel remote cache; fork PRs write read-only remotely) from a repository variable and secret when present. Agents never create them ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)); without them each runner keeps its local Turbo cache.
 
 If CI runs stay **`queued`** with no runner name, see **[RUNNER-QUEUE.md](./RUNNER-QUEUE.md)** (relay webhook, isolated onboarding, Sandbox host, JIT label contract).
 

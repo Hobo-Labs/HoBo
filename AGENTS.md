@@ -29,6 +29,27 @@ over conflicting repository workflow guidance.
   availability, host attachment, and authenticated sessions as separate
   observations, and do not assert a cause without evidence. Follow the
   relevant setup skill before any private owner flow.
+- Agents never store secrets, with no exceptions. Do not create environment
+  variables holding secrets or store or deploy configuration, GitHub Actions
+  secrets or variables, `.env` files (examples included), local secret or key
+  files, secrets in the repository, or credential stores of your own. All
+  secret management goes through the third-party secret store the owner
+  configures with the HoBo CLI or HoBo MCP server (`choose_secret_store`);
+  code reads each credential as `owner://<NAME>` through the owner store
+  session's resolver (`packages/hobo/src/owner-store-session.ts`), and HoBo
+  refuses `env://<NAME>` locators. The only GitHub credential a workflow may
+  name is the per-job `GITHUB_TOKEN` (`secrets.GITHUB_TOKEN` or
+  `github.token`), which GitHub mints for each job and nobody stores. A change
+  that adds an exception to this rule is rejected.
+- HoBo reaches GitHub only through its own GitHub App, with no exceptions. The
+  owner installs the App HoBo prefills (`hobo ci app create`), HoBo keeps the
+  App code it is handed and the App's credentials in the owner's store, and
+  HoBo mints short-lived installation tokens from them; a workflow may also
+  use its per-job `GITHUB_TOKEN`. Agents never ask the owner for a GitHub
+  token of their own, never use a person's `gh` sign-in, and never add store
+  entries, capture forms, fixtures or docs for one. `secrets:guard` and the
+  pre-tool hook reject such changes and commands, and a change that adds an
+  exception is rejected.
 - HoBo manages deployment of its CI relay. Its Vercel project is intentionally
   not Git-linked; do not reconnect it or treat the missing link as a defect.
 
@@ -36,7 +57,22 @@ Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
 and Copilot. Standalone documentation comments follow the same rule. Run
 `pnpm run source:guard -- --worktree` when checking manually, including ignored
 agent artifacts in nested projects;
-the pre-commit hook checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
+the pre-commit hook checks staged changes. The same edit hooks run
+`secrets:guard` (`scripts/check-secret-storage.mts`), and a pre-tool hook in
+each harness (`scripts/agent-secret-policy.mts`) refuses commands that store
+Actions secrets or variables, Vercel environment variables, `.env` writes,
+edits to secret files, and credential-storing tools such as
+`request_credential` before they run. `secrets:guard` also runs in the
+pre-commit hook and in `agent:check`, so CI checks each pull request's diff
+against its base; it rejects added Actions secret and variable references
+other than the per-job token, secret files, environment credential reads
+(code such as `process.env` lookups and uppercase shell variables),
+`env://` locators, and secret-storing commands. It also rejects committed store
+coordinates: real-looking project, identity, team and deploy project ids under
+binding keys, binding files holding them outside test fixtures, and any
+`deploy/secret-store.binding.json`. They are the owner's private settings and
+live only in the owner's secret store, read through the owner store session;
+fixtures use synthetic values such as all-zero UUIDs. The source guard covers TypeScript, JavaScript, shell, Python,
 CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
 Kotlin, Ruby, Lua, and Swift, including source templates; the same rule applies to every other language.
 
@@ -188,7 +224,7 @@ The generated-files pre-commit guard (`scripts/no-hand-edited-generated-files.mt
 **Skill precedence: the local `spriterrific` CLI skill beats `spriterrific-api`.**
 Same engine; the local one writes a reviewable run folder and catches a bad
 anchor before it is animated, which is where the cost is. Use the hosted API
-only when the CLI genuinely cannot run (no `FAL_KEY`, no Python, no tool) or the
+only when the CLI genuinely cannot run (no `FAL_KEY` in its environment, no Python, no tool) or the
 user asks for it — and say which you used.
 
 ### Where assets land
@@ -469,7 +505,7 @@ These are cheap to honor and expensive to unwind.
 - **No unsupported compliance claims.** SOC 2, ISO 27001, GDPR, HIPAA, PCI, and similar certifications stay unclaimed until an owning evidence surface accepts them.
 
 ## Keys & risks (read before enabling gbrain)
-- **gbrain needs an initialized embedding provider.** `gbrain init --pglite` can use local Ollama with no key or egress. Remote `OPENAI_API_KEY` / `ZEROENTROPY_API_KEY` / `VOYAGE_API_KEY` providers receive embedding/query text and may cost money; don't send them sensitive content. Configure remote keys via `.env` (see `.env.example`).
+- **gbrain needs an initialized embedding provider.** `gbrain init --pglite` can use local Ollama with no key or egress. Remote `OPENAI_API_KEY` / `ZEROENTROPY_API_KEY` / `VOYAGE_API_KEY` providers receive embedding/query text and may cost money; don't send them sensitive content. gbrain reads a remote key from its own process environment; agents never store one there or in a `.env` file, so use local Ollama.
 - **Serena / headroom / RTK / caveman / ponytail / superpowers** need **no keys** and run locally; superpowers has optional telemetry (set `SUPERPOWERS_DISABLE_TELEMETRY=1` to disable).
 - **SkillOpt** is installed from `microsoft/SkillOpt`; its default sleep mock backend is no-spend, but real `codex`, `claude`, OpenAI, Azure OpenAI, Qwen, or MiniMax backends use the credentials/budget you configure.
 - **caveman** was installed via a `curl … | bash` shim (forwarding to `npx github:JuliusBrussee/caveman`); the pinned installer is handled in `scripts/setup-agent-tools.sh`.

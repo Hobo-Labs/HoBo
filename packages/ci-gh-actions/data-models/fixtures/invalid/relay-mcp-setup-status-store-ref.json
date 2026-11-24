@@ -1,0 +1,5 @@
+{
+  "state": "not-configured",
+  "missing": ["HOBO_CI_CONFIG_JSON"],
+  "storeRef": "infisical://project/prod/hobo-ci-relay"
+}

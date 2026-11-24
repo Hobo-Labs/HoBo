@@ -25,7 +25,7 @@ import {
 } from "./ceremony-settings.js";
 import { lazyEgressFetch } from "./egress.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
-import { awaitHandOffStore, storeAnswers } from "./hand-off-store.js";
+import { storeAnswers, takeHandOffSignIn } from "./hand-off-store.js";
 import {
 	captureAll,
 	KEPT_STORE_SIGN_INS,
@@ -316,10 +316,10 @@ async function prepareGithubWithVault(
 	}
 	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
-	const openOwner = () =>
+	const openOwner = (resolved?: Env) =>
 		ownerStore("ci", vault, {
 			...deps,
-			env: plainEnv,
+			env: { ...plainEnv, ...resolved },
 			// The setup page collected Bitwarden's API key: provision from it
 			// (one approved login request) before the store opens.
 			beforeOpen: async (id, values) => {
@@ -378,9 +378,21 @@ async function prepareGithubWithVault(
 			input.handOff === true &&
 			!input.whatIf &&
 			!(await storeAnswers(owner, "ci"));
+		if (needsOwner && owner.handOffSignIn !== undefined) {
+			const taken = await takeHandOffSignIn({
+				family: "ci",
+				owner,
+				open: openOwner,
+				vault,
+				channel: deps.ownerChannel,
+			});
+			if (taken.kind === "refused")
+				return refused(taken.code, taken.message, taken.remediation);
+			owner = taken.owner;
+		}
 		// Through the HoBo MCP server (--json, an owner channel) no progress
 		// line reaches anyone: say why the store did not open, never wait.
-		if (
+		else if (
 			needsOwner &&
 			deps.ownerChannel !== undefined &&
 			(input.run.flags.json || input.run.flags.quiet)
@@ -392,26 +404,6 @@ async function prepareGithubWithVault(
 					"Run again: HoBo signs in to the store afresh.",
 				],
 			);
-		if (
-			needsOwner &&
-			owner.canAwaitEgressCredential &&
-			(input.run.flags.json || input.run.flags.quiet)
-		)
-			return refused(
-				"HOBO_CI_HANDOFF_SILENT",
-				"The owner hand-off needs progress output. Omit --json and -q, then retry.",
-				["Run hobo ci up --hand-off without --json or -q."],
-			);
-		if (needsOwner && owner.canAwaitEgressCredential)
-			owner = await awaitHandOffStore({
-				family: "ci",
-				open: openOwner,
-				emit: (line) => input.run.emitProgress(line),
-				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
-				...(deps.handOffTimeoutMs !== undefined
-					? { timeoutMs: deps.handOffTimeoutMs }
-					: undefined),
-			});
 		else if (needsOwner) owner = { ...owner, opened: undefined };
 	} catch (error) {
 		if (!(error instanceof InvalidSecretStoreError)) throw error;
@@ -603,7 +595,7 @@ async function prepareGithubWithVault(
 			[
 				"Run hobo ci up --hand-off through the HoBo MCP server (its ci tool): it brings each step to you as a link or a form, wherever you are, and keeps what you give it in your secret store.",
 				"An agent can run hobo ci up --hand-off with a preconnected store and GitHub App; otherwise the run reports the available owner actions.",
-				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID, a non-secret setting) so the run signs in with its own OIDC token.`,
+				"For CI, run with the owner's store session (HoBo MCP's choose_secret_store): the store's coordinates stay in the owner's secret store and are never set as environment variables.",
 			],
 		);
 

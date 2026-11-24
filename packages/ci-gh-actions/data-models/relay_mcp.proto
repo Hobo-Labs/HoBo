@@ -126,3 +126,16 @@ message RelayMcpRetry {
   string delivery_id = 1;
   string status = 2;
 }
+message RelayMcpSetupStatus {
+  string state = 1;
+  repeated string missing = 2;
+  repeated string invalid = 3;
+  repeated string providable = 4;
+  bool writable = 5;
+}
+message RelayMcpSetupResult {
+  string outcome = 1;
+  repeated string written = 2;
+  repeated string refused = 3;
+  repeated string remaining = 4;
+}
