@@ -194,6 +194,26 @@ describe("SPEC R1 + R4: HoBo creates the identity through the API", () => {
 		});
 	});
 
+	it("says what Infisical answered when it refuses a step", async () => {
+		const api = fakeInfisical();
+		const refusing: typeof fetch = async (input, init) =>
+			new URL(String(input)).pathname.endsWith("/identity-memberships")
+				? new Response(
+						JSON.stringify({ message: "Environment with slug prod not found" }),
+						{ status: 400 },
+					)
+				: api.fetch(input, init);
+		const result = await provisionInfisicalAccess({
+			...base(fakeMachine({ cliOnPath: true, signedIn: true }), api),
+			fetch: refusing,
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			message:
+				"Infisical refused listing the organization's identities (HTTP 400): Environment with slug prod not found.",
+		});
+	});
+
 	it("prefers OIDC Auth when the workload has an issuer, and mints no bearer token", async () => {
 		const api = fakeInfisical();
 		const result = await provisionInfisicalAccess({

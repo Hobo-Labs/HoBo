@@ -287,11 +287,15 @@ export async function provisionInfisicalAccess(
 			body?: ApiBody,
 		): Promise<T> => {
 			const response = await attempt(user, method, pathname, body);
-			if (!response.ok)
+			if (!response.ok) {
+				const said = refusalMessage.safeParse(
+					await response.json().catch(() => undefined),
+				);
 				throw new InfisicalApiRefusal(
-					`Infisical refused ${what} (HTTP ${response.status}).`,
+					`Infisical refused ${what} (HTTP ${response.status})${said.success ? `: ${said.data.message}` : ""}.`,
 					response.status,
 				);
+			}
 			return schema.parse(await response.json());
 		};
 		const name = `hobo-${options.family}`;
@@ -525,6 +529,10 @@ const projectIdentities = z.object({
 			identity: z.object({ id: z.string() }).optional(),
 		}),
 	),
+});
+
+const refusalMessage = z.object({
+	message: z.string().min(1).max(500),
 });
 
 class InfisicalApiRefusal extends Error {
