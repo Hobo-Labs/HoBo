@@ -14,6 +14,7 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
 import type { DriftPolicy, Realizer } from "../../src/ports.js";
+import { sanitizeReasons } from "../../src/reconcile/errors.js";
 import {
 	createCampReconciler,
 	createDriftPolicy,
@@ -21,7 +22,6 @@ import {
 	RECONCILE_EVENTS,
 	RECONCILE_METRICS,
 } from "../../src/reconcile/index.js";
-import { sanitizeReasons } from "../../src/reconcile/errors.js";
 import {
 	asCamp,
 	asReconciler,
