@@ -2281,11 +2281,7 @@ describe("the script reading the slip", () => {
 				runnersPage("hobo-trunk", 4, 0),
 			),
 			async (apiUrl) => {
-				const { decision } = await route(
-					apiUrl,
-					undefined,
-					mergeGroupCi,
-				);
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
 					["github", "ubuntu-24.04", "queue"],
