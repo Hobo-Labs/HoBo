@@ -11,6 +11,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./alchemy": {
+			"types": "./dist/alchemy-github.d.ts",
+			"default": "./dist/alchemy-github.js"
 		}
 	},
 	"scripts": {
@@ -21,8 +25,11 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"@alchemy.run/github": "2.0.0-beta.87",
 		"@hobo/core": "workspace:*",
-		"@bufbuild/protobuf": "2.12.1"
+		"@bufbuild/protobuf": "2.12.1",
+		"alchemy": "2.0.0-beta.87",
+		"effect": "4.1.4"
 	},
 	"description": "HoBo GitHub Pages realizer: publishes a static-site tree Freight to a Pages site through the GitHub REST API only, as a compare-and-swap commit to the publishing branch (Git Data API) or a Pages deployment, and reports convergence only once the Pages build for that content is observed built."
 }

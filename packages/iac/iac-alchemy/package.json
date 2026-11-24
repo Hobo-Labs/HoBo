@@ -78,14 +78,57 @@
 		"./cloudflare/r2": {
 			"types": "./dist/cloudflare-native-r2.d.ts",
 			"default": "./dist/cloudflare-native-r2.js"
+		},
+		"./runners": {
+			"types": "./dist/runners/index.d.ts",
+			"default": "./dist/runners/index.js"
+		},
+		"./environments": {
+			"types": "./dist/environments/index.d.ts",
+			"default": "./dist/environments/index.js"
+		},
+		"./sandboxes": {
+			"types": "./dist/sandbox/index.d.ts",
+			"default": "./dist/sandbox/index.js"
+		},
+		"./test-harness": {
+			"types": "./dist/test-harness/index.d.ts",
+			"default": "./dist/test-harness/index.js"
+		},
+		"./cluster": {
+			"types": "./dist/cluster/index.d.ts",
+			"default": "./dist/cluster/index.js"
+		},
+		"./sql": {
+			"types": "./dist/sql/index.d.ts",
+			"default": "./dist/sql/index.js"
+		},
+		"./git": {
+			"types": "./dist/git/index.d.ts",
+			"default": "./dist/git/index.js"
+		},
+		"./vercel": {
+			"types": "./dist/vercel/index.d.ts",
+			"default": "./dist/vercel/index.js"
 		}
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1"
 	},
 	"peerDependencies": {
+		"@alchemy.run/boat": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
+		"@alchemy.run/drizzle": "2.0.0-beta.87",
+		"@alchemy.run/effect-cluster": "2.0.0-beta.87",
+		"@alchemy.run/git": "2.0.0-beta.87",
+		"@alchemy.run/github": "2.0.0-beta.87",
+		"@alchemy.run/infisical": "2.0.0-beta.87",
+		"@alchemy.run/neon": "2.0.0-beta.87",
+		"@alchemy.run/planetscale": "2.0.0-beta.87",
+		"@alchemy.run/prisma": "2.0.0-beta.87",
 		"@alchemy.run/rivet": "2.0.0-beta.87",
+		"@alchemy.run/sql": "2.0.0-beta.87",
+		"@alchemy.run/turso": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "^4.1.4",
 		"@effect/platform-node": "^4.1.4",
@@ -93,10 +136,43 @@
 		"ws": "^8.21.0"
 	},
 	"peerDependenciesMeta": {
+		"@alchemy.run/boat": {
+			"optional": true
+		},
 		"@alchemy.run/cloudflare": {
 			"optional": true
 		},
+		"@alchemy.run/drizzle": {
+			"optional": true
+		},
+		"@alchemy.run/effect-cluster": {
+			"optional": true
+		},
+		"@alchemy.run/git": {
+			"optional": true
+		},
+		"@alchemy.run/github": {
+			"optional": true
+		},
+		"@alchemy.run/infisical": {
+			"optional": true
+		},
+		"@alchemy.run/neon": {
+			"optional": true
+		},
+		"@alchemy.run/planetscale": {
+			"optional": true
+		},
+		"@alchemy.run/prisma": {
+			"optional": true
+		},
 		"@alchemy.run/rivet": {
+			"optional": true
+		},
+		"@alchemy.run/sql": {
+			"optional": true
+		},
+		"@alchemy.run/turso": {
 			"optional": true
 		},
 		"rivetkit": {
@@ -104,8 +180,19 @@
 		}
 	},
 	"devDependencies": {
+		"@alchemy.run/boat": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
+		"@alchemy.run/drizzle": "2.0.0-beta.87",
+		"@alchemy.run/effect-cluster": "2.0.0-beta.87",
+		"@alchemy.run/git": "2.0.0-beta.87",
+		"@alchemy.run/github": "2.0.0-beta.87",
+		"@alchemy.run/infisical": "2.0.0-beta.87",
+		"@alchemy.run/neon": "2.0.0-beta.87",
+		"@alchemy.run/planetscale": "2.0.0-beta.87",
+		"@alchemy.run/prisma": "2.0.0-beta.87",
 		"@alchemy.run/rivet": "2.0.0-beta.87",
+		"@alchemy.run/sql": "2.0.0-beta.87",
+		"@alchemy.run/turso": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "4.1.4",
 		"@effect/platform-node": "4.1.4",

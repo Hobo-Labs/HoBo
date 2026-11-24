@@ -1,0 +1,235 @@
+#!/usr/bin/env node
+
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import process from "node:process";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { importSpecifiersOf } from "./lib/test-import-specifiers.mts";
+
+export type DomainBoundaryViolation = Readonly<{
+	file: string;
+	rule:
+		| "domain-no-raw-io"
+		| "domain-no-secret-fields"
+		| "domain-verify-required"
+		| "domain-story-required";
+	message: string;
+}>;
+
+export type DomainBoundaryReport = Readonly<{
+	checkedFiles: readonly string[];
+	checkedModels: readonly string[];
+	violations: readonly DomainBoundaryViolation[];
+}>;
+
+const SKIPPED_DIRS = new Set([
+	".git",
+	".turbo",
+	"dist",
+	"fixtures",
+	"node_modules",
+]);
+
+const FORBIDDEN_IO_MODULES = new Set([
+	"child_process",
+	"fs",
+	"fs/promises",
+	"http",
+	"https",
+	"mysql2",
+	"net",
+	"node:child_process",
+	"node:fs",
+	"node:fs/promises",
+	"node:http",
+	"node:https",
+	"node:net",
+	"node:sqlite",
+	"pg",
+	"undici",
+]);
+
+const SECRET_FIELD_PATTERN =
+	/\b(token|apiKey|secret|password|privateKey|accessToken|refreshToken)\s*:/gu;
+
+function toPosix(pathValue: string): string {
+	return pathValue.replaceAll("\\", "/");
+}
+
+function isForbiddenIoSpecifier(specifier: string): boolean {
+	if (FORBIDDEN_IO_MODULES.has(specifier)) return true;
+	for (const mod of FORBIDDEN_IO_MODULES) {
+		if (!mod.startsWith("node:") && specifier.startsWith(`${mod}/`))
+			return true;
+	}
+	return false;
+}
+
+function listTsFiles(dir: string): string[] {
+	if (!existsSync(dir)) return [];
+	const out: string[] = [];
+	const stack = [dir];
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (current === undefined) continue;
+		const entries = readdirSync(current, { withFileTypes: true }).sort((a, b) =>
+			a.name.localeCompare(b.name),
+		);
+		for (const entry of entries) {
+			if (entry.isDirectory()) {
+				if (!SKIPPED_DIRS.has(entry.name)) {
+					stack.push(join(current, entry.name));
+				}
+				continue;
+			}
+			if (!entry.isFile()) continue;
+			if (entry.name.endsWith(".d.ts")) continue;
+			if (entry.name.endsWith(".ts") || entry.name.endsWith(".mts")) {
+				out.push(join(current, entry.name));
+			}
+		}
+	}
+	return out.sort();
+}
+
+function findPackagesWithDomainDir(packagesRoot: string): string[] {
+	if (!existsSync(packagesRoot)) return [];
+	const found: string[] = [];
+	const walk = (dir: string): void => {
+		const domainDir = join(dir, "src", "domain");
+		if (existsSync(domainDir)) {
+			found.push(dir);
+			return;
+		}
+		const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+			a.name.localeCompare(b.name),
+		);
+		for (const entry of entries) {
+			if (!entry.isDirectory() || SKIPPED_DIRS.has(entry.name)) continue;
+			if (entry.name === "src" || entry.name === "test") continue;
+			walk(join(dir, entry.name));
+		}
+	};
+	walk(packagesRoot);
+	return found.sort();
+}
+
+export function checkDomainBoundaries(rootDir: string): DomainBoundaryReport {
+	const packagesRoot = join(rootDir, "packages");
+	const packageDirs = findPackagesWithDomainDir(packagesRoot);
+	const checkedFiles: string[] = [];
+	const checkedModels: string[] = [];
+	const violations: DomainBoundaryViolation[] = [];
+
+	for (const pkgDir of packageDirs) {
+		const domainFiles = listTsFiles(join(pkgDir, "src", "domain"));
+		let declaresModel = false;
+
+		for (const absFile of domainFiles) {
+			const relFile = toPosix(relative(rootDir, absFile));
+			checkedFiles.push(relFile);
+			const source = readFileSync(absFile, "utf8");
+
+			for (const entry of importSpecifiersOf(source, absFile)) {
+				if (isForbiddenIoSpecifier(entry.specifier)) {
+					violations.push({
+						file: relFile,
+						rule: "domain-no-raw-io",
+						message: `forbidden raw I/O import "${entry.specifier}" inside src/domain`,
+					});
+				}
+			}
+
+			if (
+				source.includes("Domain.Event(") ||
+				source.includes("Domain.Aggregate(")
+			) {
+				SECRET_FIELD_PATTERN.lastIndex = 0;
+				const seenFields = new Set<string>();
+				let match = SECRET_FIELD_PATTERN.exec(source);
+				while (match !== null) {
+					const fieldName = match[1];
+					if (fieldName !== undefined && !seenFields.has(fieldName)) {
+						seenFields.add(fieldName);
+						violations.push({
+							file: relFile,
+							rule: "domain-no-secret-fields",
+							message: `secret-shaped schema field "${fieldName}" is prohibited in Domain.Event / Domain.Aggregate`,
+						});
+					}
+					match = SECRET_FIELD_PATTERN.exec(source);
+				}
+			}
+
+			if (source.includes("Domain.Model(")) {
+				declaresModel = true;
+			}
+		}
+
+		if (declaresModel) {
+			const relPkg = toPosix(relative(rootDir, pkgDir));
+			checkedModels.push(relPkg);
+			const testFiles = listTsFiles(join(pkgDir, "test"));
+			const testSources = testFiles.map((testFile) =>
+				readFileSync(testFile, "utf8"),
+			);
+			const hasVerifyTest = testSources.some((source) =>
+				source.includes("Domain.verify("),
+			);
+			if (!hasVerifyTest) {
+				violations.push({
+					file: relPkg,
+					rule: "domain-verify-required",
+					message:
+						"package declares Domain.Model(...) without a Domain.verify(...) test under test/",
+				});
+			}
+			const hasStoryTest = testSources.some((source) =>
+				source.includes("Story.make("),
+			);
+			if (!hasStoryTest) {
+				violations.push({
+					file: relPkg,
+					rule: "domain-story-required",
+					message:
+						"package declares Domain.Model(...) without an Alchemy Domain BDD Story.make(...) test under test/",
+				});
+			}
+		}
+	}
+
+	return { checkedFiles, checkedModels, violations };
+}
+
+function main(argv: readonly string[]): number {
+	const rootArg = argv
+		.find((arg) => arg.startsWith("--root="))
+		?.slice("--root=".length);
+	const rootDir =
+		rootArg === undefined || rootArg === ""
+			? join(dirname(fileURLToPath(import.meta.url)), "..")
+			: resolve(rootArg);
+	const report = checkDomainBoundaries(rootDir);
+
+	if (report.violations.length === 0) {
+		console.log(
+			`domain-boundaries: ok (${report.checkedFiles.length} file(s), ${report.checkedModels.length} model(s))`,
+		);
+		return 0;
+	}
+
+	console.error(
+		`domain-boundaries: ${report.violations.length} violation(s) found:`,
+	);
+	for (const violation of report.violations) {
+		console.error(
+			`  [${violation.rule}] ${violation.file}: ${violation.message}`,
+		);
+	}
+	return 1;
+}
+
+const entry = process.argv[1];
+if (entry && import.meta.url === pathToFileURL(entry).href) {
+	process.exit(main(process.argv.slice(2)));
+}

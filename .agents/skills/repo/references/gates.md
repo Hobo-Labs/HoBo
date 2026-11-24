@@ -19,6 +19,8 @@ Failed validation is not a completion state. Fix the failure or report the block
 
 ## Common Commands
 
+- Single-file / package tests: `pnpm --filter <pkg> exec vitest run <file>`, `pnpm --filter <pkg> test`, `node --import tsx --test scripts/test/<file>.test.ts`
+- Changed / affected test lanes: `pnpm run test:changed`, `pnpm run test:affected`, `pnpm exec turbo run test --filter=./packages/<pkg>`
 - Staged path: `pnpm run check:relevant:staged`
 - Latest-commit path: `pnpm run agent:check`
 - Branch path: `pnpm run check:relevant -- --base=origin/main`
@@ -31,7 +33,8 @@ Failed validation is not a completion state. Fix the failure or report the block
 ## Gate Rules
 
 - Do not bypass hooks or use `--no-verify`.
-- Do not run full repo lint, test, typecheck, build, or codegen during implementation when an affected or changed-scope command exists.
+- Always run only tests related to your changes. Never run full-repo sweeps (`pnpm test`, `pnpm run test:unit`, `pnpm run test:all`, `pnpm run check:all`, `pnpm run verify:full`, unfiltered `turbo run test`, or unfiltered root `vitest run`) unless the user explicitly asks for one (`HOBO_ALLOW_BROAD_TESTS=1`). The pre-tool hook (`scripts/agent-session-policy.mts`) refuses broad sweeps by default across Claude Code, Cursor, Codex, and Copilot.
+- During a merge (`MERGE_HEAD`), `agent:check --staged` intersects staged diffs across merge parents so merging `origin/main` validates only conflict-resolved or merge-introduced files instead of unrelated upstream commits.
 - If a command times out or starts broad work unexpectedly, stop and narrow scope before retrying.
-- Use latest-commit or staged validation for small iteration and post-rebase repair.
+- Use latest-commit or staged validation for small iteration and post-merge repair.
 - Run explicit PR-base validation once the implementation is complete and conflicts are resolved.

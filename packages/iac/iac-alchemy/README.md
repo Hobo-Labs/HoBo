@@ -864,3 +864,29 @@ or otherwise reconcile messages, and authorize destruction before deleting or
 recreating the actor: destroying its database destroys messages and deduplication
 history. Provider credentials, pool isolation, source identity, durable storage,
 and clock correctness remain independently verified host responsibilities.
+
+## Runner Provider Layers (`@hobo/iac-alchemy/runners`)
+
+`@hobo/iac-alchemy/runners` provides Alchemy v2 `Resource` definitions and `Provider` Layers for HoBo's self-hosted and burst CI runner targets:
+
+- `Hobo.HostingerRunner` (`HostingerRunnerProvider`): enforces HoBo's fleet-only Hostinger API route guard (`GET /api/vps/v1/virtual-machines`, `POST /api/vps/v1/virtual-machines/<id>/(start|restart)`), resolves credentials exclusively through `owner://<NAME>` locators, and never persists secrets into Alchemy state.
+- `Hobo.Agent37Runner` (`Agent37RunnerProvider`): manages Agent37 sandbox creation and teardown through `owner://<NAME>` credentials with zero secret persistence.
+- `Hobo.LocalRunner` (`LocalRunnerProvider`): manages local machine runner slot registrations without network or secret requirements.
+- `createAlchemyRunnerBackend`: adapts `LocalRunner`, `HostingerRunner`, `Agent37Runner`, and GitHub-hosted runner dispatch into a unified multi-tier backend matching `@hobo/ci/domain`'s `RunnerBackend` contract.
+
+## Environments, Sandboxes & Test Harness
+
+- `@hobo/iac-alchemy/environments`: integrates `@alchemy.run/infisical` (`createHoboInfisicalSecrets`), disables ambient shell secrets via `Secrets.ProcessEnv({ disabled: true })`, provides `OwnerStoreSecretProvider` (`ConfigProvider.layerAdd`) for `owner://<NAME>` credentials as `Config.Redacted`, and validates Alchemy stages and profiles with redacted `ProviderDetails`.
+- `@hobo/iac-alchemy/sandboxes`: integrates `@alchemy.run/boat` (`Boat.Snapshot`, `Boat.Sandbox`) alongside a Boat-shaped custom Agent37 sandbox provider (`Agent37Snapshot`, `Agent37Sandbox`, snapshot setup hashing, and live sandbox forks) for CI/CD workloads.
+- `@hobo/iac-alchemy/test-harness`: provides a Vitest-compatible `createAlchemyTestHarness` following Alchemy's `Test.make` one-deploy-per-suite (`beforeAll(deploy)` / `afterAll(destroy)`) and provider-lifecycle session patterns.
+- `@hobo/iac-alchemy/cluster`: integrates `@alchemy.run/effect-cluster` (`Cluster.Database.fromUrl` with `Config.Redacted` credentials, `Cluster.providers()`, swappable `ClusterCloudflare.DurableObjectPool` / container pool topology validation) for HoBo CI fleet coordination.
+- `@hobo/iac-alchemy/sql`: integrates `@alchemy.run/sql`, `@alchemy.run/drizzle` (priority Drizzle v1 migrations with `__alchemy_migrations` linear-history enforcement and Node SQLite executor), Postgres providers (`@alchemy.run/neon`, `@alchemy.run/planetscale`, `@alchemy.run/prisma` with stage-aware preview branching), and libSQL (`@alchemy.run/turso` groups, databases, and per-tenant fleets).
+- `@hobo/iac-alchemy/git`: integrates `@alchemy.run/git` (self-hosted Git on R2/S3 + Durable Objects/D1) and `@alchemy.run/github` authenticated exclusively via HoBo GitHub App installation credentials (`GitHub.fromApp` + `owner://` locators) while refusing Actions secrets/variables and PAT resources.
+- `@hobo/iac-alchemy/vercel`: models Vercel service deployment as a custom Alchemy v2 cloud provider (`VercelProject`, `VercelServiceDeployment`, `VercelAlias`, `VercelCloudProviders`) enforcing unlinked Git (`gitLink: "disabled"`) alongside budget/credit-driven dual-cloud routing with Cloudflare (`selectDualCloudBudgetTarget`).
+- Redundant `@hobo/iac-terraform` and `@hobo/iac-crossplane` packages and tests were removed as `@hobo/iac-alchemy` became the primary IaC substrate.
+
+
+
+
+
+

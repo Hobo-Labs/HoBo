@@ -79,6 +79,14 @@
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"
+    },
+    "./domain": {
+      "types": "./dist/domain/index.d.ts",
+      "default": "./dist/domain/index.js"
+    },
+    "./cluster": {
+      "types": "./dist/cluster/index.d.ts",
+      "default": "./dist/cluster/index.js"
     }
   },
   "scripts": {
@@ -88,6 +96,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@alchemy.run/domain": "2.0.0-beta.87",
     "@bufbuild/protobuf": "2.12.1",
     "@hobo/bindles": "workspace:*",
     "@hobo/broker": "workspace:*",
@@ -95,6 +104,7 @@
     "@hobo/dispatcher": "workspace:*",
     "@hobo/fleet": "workspace:*",
     "@hobo/pricing": "workspace:*",
+    "effect": "4.1.4",
     "zod": "^4.1.13"
   },
   "devDependencies": {

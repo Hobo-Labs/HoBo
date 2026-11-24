@@ -15,6 +15,11 @@ export {
 	UnsupportedCodecError,
 } from "./codec.js";
 export {
+	createSqliteDomainPlatform,
+	initSqliteDomainTables,
+	type SqliteDomainPlatformOptions,
+} from "./domain-platform.js";
+export {
 	asBigInt,
 	asBytes,
 	asNumber,
