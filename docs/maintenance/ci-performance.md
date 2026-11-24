@@ -178,7 +178,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   same-repo run, bound to the entry's PR, base tip matching the branch name and the event, tree
   SHAs from the commits API, base contained in the PR head by the compare API — and reports it
   as the route job's `pr-fabric-green` output. On a verified match, **PR impact validation**,
-  **Workspace test shards** and **Scripts tests** are skipped and the `pr-gate` required check
+  **Workspace test shards**, **Scripts tests** and **State-machine verification** are skipped and the `pr-gate` required check
   accepts them; anything short of a verified match is `reuse=false` and the merge group runs its
   gate jobs as before. The plan job, secret scan, merge-only required checks and the gate itself
   are untouched. Committed policy gates it: `runnerRouting.mergeGroup.reusePrFabric` in
@@ -341,6 +341,29 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   node builtins only, since it decides whether to install; `scripts/test/job-scope.test.ts` pins the walk
   and checks that both real entries scope without giving up. #1652 (ci-gh-actions) and #1653
   (`scripts/run-tests.ts`) would have skipped both jobs: 1–3 slot-minutes each per run, excluding stalls.
+- **State-machine verification runs only when the diff reaches the verification skills.** The four
+  `state-machine-verification` shards held a runner for 5 to 7 minutes each on every pull request and
+  merge group. The PR impact plan's "Decide whether state-machine verification is needed" step pipes the
+  event's diff (the PR merge commit's first parent, or the merge group's base, proven-tree delta
+  included) into `scripts/ci/state-machine-scope.mts` and outputs `state_machines`. It is `false` only
+  when no changed path lands in what the skills exercise: every `.agents/skills/verify-*` file, the two
+  `scripts/verify-*state-machine*.sh` drivers, the job's install scripts, `hobo-ci.yml`,
+  `.github/actions/`, the action pins, the job-scope CI inputs (pins, submodules, runner image, root
+  `vitest.config.*`), root `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `turbo.json`,
+  `mise.*`, `.npmrc`, `.node-version` and `tsconfig*.json`, every workspace-wide input `affected-lanes.mts`
+  knows, and the workspace closure (from package manifests) of the seven packages the job builds plus
+  every package, file or directory a skill file or a reached shell script names. Relative imports of
+  reached code are followed; a package-relative name such as `src/github.ts` counts when a reached
+  package holds it and otherwise widens to the nearest existing directory. An empty diff, a missing
+  base, an unreadable file, an unresolvable or out-of-tree relative import, a missing built package or
+  no skills at all keeps it `true`. The job is skipped when the plan succeeded with `false`, and in a
+  merge group when `pr-fabric-green` is `true`; `pr-gate` accepts a skipped run only in those two
+  cases. A skipped plan (a signed local run) leaves the output empty, so the job runs. The job is not
+  an attestation-covered job: a local run would need Java and TLC. Its build step uses
+  `--concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}`
+  ([finding 169](../ci/findings/0169-state-machine-verification-ran-on-every-change.md)).
+  `scripts/test/state-machine-scope.test.ts` pins the walk on an in-memory tree and checks that the
+  repository's own skills scope without giving up.
 
 ## The ci-gh-actions test suite
 
@@ -411,7 +434,7 @@ and the CLI's eager imports are left for later changes.
 
 ## Changed paths on stdin
 
-`job-scope.mts`, `dependent-tests.mts` and `impact-classifier.mts` read the changed paths that a
+`job-scope.mts`, `state-machine-scope.mts`, `dependent-tests.mts` and `impact-classifier.mts` read the changed paths that a
 `git diff --name-only …` pipe gives them through `scripts/lib/read-stdin.mts`, not `readFileSync(0)`.
 In Node 22, `import process from "node:process"` builds that module's exports from every property of
 `process`. That opens `process.stdin`, and on a pipe libuv sets O_NONBLOCK on fd 0. If node reaches

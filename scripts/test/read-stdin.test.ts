@@ -264,6 +264,15 @@ describe("the CI scripts that read changed paths from stdin, behind a late write
 		);
 	});
 
+	it("state-machine-scope.mts", async () => {
+		const exit = await runWithLateWriter(
+			[...STRIP, "scripts/ci/state-machine-scope.mts"],
+			late,
+		);
+		assert.equal(exit.status, 0, exit.stderr);
+		assert.equal(exit.stdout, "false\n");
+	});
+
 	it("impact-classifier.mts", async () => {
 		const exit = await runWithLateWriter(
 			[...STRIP, "scripts/ci/impact-classifier.mts"],
