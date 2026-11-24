@@ -137,7 +137,7 @@ export function verifyDpopProof(
 	if (header.alg !== algorithmOf(jwk.value))
 		return agentRefusal(
 			"dpop-invalid",
-			`alg ${String(header.alg)} does not fit the key`,
+			"The proof algorithm does not fit the key.",
 		);
 	if (!verifyCompactJws(decoded, jwk.value))
 		return agentRefusal(
@@ -156,7 +156,7 @@ export function verifyDpopProof(
 	if (htm !== expect.method)
 		return agentRefusal(
 			"dpop-method-mismatch",
-			`htm ${htm} is not ${expect.method}`,
+			"The proof method does not match the request.",
 		);
 	const expectedPath = pathOf(expect.url);
 	const proofPath = pathOf(htu);
@@ -171,12 +171,12 @@ export function verifyDpopProof(
 	)
 		return agentRefusal(
 			"dpop-url-mismatch",
-			`htu ${htu} does not match ${expect.url}`,
+			"The proof URL does not match the request.",
 		);
 	if (Math.abs(iat * 1000 - expect.nowMs) > expect.skewMs)
 		return agentRefusal(
 			"dpop-stale",
-			`iat ${iat} is outside ±${expect.skewMs} ms of the Station clock`,
+			"The proof timestamp is outside the permitted clock skew.",
 		);
 	if (
 		expect.accessToken !== undefined &&

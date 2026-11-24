@@ -541,11 +541,13 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 				},
 			};
 		} catch (error) {
-			const message = messageOf(error);
-			return agentRefusal(
-				/expired/u.test(message) ? "svid-expired" : "svid-invalid",
-				message,
-			);
+			let expired = false;
+			try {
+				expired = /expired/u.test(messageOf(error));
+			} catch {}
+			return expired
+				? agentRefusal("svid-expired", "The SVID has expired.")
+				: agentRefusal("svid-invalid", "The SVID could not be verified.");
 		}
 	}
 

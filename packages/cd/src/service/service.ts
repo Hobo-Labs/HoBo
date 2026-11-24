@@ -173,9 +173,9 @@ export function createCdService(d: CdServiceDeps): CdServiceHost {
 	}
 	function emit(points: readonly OtelMetricPoint[]): void {
 		if (!d.telemetry || points.length === 0) return;
-		d.telemetry.metrics(points).catch(() => {
-			// Telemetry is best-effort; a broken exporter never stops delivery.
-		});
+		try {
+			d.telemetry.metrics(points).catch(() => undefined);
+		} catch {}
 	}
 
 	function ctx(): CdContext {

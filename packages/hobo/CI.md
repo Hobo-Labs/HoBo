@@ -298,6 +298,49 @@ tool with `args: ["fleet", "status"]` (or `["fleet", "restart", "<vm>"]`) and
 the project directory as `cwd`. The verb manages machines only; it does not
 register runners or the `hobo-arc` scale set on them.
 
+### Hostinger through Infisical Agent Vault
+
+When the owner's store is Infisical and holds no `HOSTINGER_API_TOKEN` entry,
+the fleet verbs use Infisical Agent Vault instead, so neither HoBo nor the
+agent ever holds the Hostinger token. The owner needs:
+
+- exactly one Agent Vault project that the identity they signed in with
+  reaches;
+- in it, an `http` service whose host pattern covers
+  `developers.hostinger.com` (exactly, or as a one-label `*.hostinger.com`
+  wildcard), with the Hostinger token as the credential the proxy adds, or as
+  a value the proxy fills into a header placeholder;
+- that identity as an Agent Vault admin of the project, or holding an access
+  bundle with the service.
+
+HoBo runs the proxy itself. On the first fleet call of an MCP server it
+starts a one-hour session for the service, registers a proxy named `hobo`
+(traffic policy `service-hosts`) or rotates the token of the existing one,
+and starts `infisical agent-vault proxy` on a free `127.0.0.1` port with
+that token only in the child's environment and a fresh temporary data
+directory. It installs `@infisical/cli` 0.45.14 into HoBo's tools directory
+when the CLI on `PATH` is older. Hostinger requests then go through the proxy
+with the session token as proxy credentials, trusting only the proxy's CA,
+and carry the service's header placeholder, or no `Authorization` header when
+the proxy adds the credential. The route is renewed five minutes before the
+session expires. When the MCP server or the owner's store session closes,
+HoBo revokes the session, stops the proxy and deletes its data directory.
+
+Results name the route only as service and hosts: `data.credentialSource` is
+`{kind: "agent-vault", service, hosts}` (or `{kind: "owner-store"}`), and
+`doctor`'s `ownerStoreSession.agentVault` reports the project name, its
+services with their hosts, and the proxy's name and whether HoBo's proxy is
+running, once a fleet call has reached Agent Vault. No project, proxy or
+session id and no token appears in any result or error. Refusals:
+
+| Code | When |
+|---|---|
+| `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` | No store entry, and Agent Vault is unreachable (no project, or Infisical refused the identity) or has no `http` service for the host; the message says which. |
+| `HOBO_AGENT_VAULT_PROJECT_AMBIGUOUS` | The identity reaches more than one Agent Vault project; the message names them. |
+| `HOBO_AGENT_VAULT_NO_CREDENTIAL` | The service neither adds a credential nor offers a header placeholder. |
+| `HOBO_AGENT_VAULT_PROXY_FAILED` | The Infisical CLI could not be installed or the proxy did not become healthy. |
+| `HOBO_AGENT_VAULT_FAILED` | Infisical's answer could not be used. |
+
 ## Give the fleet's ARC pods node caches
 
 ```sh
@@ -567,9 +610,13 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 | `--repo`, `--project` | Override the Yard's `repository` and `project` (a fork, a scratch project) |
 | `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or a store coordinate (any `INFISICAL_*` name, `*_PROJECT_ID`, `*_TEAM_ID`, `*_ORG_ID`, `*_IDENTITY_ID`, OIDC, subject or binding name) |
 | `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
-| `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
+| `--wait` | Drive the deployment to READY and verification with a 20-minute budget checked between passes; ERROR or CANCELED is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
 | `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration; preview only, since production needs the bundled store binding (`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`). `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
+
+An in-flight provider operation can outlast the budget. This relay path does
+not durably fence it across lease expiry, processes or restarts; inspect the
+provider and CD journal to establish its outcome before another deploy.
 
 Production deploys only through `hobo cd` with the owner's store session (the
 [relay bootstrap](../ci-vercel/BOOTSTRAP.md) gives the two commands). The

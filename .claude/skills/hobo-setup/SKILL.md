@@ -82,6 +82,16 @@ and admits no exceptions.
   `HOBO_CI_ACCOUNT_TOKEN` and writes each straight into the store. Entries the store already holds are kept unless
   `replace: true`. Its result lists entry names only (`stored`, `kept`,
   `skipped`, `failed`).
+- Infisical Agent Vault: with an Infisical store that has no
+  `HOSTINGER_API_TOKEN` entry, the fleet verbs use the owner's Agent Vault
+  instead. HoBo runs the proxy itself; never start
+  `infisical agent-vault proxy` or create sessions yourself. The owner needs
+  one Agent Vault project their signed-in identity reaches (as an Agent Vault
+  admin, or through an access bundle) with an `http` service covering
+  `developers.hostinger.com`. `doctor`'s `ownerStoreSession.agentVault` and
+  the fleet's `data.credentialSource` name the service and hosts only. On
+  `HOBO_AGENT_VAULT_PROJECT_AMBIGUOUS`, ask the owner which project HoBo
+  should use; they sign in with an identity that reaches only that one.
 - `sign-in-needed` (with a code): the choice is kept; call
   `choose_secret_store` again when the owner is ready. Do not claim the store
   is connected.

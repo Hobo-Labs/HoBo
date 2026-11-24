@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
 	createDpopProof,
+	createDpopProofVerifier,
 	createJournalReplayStore,
 	generateAgentKey,
 	jwkThumbprint,
@@ -42,6 +43,48 @@ describe("JWK thumbprint (RFC 7638)", () => {
 });
 
 describe("DPoP proofs", () => {
+	it("does not echo untrusted proof fields in verification refusals", () => {
+		const marker = "synthetic-private-proof.invalid";
+		const key = generateAgentKey("ES256");
+		const expectation = {
+			method: "POST",
+			url: URL_REFRESH,
+			nowMs: 1_000_000,
+			skewMs: 60_000,
+		};
+		const make = (method: string, url: string) =>
+			createDpopProof({
+				privateJwk: key.privateJwk,
+				method,
+				url,
+				iatSeconds: 1000,
+				jti: "fixture",
+			});
+		const valid = make("POST", URL_REFRESH);
+		const [head, payload, signature] = valid.split(".");
+		const header = JSON.parse(
+			Buffer.from(head ?? "", "base64url").toString("utf8"),
+		);
+		const altered = Buffer.from(
+			JSON.stringify({ ...header, alg: marker }),
+		).toString("base64url");
+		const results = [
+			verifyDpopProof(make(marker, URL_REFRESH), expectation),
+			verifyDpopProof(make("POST", `https://${marker}/wrong`), expectation),
+			verifyDpopProof(`${altered}.${payload}.${signature}`, expectation),
+			parsePublicJwk({ kty: marker, crv: marker, x: "AAAA" }),
+		];
+		expect(
+			results.map((result) => (result.ok ? "ok" : result.reasons[0]?.code)),
+		).toEqual([
+			"dpop-method-mismatch",
+			"dpop-url-mismatch",
+			"dpop-invalid",
+			"jwk-invalid",
+		]);
+		expect(JSON.stringify(results)).not.toContain(marker);
+	});
+
 	for (const alg of ["ES256", "EdDSA"] as const) {
 		it(`round-trips an ${alg} proof bound to the key thumbprint`, () => {
 			const key = generateAgentKey(alg);
@@ -210,6 +253,38 @@ describe("DPoP proofs", () => {
 			skewMs: 60_000,
 		});
 		expect(r.ok ? "" : r.reasons[0]?.code).toBe("dpop-invalid");
+	});
+});
+
+describe("replay verification failure", () => {
+	it("redacts a replay-store error after verifying a valid proof", async () => {
+		const key = generateAgentKey("ES256");
+		const proof = createDpopProof({
+			privateJwk: key.privateJwk,
+			method: "POST",
+			url: URL_REFRESH,
+			iatSeconds: 1000,
+			jti: "fixture",
+		});
+		const verifier = createDpopProofVerifier({
+			replay: {
+				claim: async () => {
+					throw new Error("synthetic-private-journal.invalid");
+				},
+			},
+			skewMs: 60_000,
+		});
+		const out = await verifier.verify(proof, {
+			reconcilerId: "fixture",
+			method: "POST",
+			url: URL_REFRESH,
+			nowMs: 1_000_000,
+		});
+		expect(out.ok).toBe(false);
+		if (!out.ok) expect(out.reasons[0]?.code).toBe("store-unavailable");
+		expect(JSON.stringify(out)).not.toContain(
+			"synthetic-private-journal.invalid",
+		);
 	});
 });
 

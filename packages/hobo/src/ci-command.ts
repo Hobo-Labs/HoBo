@@ -31,6 +31,7 @@ import {
 } from "@hobo/hobo-ci";
 import type { KubernetesTlsMaterial } from "@hobo/provider-kubernetes";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
+import type { AgentVaultRouter } from "./agent-vault-broker.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
@@ -483,6 +484,7 @@ export function createCiCommand(
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
 		ownerCredentials?: (cwd: string) => CredentialResolver;
+		fleetAgentVault?: (cwd: string) => AgentVaultRouter | undefined;
 		ownerEntries?: (cwd: string) => OwnerStoreEntries;
 		hostingerHttp?: HttpTransport;
 		kubernetesHttp?: (tls: KubernetesTlsMaterial) => HttpTransport;
@@ -510,6 +512,7 @@ export function createCiCommand(
 				return runCiFleet({
 					positionals: args.slice(1),
 					credentials: deps.ownerCredentials?.(flags.cwd),
+					agentVault: deps.fleetAgentVault?.(flags.cwd),
 					transport:
 						deps.hostingerHttp ?? createFetchHttpTransport(globalThis.fetch),
 				});
