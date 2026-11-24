@@ -178,6 +178,18 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   are untouched. Committed policy gates it: `runnerRouting.mergeGroup.reusePrFabric` in
   `.hobo/ci.json` (`true`, and an absent block means the same; an unreadable or invalid policy
   turns reuse off).
+- **Merge groups test only what changed since the tree the pull request run proved.** Every
+  `pull_request` run's route job records the merge commit it tested as the artifact name
+  `pr-fabric-tested-<merge sha>-<tree>`. In a merge group the route job's `pr-fabric` step
+  (`decideProvenTreeDelta`) finds the newest green same-repo run for the entry's current head with
+  that record, checks the commit through the API (recorded tree, pull request head as second parent,
+  first parent contained in the group's base) and outputs it as `proven-base`. The plan job,
+  PR impact validation and each workspace shard run `scripts/ci/proven-tree.mts`, which fetches it,
+  checks its tree and ancestry again, and checks out a local commit with the group's tree over it, so
+  the gate scope, the S0 gate set and the shard plan all diff from it. Anything missing or doubtful
+  keeps `merge_group.base_sha`; a later job that cannot repeat the proof widens to `check:all` or
+  every suite of its shard. The same `reusePrFabric` policy gates it
+  ([finding 163](../ci/findings/0163-merge-groups-retested-what-the-pull-request-run-proved.md)).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
