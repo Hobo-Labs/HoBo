@@ -182,6 +182,13 @@ describe("provision → claim open → claim finalize → deploy inputs", () => 
 			allowLoopback: true,
 			fetch: withGithub,
 			bindingStore: ownerStoreStandIn(cwd),
+			credentials: {
+				async resolve(ref) {
+					if (ref !== "github-app://Hobo-Labs/HoBo")
+						throw new Error(`no installation for ${ref}`);
+					return { token: "synthetic-installation-token" };
+				},
+			},
 		});
 		expect(provisioned.ok).toBe(true);
 		// The deploy identity trusts the subject GitHub issues for the

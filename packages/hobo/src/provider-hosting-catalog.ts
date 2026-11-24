@@ -1397,7 +1397,6 @@ function externalRegistry(
 
 // public-contract: Camp labels (binding) and Freight labels (directives) the catalog resolver realizer reads.
 export const CATALOG_REALIZER_LABELS = Object.freeze({
-	/** Camp: the credential locator (`env://NAME`, ...) the resolver may use. */
 	credentialRef: "hobo.cd/credential-ref",
 	/** Camp: `npmjs`, `github-packages` or a Verdaccio `https://` origin. */
 	npmRegistry: "hobo.cd/npm.registry",

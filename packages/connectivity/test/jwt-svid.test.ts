@@ -33,17 +33,17 @@ const AUD = "database-access";
 const SECRET = "test-hmac-secret-not-the-default";
 const NOW = 1_800_000_000;
 
-function mint(overrides: Parameters<typeof mintJwtSvid>[0] | object = {}) {
+function mint(overrides: Partial<Parameters<typeof mintJwtSvid>[0]> = {}) {
 	return mintJwtSvid({
 		spiffeId: SPIFFE,
 		audience: AUD,
 		hmacSecret: SECRET,
 		now: NOW,
 		...overrides,
-	} as Parameters<typeof mintJwtSvid>[0]);
+	});
 }
 
-function messageOf(fn: () => unknown): string {
+function messageOf(fn: () => void): string {
 	try {
 		fn();
 	} catch (error) {
@@ -503,7 +503,7 @@ describe("ES256", () => {
 });
 
 describe("resolveSvidHmacSecret", () => {
-	test("an explicit secret wins over the environment", () => {
+	test("an explicit secret is used as given", () => {
 		expect(
 			resolveSvidHmacSecret({
 				hmacSecret: "explicit",
@@ -512,10 +512,17 @@ describe("resolveSvidHmacSecret", () => {
 		).toBe("explicit");
 	});
 
-	test("the environment supplies the secret when no argument does", () => {
+	test("never reads the secret from the environment", () => {
 		expect(
 			resolveSvidHmacSecret({ env: { HOBO_SVID_HMAC_SECRET: "from-env" } }),
-		).toBe("from-env");
+		).toBe(DEFAULT_SVID_HMAC_SECRET);
+		expect(
+			messageOf(() =>
+				resolveSvidHmacSecret({
+					env: { NODE_ENV: "production", HOBO_SVID_HMAC_SECRET: "from-env" },
+				}),
+			),
+		).toContain("owner://HOBO_SVID_HMAC_SECRET");
 	});
 
 	test("an empty secret is treated as absent", () => {
@@ -558,7 +565,7 @@ describe("resolveSvidHmacSecret", () => {
 			}),
 		);
 		expect(message).toContain("not allowed in production");
-		expect(message).toContain("HOBO_SVID_HMAC_SECRET");
+		expect(message).toContain("owner://HOBO_SVID_HMAC_SECRET");
 	});
 
 	test("an explicit opt-in allows the default secret even in production", () => {

@@ -51,6 +51,7 @@ export async function runCiProjectCli(
 		env?: NodeJS.ProcessEnv;
 		fetch?: typeof fetch;
 		write?: (text: string) => void;
+		accountToken?: () => Promise<string>;
 	} = {},
 ): Promise<void> {
 	const { values, positionals } = parseArgs({
@@ -63,7 +64,6 @@ export async function runCiProjectCli(
 			"trusted-origin": { type: "string" },
 			"trusted-account": { type: "string" },
 			"trusted-policy-sha256": { type: "string" },
-			"token-file": { type: "string" },
 			phase: { type: "string" },
 			"secret-dir": { type: "string" },
 			"allow-secret": { type: "string", multiple: true },
@@ -101,7 +101,6 @@ export async function runCiProjectCli(
 	const write = options.write ?? ((text: string) => process.stdout.write(text));
 	if (positionals[0] === "inspect") {
 		if (
-			values["token-file"] ||
 			values["trusted-origin"] ||
 			values["trusted-account"] ||
 			values["trusted-policy-sha256"] ||
@@ -136,7 +135,6 @@ export async function runCiProjectCli(
 			!values["trusted-secrets-sha256"] ||
 			!values["trusted-origin"] ||
 			!values["trusted-account"] ||
-			values["token-file"] ||
 			values["trusted-policy-sha256"]
 		)
 			throw new Error(
@@ -184,16 +182,13 @@ export async function runCiProjectCli(
 			accountId: values["trusted-account"],
 		},
 	];
-	const tokenFile = values["token-file"] ?? env.HOBO_CI_ACCOUNT_TOKEN_FILE;
-	if (tokenFile && env.HOBO_CI_ACCOUNT_TOKEN)
-		throw new Error("choose exactly one account credential source");
-	const accountToken = async () => {
-		if (tokenFile) {
-			const path = resolve(cwd, tokenFile);
-			return (await readBoundedFile(path, 1024)).trimEnd();
-		}
-		return env.HOBO_CI_ACCOUNT_TOKEN ?? "";
-	};
+	const accountToken =
+		options.accountToken ??
+		(async () => {
+			throw new Error(
+				"apply needs the CI account credential owner://HOBO_CI_ACCOUNT_TOKEN from the owner's store session; run HoBo MCP's choose_secret_store and apply through HoBo, which resolves it",
+			);
+		});
 	const clientOptions: CiPolicyApplyOptions = {
 		trustedTargets,
 		accountToken,

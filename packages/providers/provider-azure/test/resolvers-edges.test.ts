@@ -58,7 +58,7 @@ type ResolverProbe =
 	| (() => Promise<ResolveOutcome | undefined>)
 	| (() => Promise<void>);
 
-const CREDENTIAL_REF = "env://AZURE_ARM_ACCESS_TOKEN";
+const CREDENTIAL_REF = "owner://AZURE_ARM_ACCESS_TOKEN";
 /** A JWT-shaped ARM bearer token. Never expected anywhere but a header. */
 const TOKEN =
 	"eyJhbGciOiJSUzI1NiJ9.eyJhdWQiOiJodHRwczovL21hbmFnZW1lbnQuYXp1cmUuY29tIn0.fakesignaturewithrealisticlengthabcdefghij";

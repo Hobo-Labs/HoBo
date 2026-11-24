@@ -18,6 +18,7 @@ import {
 	createMcpOwnerChannel,
 	createOwnerCaptureApp,
 } from "./mcp-owner-channel.js";
+import { createOwnerPages } from "./mcp-owner-page.js";
 import {
 	createInfisicalCaptureConnector,
 	secretCaptureProjectDir,
@@ -33,6 +34,7 @@ import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 import {
 	createOwnerStoreSessions,
 	type OwnerSignIn,
+	ownerChannelRelayFolder,
 	ownerChannelSignIn,
 } from "./owner-store-session.js";
 
@@ -110,6 +112,13 @@ export function composeHoboMcp(options: {
 					which: (bin) => whichOnPath(bin),
 				},
 			}),
+		relayFolder: ownerChannelRelayFolder({
+			owner,
+			deps: {
+				runCommand: machineRunner(),
+				which: (bin) => whichOnPath(bin),
+			},
+		}),
 		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
 	});
 	const server = createHoboMcpServer({
@@ -144,7 +153,14 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
-	session = createMcpStdioSession(capture, createStoreChoiceApp({ sessions }));
+	session = createMcpStdioSession(
+		capture,
+		createStoreChoiceApp({
+			sessions,
+			pages: createOwnerPages(),
+			deposit: (name, value) => owner.deposit(name, value),
+		}),
+	);
 	const ready = capture;
 	return {
 		owner,
