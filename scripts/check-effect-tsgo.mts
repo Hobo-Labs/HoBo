@@ -142,6 +142,28 @@ function parseExplicitPackages(argv: readonly string[]): readonly string[] {
 	return explicit;
 }
 
+export function resolveExplicitPackagePaths(
+	rootDir: string,
+	rawNames: readonly string[],
+): readonly string[] {
+	return rawNames.map((entry) => {
+		const normalized = toPosix(entry).replace(/^\.\//u, "");
+		if (workspaceDirForPath(normalized) !== undefined) return normalized;
+		for (const candidate of [
+			`packages/${normalized}`,
+			`packages/iac/${normalized}`,
+			`packages/providers/${normalized}`,
+			`packages/runtimes/${normalized}`,
+			`packages/build/${normalized}`,
+		]) {
+			if (existsSync(join(rootDir, candidate, "package.json"))) {
+				return candidate;
+			}
+		}
+		return normalized;
+	});
+}
+
 function main(argv: readonly string[]): number {
 	const rootArg = argv
 		.find((arg) => arg.startsWith("--root="))
@@ -157,11 +179,17 @@ function main(argv: readonly string[]): number {
 	const explicitPackages = parseExplicitPackages(argv);
 	const files =
 		explicitPackages.length > 0
-			? explicitPackages
+			? resolveExplicitPackagePaths(rootDir, explicitPackages)
 			: listChangedFiles(rootDir, { staged, base });
 	const targets = selectEffectTsgoTargets(rootDir, files);
 
 	if (targets.length === 0) {
+		if (explicitPackages.length > 0) {
+			console.error(
+				`effect-tsgo: explicit --packages matched no Effect/Alchemy package(s): ${explicitPackages.join(", ")}`,
+			);
+			return 1;
+		}
 		console.log("effect-tsgo: ok (no impacted Effect/Alchemy packages)");
 		return 0;
 	}

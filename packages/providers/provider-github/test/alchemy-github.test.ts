@@ -27,6 +27,24 @@ describe("@hobo/provider-github @alchemy.run/github integration", () => {
 		]) {
 			expect(() => assertNoStoredGitHubActionSecrets(forbidden)).toThrow();
 		}
+
+		const exportedKeys = new Set(Object.keys(GitHub));
+		for (const forbiddenExport of [
+			"fromToken",
+			"fromEnv",
+			"GitHubEnv",
+			"PersonalAccessToken",
+			"PersonalAccessTokenProvider",
+			"Secret",
+			"SecretProvider",
+			"Secrets",
+			"Variable",
+			"VariableProvider",
+			"Variables",
+			"webhookSecretEnvName",
+		]) {
+			expect(exportedKeys.has(forbiddenExport)).toBe(false);
+		}
 	});
 
 	it("declares GitHub repository, webhook, and release Alchemy resources", () => {

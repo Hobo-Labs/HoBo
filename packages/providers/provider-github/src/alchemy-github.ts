@@ -146,4 +146,79 @@ export function declareAlchemyGitHubIntegration(input: {
 	});
 }
 
-export { GitHub };
+export type AllowedGitHubKey =
+	| "Auth"
+	| "BranchProtection"
+	| "BranchProtectionProvider"
+	| "Collaborator"
+	| "CollaboratorProvider"
+	| "Comment"
+	| "CommentProvider"
+	| "Credentials"
+	| "Environment"
+	| "EnvironmentProvider"
+	| "Issue"
+	| "IssueProvider"
+	| "Label"
+	| "LabelProvider"
+	| "Milestone"
+	| "MilestoneProvider"
+	| "Providers"
+	| "PullRequest"
+	| "PullRequestProvider"
+	| "Release"
+	| "ReleaseProvider"
+	| "Repository"
+	| "RepositoryEventSource"
+	| "RepositoryEventSourceLive"
+	| "RepositoryProvider"
+	| "Ruleset"
+	| "RulesetProvider"
+	| "TeamAccess"
+	| "TeamAccessProvider"
+	| "Webhook"
+	| "WebhookProvider"
+	| "WikiPage"
+	| "WikiPageProvider"
+	| "fromApp"
+	| "providers";
+
+const AllowedGitHub: Readonly<Pick<typeof GitHub, AllowedGitHubKey>> = {
+	Auth: GitHub.Auth,
+	BranchProtection: GitHub.BranchProtection,
+	BranchProtectionProvider: GitHub.BranchProtectionProvider,
+	Collaborator: GitHub.Collaborator,
+	CollaboratorProvider: GitHub.CollaboratorProvider,
+	Comment: GitHub.Comment,
+	CommentProvider: GitHub.CommentProvider,
+	Credentials: GitHub.Credentials,
+	Environment: GitHub.Environment,
+	EnvironmentProvider: GitHub.EnvironmentProvider,
+	Issue: GitHub.Issue,
+	IssueProvider: GitHub.IssueProvider,
+	Label: GitHub.Label,
+	LabelProvider: GitHub.LabelProvider,
+	Milestone: GitHub.Milestone,
+	MilestoneProvider: GitHub.MilestoneProvider,
+	Providers: GitHub.Providers,
+	PullRequest: GitHub.PullRequest,
+	PullRequestProvider: GitHub.PullRequestProvider,
+	Release: GitHub.Release,
+	ReleaseProvider: GitHub.ReleaseProvider,
+	Repository: GitHub.Repository,
+	RepositoryEventSource: GitHub.RepositoryEventSource,
+	RepositoryEventSourceLive: GitHub.RepositoryEventSourceLive,
+	RepositoryProvider: GitHub.RepositoryProvider,
+	Ruleset: GitHub.Ruleset,
+	RulesetProvider: GitHub.RulesetProvider,
+	TeamAccess: GitHub.TeamAccess,
+	TeamAccessProvider: GitHub.TeamAccessProvider,
+	Webhook: GitHub.Webhook,
+	WebhookProvider: GitHub.WebhookProvider,
+	WikiPage: GitHub.WikiPage,
+	WikiPageProvider: GitHub.WikiPageProvider,
+	fromApp: GitHub.fromApp,
+	providers: GitHub.providers,
+};
+
+export { AllowedGitHub as GitHub };

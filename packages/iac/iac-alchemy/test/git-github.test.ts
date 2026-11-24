@@ -7,6 +7,7 @@ import {
 	declareHoboGitHubRepositoryStack,
 	describeAlchemyGitHostSpec,
 	Git,
+	GitHub,
 } from "../src/git/index.js";
 
 describe("@hobo/iac-alchemy/git (@alchemy.run/git and @alchemy.run/github)", () => {
@@ -58,6 +59,25 @@ describe("@hobo/iac-alchemy/git (@alchemy.run/git and @alchemy.run/github)", () 
 			"PersonalAccessToken",
 		]) {
 			expect(() => assertAllowedGitHubResourceKind(forbidden)).toThrow();
+		}
+
+		expect(GitHub.fromApp).toBeTypeOf("function");
+		const exportedKeys = new Set(Object.keys(GitHub));
+		for (const forbiddenExport of [
+			"fromToken",
+			"fromEnv",
+			"GitHubEnv",
+			"PersonalAccessToken",
+			"PersonalAccessTokenProvider",
+			"Secret",
+			"SecretProvider",
+			"Secrets",
+			"Variable",
+			"VariableProvider",
+			"Variables",
+			"webhookSecretEnvName",
+		]) {
+			expect(exportedKeys.has(forbiddenExport)).toBe(false);
 		}
 
 		const stackProgram = declareHoboGitHubRepositoryStack({

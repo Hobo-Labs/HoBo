@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
 	packageUsesEffect,
+	resolveExplicitPackagePaths,
 	selectEffectTsgoTargets,
 	workspaceDirForPath,
 } from "../check-effect-tsgo.mts";
@@ -88,6 +89,11 @@ describe("check-effect-tsgo target selection", () => {
 					tsconfigPath: "packages/iac/iac-alchemy/tsconfig.json",
 				},
 			]);
+
+			assert.deepEqual(
+				resolveExplicitPackagePaths(root, ["ci", "iac-alchemy", "packages/ci"]),
+				["packages/ci", "packages/iac/iac-alchemy", "packages/ci"],
+			);
 		});
 	});
 });
