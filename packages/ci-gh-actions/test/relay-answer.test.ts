@@ -1,6 +1,5 @@
 import { create } from "@bufbuild/protobuf";
 import { RelayJobAnswerSchema, type RelayJobMessage } from "@hobo/ci";
-import { createMemoryMesh, createMeshCoordinator } from "@hobo/ci/mesh";
 import { describe, expect, it } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import {
@@ -12,6 +11,7 @@ import {
 	type RelayTurn,
 	relayRunnerRun,
 } from "../src/relay-answer/index.js";
+import { createRelayTurn, type RelayTurnPeer } from "../src/relay-turn.js";
 import { testJitConfig } from "../src/runner-protocol/port.js";
 import {
 	GithubSimulator,
@@ -655,40 +655,57 @@ describe("relay mode answers each repository only as it asks", () => {
 	});
 });
 
-describe("R16: any mesh node may answer, and only one does", () => {
-	function meshNode(
-		sim: GithubSimulator,
-		mesh: ReturnType<typeof createMemoryMesh>,
-		id: string,
-	) {
-		const coordinator = createMeshCoordinator({
-			self: () => ({
-				id,
-				freeSlots: 1,
-				healthy: true,
-				labels: ["hobo-relay"],
-				validUntilMs: sim.nowMs() + 60_000,
-			}),
-			board: mesh.board,
-			claims: mesh.claims,
-			stepMs: 20_000,
-			viewMaxAgeMs: 0,
-			now: () => sim.nowMs(),
-		});
+describe("R16: any fleet member may answer, and only one does", () => {
+	const HOSTED = `dev_${"a".repeat(32)}`;
+	const BOX = `dev_${"b".repeat(32)}`;
+
+	function fleetRoom(sim: GithubSimulator) {
+		const peers: RelayTurnPeer[] = [];
+		const holders = new Map<number, string>();
 		return {
-			coordinator,
-			node: relayNode(sim, { node: id, turn: coordinator }),
+			join(memberId: string) {
+				peers.push({
+					memberId,
+					freeSlots: 1,
+					healthy: true,
+					labels: ["hobo-relay"],
+				});
+			},
+			turn(memberId: string) {
+				return createRelayTurn({
+					self: memberId,
+					peers: async () => [...peers],
+					claims: {
+						async claim(jobId, member) {
+							const holder = holders.get(jobId);
+							if (holder !== undefined && holder !== member) return "held";
+							holders.set(jobId, member);
+							return "claimed";
+						},
+					},
+					stepMs: 20_000,
+					nowMs: () => sim.nowMs(),
+				});
+			},
 		};
 	}
 
-	it("with the first node down, the second answers the relay job exactly once", async () => {
+	function memberNode(
+		sim: GithubSimulator,
+		room: ReturnType<typeof fleetRoom>,
+		id: string,
+		memberId: string,
+	) {
+		room.join(memberId);
+		return { node: relayNode(sim, { node: id, turn: room.turn(memberId) }) };
+	}
+
+	it("with the first member down, the second answers the relay job exactly once", async () => {
 		const sim = new GithubSimulator();
 		turnOn(sim);
-		const mesh = createMemoryMesh({ now: () => sim.nowMs() });
-		const hosted = meshNode(sim, mesh, "hosted");
-		const box = meshNode(sim, mesh, "box");
-		await hosted.coordinator.advertise();
-		await box.coordinator.advertise();
+		const room = fleetRoom(sim);
+		const hosted = memberNode(sim, room, "hosted", HOSTED);
+		const box = memberNode(sim, room, "box", BOX);
 		const { runId } = queueRelay(sim);
 		await sim.deliver(async () => new Response("unavailable", { status: 503 }));
 		let polls = 0;
@@ -709,14 +726,12 @@ describe("R16: any mesh node may answer, and only one does", () => {
 		).toHaveLength(1);
 	});
 
-	it("with both nodes up, one answers and the other is told the job is held", async () => {
+	it("with both members up, one answers and the other is told the job is held", async () => {
 		const sim = new GithubSimulator();
 		turnOn(sim);
-		const mesh = createMemoryMesh({ now: () => sim.nowMs() });
-		const first = meshNode(sim, mesh, "hosted");
-		const second = meshNode(sim, mesh, "box");
-		await first.coordinator.advertise();
-		await second.coordinator.advertise();
+		const room = fleetRoom(sim);
+		const first = memberNode(sim, room, "hosted", HOSTED);
+		const second = memberNode(sim, room, "box", BOX);
 		const { relay, runId } = queueRelay(sim);
 		const queued = {
 			installationId: 1,
@@ -740,6 +755,34 @@ describe("R16: any mesh node may answer, and only one does", () => {
 			outcomes.find((outcome) => outcome.kind === "skipped"),
 		).toMatchObject({ reason: "claimed-elsewhere" });
 		expect(job(sim, "title", runId).conclusion).toBe("success");
+	});
+
+	it("a member outside the ranking or before its turn waits", async () => {
+		const sim = new GithubSimulator();
+		const room = fleetRoom(sim);
+		const outsider = room.turn(HOSTED);
+		expect(
+			await outsider.shouldStart({
+				jobId: 7,
+				label: "hobo-relay",
+				queuedAtMs: sim.nowMs(),
+			}),
+		).toEqual({ start: false, reason: "not-eligible" });
+		room.join(HOSTED);
+		room.join(BOX);
+		const decisions = await Promise.all(
+			[HOSTED, BOX].map((member) =>
+				room.turn(member).shouldStart({
+					jobId: 7,
+					label: "HOBO-RELAY",
+					queuedAtMs: sim.nowMs(),
+				}),
+			),
+		);
+		expect(decisions.map((decision) => decision.reason).sort()).toEqual([
+			"claimed",
+			"waiting-turn",
+		]);
 	});
 });
 

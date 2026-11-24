@@ -49,15 +49,6 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
-	type Agent37PoolObservation,
-	type Agent37PoolPolicy,
-	agent37Capacity,
-	DEFAULT_GITHUB_MACHINE_TYPE,
-	type FleetMember,
-	LOCAL_HOST_RUNNER_LABEL,
-	selectFleetVerification,
-} from "../../packages/ci/src/fleet-overflow.ts";
-import {
 	judgeRoutingSlip,
 	type ParsedRoutingSlip,
 	type RoutingSlipClassName,
@@ -69,6 +60,45 @@ import {
 	readRunnerRouting,
 	routingLabels,
 } from "./runner-routing.mts";
+
+// public-contract: GitHub's machine type the route job falls back to.
+export const DEFAULT_GITHUB_MACHINE_TYPE = "ubuntu-24.04";
+// public-contract: the runs-on label a registered local box serves.
+export const LOCAL_HOST_RUNNER_LABEL = "hobo-local-host";
+
+export type Agent37PoolObservation = Readonly<{
+	activeRunners: number;
+}>;
+
+export type Agent37Capacity = Readonly<{
+	runsOn: string;
+	runnerNamePrefix: string;
+	freeRunners: number;
+}>;
+
+export function agent37Capacity(
+	pool: RunnerRoutingPool,
+	observation: Agent37PoolObservation,
+): Agent37Capacity | undefined {
+	const runsOn = pool.labels[0] ?? "";
+	if (
+		!Number.isSafeInteger(pool.maxRunners) ||
+		pool.maxRunners < 1 ||
+		pool.maxRunners > 10_000 ||
+		pool.labels.length < 1 ||
+		pool.labels.length > 16 ||
+		pool.labels.some((label) => label.trim().length === 0) ||
+		runsOn.length === 0 ||
+		pool.runnerNamePrefix.length < 1 ||
+		pool.runnerNamePrefix.length > 128 ||
+		!Number.isSafeInteger(observation.activeRunners) ||
+		observation.activeRunners < 0
+	)
+		return undefined;
+	const freeRunners = pool.maxRunners - observation.activeRunners;
+	if (freeRunners < 1) return undefined;
+	return { runsOn, runnerNamePrefix: pool.runnerNamePrefix, freeRunners };
+}
 
 /** `auto` falls back; the others pin one tier, `fleet` being the behaviour before routing. */
 export const ROUTE_MODES = ["auto", "fleet", "local", "github"] as const;
@@ -321,37 +351,12 @@ export function routeRunner(input: {
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
 	const first = input.trunkPriority === true || input.undecidedAhead === 0;
-	const members = [
-		{
-			id: "fleet",
-			backend: "hobo",
-			enabled: true,
-			runsOn: fleetLabel,
-			freeSlots: first && takingJobs(input.fleet, limits) ? 1 : 0,
-		},
-		{
-			id: "local",
-			backend: "local",
-			enabled: input.localEnrolled,
-			runsOn: localLabel,
-			freeSlots: first && takingJobs(input.local, limits) ? 1 : 0,
-		},
-		{
-			id: "github",
-			backend: "github",
-			enabled: true,
-			runsOn: githubLabel,
-			freeSlots: 1,
-		},
-	] satisfies FleetMember[];
-	// The workflow needs an actual runner. The same fleet selector offers
-	// local signoff to the opted-in local coordinator, never as runs-on here.
-	const choice = selectFleetVerification({
-		members,
-		unknownMembers: [],
-		localSignoffEnabled: false,
-	});
-	const selected = choice.kind === "runner" ? choice.runner : undefined;
+	const selected: RouteTier =
+		first && takingJobs(input.fleet, limits)
+			? "fleet"
+			: input.localEnrolled && first && takingJobs(input.local, limits)
+				? "local"
+				: "github";
 	const loads = [
 		describeLoad("the fleet", input.fleet, input.slowPickupWindowSeconds),
 		input.localEnrolled
@@ -363,7 +368,7 @@ export function routeRunner(input: {
 					`${input.undecidedAhead} run(s) started in the ${BURST_SECONDS} s before this one and have not chosen a runner yet`,
 				]),
 	].join("; ");
-	if (!selected || selected.backend === "hobo")
+	if (selected === "fleet")
 		return {
 			tier: "fleet",
 			runner: fleetLabel,
@@ -371,8 +376,8 @@ export function routeRunner(input: {
 			refusedBy: "none",
 		};
 	return {
-		tier: selected.backend === "local" ? "local" : "github",
-		runner: selected.runsOn,
+		tier: selected,
+		runner: selected === "local" ? localLabel : githubLabel,
 		reason: `${loads}; the limits are ${limits.maxWaitSeconds} s and ${limits.maxQueued} waiting`,
 		refusedBy: "queue",
 	};
@@ -1278,7 +1283,7 @@ export type PrBatchCapacityVerifier = (
 ) => Promise<boolean>;
 
 export type Agent37PoolObserver = (
-	pool: Agent37PoolPolicy,
+	pool: RunnerRoutingPool,
 ) => Promise<Agent37PoolObservation>;
 
 function prBatchScope(
@@ -1742,7 +1747,7 @@ export async function main(
 			headRepository?.toLowerCase() === callerRepository.toLowerCase() &&
 			routeClass(event, eventPayload) === "pr";
 		const refuseAgent37 = (
-			pool: Agent37PoolPolicy,
+			pool: RunnerRoutingPool,
 			reason: "observer-missing" | "observer-failed",
 		) => {
 			console.log(

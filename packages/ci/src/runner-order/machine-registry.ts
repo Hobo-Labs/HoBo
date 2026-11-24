@@ -5,10 +5,10 @@ import {
 	MachineAdvertSchema,
 } from "../_generated/relay_job_pb.js";
 import {
-	MESH_PUBLIC_KEY,
-	MESH_SIGNATURE,
-	type MeshIdentity,
-} from "../mesh/trust.js";
+	MACHINE_PUBLIC_KEY,
+	MACHINE_SIGNATURE,
+	type MachineIdentity,
+} from "./machine-identity.js";
 import type { MachineCandidate, MachineSharing } from "./machines.js";
 import type { MachineRegistry } from "./ports.js";
 import {
@@ -103,7 +103,7 @@ export function machineAdvertSigningPayload(advert: MachineAdvert): string {
 
 export function signMachineAdvert(
 	advert: MachineAdvert,
-	identity: MeshIdentity,
+	identity: MachineIdentity,
 ): SignedMachineAdvert {
 	const keyed = defineMachineAdvert(
 		create(MachineAdvertSchema, { ...advert, signerKeyId: identity.publicKey }),
@@ -117,8 +117,8 @@ export function signMachineAdvert(
 export function verifyMachineAdvert(signed: SignedMachineAdvert): boolean {
 	const publicKey = signed.advert.signerKeyId;
 	if (
-		!MESH_PUBLIC_KEY.test(publicKey) ||
-		!MESH_SIGNATURE.test(signed.signature)
+		!MACHINE_PUBLIC_KEY.test(publicKey) ||
+		!MACHINE_SIGNATURE.test(signed.signature)
 	)
 		return false;
 	try {

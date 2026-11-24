@@ -1,19 +1,17 @@
+import type { Outcome, TrustRecord } from "@hobo/fleet";
+import { acceptTrust } from "@hobo/fleet/keys";
 import type {
 	JunctionDefinition,
 	JunctionFederationPlan,
 	PolicyPackDistribution,
 	RegistryBundleDistribution,
 	TrustAnchorExchange,
+	YardTrustRecords,
 } from "./types.js";
 
-/**
- * Derive the federation records that ride the same member mechanism as
- * connectivity: pairwise trust-anchor exchange, per-member signed policy-pack
- * distribution, and pairwise signed registry-bundle distribution. Records
- * only — realization is each yard's job.
- */
 export function deriveFederationPlan(
 	definition: JunctionDefinition,
+	trust: YardTrustRecords = {},
 ): JunctionFederationPlan {
 	const names = definition.members.map((member) => member.yardName);
 
@@ -26,7 +24,9 @@ export function deriveFederationPlan(
 				kind: "trust-anchor-exchange",
 				fromYard,
 				toYard,
-				anchorRef: `trust-anchor://${fromYard}/${definition.name}`,
+				trust: Object.hasOwn(trust, fromYard)
+					? (trust[fromYard] ?? null)
+					: null,
 			});
 			registryBundles.push({
 				kind: "registry-bundle-distribution",
@@ -46,4 +46,20 @@ export function deriveFederationPlan(
 	}));
 
 	return { trustExchanges, policyPacks, registryBundles };
+}
+
+export function acceptFederatedTrust(
+	exchange: TrustAnchorExchange,
+	pinned: TrustRecord | undefined,
+): Outcome<TrustRecord> {
+	if (exchange.trust === null)
+		return {
+			ok: false,
+			error: {
+				code: "invalid-request",
+				message: `${exchange.fromYard} has not published its trust record`,
+				detail: { check: "trust" },
+			},
+		};
+	return acceptTrust(pinned, exchange.trust);
 }

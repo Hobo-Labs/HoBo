@@ -1,0 +1,313 @@
+import { parseTenantId } from "@hobo/core";
+import {
+	type Account,
+	Algorithms,
+	type ClaimsData,
+	createAccount,
+	createOperator,
+	createServer,
+	createUser,
+	decode,
+	encode,
+	fromSeed,
+	parseCreds,
+	type User,
+} from "@nats-io/jwt";
+import { describe, expect, it } from "vitest";
+import {
+	accountOfCredentials,
+	auditRoleOfCredentials,
+	DEVICE_CREDENTIAL_MS,
+	mintAccount,
+	mintAccountWithSigningKeys,
+	mintAuthorizationResponse,
+	mintDeviceUser,
+	staticCredentials,
+	tenantKeys,
+	verifyAuthorizationRequest,
+	verifyJwt,
+} from "../src/bus/nats-jwt.js";
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+const TENANT = parseTenantId("acme");
+const operatorSeed = () => decoder.decode(createOperator().getSeed());
+
+describe("tenant keys (A7)", () => {
+	it("derives the same account and keys from the same operator seed and tenant", () => {
+		const seed = operatorSeed();
+		const once = tenantKeys(seed, TENANT);
+		const again = tenantKeys(seed, TENANT);
+		const other = tenantKeys(seed, parseTenantId("beta"));
+		expect(once.account.getPublicKey()).toBe(again.account.getPublicKey());
+		expect(once.account.getPublicKey()).toMatch(/^A/u);
+		expect(once.users.authority.getPublicKey()).toMatch(/^U/u);
+		expect(once.xkey.getPublicKey()).toMatch(/^X/u);
+		expect(once.scoped.executor.getPublicKey()).toMatch(/^A/u);
+		expect(other.account.getPublicKey()).not.toBe(once.account.getPublicKey());
+		expect(
+			new Set(Object.values(once.scoped).map((k) => k.getPublicKey())).size,
+		).toBe(3);
+	});
+
+	it("mints the account with three scoped signing keys and the callout settings", async () => {
+		const seed = operatorSeed();
+		const keys = tenantKeys(seed, TENANT);
+		const jwt = await mintAccount(keys, TENANT, seed);
+		expect(verifyJwt(jwt)).toBe(true);
+		const claims: ClaimsData<Account> = decode(jwt);
+		expect(claims.name).toBe("T_acme");
+		expect(claims.sub).toBe(keys.account.getPublicKey());
+		const signing = (claims.nats.signing_keys ?? []).flatMap((key) =>
+			key instanceof Object ? [key] : [],
+		);
+		expect(signing.map((key) => key.role).sort()).toEqual([
+			"dispatcher",
+			"executor",
+			"observer",
+		]);
+		const executor = signing.find((key) => key.role === "executor");
+		expect(executor?.template.pub?.allow).toContain("fleet.claim.>");
+		expect(executor?.template.sub?.allow).toContain("fleet.relay.{{name()}}.>");
+		expect(claims.nats.authorization?.auth_users).toEqual([
+			keys.users.authority.getPublicKey(),
+			keys.users.witness.getPublicKey(),
+			keys.users.provisioner.getPublicKey(),
+		]);
+		expect(claims.nats.authorization?.allowed_accounts).toEqual([
+			keys.account.getPublicKey(),
+		]);
+		expect(claims.nats.authorization?.xkey).toBe(keys.xkey.getPublicKey());
+	});
+
+	it("writes static credentials, the sentinel denied everything", async () => {
+		const keys = tenantKeys(operatorSeed(), TENANT);
+		const sentinel = await staticCredentials(keys, "sentinel");
+		const parsed = await parseCreds(encoder.encode(sentinel));
+		expect(parsed.uc.name).toBe("sentinel");
+		expect(parsed.uc.nats.pub?.deny).toEqual([">"]);
+		expect(parsed.uc.nats.sub?.deny).toEqual([">"]);
+		expect(accountOfCredentials(sentinel)).toBe(keys.account.getPublicKey());
+		const authority = await parseCreds(
+			encoder.encode(await staticCredentials(keys, "authority")),
+		);
+		expect(authority.uc.nats.sub?.allow).toContain("$SYS.REQ.USER.AUTH");
+		expect(authority.uc.nats.resp?.max).toBe(1);
+		expect(() => accountOfCredentials("nothing")).toThrow();
+	});
+});
+
+describe("the audit role of a connection", () => {
+	it("is the witness only for the witness user's credentials", async () => {
+		const keys = tenantKeys(operatorSeed(), TENANT);
+		expect(
+			auditRoleOfCredentials(await staticCredentials(keys, "witness")),
+		).toBe("witness");
+		for (const user of ["authority", "provisioner", "sentinel"] as const)
+			expect(auditRoleOfCredentials(await staticCredentials(keys, user))).toBe(
+				"authority",
+			);
+		expect(() => auditRoleOfCredentials("nothing")).toThrow();
+	});
+});
+
+describe("account signing keys from a supplied list (L41)", () => {
+	const fresh = () => decoder.decode(createAccount().getSeed());
+	const publicOf = (seed: string) =>
+		fromSeed(encoder.encode(seed)).getPublicKey();
+
+	it("lists plain account-signing keys and every scoped key with its {{name()}} template", async () => {
+		const seed = operatorSeed();
+		const keys = tenantKeys(seed, TENANT);
+		const accountSigning = publicOf(fresh());
+		const newObserver = publicOf(fresh());
+		const jwt = await mintAccountWithSigningKeys(keys, TENANT, seed, {
+			account: [accountSigning],
+			scoped: {
+				observer: [keys.scoped.observer.getPublicKey(), newObserver],
+				executor: [keys.scoped.executor.getPublicKey()],
+				dispatcher: [],
+			},
+		});
+		expect(verifyJwt(jwt)).toBe(true);
+		const claims: ClaimsData<Account> = decode(jwt);
+		expect(claims.sub).toBe(keys.account.getPublicKey());
+		const listed = claims.nats.signing_keys ?? [];
+		expect(listed.filter((key) => !(key instanceof Object))).toEqual([
+			accountSigning,
+		]);
+		const scoped = listed.flatMap((key) =>
+			key instanceof Object ? [key] : [],
+		);
+		expect(scoped.map((key) => [key.role, key.key])).toEqual([
+			["observer", keys.scoped.observer.getPublicKey()],
+			["observer", newObserver],
+			["executor", keys.scoped.executor.getPublicKey()],
+		]);
+		for (const key of scoped) {
+			expect(key.kind).toBe("user_scope");
+			expect(key.template.sub?.allow).toContain("_INBOX.{{name()}}.>");
+		}
+		expect(scoped[1]?.template).toEqual(scoped[0]?.template);
+		expect(claims.nats.authorization?.auth_users).toEqual([
+			keys.users.authority.getPublicKey(),
+			keys.users.witness.getPublicKey(),
+			keys.users.provisioner.getPublicKey(),
+		]);
+		expect(claims.nats.authorization?.xkey).toBe(keys.xkey.getPublicKey());
+	});
+
+	it("gives the provisioned account exactly the derived scoped keys", async () => {
+		const seed = operatorSeed();
+		const keys = tenantKeys(seed, TENANT);
+		const provisioned: ClaimsData<Account> = decode(
+			await mintAccount(keys, TENANT, seed),
+		);
+		const supplied: ClaimsData<Account> = decode(
+			await mintAccountWithSigningKeys(keys, TENANT, seed, {
+				account: [],
+				scoped: {
+					observer: [keys.scoped.observer.getPublicKey()],
+					executor: [keys.scoped.executor.getPublicKey()],
+					dispatcher: [keys.scoped.dispatcher.getPublicKey()],
+				},
+			}),
+		);
+		expect(supplied.nats.signing_keys).toEqual(provisioned.nats.signing_keys);
+	});
+
+	it("refuses a key that is not an account public key, or one listed twice", async () => {
+		const seed = operatorSeed();
+		const keys = tenantKeys(seed, TENANT);
+		const none = { observer: [], executor: [], dispatcher: [] };
+		await expect(
+			mintAccountWithSigningKeys(keys, TENANT, seed, {
+				account: [createUser().getPublicKey()],
+				scoped: none,
+			}),
+		).rejects.toThrow(/not an account public key/);
+		const mistaken = fresh();
+		const refusal = await mintAccountWithSigningKeys(keys, TENANT, seed, {
+			account: [mistaken],
+			scoped: none,
+		}).catch((cause: Error) => cause.message);
+		expect(refusal).toMatch(/not an account public key/);
+		expect(refusal).not.toContain(mistaken);
+		const twice = keys.scoped.observer.getPublicKey();
+		await expect(
+			mintAccountWithSigningKeys(keys, TENANT, seed, {
+				account: [twice],
+				scoped: { ...none, observer: [twice] },
+			}),
+		).rejects.toThrow(/listed twice/);
+	});
+
+	it("re-issues a static user's credentials under an account signing key, same user key", async () => {
+		const keys = tenantKeys(operatorSeed(), TENANT);
+		const signingSeed = fresh();
+		const credentials = await staticCredentials(
+			keys,
+			"provisioner",
+			signingSeed,
+		);
+		const parsed = await parseCreds(encoder.encode(credentials));
+		expect(parsed.uc.iss).toBe(publicOf(signingSeed));
+		expect(parsed.uc.nats.issuer_account).toBe(keys.account.getPublicKey());
+		expect(parsed.uc.sub).toBe(keys.users.provisioner.getPublicKey());
+		expect(accountOfCredentials(credentials)).toBe(keys.account.getPublicKey());
+	});
+
+	it("keeps the provisioner's user JWT under nats-server's 4 KiB control line", async () => {
+		const keys = tenantKeys(operatorSeed(), TENANT);
+		for (const signer of [undefined, fresh()]) {
+			const parsed = await parseCreds(
+				encoder.encode(await staticCredentials(keys, "provisioner", signer)),
+			);
+			expect(parsed.jwt.length).toBeLessThan(4096);
+		}
+	});
+});
+
+describe("device credentials (§6.7 step 4)", () => {
+	it("names the user by member id, expires in 10 minutes and carries no permissions", async () => {
+		const keys = tenantKeys(operatorSeed(), TENANT);
+		const user = createUser().getPublicKey();
+		const now = Date.parse("2026-11-13T10:00:00Z");
+		const jwt = await mintDeviceUser({
+			userNkey: user,
+			memberId: `dev_${"a".repeat(32)}`,
+			accountPublicKey: keys.account.getPublicKey(),
+			scopedSeed: decoder.decode(keys.scoped.executor.getSeed()),
+			nowMs: now,
+		});
+		expect(verifyJwt(jwt)).toBe(true);
+		const claims: ClaimsData<User> = decode(jwt);
+		expect(claims.name).toBe(`dev_${"a".repeat(32)}`);
+		expect(claims.sub).toBe(user);
+		expect(claims.iss).toBe(keys.scoped.executor.getPublicKey());
+		expect(claims.nats.issuer_account).toBe(keys.account.getPublicKey());
+		expect(claims.exp).toBe(Math.floor((now + DEVICE_CREDENTIAL_MS) / 1000));
+		expect(claims.nats.pub).toBeUndefined();
+		expect(claims.nats.sub).toBeUndefined();
+
+		const response = await mintAuthorizationResponse({
+			userNkey: user,
+			serverId: createServer().getPublicKey(),
+			accountPublicKey: keys.account.getPublicKey(),
+			signerSeed: decoder.decode(keys.scoped.executor.getSeed()),
+			answer: { jwt },
+			nowMs: now,
+		});
+		expect(verifyJwt(response)).toBe(true);
+		const answer: ClaimsData<{ jwt: string; issuer_account: string }> =
+			decode(response);
+		expect(answer.nats.jwt).toBe(jwt);
+		expect(answer.nats.issuer_account).toBe(keys.account.getPublicKey());
+	});
+});
+
+describe("callout request verification", () => {
+	const request = async (
+		signer = createServer(),
+		id = signer.getPublicKey(),
+		aud = "nats-authorization-request",
+	) =>
+		encode(
+			Algorithms.v2,
+			{
+				aud,
+				jti: "x",
+				iat: 1,
+				iss: signer.getPublicKey(),
+				name: "",
+				sub: id,
+				nats: {
+					server_id: { id, name: "n1", host: "h" },
+					user_nkey: createUser().getPublicKey(),
+					client_info: { nonce: "abc" },
+					connect_opts: { protocol: 1, auth_token: "t" },
+					type: "authorization_request",
+					version: 2,
+				},
+			},
+			signer,
+		);
+
+	it("accepts a request signed by the server it names, and refuses any other", async () => {
+		expect(verifyAuthorizationRequest(await request()).verified).toBe(true);
+		const forger = createServer();
+		const named = createServer().getPublicKey();
+		expect(
+			verifyAuthorizationRequest(await request(forger, named)).verified,
+		).toBe(false);
+		expect(
+			verifyAuthorizationRequest(
+				await request(createServer(), undefined, "NATS"),
+			).verified,
+		).toBe(false);
+		const genuine = await request();
+		const tampered = `${genuine.slice(0, -4)}AAAA`;
+		expect(verifyAuthorizationRequest(tampered).verified).toBe(false);
+		expect(verifyAuthorizationRequest("garbage").verified).toBe(false);
+	});
+});

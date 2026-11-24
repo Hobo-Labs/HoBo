@@ -2889,9 +2889,8 @@ export async function main(
 		if (runnerUnavailable.some((tier) => tier !== "fleet" && tier !== "local"))
 			throw new AttestError("--runner-unavailable requires fleet or local");
 		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
-		const { executeFleetVerification, observeFleetVerification } = await import(
-			"./fleet-signoff.mts"
-		);
+		const { executeRunnerVerification, observeRunnerVerification } =
+			await import("./fleet-signoff.mts");
 		const observation = {
 			cwd: root,
 			env,
@@ -2902,9 +2901,9 @@ export async function main(
 			providerUnavailable,
 			runnerUnavailable,
 		};
-		const choice: Awaited<ReturnType<typeof observeFleetVerification>> & {
+		const choice: Awaited<ReturnType<typeof observeRunnerVerification>> & {
 			baseSha?: string;
-		} = await observeFleetVerification(observation);
+		} = await observeRunnerVerification(observation);
 		if (choice.kind === "invalid-provider-assertion")
 			throw new AttestError(
 				`--provider-unavailable=${choice.provider} does not name one enabled inventory member in the trusted base`,
@@ -3055,7 +3054,7 @@ export async function main(
 				? witness.published.proof.prNumber
 				: undefined);
 		console.log("ci:attest fleet: running the local signoff fallback");
-		return executeFleetVerification({
+		return executeRunnerVerification({
 			choice,
 			runLocal: () =>
 				main(

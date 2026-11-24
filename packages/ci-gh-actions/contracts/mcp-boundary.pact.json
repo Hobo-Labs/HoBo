@@ -219,7 +219,13 @@
                 "name": "get_relay_status"
               },
               {
-                "name": "list_mesh_nodes"
+                "name": "list_fleet_members"
+              },
+              {
+                "name": "get_fleet_view"
+              },
+              {
+                "name": "get_fleet_verdict"
               },
               {
                 "name": "reconcile_lease"
@@ -273,8 +279,8 @@
                 "mimeType": "application/json"
               },
               {
-                "uri": "hobo-ci://mesh/nodes",
-                "name": "mesh-nodes",
+                "uri": "hobo-ci://fleet/members",
+                "name": "fleet-members",
                 "mimeType": "application/json"
               }
             ]
@@ -711,7 +717,7 @@
       }
     },
     {
-      "description": "list the relay mesh's nodes on a host with no mesh as not configured, not as an error",
+      "description": "list the relay fleet's members on a host with no fleet as not configured, not as an error",
       "request": {
         "method": "POST",
         "path": "/mcp",
@@ -725,7 +731,7 @@
           "id": 17,
           "method": "tools/call",
           "params": {
-            "name": "list_mesh_nodes",
+            "name": "list_fleet_members",
             "arguments": {}
           }
         }
@@ -741,18 +747,16 @@
           "id": 17,
           "result": {
             "structuredContent": {
-              "mesh": "not-configured",
-              "nodes": [],
-              "readAt": "",
-              "requireTrusted": false,
-              "truncated": false
+              "configured": false,
+              "fleet": "",
+              "members": []
             }
           }
         }
       }
     },
     {
-      "description": "read the mesh nodes resource",
+      "description": "read the fleet members resource",
       "request": {
         "method": "POST",
         "path": "/mcp",
@@ -766,7 +770,7 @@
           "id": 18,
           "method": "resources/read",
           "params": {
-            "uri": "hobo-ci://mesh/nodes"
+            "uri": "hobo-ci://fleet/members"
           }
         }
       },
@@ -782,9 +786,9 @@
           "result": {
             "contents": [
               {
-                "uri": "hobo-ci://mesh/nodes",
+                "uri": "hobo-ci://fleet/members",
                 "mimeType": "application/json",
-                "text": "{\"mesh\":\"not-configured\",\"nodes\":[],\"readAt\":\"\",\"requireTrusted\":false,\"truncated\":false}"
+                "text": "{\"configured\":false,\"fleet\":\"\",\"members\":[]}"
               }
             ]
           }

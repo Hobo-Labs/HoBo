@@ -12,7 +12,6 @@ import { createHoboCli, type HoboCli, parseArgv } from "@hobo/cli";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import { createCiCommand } from "../ci-command.js";
 import { openBrowser } from "../ci-github-connect.js";
-
 import { createComposedHoboCli } from "../cli.js";
 import {
 	bootstrapDefaultProviders,
@@ -29,6 +28,7 @@ import {
 	withoutCredentials,
 	workingDirOf,
 } from "../credentials-opensesame.js";
+import { runFleetCli } from "../fleet-cli.js";
 import { createBareMetalProvider } from "../local-provider.js";
 import { removeOwnedDirsOnSignals } from "../owned-temp-dir.js";
 import { ciUsesYard, loadOwnerKeys } from "../owner-keys.js";
@@ -95,6 +95,7 @@ function writeResult(result: Awaited<ReturnType<HoboCli["run"]>>): number {
 async function runComposed(
 	options: DefaultYardRuntimeOptions = {},
 ): Promise<number> {
+	if (args[0] === "fleet") return runFleetCli(args.slice(1));
 	// CI talks to its account relay and GitHub directly. It must work before
 	// local Yard provisioning and without creating an unrelated SQLite journal.
 	let verb: string | null;

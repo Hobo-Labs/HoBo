@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
 import {
-	type AssignmentAcceptOutcome,
-	assignmentKey,
 	createImmutableJournal,
-	type FleetAssignment,
 	type ImmutableJournalMember,
 	type ImmutableJournalReplica,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
+import type { AssignmentAcceptOutcome, AssignmentEntry } from "@hobo/fleet";
+import { assignmentKey } from "@hobo/fleet/assignment";
 import { describe, expect, it } from "vitest";
 import {
 	assertQuorumEventStore,
@@ -17,7 +16,7 @@ import {
 } from "../src/quorum-eventstore.js";
 
 class Replica implements ImmutableJournalReplica {
-	readonly entries: FleetAssignment[] = [];
+	readonly entries: AssignmentEntry[] = [];
 	readonly documents = new Map<string, string>();
 	available = true;
 	loseReply = false;
@@ -27,7 +26,7 @@ class Replica implements ImmutableJournalReplica {
 		if (!this.available) throw new Error("offline");
 		return this.entries.slice(-(limit ?? this.entries.length));
 	}
-	async accept(entry: FleetAssignment): Promise<AssignmentAcceptOutcome> {
+	async accept(entry: AssignmentEntry): Promise<AssignmentAcceptOutcome> {
 		if (!this.available) throw new Error("offline");
 		if (this.failAccept) throw new Error("accept unavailable");
 		const old = this.entries.find((value) => value.epoch === entry.epoch);

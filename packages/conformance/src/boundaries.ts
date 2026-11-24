@@ -87,7 +87,8 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/bindings",
 	"packages/claims",
 	"packages/trust",
-	"packages/backend-fleet",
+	"packages/fleet",
+	"packages/backend-routing",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
 	"packages/r2-object",
@@ -197,7 +198,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/capability-profiles",
 	"packages/claims",
 	"packages/convex",
-	"packages/backend-fleet",
+	"packages/backend-routing",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
 	"packages/r2-object",
@@ -290,6 +291,11 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/data-core",
 	"packages/data-sqlite",
 	"packages/data-mongodb",
+	"packages/fleet",
+	"packages/fleet-nats",
+	"packages/fleet-p2p",
+	"packages/fleet-agent",
+	"packages/fleet-authority",
 ]);
 
 // Directories whose packages are adapters. One list, because two rules read

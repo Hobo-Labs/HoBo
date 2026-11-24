@@ -8,13 +8,13 @@ import {
 	type Agent37PoolObservation,
 	type Agent37PoolPolicy,
 	agent37Capacity,
-	type FleetMember,
-	selectFleetBackend,
-	selectFleetVerification,
-} from "../../packages/ci/src/fleet-overflow.ts";
+	type RunnerTierState,
+	selectRunnerTier,
+	selectRunnerVerification,
+} from "../../packages/ci/src/runner-routing/tiers.ts";
 import {
-	planFleetVerification,
-	readFleetOverflowPolicy,
+	planRunnerVerification,
+	readRunnerOverflowPolicy,
 } from "../ci/fleet-signoff.mts";
 import {
 	type Agent37PoolObserver,
@@ -36,7 +36,7 @@ const sameRepositoryPullRequest = {
 	},
 };
 const idle: Agent37PoolObservation = { activeRunners: 0 };
-const pool = (overrides: Partial<FleetMember> = {}): FleetMember => ({
+const pool = (overrides: Partial<RunnerTierState> = {}): RunnerTierState => ({
 	id: "ci:agent37-runners",
 	backend: "agent37",
 	enabled: true,
@@ -150,29 +150,29 @@ describe("agent37 pool capacity, pure", () => {
 
 describe("the agent37 fleet overflow backend", () => {
 	it("spills to arc and a local box before the rented pool, and to it before hosted", () => {
-		const arc: FleetMember = {
+		const arc: RunnerTierState = {
 			id: "ci:arc",
 			backend: "arc",
 			enabled: true,
 			runsOn: "hobo-arc",
 			freeSlots: 1,
 		};
-		const local: FleetMember = {
+		const local: RunnerTierState = {
 			id: "local",
 			backend: "local",
 			enabled: true,
 			runsOn: "hobo-local-host",
 			freeSlots: 1,
 		};
-		const github: FleetMember = {
+		const github: RunnerTierState = {
 			id: "github",
 			backend: "github",
 			enabled: true,
 			runsOn: "ubuntu-24.04",
 			freeSlots: 1,
 		};
-		const choose = (candidates: readonly FleetMember[]) =>
-			selectFleetBackend({ members: candidates, currentLabels: [] });
+		const choose = (candidates: readonly RunnerTierState[]) =>
+			selectRunnerTier({ members: candidates, currentLabels: [] });
 		assert.deepEqual(choose([pool(), arc, local, github])?.backend, "arc");
 		assert.deepEqual(choose([pool(), local, github])?.backend, "local");
 		assert.deepEqual(choose([pool(), github])?.backend, "agent37");
@@ -180,7 +180,7 @@ describe("the agent37 fleet overflow backend", () => {
 	});
 
 	it("keeps a job already bound to the pool's label on it, never re-relayed to hobo", () => {
-		const selection = selectFleetBackend({
+		const selection = selectRunnerTier({
 			members: [
 				{
 					id: "fleet",
@@ -200,7 +200,7 @@ describe("the agent37 fleet overflow backend", () => {
 	});
 
 	it("offers a healthy agent37 member for verification before hosted compute", () => {
-		const choice = selectFleetVerification({
+		const choice = selectRunnerVerification({
 			members: [
 				{
 					id: "fleet",
@@ -229,7 +229,7 @@ describe("the agent37 fleet overflow backend", () => {
 	});
 
 	it("fails verification closed when an enabled agent37 member's capacity is unknown", () => {
-		const choice = selectFleetVerification({
+		const choice = selectRunnerVerification({
 			members: [
 				{
 					id: "fleet",
@@ -627,7 +627,7 @@ describe("the PR batch spill to agent37", () => {
 
 describe("the signoff inventory over the agent37 provider", () => {
 	it("reads the committed policy and inventories the enabled provider and its pool", () => {
-		assert.deepEqual(readFleetOverflowPolicy(committedText), [
+		assert.deepEqual(readRunnerOverflowPolicy(committedText), [
 			{
 				id: "ci:agent37-runners",
 				runsOn: "hobo-agent37",
@@ -652,13 +652,13 @@ describe("the signoff inventory over the agent37 provider", () => {
 				provider.pool = malformed;
 				provider.enabled = enabled;
 				assert.equal(
-					readFleetOverflowPolicy(JSON.stringify(source)),
+					readRunnerOverflowPolicy(JSON.stringify(source)),
 					undefined,
 				);
 			}
 		delete provider.pool;
 		provider.enabled = false;
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), [
+		assert.deepEqual(readRunnerOverflowPolicy(JSON.stringify(source)), [
 			{
 				id: "external-pool:0:hobo-agent37",
 				runsOn: "hobo-agent37",
@@ -666,7 +666,7 @@ describe("the signoff inventory over the agent37 provider", () => {
 			},
 		]);
 		provider.enabled = true;
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), [
+		assert.deepEqual(readRunnerOverflowPolicy(JSON.stringify(source)), [
 			{
 				id: "ci:agent37-runners",
 				runsOn: "hobo-agent37",
@@ -687,17 +687,17 @@ describe("the signoff inventory over the agent37 provider", () => {
 			(entry: { id: string }) => entry.id === "agent37-runners",
 		);
 		provider.engine = { name: "surprise" };
-		assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
+		assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
 		delete provider.engine;
 		provider.unknown = true;
-		assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
+		assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
 	});
 });
 
 describe("the signoff plan over agent37 inventory", () => {
 	const now = Date.parse("2026-11-16T18:00:00Z");
 	const settings = { ...routeSettings(undefined), localRunner: true };
-	const members = readFleetOverflowPolicy(committedText);
+	const members = readRunnerOverflowPolicy(committedText);
 	assert.ok(members);
 	const seenJob = (
 		job: { labels: string[]; started: boolean },
@@ -717,7 +717,7 @@ describe("the signoff plan over agent37 inventory", () => {
 			githubUnavailable?: boolean;
 		} = {},
 	) =>
-		planFleetVerification({
+		planRunnerVerification({
 			settings,
 			localSignoffEnabled: true,
 			githubUnavailable: options.githubUnavailable ?? false,

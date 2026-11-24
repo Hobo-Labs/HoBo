@@ -15,10 +15,12 @@ import { canonicalManifestHash } from "@hobo/bindles";
 import {
 	ArtifactKind,
 	type CampId,
+	type CampMembers,
 	type CampReconciler,
 	type CampTopology,
 	type CdContext,
 	type CredentialResolver,
+	type DeliveryFleet,
 	DeltaRecordSchema,
 	type DesiredStateReader,
 	type FreightId,
@@ -183,6 +185,8 @@ export type CdRuntimeOptions = Readonly<{
 	 * line on stderr, event `hobo_cd_runner_host_ingest_failed`).
 	 */
 	onRunnerHostIngestError?: (error: Error) => void;
+	fleet?: DeliveryFleet;
+	members?: CampMembers;
 }>;
 
 export type CdRuntime = Readonly<{
@@ -522,6 +526,10 @@ export async function openCdRuntime(
 		trustPolicy: options.trustPolicy ?? {},
 		policyPack,
 		topology,
+		...(options.fleet !== undefined ? { fleet: options.fleet } : undefined),
+		...(options.members !== undefined
+			? { members: options.members }
+			: undefined),
 		railCatalog,
 		readRailEvents: createJournalRailEventReader({ store }),
 		...(options.readCiEvents
@@ -1129,6 +1137,7 @@ export function agentReconciler(
 		reconcilerId: string;
 		privateJwk: CdJsonObject;
 		svid: string;
+		credential?: () => Promise<string>;
 		campIds: readonly CampId[];
 		realizer: Realizer;
 		store: DurableEventStore;
@@ -1148,6 +1157,7 @@ export function agentReconciler(
 		reconcilerId,
 		privateJwk: input.privateJwk,
 		svid: input.svid,
+		credential: input.credential,
 		now: input.now,
 	});
 	return defaultCdFactories.createCampReconciler({
@@ -1368,6 +1378,8 @@ async function runAgentProcess(
 		// SAFETY: checked to be a JSON object above.
 		privateJwk: parsedKey as CdJsonObject,
 		svid,
+		credential: async () =>
+			(await readFile(resolve(input.cwd, svidFile), "utf8")).trim(),
 		// SAFETY: opaque Camp ids; the feed refuses Camps the agent was not accepted for.
 		campIds: camps as CampId[],
 		realizer: input.realizer,

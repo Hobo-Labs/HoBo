@@ -8,18 +8,22 @@
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
 import {
+	type AssignmentEntry,
 	type AssignmentReply,
-	type PostgresFleetAssignment,
-	parseFleetAssignment,
+	Health,
+	parseMemberName,
+} from "@hobo/fleet";
+import {
+	parseAssignmentEntry,
 	resolveAssignment,
-} from "../src/index.js";
+} from "@hobo/fleet/assignment";
+import { describe, expect, it } from "vitest";
 import { MemoryReplica } from "./fleet-model.js";
 
 type WireEntry = Omit<
-	PostgresFleetAssignment,
-	"active" | "target" | "lossWindowMs"
+	AssignmentEntry,
+	"active" | "target" | "lossWindowMs" | "members"
 > & {
 	readonly active?: string;
 	readonly target?: string;
@@ -64,12 +68,15 @@ const pact = JSON.parse(
 	),
 ) as Pact;
 
-function fromWire(entry: WireEntry): PostgresFleetAssignment {
-	return parseFleetAssignment({
+function fromWire(entry: WireEntry): AssignmentEntry {
+	return parseAssignmentEntry({
 		...entry,
-		active: entry.active,
-		target: entry.target,
+		active:
+			entry.active === undefined ? undefined : parseMemberName(entry.active),
+		target:
+			entry.target === undefined ? undefined : parseMemberName(entry.target),
 		lossWindowMs: entry.lossWindowMs,
+		members: undefined,
 	});
 }
 
@@ -85,7 +92,7 @@ describe("fleet boundary contract", () => {
 			const { body } = interaction.request;
 			const expected = interaction.response.body;
 			if (interaction.request.path === "/fleet/assignments/accept") {
-				const replica = new MemoryReplica("a");
+				const replica = new MemoryReplica(parseMemberName("a"));
 				for (const held of body.held ?? []) replica.rows.push(fromWire(held));
 				if (body.entry === undefined) throw new Error("pact has no entry");
 				expect(replica.apply(fromWire(body.entry))).toBe(expected.outcome);
@@ -95,10 +102,19 @@ describe("fleet boundary contract", () => {
 			const replies = (body.replies ?? []).map(
 				(reply): AssignmentReply =>
 					"rows" in reply
-						? { replica: reply.replica, rows: reply.rows.map(fromWire) }
-						: reply,
+						? {
+								replica: parseMemberName(reply.replica),
+								rows: reply.rows.map(fromWire),
+							}
+						: {
+								replica: parseMemberName(reply.replica),
+								failure: Health.UNREACHABLE,
+							},
 			);
-			const resolution = resolveAssignment(body.members ?? [], replies);
+			const resolution = resolveAssignment(
+				(body.members ?? []).map((name) => parseMemberName(name)),
+				replies,
+			);
 			expect(resolution.status).toBe(expected.status);
 			if (resolution.status === "current") {
 				expect(resolution.assignment.epoch).toBe(expected.epoch);

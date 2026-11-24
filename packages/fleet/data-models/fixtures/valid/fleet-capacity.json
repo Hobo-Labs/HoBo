@@ -1,0 +1,9 @@
+{
+  "live": 3,
+  "healthy": 2,
+  "totalSlots": 12,
+  "freeSlots": 5,
+  "freeMemoryMb": 30000,
+  "freeDiskMb": 600000,
+  "maxMemoryMb": 16384
+}

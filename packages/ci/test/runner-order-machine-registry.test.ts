@@ -5,9 +5,9 @@ import {
 	type MachineAdvert,
 	MachineAdvertSchema,
 } from "../src/_generated/relay_job_pb.js";
-import { generateMeshIdentity } from "../src/mesh/trust.js";
 import { answerRelayJob } from "../src/runner-order/answer.js";
 import { NO_ROUTE_FACTS } from "../src/runner-order/decide.js";
+import { generateMachineIdentity } from "../src/runner-order/machine-identity.js";
 import {
 	MACHINE_ADVERT_TTL_MS,
 	MachineRegistryError,
@@ -43,8 +43,8 @@ const ACCOUNT = {
 	ownerLogin: "octocat",
 	nowMs: NOW,
 };
-const studioKey = generateMeshIdentity().identity;
-const thiefKey = generateMeshIdentity().identity;
+const studioKey = generateMachineIdentity().identity;
+const thiefKey = generateMachineIdentity().identity;
 
 function advert(
 	init: Partial<Omit<MachineAdvert, "$typeName" | "$unknown">> = {},

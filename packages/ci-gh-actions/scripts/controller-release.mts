@@ -19,16 +19,11 @@ export type ControllerReleaseEntry = Readonly<{
 	entry: string;
 }>;
 
-/** The controllers a host can run as a supervised process. */
 export const CONTROLLER_RELEASE_ENTRIES: readonly ControllerReleaseEntry[] =
 	Object.freeze([
 		{
 			artifactName: "hobo-ci-worker-release",
 			entry: "scripts/isolated-worker-daemon-main.mts",
-		},
-		{
-			artifactName: "hobo-ci-local-runner-release",
-			entry: "scripts/local-runner.ts",
 		},
 	]);
 

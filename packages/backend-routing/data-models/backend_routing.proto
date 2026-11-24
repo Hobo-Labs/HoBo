@@ -1,0 +1,167 @@
+//
+// The parsed TypeScript values under `src/` are narrowings of these records.
+
+syntax = "proto3";
+
+package hobo.backend_routing.v1;
+
+// The units an allowance, and therefore a measurement, is stated in.
+enum FleetUsageUnit {
+  FLEET_USAGE_UNIT_UNSPECIFIED = 0;
+  // One statement sent to a SQL backend.
+  FLEET_USAGE_UNIT_OPERATIONS = 1;
+  FLEET_USAGE_UNIT_COMPUTE_HOURS = 2;
+  FLEET_USAGE_UNIT_STORAGE_BYTES = 3;
+  // One command sent to a Redis-protocol store.
+  FLEET_USAGE_UNIT_COMMANDS = 4;
+  // Rows a libSQL database bills as read and written.
+  FLEET_USAGE_UNIT_ROWS_READ = 5;
+  FLEET_USAGE_UNIT_ROWS_WRITTEN = 6;
+  // The operation classes an object store such as Vercel Blob bills.
+  FLEET_USAGE_UNIT_SIMPLE_OPERATIONS = 7;
+  FLEET_USAGE_UNIT_ADVANCED_OPERATIONS = 8;
+}
+
+// A measured quantity: this period's total for a rate, the size for a level.
+message FleetUsageMeasurement {
+  FleetUsageUnit unit = 1;
+  uint64 used = 2;
+}
+
+// What happens beyond an allowance.
+enum FleetOverageKind {
+  FLEET_OVERAGE_KIND_UNSPECIFIED = 0;
+  // The service stops until the period ends or the plan changes.
+  FLEET_OVERAGE_KIND_HARD_STOP = 1;
+  // Use beyond the allowance is billed per unit.
+  FLEET_OVERAGE_KIND_METERED = 2;
+  // Nobody has verified it. Treated as a stop.
+  FLEET_OVERAGE_KIND_UNKNOWN = 3;
+}
+
+message FleetAllowance {
+  FleetUsageUnit unit = 1;
+  // Included per period, or in total for storage. Unset means unknown.
+  optional uint64 included = 2;
+  FleetOverageKind beyond = 3;
+  // Millionths of a US dollar per unit, possibly fractional. Set exactly when
+  // `beyond` is METERED.
+  optional double metered_micros_per_unit = 4;
+}
+
+// Where a financial model's numbers came from.
+message FleetEvidence {
+  string source = 1;
+  // YYYY-MM-DD: the day somebody read the source.
+  string observed_at = 2;
+}
+
+// What running on one backend costs and how much it allows.
+message FleetFinancialModel {
+  string backend = 1;
+  string plan = 2;
+  // Millionths of a US dollar a month. Unset means unknown.
+  optional uint64 fixed_monthly_fee_micros = 3;
+  repeated FleetAllowance allowances = 4;
+  FleetEvidence evidence = 5;
+}
+
+enum FleetFeasibility {
+  FLEET_FEASIBILITY_UNSPECIFIED = 0;
+  FLEET_FEASIBILITY_FEASIBLE = 1;
+  FLEET_FEASIBILITY_UNKNOWN = 2;
+  FLEET_FEASIBILITY_INFEASIBLE = 3;
+}
+
+// One standby as decideFleet ranked it.
+message FleetCandidate {
+  string backend = 1;
+  bool eligible = 2;
+  FleetFeasibility feasibility = 3;
+  optional uint64 lag_ms = 4;
+  optional uint64 exhausts_in_ms = 5;
+  repeated string reasons = 6;
+}
+
+enum FleetAction {
+  FLEET_ACTION_UNSPECIFIED = 0;
+  FLEET_ACTION_KEEP = 1;
+  FLEET_ACTION_HOLD = 2;
+  FLEET_ACTION_SWITCH = 3;
+  FLEET_ACTION_FAILOVER = 4;
+}
+
+// decideFleet's answer.
+message FleetDecision {
+  FleetAction action = 1;
+  uint64 epoch = 2;
+  optional string writer = 3;
+  optional string target = 4;
+  optional uint64 loss_window_ms = 5;
+  repeated string reasons = 6;
+  repeated FleetCandidate candidates = 7;
+  uint64 decided_at_ms = 8;
+}
+
+// Cheapest first.
+enum FleetOfferTier {
+  FLEET_OFFER_TIER_UNSPECIFIED = 0;
+  FLEET_OFFER_TIER_FREE = 1;
+  FLEET_OFFER_TIER_PREPAID = 2;
+  FLEET_OFFER_TIER_PAYG = 3;
+}
+
+// One member as an offer: its model, its tier and the most it may cost.
+message FleetOffer {
+  FleetFinancialModel model = 1;
+  FleetOfferTier tier = 2;
+  // Micro-dollars a period. Unset means zero: no money.
+  optional uint64 cap_micros = 3;
+}
+
+// routeFleetByBudget's thresholds.
+message FleetRoutingMarks {
+  // Leave the active member at this projected fraction of an allowance.
+  double switch_at = 1;
+  // Take a member only below this projected fraction. Lower than switch_at.
+  double switch_back_below = 2;
+  uint64 min_dwell_ms = 3;
+  uint64 failover_after_ms = 4;
+}
+
+// One member as routeFleetByBudget ranked it.
+message FleetRouteCandidate {
+  string backend = 1;
+  optional FleetOfferTier tier = 2;
+  bool eligible = 3;
+  optional double projected_fraction = 4;
+  optional uint64 projected_cost_micros = 5;
+  repeated string reasons = 6;
+}
+
+// routeFleetByBudget's answer.
+message FleetRoute {
+  FleetAction action = 1;
+  uint64 epoch = 2;
+  optional string active = 3;
+  optional string target = 4;
+  repeated string reasons = 5;
+  repeated FleetRouteCandidate candidates = 6;
+  uint64 decided_at_ms = 7;
+}
+
+// The fleet's operating plan for a declared continuity policy
+// (`continuityFleetPlan`, src/continuity.ts).
+message ContinuityFleetPlan {
+  string tier = 1;
+  int64 rpo_ms = 2;
+  int64 failover_after_ms = 3;
+  int64 min_dwell_ms = 4;
+  int32 standbys = 5;
+  // "snapshot" or "cold".
+  string copy = 6;
+  int64 copy_every_ms = 7;
+  int64 backup_every_ms = 8;
+  int32 backups_kept = 9;
+  optional int64 monthly_budget_micros = 10;
+}

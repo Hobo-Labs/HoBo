@@ -13,12 +13,12 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-	executeFleetVerification,
-	FLEET_CLOCK_SKEW_MS,
-	type FleetOverflowMember,
-	observeFleetVerification,
-	planFleetVerification,
-	readFleetOverflowPolicy,
+	executeRunnerVerification,
+	observeRunnerVerification,
+	planRunnerVerification,
+	type RunnerOverflowMember,
+	readRunnerOverflowPolicy,
+	SIGNOFF_CLOCK_SKEW_MS,
 } from "../ci/fleet-signoff.mts";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
 import {
@@ -53,12 +53,12 @@ const plan = (
 		localSignoffEnabled?: boolean;
 		githubUnavailable?: boolean;
 		slip?: SlipReading;
-		overflow?: readonly FleetOverflowMember[];
+		overflow?: readonly RunnerOverflowMember[];
 		providerUnavailable?: readonly string[];
 		runnerUnavailable?: readonly string[];
 	} = {},
 ) =>
-	planFleetVerification({
+	planRunnerVerification({
 		settings,
 		localSignoffEnabled: options.localSignoffEnabled ?? true,
 		githubUnavailable: options.githubUnavailable ?? false,
@@ -120,7 +120,7 @@ describe("local signoff in the fleet decision", () => {
 								});
 							}
 							const calls: string[] = [];
-							const status = await executeFleetVerification({
+							const status = await executeRunnerVerification({
 								choice,
 								runLocal: async () => {
 									calls.push("run");
@@ -170,7 +170,7 @@ describe("local signoff in the fleet decision", () => {
 	});
 
 	it("quarantines future queues and impossible pickups before deciding availability", async () => {
-		const future = now + FLEET_CLOCK_SKEW_MS + 60_000;
+		const future = now + SIGNOFF_CLOCK_SKEW_MS + 60_000;
 		const futureQueued = ["hobo", "hobo-local-host", "ubuntu-24.04"].flatMap(
 			(label) =>
 				Array.from(
@@ -215,7 +215,7 @@ describe("local signoff in the fleet decision", () => {
 		const withinSkew = {
 			...picked("hobo"),
 			createdAtMs: now + 2_000,
-			startedAtMs: now + FLEET_CLOCK_SKEW_MS,
+			startedAtMs: now + SIGNOFF_CLOCK_SKEW_MS,
 		};
 		assert.deepEqual(await plan(queue([withinSkew])), {
 			kind: "runner",
@@ -233,7 +233,9 @@ describe("local signoff in the fleet decision", () => {
 		};
 		assert.deepEqual(
 			await plan(
-				queue([{ ...withinSkew, startedAtMs: now + FLEET_CLOCK_SKEW_MS + 1 }]),
+				queue([
+					{ ...withinSkew, startedAtMs: now + SIGNOFF_CLOCK_SKEW_MS + 1 },
+				]),
 				{ slip: pinned },
 			),
 			{ kind: "runner", tier: "github", runner: "ubuntu-24.04" },
@@ -301,7 +303,7 @@ describe("local signoff in the fleet decision", () => {
 
 	it("includes opaque labels in the queue lookup", async () => {
 		let observedLabels: readonly string[] = [];
-		const choice = await planFleetVerification({
+		const choice = await planRunnerVerification({
 			settings,
 			localSignoffEnabled: true,
 			overflow: [{ id: "ci:sandbox", runsOn: "sandbox", observable: false }],
@@ -591,13 +593,13 @@ describe("local signoff in the fleet decision", () => {
 				observable: false,
 			},
 		];
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), agent37);
+		assert.deepEqual(readRunnerOverflowPolicy(JSON.stringify(source)), agent37);
 		const arc = source.environments.ci.policy.providers.find(
 			(entry: { id: string }) => entry.id === "hostinger-arc",
 		);
 		arc.enabled = true;
 		source.integrations[0].enabled = true;
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), [
+		assert.deepEqual(readRunnerOverflowPolicy(JSON.stringify(source)), [
 			{
 				id: "ci:hostinger-arc",
 				runsOn: "hobo-arc",
@@ -612,9 +614,9 @@ describe("local signoff in the fleet decision", () => {
 		]);
 		delete arc.enabled;
 		source.integrations[0].enabled = false;
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), agent37);
+		assert.deepEqual(readRunnerOverflowPolicy(JSON.stringify(source)), agent37);
 		delete source.integrations[0].enabled;
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), [
+		assert.deepEqual(readRunnerOverflowPolicy(JSON.stringify(source)), [
 			...agent37,
 			{
 				id: "integration:blacksmith:blacksmith-2vcpu-ubuntu-2404",
@@ -634,34 +636,34 @@ describe("local signoff in the fleet decision", () => {
 		source.environments.ci.policy.providers[3] = {
 			$ref: "#/definitions/providers/arc",
 		};
-		assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
+		assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
 		source.environments.ci.policy.providers[3] = {
 			$ref: "#/definitions/providers/missing",
 		};
-		assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
+		assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
 		source.environments.ci.policy.providers[3] = arc;
 		source.environments.ci.extends = "template";
-		assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
+		assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
 		delete source.environments.ci.extends;
 		arc.enabled = "true";
-		assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
+		assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
 		arc.enabled = true;
 		arc.scaleSet.maxRunners = "4";
-		assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
+		assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
 		arc.scaleSet.maxRunners = 4;
 		for (const field of ["pool", "routing", "budget"]) {
 			const previous = source.environments.ci.policy[field];
 			source.environments.ci.policy[field] = [];
-			assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
+			assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
 			source.environments.ci.policy[field] = previous;
 		}
 		source.environments.ci.policy.thresholds = {};
-		assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
+		assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
 		source.environments.ci.policy.thresholds = [];
 		delete source.environments.ci.policy.providers;
-		assert.equal(readFleetOverflowPolicy(JSON.stringify(source)), undefined);
-		assert.equal(readFleetOverflowPolicy("{"), undefined);
-		assert.equal(readFleetOverflowPolicy(undefined), undefined);
+		assert.equal(readRunnerOverflowPolicy(JSON.stringify(source)), undefined);
+		assert.equal(readRunnerOverflowPolicy("{"), undefined);
+		assert.equal(readRunnerOverflowPolicy(undefined), undefined);
 	});
 
 	it("validates Kubernetes scale-set and engine inventory fields", () => {
@@ -684,7 +686,7 @@ describe("local signoff in the fleet decision", () => {
 		const arc = source.environments.ci.policy.providers[3];
 		arc.enabled = true;
 		const scaleSet = arc.scaleSet;
-		const read = () => readFleetOverflowPolicy(JSON.stringify(source));
+		const read = () => readRunnerOverflowPolicy(JSON.stringify(source));
 		assert.deepEqual(read(), [
 			{ id: "ci:hostinger-arc", runsOn: "hobo-arc", observable: true },
 			...agent37,
@@ -739,7 +741,7 @@ describe("local signoff in the fleet decision", () => {
 		const hosted = source.environments.ci.policy.providers[2];
 		hosted.enabled = true;
 		hosted.runsOn = "ubuntu-22.04";
-		const overflow = readFleetOverflowPolicy(JSON.stringify(source));
+		const overflow = readRunnerOverflowPolicy(JSON.stringify(source));
 		assert.deepEqual(overflow, [
 			{
 				id: "ci:github-hosted",
@@ -763,7 +765,7 @@ describe("local signoff in the fleet decision", () => {
 			{ kind: "runner", tier: "local", runner: "hobo-local-host" },
 		);
 		hosted.runsOn = "ubuntu-24.04";
-		const equalLabel = readFleetOverflowPolicy(JSON.stringify(source));
+		const equalLabel = readRunnerOverflowPolicy(JSON.stringify(source));
 		assert.deepEqual(equalLabel, [
 			{
 				id: "ci:github-hosted",
@@ -795,7 +797,7 @@ describe("local signoff in the fleet decision", () => {
 		const arc = source.environments.ci.policy.providers[3];
 		arc.enabled = true;
 		arc.runsOn = "ubuntu-24.04";
-		const overflow = readFleetOverflowPolicy(JSON.stringify(source));
+		const overflow = readRunnerOverflowPolicy(JSON.stringify(source));
 		assert.ok(overflow);
 		assert.deepEqual(overflow, [
 			{ id: "ci:hostinger-arc", runsOn: "ubuntu-24.04", observable: true },
@@ -861,7 +863,7 @@ describe("local signoff in the fleet decision", () => {
 			},
 		);
 		assert.deepEqual(
-			await planFleetVerification({
+			await planRunnerVerification({
 				settings,
 				localSignoffEnabled: true,
 				readSlip: async () => noSlip,
@@ -875,7 +877,7 @@ describe("local signoff in the fleet decision", () => {
 	});
 
 	it("honours pins and routing slips before considering local signoff", async () => {
-		const pinned = await planFleetVerification({
+		const pinned = await planRunnerVerification({
 			settings: { ...settings, pin: "github" },
 			localSignoffEnabled: true,
 			readSlip: async () => {
@@ -978,7 +980,7 @@ describe("local signoff in the fleet decision", () => {
 			},
 		];
 		assert.deepEqual(
-			await planFleetVerification({
+			await planRunnerVerification({
 				settings,
 				localSignoffEnabled: true,
 				overflow,
@@ -1046,7 +1048,7 @@ describe("local signoff in the fleet decision", () => {
 			{ kind: "runner", tier: "github", runner: "ubuntu-24.04" },
 		);
 		assert.deepEqual(
-			await planFleetVerification({
+			await planRunnerVerification({
 				settings,
 				localSignoffEnabled: true,
 				nowMs: now,
@@ -1126,7 +1128,7 @@ describe("local signoff in the fleet decision", () => {
 
 	it("falls back to queue evidence after a slip read error, and waits if the queue also fails", async () => {
 		const decide = (readQueue: () => Promise<QueueView>) =>
-			planFleetVerification({
+			planRunnerVerification({
 				settings,
 				localSignoffEnabled: true,
 				readSlip: async () => {
@@ -1157,7 +1159,7 @@ describe("local signoff in the fleet decision", () => {
 			choice: Awaited<ReturnType<typeof plan>>,
 			runStatus: number,
 		) =>
-			executeFleetVerification({
+			executeRunnerVerification({
 				choice,
 				runLocal: async () => {
 					calls.push("run");
@@ -1640,7 +1642,7 @@ exec /usr/bin/git "$@"
 				providerUnavailable: string[],
 				policyCurrent = true,
 			) =>
-				observeFleetVerification({
+				observeRunnerVerification({
 					cwd: repo,
 					env: commandEnv,
 					baseRef: "origin/opaque-policy",
@@ -1684,7 +1686,7 @@ exec /usr/bin/git "$@"
 			);
 			writeFileSync(jobs, JSON.stringify(queued));
 			assert.deepEqual(
-				await observeFleetVerification({
+				await observeRunnerVerification({
 					cwd: repo,
 					env: commandEnv,
 					baseRef: "origin/malformed-policy",
@@ -1754,7 +1756,7 @@ exec /usr/bin/git "$@"
 				"ci:agent37-runners",
 			];
 			const observeInventory = () =>
-				observeFleetVerification({
+				observeRunnerVerification({
 					cwd: repo,
 					env: commandEnv,
 					baseRef: "origin/inventory-policy",
@@ -1830,7 +1832,7 @@ exec /usr/bin/git "$@"
 				policyCurrent = true,
 				baseRef = "origin/local-policy",
 			) =>
-				observeFleetVerification({
+				observeRunnerVerification({
 					cwd: repo,
 					env: commandEnv,
 					baseRef,
@@ -2134,9 +2136,11 @@ exec /usr/bin/git "$@"
 			writeFileSync(runs, JSON.stringify({ workflow_runs: [validRun] }));
 			const actualClock = Date.now;
 			const frozenNow = actualClock();
-			const boundary = new Date(frozenNow + FLEET_CLOCK_SKEW_MS).toISOString();
+			const boundary = new Date(
+				frozenNow + SIGNOFF_CLOCK_SKEW_MS,
+			).toISOString();
 			const justBefore = subMillisecond(
-				new Date(frozenNow + FLEET_CLOCK_SKEW_MS - 1).toISOString(),
+				new Date(frozenNow + SIGNOFF_CLOCK_SKEW_MS - 1).toISOString(),
 				"999999",
 			);
 			const justAfter = subMillisecond(boundary, "000001");
@@ -2319,7 +2323,7 @@ exec /usr/bin/git "$@"
 			assert.match(asserted.stderr, /working tree is not clean/u);
 			rmSync(join(repo, "dirty.txt"));
 			assert.deepEqual(
-				await observeFleetVerification({
+				await observeRunnerVerification({
 					cwd: repo,
 					env: commandEnv,
 					localSignoffEnabled: true,

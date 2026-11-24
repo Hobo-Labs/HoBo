@@ -1,9 +1,9 @@
 import {
 	chooseMachine,
+	generateMachineIdentity,
 	machineOnline,
 	registryMachineCandidates,
 } from "@hobo/ci";
-import { generateMeshIdentity } from "@hobo/ci/mesh";
 import { InMemoryMachineRegistry } from "@hobo/ci/runner-order/testing";
 import { describe, expect, it } from "vitest";
 import {
@@ -83,7 +83,7 @@ function setup(
 	);
 	const worker = createMachineWorker({
 		profile: PROFILE,
-		identity: generateMeshIdentity().identity,
+		identity: generateMachineIdentity().identity,
 		sink: registryAdvertSink(registry, {
 			accountId: "local",
 			ownerId: "42",

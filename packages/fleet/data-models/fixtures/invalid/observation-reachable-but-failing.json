@@ -1,0 +1,8 @@
+{
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "observerId": "dev_0123456789abcdef0123456789abcdef",
+  "health": "HEALTH_REACHABLE",
+  "failingForMs": 5000,
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "validUntil": "2026-11-12T10:20:00.000Z"
+}

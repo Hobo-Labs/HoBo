@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package hobo.fleet_authority.v1;
+
+message SignInProviderConfig {
+  string id = 1;
+  string issuer = 2;
+  string client_id = 3;
+  string client_secret_secret = 4;
+  string principal_claim = 5;
+  repeated string scopes = 6;
+  string web_base = 7;
+  string api_base = 8;
+}
+
+message DirectoryEntryConfig {
+  string principal = 1;
+  repeated string tags = 2;
+  repeated string aliases = 3;
+}
+
+message ClaimRuleConfig {
+  string issuer = 1;
+  string claim = 2;
+  string equals = 3;
+  repeated string tags = 4;
+}
+
+message PinnedIssuerConfig {
+  string issuer = 1;
+  string jwks_uri = 2;
+}
+
+message AccountConfig {
+  string principal = 1;
+  repeated string scopes = 2;
+  string credential_secret = 3;
+}
+
+message OverlayProviderConfig {
+  string provider = 1;
+  string api_base = 2;
+  string organisation = 3;
+  string credential_secret = 4;
+}
+
+message SecretStoreConfig {
+  string kind = 1;
+  string address = 2;
+  string role = 3;
+  string token_file = 4;
+  string mount_path = 5;
+  string namespace = 6;
+}
+
+message FleetAuthorityConfig {
+  string issuer = 1;
+  string profile = 2;
+  repeated string nats_urls = 3;
+  repeated string relay_urls = 4;
+  string min_agent_version = 5;
+  string tenant = 6;
+  string data_dir = 7;
+  string secret_prefix = 8;
+  string nats_credentials_secret = 9;
+  string listen = 10;
+  string session_key_secret = 11;
+  repeated SignInProviderConfig sign_in = 12;
+  repeated DirectoryEntryConfig directory = 13;
+  repeated ClaimRuleConfig claim_rules = 14;
+  repeated PinnedIssuerConfig oidc_issuers = 15;
+  repeated AccountConfig accounts = 16;
+  repeated OverlayProviderConfig overlay = 17;
+  string nats_sentinel_credentials_secret = 18;
+  string witness_nats_credentials_secret = 19;
+  string callout_xkey_secret = 20;
+  SecretStoreConfig secret_store = 21;
+}
