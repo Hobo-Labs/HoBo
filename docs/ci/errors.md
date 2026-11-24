@@ -1175,14 +1175,14 @@ hobo ci fleet caches needs owner://{entry} from the owner's store session, and n
 ```
 
 ```text
-hobo ci fleet needs owner://HOSTINGER_API_TOKEN from the owner's store session, and none resolved. Run HoBo MCP's choose_secret_store to connect the owner's store, then ask again.
+hobo ci fleet needs owner://HOSTINGER_API_TOKEN from the owner's store session, or an Infisical Agent Vault service for {HOSTINGER_API_HOST}, and neither resolved.{…} Run HoBo MCP's choose_secret_store to connect the owner's store, then ask again.
 ```
 
 What to do:
 
 - Call the HoBo MCP tool choose_secret_store for this project directory.
 - Have the owner store the cluster's kubeconfig in that store under {entry}.
-- Have the owner store the Hostinger API token in that store under {…}.
+- Have the owner store the Hostinger API token in that store under {…}, or keep it in an Infisical Agent Vault http service for {HOSTINGER_API_HOST} that the signed-in Infisical identity can use.
 
 ### HOBO_CI_FLEET_FAILED
 
