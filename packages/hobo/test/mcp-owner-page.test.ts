@@ -13,7 +13,9 @@ import {
 import {
 	CHOOSE_SECRET_STORE_TOOL,
 	createStoreChoiceApp,
+	locatorSettings,
 	NO_STORE_CHOICE_SUPPORT,
+	parseStoreChoice,
 	SUBMIT_OWNER_PAGE_TOOL,
 } from "../src/mcp-store-choice.js";
 import type { OwnerStoreSessions } from "../src/owner-store-session.js";
@@ -320,6 +322,12 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		expect(deposited.get("INFISICAL_CLI_SESSION")).toBe("c2Vzc2lvbi1maXh0dXJl");
 		expect(written.size).toBe(0);
 		expect(JSON.stringify(done)).not.toContain("c2Vzc2lvbi1maXh0dXJl");
+	});
+
+	it("takes Infisical without a project ID, leaving the project for HoBo to resolve", () => {
+		const choice = parseStoreChoice({ store: "infisical" });
+		expect(choice).toEqual({ store: "infisical", projectId: undefined });
+		expect(locatorSettings(choice)).toEqual({ HOBO_SECRET_STORE: "infisical" });
 	});
 
 	it("still reports no private form when no owner page is wired", async () => {

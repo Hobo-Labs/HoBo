@@ -222,7 +222,12 @@ export function createOwnerPages(
 
 const STORE_SECTIONS = {
 	infisical: [
-		{ name: "INFISICAL_PROJECT_ID", label: "Project ID", secret: false },
+		{
+			name: "INFISICAL_PROJECT_ID",
+			label:
+				"Project ID (optional; HoBo finds or creates its Secrets Management project)",
+			secret: false,
+		},
 		{
 			name: "INFISICAL_CLI_SESSION",
 			label:

@@ -82,7 +82,7 @@ export const STORE_OPTIONS = [
 	{
 		id: "infisical",
 		label: "Infisical",
-		needs: "its project ID",
+		needs: "nothing to look up; HoBo finds or creates its project",
 	},
 	{
 		id: "1password",
@@ -116,7 +116,7 @@ type StoreFieldName = (typeof STORE_CHOICE_FIELD_NAMES)[number];
 const STORE_FIELDS = {
 	INFISICAL_PROJECT_ID: {
 		type: "string",
-		title: "Infisical project ID (Infisical only)",
+		title: "Infisical project ID (optional; HoBo finds or creates its project)",
 	},
 	OP_VAULT_ID: { type: "string", title: "1Password vault ID (1Password only)" },
 	OP_CONNECT_HOST: {
@@ -158,7 +158,7 @@ export function storeFieldsSchema(
 			return {
 				type: "object",
 				properties: pick(["INFISICAL_PROJECT_ID"]),
-				required: ["INFISICAL_PROJECT_ID"],
+				required: [],
 			};
 		case "1password":
 			return {
@@ -184,7 +184,7 @@ export class StoreChoiceInvalid extends Error {
 
 /** What the owner chose, parsed: one shape per store. */
 export type StoreChoice =
-	| { readonly store: "infisical"; readonly projectId: string }
+	| { readonly store: "infisical"; readonly projectId: string | undefined }
 	| {
 			readonly store: "1password";
 			readonly vaultId: string;
@@ -215,10 +215,6 @@ export function parseStoreChoice(answer: JsonValue | undefined): StoreChoice {
 	const a = parsed.data;
 	try {
 		if (a.store === "infisical") {
-			if (a.INFISICAL_PROJECT_ID === undefined)
-				throw new StoreChoiceInvalid(
-					"Infisical needs its project ID (Project Settings in Infisical).",
-				);
 			return { store: "infisical", projectId: a.INFISICAL_PROJECT_ID };
 		}
 		if (a.store === "1password")
@@ -250,7 +246,9 @@ export function locatorSettings(choice: StoreChoice) {
 		case "infisical":
 			return {
 				HOBO_SECRET_STORE: choice.store,
-				INFISICAL_PROJECT_ID: choice.projectId,
+				...(choice.projectId !== undefined
+					? { INFISICAL_PROJECT_ID: choice.projectId }
+					: undefined),
 			};
 		case "1password":
 			return {
