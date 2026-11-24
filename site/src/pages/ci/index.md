@@ -17,6 +17,7 @@ Which host is a **standing decision**: the same idea as [continuous migration](/
 | [Providers](/HoBo/ci/providers/) | What each provider costs, who it serves, how to connect it |
 | [Fleet balancing](/HoBo/ci/fleet-balancing/) | Eligibility → price → policy, on worked decisions |
 | [Route table](/HoBo/ci/route-table/) | Publishing the choice so a job can ask for the right label |
+| [Runner order](/HoBo/ci/runner-order/) | A committed list of runner types, walked first-fit when HoBo CI decides for a job |
 | [Host health](/HoBo/ci/host-health/) | The box watching its own CPU, memory and disk |
 | [Errors & codes](/HoBo/reference/errors/#ci-fleet) | Stable refusal codes (reference) |
 

@@ -111,6 +111,7 @@ export function executor(
 	const held = new Map<WorkDigest, Held>();
 	const handled = new Map<WorkDigest, number>();
 	const live = new Map<string, Live>();
+	const untorn = new Map<string, Sandbox>();
 	const runs = new Set<Promise<void>>();
 	const waits = new Set<ReturnType<typeof setTimeout>>();
 	const observations = createObservationCache(bus.registry);
@@ -125,6 +126,7 @@ export function executor(
 	let ready: Promise<void> = Promise.resolve();
 	let writes: Promise<void> = Promise.resolve();
 	let flushing: Promise<void> = Promise.resolve();
+	let retrying: Promise<void> = Promise.resolve();
 	let accepting = false;
 	let started = false;
 
@@ -210,7 +212,35 @@ export function executor(
 		return bus.registry.member(self.memberId);
 	}
 
-	const inUse = () => held.size + live.size;
+	const inUse = () => held.size + live.size + untorn.size;
+
+	async function teardown(
+		orderId: string,
+		sandbox: Sandbox,
+		first: boolean,
+	): Promise<void> {
+		try {
+			await sandbox.destroy();
+			untorn.delete(orderId);
+		} catch {
+			if (!first) return;
+			untorn.set(orderId, sandbox);
+			log("hobo_fleet_sandbox_unavailable", {
+				order: orderId,
+				reason: "teardown-unconfirmed",
+			});
+		}
+	}
+
+	const retryTeardown = (): Promise<void> => {
+		retrying = retrying
+			.then(async () => {
+				for (const [orderId, sandbox] of untorn)
+					await teardown(orderId, sandbox, false);
+			})
+			.catch(() => undefined);
+		return retrying;
+	};
 
 	async function ownObservation(record: MemberRecord, fleet: FleetId) {
 		const reading = await deps.capacity.read();
@@ -590,8 +620,8 @@ export function executor(
 			});
 		} finally {
 			secret.fill(0);
+			await teardown(order.orderId, sandbox, true);
 			live.delete(order.orderId);
-			await sandbox.destroy().catch(() => undefined);
 			await proxy.close().catch(() => undefined);
 		}
 	}
@@ -622,7 +652,10 @@ export function executor(
 			from(ORDERS),
 			onOrder,
 		);
-		flushTimer = setInterval(() => void flush(), FLUSH_MS);
+		flushTimer = setInterval(() => {
+			void flush();
+			void retryTeardown();
+		}, FLUSH_MS);
 		await flush();
 	}
 
@@ -673,6 +706,7 @@ export function executor(
 			offerSubscription = undefined;
 			orderSubscription = undefined;
 			await flushing;
+			await retrying;
 			await persist();
 		},
 		sandboxOf(orderId: string) {

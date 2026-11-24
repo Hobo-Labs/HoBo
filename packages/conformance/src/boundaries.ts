@@ -154,6 +154,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-gh-actions",
 	// The optional relay agent composes the relay; nothing depends on it.
 	"packages/ci-agent",
+	"packages/ci-dashboard",
 	"packages/ci-ado",
 	"packages/ci-dagger",
 	"packages/ci-cf",

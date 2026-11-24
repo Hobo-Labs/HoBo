@@ -1,5 +1,7 @@
 import { createPrivateKey } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { hostname } from "node:os";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { create } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
@@ -10,6 +12,12 @@ import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
 import { createGithubOidcVerifier } from "./oidc.js";
 import { acquirePartitionLock } from "./partition-lock.js";
 import { createRelayHost, type RelayAgent } from "./relay-host.js";
+import {
+	createRelayWiring,
+	type RelayWiring,
+	relayWiringFlags,
+	relayWiringOn,
+} from "./relay-wiring.js";
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
 	const value = env[name];
@@ -53,6 +61,7 @@ export async function startRelayFromEnvironment(
 				readonly { installationId: number; repository: string }[]
 			>;
 		}) => RelayAgent | Promise<RelayAgent>;
+		dashboard?: (request: Request) => Promise<Response | undefined>;
 	} = {},
 ) {
 	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
@@ -100,6 +109,7 @@ export async function startRelayFromEnvironment(
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);
 	let store: SqliteCiStore;
+	let wiring: RelayWiring | undefined;
 	try {
 		store = new SqliteCiStore(database);
 	} catch (error) {
@@ -124,15 +134,52 @@ export async function startRelayFromEnvironment(
 					}),
 				),
 		});
+		const relayLog = (
+			event: string,
+			fields: Readonly<Record<string, string | number | boolean>>,
+		) =>
+			process.stdout.write(
+				`${JSON.stringify({ level: "info", event, ...fields })}\n`,
+			);
+		const github =
+			ports.github ??
+			createGithubAppTransport({
+				appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
+				privateKey,
+			});
+		const flags = relayWiringFlags(env);
+		const wired = relayWiringOn(flags)
+			? createRelayWiring({
+					flags,
+					github,
+					connections: async () =>
+						(
+							(await store.configuration())?.configuration?.connections ?? []
+						).map((connection) => ({
+							accountId: connection.accountId,
+							installationId: connection.installationId,
+							repository: connection.repository,
+							public: connection.publicRepositoryAcknowledged,
+						})),
+					database:
+						env.HOBO_CI_WIRING_DB ??
+						join(dirname(database), "relay-wiring.sqlite"),
+					node: `relay-${hostname()}`,
+					dashboard: ports.dashboard,
+					authenticate,
+					log: relayLog,
+				})
+			: undefined;
+		wiring = wired;
 		const { service, runtime } = createRelayHost({
 			store,
 			agent,
-			github:
-				ports.github ??
-				createGithubAppTransport({
-					appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
-					privateKey,
-				}),
+			wiring: wired && {
+				onWebhook: (webhook) => void wired.onWebhook(webhook),
+				page: (request) => wired.page(request),
+				control: (request) => wired.control(request),
+			},
+			github,
 			identity: createGithubOidcVerifier(publicUrl.origin),
 			webhookSecret,
 			ingressForwardSecret,
@@ -158,9 +205,11 @@ export async function startRelayFromEnvironment(
 			service,
 			runtime,
 			store,
+			wiring: wired,
 			stop() {
 				stopping ??= (async () => {
 					const result = await service.stop();
+					wired?.close();
 					if (result.drained) await lock.release();
 					return result;
 				})();
@@ -168,6 +217,7 @@ export async function startRelayFromEnvironment(
 			},
 		};
 	} catch (error) {
+		wiring?.close();
 		store.close();
 		await lock.release();
 		throw error;

@@ -986,6 +986,7 @@ export async function divertSaturatedPrBatch(input: {
 	labels: RouteSettings["labels"];
 	fleetLabel: string;
 	localEnrolled: boolean;
+	trunkLend: boolean;
 	limits: RouteLimits;
 	now: () => number;
 	sleep: (seconds: number) => Promise<void>;
@@ -1087,7 +1088,10 @@ export async function divertSaturatedPrBatch(input: {
 			return undefined;
 		}
 	};
-	return (await tryPrBatchTrunkDivert()) ?? (await tryPrBatchFleetDivert());
+	return (
+		(input.trunkLend ? await tryPrBatchTrunkDivert() : undefined) ??
+		(await tryPrBatchFleetDivert())
+	);
 }
 
 async function readNodeCpuPercent(
@@ -1152,6 +1156,7 @@ export const DEFAULT_RUNNER_LABELS: RunnerRouting["labels"] = {
 export const DEFAULT_LOCAL_RUNNER = false;
 /** Pull requests' deps-image job keeps the fleet label unless committed configuration says so. */
 export const DEFAULT_BOX_RUNNER = false;
+export const DEFAULT_TRUNK_LEND = false;
 
 /** What the route job takes from `runnerRouting`, or the code's defaults. */
 export type RouteSettings = Readonly<{
@@ -1165,6 +1170,7 @@ export type RouteSettings = Readonly<{
 	 * job keeps the fleet label.
 	 */
 	boxRunner: string;
+	trunkLend: boolean;
 	/** `false` when `.hobo/ci.json` held no valid `runnerRouting`. */
 	committed: boolean;
 }>;
@@ -1179,6 +1185,7 @@ export function routeSettings(
 			labels: policy.labels,
 			localRunner: policy.localRunner,
 			boxRunner: policy.boxRunner ? policy.labels.box : "",
+			trunkLend: policy.box.trunkLend === 1,
 			committed: true,
 		};
 	return {
@@ -1190,6 +1197,7 @@ export function routeSettings(
 		labels: DEFAULT_RUNNER_LABELS,
 		localRunner: DEFAULT_LOCAL_RUNNER,
 		boxRunner: DEFAULT_BOX_RUNNER ? DEFAULT_RUNNER_LABELS.box : "",
+		trunkLend: DEFAULT_TRUNK_LEND,
 		committed: false,
 	};
 }
@@ -1724,6 +1732,7 @@ export async function main(
 						labels,
 						fleetLabel,
 						localEnrolled,
+						trunkLend: settings.trunkLend,
 						limits,
 						now,
 						sleep: (wait) => delay(wait * 1000),

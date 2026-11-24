@@ -47,12 +47,37 @@
       "types": "./dist/runner-host.d.ts",
       "default": "./dist/runner-host.js"
     },
+    "./machine-worker": {
+      "types": "./dist/machine-worker/index.d.ts",
+      "default": "./dist/machine-worker/index.js"
+    },
+    "./machine-worker/testing": {
+      "types": "./dist/machine-worker/testing.d.ts",
+      "default": "./dist/machine-worker/testing.js"
+    },
+    "./machine-worker/macos": {
+      "types": "./dist/machine-worker/macos/index.d.ts",
+      "default": "./dist/machine-worker/macos/index.js"
+    },
     "./relay-cache": {
       "types": "./dist/relay-cache/index.d.ts",
       "default": "./dist/relay-cache/index.js"
     },
+    "./relay-checks": {
+      "types": "./dist/relay-checks/index.d.ts",
+      "default": "./dist/relay-checks/index.js"
+    },
     "./schema/ci-project.schema.json": "./schema/ci-project.schema.json",
-    "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json"
+    "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json",
+    "./read-api": {
+      "types": "./dist/read-api.d.ts",
+      "default": "./dist/read-api.js"
+    },
+    "./schema/read-api.openapi.json": "./schema/read-api.openapi.json",
+    "./provider-usage": {
+      "types": "./dist/provider-usage/index.d.ts",
+      "default": "./dist/provider-usage/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -101,6 +126,7 @@
     "@pact-foundation/pact": "17.1.4",
     "@types/pg": "8.15.5",
     "esbuild": "0.28.1",
+    "fast-check": "^4.9.0",
     "pg": "8.22.0",
     "testcontainers": "11.8.1"
   }

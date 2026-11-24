@@ -36,6 +36,11 @@
 	},
 	{
 		"rule": 9,
+		"path": "packages/hobo/src/ci-fleet-caches.ts",
+		"reason": "FleetCluster and loadFleetClusters name the clusters `hobo ci fleet caches` applies ARC node caches to."
+	},
+	{
+		"rule": 9,
 		"path": "packages/hobo/src/fleet-command.ts",
 		"reason": "The hobo fleet command itself."
 	},

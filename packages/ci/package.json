@@ -44,6 +44,38 @@
       "types": "./dist/insights/index.d.ts",
       "default": "./dist/insights/index.js"
     },
+    "./runner-order/machine-registry-sqlite": {
+      "types": "./dist/runner-order/machine-registry-sqlite.d.ts",
+      "default": "./dist/runner-order/machine-registry-sqlite.js"
+    },
+    "./insights/history-sqlite": {
+      "types": "./dist/insights/history-sqlite.d.ts",
+      "default": "./dist/insights/history-sqlite.js"
+    },
+    "./insights/usage": {
+      "types": "./dist/insights/usage.d.ts",
+      "default": "./dist/insights/usage.js"
+    },
+    "./runner-order": {
+      "types": "./dist/runner-order/index.d.ts",
+      "default": "./dist/runner-order/index.js"
+    },
+    "./insights/breakdown": {
+      "types": "./dist/insights/breakdown.d.ts",
+      "default": "./dist/insights/breakdown.js"
+    },
+    "./runner-order/testing": {
+      "types": "./dist/runner-order/testing.d.ts",
+      "default": "./dist/runner-order/testing.js"
+    },
+    "./runner-order/journal-sqlite": {
+      "types": "./dist/runner-order/journal-sqlite.d.ts",
+      "default": "./dist/runner-order/journal-sqlite.js"
+    },
+    "./runner-order/provider-health-sqlite": {
+      "types": "./dist/runner-order/provider-health-sqlite.d.ts",
+      "default": "./dist/runner-order/provider-health-sqlite.js"
+    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"

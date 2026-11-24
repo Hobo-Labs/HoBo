@@ -16,7 +16,7 @@ description: Verify the shared policy feasibility boundary used by HoBo CI and h
 - `packages/core/src/ports/budget-policy.ts` (`parseBudgetPolicy`, `evaluateBudgetPolicy`)
 - `packages/core/test/budget-policy.property.test.ts` and `budget-policy-schema.test.ts`
 - `packages/core/data-models/budget_policy.proto` and related CUE contracts
-- Consumers include `packages/ci/src/routing.ts`, `packages/ci/src/shared-budget.ts`, and `packages/cloud/src/planner/hosting-budget.ts`.
+- Consumers include `packages/ci/src/routing.ts`, `packages/ci/src/shared-budget.ts`, and `packages/cloud/src/planner/hosting-budget.ts`. The CI bridge window checks are covered separately by `verify-ci-budget-window`.
 
 ## Run
 

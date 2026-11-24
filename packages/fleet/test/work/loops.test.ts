@@ -557,6 +557,54 @@ describe("the executor", () => {
 		await throwing.executor.stop();
 	});
 
+	it("holds a slot whose sandbox teardown is unconfirmed until a later teardown succeeds", async () => {
+		const inner = fakeDriver(SandboxTier.S1_CONTAINER);
+		let failures = 1;
+		let destroys = 0;
+		const sticky: SandboxDriver = {
+			tier: inner.tier,
+			available: () => inner.available(),
+			async create(input) {
+				const sandbox = await inner.create(input);
+				return {
+					...sandbox,
+					exec: (command) => sandbox.exec(command),
+					writeSecret: (path, bytes) => sandbox.writeSecret(path, bytes),
+					async destroy() {
+						destroys += 1;
+						if (failures > 0) {
+							failures -= 1;
+							throw new Error("teardown not confirmed");
+						}
+						await sandbox.destroy();
+					},
+				};
+			},
+		};
+		const s = await single({ drivers: [sticky] });
+		s.source.queue.push(upstream("job-1", NOW));
+		await vi.advanceTimersByTimeAsync(2_000);
+		expect(s.receipts.map((receipt) => receipt.status).slice(-1)).toEqual([
+			ReceiptStatus.SUCCEEDED,
+		]);
+		expect(destroys).toBe(1);
+		expect(s.executor.inUse()).toBe(1);
+		expect(
+			s.logs.lines.filter(
+				(line) =>
+					line.event === "hobo_fleet_sandbox_unavailable" &&
+					line.fields.reason === "teardown-unconfirmed",
+			),
+		).toHaveLength(1);
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(destroys).toBe(2);
+		expect(s.executor.inUse()).toBe(0);
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(destroys).toBe(2);
+		await s.dispatcher.stop();
+		await s.executor.stop();
+	});
+
 	it("does not advertise a driver whose self-test fails, so work needing it is not claimed", async () => {
 		const failing: SandboxDriver = {
 			tier: SandboxTier.S1_CONTAINER,

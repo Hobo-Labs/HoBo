@@ -27,6 +27,9 @@ import {
 	ciRunnerImageVersion,
 	evaluateCiRunnerContract,
 	IMAGE_CONTRACT_COMMANDS,
+	JOB_SCOPED_MISE_TOOLS,
+	JOB_TOOLS_ENV,
+	jobMiseTools,
 	lockedMiseToolVersion,
 	MISE_LOCK,
 	MISE_PYTHON_TOOL,
@@ -39,10 +42,12 @@ import {
 	REQUIRED_COMMANDS,
 	spawnCommand,
 	syncMissingMiseTools,
+	unknownJobTools,
 	verifyBaseImageDigestResolves,
 } from "../lib/ci-runner-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
+delete process.env[JOB_TOOLS_ENV];
 
 // Check names do not depend on what the host has installed, so these cases
 // skip the dozen sequential tool spawns a stalled runner box can stretch past
@@ -916,5 +921,110 @@ describe("ci-runner base digest check (registry API)", () => {
 		);
 		expect(missing.ok).toBe(false);
 		expect(missing.detail).toContain("404");
+	});
+});
+
+describe("ci-runner job-scoped mise tools", () => {
+	const configured = parseMiseToolNames(
+		readFileSync(join(root, MISE_TOML), "utf8"),
+	);
+	const core = configured.filter(
+		(tool) => !JOB_SCOPED_MISE_TOOLS.includes(tool),
+	);
+
+	it("keeps every tool when the job names none or asks for all", () => {
+		expect(jobMiseTools(configured, {})).toEqual(configured);
+		expect(jobMiseTools(configured, { [JOB_TOOLS_ENV]: "all" })).toEqual(
+			configured,
+		);
+	});
+
+	it("drops the job-scoped tools a job does not name", () => {
+		expect(jobMiseTools(configured, { [JOB_TOOLS_ENV]: "" })).toEqual(core);
+		expect(
+			jobMiseTools(configured, { [JOB_TOOLS_ENV]: "python" }).filter((tool) =>
+				JOB_SCOPED_MISE_TOOLS.includes(tool),
+			),
+		).toEqual([MISE_PYTHON_TOOL]);
+		expect(
+			jobMiseTools(configured, { [JOB_TOOLS_ENV]: "betterleaks, syft" }),
+		).toEqual(configured.filter((tool) => tool !== MISE_PYTHON_TOOL));
+	});
+
+	it("names requested tools that are not job-scoped", () => {
+		expect(unknownJobTools({ [JOB_TOOLS_ENV]: "python node bogus" })).toEqual([
+			"node",
+			"bogus",
+		]);
+		expect(unknownJobTools({ [JOB_TOOLS_ENV]: "all" })).toEqual([]);
+		expect(unknownJobTools({})).toEqual([]);
+	});
+
+	it("installs and exports only the job's tools", () => {
+		const calls: string[][] = [];
+		const result = syncMissingMiseTools(root, {
+			run: (cmd, args) => {
+				calls.push([cmd, ...args]);
+				if (cmd === "mise" && args.includes("ls")) {
+					return {
+						ok: true,
+						out: "python 3.12.16 (missing)\nsyft 1.56.0 (missing)\ncue 0.14.0 (missing)\n",
+					};
+				}
+				if (cmd === "mise" && args.includes("which")) {
+					return { ok: true, out: `/opt/mise/${args.at(-1)}/bin/x` };
+				}
+				return { ok: true, out: "" };
+			},
+			env: { PATH: "/usr/bin", [JOB_TOOLS_ENV]: "" },
+			appendFile: () => {},
+		});
+		expect(result.ok).toBe(true);
+		expect(result.installed).toEqual(["cue"]);
+		expect(calls.filter((call) => call.includes("install"))).toEqual([
+			["mise", "--cd", root, "install", "--locked", "cue"],
+		]);
+		expect(
+			calls.filter((call) => call.includes("which")).map((call) => call.at(-1)),
+		).toEqual(core);
+	});
+
+	it("probes only the job's tools and skips the Python runtime unless named", () => {
+		const probed = (env: NodeJS.ProcessEnv) => {
+			const calls: string[][] = [];
+			const checks = evaluateCiRunnerContract(root, {
+				env,
+				run: (cmd, args) => {
+					calls.push([cmd, ...args]);
+					if (
+						cmd === "mise" &&
+						args[0] === "exec" &&
+						args[2] === MISE_PYTHON_TOOL
+					)
+						return { ok: true, out: `Python ${MISE_PYTHON_VERSION}.16` };
+					return present(cmd, args);
+				},
+			});
+			return { checks, calls };
+		};
+		const scoped = probed({ [JOB_TOOLS_ENV]: "" });
+		const toolChecks = scoped.checks
+			.filter((check) => check.name.startsWith("mise-tool:"))
+			.map((check) => check.name.slice("mise-tool:".length));
+		expect(toolChecks).toEqual(core);
+		expect(
+			scoped.checks.find((check) => check.name === "python-version"),
+		).toMatchObject({
+			ok: true,
+			detail: expect.stringContaining(JOB_TOOLS_ENV),
+		});
+		expect(scoped.calls.some((call) => call.includes(MISE_PYTHON_TOOL))).toBe(
+			false,
+		);
+
+		const python = probed({ [JOB_TOOLS_ENV]: "python" });
+		expect(
+			python.checks.find((check) => check.name === "python-version"),
+		).toMatchObject({ ok: true, detail: `Python ${MISE_PYTHON_VERSION}.16` });
 	});
 });

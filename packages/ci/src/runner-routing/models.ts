@@ -833,3 +833,176 @@ export function runnerFinancialModel(
 export const RUNNER_PROVIDER_KINDS: readonly string[] = [
 	...new Set(RUNNER_FINANCIAL_MODELS.map((model) => model.provider)),
 ].sort();
+
+export type HostedListRate = Readonly<{
+	vcpus: number;
+	label: string;
+	usdPerMinute: string;
+	billing: RunnerBilling;
+	derived: boolean;
+}>;
+
+export type HostedListPrice =
+	| Readonly<{
+			kind: "priced";
+			provider: string;
+			rates: readonly HostedListRate[];
+			source: string;
+			observedAt: string;
+			validUntil: string;
+			note: string;
+	  }>
+	| Readonly<{
+			kind: "unpriced";
+			provider: string;
+			reason: string;
+			source: string;
+			observedAt: string;
+	  }>;
+
+const LIST_PRICES_OBSERVED_AT = "2026-11-17T00:00:00Z";
+const LIST_PRICES_VALID_UNTIL = "2027-02-17T00:00:00Z";
+
+function listRate(
+	vcpus: number,
+	label: string,
+	usdPerMinute: string,
+	billing: RunnerBilling,
+	derived = false,
+): HostedListRate {
+	return { vcpus, label, usdPerMinute, billing, derived };
+}
+
+export const HOSTED_LIST_PRICES: ReadonlyMap<string, HostedListPrice> = new Map<
+	string,
+	HostedListPrice
+>([
+	[
+		"blacksmith",
+		{
+			kind: "priced",
+			provider: "blacksmith",
+			rates: [2, 4, 8, 16, 32].map((vcpus) =>
+				listRate(
+					vcpus,
+					`blacksmith-${vcpus}vcpu-ubuntu-2404`,
+					(0.002 * vcpus).toFixed(3),
+					"per-second",
+					vcpus !== 2,
+				),
+			),
+			source: "https://www.blacksmith.sh/pricing",
+			observedAt: LIST_PRICES_OBSERVED_AT,
+			validUntil: LIST_PRICES_VALID_UNTIL,
+			note: "$0.004 a minute is printed for the 2 vCPU Ubuntu x64 runner and no other size is priced on the page; the rate scales with vCPU, as the `blacksmith-4vcpu` model above reads it. Billed per second, as that model records.",
+		},
+	],
+	[
+		"depot",
+		{
+			kind: "priced",
+			provider: "depot",
+			rates: [
+				listRate(2, "depot-ubuntu-24.04", "0.006", "per-second"),
+				listRate(4, "depot-ubuntu-24.04-4", "0.012", "per-second"),
+				listRate(8, "depot-ubuntu-24.04-8", "0.024", "per-second"),
+				listRate(16, "depot-ubuntu-24.04-16", "0.048", "per-second"),
+				listRate(32, "depot-ubuntu-24.04-32", "0.096", "per-second"),
+				listRate(64, "depot-ubuntu-24.04-64", "0.192", "per-second"),
+			],
+			source: "https://depot.dev/docs/github-actions/runner-types",
+			observedAt: LIST_PRICES_OBSERVED_AT,
+			validUntil: LIST_PRICES_VALID_UNTIL,
+			note: "Each label's price per minute is printed in the runner-type table. The page does not say how elapsed time is rounded; per second follows the `depot-4vcpu` model above.",
+		},
+	],
+	[
+		"namespace",
+		{
+			kind: "priced",
+			provider: "namespace",
+			rates: [2, 4, 8, 16, 32].map((vcpus) =>
+				listRate(
+					vcpus,
+					`nscloud-ubuntu-24.04-amd64-${vcpus}x${vcpus * 2}`,
+					(0.0015 * vcpus).toFixed(4),
+					"per-minute-ceil",
+				),
+			),
+			source: "https://namespace.so/pricing",
+			observedAt: LIST_PRICES_OBSERVED_AT,
+			validUntil: LIST_PRICES_VALID_UNTIL,
+			note: 'The Linux amd64 table prints the pay-as-you-go rate per shape: $0.003 (2x4), $0.006 (4x8), $0.012 (8x16), $0.024 (16x32) and $0.048 (32x64) a minute; minutes inside a prepaid plan cost less. "We account for a minimum of 1 minute" and the next 15 seconds round down, so rounding up to the minute slightly over-counts.',
+		},
+	],
+	[
+		"warpbuild",
+		{
+			kind: "priced",
+			provider: "warpbuild",
+			rates: [2, 4, 8, 16, 32].map((vcpus) =>
+				listRate(
+					vcpus,
+					`warp-ubuntu-2404-x64-${vcpus}x`,
+					(0.002 * vcpus).toFixed(3),
+					"per-minute-ceil",
+				),
+			),
+			source: "https://www.warpbuild.com/pricing",
+			observedAt: LIST_PRICES_OBSERVED_AT,
+			validUntil: LIST_PRICES_VALID_UNTIL,
+			note: 'Linux x86-64 cloud runners are printed at $0.004 (2 vCPU), $0.008 (4), $0.016 (8), $0.032 (16) and $0.064 (32) a minute. "CI runners are billed on a per-minute basis." No free minutes or plan fee for runners is printed.',
+		},
+	],
+	[
+		"ubicloud",
+		{
+			kind: "priced",
+			provider: "ubicloud",
+			rates: [
+				listRate(2, "ubicloud-standard-2", "0.00125", "per-minute-ceil"),
+				listRate(4, "ubicloud-standard-4", "0.0025", "per-minute-ceil"),
+				listRate(8, "ubicloud-standard-8", "0.005", "per-minute-ceil"),
+				listRate(16, "ubicloud-standard-16", "0.01", "per-minute-ceil"),
+				listRate(30, "ubicloud-standard-30", "0.01875", "per-minute-ceil"),
+			],
+			source: "https://www.ubicloud.com/docs/about/pricing",
+			observedAt: LIST_PRICES_OBSERVED_AT,
+			validUntil: LIST_PRICES_VALID_UNTIL,
+			note: 'Standard x64 runners are printed per minute; "we calculate resource consumption at per minute granularity". Every account gets a $2.5 monthly credit, about 1,250 minutes of the 2 vCPU runner, which the list rate does not subtract.',
+		},
+	],
+	[
+		"boat",
+		{
+			kind: "priced",
+			provider: "boat",
+			rates: [listRate(4, "boat", "0.0006", "per-second", true)],
+			source: "https://docs.boat.dev/pricing.md",
+			observedAt: OBSERVED_AT,
+			validUntil: VALID_UNTIL,
+			note: "The `boat` model above: $0.036 an hour for the default 4 vCPU / 8 GB size, 0.036 / 60 = 0.0006. Only the default size has been read.",
+		},
+	],
+	[
+		"runs-on",
+		{
+			kind: "unpriced",
+			provider: "runs-on",
+			reason:
+				'RunsOn charges a flat yearly licence with "no seats, no minute-metering", and AWS bills the machines to the owner\'s own account at spot prices, so there is no per-minute list price to apply.',
+			source: "https://runs-on.com/pricing/",
+			observedAt: LIST_PRICES_OBSERVED_AT,
+		},
+	],
+]);
+
+export function hostedListRate(
+	provider: string,
+	label: string,
+): HostedListRate | undefined {
+	const price = HOSTED_LIST_PRICES.get(provider);
+	if (price?.kind !== "priced") return undefined;
+	const lower = label.trim().toLowerCase();
+	return price.rates.find((entry) => entry.label === lower);
+}

@@ -4,6 +4,8 @@ import {
 	CI_PROJECT_PROVIDERS_SCHEMA_REF,
 	CiProjectProviderSchema,
 } from "./project-providers.js";
+import { RelayJobsSettingsSchema } from "./relay-answer/ci-file.js";
+import { ChecksBlock } from "./relay-checks/config.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
 import { RunnerOrderDocumentSchema } from "./runner-order-config.js";
 import { RunnerRoutingSchema } from "./runner-routing.js";
@@ -306,6 +308,8 @@ export const CiProjectDocumentSchema = z
 		 * repository variable carries it (ADR-0181).
 		 */
 		turboCache: TurboCacheSchema.optional(),
+		relayJobs: RelayJobsSettingsSchema.optional(),
+		checks: ChecksBlock.optional(),
 	})
 	.strict();
 
@@ -410,6 +414,8 @@ export function resolveCiProjectReferences(
 		fleet: _fleet,
 		runnerOrder: _runnerOrder,
 		turboCache: _turboCache,
+		relayJobs: _relayJobs,
+		checks: _checks,
 		...document
 	} = input;
 	return expand(z.json().parse(document), 0);

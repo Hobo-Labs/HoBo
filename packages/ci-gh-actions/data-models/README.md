@@ -73,3 +73,17 @@ Run scoped generation and drift checks from the monorepo root:
 pnpm codegen --filter packages/ci-gh-actions
 pnpm codegen:check --filter packages/ci-gh-actions
 ```
+
+`machine_worker.proto` owns the machine worker's records (ADR-0183):
+`StoredMachine`, what `machine.json` under HOBO_HOME's `ci/machine/` holds
+(the machine's id and name; its key stays in its own file), and `WorkerEvent`,
+each `worker.*` line `hobo ci machine connect --events` prints. Its
+type-specific fields are proto3 `optional`, so a zero busy count or a `false`
+pause is printed rather than dropped. `machine_worker.cue` constrains both,
+one closed branch per event type, and ends with
+`#MachineWorker: *#MachineWorkerRecord | #Onboarding` so the package-wide
+fixtures still vet against it. Its own fixtures, under
+`fixtures/machine_worker/`, pin that a stored machine holds no key or token,
+that a job event carries no runner configuration, that a refused job names no
+runner, and that an unknown type or refusal reason is invalid.
+`src/machine-worker/records.ts` is the only place they are parsed and written.

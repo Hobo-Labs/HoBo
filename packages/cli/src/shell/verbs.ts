@@ -377,7 +377,17 @@ Usage:
   hobo ci diagnose [run]           Why a run's jobs failed, and whether a re-run is likely to help
   hobo ci route                    Answer one relay job against the runner order and show the walk
                                    (see route options)
+  hobo ci machine status [<id>]    Connected machines: online, paused, busy slots, sharing
+  hobo ci machine pause <id>       Take no new jobs on a machine; running jobs finish (resume undoes it)
+  hobo ci machine share <id> <who> Take jobs for only_me or anyone who may read the repository
+  hobo ci machine remove <id>      Forget a machine and its key at once
+  hobo ci machine connect --repo <owner/name>
+                                   Run jobs routed to this computer, each in a fresh container; Ctrl-C drains
   hobo ci status                  Inspect the relay connection
+  hobo ci provider-health          Hosted runner types the relay stopped routing to; clear <provider> <label> lets one through
+  hobo ci activity                 Each relay job from the relay's journal: where it ran and why (--since, --runner, --outcome)
+  hobo ci usage                    Billed minutes, short jobs, minutes kept off GitHub and the included minutes left (--source github)
+  hobo ci performance              Workflow, job and runner times against ubuntu-latest, and the signals by slice and day
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
   hobo ci secret-store plan       Choose the relay's config/secret store for this deployment

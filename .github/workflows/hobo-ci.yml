@@ -232,6 +232,8 @@ jobs:
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts --materialize-only
       - uses: $/.github/actions/ci-runner-preflight
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
+        with:
+          tools: all
       - uses: $/.github/actions/pnpm-store
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
       - name: Install root deps for shell lint
@@ -1189,6 +1191,8 @@ jobs:
           clean: false
           persist-credentials: false
       - uses: $/.github/actions/ci-runner-preflight
+        with:
+          tools: python
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
@@ -1328,7 +1332,7 @@ jobs:
     needs: route
     if: ${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr-offpath"')) }}
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -1453,6 +1457,7 @@ jobs:
           include-own-run: "true"
       - uses: $/.github/actions/ci-runner-preflight
         with:
+          tools: betterleaks
           install-toolchain: false
       # The secret scan starts here and runs beside the deps and plan steps; the last
       # step waits for it, so the job's 20 minutes hold the longer of the two, not
@@ -2384,6 +2389,8 @@ jobs:
           submodules: recursive
           clean: false
       - uses: $/.github/actions/ci-runner-preflight
+        with:
+          tools: all
       - run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
         run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
@@ -2407,6 +2414,8 @@ jobs:
           clean: false
           fetch-depth: 0
       - uses: $/.github/actions/ci-runner-preflight
+        with:
+          tools: betterleaks
       - name: Scan git history for secrets
         run: >-
           node --experimental-strip-types --no-warnings scripts/ci/betterleaks-main-scan.mts
