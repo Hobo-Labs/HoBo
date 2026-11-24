@@ -74,6 +74,10 @@
 		"./git": {
 			"types": "./dist/git/index.d.ts",
 			"default": "./dist/git/index.js"
+		},
+		"./vercel": {
+			"types": "./dist/vercel/index.d.ts",
+			"default": "./dist/vercel/index.js"
 		}
 	},
 	"dependencies": {
