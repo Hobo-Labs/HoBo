@@ -103,7 +103,7 @@ describe("the relay's Yard", () => {
 		}
 	});
 
-	it("binds the config service in production only; the store is chosen at deploy, its coordinates are inputs", () => {
+	it("binds the config service in production only; its coordinates are never inputs or settings, only bundled into a build", () => {
 		const production = campOf("production");
 		const preview = campOf("preview");
 		const profile = capability.secretRef.runtimeProjection;
@@ -115,22 +115,11 @@ describe("the relay's Yard", () => {
 				connectivityId: "infisical.oidc-auth/v1",
 				properties: {
 					capability: "secrets.config-service/v1",
-					bindingFile: "deploy/secret-store.binding.json",
-					inputs: [
-						"INFISICAL_IDENTITY_ID",
-						"INFISICAL_PROJECT_ID",
-						"INFISICAL_SITE_URL",
-					],
-					settings: {
-						HOBO_CI_CONFIG_SERVICE: "infisical",
-						INFISICAL_SECRET_PATH: "/hobo-ci-relay",
-					},
+					bundledBindingFile: "deploy/secret-store.binding.json",
 				},
 			}),
 		]);
-		expect(production.resolverConfig.properties).toEqual({
-			settings: { INFISICAL_ENVIRONMENT: "prod" },
-		});
+		expect(production.resolverConfig.properties).toEqual({});
 		expect(RELAY_CONFIG_SERVICE.secretPath).toBe("/hobo-ci-relay");
 	});
 

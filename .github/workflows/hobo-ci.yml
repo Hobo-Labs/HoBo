@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
     branches: [main]
     types: [checks_requested]
@@ -235,7 +235,11 @@ jobs:
           name: ci-runner-oci-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/hobo-ci-job-logs/ci-runner-oci-build.log
           if-no-files-found: ignore
-      # Published from main only; a pull request's image is tried on the box, not shipped.
+      - name: Share this pull request's runner image through GHCR
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success' && steps.ci_runner_image_build.outcome == 'success' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/push-ci-runner-image-ghcr.mts --pull-request
       - name: Push runner image to GHCR (optional)
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
         env:
@@ -1116,7 +1120,7 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
@@ -1209,15 +1213,30 @@ jobs:
           turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
+      - name: Build HoBo integration dependencies
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 12
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --filter=@hobo/adapter-hono...
+          --filter=@hobo/provider-agentv...
+          --filter=@hobo/provider-ax...
+          --filter=@hobo/provider-browser-wasm...
+          --filter=@hobo/provider-config...
+          --filter=@hobo/provider-convex...
+          --filter=@hobo/provider-flux...
+          --filter=@hobo/provider-turso...
+          --filter=@hobo/provider-vercel-blob...
+          --filter=@hobo/provider-webernetes...
+          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       - name: HoBo slow integration suites
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 6
         env:
           SHARD_INDEX: ${{ matrix.shard }}
         run: >-
-          pnpm exec turbo run test:release-integration --filter=@hobo/hobo
-          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
-          -- --shard="$((SHARD_INDEX + 1))/4"
+          pnpm --filter @hobo/hobo run test:release-integration
+          --shard="$((SHARD_INDEX + 1))/4"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
@@ -2151,8 +2170,8 @@ jobs:
 
   dev-cold-loop-gate:
     name: hobo dev cold loop (offline <=60s)
-    needs: route
-    if: github.event_name == 'pull_request'
+    needs: [route, ci-runner-image]
+    if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     # The 60 s budget is the cold loop's own; an ARC pod first pulls the worker image,
     # or builds it (build.sh has a 600 s budget) when GHCR has none for this key.
@@ -2407,7 +2426,6 @@ jobs:
           fetch-depth: 0
       - uses: $/.github/actions/ci-runner-preflight
       - name: Scan git history for secrets
-        run: |
-          set -euo pipefail
-          betterleaks git --config .betterleaks.toml --redact --exit-code 1 \
-            --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
+        run: >-
+          node --experimental-strip-types --no-warnings scripts/ci/betterleaks-main-scan.mts
+          --range "${{ github.event.pull_request.base.sha }}..${{ github.sha }}"

@@ -37,6 +37,7 @@ export type OpenedCdStore = Readonly<{
 	backend: CdStoreSelection["backend"];
 	/** A fleet's writer and what keeps it from its policy; absent off a fleet. */
 	fleet?: () => CdFleetStatus;
+	maintain?: () => Promise<void>;
 	close(): Promise<void>;
 }>;
 
@@ -123,24 +124,29 @@ async function openFleet(
 	if (shortfalls.length > 0)
 		warn("hobo_cd_journal_continuity_short", { tier: plan.tier, shortfalls });
 	await store.tick();
-	let running = false;
-	const timer = setInterval(() => {
-		if (running) return;
-		running = true;
-		store
+	let running: Promise<void> | undefined;
+	const maintain = (): Promise<void> => {
+		if (running !== undefined) return running;
+		const tick = store
 			.tick()
-			.catch((error: Error) =>
-				warn("hobo_cd_journal_fleet_tick_failed", { message: error.message }),
-			)
+			.then(() => undefined)
 			.finally(() => {
-				running = false;
+				if (running === tick) running = undefined;
 			});
+		running = tick;
+		return tick;
+	};
+	const timer = setInterval(() => {
+		maintain().catch((error: Error) =>
+			warn("hobo_cd_journal_fleet_tick_failed", { message: error.message }),
+		);
 	}, plan.copyEveryMs);
 	timer.unref();
 	return {
 		store,
 		backend: "postgres-fleet",
 		fleet: () => ({ writer: store.writer(), shortfalls }),
+		maintain,
 		close: async () => {
 			clearInterval(timer);
 			await store.end();

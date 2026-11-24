@@ -3,12 +3,6 @@ import { Customer } from "@polar-sh/sdk/models/components/customer.js";
 import { CHECKOUT_SUCCESS_URL } from "../paths";
 import { polarClient } from "./polarClient";
 
-/**
- * Returns a Polar customer for the given User email, creating a customer if none exist.
- *
- * NOTE: Polar enforces unique emails and `externalId`.
- *       Additionally, `externalId` can't be changed once set.
- */
 export async function ensurePolarCustomer(
   userId: string,
   userEmail: string,

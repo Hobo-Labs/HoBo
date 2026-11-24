@@ -118,8 +118,11 @@ describe("hobo ci up --hand-off", () => {
 			port: createMemorySecretsPort({ id: "memory" }),
 			reference: (name) => `infisical://proj/prod/hobo-ci/${name}`,
 		};
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "handed-over-token");
 		const outcome = await prepareGithubConnection(input(), {
-			env: { INFISICAL_SIGN_IN: "egress-proxy" },
+			env: {},
+			vault,
 			locator,
 			openStore: async () => ({ ok: true, store }),
 			startPage: noPage,
@@ -137,7 +140,7 @@ describe("hobo ci up --hand-off", () => {
 		expect(text).not.toMatch(/relay/u);
 	});
 
-	it("honors an explicitly saved OAuth choice instead of switching to the proxy", async () => {
+	it("honors an explicitly saved OAuth choice instead of asking for a token", async () => {
 		const vault = createTrustedVault();
 		vault.put("INFISICAL_OAUTH_CLIENT_SECRET", "fixture-client-secret");
 		const attempts: string[] = [];
@@ -174,13 +177,80 @@ describe("hobo ci up --hand-off", () => {
 		);
 		expect(attempts).toEqual(["oauth"]);
 		expect(sleeps).toBe(0);
-		expect(lines.some((line) => line.startsWith("HOBO_OWNER_CREDENTIAL"))).toBe(
-			false,
+		expect(JSON.stringify([lines, outcome])).not.toContain(
+			"HOBO_OWNER_CAPTURE",
 		);
 		expect(outcome).toMatchObject({
 			kind: "refused",
 			result: { code: "HOBO_CI_STORE_NEEDS_SIGN_IN" },
 		});
+	});
+
+	it("takes the Infisical access token the owner hands over through HoBo's capture", async () => {
+		const store: OpenedSecretStore = {
+			id: "infisical",
+			port: createMemorySecretsPort({ id: "memory" }),
+			reference: (name) => `infisical://proj/prod/hobo-ci/${name}`,
+		};
+		const held = new Map<string, string>();
+		const owner = {
+			openUrl: async () => undefined,
+			captureSecret: async ({ name }: { readonly name: string }) => {
+				const value = held.get(name);
+				held.delete(name);
+				return value;
+			},
+			holds: (name: string) => held.has(name),
+		};
+		const tokens: (string | undefined)[] = [];
+		const deps: Parameters<typeof prepareGithubConnection>[1] = {
+			env: {},
+			locator,
+			ownerChannel: owner,
+			openStore: async (_id, _coordinates, signIn) => {
+				tokens.push(signIn.reveal("INFISICAL_TOKEN"));
+				return { ok: true, store };
+			},
+			startPage: noPage,
+		};
+		const first = await prepareGithubConnection(input(), deps);
+		expect(first).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_STORE_NEEDS_SIGN_IN" },
+		});
+		const asked = JSON.stringify(first);
+		expect(asked).toContain(
+			`HOBO_OWNER_CAPTURE name=INFISICAL_TOKEN guide=${INFISICAL_TOKEN_AUTH_DOCS}`,
+		);
+		expect(asked).not.toMatch(/credential form|egress/u);
+		expect(tokens).toEqual([]);
+		held.set("INFISICAL_TOKEN", "handed-over-token");
+		const second = await prepareGithubConnection(input(), deps);
+		expect(tokens).toEqual(["handed-over-token"]);
+		expect(held.size).toBe(0);
+		expect(JSON.stringify(second)).not.toContain("HOBO_CI_STORE_NEEDS_SIGN_IN");
+	});
+
+	it("names the HoBo MCP route for the token when no owner channel can take it", async () => {
+		const outcome = await prepareGithubConnection(input(), {
+			env: {},
+			locator: {
+				read: async () => ({
+					HOBO_SECRET_STORE: "infisical",
+					INFISICAL_PROJECT_ID: "proj",
+					INFISICAL_SIGN_IN: "typed",
+				}),
+				write: async () => undefined,
+			},
+			startPage: noPage,
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_STORE_NEEDS_SIGN_IN" },
+		});
+		const text = JSON.stringify(outcome);
+		expect(text).toContain("through the HoBo MCP server");
+		expect(text).not.toMatch(/credential form|egress/u);
 	});
 
 	it("does not wait for a token when the store locator is incomplete", async () => {
@@ -206,8 +276,8 @@ describe("hobo ci up --hand-off", () => {
 			},
 		);
 		expect(sleeps).toBe(0);
-		expect(lines.some((line) => line.startsWith("HOBO_OWNER_CREDENTIAL"))).toBe(
-			false,
+		expect(JSON.stringify([lines, outcome])).not.toContain(
+			"HOBO_OWNER_CAPTURE",
 		);
 		expect(outcome).toMatchObject({
 			kind: "refused",

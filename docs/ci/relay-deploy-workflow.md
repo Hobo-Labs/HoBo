@@ -50,21 +50,15 @@ against a fake `hobo.js` that answers with a credential-shaped message and
 asserts the summary shows `[redacted]`), and the CLI masks the store-read
 `VERCEL_TOKEN` with `::add-mask::` only when `GITHUB_ACTIONS=true`, never merely
 because OIDC mint variables are present
-(`packages/hobo/test/ci-relay-deploy.test.ts`). The gate treats an
-absent or unreadable `packages/ci-vercel/deploy/secret-store.binding.json`
-as a required-check failure; the committed binding carries coordinates only.
-A binding that names no deploy project is the fallback period's committed
-shape, and it fails every event that would deploy: the relay's Vercel project
-is intentionally not Git-linked (`AGENTS.md`), so until the cutover records
-the deploy project nothing deploys the relay at all — no green required
-check may say otherwise. `hobo ci deploy` run directly in that state refuses
-with `HOBO_CI_DEPLOY_AUTH_REQUIRED`.
-The store-read-credential → CD-deploy channel is built, not proven: the
-first production run after the cutover commit — the relay-relevant push
-that records `deployProjectId` — must show
-the *Verify the secret store connection* check passing and the *Deliver the
-relay through HoBo CD* step summary carrying both targets, and be linked
-(`packages/ci-vercel/README.md`, "Merge cutover"). The delivery step runs both
+(`packages/hobo/test/ci-relay-deploy.test.ts`). The store's coordinates live only in the owner's store (the
+`HOBO_CI_SECRET_STORE_BINDING` entry), never in the repository, so a push
+deploys nothing: the gate posts a notice to deploy through `hobo cd` after
+HoBo MCP's `choose_secret_store`, and the protected job's `hobo` commands stop
+with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` unless an owner store session is
+established for them. The store-read-credential → CD-deploy channel is built,
+not proven: the first production delivery through that session must show the
+*Verify the secret store connection* check passing and both targets delivered,
+and be linked (`packages/ci-vercel/README.md`). The delivery step runs both
 targets as `hobo ci deploy --cwd packages/ci-vercel --sha "$GITHUB_SHA" --target
 "$target" --wait` in the `id-token: write` job; preview `--wait` is refused
 without `--sha` and GitHub OIDC, and production creation never assigns custom
@@ -74,15 +68,10 @@ domains before HoBo promotes it.
 
 `scripts/ci/relay-deploy-gate.mts` answers two questions from a closed input
 set: does this event deploy, and by when. A pull request never deploys. A push
-deploys only when a changed path is a relay input; an unreadable push range is
-a required-check failure, never a reason to deploy. A manual run always needs a
-decision, so it deploys or fails. An absent or unreadable secret-store binding
-is a required-check failure for any event that would deploy; a bound file is
-read for shape only, never for a value. A binding that names no deploy project
-(`deployProjectId`) is the fallback period's committed shape: every event that
-would deploy — a relay push, or a manual run — fails the check naming the
-cutover, because the relay's Vercel project is intentionally not Git-linked
-and nothing else deploys it. The gate writes `run`, `reason`, and
+never deploys: when a changed path is a relay input, or the push range cannot be
+read, the gate posts the notice to deploy through `hobo cd` with the owner's
+store session. A manual run deploys, and its protected job's `hobo` commands
+need an established owner store session. The gate writes `run`, `reason`, and
 the ISO `deadline` to GitHub's output, prints the skip or deploy notice, and on
 failure prints `::error title=Relay deploy failed::` with exit 1. The deadline
 is the job timeout less its setup and summary margin, and bounds the whole

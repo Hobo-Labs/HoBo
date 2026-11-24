@@ -1,26 +1,8 @@
-import type { OwnerStore } from "./owner-store.js";
+import type { TrustedVault } from "@hobo/core";
 
-/**
- * The store side of an owner hand-off, with post-back.
- *
- * A handed-off run (an agent's remote box) shows no page, so the owner signs
- * the run in out of band: they give the agent's session an Infisical access
- * token in its credential form, and the session's egress proxy injects it on
- * the way to Infisical (`INFISICAL_SIGN_IN=egress-proxy`). Nothing calls this
- * machine back. Instead the run names what it needs on one
- * `HOBO_OWNER_CREDENTIAL` line, then polls the store until it answers with
- * the owner's credential, and carries on in the same run. Only a store that
- * answers a read counts as signed in: a placeholder the proxy has not replaced
- * yet is refused by Infisical, and the run keeps waiting.
- */
-
-// public-contract: the prefix of the one progress line naming the credential a handed-off run waits for.
-export const OWNER_CREDENTIAL_LINE_PREFIX = "HOBO_OWNER_CREDENTIAL";
-// public-contract: 1Password's guide to the Connect server and the access token a handed-off run needs.
-export const ONE_PASSWORD_CONNECT_GUIDE = "https://www.1password.dev/connect/";
-// public-contract: Infisical's guide to the Token Auth identity the owner creates for a handed-off run.
-export const INFISICAL_TOKEN_AUTH_GUIDE =
-	"https://infisical.com/docs/documentation/platform/identities/token-auth";
+import { storeLabel } from "./ceremony-settings.js";
+import { type OwnerChannel, ownerCaptureLine } from "./owner-channel.js";
+import type { HandOffSignIn, OwnerStore } from "./owner-store.js";
 
 /** The entry a probe reads: the lifecycle's own settings, present or not. */
 function probeEntry(family: "ci" | "cd"): string {
@@ -42,57 +24,70 @@ export async function storeAnswers(
 	);
 }
 
-/** What the owner gives, for the store they chose, and where. */
-export function credentialLine(
-	owner: Pick<OwnerStore, "id" | "egressCredentialHost">,
-	family: "ci" | "cd",
-	timeoutMs: number,
-): string {
-	const host =
-		owner.egressCredentialHost !== undefined
-			? new URL(owner.egressCredentialHost).host
-			: "app.infisical.com";
-	const wait = `This run waits ${Math.round(timeoutMs / 60_000)} minutes and continues on its own.`;
-	if (owner.id === "1password")
-		return `${OWNER_CREDENTIAL_LINE_PREFIX} host=${host} guide=${ONE_PASSWORD_CONNECT_GUIDE} — this run signs in to your 1Password Connect server through the session's egress proxy (OP_CONNECT_HOST). Save the server's access in the agent's credential form for ${host}, never in chat. ${wait}`;
-	return `${OWNER_CREDENTIAL_LINE_PREFIX} host=${host} guide=${INFISICAL_TOKEN_AUTH_GUIDE} — this run signs in to Infisical through the session's egress proxy (INFISICAL_SIGN_IN=egress-proxy). Save your Infisical access in the agent's credential form for ${host}, never in chat. ${wait}`;
-}
+export type HandOffSignInOutcome =
+	| Readonly<{ kind: "owner"; owner: OwnerStore }>
+	| Readonly<{
+			kind: "refused";
+			code: string;
+			message: string;
+			remediation: readonly string[];
+	  }>;
 
-export interface HandOffStoreOptions {
+export interface HandOffSignInInput {
 	readonly family: "ci" | "cd";
-	/** Find and open the owner's store again (the sign-in may have arrived). */
+	readonly owner: OwnerStore;
 	readonly open: () => Promise<OwnerStore>;
-	readonly emit: (line: string) => void;
-	readonly sleep?: (ms: number) => Promise<void>;
-	readonly now?: () => number;
-	readonly timeoutMs?: number;
-	readonly intervalMs?: number;
+	readonly vault: TrustedVault;
+	readonly channel: OwnerChannel | undefined;
 }
 
-/**
- * Wait, in this run, for the owner's out-of-band sign-in. Returns the store
- * once it answers; otherwise, at the deadline, the owner store as not opened,
- * so the caller refuses with every path.
- */
-export async function awaitHandOffStore(
-	options: HandOffStoreOptions,
-): Promise<OwnerStore> {
-	const sleep =
-		options.sleep ??
-		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-	const now = options.now ?? Date.now;
-	const timeoutMs = options.timeoutMs ?? 15 * 60_000;
-	const deadline = now() + timeoutMs;
-	let owner = await options.open();
-	if (await storeAnswers(owner, options.family)) return owner;
-	// A proxy credential cannot repair missing coordinates or another sign-in.
-	if (!owner.canAwaitEgressCredential) return { ...owner, opened: undefined };
-	options.emit(credentialLine(owner, options.family, timeoutMs));
-	while (now() < deadline) {
-		await sleep(options.intervalMs ?? 10_000);
-		owner = await options.open();
-		if (await storeAnswers(owner, options.family)) return owner;
-		if (!owner.canAwaitEgressCredential) return { ...owner, opened: undefined };
-	}
-	return { ...owner, opened: undefined };
+export function handOffSignInLines(signIn: HandOffSignIn): readonly string[] {
+	return [
+		ownerCaptureLine(signIn.name, signIn.guide),
+		`${signIn.instructions} Hand it over in the HoBo MCP App's secret form; it goes only to this run, which holds it in memory.`,
+		"Then run again.",
+	];
+}
+
+export async function takeHandOffSignIn(
+	input: HandOffSignInInput,
+): Promise<HandOffSignInOutcome> {
+	const signIn = input.owner.handOffSignIn;
+	if (signIn === undefined)
+		return { kind: "owner", owner: { ...input.owner, opened: undefined } };
+	const fam = input.family.toUpperCase();
+	const store = storeLabel(input.owner.id);
+	const handOver = handOffSignInLines(signIn);
+	if (input.channel === undefined)
+		return {
+			kind: "refused",
+			code: `HOBO_${fam}_STORE_NEEDS_SIGN_IN`,
+			message: `A handed-off run signs in to ${store} with the ${signIn.title} you hand to it through HoBo.`,
+			remediation: [
+				`Run hobo ${input.family} up through the HoBo MCP server (its ci and cd tools): its secret form takes your ${signIn.title} (${signIn.guide}) straight to the run.`,
+			],
+		};
+	await input.channel.openUrl(signIn.guide, signIn.instructions, signIn.name);
+	const token = await input.channel.captureSecret({
+		name: signIn.name,
+		title: signIn.title,
+		instructions: signIn.instructions,
+	});
+	if (token === undefined)
+		return {
+			kind: "refused",
+			code: `HOBO_${fam}_STORE_NEEDS_SIGN_IN`,
+			message: `${store} needs your ${signIn.title} before this run can open it.`,
+			remediation: handOver,
+		};
+	input.vault.put(signIn.name, token);
+	const owner = await input.open();
+	if (await storeAnswers(owner, input.family)) return { kind: "owner", owner };
+	input.vault.drop(signIn.name);
+	return {
+		kind: "refused",
+		code: `HOBO_${fam}_STORE_SIGN_IN_REJECTED`,
+		message: `${store} did not accept the ${signIn.title} you handed over.`,
+		remediation: handOver,
+	};
 }

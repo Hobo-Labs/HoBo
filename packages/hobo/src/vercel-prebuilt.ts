@@ -1,10 +1,17 @@
 import { execFile } from "node:child_process";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { isJsonNumber } from "./json.js";
 
-import type { VercelClient, VercelProjectDeployment } from "./vercel-client.js";
+import {
+	VercelApiError,
+	type VercelClient,
+	VercelProductionDeploymentMissingError,
+	type VercelProjectDeployment,
+	VercelPromotionUnconfirmedError,
+	VercelTransportError,
+} from "./vercel-client.js";
 
 // public-contract: the meta keys a HoBo-staged Vercel build carries.
 export const VERCEL_PREBUILT_META = Object.freeze({
@@ -66,6 +73,7 @@ type StageInput = Readonly<{
 	sha: string;
 	emit: (message: string) => void;
 	removeOutput?: (directory: string) => void;
+	bundle?: Readonly<{ file: string; text: string }>;
 }>;
 
 const CREDENTIAL_NAME =
@@ -121,6 +129,27 @@ export function vercelBuildRunnerFrom(
 		});
 }
 
+export function repositoryRoot(cwd: string): string | undefined {
+	let dir = path.resolve(cwd);
+	for (;;) {
+		if (existsSync(path.join(dir, ".git"))) return dir;
+		const parent = path.dirname(dir);
+		if (parent === dir) return undefined;
+		dir = parent;
+	}
+}
+
+export function checkoutHeadOf(repoRoot: string): Promise<string> {
+	return new Promise((resolve) => {
+		execFile(
+			"git",
+			["rev-parse", "HEAD"],
+			{ cwd: repoRoot, timeout: 30_000, encoding: "utf8" },
+			(error, stdout) => resolve(error === null ? String(stdout).trim() : ""),
+		);
+	});
+}
+
 function lastLines(text: string, lines = 12): string {
 	return text.trim().split("\n").slice(-lines).join("\n");
 }
@@ -149,8 +178,11 @@ export async function stageVercelBuild(
 	const removeOutput = input.removeOutput ?? removeDirectory;
 	removeOutput(output);
 	try {
+		if (input.bundle !== undefined)
+			writeFileSync(input.bundle.file, input.bundle.text, { mode: 0o600 });
 		return await buildAndUpload(input, sha);
 	} finally {
+		if (input.bundle !== undefined) rmSync(input.bundle.file, { force: true });
 		removeOutput(output);
 	}
 }
@@ -281,11 +313,35 @@ export async function promoteStagedBuild(
 	try {
 		await input.client.promoteDeployment(read.id, staged.id);
 	} catch (error) {
-		return {
-			ok: false,
-			code: VERCEL_PREBUILT_REFUSAL.promoteFailed,
-			message: `Vercel refused to promote ${staged.id}: ${error instanceof Error ? error.message : "unknown error"}`,
-		};
+		const reason = error instanceof Error ? error.message : "unknown error";
+		if (
+			!(error instanceof VercelApiError) &&
+			!(error instanceof VercelTransportError) &&
+			!(error instanceof VercelProductionDeploymentMissingError) &&
+			!(error instanceof VercelPromotionUnconfirmedError)
+		)
+			return {
+				ok: false,
+				code: VERCEL_PREBUILT_REFUSAL.promoteFailed,
+				message: `Vercel refused to promote ${staged.id}: ${reason}`,
+			};
+		let observed: string | undefined;
+		let unreadable = false;
+		try {
+			observed = (await input.client.readProject(read.id))
+				.productionDeploymentId;
+		} catch {
+			unreadable = true;
+		}
+		if (!unreadable && observed !== undefined && observed !== staged.id)
+			return {
+				ok: false,
+				code: VERCEL_PREBUILT_REFUSAL.promoteFailed,
+				message: `Vercel refused to promote ${staged.id}: ${reason}`,
+			};
+		input.emit(
+			`the promotion of ${staged.id} is unconfirmed (${reason}); verifying production as possibly promoted`,
+		);
 	}
 	return {
 		ok: true,

@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { FeedRequest, FeedResponse } from "@hobo/cd";
 import { parseReadRequest } from "@hobo/cd/service";
-import type { CdHost } from "@hobo/hobo/cd-platform";
+import type { CdHost, CdPassReport } from "@hobo/hobo/cd-platform";
 
 import {
 	composeVercelCdHost,
@@ -234,7 +234,9 @@ export function createCdHttpEntry(
 	};
 }
 
-export async function runCdPass(load: () => Promise<CdHost>) {
+export async function runCdPass(
+	load: () => Promise<CdHost>,
+): Promise<CdPassReport> {
 	const host = await load();
 	return host.pass(AbortSignal.timeout(host.passDeadlineMs));
 }

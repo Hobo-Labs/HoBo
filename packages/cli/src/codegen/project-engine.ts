@@ -19,7 +19,6 @@ import {
 	selectTypeScriptProjectCodegenEngine,
 } from "./typescript-project-engine.js";
 
-/** Compose catalog-owned seed files with the compiler-backed application imprint. */
 export async function selectProjectCodegenEngine(
 	projectRoot: string,
 ): Promise<CodegenEngine> {

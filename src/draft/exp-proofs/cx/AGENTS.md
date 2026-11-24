@@ -1,9 +1,5 @@
-# cx experience proofs
+# Customer experience proof instructions
 
-Customer/publisher experience. Artifacts: journey maps/scripts and communication fixtures (`assets/*.md` or `journeys/`). Evidence packs and support flows live here.
+Follow the parent [experience proof instructions](../AGENTS.md). Implement the customer or publisher journey and verify it with executable tests or feature steps. Do not replace the behavior with journey plans or synthetic evidence.
 
-Everything else (proof.json, executed examples/, notebook, cascade rule, run commands) follows the
-parent [`src/draft/exp-proofs/AGENTS.md`](../AGENTS.md). Run a package with
-`pnpm exec turbo run test --filter ./src/draft/exp-proofs/cx/<slug>`; validate artifacts with
-`pnpm run draft:artifacts -- --staged`. Changing a proof here cascades into referencing epic
-rollups — update them in the same diff (`pnpm run draft:cascade -- --staged`).
+Run `pnpm exec turbo run test --filter ./src/draft/exp-proofs/cx/<slug>` and the relevant staged artifact and cascade checks.

@@ -345,7 +345,10 @@ export interface VercelClient {
 	// name is taken: someone made it meanwhile) answers `created: false`, with
 	// its reason, rather than failing. Any other refusal, another 409 included,
 	// is a VercelApiError.
-	createProject(name: string): Promise<VercelProjectResult>;
+	createProject(
+		name: string,
+		settings?: Readonly<{ rootDirectory?: string }>,
+	): Promise<VercelProjectResult>;
 	readProject(
 		project: string,
 	): Promise<Readonly<{ id: string; productionDeploymentId?: string }>>;
@@ -1247,7 +1250,7 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 		);
 		if (!response.ok) throw await failure("get project", response, secrets);
 		const payload = await payloadFrom("get project", response);
-		if (!isJsonString(payload.id) || !/^prj_[A-Za-z0-9]+$/u.test(payload.id))
+		if (!isJsonString(payload.id) || !/^prj_[A-Za-z0-9_-]+$/u.test(payload.id))
 			throw new Error(
 				"vercel-client: project read returned an invalid identity",
 			);
@@ -1375,11 +1378,18 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 				);
 		},
 
-		async createProject(name: string): Promise<VercelProjectResult> {
+		async createProject(
+			name: string,
+			settings: Readonly<{ rootDirectory?: string }> = {},
+		): Promise<VercelProjectResult> {
 			const made = await post(
 				"create project",
 				"/v9/projects",
-				JSON.stringify({ name }),
+				JSON.stringify(
+					settings.rootDirectory === undefined
+						? { name }
+						: { name, rootDirectory: settings.rootDirectory },
+				),
 			);
 			if (!made.ok) {
 				const refusal = await failure("create project", made, secrets);

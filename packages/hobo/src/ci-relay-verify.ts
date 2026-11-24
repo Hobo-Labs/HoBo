@@ -41,8 +41,10 @@ import {
 import type { HttpTransport, TransportResponse } from "@hobo/core";
 import type { DeliveryModule } from "./cd-delivery-module.js";
 import {
+	isJsonArray,
 	isJsonObject,
 	isJsonString,
+	type JsonObject,
 	type JsonValue,
 	parseJsonValue,
 } from "./json.js";
@@ -352,7 +354,30 @@ export type RelayProbeFindings = Readonly<{
 	notReady?: readonly string[];
 	/** `/readyz` did not answer 200 (its last status). */
 	readyStatus?: number;
+	configGaps?: RelayConfigGaps;
 }>;
+
+export type RelayConfigGaps = Readonly<{
+	missing: readonly string[];
+	invalid: readonly string[];
+}>;
+
+const CONFIG_ENTRY_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
+
+function entryNames(value: JsonValue | undefined): readonly string[] {
+	return isJsonArray(value)
+		? value.filter(
+				(name): name is string =>
+					isJsonString(name) && CONFIG_ENTRY_NAME.test(name),
+			)
+		: [];
+}
+
+function configGapsOf(body: JsonObject): RelayConfigGaps | undefined {
+	const missing = entryNames(body.missing);
+	const invalid = entryNames(body.invalid);
+	return missing.length + invalid.length > 0 ? { missing, invalid } : undefined;
+}
 
 function bodyOf(response: TransportResponse) {
 	try {
@@ -415,9 +440,14 @@ export function commitCheckingProbe(
 			}
 			const state =
 				body.started === false ? readyzStateOf(body.state) : undefined;
+			const gaps = state === "not-configured" ? configGapsOf(body) : undefined;
 			ready =
 				state !== undefined
-					? { readyStatus: response.status, readyzState: state }
+					? {
+							readyStatus: response.status,
+							readyzState: state,
+							...(gaps !== undefined ? { configGaps: gaps } : undefined),
+						}
 					: body.ready === false
 						? {
 								readyStatus: response.status,
@@ -515,16 +545,16 @@ export function relayVerifyFailure(
 	if (findings.readyzState === "not-configured")
 		return {
 			code: RELAY_VERIFY_REFUSAL.relayNotConfigured,
-			reason: `${origin}/readyz says the relay is not configured: its config service holds no valid relay configuration yet`,
+			reason: `${origin}/readyz says the relay is not configured: its config service holds no valid relay configuration yet${describeGaps(findings.configGaps)}`,
 			remediation:
-				"Put the relay's configuration in the store deploy/secret-store.binding.json names (packages/ci-vercel/CONFIG-SERVICE.md): the GitHub App's credentials go in with hobo ci app create --via-workflow, the owner's entries as its section What the folder holds lists. Re-run this workflow once they are there.",
+				"Put the relay's configuration in the relay folder of the owner's own secret store (packages/ci-vercel/CONFIG-SERVICE.md): the GitHub App's credentials go in with hobo ci app create --via-workflow, the owner's entries as its section What the folder holds lists. Re-run this workflow once they are there.",
 		};
 	if (findings.readyzState === "config-service-denied")
 		return {
 			code: RELAY_VERIFY_REFUSAL.relayNotReady,
 			reason: `${origin}/readyz says the relay's config service refused its identity`,
 			remediation:
-				"The relay identity named in deploy/secret-store.binding.json must trust this project's Vercel production OIDC tokens (OIDC Auth; packages/ci-vercel/CONFIG-SERVICE.md). hobo ci secret-store verify checks the deploy identity by name.",
+				"The relay identity the owner's store binding names must trust this project's Vercel production OIDC tokens (OIDC Auth; packages/ci-vercel/CONFIG-SERVICE.md). hobo ci secret-store verify checks the deploy identity by name.",
 		};
 	if (findings.readyzState === "config-service-unavailable")
 		return {
@@ -557,4 +587,12 @@ export function relayVerifyFailure(
 					: "The production domain does not serve the relay; check the project's domains on Vercel.",
 		};
 	return undefined;
+}
+
+function describeGaps(gaps: RelayConfigGaps | undefined): string {
+	if (gaps === undefined) return "";
+	return [
+		gaps.missing.length > 0 ? ` (missing: ${gaps.missing.join(", ")})` : "",
+		gaps.invalid.length > 0 ? ` (refused: ${gaps.invalid.join(", ")})` : "",
+	].join("");
 }

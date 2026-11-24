@@ -14,11 +14,16 @@ import {
 	type IacProvider,
 } from "@hobo/cloud";
 import { createTrustedVault } from "@hobo/core";
-import { CD_PLACEMENT_YARDS } from "@hobo/hobo-cd";
+import {
+	CD_PLACEMENT_YARDS,
+	CD_STORE_COORDINATES_HANDOFF,
+	cdStoreCoordinatesText,
+} from "@hobo/hobo-cd";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+	type CdPrebuiltDelivery,
 	createCdVercelUpCommand,
 	routePreparedPlacements,
 	withYardOfferings,
@@ -27,7 +32,6 @@ import {
 	createComposedHoboCli,
 	createDefaultYardRuntime,
 } from "../src/index.js";
-import type { VercelDeployProviderOptions } from "../src/vercel-deploy-provider.js";
 
 // `hobo cd plan` places the CD project's journal and its config where `hobo cd
 // up` makes them: the journal on the fleet `prepare` provisions (Neon
@@ -177,27 +181,40 @@ describe("hobo cd up hands each resource to whoever makes it", () => {
 	});
 });
 
-describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
-	it("deploys packages/cd-vercel at the current commit to CD's preview", async () => {
+const SYNTHETIC_ID = "00000000-0000-0000-0000-000000000000";
+const COORDINATES = cdStoreCoordinatesText({
+	siteUrl: "https://app.infisical.com",
+	projectId: SYNTHETIC_ID,
+	environment: "prod",
+	secretPath: "/hobo-cd",
+	identityId: SYNTHETIC_ID,
+});
+
+function preparedVault() {
+	const vault = createTrustedVault();
+	vault.put("VERCEL_TOKEN", "tok_test");
+	vault.put("VERCEL_TEAM_ID", "team_abc");
+	vault.put(CD_STORE_COORDINATES_HANDOFF, COORDINATES);
+	return vault;
+}
+
+describe("hobo cd up delivers CD on Vercel as a prebuilt build", () => {
+	it("bundles the store binding into the build of the current commit and sets no Vercel variable", async () => {
 		const runtime = createDefaultYardRuntime({ env: {} });
 		trackRuntimeLocalStore(runtime);
-		const vault = createTrustedVault();
-		vault.put("VERCEL_TOKEN", "tok_test");
-		vault.put("VERCEL_TEAM_ID", "team_abc");
-		vault.put("HOBO_CD_DEPLOY_INFISICAL_PROJECT_ID", "proj-1");
-		vault.put(
-			"HOBO_CD_DEPLOY_INFISICAL_IDENTITY_ID",
-			"00000000-0000-4000-8000-000000000001",
-		);
 		const deployed: string[] = [];
-		let seenOptions: Omit<VercelDeployProviderOptions, "fetch"> | undefined;
+		const progress: string[] = [];
+		let seen: CdPrebuiltDelivery | undefined;
 		let placedRuntime: YardRuntime | undefined;
 		const up = createCdVercelUpCommand({
-			credentials: vault,
+			credentials: preparedVault(),
 			runtime,
 			resolveGitHead: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
-			vercelDeployProvider: (options) => {
-				seenOptions = options;
+			vercelDeployProvider: () => {
+				throw new Error("hobo cd up never makes a git deployment");
+			},
+			prebuiltProvider: (delivery) => {
+				seen = delivery;
 				return {
 					id: "fake",
 					preview: async () => ({ summary: "", changes: 1 }),
@@ -223,26 +240,31 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 				};
 			},
 		});
-		const result = await up.run(cdUpRunInput());
+		const result = await up.run({
+			...cdUpRunInput(),
+			emitProgress: (line) => progress.push(line),
+		});
 		expect(result.ok).toBe(true);
-		expect(seenOptions).toMatchObject({
+		expect(seen).toMatchObject({
 			token: "tok_test",
 			teamId: "team_abc",
-			projectName: "hobo-cd",
-			target: "preview",
-			createMissingProject: true,
-			configuration: {
-				INFISICAL_PROJECT_ID: "proj-1",
-				INFISICAL_IDENTITY_ID: "00000000-0000-4000-8000-000000000001",
-			},
-			gitArtifact: {
-				org: "Hobo-Labs",
-				repo: "HoBo",
-				ref: "feature/x",
-				sha: "a".repeat(40),
-				rootDirectory: "packages/cd-vercel",
+			project: "hobo-cd",
+			rootDirectory: "packages/cd-vercel",
+			sha: "a".repeat(40),
+			bundle: {
+				file: path.join(
+					packages,
+					"cd-vercel",
+					"deploy",
+					"secret-store.binding.json",
+				),
+				text: COORDINATES,
 			},
 		});
+		expect(seen).not.toHaveProperty("configuration");
+		expect(JSON.stringify(result)).not.toContain(SYNTHETIC_ID);
+		expect(progress.join("\n")).not.toContain(SYNTHETIC_ID);
+		expect(progress.join("\n")).not.toContain("INFISICAL_");
 		expect(placedRuntime?.registry.providers()).toEqual(
 			expect.arrayContaining([
 				"yard:hobo-cd",
@@ -266,6 +288,28 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 		await iacRun("cd-journal", "yard:hobo-cd-journal");
 		await iacRun("cd-api", "yard:hobo-cd");
 		expect(deployed).toEqual(["cd-api"]);
+	});
+
+	it("refuses without the owner's store session, before any provider is made", async () => {
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "tok_test");
+		const up = createCdVercelUpCommand({
+			credentials: vault,
+			runtime: createDefaultYardRuntime({ env: {} }),
+			resolveGitHead: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
+			prebuiltProvider: () => {
+				throw new Error("must not deliver");
+			},
+			upWith: () => {
+				throw new Error("must not converge");
+			},
+		});
+		const result = await up.run(cdUpRunInput());
+		expect(result).toMatchObject({
+			ok: false,
+			code: "HOBO_CD_UP_STORE_SESSION_REQUIRED",
+			message: expect.stringContaining("never sets them as Vercel variables"),
+		});
 	});
 
 	it("refuses when the checkout is on no branch", async () => {

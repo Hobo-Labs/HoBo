@@ -12,6 +12,7 @@ import { createHoboCli } from "@hobo/cli";
 import { afterEach, describe, expect, it } from "vitest";
 import pact from "../contracts/ci-cli.pact.json";
 import { ciRepositoryFromRemote, createCiCommand } from "../src/ci-command.js";
+import { ownerStoreEntries } from "./support/owner-store-stand-in.js";
 
 /** The contract fixture of what a relay answers `GET /v1/mesh/nodes` with. */
 const MESH_REPORTS_FIXTURE = new URL(
@@ -36,6 +37,7 @@ async function fixture(
 		env?: NodeJS.ProcessEnv;
 		fetch?: typeof fetch;
 		credentialFetch?: typeof fetch;
+		ownerStore?: boolean;
 	} = {},
 ) {
 	const home = await mkdtemp(join(tmpdir(), "hobo-ci-command-"));
@@ -93,6 +95,9 @@ async function fixture(
 		fetch: send,
 		...(options.credentialFetch !== undefined
 			? { credentialFetch: options.credentialFetch }
+			: undefined),
+		...(options.ownerStore === true
+			? { ownerEntries: () => ownerStoreEntries(home) }
 			: undefined),
 		git: async (args) => {
 			if (args[0] === "rev-parse") return home;
@@ -853,6 +858,7 @@ describe("hobo ci setup", () => {
 		const { cli, home, requests } = await fixture({
 			env: { GH_TOKEN: "synthetic-github-token" },
 			credentialFetch,
+			ownerStore: true,
 		});
 		const result = await cli.run(
 			[

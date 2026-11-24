@@ -13,7 +13,6 @@ export function Header(props: {
     <header className="bg-background border-border shadow-xs sticky top-0 z-10 flex w-full border-b">
       <div className="flex grow items-center justify-between px-8 py-5 sm:justify-end sm:gap-5">
         <div className="flex items-center gap-2 sm:gap-4 lg:hidden">
-          {/* <!-- Hamburger Toggle BTN --> */}
 
           <button
             aria-controls="sidebar"
@@ -71,23 +70,16 @@ export function Header(props: {
             </span>
           </button>
 
-          {/* <!-- Hamburger Toggle BTN --> */}
         </div>
 
         <ul className="2xsm:gap-4 flex items-center gap-2">
-          {/* <!-- Dark Mode Toggler --> */}
           <DarkModeSwitcher />
-          {/* <!-- Dark Mode Toggler --> */}
 
-          {/* <!-- Chat Notification Area --> */}
           <MessageButton />
-          {/* <!-- Chat Notification Area --> */}
         </ul>
 
         <div className="2xsm:gap-7 flex items-center gap-3">
-          {/* <!-- User Area --> */}
           <UserDropdown user={props.user} />
-          {/* <!-- User Area --> */}
         </div>
       </div>
     </header>

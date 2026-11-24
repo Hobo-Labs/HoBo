@@ -335,6 +335,11 @@ changes nothing.
 
 Project: --project <dir>, then HOBO_CD_PROJECT, then the bundled CD project,
 then the working directory.
+
+up builds HoBo.CD's current commit once with its store binding bundled from the
+owner's store session (removed once staged), then promotes that build to
+production; the coordinates are never Vercel variables. Without the owner's
+store session it stops with HOBO_CD_UP_STORE_SESSION_REQUIRED.
 `;
 	}
 
@@ -372,6 +377,12 @@ Usage:
   hobo ci secret-store provision  Provision it and hand it to the owner by claim (hobo claim open)
   hobo ci secret-store connect    Record an Infisical the owner connected by hand (OIDC Auth)
   hobo ci secret-store verify     Sign in as each identity it can here; pass/fail by name
+  hobo ci fleet status            List the CI fleet's Hostinger VPS (id, hostname, state, plan)
+  hobo ci fleet restart|start <vm> Restart or start an owned VPS by id or hostname; never buys one
+                                   (token: owner://HOSTINGER_API_TOKEN via choose_secret_store)
+  hobo ci fleet caches             Plan (--plan), apply (--apply) or report (--status) the ARC scale sets'
+                                   node pnpm store and image cache; --prewarm <sha> fetches that lockfile
+                                   (kubeconfig: owner://<CONNECTION_REF>_KUBECONFIG via choose_secret_store)
 
 Role: ${verb.role}
 ${statusLine}
@@ -442,10 +453,15 @@ Deploy options (hobo ci deploy; run in the relay's project directory, or pass --
   --set <NAME=value>          Non-secret setting to apply first (repeatable); secrets are refused
   --root-directory <dir>      Project root directory to save on the project
   --create-project            Create the project when Vercel has none by that name
+  --build git|prebuilt        git (default; preview only) or prebuilt: HoBo builds --sha once
+                              with the store binding bundled from the owner's store session,
+                              then promotes that build. Production needs prebuilt
+                              (HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT)
   --dry-run                   Print what would be sent; reads no token, sends nothing
-                              A real run reads VERCEL_TOKEN from the environment, and
-                              the team and the config service's coordinates from
-                              deploy/secret-store.binding.json when it exists.
+                              A real run reads the team and the config service's
+                              coordinates from the owner's store session (HoBo MCP's
+                              choose_secret_store); without one it stops with
+                              HOBO_CI_SECRET_STORE_SESSION_REQUIRED.
   --adopt                     Token-free: adopt the deployment Vercel's Git integration
                               made of --sha (takes --sha, --repo, --ref only). Reads
                               GitHub's Deployments API with GITHUB_TOKEN, never a Vercel
@@ -462,15 +478,17 @@ Secret store options (hobo ci secret-store plan|provision; ADR-0179 amendment):
   --vercel-team-slug <slug>   Vercel team slug (the OIDC issuer's path)
   --vercel-project-id <id>    The relay's Vercel project id (prj_...)
   --allow-designed            Route to a store the relay cannot read yet
-  Writes deploy/secret-store.binding.json (coordinates only); never prints a claim link.
-Connect options (hobo ci secret-store connect; identifiers, none is a secret):
+  Writes the coordinates to the owner's secret store, never the repository; never prints
+  them or a claim link.
+Connect options (hobo ci secret-store connect; the owner's private store coordinates,
+typed by the owner in their own terminal, written to their store, never shown):
   --project-id <id>           The relay's Infisical project (folder /hobo-ci-relay)
   --deploy-project-id <id>    The deploy credential's project (VERCEL_TOKEN at /)
   --relay-identity-id <id>    hobo-ci-relay (OIDC Auth, Vercel)
   --deploy-identity-id <id>   hobo-ci-deploy (OIDC Auth, GitHub Actions)
   --team <team_id>            The Vercel team the relay's identity trusts
   --site-url <origin>         Infisical origin (default https://app.infisical.com)
-  --yes                       Replace an existing binding
+  --yes                       Replace the binding in the owner's store
 
 Init options (hobo ci init; reads and edits .github/workflows, commits nothing):
   --plan                        Show each job: ready, already on the fleet, or skipped and why (default)
