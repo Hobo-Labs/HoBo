@@ -145,6 +145,12 @@ describe("deployable relay partition", () => {
 			value: false,
 			error: /capability confinement/,
 		},
+		{
+			name: "relay entry without strict fleet runtime",
+			path: ["spec", "template", "spec", "containers", 0, "command", 2],
+			value: "dist/main.js",
+			error: /strict fleet relay entry/,
+		},
 	])("refuses Kubernetes $name before deployment", async ({
 		path,
 		value,

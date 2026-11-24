@@ -9,7 +9,6 @@ import type { StrictFleetStore } from "@hobo/ci/fleet-v2";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { relayInstallAssets } from "./assets.js";
 import { createControlAuthenticator } from "./control-auth.js";
-import { createStrictFleetRuntime } from "./fleet-v2/runtime.js";
 import type { StartFencePolicy } from "./fleet-v2/start-fence-handler.js";
 import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
 import { type JoinedMesh, joinMeshFromEnv } from "./mesh-join.js";
@@ -34,6 +33,17 @@ export interface RelaySecrets {
 	readonly ingressForwardSecret?: string;
 }
 
+export function allowsLoopbackHttp(env: NodeJS.ProcessEnv): boolean {
+	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
+	const requestedHost = env.HOBO_CI_HOST ?? "127.0.0.1";
+	return (
+		env.HOBO_CI_ALLOW_INSECURE_LOOPBACK === "1" &&
+		publicUrl.protocol === "http:" &&
+		["127.0.0.1", "localhost"].includes(publicUrl.hostname) &&
+		["127.0.0.1", "localhost"].includes(requestedHost)
+	);
+}
+
 export async function startRelayFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
 	ports: {
@@ -52,11 +62,7 @@ export async function startRelayFromEnvironment(
 ) {
 	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
 	const requestedHost = env.HOBO_CI_HOST ?? "127.0.0.1";
-	const localHttp =
-		env.HOBO_CI_ALLOW_INSECURE_LOOPBACK === "1" &&
-		publicUrl.protocol === "http:" &&
-		["127.0.0.1", "localhost"].includes(publicUrl.hostname) &&
-		["127.0.0.1", "localhost"].includes(requestedHost);
+	const localHttp = allowsLoopbackHttp(env);
 	if (
 		(publicUrl.protocol !== "https:" && !localHttp) ||
 		publicUrl.username ||
@@ -90,21 +96,10 @@ export async function startRelayFromEnvironment(
 	const assets = relayInstallAssets();
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);
-	let strictFleetRuntime: Awaited<ReturnType<typeof createStrictFleetRuntime>>;
-	try {
-		strictFleetRuntime = ports.strictFleet
-			? undefined
-			: await createStrictFleetRuntime(env, { requirePostgres: !localHttp });
-	} catch (error) {
-		await lock.release();
-		throw error;
-	}
-	const strictFleet = ports.strictFleet ?? strictFleetRuntime;
 	let store: SqliteCiStore;
 	try {
 		store = new SqliteCiStore(database);
 	} catch (error) {
-		await strictFleetRuntime?.close();
 		await lock.release();
 		throw error;
 	}
@@ -159,7 +154,7 @@ export async function startRelayFromEnvironment(
 			}
 		const { service, runtime } = createRelayHost({
 			store,
-			strictFleet,
+			strictFleet: ports.strictFleet,
 			agent,
 			meshNodes: mesh?.node.reports,
 			github:
@@ -199,31 +194,23 @@ export async function startRelayFromEnvironment(
 				stopping ??= (async () => {
 					ready = () => false;
 					await mesh?.stop().catch(() => undefined);
-					try {
-						const result = await service.stop();
-						if (result.drained) await lock.release();
-						return result;
-					} finally {
-						await strictFleetRuntime?.close();
-					}
+					const result = await service.stop();
+					if (result.drained) await lock.release();
+					return result;
 				})();
 				return stopping;
 			},
 		};
 	} catch (error) {
 		store.close();
-		await strictFleetRuntime?.close();
 		await lock.release();
 		throw error;
 	}
 }
-const entry = process.argv[1];
-if (
-	process.env.HOBO_CI_RELEASE_BUILD !== "1" &&
-	entry &&
-	import.meta.url === pathToFileURL(entry).href
-) {
-	startRelayFromEnvironment()
+export function serveRelayUntilSignalled(
+	start: () => Promise<{ stop(): Promise<{ drained: boolean }> }>,
+): void {
+	start()
 		.then((running) => {
 			const stop = () => {
 				void running
@@ -243,3 +230,11 @@ if (
 			process.exitCode = 1;
 		});
 }
+
+const entry = process.argv[1];
+if (
+	process.env.HOBO_CI_RELEASE_BUILD !== "1" &&
+	entry &&
+	import.meta.url === pathToFileURL(entry).href
+)
+	serveRelayUntilSignalled(() => startRelayFromEnvironment());

@@ -74,6 +74,7 @@ const deploymentSchema = z.object({
 				containers: z.array(
 					z.object({
 						name: z.string(),
+						command: z.array(z.string()).optional(),
 						env: z.array(environment),
 						securityContext: z.object({
 							allowPrivilegeEscalation: z.boolean(),
@@ -353,6 +354,11 @@ export function checkDeployment(input: {
 			strictPartition.key === "strict-fleet-partition" &&
 			strictPartition.optional === true,
 		"optional strict fleet partition binding",
+	);
+	requireInvariant(
+		container.command?.[0] === "node" &&
+			container.command.at(-1) === "dist/fleet-v2/serve.js",
+		"strict fleet relay entry",
 	);
 	for (const key of [
 		"HOBO_CI_GITHUB_APP_KEY_FILE",

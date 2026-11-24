@@ -54,11 +54,18 @@ require the current CD Set to have a converged observation. `--dry-run` and
 `--preview` are aliases for `--what-if` on these two commands. Revision selectors
 and rollback cannot be combined with `--what-if`; rollback restores the prior
 Set exactly and cannot be combined with `--mode`.
+An uncertain provider apply returns `needs-human` immediately and does not
+route the resource to another provider while reconciliation is required.
 
 Budgeted hosting plans require a trusted Yard binding before reading budget
 evidence and reject target selectors that the hosting authority cannot verify.
 `up --what-if` uses the same session selection as `up`, including an anonymous
 session when `--anonymous` or `--temporary` is selected.
+
+If a provider call may have changed infrastructure, `up` reports
+`needs-human` and stops retries or routing to another provider until the
+uncertain effect is reconciled. Any existing budget hold remains reserved.
+`waiting` means the bounded convergence passes have not completed.
 
 Subcommand flags: `deploy`, `incident` and `serve` subcommands declare their
 own flags in `src/shell/subcommands.ts` (`DEPLOY_SUBCOMMANDS`,

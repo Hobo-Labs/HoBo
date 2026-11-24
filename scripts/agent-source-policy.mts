@@ -178,4 +178,29 @@ if (repository.status !== 0 || !repository.stdout.trim()) {
 			}
 		}
 	}
+	const secretPolicy = spawnSync(
+		process.execPath,
+		[
+			"--experimental-strip-types",
+			fileURLToPath(new URL("./check-secret-storage.mts", import.meta.url)),
+			"--worktree",
+		],
+		{
+			cwd: root,
+			encoding: "utf8",
+			env: { ...process.env, NODE_OPTIONS: "" },
+			maxBuffer: 4 * 1024 * 1024,
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: 45_000,
+		},
+	);
+	if (secretPolicy.status !== 0) {
+		process.stderr.write("Secret policy: agents never store secrets.\n");
+		process.stderr.write(
+			secretPolicy.stderr ||
+				secretPolicy.error?.message ||
+				`Guard exited ${secretPolicy.status}.\n`,
+		);
+		process.exitCode = 2;
+	}
 }

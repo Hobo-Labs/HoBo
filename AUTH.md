@@ -13,8 +13,10 @@ Product agent-auth design for HoBo as a runtime lives in
 ADR family; when public origins ship agent registration, they should publish auth.md per the
 WorkOS format.
 
-Full tooling narrative: [`docs/agent-tooling.md`](docs/agent-tooling.md). Copy
-[`.env.example`](.env.example) to `.env` (gitignored) only for tools you enable.
+Full tooling narrative: [`docs/agent-tooling.md`](docs/agent-tooling.md). Agents never store
+secrets: no `.env` files, no secret environment variables, no Actions secrets or variables
+(the rule at the start of [`AGENTS.md`](AGENTS.md)). Credentials HoBo needs come from the
+owner's store session (`choose_secret_store`, `owner://<NAME>`).
 
 ## Residual: local coding-agent keys & egress
 
@@ -43,7 +45,10 @@ in your agent UI unless you intentionally opt in.
 
 ### Tools that need keys (opt-in)
 
-| Tool | Env vars | Data egress | Cost |
+Third-party tools below read keys from their own process environment. Agents never put a
+key there or in a file; use each tool's zero-key mode.
+
+| Tool | Env vars it reads | Data egress | Cost |
 |---|---|---|---|
 | **gbrain** | Exactly one of `OPENAI_API_KEY`, `ZEROENTROPY_API_KEY`, `VOYAGE_API_KEY` | Text embedded + queries go to that provider | Recurring embedding/API |
 | **SkillOpt** live backends | Provider-specific (`ANTHROPIC_API_KEY`, Azure OpenAI, Qwen, MiniMax, …) | Prompts/code to chosen backend | Per-run |
@@ -53,7 +58,7 @@ gbrain MCP is launched via [`scripts/agent-mcp-gbrain.sh`](scripts/agent-mcp-gbr
 
 ### Agent rules (local residual)
 
-1. Never commit `.env`, tokens, or private keys.
+1. Never store secrets: no `.env` files, secret environment variables, Actions secrets or variables, key files, or credential stores of your own (`secrets:guard`, `scripts/agent-secret-policy.mts`).
 2. Never paste secret values into issues, bus entries, or skill files — reference `file:line` / env var **names** only.
 3. Prefer identity federation / bound resources over stored secrets in product code ([ADR-0027](urn:hobo:decision:02-identity-security) family).
 4. Decline optional MCP servers (gbrain) when you do not want egress.
@@ -70,7 +75,6 @@ gbrain MCP is launched via [`scripts/agent-mcp-gbrain.sh`](scripts/agent-mcp-gbr
 ## Related
 
 - WorkOS auth.md protocol: https://workos.com/auth-md · https://github.com/workos/auth.md
-- [`.env.example`](.env.example)
 - [`docs/agent-tooling.md`](docs/agent-tooling.md) § Keys & risks
 - Product agent-auth design: [`urn:hobo:requirement:ai-native-agent-auth`](urn:hobo:requirement:ai-native-agent-auth)
 - OptimizeXP AX auth reference: `.agents/skills/optimizexp/references/ax/auth.md`

@@ -1,7 +1,7 @@
 ---
 type: Agent Skill Reference
 title: "OptimizeXP AX — specs and standing contracts"
-description: "Standing contract files agents must discover: WorkOS AUTH.md/auth.md, AGENTS.md, UI tokens, llms.txt, env examples."
+description: "Standing contract files agents must discover: WorkOS AUTH.md/auth.md, AGENTS.md, UI tokens, llms.txt."
 tags: [hobo, optimizexp, ax, specs, agents-md, auth, design-md, workos]
 timestamp: 2026-07-31T00:00:00Z
 ---
@@ -19,7 +19,6 @@ names** (WorkOS auth.md, UI tokens, llms.txt) — do not invent house brands for
 | `AUTH.md` / `auth.md` | **WorkOS open protocol** for agent registration (flows, scopes, credentials) — not a HoBo invention | file present; product origins should publish per https://workos.com/auth-md |
 | `AGENTS.md` | Standing agent instruction brief (ecosystem convention) | file exists; linked from CLAUDE.md |
 | `CLAUDE.md` | Claude-oriented include / summary | points at AGENTS / skills |
-| `.env.example` | Env var **names** only (local residual) | no secrets committed |
 | `docs/agent-tooling.md` | Full coding-agent tooling narrative (repo) | linked from AGENTS |
 | `site/src/styles/global.css` | Implemented visual tokens | `pnpm run design:lint` |
 | `site/public/llms.txt` (+ full dump) | Public agent briefing for the product site | file exists; no internal secrets |

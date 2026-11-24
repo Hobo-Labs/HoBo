@@ -79,8 +79,7 @@ async function session(
 		id: "infisical",
 		chosen: true,
 		missing: [],
-		canAwaitEgressCredential: false,
-		egressCredentialHost: undefined,
+		handOffSignIn: undefined,
 		opened: {
 			id: "infisical",
 			port,
@@ -94,7 +93,6 @@ async function session(
 	};
 	const sessions = createOwnerStoreSessions({
 		signIn: async () => ({ kind: "owner", owner }),
-		env: {},
 	});
 	await sessions.establish(CWD);
 	return sessions;

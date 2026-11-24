@@ -304,7 +304,9 @@ kubectl create configmap hobo-ci-config --from-file=config.json=/srv/hobo-ci/con
 kubectl create secret generic hobo-ci-secrets --from-literal=app-id=12345 --from-file=private-key.pem=/srv/hobo-ci/secrets/private-key.pem --from-file=webhook-secret=/srv/hobo-ci/secrets/webhook-secret --from-file=control-tokens.json=/srv/hobo-ci/secrets/control-tokens.json
 ```
 
-Strict fleet mode is optional. To enable it, add `strict-fleet-policies.json`
+Strict fleet mode is optional. The Kubernetes manifest starts the relay with
+`dist/fleet-v2/serve.js`, which reads the settings below; the image's default
+`dist/main.js`, which Compose runs, ignores them. To enable it, add `strict-fleet-policies.json`
 and `strict-fleet-policies-file=/etc/hobo-ci-strict/strict-fleet-policies.json`
 to `hobo-ci-config`, and add `strict-fleet-database` to `hobo-ci-secrets` with
 the PostgreSQL connection string. `strict-fleet-partition` is optional and
@@ -423,8 +425,10 @@ every box job, ARC pod and GitHub-hosted runner can replay what another already
 built. It is separate from the relay and optional; nothing uses it until
 `.hobo/ci.json` names the server's URL in `turboCache.api` (committed
 configuration, read by `.github/actions/turbo-cache` from the checkout; no
-repository variable carries it), and the repository has the variable
-`TURBO_TEAM` (any slug) and the secret `TURBO_TOKEN` (the token below).
+repository variable carries it), and the workflows find the variable
+`TURBO_TEAM` (any slug) and the secret `TURBO_TOKEN` (the token below). Agents
+never create that variable or secret
+([AGENTS.md](../../../AGENTS.md#repository-rules-for-every-agent)).
 
 ```sh
 docker compose --env-file /abs/path/to/turbo-cache.env \
@@ -437,6 +441,60 @@ The env file sets `HOBO_CI_TURBO_CACHE_TOKEN`, and optionally
 To serve ARC pods or another box, bind the private address they reach this host
 on; do not expose it publicly without TLS in front. Fork pull requests receive
 no token, so they neither read nor write the cache.
+
+## ARC runner node caches
+
+An ARC runner pod (`hobo-trunk-runner-*`, `hobo-runner-*`) starts with an empty
+pnpm store and an empty Docker engine, so every job downloaded every package
+and image again over the node's slow link ([finding 160](../../../docs/ci/findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)).
+`hobo ci fleet caches` gives the scale sets node-local caches that outlive the
+pod:
+
+```sh
+hobo ci fleet caches --plan
+hobo ci fleet caches --apply --prewarm "$(git rev-parse origin/main)"
+hobo ci fleet caches --status
+```
+
+An agent runs the same verb through HoBo MCP: the `ci` tool with
+`args: ["fleet", "caches", "--apply", "--prewarm", "<sha>"]` and the project
+directory as `cwd`. Nobody runs kubectl against the cluster for this.
+
+It reads the `hostinger-arc` kubernetes pool in `.hobo/ci.json` for the
+namespace (`arc-runners`) and, by default, acts on every
+`AutoscalingRunnerSet` there (`hobo-trunk` and `hobo-runner`; `--scale-set`
+narrows it, `--namespace` overrides it). It reaches the cluster's API server
+with the kubeconfig the owner keeps in their store as
+`HOSTINGER_ARC_KUBECONFIG` (the pool's `connectionRef`, upper-cased, with
+`_KUBECONFIG`), resolved through the owner's store session; without it the
+verb refuses with `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` before any network
+call. The kubeconfig must carry the server, `certificate-authority-data` and
+a `token` or inline client certificate data; file paths, exec plugins and
+skipped TLS verification are refused. The identity needs `get`, `list` and
+`patch` on `autoscalingrunnersets.actions.github.com` and `create` and `list`
+on `jobs.batch` in that namespace, and nothing else.
+
+`--plan` (the default) prints the idempotent JSON patch that mounts `/var/lib/hobo-ci/pnpm-store` at `/pnpm-store` and
+`/var/lib/hobo-ci/images` at `/var/cache/hobo-ci/images` (hostPath,
+`DirectoryOrCreate`, owned by UID 1000 through the `hobo-cache-owner` init
+container), and sets `HOBO_CI_PNPM_STORE_DIR` and `HOBO_CI_IMAGE_CACHE_DIR` on
+the runner container; `--apply` sends it, guarded by the object's
+`resourceVersion`, and changes nothing on a scale set that already has the
+caches. `--prewarm <sha>` also creates a Job (`<scale set>-store-prewarm-<sha
+prefix>`) that runs `pnpm fetch --frozen-lockfile` for the whole workspace's
+lockfile at that commit into the node store, so the first job on the node is
+warm too; a second run for the same commit finds the Job already there.
+`--status` reports, for each scale set, whether the caches are mounted and
+whether its newest prewarm Job succeeded, failed or is still running;
+`--json` carries the record as `data.fleetCaches`. Run `--apply` again after
+a `helm upgrade` of a scale set, which replaces the pod template.
+
+Inside the pod, `scripts/ci/pnpm-install.mts` installs into the store named by
+`HOBO_CI_PNPM_STORE_DIR` when it is writable, `.github/actions/turbo-cache`
+keeps the Turbo local cache in `hobo-turbo-cache` inside it, and
+`scripts/ci/data-live-servers.mts up` loads the digest-pinned PostgreSQL and
+MongoDB images from `HOBO_CI_IMAGE_CACHE_DIR` (`<digest>.tar`), saving them
+there after the first pull.
 
 ## Backup, restore and stop
 

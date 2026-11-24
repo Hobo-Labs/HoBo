@@ -99,19 +99,33 @@ owner handles no secret value on the default path:
   GitHub OIDC); the cache's
   default member is Vercel Blob over OIDC. The amendment's table lists every
   secret, what it became and the vendor evidence.
-- **Coordinates in the repository.** In production (`VERCEL_ENV=production`,
-  no `HOBO_CI_CONFIG_SERVICE`), the loader reads the store's origin, project,
-  environment, folder and the relay's identity from the committed
-  `deploy/secret-store.binding.json`, bundled with every function
-  (`vercel.json` `includeFiles`). No environment variable is set through
-  Vercel's API.
+- **Coordinates only in the owner's store.** The store coordinates (project
+  and deploy project ids, the relay, writer and reader identity ids, the Vercel
+  team id, the OIDC subjects and the claim bundle id) are the owner's private
+  settings. They live only in the owner's own secret store, as the
+  `HOBO_CI_SECRET_STORE_BINDING` entry, which HoBo reads and writes through the
+  owner store session (HoBo MCP's `choose_secret_store`). They are never
+  committed, printed, put in a document or pull request, set as an environment
+  variable or Actions secret, or asked for in a chat. In production
+  (`VERCEL_ENV=production`), the loader reads the
+  store's origin, project, environment, folder and the relay's identity from
+  `deploy/secret-store.binding.json` inside the function bundle
+  (`vercel.json` `includeFiles`). That file exists only in a build HoBo makes:
+  `hobo ci deploy --build prebuilt` writes those six fields from the owner store
+  session just before `vercel build`, and removes the file once the build is
+  staged. The path is ignored by git, and `secrets:guard` rejects a commit of
+  it. A command that needs the coordinates without an owner store session
+  stops with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED`. The loader never reads a
+  coordinate from the environment: `HOBO_CI_CONFIG_SERVICE=infisical` without
+  the bundled file fails, and a `--build git` production deploy, which could
+  carry none, is refused (`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`).
 - **Connecting** (once): the `hobo-deploy` skill walks the owner through the
   dashboard one step at a time, every value prefilled: projects `hobo-ci`
   (folder `/hobo-ci-relay`, `prod`) and `hobo-ci-deploy` (`prod`);
   `hobo-ci-relay` with OIDC Auth trusting Vercel (issuer
-  `https://oidc.vercel.com/tyler-r-kendricks-projects`, subject
-  `owner:tyler-r-kendricks-projects:project:hobo-ci:environment:production`,
-  audience `https://vercel.com/tyler-r-kendricks-projects`, `project_id` and
+  `https://oidc.vercel.com/<team-slug>`, subject
+  `owner:<team-slug>:project:hobo-ci:environment:production`,
+  audience `https://vercel.com/<team-slug>`, `project_id` and
   `owner_id` pinned), Viewer, in `hobo-ci`; `hobo-ci-writer` with OIDC Auth
   trusting GitHub Actions, create/edit, in `hobo-ci`; and
   `hobo-ci-deploy-reader` with OIDC Auth trusting GitHub Actions, read-only
@@ -119,9 +133,9 @@ owner handles no secret value on the default path:
   environment `hobo-ci-app-credentials`; the deploy job uses
   `hobo-ci-deploy`. Their respective OIDC subjects end in
   `:environment:hobo-ci-app-credentials` and `:environment:hobo-ci-deploy` after
-  GitHub's immutable repository prefix. Both trusts pin `repository_id`
-  `1274791462`, `repository_owner_id` `344805935`, that distinct `environment`,
-  and `ref` `refs/heads/main`. The reader pins both `workflow_ref` and
+  GitHub's immutable repository prefix. Both trusts pin `repository_id`,
+  `repository_owner_id`, that distinct `environment`, and `ref`
+  `refs/heads/main`. The reader pins both `workflow_ref` and
   `job_workflow_ref` to
   `Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main`. The
   writer pins `workflow_ref` to
@@ -140,14 +154,14 @@ owner handles no secret value on the default path:
   `hobo-ci-writer` on `hobo-ci` instead of a custom create/edit-only role.
   Infisical Cloud **Free** has no custom project roles ([pricing](https://infisical.com/pricing) — “Custom roles, multi-role, temporary access” on **Advanced** and up; checked 2026-11-12). **Member** is read/write on secrets across all project environments ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12). That residual applies only to the writer: Member is not an acceptable role for `hobo-ci-deploy-reader`.) Then:
 
-  ```sh
-  GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
-    --repo Hobo-Labs/HoBo --project-id <hobo-ci> --deploy-project-id <hobo-ci-deploy> \
-    --relay-identity-id <hobo-ci-relay> \
-    --deploy-identity-id <hobo-ci-writer> \
-    --deploy-credential-identity-id <hobo-ci-deploy-reader> \
-    --team team_BRBUnG6uGhSsVV3EG5GFV3FM
-  ```
+  The owner runs `hobo ci secret-store connect --cwd packages/ci-vercel --repo
+  Hobo-Labs/HoBo` in their own terminal, with their secret store connected
+  through HoBo, passing the dashboard ids as its options (`--project-id`,
+  `--deploy-project-id`, `--relay-identity-id`, `--deploy-identity-id`,
+  `--deploy-credential-identity-id`, `--team`). An agent never asks for these
+  ids, never puts them in a command it runs, and never repeats them. `connect`
+  writes them to the owner's store as `HOBO_CI_SECRET_STORE_BINDING`; its
+  result names the identities, never their ids, subjects or claims.
 
   `connect` resolves the deploy trust from GitHub: `sub_claim_prefix` from
   `GET /repos/{owner}/{repo}/actions/oidc/customization/sub` (or the
@@ -169,9 +183,10 @@ owner handles no secret value on the default path:
   audience (`PATCH /api/v1/auth/oidc-auth/identities/{id}`, no new identity).
   The binding is unchanged if either update fails. If reader repair succeeds and
   writer repair fails, the reader stays repaired and the error names both
-  outcomes; re-running the idempotent repair completes the writer. Otherwise
-  `connect` prints the exact trust configurations to set in the dashboard and
-  preserves an existing pending or claimed state. When `verify` is denied with a
+  outcomes; re-running the idempotent repair completes the writer. Without the
+  owner's Infisical sign-in, `connect` says which identities still need their
+  trust, without showing the subjects or claims, and preserves an existing
+  pending or claimed state. When `verify` is denied with a
   token whose `sub` differs from that subject (or is immutable while no subject
   was recorded), its failure says so and names this repair.
 
@@ -180,7 +195,7 @@ owner handles no secret value on the default path:
   ever typed by a person, into the HoBo MCP App (`capture_secret` on
   `hobo-mcp`), never into the chat; it goes sealed from the form to the MCP
   server to the store. See [`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
-- **Verifying**, by identity name and id: `hobo-ci-deploy-reader` in the deploy
+- **Verifying**, by identity name: `hobo-ci-deploy-reader` in the deploy
   workflow's *Verify the secret store connection* step (`hobo ci secret-store
   verify --identity reader`) must read `VERCEL_TOKEN` without logging it, have
   exactly Viewer, and receive HTTP **403** for relay-folder listing and direct
@@ -199,7 +214,8 @@ owner handles no secret value on the default path:
   `Deposit the GitHub App's credentials` runs only through the manual
   `app-credentials.yml` caller and is not a push check. A skipped job is never
   successful reader, writer, or relay verification. Failures print only
-  `oidc_sub` / `oidc_aud`, never an access token or secret value. Both workflow
+  `oidc_aud`, never an identity id, an OIDC subject, an access token or a
+  secret value. Both workflow
   verification steps run `scripts/ci/relay-deploy-secret-store-verify-report.mts` so empty stdout or
   stderr-only crashes fail loudly. Before either job installs or signs in,
   `scripts/ci/relay-deploy-environment.mts` uses the job's scoped `GITHUB_TOKEN`
@@ -225,9 +241,9 @@ with compensating controls, without upgrading Infisical.
 Compensating controls for **(d)** (no dashboard change required beyond
 existing OIDC):
 
-- **Trust:** the writer subject is
-  `repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials`;
-  the reader subject ends in `:environment:hobo-ci-deploy`. Both pin repository
+- **Trust:** the writer subject is GitHub's immutable repository prefix
+  followed by `:environment:hobo-ci-app-credentials`; the reader subject ends
+  in `:environment:hobo-ci-deploy`. Both pin repository
   ids, environment, `ref`, and called `job_workflow_ref` for `relay-deploy.yml`
   on `main`. The reader's top-level `workflow_ref` is also `relay-deploy.yml`;
   the writer's is `app-credentials.yml`, the only supported reusable caller.
@@ -260,23 +276,20 @@ project at its root, read by the dedicated `deployCredentialIdentityId`, never
 the writer in `deployIdentityId`. The owner must create `hobo-ci-deploy`, its
 read-only `hobo-ci-deploy-reader` identity, and deposit the token at its root
 through the MCP capture connector's `deploy` target (or `hobo-secret-writer`).
-The committed attach binding currently lacks `deployProjectId`,
-`deployCredentialIdentityId`, and `deployOidcSubject`. The unprotected gate
-therefore skips deployment with an explicit notice; it never starts the
-protected deploy job. Read-only hosting evidence can still use the claimed relay
-coordinates. A direct real deploy fails closed before requesting GitHub OIDC or
-authenticating to Infisical, while `--dry-run` can inspect the plan. A missing
-project or token stops preview after repair.
+A binding without `deployProjectId`, `deployCredentialIdentityId`, and
+`deployOidcSubject` is credential-free: a direct real deploy fails closed before
+requesting GitHub OIDC or authenticating to Infisical, while `--dry-run` can
+inspect the plan. A missing project or token stops preview after repair.
 **Built, not proven**: owner provisioning of that project, identity and token is
 still required, and no qualifying production run is linked yet. After
-provisioning and committing the binding, link both observations here:
+provisioning, link both observations here:
 
 - A successful production `relay-deploy` run whose *Verify the protected deploy
   environment* step attests the exact `main`-only policy; whose *Verify the
   secret store connection* step passes the reader with exactly Viewer, HTTP 403
   for the relay-folder listing and direct token read, and HTTP 404 for relay-
-  project membership; whose preview step records `deploy token read from
-  infisical://…/VERCEL_TOKEN as the binding's deploy credential identity`; and
+  project membership; whose preview step records `deploy token read from the
+  deploy credential project as hobo-ci-deploy-reader`; and
   whose production deploy and origin verification succeed.
 - A successful `app-credentials` run whose *Verify the protected writer
   environment* step attests the exact `main`-only policy and whose writer check
@@ -286,9 +299,8 @@ provisioning and committing the binding, link both observations here:
 An OIDC-only verification or skipped deploy is not evidence. Record only run
 links, secret references and outcomes, never the token or OIDC JWT.
 
-**Cutover sequence** (fail closed while incomplete): the unprotected gate skips
-only a fully credential-free binding and rejects a half-configured one.
-`hobo ci deploy --dry-run` can still plan; every real deploy refuses a
+**Cutover sequence** (fail closed while incomplete): `hobo ci deploy --dry-run`
+can still plan; every real deploy refuses a
 credential-free binding before GitHub OIDC or Infisical authentication. The
 owner (Tyler) completes provisioning before enabling deployment:
 
@@ -308,17 +320,17 @@ owner (Tyler) completes provisioning before enabling deployment:
    `connect` in step 5 applies both exact configurations with the owner's token.
 4. Deposit `VERCEL_TOKEN` at the `hobo-ci-deploy` project's root through the
    MCP capture connector's `deploy` target (or `hobo-secret-writer`).
-5. Run `hobo ci secret-store connect --cwd packages/ci-vercel
-   --deploy-project-id <hobo-ci-deploy>
-   --deploy-credential-identity-id <hobo-ci-deploy-reader> --yes`, with
-   `INFISICAL_TOKEN` from the owner's own `infisical login` for that one run so
+5. The owner runs `hobo ci secret-store connect --cwd packages/ci-vercel --yes`
+   in their own terminal with the deploy project and reader ids as its
+   `--deploy-project-id` and `--deploy-credential-identity-id` options, and
+   with `INFISICAL_TOKEN` from their own `infisical login` for that one run so
    both GitHub Actions identities' trust is repaired in place. It records the
    deploy project, reader id and writer environment subject. Without those values
    it preserves credential-free mode; supplying only one fails with the missing
    paired option.
-6. Commit the rewritten `deploy/secret-store.binding.json`. The gate now admits
-   it, and the next `relay-deploy` runs must provide the production observations
-   above: protected-environment attestations, value read as the dedicated
+6. Nothing is committed: `connect` rewrote the binding in the owner's store.
+   The next deploy through `hobo cd` with the owner's store session must
+   provide the production observations above: protected-environment attestations, value read as the dedicated
    reader, exact Viewer, HTTP 403 read isolation and HTTP 404 membership checks,
    then successful production deploy and origin verification.
 
@@ -384,44 +396,36 @@ are pinned by
 and membership by
 [`infisical-api.pact.json`](../adapters/adapter-infisical/contracts/pacts/infisical-api.pact.json).
 
-The coordinates (the store's origin, project ids, the identity ids, and the
-Vercel team id) are written to `deploy/secret-store.binding.json`, the
+The coordinates (the store's origin, project ids, the identity ids, the
+Vercel team id, the deploy subject and the claim bundle id) are the
 `SecretStoreBinding` record of
-[`secret_store_claim.proto`](../secret-store-claim/data-models/secret_store_claim.proto).
-They are ids, not credentials; committing the file is how `hobo ci deploy` and
-the workflow find the store.
+[`secret_store_claim.proto`](../secret-store-claim/data-models/secret_store_claim.proto),
+written to the owner's own secret store as `HOBO_CI_SECRET_STORE_BINDING`. They
+are the owner's private settings: HoBo reads them through the owner store
+session when `hobo ci` or `hobo cd` runs and never commits or prints them.
 
 ## What the relay deployment declares
 
-Plain configuration on the Vercel project, not secrets:
-
-| Variable | Value | From |
-|---|---|---|
-| `HOBO_CI_CONFIG_SERVICE` | `infisical` (`env`, the default, reads the environment instead) | the Yard's binding row |
-| `INFISICAL_SECRET_PATH` | `/hobo-ci-relay` | the Yard's binding row |
-| `INFISICAL_ENVIRONMENT` | `prod` | the production Camp |
-| `INFISICAL_SITE_URL` | the store's origin | `deploy/secret-store.binding.json` |
-| `INFISICAL_IDENTITY_ID` | the id of `hobo-ci-relay` | `deploy/secret-store.binding.json` |
-| `INFISICAL_PROJECT_ID` | the id of `hobo-ci` | `deploy/secret-store.binding.json` |
-
-`HOBO_CI_CONFIG_SERVICE` is a setting of the relay's Bindle
-([`src/bindle.ts`](src/bindle.ts)); the `INFISICAL_*` coordinates belong to the
-config-service binding of the relay's Yard ([`deploy/yard.ts`](deploy/yard.ts)),
-which names the capability and the binding file and asks the deploy for the
-three inputs. `hobo ci deploy` fills them, and the Vercel team, from the
-committed binding (a `--set` still wins), and sets them on the project for
-production; nobody types them into Vercel.
+No store coordinate is a Vercel variable. The config-service binding of the
+relay's Yard ([`deploy/yard.ts`](deploy/yard.ts)) names the capability and the
+path its coordinates are bundled at (`bundledBindingFile`), and asks the deploy
+for no input. `hobo ci deploy --build prebuilt` writes the relay's six
+coordinates from the owner store session into that path for the duration of
+`vercel build` only. A `--set` of an `INFISICAL_*` coordinate is refused like
+any other undeclared setting. A Git build carries no coordinates, so its
+production `/readyz` stays not ready and HoBo never qualifies it.
 
 ## The deploy workflow on `main`
 
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
-deploys the relay to production on every push to `main` that changes it, and on
-a manual run (Actions → HoBo relay deploy → Run workflow). It never asks anyone
-to deploy, holds no secret and reads no repository variable about the relay:
-its unprotected gate reads the committed binding before any protected
-environment admission. On canonical `main`, a missing or malformed binding fails
-that gate. A credential-free binding skips deployment with an explicit notice; a
-half-configured binding fails. When admitted, the protected deploy job signs in
+holds no store coordinates: none is committed, and none is an Actions secret or
+variable. Its unprotected gate therefore deploys nothing on a push. On a push
+that changes the relay it posts a notice that the relay deploys through
+`hobo cd` with the owner's store session (`hobo ci deploy --build prebuilt`
+after HoBo MCP's `choose_secret_store`). A manual run (Actions → HoBo relay
+deploy → Run workflow) starts the protected deploy job, whose `hobo` commands
+stop with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` unless an owner store session
+is established for them. With one, the protected deploy job signs in
 with its GitHub Actions OIDC token as `hobo-ci-deploy-reader` from
 `deployCredentialIdentityId` and reads `VERCEL_TOKEN` from the deploy project's
 root, masked in the log. A direct deploy with no configured credential stops
@@ -499,6 +503,16 @@ already bound to the project (Turso through its existing integration, or
 ([The cache fleet](README.md#the-cache-fleet)), which picks one by budget.
 
 ## What the folder holds
+
+A folder the relay reads but cannot use is named at `/readyz`: `state:
+"not-configured"` with `missing` (required entries that are absent) and
+`invalid` (entries their parser refuses), names only.
+
+While the folder is incomplete the relay serves its
+[setup mode](README.md#setup-mode) at `/mcp`: the owner reads the same names
+with `relay_setup_status` and fills them with `relay_setup_provide`, which
+writes as `hobo-secret-writer` with a one-use client secret the owner enters
+in the form, never through a workflow input or an Actions secret.
 
 One entry per key, named as the relay's environment variable; the loader
 refuses a folder holding any other key, and names it (never its value).

@@ -35,6 +35,7 @@ spec:
         - name: relay
           image: hobo-ci-relay:local
           imagePullPolicy: IfNotPresent
+          command: ["node", "--use-env-proxy", "dist/fleet-v2/serve.js"]
           ports:
             - {name: http, containerPort: 8787}
           resources:

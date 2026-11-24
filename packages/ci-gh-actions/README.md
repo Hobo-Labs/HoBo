@@ -198,6 +198,35 @@ built on the official `@modelcontextprotocol/sdk` (`McpServer` over
 `WebStandardStreamableHTTPServerTransport`) and mounted by every HTTP host
 through `HostedRelayApplication.mcp`. A host that mounts none answers 404.
 
+### Setup mode
+
+`createRelaySetupMcp` (`src/relay-setup-mcp.ts`) is a second, smaller MCP
+server that a host mounts at `/mcp` only while the relay cannot start because
+its configuration is incomplete. The Vercel host does this
+([`@hobo/ci-vercel`](../ci-vercel/README.md#setup-mode)); every other route,
+`/readyz` included, stays refused. It needs no account credential: its answers
+carry entry names and outcome codes only, which `/readyz` already reports, and
+the one tool that writes is authorized by the config service itself.
+
+| Tool | What it does |
+| --- | --- |
+| `relay_setup_status` | `RelayMcpSetupStatus`: the start state, the `missing` and `invalid` entry names, which of them the owner may `provide`, and whether this host can write to its config service |
+| `relay_setup_provide` | Sends one form-mode elicitation (MCP 2025-11-25) with a field per outstanding entry (or only `names`) plus the store writer's client ID and one-use client secret, then hands the accepted values to the host's writer. Returns `RelayMcpSetupResult`: an `outcome` and the `written`, `refused` and `remaining` names |
+
+The host decides which entries are offered and parses each value (`accept`);
+a value it refuses is named in `refused` and never written. Outcomes besides
+`written`: `declined`, `cancelled`, `nothing-to-provide`, `nothing-valid`,
+`form-unavailable` (the client declared no form elicitation, or the answer
+did not arrive), `store-not-writable`, `writer-refused` and
+`store-unavailable`. A failed write logs `hobo_ci_relay_setup_write_failed`
+with its code and the number of entries, never a name's value. Sessions are
+held in the process (a form's answer must reach the instance that asked;
+otherwise the form times out and the owner retries), at most 16, closed after
+15 idle minutes; an unknown session answers 404 so the client initializes
+again. A browser `Origin` other than the host's public origin is refused.
+Both records are in [`data-models/relay_mcp.proto`](data-models/relay_mcp.proto),
+closed in CUE.
+
 ### Authentication and scope
 
 `/mcp` takes the account API's bearer credentials, resolved by the same
@@ -1609,6 +1638,10 @@ must come from trusted controller configuration. An embedded relay can serve
 `POST /v1/fleet/start-fence` by passing an initialized `StrictFleetStore` and
 trusted `StartFencePolicy` entries as `strictFleet` to `createRelayHost`.
 The same option is available to callers of `startRelayFromEnvironment`.
+`startStrictFleetRelayFromEnvironment` (`src/fleet-v2/serve.ts`, the
+Kubernetes entry) builds it from the `HOBO_CI_STRICT_FLEET_*` settings and
+closes the store when the relay stops; `dist/main.js` and the hosted relay
+bundle never load the PostgreSQL client.
 The endpoint verifies the slot credential and actual GitHub assignment, commits
 the binding, then returns the receipt. With no strict fleet configuration, the
 route is unavailable. The caller owns the strict store's lifecycle.

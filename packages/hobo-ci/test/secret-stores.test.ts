@@ -7,10 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { storeSettings } from "../src/ceremony-settings.js";
 import { STORE_CHOICE } from "../src/owner-store.js";
-import {
-	EGRESS_PROXY_PLACEHOLDER,
-	openSecretStore,
-} from "../src/secret-stores.js";
+import { openSecretStore } from "../src/secret-stores.js";
 
 function signedIn(token = "machine-token") {
 	const vault = createTrustedVault();
@@ -21,30 +18,43 @@ function signedIn(token = "machine-token") {
 const ORG = "11111111-2222-4333-8444-555555555555";
 const PROJECT = "66666666-7777-4888-9999-aaaaaaaaaaaa";
 
-it("uses the proxy marker rather than a token retained from an earlier choice", async () => {
-	const vault = createTrustedVault();
-	vault.put("INFISICAL_TOKEN", "old-writable-token");
-	let authorization: string | null = null;
-	const opened = await openSecretStore(
-		"infisical",
-		{
-			INFISICAL_SIGN_IN: "egress-proxy",
-			INFISICAL_PROJECT_ID: "proj",
-			INFISICAL_ENVIRONMENT: "prod",
-			INFISICAL_SECRET_PATH: "/hobo-ci",
-		},
-		vault,
-		{
+describe("1Password through the owner's Connect server", () => {
+	const coordinates = {
+		OP_VAULT_ID: "k2l3m4n5o6p7q8r9s0t1u2v3w4",
+		OP_CONNECT_HOST: "https://connect.example",
+	};
+
+	it("stays closed until the owner hands this run a Connect token", async () => {
+		let requests = 0;
+		const opened = await openSecretStore(
+			"1password",
+			coordinates,
+			createTrustedVault(),
+			{
+				fetch: async () => {
+					requests += 1;
+					return Response.json({}, { status: 401 });
+				},
+			},
+		);
+		expect(opened.ok).toBe(false);
+		expect(requests).toBe(0);
+	});
+
+	it("sends only the handed-over token to the Connect server", async () => {
+		const vault = createTrustedVault();
+		vault.put("OP_CONNECT_TOKEN", "handed-over-connect-token");
+		let authorization: string | null = null;
+		const opened = await openSecretStore("1password", coordinates, vault, {
 			fetch: async (_input, init) => {
 				authorization = new Headers(init?.headers).get("authorization");
-				return Response.json({}, { status: 403 });
+				return Response.json([]);
 			},
-		},
-	);
-	expect(opened.ok).toBe(true);
-	if (!opened.ok) throw new Error("not opened");
-	await opened.store.port.access("NAME");
-	expect(authorization).toBe(`Bearer ${EGRESS_PROXY_PLACEHOLDER}`);
+		});
+		if (!opened.ok) throw new Error("not opened");
+		await opened.store.port.access("NAME");
+		expect(authorization).toBe("Bearer handed-over-connect-token");
+	});
 });
 
 function fakeBitwarden(): BitwardenSdkClient {

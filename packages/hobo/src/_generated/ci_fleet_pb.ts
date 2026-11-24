@@ -6,115 +6,101 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
-/**
- * Describes the file ci_fleet.proto.
- */
 export const file_ci_fleet: GenFile = /*@__PURE__*/
-  fileDesc("Cg5jaV9mbGVldC5wcm90bxIQaG9iby5jaS5mbGVldC52MSJ+CgtDaUZsZWV0SG9zdBIQCghwcm92aWRlchgBIAEoCRIKCgJpZBgCIAEoCRIQCghob3N0bmFtZRgDIAEoCRINCgVzdGF0ZRgEIAEoCRIMCgRwbGFuGAUgASgJEgwKBGlwdjQYBiABKAkSFAoMYWN0aW9uc19sb2NrGAcgASgJIk8KDUNpRmxlZXRTdGF0dXMSEAoIcHJvdmlkZXIYASABKAkSLAoFaG9zdHMYAiADKAsyHS5ob2JvLmNpLmZsZWV0LnYxLkNpRmxlZXRIb3N0IowBChJDaUZsZWV0UG93ZXJBY3Rpb24SEAoIcHJvdmlkZXIYASABKAkSKwoEaG9zdBgCIAEoCzIdLmhvYm8uY2kuZmxlZXQudjEuQ2lGbGVldEhvc3QSDgoGYWN0aW9uGAMgASgJEhEKCWFjdGlvbl9pZBgEIAEoCRIUCgxhY3Rpb25fc3RhdGUYBSABKAliBnByb3RvMw");
+  fileDesc("Cg5jaV9mbGVldC5wcm90bxIQaG9iby5jaS5mbGVldC52MSJ+CgtDaUZsZWV0SG9zdBIQCghwcm92aWRlchgBIAEoCRIKCgJpZBgCIAEoCRIQCghob3N0bmFtZRgDIAEoCRINCgVzdGF0ZRgEIAEoCRIMCgRwbGFuGAUgASgJEgwKBGlwdjQYBiABKAkSFAoMYWN0aW9uc19sb2NrGAcgASgJIk8KDUNpRmxlZXRTdGF0dXMSEAoIcHJvdmlkZXIYASABKAkSLAoFaG9zdHMYAiADKAsyHS5ob2JvLmNpLmZsZWV0LnYxLkNpRmxlZXRIb3N0IowBChJDaUZsZWV0UG93ZXJBY3Rpb24SEAoIcHJvdmlkZXIYASABKAkSKwoEaG9zdBgCIAEoCzIdLmhvYm8uY2kuZmxlZXQudjEuQ2lGbGVldEhvc3QSDgoGYWN0aW9uGAMgASgJEhEKCWFjdGlvbl9pZBgEIAEoCRIUCgxhY3Rpb25fc3RhdGUYBSABKAkiSgoaQ2lGbGVldENhY2hlUGF0Y2hPcGVyYXRpb24SCgoCb3AYASABKAkSDAoEcGF0aBgCIAEoCRISCgp2YWx1ZV9qc29uGAMgASgJIj4KE0NpRmxlZXRDYWNoZVByZXdhcm0SCwoDam9iGAEgASgJEgsKA3JlZhgCIAEoCRINCgVzdGF0ZRgDIAEoCSLZAQoUQ2lGbGVldENhY2hlU2NhbGVTZXQSDAoEbmFtZRgBIAEoCRIRCgluYW1lc3BhY2UYAiABKAkSFgoOY2FjaGVzX21vdW50ZWQYAyABKAgSEwoLcGF0Y2hfc3RhdGUYBCABKAkSOwoFcGF0Y2gYBSADKAsyLC5ob2JvLmNpLmZsZWV0LnYxLkNpRmxlZXRDYWNoZVBhdGNoT3BlcmF0aW9uEjYKB3ByZXdhcm0YBiABKAsyJS5ob2JvLmNpLmZsZWV0LnYxLkNpRmxlZXRDYWNoZVByZXdhcm0ifQoNQ2lGbGVldENhY2hlcxIPCgdjbHVzdGVyGAEgASgJEhEKCW5hbWVzcGFjZRgCIAEoCRIMCgRtb2RlGAMgASgJEjoKCnNjYWxlX3NldHMYBCADKAsyJi5ob2JvLmNpLmZsZWV0LnYxLkNpRmxlZXRDYWNoZVNjYWxlU2V0YgZwcm90bzM");
 
-/**
- * @generated from message hobo.ci.fleet.v1.CiFleetHost
- */
 export type CiFleetHost = Message<"hobo.ci.fleet.v1.CiFleetHost"> & {
-  /**
-   * @generated from field: string provider = 1;
-   */
   provider: string;
 
-  /**
-   * @generated from field: string id = 2;
-   */
   id: string;
 
-  /**
-   * @generated from field: string hostname = 3;
-   */
   hostname: string;
 
-  /**
-   * @generated from field: string state = 4;
-   */
   state: string;
 
-  /**
-   * @generated from field: string plan = 5;
-   */
   plan: string;
 
-  /**
-   * @generated from field: string ipv4 = 6;
-   */
   ipv4: string;
 
-  /**
-   * @generated from field: string actions_lock = 7;
-   */
   actionsLock: string;
 };
 
-/**
- * Describes the message hobo.ci.fleet.v1.CiFleetHost.
- * Use `create(CiFleetHostSchema)` to create a new message.
- */
 export const CiFleetHostSchema: GenMessage<CiFleetHost> = /*@__PURE__*/
   messageDesc(file_ci_fleet, 0);
 
-/**
- * @generated from message hobo.ci.fleet.v1.CiFleetStatus
- */
 export type CiFleetStatus = Message<"hobo.ci.fleet.v1.CiFleetStatus"> & {
-  /**
-   * @generated from field: string provider = 1;
-   */
   provider: string;
 
-  /**
-   * @generated from field: repeated hobo.ci.fleet.v1.CiFleetHost hosts = 2;
-   */
   hosts: CiFleetHost[];
 };
 
-/**
- * Describes the message hobo.ci.fleet.v1.CiFleetStatus.
- * Use `create(CiFleetStatusSchema)` to create a new message.
- */
 export const CiFleetStatusSchema: GenMessage<CiFleetStatus> = /*@__PURE__*/
   messageDesc(file_ci_fleet, 1);
 
-/**
- * @generated from message hobo.ci.fleet.v1.CiFleetPowerAction
- */
 export type CiFleetPowerAction = Message<"hobo.ci.fleet.v1.CiFleetPowerAction"> & {
-  /**
-   * @generated from field: string provider = 1;
-   */
   provider: string;
 
-  /**
-   * @generated from field: hobo.ci.fleet.v1.CiFleetHost host = 2;
-   */
   host?: CiFleetHost | undefined;
 
-  /**
-   * @generated from field: string action = 3;
-   */
   action: string;
 
-  /**
-   * @generated from field: string action_id = 4;
-   */
   actionId: string;
 
-  /**
-   * @generated from field: string action_state = 5;
-   */
   actionState: string;
 };
 
-/**
- * Describes the message hobo.ci.fleet.v1.CiFleetPowerAction.
- * Use `create(CiFleetPowerActionSchema)` to create a new message.
- */
 export const CiFleetPowerActionSchema: GenMessage<CiFleetPowerAction> = /*@__PURE__*/
   messageDesc(file_ci_fleet, 2);
+
+export type CiFleetCachePatchOperation = Message<"hobo.ci.fleet.v1.CiFleetCachePatchOperation"> & {
+  op: string;
+
+  path: string;
+
+  valueJson: string;
+};
+
+export const CiFleetCachePatchOperationSchema: GenMessage<CiFleetCachePatchOperation> = /*@__PURE__*/
+  messageDesc(file_ci_fleet, 3);
+
+export type CiFleetCachePrewarm = Message<"hobo.ci.fleet.v1.CiFleetCachePrewarm"> & {
+  job: string;
+
+  ref: string;
+
+  state: string;
+};
+
+export const CiFleetCachePrewarmSchema: GenMessage<CiFleetCachePrewarm> = /*@__PURE__*/
+  messageDesc(file_ci_fleet, 4);
+
+export type CiFleetCacheScaleSet = Message<"hobo.ci.fleet.v1.CiFleetCacheScaleSet"> & {
+  name: string;
+
+  namespace: string;
+
+  cachesMounted: boolean;
+
+  patchState: string;
+
+  patch: CiFleetCachePatchOperation[];
+
+  prewarm?: CiFleetCachePrewarm | undefined;
+};
+
+export const CiFleetCacheScaleSetSchema: GenMessage<CiFleetCacheScaleSet> = /*@__PURE__*/
+  messageDesc(file_ci_fleet, 5);
+
+export type CiFleetCaches = Message<"hobo.ci.fleet.v1.CiFleetCaches"> & {
+  cluster: string;
+
+  namespace: string;
+
+  mode: string;
+
+  scaleSets: CiFleetCacheScaleSet[];
+};
+
+export const CiFleetCachesSchema: GenMessage<CiFleetCaches> = /*@__PURE__*/
+  messageDesc(file_ci_fleet, 6);
 

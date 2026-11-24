@@ -77,6 +77,7 @@
 		"search:structure": "ast-grep scan",
 		"setup": "node --experimental-strip-types scripts/bootstrap-siblings.mts && bash scripts/bootstrap-dev.sh --project-only && pnpm run install:check",
 		"plans:guard": "node --experimental-strip-types scripts/check-no-committed-plans.mts",
+		"secrets:guard": "node --experimental-strip-types scripts/check-secret-storage.mts",
 		"secrets:staged": "node --experimental-strip-types scripts/secrets-staged.mts",
 		"source:guard": "node --import tsx scripts/check-source-policy.mts",
 		"release:check": "node --import tsx scripts/check-release-state.mts",

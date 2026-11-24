@@ -26,7 +26,6 @@ export interface IacProgram {
 	driver: string;
 	action: "preview" | "apply" | "destroy";
 	stackName: string;
-
 	operationGeneration?: string;
 	/** The declaration the provider must realize, when supplied by the orchestrator. */
 	resource?: ResourcePlan;
@@ -350,7 +349,6 @@ function readProviderFailure(error: unknown): ProviderFailure {
 			error !== null &&
 			"requiresReconciliation" in error &&
 			error.requiresReconciliation === true;
-
 		const provesNotStarted =
 			typeof error === "object" &&
 			error !== null &&

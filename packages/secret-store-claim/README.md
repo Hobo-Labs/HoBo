@@ -26,8 +26,10 @@ with its reason.
 
 - `offers.ts`: the offer kinds, claim mechanisms and defaults; `parseSecretStoreOffer`.
 - `select.ts`: `parseSecretStoreEvidence`, `selectSecretStore`.
-- `binding.ts`: `SecretStoreBinding`, the coordinates committed as
-  `deploy/secret-store.binding.json`; parse, read and format.
+- `binding.ts`: `SecretStoreBinding`, the coordinates kept only in the
+  owner's own secret store (`SECRET_STORE_BINDING_ENTRY`, never committed) and
+  bundled by HoBo into a build at `BUNDLED_SECRET_STORE_BINDING_FILE`; parse,
+  read and format.
 - `claim.ts`: the claim bundle (`@hobo/claims`), one-time action sealing
   scoped the way `hobo claim open` redeems.
 - `auth-md.ts`: `probeAuthMdStore`, `provisionAuthMdStore`.

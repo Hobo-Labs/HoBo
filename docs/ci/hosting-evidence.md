@@ -6,11 +6,14 @@ description: "Read-only workflow checks for hosting evidence."
 
 # Hosting evidence observation
 
-The manually dispatched `HoBo hosting evidence (read-only)` workflow checks
-whether this repository's main-branch GitHub Actions identity can list names in
-the committed Infisical folder. A claimed legacy binding may use the confined
-repair parser for this read-only observation; that does not admit it to the
-relay deploy gate or any real deploy command. Foreign, pending, or malformed
+The manually dispatched `HoBo hosting evidence (read-only)` workflow holds no
+store coordinates: they live only in the owner's own secret store and are never
+committed. Run from the workflow, it reports `unavailable` and fails, naming the
+owner store session (HoBo MCP's `choose_secret_store`) as the place to observe
+from. Given a binding from that session, the observation checks whether the
+main-branch GitHub Actions identity can list names in the relay's Infisical
+folder. A claimed legacy binding may use the confined repair parser for this
+read-only observation; that does not admit it to any real deploy command. Foreign, pending, or malformed
 bindings return unavailable before any provider request. The workflow uses the
 HoBo secret-store SDK and reports only a small allowlist
 of key names. It may also read and report the public,

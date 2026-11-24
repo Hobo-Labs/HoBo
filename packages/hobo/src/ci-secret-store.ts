@@ -3,15 +3,6 @@
 // the owner by claim (ADR-0179 amendment "Secret store chosen at deploy,
 // provisioned by claim"; `@hobo/secret-store-claim`).
 //
-// Nothing is pre-provisioned by hand and nothing lands in Vercel or GitHub
-// secrets or variables. The store's coordinates (ids and an origin, no
-// credential) are written to `deploy/secret-store.binding.json` in the relay's
-// project, which `hobo ci deploy` and the deploy workflow read instead of
-// repository variables. Bearer material (a claim URL, a sealed sign-in) goes
-// only into the owner-only one-time action store under HOBO_HOME, and the
-// owner reveals it in their own terminal with `hobo claim open secret-store`.
-// This command never prints it.
-//
 // Evidence, per offer, gathered here:
 // - auth-md: each `--auth-md <origin>` is probed for auth.md metadata that
 //   advertises anonymous registration;
@@ -24,10 +15,6 @@
 //
 // HONEST SCOPE: exercised against local stand-ins only.
 
-import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { parseSessionBinding } from "@hobo/auth-md";
 import type { ClaimBundle, ClaimItem } from "@hobo/claims";
@@ -53,7 +40,7 @@ import {
 	provisionSelfHostedInfisical,
 	readSecretStoreBinding,
 	relayStoreLayout,
-	SECRET_STORE_BINDING_FILE,
+	SECRET_STORE_BINDING_ENTRY,
 	SECRET_STORE_CLAIM_ITEM,
 	SELF_HOSTED_PROVIDER_ID,
 	SecretStoreError,
@@ -75,6 +62,10 @@ import {
 import { applyClaimCommand, rebuildClaimState } from "./claim-plane.js";
 import { isJsonString } from "./json.js";
 import { createFileOneTimeActionStore } from "./one-time-action-store-file.js";
+import {
+	OwnerCredentialUnavailable,
+	type OwnerStoreEntries,
+} from "./owner-store-session.js";
 
 // The options of `hobo ci secret-store`, as `parseCiArgs` names them.
 export const CI_SECRET_STORE_OPTIONS = [
@@ -114,14 +105,6 @@ export const SECRET_STORE_ONLY_OPTIONS = [
 	"allow-designed",
 ] as const;
 
-// The settings the relay's config-service binding asks the deploy for, and
-// where in the binding each comes from.
-export const SECRET_STORE_DEPLOY_INPUTS = Object.freeze({
-	INFISICAL_SITE_URL: "endpoint",
-	INFISICAL_IDENTITY_ID: "relayIdentityId",
-	INFISICAL_PROJECT_ID: "projectId",
-} as const);
-
 const RUNTIME_BUILT = new Set([
 	"infisical-self-hosted",
 	"infisical-cloud-attach",
@@ -136,46 +119,84 @@ export class SecretStoreBindingRefusal extends Error {
 	}
 }
 
-/**
- * The committed binding of the relay project at `cwd`, or undefined when
- * the store has not been chosen yet. A binding the relay cannot read (a
- * designed runtime) or a malformed file is refused, never skipped.
- */
-export function loadSecretStoreBinding(
-	cwd: string,
-): ParsedSecretStoreBinding | undefined {
-	const file = path.join(cwd, SECRET_STORE_BINDING_FILE);
-	if (!existsSync(file)) return undefined;
+// public-contract: the refusal when the owner's store session that holds the coordinates is not established.
+export const SECRET_STORE_SESSION_REQUIRED =
+	"HOBO_CI_SECRET_STORE_SESSION_REQUIRED";
+
+const SESSION_REQUIRED_MESSAGE =
+	"The relay's store coordinates live only in the owner's secret store, never in the repository or the environment. Connect it with HoBo MCP's choose_secret_store (cwd: this project), then run again.";
+
+export interface SecretStoreBindingStore {
+	read(): Promise<string | undefined>;
+	write(text: string): Promise<void>;
+}
+
+function sessionRequired(): SecretStoreBindingRefusal {
+	return new SecretStoreBindingRefusal(
+		SECRET_STORE_SESSION_REQUIRED,
+		SESSION_REQUIRED_MESSAGE,
+	);
+}
+
+async function withinSession<T>(run: () => Promise<T>): Promise<T> {
+	try {
+		return await run();
+	} catch (error) {
+		if (
+			error instanceof OwnerCredentialUnavailable &&
+			error.reason === "no-session"
+		)
+			throw sessionRequired();
+		throw error;
+	}
+}
+
+export function ownerSecretStoreBindingStore(
+	entries: OwnerStoreEntries,
+): SecretStoreBindingStore {
+	return Object.freeze({
+		read: () => withinSession(() => entries.read(SECRET_STORE_BINDING_ENTRY)),
+		write: (text: string) =>
+			withinSession(() => entries.write(SECRET_STORE_BINDING_ENTRY, text)),
+	});
+}
+
+export function requireSecretStoreBindingStore(
+	store: SecretStoreBindingStore | undefined,
+): SecretStoreBindingStore {
+	if (store === undefined) throw sessionRequired();
+	return store;
+}
+
+export async function readSecretStoreBindingText(
+	store: SecretStoreBindingStore | undefined,
+): Promise<string | undefined> {
+	return requireSecretStoreBindingStore(store).read();
+}
+
+export async function loadSecretStoreBinding(
+	store: SecretStoreBindingStore | undefined,
+): Promise<ParsedSecretStoreBinding | undefined> {
+	const text = await readSecretStoreBindingText(store);
+	return text === undefined ? undefined : parseOwnerStoreBinding(text);
+}
+
+export function parseOwnerStoreBinding(text: string): ParsedSecretStoreBinding {
 	let binding: ParsedSecretStoreBinding;
 	try {
-		binding = readSecretStoreBinding(readFileSync(file, "utf8"));
+		binding = readSecretStoreBinding(text);
 	} catch {
 		throw new SecretStoreBindingRefusal(
 			"HOBO_CI_SECRET_STORE_BINDING_INVALID",
-			`${SECRET_STORE_BINDING_FILE} is not a valid secret store binding (coordinates only). A deploy credential needs both a deploy project other than the relay's, a deployCredentialIdentityId distinct from the relay and writer identities, and deployOidcSubject; re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id to configure one.`,
+			"The owner store's secret store binding is not valid (coordinates only). A deploy credential needs both a deploy project other than the relay's, a deploy credential identity distinct from the relay and writer identities, and the writer's deploy subject; re-run hobo ci secret-store connect through the owner hand-off to configure one.",
 		);
 	}
 	if (!RUNTIME_BUILT.has(binding.kind))
 		throw new SecretStoreBindingRefusal(
 			"HOBO_CI_SECRET_STORE_RUNTIME_UNBUILT",
-			`${SECRET_STORE_BINDING_FILE} binds a ${binding.kind} store, which the relay cannot read yet.`,
+			`The owner store's binding names a ${binding.kind} store, which the relay cannot read yet.`,
 		);
 	return binding;
-}
-
-/** The deploy inputs a binding fills: names to non-secret values. */
-export function secretStoreDeployInputs(
-	binding: Pick<
-		ParsedSecretStoreBinding,
-		"endpoint" | "projectId" | "relayIdentityId"
-	>,
-): ReadonlyMap<string, string> {
-	return new Map(
-		Object.entries(SECRET_STORE_DEPLOY_INPUTS).map(([name, field]) => [
-			name,
-			binding[field],
-		]),
-	);
 }
 
 type Values = Readonly<
@@ -280,6 +301,7 @@ export interface CiSecretStoreInput {
 	readonly now?: () => number;
 	/** Tests: accept a loopback stand-in's http origin as a fleet host. */
 	readonly allowLoopback?: boolean;
+	readonly bindingStore?: SecretStoreBindingStore;
 }
 
 async function gatherEvidence(input: CiSecretStoreInput) {
@@ -362,23 +384,14 @@ async function attachBundle(
 	});
 }
 
-/** Write the binding atomically; `provision` and `connect` both use it. */
 export async function writeSecretStoreBinding(
-	cwd: string,
+	store: SecretStoreBindingStore | undefined,
 	binding: ParsedSecretStoreBinding,
 ): Promise<string> {
-	const file = path.join(cwd, SECRET_STORE_BINDING_FILE);
-	const temporary = `${file}.${randomUUID()}.tmp`;
-	await mkdir(path.dirname(file), { recursive: true });
-	try {
-		await writeFile(temporary, formatSecretStoreBinding(binding), {
-			flag: "wx",
-		});
-		await rename(temporary, file);
-	} finally {
-		await rm(temporary, { force: true });
-	}
-	return SECRET_STORE_BINDING_FILE;
+	await requireSecretStoreBindingStore(store).write(
+		formatSecretStoreBinding(binding),
+	);
+	return SECRET_STORE_BINDING_ENTRY;
 }
 
 function claimSteps(kind: string, cwd: string): readonly string[] {
@@ -396,16 +409,16 @@ function claimSteps(kind: string, cwd: string): readonly string[] {
 			return [
 				`Run \`hobo claim open ${SECRET_STORE_CLAIM_ITEM} ${where}\` in your own terminal: it shows your Infisical sign-in once. Sign in, then change the password and turn on MFA.`,
 				`Then run \`hobo claim finalize ${SECRET_STORE_CLAIM_ITEM} ${where}\`: HoBo deletes its own bootstrap identity and checks that Infisical refuses its token.`,
-				`Commit ${SECRET_STORE_BINDING_FILE} (coordinates only) so hobo ci deploy and the deploy workflow find the store.`,
+				`The coordinates are in your secret store (${SECRET_STORE_BINDING_ENTRY}); hobo ci deploy reads them from the owner store session. Never commit or share them.`,
 			];
 		case "infisical-cloud-attach":
 			return [
 				"In Infisical's web app: sign up or in, create projects hobo-ci (folder /hobo-ci-relay) and hobo-ci-deploy in prod, and add three OIDC Auth machine identities: hobo-ci-relay (Vercel), hobo-ci-writer (GitHub Actions), and read-only hobo-ci-deploy-reader (GitHub Actions, in hobo-ci-deploy only). The hobo-deploy skill gives every value.",
-				`Run \`hobo ci secret-store connect ${where} --repo <owner/name> --project-id … --deploy-project-id … --relay-identity-id … --deploy-identity-id … --deploy-credential-identity-id … --team …\` with the ids (none is a secret; GH_TOKEN lets it read the OIDC subject GitHub issues for the repository), set both GitHub Actions identities' OIDC trust to the subject and claims it prints, then commit ${SECRET_STORE_BINDING_FILE}.`,
+				`In your own terminal, with your secret store connected (HoBo MCP's choose_secret_store), run \`hobo ci secret-store connect ${where} --repo <owner/name>\` with the ids from the dashboard. It writes them to your secret store as ${SECRET_STORE_BINDING_ENTRY}, never to the repository, and never prints them. Do not paste them into a chat or a commit.`,
 			];
 		default:
 			return [
-				`Commit ${SECRET_STORE_BINDING_FILE} (coordinates only) so hobo ci deploy and the deploy workflow find the store.`,
+				`The coordinates stay in your secret store (${SECRET_STORE_BINDING_ENTRY}); hobo ci deploy reads them from the owner store session.`,
 			];
 	}
 }
@@ -630,7 +643,7 @@ export async function runCiSecretStore(
 			await attachBundle(input.runtime, deploymentRef, bundle);
 		const written =
 			binding !== undefined
-				? await writeSecretStoreBinding(input.cwd, binding)
+				? await writeSecretStoreBinding(input.bindingStore, binding)
 				: undefined;
 		const steps = claimSteps(kind, input.cwd);
 		return {
@@ -640,7 +653,7 @@ export async function runCiSecretStore(
 			message: [
 				summary,
 				written !== undefined
-					? `Wrote ${written} (coordinates only).`
+					? `Wrote the coordinates to your secret store as ${written}; they are not shown here.`
 					: `The relay cannot read a ${kind} store yet; no binding was written.`,
 				"Owner, next:",
 				...steps.map((step, index) => `  ${index + 1}. ${step}`),
@@ -653,10 +666,8 @@ export async function runCiSecretStore(
 					? {
 							binding: {
 								kind: binding.kind,
-								endpoint: binding.endpoint,
-								projectId: binding.projectId,
 								claimState: binding.claimState,
-								file: SECRET_STORE_BINDING_FILE,
+								entry: SECRET_STORE_BINDING_ENTRY,
 							},
 						}
 					: undefined),

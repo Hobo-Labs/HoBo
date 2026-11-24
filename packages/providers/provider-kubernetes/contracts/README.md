@@ -1,6 +1,7 @@
 # Contracts
 
-One boundary crosses out of this package: the Kubernetes apiserver.
+One boundary crosses out of this package: the Kubernetes apiserver. Two pact
+files describe the two surfaces this package calls on it.
 
 ## `provider-kubernetes-apiserver.pact.json`
 
@@ -37,6 +38,29 @@ the review.
 | 403 Forbidden | Maps to `PROVIDER_AUTH_FAILED`, carrying the `Status.reason` |
 | namespace DELETE | Answers `Terminating`, so the outcome is `deleting`, not `deleted` |
 | namespace NotFound | The only evidence that turns `deleting` into `deleted` |
+
+## `provider-kubernetes-arc-runner-sets.pact.json`
+
+The contract for the Actions Runner Controller and batch surfaces
+`createArcRunnerSetClient` calls on behalf of `hobo ci fleet caches`.
+`test/arc-runner-sets.contract.test.ts` replays every interaction through the
+real client and guarded transport, asserting the emitted method, path, query,
+headers and whole body; `packages/hobo/test/ci-fleet-caches.test.ts` asserts the
+verb sends exactly the pact's patch and Job bodies. The responses were written
+by hand from the Kubernetes API reference (`AutoscalingRunnerSet` from ARC's
+`actions.github.com/v1alpha1` CRD, `Job` from `batch/v1`, `Status` failures).
+
+| Interaction | What it pins |
+|---|---|
+| list the runner scale sets | `GET …/autoscalingrunnersets`; the verb's default targets are every scale set it lists |
+| read one runner scale set | `GET …/autoscalingrunnersets/<name>` with the runner template the patch is computed from |
+| NotFound for a scale set | A 404 reads as absent, not as a failure to retry |
+| JSON-patch the node caches | `PATCH` with `application/json-patch+json`: a `resourceVersion` `test`, then the hostPath volumes, the `hobo-cache-owner` init container, the runner's mounts and env |
+| resourceVersion test no longer holds | A 422 means the object moved under the patch: `PROVISIONING_CONFLICT`, run again |
+| not authorized | A 403 maps to `PROVIDER_AUTH_FAILED` |
+| create the store prewarm Job | `POST …/jobs` with the whole Job, labelled with its scale set and commit |
+| AlreadyExists on that create | A 409 means this commit's prewarm already ran or is running |
+| prewarm Jobs by label | `GET …/jobs?labelSelector=hobo.ci/store-prewarm=<scale set>`; `--status` reads the newest one's conditions |
 
 ### Why the manifest is compared whole
 

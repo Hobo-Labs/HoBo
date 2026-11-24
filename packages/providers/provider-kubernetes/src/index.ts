@@ -14,6 +14,15 @@ export {
 	type ServiceRecord,
 } from "./api.js";
 export {
+	ARC_RUNNER_SETS_PATH,
+	type ArcJobCreation,
+	type ArcRunnerSetClient,
+	type ArcRunnerSetClientOptions,
+	arcRunnerSetPolicy,
+	BATCH_JOBS_PATH,
+	createArcRunnerSetClient,
+} from "./arc-runner-sets.js";
+export {
 	APPS_PATH,
 	createKubernetesApiClient,
 	errorForApiResponse,
@@ -53,6 +62,7 @@ export {
 	KubernetesProviderError,
 	redactClusterText,
 } from "./errors.js";
+export { createKubernetesHttpsTransport } from "./https-transport.js";
 export {
 	assertLocalIacProgram,
 	IAC_PROGRAM_API_VERSION,
@@ -62,6 +72,11 @@ export {
 	type IacResource,
 	KUBERNETES_IAC_PROVIDER,
 } from "./iac-program.js";
+export {
+	type KubernetesClusterAccess,
+	type KubernetesTlsMaterial,
+	parseKubeconfig,
+} from "./kubeconfig.js";
 export {
 	AUTH_SCHEMA,
 	CAPABILITIES_SCHEMA,

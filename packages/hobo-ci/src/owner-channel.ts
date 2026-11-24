@@ -53,6 +53,7 @@ export interface OwnerChannel {
 export const KEPT_STORE_SIGN_INS = [
 	"INFISICAL_TOKEN",
 	"OP_SERVICE_ACCOUNT_TOKEN",
+	"OP_CONNECT_TOKEN",
 	"BWS_ACCESS_TOKEN",
 ] as const;
 

@@ -237,7 +237,6 @@ export interface ResourceActorDeps {
 	actorHost: ActorHost;
 	executor: Executor;
 	broker: CredentialBroker;
-
 	verifyResume?: (input: {
 		readonly tenant: string;
 		readonly deploymentId: string;

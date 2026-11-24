@@ -1,8 +1,8 @@
 # `@hobo/runtime-rivet`
 
 Optional **Camp runtime** with a HoBo-owned local journal and Rivet-compatible
-actor keys. The current host is a local oracle; it does not place actors in a
-Rivet engine.
+actor keys. The local host remains an oracle. The separate distributed journal
+uses a real RivetKit actor and an asynchronous lease host.
 
 | HoBo contract | Realization |
 |---|---|
@@ -15,14 +15,34 @@ RivetKit, its WASM package, and the Rivet Engine image are pinned to 3.0.0.
 `loadRivetkit()` uses dynamic import for ESM and CommonJS hosts. The live tests
 exercise the pinned upstream engine separately from the HoBo local host, verify
 actor state across an engine restart, and fail if the engine or an actor action
-fails. Journal reopen tests cover persisted-state replay and in-flight commands.
+fails. Distributed journal coverage includes lease contention, durable appends,
+replay, actor sleep and wake. Journal reopen tests cover persisted-state replay
+and in-flight commands.
+
+Register `createRivetDistributedJournalActor(verifier)` in a RivetKit registry,
+and pass its client namespace, tenant, Camp and capability issuer to
+`createRivetDistributedJournal`. Each operation needs a short-lived signed
+capability bound to the actor key, action and exact arguments; the actor checks
+it against a host-owned authorization policy before accessing its journal.
+Keep the signing key and authority outside the deployed actor.
+
+Lease grants, fences, deduplication identities and facts share one actor-local
+SQLite transaction. Pages contain at most 16 events of at most 32 KiB each;
+use the first page's `revision` as `throughRevision` for subsequent pages. If
+a grant or append returns `OUTCOME_UNKNOWN`, reconcile with the same request
+or event ID. The asynchronous lease port fences appends in this journal only:
+it cannot fence a separate event store or external effects. The asynchronous
+journal does not yet implement the local host's durable inbox and outbox.
+The actor rejects a clock earlier than any time it has persisted; lease expiry
+also relies on the host's clock not moving backward between observations.
 
 ## Fidelity
 
 - `local-sqlite` uses `node:sqlite` for the local HoBo journal.
 - `runner`, `serverless`, and `managed` modes are rejected until a Rivet-backed
-  HoBo host is implemented and verified. A local journal cannot be labeled
-  `rivetkit`.
+  implementation of the synchronous `ActorHost` contract exists. Use the
+  separate asynchronous Rivet journal for distributed leases and facts; a
+  local journal cannot be labeled `rivetkit`.
 - The 3.0.0 pin does not migrate data from an existing Rivet 2 engine. An
   operator must establish and verify an upstream migration before upgrading
   an existing deployment.
