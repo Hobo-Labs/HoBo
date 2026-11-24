@@ -1,5 +1,4 @@
 import {
-	type FleetState,
 	type HostedRunnerProvider,
 	type MachineCandidate,
 	type MachineRegistry,
@@ -10,6 +9,7 @@ import {
 	type ProviderHealthStore,
 	type RouteFacts,
 	type RouteFactsSource,
+	type RunnerFleetState,
 	type RunnerRouteRequest,
 	registryMachineCandidates,
 	type SpendReader,
@@ -19,7 +19,7 @@ export type ActiveLeaseSource = Readonly<{
 	activeLeases(): Promise<readonly Readonly<{ accountId: string }>[]>;
 }>;
 
-export type FleetRoom = Readonly<{
+export type RunnerFleetRoom = Readonly<{
 	slots: number;
 	isolated: boolean;
 	leases: ActiveLeaseSource;
@@ -27,7 +27,7 @@ export type FleetRoom = Readonly<{
 
 export type StoreRouteFactsDeps = Readonly<{
 	accountId: string;
-	fleet: FleetRoom | undefined;
+	fleet: RunnerFleetRoom | undefined;
 	machines: MachineRegistry | undefined;
 	readers: ((repository: string) => Promise<ReadonlySet<string>>) | undefined;
 	spend: SpendReader | undefined;
@@ -85,7 +85,7 @@ export class StoreRouteFacts implements RouteFactsSource {
 		}
 	}
 
-	private async fleet(): Promise<FleetState | undefined> {
+	private async fleet(): Promise<RunnerFleetState | undefined> {
 		const room = this.deps.fleet;
 		if (!room || room.slots <= 0) return undefined;
 		const active = await room.leases.activeLeases();

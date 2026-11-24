@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hobo-fleet
+resources:
+  - namespace.yaml
+  - nats.yaml
+  - authority.yaml
+  - witness.yaml
+  - relay.yaml
+  - provision-job.yaml
+configMapGenerator:
+  - name: hobo-fleet-nats-config
+    files: [nats.conf=../nats/ha.conf]
+  - name: hobo-fleet-authority-config
+    files: [authority.json=../config/authority.ha.json]
+  - name: hobo-fleet-witness-config
+    files: [witness.json=../config/witness.ha.json]
+  - name: hobo-fleet-provisioner-config
+    files: [provisioner.json=../config/provisioner.ha.json]
+  - name: hobo-fleet-relay-config
+    files: [iroh-relay.toml=../relay/iroh-relay.toml]
+images:
+  - name: ghcr.io/hobo-labs/hobo/hobo-fleet-authority
+    newTag: candidate
+  - name: ghcr.io/hobo-labs/hobo/hobo-fleet-witness
+    newTag: candidate
+  - name: ghcr.io/hobo-labs/hobo/hobo-fleet-relay
+    newTag: candidate
+  - name: ghcr.io/hobo-labs/hobo/hobo-cli
+    newTag: candidate

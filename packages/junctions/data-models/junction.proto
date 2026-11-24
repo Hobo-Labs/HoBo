@@ -59,9 +59,11 @@ message DnsRecord {
 }
 
 message TrustAnchorExchange {
+  reserved 3;
+  reserved "anchor_ref";
   string from_yard = 1;
   string to_yard = 2;
-  string anchor_ref = 3;
+  bytes trust = 4;
 }
 
 message PolicyPackDistribution {

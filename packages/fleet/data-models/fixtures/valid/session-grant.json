@@ -1,0 +1,23 @@
+{
+  "sessionId": "ses_01",
+  "tenant": "acme",
+  "initiator": {
+    "memberId": "dev_fedcba9876543210fedcba9876543210",
+    "principal": "github:1234",
+    "transportIdentity": "node-7f3a",
+    "sealPublicKey": "Qm9vbXNoYWthbGFrYS1ib29tc2hha2FsYWthLWJvb20"
+  },
+  "acceptor": {
+    "memberId": "dev_0123456789abcdef0123456789abcdef",
+    "principal": "github:1234",
+    "transportIdentity": "node-7f3a",
+    "sealPublicKey": "Qm9vbXNoYWthbGFrYS1ib29tc2hha2FsYWthLWJvb20"
+  },
+  "purpose": "SESSION_PURPOSE_BLOB",
+  "orderId": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "blobDigests": [
+    "sha256:abababababababababababababababababababababababababababababababab"
+  ],
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "expiresAt": "2026-11-12T10:20:00.000Z"
+}

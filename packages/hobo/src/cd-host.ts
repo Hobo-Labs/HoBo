@@ -32,7 +32,7 @@ export function cdJson(status: number, value: unknown): FeedResponse {
 export type CdReadiness = "service" | "composed";
 
 // public-contract: shared subscription lease id every Vercel CD instance claims; deployed holders coordinate on this exact value.
-export const FLEET_PASS_SUBSCRIPTION = "cd:vercel:fleet-pass";
+export const HOST_PASS_SUBSCRIPTION = "cd:vercel:fleet-pass";
 export const DEFAULT_PASS_DEADLINE_MS = 240_000;
 // public-contract: the fleet pass lease must outlive the pass deadline with a margin over a Vercel function's 300 s maxDuration, so the lease never expires mid-pass.
 export const DEFAULT_FLEET_PASS_LEASE_TTL_MS = 360_000;
@@ -328,7 +328,7 @@ export async function composeCdHost(
 			return { held: false, skipReason: "fleet-pass-unsupported" };
 		try {
 			const lease = await claim({
-				subscriptionId: FLEET_PASS_SUBSCRIPTION,
+				subscriptionId: HOST_PASS_SUBSCRIPTION,
 				partitionId: config.tenant,
 				holderId: input.holderId,
 				leaseTtlMs: fleetPassLeaseTtlMs,
@@ -349,7 +349,7 @@ export async function composeCdHost(
 		if (release === undefined) return;
 		await release
 			.call(runtime.store, {
-				subscriptionId: FLEET_PASS_SUBSCRIPTION,
+				subscriptionId: HOST_PASS_SUBSCRIPTION,
 				partitionId: config.tenant,
 				holderId: input.holderId,
 				fenceToken: lease.fenceToken,

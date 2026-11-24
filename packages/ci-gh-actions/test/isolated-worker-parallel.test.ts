@@ -265,7 +265,7 @@ describe("cli docker driver parallel helpers", () => {
 			),
 		).resolves.toEqual({ exitCode: 0 });
 		expect(readFileSync(log, "utf8").trim()).toBe(
-			"run --rm --network none --user 1000:1000 hobo-ci-deps:local sh -c test -w /opt/actions-runner/_hobo_work",
+			"run --rm --cap-drop=ALL --security-opt=no-new-privileges:true --pids-limit=4096 --read-only --tmpfs=/tmp:rw,exec,nosuid,nodev,mode=1777 --mount=type=volume,target=/opt/actions-runner --mount=type=volume,target=/home/runner --network none --user 1000:1000 hobo-ci-deps:local sh -c test -w /opt/actions-runner/_hobo_work",
 		);
 	});
 
@@ -273,7 +273,7 @@ describe("cli docker driver parallel helpers", () => {
 		const { bin, log } = fakeBinary();
 		const driver = createCliDockerDriver({
 			binary: bin,
-			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+			env: { PATH: process.env.PATH },
 		});
 		await driver.create({
 			name: "hobo-x",
@@ -297,7 +297,7 @@ describe("cli docker driver parallel helpers", () => {
 		const { bin, log } = fakeBinary();
 		const driver = createCliDockerDriver({
 			binary: bin,
-			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+			env: { PATH: process.env.PATH },
 		});
 		await driver.create({
 			name: "hobo-x",
@@ -315,7 +315,7 @@ describe("cli docker driver parallel helpers", () => {
 		const { bin, log } = fakeBinary();
 		const driver = createCliDockerDriver({
 			binary: bin,
-			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+			env: { PATH: process.env.PATH },
 		});
 		await driver.create({
 			name: "hobo-x",
@@ -334,7 +334,7 @@ describe("cli docker driver parallel helpers", () => {
 		const { bin, log } = fakeBinary();
 		const driver = createCliDockerDriver({
 			binary: bin,
-			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+			env: { PATH: process.env.PATH },
 		});
 		await driver.create({
 			name: "hobo-trunk",
@@ -367,7 +367,7 @@ describe("cli docker driver parallel helpers", () => {
 			const logEvent = vi.fn();
 			const driver = createCliDockerDriver({
 				binary: bin,
-				env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+				env: { PATH: process.env.PATH },
 				log: logEvent,
 			});
 			const spec = {
@@ -410,7 +410,7 @@ describe("cli docker driver parallel helpers", () => {
 		const { bin } = fakeBinary();
 		const driver = createCliDockerDriver({
 			binary: bin,
-			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0" },
+			env: {},
 		});
 		await expect(
 			driver.create({
@@ -428,7 +428,7 @@ describe("cli docker driver parallel helpers", () => {
 		const { bin, log } = fakeBinary();
 		const driver = createCliDockerDriver({
 			binary: bin,
-			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0" },
+			env: {},
 		});
 		await driver.create({
 			name: "hobo-x",
@@ -453,7 +453,7 @@ describe("cli docker driver parallel helpers", () => {
 		const { bin } = fakeBinary();
 		const driver = createCliDockerDriver({
 			binary: bin,
-			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0" },
+			env: {},
 		});
 		await expect(
 			driver.create({

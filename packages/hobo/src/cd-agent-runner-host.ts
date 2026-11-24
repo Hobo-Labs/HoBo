@@ -1,30 +1,3 @@
-/**
- * The runner-host realizer as `hobo deploy agent run` registers it on a
- * runner host (packages/ci-gh-actions/deploy/runner-fleet/README.md), and
- * the Station's reading of what such an agent reports.
- *
- * Agent side: `createRunnerHostRealizer` adapts the typed `ResourceResolver`
- * from `@hobo/ci-gh-actions/runner-host` to the `@hobo/cd` `Realizer` port.
- * The image a Set asks for is the runner-host row of its resolved plan
- * (`productId` `hobo-ci.runner-host/v1`, `realizationParameters.image`, pinned
- * by digest); converge drains, swaps the controller by digest and verifies by
- * observation, and a refusal (a drain deadline, a failed verify restored to
- * the previous digest, a missing host port) is a BLOCKED observation with the
- * realizer's own code. Every observation carries the host's health claims
- * (mesh advert, lease, readiness, served labels).
- *
- * Station side: `withRunnerHostHealthIngest` wraps the delivery feed so an
- * accepted observation from a runner-host agent also reaches
- * `CampInventory.observe` as health-source conditions (REACHABLE / LEASED /
- * READY) and claims, and a host that is not ready carries the NO_PLACE taint
- * `hobo.ci/runner-host-unready` until it is: placement skips it and a fan-out
- * defers it. Nothing here grants: claims only narrow.
- *
- * Credentials: the request names the registry read credential by locator
- * (`credentialRef`); the host's container engine holds it, and nothing here
- * resolves, logs or records it.
- */
-
 import {
 	create,
 	fromJson,
@@ -89,8 +62,8 @@ export const RUNNER_HOST_UNREADY_TAINT = "hobo.ci/runner-host-unready";
 
 const HOST_KINDS: readonly RunnerHostKind[] = [
 	"box-worker",
-	"mesh-node",
-	"local-runner",
+	"fleet-device",
+	"developer-device",
 ];
 const CREDENTIAL_LOCATOR = /^owner:\/\/[A-Za-z_][A-Za-z0-9_.-]{0,127}$/u;
 const DOCKER_BINARY = /^(?:docker|podman|\/[^\s\0]{1,255})$/u;
@@ -101,7 +74,6 @@ const RELEASE_URL = /^https:\/\/[^\s@/]{1,253}(?:\/[^\s@]{0,2048})?$/u;
 
 /** What a runner host's agent is told about itself (`HOBO_CD_RUNNER_HOST`). */
 export type RunnerHostAgentConfig = Readonly<{
-	/** The host's mesh node id; its Camp is `hobo-ci-runners/<hostId>`. */
 	hostId: string;
 	hostKind: RunnerHostKind;
 	/** Locator of the registry read credential the host's engine holds. */
@@ -135,7 +107,7 @@ function refusal(code: string, message: string, remediation: string) {
 	};
 }
 
-const CONFIG_REMEDIATION = `Write the runner host's agent config as JSON {"hostId":"<mesh node id>","hostKind":"box-worker|mesh-node|local-runner","credentialRef":"owner://<NAME>","docker":{"binary":"docker"},"worker":{"database":"/var/lib/hobo-ci/worker.sqlite"} or {"directory":"<local runner state directory>"},"controller":{"mode":"container"} or {"mode":"process","releases":"<absolute directory or https:// base URL>"},"drainDeadlineMs":7200000} and name it with ${CD_RUNNER_HOST_ENV} (packages/ci-gh-actions/deploy/runner-fleet/README.md).`;
+const CONFIG_REMEDIATION = `Write the runner host's agent config as JSON {"hostId":"<device name in fleet hobo>","hostKind":"box-worker|fleet-device|developer-device","credentialRef":"owner://<NAME>","docker":{"binary":"docker"},"worker":{"database":"/var/lib/hobo-ci/worker.sqlite"} or {"directory":"<local runner state directory>"},"controller":{"mode":"container"} or {"mode":"process","releases":"<absolute directory or https:// base URL>"},"drainDeadlineMs":7200000} and name it with ${CD_RUNNER_HOST_ENV} (packages/ci-gh-actions/deploy/runner-fleet/README.md).`;
 
 /** Parse the agent config once; every problem is listed, nothing partial is returned. */
 export function parseRunnerHostAgentConfig(
@@ -170,10 +142,14 @@ export function parseRunnerHostAgentConfig(
 		!isJsonString(hostId) ||
 		runnerHostIdForCamp(`${RUNNER_FLEET_YARD}/${hostId}`) === undefined
 	)
-		problems.push("hostId must be the host's lowercase mesh node id");
+		problems.push(
+			"hostId must be the host's lowercase device name in fleet hobo",
+		);
 	const kind = HOST_KINDS.find((k) => k === hostKind);
 	if (kind === undefined)
-		problems.push("hostKind must be box-worker, mesh-node or local-runner");
+		problems.push(
+			"hostKind must be box-worker, fleet-device or developer-device",
+		);
 	if (!isJsonString(credentialRef) || !CREDENTIAL_LOCATOR.test(credentialRef))
 		problems.push(
 			"credentialRef must name an entry in the owner's secret store as owner://NAME, never a secret value",
@@ -794,7 +770,7 @@ export function createRunnerHostVerifySuite(
 				return refuse(
 					"runner-host-unready",
 					`${input.campId} converged Set ${set.setId} but is not ready (${ready?.reason || "no readiness reported"})`,
-					"The host's controller is not serving or its mesh advert is stale or unhealthy; fix the host, then promote again.",
+					"The host's controller is not serving or its fleet observation is stale or unhealthy; fix the host, then promote again.",
 				);
 			return {
 				ok: true as const,

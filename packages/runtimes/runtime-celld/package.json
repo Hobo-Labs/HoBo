@@ -16,7 +16,8 @@
 		}
 	},
 	"dependencies": {
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@hobo/fleet": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": ">=24.0.0"

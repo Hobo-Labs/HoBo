@@ -1,0 +1,24 @@
+{
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "sequence": 3,
+  "keys": [
+    {
+      "purpose": "KEY_PURPOSE_SIGN",
+      "keyId": "dev_0123456789abcdef0123456789abcdef#sign",
+      "algorithm": "KEY_ALGORITHM_EDDSA",
+      "value": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4"
+    },
+    {
+      "purpose": "KEY_PURPOSE_SEAL",
+      "keyId": "dev_0123456789abcdef0123456789abcdef#seal",
+      "value": "Qm9vbXNoYWthbGFrYS1ib29tc2hha2FsYWthLWJvb20"
+    },
+    {
+      "purpose": "KEY_PURPOSE_TRANSPORT",
+      "keyId": "dev_0123456789abcdef0123456789abcdef#transport",
+      "value": "node-7f3a"
+    }
+  ],
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "notAfter": "2026-11-13T10:00:00.000Z"
+}

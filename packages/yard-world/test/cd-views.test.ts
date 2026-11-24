@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest";
 import {
 	COMPLIANCE_WATCH_RATIO,
 	complianceHeatmap,
+	deliveryCampsView,
 	emptyWorld,
-	fleetView,
 	freightTimeline,
 	heatBand,
 	liftCdTopology,
@@ -295,7 +295,7 @@ describe("fleet views", () => {
 				},
 				1,
 			);
-		const view = fleetView(
+		const view = deliveryCampsView(
 			metrics([
 				cond("c2", "reachable", "false"),
 				cond("c1", "reachable", "true"),

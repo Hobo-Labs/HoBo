@@ -93,7 +93,7 @@ flowchart TB
 | Policy | Tag ACL + OPA HTTP/CLI + **rego-lite** JSON documents | Per-tenant OPA bundle distribution |
 | Billing | Aggregator + **durable ledger** + Stripe PaymentIntent REST | Tax, dunning, hosted checkout UX |
 | DNS | Cloudflare + Route53 (**SigV4**), Tailscale **API** MagicDNS, Netbird management DNS, heartbeat dynamic DNS | Multi-region failover automation |
-| Credentials | Real **ES256 DPoP** + audience-bound **JWT-SVID** | SPIRE Workload API fetch drop-in |
+| Credentials | DPoP from `@hobo/fleet/keys`; audience-bound **JWT-SVID** elevated capabilities through `@hobo/identity` | SPIRE Workload API fetch drop-in |
 
 ```mermaid
 flowchart LR
