@@ -670,6 +670,7 @@ export function selectRelevantChecks(
 				file === "scripts/test/read-stdin.test.ts" ||
 				file === "scripts/test/job-scope.test.ts" ||
 				file === "scripts/ci/job-scope.mts" ||
+				file === "scripts/ci/state-machine-scope.mts" ||
 				file === "scripts/ci/dependent-tests.mts" ||
 				file === "scripts/ci/impact-classifier.mts",
 		)
@@ -685,6 +686,31 @@ export function selectRelevantChecks(
 			],
 			reason:
 				"changed-path stdin readers must keep surviving a late writer on a non-blocking pipe (EAGAIN)",
+		});
+	}
+
+	if (
+		files.some(
+			(file) =>
+				file === "scripts/ci/state-machine-scope.mts" ||
+				file === "scripts/test/state-machine-scope.test.ts" ||
+				file === "scripts/ci/job-scope.mts" ||
+				file === "scripts/ci/affected-lanes.mts" ||
+				file === "scripts/verify-all-state-machines.sh" ||
+				file === "scripts/verify-state-machine.sh" ||
+				file.startsWith(".agents/skills/verify-"),
+		)
+	) {
+		checks.push({
+			command: "node",
+			args: [
+				"--import",
+				"tsx",
+				"--test",
+				"scripts/test/state-machine-scope.test.ts",
+			],
+			reason:
+				"the PR impact plan skips state-machine verification only when no changed path reaches the verification skills",
 		});
 	}
 
