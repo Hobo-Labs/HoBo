@@ -1,17 +1,11 @@
 ---
 type: Design
-title: "CI runner routing"
-description: "Runner routing: how the HoBo CI relay chooses among owned and rented runner providers: per-provider financial models rated by the pricing engine, admission through the shared budget policy, and the box relay's routing slip ahead of the queue."
-tags: [hobo, ci, finops, routing, design]
+title: "CI fleet balancing"
+description: "How the HoBo CI relay balances jobs across owned and rented runner providers: per-provider financial models rated by the pricing engine, admission through the shared budget policy, and the box relay's routing slip ahead of the queue."
+tags: [hobo, ci, finops, fleet, design]
 ---
 
-# CI runner routing
-
-Runner routing chooses a runner *provider* for a job by role and cost. It is
-routing, not a fleet ([ADR-0183](./adr/fleet.md#adr-0183)): the machines HoBo
-owns are members of the fleet `hobo` in [HoBo Fleet](./fleet.md), and runner
-routing reads their health and capacity from it. This document was titled
-"CI fleet balancing" before that consolidation.
+# CI fleet balancing
 
 HoBo CI started with one host, the box. When more work arrives than the box has
 slots, jobs wait on the `hobo` label, and a job that waits long enough is
@@ -21,8 +15,8 @@ operator enabled them. This document describes the general form: any number of
 providers, compared on what a job would really cost there, admitted by the same
 [shared budget policy](./shared-budget-policy.md) that governs CI admission.
 
-The code is the `runner-routing` module of `@hobo/ci`
-([`packages/ci/src/runner-routing/`](../../packages/ci/src/runner-routing/)) and the routing
+The code is the `fleet` module of `@hobo/ci`
+([`packages/ci/src/fleet/`](../../packages/ci/src/fleet/)) and the routing
 slip issuer in `@hobo/ci-gh-actions`
 ([`routing-slip-issuer.ts`](../../packages/ci-gh-actions/src/isolated-worker/routing-slip-issuer.ts)).
 Operator steps are in the
@@ -45,7 +39,7 @@ routing slip ([ADR-0181](./adr/routing-slips.md#adr-0181)).
 
 ## Financial models
 
-[`models.ts`](../../packages/ci/src/runner-routing/models.ts) holds one model per
+[`models.ts`](../../packages/ci/src/fleet/models.ts) holds one model per
 machine class per provider: the rate per runner minute, whether the provider
 rounds each job up to a minute, the plan fee, the minutes included each month,
 the provider's own ceiling on jobs at once, and which repositories it serves.
@@ -91,8 +85,8 @@ to Runloop were read on 2026-11-10.
 | GitHub-hosted, public repository | Label | 0 | — | — | 20 jobs at once on the Free plan |
 | GitHub-hosted, private repository | Label | 0.006 | account fact | — | Each job rounded up to a minute |
 
-Runner routing never multiplies a rate by a duration.
-[`pricing.ts`](../../packages/ci/src/runner-routing/pricing.ts) compiles a model into an
+The fleet never multiplies a rate by a duration.
+[`pricing.ts`](../../packages/ci/src/fleet/pricing.ts) compiles a model into an
 `@hobo/pricing` catalog: a product with a runner-minute meter, a rate card with
 the usage charge and the plan fee as a fixed monthly charge, and an allowance
 grant for the included minutes. The quote engine rates the month with and
@@ -107,7 +101,7 @@ out of that without special cases:
 
 ## Balancing
 
-[`balanceRunnerProviders`](../../packages/ci/src/runner-routing/balance.ts) asks three questions
+[`balanceFleet`](../../packages/ci/src/fleet/balance.ts) asks three questions
 in order and never merges them.
 
 1. **Can this member run the job at all?** Repository visibility and ownership,
@@ -155,7 +149,7 @@ The relay used to write a route table to the repository variable
 `HOBO_CI_FLEET_ROUTES` after each dispatch pass. That publisher is deleted
 ([ADR-0181](./adr/routing-slips.md#adr-0181-routing-list), decision 6): no environment or
 repository variable carries routing (R2), and nothing ever read the table. At
-each start the routing-slip leader deletes `HOBO_CI_FLEET_ROUTES`, `_STATE`,
+each start the mesh leader deletes `HOBO_CI_FLEET_ROUTES`, `_STATE`,
 `_CAPACITY` and the five human-set route variables; a 403 (the App's manifest
 does not request repository variables) is logged once and changes nothing,
 since no workflow reads them.
@@ -163,10 +157,9 @@ since no workflow reads them.
 The relay's answer now travels as a **routing slip**
 ([ADR-0181](./adr/routing-slips.md#adr-0181)): the message of a parentless
 commit at `refs/hobo/routing-slip`, written by the box relay that leads the
-fleet (rank 0 of `rankMembers` over its `DISPATCHER` members) and read by the **Route runners** job with its own token. Per class
-(`pr`, `fork`, `trunk`) it gives a `runner`,
-a `tier` and a `reason` code, never a figure. The reasons come from
-`@hobo/fleet` `fleetVerdict` over the box's fleet view:
+mesh and read by the **Route runners** job with its own token. Per class
+(`pr`, `fork`, `trunk`, the classes `#FleetRoutes` named) it gives a `runner`,
+a `tier` and a `reason` code, never a figure:
 
 ```json
 {"pr":{"runner":"hobo","tier":"fleet","reason":"fleet-busy"},
@@ -174,9 +167,9 @@ a `tier` and a `reason` code, never a figure. The reasons come from
  "trunk":{"runner":"ubuntu-24.04","tier":"github","reason":"no-capacity"}}
 ```
 
-The fleet `hobo` is refused for a class only when no live member serves its label
+The fleet is refused for a class only when no live node serves its label
 (`no-node`), when work assigned to it has started nothing for ten minutes
-(`stalled`), or when every member refuses for a reason other than its own
+(`stalled`), or when every node refuses for a reason other than its own
 running jobs and no counted external pool has a free runner (`no-capacity`).
 A busy box is `fleet-busy`; a timely pickup and wait check preserves it even
 when several jobs are queued (R4). A fleet slip must have current GitHub
@@ -193,10 +186,10 @@ its runner yet. The pull-request deps image job uses an enrolled box when the
 fleet is selected; otherwise it can validate the unpromoted image on a
 GitHub-hosted Docker runner, with Node 24 and read-only GHCR access.
 
-The slip does not carry a balanced choice between paid label providers:
-its classes say fleet, local box or GitHub-hosted. The route table that once
-computed that choice (`fleetRouteTable`, `#FleetRoutes`) was deleted with the
-variables it described.
+The slip does not yet carry the balanced choice between paid label providers
+that the route table computed: its classes say fleet, local box or
+GitHub-hosted. `fleetRouteTable` and `#FleetRoutes` remain in `@hobo/ci` for
+that.
 
 The rate, included minutes and ceiling of each member come from the connected
 offer, which is what the operator observed for this account. Usage that the
@@ -215,7 +208,7 @@ would post for a new offer.
   label provider is bounded only by that provider's own spend limit. This must
   be closed before a workflow reads the table for a paid provider.
 - **The slip does not name paid label providers.** Routing a class to the
-  cheapest admitted label provider is still outstanding. Jobs that run off the box still
+  provider `fleetRouteTable` ranks first is still outstanding. Jobs that run off the box still
   assume its toolchain image and mounts.
 - **Host drivers for the sandbox providers** (Agent37, Modal, Boat, Daytona,
   E2B, Lizard, Northflank, Freestyle, Blaxel, Cloudflare Sandbox and Runloop).
@@ -223,7 +216,7 @@ would post for a new offer.
   cannot start a runner on them, so they are not accepted as policy provider
   kinds. Running the Actions runner on any of them is untested. Lizard's
   runners are a label provider and are accepted as the kind `lizard`.
-- **A job's own size.** The refusal `fleet.machine` compares a job's stated CPU and memory
+- **A job's own size.** `fleet.machine` compares a job's stated CPU and memory
   need with the machine class, but the relay does not yet state one for a
   routed job, so the check constrains only callers that supply it.
 - **Circuit breakers for rented members.** The box daemon marks its own offers
@@ -232,15 +225,15 @@ would post for a new offer.
   a rented provider after failed launches or slow pickups.
 - **Live vendor billing.** The models are published list prices read by hand.
   No provider account, invoice or usage API was exercised.
-- **Upgrading the owned hosts through HoBo CD.** The box worker and the
-  other enrolled runner hosts are Camps of the `hobo-ci-runner-fleet` Bindle; their
+- **Upgrading the owned hosts through HoBo CD.** The box worker, mesh nodes
+  and local runners are Camps of the `hobo-ci-runner-fleet` Bindle; their
   Station Rail approves the `self-hosted` provider, their CD agent registers
-  the runner-host realizer, and each agent report carries the host's fleet
-  observation, lease and readiness into Camp inventory, so an unready host is
-  tainted `NO_PLACE` and a fan-out defers it. Balancing reads the fleet view,
-  not that inventory. The agent reads the worker's leases, observation and
-  admission marker from the worker's data directory, an enrolled developer
-  machine's GitHub presence from the report its controller writes there, and swaps a
+  the runner-host realizer, and each agent report carries the host's mesh
+  advert, lease and readiness into Camp inventory, so an unready host is
+  tainted `NO_PLACE` and a fan-out defers it. Balancing reads the mesh board,
+  not that inventory. The agent reads the worker's leases, advert and
+  admission marker from the worker's data directory, a local runner's GitHub
+  presence from the report its controller writes there, and swaps a
   controller that runs as a process through its daemon's supervisor
   (single-file releases built by `release:build`, staged by their own
   digest and paired with the image of the same version in the fleet's

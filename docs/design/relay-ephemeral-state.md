@@ -157,28 +157,6 @@ undocumented cases marked as assumptions, is in
 `meterLibsqlClient` counts requests and `createLibsqlUsageMeter` sums the
 binding's rows estimate.
 
-## Options routed by budget
-
-Under the 2026-11-11 amendment of ADR-0179 every binding above is a priced
-offer in HoBo's pricing catalog, and budget policy picks exactly one active
-backend: Upstash (500,000 commands a month free, then pay-as-you-go), Aiven for
-Valkey free (no command cap), Turso free (500 million rows read, 10 million
-written; blocked when exhausted), self-hosted Valkey (no provider cost), and
-Vercel Blob (first-party, conditional writes by ETag; pay-as-you-go, so
-chosen only under a declared cap). The assignment log that names the active
-backend is itself kept on the backends through this port, by majority: one
-key per backend, `hobo-ci:<env>:fleet:assignment`, written by
-`putIfAbsent` or `compareAndSet` on the version read
-(`ephemeralAssignmentReplica` in `@hobo/fleet/assignment`, the one-active
-register of [HoBo Fleet](./fleet.md); cost-based choosing is
-[`@hobo/backend-routing`](../../packages/backend-routing/README.md)), with the
-30-day TTL refreshed on every write and repair tick. A log a backend loses
-reads as empty and is rejoined from the others. Usage counters live on each
-backend too, `hobo-ci:<env>:fleet:usage:<backend>:<unit>:<YYYY-MM>`. A switch starts the new
-backend cold, which is safe because everything here may be lost. Sources, the
-cost table and the selection policy:
-[Options routed by budget](./hosted-relay-stateless.md#options-routed-by-budget).
-
 ## What the tests establish
 
 The same 24 conformance cases run on the in-memory engine, on a real
@@ -192,8 +170,7 @@ claims durability.
 
 ## Related
 
-- [HoBo Fleet](./fleet.md) — the cache fleet is a local-mode one-active fleet ([ADR-0183](./adr/fleet.md#adr-0183)).
-- [CI Relay Mesh](./ci-relay-mesh.md) — superseded by ADR-0183.
+- [CI Relay Mesh](./ci-relay-mesh.md) — the relay this state serves.
 - [`@hobo/provider-upstash`](../../packages/providers/provider-upstash/README.md) — the REST binding.
 - [`@hobo/provider-turso`](../../packages/providers/provider-turso/README.md) — the libSQL binding.
 - [`@hobo/core` architecture](../../packages/core/ARCHITECTURE.md) — the port contracts.

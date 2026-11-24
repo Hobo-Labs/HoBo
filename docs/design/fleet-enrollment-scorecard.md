@@ -1,16 +1,6 @@
----
-type: Scorecard
-title: "Fleet enrollment scorecard (superseded)"
-description: "Frozen ratings of the fleet-v2 enrollment design, superseded by ADR-0183."
-status: "Superseded by ADR-0183"
-tags: [hobo, ci, fleet, superseded]
----
-
 # Fleet enrollment scorecard
 
-> **Superseded by [ADR-0183](./adr/fleet.md#adr-0183).** Frozen; the outcomes of [HoBo Fleet](./fleet.md) are checked by `pnpm run fleet:outcome <id>`.
-
-Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` and `not-implemented` separately from `pass`. The allowed status vocabulary is `pass`, `blocked-on-credentials` and `not-implemented`. Frozen: `fleet-v2` and this scorecard's generator and eval test were deleted by the HoBo Fleet consolidation (ADR-0183).
+Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` and `not-implemented` separately from `pass`. The allowed status vocabulary (`pass`, `blocked-on-credentials`, `not-implemented`) is pinned by `test/fleet-enrollment-scorecard.eval.test.ts`.
 
 | Section | Requirement | Status | Evidence |
 | --- | --- | --- | --- |

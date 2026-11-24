@@ -7,11 +7,7 @@ tags: [hobo, design, adr, ci, relay, routing, fleet]
 
 # ADR-0180 — Runner Routing Asks the Relay for a Fleet Verdict {#adr-0180}
 
-**Status:** Superseded by [ADR-0183](fleet.md#adr-0183) (2026-11-14): a
-reporter is an enrolled fleet device, a report is an observation, and
-agreement is `@hobo/fleet` `fleetVerdict` over the signed fleet view; the
-hosted verdict routes, stores, reporter keys and PACT are deleted. Earlier
-superseded for transport by
+**Status:** Superseded for transport by
 [ADR-0181](routing-slips.md#adr-0181) (2026-11-13): the route job reads the
 box relay's routing slip instead of asking the hosted relay. The rule stands:
 the relay decides and no capacity figure leaves it. Accepted, amended
@@ -229,7 +225,7 @@ the route table and its `HOBO_CI_FLEET_ROUTES` publisher stay.
 channel is built to, and what the workflows, the monitor and the retirement
 of the variable channels do. Operating the channel (enrollment, switches,
 cost, rollback, the game day) is in the
-fleet verdict runbooks, which the HoBo Fleet consolidation (ADR-0183) removed with the hosted verdict;
+[fleet verdict runbooks](../../../packages/ci-vercel/README.md#fleet-verdict-operations);
 its evidence gates G1–G7 are recorded in
 [finding 145](../../ci/findings/0145-fleet-verdict-channel-operating-record.md).
 
