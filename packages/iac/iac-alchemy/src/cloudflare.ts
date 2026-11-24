@@ -1,10 +1,14 @@
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { Database } from "@alchemy.run/cloudflare/D1/Database";
+import { App as FlagshipApp } from "@alchemy.run/cloudflare/Flagship/App";
+import { Flag as FlagshipFlag } from "@alchemy.run/cloudflare/Flagship/Flag";
 import { Namespace } from "@alchemy.run/cloudflare/KV/Namespace";
 import type { Providers } from "@alchemy.run/cloudflare/Providers";
 import { Queue } from "@alchemy.run/cloudflare/Queues/Queue";
 import { Bucket } from "@alchemy.run/cloudflare/R2/Bucket";
+import { Secret } from "@alchemy.run/cloudflare/SecretsStore/Secret";
 import { Vite } from "@alchemy.run/cloudflare/Website/Vite";
 import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
 import * as Effect from "effect/Effect";
@@ -15,11 +19,21 @@ import {
 	describeAlchemyPrimitiveSupport,
 } from "./bindle.js";
 import {
+	type CloudflareFlagshipBoolean,
+	captureCloudflareFlagshipFlags,
+	cloudflareFlagshipResourceIds,
+} from "./cloudflare-flagship.js";
+import {
 	type CloudflareBindleEntrypoint,
 	cloudflareDependencyBindings,
 	inspectCloudflareWorker,
 	validateCloudflareHttpAnnotations,
 } from "./cloudflare-runtime.js";
+import {
+	type CloudflareSecretDefinition,
+	captureCloudflareSecrets,
+	cloudflareSecretResourceId,
+} from "./cloudflare-secret.js";
 import { AlchemyIacError } from "./plan.js";
 import {
 	type AlchemySourceClaim,
@@ -31,11 +45,33 @@ import {
 
 export interface CloudflareBindleMappingOptions {
 	readonly workerModules: Readonly<Record<string, string>>;
+
 	readonly projectRoot?: string;
+
 	readonly sourceFence?: AlchemySourceFence;
+
+	readonly flagshipFlags?: readonly CloudflareFlagshipBoolean[];
+
+	readonly secrets?: readonly CloudflareSecretDefinition[];
 }
 
+export {
+	type CloudflareFlagshipBoolean,
+	cloudflareFlagshipResourceIds,
+} from "./cloudflare-flagship.js";
+export {
+	type CloudflareSecretDefinition,
+	cloudflareSecretResourceId,
+} from "./cloudflare-secret.js";
+
 const viteEntrypoints = new WeakMap<CloudflareBindleEntrypoint, string>();
+const applyVite = Reflect.apply;
+const getViteEntrypoint = WeakMap.prototype.get;
+const setViteEntrypoint = WeakMap.prototype.set;
+const reportHasOwn = Object.hasOwn;
+const reportCreate = Object.create;
+const reportDefine = Object.defineProperty;
+const reportFreeze = Object.freeze;
 
 export function cloudflareViteApp(root: string): () => never {
 	const entrypoint = (): never => {
@@ -45,13 +81,21 @@ export function cloudflareViteApp(root: string): () => never {
 	Object.defineProperty(entrypoint, Symbol.for("hobo.webapp.meta"), {
 		value: metadata,
 	});
-	viteEntrypoints.set(entrypoint, root);
+	applyVite(setViteEntrypoint, viteEntrypoints, [entrypoint, root]);
 	return Object.freeze(entrypoint);
 }
 
 export type CloudflareBindleMappers<Requirements> = Readonly<
 	Record<
-		"api" | "bucket" | "kv" | "queue" | "service" | "web",
+		| "api"
+		| "bucket"
+		| "data"
+		| "flag"
+		| "kv"
+		| "queue"
+		| "secret"
+		| "service"
+		| "web",
 		AlchemyPrimitiveMapper<CloudflareBindleEntrypoint, Requirements, Providers>
 	>
 >;
@@ -59,33 +103,36 @@ export type CloudflareBindleMappers<Requirements> = Readonly<
 const CLOUD_FLARE_LIMITATIONS: Readonly<Record<string, string>> = Object.freeze(
 	{
 		api: "HTTP Worker requires an exported bindle module and disabled session replay.",
-		kv: "KV infrastructure only: the HoBo WASI store runtime and its consistency are not bound.",
+		kv: "KV.Namespace infrastructure only: the HoBo WASI store runtime and its consistency are not bound.",
 		bucket:
-			"R2 infrastructure only: blob object metadata, blob events and presigned URLs are not bound.",
+			"R2.Bucket infrastructure only: blob object metadata, blob events and presigned URLs are not bound.",
 		queue:
-			"Queue infrastructure is available; idempotent enqueue and leased dequeue are not implemented.",
+			"Queues.Queue infrastructure is available; idempotent enqueue and leased dequeue are not implemented.",
 		topic:
 			"Cloudflare Queue delivery is not a multi-subscriber messaging topic.",
 		secret:
-			"Cloudflare secrets have no implemented HoBo put/access runtime binding.",
-		data: "Cloudflare databases have no implemented HoBo data-port binding.",
-		schedule: "No scheduler binding is implemented for this mapping.",
+			"SecretsStore.Secret requires an explicit existing store and redacted value; HoBo put/access runtime operations are not bound.",
+		data: "D1.Database infrastructure only: the HoBo data runtime for read, write, query and administration is not bound.",
+		schedule:
+			"Workers CronEventSource and ScheduledEvents are available, but HoBo dynamic interval registration and its fail-closed cron handling are not bound.",
 		project: "No equivalent HoBo project isolation binding is implemented.",
 		websocket:
-			"No HoBo websocket lifecycle or broadcast binding is implemented.",
-		job: "No HoBo job submit and completion binding is implemented.",
+			"Workers WebSocket.upgrade is available, but HoBo websocket lifecycle, broadcast and subscription are not bound.",
+		job: "Workflows.Workflow is available, but HoBo job submission and completion are not bound.",
 		web: "Vite website or HTTP Worker; both require disabled session replay and Vite dependencies are unsupported.",
 		service:
 			"HTTP Worker requires an exported bindle module and disabled session replay.",
 		external:
 			"External dependency authority and connection metadata are not mapped.",
-		container: "Container configuration and lifecycle are not mapped.",
+		container:
+			"Containers.ContainerApplication is available, but HoBo container configuration, endpoint and lifecycle are not bound.",
 		"wasm-component": "The WASI component runtime and imports are not mapped.",
-		flag: "No HoBo feature-flag evaluation or mutation binding is implemented.",
-		auth: "No HoBo identity verification and session binding is implemented.",
+		flag: "Flagship.App and Flag infrastructure requires explicit boolean settings; HoBo flag evaluation and mutation runtime are not bound.",
+		auth: "Auth.OAuthClient and AuthProvider are available, but HoBo identity verification and sessions are not bound.",
 		crypto:
-			"No HoBo cryptographic key lifecycle and policy binding is implemented.",
-		notify: "No HoBo notification delivery binding is implemented.",
+			"Workers.SecretKey imports WebCrypto keys, but HoBo cryptographic key lifecycle and policy are not bound.",
+		notify:
+			"Email.Send is available for email, but the HoBo notification delivery port is not bound.",
 		guardrail: "No HoBo guardrail evaluation binding is implemented.",
 		ui: "No HoBo UI render and drive binding is implemented.",
 		experiment:
@@ -104,15 +151,29 @@ export function describeCloudflarePrimitiveSupport(
 		readonly allowVerbs: readonly string[];
 	}[],
 ): CloudflarePrimitiveSupport[] {
-	return describeAlchemyPrimitiveSupport(
+	const support = describeAlchemyPrimitiveSupport(
 		catalog,
 		cloudflareBindleMappers({ workerModules: {} }),
-	).map((support) => ({
-		...support,
-		reason: Object.hasOwn(CLOUD_FLARE_LIMITATIONS, support.kind)
-			? (CLOUD_FLARE_LIMITATIONS[support.kind] ?? "No mapping is implemented.")
-			: "No mapping is implemented for this primitive.",
-	}));
+	);
+	const report: CloudflarePrimitiveSupport[] = [];
+	for (let index = 0; index < support.length; index++) {
+		const row = support[index];
+		if (row === undefined)
+			throw new AlchemyIacError("BINDLE_INVALID", "support row is unavailable");
+		const result = {
+			...row,
+			reason: reportHasOwn(CLOUD_FLARE_LIMITATIONS, row.kind)
+				? (CLOUD_FLARE_LIMITATIONS[row.kind] ?? "No mapping is implemented.")
+				: "No mapping is implemented for this primitive.",
+		};
+		const field: PropertyDescriptor = reportCreate(null);
+		field.value = result;
+		field.enumerable = true;
+		field.configurable = true;
+		field.writable = true;
+		reportDefine(report, index, reportFreeze(field));
+	}
+	return report;
 }
 
 export function cloudflareBindleMappers<Requirements>(
@@ -122,6 +183,8 @@ export function cloudflareBindleMappers<Requirements>(
 	const workingDirectory = process.cwd();
 	const projectRoot = resolve(options.projectRoot ?? workingDirectory);
 	const sourceFence = captureAlchemySourceFence(options.sourceFence);
+	const flagshipFlags = captureCloudflareFlagshipFlags(options.flagshipFlags);
+	const secrets = captureCloudflareSecrets(options.secrets);
 	type Input = AlchemyPrimitiveInput<CloudflareBindleEntrypoint, Requirements>;
 	const sourceBinding = (
 		input: Input,
@@ -198,7 +261,8 @@ export function cloudflareBindleMappers<Requirements>(
 			isAbsolute(root.value) ||
 			root.value.split("/").includes("..") ||
 			input.entrypoint === undefined ||
-			viteEntrypoints.get(input.entrypoint) !== root.value
+			applyVite(getViteEntrypoint, viteEntrypoints, [input.entrypoint]) !==
+				root.value
 		)
 			throw new AlchemyIacError(
 				"ENTRYPOINT_UNSUPPORTED",
@@ -240,6 +304,17 @@ export function cloudflareBindleMappers<Requirements>(
 		bindsEntrypoint: false,
 		validate: noDependencies,
 	} as const;
+	const secretFor = (input: Input): CloudflareSecretDefinition | undefined => {
+		for (let index = 0; index < secrets.length; index++) {
+			const secret = secrets[index];
+			if (
+				secret?.bindleName === input.bindleName &&
+				secret.resourceName === input.declaration.name
+			)
+				return secret;
+		}
+		return undefined;
+	};
 	const http: AlchemyPrimitiveMapper<
 		CloudflareBindleEntrypoint,
 		Requirements,
@@ -388,6 +463,102 @@ export function cloudflareBindleMappers<Requirements>(
 		},
 	};
 	return {
+		secret: {
+			...empty,
+			resourceTypes: ["Cloudflare.SecretsStore.Secret"],
+			operations: [],
+			limitations: [
+				CLOUD_FLARE_LIMITATIONS.secret ?? "Secret support is limited.",
+			],
+			validate(input) {
+				noDependencies(input);
+				if (secretFor(input) === undefined)
+					throw new AlchemyIacError(
+						"SECRET_CONFIG_REQUIRED",
+						"an explicit existing store and redacted secret value are required",
+					);
+			},
+			build(input) {
+				const secret = secretFor(input);
+				if (secret === undefined)
+					throw new AlchemyIacError(
+						"SECRET_CONFIG_REQUIRED",
+						"an explicit existing store and redacted secret value are required",
+					);
+				return Effect.gen(function* () {
+					const primary = yield* Secret(
+						cloudflareSecretResourceId(
+							input.bindleName,
+							input.declaration.name,
+						),
+						{
+							store: { accountId: secret.accountId, storeId: secret.storeId },
+							name: secret.secretName,
+							value: secret.value,
+						},
+					);
+					return { primary, resources: [primary], boundDependencies: [] };
+				});
+			},
+		},
+		flag: {
+			...empty,
+			resourceTypes: ["Cloudflare.Flagship.App", "Cloudflare.Flagship.Flag"],
+			operations: [],
+			limitations: [CLOUD_FLARE_LIMITATIONS.flag ?? "Flag support is limited."],
+			validate(input) {
+				noDependencies(input);
+				if (
+					!flagshipFlags.some(
+						(flag) =>
+							flag.bindleName === input.bindleName &&
+							flag.resourceName === input.declaration.name,
+					)
+				)
+					throw new AlchemyIacError(
+						"FLAGSHIP_CONFIG_REQUIRED",
+						"explicit boolean Flagship settings are required for this flag",
+					);
+			},
+			build(input) {
+				const definition = flagshipFlags.find(
+					(flag) =>
+						flag.bindleName === input.bindleName &&
+						flag.resourceName === input.declaration.name,
+				);
+				if (definition === undefined)
+					throw new AlchemyIacError(
+						"FLAGSHIP_CONFIG_REQUIRED",
+						"explicit boolean Flagship settings are required for this flag",
+					);
+				const ids = cloudflareFlagshipResourceIds(
+					input.bindleName,
+					input.declaration.name,
+				);
+				return Effect.gen(function* () {
+					const app = yield* FlagshipApp(ids.app, {});
+					const primary = yield* FlagshipFlag(ids.flag, {
+						appId: app.appId,
+						key: input.declaration.name,
+						enabled: definition.enabled,
+						defaultVariation: definition.defaultValue ? "enabled" : "disabled",
+						variations: { disabled: false, enabled: true },
+					});
+					return { primary, resources: [app, primary], boundDependencies: [] };
+				});
+			},
+		},
+		data: {
+			...empty,
+			resourceTypes: ["Cloudflare.D1Database"],
+			operations: [],
+			limitations: [CLOUD_FLARE_LIMITATIONS.data ?? "Data support is limited."],
+			build: (input) =>
+				Effect.gen(function* () {
+					const primary = yield* Database(input.declaration.name, {});
+					return { primary, resources: [primary], boundDependencies: [] };
+				}),
+		},
 		bucket: {
 			...empty,
 			resourceTypes: ["Cloudflare.R2.Bucket"],

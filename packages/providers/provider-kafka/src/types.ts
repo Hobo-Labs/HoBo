@@ -72,7 +72,7 @@ export const KAFKA_MESSAGING_CAPABILITIES: MessagingCapabilities =
 		transactionalProduce: true,
 		idempotentProduce: true,
 		schemaRegistry: true,
-		deadLetter: true,
+		deadLetter: false,
 		partitionAware: true,
 		crossYardFederation: true,
 	});

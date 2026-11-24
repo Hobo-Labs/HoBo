@@ -17,6 +17,14 @@ only after they pass, calls [basecamp/gh-signoff](https://github.com/basecamp/gh
 The [runbook](../../packages/ci/RUNNER-QUEUE.md#sign-off-without-an-actions-runner)
 has setup and operational commands.
 
+The workspace test shards and the scripts test shards run their tests from a
+detached `HEAD` with `GITHUB_HEAD_REF` and `GITHUB_BASE_REF` unset on
+`pull_request` as on `merge_group`, and a local signoff runs them the same way
+at the detached merge commit, so a test that depends on the pull request's
+branch name fails before the merge queue rather than only inside it.
+`scripts/test/scripts-tests-job.test.ts` pins the scripts lane's
+`env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF` command.
+
 ## Selection contract
 
 A configured pin or valid pinned slip wins before availability is read. An
@@ -26,14 +34,19 @@ A slip choosing a fallback records a fleet refusal, but a fresh healthy fleet
 pickup takes precedence. A slip choosing an enrolled local runner does not
 establish that it is taking jobs; the queue must establish its availability or
 refusal. A GitHub slip does not rule out a local runner enrolled since the slip
-was issued. An unusable, expired, unreadable, or tier/label-contradictory slip
-leaves the queue rule to decide.
+was issued. An `agent37` slip is valid only when its runner matches a label in
+committed `runnerRouting.externalPools`; provider declarations alone and unknown
+tiers do not authorize a slip. An unusable, expired, unreadable, or
+tier/label-contradictory slip leaves the queue rule to decide.
 
 After pins and slips, availability means *observed* availability, not a
 reservation or a guarantee that a runner will still be free. The generic
 selector uses HoBo, ARC, local, then GitHub-hosted order. The checkout
 coordinator also considers enabled provider and external-pool inventory from the
-trusted base. Providers sharing a label remain separate observations. Capacity
+trusted base. Providers sharing a label remain separate observations. Agent37
+provider and external-pool declarations are opaque to this generic selection:
+a healthy Actions queue pickup cannot establish pool availability without the
+route action's trusted `observeAgent37Pool` observer. Capacity
 with no useful queue evidence remains unknown unless the operator independently
 observes its outage and names that enabled member with `--provider-unavailable=ID`.
 Unsupported inventory stays unknown. An Actions workflow continues

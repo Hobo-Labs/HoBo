@@ -1,0 +1,11 @@
+{
+	"resourceId": "events",
+	"resourceType": "Rivet.DurableObject",
+	"bindleName": "events-app",
+	"applicationName": "events",
+	"sourceKind": "rivet-async-queue",
+	"sourcePath": "/src/events-main.ts",
+	"sourceDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	"environmentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+	"proofRef": "host:topic-source"
+}

@@ -12,6 +12,18 @@ export {
 	type InfisicalAdmin,
 	type InfisicalOidcTrust,
 } from "./admin.js";
+export type {
+	AgentVaultCertificateAuthority,
+	AgentVaultCredentialType,
+	AgentVaultProject,
+	AgentVaultProxy,
+	AgentVaultProxyStart,
+	AgentVaultService,
+	AgentVaultServiceType,
+	AgentVaultSession,
+	AgentVaultSessionService,
+	InfisicalAgentVaultApi,
+} from "./agent-vault.js";
 export {
 	githubActionsJwtSource,
 	type InfisicalAuth,

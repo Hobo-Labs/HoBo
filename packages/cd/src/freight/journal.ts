@@ -10,6 +10,7 @@ import {
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
 import type { PrincipalRef } from "@hobo/core";
 import type { TelemetrySink } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { isJsonObject, isJsonString, jsonOf } from "./json.js";
 
 /** Event body for a generated record: its canonical protobuf JSON. */
@@ -82,7 +83,7 @@ export function iso(ms: number): string {
  * so a failing sink never turns a committed command into an error the caller
  * would retry.
  */
-export function emitCounter(
+export async function emitCounter(
 	sink: TelemetrySink | undefined,
 	point: Readonly<{
 		name: string;
@@ -91,17 +92,15 @@ export function emitCounter(
 		attributes: Readonly<Record<string, string>>;
 		value?: number;
 	}>,
-): void {
-	sink
-		?.metrics([
-			{
-				name: point.name,
-				kind: "counter",
-				value: point.value ?? 1,
-				unit: point.unit,
-				atMs: point.atMs,
-				attributes: point.attributes,
-			},
-		])
-		.catch(() => undefined);
+): Promise<void> {
+	await emitMetrics(sink, [
+		{
+			name: point.name,
+			kind: "counter",
+			value: point.value ?? 1,
+			unit: point.unit,
+			atMs: point.atMs,
+			attributes: point.attributes,
+		},
+	]);
 }

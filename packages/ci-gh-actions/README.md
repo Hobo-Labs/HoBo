@@ -27,6 +27,225 @@ claims a single-use JIT configuration with GitHub OIDC and starts the official
 Actions runner. GitHub assigns an original queued job to that runner. The
 original workflow, checkout, job token, logs and artifacts stay in GitHub Actions.
 
+## Runner teardown correlation
+
+When GitHub returns several jobs associated with a runner, correlation selects
+an executing job before a queued or finished reservation, including when the
+jobs belong to different observed runs. A matching job with an unknown status
+also retains the runner, but does not by itself transfer custody or withdraw the
+reserved job. Confirmed execution still takes priority over an unknown status.
+When both runner IDs are present, the IDs must match; runner names are a fallback
+only when an ID is missing. A name-only match can still be ambiguous.
+If a later lookup fails after a queued or unknown match, the result is marked
+incomplete and cannot transfer custody. Fail-closed teardown retains the runner
+on an incomplete or failed lookup; the force-stop path can continue after the
+queued grace period. A queued match retains the runner when its binding time,
+current time, or grace value is invalid; this rule also applies to a direct
+served-job lookup. At the valid grace boundary, teardown may proceed. Job
+listings are paginated up to 100 pages. Run listings
+are bounded, and reaching a limit while more work exists is treated as an
+incomplete scan. Duplicate or malformed pages fail the lookup. GitHub can
+change its listings between requests, so pagination is not an atomic snapshot
+and a changing listing can still omit an assignment. The maintained
+[runner-correlation verification skill](../../.agents/skills/verify-ci-runner-correlation/SKILL.md)
+records the checks and assumptions.
+
+The model explores 22 distinct states. This projection hides 13 internal
+transitions that do not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Matching jobs observed
+  s1: Executing job blocks teardown
+  s2: No executing job selected
+  s3: Runner may be stopped
+  [*] --> s0
+  s0 --> s1: select highest-priority job
+  s0 --> s2: select highest-priority job
+  s2 --> s3: allow teardown
+```
+
+The cross-run model explores 96 distinct states, including lookup failure and
+force-stop behavior. Its projection hides 48 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Checking runs
+  s1: Executing job observed
+  s2: No execution observed
+  s3: Lookup incomplete
+  s4: Teardown allowed
+  s5: Runner retained
+  [*] --> s0
+  s0 --> s1: check later runs
+  s0 --> s3: later lookup fails
+  s0 --> s2: check later runs
+  s1 --> s5: apply teardown policy
+  s2 --> s3: served-job lookup fails
+  s2 --> s4: apply teardown policy
+  s3 --> s4: apply teardown policy
+  s3 --> s5: apply teardown policy
+  s2 --> s5: apply teardown policy
+```
+
+The pagination model explores 170 distinct states, including exhausted and
+truncated scans in both teardown modes. Its projection hides 90 same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Scanning jobs
+  s1: Listing exhausted
+  s2: Executing job observed
+  s3: Teardown allowed
+  s4: Scan limit reached
+  s5: Runner retained
+  [*] --> s0
+  s0 --> s1: confirm listing exhausted
+  s0 --> s2: read next job
+  s1 --> s3: apply teardown policy
+  s0 --> s4: detect more work beyond limit
+  s2 --> s5: apply teardown policy
+  s4 --> s3: apply teardown policy
+  s4 --> s5: apply teardown policy
+```
+
+The unknown-status model checks two abstract observations, with queued grace
+already expired, in 300 distinct states. Its projection hides 150 same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Checking assignments
+  s1: No active job observed
+  s2: Executing job observed
+  s3: Status unknown
+  s4: Lookup incomplete
+  s5: Teardown allowed
+  s6: Runner retained
+  [*] --> s0
+  s0 --> s1: check later runs
+  s0 --> s4: later lookup fails
+  s0 --> s2: check later runs or later lookup fails
+  s0 --> s3: check later runs or later lookup fails
+  s1 --> s5: apply custody and teardown policy
+  s2 --> s6: apply custody and teardown policy
+  s3 --> s6: apply custody and teardown policy
+  s4 --> s5: apply custody and teardown policy
+  s4 --> s6: apply custody and teardown policy
+```
+
+The runner-identity model checks matching and custody permission in 36 states,
+including missing, equal, and conflicting IDs. Its projection hides 18 same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Runner and job observed
+  s1: Runner does not match
+  s2: Runner matches
+  [*] --> s0
+  s0 --> s1: compare IDs or available names
+  s0 --> s2: compare IDs or available names
+```
+
+The queued-grace model checks direct and scanned observations with invalid,
+recent, or expired timing in 12 states. Its projection hides six same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Queued job observed
+  s1: Teardown allowed
+  s2: Runner retained
+  [*] --> s0
+  s0 --> s1: evaluate grace period
+  s0 --> s2: evaluate grace period
+```
+
+## Strict-start hook receipt
+
+The fleet v2 pre-job hook template requires an HTTPS endpoint, HTTP 200, and a
+JSON receipt with `authorized: true`, `slotId`, `claimId`, `accountId`,
+`profileId`, `runnerName`, and the exact `executionKey` from its request. Both
+start-fence handlers issue this receipt. It checks the run ID and attempt
+against the runner context before sending the request. Redirects, empty or
+malformed responses, mismatched identities, oversized receipts, and transport
+failures block the job. The binding secret is sent in the request body.
+
+The strict GitHub assignment lookup accepts a trusted single-repository scope,
+scans in-progress runs, and requires an unambiguous match for the registered
+runner ID, name, runner group, and required labels. It re-reads the job and run
+before deriving the execution key. Incomplete scans or conflicting evidence
+fail the lookup. GitHub can change assignments or paginated listings during or
+after those reads; required-label matching alone does not establish the complete
+execution profile.
+
+The optional endpoint checks a slot credential before querying GitHub, commits
+the matching binding, then rechecks assignment and stored claim before issuing a
+receipt. The production controller does not configure this endpoint or install
+the hook. Assignment or claim state can change after those observations, so
+they do not guarantee the same state at receipt issuance. The hook cannot
+independently prove the assigned job or claim state; it also relies on an
+authenticated, fresh response.
+
+The receipt model explores 285 states with trusted receipt issuance. Its
+projection hides 114 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Hook invoked
+  s1: Workflow blocked
+  s2: Waiting for receipt
+  s3: Workflow may start
+  [*] --> s0
+  s0 --> s1: check runner context
+  s0 --> s2: check runner context
+  s2 --> s1: validate status and receipt
+  s2 --> s3: validate status and receipt
+```
+
+The endpoint model checks 142 bounded states; its projection hides 52 same-state
+transitions. Separate executable counterexamples show assignment or claim state
+can change between its final reads and receipt issuance.
+
+```mermaid
+stateDiagram-v2
+  s0: Start request received
+  s1: Request rejected
+  s2: Checking GitHub assignment
+  s3: Binding job to slot
+  s4: Rechecking assignment
+  s5: No receipt#59; reconcile
+  s6: Rechecking stored claim
+  s7: Receipt issued
+  [*] --> s0
+  s0 --> s1: verify slot credential
+  s0 --> s2: verify slot credential
+  s2 --> s1: check assignment
+  s2 --> s3: check assignment
+  s3 --> s4: commit binding
+  s3 --> s5: commit binding
+  s3 --> s1: commit binding
+  s4 --> s5: recheck assignment
+  s4 --> s6: recheck assignment
+  s6 --> s5: recheck stored claim
+  s6 --> s7: recheck stored claim
+```
+
+The assignment-evidence model checks 128 bounded states. Its projection hides
+64 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: GitHub evidence observed
+  s1: Assignment unavailable
+  s2: Assignment verified
+  [*] --> s0
+  s0 --> s1: check scope, runner, group, labels and current job
+  s0 --> s2: check scope, runner, group, labels and current job
+```
+
 ## Test this branch
 
 Run from the monorepo root with Node 24, Linux x64, bash and git:
@@ -170,10 +389,13 @@ Every host of the relay serves the same Fetch handler, `createRelayHandler`
 | `/engines/gh-actions/…` | The same routes as the root |
 | `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
 | `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
-| `GET`, `PUT /v1/fleet/verdicts/{owner}/{repo}` | The fleet verdict runner routing asks for ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)): read by anyone (no query string; the agreed verdict of every reporter enrolled for the repository's account, less any label whose daily allowance is spent), reported by an enrolled reporter's Ed25519 signature (`X-HoBo-Reporter`, `X-HoBo-Sequence`, `X-HoBo-Issued-At`, `X-HoBo-Signature`; no bearer). A refusal names its `reason`: `bad-request`, `unknown-reporter`, `bad-signature`, `clock-skew`, `replayed`, `not-found` or `invalid-report`. Handed to the host's control plane |
-| `GET /v1/fleet/reporters/{owner}/{repo}` | Each enrolled reporter's state and liveness and each label's allowance (`FleetReporterStatusList`), for a GitHub Actions OIDC token from a workflow of that repository (audience: the relay's origin; any event). Handed to the host's control plane |
 | `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
 | `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
+
+No `/v1/fleet/` route is served: the fleet verdict and reporter status routes
+were retired with ADR-0180's hosted transport (ADR-0181), and
+any such path answers 404. Runner routing reads the box relay's routing slip
+instead.
 
 A delivery is authenticated by GitHub's `X-Hub-Signature-256`, or, when the host
 configures an ingress forward secret, by `X-Hobo-Ingress-Forward` from
@@ -606,19 +828,20 @@ schemas and never fetches the `$schema` URL while loading configuration.
 
 ### Provider shapes
 
-A policy provider is one of eight closed, kind-specific shapes defined in the
+A policy provider is one of nine closed, kind-specific shapes defined in the
 sibling [provider schema](schema/ci-project-providers.schema.json) (exported as
 `@hobo/ci-gh-actions/schema/ci-project-providers.schema.json`). The project
 schema's `Provider` is a relative `$ref` to that file, which is a `oneOf` with
 `additionalProperties: false` on every branch. Every kind carries the base
 fields `id`, `kind`, `connectionRef`, `runsOn` and optional `enabled`; existing
-five-field providers of every kind except `vercel` stay valid unchanged.
+providers of previously supported kinds other than `vercel` stay valid unchanged.
 
 | Kind | Extra fields |
 |---|---|
-| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
+| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine`, `pool` and `location` are rejected |
 | `kubernetes` | optional `scaleSet` **or** optional `engine` (never both); neither keeps the existing disposable-pod path |
-| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet` and `engine` are rejected |
+| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet`, `engine` and `pool` are rejected |
+| `agent37` | required `pool`: box type, documented size, region, immutable template, lifecycle, labels, egress allowlist and monthly create/budget limits |
 
 `scaleSet` names an [ARC](https://github.com/actions/actions-runner-controller)
 `AutoscalingRunnerSet`: `{ "name", "namespace", "maxRunners", "minRunners"? }`.
@@ -629,6 +852,20 @@ five-field providers of every kind except `vercel` stay valid unchanged.
 checks. HoBo never installs or upgrades ARC or Dagger. Neither shape accepts a
 kubeconfig, token or `githubConfigSecret`: cluster and Vercel credentials stay
 out of `.hobo/ci.json` and resolve through the `connectionRef`.
+
+Agent37 pools accept `default`, `vm` and `performance` types. Documented sizes are
+2 vCPU/4 GB, 4/8, 4/16 and 4/32, plus 8/64 for `vm` and `performance`; disk is
+1–1024 whole GB. Non-US regions require a non-default type. Templates require a
+positive numeric revision such as `agent37-ubuntu@1`; mutable names and tags are
+rejected. Idle TTL is 60–3600 seconds. Pools above 32 GB of concurrent memory
+require `allowAboveFreeTier: true`. Labels are unique. Network allowlists contain
+1–100 unique lowercase DNS hostnames or leading-label wildcards; IP addresses
+and wildcard bases with fewer than three DNS labels, including `*.com`, `*.co.uk`,
+and `*.github.io`, are rejected, with everything else denied. Monthly USD-microdollar caps and bounded create-per-hour limits are
+required. The committed `agent37-runners` example is disabled and stores no API
+key or webhook secret. The default `runnerRouting.externalPools` list remains
+empty. A project must explicitly configure an external pool to opt into externally
+hosted runners.
 
 ```json
 {
@@ -641,10 +878,10 @@ out of `.hobo/ci.json` and resolve through the `connectionRef`.
 ```
 
 The TypeScript types (`CiProjectProvider`, `CiKubernetesProvider`,
-`CiVercelProvider`, …) are inferred from the same discriminated union in
+`CiVercelProvider`, `CiAgent37Provider`, …) are inferred from the same discriminated union in
 `src/project-providers.ts`; `pnpm --filter @hobo/ci-gh-actions schema:check`
 fails when either shipped file drifts. The protobuf `CiPolicyProvider` carries
-the shapes as a `capacity` oneof (`scale_set` | `engine`) plus `location`, CUE
+the shapes as a `capacity` oneof (`scale_set` | `engine` | `pool`) plus `location`, CUE
 constrains them in `@hobo/ci`'s `ci.cue`, and `parseCiPolicy` rejects a shape on
 the wrong kind. A relay keeps reading persisted vercel policies whose protobuf
 `location` is empty; only authored files require it.
@@ -740,18 +977,14 @@ pnpm --filter @hobo/ci-gh-actions project inspect --environment integration
 Inspection prints the selected account, origin, budget and canonical policy
 SHA-256. Review the selected policy in a trusted source and record its digest
 outside the repository. Applying requires an explicit environment, a separately
-trusted origin and account, the reviewed policy digest, and an account token:
+trusted origin and account, the reviewed policy digest, and the account
+credential `owner://HOBO_CI_ACCOUNT_TOKEN`. The account credential lives only in
+the owner's secret store: the standalone `project apply` reads no token file or
+environment variable and refuses until HoBo, holding the owner store session
+from HoBo MCP's `choose_secret_store`, passes it the resolved credential as
+`runCiProjectCli(args, { accountToken })`.
 
-```sh
-pnpm --filter @hobo/ci-gh-actions project apply \
-  --environment local \
-  --trusted-origin http://127.0.0.1:8787 \
-  --trusted-account local-ci \
-  --trusted-policy-sha256 "$REVIEWED_POLICY_SHA256" \
-  --token-file /path/to/local-account-token
-```
-
-Use a different trusted tuple and token for integration. The target and digest
+Use a different trusted tuple and store entry for integration. The target and digest
 are checked before obtaining credentials; the relay account and revision are
 checked before writing. Do not automatically approve a digest calculated from
 an untrusted pull request, or apply its configuration with privileged credentials.
@@ -847,9 +1080,11 @@ policy revision as an ETag; writes require `If-Match` and return `409` on confli
 ```ts
 import { createCiRelayClient } from '@hobo/ci-gh-actions/client';
 
+const credentials = ownerSession.credentials(projectDirectory);
 const ci = createCiRelayClient({
-  origin: process.env.HOBO_CI_PUBLIC_URL!,
-  accountToken: () => process.env.HOBO_CI_ACCOUNT_TOKEN!,
+  origin: 'https://ci.example.test',
+  accountToken: async () =>
+    (await credentials.resolve('owner://HOBO_CI_ACCOUNT_TOKEN', 'hobo-ci-account')).token,
 });
 const setup = await ci.prepareRepository({
   repository: 'example/private-repository',
@@ -1543,9 +1778,6 @@ the port's 30-day cap.
 | `app:installations:<accountId>`, `app:installation-owner:<installationId>` | `RelayCacheVerifiedInstallations`; owning account id | 24 h | `CacheVerifiedInstallations.bindInstallation` |
 | `invitation:<mac>`, `owner-session:<mac>` | redemption time; `RelayCacheOwnerSession` | until the invitation expires; 10 min | `CacheOwnerBootstrap` |
 | `worker-health:<deployment>:<component>` | `RelayWorkerHealth` (`@hobo/ci-vercel`) | 24 h | `@hobo/ci-vercel`'s `CacheWorkerHealth` |
-| `fleet-verdict:<owner>/<repo>:<reporter id>` | `FleetVerdict`: one reporter's last report as stamped (a shadow report blocks nothing) | Until the report expires (at most 180 s) | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
-| `fleet-reporter:<owner>/<repo>:<reporter id>` | `FleetReporterState`: last sequence, mode, last report, per label last blocked and cleared | 24 hours, refreshed on every accepted report | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
-| `fleet-allowance:<owner>/<repo>` | `FleetVerdictAllowance`: per label, the window's start and its blocked seconds | 24 hours from the latest window's start | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
 | `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | A lease's change of state; `ci.BudgetOverrun`, `ci.AssignmentUnknown`, `ci.LeaseRebuilt`; `ci.JobQueued`, `ci.JobExpired`, `ci.JobAssignmentCleared`, and `ci.JobCompleted` for a job no lease took. Not a write that leaves a lease's state alone (an observed job id, a Sandbox sub-stage) |
 
 ### Helpers on the cache (phase 5)
@@ -1625,6 +1857,442 @@ estimate of about 25 assumed one command per ring append and no routing reads.
   plus the last 50 ended leases per account.
 - Shared-budget settlement (`reconcileSharedBudget`,
   `releaseUnusedSharedBudget`): budget-policy accounts are never admitted.
+
+## Relay job seams
+
+A [relay job](../ci/RELAY-JOB.md) is answered by `answerRelayJob` from
+`@hobo/ci`. This package holds the two seams on its GitHub side:
+
+- [`src/runner-protocol/port.ts`](src/runner-protocol/port.ts): the runner
+  protocol a relay-mode node answers over. `RunnerServiceClient.open` signs in
+  as a one-job runner (`ParsedJitConfig`, whose fields follow the
+  `.runner` and `.credentials` files of `actions/runner`) and gives a
+  `RunnerSession` that takes the next job, completes it with an answer and
+  closes. `InMemoryRunnerService` is a fake that gives each job to one session
+  only; `runnerServiceClientConformance` is the test every real client must
+  pass. No client that speaks to GitHub exists yet, so the channel is built,
+  not proven.
+- [`test/support/github-simulator-port.ts`](test/support/github-simulator-port.ts):
+  the interface of the GitHub simulator the parity scenarios run against:
+  one `fetch` for REST, billing and the runner service, `queueJob`, `deliver`
+  (webhooks to a handler), `advance` (its clock), `dropNextWebhook`, and reads
+  of its runners and jobs.
+
+The JIT configuration contains the private RSA parameters used to sign session
+token requests; treat them as secrets and do not log them. The in-memory fake
+accepts completions only from the session that took the job and rejects calls
+after the session closes.
+
+## Runner protocol client
+
+[`src/runner-protocol/RUNNER-PROTOCOL.md`](src/runner-protocol/RUNNER-PROTOCOL.md)
+describes `GithubRunnerServiceClient`, the client a relay-mode node uses to
+take a relay job as a one-job runner and complete it with an answer
+(ADR-0183), and `parseJitConfig`, which checks a one-job runner configuration
+before anything signs in with it. It is written from the open-source runner,
+with every field cited, ships off behind `relayJobs.answer`, and is built, not
+proven: no run against GitHub's runner service is linked yet.
+`FakeGithubRunnerService` serves the protocol in memory for tests and the
+GitHub simulator.
+
+## Adopt existing runners
+
+[`src/runner-adoption.ts`](src/runner-adoption.ts) brings a self-hosted
+runner that was registered before HoBo into the runner order without
+touching its machine ([ADR-0183](../../docs/ci/runner-order.md),
+gauntlet case M10).
+
+- `listAdoptableRunners` reads a private repository's own runners and its
+  organization's runners whose runner group admits the repository
+  (`runner-groups?visible_to_repository=`). A runner in a group that leaves
+  the repository out is listed under `leftOut` and never offered. A public
+  repository is offered nothing, because its jobs never run on machines.
+- `adoptRunner` adds one label, `hobo-runner-<8 hex>`, through GitHub's
+  runner labels API and returns a `MachineAdvert`: host isolation, one slot,
+  busy as GitHub reports it, signed by `github:runner-labels`. The label is
+  derived from where the runner is registered and its id, so adopting twice
+  writes nothing the second time. The prospective advert is checked before the
+  label write, and adoption refuses a label already on another listed runner.
+  The listing is a point-in-time check; hosts must protect runner labels from
+  conflicting concurrent changes.
+- `releaseRunner` removes only the label derived for that runner; a label that
+  is already gone is not an error.
+
+The only writes are the two labels calls. Nothing is installed on the
+machine and no registration token is asked for. The calls are pinned by
+[`contracts/github-runner-labels.pact.json`](contracts/github-runner-labels.pact.json),
+hand-authored from GitHub's REST reference and executed by its consumer test;
+no provider verification or live run has been recorded, so the channel is
+built, not proven. A CLI for these operations is not yet included.
+
+## Machine connect (`hobo ci machine connect`)
+
+`hobo ci machine connect --repo <owner/name>` makes the computer it runs on a
+machine a runner order can route jobs to (ADR-0183,
+[`docs/ci/runner-order.md`](../../docs/ci/runner-order.md)).
+It needs only an installed CLI, the owner's store connected through HoBo MCP's
+`choose_secret_store`, and HoBo's GitHub App (`hobo ci app create`) installed on
+each named repository with permission to manage self-hosted runners. It reads
+GitHub only with installation tokens the owner store session mints for that App
+(`github-app://<owner>/<repo>`), reuses each for at most 45 minutes, and never
+asks for a person's GitHub token; it assumes no checkout. The command lives in
+`packages/hobo/src/ci-machine-connect.ts`; the worker it runs is in
+[`src/machine-worker/`](src/machine-worker/MACHINE-WORKER.md), exported as
+`@hobo/ci-gh-actions/machine-worker`.
+
+- The machine keeps one id and one Ed25519 key under
+  `$HOBO_HOME/ci/machine/` (made on the first connect, owner-only) and
+  advertises a signed advert every 30 seconds in the local node's machine
+  registry, the one `hobo ci machine status` reads.
+- It reads the named repositories' queues for its own label
+  (`hobo-machine-<id>`) with that repository's installation token, at most every
+  15 seconds. The advert names the first repository's owner.
+- Each job gets a one-job runner on its repository; the configuration is
+  checked with `parseJitConfig` before anything uses it, and the job runs in a
+  fresh container (`--host`: on the machine, and the advert says so) with none
+  of the CLI's environment.
+- `--concurrency`, `--share only-me|anyone`, `--events` (one JSON object per
+  line) and `p` on a terminal to pause. Ctrl-C drains and takes the machine
+  offline at once; a second Ctrl-C stops the running jobs. Public repositories
+  and fork pull requests are refused. Linux x64 and arm64 only.
+
+Tested against the GitHub simulator with a fake container driver
+(`test/machine-worker*.test.ts`) and, for the command, with fakes
+(`packages/hobo/test/ci-machine-connect.test.ts`). It is built, not proven:
+no run on a real machine against GitHub is linked yet. The run that would
+prove it, on a Linux machine with Docker, the owner's store connected, and
+HoBo's GitHub App installed on a private test repository:
+
+1. `hobo ci machine connect --repo <owner>/<private-repo> --events`, and note
+   the `runsOn` label in the first `machine.connected` line.
+2. Push a workflow whose job has `runs-on: <that label>`; see
+   `worker.job_started` and `worker.job_finished`, the job green on GitHub,
+   and no self-hosted runner left under the repository's settings.
+3. Press Ctrl-C; `hobo ci machine status` shows the machine offline.
+
+## Per-run traces
+
+[`src/run-trace.ts`](src/run-trace.ts) turns the run, job and step facts a
+relay stores from `workflow_run` and `workflow_job` webhooks
+([`src/insight-ingest.ts`](src/insight-ingest.ts)) into one OpenTelemetry
+trace per run attempt, and sends it through the relay's existing OTLP sink
+(`relayTraceSinkFromEnv` in [`src/relay-trace.ts`](src/relay-trace.ts)). It is
+part of the runner-order work recorded in
+[ADR-0183](../../docs/ci/runner-order.md).
+
+| Span | From | To | Parent |
+| --- | --- | --- | --- |
+| `RUN <workflow>` | the attempt was created | it completed | none (the root) |
+| the job's name | the job was queued | it finished | the root |
+| `waiting for a runner` | the job was queued | a runner took it, or it finished when none did | the job |
+| the step's name, for each step that ran | the step started | it finished | the job |
+
+- Every id is a hash of GitHub's ids, so the parts need no shared context.
+  The first attempt keeps the run's own trace (`runTraceId`), which the
+  relay's GitHub-call spans and a job's Turbo trace already write into. A
+  re-run's attempt gets a trace of its own (`runAttemptTraceId`).
+- A part is exported once it finishes: a job's spans when its `completed`
+  webhook is folded in, the root when the run's is. `RunTraceIngest` folds
+  each webhook into the store as `InsightIngest` does and sends only what that
+  webhook finished, so a job span sent minutes before its run span joins the
+  same trace, and a webhook GitHub delivers twice sends nothing the second
+  time. A failed export is not retried and never undoes the stored facts.
+- Attributes use OpenTelemetry's `cicd.*` and `vcs.*` semantic conventions
+  (the [CI/CD](https://opentelemetry.io/docs/specs/semconv/registry/attributes/cicd/)
+  and [VCS](https://opentelemetry.io/docs/specs/semconv/registry/attributes/vcs/)
+  attribute registries and the
+  [CI/CD span rules](https://opentelemetry.io/docs/specs/semconv/cicd/cicd-spans/),
+  read on 2026-11-17): the pipeline and task names, ids, URLs and results,
+  the runner as `cicd.worker.name`, and the repository, branch and commit.
+- A failed or timed-out run, job or step sets an error status and
+  `error.type`; a cancelled or skipped one does not.
+- A relay job, matched by its id in the workflow against the job name, and a
+  job whose known `needs` include it, carry the newest route decision the
+  journal holds for that attempt as `hobo.ci.route.step`, `.outcome`,
+  `.runner`, `.skipped` (each skipped step as `key:reason`) and `.mode`.
+  GitHub's job webhooks do not carry `needs`, so a routed job usually shows
+  the decision only through its relay job, in the same trace.
+- The root span is kind `internal`: the shared OTLP writer has no `server`
+  kind, which the CI/CD span rules recommend for a pipeline run.
+
+The tests drive it through the GitHub simulator: a relay job's span sent
+with its own webhook and the run's span sent a minute and a half later share
+the trace id of the run and attempt, and the job's parent is the root. The
+relay host does not call `RunTraceIngest` yet, so traces from production
+runs are built, not proven.
+
+## Read API and OpenAPI
+
+[`src/read-api.ts`](src/read-api.ts) is the relay's read API
+([ADR-0183](../../docs/ci/runner-order.md), gauntlet case S06): the
+records the dashboard, the `hobo ci` commands and agents read, from one
+route table.
+
+| Path (below `/v1/accounts/self`) | Answers |
+| --- | --- |
+| `GET /runner-order?repository=` | The committed `RunnerOrder`, and the parser's sentence when it does not parse |
+| `GET /routes` | Route journal entries (`RunnerRouteEvent`), newest first |
+| `GET /machines` | The account's machines (`MachineAdvert`), in id order |
+| `GET /runs` | Stored run attempts (`RunFact`), newest first, without their jobs |
+| `GET /runs/{id}/{attempt}/jobs` | One attempt's jobs (`JobFact`) with their steps |
+| `GET /signals` | The nine signals with a breakdown and a per-day trend |
+| `GET /job-times` | Times by workflow, job and runner, each runner against `ubuntu-latest` |
+| `GET /usage` | Billed and kept minutes per runner and day, against the included amount |
+
+- Every path needs an account token with the `policy:read` scope, the one the
+  account API's other reads use, and answers only that token's account:
+  routes and machines are read by account id, runs only from the
+  repositories the account has connected. A repository, run or attempt of
+  another account answers 404, as one that does not exist would, and a row a
+  store hands back for another account is dropped.
+- Stored records are protobuf JSON; reports are plain JSON. Lists take
+  `limit` (1 to 200, default 50) and the previous page's `next` as `cursor`,
+  and reach at most 1,000 rows deep; `since` is epoch milliseconds, 90 days
+  back by default for lists and 30 for reports.
+- A host that keeps no journal, machine registry or run history (the
+  stateless Vercel host, ADR-0179) passes `undefined` for it. Its paths then
+  answer 404 `not-stored-here` with the command that reads GitHub instead,
+  such as `hobo ci signals` or `gh run list`. The runner order is read from
+  the repository on every host.
+- `ReadApiClient` reads it with an account token and parses each answer back
+  into the generated records and the report types.
+- [`schema/read-api.openapi.json`](schema/read-api.openapi.json) is the
+  OpenAPI 3.1 description, generated from the route table: protobuf records
+  from their descriptors, reports from the zod schemas the client parses
+  with. `node --import tsx scripts/read-api-openapi.ts` writes it and
+  `--check` fails when it is stale; `test/read-api.test.ts` calls every path
+  and checks each answer against the file.
+- [`contracts/read-api.pact.json`](contracts/read-api.pact.json) holds one
+  interaction per path and three refusals (no read scope, another account's
+  repository, a host that keeps no run history).
+  `contracts/read-api.consumer.test.ts` reads each through `ReadApiClient`,
+  and `contracts/read-api.provider.test.ts` has the handler answer each with
+  the declared body.
+
+`createReadApi` returns a handler that answers a read API path and returns
+`undefined` for any other, so a relay can try it before its control routes.
+No deployed relay serves it yet, so the channel is built, not proven.
+
+## MCP insight tools
+
+[`src/relay-mcp-insights.ts`](src/relay-mcp-insights.ts) adds the eight
+read-only insight tools of [ADR-0183](../../docs/ci/runner-order.md)
+to a relay MCP server: `get_runner_order`, `explain_route`,
+`list_route_decisions`, `list_machines`, `get_signals`, `get_job_times`,
+`get_run_failures` and `get_usage`. `registerRelayMcpInsightTools(server,
+services)` registers them on an `McpServer`; `services` names the ports they
+read (the runner order source, the route facts source, the route journal,
+the machine registry, the stored runs, a minutes reader and a log reader),
+the repositories each account connected, and GitHub's per-minute rate with
+its page and the day it was read.
+
+- Every tool needs only the read scope (`policy:read`) and is annotated
+  read-only. A caller without it is refused.
+- A tool that names a repository refuses one the caller's account did not
+  connect, so one account never reads another's order, runs or failures.
+  The journal and the machine registry are read by account.
+- `explain_route` walks the committed order for the inputs given, with the
+  facts true now, through the same `answerRelayJob` both relay modes call.
+  The journal entries it would write are kept aside and dropped: it records
+  nothing.
+- `list_route_decisions` is the activity feed (`journalActivity`), newest
+  first, paged with an opaque cursor. `get_signals`, `get_job_times` and
+  `get_usage` run the `@hobo/ci` insight reports over at most 1,000 stored
+  run attempts of the last 30 days (90 at most). `get_run_failures`
+  diagnoses at most five failed jobs of one run with fixed patterns and
+  prints the evidence; no model is asked.
+- Results are compact JSON. A refusal is a tool error whose first line reads
+  `message (CODE)` and whose second says what to do; the codes are in
+  [`docs/ci/errors.md`](../../docs/ci/errors.md). On a host that keeps no
+  journal, machines or run history, the tool that needs one answers
+  `HOBO_CI_MCP_NOT_STORED` and names the `hobo ci` command that reads GitHub
+  instead. A port that throws answers `HOBO_CI_MCP_FAILED` and is logged as
+  `hobo_ci_mcp_insight_failed`; the error's text is never returned.
+
+The tools are tested against the in-memory fakes of
+`@hobo/ci/runner-order/testing` (`test/relay-mcp-insights.test.ts`, cases S04
+and X04). [`contracts/mcp-insights.pact.json`](contracts/mcp-insights.pact.json)
+holds what an MCP agent relies on, one interaction per tool plus the three
+refusals; `contracts/mcp-insights.provider.test.ts` sends each request to the
+tools over the Streamable HTTP transport, as the authenticated caller it
+names, and matches the answer. The relay's HTTP framing in front of them
+(bearer credentials, origins, sessions) is the one `mcp-boundary.pact.json`
+covers. `createRelayMcpServer` does not register the insight tools yet, so no
+deployed relay serves them: they are built, not proven.
+
+## Provider usage sync
+
+`@hobo/ci-gh-actions/provider-usage` reads what an account spent this month
+on Depot, Namespace and WarpBuild from each provider's own usage API, once an
+hour, and serves it to a runner order's spend limit ahead of the ledger
+(ADR-0183). [`src/provider-usage/PROVIDER-USAGE.md`](src/provider-usage/PROVIDER-USAGE.md)
+names each call, the field read, how it becomes dollars, and the vendor page
+and day each was read.
+
+- `DepotUsageReader`, `NamespaceUsageReader` and `WarpbuildUsageReader` make
+  read calls only. A refusal, another shape or a network failure is
+  "unmeasured"; a reader never throws.
+- A subscription holds an owner-store credential reference
+  (`owner://NAME`), never a token. `ownerStoreCredentialResolver` resolves it
+  per sync through the owner store session, and no reading keeps it.
+- `ProviderUsageSync` syncs every subscription; `scheduleProviderUsageSync`
+  runs it at start and hourly. `SyncedSpendReader` answers the ledger's
+  figures with each fresh vendor reading in its place, from memory, so a
+  routing step never waits on a vendor. A provider whose read fails, or
+  whose reading is over three hours old, falls back to the ledger.
+
+`contracts/depot-usage.pact.json`, `namespace-usage.pact.json` and
+`warpbuild-usage.pact.json` hold one reading and one refused token each;
+`contracts/provider-usage.consumer.test.ts` drives each reader through them.
+No reader has called a vendor and the relay does not construct the spend
+reader yet: built, not proven.
+
+## Relay job, relay mode
+
+`createRelayAnswerer` (`src/relay-answer/`) lets a HoBo node claim a check job
+itself, over the runner protocol, when the job asks only for the `hobo-relay`
+label, is made only of HoBo check steps, and relay mode is on both for the
+node and in the repository's `.hobo/ci.json`. The job runs on no runner, bills
+no minute and runs no job code. Relay mode never routes: routing happens in
+HoBo CI, never in a workflow, and a job on the relay label that asks to be
+routed is failed. A rescue poll answers relay jobs whose webhook never
+arrived, and a sweep deletes leftover `hobo-relay-*` runners. Of a repository
+it reads only `.hobo/ci.json`. It is built, not proven: it is tested against
+the GitHub simulator and the hand-authored pacts
+[`contracts/relay-answer.pact.json`](contracts/relay-answer.pact.json) and
+[`contracts/relay-answer-webhook.pact.json`](contracts/relay-answer-webhook.pact.json),
+and no run against GitHub's runner service is linked yet. See
+[`src/relay-answer/RELAY-MODE.md`](src/relay-answer/RELAY-MODE.md).
+
+## Automatic retry
+
+A routed job that failed for a reason outside its own steps is run again
+without anyone asking, under the retry policy in the runner order
+(ADR-0183, [`docs/ci/runner-order.md`](../../docs/ci/runner-order.md)).
+[`src/auto-retry.ts`](src/auto-retry.ts) does it when a run attempt completes
+with a failure:
+
+- `autoRetryRun(run, deps)` takes the attempt as the relay stores it, the
+  route journal's decision for it, the machine events and the job's
+  check-run annotations, and builds the failed job's facts for
+  `retryVerdict` in `@hobo/ci`. A job that never reached its own steps, ran
+  on a machine that disconnected meanwhile, or that GitHub says lost its
+  runner is retried; a failing test is not, and a run where any routed job
+  failed in its own steps is left alone. A run with more than one relay is
+  left alone too.
+- The `job.retried` row is written to the retry ledger before GitHub is
+  asked. The row is the protobuf record `JobRetried` from `@hobo/ci`
+  (`data-models/job_retried.proto`, constrained by `job_retried.cue`, with
+  fixtures under `fixtures/job_retried/`); `parseJobRetried` and
+  `defineJobRetried` return it checked and frozen, and the ledger stores its
+  protobuf JSON. The ledger keeps one row per repository, run and attempt,
+  so a redelivered `workflow_run` webhook, or two deliveries racing, retries
+  once. `SqliteRetryLedger` takes the store's database handle (ADR-0135);
+  `retryLedgerConformance` is the ledger's rules.
+- The row then records GitHub's answer: `started` on 201, `refused` on any
+  other answer (final, and counted against neither the per-run maximum nor
+  the daily cap), or `failed` when there was no answer or a server error. A
+  `failed` row is taken back by exactly one later delivery of the webhook,
+  which asks GitHub again for the same relay job.
+- The run's decision is read from the route journal newest first, in pages
+  that grow from `DECISION_READ_LIMIT` until they hold every entry since the
+  run began (at most `DECISION_READ_MAX`), so a busy repository's decision
+  is not missed.
+- The retry re-runs the relay job (`POST .../actions/jobs/{id}/rerun`, which
+  re-runs a job and every job that needs it), not the failed job. The relay
+  then decides again: `RetryRouteFacts` wraps the relay's facts source and
+  gives the next attempt the row's failed step, machine and target, so
+  `retryOrder` tries the failed step first (`same`) or last (`other`).
+- The policy's maximum (1 or 2 per run) and `RUNNER_RETRY_DAILY_CAP` per
+  account count the ledger's rows that were not refused. A failed
+  annotation read is no annotations.
+- A delivery that claimed a row and died before recording GitHub's answer
+  leaves it `pending`. After `RETRY_PENDING_LEASE_MS` (5 minutes) one later
+  delivery takes it back, stamps it with its own time and asks again; inside
+  the lease, a delivery answers `already_retried`.
+
+A relay job is one asking `hobo-relay`, or named `relay` or `route` alone or
+with a matrix suffix (`route (linux)`); `route-lint` or `relay-tests` is not.
+`isRelayJob` in [`src/insight-ingest.ts`](src/insight-ingest.ts) is the one
+rule.
+
+**Inert until HoBo CI routes on claim.** Retry acts only on a run with a
+route decision in the journal and a relay job to re-run. Routing happens in
+HoBo CI, never in a workflow, and relay mode answers only check jobs, so no
+production path journals a route decision today and `autoRetryRun` answers
+`no_relay_decision`. `test/auto-retry.test.ts` exercises the rules with a
+journal it fills itself; `test/relay-wiring.test.ts` shows the wired relay
+re-runs nothing.
+
+## Runner-less checks: title, then lint
+
+`createRelayChecks` (`src/relay-checks/`) is the `checks` handler relay mode
+calls (ADR-0183, F9). A relay job whose steps are all
+HoBo check steps (a `uses:` ending in `/checks/pr-title` or `/checks/lint`)
+is completed by the relay itself, passed or failed with annotations, so no
+runner starts and no minute is billed. Every step must be a check step with
+literal inputs, each check once; anything else fails the job with the reason.
+The title check needs a pull request event (for a `pull_request_target` run
+from a fork, the pull request is found from the run's head) and takes its
+allowed types from the step or from `checks.prTitle.types` in `.hobo/ci.json`.
+The lint check is off unless `checks.lint` is set; it runs `actionlint`,
+`shellcheck`, `oxlint`, `ruff` and `typos` on the commit's archive (read by
+following GitHub's redirect to codeload, see `RelayArchiveAccess`) in a
+sandbox with no network
+(`createDockerLintSandbox`), five minutes per tool and eight minutes for the
+whole check (the relay renews no job lock, so a slow or hung tool ends as
+"Lint timed out" inside the lock), and reports one result per tool and 50
+annotations at most. Each answered job is a `check.completed`
+event, a callback rather than a journal record. It is built, not proven:
+tested against the GitHub simulator and a fake sandbox. C01's T3 run is owed:
+a title check job answered by the deployed relay, to be linked when relay
+mode is on for this repository. The
+Docker lint sandbox is new rather than an existing HoBo sandbox, because the
+existing ones start runners; the `LintSandbox` port lets another replace it.
+See [`src/relay-checks/RELAY-CHECKS.md`](src/relay-checks/RELAY-CHECKS.md).
+
+## Wiring: turning the built pieces on
+
+`createRelayWiring` (`src/relay-wiring.ts`) connects three earlier pieces to
+the relay's Node host (`startRelayFromEnvironment`), each behind its own flag
+and each off unless its variable is exactly `1` (ADR-0183,
+[runner order](../../docs/design/adr/runner-order.md)):
+
+| Flag | What it turns on |
+| --- | --- |
+| `HOBO_CI_RELAY_JOBS_ANSWER` (label `HOBO_CI_RELAY_JOBS_LABEL`) | Relay mode's rescue, then sweep, after each pull-admission poll. A pass still running makes the next poll skip its own, and admission never waits for one. `hobo ci serve` sets this from the project's `.hobo/ci.json` `relayJobs.answer` and clears any value from the shell |
+| `HOBO_CI_AUTO_RETRY` | Every `workflow_job` and `workflow_run` delivery the relay accepted is folded into run history, and a failed `workflow_run` goes to `autoRetryRun` with the SQLite retry ledger |
+| `HOBO_CI_DASHBOARD` | The read-only dashboard (`@hobo/ci-dashboard`) at `/dashboard`, for `GET` and `HEAD` only, and the read API it reads (`GET /v1/accounts/self/{runner-order,routes,machines,runs,signals,job-times,usage}`), checked with the relay's own account tokens and read scope. Run history is kept for it from the accepted webhooks. `hobo ci serve` supplies the page route; a host that supplies none serves the read API alone |
+
+The wiring keeps its route journal, retry ledger, run history and machine
+registry in `relay-wiring.sqlite` beside the relay's journal (or
+`HOBO_CI_WIRING_DB`), a file of its own written only by the relay process
+(ADR-0135). With every flag off the relay opens no such file, asks GitHub
+nothing more and serves no new path. The project schema accepts the
+`relayJobs` and `checks` blocks those pieces read from `.hobo/ci.json`, so
+`hobo ci serve` can load a project that sets them.
+
+What is not wired, and why:
+
+- Runner-less checks (`RelayChecks`) are not passed to the answerer, so a
+  check job it claims fails with a sentence saying its checks did not run;
+  the lint sandbox needs its own configuration first.
+- The read API's usage report leaves minutes unmeasured: the host has no
+  billing reader. Nothing on this host writes machine adverts or machine
+  events yet, so the machine registry is empty and a retry sees no machine
+  disconnect. No route decision is journaled, so retry re-runs nothing.
+- Relay mode answers through the pull-admission poller. A relay on push
+  admission runs no poller, so it does not answer relay jobs.
+- With the CI agent on, `hobo ci serve` starts the relay through the agent's
+  entry, which takes no dashboard route: the dashboard is not served then.
+
+Built, not proven. `test/relay-wiring.test.ts` drives the wiring against the
+GitHub simulator (a lost check job claimed after a poll, a failed run with no
+route decision re-run by nothing, nothing with each flag off);
+`test/relay-wiring-entry.test.ts` drives `startRelayFromEnvironment` over
+HTTP (a webhook folded into run history, the page, the read API behind its
+token, and none of it with the flags off); `packages/hobo/test/ci-serve.test.ts` drives `hobo ci serve` and its
+poller. No relay has run with a flag on against GitHub yet.
 
 ## Strict pre-job hook
 

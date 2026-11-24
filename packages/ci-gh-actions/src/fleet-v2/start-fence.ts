@@ -28,7 +28,7 @@ const githubJobKeySchema = z.strictObject({
 	runAttempt: z.number().int().min(1),
 });
 
-const startFenceRequestSchema = z.strictObject({
+export const startFenceRequestSchema = z.strictObject({
 	slotId: z.string().min(1),
 	claimId: z.string().min(1),
 	bindingSecret: z.string().min(32).max(1024),

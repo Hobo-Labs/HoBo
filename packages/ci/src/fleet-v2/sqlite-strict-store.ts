@@ -35,6 +35,8 @@ import {
 	type WorkerDelivery,
 	WorkerDeliverySchema,
 } from "../_generated/fleet_v2_pb.js";
+import { nextCapacitySequence } from "./capacity-sequence.js";
+import { nextEffectFence } from "./effect-fence.js";
 import {
 	executionAccountId,
 	executionKeyId,
@@ -47,6 +49,7 @@ import {
 import {
 	type RunnerSlotState,
 	rejectFleet,
+	releaseRunnerSlotAfterTeardown,
 	transitionCapacityGroup,
 	transitionCiDemand,
 	transitionEffect,
@@ -58,6 +61,7 @@ import type {
 	EffectClaimInput,
 	EffectFenceInput,
 	ReserveCapacityInput,
+	RunnerSlotTransitionOptions,
 	StrictFleetStore,
 } from "./strict-store.js";
 
@@ -456,7 +460,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				group.state as import("./state-machine.js").CapacityGroupState,
 			);
 			const updated = clone(CapacityGroupSchema, group);
-			updated.seq += 1;
+			updated.seq = nextCapacitySequence(updated.seq);
 			const changed = this.db
 				.prepare(
 					"UPDATE fleet_v2_capacity_groups SET approved_units=?,seq=seq+1,state=?,body=? WHERE id=? AND seq=? AND reserved_units=?",
@@ -751,7 +755,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				);
 			const updatedGroup = clone(CapacityGroupSchema, group);
 			updatedGroup.reservedUnits += slot.capacityCostUnits;
-			updatedGroup.seq += 1;
+			updatedGroup.seq = nextCapacitySequence(updatedGroup.seq);
 			this.saveCapacity(updatedGroup);
 			const updatedDemand = clone(CiDemandSchema, demand);
 			transitionCiDemand(
@@ -796,31 +800,43 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 		expected: RunnerSlotState,
 		next: RunnerSlotState,
 		externalRunnerId?: string,
+		options?: RunnerSlotTransitionOptions,
 	): Promise<RunnerSlot> {
 		return this.tx(() => {
 			const slot = this.slotInside(id);
 			if (!slot)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "runner slot not found");
+			const resolvingUncertainty =
+				expected === "uncertain" && next === "released";
+			if (resolvingUncertainty && options?.teardownConfirmed !== true)
+				rejectFleet(
+					FleetRejectionCode.TEARDOWN_UNCONFIRMED,
+					"runner teardown has not been confirmed",
+				);
+			if (resolvingUncertainty && slot.state === "released") return slot;
 			if (slot.state !== expected)
 				rejectFleet(
 					FleetRejectionCode.INVALID_TRANSITION,
 					`runner slot expected ${expected}, found ${slot.state}`,
 				);
-			transitionRunnerSlot(expected, next);
-			// Pre-claim release: a slot that leaves reserved/provisioning/
-			// registered for a terminal state without an execution claim gives
-			// its reserved units back, so abandoned reservations cannot leak
-			// capacity forever. Claimed slots release only via
-			// completeExecution teardown.
+			if (resolvingUncertainty) releaseRunnerSlotAfterTeardown(expected, true);
+			else transitionRunnerSlot(expected, next);
 			if (
-				(next === "released" || next === "uncertain") &&
-				["reserved", "provisioning", "registered"].includes(expected)
+				next === "released" &&
+				["reserved", "provisioning", "registered", "uncertain"].includes(
+					expected,
+				)
 			) {
 				const claim = this.db
 					.prepare(
 						"SELECT key FROM fleet_v2_execution_claims WHERE runner_slot_id=?",
 					)
 					.get(slot.id);
+				if (claim && resolvingUncertainty)
+					rejectFleet(
+						FleetRejectionCode.EXECUTION_CONFLICT,
+						"a claimed slot must be released through execution settlement",
+					);
 				if (!claim) {
 					const changed = this.db
 						.prepare(
@@ -840,8 +856,17 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 					if (currentGroup) {
 						const group = clone(CapacityGroupSchema, currentGroup);
 						group.reservedUnits -= slot.capacityCostUnits;
-						group.seq += 1;
+						group.seq = nextCapacitySequence(group.seq);
 						this.saveCapacity(group);
+						this.event(
+							FleetEventType.CAPACITY_RELEASED,
+							this.now(),
+							slot.accountId,
+							"capacity-group",
+							group.id,
+							undefined,
+							slot.incarnationId,
+						);
 					}
 				}
 			}
@@ -935,7 +960,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 						.prepare("SELECT next_fence FROM fleet_v2_effects WHERE id=?")
 						.get(effect.id),
 				);
-			const fence = fenceRow.next_fence + 1;
+			const fence = nextEffectFence(fenceRow.next_fence);
 			const expiresAt = this.expiry(input.leaseMs);
 			const delivery = create(WorkerDeliverySchema, {
 				id: randomUUID(),
@@ -1354,7 +1379,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				);
 			}
 			let capacityReleased = false;
-			if (input.teardownConfirmed) {
+			if (input.teardownConfirmed === true) {
 				const inserted = this.db
 					.prepare(
 						"INSERT INTO fleet_v2_capacity_releases(claim_id,capacity_group_id,units,released_at) VALUES(?,?,?,?) ON CONFLICT(claim_id) DO NOTHING",
@@ -1388,9 +1413,12 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 						);
 					const group = clone(CapacityGroupSchema, currentGroup);
 					group.reservedUnits -= slot.capacityCostUnits;
-					group.seq += 1;
+					group.seq = nextCapacitySequence(group.seq);
 					this.saveCapacity(group);
-					transitionRunnerSlot(slot.state as RunnerSlotState, "released");
+					releaseRunnerSlotAfterTeardown(
+						slot.state as RunnerSlotState,
+						input.teardownConfirmed,
+					);
 					slot.state = "released";
 					this.saveSlot(slot);
 					capacityReleased = true;

@@ -20,7 +20,7 @@ export const CATALOG_ROWS = [
 	},
 	{
 		factory: "topic",
-		portRef: ["wasi:messaging"],
+		portRef: ["hobo:durable-messaging"],
 		allowVerbs: ["publish", "subscribe"],
 	},
 	{

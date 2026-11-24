@@ -49,8 +49,7 @@ describe("kafka live transport path", () => {
 		expect(batch).toHaveLength(1);
 		expect(batch[0]?.body).toEqual({ id: 1 });
 
-		bus.ack(first(batch).messageId, first(batch).leaseId);
-		await bus.flush?.();
+		await bus.ack(first(batch).messageId, first(batch).leaseId);
 
 		const again = await bus.consume(topic, parseConsumerGroupId("workers"));
 		expect(again).toHaveLength(0);
@@ -58,6 +57,107 @@ describe("kafka live transport path", () => {
 		const types = bus.events().map((e) => e.type);
 		expect(types).toContain("messaging.published");
 		expect(types).toContain("messaging.acked");
+	});
+
+	it("waits for broker acknowledgement and exposes an uncertain failure", async () => {
+		const original = createInMemoryKafkaTransport();
+		let releaseCommit: () => void = () => {};
+		const gate = new Promise<void>((resolve) => {
+			releaseCommit = resolve;
+		});
+		let commitCalls = 0;
+		let releaseCalls = 0;
+		const transport = {
+			...original,
+			async commit() {
+				commitCalls++;
+				await gate;
+				throw new Error("reply lost");
+			},
+			async release(request: Parameters<typeof original.release>[0]) {
+				releaseCalls++;
+				await original.release(request);
+			},
+		};
+		const bus = createKafkaMessaging({
+			cluster: localRedpandaCluster("acme"),
+			transport,
+		});
+		const topic = parseTopicName("orders");
+		await bus.publish(topic, { id: 1 });
+		const message = first(
+			await bus.consume(topic, parseConsumerGroupId("workers")),
+		);
+		const pending = bus.ack(message.messageId, message.leaseId);
+		expect(pending).toBeInstanceOf(Promise);
+		expect(bus.events().some((event) => event.type === "messaging.acked")).toBe(
+			false,
+		);
+		releaseCommit();
+		await expect(pending).rejects.toMatchObject({
+			code: "MESSAGING_SETTLEMENT_UNKNOWN",
+		});
+		await expect(
+			bus.nack(message.messageId, message.leaseId),
+		).rejects.toMatchObject({ code: "MESSAGING_SETTLEMENT_UNKNOWN" });
+		expect({ commitCalls, releaseCalls }).toEqual({
+			commitCalls: 1,
+			releaseCalls: 0,
+		});
+	});
+
+	it("does not release a message after an acknowledgement reply is lost", async () => {
+		const original = createInMemoryKafkaTransport();
+		let commits = 0;
+		let releases = 0;
+		const transport = {
+			...original,
+			async commit() {
+				commits++;
+				throw new Error("reply lost");
+			},
+			async release() {
+				releases++;
+			},
+		};
+		const bus = createKafkaMessaging({
+			cluster: localRedpandaCluster("acme"),
+			transport,
+		});
+		const topic = parseTopicName("orders");
+		await bus.publish(topic, { id: 1 });
+		await expect(
+			bus.subscribe(topic, parseConsumerGroupId("workers"), async () => {}),
+		).rejects.toMatchObject({ code: "MESSAGING_SETTLEMENT_UNKNOWN" });
+		expect({ commits, releases }).toEqual({ commits: 1, releases: 0 });
+	});
+
+	it("reports a committed acknowledgement when local observation fails", async () => {
+		let failClock = false;
+		const bus = createKafkaMessaging({
+			cluster: localRedpandaCluster("acme"),
+			transport: createInMemoryKafkaTransport(),
+			now: () => {
+				if (failClock) throw new Error("clock unavailable");
+				return "2026-01-01T00:00:00.000Z";
+			},
+		});
+		const topic = parseTopicName("orders");
+		const group = parseConsumerGroupId("workers");
+		await bus.publish(topic, { id: 1 });
+		const message = first(await bus.consume(topic, group));
+		failClock = true;
+		await expect(
+			bus.ack(message.messageId, message.leaseId),
+		).rejects.toMatchObject({
+			code: "MESSAGING_SETTLEMENT_COMMITTED",
+			operation: "ack",
+		});
+		failClock = false;
+		await expect(
+			bus.ack(message.messageId, message.leaseId),
+		).rejects.toMatchObject({ code: "MESSAGING_DELIVERY" });
+		expect(await bus.consume(topic, group)).toEqual([]);
 	});
 
 	it("routes produce through the injected transport (not pure emulator)", async () => {

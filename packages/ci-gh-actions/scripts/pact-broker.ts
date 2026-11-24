@@ -184,8 +184,6 @@ async function main() {
 			providerVersionBranch: values.branch,
 			publishVerificationResult: true,
 		};
-		if (process.env.PACT_BROKER_TOKEN)
-			options.pactBrokerToken = process.env.PACT_BROKER_TOKEN;
 		await verifyLocalRunnerPact(options, values.fault);
 		return;
 	}
@@ -204,7 +202,7 @@ async function main() {
 			process.env.HOBO_CI_GITHUB_PACT_VERSION ??
 			"unverified",
 	);
-	const broker = pactBrokerClient(address, process.env.PACT_BROKER_TOKEN);
+	const broker = pactBrokerClient(address);
 	if (values.gate) {
 		const local = await broker.matrix(version, version);
 		const github = await broker.matrix(version, githubVersion, {

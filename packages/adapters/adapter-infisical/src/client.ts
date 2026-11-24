@@ -29,6 +29,10 @@ import {
 	InfisicalTokenRevokeRequestSchema,
 	InfisicalUniversalAuthLoginRequestSchema,
 } from "./_generated/adapter_infisical_pb.js";
+import {
+	createInfisicalAgentVaultApi,
+	type InfisicalAgentVaultApi,
+} from "./agent-vault.js";
 import type { InfisicalAuth } from "./auth.js";
 import { parseJwt } from "./auth.js";
 import {
@@ -109,6 +113,7 @@ export interface InfisicalClient {
 	 * ends it for both. A different origin is refused (`invalid-input`).
 	 */
 	forBinding(binding: ParsedInfisicalBinding): InfisicalClient;
+	agentVault(): InfisicalAgentVaultApi;
 }
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -147,6 +152,12 @@ export async function readBody(
 	} catch {
 		return undefined;
 	}
+}
+
+function accepted(operation: string, answer: Answer): JsonValue {
+	if (answer.status < 200 || answer.status > 299)
+		throw failure(operation, answer);
+	return answer.body ?? {};
 }
 
 function retryAfterMs(response: Response): number | undefined {
@@ -654,6 +665,26 @@ function createInfisicalClientInternal(
 				if (other.siteUrl !== binding.siteUrl)
 					throw new InfisicalError("bind client", "invalid-input");
 				return build(other);
+			},
+			agentVault() {
+				return createInfisicalAgentVaultApi({
+					call: async (operation, method, path, payload) =>
+						accepted(
+							operation,
+							await request(operation, method, path, payload),
+						),
+					callAsSession: async (operation, sessionToken, path) =>
+						accepted(
+							operation,
+							await exchange(
+								operation,
+								"GET",
+								path,
+								{ authorization: `Bearer ${sessionToken}` },
+								undefined,
+							),
+						),
+				});
 			},
 		};
 	}

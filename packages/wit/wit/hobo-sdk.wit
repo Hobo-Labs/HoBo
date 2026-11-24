@@ -8,6 +8,7 @@ world sdk {
   import hobo:runtime/command@0.1.0;
   import hobo:runtime/subscribe@0.1.0;
   import hobo:queue/queue@0.1.0;
+  import hobo:durable-messaging/messaging@0.1.0;
   import hobo:scheduler/scheduler@0.1.0;
   import hobo:blob-events/blob-events@0.1.0;
   import hobo:evidence/evidence@0.1.0;
