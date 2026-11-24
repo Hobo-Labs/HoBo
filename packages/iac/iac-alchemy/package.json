@@ -66,6 +66,10 @@
 		"./cluster": {
 			"types": "./dist/cluster/index.d.ts",
 			"default": "./dist/cluster/index.js"
+		},
+		"./sql": {
+			"types": "./dist/sql/index.d.ts",
+			"default": "./dist/sql/index.js"
 		}
 	},
 	"dependencies": {
