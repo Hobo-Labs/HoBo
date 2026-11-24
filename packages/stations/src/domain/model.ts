@@ -3,9 +3,16 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import {
-	CloudBackendId,
-	CloudProviderKind,
-	CutoverPhase,
+	CloudBackendTarget,
+	decodeEpochMs,
+	decodeNonNegativeCount,
+	decodeProgressiveRampPlan,
+	decodeRampWeightPercent,
+	decodeTtlSeconds,
+	NonEmptyReason,
+	NonNegativeCount,
+	RampWeightPercent,
+	TtlSeconds,
 } from "./ids.js";
 import {
 	ExecuteProgressiveCutover,
@@ -15,6 +22,15 @@ import {
 	BudgetMigrationProposed,
 	TrafficRoute,
 } from "./TrafficRoute.aggregate.js";
+
+const DEFAULT_RAMP_PLAN = decodeProgressiveRampPlan([
+	decodeRampWeightPercent(10),
+	decodeRampWeightPercent(50),
+	decodeRampWeightPercent(100),
+]);
+const DEFAULT_LOW_TTL = decodeTtlSeconds(30);
+const ZERO_SWAPS = decodeNonNegativeCount(0);
+const ZERO_WEIGHT = decodeRampWeightPercent(0);
 
 export class StartCutoverPolicy extends Domain.Policy("StartCutoverPolicy", {
 	from: TrafficRoute,
@@ -26,84 +42,149 @@ export const StartCutoverPolicyLive = StartCutoverPolicy.toLayer(
 		const runCutover = yield* ExecuteProgressiveCutover;
 		return Effect.fn(function* ({ source, event }) {
 			yield* runCutover.start(source, {
-				toProvider: event.toProvider,
-				toBackendId: event.toBackendId,
-				rampSteps: [10, 50, 100],
-				lowTtlSeconds: 30,
-				completedAtMs: event.proposedAtMs + 4_000,
+				to: event.to,
+				rampPlan: DEFAULT_RAMP_PLAN,
+				lowTtlSeconds: DEFAULT_LOW_TTL,
+				completedAtMs: decodeEpochMs(event.proposedAtMs + 4_000),
 			});
 		});
 	}),
 );
 
-const TrafficRoutingViewState = Schema.Struct({
-	phase: CutoverPhase,
-	activeProvider: Schema.NullOr(CloudProviderKind),
-	activeBackendId: Schema.NullOr(CloudBackendId),
-	challengerProvider: Schema.NullOr(CloudProviderKind),
-	targetWeightPercent: Schema.Int,
-	ttlSeconds: Schema.Int,
-	swapsCompleted: Schema.Int,
-	reconciliationReason: Schema.NullOr(Schema.String),
+export const UnregisteredRouteView = Schema.TaggedStruct("Unregistered", {});
+
+export const SteadyRouteView = Schema.TaggedStruct("Steady", {
+	incumbent: CloudBackendTarget,
+	ttlSeconds: TtlSeconds,
+	swapsCompleted: NonNegativeCount,
 });
+
+export const TtlLoweringRouteView = Schema.TaggedStruct("TtlLowering", {
+	incumbent: CloudBackendTarget,
+	challenger: CloudBackendTarget,
+	ttlSeconds: TtlSeconds,
+	swapsCompleted: NonNegativeCount,
+});
+
+export const RampingRouteView = Schema.TaggedStruct("Ramping", {
+	incumbent: CloudBackendTarget,
+	challenger: CloudBackendTarget,
+	targetWeightPercent: RampWeightPercent,
+	ttlSeconds: TtlSeconds,
+	swapsCompleted: NonNegativeCount,
+});
+
+export const RolledBackRouteView = Schema.TaggedStruct("RolledBack", {
+	incumbent: CloudBackendTarget,
+	ttlSeconds: TtlSeconds,
+	swapsCompleted: NonNegativeCount,
+	reason: NonEmptyReason,
+});
+
+export const ReconciliationRequiredRouteView = Schema.TaggedStruct(
+	"ReconciliationRequired",
+	{
+		incumbent: Schema.NullOr(CloudBackendTarget),
+		swapsCompleted: NonNegativeCount,
+		reason: NonEmptyReason,
+	},
+);
+
+export const TrafficRoutingViewState = Schema.Union([
+	UnregisteredRouteView,
+	SteadyRouteView,
+	TtlLoweringRouteView,
+	RampingRouteView,
+	RolledBackRouteView,
+	ReconciliationRequiredRouteView,
+]);
+export type TrafficRoutingViewState = typeof TrafficRoutingViewState.Type;
+
+const INITIAL_VIEW_STATE: TrafficRoutingViewState = {
+	_tag: "Unregistered",
+};
 
 export class TrafficRoutingView extends Domain.View("TrafficRoutingView", {
 	from: [TrafficRoute],
 	key: TrafficRoute,
 	state: TrafficRoutingViewState,
-	initial: {
-		phase: "unregistered" as const,
-		activeProvider: null,
-		activeBackendId: null,
-		challengerProvider: null,
-		targetWeightPercent: 0,
-		ttlSeconds: 300,
-		swapsCompleted: 0,
-		reconciliationReason: null,
-	},
+	initial: INITIAL_VIEW_STATE,
 	evolve: {
 		TrafficIncumbentRegistered: (state, event) => ({
-			...state,
-			phase: "steady" as const,
-			activeProvider: event.provider,
-			activeBackendId: event.backendId,
+			_tag: "Steady" as const,
+			incumbent: event.incumbent,
 			ttlSeconds: event.ttlSeconds,
+			swapsCompleted:
+				state._tag === "Unregistered" ? ZERO_SWAPS : state.swapsCompleted,
 		}),
-		BudgetMigrationProposed: (state, event) => ({
-			...state,
-			phase: "ttl-lowering" as const,
-			challengerProvider: event.toProvider,
-			targetWeightPercent: 0,
-		}),
-		CutoverTtlLowered: (state, event) => ({
-			...state,
-			phase: "ramping" as const,
-			ttlSeconds: event.ttlSeconds,
-		}),
-		CutoverRampAdvanced: (state, event) => ({
-			...state,
-			phase: "ramping" as const,
-			targetWeightPercent: event.targetWeightPercent,
-		}),
-		CutoverCompleted: (state, event) => ({
-			...state,
-			phase: "steady" as const,
-			activeProvider: event.activeProvider,
-			activeBackendId: event.activeBackendId,
-			challengerProvider: null,
-			targetWeightPercent: 100,
-			swapsCompleted: state.swapsCompleted + 1,
-		}),
-		CutoverRolledBack: (state) => ({
-			...state,
-			phase: "rolled-back" as const,
-			challengerProvider: null,
-			targetWeightPercent: 0,
-		}),
+		BudgetMigrationProposed: (state, event) => {
+			if (state._tag !== "Steady" && state._tag !== "RolledBack") {
+				return state;
+			}
+			return {
+				_tag: "TtlLowering" as const,
+				incumbent: state.incumbent,
+				challenger: event.to,
+				ttlSeconds: state.ttlSeconds,
+				swapsCompleted: state.swapsCompleted,
+			};
+		},
+		CutoverTtlLowered: (state, event) => {
+			if (state._tag !== "TtlLowering" && state._tag !== "Ramping") {
+				return state;
+			}
+			return {
+				_tag: "Ramping" as const,
+				incumbent: state.incumbent,
+				challenger: state.challenger,
+				targetWeightPercent:
+					state._tag === "Ramping" ? state.targetWeightPercent : ZERO_WEIGHT,
+				ttlSeconds: event.ttlSeconds,
+				swapsCompleted: state.swapsCompleted,
+			};
+		},
+		CutoverRampAdvanced: (state, event) => {
+			if (state._tag !== "TtlLowering" && state._tag !== "Ramping") {
+				return state;
+			}
+			return {
+				_tag: "Ramping" as const,
+				incumbent: state.incumbent,
+				challenger: state.challenger,
+				targetWeightPercent: event.targetWeightPercent,
+				ttlSeconds: state.ttlSeconds,
+				swapsCompleted: state.swapsCompleted,
+			};
+		},
+		CutoverCompleted: (state, event) => {
+			if (state._tag !== "Ramping") {
+				return state;
+			}
+			return {
+				_tag: "Steady" as const,
+				incumbent: event.incumbent,
+				ttlSeconds: state.ttlSeconds,
+				swapsCompleted: event.swapsInWindow,
+			};
+		},
+		CutoverRolledBack: (state, event) => {
+			if (state._tag !== "TtlLowering" && state._tag !== "Ramping") {
+				return state;
+			}
+			return {
+				_tag: "RolledBack" as const,
+				incumbent: event.restored,
+				ttlSeconds: state.ttlSeconds,
+				swapsCompleted: state.swapsCompleted,
+				reason: event.reason,
+			};
+		},
 		CutoverReconciliationRequired: (state, event) => ({
-			...state,
-			phase: "reconciliation-required" as const,
-			reconciliationReason: event.reason,
+			_tag: "ReconciliationRequired" as const,
+			incumbent: state._tag === "Unregistered" ? null : state.incumbent,
+			swapsCompleted:
+				state._tag === "Unregistered" ? ZERO_SWAPS : state.swapsCompleted,
+			reason: event.reason,
 		}),
 	},
 }) {}
@@ -134,7 +215,8 @@ export class StationRoutingApi extends Domain.Api(
 		views: ["TrafficRoutingView"],
 	},
 	{
-		description: "Control API for Station progressive traffic routing and cutover.",
+		description:
+			"Control API for Station progressive traffic routing and cutover.",
 	},
 ) {}
 

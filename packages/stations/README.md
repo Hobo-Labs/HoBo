@@ -344,3 +344,24 @@ claims `domain.RolledBack` until active/full restoration is observed.
 that returns partial realization for availability or resiliency cannot complete a
 cutover requiring those guarantees. Tests use explicit contract-backed adapters
 for stronger guarantees; they do not certify live cloud behavior.
+
+## Alchemy Domain model (`@hobo/stations/domain`)
+
+`StationRouting` models progressive traffic routing and multi-cloud cutover using
+EffectTS schemas and `@alchemy.run/domain` (`TrafficRoute` aggregate,
+`TrafficRoutingView`, `StartCutoverPolicy`, `ExecuteProgressiveCutover` saga,
+`TrafficRoutingBackend` port, and `StationRoutingApi`):
+
+- **Branded constrained values:** `TtlSeconds` (≥ 5), `RampWeightPercent`
+  (0–100), `NonNegativeMs`, `EpochMs`, `PositiveSwapLimit` (≥ 1),
+  `ProgressiveRampPlan` (strictly ascending percentages ending at 100),
+  `LoweredTtlEvidence` (`loweredTtlSeconds < previousTtlSeconds` and
+  `waitedSeconds >= previousTtlSeconds`), and paired `CloudBackendTarget`
+  (`provider` + `backendId`).
+- **Discriminated tagged-union state:** `TrafficRouteState` and
+  `TrafficRoutingViewState` separate `Unregistered`, `Steady`, `TtlLowering`,
+  `Ramping`, `RolledBack`, and `ReconciliationRequired`, making missing
+  incumbents/challengers and out-of-range weights or TTLs unrepresentable at
+  compile time and verified via `Domain.verify(StationRouting)` plus executable
+  `@alchemy.run/domain/Story` BDD scenarios.
+

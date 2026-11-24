@@ -5,12 +5,24 @@ import { describe, expect, it } from "vitest";
 import {
 	BudgetMigrationProposed,
 	CloudBackendId,
+	type CloudBackendTarget,
 	CutoverCompleted,
 	CutoverCooldownActive,
+	CutoverFlipLimitExceeded,
+	CutoverPreconditionRefused,
 	CutoverRampAdvanced,
 	CutoverReconciliationRequired,
 	CutoverRolledBack,
 	CutoverTtlLowered,
+	decodeEpochMs,
+	decodeLoweredTtlEvidence,
+	decodeNonNegativeCount,
+	decodeNonNegativeMs,
+	decodePositiveSwapLimit,
+	decodeProgressiveRampPlan,
+	decodeRampWeightPercent,
+	decodeTtlSeconds,
+	NonEmptyReason,
 	ProposeBudgetMigration,
 	RegisterTrafficIncumbent,
 	RoutingMutationAmbiguous,
@@ -19,6 +31,7 @@ import {
 	TrafficIncumbentRegistered,
 	TrafficRoute,
 	TrafficRouteId,
+	type TrafficRouteState,
 	TrafficRoutingBackend,
 	TrafficRoutingView,
 } from "../src/domain/index.js";
@@ -28,269 +41,383 @@ const story = Story.make(StationRouting, {
 	stub: [TrafficRoutingBackend],
 });
 
-describe("@hobo/stations/domain StationRouting (Vercel <-> Cloudflare budget migration)", () => {
+const VERCEL_TARGET: CloudBackendTarget = {
+	provider: "vercel",
+	backendId: CloudBackendId.make("vercel-iad1"),
+};
+
+const CLOUDFLARE_TARGET: CloudBackendTarget = {
+	provider: "cloudflare",
+	backendId: CloudBackendId.make("cloudflare-workers-edge"),
+};
+
+const TTL_300 = decodeTtlSeconds(300);
+const TTL_30 = decodeTtlSeconds(30);
+const WEIGHT_10 = decodeRampWeightPercent(10);
+const WEIGHT_50 = decodeRampWeightPercent(50);
+const WEIGHT_100 = decodeRampWeightPercent(100);
+
+describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () => {
 	it("passes Domain.verify static model verification", () => {
 		expect(Domain.verify(StationRouting)).toEqual([]);
 	});
 
-	it("progressively migrates traffic from Vercel to Cloudflare on budget exhaustion and enforces stability cooldown", async () => {
+	it("rejects illegal TTLs, weights, swap limits, ramp plans, and TTL evidence at the schema boundary", () => {
+		expect(() => decodeTtlSeconds(4)).toThrow();
+		expect(() => decodeRampWeightPercent(-1)).toThrow();
+		expect(() => decodeRampWeightPercent(101)).toThrow();
+		expect(() => decodePositiveSwapLimit(0)).toThrow();
+		expect(() => decodeNonNegativeMs(-1)).toThrow();
+		expect(() =>
+			decodeProgressiveRampPlan([WEIGHT_50, WEIGHT_10, WEIGHT_100]),
+		).toThrow();
+		expect(() =>
+			decodeProgressiveRampPlan([WEIGHT_10, WEIGHT_50]),
+		).toThrow();
+		expect(() =>
+			decodeLoweredTtlEvidence({
+				previousTtlSeconds: TTL_300,
+				loweredTtlSeconds: TTL_300,
+				waitedSeconds: decodeNonNegativeMs(300),
+			}),
+		).toThrow();
+		expect(() =>
+			decodeLoweredTtlEvidence({
+				previousTtlSeconds: TTL_300,
+				loweredTtlSeconds: TTL_30,
+				waitedSeconds: decodeNonNegativeMs(120),
+			}),
+		).toThrow();
+		expect(
+			decodeLoweredTtlEvidence({
+				previousTtlSeconds: TTL_300,
+				loweredTtlSeconds: TTL_30,
+				waitedSeconds: decodeNonNegativeMs(300),
+			}),
+		).toEqual({
+			previousTtlSeconds: 300,
+			loweredTtlSeconds: 30,
+			waitedSeconds: 300,
+		});
+	});
+
+	it("prevents unbranded primitives, cross-brand IDs, and impossible state fields at compile time", () => {
+		const compileTimeChecks = (state: TrafficRouteState) => {
+			if (state._tag === "Steady") {
+				const incumbent: CloudBackendTarget = state.incumbent;
+				// @ts-expect-error Steady state cannot carry a challenger
+				const impossibleChallenger = state.challenger;
+				return { incumbent, impossibleChallenger };
+			}
+			if (state._tag === "Unregistered") {
+				// @ts-expect-error Unregistered state cannot carry an incumbent
+				const impossibleIncumbent = state.incumbent;
+				return { impossibleIncumbent };
+			}
+			return state;
+		};
+
+		const rejectRawPrimitives = () => {
+			new RegisterTrafficIncumbent({
+				incumbent: {
+					provider: "vercel",
+					// @ts-expect-error TrafficRouteId is nominally distinct from CloudBackendId
+					backendId: TrafficRouteId.make("route-1"),
+				},
+				// @ts-expect-error raw number is not a branded TtlSeconds
+				ttlSeconds: 300,
+				policy: {
+					cooldownMs: decodeNonNegativeMs(0),
+					maxSwapsPerWindow: decodePositiveSwapLimit(1),
+				},
+			});
+		};
+
+		expect(compileTimeChecks).toBeDefined();
+		expect(rejectRawPrimitives).toBeDefined();
+	});
+
+	it("progressively migrates Vercel -> Cloudflare and enforces target distinction, cooldown, and flip limit", async () => {
 		const routeId = TrafficRouteId.make("route-ci-relay");
 		const route = TrafficRoute.ref(routeId);
-		const vercelBackend = CloudBackendId.make("vercel-iad1");
-		const cloudflareBackend = CloudBackendId.make("cloudflare-workers-edge");
+		const policy = {
+			cooldownMs: decodeNonNegativeMs(60_000),
+			maxSwapsPerWindow: decodePositiveSwapLimit(1),
+		};
+		const budgetReason = NonEmptyReason.make(
+			"vercel-credits-exhausted-cloudflare-lower-cost",
+		);
+		const healthy10 = NonEmptyReason.make("p99 18ms, 0% 5xx");
+		const healthy50 = NonEmptyReason.make("p99 20ms, 0% 5xx");
+		const healthy100 = NonEmptyReason.make("p99 21ms, 0% 5xx");
 
 		await Effect.runPromise(
 			story(
 				Story.when(
 					route,
 					new RegisterTrafficIncumbent({
-						provider: "vercel",
-						backendId: vercelBackend,
-						ttlSeconds: 300,
-						cooldownMs: 60_000,
-						maxSwapsPerWindow: 2,
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
 					}),
 				),
 				Story.then(
 					route,
 					new TrafficIncumbentRegistered({
-						provider: "vercel",
-						backendId: vercelBackend,
-						ttlSeconds: 300,
-						cooldownMs: 60_000,
-						maxSwapsPerWindow: 2,
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
 					}),
 				),
 				Story.when(
 					route,
 					new ProposeBudgetMigration({
-						toProvider: "cloudflare",
-						toBackendId: cloudflareBackend,
-						reason: "vercel-credits-exhausted-cloudflare-lower-cost",
-						nowMs: 1_000,
+						to: VERCEL_TARGET,
+						reason: NonEmptyReason.make("noop-same-target"),
+						nowMs: decodeEpochMs(500),
+						preconditionsMet: true,
+					}),
+				),
+				Story.rejected(
+					new CutoverPreconditionRefused({
+						reason: "target-matches-incumbent",
+					}),
+				),
+				Story.when(
+					route,
+					new ProposeBudgetMigration({
+						to: CLOUDFLARE_TARGET,
+						reason: budgetReason,
+						nowMs: decodeEpochMs(1_000),
 						preconditionsMet: true,
 					}),
 				),
 				Story.then(
 					route,
 					new BudgetMigrationProposed({
-						fromProvider: "vercel",
-						fromBackendId: vercelBackend,
-						toProvider: "cloudflare",
-						toBackendId: cloudflareBackend,
-						reason: "vercel-credits-exhausted-cloudflare-lower-cost",
-						proposedAtMs: 1_000,
+						from: VERCEL_TARGET,
+						to: CLOUDFLARE_TARGET,
+						reason: budgetReason,
+						proposedAtMs: decodeEpochMs(1_000),
 					}),
 				),
-				Story.call(TrafficRoutingBackend.lowerTtl, { routeId, ttlSeconds: 30 }),
+				Story.call(TrafficRoutingBackend.lowerTtl, {
+					routeId,
+					ttlSeconds: TTL_30,
+				}),
 				Story.succeed(TrafficRoutingBackend.lowerTtl, {
-					appliedTtlSeconds: 30,
+					appliedTtlSeconds: TTL_30,
 				}),
-				Story.then(route, new CutoverTtlLowered({ ttlSeconds: 30 })),
+				Story.then(route, new CutoverTtlLowered({ ttlSeconds: TTL_30 })),
 				Story.call(TrafficRoutingBackend.applyWeight, {
 					routeId,
-					toProvider: "cloudflare",
-					toBackendId: cloudflareBackend,
-					weightPercent: 10,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_10,
 				}),
 				Story.succeed(TrafficRoutingBackend.applyWeight, {
-					appliedWeightPercent: 10,
+					appliedWeightPercent: WEIGHT_10,
 				}),
 				Story.then(
 					route,
 					new CutoverRampAdvanced({
-						targetWeightPercent: 10,
-						toProvider: "cloudflare",
-						toBackendId: cloudflareBackend,
+						targetWeightPercent: WEIGHT_10,
+						to: CLOUDFLARE_TARGET,
 					}),
 				),
 				Story.call(TrafficRoutingBackend.observeHealth, {
 					routeId,
-					toProvider: "cloudflare",
-					toBackendId: cloudflareBackend,
-					weightPercent: 10,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_10,
 				}),
 				Story.succeed(TrafficRoutingBackend.observeHealth, {
 					healthy: true,
-					summary: "p99 18ms, 0% 5xx",
+					summary: healthy10,
 				}),
 				Story.call(TrafficRoutingBackend.applyWeight, {
 					routeId,
-					toProvider: "cloudflare",
-					toBackendId: cloudflareBackend,
-					weightPercent: 50,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_50,
 				}),
 				Story.succeed(TrafficRoutingBackend.applyWeight, {
-					appliedWeightPercent: 50,
+					appliedWeightPercent: WEIGHT_50,
 				}),
 				Story.then(
 					route,
 					new CutoverRampAdvanced({
-						targetWeightPercent: 50,
-						toProvider: "cloudflare",
-						toBackendId: cloudflareBackend,
+						targetWeightPercent: WEIGHT_50,
+						to: CLOUDFLARE_TARGET,
 					}),
 				),
 				Story.call(TrafficRoutingBackend.observeHealth, {
 					routeId,
-					toProvider: "cloudflare",
-					toBackendId: cloudflareBackend,
-					weightPercent: 50,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_50,
 				}),
 				Story.succeed(TrafficRoutingBackend.observeHealth, {
 					healthy: true,
-					summary: "p99 20ms, 0% 5xx",
+					summary: healthy50,
 				}),
 				Story.call(TrafficRoutingBackend.applyWeight, {
 					routeId,
-					toProvider: "cloudflare",
-					toBackendId: cloudflareBackend,
-					weightPercent: 100,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_100,
 				}),
 				Story.succeed(TrafficRoutingBackend.applyWeight, {
-					appliedWeightPercent: 100,
+					appliedWeightPercent: WEIGHT_100,
 				}),
 				Story.then(
 					route,
 					new CutoverRampAdvanced({
-						targetWeightPercent: 100,
-						toProvider: "cloudflare",
-						toBackendId: cloudflareBackend,
+						targetWeightPercent: WEIGHT_100,
+						to: CLOUDFLARE_TARGET,
 					}),
 				),
 				Story.call(TrafficRoutingBackend.observeHealth, {
 					routeId,
-					toProvider: "cloudflare",
-					toBackendId: cloudflareBackend,
-					weightPercent: 100,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_100,
 				}),
 				Story.succeed(TrafficRoutingBackend.observeHealth, {
 					healthy: true,
-					summary: "p99 21ms, 0% 5xx",
+					summary: healthy100,
 				}),
 				Story.then(
 					route,
 					new CutoverCompleted({
-						activeProvider: "cloudflare",
-						activeBackendId: cloudflareBackend,
-						completedAtMs: 5_000,
+						incumbent: CLOUDFLARE_TARGET,
+						completedAtMs: decodeEpochMs(5_000),
+						swapsInWindow: decodeNonNegativeCount(1),
 					}),
 				),
 				Story.view(TrafficRoutingView, route, {
-					phase: "steady",
-					activeProvider: "cloudflare",
-					activeBackendId: cloudflareBackend,
-					swapsCompleted: 1,
+					_tag: "Steady",
+					incumbent: CLOUDFLARE_TARGET,
+					ttlSeconds: TTL_30,
+					swapsCompleted: decodeNonNegativeCount(1),
 				}),
 				Story.when(
 					route,
 					new ProposeBudgetMigration({
-						toProvider: "vercel",
-						toBackendId: vercelBackend,
-						reason: "too-soon-flipback",
-						nowMs: 10_000,
+						to: VERCEL_TARGET,
+						reason: NonEmptyReason.make("too-soon-flipback"),
+						nowMs: decodeEpochMs(10_000),
 						preconditionsMet: true,
 					}),
 				),
 				Story.rejected(
 					new CutoverCooldownActive({
-						nextAllowedAtMs: 65_000,
-						nowMs: 10_000,
+						nextAllowedAtMs: decodeEpochMs(65_000),
+						nowMs: decodeEpochMs(10_000),
+					}),
+				),
+				Story.when(
+					route,
+					new ProposeBudgetMigration({
+						to: VERCEL_TARGET,
+						reason: NonEmptyReason.make("past-cooldown-but-at-flip-limit"),
+						nowMs: decodeEpochMs(70_000),
+						preconditionsMet: true,
+					}),
+				),
+				Story.rejected(
+					new CutoverFlipLimitExceeded({
+						swapsInWindow: decodeNonNegativeCount(1),
+						maxSwapsPerWindow: decodePositiveSwapLimit(1),
 					}),
 				),
 			),
 		);
 	});
 
-	it("rolls back to incumbent on unhealthy ramp probe and flags reconciliation on ambiguous noRollback failure", async () => {
+	it("rolls back on unhealthy probe and blocks new migrations after ambiguous noRollback failure", async () => {
 		const rollbackRouteId = TrafficRouteId.make("route-rollback");
 		const rollbackRoute = TrafficRoute.ref(rollbackRouteId);
 		const reconcileRouteId = TrafficRouteId.make("route-reconcile");
 		const reconcileRoute = TrafficRoute.ref(reconcileRouteId);
-		const vercelBackend = CloudBackendId.make("vercel-iad1");
-		const cfBackend = CloudBackendId.make("cloudflare-workers-edge");
+		const policy = {
+			cooldownMs: decodeNonNegativeMs(0),
+			maxSwapsPerWindow: decodePositiveSwapLimit(4),
+		};
+		const canaryFailure = NonEmptyReason.make("5xx spike on canary");
+		const ambiguousFailure = NonEmptyReason.make(
+			"dns-provider-timeout-outcome-unknown",
+		);
+		const replenishReason = NonEmptyReason.make(
+			"vercel-credit-grant-replenished",
+		);
+		const shiftReason = NonEmptyReason.make("budget-shift");
 
 		await Effect.runPromise(
 			story(
 				Story.when(
 					rollbackRoute,
 					new RegisterTrafficIncumbent({
-						provider: "cloudflare",
-						backendId: cfBackend,
-						ttlSeconds: 300,
-						cooldownMs: 0,
-						maxSwapsPerWindow: 4,
+						incumbent: CLOUDFLARE_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
 					}),
 				),
 				Story.then(
 					rollbackRoute,
 					new TrafficIncumbentRegistered({
-						provider: "cloudflare",
-						backendId: cfBackend,
-						ttlSeconds: 300,
-						cooldownMs: 0,
-						maxSwapsPerWindow: 4,
+						incumbent: CLOUDFLARE_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
 					}),
 				),
 				Story.when(
 					rollbackRoute,
 					new ProposeBudgetMigration({
-						toProvider: "vercel",
-						toBackendId: vercelBackend,
-						reason: "vercel-credit-grant-replenished",
-						nowMs: 1_000,
+						to: VERCEL_TARGET,
+						reason: replenishReason,
+						nowMs: decodeEpochMs(1_000),
 						preconditionsMet: true,
 					}),
 				),
 				Story.then(
 					rollbackRoute,
 					new BudgetMigrationProposed({
-						fromProvider: "cloudflare",
-						fromBackendId: cfBackend,
-						toProvider: "vercel",
-						toBackendId: vercelBackend,
-						reason: "vercel-credit-grant-replenished",
-						proposedAtMs: 1_000,
+						from: CLOUDFLARE_TARGET,
+						to: VERCEL_TARGET,
+						reason: replenishReason,
+						proposedAtMs: decodeEpochMs(1_000),
 					}),
 				),
 				Story.call(TrafficRoutingBackend.lowerTtl, {
 					routeId: rollbackRouteId,
-					ttlSeconds: 30,
+					ttlSeconds: TTL_30,
 				}),
 				Story.succeed(TrafficRoutingBackend.lowerTtl, {
-					appliedTtlSeconds: 30,
+					appliedTtlSeconds: TTL_30,
 				}),
-				Story.then(rollbackRoute, new CutoverTtlLowered({ ttlSeconds: 30 })),
+				Story.then(rollbackRoute, new CutoverTtlLowered({ ttlSeconds: TTL_30 })),
 				Story.call(TrafficRoutingBackend.applyWeight, {
 					routeId: rollbackRouteId,
-					toProvider: "vercel",
-					toBackendId: vercelBackend,
-					weightPercent: 10,
+					to: VERCEL_TARGET,
+					weightPercent: WEIGHT_10,
 				}),
 				Story.succeed(TrafficRoutingBackend.applyWeight, {
-					appliedWeightPercent: 10,
+					appliedWeightPercent: WEIGHT_10,
 				}),
 				Story.then(
 					rollbackRoute,
 					new CutoverRampAdvanced({
-						targetWeightPercent: 10,
-						toProvider: "vercel",
-						toBackendId: vercelBackend,
+						targetWeightPercent: WEIGHT_10,
+						to: VERCEL_TARGET,
 					}),
 				),
 				Story.call(TrafficRoutingBackend.observeHealth, {
 					routeId: rollbackRouteId,
-					toProvider: "vercel",
-					toBackendId: vercelBackend,
-					weightPercent: 10,
+					to: VERCEL_TARGET,
+					weightPercent: WEIGHT_10,
 				}),
 				Story.succeed(TrafficRoutingBackend.observeHealth, {
 					healthy: false,
-					summary: "5xx spike on canary",
+					summary: canaryFailure,
 				}),
 				Story.call(TrafficRoutingBackend.restoreIncumbent, {
 					routeId: rollbackRouteId,
-					reason: "5xx spike on canary",
+					reason: canaryFailure,
 				}),
 				Story.succeed(TrafficRoutingBackend.restoreIncumbent, {
 					restored: true,
@@ -298,77 +425,83 @@ describe("@hobo/stations/domain StationRouting (Vercel <-> Cloudflare budget mig
 				Story.then(
 					rollbackRoute,
 					new CutoverRolledBack({
-						restoredProvider: "cloudflare",
-						restoredBackendId: cfBackend,
-						reason: "5xx spike on canary",
+						restored: CLOUDFLARE_TARGET,
+						reason: canaryFailure,
 					}),
 				),
 				Story.view(TrafficRoutingView, rollbackRoute, {
-					phase: "rolled-back",
-					activeProvider: "cloudflare",
+					_tag: "RolledBack",
+					incumbent: CLOUDFLARE_TARGET,
+					reason: canaryFailure,
 				}),
-
 				Story.when(
 					reconcileRoute,
 					new RegisterTrafficIncumbent({
-						provider: "vercel",
-						backendId: vercelBackend,
-						ttlSeconds: 300,
-						cooldownMs: 0,
-						maxSwapsPerWindow: 4,
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
 					}),
 				),
 				Story.then(
 					reconcileRoute,
 					new TrafficIncumbentRegistered({
-						provider: "vercel",
-						backendId: vercelBackend,
-						ttlSeconds: 300,
-						cooldownMs: 0,
-						maxSwapsPerWindow: 4,
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
 					}),
 				),
 				Story.when(
 					reconcileRoute,
 					new ProposeBudgetMigration({
-						toProvider: "cloudflare",
-						toBackendId: cfBackend,
-						reason: "budget-shift",
-						nowMs: 3_000,
+						to: CLOUDFLARE_TARGET,
+						reason: shiftReason,
+						nowMs: decodeEpochMs(3_000),
 						preconditionsMet: true,
 					}),
 				),
 				Story.then(
 					reconcileRoute,
 					new BudgetMigrationProposed({
-						fromProvider: "vercel",
-						fromBackendId: vercelBackend,
-						toProvider: "cloudflare",
-						toBackendId: cfBackend,
-						reason: "budget-shift",
-						proposedAtMs: 3_000,
+						from: VERCEL_TARGET,
+						to: CLOUDFLARE_TARGET,
+						reason: shiftReason,
+						proposedAtMs: decodeEpochMs(3_000),
 					}),
 				),
 				Story.call(TrafficRoutingBackend.lowerTtl, {
 					routeId: reconcileRouteId,
-					ttlSeconds: 30,
+					ttlSeconds: TTL_30,
 				}),
 				Story.fail(
 					TrafficRoutingBackend.lowerTtl,
 					new RoutingMutationAmbiguous({
-						reason: "dns-provider-timeout-outcome-unknown",
+						reason: ambiguousFailure,
 					}),
 				),
 				Story.then(
 					reconcileRoute,
 					new CutoverReconciliationRequired({
-						reason: "dns-provider-timeout-outcome-unknown",
+						reason: ambiguousFailure,
 					}),
 				),
 				Story.view(TrafficRoutingView, reconcileRoute, {
-					phase: "reconciliation-required",
-					reconciliationReason: "dns-provider-timeout-outcome-unknown",
+					_tag: "ReconciliationRequired",
+					reason: ambiguousFailure,
 				}),
+				Story.when(
+					reconcileRoute,
+					new ProposeBudgetMigration({
+						to: CLOUDFLARE_TARGET,
+						reason: shiftReason,
+						nowMs: decodeEpochMs(5_000),
+						preconditionsMet: true,
+					}),
+				),
+				Story.rejected(
+					new CutoverPreconditionRefused({
+						reason: "reconciliation-pending",
+					}),
+				),
 			),
 		);
 	});
