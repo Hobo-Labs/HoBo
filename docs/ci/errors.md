@@ -23,10 +23,11 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-138 codes.
+139 codes.
 
 | Code | Returned from |
 | --- | --- |
+| [`HOBO_CI_ACCOUNT_CREDENTIAL_UNAVAILABLE`](#hobo_ci_account_credential_unavailable) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_ACCOUNT_MISMATCH`](#hobo_ci_account_mismatch) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_ADOPTED`](#hobo_ci_adopted) | `packages/hobo/src/ci-relay-adopt.ts` |
 | [`HOBO_CI_ADOPT_AUTH_REQUIRED`](#hobo_ci_adopt_auth_required) | `packages/hobo/src/ci-relay-adopt.ts` |
@@ -48,7 +49,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_APP_NOT_CREATED`](#hobo_ci_app_not_created) | `packages/hobo-ci/src/remote-app.ts` |
 | [`HOBO_CI_APP_TIMEOUT`](#hobo_ci_app_timeout) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_APP_UNVERIFIED`](#hobo_ci_app_unverified) | `packages/hobo/src/ci-app-create.ts` |
-| [`HOBO_CI_AUTH_REQUIRED`](#hobo_ci_auth_required) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
+| [`HOBO_CI_AUTH_REQUIRED`](#hobo_ci_auth_required) | `packages/hobo/src/ci-activity.ts` |
 | [`HOBO_CI_CONFIG_INVALID`](#hobo_ci_config_invalid) | `packages/hobo/src/ci-connect.ts` |
 | [`HOBO_CI_CONFIG_SERVICE_ERROR`](#hobo_ci_config_service_error) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_CONFIG_SERVICE_UNCONFIGURED`](#hobo_ci_config_service_unconfigured) | `packages/hobo/src/ci-app-create.ts` |
@@ -167,6 +168,21 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_WORKFLOWS_UNREADABLE`](#hobo_ci_workflows_unreadable) | `packages/hobo/src/ci-init.ts` |
 
 ## Codes
+
+### HOBO_CI_ACCOUNT_CREDENTIAL_UNAVAILABLE
+
+Returned from `packages/hobo/src/ci-command.ts`.
+
+Message:
+
+```text
+hobo ci needs the relay account credential owner://HOBO_CI_ACCOUNT_TOKEN from the owner's store session, and none resolved. Run HoBo MCP's choose_secret_store for this project directory, then ask again. Human hobo login sessions are separate from CI account credentials.
+```
+
+What to do:
+
+- Call the HoBo MCP tool choose_secret_store for this project directory.
+- Have the owner keep the relay account credential in that store under {…}.
 
 ### HOBO_CI_ACCOUNT_MISMATCH
 
@@ -446,7 +462,7 @@ What to do: follow the message.
 
 ### HOBO_CI_AUTH_REQUIRED
 
-Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts`.
+Returned from `packages/hobo/src/ci-activity.ts`.
 
 Messages:
 
@@ -464,10 +480,6 @@ The CI relay did not accept the account credential. Check the HOBO_CI_ACCOUNT_TO
 
 ```text
 The CI account credential cannot read this relay's records: it needs the policy:read scope.
-```
-
-```text
-Set HOBO_CI_ACCOUNT_TOKEN or HOBO_CI_ACCOUNT_TOKEN_FILE to your relay account credential. Human hobo login sessions are separate from CI account credentials.
 ```
 
 What to do:
