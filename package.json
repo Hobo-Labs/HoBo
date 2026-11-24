@@ -59,6 +59,7 @@
 		"licenses:check": "node --import tsx scripts/check-licenses.ts",
 		"lint": "pnpm run lint:docs",
 		"lint:boundaries": "node --import tsx scripts/check-package-boundaries.mts",
+		"lint:domain-boundaries": "node --experimental-strip-types scripts/check-domain-boundaries.mts",
 		"lint:test-deps": "node --import tsx scripts/check-test-workspace-deps.mts",
 		"lint:code": "biome format scripts/ test/",
 		"lint:code:fix": "biome format --write scripts/ test/",
