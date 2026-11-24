@@ -1,4 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
+import type { CredentialResolver } from "@hobo/cd";
 import { isGithubHostedLabel } from "@hobo/ci";
 import {
 	type CiSignal,
@@ -15,8 +16,13 @@ import {
 } from "@hobo/ci/insights";
 import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
+import {
+	GITHUB_APP_NEEDED_REFUSAL,
+	GithubApiError,
+	GithubAppNeeded,
+	githubAppReader,
+} from "./ci-github-app.js";
 import { validRepository } from "./ci-repository.js";
-import { CiProcessError, type CiRunExec, runCiProcess } from "./ci-runs.js";
 
 export type CiInsightOptions = Readonly<
 	Record<string, string | boolean | readonly string[] | undefined>
@@ -28,6 +34,7 @@ export const DEFAULT_SIGNAL_RUNS = 50;
 export const MAX_DIAGNOSED_JOBS = 5;
 
 const LOG_TAIL_BYTES = 256 * 1024;
+const LOG_BYTES = 16 * 1024 * 1024;
 
 const PRINTED_EXCERPT_LINES = 12;
 const JOBS_PER_PAGE = 100;
@@ -321,61 +328,49 @@ function failure(error: Error): CommandResult {
 			message: error.message,
 			remediation: ["Run hobo ci --help for supported commands and options."],
 		};
-	if (error instanceof CiProcessError && error.kind === "missing")
-		return {
-			ok: false,
-			status: "unavailable",
-			code: "HOBO_CI_TOOL_REQUIRED",
-			message:
-				"Install the GitHub CLI (gh) and authenticate with gh auth login, then retry this CI command.",
-		};
-	if (error instanceof CiProcessError && error.kind === "timeout")
+	if (error instanceof GithubAppNeeded) return GITHUB_APP_NEEDED_REFUSAL;
+	if (error instanceof GithubApiError && error.kind === "timeout")
 		return {
 			ok: false,
 			status: "unconfirmed",
 			code: "HOBO_CI_OPERATION_TIMEOUT",
 			message: "The GitHub request timed out. Nothing was changed; retry.",
 		};
-	const status = error instanceof CiProcessError ? error.httpStatus : undefined;
+	const status = error instanceof GithubApiError ? error.httpStatus : undefined;
 	return {
 		ok: false,
 		status: "error",
 		code: "HOBO_CI_GITHUB_FAILED",
 		message:
 			status === 401 || status === 403
-				? "GitHub denied this read. Check gh auth status and repository Actions permissions."
+				? "GitHub denied this read. Check that HoBo's GitHub App is installed on the repository with Actions read permission."
 				: status === 404
 					? "GitHub found no such repository or run. Check the run ID and the repository."
 					: status === 429
 						? "GitHub rate limited this read. Wait before retrying."
-						: "GitHub could not be read, or answered with something that is not a run. Check gh auth status and repository Actions permissions.",
+						: "GitHub could not be read, or answered with something that is not a run. Check that HoBo's GitHub App is installed on the repository with Actions read permission.",
 	};
 }
 
 export async function runCiInsights(input: {
 	command: "signals" | "diagnose";
 	repository: string;
-	cwd: string;
 	args: readonly string[];
 	options: CiInsightOptions;
-	execFile?: CiRunExec;
-	env?: NodeJS.ProcessEnv;
+	credentials: CredentialResolver | undefined;
+	fetch: typeof fetch;
 	now?: () => number;
 }): Promise<CommandResult> {
 	if (!validRepository(input.repository))
 		return failure(new InsightUsage("--repo must be a GitHub owner/name."));
-	const exec = input.execFile ?? runCiProcess;
-	const env = input.env ?? process.env;
+	const github = githubAppReader({
+		credentials: input.credentials,
+		repository: input.repository,
+		fetch: input.fetch,
+		scope: `hobo ci ${input.command}`,
+	});
 	const repo = `repos/${input.repository}`;
-	const apiResult = (path: string, maxBuffer = 16 * 1024 * 1024) =>
-		exec("gh", ["api", path], {
-			cwd: input.cwd,
-			timeout: 30_000,
-			maxBuffer,
-			env,
-		});
-	const api = async (path: string, maxBuffer = 16 * 1024 * 1024) =>
-		(await apiResult(path, maxBuffer)).stdout;
+	const api = (path: string) => github.read(path);
 	const jobsOf = async (
 		run: GithubRun,
 		attempt: number,
@@ -524,8 +519,11 @@ export async function runCiInsights(input: {
 		for (const job of failed.slice(0, MAX_DIAGNOSED_JOBS)) {
 			if (job.checkRunId === undefined)
 				throw new Error(`GitHub returned no check-run ID for job ${job.id}`);
-			const log = await apiResult(`${repo}/actions/jobs/${job.id}/logs`);
-			const logTail = log.stdout.slice(-LOG_TAIL_BYTES);
+			const log = await github.log(
+				`${repo}/actions/jobs/${job.id}/logs`,
+				LOG_BYTES,
+			);
+			const logTail = log.text.slice(-LOG_TAIL_BYTES);
 			const annotations: string[] = [];
 			for (let page = 1; page <= MAX_ANNOTATION_PAGES; page++) {
 				const suffix = page === 1 ? "" : `&page=${page}`;
@@ -548,7 +546,7 @@ export async function runCiInsights(input: {
 				job: job.name,
 				id: job.id,
 				runner: job.runnerName ?? job.labels.join(", "),
-				logTruncated: log.truncated === true,
+				logTruncated: log.truncated,
 				diagnosis,
 				summary: summarizeDiagnosis(diagnosis),
 			});

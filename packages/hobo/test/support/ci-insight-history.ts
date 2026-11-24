@@ -1,5 +1,10 @@
 import type { InsightJob, InsightRun } from "@hobo/ci/insights";
-import type { CiRunExec } from "../../src/ci-runs.js";
+import {
+	type GithubAnswer,
+	type GithubRequest,
+	type GithubRestFake,
+	githubRestFetch,
+} from "./github-app-fake.js";
 
 const MINUTE = 60_000;
 const DAY = 86_400_000;
@@ -152,13 +157,13 @@ function restRun(run: InsightRun, firstCreatedAtMs: number) {
 	};
 }
 
-export type FakeGithub = Readonly<{ execFile: CiRunExec; asked: string[] }>;
-
 export function fakeGithub(
 	runs: readonly InsightRun[],
-	options: Readonly<{ private: boolean; token?: string }> = { private: true },
-): FakeGithub {
-	const asked: string[] = [];
+	options: Readonly<{
+		private: boolean;
+		also?: (request: GithubRequest) => GithubAnswer | undefined;
+	}> = { private: true },
+): GithubRestFake {
 	const latest = new Map<number, InsightRun>();
 	const created = new Map<number, number>();
 	for (const run of runs) {
@@ -172,49 +177,36 @@ export function fakeGithub(
 	const listed = [...latest.values()].sort(
 		(left, right) => right.createdAtMs - left.createdAtMs,
 	);
-	const execFile: CiRunExec = async (file, args) => {
-		asked.push([file, ...args].join(" "));
-		if (args[0] === "auth" && args[1] === "token") {
-			if (options.token === undefined) throw new Error("not logged in");
-			return { stdout: `${options.token}\n`, stderr: "" };
-		}
-		const path = args[1] ?? "";
-		const repo = `repos/${HISTORY_REPOSITORY}`;
+	const repo = `repos/${HISTORY_REPOSITORY}`;
+	return githubRestFetch((request) => {
+		const path = request.path;
 		if (path === repo)
-			return {
-				stdout: JSON.stringify({
-					full_name: HISTORY_REPOSITORY,
-					private: options.private,
-					default_branch: "main",
-				}),
-				stderr: "",
-			};
-		const list = /actions\/runs\?per_page=(\d+)$/u.exec(path);
+			return JSON.stringify({
+				full_name: HISTORY_REPOSITORY,
+				private: options.private,
+				default_branch: "main",
+			});
+		const list = /^repos\/octo\/app\/actions\/runs\?per_page=(\d+)$/u.exec(
+			path,
+		);
 		if (list)
-			return {
-				stdout: JSON.stringify({
-					total_count: listed.length,
-					workflow_runs: listed
-						.slice(0, Number(list[1]))
-						.map((run) => restRun(run, created.get(run.id) ?? run.createdAtMs)),
-				}),
-				stderr: "",
-			};
+			return JSON.stringify({
+				total_count: listed.length,
+				workflow_runs: listed
+					.slice(0, Number(list[1]))
+					.map((run) => restRun(run, created.get(run.id) ?? run.createdAtMs)),
+			});
 		const jobs = /actions\/runs\/(\d+)\/attempts\/(\d+)\/jobs/u.exec(path);
 		if (jobs) {
 			const run = runs.find(
 				(entry) =>
 					entry.id === Number(jobs[1]) && entry.attempt === Number(jobs[2]),
 			);
-			return {
-				stdout: JSON.stringify({
-					total_count: run?.jobs.length ?? 0,
-					jobs: run ? run.jobs.map((entry) => restJob(run, entry)) : [],
-				}),
-				stderr: "",
-			};
+			return JSON.stringify({
+				total_count: run?.jobs.length ?? 0,
+				jobs: run ? run.jobs.map((entry) => restJob(run, entry)) : [],
+			});
 		}
-		throw new Error(`unexpected gh call: ${args.join(" ")}`);
-	};
-	return { execFile, asked };
+		return options.also?.(request);
+	});
 }

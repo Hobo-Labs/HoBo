@@ -1,14 +1,15 @@
 import { execFile } from "node:child_process";
 import { stripVTControlCharacters } from "node:util";
+import type { CredentialResolver } from "@hobo/cd";
 import type { CommandResult } from "@hobo/cli";
+import { z } from "zod";
 import {
-	isJsonArray,
-	isJsonNumber,
-	isJsonObject,
-	isJsonString,
-	type JsonValue,
-	parseJsonValue,
-} from "./json.js";
+	GITHUB_APP_NEEDED_REFUSAL,
+	GithubApiError,
+	GithubAppNeeded,
+	githubAppReader,
+} from "./ci-github-app.js";
+import { isJsonString } from "./json.js";
 
 export type CiRunOptions = Readonly<
 	Record<string, string | boolean | readonly string[] | undefined>
@@ -29,7 +30,6 @@ export class CiProcessError extends Error {
 	constructor(
 		readonly kind: "missing" | "timeout" | "failed",
 		readonly executable: string,
-		readonly httpStatus?: number,
 	) {
 		super("CI subprocess failed");
 	}
@@ -56,7 +56,6 @@ export const runCiProcess: CiRunExec = (file, args, options) =>
 									? "timeout"
 									: "failed",
 							file,
-							Number(/HTTP\s+(\d{3})/.exec(stderr)?.[1]) || undefined,
 						),
 					);
 				else resolve({ stdout, stderr });
@@ -64,8 +63,10 @@ export const runCiProcess: CiRunExec = (file, args, options) =>
 		);
 	});
 
-const runFields =
-	"databaseId,name,displayTitle,headBranch,headSha,status,conclusion,url";
+const LOG_BYTES = 2 * 1024 * 1024;
+const JOBS_PER_PAGE = 100;
+const MAX_JOB_PAGES = 10;
+
 const supported = {
 	list: ["branch", "git-branch", "all-branches", "commit", "status", "limit"],
 	ls: ["branch", "git-branch", "all-branches", "commit", "status", "limit"],
@@ -116,59 +117,120 @@ function countOption(
 	return Number(value);
 }
 
-function runRecord(value: JsonValue) {
-	if (
-		!isJsonObject(value) ||
-		!isJsonNumber(value.databaseId) ||
-		!Number.isSafeInteger(value.databaseId) ||
-		value.databaseId < 1 ||
-		!isJsonString(value.status) ||
-		!isJsonString(value.headSha) ||
-		!isJsonString(value.headBranch) ||
-		!isJsonString(value.name) ||
-		!isJsonString(value.displayTitle) ||
-		!isJsonString(value.url) ||
-		!(value.conclusion === null || isJsonString(value.conclusion)) ||
-		(isJsonString(value.conclusion) &&
-			value.conclusion !== "" &&
-			![
-				"success",
-				"failure",
-				"neutral",
-				"skipped",
-				"stale",
-				"timed_out",
-				"cancelled",
-				"action_required",
-				"startup_failure",
-			].includes(value.conclusion)) ||
-		![
-			"queued",
-			"in_progress",
-			"completed",
-			"waiting",
-			"pending",
-			"requested",
-		].includes(value.status) ||
-		(value.status === "completed" && !value.conclusion)
-	)
-		throw new Error("Invalid GitHub run response");
+const RUN_STATUSES = [
+	"queued",
+	"in_progress",
+	"completed",
+	"waiting",
+	"pending",
+	"requested",
+] as const;
+
+const RUN_CONCLUSIONS = [
+	"success",
+	"failure",
+	"neutral",
+	"skipped",
+	"stale",
+	"timed_out",
+	"cancelled",
+	"action_required",
+	"startup_failure",
+] as const;
+
+const RestRun = z
+	.looseObject({
+		id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+		name: z.string().nullish(),
+		display_title: z.string(),
+		head_branch: z.string().nullish(),
+		head_sha: z.string(),
+		status: z.enum(RUN_STATUSES),
+		conclusion: z.enum(RUN_CONCLUSIONS).nullish(),
+		html_url: z.string(),
+		run_attempt: z
+			.number()
+			.int()
+			.positive()
+			.max(Number.MAX_SAFE_INTEGER)
+			.nullish(),
+	})
+	.refine((run) => run.status !== "completed" || Boolean(run.conclusion));
+
+const RestRunsPage = z.looseObject({ workflow_runs: z.array(RestRun) });
+
+const RestStep = z.looseObject({
+	name: z.string(),
+	number: z.number().int(),
+	status: z.string(),
+	conclusion: z.string().nullish(),
+});
+
+const RestJob = z.looseObject({
+	id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+	name: z.string(),
+	status: z.string(),
+	conclusion: z.string().nullish(),
+	started_at: z.string().nullish(),
+	completed_at: z.string().nullish(),
+	html_url: z.string().nullish(),
+	steps: z.array(RestStep).nullish(),
+});
+
+const RestJobsPage = z.looseObject({
+	total_count: z.number().int().nonnegative(),
+	jobs: z.array(RestJob),
+});
+
+type CiRunJob = Readonly<{
+	databaseId: number;
+	name: string;
+	status: string;
+	conclusion: string;
+	startedAt: string;
+	completedAt: string;
+	url: string;
+	steps: readonly Readonly<{
+		name: string;
+		number: number;
+		status: string;
+		conclusion: string;
+	}>[];
+}>;
+
+function runRecord(value: z.infer<typeof RestRun>) {
 	return {
-		id: value.databaseId,
-		name: value.name,
-		title: value.displayTitle,
-		branch: value.headBranch,
-		commit: value.headSha,
+		id: value.id,
+		name: value.name ?? "",
+		title: value.display_title,
+		branch: value.head_branch ?? "",
+		commit: value.head_sha,
 		status: value.status,
-		conclusion: value.conclusion,
-		url: value.url,
+		conclusion: value.conclusion ?? "",
+		url: value.html_url,
+	};
+}
+
+function runJob(job: z.infer<typeof RestJob>): CiRunJob {
+	return {
+		databaseId: job.id,
+		name: job.name,
+		status: job.status,
+		conclusion: job.conclusion ?? "",
+		startedAt: job.started_at ?? "",
+		completedAt: job.completed_at ?? "",
+		url: job.html_url ?? "",
+		steps: (job.steps ?? []).map((step) => ({
+			name: step.name,
+			number: step.number,
+			status: step.status,
+			conclusion: step.conclusion ?? "",
+		})),
 	};
 }
 
 function runList(text: string) {
-	const value = parseJsonValue(text);
-	if (!isJsonArray(value)) throw new Error("Invalid GitHub run list");
-	return value.map(runRecord);
+	return RestRunsPage.parse(JSON.parse(text)).workflow_runs.map(runRecord);
 }
 
 function failed(conclusion: string | null): boolean {
@@ -191,6 +253,8 @@ export async function runCiRuns(input: {
 	options: CiRunOptions;
 	execFile?: CiRunExec;
 	env?: NodeJS.ProcessEnv;
+	credentials: CredentialResolver | undefined;
+	fetch: typeof fetch;
 	emitProgress?: (message: string) => void;
 	now?: () => number;
 	sleep?: (ms: number) => Promise<void>;
@@ -204,35 +268,53 @@ export async function runCiRuns(input: {
 		(async (ms: number) =>
 			new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	let outputTruncated = false;
-	let remainingLogBytes = 2 * 1024 * 1024;
-	const call = async (
-		file: string,
-		argv: readonly string[],
-		timeout = 30000,
-		log = false,
-	) => {
-		const result = await exec(file, argv, {
+	let remainingLogBytes = LOG_BYTES;
+	const git = async (argv: readonly string[]) => {
+		const result = await exec("git", argv, {
 			cwd,
-			timeout,
-			maxBuffer: 2 * 1024 * 1024,
+			timeout: 30000,
+			maxBuffer: LOG_BYTES,
 			env,
 		});
-		if (result.truncated && !log) throw new CiProcessError("failed", file);
-		if (!log) return result.stdout;
-		const bytes = Buffer.from(result.stdout);
-		outputTruncated ||=
-			Boolean(result.truncated) || bytes.length > remainingLogBytes;
+		if (result.truncated) throw new CiProcessError("failed", "git");
+		return result.stdout;
+	};
+	const github = githubAppReader({
+		credentials: input.credentials,
+		repository,
+		fetch: input.fetch,
+		scope: `hobo ci ${command}`,
+	});
+	const repo = `repos/${repository}`;
+	const read = (path: string) => github.read(path);
+	const jobLog = async (jobId: number) => {
+		const body = await github.log(
+			`${repo}/actions/jobs/${jobId}/logs`,
+			LOG_BYTES,
+		);
+		const bytes = Buffer.from(body.text);
+		outputTruncated ||= body.truncated || bytes.length > remainingLogBytes;
 		const text = bytes.subarray(0, remainingLogBytes).toString("utf8");
 		remainingLogBytes -= Math.min(bytes.length, remainingLogBytes);
 		return text;
 	};
-	const gh = (argv: readonly string[], timeout?: number, log = false) =>
-		call(
-			"gh",
-			["run", ...argv, "--repo", `github.com/${repository}`],
-			timeout,
-			log,
-		);
+	const jobsAt = async (path: string): Promise<CiRunJob[]> => {
+		const jobs: CiRunJob[] = [];
+		for (let page = 1; page <= MAX_JOB_PAGES; page++) {
+			const listed = RestJobsPage.parse(
+				JSON.parse(
+					await read(`${path}?per_page=${JOBS_PER_PAGE}&page=${page}`),
+				),
+			);
+			jobs.push(...listed.jobs.map(runJob));
+			if (
+				jobs.length >= listed.total_count ||
+				listed.jobs.length < JOBS_PER_PAGE
+			)
+				break;
+		}
+		return jobs;
+	};
 	try {
 		if (
 			!/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(
@@ -253,7 +335,7 @@ export async function runCiRuns(input: {
 		if (args.length > (command === "list" || command === "ls" ? 0 : 1))
 			throw new CiRunUsage(`Too many arguments for hobo ci ${command}.`);
 
-		const listArgs = async (limit: number): Promise<string[]> => {
+		const listPath = async (limit: number): Promise<string> => {
 			const branch =
 				textOption(options, "git-branch") ?? textOption(options, "branch");
 			if (options["git-branch"] !== undefined && options.branch !== undefined)
@@ -266,17 +348,17 @@ export async function runCiRuns(input: {
 				);
 			if (commit && !/^[a-fA-F0-9]{7,64}$/.test(commit))
 				throw new CiRunUsage("--commit requires a Git commit SHA.");
-			const flags = ["list", "--json", runFields, "--limit", String(limit)];
+			const query = new URLSearchParams({ per_page: String(limit) });
 			if (!all && (!commit || branch)) {
 				const selected =
-					branch ?? (await call("git", ["branch", "--show-current"])).trim();
+					branch ?? (await git(["branch", "--show-current"])).trim();
 				if (!selected)
 					throw new CiRunUsage(
 						"Detached HEAD: pass --branch NAME or --all-branches.",
 					);
-				flags.push("--branch", selected);
+				query.set("branch", selected);
 			}
-			if (commit) flags.push("--commit", commit);
+			if (commit) query.set("head_sha", commit);
 			const status = textOption(options, "status");
 			if (status) {
 				const statuses = new Map([
@@ -291,14 +373,14 @@ export async function runCiRuns(input: {
 					throw new CiRunUsage(
 						"--status must be queued, running, succeeded, failed, or skipped.",
 					);
-				flags.push("--status", selectedStatus);
+				query.set("status", selectedStatus);
 			}
-			return flags;
+			return `${repo}/actions/runs?${query}`;
 		};
 
 		if (command === "list" || command === "ls") {
 			const limit = countOption(options, "limit", 20, 100);
-			const runs = runList(await gh(await listArgs(limit)));
+			const runs = runList(await read(await listPath(limit)));
 			return {
 				ok: true,
 				message: runs.length
@@ -320,7 +402,7 @@ export async function runCiRuns(input: {
 					"hobo ci grep <text> requires a search string of up to 1024 characters.",
 				);
 			const runs = runList(
-				await gh(await listArgs(countOption(options, "runs", 20, 50))),
+				await read(await listPath(countOption(options, "runs", 20, 50))),
 			);
 			const matches: { runId: number; line: string }[] = [];
 			let searched = 0;
@@ -334,17 +416,32 @@ export async function runCiRuns(input: {
 				)
 					break;
 				if (run.status !== "completed") continue;
-				let logs: string;
+				const logs: string[] = [];
 				try {
-					logs = await gh(["view", String(run.id), "--log"], undefined, true);
+					for (const job of await jobsAt(
+						`${repo}/actions/runs/${run.id}/jobs`,
+					)) {
+						if (remainingLogBytes === 0) break;
+						try {
+							logs.push(await jobLog(job.databaseId));
+						} catch (error) {
+							if (
+								!(error instanceof GithubApiError) ||
+								error.httpStatus !== 404
+							)
+								throw error;
+						}
+					}
 				} catch (error) {
-					if (error instanceof CiProcessError && error.httpStatus !== 404)
+					if (!(error instanceof GithubApiError) || error.httpStatus !== 404)
 						throw error;
+				}
+				if (logs.length === 0) {
 					unavailableRuns.push(run.id);
 					continue;
 				}
 				searched++;
-				for (const line of logs.split("\n")) {
+				for (const line of logs.join("\n").split("\n")) {
 					if (line.toLowerCase().includes(query.toLowerCase()))
 						matches.push({ runId: run.id, line });
 					if (matches.length >= 200) break;
@@ -379,20 +476,12 @@ export async function runCiRuns(input: {
 				"Run ID must be a positive GitHub Actions run ID from hobo ci list.",
 			);
 		if (!runId) {
-			const commit = (await call("git", ["rev-parse", "HEAD"])).trim();
+			const commit = (await git(["rev-parse", "HEAD"])).trim();
 			if (!/^[a-fA-F0-9]{40,64}$/.test(commit))
 				throw new Error("Invalid Git commit");
-			const flags = [
-				"list",
-				"--commit",
-				commit,
-				"--limit",
-				"1",
-				"--json",
-				runFields,
-			];
-			if (command === "rerun") flags.push("--status", "failure");
-			const latest = runList(await gh(flags))[0];
+			const query = new URLSearchParams({ head_sha: commit, per_page: "1" });
+			if (command === "rerun") query.set("status", "failure");
+			const latest = runList(await read(`${repo}/actions/runs?${query}`))[0];
 			if (!latest)
 				return {
 					ok: false,
@@ -406,25 +495,20 @@ export async function runCiRuns(input: {
 				};
 			runId = String(latest.id);
 		}
-		const viewFlags = ["view", runId];
-		if (options.attempt !== undefined)
-			viewFlags.push(
-				"--attempt",
-				String(countOption(options, "attempt", 1, 100000)),
-			);
-		const read = async () => {
-			const value = parseJsonValue(
-				await gh([...viewFlags, "--json", `${runFields},jobs`]),
-			);
-			const run = runRecord(value);
+		const runPath = `${repo}/actions/runs/${runId}`;
+		let viewAttempt =
+			options.attempt === undefined
+				? undefined
+				: countOption(options, "attempt", 1, 100000);
+		const readRun = async () => {
+			const viewed =
+				viewAttempt === undefined
+					? runPath
+					: `${runPath}/attempts/${viewAttempt}`;
+			const run = runRecord(RestRun.parse(JSON.parse(await read(viewed))));
 			if (String(run.id) !== runId)
 				throw new Error("GitHub returned a different run identity");
-			if (
-				!isJsonObject(value) ||
-				!(value.jobs === null || isJsonArray(value.jobs))
-			)
-				throw new Error("Invalid GitHub jobs response");
-			return { ...run, jobs: value.jobs ?? [] };
+			return { ...run, jobs: await jobsAt(`${viewed}/jobs`) };
 		};
 		const wait = switchOption(options, "wait");
 		const deadline = now() + 600000;
@@ -442,7 +526,7 @@ export async function runCiRuns(input: {
 					if (now() >= deadline) throw new CiWaitTimeout();
 					if (
 						!wait ||
-						!(error instanceof CiProcessError) ||
+						!(error instanceof GithubApiError) ||
 						!(
 							error.kind === "timeout" ||
 							(error.httpStatus !== undefined && error.httpStatus >= 500) ||
@@ -455,26 +539,16 @@ export async function runCiRuns(input: {
 				}
 			}
 		};
-		let run = await retryRead(read);
+		let run = await retryRead(readRun);
 		const readAttempt = async () => {
-			const value = (
-				await call("gh", [
-					"api",
-					`repos/${repository}/actions/runs/${runId}`,
-					"--jq",
-					".run_attempt",
-					"--hostname",
-					"github.com",
-				])
-			).trim();
-			if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)))
+			const attempt = RestRun.parse(
+				JSON.parse(await read(runPath)),
+			).run_attempt;
+			if (attempt === undefined || attempt === null)
 				throw new Error("Invalid GitHub attempt response");
-			return Number(value);
+			return attempt;
 		};
-		let targetAttempt =
-			options.attempt === undefined
-				? undefined
-				: countOption(options, "attempt", 1, 100000);
+		let targetAttempt = viewAttempt;
 		if (command === "rerun") {
 			if (run.status !== "completed")
 				throw new CiRunUsage("Only finished runs can be rerun.");
@@ -483,19 +557,19 @@ export async function runCiRuns(input: {
 					"The selected run is no longer failed. Pass an explicit run ID to rerun a successful or skipped run.",
 				);
 			const previousAttempt = wait ? await retryRead(readAttempt) : 0;
-			await gh(["rerun", runId]);
+			await github.post(`${runPath}/rerun`);
 			if (wait) {
 				targetAttempt = previousAttempt + 1;
 				// Pin the newly requested attempt. Another operator may retry the
 				// same run later; that must not replace the result we are waiting for.
-				viewFlags.push("--attempt", String(targetAttempt));
+				viewAttempt = targetAttempt;
 				let observedAttempt = await retryRead(readAttempt);
 				while (observedAttempt < targetAttempt) {
 					if (now() >= deadline) throw new CiWaitTimeout();
 					await sleep(1000);
 					observedAttempt = await retryRead(readAttempt);
 				}
-				run = await retryRead(read, true);
+				run = await retryRead(readRun, true);
 				if (observedAttempt !== targetAttempt || run.status === "completed")
 					return {
 						ok: false,
@@ -515,7 +589,7 @@ export async function runCiRuns(input: {
 		if (wait && run.status !== "completed") {
 			if (targetAttempt === undefined) {
 				targetAttempt = await retryRead(readAttempt);
-				viewFlags.push("--attempt", String(targetAttempt));
+				viewAttempt = targetAttempt;
 			}
 			let lastStatus = "";
 			while (run.status !== "completed") {
@@ -526,7 +600,7 @@ export async function runCiRuns(input: {
 					);
 				lastStatus = run.status;
 				await sleep(3000);
-				run = await retryRead(read);
+				run = await retryRead(readRun);
 			}
 		}
 		if (command === "logs") {
@@ -545,18 +619,10 @@ export async function runCiRuns(input: {
 			const onlyFailed = switchOption(options, "failed");
 			const jobs = run.jobs.filter(
 				(job) =>
-					isJsonObject(job) &&
-					isJsonString(job.name) &&
 					(!names.length || names.includes(job.name)) &&
-					(!onlyFailed ||
-						(isJsonString(job.conclusion) && failed(job.conclusion))),
+					(!onlyFailed || failed(job.conclusion)),
 			);
-			if (
-				names.some(
-					(name) =>
-						!run.jobs.some((job) => isJsonObject(job) && job.name === name),
-				)
-			)
+			if (names.some((name) => !run.jobs.some((job) => job.name === name)))
 				throw new CiRunUsage(
 					"Requested task was not found. HoBo Actions task selectors use exact GitHub job names shown by hobo ci inspect.",
 				);
@@ -565,23 +631,11 @@ export async function runCiRuns(input: {
 			const unavailableTasks: string[] = [];
 			for (const job of jobs.slice(0, limit)) {
 				if (remainingLogBytes === 0) break;
-				if (
-					!isJsonObject(job) ||
-					!isJsonNumber(job.databaseId) ||
-					!Number.isSafeInteger(job.databaseId) ||
-					job.databaseId < 1 ||
-					!isJsonString(job.name)
-				)
-					throw new Error("Invalid GitHub job response");
 				let text: string;
 				try {
-					text = await gh(
-						[...viewFlags, "--job", String(job.databaseId), "--log"],
-						undefined,
-						true,
-					);
+					text = await jobLog(job.databaseId);
 				} catch (error) {
-					if (error instanceof CiProcessError && error.httpStatus !== 404)
+					if (!(error instanceof GithubApiError) || error.httpStatus !== 404)
 						throw error;
 					unavailableTasks.push(job.name);
 					continue;
@@ -623,17 +677,10 @@ export async function runCiRuns(input: {
 			switchOption(options, "wait") && complete && failed(run.conclusion);
 		const jobs =
 			command === "inspect"
-				? run.jobs.map((job) => {
-						if (!isJsonObject(job) || !isJsonString(job.name))
-							throw new Error("Invalid GitHub job response");
-						const status =
-							isJsonString(job.conclusion) && job.conclusion
-								? job.conclusion
-								: isJsonString(job.status)
-									? job.status
-									: "unknown";
-						return `${humanText(job.name)}  ${humanText(status)}`;
-					})
+				? run.jobs.map(
+						(job) =>
+							`${humanText(job.name)}  ${humanText(job.conclusion || job.status || "unknown")}`,
+					)
 				: [];
 		const summary = `${run.id}  ${humanText(run.conclusion || run.status)}  ${humanText(run.title)}\n${humanText(run.url)}${jobs.length ? `\n\nJobs\n${jobs.join("\n")}` : ""}`;
 		return {
@@ -651,11 +698,12 @@ export async function runCiRuns(input: {
 			data: { repository, run, attempt: targetAttempt },
 		};
 	} catch (error) {
-		if (error instanceof CiProcessError && error.httpStatus) {
+		if (error instanceof GithubAppNeeded) return GITHUB_APP_NEEDED_REFUSAL;
+		if (error instanceof GithubApiError && error.httpStatus) {
 			const status = error.httpStatus;
 			const message =
 				status === 401 || status === 403
-					? "GitHub denied this operation. Check gh auth status and repository Actions permissions."
+					? "GitHub denied this operation. Check that HoBo's GitHub App is installed on the repository with Actions read permission, and Actions write permission for hobo ci rerun."
 					: status === 404
 						? "The GitHub run or requested attempt was not found. Check the run ID, attempt and repository."
 						: status === 429
@@ -669,7 +717,10 @@ export async function runCiRuns(input: {
 				data: { httpStatus: status },
 			};
 		}
-		if (error instanceof CiProcessError && error.kind === "timeout")
+		if (
+			(error instanceof GithubApiError || error instanceof CiProcessError) &&
+			error.kind === "timeout"
+		)
 			return {
 				ok: false,
 				status: "unconfirmed",
@@ -690,7 +741,7 @@ export async function runCiRuns(input: {
 				ok: false,
 				status: "unavailable",
 				code: "HOBO_CI_TOOL_REQUIRED",
-				message: `Install ${error.executable === "gh" ? "the GitHub CLI (gh) and authenticate with gh auth login" : "Git"}, then retry this CI command.`,
+				message: "Install Git, then retry this CI command.",
 			};
 		if (error instanceof CiRunUsage)
 			return {
@@ -705,9 +756,9 @@ export async function runCiRuns(input: {
 			status: "error",
 			code: "HOBO_CI_GITHUB_FAILED",
 			message:
-				"GitHub CLI could not complete the CI run operation. Check gh auth status and repository Actions permissions; inspect the run before repeating a rerun because its outcome may be unconfirmed.",
+				"GitHub could not complete the CI run operation. Check that HoBo's GitHub App is installed on the repository with Actions permissions; inspect the run before repeating a rerun because its outcome may be unconfirmed.",
 			remediation: [
-				"Check gh auth status and repository Actions permissions, then inspect the run before repeating a mutation.",
+				"Check that HoBo's GitHub App is installed on the repository with Actions read permission, and Actions write permission for hobo ci rerun, then inspect the run before repeating a mutation.",
 			],
 		};
 	}
