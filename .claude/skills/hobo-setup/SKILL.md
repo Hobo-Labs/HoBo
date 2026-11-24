@@ -98,6 +98,11 @@ and admits no exceptions.
   `sealed` field, unchanged. The answer is encrypted to HoBo; never ask for
   any of it in chat. `refused` means the page expired, was already used, or
   was altered: call `choose_secret_store` for a new one.
+- If the host declares forms but the owner never sees them (a form times
+  out or comes back cancelled at once), call `choose_secret_store` with
+  `channel: "page"`. HoBo's owner page then also takes the store's sign-in
+  (Infisical's copied session) and the GitHub and Hostinger entries, and
+  `submit_owner_page` writes those entries into the store once signed in.
 - `secure-form-unavailable`: no private channel is wired. Report that this
   host cannot provide a secure HoBo owner hand-off.
 

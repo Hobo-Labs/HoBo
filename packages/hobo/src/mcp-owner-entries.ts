@@ -8,8 +8,14 @@ export const STORE_OWNER_ENTRIES_TOOL = "store_owner_entries";
 
 const KUBECONFIG_MARKER = /^\s*apiVersion:/mu;
 
+export type OwnerEntryName =
+	| "HOSTINGER_API_TOKEN"
+	| "HOSTINGER_ARC_KUBECONFIG"
+	| "HOBO_CI_ACCOUNT_TOKEN"
+	| "GITHUB_RELEASE_TOKEN";
+
 export type OwnerEntrySpec = Readonly<{
-	name: string;
+	name: OwnerEntryName;
 	label: string;
 	purpose: string;
 	minLength: number;

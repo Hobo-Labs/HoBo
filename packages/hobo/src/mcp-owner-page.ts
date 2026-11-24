@@ -1,4 +1,4 @@
-import { createHash, randomUUID, webcrypto } from "node:crypto";
+import { createHash, randomInt, randomUUID, webcrypto } from "node:crypto";
 
 import { z } from "zod";
 
@@ -12,6 +12,7 @@ export const OWNER_PAGE_INFO = "hobo-owner-page/v1";
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
 
 export const OWNER_PAGE_SECRET_FIELDS = [
+	"INFISICAL_CLI_SESSION",
 	"INFISICAL_TOKEN",
 	"OP_CONNECT_TOKEN",
 	"BW_CLIENTID",
@@ -33,6 +34,11 @@ const answersSchema = z
 		OP_CONNECT_TOKEN: answerField,
 		BW_CLIENTID: answerField,
 		BW_CLIENTSECRET: answerField,
+		INFISICAL_CLI_SESSION: answerField,
+		HOSTINGER_API_TOKEN: answerField,
+		HOSTINGER_ARC_KUBECONFIG: z.string().max(65536).optional(),
+		HOBO_CI_ACCOUNT_TOKEN: answerField,
+		GITHUB_RELEASE_TOKEN: answerField,
 	})
 	.strict();
 
@@ -144,7 +150,11 @@ async function aesKey(
 }
 
 export function createOwnerPages(
-	options: { readonly now?: () => number; readonly ttlMs?: number } = {},
+	options: {
+		readonly now?: () => number;
+		readonly ttlMs?: number;
+		readonly infisicalOrigin?: string;
+	} = {},
 ): OwnerPages {
 	const now = options.now ?? Date.now;
 	const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
@@ -169,7 +179,13 @@ export function createOwnerPages(
 			return {
 				page,
 				fingerprint,
-				html: renderOwnerPageHtml({ page, x, y, fingerprint }),
+				html: renderOwnerPageHtml({
+					page,
+					x,
+					y,
+					fingerprint,
+					signInUrl: `${options.infisicalOrigin ?? "https://app.infisical.com"}/login?callback_port=${randomInt(20_000, 60_000)}`,
+				}),
 			};
 		},
 		async unseal(sealed) {
@@ -212,8 +228,14 @@ const STORE_SECTIONS = {
 	infisical: [
 		{ name: "INFISICAL_PROJECT_ID", label: "Project ID", secret: false },
 		{
+			name: "INFISICAL_CLI_SESSION",
+			label:
+				"Infisical sign-in: open the link above, sign in, and paste what Infisical copies",
+			secret: true,
+		},
+		{
 			name: "INFISICAL_TOKEN",
-			label: "Token Auth access token",
+			label: "Or a Token Auth access token",
 			secret: true,
 		},
 	],
@@ -233,6 +255,26 @@ const STORE_SECTIONS = {
 	],
 } as const;
 
+const ENTRY_FIELDS = [
+	{
+		name: "HOSTINGER_API_TOKEN",
+		label: "Hostinger API token (hPanel → Profile → API)",
+	},
+	{
+		name: "HOSTINGER_ARC_KUBECONFIG",
+		label:
+			"Hostinger ARC cluster kubeconfig, as one base64 line (base64 -w0 kubeconfig)",
+	},
+	{
+		name: "HOBO_CI_ACCOUNT_TOKEN",
+		label: "GitHub token for HoBo CI (Actions, Administration, Metadata)",
+	},
+	{
+		name: "GITHUB_RELEASE_TOKEN",
+		label: "GitHub token for releases (Contents and Packages write)",
+	},
+] as const;
+
 function escapeHtml(text: string): string {
 	return text
 		.replaceAll("&", "&amp;")
@@ -247,6 +289,7 @@ export function renderOwnerPageHtml(input: {
 	readonly x: string;
 	readonly y: string;
 	readonly fingerprint: string;
+	readonly signInUrl: string;
 }): string {
 	const options = STORE_OPTIONS.map(
 		(o) =>
@@ -259,8 +302,16 @@ export function renderOwnerPageHtml(input: {
 					`<label for="${f.name}">${escapeHtml(f.label)}</label><input id="${f.name}" name="${f.name}" type="${f.secret ? "password" : "text"}" autocomplete="off" spellcheck="false">`,
 			)
 			.join("");
-		return `<fieldset data-for="${o.id}" hidden><legend>${escapeHtml(o.label)}</legend>${inputs}</fieldset>`;
+		const link =
+			o.id === "infisical"
+				? `<p><a href="${escapeHtml(input.signInUrl)}" target="_blank" rel="noopener noreferrer">Sign in to Infisical</a>. When it says Unable to reach CLI, click Copy to clipboard and paste it below.</p>`
+				: "";
+		return `<fieldset data-for="${o.id}" hidden><legend>${escapeHtml(o.label)}</legend>${link}${inputs}</fieldset>`;
 	}).join("");
+	const entries = `<fieldset data-for="entries"><legend>GitHub and Hostinger</legend><p>HoBo writes these into the store you chose. Leave any you have already stored blank.</p>${ENTRY_FIELDS.map(
+		(f) =>
+			`<label for="${f.name}">${escapeHtml(f.label)}</label><input id="${f.name}" name="${f.name}" type="password" autocomplete="off" spellcheck="false">`,
+	).join("")}</fieldset>`;
 	const config = JSON.stringify({
 		page: input.page,
 		x: input.x,
@@ -295,7 +346,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style></head><body><main>
 <h1>Connect your secret store</h1>
 <p>HoBo keeps this project's credentials in your store. What you enter is encrypted in this page to the HoBo server running your session; the agent only carries the sealed result and cannot read it.</p>
-<form id="f">${options}${fields}
+<form id="f">${options}${fields}${entries}
 <button type="submit" id="go">Seal and send to HoBo</button>
 <div id="say" role="status"></div></form>
 <div class="key">HoBo key fingerprint <code>${escapeHtml(input.fingerprint)}</code></div>
@@ -307,7 +358,7 @@ var cfg=JSON.parse(document.getElementById("cfg").textContent);
 var f=document.getElementById("f"),say=document.getElementById("say"),go=document.getElementById("go");
 function status(text,kind){say.textContent=text;say.className=kind||""}
 function picked(){var r=f.querySelector("input[name=store]:checked");return r?r.value:""}
-function show(){var s=picked();Array.prototype.forEach.call(f.querySelectorAll("fieldset"),function(e){e.hidden=e.getAttribute("data-for")!==s})}
+function show(){var s=picked();Array.prototype.forEach.call(f.querySelectorAll("fieldset"),function(e){e.hidden=e.getAttribute("data-for")!==s&&e.getAttribute("data-for")!=="entries"})}
 f.addEventListener("change",show);show();
 function b64(buf){var s="",a=new Uint8Array(buf);for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")}
 async function seal(answers){
@@ -322,7 +373,7 @@ var ct=await subtle.encrypt({name:"AES-GCM",iv:iv,additionalData:enc.encode(cfg.
 var epk=await subtle.exportKey("jwk",mine.publicKey);
 return JSON.stringify({v:1,page:cfg.page,epk:{kty:"EC",crv:"P-256",x:epk.x,y:epk.y},iv:b64(iv),ct:b64(ct)})}
 f.addEventListener("submit",async function(e){e.preventDefault();var s=picked();if(!s){status("Choose a store.","bad");return}
-var answers={store:s};Array.prototype.forEach.call(f.querySelectorAll('fieldset[data-for="'+s+'"] input'),function(i){var v=i.value.trim();if(v)answers[i.name]=v});
+var answers={store:s};Array.prototype.forEach.call(f.querySelectorAll('fieldset[data-for="'+s+'"] input, fieldset[data-for="entries"] input'),function(i){var v=i.value.trim();if(v)answers[i.name]=v});
 go.disabled=true;status("Sealing…");
 try{var sealed=await seal(answers);
 Array.prototype.forEach.call(f.querySelectorAll("input[type=password],input[type=text]"),function(i){i.value=""});

@@ -11,6 +11,7 @@ import { z } from "zod";
 
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.js";
 import {
+	OWNER_ENTRY_SPECS,
 	STORE_OWNER_ENTRIES_DESCRIPTION,
 	STORE_OWNER_ENTRIES_INPUT,
 	STORE_OWNER_ENTRIES_TITLE,
@@ -20,6 +21,7 @@ import {
 import {
 	OWNER_PAGE_COLLECTION,
 	OWNER_PAGE_SECRET_FIELDS,
+	type OwnerPageAnswers,
 	OwnerPageRefused,
 	type OwnerPages,
 } from "./mcp-owner-page.js";
@@ -316,6 +318,7 @@ const callArgs = z
 	.object({
 		cwd: z.string().trim().min(1).optional().catch(undefined),
 		reselect: z.boolean().optional().catch(undefined),
+		channel: z.enum(["form", "page"]).optional().catch(undefined),
 	})
 	.loose();
 
@@ -434,6 +437,12 @@ const chooseArgs: JsonObject = {
 		description:
 			"Ask the owner to choose again even when a store is already chosen.",
 	},
+	channel: {
+		type: "string",
+		enum: ["form", "page"],
+		description:
+			"page: HoBo's sealed owner page (an Artifact), also for the store's sign-in and the GitHub and Hostinger entries; use it when the host declares forms but the owner never sees them.",
+	},
 };
 
 export function createStoreChoiceApp(
@@ -524,6 +533,26 @@ export function createStoreChoiceApp(
 		return record(cwd, isJsonObject(fields) ? { ...fields, store } : { store });
 	};
 
+	const writeEntries = async (
+		cwd: string,
+		answers: OwnerPageAnswers,
+	): Promise<string[]> => {
+		const sessions = options.sessions;
+		if (sessions === undefined || !sessions.status(cwd).established) return [];
+		const entries = sessions.entries(cwd);
+		const stored: string[] = [];
+		for (const spec of OWNER_ENTRY_SPECS) {
+			const entry = answers[spec.name];
+			const value = entry === undefined ? undefined : spec.parse(entry);
+			if (value === undefined) continue;
+			try {
+				await entries.write(spec.name, value);
+				stored.push(spec.name);
+			} catch {}
+		}
+		return stored;
+	};
+
 	const submitOwnerPage = async (
 		args: JsonObject,
 		pages: OwnerPages,
@@ -558,7 +587,20 @@ export function createStoreChoiceApp(
 				return value === undefined ? [] : [[name, value]];
 			}),
 		]);
-		return record(opened.cwd, choice);
+		const recorded = await record(opened.cwd, choice);
+		const stored = await writeEntries(opened.cwd, answers);
+		return stored.length === 0
+			? recorded
+			: {
+					...recorded,
+					content: [
+						{
+							type: "text",
+							text: `${recorded.content[0]?.text ?? ""} Stored in the owner's store: ${stored.join(", ")}.`,
+						},
+					],
+					structuredContent: { ...recorded.structuredContent, stored },
+				};
 	};
 
 	const baseTools = (
@@ -691,7 +733,10 @@ export function createStoreChoiceApp(
 				awaitingWidget.delete(cwd);
 				return record(cwd, args);
 			}
-			const reselect = callArgs.parse(args).reselect === true;
+			const parsedCall = callArgs.parse(args);
+			const reselect = parsedCall.reselect === true;
+			if (parsedCall.channel === "page" && options.pages !== undefined)
+				return ownerPage(cwd, options.pages);
 			if (!reselect) {
 				const held = options.sessions?.status(cwd);
 				if (held?.established === true && held.store !== undefined)

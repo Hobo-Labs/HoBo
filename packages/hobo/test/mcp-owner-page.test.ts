@@ -249,6 +249,83 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		]);
 	});
 
+	it("on request, takes the sign-in and the GitHub and Hostinger entries through the page even where the host declares forms", async () => {
+		const deposited = new Map<string, string>();
+		const written = new Map<string, string>();
+		let established = false;
+		const sessions: OwnerStoreSessions = {
+			establish: async () => {
+				established = deposited.has("INFISICAL_CLI_SESSION");
+				return established
+					? { status: "established", store: "Infisical" }
+					: { status: "sign-in-needed", store: "Infisical", code: "X" };
+			},
+			status: () =>
+				established
+					? { established: true, store: "Infisical" }
+					: { established: false },
+			credentials: () => ({
+				resolve: async () => {
+					throw new Error("unused");
+				},
+			}),
+			entries: () => ({
+				read: async (name) => written.get(name),
+				write: async (name, value) => {
+					written.set(name, value);
+				},
+			}),
+			close: () => undefined,
+		};
+		const app = createStoreChoiceApp({
+			cwd: "/synthetic/project",
+			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+			sessions,
+			pages: createOwnerPages(),
+			deposit: (name, value) => deposited.set(name, value),
+		});
+		const support = { formElicitation: true, apps: false };
+		const shown = await app.callTool(
+			CHOOSE_SECRET_STORE_TOOL,
+			{ channel: "page" },
+			support,
+			async () => {
+				throw new Error("no form expected");
+			},
+		);
+		const page = z
+			.object({ status: z.literal("owner-page"), html: z.string() })
+			.parse(shown.structuredContent);
+		expect(page.html).toContain("/login?callback_port=");
+		const out = await submitInBrowser(
+			page.html,
+			{
+				INFISICAL_PROJECT_ID: PROJECT,
+				INFISICAL_CLI_SESSION: "c2Vzc2lvbi1maXh0dXJl",
+				HOSTINGER_API_TOKEN: "hostinger-fixture-token-0123456789",
+				HOBO_CI_ACCOUNT_TOKEN: "github_pat_fixture0123456789",
+			},
+			"infisical",
+		);
+		expect(out.data.sealed).not.toContain("hostinger-fixture");
+		const done = await app.callTool(
+			SUBMIT_OWNER_PAGE_TOOL,
+			{ sealed: out.data.sealed },
+			support,
+			undefined,
+		);
+		expect(done.structuredContent).toEqual({
+			status: "established",
+			store: "Infisical",
+			stored: ["HOSTINGER_API_TOKEN", "HOBO_CI_ACCOUNT_TOKEN"],
+		});
+		expect(deposited.get("INFISICAL_CLI_SESSION")).toBe("c2Vzc2lvbi1maXh0dXJl");
+		expect(written.get("HOSTINGER_API_TOKEN")).toBe(
+			"hostinger-fixture-token-0123456789",
+		);
+		expect(JSON.stringify(done)).not.toContain("hostinger-fixture");
+	});
+
 	it("still reports no private form when no owner page is wired", async () => {
 		const app = createStoreChoiceApp({
 			cwd: "/synthetic/project",
