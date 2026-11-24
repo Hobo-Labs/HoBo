@@ -42,6 +42,7 @@ import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 import {
 	createOwnerStoreSessions,
 	type OwnerSignIn,
+	ownerChannelRelayFolder,
 	ownerChannelSignIn,
 } from "./owner-store-session.js";
 import {
@@ -743,6 +744,14 @@ export function composeHoboMcp(options: {
 						which: (bin) => whichOnPath(bin),
 					},
 				})(input)),
+		relayFolder: (input) =>
+			ownerChannelRelayFolder({
+				owner: ownerForFamily(owner, "ci", input.cwd) ?? owner,
+				deps: {
+					runCommand: machineRunner(),
+					which: (bin) => whichOnPath(bin),
+				},
+			})(input),
 		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
 	});
 	const server = createHoboMcpServer({

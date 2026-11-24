@@ -60,7 +60,7 @@ const pact = JSON.parse(
 	),
 );
 
-const CREDENTIAL_REF = "env://DIGITALOCEAN_TOKEN";
+const CREDENTIAL_REF = "owner://DIGITALOCEAN_TOKEN";
 /** A token-shaped PAT. Never expected anywhere but one header. */
 const TOKEN = "dop_v1_fakepersonalaccesstoken0123456789abcdef";
 // SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.

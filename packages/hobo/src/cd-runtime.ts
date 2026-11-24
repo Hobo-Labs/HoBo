@@ -80,6 +80,7 @@ import {
 	type JsonObject as CdJsonObject,
 	createBoundedFetchTransport,
 	type DurableEventStore,
+	GITHUB_APP_CREDENTIAL_SCHEME,
 	type HttpTransport,
 	type PrincipalRef,
 	ResolverError,
@@ -111,6 +112,10 @@ import {
 	TopologyConflictError,
 	yardTopology,
 } from "./cd-topology.js";
+import {
+	OWNER_CREDENTIAL_SCHEME,
+	OwnerCredentialUnavailable,
+} from "./owner-store-session.js";
 import {
 	CATALOG_REALIZED_PRODUCTS,
 	type CatalogCampBinding,
@@ -225,6 +230,22 @@ export function envCredentials(
 					`credential ${ref} is not resolvable on this host (use env://<NAME>)`,
 				);
 			return { token: value };
+		},
+	};
+}
+
+export function hostCredentials(): CredentialResolver {
+	return {
+		async resolve(ref: string) {
+			throw new OwnerCredentialUnavailable(
+				ref,
+				ref.startsWith(OWNER_CREDENTIAL_SCHEME) ||
+					ref.startsWith(GITHUB_APP_CREDENTIAL_SCHEME)
+					? "no-session"
+					: ref.startsWith("env:")
+						? "environment-ref"
+						: "unsupported-ref",
+			);
 		},
 	};
 }
@@ -420,7 +441,7 @@ async function openComposedCdRuntime(
 	const http =
 		options.http ??
 		createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	const credentials = options.credentials ?? envCredentials(options.env);
+	const credentials = options.credentials ?? hostCredentials();
 	const kube = await openKubeFleet({
 		env: options.env,
 		cwd: options.cwd,

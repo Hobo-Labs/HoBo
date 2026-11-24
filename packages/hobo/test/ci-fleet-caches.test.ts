@@ -220,7 +220,7 @@ function cli(
 						? REPOSITORY_ROOT
 						: "https://github.com/Hobo-Labs/HoBo.git",
 				...(sessions !== undefined
-					? { fleetCredentials: sessions.credentials }
+					? { ownerCredentials: sessions.credentials }
 					: undefined),
 				kubernetesHttp: server.factory,
 			}),

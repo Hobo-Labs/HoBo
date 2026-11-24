@@ -155,7 +155,8 @@ it("applies a pinned repo profile to the real local relay, enforces budget and p
 			],
 			{
 				cwd: directory,
-				env: { HOBO_CI_ACCOUNT_TOKEN: token },
+				env: {},
+				accountToken: async () => token,
 				write: () => {},
 			},
 		);

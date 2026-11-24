@@ -73,7 +73,7 @@ function homeWithSession(options: { proofKeyId?: string } = {}): string {
 			issuedAt: "2026-01-01T00:00:00.000Z",
 			...(options.proofKeyId !== undefined
 				? { proofKeyId: options.proofKeyId }
-				: {}),
+				: undefined),
 		},
 	});
 	return dir;
@@ -255,10 +255,7 @@ describe("agent lane", () => {
 		expect(credential?.dpopProof).toBeTruthy();
 	});
 
-	it("verifies against a secret supplied through the environment", async () => {
-		// A deployment that sets the secret in env rather than in code must reach
-		// the same verify path, or the presenter would check its own mint against
-		// the wrong key and refuse a valid credential.
+	it("reads no HMAC secret from the environment", async () => {
 		const credential = await createCredentialPresenter().presentAuthenticated({
 			audience: AUDIENCE,
 			hoboHome: home(),

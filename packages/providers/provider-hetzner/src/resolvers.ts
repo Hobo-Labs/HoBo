@@ -548,7 +548,7 @@ async function resolveToken(
 	if (ref.trim().length === 0) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_MISSING",
-			'hetzner resolver: credentialRef is empty. Supply a locator such as "env://HCLOUD_TOKEN" or "secret://camp/hetzner-project-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
+			'hetzner resolver: credentialRef is empty. Supply a locator such as "owner://HCLOUD_TOKEN" or "secret://camp/hetzner-project-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
 		);
 	}
 	const trimmed = ref.trim();
@@ -561,7 +561,7 @@ async function resolveToken(
 	if (!CREDENTIAL_REF_PATTERN.test(trimmed)) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_NOT_A_REF",
-			`hetzner resolver: credentialRef ${JSON.stringify(redactHetznerText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "env://HCLOUD_TOKEN"`,
+			`hetzner resolver: credentialRef ${JSON.stringify(redactHetznerText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "owner://HCLOUD_TOKEN"`,
 		);
 	}
 	let material: string;
