@@ -628,32 +628,26 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	it("reports an image only GHCR has as published", () => {
-		withWorkerPublishStub(
-			{ host: false, manifest: true, pull: true },
-			() => {
-				assert.equal(
-					ghcrWorkerPullable(
-						"Hobo-Labs/HoBo",
-						ciWorkerImagePublished().version,
-						"token-for-test",
-					),
-					true,
-				);
-				const status = ciWorkerImagePublished();
-				assert.equal(status.host, false);
-				assert.equal(status.ghcr, true);
-			},
-		);
+		withWorkerPublishStub({ host: false, manifest: true, pull: true }, () => {
+			assert.equal(
+				ghcrWorkerPullable(
+					"Hobo-Labs/HoBo",
+					ciWorkerImagePublished().version,
+					"token-for-test",
+				),
+				true,
+			);
+			const status = ciWorkerImagePublished();
+			assert.equal(status.host, false);
+			assert.equal(status.ghcr, true);
+		});
 	});
 
 	it("treats a manifest without pullable layers as unpublished", () => {
-		withWorkerPublishStub(
-			{ host: false, manifest: true, pull: false },
-			() => {
-				const status = ciWorkerImagePublished();
-				assert.equal(status.ghcr, false);
-			},
-		);
+		withWorkerPublishStub({ host: false, manifest: true, pull: false }, () => {
+			const status = ciWorkerImagePublished();
+			assert.equal(status.ghcr, false);
+		});
 	});
 
 	it("does not treat ordinary CI as release worker ensure", () => {

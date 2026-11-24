@@ -296,14 +296,6 @@ export function materializeCiWorkerImageOnly(): string | null {
 			process.env.HOBO_CI_WORKER_IMAGE_REF === undefined
 		)
 			sources.push(pullRequestWorkerTag(repo, pullRequest, version));
-		const digestRef = process.env.HOBO_CI_WORKER_IMAGE_REF?.trim();
-		const versionTag = remoteWorkerTag(repo, version);
-		if (
-			digestRef &&
-			validatedWorkerDigestRef(repo, digestRef) &&
-			!sources.includes(versionTag)
-		)
-			sources.push(versionTag);
 		dockerLoginGhcr(actor, token);
 		for (const remote of sources) {
 			if (!workerManifestReachable(remote, token)) {
