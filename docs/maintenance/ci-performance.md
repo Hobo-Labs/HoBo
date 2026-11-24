@@ -82,18 +82,33 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
-  saves in a separate `if: always()` step (`mode: save`). Turbo caches only successful tasks, so a partial
-  save is still correct. Merge-group validation and workspace shards opt into run-scoped keys containing
-  `github.run_id` and `github.run_attempt`: shards prefer validation's completed save, then the newest
-  same-run shard save, before the older per-job fallback. Every merge-group shard saves under its own job
-  and matrix-index key, so concurrent saves do not contend for one immutable key. These caches share only
-  within the run; fork PRs never opt in. `scripts/ci/turbo-cache-prune.mts` (node builtins only) runs first
-  as a workflow step. Ordinary saves keep every entry a `.turbo/runs` summary named, retain other entries
-  used within `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7), and drop the rest. Run-scoped saves instead contain
-  only entries written for this job's misses, avoiding a full copy of every restored shard in every save.
-  The script outputs `save=false` when no task missed the cache and left an entry, skipping the save
-  composite. Saves from PRs stay scoped to the PR ref; push-to-main saves remain the cross-run seed every
-  PR and merge group restores.
+  saves in a separate `if: always()` step (`mode: save`). The combined `actions/cache` it replaced saved
+  only on job success, and the Main full gate kept failing, so main never seeded a cache and every run
+  rebuilt all 135 packages. Turbo caches only successful tasks, so a partial save is still correct.
+  `scripts/ci/turbo-cache-prune.mts` (node builtins only) runs first as a workflow step: it keeps every
+  entry a `.turbo/runs` summary from this job named and stamps it used, keeps other entries used within
+  `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7), and drops the rest. It outputs `save=false` when no task
+  missed the cache and left an entry, and the save step is skipped, so a fully cached run never starts
+  the save composite (whose `actions/cache/save` resolve once timed out for 2 minutes). Keeping only the
+  entries one run touched shrank main's cache to an affected-only run's handful of packages, and the next
+  run rebuilt the rest cold. Saves from PRs stay scoped to the PR ref (no cross-PR poisoning);
+  push-to-main saves are the ones every PR and merge group restores. Merge-group validation and
+  workspace shards opt into run-scoped keys containing `github.run_id` and `github.run_attempt`
+  (turbo-cache input `shared-run`): shards prefer validation's completed save, then the newest same-run
+  shard save, before the older per-job fallback. Every merge-group shard saves under its own job and
+  matrix-index key, so concurrent saves do not contend for one immutable key. These caches share only
+  within the run; fork PRs never opt in. Run-scoped saves contain only entries written for this job's
+  misses, avoiding a full copy of every restored shard in every save.
+- **Main seeds a whole-workspace build cache.** The `main_build_cache` job builds every package on
+  each push to main (on the routed runner, with the workspace shards' checkout and install, so the
+  build hashes match theirs; on the box the shared host cache already holds them) and saves `.turbo/cache` under `turbo-<os>-main-build-…`, pruned with
+  `HOBO_TURBO_CACHE_KEEP_DAYS=0` to that tree's builds. Turbo-cache input `main-build: "true"`
+  restores the newest one before the job's own caches; PR impact validation, the workspace shards,
+  PR affected package lanes and both scripts-test jobs set it. A merge-queue-reused push still runs
+  this job. `dependent-tests.mts --run` first runs the plan's `build` tasks in their own turbo call at
+  one per CPU, capped at 1024 MB per build after a 768 MB reserve (`HOBO_TURBO_BUILD_CONCURRENCY`
+  overrides it), then the unchanged test calls at the memory-derived `HOBO_TURBO_CONCURRENCY`
+  ([finding 162](../ci/findings/0162-merge-queue-shards-rebuilt-every-package-one-at-a-time.md)).
 - **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` filters the turbo lanes to the changed
   packages and examples, including the packages inside a pnpm-workspace group such as
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
@@ -169,6 +184,18 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   are untouched. Committed policy gates it: `runnerRouting.mergeGroup.reusePrFabric` in
   `.hobo/ci.json` (`true`, and an absent block means the same; an unreadable or invalid policy
   turns reuse off).
+- **Merge groups test only what changed since the tree the pull request run proved.** Every
+  `pull_request` run's route job records the merge commit it tested as the artifact name
+  `pr-fabric-tested-<merge sha>-<tree>`. In a merge group the route job's `pr-fabric` step
+  (`decideProvenTreeDelta`) finds the newest green same-repo run for the entry's current head with
+  that record, checks the commit through the API (recorded tree, pull request head as second parent,
+  first parent contained in the group's base) and outputs it as `proven-base`. The plan job,
+  PR impact validation and each workspace shard run `scripts/ci/proven-tree.mts`, which fetches it,
+  checks its tree and ancestry again, and checks out a local commit with the group's tree over it, so
+  the gate scope, the S0 gate set and the shard plan all diff from it. Anything missing or doubtful
+  keeps `merge_group.base_sha`; a later job that cannot repeat the proof widens to `check:all` or
+  every suite of its shard. The same `reusePrFabric` policy gates it
+  ([finding 163](../ci/findings/0163-merge-groups-retested-what-the-pull-request-run-proved.md)).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
