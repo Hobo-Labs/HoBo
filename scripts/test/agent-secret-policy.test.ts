@@ -51,6 +51,19 @@ describe("agent secret policy hook", () => {
 		);
 	});
 
+	it("refuses a person's GitHub sign-in token", () => {
+		for (const command of [
+			words("gh", "auth", "token"),
+			words("echo", "x", "|", "gh", "auth", "login", "--with-token"),
+		])
+			assert.match(
+				secretPolicyRefusal({ tool_name: "Bash", tool_input: { command } }) ??
+					"",
+				/GitHub App/u,
+				command,
+			);
+	});
+
 	it("refuses edits to secret files and credential-storing tools", () => {
 		for (const event of [
 			{ tool_name: "Write", tool_input: { file_path: "/repo/.env" } },
