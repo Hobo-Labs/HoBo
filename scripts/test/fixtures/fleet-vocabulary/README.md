@@ -34,7 +34,8 @@ exits 1 when any rule finds something and prints one line per finding
 
 The guard, its allowlist, its test and everything in this directory are never
 scanned, nor is anything under `docs/` or `site/`. An allowlist entry is
-`{ rule, path, reason }`; adding one is a coordinator amendment.
+`{ rule, path, reason }`; adding one is a coordinator amendment. The
+guard's test lists every entry, so a new entry is added there too.
 
 ## `fleet:docs`
 

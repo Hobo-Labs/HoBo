@@ -221,6 +221,7 @@ describe("fleet:vocabulary allowlist", () => {
 				rule: 9,
 				path: "packages/ci-gh-actions/src/jit-runner-fleet-recovery.ts",
 			},
+			{ rule: 9, path: "packages/hobo/src/ci-fleet-caches.ts" },
 			{ rule: 9, path: "packages/hobo/src/fleet-command.ts" },
 			{ rule: 9, path: "scripts/ci/route-runner.mts" },
 		]);
