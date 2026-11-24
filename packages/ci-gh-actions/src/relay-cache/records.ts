@@ -172,16 +172,6 @@ export function relayCacheKeys(environment: string) {
 			key(
 				`worker-health:${segment(scope, "health scope")}:${segment(component, "component")}`,
 			),
-		fleetVerdict: (repository: string, reporterId: string) =>
-			key(
-				`fleet-verdict:${segment(repository, "repository")}:${segment(reporterId, "reporter id")}`,
-			),
-		fleetReporter: (repository: string, reporterId: string) =>
-			key(
-				`fleet-reporter:${segment(repository, "repository")}:${segment(reporterId, "reporter id")}`,
-			),
-		fleetAllowance: (repository: string) =>
-			key(`fleet-allowance:${segment(repository, "repository")}`),
 		feedRing: (accountId: string) =>
 			`${prefix}feed:${segment(accountId, "account id")}`,
 	} as const;

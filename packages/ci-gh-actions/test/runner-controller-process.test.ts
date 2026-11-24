@@ -479,7 +479,7 @@ const request = (
 	runnerHostResolveRequest({
 		campId: "hobo-ci-runners/box",
 		image,
-		credentialRef: "env://HOBO_CI_RELEASE_READ",
+		credentialRef: "owner://HOBO_CI_RELEASE_READ",
 		...(config ? { config } : undefined),
 	});
 

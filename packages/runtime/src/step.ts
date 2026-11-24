@@ -1,5 +1,10 @@
 import type { StepOptions } from "./ctx.js";
-import { FatalError, RetryableError, WorkflowFailure } from "./errors.js";
+import {
+	FatalError,
+	RetryableError,
+	WorkflowExecutionAborted,
+	WorkflowFailure,
+} from "./errors.js";
 import type { JsonValue } from "./json.js";
 
 export type { StepOptions } from "./ctx.js";
@@ -44,6 +49,7 @@ export async function runWithRetries<T>(
 		try {
 			return await fn();
 		} catch (error) {
+			if (error instanceof WorkflowExecutionAborted) throw error;
 			if (error instanceof FatalError) {
 				throw new WorkflowFailure(`step ${name} failed fatally`, {
 					step: name,

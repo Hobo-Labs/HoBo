@@ -272,15 +272,26 @@ describe("the routing slip, read without dependencies (M4)", () => {
 	});
 });
 
-describe("committed runnerRouting equals the code's defaults (M8)", () => {
+describe("committed runnerRouting against the code's defaults (M8)", () => {
 	const daemon = repoFile(
 		"packages/ci-gh-actions/scripts/isolated-worker-daemon-main.mts",
 	);
 
-	it("box: the daemon reads it from its checkout, and its fallback equals it", () => {
+	it("box: the daemon reads it from its checkout, and its fallback differs only in the agent37 pool", () => {
 		assert.ok(committed);
 		assert.match(daemon, /readBoxRoutingPolicy\(checkoutRoot\)/u);
-		assert.deepEqual(committed, DEFAULT_RUNNER_ROUTING);
+		const { externalPools: committedPools, ...committedRest } = committed;
+		const { externalPools: fallbackPools, ...fallbackRest } =
+			DEFAULT_RUNNER_ROUTING;
+		assert.deepEqual(committedRest, fallbackRest);
+		assert.deepEqual(fallbackPools, []);
+		assert.deepEqual(committedPools, [
+			{
+				labels: ["hobo-agent37"],
+				runnerNamePrefix: "hobo-a37-",
+				maxRunners: 4,
+			},
+		]);
 	});
 
 	it("route: no pin, the queue limits and the labels", () => {
@@ -333,7 +344,13 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		);
 		assert.equal(committed.verdict.enterMs, FLEET_VERDICT_ENTER_MS);
 		assert.equal(committed.verdict.exitMs, FLEET_VERDICT_EXIT_MS);
-		assert.deepEqual(committed.externalPools, []);
+		assert.deepEqual(committed.externalPools, [
+			{
+				labels: ["hobo-agent37"],
+				runnerNamePrefix: "hobo-a37-",
+				maxRunners: 4,
+			},
+		]);
 		assert.equal(committed.verdict.stallMs, DEFAULT_ROUTING_STALL_MS);
 		assert.equal(committed.verdict.stallMs, 10 * 60_000);
 	});

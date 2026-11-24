@@ -183,7 +183,7 @@ an unconfirmed delete *raises* with the same wording rather than returning.
 
 ### Credentials
 
-`credentialRef` is a locator (`env://AZURE_ARM_ACCESS_TOKEN`,
+`credentialRef` is a locator (`owner://AZURE_ARM_ACCESS_TOKEN`,
 `secret://camp/azure-arm-token`), enforced against the same grammar core's
 `parseResolveRequest` uses; a token-shaped value is refused with
 `RESOLVER_CREDENTIAL_NOT_A_REF`. The resolved bearer token is written to exactly

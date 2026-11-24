@@ -1,18 +1,7 @@
-import {
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	createFleetPickupMemory,
 	createFleetVerdictHolds,
-	createFleetVerdictSchedule,
-	createFleetVerdictSequence,
 	FLEET_VERDICT_ENTER_MS,
 	FLEET_VERDICT_EXIT_MS,
 } from "../src/isolated-worker/fleet-verdict-state.js";
@@ -88,73 +77,6 @@ describe("the fleet verdict holds", () => {
 		});
 		state.observe(T0, new Set(["hobo-trunk", "hobo"]));
 		expect([...state.blocked()]).toEqual(["hobo"]);
-	});
-});
-
-describe("the send schedule", () => {
-	it("sends at once on a change, then every 60 s", () => {
-		const schedule = createFleetVerdictSchedule({ resendMs: 60_000 });
-		expect(schedule.due(T0, false)).toBe(true);
-		schedule.attempted(T0, true);
-		expect(schedule.due(T0 + 10_000, false)).toBe(false);
-		expect(schedule.due(T0 + 20_000, true)).toBe(true);
-		schedule.attempted(T0 + 20_000, true);
-		expect(schedule.due(T0 + 70_000, false)).toBe(false);
-		expect(schedule.due(T0 + 80_000, false)).toBe(true);
-	});
-
-	it("tries again at the next sample while a change is unsent, otherwise at the next 60 s mark", () => {
-		const schedule = createFleetVerdictSchedule({ resendMs: 60_000 });
-		schedule.attempted(T0, true);
-		expect(schedule.due(T0 + 10_000, true)).toBe(true);
-		schedule.attempted(T0 + 10_000, false);
-		expect(schedule.due(T0 + 20_000, false)).toBe(true);
-		schedule.attempted(T0 + 20_000, true);
-		expect(schedule.due(T0 + 80_000, false)).toBe(true);
-		schedule.attempted(T0 + 80_000, false);
-		expect(schedule.due(T0 + 90_000, false)).toBe(false);
-		expect(schedule.due(T0 + 140_000, false)).toBe(true);
-	});
-});
-
-describe("the report sequence", () => {
-	function file() {
-		const directory = mkdtempSync(join(tmpdir(), "hobo-fleet-verdict-"));
-		onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
-		return join(directory, "fleet-verdict-state.json");
-	}
-
-	it("is the clock, or one more than the last, whichever is higher, and is written before it is used", () => {
-		const path = file();
-		const sequence = createFleetVerdictSequence(path);
-		expect(sequence.next(T0)).toBe(BigInt(T0));
-		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
-			lastSequence: String(T0),
-		});
-		expect(sequence.next(T0)).toBe(BigInt(T0) + 1n);
-		expect(statSync(path).mode & 0o077).toBe(0);
-	});
-
-	it("never reuses a sequence, even if the clock steps back", () => {
-		const path = file();
-		const first = createFleetVerdictSequence(path);
-		const issued = [first.next(T0), first.next(T0 + 5_000)];
-		const restarted = createFleetVerdictSequence(path);
-		const after = restarted.next(T0 - 3_600_000);
-		expect(after).toBe(BigInt(T0 + 5_000) + 1n);
-		expect(new Set([...issued, after]).size).toBe(3);
-	});
-
-	it("refuses to start from a state file it cannot read as one", () => {
-		const path = file();
-		createFleetVerdictSequence(path).next(T0);
-		rmSync(path);
-		expect(createFleetVerdictSequence(path).next(T0)).toBe(BigInt(T0));
-		const malformed = file();
-		writeFileSync(malformed, '{"lastSequence":-1}');
-		expect(() => createFleetVerdictSequence(malformed)).toThrow(
-			/fleet-verdict-state/u,
-		);
 	});
 });
 

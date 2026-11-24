@@ -9,12 +9,8 @@ import type {
 	TelemetrySink,
 	TopologyReader,
 } from "../ports.js";
-import {
-	isStoreFailure,
-	messageOf,
-	serviceReason,
-	serviceRefusal,
-} from "./errors.js";
+import { isStoreFailure, serviceReason, serviceRefusal } from "./errors.js";
+import { sanitizedCdHealth } from "./health.js";
 import { type CdOpenApiDocument, cdOpenApi } from "./openapi.js";
 import { type CdReadRoute, parseReadRequest } from "./routes.js";
 import { cdEventStream, STREAM_DEFAULTS } from "./stream.js";
@@ -87,12 +83,25 @@ export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
 	const views: ViewDeps = { cd: d.cd, store: d.store, topology: d.topology };
 
 	function emit(points: readonly OtelMetricPoint[]): void {
-		d.telemetry?.metrics(points).catch(() => {
-		});
+		try {
+			d.telemetry?.metrics(points).catch(() => undefined);
+		} catch {}
 	}
 
 	function ready(): FeedResponse {
-		const report = d.service?.health();
+		let report: HealthReport | undefined;
+		try {
+			const health = d.service?.health();
+			report = health ? sanitizedCdHealth(health) : undefined;
+		} catch {
+			return refusalResponse(
+				serviceRefusal(
+					"not-ready",
+					"Readiness could not be determined.",
+					"service",
+				),
+			);
+		}
 		if (report?.ok) return okResponse(report);
 		const failing = report?.checks.filter((c) => !c.ok) ?? [];
 		const reasons =
@@ -188,11 +197,12 @@ export function createCdControlApi(d: CdControlApiDeps): CdControlApi {
 				name,
 			];
 		} catch (error) {
-			const code = isStoreFailure(error) ? "store-unavailable" : "view-failed";
-			return [
-				refusalResponse(serviceRefusal(code, messageOf(error), name)),
-				name,
-			];
+			const storeUnavailable = isStoreFailure(error);
+			const code = storeUnavailable ? "store-unavailable" : "view-failed";
+			const message = storeUnavailable
+				? "The CD journal is unavailable."
+				: "The CD view could not be built.";
+			return [refusalResponse(serviceRefusal(code, message, name)), name];
 		}
 	}
 

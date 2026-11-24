@@ -31,3 +31,44 @@ describe("retired fleet variable channels", () => {
 		expect(exported).toContain("retireRepositoryVariables");
 	});
 });
+
+describe("the retired hosted fleet verdict path", () => {
+	it("exports no verdict route, store, signature or reporter", () => {
+		for (const name of [
+			"createFleetVerdictStore",
+			"createMemoryFleetVerdicts",
+			"parseFleetVerdict",
+			"parseFleetVerdictReport",
+			"parseFleetReporters",
+			"FLEET_VERDICTS_PATH",
+			"FLEET_REPORTERS_PATH",
+			"signedFleetVerdictRequest",
+			"verifyFleetVerdictReport",
+			"createFleetVerdictReporter",
+			"createFleetVerdictSchedule",
+			"createFleetVerdictSequence",
+			"createGithubWorkflowVerifier",
+		])
+			expect(exported).not.toContain(name);
+		for (const name of [
+			"evaluateFleetVerdict",
+			"createFleetVerdictHolds",
+			"createFleetPickupMemory",
+		])
+			expect(exported).toContain(name);
+	});
+
+	it("keeps no file, record or contract for it", () => {
+		for (const path of [
+			"../src/fleet-verdict.ts",
+			"../src/fleet-verdict-auth.ts",
+			"../src/workflow-oidc.ts",
+			"../src/isolated-worker/fleet-verdict-reporter.ts",
+			"../src/_generated/fleet_verdict_pb.ts",
+			"../data-models/fleet_verdict.proto",
+			"../scripts/fleet-reporter-enroll.mts",
+			"../contracts/fleet-verdict-boundary.pact.json",
+		])
+			expect(existsSync(file(path)), path).toBe(false);
+	});
+});

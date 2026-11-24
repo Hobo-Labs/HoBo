@@ -1,9 +1,24 @@
 {
 	"reaches": [
 		{
+			"from": "packages/runtimes/runtime-rivet/test/durable-topic-async-live.test.ts",
+			"needs": ["@hobo/wit#build"],
+			"why": "loads WIT sources and component tools from the sibling workspace"
+		},
+		{
 			"from": "packages/iac/iac-alchemy/test/core-isolation.test.ts",
 			"needs": ["@hobo/core#build"],
 			"why": "inspects shared package source and metadata through computed paths; the test dependency checker conservatively schedules core's build even though the scan does not execute it"
+		},
+		{
+			"from": "packages/runtime/test/durable-messaging-async-component.test.ts",
+			"needs": ["@hobo/core#build", "@hobo/wit#build"],
+			"why": "builds a real component using the WIT package's tools and sources, then loads core's built messaging limits by a computed file URL"
+		},
+		{
+			"from": "packages/extension-alchemy-rivet/test/rivet-topic-live.mjs",
+			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime-rivet#build"],
+			"why": "runs a spawned fixture that loads the adapter and runtime through computed module paths"
 		},
 		{
 			"from": "packages/cli/test/generated-runtime-execution.test.ts",

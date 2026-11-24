@@ -14,7 +14,11 @@ export const TELEMETRY_FAILURES = Object.freeze({
 	},
 	"otlp-partial-success": {
 		remediation:
-			"The collector accepted the batch but rejected some items; see the message for the collector's reason (usually invalid attributes or limits).",
+			"The collector accepted the batch but rejected some items; check collector limits and attribute validity.",
+	},
+	"telemetry-journal-unavailable": {
+		remediation:
+			"Check journal availability before retrying the telemetry query.",
 	},
 	"telemetry-tenant-mismatch": {
 		remediation:

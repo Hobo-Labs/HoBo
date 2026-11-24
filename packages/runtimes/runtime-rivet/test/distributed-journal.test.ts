@@ -270,7 +270,7 @@ describe("Rivet journal client boundary", () => {
 	])("reports an ambiguous grant when a receipt is malformed", async (receipt) => {
 		const namespace = {
 			getOrCreate: () => ({
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed receipts exercise the external Rivet boundary.
+				// SAFETY: malformed receipts exercise the external Rivet boundary.
 				acquire: async () => receipt as never,
 				check: async () => ({ status: "valid" as const }),
 				release: async () => ({ status: "released" as const }),

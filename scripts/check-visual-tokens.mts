@@ -309,8 +309,11 @@ function checkHexSet(
 			];
 }
 
-function statusTokens(source: Source): Map<string, string> {
-	const startMarker = "export const STATUS_PAGE_TOKENS = {";
+function typescriptTokens(
+	source: Source,
+	constant: string,
+): Map<string, string> {
+	const startMarker = `export const ${constant} = {`;
 	const endMarker = "} as const;";
 	const start = source.css.indexOf(startMarker);
 	const bodyStart = start + startMarker.length;
@@ -320,7 +323,7 @@ function statusTokens(source: Source): Map<string, string> {
 		start !== source.css.lastIndexOf(startMarker) ||
 		end < bodyStart
 	)
-		throw new Error(`${source.path}: expected one STATUS_PAGE_TOKENS palette`);
+		throw new Error(`${source.path}: expected one ${constant} palette`);
 	const values = new Map<string, string>();
 	for (const line of source.css.slice(bodyStart, end).split("\n")) {
 		if (!line.trim()) continue;
@@ -340,10 +343,14 @@ function statusTokens(source: Source): Map<string, string> {
 	return values;
 }
 
-function checkStatusPage(source: Source): string[] {
+function checkTypescriptTokens(
+	source: Source,
+	project: "status-page" | "ci-dashboard",
+	constant: string,
+): string[] {
 	try {
-		const values = statusTokens(source);
-		const expected = Object.entries(contract["status-page"].tokens).sort(
+		const values = typescriptTokens(source, constant);
+		const expected = Object.entries(contract[project].tokens).sort(
 			([first], [second]) => first.localeCompare(second),
 		);
 		const actual = [...values.entries()].sort(([first], [second]) =>
@@ -357,16 +364,15 @@ function checkStatusPage(source: Source): string[] {
 					];
 		return [
 			...contractErrors,
-			...contract["status-page"].contrast.flatMap(
-				({ foreground, background }) =>
-					contrastError(
-						source.path,
-						"STATUS_PAGE_TOKENS",
-						foreground,
-						background,
-						values.get(foreground),
-						values.get(background),
-					),
+			...contract[project].contrast.flatMap(({ foreground, background }) =>
+				contrastError(
+					source.path,
+					constant,
+					foreground,
+					background,
+					values.get(foreground),
+					values.get(background),
+				),
 			),
 		];
 	} catch (error) {
@@ -406,8 +412,16 @@ function checkProject(repoRoot: string, project: VisualTokenProject): string[] {
 				];
 			}
 			case contract["status-page"].project:
-				return checkStatusPage(
+				return checkTypescriptTokens(
 					readSource(repoRoot, contract["status-page"].palette),
+					"status-page",
+					"STATUS_PAGE_TOKENS",
+				);
+			case contract["ci-dashboard"].project:
+				return checkTypescriptTokens(
+					readSource(repoRoot, contract["ci-dashboard"].palette),
+					"ci-dashboard",
+					"DASHBOARD_TOKENS",
 				);
 			default:
 				return [

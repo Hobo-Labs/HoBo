@@ -24,7 +24,7 @@ import type {
 	ReconcilerTransport,
 	TopologyReader,
 } from "../ports.js";
-import { messageOf, refuse } from "./errors.js";
+import { refuse } from "./errors.js";
 import { stableJson } from "./json.js";
 import { observationJson, statusEventsFor } from "./status-events.js";
 
@@ -51,7 +51,11 @@ function principalFor(reconcilerId: string): PrincipalRef {
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only EventStoreError codes are read.
 function codeOf(error: unknown): string {
-	return error instanceof EventStoreError ? error.code : "";
+	try {
+		return error instanceof EventStoreError ? String(error.code) : "";
+	} catch {
+		return "";
+	}
 }
 
 const MISMATCH_CODES: ReadonlySet<string> = new Set([
@@ -64,7 +68,11 @@ const MISMATCH_CODES: ReadonlySet<string> = new Set([
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only an Error's `code` property is read and matched against MISMATCH_CODES.
 function typedCodeOf(error: unknown): string {
-	return error instanceof Error && "code" in error ? String(error.code) : "";
+	try {
+		return error instanceof Error && "code" in error ? String(error.code) : "";
+	} catch {
+		return "";
+	}
 }
 
 function asPosition(value: bigint): EventPosition {
@@ -210,7 +218,11 @@ export function createInProcessTransport(
 					`lease fence ${lease.fence} on ${lease.campId} is no longer current`,
 					lease.campId,
 				);
-			return refuse("store-unavailable", messageOf(error), lease.campId);
+			return refuse(
+				"store-unavailable",
+				"The CD journal is unavailable.",
+				lease.campId,
+			);
 		}
 	}
 
@@ -245,7 +257,11 @@ export function createInProcessTransport(
 						`Camp ${input.campId} is leased by another reconciler`,
 						input.campId,
 					);
-				return refuse("store-unavailable", messageOf(error), input.campId);
+				return refuse(
+					"store-unavailable",
+					"The CD journal is unavailable.",
+					input.campId,
+				);
 			}
 		},
 		renew,
@@ -280,12 +296,11 @@ export function createInProcessTransport(
 					);
 				return { ok: true as const, value: resolved };
 			} catch (error) {
-				const message = messageOf(error);
 				return refuse(
 					MISMATCH_CODES.has(typedCodeOf(error))
 						? "resolved-set-mismatch"
 						: "resolved-set-missing",
-					`resolved set ${set.resolvedSetDigest} for Set ${set.setId}: ${message}`,
+					"The resolved set could not be loaded or verified.",
 					set.setId,
 				);
 			}
@@ -329,7 +344,11 @@ export function createInProcessTransport(
 							`status append refused for fence ${lease.fence}`,
 							lease.campId,
 						);
-					return refuse("store-unavailable", messageOf(error), lease.campId);
+					return refuse(
+						"store-unavailable",
+						"The CD journal is unavailable.",
+						lease.campId,
+					);
 				}
 			}
 			return refuse(
@@ -366,7 +385,11 @@ export function createInProcessTransport(
 						`checkpoint refused for fence ${lease.fence}`,
 						lease.campId,
 					);
-				return refuse("store-unavailable", messageOf(error), lease.campId);
+				return refuse(
+					"store-unavailable",
+					"The CD journal is unavailable.",
+					lease.campId,
+				);
 			}
 		},
 	} satisfies ReconcilerTransport);

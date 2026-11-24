@@ -6,6 +6,8 @@
 	},
 	"include": [
 		"test/agreement-status.test.ts",
+		"test/iac-availability-regressions.test.ts",
+		"test/iac-target-baseline-regression.test.ts",
 		"test/shared-fixed-quantity.test.ts",
 		"test/deterministic-developer-pricing.test.ts",
 		"test/deterministic-time-order.test.ts",

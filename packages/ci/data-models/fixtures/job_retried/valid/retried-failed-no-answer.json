@@ -1,0 +1,16 @@
+{
+  "type": "job.retried",
+  "accountId": "acct-1",
+  "repository": "octo/app",
+  "runId": 9001,
+  "attempt": 1,
+  "relayJobId": 11,
+  "relayJob": "route",
+  "jobId": 12,
+  "jobName": "build",
+  "kind": "runner_start",
+  "target": "other",
+  "failedStep": "blacksmith",
+  "atMs": 1763355600000,
+  "rerun": "failed"
+}

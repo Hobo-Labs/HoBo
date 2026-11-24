@@ -40,6 +40,10 @@
         "command": "python3 scripts/agent_completion_hook.py cursor",
         "timeout": 10,
         "loop_limit": null
+      },
+      {
+        "command": "node --experimental-strip-types scripts/agent-owner-ask-hook.mts --format=cursor",
+        "timeout": 10
       }
     ],
     "beforeSubmitPrompt": [

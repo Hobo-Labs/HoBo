@@ -205,7 +205,7 @@ describe("hobo ci connect never leaks credentials", () => {
 				{
 					id: "boat-key",
 					auth: "secret-ref",
-					"secret-ref": "env:BOAT_API_KEY",
+					"secret-ref": "owner://BOAT_API_KEY",
 				},
 			],
 		] as const;

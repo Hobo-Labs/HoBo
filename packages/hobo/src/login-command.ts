@@ -42,6 +42,7 @@ function isPrincipalKind(
 	}
 }
 
+import { SettingParseError } from "@hobo/hobo-ci";
 import { upsertLoginProfile } from "./hobo-profile.js";
 import {
 	DeviceGrantError,
@@ -50,6 +51,18 @@ import {
 	resolveOidcIssuerConfig,
 	runDeviceCodeGrant,
 } from "./oidc-device-grant.js";
+import {
+	parseRelayOrigin,
+	RelayLoginError,
+	type RelayOwnerSessions,
+} from "./relay-owner-session.js";
+
+export type RelayLoginCommandDeps =
+	| Readonly<{
+			sessions: RelayOwnerSessions;
+			openBrowser?: (url: string) => void;
+	  }>
+	| "owner-channel";
 
 export interface BrokerAwareLoginCommandDeps extends LoginCommandDeps {
 	readonly env?: NodeJS.ProcessEnv;
@@ -63,6 +76,77 @@ export interface BrokerAwareLoginCommandDeps extends LoginCommandDeps {
 	readonly sleep?: (ms: number) => Promise<void>;
 	/** Injected clock (epoch ms). */
 	readonly now?: () => number;
+	readonly relay?: RelayLoginCommandDeps;
+}
+
+async function runRelayLogin(
+	relay: RelayLoginCommandDeps | undefined,
+	text: string,
+	emitProgress: (message: string) => void,
+): Promise<CommandResult> {
+	if (relay === undefined || relay === "owner-channel")
+		return {
+			ok: false,
+			status: "error",
+			code: "HOBO_RELAY_LOGIN_USE_MCP_TOOL",
+			message:
+				"Through HoBo MCP, sign in to the relay with the relay_login tool: it asks the owner for the address and shows the GitHub code privately, never in a tool result.",
+			remediation: ["Call HoBo MCP's relay_login."],
+			data: { command: "login", authMethod: "relay-device-code" },
+		};
+	let origin: ReturnType<typeof parseRelayOrigin>;
+	try {
+		origin = parseRelayOrigin(text);
+	} catch (error) {
+		if (!(error instanceof SettingParseError)) throw error;
+		return {
+			ok: false,
+			status: "error",
+			code: "HOBO_RELAY_LOGIN_ORIGIN",
+			message: error.message,
+			remediation: [
+				"Pass the relay's https origin: hobo login --relay https://relay.example",
+			],
+			data: { command: "login", authMethod: "relay-device-code" },
+		};
+	}
+	try {
+		await relay.sessions.begin({
+			origin,
+			present: async (confirmation) => {
+				emitProgress(
+					`Open ${confirmation.verificationUri}, sign in as the owner of HoBo's GitHub App installation, and enter the code ${confirmation.userCode} (it expires in ${Math.max(1, Math.floor(confirmation.expiresInSeconds / 60))} minutes).`,
+				);
+				relay.openBrowser?.(confirmation.verificationUri);
+			},
+		});
+		const state = relay.sessions.state();
+		return {
+			ok: true,
+			status: "ok",
+			code: "HOBO_OK",
+			message:
+				"Signed in to the HoBo CI relay for this process only: the session is kept in memory and ends when the process exits. Nothing was written to disk.",
+			data: {
+				command: "login",
+				authMethod: "relay-device-code",
+				session: "process-memory",
+				...(state.status === "established"
+					? { expiresInSeconds: state.expiresInSeconds }
+					: undefined),
+			},
+		};
+	} catch (error) {
+		if (!(error instanceof RelayLoginError)) throw error;
+		return {
+			ok: false,
+			status: "error",
+			code: error.code,
+			message: error.message,
+			remediation: [...error.remediation],
+			data: { command: "login", authMethod: "relay-device-code" },
+		};
+	}
 }
 
 export function createBrokerAwareLoginCommand(
@@ -72,6 +156,8 @@ export function createBrokerAwareLoginCommand(
 	return {
 		implemented: true,
 		run: async (input): Promise<CommandResult> => {
+			if (isJsonString(input.flags.relay))
+				return runRelayLogin(deps.relay, input.flags.relay, input.emitProgress);
 			const env = deps.env ?? process.env;
 			const oidc = resolveOidcIssuerConfig(env);
 

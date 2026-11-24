@@ -578,14 +578,32 @@ describe("local signoff in the fleet decision", () => {
 		const source = JSON.parse(
 			readFileSync(new URL("../../.hobo/ci.json", import.meta.url), "utf8"),
 		);
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), []);
+		const agent37 = [
+			{
+				id: "ci:agent37-runners",
+				runsOn: "hobo-agent37",
+				observable: false,
+				backend: "agent37",
+			},
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: false,
+			},
+		];
+		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), agent37);
 		const arc = source.environments.ci.policy.providers.find(
 			(entry: { id: string }) => entry.id === "hostinger-arc",
 		);
 		arc.enabled = true;
 		source.integrations[0].enabled = true;
 		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), [
-			{ id: "ci:hostinger-arc", runsOn: "hobo-arc", observable: true },
+			{
+				id: "ci:hostinger-arc",
+				runsOn: "hobo-arc",
+				observable: true,
+			},
+			...agent37,
 			{
 				id: "integration:blacksmith:blacksmith-2vcpu-ubuntu-2404",
 				runsOn: "blacksmith-2vcpu-ubuntu-2404",
@@ -594,9 +612,10 @@ describe("local signoff in the fleet decision", () => {
 		]);
 		delete arc.enabled;
 		source.integrations[0].enabled = false;
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), []);
+		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), agent37);
 		delete source.integrations[0].enabled;
 		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), [
+			...agent37,
 			{
 				id: "integration:blacksmith:blacksmith-2vcpu-ubuntu-2404",
 				runsOn: "blacksmith-2vcpu-ubuntu-2404",
@@ -649,12 +668,26 @@ describe("local signoff in the fleet decision", () => {
 		const source = JSON.parse(
 			readFileSync(new URL("../../.hobo/ci.json", import.meta.url), "utf8"),
 		);
+		const agent37 = [
+			{
+				id: "ci:agent37-runners",
+				runsOn: "hobo-agent37",
+				observable: false,
+				backend: "agent37",
+			},
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: false,
+			},
+		];
 		const arc = source.environments.ci.policy.providers[3];
 		arc.enabled = true;
 		const scaleSet = arc.scaleSet;
 		const read = () => readFleetOverflowPolicy(JSON.stringify(source));
 		assert.deepEqual(read(), [
 			{ id: "ci:hostinger-arc", runsOn: "hobo-arc", observable: true },
+			...agent37,
 		]);
 		for (const malformed of [
 			{ ...scaleSet, garbage: true },
@@ -682,6 +715,7 @@ describe("local signoff in the fleet decision", () => {
 		arc.engine = { name: "dagger-engine" };
 		assert.deepEqual(read(), [
 			{ id: "ci:hostinger-arc", runsOn: "hobo-arc", observable: false },
+			...agent37,
 		]);
 	});
 
@@ -689,6 +723,19 @@ describe("local signoff in the fleet decision", () => {
 		const source = JSON.parse(
 			readFileSync(new URL("../../.hobo/ci.json", import.meta.url), "utf8"),
 		);
+		const agent37 = [
+			{
+				id: "ci:agent37-runners",
+				runsOn: "hobo-agent37",
+				observable: false,
+				backend: "agent37",
+			},
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: false,
+			},
+		];
 		const hosted = source.environments.ci.policy.providers[2];
 		hosted.enabled = true;
 		hosted.runsOn = "ubuntu-22.04";
@@ -700,6 +747,7 @@ describe("local signoff in the fleet decision", () => {
 				observable: true,
 				backend: "github",
 			},
+			...agent37,
 		]);
 		assert.ok(overflow);
 		assert.deepEqual(
@@ -708,6 +756,7 @@ describe("local signoff in the fleet decision", () => {
 					waiting("hobo"),
 					picked("hobo-local-host"),
 					picked("ubuntu-22.04"),
+					waiting("hobo-agent37"),
 				]),
 				{ overflow },
 			),
@@ -722,6 +771,7 @@ describe("local signoff in the fleet decision", () => {
 				observable: true,
 				backend: "github",
 			},
+			...agent37,
 		]);
 	});
 
@@ -729,6 +779,19 @@ describe("local signoff in the fleet decision", () => {
 		const source = JSON.parse(
 			readFileSync(new URL("../../.hobo/ci.json", import.meta.url), "utf8"),
 		);
+		const agent37 = [
+			{
+				id: "ci:agent37-runners",
+				runsOn: "hobo-agent37",
+				observable: false,
+				backend: "agent37",
+			},
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: false,
+			},
+		];
 		const arc = source.environments.ci.policy.providers[3];
 		arc.enabled = true;
 		arc.runsOn = "ubuntu-24.04";
@@ -736,6 +799,7 @@ describe("local signoff in the fleet decision", () => {
 		assert.ok(overflow);
 		assert.deepEqual(overflow, [
 			{ id: "ci:hostinger-arc", runsOn: "ubuntu-24.04", observable: true },
+			...agent37,
 		]);
 		assert.deepEqual(
 			await plan(queue([waiting("hobo"), waiting("hobo-local-host")]), {
@@ -891,6 +955,68 @@ describe("local signoff in the fleet decision", () => {
 				runner: "hobo",
 			});
 		}
+	});
+
+	it("validates agent37 slips against committed external pools and rejects unknown tiers", async () => {
+		const pinned = (tier: string, runner: string): SlipReading =>
+			JSON.parse(
+				JSON.stringify({
+					ok: true,
+					decision: {
+						tier,
+						runner,
+						reason: "pinned",
+						slip: { kind: "used", reason: "pinned", from: "node@abc" },
+					},
+				}),
+			);
+		const overflow = [
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: true,
+			},
+		];
+		assert.deepEqual(
+			await planFleetVerification({
+				settings,
+				localSignoffEnabled: true,
+				overflow,
+				readSlip: async () => pinned("agent37", "HOBO-AGENT37"),
+				readQueue: async () => {
+					throw new Error("a valid pin must not read the queue");
+				},
+				nowMs: now,
+			}),
+			{ kind: "runner", tier: "overflow", runner: "HOBO-AGENT37" },
+		);
+		for (const slip of [
+			pinned("agent37", "hobo"),
+			pinned("agent37", "uncommitted-agent37"),
+			pinned("unknown-tier", "hobo-agent37"),
+		])
+			assert.deepEqual(
+				await plan(queue([picked("hobo")]), { overflow, slip }),
+				{
+					kind: "runner",
+					tier: "fleet",
+					runner: "hobo",
+				},
+			);
+		assert.deepEqual(
+			await plan(queue([picked("hobo")]), {
+				overflow: [
+					{
+						id: "ci:agent37-runners",
+						runsOn: "hobo-agent37",
+						observable: true,
+						backend: "agent37",
+					},
+				],
+				slip: pinned("agent37", "hobo-agent37"),
+			}),
+			{ kind: "runner", tier: "fleet", runner: "hobo" },
+		);
 	});
 
 	it("does not mistake a local routing slip for proof that the local runner is available", async () => {
@@ -1235,6 +1361,10 @@ if [ "$1" = signoff ] && [ "$2" = --help ]; then
   echo --commit; exit 0
 fi
 if [ "$1" = signoff ] && [ "$2" = create ]; then exit 0; fi
+if [ "$1" = auth ] && [ "$2" = status ]; then
+  [ -n "\${HOBO_GH_SIGN_IN:-}" ] || exit 1
+  printf '  - Token: %s************\\n' "$HOBO_GH_SIGN_IN"; exit 0
+fi
 if [ "$1" = api ] && [ "$2" = 'user/installations?per_page=100' ]; then
   [ -n "\${HOBO_STATUS_INSTALLATIONS:-}" ] || exit 1
   printf '%s\\n' "$HOBO_STATUS_INSTALLATIONS"; exit 0
@@ -1503,6 +1633,8 @@ exec /usr/bin/git "$@"
 				"--base=origin/opaque-policy",
 				"--provider-unavailable=ci:vercel-sandbox",
 				"--provider-unavailable=production:vercel-sandbox",
+				"--provider-unavailable=ci:agent37-runners",
+				"--provider-unavailable=external-pool:0:hobo-agent37",
 			];
 			const observeOpaque = (
 				providerUnavailable: string[],
@@ -1516,7 +1648,12 @@ exec /usr/bin/git "$@"
 					policyCurrent,
 					providerUnavailable,
 				});
-			const allOpaque = ["ci:vercel-sandbox", "production:vercel-sandbox"];
+			const allOpaque = [
+				"ci:vercel-sandbox",
+				"production:vercel-sandbox",
+				"ci:agent37-runners",
+				"external-pool:0:hobo-agent37",
+			];
 			assert.deepEqual(await observeOpaque([allOpaque[0] ?? ""]), {
 				kind: "wait",
 				reason: "availability-unknown",
@@ -1527,14 +1664,24 @@ exec /usr/bin/git "$@"
 				reason: "availability-unknown",
 			});
 			const queued = JSON.parse(readFileSync(jobs, "utf8"));
-			queued.jobs.push({
-				run_id: 123,
-				status: "queued",
-				labels: ["hobo-arc"],
-				created_at: at(500),
-				runner_name: null,
-				started_at: null,
-			});
+			queued.jobs.push(
+				{
+					run_id: 123,
+					status: "queued",
+					labels: ["hobo-arc"],
+					created_at: at(500),
+					runner_name: null,
+					started_at: null,
+				},
+				{
+					run_id: 123,
+					status: "queued",
+					labels: ["hobo-agent37"],
+					created_at: at(500),
+					runner_name: null,
+					started_at: null,
+				},
+			);
 			writeFileSync(jobs, JSON.stringify(queued));
 			assert.deepEqual(
 				await observeFleetVerification({
@@ -1604,6 +1751,7 @@ exec /usr/bin/git "$@"
 				"ci:hostinger-arc",
 				"integration:blacksmith:blacksmith-2vcpu-ubuntu-2404",
 				"external-pool:0:pool.ubuntu-1",
+				"ci:agent37-runners",
 			];
 			const observeInventory = () =>
 				observeFleetVerification({
@@ -1673,6 +1821,10 @@ exec /usr/bin/git "$@"
 			rmSync(join(repo, "dirty.txt"));
 			// A silent queue needs independently observed outages for both enabled tiers.
 			writeFileSync(jobs, JSON.stringify({ jobs: [] }));
+			const agent37Assertions = [
+				"ci:agent37-runners",
+				"external-pool:0:hobo-agent37",
+			];
 			const silent = (
 				runnerUnavailable: string[],
 				policyCurrent = true,
@@ -1685,6 +1837,7 @@ exec /usr/bin/git "$@"
 					localSignoffEnabled: true,
 					githubUnavailable: true,
 					policyCurrent,
+					providerUnavailable: agent37Assertions,
 					runnerUnavailable,
 				});
 			assert.deepEqual(await silent([]), {
@@ -1741,6 +1894,7 @@ exec /usr/bin/git "$@"
 				"--github-unavailable",
 				"--runner-unavailable=fleet",
 				"--runner-unavailable=local",
+				...agent37Assertions.map((id) => `--provider-unavailable=${id}`),
 			]);
 			assert.match(
 				assertedRunners.stdout,
@@ -1751,6 +1905,7 @@ exec /usr/bin/git "$@"
 				"--base=origin/many-policy",
 				"--github-unavailable",
 				"--runner-unavailable=fleet",
+				"--provider-unavailable=external-pool:0:hobo-agent37",
 				...Array.from(
 					{ length: 100 },
 					(_, index) => `--provider-unavailable=ci:provider-${index}`,
@@ -1774,6 +1929,7 @@ exec /usr/bin/git "$@"
 				"--github-unavailable",
 				"--runner-unavailable=fleet",
 				"--runner-unavailable=local",
+				...agent37Assertions.map((id) => `--provider-unavailable=${id}`),
 			];
 			const jobBase = {
 				run_id: 123,
@@ -2176,10 +2332,16 @@ exec /usr/bin/git "$@"
 			assert.notEqual(unverified.status, 0);
 			assert.match(unverified.stdout, /waiting \(availability-unknown\)/u);
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
-			const missing = command({ HOBO_FLEET_MISSING_SIGNOFF: "1" });
+			const missing = command(
+				{ HOBO_FLEET_MISSING_SIGNOFF: "1" },
+				agent37Assertions.map((id) => `--provider-unavailable=${id}`),
+			);
 			assert.notEqual(missing.status, 0);
 			assert.match(missing.stderr, /install or upgrade basecamp\/gh-signoff/u);
-			const fallback = command();
+			const fallback = command(
+				{},
+				agent37Assertions.map((id) => `--provider-unavailable=${id}`),
+			);
 			assert.notEqual(fallback.status, 0);
 			assert.match(fallback.stdout, /preparing the local signoff fallback/u);
 			assert.match(fallback.stderr, /working tree is not clean/u);
@@ -2226,6 +2388,7 @@ exec /usr/bin/git "$@"
 			writeFileSync(runs, validRuns);
 			const validRefusal = command({ HOBO_FLEET_SLIP: slip }, [
 				"--github-unavailable",
+				...agent37Assertions.map((id) => `--provider-unavailable=${id}`),
 			]);
 			assert.match(
 				validRefusal.stdout,
@@ -2234,6 +2397,10 @@ exec /usr/bin/git "$@"
 			assert.match(validRefusal.stderr, /working tree is not clean/u);
 
 			// A committed local workflow runs end to end and reaches gh-signoff.
+			const localRunFlags = [
+				"--fresh",
+				...agent37Assertions.map((id) => `--provider-unavailable=${id}`),
+			];
 			rmSync(join(repo, "dirty.txt"));
 			git(repo, ["switch", "--quiet", "-c", "feature"]);
 			const baseA = git(repo, ["rev-parse", "refs/remotes/origin/main"])
@@ -2263,7 +2430,7 @@ exec /usr/bin/git "$@"
 			const head = git(repo, ["rev-parse", "HEAD"]).toString().trim();
 			const tree = git(repo, ["rev-parse", "HEAD^{tree}"]).toString().trim();
 			git(remote, ["update-ref", "refs/heads/feature", baseA]);
-			const unpublished = command({}, ["--fresh"]);
+			const unpublished = command({}, localRunFlags);
 			assert.notEqual(unpublished.status, 0);
 			assert.match(
 				unpublished.stderr,
@@ -2271,9 +2438,10 @@ exec /usr/bin/git "$@"
 					? /not verifiably on a branch of origin/u
 					: /Git 2\.45 or newer/u,
 			);
-			const unpublishedOldGit = command({ HOBO_FLEET_OLD_GIT: "1" }, [
-				"--fresh",
-			]);
+			const unpublishedOldGit = command(
+				{ HOBO_FLEET_OLD_GIT: "1" },
+				localRunFlags,
+			);
 			assert.notEqual(unpublishedOldGit.status, 0);
 			assert.match(unpublishedOldGit.stderr, /Git 2\.45 or newer/u);
 			assert.equal(
@@ -2285,7 +2453,7 @@ exec /usr/bin/git "$@"
 			// Advance A→B after observation and before the run fetches its base.
 			const baseChangedBeforeRun = command(
 				{ HOBO_FLEET_ADVANCE_AT_HELP: baseB },
-				["--fresh"],
+				localRunFlags,
 			);
 			assert.notEqual(baseChangedBeforeRun.status, 0);
 			assert.match(
@@ -2298,7 +2466,7 @@ exec /usr/bin/git "$@"
 			git(repo, ["update-ref", "refs/remotes/origin/main", baseA]);
 			// Advance A→B while local checks run, before the final signoff.
 			writeFileSync(join(bin, "advance-base"), baseB);
-			const baseChangedBeforeSignoff = command({}, ["--fresh"]);
+			const baseChangedBeforeSignoff = command({}, localRunFlags);
 			assert.notEqual(baseChangedBeforeSignoff.status, 0);
 			assert.match(
 				baseChangedBeforeSignoff.stderr,
@@ -2309,13 +2477,13 @@ exec /usr/bin/git "$@"
 			git(repo, ["update-ref", "refs/remotes/origin/main", baseA]);
 			const readOnly = command(
 				{
-					GH_TOKEN: "ghu_fixture",
+					HOBO_GH_SIGN_IN: "ghu_",
 					HOBO_STATUS_INSTALLATIONS: JSON.stringify({
 						owner: "acme",
 						statuses: "read",
 					}),
 				},
-				["--fresh"],
+				localRunFlags,
 			);
 			assert.notEqual(readOnly.status, 0);
 			assert.match(readOnly.stderr, /read-only commit statuses/u);
@@ -2326,7 +2494,7 @@ exec /usr/bin/git "$@"
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
 			// The trusted workflow actually executes and fails, so no status is posted.
 			writeFileSync(join(bin, "fail-job"), "fail\n");
-			const executedFailure = command({}, ["--fresh"]);
+			const executedFailure = command({}, localRunFlags);
 			assert.notEqual(executedFailure.status, 0);
 			assert.equal(
 				readFileSync(join(bin, "failed-command"), "utf8").trim(),
@@ -2334,7 +2502,7 @@ exec /usr/bin/git "$@"
 			);
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
 			rmSync(join(bin, "fail-job"));
-			const success = command({}, ["--fresh"]);
+			const success = command({}, localRunFlags);
 			assert.equal(success.status, 0, success.stderr);
 			assert.match(success.stdout, /running the local signoff fallback/u);
 			assert.match(
@@ -2378,7 +2546,7 @@ exec /usr/bin/git "$@"
 				HOBO_FLEET_QUEUE: queue,
 				HOBO_FLEET_GROUP_HEAD: groupHead,
 			};
-			const groupFlags = ["--fresh", `--merge-group-ref=${groupRef}`];
+			const groupFlags = [...localRunFlags, `--merge-group-ref=${groupRef}`];
 			writeFileSync(join(bin, "change-queue-on-job"), "change\n");
 			const movedGroup = command(groupEnv, groupFlags);
 			assert.notEqual(
@@ -2442,10 +2610,11 @@ exec /usr/bin/git "$@"
 			}))
 				writeFileSync(join(prDir, name), JSON.stringify(value));
 			git(remote, ["update-ref", "refs/heads/feature", baseA]);
-			const forkSuccess = command({ HOBO_FLEET_PR_DIR: prDir }, [
-				"--fresh",
-				"--pr=17",
-			]);
+			const pullRequestFlags = [...localRunFlags, "--pr=17"];
+			const forkSuccess = command(
+				{ HOBO_FLEET_PR_DIR: prDir },
+				pullRequestFlags,
+			);
 			assert.equal(forkSuccess.status, 0, forkSuccess.stderr);
 			assert.equal(
 				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
@@ -2453,7 +2622,7 @@ exec /usr/bin/git "$@"
 			);
 			const closedPr = command(
 				{ HOBO_FLEET_PR_DIR: prDir, HOBO_FLEET_PR_CLOSED: "1" },
-				["--fresh", "--pr=17"],
+				pullRequestFlags,
 			);
 			assert.notEqual(closedPr.status, 0);
 			assert.doesNotMatch(
@@ -2465,10 +2634,10 @@ exec /usr/bin/git "$@"
 				2,
 			);
 			writeFileSync(join(bin, "close-pr-on-job"), "close\n");
-			const closedDuringJob = command({ HOBO_FLEET_PR_DIR: prDir }, [
-				"--fresh",
-				"--pr=17",
-			]);
+			const closedDuringJob = command(
+				{ HOBO_FLEET_PR_DIR: prDir },
+				pullRequestFlags,
+			);
 			assert.notEqual(closedDuringJob.status, 0);
 			assert.match(
 				closedDuringJob.stdout,
@@ -2482,9 +2651,10 @@ exec /usr/bin/git "$@"
 			rmSync(join(bin, "close-pr-on-job"));
 			rmSync(join(bin, "pr-closed"));
 			writeFileSync(join(bin, "change-pr-on-job"), "change\n");
-			const replacedDuringJob = command({ HOBO_FLEET_PR_DIR: prDir }, [
-				"--fresh",
-			]);
+			const replacedDuringJob = command(
+				{ HOBO_FLEET_PR_DIR: prDir },
+				localRunFlags,
+			);
 			assert.notEqual(replacedDuringJob.status, 0);
 			assert.match(
 				replacedDuringJob.stderr,
@@ -2526,7 +2696,7 @@ exec /usr/bin/git "$@"
 			]);
 			git(repo, ["update-ref", "-d", "refs/remotes/origin/feature"]);
 			git(repo, ["fetch", "--quiet", "origin", "feature"]);
-			const advancedSuccess = command({}, ["--fresh"]);
+			const advancedSuccess = command({}, localRunFlags);
 			if (supportsNoLazyFetch)
 				assert.equal(advancedSuccess.status, 0, advancedSuccess.stderr);
 			else {
@@ -2552,7 +2722,7 @@ exec /usr/bin/git "$@"
 				"failing check",
 			]);
 			git(repo, ["push", "--quiet", "origin", "HEAD:refs/heads/feature"]);
-			const failed = command();
+			const failed = command({}, localRunFlags);
 			assert.notEqual(failed.status, 0);
 			assert.match(
 				failed.stdout,

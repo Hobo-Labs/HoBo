@@ -47,7 +47,8 @@ export function admitWhenReady(
 	application: HostedRelayApplication,
 	ready: () => boolean,
 ): HostedRelayApplication {
-	return {
+	const startFence = application.startFence;
+	const gated: HostedRelayApplication = {
 		...application,
 		ready: async () => ready(),
 		async ingestWebhook(input) {
@@ -57,6 +58,18 @@ export function admitWhenReady(
 		async claim(leaseId, oidc) {
 			if (!ready()) throw new Error("relay is not ready");
 			return application.claim(leaseId, oidc);
+		},
+	};
+	if (!startFence) return gated;
+	return {
+		...gated,
+		async startFence(request: Request) {
+			if (!ready())
+				return Response.json(
+					{ ok: false },
+					{ status: 503, headers: { "Cache-Control": "no-store" } },
+				);
+			return startFence(request);
 		},
 	};
 }

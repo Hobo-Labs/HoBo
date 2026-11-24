@@ -23,7 +23,7 @@ const request = parseResolveRequest({
 		physicalId: "17",
 	},
 	desired: { name: "api", location: "fsn1" },
-	credentialRef: "env://HCLOUD_TOKEN",
+	credentialRef: "owner://HCLOUD_TOKEN",
 });
 const json = (status: number, value: JsonValue): TransportResponse => ({
 	status,

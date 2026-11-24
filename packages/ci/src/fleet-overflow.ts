@@ -1,4 +1,4 @@
-export type FleetBackend = "hobo" | "arc" | "local" | "github";
+export type FleetBackend = "hobo" | "arc" | "local" | "github" | "agent37";
 
 export type FleetMember = Readonly<{
 	id: string;
@@ -26,6 +26,7 @@ export const LOCAL_HOST_RUNNER_LABEL = "hobo-local-host";
 const OVERFLOW_BACKEND_ORDER: readonly FleetBackend[] = [
 	"arc",
 	"local",
+	"agent37",
 	"github",
 ];
 const VERIFICATION_BACKENDS: ReadonlySet<string> = new Set([
@@ -95,6 +96,46 @@ export function selectFleetBackend(input: {
 	}
 
 	return undefined;
+}
+
+export type Agent37PoolPolicy = Readonly<{
+	labels: readonly string[];
+	runnerNamePrefix: string;
+	maxRunners: number;
+}>;
+
+export type Agent37PoolObservation = Readonly<{
+	activeRunners: number;
+}>;
+
+export type Agent37Capacity = Readonly<{
+	runsOn: string;
+	runnerNamePrefix: string;
+	freeRunners: number;
+}>;
+
+export function agent37Capacity(
+	pool: Agent37PoolPolicy,
+	observation: Agent37PoolObservation,
+): Agent37Capacity | undefined {
+	const runsOn = pool.labels[0] ?? "";
+	if (
+		!Number.isSafeInteger(pool.maxRunners) ||
+		pool.maxRunners < 1 ||
+		pool.maxRunners > 10_000 ||
+		pool.labels.length < 1 ||
+		pool.labels.length > 16 ||
+		pool.labels.some((label) => label.trim().length === 0) ||
+		runsOn.length === 0 ||
+		pool.runnerNamePrefix.length < 1 ||
+		pool.runnerNamePrefix.length > 128 ||
+		!Number.isSafeInteger(observation.activeRunners) ||
+		observation.activeRunners < 0
+	)
+		return undefined;
+	const freeRunners = pool.maxRunners - observation.activeRunners;
+	if (freeRunners < 1) return undefined;
+	return { runsOn, runnerNamePrefix: pool.runnerNamePrefix, freeRunners };
 }
 
 export type FleetVerificationSelection =

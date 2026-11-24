@@ -13,6 +13,7 @@ import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "../src/isolated-worker/conta
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import { orphanJobCandidateForLease } from "../src/isolated-worker/orphan-jobs.js";
 import * as correlationModule from "../src/jit-runner-correlation.js";
+import { jitRunnerGithubWithoutAssignments } from "./github-deregister-mock.js";
 
 function transitionFor(lease: Lease) {
 	return vi.fn(
@@ -614,7 +615,7 @@ describe("shared hobo label JIT reassignment", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("falls through correlation errors to getJob before settling", async () => {
+	it("retains the runner when correlation fails even if the served job completed", async () => {
 		const leaseId = "correlation-fallthrough-getjob";
 		const lease = create(LeaseSchema, {
 			id: leaseId,
@@ -670,7 +671,7 @@ describe("shared hobo label JIT reassignment", () => {
 		};
 		const controller = createIsolatedContainerController({
 			store,
-			github: githubAllowRunnerDeregister(),
+			github: deniedGithub(),
 			publicOrigin: "https://ci.example.test",
 			docker,
 			workerAccountId: "worker-a",
@@ -678,7 +679,8 @@ describe("shared hobo label JIT reassignment", () => {
 			now: () => "2026-11-12T12:10:00.000Z",
 		});
 		await controller.host.reconcile(lease.id);
-		expect(settle).toHaveBeenCalled();
+		expect(settle).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
 		vi.restoreAllMocks();
 	});
 
@@ -1055,11 +1057,5 @@ function deniedGithub(): GithubTransport {
 }
 
 function githubAllowRunnerDeregister(): GithubTransport {
-	return {
-		async request(_installationId, path, method) {
-			if (method === "DELETE" && path.includes("/actions/runners/"))
-				return new Response(null, { status: 204 });
-			throw new Error(`unexpected ${method} ${path}`);
-		},
-	};
+	return jitRunnerGithubWithoutAssignments();
 }

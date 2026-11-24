@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { availableParallelism, totalmem } from "node:os";
 import { posix } from "node:path";
 import process from "node:process";
 import { readStdin } from "../lib/read-stdin.mts";
@@ -1056,11 +1057,55 @@ function turboAffectedArgs(): readonly string[] {
 	return process.env.HOBO_TURBO_USE_AFFECTED === "1" ? ["--affected"] : [];
 }
 
+export const BUILD_TASK_MB = 1024;
+export const BUILD_RESERVE_MB = 768;
+
+export function buildTaskConcurrency(
+	input: Readonly<{ cpuCount: number; limitMb: number }>,
+): number {
+	const byMemory = Math.floor(
+		(input.limitMb - BUILD_RESERVE_MB) / BUILD_TASK_MB,
+	);
+	return Math.max(1, Math.min(Math.floor(input.cpuCount), byMemory));
+}
+
+const MIB = 1024 * 1024;
+
+function cgroupMemoryMaxMb(): number | undefined {
+	try {
+		const max = readFileSync("/sys/fs/cgroup/memory.max", "utf8").trim();
+		return /^\d+$/u.test(max) ? Math.floor(Number(max) / MIB) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function jobMemoryLimitMb(): number {
+	const cgroup = cgroupMemoryMaxMb();
+	if (cgroup !== undefined) return cgroup;
+	const configured = Number(process.env.HOBO_CI_JOB_MEMORY_MB);
+	return Number.isFinite(configured) && configured >= 1
+		? Math.floor(configured)
+		: Math.floor(totalmem() / MIB);
+}
+
+function buildConcurrencyFromEnv(): string {
+	const configured = process.env.HOBO_TURBO_BUILD_CONCURRENCY?.trim();
+	if (configured) return configured;
+	return String(
+		buildTaskConcurrency({
+			cpuCount: availableParallelism(),
+			limitMb: jobMemoryLimitMb(),
+		}),
+	);
+}
+
 export function planCommands(
 	plan: TestPlan,
 	turboArgs: readonly string[],
 	concurrency: string,
 	graph: TestGraph,
+	buildConcurrency?: string,
 ): readonly (readonly string[])[] {
 	const test = ["exec", "turbo", "run", "test"];
 	const parallel = `--concurrency=${concurrency}`;
@@ -1069,7 +1114,24 @@ export function planCommands(
 		return [[...test, ...affected, parallel, ...turboArgs]];
 	const slices = plan.vitestShards ?? new Map<string, VitestShardSlices>();
 	const commands: string[][] = [];
+	const buildFirst = buildConcurrency !== undefined && affected.length === 0;
+	const buildPass = (tasks: readonly GraphTask[]) => {
+		const builds = tasks
+			.filter((task) => task.task === "build")
+			.map((task) => task.taskId);
+		if (buildFirst && builds.length > 0)
+			commands.push([
+				"exec",
+				"turbo",
+				"run",
+				...builds,
+				"--continue",
+				`--concurrency=${buildConcurrency}`,
+				...turboArgs,
+			]);
+	};
 	if (plan.subsets.size === 0 && slices.size === 0) {
+		if (plan.full.length > 0 && buildFirst) buildPass(graph(plan.full));
 		if (plan.full.length > 0)
 			commands.push([
 				...test,
@@ -1084,7 +1146,13 @@ export function planCommands(
 	const separateTests = new Set(
 		[...plan.subsets.keys(), ...slices.keys()].map((dir) => `${dir}\0test`),
 	);
-	const tasks = graph([...plan.full, ...plan.subsets.keys(), ...slices.keys()])
+	const planned = graph([
+		...plan.full,
+		...plan.subsets.keys(),
+		...slices.keys(),
+	]);
+	buildPass(planned);
+	const tasks = planned
 		.filter((task) => !separateTests.has(`${task.directory}\0${task.task}`))
 		.map((task) => task.taskId);
 	if (tasks.length > 0)
@@ -1255,6 +1323,7 @@ function runPlan(plan: TestPlan, turboArgs: readonly string[]): number {
 		turboArgs,
 		process.env.HOBO_TURBO_CONCURRENCY ?? "100%",
 		turboTestGraph,
+		buildConcurrencyFromEnv(),
 	)) {
 		console.log(`$ pnpm ${args.join(" ")}`);
 		const exit = spawnSync("pnpm", args, { stdio: "inherit" }).status ?? 1;

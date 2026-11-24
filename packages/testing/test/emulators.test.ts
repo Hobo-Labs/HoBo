@@ -85,7 +85,7 @@ describe("in-process service emulators", () => {
 			expect(a?.body).toEqual({ id: 7 });
 			expect(b?.body).toEqual({ id: 7 });
 			if (!a) throw new Error("message was not delivered");
-			topic.ack(a.messageId, a.leaseId);
+			await topic.ack(a.messageId, a.leaseId);
 			expect(await topic.consume(topicName, parseConsumerGroupId("a"))).toEqual(
 				[],
 			);

@@ -45,7 +45,7 @@ export const RUNNER_FLEET_PROVIDER = "self-hosted";
 // public-contract: the id of the runner fleet's declared Station Rail.
 export const RUNNER_FLEET_RAIL = "hobo-ci-runner-fleet";
 // public-contract: credential locator the CD Station resolves to read GHCR (never stored).
-export const RUNNER_IMAGE_CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";
+export const RUNNER_IMAGE_CREDENTIAL_REF = "owner://HOBO_CI_GHCR_READ_TOKEN";
 // public-contract: the Freight artifact a container-mode controller runs (the worker image).
 export const RUNNER_IMAGE_ARTIFACT = "hobo-ci-worker";
 /**

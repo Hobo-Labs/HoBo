@@ -1,13 +1,19 @@
+import { randomUUID } from "node:crypto";
 import {
+	assertDeadLetterSupported,
 	type ConsumedMessage,
 	createInMemoryMessaging,
+	createMessagingSettlementTracker,
 	createUsageEvent,
+	MESSAGING_SETTLEMENT_ID_LIMIT,
 	type Messaging,
 	MessagingCapabilityError,
 	MessagingDeliveryError,
+	MessagingDeliveryExhaustedError,
 	type MessagingEvent,
 	type MessagingLeaseId,
 	type MessagingMessageId,
+	MessagingSettlementCommittedError,
 	type MeteringBus,
 	parseConsumerGroupId,
 	parseMessagingLeaseId,
@@ -28,6 +34,7 @@ export interface DaprMessagingOptions {
 	readonly live?: boolean;
 	readonly client?: DaprSidecarClient;
 	readonly now?: () => string;
+	readonly settlementTimeoutMs?: number;
 }
 
 export interface DaprMessaging extends Messaging {
@@ -35,7 +42,6 @@ export interface DaprMessaging extends Messaging {
 	readonly fidelity: "simulated" | "live";
 	readonly placement: "dapr-pubsub";
 	readonly client: DaprSidecarClient | null;
-	flush?(): Promise<void>;
 }
 
 export function createDaprMessaging(
@@ -55,10 +61,14 @@ export function createDaprMessaging(
 		transactionalProduce: false,
 		idempotentProduce: false,
 		schemaRegistry: false,
-		deadLetter: true,
+		deadLetter: false,
 		partitionAware: false,
 		crossYardFederation: true,
 	};
+	const pending = createMessagingSettlementTracker<{
+		topic: TopicName;
+		group: string;
+	}>(options.settlementTimeoutMs);
 
 	if (!client) {
 		const inner = createInMemoryMessaging({
@@ -103,14 +113,13 @@ export function createDaprMessaging(
 			ack: (m, l) => inner.ack(m, l),
 			nack: (m, l, r) => inner.nack(m, l, r),
 			events: () => inner.events(),
-			async flush() {},
 		};
 		return Object.freeze(simulated);
 	}
 
 	const eventLog: MessagingEvent[] = [];
-	const pending = new Map<string, { topic: string; group: string }>();
-	const pendingOps: Promise<void>[] = [];
+	const leasePrefix = randomUUID();
+	let leaseSequence = 0;
 	const subscriptions = new Map<
 		string,
 		{ topic: string; group: string; maxDeliveryAttempts: number }
@@ -140,12 +149,14 @@ export function createDaprMessaging(
 		client,
 
 		async ensureTopic(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const name = tenantScopedTopicName(spec.tenantId, spec.name);
 			emit({ type: "messaging.topic.created", topic: name });
 			return Object.freeze({ ...spec, name });
 		},
 
 		async ensureSubscription(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const topic = tenantScopedTopicName(spec.tenantId, spec.topic);
 			const group = tenantScopedConsumerGroup(
 				spec.tenantId,
@@ -210,18 +221,52 @@ export function createDaprMessaging(
 		async consume(topic, consumerGroup, opts = {}) {
 			const physical = tenantScopedTopicName(tenantId, topic);
 			const group = tenantScopedConsumerGroup(tenantId, consumerGroup);
+			if (
+				physical.length > MESSAGING_SETTLEMENT_ID_LIMIT ||
+				group.length > MESSAGING_SETTLEMENT_ID_LIMIT
+			)
+				throw new MessagingDeliveryError("messaging scope is not bounded");
+			const maxMessages = opts.maxMessages ?? 1;
+			if (
+				!Number.isSafeInteger(maxMessages) ||
+				maxMessages < 1 ||
+				maxMessages > pending.capacity()
+			)
+				throw new MessagingDeliveryError(
+					"invalid or unavailable messaging capacity",
+				);
 			const drained = await client.drain(
 				config.defaultPubsubName,
 				physical,
-				opts.maxMessages ?? 1,
+				maxMessages,
 				group,
 			);
+			if (drained.length > maxMessages)
+				throw new MessagingDeliveryError("sidecar returned too many messages");
+			const claims: {
+				messageId: MessagingMessageId;
+				leaseId: MessagingLeaseId;
+				scope: string;
+				context: { topic: TopicName; group: string };
+			}[] = [];
 			const batch: ConsumedMessage[] = drained.map((m) => {
 				const messageId = parseMessagingMessageId(m.id);
-				const leaseId = parseMessagingLeaseId(`dapr-lease-${m.id}`);
-				pending.set(`${messageId}::${leaseId}`, {
-					topic: physical,
-					group,
+				if (messageId.length > MESSAGING_SETTLEMENT_ID_LIMIT)
+					throw new MessagingDeliveryError(
+						"messaging lease identity is not bounded",
+					);
+				if (leaseSequence >= Number.MAX_SAFE_INTEGER)
+					throw new MessagingDeliveryError(
+						"messaging lease sequence exhausted",
+					);
+				const leaseId = parseMessagingLeaseId(
+					`dapr-${leasePrefix}-${++leaseSequence}`,
+				);
+				claims.push({
+					messageId,
+					leaseId,
+					scope: JSON.stringify([physical, group, messageId]),
+					context: { topic: physical, group },
 				});
 				return Object.freeze({
 					messageId,
@@ -234,6 +279,7 @@ export function createDaprMessaging(
 					headers: {},
 				});
 			});
+			pending.register(claims);
 			for (const m of batch) {
 				emit({
 					type: "messaging.consumed",
@@ -263,128 +309,76 @@ export function createDaprMessaging(
 				...opts,
 			});
 			let handled = 0;
-			let deadLettered = 0;
-			for (const message of batch) {
+			for (const [index, message] of batch.entries()) {
+				const exhausted = (): never => {
+					emit({
+						type: "messaging.delivery.exhausted",
+						topic: message.topic,
+						messageId: message.messageId,
+						consumerGroup: group,
+						reason: "max_delivery_attempts",
+					});
+					throw new MessagingDeliveryExhaustedError(
+						message,
+						Object.freeze(batch.slice(index + 1)),
+						handled,
+					);
+				};
+				if (message.deliveryAttempt > maxAttempts) exhausted();
 				try {
 					await handler(message);
-					await doAck(
-						client,
-						pending,
+				} catch (err) {
+					if (message.deliveryAttempt >= maxAttempts) exhausted();
+					await live.nack(
 						message.messageId,
 						message.leaseId,
-						emit,
+						err instanceof Error ? err.message : String(err),
 					);
-					handled += 1;
-				} catch (err) {
-					const reason = err instanceof Error ? err.message : String(err);
-					if (message.deliveryAttempt >= maxAttempts) {
-						await doAck(
-							client,
-							pending,
-							message.messageId,
-							message.leaseId,
-							emit,
-						);
-						deadLettered += 1;
-						emit({
-							type: "messaging.dead_lettered",
-							topic: message.topic,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: "max_delivery_attempts",
-						});
-						emit({
-							type: "messaging.delivery.permanent_failure",
-							topic: message.topic,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: reason || "max_delivery_attempts",
-						});
-					} else {
-						await doNack(
-							client,
-							pending,
-							message.messageId,
-							message.leaseId,
-							reason,
-							emit,
-						);
-					}
+					continue;
 				}
+				await live.ack(message.messageId, message.leaseId);
+				handled += 1;
 			}
-			return { handled, deadLettered };
+			return { handled, deadLettered: 0 };
 		},
 
-		ack(messageId, leaseId) {
+		async ack(messageId, leaseId) {
 			const id = parseMessagingMessageId(String(messageId));
 			const lease = parseMessagingLeaseId(String(leaseId));
-			if (!pending.has(`${id}::${lease}`)) {
-				throw new MessagingDeliveryError(`no inflight dapr message ${id}`);
+			const context = await pending.settle(id, lease, "ack", (value) =>
+				client.ack(String(id), value.group),
+			);
+			try {
+				emit({ type: "messaging.acked", topic: context.topic, messageId: id });
+			} catch {
+				throw new MessagingSettlementCommittedError("ack", id, lease);
 			}
-			pendingOps.push(doAck(client, pending, id, lease, emit));
 		},
 
-		nack(messageId, leaseId, reason) {
+		async nack(messageId, leaseId, reason) {
 			const id = parseMessagingMessageId(String(messageId));
 			const lease = parseMessagingLeaseId(String(leaseId));
-			if (!pending.has(`${id}::${lease}`)) {
-				throw new MessagingDeliveryError(`no inflight dapr message ${id}`);
+			const context = await pending.settle(id, lease, "nack", (value) =>
+				client.nack(String(id), value.group),
+			);
+			try {
+				emit({
+					type: "messaging.nacked",
+					topic: context.topic,
+					messageId: id,
+					reason: reason ?? "nack",
+				});
+			} catch {
+				throw new MessagingSettlementCommittedError("nack", id, lease);
 			}
-			pendingOps.push(doNack(client, pending, id, lease, reason, emit));
 		},
 
 		events() {
 			return eventLog.slice();
 		},
-
-		async flush() {
-			await Promise.all(pendingOps.splice(0, pendingOps.length));
-		},
 	};
 
 	return Object.freeze(live);
-}
-
-async function doAck(
-	client: DaprSidecarClient,
-	pending: Map<string, { topic: string; group: string }>,
-	messageId: MessagingMessageId,
-	leaseId: MessagingLeaseId,
-	emit: (e: Omit<MessagingEvent, "at" | "tenantId">) => void,
-): Promise<void> {
-	const key = `${messageId}::${leaseId}`;
-	const meta = pending.get(key);
-	if (!meta)
-		throw new MessagingDeliveryError(`no inflight dapr message ${messageId}`);
-	await client.ack(String(messageId), meta.group);
-	pending.delete(key);
-	emit({
-		type: "messaging.acked",
-		topic: parseTopicName(meta.topic),
-		messageId,
-	});
-}
-
-async function doNack(
-	client: DaprSidecarClient,
-	pending: Map<string, { topic: string; group: string }>,
-	messageId: MessagingMessageId,
-	leaseId: MessagingLeaseId,
-	reason: string | undefined,
-	emit: (e: Omit<MessagingEvent, "at" | "tenantId">) => void,
-): Promise<void> {
-	const key = `${messageId}::${leaseId}`;
-	const meta = pending.get(key);
-	if (!meta)
-		throw new MessagingDeliveryError(`no inflight dapr message ${messageId}`);
-	await client.nack(String(messageId), meta.group);
-	pending.delete(key);
-	emit({
-		type: "messaging.nacked",
-		topic: parseTopicName(meta.topic),
-		messageId,
-		reason: reason ?? "nack",
-	});
 }
 
 async function meter(

@@ -61,10 +61,7 @@ export async function runNativeKafkaPath(tenantId = "acme"): Promise<{
 	const batch = await bus.consume(topic, "workers" as never, {
 		maxMessages: 10,
 	});
-	for (const m of batch) bus.ack(m.messageId, m.leaseId);
-	if ((bus as { flush?: () => Promise<void> }).flush instanceof Function) {
-		await (bus as { flush: () => Promise<void> }).flush();
-	}
+	for (const m of batch) await bus.ack(m.messageId, m.leaseId);
 	return {
 		messaging: bus,
 		published: 2,

@@ -301,63 +301,36 @@ Delivering through HoBo CD changed the verb for anyone who runs it by hand:
 |---|---|
 | `--wait` waited for READY | `--wait` waits for READY, then verifies and qualifies; it needs the target's probe origin (`HOBO_CI_RELAY_PREVIEW_URL` or `HOBO_CI_RELAY_URL`) and is refused without it (`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`) |
 | `--target production` deployed any ref | it needs `--sha`, and preview's qualification of that commit in the same journal (`HOBO_CI_DEPLOY_NOT_QUALIFIED`) |
-| a 15-minute wait | a 20-minute wait; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
+| a 15-minute wait | a 20-minute driving budget checked between passes; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
 | — | new codes: `HOBO_CI_DEPLOY_INCOMPLETE`, `HOBO_CI_DEPLOY_VERIFICATION_FAILED`, `HOBO_CI_DEPLOY_NOT_QUALIFIED`, `HOBO_CI_DEPLOY_SOURCE_UNPINNED`, `HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`, `HOBO_CI_DEPLOY_DELIVERY_INVALID`, `HOBO_CI_DEPLOY_FREIGHT_REFUSED`, `HOBO_CI_DEPLOY_PROMOTION_REFUSED` |
 
-**Production is deployed through `hobo cd` with the owner's store session.**
-The relay's store coordinates live only in the owner's own secret store (the
-`HOBO_CI_SECRET_STORE_BINDING` entry), never in the repository, an Actions
-secret or variable, or an environment variable, so
-[`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
-deploys nothing on a push. On a push that changes this package or a workspace
-package it is built from (its pnpm-lock closure,
-`scripts/ci/relay-deploy-gate.mts`) its gate posts a notice to deploy through
-`hobo cd` (`hobo ci deploy --build prebuilt`, see [BOOTSTRAP.md](BOOTSTRAP.md))
-after HoBo MCP's `choose_secret_store`. A `workflow_dispatch` run starts the
-protected job, whose `hobo` commands stop with
-`HOBO_CI_SECRET_STORE_SESSION_REQUIRED` unless an owner store session is
-established for them:
+An in-flight provider operation can outlast the budget. The relay does not
+durably fence it across lease expiry, processes or restarts, so inspect the
+provider and CD journal to establish its outcome before another deploy.
 
-0. A `route` job picks the runner first, as `hobo-ci.yml` does (the fleet
-   while it takes jobs, an enrolled box, else GitHub-hosted).
-1. An unprotected `gate` job reads no binding: it decides from the event and
-   the changed paths, and the protected `deploy` job starts only on a manual
-   run. No repository variable or secret configures the relay. The binding
-   lives in the owner's store, written there by `hobo ci secret-store provision`
-   after the owner claims the chosen store, or by `hobo ci secret-store connect`
-   ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
-   [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
-2. *Verify the protected environment and secret store connection*: both jobs
-   first require GitHub API proof of an exact `main`-only custom deployment
-   branch policy. The deploy job names
-   `hobo-ci-deploy` and selects only the reader check. With
-   `permissions: id-token: write`, it signs in as `hobo-ci-deploy-reader` at its
-   own audience, reads `VERCEL_TOKEN` without logging the value, requires exactly
-   Viewer membership in the deploy project, requires HTTP 403 from the relay-
-   folder listing and direct token read, and requires HTTP 404 for its own
-   relay-project membership. The app-credentials job names
-   `hobo-ci-app-credentials` and selects only writer verification before deposit:
-   sign-in at its own audience, HTTP 403 from deploy-project listing and token
-   reads, and HTTP 404 for its own deploy-project membership. Verification never
-   writes a probe secret. Each issued session is revoked and every other scope
-   answer fails closed. The deploy-token read never signs in as the writer.
-   Until the owner provisions and commits the complete binding, no deploy token
-   is read. Branch protection can require named jobs, not these steps.
-   `Decide whether to deploy` is the canonical push check; a credential-free
-   skip leaves the reader unverified. Once the binding is complete, require
-   `Deploy the hosted CI relay (production)` when reader and relay verification
-   are required on that path. The writer job runs only through the manual
-   `app-credentials.yml` caller and is not a push check. A skipped job is not
-   successful verification. See
-   [the production evidence obligation](CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
-3. *Deploy the relay*: `hobo ci deploy --build prebuilt --sha "$GITHUB_SHA"`,
-   preview then production, with the deploy token the job reads as
-   `hobo-ci-deploy-reader`. Preview builds this checkout once and stages it;
-   production promotes that same build and is verified at the Yard's
-   production domain (`/healthz` names the commit, `/readyz` answers 200),
-   rolling back when that fails
-   ([above](#deploying-the-relay-with-hobo)). Vercel's Git integration is
-   never connected. Each command's exit status is its step's.
+**The relay deploys only through HoBo with the owner's store session.**
+The relay's store coordinates live only in the owner's own secret store (the
+`HOBO_CI_SECRET_STORE_BINDING` entry), and so does the Vercel deploy token
+(`owner://HOBO_CD_VERCEL_TOKEN`, kept by `hobo cd up`): never in the
+repository, an Actions secret or variable, or an environment variable. No
+GitHub Actions job can hold that session, so no workflow deploys the relay:
+[`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
+has no push or manual trigger and keeps only the reusable `app-credentials`
+job. Deploy from an owner session (HoBo MCP's `choose_secret_store`, then
+`hobo ci deploy --build prebuilt`, see [BOOTSTRAP.md](BOOTSTRAP.md)): preview
+builds the checkout of `--sha` once and stages it; production promotes that
+same build and is verified at the Yard's production domain (`/healthz` names
+the commit, `/readyz` answers 200), rolling back when that fails
+([above](#deploying-the-relay-with-hobo)). Without a session every real deploy
+refuses with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` before anything is sent;
+with a session whose store holds no token, with `HOBO_CI_DEPLOY_AUTH_REQUIRED`
+pointing at `hobo cd up`. Vercel's Git integration is never connected.
+
+A relay left behind its sources is raised, not silent: the
+[CI health monitor](../../docs/ci/health-monitor.md) compares the commit the
+relay's `/healthz` names with the default branch and raises H11 when a later
+commit changed this package or a workspace package it is built from (its
+pnpm-lock closure, `scripts/ci/relay-inputs.mts`).
 
 [`.github/workflows/app-credentials.yml`](../../.github/workflows/app-credentials.yml)
 deposits GitHub App credentials: it reads the one-time manifest code from the
@@ -439,8 +412,9 @@ only. No `GITHUB_TOKEN`: `HOBO_CI_ADOPT_AUTH_REQUIRED` (it never reads
 
 ##### The adopt time budget
 
-The whole command runs against one deadline, so the deploy job fits the
-20-minute cap every workflow job has (`scripts/test/workflow-job-timeouts.test.ts`).
+The command uses one deadline for its stage budgets. The workflow also has a
+20-minute job cap (`scripts/test/workflow-job-timeouts.test.ts`); an in-flight
+operation can outlast its stage budget.
 `--deadline <ISO-8601 time with a zone>` names it, `--budget <minutes>` (1 to
 20) counts it from now, the earlier wins, the default is 12 minutes and no
 deadline lies more than 20 minutes away (`RELAY_ADOPT_BUDGET` in
@@ -468,12 +442,8 @@ None of them changes anything on Vercel, and the deployment is not lost: the
 next push to `main`, or a re-run of the workflow for the same commit, adopts
 it (the CD journal keeps the in-flight promotion). The workflow prints the
 adoption result and records it in the job summary even when the command fails,
-then preserves its nonzero status. In the relay deploy
-workflow the gate step (`scripts/ci/relay-deploy-gate.mts`, right after
-checkout) sets the deadline to the job's 20 minutes less a 3-minute margin,
-so the install and build come out of the adopt budget and the command ends
-with its typed reason before GitHub would kill the job; the adopt step's own
-timeout is only a backstop that cannot fire first.
+then preserves its nonzero status. The adopt step's timeout can still fire if
+an in-flight operation does not return.
 
 Stated, not hidden: `/readyz` answers 503 until the relay can read its store,
 so production does not qualify until the store's folder is filled (the old
@@ -486,7 +456,7 @@ and the message says so. Exercised against recorded-shape GitHub answers, fake
 probes and a temporary journal (`packages/hobo/test/ci-relay-adopt.test.ts`);
 no live adoption has run.
 
-HoBo CD delivery with a deploy token stays the by-hand path below.
+HoBo CD delivery from the owner's store session is the by-hand path below.
 
 By hand, for a preview or to read a plan:
 
@@ -495,16 +465,18 @@ By hand, for a preview or to read a plan:
 hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… \
   --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# A real run reads VERCEL_TOKEN from the environment. Preview is the default.
-VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref <branch> --team team_…
+# A real run reads the deploy token through the owner's store session
+# (HoBo MCP's choose_secret_store first). Preview is the default.
+hobo ci deploy --cwd packages/ci-vercel --ref <branch> --team team_…
 
 # Verify and qualify it (needs HOBO_CI_RELAY_PREVIEW_URL), then promote it
 # (preview's qualification is read from the same CD journal, so keep HOBO_HOME).
-VERCEL_TOKEN=… HOBO_CI_RELAY_PREVIEW_URL=https://… hobo ci deploy \
+HOBO_CI_RELAY_PREVIEW_URL=https://… hobo ci deploy \
   --cwd packages/ci-vercel --ref main --sha <commit> --team team_… --wait
 ```
 
-It needs a Vercel access token for the project's scope and Vercel's GitHub
+It needs the owner's store session holding a Vercel access token for the
+project's scope (`hobo cd up` keeps it) and, for `--build git`, Vercel's GitHub
 integration able to read the repository. `--set` takes only the `env.*` fields
 of `relayConfig` and the inputs of the bindings the Camp chooses; a `secret.*`
 field, a setting the Yard already sets, an undeclared name, a storage
@@ -684,10 +656,8 @@ but refused by their parser). Entries the relay does not use are never named.
 | `VALKEY_URL`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `BLOB_STORE_ID` | the config service, optional | members the environment does not bind (an Aiven Valkey URL is stored here) |
 | `HOBO_CI_CACHE_OFFERS_JSON` | the config service or project env, optional | the declared offers, budget caps and switch marks ([below](#the-cache-fleet)) |
 | `HOBO_CI_CACHE_MONTHLY_COMMANDS` | project env, optional | Upstash's allowance in the default offers |
-| `HOBO_CI_FLEET_REPORTERS_JSON` | the config service, optional | the fleet reporters whose signed verdict reports the relay accepts: id, Ed25519 public key, account, labels; at most eight per account ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment)). Unset, every report is refused |
-| `HOBO_CI_FLEET_VERDICT_SERVING` | the config service, optional | `off` is the fleet verdict kill switch: reads block nothing, reports answer 503 |
-| `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` | the config service, optional | verdict-blocked minutes per label per 24-hour window before the label is served open; 240 |
 | `HOBO_CI_EVENTS_URL`, `HOBO_CI_EVENTS_TENANT` | project env, optional | relay failures as CloudEvents |
+| `HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING`, `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` | retired | read by nothing; a config service that still holds one is accepted and the key ignored ([Fleet verdicts (retired)](#fleet-verdicts-retired)) |
 | Every `RelayRuntimeConfig` key | the config service | [Config service](CONFIG-SERVICE.md#what-the-folder-holds); `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` (32 random bytes, base64url) is required with `HOBO_CI_SANDBOX_ENABLED` |
 
 No `DATABASE_URL*` or Neon variable is read.
@@ -829,22 +799,6 @@ table is in [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#keys-values-and-t
   deployment, 24 hours. Missing is `starting`; a failure newer than the last
   success, or no success for 45 minutes, is `failing`, and `/readyz` answers
   503.
-- **Fleet verdicts** (`src/fleet-verdict-cache.ts`, the verdict store of
-  `@hobo/ci-gh-actions` on the cache;
-  [ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment)). Per
-  repository: each enrolled reporter's last signed report until it expires
-  (at most 180 seconds), each reporter's `FleetReporterState` for a day after
-  its last report (the replay guard), and the `FleetVerdictAllowance` for a
-  day from its window's start. The hosted relay keeps, agrees and serves; the
-  box relay decides. `GET /v1/fleet/verdicts/{owner}/{repo}` serves a label
-  blocked only while every reporter enrolled for it agrees, and not once its
-  daily allowance is spent; a read is one cache round trip, none for an
-  unconnected repository. `GET /v1/fleet/reporters/{owner}/{repo}` shows the
-  reporters and the allowance to a workflow of that repository (its OIDC
-  token). Losing the cache reads as "nothing blocked", which is what runner
-  routing assumes without a verdict; the reporters send again within a
-  minute, the replay guard resumes from the next report and the allowance
-  window restarts.
 - **Sessions, OAuth `state`, App installation**: `createStatelessAppOnboarding`
   from `@hobo/ci-gh-actions`. Records are named by an HMAC under a key derived
   from `HOBO_CI_SESSION_KEY` and, where they hold a credential, sealed with
@@ -924,6 +878,38 @@ pass already assumes), `src/function-limits.ts` holds the same number, and
 an MCP client waits by default. `test/function-limits.test.ts` fails if the
 two numbers differ. The server reads through the store's `observer()`, and
 `wait_for_events` reads the store's change ring.
+
+### Owner sign-in
+
+`/v1/owner-login/*` lets a restarted HoBo process reconnect to this relay with
+one GitHub confirmation instead of the owner setup form
+(`createRelayOwnerLogin` in `@hobo/ci-gh-actions`, mounted by
+`src/stateless-composition.ts`). `POST /v1/owner-login/device` starts GitHub's
+device flow with the App's client id and returns GitHub's user code with a
+device code the relay sealed (AES-256-GCM, key derived by HKDF from
+`HOBO_CI_SESSION_KEY`), so only the relay can redeem it. `POST
+/v1/owner-login/token` redeems it at GitHub, checks the GitHub account against
+the installations of `HOBO_CI_BOOTSTRAP_ACCOUNT_ID`'s control credentials
+(`relayOwnerAccount`: the installation's user, or an active administrator of its
+organization, through the App's `members: read`), revokes the user token with the
+App's client secret and returns an eight-hour sealed session. `POST
+/v1/owner-login/credentials` takes that session as a bearer and resolves
+`github-app://<owner>/<repo>` to an installation token for a repository the
+account binds, or `owner://HOBO_CI_ACCOUNT_TOKEN` to a 15-minute sealed
+account credential that the account API (and the relay's MCP server) accept
+with the account's scopes. Any other entry is `not_resolvable`: the relay never
+returns its App private key or a stored entry. Nothing is written to the cache
+or the config service; every value is sealed and checked statelessly, and a
+configuration that drops the account ends its sessions. Refusals follow RFC 8628
+(`authorization_pending`, `slow_down`, `access_denied`, `expired_token`) plus
+`not_owner`, `not_configured`, `device_flow_unavailable`, `session_required`,
+`not_bound`, `not_resolvable`, `invalid_request` and `github_refused`. The
+messages are `relay_owner_login.proto` with `relay_owner_login.cue` in
+`@hobo/ci-gh-actions`; `contracts/relay-owner-login.provider.test.ts` verifies
+HoBo's consumer pact (`packages/hobo/contracts/relay-owner-login.pact.json`)
+against the composed relay, and `test/stateless-owner-login.test.ts` checks that
+the account credential reaches the account API and expires. A live GitHub
+confirmation is a release check.
 
 ### Setup mode
 
@@ -1071,13 +1057,30 @@ The isolated Sandbox runner integration is configured via
 `HOBO_CI_SANDBOX_ENABLED=1`, `HOBO_CI_SANDBOX_TEAM_ID`,
 `HOBO_CI_SANDBOX_PROJECT_ID`, `HOBO_CI_SANDBOX_ISSUER` (the pinned Vercel
 team issuer), and `HOBO_CI_SANDBOX_DOMAINS_JSON`
-(an explicit hostname allowlist). GitHub runner setup, checkout, Node setup,
+(an explicit hostname allowlist). `HOBO_CI_SANDBOX_PROVIDER=agent37` selects
+the Agent37 guest driver instead of Vercel Sandbox (the default). Agent37
+receives an injected client and fails closed when driver options are absent.
+Discovery adopts only a running instance whose lease identity, pinned template,
+type, region, resources, and network still match the requested pool.
+The driver copies the domains into `network.allow` only after validating 1–100
+unique lowercase DNS hostnames or leading-label wildcards; URLs, addresses,
+empty lists, `allow-all`, and `deny-all` are refused. Wildcard bases require at
+least three DNS labels, rejecting public-suffix patterns such as `*.com`,
+`*.co.uk`, and `*.github.io`. Agent37 interprets a leading `*.` entry as the apex
+and its subdomains. This path has no separate
+proxy VM. The single-use GitHub JIT travels only in the named staging exec's
+HTTPS body; the background start exec contains a constant script, deletes the
+0600 staging file before runner launch, and uses a scrubbed environment. Tests
+cover the full lifecycle through `@hobo/provider-agent37/fake`. No production
+Agent37 egress observation has been captured, so this channel is built and
+contract-tested, not production-proven.
+GitHub runner setup, checkout, Node setup,
 and artifact transfer can require `github.com`, `api.github.com`,
 `codeload.github.com`, `raw.githubusercontent.com`, `nodejs.org`,
 `release-assets.githubusercontent.com`, `*.actions.githubusercontent.com`,
 and `*.blob.core.windows.net`. Add the hosts used by each workflow's own
 dependencies and redirect targets; this list does not cover every workflow.
-The only permitted wildcard patterns are
+On the Vercel path, the only permitted wildcard patterns are
 `*.actions.githubusercontent.com` and `*.blob.core.windows.net`, which GitHub
 documents for runner traffic. The Azure Blob suffix includes third-party storage
 accounts; enabling it permits job traffic to those accounts as well.
@@ -1150,16 +1153,10 @@ embedded hosted bridge still supplies and enforces its lease timeout.
 service, the cache, the execution host and the repair evidence (see the probes
 in [The stateless relay](#the-stateless-relay)).
 
-After Vercel promotes a deploy, `relay-deploy.yml` also probes the relay at its
-**public origin** (the default environment's `relayOrigin` in `.hobo/ci.json`,
-`https://hobo-ci.vercel.app`), not the deployment URL, which may be protected
-and answer 401: step *Probe the fleet verdict at the public origin* requires
-`GET /v1/fleet/verdicts/<this repository>` to answer 200 with this
-repository's lower-case `repository` and a `blocked` object. The deploy has
-already happened, so the step reports: a red step is the signal to roll back
-in the order of [Fleet verdict operations](#fleet-verdict-operations). Route
-jobs read a relay that does not answer as no relay, so a bad deploy never
-stops a run.
+After a production deploy, `hobo ci deploy` requires the production domain's `/healthz`
+to name the commit and its `/readyz` to answer 200. It probes no other route: the fleet
+verdict probe went with the verdict routes
+([Fleet verdict operations](#fleet-verdict-operations)).
 
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
 [runner queue runbook](../ci/RUNNER-QUEUE.md)).
@@ -1190,91 +1187,17 @@ error or its cause is a database refusal, the line also carries its five-charact
 
 ## Fleet verdict operations
 
-The runbooks for the fleet verdict channel ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180-amendment) and its
-[routing rules](../../docs/design/adr/fleet-verdict.md#adr-0180-rules)). The box relay
-decides whether a fleet label is blocked; this relay keeps signed reports, agrees them and serves the
-verdict at `GET /v1/fleet/verdicts/{owner}/{repo}`. Every gate passed is recorded in
-[finding 145](../../docs/ci/findings/0145-fleet-verdict-channel-operating-record.md).
+This relay no longer serves fleet verdicts. `GET`/`PUT /v1/fleet/verdicts/{owner}/{repo}` and
+`GET /v1/fleet/reporters/{owner}/{repo}` answer 404, nothing is kept on the cache for them, and the
+reporter enrollment, kill switch and daily allowance are gone
+([ADR-0181](../../docs/design/adr/routing-slips.md#adr-0181), which supersedes ADR-0180's hosted
+transport). The box relay hands each run
+its route instead, as a routing slip at `refs/hobo/routing-slip`, which the route job reads with its own
+`GITHUB_TOKEN`; nothing on this relay is asked.
 
-**Order matters.** The relay's runtime configuration is a strict schema: a relay that does not know a key
-refuses the whole configuration at cold start and answers 503. So the relay learns a key (a merged and
-deployed change) before anyone sets it, and loses it (removal from the config service) before the change
-that taught it is reverted.
-
-### Enroll a box
-
-1. On the box: `node packages/ci-gh-actions/scripts/fleet-reporter-enroll.mts --key-file <the key file>
-   --id <reporter id> --account <account id> --labels hobo,hobo-trunk`. The key file is
-   `HOBO_CI_MESH_KEY_FILE` (default `mesh-node.key` beside the journal); the script makes it with mode 600
-   if there is none and prints one JSON entry carrying the **public** key only.
-2. Add that entry to `reporters` in `HOBO_CI_FLEET_REPORTERS_JSON` in the config service (`hobo ci`; at most
-   eight per account). The account must be the one the repository is connected under, and the labels only
-   those the box serves: anything else is refused `not-found` or `invalid-report`.
-3. On the box set `HOBO_CI_FLEET_VERDICT_MODE=shadow`, `HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN=https://hobo-ci.vercel.app`,
-   `HOBO_CI_FLEET_REPORTER_ID=<reporter id>`, the declared pools (`HOBO_CI_FLEET_EXTERNAL_POOLS_JSON`, e.g.
-   the ARC pool `[{"labels":["hobo","hobo-trunk"],"runnerNamePrefix":"hobo-runner-","maxRunners":1}]`) and
-   `HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS` (set it above the pools' size, or an ARC runner that is free keeps
-   the label open), then restart the daemon. Settings are listed in the
-   [runner queue runbook](../ci/RUNNER-QUEUE.md).
-4. Check: `GET /v1/fleet/reporters/{owner}/{repo}` (a GitHub Actions OIDC token whose audience is this
-   origin; the CI health monitor makes this call) shows the reporter live in `shadow`. A reporter that stays
-   silent was refused: the relay logs `hobo_ci_fleet_verdict_refused` with the reason (`unknown-reporter`,
-   `bad-signature`, `clock-skew`, `replayed`, `not-found`, `invalid-report`).
-
-**Take a box out for maintenance.** Agreement is unanimous among the enrolled reporters that serve a label,
-and a silent reporter keeps its labels open. An enrolled box that is switched off therefore can never let
-the others block. Remove its entry from `HOBO_CI_FLEET_REPORTERS_JSON` for the maintenance and add it back
-after.
-
-**A key that is lost, regenerated or stolen.** Remove the entry (a stolen key can block only its account's
-connected repositories on its enrolled labels, bounded by the allowance), then enroll again with the new
-key. Reports signed with the old one are refused `bad-signature` and the monitor raises H4.
-
-### Switches
-
-| Switch | Where | Effect |
-| --- | --- | --- |
-| `HOBO_CI_FLEET_VERDICT_SERVING=off` | the config service (this relay) | Kill switch: reads answer "nothing blocked", reports answer 503 |
-| `HOBO_CI_FLEET_VERDICT_MODE=shadow` or `off` | the box | `shadow` reports what it would block, which this relay keeps but never serves; `off` stops the reporter |
-| `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` | the config service | The allowance: verdict-blocked minutes per label per 24-hour window (default 240) before the label is served open |
-| `HOBO_CI_ROUTE=fleet` | repository variable | Pins every routed run to the fleet; no workflow asks the relay |
-
-**What bounds cost.** The allowance bounds verdict-blocked *time* (two windows' worth across a window
-boundary or a lost cache), not money: the money is that time times the runs that start. A blocked main push
-costs on the order of 100 billed minutes. The monitor's H8 raises paid minutes per window, split by what
-refused the fleet, and H10 raises a spent allowance.
-
-**A GitHub Actions budget is not a routing control.** The route job and the required pull-request gate run on
-GitHub-hosted runners, so a spent budget stops all CI, including the jobs that would route around the fleet.
-Set the budget's alerts well below its limit and treat an alert as an incident; never rely on the limit to
-cap overflow.
-
-### Roll back
-
-Any step: use its own switch above. A relay that does not answer never stops a run (route jobs read it as
-no relay), so rollback is not urgent.
-
-To take the code out: first remove `HOBO_CI_FLEET_REPORTERS_JSON` and `HOBO_CI_FLEET_VERDICT_SERVING` (and
-`HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES`, if set) from the config service, then revert on `main`.
-Reverting first would make the older relay refuse its configuration at cold start.
-
-A deploy whose step *Probe the fleet verdict at the public origin* in `relay-deploy.yml` is red is rolled
-back the same way: promote the previous deployment in Vercel, or revert, after removing any key the older
-relay does not know.
-
-### Game day: a forced block
-
-Run with the box's reporter in `shadow` first (G3), then in `report` (G5).
-
-1. Wait until CI is idle on the box: the rule blocks only an idle box (a box busy with CI's own jobs is never
-   blocked).
-2. Make sure the rest of the fleet is below the minimum free runners: with the minimum above the declared
-   pools' size it always is; otherwise hold their runners with a dispatched job for the same five minutes.
-3. On the box: `node packages/ci-gh-actions/scripts/hold-memory.mts --mb <enough to fail admission> --seconds 300`.
-   It prints `hold_memory_held`, then `hold_memory_released`.
-4. Evidence: the status route shows the label's `lastBlockedAt` within 90 s of `hold_memory_held` and
-   `lastClearedAt` within 60 s of `hold_memory_released`. In `shadow` the served verdict
-   (`GET /v1/fleet/verdicts/{owner}/{repo}`) stays open throughout. In `report`, a run dispatched during the
-   hold gets a route notice with `"refusedBy":"relay"` and its jobs use GitHub-hosted runners, and the next
-   run dispatched after the hold stays on the fleet.
-5. Record the times in finding 145.
+`HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING` and
+`HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` are retired keys: their `RelayRuntimeConfig` fields are
+reserved, and the loader drops them before it parses the configuration, so a config service that still
+holds one starts the relay as if it did not. The history of the channel, gates G1 to G7 included, stays
+in [finding 145](../../docs/ci/findings/0145-fleet-verdict-channel-operating-record.md) and
+[ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180).

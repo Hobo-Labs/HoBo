@@ -32,8 +32,8 @@ export function createNetbirdOverlay(options?: {
 	function client(): NetbirdApiClient | null {
 		if (options?.api) return options.api;
 		if (!managementUrl) return null;
-		const accessToken = options?.accessToken ?? process.env.NETBIRD_TOKEN;
-		const setupKey = options?.setupKey ?? process.env.NETBIRD_SETUP_KEY;
+		const accessToken = options?.accessToken;
+		const setupKey = options?.setupKey;
 		return createNetbirdApiClient({
 			managementUrl,
 			...(accessToken !== undefined && accessToken.length > 0
@@ -104,7 +104,7 @@ export function createNetbirdOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"netbird: set NETBIRD_MANAGEMENT_URL + NETBIRD_SETUP_KEY (or accessToken) for live join",
+					"netbird: set NETBIRD_MANAGEMENT_URL and pass setupKey (or accessToken) from the owner's store (owner://NETBIRD_SETUP_KEY) for live join",
 				);
 			}
 
@@ -185,7 +185,7 @@ export function createNetbirdOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"netbird DNS requires management URL + access token (NETBIRD_TOKEN)",
+					"netbird DNS requires management URL + accessToken from the owner's store (owner://NETBIRD_TOKEN)",
 				);
 			}
 			await options?.metering?.emit(

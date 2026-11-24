@@ -14,7 +14,6 @@ import {
 	ReconcileObservationRecordSchema,
 	ReconcileStatus,
 } from "../_generated/cd_pb.js";
-import { messageOf } from "../agent/errors.js";
 import {
 	CD_DEFAULTS,
 	CD_EVENTS,
@@ -44,7 +43,11 @@ function subscription(campId: string) {
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only EventStoreError codes are read.
 function codeOf(error: unknown): string {
-	return error instanceof EventStoreError ? error.code : "";
+	try {
+		return error instanceof EventStoreError ? String(error.code) : "";
+	} catch {
+		return "";
+	}
 }
 
 function principalFor(reconcilerId: string): PrincipalRef {
@@ -119,7 +122,11 @@ export function createFeedJournal(
 					`Camp ${input.campId} is leased by another reconciler`,
 					input.campId,
 				);
-			return feedRefusal("store-unavailable", messageOf(error), input.campId);
+			return feedRefusal(
+				"store-unavailable",
+				"The CD journal is unavailable.",
+				input.campId,
+			);
 		}
 	}
 
@@ -155,7 +162,11 @@ export function createFeedJournal(
 					`lease fence ${lease.fence} on ${lease.campId} is no longer current`,
 					lease.campId,
 				);
-			return feedRefusal("store-unavailable", messageOf(error), lease.campId);
+			return feedRefusal(
+				"store-unavailable",
+				"The CD journal is unavailable.",
+				lease.campId,
+			);
 		}
 	}
 
@@ -216,7 +227,11 @@ export function createFeedJournal(
 						`status append refused for fence ${lease.fence}`,
 						lease.campId,
 					);
-				return feedRefusal("store-unavailable", messageOf(error), lease.campId);
+				return feedRefusal(
+					"store-unavailable",
+					"The CD journal is unavailable.",
+					lease.campId,
+				);
 			}
 		}
 		return feedRefusal(
@@ -266,7 +281,11 @@ export function createFeedJournal(
 					`checkpoint refused for fence ${lease.fence}`,
 					lease.campId,
 				);
-			return feedRefusal("store-unavailable", messageOf(error), lease.campId);
+			return feedRefusal(
+				"store-unavailable",
+				"The CD journal is unavailable.",
+				lease.campId,
+			);
 		}
 	}
 

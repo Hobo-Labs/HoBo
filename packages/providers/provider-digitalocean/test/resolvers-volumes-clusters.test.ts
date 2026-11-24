@@ -60,7 +60,7 @@ interface RecordedCall {
 const VOLUMES = "/v2/volumes";
 const CLUSTERS = "/v2/kubernetes/clusters";
 const TOKEN = "dop_v1_fakepersonalaccesstoken0123456789abcdef";
-const CREDENTIAL_REF = "env://DIGITALOCEAN_TOKEN";
+const CREDENTIAL_REF = "owner://DIGITALOCEAN_TOKEN";
 
 function json(status: number, payload: JsonValue): TransportResponse {
 	return {

@@ -196,7 +196,9 @@ describe("createHostingTransitionRealizer", () => {
 			}),
 		);
 		expect(restored.status).toBe(ReconcileStatus.BLOCKED);
-		expect(restored.reasons[0]?.message).toBe("verification failed");
+		expect(restored.reasons[0]?.message).toBe(
+			"The hosting transition restored the source; the new version did not take effect.",
+		);
 		const settledBack = transitionStatus(
 			state({
 				phase: HostingTransitionPhase.SETTLED,
@@ -204,6 +206,47 @@ describe("createHostingTransitionRealizer", () => {
 			}),
 		);
 		expect(settledBack.status).toBe(ReconcileStatus.BLOCKED);
+	});
+
+	it.each([
+		"observe",
+		"converge",
+	] as const)("redacts a thrown coordinator %s failure", async (phase) => {
+		const script = scripted([state({})]);
+		const base = script.factory({ context: { fenceToken: 7n } });
+		const failing = {
+			...script,
+			factory: () => ({
+				...base,
+				load: async () => {
+					throw new Error("synthetic-private-provider.invalid");
+				},
+				propose: async () => {
+					throw new Error("synthetic-private-provider.invalid");
+				},
+			}),
+		};
+		const h = harness(() => PLAN, failing);
+		const obs = await h.realizer[phase](h.input, h.ctx);
+		expect(obs.status).toBe(ReconcileStatus.BLOCKED);
+		expect(obs.reasons[0]?.code).toBe("realize-failed");
+		expect(JSON.stringify(obs)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
+	});
+
+	it("redacts a provider-supplied blocked transition reason", () => {
+		const verdict = transitionStatus(
+			state({
+				phase: HostingTransitionPhase.BLOCKED,
+				blockedReason: "synthetic-private-provider.invalid",
+			}),
+		);
+		expect(verdict.status).toBe(ReconcileStatus.BLOCKED);
+		expect(verdict.reasons[0]?.code).toBe("realize-blocked");
+		expect(JSON.stringify(verdict)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
 	});
 
 	it("a Set with no version change converges without touching the coordinator", async () => {
@@ -219,8 +262,9 @@ describe("createHostingTransitionRealizer", () => {
 		const obs = await h.realizer.converge(h.input, h.ctx);
 		expect(obs.status).toBe(ReconcileStatus.BLOCKED);
 		expect(obs.reasons[0]?.code).toBe("realize-failed");
-		expect(obs.reasons[0]?.message).toMatch(
-			/durable shared financial authority/u,
+		expect(obs.reasons[0]?.message).toBe(
+			"The hosting transition could not complete.",
 		);
+		expect(obs.reasons[0]?.remediation).toBeTruthy();
 	});
 });

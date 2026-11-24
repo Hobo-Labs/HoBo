@@ -1,3 +1,4 @@
+import { parseConsumerGroupId, parseTopicName } from "@hobo/core";
 import { first } from "@hobo/core/total-access";
 import { describe, expect, it } from "vitest";
 import {
@@ -27,14 +28,65 @@ describe("dapr live client path", () => {
 		expect(bus.fidelity).toBe("live");
 		expect(bus.client).toBe(client);
 
-		await bus.publish("events" as never, { hello: true });
+		await bus.publish(parseTopicName("events"), { hello: true });
 		const batch = await bus.consume("events" as never, "g1" as never);
 		expect(batch).toHaveLength(1);
 		expect(batch[0]?.body).toEqual({ hello: true });
-		bus.ack(first(batch).messageId, first(batch).leaseId);
-		await bus.flush?.();
+		await bus.ack(first(batch).messageId, first(batch).leaseId);
 		const again = await bus.consume("events" as never, "g1" as never);
 		expect(again).toHaveLength(0);
+	});
+
+	it("does not nack a handler whose acknowledgement result is unknown", async () => {
+		const original = createInMemoryDaprClient();
+		let acknowledgements = 0;
+		let rejections = 0;
+		const client = {
+			...original,
+			async ack() {
+				acknowledgements++;
+				throw new Error("reply lost");
+			},
+			async nack() {
+				rejections++;
+			},
+		};
+		const bus = createDaprMessaging({
+			config: defaultDaprRuntimeConfig("acme", "prod"),
+			client,
+		});
+		await bus.publish(parseTopicName("events"), { hello: true });
+		await expect(
+			bus.subscribe(
+				parseTopicName("events"),
+				parseConsumerGroupId("g1"),
+				async () => {},
+			),
+		).rejects.toMatchObject({ code: "MESSAGING_SETTLEMENT_UNKNOWN" });
+		expect({ acknowledgements, rejections }).toEqual({
+			acknowledgements: 1,
+			rejections: 0,
+		});
+	});
+
+	it("does not accept a lease from a previous adapter instance", async () => {
+		const client = createInMemoryDaprClient();
+		const config = defaultDaprRuntimeConfig("acme", "prod");
+		const firstBus = createDaprMessaging({ config, client });
+		const topic = parseTopicName("events");
+		const group = parseConsumerGroupId("g1");
+		await firstBus.publish(topic, { hello: true });
+		const old = first(await firstBus.consume(topic, group));
+		await client.nack(old.messageId, old.consumerGroup);
+		const nextBus = createDaprMessaging({ config, client });
+		const current = first(await nextBus.consume(topic, group));
+		expect(current.leaseId).not.toBe(old.leaseId);
+		await expect(nextBus.ack(old.messageId, old.leaseId)).rejects.toMatchObject(
+			{ code: "MESSAGING_DELIVERY" },
+		);
+		await expect(
+			nextBus.ack(current.messageId, current.leaseId),
+		).resolves.toBeUndefined();
 	});
 
 	it("actor host fidelity live with client; single-writer preserved", async () => {

@@ -225,6 +225,8 @@ The repo pre-commit hook is installed for you: the root `prepare` script points 
 npm run prepare-hooks
 ```
 
+The same setup registers two git merge drivers that `.gitattributes` names, so a merge of parallel branches never conflicts on derived values: `hobo-attestation-pins` merges `scripts/ci/attestation.mts` and rewrites `SHADOW_WORKFLOW_BLOB` and `SHADOW_PLAN_BLOB` to the blobs of the merged `.github/workflows/hobo-ci.yml` and `scripts/ci/attested-jobs.json`, and `hobo-error-catalog` regenerates `docs/ci/errors.md` from the merged sources. The pins stay committed security values; the driver only keeps them correct. When the workflow, the plan or a catalog source conflicts itself, the driver leaves its file conflicted; after resolving the rest, `node --experimental-strip-types --no-warnings scripts/ci/merge-driver.mts refresh` rewrites both from the working tree.
+
 `.githooks/pre-commit` then runs, through `scripts/run-script.mts`, the generated-files guard (`generated:guard`) and the staged impact-routed gate (`check:relevant:staged`), which selects the relevant subset of the architecture guard, tests, technical standards, docs linters, and docs freshness for the staged diff before each commit. The root-script gates need Node and installed dependencies but no package manager. A change under a workspace package selects the turbo package-test lane, which runs package scripts through pnpm, and a few root scripts (such as `install:check`) call pnpm themselves; without pnpm those gates fail and the commit is refused. `npm run architecture:guard:staged` runs before the heavier test suite so missing PACT/protobuf/CUE/parse/event evidence is caught locally instead of burning CI.
 
 ## Technical standards

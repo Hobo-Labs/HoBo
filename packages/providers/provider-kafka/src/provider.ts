@@ -1,5 +1,3 @@
-import { MESSAGING_WIT_INTERFACE } from "@hobo/core";
-
 import { type JsonValue, parseJsonValue } from "./json.js";
 
 import { KAFKA_PROVIDER_ID, publishCapabilityManifest } from "./manifest.js";
@@ -43,7 +41,7 @@ export function createKafkaProvider(
 
 	return Object.freeze({
 		id: KAFKA_PROVIDER_ID,
-		witExports: [MESSAGING_WIT_INTERFACE, "hobo:queue/queue@0.1.0"],
+		witExports: [],
 		capabilities: KAFKA_MESSAGING_CAPABILITIES,
 		capabilityManifest: () => publishCapabilityManifest(),
 		realize(input: { cluster?: JsonValue; topics?: readonly JsonValue[] }) {

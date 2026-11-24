@@ -353,8 +353,12 @@ describe("release-hobo affected image job", () => {
 	it("reuses the Fabric deps layer instead of always installing", () => {
 		expect(hoboWorkflow).toContain("Link deps layer or install");
 		expect(hoboWorkflow).toContain("deps-layer.mts check --require");
+		expect(hoboWorkflow).not.toContain('if [ -n "${HOBO_CI_DEPS_LAYER:-}" ]');
+		expect(hoboWorkflow).not.toMatch(
+			/- run: pnpm install --frozen-lockfile --config\.confirmModulesPurge=false/u,
+		);
 		expect(hoboWorkflow).toContain(
-			"reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install",
+			"reusing the runner's deps layer; skip pnpm install",
 		);
 		expect(hoboWorkflow).toContain(
 			"pnpm install --frozen-lockfile --config.confirmModulesPurge=false",

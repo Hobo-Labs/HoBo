@@ -60,6 +60,35 @@ lowest-common-denominator abstraction that hides the provider.
 - Design suite, ADRs and traceability under `docs/design/`; proofs under
   `src/draft/`; gates run through `pnpm agent:check`.
 
+## Delivery goal: CI fleet and owner setup
+
+HoBo CI runs this repository's jobs on HoBo's own fleet first and on
+GitHub-hosted runners only as overflow. The owner sets it up once, and nothing
+secret is kept on any machine.
+
+It is done when, measured on the live repository:
+
+1. Every pool takes jobs with capacity the router verified: the owner's own
+   machine (`hobo ci machine connect`), Agent37 on demand, the Hostinger ARC
+   fleet once the owner joins it during development, and GitHub-hosted. Each
+   CI Fabric run's routing notice names the tier it chose and, when it chose
+   GitHub-hosted, which HoBo pool refused and why.
+2. Over a rolling seven days, at least 80% of CI Fabric jobs run on HoBo tiers,
+   and every job on GitHub-hosted carries a routing notice that HoBo capacity
+   was refused or saturated.
+3. Over the same window, the median queue wait on HoBo tiers is below the
+   median on GitHub-hosted.
+4. Merge-queue CI Fabric runs finish within the queue's 16-minute limit at the
+   90th percentile.
+5. The owner chooses their secret store once, in a form shown in their own
+   session. After a restart, `hobo login --relay` reconnects with one browser
+   confirmation and no form.
+6. HoBo reaches GitHub only through HoBo's GitHub App. Agents store no secret,
+   identifier or environment variable, and deploy only with `hobo cd`.
+
+Merged pull requests are not evidence of any of these. The evidence is the
+routing notices, job timings and owner-session status the repository records.
+
 ## Capabilities and Constraints
 
 - Active design + executable contract/proof repository with a production

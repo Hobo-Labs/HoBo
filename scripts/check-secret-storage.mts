@@ -26,6 +26,49 @@ export const OWNER_STORE_PATH =
 
 export const PER_JOB_TOKEN = "GITHUB_TOKEN";
 
+export const GITHUB_APP_PATH =
+	"HoBo reaches GitHub only through its GitHub App: the owner installs the App HoBo prefills (hobo ci app create), its credentials live in the owner's store, and HoBo mints short-lived installation tokens from them. A workflow may also use its per-job GITHUB_TOKEN. Personal tokens, fine-grained tokens and a person's gh sign-in are rejected, with no exceptions (AGENTS.md).";
+
+const GITHUB_TOKEN_ENTRY =
+	/(?:owner:\/\/|["'`])((?:[A-Z0-9]+_)*(?:G[I]THUB|GH)(?:_[A-Z0-9]+)*_(?:TOKEN|P[A]T))\b/gu;
+const PERSONAL_GITHUB_TOKEN =
+	/\b(?:gh[p]_[A-Za-z0-9]{20,}|github_[p]at_[A-Za-z0-9_]{10,})/u;
+const PERSONAL_GITHUB_SIGN_IN =
+	/\bgh\s+auth\s+(?:token\b|login\b[^\n]*--with-token)/u;
+const PERSONAL_TOKEN_WORDS =
+	/\bGitHub\b[^\n]{0,60}\b(?:personal\s+access\s+tokens?|fine-grained\s+(?:personal\s+)?(?:access\s+)?tokens?|PATs?)\b|\b(?:personal\s+access\s+tokens?|fine-grained\s+(?:personal\s+)?(?:access\s+)?tokens?|PATs?)\b[^\n]{0,60}\bGitHub\b/iu;
+
+function githubPersonalTokenViolations(
+	file: string,
+	added: AddedLine,
+): Violation[] {
+	const at = { file, line: added.line };
+	const found: Violation[] = [];
+	if (!file.startsWith(".github/"))
+		for (const entry of added.text.matchAll(GITHUB_TOKEN_ENTRY))
+			if (entry[1] !== PER_JOB_TOKEN)
+				found.push({
+					...at,
+					message: `names the GitHub token entry ${entry[1]}. ${GITHUB_APP_PATH}`,
+				});
+	if (PERSONAL_GITHUB_TOKEN.test(added.text))
+		found.push({
+			...at,
+			message: `adds a personal GitHub token literal. ${GITHUB_APP_PATH}`,
+		});
+	if (PERSONAL_GITHUB_SIGN_IN.test(added.text))
+		found.push({
+			...at,
+			message: `uses a person's gh sign-in token. ${GITHUB_APP_PATH}`,
+		});
+	if (PERSONAL_TOKEN_WORDS.test(added.text))
+		found.push({
+			...at,
+			message: `asks for or describes a personal GitHub token. ${GITHUB_APP_PATH}`,
+		});
+	return found;
+}
+
 const WORKFLOW_EXPRESSION = /\$\{\{([\s\S]*?)\}\}/gu;
 const STORED_CONTEXT =
 	/\b(secrets|vars)\b(?:\s*\.\s*([A-Za-z_][A-Za-z0-9_-]*)|\s*\[\s*['"]([^'"]+)['"]\s*\])?/gu;
@@ -218,6 +261,11 @@ type StoringCommand = Readonly<{
 
 export const STORING_COMMANDS: readonly StoringCommand[] = [
 	{
+		pattern: /\bgh\s+auth\s+(?:token\b|login\b[^\n]*--with-token)/u,
+		what: "takes or hands over a person's GitHub sign-in token instead of HoBo's GitHub App",
+		outsideHoboCodeOnly: false,
+	},
+	{
 		pattern: /\bgh\s+(?:secret|variable)\s+(?:set|delete|remove)\b/u,
 		what: "creates or changes a GitHub Actions secret or variable",
 		outsideHoboCodeOnly: false,
@@ -383,6 +431,7 @@ export function secretStorageViolations(
 			const at = { file, line: added.line };
 			if (file.startsWith(".github/"))
 				violations.push(...workflowViolations(file, added));
+			violations.push(...githubPersonalTokenViolations(file, added));
 			if (registry && REGISTRY_AUTH.test(added.text))
 				violations.push({
 					...at,

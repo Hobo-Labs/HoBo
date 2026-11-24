@@ -20,7 +20,13 @@ it("runs the bound application through a real Rivet 3 HTTP actor", {
 		}>((resolve, reject) => {
 			const child = spawn(process.execPath, ["--import", loader, fixture], {
 				cwd: directory,
-				env: { PATH: process.env.PATH, NODE_ENV: "test" },
+				env: {
+					PATH: process.env.PATH,
+					NODE_ENV: "test",
+					TOKIO_WORKER_THREADS: "2",
+					NODE_OPTIONS: "--v8-pool-size=1",
+					UV_THREADPOOL_SIZE: "1",
+				},
 				detached: process.platform !== "win32",
 			});
 			let output = "";

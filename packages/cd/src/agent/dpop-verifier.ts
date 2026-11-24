@@ -4,7 +4,7 @@ import {
 	type VerifiedDpop,
 	verifyDpopProof,
 } from "./dpop.js";
-import { agentRefusal, messageOf } from "./errors.js";
+import { agentRefusal } from "./errors.js";
 import type { DpopReplayStore } from "./replay.js";
 
 export type DpopCheck = Readonly<{
@@ -56,13 +56,13 @@ export function createDpopProofVerifier(
 				if (!first)
 					return agentRefusal(
 						"dpop-replayed",
-						`DPoP jti ${verified.value.jti} was already used`,
+						"The DPoP proof was already used.",
 						check.reconcilerId,
 					);
-			} catch (error) {
+			} catch {
 				return agentRefusal(
 					"store-unavailable",
-					messageOf(error),
+					"The replay-protection journal is unavailable.",
 					check.reconcilerId,
 				);
 			}

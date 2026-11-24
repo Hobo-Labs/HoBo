@@ -7,6 +7,7 @@ import {
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
 import type { PrincipalRef } from "@hobo/core";
 import type { TelemetrySink } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { isJsonObject, isJsonString, jsonOf } from "./json.js";
 
 export function body<T extends Message>(
@@ -65,7 +66,7 @@ export function iso(ms: number): string {
 	return new Date(ms).toISOString();
 }
 
-export function emitCounter(
+export async function emitCounter(
 	sink: TelemetrySink | undefined,
 	point: Readonly<{
 		name: string;
@@ -74,17 +75,15 @@ export function emitCounter(
 		attributes: Readonly<Record<string, string>>;
 		value?: number;
 	}>,
-): void {
-	sink
-		?.metrics([
-			{
-				name: point.name,
-				kind: "counter",
-				value: point.value ?? 1,
-				unit: point.unit,
-				atMs: point.atMs,
-				attributes: point.attributes,
-			},
-		])
-		.catch(() => undefined);
+): Promise<void> {
+	await emitMetrics(sink, [
+		{
+			name: point.name,
+			kind: "counter",
+			value: point.value ?? 1,
+			unit: point.unit,
+			atMs: point.atMs,
+			attributes: point.attributes,
+		},
+	]);
 }

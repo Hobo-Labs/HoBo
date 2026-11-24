@@ -20,7 +20,7 @@ export type Tree = Readonly<{
 	workspaces: readonly Workspace[];
 }>;
 
-const ALWAYS = [
+export const CI_INPUTS: readonly RegExp[] = [
 	/^\.github\//,
 	/^mise\.lock$/,
 	/^\.gitmodules$/,
@@ -33,14 +33,14 @@ const ALWAYS = [
 	/^packages\/ci-gh-actions\/deploy\/ci-runner\//,
 	/^scripts\/(lib\/ci-runner-contract|ci-runner-preflight)\.mts$/,
 ];
-const CODE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+export const CODE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 const STATIC_IMPORT =
 	/\b(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?["']([^"'\n]+)["']/g;
 const DYNAMIC_IMPORT = /\bimport\s*\(\s*(?:(["'])([^"'\n]+)\1\s*\))?/g;
 const MODULE_URL =
 	/\bnew\s+URL\(\s*["'](\.[^"'\n]*)["']\s*,\s*import\.meta\.url/g;
 
-function candidates(base: string): string[] {
+export function candidates(base: string): string[] {
 	const stem = base.replace(/\.(?:[cm]?js|jsx)$/, "");
 	if (stem !== base)
 		return [base, `${stem}.ts`, `${stem}.tsx`, `${stem}.mts`, `${stem}.cts`];
@@ -55,11 +55,19 @@ function candidates(base: string): string[] {
 	];
 }
 
-function packageName(specifier: string): string {
+export function packageName(specifier: string): string {
 	const parts = specifier.split("/");
 	return specifier.startsWith("@")
 		? parts.slice(0, 2).join("/")
 		: (parts[0] ?? "");
+}
+
+export function literalSpecifiers(source: string): string[] {
+	return [
+		...[...source.matchAll(STATIC_IMPORT)].map((match) => match[1]),
+		...[...source.matchAll(MODULE_URL)].map((match) => match[1]),
+		...[...source.matchAll(DYNAMIC_IMPORT)].map((match) => match[2]),
+	].filter((specifier): specifier is string => Boolean(specifier));
 }
 
 export function reach(
@@ -91,16 +99,9 @@ export function reach(
 		if (!CODE.test(file)) continue;
 		const source = tree.read(file);
 		if (source === undefined) return { unscoped: `cannot read ${file}` };
-		const specifiers: string[] = [];
-		for (const match of source.matchAll(STATIC_IMPORT))
-			if (match[1]) specifiers.push(match[1]);
-		for (const match of source.matchAll(MODULE_URL))
-			if (match[1]) specifiers.push(match[1]);
-		for (const match of source.matchAll(DYNAMIC_IMPORT)) {
-			if (!match[2]) return { unscoped: `computed import() in ${file}` };
-			specifiers.push(match[2]);
-		}
-		for (const specifier of specifiers) {
+		if ([...source.matchAll(DYNAMIC_IMPORT)].some((match) => !match[2]))
+			return { unscoped: `computed import() in ${file}` };
+		for (const specifier of literalSpecifiers(source)) {
 			if (specifier.startsWith(".")) {
 				const base = posix.normalize(
 					posix.join(posix.dirname(file), specifier),
@@ -137,7 +138,7 @@ export function jobScope(
 	if (outside.length > 0 && lanes.mode === "all")
 		return { run: true, reason: lanes.reason };
 	const always = changed.find((path) =>
-		ALWAYS.some((pattern) => pattern.test(path)),
+		CI_INPUTS.some((pattern) => pattern.test(path)),
 	);
 	if (always)
 		return { run: true, reason: `CI or pin input changed: ${always}` };
@@ -228,14 +229,8 @@ export function readWorkspaces(): Workspace[] {
 	return workspaces;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-	const entries = process.argv.slice(2);
-	if (entries.length === 0) {
-		console.error("usage: job-scope.mts <entry file>... < changed-paths");
-		process.exit(2);
-	}
-	const input = readStdin();
-	const tree: Tree = {
+export function diskTree(): Tree {
+	return {
 		read: (path) => {
 			try {
 				return readFileSync(path, "utf8");
@@ -252,7 +247,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		},
 		workspaces: readWorkspaces(),
 	};
-	const scope = jobScope(input.split("\n"), entries, tree);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+	const entries = process.argv.slice(2);
+	if (entries.length === 0) {
+		console.error("usage: job-scope.mts <entry file>... < changed-paths");
+		process.exit(2);
+	}
+	const input = readStdin();
+	const scope = jobScope(input.split("\n"), entries, diskTree());
 	console.error(`job-scope: ${scope.run ? "run" : "skip"} (${scope.reason})`);
 	process.stdout.write(`run=${scope.run}\n`);
 }

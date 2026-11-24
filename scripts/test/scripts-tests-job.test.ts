@@ -90,7 +90,6 @@ function step(entry: Job, name: string): Step {
 const ROUTED =
 	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 
-const buildJob = job("scripts-tests-build");
 const scripts = job("scripts-tests");
 const gate = job("pr-gate");
 const SCOPE = "Decide whether the change reaches scripts, tests or workflows";
@@ -151,7 +150,6 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.equal(scripts.name, "Scripts tests");
 		assert.ok(scripts.needs.includes("route"));
 		assert.ok(scripts.needs.includes("ci-runner-image"));
-		assert.ok(buildJob.needs.includes("ci-runner-image"));
 		assert.equal(scripts.runsOn, ROUTED);
 		assert.match(scripts.if, /!cancelled\(\)/u);
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);
@@ -160,7 +158,7 @@ describe("the scripts lane is a pull-request gate", () => {
 		const lane = step(scripts, LANE);
 		assert.equal(
 			lane.run.trim(),
-			'pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"',
+			'env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"',
 		);
 		assert.equal(lane.if, "steps.scope.outputs.run == 'true'");
 		// The pinned toolchain (Node 24 from mise.toml) is in place first:
@@ -198,15 +196,27 @@ describe("the scripts lane is a pull-request gate", () => {
 			.map(asObject)
 			.find((entry) => entry?.name === "CI trace");
 		assert.equal(asObject(trace?.with)?.disambiguator, "${{ matrix.shard }}");
-		assert.ok(
-			!scripts.steps.some((entry) => entry.name === "Save Turbo cache"),
+		const prune = step(scripts, "Prune Turbo cache");
+		const save = step(scripts, "Save Turbo cache");
+		assert.equal(save.uses, "$/.github/actions/turbo-cache");
+		assert.match(prune.if, /matrix\.shard == 0/u);
+		assert.match(save.if, /^always\(\) && matrix\.shard == 0 && /u);
+		assert.equal(
+			scripts.steps.filter((entry) => entry.uses === save.uses).length,
+			2,
 		);
 	});
 
-	it("builds every scripts-test import root and the affected-lanes union once per run", () => {
-		const build = step(buildJob, BUILD);
+	it("builds every scripts-test import root and the affected-lanes union in each shard", () => {
+		assert.ok(!("scripts-tests-build" in (jobs ?? {})));
+		const build = step(scripts, BUILD);
 		assert.equal(build.if, "steps.scope.outputs.run == 'true'");
+		assert.equal(build.timeout, 6);
 		assert.match(build.run, /turbo run build\b/u);
+		assert.ok(
+			build.run.includes("--concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}"),
+		);
+		assert.ok(!build.run.includes("HOBO_TURBO_CONCURRENCY"));
 		assert.match(build.run, /git diff --name-only "\$BASE" HEAD/u);
 		assert.match(
 			build.run,
@@ -239,162 +249,49 @@ describe("the scripts lane is a pull-request gate", () => {
 				filters.includes(`--filter=${name}...`),
 				`the derived build filters miss --filter=${name}...`,
 			);
-		const names = buildJob.steps.map((entry) => entry.uses || entry.name);
+		const names = scripts.steps.map((entry) => entry.uses || entry.name);
 		assert.ok(names.indexOf("Install dependencies") < names.indexOf(BUILD));
-		assert.ok(scripts.needs.includes("scripts-tests-build"));
+		assert.ok(
+			names.indexOf("$/.github/actions/turbo-cache") < names.indexOf(BUILD),
+		);
+		assert.ok(names.indexOf(BUILD) < names.indexOf(LANE));
 		assert.equal(
-			buildJob.steps.filter((entry) => /turbo run build\b/u.test(entry.run))
+			scripts.steps.filter((entry) => /turbo run build\b/u.test(entry.run))
 				.length,
 			1,
 		);
-		const local = step(scripts, "Build current sources for local attestation");
-		assert.equal(
-			local.if,
-			"steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS != 'true'",
-		);
-		assert.match(local.run, /turbo run build\b/u);
-		assert.match(local.run, /scripts\/ci\/scripts-test-imports\.mts/u);
-		assert.match(
-			local.run,
-			/scripts\/ci\/affected-lanes\.mts --base="\$BASE"/u,
-		);
-		assert.ok(local.run.includes('"${IMPORTED[@]}"'));
-		assert.ok(local.run.includes('"${AFFECTED[@]}"'));
-		assert.ok(!scripts.steps.some((entry) => entry.name === BUILD));
 	});
 
-	it("restores older scripts caches for the build and the new build cache in every shard", () => {
-		assert.equal(
-			asText(step(buildJob, "Turbo cache").with["preferred-job"]),
-			"scripts-tests",
-		);
-		assert.equal(
-			asText(step(scripts, "Turbo cache").with["preferred-job"]),
-			"scripts-tests-build",
-		);
-		assert.equal(
-			step(buildJob, "Save Turbo cache").uses,
-			"$/.github/actions/turbo-cache",
-		);
+	it("restores the main build and this lane's own cache in every shard", () => {
+		const cache = step(scripts, "Turbo cache").with;
+		assert.equal(asText(cache["preferred-job"]), "scripts-tests");
+		assert.equal(asText(cache["main-build"]), "true");
 	});
 
 	it("keeps Turbo credentials for same-repository pull requests and withholds them from merge groups and forks", () => {
-		for (const entry of [buildJob, scripts]) {
-			const cache = step(entry, "Turbo cache").with;
-			assert.equal(
-				cache["turbo-token"],
-				"${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}",
-			);
-			assert.equal(
-				cache["remote-mode"],
-				"${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}",
-			);
-		}
-	});
-
-	it("passes one nonempty dist tarball to every test shard", () => {
-		const pack = step(buildJob, "Pack scripts-test build outputs");
-		const upload = step(buildJob, "Upload scripts-test build outputs");
-		const download = step(scripts, "Download scripts-test build outputs");
-		const extract = step(scripts, "Extract scripts-test build outputs");
-		assert.match(upload.uses, /^actions\/upload-artifact@[a-f0-9]{40}$/u);
-		assert.match(download.uses, /^actions\/download-artifact@[a-f0-9]{40}$/u);
-		assert.equal(upload.with.name, "scripts-tests-dist-${{ github.run_id }}");
-		assert.equal(upload.with.name, download.with.name);
-		assert.equal(upload.with.path, "${{ runner.temp }}/scripts-tests-dist.tar");
-		assert.equal(download.with.path, "${{ runner.temp }}");
-		assert.equal(upload.with.overwrite, true);
-		assert.equal(upload.with["if-no-files-found"], "error");
-		assert.equal(upload.with["retention-days"], 1);
-		assert.equal(pack.timeout, 3);
-		assert.equal(upload.timeout, 3);
-		assert.equal(extract.timeout, 3);
-		assert.match(pack.run, /find packages external\/ts-autocode\/packages/u);
-		assert.match(pack.run, /test -s "\$ARCHIVE"/u);
-		assert.match(extract.run, /test -s "\$ARCHIVE"/u);
-		assert.match(extract.run, /tar -xf "\$ARCHIVE" -C \./u);
+		const cache = step(scripts, "Turbo cache").with;
 		assert.equal(
-			extract.if,
-			"steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS == 'true'",
+			cache["turbo-token"],
+			"${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}",
 		);
-		const buildNames = buildJob.steps.map((entry) => entry.name);
-		const testNames = scripts.steps.map((entry) => entry.name);
-		assert.ok(buildNames.indexOf(BUILD) < buildNames.indexOf(pack.name));
-		assert.ok(buildNames.indexOf(pack.name) < buildNames.indexOf(upload.name));
-		assert.ok(
-			buildNames.indexOf(upload.name) < buildNames.indexOf("Save Turbo cache"),
+		assert.equal(
+			cache["remote-mode"],
+			"${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}",
 		);
-		assert.ok(
-			testNames.indexOf(download.name) < testNames.indexOf(extract.name),
-		);
-		assert.ok(testNames.indexOf(extract.name) < testNames.indexOf(LANE));
 	});
 
-	it("round-trips the dist tarball and rejects missing or empty archives", () => {
-		const root = mkdtempSync(join(tmpdir(), "hobo-scripts-dist-"));
-		const source = join(root, "source");
-		const target = join(root, "target");
-		const runnerTemp = join(root, "runner-temp");
-		const archive = join(runnerTemp, "scripts-tests-dist.tar");
-		const env = { ...process.env, RUNNER_TEMP: runnerTemp };
-		const extract = () =>
-			spawnSync(
-				"bash",
-				["-c", step(scripts, "Extract scripts-test build outputs").run],
-				{ cwd: target, encoding: "utf8", env },
-			);
-		try {
-			for (const directory of [source, target, runnerTemp])
-				mkdirSync(directory, { recursive: true });
-			for (const file of [
-				"packages/example/dist/index.js",
-				"external/ts-autocode/packages/example/dist/index.js",
-				"packages/example/node_modules/dependency/dist/index.js",
-			]) {
-				mkdirSync(join(source, file, ".."), { recursive: true });
-				writeFileSync(join(source, file), "built\n");
-			}
-			const packed = spawnSync(
-				"bash",
-				["-c", step(buildJob, "Pack scripts-test build outputs").run],
-				{ cwd: source, encoding: "utf8", env },
-			);
-			assert.equal(packed.status, 0, packed.stderr);
-			const extracted = extract();
-			assert.equal(extracted.status, 0, extracted.stderr);
-			assert.equal(
-				readFileSync(join(target, "packages/example/dist/index.js"), "utf8"),
-				"built\n",
-			);
-			assert.equal(
-				readFileSync(
-					join(target, "external/ts-autocode/packages/example/dist/index.js"),
-					"utf8",
-				),
-				"built\n",
-			);
-			assert.throws(() =>
-				readFileSync(
-					join(
-						target,
-						"packages/example/node_modules/dependency/dist/index.js",
-					),
-				),
-			);
-			rmSync(archive);
-			assert.notEqual(extract().status, 0);
-			writeFileSync(archive, "");
-			assert.notEqual(extract().status, 0);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
+	it("passes no build artifact between jobs", () => {
+		for (const entry of scripts.steps) {
+			assert.doesNotMatch(entry.uses, /^actions\/(?:up|down)load-artifact@/u);
+			assert.doesNotMatch(entry.run, /scripts-tests-dist/u);
 		}
 	});
 
-	it("fails closed when the two-commit build base is empty", () => {
+	it("fails closed in each shard when the two-commit build base is empty", () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-scripts-build-"));
 		try {
 			git(root, "init", "-q", "-b", "main");
-			const run = spawnSync("bash", ["-c", step(buildJob, BUILD).run], {
+			const run = spawnSync("bash", ["-c", step(scripts, BUILD).run], {
 				cwd: root,
 				encoding: "utf8",
 				env: { ...process.env, RUNNER_TEMP: root },
@@ -408,7 +305,6 @@ describe("the scripts lane is a pull-request gate", () => {
 
 	it("never waits for the deps image", () => {
 		assert.ok(!scripts.needs.includes("ci-deps-image"));
-		assert.ok(!buildJob.needs.includes("ci-deps-image"));
 	});
 
 	for (const [changed, expected] of [
@@ -428,15 +324,13 @@ describe("the scripts lane is a pull-request gate", () => {
 			}
 		});
 
-	it("re-verifies a fetched merge-group base in both scripts scopes", () => {
-		for (const entry of [buildJob, scripts]) {
-			const run = step(entry, SCOPE).run;
-			assert.match(run, /if ! git cat-file -e /u);
-			assert.match(
-				run,
-				/git fetch --no-tags --depth=1 origin "\$MERGE_GROUP_BASE_SHA"\n\s+git cat-file -e /u,
-			);
-		}
+	it("re-verifies a fetched merge-group base in the scripts scope", () => {
+		const run = step(scripts, SCOPE).run;
+		assert.match(run, /if ! git cat-file -e /u);
+		assert.match(
+			run,
+			/git fetch --no-tags --depth=1 origin "\$MERGE_GROUP_BASE_SHA"\n\s+git cat-file -e /u,
+		);
 	});
 
 	it("compares a pull request's merge commit with its first parent", () => {
@@ -474,12 +368,12 @@ describe("the scripts lane is a pull-request gate", () => {
 
 	it("is required by the PR impact gate", () => {
 		assert.equal(gate.name, "PR impact gate");
-		assert.ok(gate.needs.includes("scripts-tests-build"));
+		assert.ok(!gate.needs.includes("scripts-tests-build"));
 		assert.ok(gate.needs.includes("scripts-tests"));
 		assert.match(gate.if, /always\(\)/u);
 	});
 
-	it("accepts scripts and build success or a complete verified local run", () => {
+	it("accepts scripts success or a complete verified local run", () => {
 		const script = step(gate, GATE_STEP).run;
 		const passing = {
 			PLAN_RESULT: "success",
@@ -513,41 +407,34 @@ describe("the scripts lane is a pull-request gate", () => {
 					others === passing
 				)
 					continue;
-				for (const result of ["success", "failure", "cancelled", "skipped", ""])
-					for (const buildResult of [
-						"success",
-						"failure",
-						"cancelled",
-						"skipped",
-						"",
-					]) {
-						const run = spawnSync("bash", ["-c", script], {
-							encoding: "utf8",
-							env: {
-								...process.env,
-								...others,
-								EVENT_NAME: event,
-								AFFECTED_RESULT: affected,
-								SCRIPTS_BUILD_RESULT: buildResult,
-								SCRIPTS_RESULT: result,
-							},
-						});
-						const expected =
-							(result === "success" ||
-								(result === "skipped" && others === attestedAll)) &&
-							(buildResult === "success" ||
-								(buildResult === "skipped" && others === attestedAll));
-						assert.equal(
-							run.status === 0,
-							expected,
-							`${event} ${JSON.stringify(others)} build=${buildResult} scripts=${result}: ${run.stderr}`,
-						);
-						if (!expected)
-							assert.match(
-								run.stderr,
-								/Scripts tests(?: build)? did not succeed/u,
-							);
-					}
+				for (const result of [
+					"success",
+					"failure",
+					"cancelled",
+					"skipped",
+					"",
+				]) {
+					const run = spawnSync("bash", ["-c", script], {
+						encoding: "utf8",
+						env: {
+							...process.env,
+							...others,
+							EVENT_NAME: event,
+							AFFECTED_RESULT: affected,
+							SCRIPTS_RESULT: result,
+						},
+					});
+					const expected =
+						result === "success" ||
+						(result === "skipped" && others === attestedAll);
+					assert.equal(
+						run.status === 0,
+						expected,
+						`${event} ${JSON.stringify(others)} scripts=${result}: ${run.stderr}`,
+					);
+					if (!expected)
+						assert.match(run.stderr, /Scripts tests did not succeed/u);
+				}
 			}
 	});
 
@@ -568,7 +455,6 @@ describe("the scripts lane is a pull-request gate", () => {
 					VALIDATION_RESULT: "success",
 					WORKSPACE_RESULT: "success",
 					AFFECTED_RESULT: "success",
-					SCRIPTS_BUILD_RESULT: "success",
 					SCRIPTS_RESULT: "skipped",
 					FORMAL_RESULT: "success",
 					ROUTE_RESULT: route,

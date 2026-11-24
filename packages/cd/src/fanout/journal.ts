@@ -16,6 +16,7 @@ import {
 } from "@hobo/core";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { OtelMetricPoint, TelemetrySink } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 
 export function iso(ms: number): string {
 	return new Date(ms).toISOString();
@@ -220,12 +221,12 @@ export function leaseRunner(
 	};
 }
 
-export function emit(
+export async function emit(
 	sink: TelemetrySink | undefined,
 	points: readonly OtelMetricPoint[],
-): void {
+): Promise<void> {
 	if (sink === undefined || points.length === 0) return;
-	void sink.metrics(points).catch(() => undefined);
+	await emitMetrics(sink, points);
 }
 
 export function counter(

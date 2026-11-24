@@ -47,6 +47,7 @@
 		"@hobo/cd": "workspace:*",
 		"@hobo/cd-kube-fleet": "workspace:*",
 		"@hobo/ci": "workspace:*",
+		"@hobo/ci-dashboard": "workspace:*",
 		"@hobo/ci-gh-actions": "workspace:*",
 		"@hobo/claims": "workspace:*",
 		"@hobo/cli": "workspace:*",
@@ -118,6 +119,7 @@
 		"@hobo/ci-vercel": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
 		"@hobo/events": "workspace:*",
+		"@hobo/provider-agent37": "workspace:*",
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
@@ -134,6 +136,7 @@
 		"test": "vitest run",
 		"pretest:ci-e2e": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test:ci-e2e": "vitest run --config vitest.ci-e2e.config.ts",
+		"test:live": "vitest run --config vitest.live.config.ts",
 		"pretest:release-integration": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test:release-integration": "vitest run --config vitest.release-integration.config.ts"
 	}

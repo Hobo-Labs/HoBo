@@ -161,7 +161,7 @@ const registry: HttpTransport = async (request) => {
 const AGENT_CONFIG = {
 	hostId: "box",
 	hostKind: "box-worker",
-	credentialRef: "env://HOBO_CI_GHCR_READ_TOKEN",
+	credentialRef: "owner://HOBO_CI_GHCR_READ_TOKEN",
 };
 
 const dirs: string[] = [];

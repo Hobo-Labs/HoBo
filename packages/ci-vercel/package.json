@@ -39,6 +39,7 @@
     "@hobo/bindles": "workspace:*",
     "@hobo/camps": "workspace:*",
     "@hobo/pricing": "workspace:*",
+    "@hobo/provider-agent37": "workspace:*",
     "@hobo/provider-manifest": "workspace:*",
     "@hobo/provider-vercel": "workspace:*",
     "@hobo/testing": "workspace:*",

@@ -18,6 +18,7 @@ package vercel
 	HOBO_CI_SANDBOX_PROJECT_ID?:       string & =~"^prj_[A-Za-z0-9]{1,100}$"
 	HOBO_CI_SANDBOX_ISSUER?:           string & =~"^https?://"
 	HOBO_CI_SANDBOX_PLAN?:             "hobby" | "pro" | "enterprise"
+	HOBO_CI_SANDBOX_PROVIDER?:         "vercel" | "agent37"
 	HOBO_CI_SANDBOX_DOMAINS_JSON?:     string & =~"(?s)^.{2,}$"
 	HOBO_CI_GITHUB_APP_ID:             string & =~"^[1-9][0-9]{0,15}$"
 	HOBO_CI_GITHUB_APP_PRIVATE_KEY:    string & =~"^-----BEGIN (RSA )?PRIVATE KEY-----"
@@ -30,7 +31,4 @@ package vercel
 	TURSO_AUTH_TOKEN?:          string & =~"^[!-~]{1,4096}$"
 	BLOB_STORE_ID?:             string & =~"^(store_)?[A-Za-z0-9]{1,64}$"
 	HOBO_CI_CACHE_OFFERS_JSON?: string & =~"(?s)^.{2,}$"
-	HOBO_CI_FLEET_REPORTERS_JSON?:              string & =~"(?s)^.{2,}$"
-	HOBO_CI_FLEET_VERDICT_SERVING?:             "on" | "off"
-	HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES?: string & =~"^[1-9][0-9]{0,3}$"
 }
