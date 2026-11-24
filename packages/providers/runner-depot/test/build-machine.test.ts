@@ -15,7 +15,7 @@ import {
 	DEPOT_EXECUTOR_MISSING,
 	type DepotBuildExecutor,
 	type DepotFetch,
-	envDepotTokenProvider,
+	ownerDepotTokenProvider,
 } from "../src/index.js";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -178,7 +178,11 @@ describe("Depot BuildMachineProvider (hobo:build-machine, replay lane)", () => {
 
 		const noToken = machine(transport, {
 			executor: warmingExecutor(),
-			token: envDepotTokenProvider({}),
+			token: ownerDepotTokenProvider({
+				resolve: async () => {
+					throw new Error("not in the store");
+				},
+			}),
 		});
 		await assert.rejects(
 			noToken.execute({ buildId: "x" }),

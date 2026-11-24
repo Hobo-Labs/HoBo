@@ -581,7 +581,7 @@ describe("HoBo CI GitHub Actions run boundary", () => {
 		expect(fixture.calls[0]?.file).toBe("gh");
 		expect(fixture.calls[0]?.args).not.toContain("--branch");
 	});
-	it("removes CI account credentials from child processes and strips terminal controls", async () => {
+	it("passes the GitHub CLI its own sign-in and strips terminal controls", async () => {
 		const result = await runCiRuns({
 			command: "list",
 			repository: "owner/project",
@@ -590,13 +590,9 @@ describe("HoBo CI GitHub Actions run boundary", () => {
 			options: { "all-branches": true },
 			env: {
 				GH_TOKEN: "github-token",
-				HOBO_CI_ACCOUNT_TOKEN: "relay-token",
-				HOBO_CI_ACCOUNT_TOKEN_FILE: "/mounted/token",
 			},
 			execFile: async (_file, _args, options) => {
 				expect(options.env?.GH_TOKEN).toBe("github-token");
-				expect(options.env?.HOBO_CI_ACCOUNT_TOKEN).toBeUndefined();
-				expect(options.env?.HOBO_CI_ACCOUNT_TOKEN_FILE).toBeUndefined();
 				return {
 					stdout: JSON.stringify([
 						{ ...record, displayTitle: "\u001b]52;c;fake\u0007safe title" },

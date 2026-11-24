@@ -19,6 +19,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
+	DEFAULT_SVID_HMAC_SECRET,
 	type DpopKeyPair,
 	exportDpopPrivateJwk,
 	generateDpopKeyPair,
@@ -113,11 +114,7 @@ export function createCredentialPresenter(options?: {
 				verifyJwtSvid({
 					token: svid.token,
 					audience: input.audience,
-					...(options?.svidHmacSecret !== undefined
-						? { hmacSecret: options.svidHmacSecret }
-						: env.HOBO_SVID_HMAC_SECRET
-							? { hmacSecret: env.HOBO_SVID_HMAC_SECRET }
-							: { hmacSecret: "hobo-local-svid-dev-only" }),
+					hmacSecret: options?.svidHmacSecret ?? DEFAULT_SVID_HMAC_SECRET,
 				});
 
 				const keyPair =

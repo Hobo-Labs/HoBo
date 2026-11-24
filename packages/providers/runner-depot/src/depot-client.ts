@@ -62,7 +62,7 @@ export class DepotCredentialsMissingError extends Error {
 	readonly code = DEPOT_CREDENTIALS_MISSING;
 	constructor() {
 		super(
-			"runner-depot: no brokered Depot project token available — wire a token provider (the Yard broker) or set DEPOT_PROJECT_TOKEN for the live lane.",
+			"runner-depot: no brokered Depot project token available — wire a token provider (the Yard broker) or resolve owner://DEPOT_PROJECT_TOKEN through the owner store session (HoBo MCP choose_secret_store); the environment is never read.",
 		);
 		this.name = "DepotCredentialsMissingError";
 	}
@@ -118,17 +118,25 @@ const globalFetch: DepotFetch = (url, init) => {
 	return fetchImpl(url, init);
 };
 
-// The env-fallback token provider for the credential-gated LIVE lane only:
-// DEPOT_PROJECT_TOKEN carries a broker-minted expiring token into the
-// process; absence throws the typed gate instead of limping into 401s.
-export function envDepotTokenProvider(
-	env: Record<string, string | undefined> = process.env,
+export type DepotCredentialResolver = Readonly<{
+	resolve(
+		ref: string,
+		scope: string,
+	): Promise<Readonly<Record<string, string>>>;
+}>;
+
+// public-contract: the owner-store entry the Depot runner reads its project token from.
+export const DEPOT_PROJECT_TOKEN_REF = "owner://DEPOT_PROJECT_TOKEN";
+
+export function ownerDepotTokenProvider(
+	credentials: DepotCredentialResolver,
 ): BrokeredDepotTokenProvider {
 	return async () => {
-		const token = env.DEPOT_PROJECT_TOKEN;
-		if (!token) {
-			throw new DepotCredentialsMissingError();
-		}
+		const material = await credentials
+			.resolve(DEPOT_PROJECT_TOKEN_REF, "depot.project")
+			.catch(() => undefined);
+		const token = material?.token;
+		if (!token) throw new DepotCredentialsMissingError();
 		return token;
 	};
 }

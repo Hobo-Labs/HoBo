@@ -27,9 +27,10 @@ development broker without discarding history, use:
 docker compose --project-name hobo-ci-pact -f packages/ci-gh-actions/contracts/compose.pact.yml down
 ```
 
-An existing shared broker can replace the local broker through
-`PACT_BROKER_BASE_URL=https://your-broker.example` and an approved
-`PACT_BROKER_TOKEN` environment binding. Embedded URL credentials, plaintext
+An existing shared broker that accepts unauthenticated reads and writes can
+replace the local broker through `PACT_BROKER_BASE_URL=https://your-broker.example`;
+the script reads no broker token from its environment, so a broker that needs
+one refuses it. Embedded URL credentials, plaintext
 remote brokers, redirects, malformed responses and missing verification fail
 closed. Use a reviewed source commit as `--version`. A published version cannot
 be replaced with a different contract; publish the new source version instead.

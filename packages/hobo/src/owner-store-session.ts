@@ -1,7 +1,14 @@
 import path from "node:path";
 
 import type { CredentialResolver } from "@hobo/cd";
-import { createTrustedVault, type TrustedVault } from "@hobo/core";
+import { createGithubAppTransport } from "@hobo/ci-gh-actions";
+import {
+	createTrustedVault,
+	GITHUB_APP_CREDENTIAL_SCHEME,
+	type GithubAppRepository,
+	parseGithubAppInstallationRef,
+	type TrustedVault,
+} from "@hobo/core";
 import {
 	KEPT_STORE_SIGN_INS,
 	type OpenedSecretStore,
@@ -13,6 +20,7 @@ import {
 	storeLabel,
 	withoutSecretEnv,
 } from "@hobo/hobo-ci";
+import { z } from "zod";
 
 export type OwnerStoreLabel = "Infisical" | "1Password" | "Bitwarden";
 
@@ -62,20 +70,46 @@ export class OwnerCredentialUnavailable extends Error {
 			| "no-session"
 			| "not-in-store"
 			| "environment-ref"
-			| "unsupported-ref",
+			| "unsupported-ref"
+			| "github-app-missing"
+			| "github-app-not-installed"
+			| "github-app-refused",
 	) {
-		super(
-			reason === "no-session"
-				? `credential ${ref} needs the owner's store session: run HoBo MCP's choose_secret_store first`
-				: reason === "not-in-store"
-					? `credential ${ref} is not in the owner's store`
-					: reason === "environment-ref"
-						? `credential ${ref} names the process environment, which never holds credentials: store the entry in the owner's store, connect it with HoBo MCP's choose_secret_store, and use owner://<NAME>`
-						: `credential ${ref} is not resolvable on this host (use owner://<NAME> after HoBo MCP's choose_secret_store)`,
-		);
+		super(OwnerCredentialUnavailable.explain(ref, reason));
 		this.name = "OwnerCredentialUnavailable";
 	}
+
+	private static explain(
+		ref: string,
+		reason: OwnerCredentialUnavailable["reason"],
+	): string {
+		switch (reason) {
+			case "no-session":
+				return `credential ${ref} needs the owner's store session: run HoBo MCP's choose_secret_store first`;
+			case "not-in-store":
+				return `credential ${ref} is not in the owner's store`;
+			case "environment-ref":
+				return `credential ${ref} names the process environment, which never holds credentials: store the entry in the owner's store, connect it with HoBo MCP's choose_secret_store, and use owner://<NAME>`;
+			case "github-app-missing":
+				return `credential ${ref} needs HoBo's GitHub App credentials (${GITHUB_APP_ID_ENTRY}, ${GITHUB_APP_PRIVATE_KEY_ENTRY}) in the owner's store relay folder: run hobo ci app create`;
+			case "github-app-not-installed":
+				return `credential ${ref} needs HoBo's GitHub App installed on that repository: install the App hobo ci app create made`;
+			case "github-app-refused":
+				return `credential ${ref} could not be minted: GitHub refused HoBo's GitHub App (check the App made by hobo ci app create)`;
+			case "unsupported-ref":
+				return `credential ${ref} is not resolvable on this host (use owner://<NAME> or ${GITHUB_APP_CREDENTIAL_SCHEME}<owner>/<repo> after HoBo MCP's choose_secret_store)`;
+		}
+	}
 }
+
+// public-contract: the owner-store entry hobo ci app create writes with HoBo's GitHub App id.
+export const GITHUB_APP_ID_ENTRY = "HOBO_CI_GITHUB_APP_ID";
+// public-contract: the owner-store entry hobo ci app create writes with HoBo's GitHub App private key.
+export const GITHUB_APP_PRIVATE_KEY_ENTRY = "HOBO_CI_GITHUB_APP_PRIVATE_KEY";
+
+const RepositoryInstallation = z.object({
+	id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
 
 // public-contract: the credential locator scheme that reads an entry from the owner's store session.
 export const OWNER_CREDENTIAL_SCHEME = "owner://";
@@ -144,8 +178,83 @@ export function ownerChannelSignIn(options: {
 	};
 }
 
+export type OwnerRelayFolder = (input: {
+	readonly cwd: string;
+	readonly vault: TrustedVault;
+}) => Promise<OpenedSecretStore | undefined>;
+
+export function ownerChannelRelayFolder(options: {
+	readonly owner: OwnerChannel;
+	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly deps?: Omit<OwnerStoreDeps, "env" | "cwd" | "ownerChannel">;
+}): OwnerRelayFolder {
+	return async ({ cwd, vault }) => {
+		const relay = await ownerStore("ci", vault, {
+			...options.deps,
+			env: withoutSecretEnv(options.env ?? process.env),
+			cwd,
+			ownerChannel: options.owner,
+			noBrowser: true,
+		});
+		return relay.opened;
+	};
+}
+
+async function readMaterial(
+	port: OpenedSecretStore["port"],
+	name: string,
+): Promise<string | undefined> {
+	const read = await port.access(name).catch(() => undefined);
+	return read?.status === "ok" &&
+		read.material !== undefined &&
+		read.material !== ""
+		? read.material
+		: undefined;
+}
+
+async function mintInstallationToken(input: {
+	readonly ref: string;
+	readonly repository: GithubAppRepository;
+	readonly relay: OpenedSecretStore | undefined;
+	readonly fetch: typeof fetch | undefined;
+}): Promise<string> {
+	const appId =
+		input.relay && (await readMaterial(input.relay.port, GITHUB_APP_ID_ENTRY));
+	const privateKey =
+		input.relay &&
+		(await readMaterial(input.relay.port, GITHUB_APP_PRIVATE_KEY_ENTRY));
+	if (!appId || !privateKey)
+		throw new OwnerCredentialUnavailable(input.ref, "github-app-missing");
+	const app = createGithubAppTransport({
+		appId: appId.trim(),
+		privateKey,
+		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+	});
+	const installation = await app
+		.appRequest(
+			`/repos/${input.repository.owner}/${input.repository.repo}/installation`,
+		)
+		.catch(() => undefined);
+	if (installation === undefined || installation.status >= 500)
+		throw new OwnerCredentialUnavailable(input.ref, "github-app-refused");
+	if (installation.status === 404)
+		throw new OwnerCredentialUnavailable(input.ref, "github-app-not-installed");
+	const parsed = installation.ok
+		? RepositoryInstallation.safeParse(
+				await installation.json().catch(() => undefined),
+			)
+		: undefined;
+	if (parsed === undefined || !parsed.success)
+		throw new OwnerCredentialUnavailable(input.ref, "github-app-refused");
+	return app.installationToken(parsed.data.id).catch(() => {
+		throw new OwnerCredentialUnavailable(input.ref, "github-app-refused");
+	});
+}
+
 export function createOwnerStoreSessions(options: {
 	readonly signIn: OwnerSignIn;
+	readonly relayFolder?: OwnerRelayFolder;
+	readonly fetch?: typeof fetch;
 	readonly kept?: TrustedVault;
 }): OwnerStoreSessions {
 	const held = new Map<string, Held>();
@@ -211,21 +320,31 @@ export function createOwnerStoreSessions(options: {
 			const key = keyOf(cwd);
 			return {
 				async resolve(ref) {
-					const name = entryOf(ref);
+					const repository = parseGithubAppInstallationRef(ref);
+					const name = repository === undefined ? entryOf(ref) : undefined;
 					const current = held.get(key);
 					if (current === undefined)
 						throw new OwnerCredentialUnavailable(ref, "no-session");
-					const read = await current.store.port
-						.access(name)
-						.catch(() => undefined);
-					if (
-						read === undefined ||
-						read.status !== "ok" ||
-						read.material === undefined ||
-						read.material === ""
-					)
+					if (repository !== undefined) {
+						const relay = await options
+							.relayFolder?.({ cwd: key, vault: current.vault })
+							.catch(() => undefined);
+						return {
+							token: await mintInstallationToken({
+								ref,
+								repository,
+								relay,
+								fetch: options.fetch,
+							}),
+						};
+					}
+					const material =
+						name === undefined
+							? undefined
+							: await readMaterial(current.store.port, name);
+					if (material === undefined)
 						throw new OwnerCredentialUnavailable(ref, "not-in-store");
-					return { token: read.material };
+					return { token: material };
 				},
 			};
 		},
@@ -240,13 +359,7 @@ export function createOwnerStoreSessions(options: {
 			};
 			return {
 				async read(name) {
-					const port = opened(name);
-					const read = await port.access(name).catch(() => undefined);
-					return read?.status === "ok" &&
-						read.material !== undefined &&
-						read.material !== ""
-						? read.material
-						: undefined;
+					return readMaterial(opened(name), name);
 				},
 				async write(name, value) {
 					await opened(name).put(name, value);
