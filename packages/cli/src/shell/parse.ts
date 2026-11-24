@@ -51,6 +51,7 @@ export interface CliFlags {
 	readonly budgetId?: string | null;
 	readonly whatIf?: boolean;
 	readonly mode?: string | null;
+	readonly relay?: string | null;
 	readonly subcommandOptions?: SubcommandOptions;
 }
 
@@ -116,6 +117,7 @@ export function parseArgv(
 		budgetId: null,
 		whatIf: false,
 		mode: null,
+		relay: null,
 	};
 	const args: string[] = [];
 	const subcommandOptions = new Map<string, SubcommandOptionValue>();
@@ -455,6 +457,12 @@ function parseOption(
 		case "--broker":
 			if (verb === "up" || verb === "claim" || verb === "login") {
 				flags.broker = takeValue(argv, index, token);
+				return index + 1;
+			}
+			throw unknownOption(token, verb);
+		case "--relay":
+			if (verb === "login") {
+				flags.relay = takeValue(argv, index, token);
 				return index + 1;
 			}
 			throw unknownOption(token, verb);

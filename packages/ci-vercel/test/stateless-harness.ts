@@ -196,7 +196,10 @@ export type StatelessHarness = Awaited<ReturnType<typeof openStatelessRelay>>;
 
 /** Compose the relay over stand-ins; the clock starts now and moves only when told. */
 export async function openStatelessRelay(
-	options: { failCache?: () => boolean } = {},
+	options: {
+		failCache?: () => boolean;
+		githubFor?: (request: Request) => Promise<Response | undefined>;
+	} = {},
 ) {
 	let nowMs = Math.floor(Date.now() / 1000) * 1000;
 	const clock = {
@@ -343,7 +346,10 @@ export async function openStatelessRelay(
 				return Response.json({ jobs: [...jobs.values()].map(jobJson) });
 			return new Response(null, { status: 404 });
 		},
-		appRequest: async () => new Response(null, { status: 404 }),
+		appRequest: async (path) =>
+			(await options.githubFor?.(
+				new Request(`https://api.github.com${path}`),
+			)) ?? new Response(null, { status: 404 }),
 	};
 
 	// Vercel Sandbox: VMs by name.
@@ -470,7 +476,14 @@ export async function openStatelessRelay(
 	const redeliveries: number[] = [];
 	/** GitHub's App delivery history answers 500 while set. */
 	const appApi = { down: false };
-	const fetch = async (input: string | URL | Request): Promise<Response> => {
+	const fetch = async (
+		input: string | URL | Request,
+		init?: RequestInit,
+	): Promise<Response> => {
+		const answered = await options.githubFor?.(
+			input instanceof Request ? input : new Request(String(input), init),
+		);
+		if (answered !== undefined) return answered;
 		const url = new URL(input instanceof Request ? input.url : String(input));
 		if (url.origin !== "https://api.github.com")
 			throw new Error(`unexpected fetch to ${url.origin}`);
