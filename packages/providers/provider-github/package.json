@@ -11,6 +11,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./alchemy": {
+			"types": "./dist/alchemy-github.d.ts",
+			"default": "./dist/alchemy-github.js"
 		}
 	},
 	"scripts": {

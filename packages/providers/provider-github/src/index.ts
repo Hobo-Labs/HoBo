@@ -1,4 +1,14 @@
 export {
+	type AlchemyGitHubAppAuthConfig,
+	assertNoStoredGitHubActionSecrets,
+	createAlchemyGitHubAppCredentials,
+	declareAlchemyGitHubIntegration,
+	declareAlchemyGitHubRelease,
+	declareAlchemyGitHubRepository,
+	declareAlchemyGitHubWebhook,
+	GitHub,
+} from "./alchemy-github.js";
+export {
 	GITHUB_API_KINDS,
 	GITHUB_API_VERSION,
 	GITHUB_COM_API_ORIGIN,

@@ -687,7 +687,9 @@ and clock correctness remain independently verified host responsibilities.
 - `@hobo/iac-alchemy/test-harness`: provides a Vitest-compatible `createAlchemyTestHarness` following Alchemy's `Test.make` one-deploy-per-suite (`beforeAll(deploy)` / `afterAll(destroy)`) and provider-lifecycle session patterns.
 - `@hobo/iac-alchemy/cluster`: integrates `@alchemy.run/effect-cluster` (`Cluster.Database.fromUrl` with `Config.Redacted` credentials, `Cluster.providers()`, swappable `ClusterCloudflare.DurableObjectPool` / container pool topology validation) for HoBo CI fleet coordination.
 - `@hobo/iac-alchemy/sql`: integrates `@alchemy.run/sql`, `@alchemy.run/drizzle` (priority Drizzle v1 migrations with `__alchemy_migrations` linear-history enforcement and Node SQLite executor), Postgres providers (`@alchemy.run/neon`, `@alchemy.run/planetscale`, `@alchemy.run/prisma` with stage-aware preview branching), and libSQL (`@alchemy.run/turso` groups, databases, and per-tenant fleets).
+- `@hobo/iac-alchemy/git`: integrates `@alchemy.run/git` (self-hosted Git on R2/S3 + Durable Objects/D1) and `@alchemy.run/github` authenticated exclusively via HoBo GitHub App installation credentials (`GitHub.fromApp` + `owner://` locators) while refusing Actions secrets/variables and PAT resources.
 - Redundant `@hobo/iac-terraform` and `@hobo/iac-crossplane` packages and tests were removed as `@hobo/iac-alchemy` became the primary IaC substrate.
+
 
 
 
