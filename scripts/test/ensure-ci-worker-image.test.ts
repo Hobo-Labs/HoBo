@@ -20,11 +20,40 @@ import {
 	releaseWorkerEnsurePath,
 	remoteWorkerTag,
 	resolveWorkerRemoteRef,
+	selectWorkerRepoDigest,
 	validatedWorkerDigestRef,
 	workerPullBudgetSec,
 } from "../ci/ensure-ci-worker-image.mts";
 
 describe("ensure-ci-worker-image", () => {
+	const workerDigest = `sha256:${"a".repeat(64)}`;
+	const workerRepoRef = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@${workerDigest}`;
+
+	it("selects the matching worker RepoDigests entry and rejects foreign digests", () => {
+		assert.equal(
+			selectWorkerRepoDigest("Hobo-Labs/HoBo", [
+				"ghcr.io/other/repo/worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				workerRepoRef,
+			]),
+			workerRepoRef,
+		);
+		assert.throws(
+			() =>
+				selectWorkerRepoDigest("Hobo-Labs/HoBo", [
+					"ghcr.io/other/repo/worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				]),
+			/no matching RepoDigests entry/u,
+		);
+		assert.throws(
+			() =>
+				selectWorkerRepoDigest("Hobo-Labs/HoBo", [
+					workerRepoRef,
+					`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"b".repeat(64)}`,
+				]),
+			/ambiguous/u,
+		);
+	});
+
 	it("tags GHCR worker refs lower-case", () => {
 		assert.equal(
 			remoteWorkerTag("Hobo-Labs/HoBo", "vdeadbeefcafe"),
@@ -242,7 +271,7 @@ describe("ensure-ci-worker-image", () => {
 					'if [ "$1 $2" = "image inspect" ]; then',
 					manifest
 						? [
-								`  printf '%s\\n' 'ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}'`,
+								`  printf '%s\\n' '["ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}"]'`,
 								"  exit 0",
 							].join("\n")
 						: "  exit 1",

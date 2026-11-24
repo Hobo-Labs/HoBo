@@ -128,6 +128,25 @@ export function validatedWorkerDigestRef(
 	return /^sha256:[a-f0-9]{64}$/u.test(ref.slice(prefix.length)) ? ref : null;
 }
 
+export function selectWorkerRepoDigest(
+	repo: string,
+	repoDigests: readonly string[],
+): string {
+	const matches = repoDigests
+		.map((entry) => validatedWorkerDigestRef(repo, entry.trim()))
+		.filter((ref): ref is string => ref !== null);
+	const image = `ghcr.io/${repo.toLowerCase()}/hobo-ci-worker`;
+	if (matches.length === 1) return matches[0];
+	if (matches.length === 0) {
+		throw new Error(
+			`local worker digest unavailable for ${image}; no matching RepoDigests entry`,
+		);
+	}
+	throw new Error(
+		`local worker digest ambiguous for ${image}; found ${matches.length} matching RepoDigests entries`,
+	);
+}
+
 export function resolveWorkerRemoteRef(
 	repo: string,
 	version: string,
@@ -276,7 +295,7 @@ export function resolveWorkerDigestRefFromPulledImage(
 	const remote = remoteWorkerTag(repo, version);
 	const inspected = spawnSync(
 		"docker",
-		["image", "inspect", remote, "--format", "{{index .RepoDigests 0}}"],
+		["image", "inspect", remote, "--format", "{{json .RepoDigests}}"],
 		{ cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
 	);
 	if (inspected.status !== 0) {
@@ -284,13 +303,20 @@ export function resolveWorkerDigestRefFromPulledImage(
 			`local worker inspect failed for ${remote} (status ${inspected.status ?? "unknown"})`,
 		);
 	}
-	const repoDigest = inspected.stdout.trim();
-	if (!repoDigest.includes("@sha256:")) {
+	let repoDigests: unknown;
+	try {
+		repoDigests = JSON.parse(inspected.stdout.trim() || "[]");
+	} catch {
 		throw new Error(
-			`local worker digest unavailable for ${remote}; docker returned ${repoDigest || "(empty)"}`,
+			`local worker inspect returned invalid RepoDigests JSON for ${remote}`,
 		);
 	}
-	return repoDigest;
+	if (!Array.isArray(repoDigests)) {
+		throw new Error(
+			`local worker inspect returned non-array RepoDigests for ${remote}`,
+		);
+	}
+	return selectWorkerRepoDigest(repo, repoDigests);
 }
 
 function workerDigestWaitSleepSec(

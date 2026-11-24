@@ -48,3 +48,5 @@ Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../pac
 [`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
 resolution contracts are exercised in
 [`scripts/test/ensure-ci-worker-image.test.ts`](../test/ensure-ci-worker-image.test.ts).
+Release `--resolve-digest` pins the worker only when `docker image inspect` lists
+exactly one `RepoDigests` entry for `ghcr.io/<repo>/hobo-ci-worker@sha256:…`.
