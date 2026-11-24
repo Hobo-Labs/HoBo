@@ -113,6 +113,20 @@ separate package, `@hobo/ci-agent`, loaded only when a block is present; a
 `hobo` install without it refuses to serve such a project unless `--no-agent`
 is passed.
 
+Three relay pieces of [ADR-0183](../../docs/design/adr/runner-order.md) are
+off until turned on. **Relay mode** claims runner-less check jobs (it never
+routes; routing happens in HoBo CI, never in a workflow) only when the
+project's `.hobo/ci.json` says `"relayJobs": { "answer": true }`; a value in
+the shell does not count. Its rescue and leftover-runner sweep then run after
+each pull-admission poll, never holding the poll up. **Automatic retry**
+needs `HOBO_CI_AUTO_RETRY=1`. **The dashboard** needs `HOBO_CI_DASHBOARD=1`:
+the page is served at `/dashboard` and the read API it reads under
+`/v1/accounts/self/`, checked with the relay's account tokens. Their records
+live in `<HOBO_HOME>/ci/serve/relay-wiring.sqlite`, opened only when one is on.
+With the agent block on, the relay starts through the agent's entry and the
+dashboard page is not served. See
+[the relay wiring](../ci-gh-actions/README.md#wiring-turning-the-built-pieces-on).
+
 Alternatively, import a self-hosted App's key and webhook secret from files:
 
 ```sh
@@ -226,8 +240,15 @@ repeating setup with the same explicit relay/repository reuses the connection.
 
 ## Inspect and retry runs
 
-Run commands use the authenticated [GitHub CLI](https://cli.github.com/manual/gh_run)
-(`gh`), with an explicit repository target. They can inspect existing Actions
+Run commands call the GitHub REST API at `api.github.com` with a short-lived
+installation token of HoBo's GitHub App on the selected repository, which the
+owner store session mints (`github-app://owner/name`); no personal GitHub
+sign-in or token is read. Connect the owner's store with HoBo MCP's
+`choose_secret_store` and install the App (`hobo ci app create`) with Actions
+read permission, and Actions write permission for `rerun`; without them the
+commands answer `HOBO_CI_GITHUB_APP_NEEDED`. A job log is read from the
+short-lived download GitHub redirects to, which is fetched without the token;
+logs are bounded at 2 MiB per command. They can inspect existing Actions
 runs before connecting a relay. They report GitHub run IDs, separate from relay
 lease IDs; use `hobo ci status` to check the HoBo connection.
 
@@ -424,9 +445,9 @@ hobo ci diagnose               # the latest failed run
 hobo ci diagnose 123456789
 ```
 
-Both read GitHub's run history with the authenticated GitHub CLI and store
-nothing. `signals` reads up to `--runs` completed runs (1-100) with their jobs,
-and the attempt before the latest when a run was re-run. It prints signals
+Both read GitHub's run history through HoBo's GitHub App installation on the
+repository and store nothing. `signals` reads up to `--runs` completed runs
+(1-100) with their jobs, and the attempt before the latest when a run was re-run. It prints signals
 that cover at least 30 minutes and 1% of job time, grouped as cost,
 speed and complexity, with the worst offenders under each, and one line per
 runner: jobs, share started, median wait, median and p90 run time, share
@@ -437,8 +458,8 @@ each log and every annotation page of the check run identified by
 `check_run_url`, and prints the first failed step, what kind of failure it
 looks like, whether a re-run is likely to help, and the log lines leading up to
 the last error. A log, annotation, or check-run identity read failure fails the
-command rather than producing a partial diagnosis. If the GitHub CLI truncates
-a log, the diagnosis says it may be incomplete and sets `logTruncated` on that
+command rather than producing a partial diagnosis. If a log exceeds 16 MiB,
+the diagnosis says it may be incomplete and sets `logTruncated` on that
 job's JSON result. Human-readable reports remove terminal escape sequences,
 control characters, and bidirectional overrides from GitHub metadata, logs, and
 annotations. The rules are fixed pattern tables in `@hobo/ci/insights`; no log

@@ -49,16 +49,13 @@ export function providerHealthKey(provider: string, label: string): string {
 function tripped(
 	outcomes: readonly ProviderOutcome[],
 	options: ProviderHealthOptions,
-): boolean {
-	if (outcomes.length < options.tripAfter) return false;
+): number | undefined {
+	if (outcomes.length < options.tripAfter) return undefined;
 	const recent = outcomes.slice(-options.tripAfter);
-	const first = recent[0];
-	const last = recent.at(-1);
-	if (!first || !last) return false;
-	return (
-		recent.every((outcome) => !outcome.started) &&
-		last.atMs - first.atMs <= options.windowMs
-	);
+	if (recent.some((outcome) => outcome.started)) return undefined;
+	const times = recent.map((outcome) => outcome.atMs);
+	const latest = Math.max(...times);
+	return latest - Math.min(...times) <= options.windowMs ? latest : undefined;
 }
 
 export function recordProviderOutcome(
@@ -81,7 +78,8 @@ export function recordProviderOutcome(
 			trialStartedAtMs: undefined,
 		};
 	}
-	if (!tripped(outcomes, options))
+	const trippedAtMs = tripped(outcomes, options);
+	if (trippedAtMs === undefined)
 		return {
 			outcomes,
 			trippedAtMs: undefined,
@@ -91,9 +89,9 @@ export function recordProviderOutcome(
 		};
 	return {
 		outcomes,
-		trippedAtMs: outcome.atMs,
+		trippedAtMs,
 		backoffMs: options.firstBackoffMs,
-		nextTrialAtMs: outcome.atMs + options.firstBackoffMs,
+		nextTrialAtMs: trippedAtMs + options.firstBackoffMs,
 		trialStartedAtMs: undefined,
 	};
 }

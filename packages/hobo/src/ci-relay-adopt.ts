@@ -362,7 +362,7 @@ export async function runCiRelayAdopt(
 			ok: false,
 			status: "authentication-required",
 			code: RELAY_ADOPT_REFUSAL.authRequired,
-			message: `--adopt reads GitHub's Deployments API with the token ${RELAY_ADOPT_CREDENTIAL_REF} names (in a workflow, GITHUB_TOKEN: \${{ github.token }} with deployments: read). No Vercel token is read.`,
+			message: `--adopt reads GitHub's Deployments API with the workflow job's own per-job GITHUB_TOKEN (GITHUB_TOKEN: \${{ github.token }} with deployments: read), and the job gave none. No Vercel token is read.`,
 		};
 	}
 	const read = githubReader(

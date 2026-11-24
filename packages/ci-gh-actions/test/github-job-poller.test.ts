@@ -164,6 +164,15 @@ class FakeGithub implements GithubTransport {
 			/^\/repos\/Org\/Repo\/actions\/runs\?status=(queued|in_progress)&per_page=50$/.exec(
 				path,
 			);
+		if (
+			path ===
+			"/repos/Org/Repo/actions/runs?status=in_progress&per_page=25&page=1"
+		) {
+			return Response.json(
+				{ workflow_runs: this.runs.in_progress.map((id) => ({ id })) },
+				{ headers },
+			);
+		}
 		if (list?.[1] === "queued" || list?.[1] === "in_progress")
 			return Response.json(
 				{

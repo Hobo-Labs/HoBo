@@ -36,6 +36,8 @@ const env = {
 type RequestBody = {
 	slotId: string;
 	claimId: string;
+	accountId: string;
+	profileId: string;
 	runnerName: string;
 	bindingSecret: string;
 	executionKey: { githubJob: typeof githubJob };
@@ -54,6 +56,8 @@ function receipt(body: RequestBody) {
 		authorized: true,
 		slotId: body.slotId,
 		claimId: body.claimId,
+		accountId: body.accountId,
+		profileId: body.profileId,
 		runnerName: body.runnerName,
 		executionKey: body.executionKey,
 	};

@@ -1,0 +1,42 @@
+{
+  "consumer": { "name": "HoBoCiProviderUsageSync" },
+  "provider": { "name": "DepotGithubActionsApi" },
+  "interactions": [
+    {
+      "description": "read this month's GitHub Actions cost",
+      "providerState": "the organization's Depot runners cost $123.45 at list rate this month",
+      "request": {
+        "method": "POST",
+        "path": "/depot.core.v1.GithubActionsService/GetGithubActionsUsageProjection",
+        "headers": { "authorization": "Bearer depot-usage-token", "connect-protocol-version": "1", "content-type": "application/json" },
+        "body": { "timeRange": { "startAt": "2026-11-01T00:00:00.000Z", "endAt": "2026-11-17T12:00:00.000Z" } }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "periodStart": "2026-11-01T00:00:00Z",
+          "periodEnd": "2026-11-17T12:00:00Z",
+          "dataThrough": "2026-11-17T11:55:00Z",
+          "actualBillableSeconds": "1234500",
+          "projectedBillableSeconds": "2160000",
+          "actualCost": "12345",
+          "projectedCost": "21600",
+          "currency": "USD",
+          "methodology": "Actual usage through dataThrough at the published list rate; the projection extends the average daily rate."
+        }
+      }
+    },
+    {
+      "description": "a revoked token is refused",
+      "providerState": "the token was revoked",
+      "request": {
+        "method": "POST",
+        "path": "/depot.core.v1.GithubActionsService/GetGithubActionsUsageProjection",
+        "headers": { "authorization": "Bearer depot-revoked-token", "connect-protocol-version": "1", "content-type": "application/json" },
+        "body": { "timeRange": { "startAt": "2026-11-01T00:00:00.000Z", "endAt": "2026-11-17T12:00:00.000Z" } }
+      },
+      "response": { "status": 401, "body": { "code": "unauthenticated", "message": "invalid token" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

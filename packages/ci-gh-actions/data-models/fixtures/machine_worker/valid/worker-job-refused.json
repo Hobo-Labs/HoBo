@@ -1,0 +1,1 @@
+{"type":"worker.job_refused","machineId":"m-7f3a0c2b9d41","atMs":1793016000000,"jobId":80,"repository":"octo/site","detail":"octo/site is public; a public repository's jobs never run on a machine."}
