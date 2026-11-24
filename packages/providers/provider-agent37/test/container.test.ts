@@ -1,8 +1,17 @@
-import { startFakeAgent37Server } from "@hobo/provider-agent37/fake/container";
 import { describe, expect, it } from "vitest";
+import {
+	PINNED_FAKE_AGENT37_IMAGE,
+	startFakeAgent37Server,
+} from "../src/fake/container.js";
 
 describe("Agent37 fake container startup", () => {
-	it("requires explicit fallback and serves HTTP in fallback mode", async () => {
+	it("pins the testcontainer image by digest", () => {
+		expect(PINNED_FAKE_AGENT37_IMAGE).toMatch(
+			/^node:24-alpine@sha256:[a-f0-9]{64}$/u,
+		);
+	});
+
+	it("requires explicit opt-in for an in-process fallback", async () => {
 		const previous = process.env.HOBO_FUZZ_DOCKER;
 		process.env.HOBO_FUZZ_DOCKER = "0";
 		try {
@@ -20,6 +29,7 @@ describe("Agent37 fake container startup", () => {
 			});
 			try {
 				expect(started.mode).toBe("in-process");
+				expect(started.baseUrl.startsWith("http://127.0.0.1:")).toBe(true);
 				const response = await fetch(`${started.baseUrl}/v1/instances`, {
 					headers: { authorization: `Bearer ${started.apiKey}` },
 				});

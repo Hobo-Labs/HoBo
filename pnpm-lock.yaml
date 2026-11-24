@@ -1235,6 +1235,9 @@ importers:
       '@hobo/pricing':
         specifier: workspace:*
         version: link:../pricing
+      '@hobo/provider-agent37':
+        specifier: workspace:*
+        version: link:../providers/provider-agent37
       '@hobo/provider-manifest':
         specifier: workspace:*
         version: link:../provider-manifest
@@ -2201,6 +2204,9 @@ importers:
       '@hobo/events':
         specifier: workspace:*
         version: link:../events
+      '@hobo/provider-agent37':
+        specifier: workspace:*
+        version: link:../providers/provider-agent37
       '@hobo/redaction-test-harness':
         specifier: workspace:*
         version: link:../redaction-test-harness
@@ -2741,6 +2747,16 @@ importers:
         version: 4.1.9(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
 
   packages/providers/provider-agent37:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^22.15.29

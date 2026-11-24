@@ -43,6 +43,10 @@ export {
 	hostedListRate,
 } from "./fleet/models.js";
 export {
+	type Agent37Capacity,
+	type Agent37PoolObservation,
+	type Agent37PoolPolicy,
+	agent37Capacity,
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetBackend,
 	type FleetMember,

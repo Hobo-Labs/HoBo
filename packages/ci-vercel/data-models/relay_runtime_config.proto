@@ -44,4 +44,5 @@ message RelayRuntimeConfig {
   optional string hobo_ci_cache_offers_json = 26 [json_name = "HOBO_CI_CACHE_OFFERS_JSON"];
   reserved 27, 28, 29;
   reserved "hobo_ci_fleet_reporters_json", "hobo_ci_fleet_verdict_serving", "hobo_ci_fleet_verdict_daily_block_minutes";
+  optional string hobo_ci_sandbox_provider = 30 [json_name = "HOBO_CI_SANDBOX_PROVIDER"];
 }
