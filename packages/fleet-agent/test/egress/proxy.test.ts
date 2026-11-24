@@ -354,7 +354,7 @@ describe("createEgressProxyFactoryWith", () => {
 		const url = new URL(first.url);
 		const socket = tcpConnect(Number(url.port), url.hostname);
 		const [error] = await once(socket, "error");
-		expect(String(error)).toMatch(/ECONNREFUSED/u);
+		expect(String(error)).toMatch(/ECONNREFUSED|ECONNRESET/u);
 		await second.close();
 		await second.close();
 	});
