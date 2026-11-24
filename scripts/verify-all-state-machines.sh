@@ -8,6 +8,8 @@ list_only=false
 shard_index=0
 shard_count=1
 shard_seen=false
+jobs=1
+jobs_seen=false
 while (( $# > 0 )); do
 	case "$1" in
 		--) shift ;;
@@ -25,6 +27,14 @@ while (( $# > 0 )); do
 			fi
 			shard_seen=true
 			shift ;;
+		--jobs=*)
+			if [[ "$jobs_seen" == true || ! "${1#--jobs=}" =~ ^[1-9][0-9]?$ ]]; then
+				echo 'Jobs must be a single count from 1 to 99.' >&2
+				exit 2
+			fi
+			jobs="${1#--jobs=}"
+			jobs_seen=true
+			shift ;;
 		--*) echo "Unknown verification option: $1" >&2; exit 2 ;;
 		*) break ;;
 	esac
@@ -33,9 +43,6 @@ done
 shopt -s nullglob
 if (( $# == 0 )); then
 	skills=("$repo_dir"/.agents/skills/verify-*)
-	if (( ${#skills[@]} > 0 )); then
-		mapfile -t skills < <(printf '%s\n' "${skills[@]}" | LC_ALL=C sort)
-	fi
 else
 	skills=()
 	for name in "$@"; do
@@ -45,6 +52,9 @@ else
 		fi
 		skills+=("$repo_dir/.agents/skills/$name")
 	done
+fi
+if (( ${#skills[@]} > 0 )); then
+	mapfile -t skills < <(printf '%s\n' "${skills[@]}" | LC_ALL=C sort -u)
 fi
 if (( ${#skills[@]} == 0 )); then
 	echo 'No state-machine verification skills found.' >&2
@@ -109,17 +119,36 @@ if [[ "$needs_z3" == true ]]; then
 	fi
 fi
 
+run_skill() {
+	local skill="$1" name="${1##*/}" started="$SECONDS" status=0
+	bash scripts/verify-state-machine.sh "$skill" >"$scratch_dir/$name.log" 2>&1 || status=$?
+	printf '%s %s\n' "$status" "$((SECONDS - started))" >"$scratch_dir/$name.result"
+}
+
+running=0
+for skill in "${skills[@]}"; do
+	if (( running >= jobs )); then
+		wait -n
+		running=$((running - 1))
+	fi
+	run_skill "$skill" &
+	running=$((running + 1))
+done
+wait
+
 failed=0
 for skill in "${skills[@]}"; do
 	name="${skill##*/}"
-	log="$scratch_dir/$name.log"
-	if bash scripts/verify-state-machine.sh "$skill" >"$log" 2>&1; then
-		printf 'PASS %s\n' "$name"
+	status=1
+	seconds=0
+	read -r status seconds 2>/dev/null <"$scratch_dir/$name.result"
+	if [[ "$status" == 0 ]]; then
+		printf 'PASS %s (%ss)\n' "$name" "$seconds"
 	else
-		printf 'FAIL %s\n' "$name" >&2
-		cat "$log" >&2
+		printf 'FAIL %s (%ss)\n' "$name" "$seconds" >&2
+		cat "$scratch_dir/$name.log" >&2
 		failed=$((failed + 1))
 	fi
 done
-printf 'Checked %s skills; %s failed.\n' "${#skills[@]}" "$failed"
+printf 'Checked %s skills with %s jobs in %ss; %s failed.\n' "${#skills[@]}" "$jobs" "$SECONDS" "$failed"
 (( failed == 0 ))

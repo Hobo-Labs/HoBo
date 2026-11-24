@@ -1205,10 +1205,6 @@ jobs:
     if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.pr_gate_plan.result == 'success' && needs.pr_gate_plan.outputs.state_machines == 'false') && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
     permissions:
       contents: read
     steps:
@@ -1260,9 +1256,7 @@ jobs:
           --concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%} --output-logs=new-only
       - name: Check state machines
         timeout-minutes: 20
-        env:
-          FORMAL_SHARD: ${{ matrix.shard }}
-        run: pnpm run verify:state-machines -- "--shard=${FORMAL_SHARD}/4"
+        run: pnpm run verify:state-machines -- "--jobs=$(nproc)"
 
   pr-gate:
     name: PR impact gate
