@@ -15,7 +15,7 @@ import {
 	type ResourceObservation,
 } from "../_generated/cd_pb.js";
 import { OBSERVE_ATTRIBUTES_LIMIT_BYTES } from "../events.js";
-import { reason } from "./errors.js";
+import { reason, sanitizeReasons } from "./errors.js";
 import { applyRetained, mappingRetained, mergeRetained } from "./retained.js";
 
 const encoder = new TextEncoder();
@@ -34,6 +34,11 @@ function truncateUtf8(text: string, maxBytes: number): string {
 
 function digest(text: string): string {
 	return `sha256:${createHash("sha256").update(text).digest("hex")}`;
+}
+
+function safeObservedAt(value: string, fallback: string): string {
+	const parsed = Date.parse(value);
+	return Number.isFinite(parsed) ? new Date(parsed).toISOString() : fallback;
 }
 
 /** Replace a secret-looking value with its secretRef; undefined when clean. */
@@ -116,7 +121,7 @@ export function trimAttributes(
 		reasons.push(
 			reason(
 				"attribute-undeclared",
-				`removed attributes outside observe_fields: ${undeclared.join(", ")}`,
+				"Removed attributes outside the declared observe fields.",
 				input.resource,
 			),
 		);
@@ -147,8 +152,8 @@ export function sanitizeObservation(
 	next.campId = input.campId;
 	next.reconcilerId = input.reconcilerId;
 	next.fenceToken = input.fence.toString(10);
-	if (next.observedAt === "") next.observedAt = observedAt;
-	const reasons: ReasonRecord[] = [...next.reasons];
+	next.observedAt = safeObservedAt(next.observedAt, observedAt);
+	const reasons = sanitizeReasons(next.reasons, input.campId, "realizer");
 	const mapping = input.resolved
 		? mappingRetained(input.resolved)
 		: new Map<string, readonly string[]>();
@@ -173,7 +178,7 @@ export function sanitizeObservation(
 	next.claims = next.claims.map((claim) => {
 		const stamped = { ...claim };
 		stamped.reportedBy = input.reconcilerId;
-		if (stamped.observedAt === "") stamped.observedAt = observedAt;
+		stamped.observedAt = safeObservedAt(stamped.observedAt, observedAt);
 		return stamped;
 	});
 	const handover: Record<string, string> = {};

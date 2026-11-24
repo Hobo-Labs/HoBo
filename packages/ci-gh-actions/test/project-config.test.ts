@@ -332,6 +332,25 @@ describe("repository CI environment configuration", () => {
 		]);
 	});
 
+	it("accepts the relayJobs and checks blocks relay mode reads (ADR-0183), strictly", () => {
+		const relayMode = {
+			...input(),
+			relayJobs: { answer: true, label: "hobo-relay" },
+			checks: { prTitle: { types: ["feat", "fix"] }, lint: false },
+		};
+		expect(
+			parseCiProjectConfig(JSON.stringify(relayMode)).defaultEnvironment,
+		).toBe("local");
+		for (const broken of [
+			{ ...relayMode, relayJobs: { answer: "yes" } },
+			{ ...relayMode, relayJobs: { answer: true, extra: 1 } },
+			{ ...relayMode, checks: { lint: true, prTitle: { types: ["no-dash"] } } },
+		])
+			expect(() => parseCiProjectConfig(JSON.stringify(broken))).toThrow(
+				"invalid CI project configuration",
+			);
+	});
+
 	it("rejects unsafe URLs, embedded secrets and duplicate billing targets", () => {
 		for (const relayOrigin of [
 			"http://relay.example.test",

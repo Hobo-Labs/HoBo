@@ -66,9 +66,7 @@ export function parseStationOrigin(baseUrl: string): StationOrigin {
 	try {
 		url = new URL(baseUrl);
 	} catch {
-		throw new AgentEgressError(
-			`station base URL ${JSON.stringify(baseUrl)} does not parse`,
-		);
+		throw new AgentEgressError("The Station base URL is invalid.");
 	}
 	if (url.protocol !== "https:")
 		throw new AgentEgressError("agent egress is HTTPS only");
@@ -88,9 +86,7 @@ export function parseStationOrigin(baseUrl: string): StationOrigin {
 		METADATA_HOSTS.has(url.hostname.toLowerCase()) ||
 		linkLocalOrUnspecified(url.hostname)
 	)
-		throw new AgentEgressError(
-			`${url.hostname} is a metadata or link-local endpoint`,
-		);
+		throw new AgentEgressError("The Station base URL is a forbidden endpoint.");
 	// SAFETY: every rule above held.
 	return Object.freeze({
 		origin: url.origin,

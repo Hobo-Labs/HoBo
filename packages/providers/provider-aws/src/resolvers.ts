@@ -317,7 +317,7 @@ async function resolveAwsCredentials(
 	if (ref.trim().length === 0) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_MISSING",
-			'aws resolver: credentialRef is empty. Supply a locator such as "env://AWS_DEPLOY_CREDENTIALS" or "secret://camp/aws-deploy" and register it with the host credential resolver; the resolver never accepts inline credential material',
+			'aws resolver: credentialRef is empty. Supply a locator such as "owner://AWS_DEPLOY_CREDENTIALS" or "secret://camp/aws-deploy" and register it with the host credential resolver; the resolver never accepts inline credential material',
 		);
 	}
 	const trimmed = ref.trim();

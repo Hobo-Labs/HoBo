@@ -54,7 +54,7 @@ type ResolverProbe =
 	| (() => Promise<ResolveOutcome | undefined>)
 	| (() => Promise<void>);
 
-const CREDENTIAL_REF = "env://GOOGLE_OAUTH_ACCESS_TOKEN";
+const CREDENTIAL_REF = "owner://GOOGLE_OAUTH_ACCESS_TOKEN";
 /** A token-shaped OAuth2 access token. Never expected anywhere but a header. */
 const TOKEN = "ya29.FakeGoogleAccessToken0123456789abcdefghijklmno";
 const PROJECT_ID = "hobo-test-project";

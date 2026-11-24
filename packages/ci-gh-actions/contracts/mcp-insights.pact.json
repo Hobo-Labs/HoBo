@@ -1,0 +1,316 @@
+{
+  "consumer": {
+    "name": "McpAgentClient"
+  },
+  "provider": {
+    "name": "HoboCiRelayMcpInsights"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "consumerFixtures": {
+      "callers": {
+        "reader": {
+          "accountId": "acct-1",
+          "scopes": ["policy:read"]
+        },
+        "operator": {
+          "accountId": "acct-1",
+          "scopes": ["operations:write"]
+        }
+      },
+      "note": "The caller is the account and scopes the relay's HTTP layer authenticated and hands the MCP transport as its auth info; the bearer credential never reaches a tool (see mcp-boundary.pact.json). Account acct-1 connects octo/app (private) and octo/site (public); acct-2 connects other/repo."
+    }
+  },
+  "interactions": [
+    {
+      "description": "list the eight insight tools, each read-only",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "tools": [
+            { "name": "get_runner_order", "annotations": { "readOnlyHint": true, "destructiveHint": false } },
+            { "name": "explain_route", "annotations": { "readOnlyHint": true, "destructiveHint": false } },
+            { "name": "list_route_decisions", "annotations": { "readOnlyHint": true, "destructiveHint": false } },
+            { "name": "list_machines", "annotations": { "readOnlyHint": true, "destructiveHint": false } },
+            { "name": "get_signals", "annotations": { "readOnlyHint": true, "destructiveHint": false } },
+            { "name": "get_job_times", "annotations": { "readOnlyHint": true, "destructiveHint": false } },
+            { "name": "get_run_failures", "annotations": { "readOnlyHint": true, "destructiveHint": false } },
+            { "name": "get_usage", "annotations": { "readOnlyHint": true, "destructiveHint": false } }
+          ]
+        }
+      }
+    },
+    {
+      "description": "read a repository's committed runner order",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": { "name": "get_runner_order", "arguments": { "repository": "octo/app" } }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "structuredContent": {
+            "repository": "octo/app",
+            "order": { "steps": [{ "key": "machine" }, { "key": "github" }] }
+          }
+        }
+      }
+    },
+    {
+      "description": "explain where a job would run now, recording nothing",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+          "name": "explain_route",
+          "arguments": { "repository": "octo/app", "inputs": { "machine": "self-hosted", "github": "ubuntu-24.04" } }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "structuredContent": {
+            "repository": "octo/app",
+            "outcome": "routed",
+            "runner": "ubuntu-24.04",
+            "step": "github",
+            "unhealthyFallback": false,
+            "recorded": false
+          }
+        }
+      }
+    },
+    {
+      "description": "list the newest route decision with a cursor to the next",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "tools/call",
+        "params": { "name": "list_route_decisions", "arguments": { "limit": 1 } }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "result": {
+          "structuredContent": {
+            "decisions": [
+              { "repository": "octo/app", "mode": "relay", "outcome": "routed", "runner": "ubuntu-24.04", "step": "github" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "list the account's machines, online and offline",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "tools/call",
+        "params": { "name": "list_machines", "arguments": {} }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "result": {
+          "structuredContent": {
+            "machines": [
+              { "id": "m-1", "online": true, "paused": false, "isolation": "container" },
+              { "id": "m-2", "online": false }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "read the nine signals over the stored runs",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": { "name": "get_signals", "arguments": { "repository": "octo/app" } }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "result": {
+          "structuredContent": { "repository": "octo/app", "runs": 5, "truncated": false }
+        }
+      }
+    },
+    {
+      "description": "read one job's times per runner",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "tools/call",
+        "params": { "name": "get_job_times", "arguments": { "repository": "octo/app", "job": "test" } }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "result": {
+          "structuredContent": {
+            "repository": "octo/app",
+            "runs": 5,
+            "jobs": [{ "workflow": "CI", "job": "test" }]
+          }
+        }
+      }
+    },
+    {
+      "description": "diagnose a run's failed job with its step and evidence",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "tools/call",
+        "params": { "name": "get_run_failures", "arguments": { "repository": "octo/app", "runId": 200 } }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "result": {
+          "structuredContent": {
+            "repository": "octo/app",
+            "runId": 200,
+            "attempt": 1,
+            "failedJobs": 1,
+            "jobs": [
+              {
+                "jobId": 3000,
+                "name": "test",
+                "log": "read",
+                "failedStep": { "name": "Run pnpm test", "number": 2 },
+                "kind": "test"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "read Actions usage with the rate's source and day",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 9,
+        "method": "tools/call",
+        "params": { "name": "get_usage", "arguments": { "repository": "octo/app", "days": 2 } }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 9,
+        "result": {
+          "structuredContent": {
+            "repository": "octo/app",
+            "runs": 3,
+            "rate": {
+              "usdPerMinute": 0.006,
+              "source": "https://docs.github.com/en/billing/reference/actions-runner-pricing",
+              "readOn": "2026-11-17"
+            },
+            "included": { "usedMinutes": 1200, "includedMinutes": 3000 }
+          }
+        }
+      }
+    },
+    {
+      "description": "refuse a credential without the read scope as message (CODE)",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "operator",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "tools/call",
+        "params": { "name": "get_signals", "arguments": { "repository": "octo/app" } }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "result": {
+          "isError": true,
+          "content": [
+            { "type": "text", "text": "account scope required: policy:read (HOBO_CI_MCP_SCOPE_REQUIRED)" },
+            { "type": "text", "text": "Use a token that holds the read scope." }
+          ]
+        }
+      }
+    },
+    {
+      "description": "refuse a repository another account connected",
+      "providerState": "a relay with stored routes, machines and runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "tools/call",
+        "params": { "name": "get_run_failures", "arguments": { "repository": "other/repo", "runId": 900 } }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 11,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "other/repo is not connected to this account (HOBO_CI_MCP_REPOSITORY_NOT_CONNECTED)"
+            },
+            { "type": "text", "text": "Name a repository the account connected to the relay." }
+          ]
+        }
+      }
+    },
+    {
+      "description": "say a stateless host keeps no route journal and name the command instead",
+      "providerState": "a relay that stores no journal, machines or runs",
+      "caller": "reader",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "tools/call",
+        "params": { "name": "list_route_decisions", "arguments": {} }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 12,
+        "result": {
+          "isError": true,
+          "content": [
+            { "type": "text", "text": "This relay keeps no route journal (HOBO_CI_MCP_NOT_STORED)" },
+            { "type": "text", "text": "Instead, run hobo ci route in a checkout to see where one job would go." }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -820,6 +820,58 @@ test("unrelated docs edits do not trip the behavior lane", () => {
 	assert.ok(!checks.some(isBehaviorLane));
 });
 
+function isParityScorecardCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args.join(" ") === "run ci:parity-scorecard:check"
+	);
+}
+
+function behaviorBuild(checks: readonly Check[]) {
+	return checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+}
+
+test("the behavior lane builds what the parity gauntlet's steps import", () => {
+	const build = behaviorBuild(plan(["cucumber.yaml"]).checks);
+	for (const filter of [
+		"--filter=@hobo/hobo^...",
+		"--filter=@hobo/ci-gh-actions^...",
+		"--filter=@hobo/ci-dashboard^...",
+	])
+		assert.ok(build?.args.includes(filter), filter);
+});
+
+test("a stale parity scorecard fails a gate", () => {
+	for (const file of [
+		"docs/ci/parity-scorecard.md",
+		"features/hobo-ci-parity/cases.json",
+		"features/hobo-ci-parity/routing.feature",
+		"scripts/ci/parity-scorecard.mts",
+		"packages/ci/src/runner-order/answer.ts",
+		"packages/ci-gh-actions/src/relay-answer/answerer.ts",
+		"packages/ci-gh-actions/test/support/github-simulator/index.ts",
+		"packages/ci-dashboard/src/views.ts",
+		"packages/hobo/src/ci-route.ts",
+	]) {
+		const { checks } = plan([file]);
+		assert.ok(checks.some(isParityScorecardCheck), file);
+		assert.equal(behaviorBuild(checks)?.serial, true, file);
+	}
+});
+
+test("edits away from the CI packages leave the parity scorecard alone", () => {
+	for (const file of [
+		"docs/design/vision.md",
+		"packages/hobo/src/deploy.ts",
+		"packages/ci/README.md",
+	])
+		assert.equal(plan([file]).checks.some(isParityScorecardCheck), false, file);
+});
+
 function isOptimizexpLane(check: Check) {
 	return (
 		check.command === "pnpm" && check.args.join(" ") === "run optimizexp:check"

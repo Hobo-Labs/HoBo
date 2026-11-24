@@ -21,6 +21,7 @@ import {
 	chooseRunner,
 	confirmMergeGroupFabricFleet,
 	DEFAULT_LOCAL_RUNNER,
+	DEFAULT_TRUNK_LEND,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
 	DEFAULT_RUNNER_LABELS,
@@ -1294,6 +1295,19 @@ describe("the committed routing policy the route job reads", () => {
 		assert.deepEqual([committed, fromCode], [true, false]);
 		assert.deepEqual(fromFile, defaults);
 		assert.equal(defaults.localRunner, DEFAULT_LOCAL_RUNNER);
+	});
+
+	it("lends the trunk label to PR batches only when box.trunkLend is 1", () => {
+		const policy = readRunnerRouting(COMMITTED);
+		assert.ok(policy);
+		assert.equal(routeSettings(policy).trunkLend, false);
+		assert.equal(
+			routeSettings({ ...policy, box: { ...policy.box, trunkLend: 1 } })
+				.trunkLend,
+			true,
+		);
+		assert.equal(routeSettings(undefined).trunkLend, DEFAULT_TRUNK_LEND);
+		assert.equal(DEFAULT_TRUNK_LEND, false);
 	});
 
 	it("counts no slip and an expired slip as absent, every other refusal as unusable", () => {

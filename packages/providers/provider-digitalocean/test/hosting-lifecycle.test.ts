@@ -24,7 +24,7 @@ const request = parseResolveRequest({
 		physicalId: "17",
 	},
 	desired: { name: "api", region: "nyc3" },
-	credentialRef: "env://DIGITALOCEAN_TOKEN",
+	credentialRef: "owner://DIGITALOCEAN_TOKEN",
 });
 const json = (status: number, value: JsonValue): TransportResponse => ({
 	status,

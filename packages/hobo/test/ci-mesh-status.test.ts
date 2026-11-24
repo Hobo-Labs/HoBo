@@ -406,7 +406,7 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 	const viaMcp = async () =>
 		parseMeshNodeReports(await callTool(base, "list_mesh_nodes"));
 
-	function cli(env: NodeJS.ProcessEnv) {
+	function cli(env: NodeJS.ProcessEnv, account?: string) {
 		const home = join(directory, "cli-home");
 		const repository = join(directory, "cli-repository");
 		mkdirSync(home, { recursive: true });
@@ -416,6 +416,12 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 			commands: {
 				ci: createCiCommand({
 					env: { HOBO_HOME: home, ...env },
+					ownerCredentials: () => ({
+						resolve: async () => {
+							if (account === undefined) throw new Error("not in the store");
+							return { token: account };
+						},
+					}),
 					interactive: false,
 					// The CLI insists on an HTTPS relay; the test's listens on loopback.
 					fetch: async (url, init) => {
@@ -458,7 +464,6 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 			}),
 		}),
 	});
-	const online = { HOBO_CI_ACCOUNT_TOKEN: TOKEN };
 	const relayArgs = [
 		"status",
 		"--relay",
@@ -561,7 +566,7 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 	}, 30_000);
 
 	it("gives the same list through hobo ci status, as a table and as JSON", async () => {
-		const table = await cli(online).run(relayArgs);
+		const table = await cli({}, TOKEN).run(relayArgs);
 		expect(table.exitCode).toBe(0);
 		expect(table.stdout).toContain("CI connected for example/repository");
 		const lines = table.stdout.split("\n");
@@ -585,7 +590,7 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 		expect(line("relay-a").at(-1)).toBe("trusted");
 		expect(table.stdout).toContain("3/6 slots free on 2 healthy node(s)");
 
-		const asked = cli(online);
+		const asked = cli({}, TOKEN);
 		const json = await asked.run([...relayArgs, "--json"]);
 		expect(json.exitCode).toBe(0);
 		const status = Status.parse(JSON.parse(json.stdout));
@@ -712,10 +717,10 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 		expect(
 			(await viaMcp()).nodes.find((node) => node.id === "box-b")?.state,
 		).toBe("lost");
-		const table = await cli(online).run(relayArgs);
+		const table = await cli({}, TOKEN).run(relayArgs);
 		expect(table.stdout).toMatch(/^box-b\s+lost\s+-\s+-\s+-\s/m);
 		const json = Status.parse(
-			JSON.parse((await cli(online).run([...relayArgs, "--json"])).stdout),
+			JSON.parse((await cli({}, TOKEN).run([...relayArgs, "--json"])).stdout),
 		);
 		expect(
 			json.data.mesh.nodes.find((node) => node.id === "box-b")?.state,

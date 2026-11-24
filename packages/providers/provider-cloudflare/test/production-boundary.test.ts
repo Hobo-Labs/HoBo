@@ -13,7 +13,7 @@ const request: ResolveRequest = {
 		logicalId: "example",
 	},
 	desired: {},
-	credentialRef: "env://CLOUDFLARE_API_TOKEN",
+	credentialRef: "owner://CLOUDFLARE_API_TOKEN",
 };
 function resolver() {
 	const value = cloudflareResolvers({

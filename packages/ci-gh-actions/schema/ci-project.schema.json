@@ -68,6 +68,42 @@
     },
     "turboCache": {
       "$ref": "#/$defs/TurboCache"
+    },
+    "relayJobs": {
+      "type": "object",
+      "properties": {
+        "answer": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "prTitle": {
+          "type": "object",
+          "properties": {
+            "types": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema120"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "lint": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -429,7 +465,7 @@
         },
         "secretRef": {
           "type": "string",
-          "pattern": "^(?:github-secret|env):[A-Z][A-Z0-9_]{0,63}$"
+          "pattern": "^owner:\\/\\/[A-Z][A-Z0-9_]{0,63}$"
         },
         "projectId": {
           "type": "string",
@@ -1636,6 +1672,10 @@
           "pattern": "^https:\\/\\/[A-Za-z0-9._:/-]+$"
         }
       ]
+    },
+    "__schema120": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{1,30}$"
     }
   },
   "$id": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",

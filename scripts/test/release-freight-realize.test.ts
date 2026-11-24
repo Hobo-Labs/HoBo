@@ -28,6 +28,7 @@ import {
 	qualifyReleaseCandidate,
 	RELEASE_DELIVERY_MODULE,
 	type ReleaseCdSeams,
+	type ReleaseCredentials,
 	recordReleaseFreight,
 	releaseCampId,
 	releaseDriveFor,
@@ -126,16 +127,43 @@ function withProbes(
 	};
 }
 
-function seams(http: HttpTransport, passes = 40): ReleaseCdSeams {
-	return { http, now: clock(), drive: { passes, intervalMs: 0 } };
+function githubAppInstallationToken(token: string): ReleaseCredentials {
+	return {
+		async resolve(ref) {
+			if (ref !== `github-app://${OWNER}/${REPO}`)
+				throw new Error(`no installation for ${ref}`);
+			return { token };
+		},
+	};
+}
+
+function seams(
+	http: HttpTransport,
+	passes = 40,
+	token = GHCR_TOKEN,
+): ReleaseCdSeams {
+	return {
+		http,
+		now: clock(),
+		drive: { passes, intervalMs: 0 },
+		credentials: githubAppInstallationToken(token),
+	};
 }
 
 const env = {
 	HOBO_RELEASE_REVISION: COMMIT,
 	GITHUB_REPOSITORY: `${OWNER}/${REPO}`,
 	GITHUB_RUN_ID: "42",
-	GITHUB_TOKEN: GHCR_TOKEN,
 };
+
+function ownerNpmToken(token: string): ReleaseCredentials {
+	return {
+		async resolve(ref) {
+			if (ref !== "owner://NPM_TOKEN") throw new Error(`no entry for ${ref}`);
+			return { token };
+		},
+	};
+}
 
 /** Every byte the release journal and artifact store hold, as text. */
 function journalText(home: string): string {
@@ -538,8 +566,8 @@ describe.skipIf(!built)(
 			await qualifySiteRelease({
 				dist,
 				home,
-				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
-				seams: seams(withProbes(github, [], world), 700),
+				env,
+				seams: seams(withProbes(github, [], world), 700, fx.TOKEN),
 			});
 			const head = world.commits.get(world.head("gh-pages"));
 			expect(head?.message).toBe(`deploy: ${COMMIT}`);
@@ -594,11 +622,12 @@ describe.skipIf(!built)(
 			await qualifySiteRelease({
 				dist,
 				home,
-				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
+				env,
 				seams: {
 					http: withProbes(github, [], world),
 					now,
 					drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
+					credentials: githubAppInstallationToken(fx.TOKEN),
 				},
 			});
 			expect(buildDelayMs).toBeGreaterThan(480_000);
@@ -618,11 +647,12 @@ describe.skipIf(!built)(
 				qualifySiteRelease({
 					dist,
 					home,
-					env: { ...env, GITHUB_TOKEN: fx.TOKEN },
+					env,
 					seams: {
 						http: withProbes(world.transport, [], world),
 						now: clock(60_000),
 						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
+						credentials: githubAppInstallationToken(fx.TOKEN),
 					},
 				}),
 			).rejects.toThrow(/blocked/u);
@@ -655,11 +685,12 @@ describe.skipIf(!built)(
 				qualifySiteRelease({
 					dist,
 					home,
-					env: { ...env, GITHUB_TOKEN: fx.TOKEN },
+					env,
 					seams: {
 						http: withProbes(github, [], world),
 						now: clock(60_000),
 						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
+						credentials: githubAppInstallationToken(fx.TOKEN),
 					},
 				}),
 			).rejects.toThrow(/blocked/u);
@@ -673,7 +704,10 @@ describe.skipIf(!built)(
 			const { npm, signer, sigstore } = fx;
 			const world = npm.registryWorld({ publicReads: true });
 			const seen: TransportRequest[] = [];
-			const fixtures = seams(withProbes(world.transport, seen));
+			const fixtures = {
+				...seams(withProbes(world.transport, seen)),
+				credentials: ownerNpmToken(npm.TOKEN),
+			};
 			const build = signer.githubActionsBuild({
 				GITHUB_SERVER_URL: "https://github.com",
 				GITHUB_REPOSITORY: `${OWNER}/${REPO}`,
@@ -702,7 +736,7 @@ describe.skipIf(!built)(
 			const { verdict } = await qualifyReleaseCandidate({
 				home,
 				family: "npm",
-				env: { ...env, NPM_TOKEN: npm.TOKEN },
+				env,
 				seams: fixtures,
 				stored: [
 					{
@@ -763,8 +797,11 @@ describe.skipIf(!built)(
 				qualifyReleaseCandidate({
 					home,
 					family: "npm",
-					env: { ...env, NPM_TOKEN: "npm_fixtureToken" },
-					seams: seams(http),
+					env,
+					seams: {
+						...seams(http),
+						credentials: ownerNpmToken("npm_fixtureToken"),
+					},
 					stored: [
 						{
 							name: `@hobo-labs/core@${VERSION}`,

@@ -127,7 +127,6 @@ async function command(
 ): Promise<string> {
 	const env = runnerEnvironment(process.env);
 	if (file === "gh") {
-		if (process.env.GH_TOKEN) env.GH_TOKEN = process.env.GH_TOKEN;
 		if (process.env.GITHUB_TOKEN) env.GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 	}
 	return new Promise((resolveCommand, reject) =>

@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { asObject, asText, parseJson } from "./runner-routing.mts";
 
 export function hasReadOnlyStatusInstallation(
@@ -18,17 +18,35 @@ export function hasReadOnlyStatusInstallation(
 	return matches.length === 1 && matches[0] === "read";
 }
 
+const MASKED_SIGN_IN_KIND = /^\s*-\s*Token:\s+(gh[a-z]_)\*+\s*$/mu;
+
+function ghSignInKind(input: {
+	cwd: string;
+	env: NodeJS.ProcessEnv;
+}): string | undefined {
+	const host = input.env.GH_HOST?.toLowerCase() || "github.com";
+	const status = spawnSync(
+		"gh",
+		["auth", "status", "--active", "--hostname", host],
+		{
+			cwd: input.cwd,
+			env: input.env,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: 10_000,
+			maxBuffer: 64 * 1024,
+		},
+	);
+	if (status.status !== 0) return undefined;
+	return MASKED_SIGN_IN_KIND.exec(`${status.stdout}\n${status.stderr}`)?.[1];
+}
+
 export function githubAppStatusIsReadOnly(input: {
 	cwd: string;
 	env: NodeJS.ProcessEnv;
 }): boolean {
-	const host = input.env.GH_HOST?.toLowerCase();
-	const token =
-		host === "github.com" || host?.endsWith(".ghe.com")
-			? (input.env.GH_TOKEN ?? input.env.GITHUB_TOKEN)
-			: (input.env.GH_ENTERPRISE_TOKEN ?? input.env.GITHUB_ENTERPRISE_TOKEN);
 	const repository = input.env.GH_REPO?.split("/").slice(-2).join("/");
-	if (!token?.startsWith("ghu_") || !repository) return false;
+	if (!repository || ghSignInKind(input) !== "ghu_") return false;
 	try {
 		const installations = execFileSync(
 			"gh",
