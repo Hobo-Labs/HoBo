@@ -79,10 +79,9 @@ export const RunnerRoutingSchema = z
 		mergeGroup: z
 			.object({
 				reusePrFabric: z.boolean(),
-				admitIdleTrunkFromRunnerPage: z.boolean().default(true),
 			})
 			.strict()
-			.default({ reusePrFabric: true, admitIdleTrunkFromRunnerPage: true }),
+			.default({ reusePrFabric: true }),
 		verdict: z
 			.object({
 				minFreeRunners: whole(1, 9999),

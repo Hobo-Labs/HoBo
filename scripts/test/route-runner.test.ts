@@ -2274,31 +2274,25 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("uses an idle hobo-trunk without a claim while GitHub-hosted is saturated", async () => {
+	it("keeps a saturated merge-group batch hosted with pickup and an idle runner page but no claim", async () => {
 		await withGithub(
 			observedWithRunners(
 				[...saturatedHostedQueue(), pickup("hobo-trunk")],
 				runnersPage("hobo-trunk", 4, 0),
 			),
 			async (apiUrl) => {
-				const { decision, lines } = await route(
+				const { decision } = await route(
 					apiUrl,
 					undefined,
 					mergeGroupCi,
 				);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
-					["fleet", "hobo-trunk", "none"],
+					["github", "ubuntu-24.04", "queue"],
 				);
-				assert.match(decision.reason, /the claim is skipped/u);
+				assert.match(decision.reason, /no verified capacity and Broker claim/u);
 				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, true);
 				assert.equal(decision.mergeGroupHostedProbe?.runnerPageIdleTrunk, true);
-				assert.ok(
-					warningsIn(lines).some((line) =>
-						line.includes("the claim is skipped"),
-					),
-					lines.join("\n"),
-				);
 			},
 		);
 	});
@@ -2318,29 +2312,19 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("diverts a saturated merge-group batch to an idle hobo-trunk with no queue pickup", async () => {
-		await withGithub(
+	it("does not route a saturated merge-group batch on runner-page idle alone", async () => {
+		const { decision } = await mergeGroupRoute(
 			observedWithRunners(
 				saturatedHostedQueue(),
 				runnersPage("hobo-trunk", 4, 0),
 			),
-			async (apiUrl) => {
-				const { decision } = await route(
-					apiUrl,
-					undefined,
-					mergeGroupCi,
-					[],
-					COMMITTED,
-					async () => true,
-				);
-				assert.deepEqual(
-					[decision.tier, decision.runner, decision.refusedBy],
-					["fleet", "hobo-trunk", "none"],
-				);
-				assert.match(decision.reason, /idle online hobo-trunk runner/u);
-				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, true);
-			},
 		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(decision.reason, /no healthy hobo-trunk capacity/u);
+		assert.equal(decision.mergeGroupHostedProbe?.runnerPageIdleTrunk, true);
 	});
 
 	it("keeps a saturated merge-group batch hosted when every hobo-trunk runner is busy", async () => {
@@ -2356,43 +2340,6 @@ describe("the script reading the slip", () => {
 		);
 		assert.match(decision.reason, /no healthy hobo-trunk capacity/u);
 		assert.equal(decision.mergeGroupHostedProbe?.runnerPageIdleTrunk, false);
-	});
-
-	it("keeps a saturated merge-group batch hosted when runner-page idle trunk admission is disabled by policy", async () => {
-		const { decision } = await printedBy(() =>
-			main(
-				[],
-				{
-					...mergeGroupCi,
-					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
-					GITHUB_RUN_ID: "50",
-					GITHUB_API_URL: "https://api.github.com",
-				},
-				{
-					routingConfig: withRouting((routing) => {
-						routing.mergeGroup = {
-							...routing.mergeGroup,
-							admitIdleTrunkFromRunnerPage: false,
-						};
-					}),
-					eventPayload: SAME_REPOSITORY_PULL,
-					fetch: async (url) =>
-						publicRepoRead(url) ??
-						Response.json(
-							observedWithRunners(
-								saturatedHostedQueue(),
-								runnersPage("hobo-trunk", 4, 0),
-							)(String(url).replace("https://api.github.com", "")),
-						),
-					now: () => SLIP_NOW,
-				},
-			),
-		);
-		assert.deepEqual(
-			[decision.tier, decision.runner, decision.refusedBy],
-			["github", "ubuntu-24.04", "queue"],
-		);
-		assert.match(decision.reason, /policy/u);
 	});
 
 	it("keeps an automatic merge-group release on verified public compute", async () => {

@@ -179,7 +179,6 @@ export type RunnerRouting = Readonly<{
 	}>;
 	mergeGroup: Readonly<{
 		reusePrFabric: boolean;
-		admitIdleTrunkFromRunnerPage: boolean;
 	}>;
 	verdict: Readonly<{
 		minFreeRunners: number;
@@ -238,21 +237,11 @@ function parseMainGate(
 function parseMergeGroup(
 	value: JsonValue | undefined,
 ): RunnerRouting["mergeGroup"] | undefined {
-	if (value === undefined)
-		return { reusePrFabric: true, admitIdleTrunkFromRunnerPage: true };
-	const fields = withKeys(
-		value,
-		["reusePrFabric"],
-		["admitIdleTrunkFromRunnerPage"],
+	if (value === undefined) return { reusePrFabric: true };
+	const reusePrFabric = asBoolean(
+		exactly(value, ["reusePrFabric"])?.reusePrFabric,
 	);
-	const reusePrFabric = asBoolean(fields?.reusePrFabric);
-	const admitIdleTrunkFromRunnerPage =
-		fields?.admitIdleTrunkFromRunnerPage === undefined
-			? true
-			: asBoolean(fields.admitIdleTrunkFromRunnerPage);
-	return reusePrFabric !== undefined && admitIdleTrunkFromRunnerPage !== undefined
-		? { reusePrFabric, admitIdleTrunkFromRunnerPage }
-		: undefined;
+	return reusePrFabric !== undefined ? { reusePrFabric } : undefined;
 }
 
 function parseVerdict(
