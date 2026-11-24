@@ -13,7 +13,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { describe, it } from "vitest";
+import { describe, it } from "node:test";
 import { parseFleetVerdict } from "../../packages/fleet/src/verdict-wire.ts";
 import {
 	ABSENT_SLIP_WHYS,
