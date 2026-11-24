@@ -60,6 +60,53 @@ clusters must have a configured runner provider and relay access. Installing the
 App and connecting a repository does not prove that any runner is available or
 that a GitHub Actions job has executed.
 
+### Reconnect after a restart: `hobo login --relay`
+
+Once the relay is configured (its GitHub App installed and its account bound),
+a restarted container or machine reconnects with one GitHub confirmation and no
+setup form:
+
+```sh
+hobo login --relay https://ci.example.com          # checks the sign-in; the session ends with the process
+hobo ci status --relay https://ci.example.com      # signs in when the first credential is needed
+```
+
+The relay starts GitHub's device flow with HoBo's GitHub App
+(`POST /v1/owner-login/device`); the owner opens `https://github.com/login/device`
+and enters the code HoBo prints. HoBo polls `POST /v1/owner-login/token`; the
+relay redeems GitHub's code itself, checks that the GitHub account owns the App
+installation the relay's account binds (the installation's user, or an active
+administrator of its organization), drops the GitHub user token and returns an
+eight-hour session sealed with its session key. HoBo keeps that session only in
+the memory of the process that signed in: the `hobo` process for one command, the
+`hobo-mcp` server for an MCP session (its `relay_login` tool). Nothing is written:
+no token, relay origin, account or identifier on disk, in a keychain or in the
+environment, so the next process signs in again with one confirmation. Pass the
+origin each time (`--relay`); `hobo login --relay` never writes `profile.json`.
+
+With a session, `owner://HOBO_CI_ACCOUNT_TOKEN` resolves to a 15-minute account
+credential the relay seals and its account API accepts, and
+`github-app://<owner>/<repo>` to an installation token of HoBo's GitHub App for a
+repository the account binds (`POST /v1/owner-login/credentials`). Every other
+`owner://` entry is refused (`relay-not-resolvable`): the relay hands out
+short-lived values only, never its App private key or a stored entry, so verbs
+that need the owner's long-lived provider entries (a Hostinger or Vercel token)
+still need `choose_secret_store`. Refusals: `HOBO_RELAY_LOGIN_UNREACHABLE`,
+`HOBO_RELAY_LOGIN_NOT_CONFIGURED` (no account with an installation),
+`HOBO_RELAY_LOGIN_DEVICE_FLOW` (Device Flow is off in the App's settings),
+`HOBO_RELAY_LOGIN_DENIED`, `HOBO_RELAY_LOGIN_EXPIRED`, `HOBO_RELAY_LOGIN_NOT_OWNER`,
+`HOBO_RELAY_LOGIN_ORIGIN` (not an https origin) and, through `hobo-mcp`'s CLI
+`login` tool, `HOBO_RELAY_LOGIN_USE_MCP_TOOL`.
+
+In HoBo MCP, `relay_login` asks the owner for the relay address in a host form,
+or on HoBo's sealed owner page when the host shows no forms (`relay_login` again
+with the page's `sealed` text), then shows the GitHub code in a second host form
+or on a confirmation page the agent publishes. Its results carry a status only,
+never the address, the code or the session. `hobo ci` and `hobo cd` verbs in that
+server resolve through the relay session while no store session is established
+for the project (`withRelaySession` in `src/owner-store-session.ts`); `doctor`
+reports `relaySession.expiresInSeconds`.
+
 Prefer the committed **`.hobo/ci.json`** profile when present. It names each
 environment's `relayOrigin`, optional `jobAdmission` (`push` for hosted relays,
 `pull` for loopback laptops), and `selection` rules for branch/CD routing. Local

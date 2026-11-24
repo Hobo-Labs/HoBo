@@ -126,6 +126,15 @@ Each subcommand takes exactly the flags its usage line names, plus `--format`,
 | Policy | `compliance show`; Rails promote with `promote` and Rail Freight |
 | Hosting | `hosting-status`, `hosting-resume`, `hosting-cancel`, `hosting-resume-mutation` (unchanged) |
 
+After a restart, `hobo cd <subcommand> --relay <https-origin>` (or HoBo MCP's
+`relay_login`) signs in to the owner's already configured CI relay with one
+GitHub confirmation and resolves `github-app://<owner>/<repo>` and
+`owner://HOBO_CI_ACCOUNT_TOKEN` through it for that process only; `--relay` is
+taken off the arguments before the subcommand parses them. Long-lived provider
+entries (a Vercel or Hostinger token) are not handed out by the relay, so the
+steps that read them still need the owner's store session
+([CI.md](CI.md#reconnect-after-a-restart-hobo-login---relay)).
+
 Promotions and rollbacks derive a deterministic idempotency key from their
 inputs (override with `--idempotency-key`), so the same request twice is one
 request (I12).

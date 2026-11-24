@@ -735,6 +735,7 @@ Example:
 
 Usage:
   hobo login [global flags] [--home <path>] [--broker <uri>]
+  hobo login --relay <https-origin>
 
 Role: ${verb.role}
 ${statusLine}
@@ -742,8 +743,14 @@ Obtain a dev session/identity context and persist it to .hobo/session.json
 so hobo up / hobo down run under it. --broker targets a remote Conductor
 endpoint (--broker-uri is an accepted alias).
 
+--relay signs in to an already configured HoBo CI relay instead: the owner
+confirms one code at GitHub, and the session lives only in this process's
+memory; nothing is written. hobo ci and hobo cd take --relay <https-origin>
+to sign in the same way when a credential is first needed.
+
 Example:
   hobo login
+  hobo login --relay https://relay.example
 `;
 	}
 

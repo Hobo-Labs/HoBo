@@ -10,6 +10,7 @@ import {
 	OWNER_PAGE_COLLECTION,
 	OwnerPageRefused,
 } from "../src/mcp-owner-page.js";
+import { createRelayLoginTool } from "../src/mcp-relay-login.js";
 import {
 	CHOOSE_SECRET_STORE_TOOL,
 	createStoreChoiceApp,
@@ -19,6 +20,7 @@ import {
 	SUBMIT_OWNER_PAGE_TOOL,
 } from "../src/mcp-store-choice.js";
 import type { OwnerStoreSessions } from "../src/owner-store-session.js";
+import { createRelayOwnerSessions } from "../src/relay-owner-session.js";
 
 const ORIGIN = "https://owner-page.hobo.test/";
 const TOKEN = "header.payload-owner-page-fixture.signature";
@@ -345,6 +347,143 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		);
 		expect(shown.structuredContent).toMatchObject({
 			status: "secure-form-unavailable",
+		});
+	});
+});
+
+async function sealRelayInBrowser(
+	html: string,
+	relay: string,
+): Promise<z.infer<typeof saved>> {
+	const page = await browser.newPage();
+	try {
+		await page.route(ORIGIN, (route) =>
+			route.fulfill({ contentType: "text/html", body: html }),
+		);
+		await page.addInitScript(() => {
+			Object.defineProperty(window, "claude", {
+				value: {
+					use: async (name: string) =>
+						name === "db"
+							? {
+									doc: (path: string) => ({
+										set: async (
+											data: Readonly<Record<string, string | number>>,
+										) => {
+											document.documentElement.dataset.saved = JSON.stringify({
+												path,
+												data,
+											});
+										},
+									}),
+								}
+							: null,
+				},
+			});
+		});
+		await page.goto(ORIGIN);
+		await page.fill("#relay", relay);
+		await page.click("#go");
+		await page.waitForFunction(() =>
+			document.getElementById("say")?.classList.contains("ok"),
+		);
+		expect(await page.inputValue("#relay")).toBe("");
+		return saved.parse(
+			JSON.parse((await page.getAttribute("html", "data-saved")) ?? "null"),
+		);
+	} finally {
+		await page.close();
+	}
+}
+
+describe("HoBo's relay owner page", () => {
+	const RELAY = "https://relay.hobo.test";
+
+	it("seals the relay address so only this HoBo server reads it, then shows the GitHub code for the owner only", async () => {
+		const pages = createOwnerPages();
+		const opened = await pages.openRelay("/synthetic/project");
+		const out = await sealRelayInBrowser(opened.html, RELAY);
+		expect(out.path).toBe(`${OWNER_PAGE_COLLECTION}/${opened.page}`);
+		expect(out.data.sealed).not.toContain("relay.hobo.test");
+		await expect(pages.unseal(out.data.sealed)).rejects.toMatchObject({
+			reason: "unknown-page",
+		});
+
+		const again = await pages.openRelay("/synthetic/project");
+		const sealed = await sealRelayInBrowser(again.html, RELAY);
+		const sessions = createRelayOwnerSessions({
+			fetch: async (input) =>
+				String(input) === `${RELAY}/v1/owner-login/device`
+					? Response.json({
+							device_code: "D".repeat(52),
+							user_code: "WXYZ-1234",
+							verification_uri: "https://github.com/login/device",
+							expires_in: 900,
+							interval: 5,
+						})
+					: Response.json({ error: "authorization_pending" }, { status: 400 }),
+			sleep: () => new Promise<void>(() => undefined),
+			now: Date.now,
+		});
+		const app = createStoreChoiceApp({
+			cwd: "/synthetic/project",
+			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+			pages,
+			relayLogin: createRelayLoginTool({ relay: sessions, pages }),
+		});
+		const result = await app.callTool(
+			"relay_login",
+			{ sealed: sealed.data.sealed },
+			NO_STORE_CHOICE_SUPPORT,
+			undefined,
+		);
+		const confirmation = z
+			.object({ status: z.literal("confirm-page"), html: z.string() })
+			.parse(result.structuredContent);
+		expect(confirmation.html).toContain("WXYZ-1234");
+		expect(confirmation.html).toContain("https://github.com/login/device");
+		expect(JSON.stringify(result.content)).not.toContain("WXYZ-1234");
+		expect(JSON.stringify(result)).not.toContain("relay.hobo.test");
+		expect(
+			(
+				await app.callTool(
+					"relay_login",
+					{},
+					NO_STORE_CHOICE_SUPPORT,
+					undefined,
+				)
+			).structuredContent,
+		).toEqual({ status: "pending" });
+		sessions.close();
+	});
+
+	it("opens an owner page for the address when the host shows no forms", async () => {
+		const pages = createOwnerPages();
+		const app = createStoreChoiceApp({
+			cwd: "/synthetic/project",
+			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+			pages,
+			relayLogin: createRelayLoginTool({
+				relay: createRelayOwnerSessions({
+					fetch: async () => new Response(null, { status: 500 }),
+					sleep: async () => undefined,
+					now: Date.now,
+				}),
+				pages,
+			}),
+		});
+		const result = await app.callTool(
+			"relay_login",
+			{},
+			NO_STORE_CHOICE_SUPPORT,
+			undefined,
+		);
+		expect(result.structuredContent).toMatchObject({
+			status: "owner-page",
+			capabilities: { db: {} },
+		});
+		await expect(pages.unsealRelay("{}")).rejects.toMatchObject({
+			reason: "malformed",
 		});
 	});
 });

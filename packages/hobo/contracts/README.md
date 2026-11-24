@@ -18,6 +18,18 @@ relay OAuth start remains covered by `@hobo/ci-gh-actions`' OAuth-session tests.
 GitHub is an external provider and does not verify this consumer fixture; live
 App registration, settings changes, and installation remain release checks.
 
+`relay-owner-login.pact.json` pins HoBo's sign-in to an already configured CI
+relay: the device start, a pending and a confirmed poll, an installation token,
+the 15-minute account credential, the refusal of a long-lived entry and of an
+expired session, with the generated `relay_owner_login.proto` JSON of
+`@hobo/ci-gh-actions` (constrained by its `relay_owner_login.cue`).
+`test/relay-owner-session.test.ts` replays every interaction against the real
+client, session holder, `hobo login --relay` and `relay_login`, and checks each
+request HoBo sent against the pact. The provider side verifies the same file
+against the composed stateless relay in
+`../../ci-vercel/contracts/relay-owner-login.provider.test.ts`. GitHub's device
+flow and a live owner confirmation remain release checks.
+
 `test/ci-runs.test.ts` exercises the process contract to GitHub CLI with exact
 argument arrays, repository/host selection, bounded JSON parsing, current commit
 resolution, retry admission and new-attempt fencing. It uses a process seam;
