@@ -160,6 +160,20 @@ wired the same way in Claude Code, Codex, Cursor and Copilot, also applies
 [`scripts/test/agent-session-policy.test.ts`](../scripts/test/agent-session-policy.test.ts)
 covers each refusal, the allowed cases, and the ledger.
 
+A second Stop hook, [`scripts/agent-owner-ask-hook.mts`](../scripts/agent-owner-ask-hook.mts),
+runs beside the completion review in Claude Code (`Stop`), Codex (`Stop`),
+Cursor (`stop`) and Copilot (`agentStop`). It blocks ending a turn whose final
+assistant message asks the owner to sign in again, re-submit a form, or test
+by hand, and tells the agent to verify the result itself. The phrases are the
+exported `OWNER_RETEST_PHRASES`; text in code spans, code blocks and quotes is
+ignored. The ask is allowed only when the transcript shows, after the human's
+latest message, an owner-session result with status `sign-in-needed` and a
+`reason`. The hook reads the harness's `last_assistant_message`, or else the
+last assistant text in `transcript_path`; it calls no model and no network,
+and allows the stop when neither is available.
+[`scripts/test/agent-owner-ask-hook.test.ts`](../scripts/test/agent-owner-ask-hook.test.ts)
+covers the phrases, the exception and each harness's answer.
+
 ## Product implementation guardrails
 
 Agents implementing HoBo code must follow the canonical architecture rules in [`../AGENTS.md`](../AGENTS.md): every service boundary is pinned by PACT contracts; records, messages, data shapes, and objects are defined in protobuf with CUE constraints; runtime code parses into derived types instead of validating broad values in place; and flows use CQRS, event stores, materialized views, and actors. Actors consume commands, emit events, and coordinate durable state. Query paths use rx-style projections with cached current snapshots and persisted historical snapshots in a read store.
