@@ -1258,7 +1258,15 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Resolve and validate release version
         env:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
