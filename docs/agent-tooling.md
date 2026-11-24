@@ -132,6 +132,34 @@ input and use the returned `decision` and `reason`, or adapt Cursor's
 `followup_message` format. A compatible harness needs a reliable continuation
 marker and session identifier.
 
+## Owner session and pull request guardrails
+
+The pre-tool hook [`scripts/agent-secret-policy.mts`](../scripts/agent-secret-policy.mts),
+wired the same way in Claude Code, Codex, Cursor and Copilot, also applies
+[`scripts/agent-session-policy.mts`](../scripts/agent-session-policy.mts):
+
+- It refuses a shell command that stops HoBo's MCP server or owner page
+  driver: `kill`, `pkill`, `killall` or `taskkill` aimed at `hobo-mcp`,
+  `hobo mcp`, `hobo.js mcp` or the owner page, including through `pgrep … |
+  xargs kill`, and `pkill`/`killall` of every `node` or `tsx` process. The
+  server keeps an open owner page's one-use key and any sealed submission
+  only in memory, so no file says whether a form is open; the hook therefore
+  refuses these commands outright and tells the agent to let the form finish.
+  A `kill <pid>` with a bare number cannot be attributed and is not refused.
+- It refuses creating a pull request (the GitHub MCP `create_pull_request`
+  tool, `gh pr create`, and `gh api …/pulls` with `POST` or `-f`/`-F`
+  fields) when the session already has three pull requests that have not
+  landed. A session is the head branch without its last `-<suffix>`
+  (`claude/<slug>-<id>-grounding` belongs to `claude/<slug>-<id>`). The hook
+  counts offline: each allowed creation is recorded in
+  `$(git rev-parse --git-common-dir)/hobo-agent/pull-requests.json`, shared
+  by every worktree, and an entry clears once its head commit is on
+  `origin/main` after a fetch. Recreating a pull request for the same head is
+  allowed. The refusal cites CLAUDE.md's one PR per workstream.
+
+[`scripts/test/agent-session-policy.test.ts`](../scripts/test/agent-session-policy.test.ts)
+covers each refusal, the allowed cases, and the ledger.
+
 ## Product implementation guardrails
 
 Agents implementing HoBo code must follow the canonical architecture rules in [`../AGENTS.md`](../AGENTS.md): every service boundary is pinned by PACT contracts; records, messages, data shapes, and objects are defined in protobuf with CUE constraints; runtime code parses into derived types instead of validating broad values in place; and flows use CQRS, event stores, materialized views, and actors. Actors consume commands, emit events, and coordinate durable state. Query paths use rx-style projections with cached current snapshots and persisted historical snapshots in a read store.
