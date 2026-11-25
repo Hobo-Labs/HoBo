@@ -1,38 +1,3 @@
-/**
- * Which changed paths are non-meaningful ("inert") for package lanes.
- *
- * A path is inert only under a named rule: identical bytes, format-only
- * JSON, whitespace-only markdown, or a TypeScript token stream unchanged
- * once trivia is dropped (directive comments, JSDoc, shebangs and
- * ASI-significant newlines stay in the stream). The token-stream rule is
- * syntactic, not semantic, and has known false-inert classes (council R2):
- * the bare scanner never rescans `/` into regex literals or tokenizes JSX
- * children, so whitespace inside a regex, `/*` inside a regex class, JSX
- * text, and a newline hidden inside a multiline comment after `return`
- * can hash equal across a real behavior change. Shadow numbers are
- * therefore optimistic and are not enforcement evidence. Everything else
- * — added/deleted files, unparsable input, a missing base or tokenizer,
- * more than 300 changed paths — is meaningful.
- * Uncertainty always widens to today's behavior: feeding `meaningfulPaths`
- * to `affectedLanes`/`planDependentTests` can only narrow by inert paths,
- * and the workflow runs this in shadow mode (`HOBO_IMPACT_GATE=shadow`,
- * the default) where the classification changes nothing and only reports.
- * Shadow-only is load-bearing: some suites scan raw source text (design
- * lint, redaction walks), so a token-inert change can still fail them.
- * Enforcement is blocked on both: those scan roots modeled, and the
- * tokenizer made parser-driven (or failed closed on slash tokens and
- * JSX). Until then nothing consumes this output. A change to the
- * classifier or its wiring always classifies every path meaningful.
- *
- * Node builtins only. The token-stream rule needs the `typescript` package
- * (already a root dependency); when it cannot be loaded — the pre-install
- * path — code files stay meaningful and the JSON/markdown rules still run.
- *
- * CLI: `git diff --name-only BASE...HEAD | node --experimental-strip-types
- * scripts/ci/impact-classifier.mts --base=BASE [--meaningful-out=FILE]`
- * prints the classification as JSON and a shadow summary on stderr.
- * Omitting `--base` retains fail-closed behavior (every path meaningful).
- */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -45,7 +10,6 @@ import {
 	cliRootFileReader,
 } from "./affected-lanes.mts";
 
-/** Base/head file contents, injectable so tests can run in memory. */
 export type ReadVersions = (
 	path: string,
 	side: "base" | "head",
@@ -60,34 +24,22 @@ export type InertRule =
 export type FileImpact = Readonly<{
 	path: string;
 	meaningful: boolean;
-	/** The rule that proved the path inert; absent when meaningful. */
 	rule?: InertRule;
 }>;
 
 export type ImpactClassification = Readonly<{
-	/** Paths no inert rule proved safe to drop. */
 	meaningfulPaths: readonly string[];
 	inert: readonly FileImpact[];
-	/** A scripts/ or test/ file changed at the byte level: biome's format
-	 * gate reads bytes, so inert never implies unformatted. */
 	formatCheck: boolean;
-	/** The code-trivia rule ran (a tokenizer was available). */
 	tokenizer: boolean;
 	reason?: string;
 }>;
 
-/** Hash of a file's trivia-insensitive token stream; undefined = cannot prove. */
 export type CodeTokenizer = (path: string, text: string) => string | undefined;
 
 const CODE_PATH = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 const MAX_PATHS = 300;
 
-/**
- * Parsed JSON re-serialized. Key order is preserved on purpose: it is
- * observable data (package.json `exports` conditions resolve first-match,
- * golden manifests pin byte order), so only formatting differences are
- * inert, never a reorder.
- */
 function canonicalJson(text: string): string | undefined {
 	try {
 		const value: unknown = JSON.parse(text);
@@ -174,17 +126,10 @@ export function classifyImpact(
 export type ShadowComparison = Readonly<{
 	current: AffectedLanes;
 	proposed: AffectedLanes;
-	/** Inert paths the proposal drops, each explained by its rule. */
 	dropped: readonly FileImpact[];
-	/** Paths dropped without an inert rule. Must always be empty. */
 	unexplained: readonly string[];
 }>;
 
-/**
- * Today's lanes against the lanes for the meaningful paths only. An
- * all-inert diff proposes `skip` (an empty path list would otherwise widen
- * to `all` in `affectedLanes`); an empty diff stays fail-closed.
- */
 export function shadowLanes(
 	paths: readonly string[],
 	classification: ImpactClassification,
@@ -211,7 +156,6 @@ export function shadowLanes(
 	};
 }
 
-/** The slice of the TypeScript compiler API the tokenizer needs. */
 type TypescriptLike = Readonly<{
 	ScriptTarget: Readonly<Record<string, number>>;
 	LanguageVariant: Readonly<Record<string, number>>;
@@ -239,10 +183,6 @@ type TypescriptLike = Readonly<{
 const DIRECTIVE_COMMENT =
 	/@ts-(?:ignore|expect-error|nocheck|check)|biome-ignore|eslint|oxlint|prettier-ignore|istanbul ignore|c8 ignore|v8 ignore|@__PURE__|@__NO_SIDE_EFFECTS__|vite-ignore|webpackIgnore|sourceMappingURL|^\/{2,}\s*<reference/u;
 
-/**
- * Paths whose own change must run under today's behavior, never under a
- * classification the change itself could have rigged.
- */
 const SELF_PATHS = new Set([
 	"scripts/ci/impact-classifier.mts",
 	"scripts/lib/read-stdin.mts",
@@ -252,14 +192,6 @@ const SELF_PATHS = new Set([
 	".github/workflows/hobo-ci.yml",
 ]);
 
-/**
- * Trivia-insensitive token-stream hash. Two versions hash equal only when
- * they tokenize identically outside whitespace and plain comments: string,
- * template and regex literal text is hashed, directive comments and JSDoc
- * are kept, a newline after `return`/`throw`/`break`/`continue`/`yield`
- * or before `++`/`--` is significant (ASI), and either side failing to
- * parse proves nothing.
- */
 export function typescriptTokenizer(ts: TypescriptLike): CodeTokenizer {
 	const kind = (name: string): number => ts.SyntaxKind[name] ?? -1;
 	const trivia = new Set(
@@ -319,7 +251,6 @@ export function typescriptTokenizer(ts: TypescriptLike): CodeTokenizer {
 			let previous = -1;
 			let sawNewline = false;
 			let lastPos = -1;
-			// Every scan must advance; a stuck scanner proves nothing.
 			for (let guard = text.length * 2 + 100; guard > 0; guard--) {
 				const token = scanner.scan();
 				if (token === endOfFile)
@@ -355,12 +286,8 @@ export function typescriptTokenizer(ts: TypescriptLike): CodeTokenizer {
 	};
 }
 
-/** The real tokenizer, or undefined when `typescript` cannot be loaded. */
 export function loadTokenizer(): CodeTokenizer | undefined {
 	try {
-		// SAFETY: the pinned `typescript` package supplies every member of
-		// TypescriptLike; a mismatched module throws on first use inside the
-		// tokenizer, which fails closed to undefined there.
 		const ts = createRequire(import.meta.url)("typescript") as TypescriptLike;
 		return typescriptTokenizer(ts);
 	} catch {
@@ -375,9 +302,7 @@ function cliVersionReader(baseRef: string): ReadVersions {
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "ignore"],
 		}).trim();
-	} catch {
-		// An unrelated or unavailable history falls back to the ref itself.
-	}
+	} catch {}
 	if (mergeBase === "") mergeBase = baseRef;
 	return (path, side) => {
 		try {
