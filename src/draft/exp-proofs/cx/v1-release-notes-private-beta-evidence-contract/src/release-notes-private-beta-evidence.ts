@@ -102,7 +102,7 @@ export const RELEASE_NOTES_PRIVATE_BETA_EVIDENCE: ReleaseNotesPrivateBetaEvidenc
       id: "upgrade-test-suite-private-beta-results",
       status: "accepted-substitute",
       owningProject: "Upgrade Test Suite",
-      proofSource: ["docs/design/upgrade-test-suite.md", "HOBO-433"],
+      proofSource: ["https://linear.app/quickdeploy-ai/document/upgrade-test-suite-scope-and-acceptance-archived-7c2b2c549d86", "HOBO-433"],
       feeds: ["compatibility-matrix", "migration-notes"]
     },
     {

@@ -91,7 +91,7 @@ see the next step, owner, accepted limitation, and proof source for the onboardi
 
 - [Workspace & Onboarding UX](./workspace-onboarding-ux.md) owns the first-run product rail that
   customer onboarding consumes.
-- [Persona Operating Profile](./persona-operating-profile.md) owns minimal profile fields and
+- [Persona Operating Profile](https://linear.app/quickdeploy-ai/document/persona-operating-profile-and-recommendation-memory-archived-e3cb2a547f5c) owns minimal profile fields and
   recommendation boundaries.
 - [Pre-Launch Outcome Contract](./pre-launch-outcome-contract.md) owns the customer-visible
   outcome baseline and success signal.

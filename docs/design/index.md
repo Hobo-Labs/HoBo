@@ -80,8 +80,8 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`organization-workspace-model.md`](./organization-workspace-model.md) | Productization M0 scope and acceptance for organization, workspace, project, tenant, and environment ownership | — |
 | [`workspace-activation-telemetry-contract.md`](./workspace-activation-telemetry-contract.md) | Productization M0 contract for first-run workspace activation telemetry and privacy boundaries | — |
 | [`e2e-test-matrix.md`](./e2e-test-matrix.md) | Productization M0 scope and acceptance for the E2E Test Matrix project | — |
-| [`performance-load-tests.md`](./performance-load-tests.md) | Productization M0 scope, launch envelope, capacity assumptions, deterministic fixtures, threshold handoffs, and acceptance for Performance & Load Tests | — |
-| [`persona-operating-profile.md`](./persona-operating-profile.md) | Productization M0 contract for persona operating profile fields and v1 recommendation memory boundaries | — |
+| [`performance-load-tests.md`](https://linear.app/quickdeploy-ai/document/performance-and-load-tests-archived-16faf7e829d8) | Productization M0 scope, launch envelope, capacity assumptions, deterministic fixtures, threshold handoffs, and acceptance for Performance & Load Tests | — |
+| [`persona-operating-profile.md`](https://linear.app/quickdeploy-ai/document/persona-operating-profile-and-recommendation-memory-archived-e3cb2a547f5c) | Productization M0 contract for persona operating profile fields and v1 recommendation memory boundaries | — |
 | [`launch-e2e-persona-matrix.md`](./launch-e2e-persona-matrix.md) | Productization M0 contract for launch e2e persona journeys and pass/fail thresholds | — |
 | [`wasm-runtime-wit.md`](./wasm-runtime-wit.md#plan-20) | WASM/WASI runtime & WIT interface reference | 20 |
 | [`authoring-resources-wiring.md`](./authoring-resources-wiring.md#plan-21) | Authoring: resource catalog, wiring/manifest, config & the Hobo Code DSL | 21 |
@@ -143,7 +143,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`customer-onboarding.md`](./customer-onboarding.md) | Productization M0 first-customer onboarding script, success criteria, support handoff, and pilot-note routing contract | — |
 | [`dogfood-yard.md`](./dogfood-yard.md) | Productization M0 dogfood Yard acceptance scenarios and telemetry evidence | 04, 05, 07, 40 |
 | [`upgrade-migration-engine.md`](./upgrade-migration-engine.md) | Productization M0 scope and acceptance for upgrade paths, migration dry-run, rollback evidence, and support handoff | — |
-| [`upgrade-test-suite.md`](./upgrade-test-suite.md) | Productization M0 scope and acceptance for upgrade scenario coverage, fixtures, evidence fields, result states, and suite handoffs | — |
+| [`upgrade-test-suite.md`](https://linear.app/quickdeploy-ai/document/upgrade-test-suite-scope-and-acceptance-archived-7c2b2c549d86) | Productization M0 scope and acceptance for upgrade scenario coverage, fixtures, evidence fields, result states, and suite handoffs | — |
 | [`bootstrap-installer.md`](./bootstrap-installer.md) | Productization M0 scope and acceptance for SaaS, self-host, and local/dev bootstrap installer paths | — |
 | [`backup-restore.md`](./backup-restore.md) | Productization M0 scope and acceptance for backup sources, restore paths, RPO/RTO drill evidence, and recovery handoffs | — |
 | [`settings-project-lifecycle.md`](./settings-project-lifecycle.md) | Productization M0 settings and project lifecycle scope, state model, ownership, and evidence gate | — |
@@ -157,7 +157,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`org-catalogs.md`](./org-catalogs.md) | Productization M0 scope and acceptance for org catalog kinds, approval states, evidence fields, owner handoffs, and scope boundaries | — |
 | [`resource-garbage-collection.md`](./resource-garbage-collection.md) | Productization M0 scope and acceptance for resource garbage classes, cleanup eligibility, orphan evidence, owner handoffs, and safe cleanup boundaries | — |
 | [`teardown-recovery.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/teardown-recovery.md) | Productization M0 scope and acceptance for teardown states, dependency-drain evidence, recovery decisions, cleanup/support handoffs, and safe teardown boundaries | — |
-| [`drift-reconciliation.md`](./drift-reconciliation.md) | Productization M0 scope and acceptance for drift classes, reconciliation states, source-of-truth evidence, owner handoffs, and follow-up gates | — |
+| [`drift-reconciliation.md`](https://linear.app/quickdeploy-ai/document/drift-reconciliation-scope-and-acceptance-archived-a98b68b1b67c) | Productization M0 scope and acceptance for drift classes, reconciliation states, source-of-truth evidence, owner handoffs, and follow-up gates | — |
 | [`stage-6-production-hardening-acceptance.md`](./stage-6-production-hardening-acceptance.md) | Stage-6 (Production Hardening) acceptance record: ratified HA/DR/canary/FinOps hooks, promoted epic proofs, restated stage gate, and the S6-02..S6-10 follow-up gate | — |
 | [`compatibility-matrix.md`](./compatibility-matrix.md) | Productization M0 browser, device, platform, CLI bootstrap, and support-routing compatibility matrix | — |
 

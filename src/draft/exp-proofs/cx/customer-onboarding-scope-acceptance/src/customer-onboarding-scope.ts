@@ -61,7 +61,7 @@ export const CUSTOMER_ONBOARDING_SCOPE = {
     "Linear HOBO-449 issue body",
     "docs/design/customer-onboarding.md",
     "docs/design/workspace-onboarding-ux.md",
-    "docs/design/persona-operating-profile.md",
+    "https://linear.app/quickdeploy-ai/document/persona-operating-profile-and-recommendation-memory-archived-e3cb2a547f5c",
     "docs/design/pre-launch-outcome-contract.md",
     "docs/design/beta-pilot-feedback.md",
     "docs/design/support-sla-channels.md",
