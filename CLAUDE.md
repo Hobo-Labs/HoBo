@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 The repository-wide rules at the start of [AGENTS.md](AGENTS.md) apply to Claude
-and every plugin or skill, including the completion discipline, the prohibition
-on explanatory comments, deferred work markers, and planning or design documents.
+and every plugin or skill. Preserve training input comments and track genuinely
+unfinished work in Linear before removing its marker or planning document.
 
 **Repo:** HoBo — a cloud-agnostic, AI-native hosting platform: an active design suite **plus a production `packages/` workspace** (140+ package manifests, ~400k lines of non-test TypeScript; S0–S3 stage-gate lanes green). Honest-scope caveats (in-memory Pulumi stand-in default, synthetic componentize bytes, not on npm) live in the README status summary and `docs/design/live-provider-matrix.md`. The design suite is in [`docs/design/`](docs/design/index.md); formal requirements are archived in [`docs/archive/requirements/`](docs/archive/requirements/index.md); competitor research is in [`docs/competitors/`](docs/competitors/index.md). Production packages live under `packages/`; draft proofs and agent tooling remain under `src/draft/` and `.agents/`/`.claude/`/`scripts/`.
 
@@ -10,7 +10,7 @@ on explanatory comments, deferred work markers, and planning or design documents
 The repo-local **sdlc** skill coordinates implementation and review under the repository-wide rules; **`/sdlc --finish`** lands the session (commit, merge `origin/main` in, one PR per workstream, merge — never squash — all session work; see the skill's `--finish` section). Companion **gh-stack** skill covers non-interactive CLI; **draft** governs proof material with gate-enforced artifacts (`proof.json`, executed examples, notebooks, cucumber features via `pnpm run test:behavior`).
 This repo is wired with the agent tools listed in the docs/agent-tooling.md table for Claude Code, Cursor, and Codex (Superpowers also targets GitHub Copilot CLI) — see **[`AGENTS.md`](AGENTS.md)** for the full table and **[`docs/agent-tooling.md`](docs/agent-tooling.md)** for setup/keys/risks. Quick map:
 - **superpowers** (`obra/Superpowers`) — plugin: code-review, TDD, and debugging workflows; planning and design artifacts are prohibited; enabled repo-wide via `.claude/settings.json`; loads at session start.
-- **mattpocock/skills** — engineering disciplines incl. **`grill-with-docs`** (design interview → ADRs+glossary), `domain-modeling`, `codebase-design`, `tdd`; one-time `/setup-matt-pocock-skills` to configure.
+- **mattpocock/skills** — engineering disciplines incl. **`grill-with-docs`** (design interviews without creating ADRs), `domain-modeling`, `codebase-design`, `tdd`; one-time `/setup-matt-pocock-skills` to configure.
 - **caveman** — terse-output compression (active by default; `/caveman` to adjust).
 - **impeccable** (`pbakaus/impeccable`) — design skill (23 commands: `/impeccable shape|critique|audit|polish`, dials like `bolder`/`quieter`). **Always-on for UI/TUI/dashboard work** — do not wait to be asked (see **AGENTS.md “Visual quality”**). `PRODUCT.md` holds product truth; visual tokens and components live in source. Do not run commands that generate design documents. Its daily phone-home (from `scripts/context.mjs` run as a command — the hook does **not** fetch) is disabled by `IMPECCABLE_NO_UPDATE_CHECK=1` in `.claude/settings.json`, which covers Claude Code sessions; the config-file opt-out is cwd-relative and misses subdirectories; it installs a per-edit hook for Codex/Cursor/Copilot only.
 - **Higgsfield MCP** — official hosted image/video generation (`mcp__higgsfield__*`); account OAuth, no key in-repo, needs human approval before use.
@@ -25,8 +25,8 @@ Install the binaries once with [`scripts/setup-agent-tools.sh`](scripts/setup-ag
 
 ## Working norms
 - **Agents never store secrets.** No secret or store-configuration env vars, Actions secrets or variables, `.env` or key files, or own credential stores; credentials are `owner://<NAME>` entries in the owner's HoBo store session. See the rule at the start of `AGENTS.md`; `secrets:guard` and the pre-tool hooks enforce it.
-- **Do not create plans, roadmaps, or design documents.** Complete existing work and remove its planning artifacts. See the rules at the start of `AGENTS.md`.
-- Keep user and operator documentation aligned with behavior in `packages/`; `docs:freshness` checks code changes alongside documentation changes. Finish and remove the existing design suite under the repository-wide rules.
+- **Do not create plans, roadmaps, or design documents.** Track genuinely unfinished work in Linear and remove its planning artifacts. See the rules at the start of `AGENTS.md`.
+- Keep user and operator documentation aligned with behavior in `packages/`; `docs:freshness` checks code changes alongside documentation changes. Move unfinished work from the existing design suite to Linear and remove its planning artifacts.
 - Follow the HoBo implementation architecture rules in [`AGENTS.md`](AGENTS.md): PACT at service boundaries, protobuf plus CUE for records/messages/data/objects, project-local `data-models/` folders for CUE-constrained types, parse-don't-validate derived types, and event-driven CQRS/actors/materialized views.
 - **Durable EventStore (ADR-0135):** default SQLite behind ports (`@hobo/storage-sqlite`, `@hobo/runtime-local`, `@hobo/runtime-browser`); one partition / one writer; stream-head CAS + fencing; never multi-writer NFS WAL. See AGENTS.md “Portable SQLite EventStore”.
 - **Bindle-first + impedance (ADR-0144):** abstract ports via Bindle kinds are the default authoring path; provider escapes are Camp/Yard-scoped and PortabilityReport-scored; check thin-adapter impedance limits before claiming fidelity.

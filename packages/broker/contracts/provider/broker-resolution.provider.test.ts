@@ -18,11 +18,6 @@ const pact = JSON.parse(
 	),
 );
 
-// PROVIDER verification: the hosted HTTP surface (http.ts) replays every
-// interaction in broker_resolution.pact.json and must reproduce the recorded
-// status and body layout. The consumer suite exercises the same pact from the
-// caller's side, so the boundary is pinned from both directions.
-
 function definition(
 	providerId: string,
 	marginalPrice: string,
@@ -90,10 +85,8 @@ describe("HoBo Broker resolve surface — provider verification of the pact", ()
 
 			const expectedReceipt = interaction.response.body.receipt;
 			if (expectedReceipt !== undefined) {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const receipt = response.body.receipt as JsonObject;
 				expect(receipt.requestId).toBe(expectedReceipt.requestId);
-				// SAFETY: assertion required at this I/O or test boundary.
 				const placements = receipt.placements as Array<JsonObject>;
 				expect(placements[0]?.providerId).toBe(
 					expectedReceipt.placements[0].providerId,
@@ -101,7 +94,6 @@ describe("HoBo Broker resolve surface — provider verification of the pact", ()
 			}
 			const expectedRejection = interaction.response.body.rejection;
 			if (expectedRejection !== undefined) {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const rejection = response.body.rejection as {
 					reasons: Array<JsonObject>;
 				};
@@ -112,12 +104,9 @@ describe("HoBo Broker resolve surface — provider verification of the pact", ()
 					expectedRejection.reasons[0].code,
 				);
 			}
-			const expectedTypes =
-				// SAFETY: assertion required at this I/O or test boundary.
-				(interaction.response.body.events as Array<{ type: string }>).map(
-					(event) => event.type,
-				);
-			// SAFETY: assertion required at this I/O or test boundary.
+			const expectedTypes = (
+				interaction.response.body.events as Array<{ type: string }>
+			).map((event) => event.type);
 			const actualTypes = (response.body.events as Array<{ type: string }>).map(
 				(event) => event.type,
 			);

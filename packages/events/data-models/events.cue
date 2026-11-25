@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the @hobo/events reactive-streams + saga records (S1-15b).
-// One constraint definition per protobuf message/enum in events.proto.
 
 #ChangeOp: "insert" | "update" | "delete"
 

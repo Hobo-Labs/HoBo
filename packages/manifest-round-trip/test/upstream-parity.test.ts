@@ -1,7 +1,3 @@
-/**
- * Where a shape moved, the package it left must re-export it rather than keep
- * a second declaration that can drift.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -21,8 +17,6 @@ describe("ResourceIntent moved and is re-exported", () => {
 			/no exported declaration named ResourceIntent/u,
 		);
 		expect(PLAN_TYPES).toContain('} from "@hobo/manifest-declaration";');
-		// The placement vocabulary moved with it; a partial move would leave
-		// `PlacementCriteria` declared here and referring to a type that is not.
 		for (const name of [
 			"PlacementCriteria",
 			"PlacementPropertySelector",
@@ -38,10 +32,6 @@ describe("ResourceIntent moved and is re-exported", () => {
 	});
 
 	it("the authoring type it re-exports is the unbranded one", () => {
-		// `@hobo/cloud` builds intents with object literals and assigns
-		// `intent.region` after construction. Re-exporting `ParsedResourceIntent`
-		// under the name `ResourceIntent` would compile here and break there, so
-		// the two names are pinned as distinct re-exports.
 		expect(PLAN_TYPES).toMatch(/^\ttype ResourceIntent,$/mu);
 		expect(PLAN_TYPES).toMatch(/^\ttype ParsedResourceIntent,$/mu);
 	});

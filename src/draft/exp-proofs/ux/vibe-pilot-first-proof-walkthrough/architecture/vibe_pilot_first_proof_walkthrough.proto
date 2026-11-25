@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for the HOBO-563 pilot first-proof walkthrough.
-// This is design-time proof data, not generated production runtime code.
 
 enum VibePilotFirstProofMode {
   VIBE_PILOT_FIRST_PROOF_MODE_UNSPECIFIED = 0;

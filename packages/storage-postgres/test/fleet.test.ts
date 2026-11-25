@@ -29,8 +29,6 @@ async function freshDatabase(name: string): Promise<PostgresFleetMember> {
 	const database = `hobo_fleet_${RUN}_${name}`;
 	await adminQuery(`CREATE DATABASE ${database}`);
 	databases.push(database);
-	// The lane's URL may name a socket directory and no host, which the WHATWG
-	// parser refuses; swap the database segment as text.
 	const connectionString = POSTGRES_URL.replace(
 		/^(postgres(?:ql)?:\/\/[^/?]*)\/[^?]*/u,
 		`$1/${database}`,
@@ -56,11 +54,9 @@ const plan: ContinuityFleetPlan = continuityFleetPlan({
 
 interface Outage {
 	readonly down: Set<string>;
-	/** Members whose next connection fails once (an interrupted copy). */
 	readonly dropOnce: Set<string>;
 }
 
-/** Real pools behind a switch that can take a member down. */
 function switchable(outage: Outage) {
 	return (member: PostgresFleetMember, schema: string): PgPoolLike => {
 		const pool = new pg.Pool({
@@ -79,7 +75,6 @@ function switchable(outage: Outage) {
 				if (outage.down.has(member.id)) throw refuse();
 				const client = await pool.connect();
 				if (!outage.dropOnce.has(member.id)) return client;
-				// Let the copy start, then cut the connection under it.
 				let statements = 0;
 				return {
 					async query(text, values) {
@@ -180,10 +175,8 @@ describeLive("PostgreSQL EventStore on a fleet", () => {
 		const b = await freshDatabase("b");
 		const w = await freshDatabase("w");
 		const outage: Outage = { down: new Set(), dropOnce: new Set() };
-		// A writer, one standby and a witness that holds only the register.
 		const store = await open([a, b], outage, [w]);
 		try {
-			// An empty fleet: the first tick names the first member writer.
 			expect((await store.tick()).status).toBe("settled");
 			const first = await store.append(
 				"deploy:1",
@@ -192,20 +185,16 @@ describeLive("PostgreSQL EventStore on a fleet", () => {
 			);
 			expect(store.writer()).toBe("a");
 
-			// The copy is interrupted part-way: the standby is left as it was.
 			outage.dropOnce.add("b");
 			await store.tick();
-			// The next tick copies it whole.
 			await store.tick();
 			expect(await rows(b)).toBe(1);
 
-			// The writer's vendor goes down: the fleet fails over within the RPO.
 			outage.down.add("a");
 			const report = await store.tick();
 			expect(report.decision?.action).toBe("failover");
 			expect(report.assignment?.active).toBe("b");
 
-			// Work continues on the new writer, with the history it had.
 			const second = await store.append(
 				"deploy:1",
 				[{ type: "deploy.Finished", data: {} }],
@@ -230,7 +219,6 @@ describeLive("PostgreSQL EventStore on a fleet", () => {
 		const b = await freshDatabase("fb");
 		const w = await freshDatabase("fw");
 		const outage: Outage = { down: new Set(), dropOnce: new Set() };
-		// A lease long enough that the store never re-reads the register.
 		const store = await createPostgresFleetEventStore({
 			members: [a, b],
 			witnesses: [w],
@@ -247,8 +235,6 @@ describeLive("PostgreSQL EventStore on a fleet", () => {
 				expectedSeq: 0,
 			});
 			expect(store.writer()).toBe("fa");
-			// Another process moves the writer: the entry reaches the old writer's
-			// copy of the register, and this store's lease still names it.
 			const register = new pg.Client({ connectionString: a.connectionString });
 			await register.connect();
 			try {
@@ -301,8 +287,6 @@ describeLive("PostgreSQL EventStore on a fleet", () => {
 			pool: switchable(outage),
 		});
 		try {
-			// The first tick backs up the (empty) journal; within the period,
-			// a tick takes none.
 			expect((await store.tick()).backup?.kind).toBe("taken");
 			await store.append("b", [{ type: "b.One", data: {} }], {
 				...OPTS,
@@ -310,7 +294,6 @@ describeLive("PostgreSQL EventStore on a fleet", () => {
 			});
 			clock += 30_000;
 			expect((await store.tick()).backup?.kind).toBe("not-due");
-			// Two more periods: three taken, two kept.
 			for (const n of [2, 3]) {
 				await store.append("b", [{ type: `b.N${n}`, data: {} }], {
 					...OPTS,
@@ -323,9 +306,7 @@ describeLive("PostgreSQL EventStore on a fleet", () => {
 			const held = await store.backups();
 			expect(held.map((backup) => backup.rows > 0)).toEqual([true, true]);
 			expect(held[0]?.takenAtMs).toBeGreaterThan(held[1]?.takenAtMs ?? 0);
-			// The writer holds events, so restoring over it is refused.
 			await expect(store.restore({ into: "ba" })).rejects.toThrow(/writer/);
-			// A replaced standby gets the newest backup back.
 			const admin = new pg.Client({ connectionString: b.connectionString });
 			await admin.connect();
 			try {

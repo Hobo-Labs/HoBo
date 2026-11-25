@@ -1,8 +1,3 @@
-// Runner-host health as Camp inventory evidence, and the runner fleet's
-// Station Rail: what the CD agent on a runner host reports (claims on its
-// reconcile observation) and what the Station turns them into
-// (CampInventory.observe conditions), plus the Rail that makes the fleet's
-// Placement decidable.
 import { readFileSync } from "node:fs";
 import { createRail } from "@hobo/stations";
 import { describe, expect, it } from "vitest";
@@ -35,7 +30,6 @@ const advert = {
 const NOW = advert.validUntilMs - 30_000;
 const DIGEST = `sha256:${"2".repeat(64)}`;
 
-/** A resolver outcome as the realizer reports it for the recorded box host. */
 function outcomeWith(
 	observation:
 		| Readonly<{

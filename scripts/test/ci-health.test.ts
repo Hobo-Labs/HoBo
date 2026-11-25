@@ -41,7 +41,6 @@ type Recorded = Readonly<{
 
 const fixtureDir = join(import.meta.dirname, "fixtures", "ci-health");
 function load(name: string): Recorded {
-	// SAFETY: the fixture files are written in the Recorded shape above.
 	return JSON.parse(readFileSync(join(fixtureDir, name), "utf8")) as Recorded;
 }
 const clear = load("clear-window.json");
@@ -169,7 +168,6 @@ describe("ci-health signals from recorded pages", () => {
 	it("H8 is clear under the paid-minutes limit, leaving out the route job and the gates", () => {
 		assert.equal(clearReport.signals.H8.state, "clear");
 		assert.equal(clearReport.paidMinutes.total, 38);
-		// The relay's slip sent that run to GitHub-hosted.
 		assert.equal(clearReport.paidMinutes.byRefusal.slip, 38);
 	});
 	it("H8 breaches over the limit, split by what refused the fleet", () => {
@@ -240,7 +238,6 @@ describe("ci-health readers", () => {
 			{ slip: "fallback", why: "no routing slip", refusedBy: "none" },
 		);
 		assert.equal(parseRouteNotice("not json"), undefined);
-		// The hosted relay's verdict notice (v1) is no longer read.
 		assert.equal(
 			parseRouteNotice(
 				'{"v":1,"workflow":"hobo-ci.yml","tier":"fleet","runner":"hobo","relay":"verdict","why":"","refusedBy":"none"}',
@@ -316,7 +313,6 @@ describe("ci-health readers", () => {
 	});
 });
 
-/** A one-file zip archive, deflated, as upload-artifact writes it. */
 function zipOf(name: string, text: string): Buffer {
 	const data = Buffer.from(text);
 	const packed = deflateRawSync(data);
@@ -474,7 +470,6 @@ async function runMain(
 		return {
 			code,
 			calls,
-			// SAFETY: main writes the HealthReport it built, as JSON.
 			report: JSON.parse(readFileSync(reportPath, "utf8")) as HealthReport,
 			log: lines.join("\n"),
 		};
@@ -483,7 +478,6 @@ async function runMain(
 	}
 }
 
-/** An issue as the monitor sends it to GitHub. */
 type SentIssue = Readonly<{
 	title: string;
 	labels: readonly string[];
@@ -493,13 +487,9 @@ type SentIssue = Readonly<{
 function issuesOpened(calls: readonly Call[]): SentIssue[] {
 	return calls
 		.filter((call) => call.method === "POST" && call.url.endsWith("/issues"))
-		.map(
-			// SAFETY: raiseIssues sends a SentIssue as the JSON body.
-			(call) => JSON.parse(call.body) as SentIssue,
-		);
+		.map((call) => JSON.parse(call.body) as SentIssue);
 }
 
-/** A window of `count` main-gate runs, each with a route job and a plan job: the most this monitor reads. */
 function largestWindow(count: number): Recorded {
 	const [run] = clear.runs;
 	const [route, plan] = clear.jobs["101"] ?? [];

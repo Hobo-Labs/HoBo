@@ -1,13 +1,3 @@
-// Real records moving between real engines of different kinds, live:
-// SQLite files, a PostgreSQL server, and a MongoDB replica set.
-//
-// PostgreSQL ↔ MongoDB is the case the design exists for — a relational
-// engine and a document engine, with different type systems, different change
-// capture, and different fencing — moved through one canonical hub with no
-// pairwise migrator. The conformance kit's pattern cases are the proof: zero
-// loss with writes arriving between every phase, one write authority, resume
-// after a crash at every phase boundary, a lossless soak rollback, and a
-// rollback that cannot resurrect an erased subject.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -35,11 +25,8 @@ import { connectLive, LIVE_URL, type LiveMongo } from "./support/live.js";
 
 const NOW = "2026-11-10T00:00:00.000Z";
 const POSTGRES_URL = process.env.HOBO_TEST_POSTGRES_URL ?? "";
-// Random, not derived from the clock and the process id: two test files can
-// start in the same millisecond, and a worker thread shares its parent's pid.
 const RUN_ID = randomUUID().replaceAll("-", "").slice(0, 12);
 
-/** Every PostgreSQL namespace this file has used; what its leak check covers. */
 const OWN_NAMESPACES: string[] = [];
 
 function failures(results: readonly EngineConformanceResult[]): string {
@@ -49,15 +36,12 @@ function failures(results: readonly EngineConformanceResult[]): string {
 		.join("\n");
 }
 
-/** One SQLite file per binding, each in its own temp directory. */
 function sqliteHarness(): EngineHarness {
 	const dirs = new Map<EngineBinding, string>();
 	const file = (dir: string): string => path.join(dir, "store.db");
 	return {
 		schemaFixture: SQLITE_SCHEMA_FIXTURE,
-		// Names SQLite keeps for itself; a dataset must never land on one.
 		reservedDatasetNames: ["sqlite_sequence", "sqlite_master"],
-		// A SQLite position is a journal sequence.
 		positionPastHead: (head) => String(Number(head) + 1_000_000),
 		create() {
 			const dir = mkdtempSync(path.join(tmpdir(), "hobo-cross-engine-"));
@@ -68,7 +52,6 @@ function sqliteHarness(): EngineHarness {
 			dirs.set(binding, dir);
 			return binding;
 		},
-		// A second connection to the same file.
 		attach(binding) {
 			const dir = dirs.get(binding);
 			if (dir === undefined) {
@@ -84,15 +67,12 @@ function sqliteHarness(): EngineHarness {
 	};
 }
 
-/** One PostgreSQL namespace per binding, dropped — slots included — on close. */
 function postgresHarness(pool: pg.Pool): EngineHarness {
 	const executor = createPgExecutor(pool);
 	const namespaces = new WeakMap<EngineBinding, string>();
 	let counter = 0;
 	return {
 		schemaFixture: POSTGRES_SCHEMA_FIXTURE,
-		// A write-ahead-log location 4 GiB past the head: well-formed, and one
-		// no test run reaches.
 		positionPastHead: (head) => formatLsn(parseLsn(head) + (1n << 32n)),
 		create() {
 			counter += 1;
@@ -109,8 +89,6 @@ function postgresHarness(pool: pg.Pool): EngineHarness {
 			namespaces.set(binding, namespace);
 			return binding;
 		},
-		// A second binding on the same namespace. Not ephemeral: the first
-		// binding owns the namespace and drops it.
 		attach(binding) {
 			const namespace = namespaces.get(binding);
 			if (namespace === undefined) {
@@ -171,18 +149,12 @@ describe.skipIf(LIVE_URL === "" || POSTGRES_URL === "")(
 		beforeAll(async () => {
 			live = await connectLive();
 			pool = new pg.Pool({ connectionString: POSTGRES_URL, max: 12 });
-			// An idle client dropped by the server is not a test failure.
 			pool.on("error", () => {});
 		});
 
 		afterAll(async () => {
 			assert.deepEqual(await live.leftovers(), []);
 			await live.close();
-			// A leaked slot pins WAL forever; the lane fails if one of this
-			// file's outlives it. Slot names are cluster-wide and other suites
-			// share the server, so only the objects carrying the digests of the
-			// namespaces this file used are counted — every name the binding
-			// derives starts with one.
 			const current = await pool.query(
 				"SELECT current_database()::text AS database",
 			);
@@ -215,11 +187,6 @@ describe.skipIf(LIVE_URL === "" || POSTGRES_URL === "")(
 			});
 			assert.equal(report.outcome, "pass", failures(report.results));
 			assert.equal(report.engine, "postgres");
-			// PostgreSQL has every port, the schema port included, so nothing is
-			// skipped for want of one. It states no record bound, so the size
-			// case has nothing to probe; and the native cases are an engine
-			// moving its own records to itself, which cannot apply to a
-			// cross-engine pair.
 			assert.deepEqual(
 				report.skipped.filter((caseId) => !caseId.includes(".native.")),
 				["records.oversize-record-refuses-the-batch"],

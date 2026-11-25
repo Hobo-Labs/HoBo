@@ -1,7 +1,3 @@
-/**
- * Re-exports from `@hobo/runtime-wasm` for back-compat.
- * Prefer importing from `@hobo/runtime-wasm` in new code.
- */
 export {
 	applyHoboMeshEnvHeaders,
 	bootWasmtimeSandbox,

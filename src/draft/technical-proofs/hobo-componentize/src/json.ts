@@ -15,7 +15,6 @@ export type JsonValue =
 	| JsonValue[]
 	| JsonObject;
 
-/** Read-only view of a JSON value; accepts frozen domain values as-is. */
 export type ReadonlyJsonValue =
 	| string
 	| number
@@ -53,7 +52,6 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 	return tagOf.call(value) === "[object Array]";
 }
 
-/** Clone a domain value across the JSON document boundary. */
 export function cloneAsJson<T>(value: T): JsonValue {
 	return parseJsonValue(JSON.stringify(value ?? null));
 }
@@ -61,7 +59,6 @@ export function cloneAsJson<T>(value: T): JsonValue {
 export function parseJsonObject(text: string): JsonObject {
 	let value: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		value = JSON.parse(text) as JsonValue;
 	} catch {
 		return {};
@@ -76,18 +73,12 @@ export function asJsonObject<T>(value: T): JsonObject {
 
 export function parseJsonValue(text: string): JsonValue {
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return null;
 	}
 }
 
-/**
- * Deterministic JSON encoding for digest inputs: object keys are sorted
- * recursively (including objects nested inside arrays); array order is
- * preserved. Read-only — never mutates its input.
- */
 export function stableStringify(value: ReadonlyJsonValue): string {
 	if (
 		value === null ||

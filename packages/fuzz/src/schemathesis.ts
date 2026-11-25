@@ -1,7 +1,3 @@
-/**
- * Optional Schemathesis wrapper. PR lanes skip when the binary is missing
- * so default agent:check stays offline and docker-free.
- */
 import { spawnSync } from "node:child_process";
 
 import { schemathesisAvailable } from "./env.js";

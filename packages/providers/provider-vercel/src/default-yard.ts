@@ -1,31 +1,3 @@
-/**
- * The default Vercel Yard: a catalog of what **can** be allocated on Vercel.
- *
- * A Yard is not a mapping, not a pool, and not a record of what an app uses. It
- * declares the offerings a provider makes available, so selection has something
- * to choose from later. That is why the catalog holds an **array** per slot: a
- * slot may list several offerings, and picking among them is ADR-0151
- * selection's job — hard gates then lexicographic ordering — never this
- * module's. Nothing below ranks, scores, or prefers.
- *
- * `vercelYardSpec()` emits raw row-shaped data rather than a `Yard`: this is a
- * layer-2 provider package, so it may import `@hobo/core` and nothing else HoBo
- * — `@hobo/yards` (layer 3) is the package that parses these rows into a
- * canonical, deduplicated set. The rows are sorted by
- * `(profile, productId, connectivityId)`, the same canonical order
- * `parseYardBindings` imposes, so the hand-off is byte-stable and matches what
- * the aws/azure/gcp/cloudflare packages emit.
- *
- * Determinism: regions are de-duplicated and sorted, records come back frozen,
- * and there is no clock, randomness, or environment read anywhere in the path.
- * Two calls with the same options are deep-equal.
- *
- * HONEST SCOPE: a catalog entry means "HoBo can express this offering", not
- * "HoBo can provision it today". Standalone `vercel.edge-function/v1` has no
- * REST resolver. Blob requires a team, an approved project binding and
- * durable mutation coordination; see `./resolvers.js` and the README.
- */
-
 import type { CapabilitySlot, SlotBinding } from "@hobo/core";
 
 import { type JsonObject, parseJsonObject } from "./json.js";
@@ -76,12 +48,10 @@ export class VercelYardSpecError extends Error {
 	}
 }
 
-/** Allocatable options per capability slot; a slot may hold several. */
 export type VercelSlotCatalog = Readonly<
 	Partial<Record<CapabilitySlot, readonly SlotBinding[]>>
 >;
 
-/** Row shape `@hobo/yards` parses (`YardBindingInput`), without importing it. */
 export interface VercelYardBindingRow {
 	readonly profile: string;
 	readonly productId?: string;
@@ -89,7 +59,6 @@ export interface VercelYardBindingRow {
 	readonly properties: JsonObject;
 }
 
-/** Raw Yard shape: provider, regions, and the allocatable row set. */
 export interface VercelYardSpec {
 	readonly provider: typeof PROVIDER_TARGET;
 	readonly regions: readonly string[];
@@ -110,7 +79,6 @@ export interface VercelYardSpecOptions {
 	readonly sandboxHost?: VercelSandboxHostSlotOptions;
 }
 
-/** The catalog with no per-offering settings: what Vercel can allocate, bare. */
 export const VERCEL_DEFAULT_BINDINGS: VercelSlotCatalog = Object.freeze({
 	web: Object.freeze([staticDeployment()]),
 	service: Object.freeze([edgeFunction()]),
@@ -134,7 +102,6 @@ export function vercelYardSpec(
 	});
 }
 
-/** The slot-keyed catalog, carrying any per-offering settings the caller set. */
 export function vercelSlotCatalog(
 	options: VercelYardSpecOptions = {},
 ): VercelSlotCatalog {
@@ -165,12 +132,6 @@ export function vercelSlotCatalog(
 	});
 }
 
-/**
- * Flattens the slot catalog into the canonical row order
- * `(profile, productId, connectivityId)` — the same order `@hobo/yards`
- * imposes, so a round-trip through it does not reshuffle the set. The slot
- * itself is not a row field: rows key on the capability profile.
- */
 export function vercelYardRows(
 	catalog: VercelSlotCatalog,
 ): readonly VercelYardBindingRow[] {
@@ -226,7 +187,6 @@ function canonicalRegions(
 	return Object.freeze([...new Set(source)].sort());
 }
 
-/** Code-unit comparison: locale-independent so ordering is reproducible. */
 function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }

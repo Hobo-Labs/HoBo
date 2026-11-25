@@ -1,8 +1,3 @@
-// How the Station's CD runtime plans the runner fleet's Freight into a Set
-// (cd-runtime.ts): the runner-host planner offering, the fleet's Bindle
-// declaration paired with a Freight its source discovered, and each
-// runner-host row bound to the controller its Freight pins. Offline, over
-// the real `@hobo/cloud` planner and the `@hobo/cd` planning resolver.
 import { create } from "@bufbuild/protobuf";
 import { canonicalManifestHash, parseManifest } from "@hobo/bindles";
 import {
@@ -43,9 +38,7 @@ import {
 import { openCdStore } from "../src/cd-store.js";
 import { imageAt, runnerHostResolvedSet } from "./fixtures/runner-host-fake.js";
 
-// SAFETY: runner fleet Camp ids (hobo-ci-runners/<host id>) and one outside it.
 const BOX = "hobo-ci-runners/box" as CampId;
-// SAFETY: as above.
 const RELEASE = "hobo-release/oci-candidate" as CampId;
 const TARGET = imageAt("2");
 const ctx: CdContext = {
@@ -67,7 +60,6 @@ function camp(campId: string, provider: string): CampTopology {
 	};
 }
 
-/** The fleet's applied source, as `pipeline apply` records it. */
 const SOURCE = create(FreightSourceRecordSchema, {
 	schemaVersion: "hobo.cd.source/v1",
 	name: "hobo-ci-runner-image",
@@ -112,7 +104,6 @@ function freight(
 	});
 }
 
-/** A desired-state reader holding at most one current Set per Camp. */
 function desiredWith(
 	current: Readonly<Record<string, ResolvedDeploymentSet>> = {},
 ): DesiredStateReader {
@@ -140,7 +131,6 @@ function desiredWith(
 	};
 }
 
-/** The Station's resolver for the runner fleet, as cd-runtime composes it. */
 async function resolverFor(
 	camps: readonly CampTopology[],
 	desired: DesiredStateReader = desiredWith(),
@@ -186,12 +176,10 @@ describe("the runner-host planner offering", () => {
 		expect(providers.map((provider) => provider.id)).toEqual(["self-hosted"]);
 		const [capability] = providers[0]?.capabilities ?? [];
 		expect(capability?.port).toBe(RUNNER_HOST_PRODUCT_ID);
-		// SAFETY: minimal planner requests; satisfies reads only port and features.
 		expect(capability?.satisfies({ port: "compute" } as never)).toEqual({
 			kind: "none",
 		});
 		expect(
-			// SAFETY: as above.
 			capability?.satisfies({ port: RUNNER_HOST_PRODUCT_ID } as never),
 		).toEqual({ kind: "full" });
 		expect(runnerHostPlannerProviders([camp(RELEASE, "self-hosted")])).toEqual(
@@ -244,7 +232,6 @@ describe("Matching resolves the runner fleet's Freight into a runner-host Set", 
 				}),
 			]);
 			expect(resolved.matches[0]?.providerId).toBe("self-hosted");
-			// The Delta is over the bound Set, not the unbound plan.
 			expect(delta.changes).toHaveLength(1);
 			expect(delta.changes[0]?.afterHash).not.toBe("");
 			expect(delta.deltaId).toMatch(/^delta_[0-9a-f]{24}$/u);

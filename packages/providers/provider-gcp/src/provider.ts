@@ -85,12 +85,6 @@ export interface GcpProviderOptions {
 	regions?: string[];
 }
 
-// The @hobo/provider-gcp factory (HOBO-87 authoring contract): capability
-// declarations + the GCP equivalence map as default Resource Definitions,
-// realize() -> IacProgram for the primary Pulumi lane, a runtime client per
-// port, and the published Capability Manifest with declared cost facts and the
-// keyless Workload-Identity-Federation auth posture (HOBO-110 — no
-// service-account keys).
 export function createGcpProvider(
 	options: GcpProviderOptions = {},
 ): CloudProvider {

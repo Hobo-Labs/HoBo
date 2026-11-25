@@ -13,8 +13,6 @@ import {
 	type InitialCapabilityPort,
 } from "./equivalence.js";
 
-// The schema ids are platform contract, so they live in @hobo/core and are
-// re-exported here to keep this package's public surface unchanged.
 export {
 	AUTH_SCHEMA,
 	CAPABILITIES_SCHEMA,
@@ -27,9 +25,6 @@ export const GCP_PROVIDER_ID = "@hobo/provider-gcp";
 
 export const DEFAULT_REGIONS = ["us-central1", "us-east1", "europe-west1"];
 
-// A `type` alias (not an interface) so it keeps an implicit index signature
-// and stays assignable to @hobo/core's `PublishedManifestDocuments`
-// (Record<string, string>) on CapabilityManifest.published (ADR-0156).
 export type PublishedManifestDocuments = {
 	"/.well-known/capability-manifest/index.json": string;
 	"/.well-known/capability-manifest/capabilities.json": string;
@@ -37,9 +32,6 @@ export type PublishedManifestDocuments = {
 	"/.well-known/capability-manifest/cost.json": string;
 };
 
-// Declared marginal-cost facts per equivalence class — REAL public list-price
-// magnitudes (representative SKUs, declared-provider source), so min-cost
-// ranking has honest inputs rather than uniform zeros.
 export const COST_FACTS = {
 	"web/service": {
 		sku: "gcp.cloudrun.vcpu-hour",
@@ -96,11 +88,6 @@ export function publishCapabilityManifest(
 		providerId,
 		equivalenceClasses: ports.map((port) => {
 			const mapping = EQUIVALENCE_CLASSES[port];
-			// `features` is a readonly tuple on the mapping, and a readonly array
-			// is not a `JsonValue` — spreading the mapping wholesale carries that
-			// readonly-ness into the document and the digest call rejects it.
-			// Copying is what publishing means here anyway: the document is a
-			// snapshot, not a live view of the table it was built from.
 			return {
 				class: port,
 				...mapping,
@@ -121,10 +108,6 @@ export function publishCapabilityManifest(
 			};
 		}),
 	};
-	// The HOBO-110 keyless flow: the Yard broker mints an OIDC token for the
-	// SVID + scope and exchanges it via GCP Workload Identity Federation
-	// (STS token exchange) — no service-account key is ever stored or
-	// published.
 	const authDocument = {
 		schema: AUTH_SCHEMA,
 		providerId,
@@ -159,8 +142,6 @@ export function publishCapabilityManifest(
 				source: {
 					type: "declared-provider",
 					documentRef: digestRef(`cost:${providerId}:${fact.sku}`),
-					// Transcribed from the vendor's public pricing page, not
-					// attested by the provider (ADR-0129 §5).
 					transcribedOn: "2026-07-27",
 				},
 			};

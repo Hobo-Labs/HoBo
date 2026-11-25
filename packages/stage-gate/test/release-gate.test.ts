@@ -1,15 +1,3 @@
-/**
- * The release gate end to end through real processes (ADR-0172):
- * runStageGate(defineReleaseGate()) spawns `node --import tsx
- * scripts/check-acceptance.mts <step>`, which spawns HOBO_AI_BDD_CMD in
- * HOBO_AI_BDD_PROJECT. Here that command is test/helpers/fake-ai-bdd.mts,
- * which plays back the exit codes and files of the pact's interactions and
- * writes the committed report fixtures as a run's report. The real ai-bdd is
- * the env-gated lane in acceptance-real.test.ts. This suite holds how each of
- * ai-bdd's exit codes lands in the record; release-freshness.test.ts holds
- * which run a report belongs to, and release-bounds.test.ts what the gate
- * does with a hung, loud or unstartable command.
- */
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -77,7 +65,6 @@ describe("the release gate through real processes", () => {
 			expect(run.result.record.status).toBe("passed");
 			const replay = checkOf(run, "acceptance-replay");
 			const reportPath = join(run.project, ".ai-bdd", "report", "report.json");
-			// The digest is of the file ai-bdd wrote: `sha256sum report.json` prints the same.
 			expect(replay.evidence.report_digest).toBe(sha256Of(reportPath));
 			const runId = runIdOf(reportPath);
 			expect(runId).not.toBe("01a132d2-fe9a-7d3a-a7d8-157d681d6417");
@@ -123,7 +110,6 @@ describe("the release gate through real processes", () => {
 					exitCode: -1,
 				});
 			}
-			// Nothing after the stale plan was started.
 			expect(run.calls).toEqual(['["compile","--check"]']);
 		},
 		TIMEOUT,
@@ -152,7 +138,6 @@ describe("the release gate through real processes", () => {
 	it(
 		"exit 3 (infrastructure) records the check as not run, never failed or passed",
 		async () => {
-			// ai-bdd writes a report on exit 3; the gate does not read it either.
 			const run = await runGate({
 				...ALL_PASS,
 				run: { exit: 3, report: PASSED },

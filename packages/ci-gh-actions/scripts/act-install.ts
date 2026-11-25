@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-// Official nektos/act v0.2.89 release checksums, checked 2026-10-29.
 const version = "0.2.89";
 const target = [
 	{

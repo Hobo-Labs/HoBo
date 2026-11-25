@@ -29,7 +29,6 @@ import {
 	TARBALL,
 } from "./support/world.js";
 
-/** A minimal ustar archive, optionally with a PAX `path` record for the manifest. */
 function tarOf(entries: [string, string][], pax = false): Uint8Array {
 	const blocks: Buffer[] = [];
 	const header = (name: string, size: number, type: string) => {
@@ -227,9 +226,6 @@ describe.skipIf(!Object.values(live).every(Boolean))(
 	},
 );
 
-// Opt-in write lane for the one unverified routing claim: a scoped name sent
-// unescaped (the transport guard refuses %2f) to the dist-tag route. It moves
-// HOBO_NPM_LIVE_PROMOTE_TAG to the live version; use a scratch tag.
 const promoteTag = process.env.HOBO_NPM_LIVE_PROMOTE_TAG;
 describe.skipIf(!(promoteTag && Object.values(live).every(Boolean)))(
 	"npm live lane (writes one dist-tag; skipped: set the read-only lane's variables plus HOBO_NPM_LIVE_PROMOTE_TAG=<scratch tag> on a scoped package)",

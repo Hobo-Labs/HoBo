@@ -1,16 +1,8 @@
-/**
- * Per-station layout persistence (Phase 2 slice 3).
- *
- * Layouts live as JSON under `<OTEL_OFFICE_HOME>/layouts/<stationId>.json`
- * (default home: `~/.otel-office/`). Writes are atomic (tmp file + rename) and
- * debounced so a burst of editor drags coalesces into one disk write.
- */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { OfficeLayout } from "./layout.js";
 import { isJsonObject, parseJsonValue, type JsonObject } from "./json.js";
-
 
 export const LAYOUT_SAVE_DEBOUNCE_MS = 200;
 
@@ -34,11 +26,6 @@ export class LayoutStore {
 		return join(this.dir, stationFileName(stationId));
 	}
 
-	/**
-	 * Load a persisted layout as unvalidated JSON; undefined when absent or
-	 * unreadable/corrupt. Callers must run `validateLayout` before use — the
-	 * store deliberately does not claim the bytes are an OfficeLayout.
-	 */
 	load(stationId: string): JsonObject | undefined {
 		try {
 			const raw = readFileSync(this.pathFor(stationId), "utf8");
@@ -49,7 +36,6 @@ export class LayoutStore {
 		}
 	}
 
-	/** Atomic write: serialize to a tmp sibling, then rename over the target. */
 	saveNow(stationId: string, layout: OfficeLayout): void {
 		mkdirSync(this.dir, { recursive: true });
 		const target = this.pathFor(stationId);
@@ -58,7 +44,6 @@ export class LayoutStore {
 		renameSync(tmp, target);
 	}
 
-	/** Debounced save — rapid editor changes coalesce into one write. */
 	saveDebounced(stationId: string, layout: OfficeLayout, ms = LAYOUT_SAVE_DEBOUNCE_MS): void {
 		const existing = this.pending.get(stationId);
 		if (existing !== undefined) clearTimeout(existing.timer);
@@ -70,7 +55,6 @@ export class LayoutStore {
 		this.pending.set(stationId, { layout, timer });
 	}
 
-	/** Flush all debounced writes synchronously (shutdown + tests). */
 	flush(): void {
 		for (const [stationId, entry] of this.pending.entries()) {
 			clearTimeout(entry.timer);

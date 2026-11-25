@@ -1,9 +1,3 @@
-/**
- * Cases live in `ingest.cases.jsonl`.
- *
- * One thing stays hand-written: canonical digesting is a claim about *two*
- * calls agreeing, and a case row describes one call.
- */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeConcern } from "@hobo/contract-harness";

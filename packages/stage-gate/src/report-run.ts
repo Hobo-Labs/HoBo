@@ -1,10 +1,3 @@
-/**
- * The run-level sections of an ai-bdd RunReport v1 the release gate holds to
- * replay-only (ADR-0172): `options` (frozen, no agent, recordings not
- * rewritten) and `usage` (no model call and no token anywhere: the run, each
- * purpose, each scenario and each step). Each object is closed to its schema
- * key set.
- */
 import { isJsonBoolean, isJsonNumber, type JsonObject } from "./json.js";
 import { RUN_REPORT_KEYS } from "./report-keys.js";
 import {
@@ -18,7 +11,6 @@ import {
 const MODEL_PURPOSES = ["extract", "act", "checkgen", "judge"] as const;
 const USAGE_FIELDS = ["modelCalls", "inputTokens", "outputTokens"] as const;
 
-/** The run's own usage, against which a scenario's or a step's is held. */
 export interface RunUsage {
 	readonly modelCalls: number;
 	readonly inputTokens: number;
@@ -66,7 +58,6 @@ export function readOptions(report: JsonObject, issues: string[]): void {
 	);
 }
 
-/** Calls and tokens of a Usage-shaped object; any token is refused (calls are refused by the caller, with its reason). */
 function spentNothing(
 	usage: JsonObject,
 	path: string,
@@ -88,7 +79,6 @@ function spentNothing(
 	return { modelCalls: calls, inputTokens: input, outputTokens: output };
 }
 
-/** `usage` and `usage.byPurpose`: zero model calls and zero tokens. */
 export function readUsage(report: JsonObject, issues: string[]): RunUsage {
 	const usage = objectOf(report, "usage", "", issues);
 	closedKeys(usage, "usage", RUN_REPORT_KEYS.RunUsage, issues);
@@ -121,10 +111,6 @@ export function readUsage(report: JsonObject, issues: string[]): RunUsage {
 	return run;
 }
 
-/**
- * A scenario's or a step's `usage`, held to the run's: the run spent none
- * (or is refused for it), so any call or token here contradicts the report.
- */
 export function readNestedUsage(
 	owner: JsonObject,
 	path: string,

@@ -1,14 +1,3 @@
-// Sigstore bundle verification with sigstore@5.0.1's own verification stack,
-// against a trusted root the operator injects (never fetched implicitly).
-//
-// `sigstore`'s top-level `verify()` always fetches its trusted root through TUF
-// over its own HTTP client, which would bypass the injected `HttpTransport`
-// and make verification depend on the network at decision time. The pieces
-// it composes — `@sigstore/verify` (`Verifier`, `toTrustMaterial`,
-// `toSignedEntity`), `@sigstore/bundle` and `@sigstore/protobuf-specs` — are
-// loaded from the `sigstore` package's own dependency closure (so the version
-// is exactly the one `sigstore@5.0.1` pins in the lockfile) and driven with
-// the trusted root from the trust policy.
 import type { KeyObject } from "node:crypto";
 import { createRequire } from "node:module";
 import {
@@ -20,7 +9,6 @@ import {
 	parseJsonText,
 } from "../artifacts/json.js";
 
-// Opaque values that only ever flow between the sigstore modules.
 type TrustedRootMessage = Readonly<{ readonly __sigstore: "TrustedRoot" }>;
 type TrustMaterial = Readonly<{ readonly __sigstore: "TrustMaterial" }>;
 type ParsedBundle = Readonly<{ readonly __sigstore: "Bundle" }>;
@@ -47,7 +35,6 @@ interface SigstoreVerifier {
 	verify(entity: SignedEntity, policy?: VerificationPolicy): Signer;
 }
 
-/** The surface of @sigstore/verify@4 that sigstore@5.0.1 itself uses. */
 interface VerifyModule {
 	Verifier: new (
 		trust: TrustMaterial,
@@ -74,7 +61,6 @@ type SigstoreModules = Readonly<{
 
 let loaded: SigstoreModules | undefined;
 
-/** The sigstore@5.0.1 verification closure, resolved from the `sigstore` package itself. */
 function sigstoreModules(): SigstoreModules {
 	if (loaded !== undefined) return loaded;
 	const local = createRequire(import.meta.url);
@@ -89,7 +75,6 @@ function sigstoreModules(): SigstoreModules {
 	return loaded;
 }
 
-/** The public-good trusted root embedded in the @sigstore/tuf seed that sigstore@5.0.1 ships. */
 export function publicGoodSeedRoot(): JsonObject {
 	const { seeds } = sigstoreModules();
 	const seed = isJsonObject(seeds)
@@ -111,7 +96,6 @@ export function publicGoodSeedRoot(): JsonObject {
 
 export type SigstoreTrust = Readonly<{ verifier: SigstoreVerifier }>;
 
-/** Build trust material once per trust policy; throws on a malformed trusted root. */
 export function sigstoreTrust(
 	trustedRoot: JsonObject,
 	thresholds: VerifierOptions,
@@ -190,11 +174,6 @@ function signedEntity(bundle: JsonObject, statement: Uint8Array): Entity {
 	}
 }
 
-/**
- * Verify a serialized Sigstore bundle over exactly `statement`. A DSSE bundle's
- * payload must be byte-identical to the statement; a message-signature bundle
- * must sign the statement's digest.
- */
 export function verifySigstoreBundle(
 	trust: SigstoreTrust,
 	bundle: JsonObject,
@@ -215,7 +194,6 @@ export function verifySigstoreBundle(
 	};
 }
 
-/** Re-run sigstore's identity policy for the pin that matched (defence in depth). */
 export function enforceSigstorePolicy(
 	trust: SigstoreTrust,
 	bundle: JsonObject,

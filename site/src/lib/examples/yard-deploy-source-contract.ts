@@ -1,5 +1,3 @@
-/** Browser-safe yard deploy source types + helpers (no Node fs). */
-
 export type YardDeploySource = {
 	readonly targetId: string;
 	readonly sourcePath: string;
@@ -11,7 +9,6 @@ export type ProviderImportSpec = {
 	readonly exportName: string;
 };
 
-/** Pool targets → provider extension package import contract. */
 const PROVIDER_IMPORTS = {
 	"browser-wasm": {
 		packageName: "@hobo/provider-browser-wasm",
@@ -40,10 +37,6 @@ const PROVIDER_IMPORTS = {
 	aws: { packageName: "@hobo/provider-aws", exportName: "aws" },
 	azure: { packageName: "@hobo/provider-azure", exportName: "azure" },
 	gcp: { packageName: "@hobo/provider-gcp", exportName: "gcp" },
-	// The fallback below would derive `digitalOcean` from `digitalocean`, and
-	// the package exports `digitalocean`; the same one-word/two-word mismatch
-	// is why every provider whose id is not a plain lower-case word is listed
-	// rather than inferred.
 	digitalocean: {
 		packageName: "@hobo/provider-digitalocean",
 		exportName: "digitalocean",
@@ -61,7 +54,6 @@ const PROVIDER_IMPORTS = {
 
 export function providerImportForTarget(targetId: string): ProviderImportSpec {
 	if (Object.hasOwn(PROVIDER_IMPORTS, targetId)) {
-		// SAFETY: hasOwn narrowed targetId to a known PROVIDER_IMPORTS key.
 		return PROVIDER_IMPORTS[targetId as keyof typeof PROVIDER_IMPORTS];
 	}
 	const exportName = targetId.replace(/-([a-z])/gu, (_, c: string) => c.toUpperCase());
@@ -77,10 +69,6 @@ export function yardDeployByTarget(
 	return new Map(sources.map((entry) => [entry.targetId, entry]));
 }
 
-/**
- * Pool Code: one Environment Station authoring file for the provision plan.
- * Provider plugins own capabilities — this file only imports and lists them.
- */
 export type PoolDeploySourceText = {
 	readonly pathLabel: string;
 	readonly source: string;

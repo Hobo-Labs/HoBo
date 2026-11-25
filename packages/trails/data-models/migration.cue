@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in migration.proto, so the
-// architecture guard can confirm the live-migration shapes are bounded at
-// parse time.
 
 package trails
 
@@ -34,8 +31,6 @@ package trails
 	contract: [...string & !=""]
 	verify_after_backfill: string & !=""
 	verify_after_contract?: string
-	// Per phase, a violations query that returns no rows exactly when the
-	// phase's statements are in effect.
 	probe_expand?:   string & !=""
 	probe_backfill?: string & !=""
 	probe_contract?: string & !=""
@@ -68,8 +63,6 @@ package trails
 	recovered?:   bool
 }
 
-// Written before a phase runs its statements, as a compare-and-set on the
-// journal head.
 #MigrationPhaseIntendedEventData: {
 	migrationId: string & !=""
 	phase:       "expand" | "backfill" | "contract"
@@ -118,16 +111,12 @@ package trails
 	imported_at:       string & !=""
 }
 
-// ── ADR-0177 additions ──────────────────────────────────────────────────────
 
 #MigrationHeldEventData: {
 	migrationId: string & !=""
-	// A migration holds only in a safe-hold phase; the cutover step completes
-	// or compensates.
 	phase:  "plan" | "gate" | "prepare" | "seed" | "converge" | "verify" | "shift-reads" | "soak"
 	reason: string & !=""
 	heldAt: string & !=""
-	// The phase whose statements the port reported as failed.
 	failedPhase?: "expand" | "backfill" | "contract"
 }
 
@@ -161,10 +150,6 @@ package trails
 	ok:            bool
 	findings:      [...#CanTrailPolicyFindingRecord]
 	custodyDigest: =~"^sha256:[0-9a-f]{64}$"
-	// A verdict is ok exactly when it has no findings.
 	ok: len(findings) == 0
-	// The custody roles the path behind the verdict named. A verdict without
-	// the member names none, and so covers no migration pattern.
 	roles?: [...string & !=""]
 }
-

@@ -1,4 +1,3 @@
-/** Durable receiver for cross-migration Camp write authority. */
 import { createHash } from "node:crypto";
 import {
 	canonicalEncode,
@@ -98,8 +97,6 @@ function scopeOf(input: HandoverRouteScope): HandoverRouteScope {
 	return Object.freeze(scope);
 }
 
-/** Runtime validation rejects arbitrary callbacks that cannot fence a stale
- * cross-migration route at the receiver. */
 export function assertFencedHandoverFlip(
 	flip: FencedHandoverFlip,
 	expected: Bound,
@@ -120,16 +117,9 @@ export function assertFencedHandoverFlip(
 		);
 }
 
-/** Internal routing model, not a public production receiver. All writers and readers must
- * use this record. Every generation change and route flip is one conditional
- * append, so a delayed request cannot overwrite a later Camp generation.
- * Native-fence readback and this CAS are on different providers and are not
- * atomic together. The production host must hold a receiver-enforced Camp
- * operation lock and funding through completion, or keep this path disabled. */
 export function createDurableHandoverRouter(options: {
 	readonly journal: DataMigrationJournal;
 	readonly scope: HandoverRouteScope;
-	/** Independent read of the exact native source fence under funded Camp authority. */
 	readonly verifyNativeFence: (
 		input: Readonly<{
 			scope: HandoverRouteScope;
@@ -152,9 +142,6 @@ export function createDurableHandoverRouter(options: {
 	const journal = options.journal,
 		scope = scopeOf(options.scope),
 		verifyNativeFence = options.verifyNativeFence;
-	// One physical lock per logical Camp. A second dataset or tenant scope
-	// cannot silently open a separate generation while this Camp is moving;
-	// until a shared multi-dataset route is enrolled it must fail closed.
 	const key = `trails-route:${createHash("sha256")
 		.update(canonicalEncode({ tenant: scope.tenant, campId: scope.campId }))
 		.digest("hex")}`;

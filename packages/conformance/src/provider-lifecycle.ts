@@ -1,40 +1,3 @@
-/**
- * Provider lifecycle conformance — the scratch harness a provider author runs
- * to prove their reconcile loop before anyone points it at real infrastructure
- * (ADR-0159).
- *
- * The interesting failures in a provider are never "it did not create the
- * thing". They are the ones that only show up on the second apply: a delete
- * that throws because the resource is already gone, a create that mints a
- * second instance after a crashed apply lost the state write, an "update" that
- * quietly replaces the resource under a stable field. Those are the six cases
- * here, and they are the same suite the generation pipeline's validate step
- * runs, so an LLM-written provider and a hand-written one clear one bar.
- *
- * Two design choices carry most of the weight:
- *
- * 1. **The stack owns reconcile semantics; the provider owns effects.** Diffing
- *    desired against believed state, deciding replace-vs-update, and ordering
- *    teardown are the harness's job. Minting instances, deleting them, and
- *    taking ownership of a foreign one are the provider's — which is why a
- *    broken provider can double-mint and be caught for it.
- * 2. **A no-change apply re-runs `create` *without* the state pointer.** That
- *    is precisely what a resumed apply looks like after a lost state write, and
- *    it is the only way the crash-resume case has teeth: a provider that mints
- *    on every call double-provisions on every crashed apply, and this suite
- *    says so instead of reporting green.
- *
- * ## Honest scope
- *
- * Scratch stacks are in-memory only and per-case. They touch no filesystem, no
- * `.hobo/`, no `.alchemy/`, no shared stage, and no network — this module
- * imports nothing from `node:fs`. Passing this suite therefore proves the
- * *shape* of a provider's lifecycle, not that its real-world calls succeed;
- * live-provider evidence is the `./live` lane's job. Nothing here reads a clock
- * or a random source: instance ids are minted from a per-stack counter, so two
- * runs of the same suite are byte-identical.
- */
-
 import {
 	cloneAsJson,
 	isJsonBoolean,
@@ -50,7 +13,6 @@ import type { ConformanceSuiteDescriptor } from "./types.js";
 export const PROVIDER_LIFECYCLE_SUITE_ID =
 	"hobo.conformance.provider-lifecycle/v1";
 
-/** The six lifecycle cases, by their stable reported names. */
 export const PROVIDER_LIFECYCLE_CASE_NAMES = {
 	create: "provider-lifecycle/create",
 	updateInPlace: "provider-lifecycle/update-in-place",
@@ -74,10 +36,6 @@ export const PROVIDER_LIFECYCLE_ERROR_CODES = [
 export type ProviderLifecycleErrorCode =
 	(typeof PROVIDER_LIFECYCLE_ERROR_CODES)[number];
 
-/**
- * Every refusal and every failed assertion in this module. Cases report through
- * thrown errors, so the code is what a caller keys on — never the message.
- */
 export class ProviderLifecycleError extends Error {
 	readonly code: ProviderLifecycleErrorCode;
 
@@ -88,45 +46,31 @@ export class ProviderLifecycleError extends Error {
 	}
 }
 
-/** A resource that exists in the scratch world. */
 // domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface ScratchResource {
 	readonly id: string;
 	readonly type: string;
 	readonly logicalId: string;
-	/** False for a pre-seeded foreign resource until the provider adopts it. */
 	readonly owned: boolean;
 	readonly outputs: JsonObject;
 	readonly stables: JsonObject;
 }
 
-/**
- * The in-memory stand-in for "the provider's side of the world". A provider
- * under test creates, mutates and removes resources here; the stack reads it
- * back to decide what actually exists.
- */
 export interface ScratchWorld {
-	/** Id-sorted, so a report never depends on insertion order. */
 	list(): readonly ScratchResource[];
 	get(instanceId: string): ScratchResource | undefined;
 	find(logicalId: string): ScratchResource | undefined;
 	put(resource: ScratchResource): ScratchResource;
 	remove(instanceId: string): boolean;
-	/** Deterministic minting: a per-logical-id counter, no clock, no randomness. */
 	nextInstanceId(logicalId: string): string;
 }
 
-/** What the stack hands a provider on every call. */
 export interface ScratchProviderContext {
 	readonly world: ScratchWorld;
 	readonly type: string;
 	readonly logicalId: string;
 	readonly properties: JsonObject;
 	readonly stables: JsonObject;
-	/**
-	 * The instance the stack believes exists. Deliberately absent on the
-	 * resume path: the crash being simulated is the loss of that pointer.
-	 */
 	readonly current?: ScratchResource;
 }
 
@@ -139,11 +83,6 @@ export interface ScratchProviderResult {
 	readonly outputs: JsonObject;
 }
 
-/**
- * The provider under test. `create` must be idempotent for a logical id,
- * `delete` must tolerate an already-deleted resource, and `adopt` is required
- * only by the adopt case.
- */
 export interface ScratchProvider {
 	create(
 		context: ScratchProviderContext,
@@ -157,19 +96,16 @@ export interface ScratchProvider {
 	): ScratchProviderResult | Promise<ScratchProviderResult>;
 }
 
-/** The authored desired state a case deploys. */
 // domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface ScratchDesired {
 	readonly type: string;
 	readonly logicalId: string;
 	readonly properties: JsonObject;
-	/** Fields that cannot change in place: a change here forces replacement. */
 	readonly stables: JsonObject;
 }
 
 export interface ScratchStackState {
 	list(): readonly { readonly id: string; readonly type: string }[];
-	/** The same instances with their full scratch record, for ownership checks. */
 	resources(): readonly ScratchResource[];
 }
 
@@ -186,7 +122,6 @@ export interface ScratchSeedResourceInput {
 	readonly id: string;
 	readonly type: string;
 	readonly logicalId: string;
-	/** Defaults to false — a seeded resource is foreign until adopted. */
 	readonly owned?: boolean;
 	readonly outputs?: JsonObject;
 	readonly stables?: JsonObject;
@@ -197,16 +132,13 @@ export interface ScratchSeedInput {
 }
 
 export interface CreateScratchStackOptions {
-	/** Pre-existing resources, e.g. the foreign resource the adopt case takes over. */
 	readonly seed?: ScratchSeedInput;
-	/** Defaults to the reference provider, so a bare stack is usable on its own. */
 	readonly provider?: ScratchProvider;
 }
 
 export interface ProviderLifecycleCase {
 	readonly name: string;
 	readonly run: (stack: ScratchStack) => Promise<void>;
-	/** Scratch world this case starts from. Only the adopt case needs one. */
 	readonly seed?: ScratchSeedInput;
 }
 
@@ -266,7 +198,6 @@ function canonicalize(value: JsonValue | undefined): JsonValue {
 	return value ?? null;
 }
 
-/** Key-order-independent comparison, so "the outputs changed" means content. */
 function canonicalJson<T>(value: T): string {
 	return JSON.stringify(canonicalize(cloneAsJson(value)));
 }
@@ -283,7 +214,6 @@ function requireRecord<T>(
 	if (value === null || !isJsonObject(value) || Array.isArray(value)) {
 		throw new ProviderLifecycleError(code, `${field} must be an object`);
 	}
-	// SAFETY: assertion to `sonObject; } funct` is required at this boundary.
 	return value as JsonObject;
 }
 
@@ -312,7 +242,6 @@ function optionalRecord<T>(
 	return Object.freeze({ ...requireRecord(value, code, field) });
 }
 
-/** Parse boundary for authored desired state. Returns a frozen derived record. */
 export function parseScratchDesired<T>(value: T): ScratchDesired {
 	const record = requireRecord(value, "SCRATCH_DESIRED_INVALID", "desired");
 	return Object.freeze({
@@ -335,7 +264,6 @@ export function parseScratchDesired<T>(value: T): ScratchDesired {
 	});
 }
 
-/** Parse boundary for a seeded scratch world. */
 export function parseScratchSeed<T>(value: T): readonly ScratchResource[] {
 	if (value === undefined) {
 		return Object.freeze([]);
@@ -383,13 +311,7 @@ export function parseScratchSeed<T>(value: T): readonly ScratchResource[] {
 	return Object.freeze(resources);
 }
 
-/**
- * Parse boundary for the provider under test. Fails closed: a provider missing
- * a lifecycle verb is refused here rather than reported as a passing suite with
- * skipped cases.
- */
 export function parseScratchProvider<T>(value: T): ScratchProvider {
-	// SAFETY: assertion to `ord( value, "SCRATCH_PROVIDER_INVALID", "provider", ) as JsonObject; for (co` is required at this boundary.
 	const record = requireRecord(
 		value,
 		"SCRATCH_PROVIDER_INVALID",
@@ -409,7 +331,6 @@ export function parseScratchProvider<T>(value: T): ScratchProvider {
 			"provider.adopt must be a function when present",
 		);
 	}
-	// SAFETY: parsed provider verbs are the ScratchProvider surface at this boundary.
 	return value as never;
 }
 
@@ -465,10 +386,6 @@ interface JournalEntry {
 	readonly live: boolean;
 }
 
-/**
- * An in-memory, per-case stack. Nothing here is persisted: the world, the
- * journal and the id counters all die with the object.
- */
 export function createScratchStack(
 	options: CreateScratchStackOptions = {},
 ): ScratchStack {
@@ -477,7 +394,6 @@ export function createScratchStack(
 			? createReferenceScratchProvider()
 			: parseScratchProvider(options.provider);
 	const world = createScratchWorld(parseScratchSeed(options.seed));
-	// Insertion-ordered: teardown walks it in reverse.
 	const journal = new Map<string, JournalEntry>();
 
 	function contextFor(
@@ -494,8 +410,6 @@ export function createScratchStack(
 		};
 	}
 
-	// Returns whatever the provider handed back: it is untrusted until `deploy`
-	// parses it.
 	async function reconcile(
 		desired: ScratchDesired,
 	): Promise<ScratchProviderResult> {
@@ -505,8 +419,6 @@ export function createScratchStack(
 
 		if (entry !== undefined && believed !== undefined) {
 			if (canonicalJson(entry.stables) !== canonicalJson(desired.stables)) {
-				// A declared-stable field moved: the old instance cannot carry the
-				// new value, so it is torn down and a fresh one takes its place.
 				await provider.delete({
 					...contextFor(desired, believed),
 					current: believed,
@@ -521,9 +433,6 @@ export function createScratchStack(
 					current: believed,
 				});
 			}
-			// Nothing changed. Re-assert existence WITHOUT handing back the state
-			// pointer — that is exactly the apply that resumes after a lost state
-			// write, and an idempotent provider returns the instance it already made.
 			return await provider.create(contextFor(desired, undefined));
 		}
 
@@ -572,9 +481,6 @@ export function createScratchStack(
 		},
 		async destroy(): Promise<void> {
 			for (const [logicalId, entry] of [...journal.entries()].reverse()) {
-				// The journal keeps tombstones on purpose: a second destroy re-issues
-				// delete for an instance that is already gone, which is the only way
-				// to find out whether the provider treats that as success.
 				const current: ScratchResource = world.get(entry.instanceId) ?? {
 					id: entry.instanceId,
 					type: entry.type,
@@ -611,11 +517,6 @@ export function createScratchStack(
 	};
 }
 
-/**
- * The provider that defines "correct" for this suite: idempotent create,
- * in-place update, tolerant delete, ownership-preserving adopt. Useful as a
- * worked example and as the harness's own self-test subject.
- */
 export function createReferenceScratchProvider(): ScratchProvider {
 	function outputsFor(context: ScratchProviderContext): JsonObject {
 		return Object.freeze({
@@ -626,8 +527,6 @@ export function createReferenceScratchProvider(): ScratchProvider {
 
 	return {
 		create(context: ScratchProviderContext): ScratchProviderResult {
-			// Idempotency lives here: an owned instance for this logical id is the
-			// answer, whether or not the caller still remembers it.
 			const existing = context.world.find(context.logicalId);
 			if (existing?.owned === true) {
 				const refreshed = context.world.put({
@@ -656,7 +555,6 @@ export function createReferenceScratchProvider(): ScratchProvider {
 			return { instanceId: updated.id, outputs: updated.outputs };
 		},
 		delete(context: ScratchOwnedContext): void {
-			// Already gone is success, not an error.
 			context.world.remove(context.current.id);
 		},
 		adopt(context: ScratchOwnedContext): ScratchProviderResult {
@@ -691,11 +589,6 @@ function withStables(stables: JsonObject): ScratchDesired {
 	return Object.freeze({ ...BASE_DESIRED, stables: Object.freeze(stables) });
 }
 
-/**
- * The lifecycle suite every provider must pass: create, update-in-place,
- * replace, delete, adopt, and crash-resume idempotency (reconcile twice ⇒ same
- * outputs, one instance).
- */
 export const PROVIDER_LIFECYCLE_SUITE: readonly ProviderLifecycleCase[] =
 	Object.freeze([
 		Object.freeze({
@@ -773,7 +666,6 @@ export const PROVIDER_LIFECYCLE_SUITE: readonly ProviderLifecycleCase[] =
 					stack.state.list().length === 0,
 					"destroy left the resource behind",
 				);
-				// Already deleted is success: a resumed teardown re-issues delete.
 				await stack.destroy();
 				assertLifecycle(
 					stack.state.list().length === 0,
@@ -805,7 +697,6 @@ export const PROVIDER_LIFECYCLE_SUITE: readonly ProviderLifecycleCase[] =
 			name: PROVIDER_LIFECYCLE_CASE_NAMES.crashResume,
 			run: async (stack: ScratchStack): Promise<void> => {
 				const first = await stack.deploy(BASE_DESIRED);
-				// Second reconcile of identical desired state — the resumed apply.
 				const second = await stack.deploy(BASE_DESIRED);
 				assertLifecycle(
 					second.instanceId === first.instanceId,
@@ -824,7 +715,6 @@ export const PROVIDER_LIFECYCLE_SUITE: readonly ProviderLifecycleCase[] =
 		}),
 	]);
 
-/** Registry descriptor, so a Resource Definition can reference the suite by id. */
 export const PROVIDER_LIFECYCLE_SUITE_DESCRIPTOR: ConformanceSuiteDescriptor =
 	Object.freeze({
 		suiteId: PROVIDER_LIFECYCLE_SUITE_ID,
@@ -837,10 +727,6 @@ export const PROVIDER_LIFECYCLE_SUITE_DESCRIPTOR: ConformanceSuiteDescriptor =
 		),
 	});
 
-/**
- * Runs the lifecycle suite against a provider, one fresh in-memory stack per
- * case so no case can be carried by another's leftovers.
- */
 export async function runProviderLifecycleConformance<T>(
 	provider: T,
 	options: { readonly cases?: readonly ProviderLifecycleCase[] } = {},

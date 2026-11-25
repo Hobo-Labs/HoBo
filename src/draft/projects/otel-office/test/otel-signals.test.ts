@@ -63,9 +63,8 @@ describe("mapLogsPayload", () => {
 			type: "log-record",
 			severity: "WARN",
 			characterId: "s1/orders-api",
-			at: 2000, // timeUnixNano 2_000_000_000 ns → 2000 ms
+			at: 2000,
 		});
-		// SAFETY: `const next = applyEvent(state, events[0] ?? ({} as never));` is required at this I/O or test boundary.
 		const next = applyEvent(state, events[0] ?? ({} as never));
 		expect(next.characters["s1/orders-api"]?.bubble).toBe("queue lag rising");
 	});
@@ -73,7 +72,6 @@ describe("mapLogsPayload", () => {
 	it("ERROR logs flip the character to stuck attention", () => {
 		const state = emptyOffice();
 		const events = mapLogsPayload(logsPayload(17, "boom"), state, 5_000);
-		// SAFETY: `const next = applyEvent(state, events[0] ?? ({} as never));` is required at this I/O or test boundary.
 		const next = applyEvent(state, events[0] ?? ({} as never));
 		const ch = next.characters["s1/orders-api"];
 		expect(ch?.state).toBe("stuck");
@@ -83,7 +81,6 @@ describe("mapLogsPayload", () => {
 	it("INFO logs stay quiet (no bubble)", () => {
 		const state = emptyOffice();
 		const events = mapLogsPayload(logsPayload(9, "all good"), state, 5_000);
-		// SAFETY: `const next = applyEvent(state, events[0] ?? ({} as never));` is required at this I/O or test boundary.
 		const next = applyEvent(state, events[0] ?? ({} as never));
 		expect(next.characters["s1/orders-api"]?.bubble).toBeUndefined();
 	});
@@ -126,7 +123,6 @@ describe("mapMetricsPayload", () => {
 		};
 		const events = mapMetricsPayload(payload, state, 5_000);
 		expect(events[0]).toMatchObject({ type: "metric-sample", metric: "health", value: 0.35 });
-		// SAFETY: `const next = applyEvent(state, events[0] ?? ({} as never));` is required at this I/O or test boundary.
 		const next = applyEvent(state, events[0] ?? ({} as never));
 		expect(next.characters["s1/orders-api"]?.health).toBe(0.35);
 	});

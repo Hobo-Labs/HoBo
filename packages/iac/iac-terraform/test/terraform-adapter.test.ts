@@ -15,10 +15,6 @@ import {
 	validateIacProgram,
 } from "../src/index.js";
 
-// HOBO-717: the HCL-lane adapter over the deterministic in-memory engine —
-// program parsing, per-resource workspace state, divergence/partial-apply
-// fail-closed behavior, and the shared IaC-backend conformance smoke.
-
 describe("validateIacProgram (parse, don't validate)", () => {
 	it("accepts terraform and opentofu providers and freezes the parsed program", () => {
 		for (const provider of ["terraform", "opentofu"]) {

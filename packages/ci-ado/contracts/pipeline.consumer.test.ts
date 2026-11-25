@@ -8,7 +8,6 @@ import {
 } from "../src/index.js";
 import pact from "./pipeline.pact.json" with { type: "json" };
 
-// Hand-authored consumer expectation. This does not verify a live ADO agent or service.
 describe("Azure Pipelines YAML consumer contract", () => {
 	it.each(pact.interactions)("$description", async (interaction) => {
 		const expected = interaction.response[0]?.contents;

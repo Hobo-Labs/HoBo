@@ -1,12 +1,3 @@
-# The hosted relay's Upstash Redis cache offers (ADR-0179 amendment, phase 5).
-# Lowered into the @hobo/pricing catalog by scripts/generate-offers.mts; the
-# relay's default cache offers are derived from that catalog.
-#
-# Prices as Upstash stated them on 2026-11-11 (re-check at provisioning).
-# The free plan is blocked when its allowance is exhausted; the pricing
-# catalog has no "blocked" model, so the generator's binding table records it.
-# Whether the pay-as-you-go plan includes the free allowance is unverified,
-# so the pay-as-you-go plan bills every command (an upper bound).
 schema: hobo.provider-manifest/v1
 
 provider:

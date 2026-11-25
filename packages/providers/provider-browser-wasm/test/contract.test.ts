@@ -1,18 +1,3 @@
-/**
- * Consumer-driven contract verification for the host asset origin.
- *
- * `contracts/provider-browser-wasm-host-origin.pact.json` states what this
- * package expects of the page that is going to run the guest. A pact file
- * nobody replays is a wish, so this suite loads it and drives the real client
- * against each interaction: the request the client emits must match the one the
- * pact describes, and the client must behave as documented when handed the
- * pact's recorded response.
- *
- * The fake sits at the HTTP seam and nowhere else. The parsers, the digest
- * verification (real Web Crypto over the pact's real bytes), the same-origin
- * guard and the driver are all the shipping ones; only `fetch` and the guest
- * runtime are stood in for, because neither exists in Node.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -172,12 +157,6 @@ function interaction(fragment: string): PactInteraction {
 	return found;
 }
 
-/**
- * Recover the recorded body as bytes.
- *
- * A WebAssembly bundle cannot be recorded as JSON, so those interactions carry
- * base64 and say so. Everything else is a JSON document, recorded readably.
- */
 function bodyBytes(response: PactInteraction["response"]): Uint8Array {
 	if (response.body === undefined) return new Uint8Array();
 	if (response.encoding === "base64") {
@@ -262,7 +241,6 @@ const placement: GuestPlacement = parseGuestPlacement({
 	requiredImports: ["wasi:io/streams@0.2.0"],
 });
 
-/** A runtime that records what it was asked to do and does nothing else. */
 function runtimeProviding(
 	providedImports: readonly string[],
 	overrides: Partial<{
@@ -340,8 +318,6 @@ describe("host capabilities, verified against the pact", () => {
 	});
 
 	it("parses a private-mode context as unavailable rather than as an error", async () => {
-		// "No durable storage" is an answer, not a failure. Turning it into one
-		// here would hide the case the negotiation below exists for.
 		const transport = transportReplaying(interaction("private-mode context"));
 
 		const host = await clientOver(transport).fetchHostCapabilities();
@@ -424,9 +400,6 @@ describe("the component bundle, verified against the pact", () => {
 	});
 
 	it("refuses the single-page-app document a misconfigured origin serves instead of a 404", async () => {
-		// A 200 `text/html` where a `.wasm` should be is the most common way a
-		// static host answers a missing asset, and `compileStreaming` would
-		// reject it several layers deeper.
 		const manifest = await manifestFrom();
 		const transport = transportReplaying(
 			interaction("single-page-app document"),
@@ -457,8 +430,6 @@ describe("the component bundle, verified against the pact", () => {
 	});
 
 	it("refuses a core module whose digest is perfectly correct", async () => {
-		// The digest agrees; the bundle is still a core module, which would fail
-		// component instantiation with a message that reads like a host bug.
 		const manifest = await clientOver(
 			transportReplaying(interaction("core module rather than a component")),
 		).fetchGuestManifest("legacy-module");
@@ -502,9 +473,6 @@ describe("provisioning end to end, replayed from the pact", () => {
 	});
 
 	it("never fetches the bundle when the host cannot supply an import it needs", async () => {
-		// The manifest says what the guest needs and the host knows what it
-		// supplies, so the refusal happens before a byte of guest code is
-		// downloaded, let alone linked.
 		const transport = transportReplaying(
 			interaction("cross-origin isolated context"),
 			interaction("serve the guest manifest"),
@@ -524,8 +492,6 @@ describe("provisioning end to end, replayed from the pact", () => {
 	});
 
 	it("refuses durable placement in the private-mode context the pact records", async () => {
-		// The refusal lands before the bundle is downloaded: persistence is
-		// negotiated as soon as the manifest is in hand.
 		const transport = transportReplaying(
 			interaction("private-mode context"),
 			interaction("serve the guest manifest"),
@@ -560,8 +526,6 @@ describe("provisioning end to end, replayed from the pact", () => {
 
 		expect(receipt.placement.persistence).toBe("opfs-sahpool");
 		expect(receipt.effectivePersistence).toBe("transient-memory");
-		// The downgrade is legible in the receipt and the handle holds no
-		// partition, so nothing downstream can claim durability.
 		expect(receipt.handle.partitionId).toBe("");
 	});
 
@@ -651,9 +615,6 @@ describe("release", () => {
 
 describe("the default runtime", () => {
 	it("refuses to instantiate rather than pretend a guest ran", async () => {
-		// Outside a browser there is no runtime, and a stand-in that "ran" the
-		// guest would make every downstream receipt a claim about an
-		// instantiation that never happened.
 		const runtime = createUnavailableRuntime("this is not a browser");
 
 		expect(runtime.providedImports).toEqual([]);

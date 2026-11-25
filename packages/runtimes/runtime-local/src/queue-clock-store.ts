@@ -131,14 +131,10 @@ export function cloneStore<T>(value: T): T {
 		return structuredClone(value);
 	}
 	const cloned = parseJsonValue(JSON.stringify(value));
-	// SAFETY: JSON round-trip preserves the caller-owned store snapshot type.
 	return cloned as T;
 }
 
 function deepFreeze<T>(value: T): T {
-	// Arrays as well as plain objects: `store.trace` and every queue's
-	// `messages` are arrays, so a guard that admitted only plain objects would
-	// hand back a "frozen" snapshot whose queues could still be pushed to.
 	if (Array.isArray(value) || isJsonObject(value)) {
 		Object.freeze(value);
 		for (const nested of Object.values(value)) {
@@ -152,7 +148,6 @@ export function appendTrace(
 	store: QueueClockStore,
 	event: ClockTraceEntry,
 ): void {
-	// SAFETY: assertion to `deepFreeze({ ...event }) as ClockTraceEntry` is required at this boundary.
 	store.trace.push(deepFreeze({ ...event }) as ClockTraceEntry);
 }
 

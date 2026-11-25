@@ -1,7 +1,3 @@
-// The shell's typed `hobo deploy` option table (@hobo/cli subcommands.ts) and
-// the CD subcommands (cd-deploy.ts) describe one surface: every subcommand is
-// in both, and each usage line names exactly the flags the shell accepts for
-// it (beside the common --format/--simulate/--yard).
 import { DEPLOY_SUBCOMMANDS } from "@hobo/cli";
 import { describe, expect, it } from "vitest";
 import { CD_DEPLOY_SUBCOMMANDS } from "../src/cd-deploy.js";

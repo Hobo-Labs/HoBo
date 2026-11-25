@@ -1,6 +1,3 @@
-// Test doubles for the WP1 Freight ledger and ingest tests. Each one models
-// the frozen port it stands in for (ports.ts, @hobo/core eventstore); none of
-// them is reachable from production code.
 import { createHash } from "node:crypto";
 import type {
 	AppendOptions,
@@ -54,15 +51,11 @@ export function digestOf(seed: string): `sha256:${string}` {
 	return `sha256:${hex64(seed)}`;
 }
 
-/** Brand a Camp id in a test. */
 export function camp(id: string): CampId {
-	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
-/** Brand a Freight id in a test (ids come from recorded Freight or the golden corpus). */
 export function fid(id: string): FreightId {
-	// SAFETY: test fixture ids are recorded or golden `sha256:` Freight ids.
 	return id as FreightId;
 }
 
@@ -86,11 +79,6 @@ export function context(
 	return { tenant: TENANT, principal, now };
 }
 
-/**
- * In-memory DurableEventStore with the conformance-suite semantics the ledger
- * relies on: per-stream expected-seq CAS (a stale expectedSeq throws), and
- * per-stream idempotency-key dedup checked before the CAS.
- */
 export class MemoryEventStore implements DurableEventStore {
 	private readonly streams = new Map<string, EventEnvelope[]>();
 	private readonly all: PositionedEvent[] = [];
@@ -136,7 +124,6 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = input.meta;
-			// SAFETY: test double; positions are minted here from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);
@@ -205,7 +192,6 @@ export class MemoryEventStore implements DurableEventStore {
 		return { ...result, effects: [] };
 	}
 
-	/** Test helper: raw events of one stream. */
 	events(streamId: string): readonly EventEnvelope[] {
 		return this.streams.get(streamId) ?? [];
 	}
@@ -227,7 +213,6 @@ export class RecordingTelemetry implements TelemetrySink {
 	}
 }
 
-/** Verifies every artifact digest against bytes the test registered as "at the coordinate". */
 export class MapArtifactVerifier implements ArtifactVerifier {
 	readonly known = new Map<string, string>();
 	calls = 0;
@@ -266,7 +251,6 @@ export class MapArtifactVerifier implements ArtifactVerifier {
 }
 
 function reason(code: string, message: string, subject: string): ReasonRecord {
-	// SAFETY: test double; a plain object with the generated message's shape.
 	return {
 		$typeName: "hobo.cd.v1.ReasonRecord",
 		code,
@@ -281,7 +265,6 @@ export type AuthorizerCall = Readonly<{
 	principal: PrincipalRef;
 }>;
 
-/** Allows users and services; agents get proposal-only; listed actions are denied. */
 export class FakeAuthorizer implements CdAuthorizer {
 	readonly calls: AuthorizerCall[] = [];
 	readonly denied = new Set<CdAction>();
@@ -306,7 +289,6 @@ export class FakeAuthorizer implements CdAuthorizer {
 	}
 }
 
-/** Records nudges; never creates Freight (the real one polls with a verified read). */
 export class FakeSources implements FreightSources {
 	readonly scheduled: string[][] = [];
 	constructor(private readonly sources: readonly FreightSourceRecord[] = []) {}

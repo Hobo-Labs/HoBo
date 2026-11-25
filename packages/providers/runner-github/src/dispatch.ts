@@ -8,16 +8,9 @@ import {
 	type ExecutionHostManifest,
 } from "./types.js";
 
-// Dispatcher selection over registered execution hosts (ADR-0071), promoted
-// from the `execution-host-provider-contract` draft proof: rank ONLY the
-// registered providers of a category by effective marginal cost against the
-// CreditLedgerView (Plan 5), pick the cheapest, and record WHY as a
-// past-tense `dispatch.Decided` fact — the projection any audit replays.
-
 // public-contract: the past-tense fact type each selection records.
 export const DISPATCH_DECIDED = "dispatch.Decided";
 
-// The routing objectives the Dispatcher accepts (default maximize-credits).
 export const OBJECTIVES = [
 	"cost",
 	"latency",
@@ -28,9 +21,6 @@ export const OBJECTIVES = [
 
 export type DispatchObjective = (typeof OBJECTIVES)[number];
 
-// The structural provider surface the registry accepts — both this package's
-// providers and sibling adapters (Blacksmith, Depot, self-hosted fixtures)
-// register through the same shape.
 export interface ExecutionHostProviderLike {
 	readonly id: string;
 	readonly category: ExecutionHostCategory;
@@ -50,8 +40,6 @@ export interface ExecutionHostRegistry {
 	readonly byId: Map<string, ExecutionHostRecord>;
 }
 
-// The materialized credit view the ranking consumes: per provider, per SKU,
-// how much free headroom remains and what a unit costs beyond it.
 export interface CreditLedgerView {
 	readonly seq: number;
 	readonly balanceHash: string;
@@ -100,10 +88,8 @@ export interface DispatchRequest {
 	readonly category: ExecutionHostCategory;
 	readonly dispatchId: string;
 	readonly objective?: DispatchObjective;
-	// Estimated metered units of the job/build being routed.
 	readonly units?: number;
 	readonly ledgerView?: CreditLedgerView;
-	// Pin a provider explicitly (records optedOutOfRouting: true).
 	readonly withProvider?: string;
 }
 
@@ -164,8 +150,6 @@ function rankCandidate(
 	};
 }
 
-// Deterministic selection: cheapest effective marginal cost first, provider id
-// as the tie-break — the same inputs always produce the same decision fact.
 export function selectExecutionHost(
 	request: DispatchRequest,
 	registry: ExecutionHostRegistry,

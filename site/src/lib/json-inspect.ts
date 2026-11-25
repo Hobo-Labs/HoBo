@@ -15,7 +15,6 @@ export type JsonValue =
 
 export type JsonObject = { readonly [key: string]: JsonValue };
 
-/** Concrete debug/log field bag (interface so consumers stay anti-slop clean). */
 export interface DebugFields {
 	readonly [key: string]:
 		| string

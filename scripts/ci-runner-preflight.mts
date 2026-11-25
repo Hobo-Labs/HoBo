@@ -28,9 +28,6 @@ if (process.argv.includes("--print-job-tools")) {
 	process.exit(0);
 }
 
-// Always installs only tools `mise ls --current --missing` reports (including a
-// pin bumped in mise.lock before the runner image is rebuilt), so skipping the
-// blanket `mise install --locked` step never fails closed on toolchain drift.
 const sync = syncMissingMiseTools(process.cwd());
 console.log(
 	`${sync.ok ? "ok  " : "ERR "} mise-tool-sync: ${sync.detail} (${sync.elapsedMs} ms)`,

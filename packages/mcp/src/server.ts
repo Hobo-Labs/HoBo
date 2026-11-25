@@ -29,13 +29,6 @@ import {
 	type ToolDescriptor,
 } from "./tool-surface.js";
 
-// S3-01/S3-02 — the MCP server object. It exposes listTools()/callTool() and
-// dispatches EVERY tool through the SAME @hobo/cli command registry the CLI
-// uses (an injected HoboCli whose plan/up/down/login commands are wired to a
-// YardRuntime). There is no second implementation of plan/up/down here: a tool
-// call becomes `hobo <verb> --json` over the shared dispatch path. Auth is
-// checked BEFORE dispatch (deny-by-default); results are inert data.
-
 export interface ToolCallInput {
 	readonly cwd?: string;
 	readonly camp?: string;
@@ -43,16 +36,12 @@ export interface ToolCallInput {
 }
 
 // domain-view: the inert tool-call result; its wire form is McpToolCallResult
-// in data-models/mcp.proto. `output` is pure data — the CLI envelope — and can
-// never schedule or widen a follow-up call (ADR-0023 item 3).
 export interface ToolCallResult {
 	readonly ok: boolean;
 	readonly tool: string;
 	readonly status: string;
 	readonly code: string;
 	readonly output: unknown;
-	// Present for scope allow/deny outcomes; absent when a call is refused for
-	// backpressure (MCP_RATE_LIMITED) before the scope decision is reached.
 	readonly decision?: ToolDecision;
 	readonly error?: { readonly code: string; readonly message: string };
 }
@@ -77,16 +66,10 @@ export interface HoboMcpServer {
 }
 
 export interface CreateHoboMcpServerOptions {
-	// The shared dispatch layer. Its plan/up/down/login command modules carry the
-	// injected YardRuntime, exactly as the CLI tests wire them.
 	readonly cli: HoboCli;
 	readonly surface?: readonly ToolDescriptor[];
 	readonly auditSink?: (event: AuthDecisionEvent) => void;
 	readonly now?: () => string;
-	// S3-06 — optional per-principal / per-tenant backpressure (NFR-019). When
-	// absent, no throttling is applied (existing callers are unaffected). `clock`
-	// is the monotonic millisecond source the limiter reads — injected so tests
-	// are deterministic; it defaults to Date.now.
 	readonly rateLimit?: RateLimitPolicy;
 	readonly clock?: () => number;
 	readonly rateLimitAuditSink?: (event: RateLimitEvent) => void;
@@ -130,11 +113,6 @@ export function createHoboMcpServer(
 			const correlationId =
 				callOptions?.correlationId ?? `mcp:${name}:${auth.subject}`;
 
-			// S3-06 — backpressure BEFORE dispatch (NFR-019). Rate-limiting is the
-			// outermost gate so a flooding principal is throttled regardless of scope
-			// (even repeated denied calls consume budget), while a control principal
-			// keyed by a different (tenant, principal) is unaffected. Fail-closed: an
-			// exhausted principal gets a typed MCP_RATE_LIMITED result + audited fact.
 			if (limiter) {
 				const rl = limiter.check({
 					tenant: auth.tenant,
@@ -167,7 +145,6 @@ export function createHoboMcpServer(
 
 			const tool = findTool(name, surface);
 			if (!tool) {
-				// Unknown tools are not part of the derived surface — fail closed.
 				const decision = deniedUnknown(
 					name,
 					auth,
@@ -199,7 +176,6 @@ export function createHoboMcpServer(
 			});
 			record(decision.event);
 
-			// Deny-by-default: the scope check gates BEFORE the shared dispatch runs.
 			if (decision.effect === "deny") {
 				return {
 					ok: false,
@@ -212,7 +188,6 @@ export function createHoboMcpServer(
 				};
 			}
 
-			// Authorized: dispatch through the SAME registry the CLI uses.
 			const argv = buildArgv(tool.verb, input);
 			const runOptions = input.cwd !== undefined ? { cwd: input.cwd } : {};
 			const run = await options.cli.run(argv, runOptions);
@@ -254,7 +229,6 @@ export interface CliEnvelope {
 	ok?: boolean;
 	status?: string;
 	code?: string;
-	/** A refusal's message and what to do next: the agent relays them. */
 	message?: string;
 	remediation?: string[];
 	raw?: string;

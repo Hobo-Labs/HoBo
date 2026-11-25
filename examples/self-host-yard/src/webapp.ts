@@ -1,8 +1,3 @@
-/**
- * The status-page web app: a plain fetch handler serving a tiny HTML shell
- * that names the components the bound API reports on. Bound to the API via
- * `.dependsOn(api)` in `src/bindle.ts`.
- */
 export function statusWeb(_request: Request): Response {
 	return new Response(
 		`<!doctype html>

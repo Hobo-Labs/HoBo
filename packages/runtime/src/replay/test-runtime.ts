@@ -171,9 +171,7 @@ export function testRuntime(
 						event.type === "run.StepCompleted" &&
 						event.data &&
 						isJsonObject(event.data) &&
-						// SAFETY: assertion to `event.data as { name?: string; index?: number }` is required at this boundary.
 						(event.data as { name?: string; index?: number }).name === name &&
-						// SAFETY: assertion to `event.data as { name?: string; index?: number }` is required at this boundary.
 						(event.data as { name?: string; index?: number }).index === index,
 				);
 				if (!completed) {
@@ -186,7 +184,6 @@ export function testRuntime(
 					});
 				}
 				run.stepIndex += 1;
-				// SAFETY: assertion to `completed.data as { result: T }` is required at this boundary.
 				return (completed.data as { result: T }).result;
 			},
 			sleep(delayMs: number, options: { id?: string; label?: string } = {}) {
@@ -334,8 +331,6 @@ export function testRuntime(
 				timers: [],
 				trace: [],
 			};
-			// SAFETY: assertion to `run as RunRecord<JsonValue, JsonValue>` is required at this boundary.
-			// SAFETY: run records are stored erased across workflow generics.
 			runs.set(runId, run as never);
 			await appendRunEvent(run, "run.Started", cloneAsJson({ seed, args }));
 			await applyHandler(run, workflow.onStart, clone(args), true);
@@ -355,7 +350,6 @@ export function testRuntime(
 		},
 
 		async state<S>(runRef: RunRef): Promise<S> {
-			// SAFETY: assertion to `clone(getRun(runs, runRef).state) as S` is required at this boundary.
 			return clone(getRun(runs, runRef).state) as S;
 		},
 
@@ -385,7 +379,6 @@ export function testRuntime(
 				});
 			}
 
-			// SAFETY: assertion to `clone(replayed.state) as S` is required at this boundary.
 			return clone(replayed.state) as S;
 		},
 	};
@@ -464,7 +457,6 @@ function clone<T>(value: T): T {
 		return structuredClone(value);
 	}
 	const cloned = parseJsonValue(JSON.stringify(value));
-	// SAFETY: JSON round-trip preserves T at this clone fallback.
 	return cloned as T;
 }
 

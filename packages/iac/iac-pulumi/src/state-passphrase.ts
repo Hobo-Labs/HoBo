@@ -5,7 +5,6 @@ import { PulumiEngineUnavailableError } from "./pulumi-engine-errors.js";
 export const PULUMI_STATE_PASSPHRASE_MISSING =
 	"pulumi-state-passphrase-missing";
 
-/** Select a stable caller-supplied key, or a process-only key for disposable state. */
 export function statePassphrase(
 	explicit: string | undefined,
 	ephemeralState: boolean | undefined,
@@ -14,7 +13,6 @@ export function statePassphrase(
 	return ephemeralState ? randomBytes(32).toString("base64url") : undefined;
 }
 
-/** Never initialize or alter persistent state with an unrecoverable key. */
 export function requireStatePassphrase(passphrase: string | undefined): string {
 	if (!passphrase)
 		throw new PulumiEngineUnavailableError(

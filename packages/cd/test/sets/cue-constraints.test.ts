@@ -1,5 +1,3 @@
-// Vets real journal bodies against data-models/sets.cue (the constraints the
-// TS parsers mirror). Skips with a visible reason when no `cue` binary exists.
 import { execFileSync } from "node:child_process";
 import {
 	existsSync,

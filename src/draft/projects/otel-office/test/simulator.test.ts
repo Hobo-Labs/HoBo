@@ -38,7 +38,6 @@ describe("simulator", () => {
 		expect(events.some((e) => e.type === "metric-sample" && e.metric === "health")).toBe(true);
 		const logs = events.filter((e) => e.type === "log-record");
 		expect(logs.length).toBeGreaterThan(0);
-		// Simulator logs come in varied severities.
 		expect(new Set(logs.map((l) => (l.type === "log-record" ? l.severity : ""))).size).toBeGreaterThan(1);
 	});
 });

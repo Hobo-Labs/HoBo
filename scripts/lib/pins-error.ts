@@ -1,9 +1,3 @@
-/**
- * The one error type of the pin code: every refusal carries a code a caller
- * (and a test) can match, and its message starts with that code.
- *
- * Erasable TypeScript with node builtins only.
- */
 export type PinsErrorCode =
 	| "PINS_MALFORMED"
 	| "TARGET_UNSUPPORTED"
@@ -32,12 +26,9 @@ export type PinsErrorCode =
 	| "ARCHIVE_WRITE_FAILED"
 	| "USAGE";
 
-/** Every refusal is named; a bare Error would be untraceable. */
 export class PinsError extends Error {
 	readonly code: PinsErrorCode;
-	/** Errors raised while cleaning up after this one, which must not replace it. */
 	readonly suppressed: readonly Error[];
-	/** `cause` keeps the error underneath, such as a file system error and its errno. */
 	constructor(
 		code: PinsErrorCode,
 		message: string,
@@ -55,7 +46,6 @@ export class PinsError extends Error {
 		this.suppressed = options?.suppressed ?? [];
 	}
 
-	/** This error again, with `note` added to the end of its message. */
 	withNote(note: string): PinsError {
 		return new PinsError(
 			this.code,
@@ -64,7 +54,6 @@ export class PinsError extends Error {
 		);
 	}
 
-	/** This error again, with `also` (a failure while `step`) recorded beside it and named in the message. */
 	withSuppressed(step: string, also: Error): PinsError {
 		return new PinsError(
 			this.code,

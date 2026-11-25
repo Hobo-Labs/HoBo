@@ -1,13 +1,3 @@
-/**
- * Operation metering for the Blob binding.
- *
- * `meterVercelBlobSdk` wraps the SDK and counts what is actually sent, by
- * billable class: every `get` is a simple operation, every `put` and `list`
- * an advanced one (a refused conditional upload included), every `del` a
- * free delete. That is the figure `test/blob-cost.test.ts` checks against
- * `VERCEL_BLOB_EPHEMERAL_COST`. Only method names and counts reach the meter;
- * pathnames, bodies and ETags never do.
- */
 import type { VercelBlobOperationCounts } from "./cost.js";
 import type { VercelBlobSdk, VercelBlobSdkMethodName } from "./sdk.js";
 

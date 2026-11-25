@@ -69,21 +69,9 @@ const PORT_TO_CLASS: PortClassMap = {
 };
 
 export interface KubernetesProviderOptions {
-	/**
-	 * Topology labels for the cluster's nodes. There is no way to discover
-	 * these from the Kubernetes API without reading node labels an operator may
-	 * not expose, so they are stated rather than guessed; the default is the
-	 * one honest value.
-	 */
 	regions?: string[];
 }
 
-// The @hobo/provider-kubernetes factory (HOBO-87 authoring contract):
-// capability declarations + the Kubernetes equivalence map as default Resource
-// Definitions, realize() -> IacProgram for the primary Pulumi lane, a runtime
-// client per port, and the published Capability Manifest with declared cost
-// facts and the projected-ServiceAccount-token auth posture (HOBO-110 — this
-// package stores no static keys).
 export function createKubernetesProvider(
 	options: KubernetesProviderOptions = {},
 ): CloudProvider {
@@ -133,16 +121,6 @@ export function createKubernetesProvider(
 	};
 }
 
-/**
- * The driver-program lane this package used to return from `realize()`.
- *
- * `realize()` now emits the canonical `hobo.iac-program/v1` document that
- * `@hobo/core`'s `CloudProvider` contract requires and every other provider
- * emits — the previous return value was a provider-shaped document that no
- * executor in the repo consumed. The driver program is kept here rather than
- * deleted because it names the *apply* path this package actually implements:
- * `provisionWorkload` in `./driver.ts`, talking to a real apiserver.
- */
 export interface KubernetesDriverProgram {
 	apiVersion: "hobo.driver-program/v1";
 	driver: string;

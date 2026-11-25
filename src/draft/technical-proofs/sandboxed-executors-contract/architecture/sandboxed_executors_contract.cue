@@ -1,4 +1,3 @@
-// CUE constraints for Sandboxed Executors Contract protobuf types.
 
 package architecture_evidence
 

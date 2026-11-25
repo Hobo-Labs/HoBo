@@ -1,10 +1,3 @@
-/**
- * parseAiBddRunReport: the one boundary an ai-bdd report crosses (ADR-0172).
- *
- * The two fixtures are reports ai-bdd wrote in real runs; every other input
- * here is one of them with a single named edit, so a refusal is always
- * attributable to the field the test changed.
- */
 import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
@@ -62,7 +55,6 @@ describe("parseAiBddRunReport", () => {
 			noAgent: true,
 			exitCode: 0,
 		});
-		// The digest is of the bytes as read, so it is what `sha256sum report.json` prints.
 		expect(evidence.reportDigest).toBe(
 			"sha256:39b3124e109795fcb285de613fb0eee1bf60322a017c0d1b6c54639e7bdebbb1",
 		);
@@ -70,7 +62,6 @@ describe("parseAiBddRunReport", () => {
 	});
 
 	it("refuses a report that used the agent", () => {
-		// The real failed fixture: a frozen run without --no-agent that healed through the agent.
 		const issues = issuesOf(fixtureBytes("report.v1.failed.json"));
 		expect(issues).toContain(
 			"options.noAgent is false: a step could have fallen back to the agent",
@@ -110,8 +101,6 @@ describe("parseAiBddRunReport", () => {
 	});
 
 	it("a judge call means the verdict cache was cold, and is refused", () => {
-		// `--no-agent` stops the agent, not the judge: with an empty .ai-bdd/cache/
-		// a frozen replay still asks the judge, so zero model calls needs the cache.
 		const doc = fixtureDoc("passed");
 		doc.usage = {
 			...docAt(doc, "usage"),
@@ -181,8 +170,6 @@ describe("parseAiBddRunReport", () => {
 	});
 
 	it("refuses exit 0 for a run with no scenario at all", () => {
-		// ai-bdd exits 0 for an empty run (no plans, or every scenario rejected):
-		// nothing replayed, so it is not evidence that the documented scenarios do.
 		const doc = fixtureDoc("passed");
 		doc.scenarios = [];
 		doc.totals = { ...docAt(doc, "totals"), passed: 0 };
@@ -270,7 +257,6 @@ describe("parseAiBddRunReport", () => {
 		"2026-10-13T01:14:10Z",
 		"2026-10-13T01:14:10.915+00:00",
 		"2026-10-13 01:14:10.915Z",
-		// The form, but no date: month 13, hour 25.
 		"2026-13-45T25:61:61.000Z",
 	])("refuses startedAt %j, which is not the toISOString form v1 pins", (startedAt) => {
 		const doc = fixtureDoc("passed");

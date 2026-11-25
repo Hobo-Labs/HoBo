@@ -1,12 +1,3 @@
-/**
- * The cache directory's hygiene. It holds executables that a later command
- * runs, so it is created private (0700), refused when it is not the user's
- * own and closed to others, and swept of the partial files a dead download
- * left behind. (A download killed by a signal removes its own; this is for the
- * ones that were killed harder.)
- *
- * Erasable TypeScript with node builtins only.
- */
 import { lstatSync, readdirSync, rmSync } from "node:fs";
 import { lstat, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,7 +16,6 @@ export interface DirProblem {
 	readonly fix: string;
 }
 
-/** What is wrong with a cache directory, given what `lstat` says about it. */
 export function dirProblem(
 	info: DirInfo,
 	uid: number,
@@ -67,7 +57,6 @@ async function problemAt(path: string): Promise<DirProblem | null> {
 	);
 }
 
-/** The first thing wrong with the cache root or, when given, one digest directory. */
 export async function cacheProblem(
 	cache: string,
 	sha256?: string,
@@ -78,13 +67,7 @@ export async function cacheProblem(
 	);
 }
 
-/** A partial file younger than this may be a download that is just starting. */
 const MIN_AGE_MS = 60_000;
-/**
- * A live download writes, or gives up, long before this: every network wait is
- * bounded by HOBO_PINS_NET_TIMEOUT_MS (at most ten minutes). Past it a partial
- * file is a leftover whatever its pid says, which a reused pid cannot fake.
- */
 const MAX_AGE_MS = 3_600_000;
 
 function pidAlive(pid: number): boolean {
@@ -96,12 +79,6 @@ function pidAlive(pid: number): boolean {
 	}
 }
 
-/**
- * Whether a partial file `age` ms old, named after `pid`, belongs to nobody.
- * This process knows its own live downloads, so a file named after its own pid
- * that is not one of them (a killed run that was also pid 1) is a leftover; for
- * another pid, a live process keeps the file until the age bound.
- */
 function abandoned(
 	path: string,
 	pid: number,
@@ -112,13 +89,6 @@ function abandoned(
 	return age > MAX_AGE_MS || pid === process.pid || !alive(pid);
 }
 
-/**
- * Remove the throwaway probe repositories (`.probe-*`, `pins-git-probe.ts`)
- * that a killed run left in the cache root: only real directories (a link is
- * never followed or removed), only the user's own, only older than an hour
- * (no probe runs that long: its git call has a deadline of at most ten
- * minutes). Synchronous, so the git-only verbs can call it too.
- */
 export function sweepProbes(cache: string, now: number = Date.now()): string[] {
 	const removed: string[] = [];
 	let names: string[];
@@ -138,19 +108,11 @@ export function sweepProbes(cache: string, now: number = Date.now()): string[] {
 				rmSync(path, { recursive: true, force: true });
 				removed.push(path);
 			}
-		} catch {
-			// Gone between the listing and now.
-		}
+		} catch {}
 	}
 	return removed;
 }
 
-/**
- * Remove the `*.partial` files no live download is writing: older than a
- * minute and either older than an hour or named after a process that is gone.
- * Lock-free: nothing is held, and a reused pid only delays a sweep, by at most
- * the hour.
- */
 export async function sweepPartials(
 	cache: string,
 	now: number = Date.now(),
@@ -181,18 +143,12 @@ export async function sweepPartials(
 					await rm(path, { force: true });
 					removed.push(path);
 				}
-			} catch {
-				// Gone between the listing and now: nothing to sweep.
-			}
+			} catch {}
 		}
 	}
 	return removed;
 }
 
-/**
- * Make the cache ready to write: create it private if it is missing, refuse it
- * if it is not safe, and sweep what a dead download left.
- */
 export async function prepareCache(
 	cache: string,
 	sha256?: string,
@@ -200,7 +156,6 @@ export async function prepareCache(
 	try {
 		await mkdir(cache, { recursive: true, mode: 0o700 });
 	} catch (error) {
-		// A file where the directory belongs is reported below, not thrown as EEXIST.
 		const exists =
 			error instanceof Error && "code" in error && error.code === "EEXIST";
 		if (!exists) throw error;

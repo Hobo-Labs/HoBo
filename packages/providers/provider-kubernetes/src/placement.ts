@@ -1,19 +1,3 @@
-/**
- * Parse-don't-validate boundary for an authored placement.
- *
- * `kubernetes.with.deployment({...})` hands this package a
- * `JsonObject` — an option bag written by a human, possibly
- * assembled from environment variables or a config file. It crosses this
- * parser once and comes out as {@link WorkloadPlacement}, whose every field is
- * already in the one unit the rest of the package compares in. No later code
- * re-checks a name, re-reads a Kubernetes quantity suffix, or wonders whether
- * `memory` was mebibytes or bytes.
- *
- * The invariants here are the same ones in
- * `data-models/provider_kubernetes.cue`; that file is the design-time view and
- * this is the executable one.
- */
-
 import { KubernetesProviderError } from "./errors.js";
 import {
 	isJsonNumber,
@@ -23,19 +7,11 @@ import {
 	type StringBag,
 } from "./json.js";
 
-/** RFC 1123 label: namespaces, service names, deployment names. */
 const DNS_1123_LABEL = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/u;
 
-/** RFC 1123 subdomain, for the Service's in-cluster DNS name. */
 const DNS_1123_SUBDOMAIN =
 	/^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*$/u;
 
-/**
- * A reference this driver is willing to place. A bare `nginx` is rejected on
- * purpose: an unqualified name resolves through whatever default registry the
- * node happens to be configured with, which is not a placement decision
- * anybody made here.
- */
 const IMAGE_REF =
 	/^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(:[0-9]+)?(\/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+(:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|@sha256:[0-9a-f]{64})$/u;
 
@@ -49,14 +25,8 @@ export const MIN_MEMORY_BYTES = 4 * 1024 * 1024;
 export const MAX_MEMORY_BYTES = 256 * 1024 * 1024 * 1024;
 export const MAX_REPLICAS = 100;
 
-/**
- * The rendered rollout surges by exactly one pod. It is spelled out rather
- * than left to the 25% default because the replica bounds in
- * `data-models/provider_kubernetes.cue` are only true if it is.
- */
 export const MAX_SURGE = 1;
 
-/** The one resource class this provider realizes; see src/equivalence.ts. */
 // public-contract: dispatcher resource class for Kubernetes placements.
 export const PROVIDER_RESOURCE_CLASS = "kubernetes:deployment";
 
@@ -67,7 +37,6 @@ export const NAME_LABEL = "app.kubernetes.io/name";
 // public-contract: ownership label value used for cleanup fencing.
 export const MANAGED_BY_VALUE = "hobo";
 
-/** cpu in millicores, memory in bytes — the only units this package compares. */
 export type ResourceQuantity = {
 	readonly cpuMillicores: number;
 	readonly memoryBytes: number;
@@ -127,13 +96,6 @@ const DECIMAL_SUFFIXES: QuantitySuffixes = {
 	T: 1000 ** 4,
 };
 
-/**
- * Parse a Kubernetes CPU quantity into millicores.
- *
- * Kubernetes accepts `"250m"`, `"0.25"` and `0.25`. Comparing those as written
- * is how a limit ends up below its request, so nothing downstream ever sees
- * the original spelling.
- */
 export function parseCpuMillicores<T>(value: T, field: string): number {
 	let millicores: number;
 	if (isJsonNumber(value)) {
@@ -163,13 +125,6 @@ export function parseCpuMillicores<T>(value: T, field: string): number {
 	return millicores;
 }
 
-/**
- * Parse a Kubernetes memory quantity into bytes.
- *
- * Both suffix families are real and they differ: `1M` is 1,000,000 bytes and
- * `1Mi` is 1,048,576. A parser that treated them alike would silently
- * under-provision by 4.8% at gibibyte scale.
- */
 export function parseMemoryBytes<T>(value: T, field: string): number {
 	let bytes: number;
 	if (isJsonNumber(value)) {
@@ -223,7 +178,6 @@ function parseQuantityBlock<T>(
 	if (!isJsonObject(raw) || raw === null || Array.isArray(raw)) {
 		throw rejected(`${field} must be an object with cpu and memory`);
 	}
-	// SAFETY: assertion to `as JsonObject; r` is required at this boundary.
 	const record = raw as JsonObject;
 	return {
 		cpuMillicores:
@@ -243,7 +197,6 @@ function parseLabels<T>(raw: T): StringBag {
 		throw rejected("labels must be a string map");
 	}
 	const labels: StringBag = {};
-	// SAFETY: assertion to `as JsonObject)) {` is required at this boundary.
 	for (const [key, value] of Object.entries(raw as JsonObject)) {
 		if (!LABEL_KEY.test(key)) {
 			throw rejected(
@@ -253,9 +206,6 @@ function parseLabels<T>(raw: T): StringBag {
 		if (!isJsonString(value) || !LABEL_VALUE.test(value)) {
 			throw rejected(`label ${key.slice(0, 64)} has a non-label value`);
 		}
-		// The two labels the renderer owns are how cleanup tells an object it
-		// created from one it adopted. Letting an author overwrite them turns a
-		// namespace delete into someone else's outage.
 		if (key === MANAGED_BY_LABEL || key === NAME_LABEL) {
 			throw rejected(
 				`label ${key} is owned by this provider and cannot be set`,
@@ -266,12 +216,10 @@ function parseLabels<T>(raw: T): StringBag {
 	return Object.freeze(labels);
 }
 
-/** Turn an untrusted option bag into a placement that cannot hold a bad case. */
 export function parseWorkloadPlacement<T>(input: T): WorkloadPlacement {
 	if (!isJsonObject(input) || input === null || Array.isArray(input)) {
 		throw rejected("a placement must be an object");
 	}
-	// SAFETY: assertion to `t as JsonObject; ` is required at this boundary.
 	const record = input as JsonObject;
 
 	const workloadName = requireLabel(record.name, "name");
@@ -316,9 +264,6 @@ export function parseWorkloadPlacement<T>(input: T): WorkloadPlacement {
 	);
 	const limits = parseQuantityBlock(record.limits, "limits", DEFAULT_LIMITS);
 
-	// The apiserver accepts a limit below its request without complaint, and
-	// then the scheduler reserves one number while the kubelet enforces the
-	// other. Refusing here is the only place it is cheap.
 	if (limits.cpuMillicores < requests.cpuMillicores) {
 		throw rejected("cpu limit is below the cpu request", {
 			limit: limits.cpuMillicores,
@@ -344,7 +289,6 @@ export function parseWorkloadPlacement<T>(input: T): WorkloadPlacement {
 	});
 }
 
-/** `<service>.<namespace>.svc.cluster.local` — the only address this provider promises. */
 export function clusterDnsName(placement: WorkloadPlacement): string {
 	const name = `${placement.workloadName}.${placement.namespace}.svc.cluster.local`;
 	if (!DNS_1123_SUBDOMAIN.test(name)) {
@@ -367,7 +311,6 @@ function ownedLabels(placement: WorkloadPlacement): StringBag {
 	};
 }
 
-/** Render memory back into the smallest exact binary suffix the apiserver accepts. */
 export function formatMemoryQuantity(bytes: number): string {
 	for (const [suffix, multiplier] of [
 		["Gi", BINARY_SUFFIXES.Gi],
@@ -417,8 +360,6 @@ export function renderDeploymentManifest(
 			template: {
 				metadata: { labels: ownedLabels(placement) },
 				spec: {
-					// A workload that never calls the apiserver has no business
-					// carrying a token that lets it.
 					automountServiceAccountToken: false,
 					enableServiceLinks: false,
 					securityContext: {

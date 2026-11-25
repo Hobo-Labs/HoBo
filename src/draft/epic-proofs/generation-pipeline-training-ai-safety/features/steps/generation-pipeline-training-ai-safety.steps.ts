@@ -1,10 +1,3 @@
-/**
- * Executable step definitions for generation-pipeline-training-ai-safety.feature.
- *
- * Drives the epic's real reference simulation
- * (services/generation-reference-architecture.ts) and asserts the cold-start,
- * training, live-fix, and adversarial artifacts it actually produces.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -23,8 +16,6 @@ function simulation(): Promise<Simulation> {
 type GenerationWorld = {
 	result?: Simulation;
 };
-
-// --- Scenario: Generate and certify a database provider ----------------------------------
 
 Given(
 	"a target WIT port, capability manifest, sanitized material, and recorded traces",
@@ -67,8 +58,6 @@ Then(
 	},
 );
 
-// --- Scenario: Promote a challenger from trusted training evidence -----------------------
-
 Given(
 	"OpenInference trajectories with privacy filtering and poisoning checks",
 	async function (this: GenerationWorld) {
@@ -103,8 +92,6 @@ Then(
 		assert.equal(training.promotion.outcome, "promoted");
 	},
 );
-
-// --- Scenario: Retain gates for risky generated changes and adversarial candidates -------
 
 Given(
 	"a drifted generated stack with a candidate live fix and adversarial training inputs",

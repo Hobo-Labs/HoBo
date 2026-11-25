@@ -13,7 +13,6 @@ import { CANDIDATE_BUCKETS, type CandidateBucket } from "./candidate.js";
 import { cellKey } from "./grid.js";
 import type { CapabilityMatrix, CapabilityMatrixCell } from "./matrix.js";
 
-/** Single-letter bucket markers, in the order every cell prints them. */
 const BUCKET_MARKERS: readonly (readonly [CandidateBucket, string])[] = [
 	["native", "n"],
 	["pack", "p"],
@@ -120,6 +119,5 @@ export function renderCapabilityMatrixMarkdown(
 		lines.push("");
 	}
 
-	// A single trailing newline, so the file is POSIX-clean and byte-stable.
 	return `${lines.join("\n").replace(/\n+$/u, "")}\n`;
 }

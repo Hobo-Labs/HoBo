@@ -24,7 +24,6 @@ function decisionRequest(overrides: JsonObject = {}) {
 		costEstimateUsd: 0,
 		correlationId: "corr-633",
 		occurredAt: "2026-07-01T12:00:00.000Z",
-		// SAFETY: assertion required at this I/O or test boundary.
 		...(overrides.context as JsonObject | undefined),
 	};
 	return {

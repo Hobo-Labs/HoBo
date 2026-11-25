@@ -17,7 +17,6 @@ import {
 } from "./types.js";
 import { isJsonNumber, isJsonString, type JsonObject } from "../../../src/json.js";
 
-
 async function runCommand(
   command: string,
   args: readonly string[],
@@ -88,7 +87,6 @@ function resolveBufCommand(repoRoot: string) {
         return { command: bufBin, args: [] };
       }
     } catch {
-      // fall through to PATH lookup
     }
   }
   return { command: "buf", args: [] };

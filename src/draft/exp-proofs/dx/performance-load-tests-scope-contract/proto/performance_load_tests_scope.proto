@@ -2,10 +2,6 @@ syntax = "proto3";
 
 package hobo.performance_load_tests.v1;
 
-// Data shapes for the HOBO-440 Performance & Load Tests M0 scope record.
-// These mirror the structures validated by
-// `src/performance-load-tests-scope.mjs` so the design-time contract has a
-// language-neutral schema for downstream M1+ consumers.
 
 enum ProofMode {
   PROOF_MODE_UNSPECIFIED = 0;

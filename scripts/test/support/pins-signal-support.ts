@@ -1,8 +1,3 @@
-/**
- * Fixtures for the tests of a git ended by a signal: a stand-in `git` first on
- * PATH that ends itself the way the test says, and a way to run a small
- * program that calls the pins' git primitives with it.
- */
 import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,12 +9,6 @@ export const REAL_GIT = spawnSync("sh", ["-c", "command -v git"], {
 	encoding: "utf8",
 }).stdout.trim();
 
-/**
- * A directory holding a `git` that does `STANDIN_ACTION` (`kill:<SIG>` or
- * `exit:<n>`), else runs the real one. It gives up its own core file first:
- * a test that looks for the core file of the wrapper must not find the
- * stand-in's.
- */
 export function standIn(dir: string): string {
 	const bin = join(dir, "bin");
 	mkdirSync(bin);
@@ -38,7 +27,6 @@ exec '${REAL_GIT}' "$@"
 	return bin;
 }
 
-/** The file URL of a library module, as a JSON string for a program's `import()`. */
 export const lib = (name: string): string =>
 	JSON.stringify(pathToFileURL(join(REPO_ROOT, "scripts/lib", name)).href);
 
@@ -47,11 +35,6 @@ export interface Ran {
 	readonly run: SpawnSyncReturns<string>;
 }
 
-/**
- * `program` (an ES module) under node, in a scratch directory, with the
- * stand-in git first on PATH doing `action`. With `core` the shell that starts
- * node first raises the core-file limit to unlimited.
- */
 export function runWithStandIn(
 	program: string,
 	action: string,

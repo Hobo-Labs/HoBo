@@ -34,7 +34,6 @@ export function tierToWire(tier: CowTier): CowTierPb {
 	return TIER_TO_WIRE[tier];
 }
 
-/** Unknown/unspecified is not a tier we can act on, so it parses to null. */
 export function tierFromWire(tier: CowTierPb): CowTier | null {
 	if (tier === TIER_TO_WIRE.reflink) return "reflink";
 	if (tier === TIER_TO_WIRE.overlayfs) return "overlayfs";
@@ -43,7 +42,6 @@ export function tierFromWire(tier: CowTierPb): CowTier | null {
 	return null;
 }
 
-/** Field-for-field wire form of a capability probe. */
 interface CapabilityWire {
 	tier: CowTierPb;
 	available: CowTierPb[];
@@ -60,11 +58,6 @@ export function capabilityToWire(capability: Capability): CapabilityWire {
 	};
 }
 
-/**
- * Wire form of a workspace. Absent overlay layers become empty strings because
- * proto3 has no optional scalar presence here — the domain type keeps the
- * distinction, the wire form does not need it.
- */
 interface WorkspaceWire {
 	name: string;
 	path: string;

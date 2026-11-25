@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-/**
- * Create a signed release tag at a commit when absent (never moves/deletes tags).
- *
- * The tag object is written and signed here, not by `git tag -s`: the release
- * runners have no OpenSSH client for git to sign with (the runner image
- * installs packages without recommends), and no git identity either. The
- * signature is the same sshsig git writes for `gpg.format = ssh`, so
- * `git verify-tag` with an allowed_signers file checks it as usual.
- */
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +10,6 @@ import {
 	sshSign,
 } from "../lib/ssh-sig.mts";
 
-/** Who the release tag names as its tagger. */
 export const RELEASE_TAGGER =
 	"github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>";
 
@@ -107,7 +97,6 @@ export function releaseSigningKey(entries: ReleaseKeyEntries): Ed25519Key {
 	const key = parseOpenSshEd25519PrivateKey(keyMaterial);
 	const published = entries.HOBO_RELEASE_TAG_SSH_SIGNING_KEY?.trim();
 	if (published) {
-		// Throws, naming the problem, unless it reads as an ssh-ed25519 public key.
 		const expected = parseEd25519PublicLine(published);
 		if (!expected.equals(key.publicKey)) {
 			throw new Error(
@@ -118,7 +107,6 @@ export function releaseSigningKey(entries: ReleaseKeyEntries): Ed25519Key {
 	return key;
 }
 
-/** The unsigned body of an annotated tag object (what the signature covers). */
 export function tagPayload(options: {
 	readonly commit: string;
 	readonly tag: string;
@@ -136,7 +124,6 @@ export function tagPayload(options: {
 	].join("\n");
 }
 
-/** A signed tag object: the payload with its sshsig appended, as git writes it. */
 export function signedTagObject(payload: string, key: Ed25519Key): string {
 	return `${payload}${sshSign(Buffer.from(payload, "utf8"), key)}`;
 }
@@ -188,7 +175,6 @@ function main(): void {
 	}
 	const commitSha = runGit(["rev-parse", commit]).trim();
 	if (tagExists(tag)) {
-		// An annotated tag resolves to its tag object; the commit is what has to match.
 		const existing = runGit(["rev-parse", `${tag}^{commit}`]).trim();
 		if (existing !== commitSha) {
 			throw new Error(

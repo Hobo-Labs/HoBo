@@ -66,7 +66,6 @@ import * as hostinger from "./hostinger.js";
 import * as kubernetes from "./kubernetes.js";
 import * as vercel from "./vercel.js";
 
-/** The closed council vocabulary, local levels before cloud fallbacks. */
 // public-contract: the parity level vocabulary every parity claim depends on.
 export const PARITY_LEVELS = Object.freeze([
 	"P0",
@@ -79,10 +78,6 @@ export const PARITY_LEVELS = Object.freeze([
 
 export type ParityLevel = (typeof PARITY_LEVELS)[number];
 
-/**
- * The only levels this projection may emit. Full L1 additionally requires the
- * six-case conformance suite and PACT evidence that this projection cannot see.
- */
 export type SimulatedParityLevel = "P0" | "L1-DECLARED";
 
 // public-contract: refusal codes callers may branch on.
@@ -102,16 +97,11 @@ export class ParityError extends Error {
 	}
 }
 
-/**
- * One provider's derived parity. The id lists show which products resolve;
- * this in-process read model has no wire representation.
- */
 export interface ProviderParityRow {
 	readonly provider: string;
 	readonly catalogProductIds: readonly string[];
 	readonly resolvedProductIds: readonly string[];
 	readonly level: SimulatedParityLevel;
-	/** Always `"<resolved>/<catalog>"` — a claim without one is not a claim. */
 	readonly denominator: string;
 }
 
@@ -132,12 +122,6 @@ function canonicalIds(ids: Iterable<string>): readonly string[] {
 	return Object.freeze([...new Set(canonical)].sort());
 }
 
-/**
- * Parses one provider's catalog and resolved ids into a parity row.
- *
- * Refuses rather than repairs: blank provider or product ids, an empty catalog,
- * or a resolved id the catalog does not declare all throw a typed ParityError.
- */
 export function parityRow(
 	provider: string,
 	catalogProductIds: Iterable<string>,
@@ -176,7 +160,6 @@ export function parityRow(
 	});
 }
 
-/** The namespaces this package publishes, in the order rows are returned. */
 // public-contract: the provider rows providerParity() returns and their order.
 export const PARITY_PROVIDERS = Object.freeze([
 	"aws",
@@ -259,7 +242,6 @@ function productIdsByProfile(yard: ParsedYard): ReadonlyMap<string, string[]> {
 	return profiles;
 }
 
-/** Every namespace's parity, derived from its live catalog and constants. */
 export function providerParity(): readonly ProviderParityRow[] {
 	return Object.freeze(
 		PARITY_PROVIDERS.map((provider) => {
@@ -273,7 +255,6 @@ export function providerParity(): readonly ProviderParityRow[] {
 	);
 }
 
-/** Per-profile parity in provider order, then lexicographic profile order. */
 export function providerProfileParity(): readonly ProviderProfileParityRow[] {
 	const rows = PARITY_PROVIDERS.flatMap((provider) => {
 		const source = PARITY_SOURCES[provider];
@@ -297,13 +278,6 @@ const LEVEL_EVIDENCE: Readonly<Record<SimulatedParityLevel, string>> =
 		"L1-DECLARED": "resolvers declared (conformance not asserted here)",
 	});
 
-/**
- * Re-derives and renders a row so caller-supplied level or denominator fields
- * cannot fabricate a claim.
- *
- * Example format (illustrative, not a current claim):
- * `acme L1-DECLARED: 1/3 resolvers declared (conformance not asserted here)`.
- */
 export function formatParityClaim(row: ProviderParityRow): string {
 	const derived = parityRow(
 		row.provider,

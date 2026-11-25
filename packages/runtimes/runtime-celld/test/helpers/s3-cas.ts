@@ -138,7 +138,6 @@ export async function startS3CasServer(): Promise<S3CasServer> {
 	await new Promise<void>((resolve) => {
 		server.listen(0, "127.0.0.1", () => resolve());
 	});
-	// SAFETY: assertion required at this I/O or test boundary.
 	const port = (server.address() as AddressInfo).port;
 	return {
 		url: `http://127.0.0.1:${port}`,

@@ -61,7 +61,6 @@ function hasV2Streams(db: SqliteDriver): boolean {
 
 function hasLegacyEvents(db: SqliteDriver): boolean {
 	if (!tableExists(db, "events")) return false;
-	// v1 events have TEXT data column and no global_position
 	const info = db.prepare(`PRAGMA table_info(events)`).all();
 	const cols = new Set(info.map((r) => asText(r.name, "name")));
 	return (
@@ -71,10 +70,6 @@ function hasLegacyEvents(db: SqliteDriver): boolean {
 	);
 }
 
-/**
- * Open-path migration: 0/empty → v2; legacy v1 → v2; v2 → no-op;
- * newer than supported → fail closed.
- */
 export function migrateToCurrent(
 	db: SqliteDriver,
 	options: { now?: string } = {},
@@ -97,7 +92,6 @@ export function migrateToCurrent(
 		};
 	}
 
-	// Fresh DB or partially initialized
 	if (version === 0 && !tableExists(db, "events")) {
 		db.beginImmediate();
 		try {
@@ -120,7 +114,6 @@ export function migrateToCurrent(
 		};
 	}
 
-	// Detect legacy v1 by shape when user_version was never set (runtime-local)
 	const isLegacy =
 		version === 0 || version === LEGACY_SCHEMA_VERSION || hasLegacyEvents(db);
 
@@ -150,7 +143,6 @@ export function migrateToCurrent(
 		};
 	}
 
-	// Already on v2 tables but version pragma lagging
 	if (hasV2Streams(db)) {
 		setUserVersion(db, SCHEMA_VERSION);
 		return {
@@ -168,15 +160,9 @@ export function migrateToCurrent(
 	);
 }
 
-/**
- * Migrate exact runtime-local v1 events/snapshots → v2.
- * Ordering: (stream_id ASC, seq ASC). Positions assigned in that order.
- * owner_epoch = 0 (unfenced legacy). Noncontiguous seq fails safely.
- */
 function migrateLegacyV1ToV2(db: SqliteDriver, now: string): MigrationReport {
 	db.beginImmediate();
 	try {
-		// Rename legacy tables
 		db.exec(`ALTER TABLE events RENAME TO events_v1`);
 		if (tableExists(db, "snapshots")) {
 			db.exec(`ALTER TABLE snapshots RENAME TO snapshots_v1`);
@@ -207,7 +193,6 @@ function migrateLegacyV1ToV2(db: SqliteDriver, now: string): MigrationReport {
 
 			if (rows.length === 0) continue;
 
-			// Contiguity check: seq must be 1..n without gaps
 			for (let i = 0; i < rows.length; i++) {
 				const seq = asNumber(rows[i]?.seq, "seq");
 				if (seq !== i + 1) {
@@ -296,7 +281,6 @@ function migrateLegacyV1ToV2(db: SqliteDriver, now: string): MigrationReport {
 						`snapshot ahead of stream ${streamId}: snapshot seq ${seq} > head ${headRev}`,
 					);
 				}
-				// Ensure stream head exists even if no events (should not happen)
 				if (!head) {
 					db.prepare(
 						`INSERT INTO streams (stream_id, revision, owner_epoch, created_at, updated_at)
@@ -320,7 +304,6 @@ function migrateLegacyV1ToV2(db: SqliteDriver, now: string): MigrationReport {
 		setUserVersion(db, SCHEMA_VERSION);
 		db.commit();
 
-		// Post-migration integrity (outside write txn is fine; read-only checks)
 		assertIntegrity(db);
 
 		return {
@@ -334,9 +317,7 @@ function migrateLegacyV1ToV2(db: SqliteDriver, now: string): MigrationReport {
 	} catch (error) {
 		try {
 			db.rollback();
-		} catch {
-			// ignore rollback errors
-		}
+		} catch {}
 		if (
 			error instanceof MigrationFailureError ||
 			error instanceof StreamIntegrityError ||
@@ -370,7 +351,6 @@ export function assertIntegrity(db: SqliteDriver): void {
 	}
 }
 
-/** Build a legacy v1 fixture database for migration tests. */
 export function installLegacyV1Fixture(
 	db: SqliteDriver,
 	fixture: {
@@ -461,5 +441,4 @@ CREATE TABLE IF NOT EXISTS snapshots (
 			snap.run(s.stream_id, s.seq, encodeLegacyJsonText(s.state), s.saved_at);
 		}
 	}
-	// Legacy never set user_version (stays 0)
 }

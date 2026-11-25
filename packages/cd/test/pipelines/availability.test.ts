@@ -1,7 +1,3 @@
-// PipelineController.available (D4, D21, I13, I16): lineage from
-// qualifications, soak from upstream env.Promoted, approvals per Camp until
-// expiry, quorum over placement decisions with mandatory groups.
-
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

@@ -112,8 +112,6 @@ test("milestone: a budget signal re-dispatches to the cheaper backend and re-app
 
 test("milestone: two rapid signals produce exactly one swap — the second is held by cooldown, and applies after it expires", async () => {
 	const port = createSimpleTrafficRouting();
-	// Ledger list-unit-costs override the static cost model, so flipping the
-	// ledger makes the loop want to swap back immediately.
 	let accounts = [
 		accountFor("backend:vercel", 0.05),
 		accountFor("backend:lakebed", 0.01),
@@ -143,8 +141,6 @@ test("milestone: two rapid signals produce exactly one swap — the second is he
 	assert.equal(first.action, "reapplied");
 	assert.equal(loop.incumbent(), "backend:lakebed");
 
-	// Prices flip 5 seconds later: the loop wants vercel back, but cooldown
-	// holds it — exactly one applied swap so far.
 	accounts = [
 		accountFor("backend:vercel", 0.01),
 		accountFor("backend:lakebed", 0.05),
@@ -156,7 +152,6 @@ test("milestone: two rapid signals produce exactly one swap — the second is he
 	assert.equal(loop.incumbent(), "backend:lakebed");
 	assert.equal(loop.revision(), 1);
 
-	// After the cooldown window the same pressure applies cleanly.
 	nowIso = "2026-08-03T00:02:00.000Z";
 	const third = await loop.handleSignal(budgetSignal(3));
 	assert.equal(third.action, "reapplied");

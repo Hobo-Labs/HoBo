@@ -7,7 +7,6 @@ import { fromJsonString } from "@bufbuild/protobuf";
 import { parseRelativePath } from "@hobo/ci/execution";
 import { type CheckConfig, CheckConfigSchema } from "./_generated/checks_pb.js";
 
-/** Immutable refinement of the protobuf configuration, parsed once at the edge. */
 export type DaggerCheckConfig = Readonly<
 	Omit<CheckConfig, "filters" | "skip">
 > & {
@@ -15,7 +14,6 @@ export type DaggerCheckConfig = Readonly<
 	readonly skip: readonly string[];
 };
 
-/** Native 1.x checks deliberately accept only operator-owned engines. */
 export function parseDaggerCheckConfig(json: string): DaggerCheckConfig {
 	const config = fromJsonString(CheckConfigSchema, json);
 	config.engine ||= "local";
@@ -52,7 +50,6 @@ export function parseDaggerCheckConfig(json: string): DaggerCheckConfig {
 	});
 }
 
-/** Reviewable argv; no process, engine, or network side effects. */
 export function daggerCheckArgs(
 	config: DaggerCheckConfig,
 	cwd = process.cwd(),
@@ -77,7 +74,6 @@ export function daggerCheckArgs(
 
 export interface DaggerCheckRunOptions {
 	readonly cwd?: string;
-	/** Operator-selected executable; never read from repository configuration. */
 	readonly executable?: string;
 	readonly env?: NodeJS.ProcessEnv;
 	readonly signal?: AbortSignal;
@@ -90,10 +86,6 @@ export class DaggerCheckTimeoutError extends Error {
 	}
 }
 
-/**
- * Runs native checks and forwards their logs and exit code. This is a local CLI
- * entrypoint, not a scheduled pipeline session or a remote stop acknowledgment.
- */
 export async function runDaggerChecks(
 	config: DaggerCheckConfig,
 	options: DaggerCheckRunOptions = {},
@@ -119,8 +111,6 @@ export async function runDaggerChecks(
 	try {
 		settings = await mkdtemp(join(tmpdir(), "hobo-dagger-checks-"));
 		signal.throwIfAborted();
-		// Tokens alone are insufficient: the CLI also reads a saved Cloud login.
-		// Keep proxy, CA, Docker and other toolchain settings in the child only.
 		const env: NodeJS.ProcessEnv = {
 			...(options.env ?? process.env),
 		};
@@ -138,7 +128,6 @@ export async function runDaggerChecks(
 				delete env[key];
 		}
 		env.XDG_CONFIG_HOME = settings;
-		// Avoid inherited per-user module settings; the workspace remains canonical.
 		env.DAGGER_CONFIG = join(settings, "config.toml");
 		await writeFile(env.DAGGER_CONFIG, "");
 		const { stdout } = await promisify(execFile)(executable, ["version"], {
@@ -172,9 +161,7 @@ export async function runDaggerChecks(
 					try {
 						process.kill(-child.pid, stopSignal);
 						return;
-					} catch {
-						// The owned process group may have exited; use the child handle.
-					}
+					} catch {}
 				}
 				child.kill(stopSignal);
 			};
@@ -189,7 +176,6 @@ export async function runDaggerChecks(
 				failure = error;
 			});
 			child.once("close", (code, exitSignal) => {
-				// Transport children belong to this invocation, including on success.
 				stop("SIGKILL");
 				clearTimeout(escalation);
 				signal.removeEventListener("abort", abort);

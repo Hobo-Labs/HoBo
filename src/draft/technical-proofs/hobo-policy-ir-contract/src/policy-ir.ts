@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonString, isJsonNumber, isJsonBoolean, isJsonObject, cloneAsJson, type JsonValue, type JsonObject, type JsonBag } from "./json.js";
 
-
 export const POLICY_IR_SCHEMA_VERSION = "hobo.policy-ir/v1" as const;
 export const POLICY_DECIDED_EVENT_TYPE = "policy.Decided" as const;
 
@@ -152,7 +151,6 @@ export function createDecision<TRequest, TDecision>(requestInput: TRequest, deci
       ...decisionSource,
       evidence: {
         policyIds: [],
-        // SAFETY: assertion to `...(decisionSource.evidence as JsonObject | undefined),` is required at this boundary.
         ...(decisionSource.evidence as JsonObject | undefined),
         inputHash: request.inputHash,
       },
@@ -341,7 +339,6 @@ function parseSubject(input: JsonValue, path: string): DecisionSubject {
     throw new PolicyIrValidationError("unknown-subject-kind", kind, `${path}.kind`);
   }
   const parsed: DecisionSubject = {
-    // SAFETY: assertion to `kind: kind as SubjectKind,` is required at this boundary.
     kind: kind as SubjectKind,
     id: expectNonEmptyString(subject.id, `${path}.id`),
   };
@@ -373,7 +370,6 @@ function parseSubjectKind(input: JsonValue, path: string): SubjectKind {
   if (!SUBJECT_KIND_SET.has(kind)) {
     throw new PolicyIrValidationError("unknown-subject-kind", kind, path);
   }
-  // SAFETY: assertion to `return kind as SubjectKind;` is required at this boundary.
   return kind as SubjectKind;
 }
 
@@ -390,7 +386,6 @@ function parsePhase(input: JsonValue, path: string): Phase {
   if (!PHASE_SET.has(phase)) {
     throw new PolicyIrValidationError("unknown-phase", phase, path);
   }
-  // SAFETY: assertion to `return phase as Phase;` is required at this boundary.
   return phase as Phase;
 }
 
@@ -399,7 +394,6 @@ function parseEffect(input: JsonValue, path: string): Effect {
   if (!EFFECT_SET.has(effect)) {
     throw new PolicyIrValidationError("unknown-effect", effect, path);
   }
-  // SAFETY: assertion to `return effect as Effect;` is required at this boundary.
   return effect as Effect;
 }
 
@@ -415,7 +409,6 @@ function parseEvidence(
   }
   const parsed: DecisionEvidence = {
     policyIds: parseStringArray(evidence.policyIds, `${path}.policyIds`),
-    // SAFETY: assertion to `inputHash: inputHash as Sha256Hash,` is required at this boundary.
     inputHash: inputHash as Sha256Hash,
     engine: expectNonEmptyString(evidence.engine, `${path}.engine`),
   };
@@ -434,7 +427,6 @@ function parseObligations(input: JsonValue, path: string): Decision["obligations
   return obligations.map((obligation, index) => {
     const parsed = expectObject(obligation, `${path}[${index}]`);
     expectNonEmptyString(parsed.kind, `${path}[${index}].kind`);
-    // SAFETY: assertion to `return parsed as { kind: string; [key: string]: JsonValue };` is required at this boundary.
     return parsed as { kind: string; [key: string]: JsonValue };
   });
 }
@@ -464,7 +456,6 @@ function parseDecisionContext(input: JsonValue | undefined): JsonObject {
   if (input === undefined) {
     return {};
   }
-  // SAFETY: canonical JSON of the context object is a JsonObject at this boundary.
   const context: JsonObject = canonicalJsonValue(input, "$.context") as JsonObject;
   return context;
 }

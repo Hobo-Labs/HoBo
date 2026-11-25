@@ -14,7 +14,6 @@ import {
 	type JsonValue,
 } from "../json.js";
 
-/** Schema versions for yard-first placement records. */
 // public-contract: yard instance registration schema id.
 export const YARD_INSTANCE_SCHEMA = "hobo.yard-instance/v1" as const;
 // public-contract: yard inventory snapshot schema id.
@@ -53,10 +52,6 @@ export interface CampLayout {
 	readonly runtimeRequirements: readonly string[];
 }
 
-/**
- * Planning record comparing requested Yard to live instances / runtimes.
- * Not a topology primitive.
- */
 // domain-view: planning/placement domain type (wire form in broker.proto when present).
 export interface YardLayout {
 	readonly providerId?: string;
@@ -81,7 +76,6 @@ export interface YardPlacementRequest {
 	readonly requestedLayout: YardLayout;
 	readonly bindleManifestHash: ContentHash;
 	readonly bindleRequirementsHash: ContentHash;
-	/** Request only — never authorizes generation. Broker policy is authoritative. */
 	readonly allowGenerationRequested: boolean;
 }
 
@@ -128,10 +122,6 @@ export interface YardInventorySnapshot {
 	readonly contentHash: ContentHash;
 }
 
-/**
- * Broker-approved runtime template capable of hosting/generating a Yard.
- * Not an app runtime backend and not a live Yard instance.
- */
 // domain-view: planning/placement domain type (wire form in broker.proto when present).
 export interface YardRuntimeRegistration {
 	readonly schemaVersion: typeof YARD_RUNTIME_SCHEMA;
@@ -264,7 +254,6 @@ export interface BindleDeploymentRequest {
 	readonly objective: string;
 	readonly spendEstimateUsd: number;
 	readonly ownerTenantId: string;
-	/** Resource requirements for residual placement under selected Yard provider. */
 	readonly resources: readonly {
 		readonly resourceId: string;
 		readonly port: string;
@@ -355,23 +344,15 @@ export function contentHashOf<T>(value: T): ContentHash {
 
 export function emptyYardLayout(): YardLayout {
 	return Object.freeze({
-		// SAFETY: assertion required at this I/O or test boundary.
 		regions: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		require: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		prefer: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		residency: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		isolation: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		network: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		componentHosts: Object.freeze([] as string[]),
 		labels: Object.freeze({}),
 		properties: Object.freeze({}),
-		// SAFETY: assertion required at this I/O or test boundary.
 		camps: Object.freeze([] as CampLayout[]),
 	});
 }
@@ -381,7 +362,6 @@ export function parseYardLayout(input: JsonValue | undefined): YardLayout {
 	if (!isJsonObject(input) || Array.isArray(input)) {
 		throw new TypeError("yard layout must be an object");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const raw = input as JsonObject;
 	const base = emptyYardLayout();
 	return Object.freeze({
@@ -409,16 +389,12 @@ export function parseYardLayout(input: JsonValue | undefined): YardLayout {
 export function parseCampLayout(input: JsonValue | undefined): CampLayout {
 	if (!isJsonObject(input) || input === null || Array.isArray(input)) {
 		return Object.freeze({
-			// SAFETY: assertion required at this I/O or test boundary.
 			require: Object.freeze([] as string[]),
-			// SAFETY: assertion required at this I/O or test boundary.
 			prefer: Object.freeze([] as string[]),
 			labels: Object.freeze({}),
-			// SAFETY: assertion required at this I/O or test boundary.
 			runtimeRequirements: Object.freeze([] as string[]),
 		});
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const raw = input as JsonObject;
 	return Object.freeze({
 		...(isJsonString(raw.id) ? { id: raw.id } : undefined),
@@ -452,9 +428,7 @@ function stringMap(
 		return Object.freeze({});
 	}
 	const out: Record<string, string> = {};
-	// SAFETY: assertion required at this I/O or test boundary.
 	for (const key of Object.keys(value as object).sort()) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const v = (value as JsonObject)[key];
 		if (isJsonString(v)) out[key] = v;
 	}
@@ -468,9 +442,7 @@ function jsonMap(
 		return Object.freeze({});
 	}
 	const out: Record<string, JsonValue> = {};
-	// SAFETY: assertion required at this I/O or test boundary.
 	for (const key of Object.keys(value as object).sort()) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		out[key] = toJson((value as JsonObject)[key]);
 	}
 	return Object.freeze(out);

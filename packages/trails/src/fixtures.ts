@@ -1,7 +1,3 @@
-/**
- * Contract-asserted Trail fixtures for hobo dev (ADR-0070 fidelity).
- */
-
 import { createContractAssertedDataDualFixtures } from "./data-steps.js";
 import { defineTrail } from "./definition.js";
 import {
@@ -13,16 +9,12 @@ import { TrailRunner } from "./runner.js";
 
 export type LocalTrailFixtures = Readonly<{
 	identity: IdentityTrailHandle;
-	/** App-authored data + identity composition example. */
 	appTrail: ReturnType<typeof defineTrail>;
 	runner: TrailRunner;
 	label: "contract-asserted-trail-fixtures";
 	fidelity: "simulated";
 }>;
 
-/**
- * Offline fixtures: continuous identity hands-off + sample app data Trail.
- */
 export function createContractAssertedTrailFixtures(input?: {
 	readonly tenant?: string;
 	readonly target?: string;

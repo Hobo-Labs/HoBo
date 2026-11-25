@@ -1,7 +1,3 @@
-/**
- * Golden Suite oracles for Trails (dual consistency, zero-loss, fail-closed).
- */
-
 import type { JsonObject } from "./json.js";
 import type { TrailRunResult } from "./runner.js";
 
@@ -69,8 +65,6 @@ export function goldenZeroLoss(result: TrailRunResult): TrailGoldenVerdict {
 }
 
 export function goldenFailClosed(result: TrailRunResult): TrailGoldenVerdict {
-	// When dual diverged, must compensate/abort — never remain cutover.
-	// Check run.state (source of truth), not just result flags that could lie.
 	const diverged = result.dataResults.some((d) => !d.consistent);
 	const stateSafe =
 		result.run.state === "compensated" ||
@@ -194,7 +188,6 @@ export function goldenJunctionIntegrity(
 	});
 }
 
-/** Run all Golden oracles against a Trail result. */
 export function runTrailGoldenSuite(
 	result: TrailRunResult,
 	identityHandsOff?: {

@@ -1,5 +1,3 @@
-// Typed failure codes and metric names of the posture module (WP24). Every
-// refusal carries a remediation; metric names follow the plan (§9 WP19).
 import { OWNERSHIP_CONFLICT, SHADOW_REQUIRED } from "../events.js";
 
 // public-contract: reason codes the posture module records or refuses with.
@@ -41,7 +39,6 @@ export const POSTURE_METRIC = Object.freeze({
 	refusals: "hobo.cd.posture.refusals",
 } as const);
 
-/** A journal append lost every CAS attempt or the store failed; the caller retries. */
 export class PostureJournalError extends Error {
 	readonly code: string;
 	readonly remediation: string;

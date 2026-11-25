@@ -1,9 +1,3 @@
-/**
- * Atom metadata (`atoms/<id>/meta.json`) is read from disk and parsed into a
- * pattern manifest. These tests pin which values count: a field is a string
- * only when it is a primitive string, so a boxed `String` or an object that
- * spoofs its `Symbol.toStringTag` is treated as absent, as before.
- */
 import { describe, expect, it } from "vitest";
 
 import { parseAtomAsPattern } from "../src/atoms.js";

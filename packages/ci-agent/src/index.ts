@@ -1,11 +1,3 @@
-/**
- * `@hobo/ci-agent`: an optional agent for the HoBo CI relay that plans the
- * merge queue and resolves merge conflicts with a configured model.
- *
- * This entry is free of provider SDKs, git and SQLite. Adapters are subpaths:
- * `./ai-sdk` (models), `./git` (the merge workspace), `./github` (the merge
- * queue) and `./sqlite` (the durable journal).
- */
 export type {
 	AgentConfig,
 	AgentEvent,

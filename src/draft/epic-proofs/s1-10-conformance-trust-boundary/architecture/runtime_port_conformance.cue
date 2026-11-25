@@ -17,8 +17,6 @@ package conformance
 	passed: int & >=0
 	failed: int & >=0
 	total: int & >0
-	// Every check is either a pass or a failure; a coverage row whose parts do
-	// not sum to its total is under-reporting one of them.
 	_coverageAccountsForEveryCheck: true & (passed + failed == total)
 }
 
@@ -30,7 +28,6 @@ package conformance
 	failures: [...#ConformanceFailure]
 	local_coverage: #LocalCoverage
 
-	// A failing report that names no failure is not actionable.
 	if status == "fail" {
 		failures: [_, ...]
 	}

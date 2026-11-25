@@ -8,7 +8,6 @@ import {
 } from "../src/index.js";
 import { type JsonValue } from "../src/json.js";
 
-
 const KV = "wasi:keyvalue/store@0.2.0";
 const WORKFLOW = "hobo:runtime/workflow@0.1.0";
 
@@ -25,7 +24,6 @@ test("slow provider exceeds caller deadline with typed transient classification"
         get: async (_payload, context) => {
           context.signal.addEventListener(
             "abort",
-            // SAFETY: assertion to `() => cancellations.push((context.signal.reason as { code: string }).code),` is required at this boundary.
             () => cancellations.push((context.signal.reason as { code: string }).code),
             { once: true },
           );

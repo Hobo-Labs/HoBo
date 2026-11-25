@@ -1,11 +1,3 @@
-/**
- * Runnable example for generation-pipeline-training-ai-safety. The draft-artifact gate
- * EXECUTES this with `node --import tsx` and diffs stdout against usage.expected.txt.
- *
- * Runs the same reference simulation the cucumber steps drive
- * (services/generation-reference-architecture.ts): sandboxed cold-start generation,
- * gated challenger training, and the adversarial screens that keep humans in the loop.
- */
 import { strict as assert } from "node:assert";
 
 import { runGenerationPipelineTrainingSafetySimulation } from "../services/generation-reference-architecture.ts";
@@ -13,7 +5,6 @@ import { runGenerationPipelineTrainingSafetySimulation } from "../services/gener
 const result = await runGenerationPipelineTrainingSafetySimulation();
 assert.equal(result.epic.slug, "generation-pipeline-training-ai-safety");
 
-// 1) Cold start: scaffold -> fill -> repair -> certify inside a no-egress sandbox.
 assert.equal(
 	result.materials.sanitized.materials[0].trustBoundary,
 	"untrusted_user_material",
@@ -34,7 +25,6 @@ console.log(
 	`safety certifiable=${result.safety.certifiable.effect} sandboxEgressAttempts=${result.sandbox.egressAttempts}`,
 );
 
-// 2) Training: OPTO challenger promotes only after live-eval, poisoning, and privacy gates.
 const training = result.training;
 assert.equal(training.capture.trajectoryCount, 3);
 assert.equal(training.optimizer.outcome, "ready-for-gate");
@@ -49,8 +39,6 @@ console.log(
 	`training poisoning=${training.poisoning.outcome} rawPayloadsToOptimizer=${training.privacy.optimizerPayload.rawPayloadsIncluded} promotion=${training.promotion.outcome}`,
 );
 
-// 3) Adversarial paths: risky live fixes need humans, malicious candidates are denied,
-//    poisoned training quarantines, and generated regions stay synchronized.
 assert.equal(result.liveFix.decision.outcome, "requires-human-approval");
 assert.equal(result.negative.nonConverging.outcome, "needs-human");
 assert.equal(result.negative.maliciousCandidate.effect, "deny");

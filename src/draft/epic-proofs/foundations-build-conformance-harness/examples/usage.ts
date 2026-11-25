@@ -1,11 +1,3 @@
-/**
- * Runnable example for foundations-build-conformance-harness. The draft-artifact gate
- * EXECUTES this with `node --import tsx` and diffs stdout against usage.expected.txt.
- *
- * Runs the same reference simulation the cucumber steps drive
- * (services/foundations-reference-architecture.ts): workspace skeleton + boundary
- * lint, deterministic componentize, the artifact trust gate, and OIDC-gated CI lanes.
- */
 import { strict as assert } from "node:assert";
 
 import { runFoundationsBuildConformanceSimulation } from "../services/foundations-reference-architecture.ts";
@@ -13,7 +5,6 @@ import { runFoundationsBuildConformanceSimulation } from "../services/foundation
 const result = await runFoundationsBuildConformanceSimulation();
 assert.equal(result.epic.slug, "foundations-build-conformance-harness");
 
-// 1) Workspace skeleton validates; adapter boundary violations are denied.
 assert.equal(result.workspace.packageManager, "pnpm");
 assert.equal(result.workspace.status, "valid");
 assert.equal(result.workspace.boundaryViolation.effect, "deny");
@@ -29,7 +20,6 @@ console.log(
 	`adapter import lint effect=${result.negative.adapterImport.effect}`,
 );
 
-// 2) hello-bindle componentizes deterministically: wasm validates, OCI descriptor, smoke run.
 const componentize = result.componentize;
 assert.equal(componentize.validation.passed, true);
 assert.equal(componentize.smoke.exitCode, 0);
@@ -41,8 +31,6 @@ console.log(
 	`componentize wasmValid=${componentize.validation.passed} smokeExit=${componentize.smoke.exitCode} ociMediaType=${componentize.oci.mediaType}`,
 );
 
-// 3) Trust gate: signed artifacts verify and reach Matching without auto-selection;
-//    unsigned artifacts are refused.
 assert.equal(result.artifactTrust.install.ok, true);
 assert.equal(result.artifactTrust.install.availableToMatching, true);
 assert.equal(result.artifactTrust.install.selectedByMatching, false);
@@ -56,7 +44,6 @@ console.log(
 	`unsigned artifact refused reasons=${result.negative.unsignedArtifact.reasons.join(",")}`,
 );
 
-// 4) CI: contract lane passes; E2E runs on short-lived OIDC tokens; missing OIDC fails closed.
 assert.equal(result.ci.contract.passed, true);
 assert.equal(result.ci.e2e.status, "passed");
 assert.equal(result.ci.e2e.token.expiresInSeconds, 900);

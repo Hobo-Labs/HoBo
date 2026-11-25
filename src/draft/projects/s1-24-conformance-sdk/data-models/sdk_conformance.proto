@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.conformance.sdk.v1;
 
-// Design-time contract for @hobo/conformance/sdk report shapes.
-// Runtime types in src/sdk/types.ts derive from these messages.
 
 message SemanticsAnnexVector {
   string name = 1;

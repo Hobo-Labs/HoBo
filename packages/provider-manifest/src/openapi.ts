@@ -1,12 +1,3 @@
-/**
- * OpenAPI 3.x -> the operation table the generators consume.
- *
- * Parse boundary for an untrusted API description: it becomes a
- * `ParsedApiSpec` or a list of issues. Only what a client call needs is read
- * (operations, their parameters, whether a body is sent); schemas are not
- * interpreted, so generated signatures name parameters but type bodies and
- * responses as `unknown`.
- */
 import type { JsonObject, JsonValue } from "@bufbuild/protobuf";
 import { parseDocument } from "yaml";
 import type { ManifestIssue } from "./parse.js";
@@ -28,7 +19,6 @@ export type ApiParameter = {
 };
 
 export type ApiOperation = {
-	/** A JavaScript identifier, unique within the spec. */
 	readonly id: string;
 	readonly method: string;
 	readonly path: string;
@@ -42,12 +32,10 @@ declare const parsedApiBrand: unique symbol;
 export type ApiDescription = {
 	readonly title: string;
 	readonly version: string;
-	/** First declared server URL, or "" when the spec names none. */
 	readonly baseUrl: string;
 	readonly operations: readonly ApiOperation[];
 };
 
-/** An API description that crossed the parse boundary. */
 export type ParsedApiSpec = ApiDescription & {
 	readonly [parsedApiBrand]: true;
 };
@@ -68,11 +56,6 @@ function text(value: JsonValue | undefined): string {
 		: String(value);
 }
 
-/**
- * Descriptive text from a spec ends up in tool descriptions and search results
- * a model reads, so it is untrusted input: one line, no control characters, and
- * bounded, so a spec cannot smuggle paragraphs of instructions through a title.
- */
 export const MAX_TITLE = 80;
 export const MAX_SUMMARY = 160;
 
@@ -94,7 +77,6 @@ function clean(value: string, max: number): string {
 	return line.length <= max ? line : `${line.slice(0, max - 1)}…`;
 }
 
-/** `listPets`, `get /pets/{id}` -> a legal, readable identifier. */
 function identifier(raw: string): string {
 	const words = raw.split(/[^A-Za-z0-9]+/u).filter((word) => word !== "");
 	const joined = words
@@ -131,7 +113,6 @@ function parameters(
 		}
 		if (!isObject(parameter)) return;
 		const location = text(parameter.in);
-		// Cookie parameters are browser state, not something a client sets.
 		if (location !== "path" && location !== "query" && location !== "header") {
 			return;
 		}
@@ -144,7 +125,6 @@ function parameters(
 	return parsed;
 }
 
-/** Refine an already-decoded OpenAPI document. */
 export function parseOpenApiJson(value: JsonValue | undefined): ApiSpecResult {
 	const issues: ManifestIssue[] = [];
 	if (!isObject(value)) {
@@ -190,7 +170,6 @@ export function parseOpenApiJson(value: JsonValue | undefined): ApiSpecResult {
 				});
 			}
 			seen.add(id);
-			// Operation-level parameters override path-level ones of the same name.
 			const own = parameters(
 				operation.parameters,
 				componentParameters,
@@ -243,11 +222,9 @@ export function parseOpenApiJson(value: JsonValue | undefined): ApiSpecResult {
 		baseUrl: isObject(firstServer) ? text(firstServer.url) : "",
 		operations,
 	};
-	// SAFETY: the brand is conferred here and nowhere else; every check passed.
 	return { ok: true, api: description as ParsedApiSpec };
 }
 
-/** Parse OpenAPI text. YAML is a superset of JSON, so one reader serves both. */
 export function parseOpenApi(source: string): ApiSpecResult {
 	const document = parseDocument(source);
 	if (document.errors.length > 0) {
@@ -259,6 +236,5 @@ export function parseOpenApi(source: string): ApiSpecResult {
 			})),
 		};
 	}
-	// SAFETY: yaml's toJS yields plain JSON-shaped data; refined just below.
 	return parseOpenApiJson(document.toJS() as JsonValue);
 }

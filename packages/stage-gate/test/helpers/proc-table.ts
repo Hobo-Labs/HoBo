@@ -1,7 +1,3 @@
-/**
- * Directories laid out like the Linux process table, for the tests of
- * src/process-group.ts: one <pid>/stat per entry, written as Linux writes it.
- */
 import {
 	mkdirSync,
 	mkdtempSync,
@@ -12,9 +8,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** The group the tables are about. */
 export const PGID = 4242;
-/** It leads its own session, as ai-bdd's (spawned detached) does. */
 export const GROUP = { pgid: PGID, sid: PGID } as const;
 
 export interface ProcEntry {
@@ -22,13 +16,10 @@ export interface ProcEntry {
 	readonly comm: string;
 	readonly state: string;
 	readonly pgrp: number;
-	/** The session, field 6; pgrp unless set. */
 	readonly session?: number;
-	/** num_threads, field 20. */
 	readonly threads: number;
 }
 
-/** A /proc/<pid>/stat line as Linux writes it: 52 fields, comm unescaped in parentheses. */
 export function statLine({
 	pid,
 	comm,
@@ -42,7 +33,6 @@ export function statLine({
 	return `${pid} (${comm}) ${state} 1 ${pgrp} ${session} ${flags} ${threads} ${rest}\n`;
 }
 
-/** A single-thread zombie of PGID. */
 export const zombie = (pid: number): ProcEntry => ({
 	pid,
 	comm: "sleep",
@@ -52,12 +42,7 @@ export const zombie = (pid: number): ProcEntry => ({
 });
 
 export interface ProcTables {
-	/** Where the tables are made; anything else a test needs on disk can go here. */
 	readonly dir: string;
-	/**
-	 * A new table holding `entries` and `self`, which names this process (as
-	 * /proc does for its own PID namespace) unless `selfPid` names another.
-	 */
 	readonly table: (entries: readonly ProcEntry[], selfPid?: number) => string;
 	readonly remove: () => void;
 }

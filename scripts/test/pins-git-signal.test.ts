@@ -1,15 +1,3 @@
-/**
- * A git ended by a signal is `128 + its number` and "killed by SIG..." however
- * it was run: directly, under the deadline wrapper (`git()` with a deadline),
- * or streamed (`netGitWatched`). Through the wrapper the signal used to
- * become a plain exit 128, so the same OOM kill read as "exited 128: " there
- * and "killed by SIGKILL" on a direct call. A real exit status is left alone:
- * 129 is git's usage error, not a SIGHUP. The edges of the wrapper's way of
- * doing it (a core file, the inspector, SIGPIPE) are in
- * `pins-git-signal-edges.test.ts`.
- *
- * A stand-in `git` first on PATH ends itself the way the test says.
- */
 import assert from "node:assert/strict";
 import {
 	chmodSync,
@@ -34,7 +22,6 @@ import {
 	scratch,
 } from "./support/pins-support.ts";
 
-/** Every signal a git can plausibly die of: the wrapper re-raises six and exits 128 + N for the rest. */
 const SIGNALS = [
 	"SIGHUP",
 	"SIGINT",
@@ -49,10 +36,8 @@ const SIGNALS = [
 	"SIGPIPE",
 ] as const;
 
-/** The ones the end-to-end refusal is walked for: it does not depend on how the wrapper ends. */
 const REFUSED_FOR = ["SIGKILL", "SIGTERM", "SIGSEGV"] as const;
 
-/** One program: the same stand-in git run directly, under the wrapper, and streamed. */
 const PROGRAM = `
 const core = await import(${lib("pins-git-core.ts")});
 const stream = await import(${lib("pins-git-stream.ts")});

@@ -6,7 +6,6 @@ import {
 } from "../src/live-container-count.js";
 
 const lease = (state: Lease["state"], sandboxName = ""): Lease =>
-	// SAFETY: minimal Lease fields for box worker slot counting only.
 	({
 		provider: "hobo-box-worker",
 		state,

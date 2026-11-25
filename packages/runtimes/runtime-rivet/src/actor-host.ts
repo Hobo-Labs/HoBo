@@ -13,15 +13,12 @@ import { cloneAsJson, type JsonValue, parseJsonValue } from "./json.js";
 import { parseRivetActorFidelity } from "./parse.js";
 import { RivetJournalError } from "./types.js";
 
-/** Core `ActorLease` (ADR-0156) tagged with the Rivet placement. */
 export interface RivetActorLease extends ActorLease {
 	readonly placement: "rivet";
 }
 
-/** The canonical `@hobo/core` state handle (ADR-0156), under its Rivet name. */
 export type RivetActorStateHandle<S> = ActorStateHandle<S>;
 
-/** The core ActorHost port (ADR-0156) plus Rivet-specific journal members. */
 export interface RivetActorHost extends ActorHost {
 	readonly placementMode: "rivet";
 	readonly fidelity: "local-sqlite";

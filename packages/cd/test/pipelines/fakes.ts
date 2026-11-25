@@ -1,6 +1,3 @@
-// Test doubles for the WP5 pipeline and change-window tests. Each models the
-// frozen port it stands in for (ports.ts, @hobo/core eventstore); none is
-// reachable from production code.
 import type {
 	AppendOptions,
 	AppendResult,
@@ -41,15 +38,11 @@ export const DAY = 24 * HOUR;
 export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@acme" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
-/** Brand a Camp id in a test. */
 export function camp(id: string): CampId {
-	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
-/** Brand a Freight id in a test. */
 export function fid(id: string): FreightId {
-	// SAFETY: test fixture ids are literal Freight ids.
 	return id as FreightId;
 }
 
@@ -79,19 +72,11 @@ export function context(
 	return { tenant: TENANT, principal, now };
 }
 
-/**
- * In-memory DurableEventStore with the conformance-suite semantics the code
- * relies on: per-stream expected-seq CAS (a stale expectedSeq throws),
- * per-stream idempotency-key dedup checked before the CAS, global positions,
- * and `readAll` filtered by type, tenant and position.
- */
 export class MemoryEventStore implements DurableEventStore {
 	private readonly streams = new Map<string, EventEnvelope[]>();
 	readonly all: PositionedEvent[] = [];
 	private nextId = 1;
-	/** Envelope timestamps come from this clock (the journal's fact time). */
 	constructor(private readonly now: () => number = () => T0) {}
-	/** When set, the next append throws as a concurrent writer would. */
 	failNextAppend = 0;
 
 	async append(
@@ -137,7 +122,6 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = input.meta;
-			// SAFETY: test double; positions are minted from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);
@@ -177,7 +161,6 @@ export class MemoryEventStore implements DurableEventStore {
 		}
 	}
 
-	/** Append a raw event body (other work packages' facts, corrupt rows). */
 	async seed(
 		streamId: string,
 		type: string,
@@ -223,7 +206,6 @@ export class MemoryEventStore implements DurableEventStore {
 	}
 }
 
-/** Authorizer that records each call; deny or proposal-only per action. */
 export class RecordingAuthorizer implements CdAuthorizer {
 	readonly calls: {
 		action: CdAction;

@@ -1,6 +1,3 @@
-// CD.md: telemetry defaults to none. Without OTEL_EXPORTER_OTLP_ENDPOINT the
-// composed runtime must not post spans/metrics anywhere (it used to retry
-// http://localhost:4318 for ~15 s, holding every `hobo deploy` open).
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,7 +27,6 @@ describe("CD runtime telemetry", () => {
 			});
 			expect(opened.ok).toBe(true);
 			if (!opened.ok) return;
-			// A refusal counts a fail-closed metric: the path that used to export.
 			await runCdDeploySubcommand(opened.value.host, ["reconcile"], {
 				camp: "edge/prod",
 			});

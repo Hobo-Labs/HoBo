@@ -1,10 +1,3 @@
-/**
- * Executable step definitions for contracts-policy-governance.feature.
- *
- * Drives the epic's real mocked boundary harness and Gatekeeper simulations
- * (services/reference-architecture.ts) and asserts the governance decisions
- * they actually produce — no live policy or registry services.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -27,8 +20,6 @@ type GovernanceWorld = {
 	denyCeiling?: DenyCeiling;
 	failClosed?: FailClosed;
 };
-
-// --- Scenario: Compatible deploy produces auditable approval obligations ----------------
 
 Given(
 	"a production camp with mandatory contract, policy, obligation, cost, provenance, and conformance gates",
@@ -91,8 +82,6 @@ Then(
 	},
 );
 
-// --- Scenario: Mandatory governance cannot be bypassed ----------------------------------
-
 Given(
 	"a bindle-level policy pack that tries to disable mandatory contract gates",
 	function (this: GovernanceWorld) {
@@ -124,8 +113,6 @@ Then(
 		);
 	},
 );
-
-// --- Scenario: Policy uncertainty fails closed ------------------------------------------
 
 Given(
 	"the policy engine and signed policy-pack registry are unavailable",

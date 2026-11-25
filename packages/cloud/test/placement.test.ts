@@ -15,13 +15,6 @@ import {
 } from "../src/index.js";
 import { type JsonValue, parseJsonValue } from "../src/json.js";
 
-// E19 placement-constraint vocabulary golden vectors:
-// property selectors, affinity/anti-affinity between resource classes, spread,
-// and pickN, each resolved deterministically as hard filters BETWEEN capability
-// negotiation and the untouched lexicographic ranking (ADR-0033/ADR-0088).
-// The vocabulary records what the Planner PLANS; execution of spread and
-// anti-affinity stays delegated to wadm.
-
 const HELLO_BINDLE_PLAN_HASH =
 	"sha256:0e1bbf78ae6b765d8a4cd5cb41c5b9c5eadc43e32ea4fedec97cf87a7deef915";
 
@@ -85,7 +78,6 @@ function criteria(overrides: Partial<PlacementCriteria>): PlacementCriteria {
 	return { selectors: [], affinities: [], ...overrides };
 }
 
-// Two kv providers: alpha (us-east-1, pricier) and beta (eu-west-1, cheaper).
 function twoYardRegistry(): PlannerRegistry {
 	return registryOf([
 		definition({
@@ -241,7 +233,6 @@ describe("E19 placement: affinity / anti-affinity between resource classes", () 
 		);
 		expect(outcome.ok).toBe(true);
 		if (!outcome.ok) return;
-		// alpha is pricier, but affinity is a hard filter applied before ranking.
 		expect(outcome.decision.providerId).toBe("alpha");
 	});
 
@@ -360,8 +351,6 @@ describe("E19 placement: spread", () => {
 		);
 		expect(outcome.ok).toBe(true);
 		if (!outcome.ok) return;
-		// ap-south-1 already carries one kv placement; eu-west-1 and us-east-1 are
-		// tied at zero, so the lexicographically smallest wins.
 		expect(outcome.region).toBe("eu-west-1");
 	});
 
@@ -386,7 +375,6 @@ describe("E19 placement: spread", () => {
 		);
 		expect(outcome.ok).toBe(true);
 		if (!outcome.ok) return;
-		// beta is cheaper but already carries a kv placement; spread keeps alpha.
 		expect(outcome.decision.providerId).toBe("alpha");
 		const betaRejection = outcome.decision.rejectedCandidates.find(
 			(entry) => entry.definitionId === "beta:kv",
@@ -403,7 +391,6 @@ describe("E19 placement: pickN cardinality", () => {
 		);
 		expect(outcome.ok).toBe(true);
 		if (!outcome.ok) return;
-		// The full ranking records the N candidates; the Planner still places one.
 		expect(outcome.decision.ranking.length).toBe(2);
 	});
 

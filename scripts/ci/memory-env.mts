@@ -55,7 +55,6 @@ export function recentPeakMbForJob(
 ): number | undefined {
 	if (!peaksPath || jobName === "") return undefined;
 	try {
-		// SAFETY: worker-owned JSON; shape matches MemoryPeakHistories.
 		const parsed = JSON.parse(
 			readFileSync(peaksPath, "utf8"),
 		) as MemoryPeakHistories;

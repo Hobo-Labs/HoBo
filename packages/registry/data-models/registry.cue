@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in registry.proto, so the
-// architecture guard can confirm the bundle manifest, BundleImported fact,
-// provenance statement, and index entry are bounded at parse time.
 
 package registry
 

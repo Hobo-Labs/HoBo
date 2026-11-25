@@ -5,9 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import { createComposedHoboCli } from "../src/index.js";
 
-// `hobo logs` boots the offline Camp and returns the component-host event tail
-// mirrored through the Streamer.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -56,7 +53,6 @@ describe("hobo logs", () => {
 			expect(logs.status).toBe("tailed");
 			expect(logs.data.runtime).toBe("runtime-local");
 			expect(logs.data.offline).toBe(true);
-			// The component host produced events, mirrored as streamed frames.
 			expect(Array.isArray(logs.data.events)).toBe(true);
 			expect(logs.data.events.length).toBeGreaterThan(0);
 			expect(logs.data.streamedFrames).toBeGreaterThan(0);

@@ -1,8 +1,3 @@
-// PostureEvaluator conformance (ADR-0182 D25, I8, I22). The Station-side
-// evaluator is pure: the same rules and observation give the same findings in
-// any order, unknown counts against compliance, and only the fixed operator
-// set exists (no expression language).
-
 import { isJsonArray, isJsonObject } from "../json.js";
 import {
 	type CdConformanceReport,
@@ -55,7 +50,6 @@ export type PostureClauseLike =
 			value: string;
 	  }>;
 
-/** Structural mirror of @hobo/policy/posture PostureRule. */
 export type PostureRuleLike = Readonly<{
 	id: string;
 	pack: string;
@@ -151,7 +145,6 @@ function canonicalFindings(evaluation: PostureEvaluationLike): string {
 	});
 }
 
-/** One rule per operator, with the outcome its single resource must produce. */
 export function operatorCases(): readonly Readonly<{
 	op: PostureOperatorLike;
 	rule: PostureRuleLike;

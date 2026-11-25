@@ -2,7 +2,6 @@ import type { PactDocument, PactRequest, PactResponse } from "./pact.js";
 import { isRecursiveSubset } from "./subset.js";
 import { isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export interface ProviderStub {
   readonly name: string;
   handle(request: PactRequest): PactResponse | Promise<PactResponse>;
@@ -96,9 +95,7 @@ function findBodyMismatch(expected: JsonValue, actual: JsonValue, path = "$"): s
     return `body field ${path} is missing`;
   }
 
-  // SAFETY: assertion to `const expectedRecord = expected as JsonObject;` is required at this boundary.
   const expectedRecord = expected as JsonObject;
-  // SAFETY: assertion to `const actualRecord = actual as JsonObject;` is required at this boundary.
   const actualRecord = actual as JsonObject;
 
   for (const key of Object.keys(expectedRecord)) {

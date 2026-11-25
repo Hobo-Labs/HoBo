@@ -47,16 +47,11 @@
 
 import { sortKeys } from "@hobo/core";
 
-// The PACT body and any producer that stamps a schema onto a transported intent
-// name this exact string, so a divergent spelling is a different contract rather
-// than a typo.
 // public-contract: wire identity of the declaration manifest.
 export const RESOURCE_INTENT_SCHEMA = "hobo.resource-intent/v1";
 
-/** Whole-intent degradation mode: hard requirement, or best-effort. */
 export type Negotiation = "require" | "prefer";
 
-/** Comparison operators a placement property selector may use. */
 export type PlacementSelectorOp =
 	| "eq"
 	| "ne"
@@ -93,13 +88,8 @@ const AFFINITY_MODES: readonly PlacementAffinityMode[] = [
 
 const PLACEMENT_SCOPES: readonly PlacementScope[] = ["region", "yard"];
 
-// ---- Structural authoring shapes. Mutable and non-readonly on purpose: these
-// are the exact declarations `@hobo/cloud` uses today, so re-exporting them
-// from there changes no consumer.
-
 // domain-view: authoring view; wire form is PlacementPropertySelector in data-models/resource_intent.proto.
 export interface PlacementPropertySelector {
-	/** "cost" | "region" | "provider" | "capacity" | "latency" | custom feature key. */
 	key: string;
 	op: PlacementSelectorOp;
 	values: string[];
@@ -108,7 +98,6 @@ export interface PlacementPropertySelector {
 // domain-view: authoring view; wire form is PlacementAffinityRule in data-models/resource_intent.proto.
 export interface PlacementAffinityRule {
 	mode: PlacementAffinityMode;
-	/** The referenced resource class (capability port). */
 	targetPort: string;
 	scope: PlacementScope;
 }
@@ -120,7 +109,6 @@ export interface PlacementSpread {
 
 // domain-view: authoring view; wire form is PlacementPickN in data-models/resource_intent.proto.
 export interface PlacementPickN {
-	/** Minimum distinct satisfying candidates matching must find (>= 1). */
 	count: number;
 }
 
@@ -143,15 +131,8 @@ export interface ResourceIntent {
 	region?: string;
 	objective: string;
 	placement?: PlacementCriteria;
-	/**
-	 * When the resource runs (a schedule's five-field cron expression), from
-	 * the Bindle's `cadence` trait. Absent for every other resource.
-	 */
 	cadence?: string;
 }
-
-// ---- Parsed derived types. Deeply readonly, frozen, and branded so the type
-// cannot be forged by an object literal.
 
 declare const resourceIntentBrand: unique symbol;
 
@@ -182,7 +163,6 @@ export type ParsedPlacementCriteria = {
 	readonly pickN?: ParsedPlacementPickN;
 };
 
-/** A parsed declaration manifest. Construct only through {@link parseResourceIntent}. */
 export type ParsedResourceIntent = {
 	readonly name: string;
 	readonly port: string;
@@ -196,10 +176,6 @@ export type ParsedResourceIntent = {
 	readonly cadence?: string;
 	readonly [resourceIntentBrand]: "ResourceIntent";
 };
-
-// ---- Canonical proto3-JSON wire records. Every field that proto3 omits at its
-// default value is optional here, which is exactly the set of fields whose
-// absence and default are the same value.
 
 export type PlacementPropertySelectorRecord = {
 	readonly key: string;
@@ -241,7 +217,6 @@ export type ResourceIntentRecord = {
 	readonly cadence?: string;
 };
 
-/** Every refusal from this module. `path` names the offending field. */
 export class ResourceIntentError extends Error {
 	readonly code = "INVALID_RESOURCE_INTENT" as const;
 	readonly path: string;
@@ -255,7 +230,6 @@ export class ResourceIntentError extends Error {
 
 const UINT32_MAX = 4_294_967_295;
 
-/** Five whitespace-separated cron fields (minute hour day month weekday). */
 const CRON_FIELDS = /^\S+(\s+\S+){4}$/u;
 
 const RESOURCE_INTENT_KEYS: readonly string[] = [
@@ -327,7 +301,6 @@ function asObject<T>(value: T, path: string): UnparsedRecord {
 			`expected an object, got ${describe(value)}`,
 		);
 	}
-	// SAFETY: the tag check above excludes null, arrays, primitives, and exotic objects.
 	return value as UnparsedRecord;
 }
 
@@ -347,8 +320,6 @@ function rejectUnknownKeys(
 ): void {
 	for (const key of Object.keys(record)) {
 		if (allowed.includes(key)) continue;
-		// Silently dropping an unrecognised key is how a producer's new field
-		// disappears without anyone noticing it stopped arriving.
 		throw new ResourceIntentError(
 			`${path}.${key}`,
 			`unknown field; expected one of ${allowed.join(", ")}`,
@@ -366,7 +337,6 @@ function requireNonEmptyString(value: UnparsedValue, path: string): string {
 	if (value === "") {
 		throw new ResourceIntentError(path, "must not be empty");
 	}
-	// SAFETY: the string tag check above establishes the runtime string representation.
 	return value as string;
 }
 
@@ -385,8 +355,6 @@ function requireStringList(
 	for (const [index, entry] of value.entries()) {
 		const item = requireNonEmptyString(entry, `${path}[${index}]`);
 		if (seen.has(item)) {
-			// require/prefer/deps are sets by meaning; a repeated entry adds
-			// nothing and makes two spellings of one declaration.
 			throw new ResourceIntentError(
 				`${path}[${index}]`,
 				`duplicate entry ${JSON.stringify(item)}`,
@@ -395,8 +363,6 @@ function requireStringList(
 		seen.add(item);
 		out.push(item);
 	}
-	// Order is preserved exactly as authored: normalising it here would make a
-	// round trip lossy for every producer that means something by the order.
 	return Object.freeze(out);
 }
 
@@ -411,14 +377,12 @@ function requireMember<T extends string>(
 			`expected a string, got ${describe(value)}`,
 		);
 	}
-	// SAFETY: the string tag check makes this cast a string before membership is checked.
 	if (!allowed.includes(value as T)) {
 		throw new ResourceIntentError(
 			path,
 			`${JSON.stringify(value)} is not one of ${allowed.join(" | ")}`,
 		);
 	}
-	// SAFETY: the string tag check and closed-vocabulary membership check establish T.
 	return value as T;
 }
 
@@ -439,12 +403,6 @@ function parseSelector(
 	const values = record.values.map((entry, index) =>
 		requireNonEmptyString(entry, `${path}.values[${index}]`),
 	);
-	// The evaluator in @hobo/cloud reads values[0] for the scalar comparisons
-	// and the whole list for in/not-in, and ignores values entirely for
-	// "exists". Both malformed arities below are therefore silent rather than
-	// loud downstream: an operandless "eq" compares against undefined and
-	// rejects every candidate, and an "exists" carrying operands reads as a
-	// filter that is never applied.
 	if (op === "exists" && values.length > 0) {
 		throw new ResourceIntentError(
 			`${path}.values`,
@@ -529,11 +487,8 @@ function parseCriteria(
 				`expected an integer, got ${JSON.stringify(count)}`,
 			);
 		}
-		// SAFETY: the number tag and integer checks establish the numeric count.
 		const numericCount = count as number;
 		if (numericCount < 1) {
-			// A cardinality of zero asks matching to find nothing, which is not a
-			// weaker constraint but an incoherent one.
 			throw new ResourceIntentError(
 				`${path}.pickN.count`,
 				`must be at least 1, got ${numericCount}`,
@@ -554,14 +509,6 @@ function parseCriteria(
 	return Object.freeze(result);
 }
 
-/**
- * Parse-don't-validate boundary for the declaration manifest.
- *
- * Throws {@link ResourceIntentError} naming the offending field path. Never
- * repairs, never defaults, never drops: an input this function returns from is
- * structurally identical to the input it was given, so a value can be parsed,
- * encoded and parsed again without changing.
- */
 export function parseResourceIntent<T>(input: T): ParsedResourceIntent {
 	const record = asObject(input, "$");
 	rejectUnknownKeys(record, "$", RESOURCE_INTENT_KEYS);
@@ -579,9 +526,6 @@ export function parseResourceIntent<T>(input: T): ParsedResourceIntent {
 	const objective = requireNonEmptyString(record.objective, "$.objective");
 
 	if (deps.includes(name)) {
-		// A bind edge from a resource to itself is a one-node cycle. It is
-		// checkable here, inside one record, rather than only once the whole DAG
-		// is ordered.
 		throw new ResourceIntentError(
 			"$.deps",
 			`resource ${JSON.stringify(name)} cannot depend on itself`,
@@ -591,10 +535,6 @@ export function parseResourceIntent<T>(input: T): ParsedResourceIntent {
 	let region: string | undefined;
 	if ("region" in record) {
 		if (record.region === undefined) {
-			// Under exactOptionalPropertyTypes an absent optional field and one
-			// holding undefined are different values, and only the first has a
-			// wire form. Accepting the second would make the round trip lossy at
-			// the very first step.
 			throw new ResourceIntentError(
 				"$.region",
 				"is present but undefined; omit the field instead",
@@ -630,17 +570,9 @@ export function parseResourceIntent<T>(input: T): ParsedResourceIntent {
 	if (region !== undefined) result.region = region;
 	if (placement !== undefined) result.placement = placement;
 	if (cadence !== undefined) result.cadence = cadence;
-	// SAFETY: every property was parsed above and the unique brand is never observable at runtime.
 	return Object.freeze(result) as ParsedResourceIntent;
 }
 
-/**
- * The canonical proto3-JSON wire record for a parsed declaration.
- *
- * Follows the proto3 JSON mapping exactly: snake_case field names, and fields
- * whose value equals the proto3 default omitted — except `region`, which the
- * schema declares `optional` and which therefore round-trips its presence.
- */
 export function encodeResourceIntent(
 	intent: ParsedResourceIntent,
 ): ResourceIntentRecord {
@@ -688,13 +620,6 @@ function encodeCriteria(
 	return record;
 }
 
-/**
- * The exact inverse of {@link encodeResourceIntent}: rebuilds the parsed
- * declaration from its wire record, restoring the defaults proto3 omitted.
- *
- * Runs the full parse boundary, so a hand-written record gets the same refusals
- * an authored value does.
- */
 export function decodeResourceIntent<T>(record: T): ParsedResourceIntent {
 	const wire = asObject(record, "$");
 	const allowed = [
@@ -769,27 +694,12 @@ function decodeCriteria<T>(value: T): DecodedCriteria {
 	return result;
 }
 
-/**
- * Byte-stable serialization of the wire record: keys sorted at every depth,
- * array order left alone.
- *
- * `sortKeys` comes from `@hobo/core` rather than being rewritten here, because
- * the repository already carries two spellings of canonical ordering and a
- * third would be one more thing to keep in step.
- */
 export function canonicalResourceIntentJson(
 	intent: ParsedResourceIntent,
 ): string {
 	return JSON.stringify(sortKeys(encodeResourceIntent(intent)));
 }
 
-/**
- * The mutable authoring view of a parsed declaration.
- *
- * The inverse direction of {@link parseResourceIntent}, for the callers that
- * build `ResourceIntent` literals today — notably `@hobo/cloud`'s planner,
- * which mutates `intent.region` after construction.
- */
 export function toResourceIntent(intent: ParsedResourceIntent): ResourceIntent {
 	const result: ResourceIntent = {
 		name: intent.name,

@@ -32,7 +32,6 @@ export const PROXY_KEY = parseProxyTokenKey(
 	Buffer.from("relay-cache-test-key-0123456789abcdef"),
 );
 
-/** The contract fixture: one account, one isolated repository, a zero-price box offer of concurrency two. */
 export function configuration(): Configuration {
 	return create(ConfigurationSchema, {
 		accounts: [
@@ -77,7 +76,6 @@ export function configuration(): Configuration {
 	});
 }
 
-/** The fixture account plus a second one with its own repository and box. */
 export function twoAccounts(): Configuration {
 	const config = configuration();
 	const [account] = config.accounts;
@@ -140,7 +138,6 @@ export function delivery(deliveryId: string, body: string, receivedAt = NOW) {
 	};
 }
 
-/** A config source a test can move, as an operator would through `hobo ci`. */
 export function mutableConfig(initial: Configuration, revision = 1) {
 	let snapshot: RelayConfigSnapshot = {
 		state: create(ConfigurationStateSchema, {
@@ -174,13 +171,10 @@ export type RelayCacheHarness = {
 	meter: MeteredExecutor;
 	intake: RelayAcceptedDelivery[];
 	config: ReturnType<typeof mutableConfig>;
-	/** Empty the cache, as a lost Upstash database or a flushed Valkey would. */
 	flush(): void;
-	/** Another relay instance over the same cache. */
 	peer(overrides?: Partial<RelayCacheStoreOptions>): RelayCacheStore;
 };
 
-/** A store over the in-memory Redis engine, metered, on a manual clock. */
 export function openRelayCache(
 	config: Configuration = configuration(),
 	overrides: Partial<RelayCacheStoreOptions> = {},

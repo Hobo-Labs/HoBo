@@ -1,15 +1,6 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
-/**
- * Browser WASM TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
- *
- * A browser guest receives calls from the host page that instantiated it,
- * inside one browsing context. The only traffic split that exists is the host
- * page choosing which published guest version to instantiate, by weight: the
- * in-process floor. `provider` is `other`: the core union has no browser-wasm
- * member, and `@hobo/core` is not edited.
- */
 export const BROWSER_WASM_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	Object.freeze({
 		provider: "other",
@@ -28,7 +19,6 @@ const NO_DNS =
 const NOT_A_SERVER =
 	"A browser guest is not reachable from outside its tab; there is nothing to publish";
 
-/** Offerings a browser guest cannot realize, declared absent rather than preview. */
 export const BROWSER_WASM_TRAFFIC_ROUTING_ABSENT: readonly AbsentTrafficOffering[] =
 	Object.freeze(
 		(

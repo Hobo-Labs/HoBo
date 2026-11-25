@@ -44,7 +44,6 @@ interface ManifestReading {
 	readonly problems: readonly string[];
 }
 
-/** Listed upstream but deliberately absent here: test-only files and verify.mjs. */
 function isNotVendored(path: string): boolean {
 	const parts = path.split("/");
 	return (
@@ -85,13 +84,10 @@ function readManifest(copy: string): ManifestReading {
 }
 
 interface CopyListing {
-	/** Regular files, as sorted posix paths. */
 	readonly files: readonly string[];
-	/** Anything else under the copy (a symlink, a socket), as sorted posix paths. */
 	readonly irregular: readonly string[];
 }
 
-/** Every entry under `copy` but its manifest. A symlink is never followed. */
 function listCopy(copy: string, prefix = ""): CopyListing {
 	const files: string[] = [];
 	const irregular: string[] = [];

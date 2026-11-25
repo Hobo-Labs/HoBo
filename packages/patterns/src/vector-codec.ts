@@ -1,6 +1,3 @@
-// Vector BLOBs are little-endian IEEE-754 float32. SQLite is a derived
-// read-store / materialized view of catalog vectors, never the source of truth.
-
 const CODEC_ID = "f32le-l2";
 
 export type EncodedVector = {

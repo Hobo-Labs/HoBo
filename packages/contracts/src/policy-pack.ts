@@ -8,14 +8,7 @@ import {
 } from "@hobo/policy";
 import type { JsonObject } from "./json.js";
 
-// This module COMPOSES @hobo/policy — it does not reimplement the policy engine.
-// @hobo/policy owns the decision model (the Policy IR: request/decision/effect/
-// obligations/evidence + the `policy.Decided` event). Here a small policy-pack
-// evaluator runs a set of typed TypeScript rules over a decision request and
-// LOWERS the outcome onto @hobo/policy's `createDecision` / `createPolicyDecided
-// Event`, so every deploy — even one a permissive default pack allows — records a
-// `policy.Decided` fact (governed-by-default without blocking, FR-051/NFR-017).
-
+// public-contract: stable exported contract literal
 export const POLICY_PACK_ENGINE_ID = "hobo.contracts/policy-pack@0.1.0";
 
 export type PolicyEffect =
@@ -26,7 +19,6 @@ export type PolicyEffect =
 	| "mutate"
 	| "require-approval";
 
-// Most-restrictive-wins ordering shared with the Gatekeeper composition.
 export const EFFECT_RANK: ReadonlyMap<string, number> = new Map([
 	["deny", 0],
 	["require-approval", 1],
@@ -69,9 +61,6 @@ export interface PolicyEvaluation {
 	matchedRuleIds: string[];
 }
 
-// The permissive default pack: no rules, so every request lands on `allow`, yet
-// still produces a recorded `policy.Decided` — the "governed by default without
-// blocking" default the design requires of every deploy.
 export function createPermissiveDefaultPack(): PolicyPack {
 	return { id: "hobo.default/permissive", version: "1.0.0", rules: [] };
 }
@@ -100,8 +89,6 @@ export function evaluatePolicyPack(input: {
 		outcome: rule.decide(input.request),
 	}));
 
-	// Most-restrictive-wins: the lowest-ranked effect across matching rules is the
-	// pack's effect; an empty pack yields `allow`.
 	const winning = outcomes.reduce<{
 		rule: PolicyRule;
 		outcome: PolicyRuleOutcome;

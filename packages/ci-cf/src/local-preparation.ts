@@ -62,7 +62,6 @@ export function sourceGit(
 	return result.stdout.trimEnd();
 }
 
-/** Expand pinned, initialized Git submodules without modifying a source checkout. */
 async function archiveSource(
 	source: string,
 	sha: string,
@@ -126,13 +125,10 @@ async function archiveSource(
 			git("read-tree", `--prefix=${link.path}/`, `${link.sha}^{tree}`);
 		}
 		const tree = git("write-tree");
-		// CI needs the committed tree, including files excluded from release archives.
 		await writeFile(
 			join(gitDir, "info/attributes"),
 			"* -export-ignore -export-subst\n",
 		);
-		// A canonical private commit supplies a stable archive timestamp on all Git
-		// versions. It never modifies the source repository or its original identity.
 		const canonical = sourceGit(
 			[
 				`--git-dir=${gitDir}`,

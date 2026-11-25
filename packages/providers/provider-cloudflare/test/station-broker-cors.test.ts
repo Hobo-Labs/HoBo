@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-/**
- * Station-broker CORS + health contract (pure checks; Worker body lives under station-broker/).
- * Full provision is covered by temporary-station tests with mocked transport.
- */
 const ALLOWED_ORIGIN =
 	/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$|^https:\/\/([a-z0-9-]+\.)*github\.io$/iu;
 

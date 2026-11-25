@@ -1,27 +1,12 @@
-/**
- * The continuous-migration pattern catalog (ADR-0177 decision 5).
- *
- * Two questions pick a pattern family: who is the authority, and what
- * changes. The catalog is closed and versioned — adding a pattern is a
- * reviewed catalog change, the same rule the capability catalog follows —
- * and it is pure data, so it can be printed, diffed, and digested into every
- * decision that was made against it.
- *
- * Application-level dual-write is deliberately absent. Two independent writes
- * with no shared transaction diverge on the first partial failure, silently.
- * Every pattern here keeps exactly one write authority at any log position.
- */
 import { digestOf, type JsonObject } from "./json.js";
 import type { SpiPortName } from "./spi.js";
 
 // public-contract: the schema id the pattern catalog is published under.
 export const PATTERN_CATALOG_CONTRACT = "hobo.migration-pattern-catalog/v1";
 
-/** Who holds the truth for the data being moved. */
 export const AUTHORITIES = ["projected", "authoritative", "journal"] as const;
 export type Authority = (typeof AUTHORITIES)[number];
 
-/** What a migration changes about the data. */
 export const CHANGE_KINDS = [
 	"shape",
 	"placement",
@@ -40,7 +25,6 @@ export const MIGRATION_PATTERNS = [
 ] as const;
 export type MigrationPatternId = (typeof MIGRATION_PATTERNS)[number];
 
-/** One ordered phase list; every pattern is a subset of it. */
 export const MIGRATION_PHASES = [
 	"plan",
 	"gate",
@@ -55,11 +39,6 @@ export const MIGRATION_PHASES = [
 ] as const;
 export type MigrationPhase = (typeof MIGRATION_PHASES)[number];
 
-/**
- * A safe hold is a phase a migration can sit in indefinitely without losing
- * data or violating policy. Only the fence-and-flip step is not one: it is
- * bounded and either completes or compensates.
- */
 export const SAFE_HOLD_PHASES: readonly MigrationPhase[] = Object.freeze([
 	"plan",
 	"gate",
@@ -71,19 +50,9 @@ export const SAFE_HOLD_PHASES: readonly MigrationPhase[] = Object.freeze([
 	"soak",
 ]);
 
-/**
- * - `lossless`: the side being abandoned is still current.
- * - `to-snapshot`: writes since the snapshot or flip are lost on rollback.
- * - `none`: no rollback remains.
- */
 export const ROLLBACK_POSTURES = ["none", "to-snapshot", "lossless"] as const;
 export type RollbackPosture = (typeof ROLLBACK_POSTURES)[number];
 
-/**
- * - `none`: writes are never refused.
- * - `bounded`: writes are refused only for the fence-and-flip step.
- * - `window`: writes are refused for the whole copy.
- */
 export const WRITE_FREEZES = ["none", "bounded", "window"] as const;
 export type WriteFreeze = (typeof WRITE_FREEZES)[number];
 
@@ -96,24 +65,14 @@ export interface MigrationPattern {
 	readonly phases: readonly MigrationPhase[];
 	readonly sourcePorts: readonly SpiPortName[];
 	readonly targetPorts: readonly SpiPortName[];
-	/**
-	 * Ports that upgrade the soak-window rollback from `to-snapshot` to
-	 * `lossless` when all are present: apply on the source, and capture *and
-	 * fence* on the target. Capture and apply are the reverse tail itself. The
-	 * fence is what makes going back lossless: without it the target can
-	 * acknowledge a write between the rollback's last digest and the flip, and
-	 * that write is gone. A target that cannot be fenced gets `to-snapshot`.
-	 */
 	readonly reverseTailPorts: {
 		readonly source: readonly SpiPortName[];
 		readonly target: readonly SpiPortName[];
 	};
 	readonly writeFreeze: WriteFreeze;
 	readonly rollbackBeforeFlip: RollbackPosture;
-	/** Soak-window posture without, and with, a reverse tail. */
 	readonly rollbackInSoak: RollbackPosture;
 	readonly rollbackInSoakWithReverseTail: RollbackPosture;
-	/** `log` when the pattern permanently moves authority into the event log. */
 	readonly authorityAfter: "unchanged" | "log";
 }
 
@@ -275,7 +234,6 @@ export const PATTERN_CATALOG: readonly MigrationPattern[] = Object.freeze([
 export function getPattern(id: MigrationPatternId): MigrationPattern {
 	const found = PATTERN_CATALOG.find((entry) => entry.id === id);
 	if (found === undefined) {
-		// Unreachable for a typed id; kept so a widened caller fails loudly.
 		throw new RangeError(`unknown migration pattern ${id}`);
 	}
 	return found;
@@ -284,11 +242,9 @@ export function getPattern(id: MigrationPatternId): MigrationPattern {
 export function isMigrationPatternId(
 	value: string,
 ): value is MigrationPatternId {
-	// SAFETY: membership test against the closed tuple of pattern ids.
 	return (MIGRATION_PATTERNS as readonly string[]).includes(value);
 }
 
-/** Patterns legal for an authority and a kind of change, in catalog order. */
 export function patternsFor(
 	authority: Authority,
 	change: ChangeKind,
@@ -320,11 +276,6 @@ export function patternToJson(entry: MigrationPattern): JsonObject {
 	};
 }
 
-/**
- * Digest of the whole catalog. Every decision records it, so a change of
- * selected pattern is attributable to a catalog change rather than to
- * nondeterminism (the ADR-0144 catalog-hash discipline).
- */
 export function patternCatalogDigest(): `sha256:${string}` {
 	return digestOf({
 		contract: PATTERN_CATALOG_CONTRACT,

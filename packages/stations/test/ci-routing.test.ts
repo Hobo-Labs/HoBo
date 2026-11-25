@@ -146,7 +146,6 @@ describe("Station CI budget routing bridge", () => {
 			expect(await selected(client)).toBe("depot");
 			await bridge.accept(JSON.stringify(signalAt(1)));
 			expect(await selected(client)).toBe("k8");
-			// A credit recovers both thresholds; until the highest recovers, keep its profile.
 			await bridge.accept(JSON.stringify(signalAt(2)));
 			expect(await selected(client)).toBe("k8");
 			await bridge.accept(JSON.stringify(signalAt(3)));

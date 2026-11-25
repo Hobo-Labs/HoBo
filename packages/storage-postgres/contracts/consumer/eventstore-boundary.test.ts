@@ -2,20 +2,10 @@ import { describe, expect, it } from "vitest";
 import { isJsonObject, isJsonString } from "../../src/json.js";
 import { loadPact } from "../pact.js";
 
-/**
- * Consumer side of eventstore-boundary.pact.json. The consumer is the CD
- * reconciler transport, which classifies store failures by
- * `error.code` only: STALE_FENCE or *LEASE_CONFLICT means "lost the Camp",
- * OPTIMISTIC_SEQUENCE_CONFLICT means "re-read and retry", anything else is
- * "store unavailable". This test pins that every response the consumer
- * expects is one it can classify, and that successful responses carry
- * u64-safe decimal strings.
- */
 const pact = loadPact();
 
 type Classification = "lost-lease" | "retry" | "regression" | "unavailable";
 
-/** The reconciler's classification rule (mirrors the WP7 transport). */
 function classify(code: string): Classification {
 	if (
 		code === "STALE_FENCE" ||

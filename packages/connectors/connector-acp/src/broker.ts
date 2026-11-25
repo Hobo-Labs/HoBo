@@ -1,10 +1,5 @@
 import type { AgentPrincipal } from "./types.js";
 
-// The connector-token exchange seam (ai-native-agent-auth.md, promoted from
-// the connector-runtime-broker draft proof): the agent principal is a
-// brokered connector token bound to an SVID, always delegated by a human
-// user, and NEVER wider than the manifest allow.
-
 // public-contract: the token-exchange grant type the broker speaks.
 export const TOKEN_EXCHANGE_GRANT =
 	"urn:ietf:params:oauth:grant-type:token-exchange";
@@ -27,9 +22,6 @@ export interface ConnectorTokenBroker {
 	}>;
 }
 
-// Build the exchange request for one connector session. Requested scopes
-// may only ever NARROW the manifest allow — widening throws before any
-// broker call.
 export function buildConnectorTokenRequest(input: {
 	readonly requestId: string;
 	readonly principal: AgentPrincipal;

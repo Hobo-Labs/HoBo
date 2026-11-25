@@ -8,9 +8,6 @@ import {
 	createGenerateCommand,
 } from "../src/index.js";
 
-// `hobo generate <name> [ports...]` synthesizes a real provider from a port spec
-// and registers it, so `hobo registry` immediately shows it.
-
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const store of openStores) store.close();
@@ -25,7 +22,6 @@ function envelope(stdout: string): any {
 describe("createGenerateCommand", () => {
 	it("generates + registers a provider from a port spec, visible in registry", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -38,7 +34,6 @@ describe("createGenerateCommand", () => {
 		expect(gen.status).toBe("generated");
 		expect(gen.data.provider).toBe("acme-kv");
 		expect(gen.data.ports.sort()).toEqual(["kv", "objectStore"]);
-		// A real capability manifest was produced.
 		expect(gen.data.manifest.providerId).toBe("acme-kv");
 
 		const registry = envelope((await cli.run(["registry", "--json"])).stdout);
@@ -54,7 +49,6 @@ describe("createGenerateCommand", () => {
 
 	it("defaults to a kv port when none is given", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -67,7 +61,6 @@ describe("createGenerateCommand", () => {
 
 	it("refuses to overwrite an existing provider name", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -81,7 +74,6 @@ describe("createGenerateCommand", () => {
 
 	it("requires a name", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -92,9 +84,7 @@ describe("createGenerateCommand", () => {
 
 	it("reports unavailable when no runtime is wired", async () => {
 		const result = await createGenerateCommand().run({
-			// SAFETY: assertion required at this I/O or test boundary.
 			context: { cwd: "/tmp", projectDir: "/tmp" } as CliContext,
-			// SAFETY: assertion required at this I/O or test boundary.
 			flags: { cwd: "/tmp" } as never,
 			args: ["x"],
 			verb: "generate",

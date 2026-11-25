@@ -313,8 +313,6 @@ describe("atomic object journal replica", () => {
 		if (!object?.value || !replica) throw new Error("missing voter");
 		const head = (await replica.read())[0]?.reason.split(":")[2];
 		if (!head) throw new Error("missing head");
-		// SAFETY: this body was produced by the voter and its document shape was
-		// validated on every preceding write in this fixture.
 		const state = JSON.parse(object.value.body) as {
 			documents: { digest: string; value: string }[];
 		};
@@ -342,7 +340,6 @@ describe("atomic object journal replica", () => {
 		const object = stores[0],
 			replica = voters[0]?.replica;
 		if (!object?.value || !replica) throw new Error("missing voter");
-		// SAFETY: this state was written and validated by the fixture voter.
 		const state = JSON.parse(object.value.body) as {
 			documents: { digest: string; value: string }[];
 		};

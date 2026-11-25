@@ -27,7 +27,6 @@ function digest(value: string): void {
 		throw new Error("invalid plan or artifact digest");
 }
 
-/** Reserves a fresh private output directory before any check side effects. */
 export async function reserveArtifactDirectory(path: string): Promise<string> {
 	const target = resolve(path);
 	const parent = await realpath(dirname(target));
@@ -46,7 +45,6 @@ export function artifactReportDigest(report: AdoRunReport): string {
 	return hash(Buffer.from(serializedReport(report)));
 }
 
-/** Copies only the bytes that the runtime already collected and integrity-checked. */
 export async function writeArtifactBundle(
 	root: string,
 	result: PipelineResult,
@@ -131,7 +129,6 @@ export async function readBoundedFile(
 	}
 }
 
-/** Rejects unlisted entries and links without following them during the tree walk. */
 async function verifyBundleEntries(
 	root: string,
 	paths: readonly string[],
@@ -159,7 +156,6 @@ async function verifyBundleEntries(
 	await walk(root, "");
 }
 
-/** Verifies a local or natively downloaded Pipeline Artifact bundle. */
 export async function verifyArtifactBundle(
 	path: string,
 	expectedPlanDigest: string,

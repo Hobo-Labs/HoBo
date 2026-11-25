@@ -1,8 +1,3 @@
-// `decide` (D20) as a pure function over recorded inputs: the Placement, the
-// inventory snapshot of its bound Camp sets, score snapshots, the subject's
-// residency, the Rail's delivery object and `atMs`. No clock, network or
-// randomness, and no dependence on input order (I18). Observed claims only
-// ever exclude (I19); residency reads declared Yard regions only.
 import { create, toJson } from "@bufbuild/protobuf";
 import { evaluateResidency, type ResidencyConstraint } from "@hobo/core";
 import {
@@ -41,7 +36,6 @@ import type {
 } from "../ports.js";
 import { parseRequiredClaim } from "./parse.js";
 
-/** Exclusion codes recorded on candidates (every exclusion has one). */
 export const EXCLUSION = Object.freeze({
 	taintNotTolerated: "taint-not-tolerated",
 	claimMissing: "claim-missing",
@@ -56,18 +50,11 @@ export const EXCLUSION = Object.freeze({
 
 export type DecideInput = Readonly<{
 	placement: PlacementRecord;
-	/** Snapshot of the Placement's Camp sets that the Rail binds; nothing else is visible. */
 	snapshot: InventorySnapshot;
 	scores: readonly ScoreSnapshotRecord[];
 	subject: PlacementSubject;
 	railDelivery: RailDeliveryRecord | undefined;
-	/**
-	 * The Rail's `approvedProviders`. Stations Rails always carry one (default
-	 * `["local"]`), so undefined means the evidence is absent and the decision
-	 * is refused with `rail-providers-unknown` (fail closed, I5).
-	 */
 	approvedProviders?: readonly string[] | undefined;
-	/** Every defined Camp set name; a visible set outside it records `set-unknown`. */
 	knownSets?: readonly string[] | undefined;
 	exclude?: readonly string[] | undefined;
 	count?: number | undefined;
@@ -199,7 +186,6 @@ function exclusions(
 	return codes;
 }
 
-/** Latest unexpired snapshot per weighted score (ties by digest); expired ones are ignored, never extrapolated. */
 function liveScores(
 	placement: PlacementRecord,
 	scores: readonly ScoreSnapshotRecord[],
@@ -325,7 +311,6 @@ function select(
 	return { ok: true, value: { selected, blocked } };
 }
 
-/** Groups of a decision plus the reasons recorded while forming them. */
 type GroupedDecision = Readonly<{
 	groups: PlacementGroupDecisionRecord[];
 	reasons: ReasonRecord[];
@@ -402,12 +387,6 @@ function groupsOf(
 	return { groups, reasons };
 }
 
-/**
- * Deterministic decision id over every recorded input. `atMs` is an input on
- * purpose: score expiry and taint toleration windows depend on it, so a retry
- * at the same instant is one event (I12) while a retry at a later clock
- * reading is a new decision over possibly different evidence.
- */
 export function decisionIdOf(
 	input: DecideInput,
 	scoreDigests: readonly string[],

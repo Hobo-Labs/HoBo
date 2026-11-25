@@ -1,9 +1,3 @@
-/**
- * `pins:bump <name> <ref>` resolves a tag or a branch whose name looks like a
- * commit id (`beefcafe`, `20241013`) as the tag or branch it is: a short id
- * this clone (or the --reference clone) has comes first, then
- * `refs/tags/<name>^{commit}` on the server, then `refs/heads/<name>`.
- */
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -86,10 +80,8 @@ describe("fetch of a full submodule clone", () => {
 		const remote = makeRemote(dir);
 		const work = makeWork(dir, remote, 0);
 		const sub = join(work, "external/lib");
-		// A developer's own full clone of the library, at the pin.
 		git(work, ["submodule", "update", "--init", "--", "external/lib"]);
 		assert.equal(git(sub, ["rev-parse", "--is-shallow-repository"]), "false");
-		// Someone else moves the pin to a commit this clone has not fetched.
 		git(remote.dir, ["commit", "-q", "--allow-empty", "-m", "four"]);
 		const four = git(remote.dir, ["rev-parse", "HEAD"]);
 		git(work, ["update-index", "--cacheinfo", `160000,${four},external/lib`]);

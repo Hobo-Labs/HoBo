@@ -272,7 +272,6 @@ import (
 	}
 }
 
-// Fixture root for the provider-neutral admission boundary.
 #Budget: {
 	iacEvidence?: #IacTargetLiabilityEvidence
 	iacDecision?: #IacTargetAdmissionDecision

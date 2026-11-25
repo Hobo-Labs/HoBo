@@ -1,8 +1,3 @@
-// Content-addressed filesystem backend: blobs live at
-// `<root>/blobs/sha256/<hh>/<hex>`. A write goes to `<root>/tmp/` first, is
-// fsynced, renamed into place (atomic on one filesystem), and the directory
-// is fsynced, so a crash leaves either the whole blob or no blob — never a
-// partial one at a digest path. Temp files are never listed or read.
 import * as fs from "node:fs/promises";
 import { join } from "node:path";
 import type { Digest } from "../ports.js";
@@ -11,7 +6,6 @@ import { digestHex, parseDigest } from "./digest.js";
 import { errorCodeOf } from "./json.js";
 import { ARTIFACT_REASON, ArtifactStoreError } from "./reasons.js";
 
-/** The filesystem calls the backend makes; injectable so tests can fail one mid-write. */
 export type FilesystemIo = Readonly<{
 	mkdir: typeof fs.mkdir;
 	open: typeof fs.open;
@@ -63,8 +57,6 @@ export function createFilesystemBackend(
 	};
 
 	async function fsyncDirectory(dir: string): Promise<void> {
-		// Directory fsync makes the rename durable on POSIX. Platforms that
-		// cannot open a directory (Windows) refuse it; the rename is still atomic.
 		let handle: fs.FileHandle | undefined;
 		try {
 			handle = await io.open(dir, "r");

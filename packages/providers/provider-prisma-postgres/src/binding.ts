@@ -1,11 +1,3 @@
-/**
- * The portable binding emitted by a Prisma Postgres claimable database.
- *
- * One endpoint, one profile: `binding.postgresql/v1`. Prisma Postgres speaks
- * the PostgreSQL wire protocol through `db.prisma.io`, so there is nothing
- * provider-specific for a workload to consume and no second binding profile to
- * invent.
- */
 import {
 	type CapabilityBinding,
 	type CapabilityBindingInput,
@@ -55,8 +47,6 @@ export function buildPrismaCapabilityBinding(
 			? { expiresAtMs: input.expiresAtMs }
 			: undefined),
 		renewable: false,
-		// Undocumented for the claimable tier, so declared false rather than
-		// promised. See the README's "Not verified" section.
 		rotationSupported: false,
 		revocationSupported: false,
 		producerEvidenceRef: input.producerEvidenceRef,

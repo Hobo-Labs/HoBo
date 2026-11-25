@@ -20,13 +20,11 @@ const deployment = z
 	);
 
 it("derives the MCP wait ceiling from the duration vercel.json gives the relay function", () => {
-	// The platform is told this limit, and the code assumes the same one.
 	expect(deployment.functions["api/relay.ts"]?.maxDuration).toBe(
 		RELAY_FUNCTION_MAX_DURATION_SECONDS,
 	);
 	const ceiling = mcpWaitCeilingMs(RELAY_FUNCTION_MAX_DURATION_SECONDS);
 	expect(ceiling).toBe(50_000);
-	// A wait at the ceiling ends with half a minute of the function's time left.
 	expect(ceiling + 30_000).toBeLessThanOrEqual(
 		RELAY_FUNCTION_MAX_DURATION_SECONDS * 1000,
 	);
@@ -37,7 +35,6 @@ it("shortens the wait for a shorter function, and refuses one with no time to wa
 		const ceiling = mcpWaitCeilingMs(limit);
 		expect(ceiling).toBeGreaterThan(0);
 		expect(ceiling + 30_000).toBeLessThanOrEqual(limit * 1000);
-		// Never longer than an MCP client waits for an answer by default.
 		expect(ceiling).toBeLessThanOrEqual(50_000);
 	}
 	expect(mcpWaitCeilingMs(60)).toBe(30_000);

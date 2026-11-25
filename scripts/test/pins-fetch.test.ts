@@ -1,9 +1,3 @@
-/**
- * The verified, content-addressed fetch that every asset pin goes through:
- * bytes are kept only when they hash to the pin, nothing unverified is ever
- * executable, and the cache is keyed by content and re-hashed before it is
- * trusted.
- */
 import assert from "node:assert/strict";
 import {
 	closeSync,
@@ -147,7 +141,6 @@ describe("fetchVerified", () => {
 				? join(dir, name)
 				: undefined;
 		});
-		// Someone who can write the cache changes a byte the stream already hashed.
 		const fd = openSync(partial, "r+");
 		writeSync(fd, Buffer.from("X"), 0, 1, 0);
 		closeSync(fd);

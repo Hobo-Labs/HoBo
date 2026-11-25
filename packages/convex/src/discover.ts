@@ -5,7 +5,6 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
-/** Env required for any Convex+Vite+WorkOS AuthKit ship (swaghaus). */
 export const SWAGHAUS_GENERAL_ENV = Object.freeze([
 	"CONVEX_DEPLOY_KEY",
 	"VITE_CONVEX_URL",
@@ -34,7 +33,6 @@ export type DiscoveredConvexEnv = {
 	}[];
 };
 
-/** Resolve repo-relative convexApp(root) against a repo root. */
 export function resolveConvexRoot(repoRoot: string, root: string): string {
 	const abs = path.resolve(repoRoot, root);
 	if (!abs.startsWith(path.resolve(repoRoot))) {
@@ -84,9 +82,6 @@ async function exists(filePath: string): Promise<boolean> {
 	}
 }
 
-/**
- * Probe the Convex app root for `convex/` + auth.config and return ship env deps.
- */
 export async function discoverConvexEnv(
 	repoRoot: string,
 	root: string,
@@ -103,9 +98,7 @@ export async function discoverConvexEnv(
 			if (!text.includes("WORKOS")) {
 				generalEnv = generalEnv.filter((key) => !key.includes("WORKOS"));
 			}
-		} catch {
-			/* keep defaults */
-		}
+		} catch {}
 	}
 
 	return Object.freeze({

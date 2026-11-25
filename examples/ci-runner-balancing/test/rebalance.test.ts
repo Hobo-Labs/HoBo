@@ -131,7 +131,6 @@ describe("runRebalance", () => {
 			requestedBy: "test",
 			seq: "seq-10",
 		});
-		// Unset variable adopts the eligible cheapest rung: GitHub-hosted free tier.
 		expect(writes).toStrictEqual([
 			{ name: "HOBO_RUNNER_LINUX_SMALL", value: "ubuntu-latest" },
 		]);
@@ -212,9 +211,6 @@ describe("runRebalance", () => {
 			},
 		);
 		const decision = result.plan.decisions[0];
-		// GitHub-hosted is hard-blocked (spending limit) and no third-party
-		// provider is enabled: instead of failing closed, the dispatcher
-		// fails over to the requesting machine's last-resort label.
 		expect(decision?.kind).toBe(DecisionKind.FLIP);
 		expect(decision?.toValue).toBe("hobo-last-resort");
 		expect(decision?.providerId).toBe("requesting_machine");
@@ -242,9 +238,6 @@ describe("runRebalance", () => {
 			},
 		);
 		const decision = result.plan.decisions[0];
-		// GitHub's included minutes are exhausted (2200 > 2000) while
-		// Blacksmith still has free headroom: free credits win over GitHub's
-		// realtime billing even though GitHub is still under its envelope.
 		expect(decision?.kind).toBe(DecisionKind.FLIP);
 		expect(decision?.toValue).toBe("blacksmith-2vcpu-ubuntu-2404");
 		expect(decision?.usageKnown).toBe(true);

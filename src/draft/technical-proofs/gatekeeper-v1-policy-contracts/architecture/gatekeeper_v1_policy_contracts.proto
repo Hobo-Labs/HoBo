@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the Gatekeeper v1 draft package
-// reasons about. Design-time contract artifact; not compiled at runtime.
 
 enum GatekeeperV1EvidenceKind {
   EVIDENCE_KIND_UNSPECIFIED = 0;

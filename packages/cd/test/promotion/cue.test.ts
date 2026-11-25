@@ -1,4 +1,3 @@
-// data-models/promotion.cue agrees with the bodies the promotion saga writes.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +13,6 @@ import { camp, fid, HOUR } from "./store.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = join(here, "../../data-models/promotion.cue");
 
-/** `cue` on PATH, else the repo-pinned binary under an ancestor's `.tools/cue/<version>/cue`. */
 function findCue(): string | undefined {
 	try {
 		execFileSync("cue", ["version"], { stdio: "ignore" });
@@ -53,7 +51,6 @@ function vets(definition: string, value: JsonValue): boolean {
 	}
 }
 
-/** A persisted body as JSON (bodies are JSON by construction). */
 function json<T>(value: T): JsonValue {
 	return JSON.parse(JSON.stringify(value));
 }

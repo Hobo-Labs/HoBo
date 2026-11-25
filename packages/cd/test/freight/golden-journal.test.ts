@@ -1,7 +1,3 @@
-// Golden v1 event bodies for every Freight fact (append-only corpus): a
-// journal written by this release must fold identically in every later one.
-// Changing a body shape needs an upcaster plus a new corpus entry, never an
-// edit here.
 import type { JsonObject } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";

@@ -1,15 +1,3 @@
-/**
- * Worker-health evidence on the cache (ADR-0179 phase 5), in place of
- * `hobo_ci_worker_health`: the last success and failure of the repair tick
- * and of each repair scanner, one key per component with a 24-hour TTL,
- * advanced with compare-and-set so an older callback never overwrites newer
- * evidence.
- *
- * A missing key is "no evidence yet", reported as `starting`, not failing:
- * after a cache loss the next tick writes it. A component is `failing` when
- * its last failure is newer than its last success, or its last success is
- * older than 45 minutes (three missed repair ticks).
- */
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import { RELAY_TTL, relayCacheKeys } from "@hobo/ci-gh-actions/relay-cache";
 import type { EphemeralStatePort } from "@hobo/core";
@@ -26,7 +14,6 @@ export type RelayWorkerStatus = "ok" | "starting" | "failing";
 export type CacheWorkerHealthOptions = Readonly<{
 	state: EphemeralStatePort;
 	environment: string;
-	/** Evidence is kept per deployment, so a callback of an older release cannot vouch for this one. */
 	deploymentId?: string | undefined;
 	now?: () => number;
 }>;
@@ -38,7 +25,6 @@ function scope(deploymentId: string | undefined): string {
 	return deploymentId;
 }
 
-/** The relay's repair evidence, as `runRepairs` and `/readyz` use it. */
 export class CacheWorkerHealth {
 	private readonly keys: ReturnType<typeof relayCacheKeys>;
 	private readonly scope: string;
@@ -60,7 +46,6 @@ export class CacheWorkerHealth {
 			: undefined;
 	}
 
-	/** Record one outcome at `atMs`; evidence only ever moves forward. */
 	async mark(
 		component: RelayWorkerComponent,
 		ok: boolean,
@@ -105,7 +90,6 @@ export class CacheWorkerHealth {
 		throw new Error("worker health contended");
 	}
 
-	/** The scan's start, so a delayed completion cannot overwrite newer failure evidence. */
 	async startRepair(): Promise<string> {
 		return new Date(this.now()).toISOString();
 	}
@@ -125,7 +109,6 @@ export class CacheWorkerHealth {
 		);
 	}
 
-	/** A scanner may stop asking for continuations once it completed recently, after any failure. */
 	async repairComplete(index: number): Promise<boolean> {
 		if (index !== 0 && index !== 1) throw new Error("invalid repair index");
 		const [scanner, tick] = await Promise.all([
@@ -140,7 +123,6 @@ export class CacheWorkerHealth {
 		);
 	}
 
-	/** Each component's status; a missing key reads as `starting`. */
 	async status(): Promise<
 		Readonly<Record<RelayWorkerComponent, RelayWorkerStatus>>
 	> {
@@ -165,7 +147,6 @@ export class CacheWorkerHealth {
 		};
 	}
 
-	/** The worst component status: `failing`, else `starting`, else `ok`. */
 	async summary(): Promise<RelayWorkerStatus> {
 		const statuses = Object.values(await this.status());
 		return statuses.includes("failing")

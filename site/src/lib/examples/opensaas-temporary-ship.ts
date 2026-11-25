@@ -6,8 +6,6 @@ import {
 	type JsonValue,
 } from "../json-inspect.js";
 
-/** Same-origin OpenSaaS Temporary Accounts ship for Examples console. */
-
 export type OpenSaasTemporaryShipResult = {
 	readonly exampleId: string;
 	readonly stationId: string;
@@ -44,11 +42,6 @@ function sameOriginCfTempBase(pageUrl?: string | URL, basePath = "/HoBo/"): stri
 	return `${page.origin}${prefix}/api/cf-temp`;
 }
 
-/**
- * Ship real Open SaaS via Temporary Accounts.
- * `root` is the Bindle waspApp(root) path — server builds that tree.
- * Bindle `db` is realized via Neon Claimable (anon, zero project keys).
- */
 export async function shipOpenSaasViaTemporaryAccounts(input: {
 	readonly stationId: string;
 	readonly pageUrl?: string | URL;

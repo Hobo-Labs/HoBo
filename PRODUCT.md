@@ -92,7 +92,7 @@ routing notices, job timings and owner-session status the repository records.
 ## Capabilities and Constraints
 
 - Active design + executable contract/proof repository with a production
-  `packages/` workspace (144 package manifests).
+  `packages/` workspace.
 - The canonical `hobo` verb set dispatches against the local lane.
 - Live Vercel/Cloudflare paths and `HOBO_PULUMI_LIVE=1` are credential- or
   engine-gated, not default.

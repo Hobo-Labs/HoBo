@@ -10,12 +10,6 @@ import type {
 	GovernedAcpClient,
 } from "./types.js";
 
-// The stdio transport lane: spawn a vendor agent binary (`claude-code-acp`,
-// `gemini --experimental-acp`, ...) under the Executor sandbox posture and
-// speak REAL ACP to it over `@agentclientprotocol/sdk`'s ClientSideConnection
-// + ndJsonStream. The SDK import is LAZY with a typed gate so the replay
-// lane never needs the binary or the wire.
-
 // public-contract: typed gate when @agentclientprotocol/sdk cannot load.
 export const ACP_SDK_MISSING = "ACP_SDK_MISSING";
 // public-contract: typed failure when the agent subprocess cannot spawn.
@@ -58,10 +52,7 @@ async function loadAcpSdk() {
 export interface StdioAgentOptions {
 	readonly command: string;
 	readonly args?: readonly string[];
-	// The parse-enforced sandbox posture — the spawn scrubs the environment
-	// to its allowlist and chdirs into the workspace root.
 	readonly sandbox: AgentSandboxPosture;
-	// The governed client the SDK routes agent callbacks into.
 	readonly client: GovernedAcpClient;
 }
 
@@ -70,10 +61,6 @@ export interface StdioAgentHandle {
 	dispose(): void;
 }
 
-// Spawn the agent under the sandbox posture and wire the real ACP client
-// connection over its stdio. The returned connection is the same structural
-// seam the fixture implements — vendor adapters and conformance tests are
-// interchangeable above it.
 export async function connectAcpAgentOverStdio(
 	options: StdioAgentOptions,
 ): Promise<StdioAgentHandle> {
@@ -86,16 +73,12 @@ export async function connectAcpAgentOverStdio(
 	if (!child.stdin || !child.stdout) {
 		throw new AcpAgentSpawnError(options.command, "no stdio pipes");
 	}
-	child.on("error", () => {
-		// Surfaced on the next protocol call as a stream failure; the typed
-		// spawn error covers the synchronous cases below.
-	});
+	child.on("error", () => {});
 
 	const rawPair = {
 		input: Writable.toWeb(child.stdin),
 		output: Readable.toWeb(child.stdout),
 	};
-	// SAFETY: Node web streams satisfy the ACP SDK ndJsonStream pair.
 	const pair = rawPair as NdJsonPair;
 	const stream = sdk.ndJsonStream(pair.input, pair.output);
 	const connection = new sdk.ClientSideConnection(

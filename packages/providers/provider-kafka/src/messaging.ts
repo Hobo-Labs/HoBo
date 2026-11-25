@@ -1,13 +1,3 @@
-/**
- * Native Kafka-shaped Messaging adapter.
- *
- * Fidelity is honest:
- * - `live` only when a {@link KafkaBrokerTransport} is supplied (fake harness
- *   or real broker client implementing the same methods).
- * - `simulated` uses the pure in-process Messaging emulator (no transport).
- * - `live: true` without a transport throws (never labels live falsely).
- */
-
 import { randomUUID } from "node:crypto";
 import {
 	assertDeadLetterSupported,
@@ -51,11 +41,7 @@ import {
 export interface KafkaMessagingOptions {
 	readonly cluster: KafkaClusterSpec;
 	readonly metering?: MeteringBus;
-	/**
-	 * When true, requires {@link transport}. Never enables live fidelity alone.
-	 */
 	readonly live?: boolean;
-	/** Production/live path: all produce/fetch/commit go through this seam. */
 	readonly transport?: KafkaBrokerTransport;
 	readonly now?: () => string;
 	readonly settlementTimeoutMs?: number;
@@ -68,10 +54,6 @@ export interface KafkaMessaging extends Messaging {
 	readonly partitionsFor: (topic: TopicName) => number;
 }
 
-/**
- * Create a Kafka-backed Messaging surface.
- * Inject `transport` for the live client code path (unit harness or real broker).
- */
 export function createKafkaMessaging(
 	options: KafkaMessagingOptions,
 ): KafkaMessaging {
@@ -164,7 +146,6 @@ export function createKafkaMessaging(
 		return Object.freeze(simulated);
 	}
 
-	// Live path: every I/O goes through the broker transport.
 	const eventLog: MessagingEvent[] = [];
 	const leasePrefix = randomUUID();
 	let leaseSequence = 0;

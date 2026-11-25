@@ -1,16 +1,5 @@
 import { deepFreeze } from "../parse-utils.js";
 
-/**
- * Generic offering resolution, keyed by resource class.
- *
- * Extracted from the traffic-routing offering negotiation (ADR-0143): the
- * "resolve user intent against station-registered provider offerings" pattern
- * — prefer/require negotiation plus an ordered portable-fallback ladder — is
- * the same for every resource class (traffic routing, data stores, queues,
- * identity, …). Vocabulary modules pin the `Id`/`Provider` unions per class
- * (`traffic-routing-offerings.ts`, `data-store-offerings.ts`); this module
- * owns the negotiation semantics so they can never drift apart per class.
- */
 export type OfferingNegotiation = "prefer" | "require";
 
 export type OfferingStability = "stable" | "preview" | "experimental";
@@ -30,7 +19,6 @@ export interface ResourceOfferingProfile<
 > {
 	readonly provider: Provider;
 	readonly offerings: readonly ResourceOffering<Id>[];
-	/** Ordered fallback offering ids when native realization cannot cover the request. */
 	readonly fallbacks: readonly Id[];
 }
 
@@ -69,11 +57,6 @@ export type ResourceOfferingResolveResult<
 			readonly remediation: string;
 	  };
 
-/**
- * Match requested offerings against a provider profile with prefer/require
- * negotiation and the profile's fallback ladder. `resourceClass` names the
- * vocabulary in remediation messages (e.g. "traffic-routing", "data-store").
- */
 export function matchResourceOfferings<
 	Id extends string,
 	Provider extends string,
@@ -132,10 +115,6 @@ export function matchResourceOfferings<
 	};
 }
 
-/**
- * Resolve a request against candidate provider profiles for a resource class.
- * First profile that is not `none` wins (callers should rank by cost/policy).
- */
 export function resolveResourceOfferings<
 	Id extends string,
 	Provider extends string,
@@ -144,7 +123,6 @@ export function resolveResourceOfferings<
 	profiles: readonly ResourceOfferingProfile<Id, Provider>[],
 	request: ResourceOfferingRequest<Id> = {},
 	options: {
-		/** Reported as missing when no profiles are registered at all. */
 		readonly defaultMissing?: readonly Id[];
 	} = {},
 ): ResourceOfferingResolveResult<Id, Provider> {

@@ -1,10 +1,3 @@
-/**
- * The SQLite engine binding: the `@hobo/data-core` SPI over one store.
- *
- * Every method answers synchronously. The SPI allows that (`Awaitable`), and
- * it is what lets the same store back the synchronous ports `@hobo/trails`
- * runs its live lanes on.
- */
 import { type KeyObject, randomUUID } from "node:crypto";
 import { constants, copyFileSync, existsSync } from "node:fs";
 import type { DatabaseSync, SQLInputValue, StatementSync } from "node:sqlite";
@@ -30,27 +23,17 @@ export const SQLITE_ENGINE_PROFILE = "data.sqlite/v1";
 // public-contract: engine id reported in the SQLite engine declaration.
 export const SQLITE_ENGINE_ID = "sqlite";
 
-/**
- * Impedance this engine can report (ADR-0144). Each is a real limit of the
- * engine or of this binding, stated so nobody over-claims fidelity.
- */
 export const SQLITE_IMPEDANCE_CODES = [
-	/** Capture is a transactional outbox: a write that bypasses the binding is not captured. */
 	"SQLITE_CAPTURE_OUTBOX_ONLY",
-	/** The fence stops writers that go through the binding, not another process on the file. */
 	"SQLITE_FENCE_ENTRY_POINT",
-	/** Decimal, timestamp, date, uuid and json are stored as TEXT: exact through HoBo, unconstrained natively. */
 	"SQLITE_TEXT_AFFINITY_TYPES",
-	/** A schema snapshot is a file copy, so an in-memory store has no schema port. */
 	"SQLITE_SCHEMA_SNAPSHOT_NEEDS_FILE",
-	/** Text containing U+0000 is refused; SQLite would store it truncated. */
 	"SQLITE_TEXT_REFUSES_NUL",
 ] as const;
 
 const TEXT_NOTE =
 	"stored as TEXT in canonical form; exact through this binding, but SQLite itself accepts any text";
 
-/** How each canonical type lands in SQLite, and how faithful the trip is. */
 export const SQLITE_TYPE_MAPPING: JsonObject = Object.freeze({
 	engine: SQLITE_ENGINE_ID,
 	edges: [
@@ -136,10 +119,8 @@ export const SQLITE_TYPE_MAPPING: JsonObject = Object.freeze({
 
 // domain-view: construction options (adds an injected clock); wire form is SqliteEngineOptions in data-models/data_sqlite.proto.
 export interface SqliteEngineOptions {
-	/** Store file path, or `:memory:`. A file is required for the schema port. */
 	readonly path: string;
 	readonly clock?: () => string;
-	/** Trusted routing receivers that can issue exact-operation receipts. */
 	readonly operationReceivers?: ReadonlyMap<
 		string,
 		string | Buffer | KeyObject
@@ -147,7 +128,6 @@ export interface SqliteEngineOptions {
 }
 
 export interface SqliteEngine extends EngineBinding {
-	/** The store behind the binding, for the synchronous Trails ports. */
 	readonly store: SqliteDatasetStore;
 }
 
@@ -185,7 +165,6 @@ function declarationFor(
 	});
 }
 
-/** What the schema port needs from whatever owns the connection. */
 export interface SqliteSchemaHost {
 	readonly path: string;
 	connection(): DatabaseSync;
@@ -194,7 +173,6 @@ export interface SqliteSchemaHost {
 	operationFenceEnabled?(): boolean;
 }
 
-/** The schema port with synchronous signatures, as SQLite answers them. */
 export interface SyncSchemaApplyPort {
 	snapshot(): SchemaSnapshotRef;
 	applyPhase(
@@ -205,18 +183,11 @@ export interface SyncSchemaApplyPort {
 	restore(ref: SchemaSnapshotRef): void;
 }
 
-/** Whitespace, statement terminators and comments: SQL that does nothing. */
 const SQL_TRIVIA = /--[^\n]*|\/\*[\s\S]*?\*\/|[\s;]+/gu;
 
-/**
- * Prepare a query that must be exactly one statement. SQLite compiles the
- * first statement of a string and ignores the rest, so a second violations
- * query would never run and its violations would read as none.
- */
 function prepareSole(db: DatabaseSync, sql: string): StatementSync {
 	const statement = db.prepare(sql);
 	const compiled = statement.sourceSQL;
-	// Anything that is not a prefix is treated as wholly uncompiled.
 	const tail = sql.startsWith(compiled) ? sql.slice(compiled.length) : sql;
 	if (tail.replace(SQL_TRIVIA, "") !== "") {
 		throw new SqliteDataError(
@@ -233,26 +204,14 @@ function totalChanges(db: DatabaseSync): number {
 	return Number(row?.total ?? 0);
 }
 
-/**
- * Schema apply over a SQLite connection (ADR-0032 §3-4): real expand /
- * backfill / contract SQL, a mandatory restorable snapshot, and a restore
- * path. Rollback is forward-only — restore the snapshot and redeploy the
- * last-good Set; there are no `.down` scripts.
- */
 export function createSchemaPort(
 	host: SqliteSchemaHost,
 	clock: () => string,
 ): SyncSchemaApplyPort {
 	return {
 		snapshot(): SchemaSnapshotRef {
-			// A random ref, never a per-port counter: a counter restarts with the
-			// process, so re-running a crashed migration would snapshot the
-			// half-migrated store over the pre-migration copy and a later
-			// rollback would restore the damage.
 			const ref = `${host.path}.snapshot-${randomUUID()}`;
-			// Checkpoint any WAL state so the file copy is the full store.
 			host.connection().exec("PRAGMA wal_checkpoint(TRUNCATE)");
-			// Exclusive: an existing snapshot is never written over.
 			copyFileSync(host.path, ref, constants.COPYFILE_EXCL);
 			return Object.freeze({ ref, takenAt: clock() });
 		},
@@ -263,8 +222,6 @@ export function createSchemaPort(
 			if (statements.length === 0) {
 				return Object.freeze({ phase, statements: 0, changes: 0 });
 			}
-			// One transaction per phase: SQLite DDL is transactional, so a
-			// failing statement leaves nothing of the phase behind.
 			const changes = host.transaction(() => {
 				if (host.operationFenceEnabled?.())
 					throw new Error(
@@ -273,21 +230,14 @@ export function createSchemaPort(
 				const db = host.connection();
 				const before = totalChanges(db);
 				for (const statement of statements) {
-					// `exec`, not `prepare().run()`: an entry may hold several
-					// statements, and preparing it would run the first and report
-					// success for the rest.
 					db.exec(statement);
 				}
-				// Rows the phase inserted, updated or deleted. A statement's own
-				// `changes` is the count of the last DML before it, so DDL
-				// would repeat a stale number.
 				return totalChanges(db) - before;
 			});
 			return Object.freeze({ phase, statements: statements.length, changes });
 		},
 		verify(violationsQuery: string): readonly JsonObject[] {
 			return Object.freeze(
-				// SAFETY: SQL result rows are JSON-shaped evidence records.
 				prepareSole(host.connection(), violationsQuery).all() as JsonObject[],
 			);
 		},
@@ -313,8 +263,6 @@ export function createSqliteEngine(options: SqliteEngineOptions): SqliteEngine {
 		operationReceivers: receivers,
 	});
 	const fileBacked = options.path !== ":memory:";
-	// File-replacement restores cannot be fenced by a database row across close
-	// and reopen. Do not expose schema mutation on this lock-enabled binding.
 	const operationFenceEnabled = store.operationFenceEnabled();
 	const schemaAllowed = fileBacked && !operationFenceEnabled;
 	const binding: SqliteEngine = {

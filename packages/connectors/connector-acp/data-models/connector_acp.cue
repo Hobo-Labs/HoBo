@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the ACP connector wire records. One constraint per
-// protobuf message in connector_acp.proto.
 
 #AgentPrincipalRecord: {
 	kind:            "agent"

@@ -29,16 +29,12 @@ describe("main workspace shard capacity", () => {
 		}
 	});
 
-	// Run 43130657460: repo-wide at cap 4, slowest shard planned at 1375 s,
-	// cancelled at the 19-minute step limit (finding 117).
 	const fiveMinuteSuites = {
 		defaultSeconds: 300,
 		seconds: new Map<string, number>(),
 	};
 
 	it("adds shards past the cap, no more than the slowest shard needs", () => {
-		// Ten 5-minute suites: two fit the 12-minute budget per shard, so five
-		// shards, where the cap of two would leave 25 minutes on each.
 		const planned = planMainWorkspaceShardCount(scoped(10), 2, {
 			durations: fiveMinuteSuites,
 		});

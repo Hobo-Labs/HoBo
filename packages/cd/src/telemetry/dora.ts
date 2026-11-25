@@ -1,20 +1,3 @@
-// DORA four keys and reconcile lag (WP19, C13) as a materialized view over
-// the event store. `computeDora` is the pure definition (hand-checkable); the
-// projection only gathers its facts from the journal, incrementally from a
-// position cursor, so a refresh reads only new events (the cursor is the
-// view's snapshot; the in-memory facts are its read store).
-//
-// Definitions (per Camp, filtered by `campIds` when given; window is
-// (now − windowMs, now]):
-//   - Deployment: an `env.Promoted` for a Bindle (Rail promotions excluded).
-//   - Deployment frequency: deployments in the window per day.
-//   - Lead time: `env.Promoted` time − the Freight's `freight.Recorded` time.
-//   - Change failure: a deployment followed, on the same Camp and before that
-//     Camp's next deployment, by an `env.PromoteRolledBack`.
-//   - Time to restore: that rollback's time − the failed deployment's time
-//     (DORA's "failed deployment recovery time").
-//   - p50 is the nearest-rank median: the ⌈n/2⌉-th smallest value. Empty
-//     samples report 0 (no deployments, nothing to measure).
 import { type DescMessage, fromJson } from "@bufbuild/protobuf";
 import type {
 	DurableEventStore,
@@ -47,7 +30,6 @@ export type DoraRollback = Readonly<{ campId: string; atMs: number }>;
 export type DoraFacts = Readonly<{
 	deployments: readonly DoraDeployment[];
 	rollbacks: readonly DoraRollback[];
-	/** Freight id → `freight.Recorded` time. */
 	recordedAtMs: ReadonlyMap<string, number>;
 }>;
 
@@ -119,7 +101,6 @@ export function computeDora(facts: DoraFacts, query: DoraQuery): DoraMetrics {
 
 type CampMark = Readonly<{ setId: string; atMs: number }>;
 
-/** Reconcile lag: how far a Camp's status trails its latest desired Set. */
 export function computeReconcileLag(
 	specs: readonly CampMark[],
 	converged: readonly CampMark[],
@@ -138,7 +119,6 @@ export function computeReconcileLag(
 
 function parse<D extends DescMessage>(schema: D, event: EventEnvelope) {
 	try {
-		// SAFETY: event-store bodies are JSON; fromJson parses or throws.
 		const data = event.data as JsonValue;
 		return fromJson(schema, data, { ignoreUnknownFields: true });
 	} catch {
@@ -153,7 +133,6 @@ function ms(text: string): number | undefined {
 }
 
 export type DoraProjection = Readonly<{
-	/** Catch up from the cursor; returns the number of events read. */
 	refresh(): Promise<number>;
 	facts(): DoraFacts;
 	specs(campId: string): readonly CampMark[];

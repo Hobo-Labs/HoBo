@@ -1,15 +1,3 @@
-/**
- * The reader's name keys against Unicode's own tables. Two names a
- * case-insensitive file system stores as one file must share a key, or the
- * reader would accept an archive whose second copy of the member overwrites
- * the first there. `support/unicode-casefold.json` holds, for every assigned
- * code point of Unicode 15.1, its full case folding under canonical
- * equivalence (Linux casefold directories) and its simple uppercase (NTFS),
- * the BMP code points that version leaves unassigned, and the
- * Default_Ignorable_Code_Point ranges; its generator is
- * `support/unicode-casefold.py`. `foldName` is the first key, `upcaseName` the
- * second; either may join more names than its file system does.
- */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -37,7 +25,6 @@ function readTable(): Table {
 
 const TABLE = readTable();
 
-/** A name as the reader gets it: UTF-8 bytes in a latin1 string. */
 const asBytes = (text: string): string =>
 	Buffer.from(text, "utf8").toString("latin1");
 
@@ -92,8 +79,6 @@ describe("upcaseName", () => {
 			if ((point >= 0xd800 && point <= 0xdfff) || unassigned(point)) continue;
 			const expected = String.fromCodePoint(simple.get(point) ?? point);
 			const got = upcase(String.fromCodePoint(point));
-			// A runtime on a later Unicode may give a 15.1 code point an uppercase
-			// 15.1 had not assigned yet (U+019B, U+0264 in 16.0): that only joins more.
 			const newer =
 				!simple.has(point) && unassigned(got.codePointAt(0) ?? point);
 			if (got !== expected && !newer) {
@@ -109,7 +94,6 @@ describe("upcaseName", () => {
 	});
 });
 
-/** mulberry32: the same names on every run. */
 function seeded(seed: number): () => number {
 	let state = seed;
 	return () => {
@@ -123,13 +107,11 @@ function seeded(seed: number): () => number {
 describe("random names", () => {
 	const FOLD = new Map(TABLE.fold);
 	const UPPER = new Map(TABLE.upcase);
-	/** Unicode's canonical caseless key of a whole name, NFD(casefold(NFD(name))), from the table. */
 	const caseless = (text: string): string =>
 		[...text.normalize("NFD")]
 			.map((char) => FOLD.get(char.codePointAt(0) ?? 0) ?? char)
 			.join("")
 			.normalize("NFD");
-	/** NTFS's key of a whole name: each BMP code point to its simple uppercase, from the table. */
 	const ntfs = (text: string): string =>
 		[...text]
 			.map((char) => {

@@ -1,31 +1,4 @@
 #!/usr/bin/env node
-/**
- * Obtain, check and move the pins in tools/pins/siblings.json.
- *
- *   node --experimental-strip-types scripts/bootstrap-siblings.mts [options]
- *
- *   (no verb)                     initialise every git pin (the submodule at its gitlink)
- *   --status [--offline|--online] report every pin; exit 1 when one has drifted
- *   --fetch [name...]             initialise git pins; download and verify asset pins
- *   --bump <name> <ref> [--repo URL] [--drop TARGET]... [--entry NAME] [--member PATH]
- *                                 move one pin: a git pin's gitlink (staged), or an
- *                                 asset pin to a release tag (siblings.json rewritten);
- *                                 a release of <name>_<tag>_<os>_<arch>.tar.gz archives
- *                                 is pinned by the archive, running its member PATH
- *                                 (default <name>)
- *
- *   --reference <dir>             borrow objects from a local clone (no download for what it has)
- *   --root <dir>                  the repository to act on (default: the one holding this script)
- *
- * Runs before `pnpm install`: erasable TypeScript, node builtins only, and
- * `git` on PATH. Exit 0 ok, 1 a check or an operation failed, 2 wrong usage.
- *
- * HOBO_PINS_NET_TIMEOUT_MS bounds every network wait (default 120000, at most
- * 600000); running out is NET_TIMEOUT, with nothing staged or kept.
- *
- * HOBO_PINS_ALLOW_LOCAL=1 additionally accepts loopback http URLs and local
- * repository paths in the manifest. The tests set it; nothing else should.
- */
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,7 +44,6 @@ function usage(message: string): never {
 	throw new PinsError("USAGE", `${message}\n${USAGE}`);
 }
 
-/** pnpm passes the `--` of `pnpm run pins:status -- --online` through; no pin name or ref starts with a dash. */
 function withoutSeparator(args: readonly string[]): string[] {
 	const at = args.indexOf("--");
 	return at === -1 ? [...args] : [...args.slice(0, at), ...args.slice(at + 1)];
@@ -132,7 +104,7 @@ function parseRequest(args: readonly string[]): Request {
 	) {
 		usage(`--reference ${reference} is not a git repository`);
 	}
-	netTimeoutMs(); // a bad HOBO_PINS_NET_TIMEOUT_MS is a usage error before anything runs
+	netTimeoutMs();
 	const here = fileURLToPath(new URL("..", import.meta.url));
 	return {
 		verb,
@@ -184,8 +156,6 @@ try {
 		console.error(`ERR ${error.message}`);
 		process.exitCode = error.code === "USAGE" ? 2 : 1;
 	} else if (error instanceof Error && process.env.HOBO_PINS_DEBUG !== "1") {
-		// A system error (a path that is the wrong kind, a timeout) is one line,
-		// not a stack; HOBO_PINS_DEBUG=1 shows the stack.
 		console.error(
 			`ERR ${"code" in error ? String(error.code) : error.name}: ${error.message}`,
 		);

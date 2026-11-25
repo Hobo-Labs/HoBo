@@ -1,24 +1,3 @@
-/**
- * The TrafficRouting port's parse boundary.
- *
- * A strict parse-don't-validate layer, and the strictness is the interesting
- * part. Three properties are load-bearing and each is pinned directly:
- *
- * **Unknown keys are refused, not ignored.** A typo'd field in a routing plan
- * would otherwise be silently dropped, and a dropped `weight` means traffic
- * splits differently from what the author wrote. Refusing turns a silent
- * misroute into a parse error.
- *
- * **A plan's rules may only reference backends the plan declares — and must
- * match them exactly.** Two copies of a backend that disagree on weight or
- * endpoint is a plan with two answers, so the cross-reference check compares
- * whole objects rather than just ids.
- *
- * **Every path in an error names where the failure was.** These documents nest
- * several levels; "invalid weight" without `plan.intent.rules[2].backends[1]`
- * is unactionable on anything real.
- */
-
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/json.js";
 
@@ -108,8 +87,6 @@ describe("parseBackendRef", () => {
 	});
 
 	it("refuses an unknown key rather than ignoring it", () => {
-		// A dropped field means the plan does something other than what was
-		// written, silently. Refusing makes that a parse error instead.
 		expect(() => parseBackendRef(backend({ wieght: 50 }))).toThrow(
 			TrafficRoutingParseError,
 		);
@@ -157,7 +134,6 @@ describe("parseBackendRef", () => {
 
 describe("parseRoutingRule", () => {
 	it("defaults the weight strategy to static", () => {
-		// An absent strategy must be a definite one, not undefined behaviour.
 		expect(parseRoutingRule(rule()).weightStrategy).toBe("static");
 	});
 
@@ -172,7 +148,6 @@ describe("parseRoutingRule", () => {
 	});
 
 	it("rejects duplicate backend ids within one rule", () => {
-		// Two entries for one backend is a rule with two answers for it.
 		expect(() =>
 			parseRoutingRule(rule({ backends: [backend(), backend()] })),
 		).toThrow(/unique backend id/u);
@@ -226,8 +201,6 @@ describe("parseMinAvailabilitySpec", () => {
 	});
 
 	it.each([0, -1, 1.5])("rejects the count %s", (value) => {
-		// A minimum of zero is not a minimum; it is the absence of one, and
-		// should be expressed by omitting the field.
 		expect(() =>
 			parseMinAvailabilitySpec({ minHealthyBackends: value }),
 		).toThrow(TrafficRoutingParseError);
@@ -246,8 +219,6 @@ describe("parseResiliencySpec", () => {
 	});
 
 	it("accepts zero retries but not a zero timeout", () => {
-		// Zero retries is a real choice — "try once". A zero timeout is not a
-		// timeout, so the two use different numeric guards on purpose.
 		expect(parseResiliencySpec({ retries: 0 }).retries).toBe(0);
 		expect(() => parseResiliencySpec({ timeoutMs: 0 })).toThrow(
 			TrafficRoutingParseError,
@@ -304,8 +275,6 @@ describe("parseRoutingPlan cross-references", () => {
 	});
 
 	it("rejects a rule referencing an undeclared backend", () => {
-		// A plan that routes to something it never declared is a plan whose
-		// backends list is not the source of truth it claims to be.
 		expect(() =>
 			parseRoutingPlan(
 				plan({
@@ -330,8 +299,6 @@ describe("parseRoutingPlan cross-references", () => {
 	});
 
 	it("rejects a backend that matches by id but differs in detail", () => {
-		// Two copies that disagree on weight is a plan with two answers. The
-		// check compares whole objects rather than just ids for this reason.
 		expect(() =>
 			parseRoutingPlan(
 				plan({
@@ -399,8 +366,6 @@ describe("parseRoutingPlan cross-references", () => {
 	});
 
 	it("keeps degraded when explicitly false", () => {
-		// `false` is a statement, not an absence; dropping it would lose the
-		// distinction between "not degraded" and "not measured".
 		expect(parseRoutingPlan(plan({ degraded: false })).degraded).toBe(false);
 	});
 

@@ -1,9 +1,3 @@
-// The `native` realization of the copy patterns, run with the reference
-// engine's opt-in native profile. What is proven here: the engine's own
-// transport carries the records and the hub ports are never touched; the run
-// holds while the engine is slow and resumes from its facts; a native
-// realization that cannot run is an error and never a quiet hub run; and the
-// journal carries neither a record nor the fence token.
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
@@ -49,8 +43,6 @@ const ORDERS: DatasetSchema = parseDatasetSchema({
 });
 
 const ALLOW = evaluateCustodyPath({
-	// One point per role: a run holds on a path that leaves out a copy it
-	// creates — the relay, the retained log, the retiring source.
 	path: parseCustodyPath({
 		points: CUSTODY_ROLES.map((role) => ({
 			id: role,
@@ -85,11 +77,6 @@ interface Staged {
 	readonly journal: MigrationJournal;
 }
 
-/**
- * A linked pair. Neither side has the ports the hub would need — no scan and
- * no capture on the source, no apply on the target — so a run that completes
- * here cannot have gone through the hub.
- */
 async function staged(rows: number): Promise<Staged> {
 	const link = createReferenceNativeLink();
 	const source = createReferenceEngine({
@@ -182,7 +169,6 @@ describe("native realization — snapshot-and-tail", () => {
 						return ALLOW;
 					},
 					afterPhase: async (phase) => {
-						// Writes between phases, as an application would make them.
 						if (
 							phase === "fence-and-flip" ||
 							phase === "soak" ||
@@ -202,7 +188,6 @@ describe("native realization — snapshot-and-tail", () => {
 			),
 		);
 		assert.equal(result.status, "completed", result.reason);
-		// The verdict was recomputed before every phase, as it is for the hub.
 		assert.deepEqual(phases, [
 			"gate",
 			"prepare",
@@ -220,12 +205,9 @@ describe("native realization — snapshot-and-tail", () => {
 		assert.equal(planned?.type, MIGRATION_EVENTS.Planned);
 		assert.equal(planned?.data.realization, "native");
 		assert.equal(planned?.data.profile, REFERENCE_NATIVE_PROFILE);
-		// 20 seeded, 6 written between phases, 6 deleted — 5 distinct, since
-		// two phase names are the same length.
 		assert.equal(await count(stage.target), 21);
 		assert.equal(await count(stage.source), 0, "the source is retired");
 		assert.deepEqual(stage.link.open(), [], "the transfer was closed");
-		// The prepare checkpoint names the transfer and carries its ticket.
 		assert.deepEqual(result.state.checkpoints.prepare, {
 			realization: "native",
 			profile: REFERENCE_NATIVE_PROFILE,
@@ -275,13 +257,11 @@ describe("native realization — snapshot-and-tail", () => {
 		assert.match(held.reason ?? "", /native initial copy has not finished/u);
 		assert.equal(held.rollback, "lossless");
 		assert.equal(await count(stage.target), 0);
-		// A hold is not an outage: the source keeps taking writes.
 		await stage.source.records.write({
 			dataset: "orders",
 			mutations: [order("while-held", "1")],
 		});
 
-		// The copy finishes, then the tail lags.
 		stage.link.stall(false);
 		const lagging = await runSnapshotAndTail(
 			native(
@@ -367,7 +347,6 @@ describe("native realization — snapshot-and-tail", () => {
 		const options = () =>
 			native(stage, {
 				flipAuthority: (flip) => {
-					// By the time authority moves, the engine's transport is gone.
 					assert.deepEqual(stage.link.open(), []);
 					if (crash) {
 						crash = false;
@@ -406,7 +385,6 @@ describe("native realization — snapshot-and-tail", () => {
 			"no reverse tail: the old side went stale at the flip",
 		);
 		assert.deepEqual(stage.link.open(), [], "closed at the cutover");
-		// The target is the authority now; an erasure lands there.
 		await stage.target.records.write({
 			dataset: "orders",
 			mutations: [
@@ -436,7 +414,6 @@ describe("native realization — snapshot-and-tail", () => {
 			undefined,
 			"an erased subject stays erased",
 		);
-		// The source takes writes again, and nothing carries them anywhere.
 		await stage.source.records.write({
 			dataset: "orders",
 			mutations: [order("after-rollback", "1")],
@@ -482,7 +459,6 @@ describe("native realization — no silent downgrade", () => {
 		const refused = await refusal(() => runSnapshotAndTail(options));
 		assert.equal(refused.code, "NATIVE_REALIZATION_UNAVAILABLE");
 		assert.match(refused.message, /hub realization is not substituted/u);
-		// Nothing was planned, and nothing was copied by any other route.
 		assert.deepEqual(await journal.load("m1"), []);
 		assert.equal(await target.datasets.describeDataset("orders"), undefined);
 		return refused;
@@ -490,7 +466,6 @@ describe("native realization — no silent downgrade", () => {
 
 	test("a target without the port is an error, though the hub could have run", async () => {
 		const link = createReferenceNativeLink();
-		// Both sides have every hub port: a fallback would succeed silently.
 		const source = createReferenceEngine({ native: link });
 		const target = createReferenceEngine();
 		await source.datasets.ensureDataset(ORDERS);
@@ -626,7 +601,6 @@ describe("native realization — no silent downgrade", () => {
 		assert.equal(refused.code, "INVALID_MIGRATION_PLAN");
 		assert.match(refused.message, /planned with the native realization/u);
 		assert.equal((await journal.load("m1")).length, facts, "nothing was added");
-		// The hub's forward subscription was never started behind its back.
 		assert.equal(
 			await requirePort(target, "apply").watermark({
 				dataset: "orders",
@@ -637,7 +611,6 @@ describe("native realization — no silent downgrade", () => {
 		const done = await runSnapshotAndTail(options("native"));
 		assert.equal(done.status, "completed", done.reason);
 
-		// And the other way round, on a fresh pair and a fresh migration.
 		const other = createMemoryMigrationJournal();
 		const from = createReferenceEngine({ native: link });
 		const to = createReferenceEngine({ native: link });
@@ -660,7 +633,6 @@ describe("native realization — no silent downgrade", () => {
 
 	test("a transfer the engine refuses fails the run with its code in the journal, and the hub is not tried", async () => {
 		const stage = await staged(3);
-		// A target that already holds records: a native copy cannot merge.
 		await stage.target.datasets.ensureDataset(ORDERS);
 		await stage.target.records.write({
 			dataset: "orders",
@@ -676,7 +648,6 @@ describe("native realization — no silent downgrade", () => {
 		assert.equal(failed?.data.reason, "DataCoreError: NATIVE_TRANSFER_REFUSED");
 		assert.equal(await count(stage.target), 1, "nothing was copied");
 		assert.equal(await count(stage.source), 3);
-		// Abandoning the migration: the half-opened transfer is stopped by name.
 		assert.deepEqual(stage.link.open(), [nativeTransferName("m1")]);
 		const ref = {
 			profile: REFERENCE_NATIVE_PROFILE,
@@ -734,7 +705,6 @@ describe("native realization — no silent downgrade", () => {
 			),
 			"SOURCE_UNREACHABLE",
 		);
-		// A transfer that was never opened, or was stopped, is lost — loudly.
 		const lostCodes = [
 			await refusal(async () => targetPort.seeded(ref)),
 			await refusal(async () => sourcePort.mark({ ...ref, transfer: "never" })),
@@ -777,7 +747,6 @@ describe("native realization — offline-copy", () => {
 			dataset: "orders",
 			mutations: [order("between-attempts", "1")],
 		});
-		// The transfer was left in place for the next attempt.
 		assert.deepEqual(stage.link.open(), [nativeTransferName("m1")]);
 		stage.link.stall(false);
 		const done = await runOfflineCopy(native(stage));
@@ -853,7 +822,6 @@ describe("the journal carries no fence token", () => {
 				);
 				assert.equal(cutOver?.data.fenceToken, undefined);
 				assert.equal(cutOver?.data.fenceTokenDigest, fenceTokenDigest(token));
-				// Soak and finalize find the fence again from the digest.
 				const done = await run(options({}));
 				assert.equal(done.status, "completed", done.reason);
 				assert.ok(
@@ -872,8 +840,6 @@ describe("the journal carries no fence token", () => {
 		assert.equal(held.status, "held");
 		const scope = scopeOf("orders");
 		const fence = requirePort(stage.source, "fence");
-		// Someone lifts the fence, the old authority takes a write, and a
-		// different fence goes up.
 		await fence.release({ scope, fenceToken: await raw(stage.source) });
 		await stage.source.records.write({
 			dataset: "orders",
@@ -896,7 +862,6 @@ describe("the journal carries no fence token", () => {
 		);
 		assert.equal(held.status, "held");
 		const token = await raw(stage.source);
-		// Rewrite the journal into the form it used to have.
 		const legacy = createMemoryMigrationJournal();
 		for (const [index, fact] of (await stage.journal.load("m1")).entries()) {
 			const { fenceTokenDigest: digest, ...rest } = fact.data;
@@ -971,13 +936,9 @@ describe("retirement cannot reach the new authority", () => {
 			flipAuthority: () => {},
 		});
 		assert.equal(result.status, "completed", result.reason);
-		// After the cutover the forward subscription is stopped, then the
-		// source retired. It is never read in between or afterwards, so an
-		// engine that logs the retirement as deletes has nobody to hand them to.
 		assert.deepEqual(calls, ["stop hobo_migration_m1_forward", "retire"]);
 		assert.equal(await count(target), 3, "the target keeps every record");
 		assert.equal(await count(real), 0);
-		// And a write the new authority takes afterwards is not disturbed.
 		await target.records.write({
 			dataset: "orders",
 			mutations: [order("o-4", "4")],
@@ -988,7 +949,6 @@ describe("retirement cannot reach the new authority", () => {
 
 	test("a rollback stops the forward subscription too, so a durable source's log is not pinned for ever", async () => {
 		const real = createReferenceEngine({ engine: "source" });
-		// No capture on the target: no reverse tail, a to-snapshot rollback.
 		const target = createReferenceEngine({
 			engine: "target",
 			omit: ["capture"],
@@ -1021,7 +981,6 @@ describe("retirement cannot reach the new authority", () => {
 			scope: scopeOf("orders"),
 			flipAuthority: () => {},
 			soakDecision: () => decision,
-			// A to-snapshot rollback needs the ledger; here nothing was erased.
 			erasures: { since: () => [] },
 		});
 		assert.equal((await runSnapshotAndTail(options("hold"))).status, "held");
@@ -1029,7 +988,6 @@ describe("retirement cannot reach the new authority", () => {
 		const rolled = await runSnapshotAndTail(options("rollback"));
 		assert.equal(rolled.status, "rolled-back");
 		assert.deepEqual(stopped, ["hobo_migration_m1_forward"]);
-		// The source writes again.
 		await source.records.write({
 			dataset: "orders",
 			mutations: [order("o-2", "2")],

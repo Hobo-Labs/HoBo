@@ -11,8 +11,6 @@ async function listCueSchemas(dataModelsDir: string): Promise<string[]> {
 		.sort((left, right) => left.localeCompare(right));
 }
 
-// Category containers whose children are themselves packages
-// (pnpm-workspace.yaml globs packages/<category>/*).
 const NESTED_PACKAGE_CATEGORIES = [
 	"adapters",
 	"providers",
@@ -52,8 +50,6 @@ export function discoverDataModelPackages(
 	const discovered: DataModelPackage[] = [];
 	for (const { name, packageDir } of candidates) {
 		const dataModelsDir = join(packageDir, "data-models");
-		// A package opts into codegen by giving its data-models a buf module
-		// marker; bare .proto/.cue folders are documentation-only until they do.
 		if (!existsSync(join(dataModelsDir, "buf.yaml"))) continue;
 		if (options.filter && !packageDir.startsWith(resolve(options.filter)))
 			continue;

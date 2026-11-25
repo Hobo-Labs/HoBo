@@ -80,7 +80,6 @@ interface TargetPack {
 	readonly canHostNow: boolean;
 	readonly unavailableReason?: string;
 	readonly native: readonly string[];
-	/** Matching prefer-degrades (missing ports) — formerly ad-hoc lowers. */
 	readonly lowers: Readonly<Record<string, string>>;
 	readonly environment: string;
 }
@@ -98,13 +97,11 @@ interface LiveHost {
 	readonly exampleTitle: string;
 	readonly runtime: StationHostRuntime;
 	readonly frame: HTMLIFrameElement;
-	/** Anonymous / Temporary Accounts claim URL when the host issued one. */
 	readonly claimUrl?: string;
 }
 
 export const HOST_SANDBOX_TOKENS = ["allow-scripts"] as const;
 
-/** Ship stays locked until Pool has at least one deployed station. */
 export const SHIP_LOCKED_DEPLOY_LABEL = "Locked — deploy stations first";
 export const SHIP_GATE_PLAN_LINE = "Deploy at least one station in Pool first.";
 export const SHIP_RUNTIME_MISSING_LABEL = "Pick a local-bridge app";
@@ -115,11 +112,8 @@ export function shipStationsReady(stationCount: number): boolean {
 	return stationCount > 0;
 }
 
-/** Targets whose Environment Station hosts fully in-page on a static site. */
 export const IN_PAGE_STATION_TARGETS = ["browser-wasm"] as const;
 
-/** Static hosts (GitHub Pages) have no same-origin temp API; browser-wasm
- * stations still host in-page when the WIT runtime assets are published. */
 export function canHostStationInPage(
 	targetId: string,
 	witRuntimeAvailable: boolean,
@@ -134,8 +128,6 @@ function isInPageStationTarget(targetId: string): boolean {
 	return false;
 }
 
-/** Pool outcome after per-target isolation: partial provision is success —
- * remote yards failing on a static host must not block in-page stations. */
 export type PoolDeployOutcome = {
 	readonly state: "stations-ready" | "failed";
 	readonly line: string;
@@ -240,8 +232,6 @@ export async function bootExamplesConsole(): Promise<void> {
 	let live: LiveHost[] = [];
 	let busy = false;
 	const revokeAnonymousStations = () => {
-		// Same-origin anon hosts are disk-backed under site/.hobo-anon-hosts;
-		// no blob: object URLs to revoke.
 	};
 
 	const selectedAppSet = () =>
@@ -582,9 +572,6 @@ export async function bootExamplesConsole(): Promise<void> {
 			const createdAt = new Date().toISOString();
 			const nextStations: DeployedStation[] = [];
 			const failedTargetIds: string[] = [];
-			/** Static-host fallbacks when the same-origin temp API is absent:
-			 * in-page browser station first (browser-wasm), then the optional
-			 * local bridge (`?bridge=`) for docker/CLI-backed targets. */
 			const provisionStationFallback = async (
 				target: StationTarget,
 				stationId: string,
@@ -644,9 +631,6 @@ export async function bootExamplesConsole(): Promise<void> {
 				let expiresAt: string | undefined;
 				try {
 				if (target.id === "cloudflare") {
-					// Real Cloudflare Temporary Account via same-origin /api/cf-temp
-					// (astro dev) or configured Temporary Accounts CORS relay.
-					// Never stamp blob: and call it Cloudflare.
 					const provisioned = await provisionCloudflareStationViaBroker({
 						stationId,
 					});
@@ -1114,10 +1098,6 @@ export async function bootExamplesConsole(): Promise<void> {
 	void current;
 }
 
-/** Station deploy from the provider pool + demo policy preset.
- * Selecting a yard widens the resource pool and replica budget so operator
- * Pool stamps are not blocked as not-in-resource-pool / over-replica.
- */
 export function resolveStationDeployPlan(
 	yards: readonly ExampleYard[],
 	selected: ReadonlySet<string>,
@@ -1145,7 +1125,6 @@ export function resolveStationDeployPlan(
 	);
 }
 
-/** Example deploy onto already-registered stations (filtered by example yards). */
 export function resolveExampleStationPlan(
 	example: ExampleCatalogEntry,
 	stations: readonly DeployedStation[],
@@ -1207,7 +1186,6 @@ function packFor(id: string): TargetPack {
 	return pack;
 }
 
-/** Whether a Pool yard target is selectable (never fake-disabled for CF/Railway). */
 export function targetPackCanHostNow(targetId: string): boolean {
 	return packFor(targetId).canHostNow;
 }
@@ -1220,7 +1198,6 @@ export function defaultPoolTargetIds(yards: readonly ExampleYard[]): Set<string>
 	);
 }
 
-/** Browser WASM + Webernetes share one Pool dropdown option. */
 export const LOCAL_YARD_TARGET_IDS = ["browser-wasm", "webernetes"] as const;
 
 export type YardUiOption = {
@@ -1296,8 +1273,6 @@ export function yardSelectionSummary(
 		(option) => yardOptionSelectionState(option, selected) === "all",
 	);
 	const allTargetCount = allYardUiTargetIds(options).length;
-	// Local merges browser-wasm + webernetes into one option — summary must
-	// report station/target count (matches Deploy stations N), not option count.
 	if (fully.length === options.length && selected.size === allTargetCount) {
 		return `All · ${selected.size} stations`;
 	}
@@ -1405,7 +1380,6 @@ function renderYardSelect(
 	type YardSelectElement = HTMLSelectElement & {
 		_yardState?: YardSelectState;
 	};
-	// SAFETY: the yard picker stores prior selection on the select element instance.
 	const selectState = select as YardSelectElement;
 	const picker =
 		select.closest<HTMLElement>("[data-yard-picker]") ??
@@ -1905,7 +1879,6 @@ export function normalizeBase(value: string | undefined): string {
 	return `${value ?? "/"}`.replace(/\/?$/u, "/");
 }
 
-/** Last selected app wins for Ship Bindle focus; fall back to first selected / catalog. */
 export function pickSourceFocusId(
 	selected: ReadonlySet<string>,
 	focusId: string | null | undefined,
@@ -1916,9 +1889,6 @@ export function pickSourceFocusId(
 	return first ?? fallbackId;
 }
 
-/**
- * Prefer the active live host's example when present; otherwise Ship selection.
- */
 export function resolveStageSourceFocusId(input: {
 	readonly selected: ReadonlySet<string>;
 	readonly sourceFocusId: string | null | undefined;

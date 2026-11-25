@@ -1,5 +1,3 @@
-// PipelineController.apply (D4, D21, D24): graph validation at the parse
-// boundary, governance, one pipeline per Bindle, idempotent re-apply.
 import { describe, expect, it } from "vitest";
 import {
 	AutoPromotion,

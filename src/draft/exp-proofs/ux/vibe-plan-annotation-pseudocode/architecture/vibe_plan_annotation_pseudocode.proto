@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for HOBO-543. These records describe deterministic
-// plan annotation fixtures only; they are not policy, billing, approval, or UI
-// runtime implementations.
 
 enum PlanAnnotationProofMode {
   PLAN_ANNOTATION_PROOF_MODE_UNSPECIFIED = 0;

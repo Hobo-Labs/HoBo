@@ -1,8 +1,3 @@
-/**
- * Broker discovery document — mandatory before remote/anonymous deploy.
- * Parse-don't-validate: invalid payloads fail closed.
- */
-
 import {
 	cloneAsJson,
 	isJsonBoolean,
@@ -50,7 +45,6 @@ export function parseBrokerDiscoveryDocument(
 			"HOBO_DISCOVERY_INVALID",
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = raw as JsonObject;
 	if (obj.schemaVersion !== BROKER_DISCOVERY_SCHEMA) {
 		throw new BrokerDiscoveryError(
@@ -85,14 +79,11 @@ export function parseBrokerDiscoveryDocument(
 				"HOBO_DISCOVERY_INVALID",
 			);
 		}
-		// SAFETY: assertion required at this I/O or test boundary.
 		return m as BrokerAuthMethod;
 	});
 	const supportsAnonymous =
 		obj.supportsAnonymous === true || authMethods.includes("anonymous");
 	if (!isJsonBoolean(obj.supportsAnonymous)) {
-		// If omitted, derive from authMethods only when anonymous is listed.
-		// Explicit false must be respected when present.
 	}
 	const explicitAnon = isJsonBoolean(obj.supportsAnonymous)
 		? obj.supportsAnonymous
@@ -142,14 +133,8 @@ function requireString(value: JsonValue | undefined, field: string): string {
 	return value.trim();
 }
 
-/**
- * Fetch discovery from well-known paths under the broker URI.
- * HONEST SCOPE: production brokers may serve protected-resource metadata;
- * this client tries the HoBo well-known first, then /.well-known/oauth-protected-resource.
- */
 export function createBrokerDiscoveryClient(options?: {
 	readonly fetchImpl?: typeof fetch;
-	/** Inject a fixed document (tests / in-process mock broker). */
 	readonly fixed?: ReadonlyMap<string, BrokerDiscoveryDocument | unknown>;
 }): BrokerDiscoveryClient {
 	const fetchImpl = options?.fetchImpl ?? fetch;
@@ -177,7 +162,6 @@ export function createBrokerDiscoveryClient(options?: {
 						continue;
 					}
 					const body = await res.json();
-					// Protected-resource metadata may wrap our document.
 					const parsedBody = isJsonObject(body) ? body : {};
 					const nested = parsedBody.hobo_broker;
 					const candidate =

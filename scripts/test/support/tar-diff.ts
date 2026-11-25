@@ -1,9 +1,3 @@
-/**
- * What the reader and the system `tar` each make of one archive, for the
- * tests that hold the reader to `tar`: the reader's answer (the member's
- * sha256 or the code it refused with) and what `tar -xzf` leaves at the
- * member's path, extracting the whole archive or only the member.
- */
 import { spawn, spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,14 +13,11 @@ const NAMES = new Map([
 	[sha256Hex(EVIL), "EVIL"],
 ]);
 
-/** GOOD or EVIL for their digests, anything else as it is. */
 export const label = (answer: string): string => NAMES.get(answer) ?? answer;
 
-/** True when `answer` is a member's sha256, not a refusal. */
 export const accepted = (answer: string): boolean =>
 	/^[0-9a-f]{64}$/u.test(answer);
 
-/** The reader's answer: the member's sha256, or the code it refused with. */
 export async function readerSays(
 	path: string,
 	member: string,
@@ -39,12 +30,6 @@ export async function readerSays(
 	}
 }
 
-/**
- * Why the comparisons with GNU tar cannot run under `env`, or `false` when
- * they can. GNU tar is the reference, so `tar --version` must run and say
- * "GNU tar": any other tar on PATH (bsdtar among them) is named by its own
- * banner and never compared against.
- */
 export function gnuTarMissing(
 	env: NodeJS.ProcessEnv = process.env,
 ): string | false {
@@ -57,10 +42,8 @@ export function gnuTarMissing(
 	return `the tar on PATH is not GNU tar (it says ${JSON.stringify(banner)}), and GNU tar is the reference these comparisons hold the reader to`;
 }
 
-/** `false` when GNU tar is on PATH, else why every comparison with it is skipped. */
 export const noGnuTar = gnuTarMissing();
 
-/** What is at `at` after an extract: a regular file's sha256, or what is there instead. */
 function leftAt(at: string): string {
 	try {
 		const stat = lstatSync(at);
@@ -71,7 +54,6 @@ function leftAt(at: string): string {
 	}
 }
 
-/** `tar`'s exit status for `args`, or -1 when it was killed or could not start. */
 function tarStatus(args: readonly string[]): Promise<number> {
 	return new Promise((resolve) => {
 		const child = spawn("tar", args, { stdio: "ignore" });
@@ -80,7 +62,6 @@ function tarStatus(args: readonly string[]): Promise<number> {
 	});
 }
 
-/** What `tar` leaves at `member`, and its exit status when not 0. */
 export async function tarLeaves(
 	path: string,
 	member: string,
@@ -94,10 +75,6 @@ export async function tarLeaves(
 	return status === 0 ? found : `${label(found)} (tar exit ${status})`;
 }
 
-/**
- * Where the reader accepted `path` and named `answer`, each extract that left
- * anything else at the member, as one line per extract; nothing when it agrees.
- */
 export async function disagreements(
 	what: string,
 	path: string,
@@ -116,7 +93,6 @@ export async function disagreements(
 	return found;
 }
 
-/** `disagreements` for many archives, eight `tar` runs at a time. */
 export async function allDisagreements(
 	cases: readonly {
 		readonly what: string;

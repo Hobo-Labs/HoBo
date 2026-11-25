@@ -1,5 +1,3 @@
-/** Path filters aligned with `.github/workflows/release-hobo.yml` pull_request.paths. */
-
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -40,7 +38,6 @@ export function loadReleaseHoboPullRequestPathFilters(
 	);
 }
 
-/** Match GitHub workflow path filter globs (no leading `./`). */
 export function pathMatchesReleaseHoboFilter(
 	filePath: string,
 	filter: string,

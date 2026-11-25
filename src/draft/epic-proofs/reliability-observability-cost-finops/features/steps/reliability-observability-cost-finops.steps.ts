@@ -1,12 +1,3 @@
-/**
- * Executable step definitions for reliability-observability-cost-finops.feature.
- *
- * Drives the epic's real reference simulation
- * (services/reliability-reference-architecture.ts), which executes the
- * promoted telemetry, SLO, metering, saga, and golden-chaos technical proofs.
- * Every assertion reads a value the simulation computed; no live telemetry,
- * billing, or chaos backend is called.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -21,8 +12,6 @@ function simulation(): Promise<Simulation> {
 	simulationPromise ??= runReliabilityObservabilityCostSimulation();
 	return simulationPromise;
 }
-
-// --- Scenario: Deploy burn creates a rollback obligation -------------------
 
 let telemetrySlice: Simulation["telemetry"] | undefined;
 let negativeSlice: Simulation["negative"] | undefined;
@@ -58,8 +47,6 @@ Then("missing SLI data keeps the reliability gate fail-closed", () => {
 		"regenerated-malformed-traceparent",
 	);
 });
-
-// --- Scenario: Spend pressure degrades safely ------------------------------
 
 let finopsSlice: Simulation["finops"] | undefined;
 
@@ -100,8 +87,6 @@ Then(
 	},
 );
 
-// --- Scenario: Partial deploy failure compensates --------------------------
-
 let recoverySlice: Simulation["recovery"] | undefined;
 
 Given(
@@ -126,8 +111,6 @@ Then("the Run Inspector exposes completed reliability replay evidence", () => {
 	assert.equal(recoverySlice?.runInspector.status, "completed");
 	assert.equal(negativeSlice?.staleSagaLease, "stale saga lease");
 });
-
-// --- Scenario: Golden Suite and chaos evidence -----------------------------
 
 let statusSlice: Simulation["status"] | undefined;
 

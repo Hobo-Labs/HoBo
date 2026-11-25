@@ -1,24 +1,3 @@
-/**
- * Resolving a private Wasm guest, and the mesh env headers.
- *
- * `resolvePrivateWasmGuest` is a precedence chain over the filesystem, and a
- * precedence chain is exactly the kind of code that keeps working while being
- * subtly wrong: if two candidates both exist and the order changes, the build
- * still succeeds and produces a different component. So each rung is pinned
- * against a directory where the rungs below it *also* exist.
- *
- * The order encodes a real rule. An explicit `modulePath` beats everything
- * because the caller said so. A prebuilt `.wasm` beats a source module because
- * someone already compiled it deliberately. `dist/` beats `src/` for the same
- * reason. And a missing explicit path is an error while a missing inferred one
- * is not — the first is a caller who asked for something that is not there, the
- * second is a project that simply has no guest yet.
- *
- * `applyHoboMeshEnvHeaders` writes the bindle env onto every mesh hop, in two
- * forms at once: per-key headers and one JSON map. Both are pinned, and so is
- * the lowercasing, since HTTP header names are case-insensitive on the wire but
- * the per-key lookup is not.
- */
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -32,7 +11,6 @@ import {
 	resolvePrivateWasmGuest,
 } from "../src/sandbox.js";
 
-/** A project directory containing exactly the files named. */
 function project(...files: string[]): string {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-wasm-"));
 	for (const file of files) {
@@ -59,8 +37,6 @@ describe("an explicit module path", () => {
 	});
 
 	it("beats a prebuilt wasm, because the caller said so", () => {
-		// The caller's explicit choice outranks anything inferred, including a
-		// compiled artifact.
 		const dir = project("custom/entry.ts", "dist/wasm/api.wasm");
 		const resolved = resolve(dir, "custom/entry.ts");
 		expect(resolved.appModulePath).toBe(join(dir, "custom/entry.ts"));
@@ -75,8 +51,6 @@ describe("an explicit module path", () => {
 	});
 
 	it("throws when it does not exist", () => {
-		// A caller who named a file that is not there has made a mistake; falling
-		// back to inference would build something they did not ask for.
 		expect(() => resolve(project(), "custom/missing.ts")).toThrow(
 			/modulePath not found/u,
 		);
@@ -106,7 +80,6 @@ describe("a prebuilt component", () => {
 	});
 
 	it("prefers dist over src", () => {
-		// Someone compiled into dist deliberately; src is the working copy.
 		const dir = project("src/wasm/api.wasm", "dist/wasm/api.wasm");
 		expect(resolve(dir).wasmPath).toBe(join(dir, "dist/wasm/api.wasm"));
 	});
@@ -147,8 +120,6 @@ describe("a hand-written guest", () => {
 	});
 
 	it("is reported alongside an app module rather than instead of it", () => {
-		// Both are inputs to the same build: the guest is the wrapper, the app
-		// module is what it wraps.
 		const dir = project("src/wasm/api-guest.mjs", "src/api.ts");
 		const resolved = resolve(dir);
 		expect(resolved.guestSourcePath).toBeTruthy();
@@ -186,15 +157,11 @@ describe("the app module search", () => {
 	});
 
 	it("prefers src over dist for a source module", () => {
-		// The reverse of the wasm rule, and deliberately so: for *sources* the
-		// working copy is authoritative, for *artifacts* the built one is.
 		const dir = project("dist/api.js", "src/api.js");
 		expect(resolve(dir).appModulePath).toBe(join(dir, "src/api.js"));
 	});
 
 	it("reports nothing found rather than throwing", () => {
-		// An inferred path that is absent is a project with no guest yet, not an
-		// error — unlike an explicit one the caller named.
 		const resolved = resolve(project());
 		expect(resolved.appModulePath).toBeNull();
 		expect(resolved.wasmPath).toBeNull();
@@ -225,8 +192,6 @@ describe("applyHoboMeshEnvHeaders", () => {
 	});
 
 	it("also writes the whole env as one JSON map", () => {
-		// Both forms travel: per-key for cheap lookup, the map so a hop can
-		// forward an env it does not itself understand.
 		const env = { A: "1", B: "2" };
 		const headers = applyHoboMeshEnvHeaders(new Headers(), env);
 		expect(JSON.parse(headers.get(HOBO_BINDLE_ENV_HEADER) ?? "{}")).toEqual(
@@ -243,7 +208,6 @@ describe("applyHoboMeshEnvHeaders", () => {
 	});
 
 	it("does not mutate the headers it was given", () => {
-		// A hop that mutated its caller's headers would leak env upstream.
 		const original = new Headers();
 		applyHoboMeshEnvHeaders(original, { A: "1" });
 		expect(original.get(`${HOBO_ENV_HEADER_PREFIX}a`)).toBeNull();
@@ -255,8 +219,6 @@ describe("applyHoboMeshEnvHeaders", () => {
 	});
 
 	it("overwrites a stale value from a previous hop", () => {
-		// The current hop's env wins; appending would produce two values for one
-		// key and a consumer reading either.
 		const headers = applyHoboMeshEnvHeaders(
 			new Headers({ [`${HOBO_ENV_HEADER_PREFIX}a`]: "old" }),
 			{ A: "new" },
@@ -275,8 +237,6 @@ describe("defaultHoboHome", () => {
 	});
 
 	it("ignores an empty HOBO_HOME rather than returning an empty path", () => {
-		// An empty path would resolve to the process's working directory, which
-		// is how a toolchain gets installed into somebody's project.
 		expect(defaultHoboHome({ HOBO_HOME: "" })).toMatch(/\.hobo$/u);
 	});
 });

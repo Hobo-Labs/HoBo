@@ -1,7 +1,3 @@
-/**
- * Platform recipe catalog (OpenRewrite-inspired composition).
- * identity.continuous is hands-off — zero Bindle config required.
- */
 import {
 	defineTrail,
 	type TrailDefinition,
@@ -24,9 +20,7 @@ export type PlatformRecipeId =
 export type PlatformRecipe = Readonly<{
 	id: PlatformRecipeId;
 	description: string;
-	/** Expands into concrete Trail steps. */
 	expand: () => readonly TrailStep[];
-	/** Pure continuous identity requires no app authoring. */
 	bindleConfigRequired: boolean;
 	handsOffContinuous: boolean;
 }>;
@@ -84,8 +78,6 @@ const catalog = {
 		description: "Golden dual-consistency / zero-loss validation",
 		bindleConfigRequired: false,
 		handsOffContinuous: false,
-		// dependsOn for app dual/schema steps is wired by wireTrailPhaseDependencies
-		// (platform recipes cannot know app step ids at expand time).
 		expand: () =>
 			Object.freeze([
 				Object.freeze({
@@ -100,8 +92,6 @@ const catalog = {
 		description: "Cutover gate after dual window is healthy",
 		bindleConfigRequired: false,
 		handsOffContinuous: false,
-		// Depends on validation-oracle; wireTrailPhaseDependencies also ties
-		// validation to dual/schema/data so cutover cannot beat dual by id sort.
 		expand: () =>
 			Object.freeze([
 				Object.freeze({
@@ -139,10 +129,6 @@ export function listPlatformRecipes(): readonly PlatformRecipe[] {
 	return Object.freeze(Object.values(catalog));
 }
 
-/**
- * Expand recipeList into concrete steps (hierarchical composition).
- * identity.continuous expands without any Bindle fields.
- */
 export function expandRecipes(
 	recipeIds: readonly string[],
 ): readonly TrailStep[] {
@@ -159,10 +145,6 @@ export function expandRecipes(
 	return Object.freeze(steps);
 }
 
-/**
- * Built-in hands-off Trail for pure continuous identity (zero app authoring).
- * Matching/policy activate this; Bindle config is never required.
- */
 export function identityContinuousTrail(version = "1.0.0"): TrailDefinition {
 	return defineTrail({
 		id: "platform.identity.continuous",
@@ -174,15 +156,11 @@ export function identityContinuousTrail(version = "1.0.0"): TrailDefinition {
 	});
 }
 
-/**
- * Compose app Trail with platform recipes (recipeList + steps).
- */
 export function composeTrailWithRecipes(
 	trail: TrailDefinition,
 ): TrailDefinition {
 	const expanded = expandRecipes(trail.recipeList ?? []);
 	if (expanded.length === 0) return trail;
-	// Prefix recipe steps that aren't already present.
 	const existing = new Set(trail.steps.map((s) => s.id));
 	const merged = [
 		...expanded.filter((s) => !existing.has(s.id)),

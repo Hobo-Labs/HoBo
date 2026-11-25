@@ -1,6 +1,3 @@
-// Fleet and policy suites: PlacementEngine
-// permutation determinism, FanoutController, PostureEvaluator, CampInventory.
-// Also pins the fleet rows these suites prove.
 import {
 	CAMP_INVENTORY_ASSERTIONS,
 	FANOUT_CONTROLLER_ASSERTIONS,

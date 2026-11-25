@@ -77,8 +77,6 @@ describe("resolveGitMirrorRoot", () => {
 	it("falls back when the preferred root cannot be created", () => {
 		const fallback = mkdtempSync(join(tmpdir(), "hobo-git-mirror-fb-"));
 		roots.push(fallback);
-		// A permission failure is simulated: as root, a read-only parent
-		// directory would not stop mkdir, and this test runs as root in containers.
 		for (const code of ["EACCES", "EPERM", "EROFS"])
 			expect(
 				resolveGitMirrorRoot("/var/lib/hobo-ci/git", fallback, (root) => {
@@ -86,7 +84,6 @@ describe("resolveGitMirrorRoot", () => {
 						throw Object.assign(new Error("denied"), { code });
 				}),
 			).toBe(fallback);
-		// Any other failure is not a reason to fall back.
 		expect(() =>
 			resolveGitMirrorRoot("/var/lib/hobo-ci/git", fallback, () => {
 				throw Object.assign(new Error("full"), { code: "ENOSPC" });
@@ -126,9 +123,6 @@ describe("createBoxGitMirror mirror path", () => {
 		roots.push(root);
 		const locked = join(root, "locked");
 		mkdirSync(locked);
-		// A file where the owner directory goes stops mkdir for every user. A
-		// read-only root would not: as root mkdir ignores the mode, and this
-		// test runs as root in containers.
 		writeFileSync(join(locked, "Hobo-Labs"), "");
 		const mirror = createBoxGitMirror({
 			root: locked,
@@ -238,7 +232,6 @@ describe("createBoxGitMirror", () => {
 		expect(isCompleteGitMirror(mirror.path)).toBe(true);
 	});
 
-	/** Objects of the commit's tree the mirror does not hold. */
 	function missingObjects(mirrorPath: string, sha: string): string[] {
 		return git(mirrorPath, [
 			"rev-list",
@@ -251,7 +244,6 @@ describe("createBoxGitMirror", () => {
 			.filter((line) => line.startsWith("?"));
 	}
 
-	/** A job's checkout: one commit, from the mirror alone, GitHub out of reach. */
 	function checkoutFromMirrorAlone(
 		root: string,
 		mirrorPath: string,
@@ -279,7 +271,6 @@ describe("createBoxGitMirror", () => {
 
 	function filteringSource(root: string): CommitSource & { url: string } {
 		const made = commitSource(root);
-		// GitHub honours blob:none; a bare path does not, and would hide the bug.
 		git(made.source, ["config", "uploadpack.allowFilter", "true"]);
 		git(made.source, ["config", "uploadpack.allowAnySHA1InWant", "true"]);
 		return { ...made, url: `file://${made.source}` };
@@ -334,8 +325,6 @@ describe("createBoxGitMirror", () => {
 		});
 		mkdirSync(join(mirror.path, ".."), { recursive: true });
 		git(root, ["clone", "--bare", "--filter=blob:none", url, mirror.path]);
-		// A repair that dropped the markers without fetching the blobs: the
-		// mirror now reads as complete, so only the whole-tree check catches it.
 		git(mirror.path, ["config", "--unset", "remote.origin.promisor"]);
 		git(mirror.path, ["config", "--unset", "remote.origin.partialclonefilter"]);
 		expect(isCompleteGitMirror(mirror.path)).toBe(true);

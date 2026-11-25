@@ -1,15 +1,3 @@
-/**
- * The read boundary for a matrix that came from somewhere else.
- *
- * A matrix that has been committed to a repository, shipped over a wire, or
- * round-tripped through JSON is untrusted input. This is the one place it
- * crosses back into a derived domain type: past `parseCapabilityMatrix` an
- * incomplete grid, an unknown verdict, an unsorted bucket, or a digest that
- * does not describe the body is unrepresentable, so no consumer re-checks
- * them.
- *
- * Parse, don't validate — the return type is the proof, not a boolean.
- */
 import {
 	isBindlePrimitive,
 	isBindleRuntime,
@@ -89,7 +77,6 @@ function object(value: JsonValue, path: string): JsonObject {
 			"must be an object",
 		);
 	}
-	// SAFETY: the preceding tag and array checks establish a plain object.
 	return value as JsonObject;
 }
 
@@ -101,7 +88,6 @@ function array(value: JsonValue, path: string): readonly JsonValue[] {
 			"must be an array",
 		);
 	}
-	// SAFETY: the preceding tag check establishes a primitive string value.
 	return value;
 }
 
@@ -113,7 +99,6 @@ function text(value: JsonValue, path: string): string {
 			"must be a string",
 		);
 	}
-	// SAFETY: the preceding tag check establishes a primitive string value.
 	return value as string;
 }
 
@@ -137,7 +122,6 @@ function instant(value: JsonValue, path: string): number {
 			"must be an integer epoch-millisecond instant",
 		);
 	}
-	// SAFETY: the preceding tag and integer checks establish a numeric instant.
 	return value as number;
 }
 
@@ -170,7 +154,6 @@ function member<T extends string>(
 	path: string,
 ): T {
 	const parsed = text(value, path);
-	// SAFETY: vocabulary is a readonly string literal collection by contract.
 	if (!(vocabulary as readonly string[]).includes(parsed)) {
 		throw new CapabilityMatrixError(
 			"UNKNOWN_VOCABULARY",
@@ -178,11 +161,9 @@ function member<T extends string>(
 			`${JSON.stringify(parsed)} is not one of ${vocabulary.join(", ")}`,
 		);
 	}
-	// SAFETY: includes() established that parsed is a member of vocabulary.
 	return parsed as T;
 }
 
-/** Definition ids must arrive sorted and unique, or the digest is unstable. */
 function definitionIds(value: JsonValue, path: string): readonly string[] {
 	const entries = array(value, path).map((entry, index) =>
 		nonEmptyText(entry, `${path}[${index}]`),
@@ -262,8 +243,6 @@ function candidate(
 			`${primitive}/${runtime} is not a Bindle primitive and runtime pair`,
 		);
 	}
-	// A candidate filed under the wrong cell would make every per-cell count a
-	// lie while the grid still looked complete.
 	if (primitive !== coordinate.primitive || runtime !== coordinate.runtime) {
 		throw new CapabilityMatrixError(
 			"INVALID_CAPABILITY_MATRIX",
@@ -350,8 +329,6 @@ function cell(
 		record.verdict,
 		`${path}.verdict`,
 	);
-	// The verdict is a pure function of the buckets, so a recorded verdict that
-	// disagrees with them is evidence the record was edited by hand.
 	const derived = deriveCoverageVerdict(parsedBuckets);
 	if (verdict !== derived) {
 		throw new CapabilityMatrixError(
@@ -398,12 +375,6 @@ function exclusion(value: JsonValue, path: string): CapabilityMatrixExclusion {
 	};
 }
 
-/**
- * Parse an untrusted matrix document into a `CapabilityMatrix`.
- *
- * Rejects, rather than repairs: a grid missing a cell is not a matrix with a
- * gap, it is not a matrix.
- */
 export function parseCapabilityMatrix(
 	value: CapabilityMatrixDocument,
 ): CapabilityMatrix {
@@ -456,7 +427,6 @@ export function parseCapabilityMatrix(
 	return { ...body, digest: recomputed };
 }
 
-/** Non-throwing variant, for callers surveying several stored matrices. */
 export function tryParseCapabilityMatrix(
 	value: CapabilityMatrixDocument,
 ): CapabilityMatrix | undefined {

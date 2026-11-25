@@ -1,7 +1,3 @@
-// Golden v1 event bodies for placement.* (append-only upcaster corpus): a
-// journal written by this release must fold identically in every later one.
-// Changing a body shape needs an upcaster plus a new corpus entry, never an
-// edit here.
 import type { JsonObject } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { TaintEffect } from "../../src/_generated/cd_pb.js";
@@ -146,7 +142,6 @@ describe("golden placement journal corpus (v1 bodies)", () => {
 			"residency-conflict:jurisdiction-not-allowed",
 		]);
 		expect(decision?.scoreSnapshotDigests).toEqual([DIGEST_B]);
-		// The recorded snapshot is re-read for later decisions as is.
 		const reported = jsonOf(store.events(scoreStream("capacity"))[0]?.data);
 		expect(stringAt(reported, "digest")).toBe(DIGEST_B);
 	});

@@ -41,7 +41,6 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 	return tagOf.call(value) === "[object Array]";
 }
 
-/** Clone a domain value across the JSON document boundary. */
 export function cloneAsJson<T>(value: T): JsonValue {
 	return parseJsonValue(JSON.stringify(value ?? null));
 }
@@ -49,7 +48,6 @@ export function cloneAsJson<T>(value: T): JsonValue {
 export function parseJsonObject(text: string): JsonObject {
 	let value: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		value = JSON.parse(text) as JsonValue;
 	} catch {
 		return {};
@@ -59,7 +57,6 @@ export function parseJsonObject(text: string): JsonObject {
 
 export function parseJsonValue(text: string): JsonValue {
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return null;

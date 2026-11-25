@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes for the HOBO-472 launch
-// site release-candidate evidence contract. This is a design-time schema
-// artifact, not a runtime compilation target.
 
 enum LaunchSiteReleaseCandidateEvidenceStatus {
   LAUNCH_SITE_RELEASE_CANDIDATE_EVIDENCE_STATUS_UNSPECIFIED = 0;

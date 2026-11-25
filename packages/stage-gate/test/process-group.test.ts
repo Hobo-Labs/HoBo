@@ -1,8 +1,3 @@
-/**
- * scanGroup (ADR-0172): what the process table shows of ai-bdd's group once
- * kill(-pgid, 0) has found a member. Most cases read a process table laid out
- * in a temp dir; the odd comm reads the real one.
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -42,13 +37,11 @@ describe("scanGroup", () => {
 	});
 
 	it("is live while a member whose main thread exited still runs other threads", () => {
-		// Linux shows such a thread-group leader as Z, with num_threads above 1.
 		const leaderExited = { ...zombie(101), comm: "python3", threads: 2 };
 		expect(scanGroup(GROUP, table([zombie(100), leaderExited]))).toBe("live");
 	});
 
 	it("is live for a Z member whose num_threads is not 1: only a zombie of one thread is let go", () => {
-		// Linux never writes 0 or a word there; a line that does is not read as a zombie.
 		for (const threads of [0, Number.NaN]) {
 			const odd = { ...zombie(101), threads };
 			expect(scanGroup(GROUP, table([zombie(100), odd]))).toBe("live");
@@ -56,14 +49,12 @@ describe("scanGroup", () => {
 	});
 
 	it("is live when the table shows no member, as a /proc of another PID namespace does", () => {
-		// kill(-pgid, 0) has just found a member: a table that shows none cannot say it is gone.
 		const elsewhere = { ...zombie(100), state: "S", pgrp: 7 };
 		expect(scanGroup(GROUP, table([elsewhere]))).toBe("live");
 		expect(scanGroup(GROUP, table([]))).toBe("live");
 	});
 
 	it("is elsewhere when the pgid shows only in another session's processes: the number was reused", () => {
-		// Ours leads its own session; a process that took the freed number for a group of its own did not.
 		const stranger = { ...zombie(100), state: "S", session: 77 };
 		expect(scanGroup(GROUP, table([stranger]))).toBe("elsewhere");
 	});
@@ -77,8 +68,6 @@ describe("scanGroup", () => {
 	});
 
 	it("is live when an entry's stat cannot be read for a reason other than its process being gone", () => {
-		// EISDIR here; EACCES under hidepid=1 for another user's process, EMFILE at the fd limit.
-		// Such an entry may be a member the scan cannot see, so beside a zombie it is not a group of zombies.
 		const root = table([zombie(100)]);
 		mkdirSync(join(root, "101", "stat"), { recursive: true });
 		expect(scanGroup(GROUP, root)).toBe("live");
@@ -91,8 +80,6 @@ describe("scanGroup", () => {
 	it.runIf(process.platform === "linux")(
 		"reads the fields after the last ')': a live process named 'a) Z 1 2 (b' beside a zombie is live",
 		async () => {
-			// Node 24 names its main thread MainThread during startup, so set comm after that.
-			// The detached shell leaves `sleep 0` unreaped; Node signals after seeing its Z state.
 			const named = join(scratch, "a) Z 1 2 (b");
 			symlinkSync(process.execPath, named);
 			const leader = spawn(
@@ -146,7 +133,6 @@ function hasErrorCode(
 	return cause instanceof Error && "code" in cause && cause.code === code;
 }
 
-/** A process's /proc stat line as it reads now, for a failure message. */
 function statLineOf(pid: string): string {
 	try {
 		return readFileSync(`/proc/${pid}/stat`, "utf8").trim();
@@ -160,7 +146,6 @@ interface ProcState {
 	readonly state: string;
 }
 
-/** The comm and state of a real process, read independently of scanGroup. */
 function stateOf(pid: string): ProcState {
 	let stat: string;
 	try {

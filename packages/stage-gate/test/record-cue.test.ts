@@ -1,19 +1,3 @@
-/**
- * The record's CUE against data (ADR-0172): `cue vet -c` accepts every
- * fixture under test/fixtures/records/<Definition>/valid and refuses every
- * one under .../invalid, and parseStageGateRecord agrees on each record.
- * CUE fills an absent field with the value a constraint gives it, so a field
- * that is not required satisfies `model_calls: "0"` by being left out; the
- * tests below remove every field one at a time to pin that each is required.
- *
- * This suite needs the cue binary (v0.14.0): HOBO_CUE_BIN, which must exist
- * (empty is unset), else the cache the root test:schema lane fills at
- * .tools/cue/v0.14.0, else cue on PATH; whichever it finds must print
- * `cue version v0.14.0` (or `0.14.0`) first, and another patch version is
- * refused (test/helpers/cue-binary.ts).
- * The package's `test:schema` runs it and the root `test:schema` reaches
- * that; without cue it fails, never skips.
- */
 import { spawnSync } from "node:child_process";
 import {
 	mkdtempSync,
@@ -44,7 +28,6 @@ const RECORDS = join(HERE, "fixtures", "records");
 const SCHEMAS = ["stage_gate_record.cue", "acceptance_evidence.cue"];
 const DEFINITIONS = ["StageGateRecord", "AcceptanceEvidence"];
 
-// Before the scratch dir: a cue it refuses fails the module before afterAll is registered.
 const CUE = cueBinary(process.env, REPO_ROOT);
 
 const scratch = mkdtempSync(join(tmpdir(), "hobo-record-cue-"));
@@ -57,7 +40,6 @@ interface Vet {
 	readonly output: string;
 }
 
-/** `cue vet -c` of one data file against a definition of the package's two schemas. */
 function vet(definition: string, dataFile: string): Vet {
 	const result = spawnSync(
 		CUE,
@@ -78,14 +60,11 @@ function fixturesOf(definition: string, kind: "valid" | "invalid"): string[] {
 		.map((name) => join(definition, kind, name));
 }
 
-/** A mutable copy of a fixture. */
 function docOf(fixture: string): ReportDoc {
 	const text = readFileSync(join(RECORDS, fixture), "utf8");
-	// SAFETY: every fixture under test/fixtures/records is a JSON object (the vet tests read each one).
 	return JSON.parse(text) as ReportDoc;
 }
 
-/** The fixture with one field removed, written to a scratch file. */
 function without(fixture: string, parent: string, key: string): string {
 	const doc = docOf(fixture);
 	delete nodeAt(doc, parent)[key];
@@ -148,7 +127,6 @@ function fieldsAt(parent: string, keys: readonly string[]): FieldAt[] {
 	return keys.map((key): FieldAt => [parent, key]);
 }
 
-/** Every field the parser requires of a passed release record, by the object that holds it. */
 const REQUIRED_IN_RELEASE: readonly FieldAt[] = [
 	...fieldsAt("", [
 		"gate_id",

@@ -8,6 +8,7 @@ import {
 	positiveInteger,
 } from "../parse-utils.js";
 
+// public-contract: stable exported contract literal
 export const QUEUE_CLOCK_RUNTIME_PORT_CONTRACT_VERSION =
 	"hobo.queue-clock-runtime-port/v1";
 
@@ -108,22 +109,18 @@ export class QueueLeaseLostError extends Error {
 }
 
 export function parseMessageId(value: string): MessageId {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "messageId", QueueParseError) as MessageId;
 }
 
 export function parseQueueName(value: string): QueueName {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "queueName", QueueParseError) as QueueName;
 }
 
 export function parseLeaseId(value: string): LeaseId {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "leaseId", QueueParseError) as LeaseId;
 }
 
 export function parseIdempotencyKey(value: string): IdempotencyKey {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"idempotencyKey",
@@ -132,7 +129,6 @@ export function parseIdempotencyKey(value: string): IdempotencyKey {
 }
 
 export function parseActorKey(value: string): ActorKey {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "actorKey", QueueParseError) as ActorKey;
 }
 

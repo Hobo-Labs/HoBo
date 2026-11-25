@@ -45,7 +45,6 @@ function validRecordPayload() {
 	};
 }
 
-/** First check of a payload, asserted present. */
 function firstCheck<T>(checks: readonly T[]): T {
 	const [check] = checks;
 	assert(check, "expected the payload to carry at least one check");

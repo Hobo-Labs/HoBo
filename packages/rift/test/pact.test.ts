@@ -1,11 +1,3 @@
-/**
- * Provider verification for the CLI boundary.
- *
- * A caller drives `hobo-rift` by argv and reads exit code plus stdout — it
- * has no other way in. A pact file that nobody executes is decoration, so this
- * runs the built CLI once per interaction in a throwaway root and checks the
- * response the contract promises.
- */
 import { spawnSync } from "node:child_process";
 import {
 	existsSync,
@@ -38,7 +30,6 @@ interface Interaction {
 	};
 }
 
-// SAFETY: `const pact = JSON.parse(` is required at this I/O or test boundary.
 const pact = JSON.parse(
 	readFileSync(
 		join(pkg, "contracts", "pacts", "rift-workspace-boundary.pact.json"),
@@ -64,7 +55,6 @@ function run(argv: readonly string[]) {
 }
 
 beforeAll(() => {
-	// The contract is against the shipped artifact, not the sources.
 	if (!existsSync(cli)) {
 		throw new Error(
 			`build packages/rift before verifying the pact: ${cli} missing`,
@@ -76,8 +66,6 @@ beforeAll(() => {
 });
 
 describe(`${pact.consumer.name} → ${pact.provider.name}`, () => {
-	// Sequential: later interactions depend on earlier state (create → duplicate
-	// → exec → remove), which is exactly the order the consumer uses them in.
 	for (const interaction of pact.interactions) {
 		it(interaction.description, () => {
 			const got = run(interaction.request.argv);
@@ -87,7 +75,6 @@ describe(`${pact.consumer.name} → ${pact.provider.name}`, () => {
 			).toBe(interaction.response.exitCode);
 
 			if (interaction.response.jsonKeys) {
-				// SAFETY: `const parsed = JSON.parse(got.stdout) as JsonObject;` is required at this I/O or test boundary.
 				const parsed = JSON.parse(got.stdout) as JsonObject;
 				for (const key of interaction.response.jsonKeys) {
 					expect(parsed).toHaveProperty(key);
@@ -106,7 +93,6 @@ describe(`${pact.consumer.name} → ${pact.provider.name}`, () => {
 				);
 			}
 			if (interaction.response.repeatable) {
-				// Idempotence is load-bearing: the consumer calls init before every create.
 				expect(run(interaction.request.argv).code).toBe(
 					interaction.response.exitCode,
 				);

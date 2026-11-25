@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-/**
- * Whether the main train has something to release.
- *
- * `--since-last-release` asks "did a release path change since the nearest
- * release tag in this commit's history?". The older `--from <rev>` form asked
- * only about one range, usually `head^..head`: a commit whose CI run was
- * cancelled by the next push, or that reached `main` behind another in one
- * merge-queue batch, was never asked about again, so its change never shipped
- * unless a later commit happened to touch a release path too.
- */
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,18 +10,15 @@ import {
 
 const root = join(import.meta.dirname, "..", "..");
 
-/** Release tags the main train writes (`v0.0.0-alpha.N`); not the `sdk-v`/`cli-v` lines. */
 export const RELEASE_TAG_MATCH = "v[0-9]*";
 
 export interface ReleaseScope {
 	readonly run: boolean;
 	readonly reason: string;
-	/** The commit the change set was measured from; undefined when there is no earlier release. */
 	readonly from?: string;
 }
 
 function git(cwd: string, args: readonly string[]) {
-	// C locale: the "nothing matches" check below reads git's English message.
 	return spawnSync("git", args, {
 		cwd,
 		encoding: "utf8",
@@ -52,18 +39,13 @@ function gitDiffNameOnly(cwd: string, from: string, to: string): string[] {
 		.filter((line) => line.length > 0);
 }
 
-/** The nearest release tag in `to`'s history, or undefined when there is none. */
 export function lastReleaseTag(cwd: string, to: string): string | undefined {
-	// A shallow clone hides older tags, which would read as "never released"
-	// and release everything; the gate checks out full history.
 	const shallow = git(cwd, ["rev-parse", "--is-shallow-repository"]);
 	if (shallow.status !== 0 || shallow.stdout.trim() !== "false") {
 		throw new Error(
 			"release scope: the checkout is shallow (or not a repository); it needs full history and tags",
 		);
 	}
-	// describe says "no names found" before it reads the revision, so a bad
-	// one would read as "never released" without this.
 	const commit = git(cwd, [
 		"rev-parse",
 		"--verify",
@@ -82,15 +64,12 @@ export function lastReleaseTag(cwd: string, to: string): string | undefined {
 		to,
 	]);
 	if (result.status === 0) return result.stdout.trim() || undefined;
-	// describe exits 128 with "No names found" / "No tags can describe" when
-	// nothing matches; anything else (a bad revision, a broken repo) is real.
 	if (/no (names found|tags can describe)/iu.test(result.stderr)) {
 		return undefined;
 	}
 	throw new Error(`git describe ${to}: ${result.stderr || result.stdout}`);
 }
 
-/** Decide from what changed between `from` and `to`. */
 export function releaseScopeBetween(
 	cwd: string,
 	from: string,
@@ -110,7 +89,6 @@ export function releaseScopeBetween(
 	};
 }
 
-/** Decide from what changed since the nearest release tag in `to`'s history. */
 export function releaseScopeSinceLastRelease(
 	cwd: string,
 	to: string,

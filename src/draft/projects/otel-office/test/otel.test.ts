@@ -62,7 +62,7 @@ describe("mapTracePayload", () => {
 		const events = mapTracePayload(payload({}), state);
 		let next = state;
 		for (const event of events) next = applyEvent(next, event);
-		expect(next.characters["station-a/orders-api"]?.state).toBe("idle"); // ended cleanly
+		expect(next.characters["station-a/orders-api"]?.state).toBe("idle");
 		expect(events[0]).toMatchObject({ type: "span-started", spanKind: "server" });
 		const startedOnly = next.characters["station-a/orders-api"];
 		expect(startedOnly?.campId).toBe("camp-orders");
@@ -253,7 +253,6 @@ describe("trace-pair derivation (junction packets)", () => {
 	it("packet appears in state after reducing a cross-camp trace pair", () => {
 		const state = stateWithCampsAndJunction();
 		let next = state;
-		// Drop span-ended so the server span is still open when the packet starts.
 		for (const event of mapTracePayload(crossCampPayload(), state).filter(
 			(e) => e.type !== "span-ended",
 		)) {

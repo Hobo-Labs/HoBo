@@ -1,6 +1,3 @@
-// data-models/verification.cue and the TypeScript boundary must agree: what
-// parseVerificationSpec accepts and what the engine records vets clean; what
-// the parser refuses, CUE refuses too.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,7 +38,6 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = resolve(here, "../../data-models/verification.cue");
 
-/** `cue` on PATH, else the repo-pinned binary under an ancestor's `.tools/cue/<version>/cue`. */
 function findCue(): string | undefined {
 	try {
 		execFileSync("cue", ["version"], { stdio: "ignore" });
@@ -66,11 +62,6 @@ const cue = findCue();
 const scratch = mkdtempSync(join(tmpdir(), "hobo-cd-verification-cue-"));
 let written = 0;
 
-/**
- * Unify the value with the definition and export it. Exporting an instance
- * (rather than `cue vet -d`) evaluates the hidden constraints against the
- * data only, never the bare definition.
- */
 function vets(definition: string, value: JsonValue | undefined): boolean {
 	if (!cue) throw new Error("cue binary not found");
 	written += 1;
@@ -192,7 +183,6 @@ describe.skipIf(cue === undefined)(
 					vets(definitionFor(event.type), jsonOf(event.data)),
 					event.type,
 				).toBe(true);
-			// A PASS without checks is not a valid result.
 			const completed = bodyObject(events[events.length - 1]?.data);
 			expect(
 				vets("#VerificationResultRecord", {

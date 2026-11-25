@@ -31,7 +31,6 @@ import {
 } from "./parse.js";
 import { isJsonObject, isJsonString, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const BUILD_MANIFEST_PATH = ".hobo/build/build-manifest.json";
 export const BUILD_ARTIFACT_DIR = ".hobo/build/artifacts";
 
@@ -131,7 +130,6 @@ export async function writeBuildFixtureProject(
 
   const services = options.services ?? DEFAULT_SERVICES;
   const bindlePath = join(projectRoot, "hobo.bindle.json");
-  // SAFETY: `const bindle = JSON.parse(await readFile(bindlePath, "utf8")) as { services?: Js` is required at this I/O or test boundary.
   const bindle = JSON.parse(await readFile(bindlePath, "utf8")) as { services?: JsonValue[] };
   bindle.services = services.map((service) => ({ ...service }));
   await writeFile(bindlePath, stableStringify(bindle));
@@ -160,7 +158,6 @@ async function assertGeneratedFresh(projectRoot: string): Promise<void> {
     let code = "";
     if (error && isJsonObject(error) && "code" in error) {
       const record = error;
-      // SAFETY: `const coded = record as JsonObject & { readonly code?: JsonValue };` is required at this I/O or test boundary.
       const coded = record as JsonObject & { readonly code?: JsonValue };
       code = isJsonString(coded.code) ? coded.code : String(coded.code ?? "");
     }
@@ -388,7 +385,6 @@ async function listFiles(root: string): Promise<string[]> {
 
 async function readJson(projectRoot: string, path: string): Promise<JsonObject> {
   try {
-    // SAFETY: `return JSON.parse(await readFile(join(projectRoot, path), "utf8")) as JsonObject` is required at this I/O or test boundary.
     return JSON.parse(await readFile(join(projectRoot, path), "utf8")) as JsonObject;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -208,7 +208,6 @@ describe("job-scope", () => {
 			"packages/cli/src/index.ts",
 			"packages/data-mongodb/src/index.ts",
 		];
-		// The jobs that run vitest from the root config load its setup files.
 		const vitestJobs = [0, 1, 3];
 		for (const [index, entries] of jobs.entries()) {
 			const skip = jobScope(["docs/a.md"], entries, fs);

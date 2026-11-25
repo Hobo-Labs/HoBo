@@ -1,26 +1,3 @@
-/**
- * Planning a pattern application, and the path guard both halves share.
- *
- * `apply.test.ts` covers the structural merge; this covers the plan step and
- * the refusals, which is where a pattern application is stopped from touching
- * something it should not.
- *
- * **`assertSafe` is the whole containment story.** A pattern is applied inside
- * an isolation root and promoted afterwards, so a target path escaping that
- * root would write into the real project before anyone reviewed it. It refuses
- * on three separate grounds — a leading slash, a `..` segment, and a resolved
- * path outside the root — and the third is the backstop for anything the first
- * two miss.
- *
- * **A missing target is not an error.** A pattern that creates a file has no
- * preimage, so the plan records an empty expectation rather than failing;
- * treating "not there yet" as a fault would make every scaffolding pattern
- * unusable.
- *
- * **Promotion is always required.** The plan and the receipt both say so
- * unconditionally: an application that could mark itself promoted would defeat
- * the isolate-then-review model entirely.
- */
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -72,14 +49,10 @@ describe("planPatternApplication", () => {
 	});
 
 	it("records a preimage hash for a file that exists", () => {
-		// The preimage is what makes the apply checkable: it says which content
-		// the plan was made against.
 		expect(plan().expectedPreimage).toHaveLength(1);
 	});
 
 	it("records no preimage for a file that does not exist yet", () => {
-		// A scaffolding pattern has no preimage; treating that as a fault would
-		// make every create-a-file pattern unusable.
 		expect(plan({ isolationRoot: root(false) }).expectedPreimage).toEqual([]);
 	});
 
@@ -98,16 +71,11 @@ describe("planPatternApplication", () => {
 	});
 
 	it("carries the pattern's declared effects verbatim", () => {
-		// This pattern declares none, and the plan says none rather than
-		// synthesizing one — an effect list is a claim about what an application
-		// does, so inventing entries would make the plan lie about its scope.
 		const pattern = catalog.patterns.find((p) => p.id === PATTERN_ID);
 		expect(plan().effects).toEqual(pattern?.effects ?? []);
 	});
 
 	it("always requires promotion", () => {
-		// An application that could mark itself promoted would defeat the
-		// isolate-then-review model entirely.
 		expect(plan().promotionRequired).toBe(true);
 	});
 
@@ -125,8 +93,6 @@ describe("planPatternApplication", () => {
 
 describe("the path guard", () => {
 	it("refuses an absolute target path", () => {
-		// The containment story: a path escaping the isolation root would write
-		// into the real project before anyone reviewed it.
 		expect(() => plan({ targetPath: "/etc/passwd" })).toThrow(
 			PatternParseError,
 		);
@@ -145,9 +111,6 @@ describe("the path guard", () => {
 	});
 
 	it("refuses a traversal that would resolve back inside", () => {
-		// Refused on the `..` rule regardless of where it lands, because a path
-		// that has to be *resolved* to be judged safe is a path one normalize
-		// change away from being unsafe.
 		expect(() => plan({ targetPath: "src/../src/bindle.ts" })).toThrow(
 			PatternParseError,
 		);
@@ -162,8 +125,6 @@ describe("the path guard", () => {
 	});
 
 	it("guards the apply path as well as the plan path", () => {
-		// Both entry points share the guard; guarding only one would leave the
-		// other reachable.
 		expect(() =>
 			applyPatternPlan({
 				catalog,
@@ -193,7 +154,6 @@ describe("applyPatternPlan receipts", () => {
 	}
 
 	it("reports zero model calls", () => {
-		// The zero-inference claim, asserted on the receipt rather than assumed.
 		const receipt = apply();
 		expect(receipt.llmCalls).toBe(0);
 		expect(receipt.llmInputTokens).toBe(0);
@@ -219,8 +179,6 @@ describe("applyPatternPlan receipts", () => {
 	});
 
 	it("reports idempotent and changes nothing on a repeat", () => {
-		// Re-running a pattern must be safe: the second run is a no-op that says
-		// so, rather than appending the resource again.
 		const dir = root();
 		applyPatternPlan({
 			catalog,
@@ -254,7 +212,6 @@ describe("applyPatternPlan receipts", () => {
 	});
 
 	it("creates the target directory when it does not exist", () => {
-		// A pattern that targets a new folder must not fail on the folder.
 		expect(() =>
 			apply({ isolationRoot: root(false), targetPath: "src/bindle.ts" }),
 		).not.toThrow();

@@ -596,11 +596,6 @@ a:hover {
 }
 
 .mascot .mascot-puff circle,
-/* Clouds, traced. Two layers, and the night rule is the owner's, stated for
-   characters and props alike: the WHITE INTERIOR STAYS WHITE — a cloud is
-   white because clouds are white, not because the paper is — and the drawn
-   ink stays near-black, lifted a touch at night so the outline separates from
-   a dark sky instead of vanishing into it. No inversion on either layer. */
 .cloud .cloud-fill {
 	fill: #ffffff;
 }

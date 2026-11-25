@@ -1,4 +1,3 @@
-// CUE constraints for pod_resolver.proto.
 package provider_webernetes
 
 #PodDigest: =~"^sha256:[a-f0-9]{64}$"
@@ -16,7 +15,6 @@ package provider_webernetes
 	absenceConfirmed:     bool
 	retirementConfirmed?: bool
 	lifecycleStatus:      "ready" | "pending" | "absent"
-	// Never ready without a successful probe.
 	if ready {
 		probeStatus:     >=200 & <300
 		lifecycleStatus: "ready"

@@ -119,7 +119,6 @@ describe("worker image garbage collection", () => {
 	});
 
 	it("keeps a candidate and the GHCR tags of the image it names", () => {
-		// push-release-ghcr-images tags `<id>:candidate` for GHCR, then pushes.
 		const images = [
 			image("hobo-cli:candidate", "2026-02-01T00:00:00Z", false, "sha256:new"),
 			image(

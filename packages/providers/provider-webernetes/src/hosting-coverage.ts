@@ -11,12 +11,10 @@ import {
 	WEBERNETES_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
-/** Every Webernetes hosting product with a shipped resolver (I14). */
 export const WEBERNETES_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze(
 	[WEBERNETES_POD_PRODUCT_ID],
 );
 
-/** Local-yard products no resolver realizes. Each is a decision. */
 export const WEBERNETES_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 	Object.freeze([
 		Object.freeze({
@@ -45,7 +43,6 @@ export const WEBERNETES_HOSTING_COVERAGE: HostingCoverage =
 		absent: WEBERNETES_TRAFFIC_ROUTING_ABSENT,
 	});
 
-/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product Webernetes does not realize. */
 export function webernetesProductRefusal(
 	productId: string,
 ): ResolverError | undefined {

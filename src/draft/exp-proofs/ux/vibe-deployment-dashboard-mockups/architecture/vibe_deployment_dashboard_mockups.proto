@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for the HOBO-544 dashboard mockup fixture.
-// This is design-time proof data, not generated production runtime code.
 
 enum VibeDeploymentDashboardProofMode {
   VIBE_DEPLOYMENT_DASHBOARD_PROOF_MODE_UNSPECIFIED = 0;

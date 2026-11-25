@@ -31,7 +31,6 @@ describe("deps build window: which containers count as busy", () => {
 	});
 
 	it("knows its own container from the job directory the worker mounts", () => {
-		// container-controller names the container and the job directory `hobo-<lease id>`.
 		const self = identifySelfContainer({
 			hostJobDirectory: `/var/lib/hobo-ci/work/${OWN_NAME}`,
 			hostName: "unrelated",
@@ -144,8 +143,6 @@ describe("deps build window: decision", () => {
 	});
 
 	it("opens on an idle box however long it has waited: low headroom alone does not block", () => {
-		// build-deps.sh enforces headroom after the window, pruning the builder
-		// cache and old deps images first; waiting here would never prune.
 		for (const self of [known, { kind: "unknown" }, { kind: "none" }] as const)
 			for (const elapsedMs of [0, 900_000])
 				expect(
@@ -199,7 +196,6 @@ describe("deps build window: wiring", () => {
 		const controller = read(
 			"packages/ci-gh-actions/src/isolated-worker/container-controller.ts",
 		);
-		// The container name and the mounted job directory share `hobo-<lease id>`.
 		expect(controller).toContain(
 			"env.HOBO_CI_HOST_JOB_DIRECTORY = jobDirectory",
 		);

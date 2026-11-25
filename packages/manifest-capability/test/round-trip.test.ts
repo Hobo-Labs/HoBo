@@ -1,27 +1,3 @@
-/**
- * Round trip over the fixtures that already exist in this repo.
- *
- * Nothing here is invented. Inventing fixtures is how a schema passes its own
- * test while failing on real data, so every requirement driven through the
- * wire below is lifted from a file some other package already asserts against:
- *
- *   - packages/capability-profiles/test/selection.cases.jsonl
- *   - packages/cloud/test/profile-matching.cases.jsonl
- *   - packages/capability-profiles/contracts/pacts/catalog-selection.pact.json
- *   - packages/data-postgres/contracts/pacts/postgres-conformance.pact.json
- *
- * and the profile catalog is checked against the digest that twelve committed
- * golden offers under packages/recipes/test/golden/ carry.
- *
- * These are read as data, not imported. This package's only workspace
- * dependency is @hobo/core; reading another package's fixture file off disk
- * does not create a workspace edge, and the package-boundary guard scans
- * imports under src/, not filesystem reads under test/.
- *
- * The criterion is byte-identity under JSON.stringify, not deep equality.
- * Deep equality would pass while an encoder reordered keys or turned an absent
- * optional into a present `undefined`, and both of those change a digest.
- */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -50,17 +26,6 @@ const repoFile = (relative: string): string =>
 		"utf8",
 	);
 
-/**
- * The keys of `CapabilityRequirementInput`.
- *
- * The PACT request bodies are *selection* requests: they carry the requirement
- * inline alongside fields like `restrictToDefinitions` and `candidateProfiles`
- * that belong to the selection call, not to the requirement. Projecting rather
- * than passing the whole body through is the honest reading — and the
- * projection is asserted to be non-trivial below, so a body that turned out to
- * carry no requirement at all would fail rather than silently contribute an
- * empty case.
- */
 const REQUIREMENT_KEYS = [
 	"requiredProfiles",
 	"preferredProfiles",
@@ -83,7 +48,6 @@ function projectRequirement(
 			body[key],
 		]),
 	);
-	// SAFETY: requiredProfiles is present and the projection retains only input keys.
 	return projected as CapabilityRequirementInput;
 }
 
@@ -98,7 +62,6 @@ function fixturesFromJsonl(relative: string): readonly Fixture[] {
 	for (const [index, line] of lines.entries()) {
 		const trimmed = line.trim();
 		if (trimmed === "" || trimmed.startsWith("#")) continue;
-		// SAFETY: committed JSONL fixtures follow the selection-case shape.
 		const parsed = JSON.parse(trimmed) as {
 			name?: string;
 			input?: readonly { requirement?: JsonObject }[];
@@ -118,7 +81,6 @@ function fixturesFromJsonl(relative: string): readonly Fixture[] {
 
 function fixturesFromPact(relative: string): readonly Fixture[] {
 	const found: Fixture[] = [];
-	// SAFETY: committed PACT fixtures follow the interaction shape projected here.
 	const pact = JSON.parse(repoFile(relative)) as {
 		interactions?: readonly {
 			description?: string;
@@ -138,13 +100,6 @@ function fixturesFromPact(relative: string): readonly Fixture[] {
 	return found;
 }
 
-/**
- * The PACT sources come from this package's own `contracts/pact-inventory.json`
- * rather than from a list written here, so the inventory is load-bearing: an
- * entry that goes stale fails the harvest assertion instead of rotting into
- * prose nobody rechecks.
- */
-// SAFETY: the committed inventory declares the consumed PACT paths.
 const PACT_INVENTORY = JSON.parse(
 	readFileSync(
 		fileURLToPath(new URL("../contracts/pact-inventory.json", import.meta.url)),
@@ -161,12 +116,6 @@ const FIXTURES: readonly Fixture[] = [
 ];
 
 describe("capability requirement round trip over existing repo fixtures", () => {
-	/**
-	 * Pins the harvest. Without this, a fixture file that moved or a selector
-	 * that stopped matching would leave the suite running over zero cases and
-	 * still reporting green — the §1.1 shape, where a test passes because it
-	 * asserts nothing.
-	 */
 	it("harvests every requirement the four source files carry", () => {
 		expect(FIXTURES.map((fixture) => fixture.origin).sort()).toEqual([
 			"packages/capability-profiles/contracts/pacts/catalog-selection.pact.json (a PostgreSQL requirement resolves to a conformant Postgres product)",
@@ -209,18 +158,12 @@ describe("capability requirement round trip over existing repo fixtures", () => 
 	)("survives the wire byte-identically: %s", (_origin, fixture) => {
 		const parsed = parseCapabilityRequirement(fixture.input);
 		const encoded = toCapabilityRequirementWire(parsed);
-		// Through JSON, because that is what crossing a boundary costs.
 		const decoded = fromCapabilityRequirementWire(
 			JSON.parse(JSON.stringify(encoded)),
 		);
 		expect(JSON.stringify(decoded)).toBe(JSON.stringify(parsed));
 	});
 
-	/**
-	 * The fixtures do not exercise every arm, so this covers the ones they
-	 * miss: an absent optional next to a present one, a string-set value, a
-	 * float, a negative weight-ordering tie, and an empty migration list.
-	 */
 	it("preserves presence for the optionals the fixtures never populate", () => {
 		const parsed = parseCapabilityRequirement({
 			requiredProfiles: [
@@ -272,8 +215,6 @@ describe("capability requirement round trip over existing repo fixtures", () => 
 			JSON.parse(JSON.stringify(toCapabilityRequirementWire(parsed))),
 		);
 		expect(JSON.stringify(decoded)).toBe(JSON.stringify(parsed));
-		// `trustRef` present, `runtime.required` present: assert the wire really
-		// carried them rather than the decoder re-deriving a default.
 		expect(decoded.trustRef).toBe("trust/postgres-v1");
 		expect(decoded.runtime.required).toBe("oci");
 	});
@@ -290,15 +231,6 @@ describe("capability requirement round trip over existing repo fixtures", () => 
 	});
 });
 
-/**
- * The registry digest, transcribed from
- * packages/capability-profiles/src/registry.ts.
- *
- * Transcribed rather than imported: this package depends only on @hobo/core.
- * A wrong transcription cannot make this test pass, because the value it has
- * to reproduce is committed in twelve golden offer files that nothing here can
- * reach in to change.
- */
 function registryDigestOf(
 	profiles: readonly ReturnType<typeof parseCapabilityProfile>[],
 ): string {
@@ -350,7 +282,6 @@ const GOLDEN_OFFERS = [
 ] as const;
 
 const goldenRegistryDigests = GOLDEN_OFFERS.map((name) => {
-	// SAFETY: committed golden offers declare their registry digest.
 	const offer = JSON.parse(
 		repoFile(`packages/recipes/test/golden/${name}.offer.json`),
 	) as { profileRegistryDigest?: string };
@@ -392,18 +323,6 @@ describe("standard capability profile catalog round trip", () => {
 		expect(JSON.stringify(decoded)).toBe(JSON.stringify(descriptor));
 	});
 
-	/**
-	 * The reason the StringList wrapper exists, pinned so deleting it fails a
-	 * test that explains itself rather than sixty mysterious digest mismatches.
-	 *
-	 * Every descriptor in the catalog omits `enumValues` — no first-party
-	 * profile declares an `enum` valueKind. A bare proto3 `repeated string
-	 * enum_values` cannot distinguish that omission from an empty list, so it
-	 * would decode all of them as `[]`. The registry digest is computed with
-	 * JSON.stringify, which omits an `undefined` property and emits `[]` for an
-	 * empty array, so the substitution is observable — and it lands on a value
-	 * twelve committed golden offers carry.
-	 */
 	it("would break the golden digest if absent enumValues decoded as empty", () => {
 		const parsed = STANDARD_CAPABILITY_PROFILES.map(parseCapabilityProfile);
 		expect(
@@ -435,17 +354,6 @@ describe("standard capability profile catalog round trip", () => {
 });
 
 describe("the wire form is more canonical than the parse boundary", () => {
-	/**
-	 * `parseCapabilityRequirement`'s doc comment claims "the returned
-	 * requirement is canonically ordered so equivalent authoring order produces
-	 * byte-identical decisions". That is true of array order and false of key
-	 * order: `features` and `guarantees` are shallow-copied and sorted, so the
-	 * element objects are the caller's own, with the caller's key order.
-	 *
-	 * The wire schema fixes it, because encoding names the fields in
-	 * declaration order. This test pins both halves — the defect and the
-	 * repair — so neither can regress unnoticed.
-	 */
 	const canonical = parseCapabilityRequirement({
 		requiredProfiles: [{ profileId: "data.postgres/v1" }],
 		features: [
@@ -474,15 +382,6 @@ describe("the wire form is more canonical than the parse boundary", () => {
 		expect(JSON.stringify(canonical)).not.toBe(JSON.stringify(shuffled));
 	});
 
-	/**
-	 * Both halves of the codec, separately.
-	 *
-	 * Asserting only on the decoded value hides an encoder that forwards the
-	 * caller's object unchanged, because the decoder rebuilds fields in
-	 * declaration order and would launder the difference. That is not
-	 * hypothetical — an earlier version of this test asserted only the round
-	 * trip, and spreading `...entry` in the encoder left it green.
-	 */
 	it("canonicalizes on the way out", () => {
 		expect(JSON.stringify(toCapabilityRequirementWire(shuffled))).toBe(
 			JSON.stringify(toCapabilityRequirementWire(canonical)),
@@ -500,8 +399,6 @@ describe("the wire form is more canonical than the parse boundary", () => {
 				),
 			);
 		expect(trip(shuffled)).toBe(trip(canonical));
-		// And the canonical spelling is a fixed point, so the wire does not
-		// merely agree with itself — it agrees with the parse boundary.
 		expect(trip(canonical)).toBe(JSON.stringify(canonical));
 	});
 });

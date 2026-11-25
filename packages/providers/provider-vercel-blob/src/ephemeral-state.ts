@@ -1,51 +1,3 @@
-/**
- * `EphemeralStatePort` over Vercel Blob, with the semantics of the
- * Redis-protocol binding in `@hobo/kv-redis-compatible`, checked by the same
- * 24-case conformance suite.
- *
- * Storage: one private blob per key (`pathname.ts`) whose body is a record
- * (`record.ts`) holding the value, an incarnation chosen by the write that
- * created the key, a revision, an absolute expiry and a per-write id. The
- * version a caller sees is `<incarnation>:<revision>`, so a version from a
- * deleted or expired incarnation never matches the recreated key (no ABA).
- *
- * Atomicity comes from Blob's conditional writes, not from a script: a blob
- * has an ETag, and `put(..., { ifMatch: etag })` / `del(..., { ifMatch })`
- * apply only while the blob still has it. Every write is therefore
- * read-then-conditional-write:
- *
- * - `putIfAbsent` is a create-only `put` (`allowOverwrite: false`). When the
- *   store refuses it, the blob is read: live means the race is lost; expired
- *   means it is replaced with `ifMatch` on the expired blob's ETag, so of two
- *   callers replacing the same expired blob exactly one succeeds.
- * - `compareAndSet`, `increment` and `expire` read the blob, check the stored
- *   version (and liveness) themselves, then `put` with `ifMatch` on the ETag
- *   they read. The ETag binds the check to the write: if anything rewrote the
- *   blob in between, the write is refused.
- * - `delete` reads (to report whether a live key was removed, and to check
- *   the version) and deletes with `ifMatch`.
- *
- * A refused conditional write re-reads and decides again, with jittered
- * exponential backoff, at most `maxAttempts` times. `compareAndSet` and a
- * versioned `delete` retry only while the stored version still equals the
- * expected one (an `expire` rewrites the blob without changing its version);
- * `increment` and `putIfAbsent` of an expired key retry until they apply.
- * Under contention on one key, n concurrent incrementers cost O(n²) operations
- * in the worst case, and the call throws `VercelBlobContentionError` after
- * `maxAttempts` rounds rather than loop forever.
- *
- * A write whose reply was lost — the SDK retried it after a network error and
- * the retry was refused because the first attempt had landed — is recognised
- * by reading the blob back and finding this call's write id, so it reports
- * success rather than a lost race. A lost delete reply cannot be recognised
- * that way (nothing is left to read) and reports `false`.
- *
- * Time: "now" is this client's clock (`now`, default `Date.now`). Blob keeps
- * no TTL, so expiry is a field in the record, and every client must agree on
- * time to within the precision the caller needs. Reads treat an expired record
- * as absent; expired blobs are replaced in place by the next `putIfAbsent` or
- * `increment`, removed by a `delete`, and swept by `purgeExpiredBlobs`.
- */
 import {
 	type EphemeralEntry,
 	type EphemeralKey,
@@ -80,37 +32,24 @@ import {
 } from "./sdk.js";
 
 export type VercelBlobRetryOptions = {
-	/** Read-and-write rounds before giving up on a contended key. Default 64. */
 	readonly maxAttempts?: number;
-	/** First backoff ceiling, doubled per round. Default 5 ms. */
 	readonly baseDelayMs?: number;
-	/** Largest backoff ceiling. Default 250 ms. */
 	readonly maxDelayMs?: number;
-	/** Default `setTimeout`. A test injects an immediate one. */
 	readonly sleep?: (ms: number) => Promise<void>;
-	/** Default `Math.random`. */
 	readonly random?: () => number;
 };
 
 export type VercelBlobEphemeralStateOptions = {
-	/** `vercelBlobSdk` in production; `createMemoryBlobSdk()` in tests. */
 	readonly sdk: VercelBlobSdk;
-	/** The store; omit to let the SDK read `BLOB_STORE_ID` itself. */
 	readonly storeId?: string;
-	/** Pathname prefix of every key's blob. Default `hobo-ephemeral`. */
 	readonly namespace?: string;
-	/** Milliseconds since the Unix epoch. Default `Date.now`. */
 	readonly now?: () => number;
-	/** Incarnation for a key a call creates; must not repeat. Default a random UUID. */
 	readonly newIncarnation?: () => string;
-	/** Id of each write; must not repeat. Default a random UUID. */
 	readonly newWriteId?: () => string;
-	/** Most reads `getMany` keeps in flight. Default 8. */
 	readonly readConcurrency?: number;
 	readonly retry?: VercelBlobRetryOptions;
 };
 
-/** A key stayed contended for every attempt; nothing was applied. */
 export class VercelBlobContentionError extends Error {
 	readonly code = "HOBO_VERCEL_BLOB_EPHEMERAL_CONTENTION";
 	constructor(operation: string, attempts: number) {
@@ -121,7 +60,6 @@ export class VercelBlobContentionError extends Error {
 	}
 }
 
-/** What the binding read: the parsed record and the ETag a conditional write binds to. */
 type Read = { readonly record: StoredRecord; readonly etag: string };
 
 type WriteOutcome =
@@ -129,11 +67,9 @@ type WriteOutcome =
 	| { readonly ok: false; readonly reason: "refused" | "precondition-failed" };
 
 const CONTENT_TYPE = "application/json";
-/** The CDN cache is never read (every read bypasses it); keep the minimum. */
 const CACHE_MAX_AGE_SECONDS = 60;
 const INTEGER = /^-?\d{1,16}$/u;
 
-/** Internal operations shared by the port and the purge. */
 export type VercelBlobEphemeralInternals = {
 	readonly sdk: VercelBlobSdk;
 	readonly storeId: string | undefined;
@@ -208,7 +144,6 @@ export function createVercelBlobEphemeralState(
 	const pathOf = (key: EphemeralKey) => blobPathname(namespace, key);
 	const isLive = (record: StoredRecord) => record.expiresAtMs > now();
 
-	/** Jittered exponential backoff before round `attempt` (1-based retries). */
 	const backoff = (attempt: number) =>
 		sleep(random() * Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1)));
 
@@ -237,10 +172,6 @@ export function createVercelBlobEphemeralState(
 		}
 	}
 
-	/**
-	 * Run `round` until it returns a result; a round returning `undefined` lost
-	 * a race and is retried after a backoff.
-	 */
 	async function contended<T>(
 		operation: string,
 		round: () => Promise<{ readonly done: T } | undefined>,
@@ -253,7 +184,6 @@ export function createVercelBlobEphemeralState(
 		throw new VercelBlobContentionError(operation, maxAttempts);
 	}
 
-	/** Write ids this call has sent, with what each would report if it landed. */
 	function ownWrites<T>() {
 		const sent = new Map<string, T>();
 		return {
@@ -335,7 +265,6 @@ export function createVercelBlobEphemeralState(
 				const landed = mine.landed(current);
 				if (landed !== undefined) return landed;
 				if (current === undefined) {
-					// Deleted between the refused create and the read: create again.
 					create = true;
 					return undefined;
 				}
@@ -385,7 +314,6 @@ export function createVercelBlobEphemeralState(
 				const current = await read(pathname);
 				if (current === undefined) return { done: false };
 				if (!isLive(current.record)) {
-					// Expired: absent to the caller, and free to clean up.
 					await remove(pathname, current.etag);
 					return { done: false };
 				}

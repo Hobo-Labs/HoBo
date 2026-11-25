@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const BROKER_ARTIFACT_SCHEMAS = {
   "contract-manifest": "hobo.meta-cloud-broker.contract-manifest/v1",
   "broker-environment": "hobo.meta-cloud-broker.environment/v1",
@@ -77,7 +76,6 @@ export type ResolutionDecision =
       };
     };
 
-// SAFETY: `const ARTIFACT_KINDS = Object.keys(BROKER_ARTIFACT_SCHEMAS) as BrokerArtifactKin` is required at this I/O or test boundary.
 const ARTIFACT_KINDS = Object.keys(BROKER_ARTIFACT_SCHEMAS) as BrokerArtifactKind[];
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const SHA256 = /^sha256:[a-zA-Z0-9._:-]+$/;
@@ -222,7 +220,6 @@ export function parseBrokerArtifactSet(input: JsonValue): ParseResult {
   }
 
   const errors: string[] = [];
-  // SAFETY: `const artifacts = input as BrokerArtifactEnvelope[];` is required at this I/O or test boundary.
   const artifacts = input as BrokerArtifactEnvelope[];
   const seenKinds = new Set<string>();
 
@@ -261,7 +258,6 @@ export function evaluateBrokerArtifacts(artifacts: BrokerArtifactEnvelope[]): Re
 
   if (missing.length > 0) {
     const reason = rejection.payload.reason;
-    // SAFETY: `return sortKeys({` is required at this I/O or test boundary.
     return sortKeys({
       kind: "resolution-rejection",
       decision: "rejected",
@@ -278,7 +274,6 @@ export function evaluateBrokerArtifacts(artifacts: BrokerArtifactEnvelope[]): Re
     }) as ResolutionDecision;
   }
 
-  // SAFETY: `return sortKeys({` is required at this I/O or test boundary.
   return sortKeys({
     kind: "resolution-receipt",
     decision: "accepted",
@@ -338,9 +333,7 @@ function validateEnvelope(artifact: any, errors: string[]): void {
     errors.push(`${kind} kind must be one of ${ARTIFACT_KINDS.join(", ")}`);
     return;
   }
-  // SAFETY: `if (artifact.schema !== BROKER_ARTIFACT_SCHEMAS[kind as BrokerArtifactKind]) {` is required at this I/O or test boundary.
   if (artifact.schema !== BROKER_ARTIFACT_SCHEMAS[kind as BrokerArtifactKind]) {
-    // SAFETY: `errors.push(`${kind} schema must be ${BROKER_ARTIFACT_SCHEMAS[kind as BrokerArti` is required at this I/O or test boundary.
     errors.push(`${kind} schema must be ${BROKER_ARTIFACT_SCHEMAS[kind as BrokerArtifactKind]}`);
   }
   if (!SEMVER.test(String(artifact.version ?? ""))) {
@@ -444,7 +437,6 @@ function sortArtifacts(artifacts: BrokerArtifactEnvelope[]): BrokerArtifactEnvel
 }
 
 function clone<T>(value: T): T {
-  // SAFETY: `return JSON.parse(JSON.stringify(value)) as T;` is required at this I/O or test boundary.
   return JSON.parse(JSON.stringify(value)) as T;
 }
 

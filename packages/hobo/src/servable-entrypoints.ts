@@ -1,12 +1,3 @@
-/**
- * HTTP App Kit entrypoint collection + Session Replay wrap (ADR-0137).
- * Kept free of Yard/compose imports so tests and agents can exercise
- * Bindle Kit replay without loading the full host graph.
- *
- * **App Kit** (not "membrane type"): Bindle-declared application surfaces
- * (api, web, service, ui, …). Every HTTP App Kit is Session-Replay wrapped.
- */
-
 import type { BindleDefinition } from "@hobo/bindles";
 import {
 	applySessionReplayToEntrypoints,
@@ -35,17 +26,12 @@ type ServableEntrypointOptions = {
 	readonly stationId?: string;
 };
 
-/** HTTP App Kits that host fetch handlers on local Yard / Camp. */
 function isHttpAppKit(kind: string): boolean {
 	return (
 		kind === "api" || kind === "web" || kind === "service" || kind === "ui"
 	);
 }
 
-/**
- * External exposure policy.
- * Default: only `web` is public (ingress). `api`/`service` stay private mesh.
- */
 export function isExternalComponent(
 	kind: string,
 	annotations: readonly {
@@ -68,13 +54,9 @@ function asFetchHandler(
 	if (!(value instanceof Function)) {
 		return null;
 	}
-	// SAFETY: Bindle entrypoint returned a function at the serve boundary.
 	return value as FetchHandler;
 }
 
-/**
- * Collect api/web/service entrypoints and wrap replayable web surfaces.
- */
 export function listServableEntrypoints(
 	definition: BindleDefinition,
 	options: ServableEntrypointOptions = {},
@@ -101,7 +83,6 @@ export function listServableEntrypointsWithReplay(
 			handler: resolved,
 			external: isExternalComponent(
 				record.kind,
-				// SAFETY: bindle annotations are JSON config objects at the serve boundary.
 				record.annotations as readonly {
 					readonly option: string;
 					readonly config: JsonObject;

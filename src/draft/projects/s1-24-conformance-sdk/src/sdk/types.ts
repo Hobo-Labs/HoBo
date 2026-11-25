@@ -1,8 +1,4 @@
 import { type JsonValue, type JsonObject } from "../json.js";
-/**
- * Types derived from data-models/proto/sdk_conformance.proto.
- * Do not invent parallel interfaces — keep aligned with protobuf messages.
- */
 
 export type AnnexCategory =
   | "error-mapping"

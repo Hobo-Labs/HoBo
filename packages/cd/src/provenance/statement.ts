@@ -1,10 +1,3 @@
-// Statement parsing goes through `@hobo/registry` `parseProvenanceStatement`.
-// That parser reads the builder from `predicate.builder.id`, which is the SLSA
-// v0.2 location; SLSA provenance v1 — what GitHub `actions/attest`, npm and
-// every current builder emit — puts it at `predicate.runDetails.builder.id`.
-// This adapter lifts the v1 location into the field the registry parser reads,
-// and refuses a document that names two different builders. Everything else
-// (statement type, predicate type, sha256 subjects) is the registry's check.
 import {
 	type ProvenanceStatement,
 	parseProvenanceStatement,

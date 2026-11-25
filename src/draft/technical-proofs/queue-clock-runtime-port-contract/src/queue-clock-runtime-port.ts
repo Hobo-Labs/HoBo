@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { isJsonString } from "./json.js";
 
-
 export const QUEUE_CLOCK_RUNTIME_PORT_CONTRACT_VERSION =
   "hobo.queue-clock-runtime-port/v1";
 
@@ -451,7 +450,6 @@ async function provesAtLeastOnceRetry(createRuntime) {
       throw new Error("transient");
     });
   } catch {
-    // Expected retry path.
   }
   await runtime.queue.handle("jobs", async () => {
     attempts += 1;

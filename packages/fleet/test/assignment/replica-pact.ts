@@ -1,8 +1,3 @@
-/**
- * The replica's side of `contracts/ephemeral-assignment-replica.pact.json`:
- * the scenario both sides run, a port that replays the pact, and a recorder
- * that turns real port calls into interactions.
- */
 import { readFileSync } from "node:fs";
 import type {
 	EphemeralEntry,
@@ -21,7 +16,6 @@ import type { EphemeralAssignmentReplica } from "../../src/ports.js";
 
 export const PACT_KEY = "hobo-ci:production:fleet:assignment";
 
-/** One port call as the pact records it. Only what the replica uses. */
 export type PortRequest =
 	| { readonly operation: "get"; readonly key: string }
 	| {
@@ -82,7 +76,6 @@ function asWrite(response: PortResponse): EphemeralWrite {
 	throw new Error("pact response is not a write");
 }
 
-/** Run one request against a real port and describe its answer. */
 export async function execute(
 	port: EphemeralStatePort,
 	request: PortRequest,
@@ -113,7 +106,6 @@ export async function execute(
 	}
 }
 
-/** A port that answers from the pact, in order, and records what it was asked. */
 export function replayPort(interactions: readonly PortInteraction[]) {
 	const sent: PortRequest[] = [];
 	let next = 0;
@@ -180,7 +172,6 @@ const sealed = parseAssignmentEntry({
 	members: undefined,
 });
 
-/** What the replica does in the pact, and what it concludes. */
 export async function runReplicaScenario(
 	replica: (port: EphemeralStatePort) => EphemeralAssignmentReplica,
 	port: EphemeralStatePort,

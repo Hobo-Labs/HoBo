@@ -1,11 +1,3 @@
-// The aggregate's consistency boundary is realized as an actor: a single-writer
-// lease with a monotonic fencing token (data-plane.md "Two folds, one log"). The
-// port is the canonical `@hobo/core` actor-host port (ADR-0156): `AggregateLease`
-// is core's `ActorLease` and this package's `ActorHost` is core's lease-only
-// `ActorLeaseHost` narrowing, so the kernel keeps depending inward only; a
-// runtime supplies the real, durable implementation and the in-memory host below
-// is the deterministic default for tests and `hobo dev`.
-
 import type {
 	ActorLeaseHost as ActorHost,
 	ActorLease as AggregateLease,

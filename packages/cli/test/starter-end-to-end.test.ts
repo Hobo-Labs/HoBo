@@ -12,7 +12,6 @@ describe("starter to executable application", () => {
 		async (template) => {
 			const root = await mkdtemp(join(tmpdir(), "hobo-starter-e2e-"));
 			try {
-				// new -> codegen -> build, each asserted to exit 0 by the fixture.
 				const project = await copyBuiltStarter(template, root);
 				await rm(join(project, "src"), { recursive: true, force: true });
 				const script =

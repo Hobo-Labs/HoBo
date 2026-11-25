@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for sdk-authoring-ifc-bindles.feature.
- *
- * Drives the epic's real reference service
- * (services/sdk-authoring-reference-architecture.ts) over the committed
- * scenario fixture: manifest lowering, guardrail evaluation, Hobo Code DSL
- * parity, and non-TS parity — all mocked boundaries, no live codegen.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -29,8 +21,6 @@ type AuthoringWorld = {
 };
 
 const world: AuthoringWorld = {};
-
-// --- Scenario: IfC declarations lower to one deterministic manifest ----------
 
 Given("the sample Bindle authored through the IfC scenario fixture", async () => {
   world.fixture = await loadSdkAuthoringScenarioFixture();
@@ -70,8 +60,6 @@ Then("the generated IfC type surface is clean with no drift", () => {
   assert.equal(sim.codegen.mcpParity, true);
 });
 
-// --- Scenario: Authoring guardrails surface before deploy --------------------
-
 Given(
   "the IfC guardrail inputs with unobserved, narrowed, and widened declarations",
   async () => {
@@ -107,8 +95,6 @@ Then("raw driver usage is marked as portability debt", () => {
   assert.equal(guardrails.rawDriverDebt.marker, "RAW_DRIVER_PORTABILITY_DEBT");
   assert.equal(guardrails.rawDriverDebt.severity, "warn");
 });
-
-// --- Scenario: Hobo Code DSL stays a lowering front door with parity ---------
 
 Given("the same Bindle authored in the Hobo Code DSL", async () => {
   world.fixture = await loadSdkAuthoringScenarioFixture();

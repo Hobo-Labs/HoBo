@@ -8,7 +8,6 @@ import {
 	TurboCiPlanSchema,
 } from "./_generated/turbo_ci_pb.js";
 
-// Task tags are resolved by Turbo, including package overrides and $TURBO_EXTENDS$.
 const query =
 	"query { packages { items { name tags tasks { items { fullName tags } } } } }";
 const taskId = z
@@ -49,10 +48,8 @@ const affectedGraph = z.object({
 	}),
 });
 
-/** Local wiring only. This runs trusted checkout code with the caller's permissions. */
 export interface TurboCiOptions {
 	cwd: string;
-	/** Path to the installed turbo Node launcher; defaults to the checkout's dependency. */
 	turboPath?: string;
 	affected?: boolean;
 	base?: string;
@@ -105,8 +102,6 @@ function command(
 			}
 		}
 		function stop() {
-			// A second interrupt asks Turbo's task manager to kill task groups
-			// that ignore graceful shutdown. Keep Turbo alive long enough to reap.
 			kill("SIGINT");
 			escalation ??= setTimeout(() => kill("SIGINT"), 250);
 			hardStop ??= setTimeout(() => {
@@ -159,7 +154,6 @@ function command(
 	});
 }
 
-/** Select Vercel CI entrypoints, then let Turbo expand dependencies and affected scope. */
 export async function planTurboCi(
 	options: TurboCiOptions,
 ): Promise<TurboCiPlan> {
@@ -190,8 +184,6 @@ export async function planTurboCi(
 		),
 	].sort();
 	if (options.affected && taskIds.length) {
-		// Explicit package#task selectors bypass `turbo run --affected`. Resolve the
-		// input-aware affected set first, then execute its CI entrypoints normally.
 		const affectedQuery = `query { affectedTasks(base: ${JSON.stringify(options.base)}, head: ${JSON.stringify(options.head ?? "HEAD")}) { items { fullName } } }`;
 		const affected = affectedGraph.parse(
 			JSON.parse(
@@ -247,7 +239,6 @@ export async function planTurboCi(
 	return create(TurboCiPlanSchema, { taskIds, runArgs });
 }
 
-/** Stream the selected tasks' logs and return Turbo's exit code. No Vercel API calls. */
 export async function runTurboCi(options: TurboCiOptions): Promise<number> {
 	const plan = await planTurboCi(options);
 	if (!plan.taskIds.length) return 0;

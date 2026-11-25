@@ -1,12 +1,3 @@
-/**
- * Placement and release, in terms of the parsed records.
- *
- * No HTTP and no JSON here. This file decides whether the host can actually
- * support the placement, and refuses before instantiation rather than after —
- * because after, in a browser, the failure mode is a frozen tab or a guest
- * silently running without the durability it was promised.
- */
-
 import type { HostAssetClient } from "./client.js";
 import { BrowserWasmProviderError } from "./errors.js";
 import type { GuestRuntimePort } from "./host-runtime.js";
@@ -48,7 +39,6 @@ export type ProvisionReceipt = {
 	readonly manifest: GuestManifest;
 	readonly artifact: ComponentArtifact;
 	readonly handle: GuestHandle;
-	/** What was actually obtained, which may be weaker than what was asked for. */
 	readonly effectivePersistence: PersistenceMode;
 	readonly guestUrl: string;
 };
@@ -69,11 +59,6 @@ export type ProvisionGuestInput = {
 	readonly client: HostAssetClient;
 	readonly runtime: GuestRuntimePort;
 	readonly placement: GuestPlacement;
-	/**
-	 * Accept transient memory when durable storage was requested and the
-	 * context has none. Off by default: a silent downgrade is a durability
-	 * promise nobody kept.
-	 */
 	readonly allowTransient?: boolean;
 };
 
@@ -84,12 +69,6 @@ function unsupported(
 	return new BrowserWasmProviderError("HOST_UNSUPPORTED", message, { detail });
 }
 
-/**
- * Reconcile what was asked for with what the document can do.
- *
- * Returns the persistence the guest will actually get. Downgrading is allowed
- * and must be visible; claiming the upgrade is not allowed at all.
- */
 export function negotiatePersistence(input: {
 	readonly placement: GuestPlacement;
 	readonly host: HostCapabilities;
@@ -101,9 +80,6 @@ export function negotiatePersistence(input: {
 		return "opfs-sahpool";
 	}
 	if (input.allowTransient) return "transient-memory";
-	// A private-mode context has no OPFS. Quietly running in memory would mean
-	// the guest's journal disappears when the tab does, which is precisely the
-	// thing durable persistence was requested to prevent.
 	throw new BrowserWasmProviderError(
 		"PERSISTENCE_UNAVAILABLE",
 		`${placement.guestId} asked for durable OPFS storage and this context reports ${host.persistence}`,
@@ -117,12 +93,6 @@ export function negotiatePersistence(input: {
 	);
 }
 
-/**
- * Capabilities, manifest, bytes, then instantiate.
- *
- * The order is the point: every refusal below happens before a single byte of
- * guest code runs.
- */
 export async function provisionGuest(
 	input: ProvisionGuestInput,
 ): Promise<ProvisionReceipt> {
@@ -131,9 +101,6 @@ export async function provisionGuest(
 	const host = await client.fetchHostCapabilities();
 
 	if (placement.sharedMemory && !host.crossOriginIsolated) {
-		// Shared linear memory needs SharedArrayBuffer, which needs COOP
-		// same-origin plus COEP require-corp on the document. No provider can
-		// grant itself those.
 		throw unsupported(
 			`${placement.guestId} asked for shared memory and the document is not cross-origin isolated`,
 			{ guestId: placement.guestId },
@@ -164,8 +131,6 @@ export async function provisionGuest(
 		);
 	}
 
-	// A missing import is a link error raised from inside the runtime, long
-	// after the useful diagnosis was available here.
 	const missing = manifest.imports.filter(
 		(id) => !runtime.providedImports.includes(id),
 	);
@@ -219,8 +184,6 @@ export async function provisionGuest(
 		effectivePersistence === "opfs-sahpool" &&
 		(instantiated.partitionId === "" || instantiated.workerName === "")
 	) {
-		// The runtime reported durable persistence without the worker or the
-		// partition that make it durable.
 		throw new BrowserWasmProviderError(
 			"PERSISTENCE_UNAVAILABLE",
 			`${placement.guestId} was instantiated without the worker and partition durable storage needs`,
@@ -256,16 +219,9 @@ export type ReleaseGuestInput = {
 	readonly runtime: GuestRuntimePort;
 	readonly receipt: ProvisionReceipt;
 	readonly now: () => number;
-	/** Keep the OPFS partition for the next run of the same guest. */
 	readonly retainPartition?: boolean;
 };
 
-/**
- * Terminate the guest and say honestly what is left behind.
- *
- * `released` is the only state that claims nothing remains, so it is the only
- * one that requires both halves to have actually happened.
- */
 export async function releaseGuest(
 	input: ReleaseGuestInput,
 ): Promise<CleanupOutcome> {
@@ -282,8 +238,6 @@ export async function releaseGuest(
 	});
 
 	if (!result.workerTerminated) {
-		// A guest still holding its worker is still running; reporting cleanup
-		// would retire a live placement from the read model.
 		throw new BrowserWasmProviderError(
 			"CLEANUP_INCOMPLETE",
 			`${guestId} did not release its worker`,
@@ -310,8 +264,6 @@ export async function releaseGuest(
 		);
 	}
 
-	// `partitionDropped` reads as "no partition remains", which is also true of
-	// a transient guest that never had one.
 	return Object.freeze({
 		guestId,
 		state: "released" as const,
@@ -322,12 +274,6 @@ export async function releaseGuest(
 	});
 }
 
-/**
- * What a closed tab leaves behind.
- *
- * Nothing here ran, which is the whole content of the record: an orphan is
- * evidence that release never happened, and the next run has to reconcile it.
- */
 export function orphanedGuest(
 	guestId: string,
 	observedAtMs: number,

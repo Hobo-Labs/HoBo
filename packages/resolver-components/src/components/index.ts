@@ -1,5 +1,3 @@
-// The two reference hobo:resolver components, plus a helper that builds one
-// into bytes + a manifest to sign through the componentize recipe.
 import {
 	type BuiltResolverComponent,
 	buildResolverComponent,
@@ -61,7 +59,6 @@ export function sftpStatic(
 	});
 }
 
-/** Componentize a reference component (synthetic lane) and stamp its manifest. */
 export function buildReferenceComponent(
 	component: ReferenceComponent,
 ): BuiltResolverComponent {

@@ -1,7 +1,3 @@
-// The kit, turned on itself. Every engine in `support/broken-engines.ts` is a
-// reference engine with one defect; the kit must fail each of them, and the
-// first case to fail must be the one written to catch that defect. A variant
-// that passes here is a hole in the kit.
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
@@ -58,8 +54,6 @@ describe("the kit fails every deliberately broken engine", () => {
 				variant.caughtBy,
 				`${variant.name} was first caught by: ${firstFailure(report)}`,
 			);
-			// Everything that fails or is blocked is the defect or downstream
-			// of it: a case with no path to the broken port still passes.
 			assert.equal(
 				report.results.find(
 					(result) => result.caseId === "declaration.matches-binding",
@@ -119,7 +113,6 @@ describe("what the variants are measured against", () => {
 describe("a declared limit is reported as one, and only where the kit allows it", () => {
 	const CASE = "capture.acknowledged-positions-are-final";
 	const CODE = "TEST_ACKNOWLEDGE_RELEASES_NOTHING";
-	/** A reference engine that declares `CODE`; with `real`, it also has the limit. */
 	const declaring = (real: boolean): EngineBinding => {
 		const inner = createReferenceEngine();
 		const capture = requirePort(inner, "capture");
@@ -147,7 +140,6 @@ describe("a declared limit is reported as one, and only where the kit allows it"
 		assert.equal(result?.status, "declared-limit");
 		assert.match(result?.detail ?? "", new RegExp(`^${CODE}: `, "u"));
 		assert.equal(report.outcome, "pass", firstFailure(report));
-		// The same engine without the declaration is simply broken.
 		const undeclared = await runEngineConformance({
 			engine: harness(true, {}),
 			now: NOW,

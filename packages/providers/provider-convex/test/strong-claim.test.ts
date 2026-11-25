@@ -309,7 +309,6 @@ describe("strong claim: failure branches", () => {
 		]);
 		expect(failed.claimComplete).toBe(false);
 
-		// Even a stray Completed event cannot resurrect it.
 		const decision = decideStrongClaim(failed, { type: "DestroySource" });
 		expect(decision.ok).toBe(false);
 		if (!decision.ok) expect(decision.rejection.code).toBe("terminal");
@@ -510,7 +509,6 @@ describe("strong claim: saga executor over the injected driver", () => {
 		expect(result.ok).toBe(false);
 		expect(result.state.sourceDestroyed).toBe(false);
 		expect(result.state.claimComplete).toBe(false);
-		// The cutover already happened, so the destination stays authoritative.
 		expect(result.state.authoritative).toBe("destination");
 	});
 });

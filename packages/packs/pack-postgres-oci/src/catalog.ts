@@ -1,16 +1,3 @@
-/**
- * Making the pack selectable.
- *
- * `postgresPackSemanticsOptions` fills in the Yard-side references and the
- * structured capabilities a requirement can gate on. The values that describe the
- * *pack* (realization, ownership, pinned digests, persistence) are not settable
- * here — the framework projection reads them off the verified manifest.
- *
- * `serverVersion` and `maxConnections` are advertised because `data.postgres/v1`
- * declares them as features. `pooling` is advertised as `false`: this pack runs
- * one PostgreSQL server and no pooler, and a `true` here would win selections it
- * cannot serve.
- */
 import type { SelectionCandidate } from "@hobo/capability-profiles";
 import {
 	type PackSemanticsOptions,
@@ -24,13 +11,10 @@ import { POSTGRES_SERVER_MAJOR, POSTGRES_SERVER_VERSION } from "./image.js";
 export const POSTGRES_PACK_DEFINITION_ID = "hobo.pack.postgres-oci/v1" as const;
 
 export type PostgresCatalogOptions = {
-	/** The Yard that will run the container. Compute host, not a vendor. */
 	readonly yardId: string;
-	/** Epoch ms after which the pack's evidence must be re-gathered. */
 	readonly evidenceExpiresAtMs: number;
 	readonly evidenceSignatureValid: boolean;
 	readonly maxConnections?: number;
-	/** Extensions actually present in the pinned image, if any were verified. */
 	readonly extensions?: readonly string[];
 	readonly tls?: boolean;
 };
@@ -57,16 +41,11 @@ export function postgresPackSemanticsOptions(
 			preparedStatements: true,
 			jsonDocuments: true,
 			maxConnections: options.maxConnections ?? 100,
-			// No pooler in this pack. Stated rather than omitted, because an
-			// absent capability and a false one behave differently in selection.
 			pooling: false,
-			// TLS is off unless the Yard terminates it. Reporting an unenforced
-			// `true` would let a requirement that gates on TLS pick this pack.
 			tls: options.tls ?? false,
 			extensions: options.extensions ?? [],
 		},
 		placementConstraints: [
-			// A single-writer volume cannot follow the container across hosts.
 			{ key: "storage.localVolume", operator: "equals", values: ["true"] },
 		],
 		requiresConnectivityProfiles: ["binding.postgresql/v1"],

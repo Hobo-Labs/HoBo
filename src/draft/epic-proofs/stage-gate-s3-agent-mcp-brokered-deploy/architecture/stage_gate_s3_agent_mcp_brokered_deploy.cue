@@ -1,4 +1,3 @@
-// CUE constraints for Stage Gate S3 drill evidence records.
 
 package architecture_evidence
 

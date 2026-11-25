@@ -21,14 +21,6 @@ import {
 import type { QuarantinedDelivery } from "./account-operations.js";
 import type { CursorCodec } from "./relay-mcp-cursor.js";
 
-/**
- * The views the relay's MCP server returns. Each is assembled one named field
- * at a time, so a field added to a lease, a job or an event is not exposed
- * until someone lists it here. An event's stored detail is read for a handful
- * of identifying fields and never returned.
- */
-
-/** A lease for triage: where it is, what it runs, what it cost. */
 export function leaseView(lease: Lease): RelayMcpLease {
 	return create(RelayMcpLeaseSchema, {
 		id: lease.id,
@@ -55,7 +47,6 @@ export function leaseView(lease: Lease): RelayMcpLease {
 	});
 }
 
-/** A queued job that has no lease yet. */
 export function jobView(job: Job): RelayMcpJob {
 	return create(RelayMcpJobSchema, {
 		id: job.id,
@@ -70,7 +61,6 @@ export function jobView(job: Job): RelayMcpJob {
 	});
 }
 
-/** The lease a lease event recorded, when its detail is that lease. */
 function eventLease(event: CiEvent): Lease | undefined {
 	if (!event.leaseId) return undefined;
 	try {
@@ -81,10 +71,6 @@ function eventLease(event: CiEvent): Lease | undefined {
 	}
 }
 
-/**
- * One journal event: its cursor, type and time, and the job or lease it is
- * about. The cursor is the account's own; the journal position is not shown.
- */
 export function eventView(
 	entry: SequencedCiEvent,
 	cursors: Pick<CursorCodec, "encode">,
@@ -118,7 +104,6 @@ export function eventView(
 	return view;
 }
 
-/** A quarantined delivery's identity and history; never its body. */
 export function quarantinedDeliveryView(
 	delivery: QuarantinedDelivery,
 ): RelayMcpQuarantinedDelivery {

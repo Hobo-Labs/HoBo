@@ -1,8 +1,3 @@
-/**
- * Host workdir filesystem helpers for isolated CI jobs.
- * Kept dependency-free (Node built-ins only) so deps-image mount verify can
- * import this module before the full {@link ./storage-admission.js} graph loads.
- */
 import {
 	chown,
 	lstat,
@@ -28,7 +23,6 @@ export type WorkerFileSystemStats = Readonly<{
 	bfree: number;
 	files: number;
 	ffree: number;
-	/** Fundamental file-system block size in bytes (`statfs.bsize`). */
 	bsize: number;
 }>;
 

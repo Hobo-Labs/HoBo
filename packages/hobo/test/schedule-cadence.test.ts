@@ -14,11 +14,6 @@ import { describe, expect, it } from "vitest";
 import { relayPlatformDrift } from "../src/ci-up-relay.js";
 import { toRegistrableProvider } from "../src/compose.js";
 
-// A schedule's cadence is declared on the schedule (the cadence trait) and
-// carried by the plan to whoever runs it: a Cloudflare Cron Trigger on the
-// Worker it depends on, or the Vercel schedule a deployment's vercel.json
-// declares for the relay's repair queue.
-
 function planned(definition: ReturnType<typeof bindle>) {
 	const manifest = collectBindleManifest(
 		targetFromBindleDefinition(definition),
@@ -48,7 +43,6 @@ describe("a schedule's cadence, from the Bindle to the provider", () => {
 			productId: "cloudflare.cron-triggers/v1",
 			realizationParameters: { cron: "*/5 * * * *", target: "api" },
 		});
-		// The Pulumi lane: realized with the cadence and a typed Worker binding.
 		const { iac } = realizeResourcePlans(
 			nodes.map((node) => ({
 				...node,

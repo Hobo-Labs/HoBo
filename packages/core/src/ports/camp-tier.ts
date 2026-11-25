@@ -77,51 +77,13 @@
  * and both needed.
  */
 
-/**
- * The named tiers. Values are the wire form and appear in Camp ids, so they are
- * short, lower-case, and stable.
- */
 import { isJsonString, type JsonValue } from "../json.js";
 
 export const CAMP_TIERS = Object.freeze({
-	/**
-	 * Internet-facing ingress: the only tier that accepts unsolicited public
-	 * traffic. CDN, load balancer, API gateway, static assets, WAF.
-	 *
-	 * This is the position SEC05-BP01 describes as "an Amazon VPC public subnet
-	 * (similar to a demilitarized zone, or DMZ)" and SE:04 as "Implement
-	 * demilitarized zones (DMZs) in front of the application with proper
-	 * controls via firewalls". `edge` is preferred over `dmz` as the name
-	 * because a DMZ historically implied a trusted interior behind it, which is
-	 * the assumption ADR-0023 rejects — the containment role is identical, the
-	 * implied trust is not.
-	 */
 	edge: "edge",
 
-	/**
-	 * Business logic. Private by construction: no inbound path from the
-	 * internet, reached only through `edge` or another internal caller.
-	 *
-	 * SEC05-BP01's "back-end services deployed into private subnets"; SE:04's
-	 * application tier. This is the "business layer" of classic N-tier, named
-	 * for where it runs rather than for the code that runs there.
-	 */
 	app: "app",
 
-	/**
-	 * Persistence and the state services around it: databases, caches, queues,
-	 * object stores, search indexes.
-	 *
-	 * SEC05-BP01 is explicit that this is its own layer and not merely another
-	 * private subnet alongside `app`: "The data layer, that is hosting resources
-	 * such as databases and shared file systems, can reside in different private
-	 * subnets from the resources of your application layer."
-	 *
-	 * Note this is the *deployment* tier that holds stores. A "data access
-	 * layer" in the N-tier sense is application code and belongs in `app`; the
-	 * store it talks to belongs here. Keeping that distinction is the point —
-	 * putting the accessor with the store would defeat the boundary.
-	 */
 	data: "data",
 
 	/**
@@ -160,19 +122,6 @@ export const CAMP_TIERS = Object.freeze({
 
 export type CampTier = (typeof CAMP_TIERS)[keyof typeof CAMP_TIERS];
 
-/**
- * Every named tier, ordered by containment depth along the request path:
- * `edge` takes public traffic, `app` is reachable only from inside, `data`
- * holds state and calls nothing.
- *
- * `untrusted` and `ops` sit *after* that spectrum rather than on it, and the
- * distinction is worth stating because getting it wrong produces a graph that
- * contradicts itself. `untrusted` is not "more protected than `data`" — it is
- * a quarantine, contained *from* the rest rather than protected *by* it, and
- * both `edge` (an upload arrives) and `app` (a job runs generated code)
- * legitimately hand work to it. Placing it mid-spectrum would make one of those
- * two edges look like a reversal. `ops` is off the request path entirely.
- */
 export const CAMP_TIER_ORDER: readonly CampTier[] = Object.freeze([
 	CAMP_TIERS.edge,
 	CAMP_TIERS.app,
@@ -181,25 +130,15 @@ export const CAMP_TIER_ORDER: readonly CampTier[] = Object.freeze([
 	CAMP_TIERS.ops,
 ]);
 
-/**
- * The tiers a workload gets when it says nothing.
- *
- * Three, matching the shape both frameworks reach for first — SEC05-BP01's
- * "presentation layer, application layer, and data layer", SE:04's web/database
- * split — and stopping there because SE:04 also warns that segmenting past a
- * reasonable limit loses the benefit.
- */
 export const DEFAULT_CAMP_TIERS: readonly CampTier[] = Object.freeze([
 	CAMP_TIERS.edge,
 	CAMP_TIERS.app,
 	CAMP_TIERS.data,
 ]);
 
-/** True when `value` is a named tier. */
 export function isCampTier(value: JsonValue | undefined): value is CampTier {
 	return (
 		isJsonString(value) &&
-		// SAFETY: assertion required at this I/O or test boundary.
 		(CAMP_TIER_ORDER as readonly string[]).includes(value)
 	);
 }

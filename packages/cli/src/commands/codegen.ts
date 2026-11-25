@@ -35,7 +35,6 @@ export function createCodegenCommand(
 						: `hobo codegen ok (${count} generated files written)`,
 					data: {
 						command: "codegen",
-						// SAFETY: `...(toJson(CodegenReportSchema, result) as JsonObject),` is required at this I/O or test boundary.
 						...(toJson(CodegenReportSchema, result) as JsonObject),
 					},
 				};

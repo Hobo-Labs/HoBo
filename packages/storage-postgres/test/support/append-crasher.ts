@@ -1,9 +1,3 @@
-/**
- * Child process for the crash-mid-append probe: appends batches of three
- * events (one correlation id per batch) as fast as it can and prints
- * `ACKED seq=<n>` after each committed batch, until the parent SIGKILLs it.
- * A batch the kill interrupts must be wholly absent after restart.
- */
 import { createPostgresEventStore } from "../../src/index.js";
 
 const [url, schema] = process.argv.slice(2);

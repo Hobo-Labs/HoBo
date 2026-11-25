@@ -1,13 +1,5 @@
 package adapter_drizzle
 
-// Constraints for the drizzle adapter's reported records.
-//
-// The invariants worth enforcing here are the honesty ones. An impedance code
-// must come from the closed vocabulary the adapter actually emits, so a
-// consumer can switch on it. A refusal must carry non-empty remediation, so
-// fail-closed never means dead-end. And sql_emission_available may only be true
-// when the toolchain is present — that cross-field rule is the whole point of
-// the gate, expressed where it cannot be forgotten.
 
 #DrizzleImpedanceCode: "DRIZZLE_COLUMN_UNRECOGNIZED" |
 	"DRIZZLE_COLUMN_TYPE_UNREADABLE" |
@@ -29,10 +21,8 @@ package adapter_drizzle
 	"TOOLCHAIN_UNAVAILABLE" |
 	"SQL_EMISSION_INCOMPLETE"
 
-// Semantic version of the pinned drizzle-kit release.
 #EngineVersion: =~"^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
 
-// Unqualified SQL identifier; the IR has no schema qualifier.
 #TableName: =~"^[a-z_][a-z0-9_]*$"
 
 #DrizzleImpedanceFindingRecord: {
@@ -52,8 +42,6 @@ package adapter_drizzle
 	engine_version: #EngineVersion
 	toolchain_present:     bool
 	sql_emission_available: bool
-	// SQL may only be claimed available behind a present toolchain. Anything
-	// else would be a best-effort approximation, which this adapter refuses.
 	_emissionRequiresToolchain: true & (!sql_emission_available | toolchain_present)
 }
 

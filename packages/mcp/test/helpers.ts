@@ -28,11 +28,6 @@ import type { AuthContext } from "../src/auth.js";
 import type { JsonValue } from "../src/json.js";
 import { MCP_TOOL_CALL_VERB, MCP_TOOL_PORT } from "../src/tool-surface.js";
 
-// Mirrors packages/cli/test/cloud-verbs.test.ts: an in-process, mocked-lane Yard
-// (runtime-local EventStore + in-memory ActorHost + an injected in-memory
-// IacProvider). No real cloud calls. The MCP server drives this exact seam so it
-// reuses the CLI dispatch path rather than reimplementing plan/up/down.
-
 export const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -65,9 +60,7 @@ function inMemoryIac(): IacProvider {
 		async apply(program: IacProgram) {
 			return { endpoint: `${program.resourceId}.local` };
 		},
-		async destroy() {
-			/* local backend no-op */
-		},
+		async destroy() {},
 		async refresh() {
 			return { drift: false, observed: {} };
 		},
@@ -93,8 +86,6 @@ export function makeRuntime(): YardRuntime {
 	};
 }
 
-// A HoboCli whose cloud verbs are wired to a fresh injected YardRuntime — the
-// same construction the CLI tests use.
 export function makeWiredCli(runtime = makeRuntime()): HoboCli {
 	return createHoboCli({
 		commands: {
@@ -122,8 +113,6 @@ export async function withProject(
 	}
 }
 
-// A resolved SVID auth context granting the given tool names — the same
-// ScopeEntry[] shape IdentityService.authenticateAtGateway returns.
 export function authGranting(
 	toolNames: readonly string[],
 	overrides: { subject?: string; tenant?: string } = {},

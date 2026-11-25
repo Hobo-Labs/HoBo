@@ -1,14 +1,3 @@
-// Golden upcaster corpus for the event bodies the promotion saga appends:
-// env.PromoteRequested / Promoted / PromoteRejected / PromoteSuperseded /
-// PromoteRolledBack (PromotionRecord) and env.Cloned / Expired
-// (PreviewEnvironmentRecord). Append-only: a body change needs a new
-// version, a total upcaster and a new pinned entry (ADR-0032). Field tags
-// follow cd.proto. The saga.* facts belong to @hobo/events' own corpus.
-//
-// The corpus codec has scalar, string-list and JSON-object fields only, so
-// `toPromotionCorpusBody` carries repeated messages (`reasons`,
-// `obligations`) as their members' canonical JSON and a nested message
-// (`source`) as its canonical JSON: a lossless, deterministic view.
 import {
 	type CorpusBaseline,
 	createCorpusBaseline,
@@ -46,7 +35,6 @@ const PROMOTION_FIELDS: readonly EventFieldSpec[] = [
 	stringField("requestedAt", 12),
 	stringsField("reasons", 13, OPTIONAL),
 	stringField("strategy", 14, OPTIONAL),
-	// bool proposal = 15 is omitted from protobuf JSON when false.
 	{ name: "proposal", tag: 15, type: "bool", required: false },
 	stringField("idempotencyKey", 16),
 	stringField("fanoutId", 17, OPTIONAL),
@@ -58,7 +46,6 @@ const PREVIEW_FIELDS: readonly EventFieldSpec[] = [
 	stringField("campId", 1),
 	stringField("sourceCampId", 2),
 	stringField("freightId", 3),
-	// uint64 is a decimal string in protobuf JSON.
 	stringField("ttlMs", 4),
 	stringField("expiresAt", 5),
 	stringField("createdBy", 6),
@@ -214,7 +201,6 @@ const REPEATED_MESSAGES: ReadonlySet<string> = new Set([
 	"obligations",
 ]);
 
-/** The corpus view of a journal body: messages become canonical JSON strings. */
 export function toPromotionCorpusBody<T>(data: T): EventBody {
 	const document = toJsonValue(data);
 	if (!isJsonObject(document)) return {};

@@ -2,7 +2,6 @@ package data_models
 
 import "list"
 
-// CUE constraints for provider_cloudflare.proto messages.
 
 #EquivalenceMapping: {
 	class:            string & !=""

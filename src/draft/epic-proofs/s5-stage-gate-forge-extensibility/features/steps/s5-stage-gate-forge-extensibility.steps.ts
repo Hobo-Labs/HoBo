@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for s5-stage-gate-forge-extensibility.feature.
- *
- * Drives the epic's real reference service (services/s5-stage-gate-reference.ts),
- * which composes the generation, signed-artifact registry, eval-promotion, and
- * live-fix technical-proof contracts into one offline Stage-5 drill. The drill
- * runs once and every scenario asserts against its real slice outputs.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -29,8 +21,6 @@ type ForgeWorld = {
 };
 
 const world: ForgeWorld = {};
-
-// --- Scenario: hobo forge yields a signed Registry listing -------------------
 
 Given("the S5 forge drill against the no-egress reference backend", async () => {
   const result = await drill();
@@ -75,8 +65,6 @@ Then("tampered or unsigned forged artifacts fail install verification", () => {
   assert.equal(adversarial.unsignedArtifactRefused, true);
 });
 
-// --- Scenario: Forged provider deploys a Bindle resource end-to-end ----------
-
 Given("a certified forged provider installed from the Registry", async () => {
   const result = await drill();
   assert.equal(result.registry.installOk, true, "install verification must have passed");
@@ -104,8 +92,6 @@ Then(
   },
 );
 
-// --- Scenario: Stub port implementation promotes through the eval gate -------
-
 Given("recorded stub traces and a conformance-green forge candidate", async () => {
   const result = await drill();
   world.stubImpl = result.stubImpl;
@@ -125,8 +111,6 @@ Then("the stub challenger promotes through conformance, eval, and policy lenses"
   assert.ok(stubImpl.events.includes("impl.Promoted"), "promotion emits impl.Promoted");
   assert.deepEqual(stubImpl.failures, []);
 });
-
-// --- Scenario: Gated live-fix auto-rolls back ---------------------------------
 
 Given("a staging SLO incident and a low-risk generated fix candidate", async () => {
   const result = await drill();

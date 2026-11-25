@@ -1,14 +1,3 @@
-// HoBo posture health source (D24, D25): reads the `noncompliant_ratio` and
-// `shadow_divergence_count` series from the compliance and shadow projections
-// through the frozen PostureSeriesReader. An INFORM node verifies on these.
-//
-// query:        "noncompliant_ratio" | "shadow_divergence_count"
-// endpoint_ref: "" or the candidate Rail digest "sha256:<hex>"
-//               (required for shadow_divergence_count)
-//
-// Posture is per Camp: CANARY and ALL read the Camp; there is no baseline.
-// A window without compliance records yields no samples, so the engine fails
-// it (I5) — never "compliant by absence".
 import { create } from "@bufbuild/protobuf";
 import {
 	Aggregation,
@@ -33,7 +22,6 @@ export const POSTURE_SERIES = Object.freeze({
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 function railDigest(value: string): Digest | undefined {
-	// SAFETY: matched against the Digest pattern.
 	return DIGEST.test(value) ? (value as Digest) : undefined;
 }
 
@@ -97,11 +85,6 @@ export function createHoboPostureSource(
 	};
 }
 
-/**
- * The default INFORM-node verification (Part I §I.8 R12): pass only with a
- * noncompliant ratio ≤ 2% and zero shadow divergences over 24 h. A Rail that
- * intends to block something widens `maxShadowDivergence` explicitly.
- */
 export function informVerificationSpec(
 	input: Readonly<{
 		railDigest: Digest;

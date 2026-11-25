@@ -11,12 +11,6 @@ import { readLocalDeployment } from "../src/local-deployment.js";
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL("../dist/bin/hobo.js", import.meta.url));
 
-// One template carries the packaged lifecycle. The four starters share one
-// project tree (packages/patterns/patterns/starter/cli/<template>/project are
-// byte-identical) and differ only in the names and route filled into it, and
-// `new → codegen → build → /proof` for every template runs in-process in
-// packages/cli/test/starter-end-to-end.test.ts. What this file adds, the
-// packaged `up` → HTTP → `down`, does not depend on the template.
 describe("canonical starter through real self-hosted deployment", () => {
 	it.for(["fullstack"])(
 		"new → codegen → build → packaged up → HTTP → down for %s",
@@ -55,7 +49,6 @@ describe("canonical starter through real self-hosted deployment", () => {
 				).toMatchObject({ ok: true });
 				expect(await command(["codegen"])).toMatchObject({ ok: true });
 				expect(await command(["build"])).toMatchObject({ ok: true });
-				// Keep app.ts as a real unavailable-source case: its seed import was removed.
 				await rm(join(project, "src"), { recursive: true, force: true });
 				const up = await command(["up"]);
 				expect(up).toMatchObject({
@@ -85,9 +78,6 @@ describe("canonical starter through real self-hosted deployment", () => {
 					fetch(up.data.primaryUrl, { signal: AbortSignal.timeout(1000) }),
 				).rejects.toThrow();
 			} finally {
-				// The local deployment's `down` acts on its receipt; with none left it
-				// falls through to the runtime `down`, which this deployment never
-				// used. A passing run has already stopped it.
 				const live = await readLocalDeployment(project).catch(() => true);
 				if (live) await command(["down"]).catch(() => undefined);
 				await rm(root, { recursive: true, force: true });

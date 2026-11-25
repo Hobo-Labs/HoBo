@@ -546,7 +546,6 @@ function compareRelationships(
 }
 
 function stripUndefined<T extends object>(value: T): T {
-  // SAFETY: `return Object.fromEntries(` is required at this I/O or test boundary.
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => entry !== undefined),
   ) as T;
@@ -554,14 +553,12 @@ function stripUndefined<T extends object>(value: T): T {
 
 function sortJson<T>(value: T): T {
   if (Array.isArray(value)) {
-    // SAFETY: mapped array preserves T's array structure at this canonicalization boundary.
     return value.map(sortJson) as T;
   }
   if (!value || !isJsonObject(value)) {
     return value;
   }
 
-  // SAFETY: sorted entries reconstruct T after key-order canonicalization.
   return Object.fromEntries(
     Object.entries(value)
       .sort(([left], [right]) => left.localeCompare(right))

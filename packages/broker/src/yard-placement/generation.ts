@@ -15,21 +15,15 @@ export const DEFAULT_YARD_GENERATION_POLICY: YardGenerationPolicy =
 	Object.freeze({
 		id: "yard-generation-default-deny",
 		effect: "deny",
-		// SAFETY: assertion required at this I/O or test boundary.
 		allowedRuntimeIds: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		deniedRuntimeIds: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		allowedProviderIds: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		deniedProviderIds: Object.freeze([] as string[]),
-		// SAFETY: assertion required at this I/O or test boundary.
 		allowedConnectorIds: Object.freeze([] as string[]),
 		maxConcurrentGenerations: 0,
 		maxYardsPerTenant: 0,
 		requireApproval: true,
 		requireAttestation: true,
-		// SAFETY: assertion required at this I/O or test boundary.
 		lockedProperties: Object.freeze([] as string[]),
 	});
 
@@ -47,10 +41,6 @@ export interface YardGenerationConnector {
 	compensate?(plan: YardGenerationPlan): Promise<YardGenerationResult>;
 }
 
-/**
- * Pure decision: whether generation is allowed and which runtime/connector wins.
- * Default effect is deny.
- */
 export function planYardGeneration(options: {
 	readonly ownerTenantId: string;
 	readonly requestedLayout: YardLayout;
@@ -134,9 +124,7 @@ export function planYardGeneration(options: {
 		};
 	}
 
-	// SAFETY: assertion required at this I/O or test boundary.
 	const layoutHash = contentHashOf(options.requestedLayout) as ContentHash;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const idempotencyKey = contentHashOf({
 		ownerTenantId: options.ownerTenantId,
 		layoutHash,
@@ -167,7 +155,6 @@ export function planYardGeneration(options: {
 	};
 	const plan: YardGenerationPlan = Object.freeze({
 		...planBody,
-		// SAFETY: assertion required at this I/O or test boundary.
 		planHash: contentHashOf(planBody) as ContentHash,
 	});
 
@@ -179,10 +166,6 @@ export function planYardGeneration(options: {
 	};
 }
 
-/**
- * In-memory generation saga coordinator: leases by idempotency key so concurrent
- * identical requests share one attempt.
- */
 export interface YardGenerationSaga {
 	readonly run: (plan: YardGenerationPlan) => Promise<YardGenerationResult>;
 	readonly inspect: (
@@ -208,7 +191,6 @@ export function createYardGenerationSaga(options: {
 				) {
 					return existing.result;
 				}
-				// Resume inspect path for in-flight.
 				const connector = options.connectors.get(plan.generatorConnectorId);
 				if (!connector) {
 					return fail(plan, "connector-missing", "generator connector missing");
@@ -241,7 +223,6 @@ export function createYardGenerationSaga(options: {
 			attempts.set(plan.idempotencyKey, { plan, result: started });
 
 			const result = await connector.provision(plan);
-			// Never treat provisioned as ready without registration path.
 			const normalized =
 				result.status === "provisioned"
 					? Object.freeze({ ...result, status: "registered" as const })

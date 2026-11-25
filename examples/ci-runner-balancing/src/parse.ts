@@ -1,15 +1,3 @@
-/**
- * The single parse boundary for untrusted registry documents (parse, don't
- * validate). Raw JSON crosses this boundary exactly once and comes out as
- * the derived domain type {@link ParsedRegistry}: generated protobuf
- * records plus structural invariants mirrored from
- * `data-models/runner_balancing.cue` (ids resolve, every routed provider
- * has a budget envelope, caps are ordered). Invalid *structure* throws;
- * invalid *cost facts* deliberately do not — they degrade to declared
- * min-cost ranking downstream in the ledger projection, because declared
- * facts are untrusted ranking input, never billing input.
- */
-
 import { create, fromJson } from "@bufbuild/protobuf";
 
 import {
@@ -34,7 +22,6 @@ export class RegistryParseError extends Error {
 }
 
 // domain-view: parse-don't-validate derived type — the registry document's
-// parsed form with resolved lookups; its wire form is the generated records.
 export interface ParsedRegistry {
 	readonly providers: readonly RunnerProviderProfile[];
 	readonly providerById: ReadonlyMap<string, RunnerProviderProfile>;
@@ -45,7 +32,6 @@ export interface ParsedRegistry {
 const PROVIDER_ID = /^[a-z][a-z0-9_]*$/;
 const VARIABLE_NAME = /^[A-Z][A-Z0-9_]*$/;
 
-/** JSON that has not yet crossed a protobuf/CUE parse boundary. */
 export type JsonObject = { readonly [key: string]: JsonValue };
 export type JsonValue =
 	| string
@@ -157,7 +143,6 @@ function asArray(value: JsonValue | undefined, field: string, problems: string[]
 	return [];
 }
 
-/** Parse one untrusted registry document into the derived domain type. */
 export function parseRegistryDocument(raw: JsonValue): ParsedRegistry {
 	const problems: string[] = [];
 	if (!isJsonObject(raw)) {
@@ -172,7 +157,6 @@ export function parseRegistryDocument(raw: JsonValue): ParsedRegistry {
 		problems,
 	).entries()) {
 		try {
-			// SAFETY: assertion to `y as never)); ` is required at this boundary.
 			providers.push(fromJson(RunnerProviderProfileSchema, entry as never));
 		} catch (error) {
 			problems.push(`providers[${index}]: ${String(error)}`);
@@ -186,7 +170,6 @@ export function parseRegistryDocument(raw: JsonValue): ParsedRegistry {
 		problems,
 	).entries()) {
 		try {
-			// SAFETY: assertion to `y as never)); ` is required at this boundary.
 			tracks.push(fromJson(RunnerTrackSchema, entry as never));
 		} catch (error) {
 			problems.push(`tracks[${index}]: ${String(error)}`);
@@ -200,7 +183,6 @@ export function parseRegistryDocument(raw: JsonValue): ParsedRegistry {
 		problems,
 	).entries()) {
 		try {
-			// SAFETY: assertion to `y as never); ` is required at this boundary.
 			const envelope = fromJson(BudgetEnvelopeSchema, entry as never);
 			envelopes.set(envelope.providerId, envelope);
 		} catch (error) {
@@ -265,17 +247,11 @@ export function parseRegistryDocument(raw: JsonValue): ParsedRegistry {
 	return { providers, providerById, tracks, envelopes };
 }
 
-/**
- * Parse one untrusted usage document (operator override or adapter payload)
- * into generated UsageSnapshot records; unusable entries are dropped, not
- * guessed at.
- */
 export function parseUsageSnapshots(raw: JsonValue): UsageSnapshot[] {
 	if (!Array.isArray(raw)) return [];
 	const snapshots: UsageSnapshot[] = [];
 	for (const entry of raw) {
 		try {
-			// SAFETY: assertion to `y as never); ` is required at this boundary.
 			const snapshot = fromJson(UsageSnapshotSchema, entry as never);
 			if (
 				snapshot.providerId !== "" &&
@@ -287,13 +263,11 @@ export function parseUsageSnapshots(raw: JsonValue): UsageSnapshot[] {
 				snapshots.push(snapshot);
 			}
 		} catch {
-			// Unusable rows are evidence of a bad source, not a reason to guess.
 		}
 	}
 	return snapshots;
 }
 
-/** Build an unknown-usage snapshot (honest degradation for silent sources). */
 export function unknownUsage(providerId: string, source: string): UsageSnapshot {
 	return create(UsageSnapshotSchema, {
 		providerId,

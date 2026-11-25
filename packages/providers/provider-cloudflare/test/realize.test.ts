@@ -12,7 +12,6 @@ import {
 } from "../src/index.js";
 import type { JsonObject } from "../src/json.js";
 
-// Golden per-port ResourcePlans -> expected Cloudflare resource class.
 const GOLDEN: Array<{ port: string; name: string; resourceClass: string }> = [
 	{ port: "compute", name: "web", resourceClass: "cloudflare:workers-script" },
 	{ port: "kv", name: "sessions", resourceClass: "cloudflare:kv-namespace" },
@@ -25,7 +24,6 @@ const GOLDEN: Array<{ port: string; name: string; resourceClass: string }> = [
 
 describe("realize() emits a valid IacProgram per initial port", () => {
 	for (const golden of GOLDEN) {
-		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		it(`realizes ${golden.port} -> ${golden.resourceClass} as a valid program`, () => {
 			const provider = createCloudflareProvider();
 			const plan: ResourcePlan = {
@@ -35,8 +33,6 @@ describe("realize() emits a valid IacProgram per initial port", () => {
 			};
 			const { iac } = provider.realize(plan);
 
-			// LOCAL copy of the iac-pulumi shape accepts it (see also the real
-			// @hobo/iac-pulumi composition test).
 			assert.doesNotThrow(() => assertLocalIacProgram(iac));
 			assert.equal(iac.apiVersion, "hobo.iac-program/v1");
 			assert.equal(iac.kind, "iac-program");
@@ -67,7 +63,6 @@ describe("realize() option negotiation", () => {
 			],
 		};
 		const { iac } = realizeResourcePlan(plan);
-		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		const options = iac.resources[0]?.inputs.options as JsonObject;
 		assert.equal(options.cpuMs, 15_000);
 		assert.equal("cpu" in options, false);
@@ -102,17 +97,12 @@ describe("hello-bindle realizes end-to-end", () => {
 				["sessions", "cloudflare:kv-namespace"],
 			],
 		);
-		// Worker binds to assets + sessions via ${resources.*.outputs.binding}.
-		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		const bindings = iac.resources[0]?.inputs.bindings as Array<{
 			ref: string;
 		}>;
 		assert.deepEqual(
 			bindings.map((bind) => bind.ref),
 			[
-				// Not template literals: these are the literal output-reference strings
-				// the IaC program emits (`resources.<name>.outputs.<output>`), which is
-				// exactly what this assertion pins.
 				// biome-ignore-start lint/suspicious/noTemplateCurlyInString: literal IaC output refs
 				"${resources.assets.outputs.binding}",
 				"${resources.sessions.outputs.binding}",
@@ -162,7 +152,6 @@ describe("bindings say what they point at", () => {
 				resourceType: "cloudflare:workers-script",
 			},
 		]);
-		// The relay's repair schedule depends on a queue, and says so.
 		assert.deepEqual(bindingsOf("repair"), [
 			{
 				resource: "hobo-ci",

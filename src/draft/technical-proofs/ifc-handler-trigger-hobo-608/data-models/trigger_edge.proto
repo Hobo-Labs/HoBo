@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Design-time TriggerEdge record for HOBO-608 attachment + manifest IR.
 
 message DurableRuntimeLink {
   string primitive = 1;

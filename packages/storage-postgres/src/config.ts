@@ -6,13 +6,6 @@ import {
 import { StoragePostgresError } from "./errors.js";
 import { parseSchemaName, type SchemaName } from "./identifiers.js";
 
-/**
- * Defaults. The first three mirror `CD_DEFAULTS` in `@hobo/cd`
- * (`postgresMinMajorVersion`, `postgresStatementTimeoutMs`,
- * `postgresPoolSize`); the lease TTL mirrors `CD_DEFAULTS.leaseTtlMs`.
- * This package does not import `@hobo/cd` (storage sits below delivery),
- * so the parity is held by a test instead.
- */
 export const POSTGRES_STORE_DEFAULTS = Object.freeze({
 	minServerMajorVersion: 16,
 	statementTimeoutMs: 5_000,
@@ -24,9 +17,7 @@ export const POSTGRES_STORE_DEFAULTS = Object.freeze({
 	applicationName: "hobo-storage-postgres",
 });
 
-/** Parsed, range-checked store configuration. */
 export type PostgresStoreConfig = Readonly<{
-	/** Empty when the caller injects its own pool. */
 	connectionString: string;
 	schema: SchemaName;
 	partitionId: string;
@@ -38,7 +29,6 @@ export type PostgresStoreConfig = Readonly<{
 	applicationName: string;
 }> & { readonly __brand: "storage-postgres.PostgresStoreConfig" };
 
-/** JSON form accepted by `parsePostgresStoreConfig` (proto3 JSON, camelCase or snake_case). */
 export type PostgresStoreConfigInput = Readonly<{
 	connectionString?: string;
 	schema?: string;
@@ -123,21 +113,14 @@ function refine(record: PostgresStoreConfigRecord): PostgresStoreConfig {
 		),
 		applicationName,
 	};
-	// SAFETY: every field above was parsed or range-checked; that is the brand.
 	return Object.freeze(config) as PostgresStoreConfig;
 }
 
-/**
- * Parse configuration from its JSON wire form. Unknown fields, wrong types
- * and out-of-range values are refused with `invalid-config`; zero/absent
- * fields take `POSTGRES_STORE_DEFAULTS`.
- */
 export function parsePostgresStoreConfig(
 	input: PostgresStoreConfigInput | JsonValue,
 ): PostgresStoreConfig {
 	let record: PostgresStoreConfigRecord;
 	try {
-		// SAFETY: fromJson validates every field against the generated schema.
 		record = fromJson(PostgresStoreConfigRecordSchema, input as JsonValue);
 	} catch (error) {
 		throw new StoragePostgresError(
@@ -148,7 +131,6 @@ export function parsePostgresStoreConfig(
 	return refine(record);
 }
 
-/** Read configuration from environment variables (`HOBO_STORE_POSTGRES_*`). */
 export function postgresStoreConfigFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
 ): PostgresStoreConfig {

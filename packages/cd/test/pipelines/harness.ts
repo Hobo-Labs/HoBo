@@ -1,4 +1,3 @@
-// Arrangement helpers for the pipeline controller tests.
 import { create, toJson } from "@bufbuild/protobuf";
 import {
 	type PipelineNodeRecord,
@@ -29,7 +28,6 @@ import {
 	TENANT,
 } from "./fakes.js";
 
-/** The plain-object branch of a message init shape (not a message instance). */
 type NodeInit = Parameters<typeof create<typeof PipelineNodeRecordSchema>>[1];
 type PipelineInit = Parameters<typeof create<typeof PipelineRecordSchema>>[1];
 
@@ -112,14 +110,12 @@ export function harness(options: HarnessOptions = {}) {
 		controller,
 		build,
 		ctx,
-		/** Define a Freight source the way WP2 does (a `source.Defined` fact). */
 		async source(name: string) {
 			await store.seed(CD_STREAMS.source(name), CD_EVENTS.SourceDefined, {
 				name,
 				bindle: "acme/shop",
 			});
 		},
-		/** Record that a promotion converged (WP6's `env.Promoted`) at the current clock. */
 		async promoted(
 			freightId: string,
 			campIds: readonly string[],

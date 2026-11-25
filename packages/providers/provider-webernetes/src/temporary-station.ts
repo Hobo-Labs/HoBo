@@ -14,11 +14,6 @@ import {
 
 export const supportsAnonymousTemporaryDeploy = true as const;
 
-/**
- * The only seam in this package. Whatever stands up the local station — the
- * Examples dev server, a test double, an overlay host — implements this and
- * hands back two URLs, which are then untrusted until they cross the parser.
- */
 export type LocalTempTransport = {
 	provision(input: {
 		readonly stationId: string;
@@ -30,14 +25,6 @@ export type LocalTemporaryStationInput = {
 	readonly transport?: LocalTempTransport;
 };
 
-/**
- * Provision a temporary/agent Environment Station on the local yard.
- *
- * The result is anonymous and temporary because the endpoint is local and the
- * lease expires, not because this function says so: `deployment` is the parsed
- * pair, and a transport that returned a public host or a URL with userinfo has
- * already failed by the time this returns.
- */
 export async function provisionTemporaryEnvironmentStation(
 	input: LocalTemporaryStationInput,
 ): Promise<TemporaryEnvironmentStationResult> {

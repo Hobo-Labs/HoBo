@@ -1,17 +1,10 @@
 package data_models
 
-// CUE constraints for kube_fleet.proto. Values are protobuf
-// JSON field names. The parsers in src/config.ts apply the same rules, so a
-// value violating them never exists past the parse boundary;
-// test/cue-constraints.test.ts keeps the two in agreement.
 
-// https://host[:port] with no path, query, fragment or userinfo.
 #ApiBaseUrl: string & =~"^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$"
 
-// Kubernetes DNS-1123 label (namespaces, cluster names).
 #K8sLabel: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
 
-// Kubernetes DNS-1123 subdomain (object names).
 #K8sName: string & =~"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$"
 
 #HubKind:  "HUB_KIND_OCM" | "HUB_KIND_KARMADA" | "HUB_KIND_CLUSTER_INVENTORY"

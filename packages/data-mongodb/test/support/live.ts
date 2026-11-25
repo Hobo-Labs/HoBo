@@ -1,6 +1,3 @@
-// The live lane's harness: one shared client, one database per binding,
-// dropped when the binding closes. Nothing here runs unless
-// HOBO_TEST_MONGODB_URL is set.
 import type { EngineBinding, EngineHarness } from "@hobo/data-core";
 import { type Db, MongoClient } from "mongodb";
 import {
@@ -10,20 +7,14 @@ import {
 } from "../../src/index.js";
 import { createMongoDriverExecutor } from "./driver-executor.js";
 
-/** The connection string, from the environment only; never logged. */
 export const LIVE_URL = process.env.HOBO_TEST_MONGODB_URL ?? "";
 
 export interface LiveMongo {
 	readonly client: MongoClient;
-	/** A database name unique to this run. */
 	database(): string;
-	/** The driver's own handle, for writes that deliberately bypass the binding. */
 	native(database: string): Db;
-	/** An executor over a database; `drop` removes the database on close. */
 	executor(database: string, drop: boolean): MongoExecutor;
-	/** A fresh database behind every binding, dropped when it closes. */
 	harness(): EngineHarness;
-	/** Databases this run created that still exist. */
 	leftovers(): Promise<readonly string[]>;
 	close(): Promise<void>;
 }

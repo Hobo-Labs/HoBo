@@ -1,6 +1,3 @@
-// The planning resolver over the real `@hobo/cloud` planner (the same path
-// as `yard-client.ts` `pureplan`): I1 across two providers, exact diffs,
-// fail-closed declaration identity, teardown and departure.
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
@@ -21,8 +18,6 @@ import { digestOf } from "../../src/promotion/journal.js";
 import { FakeDesired, FakeFreight } from "./doubles.js";
 import { camp, context, MemoryEventStore, T0, TENANT } from "./store.js";
 
-// The declaration parser lives in @hobo/bindles, which @hobo/cd does not
-// depend on; the test loads it through @hobo/cloud's own resolution.
 let parseManifest: (raw: JsonObject) => Declaration;
 beforeAll(async () => {
 	const cloudEntry = fileURLToPath(import.meta.resolve("@hobo/cloud"));
@@ -103,7 +98,6 @@ function setup(camps: Record<string, CampPlanning>) {
 	return { desired, resolver, addFreight, addDeclaration, declarations };
 }
 
-/** A Yard pins each resource to its provider through placement selectors. */
 function pinned(environment: string, providerId: string): CampPlanning {
 	const criteria = {
 		selectors: [{ key: "provider", op: "eq" as const, values: [providerId] }],
@@ -203,7 +197,6 @@ describe("planning resolver (planning.ts)", () => {
 			"beta",
 			"beta",
 		]);
-		// Promote, never rebuild: identical resource graph and ports, only the Matching differs.
 		expect(
 			eu.value.resolved.plan.resources.map((r) => [r.name, r.port]),
 		).toEqual(us.value.resolved.plan.resources.map((r) => [r.name, r.port]));
@@ -246,7 +239,6 @@ describe("planning resolver (planning.ts)", () => {
 			[],
 		);
 		expect(second.value.delta.baseSetId).toBe("set_1");
-		// Same plan graph: a re-resolve is deterministic (same Delta id).
 		const again = await s.resolver.resolve(
 			{ freight: f2, campId: camp("us-1"), intent: "promote" },
 			context(() => T0),

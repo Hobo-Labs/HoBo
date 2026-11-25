@@ -180,7 +180,6 @@ describe("topology objects", () => {
     });
     assert.throws(
       () =>
-        // SAFETY: assertion to `camp("dev", {` is required at this boundary.
         camp("dev", {
           bindle: app,
           defaultProvider: localDefault,

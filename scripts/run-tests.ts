@@ -41,11 +41,6 @@ const broadAgentCategories = new Set([
 const categories = {
 	unit: rootOnly ? ["test/*test.ts", "test/*test.mjs"] : legacyUnitPatterns,
 	draft: draftUnitPatterns,
-	// Every test of the repo's own scripts, each under the runner it is
-	// written for: the Vitest-style files in the Vitest run below, then the
-	// node:test-style files under `node --test`. `test:scripts` used to hand
-	// the whole directory to `node --test`, which cannot load a Vitest-style
-	// file, so it reported one failure per such file on a healthy tree.
 	scripts: ["scripts/test/*.test.ts"],
 	types: [
 		"src/draft/*/*/type-tests/*.ts",
@@ -66,13 +61,6 @@ const categories = {
 		"src/draft/*/*/contracts/consumer/*test.ts",
 		"src/draft/exp-proofs/*/*/contracts/consumer/*test.ts",
 		"packages/runtimes/*/contracts/consumer/*test.ts",
-		// Every package-level contract test, wherever it lives in the tree. The
-		// `.contract.test.ts` suffix is the repo's deliberate marker for "this
-		// test holds code to a published contract", so it is the thing to key
-		// on. Before this pattern existed the category reached only
-		// `src/draft/**` plus one runtimes path, so 30-odd real contract tests
-		// under `packages/**` — including pact-driven ones — were unreachable
-		// from `pnpm run test:contract` and could rot silently.
 		"packages/**/*.contract.test.ts",
 		"test/*contract*.test.ts",
 	],
@@ -86,30 +74,12 @@ const categories = {
 		"src/draft/*/*/tests/*provider*.test.mjs",
 		"src/draft/exp-proofs/*/*/tests/*provider*.test.mjs",
 		"src/draft/*/*/contracts/provider/*test.ts",
-		// Deliberately NOT extended to `packages/**`: in this repo "provider"
-		// names a *cloud* provider far more often than a pact provider, so a
-		// `*provider*` glob there would sweep in dozens of unrelated suites
-		// (`add-aws-provider.test.ts`, `local-provider.test.ts`, every
-		// `provider-*/test/provider.test.ts`) and make the category meaningless.
-		// Package-level contract tests are matched by the `.contract.test.ts`
-		// marker in `contract-consumer` above instead.
 		"test/*provider*.test.ts",
 	],
-	// Chaos suites already existed and were documented in AGENTS.md ("Chaos
-	// lanes, and which one proves what") but had no lane of their own: they ran
-	// only as a side effect of a package's broad test run, so there was no way
-	// to ask "is the chaos surface green" without running everything. The glob
-	// keys on the `chaos` marker in the filename, which is how the two suites
-	// AGENTS.md distinguishes are already named.
-	// CD chaos also runs from the conformance kit example,
-	// which drives the shared `runCdChaos` lane against its reference world.
 	chaos: [
 		"packages/**/test/*chaos*.test.ts",
 		"examples/cd-*/test/*chaos*.test.ts",
 	],
-	// CD load: the 10,000-Camp fan-out tick and the delivery
-	// feed. Scoped to the CD packages on purpose: `*load*` elsewhere names
-	// loaders, not load tests.
 	load: [
 		"examples/cd-*/test/*-load.test.ts",
 		"packages/cd/test/**/*-load.test.ts",
@@ -138,14 +108,7 @@ if (!patterns) {
 	process.exit(1);
 }
 
-// Category lanes run under Vitest, which cannot load node:test-style files.
-// Package files belong to their package-level `node --test` contract lanes;
-// root test/ and scripts/test/ files run under Node below after the Vitest
-// process finishes.
 const nodeTestFiles = new Set<string>();
-// Frozen proofs cannot change after promotion (scripts/promotions.json), so a
-// frozen proof test that runs its stale code against the live repo would fail
-// forever. The promoted package carries the maintained copy of each test here.
 const frozenLiveRepoTests = new Set([
 	"src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools/test/codegen-pipeline.test.ts",
 ]);
@@ -211,9 +174,6 @@ if (testFiles.length === 0 && shardedRootNodeTestFiles.length === 0) {
 	process.exit(0);
 }
 
-// The tracked-file list goes through a temporary Vitest config instead of the
-// command line so large categories cannot exceed the Windows command-length
-// limit (the reason the old runner batched files by character budget).
 const configDir = mkdtempSync(join(tmpdir(), "hobo-vitest-"));
 const configPath = join(configDir, "vitest.config.mjs");
 const baseConfigUrl = pathToFileURL(
@@ -311,8 +271,6 @@ try {
 		}
 		exitCode = result.status ?? 1;
 	}
-	// Run the node:test files whatever Vitest answered: one command reports
-	// every failure in the lane, not only the first runner's.
 	if (shardedRootNodeTestFiles.length > 0) {
 		const nodeResult = spawnSync(
 			process.execPath,

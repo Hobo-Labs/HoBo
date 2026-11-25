@@ -16,7 +16,6 @@ import {
 	DEFAULT_MONTHLY_CACHE_COMMANDS,
 } from "./cache-backend.js";
 
-/** A default offer from the catalog; Upstash's command allowance may be overridden. */
 function catalogOffer(
 	entry: (typeof RELAY_CACHE_OFFER_DEFAULTS)[number],
 	commands: number,
@@ -47,11 +46,6 @@ function catalogOffer(
 	});
 }
 
-/**
- * The defaults, per backend, from the offer catalog; `commands` overrides
- * Upstash's allowance. `redis` (`REDIS_URL`) has no offer: nobody has said
- * what it is, so it is never moved to for budget reasons. `memory` is free.
- */
 export function defaultCacheOffers(
 	commands = DEFAULT_MONTHLY_CACHE_COMMANDS,
 ): ReadonlyMap<CacheBackendId, FleetOffer> {
@@ -81,7 +75,6 @@ export function defaultCacheOffers(
 	return offers;
 }
 
-/** Each backend's catalog rate card (`<backend>=<rate card id>`), for the start-up log. */
 export function cacheOfferRateCards(): readonly string[] {
 	return RELAY_CACHE_OFFER_DEFAULTS.map(
 		(entry) => `${entry.backend}=${entry.rateCardId}`,
@@ -135,11 +128,9 @@ const Document = z
 	})
 	.strict();
 
-/** The relay's marks, unless configured: switch at 90%, back below 80%. */
 export const DEFAULT_CACHE_ROUTING_MARKS: FleetRoutingMarks =
 	parseFleetRoutingMarks({
 		...DEFAULT_FLEET_ROUTING_MARKS,
-		// A tick that finds the active cache down probes it for about this long.
 		failoverAfterMs: 10_000,
 	});
 
@@ -149,12 +140,6 @@ export type CacheOffers = Readonly<{
 	membershipEpochs: boolean;
 }>;
 
-/**
- * The declared offers over the defaults: an offer named in the document
- * replaces the default for its backend entirely; marks are merged field by
- * field. `HOBO_CI_CACHE_MONTHLY_COMMANDS` still sets Upstash's default
- * allowance.
- */
 export function parseCacheOffers(
 	json: string | undefined,
 	commands = DEFAULT_MONTHLY_CACHE_COMMANDS,
@@ -221,7 +206,6 @@ export function parseCacheOffers(
 			}),
 		};
 	} catch {
-		// The fleet parsers' messages name fields; still, report the key only.
 		throw new CacheBindingError("HOBO_CI_CACHE_OFFERS_JSON is not valid");
 	}
 }

@@ -1,7 +1,4 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-chained-type-assertions, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening, anti-slop/no-unsafe-dictionary-type -- SAFETY: test doubles stand in for whole frozen ports; each is a recording proxy cast once to the port it replaces. */
-// Test doubles for the composition root (WP18). Every fake factory records the
-// deps it received and returns a recording module: any method call resolves
-// to "<module>.<method>" and is logged, so wiring is observable end to end.
 import type {
 	DurableEventStore,
 	EventEnvelope,
@@ -94,7 +91,6 @@ export function base(store: DurableEventStore = fakeStore()): CdBase {
 
 export type CallLog = string[];
 
-/** A module whose every member is a recording async method. */
 export function recordingModule<T extends object>(
 	name: string,
 	log: CallLog,
@@ -166,7 +162,6 @@ export function fakeFactories(log: CallLog, calls: FactoryCall[]): CdFactories {
 				return [];
 			if (factory === "createTelemetrySink") return recordingSink();
 			if (factory === "createCampPolicy") {
-				// Real-enough binding lookup for the rail reader.
 				return {
 					async binding(campId: string) {
 						log.push(`campPolicy.binding:${campId}`);
@@ -180,7 +175,6 @@ export function fakeFactories(log: CallLog, calls: FactoryCall[]): CdFactories {
 	return out as unknown as CdFactories;
 }
 
-/** Enforced bindings the fake CampPolicy returns, by Camp id. */
 export const bindings = new Map<string, { enforcedRailDigest: string }>();
 
 export function fakeAdapters(

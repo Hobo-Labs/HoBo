@@ -1,9 +1,3 @@
-/**
- * The dataset store: everything the record-shaped ports do against real
- * tables. One class so the ports share one bootstrap, one schema cache, and
- * one write path — the fence and the capture log both depend on there being
- * exactly one way a record gets written.
- */
 import { randomUUID } from "node:crypto";
 import {
 	type CanonicalRecord,
@@ -59,13 +53,11 @@ import {
 	openFieldsOf,
 } from "./types.js";
 
-/** A dataset as the store holds it: the schema and its prepared statements. */
 export interface StoredDataset {
 	readonly schema: DatasetSchema;
 	readonly statements: DatasetStatements;
 }
 
-/** One stored record with the scope coordinates it lives at. */
 export interface StoredRecord {
 	readonly tenant: string;
 	readonly key: string;
@@ -76,7 +68,6 @@ const DUPLICATE_TABLE = "42P07";
 const UNIQUE_VIOLATION = "23505";
 
 function parseJsonText(text: string): JsonValue {
-	// SAFETY: JSON.parse yields a JSON value at this document boundary.
 	return JSON.parse(text) as JsonValue;
 }
 
@@ -86,13 +77,6 @@ function missingDataset(name: string): DataCoreError {
 	});
 }
 
-/**
- * Rethrow a refused write as what the contract calls it. The fence trigger's
- * SQLSTATE becomes `FencedWriteError`; a value the server would not store
- * becomes `INVALID_RECORD`. Anything else is rethrown unchanged — a
- * serialization failure or a lost connection is the caller's to retry, not
- * ours to relabel.
- */
 export function rethrowWriteError(
 	cause: unknown,
 	dataset: string,
@@ -102,14 +86,10 @@ export function rethrowWriteError(
 	if (state === FENCED_WRITE_SQLSTATE) {
 		throw new FencedWriteError(dataset, tenant);
 	}
-	// Class 22 is a data exception (a value out of range, a byte the encoding
-	// forbids); 23502 and 23514 are a NULL or a value a constraint refuses.
 	if (
 		state !== undefined &&
 		(state.startsWith("22") || state === "23502" || state === "23514")
 	) {
-		// The server's message can quote the offending value, so only the
-		// SQLSTATE is carried forward.
 		throw new DataCoreError(
 			"INVALID_RECORD",
 			`the server refused a value for ${dataset} (SQLSTATE ${state}); nothing was stored`,
@@ -142,18 +122,12 @@ export class DatasetStore {
 		return qualifiedName(this.namespace, METADATA_TABLES[table]);
 	}
 
-	/** True once this store has reached the server at all. */
 	get touched(): boolean {
 		return this.bootstrap !== undefined;
 	}
 
-	/**
-	 * Make sure the namespace, the metadata tables and the trigger functions
-	 * exist, once, and answer the database name.
-	 */
 	ready(): Promise<string> {
 		this.bootstrap ??= this.bootstrapOnce().catch((cause) => {
-			// A failed bootstrap is retried by the next call, not remembered.
 			this.bootstrap = undefined;
 			throw cause;
 		});
@@ -161,8 +135,6 @@ export class DatasetStore {
 	}
 
 	private async bootstrapOnce(): Promise<string> {
-		// One read answers whether the namespace is already bootstrapped, so a
-		// binding opened against an existing store runs no DDL at all.
 		const probe = await this.executor.query(
 			"SELECT current_database()::text AS database, obj_description(to_regprocedure($1::text), 'pg_proc') AS marker",
 			[bootstrapProbe(this.namespace)],
@@ -170,8 +142,6 @@ export class DatasetStore {
 		const database = probe.rows[0]?.database ?? "";
 		if (probe.rows[0]?.marker === BOOTSTRAP_MARKER) return database;
 		await this.executor.transaction(async (tx) => {
-			// Serialised across bindings, so two processes starting together
-			// do not race on the same DDL.
 			await tx.query(
 				"SELECT pg_advisory_xact_lock(hashtext($1::text))::text AS locked",
 				[`hobo-data:${this.namespace}`],
@@ -195,7 +165,6 @@ export class DatasetStore {
 			);
 	}
 
-	/** Serialize schema mutations with first receiver enrollment. */
 	async assertSchemaMutationAllowed(tx: PostgresExecutor): Promise<void> {
 		await tx.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
 		await tx.query(
@@ -212,14 +181,10 @@ export class DatasetStore {
 			);
 	}
 
-	/** Drop the namespace and everything in it. Only an ephemeral close does this. */
 	async dropNamespace(): Promise<void> {
 		await this.ready();
 		await this.executor.transaction(async (tx) => {
 			await tx.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
-			// The first enrollment takes this same lock; a stale ephemeral
-			// binding cannot inspect an empty policy and then drop it after a
-			// concurrent claim has made the source authoritative.
 			await tx.query(
 				"SELECT pg_advisory_xact_lock(hashtext($1::text))::text AS locked",
 				[`hobo-data-fence-policy:${this.namespace}`],
@@ -239,8 +204,6 @@ export class DatasetStore {
 		this.known.clear();
 		this.bootstrap = undefined;
 	}
-
-	// ── datasets ──────────────────────────────────────────────────────────────
 
 	private async load(name: string): Promise<StoredDataset | undefined> {
 		await this.ready();
@@ -266,7 +229,6 @@ export class DatasetStore {
 		return (await this.load(name))?.schema;
 	}
 
-	/** The dataset, or the contract's error for an absent one. */
 	async dataset(name: string): Promise<StoredDataset> {
 		const stored = this.known.get(name) ?? (await this.load(name));
 		if (stored === undefined) throw missingDataset(name);
@@ -315,8 +277,6 @@ export class DatasetStore {
 		} catch (cause) {
 			const state = sqlStateOf(cause);
 			if (state !== DUPLICATE_TABLE && state !== UNIQUE_VIOLATION) throw cause;
-			// Either another binding created the dataset first, or a table of
-			// that name exists that is not a dataset. Only the former is fine.
 			const raced = await this.load(schema.name);
 			if (raced === undefined) {
 				throw new DataCoreError(
@@ -333,8 +293,6 @@ export class DatasetStore {
 		await this.load(schema.name);
 		return true;
 	}
-
-	// ── conversion ────────────────────────────────────────────────────────────
 
 	private stored(schema: DatasetSchema, row: PostgresRow): StoredRecord {
 		const record = canonicalFromNative(
@@ -370,9 +328,6 @@ export class DatasetStore {
 			),
 		);
 		if (claimed !== encodeRecordKey(schema, record)) {
-			// A typed table keys a row by its key columns. A mutation whose key
-			// disagrees with its own record would land somewhere other than
-			// where its key says, so it is refused.
 			throw new DataCoreError(
 				"INVALID_RECORD",
 				"a mutation's key must be the key of its record",
@@ -396,9 +351,6 @@ export class DatasetStore {
 		];
 	}
 
-	// ── the one write path ────────────────────────────────────────────────────
-
-	/** Present the fence token to the trigger, for this transaction only. */
 	private async present(
 		tx: PostgresExecutor,
 		fenceToken: string | undefined,
@@ -410,7 +362,6 @@ export class DatasetStore {
 		);
 	}
 
-	/** Apply mutations in order on an open transaction. */
 	async applyOn(
 		tx: PostgresExecutor,
 		stored: StoredDataset,
@@ -420,8 +371,6 @@ export class DatasetStore {
 		const { schema, statements } = stored;
 		await this.present(tx, fenceToken);
 		for (const mutation of mutations) {
-			// The tenant is a text key column like any other: one the server
-			// would alter or reject is refused before it is sent.
 			assertStorableText(mutation.tenant, "tenant");
 			const upsert = mutation.op === "upsert" && mutation.record !== undefined;
 			if (
@@ -429,9 +378,6 @@ export class DatasetStore {
 				encodeRecordKey(schema, decodeRecordKey(schema, mutation.key)) !==
 					mutation.key
 			) {
-				// A delete names a key and nothing else. Read leniently, an
-				// uppercase uuid or a spaced-out key would delete here and
-				// delete nothing in an engine that compares keys as text.
 				throw new DataCoreError(
 					"INVALID_RECORD",
 					"a delete names a record by its canonical key",
@@ -463,15 +409,6 @@ export class DatasetStore {
 		);
 	}
 
-	/**
-	 * Changes and their watermark, in one transaction.
-	 *
-	 * With `expected` the apply is conditional, and the watermark is written
-	 * *first*: one statement that only takes effect when the row is what the
-	 * applier named. It takes the row's lock, so a second applier naming the
-	 * same watermark waits for the first to commit, then matches nothing and
-	 * is refused before it has written a record; a refusal rolls back.
-	 */
 	async apply(
 		dataset: string,
 		changes: readonly RecordMutation[],
@@ -482,9 +419,6 @@ export class DatasetStore {
 	): Promise<void> {
 		const stored = await this.dataset(dataset);
 		await this.executor.transaction(async (tx) => {
-			// The watermark covers the complete dataset, including an empty
-			// batch. Serialize it with a source operation even when there are
-			// no row-triggered writes to provide the barrier.
 			await tx.query(
 				`SELECT dataset FROM ${this.meta("datasets")} WHERE dataset = $1::text FOR SHARE`,
 				[dataset],
@@ -525,8 +459,6 @@ export class DatasetStore {
 		return result.rows[0]?.log_position ?? undefined;
 	}
 
-	// ── reads ─────────────────────────────────────────────────────────────────
-
 	async read(
 		dataset: string,
 		tenant: string,
@@ -541,7 +473,6 @@ export class DatasetStore {
 		return row === undefined ? undefined : this.stored(schema, row).record;
 	}
 
-	/** One keyset page in primary-key order, after `last` when it is given. */
 	async page(
 		on: PostgresExecutor,
 		stored: StoredDataset,
@@ -564,7 +495,6 @@ export class DatasetStore {
 		return result.rows.map((row) => this.stored(schema, row));
 	}
 
-	/** Stream the scope through the canonical digest builder. */
 	async digestOn(
 		on: PostgresExecutor,
 		stored: StoredDataset,
@@ -594,8 +524,6 @@ export class DatasetStore {
 
 	async digest(scope: DatasetScope, buckets: number): Promise<DatasetDigest> {
 		const stored = await this.dataset(scope.dataset);
-		// One snapshot for the whole scan, so the digest describes a state the
-		// store was actually in rather than a blend of several.
 		return this.executor.transaction(async (tx) => {
 			await tx.query(
 				"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY",
@@ -604,7 +532,6 @@ export class DatasetStore {
 		});
 	}
 
-	/** A keyset-paginated scan yielding upserts, one chunk per call. */
 	openScan(
 		stored: StoredDataset,
 		tenant: string,
@@ -629,9 +556,6 @@ export class DatasetStore {
 		};
 	}
 
-	// ── fence ─────────────────────────────────────────────────────────────────
-
-	/** Caller holds a lock on the dataset registry row until its transaction ends. */
 	async assertNoFenceOperation(
 		on: PostgresExecutor,
 		scope: DatasetScope,
@@ -664,9 +588,6 @@ export class DatasetStore {
 		if (existing !== undefined) return existing;
 		const minted = `fence:${scope.dataset}:${scope.tenant}:${randomUUID()}`;
 		return this.executor.transaction(async (tx) => {
-			// Updating the dataset's metadata row conflicts with the share lock
-			// every writer's trigger takes: this waits for in-flight writers to
-			// finish, and holds later ones until the fence row is committed.
 			await tx.query(
 				`UPDATE ${this.meta("datasets")} SET fence_epoch = fence_epoch + 1 WHERE dataset = $1::text`,
 				[scope.dataset],
@@ -711,8 +632,6 @@ export class DatasetStore {
 		return (await this.fenceToken(this.executor, scope)) !== undefined;
 	}
 
-	// ── retire ────────────────────────────────────────────────────────────────
-
 	async retire(
 		scope: DatasetScope,
 		fenceToken: string,
@@ -725,9 +644,6 @@ export class DatasetStore {
 			});
 		try {
 			return await this.executor.transaction(async (tx) => {
-				// Exclusive on the dataset's metadata row: no writer — not even
-				// one holding the token — can land between the digest and the
-				// delete.
 				await tx.query(
 					`SELECT dataset FROM ${this.meta("datasets")} WHERE dataset = $1::text FOR UPDATE`,
 					[scope.dataset],
@@ -745,8 +661,6 @@ export class DatasetStore {
 					scope,
 					expected.buckets.length,
 				);
-				// Redelivery: the scope is already empty behind the caller's
-				// own fence. There is nothing left to compare or to remove.
 				if (current.count === 0) return 0;
 				if (
 					current.count !== expected.count ||
@@ -763,8 +677,6 @@ export class DatasetStore {
 			});
 		} catch (cause) {
 			if (sqlStateOf(cause) === FENCED_WRITE_SQLSTATE) {
-				// A wider or narrower fence held by someone else covers part of
-				// this scope: the caller is not the only authority over it.
 				throw refused("another fence covers part of this scope");
 			}
 			throw cause;

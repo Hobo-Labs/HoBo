@@ -50,7 +50,6 @@ export function assertCrewMcpAutonomyLimitationRegistered(): ParsedCrewMcpAutono
     throw new Error("known-limitations contract is missing crew-mcp-write-actions-policy-gated");
   }
 
-  // SAFETY: `return {` is required at this I/O or test boundary.
   return {
     markdownRow: row,
     contractRow: {

@@ -3,10 +3,6 @@ import { spawn } from "node:child_process";
 
 import { ciProjectDir } from "./project.js";
 
-// `hobo-ci up|down|plan|status`: this project's own CLI. It is the same
-// lifecycle as `hobo ci <action> --project <this package>`, run by the `hobo`
-// binary on PATH, so the CI project is converged by the one HoBo engine and
-// never by a second one. Any other subcommand is passed to `hobo ci`.
 const args = process.argv.slice(2);
 const lifecycle = new Set(["up", "down", "plan", "status"]);
 const forwarded =

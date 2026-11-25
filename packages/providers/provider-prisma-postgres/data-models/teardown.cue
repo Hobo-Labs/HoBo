@@ -1,6 +1,5 @@
 package provider_prisma_postgres
 
-// Protobuf JSON names match the actual result returned by the driver.
 #PrismaDestroyOutcome: {
 	released: bool
 	reapMode: "ttl-expiry" | "already-expired" | "provider-confirmed"

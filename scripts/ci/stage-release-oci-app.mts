@@ -316,7 +316,6 @@ function turboBuild(root: string, filters: readonly string[]): void {
 	run(root, "pnpm", releaseOciTurboBuildArgs(root, filters));
 }
 
-/** `node_modules` path for a package name (supports scoped packages). */
 export function nodeModulesPathForPackageName(
 	appDir: string,
 	packageName: string,
@@ -341,7 +340,6 @@ type MovePackageDirDeps = {
 	readonly rmSync: typeof rmSync;
 };
 
-/** Move extracted `package/` into `node_modules`; copy+rm when rename crosses devices. */
 export function moveExtractedPackageDir(
 	pkgDir: string,
 	target: string,
@@ -364,16 +362,10 @@ export function moveExtractedPackageDir(
 	}
 }
 
-/** Temp dir for tarball extract; must sit on the same device as `appDir` (pnpm store staging). */
 export function sdkOverlayExtractRoot(appDir: string): string {
 	return mkdtempSync(join(appDir, ".sdk-overlay-"));
 }
 
-/**
- * Lay staged `@hobo-labs/*` tarballs into a pnpm-deploy app without `npm install`.
- * npm's arborist crashes (Node 24) when reconciling tarballs against pnpm's
- * `file:` workspace layout; direct extract preserves deploy `node_modules`.
- */
 export function installSdkTarballsIntoApp(
 	appDir: string,
 	artifactsDir: string,
@@ -389,7 +381,6 @@ export function installSdkTarballsIntoApp(
 			const raw: unknown = JSON.parse(
 				readFileSync(join(pkgDir, "package.json"), "utf8"),
 			);
-			// SAFETY: npm pack always includes `name` in package/package.json.
 			const manifest = raw as TarballManifest;
 			if (!manifest.name) {
 				throw new Error(`SDK tarball missing name: ${tarball}`);
@@ -467,8 +458,6 @@ export function releaseOciStagingLocation(
 	}
 }
 
-/** Resolve from the workspace: pnpm otherwise chooses a different store for
- * a deployment target on another filesystem, breaking deployment from the workspace store. */
 export function releasePnpmStore(
 	root: string,
 	env: NodeJS.ProcessEnv = process.env,
@@ -500,11 +489,6 @@ export function releasePnpmStore(
 	);
 }
 
-/** Deploy is `--prefer-offline`, never `--offline`: deploy re-resolves direct
- * dependencies and a frozen install caches no registry metadata, so a cold
- * ephemeral runner must be allowed to fetch missing metadata/tarballs.
- * Versions and integrity
- * stay pinned by the shared workspace lockfile deploy resolves against. */
 export function releaseOciDeployArgs(
 	packageName: string,
 	appDir: string,
@@ -666,11 +650,6 @@ function dockerignoreRuleMatcher(rule: string): RegExp {
 	return new RegExp(`^${source}$`, "u");
 }
 
-/**
- * Whether Docker leaves `path` out of a build context that has this
- * `.dockerignore`: the last rule matching the path or one of its parent
- * directories decides, and a `!` rule puts the path back.
- */
 export function releaseOciDockerignoreExcludes(
 	dockerignore: string,
 	path: string,

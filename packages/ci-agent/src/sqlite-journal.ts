@@ -13,11 +13,6 @@ import {
 const Row = z.object({ body: z.string() });
 const Total = z.object({ tokens: z.number().nullable() });
 
-/**
- * The journal in one SQLite file: one writer, events appended in a single
- * statement. The `key` and `tokens` columns are derived from the event body
- * when it is written and can be rebuilt from `body` alone.
- */
 export function createSqliteJournal(
 	path: string,
 ): AgentJournal & { close(): void } {
@@ -67,7 +62,6 @@ export function createSqliteJournal(
 			);
 		},
 		async settled(key) {
-			// Settling events only: a published one shares no key with them.
 			const placeholders = SETTLING_EVENT_TYPES.map(() => "?").join(", ");
 			return one(
 				`SELECT body FROM agent_events WHERE key = ? AND type IN (${placeholders}) ORDER BY position LIMIT 1`,

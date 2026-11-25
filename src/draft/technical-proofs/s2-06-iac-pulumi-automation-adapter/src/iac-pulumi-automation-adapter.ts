@@ -361,7 +361,6 @@ export async function runIacBackendConformance({ adapter, program }) {
 }
 
 export function validateIacProgram(program) {
-  // Parse-don't-validate: returns ParsedIacProgram derived types.
   if (!isObjectRecord(program)) {
     throw new PulumiProgramError("invalid-program", "IacProgram must be an object");
   }

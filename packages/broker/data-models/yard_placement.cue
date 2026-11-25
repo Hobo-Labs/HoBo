@@ -1,6 +1,5 @@
 package broker
 
-// CUE constraints for yard_placement.proto wire forms.
 
 #YardShape: {
 	provider_id?: string

@@ -1,8 +1,3 @@
-/**
- * `hobo messaging` — inspect unified Messaging surface readiness, dry-run
- * Dapr component YAML, and summarize Kafka/Dapr backends (ADR-0138).
- */
-
 import type { CommandModule } from "@hobo/cli";
 import { DURABLE_MESSAGING_WIT_INTERFACE } from "@hobo/core";
 import {
@@ -98,7 +93,6 @@ export function createMessagingCommand(
 				};
 			}
 
-			// default: status
 			emitProgress(
 				`hobo messaging status: kafka=${kafka.fidelity} dapr=${dapr.fidelity} default=in-process-wasm`,
 			);

@@ -117,10 +117,6 @@ export interface ActorLocalJournal {
 	acceptCommand(input: AcceptCommandInput): AcceptCommandResult;
 	claimNext(streamId: string): InboxCommand | undefined;
 	markCommitted(streamId: string, commandId: string): void;
-	/**
-	 * Append facts, mark inbox committed, and stage outbox rows in one txn.
-	 * External I/O stays outside this call.
-	 */
 	commitCommand(input: {
 		readonly streamId: string;
 		readonly commandId: string;
@@ -257,7 +253,6 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		},
 		head(streamId) {
 			insertHead.run(streamId);
-			// SAFETY: node:sqlite returns a row bag at this driver boundary.
 			const row = getHead.get(streamId) as SqliteRow | undefined;
 			return {
 				revision: asNumber(row?.revision),
@@ -267,7 +262,6 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		append(streamId, expectedRevision, facts) {
 			return this.transaction(() => {
 				insertHead.run(streamId);
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
 				const headRow = getHead.get(streamId) as SqliteRow | undefined;
 				const current = asNumber(headRow?.revision);
 				if (current !== expectedRevision) {
@@ -304,7 +298,6 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 			});
 		},
 		readFacts(streamId, fromSeq = 1) {
-			// SAFETY: node:sqlite returns row bags at this driver boundary.
 			const rows = readEvents.all(streamId, fromSeq) as SqliteRow[];
 			return rows.map((row) => ({
 				seq: asNumber(row.seq),
@@ -325,7 +318,6 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		},
 		acceptCommand(input) {
 			return this.transaction(() => {
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
 				const existing = getInbox.get(input.streamId, input.commandId) as
 					| SqliteRow
 					| undefined;
@@ -357,12 +349,10 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		},
 		claimNext(streamId) {
 			return this.transaction(() => {
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
 				const row = nextInbox.get(streamId) as SqliteRow | undefined;
 				if (!row) return undefined;
 				const commandId = String(row.command_id);
 				claimInbox.run(streamId, commandId);
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
 				const claimed = getInbox.get(streamId, commandId) as SqliteRow;
 				return mapInbox(claimed);
 			});
@@ -375,7 +365,6 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		commitCommand(input) {
 			return this.transaction(() => {
 				insertHead.run(input.streamId);
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
 				const commitHead = getHead.get(input.streamId) as SqliteRow | undefined;
 				const current = asNumber(commitHead?.revision);
 				if (current !== input.expectedRevision) {
@@ -426,7 +415,6 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 			});
 		},
 		loadCommand(streamId, commandId) {
-			// SAFETY: node:sqlite returns a row bag at this driver boundary.
 			const row = getInbox.get(streamId, commandId) as SqliteRow | undefined;
 			return row ? mapInbox(row) : undefined;
 		},
@@ -436,7 +424,6 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 			});
 		},
 		pendingOutbox(streamId) {
-			// SAFETY: node:sqlite returns row bags at this driver boundary.
 			const rows = listOutbox.all(streamId) as SqliteRow[];
 			return rows.map((row) => ({
 				effectId: String(row.effect_id),

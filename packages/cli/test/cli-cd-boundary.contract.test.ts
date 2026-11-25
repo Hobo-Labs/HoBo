@@ -27,11 +27,6 @@ import {
 	fakeFreightManifestCodec,
 } from "./cd-delivery-fakes.js";
 
-// Consumer pact pinning the `hobo up`/`down` -> @hobo/cd port boundary (plan
-// 0024 D13): which ports the yard-client seam calls, with which request
-// shapes, and which response fields it relies on. The real @hobo/cd modules
-// (WP1/WP3/WP4/WP6/WP7) are the provider; WP18 composes them.
-
 const pactPath = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"..",
@@ -46,7 +41,6 @@ type Interaction = Readonly<{
 	matchingRules: Readonly<Record<string, string>>;
 }>;
 
-// SAFETY: the pact file is a checked-in JSON fixture read at the test boundary.
 const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {
 	consumer: { name: string };
 	provider: { name: string };
@@ -75,7 +69,6 @@ const BINDLE_V2 = parseManifest({
 });
 
 const DEPLOYMENT = "pact-cd";
-// SAFETY: `hobo up` uses the deployment id as the deployment Camp id by default.
 const CAMP = DEPLOYMENT as CampId;
 
 let stores: RuntimeLocalEventStore[] = [];
@@ -154,7 +147,6 @@ function valueAt(
 	return cursor;
 }
 
-/** Exact contents match plus every `request.*` matching rule. */
 function expectRequest(item: Interaction, actual: JsonValue | undefined): void {
 	expect(actual).toMatchObject(item.request.contents);
 	for (const [path, pattern] of Object.entries(item.matchingRules))

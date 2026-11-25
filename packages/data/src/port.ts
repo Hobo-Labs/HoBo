@@ -1,10 +1,7 @@
 import type { ProviderPort } from "@hobo/core";
 import { createPortDescriptor } from "@hobo/core";
 
-// The `hobo:projection` provider port a sink adapter satisfies (data-plane.md
-// §Projection events & ports). The kernel's only inward dependency is the shared
-// @hobo/core port vocabulary; concrete sinks (native/relational/document) bind
-// behind this descriptor via Matching, never in app code.
+// public-contract: stable exported contract literal
 export const PROJECTION_INTERFACE = "hobo:projection/sink";
 
 const projectionDescriptor = createPortDescriptor({

@@ -198,7 +198,6 @@ export async function writeBuildFixtureProject(
 
 	const services = options.services ?? DEFAULT_SERVICES;
 	const bindlePath = join(projectRoot, "hobo.bindle.json");
-	// SAFETY: `const bindle = JSON.parse(await readFile(bindlePath, "utf8")) as {` is required at this I/O or test boundary.
 	const bindle = JSON.parse(await readFile(bindlePath, "utf8")) as {
 		services?: JsonValue[];
 	};
@@ -517,7 +516,6 @@ async function readJson(
 	path: string,
 ): Promise<JsonObject> {
 	try {
-		// SAFETY: `return JSON.parse(` is required at this I/O or test boundary.
 		return JSON.parse(
 			await readFile(join(projectRoot, path), "utf8"),
 		) as JsonObject;

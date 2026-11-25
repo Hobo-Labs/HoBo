@@ -1,16 +1,3 @@
-/**
- * Conformance for `EphemeralStatePort` bindings.
- *
- * Same idea as the command-level suite in `cases.ts`, one level up: the cases
- * are data plus a `run` over an injected context, so a binding author runs the
- * identical suite against the in-memory engine, a RESP socket, or a REST
- * endpoint, and a vitest file is a loop over `EPHEMERAL_STATE_CONFORMANCE_CASES`.
- *
- * Every case needs the whole context — several clients, time control, and a
- * command meter — so there is nothing to skip: a lane that cannot supply the
- * context does not run the suite at all. Time control on a real server is a
- * sleep; pick `ttlMs` so that sleeping a few multiples of it is affordable.
- */
 import {
 	acquireEphemeralLock,
 	createEphemeralRing,
@@ -30,18 +17,10 @@ import type { CommandUsage } from "./ephemeral-meter.js";
 import { KvRedisCompatibleError } from "./errors.js";
 
 export type EphemeralConformanceContext = {
-	/**
-	 * Independent clients of one backend (separate connections where the
-	 * binding has them). Concurrency cases spread writers across all of them.
-	 */
 	readonly clients: readonly [EphemeralStatePort, ...EphemeralStatePort[]];
-	/** Move the backend's clock forward: arithmetic in memory, a sleep on a server. */
 	readonly advanceTime: (ms: number) => Promise<void>;
-	/** Commands `clients[0]` has sent so far. */
 	readonly usage: () => CommandUsage;
-	/** Prefix for every key and ring a case writes, so runs do not collide. */
 	readonly keyPrefix: string;
-	/** The unit TTL cases scale their waits from. */
 	readonly ttlMs: number;
 };
 
@@ -726,7 +705,7 @@ export const EPHEMERAL_STATE_CONFORMANCE_CASES: readonly EphemeralConformanceCas
 					ttlMs: ttl,
 				});
 				await ring.append("e1");
-				await state.increment(ring.keys.seq, 1, ttl, "refresh"); // a writer that died before its entry write
+				await state.increment(ring.keys.seq, 1, ttl, "refresh");
 				await ring.append("e3");
 				const read = await ring.read(0);
 				check(
@@ -764,7 +743,6 @@ export const EPHEMERAL_STATE_CONFORMANCE_CASES: readonly EphemeralConformanceCas
 						`${operation} sent ${sent} commands, documented ${expected}`,
 					);
 				};
-				// Warm every script handle so the steady-state cost is what is measured.
 				const warm = await state.putIfAbsent(key("warm"), "1", ttl);
 				if (warm.applied)
 					await state.compareAndSet(key("warm"), warm.version, "2", ttl);
@@ -825,7 +803,6 @@ export type EphemeralConformanceResult = {
 	readonly detail: string;
 };
 
-/** Run every case in order, outside a test runner; a thrown non-failure aborts the run. */
 export async function runEphemeralStateConformance(
 	context: EphemeralConformanceContext,
 ): Promise<readonly EphemeralConformanceResult[]> {

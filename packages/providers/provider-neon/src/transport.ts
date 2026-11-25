@@ -1,12 +1,3 @@
-/**
- * The HTTP boundary for the claimable-database API, as an injected port.
- *
- * Nothing in this package reaches for a global `fetch`. A host supplies a
- * transport; the guard below is what makes any supplied transport safe —
- * HTTPS only, one allowlisted host, no redirect chasing, bounded body, bounded
- * time. A driver that trusts its transport is a driver that can be pointed at
- * an attacker's origin by a single bad config value.
- */
 import {
 	assertAllowedEndpoint as assertAllowedEndpointCore,
 	createBoundedFetchTransport,
@@ -33,11 +24,6 @@ export type TransportResponse = {
 	readonly body: string;
 };
 
-/**
- * Implementations MUST NOT follow redirects and MUST abort at `timeoutMs`.
- * The guard re-checks both, but a transport that silently follows a 302 has
- * already sent the request body to the redirect target.
- */
 export interface NeonTransport {
 	request(request: TransportRequest): Promise<TransportResponse>;
 }
@@ -49,7 +35,6 @@ export type TransportPolicy = {
 	readonly timeoutMs: number;
 };
 
-/** Only the documented official origin. Neon Launchpad has exactly one. */
 export const NEON_ALLOWED_HOSTS = ["neon.new"] as const;
 
 export const DEFAULT_TRANSPORT_POLICY: TransportPolicy = {
@@ -59,10 +44,6 @@ export const DEFAULT_TRANSPORT_POLICY: TransportPolicy = {
 	timeoutMs: 15_000,
 };
 
-/**
- * Parse an outbound URL against the policy. Returns the parsed URL so callers
- * cannot accidentally use the unchecked string.
- */
 export function assertAllowedEndpoint(
 	url: string,
 	policy: TransportPolicy,
@@ -76,10 +57,6 @@ export function assertAllowedEndpoint(
 	}
 }
 
-/**
- * Neon's policy onto core's. The single `allowedPathPrefix` becomes a one-entry
- * list; core takes an array because most callers pin several endpoints.
- */
 function corePolicy(policy: TransportPolicy) {
 	return {
 		allowedHosts: policy.allowedHosts,
@@ -89,11 +66,6 @@ function corePolicy(policy: TransportPolicy) {
 	};
 }
 
-/**
- * Core refuses with a `TransportGuardError`; this package's callers catch
- * `NeonProviderError`. Translating keeps the thrown type and the code every
- * call site matches on.
- */
 function parseTransportMethod(method: string): TransportMethod {
 	switch (method) {
 		case "GET":
@@ -114,13 +86,6 @@ function asProviderError(cause: Error): Error {
 	});
 }
 
-/**
- * Wrap any transport with the request/response invariants.
- *
- * A 3xx is rejected outright rather than followed: the claimable-database API
- * documents no redirects, so one is either a contract change or a hijack, and
- * neither should silently resolve.
- */
 export function createGuardedTransport(
 	inner: NeonTransport,
 	policy: TransportPolicy = DEFAULT_TRANSPORT_POLICY,
@@ -158,11 +123,6 @@ export function createGuardedTransport(
 	};
 }
 
-/**
- * Minimal WHATWG-fetch adapter. `fetchImpl` is required — the point of the
- * port is that reaching the network is always something a host decided to
- * hand over, never something a library reached for.
- */
 export function createFetchTransport(options: {
 	readonly fetchImpl: typeof globalThis.fetch;
 }): NeonTransport {
@@ -181,8 +141,6 @@ export function createFetchTransport(options: {
 						"PROVIDER_CONTRACT_CHANGED",
 						cause.message,
 					);
-				// A timed-out or dropped request never proves the server did
-				// nothing, so it can only be reported as ambiguous.
 				throw new NeonProviderError(
 					"PROVIDER_OPERATION_AMBIGUOUS",
 					`${request.method} to the provider did not complete`,

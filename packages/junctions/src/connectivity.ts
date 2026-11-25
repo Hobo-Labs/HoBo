@@ -67,12 +67,6 @@ export function selectConnectivityTier(
 	return "public-mtls";
 }
 
-/**
- * Derive the cross-cloud connectivity plan from the parsed junction: one
- * peering edge per member pair, a federated DNS plan, and the federation
- * records (trust anchors, policy packs, registry bundles) that ride the same
- * member mechanism. Pure derivation over declared manifests — no cloud calls.
- */
 export function deriveConnectivityPlan(
 	definition: JunctionDefinition,
 	options: Readonly<{ trust?: YardTrustRecords }> = {},
@@ -92,8 +86,6 @@ export function deriveConnectivityPlan(
 			if (!source || !target) continue;
 			const conflict = residencyConflictFor(source, target);
 			if (conflict !== undefined) {
-				// ADR-0103 #3-4: residency mismatches fail closed — the pair gets a
-				// diagnostic and NO edge/halves, never a silent public fallback.
 				residencyConflicts.push({
 					sourceYard: source.yardName,
 					targetYard: target.yardName,
@@ -205,12 +197,6 @@ function residencyDemandFailure(
 	return undefined;
 }
 
-/**
- * Extract one yard's half of the plan — the mirrored edge halves it
- * terminates, the DNS records it must realize (its own) and resolve (all),
- * and the federation entries addressed to or issued by it. Each yard realizes
- * its own half; the junction never reaches into a member.
- */
 export function planForYard(
 	plan: JunctionConnectivityPlan,
 	yardName: string,

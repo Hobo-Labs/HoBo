@@ -1,12 +1,3 @@
-/**
- * Deploy Convex swaghaus: Temporary frontend on Cloudflare Pages.
- *
- * Live anonymous self-host of official Convex OCI/binary is currently
- * unavailable under zero project API keys (see
- * `provisionConvexBackendAnonymous` rejection matrix). Mock path ships a
- * Temporary-shaped backend URL for CI/Examples. Not localhost docker. Not
- * Convex Cloud unless HOBO_CONVEX_ALLOW_CLOUD=1. Not E2B (credentialed).
- */
 import { spawn } from "node:child_process";
 import { access, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";

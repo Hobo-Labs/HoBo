@@ -1,4 +1,3 @@
-// CUE constraints for Gatekeeper v1 policy + contracts draft package schema.
 
 package architecture_evidence
 

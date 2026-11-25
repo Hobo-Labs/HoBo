@@ -52,7 +52,6 @@ describe("plans:guard", () => {
 			throw new Error("read");
 		};
 		expect(planReason("packages/ci/src/policy.ts", read)).toBeUndefined();
-		// A package may have its own folder called plans; only the two above are refused.
 		expect(planReason("packages/x/plans/a.ts", read)).toBeUndefined();
 	});
 

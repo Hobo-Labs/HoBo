@@ -1,35 +1,3 @@
-/**
- * Local substrate auto-discovery: inspect the machine a default localhost
- * Station is running on and report, per *hosting substrate*, whether this box
- * can actually run a workload that way — then turn the substrates that are
- * present into Yards the Station can register.
- *
- * Today `seedLocalhostYard()` (ADR-0157) gives a localhost Station exactly one
- * Yard, `yard:local`, decided purely from capability observations. That seed is
- * substrate-blind: it does not know whether this machine has a WASM toolchain,
- * a container engine, a WSL2 guest kernel, LXC/Incus, systemd-nspawn, or KVM +
- * Firecracker. This module supplies the missing axis, and keeps three rules
- * that the seed already holds:
- *
- * - **Pure over injected probes.** Detection never reads `process.env`, never
- *   shells out, never touches the network, and never looks at the clock. The
- *   only way in is a `LocalSubstrateProbes` record, so a test can describe a
- *   whole machine as data. A timestamp, if wanted, is an injected `now`.
- * - **Nothing is silently omitted.** Every substrate in the closed vocabulary
- *   appears in the report, absent ones with a remediation naming what to change.
- *   A dropped substrate reads as "HoBo has no opinion here" when the truth is
- *   "this box cannot host that way".
- * - **Evidence or it did not happen.** `present: true` requires at least one
- *   concrete evidence row (a binary path, a socket path, a file inspected). The
- *   invariant is asserted, not merely intended, and a violation is a typed
- *   refusal rather than an optimistic claim.
- *
- * Fidelity (ADR-0042) is assigned honestly and deliberately conservatively: see
- * `SUBSTRATE_BINDINGS` below for why only the process-shaped substrates earn
- * `real`, WASM is `simulated`, and the container/microVM substrates are
- * `camp-only`.
- */
-
 import { existsSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import {
@@ -57,11 +25,6 @@ export const LOCAL_SUBSTRATE_REPORT_CONTRACT =
 export const LOCAL_SUBSTRATE_YARDS_CONTRACT =
 	"hobo.local-substrate-yards/v1" as const;
 
-/**
- * Closed vocabulary of local hosting substrates — each entry is a distinct way
- * this machine can run a workload, not a capability of a workload. Declared in
- * sorted order because that order *is* the report order.
- */
 export const LOCAL_SUBSTRATE_KINDS = Object.freeze([
 	"firecracker",
 	"lxc",
@@ -80,11 +43,6 @@ export type LocalSubstrateErrorCode =
 	| "LOCAL_SUBSTRATE_PROBES_INVALID"
 	| "LOCAL_SUBSTRATE_REPORT_INVALID";
 
-/**
- * Refusal from substrate discovery or one of its parse boundaries. Always
- * carries a code and a remediation naming what to change; `kind` is set when
- * the refusal is attributable to one substrate.
- */
 export class LocalSubstrateError extends Error {
 	readonly code: LocalSubstrateErrorCode;
 	readonly remediation: string;
@@ -109,15 +67,10 @@ export class LocalSubstrateError extends Error {
 	}
 }
 
-/** Injectable host probes — discovery reads the machine only through these. */
 export interface LocalSubstrateProbes {
-	/** Resolve a binary on PATH; absolute path when found, else `null`. */
 	readonly which: (binary: string) => string | null;
-	/** Does this path exist (file, directory, device node, or socket)? */
 	readonly exists: (path: string) => boolean;
-	/** Read a text file; `null` when unreadable (never throws). */
 	readonly readText: (path: string) => string | null;
-	/** Snapshot of the environment; discovery never reads `process.env`. */
 	readonly env: Readonly<Record<string, string>>;
 	readonly platform: NodeJS.Platform;
 	readonly nodeVersion: string;
@@ -126,20 +79,15 @@ export interface LocalSubstrateProbes {
 export interface LocalSubstrateFinding {
 	readonly kind: LocalSubstrateKind;
 	readonly present: boolean;
-	/** Concrete things inspected. Non-empty whenever `present` is true. */
 	readonly evidence: readonly string[];
-	/** What the evidence actually proves — deliberately narrower than `present`. */
 	readonly detail: string;
-	/** Set only when absent: what to change to make this substrate available. */
 	readonly remediation?: string;
 }
 
 export interface LocalSubstrateReport {
 	readonly contract: typeof LOCAL_SUBSTRATE_REPORT_CONTRACT;
 	readonly platform: NodeJS.Platform;
-	/** One finding per `LOCAL_SUBSTRATE_KINDS` entry, sorted by kind. */
 	readonly substrates: readonly LocalSubstrateFinding[];
-	/** Present only when an explicit `now` was injected. */
 	readonly discoveredAt?: string;
 }
 
@@ -162,12 +110,10 @@ export interface LocalSubstrateYardEntry {
 export interface LocalSubstrateYardSet {
 	readonly contract: typeof LOCAL_SUBSTRATE_YARDS_CONTRACT;
 	readonly yards: readonly LocalSubstrateYardEntry[];
-	/** Absent substrates, never dropped — each with the reason it is absent. */
 	readonly unavailable: readonly {
 		readonly kind: LocalSubstrateKind;
 		readonly reason: string;
 	}[];
-	/** Capability-profile gaps inherited from `seedLocalhostYard()`. */
 	readonly profileGaps: readonly {
 		readonly profile: string;
 		readonly reason: string;
@@ -179,15 +125,6 @@ export interface LocalSubstrateRegistration {
 	readonly yards: LocalSubstrateYardSet;
 }
 
-/* -------------------------------------------------------------------------- */
-/* probes                                                                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Real probes over PATH, `node:fs`, and `node:os`. This is the only function in
- * the module allowed to touch the ambient host; everything downstream is pure
- * over what it returns.
- */
 export function defaultLocalSubstrateProbes(
 	env: NodeJS.ProcessEnv = process.env,
 ): LocalSubstrateProbes {
@@ -219,13 +156,7 @@ export function defaultLocalSubstrateProbes(
 	});
 }
 
-/**
- * Parse boundary. Untrusted probe input crosses here once and becomes a frozen
- * derived record with an environment *snapshot*, so a later mutation of the
- * caller's env cannot change what discovery sees.
- */
 function asNodePlatform(value: string): NodeJS.Platform {
-	// SAFETY: host probe platform is a NodeJS.Platform token.
 	return value as NodeJS.Platform;
 }
 
@@ -247,13 +178,11 @@ function asWhich(
 	value: JsonValue | undefined,
 ): (binary: string) => string | null {
 	const fn = requireProbeFn(value, "which");
-	// SAFETY: probe functions are host callbacks captured at the parse boundary.
 	return fn as (binary: string) => string | null;
 }
 
 function asExists(value: JsonValue | undefined): (path: string) => boolean {
 	const fn = requireProbeFn(value, "exists");
-	// SAFETY: probe functions are host callbacks captured at the parse boundary.
 	return fn as (path: string) => boolean;
 }
 
@@ -261,7 +190,6 @@ function asReadText(
 	value: JsonValue | undefined,
 ): (path: string) => string | null {
 	const fn = requireProbeFn(value, "readText");
-	// SAFETY: probe functions are host callbacks captured at the parse boundary.
 	return fn as (path: string) => string | null;
 }
 
@@ -278,7 +206,6 @@ export function parseLocalSubstrateProbes(
 			},
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const source = input as JsonObject;
 	for (const fn of ["which", "exists", "readText"] as const) {
 		if (!(source[fn] instanceof Function)) {
@@ -323,11 +250,7 @@ export function parseLocalSubstrateProbes(
 		);
 	}
 	const env: Record<string, string> = {};
-	// Snapshot in sorted key order: the env is data the report depends on, so it
-	// must not be able to change under us or hash differently per insertion order.
-	// SAFETY: assertion required at this I/O or test boundary.
 	for (const key of Object.keys(rawEnv as JsonObject).sort()) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const value = (rawEnv as JsonObject)[key];
 		if (isJsonString(value)) env[key] = value;
 	}
@@ -336,7 +259,6 @@ export function parseLocalSubstrateProbes(
 		exists: asExists(source.exists),
 		readText: asReadText(source.readText),
 		env: Object.freeze(env),
-		// SAFETY: assertion required at this I/O or test boundary.
 		platform: asNodePlatform(
 			isJsonString(source.platform) ? `${source.platform}` : process.platform,
 		),
@@ -346,17 +268,8 @@ export function parseLocalSubstrateProbes(
 	});
 }
 
-/* -------------------------------------------------------------------------- */
-/* detection                                                                   */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Node's `WebAssembly` embedder is always present, but the repo only supports
- * Node >= 20, so an older Node is not counted as a WASM substrate.
- */
 const MIN_NODE_MAJOR = 20;
 
-/** WASM toolchains that can execute a module/component outside the harness. */
 const WASM_BINARIES: readonly string[] = Object.freeze([
 	"jco",
 	"wasmedge",
@@ -364,14 +277,12 @@ const WASM_BINARIES: readonly string[] = Object.freeze([
 	"wasmtime",
 ]);
 
-/** OCI-compatible *clients*. A client is not an engine — see `detectOci`. */
 const OCI_BINARIES: readonly string[] = Object.freeze([
 	"docker",
 	"nerdctl",
 	"podman",
 ]);
 
-/** Engine endpoints. Only these prove something can actually run a container. */
 const OCI_ROOT_SOCKETS: readonly string[] = Object.freeze([
 	"/run/docker.sock",
 	"/run/podman/podman.sock",
@@ -386,10 +297,6 @@ const LXC_SOCKETS: readonly string[] = Object.freeze([
 	"/var/snap/lxd/common/lxd/unix.socket",
 ]);
 
-/**
- * Inspect the machine. Pure over the injected probes: no clock, no randomness,
- * no ambient env, no network. Two calls with the same probes are deep-equal.
- */
 export function discoverLocalSubstrates(
 	probes: LocalSubstrateProbes,
 	options?: { readonly now?: () => string },
@@ -404,13 +311,9 @@ export function discoverLocalSubstrates(
 		detectWasm(p),
 		detectWsl2(p),
 	];
-	// Sorted by kind so the report is a function of the machine, never of the
-	// order the detectors happened to run in.
 	findings.sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 
 	for (const finding of findings) {
-		// Fail closed: a "present" claim with nothing behind it is exactly the
-		// overclaim this module exists to prevent, so it is a refusal, not a warn.
 		if (finding.present && finding.evidence.length === 0) {
 			throw new LocalSubstrateError(
 				"LOCAL_SUBSTRATE_EVIDENCE_MISSING",
@@ -444,7 +347,6 @@ export function discoverLocalSubstrates(
 	});
 }
 
-/** Look up a finding by kind. Throws on a kind outside the vocabulary. */
 export function findSubstrate(
 	report: LocalSubstrateReport,
 	kind: LocalSubstrateKind,
@@ -462,12 +364,6 @@ export function findSubstrate(
 	return finding;
 }
 
-/**
- * `process` — a bare Node process on this host. Always present: this code is
- * itself running in one, so the claim is self-evidencing. The evidence names
- * the platform and Node version rather than a path, because the "binary" here
- * is the interpreter we are inside.
- */
 function detectProcess(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	return {
 		kind: "process",
@@ -478,13 +374,6 @@ function detectProcess(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	};
 }
 
-/**
- * `wasm` — anything on this box that can execute WebAssembly. Two independent
- * signals: an installed toolchain binary (wasmtime/wasmer/wasmedge/jco), or the
- * `WebAssembly` embedder inside the running Node, which genuinely instantiates
- * core modules. Node's embedder is core-module only — component-model work
- * needs jco or wasmtime — so the detail says which of the two we actually have.
- */
 function detectWasm(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	const evidence: string[] = [];
 	for (const binary of WASM_BINARIES) {
@@ -515,14 +404,6 @@ function detectWasm(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	};
 }
 
-/**
- * `oci` — containers. A `docker`/`podman`/`nerdctl` binary on PATH proves the
- * **client tool** exists, nothing more: the daemon may be stopped, remote, or
- * never installed. So we also probe the engine endpoints, and the detail always
- * says which of the two we actually saw. Presence here therefore means "there
- * is an OCI story on this box", and the strength of that story is in `detail`
- * and in the `sock:` evidence rows — never inferred from the binary alone.
- */
 function detectOci(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	const evidence: string[] = [];
 	for (const binary of OCI_BINARIES) {
@@ -530,8 +411,6 @@ function detectOci(p: LocalSubstrateProbes): LocalSubstrateFinding {
 		if (path !== null) evidence.push(`bin:${path}`);
 	}
 	const sockets = [...OCI_ROOT_SOCKETS];
-	// Rootless podman puts its socket under the user runtime dir; that path is
-	// only knowable from the injected env, never from an ambient read.
 	const runtimeDir = p.env.XDG_RUNTIME_DIR;
 	if (isJsonString(runtimeDir) && runtimeDir.length > 0) {
 		sockets.push(`${runtimeDir}/podman/podman.sock`);
@@ -564,19 +443,6 @@ function detectOci(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	};
 }
 
-/**
- * `wsl2` — are we running *inside* a WSL2 guest? Linux-only by construction.
- * Signals, in order of strength:
- *   1. `/proc/version` naming Microsoft/WSL — proves "some WSL", not which one.
- *   2. `/run/WSL` or `WSL_INTEROP`/`WSL_DISTRO_NAME` in env — proves interop is
- *      wired, which both WSL1 and WSL2 have.
- *   3. The literal `WSL2` marker in the kernel string (WSL2 ships a real Linux
- *      kernel, e.g. `5.15.0-microsoft-standard-WSL2`; WSL1 reports a syscall
- *      translation layer, e.g. `4.4.0-19041-Microsoft`).
- * Only (3) distinguishes v2 from v1, so it is required for `present: true`.
- * When we see WSL but cannot prove v2 we report the **weaker claim** — absent,
- * with a detail saying WSL interop was observed — rather than overclaiming.
- */
 function detectWsl2(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	if (p.platform !== "linux") {
 		return platformRefusal("wsl2", p.platform);
@@ -630,11 +496,6 @@ function detectWsl2(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	};
 }
 
-/**
- * `lxc` — LXC/LXD/Incus system containers. Linux-only. A client binary alone is
- * the same weak signal as with OCI, so the daemon's unix socket is probed too
- * and the detail says which was seen.
- */
 function detectLxc(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	if (p.platform !== "linux") {
 		return platformRefusal("lxc", p.platform);
@@ -671,12 +532,6 @@ function detectLxc(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	};
 }
 
-/**
- * `nspawn` — systemd-nspawn containers. Linux-only. Needs both the tool and a
- * *running* systemd: `/run/systemd/system` exists only when systemd is PID 1,
- * which is the documented systemd check and rules out containers/WSL1 shells
- * where the binary is installed but nspawn cannot work.
- */
 function detectNspawn(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	if (p.platform !== "linux") {
 		return platformRefusal("nspawn", p.platform);
@@ -717,11 +572,6 @@ function detectNspawn(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	};
 }
 
-/**
- * `firecracker` — KVM microVMs. Linux-only. Needs both the `firecracker` binary
- * and `/dev/kvm`: without the KVM device the binary cannot boot a microVM at
- * all, so the binary alone is explicitly not enough.
- */
 function detectFirecracker(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	if (p.platform !== "linux") {
 		return platformRefusal("firecracker", p.platform);
@@ -762,11 +612,6 @@ function detectFirecracker(p: LocalSubstrateProbes): LocalSubstrateFinding {
 	};
 }
 
-/**
- * Linux-only substrates on a non-Linux host: report absent with the platform as
- * the reason instead of probing paths that cannot mean anything there. Evidence
- * is empty because nothing was inspected — saying otherwise would be fiction.
- */
 function platformRefusal(
 	kind: LocalSubstrateKind,
 	platform: NodeJS.Platform,
@@ -780,36 +625,12 @@ function platformRefusal(
 	};
 }
 
-/* -------------------------------------------------------------------------- */
-/* yards                                                                       */
-/* -------------------------------------------------------------------------- */
-
 interface SubstrateBinding {
 	readonly profile: string;
 	readonly productId: string;
 	readonly fidelity: SeedFidelity;
 }
 
-/**
- * What each non-process substrate is allowed to claim it hosts, and at what
- * ADR-0042 fidelity. The fidelity assignments are the load-bearing honesty in
- * this module, so each one states its reason:
- *
- * - **wasm → `simulated`.** `runtime-local` does not execute real `.wasm` bytes
- *   today (see `docs/design/yard-bindings.md`); the in-process lane boots the
- *   collected graph with simulated resources. A wasmtime binary on the box does
- *   not change what *HoBo* executes, so `real` would be an overclaim.
- * - **oci / lxc / nspawn / firecracker → `camp-only`.** HoBo has no local
- *   launcher that places a workload into a container or microVM on this
- *   machine: `@hobo/runtime-oci` schedules through kubectl against a cluster,
- *   and there is no LXC/nspawn/Firecracker placement path at all. The substrate
- *   is genuinely available on the box, but satisfying the profile needs a Camp,
- *   which is exactly what `camp-only` means.
- *
- * `process` and `wsl2` are absent from this table on purpose: both reuse
- * `seedLocalhostYard()`'s rows, which carry their own already-audited
- * fidelities (a Node HTTP server is `real`, an in-memory queue is `simulated`).
- */
 const SUBSTRATE_BINDINGS = deepFreeze({
 	firecracker: [
 		{
@@ -873,9 +694,7 @@ const SUBSTRATE_BINDINGS = deepFreeze({
 	>
 >;
 
-/** Yard name for a substrate. `process` keeps the existing seeded name. */
 export function localSubstrateYardName(kind: LocalSubstrateKind): string {
-	// SAFETY: assertion required at this I/O or test boundary.
 	if (!(LOCAL_SUBSTRATE_KINDS as readonly string[]).includes(kind)) {
 		throw new LocalSubstrateError(
 			"LOCAL_SUBSTRATE_KIND_UNKNOWN",
@@ -890,15 +709,6 @@ export function localSubstrateYardName(kind: LocalSubstrateKind): string {
 		: `${LOCALHOST_YARD_NAME}-${kind}`;
 }
 
-/**
- * Turn a substrate report into the Yard set a localhost Station should hold.
- * Pure and deterministic: same report + same observations ⇒ deep-equal result.
- *
- * `process` and `wsl2` delegate their rows to `seedLocalhostYard()` rather than
- * re-deriving them — both are "a Node process on a POSIX box", which is exactly
- * what the seed already models, and duplicating its row table would let the two
- * drift apart.
- */
 export function localSubstrateYards(
 	report: LocalSubstrateReport,
 	options?: {
@@ -908,7 +718,6 @@ export function localSubstrateYards(
 	if (
 		!isJsonObject(report) ||
 		report === null ||
-		// SAFETY: assertion required at this I/O or test boundary.
 		(report as LocalSubstrateReport).contract !==
 			LOCAL_SUBSTRATE_REPORT_CONTRACT
 	) {
@@ -921,8 +730,6 @@ export function localSubstrateYards(
 			},
 		);
 	}
-	// Checked through an `unknown` alias: `Array.isArray` narrows a `readonly T[]`
-	// to `any[]`, which would silently erase the finding type downstream.
 	const substrates: unknown = report.substrates;
 	if (!Array.isArray(substrates)) {
 		throw new LocalSubstrateError(
@@ -961,15 +768,10 @@ export function localSubstrateYards(
 				: SUBSTRATE_BINDINGS[finding.kind].map((binding) => ({
 						profile: binding.profile,
 						productId: binding.productId,
-						// A row that exists because a probe saw the substrate is
-						// discovered, never a platform default.
-						// SAFETY: assertion required at this I/O or test boundary.
 						provenance: "discovered" as SeedProvenance,
 						fidelity: binding.fidelity,
 					}));
 
-		// `yard:local` is the seed's own Yard: reuse the record it already built
-		// instead of minting a second, subtly different one under the same name.
 		const built =
 			finding.kind === "process"
 				? seed.yard
@@ -1006,10 +808,6 @@ export function localSubstrateYards(
 	});
 }
 
-/**
- * Composition helper: discover the machine's substrates and produce the Yard
- * set a default localhost Station would register, in one deterministic call.
- */
 export function registerLocalSubstrateYards(input: {
 	readonly probes: LocalSubstrateProbes;
 	readonly observations?: readonly LocalhostCapabilityObservation[];
@@ -1038,15 +836,6 @@ export function registerLocalSubstrateYards(input: {
 	return Object.freeze({ report, yards });
 }
 
-/* -------------------------------------------------------------------------- */
-/* internals                                                                   */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Local `deepFreeze`: `@hobo/core` keeps its copy module-private (not exported
- * from the package entrypoint), and `@hobo/yards` likewise, so this module owns
- * one rather than reaching past a package boundary.
- */
 function deepFreeze<T>(value: T): T {
 	if (value === null || value === undefined) return value;
 	if (Object.isFrozen(value)) return value;

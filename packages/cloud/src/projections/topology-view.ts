@@ -4,29 +4,16 @@ import { CLOUD_EVENTS } from "../events.js";
 import type { DeploymentPlan } from "../plan-types.js";
 import type { ResourceLifecycle } from "./deployment-view.js";
 
-// The TopologyView projection (E21): the app-graph
-// read model beside deployment-view, folding the SAME deployment event stream
-// into nodes (bindle, resources, yards) and edges (bindings, placements) —
-// shaped for the designed dashboard TopologyView surface
-// (docs/design/deployment-dashboard-topology-explorer.md). Pure fold,
-// rebuildable from zero; node and edge arrays are kept sorted so a fixed
-// event fixture folds to byte-stable JSON. This is the APP graph — traffic
-// routing stays with @hobo/stations' RoutingTopology.
-
 export type TopologyNodeKind = "bindle" | "resource" | "yard";
 
 // domain-view: parsed app-graph node; wire form is TopologyNode in data-models/cloud.proto.
 export interface TopologyNode {
-	/** Stable id: `<kind>:<name>` (e.g. `resource:service`, `yard:@hobo/provider-cloudflare`). */
 	id: string;
 	kind: TopologyNodeKind;
 	label: string;
-	/** Resource nodes: the capability port (resource class). */
 	port?: string;
-	/** Resource nodes: the matched provider; yard nodes: the provider backing the yard. */
 	providerId?: string;
 	region?: string;
-	/** Resource nodes: lifecycle folded from resource.* facts. */
 	lifecycle?: ResourceLifecycle;
 
 	reconciliationEventId?: string;
@@ -60,8 +47,6 @@ function base(
 		: { deploymentId, nodes: [], edges: [] };
 }
 
-// Merge-upsert a node by id (later defined fields win), keeping the array
-// sorted by id so folds are byte-stable.
 function upsertNode(row: TopologyViewRow, node: TopologyNode): void {
 	const existing = row.nodes.find((n) => n.id === node.id);
 	if (existing) {
@@ -76,7 +61,6 @@ function upsertNode(row: TopologyViewRow, node: TopologyNode): void {
 	row.nodes = [...row.nodes, node].sort((a, b) => a.id.localeCompare(b.id));
 }
 
-// Dedupe-upsert an edge by (from, kind, to), keeping the array sorted.
 function upsertEdge(row: TopologyViewRow, edge: TopologyEdge): void {
 	const exists = row.edges.some(
 		(e) => e.from === edge.from && e.to === edge.to && e.kind === edge.kind,
@@ -156,11 +140,9 @@ function setLifecycle(
 export const topologyViewProjection: Projection<TopologyViewRow> =
 	defineProjection<TopologyViewRow>({
 		name: "topology-view",
-		// SAFETY: `key: (event) => (event.data as { deploymentId: string }).deploymentId,` is required at this I/O or test boundary.
 		key: (event) => (event.data as { deploymentId: string }).deploymentId,
 		on: {
 			[CLOUD_EVENTS.DeploymentRequested]: (row, event) => {
-				// SAFETY: `const data = event.data as { deploymentId: string; bindleHash: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; bindleHash: string };
 				const next = base(row, data.deploymentId);
 				next.bindleHash = data.bindleHash;
@@ -172,7 +154,6 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentImported]: (row, event) => {
-				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					bindleHash: string;
@@ -195,7 +176,6 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.MatchDecided]: (row, event) => {
-				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					resource: string;
@@ -214,7 +194,6 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentPlanned]: (row, event) => {
-				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					plan: DeploymentPlan;
@@ -228,7 +207,6 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 					};
 					if (resource.region !== undefined) placement.region = resource.region;
 					placeResource(next, placement);
-					// Binding edges: dependent -> dependency, one per bind edge.
 					for (const dep of resource.deps) {
 						upsertEdge(next, {
 							from: resourceNodeId(resource.name),
@@ -240,14 +218,12 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceProvisioning]: (row, event) => {
-				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				setLifecycle(next, data.resourceId, "provisioning");
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceProvisioned]: (row, event) => {
-				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				const node = next.nodes.find(
@@ -263,7 +239,6 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceFailed]: (row, event) => {
-				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					resourceId: string;
@@ -343,14 +318,12 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroying]: (row, event) => {
-				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				setLifecycle(next, data.resourceId, "destroying");
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroyed]: (row, event) => {
-				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				const node = next.nodes.find(

@@ -9,10 +9,6 @@ import {
 	StatusPageSchema,
 } from "./_generated/status_pb.js";
 
-/**
- * The components the status page reports on — the self-hosted Yard's own
- * moving parts. Seeded operational; an accepted incident report degrades one.
- */
 const components = new Map<string, { health: Health; note: string }>([
 	["yard-control-plane", { health: Health.OPERATIONAL, note: "" }],
 	["event-store", { health: Health.OPERATIONAL, note: "" }],
@@ -67,10 +63,6 @@ export function parseIncidentReport(raw: JsonValue): IncidentReport {
 
 let incidentCounter = 0;
 
-/**
- * The status-page API: a plain fetch handler (no framework) exposing
- * `GET /status` and `POST /incidents`.
- */
 export async function statusApi(request: Request): Promise<Response> {
 	const url = new URL(request.url);
 
@@ -91,7 +83,6 @@ export async function statusApi(request: Request): Promise<Response> {
 		let incident: IncidentReport;
 		try {
 			const body = await request.json();
-			// SAFETY: request JSON is untyped; parseIncidentReport is the boundary.
 			incident = parseIncidentReport(body as JsonValue);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

@@ -1,6 +1,3 @@
-// Journal helpers for the posture module (WP24): protobuf-JSON event bodies,
-// tolerant decoding, CAS appends with idempotency keys, typed refusals and
-// advisory telemetry. Nothing here reads a clock; callers pass instants.
 import { createHash } from "node:crypto";
 import {
 	create,
@@ -45,7 +42,6 @@ export function isJsonBoolean<T>(value: T): value is T & boolean {
 	return value === true || value === false;
 }
 
-/** A persisted value as plain JSON, or undefined when it is not JSON. */
 export function jsonOf<T>(data: T): JsonValue | undefined {
 	if (data === undefined) return undefined;
 	try {
@@ -56,7 +52,6 @@ export function jsonOf<T>(data: T): JsonValue | undefined {
 	}
 }
 
-/** Canonical JSON (sorted keys, no whitespace): the digest input. */
 export function canonicalJson(value: JsonValue): string {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
 	if (isJsonObject(value)) {
@@ -77,11 +72,9 @@ export function digestOf(value: JsonValue): Digest {
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 
 export function asDigest(value: string): Digest | undefined {
-	// SAFETY: matched against the Digest pattern.
 	return DIGEST.test(value) ? (value as Digest) : undefined;
 }
 
-/** Event body for a generated record: its canonical protobuf JSON. */
 export function body<T extends Message>(
 	schema: GenMessage<T>,
 	record: T,
@@ -89,7 +82,6 @@ export function body<T extends Message>(
 	return toJson(schema, record);
 }
 
-/** Decode a persisted body; undefined when it is not that record (never throws). */
 export function decode<T extends Message, D>(
 	schema: GenMessage<T>,
 	data: D,
@@ -138,7 +130,6 @@ export function metaString<T>(
 	return isJsonString(value) ? value : undefined;
 }
 
-/** Current revision of a stream (its last seq), from the fenced head when the store has one. */
 export async function streamRevision(
 	store: DurableEventStore,
 	streamId: string,
@@ -161,14 +152,8 @@ export type AppendOne = Readonly<{
 
 const APPEND_ATTEMPTS = 4;
 
-/** The event a key resolved to, and whether this call appended it (false: an earlier call did). */
 export type Appended = Readonly<{ event: EventEnvelope; fresh: boolean }>;
 
-/**
- * Append one fact under stream-head CAS with an idempotency key. A concurrent
- * writer causes a re-read and retry; a repeated key returns the recorded
- * event. Undefined only when every attempt loses the race.
- */
 export async function appendOnce(
 	input: AppendOne,
 ): Promise<Appended | undefined> {
@@ -209,7 +194,6 @@ export type MetricPoint = Readonly<{
 	attributes: OtelAttributes;
 }>;
 
-/** Telemetry is advisory (the journal is the record): a failing sink never fails a committed command. */
 export async function emit(
 	sink: TelemetrySink | undefined,
 	points: readonly MetricPoint[],

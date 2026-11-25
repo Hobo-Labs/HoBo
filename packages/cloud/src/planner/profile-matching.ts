@@ -1,34 +1,3 @@
-/**
- * Profile-aware matching.
- *
- * This is the same Matching step the Planner already runs, widened from
- * port/feature comparison to semantic capability profiles with hard gates and
- * a lexicographic order. It composes with {@link matchResource}: a resource
- * that declares a capability requirement resolves here. When a Yard is
- * selected, every path remains scoped to that Yard's provider.
- *
- * Yard binding rows (ADR-0157) enter as an *additional hard gate* in front of
- * the ADR-0151 gate sequence. They filter definitions and never reorder them:
- * ordering stays hard gates then lexicographic comparison (ADR-0151 decision
- * 11, "never a weighted score"), so a row can remove a candidate but can never
- * promote one, and can never admit a candidate another gate already refused.
- * Rows arrive **structurally** — `@hobo/cloud` must not import `@hobo/yards`,
- * which would invert the dependency direction.
- *
- * Provider coherence is checked here rather than at `yard()` parse time: only
- * the catalog knows which provider publishes a product, and inferring it from
- * an id prefix would make a naming convention load-bearing (forbidden by
- * ADR-0144).
- *
- * HONEST SCOPE: this step resolves the *product*, not the connectivity
- * implementation — that needs the connectivity registry plus the consuming
- * workload's runtime model, neither of which selection holds. A complete
- * `binding.Resolved` fact is therefore emitted only when the applied rows pin
- * exactly one `connectivityId`; otherwise the accepted outcome carries
- * `appliedRows` for the audit trail and the fact is emitted downstream, where
- * connectivity is actually resolved. `binding.Unavailable` has no such
- * dependency and is always emitted on a Yard-scoped refusal.
- */
 import { createHash } from "node:crypto";
 import {
 	BINDING_UNAVAILABLE_REMEDIATION,
@@ -59,13 +28,6 @@ import {
 	toSelectionCandidate,
 } from "../registry/resource-definition-vnext.js";
 
-/**
- * Two Yard binding rows set the same realization parameter to different values.
- *
- * Thrown rather than resolved: rows are a set, so no precedence rule exists to
- * appeal to, and picking one silently would make realization depend on
- * iteration order.
- */
 export class YardBindingParameterConflictError extends Error {
 	readonly code = "YARD_BINDING_PARAMETER_CONFLICT" as const;
 	readonly parameter: string;
@@ -81,15 +43,6 @@ export class YardBindingParameterConflictError extends Error {
 	}
 }
 
-/**
- * Bridge a Bindle's provider-neutral requirement block into a capability
- * requirement.
- *
- * Bindle authors write profile ids in `require`/`prefer`; anything that is not
- * a well-formed profile id (a plain port name like `data`) is left to the
- * legacy port matcher rather than guessed at. Returning `undefined` is how a
- * resource says "I have no profile intent" — it is not an error.
- */
 export function capabilityRequirementFromBindleRequirements(
 	requirements: BindleRequirements,
 ): CapabilityRequirement | undefined {
@@ -110,13 +63,6 @@ export function capabilityRequirementFromBindleRequirements(
 	});
 }
 
-/**
- * Structural mirror of `YardBinding` (`@hobo/yards`, `hobo.yard-binding/v1`).
- *
- * Declared here, not imported, because `@hobo/yards` sits beside `@hobo/cloud`
- * in the layering: consuming the row set structurally keeps imports flowing
- * inward. A parsed `YardBinding` is assignable to this type as-is.
- */
 export type YardBindingRow = {
 	readonly contract?: string;
 	readonly profile: string;
@@ -126,24 +72,17 @@ export type YardBindingRow = {
 	readonly properties?: Readonly<JsonObject>;
 };
 
-/** The binding authority for this match: which Yard, and the rows it declares. */
 export type YardBindingContext = {
 	readonly yardId: string;
 	readonly providerId: string;
 	readonly bindings: readonly YardBindingRow[];
 };
 
-/**
- * Row-caused refusal reasons (ADR-0157). A row that matches nothing is never
- * silently dropped — a silently dropped row is a portability lie. Derived from
- * `@hobo/bindings`' vocabulary rather than restated, so the two cannot drift.
- */
 export type YardBindingRejectionCode = Exclude<
 	BindingUnavailableCode,
 	"NO_COMPATIBLE_BINDING"
 >;
 
-/** `SelectionRejection`-shaped so row refusals join the same rejection surface. */
 export type YardBindingRejection = {
 	readonly definitionId: string;
 	readonly code: YardBindingRejectionCode;
@@ -160,10 +99,8 @@ export type ProfileMatchInput = {
 	readonly profiles: CapabilityProfileRegistry;
 	readonly definitions: readonly ResourceDefinitionVNext[];
 	readonly policy: TrustPolicy;
-	/** Canonical evaluation instant. Matching never reads a clock itself. */
 	readonly nowMs: number;
 	readonly consumableBindingProfiles?: readonly string[];
-	/** Yard binding authority. Absent means no rows constrain this match. */
 	readonly yard?: YardBindingContext;
 };
 
@@ -173,34 +110,10 @@ export type ProfileMatchAccepted = {
 	readonly ranking: readonly string[];
 	readonly rejections: readonly ProfileMatchRejectionRecord[];
 	readonly catalogHash: string;
-	/** True when the top two survivors are separated only by the id tiebreak. */
 	readonly tie: boolean;
-	/**
-	 * Canonical keys of the Yard binding rows that constrained this decision.
-	 * Present only when a Yard supplied binding authority (ADR-0033 audit trail).
-	 */
 	readonly appliedRows?: readonly string[];
-	/**
-	 * Yard-scoped, provider-native realization parameters merged from the applied
-	 * rows' `properties` (ADR-0157). This is the configuration half of a Yard
-	 * binding: the row selects *which* product realizes the profile, and these
-	 * parameterize *how* it is realized in this Yard — replica counts, resource
-	 * limits, service class. The realization *shape* stays in the versioned
-	 * Resource Definition; only its parameters live here, so a Yard cannot fork a
-	 * second configuration system (ADR-0145).
-	 *
-	 * Provider-native by construction, so it is a non-portable surface: present
-	 * parameters are reported to the PortabilityReport (ADR-0024/ADR-0144) rather
-	 * than passed through silently. Absent when no applied row carried any.
-	 */
 	readonly realizationParameters?: Readonly<JsonObject>;
-	/**
-	 * Canonical keys of the applied rows that contributed realization parameters.
-	 * The portability scorer needs to name *which* row made a Yard non-portable,
-	 * not merely that something did.
-	 */
 	readonly nonPortableRows?: readonly string[];
-	/** Present only when the rows pinned the connectivity implementation too. */
 	readonly bindingResolved?: BindingResolvedEvent;
 };
 
@@ -209,16 +122,11 @@ export type ProfileMatchRejected = {
 	readonly remediation: PlanRemediation;
 	readonly rejections: readonly ProfileMatchRejectionRecord[];
 	readonly catalogHash: string;
-	/** Present only when a Yard supplied binding authority. */
 	readonly bindingUnavailable?: BindingUnavailableEvent;
 };
 
 export type ProfileMatchOutcome = ProfileMatchAccepted | ProfileMatchRejected;
 
-/**
- * Digest over every selection-relevant catalog fact, including the profile
- * graph. A conformance result flipping changes this, so the receipt changes.
- */
 export function profileCatalogHash(
 	definitions: readonly ResourceDefinitionVNext[],
 	profiles: CapabilityProfileRegistry,
@@ -239,8 +147,6 @@ type AttributedRejection = {
 	readonly profile: string;
 };
 
-/** Check every product in a Yard, including rows unused by this Bindle.
- * Product ownership comes from the trusted catalog, never an ID prefix. */
 export function validateYardBindingOwnership(
 	yard: YardBindingContext,
 	definitions: readonly ResourceDefinitionVNext[],
@@ -257,9 +163,6 @@ export function validateYardBindingOwnership(
 	for (const row of yard.bindings) {
 		const productId = row.productId;
 		if (!productId) continue;
-		// The structural input may not have passed through yard(). A catalog
-		// entry must not legitimize an explicitly external placeholder by
-		// labeling it as if it were owned by the Yard's provider.
 		if (/^external(?:[.:/]|$)/iu.test(productId)) {
 			rejections.push({
 				profile: row.profile,
@@ -305,31 +208,18 @@ export function validateYardBindingOwnership(
 }
 
 type YardBindingGate = {
-	/** Rows whose profile this requirement names, sorted by canonical key. */
 	readonly applicableRows: readonly YardBindingRow[];
-	/** Definition ids the rows admit. Absent when no applicable row pins a product. */
 	readonly admitted?: ReadonlySet<string>;
 	readonly rejections: readonly AttributedRejection[];
-	/** True when a row is unresolvable against this catalog: refuse, do not rank. */
 	readonly fatal: boolean;
 };
 
-/**
- * Resolve the rows against the catalog.
- *
- * A row is *applicable* when its profile is exactly one this requirement names.
- * Refinement is deliberately not walked here: letting a row for a narrower
- * profile silently constrain a broader requirement would make the row's reach
- * invisible to its author.
- */
 function resolveYardBindingGate(
 	yard: YardBindingContext,
 	requiredProfileIds: readonly string[],
 	definitions: readonly ResourceDefinitionVNext[],
 ): YardBindingGate {
 	const wanted = new Set(requiredProfileIds);
-	// Codepoint ordering, matching `@hobo/bindings`' canonical row-key order:
-	// an audit trail must not depend on the host's collation locale.
 	const applicableRows = yard.bindings
 		.filter((row) => wanted.has(row.profile))
 		.map((row) => [yardBindingRowKey(row), row] as const)
@@ -374,17 +264,6 @@ function resolveYardBindingGate(
 	};
 }
 
-/**
- * Merges the applied rows' `properties` into the Yard-scoped realization
- * parameter block (ADR-0157) — the configuration half of a Yard binding.
- *
- * Conflicts are refused rather than resolved by precedence: rows are a SET, so
- * there is no "later row wins" to appeal to, and silently picking one would make
- * the winner depend on iteration order — exactly the nondeterminism ADR-0151
- * decision 11 and ADR-0144's catalog-hash attribution exist to prevent. Two rows
- * setting the same key to different values is an authoring defect, and the
- * caller surfaces it as one.
- */
 function mergeRealizationParameters(rows: readonly YardBindingRow[]):
 	| {
 			readonly parameters: Readonly<JsonObject>;
@@ -431,7 +310,6 @@ function mergeRealizationParameters(rows: readonly YardBindingRow[]):
 	};
 }
 
-/** Distinct connectivity ids the applied rows pin, sorted. */
 function pinnedConnectivity(
 	rows: readonly YardBindingRow[],
 ): readonly string[] {
@@ -462,7 +340,6 @@ function realizationFor(
 	return implementations[0]?.realization ?? "native";
 }
 
-/** Most-actionable first: an unresolvable row outranks an over-constrained one. */
 const UNAVAILABLE_CODE_PRECEDENCE: readonly (
 	| YardBindingRejectionCode
 	| "NO_COMPATIBLE_BINDING"
@@ -483,15 +360,6 @@ function sortRejections(
 	);
 }
 
-/**
- * Build the `binding.Unavailable` fact for a refusal.
- *
- * The remediation text is `@hobo/bindings`' canonical per-code string rather
- * than a second copy written here: the fail-closed contract says the refusal
- * names what to change, and one authority for that wording keeps the operator
- * reading the same sentence wherever the refusal surfaces. The refusal's
- * resource-specific detail stays on `PlanRemediation`.
- */
 function unavailableFact(
 	yard: YardBindingContext,
 	attributed: readonly AttributedRejection[],
@@ -525,8 +393,6 @@ export function matchCapabilityRequirement(
 	const candidates: SelectionCandidate[] = [];
 	for (const definition of input.definitions) {
 		const candidate = toSelectionCandidate(definition);
-		// A legacy definition without semantics is not promoted into profile
-		// matching; it remains matchable only through its original port path.
 		if (candidate === undefined) continue;
 		byId.set(definition.id, definition);
 		candidates.push(candidate);
@@ -547,8 +413,6 @@ export function matchCapabilityRequirement(
 			? resolveYardBindingGate(yard, requiredProfileIds, input.definitions)
 			: undefined;
 
-	// Fail closed before ranking: a row naming a product this catalog cannot
-	// resolve is an authoring defect, and continuing would hide it.
 	if (gate?.fatal === true && yard !== undefined) {
 		const rejections = sortRejections(
 			gate.rejections.map((entry) => entry.rejection),
@@ -609,8 +473,6 @@ export function matchCapabilityRequirement(
 	});
 
 	if (result.winner === undefined) {
-		// Rows removed every survivor: name that as its own reason rather than
-		// letting the refusal read as "no product implements this profile".
 		const rowProfiles = [
 			...new Set(
 				(gate?.applicableRows ?? [])
@@ -672,13 +534,10 @@ export function matchCapabilityRequirement(
 		};
 	}
 
-	// SAFETY: `const winner = byId.get(` is required at this I/O or test boundary.
 	const winner = byId.get(
 		result.winner.definitionId,
 	) as ResourceDefinitionVNext;
 	const runnerUp = result.ranked[1];
-	// A tie means only the stable id tiebreak separated them, which is worth
-	// recording: it is the case where a catalog addition can flip the winner.
 	const tie =
 		runnerUp !== undefined &&
 		runnerUp.creatorAuthorityAfterClaim ===
@@ -702,10 +561,6 @@ export function matchCapabilityRequirement(
 			realizationParameters = merged.parameters;
 			nonPortableRows = merged.rows;
 		}
-		// A `BindingResolution` names the connectivity implementation, so the fact
-		// is only constructible here when the rows pinned exactly one. With none
-		// pinned (or several admitted) the connectivity step downstream owns it —
-		// emitting a fact with a guessed connectivity id would be a false record.
 		const connectivity = pinnedConnectivity(gate.applicableRows);
 		const connectivityId =
 			connectivity.length === 1 ? connectivity[0] : undefined;

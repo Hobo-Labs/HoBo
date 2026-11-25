@@ -1,6 +1,3 @@
-// Every typed failure the rollout orchestrator and its adapters report. Each
-// code carries a remediation, so a refusal, hold or rollback always says what
-// to do next (production obligation).
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import { PROGRESSIVE_UNSUPPORTED, WINDOW_CLOSED } from "../events.js";

@@ -1,5 +1,3 @@
-// WP23 fan-out acceptance (D21, I20; §10 rows "3 of 400 Camps offline",
-// "Failures exceed the budget mid-fan-out", "Mandatory pilot group fails").
 import { describe, expect, it } from "vitest";
 import {
 	DepartureAction,
@@ -64,13 +62,11 @@ describe("fan-out: 400 Camps PROGRESSIVE_PER_GROUP with 3 unreachable (§10 WP23
 		);
 		for (const id of offline)
 			expect(qualified.qualifiedCampIds).not.toContain(id);
-		// The unreachable Camps never had a promotion requested.
 		for (const id of offline)
 			expect(
 				h.promotions.calls.some((c) => c.request.targets.includes(camp(id))),
 			).toBe(false);
 
-		// Reconnect: they catch up to the node's qualified Freight (MATCH_NODE).
 		for (const id of offline) h.inventory.setStatus(id, healthy(id));
 		await drive(h);
 		const after = await h.controller.get(idOf(started.value));
@@ -179,7 +175,6 @@ describe("fan-out: failure budget (§10 WP23 row 2)", () => {
 		const h = harness();
 		const decision = decisionOf(400, 40);
 		addCamps(h, decision);
-		// 2% of 400 = 8 tolerated; the 9th failure halts. All failures sit in group 0.
 		const failing = new Set(
 			Array.from({ length: 9 }, (_, i) => `c${String(i * 4).padStart(3, "0")}`),
 		);
@@ -199,7 +194,6 @@ describe("fan-out: failure budget (§10 WP23 row 2)", () => {
 		expect(h.promotions.rollbacks.map((r) => r.campId).sort()).toEqual(
 			[...failing].sort(),
 		);
-		// Succeeded Camps were never rolled back; later groups never started.
 		expect(status?.succeeded.every((id) => !failing.has(id))).toBe(true);
 		expect(
 			h.promotions.calls.some((c) => c.request.targets[0] === "c040"),
@@ -297,7 +291,6 @@ describe("fan-out: bounded concurrency under chaos (I20)", () => {
 		let peakJournal = 0;
 		for (let i = 0; i < 300; i += 1) {
 			const controller = rand() < 0.5 ? h.controller : replicaB;
-			// A competing replica sometimes holds the lease: that tick does nothing.
 			if (rand() < 0.2)
 				await h.store.holdLease(
 					CD_SUBSCRIPTIONS.fanout(started.value.fanoutId),
@@ -501,7 +494,6 @@ describe("fan-out: control and lifecycle", () => {
 			h.ctx,
 		);
 		if (!second.ok) throw new Error("start refused");
-		// The newer fan-out waits; the older one still has group 0 in flight.
 		expect(
 			h.promotions.calls.filter((c) => c.request.freightId === freightB),
 		).toHaveLength(0);

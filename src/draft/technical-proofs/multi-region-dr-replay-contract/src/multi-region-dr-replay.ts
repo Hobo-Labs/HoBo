@@ -147,7 +147,6 @@ export function runRegionLossDrill(scenario: JsonObject = {}) {
   const log = parseReplicatedLog(scenario.log);
   const detectedAt = validateIso(scenario.detectedAt, "detectedAt");
   const restoredAt = validateIso(
-    // SAFETY: assertion to `scenario.restoredAt ?? addMilliseconds(detectedAt, (scenario.restoreDurationMs a` is required at this boundary.
     scenario.restoredAt ?? addMilliseconds(detectedAt, (scenario.restoreDurationMs as number) ?? 8 * 60 * 1000),
     "restoredAt",
   );
@@ -156,13 +155,11 @@ export function runRegionLossDrill(scenario: JsonObject = {}) {
     throw new Error("targetRegion must differ from lostRegion");
   }
 
-  // SAFETY: assertion to `if (!topology.regions.includes(lostRegion as never) || !topology.regions.include` is required at this boundary.
   if (!topology.regions.includes(lostRegion as never) || !topology.regions.includes(targetRegion as never)) {
     throw new Error("drill regions must be declared in topology manifest");
   }
 
   const restore = yardUpRestore({
-    // SAFETY: assertion to `logPath: (scenario.logPath as string) ?? /replicated/${targetRegion}/yard-event` is required at this boundary.
     logPath: (scenario.logPath as string) ?? `/replicated/${targetRegion}/yard-event-log`,
     log,
     topology: scenario.topology,
@@ -257,7 +254,6 @@ function requiredObject(value: JsonValue, fieldName: string): Record<string, str
   if (!value || !isJsonObject(value)) {
     throw new Error(`${fieldName} is required`);
   }
-  // SAFETY: assertion to `return value as Record<string, string>;` is required at this boundary.
   return value as Record<string, string>;
 }
 
@@ -285,7 +281,6 @@ function deepFreeze<T>(value: T): T {
     return value;
   }
   Object.freeze(value);
-  // SAFETY: assertion to `for (const child of Object.values(value as JsonObject)) {` is required at this boundary.
   for (const child of Object.values(value as JsonObject)) {
     deepFreeze(child);
   }

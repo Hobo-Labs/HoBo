@@ -2,7 +2,6 @@ import catalog from "./pinned-container-images.json" with { type: "json" };
 
 export type PinnedContainerImages = typeof catalog;
 
-/** Digest-pinned images shared by compose, Testcontainers, and CI docs. */
 export const pinnedContainerImages: PinnedContainerImages = catalog;
 
 export function parsePinnedImage(ref: string) {

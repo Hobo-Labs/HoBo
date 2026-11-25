@@ -1,10 +1,3 @@
-/**
- * Executable step definitions for data-plane-event-sourcing-cqrs-reactivity.feature.
- *
- * Drives the epic's real reference simulation
- * (services/data-plane-reference-architecture.ts) and asserts the projection,
- * search, and adversarial artifacts it actually produces.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -21,8 +14,6 @@ function simulation(): Promise<Simulation> {
 type DataPlaneWorld = {
 	result?: Simulation;
 };
-
-// --- Scenario: Place an order and read it through a reactive projection ------------------
 
 Given(
 	"a typed order domain event, a CQRS aggregate, and a tenant-scoped materialization",
@@ -71,8 +62,6 @@ Then(
 	},
 );
 
-// --- Scenario: Keep reads portable while exposing explicit escape hatches ----------------
-
 Given(
 	"relational, document, full-text, and vector projection surfaces",
 	async function (this: DataPlaneWorld) {
@@ -120,8 +109,6 @@ Then(
 		);
 	},
 );
-
-// --- Scenario: Handle stale, poisoned, and erased data without rewriting history ---------
 
 Given(
 	"projection lag, snapshot divergence, a poison event, and an erasure request",

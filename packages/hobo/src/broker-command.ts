@@ -30,7 +30,6 @@ import {
 	parseJsonValue,
 } from "./json.js";
 
-/** Required Station + active Rail pins for every Conductor resolve. */
 function requireStationPins(flags: JsonObject) {
 	const home =
 		isJsonString(flags.home) && flags.home.length > 0
@@ -58,25 +57,10 @@ function requireStationPins(flags: JsonObject) {
 }
 
 export interface BrokerCommandDeps {
-	// The provider catalog resolutions run against when a cloud config is
-	// supplied. The composed Yard runtime's PlannerRegistry satisfies this
-	// structurally; tests inject fixtures.
 	readonly catalog: BrokerCatalog;
-	// Injectable for tests; defaults to global fetch for OPA/Cedar engines.
 	readonly fetchFn?: FetchLike;
 }
 
-// The broker config document (`hobo.broker.json`): a BrokerPolicySet plus the
-// engine and connector wiring the CLI assembles around it.
-//   {
-//     ...BrokerPolicySet (schemaVersion, brokerId, placementPolicies,
-//        billing, delivery, requiredConnectorKinds)...,
-//     "connectors":   [ConnectorConfig...],          // optional
-//     "policyEngine": { "kind": "opa"|"cedar",       // optional; default is
-//                       "endpoint": "http://...",    // the built-in policy
-//                       "decisionPath": "..." },     // packs
-//     "catalog": "registry" | "local-host"           // optional
-//   }
 // public-contract: the broker config artifact name projects commit and review.
 export const BROKER_CONFIG_FILENAME = "hobo.broker.json";
 
@@ -129,9 +113,6 @@ async function locateConfig(
 	}
 }
 
-// Assemble the broker from a config document — or, with no cloud config
-// supplied, from the built-in local lane: the running machine registered as
-// a HoBo cloud provider host with a permissive default policy set.
 async function assembleBroker(
 	deps: BrokerCommandDeps,
 	flags: JsonObject,
@@ -148,7 +129,6 @@ async function assembleBroker(
 		};
 	}
 
-	// SAFETY: assertion required at this I/O or test boundary.
 	const raw = (await readJson(configPath, "broker config")) as JsonObject;
 	const { connectors, policyEngine, catalog, ...policyDocument } = raw;
 	const policies = parseBrokerPolicySet(policyDocument);
@@ -160,7 +140,6 @@ async function assembleBroker(
 	let gatePlane: GatePlane | undefined;
 	let engineKind: AssembledBroker["engineKind"] = "builtin";
 	if (policyEngine !== undefined && policyEngine !== null) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const engine = policyEngine as JsonObject;
 		const endpoint = engine.endpoint;
 		if (!isJsonString(endpoint) || endpoint.length === 0) {
@@ -222,8 +201,6 @@ async function assembleBroker(
 	};
 }
 
-// Derive the brokering request from the project's own bindle manifest when no
-// --request document is supplied; a bare machine gets a smoke requirement.
 async function deriveRequest(
 	flags: JsonObject,
 	projectDir: string,
@@ -236,7 +213,6 @@ async function deriveRequest(
 	const requirements =
 		manifest !== null
 			? Object.entries(
-					// SAFETY: assertion required at this I/O or test boundary.
 					manifest.value.resources as Record<
 						string,
 						{ type: string; port?: string }
@@ -255,26 +231,11 @@ async function deriveRequest(
 	};
 }
 
-// `hobo broker` — the broker (the Conductor) surfaced on the CLI.
-//   hobo broker config [--init] [--config <file>]
-//     Validate and summarize the broker configuration (policies, budgets,
-//     connectors, policy engine); --init scaffolds hobo.broker.json.
-//   hobo broker up [--config <file>] [--request <file>]
-//     Assemble the broker from config and realize the request through the
-//     full pipeline: resolve -> spin-up directives -> delivery handoff. With
-//     NO cloud config supplied, the running machine is registered as a HoBo
-//     cloud provider host (zero-cost local catalog) so the whole loop is
-//     testable on a bare machine.
-//   hobo broker resolve --policies <file> --request <file>
-//     Run one resolution and print the receipt or the cataloged rejection.
-//   hobo broker matrix
-//     Print the closed rejection-code catalog.
 export function createBrokerCommand(deps: BrokerCommandDeps): CommandModule {
 	return {
 		run: async ({ args, flags, context, emitProgress }) => {
 			const subcommand = args[0] ?? "up";
 			const projectDir =
-				// SAFETY: assertion required at this I/O or test boundary.
 				(context as { projectDir?: string }).projectDir ??
 				(isJsonString(flags.cwd) ? flags.cwd : context.cwd);
 
@@ -408,7 +369,6 @@ export function createBrokerCommand(deps: BrokerCommandDeps): CommandModule {
 					if (receipt === undefined) {
 						throw new Error("resolved without a receipt");
 					}
-					// Spin up every placement, then hand the receipt to delivery.
 					const scaleEvents = receipt.placements.flatMap(
 						(placement) =>
 							broker.scale({

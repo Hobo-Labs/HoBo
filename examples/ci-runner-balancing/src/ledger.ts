@@ -1,12 +1,3 @@
-/**
- * CreditLedgerView projection: folds provider cost facts, budget envelopes,
- * usage snapshots, and hard-block evidence into the materialized view the
- * dispatcher consumes. Effective marginal cost is 0 while free headroom
- * remains and the declared list price after (ADR-0071); invalid or
- * misdeclared cost facts degrade to declared min-cost ranking (free tier
- * treated as absent) instead of throwing or chasing untrusted claims.
- */
-
 import { create } from "@bufbuild/protobuf";
 
 import {
@@ -24,7 +15,6 @@ export interface LedgerInput {
 	envelopes: ReadonlyMap<string, BudgetEnvelope>;
 	snapshots: readonly UsageSnapshot[];
 	hardBlocks?: readonly HardBlockSignal[];
-	/** Pinned by the caller (event-store offset or timestamp token). */
 	seq: string;
 }
 
@@ -35,12 +25,6 @@ interface CostView {
 	degraded: boolean;
 }
 
-/**
- * Sanitize declared cost facts. Anything structurally unusable (negative
- * price, negative free tier, non-finite numbers) collapses to "no free
- * tier, non-negative list price" so a misdeclared provider can rank by
- * declared min cost but can never fabricate free headroom.
- */
 function costView(provider: RunnerProviderProfile): CostView {
 	const cost = provider.cost;
 	const listPrice = cost?.listPriceUsdPerUnit ?? 0;

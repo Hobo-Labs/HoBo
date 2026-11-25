@@ -1,9 +1,3 @@
-/**
- * The script acts in a submodule only when git answers for that submodule.
- * An empty `.git` directory under the path, or a `.git` file whose module
- * directory was deleted, makes git walk up (or give up); either way it is a
- * refusal that names the way back, never a command run in the superproject.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";

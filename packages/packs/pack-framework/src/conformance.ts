@@ -1,18 +1,3 @@
-/**
- * The shared conformance harness: declarative cases plus an injected executor.
- *
- * A conformance case is data — a list of steps, each of which is an argv array,
- * a TCP connect, an HTTP GET, or a workload restart. Nothing in this module can
- * start a container, open a socket, or read a clock. That is what lets the
- * default test lane stay offline: the same cases run against a replay runner
- * built from recorded outcomes, and the opt-in container lane supplies a runner
- * that really talks to a container runtime.
- *
- * Cases declare what they need. A case whose evidence genuinely requires a live
- * container is marked `requires: "container-runtime"`, and
- * {@link offlineCases} filters those out so a default run never depends on
- * Docker being installed.
- */
 import { containsControlChar } from "./argv.js";
 import { PackError } from "./errors.js";
 import type { VerifiedPackManifest } from "./verification.js";
@@ -41,7 +26,6 @@ export type PackConformanceRequirement = "none" | "container-runtime";
 
 export type PackConformanceCase = {
 	readonly id: string;
-	/** The capability profile (or guarantee) this case is evidence for. */
 	readonly profileRef: string;
 	readonly description: string;
 	readonly requires: PackConformanceRequirement;
@@ -64,10 +48,6 @@ export type PackConformanceRunRequest = {
 	readonly step: PackConformanceStep;
 };
 
-/**
- * Implementations MUST NOT interpret an `exec` step through a shell and MUST
- * treat an unreachable runtime as a failed step rather than a skipped one.
- */
 export interface PackConformanceRunner {
 	run(request: PackConformanceRunRequest): Promise<PackConformanceStepOutcome>;
 }
@@ -91,12 +71,6 @@ export type PackConformanceReport = {
 
 const CASE_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/u;
 
-/**
- * Parse-don't-validate boundary for a case list.
- *
- * Runs before anything is executed, so a malformed case is a load-time failure
- * rather than a half-finished conformance run.
- */
 export function parseConformanceCases(
 	cases: readonly PackConformanceCase[],
 	manifest: VerifiedPackManifest,
@@ -157,14 +131,12 @@ export function parseConformanceCases(
 	return [...cases].sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/** Cases that can be evidenced without a container runtime. */
 export function offlineCases(
 	cases: readonly PackConformanceCase[],
 ): readonly PackConformanceCase[] {
 	return cases.filter((testCase) => testCase.requires === "none");
 }
 
-/** Cases that only mean anything against a real container. */
 export function containerCases(
 	cases: readonly PackConformanceCase[],
 ): readonly PackConformanceCase[] {
@@ -230,13 +202,6 @@ function stepSatisfied(
 	}
 }
 
-/**
- * Run a case list through an injected runner.
- *
- * A case stops at its first failing step: subsequent steps in the same case
- * usually depend on it, and reporting cascade failures as independent findings
- * makes a single defect look like five.
- */
 export async function runPackConformance(input: {
 	readonly manifest: VerifiedPackManifest;
 	readonly cases: readonly PackConformanceCase[];
@@ -294,13 +259,6 @@ export type RecordedStepOutcome = {
 	readonly outcome: PackConformanceStepOutcome;
 };
 
-/**
- * A runner backed by recorded outcomes.
- *
- * This is what keeps the mandatory lane offline and deterministic. An
- * unrecorded step is an error, not an implicit pass — a fixture set that has
- * drifted from its cases should fail loudly.
- */
 export function createReplayConformanceRunner(
 	recorded: readonly RecordedStepOutcome[],
 ): PackConformanceRunner {

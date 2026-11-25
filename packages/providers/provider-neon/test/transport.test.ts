@@ -66,10 +66,6 @@ describe("createGuardedTransport", () => {
 				url: "https://neon.new/api/v1/database/x",
 				headers: {},
 				timeoutMs: 1000,
-				// Within policy on purpose: the point of this case is the
-				// *response* being oversized, not the request asking for too
-				// much. Asking for 4096 against a 512 policy is now refused
-				// before the body is ever fetched, which the case below covers.
 				maxResponseBytes: 512,
 			}),
 		).rejects.toThrowError(/exceeded the 512 byte cap/u);
@@ -109,9 +105,6 @@ describe("createGuardedTransport", () => {
 	});
 
 	it("refuses a caller timeout above the policy ceiling instead of clamping", async () => {
-		// This used to silently rewrite a ten-minute request to two seconds and
-		// carry on. Quietly honouring something other than what was asked for
-		// hides a misconfiguration; the shared guard refuses and says so.
 		const inner = createStubTransport([OK]);
 		const transport = createGuardedTransport(inner, {
 			...DEFAULT_TRANSPORT_POLICY,
@@ -184,7 +177,6 @@ describe("createFetchTransport", () => {
 			});
 			expect.unreachable("a dropped request must throw");
 		} catch (error) {
-			// SAFETY: value was established by the surrounding parse or typed constructor.
 			expect((error as NeonProviderError).code).toBe(
 				"PROVIDER_OPERATION_AMBIGUOUS",
 			);

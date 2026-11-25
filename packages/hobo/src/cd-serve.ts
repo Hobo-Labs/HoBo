@@ -1,18 +1,4 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening -- SAFETY: the HTTP edge: node request headers and error values are untrusted and only copied or stringified. */
-/**
- * `hobo serve cd` — the CD conductor service (ADR-0182 C2/C13).
- *
- * One process hosts:
- * - the `@hobo/cd/service` tick loop (sources → … → retention) and a
- *   conductor reconciler over the Station's MANAGED Camps;
- * - one HTTP mount at `/v1/cd/`: the read API (`createCdControlApi`) for
- *   operators and the delivery feed for enrolled agents (agents connect
- *   outbound to this mount; the Station never dials an agent, I3);
- * - `/healthz` (liveness) and `/readyz` (journal, leases, steps).
- *
- * `--simulate` reaches the labelled fixtures only; the service says so in its
- * banner and in `/readyz`.
- */
 
 import { randomUUID } from "node:crypto";
 import {
@@ -72,7 +58,6 @@ async function send(
 	res.end();
 }
 
-/** Start the conductor service over an opened CD runtime. */
 export async function startCdServer(
 	input: Readonly<{
 		runtime: CdRuntime;
@@ -103,7 +88,6 @@ export async function startCdServer(
 					headers: headersOf(req),
 					body: probe ? new Uint8Array() : await readBody(req),
 				};
-				// A client hang-up aborts its long-poll or stream.
 				const perRequest = new AbortController();
 				res.on("close", () => perRequest.abort());
 				const signal = AbortSignal.any([abort.signal, perRequest.signal]);

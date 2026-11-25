@@ -58,7 +58,6 @@ export function createStubCommand(
 					data: {
 						command: "stub",
 						trainables: stubs.map((stub) => toJson(TrainableStubSchema, stub)),
-						// SAFETY: `...(toJson(CodegenReportSchema, result) as JsonObject),` is required at this I/O or test boundary.
 						...(toJson(CodegenReportSchema, result) as JsonObject),
 					},
 				};

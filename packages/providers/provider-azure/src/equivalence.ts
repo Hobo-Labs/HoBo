@@ -1,6 +1,3 @@
-// Azure equivalence classes: the cross-cloud equivalence-table row for Azure
-// (control-plane.md §Cross-cloud equivalence classes) shipped as this
-// provider's default Resource Definitions (HOBO-93 model / ADR-0090).
 export const EQUIVALENCE_CLASSES = Object.freeze({
 	"web/service": {
 		port: "compute",

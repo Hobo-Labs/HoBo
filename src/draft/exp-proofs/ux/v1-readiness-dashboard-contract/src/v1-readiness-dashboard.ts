@@ -178,7 +178,6 @@ export function validateV1ReadinessDashboard(record: JsonValue): ValidationResul
     return { ok: false, errors: ["v1 readiness dashboard record is required"] };
   }
 
-  // SAFETY: `const candidate = record as Partial<V1ReadinessDashboard>;` is required at this I/O or test boundary.
   const candidate = record as Partial<V1ReadinessDashboard>;
 
   if (candidate.issue !== "HOBO-482") {
@@ -236,6 +235,5 @@ export function assertV1ReadinessDashboard(record: JsonValue = v1ReadinessDashbo
     throw new Error(`v1 readiness dashboard contract invalid:\n${result.errors.join("\n")}`);
   }
 
-  // SAFETY: `return record as V1ReadinessDashboard;` is required at this I/O or test boundary.
   return record as V1ReadinessDashboard;
 }

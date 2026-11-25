@@ -33,8 +33,6 @@ describe("in-process feature flags", () => {
 			?.events()
 			.find((event) => event.type === "flag.Evaluated");
 		if (!snapshot) throw new Error("expected a flag event");
-		// SAFETY: the flag above defines this nested value; mutate the snapshot to
-		// verify it cannot change the store or a later snapshot.
 		const value = snapshot.data.value as { nested: { value: string } };
 		value.nested.value = "changed";
 		expect(flags.port.get("config")?.variants.control).toEqual({
@@ -144,7 +142,6 @@ describe("in-process feature flags", () => {
 		const harness = createTestHarness({
 			emulators: {
 				flag: () => ({
-					// SAFETY: exercise the runtime boundary with a malformed JavaScript factory.
 					port: {} as FeatureFlagPort,
 					fidelity: "mocked",
 					close: () => {

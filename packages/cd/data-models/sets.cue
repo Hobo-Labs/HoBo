@@ -1,6 +1,3 @@
-// CUE constraints for the Sets/Deltas records in cd.proto (WP4).
-// Field names follow the protobuf JSON mapping the journal stores. The TS
-// parsers in src/sets/codec.ts (checkSet, checkDelta) apply the same rules.
 package cd
 
 #Sha256: =~"^sha256:[0-9a-f]{64}$"
@@ -23,9 +20,6 @@ package cd
 
 #DeltaIntent: "promote" | "rollback" | "drift-remediate" | "up" | "down" | "preview" | "config" | "topology" | "failover" | "depart" | "posture-remediate"
 
-// An immutable, content-addressed desired state for one Camp. The resolved
-// plan is never inlined: it lives in the artifact store under
-// resolvedSetDigest (media type application/vnd.hobo.resolved-set+json).
 #SetRecord: {
 	schemaVersion:     "hobo.cd.set/v1"
 	setId:             =~"^set_[0-9a-z]{8,64}$"
@@ -36,11 +30,9 @@ package cd
 	planHash:          #Sha256
 	contentHash:       #Sha256
 	predecessorSetId?: string
-	// Every Set names the gate decision that admitted it (I10).
 	gateDecisionId:    string & !=""
 	origin:            #SetOrigin
 	resolvedSetDigest: #Sha256
-	// uint64 as a decimal string (protobuf JSON); a blob is never empty.
 	resolvedSetBytes: =~"^[1-9][0-9]*$"
 	createdAt:        string & !=""
 }
@@ -52,14 +44,12 @@ package cd
 	productId?:  string
 	beforeHash?: "" | #Sha256
 	afterHash?:  "" | #Sha256
-	// An add has no before; a remove has no after.
 	if kind == "CHANGE_KIND_ADD" {beforeHash?: ""}
 	if kind == "CHANGE_KIND_REMOVE" {afterHash?: ""}
 }
 
 #DeltaRecord: {
 	schemaVersion: "hobo.cd.delta/v1"
-	// Set ids own the set_ prefix.
 	deltaId:    =~"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" & !~"^set_"
 	campId:     string & !=""
 	baseSetId?: string

@@ -1,4 +1,3 @@
-// CUE constraints for cloud Yard shell gateway, event store, and projection records.
 
 package architecture_evidence
 

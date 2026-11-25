@@ -1,4 +1,3 @@
-# A small OpenAPI document used to exercise client and MCP generation.
 openapi: 3.0.3
 info:
   title: Acme Pets

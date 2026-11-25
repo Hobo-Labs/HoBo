@@ -1,10 +1,3 @@
-/**
- * Asking a server whether it serves a commit must not change any repository
- * of the user's. `git fetch --dry-run` still downloads the pack and writes
- * `.git/shallow`, so the question is asked from a throwaway bare repository
- * under the cache, removed when the answer is in: the superproject and the
- * submodule (a full clone included) keep every object and their history.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
@@ -27,7 +20,6 @@ import {
 	scratch,
 } from "./support/pins-support.ts";
 
-/** What a fetch into `dir` would change: its objects, and whether it is shallow. */
 function snapshot(dir: string) {
 	const counts = git(dir, ["count-objects", "-v"])
 		.split("\n")
@@ -52,7 +44,6 @@ describe("asking the server changes no repository of the user's", () => {
 	it("status --online leaves the superproject as it was", () => {
 		const dir = scratch("probe-status");
 		const remote = makeRemote(dir);
-		// Pinned at the first commit: not the tip, so the server is asked.
 		const work = makeWork(dir, remote, 0);
 		assert.equal(runBootstrap(work, []).status, 0);
 		const before = snapshot(work);
@@ -75,7 +66,6 @@ describe("asking the server changes no repository of the user's", () => {
 		const work = makeWork(dir, remote, 2);
 		assert.equal(runBootstrap(work, []).status, 0);
 		const sub = join(work, "external/lib");
-		// A developer's own full clone of the library.
 		git(sub, ["fetch", "-q", "--unshallow", "origin"]);
 		const before = snapshot(sub);
 		const superBefore = snapshot(work);

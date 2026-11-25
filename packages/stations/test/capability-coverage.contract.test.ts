@@ -64,14 +64,8 @@ const pactPath = join(
 	"pacts",
 	"station-capability-coverage.pact.json",
 );
-// SAFETY: assertion required at this I/O or test boundary.
 const pact = JSON.parse(readFileSync(pactPath, "utf8")) as PactFile;
 
-/**
- * The Station under test is named by the interaction's own path, so a pact edit
- * that renames it moves the real call with it rather than leaving a constant
- * behind in this file.
- */
 function stationIdOf(interaction: PactInteraction): string {
 	const match = /^\/stations\/([^/]+)\/capability-coverage$/u.exec(
 		interaction.request.path,
@@ -83,7 +77,6 @@ function stationIdOf(interaction: PactInteraction): string {
 	return decodeURIComponent(match?.[1] ?? "");
 }
 
-/** Drive the real aggregation from an interaction's request body. */
 function aggregate(interaction: PactInteraction): StationCapabilityCoverage {
 	return aggregateStationCapabilities({
 		stationId: stationIdOf(interaction),
@@ -92,13 +85,8 @@ function aggregate(interaction: PactInteraction): StationCapabilityCoverage {
 	});
 }
 
-/**
- * Descriptions that have an executable assertion below. Populated at collection
- * time, checked at run time by the unmapped-interaction guard.
- */
 const MAPPED = new Set<string>();
 
-/** Register one assertion against the interaction carrying `description`. */
 function contract(
 	description: string,
 	assertions: (interaction: PactInteraction) => void,
@@ -112,7 +100,6 @@ function contract(
 			matches.length,
 			`pact must declare exactly one interaction "${description}"`,
 		).toBe(1);
-		// SAFETY: assertion required at this I/O or test boundary.
 		assertions(matches[0] as PactInteraction);
 	});
 }
@@ -126,7 +113,6 @@ describe("station-capability-coverage pact (consumer: @hobo/stations)", () => {
 	contract(
 		"two yards both able to allocate web.hosted/v1 aggregate to coverage 2, not a conflict",
 		(interaction) => {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const expected = interaction.response.body as {
 				schema: string;
 				stationId: string;
@@ -161,18 +147,13 @@ describe("station-capability-coverage pact (consumer: @hobo/stations)", () => {
 				expect([...entry.yardNames]).toEqual([...pinned.yardNames]);
 				expect([...entry.providerIds]).toEqual([...pinned.providerIds]);
 				expect(entry.expected).toBe(pinned.expected);
-				// "Coverage, not a conflict": every pinned offering survives, and
-				// the offerings really are the breadth the count claims.
 				expect(entry.offerings.length).toBe(pinned.offeringCount);
-				// Aggregation never picks a winner, so the count must be the sum of
-				// the rows the request actually declared for that profile.
 				const declared = interaction.request.body.yards.flatMap((yard) =>
 					yard.bindings.filter((row) => row.profile === pinned.profile),
 				);
 				expect(entry.offeringCount).toBe(declared.length);
 			}
 
-			// The digest an operator reads must agree with the record.
 			const rendered = renderStationCapabilityCoverage(coverage);
 			expect(rendered).toContain(`station ${expected.stationId}`);
 			expect(rendered).toContain(expected.ok ? ": ok" : ": INCOMPLETE");
@@ -187,7 +168,6 @@ describe("station-capability-coverage pact (consumer: @hobo/stations)", () => {
 	contract(
 		"an expected profile no yard can allocate is a gap with remediation, and ok is false",
 		(interaction) => {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const expected = interaction.response.body as {
 				schema: string;
 				stationId: string;
@@ -202,19 +182,15 @@ describe("station-capability-coverage pact (consumer: @hobo/stations)", () => {
 			expect(coverage.stationId).toBe(expected.stationId);
 			expect(coverage.ok).toBe(expected.ok);
 			expect([...coverage.singlySourced]).toEqual([...expected.singlySourced]);
-			// The remediation is code-observable here (unlike a pact-prose field):
-			// `StationCapabilityGap` carries it, so it is compared verbatim.
 			expect(coverage.gaps.map((gap) => ({ ...gap }))).toEqual([
 				...expected.gaps,
 			]);
-			// A gap is an absence, not a dropped row: nothing served claims it.
 			for (const gap of expected.gaps) {
 				expect(
 					coverage.served.some((entry) => entry.profile === gap.profile),
 				).toBe(false);
 			}
 
-			// Gaps lead the digest, and carry their remediation into it.
 			const rendered = renderStationCapabilityCoverage(coverage);
 			expect(rendered).toContain(": INCOMPLETE");
 			for (const gap of expected.gaps) {
@@ -226,7 +202,6 @@ describe("station-capability-coverage pact (consumer: @hobo/stations)", () => {
 	contract(
 		"a row constraining neither productId nor connectivityId is refused, never skipped",
 		(interaction) => {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const expected = interaction.response.body as {
 				code: string;
 				remediation: string;
@@ -246,18 +221,12 @@ describe("station-capability-coverage pact (consumer: @hobo/stations)", () => {
 				thrown,
 				`aggregation accepted a catalog the pact says it refuses with ${expected.code}`,
 			).toBeInstanceOf(Error);
-			// SAFETY: assertion required at this I/O or test boundary.
 			const error = thrown as { code?: string; remediation?: string };
 			expect(error.code).toBe(expected.code);
 			expect(error.remediation).toBe(expected.remediation);
 		},
 	);
 
-	// The most important test in this file. Everything above maps one
-	// interaction to real code by description; an interaction nobody mapped is
-	// an unexecuted contract, which is the exact failure mode this file exists
-	// to remove. Adding an interaction to the pact must fail here until someone
-	// writes the assertion that proves it.
 	it("asserts every interaction the pact file declares", () => {
 		const declared = pact.interactions.map(
 			(interaction) => interaction.description,

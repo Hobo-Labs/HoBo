@@ -1,7 +1,3 @@
-/**
- * Assert every site/src/nav.ts docs slug resolves to a page under site/src/pages.
- * Exit 0 on success; print missing paths and exit 1 on failure.
- */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

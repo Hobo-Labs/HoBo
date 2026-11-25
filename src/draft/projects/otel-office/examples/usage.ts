@@ -1,10 +1,3 @@
-/**
- * Runnable example for otel-office. The draft-artifact gate EXECUTES this file
- * with `node --import tsx` and diffs stdout against usage.expected.txt.
- *
- * Demonstrates the primary contract offline: deterministic simulator → events →
- * reducer → visible office state, plus one OTLP-mapped span.
- */
 import { strict as assert } from "node:assert";
 import { applyEvent, visibleCharacters } from "../src/model.js";
 import { mapTracePayload } from "../src/otel.js";

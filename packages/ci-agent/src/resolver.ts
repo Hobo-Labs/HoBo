@@ -13,26 +13,14 @@ import {
 import type { StructuredMerger } from "./structured-merge.js";
 import { verifyResolvedFile } from "./verify.js";
 
-/** One path a trial merge could not settle. */
 export type ConflictFile = Readonly<{
 	path: string;
-	/**
-	 * "content": both sides changed the text of one regular file. Anything
-	 * else (binary, delete against modify, rename, mode or type change) is
-	 * "unsupported" and is never sent to an engine.
-	 */
 	kind: "content" | "unsupported";
-	/** `git merge-file --zdiff3` output, with markers of `markerSize` characters. */
 	merged: string;
 	markerSize: number;
 	bytes: number;
-	/**
-	 * The whole file on each side, for checks of the resolved file. Without
-	 * them the parse and duplicate-declaration checks are skipped.
-	 */
 	ours?: string;
 	theirs?: string;
-	/** The common ancestor's text, empty when both sides added the path. */
 	base?: string;
 }>;
 
@@ -45,11 +33,6 @@ export type EngineRegion = Readonly<{
 	after: string;
 }>;
 
-/**
- * An earlier resolution of the same regions that failed the repository's
- * checks, and what those checks reported. The report is CI output: data
- * about the failure, never instructions to the engine.
- */
 export type PreviousAttempt = Readonly<{
 	regions: readonly Readonly<{ id: number; resolution: string }>[];
 	checkFailures: string;
@@ -60,7 +43,6 @@ export type EngineRequest = Readonly<{
 	oursLabel: string;
 	theirsLabel: string;
 	regions: readonly EngineRegion[];
-	/** Set when this request repairs a resolution whose checks failed. */
 	previous?: PreviousAttempt | undefined;
 	maxOutputTokens: number;
 	signal: AbortSignal;
@@ -70,7 +52,6 @@ export type EngineAnswer = Readonly<{
 	regions: readonly Readonly<{
 		id: number;
 		resolution: string;
-		/** The engine's own estimate, from 0 to 1, that this text is right. */
 		confidence: number;
 	}>[];
 	usage: Readonly<{ inputTokens: number; outputTokens: number }>;
@@ -87,7 +68,6 @@ export interface ResolutionEngine {
 	resolve(request: EngineRequest): Promise<EngineAnswer>;
 }
 
-/** Why a merge was left to a person. Fixed codes; never model or repository text. */
 export type ResolutionReason =
 	| "protected-path"
 	| "too-many-files"
@@ -128,10 +108,6 @@ export type ResolvedContent = Readonly<{
 	contentSha256: string;
 	/** Each region's text, by the conflict it resolved: what a later merge can reuse. */
 	recorded: readonly RecordedRegion[];
-	/**
-	 * The structured merge settled the whole file. Its text may then differ
-	 * from git's merge outside the conflict regions too.
-	 */
 	structured: boolean;
 }>;
 
@@ -178,7 +154,6 @@ type Prepared = Readonly<{
 	file: ConflictFile;
 	segments: readonly MergeSegment[];
 	regions: readonly EngineRegion[];
-	/** Regions with no recorded resolution: the ones an engine is asked about. */
 	pending: readonly EngineRegion[];
 	recorded: ReadonlyMap<string, string> | undefined;
 	structured: boolean;
@@ -187,25 +162,14 @@ type Prepared = Readonly<{
 /** A conservative token estimate: three characters a token, not the usual four. */
 const estimateTokens = (characters: number) => Math.ceil(characters / 3);
 
-/**
- * Resolve the conflicted files of one merge, or say why not.
- *
- * Everything that can be decided without a model is decided first, so a
- * merge the agent will not touch costs no tokens. An engine is replaced by
- * the next one only when it fails to answer; an answer that is unsure or
- * malformed in its content ends the attempt, so a second engine is never
- * asked for a more confident answer to the same question.
- */
 export async function resolveConflicts(input: {
 	files: readonly ConflictFile[];
 	policy: ResolutionPolicy;
 	budget: AgentBudget;
 	engines: readonly ResolutionEngine[];
-	/** Tokens left in today's budget. */
 	remainingTokens: number;
 	oursLabel: string;
 	theirsLabel: string;
-	/** Per path: an earlier attempt that failed checks, to be corrected. */
 	previous?: ReadonlyMap<string, PreviousAttempt> | undefined;
 	/**
 	 * Conflict regions resolved before, in resolutions whose checks passed,
@@ -213,13 +177,7 @@ export async function resolveConflicts(input: {
 	 * rerere reuses a recorded resolution. Ignored for a repair.
 	 */
 	recorded?: ReadonlyMap<string, string> | undefined;
-	/**
-	 * A syntax-aware merge tried on each file before any engine. A file it
-	 * merges cleanly, and that passes the same checks, needs no engine.
-	 * Not used for a repair.
-	 */
 	structured?: StructuredMerger | undefined;
-	/** Told each time an engine fails to answer, before the next is tried. */
 	onEngineFailure?: ((failure: EngineFailure) => void) | undefined;
 }): Promise<ResolveResult> {
 	const { files, policy, budget } = input;
@@ -264,7 +222,6 @@ export async function resolveConflicts(input: {
 					]
 				: [],
 		);
-		// A repair corrects what the checks rejected, so it does not reuse.
 		const recorded = input.previous ? undefined : input.recorded;
 		const pending = regions.filter(
 			(region) => !recorded?.has(conflictKey(region)),
@@ -285,7 +242,6 @@ export async function resolveConflicts(input: {
 		),
 	);
 	if (inputEstimate > budget.maxInputTokens) return refuse("input-budget");
-	// Every file with regions is its own call, with its own output allowance.
 	const calls = asking.length;
 	const reservation = inputEstimate + budget.maxOutputTokens * calls;
 	if (reservation > input.remainingTokens) return refuse("daily-budget");
@@ -297,7 +253,6 @@ export async function resolveConflicts(input: {
 			? { ...RECORDED_ENGINE, id: "structured", model: input.structured.id }
 			: RECORDED_ENGINE;
 	for (const engine of asking.length > 0 ? input.engines : [settled]) {
-		// A fallback engine spends again: only while today's budget still covers it.
 		if (
 			last.engineId !== "" &&
 			usage.inputTokens + usage.outputTokens + reservation >
@@ -309,7 +264,6 @@ export async function resolveConflicts(input: {
 		let unavailable = false;
 		for (const entry of prepared) {
 			if (entry.regions.length === 0) {
-				// The trial merge flagged the path, but its text merged cleanly.
 				resolved.push(
 					content(
 						entry.file.path,
@@ -344,7 +298,6 @@ export async function resolveConflicts(input: {
 						signal: AbortSignal.timeout(budget.timeoutSeconds * 1000),
 					});
 				} catch (error) {
-					// The error is parsed here, at the engine boundary, for its status only.
 					const http = HttpError.safeParse(error);
 					input.onEngineFailure?.(
 						http.success
@@ -368,7 +321,6 @@ export async function resolveConflicts(input: {
 				usage.inputTokens += answer.usage.inputTokens;
 				usage.outputTokens += answer.usage.outputTokens;
 				const ids = new Set(answer.regions.map((region) => region.id));
-				// An answer for the wrong set of regions is a broken engine, not a judgement.
 				if (
 					ids.size !== answer.regions.length ||
 					ids.size !== entry.pending.length ||
@@ -469,11 +421,6 @@ function content(
 	};
 }
 
-/**
- * The file as the structured merge left it, when that merged it cleanly and
- * the result passes the checks a resolved file must pass; otherwise the file
- * as git left it.
- */
 async function structuredMerge(
 	file: ConflictFile,
 	input: Readonly<{
@@ -501,7 +448,6 @@ async function structuredMerge(
 	});
 	if (
 		merged === undefined ||
-		// Room for both sides, not for unrelated code.
 		merged.length > ours.length + theirs.length + 4096 ||
 		verifyResolvedFile({ path: file.path, ours, theirs, resolved: merged })
 	)

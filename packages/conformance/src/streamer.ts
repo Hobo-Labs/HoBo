@@ -11,6 +11,7 @@ import {
 	type StreamName,
 } from "@hobo/core";
 
+// public-contract: stable exported contract literal
 export const STREAMER_CONFORMANCE_CONTRACT = "hobo.streamer-runtime-port/v1";
 
 export type StreamerAssertionName =
@@ -30,7 +31,6 @@ export type StreamerConformanceReport = {
 export async function runStreamerConformance(
 	createStreamer: () => Streamer,
 ): Promise<StreamerConformanceReport> {
-	// SAFETY: assertion to `{} as Record<StreamerAssertionName, "pass" | "fail">` is required at this boundary.
 	const assertions = {} as Record<StreamerAssertionName, "pass" | "fail">;
 
 	const runAssertion = async (

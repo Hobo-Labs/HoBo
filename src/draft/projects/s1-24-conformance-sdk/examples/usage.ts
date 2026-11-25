@@ -22,18 +22,15 @@ import {
 import { createDriftAdapter, createReferenceAdapter } from "../test/fixtures/drift-adapters.ts";
 import { type JsonValue } from "../src/json.js";
 
-
 const fixture = (name: string): JsonValue =>
 	JSON.parse(readFileSync(new URL(`../src/sdk/${name}`, import.meta.url), "utf8"));
 
-// 1) The committed corpus and annex vectors parse into typed fixtures.
 const corpus = parseLoweringCorpus(fixture("corpus/lowering-corpus.json"));
 const annexVectors = parseSemanticsAnnexVectors(fixture("vectors/semantics-annex.vectors.json"));
 console.log(`corpus fixtures: ${corpus.map((entry) => entry.name).join(",")}`);
 console.log(`annex vectors: ${annexVectors.map((vector) => `${vector.category}/${vector.name}`).join(",")}`);
 console.log(`gate lanes: ${sdkConformanceGateSpec.lanes.join(",")}`);
 
-// 2) The reference adapter passes every lane; the report parses and is bounded by the corpus.
 const passing = await runSdkIdiomConformance({
 	corpus,
 	corpusPath: "src/sdk/corpus/lowering-corpus.json",
@@ -54,12 +51,9 @@ const reparsed = parseSdkConformanceReport(passing);
 assert.equal(reparsed.status, "passed");
 console.log(`report status=${passing.status} boundedByCorpus=${goldenIr?.boundedByCorpus}`);
 
-// 3) Canonical report JSON is deterministic — same report, same bytes.
 assert.equal(canonicalizeReportJson(passing), canonicalizeReportJson(parseSdkConformanceReport(passing)));
 console.log("canonical report json deterministic: true");
 
-// 4) Seeded drift: hiding cancellation as a retry sneaks past golden-IR lowering but the
-//    semantics annex catches it and reports the exact JSON paths that diverge.
 const drifted = await runSdkIdiomConformance({
 	corpus,
 	annexVectors,
@@ -89,7 +83,6 @@ assert.equal(uncovered.status, "failed");
 assert.equal(coverage?.cases[0]?.reason, "helper claim has no golden-IR or semantics-annex vector");
 console.log(`unbacked helper claim: report=${uncovered.status} reason="${coverage?.cases[0]?.reason}"`);
 
-// 6) Empty corpus/vectors are contract violations, not empty passes.
 await runSdkIdiomConformance({ corpus: [], annexVectors, adapter: createReferenceAdapter() }).then(
 	() => {
 		throw new Error("expected TypeError");

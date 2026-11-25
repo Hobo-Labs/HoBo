@@ -7,7 +7,6 @@ import {
 	requestAcmeDns01Certificate,
 } from "../src/acme-dns01-cert-issuance.ts";
 
-// Numbers are advisory; the gate only requires that declared benches EXECUTE.
 describe("acme dns-01 issuance hot path", () => {
 	const now = () => new Date("2026-06-27T16:00:00.000Z");
 	const identity = createFixtureIdentityCertificateAuthority({

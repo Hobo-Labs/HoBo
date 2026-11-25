@@ -1,11 +1,3 @@
-/**
- * Runnable example for alertmanager-routing-contract. The draft-artifact gate EXECUTES
- * this with `node --import tsx` and diffs stdout against usage.expected.txt.
- *
- * Proves HOBO-281: alert routing groups related SLO burns into one delivery, silences
- * suppress paging with a replayable explanation, inhibition mutes dependents while the
- * root cause fires, and receiver failure schedules a durable retry. Fixed clock.
- */
 import { strict as assert } from "node:assert";
 
 import {
@@ -14,7 +6,6 @@ import {
 	replayAlertEvents,
 } from "../src/alertmanager-routing.ts";
 import { type JsonObject } from "../src/json.js";
-
 
 const NOW = "2026-06-26T06:45:00.000Z";
 
@@ -36,10 +27,8 @@ const sloBurn = (id: string, overrides: JsonObject = {}) => ({
 	labels: {
 		sloName: "checkout-api",
 		severity: "page",
-		// SAFETY: `window: (overrides.window as string) ?? "fast-burn",` is required at this I/O or test boundary.
 		window: (overrides.window as string) ?? "fast-burn",
 	},
-	// SAFETY: `metric: { burnRate: (overrides.burnRate as number) ?? 10, remainingBudgetRatio: ` is required at this I/O or test boundary.
 	metric: { burnRate: (overrides.burnRate as number) ?? 10, remainingBudgetRatio: 0.1 },
 });
 
@@ -51,7 +40,6 @@ const recordingReceiver = (receiverId: string) => ({
 	}),
 });
 
-// 1) Two related SLO burns group into ONE receiver notification.
 const grouped = evaluateAlertRouting({
 	now: NOW,
 	signals: [
@@ -72,7 +60,6 @@ console.log(
 );
 console.log(`events: ${grouped.events.map((event: { type: string }) => event.type).join(" -> ")}`);
 
-// 2) An active silence suppresses paging; replay explains WHY no page fired.
 const silenced = evaluateAlertRouting({
 	now: NOW,
 	signals: [sloBurn("checkout-fast", { burnRate: 16.2 })],
@@ -99,7 +86,6 @@ console.log(
 	`silence: deliveries=${silenced.deliveries.length} replay status=${silencedExplanation.status} reason=${silencedExplanation.reason}`,
 );
 
-// 3) Inhibition: a critical root cause mutes the dependent warning in the same tenant.
 const inhibited = evaluateAlertRouting({
 	now: NOW,
 	signals: [
@@ -140,7 +126,6 @@ assert.deepEqual(
 	inhibited.deliveries.map((delivery: { alertFingerprints: string[] }) => delivery.alertFingerprints.length),
 	[1],
 );
-// SAFETY: `const inhibitedEntry = Object.values(replayAlertEvents(inhibited.events).explana` is required at this I/O or test boundary.
 const inhibitedEntry = Object.values(replayAlertEvents(inhibited.events).explanations).find(
 	(entry: { status: string }) => entry.status === "inhibited",
 ) as { status: string; reason: string };
@@ -149,7 +134,6 @@ console.log(
 	`inhibition: delivered=${inhibited.deliveries[0].alertFingerprints.length} muted reason=${inhibitedEntry.reason}`,
 );
 
-// 4) Receiver failure keeps the alert and schedules a durable retry.
 const failed = evaluateAlertRouting({
 	now: NOW,
 	signals: [sloBurn("checkout-fast", { burnRate: 16.2 })],

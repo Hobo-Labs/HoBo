@@ -94,7 +94,6 @@ describe("Git driver (smart HTTP v2, recorded from git upload-pack)", () => {
 		});
 		const t1 = await discover("t1", filtered);
 		expect(t1.artifacts.map((item) => item.commit)).toEqual([commits.c1]);
-		// c2 changes only src/: same declaration, nothing discovered, cursor advances.
 		const t2 = await discover("t2", filtered, t1.cursor);
 		expect(t2.artifacts).toEqual([]);
 		expect(JSON.parse(t2.cursor).at).toBe(commits.c2);
@@ -103,7 +102,6 @@ describe("Git driver (smart HTTP v2, recorded from git upload-pack)", () => {
 		expect(t3.artifacts[0]?.artifact?.digest).not.toBe(
 			t1.artifacts[0]?.artifact?.digest,
 		);
-		// Without the filter, c2 is a new declaration.
 		const whole = sub({
 			branch: "main",
 			selection: SelectionStrategy.NEWEST_COMMIT,
@@ -167,7 +165,6 @@ describe("Git driver (smart HTTP v2, recorded from git upload-pack)", () => {
 			),
 		).toEqual(["data", "flush", "delim"]);
 		const baseBytes = new TextEncoder().encode("hello world");
-		// src 11, dst 9, copy offset 0 size 5, insert " git".
 		const delta = new Uint8Array([11, 9, 0x90, 5, 4, 0x20, 0x67, 0x69, 0x74]);
 		expect(new TextDecoder().decode(applyDelta(baseBytes, delta))).toBe(
 			"hello git",

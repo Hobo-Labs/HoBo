@@ -94,9 +94,6 @@ describe("deps layer linking", () => {
 				join(payload, "packages", "ci-gh-actions", "node_modules", "tsx"),
 				"../../../node_modules/tsx",
 			);
-			// A package the layer was built with and the checkout has since
-			// dropped: `packages/code` left main while layers built before that
-			// were still on the box.
 			link(
 				join(payload, "packages", "dropped", "node_modules", "tsx"),
 				"../../../node_modules/tsx",
@@ -128,9 +125,6 @@ describe("deps layer linking", () => {
 				lstatSync(join(checkout, "node_modules")).isSymbolicLink(),
 				true,
 			);
-			// Linking must not bring a dropped package's directory back: a
-			// directory holding only `node_modules` failed the package-layout
-			// check for a package that no longer exists.
 			assert.equal(existsSync(join(checkout, "packages", "dropped")), false);
 			assert.equal(
 				readlinkSync(
@@ -221,7 +215,6 @@ describe("deps layer linking", () => {
 				join(payload, "node_modules", ".modules.yaml"),
 				`${JSON.stringify({ storeDir: "/pnpm-store/v10", virtualStoreDir: ".pnpm" }, null, 2)}\n`,
 			);
-			// payload/packages/ci-gh-actions/node_modules -> payload/node_modules.
 			link(
 				join(payload, "packages", "ci-gh-actions", "node_modules"),
 				"../../node_modules",
@@ -298,8 +291,6 @@ describe("deps layer linking", () => {
 				),
 				"../../../ci",
 			);
-			// The CI runner image exports HOBO_CI_DEPS_LAYER and the job sets
-			// GITHUB_OUTPUT; neither may reach the script under test.
 			const {
 				HOBO_CI_DEPS_LAYER: _layer,
 				GITHUB_OUTPUT: _output,

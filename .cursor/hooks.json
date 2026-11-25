@@ -51,6 +51,18 @@
         "command": "python3 scripts/agent_completion_hook.py prompt cursor",
         "timeout": 10
       }
+    ],
+    "afterShellExecution": [
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
+        "timeout": 60
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
+        "timeout": 60
+      }
     ]
   }
 }

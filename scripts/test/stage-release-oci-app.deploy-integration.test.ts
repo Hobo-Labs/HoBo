@@ -23,7 +23,6 @@ function runQuiet(cwd: string, command: string, args: readonly string[]): void {
 	).toBe(0);
 }
 
-/** Full pnpm deploy of @hobo/hobo — too slow for release contract (17m+ on box runners). */
 describe("release OCI SDK deploy integration", () => {
 	it(
 		"overlays SDK tarballs into a pnpm-deploy app without npm install",

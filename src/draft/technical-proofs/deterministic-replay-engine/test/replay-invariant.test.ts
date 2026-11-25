@@ -10,22 +10,16 @@ import {
 } from "../src/test-runtime.js";
 import { isJsonNumber, type JsonValue } from "../src/json.js";
 
-
 const checkoutWorkflow = defineWorkflow("checkout", {
   initialState: (order: { id: string }) => ({
     orderId: order.id,
     status: "started",
     approved: false,
     charged: false,
-    // SAFETY: assertion to `startedAt: null as string | null,` is required at this boundary.
     startedAt: null as string | null,
-    // SAFETY: assertion to `paymentDueAt: null as string | null,` is required at this boundary.
     paymentDueAt: null as string | null,
-    // SAFETY: assertion to `settledAt: null as string | null,` is required at this boundary.
     settledAt: null as string | null,
-    // SAFETY: assertion to `actorSignal: null as string | null,` is required at this boundary.
     actorSignal: null as string | null,
-    // SAFETY: assertion to `sagaReaction: null as string | null,` is required at this boundary.
     sagaReaction: null as string | null,
   }),
   onStart(ctx, state, order) {
@@ -36,7 +30,6 @@ const checkoutWorkflow = defineWorkflow("checkout", {
     return { ...state, startedAt: ctx.now(), actorSignal: "placed", sagaReaction: "requested" };
   },
   onHook(ctx, state, payload) {
-    // SAFETY: assertion to `if ((payload as { ok?: boolean }).ok !== true) {` is required at this boundary.
     if ((payload as { ok?: boolean }).ok !== true) {
       return { ...state, status: "rejected" };
     }
@@ -72,7 +65,6 @@ describe("replay invariant fixtures", () => {
 
   it("fails replay when ambient Date.now is read in the workflow body", async () => {
     const badWorkflow = defineWorkflow("bad-clock", {
-      // SAFETY: assertion to `initialState: () => ({ sample: null as number | null }),` is required at this boundary.
       initialState: () => ({ sample: null as number | null }),
       onStart() {
         return { sample: Date.now() };
@@ -93,7 +85,6 @@ describe("replay invariant fixtures", () => {
 
   it("allows Date.now inside a memoized step without divergence", async () => {
     const controlWorkflow = defineWorkflow("step-clock", {
-      // SAFETY: assertion to `initialState: () => ({ sample: null as number | null }),` is required at this boundary.
       initialState: () => ({ sample: null as number | null }),
       async onStart(ctx, state) {
         const sample = await ctx.step("capture-clock", () => Date.now());

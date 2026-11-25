@@ -8,7 +8,6 @@ const { describe, it } = await testRunner();
 const root = join(import.meta.dirname, "..", "..");
 const workflowDir = join(root, ".github", "workflows");
 
-/** Only main-gate may branch above 20 minutes for the weekly schedule sweep. */
 const SCHEDULE_JOB_TIMEOUT = /^hobo-ci\.yml:main-gate$/;
 
 type LongJob = Readonly<{ minutes: number; why: string }>;

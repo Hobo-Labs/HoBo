@@ -1,11 +1,3 @@
-/**
- * Pack manifest signing.
- *
- * The framework never holds a key and never links a crypto library: a host
- * supplies a {@link PackSignatureVerifier}. What the framework does own is the
- * part that is easy to get wrong — the canonical byte string that gets signed,
- * and the rule that an `unknown` verdict fails closed exactly like `invalid`.
- */
 import { createHash } from "node:crypto";
 
 import { PackError } from "./errors.js";
@@ -27,29 +19,19 @@ export type PackSignatureAlgorithm = (typeof PACK_SIGNATURE_ALGORITHMS)[number];
 
 export type PackSignature = {
 	readonly algorithm: PackSignatureAlgorithm;
-	/** Key identity the verifier resolves. Never key material. */
 	readonly keyId: string;
-	/** Base64 detached signature over the canonical manifest bytes. */
 	readonly value: string;
-	/** Digest of the canonical payload the signer claims to have signed. */
 	readonly payloadDigest: string;
-	/** ISO instant the signature was produced, as reported by the signer. */
 	readonly signedAt: string;
 };
 
 export type PackSignatureVerdict = "valid" | "invalid" | "unknown";
 
 export type PackSignatureVerificationRequest = {
-	/** Exactly the bytes {@link canonicalizeForSigning} produced. */
 	readonly payload: string;
 	readonly signature: PackSignature;
 };
 
-/**
- * Implementations MUST return `unknown` rather than guessing when the key is
- * unavailable, and MUST NOT fetch a key over the network as a side effect of
- * verification.
- */
 export interface PackSignatureVerifier {
 	verify(request: PackSignatureVerificationRequest): PackSignatureVerdict;
 }
@@ -61,7 +43,6 @@ const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 
 export function parsePackSignature(input: PackSignature): PackSignature {
 	if (
-		// SAFETY: `!(PACK_SIGNATURE_ALGORITHMS as readonly string[]).includes(input.algorithm)` is required at this I/O or test boundary.
 		!(PACK_SIGNATURE_ALGORITHMS as readonly string[]).includes(input.algorithm)
 	) {
 		throw new PackError(
@@ -96,13 +77,6 @@ export function parsePackSignature(input: PackSignature): PackSignature {
 	return input;
 }
 
-/**
- * Deterministic JSON serialization: object keys sorted at every depth, arrays
- * kept in authored order, `undefined` members dropped.
- *
- * Array order is preserved because it is semantic here — argv order, probe
- * order, and the order of configuration fields all matter.
- */
 export function canonicalJson(value: JsonValue): string {
 	if (value === null) return "null";
 	if (Array.isArray(value)) {
@@ -140,12 +114,6 @@ export function sha256Of(payload: string): string {
 	return `sha256:${createHash("sha256").update(payload, "utf8").digest("hex")}`;
 }
 
-/**
- * The signing payload: the whole manifest minus its own signature block.
- *
- * Excluding the signature is what makes the payload stable — including it would
- * mean the signer had to sign a document containing its own output.
- */
 export function canonicalizeForSigning(manifest: {
 	readonly signature?: PackSignature;
 }): string {

@@ -1,27 +1,3 @@
-/**
- * OTel office server — zero runtime deps, node:http + SSE.
- *
- *   GET  /            → static client shell (public/index.html)
- *   GET  /client/*    → compiled browser bundle (dist/client/*)
- *   GET  /state       → JSON office snapshot
- *   GET  /character/<id>/activity → bounded per-character spans/logs/metrics
- *   GET  /events      → SSE stream: snapshot, then per-tick events
- *   POST /v1/traces   → OTLP/JSON trace ingest (feeds the mapper + trace index)
- *   POST /v1/logs     → OTLP/JSON logs ingest (bubbles, stuck attention, activity)
- *   POST /v1/metrics  → OTLP/JSON metrics ingest (health bar + activity)
- *   GET  /layout/<stationId> → the station's office layout as JSON
- *   PUT  /layout/<stationId> → replace a layout (validated; 400 with reasons)
- *
- * Layouts are data (Phase 2 slice 3): part of /state + the SSE snapshot,
- * persisted per station as JSON under OTEL_OFFICE_HOME (default ~/.otel-office),
- * loaded on boot, saved (atomic + debounced) on edit.
- *
- * A server-side TraceIndex lets cross-camp packet pairs resolve even when a
- * collector sends parent and child spans in separate requests.
- *
- * Simulator on by default; OTEL_OFFICE_SIM=0 disables it.
- * Port: --port <n> or PORT env; default 0 (OS-assigned free port).
- */
 import { createReadStream, existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, extname, join, normalize } from "node:path";
@@ -45,10 +21,8 @@ import { SIM_TICK_MS, createSimulation } from "./simulator.js";
 import { TraceIndex } from "./trace-index.js";
 import { cloneAsJson, isJsonString, type JsonValue } from "./json.js";
 
-
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = normalize(join(HERE, "..", "public"));
-// tsx runs from src/ (compiled client in dist/client); node runs from dist/ (client beside it).
 const CLIENT_DIR = [join(HERE, "client"), join(HERE, "..", "dist", "client")].find((dir) =>
 	existsSync(join(dir, "index.js")),
 ) ?? join(HERE, "..", "dist", "client");
@@ -73,9 +47,7 @@ export interface OfficeServerOptions {
 	simulate?: boolean;
 	seed?: number;
 	tickMs?: number;
-	/** Layout persistence home (default: OTEL_OFFICE_HOME or ~/.otel-office). */
 	home?: string;
-	/** Optional startup/audit log sink (main() passes console.log). */
 	log?: (message: string) => void;
 }
 
@@ -83,7 +55,6 @@ export interface OfficeServer {
 	server: Server;
 	port: () => number;
 	state: () => OfficeState;
-	/** Flush debounced layout writes to disk. */
 	flushLayouts: () => void;
 	close: () => Promise<void>;
 }
@@ -116,7 +87,6 @@ function serveFile(res: ServerResponse, path: string): void {
 async function readBody(req: IncomingMessage): Promise<string> {
 	const chunks: Buffer[] = [];
 	for await (const chunk of req) {
-		// SAFETY: `chunks.push(chunk as Buffer);` is required at this I/O or test boundary.
 		chunks.push(chunk as Buffer);
 	}
 	return Buffer.concat(chunks).toString("utf8");
@@ -133,7 +103,6 @@ export function createOfficeServer(options: OfficeServerOptions = {}): OfficeSer
 	const log = options.log ?? ((): void => {});
 	const layouts = new LayoutStore(options.home ?? defaultOfficeHome());
 
-	// Boot: a persisted layout wins over the derived default when it validates.
 	for (const stationId of Object.keys(state.stations)) {
 		const persisted = layouts.load(stationId);
 		if (persisted === undefined) {
@@ -193,8 +162,6 @@ export function createOfficeServer(options: OfficeServerOptions = {}): OfficeSer
 			serveFile(res, file);
 			return;
 		}
-		// The client bundle imports shared compiled modules (e.g. ../layout.js);
-		// the browser resolves those to /<module>.js, served from the dist root.
 		if (req.method === "GET" && /^\/[a-z-]+\.js(\.map)?$/u.test(path)) {
 			const distRoot = normalize(join(CLIENT_DIR, ".."));
 			const file = join(distRoot, path.slice(1));
@@ -264,7 +231,6 @@ export function createOfficeServer(options: OfficeServerOptions = {}): OfficeSer
 					}
 					applyLayout(state, stationId, layout);
 					layouts.saveDebounced(stationId, layout);
-					// No tick may be coming (sim off) — push a fresh snapshot now.
 					broadcast([{ type: "layout-changed", at: Date.now(), stationId }]);
 					sendJson(res, 200, { applied: true });
 				} catch (error) {
@@ -277,7 +243,6 @@ export function createOfficeServer(options: OfficeServerOptions = {}): OfficeSer
 			void (async () => {
 				try {
 					const raw = await readBody(req);
-					// SAFETY: `const payload = JSON.parse(raw) as OtlpTraceRequest;` is required at this I/O or test boundary.
 					const payload = JSON.parse(raw) as OtlpTraceRequest;
 					const events = mapTracePayload(payload, state, Date.now(), traceIndex);
 					dispatch(events);
@@ -292,7 +257,6 @@ export function createOfficeServer(options: OfficeServerOptions = {}): OfficeSer
 			void (async () => {
 				try {
 					const raw = await readBody(req);
-					// SAFETY: `const payload = JSON.parse(raw) as OtlpLogsRequest;` is required at this I/O or test boundary.
 					const payload = JSON.parse(raw) as OtlpLogsRequest;
 					const events = mapLogsPayload(payload, state);
 					dispatch(events);
@@ -307,7 +271,6 @@ export function createOfficeServer(options: OfficeServerOptions = {}): OfficeSer
 			void (async () => {
 				try {
 					const raw = await readBody(req);
-					// SAFETY: `const payload = JSON.parse(raw) as OtlpMetricsRequest;` is required at this I/O or test boundary.
 					const payload = JSON.parse(raw) as OtlpMetricsRequest;
 					const events = mapMetricsPayload(payload, state);
 					dispatch(events);

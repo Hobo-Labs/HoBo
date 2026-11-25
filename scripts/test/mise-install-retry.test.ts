@@ -1,8 +1,3 @@
-/**
- * `mise_ensure_installed` retries the whole mise install: the installer
- * downloads the release and its checksum without retries of its own, and one
- * reset connection on a hosted runner used to fail the job.
- */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -12,7 +7,6 @@ import { describe, it } from "node:test";
 import { pathToFileURL } from "node:url";
 import { REPO_ROOT } from "./support/pins-support.ts";
 
-/** An installer that fails until it has run `failures` times, then succeeds. */
 function fakeInstaller(failures: number) {
 	const dir = mkdtempSync(join(tmpdir(), "mise-install-retry-"));
 	const counter = join(dir, "runs");

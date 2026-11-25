@@ -1,5 +1,3 @@
-// CUE constraints for every protobuf type in provider_convex.proto, so the
-// architecture guard can confirm the data shapes are bounded at parse time.
 
 package provider_convex
 

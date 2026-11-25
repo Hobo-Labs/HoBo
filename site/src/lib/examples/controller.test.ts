@@ -48,7 +48,6 @@ describe("Examples Home Station", () => {
 			new Set(["browser-wasm", "webernetes", "cloudflare"]),
 			"local-only",
 		);
-		// Selecting Cloudflare widens the pool — operator stamps are not blocked.
 		expect(localOnly.policy.resourcePool).toEqual(
 			expect.arrayContaining(["local", "anonymous-remote"]),
 		);
@@ -62,7 +61,6 @@ describe("Examples Home Station", () => {
 		expect(targetPackCanHostNow("lakebed")).toBe(true);
 		expect(targetPackCanHostNow("netlify")).toBe(true);
 		expect(targetPackCanHostNow("vercel")).toBe(false);
-
 
 		const multi = resolveStationDeployPlan(
 			yards,
@@ -109,7 +107,6 @@ describe("Examples Home Station", () => {
 			"station:browser:home:browser-wasm",
 			"station:browser:home:webernetes",
 		]);
-		// Empty appPolicy → single primary; both stations stay selected for Ship.
 		expect(
 			resolveExampleStationPlan(hello, stations).provision.map(({ target }) => target.id),
 		).toEqual(["browser-wasm"]);
@@ -167,7 +164,6 @@ describe("Examples Home Station", () => {
 		const helloCf = resolveExampleDeployPlan(hello).skipped.find(
 			({ target }) => target.id === "cloudflare",
 		);
-		// Cloudflare is hostable; may still be skipped for budget/role reasons, never cannot-host.
 		if (helloCf) expect(helloCf.reason).not.toBe("cannot-host");
 		expect(saas.topology.allowedYardIds).toEqual([
 			"yard:webernetes",
@@ -206,7 +202,6 @@ describe("Examples Home Station", () => {
 		const both = toggleYardUiOption(none, local!);
 		expect([...both].sort()).toEqual(["browser-wasm", "webernetes"]);
 		expect(yardOptionSelectionState(local!, both)).toBe("all");
-		// Local is one UI option covering two stations — summary names the count.
 		expect(yardSelectionSummary(options, both)).toBe("Local · 2 stations");
 		expect(toggleYardUiOption(both, local!).size).toBe(0);
 		const allIds = new Set(allYardUiTargetIds(options));
@@ -311,9 +306,7 @@ describe("Examples Home Station", () => {
 		);
 		expect(IN_PAGE_STATION_TARGETS).toEqual(["browser-wasm"]);
 		expect(canHostStationInPage("browser-wasm", true)).toBe(true);
-		// No runtime assets (stripped Pages deploy) → no in-page station.
 		expect(canHostStationInPage("browser-wasm", false)).toBe(false);
-		// Remote yards never host in-page — fail closed toward remediation.
 		expect(canHostStationInPage("cloudflare", true)).toBe(false);
 		expect(canHostStationInPage("webernetes", true)).toBe(false);
 	});

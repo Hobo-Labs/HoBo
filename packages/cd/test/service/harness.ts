@@ -1,5 +1,4 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type -- SAFETY: tests read controlled JSON envelopes. */
-// Shared provider harness for the CD read-API tests and its PACT.
 import type { FeedRequest, FeedResponse } from "../../src/ports.js";
 import {
 	createCdControlApi,

@@ -1,6 +1,3 @@
-// Test fakes owned by WP4: an in-memory DurableEventStore with
-// the SQLite journal's CAS/idempotency semantics, an in-memory ArtifactStore
-// that can corrupt bytes at rest, a recording TelemetrySink and fixtures.
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -47,7 +44,6 @@ import type {
 import { DesiredStateError } from "../../src/sets/index.js";
 
 export type FakeStore = DurableEventStore & {
-	/** Called inside append before the CAS check; lets a test interleave writers. */
 	beforeAppend?: ((streamId: string) => Promise<void> | void) | undefined;
 	readonly log: readonly PositionedEvent[];
 	conflicts: number;
@@ -117,7 +113,6 @@ export function createFakeEventStore(): FakeStore {
 					data: structuredClone(input.data ?? {}),
 				};
 				if (input.meta !== undefined) envelope.meta = input.meta;
-				// SAFETY: test fake mints monotonically increasing positions.
 				const at = position as EventPosition;
 				log.push({ position: at, event: envelope });
 				appended.push(envelope);
@@ -204,9 +199,7 @@ export type FakeArtifactStore = ArtifactStore & {
 		size: number;
 	}>;
 	corrupt(digest: string): void;
-	/** When set, put() reports this digest instead of the real one. */
 	lieAboutDigest?: string;
-	/** When set, put() reports this size instead of the real one. */
 	lieAboutSize?: bigint;
 };
 
@@ -240,7 +233,6 @@ export function createFakeArtifactStore(): FakeArtifactStore {
 		},
 		async *list() {
 			for (const digest of blobs.keys()) {
-				// SAFETY: blob keys are sha256 digests minted by put().
 				yield digest as Digest;
 			}
 		},
@@ -274,12 +266,10 @@ export function createRecordingTelemetry(): RecordingTelemetry {
 }
 
 export function deltaId(id: string): DeltaId {
-	// SAFETY: test Delta ids are opaque strings; the ledger parses them.
 	return id as DeltaId;
 }
 
 export function setId(id: string): SetId {
-	// SAFETY: test Set ids are opaque strings; the reader looks them up.
 	return id as SetId;
 }
 
@@ -292,7 +282,6 @@ export function reasonOf(
 	return create(ReasonRecordSchema, { code, message, remediation, subject });
 }
 
-/** Narrow a caught value to the module's typed error, failing the test otherwise. */
 export function asDesiredStateError(
 	value: Error | DesiredStateError | undefined,
 ): DesiredStateError {
@@ -300,11 +289,9 @@ export function asDesiredStateError(
 	throw new Error(`expected DesiredStateError, got ${String(value)}`);
 }
 
-/** The same resolved set with its top-level keys in reverse insertion order. */
 export function reverseTopLevelKeys(
 	resolved: ResolvedDeploymentSet,
 ): ResolvedDeploymentSet {
-	// SAFETY: only key order changes; every member keeps its value and type.
 	return Object.fromEntries(
 		Object.entries(resolved).reverse(),
 	) as ResolvedDeploymentSet;
@@ -324,15 +311,10 @@ function reverseKeys(value: JsonValue, insideArray: boolean): JsonValue {
 	return value;
 }
 
-/**
- * Reverse the keys of every object that is not an array member (the producer
- * hash in @hobo/cloud sorts object keys, not array members').
- */
 export function reverseObjectKeys(
 	resolved: ResolvedDeploymentSet,
 ): ResolvedDeploymentSet {
 	const document: JsonValue = JSON.parse(JSON.stringify(resolved));
-	// SAFETY: only key order changes; the JSON round trip keeps every value.
 	const reordered: ResolvedDeploymentSet = JSON.parse(
 		JSON.stringify(reverseKeys(document, false)),
 	);
@@ -351,7 +333,6 @@ export function ctxAt(
 export const T0 = Date.parse("2026-11-12T00:00:00.000Z");
 
 export function camp(id: string): CampId {
-	// SAFETY: test Camp ids are opaque strings.
 	return id as CampId;
 }
 

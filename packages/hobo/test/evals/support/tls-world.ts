@@ -10,33 +10,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createSecureContext, TLSSocket } from "node:tls";
 
-/**
- * The world a remote box sees through an enterprise network: every https
- * request goes through a TLS-inspecting proxy the box trusts. Here the
- * proxy answers as the real providers' hosts (`app.infisical.com`,
- * `api.vercel.com`, `neon.new`, ...) with a certificate from a CA only this
- * test trusts, and routes each request to a fake of that provider. Any other
- * host is refused and recorded, so egress that bypasses the proxy or reaches
- * an unexpected host fails the test instead of passing silently.
- *
- * HoBo runs unchanged: no test-only origin, no switch. The binary gets the
- * proxy in HTTPS_PROXY and the CA in NODE_EXTRA_CA_CERTS, as a corporate
- * laptop or an agent sandbox does.
- */
-
 export type ProviderHandler = (
 	request: IncomingMessage,
 	response: ServerResponse,
 ) => void | Promise<void>;
 
 export interface TlsWorld {
-	/** For HTTPS_PROXY. */
 	readonly proxyUrl: string;
-	/** For NODE_EXTRA_CA_CERTS: this world's CA (and nothing else). */
 	readonly caBundle: string;
-	/** Hosts something tried to reach that no fake answers for. */
 	readonly blocked: string[];
-	/** Every request, as `host METHOD /path`. */
 	readonly requests: string[];
 	close(): Promise<void>;
 }
@@ -101,7 +83,6 @@ function certificates(hosts: readonly string[]) {
 	};
 }
 
-/** A request's body, read by the provider that answers it. */
 export async function bodyOf(request: IncomingMessage): Promise<string> {
 	const parts: Buffer[] = [];
 	for await (const part of request) parts.push(Buffer.from(part));
@@ -118,7 +99,6 @@ export async function startTlsWorld(
 	const requests: string[] = [];
 	const sockets = new Set<Socket>();
 
-	// What the provider hosts serve, behind the proxy's TLS termination.
 	const inner = createServer((request, response) => {
 		void (async () => {
 			const host = (request.headers.host ?? "").replace(/:\d+$/u, "");
@@ -136,7 +116,6 @@ export async function startTlsWorld(
 	});
 
 	const proxy = createServer((request, response) => {
-		// Plain-http through the proxy: no provider speaks it here.
 		blocked.push(`http ${request.headers.host ?? request.url ?? ""}`);
 		response.writeHead(403).end();
 	});
@@ -156,7 +135,6 @@ export async function startTlsWorld(
 		inner.emit("connection", secure);
 	});
 	await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
-	// SAFETY: a server listening on a TCP port reports an AddressInfo.
 	const { port } = proxy.address() as AddressInfo;
 	return {
 		proxyUrl: `http://127.0.0.1:${port}`,
@@ -172,7 +150,6 @@ export async function startTlsWorld(
 	};
 }
 
-/** Answer JSON. */
 export function json(
 	response: ServerResponse,
 	status: number,

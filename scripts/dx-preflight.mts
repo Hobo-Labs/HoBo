@@ -1,12 +1,4 @@
 #!/usr/bin/env node
-/**
- * Cold-clone DX preflight: clear install-first messaging before tsx stacks.
- * Runs under `node --experimental-strip-types` (no node_modules required).
- *
- * Usage:
- *   node --experimental-strip-types scripts/dx-preflight.mts doctor [-- args…]
- *   node --experimental-strip-types scripts/dx-preflight.mts agent:check [-- args…]
- */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -18,7 +10,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(path.join(root, "package.json"));
 
 const verb = process.argv[2] ?? "";
-// pnpm often injects a lone "--" before user args; drop empties/separators
 const passthrough = process.argv.slice(3).filter((a) => a !== "--" && a !== "");
 
 function failInstall(reason: string): never {
@@ -63,13 +54,10 @@ function runWithTsxOrStrip(scriptRel: string, args: string[]): number {
 	if (tsx) {
 		return runNode(["--import", "tsx"], script, args);
 	}
-	// Cold path: strip-types only works for scripts that do not need package deps.
 	return runNode(["--experimental-strip-types"], script, args);
 }
 
 if (verb === "doctor") {
-	// Doctor itself is node-builtin-only and should run without install.
-	// Still report missing node_modules so cold clones get an install path.
 	const code = runNode(
 		["--experimental-strip-types"],
 		path.join(root, "scripts/doctor.ts"),

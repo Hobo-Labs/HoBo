@@ -1,8 +1,3 @@
-/**
- * I/O-boundary JSON values without `unknown` or runtime `typeof`.
- * Parsers accept {@link JsonValue}; callers decode JSON.parse into this tree.
- */
-
 const objectTag = Object.prototype.toString;
 
 export type JsonValue =

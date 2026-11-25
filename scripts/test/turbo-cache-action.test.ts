@@ -23,7 +23,6 @@ const ACTION = readFileSync(
 	"utf8",
 );
 
-/** The first `run: |` block (the restore-mode configure step), dedented. */
 function configureScript(): string {
 	const lines = ACTION.split("\n");
 	const start = lines.findIndex((line) => /^\s+run: \|$/.test(line));
@@ -41,17 +40,11 @@ afterAll(() => {
 	for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-/** What a test commits under `.hobo/ci.json`'s `turboCache`. */
 type TurboCacheConfig = Readonly<{ api: string }>;
 
-/** `.hobo/ci.json`'s text naming this cache server. */
 const committing = (turboCache: TurboCacheConfig) =>
 	JSON.stringify({ turboCache });
 
-/**
- * Runs the configure step in a checkout whose `.hobo/ci.json` holds
- * `configText` (no file when it is left out).
- */
 function configure(env: Record<string, string>, configText?: string) {
 	const root = mkdtempSync(join(tmpdir(), "turbo-cache-action-"));
 	roots.push(root);
@@ -221,7 +214,6 @@ describe("turbo-cache action on the box", () => {
 	it("refuses a cache server address that is not a plain https URL", () => {
 		for (const api of [
 			"turbo-cache.example.internal",
-			// The token travels to this address, so plain http is refused.
 			"http://turbo-cache.example.internal:3000",
 			"file:///etc/passwd",
 			"https://ok.example\nNODE_OPTIONS=--require=/tmp/x",

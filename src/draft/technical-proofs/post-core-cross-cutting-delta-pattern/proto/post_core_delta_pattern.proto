@@ -1,8 +1,5 @@
 syntax = "proto3";
 
-// Data-shape definitions for the HOBO-524 post-core cross-cutting delta pattern.
-// These records define docs-pattern evidence only; no broker runtime, project automation,
-// backlog migration, Yard planner, provider adapter, admin UI, or Gatekeeper behavior lives here.
 package hobo.post_core_delta_pattern.v1;
 
 enum DeltaGateDecision {

@@ -14,13 +14,6 @@ import {
 } from "../src/_generated/runner_balancing_pb.js";
 import { decide, type DecideInput } from "../src/decide.js";
 
-/**
- * Three providers, deliberately listed in non-price order so tests prove
- * ranking comes from the ledger, not from rung order:
- *  - base_c: no free tier, list 0.006 (the "GitHub-hosted" analogue)
- *  - free_a: 100 free units/month, list 0.005 (free tier + mid list price)
- *  - cheap_b: no free tier, list 0.001 (cheapest realtime billing)
- */
 const TRACK = create(RunnerTrackSchema, {
 	resource: "runner.linux.small",
 	variable: "RUNNER",

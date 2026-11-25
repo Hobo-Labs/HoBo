@@ -77,7 +77,6 @@ export function parseServiceDeclaration(raw: JsonValue): ServiceDeclaration {
 		);
 	}
 
-	// SAFETY: `const record = raw as JsonObject;` is required at this I/O or test boundary.
 	const record = raw as JsonObject;
 	const name = String(record.name ?? "");
 	if (!/^[a-z][a-z0-9-]*$/u.test(name)) {
@@ -118,7 +117,6 @@ export function parseBuildManifest(json: JsonValue): BuildManifest {
 		);
 	}
 
-	// SAFETY: `const record = json as JsonObject;` is required at this I/O or test boundary.
 	const record = json as JsonObject;
 	if (record.schema !== BUILD_MANIFEST_SCHEMA) {
 		throw new BuildError(
@@ -152,7 +150,6 @@ function parseBuildArtifact(raw: JsonValue): BuildArtifact {
 		);
 	}
 
-	// SAFETY: `const record = raw as JsonObject;` is required at this I/O or test boundary.
 	const record = raw as JsonObject;
 	const kind = String(record.kind ?? "");
 	if (
@@ -258,7 +255,6 @@ export function normalizeTargetRuntime(runtime: string): TargetRuntime {
 		normalized === "component" ||
 		normalized === "container"
 	) {
-		// SAFETY: `return normalized === "component" ? "wasm" : (normalized as TargetRuntime);` is required at this I/O or test boundary.
 		return normalized === "component" ? "wasm" : (normalized as TargetRuntime);
 	}
 	throw new BuildError(

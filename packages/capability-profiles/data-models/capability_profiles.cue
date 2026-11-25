@@ -1,6 +1,3 @@
-// Capability profile invariants. Cross-field rules the protobuf shape cannot
-// express: canonical id syntax, closed realization/maturity vocabularies, and
-// the rule that a rejection always carries a stable machine code.
 
 #ProfileId: =~"^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[0-9]+$"
 
@@ -68,7 +65,6 @@
 	allow_pack:           bool
 	allow_bridge:         bool
 	trust_ref?:           string
-	// At least one realization kind must remain open or nothing can satisfy it.
 	_atLeastOneRealization: true & (allow_native | allow_pack | allow_bridge)
 }
 

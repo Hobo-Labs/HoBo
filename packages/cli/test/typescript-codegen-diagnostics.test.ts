@@ -55,7 +55,6 @@ const baseOptions: ts.CompilerOptions = {
 	noEmit: true,
 };
 
-/** A program as codegen builds one: through its overlay compiler host. */
 function program(root: string, options: ts.CompilerOptions): ts.Program {
 	const settings = { ...baseOptions, ...options };
 	return ts.createProgram(
@@ -78,8 +77,6 @@ const text = (diagnostics: readonly ts.Diagnostic[]) =>
 
 const es2017 = { strict: true, lib: ["lib.es2017.d.ts"] };
 
-// Each row's test file is not a source, so its own errors are never reported,
-// but a global type its syntax needs and the lib lacks (TS2318) always was.
 const cases = [
 	{ name: "strict", options: { strict: true, skipLibCheck: false } },
 	{ name: "skipLibCheck", options: { strict: true, skipLibCheck: true } },
@@ -112,7 +109,6 @@ afterAll(async () => {
 	await rm(scratch, { recursive: true, force: true });
 });
 
-// Each case builds whole programs over the default lib: seconds of CPU on a busy runner.
 describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 	it.each(
 		cases,
@@ -126,7 +122,6 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 		);
 		const isSource = isSourceOf(root);
 		const whole = program(root, options);
-		// What codegen reported before: check everything, then keep source and file-less diagnostics.
 		const expected = [
 			...whole.getSyntacticDiagnostics(),
 			...whole.getSemanticDiagnostics(),
@@ -148,8 +143,6 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 		const root = await project();
 		const real = program(root, { strict: true, skipLibCheck: false });
 		const asked: (string | undefined)[] = [];
-		// Program methods are closures over the program, so a copy with one
-		// method replaced records what is asked of it.
 		const recording: ts.Program = {
 			...real,
 			getSemanticDiagnostics(file) {
@@ -212,8 +205,8 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 			);
 		const pkg = parse("pkg");
 		const other = parse("other");
-		expect(parse("pkg")).toBe(pkg); // a hit: pkg is now the most recent
-		parse("third"); // over the limit: other, the least recent, goes
+		expect(parse("pkg")).toBe(pkg);
+		parse("third");
 		expect(cache.size).toBe(2);
 		expect(parse("pkg")).toBe(pkg);
 		const reparsed = parse("other");

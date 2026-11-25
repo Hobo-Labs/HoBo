@@ -1,15 +1,3 @@
-/**
- * Local Yard serve dispatch (glossary-aligned).
- *
- * Yard = control plane (`hobo yard init`).
- * Camp = placement target created when serving a Bindle.
- * Component host = Camp capability that executes components:
- *   - local: process-local mesh (`@hobo/runtime-local`)
- *   - wasm: Wasmtime OS-process sandboxes (`@hobo/runtime-wasm`)
- *   - oci: WASM-on-OCI / Kubernetes (`@hobo/runtime-oci`)
- *   - cloud-native: multi-cloud registry (`@hobo/runtime-cloud-native`)
- */
-
 import { must } from "@hobo/core/total-access";
 import {
 	createInProcessWasmtimeEngine,
@@ -121,7 +109,6 @@ export async function serveProjectOnWasmHost(
 	return { ...result, componentHost: "local" };
 }
 
-/** Place a Bindle on the local Yard using the configured Camp component host. */
 export async function serveProjectOnLocalYard(options: {
 	readonly projectDir: string;
 	readonly yard?: BareMetalYard;
@@ -185,8 +172,6 @@ export async function serveProjectOnLocalYard(options: {
 		};
 	};
 
-	// local keeps the dedicated path (runtime-local component host lifecycle
-	// for both public and private) for back-compat with existing tests.
 	if (componentHost === "local") {
 		const result = await serveBindleOnLocalYard({
 			...options,

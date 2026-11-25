@@ -45,43 +45,28 @@ export class PulumiStateError extends Error {
 	}
 }
 
-/**
- * Stored stack/workspace state as this module reads it.
- *
- * `resources` is read back as `JsonValue` and narrowed at use, rather than
- * declared as `Record<string, ResourceOutcome>` beside a `JsonValue` index
- * signature. TypeScript requires every named property to be assignable to that
- * signature, and a record of a *specific* interface is not — the two
- * declarations contradict each other, and the index signature is the one that
- * has to hold, because this shape is parsed from a state file nobody here
- * wrote.
- */
 interface StoredState {
 	readonly [key: string]: JsonValue;
 }
 
-/** A resource in a realization outputs payload. */
 interface ResourceOutcome {
 	readonly id?: string;
 	readonly status?: string;
 	readonly outputs?: JsonObject;
 }
 
-/** Overrides accepted by the trivial fixture program. */
 interface ProgramOverrides {
 	readonly resources?: JsonValue;
 	readonly stackOutputs?: JsonValue;
 	readonly [key: string]: JsonValue;
 }
 
-/** Options for the Pulumi automation adapter. */
 interface AdapterOptions {
 	readonly stateBackend?: ReturnType<typeof createInMemoryStateBackend>;
 	readonly engine?: EngineLike;
 	readonly pulumiVersion?: string;
 }
 
-/** What an adapter actually calls on its engine — any lane may implement it. */
 interface EngineLike {
 	readonly pulumiVersion?: string;
 	snapshot?(): JsonValue;
@@ -94,20 +79,14 @@ interface EngineLike {
 	):
 		| Promise<{ appliedChanges?: readonly unknown[]; outputs?: unknown }>
 		| { appliedChanges?: readonly unknown[]; outputs?: unknown };
-	// Both arms: the real Automation-API engine awaits Pulumi, the in-memory
-	// stand-in answers synchronously, and the adapter awaits either. Naming only
-	// the synchronous arm described the stand-in and not the engine this package
-	// exists to drive.
 	refresh(program: IacProgramLike): JsonValue | Promise<JsonValue>;
 	destroy(program: IacProgramLike): JsonValue | Promise<JsonValue>;
 }
 
-/** Options for the offline state backend. */
 interface StateBackendOptions {
 	readonly failOnWriteFor?: string;
 }
 
-/** Options for the offline automation engine. */
 interface EngineOptions {
 	readonly stateBackend?: ReturnType<typeof createInMemoryStateBackend>;
 	readonly divergeOnApply?: boolean;
@@ -159,10 +138,6 @@ export function createStateBackendConfig(overrides: JsonObject = {}) {
 
 export function createPulumiAutomationAdapter(options: AdapterOptions = {}) {
 	const stateBackend = options.stateBackend ?? createInMemoryStateBackend();
-	// ponytail: the local in-memory engine below is the default backend so this
-	// package stays offline. Swap `options.engine` for a real Pulumi Automation
-	// API engine (pinned to PINNED_PULUMI_AUTOMATION_VERSION) that speaks the same
-	// preview/apply/refresh/destroy shape; nothing else in this adapter changes.
 	const engine =
 		options.engine ?? createInMemoryAutomationEngine({ stateBackend });
 	const pulumiVersion =
@@ -180,12 +155,6 @@ export function createPulumiAutomationAdapter(options: AdapterOptions = {}) {
 		id: ADAPTER_ID,
 		pulumiVersion,
 		stateBackend: stateBackend.describe(),
-		// Estate discovery seam: the full per-resource-stack state the backend
-		// actually holds, keyed by stack key. Drives `hobo drift` (declared vs
-		// held state) and `hobo import` (estate enumeration + adoption). The
-		// in-memory engine answers from its state backend; the real CLI engine
-		// answers by enumerating its per-resource stacks (and fails closed with a
-		// typed PulumiEngineUnavailableError when the pulumi binary is missing).
 		snapshotState() {
 			return engine.snapshot instanceof Function
 				? engine.snapshot()
@@ -275,10 +244,6 @@ export function createInMemoryStateBackend(options: StateBackendOptions = {}) {
 }
 
 export function createInMemoryAutomationEngine(options: EngineOptions = {}) {
-	// ponytail: local, deterministic stand-in for the Pulumi Automation API. A
-	// production engine would drive `pulumi preview/up/refresh/destroy` against a
-	// per-resource stack; the return shapes below are the contract that swap must
-	// preserve (see runIacBackendConformance).
 	const stateBackend = options.stateBackend ?? createInMemoryStateBackend();
 	let driftStacks = new Map();
 
@@ -411,9 +376,6 @@ export function createInMemoryAutomationEngine(options: EngineOptions = {}) {
 				});
 			}
 
-			// Refresh judges ONLY the program's own per-resource stacks (a
-			// single-resource refresh must not flag sibling stacks the way the
-			// full-program preview's extra-stack scan does — drift is per stack).
 			const drifted = [];
 			for (const resource of program.resources) {
 				const stackKey = createPerResourceStackKey(program, resource.name);
@@ -532,8 +494,6 @@ export async function runIacBackendConformance({ adapter, program }) {
 }
 
 export function validateIacProgram(program) {
-	// Parse, don't validate: returns a frozen, derived parsed domain program so
-	// callers work with a trusted ParsedIacProgram instead of re-checking DTO fields.
 	if (!program || !isJsonObject(program)) {
 		throw new PulumiProgramError(
 			"invalid-program",

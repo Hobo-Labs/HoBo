@@ -1,7 +1,3 @@
-// The three event-log migration patterns, end to end on real storage: the
-// real SQLite-backed event store (`@hobo/runtime-local`) and real SQLite data
-// engines (`@hobo/data-sqlite`). Nothing here is simulated — every event is
-// appended to a journal on disk and every record lands in a table on disk.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -86,8 +82,6 @@ const ORDERS: DatasetSchema = parseDatasetSchema({
 	],
 });
 
-// One point per role: a run holds on a path that leaves out a copy it
-// creates — the relay, a retained change log.
 const PATH = parseCustodyPath({
 	points: CUSTODY_ROLES.map((role) => ({
 		id: role,
@@ -141,16 +135,10 @@ async function append(
 
 const ORDER_EVENTS = new Set(["order.Recorded", "order.Paid", "order.Removed"]);
 
-/**
- * Orders as a deterministic fold over the event log. A journal holds every
- * stream — including the migration's own facts — so a fold reads only the
- * event types it owns and ignores the rest.
- */
 const ordersFold: ProjectionFold = {
 	name: "orders-projection",
 	async project(event, read): Promise<readonly RecordMutation[]> {
 		if (!ORDER_EVENTS.has(event.type)) return [];
-		// SAFETY: the order events appended by this file carry these JSON bodies.
 		const data = event.data as { id: string; status?: string; total?: string };
 		const { key } = order(data.id, "-", "0");
 		if (event.type === "order.Recorded") {
@@ -229,7 +217,6 @@ describe("event-log patterns on the real event store and real SQLite engines", (
 			await digest(target),
 		];
 		assert.ok(compareDigests(oldDigest, newDigest).equal);
-		// 30 recorded, o-0/7/14/21/28 removed.
 		assert.equal(newDigest.count, 25);
 		const paid = await target.records.read({
 			dataset: "orders",
@@ -252,7 +239,6 @@ describe("event-log patterns on the real event store and real SQLite engines", (
 		const log = eventStore("log");
 		const target = sqlite("projected");
 		const toEvents = (change: ChangeEnvelope): readonly PivotEvent[] => {
-			// SAFETY: the canonical key of the orders schema is a one-element array.
 			const [id] = JSON.parse(change.key) as [string];
 			return change.op === "delete" || change.record === undefined
 				? [{ streamId: `order:${id}`, type: "order.Removed", data: { id } }]
@@ -298,8 +284,6 @@ describe("event-log patterns on the real event store and real SQLite engines", (
 			targetSchema: ORDERS,
 			targetScope: scopeOf("orders"),
 			flipAuthority: (flip) => {
-				// The router's half of the contract: remember the highest journal
-				// head applied, and refuse a move decided at a lower one.
 				admitAuthorityMove(applied, flip);
 				flipped = true;
 			},
@@ -309,14 +293,12 @@ describe("event-log patterns on the real event store and real SQLite engines", (
 		assert.equal(result.status, "completed");
 		assert.ok(flipped);
 		assert.ok(compareDigests(await digest(source), await digest(target)).equal);
-		// The old store is fenced; authority lives in the log now.
 		await assert.rejects(async () => {
 			await source.records.write({
 				dataset: "orders",
 				mutations: [deleteMutation("", order("o-1", "-", "0").key)],
 			});
 		}, /fenced/u);
-		// The migration's own facts are a stream in the same journal, and replay.
 		const replayed = foldMigration("pivot", await journal.load("pivot"));
 		assert.equal(replayed.status, "completed");
 		assert.equal(replayed.pattern, "log-pivot");
@@ -359,7 +341,6 @@ describe("event-log patterns on the real event store and real SQLite engines", (
 		];
 		assert.deepEqual(after, before);
 		assert.ok(after.count >= 19);
-		// Stream and sequence survive; the new store continues each stream.
 		const copied: { seq: number; type: string }[] = [];
 		for await (const event of target.read("order:o-4")) {
 			copied.push({ seq: event.seq, type: event.type });

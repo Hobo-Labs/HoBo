@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.messaging_dapr_kafka.v1;
 
-// Proof scenario wire records for ADR-0138 technical proof.
 
 message ProofRun {
   string scenario = 1; // native-kafka | dapr-kafka | actor-dual | junction-federation

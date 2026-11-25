@@ -1,11 +1,3 @@
-/**
- * What must hold before the pin code moves a submodule: the repository is named
- * the same everywhere, and nothing but the reflog would hold the commit HEAD
- * is about to leave. Both are refusals with the command that resolves them.
- *
- * Erasable TypeScript with node builtins only.
- */
-
 import { type GitPin, PinsError } from "./pins.ts";
 import { configuredUrlProblem } from "./pins-git-configured.ts";
 import {
@@ -19,26 +11,16 @@ import { isAllowedTransport, type NetOptions } from "./pins-git-net.ts";
 import { modulesEntry, modulesSection } from "./pins-gitmodules.ts";
 
 export interface GitOptions extends NetOptions {
-	/** `--reference`: a local clone to borrow objects from. */
 	readonly reference: string | undefined;
-	/** `--force`: move a submodule off a commit that is on no branch. */
 	readonly force: boolean;
 }
 
 export interface Findings {
 	readonly problems: string[];
 	readonly fixes: string[];
-	/** `.gitmodules` git could read differently: what fetch and bump throw. */
 	refusal?: Refusal;
 }
 
-/**
- * The places a submodule's repository is named must agree with the manifest
- * before anything is fetched: `.gitmodules`, and the URL this clone configured
- * the last time it ran `git submodule init`. `git submodule update` uses those,
- * not the manifest, so a branch that edits `.gitmodules` would otherwise make
- * `setup` contact a host the manifest never named.
- */
 export function coherence(
 	root: string,
 	pin: GitPin,
@@ -82,13 +64,6 @@ export function coherence(
 	return found;
 }
 
-/**
- * The `git config -f .gitmodules` lines that register the path: in the
- * section that already names it in another spelling (git matches the path
- * exactly, so `./a` or `a/` registers nothing), else in a new one named
- * after it. `git submodule add` would refuse: the gitlink is in the index,
- * since gitlinkOf comes first.
- */
 function registerFix(root: string, pin: GitPin): string {
 	const section = modulesSection(root, pin.path);
 	const key = `submodule.${section?.name ?? pin.path}`;
@@ -117,12 +92,6 @@ export function assertCoherent(
 	}
 }
 
-/**
- * Moving HEAD off a commit that no branch, tag or remote holds leaves it in the
- * reflog only (a branch always contains its own tip, so a commit on a local
- * branch is never in the way). Refuse, naming the commit and the way out, unless the
- * operator said `--force`.
- */
 export function assertNotAbandoning(
 	root: string,
 	pin: GitPin,

@@ -8,7 +8,6 @@ export function localWorkerName(preparationId: string): string {
 	return `hobo-ci-${Buffer.from(preparationId, "utf8").toString("hex")}`;
 }
 
-/** Configuration only; building, executing and deploying remain explicit actions. */
 export function localConfig(
 	pipeline: ParsedPipeline,
 	sha: string,
@@ -20,7 +19,6 @@ export function localConfig(
 	return {
 		name: localWorkerName(preparationId),
 		main: fileURLToPath(new URL("../examples/local/index.ts", import.meta.url)),
-		// Wrangler 4.114.0's bundled workerd supports dates through July 29.
 		compatibility_date: "2026-07-29",
 		compatibility_flags: ["nodejs_compat"],
 		workers_dev: false,
@@ -60,7 +58,6 @@ export function localConfig(
 	} satisfies Unstable_RawConfig;
 }
 
-/** SDK-native trigger parameters; local provider never contacts Artifacts. */
 export function localParams(
 	sha: string,
 	preparationId: string,

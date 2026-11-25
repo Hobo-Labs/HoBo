@@ -17,14 +17,9 @@ export type BrowserStationInvokeResponse = Pick<
 export interface BrowserRuntimeExample {
 	readonly id: string;
 	readonly runtime: BrowserRuntimeDescriptor;
-	/** Object-literal source from examples/try-site/apps/<id>/handlers.txt */
 	readonly handlersSource?: string;
 }
 
-/**
- * Produce the JavaScript guest compiled by componentize-js. Runtime descriptors
- * plus per-example handler objects are the executable contract.
- */
 export function buildBrowserStationGuestSource(
 	examples: readonly BrowserRuntimeExample[],
 ): string {

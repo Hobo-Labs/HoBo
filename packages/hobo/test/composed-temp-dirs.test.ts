@@ -13,26 +13,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, type TestContext } from "vitest";
 
-// The temporary directories the composition makes for itself: the default
-// runtime's event store (`hobo-yard-*`) when no dataDir is given, and the live
-// Pulumi lane's workspace (`hobo-pulumi-live-*`) when HOBO_PULUMI_WORKDIR is
-// unset. Each is removed however the process ends; a directory the caller
-// names (a dataDir, a HOBO_PULUMI_WORKDIR) is the caller's, used and kept.
-// Since the live lane's state is the only record of what it deployed, building
-// it on a directory of its own is said on one `hobo:` line.
-
 const FIXTURE = fileURLToPath(
 	new URL("./fixtures/composed-temp-dirs.mjs", import.meta.url),
 );
-// Each run imports the whole built composition.
 const RUN_TIMEOUT_MS = 180_000;
 const SIGNAL_GRACE_MS = 15_000;
 
-/**
- * A TMPDIR of the test's own, so the cases (each a process importing the whole
- * composition, mostly waiting on it) run concurrently without seeing each
- * other's directories.
- */
 function scratchFor({ onTestFinished }: TestContext): string {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-composed-temp-dirs-"));
 	onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
@@ -42,9 +28,7 @@ function scratchFor({ onTestFinished }: TestContext): string {
 interface Ended {
 	readonly code: number | null;
 	readonly signal: NodeJS.Signals | null;
-	/** The `hobo-pulumi-live-*` directories in TMPDIR once the lane was built. */
 	readonly made: readonly string[];
-	/** The process's `hobo:` lines on stderr. */
 	readonly notices: readonly string[];
 }
 
@@ -90,7 +74,6 @@ function run(
 				reject(new Error(`the fixture ended (${code ?? ended}) unready`));
 				return;
 			}
-			// SAFETY: the fixture writes a JSON array of directory names.
 			const made = JSON.parse(readFileSync(report, "utf8")) as string[];
 			const notices = stderr
 				.split("\n")
@@ -123,10 +106,8 @@ describe.concurrent("the default runtime's own event store", () => {
 				const ended = await run(scratch, mode, "default", signal);
 				expect({ code: ended.code, signal: ended.signal }).toEqual(expected);
 				expect(left(scratch, "hobo-yard-")).toEqual([]);
-				// The lane made its own workspace, and nothing of it is left.
 				expect(ended.made).toHaveLength(1);
 				expect(left(scratch, "hobo-pulumi-live-")).toEqual([]);
-				// Said once: where the state is, and how to keep it.
 				expect(ended.notices).toHaveLength(1);
 				expect(ended.notices[0]).toContain(join(scratch, ended.made[0] ?? ""));
 				expect(ended.notices[0]).toContain("HOBO_PULUMI_WORKDIR");
@@ -136,9 +117,6 @@ describe.concurrent("the default runtime's own event store", () => {
 	}
 });
 
-// A data directory the caller names, with no HOBO_PULUMI_WORKDIR: the event
-// store is the caller's and kept, while the lane still makes, says and removes
-// its own workspace. One ending is enough here; the others are the siblings'.
 it(
 	"keeps a named data directory and still removes the lane's own workspace",
 	async (context) => {
@@ -186,15 +164,12 @@ describe.concurrent("a HOBO_PULUMI_WORKDIR the caller names", () => {
 					HOBO_PULUMI_WORKDIR: workDir,
 				});
 				expect({ code: ended.code, signal: ended.signal }).toEqual(expected);
-				// The lane took the caller's directory: it made none of its own,
-				// and has nothing to say about it.
 				expect(ended.made).toEqual([]);
 				expect(ended.notices).toEqual([]);
 				expect(left(scratch, "hobo-pulumi-live-")).toEqual([]);
 				expect(readFileSync(join(workDir, "sentinel"), "utf8")).toBe(
 					"earlier state",
 				);
-				// A data directory the caller named is the caller's too: it is kept.
 				expect(existsSync(join(yard, "eventstore.sqlite"))).toBe(true);
 			},
 			RUN_TIMEOUT_MS,

@@ -1,23 +1,7 @@
-/**
- * Typed event model for the OTel office.
- *
- * HoBo primitive → office mapping:
- *   Station → building (hard isolation boundary, ADR-0131): entities never mix.
- *   Yard    → floor/zone containing camp rooms.
- *   Camp    → named office area/room; its bindles sit at desks inside.
- *   Junction → corridor/door between two camp rooms.
- *   Bindle  → NPC at a desk; animation state derives from span activity.
- *   Crew    → operator-triggered character (manual spans/logs).
- *   Actor   → internal worker character (internal span kind).
- *
- * Plain TS types for Phase 1 — protobuf codegen is a tracked gap (see ADR.md).
- */
-
 export type PrimitiveKind = "bindle" | "crew" | "actor";
 
 export type AgentState = "idle" | "working" | "reading" | "stuck";
 
-/** OTel span kinds, aligned with OTLP Span.Kind numbering. */
 export type SpanKind = "internal" | "server" | "client" | "producer" | "consumer";
 
 export interface TilePoint {
@@ -47,7 +31,6 @@ export interface Camp {
 	id: string;
 	yardId: string;
 	name: string;
-	/** Room footprint on the tile grid. */
 	rect: TileRect;
 }
 
@@ -56,7 +39,6 @@ export interface Junction {
 	name: string;
 	fromCampId: string;
 	toCampId: string;
-	/** Corridor tiles connecting the two camp rooms. */
 	corridor: TilePoint[];
 }
 
@@ -69,20 +51,14 @@ export interface Character {
 	desk: TilePoint;
 	position: TilePoint;
 	state: AgentState;
-	/** ms timestamp of the last state transition. */
 	stateSince: number;
-	/** 0..1 health bar over the desk, driven by metric samples. */
 	health: number;
-	/** Speech bubble text (WARN+ logs), cleared on tick after a TTL. */
 	bubble: string | undefined;
 	bubbleSince: number;
-	/** Remaining walk path (corridor tiles) for cross-camp journeys. */
 	path: TilePoint[];
-	/** Span IDs currently open for this character, with their kind. */
 	activeSpans: Record<string, SpanKind>;
 }
 
-/** A trace packet walking a junction corridor for the span's duration. */
 export interface Packet {
 	id: string;
 	traceId: string;
@@ -90,7 +66,6 @@ export interface Packet {
 	junctionId: string;
 	fromCampId: string;
 	toCampId: string;
-	/** Remaining corridor tiles to walk. */
 	path: TilePoint[];
 	position: TilePoint;
 	startedAt: number;
@@ -100,7 +75,6 @@ export interface Packet {
 export interface OfficeState {
 	tick: number;
 	stations: Record<string, Station>;
-	/** stationId → serializable office layout (see layout.ts). */
 	layouts: Record<string, import("./layout.js").OfficeLayout>;
 	yards: Record<string, Yard>;
 	camps: Record<string, Camp>;
@@ -111,7 +85,6 @@ export interface OfficeState {
 
 export type SpanStatus = "ok" | "error";
 
-/** Normalized agent events — the single input the office reducer consumes. */
 export type AgentEvent =
 	| {
 			type: "span-started";
@@ -120,15 +93,12 @@ export type AgentEvent =
 			spanId: string;
 			name: string;
 			spanKind: SpanKind;
-			/** Span attributes (db.system / messaging.system flip state to reading). */
 			attributes: Record<string, string>;
 			stationId: string;
 			yardId: string | undefined;
 			campId: string;
 			characterId: string;
-			/** OTLP parent span id, when the trace carries one. */
 			parentSpanId?: string;
-			/** Set when the span crosses a junction (cross-camp call). */
 			junctionId: string | undefined;
 	  }
 	| {
@@ -153,7 +123,6 @@ export type AgentEvent =
 			type: "metric-sample";
 			at: number;
 			characterId: string;
-			/** "health" drives the health bar; any other name lands in the activity log only. */
 			metric: string;
 			value: number;
 	  }
@@ -163,18 +132,12 @@ export type AgentEvent =
 			characterId: string;
 			severity: "INFO" | "WARN" | "ERROR";
 			message: string;
-			/** OTLP trace id the record belongs to, when the log carries one. */
 			traceId?: string;
 	  }
-	/**
-	 * A station's layout was replaced (editor PUT). Reducer no-op; the client
-	 * re-pulls /state for the new geometry.
-	 */
 	| { type: "layout-changed"; at: number; stationId: string }
 	| { type: "tick"; at: number };
 
 export const BUBBLE_TTL_MS = 8_000;
-/** Spans blocking longer than this mark the character stuck when they end. */
 export const LONG_BLOCK_MS = 5_000;
 
 export function emptyOffice(): OfficeState {
@@ -194,7 +157,6 @@ function clone(state: OfficeState): OfficeState {
 	return structuredClone(state);
 }
 
-/** Span kind + attributes → character state while the span is open. */
 export function stateForSpan(kind: SpanKind, attrs: Record<string, string>): AgentState {
 	if (attrs["db.system"] !== undefined || attrs["messaging.system"] !== undefined) {
 		return "reading";
@@ -216,10 +178,6 @@ export function junctionForCamps(
 	);
 }
 
-/**
- * Pure reducer: one event in, next office state out. Characters keep their own
- * active-span set so overlapping spans resolve to the right state on end.
- */
 export function applyEvent(state: OfficeState, event: AgentEvent): OfficeState {
 	const next = clone(state);
 	switch (event.type) {
@@ -229,12 +187,9 @@ export function applyEvent(state: OfficeState, event: AgentEvent): OfficeState {
 				if (ch.bubble !== undefined && event.at - ch.bubbleSince > BUBBLE_TTL_MS) {
 					ch.bubble = undefined;
 				}
-				// Walk one corridor tile per tick while a journey is in progress.
 				const step = ch.path.shift();
 				if (step !== undefined) ch.position = step;
 			}
-			// Packets walk one corridor tile per tick until the path is done or
-			// the span's duration has elapsed.
 			for (const packet of Object.values(next.packets)) {
 				const step = packet.path.shift();
 				if (step !== undefined) packet.position = step;
@@ -245,7 +200,6 @@ export function applyEvent(state: OfficeState, event: AgentEvent): OfficeState {
 			return next;
 		}
 		case "layout-changed": {
-			// applyLayout already mutated state; nothing for the reducer to do.
 			return next;
 		}
 		case "packet-started": {
@@ -276,7 +230,6 @@ export function applyEvent(state: OfficeState, event: AgentEvent): OfficeState {
 			ch.state = stateForSpan(event.spanKind, event.attributes);
 			ch.stateSince = event.at;
 			ch.bubble = undefined;
-			// Cross-camp call: walk the junction corridor toward the peer room.
 			if (event.junctionId !== undefined) {
 				const junction = next.junctions[event.junctionId];
 				if (junction !== undefined) {
@@ -294,7 +247,6 @@ export function applyEvent(state: OfficeState, event: AgentEvent): OfficeState {
 		}
 		case "span-ended": {
 			const ch = next.characters[event.characterId];
-			// A packet belongs to the server-side span; when it ends the journey is over.
 			delete next.packets[event.spanId];
 			if (ch === undefined) return next;
 			delete ch.activeSpans[event.spanId];
@@ -315,7 +267,6 @@ export function applyEvent(state: OfficeState, event: AgentEvent): OfficeState {
 			ch.state = nextState;
 			ch.stateSince = event.at;
 			if (nextState === "idle") {
-				// Journey over: return to the desk.
 				ch.path = [];
 				ch.position = { ...ch.desk };
 			}
@@ -336,7 +287,6 @@ export function applyEvent(state: OfficeState, event: AgentEvent): OfficeState {
 				ch.bubble = event.message;
 				ch.bubbleSince = event.at;
 			}
-			// ERROR logs demand attention the same way an errored span does.
 			if (event.severity === "ERROR") {
 				ch.state = "stuck";
 				ch.stateSince = event.at;
@@ -346,12 +296,10 @@ export function applyEvent(state: OfficeState, event: AgentEvent): OfficeState {
 	}
 }
 
-/** Station isolation: a view never mixes entities from another station. */
 export function visibleCharacters(state: OfficeState, stationId: string): Character[] {
 	return Object.values(state.characters).filter((ch) => ch.stationId === stationId);
 }
 
-/** Per-character activity retained for the inspect panel. */
 export interface SpanActivity {
 	traceId: string;
 	spanId: string;
@@ -381,7 +329,6 @@ export interface CharacterActivity {
 	metrics: MetricActivity[];
 }
 
-/** Ring-buffer size per activity list. */
 export const ACTIVITY_LIMIT = 50;
 
 function pushBounded<T>(list: T[], item: T): void {
@@ -389,10 +336,6 @@ function pushBounded<T>(list: T[], item: T): void {
 	if (list.length > ACTIVITY_LIMIT) list.splice(0, list.length - ACTIVITY_LIMIT);
 }
 
-/**
- * Bounded per-character ring buffer of recent spans, logs, and metric samples.
- * Fed from the same event stream as the reducer; powers GET /character/<id>/activity.
- */
 export class ActivityLog {
 	private readonly byCharacter = new Map<string, CharacterActivity>();
 
@@ -444,7 +387,6 @@ export class ActivityLog {
 	for(characterId: string): CharacterActivity {
 		const found = this.byCharacter.get(characterId);
 		if (found === undefined) return { spans: [], logs: [], metrics: [] };
-		// Newest first for the inspect panel.
 		return {
 			spans: [...found.spans].reverse(),
 			logs: [...found.logs].reverse(),

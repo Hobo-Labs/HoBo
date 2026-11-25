@@ -1,17 +1,3 @@
-/**
- * Real Wasmtime OS-process sandboxes for private Camp components.
- *
- * Framework-agnostic (no Hono / Express / etc. in this package):
- *   - Bundles the app module (e.g. `src/api.ts` exporting `{ app }` with `.fetch`)
- *     into a wasi:http/proxy component — no hand-written guest required
- *   - Optional override: prebuilt `dist/wasm/<name>.wasm` or `src/wasm/<name>-guest.mjs`
- *   - HTTP frameworks live in `packages/adapters/*` (e.g. `@hobo/adapter-hono`), never core
- *
- * Driven through HoBo CLI (Yard component host = wasm | isolated-wasm):
- *   - `hobo yard ensure` / `init --host wasm` / `doctor` → toolchain under HOBO_HOME
- *   - Camp mesh injects bindle env on every hop (`x-hobo-env-*` / `x-hobo-bindle-env`)
- */
-
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -30,7 +16,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isJsonString } from "./json.js";
 
-/** Fetch handler shape shared with Camp mesh. */
 export type FetchHandler = (input: Request) => Response | Promise<Response>;
 
 // public-contract: the wasmtime version the isolated-wasm toolchain pins to.
@@ -127,9 +112,6 @@ function parseVersion(output: string): string | null {
 
 function tryWasmtime(binPath: string): { version: string } | null {
 	if (!existsSync(binPath) && binPath.includes("/")) return null;
-	// Parallel test sweeps load the box: the first exec of a freshly written
-	// ~40MB binary can exceed one 10s probe. Retry only on spawn timeout —
-	// real failures (missing, wrong arch, old version) fail immediately.
 	for (let attempt = 0; attempt < 3; attempt += 1) {
 		const result = spawnSync(binPath, ["--version"], {
 			encoding: "utf8",
@@ -156,11 +138,6 @@ function meetsFloor(version: string, floor = PINNED_WASMTIME_VERSION): boolean {
 	return true;
 }
 
-/**
- * Resolve a wasmtime binary meeting the floor version, downloading into
- * `$HOBO_HOME/tools/wasmtime` when needed. Prefer calling
- * {@link ensureIsolatedWasmToolchain} from CLI surfaces.
- */
 export async function ensureWasmtimeBinary(
 	options: {
 		readonly hoboHome?: string;
@@ -232,7 +209,6 @@ export async function ensureWasmtimeBinary(
 	const version = PINNED_WASMTIME_VERSION;
 	const archiveName = `wasmtime-v${version}-${triple}.tar.xz`;
 	const url = `https://github.com/bytecodealliance/wasmtime/releases/download/v${version}/${archiveName}`;
-	// Unique staging dir per call (vitest runs concurrent ensures in one PID).
 	const staging = join(
 		tmpdir(),
 		`hobo-wasmtime-${version}-${process.pid}-${randomUUID()}`,
@@ -267,9 +243,6 @@ export async function ensureWasmtimeBinary(
 	}
 
 	mkdirSync(toolsDir(hoboHome), { recursive: true });
-	// Atomic install: concurrent ensures (parallel test sweeps, `hobo dev` +
-	// `hobo yard ensure`) must never observe a partially written binary.
-	// Write to a unique sibling temp file, then rename over the target.
 	const tmpTarget = join(
 		toolsDir(hoboHome),
 		`.wasmtime-${process.pid}-${randomUUID()}.tmp`,
@@ -320,9 +293,7 @@ function resolveJcoBin(): string {
 		const jcoPkg = require.resolve("@bytecodealliance/jco/package.json");
 		const bin = join(dirname(jcoPkg), "src", "jco.js");
 		if (existsSync(bin)) return bin;
-	} catch {
-		// fall through
-	}
+	} catch {}
 	let dir = packageRoot();
 	for (let i = 0; i < 6; i += 1) {
 		const candidate = join(
@@ -346,26 +317,18 @@ function resolveJcoBin(): string {
 function resolveJcoTool(): JcoTool {
 	const binPath = resolveJcoBin();
 	let version = "unknown";
-	// jco.js lives at <pkg>/src/jco.js — package.json is two levels up from the file.
 	const pkgJson = join(dirname(binPath), "..", "package.json");
 	if (existsSync(pkgJson)) {
 		try {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const pkg = JSON.parse(readFileSync(pkgJson, "utf8")) as {
 				version?: string;
 			};
 			if (isJsonString(pkg.version)) version = pkg.version;
-		} catch {
-			// keep unknown
-		}
+		} catch {}
 	}
 	return { binPath, version, source: "package" };
 }
 
-/**
- * Ensure the isolated-wasm Camp component host can run: wasmtime + jco.
- * Called from `hobo yard ensure|init|doctor` and automatically from `hobo dev`.
- */
 export async function ensureIsolatedWasmToolchain(
 	options: {
 		readonly hoboHome?: string;
@@ -407,34 +370,14 @@ export async function ensureIsolatedWasmToolchain(
 export interface ResolvedPrivateGuest {
 	readonly resourceName: string;
 	readonly projectDir: string;
-	/** Prebuilt wasi:http/proxy component, if the app already componentized. */
 	readonly wasmPath: string | null;
-	/**
-	 * Explicit wasi:http guest source (optional override).
-	 * When null, HoBo bundles the app module (`src/<resourceName>.ts` etc.).
-	 */
 	readonly guestSourcePath: string | null;
-	/**
-	 * App module to bundle. Any resource name: exports `app` | `default` |
-	 * `handler` | `fetch` | named export matching the resource, with `.fetch`
-	 * or as a fetch function.
-	 */
 	readonly appModulePath: string | null;
 }
 
-/**
- * Resolve sources for **any** private bindle resource (not hello-bindle-specific).
- *
- * Priority:
- *   1. `modulePath` override (explicit path)
- *   2. Prebuilt `dist/wasm/<resourceName>.wasm`
- *   3. Explicit guest `src/wasm/<resourceName>-guest.mjs` (optional)
- *   4. App module by resource name: `src/<resourceName>.ts` (default)
- */
 export function resolvePrivateWasmGuest(options: {
 	readonly projectDir: string;
 	readonly resourceName: string;
-	/** Absolute or project-relative path to the app module (optional). */
 	readonly modulePath?: string;
 }): ResolvedPrivateGuest {
 	const { projectDir, resourceName } = options;
@@ -486,7 +429,6 @@ export function resolvePrivateWasmGuest(options: {
 		}
 	}
 
-	// Generic layout: one module per bindle resource name.
 	const candidatesApp = [
 		join(projectDir, "src", `${name}.ts`),
 		join(projectDir, "src", `${name}.tsx`),
@@ -518,15 +460,6 @@ export function resolvePrivateWasmGuest(options: {
 	};
 }
 
-/**
- * Bundle any app module into a wasi:http fetch-event guest.
- *
- * Accepted exports (first match):
- *   - `app` / `default` / `handler` / `fetch` / named export == resourceName
- *   - object with `.fetch`, or a bare `(Request) => Response` function
- *
- * Camp env is applied from mesh headers at request time (not baked in).
- */
 export async function bundleAppModuleAsWasiHttpGuest(options: {
 	readonly projectDir: string;
 	readonly resourceName: string;
@@ -619,7 +552,6 @@ addEventListener("fetch", (event) => {
 		target: "es2022",
 		absWorkingDir: options.projectDir,
 		logLevel: "silent",
-		// App deps (hono, etc.) resolve from the project, not from @hobo/hobo.
 		nodePaths: [
 			join(options.projectDir, "node_modules"),
 			join(packageRoot(), "node_modules"),
@@ -635,9 +567,6 @@ addEventListener("fetch", (event) => {
 	writeFileSync(options.outPath, file.text, "utf8");
 }
 
-/**
- * Componentize a wasi:http/proxy guest .js/.mjs into .wasm for wasmtime serve.
- */
 export async function componentizePrivateGuest(options: {
 	readonly resourceName: string;
 	readonly guestSourcePath: string;
@@ -695,8 +624,6 @@ export async function componentizePrivateGuest(options: {
 		"proxy",
 		"-o",
 		wasmPath,
-		// Disable stdio so wasmtime serve can link (no terminal-input import).
-		// Camp config is injected by HoBo mesh headers, not WASI env/stdio.
 		"--disable",
 		"stdio",
 	];
@@ -723,16 +650,9 @@ export async function componentizePrivateGuest(options: {
 	};
 }
 
-/**
- * Resolve + componentize **any** private bindle resource for isolated-wasm.
- *
- * Default: bundle `src/<resourceName>.ts` (export app|default|handler|fetch).
- * Optional: `modulePath`, prebuilt `.wasm`, or explicit `-guest.mjs`.
- */
 export async function preparePrivateWasmComponent(options: {
 	readonly projectDir: string;
 	readonly resourceName: string;
-	/** Override module path (absolute or project-relative). */
 	readonly modulePath?: string;
 	readonly hoboHome?: string;
 	readonly jcoBin?: string;
@@ -766,7 +686,6 @@ export async function preparePrivateWasmComponent(options: {
 	const bundledGuest = join(stagingDir, "guest.mjs");
 
 	try {
-		// Prefer app source (generic). Explicit guest only when no app module.
 		if (resolved.appModulePath !== null) {
 			emit(
 				`hobo: bundling ${resolved.appModulePath} → wasi:http guest for private ${options.resourceName}`,
@@ -849,9 +768,6 @@ async function waitForListen(
 	throw new Error(`wasmtime serve did not listen on 127.0.0.1:${port} in time`);
 }
 
-/**
- * Spawn a sandboxed `wasmtime serve` process for a wasi-http proxy component.
- */
 export async function bootWasmtimeSandbox(options: {
 	readonly resourceName: string;
 	readonly wasmPath: string;
@@ -911,7 +827,6 @@ export async function bootWasmtimeSandbox(options: {
 		const url = new URL(request.url);
 		const target = `${loopbackUrl}${url.pathname}${url.search}`;
 		const method = request.method;
-		// Forward HoBo mesh-injected env headers into the sandbox process.
 		const headers = Object.fromEntries(request.headers.entries());
 		const init: RequestInit = { method, headers };
 		if (method !== "GET" && method !== "HEAD") {

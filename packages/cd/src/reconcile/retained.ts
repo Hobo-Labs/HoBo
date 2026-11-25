@@ -1,11 +1,3 @@
-// Retained fields (D22): fields a controller on the target side owns, such as
-// autoscaler replicas or a provider-managed runtime version. They are excluded
-// from drift and reported as `retained`. Three declaration sources merge:
-//   1. a resolver component's `describe` (the realizer copies them into
-//      ResourceObservation.retained);
-//   2. the in-tree table below, keyed by resource kind;
-//   3. the Camp mapping-rule property `hobo.cd/retain`, which Matching copies
-//      into the resource's realizationParameters.
 import { clone, create } from "@bufbuild/protobuf";
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
 import {
@@ -20,8 +12,6 @@ const AUTOSCALED = Object.freeze(["replicas", "instances", "desiredCount"]);
 const MANAGED_RUNTIME = Object.freeze(["runtimeVersion", "platformVersion"]);
 
 // public-contract: the in-tree retained-field table, keyed by resource kind
-// (the plan resource's port). Lookups also try the kind's last segment, so
-// `hobo:http-service` and `http-service` share an entry.
 export const RETAINED_FIELDS: Readonly<Record<string, readonly string[]>> =
 	Object.freeze({
 		compute: AUTOSCALED,
@@ -38,7 +28,6 @@ export const RETAINED_FIELDS: Readonly<Record<string, readonly string[]>> =
 		queue: Object.freeze(["partitionsAutoscaled"]),
 	});
 
-/** Retained fields declared by the in-tree table for one resource kind. */
 export function tableRetained(kind: string): readonly string[] {
 	const direct = RETAINED_FIELDS[kind];
 	if (direct) return direct;
@@ -46,7 +35,6 @@ export function tableRetained(kind: string): readonly string[] {
 	return RETAINED_FIELDS[last] ?? [];
 }
 
-/** Parse `hobo.cd/retain` from a realization parameter: "a,b" or ["a","b"]. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: parse boundary for an untyped realizationParameters JSON value.
 export function parseRetainProperty(value: unknown): readonly string[] {
 	const raw =
@@ -66,7 +54,6 @@ export function parseRetainProperty(value: unknown): readonly string[] {
 	);
 }
 
-/** Mapping-rule retained fields per resource name of a resolved set. */
 export function mappingRetained(
 	resolved: ResolvedDeploymentSet,
 ): ReadonlyMap<string, readonly string[]> {
@@ -80,7 +67,6 @@ export function mappingRetained(
 	return out;
 }
 
-/** The merged retained-field set for one observed resource. */
 export function mergeRetained(
 	input: Readonly<{
 		kind: string;
@@ -109,7 +95,6 @@ export const DRIFT_CLASSES = Object.freeze([
 
 export type DriftClass = (typeof DRIFT_CLASSES)[number] | "unknown";
 
-/** Parsed `drift_kind`: `<class>` or `<class>:<field>[,<field>...]`. */
 export type DriftKind = Readonly<{
 	driftClass: DriftClass;
 	fields: readonly string[];
@@ -136,12 +121,6 @@ export function formatDriftKind(kind: DriftKind): string {
 		: `${kind.driftClass}:${kind.fields.join(",")}`;
 }
 
-/**
- * Apply retained fields to one observed resource. A `modified` drift whose
- * every changed field is retained is not drift; a mixed one keeps only the
- * non-retained fields. A `modified` drift naming no fields stays drift (fail
- * closed: the realizer did not prove the change was retained).
- */
 export function applyRetained(
 	resource: ResourceObservation,
 	retained: readonly string[],

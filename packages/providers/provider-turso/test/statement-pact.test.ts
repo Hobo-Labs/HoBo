@@ -1,13 +1,3 @@
-/**
- * Replays `contracts/libsql-ephemeral-state.pact.json` from both sides.
- *
- * Consumer: the binding, driven through the port, must send exactly the
- * pact's statements and arguments, and turn the pact's rows into the port
- * results the scenario expects. Provider: a real libSQL database (a local
- * `file:` one, through `@libsql/client`) must answer every statement with the
- * pact's rows. The Hrana-over-HTTP envelope around these statements belongs
- * to `@libsql/client`, not to this package, and is not re-pinned here.
- */
 import { createClient } from "@libsql/client";
 import { describe, expect, it } from "vitest";
 

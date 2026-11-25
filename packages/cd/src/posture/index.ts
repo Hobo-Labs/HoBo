@@ -1,5 +1,3 @@
-// @hobo/cd/posture (ADR-0182 D24, D25, I22, I23): policy delivered
-// like software and posture observed continuously.
 export {
 	type CampPolicyDeps,
 	createCampPolicy,

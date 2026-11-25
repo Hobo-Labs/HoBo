@@ -8,9 +8,6 @@ import {
 } from "../src/delivery.js";
 import type { JsonObject } from "../src/json.js";
 
-// Golden upcaster corpus for persisted broker.DeliverySubmitted facts (D14).
-// One real body per shipped shape, append-only: v1 named an engine
-// (argo | in-proc); v2 names a reconciler mode and an optional publisher.
 const corpusDir = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"fixtures/delivery-submitted",
@@ -20,7 +17,6 @@ const corpus = readdirSync(corpusDir)
 	.sort()
 	.map((name) => ({
 		name,
-		// SAFETY: assertion required at this I/O or test boundary.
 		entry: JSON.parse(readFileSync(join(corpusDir, name), "utf8")) as {
 			input: JsonObject;
 			expected: JsonObject;
@@ -41,7 +37,6 @@ describe("broker.DeliverySubmitted upcaster", () => {
 			const lifted = upcastDeliverySubmitted(entry.input);
 			expect(lifted).toEqual(entry.expected);
 			expect(lifted.schema).toBe(DELIVERY_SUBMITTED_SCHEMA);
-			// Idempotent: the current shape is a fixed point.
 			expect(upcastDeliverySubmitted(lifted)).toEqual(lifted);
 		});
 	}

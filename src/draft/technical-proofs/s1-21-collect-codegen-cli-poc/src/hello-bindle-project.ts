@@ -31,7 +31,6 @@ export function createHelloBindleCollectProject(options: { guestLanguage?: strin
     fileName: "bindle.ts",
     guestLanguage: options.guestLanguage ?? "ts",
     sourceText: helloBindleSourceText,
-    // SAFETY: assertion to `secretRefs: [] as Array<{ name: string; ref: string; value?: string }>,` is required at this boundary.
     secretRefs: [] as Array<{ name: string; ref: string; value?: string }>,
     define: helloBindleDefine,
   };

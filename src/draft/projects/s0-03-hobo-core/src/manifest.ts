@@ -17,7 +17,6 @@ import {
 } from "./parse-utils.js";
 import { type JsonValue, type JsonObject } from "./json.js";
 
-
 export const CORE_SCHEMA_VERSION = "hobo.core/v1";
 
 const STABILITIES = new Set<InterfaceStability>(["stable", "preview", "experimental"]);
@@ -188,14 +187,12 @@ function parseFlows(input: JsonValue | undefined, options: ParseCapabilityManife
   );
   const seen = new Set<string>();
   for (const flow of flows) {
-    // SAFETY: `const type = flow.type as string;` is required at this I/O or test boundary.
     const type = flow.type as string;
     if (seen.has(type)) {
       throw new ManifestParseError("auth.flows", "unique flow type", type);
     }
     seen.add(type);
   }
-  // SAFETY: `return flows.sort((a, b) => FLOW_ORDER.indexOf(a.type as AuthFlowType) - FLOW_OR` is required at this I/O or test boundary.
   return flows.sort((a, b) => FLOW_ORDER.indexOf(a.type as AuthFlowType) - FLOW_ORDER.indexOf(b.type as AuthFlowType));
 }
 
@@ -276,14 +273,12 @@ function parseCost(input: JsonValue | undefined): CapabilityManifestBundle["cost
   }
   for (const [name, price] of Object.entries(unitPrices)) {
     const entry = expectObject(price, `cost.unitPrices.${name}`, ManifestParseError);
-    // SAFETY: `if (!Number.isFinite(entry.amount) || (entry.amount as number) <= 0) {` is required at this I/O or test boundary.
     if (!Number.isFinite(entry.amount) || (entry.amount as number) <= 0) {
       throw new ManifestParseError(`cost.unitPrices.${name}.amount`, "positive number", entry.amount);
     }
   }
   return {
     currency: currency(source.currency, "cost.currency", ManifestParseError),
-    // SAFETY: `unitPrices: cloneJson(unitPrices) as CapabilityManifestBundle["cost"]["unitPrice` is required at this I/O or test boundary.
     unitPrices: cloneJson(unitPrices) as CapabilityManifestBundle["cost"]["unitPrices"],
     freeTier:
       source.freeTier === undefined

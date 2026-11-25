@@ -5,7 +5,6 @@ import {
 } from "./errors.js";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export function deepFreeze<T>(value: T): T {
   if (value && isJsonObject(value)) {
     Object.freeze(value);
@@ -20,7 +19,6 @@ export function cloneJson<T>(value: T): T {
   if (value === undefined) {
     return value;
   }
-  // SAFETY: `return JSON.parse(JSON.stringify(value)) as T;` is required at this I/O or test boundary.
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
@@ -32,7 +30,6 @@ export function expectObject(
   if (!value || !isJsonObject(value) || Array.isArray(value)) {
     throw new ErrorClass(field, "object", value ?? null);
   }
-  // SAFETY: `return value as JsonObject;` is required at this I/O or test boundary.
   return value as JsonObject;
 }
 
@@ -90,11 +87,9 @@ export function enumValue<T extends string>(
   field: string,
   ErrorClass: typeof EnvelopeParseError | typeof ManifestParseError | typeof PortDescriptorParseError,
 ): T {
-  // SAFETY: `if (!isJsonString(value) || !allowed.has(value as T)) {` is required at this I/O or test boundary.
   if (!isJsonString(value) || !allowed.has(value as T)) {
     throw new ErrorClass(field, [...allowed].join(" | "), value ?? null);
   }
-  // SAFETY: `return value as T;` is required at this I/O or test boundary.
   return value as T;
 }
 
@@ -114,11 +109,9 @@ export function nonNegativeInteger(
   field: string,
   ErrorClass: typeof EnvelopeParseError | typeof ManifestParseError | typeof PortDescriptorParseError,
 ): number {
-  // SAFETY: `if (!Number.isSafeInteger(value) || (value as number) < 0) {` is required at this I/O or test boundary.
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
     throw new ErrorClass(field, "non-negative integer", value ?? null);
   }
-  // SAFETY: `return value as number;` is required at this I/O or test boundary.
   return value as number;
 }
 
@@ -128,15 +121,12 @@ export function positiveInteger(
   ErrorClass: typeof EnvelopeParseError | typeof ManifestParseError | typeof PortDescriptorParseError,
   options: { max?: number } = {},
 ): number {
-  // SAFETY: `if (!Number.isSafeInteger(value) || (value as number) <= 0) {` is required at this I/O or test boundary.
   if (!Number.isSafeInteger(value) || (value as number) <= 0) {
     throw new ErrorClass(field, "positive integer", value ?? null);
   }
-  // SAFETY: `if (options.max !== undefined && (value as number) > options.max) {` is required at this I/O or test boundary.
   if (options.max !== undefined && (value as number) > options.max) {
     throw new ErrorClass(field, `integer <= ${options.max}`, value ?? null);
   }
-  // SAFETY: `return value as number;` is required at this I/O or test boundary.
   return value as number;
 }
 

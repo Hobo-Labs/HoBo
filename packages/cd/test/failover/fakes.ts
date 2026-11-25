@@ -1,5 +1,3 @@
-// Failover-only test doubles (WP23): pipelines, placement, topology, rails and
-// the traffic shifter. They sit on top of the fan-out fakes.
 import { create } from "@bufbuild/protobuf";
 import {
 	type ApplyResult,
@@ -81,11 +79,6 @@ export class FakePipelines implements PipelineController {
 	async tick(): Promise<void> {}
 }
 
-/**
- * Placement double that behaves like D20 `decide` over the fake inventory:
- * MANAGED, untainted, residency-passing Camps by id, `exclude` honoured.
- * `ignoreResidency` models a faulty engine for defense-in-depth tests.
- */
 export class FakePlacement implements PlacementEngine {
 	tolerations: TolerationRecord[] = [];
 	ignoreResidency = false;

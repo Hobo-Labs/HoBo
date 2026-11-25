@@ -1,8 +1,3 @@
-/**
- * Explicit payload codecs for durable boundary records.
- * No ambiguous "JSON-looking BLOB" without codec metadata.
- */
-
 import {
 	isJsonObject,
 	type JsonObject,
@@ -12,8 +7,11 @@ import {
 
 export type PayloadCodec = "json-v1" | "protobuf-v1";
 
+// public-contract: default journal payload codec id.
 export const DEFAULT_PAYLOAD_CODEC: PayloadCodec = "json-v1";
+// public-contract: default stream metadata codec id.
 export const DEFAULT_METADATA_CODEC: PayloadCodec = "json-v1";
+// public-contract: default actor state codec id.
 export const DEFAULT_STATE_CODEC: PayloadCodec = "json-v1";
 
 export class UnsupportedCodecError extends Error {
@@ -38,7 +36,6 @@ export function decodeJson(bytes: Uint8Array): JsonValue {
 	return parseJsonValue(text);
 }
 
-/** Legacy TEXT columns stored as UTF-8 JSON strings. */
 export function encodeLegacyJsonText<T>(value: T): string {
 	return JSON.stringify(value ?? null);
 }

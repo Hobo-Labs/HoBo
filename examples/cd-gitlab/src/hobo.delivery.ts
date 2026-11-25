@@ -1,10 +1,3 @@
-// Delivery as code for a Bindle built on GitLab CI (ADR-0182 D3, D4, D10).
-// Apply with `hobo deploy pipeline apply --file src/hobo.delivery.ts`.
-//
-// CD reads the Git repository over smart-HTTP protocol v2 (no Git binary, no
-// host API) and the GitLab container registry over the OCI distribution API.
-// It assembles Freight from both at the same commit. GitLab pushes are
-// authenticated with a GitLab OIDC id_token matched against a trusted publisher.
 import { create } from "@bufbuild/protobuf";
 import {
 	ArtifactKind,
@@ -84,7 +77,6 @@ export const source = create(FreightSourceRecordSchema, {
 	],
 });
 
-/** Quarter-end freeze for the finance Camps; rollback stays allowed (D10). */
 export const quarterEnd = create(ChangeWindowRecordSchema, {
 	name: "quarter-end",
 	kind: WindowKind.FREEZE,

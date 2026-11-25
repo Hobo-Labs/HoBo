@@ -60,8 +60,6 @@ describe("parseDeployedSha", () => {
 
 describe("decidePagesDeploy", () => {
 	it("publishes a site change no run deployed, however many commits ago it merged", async () => {
-		// The #1790 case: its deploy failed, and the commits after it did not
-		// touch a release path, so a head-commit-only question never asked again.
 		const decision = await decidePagesDeploy({
 			head,
 			filters,
@@ -316,7 +314,6 @@ describe("release-hobo pages jobs", () => {
 	it("decides the deploy from what is published, apart from the release train", () => {
 		const gate = job("release-pages-gate");
 		expect(gate).toContain("scripts/ci/check-release-pages-stale.mts");
-		// The train gate installs dotnet and runs vitest; the site must not wait on it.
 		expect(gate).toContain("    needs: [route]\n");
 		expect(gate).not.toContain("release-main-train-gate");
 		const pages = job("release-pages");
@@ -343,8 +340,6 @@ describe("release-hobo pages jobs", () => {
 	});
 
 	it("runs from those files alone, before any pnpm install", () => {
-		// The gate and the re-check in release-pages run on a sparse checkout with
-		// no node_modules; a package import there fails and Pages never publishes.
 		const after =
 			job("release-pages-gate").split("sparse-checkout: |\n")[1] ?? "";
 		const block = after.split("\n");
@@ -364,7 +359,6 @@ describe("release-hobo pages jobs", () => {
 				["--no-warnings", "scripts/ci/check-release-pages-stale.mts"],
 				{ cwd: copy, encoding: "utf8" },
 			);
-			// Exit 2 is the usage error: every import resolved and the script ran.
 			expect(run.stderr).not.toMatch(/ERR_MODULE_NOT_FOUND|Cannot find/);
 			expect(run.status, run.stderr).toBe(2);
 		} finally {
@@ -423,20 +417,15 @@ describe("release-hobo pages jobs", () => {
 		expect(tag).toMatch(
 			/needs: \[[^\]]*release-pages-gate, release-pages\b[^\]]*\]/,
 		);
-		// A failed gate skips the publish; that skip must not read as "nothing to do".
 		expect(tag).toContain(
 			`contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result)`,
 		);
-		// A newer run's publish cancels this one while it waits for the slot.
 		expect(tag).toContain(
 			`contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)`,
 		);
 	});
 
 	it("records the commit it built, not the branch tip the event fired on", () => {
-		// The Pages realizer commits `deploy: <HOBO_RELEASE_REVISION>`
-		// (scripts/deploy-site.mts), and the publish step pins it to the
-		// commit checked out and built here.
 		const pages = job("release-pages");
 		const step = pages.slice(
 			pages.indexOf("Record, promote and publish the Pages site"),
@@ -461,7 +450,6 @@ describe("release-hobo pages jobs", () => {
 		expect(media).toBeGreaterThan(site);
 		expect(nest).toBeGreaterThan(media);
 		expect(deploy).toBeGreaterThan(nest);
-		// The catalogue's base has to agree with where it is nested, or every asset 404s.
 		expect(readFileSync(join(root, "media/astro.config.ts"), "utf8")).toContain(
 			'base: "/HoBo/media"',
 		);

@@ -1,7 +1,3 @@
-// ADR-0158: deployment phases as vocabulary + enforcement primitives. The
-// cases below pin the two rules that make the phase model worth having — a
-// phase token is never defaulted, and a phase-scoped capability touched
-// outside its phase is refused — plus the independence of dev mode.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -38,7 +34,6 @@ describe("deployment phase vocabulary", () => {
 		try {
 			parseDeploymentPhase(value);
 		} catch (error) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as PhaseParseError).code).toBe("HOBO_CORE_PHASE_PARSE");
 		}
 	});
@@ -61,7 +56,6 @@ describe("deployment phase vocabulary", () => {
 	it("refuses a capability outside the declared vocabulary", () => {
 		expect(() =>
 			phaseForCapability(
-				// SAFETY: assertion required at this I/O or test boundary.
 				"databaseConnection" as (typeof PHASE_SCOPED_CAPABILITIES)[number],
 			),
 		).toThrow(PhaseParseError);
@@ -97,7 +91,6 @@ describe("phase enforcement", () => {
 			assertCapabilityPhase(scope, "request");
 			throw new Error("expected a phase violation");
 		} catch (error) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const violation = error as PhaseViolationError;
 			expect(violation.code).toBe("PHASE_VIOLATION");
 			expect(violation.capability).toBe("request");
@@ -113,7 +106,6 @@ describe("phase enforcement", () => {
 			assertCapabilityPhase(scope, "bindingClient");
 			throw new Error("expected a phase violation");
 		} catch (error) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const violation = error as PhaseViolationError;
 			expect(violation.code).toBe("PHASE_VIOLATION");
 			expect(violation.requiredPhase).toBe("init");

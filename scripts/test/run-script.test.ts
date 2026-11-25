@@ -27,7 +27,6 @@ const RECORD = `import { appendFileSync } from "node:fs";
 appendFileSync("args.jsonl", JSON.stringify(process.argv.slice(2)) + "\\n");
 `;
 
-/** A package with the launcher and the scripts a test asks for. */
 function checkout(scripts: Record<string, string>): string {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-run-script-"));
 	scratch.push(dir);
@@ -55,10 +54,6 @@ function received(dir: string): string[][] {
 		.map((line): string[] => JSON.parse(line));
 }
 
-// `node --run <script> -- <args>` splices the arguments into the shell
-// command and escapes `'` as `\'` inside single quotes, which sh does not
-// honour: `--base=main';touch PWNED;#` ran `touch PWNED`. The launcher hands
-// them to the script as positional parameters instead.
 describe("scripts/run-script.mts", () => {
 	it("passes every argument through as itself", () => {
 		const dir = checkout({ show: "node record.mjs" });
