@@ -303,8 +303,16 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 			expect(raced?.status).toBe("claimed");
 			expect(raced?.nodeId).toBe("relay-node-a");
 
+			const wrongNodeAnswer = await conn.answerJob({
+				jobId: GhRelayJobId.make("gh-job-1"),
+				nodeId: "relay-node-b",
+				chosenRunner: GhRunnerLabel.make("depot-ubuntu-24.04"),
+			});
+			expect(wrongNodeAnswer).toBeNull();
+
 			const answered = await conn.answerJob({
 				jobId: GhRelayJobId.make("gh-job-1"),
+				nodeId: "relay-node-a",
 				chosenRunner: GhRunnerLabel.make("depot-ubuntu-24.04"),
 			});
 			expect(answered?.status).toBe("answered");

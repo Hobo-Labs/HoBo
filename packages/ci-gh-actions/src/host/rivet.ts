@@ -130,6 +130,7 @@ export interface ClaimPickRunnerInput {
 
 export interface AnswerPickRunnerInput {
 	readonly jobId: GhRelayJobId;
+	readonly nodeId: string;
 	readonly chosenRunner: GhRunnerLabel;
 }
 
@@ -272,17 +273,35 @@ export function createGhPickRunnerRegistry(
 				if (existing.status === "answered" || existing.status === "rescued") {
 					return toRecord(existing);
 				}
+				if (existing.status !== "claimed") {
+					return null;
+				}
+				if (existing.node_id !== input.nodeId) {
+					return null;
+				}
 
 				await c.db.execute(
-					"UPDATE gh_pick_runner_jobs SET status = 'answered', chosen_runner = ? WHERE job_id = ?",
+					"UPDATE gh_pick_runner_jobs SET status = 'answered', chosen_runner = ? WHERE job_id = ? AND status = 'claimed' AND node_id = ?",
 					input.chosenRunner,
 					input.jobId,
+					input.nodeId,
 				);
-				const answered: GhPickRunnerJobRecord = {
-					...toRecord(existing),
-					status: "answered",
-					chosenRunner: input.chosenRunner,
-				};
+				const afterAnswer = decodePickRunnerRows(
+					await c.db.execute(
+						"SELECT job_id, repository, runs_on, status, node_id, chosen_runner, queued_at_ms, rescue_at_ms FROM gh_pick_runner_jobs WHERE job_id = ?",
+						input.jobId,
+					),
+				);
+				const row = afterAnswer[0];
+				if (
+					row === undefined ||
+					row.status !== "answered" ||
+					row.node_id !== input.nodeId ||
+					row.chosen_runner !== input.chosenRunner
+				) {
+					return null;
+				}
+				const answered = toRecord(row);
 				c.broadcast("relayUpdated", { action: "answered", job: answered });
 				return answered;
 			},
