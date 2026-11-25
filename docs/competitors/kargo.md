@@ -143,7 +143,7 @@ State labels follow the research contract.
 ## Better-together / integration posture
 
 - **Borrow** (done): Freight, Warehouse → Freight source, availability, soak, auto-promotion,
-  supersession and expiring approvals are taken into HoBo.CD ([ADR-0182](urn:hobo:decision:adr-0182)).
+  supersession and expiring approvals are taken into HoBo.CD ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182)).
 - **Benchmark** on promotion-graph presentation.
 - Coexistence: a HoBo.CD `publisher` reconciler can write to the same GitOps repositories an
   existing Kargo estate uses, but two promotion engines over one environment would fight; pick one
@@ -164,7 +164,7 @@ State labels follow the research contract.
 - [Working with Stages](https://main.docs.kargo.io/user-guide/how-to-guides/working-with-stages) — Stage graph, availability, soak, auto-promotion
 - [Verification](https://docs.kargo.io/user-guide/how-to-guides/verification) — analysis-based qualification
 - [v1.8.0 release notes](https://docs.kargo.io/release-notes/v1.8.0)
-- HoBo side: [continuous-delivery.md](urn:hobo:requirement:continuous-delivery)
+- HoBo side: [continuous-delivery.md](../design/continuous-delivery.md)
 
 Install base, pricing of the hosted offering and the full promotion-step catalog were not verified
 in this pass and are not asserted.

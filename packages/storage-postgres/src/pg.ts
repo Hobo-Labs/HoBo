@@ -2,12 +2,15 @@ import pg from "pg";
 import type { PostgresStoreConfig } from "./config.js";
 import { isJsonNumber, isJsonString } from "./json.js";
 
+/** One row as the driver returns it (int8 arrives as a decimal string). */
+/** One cell: this store selects only text, int2/4/8 (int8 as text) and boolean columns. */
 export type PgCell = string | number | boolean | null;
 
 export type PgRow = Readonly<Record<string, PgCell>>;
 
 export type PgParam = string | number | boolean | null | readonly string[];
 
+/** The slice of a pooled `pg` client this store uses. */
 export interface PgClientLike {
 	query(
 		text: string,
@@ -19,11 +22,13 @@ export interface PgClientLike {
 	release(destroy?: boolean | Error): void;
 }
 
+/** The slice of a `pg.Pool` this store uses; inject one to share a pool. */
 export interface PgPoolLike {
 	connect(): Promise<PgClientLike>;
 	end(): Promise<void>;
 }
 
+/** A dedicated (non-pooled) connection used for LISTEN. */
 export interface PgListenerLike {
 	connect(): Promise<void>;
 	query(text: string): Promise<void>;
@@ -43,11 +48,14 @@ function connectionSettings(config: PostgresStoreConfig) {
 	};
 }
 
+/** Pool with the store's bounded size and per-session timeouts. */
 export function createPgPool(config: PostgresStoreConfig): PgPoolLike {
 	const pool = new pg.Pool({
 		...connectionSettings(config),
 		max: config.poolSize,
 	});
+	// An idle client dropped by the server is reported on the next checkout,
+	// not as an unhandled 'error' event that would crash the process.
 	pool.on("error", () => {});
 	return pool;
 }
@@ -69,6 +77,7 @@ export function createPgListener(config: PostgresStoreConfig): PgListenerLike {
 	});
 }
 
+/** Parse an int8 column (decimal string or number) into a bigint. */
 export function int8(row: PgRow, column: string): bigint {
 	const value = row[column];
 	if (isJsonString(value) && /^-?(0|[1-9][0-9]*)$/u.test(value)) {

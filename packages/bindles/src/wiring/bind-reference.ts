@@ -30,10 +30,8 @@ export function data(
 	options: {
 		paradigm?: string;
 		allow?: readonly string[];
-		env?: Readonly<Record<string, string>>;
-		connectionString?: string;
+		/** Platform traits the planner reads (a schedule's `cadence`). */
 		annotations?: JsonObject;
-		endpoints?: JsonObject;
 	} = {},
 ): ResourceHandle {
 	assertResourceName(name, "data.name");
@@ -52,38 +50,15 @@ export function data(
 				port: "hobo:data",
 				paradigm,
 			};
-			if (paradigm !== "project") {
+			if (paradigm !== "project")
 				resource = {
 					...resource,
-					connectionString:
-						options.connectionString ?? `{${name}.connectionString}`,
+					connectionString: `{${name}.connectionString}`,
 				};
-			}
 			if (allow?.length) resource = { ...resource, allow: [...allow] };
-			if (options.env && Object.keys(options.env).length > 0) {
-				resource = { ...resource, env: { ...options.env } };
-			}
-			if (options.endpoints) {
-				resource = { ...resource, endpoints: { ...options.endpoints } };
-			}
 			if (options.annotations !== undefined)
 				resource = { ...resource, annotations: { ...options.annotations } };
 			return resource;
-		},
-	};
-}
-
-export function cache(
-	name: string,
-	options: Omit<NonNullable<Parameters<typeof data>[1]>, "paradigm"> = {},
-): ResourceHandle {
-	const handle = data(name, { ...options, paradigm: "cache" });
-	return {
-		...handle,
-		port: "hobo:cache",
-		clientType: "CacheClient",
-		manifest() {
-			return { ...handle.manifest(), port: "hobo:cache" };
 		},
 	};
 }
@@ -203,6 +178,7 @@ function componentHandle(
 			return found;
 		},
 		manifest() {
+			// ADR-0141: links + typed bindings only — never ConnectionStrings__* ambient grants.
 			const env = { ...this.env };
 			const links: Array<{ import: string; to: string }> = [];
 

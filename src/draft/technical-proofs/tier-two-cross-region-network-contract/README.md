@@ -4,7 +4,7 @@ Independent proof for HOBO-124.
 
 This package pins the M2 tier-two networking realization contract from:
 
-- `urn:hobo:requirement:security-networking`: same-provider cross-region connectivity uses provider backbone + private peering where available.
+- `docs/design/security-networking.md`: same-provider cross-region connectivity uses provider backbone + private peering where available.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: HOBO-89's `ConnectivityPlan` and tier enum.
 - `src/draft/technical-proofs/tier-one-private-network-contract`: HOBO-121's endpoint injection and bind-scoped reachability pattern.
 - `src/draft/technical-proofs/mtls-data-path-contract`: HOBO-117's SVID-keyed mTLS decision contract.
@@ -22,9 +22,11 @@ The proof covers:
 Scope boundary: this POC does not call a cloud provider, create real VPC/VNet peering, implement cross-provider tiers 3-5, build Junction inference, change Planner ranking/cost objectives, implement egress-cost feedback, or build provider IaC internals. It models the narrow tier-two realization seam those later slices consume.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Tier Two Cross Region Network Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

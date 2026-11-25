@@ -1,7 +1,4 @@
 import { createHash } from "node:crypto";
-import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
-import { DecisionEvidenceSchema } from "./_generated/policy_ir_pb.js";
-import type { Decision as WitDecisionV2 } from "./_generated/policy-engine-v2.js";
 import {
 	isJsonBoolean,
 	isJsonNumber,
@@ -41,6 +38,9 @@ export const EFFECTS = Object.freeze([
 	"require-approval",
 ]);
 
+// Mirrors the ADR-0146 classification vocabulary pinned in
+// data-models/compliance.cue — kept local because this package is
+// deliberately dependency-free.
 export const DATA_CLASSIFICATIONS = Object.freeze([
 	"public",
 	"internal",
@@ -263,105 +263,6 @@ export function fromWitDecisionRecord(recordInput, requestInput) {
 	);
 }
 
-export function toWitDecisionRecordV2<T, R>(
-	decisionInput: T,
-	requestInput?: R,
-): WitDecisionV2 {
-	const decision = parseDecision(decisionInput, requestInput);
-	const evidence: WitDecisionV2["evidence"] = {
-		policyIds: decision.evidence.policyIds,
-		inputHash: decision.evidence.inputHash,
-		engine: decision.evidence.engine,
-	};
-	if (decision.evidence.packId !== undefined) {
-		evidence.packId = decision.evidence.packId;
-		evidence.packVersion = decision.evidence.packVersion;
-	}
-	return {
-		schemaVersion: decision.schemaVersion,
-		effect: decision.effect,
-		reason: decision.reason,
-		violationsJson: JSON.stringify(decision.violations),
-		mutationsJson: JSON.stringify(decision.mutations),
-		approvalsJson: JSON.stringify(decision.approvals),
-		obligationsJson: JSON.stringify(decision.obligations),
-		evidence,
-	};
-}
-
-export function fromWitDecisionRecordV2(recordInput, requestInput) {
-	const record = expectObject(recordInput, "$");
-	const evidence = expectObject(record.evidence, "$.evidence");
-	return parseDecision(
-		{
-			schemaVersion: record.schemaVersion,
-			effect: record.effect,
-			reason: record.reason,
-			violations: parseWitJsonArray(record.violationsJson, "$.violationsJson"),
-			mutations: parseWitJsonArray(record.mutationsJson, "$.mutationsJson"),
-			approvals: parseWitJsonArray(record.approvalsJson, "$.approvalsJson"),
-			obligations: parseWitJsonArray(
-				record.obligationsJson,
-				"$.obligationsJson",
-			),
-			evidence: {
-				policyIds: evidence.policyIds,
-				inputHash: evidence.inputHash,
-				engine: evidence.engine,
-				packId: evidence.packId,
-				packVersion: evidence.packVersion,
-			},
-		},
-		requestInput,
-	);
-}
-
-function parseWitJsonArray(input: JsonValue | undefined, path: string) {
-	const text = expectNonEmptyString(input, path);
-	let value: JsonValue;
-	try {
-		value = JSON.parse(text);
-	} catch {
-		throw new PolicyIrValidationError(
-			"invalid-json",
-			"expected JSON array",
-			path,
-		);
-	}
-	return parseJsonArray(value, path);
-}
-
-export function encodePolicyEvidence(
-	input: ReturnType<typeof parseDecision>["evidence"],
-): Uint8Array {
-	const evidence = parseEvidence(input, undefined, "$.evidence");
-	return toBinary(
-		DecisionEvidenceSchema,
-		create(DecisionEvidenceSchema, {
-			policyIds: evidence.policyIds,
-			inputHash: evidence.inputHash,
-			engine: evidence.engine,
-			packId: evidence.packId,
-			packVersion: evidence.packVersion,
-		}),
-	);
-}
-
-export function decodePolicyEvidence(bytes: Uint8Array) {
-	const evidence = fromBinary(DecisionEvidenceSchema, bytes);
-	return parseEvidence(
-		{
-			policyIds: evidence.policyIds,
-			inputHash: evidence.inputHash,
-			engine: evidence.engine,
-			packId: evidence.packId,
-			packVersion: evidence.packVersion,
-		},
-		undefined,
-		"$.evidence",
-	);
-}
-
 export function hashDecisionRequest(requestInput) {
 	const source = expectObject(requestInput, "$");
 	const request = {
@@ -464,6 +365,9 @@ function parseEffect(input, path) {
 	return effect;
 }
 
+// context.dataClassifications is the one context key with pinned semantics
+// (ADR-0146): when present it must be an array drawn from the classification
+// vocabulary, so residency-aware packs can trust it without re-parsing.
 function assertDataClassifications(context, path) {
 	if (
 		context === null ||
@@ -493,28 +397,11 @@ function assertDataClassifications(context, path) {
 
 function parseEvidence(input, request, path) {
 	const evidence = expectObject(input, path);
-	if (
-		(evidence.packId === undefined) !==
-		(evidence.packVersion === undefined)
-	) {
-		throw new PolicyIrValidationError(
-			"incomplete-pack-evidence",
-			"pack id and version must be recorded together",
-			path,
-		);
-	}
-	const parsed: WitDecisionV2["evidence"] = {
+	const parsed = {
 		policyIds: parseStringArray(evidence.policyIds, `${path}.policyIds`),
 		inputHash: expectNonEmptyString(evidence.inputHash, `${path}.inputHash`),
 		engine: expectNonEmptyString(evidence.engine, `${path}.engine`),
 	};
-	if (evidence.packId !== undefined) {
-		parsed.packId = expectNonEmptyString(evidence.packId, `${path}.packId`);
-		parsed.packVersion = expectNonEmptyString(
-			evidence.packVersion,
-			`${path}.packVersion`,
-		);
-	}
 	if (!/^sha256:[a-f0-9]{64}$/.test(parsed.inputHash)) {
 		throw new PolicyIrValidationError(
 			"invalid-input-hash",
@@ -631,12 +518,7 @@ function canonicalJsonValue<T>(input: T, path = "$"): JsonValue {
 					`${path}.${key}`,
 				);
 			}
-			Object.defineProperty(output, key, {
-				value: canonicalJsonValue(input[key], `${path}.${key}`),
-				enumerable: true,
-				writable: true,
-				configurable: true,
-			});
+			output[key] = canonicalJsonValue(input[key], `${path}.${key}`);
 		}
 		return output;
 	}

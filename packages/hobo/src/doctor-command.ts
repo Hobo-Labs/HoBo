@@ -1,5 +1,4 @@
 import type { CommandModule } from "@hobo/cli";
-import type { EventStore } from "@hobo/core";
 import {
 	createContractAssertedDualFixtures,
 	dualVerifyClaims,
@@ -23,8 +22,6 @@ import { loadHoboProfile } from "./hobo-profile.js";
 import { isJsonString } from "./json.js";
 import { buildMessagingDoctorSection } from "./messaging-doctor.js";
 import type { OwnerSessionStatus } from "./owner-store-session.js";
-import { buildProjectionDoctorSection } from "./projection-diagnostics.js";
-import { quarantineDiagnostics } from "./quarantine-diagnostics.js";
 
 interface StationDoctorReport {
 	present: boolean;
@@ -41,10 +38,10 @@ export interface DoctorCommandDeps {
 	// Explicit environment snapshot for tests or an embedding host. Without one,
 	// use the same filtered process environment as the composed deploy path.
 	readonly env?: Record<string, string | undefined>;
-	readonly store?: EventStore;
 	readonly ownerSession?: (cwd: string) => OwnerSessionStatus;
 }
 
+// Turn the deploy-target description into operator-facing remediation lines.
 // Plain ambient tokens are ignored by the composed deploy path; recommend an
 // approved credential source instead of claiming an environment token works.
 function remediationFor(target: DeployTargetDescription): string[] {
@@ -65,6 +62,12 @@ function remediationFor(target: DeployTargetDescription): string[] {
 	});
 }
 
+// `hobo doctor` — report the deploy target the current environment selects and,
+// when on the in-memory fallback, exactly what to set to go live. It calls the
+// pure `describeDeployTarget` preflight (presence-only credential inspection),
+// so it never reads a secret value and is safe to run anywhere. This makes the
+// composed binary self-describing: the same precedence `hobo up` uses is
+// surfaced as a diagnostic before anything is deployed.
 export function createDoctorCommand(
 	deps: DoctorCommandDeps = {},
 ): CommandModule {
@@ -140,6 +143,8 @@ export function createDoctorCommand(
 				);
 			}
 
+			// Continuous identity migration dual fixtures (ADR-0070 extension) —
+			// offline dual-consistency oracle; fidelity remains simulated without real IdPs.
 			const dual = createContractAssertedDualFixtures({
 				tenant:
 					(isJsonString(env.HOBO_TENANT) && env.HOBO_TENANT) ||
@@ -179,6 +184,7 @@ export function createDoctorCommand(
 				);
 			}
 
+			// Trails (continuous migration plane) — identity hands-off + local dual fixtures.
 			const trailTenant =
 				(isJsonString(env.HOBO_TENANT) && env.HOBO_TENANT) ||
 				profile?.session?.tenant ||
@@ -219,49 +225,13 @@ export function createDoctorCommand(
 				);
 			}
 
+			// Binding delivery + 12-factor integrity (ADR-0141/0142).
 			const bindingDelivery = buildBindingDeliveryDoctorSection(env);
 			remediation.push(...bindingDelivery.remediation);
 
+			// Messaging plane readiness (ADR-0138): Kafka + optional Dapr.
 			const messaging = buildMessagingDoctorSection(env);
 			remediation.push(...messaging.remediation);
-
-			const projectionSection = await buildProjectionDoctorSection(
-				deps.store,
-				trailTenant,
-				emitProgress,
-			);
-			const projections = projectionSection.diagnostic;
-			remediation.push(...projectionSection.remediation);
-
-			const quarantine = await quarantineDiagnostics(deps.store, trailTenant);
-			if (quarantine.available) {
-				if (
-					quarantine.report.complete &&
-					quarantine.report.findings.length === 0
-				) {
-					emitProgress("No quarantined events found.");
-				}
-				for (const finding of quarantine.report.findings) {
-					emitProgress(
-						`quarantine: ${finding.sourceStreamId}#${finding.offendingSeq} ${finding.foldKind} ${finding.fold} — ${finding.reason}`,
-					);
-				}
-				if (quarantine.report.findings.length > 0) {
-					remediation.push(
-						"Investigate quarantined events and choose an explicit reprocess policy.",
-					);
-				}
-				if (!quarantine.report.complete) {
-					remediation.push(
-						`Continue quarantine inspection with hobo inspect quarantines ${quarantine.report.nextPosition}.`,
-					);
-				}
-			} else if (deps.store) {
-				emitProgress(`Quarantine report unavailable: ${quarantine.reason}`);
-				remediation.push(
-					"Inspect the quarantine report failure and rerun hobo doctor.",
-				);
-			}
 
 			return {
 				ok: true,
@@ -279,12 +249,6 @@ export function createDoctorCommand(
 					trails: trailsReport,
 					bindingDelivery: bindingDelivery.report,
 					messaging: messaging.report,
-					projections: projections.available
-						? { available: true, report: projections.json }
-						: projections,
-					quarantine: quarantine.available
-						? { available: true, report: quarantine.json }
-						: quarantine,
 					ownerStoreSession,
 				},
 			};

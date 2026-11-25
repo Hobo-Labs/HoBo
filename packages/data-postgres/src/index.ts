@@ -161,6 +161,7 @@ export {
 	type PostgresDataErrorOptions,
 } from "./errors.js";
 export {
+	type AssignmentColumns,
 	readAssignmentRows,
 	sqlAssignmentRegister,
 	sqlAssignmentReplica,
@@ -173,21 +174,21 @@ export {
 	type PostgresImmutableJournalOptions,
 } from "./fleet/immutable-journal.js";
 export {
-	FLEET_LOCK_CLASS,
-	type FleetLayout,
-	type FleetLayoutInput,
+	FLEET_LOCK_CLASS as POSTGRES_FLEET_LOCK_CLASS,
+	type FleetLayout as PostgresFleetLayout,
+	type FleetLayoutInput as PostgresFleetLayoutInput,
 	isReplicatedTable,
 	parseFleetLayout,
 } from "./fleet/layout.js";
 export {
-	FLEET_TRANSITION_STEPS,
-	type FleetEvent,
-	type FleetReconcileOptions,
-	type FleetReconcileReport,
-	type FleetReplicationResult,
-	type FleetSchemaRole,
-	type FleetTransition,
-	type FleetTransitionStep,
+	FLEET_TRANSITION_STEPS as POSTGRES_FLEET_TRANSITION_STEPS,
+	type FleetEvent as PostgresFleetEvent,
+	type FleetReconcileOptions as PostgresFleetReconcileOptions,
+	type FleetReconcileReport as PostgresFleetReconcileReport,
+	type FleetReplicationResult as PostgresFleetReplicationResult,
+	type FleetSchemaRole as PostgresFleetSchemaRole,
+	type FleetTransition as PostgresFleetTransition,
+	type FleetTransitionStep as PostgresFleetTransitionStep,
 	reconcileFleet,
 } from "./fleet/reconcile.js";
 export {
@@ -212,8 +213,8 @@ export {
 } from "./fleet/replication.js";
 export {
 	classifyFleetFailure,
-	type FleetBackend,
 	inTransaction,
+	type PostgresBackend,
 	parseFleetIdentifier,
 	quoteIdentifier,
 	type SqlExecutor,
@@ -224,11 +225,16 @@ export {
 	sqlState,
 } from "./fleet/sql.js";
 export {
+	addUsage,
+	type BillingPeriod,
+	billingPeriod,
+	createUsageMeter,
+	FLEET_USAGE_UNITS as POSTGRES_FLEET_USAGE_UNITS,
+	type FleetUsageUnit as PostgresFleetUsageUnit,
 	measureStorageBytes,
 	type PostgresFleetUsage,
-	type PostgresFleetUsageObservation,
 	readUsage,
-	recordUsage,
+	type UsageMeter,
 } from "./fleet/usage.js";
 export {
 	assertArgvSafe,

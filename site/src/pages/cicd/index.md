@@ -29,4 +29,4 @@ Both are placed the same way: ranked by the Dispatcher, admitted by policy.
 
 ## Related
 
-[HoBo CI](/HoBo/ci/) · [Control plane](/HoBo/system/control-plane/) · [Trails](/HoBo/primitives/trails/) · [Harness reference](/HoBo/reference/harness/) · [Operations](/HoBo/operations/)
+[HoBo CI](/HoBo/ci/) · [Control plane](/HoBo/architecture/control-plane/) · [Trails](/HoBo/primitives/trails/) · [Harness reference](/HoBo/reference/harness/) · [Operations](/HoBo/operations/)

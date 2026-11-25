@@ -75,11 +75,15 @@ export interface QueuedRepairClaims {
 	>;
 }
 
+/** Revisit still-queued jobs even after GitHub's delivery history has expired.
+ * Pagination is not a point-in-time snapshot: repeated cycles provide eventual
+ * recovery, not a guarantee for jobs that stop being queued during a scan. */
 export function createQueuedJobRepair(options: {
 	store: { configuration(): Promise<ConfigurationState | undefined> };
 	github: GithubTransport;
 	claims: QueuedRepairClaims;
 	relay: () => Promise<Pick<HostedRelay, "processWebhook">>;
+	/** Whether this deployment has recent completed scanner evidence. */
 	idleComplete?: () => Promise<boolean>;
 }) {
 	return async function repair(): Promise<{
@@ -207,6 +211,7 @@ export function createQueuedJobRepair(options: {
 			await scan.checkpoint(cursor, 60000);
 			return { more: true, truncated: false, failed: false };
 		} catch {
+			// A broken installation backs off while other repository/status cursors advance.
 			await scan.checkpoint(cursor, 60000);
 			return { more: await scan.more(), truncated: false, failed: true };
 		} finally {

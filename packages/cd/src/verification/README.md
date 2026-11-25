@@ -4,21 +4,6 @@ Deterministic, fail-closed verification of a Freight on one Camp (D9, invariants
 engine records every sample it decides from, and the verdict is a pure
 function of that record, so replay reproduces it exactly.
 
-Prometheus range results carry evaluation times and stable series identifiers.
-Sources that return only values record the end of the requested window as the
-observation time.
-
-An SLO gate using Prometheus must query recording rules directly, optionally
-with label matchers, for example `slo_burn{service="api"}`. Create recording
-rules for derived metrics before using them in the gate. The engine queries
-`timestamp()` for the same selector immediately before and after each metric
-query; differing source times do not count as evidence.
-
-The gate counts a new observation only when both source times advance. Missing,
-stale, or future source samples keep the rollout waiting; repeated samples do
-not count again. Source-time queries use the same endpoint, labels, and cohort
-as their corresponding metrics.
-
 | File | Role |
 |---|---|
 | `spec.ts` | `parseVerificationSpec` / `parseVerificationSpecJson`: applies `CD_DEFAULTS`, checks the constraints in `data-models/verification.cue`, returns the `ParsedVerificationSpec` brand. |
@@ -44,7 +29,6 @@ as their corresponding metrics.
   they FAIL with `verification-cohort-unavailable`.
 - **No data → FAIL.** An empty window fails at window end. With
   `fail_on_no_data=false` it is INCONCLUSIVE — still never a PASS.
-  An SLO gate instead waits for fresh, consecutive source observations.
 - **Deadline → INCONCLUSIVE.** A check with some but fewer than
   `required_observations` samples keeps the verification running until
   `progress_deadline_ms`, then completes INCONCLUSIVE with
@@ -70,6 +54,27 @@ verification for the same inputs is running. The engine's memory is a cache:
 the first tick after a restart rediscovers every Started stream without a
 Completed event. Concurrent ticks are serialized by the stream's expected-seq
 CAS; the loser re-reads and resumes.
+
+## Architecture (AGENTS.md rules)
+
+- **Parse, don't validate.** Specs cross the boundary once, through
+  `parseVerificationSpec`; everything after it takes the derived type
+  `ParsedVerificationSpec` (a brand of the generated `VerificationSpecRecord`),
+  so no engine path re-checks or sees an unparsed spec. Records are the
+  generated protobuf types from `cd_pb.ts`; no proto shape is hand-declared.
+- **Commands and events.** Commands are `start` and `tick`; events are
+  `verification.Started`, `rollout.EvidenceObserved` and
+  `verification.Completed`, appended to the event store (`DurableEventStore`)
+  on one stream per verification.
+- **Actor.** Each `cd-verification-<id>` stream is a single-writer actor: every
+  append carries the expected sequence, so two engines ticking the same
+  verification cannot both complete it.
+- **Projection and read store.** `foldVerification` is the projection; `get`
+  reads it from the stream, and the in-memory map of running verifications is
+  only a cache over it. There is no separate read store and no snapshot: a
+  stream is bounded by its window (one event per sample plus two), so a fold
+  from zero is the snapshot policy. Replay (`replay.ts`) is the same fold plus
+  the same verdict function.
 
 ## Metrics (`TelemetrySink`, optional)
 
@@ -108,12 +113,6 @@ PACT (`test/verification/pacts/*.pact.json`, verified by
    data on the next tick.
 2. No failures → too few samples: lower the source step, widen `window_ms`,
    or lower `required_observations`.
-
-**Symptom: a rollout remains at `rollout-slo-evidence-pending`.** Check that
-both SLO recording-rule selectors and their `timestamp()` queries return one
-matching series for the selected cohort. Confirm both source times advance and
-are within `max_sample_age_ms`; the range query's evaluation time alone does
-not establish freshness. The rollout resumes when sufficient evidence arrives.
 
 **Symptom: a canary FAILs with `verification-canary-worse` and the operator
 believes it is fine.** The test is two-sided at the declared sensitivity and

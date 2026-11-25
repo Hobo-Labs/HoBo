@@ -13,6 +13,7 @@ import {
 } from "@hobo/core";
 import { cloneAsJson, type JsonObject } from "../json.js";
 
+/** Minimal driver-program shape emitted for Lakebed deploy-time binding. */
 export interface LakebedTrafficDriverProgram {
 	readonly apiVersion: "hobo.driver-program/v1";
 	readonly kind: "driver-program";
@@ -30,8 +31,13 @@ export interface LakebedTrafficDriverProgram {
 }
 
 export interface LakebedTrafficDeployOptions {
+	/** Capsule name for the driver program (default derived from plan service). */
 	readonly capsule?: string;
 	readonly deploymentId?: string;
+	/**
+	 * Apply a realized `hobo.driver-program/v1` with a `lakebed:traffic-route`
+	 * resource. Injected so `@hobo/connectivity` stays free of provider package deps.
+	 */
 	readonly applyDriverProgram?: (
 		program: LakebedTrafficDriverProgram,
 	) => Promise<{ readonly ok: boolean; readonly notes?: readonly string[] }>;
@@ -40,16 +46,22 @@ export interface LakebedTrafficDeployOptions {
 export interface LakebedTrafficRouting extends TrafficRoutingPort {
 	readonly provider: "lakebed";
 	readonly revoke: NonNullable<TrafficRoutingPort["revoke"]>;
+	/**
+	 * Deterministic weighted backend selection for an applied plan (in-process
+	 * production router for the closed Lakebed Capsule runtime).
+	 */
 	select(
 		planId: RoutingPlanId,
 		routingKey: string,
 		ruleIndex?: number,
 	): BackendRef | null;
+	/** Last deploy-time driver program emitted for a plan, when deploy is configured. */
 	driverProgram(planId: RoutingPlanId): LakebedTrafficDriverProgram | null;
 }
 
 export interface LakebedTrafficRoutingOptions {
 	readonly metering?: MeteringBus;
+	/** Optional deploy-time domain/capsule binding layer. */
 	readonly deploy?: LakebedTrafficDeployOptions;
 }
 
@@ -60,6 +72,14 @@ interface AppliedPlan {
 	revoked: boolean;
 }
 
+/**
+ * Production Lakebed TrafficRouting adapter (dual layer).
+ *
+ * 1. In-process weighted router over capsule endpoint URLs — full realization
+ *    for static multi-backend plans (Lakebed has no public multi-LB API).
+ * 2. Optional deploy-time `lakebed:traffic-route` driver program binding when
+ *    `deploy.applyDriverProgram` is configured.
+ */
 export function createLakebedTrafficRouting(
 	options: LakebedTrafficRoutingOptions = {},
 ): LakebedTrafficRouting {
@@ -217,6 +237,7 @@ export function createLakebedTrafficRouting(
 	};
 }
 
+/** Build the deploy-time traffic-route driver program (shared shape with provider-lakebed). */
 export function buildTrafficRouteProgram(
 	plan: RoutingPlan,
 	deploy: LakebedTrafficDeployOptions = {},
@@ -357,5 +378,7 @@ async function meter(
 				outcome,
 			}),
 		);
-	} catch {}
+	} catch {
+		// Applied state remains authoritative when observation delivery fails.
+	}
 }

@@ -34,16 +34,16 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     ADMIN_CONSOLE_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:developer-experience#plan-07",
-      "urn:hobo:requirement:organization-workspace-model",
-      "urn:hobo:requirement:settings-project-lifecycle",
-      "urn:hobo:requirement:member-rbac-administration",
-      "urn:hobo:requirement:tenant-isolation-quotas",
-      "urn:hobo:requirement:support-sla-channels",
-      "urn:hobo:requirement:security-networking#plan-50",
-      "urn:hobo:decision:adr-0074",
-      "urn:hobo:decision:adr-0077",
-      "urn:hobo:decision:adr-0080",
+      "docs/design/developer-experience.md#plan-07",
+      "docs/design/organization-workspace-model.md",
+      "docs/design/settings-project-lifecycle.md",
+      "docs/design/member-rbac-administration.md",
+      "docs/design/tenant-isolation-quotas.md",
+      "docs/design/support-sla-channels.md",
+      "docs/design/security-networking.md#plan-50",
+      "docs/design/adr/02-identity-security.md#adr-0074",
+      "docs/design/adr/02-identity-security.md#adr-0077",
+      "docs/design/adr/02-identity-security.md#adr-0080",
     ],
   );
 });

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import { tmpdir, platform, arch } from "node:os";
+import { homedir, platform, arch } from "node:os";
 import { basename, join, resolve } from "node:path";
 import type { CueVetResult, CueViolation, DataModelPackage } from "./types.js";
 import { isJsonNumber, isJsonString } from "../../../src/json.js";
@@ -208,7 +208,7 @@ export async function vetReportEnvelope(
 }
 
 export async function withTempDirectory<T>(prefix: string, run: (dir: string) => Promise<T>): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), prefix));
+  const dir = await mkdtemp(join(homedir(), prefix));
   try {
     return await run(dir);
   } finally {

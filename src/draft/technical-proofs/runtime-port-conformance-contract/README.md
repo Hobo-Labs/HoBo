@@ -38,9 +38,11 @@ npm.cmd --prefix src\draft\technical-proofs\runtime-port-conformance-contract te
 Promoted to `packages/conformance/src/suites/runtime-port/` (production). Draft proof retained for historical evidence.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Runtime Port Conformance Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

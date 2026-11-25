@@ -1,10 +1,13 @@
+/**
+ * can-deploy dimension for secretless-first config schemas (ADR-0027).
+ * Fail-closed on over-privileged ranking, malformed static hatch, plaintext defaults.
+ */
 import {
 	type ConfigSchema,
 	SECRET_SOURCE_RANKS,
 	type SecretSourceRank,
 	sourceRankIndex,
 } from "./config-schema.js";
-import { sensitivityForField } from "./config-sensitivity.js";
 
 function assertTtl(ttl: string): void {
 	const match = /^(\d+)d$/.exec(ttl);
@@ -34,12 +37,15 @@ export type SecretlessConfigGateResult = Readonly<{
 	dimension: "secretless-config";
 	reasons: readonly ConfigGateReason[];
 	summary: string;
+	/** Ranking ceiling applied. */
 	allowedSources: readonly SecretSourceRank[];
 }>;
 
 export type SecretlessConfigGateInput = Readonly<{
 	schema: ConfigSchema;
+	/** Production-like environments forbid static-escape by default. */
 	environment?: "production" | "staging" | "dev" | "test";
+	/** Explicit policy deny-ceiling (overrides environment default). */
 	allowedSources?: readonly SecretSourceRank[];
 	forbidStaticEscape?: boolean;
 }>;
@@ -57,6 +63,9 @@ const DEV_DEFAULT: readonly SecretSourceRank[] = Object.freeze([
 	"static-escape",
 ]);
 
+/**
+ * Validate a Bindle config schema for can-deploy / architecture gates.
+ */
 export function evaluateSecretlessConfigGate(
 	input: SecretlessConfigGateInput,
 ): SecretlessConfigGateResult {
@@ -96,16 +105,14 @@ export function evaluateSecretlessConfigGate(
 	}
 
 	for (const [name, field] of Object.entries(input.schema.fields)) {
-		if (
-			sensitivityForField(field) === "sensitive" &&
-			field.defaultValue !== undefined
-		) {
+		if (field.sensitive && field.defaultValue !== undefined) {
 			reasons.push({
 				code: "sensitive-default",
 				field: name,
 				message: `sensitive field ${name} has a default value (forbidden)`,
 			});
 		}
+		// SAFETY: assertion required at this I/O or test boundary.
 		if (!(SECRET_SOURCE_RANKS as readonly string[]).includes(field.source)) {
 			reasons.push({
 				code: "unknown-source",
@@ -139,10 +146,8 @@ export function evaluateSecretlessConfigGate(
 				});
 			}
 		}
-		if (
-			sensitivityForField(field) === "sensitive" &&
-			field.source === "camp-value"
-		) {
+		// Ranking hygiene: sensitive should not prefer camp-value.
+		if (field.sensitive && field.source === "camp-value") {
 			reasons.push({
 				code: "unknown-source",
 				field: name,

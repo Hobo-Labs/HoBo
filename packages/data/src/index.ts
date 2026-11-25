@@ -1,16 +1,4 @@
 export {
-	type ProjectionReplicaObservation,
-	ProjectionReplicaObservationSchema,
-	type ProjectionReplicaReport,
-	ProjectionReplicaReportSchema,
-	type QuarantineFinding,
-	QuarantineFindingSchema,
-	type QuarantineReport,
-	QuarantineReportSchema,
-	type QuarantineReprocessFinding,
-	QuarantineReprocessFindingSchema,
-} from "./_generated/data_pb.js";
-export {
 	type ActorHost,
 	type AggregateLease,
 	createInMemoryActorHost,
@@ -31,14 +19,6 @@ export {
 	type EventEmitOptions,
 } from "./aggregate.js";
 export {
-	type CrossCampProjectionOptions,
-	type CrossCampProjectionSubscription,
-	type CrossCampProjectionView,
-	type CrossCampReplicationResult,
-	createCrossCampProjection,
-	type ProjectionReadEvidence,
-} from "./cross-camp-projection.js";
-export {
 	type ActorLeaseGrant,
 	type ActorLeaseJournal,
 	createDurableActorHost,
@@ -46,13 +26,10 @@ export {
 } from "./durable-actor-host.js";
 export {
 	AggregateStaleFenceError,
-	DurableEffectUnavailableError,
 	type ErrorSignal,
 	isOptimisticConflict,
 	isStaleFenceError,
-	ProjectionFoldError,
 	ProjectionWriteError,
-	UnpersistedQuarantineError,
 } from "./errors.js";
 export {
 	createActorActivatedEvent,
@@ -66,20 +43,11 @@ export {
 } from "./events.js";
 export {
 	type Evolve,
-	type FoldFailureClassification,
-	type FoldFailureClassifier,
 	type FoldOutcome,
 	type FoldSpec,
 	foldEvents,
 } from "./fold.js";
 export type { Inspectable, JsonObject, JsonValue } from "./json.js";
-export {
-	createPaginatedEventView,
-	type PaginatedPage,
-	type PaginatedRow,
-	type PaginatedSubscription,
-	type PaginatedViewOptions,
-} from "./paginated-view.js";
 export {
 	PROJECTION_INTERFACE,
 	PROJECTION_PORT,
@@ -89,25 +57,12 @@ export {
 	defineProjection,
 	type Projection,
 	type ProjectionDefinition,
-	type ProjectionQuarantineOptions,
-	type ProjectionQuarantineRecord,
-	type ProjectionRowField,
-	type ProjectionRowSchema,
 	type ProjectionSnapshot,
-	type QuarantinableProjection,
 } from "./projection.js";
 export {
-	createProjectionRebuild,
-	type ProjectionRebuildOptions,
-	type ProjectionRebuildShardResult,
-} from "./projection-rebuild.js";
-export {
-	type ProjectionReplicaReportOptions,
-	readProjectionReplicaReport,
-} from "./projection-replica-report.js";
-export {
-	type QuarantineReportOptions,
-	readQuarantineReport,
-} from "./quarantine-report.js";
+	createUpcasterRegistry,
+	type Upcaster,
+	type UpcasterRegistry,
+} from "./upcaster.js";
 
 export const HOBO_DATA_PACKAGE = "@hobo/data";

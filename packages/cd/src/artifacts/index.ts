@@ -1,3 +1,5 @@
+// "./artifacts" (WP3): content-addressed artifact store and registry-digest
+// verifier. Factories match the frozen `CdFactories` signatures in ports.ts.
 
 export { parseOciReference, parsePurl } from "./coordinates.js";
 export { parseDigest, sha256Digest } from "./digest.js";

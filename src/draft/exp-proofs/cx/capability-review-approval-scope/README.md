@@ -8,9 +8,9 @@ personas, scope-in, scope-out, service/UX/security/support boundaries, authorita
 owning initiative dependencies, review states, M1 evidence, and follow-up gate.
 
 The durable design record lives in
-[`urn:hobo:requirement:capability-review-approval`](urn:hobo:requirement:capability-review-approval).
+[`docs/design/capability-review-approval.md`](../../../../../docs/design/capability-review-approval.md).
 Branch evidence is summarized in
-[`urn:hobo:proof:hobo-423-capability-review-approval`](urn:hobo:proof:hobo-423-capability-review-approval).
+[`docs/design/proofs/hobo-423-capability-review-approval`](../../../../../docs/design/proofs/hobo-423-capability-review-approval/README.md).
 
 ## Contract Surface
 
@@ -34,9 +34,11 @@ npm.cmd --prefix src\draft\exp-proofs\cx\capability-review-approval-scope test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Capability Review Approval Scope.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

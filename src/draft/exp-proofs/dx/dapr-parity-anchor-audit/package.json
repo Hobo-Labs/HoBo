@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-dapr-parity-anchor-audit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -74,7 +74,7 @@ detection are node-attach mechanics rather than panel features.
 | `identity-secrets` | Pairing, tunnels and certificate management |
 
 ServerKit is captured for its **node-attach and Relay reference value**, not as a rival for HoBo's
-application model — a framing [`lineage.md`](urn:hobo:requirement:lineage) already records.
+application model — a framing [`lineage.md`](../design/lineage.md) already records.
 
 ## Feature surface
 
@@ -206,56 +206,56 @@ Gaps relative to HoBo's scope:
 
 | ServerKit surface | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| App runtimes (PHP-FPM/Gunicorn/PM2/Docker) behind Nginx | Workload Profiles: wasm **Component host** with OCI-container fallback | further | [Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
-| Build Packs (zero-Dockerfile → generated Dockerfile+compose) | Build/image providers under the control plane (Dagger/Packer-class adapters) | parity | [Plan 04](urn:hobo:requirement:control-plane#plan-04) |
-| Marketplace (60+ one-click templates) | Registry catalogs + marketplace UX (trust tiers, installability) | parity/further | [platform-engineering](urn:hobo:requirement:platform-engineering#plan-25), [marketplace-ux](urn:hobo:requirement:marketplace-ux) |
-| Git CD with webhooks | GitOps Operator Agent + Relay/pipeline authoring | parity | [Plan 25](urn:hobo:requirement:platform-engineering#plan-25), [Plan 40](urn:hobo:requirement:operators-sre#plan-40) |
-| PR preview environments (ephemeral) | Preview **Camps** / ephemeral environment type | parity/further | [authoring-resources-wiring](urn:hobo:requirement:authoring-resources-wiring#plan-21), [environment-lifecycle](urn:hobo:requirement:environment-lifecycle) |
-| Prod/staging/dev pipeline with code+DB promotion | Environment groups promoted/rolled back as a saga; **Deployment Set**/**Delta** | further | [platform-engineering](urn:hobo:requirement:platform-engineering#plan-25), [data-plane](urn:hobo:requirement:data-plane#plan-32) |
-| Config snapshots (immutable, secret-masked, diff+restore) | Immutable **Deployment Set** + mutable **Delta** before promotion | parity | [platform-engineering](urn:hobo:requirement:platform-engineering#plan-25) |
-| Deterministic single app health | Health/status projection folded from the event log | parity | [reliability-observability-cost](urn:hobo:requirement:reliability-observability-cost#plan-05) |
-| Workflow builder (visual automation) | Durable `workflow`/`step` SDK ergonomics per Camp | further | [Plan 02](urn:hobo:requirement:sdk-api#plan-02) |
+| App runtimes (PHP-FPM/Gunicorn/PM2/Docker) behind Nginx | Workload Profiles: wasm **Component host** with OCI-container fallback | further | [Plan 20](../design/wasm-runtime-wit.md#plan-20) |
+| Build Packs (zero-Dockerfile → generated Dockerfile+compose) | Build/image providers under the control plane (Dagger/Packer-class adapters) | parity | [Plan 04](../design/control-plane.md#plan-04) |
+| Marketplace (60+ one-click templates) | Registry catalogs + marketplace UX (trust tiers, installability) | parity/further | [platform-engineering](../design/platform-engineering.md#plan-25), [marketplace-ux](../design/marketplace-ux.md) |
+| Git CD with webhooks | GitOps Operator Agent + Relay/pipeline authoring | parity | [Plan 25](../design/platform-engineering.md#plan-25), [Plan 40](../design/operators-sre.md#plan-40) |
+| PR preview environments (ephemeral) | Preview **Camps** / ephemeral environment type | parity/further | [authoring-resources-wiring](../design/authoring-resources-wiring.md#plan-21), [environment-lifecycle](../design/environment-lifecycle.md) |
+| Prod/staging/dev pipeline with code+DB promotion | Environment groups promoted/rolled back as a saga; **Deployment Set**/**Delta** | further | [platform-engineering](../design/platform-engineering.md#plan-25), [data-plane](../design/data-plane.md#plan-32) |
+| Config snapshots (immutable, secret-masked, diff+restore) | Immutable **Deployment Set** + mutable **Delta** before promotion | parity | [platform-engineering](../design/platform-engineering.md#plan-25) |
+| Deterministic single app health | Health/status projection folded from the event log | parity | [reliability-observability-cost](../design/reliability-observability-cost.md#plan-05) |
+| Workflow builder (visual automation) | Durable `workflow`/`step` SDK ergonomics per Camp | further | [Plan 02](../design/sdk-api.md#plan-02) |
 
 ### Infrastructure, data & networking
 
 | ServerKit surface | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Nginx vhosts + domains | `domain`/`gateway` ports + route-level security | parity | [route-level security](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
-| DNS zones + Cloudflare/Route53/DO providers | DNS/domain capability providers (ports & adapters) | parity | [Plan 04](urn:hobo:requirement:control-plane#plan-04) |
-| Let's Encrypt SSL auto-renew | TLS/cert provisioning as a capability provider | parity | [Plan 04](urn:hobo:requirement:control-plane#plan-04) |
-| MySQL/MariaDB/PostgreSQL + SQL console | `sql`/data-model/data-migration ports + data plane | parity/further | [authoring-resources-wiring](urn:hobo:requirement:authoring-resources-wiring#plan-21), [data-plane](urn:hobo:requirement:data-plane#plan-32) |
-| S3/B2/local backups + restore | Backup/restore paths with RPO/RTO drill evidence | parity | [backup-restore](urn:hobo:requirement:backup-restore) |
-| Connections Hub (encrypted credential store) | Secretless-first **Config and secrets** via `ctx.config` + Meta-cloud Broker | further | [authoring-resources-wiring](urn:hobo:requirement:authoring-resources-wiring#plan-21), [meta-cloud-broker](urn:hobo:requirement:meta-cloud-broker) |
-| Cloud provisioning (DO/Hetzner/Vultr/Linode VMs) | Cloud provider adapters realizing Resource Definitions via Matching | further | [control-plane](urn:hobo:requirement:control-plane#plan-04), [Plan 25](urn:hobo:requirement:platform-engineering#plan-25) |
-| Postfix/Dovecot mail, DKIM/SPF/DMARC, Roundcube | `notify` port covers transactional messaging; full mail *hosting* is not HoBo scope | adjacent/out-of-scope | [authoring-resources-wiring](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
-| Cron, file manager, FTP server | Scheduled triggers; host filesystem/FTP is host-level, not HoBo scope | parity/out-of-scope | [authoring-resources-wiring](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Nginx vhosts + domains | `domain`/`gateway` ports + route-level security | parity | [route-level security](../design/authoring-resources-wiring.md#plan-21) |
+| DNS zones + Cloudflare/Route53/DO providers | DNS/domain capability providers (ports & adapters) | parity | [Plan 04](../design/control-plane.md#plan-04) |
+| Let's Encrypt SSL auto-renew | TLS/cert provisioning as a capability provider | parity | [Plan 04](../design/control-plane.md#plan-04) |
+| MySQL/MariaDB/PostgreSQL + SQL console | `sql`/data-model/data-migration ports + data plane | parity/further | [authoring-resources-wiring](../design/authoring-resources-wiring.md#plan-21), [data-plane](../design/data-plane.md#plan-32) |
+| S3/B2/local backups + restore | Backup/restore paths with RPO/RTO drill evidence | parity | [backup-restore](../design/backup-restore.md) |
+| Connections Hub (encrypted credential store) | Secretless-first **Config and secrets** via `ctx.config` + Meta-cloud Broker | further | [authoring-resources-wiring](../design/authoring-resources-wiring.md#plan-21), [meta-cloud-broker](../design/meta-cloud-broker.md) |
+| Cloud provisioning (DO/Hetzner/Vultr/Linode VMs) | Cloud provider adapters realizing Resource Definitions via Matching | further | [control-plane](../design/control-plane.md#plan-04), [Plan 25](../design/platform-engineering.md#plan-25) |
+| Postfix/Dovecot mail, DKIM/SPF/DMARC, Roundcube | `notify` port covers transactional messaging; full mail *hosting* is not HoBo scope | adjacent/out-of-scope | [authoring-resources-wiring](../design/authoring-resources-wiring.md#plan-21) |
+| Cron, file manager, FTP server | Scheduled triggers; host filesystem/FTP is host-level, not HoBo scope | parity/out-of-scope | [authoring-resources-wiring](../design/authoring-resources-wiring.md#plan-21) |
 
 ### Multi-server fabric & operations
 
 | ServerKit surface | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Go agent per host (HMAC/AES-GCM, WS + poll) | Yard→Camp/node control fabric; **SVID** keyless workload identity | further | [control-plane](urn:hobo:requirement:control-plane#plan-04), [ai-native-agent-auth](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
-| Agent enrollment (short-code pairing / token) | Self-host bootstrap + node attach; signed-bundle trust | parity/gap-pressure | [bootstrap-installer](urn:hobo:requirement:bootstrap-installer), [control-plane](urn:hobo:requirement:control-plane#plan-04) |
-| Remote service tunnels (WireGuard) | **Relay** — outbound-only proxy for a hosted Yard into a private network | parity | [control-plane](urn:hobo:requirement:control-plane#plan-04) |
-| Remote Docker over the agent | Executor applying workloads with scoped short-lived credentials | parity/further | [wasm-runtime-wit](urn:hobo:requirement:wasm-runtime-wit#plan-20), [control-plane](urn:hobo:requirement:control-plane#plan-04) |
-| Server templates + drift detection + auto-remediation | **Resource Packs** + drift reconciliation + ResourceActor reconcile loop | parity/further | [platform-engineering](urn:hobo:requirement:platform-engineering#plan-25), [drift-reconciliation](urn:hobo:requirement:drift-reconciliation) |
-| Fleet monitor (heatmaps, anomaly, capacity forecast) | Observability + FinOps advisory (anomaly/forecast/rightsizing) + SRE Crew | parity/further | [reliability-observability-cost](urn:hobo:requirement:reliability-observability-cost#plan-05), [operators-sre](urn:hobo:requirement:operators-sre#plan-40) |
-| API-key rotation w/ ack handshake | Brokered scoped tokens + credential lifecycle events | further | [ai-native-agent-auth](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
-| Atomic blue/green self-update + auto-rollback | Upgrade/migration engine with dry-run + rollback evidence | parity | [upgrade-migration-engine](urn:hobo:requirement:upgrade-migration-engine) |
+| Go agent per host (HMAC/AES-GCM, WS + poll) | Yard→Camp/node control fabric; **SVID** keyless workload identity | further | [control-plane](../design/control-plane.md#plan-04), [ai-native-agent-auth](../design/ai-native-agent-auth.md#plan-06) |
+| Agent enrollment (short-code pairing / token) | Self-host bootstrap + node attach; signed-bundle trust | parity/gap-pressure | [bootstrap-installer](../design/bootstrap-installer.md), [control-plane](../design/control-plane.md#plan-04) |
+| Remote service tunnels (WireGuard) | **Relay** — outbound-only proxy for a hosted Yard into a private network | parity | [control-plane](../design/control-plane.md#plan-04) |
+| Remote Docker over the agent | Executor applying workloads with scoped short-lived credentials | parity/further | [wasm-runtime-wit](../design/wasm-runtime-wit.md#plan-20), [control-plane](../design/control-plane.md#plan-04) |
+| Server templates + drift detection + auto-remediation | **Resource Packs** + drift reconciliation + ResourceActor reconcile loop | parity/further | [platform-engineering](../design/platform-engineering.md#plan-25), [drift-reconciliation](../design/drift-reconciliation.md) |
+| Fleet monitor (heatmaps, anomaly, capacity forecast) | Observability + FinOps advisory (anomaly/forecast/rightsizing) + SRE Crew | parity/further | [reliability-observability-cost](../design/reliability-observability-cost.md#plan-05), [operators-sre](../design/operators-sre.md#plan-40) |
+| API-key rotation w/ ack handshake | Brokered scoped tokens + credential lifecycle events | further | [ai-native-agent-auth](../design/ai-native-agent-auth.md#plan-06) |
+| Atomic blue/green self-update + auto-rollback | Upgrade/migration engine with dry-run + rollback evidence | parity | [upgrade-migration-engine](../design/upgrade-migration-engine.md) |
 
 ### Security, monitoring, team & AI
 
 | ServerKit surface | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Per-app ModSecurity/OWASP WAF, Fail2ban, SSH hardening | Route-level `security` + gateway authorizers; networking/isolation | parity/adjacent | [security-networking](urn:hobo:requirement:security-networking#plan-12) |
-| ClamAV, Lynis, file-integrity, OS auto-patch | Host/OS hardening — below HoBo's app-topology line | out-of-scope | [security-networking](urn:hobo:requirement:security-networking#plan-12) |
-| grype CVE scan + syft SBOM | SBOM/vulnerability/provenance evidence gates | parity/further | [sbom-vulnerability-notice-evidence](urn:hobo:requirement:sbom-vulnerability-notice-evidence) |
-| Encrypted secrets at rest (Fernet) | Secretless-first config; secrets resolved to Camp refs, never plaintext | further | [authoring-resources-wiring](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
-| Real-time metrics, GPU, public status pages | Observability plane + public status page / incident comms | parity | [reliability-observability-cost](urn:hobo:requirement:reliability-observability-cost#plan-05), [public-status-page](urn:hobo:requirement:public-status-page-incident-communication) |
-| RBAC + workspaces + quotas + SAML/OIDC SSO | Org/workspace/tenant model + member RBAC + tenant isolation/quotas | parity | [organization-workspace-model](urn:hobo:requirement:organization-workspace-model), [member-rbac-administration](urn:hobo:requirement:member-rbac-administration) |
-| Audit logging | Event-sourced audit substrate (every decision a replayable event) | further | [data-plane](urn:hobo:requirement:data-plane#plan-11) |
-| REST/OpenAPI + `X-API-Key` + webhook subscriptions | Contract-first WIT/protobuf/CUE boundaries + `notify` webhook-out | further | [contracts-policy-flags](urn:hobo:requirement:contracts-policy-flags#plan-29), [sdk-api](urn:hobo:requirement:sdk-api#plan-02) |
-| Faro **Agent Bridge** (MCP command execution) | Agents-as-principals: MCP control surface + brokered tokens + capability manifests | further | [ai-native-agent-auth](urn:hobo:requirement:ai-native-agent-auth#plan-06), [generated-stack](urn:hobo:requirement:generated-stack#plan-23) |
+| Per-app ModSecurity/OWASP WAF, Fail2ban, SSH hardening | Route-level `security` + gateway authorizers; networking/isolation | parity/adjacent | [security-networking](../design/security-networking.md#plan-12) |
+| ClamAV, Lynis, file-integrity, OS auto-patch | Host/OS hardening — below HoBo's app-topology line | out-of-scope | [security-networking](../design/security-networking.md#plan-12) |
+| grype CVE scan + syft SBOM | SBOM/vulnerability/provenance evidence gates | parity/further | [sbom-vulnerability-notice-evidence](../design/sbom-vulnerability-notice-evidence.md) |
+| Encrypted secrets at rest (Fernet) | Secretless-first config; secrets resolved to Camp refs, never plaintext | further | [authoring-resources-wiring](../design/authoring-resources-wiring.md#plan-21) |
+| Real-time metrics, GPU, public status pages | Observability plane + public status page / incident comms | parity | [reliability-observability-cost](../design/reliability-observability-cost.md#plan-05), [public-status-page](../design/public-status-page-incident-communication.md) |
+| RBAC + workspaces + quotas + SAML/OIDC SSO | Org/workspace/tenant model + member RBAC + tenant isolation/quotas | parity | [organization-workspace-model](../design/organization-workspace-model.md), [member-rbac-administration](../design/member-rbac-administration.md) |
+| Audit logging | Event-sourced audit substrate (every decision a replayable event) | further | [data-plane](../design/data-plane.md#plan-11) |
+| REST/OpenAPI + `X-API-Key` + webhook subscriptions | Contract-first WIT/protobuf/CUE boundaries + `notify` webhook-out | further | [contracts-policy-flags](../design/contracts-policy-flags.md#plan-29), [sdk-api](../design/sdk-api.md#plan-02) |
+| Faro **Agent Bridge** (MCP command execution) | Agents-as-principals: MCP control surface + brokered tokens + capability manifests | further | [ai-native-agent-auth](../design/ai-native-agent-auth.md#plan-06), [generated-stack](../design/generated-stack.md#plan-23) |
 
 ### Where HoBo deliberately differs
 
@@ -270,12 +270,12 @@ Gaps relative to HoBo's scope:
 
 Because ServerKit lives one level below HoBo, the most useful relationship is **learning from a shipped implementation**, and in one framing, **composition**: a ServerKit-managed host (or its Go agent) is exactly the kind of self-hosted node a HoBo **Yard**/**Relay** could sit alongside or attach. Concrete borrowings:
 
-1. **Node-attach UX.** ServerKit's **short-code pairing** + guided onboarding state machine (validate → prereqs → Docker → pair → ready) is a clean, shipped pattern for HoBo self-host node attach and Yard bootstrap ([bootstrap-installer](urn:hobo:requirement:bootstrap-installer)).
-2. **WireGuard service tunnels validate the Relay.** ServerKit's agent-managed tunnels for private/NAT'd services are a real-world proof of HoBo's **Relay** (outbound-only proxy) design ([control-plane](urn:hobo:requirement:control-plane#plan-04)).
-3. **Connections Hub → secretless surface.** A single encrypted store for source/cloud/DNS/registrar/SMTP/S3 credentials is a good UX analog for HoBo's secretless **Config and secrets** model; the lesson is a *one-surface* connections experience, while HoBo keeps the values as Camp references rather than encrypted-at-rest plaintext ([authoring-resources-wiring](urn:hobo:requirement:authoring-resources-wiring#plan-21)).
-4. **Drift-detecting server templates.** ServerKit's compliance-tracking, drift-detecting, auto-remediating templates are a shipped analog to **Resource Packs + drift reconciliation** — validation that the direction is right, with HoBo adding provenance and conformance ([platform-engineering](urn:hobo:requirement:platform-engineering#plan-25), [drift-reconciliation](urn:hobo:requirement:drift-reconciliation)).
-5. **Blue/green self-update with auto-rollback** is a good bar for HoBo's own upgrade/migration engine's operator ergonomics ([upgrade-migration-engine](urn:hobo:requirement:upgrade-migration-engine)).
-6. **Deterministic single app-health** (healthy/degraded/restarting/unhealthy) is a tidy projection shape worth mirroring in HoBo's status surface ([reliability-observability-cost](urn:hobo:requirement:reliability-observability-cost#plan-05)).
+1. **Node-attach UX.** ServerKit's **short-code pairing** + guided onboarding state machine (validate → prereqs → Docker → pair → ready) is a clean, shipped pattern for HoBo self-host node attach and Yard bootstrap ([bootstrap-installer](../design/bootstrap-installer.md)).
+2. **WireGuard service tunnels validate the Relay.** ServerKit's agent-managed tunnels for private/NAT'd services are a real-world proof of HoBo's **Relay** (outbound-only proxy) design ([control-plane](../design/control-plane.md#plan-04)).
+3. **Connections Hub → secretless surface.** A single encrypted store for source/cloud/DNS/registrar/SMTP/S3 credentials is a good UX analog for HoBo's secretless **Config and secrets** model; the lesson is a *one-surface* connections experience, while HoBo keeps the values as Camp references rather than encrypted-at-rest plaintext ([authoring-resources-wiring](../design/authoring-resources-wiring.md#plan-21)).
+4. **Drift-detecting server templates.** ServerKit's compliance-tracking, drift-detecting, auto-remediating templates are a shipped analog to **Resource Packs + drift reconciliation** — validation that the direction is right, with HoBo adding provenance and conformance ([platform-engineering](../design/platform-engineering.md#plan-25), [drift-reconciliation](../design/drift-reconciliation.md)).
+5. **Blue/green self-update with auto-rollback** is a good bar for HoBo's own upgrade/migration engine's operator ergonomics ([upgrade-migration-engine](../design/upgrade-migration-engine.md)).
+6. **Deterministic single app-health** (healthy/degraded/restarting/unhealthy) is a tidy projection shape worth mirroring in HoBo's status surface ([reliability-observability-cost](../design/reliability-observability-cost.md#plan-05)).
 
 ### The one-line takeaway
 

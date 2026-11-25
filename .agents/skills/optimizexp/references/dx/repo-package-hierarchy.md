@@ -14,7 +14,7 @@ timestamp: 2026-07-30T00:00:00Z
 packages/<name>/{src,test,contracts,data-models}
 apps|site/
 src/draft/<kind>/…          # proofs, not production growth
-docs/                       # documentation for shipped behavior
+docs/design/                # design suite
 scripts/                    # repo automation
 .agents/skills + .claude/skills  # mirrored agent skills
 ```
@@ -37,4 +37,4 @@ scripts/                    # repo automation
 
 - OKF `index.md` maps
 - `AGENTS.md` package map for EventStore / stations / etc.
-- Package README files for shipped behavior
+- `docs/design/index.md` design suite entry

@@ -634,8 +634,6 @@ components:
           type: boolean
         hooksEnabled:
           type: boolean
-        hooksAvailable:
-          type: boolean
         hooksInfoShown:
           type: boolean
         externalAssetDirectories:

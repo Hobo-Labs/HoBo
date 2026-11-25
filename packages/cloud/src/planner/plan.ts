@@ -1,4 +1,4 @@
-import { evaluateBindingDeliveryGate, type ManifestV1 } from "@hobo/bindles";
+import type { ManifestV1 } from "@hobo/bindles";
 import type {
 	CapabilityProfileRegistry,
 	CapabilityRequirement,
@@ -39,12 +39,44 @@ import {
 	type YardBindingContext,
 } from "./profile-matching.js";
 
+// The Planner: a pure function `plan(bindle, config, registry) -> DeploymentPlan`
+// (control-plane.md "The Planner"). Easy to test, replayable, deterministic. It
+// never provisions anything — it emits the content-addressed plan (or a precise,
+// machine-readable rejection) and the per-resource match.Decided decisions.
+
+/**
+ * Yard binding authority for a planning pass (ADR-0157).
+ *
+ * Supplying this promotes planning from the legacy port-only path onto the
+ * ADR-0151 capability-profile pipeline for the resources it covers: the Yard's
+ * rows hard-filter which offering may satisfy each profile, and the winning
+ * product plus its Yard-scoped realization parameters land on the plan so a
+ * deployment driver can act on them. Without it the planner behaves exactly as
+ * before and plan nodes carry no `productId` — which a driver must read as
+ * "not decided here", never "any product will do".
+ *
+ * This is opt-in on purpose. Turning it on changes which offering a resource
+ * resolves to, so it is a decision an operator makes rather than a default
+ * that shifts under them.
+ */
 export interface PlanBindingAuthority {
+	/** The Yard whose rows constrain this pass, and the rows themselves. */
 	readonly yard: YardBindingContext;
+	/** The capability-profile registry the required profiles resolve against. */
 	readonly profiles: CapabilityProfileRegistry;
+	/** Complete approved product catalog used to verify every Yard row's ownership. */
 	readonly definitions: readonly ResourceDefinitionVNext[];
 	readonly policy: TrustPolicy;
+	/**
+	 * Canonical evaluation instant. Planning never reads a clock itself, so the
+	 * caller supplies it and two passes over the same inputs are byte-stable.
+	 */
 	readonly nowMs: number;
+	/**
+	 * Per-resource capability requirements, keyed by resource name. A resource
+	 * with no entry keeps the port-only decision within the selected Yard's
+	 * provider; absent does not mean the resource has no requirements.
+	 */
 	readonly requirements: Readonly<Record<string, CapabilityRequirement>>;
 	readonly consumableBindingProfiles?: readonly string[];
 }
@@ -73,6 +105,7 @@ function realizationParametersOf(
 	return result;
 }
 
+/** What a Yard-bound match contributes to both the decision and the plan node. */
 type BoundOffering = {
 	readonly productId?: string;
 	readonly appliedRows?: readonly string[];
@@ -84,9 +117,21 @@ export interface PlanConfig {
 	deploymentId: string;
 	objective?: string;
 	region?: string;
+	// E19: per-resource placement-constraint criteria, keyed by resource name.
+	// Attached to the lowered intents so the bindle manifest stays untouched.
 	placement?: Record<string, PlacementCriteria>;
+	/**
+	 * Optional Yard binding authority. See `PlanBindingAuthority` — absent keeps
+	 * the pre-existing port-only behaviour byte-for-byte.
+	 */
 	binding?: PlanBindingAuthority;
+	/** Trusted, pinned financial evidence. Planning allocates it read-only. */
 	hostingBudget?: HostingPlanningInput;
+	/**
+	 * Providers observed unavailable (a failed health probe, or an apply that
+	 * failed retryably this run). Matching routes around them to the next
+	 * cheapest provider that satisfies the resource; it never waits for them.
+	 */
 	unavailableProviders?: readonly string[];
 }
 
@@ -108,6 +153,8 @@ export interface PlanRejection {
 
 export type PlanResult = PlanSuccess | PlanRejection;
 
+// Stable topological order over the bind-edge DAG (Kahn's algorithm with an
+// alphabetical tiebreak, so the dependency order is byte-stable).
 function dependencyOrder(intents: ResourceIntent[]): string[] | undefined {
 	const names = new Set(intents.map((i) => i.name));
 	const indegree = new Map<string, number>();
@@ -117,6 +164,7 @@ function dependencyOrder(intents: ResourceIntent[]): string[] | undefined {
 	for (const intent of intents) {
 		for (const dep of intent.deps) {
 			if (!names.has(dep)) continue;
+			// edge dep -> intent (dependency provisioned before dependent)
 			indegree.set(intent.name, (indegree.get(intent.name) ?? 0) + 1);
 			dependents.set(dep, [...(dependents.get(dep) ?? []), intent.name]);
 		}
@@ -128,6 +176,7 @@ function dependencyOrder(intents: ResourceIntent[]): string[] | undefined {
 		.sort();
 	const order: string[] = [];
 	while (ready.length > 0) {
+		// SAFETY: `const next = ready.shift() as string;` is required at this I/O or test boundary.
 		const next = ready.shift() as string;
 		order.push(next);
 		for (const child of (dependents.get(next) ?? []).sort()) {
@@ -139,6 +188,7 @@ function dependencyOrder(intents: ResourceIntent[]): string[] | undefined {
 			}
 		}
 	}
+	// A cyclic graph has no safe provision order. Never silently append nodes.
 	return order.length === names.size ? order : undefined;
 }
 
@@ -147,23 +197,6 @@ export function plan(
 	config: PlanConfig,
 	registry: PlannerRegistry,
 ): PlanResult {
-	const bindingDelivery = evaluateBindingDeliveryGate({ manifest: bindle });
-	if (!bindingDelivery.ok) {
-		return {
-			ok: false,
-			deploymentId: config.deploymentId,
-			reason:
-				"plan rejected: resource environment contains credential material",
-			remediations: bindingDelivery.reasons.map((reason) => ({
-				resource: reason.path?.split(".")[1] ?? "*",
-				code: "binding-delivery:" + reason.code,
-				requiredPort: "*",
-				requiredFeatures: [],
-				missing: [],
-				remediation: reason.message,
-			})),
-		};
-	}
 	const unavailable: ReadonlySet<string> = new Set(
 		config.unavailableProviders ?? [],
 	);
@@ -229,6 +262,7 @@ export function plan(
 				},
 			],
 		};
+	// E19: attach per-resource placement criteria to the lowered intents.
 	if (config.placement !== undefined) {
 		for (const intent of intents) {
 			const criteria = config.placement[intent.name];
@@ -239,6 +273,9 @@ export function plan(
 	const decisions: MatchDecided[] = [];
 	const resources: ResourcePlan[] = [];
 	const remediations: PlanRemediation[] = [];
+	// Placements decided so far this pass — affinity/anti-affinity/spread rules
+	// evaluate against it; deterministic because intents arrive in the
+	// byte-stable lowered (sorted-name) order.
 	const placementContext = emptyPlacementContext();
 	let hosting: ReturnType<typeof createHostingPlanningPass> | undefined;
 	try {
@@ -291,6 +328,12 @@ export function plan(
 	}
 
 	for (const intent of intents) {
+		// Yard binding authority, when supplied for this resource: the rows
+		// hard-filter the offering and carry the realization parameters. A row
+		// set that admits nothing is a refusal, not a fall-through to the
+		// port-only winner — otherwise the Yard's authority would be advisory,
+		// and a Yard that cannot satisfy a capability would silently deploy
+		// something it never declared.
 		const requirement = config.binding?.requirements[intent.name];
 		let bound: BoundOffering | undefined;
 		let approvedDefinition: { id: string; providerId: string } | undefined;
@@ -330,6 +373,8 @@ export function plan(
 					: undefined),
 			};
 		}
+		// Matching must use the selected Yard's provider and the exact definition
+		// chosen by its policy gate, including for non-financial plans.
 		const matchingRegistry: PlannerRegistry =
 			config.binding || approvedDefinition
 				? {
@@ -385,13 +430,10 @@ export function plan(
 			port: intent.port,
 			provider: decision.providerId,
 			deps: intent.deps,
-			...(intent.readyDeps !== undefined
-				? { readyDeps: [...intent.readyDeps] }
-				: undefined),
-			...(intent.completedDeps !== undefined
-				? { completedDeps: [...intent.completedDeps] }
-				: undefined),
 			strategy: "rolling-update",
+			// `appliedRows` stays on the decision (the audit trail) and off the
+			// plan node: the plan is content-addressed, and which rows were
+			// consulted does not change what gets built.
 			...(bound?.productId !== undefined
 				? { productId: bound.productId }
 				: undefined),

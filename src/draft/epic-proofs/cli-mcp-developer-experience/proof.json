@@ -25,7 +25,8 @@
       "src/draft/exp-proofs/dx/gitops-ci-journey-contract",
       "src/draft/exp-proofs/dx/secops-policy-audit-journey-contract",
       "src/draft/exp-proofs/dx/sre-drift-remediation-journey-contract"
-    ]
+    ],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

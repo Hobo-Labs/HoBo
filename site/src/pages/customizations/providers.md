@@ -45,6 +45,6 @@ Want a connector for a protocol we don't speak yet? It's the same path as any ot
 
 ## Related
 
-- [System model](/HoBo/system/) — where Executors, the Planner, and the Dispatcher sit.
+- [Architecture](/HoBo/architecture/) — where Executors, the Planner, and the Dispatcher sit.
 - [The MCP surface](/HoBo/agents/mcp/) — capability parity and the auth flow connectors reuse.
 - [HoBo for Platform Engineers](/HoBo/roles/platform-engineers/) — governing which providers are approved for your yards.

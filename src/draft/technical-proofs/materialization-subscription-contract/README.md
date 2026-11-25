@@ -22,9 +22,11 @@ Independent POC for HOBO-51, defining the reactive materialization subscription 
 This is a contract POC only. It does not implement the Reactor engine, RX operator library, Streamer transport, GraphQL facade, or ordered-feed conformance suite.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Materialization Subscription Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

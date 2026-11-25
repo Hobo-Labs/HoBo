@@ -75,12 +75,14 @@ npm.cmd --prefix src\draft\epic-proofs\networking-connectivity-dns-relay run sim
 - Add scenario coverage for geo and latency routing when product acceptance requires those policies as primary vertical slices.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Networking Connectivity Dns Relay.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

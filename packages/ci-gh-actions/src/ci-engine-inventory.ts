@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { access, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
+/** Package folder name under `packages/` → public engine id served at `/engines/<id>/`. */
 export const CI_ENGINE_PACKAGE_IDS: Readonly<Record<string, string>> =
 	Object.freeze({
 		"ci-gh-actions": "gh-actions",
@@ -26,6 +27,7 @@ export function knownEngineIds(): readonly string[] {
 	);
 }
 
+/** Discover engine ids from `packages/ci-*` folders in a repository checkout. */
 export async function inventoryCiEnginesFromRepository(
 	repositoryRoot: string,
 ): Promise<readonly string[]> {

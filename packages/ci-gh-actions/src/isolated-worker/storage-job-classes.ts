@@ -1,3 +1,4 @@
+/** Measured / budgeted inode and byte growth per CI job class (worker admission). */
 import { depsBuildDockerReserve } from "./deps-build-budget.js";
 import { lookupByJobName } from "./matrix-job-name.js";
 
@@ -49,6 +50,7 @@ export const STORAGE_CLASS_RESERVES = {
 		workRootBytes: 4 * 1024 * 1024 * 1024,
 		dockerDataRootBytes: 16 * 1024 * 1024 * 1024,
 	},
+	// Release main-train jobs (pages + npm install + site dist) observed ENOSPC at ~06:03 UTC on 0.0.0.0-alpha.94.
 	release_trunk: {
 		workRoot: 220_000,
 		dockerDataRoot: 200_000,

@@ -1,3 +1,7 @@
+// Parse boundary for VerificationSpecRecord (D9). A ParsedVerificationSpec has
+// every default from CD_DEFAULTS applied and every constraint from
+// data-models/verification.cue checked, so the engine never re-validates and
+// never sees a spec that could pass on absent evidence.
 import { clone, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import {
 	Aggregation,
@@ -18,15 +22,18 @@ export type ParsedVerificationSpec = VerificationSpecRecord & {
 	readonly __brand: "cd.ParsedVerificationSpec";
 };
 
+/** Unit that marks a query as an error-budget burn-rate series. */
+// public-contract: HealthQuery.unit value authors write in VerificationSpec.
 export const BURN_RATE_UNIT = "burn_rate";
+/** Unit that marks a query as a ratio; samples outside [0, 1] are invalid. */
+// public-contract: HealthQuery.unit value authors write in VerificationSpec.
 export const RATIO_UNIT = "ratio";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const MAX_QUERY_CHARS = 4096;
-const PROMETHEUS_RECORDING_RULE =
-	/^[A-Za-z_:][A-Za-z0-9_:]*(?:\{(?:[^{}"\\]|"(?:[^"\\]|\\.)*")*\})?$/u;
 const MAX_REQUIRED_OBSERVATIONS = 10_000;
 const MAX_WINDOW_MS = 7n * 24n * 3_600_000n;
+/** CD_DEFAULTS.verificationSensitivity as the generated enum. */
 function defaultSensitivity(): Sensitivity {
 	switch (CD_DEFAULTS.verificationSensitivity) {
 		case "MEDIUM":
@@ -40,14 +47,9 @@ export const comparisonCheckId = (query: HealthQueryRecord) =>
 	`comparison:${query.name}`;
 export const probeCheckId = (name: string) => `probe:${name}`;
 export const suiteCheckId = (suite: string) => `suite:${suite}`;
+// public-contract: CheckOutcomeRecord.check id of the aggregate
+// error-budget check in verification results.
 export const ERROR_BUDGET_CHECK = "error-budget";
-export const SLO_CHECK = "slo:gate";
-export const SLO_BURN_CHECK = "slo:burn";
-export const SLO_BUDGET_CHECK = "slo:budget";
-export const SLO_BURN_TIME_BEFORE_CHECK = "slo:burn-time-before";
-export const SLO_BURN_TIME_AFTER_CHECK = "slo:burn-time-after";
-export const SLO_BUDGET_TIME_BEFORE_CHECK = "slo:budget-time-before";
-export const SLO_BUDGET_TIME_AFTER_CHECK = "slo:budget-time-after";
 
 function isHttpsUrl(value: string): boolean {
 	try {
@@ -112,6 +114,7 @@ function checkQuery(
 	}
 }
 
+/** Apply defaults and constraints; refuse with every problem found, not just the first. */
 export function parseVerificationSpec(
 	input: VerificationSpecRecord,
 ): Outcome<ParsedVerificationSpec> {
@@ -119,9 +122,7 @@ export function parseVerificationSpec(
 	const problems: Problem[] = [];
 
 	if (spec.windowMs === 0n)
-		spec.windowMs = BigInt(
-			spec.sloGate ? 900_000 : CD_DEFAULTS.verificationWindowMs,
-		);
+		spec.windowMs = BigInt(CD_DEFAULTS.verificationWindowMs);
 	if (spec.requiredObservations === 0)
 		spec.requiredObservations = CD_DEFAULTS.verificationRequiredObservations;
 	if (spec.progressDeadlineMs === 0n)
@@ -163,8 +164,7 @@ export function parseVerificationSpec(
 		spec.thresholds.length +
 			spec.comparisons.length +
 			spec.probes.length +
-			spec.suites.length +
-			(spec.sloGate ? 1 : 0) ===
+			spec.suites.length ===
 		0
 	) {
 		problems.push({
@@ -288,6 +288,8 @@ export function parseVerificationSpec(
 				subject: path,
 			});
 		}
+		// Proto3 cannot tell "unset" from 0, and a ratio of 0 would pass every
+		// probe; the conservative default is that every probe must succeed.
 		if (probe.minSuccessRatio === 0) probe.minSuccessRatio = 1;
 		if (!(probe.minSuccessRatio > 0 && probe.minSuccessRatio <= 1)) {
 			problems.push({
@@ -310,77 +312,6 @@ export function parseVerificationSpec(
 		unique(suiteCheckId(suite.suite));
 	});
 
-	if (spec.sloGate) {
-		const gate = spec.sloGate;
-		gate.rollbackBurnRate ??= 12;
-		gate.minRemainingBudgetRatio ??= 0.08;
-		gate.holdBurnRate ??= 1;
-		gate.holdRemainingBudgetRatio ??= 0.2;
-		if (gate.sustainedBreachCount === 0) gate.sustainedBreachCount = 2;
-		if (gate.sustainedHealthyCount === 0) gate.sustainedHealthyCount = 2;
-		if (gate.maxSampleAgeMs === 0n)
-			gate.maxSampleAgeMs = spec.windowMs < 600_000n ? spec.windowMs : 600_000n;
-		checkQuery(gate.burnRate, "slo_gate.burn_rate", problems);
-		checkQuery(
-			gate.remainingBudgetRatio,
-			"slo_gate.remaining_budget_ratio",
-			problems,
-		);
-		for (const [query, path] of [
-			[gate.burnRate, "slo_gate.burn_rate"],
-			[gate.remainingBudgetRatio, "slo_gate.remaining_budget_ratio"],
-		] as const) {
-			if (
-				query?.source === HealthSourceKind.PROMETHEUS &&
-				!PROMETHEUS_RECORDING_RULE.test(query.query)
-			) {
-				problems.push({
-					code: "verification-spec-invalid",
-					message: `${path}.query must select a Prometheus recording rule directly`,
-					subject: path,
-				});
-			}
-		}
-		if (
-			gate.burnRate?.unit !== BURN_RATE_UNIT ||
-			gate.remainingBudgetRatio?.unit !== RATIO_UNIT
-		)
-			problems.push({
-				code: "verification-spec-invalid",
-				message: "SLO queries require burn_rate and ratio units",
-				subject: "slo_gate",
-			});
-		if (
-			!Number.isFinite(gate.rollbackBurnRate) ||
-			!Number.isFinite(gate.holdBurnRate) ||
-			gate.holdBurnRate <= 0 ||
-			gate.rollbackBurnRate <= gate.holdBurnRate ||
-			!Number.isFinite(gate.minRemainingBudgetRatio) ||
-			!Number.isFinite(gate.holdRemainingBudgetRatio) ||
-			gate.minRemainingBudgetRatio < 0 ||
-			gate.holdRemainingBudgetRatio > 1 ||
-			gate.minRemainingBudgetRatio >= gate.holdRemainingBudgetRatio
-		)
-			problems.push({
-				code: "verification-spec-invalid",
-				message: "SLO hold and rollback thresholds must be finite and ordered",
-				subject: "slo_gate",
-			});
-		if (
-			gate.sustainedBreachCount < 2 ||
-			gate.sustainedBreachCount > MAX_REQUIRED_OBSERVATIONS ||
-			gate.sustainedHealthyCount < 2 ||
-			gate.sustainedHealthyCount > MAX_REQUIRED_OBSERVATIONS ||
-			gate.maxSampleAgeMs > spec.windowMs
-		)
-			problems.push({
-				code: "verification-spec-invalid",
-				message:
-					"SLO sample counts must be 2..10000 and sample age must fit the window",
-				subject: "slo_gate",
-			});
-	}
-
 	if (spec.maxErrorBudgetBurn > 0) {
 		const bound = [...spec.thresholds, ...spec.comparisons].some(
 			(check) => check.query?.unit === BURN_RATE_UNIT,
@@ -402,9 +333,15 @@ export function parseVerificationSpec(
 			),
 		};
 	}
+	// SAFETY: every constraint of the brand was checked above.
 	return { ok: true, value: spec as ParsedVerificationSpec };
 }
 
+/**
+ * Parse an authored spec document (protobuf JSON). Here an absent
+ * `failOnNoData` is distinguishable from `false`, so it takes the D9 default
+ * (true); unknown fields are refused rather than dropped.
+ */
 export function parseVerificationSpecJson(
 	json: JsonValue,
 ): Outcome<ParsedVerificationSpec> {

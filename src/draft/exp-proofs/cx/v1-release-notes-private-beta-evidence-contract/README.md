@@ -27,9 +27,11 @@ npm.cmd --prefix src\draft\v1-release-notes-private-beta-evidence-contract test
 The root `pnpm-lock.yaml` registers this dependency-free workspace package so install and routed
 agent gates include the proof in fresh worktrees.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for the evidence record.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ARCHITECTURE.md` — parse-don't-validate and event-architecture evidence.

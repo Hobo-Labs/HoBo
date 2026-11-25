@@ -4,8 +4,8 @@ Independent proof for HOBO-127.
 
 This package pins the M2 tier-three networking realization contract from:
 
-- `urn:hobo:requirement:security-networking`: cross-provider private connectivity uses provider interconnects such as PrivateLink, Private Service Connect, or Private Link when the equivalence class supports it.
-- `urn:hobo:decision:adr-0043`: the Junction may infer PrivateLink/PSC as the private cross-cloud tier, while each Yard owns its own half.
+- `docs/design/security-networking.md`: cross-provider private connectivity uses provider interconnects such as PrivateLink, Private Service Connect, or Private Link when the equivalence class supports it.
+- `docs/design/adr/07-portability-extensibility.md#adr-0043`: the Junction may infer PrivateLink/PSC as the private cross-cloud tier, while each Yard owns its own half.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: HOBO-89's `ConnectivityPlan` and tier enum.
 - `src/draft/technical-proofs/tier-two-cross-region-network-contract`: HOBO-124's deterministic fallback and endpoint-injection shape.
 - `src/draft/technical-proofs/mtls-data-path-contract`: HOBO-117's SVID-keyed mTLS decision contract.
@@ -23,9 +23,11 @@ The proof covers:
 Scope boundary: this POC does not call a cloud provider, provision real PrivateLink/PSC/Private Link resources, implement the tier 4 overlay fallback, implement tier 5 public+mTLS, build Junction inference, change Planner ranking/cost objectives, implement egress-cost feedback, or build provider IaC internals. It models the narrow tier-three realization seam those later slices consume.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Tier Three Private Interconnect Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

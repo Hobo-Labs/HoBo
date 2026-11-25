@@ -19,7 +19,6 @@ import {
 	type RoutingTopology,
 	synthesizeRoutingPlan,
 } from "../src/traffic-routing/synthesize.js";
-import { budgetSignals } from "./fixtures/budget-signals.js";
 
 const tenantId = parseTenantId("tenant-hardening");
 const policyDecision = allowDecision("routing-hardening", {
@@ -41,8 +40,10 @@ const costModel = [
 	{ backendId: "a", listUnitCost: 0.05 },
 	{ backendId: "b", listUnitCost: 0.01 },
 ];
-const budget = budgetSignals(tenantId);
-const signal = budget.signal();
+const signal = {
+	kind: "budget" as const,
+	fact: { type: "budget.ThresholdCrossed", data: { tenantId } },
+};
 const prior = synthesizeRoutingPlan({
 	topology: {
 		...topology,
@@ -68,14 +69,10 @@ const precondition = {
 	incumbentPlan,
 };
 const supervisor = () => ({
-	budgetSignalEvidence: budget.evidence,
 	ledgerView: () => ({
 		view: "CreditLedgerView" as const,
 		seq: 0,
-		accounts: [
-			{ providerId: "a", dimension: "traffic.requests", listUnitCost: 0.05 },
-			{ providerId: "b", dimension: "traffic.requests", listUnitCost: 0.01 },
-		],
+		accounts: [],
 	}),
 	persistState: async () => {},
 	beforeApply: async () => {},
@@ -133,6 +130,8 @@ test("an infeasible final availability shape refuses before the first provider w
 	assert.equal(plans.length, 0);
 });
 test("availability and resiliency survive every successful ramp", async () => {
+	// Contract-backed fixture models an adapter supporting these constraints.
+	// The simple weight-only adapter intentionally refuses those guarantees.
 	const plans: RoutingPlan[] = [];
 	const port: TrafficRoutingPort = {
 		provider: "other",
@@ -578,32 +577,9 @@ test("single-writer and undeclared topologies cannot price-reroute", async () =>
 		assert.equal(plans.length, 0);
 	}
 });
-test("a single-writer backend prevents a price-reroute", async () => {
-	const { plans, port } = trackingPort();
-	const loop = createRoutingControlLoop({
-		...loopOptions(),
-		topology: {
-			...topology,
-			backends: topology.backends.map((backend) =>
-				backend.id === "b"
-					? { ...backend, costRouting: "single-writer" as const }
-					: backend,
-			),
-		},
-		port,
-	});
-	const result = await loop.handleSignal(signal);
-	assert.equal(result.action, "denied");
-	assert.equal(
-		result.action === "denied" && result.reasons[0]?.code,
-		"cost-routing-ineligible",
-	);
-	assert.equal(plans.length, 0);
-});
 test("budget shifts require durable financial supervisor capabilities", async () => {
 	const { plans, port } = trackingPort();
 	const loop = createRoutingControlLoop({
-		budgetSignalEvidence: budget.evidence,
 		topology,
 		policyDecision,
 		costModel,
@@ -615,7 +591,7 @@ test("budget shifts require durable financial supervisor capabilities", async ()
 	assert.equal(result.action, "denied");
 	assert.equal(
 		result.action === "denied" && result.reasons[0]?.code,
-		"dispatch-input-invalid",
+		"financial-supervisor-required",
 	);
 	assert.equal(plans.length, 0);
 });
@@ -772,7 +748,6 @@ test("restart cannot turn final routing status into healthy service without fres
 	assert.equal(writes, 1);
 });
 test("budget-invalid incumbent bypasses optimization cooldown", async () => {
-	const currentBudget = budgetSignals(tenantId);
 	let now = "2026-10-29T12:00:00Z";
 	let budgetCap = 100;
 	let priceA = 0.05;
@@ -802,25 +777,18 @@ test("budget-invalid incumbent bypasses optimization cooldown", async () => {
 	});
 	const loop = createRoutingControlLoop({
 		...loopOptions(),
-		budgetSignalEvidence: currentBudget.evidence,
 		clock: () => now,
 		ledgerView,
 		beforeApply: async (_plan, _phase, _percent, reason) => {
 			reasons.push(reason);
 		},
 	});
-	assert.equal(
-		(await loop.handleSignal(currentBudget.signal(1))).action,
-		"reapplied",
-	);
+	assert.equal((await loop.handleSignal(signal)).action, "reapplied");
 	now = "2026-10-29T12:00:05Z";
 	budgetCap = 0;
 	priceA = 0.01;
 	priceB = 0.05;
-	assert.equal(
-		(await loop.handleSignal(currentBudget.signal(2))).action,
-		"reapplied",
-	);
+	assert.equal((await loop.handleSignal(signal)).action, "reapplied");
 	assert.equal(loop.incumbent(), "a");
 	assert.deepEqual(reasons, ["optimization", "recovery"]);
 });

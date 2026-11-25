@@ -10,13 +10,13 @@ export const REQUIRED_EXAMPLE_KINDS = [
 export const REQUIRED_DEBT_MARKERS = ["raw-provider-edge", "authoritative-external-resource"] as const;
 
 export const REQUIRED_DESIGN_ANCHORS = [
-  "urn:hobo:requirement:developer-experience#plan-07",
-  "urn:hobo:requirement:sdk-api#plan-02",
-  "urn:hobo:requirement:control-plane#plan-04",
-  "urn:hobo:requirement:platform-engineering#plan-25",
-  "urn:hobo:requirement:data-plane#plan-32",
-  "urn:hobo:requirement:closure-builder-public-api",
-  "urn:hobo:requirement:sdk-contracts",
+  "docs/design/developer-experience.md#plan-07",
+  "docs/design/sdk-api.md#plan-02",
+  "docs/design/control-plane.md#plan-04",
+  "docs/design/platform-engineering.md#plan-25",
+  "docs/design/data-plane.md#plan-32",
+  "docs/design/closure-builder-public-api.md",
+  "docs/design/sdk-contracts.md",
 ] as const;
 
 export type ExampleKind = (typeof REQUIRED_EXAMPLE_KINDS)[number];
@@ -157,7 +157,7 @@ export interface SdkObjectGraphProof {
   parentIssue: "HOBO-566";
   phase: "M1";
   targetPackage: "src/draft/exp-proofs/api/sdk-object-graph-manifest-ir-shapes";
-  proofNote: "urn:hobo:proof:sdk-object-graph-manifest-ir-shapes";
+  proofNote: "docs/design/proofs/sdk-object-graph-manifest-ir-shapes/README.md";
   designAnchors: DesignAnchor[];
   audience: Audience[];
   proofModeLabels: ProofMode[];
@@ -193,7 +193,7 @@ export const SDK_OBJECT_GRAPH_MANIFEST_IR_PROOF: SdkObjectGraphProof = {
   parentIssue: "HOBO-566",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/api/sdk-object-graph-manifest-ir-shapes",
-  proofNote: "urn:hobo:proof:sdk-object-graph-manifest-ir-shapes",
+  proofNote: "docs/design/proofs/sdk-object-graph-manifest-ir-shapes/README.md",
   designAnchors: [...REQUIRED_DESIGN_ANCHORS],
   audience: [
     {
@@ -522,7 +522,7 @@ export function validateSdkObjectGraphProof(proof: SdkObjectGraphProof): string[
   if (proof.targetPackage !== "src/draft/exp-proofs/api/sdk-object-graph-manifest-ir-shapes") {
     errors.push("target package path must match HOBO-568 acceptance");
   }
-  if (proof.proofNote !== "urn:hobo:proof:sdk-object-graph-manifest-ir-shapes") {
+  if (proof.proofNote !== "docs/design/proofs/sdk-object-graph-manifest-ir-shapes/README.md") {
     errors.push("proof note path must match HOBO-568 acceptance");
   }
 

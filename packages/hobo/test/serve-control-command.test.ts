@@ -148,6 +148,8 @@ describe("the startup line", () => {
 	});
 
 	it("advertises the yard, stream, world and otlp routes", async () => {
+		// These are the endpoints the game UI and the collector attach to; the
+		// startup line is the only place they are enumerated.
 		const { lines } = await serve(["control"]);
 		for (const route of [
 			"/v1/yard/snapshot",

@@ -15,7 +15,8 @@
       "src/draft/technical-proofs/slsa-provenance-certification-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

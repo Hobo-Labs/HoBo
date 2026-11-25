@@ -1,7 +1,7 @@
 # HOBO-641 Resource Definitions + Matching + Resource Packs Contract
 
 S4-05 draft POC integrating the platform-engineering surface from
-[Plan 25](urn:hobo:requirement:platform-engineering#plan-25):
+[Plan 25](../../../../docs/design/platform-engineering.md#plan-25):
 
 - **Resource Definitions + Matching** — specificity-scored selection with `match.Decided` evidence
 - **Deployment Sets + Deltas** — draft→promote via `delta.Applied` producing immutable content-addressed Sets
@@ -50,8 +50,10 @@ pnpm --prefix src/draft/technical-proofs/resource-definitions-matching-packs-con
 - `resource-definition-driver-contract` — `createResourceCatalog`
 - `hobo-50-deployment-set-delta` — `foldDeploymentProjections`, `contentAddressDeploymentSet`
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf + CUE + PACT boundary evidence
+- `ADR.md` — parse-don't-validate and event-driven Set/Delta notes
 
 ## Scope (out)
 

@@ -11,7 +11,7 @@
 // re-delivers the Camp's current change when nothing newer exists; a cut-off
 // SSE response (no `end` event) resumes with `Last-Event-ID`, so changes are
 // neither skipped nor repeated.
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
 	fromJson,
 	type JsonValue as PbJsonValue,
@@ -26,6 +26,7 @@ import {
 	type TransportMethod,
 	type TransportRequest,
 } from "@hobo/core";
+import { mintDpopProof } from "@hobo/fleet/keys";
 import {
 	type DeliveryFeedFrame,
 	DeliveryFeedFrameSchema,
@@ -33,15 +34,15 @@ import {
 	ReconcileObservationRecordSchema,
 	type SetRecord,
 } from "../_generated/cd_pb.js";
-import { CD_DEFAULTS } from "../events.js";
-import { feedRefusal } from "../feed/errors.js";
+import { CD_DEFAULTS, FEED_INLINE_LIMIT_BYTES } from "../events.js";
+import { FEED_FAILURES, feedRefusal } from "../feed/errors.js";
 import {
 	isNumber,
 	isText,
 	isWireObject,
 	type WireObject,
 } from "../feed/json.js";
-import { decodeSse, FEED_SSE_EVENTS } from "../feed/sse.js";
+import { decodeSse, FEED_END_REASONS, FEED_SSE_EVENTS } from "../feed/sse.js";
 import {
 	FEED_ROUTES,
 	leaseJson,
@@ -57,7 +58,6 @@ import type {
 	ReconcilerTransport,
 	Refusal,
 } from "../ports.js";
-import { createDpopProof, type DpopProofInput } from "./dpop.js";
 import {
 	AGENT_MAX_RESPONSE_BYTES,
 	AGENT_MAX_TIMEOUT_MS,
@@ -65,7 +65,8 @@ import {
 	parseStationOrigin,
 	stationTransport,
 } from "./egress.js";
-import { agentRefusal, messageOf } from "./errors.js";
+import { AGENT_FAILURES, agentRefusal, reasonOf } from "./errors.js";
+import { agentKeyFromJwk } from "./fleet-port.js";
 
 export type HttpTransportDeps = Readonly<{
 	baseUrl: string;
@@ -73,23 +74,72 @@ export type HttpTransportDeps = Readonly<{
 	reconcilerId: ReconcilerId;
 	privateJwk: JsonObject;
 	svid: string;
+	credential?: (() => Promise<string>) | undefined;
 	now: () => number;
 }>;
+
+const STATION_FAILURES = new Map([
+	...Object.entries(AGENT_FAILURES),
+	...Object.entries(FEED_FAILURES),
+]);
+
+function safeStationRefusal(refusal: Refusal): Refusal {
+	const reasons = refusal.reasons.map((reason) => {
+		const spec = STATION_FAILURES.get(reason.code);
+		return spec
+			? reasonOf(
+					reason.code,
+					"The Station refused the request.",
+					spec.remediation,
+					"",
+				)
+			: reasonOf(
+					"response-invalid",
+					"The Station returned an unrecognized refusal.",
+					AGENT_FAILURES["response-invalid"].remediation,
+					"",
+				);
+	});
+	return reasons.length > 0
+		? { ok: false, reasons }
+		: agentRefusal(
+				"response-invalid",
+				"The Station returned an invalid refusal.",
+			);
+}
+
+function stationEnvelope(text: string, status: number): Outcome<PbJsonValue> {
+	const parsed = parseEnvelope(text);
+	if (parsed.ok && (status < 200 || status >= 300))
+		return agentRefusal(
+			"response-invalid",
+			"The Station response status is invalid.",
+		);
+	return parsed.ok ? parsed : safeStationRefusal(parsed);
+}
 
 /** Thrown by `feed()` when the Station refuses the feed; carries the typed reasons. */
 export class FeedRefusedError extends Error {
 	readonly code: string;
 	readonly reasons: readonly ReasonRecord[];
 	constructor(refusal: Refusal) {
-		super(refusal.reasons.map((r) => `${r.code}: ${r.message}`).join("; "));
+		const safe = safeStationRefusal(refusal);
+		super(safe.reasons.map((r) => `${r.code}: ${r.message}`).join("; "));
 		this.name = "FeedRefusedError";
-		this.code = refusal.reasons[0]?.code ?? "";
-		this.reasons = refusal.reasons;
+		this.code = safe.reasons[0]?.code ?? "";
+		this.reasons = safe.reasons;
 	}
 }
 
 const MAX_RESUMES = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
+const VALID_END_REASONS: ReadonlySet<string> = new Set(FEED_END_REASONS);
+const MAX_INLINE_ENTRIES = 16;
+const MAX_INLINE_CACHE_BYTES = MAX_INLINE_ENTRIES * FEED_INLINE_LIMIT_BYTES;
+
+function inlineKey(set: SetRecord): string {
+	return JSON.stringify([set.campId, set.setId, set.resolvedSetDigest]);
+}
 
 function expOf(svid: string): number {
 	try {
@@ -105,10 +155,37 @@ function expOf(svid: string): number {
 export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 	const origin = parseStationOrigin(d.baseUrl);
 	const http = stationTransport(origin, d.http);
+	const key = agentKeyFromJwk(d.privateJwk);
 	let svid = d.svid;
 	let svidExpiresAtMs = expOf(svid);
-	const inline = new Map<string, string>();
-	const fedLeases = new Set<string>();
+	const inline = new Map<string, Readonly<{ text: string; bytes: number }>>();
+	let inlineBytes = 0;
+	const fedLeases = new Map<
+		ReconcilerLease["campId"],
+		ReconcilerLease["fence"]
+	>();
+
+	function rememberInline(set: SetRecord, text: string): void {
+		const textBytes = Buffer.byteLength(text, "utf8");
+		if (textBytes > FEED_INLINE_LIMIT_BYTES) return;
+		const key = inlineKey(set);
+		const bytes = textBytes + Buffer.byteLength(key, "utf8");
+		if (bytes > MAX_INLINE_CACHE_BYTES) return;
+		const existing = inline.get(key);
+		if (existing) inlineBytes -= existing.bytes;
+		inline.delete(key);
+		while (
+			inline.size >= MAX_INLINE_ENTRIES ||
+			inlineBytes + bytes > MAX_INLINE_CACHE_BYTES
+		) {
+			const oldest = inline.keys().next().value;
+			if (oldest === undefined) break;
+			inlineBytes -= inline.get(oldest)?.bytes ?? 0;
+			inline.delete(oldest);
+		}
+		inline.set(key, { text, bytes });
+		inlineBytes += bytes;
+	}
 
 	type Raw = Readonly<{ status: number; body: string }>;
 
@@ -122,81 +199,94 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 			timeoutMs?: number;
 		}> = {},
 	): Promise<Outcome<Raw>> {
-		const url = `${origin.origin}${path}`;
-		const bearer = options.bearer !== false;
-		const proofBase = {
-			privateJwk: d.privateJwk,
-			method,
-			url,
-			iatSeconds: Math.floor(d.now() / 1000),
-			jti: randomUUID(),
-		};
-		const proofInput: DpopProofInput = bearer
-			? { ...proofBase, accessToken: svid }
-			: proofBase;
-		const headers = new Map<string, string>([
-			["dpop", createDpopProof(proofInput)],
-			["accept", "application/json, text/event-stream"],
-		]);
-		for (const [key, value] of Object.entries(options.headers ?? {}))
-			headers.set(key, value);
-		if (bearer) headers.set("authorization", `DPoP ${svid}`);
-		if (options.body) headers.set("content-type", "application/json");
-		const base = {
-			method,
-			url,
-			headers: Object.fromEntries(headers),
-			timeoutMs: options.timeoutMs ?? REQUEST_TIMEOUT_MS,
-			maxResponseBytes: AGENT_MAX_RESPONSE_BYTES,
-		};
-		const request: TransportRequest = options.body
-			? { ...base, body: JSON.stringify(options.body) }
-			: base;
 		try {
+			const url = `${origin.origin}${path}`;
+			const bearer = options.bearer !== false;
+			const proof = await mintDpopProof(
+				key.signer,
+				key.publicJwk,
+				bearer
+					? { htm: method, htu: url, accessToken: svid, nowMs: d.now() }
+					: { htm: method, htu: url, nowMs: d.now() },
+			);
+			const headers = new Map<string, string>([
+				["dpop", proof],
+				["accept", "application/json, text/event-stream"],
+			]);
+			for (const [key, value] of Object.entries(options.headers ?? {}))
+				headers.set(key, value);
+			if (bearer) headers.set("authorization", `DPoP ${svid}`);
+			if (options.body) headers.set("content-type", "application/json");
+			const base = {
+				method,
+				url,
+				headers: Object.fromEntries(headers),
+				timeoutMs: options.timeoutMs ?? REQUEST_TIMEOUT_MS,
+				maxResponseBytes: AGENT_MAX_RESPONSE_BYTES,
+			};
+			const request: TransportRequest = options.body
+				? { ...base, body: JSON.stringify(options.body) }
+				: base;
 			const response = await http(request);
+			if (
+				!Number.isInteger(response.status) ||
+				response.status < 100 ||
+				response.status > 599 ||
+				!isText(response.body)
+			)
+				return agentRefusal(
+					"response-invalid",
+					"The Station response is invalid.",
+				);
 			return {
 				ok: true,
 				value: { status: response.status, body: response.body },
 			};
 		} catch (error) {
-			if (isEgressRefusal(error))
-				return agentRefusal("egress-refused", messageOf(error));
-			return agentRefusal("station-unavailable", messageOf(error));
+			let egress = false;
+			try {
+				egress = isEgressRefusal(error);
+			} catch {}
+			return egress
+				? agentRefusal(
+						"egress-refused",
+						"The Station egress policy refused the request.",
+					)
+				: agentRefusal(
+						"station-unavailable",
+						"The Station request could not be completed.",
+					);
 		}
 	}
 
-	async function ensureSvid(): Promise<Outcome<true>> {
-		if (d.now() < svidExpiresAtMs - CD_DEFAULTS.svidRefreshBeforeExpiryMs)
-			return { ok: true, value: true };
-		const live = d.now() < svidExpiresAtMs;
-		const raw = live
-			? await send("POST", FEED_ROUTES.svidRefresh, { body: {} })
-			: await send("POST", FEED_ROUTES.svidRefresh, {
-					body: { reconcilerId: d.reconcilerId },
-					bearer: false,
-				});
-		if (!raw.ok) return raw;
-		const envelope = parseEnvelope(raw.value.body);
-		if (!envelope.ok) {
-			// An SVID that expired between the check and the call is re-activated by key possession.
-			if (live && envelope.reasons[0]?.code === "svid-expired") {
-				svidExpiresAtMs = 0;
-				return ensureSvid();
-			}
-			return envelope;
-		}
-		const value = envelope.value;
-		if (
-			!isWireObject(value) ||
-			!isText(value.svid) ||
-			!isNumber(value.expiresAtMs)
-		)
+	async function ensureSvid(signal?: AbortSignal): Promise<Outcome<true>> {
+		if (signal?.aborted)
 			return agentRefusal(
-				"response-invalid",
-				"svid response lacks svid/expiresAtMs",
+				"station-unavailable",
+				"The Station request was cancelled.",
 			);
-		svid = value.svid;
-		svidExpiresAtMs = value.expiresAtMs;
+		if (d.credential !== undefined) {
+			let current: string;
+			try {
+				current = (await d.credential()).trim();
+			} catch {
+				return agentRefusal(
+					"svid-required",
+					"The member SVID could not be obtained.",
+				);
+			}
+			if (signal?.aborted)
+				return agentRefusal(
+					"station-unavailable",
+					"The Station request was cancelled.",
+				);
+			if (current !== svid) {
+				svid = current;
+				svidExpiresAtMs = expOf(current);
+			}
+		}
+		if (svidExpiresAtMs !== 0 && d.now() >= svidExpiresAtMs)
+			return agentRefusal("svid-expired", "The member SVID has expired.");
 		return { ok: true, value: true };
 	}
 
@@ -212,14 +302,29 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 				? await send(method, path)
 				: await send(method, path, { body });
 		if (!raw.ok) return raw;
-		return parseEnvelope(raw.value.body);
+		return stationEnvelope(raw.value.body, raw.value.status);
 	}
 
-	function leaseOf(value: PbJsonValue): Outcome<ReconcilerLease> {
+	function leaseOf(
+		value: PbJsonValue,
+		expected: Pick<ReconcilerLease, "campId" | "reconcilerId" | "holderId"> &
+			Partial<Pick<ReconcilerLease, "fence">>,
+	): Outcome<ReconcilerLease> {
 		const lease = parseLease(value);
-		return lease.ok
-			? lease
-			: agentRefusal("response-invalid", "lease response does not parse");
+		if (
+			!lease.ok ||
+			lease.value.campId !== expected.campId ||
+			lease.value.reconcilerId !== expected.reconcilerId ||
+			lease.value.holderId !== expected.holderId ||
+			(expected.fence !== undefined && lease.value.fence !== expected.fence) ||
+			!Number.isSafeInteger(lease.value.expiresAtMs) ||
+			lease.value.expiresAtMs <= d.now()
+		)
+			return agentRefusal(
+				"response-invalid",
+				"The Station returned an invalid lease.",
+			);
+		return lease;
 	}
 
 	function changeOf(frame: DeliveryFeedFrame): DesiredStateChange | undefined {
@@ -230,8 +335,7 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 		} catch {
 			return undefined;
 		}
-		if (frame.resolvedSetJson)
-			inline.set(frame.set.setId, frame.resolvedSetJson);
+		if (frame.resolvedSetJson) rememberInline(frame.set, frame.resolvedSetJson);
 		const base = {
 			position,
 			set: frame.set,
@@ -248,16 +352,16 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 		input: Readonly<{ lease: ReconcilerLease; signal: AbortSignal }>,
 	): AsyncIterable<DesiredStateChange> {
 		const { lease, signal } = input;
-		const key = `${lease.campId}#${lease.fence.toString(10)}`;
-		const redeliver = !fedLeases.has(key);
-		fedLeases.add(key);
+		const redeliver = fedLeases.get(lease.campId) !== lease.fence;
 		let lastId: string | undefined;
+		let lastPosition: EventPosition | undefined;
 		for (
 			let attempt = 0;
 			attempt <= MAX_RESUMES && !signal.aborted;
 			attempt += 1
 		) {
-			const fresh = await ensureSvid();
+			const fresh = await ensureSvid(signal);
+			if (signal.aborted) return;
 			if (!fresh.ok) throw new FeedRefusedError(fresh);
 			const query = new URLSearchParams({
 				camp: lease.campId,
@@ -272,9 +376,10 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 					CD_DEFAULTS.feedLongPollMs + 30_000,
 				),
 			});
+			if (signal.aborted) return;
 			if (!raw.ok) throw new FeedRefusedError(raw);
 			if (raw.value.status !== 200) {
-				const envelope = parseEnvelope(raw.value.body);
+				const envelope = stationEnvelope(raw.value.body, raw.value.status);
 				throw new FeedRefusedError(
 					envelope.ok
 						? agentRefusal(
@@ -286,13 +391,38 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 			}
 			let ended = false;
 			for (const message of decodeSse(raw.value.body)) {
+				if (signal.aborted) return;
 				if (message.event === FEED_SSE_EVENTS.end) {
+					let valid = false;
+					try {
+						const payload: PbJsonValue = JSON.parse(message.data);
+						valid =
+							isWireObject(payload) &&
+							isText(payload.reason) &&
+							VALID_END_REASONS.has(payload.reason);
+					} catch {}
+					if (!valid)
+						throw new FeedRefusedError(
+							agentRefusal("response-invalid", "The feed end is invalid."),
+						);
+					fedLeases.set(lease.campId, lease.fence);
 					ended = true;
 					break;
 				}
-				if (message.event !== FEED_SSE_EVENTS.frame || message.id === undefined)
-					continue;
-				if (lastId !== undefined && BigInt(message.id) <= BigInt(lastId))
+				if (message.event !== FEED_SSE_EVENTS.frame) continue;
+				if (message.id === undefined)
+					throw new FeedRefusedError(
+						agentRefusal("response-invalid", "The feed frame has no position."),
+					);
+				const position = parsePosition(message.id);
+				if (!position.ok)
+					throw new FeedRefusedError(
+						agentRefusal(
+							"response-invalid",
+							"The feed frame position is invalid.",
+						),
+					);
+				if (lastPosition !== undefined && position.value <= lastPosition)
 					continue;
 				let frame: DeliveryFeedFrame;
 				try {
@@ -301,21 +431,29 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 					});
 				} catch {
 					throw new FeedRefusedError(
-						agentRefusal(
-							"response-invalid",
-							`frame ${message.id} does not parse`,
-						),
+						agentRefusal("response-invalid", "The feed frame is invalid."),
 					);
 				}
-				const change = changeOf(frame);
-				if (!change || frame.set?.campId !== lease.campId)
+				const framePosition = parsePosition(frame.position);
+				if (
+					!framePosition.ok ||
+					framePosition.value !== position.value ||
+					frame.set?.campId !== lease.campId
+				)
 					throw new FeedRefusedError(
 						agentRefusal(
 							"response-invalid",
-							`frame ${message.id} is not for Camp ${lease.campId}`,
+							"The feed frame does not match the requested lease.",
 						),
 					);
+				const change = changeOf(frame);
+				if (!change)
+					throw new FeedRefusedError(
+						agentRefusal("response-invalid", "The feed frame is invalid."),
+					);
 				lastId = message.id;
+				lastPosition = position.value;
+				if (signal.aborted) return;
 				yield change;
 			}
 			if (ended) return;
@@ -330,10 +468,9 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 		if (set.campId !== lease.campId)
 			return feedRefusal(
 				"resolved-set-mismatch",
-				`Set ${set.setId} belongs to Camp ${set.campId}, not ${lease.campId}`,
-				set.setId,
+				"The resolved set does not match the requested lease.",
 			);
-		let text = inline.get(set.setId);
+		let text = inline.get(inlineKey(set))?.text;
 		if (text === undefined) {
 			const fresh = await ensureSvid();
 			if (!fresh.ok) return fresh;
@@ -343,7 +480,7 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 			);
 			if (!raw.ok) return raw;
 			if (raw.value.status !== 200) {
-				const envelope = parseEnvelope(raw.value.body);
+				const envelope = stationEnvelope(raw.value.body, raw.value.status);
 				if (envelope.ok)
 					return agentRefusal(
 						"response-invalid",
@@ -353,14 +490,12 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 				if (code === "blob-missing")
 					return feedRefusal(
 						"resolved-set-missing",
-						envelope.reasons[0]?.message ?? "",
-						set.setId,
+						"The resolved set is unavailable.",
 					);
 				if (code === "blob-corrupt")
 					return feedRefusal(
 						"resolved-set-mismatch",
-						envelope.reasons[0]?.message ?? "",
-						set.setId,
+						"The resolved set could not be verified.",
 					);
 				return envelope;
 			}
@@ -371,21 +506,33 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 
 	return Object.freeze({
 		async claim(input) {
+			if (input.reconcilerId !== d.reconcilerId)
+				return agentRefusal(
+					"response-invalid",
+					"The requested reconciler does not match this agent.",
+				);
 			const value = await call("POST", FEED_ROUTES.leases, {
 				campId: input.campId,
 				holderId: input.holderId,
 				ttlMs: input.ttlMs,
 			});
-			return value.ok ? leaseOf(value.value) : value;
+			return value.ok ? leaseOf(value.value, input) : value;
 		},
 		async renew(lease) {
+			if (lease.reconcilerId !== d.reconcilerId)
+				return agentRefusal(
+					"response-invalid",
+					"The requested reconciler does not match this agent.",
+				);
 			const value = await call("POST", FEED_ROUTES.leaseRenew, {
 				lease: leaseJson(lease),
 			});
-			return value.ok ? leaseOf(value.value) : value;
+			return value.ok ? leaseOf(value.value, lease) : value;
 		},
 		async release(lease) {
-			fedLeases.delete(`${lease.campId}#${lease.fence.toString(10)}`);
+			if (lease.reconcilerId !== d.reconcilerId) return;
+			if (fedLeases.get(lease.campId) === lease.fence)
+				fedLeases.delete(lease.campId);
 			await call("POST", FEED_ROUTES.leaseRelease, { lease: leaseJson(lease) });
 		},
 		feed,
@@ -441,17 +588,15 @@ export function parseResolvedSet(
 	if (digest !== set.resolvedSetDigest)
 		return feedRefusal(
 			"resolved-set-mismatch",
-			`resolved set bytes hash to ${digest}, not ${set.resolvedSetDigest}`,
-			set.setId,
+			"The resolved set bytes do not match the expected digest.",
 		);
 	let json: PbJsonValue;
 	try {
 		json = JSON.parse(text);
-	} catch (error) {
+	} catch {
 		return feedRefusal(
 			"resolved-set-mismatch",
-			`resolved set does not parse: ${messageOf(error)}`,
-			set.setId,
+			"The resolved set is not valid JSON.",
 		);
 	}
 	if (
@@ -468,13 +613,11 @@ export function parseResolvedSet(
 		return feedRefusal(
 			"resolved-set-mismatch",
 			"resolved set is not a hobo.resolved-deployment-set/v1",
-			set.setId,
 		);
 	if (json.contentHash !== set.contentHash || json.campId !== set.campId)
 		return feedRefusal(
 			"resolved-set-mismatch",
-			`resolved set content ${json.contentHash} does not match Set ${set.contentHash}`,
-			set.setId,
+			"The resolved set does not match the expected content.",
 		);
 	return { ok: true, value: Object.freeze(asResolvedSet(json)) };
 }

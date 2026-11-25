@@ -18,15 +18,15 @@
           "issue": "HOBO-553",
           "phase": "M1",
           "targetPackage": "src/draft/exp-proofs/ux/vibe-troubleshooting-decision-trees",
-          "proofNote": "urn:hobo:proof:vibe-troubleshooting-decision-trees",
+          "proofNote": "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md",
           "designRefs": [
-            "urn:hobo:requirement:troubleshooting-guides",
-            "urn:hobo:proof:hobo-437-troubleshooting-guides-scope",
-            "urn:hobo:proof:resource-lifecycle-quickstart-examples",
-            "urn:hobo:requirement:developer-experience#plan-07",
-            "urn:hobo:requirement:launch-support-escalation",
-            "urn:hobo:requirement:support-sla-channels",
-            "urn:hobo:requirement:known-limitations-register"
+            "docs/design/troubleshooting-guides.md",
+            "docs/design/proofs/hobo-437-troubleshooting-guides-scope/index.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/launch-support-escalation.md",
+            "docs/design/support-sla-channels.md",
+            "docs/design/known-limitations-register.md"
           ],
           "proofModes": [
             "live",

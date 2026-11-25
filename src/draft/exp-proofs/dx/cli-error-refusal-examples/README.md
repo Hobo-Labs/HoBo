@@ -56,6 +56,8 @@ implementation is included here.
 pnpm.cmd --prefix src\draft\exp-proofs\cli-error-refusal-examples test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` defines protobuf records and CUE constraints for the catalog.
 - `architecture/pacts/` records the Pact-style design proof boundary.
+- `ADR.md` records parse-derived types and command/event/actor/projection/read-store behavior.

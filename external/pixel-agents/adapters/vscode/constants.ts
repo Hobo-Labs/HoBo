@@ -1,3 +1,10 @@
+// ── User-Level Layout Persistence (re-exports from server/) ──
+// The user-level persistence contract, surfaced as one adapter-facing barrel so
+// VS Code code never reaches into server/src/constants.js directly. Only
+// LAYOUT_REVISION_KEY has an adapter consumer today (PixelAgentsViewProvider);
+// the rest travel with it because they describe the same ~/.pixel-agents
+// file layout, and splitting the set would leave the next caller guessing which
+// half to import from where.
 /** @public */
 export {
   CONFIG_FILE_NAME,
@@ -7,6 +14,7 @@ export {
   LAYOUT_REVISION_KEY,
 } from '../../server/src/constants.js';
 
+// ── Settings Persistence (VS Code globalState keys) ─────────
 export const GLOBAL_KEY_SOUND_ENABLED = 'pixel-agents.soundEnabled';
 export const GLOBAL_KEY_LAST_SEEN_VERSION = 'pixel-agents.lastSeenVersion';
 export const GLOBAL_KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
@@ -24,9 +32,11 @@ export const GLOBAL_KEY_SHOW_AREAS = 'pixel-agents.showAreas';
  */
 export const SETTING_KEY_AREA_MAPPINGS = 'pixel-agents.areaMappings';
 
+// ── VS Code Settings (contributes.configuration keys) ───────
 export const CONFIG_KEY_AUTO_SHOW_PANEL = 'pixel-agents.autoShowPanel';
 export const CONFIG_KEY_AUTO_SPAWN_AGENT = 'pixel-agents.autoSpawnAgent';
 
+// ── VS Code Identifiers ─────────────────────────────────────
 export const VIEW_ID = 'pixel-agents.panelView';
 export const COMMAND_SHOW_PANEL = 'pixel-agents.showPanel';
 export const COMMAND_EXPORT_DEFAULT_LAYOUT = 'pixel-agents.exportDefaultLayout';

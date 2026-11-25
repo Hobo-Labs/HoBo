@@ -1,10 +1,10 @@
 ---
 layout: ../../layouts/Docs.astro
-title: Journal schema
-description: "SQLite journal initialization, tables, codecs, and integrity checks."
+title: Schema & migrations
+description: "SQLite user_version, streams/events/effects tables, codecs, legacy migration, and fail-closed integrity checks."
 ---
 
-# Journal schema
+# Schema & migrations
 
 Default durable journal schema lives in **SQLite storage engine**. Engines may differ physically; **semantics** (stream heads, positions, fencing, staged effects) must pass conformance.
 
@@ -12,13 +12,12 @@ Default durable journal schema lives in **SQLite storage engine**. Engines may d
 
 | Constant | Meaning |
 |---|---|
-| `SCHEMA_VERSION` | Current journal schema format |
+| `SCHEMA_VERSION` | Current (v2) |
+| `LEGACY_SCHEMA_VERSION` | Prior on-disk (v1) |
 
-`PRAGMA user_version` must match the journal's schema. A mismatched version is
-rejected with `UNSUPPORTED_SCHEMA_VERSION`. An unstamped database containing
-objects or a database with altered journal tables or indexes is rejected.
+`PRAGMA user_version` must match code. Opening a **newer** DB with older code → `UNSUPPORTED_SCHEMA_VERSION` (fail closed).
 
-## Core tables
+## Core tables (v2 conceptual)
 
 | Table | Role |
 |---|---|
@@ -36,13 +35,14 @@ Native single-owner partitions use WAL-friendly settings with **`synchronous=FUL
 
 ## Codecs
 
-Event payloads encode via codecs. Unknown codec → `UNSUPPORTED_CODEC`.
+Event payloads encode via versioned codecs. Unknown codec → `UNSUPPORTED_CODEC`. Upcasters live in the data plane, not as silent rewrite of historical bytes without policy.
 
-## Initialization
+## Migration rules
 
-The journal creates its schema in one transaction. Reopening verifies the
-stored table and index definitions. Incompatible databases are left intact.
-`assertIntegrity` checks SQLite integrity and foreign keys.
+1. Forward-only migrations; no destructive “fix by deleting the file” in production paths.
+2. Legacy streams get `owner_epoch = 0` until first fenced write.
+3. Integrity checks: contiguous seq, head matches last event, positions monotonic — failures → `STREAM_INTEGRITY` / `MIGRATION_FAILURE`.
+4. Tests: [Migration fixtures](/HoBo/testing/migration/).
 
 ## What apps must not do
 

@@ -1,6 +1,10 @@
+// Typed failure modes of the delivery feed. Each code has
+// the HTTP status the feed answers with and a remediation. Agent-identity
+// codes (SVID, DPoP, enrollment) live in ../agent/errors.ts.
 import { AGENT_FAILURES, type FailureSpec, reasonOf } from "../agent/errors.js";
 import type { Refusal } from "../ports.js";
 
+// public-contract: refusal codes of `@hobo/cd/feed` with HTTP status and remediation.
 export const FEED_FAILURES = Object.freeze({
 	"request-invalid": {
 		status: 400,
@@ -117,6 +121,7 @@ export function feedRefusal(
 	};
 }
 
+/** HTTP status for any refusal code the feed can return. */
 const FEED_STATUS: ReadonlyMap<string, number> = new Map(
 	Object.entries(FEED_FAILURES).map(([code, spec]) => [code, spec.status]),
 );

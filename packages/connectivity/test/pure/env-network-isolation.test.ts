@@ -1,3 +1,8 @@
+/**
+ * Environment Network Isolation conformance suite (offline).
+ * Proves walls between isolation classes + positive controls.
+ */
+
 import { createMeteringBus, parseTenantId } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
@@ -7,6 +12,7 @@ import {
 	CrossEnvGrantStore,
 	createEnvNetworkIsolationRegistry,
 	createTagAclPolicyEngine,
+	createTailscaleOverlay,
 	createTenantIsolationRegistry,
 	DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK,
 	ENV_NETWORK_ISOLATION_POLICY_PACK_ID,
@@ -25,6 +31,7 @@ import {
 	ENV_NETWORK_ISOLATION_REGO_DOCUMENT,
 	evaluateRegoLite,
 } from "../../src/policy/rego-lite.js";
+import { createTestElevatedIssuer } from "../support/elevated-issuer.js";
 
 const tenant = parseTenantId("acme");
 
@@ -90,40 +97,44 @@ describe("Environment Network Isolation conformance", () => {
 			isolationClass: "development",
 			assignedBy: "cp-admin",
 		});
-		const { token, capability } = mintElevatedAccessCapability({
+		const issuer = createTestElevatedIssuer();
+		const elevatedTrust = { issuer: issuer.issuerUrl, verify: issuer.verify };
+		const { token, capability } = await mintElevatedAccessCapability({
 			subject: "user:alice",
 			isolationClass: "production",
 			issuedBy: "cp-admin",
 			ttlSeconds: 600,
 			priorAuthnClass: "development",
 			evidence: { kind: "lower-env-authn", ref: "authn-1" },
-			allowDefaultSecret: true,
+			issuer,
 		});
 
 		const engine = createTagAclPolicyEngine({
 			envIsolation: {
 				membership,
 				elevatedToken: token,
+				elevatedTrust,
 				enforceMembershipIntegrity: true,
 			},
 		});
+		// Subject still development-tagged; elevated opens production resource.
 		const allow = await engine.evaluate(req("development", "production"));
 		expect(allow.effect).toBe("allow");
 		expect(capability.audience).toBe("production-access");
 
-		const wrong = verifyElevatedAccessCapability({
+		const wrong = await verifyElevatedAccessCapability({
 			token,
 			expectedAudience: "staging-access",
 			expectedIsolationClass: "staging",
-			allowDefaultSecret: true,
+			trust: elevatedTrust,
 		});
 		expect(wrong.ok).toBe(false);
 
-		const expired = verifyElevatedAccessCapability({
+		const expired = await verifyElevatedAccessCapability({
 			token,
 			expectedAudience: "production-access",
 			expectedIsolationClass: "production",
-			allowDefaultSecret: true,
+			trust: elevatedTrust,
 			now: new Date(Date.now() + 3600_000).toISOString(),
 		});
 		expect(expired.ok).toBe(false);
@@ -147,6 +158,7 @@ describe("Environment Network Isolation conformance", () => {
 		const engine = createTagAclPolicyEngine({
 			envIsolation: {
 				breakGlass: bg,
+				// skip membership integrity for this case
 				enforceMembershipIntegrity: false,
 			},
 		});
@@ -187,7 +199,8 @@ describe("Environment Network Isolation conformance", () => {
 	});
 
 	it("junction env scope: cross-env federation refused", async () => {
-		const verdict = evaluateEnvIsolation(
+		// Pure federation check via evaluateEnvIsolation
+		const verdict = await evaluateEnvIsolation(
 			req("development", "production", {
 				subjectTags: ["role:junction"],
 				resourceTags: [],
@@ -197,10 +210,16 @@ describe("Environment Network Isolation conformance", () => {
 	});
 
 	it("tenant × env composition: harder axis wins", () => {
-		const tenants = createTenantIsolationRegistry();
+		const tenants = createTenantIsolationRegistry({
+			shared: createTailscaleOverlay(),
+			forTenant: () => createTailscaleOverlay(),
+		});
 		tenants.registerTenant(tenantFromSlug("hard-a", "hard-overlay"));
 		tenants.registerTenant(tenantFromSlug("hard-b", "hard-overlay"));
-		const envs = createEnvNetworkIsolationRegistry();
+		const envs = createEnvNetworkIsolationRegistry({
+			shared: createTailscaleOverlay(),
+			forClass: () => createTailscaleOverlay(),
+		});
 		envs.registerClass("development", { tier: "soft" });
 		envs.registerClass("production", { tier: "hard-overlay" });
 
@@ -222,6 +241,7 @@ describe("Environment Network Isolation conformance", () => {
 
 	it("agent principal cannot ambiently escalate without membership", async () => {
 		const membership = new EnvMembershipService({ tenant: "acme" });
+		// no membership assigned for agent
 		const engine = createTagAclPolicyEngine({
 			envIsolation: {
 				membership,
@@ -287,6 +307,7 @@ describe("Environment Network Isolation conformance", () => {
 				enforceMembershipIntegrity: true,
 			},
 		});
+		// Subject claims production tag but no control-plane membership
 		const decision = await engine.evaluate(req("production", "production"));
 		expect(decision.effect).toBe("deny");
 		expect(decision.reasons.join(" ")).toMatch(/membership/i);
@@ -337,6 +358,10 @@ describe("Environment Network Isolation conformance", () => {
 		expect(pack.id).toBe(ENV_NETWORK_ISOLATION_POLICY_PACK_ID);
 		expect(pack.failClosed).toBe(true);
 		expect(pack.defaultDenyCrossEnv).toBe(true);
+		// `parseEnvNetworkIsolationPolicyPack` has three refusal branches and a
+		// bare `.toThrow()` could not tell them apart: a pack that lost its
+		// `failClosed` guard entirely would still have gone green here, refused
+		// one line earlier on the id. Each row names the branch it exercises.
 		expect(() =>
 			parseEnvNetworkIsolationPolicyPack({
 				id: ENV_NETWORK_ISOLATION_POLICY_PACK_ID,

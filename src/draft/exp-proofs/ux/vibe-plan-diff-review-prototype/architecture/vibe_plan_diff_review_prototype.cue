@@ -75,7 +75,7 @@ package vibe_plan_diff_review_prototype
 	issue:                 #Issue
 	phase:                 "M2"
 	targetPackage:         "src/draft/exp-proofs/ux/vibe-plan-diff-review-prototype"
-	proofNote:             "urn:hobo:proof:vibe-plan-diff-review-prototype"
+	proofNote:             "docs/design/proofs/vibe-plan-diff-review-prototype/README.md"
 	sourceDependencies:    [#SourceDependency, ...#SourceDependency]
 	quickstartFixtureRefs: [#QuickstartFixtureRef, ...#QuickstartFixtureRef]
 	goldenFixtures:        [#GoldenFixture, ...#GoldenFixture]

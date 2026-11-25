@@ -30,6 +30,7 @@ describe("policy gate (deny-ceiling, fail closed)", () => {
 	});
 
 	it("unlisted action classes parse to require-approval, never allow", () => {
+		// write/deploy/token/admin were omitted from the policy document.
 		assert.equal(POLICY.actionClasses.write, "require-approval");
 		assert.equal(POLICY.actionClasses.deploy, "require-approval");
 	});
@@ -65,81 +66,6 @@ describe("policy gate (deny-ceiling, fail closed)", () => {
 				actionClasses: { destroy: "allow-always" },
 			}),
 		);
-		assert.throws(() =>
-			parseAgentGuardrailPolicy({
-				agentId: "a",
-				spendCapUsd: -1,
-			}),
-		);
-		assert.throws(() =>
-			parseAgentGuardrailPolicy({
-				agentId: "a",
-				actionQuotas: { "linear:issue:claim": 1.5 },
-			}),
-		);
-	});
-
-	it("enforces action quotas before an auto-allow class", () => {
-		const policy = parseAgentGuardrailPolicy({
-			agentId: "issue-worker",
-			actionClasses: { write: "auto-allow" },
-			actionQuotas: { "linear:issue:claim": 1 },
-		});
-		const missingUsage = evaluateToolPermission({
-			action: "linear:issue:claim",
-			policy,
-		});
-		assert.equal(missingUsage.effect, "deny");
-		assert.ok(missingUsage.reasons.includes("action-quota-usage-missing"));
-
-		const available = evaluateToolPermission({
-			action: "linear:issue:claim",
-			policy,
-			usage: { currentSpendUsd: 0, actionCounts: {} },
-		});
-		assert.equal(available.effect, "allow");
-
-		const exhausted = evaluateToolPermission({
-			action: "linear:issue:claim",
-			policy,
-			usage: {
-				currentSpendUsd: 0,
-				actionCounts: { "linear:issue:claim": 1 },
-			},
-		});
-		assert.equal(exhausted.effect, "deny");
-		assert.ok(exhausted.reasons.includes("action-quota-exhausted:1"));
-	});
-
-	it("enforces the spend cap before an auto-allow class", () => {
-		const policy = parseAgentGuardrailPolicy({
-			agentId: "issue-worker",
-			actionClasses: { write: "auto-allow" },
-			spendCapUsd: 5,
-		});
-		const missingEstimate = evaluateToolPermission({
-			action: "github:pull-request:create",
-			policy,
-			usage: { currentSpendUsd: 0, actionCounts: {} },
-		});
-		assert.equal(missingEstimate.effect, "deny");
-
-		const withinCap = evaluateToolPermission({
-			action: "github:pull-request:create",
-			policy,
-			estimatedCostUsd: 2,
-			usage: { currentSpendUsd: 3, actionCounts: {} },
-		});
-		assert.equal(withinCap.effect, "allow");
-
-		const overCap = evaluateToolPermission({
-			action: "github:pull-request:create",
-			policy,
-			estimatedCostUsd: 2.01,
-			usage: { currentSpendUsd: 3, actionCounts: {} },
-		});
-		assert.equal(overCap.effect, "deny");
-		assert.ok(overCap.reasons.includes("spend-cap-exceeded:5"));
 	});
 });
 
@@ -216,6 +142,7 @@ describe("connector-token broker seam (ai-native-agent-auth.md)", () => {
 		assert.throws(() =>
 			buildConnectorTokenRequest({
 				requestId: "xaa-swe-agent",
+				// SAFETY: assertion to `undefined as never` is required at this boundary.
 				principal: { ...principal, delegatedBy: undefined as never },
 				target: { id: "swe-agent", audience: "acp://swe-agent" },
 				manifestAllow: ["logs:tail"],

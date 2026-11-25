@@ -8,7 +8,7 @@ with shared-cache economics, plus Depot-managed Actions runners.
   (Connect RPC `CreateBuild` → per-build token), runs it through the
   BuildKit executor seam (the `depot` CLI in the live lane) and returns a
   pullable `ImageRef`. Every build surfaces a `build.CacheHitObserved`
-  fact (observed hit ratio, metered units, and estimated units); only observed units debit
+  fact (observed hit ratio + metered units); only observed units debit
   the credit budget, so the second identical build demonstrates the
   shared-cache speedup in the log.
 - **RunnerProvider** (`hobo:runner`) — the SAME job spec as
@@ -29,8 +29,9 @@ and records the rationale in `dispatch.Decided` (ADR-0071).
   tests assert exact CreateBuild request formation and the recorded
   cache-fact sequence — no network. Successful build registration requires
   non-empty build IDs and tokens.
-- **Live lane (credential-gated):** `DEPOT_PROJECT_TOKEN` (broker-minted
-  short-lived project token) + the `depot` CLI executor; a missing
+- **Live lane (credential-gated):** `owner://DEPOT_PROJECT_TOKEN`, a
+  short-lived project token resolved through the owner store session
+  (`ownerDepotTokenProvider`; the environment is never read) + the `depot` CLI executor; a missing
   executor or token fails closed with typed gates.
 
 ## Install

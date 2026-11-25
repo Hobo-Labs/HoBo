@@ -396,26 +396,26 @@ The flip side is deliberate narrowness: Google-only, SaaS-only, pre-release, and
 
 <a id="hobo-mapping"></a>
 
-> How shoo's ideas map onto HoBo's identity/auth model. ✅ = HoBo has an equivalent · ➕ = HoBo goes further · n/a = out of HoBo's scope. HoBo design lives in [`../design/`](urn:hobo:requirement:index). shoo is *adjacent* to HoBo (an end-user auth broker), not a head-on competitor — the interesting overlap is the identity/token model.
+> How shoo's ideas map onto HoBo's identity/auth model. ✅ = HoBo has an equivalent · ➕ = HoBo goes further · n/a = out of HoBo's scope. HoBo design lives in [`../design/`](../design/index.md). shoo is *adjacent* to HoBo (an end-user auth broker), not a head-on competitor — the interesting overlap is the identity/token model.
 
 | shoo.dev | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Auth broker (intent: "sign-in with ~zero config") | HoBo's identity model is for **workloads + agents**, not human Google sign-in — but the "keyless, zero-config credential" goal is shared | ➕ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
-| ES256 `id_token` + JWKS verification | HoBo principals carry **SVIDs**/OIDC tokens verified the same standards-based way; brokered, short-lived | ➕ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06), [12](urn:hobo:requirement:security-networking#plan-12) |
-| OIDC discovery (`/.well-known/openid-configuration`, JWKS) | HoBo issues/consumes OIDC; agents are first-class **OIDC principals** | ✅ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
-| Domain-scoped `pairwise_sub` (no cross-site tracking) | Tenant/audience-scoped identities; least-privilege, per-scope tokens | ✅ | [12](urn:hobo:requirement:security-networking#plan-12) |
-| Mandatory PKCE (S256) | HoBo's agent OAuth/token brokering uses PKCE + audience-scoping | ✅ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
-| Mandatory server-side verification (browser untrusted) | HoBo's invariant: the control plane never trusts client claims; everything is verified + event-logged | ➕ | [12](urn:hobo:requirement:security-networking#plan-12), [11](urn:hobo:requirement:data-plane#plan-11) |
-| `customJwt`/JWKS integration into a backend (Convex) | A HoBo app could trust shoo (or any OIDC issuer) for **end-user** auth via the `secrets`/identity ports — orthogonal to HoBo's **workload** identity | ✅ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
+| Auth broker (intent: "sign-in with ~zero config") | HoBo's identity model is for **workloads + agents**, not human Google sign-in — but the "keyless, zero-config credential" goal is shared | ➕ | [06](../design/ai-native-agent-auth.md#plan-06) |
+| ES256 `id_token` + JWKS verification | HoBo principals carry **SVIDs**/OIDC tokens verified the same standards-based way; brokered, short-lived | ➕ | [06](../design/ai-native-agent-auth.md#plan-06), [12](../design/security-networking.md#plan-12) |
+| OIDC discovery (`/.well-known/openid-configuration`, JWKS) | HoBo issues/consumes OIDC; agents are first-class **OIDC principals** | ✅ | [06](../design/ai-native-agent-auth.md#plan-06) |
+| Domain-scoped `pairwise_sub` (no cross-site tracking) | Tenant/audience-scoped identities; least-privilege, per-scope tokens | ✅ | [12](../design/security-networking.md#plan-12) |
+| Mandatory PKCE (S256) | HoBo's agent OAuth/token brokering uses PKCE + audience-scoping | ✅ | [06](../design/ai-native-agent-auth.md#plan-06) |
+| Mandatory server-side verification (browser untrusted) | HoBo's invariant: the control plane never trusts client claims; everything is verified + event-logged | ➕ | [12](../design/security-networking.md#plan-12), [11](../design/data-plane.md#plan-11) |
+| `customJwt`/JWKS integration into a backend (Convex) | A HoBo app could trust shoo (or any OIDC issuer) for **end-user** auth via the `secrets`/identity ports — orthogonal to HoBo's **workload** identity | ✅ | [21](../design/authoring-resources-wiring.md#plan-21), [06](../design/ai-native-agent-auth.md#plan-06) |
 
-**How they relate (not competitors).** shoo answers **"how do end users sign in"** (human → Google). HoBo answers **"how do workloads and AI agents prove identity and get scoped credentials to clouds"** (machine → infra). They compose: a HoBo-deployed app could use shoo for its end-user login while HoBo handles workload/agent identity + secret brokering underneath. shoo's design choices that HoBo already shares — standards-based tokens (not proprietary SDKs), JWKS verification, PKCE, audience-scoping, mandatory server verification — corroborate HoBo's [Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06)/[Plan 12](urn:hobo:requirement:security-networking#plan-12) choices, extended to agents-as-principals and event-sourced auditing.
+**How they relate (not competitors).** shoo answers **"how do end users sign in"** (human → Google). HoBo answers **"how do workloads and AI agents prove identity and get scoped credentials to clouds"** (machine → infra). They compose: a HoBo-deployed app could use shoo for its end-user login while HoBo handles workload/agent identity + secret brokering underneath. shoo's design choices that HoBo already shares — standards-based tokens (not proprietary SDKs), JWKS verification, PKCE, audience-scoping, mandatory server verification — corroborate HoBo's [Plan 6](../design/ai-native-agent-auth.md#plan-06)/[Plan 12](../design/security-networking.md#plan-12) choices, extended to agents-as-principals and event-sourced auditing.
 
 ## Where HoBo is stronger or intentionally different
 
 State labels follow the research contract; this capture predates it, so design intent below reads as **design-only**.
 
 
-**Where HoBo deliberately differs.** The subject is **machines/agents**, not humans — HoBo's identity exists to let workloads/agents self-provision cloud credentials with zero developer involvement. It is **event-sourced and auditable** — every credential issuance/use is an event ([Plan 11](urn:hobo:requirement:data-plane#plan-11)), where shoo is a stateless token broker. And it is **self-hostable and multi-provider** — HoBo identity isn't tied to one IdP or a single SaaS.
+**Where HoBo deliberately differs.** The subject is **machines/agents**, not humans — HoBo's identity exists to let workloads/agents self-provision cloud credentials with zero developer involvement. It is **event-sourced and auditable** — every credential issuance/use is an event ([Plan 11](../design/data-plane.md#plan-11)), where shoo is a stateless token broker. And it is **self-hostable and multi-provider** — HoBo identity isn't tied to one IdP or a single SaaS.
 
 ## Better-together / integration posture
 

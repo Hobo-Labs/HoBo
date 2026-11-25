@@ -6,9 +6,9 @@ renewal-grace lease from HOBO-266.
 
 Design refs:
 
-- [Plan 06: Agent identity and the token broker](urn:hobo:requirement:ai-native-agent-auth#plan-06)
-- [ADR-0008](urn:hobo:decision:adr-0008)
-- [ADR-0100](urn:hobo:decision:adr-0100)
+- [Plan 06: Agent identity and the token broker](../../../../docs/design/ai-native-agent-auth.md#plan-06)
+- [ADR-0008](../../../../docs/design/adr/02-identity-security.md#adr-0008)
+- [ADR-0100](../../../../docs/design/adr/02-identity-security.md#adr-0100)
 - [HOBO-266 partition grace spike](../svid-partition-grace-spike)
 
 Behavior pinned by `npm test`:
@@ -33,9 +33,11 @@ Scope boundary:
   the HOBO-266 partition recommendation.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Token Broker Ha Cache Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

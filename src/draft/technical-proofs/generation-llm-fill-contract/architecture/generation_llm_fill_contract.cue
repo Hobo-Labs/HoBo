@@ -1,6 +1,9 @@
+// CUE constraints for every protobuf type in this package's schema, so the
+// architecture guard can confirm the data shapes are bounded at parse time.
+
 package architecture_evidence
 
-#GenerationLlmFillContractEvidenceKind: "unspecified" | "contract-record" | "contract-test"
+#GenerationLlmFillContractEvidenceKind: "unspecified" | "design-record" | "contract-test"
 
 #GenerationLlmFillContractRecord: {
 	issue:    string & !=""

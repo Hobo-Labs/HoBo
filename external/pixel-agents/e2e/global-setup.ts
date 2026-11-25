@@ -75,9 +75,23 @@ async function withVSCodeDownloadLock<T>(callback: () => Promise<T>): Promise<T>
   }
 }
 
+/**
+ * On Windows, VS Code checks for an InnoSetup mutex (`win32MutexName + "-updating"`)
+ * at startup. If the host machine's VS Code installer is running (e.g. a pending
+ * "Restart to Update"), the mutex is held and ALL VS Code instances — including our
+ * test archive — refuse to start with "Code is currently being updated".
+ *
+ * The check in main.js is:
+ *   if (!(isWindows && product.win32MutexName && product.win32VersionedUpdate)) return false;
+ *
+ * Removing `win32VersionedUpdate` from product.json makes the check short-circuit,
+ * so the test instance launches regardless of installer state. This is safe because
+ * the test archive is not managed by InnoSetup and never needs update coordination.
+ */
 function patchProductJsonForWindows(vscodePath: string): void {
   if (process.platform !== 'win32') return;
 
+  // vscodePath points to Code.exe — product.json is in the resources/app dir
   const vscodeDir = path.dirname(vscodePath);
   const candidates = fs
     .readdirSync(vscodeDir)
@@ -100,6 +114,7 @@ function patchProductJsonForWindows(vscodePath: string): void {
         delete product.win32VersionedUpdate;
         patched = true;
       }
+      // Also check nested objects (e.g. "tunnelApplicationConfig")
       for (const key of Object.keys(product)) {
         if (typeof product[key] === 'object' && product[key]?.win32VersionedUpdate) {
           delete product[key].win32VersionedUpdate;

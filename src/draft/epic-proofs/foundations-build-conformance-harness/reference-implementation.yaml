@@ -7,6 +7,8 @@ linear_url: "https://linear.app/quickdeploy-ai/project/foundations-build-and-con
 branch: "contacttylerkendrick/foundations-build-conformance-harness/epic-rollup-648882d1-sprawl-20260629T024201Z-50d1"
 pr_url: "https://github.com/Tyler-R-Kendrick/HoBo/pull/415"
 reference_impl_root: "src/draft/epic-proofs/foundations-build-conformance-harness"
+ledger: "src/draft/epic-proofs/foundations-build-conformance-harness/poc-rollup-ledger.md"
+pact_inventory: "src/draft/epic-proofs/foundations-build-conformance-harness/contracts/pact-inventory.md"
 simulation_command: "npm.cmd --prefix src\\draft\\epic-proofs\\foundations-build-conformance-harness run simulate"
 last_linear_marker: "EPIC_ROLLUP_PR"
 last_updated: "2026-06-29T03:06:11Z"

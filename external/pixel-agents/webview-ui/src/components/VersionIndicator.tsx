@@ -25,6 +25,7 @@ export function VersionIndicator({
   const isUnseen = currentMajorMinor !== lastSeenVersion;
   const showUpdateNotice = isUnseen && !dismissed;
 
+  // Start fade-out after auto-close delay, then fully dismiss after the transition
   useEffect(() => {
     if (!showUpdateNotice || fading) return;
     const fadeTimer = setTimeout(() => setFading(true), WHATS_NEW_AUTO_CLOSE_MS);
@@ -58,7 +59,7 @@ export function VersionIndicator({
 
   return (
     <>
-      { }
+      {/* Update notice — shown once per version until dismissed or auto-closed */}
       {showUpdateNotice && (
         <div
           onClick={handleOpenChangelog}
@@ -79,7 +80,7 @@ export function VersionIndicator({
           <span className="text-sm whitespace-nowrap">See what's new</span>
         </div>
       )}
-      { }
+      {/* Hover tooltip — "See what's new" appears on label hover after notice is gone */}
       {!showUpdateNotice && labelHovered && (
         <div
           onClick={handleOpenChangelog}
@@ -88,7 +89,7 @@ export function VersionIndicator({
           See what's new!
         </div>
       )}
-      { }
+      {/* Version label — always visible */}
       <div
         onMouseEnter={() => setLabelHovered(true)}
         onMouseLeave={() => setLabelHovered(false)}

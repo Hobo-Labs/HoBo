@@ -312,8 +312,8 @@ function envelope(kind: BrokerArtifactKind, owner: string, payload: JsonObject):
       source: {
         issue: "HOBO-522",
         refs: [
-          "urn:hobo:requirement:meta-cloud-broker",
-          "urn:hobo:requirement:contracts-policy-flags",
+          "docs/design/meta-cloud-broker.md",
+          "docs/design/contracts-policy-flags.md",
           "src/draft/exp-proofs/api/meta-cloud-broker-scope-contract/README.md",
         ],
       },

@@ -52,8 +52,10 @@ function sortKeys(value: JsonValue | undefined): JsonValue {
 	if (Array.isArray(value)) return value.map(sortKeys);
 	if (!value || !isJsonObject(value)) return value ?? null;
 	return Object.fromEntries(
+		// SAFETY: assertion to `value as JsonBag` is required at this boundary.
 		Object.keys(value as JsonBag)
 			.sort()
+			// SAFETY: assertion to `value as JsonBag` is required at this boundary.
 			.map((key) => [key, sortKeys((value as JsonBag)[key] ?? null)]),
 	);
 }
@@ -70,6 +72,10 @@ function requireGrounding(
 	const hasRef = isJsonString(contract?.ref) && contract.ref.trim().length > 0;
 	const hasLayout =
 		contract?.input !== undefined && contract?.output !== undefined;
+	// The shape is the non-negotiable grounding: a contract must name what
+	// goes in and what comes out, either by reference or declared inline.
+	// The rubric is optional — the gate falls back to the default
+	// exact-match rubric over examples/traces.
 	if (!contract || !(hasRef || hasLayout)) {
 		missing.push("contract (a ref, or an inline input + output shape)");
 	}
@@ -78,6 +84,7 @@ function requireGrounding(
 	}
 }
 
+/** Contract ref, synthesized from the declared shape when none is given. */
 function contractRefFor(methodRef: string, options: TrainingOptions): string {
 	const ref = options.contract.ref;
 	return isJsonString(ref) && ref.trim().length > 0
@@ -128,6 +135,7 @@ function record(
 	entry.calls.push(Object.freeze({ ...call, order: entry.calls.length }));
 }
 
+/** Demos from an applied artifact's platform-normalized program. */
 function artifactDemos(
 	artifact: TrainingArtifact | null,
 ): readonly TrainingExample[] {
@@ -139,12 +147,25 @@ function artifactDemos(
 	}));
 }
 
+/**
+ * The stub baseline (ADR-0076 mock mode): serve applied-artifact demos
+ * first, then the recorded contract examples — exact input match, falling
+ * back to the first example as the canned typed response. Every call is
+ * recorded as specification-by-example for the training loop.
+ */
 async function serveStub(
 	entry: MutableRecord,
 	input: JsonValue,
-	demos: readonly TrainingExample[],
 ): Promise<JsonValue> {
 	const key = canonical(input);
+	const demos = artifactDemos(entry.artifact);
+	for (const demo of demos) {
+		if (canonical(cloneAsJson(demo.input)) === key) {
+			const output = cloneAsJson(demo.output);
+			record(entry, { input, output, served: "matched-demo" });
+			return output;
+		}
+	}
 	const examples = entry.options.contract.examples ?? [];
 	for (const example of examples) {
 		if (canonical(cloneAsJson(example.input)) === key) {
@@ -176,6 +197,10 @@ function register(
 	requireGrounding(methodRef, options);
 	if (baseline === null) {
 		const examples = options.contract.examples ?? [];
+		// A declared output shape is enough to register: the stub serves
+		// examples/demos when they exist and reports cleanly at call time
+		// when they don't yet. Without a shape, examples are the only thing
+		// a stub could serve, so they stay required.
 		if (examples.length === 0 && options.contract.output === undefined) {
 			throw new TrainingGroundingError(methodRef, [
 				"contract.examples (or a declared output shape)",
@@ -189,23 +214,12 @@ function register(
 		artifact: null,
 		baseline,
 	};
+	// SAFETY: registry entry is completed after callable is attached.
 	const entry: MutableRecord = partial as never;
 
 	const callable = async (input: JsonValue): Promise<JsonValue> => {
-		const demos = artifactDemos(entry.artifact);
-		if (demos.length > 0) {
-			const key = canonical(input);
-			const demo = demos.find(
-				(candidate) => canonical(cloneAsJson(candidate.input)) === key,
-			);
-			if (demo) {
-				const output = cloneAsJson(demo.output);
-				record(entry, { input, output, served: "matched-demo" });
-				return output;
-			}
-		}
 		if (entry.baseline === null) {
-			return serveStub(entry, input, demos);
+			return serveStub(entry, input);
 		}
 		const output = await entry.baseline(input);
 		record(entry, { input, output, served: "body" });
@@ -214,6 +228,7 @@ function register(
 	Object.defineProperty(callable, TRAINABLE, { value: true });
 	Object.defineProperty(callable, "methodRef", { value: methodRef });
 	trainableToRef.set(callable, methodRef);
+	// SAFETY: assertion to `able as Trainable; r` is required at this boundary.
 	entry.callable = callable as Trainable;
 	registry.set(methodRef, entry);
 	if (options.token) tokenToRef.set(options.token, methodRef);
@@ -227,6 +242,7 @@ function resolveMethodRef(
 	const ref =
 		options.methodRef ??
 		options.token?.description ??
+		// SAFETY: assertion to `s { name?: string } | undefined)?.n` is required at this boundary.
 		(fn as { name?: string } | undefined)?.name;
 	if (!isJsonString(ref) || ref.trim().length === 0) {
 		throw new TrainingGroundingError("<anonymous>", ["methodRef"]);
@@ -237,18 +253,22 @@ function resolveMethodRef(
 function refFor(ref: string | symbol | Trainable): string {
 	if (isJsonString(ref)) return ref;
 	if (Object.prototype.toString.call(ref) === "[object Symbol]") {
+		// SAFETY: symbol keys are registered training tokens.
 		const mapped = tokenToRef.get(ref as never);
 		if (!mapped) throw new TrainingResolutionError(String(ref));
 		return mapped;
 	}
+	// SAFETY: remaining refs are registered Trainable callables.
 	const trainableRef = ref as Trainable;
 	return trainableToRef.get(trainableRef) ?? trainableRef.methodRef;
 }
 
+/** `training(fn, opts)` — the canonical wrapper form (ADR-0025). */
 export function training<I, O>(
 	fn: (input: I) => O | Promise<O>,
 	options: TrainingOptions<I, O>,
 ): Trainable<I, O> {
+	// SAFETY: assertion to `s as TrainingOptions, fn);` is required at this boundary.
 	const methodRef = resolveMethodRef(options as TrainingOptions, {
 		name: fn.name,
 	});
@@ -256,23 +276,47 @@ export function training<I, O>(
 		STUB_BASELINE in fn && fn[STUB_BASELINE] === true
 			? null
 			: async (input: JsonValue) => {
+					// SAFETY: trainable wrapper preserves the user input type.
 					const typed: I = input as never;
 					return await fn(typed);
 				};
+	// SAFETY: stub-or-body baseline is the registered callable payload.
 	const registered = register(methodRef, options as never, baseline as never);
+	// SAFETY: registered trainable keeps the caller I/O types.
 	return registered as never;
 }
 
+/**
+ * `training.define(opts)` — the signature-only, empty-implementation form
+ * (ADR-0125): no body; served by the contract-derived stub baseline until
+ * the training engine synthesizes an implementation (ADR-0010 cold start).
+ */
 training.define = function define<I, O>(
 	options: TrainingOptions<I, O> & { readonly methodRef: string },
 ): Trainable<I, O> {
-	return register(options.methodRef, options as never, null) as never;
+	// SAFETY: assertion to `( options.methodRef, // SAFETY: assertion to `as TrainingOptions, null` is required at` is required at this boundary.
+	return register(
+		options.methodRef,
+		// SAFETY: training.define erases I/O at the registry boundary.
+		options as never,
+		null,
+	) as never;
 };
 
+/**
+ * `training.infer(fn)` — the bare-marker form (ADR-0125): a function whose
+ * body carries only the `"use training"` directive, with NO author-supplied
+ * bindings. The groundings are inferred (and typically generated by
+ * `hobo stub`, which scans source for marked functions): methodRef from the
+ * name, intent from a leading comment in the body or a generated sentence,
+ * a synthesized `inferred://` contract ref, and a default exact-match
+ * rubric. Overrides refine any of them without changing syntax form.
+ */
 training.infer = function infer<I, O>(
-	fn: ((input: I) => O | Promise<O>) & { readonly trainingIntent?: string },
+	fn: (input: I) => O | Promise<O>,
 	overrides: Partial<TrainingOptions<I, O>> = {},
 ): Trainable<I, O> {
+	// SAFETY: assertion to `as TrainingOptions, fn); co` is required at this boundary.
 	const methodRef = resolveMethodRef(overrides as TrainingOptions, {
 		name: fn.name,
 	});
@@ -284,8 +328,8 @@ training.infer = function infer<I, O>(
 		throw new TrainingGroundingError(methodRef, ['"use training" directive']);
 	}
 	const options: TrainingOptions = {
-		intent:
-			overrides.intent ?? inferIntent(methodRef, source, fn.trainingIntent),
+		intent: overrides.intent ?? inferIntent(methodRef, source),
+		// SAFETY: assertion to `.contract ?? { ref: `inferred://${methodRef}`, }) as TrainingContract, rubric` is required at this boundary.
 		contract: (overrides.contract ?? {
 			ref: `inferred://${methodRef}`,
 		}) as TrainingContract,
@@ -295,26 +339,28 @@ training.infer = function infer<I, O>(
 		...(overrides.token ? { token: overrides.token } : undefined),
 		methodRef,
 	};
+	// SAFETY: assertion to `ethodRef, options, async (input: JsonValue) => // SAFETY: assertion to `), ) as T` is required` is required at this boundary.
 	return register(methodRef, options, async (input: JsonValue) => {
+		// SAFETY: inferred trainable preserves the user input type.
 		const typed: I = input as never;
 		return cloneAsJson(await fn(typed));
 	}) as never;
 };
 
-function inferIntent(
-	methodRef: string,
-	source: string,
-	structuredIntent: string | undefined,
-): string {
+/** Intent inference: a leading comment after the directive, else generated. */
+function inferIntent(methodRef: string, source: string): string {
 	const comment = source.match(
-		/["']use training["'];?\s*(?:\/\/[ \t]*([^\r\n]*)|\/\*\*?\s*([\s\S]*?)\*\/)/,
+		/["']use training["'];?\s*(?:\/\/\s*(.+)|\/\*\*?\s*([\s\S]*?)\*\/)/,
 	);
 	const text = (comment?.[1] ?? comment?.[2])?.replace(/\s*\*\s*/g, " ").trim();
 	if (text) return text;
-	if (structuredIntent !== undefined) return structuredIntent;
 	return `Inferred: implement ${methodRef} to reproduce and improve its recorded behavior.`;
 }
 
+/**
+ * Explicit stub baseline marker: `training(stub(), opts)` is the spelled-out
+ * form of `training.define(opts)`.
+ */
 export function stub<I = JsonValue, O = JsonValue>(): (input: I) => Promise<O> {
 	const marker = async (): Promise<O> => {
 		throw new TrainingArtifactError(
@@ -328,19 +374,29 @@ export function stub<I = JsonValue, O = JsonValue>(): (input: I) => Promise<O> {
 export function isTrainable<T>(value: T): value is T & Trainable {
 	return (
 		value instanceof Function &&
+		// SAFETY: assertion to ` [TRAINABLE]?: JsonValue })[TRAINABL` is required at this boundary.
 		(value as { [TRAINABLE]?: JsonValue })[TRAINABLE] === true
 	);
 }
 
+/** Manifest lowering: the facts every authoring form produces. */
 export function listTrainables(): readonly TrainableManifestFact[] {
 	return [...registry.values()].map((entry) => entry.fact);
 }
 
+/**
+ * DI-style resolution: return the registered servable instance by methodRef
+ * or injection token — the container-`resolve` counterpart to the @trainable
+ * decorator's registration. Tests and eval suites resolve by the same token
+ * the declaration used, so one example table can drive both.
+ */
 export function resolveTrainable<I = JsonValue, O = JsonValue>(
 	ref: string | symbol,
 ): Trainable<I, O> {
 	const entry = registry.get(refFor(ref));
 	if (!entry) throw new TrainingResolutionError(ref);
+	// SAFETY: assertion to `le as Trainable<I, O>; } export ` is required at this boundary.
+	// SAFETY: registry lookup restores the caller's Trainable I/O types.
 	return entry.callable as never;
 }
 
@@ -363,11 +419,18 @@ export function getTrainable(
 	};
 }
 
+/** Test/build-time helper: clears the module registry. */
 export function resetTrainables(): void {
 	registry.clear();
 	tokenToRef.clear();
 }
 
+/**
+ * Apply a training artifact (ADR-0125 apply-at-load promotion): parses the
+ * serialized optimized program, checks it targets this method, and attaches
+ * it so the runtime serves it (stub baselines serve its demos immediately).
+ * Reversible by applying `null`.
+ */
 export function applyTrainingArtifact(
 	trainable: Trainable | string | symbol,
 	artifact: JsonValue | null,

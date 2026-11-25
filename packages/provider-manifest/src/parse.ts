@@ -671,12 +671,6 @@ export function parseProviderManifestJson(value: JsonValue): ParseResult {
 		}
 		c.optionalHttps("provider.homepage", manifest.provider.homepage);
 	}
-	if (manifest.terms === undefined) {
-		c.fail("terms", "is required");
-	} else {
-		c.https("terms.url", manifest.terms.url);
-		c.pattern("terms.reviewedOn", manifest.terms.reviewedOn, DATE, "a date");
-	}
 	if (
 		manifest.auth === undefined &&
 		manifest.capabilities === undefined &&

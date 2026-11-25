@@ -1,6 +1,6 @@
 # Matching Specificity Vectors
 
-Executable HOBO-55 spike vectors for [ADR-0088](urn:hobo:decision:adr-0088).
+Executable HOBO-55 spike vectors for [ADR-0088](../../../../docs/design/adr/01-architecture-core.md#adr-0088).
 
 This draft package pins the matching comparator that feeds the future HOBO-64 engine:
 
@@ -16,9 +16,11 @@ npm.cmd --prefix src\draft\technical-proofs\matching-specificity-vectors test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Matching Specificity Vectors.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

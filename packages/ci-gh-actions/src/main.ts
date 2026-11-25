@@ -5,16 +5,19 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { create } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
-import type { StrictFleetStore } from "@hobo/ci/fleet-v2";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { relayInstallAssets } from "./assets.js";
 import { createControlAuthenticator } from "./control-auth.js";
-import type { StartFencePolicy } from "./fleet-v2/start-fence-handler.js";
 import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
-import { type JoinedMesh, joinMeshFromEnv } from "./mesh-join.js";
 import { createGithubOidcVerifier } from "./oidc.js";
 import { acquirePartitionLock } from "./partition-lock.js";
 import { createRelayHost, type RelayAgent } from "./relay-host.js";
+import {
+	createRelayWiring,
+	type RelayWiring,
+	relayWiringFlags,
+	relayWiringOn,
+} from "./relay-wiring.js";
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
 	const value = env[name];
@@ -33,36 +36,44 @@ export interface RelaySecrets {
 	readonly ingressForwardSecret?: string;
 }
 
-export function allowsLoopbackHttp(env: NodeJS.ProcessEnv): boolean {
-	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
-	const requestedHost = env.HOBO_CI_HOST ?? "127.0.0.1";
-	return (
-		env.HOBO_CI_ALLOW_INSECURE_LOOPBACK === "1" &&
-		publicUrl.protocol === "http:" &&
-		["127.0.0.1", "localhost"].includes(publicUrl.hostname) &&
-		["127.0.0.1", "localhost"].includes(requestedHost)
-	);
-}
-
+/**
+ * Start the relay's Node host from `HOBO_CI_*` configuration: one SQLite
+ * partition, fenced by its lock file. No process-global signal handler is
+ * registered here.
+ */
 export async function startRelayFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
+	/** A host embedding the relay may supply its own GitHub App transport. */
 	ports: {
 		github?: GithubAppTransport;
-		strictFleet?: {
-			store: StrictFleetStore;
-			policies: readonly StartFencePolicy[];
-		};
+		/**
+		 * The App's private key and webhook secret, held in memory by a host
+		 * that read them from the owner's secret store into its trusted vault.
+		 * When given, neither is read from a file or this configuration.
+		 */
 		secrets?: RelaySecrets;
+		/**
+		 * Builds the optional CI agent once the store is open. It is handed the
+		 * repositories this relay is connected to, read fresh on every call.
+		 */
 		agent?: (relay: {
 			connections(): Promise<
 				readonly { installationId: number; repository: string }[]
 			>;
 		}) => RelayAgent | Promise<RelayAgent>;
+		dashboard?: (request: Request) => Promise<Response | undefined>;
 	} = {},
 ) {
 	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
 	const requestedHost = env.HOBO_CI_HOST ?? "127.0.0.1";
-	const localHttp = allowsLoopbackHttp(env);
+	// HTTP is only useful for a local, explicitly opted-in relay. In particular,
+	// an HTTP public URL must not be paired with a wildcard listener, where
+	// account bearer tokens and webhook payloads could escape the host.
+	const localHttp =
+		env.HOBO_CI_ALLOW_INSECURE_LOOPBACK === "1" &&
+		publicUrl.protocol === "http:" &&
+		["127.0.0.1", "localhost"].includes(publicUrl.hostname) &&
+		["127.0.0.1", "localhost"].includes(requestedHost);
 	if (
 		(publicUrl.protocol !== "https:" && !localHttp) ||
 		publicUrl.username ||
@@ -74,6 +85,7 @@ export async function startRelayFromEnvironment(
 		throw new Error(
 			"relay public URL must be an HTTPS origin or explicitly enabled loopback HTTP origin with a loopback listener",
 		);
+	// Do not rely on DNS/hosts resolution of `localhost` for an insecure bind.
 	const host = localHttp ? "127.0.0.1" : requestedHost;
 	const port = Number(env.HOBO_CI_PORT ?? "8787");
 	if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -97,6 +109,7 @@ export async function startRelayFromEnvironment(
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);
 	let store: SqliteCiStore;
+	let wiring: RelayWiring | undefined;
 	try {
 		store = new SqliteCiStore(database);
 	} catch (error) {
@@ -121,48 +134,52 @@ export async function startRelayFromEnvironment(
 					}),
 				),
 		});
-		const meshLog = (
-			level: "info" | "error",
+		const relayLog = (
 			event: string,
 			fields: Readonly<Record<string, string | number | boolean>>,
 		) =>
-			process.stdout.write(`${JSON.stringify({ level, event, ...fields })}\n`);
-		let ready: () => boolean = () => false;
-		let mesh: JoinedMesh | undefined;
-		if (env.HOBO_CI_NATS_URL)
-			try {
-				mesh = await joinMeshFromEnv({
-					env,
-					defaultNodeId: `relay-${hostname()}`,
-					keyFile:
-						env.HOBO_CI_MESH_KEY_FILE ??
-						join(dirname(database), "mesh-node.key"),
-					connectionName: `hobo-ci-relay ${hostname()}`,
-					describe: () => ({
-						freeSlots: 0,
-						totalSlots: 0,
-						healthy: ready(),
-						labels: [],
-						platform: { os: process.platform, arch: process.arch },
-					}),
-					log: (event, fields) => meshLog("info", event, fields),
-				});
-			} catch (error) {
-				meshLog("error", "hobo_ci_mesh_node_unavailable", {
-					message: error instanceof Error ? error.message : "unknown",
-				});
-			}
+			process.stdout.write(
+				`${JSON.stringify({ level: "info", event, ...fields })}\n`,
+			);
+		const github =
+			ports.github ??
+			createGithubAppTransport({
+				appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
+				privateKey,
+			});
+		const flags = relayWiringFlags(env);
+		const wired = relayWiringOn(flags)
+			? createRelayWiring({
+					flags,
+					github,
+					connections: async () =>
+						(
+							(await store.configuration())?.configuration?.connections ?? []
+						).map((connection) => ({
+							accountId: connection.accountId,
+							installationId: connection.installationId,
+							repository: connection.repository,
+							public: connection.publicRepositoryAcknowledged,
+						})),
+					database:
+						env.HOBO_CI_WIRING_DB ??
+						join(dirname(database), "relay-wiring.sqlite"),
+					node: `relay-${hostname()}`,
+					dashboard: ports.dashboard,
+					authenticate,
+					log: relayLog,
+				})
+			: undefined;
+		wiring = wired;
 		const { service, runtime } = createRelayHost({
 			store,
-			strictFleet: ports.strictFleet,
 			agent,
-			meshNodes: mesh?.node.reports,
-			github:
-				ports.github ??
-				createGithubAppTransport({
-					appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
-					privateKey,
-				}),
+			wiring: wired && {
+				onWebhook: (webhook) => void wired.onWebhook(webhook),
+				page: (request) => wired.page(request),
+				control: (request) => wired.control(request),
+			},
+			github,
 			identity: createGithubOidcVerifier(publicUrl.origin),
 			webhookSecret,
 			ingressForwardSecret,
@@ -183,18 +200,16 @@ export async function startRelayFromEnvironment(
 			logger: (entry) => process.stdout.write(`${JSON.stringify(entry)}\n`),
 		});
 		await service.start();
-		ready = () => service.ready();
-		mesh?.start();
 		let stopping: Promise<{ drained: boolean }> | undefined;
 		return {
 			service,
 			runtime,
 			store,
+			wiring: wired,
 			stop() {
 				stopping ??= (async () => {
-					ready = () => false;
-					await mesh?.stop().catch(() => undefined);
 					const result = await service.stop();
+					wired?.close();
 					if (result.drained) await lock.release();
 					return result;
 				})();
@@ -202,15 +217,20 @@ export async function startRelayFromEnvironment(
 			},
 		};
 	} catch (error) {
+		wiring?.close();
 		store.close();
 		await lock.release();
 		throw error;
 	}
 }
-export function serveRelayUntilSignalled(
-	start: () => Promise<{ stop(): Promise<{ drained: boolean }> }>,
-): void {
-	start()
+const entry = process.argv[1];
+// Not inside a bundled controller release, whose entry is another module.
+if (
+	process.env.HOBO_CI_RELEASE_BUILD !== "1" &&
+	entry &&
+	import.meta.url === pathToFileURL(entry).href
+) {
+	startRelayFromEnvironment()
 		.then((running) => {
 			const stop = () => {
 				void running
@@ -230,11 +250,3 @@ export function serveRelayUntilSignalled(
 			process.exitCode = 1;
 		});
 }
-
-const entry = process.argv[1];
-if (
-	process.env.HOBO_CI_RELEASE_BUILD !== "1" &&
-	entry &&
-	import.meta.url === pathToFileURL(entry).href
-)
-	serveRelayUntilSignalled(() => startRelayFromEnvironment());

@@ -1,3 +1,7 @@
+/**
+ * Test-only: ProviderStub → Fetch for HTTP clients under PACT mocks.
+ */
+
 import {
 	createMockProviderFromPact,
 	type PactDocument,
@@ -25,6 +29,7 @@ export function createFetchFromProvider(provider: ProviderStub): typeof fetch {
 			requestInput?.method ??
 			"GET"
 		).toUpperCase();
+		// SAFETY: pact request methods are the HTTP verbs the stub already handles.
 		const method = rawMethod as PactRequest["method"];
 
 		let body: JsonValue;
@@ -57,6 +62,7 @@ export function createFetchFromProvider(provider: ProviderStub): typeof fetch {
 			...(body !== undefined ? { body } : undefined),
 		};
 		const response = await Promise.resolve(provider.handle(request));
+		// SAFETY: assertion required at this I/O or test boundary.
 		const headers = new Headers(response.headers as HeadersInit | undefined);
 		if (!headers.has("content-type") && response.body !== undefined) {
 			headers.set(
@@ -89,6 +95,7 @@ function headerValue(
 		const hit = headers.find(([k]) => k.toLowerCase() === name.toLowerCase());
 		return hit?.[1];
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const rec = headers as Record<string, string>;
 	for (const [k, v] of Object.entries(rec)) {
 		if (k.toLowerCase() === name.toLowerCase()) return v;
@@ -96,6 +103,16 @@ function headerValue(
 	return undefined;
 }
 
+/**
+ * Finds the pact for a provider, or fails the test naming what was missing.
+ *
+ * The call sites previously spelled this `pacts.find(…)` followed by
+ * `expect(pact).toBeDefined()` and then a `!` on every later use. That reads
+ * as a narrowing but is not one — the assertion silences the type error while
+ * the runtime failure stays a `Cannot read properties of undefined`, several
+ * lines from the actual problem. Throwing here narrows for real and says which
+ * provider was not found and which ones were.
+ */
 export function requirePact(
 	pacts: readonly PactDocument[],
 	providerName: string,

@@ -15,6 +15,9 @@ import {
 	parseResolveRequest,
 } from "./resource-resolver.js";
 
+/** Behavioral repository. Persisted values use the provider's generated record
+ * codec; observations use ResourceLifecycleObservationRecord. Initial records
+ * are immutable and observations advance monotonically under durable CAS. */
 // domain-view: behavioral persistence port, not a parallel wire schema.
 export interface ResourceRecordRepository<T> {
 	readonly persistence: "durable-cas";
@@ -33,9 +36,13 @@ export type ClaimableResolverScope = Pick<
 	ResourceLifecycleContext,
 	"tenantId" | "providerAccountId"
 > & {
+	/** A deployment incarnation, never just the tenant or logical resource id. */
 	readonly scopeId: string;
 };
 
+/** Separate logical resources and deployment incarnations at the provider's
+ * idempotency boundary as well as in HoBo's journal. UUIDv4 layout supports the
+ * anonymous Redis API, whose native database id is its idempotency key. */
 async function sha256Hex(value: string): Promise<string> {
 	const digest = await globalThis.crypto.subtle.digest(
 		"SHA-256",
@@ -51,6 +58,8 @@ export type ClaimableOperationKeyDeriver = (
 	request: ResolveRequest,
 ) => Promise<string>;
 
+/** Capture private host key bytes once. Public scope/author inputs alone must
+ * never determine an anonymous resource's bearer-capability id. */
 export function createClaimableOperationKeyDeriver(
 	secret: Uint8Array,
 ): ClaimableOperationKeyDeriver {
@@ -117,6 +126,7 @@ export async function claimableOperationKey(
 	return key;
 }
 
+/** Public routing handle; the secret operation key prevents offline native-id guessing. */
 export async function claimablePublicResourceId(
 	nativeId: string,
 	operationKey: string,
@@ -124,6 +134,7 @@ export async function claimablePublicResourceId(
 	return `claimable:${await sha256Hex(JSON.stringify(["hobo.claimable.public-id/v1", operationKey, nativeId]))}`;
 }
 
+/** Non-secret custody metadata is separate from provider-native bearer ids. */
 export async function claimableResourceRef(
 	scope: ClaimableResolverScope,
 	request: ResolveRequest,
@@ -131,6 +142,9 @@ export async function claimableResourceRef(
 	return `claimable:${await sha256Hex(JSON.stringify([scope.tenantId, scope.providerAccountId, scope.scopeId, request.ref.productId, request.ref.logicalId]))}`;
 }
 
+/** Compose a provider's actual driver with durable once-only create custody.
+ * A crash between provider allocation and local acknowledgement is uncertain;
+ * it must never cause a second anonymous allocation. */
 export function createClaimableResourceResolver(options: {
 	readonly providerId: string;
 	readonly productId: string;
@@ -140,12 +154,14 @@ export function createClaimableResourceResolver(options: {
 	readonly clock: () => number;
 	readonly maxObservationAgeMs?: number;
 	readonly bindingFingerprint?: (request: ResolveRequest) => Promise<string>;
+	/** Validate product-specific inputs before claiming a mutation intent. */
 	readonly validate?: (request: ResolveRequest) => void | Promise<void>;
 	readonly provision: (request: ResolveRequest) => Promise<ResolveOutcome>;
 	readonly observe: (
 		request: ResolveRequest,
 		initial: ResolveOutcome,
 	) => Promise<ResolveOutcome>;
+	/** Only providers documenting create idempotency may re-enter after an uncertain write. */
 	readonly providerIdempotentCreate?: boolean;
 	readonly retire?: (
 		request: ResolveRequest,

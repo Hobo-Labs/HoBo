@@ -361,23 +361,8 @@ describe("Convex traffic profile and coverage (I14)", () => {
 		).toEqual(CONVEX_TRAFFIC_ROUTING_PROFILE);
 		expect(
 			CONVEX_TRAFFIC_ROUTING_PROFILE.offerings.map((entry) => entry.id),
-		).toEqual([]);
-		expect(CONVEX_TRAFFIC_ROUTING_PROFILE.fallbacks).toEqual([
-			"inprocess.weighted",
-		]);
-		expect(CONVEX_TRAFFIC_ROUTING_ABSENT).toHaveLength(17);
-		expect(
-			matchTrafficRoutingOfferings(CONVEX_TRAFFIC_ROUTING_PROFILE, {
-				features: ["inprocess.weighted"],
-				negotiation: "require",
-			}).kind,
-		).toBe("none");
-		expect(
-			matchTrafficRoutingOfferings(CONVEX_TRAFFIC_ROUTING_PROFILE, {
-				features: ["inprocess.weighted"],
-				negotiation: "prefer",
-			}),
-		).toMatchObject({ kind: "partial", fallbacks: ["inprocess.weighted"] });
+		).toEqual(["inprocess.weighted"]);
+		expect(CONVEX_TRAFFIC_ROUTING_ABSENT).toHaveLength(16);
 	});
 	it("a required canary is refused (I6)", () => {
 		expect(

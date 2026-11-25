@@ -40,11 +40,13 @@ export type BudgetPolicyEvaluation = Readonly<
 	Omit<BudgetPolicyEvaluationRecord, "$typeName">
 >;
 
+/** The host supplies measured/projected values, not data from authored intent. */
 export type BudgetPolicyEvaluationContext = Readonly<
 	Omit<
 		BudgetPolicyEvaluationContextRecord,
 		"$typeName" | "boundKind" | "phase" | "measurements"
 	> & {
+		/** Native guarantees must come from the adapter's authenticated evidence port. */
 		readonly boundKind: "native" | "conservative";
 		readonly phase?: "plan" | "admit";
 		readonly measurements: readonly Readonly<
@@ -107,10 +109,13 @@ function field(value: JsonValue | undefined, name: string): string {
 	return value;
 }
 
+/** Bounded JSON read which refuses duplicate object keys, including escaped aliases.
+ * This also protects an enclosing CI policy before protobuf parsing discards aliases. */
 export function parseBudgetPolicyDocumentJson(text: string): JsonValue {
 	if (text.length > 262_144) invalid("budget policy document is too large");
 	let value: JsonValue;
 	try {
+		// SAFETY: JSON.parse is the native JSON boundary; the scanner below rejects duplicate keys.
 		value = JSON.parse(text) as JsonValue;
 	} catch {
 		return invalid("budget policy document is not valid JSON");
@@ -274,6 +279,7 @@ function canonical(value: JsonValue): string {
 	return JSON.stringify(value);
 }
 
+/** Stable, complete content to hash; no policy controls are excluded. */
 export function canonicalBudgetPolicyJson(policy: BudgetPolicy): string {
 	const parsed = parseBudgetPolicyJson(JSON.stringify(policy));
 	const constraints = [...parsed.constraints].sort((left, right) => {
@@ -325,6 +331,7 @@ export function budgetThresholdSignalKey(
 	return `budget:v2:${encodeURIComponent(budgetScopeIdentityKey(identity))}:${fraction}:${transition}:${cycle}`;
 }
 
+/** Pure feasibility. An applicable unknown metric fails closed. Planning is not admission. */
 export function evaluateBudgetPolicy(
 	policy: BudgetPolicy,
 	context: BudgetPolicyEvaluationContext,

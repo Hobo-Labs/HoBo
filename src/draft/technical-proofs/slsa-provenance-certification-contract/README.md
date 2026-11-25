@@ -13,9 +13,11 @@ It proves:
 Out of scope here: KMS/signing-key infrastructure, Registry publication, the certify engine that emits the event, and bit-reproduction guarantees for hosted model aliases.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Slsa Provenance Certification Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

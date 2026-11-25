@@ -1,3 +1,14 @@
+// Property tests for the `slotBinding()` parse boundary (ADR-0157).
+//
+// The example-based suite in `capability-slot.test.ts` pins named refusals.
+// These properties pin the claims that only hold over *all* inputs: the
+// credential screen is total at every depth, the canonical form is a function
+// of the configuration rather than of key insertion order, and the result is
+// deep-frozen and key-sorted wherever a property bag appears.
+//
+// Determinism: every run is seeded so a failure reproduces exactly. Re-running
+// with the same fast-check version and seed replays the same inputs.
+
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
@@ -8,9 +19,11 @@ import {
 } from "../src/index.js";
 import { isJsonObject, type JsonObject, type JsonValue } from "../src/json.js";
 
+/** Fixed seed: a counterexample found here is reproducible verbatim. */
 const SEED = 20260817;
 const RUNS = 300;
 
+/** The screen the boundary claims to enforce, restated independently. */
 const CREDENTIAL_KEY_PATTERN =
 	/(secret|password|token|credential|private[_-]?key|api[_-]?key)/i;
 
@@ -29,6 +42,7 @@ const CREDENTIAL_BASES = [
 
 const slotArb = fc.constantFrom(...CAPABILITY_SLOTS);
 
+/** Keys that are not credential-shaped, so only the planted key can trip. */
 const safeKeyArb = fc
 	.stringMatching(/^[a-z][a-z0-9]{0,6}$/u)
 	.filter((key) => key.length > 0 && !CREDENTIAL_KEY_PATTERN.test(key));
@@ -56,6 +70,7 @@ const safePropertiesArb = fc.dictionary(safeKeyArb, jsonValueArb, {
 	maxKeys: 5,
 });
 
+/** A credential-shaped key with adversarial casing and surrounding noise. */
 const credentialKeyArb = fc
 	.tuple(
 		fc.constantFrom(...CREDENTIAL_BASES),
@@ -72,6 +87,11 @@ const credentialKeyArb = fc
 		return `${prefix}${cased}${suffix}`;
 	});
 
+/**
+ * A JSON-safe property bag that hides exactly one credential-shaped key, at an
+ * arbitrary depth, behind plain objects and arrays. Everything else is benign,
+ * so the only refusal the boundary can legitimately report is the credential.
+ */
 const hiddenCredentialArb = fc
 	.tuple(
 		credentialKeyArb,
@@ -84,6 +104,7 @@ const hiddenCredentialArb = fc
 		for (const [key, insideArray] of wrappers) {
 			node = insideArray ? { [key]: [null, node] } : { [key]: node };
 		}
+		// SAFETY: assertion required at this I/O or test boundary.
 		return { credentialKey, properties: node as JsonObject };
 	});
 
@@ -113,6 +134,7 @@ function assertKeysSortedDeep(value: JsonValue): void {
 	const keys = Object.keys(value);
 	expect(keys).toStrictEqual([...keys].sort(byCodeUnit));
 	for (const key of keys) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		assertKeysSortedDeep((value as JsonObject)[key]);
 	}
 }
@@ -123,11 +145,13 @@ function assertFrozenDeep(value: JsonValue): void {
 	for (const entry of Object.values(value)) assertFrozenDeep(entry);
 }
 
+/** Rebuild with every object's keys reversed: same configuration, other order. */
 function reverseKeyOrder(value: JsonValue) {
 	if (Array.isArray(value)) return value.map(reverseKeyOrder);
 	if (value === null || !isJsonObject(value)) return value;
 	const out: JsonObject = {};
 	for (const key of Object.keys(value).reverse()) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		out[key] = reverseKeyOrder((value as JsonObject)[key]);
 	}
 	return out;
@@ -138,6 +162,7 @@ function refusalOf(fn: () => JsonValue) {
 		fn();
 		return { code: "NO_THROW", message: "" };
 	} catch (error) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const failure = error as { code?: string; message?: string };
 		return { code: failure.code ?? "NO_CODE", message: failure.message ?? "" };
 	}
@@ -171,6 +196,8 @@ describe("slotBinding is a total, canonical parse boundary", () => {
 						}),
 					);
 					expect(code).toBe("SLOT_BINDING_CREDENTIAL_PROPERTY");
+					// The refusal must name the offending key and the fix, not
+					// just fail: a code with an empty message is not remediation.
 					expect(message).toContain(credentialKey);
 					expect(message).toContain("secretRef");
 				},
@@ -193,6 +220,7 @@ describe("slotBinding is a total, canonical parse boundary", () => {
 			fc.property(inputArb, (input) => {
 				const reordered = {
 					...input,
+					// SAFETY: assertion required at this I/O or test boundary.
 					properties: reverseKeyOrder(input.properties) as JsonObject,
 				};
 				expect(slotBinding(reordered)).toStrictEqual(slotBinding(input));

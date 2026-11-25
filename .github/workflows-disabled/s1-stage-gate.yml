@@ -5,6 +5,7 @@ name: S1 Stage Gate
 # - offline:     @hobo/cli `hobo dev` boots the injected runtime-local Camp and serves hello-bindle
 #                offline (docker --network=none, cleared cloud creds)
 # - replay:      @hobo/conformance replay corpus (S1-16) rebuild-from-zero byte-equals live
+# - record:      assembles docs/design/build-s1-stage-gate-acceptance.md's machine record
 on:
   pull_request:
     paths:

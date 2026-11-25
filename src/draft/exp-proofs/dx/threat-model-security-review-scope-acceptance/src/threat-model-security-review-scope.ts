@@ -50,12 +50,12 @@ export const THREAT_MODEL_SECURITY_REVIEW_SCOPE = {
     "Define Threat Model & Security Review M0 scope so v1 release owners know threat intake, review gates, evidence ownership, and support/security handoffs before live scanning or security workflow work begins.",
   sourceRefs: [
     "Linear HOBO-451 issue body",
-    "urn:hobo:requirement:threat-model-security-review",
-    "urn:hobo:requirement:security-verification",
-    "urn:hobo:requirement:launch-blocker-taxonomy",
-    "urn:hobo:requirement:launch-support-escalation",
-    "urn:hobo:requirement:incident-communications",
-    "urn:hobo:requirement:legal-privacy-terms-readiness",
+    "docs/design/threat-model-security-review.md",
+    "docs/design/security-verification.md",
+    "docs/design/launch-blocker-taxonomy.md",
+    "docs/design/launch-support-escalation.md",
+    "docs/design/incident-communications.md",
+    "docs/design/legal-privacy-terms-readiness.md",
   ],
   personas: [
     {

@@ -1,7 +1,7 @@
 # @hobo/ci-guard
 
 Production package for [HOBO-586](https://linear.app/quickdeploy-ai/issue/HOBO-586). Promotes
-[HOBO-6](urn:hobo:proof:hobo-6-ci-fabric) CI fabric contract from the
+[HOBO-6](../../../../docs/design/proofs/hobo-6-ci-fabric/index.md) CI fabric contract from the
 historical draft proof at `src/draft/technical-proofs/ci-fabric-oidc-e2e-contract/`.
 
 ## Surface

@@ -1,9 +1,12 @@
 syntax = "proto3";
 
-package hobo.storage_sqlite;
+package hobo.storage_sqlite.v1;
 
+// Boundary records for durable journal wire forms.
+// Domain EventEnvelope remains in hobo.core.v1; this package owns store-local shapes.
 
 message PositionedEventWire {
+  // Database-local position as decimal string to preserve full u64 across languages.
   string global_position = 1;
   bytes event_envelope = 2;
 }
@@ -11,6 +14,7 @@ message PositionedEventWire {
 message StreamHeadWire {
   string stream_id = 1;
   int64 revision = 2;
+  // Owner epoch / fence as decimal string (u64-safe).
   string owner_epoch = 3;
   string created_at = 4;
   string updated_at = 5;
@@ -55,9 +59,11 @@ enum StorageErrorCode {
   STORAGE_ERROR_CODE_MISSING_FENCE = 3;
   STORAGE_ERROR_CODE_CHECKPOINT_REGRESSION = 4;
   STORAGE_ERROR_CODE_UNSUPPORTED_SCHEMA_VERSION = 5;
-  STORAGE_ERROR_CODE_UNSUPPORTED_CODEC = 6;
-  STORAGE_ERROR_CODE_PERSISTENCE_UNAVAILABLE = 7;
-  STORAGE_ERROR_CODE_SQLITE_BUSY = 8;
-  STORAGE_ERROR_CODE_INTEGRITY_FAILURE = 9;
-  STORAGE_ERROR_CODE_SNAPSHOT_AHEAD = 10;
+  STORAGE_ERROR_CODE_MIGRATION_FAILURE = 6;
+  STORAGE_ERROR_CODE_UNSUPPORTED_CODEC = 7;
+  STORAGE_ERROR_CODE_PERSISTENCE_UNAVAILABLE = 8;
+  STORAGE_ERROR_CODE_SQLITE_BUSY = 9;
+  STORAGE_ERROR_CODE_INTEGRITY_FAILURE = 10;
+  STORAGE_ERROR_CODE_SNAPSHOT_AHEAD = 11;
+  STORAGE_ERROR_CODE_STREAM_INTEGRITY = 12;
 }

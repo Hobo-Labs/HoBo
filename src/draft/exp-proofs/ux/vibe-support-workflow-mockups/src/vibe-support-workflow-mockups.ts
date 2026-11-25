@@ -104,7 +104,7 @@ type VibeSupportWorkflowMockups = {
   readonly issue: "HOBO-550";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-support-workflow-mockups";
-  readonly proofPath: "urn:hobo:proof:vibe-support-workflow-mockups";
+  readonly proofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly SupportWorkflowQuickstartFixtureReference[];
   readonly personas: readonly SupportWorkflowMockupPersona[];
@@ -135,8 +135,8 @@ const FIXTURES: readonly SupportWorkflowFixture[] = [
     affectedSurface: "workspace onboarding support form",
     ownerRoute: "Support Workflow / Customer Onboarding",
     evidenceLinks: [
-      "urn:hobo:requirement:support-workflow#required-support-evidence",
-      "urn:hobo:proof:resource-lifecycle-quickstart-examples#fixture-ids",
+      "docs/design/support-workflow.md#required-support-evidence",
+      "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#fixture-ids",
     ],
     redactionState: "customer-safe",
     nextUpdateCondition: "when support classifies severity and affected surface",
@@ -150,8 +150,8 @@ const FIXTURES: readonly SupportWorkflowFixture[] = [
     affectedSurface: "resource lifecycle deploy quickstart",
     ownerRoute: "Incident Communications / Support Workflow",
     evidenceLinks: [
-      "urn:hobo:requirement:incident-communications#communication-surfaces",
-      "urn:hobo:requirement:launch-support-escalation#severity-matrix",
+      "docs/design/incident-communications.md#communication-surfaces",
+      "docs/design/launch-support-escalation.md#severity-matrix",
     ],
     redactionState: "internal-only",
     nextUpdateCondition: "after incident commander confirms customer-visible impact",
@@ -166,7 +166,7 @@ const FIXTURES: readonly SupportWorkflowFixture[] = [
     ownerRoute: "Docs / Troubleshooting Guides",
     evidenceLinks: [
       "fixture://rlq-manage-stale-evidence-v1",
-      "urn:hobo:requirement:troubleshooting-guides",
+      "docs/design/troubleshooting-guides.md",
     ],
     redactionState: "customer-safe",
     nextUpdateCondition: "once docs owner approves the customer-safe workaround",
@@ -180,8 +180,8 @@ const FIXTURES: readonly SupportWorkflowFixture[] = [
     affectedSurface: "support evidence redaction gate",
     ownerRoute: "Security Verification / Legal",
     evidenceLinks: [
-      "urn:hobo:requirement:security-verification#customer-communication",
-      "urn:hobo:requirement:support-workflow#scope-out-and-non-goals",
+      "docs/design/security-verification.md#customer-communication",
+      "docs/design/support-workflow.md#scope-out-and-non-goals",
     ],
     redactionState: "requires-security-approval",
     nextUpdateCondition: "before any customer-visible evidence leaves internal review",
@@ -195,8 +195,8 @@ const FIXTURES: readonly SupportWorkflowFixture[] = [
     affectedSurface: "support ticket customer update",
     ownerRoute: "V1 Release Program & Cutline",
     evidenceLinks: [
-      "urn:hobo:requirement:support-sla-channels#sla-language-boundary",
-      "urn:hobo:requirement:known-limitations-register",
+      "docs/design/support-sla-channels.md#sla-language-boundary",
+      "docs/design/known-limitations-register.md",
     ],
     redactionState: "customer-safe",
     nextUpdateCondition: "when release owner accepts or rejects the limitation wording",
@@ -210,8 +210,8 @@ const FIXTURES: readonly SupportWorkflowFixture[] = [
     affectedSurface: "docs portal troubleshooting answer",
     ownerRoute: "Support Workflow / Docs Portal",
     evidenceLinks: [
-      "urn:hobo:requirement:docs-portal",
-      "urn:hobo:requirement:support-workflow#intake-states",
+      "docs/design/docs-portal.md",
+      "docs/design/support-workflow.md#intake-states",
     ],
     redactionState: "customer-safe",
     nextUpdateCondition: "after follow-up issue or approved unsupported-state explanation is linked",
@@ -250,15 +250,15 @@ export const VIBE_SUPPORT_WORKFLOW_MOCKUPS: VibeSupportWorkflowMockups = {
   issue: "HOBO-550",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-support-workflow-mockups",
-  proofPath: "urn:hobo:proof:vibe-support-workflow-mockups",
+  proofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md",
   designRefs: [
-    "urn:hobo:requirement:support-workflow",
-    "urn:hobo:requirement:support-sla-channels",
-    "urn:hobo:requirement:launch-support-escalation",
-    "urn:hobo:requirement:incident-communications",
-    "urn:hobo:requirement:admin-console",
-    "urn:hobo:requirement:security-verification",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/support-workflow.md",
+    "docs/design/support-sla-channels.md",
+    "docs/design/launch-support-escalation.md",
+    "docs/design/incident-communications.md",
+    "docs/design/admin-console.md",
+    "docs/design/security-verification.md",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   quickstartFixtureRefs: QUICKSTART_FIXTURE_REFS,
   personas: REQUIRED_SUPPORT_WORKFLOW_MOCKUP_PERSONAS,
@@ -424,7 +424,7 @@ export function validateVibeSupportWorkflowMockups(
   if (mockups.packagePath !== "src/draft/exp-proofs/ux/vibe-support-workflow-mockups") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (mockups.proofPath !== "urn:hobo:proof:vibe-support-workflow-mockups") {
+  if (mockups.proofPath !== "docs/design/proofs/vibe-support-workflow-mockups/README.md") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(mockups.personas, REQUIRED_SUPPORT_WORKFLOW_MOCKUP_PERSONAS)) {

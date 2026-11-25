@@ -25,12 +25,12 @@ const FORBIDDEN_SCOPE_PATTERNS = [
 ];
 
 const REQUIRED_DEPENDENCIES = [
-  "urn:hobo:requirement:reliability-observability-cost#plan-05",
-  "urn:hobo:requirement:e2e-test-matrix",
-  "urn:hobo:requirement:launch-e2e-persona-matrix",
-  "urn:hobo:requirement:pre-launch-outcome-contract",
-  "urn:hobo:decision:adr-0045",
-  "urn:hobo:decision:adr-0082",
+  "docs/design/reliability-observability-cost.md#plan-05",
+  "docs/design/e2e-test-matrix.md",
+  "docs/design/launch-e2e-persona-matrix.md",
+  "docs/design/pre-launch-outcome-contract.md",
+  "docs/design/adr/02-identity-security.md#adr-0045",
+  "docs/design/adr/02-identity-security.md#adr-0082",
 ];
 
 export const PERFORMANCE_LOAD_TESTS_SCOPE = {
@@ -94,27 +94,27 @@ export const PERFORMANCE_LOAD_TESTS_SCOPE = {
   },
   dependencies: [
     {
-      source: "urn:hobo:requirement:reliability-observability-cost#plan-05",
+      source: "docs/design/reliability-observability-cost.md#plan-05",
       reason: "Defines SLOs, error-budget gates, observability signals, capacity targets, and cost visibility consumed by performance evidence.",
     },
     {
-      source: "urn:hobo:requirement:e2e-test-matrix",
+      source: "docs/design/e2e-test-matrix.md",
       reason: "Defines launch journey rows and fixture boundaries that performance scenarios extend with expected-load evidence.",
     },
     {
-      source: "urn:hobo:requirement:launch-e2e-persona-matrix",
+      source: "docs/design/launch-e2e-persona-matrix.md",
       reason: "Defines persona journey thresholds that later performance rows must not silently weaken or override.",
     },
     {
-      source: "urn:hobo:requirement:pre-launch-outcome-contract",
+      source: "docs/design/pre-launch-outcome-contract.md",
       reason: "Defines outcome and safe-test evidence that performance/load claims compare against before launch.",
     },
     {
-      source: "urn:hobo:decision:adr-0045",
+      source: "docs/design/adr/02-identity-security.md#adr-0045",
       reason: "Pins SLO-as-code and error-budget gating as the reliability contract behind performance thresholds.",
     },
     {
-      source: "urn:hobo:decision:adr-0082",
+      source: "docs/design/adr/02-identity-security.md#adr-0082",
       reason: "Pins Golden Suites and A2H handoff so load evidence can fail closed without becoming a launch bypass.",
     },
   ],
@@ -170,35 +170,35 @@ export const PERFORMANCE_LOAD_TESTS_SCOPE = {
       kind: "scenario-inventory",
       owner: "Performance & Load Tests",
       proofMode: "design-record",
-      source: "urn:hobo:requirement:performance-load-tests#required-scenario-dimensions",
+      source: "docs/design/performance-load-tests.md#required-scenario-dimensions",
       proves: "Every launch-relevant journey names expected load, measured signal, thresholds, owner, and release phase.",
     },
     {
       kind: "workload-model-fixture",
       owner: "Platform engineering",
       proofMode: "reference-fixture",
-      source: "urn:hobo:requirement:performance-load-tests#evidence-required-for-m1",
+      source: "docs/design/performance-load-tests.md#evidence-required-for-m1",
       proves: "Synthetic workload inputs are deterministic, tenant-safe, and explicit about mocked/live boundaries.",
     },
     {
       kind: "capacity-envelope-schema",
       owner: "SRE operator",
       proofMode: "contract-test",
-      source: "urn:hobo:requirement:performance-load-tests#evidence-required-for-m1",
+      source: "docs/design/performance-load-tests.md#evidence-required-for-m1",
       proves: "Capacity evidence has stable fields for load, duration, saturation, latency, error budget, and abort state.",
     },
     {
       kind: "threshold-and-abort-policy",
       owner: "Reliability, Observability & Cost",
       proofMode: "contract-test",
-      source: "urn:hobo:requirement:performance-load-tests#service-ux-security-and-support-boundaries",
+      source: "docs/design/performance-load-tests.md#service-ux-security-and-support-boundaries",
       proves: "Threshold breaches fail closed, preserve raw evidence, and route to owner review instead of silent pass.",
     },
     {
       kind: "evidence-retention-and-support-handoff",
       owner: "Support Workflow",
       proofMode: "support-handoff",
-      source: "urn:hobo:requirement:performance-load-tests#owning-initiative-dependencies",
+      source: "docs/design/performance-load-tests.md#owning-initiative-dependencies",
       proves: "Support can explain load-test state, limitations, and next owner without owning the runner implementation.",
     },
   ],

@@ -4,12 +4,22 @@ import * as path from 'path';
 
 import type { TeamProvider } from '../../../../../core/src/teamProvider.js';
 
+/**
+ * Claude Code implementation of the TeamProvider interface.
+ *
+ * Encapsulates every Claude-specific path, field name, and tool identifier
+ * for the Agent Teams feature. Adding support for a new CLI means creating a
+ * sibling file; no changes to hookEventHandler.ts or fileWatcher.ts.
+ */
 
+// ── Internal helpers (not exposed on the public TeamProvider interface) ──
 
+/** Claude stores teammate metadata in a sidecar `<file>.meta.json`. */
 function sidecarPath(jsonlPath: string): string {
   return jsonlPath.replace(/\.jsonl$/, '.meta.json');
 }
 
+/** Parse a sidecar's `agentType` field, if present. */
 function parseSidecarAgentType(jsonlPath: string): string | null {
   const metaPath = sidecarPath(jsonlPath);
   try {
@@ -21,10 +31,12 @@ function parseSidecarAgentType(jsonlPath: string): string | null {
   }
 }
 
+/** Claude stores teammate JSONL files at `<projectDir>/<leadSessionId>/subagents/`. */
 function teammateDir(projectDir: string, leadSessionId: string): string {
   return path.join(projectDir, leadSessionId, 'subagents');
 }
 
+// ── Public TeamProvider implementation ──
 
 export const claudeTeamProvider: TeamProvider = {
   providerId: 'claude',
@@ -33,6 +45,8 @@ export const claudeTeamProvider: TeamProvider = {
   withinTurnSubagentTools: new Set(['Task']),
 
   isTeammateSpawnCall(toolName, toolInput) {
+    // Claude's Agent tool spawns a teammate ONLY when run_in_background is true.
+    // Agent without that flag is a basic within-turn subagent (identical UX to Task).
     return toolName === 'Agent' && toolInput.run_in_background === true;
   },
 
@@ -49,7 +63,7 @@ export const claudeTeamProvider: TeamProvider = {
     try {
       entries = fs.readdirSync(dir);
     } catch {
-      return [];
+      return []; // directory missing -> no teammates yet
     }
     const result: Array<{ jsonlPath: string; teammateName: string }> = [];
     for (const entry of entries) {
@@ -64,6 +78,8 @@ export const claudeTeamProvider: TeamProvider = {
   },
 
   getTeamMetadataForSession(jsonlPath) {
+    // Claude: read the first JSONL line; team fields live in the first assistant/system record.
+    // The caller (fileWatcher) already knows the path, so this is the straightforward lookup.
     let raw: string;
     try {
       raw = fs.readFileSync(jsonlPath, 'utf-8');
@@ -103,7 +119,7 @@ export const claudeTeamProvider: TeamProvider = {
     try {
       raw = fs.readFileSync(configPath, 'utf-8');
     } catch {
-      return null;
+      return null; // config missing / unreadable -> team dissolved
     }
     try {
       const data = JSON.parse(raw) as { members?: Array<{ name?: unknown }> };

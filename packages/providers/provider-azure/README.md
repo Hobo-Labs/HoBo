@@ -183,7 +183,7 @@ an unconfirmed delete *raises* with the same wording rather than returning.
 
 ### Credentials
 
-`credentialRef` is a locator (`env://AZURE_ARM_ACCESS_TOKEN`,
+`credentialRef` is a locator (`owner://AZURE_ARM_ACCESS_TOKEN`,
 `secret://camp/azure-arm-token`), enforced against the same grammar core's
 `parseResolveRequest` uses; a token-shaped value is refused with
 `RESOLVER_CREDENTIAL_NOT_A_REF`. The resolved bearer token is written to exactly
@@ -260,7 +260,7 @@ is cited to the vendor's documentation with the date it was read. It adds no
 product and does not change the published Capability Manifest; it is read by
 `assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
 has been deployed onto these products from this repository. See
-[`urn:hobo:requirement:postgres-backend-catalog`](urn:hobo:requirement:postgres-backend-catalog).
+[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).
 
 ### Virtual machine and block storage (catalog only)
 

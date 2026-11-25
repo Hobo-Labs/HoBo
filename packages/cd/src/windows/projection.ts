@@ -1,3 +1,6 @@
+// A catch-up read store over the journal: folds the events of some types in
+// global position order and remembers its last position, so each query reads
+// only what was appended since. Rebuilt from position zero on construction.
 import type {
 	DurableEventStore,
 	EventEnvelope,
@@ -17,6 +20,7 @@ export class CatchUpProjection {
 		private readonly folds: Readonly<Record<string, Fold>>,
 	) {}
 
+	/** Fold everything appended since the last call. Concurrent callers share one pass. */
 	async catchUp(): Promise<void> {
 		this.running ??= this.pass().finally(() => {
 			this.running = undefined;

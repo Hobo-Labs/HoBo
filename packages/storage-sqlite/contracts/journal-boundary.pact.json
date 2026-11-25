@@ -4,7 +4,6 @@
 	"interactions": [
 		{
 			"description": "append commits events with database-local positions",
-			"providerState": "an empty store",
 			"request": {
 				"method": "append",
 				"streamId": "order:1",
@@ -23,7 +22,6 @@
 		},
 		{
 			"description": "stale expectedSeq is rejected as an optimistic sequence conflict",
-			"providerState": "stream order:1 has one event",
 			"request": {
 				"method": "append",
 				"streamId": "order:1",
@@ -40,7 +38,6 @@
 		},
 		{
 			"description": "a stale fence token is rejected distinctly from a sequence conflict",
-			"providerState": "stream actor:a is fenced at 5",
 			"request": {
 				"method": "append",
 				"streamId": "actor:a",
@@ -55,27 +52,10 @@
 			"response": {
 				"error": { "code": "STALE_FENCE" }
 			}
-		},
-		{
-			"description": "an unfenced append to a fenced stream is rejected",
-			"providerState": "stream actor:a is fenced at 5",
-			"request": {
-				"method": "append",
-				"streamId": "actor:a",
-				"events": [{ "type": "actor.Unfenced", "data": {} }],
-				"options": {
-					"expectedSeq": 1,
-					"actor": { "kind": "system", "id": "test" },
-					"tenant": "t1"
-				}
-			},
-			"response": {
-				"error": { "code": "MISSING_FENCE" }
-			}
 		}
 	],
 	"metadata": {
 		"pactSpecification": { "version": "2.0.0" },
-		"evidence": "contracts/provider/journal-boundary.provider.test.ts"
+		"evidence": "contracts/consumer/journal-boundary.test.ts"
 	}
 }

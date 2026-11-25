@@ -1,3 +1,26 @@
+/**
+ * `EphemeralStatePort` over any Redis-protocol command executor.
+ *
+ * The executor is the same `KvRedisExecutor` the conformance suite drives, so
+ * one implementation of the port serves every binding: a RESP socket to a
+ * self-hosted Valkey or Redis (`./resp`), a REST-fronted store's executor
+ * (supplied by its provider package), or the in-memory engine
+ * (`./ephemeral-memory`).
+ * Only the executor differs, which is what "no relay code change" means.
+ *
+ * Command cost, per call (see `EPHEMERAL_STATE_COMMAND_COST` in `@hobo/core`):
+ *
+ * | method | commands |
+ * |---|---|
+ * | `get` | 1 (`HMGET`) |
+ * | `getMany` | 1 (`EVALSHA`), 0 for no keys |
+ * | `putIfAbsent`, `compareAndSet`, `increment` | 1 (`EVALSHA`) |
+ * | `delete` | 1 (`DEL`, or `EVALSHA` with an expected version) |
+ * | `expire` | 1 (`PEXPIRE`) |
+ *
+ * Add one `EVAL` the first time each script meets a server whose script cache
+ * lacks it (`NOSCRIPT`); the handle is then cached by the server.
+ */
 import {
 	type EphemeralEntry,
 	type EphemeralKey,
@@ -21,6 +44,10 @@ import type { KvRedisExecutor, RedisReply, RedisValue } from "./protocol.js";
 
 export type RedisEphemeralStateOptions = {
 	readonly executor: KvRedisExecutor;
+	/**
+	 * Incarnation token for a key this call creates. Must not repeat for the
+	 * same key; the default is a random UUID. Override only for determinism.
+	 */
 	readonly newIncarnation?: (() => string) | undefined;
 };
 
@@ -63,6 +90,7 @@ function write(raw: RedisValue, operation: string): EphemeralWrite {
 		: { applied: true, version: version(raw, operation) };
 }
 
+/** `[value, "<i>:<r>"]` from GET_MANY, or `[v, i, r]` from HMGET. */
 function entry(
 	parts: readonly RedisValue[],
 	operation: string,
@@ -100,6 +128,7 @@ function asArray(raw: RedisValue, operation: string): readonly RedisValue[] {
 	if (!Array.isArray(raw)) {
 		throw contract(`ephemeral ${operation} expected an array reply`);
 	}
+	// SAFETY: Array.isArray narrowed a RedisValue, whose only array arm is RedisValue[].
 	return raw as readonly RedisValue[];
 }
 

@@ -18,12 +18,10 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@bytecodealliance/componentize-js": "0.21.0",
-		"@hobo/core": "workspace:*",
-		"@hobo/runtime-wasm": "workspace:*",
-		"esbuild": "^0.25.0"
+		"@hobo/core": "workspace:*"
 	},
 	"devDependencies": {
+		"@bytecodealliance/componentize-js": "0.21.0",
 		"@types/node": "^22.15.0"
 	},
 	"scripts": {

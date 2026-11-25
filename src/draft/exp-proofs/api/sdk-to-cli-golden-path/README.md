@@ -40,9 +40,11 @@ real deploy URL, or require dashboard screenshots.
 pnpm.cmd --prefix src\draft\exp-proofs\sdk-to-cli-golden-path test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the golden-path proof record.
 - `architecture/pacts/` - PACT contract for the SDK-to-CLI proof boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

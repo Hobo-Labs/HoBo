@@ -147,14 +147,14 @@ export const LAUNCH_PERFORMANCE_CAPACITY_ENVELOPE = {
     {
       id: "cost.usage-fact-lineage",
       ownerProject: "Usage Metering",
-      sourceEvidence: "urn:hobo:requirement:usage-metering",
+      sourceEvidence: "docs/design/usage-metering.md",
       launchRule: "Every cost threshold must trace to accepted usage fact classes and dimensions.",
       scopeBoundary: "HOBO-502 does not create a metering projection or ingest live usage.",
     },
     {
       id: "cost.billing-boundary",
       ownerProject: "Billing & Credits",
-      sourceEvidence: "urn:hobo:requirement:billing-launch-policy",
+      sourceEvidence: "docs/design/billing-launch-policy.md",
       launchRule: "Envelope cost misses route to invoice/support wording but do not generate invoices.",
       scopeBoundary: "HOBO-502 does not add payment, invoice, refund, tax, or provider billing integration.",
     },

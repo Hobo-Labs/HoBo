@@ -1,0 +1,12 @@
+{
+  "name": "@hobo-draft/s2-06-iac-pulumi-automation-adapter",
+  "private": true,
+  "type": "module",
+  "main": "./src/iac-pulumi-automation-adapter.ts",
+  "exports": {
+    ".": "./src/iac-pulumi-automation-adapter.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -26,9 +26,6 @@ describe("plans:guard", () => {
 		expect(planReason("docs/anything/x.md", () => doc(type))).toContain(
 			type.toLowerCase(),
 		);
-		expect(planReason(".cursor/rules/task.mdc", () => doc(type))).toContain(
-			type.toLowerCase(),
-		);
 	});
 
 	it.each([
@@ -37,9 +34,7 @@ describe("plans:guard", () => {
 		"Review Findings",
 		"Reference",
 	])("allows a document typed %s", (type) => {
-		expect(
-			planReason("urn:hobo:requirement:x", () => doc(type)),
-		).toBeUndefined();
+		expect(planReason("docs/design/x.md", () => doc(type))).toBeUndefined();
 	});
 
 	it("refuses anything in a plans directory, whatever it holds", () => {

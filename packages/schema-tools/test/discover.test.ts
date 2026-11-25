@@ -124,6 +124,7 @@ describe("discoverDataModelPackages", () => {
 		try {
 			const packagesRoot = join(root, "packages");
 			await scaffoldPackage(packagesRoot, join("adapters", "adapter-sample"));
+			// An adapter whose data-models carry no buf.yaml stays documentation-only.
 			await scaffoldPackage(packagesRoot, join("adapters", "adapter-plain"), {
 				bufYaml: false,
 			});
@@ -144,6 +145,8 @@ describe("discoverDataModelPackages", () => {
 		const names = discovered.map((pkg) => pkg.name);
 		expect(names).toContain("core");
 		expect(names).toContain("schema-tools");
+		// runtime-local's data-models carry no buf.yaml: its .proto/.cue files
+		// are documentation mirrors (see test/envelope-single-source.test.ts).
 		expect(names).not.toContain("runtimes/runtime-local");
 	});
 });

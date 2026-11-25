@@ -519,67 +519,67 @@ Head-to-head:
 
 <a id="hobo-mapping"></a>
 
-> For each Convex surface, the HoBo equivalent. ✅ = HoBo has a comparable concept · ➕ = HoBo goes further · ↔ = adjacent/composes · n/a = out of scope. HoBo design lives in [`../../design/`](urn:hobo:requirement:index). Convex is **adjacent** to HoBo — a managed reactive backend, not a multi-cloud control plane — so this tracks *conceptual* correspondences (and where Convex could be a HoBo provider), not feature-for-feature competition.
+> For each Convex surface, the HoBo equivalent. ✅ = HoBo has a comparable concept · ➕ = HoBo goes further · ↔ = adjacent/composes · n/a = out of scope. HoBo design lives in [`../../design/`](../design/index.md). Convex is **adjacent** to HoBo — a managed reactive backend, not a multi-cloud control plane — so this tracks *conceptual* correspondences (and where Convex could be a HoBo provider), not feature-for-feature competition.
 
 ### Core platform
 
 | Convex | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Deterministic reactive queries; consistent snapshots | Event-sourced, deterministic **replay** + projections; durable workflows | ↔➕ | [11](urn:hobo:requirement:data-plane#plan-11) |
-| Mutations = OCC serializable transactions | Single-writer actor leases + exactly-once effects | ✅ | [05](urn:hobo:requirement:reliability-observability-cost#plan-05) |
-| Actions (external calls; Node runtime) | Provider/driver calls in sandboxed Executors; durable `step`/`workflow` | ✅ | [02](urn:hobo:requirement:sdk-api#plan-02), [04](urn:hobo:requirement:control-plane#plan-04) |
-| Document DB + schema + indexes + vector search | A **capability/resource** in HoBo's catalog (`database`/`vector`/`blobstore` ports) | ↔ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [24](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
-| Scheduled functions + cron | Saga scheduling + Pipelines/triggers | ✅ | [05](urn:hobo:requirement:reliability-observability-cost#plan-05), [28](urn:hobo:requirement:platform-engineering#plan-25) |
-| HTTP actions / webhooks | Provider HTTP ports + GitOps/webhook triggers | ✅ | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21), [28](urn:hobo:requirement:platform-engineering#plan-25) |
+| Deterministic reactive queries; consistent snapshots | Event-sourced, deterministic **replay** + projections; durable workflows | ↔➕ | [11](../design/data-plane.md#plan-11) |
+| Mutations = OCC serializable transactions | Single-writer actor leases + exactly-once effects | ✅ | [05](../design/reliability-observability-cost.md#plan-05) |
+| Actions (external calls; Node runtime) | Provider/driver calls in sandboxed Executors; durable `step`/`workflow` | ✅ | [02](../design/sdk-api.md#plan-02), [04](../design/control-plane.md#plan-04) |
+| Document DB + schema + indexes + vector search | A **capability/resource** in HoBo's catalog (`database`/`vector`/`blobstore` ports) | ↔ | [21](../design/authoring-resources-wiring.md#plan-21), [24](../design/wasm-runtime-wit.md#plan-20) |
+| Scheduled functions + cron | Saga scheduling + Pipelines/triggers | ✅ | [05](../design/reliability-observability-cost.md#plan-05), [28](../design/platform-engineering.md#plan-25) |
+| HTTP actions / webhooks | Provider HTTP ports + GitOps/webhook triggers | ✅ | [22](../design/authoring-resources-wiring.md#plan-21), [28](../design/platform-engineering.md#plan-25) |
 
 ### The three user-emphasized surfaces
 
 | Convex | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| **Generated code** (`_generated/` `api`/`server`/`dataModel`; typed function refs) | **WIT-interface-generated typed clients** + typed `.with(...)`; codegen from ports | ✅➕ | [02](urn:hobo:requirement:sdk-api#plan-02), [24](urn:hobo:requirement:wasm-runtime-wit#plan-20), [20](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
-| **Deployment API/model** (`convex deploy`, deploy keys, dev/prod/preview, CI) | The **Yard** deploy lifecycle: manifest/Set, Deltas→Sets, ephemeral/preview Camps, publishers | ✅➕ | [04](urn:hobo:requirement:control-plane#plan-04), [22](urn:hobo:requirement:authoring-resources-wiring#plan-21), [26](urn:hobo:requirement:platform-engineering#plan-25) |
-| **Management/Platform API** (`api.convex.dev/v1`, OAuth apps, provision deployments) | The Yard's control-plane API + MCP + agents-as-OIDC-principals provisioning | ✅➕ | [04](urn:hobo:requirement:control-plane#plan-04), [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
+| **Generated code** (`_generated/` `api`/`server`/`dataModel`; typed function refs) | **WIT-interface-generated typed clients** + typed `.with(...)`; codegen from ports | ✅➕ | [02](../design/sdk-api.md#plan-02), [24](../design/wasm-runtime-wit.md#plan-20), [20](../design/wasm-runtime-wit.md#plan-20) |
+| **Deployment API/model** (`convex deploy`, deploy keys, dev/prod/preview, CI) | The **Yard** deploy lifecycle: manifest/Set, Deltas→Sets, ephemeral/preview Camps, publishers | ✅➕ | [04](../design/control-plane.md#plan-04), [22](../design/authoring-resources-wiring.md#plan-21), [26](../design/platform-engineering.md#plan-25) |
+| **Management/Platform API** (`api.convex.dev/v1`, OAuth apps, provision deployments) | The Yard's control-plane API + MCP + agents-as-OIDC-principals provisioning | ✅➕ | [04](../design/control-plane.md#plan-04), [06](../design/ai-native-agent-auth.md#plan-06) |
 
 ### Ops, extensibility & auth
 
 | Convex | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Components (sandboxed reusable backends) | Capability providers + **Resource Packs** (signed, conformance-gated) | ✅➕ | [27](urn:hobo:requirement:platform-engineering#plan-25), [03](urn:hobo:requirement:control-plane#plan-04) |
-| Log streams / exceptions / dashboard | Observability + run inspector + replay | ✅➕ | [14](urn:hobo:requirement:reliability-observability-cost#plan-05), [07](urn:hobo:requirement:developer-experience#plan-07) |
-| Self-host (Rust backend; FSL→Apache) | Self-host = hosted (the Yard is a Bindle); OSS core | ✅ | [04](urn:hobo:requirement:control-plane#plan-04), [17](urn:hobo:requirement:vision#plan-17) |
-| Auth: `customJwt`/OIDC (Convex Auth/Clerk/Auth0) | Workload/agent identity (SVIDs, OIDC principals); **shoo** composes via `customJwt` | ↔ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06), [12](urn:hobo:requirement:security-networking#plan-12), [../shoo](shoo.md) |
-| AI: MCP server + agent skills | Agents-as-principals + MCP control surface + generation pipeline | ✅➕ | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06), [23](urn:hobo:requirement:generated-stack#plan-23) |
+| Components (sandboxed reusable backends) | Capability providers + **Resource Packs** (signed, conformance-gated) | ✅➕ | [27](../design/platform-engineering.md#plan-25), [03](../design/control-plane.md#plan-04) |
+| Log streams / exceptions / dashboard | Observability + run inspector + replay | ✅➕ | [14](../design/reliability-observability-cost.md#plan-05), [07](../design/developer-experience.md#plan-07) |
+| Self-host (Rust backend; FSL→Apache) | Self-host = hosted (the Yard is a Bindle); OSS core | ✅ | [04](../design/control-plane.md#plan-04), [17](../design/vision.md#plan-17) |
+| Auth: `customJwt`/OIDC (Convex Auth/Clerk/Auth0) | Workload/agent identity (SVIDs, OIDC principals); **shoo** composes via `customJwt` | ↔ | [06](../design/ai-native-agent-auth.md#plan-06), [12](../design/security-networking.md#plan-12), [../shoo](shoo.md) |
+| AI: MCP server + agent skills | Agents-as-principals + MCP control surface + generation pipeline | ✅➕ | [06](../design/ai-native-agent-auth.md#plan-06), [23](../design/generated-stack.md#plan-23) |
 
 ### Convex-as-a-HoBo-provider (the composing relationship)
 
-The cleanest framing: **Convex is a backend HoBo realizes as a capability provider** — now scaffolded as `@hobo/provider-convex` (`packages/providers/provider-convex`, thin adapter per [ADR-0144](urn:hobo:decision:adr-0144)). A Bindle that declares `data`/`bucket`/`api` resources is mapped (via Resource Definitions, [Plan 25](urn:hobo:requirement:platform-engineering#plan-25)) to a Convex deployment: the provider's capability manifest advertises `database/reactive` (with `search.vector` and `functions.scheduled` as capability features), `objectStore`, and `web/service`; provisioning targets Convex's **Management API** behind a credential-gated, fail-closed client (deploy keys are broker-held — `staticSecrets: false`, wired via `secretRef`, never Bindle config); connection refs flow through the manifest ([Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)). In that framing Convex is *infrastructure HoBo orchestrates*, not a competitor. Note honestly: HoBo has **no `vector` port today** — vector search rides as a feature of the reactive-database capability until one lands.
+The cleanest framing: **Convex is a backend HoBo realizes as a capability provider** — now scaffolded as `@hobo/provider-convex` (`packages/providers/provider-convex`, thin adapter per [ADR-0144](../design/adr/07-portability-extensibility.md#adr-0144)). A Bindle that declares `data`/`bucket`/`api` resources is mapped (via Resource Definitions, [Plan 25](../design/platform-engineering.md#plan-25)) to a Convex deployment: the provider's capability manifest advertises `database/reactive` (with `search.vector` and `functions.scheduled` as capability features), `objectStore`, and `web/service`; provisioning targets Convex's **Management API** behind a credential-gated, fail-closed client (deploy keys are broker-held — `staticSecrets: false`, wired via `secretRef`, never Bindle config); connection refs flow through the manifest ([Plan 21](../design/authoring-resources-wiring.md#plan-21)). In that framing Convex is *infrastructure HoBo orchestrates*, not a competitor. Note honestly: HoBo has **no `vector` port today** — vector search rides as a feature of the reactive-database capability until one lands.
 
 ### Examples — Swaghaus (WorkOS kept)
 
 Live Examples catalog ships [JamesCowling/swaghaus](https://github.com/JamesCowling/swaghaus) (MIT) under `examples/convex-swaghaus/` via a provider-neutral Bindle:
 
-- Authoring: `@hobo/convex` `convexApp(root)` on `b.web(...)` plus official `b.container({ image: "ghcr.io/get-convex/convex-backend:latest" })` and WorkOS AuthKit as `b.external` — Bindle never pins the `convex` provider ([ADR-0144](urn:hobo:decision:adr-0144)); never invent `hobo/convex-*` images.
+- Authoring: `@hobo/convex` `convexApp(root)` on `b.web(...)` plus official `b.container({ image: "ghcr.io/get-convex/convex-backend:latest" })` and WorkOS AuthKit as `b.external` — Bindle never pins the `convex` provider ([ADR-0144](../design/adr/07-portability-extensibility.md#adr-0144)); never invent `hobo/convex-*` images.
 - Cloudflare Examples Yard: **anon Temporary Convex self-host is fail-closed** under zero project API keys (`@hobo/provider-convex` `provisionConvexBackendAnonymous` — Instanode: no anon containers; OpenPouch anon: 256MiB cgroup vs ~205MB `convex-local-backend`; CF Temporary Containers apply **403**). Mock via `HOBO_CONVEX_SWAGHAUS_MOCK=1`. Escapes: `HOBO_CONVEX_OCI_HOST=cloudflare`, `HOBO_CONVEX_ALLOW_CLOUD=1`. E2B/SnapDeploy credentialed paths stay **out of scope**. Frontend still Temporary Pages. Local Yard compose remains in `examples/convex-swaghaus/docker-compose.yml`.
 - WorkOS client id/secrets ride Camp `secretRef` / external connector — **presence-gated, fail closed**. CI may set `HOBO_CONVEX_SWAGHAUS_MOCK=1`; no silent mock without that flag when Containers credentials are absent.
 - Operator SDK adapters: `CONVEX_SDK_RESOURCES` (`defineResource` for reactive database + function-host).
 
 ### Impedance boundaries for the provider path
 
-Realizing ports on Convex is deliberately **partial-fidelity**; these boundaries are scored by the PortabilityReport ([ADR-0024](urn:hobo:decision:adr-0024) — provider `.with()` blocks and paradigm mismatches are lock-in sources) so neither humans nor agents can over-claim:
+Realizing ports on Convex is deliberately **partial-fidelity**; these boundaries are scored by the PortabilityReport ([ADR-0024](../design/adr/07-portability-extensibility.md#adr-0024) — provider `.with()` blocks and paradigm mismatches are lock-in sources) so neither humans nor agents can over-claim:
 
 - **Document model + JS joins vs multi-model.** Convex is a document store with code-side joins; HoBo's `paradigm` vocabulary marks it `document` — mapping a `relational`/`graph` expectation onto it is a recorded paradigm mismatch, not a silent adaptation.
-- **Reactive consistent-snapshot queries vs event-sourced replay.** Convex's reactivity is live-query invalidation over current state; HoBo's substrate is an append-only log with full replay/time-travel ([Plan 11](urn:hobo:requirement:data-plane#plan-11)). Data and functions living inside Convex are **outside** HoBo's control-plane time-travel and cross-Yard Trails; only the provisioning lifecycle is event-sourced.
+- **Reactive consistent-snapshot queries vs event-sourced replay.** Convex's reactivity is live-query invalidation over current state; HoBo's substrate is an append-only log with full replay/time-travel ([Plan 11](../design/data-plane.md#plan-11)). Data and functions living inside Convex are **outside** HoBo's control-plane time-travel and cross-Yard Trails; only the provisioning lifecycle is event-sourced.
 - **Hard runtime limits.** 1 s query/mutation execution, 1 MiB document size, 10 min actions, transaction size caps — encoded as typed constants in `@hobo/provider-convex` so planners and reviewers see them, not discover them.
 - **OCC contention vs actor leases.** Convex mutations retry on optimistic-concurrency conflicts; HoBo actors serialize via leases/fencing. High-contention aggregates behave differently under load.
-- **TS/JS runtime vs WIT polyglot.** Convex functions are TypeScript/JavaScript only; the WIT membrane ([Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20)) does not extend into Convex-hosted code.
+- **TS/JS runtime vs WIT polyglot.** Convex functions are TypeScript/JavaScript only; the WIT membrane ([Plan 20](../design/wasm-runtime-wit.md#plan-20)) does not extend into Convex-hosted code.
 - **Escape hatches are Yard-scoped.** Convex-specific options ride Camp/Yard `.with(...)` annotations (Bindles reject provider annotations by construction) and are marked non-portable in the PortabilityReport.
 
 ### Where HoBo deliberately differs
 
-- **Multi-cloud + IaC + matching** — HoBo provisions *across providers* by context ([Plan 25](urn:hobo:requirement:platform-engineering#plan-25)); Convex is one backend.
-- **Event-sourced replay/time-travel + audit** as the substrate ([Plan 11](urn:hobo:requirement:data-plane#plan-11)).
-- **WASM-first polyglot runtime** ([Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20)) vs Convex's TS/JS runtime.
-- **Agent-native generation pipeline** generation of providers/implementations/definitions ([Plan 23](urn:hobo:requirement:generated-stack#plan-23)).
+- **Multi-cloud + IaC + matching** — HoBo provisions *across providers* by context ([Plan 25](../design/platform-engineering.md#plan-25)); Convex is one backend.
+- **Event-sourced replay/time-travel + audit** as the substrate ([Plan 11](../design/data-plane.md#plan-11)).
+- **WASM-first polyglot runtime** ([Plan 20](../design/wasm-runtime-wit.md#plan-20)) vs Convex's TS/JS runtime.
+- **Agent-native generation pipeline** generation of providers/implementations/definitions ([Plan 23](../design/generated-stack.md#plan-23)).
 
 ## Adversarial critique
 

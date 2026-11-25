@@ -1,3 +1,11 @@
+// Departure (D21, D23). A Camp leaving a placement receives a `depart` Set
+// (SET_ORIGIN_DEPARTURE). What happens to the resources it no longer declares
+// follows the node's DepartureAction:
+//   DELETE        remove everything the Set no longer declares;
+//   ORPHAN        remove nothing, record everything as orphaned;
+//   ORPHAN_DATA   (default) remove compute, keep data resources, record them.
+// Kept resources are passed to the realizer as `keep` and recorded in
+// `camp.Departed`; the reconciler verifies afterwards that they still exist.
 import {
 	DepartureAction,
 	type ReconcileObservationRecord,
@@ -13,11 +21,16 @@ export type DeparturePlan = Readonly<{
 	keep: readonly string[];
 }>;
 
+/** The DepartureAction CD_DEFAULTS names (ORPHAN_DATA). */
 export function defaultDepartureAction(): DepartureAction {
 	const name = CD_DEFAULTS.departureAction;
 	return DepartureAction[name];
 }
 
+/**
+ * Decide which undeclared resources go and which stay. `observed` is what the
+ * target holds now; `declared` is what the departure Set still declares.
+ */
 export function planDeparture(
 	input: Readonly<{
 		action: DepartureAction;
@@ -49,6 +62,7 @@ export function planDeparture(
 	});
 }
 
+/** Kept resources that the realizer removed anyway (should be empty). */
 export function keptButMissing(
 	plan: DeparturePlan,
 	after: ReconcileObservationRecord,
@@ -64,10 +78,17 @@ export function keptButMissing(
 	return Object.freeze(plan.keep.filter((name) => !present.has(name)));
 }
 
+/**
+ * Realize directives the reconciler adds to RealizeInput. `keep` names
+ * resources the realizer must not delete even though the desired Set no
+ * longer declares them (departure orphans). Realizers that do not read it
+ * are caught by `keptButMissing` after converge.
+ */
 export type RealizeDirectives = Readonly<{ keep?: readonly string[] }>;
 
 export type DirectedRealizeInput = RealizeInput & RealizeDirectives;
 
+/** Read `keep` from a RealizeInput that may carry directives. */
 export function keepOf(input: RealizeInput): ReadonlySet<string> {
 	const directed: DirectedRealizeInput = input;
 	return new Set(directed.keep ?? []);

@@ -1,9 +1,5 @@
 import { evaluateBudgetPolicy } from "@hobo/core";
-import {
-	createDispatcherRegistry,
-	decideCreditDispatch,
-} from "@hobo/dispatcher";
-import { allocationQuote } from "@hobo/pricing";
+import { createDispatcherRegistry, decideDispatch } from "@hobo/dispatcher";
 import type {
 	Account,
 	CiRoutingRefusal as CiRoutingRefusalWire,
@@ -11,6 +7,7 @@ import type {
 	Offer,
 	SandboxAllowance,
 } from "./_generated/ci_pb.js";
+import { allocationQuote } from "./accounting.js";
 import {
 	ciBudgetIdentity,
 	ciBudgetPolicy,
@@ -37,12 +34,15 @@ export type CiRoutingRefusal = Pick<
 	"code" | "reason" | "offerId"
 >;
 export interface CiRoutingOptions {
+	/** A plan requiring a native bound is never execution authorization. */
 	phase?: "plan" | "admit";
 	attempt?: number;
 	queueDurationMs?: number;
 	onRefusal?: (refusal: CiRoutingRefusal) => void;
 }
 
+/** Shared by admission and pre-dispatch repricing. Negative means left wins.
+ * A partly free job can still cost more than an entirely paid alternative. */
 export function compareCiRoutingCandidates(
 	left: CiRoutingCandidateCost,
 	right: CiRoutingCandidateCost,
@@ -82,6 +82,9 @@ export function compareCiRoutingCandidates(
 	return freeDifference;
 }
 
+// Timestamp-only snapshots cannot prove that a later completion at the same
+// clock tick was included. Count equality (and unknown timestamps) until a
+// strictly newer observation establishes coverage.
 export function shouldCountLocalUsage(
 	lease: Lease,
 	observedAt: string,
@@ -95,6 +98,7 @@ export function shouldCountLocalUsage(
 	);
 }
 
+/** Pure ranking input; availability is measured per customer-owned account. */
 export function route(
 	account: Account,
 	leases: readonly Lease[],
@@ -238,6 +242,7 @@ export function route(
 		const usedFree = used
 			.filter((lease) => shouldCountLocalUsage(lease, offer.observedAt))
 			.map((lease) => lease.billedFreeMinutes);
+		// Sandbox charges are multidimensional and cannot consume host-minute credits.
 		if (
 			offer.backend === "sandbox" &&
 			(!offer.sandboxPricing ||
@@ -367,7 +372,10 @@ export function route(
 		}
 		return [{ offer, free, reservedFree, paid, sandboxReservedAllowance }];
 	});
-	const preferred = common ? candidates : preferFleetCandidates(candidates);
+	// An authored shared policy ranks every admitted offer by its objective.
+	const preferred = common
+		? candidates
+		: preferRunnerTierCandidates(candidates);
 	if (preferred.length === 0) return undefined;
 	const cost = (
 		candidate: (typeof candidates)[number],
@@ -385,7 +393,9 @@ export function route(
 		(candidate) =>
 			compareCiRoutingCandidates(cost(candidate), cost(best), strategy) === 0,
 	);
-	const decision = decideCreditDispatch({
+	// Dispatcher ranks the lowest-cost shortlist, retaining its native credit
+	// rationale and deterministic tie-breaking.
+	const decision = decideDispatch({
 		category: "runner",
 		dispatchId: "ci-route",
 		units: minutes,
@@ -424,7 +434,7 @@ export function route(
 	};
 }
 
-function fleetCandidateRank(offer: Offer): number | undefined {
+function runnerTierCandidateRank(offer: Offer): number | undefined {
 	if (
 		offer.provider === "hobo-box-worker" ||
 		offer.backend === "isolated-container"
@@ -436,18 +446,18 @@ function fleetCandidateRank(offer: Offer): number | undefined {
 	return undefined;
 }
 
-function preferFleetCandidates<T extends { offer: Offer }>(
+function preferRunnerTierCandidates<T extends { offer: Offer }>(
 	candidates: readonly T[],
 ): T[] {
 	let best: number | undefined;
 	for (const candidate of candidates) {
-		const rank = fleetCandidateRank(candidate.offer);
+		const rank = runnerTierCandidateRank(candidate.offer);
 		if (rank === undefined) continue;
 		if (best === undefined || rank < best) best = rank;
 	}
 	if (best === undefined) return [...candidates];
 	return candidates.filter((candidate) => {
-		const rank = fleetCandidateRank(candidate.offer);
+		const rank = runnerTierCandidateRank(candidate.offer);
 		return rank === undefined || rank === best;
 	});
 }

@@ -37,7 +37,7 @@ The `hobo` CLI is deliberately **small and stable**. The same canonical verb set
 | `station` | Station **ops/setup** (not app lifecycle) |
 | `yard` | Bare-metal Yard install / inspect |
 | `broker` | Conductor config + resolve + matrix |
-| `serve` | Serve the local control-plane HTTP and SSE API |
+| `serve` | Local control-plane HTTP+SSE for the Yard game UI |
 
 ## Authoring
 

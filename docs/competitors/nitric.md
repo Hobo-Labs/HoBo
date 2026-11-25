@@ -72,7 +72,7 @@ the model HoBo's authoring surface descends from.
 
 ## How it competes with HoBo
 
-Nitric is recorded in [`lineage.md`](urn:hobo:requirement:lineage) as a **pillar** — HoBo's IfC-default
+Nitric is recorded in [`lineage.md`](../design/lineage.md) as a **pillar** — HoBo's IfC-default
 authoring and the `.allow()` least-privilege instinct come from here.
 
 | Contested HoBo surface | The contest |
@@ -342,17 +342,17 @@ Direct cloud SDK access for anything outside the abstracted services; provider e
 
 <a id="hobo-mapping"></a>
 
-> For every Nitric feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · 🔜 = planned, see iteration hooks. HoBo design lives in [`../../design/`](urn:hobo:requirement:index).
+> For every Nitric feature, the HoBo equivalent and the design doc that owns it. ✅ = designed at parity · ➕ = HoBo goes further · 🔜 = planned, see iteration hooks. HoBo design lives in [`../../design/`](../design/index.md).
 
 ### Core model
 
 | Nitric | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| Infrastructure from Code (run-to-collect) | **IfC-default**: resources declared inline + `.allow()`, collected by running the wasm component in resource-collection mode → manifest IR | ✅ | [02](urn:hobo:requirement:sdk-api#plan-02), [22](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
-| Services (containerized entry points) | **Services = wasm/wasi components by default** (OCI container fallback) | ➕ | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
-| Resources (building blocks) | HoBo resources = **WIT ports** with equivalence classes | ✅ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
-| The Membrane (**gRPC** runtime contract) | **wRPC membrane** (wasmCloud's WIT-native RPC) over the WIT/wasm host boundary: component imports → host routes to linked provider; wire generated from WIT, no bespoke proto; same contract drives local/cross-process/lattice | ➕ | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [ADR-0069](urn:hobo:decision:adr-0069) |
-| Resource spec | **Manifest IR** (Nitric spec ∪ Aspire manifest) consumed by the Planner | ➕ | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
+| Infrastructure from Code (run-to-collect) | **IfC-default**: resources declared inline + `.allow()`, collected by running the wasm component in resource-collection mode → manifest IR | ✅ | [02](../design/sdk-api.md#plan-02), [22](../design/authoring-resources-wiring.md#plan-21) |
+| Services (containerized entry points) | **Services = wasm/wasi components by default** (OCI container fallback) | ➕ | [20](../design/wasm-runtime-wit.md#plan-20) |
+| Resources (building blocks) | HoBo resources = **WIT ports** with equivalence classes | ✅ | [21](../design/authoring-resources-wiring.md#plan-21) |
+| The Membrane (**gRPC** runtime contract) | **wRPC membrane** (wasmCloud's WIT-native RPC) over the WIT/wasm host boundary: component imports → host routes to linked provider; wire generated from WIT, no bespoke proto; same contract drives local/cross-process/lattice | ➕ | [20](../design/wasm-runtime-wit.md#plan-20), [ADR-0069](../design/adr/01-architecture-core.md#adr-0069) |
+| Resource spec | **Manifest IR** (Nitric spec ∪ Aspire manifest) consumed by the Planner | ➕ | [22](../design/authoring-resources-wiring.md#plan-21) |
 
 ### Resource catalog (full parity target)
 
@@ -363,56 +363,56 @@ Direct cloud SDK access for anything outside the abstracted services; provider e
 | `bucket` (+ events, presigned) | `wasi:blobstore` (+ `hobo:blob-events`) | ✅ |
 | `queue` (pull) | `hobo:queue` (`wasi:messaging` profile) | ✅ |
 | `topic` (push pub/sub) | `wasi:messaging` | ✅ |
-| `secret` (versioned) | `wasi:config/store` + `hobo:secrets` (put → version, access latest\|pinned) ([Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [ADR-0113](urn:hobo:decision:adr-0113)) | ✅ |
-| `sql` | `hobo:data/relational` (realizable over draft `wasi:sql`) ([ADR-0112](urn:hobo:decision:adr-0112)) | ✅ |
+| `secret` (versioned) | `wasi:config/store` + `hobo:secrets` (put → version, access latest\|pinned) ([Plan 20](../design/wasm-runtime-wit.md#plan-20), [ADR-0113](../design/adr/02-identity-security.md#adr-0113)) | ✅ |
+| `sql` | `hobo:data/relational` (realizable over draft `wasi:sql`) ([ADR-0112](../design/adr/03-data-plane.md#adr-0112)) | ✅ |
 | `schedule` (cron/interval) | `hobo:scheduler` (control-plane `cron`) | ✅ |
 | `websocket` | `hobo:websocket` | ✅ |
 | `job` (batch, cpu/mem/gpu) | `hobo:job` (+ IaaS `vm`/`microVm`) | ✅ |
 | `website` (static/SSR) | `web()` resource | ✅ |
 
-All resources detailed with `.allow()` verbs + cross-cloud equivalence in [21](urn:hobo:requirement:authoring-resources-wiring#plan-21).
+All resources detailed with `.allow()` verbs + cross-cloud equivalence in [21](../design/authoring-resources-wiring.md#plan-21).
 
 ### Permissions, security, providers
 
 | Nitric | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| `.allow(verbs)` → least-privilege IAM | `.allow(verbs)` drives **IAM + wasm capability grants (links) + agent token scope** (one declaration, three effects) | ➕ | [21](urn:hobo:requirement:authoring-resources-wiring#plan-21), [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
-| OIDC API auth | Per-route **OIDC/JWT security rules** + `api.use()` middleware on `hobo:http`; enforced in **`hobo dev`** and at gateway ([route-level API security](urn:hobo:requirement:authoring-resources-wiring#route-level-api-security)) | ➕ | [21](urn:hobo:requirement:authoring-resources-wiring#route-level-api-security), [06](urn:hobo:requirement:ai-native-agent-auth#plan-06), [ADR-0114](urn:hobo:decision:adr-0114) |
-| `oidcRule` / `securityRule` per route + `api.use()` middleware | Named security rules (api default + per-route override + `public` opt-out) + ordered middleware chain; same manifest IR in dev and prod | ➕ | [21](urn:hobo:requirement:authoring-resources-wiring#route-level-api-security) |
-| Pulumi/Terraform providers | `iac-pulumi` (primary) + Crossplane/OpenTofu adapters | ✅ | [03](urn:hobo:requirement:control-plane#plan-04) |
-| Provider = deploy + runtime layers (**Go plugins**) | **Provider = WIT-component** that *exports* the building-block interfaces (deploy realize() + runtime WIT impl + link); the contract **is** the WIT world, no Go/TS plugin SDK | ➕ | [03](urn:hobo:requirement:control-plane#plan-04), [20](urn:hobo:requirement:wasm-runtime-wit#plan-20), [ADR-0069](urn:hobo:decision:adr-0069) |
-| Custom providers (**Go-only** plugins) | Provider authoring in **any wasm language** (code against WIT, not a plugin API) + `@hobo/conformance` gate; **auto-generatable** | ➕ | [03](urn:hobo:requirement:control-plane#plan-04), [23](urn:hobo:requirement:generated-stack#plan-23) |
-| Stack files (per-target) | `hobo.config.ts` + Camps (per-env) | ✅ | [02](urn:hobo:requirement:sdk-api#plan-02) |
+| `.allow(verbs)` → least-privilege IAM | `.allow(verbs)` drives **IAM + wasm capability grants (links) + agent token scope** (one declaration, three effects) | ➕ | [21](../design/authoring-resources-wiring.md#plan-21), [06](../design/ai-native-agent-auth.md#plan-06) |
+| OIDC API auth | Per-route **OIDC/JWT security rules** + `api.use()` middleware on `hobo:http`; enforced in **`hobo dev`** and at gateway ([route-level API security](../design/authoring-resources-wiring.md#route-level-api-security)) | ➕ | [21](../design/authoring-resources-wiring.md#route-level-api-security), [06](../design/ai-native-agent-auth.md#plan-06), [ADR-0114](../design/adr/02-identity-security.md#adr-0114) |
+| `oidcRule` / `securityRule` per route + `api.use()` middleware | Named security rules (api default + per-route override + `public` opt-out) + ordered middleware chain; same manifest IR in dev and prod | ➕ | [21](../design/authoring-resources-wiring.md#route-level-api-security) |
+| Pulumi/Terraform providers | `iac-pulumi` (primary) + Crossplane/OpenTofu adapters | ✅ | [03](../design/control-plane.md#plan-04) |
+| Provider = deploy + runtime layers (**Go plugins**) | **Provider = WIT-component** that *exports* the building-block interfaces (deploy realize() + runtime WIT impl + link); the contract **is** the WIT world, no Go/TS plugin SDK | ➕ | [03](../design/control-plane.md#plan-04), [20](../design/wasm-runtime-wit.md#plan-20), [ADR-0069](../design/adr/01-architecture-core.md#adr-0069) |
+| Custom providers (**Go-only** plugins) | Provider authoring in **any wasm language** (code against WIT, not a plugin API) + `@hobo/conformance` gate; **auto-generatable** | ➕ | [03](../design/control-plane.md#plan-04), [23](../design/generated-stack.md#plan-23) |
+| Stack files (per-target) | `hobo.config.ts` + Camps (per-env) | ✅ | [02](../design/sdk-api.md#plan-02) |
 
 ### CLI, local dev, deployment
 
 | Nitric | HoBo equivalent | Status | HoBo doc |
 |---|---|---|---|
-| `nitric start` (emulate + dashboard) | `hobo dev` on `runtime-local` + dashboard | ✅ | [15](urn:hobo:requirement:developer-experience#plan-07), [07](urn:hobo:requirement:developer-experience#plan-07) |
-| `nitric run` (containers) | `hobo dev` (wasm host; OCI fallback via runtime provider) | ✅ | [15](urn:hobo:requirement:developer-experience#plan-07) |
-| `nitric up/down/spec/build` | `hobo up/down/collect/plan/build` | ✅ | [15](urn:hobo:requirement:developer-experience#plan-07) |
-| Local dashboard (test APIs, view kv/sql, trigger schedules, etc.) | HoBo dashboard + **run inspector / replay / link & trace views** | ➕ | [07](urn:hobo:requirement:developer-experience#plan-07), [14](urn:hobo:requirement:reliability-observability-cost#plan-05) |
-| Multi-cloud, deploy to many at once | mapping rules: whole-app / per-tier / per-boundary | ✅ | [02](urn:hobo:requirement:sdk-api#plan-02), [03](urn:hobo:requirement:control-plane#plan-04) |
+| `nitric start` (emulate + dashboard) | `hobo dev` on `runtime-local` + dashboard | ✅ | [15](../design/developer-experience.md#plan-07), [07](../design/developer-experience.md#plan-07) |
+| `nitric run` (containers) | `hobo dev` (wasm host; OCI fallback via runtime provider) | ✅ | [15](../design/developer-experience.md#plan-07) |
+| `nitric up/down/spec/build` | `hobo up/down/collect/plan/build` | ✅ | [15](../design/developer-experience.md#plan-07) |
+| Local dashboard (test APIs, view kv/sql, trigger schedules, etc.) | HoBo dashboard + **run inspector / replay / link & trace views** | ➕ | [07](../design/developer-experience.md#plan-07), [14](../design/reliability-observability-cost.md#plan-05) |
+| Multi-cloud, deploy to many at once | mapping rules: whole-app / per-tier / per-boundary | ✅ | [02](../design/sdk-api.md#plan-02), [03](../design/control-plane.md#plan-04) |
 
 ### Where HoBo deliberately exceeds Nitric (net-new)
 
 | Capability | HoBo doc |
 |---|---|
-| **WASM/WASI-default polyglot runtime** (any language → component; capability security) | [20](urn:hobo:requirement:wasm-runtime-wit#plan-20) |
-| **wRPC membrane + WIT-component providers + thin SDK** (same building-block set as Nitric's gRPC + Go-plugin shape, realized on the Component Model; SDK is typed sugar with no cloud logic; deny-by-default by linking) | [ADR-0069](urn:hobo:decision:adr-0069) |
-| **Dev auth bypass via integrated contract testing** (`hobo dev` satisfies the `auth` contract with a fixture principal; same contract gates `can-deploy`, so dev can't drift from prod — vs Nitric's OIDC rules not enforced locally) | [ADR-0070](urn:hobo:decision:adr-0070) |
-| **Actors + durable workflows + choreography sagas** over a replayable event store | [02](urn:hobo:requirement:sdk-api#plan-02), [11](urn:hobo:requirement:data-plane#plan-11) |
-| **Agents as first-class principals** + Capability Manifest + MCP control surface | [06](urn:hobo:requirement:ai-native-agent-auth#plan-06) |
-| **AI-generated providers AND implementations**; stub → implement → trace → auto-evolve → live-fix (gated) | [23](urn:hobo:requirement:generated-stack#plan-23) |
-| **Aspire-style wiring + manifest IR** for any component/container | [22](urn:hobo:requirement:authoring-resources-wiring#plan-21) |
-| **Reliability/HA, security/multi-tenancy, networking, cost/FinOps** as designed concerns | [05](urn:hobo:requirement:reliability-observability-cost#plan-05), [12](urn:hobo:requirement:security-networking#plan-12), [13](urn:hobo:requirement:security-networking#plan-12), [16](urn:hobo:requirement:reliability-observability-cost#plan-05) |
+| **WASM/WASI-default polyglot runtime** (any language → component; capability security) | [20](../design/wasm-runtime-wit.md#plan-20) |
+| **wRPC membrane + WIT-component providers + thin SDK** (same building-block set as Nitric's gRPC + Go-plugin shape, realized on the Component Model; SDK is typed sugar with no cloud logic; deny-by-default by linking) | [ADR-0069](../design/adr/01-architecture-core.md#adr-0069) |
+| **Dev auth bypass via integrated contract testing** (`hobo dev` satisfies the `auth` contract with a fixture principal; same contract gates `can-deploy`, so dev can't drift from prod — vs Nitric's OIDC rules not enforced locally) | [ADR-0070](../design/adr/02-identity-security.md#adr-0070) |
+| **Actors + durable workflows + choreography sagas** over a replayable event store | [02](../design/sdk-api.md#plan-02), [11](../design/data-plane.md#plan-11) |
+| **Agents as first-class principals** + Capability Manifest + MCP control surface | [06](../design/ai-native-agent-auth.md#plan-06) |
+| **AI-generated providers AND implementations**; stub → implement → trace → auto-evolve → live-fix (gated) | [23](../design/generated-stack.md#plan-23) |
+| **Aspire-style wiring + manifest IR** for any component/container | [22](../design/authoring-resources-wiring.md#plan-21) |
+| **Reliability/HA, security/multi-tenancy, networking, cost/FinOps** as designed concerns | [05](../design/reliability-observability-cost.md#plan-05), [12](../design/security-networking.md#plan-12), [13](../design/security-networking.md#plan-12), [16](../design/reliability-observability-cost.md#plan-05) |
 
 ### Open parity items (iteration hooks)
 
 - Bucket-event + presigned-URL semantics as a HoBo WIT extension (`hobo:blob-events`).
 - Per-language IfC collection fidelity (run-to-collect vs static analysis).
-- ~~WebSocket port WIT shape (no standard `wasi:websocket` yet).~~ ✅ **RESOLVED** — preview `wasi:websocket` + `hobo:websocket` extension ([ADR-0075](urn:hobo:decision:adr-0075), [Plan 20](urn:hobo:requirement:wasm-runtime-wit#plan-20)).
-- ~~`sql` migrations workflow parity (Nitric's `migrations/<db>/*.up.sql`).~~ ✅ **RESOLVED** — declarative desired-schema + auto-diff ([Plan 32](urn:hobo:requirement:data-plane#plan-32), [ADR-0032](urn:hobo:decision:adr-0032)).
+- ~~WebSocket port WIT shape (no standard `wasi:websocket` yet).~~ ✅ **RESOLVED** — preview `wasi:websocket` + `hobo:websocket` extension ([ADR-0075](../design/adr/07-portability-extensibility.md#adr-0075), [Plan 20](../design/wasm-runtime-wit.md#plan-20)).
+- ~~`sql` migrations workflow parity (Nitric's `migrations/<db>/*.up.sql`).~~ ✅ **RESOLVED** — declarative desired-schema + auto-diff ([Plan 32](../design/data-plane.md#plan-32), [ADR-0032](../design/adr/03-data-plane.md#adr-0032)).
 
 ## Adversarial critique
 
@@ -438,7 +438,7 @@ All resources detailed with `.allow()` verbs + cross-cloud equivalence in [21](u
 
 State labels follow the research contract: **implemented** = shipped in `packages/`; **proof** =
 draft/proof material; **design-only** = design intent. See the
-[live provider matrix](urn:hobo:requirement:live-provider-matrix) for HoBo's coverage caveats.
+[live provider matrix](../design/live-provider-matrix.md) for HoBo's coverage caveats.
 
 - **Portability is scored and reported** (*implemented*, ADR-0144). Nitric asserts portability; HoBo
   measures it and declares where thin adapters leak.
@@ -453,7 +453,7 @@ draft/proof material; **design-only** = design intent. See the
 
 ## Better-together / integration posture
 
-- **Borrow** — already done and recorded in [`lineage.md`](urn:hobo:requirement:lineage): the IfC-default
+- **Borrow** — already done and recorded in [`lineage.md`](../design/lineage.md): the IfC-default
   authoring model and `.allow()` least-privilege. This capture reaffirms both and adds a third worth
   considering: **inferring the graph by running the program** is a genuinely different collection
   strategy from parsing a manifest, with real trade-offs on both sides.
@@ -477,7 +477,7 @@ draft/proof material; **design-only** = design intent. See the
 
 - [nitric.io/docs](https://nitric.io/docs) — resources, `.allow()`, collection, providers, membrane
 - [nitrictech/nitric](https://github.com/nitrictech/nitric) — source and provider implementations
-- HoBo-side: [`design/lineage.md`](urn:hobo:requirement:lineage) records Nitric as a pillar influence
+- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Nitric as a pillar influence
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current resource-catalog maturity and provider coverage were not

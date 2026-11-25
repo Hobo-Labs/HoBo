@@ -63,7 +63,7 @@ package cli_error_refusal_examples
 	issue:          "HOBO-558"
 	phase:          "M1"
 	target_package: "src/draft/exp-proofs/dx/cli-error-refusal-examples"
-	proof_note:     "urn:hobo:proof:cli-error-refusal-examples"
+	proof_note:     "docs/design/proofs/cli-error-refusal-examples/README.md"
 	design_refs:    [_, _, _, ...string]
 	examples:        [#CliErrorRefusalExample, #CliErrorRefusalExample, #CliErrorRefusalExample, #CliErrorRefusalExample, #CliErrorRefusalExample, #CliErrorRefusalExample, #CliErrorRefusalExample, #CliErrorRefusalExample, #CliErrorRefusalExample, #CliErrorRefusalExample, ...#CliErrorRefusalExample]
 	scope_boundary: #ScopeBoundary

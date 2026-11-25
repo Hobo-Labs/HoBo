@@ -39,7 +39,7 @@ Given(
 
 When("the deploy success SLO exhausts its reliability error budget", () => {
 	assert.equal(telemetrySlice?.sloStatus.status, "budget-exhausted");
-	assert.notEqual(telemetrySlice?.sloStatus.status, "healthy");
+	assert.equal(telemetrySlice?.sloStatus.healthy, false);
 });
 
 Then("the reliability policy gate returns rollback with an obligation", () => {

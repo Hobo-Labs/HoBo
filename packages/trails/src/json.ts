@@ -1,3 +1,4 @@
+/** JSON values crossing the Trails persistence and event boundaries. */
 export type JsonValue =
 	| undefined
 	| null

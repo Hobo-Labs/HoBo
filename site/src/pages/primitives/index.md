@@ -37,4 +37,4 @@ HoBo’s vocabulary is small on purpose. Learn these nouns once; every guide and
 
 ## Related
 
-[Core concepts](/HoBo/guide/concepts/) · [System model](/HoBo/system/) · [Glossary](/HoBo/reference/glossary/)
+[Core concepts](/HoBo/guide/concepts/) · [Architecture](/HoBo/architecture/) · [Glossary](/HoBo/reference/glossary/)

@@ -7,7 +7,7 @@ are structural effects. Fixtures live beside patterns and prove parse/render
 behavior only.
 
 Zero LLM tokens on every search, render and apply. Receipts record
-`llmCalls = 0`.
+`llmCalls = 0`. See [ADR.md](./ADR.md).
 
 ## Terms
 
@@ -39,10 +39,6 @@ Programmatic use goes through `loadPatternCatalog`, `searchPatterns`,
 `renderPattern` and `applyPatternPlan`; `hobo new` reaches the CLI starters
 through `renderCliStarterFiles`.
 
-Search accepts a query string or a `PatternSearchRequest` protobuf JSON object.
-The object can set `exactId`, `maxResults`, `kindFilter`, `maturityFilter`,
-`languageFilter`, `contextFilter`, and `renderingFilter`.
-
 Zero-token means **0 LLM calls / input / output tokens**, not zero CPU. Vectors
 are one ranking channel beside exact ID/alias/symbol and FTS5. Default search
 is offline. Application writes only inside a caller-supplied isolation root;
@@ -51,10 +47,6 @@ promotion out of it is the caller's job (`promotionRef: "caller-promotes"`).
 CLI starter bodies live under `patterns/starter/cli/<alias>/project/` and are
 the only source for `hobo new -t todo|api|agent|fullstack`. CLI starter ignore files exclude the local codegen/build lock database, its
 SQLite sidecars and interrupted staging trees so recovery state stays local.
-
-The `fullstack` starter serves a note editor at `/` when run with `hobo dev
---serve`. Saved notes stay in the local in-memory resource until the app stops.
-The `/app` route returns the current note as JSON.
 
 Atomic snippets live in [`atoms/`](./atoms/README.md) and load with the rest of
 the catalog.

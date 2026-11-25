@@ -25,6 +25,8 @@ or hold to publication.
 pnpm.cmd --dir src\draft\exp-proofs\cx\launch-site-ga-handoff-evidence-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` - protobuf data shapes and CUE constraints for the M4 evidence record.
 - `architecture/pacts/` - PACT contract for the evidence boundary.
+- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

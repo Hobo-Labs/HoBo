@@ -1,3 +1,7 @@
+/**
+ * Local-dev air-gap: pure local path never resolves/routes to remote-dev or production.
+ * hobo dev must not auto-join remote overlays.
+ */
 import {
 	ACCESS_EVENTS,
 	type AccessEvent,
@@ -7,9 +11,13 @@ import type { IsolationClass } from "./types.js";
 import { parseIsolationClass } from "./types.js";
 
 export type OverlayJoinRequest = Readonly<{
+	/** Caller's isolation class (from control-plane membership). */
 	callerClass: IsolationClass | null;
+	/** Target overlay isolation class. */
 	targetClass: IsolationClass;
+	/** Explicit time-bound grant id if any. */
 	crossEnvGrantId?: string;
+	/** Whether a valid elevated/break-glass capability was presented. */
 	hasElevatedCapability?: boolean;
 }>;
 
@@ -19,6 +27,9 @@ export type OverlayJoinDecision = Readonly<{
 	reason: string;
 }>;
 
+/**
+ * Deny overlay join from pure local-dev to any remote class without explicit grant.
+ */
 export function evaluateOverlayJoin(
 	request: OverlayJoinRequest,
 ): OverlayJoinDecision {
@@ -32,6 +43,7 @@ export function evaluateOverlayJoin(
 	}
 	if (caller === request.targetClass) {
 		if (caller === "local-dev") {
+			// Local-dev has no remote overlay to join.
 			return {
 				allowed: false,
 				code: "local-dev-no-remote-overlay",
@@ -45,6 +57,7 @@ export function evaluateOverlayJoin(
 			reason: "same isolation class overlay join",
 		};
 	}
+	// Cross-env: require grant or elevated capability
 	if (request.crossEnvGrantId || request.hasElevatedCapability) {
 		return {
 			allowed: true,
@@ -78,6 +91,10 @@ export function recordOverlayJoinDenied(input: {
 	return evt;
 }
 
+/**
+ * Local named endpoint resolution air-gap.
+ * Reject backend URLs that look remote/prod when mode is local.
+ */
 export function assertLocalNamedEndpointBackend(input: {
 	readonly mode: "local" | "overlay";
 	readonly backendUrl: string;
@@ -95,6 +112,7 @@ export function assertLocalNamedEndpointBackend(input: {
 		};
 	}
 	const url = input.backendUrl.toLowerCase();
+	// Reject obvious remote/prod hosts.
 	const remoteHints = [
 		".ts.net",
 		"tailscale",
@@ -114,6 +132,7 @@ export function assertLocalNamedEndpointBackend(input: {
 			};
 		}
 	}
+	// Prefer loopback / localhost / .hobo.localhost
 	const localOk =
 		url.includes("127.0.0.1") ||
 		url.includes("localhost") ||
@@ -121,6 +140,7 @@ export function assertLocalNamedEndpointBackend(input: {
 		url.startsWith("http://0.0.0.0") ||
 		url.startsWith("http://[::1]");
 	if (!localOk && (url.startsWith("http://") || url.startsWith("https://"))) {
+		// Relative or in-process backends without host are ok; host-based non-local fail.
 		try {
 			const u = new URL(url);
 			if (
@@ -135,11 +155,14 @@ export function assertLocalNamedEndpointBackend(input: {
 					reason: `local mode backend host ${u.hostname} is not loopback`,
 				};
 			}
-		} catch {}
+		} catch {
+			// non-URL backend keys allowed
+		}
 	}
 	return { ok: true };
 }
 
+/** hobo dev must not ambiently join remote overlays. */
 export function hoboDevOverlayJoinAllowed(): false {
 	return false;
 }

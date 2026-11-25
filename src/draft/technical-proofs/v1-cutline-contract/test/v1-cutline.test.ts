@@ -47,12 +47,12 @@ test("reference architecture, productization, support, legal/privacy, docs, and 
   assert.deepEqual([...represented].sort(), [...REQUIRED_READINESS_DOMAINS].sort());
 });
 
-test("scope-out decisions cite evidence identifiers", () => {
+test("scope-out decisions cite design docs or ADRs", () => {
   for (const item of v1Cutline.outOfScope) {
     assert.ok(item.citations.length > 0, `${item.id} missing citations`);
     assert.ok(
-      item.citations.every((citation) => /^urn:hobo:(?:requirement|decision):[A-Za-z0-9._-]+(?:#[a-z0-9._-]+)?$/.test(citation)),
-      `${item.id} must cite evidence identifiers`
+      item.citations.every((citation) => citation.startsWith("docs/design/") && citation.includes("#")),
+      `${item.id} must cite design docs or ADR anchors`
     );
   }
 });
@@ -66,7 +66,7 @@ test("scope-out guard rejects capability work and premature execution tasks", ()
     readinessDomain: "productization",
     blockerCategory: "v1-blocker.productization",
     evidenceRequired: ["runtime implementation"],
-    citations: ["urn:hobo:requirement:control-plane#plan-04"],
+    citations: ["docs/design/control-plane.md#plan-04"],
     workKind: "capability-implementation"
   });
   invalid.followUpTaskPolicy.createdExecutionTasksBeforeM0Acceptance = true;

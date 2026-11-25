@@ -1,6 +1,13 @@
+/**
+ * Kubernetes event-store fold resolver for Yard placement / generation.
+ * Normalizes Namespace / Deployment / apiserver signals into yard.* facts.
+ */
+
 import { asJsonObject, type JsonObject, type JsonValue } from "./json.js";
 
 // public-contract: the event-store fold this provider is addressed by. Stored
+// events name the resolver that produced them, so a rename orphans every fact
+// already written under the old id.
 export const KUBERNETES_EVENT_STORE_RESOLVER_ID =
 	"kubernetes.yard.event-store/v1" as const;
 
@@ -151,6 +158,11 @@ function kubernetesYardFromPayload(
 		ownerTenantId: String(p.ownerTenantId ?? "local"),
 		providerId: "kubernetes",
 		runtimeId: String(p.runtimeId ?? "kubernetes.yard-runtime/v1"),
+		// `layout`, matching YardInstanceRegistration in the broker and every
+		// sibling provider's fold. This was emitted as `shape`, which meant a
+		// registered Kubernetes yard carried no `layout` for anything reading the
+		// canonical record -- the field was simply absent, so placement read it as
+		// a yard that declared no regions, requirements or properties at all.
 		layout: {
 			providerId: "kubernetes",
 			regions: Array.isArray(p.regions)

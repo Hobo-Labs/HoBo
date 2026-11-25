@@ -27,7 +27,7 @@ export async function fixture(root: string): Promise<void> {
 				module: "NodeNext",
 				moduleResolution: "NodeNext",
 				strict: true,
-				types: ["node"],
+				types: [],
 				rootDir: ".",
 				outDir: "out",
 			},
@@ -85,12 +85,13 @@ export async function compile(root: string): Promise<void> {
 		module: ts.ModuleKind.NodeNext,
 		moduleResolution: ts.ModuleResolutionKind.NodeNext,
 		strict: true,
-		types: ["node"],
+		types: [],
 		...parsed?.options,
 		noEmit: false,
 		rootDir: root,
 		outDir: join(root, "out"),
 	};
+	// Codegen's host: lib and package declarations are parsed once per worker, not per program.
 	const program = ts.createProgram(
 		roots,
 		options,
@@ -118,7 +119,7 @@ export async function compilePackagedConsumer(
 		module: ts.ModuleKind.NodeNext,
 		moduleResolution: ts.ModuleResolutionKind.NodeNext,
 		strict: true,
-		types: ["node"],
+		types: [],
 		noEmit: true,
 	};
 	const program = ts.createProgram(

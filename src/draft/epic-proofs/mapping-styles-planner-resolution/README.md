@@ -40,8 +40,10 @@ pnpm exec turbo run test --filter ./src/draft/epic-proofs/mapping-styles-planner
 
 Independent POC promoting resolution fixtures from `control-plane-planner-matching-orchestrator`. Does not implement production `packages/camps` or `packages/yards`; those land in the production slice after S4-02/S4-03.
 
-## Executable evidence
+## Architecture evidence
+
 - `architecture/` — protobuf + CUE + Pact boundary fixtures
+- `architecture.md` — parse-don't-validate and event outcomes
 
 ## Upstream proofs
 

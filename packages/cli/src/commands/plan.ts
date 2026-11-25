@@ -1,10 +1,6 @@
 import { manifestHostingPolicy, parseDeploymentMode } from "@hobo/cloud";
 import { externalBoundaryRefusal } from "../cloud/boundaries.js";
-import {
-	deploymentIdFor,
-	loadProjectManifest,
-	missingProjectBindle,
-} from "../cloud/manifest.js";
+import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
 import { changeSummaryLine, upWhatIf } from "../cloud/what-if.js";
@@ -46,7 +42,7 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 			const projectDir = context.projectDir ?? context.cwd;
 			const bindle = await loadProjectManifest(projectDir);
 			if (!bindle) {
-				return missingProjectBindle("plan", projectDir);
+				return stubResult("plan");
 			}
 
 			const boundary = await externalBoundaryRefusal(projectDir, "plan");

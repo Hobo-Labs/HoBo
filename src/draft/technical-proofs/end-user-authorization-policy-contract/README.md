@@ -14,9 +14,11 @@ This draft proves HOBO-220's end-user authorization boundary on top of the exist
 This POC does not verify identities, fetch JWKS, build sessions, implement cross-tenant conformance, or replace the built-in policy engine.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for End User Authorization Policy Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

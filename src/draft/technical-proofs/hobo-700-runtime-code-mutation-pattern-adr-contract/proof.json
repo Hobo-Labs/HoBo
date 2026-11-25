@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "hobo-700-runtime-code-mutation-pattern-adr-contract",
+  "title": "HOBO-700 Runtime Code-Mutation Pattern ↔ ADR-0048 Contract",
+  "linear": "HOBO-700",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/03-data-plane.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

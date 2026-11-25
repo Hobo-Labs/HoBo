@@ -1,3 +1,8 @@
+// ADR-0160: the canonical schema IR parse boundary and the forward-only
+// expand/backfill/contract differ. The cases below pin what makes a plan
+// reviewable — determinism under input permutation, destructive work confined
+// to the contract phase, no inverse steps, and a digest that moves when the
+// engine version moves even though the steps are identical.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -182,6 +187,7 @@ describe("parseSchemaIr", () => {
 			parseSchemaIr(ir([table({ columns: [] })]));
 			throw new Error("expected a parse refusal");
 		} catch (error) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as SchemaIrParseError).code).toBe(
 				"HOBO_CORE_SCHEMA_IR_PARSE",
 			);
@@ -190,25 +196,6 @@ describe("parseSchemaIr", () => {
 });
 
 describe("diffSchemaIr", () => {
-	it("adds a replacement primary-key column before assigning its key", () => {
-		const before = parseSchemaIr(ir([table()]));
-		const after = parseSchemaIr(
-			ir([
-				table({
-					columns: [
-						column({ primaryKey: false }),
-						column({ name: "sequence", type: "serial" }),
-					],
-				}),
-			]),
-		);
-		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
-			"expand:add-column:accounts:sequence",
-			"contract:narrow-column:accounts:id",
-			"contract:narrow-column:accounts:sequence",
-		]);
-	});
-
 	it("produces an empty plan for identical schemas", () => {
 		const schema = parseSchemaIr(ir([table()]));
 		const plan = diffSchemaIr(schema, schema);
@@ -289,35 +276,6 @@ describe("diffSchemaIr", () => {
 		);
 		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
 			"expand:add-column:accounts:state",
-		]);
-	});
-
-	it.each([
-		"smallserial",
-		"serial2",
-		"serial",
-		"serial4",
-		"bigserial",
-		"serial8",
-	])("adds %s with its implicit sequence default", (type) => {
-		const before = parseSchemaIr(ir([table()]));
-		const after = parseSchemaIr(
-			ir([
-				table({
-					columns: [
-						column(),
-						column({
-							name: "sequence",
-							type,
-							primaryKey: false,
-							unique: false,
-						}),
-					],
-				}),
-			]),
-		);
-		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
-			"expand:add-column:accounts:sequence",
 		]);
 	});
 
@@ -438,7 +396,7 @@ describe("diffSchemaIr", () => {
 		]);
 	});
 
-	it("drops and recreates a redefined index in the contract phase", () => {
+	it("replaces a redefined index with a contract drop plus an expand add", () => {
 		const before = parseSchemaIr(
 			ir([
 				table({
@@ -471,69 +429,9 @@ describe("diffSchemaIr", () => {
 				}),
 			]),
 		);
-		const plan = diffSchemaIr(before, after);
-		expect(kinds(plan.steps)).toEqual([
+		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
+			"expand:add-index:accounts:accounts_email_idx",
 			"contract:drop-index:accounts:accounts_email_idx",
-			"contract:add-index:accounts:accounts_email_idx",
-		]);
-		expect(plan.steps.every((step) => step.destructive)).toBe(true);
-	});
-
-	it("moves an index name after dropping its old table's index", () => {
-		const sharedIndex = index({ name: "shared_idx", columns: ["id"] });
-		const before = ir([table({ name: "z_old", indexes: [sharedIndex] })]);
-		const after = ir([table({ name: "a_new", indexes: [sharedIndex] })]);
-		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
-			"expand:create-table:a_new:",
-			"contract:drop-index:z_old:shared_idx",
-			"contract:drop-table:z_old:",
-			"contract:add-index:a_new:shared_idx",
-		]);
-	});
-
-	it("drops an index before dropping its column", () => {
-		const before = ir([
-			table({
-				columns: [
-					column(),
-					column({ name: "email", primaryKey: false, unique: false }),
-				],
-				indexes: [index()],
-			}),
-		]);
-		const after = ir([table()]);
-		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
-			"contract:drop-index:accounts:accounts_email_idx",
-			"contract:drop-column:accounts:email",
-		]);
-	});
-
-	it("removes the old primary key before adding its replacement", () => {
-		const before = ir([
-			table({
-				columns: [
-					column({ name: "z_old" }),
-					column({
-						name: "a_new",
-						nullable: true,
-						primaryKey: false,
-						unique: false,
-					}),
-				],
-			}),
-		]);
-		const after = ir([
-			table({
-				columns: [
-					column({ name: "z_old", primaryKey: false }),
-					column({ name: "a_new", primaryKey: true, unique: false }),
-				],
-			}),
-		]);
-		expect(kinds(diffSchemaIr(before, after).steps)).toEqual([
-			"backfill:backfill-column:accounts:a_new",
-			"contract:narrow-column:accounts:z_old",
-			"contract:narrow-column:accounts:a_new",
 		]);
 	});
 
@@ -662,56 +560,6 @@ describe("diffSchemaIr", () => {
 		).not.toBe(
 			diffSchemaIr(before, after, { id: "drizzle-kit", version: "1" }).digest,
 		);
-	});
-
-	it("binds the full current and desired schemas even when step names match", () => {
-		const integerColumn = column({
-			name: "amount",
-			type: "integer",
-			nullable: true,
-			primaryKey: false,
-			unique: false,
-		});
-		const before = ir([table()]);
-		const integerTarget = ir([table({ columns: [column(), integerColumn] })]);
-		const textTarget = ir([
-			table({ columns: [column(), { ...integerColumn, type: "text" }] }),
-		]);
-		const integerPlan = diffSchemaIr(before, integerTarget);
-		const textPlan = diffSchemaIr(before, textTarget);
-
-		expect(integerPlan.steps).toEqual(textPlan.steps);
-		expect(integerPlan.digest).not.toBe(textPlan.digest);
-
-		const changedSource = ir([
-			table({ columns: [column({ type: "bigint" })] }),
-		]);
-		const alternateTarget = ir([
-			table({ columns: [column({ type: "bigint" }), integerColumn] }),
-		]);
-		const alternatePlan = diffSchemaIr(changedSource, alternateTarget);
-		expect(alternatePlan.steps).toEqual(integerPlan.steps);
-		expect(alternatePlan.digest).not.toBe(integerPlan.digest);
-	});
-
-	it("normalizes input order before computing the schema-bound digest", () => {
-		const before = ir([]);
-		const columns = [
-			column(),
-			column({
-				name: "label",
-				type: "text",
-				nullable: true,
-				primaryKey: false,
-				unique: false,
-			}),
-		];
-		const forward = diffSchemaIr(before, ir([table({ columns })]));
-		const reversed = diffSchemaIr(
-			before,
-			ir([table({ columns: [...columns].reverse() })]),
-		);
-		expect(reversed).toEqual(forward);
 	});
 
 	it("exposes the canonical differ as a SchemaDiffEngine with no SQL emission", () => {

@@ -1,9 +1,9 @@
 export const REQUIRED_DEPENDENCY_TARGETS = [
   "HOBO-496 support SLA and channel readiness",
-  "urn:hobo:requirement:reliability-observability-cost#plan-05",
-  "urn:hobo:requirement:launch-support-escalation",
-  "urn:hobo:decision:adr-0045",
-  "urn:hobo:decision:adr-0058",
+  "docs/design/reliability-observability-cost.md#plan-05",
+  "docs/design/launch-support-escalation.md",
+  "docs/design/adr/02-identity-security.md#adr-0045",
+  "docs/design/adr/03-data-plane.md#adr-0058",
 ];
 
 const FOLLOW_UP_PHASES = new Set(["M1", "M2", "M3", "M4"]);
@@ -247,19 +247,19 @@ export const PUBLIC_STATUS_PAGE_CONTRACT = {
       use: "Names support-SLA ownership while keeping contractual SLA approval out of this issue.",
     },
     {
-      target: "urn:hobo:requirement:reliability-observability-cost#plan-05",
+      target: "docs/design/reliability-observability-cost.md#plan-05",
       use: "Provides SLO, alert, burn-rate, health, and observability evidence inputs for public status decisions.",
     },
     {
-      target: "urn:hobo:requirement:launch-support-escalation",
+      target: "docs/design/launch-support-escalation.md",
       use: "Provides severity, support/debug prerequisites, redaction, and incident template handoff context.",
     },
     {
-      target: "urn:hobo:decision:adr-0045",
+      target: "docs/design/adr/02-identity-security.md#adr-0045",
       use: "Pins SLO-as-code, error-budget gating, and alerting as status evidence sources.",
     },
     {
-      target: "urn:hobo:decision:adr-0058",
+      target: "docs/design/adr/03-data-plane.md#adr-0058",
       use: "Pins incident management, runbooks, and SRE escalation as the operational incident source.",
     },
   ],

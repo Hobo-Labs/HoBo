@@ -1,14 +1,21 @@
+// OpenTelemetry CI/CD semantic conventions as used by @hobo/cd (D17, R8).
+// The pinned version lives in STANDARDS.lock.json next to this file; the two
+// must agree (a golden test enforces it). Names here are wire contract:
+// collectors, dashboards and the alert rules key on them.
 
+// public-contract: the pinned semantic-conventions release.
 export const SEMCONV = Object.freeze({
 	version: "1.41.0",
 	schemaUrl: "https://opentelemetry.io/schemas/1.41.0",
 } as const);
 
+// public-contract: instrumentation scope reported on every export.
 export const CD_INSTRUMENTATION_SCOPE = Object.freeze({
 	name: "@hobo/cd",
 	version: "0.0.1",
 } as const);
 
+// public-contract: OTel CI/CD registry attribute keys (semconv `cicd.*`).
 export const CICD = Object.freeze({
 	pipelineName: "cicd.pipeline.name",
 	pipelineActionName: "cicd.pipeline.action.name",
@@ -27,10 +34,13 @@ export const CICD = Object.freeze({
 	workerState: "cicd.worker.state",
 } as const);
 
+// public-contract: other registry keys @hobo/cd sets.
 export const DEPLOYMENT_ENVIRONMENT_NAME =
 	"deployment.environment.name" as const;
+// public-contract: other registry keys @hobo/cd sets.
 export const ERROR_TYPE = "error.type" as const;
 
+// public-contract: HoBo attribute keys (outside the OTel registry namespace).
 export const HOBO_ATTR = Object.freeze({
 	freightId: "hobo.freight.id",
 	freightAlias: "hobo.freight.alias",
@@ -50,6 +60,7 @@ export const HOBO_ATTR = Object.freeze({
 	state: "state",
 } as const);
 
+// public-contract: semconv enum values @hobo/cd emits.
 export const CICD_ACTION = Object.freeze({
 	build: "BUILD",
 	run: "RUN",
@@ -68,6 +79,7 @@ export type CicdRunState = "pending" | "executing" | "finalizing";
 
 export type CicdTaskType = "build" | "test" | "deploy";
 
+// public-contract: OTel CI/CD metric names (semconv `cicd.*` metrics).
 export const CICD_METRICS = Object.freeze({
 	pipelineRunDuration: "cicd.pipeline.run.duration",
 	pipelineRunActive: "cicd.pipeline.run.active",
@@ -76,6 +88,7 @@ export const CICD_METRICS = Object.freeze({
 	workerCount: "cicd.worker.count",
 } as const);
 
+// public-contract: HoBo CD metric names (DORA, reconcile, fleet and policy).
 export const CD_METRICS = Object.freeze({
 	doraDeploymentFrequency: "hobo.cd.dora.deployment_frequency",
 	doraLeadTime: "hobo.cd.dora.lead_time",

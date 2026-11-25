@@ -5,35 +5,26 @@
 	"type": "module",
 	"private": true,
 	"files": [
-		"dist",
-		"bin"
+		"dist"
 	],
 	"bin": {
-		"hobo-codegen": "./bin/hobo-codegen.mjs"
+		"hobo-codegen": "./src/cli.ts"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"prepack": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
-		"test": "tsc -p tsconfig.json && vitest run"
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@bufbuild/buf": "1.71.0",
-		"@bufbuild/protoc-gen-es": "2.12.1",
-		"typescript": "^6.0.3"
+		"@bufbuild/protoc-gen-es": "2.12.1"
 	},
 	"devDependencies": {
 		"@bufbuild/protobuf": "2.12.1",
-		"@pact-foundation/pact": "17.1.4",
 		"@types/node": "^22.15.3",
 		"tsx": "^4.20.3",
+		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"
-	},
-	"exports": {
-		"./generated-typescript": {
-			"types": "./dist/generated-typescript.d.ts",
-			"default": "./dist/generated-typescript.js"
-		}
 	}
 }

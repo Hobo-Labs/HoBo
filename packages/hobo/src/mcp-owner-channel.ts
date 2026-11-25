@@ -16,7 +16,6 @@ import {
 	linkField,
 	type ParsedSecretCaptureSpec,
 	type SecretCaptureApp,
-	type SecretCaptureEvent,
 	type SecretStoreConnector,
 	secretCaptureSpec,
 } from "@hobo/mcp";
@@ -257,7 +256,6 @@ export function createOwnerCaptureApp(options: {
 	readonly remote: boolean;
 	readonly elicit: (params: JsonObject) => Promise<JsonValue | undefined>;
 	readonly notify?: (method: string, params: JsonValue) => void;
-	readonly onEvent?: (event: SecretCaptureEvent) => void | Promise<void>;
 }): SecretCaptureApp {
 	return createSecretCaptureApp({
 		specs: [...RELAY_SECRET_CAPTURE_SPECS, ...OWNER_HANDOFF_SPECS],
@@ -271,8 +269,5 @@ export function createOwnerCaptureApp(options: {
 		elicit: options.elicit,
 		connector: options.connector,
 		...(options.notify !== undefined ? { notify: options.notify } : undefined),
-		...(options.onEvent !== undefined
-			? { onEvent: options.onEvent }
-			: undefined),
 	});
 }

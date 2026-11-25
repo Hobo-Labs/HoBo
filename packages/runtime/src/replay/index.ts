@@ -47,4 +47,5 @@ export type {
 	ReplayReport,
 	SeqVector,
 	SeqVectorEntry,
+	UpcastFn,
 } from "./types.js";

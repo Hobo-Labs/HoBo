@@ -71,7 +71,6 @@ export {
 export {
 	CAMP_CREDENTIAL_ENV_VAR,
 	deployEphemeralCamp,
-	type EphemeralCampDeployment,
 	type EphemeralCampTarget,
 	parseEphemeralCampTarget,
 } from "./lanes/ephemeral-camp.js";
@@ -129,21 +128,10 @@ export {
 	type TestRunnerId,
 	type VitestRunnerModule,
 } from "./runner.js";
-export type {
-	EphemeralCampDeployRequest,
-	EphemeralCampDeployResult,
-	EphemeralCampDriver,
-	EphemeralCampResource,
-} from "./types.js";
 export {
-	type BindleEdgeInput,
-	type BindleEntrypoint,
-	type BindleInput,
-	type BindleResourceInput,
 	DEFAULT_LANE,
 	DEFAULT_STAGE,
 	type DeployedGraph,
-	type EphemeralCampYardInput,
 	type Fidelity,
 	type FidelityReport,
 	LANES,

@@ -1,3 +1,20 @@
+// Optional external progressive analysis as a HealthSource. Two analysis
+// webhook dialects are kept from the removed CD plane, minus its fail-open
+// fallbacks — absent or malformed evidence is a refusal, which the
+// verification engine treats as no data, so FAIL (I5):
+//
+//   status-gate  `analysis+status:https://…`  POST the stage context; a 2xx
+//                answer is one passing sample (1), a 4xx one failing sample
+//                (0), anything else is unavailable. (The webhook-gate dialect
+//                progressive-delivery controllers use for canary analysis.)
+//   json-metric  `analysis+metric:https://…`  GET a JSON document; the query
+//                is a JSON pointer to a number or a numeric array, returned
+//                as samples. (The web-metric dialect of analysis runs.)
+//
+// Any other endpoint_ref is delegated to the wrapped source of the same kind,
+// so composing this wrapper around the built-in HTTP_JSON source keeps that
+// source's behavior for every other query. Credentials are resolved for one
+// scoped call and never logged or recorded (I9).
 import type { HttpTransport, JsonValue } from "@hobo/core";
 import { Cohort, HealthSourceKind } from "../_generated/cd_pb.js";
 import type {
@@ -14,6 +31,7 @@ import {
 } from "./json.js";
 import { refuse } from "./reasons.js";
 
+// public-contract: endpoint_ref prefixes the analysis webhook source serves.
 export const ANALYSIS_ENDPOINTS = Object.freeze({
 	statusGate: "analysis+status:",
 	jsonMetric: "analysis+metric:",
@@ -25,9 +43,11 @@ const MAX_RESPONSE_BYTES = 262_144;
 export type AnalysisWebhookDeps = Readonly<{
 	http: HttpTransport;
 	credentials: CredentialResolver;
+	/** The source this wrapper delegates every non-analysis query to. */
 	base?: HealthSource;
 }>;
 
+/** RFC 6901 JSON pointer lookup. */
 export function pointer(
 	document: JsonValue,
 	path: string,

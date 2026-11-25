@@ -5,6 +5,13 @@ import type {
 	TenantId,
 } from "@hobo/core";
 
+/**
+ * DNSControl-oriented provider wrapper.
+ *
+ * The one-shot does not shell out to DNSControl by default (no hard dependency).
+ * Instead it accumulates desired records and can emit a DNSControl-shaped plan
+ * that operators apply via their existing DNS-as-Code pipeline.
+ */
 export function createDnsControlProvider(options?: {
 	readonly onPlan?: (plan: DnsControlPlan) => void | Promise<void>;
 }): DnsProvider & {

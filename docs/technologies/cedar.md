@@ -35,13 +35,13 @@ server mode.
 ## Relevance to HoBo
 
 **Adopt-behind-a-port — a canonical optional `policy-engine` provider.**
-ADR-0015 ([identity-security](urn:hobo:decision:adr-0015))
+ADR-0015 ([identity-security](../design/adr/02-identity-security.md#adr-0015))
 pins HoBo's policy plane as typed TypeScript by default with **OPA/Rego and
 Cedar as optional providers** behind the `policy-engine` port; the adapter is
 real (`packages/broker/src/cedar.ts`, `CEDAR_ENGINE_ID = "cedar@v1"`,
 cedar-agent `is_authorized`, fail-closed deny on unreachable engine) and
 selectable via the broker's `broker_policy_cedar` flag
-([hobo-broker](urn:hobo:requirement:hobo-broker)). Proofs `hobo-133`, `hobo-212`
+([hobo-broker](../design/hobo-broker.md)). Proofs `hobo-133`, `hobo-212`
 (federated policy conflict), `hobo-223` exercise it. What HoBo borrows
 conceptually: **deny-overrides composition** (mirrored in the deny-ceiling
 policy-pack algebra, ADR-0096) and the demonstration that a **narrow, typed

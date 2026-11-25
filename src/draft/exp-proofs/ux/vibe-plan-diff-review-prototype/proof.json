@@ -10,7 +10,8 @@
     "expProofs": [
       "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode",
       "src/draft/exp-proofs/ux/vibe-plan-review-states"
-    ]
+    ],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

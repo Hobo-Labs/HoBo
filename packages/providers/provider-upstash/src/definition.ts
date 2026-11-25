@@ -144,7 +144,6 @@ export const UPSTASH_PROFILE_IMPLEMENTATIONS: readonly ProfileImplementation[] =
 export const UPSTASH_STRUCTURED_CAPABILITIES = {
 	ttl: true,
 	atomicIncrement: true,
-	atomicCompareAndSet: true,
 	sortedSets: true,
 	restTransport: true,
 	redisCommandSemantics: true,
@@ -445,7 +444,6 @@ const LEGACY_PORT = "kv";
 const LEGACY_FEATURES: readonly string[] = [
 	"ttl",
 	"atomicIncrement",
-	"atomicCompareAndSet",
 	"sortedSets",
 	"restTransport",
 ];

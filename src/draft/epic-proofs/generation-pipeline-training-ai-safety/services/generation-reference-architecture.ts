@@ -4,19 +4,37 @@ import {
   runColdStartDatabaseProviderReference,
   runNonConvergingDatabaseProviderReference,
 } from "../../../technical-proofs/generation-reference-run-contract/src/generation-reference-run.js";
-import { sanitizeGenerationMaterials } from "../../../technical-proofs/generation-material-sanitization-contract/src/material-sanitization.js";
-import { profileDigest } from "../../../technical-proofs/no-egress-generation-sandbox-contract/src/contract.js";
-import { runGenerationSafetyGate } from "../../../technical-proofs/generation-safety-gate-contract/src/safety-gate.js";
-import { decideGenerationHumanApproval } from "../../../technical-proofs/human-approval-generation-gate-contract/src/human-approval-generation-gate.js";
+import {
+  sanitizeGenerationMaterials,
+} from "../../../technical-proofs/generation-material-sanitization-contract/src/material-sanitization.js";
+import {
+  profileDigest,
+} from "../../../technical-proofs/no-egress-generation-sandbox-contract/src/contract.js";
+import {
+  runGenerationSafetyGate,
+} from "../../../technical-proofs/generation-safety-gate-contract/src/safety-gate.js";
+import {
+  decideGenerationHumanApproval,
+} from "../../../technical-proofs/human-approval-generation-gate-contract/src/human-approval-generation-gate.js";
 import {
   createGoldenTrajectory,
   makeOptimizeRequest,
 } from "../../../technical-proofs/training-engine-port-contract/src/training-engine-contract.js";
-import { createTrajectoryCaptureRuntime } from "../../../technical-proofs/openinference-trajectory-capture-contract/src/openinference-trajectory-capture.js";
-import { runBuiltInOptoTrainingRun } from "../../../technical-proofs/built-in-opto-training-engine-contract/src/built-in-opto-training-engine.js";
-import { createClassifyTicketPromotionGate } from "../../../technical-proofs/eval-promotion-gate-contract/src/eval-promotion-gate.js";
-import { createLiveEvalRuntime } from "../../../technical-proofs/live-evals-runtime-contract/src/live-evals-runtime.js";
-import { createPoisoningGuard } from "../../../technical-proofs/training-data-poisoning-guard-contract/src/training-data-poisoning-guard.js";
+import {
+  createTrajectoryCaptureRuntime,
+} from "../../../technical-proofs/openinference-trajectory-capture-contract/src/openinference-trajectory-capture.js";
+import {
+  runBuiltInOptoTrainingRun,
+} from "../../../technical-proofs/built-in-opto-training-engine-contract/src/built-in-opto-training-engine.js";
+import {
+  createClassifyTicketPromotionGate,
+} from "../../../technical-proofs/eval-promotion-gate-contract/src/eval-promotion-gate.js";
+import {
+  createLiveEvalRuntime,
+} from "../../../technical-proofs/live-evals-runtime-contract/src/live-evals-runtime.js";
+import {
+  createPoisoningGuard,
+} from "../../../technical-proofs/training-data-poisoning-guard-contract/src/training-data-poisoning-guard.js";
 import {
   createOptimizerPayload,
   evaluateTrajectoryPrivacy,
@@ -25,7 +43,9 @@ import {
   createChampionChallengerPromotion,
   findGeneratedRegion,
 } from "../../../technical-proofs/champion-challenger-promotion-contract/src/champion-challenger-promotion.js";
-import { planLiveFixCandidate } from "../../../technical-proofs/live-fix-gated-candidate-contract/src/live-fix-gated-candidate.js";
+import {
+  planLiveFixCandidate,
+} from "../../../technical-proofs/live-fix-gated-candidate-contract/src/live-fix-gated-candidate.js";
 import {
   GENERATED_STACK_LAYERS,
   checkGeneratedRegions,
@@ -47,9 +67,7 @@ export async function runGenerationPipelineTrainingSafetySimulation() {
     signingKey,
     validationScript: ["trace-mismatch", "pass"],
   });
-  const nonConverging = await runNonConvergingDatabaseProviderReference({
-    signingKey,
-  });
+  const nonConverging = await runNonConvergingDatabaseProviderReference({ signingKey });
   const materials = runMaterialSanitization();
   const sandbox = runSandboxBoundary(coldStartRaw);
   const safety = runSafetyReference();
@@ -63,7 +81,7 @@ export async function runGenerationPipelineTrainingSafetySimulation() {
       title: "Generation Pipeline, Training & AI Safety",
       slug: "generation-pipeline-training-ai-safety",
     },
-    coldStart: await normalizeColdStart(coldStartRaw),
+    coldStart: normalizeColdStart(coldStartRaw),
     materials,
     sandbox,
     safety,
@@ -86,25 +104,17 @@ export async function runGenerationPipelineTrainingSafetySimulation() {
   };
 }
 
-async function normalizeColdStart(result) {
-  const generatedProvider = await executeGeneratedProvider(
-    result.fill.candidate.filledBytes,
-  );
+function normalizeColdStart(result) {
   return {
     outcome: result.outcome,
     requestId: result.request.requestId,
     repair: {
-      outcome:
-        result.repair.outcome === "converged"
-          ? "validated"
-          : result.repair.outcome,
+      outcome: result.repair.outcome === "converged" ? "validated" : result.repair.outcome,
       events: result.repair.events.map((event) => event.type),
     },
     finalValidation: {
       traceReplay: {
-        status: result.finalValidation.report.traceReplay.passed
-          ? "passed"
-          : "failed",
+        status: result.finalValidation.report.traceReplay.passed ? "passed" : "failed",
       },
       reportRef: result.finalValidation.report.ref,
     },
@@ -113,41 +123,7 @@ async function normalizeColdStart(result) {
       recordDigest: result.certification.record.payloadDigest,
       artifactDigest: result.finalCandidateRef.digest,
     },
-    generatedProvider,
-    stageResults: result.stageResults.map((stage) => ({
-      stage: stage.stage,
-      status: stage.status,
-    })),
-  };
-}
-
-async function executeGeneratedProvider(source) {
-  const generated = await import(
-    `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
-  );
-  const calls = [];
-  const provider = generated.createProvider({
-    async connect() {
-      calls.push("connect");
-      return { connected: true };
-    },
-    async query(sql) {
-      calls.push(`query:${sql}`);
-      return { rows: [], sql };
-    },
-    async destroy() {
-      calls.push("destroy");
-    },
-  });
-  const connection = await provider.connect();
-  const query = await provider.query("select 1");
-  await provider.destroy();
-  return {
-    connection,
-    query,
-    calls,
-    fillMode: generated.fillMode,
-    claimedCapabilities: generated.claimedCapabilities,
+    stageResults: result.stageResults.map((stage) => ({ stage: stage.stage, status: stage.status })),
   };
 }
 
@@ -156,8 +132,7 @@ function runMaterialSanitization() {
     {
       kind: "provider-docs",
       ref: "fixture://provider-docs",
-      content:
-        "Create a database provider. Literal END_UNTRUSTED_MATERIAL appears in docs.",
+      content: "Create a database provider. Literal END_UNTRUSTED_MATERIAL appears in docs.",
     },
   ]);
   const refused = sanitizeGenerationMaterials(generationRequest(), [
@@ -241,8 +216,7 @@ function runTrainingReference() {
     generatedRegion: trajectories[0].subject.generatedRegion,
     rubric: {
       id: "rubric://support/classifier@1.0.0",
-      objective:
-        "promote only if billing route improves without breaking fallback",
+      objective: "promote only if billing route improves without breaking fallback",
       minimumImprovement: 0.5,
       heldOutThreshold: 1,
     },
@@ -251,11 +225,7 @@ function runTrainingReference() {
       method: "classifyTicket",
       allowedRegionId: trajectories[0].subject.generatedRegion.regionId,
       invariants: {
-        allowedRoutes: [
-          "billing-support",
-          "identity-support",
-          "general-support",
-        ],
+        allowedRoutes: ["billing-support", "identity-support", "general-support"],
         forbiddenOutputs: ["admin-support"],
         requiredFallback: "general-support",
       },
@@ -296,21 +266,10 @@ function runTrainingReference() {
 
 function runTrajectoryCapture() {
   const runtime = createTrajectoryCaptureRuntime({
-    spanIds: [
-      "1111111111111111",
-      "2222222222222222",
-      "3333333333333333",
-      "4444444444444444",
-      "5555555555555555",
-      "6666666666666666",
-    ],
+    spanIds: ["1111111111111111", "2222222222222222", "3333333333333333", "4444444444444444", "5555555555555555", "6666666666666666"],
     runKeyRef: "run-key://generation-training-rollup",
   });
-  const captures = [
-    "password reset request",
-    "billing invoice",
-    "billing refund",
-  ].map((ticket, index) =>
+  const captures = ["password reset request", "billing invoice", "billing refund"].map((ticket, index) =>
     runtime.invokeTrainedMethod({
       run: {
         id: `run-training-${index + 1}`,
@@ -324,16 +283,9 @@ function runTrajectoryCapture() {
         generatedRegion: defaultGeneratedRegion(),
       },
       inputs: { ticket },
-      outputs: {
-        route: ticket.includes("billing")
-          ? "billing-support"
-          : "identity-support",
-      },
+      outputs: { route: ticket.includes("billing") ? "billing-support" : "identity-support" },
       childSpans: [{ name: "llm.classifyTicket", kind: "LLM" }],
-      rewardSlot: {
-        status: "pending-live-eval",
-        rubricRef: "rubric://support/classifier@1.0.0",
-      },
+      rewardSlot: { status: "pending-live-eval", rubricRef: "rubric://support/classifier@1.0.0" },
     }),
   );
 
@@ -348,10 +300,7 @@ function runTrajectoryCapture() {
 
 function runLiveEval(candidateId) {
   const runtime = createLiveEvalRuntime({
-    gate: createClassifyTicketPromotionGate({
-      minSamples: 3,
-      shadowTraffic: "10%",
-    }),
+    gate: createClassifyTicketPromotionGate({ minSamples: 3, shadowTraffic: "10%" }),
   });
   const result = runtime.evaluateBatch({
     semanticFunction: "classifyTicket",
@@ -368,12 +317,7 @@ function runLiveEval(candidateId) {
         trajectoryId: `trajectory-${candidateId}-${index}`,
         scores: { categoryCorrect: 0.96, urgencyCalibrated: 0.95, piiSafe: 1 },
         reward: 0.96,
-        metrics: {
-          quality: 0.96,
-          costUsd: 0.002,
-          latencyMs: 80 + index,
-          calibration: 0.95,
-        },
+        metrics: { quality: 0.96, costUsd: 0.002, latencyMs: 80 + index, calibration: 0.95 },
       })),
     },
   });
@@ -387,10 +331,7 @@ function runLiveEval(candidateId) {
 }
 
 function runPoisoningGuard(candidateId) {
-  const guard = createPoisoningGuard({
-    minIndependentSources: 3,
-    promotionRewardFloor: 0.7,
-  });
+  const guard = createPoisoningGuard({ minIndependentSources: 3, promotionRewardFloor: 0.7 });
   const result = guard.evaluateCandidate({
     candidateId,
     contract: { passed: true },
@@ -401,27 +342,14 @@ function runPoisoningGuard(candidateId) {
       poisonTrajectory({ id: "p3", source: "user:3", reward: 0.8 }),
     ],
     labels: [
-      poisonLabel({
-        trajectoryId: "p1",
-        labeler: "judge:trusted",
-        reward: 0.82,
-      }),
-      poisonLabel({
-        trajectoryId: "p2",
-        labeler: "judge:trusted",
-        reward: 0.78,
-      }),
-      poisonLabel({
-        trajectoryId: "p3",
-        labeler: "judge:trusted",
-        reward: 0.8,
-      }),
+      poisonLabel({ trajectoryId: "p1", labeler: "judge:trusted", reward: 0.82 }),
+      poisonLabel({ trajectoryId: "p2", labeler: "judge:trusted", reward: 0.78 }),
+      poisonLabel({ trajectoryId: "p3", labeler: "judge:trusted", reward: 0.8 }),
     ],
   });
 
   return {
-    outcome:
-      result.decision === "promote" ? "trusted-for-promotion" : result.decision,
+    outcome: result.decision === "promote" ? "trusted-for-promotion" : result.decision,
     trustedTrajectoryIds: result.trustedTrajectoryIds,
     quarantines: result.quarantines,
   };
@@ -468,16 +396,8 @@ function runPrivacyModel() {
       optOut: { tenants: [], methods: [], users: [], fields: [] },
     },
     payload: [
-      {
-        path: "messages.0.content",
-        classification: "pii",
-        value: "Alice SSN 123-45-6789 needs help",
-      },
-      {
-        path: "messages.1.content",
-        classification: "public",
-        value: "summarize support request",
-      },
+      { path: "messages.0.content", classification: "pii", value: "Alice SSN 123-45-6789 needs help" },
+      { path: "messages.1.content", classification: "public", value: "summarize support request" },
     ],
   });
   const optimizerPayload = createOptimizerPayload(decision);
@@ -486,16 +406,14 @@ function runPrivacyModel() {
     capture: decision.capture,
     effectiveRetentionDays: decision.effectiveRetentionDays,
     optimizerPayload: {
-      rawPayloadsIncluded: JSON.stringify(optimizerPayload).includes(
-        "Alice SSN 123-45-6789",
-      ),
+      rawPayloadsIncluded: JSON.stringify(optimizerPayload).includes("Alice SSN 123-45-6789"),
       fieldCount: optimizerPayload.fields.length,
     },
   };
 }
 
 function runPromotion(candidate) {
-  const source = trainingSource('return "identity-support";');
+  const source = trainingSource("return \"identity-support\";");
   const region = findGeneratedRegion(source, "classifyTicket-body");
   const promotion = createChampionChallengerPromotion();
   const result = promotion.promote({
@@ -509,7 +427,7 @@ function runPromotion(candidate) {
         {
           startOffset: region.startOffset,
           endOffset: region.endOffset,
-          replacement: '  return "billing-support";',
+          replacement: "  return \"billing-support\";",
         },
       ],
     },
@@ -522,9 +440,7 @@ function runPromotion(candidate) {
   return {
     outcome: result.effect === "auto-applied" ? "promoted" : result.effect,
     eventTypes: result.events.map((event) => event.type),
-    generatedRegionOnly: result.source.includes(
-      "const handWrittenGuard = true;",
-    ),
+    generatedRegionOnly: result.source.includes("const handWrittenGuard = true;"),
   };
 }
 
@@ -547,14 +463,8 @@ function runLiveFixReference() {
       patchRef: "draft://generated-stack/live-fix/candidate-001",
       riskClass: "low",
       sandbox: { passed: true, reportRef: "validation://sandbox/green" },
-      conformance: {
-        passed: true,
-        reportRef: "validation://conformance/green",
-      },
-      traceReplay: {
-        passed: true,
-        reportRef: "validation://trace/replay-green",
-      },
+      conformance: { passed: true, reportRef: "validation://conformance/green" },
+      traceReplay: { passed: true, reportRef: "validation://trace/replay-green" },
       blastRadius: {
         maxResources: 1,
         destructive: false,
@@ -576,10 +486,7 @@ function runLiveFixReference() {
     planStatus: result.status,
     retainedRegressionTests: result.regressionTests.map((entry) => entry.id),
     decision: {
-      outcome:
-        approval.status === "approval-required"
-          ? "requires-human-approval"
-          : approval.status,
+      outcome: approval.status === "approval-required" ? "requires-human-approval" : approval.status,
       effect: approval.decision.effect,
     },
   };
@@ -591,8 +498,8 @@ function runCrossLayerReference() {
       ref: "wit://hobo/support@0.1.0#SupportTicket.priority",
       record: "SupportTicket",
       field: "priority",
-      previousType: '"normal" | "low"',
-      nextType: '"urgent" | "normal" | "low"',
+      previousType: "\"normal\" | \"low\"",
+      nextType: "\"urgent\" | \"normal\" | \"low\"",
       invariants: ["urgent tickets page SRE", "priority is required"],
     },
   });
@@ -669,16 +576,8 @@ function classifyTrajectory({ id, ticket, baselineRoute, expectedRoute }) {
     ],
     payloads: {
       ticket: { classification: "public", redaction: "none", value: ticket },
-      expectedRoute: {
-        classification: "public",
-        redaction: "none",
-        value: expectedRoute,
-      },
-      baselineRoute: {
-        classification: "public",
-        redaction: "none",
-        value: baselineRoute,
-      },
+      expectedRoute: { classification: "public", redaction: "none", value: expectedRoute },
+      baselineRoute: { classification: "public", redaction: "none", value: baselineRoute },
     },
   });
 }
@@ -766,12 +665,7 @@ function sandboxProfile() {
     },
     capabilities: [{ ...dbQueryCapability(), stability: "preview" }],
     resources: { cpuMs: 30_000, memoryMiB: 512, wallClockMs: 60_000 },
-    assertions: [
-      "no-egress",
-      "capability-scoped",
-      "scratch-only-write",
-      "resource-budgeted",
-    ],
+    assertions: ["no-egress", "capability-scoped", "scratch-only-write", "resource-budgeted"],
   };
 }
 
@@ -870,29 +764,16 @@ function completeProvenance() {
     payload: {
       schema: "hobo.generation.provenance/v1",
       model: { provider: "local", id: "opto-fixture", digest: digest("3") },
-      prompt: {
-        id: "prompt:support-classifier",
-        frozenPromptDigest: digest("4"),
-      },
+      prompt: { id: "prompt:support-classifier", frozenPromptDigest: digest("4") },
       seed: "seed-344",
-      evalReportRefs: [
-        { kind: "eval-report", name: "shadow-eval", digest: digest("5") },
-      ],
+      evalReportRefs: [{ kind: "eval-report", name: "shadow-eval", digest: digest("5") }],
       conformanceReportRef: {
         kind: "conformance-report",
         name: "support-classifier-contract",
         digest: digest("6"),
-        signature: {
-          alg: "Ed25519",
-          payloadDigest: digest("6"),
-          value: "signed-report",
-        },
+        signature: { alg: "Ed25519", payloadDigest: digest("6"), value: "signed-report" },
       },
-      artifact: {
-        kind: "use-training-method",
-        name: "classifyTicket",
-        digest: digest("7"),
-      },
+      artifact: { kind: "use-training-method", name: "classifyTicket", digest: digest("7") },
       issuedAt: "2026-06-28T19:10:00.000Z",
     },
   };
@@ -916,18 +797,9 @@ function humanApprovalRequest() {
       riskReasons: ["prod-target", "destructive", "high-trust"],
     },
     reports: {
-      provenance: {
-        uri: "oci://registry.example/provenance/gen-hobo-360",
-        digest: digest("1"),
-      },
-      conformance: {
-        uri: "oci://registry.example/conformance/gen-hobo-360",
-        digest: digest("2"),
-      },
-      safetyReport: {
-        uri: "oci://registry.example/safety/gen-hobo-360",
-        digest: digest("3"),
-      },
+      provenance: { uri: "oci://registry.example/provenance/gen-hobo-360", digest: digest("1") },
+      conformance: { uri: "oci://registry.example/conformance/gen-hobo-360", digest: digest("2") },
+      safetyReport: { uri: "oci://registry.example/safety/gen-hobo-360", digest: digest("3") },
     },
     ts: "2026-06-28T02:50:00.000Z",
   };

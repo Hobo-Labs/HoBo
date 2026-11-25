@@ -252,35 +252,6 @@ passes `redactClusterText` (the shared `@hobo/provider-redaction` redactor
 plus kubeconfig blobs and dockerconfigjson), because a `Status` message quotes the object that
 caused it and those objects carry ServiceAccount tokens and imagePullSecrets.
 
-## Strict runner Pods
-
-`createStrictRunnerPodClient` creates one deterministic Pod for a reserved runner
-slot. The caller supplies an authenticated transport, the slot and placement
-identity, a ConfigMap owner, a service account, resource limits, pinned runner
-and hook images, and the HTTPS start-fence endpoint. The hook image must provide
-`/opt/hobo/fleet/pre-job.sh`; build the supplied image from the repository root
-with `docker build -f packages/ci-gh-actions/deploy/fleet-hook/Dockerfile .`.
-The runner image must provide `/opt/actions-runner/run.sh`, accept `--jitconfig`,
-and support the hook's Bash and Node requirements. The Pod copies the runner
-into writable ephemeral storage, runs as UID and GID 1000 with a read-only root
-filesystem, and disables automatic service-account token mounting.
-
-The caller must create the Pod-named Secret with `jit-config` and
-`binding-secret` keys and persist the returned UID. The hook obtains the actual
-job identity at start time. Existing Pods are accepted only with that UID and
-an unchanged owner, slot, and specification. A
-lost create response or an absent previously recorded Pod requires reconciliation;
-it must not trigger an automatic replacement. A Pod phase describes Kubernetes
-state and does not establish GitHub registration or job authorization. Deletion
-uses a UID precondition and confirms only API acceptance.
-
-For an isolated cluster, create a disposable `hobo-acceptance-*` namespace with
-the `runner-owner` ConfigMap and `runner` service account. Expose its API using a
-loopback-only `kubectl proxy`, set `HOBO_KUBERNETES_API`,
-`HOBO_KUBERNETES_DISPOSABLE_NAMESPACE`, and `HOBO_KUBERNETES_OWNER_UID`, then run
-`pnpm --filter @hobo/provider-kubernetes run test:strict-live`. This exercises
-Pod identity and deletion only; it does not register or execute a GitHub runner.
-
 ## Hosting budget execution
 
 Cluster infrastructure cost is `pricingStatus: "unknown"`, not an authoritative zero.
@@ -307,4 +278,4 @@ is cited to the vendor's documentation with the date it was read. It adds no
 product and does not change the published Capability Manifest; it is read by
 `assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
 has been deployed onto these products from this repository. See
-[`urn:hobo:requirement:postgres-backend-catalog`](urn:hobo:requirement:postgres-backend-catalog).
+[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).

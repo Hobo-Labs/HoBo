@@ -48,7 +48,7 @@ package architecture_evidence
 	issue:                 "HOBO-548"
 	phase:                 "M1"
 	packagePath:           "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups"
-	proofPath:             "urn:hobo:proof:vibe-publisher-portal-review-mockups"
+	proofPath:             "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md"
 	designRefs:            #NonEmptyStringList
 	quickstartFixtureRefs: [#VibePublisherPortalQuickstartFixtureReference, ...#VibePublisherPortalQuickstartFixtureReference]
 	personas:              #NonEmptyStringList

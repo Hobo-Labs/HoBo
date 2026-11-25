@@ -1,6 +1,6 @@
 # HOBO-399 Bindles API Freeze Contract
 
-> **Promoted to `packages/bindles/` (S1-13 / HOBO-602).** Public export boundaries are tested in `packages/bindles/test/public-api.test.ts`.
+> **Promoted to `packages/bindles/` (S1-13 / HOBO-602).** The frozen public-API snapshot now lives at `packages/bindles/contracts/bindles-public-api.snapshot.json`.
 
 This draft freezes the narrow `@hobo/bindles` public API and representative
 `hobo.manifest/v1` IR contract described by the SDK API and authoring resource
@@ -48,9 +48,11 @@ The test runs through `tsx` because it intentionally imports the neighboring
 `hobo-bindles-resource-catalog` TypeScript source after the draft taxonomy move.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Bindles Api Freeze Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

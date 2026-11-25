@@ -1,15 +1,22 @@
 {
   "layer": "technical",
   "slug": "componentize-js-determinism-spike",
-  "title": "HOBO-603 \u2014 componentize-js determinism spike",
+  "title": "HOBO-603 — componentize-js determinism spike",
   "linear": "HOBO-603",
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md",
+      "docs/design/wasm-runtime-wit.md"
+    ]
   },
   "artifacts": {
-    "diagrams": []
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
   },
   "waivers": []
 }

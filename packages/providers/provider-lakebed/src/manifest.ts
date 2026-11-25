@@ -5,7 +5,6 @@ import {
 	canonicalJson,
 	digestRef,
 	MANIFEST_SCHEMA,
-	providerTermsFor,
 	stableDigest,
 } from "@hobo/core";
 import {
@@ -25,7 +24,6 @@ export {
 
 // public-contract: the provider id every published document carries.
 export const LAKEBED_PROVIDER_ID = "@hobo/provider-lakebed";
-export const PROVIDER_TERMS = providerTermsFor(LAKEBED_PROVIDER_ID);
 
 export const DEFAULT_REGIONS = ["global"];
 
@@ -180,7 +178,6 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
-		terms: PROVIDER_TERMS,
 		documents,
 	};
 

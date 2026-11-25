@@ -35,9 +35,12 @@ import {
   createHandsOffIdentityTrail,
 } from "@hobo/trails";
 
+// Hands-off continuous identity (Matching-driven; zero authoring)
+// Public surface is Trails-owned DTOs only — no @hobo/identity types leak.
 const id = createHandsOffIdentityTrail({ tenant: "acme" });
 activateIdentityContinuousFromMatching({ handle: id });
 
+// App-authored data Trail composed with platform recipes
 const trail = defineTrail({
   id: "app.checkout.migrate",
   version: "2026.07.27.1",
@@ -95,15 +98,6 @@ hobo trails inspect <id>
 3. Progressive ramp via existing Harness `FeatureFlagStore`.
 4. Fail-closed dual oracles + compensation; history is durable and idempotent.
 
-## Upgrade dry runs
-
-`evaluateUpgradeDryRun` produces evidence without running migration commands.
-Its optional `action` is `evaluate-upgrade-dry-run`; unknown actions are
-rejected by the scope boundary. Requests are parsed into immutable evidence;
-unknown fields and invalid or out-of-order migration phases are rejected. Unsupported or
-unreviewed compatibility, a missing required backup, and contract work without
-available rollback evidence produce a blocked report with no migration steps.
-
 ## Data migrations (ADR-0177)
 
 Trails composes data migrations; it does not implement a storage engine.
@@ -121,10 +115,6 @@ Trails composes data migrations; it does not implement a storage engine.
   callback — recomputed before every phase, a negative verdict holds the
   migration at its last safe state — and a `replayErasures` callback, called
   after every restore so a rollback cannot resurrect an erased subject.
-- **Fresh compatibility evidence.** A contract phase requires gate evidence
-  no older than `compatGateMaxAgeMs`, which defaults to five minutes. Missing,
-  invalid, future, or stale evidence blocks the destructive phase. Backfill is
-  verified again after a hold before the contract phase can resume.
 - **Every phase is write-ahead.** The fact ladder is `Planned`,
   `SnapshotTaken`, then for each of expand, backfill and contract a
   `PhaseIntended` followed by its `PhaseApplied`, with `Verified` after

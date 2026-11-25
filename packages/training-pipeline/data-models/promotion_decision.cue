@@ -9,7 +9,6 @@ package data_models
 	scores: {[string]: number & >=0 & <=1}
 	sample_count: int & >=0
 	source:       string & !=""
-	metric_sample_counts?: {[string]: int & >=1 & <=sample_count}
 }
 
 #PromotionThresholds: {

@@ -1,3 +1,7 @@
+// `createCdTelemetry` (WP19, C13): DORA four keys, reconcile lag and health
+// as queries over the DORA projection (a materialized view of the event
+// store), plus `collect`/`export` that turn them — and the fleet and policy
+// gauges — into OTel metric points for a TelemetrySink.
 import type {
 	CampId,
 	CdBase,
@@ -8,6 +12,7 @@ import type {
 	OtelMetricPoint,
 	TelemetrySink,
 } from "../ports.js";
+import { emitMetrics } from "./advisory.js";
 import {
 	computeDora,
 	computeReconcileLag,
@@ -16,21 +21,24 @@ import {
 	type DoraQuery,
 } from "./dora.js";
 import { TelemetryError } from "./errors.js";
-import { collectFleetMetrics, type FleetSources } from "./fleet.js";
+import { type CampMetricSources, collectCampMetrics } from "./fleet.js";
 import { CD_METRICS, HOBO_ATTR } from "./semconv.js";
 
+// public-contract: default DORA window for collected gauges (30 days).
 export const DORA_DEFAULT_WINDOW_MS = 30 * DAY_MS;
 
 export type CdTelemetryDeps = CdBase &
 	Readonly<{
 		sink?: TelemetrySink;
-		fleet?: FleetSources;
+		fleet?: CampMetricSources;
 		doraWindowMs?: number;
 	}>;
 
 export type CdTelemetryService = CdTelemetry &
 	Readonly<{
+		/** Every CD gauge at `ctx.now()`: DORA, reconcile lag, fleet, policy. */
 		collect(ctx: CdContext): Promise<OtelMetricPoint[]>;
+		/** `collect` then push to the sink; never throws (health records it). */
 		export(ctx: CdContext): Promise<number>;
 	}>;
 
@@ -59,7 +67,7 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 		if (ctx.tenant !== d.tenant)
 			throw new TelemetryError(
 				"telemetry-tenant-mismatch",
-				`telemetry serves tenant ${d.tenant}, request names ${ctx.tenant}`,
+				"The telemetry request names a different tenant.",
 			);
 	}
 
@@ -70,12 +78,15 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 				ok: true,
 				detail: `caught up (+${read} events)`,
 			});
-		} catch (error) {
+		} catch {
 			checks.set("journal", {
 				ok: false,
-				detail: `journal read failed: ${error instanceof Error ? error.message : String(error)}`,
+				detail: "The telemetry journal is unavailable.",
 			});
-			throw error;
+			throw new TelemetryError(
+				"telemetry-journal-unavailable",
+				"The telemetry journal is unavailable.",
+			);
 		}
 	}
 
@@ -164,12 +175,12 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 		}
 		if (d.fleet) {
 			try {
-				points.push(...(await collectFleetMetrics(d.fleet, atMs)));
+				points.push(...(await collectCampMetrics(d.fleet, atMs)));
 				checks.set("fleet-sources", { ok: true, detail: "collected" });
-			} catch (error) {
+			} catch {
 				checks.set("fleet-sources", {
 					ok: false,
-					detail: `fleet read failed: ${error instanceof Error ? error.message : String(error)}`,
+					detail: "The telemetry fleet sources are unavailable.",
 				});
 			}
 		}
@@ -194,23 +205,21 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 					ok: true,
 					detail: `exported ${points.length} points`,
 				});
-			} catch (error) {
+			} catch {
 				checks.set("exporter", {
 					ok: false,
-					detail: `export failed: ${error instanceof Error ? error.message : String(error)}`,
+					detail: "The telemetry exporter is unavailable.",
 				});
-				d.sink
-					.metrics([
-						{
-							name: CD_METRICS.exportFailures,
-							kind: "counter",
-							value: 1,
-							unit: "1",
-							atMs: ctx.now(),
-							attributes: {},
-						},
-					])
-					.catch(() => undefined);
+				emitMetrics(d.sink, [
+					{
+						name: CD_METRICS.exportFailures,
+						kind: "counter",
+						value: 1,
+						unit: "1",
+						atMs: ctx.now(),
+						attributes: {},
+					},
+				]);
 			}
 			return points.length;
 		},

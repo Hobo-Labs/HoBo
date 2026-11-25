@@ -7,13 +7,7 @@ over conflicting repository workflow guidance.
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
-  dynamic imports, and include only arguments consumed by the tool. Preserve
-  input comments inside functions and methods marked for training, and in their
-  executable fixtures. Register deliberate domain views in `scripts/schema-domain-views.json`;
-  complete parallel wire types instead of adding temporary exemptions. Tracked
-  generated and vendored code follows the same rule; update its generator or
-  maintained source while preserving required notices. Independent submodules
-  follow their own rules unless work on them is explicitly requested.
+  dynamic imports.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
 - Before ending an action request, compare the current user goal with the
@@ -23,15 +17,13 @@ over conflicting repository workflow guidance.
   alternatives and independent work before reporting a blocker. Respect the
   latest explicit stop, pause, cancellation, scope change, and real permission
   or safety boundary; do not invent work or repeat futile attempts.
-- Change HoBo APIs and internal formats directly. Update their callers, schemas,
-  tests, and documentation together. Do not add or retain deprecated aliases,
-  compatibility shims, fallback parsers, or upcasters for earlier HoBo designs.
-  Implement required external protocols and data movement as product behavior.
-- Evidence must exercise real behavior. Do not create identity-only examples,
-  no-op benchmarks, synthetic contracts, or fabricated results; replace existing
-  scaffolds with executable checks of the behavior they claim to prove.
-- Do not create or retain plans, roadmaps, design documents, agent product
-  briefs, architecture documents, ADRs, RFCs, or proposals.
+- An action request is not done until the delivery goal in `PRODUCT.md` is met
+  by the evidence it names; merged pull requests are not that evidence.
+- Before adding a credential, flow or provider, search the code and ADRs for
+  an existing mechanism and use it. List the hard constraints against the goal
+  and report any contradiction before building. The `hobo-setup` skill covers
+  owner interaction and the `sdlc` skill covers landing pull requests.
+- Do not create or retain planning documents, roadmaps, or design documents.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
@@ -55,23 +47,31 @@ over conflicting repository workflow guidance.
   name is the per-job `GITHUB_TOKEN` (`secrets.GITHUB_TOKEN` or
   `github.token`), which GitHub mints for each job and nobody stores. A change
   that adds an exception to this rule is rejected.
+- HoBo reaches GitHub only through its own GitHub App, with no exceptions. The
+  owner installs the App HoBo prefills (`hobo ci app create`), HoBo keeps the
+  App code it is handed and the App's credentials in the owner's store, and
+  HoBo mints short-lived installation tokens from them; a workflow may also
+  use its per-job `GITHUB_TOKEN`. Agents never ask the owner for a GitHub
+  token of their own, never use a person's `gh` sign-in, and never add store
+  entries, capture forms, fixtures or docs for one. `secrets:guard` and the
+  pre-tool hook reject such changes and commands, and a change that adds an
+  exception is rejected.
 - HoBo manages deployment of its CI relay. Its Vercel project is intentionally
   not Git-linked; do not reconnect it or treat the missing link as a defect.
 
-Agent tool hooks run the common source policy for Claude Code, Codex, Cursor,
-Copilot, and Gemini. They check the worktree and commits since the last clean
-checkpoint on each branch. New branches inherit a recent ancestor checkpoint;
-otherwise a new or inactive session checks the latest commit. An unresolved
-committed violation remains checked until fixed. Checkpoints live in the system
-temporary directory, or `HOBO_AGENT_POLICY_STATE_DIR` when set. Standalone
-documentation comments follow the same rule. Run `pnpm run source:guard --
---worktree` when checking manually, including ignored agent artifacts in nested
-projects; the pre-commit hook checks staged changes. The same edit hooks run
+Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
+and Copilot. Standalone documentation comments follow the same rule. Run
+`pnpm run source:guard -- --worktree` when checking manually, including ignored
+agent artifacts in nested projects;
+the pre-commit hook checks staged changes. The same edit hooks run
 `secrets:guard` (`scripts/check-secret-storage.mts`), and a pre-tool hook in
 each harness (`scripts/agent-secret-policy.mts`) refuses commands that store
 Actions secrets or variables, Vercel environment variables, `.env` writes,
 edits to secret files, and credential-storing tools such as
-`request_credential` before they run. `secrets:guard` also runs in the
+`request_credential` before they run. The same hook refuses stopping HoBo's MCP
+server or owner page driver, which holds the owner's open form, and a fourth
+unlanded pull request from one session's branches
+(`scripts/agent-session-policy.mts`; see `docs/agent-tooling.md`). `secrets:guard` also runs in the
 pre-commit hook and in `agent:check`, so CI checks each pull request's diff
 against its base; it rejects added Actions secret and variable references
 other than the per-job token, secret files, environment credential reads
@@ -81,13 +81,13 @@ coordinates: real-looking project, identity, team and deploy project ids under
 binding keys, binding files holding them outside test fixtures, and any
 `deploy/secret-store.binding.json`. They are the owner's private settings and
 live only in the owner's secret store, read through the owner store session;
-fixtures use synthetic values such as all-zero UUIDs. The source guard covers TypeScript, JavaScript, shell, Windows batch, Python,
-CSS, HTML, SVG, XML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
-Kotlin, C#, Ruby, Lua, Swift, and Gherkin, including source templates, notebook code cells, and Markdown code examples; the same rule applies to every other language.
+fixtures use synthetic values such as all-zero UUIDs. The source guard covers TypeScript, JavaScript, shell, Python,
+CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
+Kotlin, Ruby, Lua, and Swift, including source templates; the same rule applies to every other language.
 
 # Agent tooling for this repo
 
-This repo is wired for **Claude Code**, **Cursor**, **Codex**, **GitHub Copilot**, and **Gemini** with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
+This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub Copilot CLI** for Superpowers) with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
 
 | Tool | Type | What it does | Invoke |
 |---|---|---|---|
@@ -133,7 +133,7 @@ The repo-local **sdlc** skill is mirrored in `.agents/skills/sdlc` and `.claude/
 
 ## Repo-local draft skill
 
-The repo-local **draft** skill lives in both `.agents/skills/draft` and `.claude/skills/draft`. Use it to complete and retire existing draft proof material. The remaining material uses four layers:
+The repo-local **draft** skill lives in both `.agents/skills/draft` and `.claude/skills/draft`. Use it when creating, moving, or reviewing draft proof material. It replaces the old one-level draft convention with the four-layer taxonomy:
 
 - `src/draft/technical-proofs/<slug>` for isolated atomic technical concepts.
 - `src/draft/exp-proofs/<type>/<slug>` for experience proofs, grouped by experience type (`dx` developer · `ux` user · `cx` customer · `ax` agent · `api` API/SDK surface). List them with `pnpm run draft:experiences`.
@@ -146,14 +146,14 @@ Repo-local skills keep Codex-valid `SKILL.md` frontmatter and store Open Knowled
 
 The repo-local **optimizexp** skill reviews real UX, DX, and AX behavior, implements improvements, and verifies them with relevant evidence. It follows the common rule against planning and design documents.
 
-### Retiring draft proofs
+### Draft-proof hardening
 
-Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Complete missing behavior in its owning package, verify it there, and remove the obsolete proof with its references. Do not create planning documents, replacement or placeholder proofs, or synthetic evidence. Two gates run automatically through `agent:check` on changes to remaining proofs and their dependents:
+Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Implement the requested behavior and executable checks directly; do not create planning documents or placeholder proofs. New or changed proofs are validated by two gates that run automatically through `agent:check`:
 
-- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior.
+- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior. `agent:check` builds the workspace packages a changed proof imports (`turbo run build --filter=./<proof>^...`) before running its examples, so a clean CI runner has their `dist/` outputs. A proof whose examples import workspace packages also declares a `draft:prepare` script that builds them, because `check:all` runs `draft:artifacts` without that prior build; the gate runs `draft:prepare` before the examples and allows it ten minutes.
 - `pnpm run draft:cascade` — a changed technical/exp proof must update every referencing epic/project rollup in the same diff (references resolve from `proof.json` graphs + import/ledger scans).
 
-Remove obsolete entries from `src/draft/_grandfathered.json` when retiring their packages; do not add entries.
+Packages predating the standard are listed in `src/draft/_grandfathered.json` (advisory-only until their backfill wave removes them; never add new packages there).
 
 
 ## Parallel work rule
@@ -164,7 +164,7 @@ Prefer changes inside one package, app, feature folder, or test folder.
 
 ### Connectivity, naming, multi-tenant foundations
 
-- Hierarchical DNS-valid names are pure functions in `@hobo/core` (`getNamedEndpoint`, `sanitizeDnsLabel`). Never emit bare `.hobo`; use `.hobo.localhost` (local) or `.hobo.test` (overlay).
+- Hierarchical DNS-valid names are pure functions in `@hobo/core` (`getNamedEndpoint`, `sanitizeDnsLabel`). Never emit bare `.hobo`; use `.hobo.localhost` (local) or `.hobo.test` (overlay). See [ADR-0130](docs/design/adr/07-portability-extensibility.md#adr-0130).
 - Implementations for overlay (Tailscale/Netbird), pluggable DNS, tag/ACL `PolicyEngine`, metering sinks, and optional portless local named endpoints live in `@hobo/connectivity`.
 - Local serve paths inject `namedEndpoints` / `primaryNamedUrl` when available; port-based behavior remains the default offline path when portless is absent (`HOBO_PORTLESS=0` forces off).
 - Tenant context: `HOBO_TENANT` / `HOBO_PROJECT` / `HOBO_BRANCH` / `HOBO_ENV`. Soft multi-tenancy via IDs + PolicyEngine is the baseline; hard isolation is a later phase.
@@ -177,36 +177,37 @@ Prefer changes inside one package, app, feature folder, or test folder.
 - Stations also host the **traffic-routing plane** (ADR-0143): the per-resource-class **offering registry**, the **closed routing control loop** (budget/health signal → re-dispatch → re-synthesize → re-apply, with StabilityPolicy cooldown/hysteresis/flip limit), and the **progressive cutover saga** (fail-closed preconditions, rollback hysteresis, refusal + `TtlLowered` ladder). The picker is `@hobo/dispatcher` (ADR-0071, deterministic credit/budget selection; `dispatch.Decided`/`dispatch.Reservation*`); budget signals (`budget.ThresholdCrossed`/`Recovered`, exactly-once) come from `@hobo/broker`.
 - CLI: `hobo station init|up|down|status|rails *` is **ops/setup**, not a lifecycle verb. Missing Station fails closed (`hobo station init`).
 - Profile: `defaultStation` / `activeRail` required for control-plane work; `defaultBrokerUri` is only a remote Conductor HTTP endpoint, not a setup path.
-- **Station capabilities + localhost discovery (ADR-0155):** `StationCapability` (`hobo.station-capability/v1`, closed kind vocabulary, provenance `default|discovered|declared`) formalizes the "PAM/Replay/sidecars are Station capabilities" prose; matching against host evidence is fail-closed and persists `HOBO_HOME/stations/<id>/capabilities.json`. Never re-introduce ad-hoc Station init literals.
+- **Station capabilities + localhost discovery (ADR-0155):** `StationCapability` (`hobo.station-capability/v1`, closed kind vocabulary, provenance `default|discovered|declared`) formalizes the "PAM/Replay/sidecars are Station capabilities" prose; matching against host evidence is fail-closed and persists `HOBO_HOME/stations/<id>/capabilities.json`. Never re-introduce ad-hoc Station init literals. Narrative: `docs/design/stations.md`.
 
 ### Portable SQLite EventStore / durable actor journal (ADR-0135)
 
 - SQLite is the **default durable engine** behind HoBo-owned ports — **not** the public portability boundary. Managed stores remain adapters.
-- Package map: `@hobo/core` (`EventStore` / `DurableEventStore`, positions, fences, errors) · `@hobo/storage-sqlite` (current schema, `SqliteJournal`, codecs) · `@hobo/runtime-local` (Node `node:sqlite` + storage worker) · `@hobo/runtime-browser` (WASM/OPFS policy; fail-closed without real OPFS) · WIT `hobo:storage@0.1.0`.
+- Package map: `@hobo/core` (`EventStore` / `DurableEventStore`, positions, fences, errors) · `@hobo/storage-sqlite` (schema v2, migrations, `SqliteJournal`, codecs) · `@hobo/runtime-local` (Node `node:sqlite` + storage worker) · `@hobo/runtime-browser` (WASM/OPFS policy; fail-closed without real OPFS) · WIT `hobo:storage@0.1.0`.
 - **One SQLite partition, one active writer.** Scale by partitions; never multi-writer WAL over shared NFS/SMB.
 - Stream revision via **stream-head row** (not `COUNT(*)`); append CAS + `fenceToken`/`owner_epoch` inside one write transaction; database-local `global_position` for catch-up (not domain envelope identity).
 - Durable commit can stage queue / actor-signal / timer / cron / outbox effects atomically with domain events; network I/O stays **outside** the SQLite transaction.
 - Delivery: per-stream OCC, fenced single writer, at-least-once subscriptions/outbox, idempotent keys — **not** external exactly-once.
+- Design: [`docs/design/adr/03-data-plane-sqlite-default.md`](docs/design/adr/03-data-plane-sqlite-default.md), package-namespaces, `docs/design/data-plane.md`.
 
 ### Contract effects + visible resiliency (ADR-0136)
 
 - Optional `effects?: EffectSpec` and `resilience?: ResilienceProfile` on `BoundaryContract` in `@hobo/contracts` (protobuf + CUE + parse-don't-validate TS).
 - **EffectSpec** (Verse-inspired): purity lattice `pure` ⊂ `varies` ⊂ `transacts` ⊂ `noRollback`; capabilities (`decides`, `suspends`, …); domain I/O (`network`, `storage`, …). Effect **widening** is a breaking compatibility reason (`effect-widened`) when effects are declared.
-- **ResilienceProfile** is a **secondary** visible layer (retry / circuitBreaker / timeout / bulkhead / fallback / hedging). Thin `applyResilienceProfile` applicator emits facts; **never** retries `policy.Decided` deny, terminal, or cancellation. Not a primary control-plane noun.
+- **ResilienceProfile** is a **secondary** visible layer (retry / circuitBreaker / timeout / bulkhead / fallback / hedging). Thin `applyResilienceProfile` applicator emits facts; **never** retries `policy.Decided` deny, terminal, or cancellation — aligned with [`docs/design/dx-sdk-resilience-semantics.md`](docs/design/dx-sdk-resilience-semantics.md). Not a primary control-plane noun.
 - Capture/export: `EffectManifest`, `EffectTracer` (`contract.EffectDeclared` / `contract.EffectInvoked`); Gatekeeper `effectSummaries` + `gate: "effects" | "resilience"`.
 - Harness: `@hobo/contracts` `createEffectIsolation`, `mocksForEffects`, `runResilienceFaultInjection` — pure contracts isolate with zero infra (`@hobo/contract-harness` itself stays dependency-free PACT infra).
-- No public Effect-TS, Polly, or XState dependency.
+- No public Effect-TS, Polly, or XState dependency. Design: [`docs/design/adr/03-data-plane-effects-resiliency.md`](docs/design/adr/03-data-plane-effects-resiliency.md).
 
 ### Secretless-first config & secrets (ADR-0027)
 
-- Prefer identity federation / `fromBinding` / ranked `bound-resource` over any stored secret. `hobo:secrets` and catalog `secret(name)` are **residual** Nitric-parity only (ADR-0113).
+- Prefer identity federation / `fromBinding` / ranked `bound-resource` over any stored secret. `hobo:secrets` and catalog `secret(name)` are **residual** Nitric-parity only ([ADR-0113](docs/design/adr/02-identity-security.md#adr-0113)).
 - Authoring: `@hobo/bindles` `config({ ... })` with `env.string()` / `secret.string().source(...)` / `secretRef` / `fromBinding`. Dual surfaces: `env({...})` annotations + `env.string()` fields; `secret(name)` resource + `secret.string()` fields. Codegen: `generateCtxConfigSource`. Gate: `evaluateSecretlessConfigGate` (wired into Gatekeeper via `secretlessConfig`).
 - Resolution: `@hobo/identity` `resolveConfigSchema` ladder (`bound-resource` → `provider-federation` → `camp-value` → `static-escape` ≤7d). Camp adapters via `createCampSecretsPort` (Vault JWT/OIDC, AWS SM, Azure KV with brokered fetch). Events `config.Resolved` / `secret.Accessed` are refs-only (never-compact CredentialAudit). Conformance: `requireNoPlaintextConformance`. Local non-sensitive overrides: `encryptLocalOverrides` / `decryptLocalOverrides`.
-- Continuous Identity Migration (ADR-0132): dual-path PrincipalRef continuity is Matching/policy-driven with **zero required Bindle config**; dual fixtures extend ADR-0070 offline; observe via `hobo identity status` / `hobo doctor`; never invent a parallel IdP or Bindle migration DSL.
-- HoBo Trails (ADR-0134, `@hobo/trails`): app-owned continuous migration recipes (schema/data dual, junction rebind, cutover) that **compose** continuous identity as `identity.continuous`. Pure identity continuous still requires **zero Trail authoring**. Observe via `hobo trails status|plan|inspect`; progressive via existing Harness; do not invent parallel progressive/ETL planes.
-- **Live migration executors** (`@hobo/trails`): upgrade preflight/compatibility evidence (`upgrade-preflight.ts`, fail-closed scope-boundary guard), expand→backfill→contract over a real SQLite store (`migration-executor.ts`, snapshot-before-mutation, compat-gated destructive contract), pooled→siloed zero-loss tenant move (`tenant-move-port.ts`: fence → drain → export/import → checksum-gated reap), live CDC data-dual ports. Emit the `migration.*` event family only.
-- **Event bodies** (`@hobo/events`): change current contracts directly and update their producers, consumers, and executable corpus together.
-- **Jurisdiction & residency** (ADR-0146): legal geography is typed in `@hobo/core` (`ports/jurisdiction.ts`) — `evaluateResidency` is pure and **fail-closed** (unmapped region = conflict); tenants carry `residency` constraints; Gatekeeper reports a `residency` gate. Compliance rules ride `@hobo/policy` (residency pack, control→evidence packs). Never bypass with untyped region strings.
+- Continuous Identity Migration ([ADR-0132](docs/design/adr/02-identity-security.md#adr-0132)): dual-path PrincipalRef continuity is Matching/policy-driven with **zero required Bindle config**; dual fixtures extend ADR-0070 offline; observe via `hobo identity status` / `hobo doctor`; never invent a parallel IdP or Bindle migration DSL.
+- HoBo Trails ([ADR-0134](docs/design/adr/02-identity-security.md#adr-0134), `@hobo/trails`): app-owned continuous migration recipes (schema/data dual, junction rebind, cutover) that **compose** continuous identity as `identity.continuous`. Pure identity continuous still requires **zero Trail authoring**. Observe via `hobo trails status|plan|inspect`; progressive via existing Harness; do not invent parallel progressive/ETL planes.
+- **Live migration executors** (`@hobo/trails`, [upgrade-migration-engine](docs/design/upgrade-migration-engine.md)): upgrade preflight/compatibility evidence (`upgrade-preflight.ts`, fail-closed scope-boundary guard), expand→backfill→contract over a real SQLite store (`migration-executor.ts`, snapshot-before-mutation, compat-gated destructive contract), pooled→siloed zero-loss tenant move (`tenant-move-port.ts`: fence → drain → export/import → checksum-gated reap), live CDC data-dual ports. Emit the `migration.*` event family only.
+- **Event-body evolution gate** (`@hobo/events`): bumping any pinned event body (e.g. `migration.*`) **requires** a total upcaster plus an append-only entry in `packages/events/corpus/golden-replay-baseline.json`; corpus coverage/purity/append-only violations fail the test lane and with it can-deploy. Never edit or delete pinned corpus entries.
+- **Jurisdiction & residency** ([ADR-0146](docs/design/adr/02-identity-security.md#adr-0146)): legal geography is typed in `@hobo/core` (`ports/jurisdiction.ts`) — `evaluateResidency` is pure and **fail-closed** (unmapped region = conflict); tenants carry `residency` constraints; Gatekeeper reports a `residency` gate. Compliance rules ride `@hobo/policy` (residency pack, control→evidence packs). Never bypass with untyped region strings.
 - Residual classical credentials: `@hobo/connectivity` secretless connector plugins (postgres/tcp/mysql/redis + registry); isolation tiers; workload dials named endpoints only — never receives material.
 - WIT: `hobo:secrets@0.1.0` under `@hobo/wit` (experimental); bridge with `asHoboSecretsStore`.
 - Agents / `hobo dev`: schemaOnlyView + contract-asserted fixtures; no plaintext in agent context, events, or IaC.
@@ -282,9 +283,9 @@ State plainly what is **promoted** versus what is **sitting in a run for
 review**, and if the output is off-model, say so and leave it in the run. An
 asset the user cannot see is not delivered.
 
-## Draft-proof retirement policy
+## Draft-proof promotion policy
 
-Complete every required behavior in the owning production package and verify it with meaningful tests. Update dependent imports, workspace entries, and documentation, then remove the obsolete proof and its promotion-ledger entry in the same change. Do not freeze or create duplicate proofs. Existing ledger entries identify material to retire; they do not authorize deferring missing behavior or deleting its only implementation.
+When a draft proof under `src/draft/` is promoted into a production package, **the package copy becomes canonical and the proof is frozen** — record the promotion in [`scripts/promotions.json`](scripts/promotions.json) (`status: "frozen"`, digests pinned via `pnpm run promotions:check -- --update`). After that, all changes land in the package; `pnpm run promotions:check` (enforced by the root test suite) fails if a frozen proof is edited. Partial promotions that deliberately leave capability behind in the proof use `status: "reference"` with a note explaining the split. This exists because promoted copies previously diverged silently (see GAPS.md implementation-gap register, IMPL-005/IMPL-006).
 
 Before finishing a whole PR branch:
 
@@ -306,19 +307,17 @@ These rules are harness-neutral and apply to Claude Code, Cursor, Codex, Copilot
 - Use CUE for invariants and dependent constraints: ranges, formats, cross-field relationships, state transitions, capability predicates, policy obligations, and compatibility rules.
 - Implement "Parse, don't validate": untrusted input crosses one parser boundary and becomes a refined/derivative object definition. Core functions should accept parsed/refined domain types, not raw DTOs plus repeated boolean checks.
 - Require PACT-style consumer-driven contract tests for every integration boundary: SDK/runtime, runtime/provider, CLI/API, event/projection, generated plugin/host, and external service edges.
-- Run the applicable TypeScript, Protobuf, CUE, and PACT checks for code, automation, package metadata, CI, hooks, and agent tooling; fix failures in the same change.
+- When changing code, automation, package metadata, CI, hooks, or agent tooling, update docs/proof notes to identify the TypeScript, Protobuf, CUE, and PACT gates that protect the change, or document the tracked gap.
 
-Run `pnpm run standards:check` and `pnpm run architecture:guard` for these standards when applicable.
+Canonical detail lives in [`docs/design/technical-standards.md`](docs/design/technical-standards.md).
 
 ## Visual quality
 
-Preserve the owner-set HoBo Rubberhose identity and Bo artwork. Use the owning
-surface's implemented tokens and shared components, including the site's
-reduced-motion behavior. For visual changes, run `pnpm run design:lint`, the
-affected package's rendered-surface tests, and the applicable visual review.
-The gate checks contrast in the site and connection UI palettes directly from
-their CSS. Status-page and secret capture tests cover their rendered tokens and
-accessibility behavior.
+Use the owning surface's implemented tokens and shared components. For visual
+changes, run `pnpm run design:lint`, the affected package's rendered-surface
+tests, and the applicable visual review. The gate checks contrast in the site
+and connection UI palettes directly from their CSS. Status-page and secret
+capture tests cover their rendered tokens and accessibility behavior.
 
 Do not create design documents or use plugin commands that generate them.
 
@@ -349,9 +348,9 @@ them.
 
 `pnpm run build` covers `./packages/**` — every nested package, not just direct
 children of `packages/`. `pnpm run test` / `test:unit` is one turbo graph over
-exactly the root `test/` and `src/draft/**` Vitest set: four root shards
+exactly the legacy root `test/` and `src/draft/**` Vitest set: four root shards
 and nine draft shards hashed by proof package directory, with a shared turbo
-dependency on their builds. Production `packages/**` suites stay in Workspace
+dependency on the builds the legacy pretest supplied. Production `packages/**` suites stay in Workspace
 tests, and `scripts/test/` stays in `test:scripts`. An unchanged unit run pays
 only turbo's hashing and log replay.
 
@@ -488,20 +487,19 @@ Use broader build-impacting checks only when intentionally validating a branch/r
 
 ## Documentation maintenance rule
 
-When behavior changes, update the existing user or operator documentation that describes it. Do not create maintenance-only notes, plans, or design documents.
+Whenever a change touches code, automation, package metadata, CI, hooks, or agent tooling, update the matching documentation in the same change. Check whether `README.md`, `docs/agent-tooling.md`, and the relevant proof/contract README still describe the current state. If no user-facing docs change is needed, add or update the closest maintenance note so reviewers can see that docs were considered.
 
-The repo hook in `.githooks/pre-commit` runs `check:relevant:staged` through `scripts/run-script.mts` (its root-script gates need no package manager; the turbo package-test lane a workspace-package change selects, and scripts that call pnpm themselves, still need pnpm and refuse the commit without it), which routes to the smallest relevant architecture, test, docs, traceability, and contract lanes; enable it with `pnpm run prepare-hooks` (the root `prepare` script does it on install, and the session-start hooks of Claude Code, Codex, Cursor and Copilot do it through `scripts/ensure-hooks-path.sh` whenever `core.hooksPath` is unset; see `docs/agent-tooling.md`).
+Local and CI gates enforce this with `pnpm run docs:freshness`: code changes under `src/`, `scripts/`, `test/`, package metadata, workflows, or agent config must be accompanied by a docs change. The repo hook in `.githooks/pre-commit` runs `check:relevant:staged` through `scripts/run-script.mts` (its root-script gates need no package manager; the turbo package-test lane a workspace-package change selects, and scripts that call pnpm themselves, still need pnpm and refuse the commit without it), which routes to the smallest relevant architecture, test, docs, traceability, and contract lanes; enable it with `pnpm run prepare-hooks` (the root `prepare` script does it on install, and the session-start hooks of Claude Code, Codex, Cursor and Copilot do it through `scripts/ensure-hooks-path.sh` whenever `core.hooksPath` is unset; see `docs/agent-tooling.md`).
 
 ## Plans are not committed
 
-The repository does not keep plans, roadmaps, design or architecture documents,
-ADRs, RFCs, or proposals. Implement
+The repository does not keep plans, roadmaps, or design documents. Implement
 their outstanding work before removing existing artifacts. The existing
 `plans:guard` checks tracked plan documents. `source:guard` checks added or
-changed planning, architecture, and design documents (a change that only
-removes lines is allowed, so existing ones can be retired) and new comments in
-the languages listed above, including ignored `.sdlc` planning documents; the
-common rule applies to every language.
+changed planning and design documents (a change that only removes lines is
+allowed, so existing ones can be retired) and new comments in the languages
+listed above, including ignored `.sdlc` planning documents; the common rule
+applies to every language.
 Both run through the shared pre-commit and CI checks.
 
 ## Legal hygiene rules
@@ -512,7 +510,7 @@ These are cheap to honor and expensive to unwind.
 - **No third-party logos.** Naming a vendor is nominative fair use; reproducing its logo or brand mark is not. Do not add third-party logos or brand assets to the site, docs, or README without explicit review. Word marks in prose are fine.
 - **Never imply endorsement.** Nothing in docs, site copy, or marketing may state or suggest that HoBo is affiliated with, endorsed by, sponsored by, or certified by any provider.
 - **Third-party facts carry a source and a date.** Prices, free tiers, and vendor terms transcribed into this repo are *ranking input, never billing input*. Tag them with the source URL and the date a human checked them (`COST_SOURCE`, `PROVIDER_TERMS`); never fabricate an attestation field like `signedAt` that implies the vendor signed something.
-- **Provider-terms invariants (ADR-0129).** Registered providers are the operator's own accounts. Never pool, share, or resell free-tier headroom across tenants; never create provider accounts or rotate identities to reset a free tier. Rotation is *across providers*, never *across accounts within a provider*.
+- **Provider-terms invariants ([ADR-0129](docs/design/adr/07-portability-extensibility.md#adr-0129)).** Registered providers are the operator's own accounts. Never pool, share, or resell free-tier headroom across tenants; never create provider accounts or rotate identities to reset a free tier. Rotation is *across providers*, never *across accounts within a provider*.
 - **No unsupported compliance claims.** SOC 2, ISO 27001, GDPR, HIPAA, PCI, and similar certifications stay unclaimed until an owning evidence surface accepts them.
 
 ## Keys & risks (read before enabling gbrain)
@@ -765,11 +763,11 @@ Non-negotiables for either lane:
 
 `pnpm run test:all` runs every package suite the way its own package intends —
 with that package's environment, setup files and process isolation. `pnpm run
-test:unit` is the S0 lane for exactly the root/draft Vitest set; it does
+test:unit` is the S0 lane for exactly the legacy root/draft Vitest set; it does
 not run production package suites or `scripts/test/`. Per-package `test:unit`
 scripts remain the narrower affected-PR lane where they exist.
 `scripts/test/unit-test-coverage.test.ts` requires exact equality between the
-root/draft selection and the shard union, rejecting extras as well as
+legacy selection and the root/draft shard union, rejecting extras as well as
 missing files.
 
 `test:smoke` and `test:file` share one command (`vitest run --no-isolate`) and
@@ -950,9 +948,9 @@ Durable, non-obvious notes for this environment. The startup update script runs 
 
 - **No sudo.** `sudo` is never available and never allowed. Do not run it, do not ask the user to run it, do not suggest root apt/system Docker installs. Prefer `$HOME/.local/bin`, npx/pnpm, remote anon APIs. Host is **aarch64** — download ARM64 binaries only. No `/var/run/docker.sock` here.
 - **Examples Temporary = browser-only.** End users never run CLI setup (docker/wrangler/openpouch/crane). Ship is browser → same-origin `/api/cf-temp/*` → remote HTTPS APIs. Do not treat local CLI image push/deploy as a product fallback.
-- **Verify the affected surface.** Run the relevant package, service, or UI checks and use `pnpm agent:check` for the changed files.
+- **No server/GUI.** This is a design-docs + executable proof/contract repo (see README "Current state"). "Running the app" means the validation/lint/test tooling, not a web/backend service. Verify the environment with `pnpm run doctor`, `pnpm run lint`, `pnpm run standards:check`, `pnpm test`, and the doc validators listed in `README.md` "How to work in this repo".
 - **Node version.** Local Node 22 satisfies `engines` (`>=22`); CI uses Node 24. Optional native packages are installed for the current OS and CPU only (`pnpm.supportedArchitectures` is `current` for both; see [finding 19](docs/ci/findings/0019-every-job-installed-both-cpus-agent-clis.md)).
 - **Developer inner loop for a single proof package:** `pnpm exec turbo run test --filter ./src/draft/<kind>/<slug>` (see `src/draft/AGENTS.md`). The turbo "no output files found" warning on `test` is expected (no build outputs) and not a failure.
 - **`test:smoke` runs Vitest** (`vitest run --no-isolate`), same engine as `test:file`; there is no bun dependency. Both are single-target tools — see "Which command is the repo-wide gate" above before reading a bare root run as a regression.
 - **`tgrep` is not installed**, so `pnpm run search` falls back to `rg`. Always pass explicit path args (e.g. `pnpm run search "pattern" src docs`); running it with no path scope over the full worktree can be very slow.
-- **Investigate check failures.** Compare failures with the base revision and fix regressions caused by the change.
+- **All local gates pass clean on `main`** (`lint`, `standards:check`, `architecture:guard`, `docs:okf`, `docs:cli-lint`, `docs:design-lint`, `docs:coverage`, `docs:freshness`, SDK/deployment validators); treat any failure as caused by the change under test, not the environment.

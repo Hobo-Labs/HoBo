@@ -1,3 +1,32 @@
+// The rollout ledger: stream `cd-rollout-<rolloutId>`, its event bodies and the
+// pure fold that rebuilds a rollout from it. The stream is the whole truth; the
+// orchestrator's memory is a cache, so replay reads exactly what the live
+// orchestrator decided from (I8) and a crash anywhere resumes by observation.
+//
+//   rollout.Lowered                 plan, Freight, windows, obligations (D7)
+//   rollout.RampStarted             run() accepted the plan; the ramp engine started
+//   rollout.CapacityReserved        canary capacity reserved for one Camp
+//   rollout.ShiftRequested          intent recorded BEFORE the Station cutover
+//   rollout.Shifted                 the cutover's acknowledgement (never convergence)
+//   rollout.TrafficObserved         observed routing is the requested split
+//   rollout.VerificationStarted / StageVerified
+//   rollout.StageApprovalRequested  a stage-boundary approval request
+//   rollout.Held / Released         a boundary hold (window, experiment, approval)
+//   rollout.Advanced                the ramp engine accepted a stage outcome
+//   rollout.RollbackStarted / RollbackDeltaOpened (D12)
+//   rollout.Finished                promoted | rolled-back | failed
+//   rollout.EngineCommanded         the Harness engine's command ledger
+//                                   (`cd-rollout-engine-<id>`, adapters/harness)
+//
+// Every name is `family.PastTenseFact` in the frozen CD_EVENTS `rollout`
+// family, so a durable journal (@hobo/storage-sqlite, @hobo/storage-postgres)
+// accepts it. `rollout.Started` and `rollout.ApprovalRequested` belong to the
+// OpenDelivery port (@hobo/identity) with other bodies, hence RampStarted and
+// StageApprovalRequested here. The ledger's first names (`cd.rollout.<Fact>`,
+// which no durable journal accepts) and the interim storage encoding a
+// consumer used to work around them (`cdrollout.<Fact>`) are upcast on read
+// by `ledgerType`; bodies did not change. The stream ids are local to this
+// module (the frozen CD_STREAMS has no rollout entry; see the WP10 report).
 import {
 	create,
 	fromJson,
@@ -27,6 +56,7 @@ import {
 	text,
 } from "./json.js";
 
+// public-contract: the rollout ledger stream and its event names.
 export const ROLLOUT_LEDGER = Object.freeze({
 	stream: (rolloutId: string) => `cd-rollout-${rolloutId}`,
 	started: "rollout.RampStarted",
@@ -45,6 +75,52 @@ export const ROLLOUT_LEDGER = Object.freeze({
 	finished: "rollout.Finished",
 	engineCommanded: "rollout.EngineCommanded",
 } as const);
+
+export type RolloutLedgerType = Exclude<
+	(typeof ROLLOUT_LEDGER)[keyof typeof ROLLOUT_LEDGER],
+	(rolloutId: string) => string
+>;
+
+// Legacy fact names whose current name differs from the fact itself.
+const RENAMED: Readonly<Record<string, RolloutLedgerType>> = Object.freeze({
+	Started: ROLLOUT_LEDGER.started,
+	ApprovalRequested: ROLLOUT_LEDGER.approvalRequested,
+});
+
+const { stream: _stream, ...LEDGER_TYPES } = ROLLOUT_LEDGER;
+const CURRENT: ReadonlySet<string> = new Set(Object.values(LEDGER_TYPES));
+
+// The ledger's first spellings, read back and never written.
+const LEGACY_PREFIXES = ["cd.rollout.", "cdrollout."] as const;
+
+/**
+ * The current ledger type for a recorded event type (the upcaster): a current
+ * name is itself, a legacy `cd.rollout.<Fact>` or `cdrollout.<Fact>` is the
+ * name that fact has now, anything else is undefined (not a ledger event).
+ */
+export function ledgerType(type: string): RolloutLedgerType | undefined {
+	if (CURRENT.has(type))
+		// SAFETY: membership in CURRENT is membership in RolloutLedgerType.
+		return type as RolloutLedgerType;
+	for (const prefix of LEGACY_PREFIXES) {
+		if (!type.startsWith(prefix)) continue;
+		const fact = type.slice(prefix.length);
+		const renamed = RENAMED[fact];
+		if (renamed) return renamed;
+		const current = `rollout.${fact}`;
+		// SAFETY: membership in CURRENT is membership in RolloutLedgerType.
+		return CURRENT.has(current) ? (current as RolloutLedgerType) : undefined;
+	}
+	return undefined;
+}
+
+/** Every recorded spelling of one ledger type, current first (for type-filtered scans). */
+export function ledgerSpellings(type: RolloutLedgerType): readonly string[] {
+	const fact =
+		Object.entries(RENAMED).find(([, current]) => current === type)?.[0] ??
+		type.slice("rollout.".length);
+	return [type, ...LEGACY_PREFIXES.map((prefix) => `${prefix}${fact}`)];
+}
 
 export type ShiftPhase = "stage" | "rollback";
 export type VerificationPhase = "idle" | "stage";
@@ -77,6 +153,7 @@ export type RollbackState = Readonly<{
 	startedAtMs: number;
 	zero: ReadonlyMap<string, ShiftRecord>;
 	deltas: ReadonlyMap<string, string>;
+	/** Camps that need no rollback Delta, with why (no-predecessor | not-applied). */
 	settled: ReadonlyMap<string, string>;
 }>;
 
@@ -91,7 +168,9 @@ export type RolloutLedgerState = Readonly<{
 	startedAtMs?: number;
 	capacity: ReadonlyMap<string, string>;
 	stages: ReadonlyMap<string, CampStageState>;
+	/** Possible exposure per Camp: the last requested stage percent unless the shift had no effect. */
 	exposure: ReadonlyMap<string, number>;
+	/** Last stage percent per Camp that observation confirmed. */
 	observedExposure: ReadonlyMap<string, number>;
 	hold?: ReasonRecord;
 	rollback?: RollbackState;
@@ -99,7 +178,9 @@ export type RolloutLedgerState = Readonly<{
 		status: FinishedStatus;
 		reasons: readonly ReasonRecord[];
 	}>;
+	/** Time of the last recorded step; observation deadlines run from here. */
 	lastProgressAtMs: number;
+	/** Stream revision, for the expected-seq CAS on the next append. */
 	seq: number;
 }>;
 
@@ -156,6 +237,8 @@ function verdictOf(value: JsonValue | undefined): VerificationVerdict {
 export function verdictName(verdict: VerificationVerdict): string {
 	return `VERIFICATION_VERDICT_${VerificationVerdict[verdict]}`;
 }
+
+// ── Bodies ─────────────────────────────────────────────────────────────────
 
 export function loweredBody(
 	input: Readonly<{
@@ -318,6 +401,8 @@ export const bodies = Object.freeze({
 	}),
 });
 
+// ── Fold ───────────────────────────────────────────────────────────────────
+
 function decodeLowered(
 	data: JsonObject,
 	rolloutId: RolloutId,
@@ -341,6 +426,7 @@ function decodeLowered(
 	return {
 		rolloutId,
 		plan,
+		// SAFETY: read back from a Lowered body this orchestrator wrote.
 		freightId: text(data.freightId) as FreightId,
 		windows: strings(data.windows),
 		obligations,
@@ -406,7 +492,7 @@ function step(
 	const campId = text(data.campId);
 	const stageIndex = num(data.stageIndex) ?? 0;
 	const next = ((): RolloutLedgerState => {
-		switch (event.type) {
+		switch (ledgerType(event.type)) {
 			case ROLLOUT_LEDGER.started:
 				return { ...state, startedAtMs: atMs };
 			case ROLLOUT_LEDGER.capacityReserved: {
@@ -440,6 +526,7 @@ function step(
 							}
 						: undefined,
 				);
+				// A shift realized "none" changed nothing: exposure stays at the last observed split.
 				if (text(data.phase) === "rollback" || text(data.realized) !== "none")
 					return acked;
 				const exposure = new Map(acked.exposure);
@@ -537,6 +624,7 @@ function step(
 	return { ...next, lastProgressAtMs: atMs, seq: event.seq };
 }
 
+/** Fold a cd-rollout stream; undefined when it has no rollout.Lowered event. */
 export function foldRollout(
 	rolloutId: RolloutId,
 	events: Iterable<EventEnvelope>,
@@ -553,10 +641,14 @@ export function foldRollout(
 	return state;
 }
 
+/** A Camp id read back from a plan record or ledger body this orchestrator wrote. */
 export function asCamp(value: string): CampId {
+	// SAFETY: Camp ids in rollout records come from the promotion's target_camp_ids.
 	return value as CampId;
 }
 
+/** A verification id read back from a ledger body this orchestrator wrote. */
 export function asVerification(value: string): VerificationId {
+	// SAFETY: the id was returned by VerificationEngine.start and recorded verbatim.
 	return value as VerificationId;
 }

@@ -57,7 +57,7 @@ npm.cmd --prefix src/draft/epic-proofs/operators-sre-crew test
 npm.cmd --prefix src/draft/epic-proofs/operators-sre-crew run simulate
 ```
 
-The simulation evaluates policy in process and mocks its other boundaries. It records zero live network calls and loads deterministic fixtures from [simulation/fixtures](simulation/fixtures).
+The simulation uses mocked boundaries only. It records zero live network calls and loads deterministic fixtures from [simulation/fixtures](simulation/fixtures).
 
 ## What is real
 
@@ -72,6 +72,7 @@ The simulation evaluates policy in process and mocks its other boundaries. It re
 
 - SLO signal source.
 - Projection read API.
+- Policy engine.
 - Live-fix/remediation gateway.
 - A2H notify receiver.
 - Issue tracker and knowledge ports.
@@ -80,17 +81,19 @@ The simulation evaluates policy in process and mocks its other boundaries. It re
 
 ## Follow-up boundaries
 
-The policy engine runs in process. The remaining external boundaries use consumer fixtures.
+Provider verification is documented as unavailable because no real providers exist in this design repo. The Pact files are consumer fixtures for the reference implementation and should be promoted into provider verification once the corresponding runtime, policy, live-fix, notify, issue-tracker, knowledge, event-log, and chaos providers exist.
 
 
 Policy-gated flag changes are absorbed without changing operator safety, rollback, or fail-closed behavior.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Operators Sre Crew.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

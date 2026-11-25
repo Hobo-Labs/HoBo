@@ -160,20 +160,6 @@ the command on another provider. Completed commands close normally. A first fail
 in-flight state while sibling queries still evaluate the graph. A failed exit-code
 query also retains uncertainty until the provider positively acknowledges stop.
 
-For strict fleet execution, `createBoundDaggerBackend` requires an explicit
-engine endpoint and a connector that receives that endpoint. Pass it to
-`StrictDaggerScheduler` from `@hobo/ci/fleet-v2` with the fleet store, budget
-ledger, and account. The scheduler reserves a claim before connecting, verifies
-the endpoint and pipeline digest, and holds capacity when shutdown is not
-confirmed. Replaying the claim returns its recorded state without reconnecting.
-With an operator-owned Dagger engine available, run the strict real-engine check
-inside a Dagger session using `dagger run pnpm --filter @hobo/ci-dagger run
-test:strict-live`. The check uses a temporary workspace and SQLite stores, runs
-a digest-pinned container command, verifies its artifact and replay behavior,
-and removes the temporary files. `HOBO_DAGGER_TEST_IMAGE` can select another
-digest-pinned image that provides a POSIX shell, GNU `timeout`, `base64`, and
-`realpath`.
-
 `getReadiness()` and `parseReadiness()` expose an immutable, generated implemented
 SDK-readiness record. This is implementation metadata, not budget authorization
 or a claim that an engine/provider is currently connected. HoBo's scheduler must

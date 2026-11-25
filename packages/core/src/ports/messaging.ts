@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { CoreParseError } from "../errors.js";
 import {
 	cloneAsJson,
@@ -24,24 +25,8 @@ function stringBagFrom(value: JsonObject) {
 	return bag;
 }
 
-export const MESSAGING_PORT_CONTRACT_VERSION = "hobo.messaging-port/v1";
-export const MESSAGING_WIT_INTERFACE = "wasi:messaging/messaging@0.2.0";
-
-export const MESSAGING_EVENTS = Object.freeze({
-	TopicCreated: "messaging.TopicCreated",
-	SubscriptionCreated: "messaging.SubscriptionCreated",
-	MessagePublished: "messaging.MessagePublished",
-	PublishDeduplicated: "messaging.PublishDeduplicated",
-	MessageConsumed: "messaging.MessageConsumed",
-	MessageAcknowledged: "messaging.MessageAcknowledged",
-	MessageNacked: "messaging.MessageNacked",
-	MessageDeadLettered: "messaging.MessageDeadLettered",
-	DeliveryPermanentlyFailed: "messaging.DeliveryPermanentlyFailed",
-	MessageFederated: "messaging.MessageFederated",
-} as const);
-
-export type MessagingEventType =
-	(typeof MESSAGING_EVENTS)[keyof typeof MESSAGING_EVENTS];
+// public-contract: version id of the native messaging port contract providers advertise.
+export const MESSAGING_PORT_CONTRACT_VERSION = "hobo.messaging-port/v2";
 
 export type DeliveryGuarantee =
 	| "at-least-once"
@@ -62,6 +47,7 @@ export type SubscriptionName = string & {
 	readonly __brand: "SubscriptionName";
 };
 
+// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface TopicSpec {
 	readonly name: TopicName;
 	readonly tenantId: TenantId;
@@ -72,6 +58,7 @@ export interface TopicSpec {
 	readonly labels?: Readonly<Record<string, string>>;
 }
 
+// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface SubscriptionSpec {
 	readonly name: SubscriptionName;
 	readonly topic: TopicName;
@@ -82,6 +69,7 @@ export interface SubscriptionSpec {
 	readonly deadLetterTopic?: TopicName;
 }
 
+// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface MessagingSpec {
 	readonly id: string;
 	readonly tenantId: TenantId;
@@ -112,6 +100,7 @@ export interface ConsumeOptions {
 	readonly visibilityTimeoutMs?: number;
 }
 
+// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface ConsumedMessage<TBody = unknown> {
 	readonly messageId: MessagingMessageId;
 	readonly topic: TopicName;
@@ -124,7 +113,18 @@ export interface ConsumedMessage<TBody = unknown> {
 }
 
 export interface MessagingEvent {
-	readonly type: MessagingEventType;
+	readonly type:
+		| "messaging.topic.created"
+		| "messaging.subscription.created"
+		| "messaging.published"
+		| "messaging.published.deduped"
+		| "messaging.consumed"
+		| "messaging.acked"
+		| "messaging.nacked"
+		| "messaging.dead_lettered"
+		| "messaging.delivery.permanent_failure"
+		| "messaging.delivery.exhausted"
+		| "messaging.federated";
 	readonly topic: TopicName;
 	readonly messageId?: MessagingMessageId;
 	readonly consumerGroup?: ConsumerGroupId;
@@ -134,6 +134,10 @@ export interface MessagingEvent {
 	readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
+/**
+ * Backend-agnostic Messaging surface. Adapters: in-memory (tests), Kafka
+ * provider, Dapr pubsub runtime.
+ */
 export interface Messaging {
 	readonly backend: string;
 	readonly capabilities: MessagingCapabilities;
@@ -153,6 +157,7 @@ export interface Messaging {
 		options?: ConsumeOptions,
 	): Promise<readonly ConsumedMessage[]>;
 
+	/** Push-style handler registration (at-least-once redelivery on throw). */
 	subscribe(
 		topic: TopicName,
 		consumerGroup: ConsumerGroupId,
@@ -160,13 +165,14 @@ export interface Messaging {
 		options?: ConsumeOptions,
 	): Promise<{ handled: number; deadLettered: number }>;
 
-	ack(messageId: MessagingMessageId, leaseId: MessagingLeaseId): void;
+	ack(messageId: MessagingMessageId, leaseId: MessagingLeaseId): Promise<void>;
 	nack(
 		messageId: MessagingMessageId,
 		leaseId: MessagingLeaseId,
 		reason?: string,
-	): void;
+	): Promise<void>;
 
+	/** Audit / control-plane fact log (replayable). */
 	events(): readonly MessagingEvent[];
 }
 
@@ -188,7 +194,7 @@ export const PORTABLE_MESSAGING_CAPABILITIES: MessagingCapabilities =
 		transactionalProduce: false,
 		idempotentProduce: false,
 		schemaRegistry: false,
-		deadLetter: true,
+		deadLetter: false,
 		partitionAware: false,
 		crossYardFederation: false,
 	});
@@ -213,12 +219,48 @@ export class MessagingDeliveryError extends Error {
 	}
 }
 
+export class MessagingDeliveryExhaustedError extends Error {
+	readonly code = "MESSAGING_DELIVERY_EXHAUSTED" as const;
+	constructor(
+		readonly delivery: ConsumedMessage,
+		readonly unprocessed: readonly ConsumedMessage[],
+		readonly handled: number,
+	) {
+		super("Delivery attempts exhausted; the message remains unsettled");
+		this.name = "MessagingDeliveryExhaustedError";
+	}
+}
+
+export class MessagingSettlementCommittedError extends Error {
+	readonly code = "MESSAGING_SETTLEMENT_COMMITTED" as const;
+	constructor(
+		readonly operation: "ack" | "nack",
+		readonly messageId: MessagingMessageId,
+		readonly leaseId: MessagingLeaseId,
+	) {
+		super(
+			`${operation} for ${messageId} committed but local observation failed`,
+		);
+		this.name = "MessagingSettlementCommittedError";
+	}
+}
+
 export class MessagingCapabilityError extends Error {
 	readonly code = "MESSAGING_CAPABILITY" as const;
 	constructor(message: string) {
 		super(message);
 		this.name = "MessagingCapabilityError";
 	}
+}
+
+export function assertDeadLetterSupported(
+	capabilities: MessagingCapabilities,
+	spec: { readonly deadLetterTopic?: TopicName },
+): void {
+	if (spec.deadLetterTopic !== undefined && !capabilities.deadLetter)
+		throw new MessagingCapabilityError(
+			"backend cannot transfer messages to a dead-letter topic",
+		);
 }
 
 const DELIVERY_SET = new Set<DeliveryGuarantee>([
@@ -228,10 +270,12 @@ const DELIVERY_SET = new Set<DeliveryGuarantee>([
 ]);
 
 export function parseTopicName(value: string): TopicName {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "topic", MessagingParseError) as TopicName;
 }
 
 export function parseConsumerGroupId(value: string): ConsumerGroupId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"consumerGroup",
@@ -240,6 +284,7 @@ export function parseConsumerGroupId(value: string): ConsumerGroupId {
 }
 
 export function parseMessagingMessageId(value: string): MessagingMessageId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"messageId",
@@ -248,6 +293,7 @@ export function parseMessagingMessageId(value: string): MessagingMessageId {
 }
 
 export function parseMessagingLeaseId(value: string): MessagingLeaseId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"leaseId",
@@ -256,6 +302,7 @@ export function parseMessagingLeaseId(value: string): MessagingLeaseId {
 }
 
 export function parseSubscriptionName(value: string): SubscriptionName {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"subscription",
@@ -266,13 +313,18 @@ export function parseSubscriptionName(value: string): SubscriptionName {
 export function parseDeliveryGuarantee(
 	value: JsonValue | undefined,
 ): DeliveryGuarantee {
-	if (!isJsonString(value) || !DELIVERY_SET.has(value as DeliveryGuarantee)) {
+	if (
+		!isJsonString(value) ||
+		// SAFETY: assertion required at this I/O or test boundary.
+		!DELIVERY_SET.has(value as DeliveryGuarantee)
+	) {
 		throw new MessagingParseError(
 			"delivery",
 			"at-least-once|exactly-once|at-most-once",
 			value,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as DeliveryGuarantee;
 }
 
@@ -300,9 +352,12 @@ export function tenantScopedTopicName(
 ): TopicName {
 	const tenant = nonEmptyString(tenantId, "tenantId", MessagingParseError);
 	const name = nonEmptyString(topic, "topic", MessagingParseError);
+	// Multi-tenant default: physical topic is tenant-prefixed unless already scoped.
 	if (name.startsWith(`${tenant}.`) || name.startsWith(`${tenant}/`)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		return name as TopicName;
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return `${tenant}.${name}` as TopicName;
 }
 
@@ -313,8 +368,10 @@ export function tenantScopedConsumerGroup(
 	const tenant = nonEmptyString(tenantId, "tenantId", MessagingParseError);
 	const name = nonEmptyString(group, "consumerGroup", MessagingParseError);
 	if (name.startsWith(`${tenant}.`) || name.startsWith(`${tenant}/`)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		return name as ConsumerGroupId;
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return `${tenant}.${name}` as ConsumerGroupId;
 }
 
@@ -322,10 +379,12 @@ export function parseTopicSpec(input: JsonValue | undefined): TopicSpec {
 	if (!input || !isJsonObject(input)) {
 		throw new MessagingParseError("topicSpec", "object", input);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const src = input as JsonObject;
 	const delivery = parseDeliveryGuarantee(src.delivery ?? "at-least-once");
 	const spec: TopicSpec = {
 		name: parseTopicName(String(src.name ?? "")),
+		// SAFETY: assertion required at this I/O or test boundary.
 		tenantId: nonEmptyString(
 			String(src.tenantId ?? src.tenant_id ?? ""),
 			"tenantId",
@@ -358,6 +417,7 @@ export function parseSubscriptionSpec(
 	if (!input || !isJsonObject(input)) {
 		throw new MessagingParseError("subscriptionSpec", "object", input);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const src = input as JsonObject;
 	const delivery = parseDeliveryGuarantee(src.delivery ?? "at-least-once");
 	const max = positiveInteger(
@@ -371,6 +431,7 @@ export function parseSubscriptionSpec(
 		consumerGroup: parseConsumerGroupId(
 			String(src.consumerGroup ?? src.consumer_group ?? ""),
 		),
+		// SAFETY: assertion required at this I/O or test boundary.
 		tenantId: nonEmptyString(
 			String(src.tenantId ?? src.tenant_id ?? ""),
 			"tenantId",
@@ -395,6 +456,7 @@ export function parseMessagingSpec(
 	if (!input || !isJsonObject(input)) {
 		throw new MessagingParseError("messagingSpec", "object", input);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const src = input as JsonObject;
 	const topics = Array.isArray(src.topics)
 		? src.topics.map((t) => parseTopicSpec(t))
@@ -404,6 +466,7 @@ export function parseMessagingSpec(
 		: [];
 	return deepFreeze({
 		id: nonEmptyString(String(src.id ?? ""), "id", MessagingParseError),
+		// SAFETY: assertion required at this I/O or test boundary.
 		tenantId: nonEmptyString(
 			String(src.tenantId ?? src.tenant_id ?? ""),
 			"tenantId",
@@ -430,6 +493,10 @@ export function assertDeliverySupported(
 	}
 }
 
+/**
+ * In-memory Messaging adapter — local/tests / hobo dev fallback.
+ * At-least-once with optional exactly-once via idempotency keys when claimed.
+ */
 export interface InMemoryMessagingOptions {
 	readonly tenantId?: string;
 	readonly capabilities?: Partial<MessagingCapabilities>;
@@ -448,6 +515,7 @@ interface StoredMessage {
 }
 
 interface GroupCursor {
+	/** offsets already acked per topic */
 	acked: Set<string>;
 	inflight: Map<
 		string,
@@ -459,6 +527,11 @@ interface GroupCursor {
 export function createInMemoryMessaging(
 	options: InMemoryMessagingOptions = {},
 ): Messaging {
+	if (options.capabilities?.deadLetter === true)
+		throw new MessagingCapabilityError(
+			"in-memory messaging cannot transfer messages to a dead-letter topic",
+		);
+	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = (options.tenantId ?? "local") as TenantId;
 	const now = options.now ?? (() => new Date().toISOString());
 	const capabilities: MessagingCapabilities = deepFreeze({
@@ -478,6 +551,7 @@ export function createInMemoryMessaging(
 	let offsetSeq = 0;
 	let msgSeq = 0;
 	let leaseSeq = 0;
+	const leasePrefix = randomUUID();
 
 	const emit = (
 		partial: Omit<MessagingEvent, "at" | "tenantId"> & {
@@ -511,6 +585,7 @@ export function createInMemoryMessaging(
 		capabilities,
 
 		async ensureTopic(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const scoped: TopicSpec = deepFreeze({
 				...spec,
 				name: tenantScopedTopicName(spec.tenantId, spec.name),
@@ -518,12 +593,13 @@ export function createInMemoryMessaging(
 			if (!topics.has(scoped.name)) {
 				topics.set(scoped.name, scoped);
 				logs.set(scoped.name, []);
-				emit({ type: MESSAGING_EVENTS.TopicCreated, topic: scoped.name });
+				emit({ type: "messaging.topic.created", topic: scoped.name });
 			}
 			return mustGet(topics, scoped.name);
 		},
 
 		async ensureSubscription(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const topic = tenantScopedTopicName(spec.tenantId, spec.topic);
 			const group = tenantScopedConsumerGroup(
 				spec.tenantId,
@@ -545,7 +621,7 @@ export function createInMemoryMessaging(
 			if (!subscriptions.has(key)) {
 				subscriptions.set(key, scoped);
 				emit({
-					type: MESSAGING_EVENTS.SubscriptionCreated,
+					type: "messaging.subscription.created",
 					topic,
 					consumerGroup: group,
 				});
@@ -572,7 +648,7 @@ export function createInMemoryMessaging(
 				);
 				if (prior) {
 					emit({
-						type: MESSAGING_EVENTS.PublishDeduplicated,
+						type: "messaging.published.deduped",
 						topic: physical,
 						messageId: prior.messageId,
 					});
@@ -611,11 +687,7 @@ export function createInMemoryMessaging(
 					result,
 				);
 			}
-			emit({
-				type: MESSAGING_EVENTS.MessagePublished,
-				topic: physical,
-				messageId,
-			});
+			emit({ type: "messaging.published", topic: physical, messageId });
 			return result;
 		},
 
@@ -645,7 +717,13 @@ export function createInMemoryMessaging(
 
 				const attempt = (cursor.attempts.get(msg.messageId) ?? 0) + 1;
 				cursor.attempts.set(msg.messageId, attempt);
-				const leaseId = parseMessagingLeaseId(`lease-${++leaseSeq}`);
+				if (leaseSeq >= Number.MAX_SAFE_INTEGER)
+					throw new MessagingDeliveryError(
+						"messaging lease sequence exhausted",
+					);
+				const leaseId = parseMessagingLeaseId(
+					`lease-${leasePrefix}-${++leaseSeq}`,
+				);
 				cursor.inflight.set(msg.messageId, {
 					leaseId,
 					expiresAtMs: nowMs + visibility,
@@ -663,7 +741,7 @@ export function createInMemoryMessaging(
 				});
 				out.push(consumed);
 				emit({
-					type: MESSAGING_EVENTS.MessageConsumed,
+					type: "messaging.consumed",
 					topic: physical,
 					messageId: msg.messageId,
 					consumerGroup: group,
@@ -678,7 +756,6 @@ export function createInMemoryMessaging(
 				...consumeOptions,
 			});
 			let handled = 0;
-			let deadLettered = 0;
 			const physical = tenantScopedTopicName(tenantId, topic);
 			const group = tenantScopedConsumerGroup(tenantId, consumerGroup);
 			const sub = [...subscriptions.values()].find(
@@ -686,76 +763,107 @@ export function createInMemoryMessaging(
 			);
 			const maxAttempts = sub?.maxDeliveryAttempts ?? 5;
 
-			for (const message of batch) {
+			for (const [index, message] of batch.entries()) {
+				const exhausted = (): never => {
+					emit({
+						type: "messaging.delivery.exhausted",
+						topic: physical,
+						messageId: message.messageId,
+						consumerGroup: group,
+						reason: "max_delivery_attempts",
+					});
+					throw new MessagingDeliveryExhaustedError(
+						message,
+						Object.freeze(batch.slice(index + 1)),
+						handled,
+					);
+				};
+				if (message.deliveryAttempt > maxAttempts) exhausted();
 				try {
 					await handler(message);
-					messaging.ack(message.messageId, message.leaseId);
-					handled += 1;
 				} catch (err) {
-					messaging.nack(
+					if (message.deliveryAttempt >= maxAttempts) exhausted();
+					await messaging.nack(
 						message.messageId,
 						message.leaseId,
 						err instanceof Error ? err.message : String(err),
 					);
-					if (message.deliveryAttempt >= maxAttempts) {
-						deadLettered += 1;
-						emit({
-							type: MESSAGING_EVENTS.MessageDeadLettered,
-							topic: physical,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: "max_delivery_attempts",
-						});
-						emit({
-							type: MESSAGING_EVENTS.DeliveryPermanentlyFailed,
-							topic: physical,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: "max_delivery_attempts",
-						});
-						const cursor = getGroup(physical, group);
-						cursor.acked.add(message.messageId);
-						cursor.inflight.delete(message.messageId);
-					}
+					continue;
 				}
+				await messaging.ack(message.messageId, message.leaseId);
+				handled += 1;
 			}
-			return { handled, deadLettered };
+			return { handled, deadLettered: 0 };
 		},
 
-		ack(messageId, leaseId) {
+		async ack(messageId, leaseId) {
+			let found = false;
 			for (const [key, cursor] of groups) {
 				const inflight = cursor.inflight.get(messageId);
 				if (!inflight) continue;
+				found = true;
 				if (inflight.leaseId !== leaseId) {
-					throw new MessagingDeliveryError(`lease mismatch for ${messageId}`);
+					continue;
 				}
+				const current = Date.parse(now());
+				if (!Number.isFinite(current) || inflight.expiresAtMs <= current)
+					throw new MessagingDeliveryError(`lease expired for ${messageId}`);
 				cursor.acked.add(messageId);
 				cursor.inflight.delete(messageId);
 				const topic = parseTopicName(key.split("::")[0] ?? "unknown");
-				emit({ type: MESSAGING_EVENTS.MessageAcknowledged, topic, messageId });
+				try {
+					emit({ type: "messaging.acked", topic, messageId });
+				} catch {
+					throw new MessagingSettlementCommittedError(
+						"ack",
+						messageId,
+						leaseId,
+					);
+				}
 				return;
 			}
-			throw new MessagingDeliveryError(`no inflight message ${messageId}`);
+			throw new MessagingDeliveryError(
+				found
+					? `lease mismatch for ${messageId}`
+					: `no inflight message ${messageId}`,
+			);
 		},
 
-		nack(messageId, leaseId, reason) {
+		async nack(messageId, leaseId, reason) {
+			let found = false;
 			for (const [key, cursor] of groups) {
 				const inflight = cursor.inflight.get(messageId);
 				if (!inflight) continue;
+				found = true;
 				if (inflight.leaseId !== leaseId) {
-					throw new MessagingDeliveryError(`lease mismatch for ${messageId}`);
+					continue;
 				}
+				const current = Date.parse(now());
+				if (!Number.isFinite(current) || inflight.expiresAtMs <= current)
+					throw new MessagingDeliveryError(`lease expired for ${messageId}`);
 				cursor.inflight.delete(messageId);
 				const topic = parseTopicName(key.split("::")[0] ?? "unknown");
-				emit({
-					type: MESSAGING_EVENTS.MessageNacked,
-					topic,
-					messageId,
-					reason: reason ?? "nack",
-				});
+				try {
+					emit({
+						type: "messaging.nacked",
+						topic,
+						messageId,
+						reason: reason ?? "nack",
+					});
+				} catch {
+					throw new MessagingSettlementCommittedError(
+						"nack",
+						messageId,
+						leaseId,
+					);
+				}
 				return;
 			}
-			throw new MessagingDeliveryError(`no inflight message ${messageId}`);
+			throw new MessagingDeliveryError(
+				found
+					? `lease mismatch for ${messageId}`
+					: `no inflight message ${messageId}`,
+			);
 		},
 
 		events() {

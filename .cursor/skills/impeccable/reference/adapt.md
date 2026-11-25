@@ -194,7 +194,7 @@ When the adaptation feels native to each context, hand off to `/impeccable polis
 
 ## Reference Material
 
-Use the responsive guidance below alongside the existing implementation.
+The sections below were previously `responsive-design.md` and live inline now so the adapt flow has its deep responsive reference in one place.
 
 ### Responsive Design
 

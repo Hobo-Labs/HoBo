@@ -1,7 +1,7 @@
 # @hobo/cloud — the Yard control-plane kernel + Planner
 
 Production package for **S2-01** (Yard kernel) and **S2-02** (Planner + Matching),
-implementing [`urn:hobo:requirement:control-plane`](urn:hobo:requirement:control-plane).
+implementing [`docs/design/control-plane.md`](../../docs/design/control-plane.md).
 
 A coherent vertical: a **Deploy command** becomes past-tense **events**, the pure
 **Planner** resolves them to a content-addressed `DeploymentPlan` DAG, and a
@@ -11,48 +11,11 @@ Commercial provider pricing catalogs use `pricingCatalogHashFromCommercialRefs` 
 `src/commercial-pricing.ts` (sorted product-ref digest) without altering resource
 definition `catalogHashOf`.
 
-`computeAvailabilityView` estimates the availability of a dependency graph from
-declared component availability and network hops. It treats distinct components
-and hops as independent and counts a shared component once, including when it
-appears in multiple redundant paths. Unrated components default to 95%; hops
-default to 100%. The result includes per-node estimates, annual downtime,
-observed-versus-estimated divergence, and a warning when the estimate misses
-an availability SLO. The SLO result is advisory. Observed availability is
-supplied by the caller. `parseAvailabilityViewRequest` accepts the protobuf JSON
-representation defined in `data-models/availability_view.proto`.
-
 An SDK `b.bucket()` is collected as data with an object-storage paradigm. The
 planner lowers it to the durable `objectStore` capability, so provider-owned
 bucket implementations can satisfy it without an app selecting a provider.
 SDK key-value, queue and topic declarations likewise keep their distinct
 capabilities without inventing consistency or message-delivery guarantees.
-
-Container `waitFor` and `waitForCompletion` declarations become readiness and
-completion dependencies in the deployment plan. `runOrchestrator` uses its
-`observeDependency` port to check each condition after provisioning. If an
-observation is missing, pending, or failed, the dependent remains unprovisioned
-and the result names the blocked dependency. Call the orchestrator again after
-the provider's observation changes. Configure `YardRuntime.observeDependency`
-for CLI deployments or `OrchestratorRealizerDeps.observeDependency` for
-continuous delivery. Delivery also checks conditions on dependencies realized
-by earlier Sets and includes those conditions in its resource change hash.
-`createHttpDependencyObserver` probes explicitly configured URLs: a successful
-HTTP response satisfies the requested condition, while an unavailable URL,
-non-success response, timeout, or transport error leaves the dependency pending.
-Use distinct endpoints when readiness and job completion have different meanings.
-
-```ts
-const urls = new Map([
-	["db:ready", "https://db.example/ready"],
-	["migration:completed", "https://jobs.example/migration/completed"],
-]);
-const observeDependency = createHttpDependencyObserver({
-	resolveUrl: ({ dependency, condition }) => urls.get(`${dependency.name}:${condition}`),
-});
-```
-
-Pass `observeDependency` to the Yard runtime or delivery realizer. The configured
-endpoints must return success only when their named condition is satisfied.
 
 SDK `b.secret().allow(...)` declarations lower to `secretRef` and preserve
 their requested `access` and `put` operations as required capabilities. A
@@ -64,7 +27,7 @@ Before apply or destroy, the resource actor records a fresh operation generation
 and the exact program and desired-spec hashes in the deployment stream. It
 passes that generation through the generic IaC program to the executor and
 only reuses it on crash recovery when the trusted host verifies that the exact
-generation cannot overlap or duplicate a prior effect. A changed
+generation cannot overlap or duplicate a prior effect. A changed or legacy
 in-flight operation, or one without that guarantee, enters reconciliation. A
 trusted route issuer must bind the generation to its tenant,
 deployment, resource and action, and fence prior uncertain effects before
@@ -75,14 +38,6 @@ Deployment transitions use the same stream CAS as resource starts. An active
 transition prevents new applies and permits destroys only for its recorded
 resource IDs. Unresolved work blocks convergence, and rollback cannot overtake
 a pending apply.
-Rollback records `deployment.TransitionStarted` and
-`deployment.TransitionCompleted` for the plan hash, then `deployment.RolledBack`.
-It destroys every resource that reached the provider, dependents first,
-including one that failed after provisioning, and resumes an interrupted destroy
-only after the resume verifier confirms it. When a destroy fails or its outcome
-cannot be established, rollback records `resource.CompensationFailed` and
-`incident.EscalationRequested` and returns `needs-human` with the blocked
-resources.
 The resume verifier is a trusted host boundary: a point-in-time status check
 alone is insufficient unless credentials or the provider enforce that fence
 through the resumed operation.

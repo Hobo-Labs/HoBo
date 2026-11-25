@@ -1,6 +1,12 @@
+// Which of a Camp's resources hold data (D21 departure, D23 failover-unsafe).
+// Pure. A resource is data when its plan port is a data port, or when the
+// reconciler observed it with a data classification or a data kind. Unknown
+// ports are compute; anything the reconciler classified is data (fail closed:
+// a classified resource is never treated as movable compute).
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
 import type { ReconcileObservationRecord } from "../_generated/cd_pb.js";
 
+// public-contract: plan ports whose resources hold data and never move (D23).
 export const DATA_PORTS: ReadonlySet<string> = new Set([
 	"database",
 	"db",

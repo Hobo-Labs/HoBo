@@ -6,16 +6,27 @@ import {
 	positiveInteger,
 } from "../parse-utils.js";
 import { createPortDescriptor, type PortDescriptor } from "../ports.js";
-import type {
-	CronExpressionSchedule,
-	CronExpressionSpec,
-	CronSchedule,
-	IntervalCronSpec,
-	ScheduleId,
-} from "./clock.js";
+import type { CronSchedule, IntervalCronSpec, ScheduleId } from "./clock.js";
 
+// The hobo:scheduler port (D14).
+// Record shapes reuse the clock port's types (`IntervalCronSpec`,
+// `CronSchedule`; wire form data-models/clock_port.proto) — the scheduler is
+// a thin scheduling facade delegating to the deterministic clock port's
+// cron, and introduces no new wire records.
+//
+// v1 LIMITATION (recorded decision, D14): interval-only. Triggers are
+// `IntervalCronSpec` (`everyMs` + optional `startAtMs`) delegating to
+// `VirtualClock.cron`. The WIT interface
+// (packages/wit/src/generated/scheduler-{guest,provider}) also declares a
+// `cron(expr)` cron-expression form, but there is NO cron-expression parser
+// anywhere in the repo — adding one is a separate, flagged cost.
+// Implementations MUST fail closed on cron-expression specs
+// (`CronExpressionUnsupportedError`).
+
+// public-contract: the manifest/catalog port token schedule resources bind to (bindles CATALOG portRef, D14).
 export const SCHEDULER_PORT = "hobo:scheduler";
 
+// public-contract: WIT interface id of the scheduler port in the sdk world (packages/wit).
 export const SCHEDULER_PORT_INTERFACE = "hobo:scheduler/scheduler@0.1.0";
 
 export const SCHEDULER_PORT_DESCRIPTOR: PortDescriptor = createPortDescriptor({
@@ -25,12 +36,13 @@ export const SCHEDULER_PORT_DESCRIPTOR: PortDescriptor = createPortDescriptor({
 	stability: "preview",
 });
 
+/**
+ * Scheduler port v1: register an interval schedule under a caller-supplied
+ * id (idempotent — re-registering an existing id dedupes, mirroring
+ * `VirtualClock.cron`). Interval-only; see the module limitation note.
+ */
 export interface SchedulerPort {
 	every(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule;
-	cron(
-		scheduleId: ScheduleId,
-		spec: CronExpressionSpec,
-	): CronExpressionSchedule;
 }
 
 export class SchedulerParseError extends CoreParseError {
@@ -45,57 +57,34 @@ export class SchedulerParseError extends CoreParseError {
 	}
 }
 
+/** Fail-closed rejection of the WIT `cron(expr)` form (v1 interval-only). */
 export class CronExpressionUnsupportedError extends Error {
 	readonly code = "SCHEDULER_CRON_UNSUPPORTED" as const;
 
 	constructor(expr: string) {
 		super(
-			`Cron expression ${JSON.stringify(expr)} is unsupported by this scheduler`,
+			`hobo:scheduler v1 is interval-only (IntervalCronSpec); cron expression ${JSON.stringify(
+				expr,
+			)} is unsupported — no cron-expression parser exists (D14 recorded decision)`,
 		);
 		this.name = "CronExpressionUnsupportedError";
 	}
 }
 
-export function parseIntervalCronSpec(
-	record: IntervalCronSpec,
-): IntervalCronSpec {
-	const unknownField = Object.keys(record).find(
-		(field) => !["everyMs", "startAtMs", "jitterMs"].includes(field),
-	);
-	if (unknownField !== undefined) {
-		throw new SchedulerParseError(
-			unknownField,
-			"known interval field",
-			unknownField,
-		);
-	}
-	const everyMs = positiveInteger(
-		record.everyMs,
-		"everyMs",
-		SchedulerParseError,
-	);
-	const jitterMs =
-		record.jitterMs === undefined
-			? undefined
-			: nonNegativeInteger(record.jitterMs, "jitterMs", SchedulerParseError);
-	if (jitterMs !== undefined && jitterMs >= everyMs) {
-		throw new SchedulerParseError(
-			"jitterMs",
-			`integer less than ${everyMs}`,
-			jitterMs,
-		);
-	}
+export function parseIntervalCronSpec(record: {
+	every_ms: number;
+	start_at_ms?: number;
+}): IntervalCronSpec {
 	return deepFreeze({
-		everyMs,
-		...(record.startAtMs !== undefined
+		everyMs: positiveInteger(record.every_ms, "everyMs", SchedulerParseError),
+		...(record.start_at_ms !== undefined
 			? {
 					startAtMs: nonNegativeInteger(
-						record.startAtMs,
+						record.start_at_ms,
 						"startAtMs",
 						SchedulerParseError,
 					),
 				}
 			: undefined),
-		...(jitterMs !== undefined ? { jitterMs } : undefined),
 	});
 }

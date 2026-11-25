@@ -55,7 +55,7 @@ Feature: Fail-closed data-plane adversarial behavior
 
 | Slice | Implemented behavior | Main POCs |
 |---|---|---|
-| CQRS write to reactive read | WIT/protobuf domain body, aggregate command, append-only event, replay/live equivalence, Reactor push, GraphQL snapshot | HOBO-42, HOBO-46, HOBO-51, HOBO-53, HOBO-57, HOBO-60, HOBO-65, HOBO-69, HOBO-74, HOBO-76, HOBO-80, HOBO-92, HOBO-96, HOBO-107 |
+| CQRS write to reactive read | WIT/protobuf domain body, aggregate command, append-only event, replay/live equivalence, Reactor push, GraphQL snapshot | HOBO-42, HOBO-46, HOBO-51, HOBO-53, HOBO-57, HOBO-60, HOBO-65, HOBO-69, HOBO-74, HOBO-76, HOBO-80, HOBO-85, HOBO-92, HOBO-96, HOBO-107 |
 | Projection sinks and search | Relational/document/native sink decisions, change-feed, full-text search, vector extension, embed capability, raw escape hatch | HOBO-232, HOBO-234, HOBO-237, HOBO-245, HOBO-248, HOBO-252, HOBO-265 |
 | Adversarial data integrity | Snapshot cache boundary, bounded-staleness, projection lag, poison-event quarantine, crypto-shred erasure, auth/flag read-set repush, coalesced fan-out, rebuild-from-zero | HOBO-240, HOBO-256, HOBO-261, HOBO-269, HOBO-273, HOBO-278, HOBO-283, HOBO-288, HOBO-291, HOBO-295 |
 
@@ -79,14 +79,16 @@ Feature: Fail-closed data-plane adversarial behavior
 No live external service, network call, credential, customer data, or production token is required.
 
 
-Projection-consistency, change-feed, and reactor changes are absorbed without changing replay, materialization, or read-consistency behavior.
+Projection-consistency, change-feed, reactor, and reads-your-writes changes are absorbed without changing replay, materialization, or read-consistency behavior.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Data Plane Event Sourcing Cqrs Reactivity.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

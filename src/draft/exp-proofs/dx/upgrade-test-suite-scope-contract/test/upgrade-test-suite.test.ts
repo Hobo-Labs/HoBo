@@ -30,21 +30,21 @@ test("M0 record states goal, personas, scope, non-goals, and boundaries", () => 
 
 test("dependencies map authoritative design sources and owning initiatives", () => {
   assert.deepEqual(UPGRADE_TEST_SUITE_SCOPE.designRefs, [
-    "urn:hobo:requirement:release-notes-upgrade-guide",
-    "urn:hobo:requirement:compatibility-matrix",
-    "urn:hobo:requirement:backup-restore",
-    "urn:hobo:requirement:bootstrap-installer",
-    "urn:hobo:requirement:tenant-data-lifecycle",
-    "urn:hobo:requirement:security-verification",
-    "urn:hobo:requirement:support-sla-channels",
-    "urn:hobo:requirement:upgrade-migration-engine",
+    "docs/design/release-notes-upgrade-guide.md",
+    "docs/design/compatibility-matrix.md",
+    "docs/design/backup-restore.md",
+    "docs/design/bootstrap-installer.md",
+    "docs/design/tenant-data-lifecycle.md",
+    "docs/design/security-verification.md",
+    "docs/design/support-sla-channels.md",
+    "docs/design/upgrade-migration-engine.md",
   ]);
   assert.deepEqual(UPGRADE_TEST_SUITE_SCOPE.adrRefs, [
-    "urn:hobo:decision:adr-0032",
-    "urn:hobo:decision:adr-0041",
-    "urn:hobo:decision:adr-0042",
-    "urn:hobo:decision:adr-0057",
-    "urn:hobo:decision:adr-0082",
+    "docs/design/adr/03-data-plane.md#adr-0032",
+    "docs/design/adr/07-portability-extensibility.md#adr-0041",
+    "docs/design/adr/07-portability-extensibility.md#adr-0042",
+    "docs/design/adr/07-portability-extensibility.md#adr-0057",
+    "docs/design/adr/02-identity-security.md#adr-0082",
   ]);
   assert.deepEqual(
     UPGRADE_TEST_SUITE_SCOPE.initiativeDependencies.map((dependency) => dependency.owner),

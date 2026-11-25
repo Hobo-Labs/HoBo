@@ -1,11 +1,15 @@
 import type { DeviceClock } from "@hobo/hobo-cd";
 import {
+	agentVaultProxyLauncher,
 	applyEgressToProcess,
+	ensureInfisicalAgentVaultCli,
+	hoboToolsDir,
 	isRemoteBox,
 	machineRunner,
 	whichOnPath,
 } from "@hobo/hobo-ci";
-import { type AuthContext, createHoboMcpServer } from "@hobo/mcp";
+import { createHoboMcpServer } from "@hobo/mcp";
+import type { AgentVaultProxyDeps } from "./agent-vault-broker.js";
 import { ownerSecretStoreBindingStore } from "./ci-secret-store.js";
 import { createComposedHoboCli } from "./cli.js";
 import {
@@ -14,12 +18,12 @@ import {
 	reportingCredentialRefusals,
 	wantsOpenSesameRelaunch,
 } from "./credentials-opensesame.js";
-import { defaultHoboHome } from "./hobo-home.js";
-import { openMcpAuditJournal } from "./mcp-audit-journal.js";
 import {
 	createMcpOwnerChannel,
 	createOwnerCaptureApp,
 } from "./mcp-owner-channel.js";
+import { createOwnerPages } from "./mcp-owner-page.js";
+import { createRelayLoginTool } from "./mcp-relay-login.js";
 import {
 	createInfisicalCaptureConnector,
 	secretCaptureProjectDir,
@@ -35,8 +39,14 @@ import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 import {
 	createOwnerStoreSessions,
 	type OwnerSignIn,
+	ownerChannelRelayFolder,
 	ownerChannelSignIn,
+	withRelaySession,
 } from "./owner-store-session.js";
+import {
+	createRelayOwnerSessions,
+	type RelayLoginDeps,
+} from "./relay-owner-session.js";
 
 /**
  * The full `hobo-mcp` server, loaded by `bin/hobo-mcp.ts` once it has
@@ -58,9 +68,9 @@ export function composeHoboMcp(options: {
 	readonly remote: boolean;
 	/** The device grant's clock (evals pass a virtual one). */
 	readonly clock?: DeviceClock;
-	readonly audit?: ReturnType<typeof openMcpAuditJournal>;
-	readonly auth?: AuthContext;
 	readonly ownerSignIn?: OwnerSignIn;
+	readonly agentVault?: AgentVaultProxyDeps;
+	readonly relayLogin?: Partial<RelayLoginDeps> & { readonly waitMs?: number };
 }) {
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
@@ -104,8 +114,6 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
-	const audit = options.audit;
-	const auth = options.auth;
 	const sessions = createOwnerStoreSessions({
 		signIn:
 			options.ownerSignIn ??
@@ -116,17 +124,44 @@ export function composeHoboMcp(options: {
 					which: (bin) => whichOnPath(bin),
 				},
 			}),
+		relayFolder: ownerChannelRelayFolder({
+			owner,
+			deps: {
+				runCommand: machineRunner(),
+				which: (bin) => whichOnPath(bin),
+			},
+		}),
 		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
+		agentVault: options.agentVault ?? {
+			launch: agentVaultProxyLauncher(),
+			command: () =>
+				ensureInfisicalAgentVaultCli({
+					run: machineRunner(),
+					which: (bin) => whichOnPath(bin),
+					toolsDir: hoboToolsDir(),
+				}),
+		},
 	});
+	const sleep =
+		options.relayLogin?.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+	const now = options.relayLogin?.now ?? Date.now;
+	const relay = createRelayOwnerSessions({
+		fetch: options.relayLogin?.fetch ?? fetch,
+		sleep,
+		now,
+	});
+	const ownerSession = withRelaySession(sessions, {
+		held: () => relay.held(),
+		now,
+	});
+	const pages = createOwnerPages();
 	const server = createHoboMcpServer({
 		cli: createComposedHoboCli({
 			ownerChannel: owner,
-			ownerSession: sessions,
+			ownerSession,
 			...(options.clock !== undefined ? { clock: options.clock } : undefined),
 		}),
-		...(audit !== undefined
-			? { auditSink: audit.record, rateLimitAuditSink: audit.record }
-			: undefined),
 	});
 	// The secret-capture MCP App (ADR-0179 amendment "Deploy secrets captured
 	// by an MCP App into the secret store"): values the owner types go from
@@ -147,26 +182,40 @@ export function composeHoboMcp(options: {
 				sessions.entries(options.projectDir),
 			),
 		}),
-		...(audit !== undefined && auth !== undefined
-			? { onEvent: (event) => audit.recordCapture(event, auth) }
-			: undefined),
 		notify: (method, params) => {
 			options.output.write(
 				`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
 			);
 		},
 	});
-	session = createMcpStdioSession(capture, createStoreChoiceApp({ sessions }));
+	session = createMcpStdioSession(
+		capture,
+		createStoreChoiceApp({
+			sessions,
+			pages,
+			deposit: (name, value) => owner.deposit(name, value),
+			relayLogin: createRelayLoginTool({
+				relay,
+				pages,
+				sleep,
+				...(options.relayLogin?.waitMs !== undefined
+					? { waitMs: options.relayLogin.waitMs }
+					: undefined),
+			}),
+		}),
+	);
 	const ready = capture;
 	return {
 		owner,
 		server,
 		session,
 		sessions,
+		relay,
 		/** Stop whatever still waits on the owner and close open captures. */
 		async close() {
 			owner.jobs.close();
-			sessions.close();
+			relay.close();
+			await sessions.close();
 			await ready.close();
 		},
 	};
@@ -188,35 +237,23 @@ export async function serveHoboMcp(
 	// The box's egress (proxy, bypass list, CA), for every fetch in this
 	// process, before anything connects.
 	applyEgressToProcess(process.env);
-	let audit: ReturnType<typeof openMcpAuditJournal>;
+	const composed = composeHoboMcp({
+		output: io.output,
+		projectDir: secretCaptureProjectDir(process.cwd(), process.env),
+		remote: isRemoteBox(),
+	});
 	try {
-		audit = openMcpAuditJournal(defaultHoboHome());
-	} catch {
-		process.stderr.write("hobo-mcp: audit journal unavailable\n");
-		return 1;
-	}
-	const auth = localOperatorAuth();
-	try {
-		const composed = composeHoboMcp({
+		await serveMcpStdio({
+			server: composed.server,
+			auth: localOperatorAuth(),
+			input: io.input,
 			output: io.output,
-			projectDir: secretCaptureProjectDir(process.cwd(), process.env),
-			remote: isRemoteBox(),
-			audit,
-			auth,
+			session: composed.session,
 		});
-		try {
-			await serveMcpStdio({
-				server: composed.server,
-				auth,
-				input: io.input,
-				output: io.output,
-				session: composed.session,
-			});
-		} finally {
-			await composed.close();
-		}
 	} finally {
-		audit.close();
+		// Closes open captures, stops the page and revokes the writer token,
+		// and stops any step still waiting on the owner.
+		await composed.close();
 	}
 	return 0;
 }

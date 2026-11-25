@@ -2,12 +2,12 @@
 
 Independent draft POC for **HOBO-657**. Pins quorum event-store replication,
 leader election, actor lease/fencing failover, and provider-resilience controls
-per [`urn:hobo:requirement:reliability-observability-cost`](urn:hobo:requirement:reliability-observability-cost#plan-05).
+per [`docs/design/reliability-observability-cost.md`](../../../../docs/design/reliability-observability-cost.md#plan-05).
 
 ## Requirements Source
 
-- `urn:hobo:requirement:reliability-observability-cost#plan-05` — control-plane HA, actor leases + fencing, provider circuit breakers, retry budgets, bulkheads.
-- The simulated failover target is resume in under 30 seconds with 99.9% availability.
+- `docs/design/reliability-observability-cost.md#plan-05` — control-plane HA, actor leases + fencing, provider circuit breakers, retry budgets, bulkheads.
+- `docs/archive/requirements/requirements.md` — **NFR-009** resume `< 30 s`; 99.9% control-plane availability.
 - `src/draft/epic-proofs/reliability-observability-cost-finops/` — promoted Golden chaos / failover scenarios (consumed, not modified).
 
 ## Contract Surface
@@ -40,6 +40,8 @@ quorum-fenced-append assertions.
 pnpm --prefix src/draft/technical-proofs/s6-02-control-plane-ha-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf + CUE evidence for quorum append and failover outcomes.
 - `architecture/pacts/` — PACT boundary fixture.
+- `ADR.md` — parse-don't-validate and event-architecture notes.

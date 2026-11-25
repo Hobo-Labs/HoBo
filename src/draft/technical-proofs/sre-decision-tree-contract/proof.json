@@ -13,7 +13,8 @@
       "src/draft/technical-proofs/sre-operator-skeleton-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

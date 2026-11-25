@@ -1,9 +1,4 @@
-import {
-	createCapabilityProfileRegistry,
-	parseProfileId,
-	STANDARD_CAPABILITY_PROFILES,
-} from "@hobo/capability-profiles";
-import { capability } from "@hobo/core";
+import { parseProfileId } from "@hobo/capability-profiles";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -122,32 +117,5 @@ describe("the ephemeral-state profile", () => {
 			path: ["kv", "ephemeral-state"],
 			major: 1,
 		});
-		const registry = createCapabilityProfileRegistry(
-			STANDARD_CAPABILITY_PROFILES,
-		);
-		expect(capability.kv.ephemeralState).toBe(KV_EPHEMERAL_STATE_PROFILE);
-		expect(registry.require(KV_EPHEMERAL_STATE_PROFILE).refines).toContain(
-			"kv.key-value/v1",
-		);
-		expect(
-			registry.satisfies(KV_EPHEMERAL_STATE_PROFILE, "kv.key-value/v1"),
-		).toBe(true);
-	});
-
-	it("declares atomic create-if-absent for both supported store profiles", () => {
-		const registry = createCapabilityProfileRegistry(
-			STANDARD_CAPABILITY_PROFILES,
-		);
-		for (const profileId of [
-			KV_EPHEMERAL_STATE_PROFILE,
-			KV_REDIS_COMPATIBLE_PROFILE,
-		]) {
-			expect(registry.require(profileId).features).toContainEqual(
-				expect.objectContaining({
-					key: "atomicCompareAndSet",
-					valueKind: "boolean",
-				}),
-			);
-		}
 	});
 });

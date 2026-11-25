@@ -1,3 +1,13 @@
+/**
+ * Visible secondary Resiliency layer (ADR-0136).
+ * Polly-inspired strategies as metadata + thin fact-emitting applicator.
+ * Fully aligned with docs/design/dx-sdk-resilience-semantics.md:
+ * - deterministic retry schedules only
+ * - never retry policy.Decided deny or typed terminal failures
+ * - inspection from persisted facts, never process memory
+ * No Effect-TS / Polly / XState public dependencies.
+ */
+
 import type { EffectSpec } from "./effects.js";
 import { requiresNetwork } from "./effects.js";
 import {

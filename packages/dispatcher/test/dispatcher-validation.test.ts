@@ -1,9 +1,32 @@
+/**
+ * The dispatcher's parse boundary and its refusals.
+ *
+ * `dispatcher.test.ts` drives the ranking; this goes at the guards around it,
+ * because a dispatcher decides where a billable job runs and its failure modes
+ * are all quiet ones.
+ *
+ * **A malformed ledger view is refused, never defaulted.** The ledger is what
+ * says how much free headroom exists. Reading a broken one as "no credits"
+ * would send every job to the paid path, and reading it as "unlimited" would
+ * exhaust an allowance without anyone noticing — so the parse throws rather
+ * than choosing either.
+ *
+ * **An unregistered provider is invisible, not merely deprioritized.** A
+ * registry that ranked an unregistered candidate last would still select it
+ * when it is the only one, which is precisely when registration mattered.
+ *
+ * **`stableHash` is order-independent.** It is what pins a decision to the
+ * exact ledger it was made against, so two structurally identical views must
+ * hash the same regardless of key order — otherwise replay disagrees with the
+ * original for a reason nobody can see.
+ */
+
 import { describe, expect, it } from "vitest";
 import {
 	canonicalJson,
 	createDispatcherRegistry,
 	createReservationLedger,
-	decideCreditDispatch,
+	decideDispatch,
 	parseCreditLedgerView,
 	stableHash,
 } from "../src/dispatcher.js";
@@ -49,7 +72,7 @@ function runner(id: string, overrides: JsonObject = {}) {
 }
 
 const dispatch = (overrides: JsonObject = {}) =>
-	decideCreditDispatch({
+	decideDispatch({
 		registry: createDispatcherRegistry([runner("a")]),
 		category: "runner",
 		dispatchId: "d1",
@@ -70,6 +93,9 @@ describe("parseCreditLedgerView", () => {
 		7,
 		[],
 	])("rejects the non-object %s", (raw) => {
+		// Defaulting a broken ledger either way is a billing decision made by
+		// a parse bug: "no credits" sends everything to the paid path,
+		// "unlimited" exhausts an allowance silently.
 		expect(() => parseCreditLedgerView(raw)).toThrow(TypeError);
 	});
 
@@ -92,6 +118,8 @@ describe("parseCreditLedgerView", () => {
 		null,
 		undefined,
 	])("rejects the sequence %s", (seq) => {
+		// The sequence is what pins a decision to a point in the ledger; a
+		// non-integer one cannot be compared for staleness.
 		expect(() => parseCreditLedgerView(ledgerView({ seq }))).toThrow(
 			/non-negative integer/u,
 		);
@@ -108,6 +136,8 @@ describe("parseCreditLedgerView", () => {
 	});
 
 	it("clones rather than aliasing the caller's view", () => {
+		// A dispatcher that mutated its input ledger would corrupt the caller's
+		// snapshot mid-decision.
 		const input = ledgerView({ accounts: [account("a")] });
 		const parsed = parseCreditLedgerView(input);
 		expect(parsed).not.toBe(input);
@@ -122,6 +152,7 @@ describe("createDispatcherRegistry", () => {
 	});
 
 	it("rejects a non-array provider list", () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => createDispatcherRegistry({} as never)).toThrow(TypeError);
 	});
 
@@ -134,6 +165,8 @@ describe("createDispatcherRegistry", () => {
 	});
 
 	it("keeps an unregistered provider in records but out of the index", () => {
+		// Deprioritizing rather than excluding would still select it when it is
+		// the only candidate — precisely when registration mattered.
 		const registry = createDispatcherRegistry([
 			runner("a", { registered: false }),
 		]);
@@ -151,9 +184,10 @@ describe("createDispatcherRegistry", () => {
 	});
 });
 
-describe("decideCreditDispatch refusals", () => {
+describe("decideDispatch refusals", () => {
 	it("rejects a non-object request", () => {
-		expect(() => decideCreditDispatch(null as never)).toThrow(TypeError);
+		// SAFETY: assertion required at this I/O or test boundary.
+		expect(() => decideDispatch(null as never)).toThrow(TypeError);
 	});
 
 	it("requires a dispatch id", () => {
@@ -167,6 +201,7 @@ describe("decideCreditDispatch refusals", () => {
 	});
 
 	it.each([0, -1, "10"])("rejects the unit count %s", (units) => {
+		// Zero units is not a dispatch; a negative one would credit the account.
 		expect(() => dispatch({ units })).toThrow(TypeError);
 	});
 
@@ -177,11 +212,15 @@ describe("decideCreditDispatch refusals", () => {
 		expect(dispatch({ units }).ok).toBe(true);
 	});
 
-	it("defaults the objective to min-cost", () => {
-		expect(dispatch({ objective: undefined }).objective).toBe("min-cost");
+	it("defaults the objective to maximize-credits", () => {
+		expect(dispatch({ objective: undefined }).objective).toBe(
+			"maximize-credits",
+		);
 	});
 
 	it("rejects an unknown objective rather than falling back", () => {
+		// Falling back would silently optimize for something the caller did not
+		// ask for, and the decision record would say the wrong thing.
 		expect(() => dispatch({ objective: "minimize-latency" })).toThrow(
 			TypeError,
 		);
@@ -201,12 +240,17 @@ describe("decideCreditDispatch refusals", () => {
 	});
 
 	it("refuses an unknown category at the parse rather than ranking nothing", () => {
+		// A category outside the known set is a caller bug, not an empty
+		// registry — and the two deserve different answers, which is why this
+		// throws while "no registered candidates" returns a failed decision.
 		expect(() => dispatch({ category: "gpu" })).toThrow(TypeError);
 	});
 });
 
 describe("the decision record", () => {
 	it("pins the ledger sequence it decided against", () => {
+		// Without the pin, replay cannot tell whether it is reproducing the
+		// original decision or making a new one.
 		const decision = dispatch();
 		expect(decision.dispatchEvent.data.ledgerInput.seq).toBe(91);
 	});
@@ -234,6 +278,7 @@ describe("the decision record", () => {
 	});
 
 	it("records every candidate, not only the winner", () => {
+		// A decision nobody can audit is a decision nobody can appeal.
 		const decision = dispatch({
 			registry: createDispatcherRegistry([runner("a"), runner("b")]),
 			ledgerView: ledgerView({ accounts: [account("a"), account("b")] }),
@@ -254,6 +299,8 @@ describe("the decision record", () => {
 
 describe("stableHash and canonicalJson", () => {
 	it("hashes structurally identical values the same regardless of key order", () => {
+		// The property that makes a decision replayable: two spellings of one
+		// ledger must pin to the same hash.
 		expect(stableHash({ a: 1, b: 2 })).toBe(stableHash({ b: 2, a: 1 }));
 	});
 
@@ -300,6 +347,8 @@ describe("createReservationLedger", () => {
 	});
 
 	it("reports a release against an unknown reservation as not-releasable", () => {
+		// Not an error: a release that arrives twice, or after a crash, must be
+		// a reportable outcome rather than an exception.
 		const ledger = createReservationLedger(ledgerView());
 		const result = ledger.cancelReservation?.({ reservationId: "absent" });
 		if (result) expect(result.ok).toBe(false);

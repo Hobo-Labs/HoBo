@@ -1,3 +1,0 @@
-status: CLEAN
-drift: 0
-cue violations: 0

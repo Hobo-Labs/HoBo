@@ -1,5 +1,16 @@
 import { deepFreeze } from "../parse-utils.js";
 
+/**
+ * Generic offering resolution, keyed by resource class.
+ *
+ * Extracted from the traffic-routing offering negotiation (ADR-0143): the
+ * "resolve user intent against station-registered provider offerings" pattern
+ * — prefer/require negotiation plus an ordered portable-fallback ladder — is
+ * the same for every resource class (traffic routing, data stores, queues,
+ * identity, …). Vocabulary modules pin the `Id`/`Provider` unions per class
+ * (`traffic-routing-offerings.ts`, `data-store-offerings.ts`); this module
+ * owns the negotiation semantics so they can never drift apart per class.
+ */
 export type OfferingNegotiation = "prefer" | "require";
 
 export type OfferingStability = "stable" | "preview" | "experimental";
@@ -19,6 +30,7 @@ export interface ResourceOfferingProfile<
 > {
 	readonly provider: Provider;
 	readonly offerings: readonly ResourceOffering<Id>[];
+	/** Ordered fallback offering ids when native realization cannot cover the request. */
 	readonly fallbacks: readonly Id[];
 }
 
@@ -34,7 +46,6 @@ export type ResourceOfferingMatch<Id extends string = string> =
 			readonly offerings: readonly Id[];
 			readonly missing: readonly Id[];
 			readonly fallbacks: readonly Id[];
-			readonly degraded?: readonly Id[];
 	  }
 	| {
 			readonly kind: "none";
@@ -58,6 +69,11 @@ export type ResourceOfferingResolveResult<
 			readonly remediation: string;
 	  };
 
+/**
+ * Match requested offerings against a provider profile with prefer/require
+ * negotiation and the profile's fallback ladder. `resourceClass` names the
+ * vocabulary in remediation messages (e.g. "traffic-routing", "data-store").
+ */
 export function matchResourceOfferings<
 	Id extends string,
 	Provider extends string,
@@ -69,63 +85,21 @@ export function matchResourceOfferings<
 	const requested = request.features ?? [];
 	const negotiation = request.negotiation ?? "prefer";
 	const native = new Set(profile.offerings.map((entry) => entry.id));
-	const qualified = new Set(
-		profile.offerings
-			.filter(
-				(entry) => entry.stability === "stable" && entry.fidelity === "real",
-			)
-			.map((entry) => entry.id),
-	);
 	const fallbacks = profile.fallbacks.filter((id) => !native.has(id));
 	const available = new Set([...native, ...fallbacks]);
 
 	if (requested.length === 0) {
-		const offered = profile.offerings.map((entry) => entry.id);
-		const degraded = offered.filter((id) => !qualified.has(id));
-		if (negotiation === "require") {
-			return qualified.size > 0
-				? { kind: "full", offerings: [...qualified] }
-				: {
-						kind: "none",
-						missing: [],
-						remediation: `provider ${profile.provider} has no stable, real native ${resourceClass} offerings`,
-					};
-		}
-		if (degraded.length > 0) {
-			return {
-				kind: "partial",
-				offerings: offered,
-				missing: [],
-				fallbacks: [],
-				degraded,
-			};
-		}
 		return {
 			kind: "full",
-			offerings: offered,
+			offerings: profile.offerings.map((entry) => entry.id),
 		};
-	}
-	if (negotiation === "require") {
-		const missing = requested.filter((id) => !qualified.has(id));
-		return missing.length === 0
-			? { kind: "full", offerings: requested }
-			: {
-					kind: "none",
-					missing,
-					remediation: `provider ${profile.provider} lacks stable, real native ${resourceClass} offerings: ${missing.join(", ")}`,
-				};
 	}
 
 	const present = requested.filter((id) => available.has(id));
 	const missing = requested.filter((id) => !available.has(id));
 	const usedFallbacks = present.filter((id) => fallbacks.includes(id));
-	const degraded = present.filter((id) => native.has(id) && !qualified.has(id));
 
-	if (
-		missing.length === 0 &&
-		usedFallbacks.length === 0 &&
-		degraded.length === 0
-	) {
+	if (missing.length === 0 && usedFallbacks.length === 0) {
 		return { kind: "full", offerings: present };
 	}
 	if (missing.length === 0) {
@@ -134,7 +108,13 @@ export function matchResourceOfferings<
 			offerings: present,
 			missing: [],
 			fallbacks: usedFallbacks,
-			...(degraded.length ? { degraded } : undefined),
+		};
+	}
+	if (negotiation === "require") {
+		return {
+			kind: "none",
+			missing,
+			remediation: `provider ${profile.provider} lacks required ${resourceClass} offerings: ${missing.join(", ")}`,
 		};
 	}
 	if (present.length === 0) {
@@ -149,10 +129,13 @@ export function matchResourceOfferings<
 		offerings: present,
 		missing,
 		fallbacks: usedFallbacks,
-		...(degraded.length ? { degraded } : undefined),
 	};
 }
 
+/**
+ * Resolve a request against candidate provider profiles for a resource class.
+ * First profile that is not `none` wins (callers should rank by cost/policy).
+ */
 export function resolveResourceOfferings<
 	Id extends string,
 	Provider extends string,
@@ -161,6 +144,7 @@ export function resolveResourceOfferings<
 	profiles: readonly ResourceOfferingProfile<Id, Provider>[],
 	request: ResourceOfferingRequest<Id> = {},
 	options: {
+		/** Reported as missing when no profiles are registered at all. */
 		readonly defaultMissing?: readonly Id[];
 	} = {},
 ): ResourceOfferingResolveResult<Id, Provider> {
@@ -189,28 +173,6 @@ export function resolveResourceOfferings<
 			provider: profile.provider,
 			strategy: uniqueIds(strategy),
 			match,
-		};
-	}
-	if (request.negotiation === "require" && request.features?.length) {
-		const availability = uniqueIds(request.features).map((id) => ({
-			id,
-			providers: profiles
-				.filter((profile) =>
-					profile.offerings.some(
-						(entry) =>
-							entry.id === id &&
-							entry.stability === "stable" &&
-							entry.fidelity === "real",
-					),
-				)
-				.map((profile) => profile.provider),
-		}));
-		return {
-			kind: "unresolved",
-			missing: availability
-				.filter((entry) => entry.providers.length === 0)
-				.map((entry) => entry.id),
-			remediation: `no single provider satisfies required ${resourceClass} offerings: ${availability.map((entry) => `${entry.id} (${entry.providers.length ? entry.providers.join(", ") : "no qualifying provider"})`).join("; ")}`,
 		};
 	}
 	return {

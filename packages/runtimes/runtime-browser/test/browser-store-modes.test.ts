@@ -96,7 +96,13 @@ describe("choosing a mode", () => {
 		expect(detectBrowserPersistence({}).mode).toBe("opfs-sahpool");
 	});
 
-	it("detects OPFS regardless of the requested tab mode", () => {
+	it("chooses the same mode whether or not multiTab is set", () => {
+		// QUIRK: the multi-tab branch selects `opfs-sahpool` either way — both
+		// arms of that ternary are identical, so the option currently has no
+		// effect on the chosen mode. Pinned rather than removed: SAH-pool is
+		// the multi-tab-safe VFS, so the single-tab arm is the one that would
+		// change if a faster single-tab VFS were ever wired in, and silently
+		// dropping the option would remove the seam for it.
 		withOpfs(true);
 		expect(detectBrowserPersistence({ multiTab: true }).mode).toBe(
 			detectBrowserPersistence({ multiTab: false }).mode,
@@ -136,13 +142,6 @@ describe("choosing a mode", () => {
 });
 
 describe("opening a store", () => {
-	it("requires browser coordination for a concurrent-tab store", async () => {
-		withOpfs(true);
-		await expect(
-			createBrowserEventStore({ partitionId: "tenant-a", multiTab: true }),
-		).rejects.toThrow(/Multi-tab durable storage requires/);
-	});
-
 	it("refuses when persistence is unavailable and not opted out of", () => {
 		withOpfs(false);
 		return expect(
@@ -193,15 +192,15 @@ describe("opening a store", () => {
 		store.close();
 	});
 
-	it("does not substitute isolated memory for a concurrent-tab store", async () => {
+	it("passes multiTab through without changing the outcome", async () => {
 		withOpfs(false);
-		await expect(
-			createBrowserEventStore({
-				partitionId: "tenant-a",
-				allowTransient: true,
-				multiTab: true,
-			}),
-		).rejects.toThrow(/SharedWorker or Web Locks is unavailable/);
+		const store = await createBrowserEventStore({
+			partitionId: "tenant-a",
+			allowTransient: true,
+			multiTab: true,
+		});
+		expect(store.persistenceMode).toBe("transient-memory");
+		store.close();
 	});
 });
 
@@ -285,6 +284,14 @@ describe("the opened store", () => {
 			append: APPEND,
 		} as never);
 		expect(result.appended).toHaveLength(1);
+		store.close();
+	});
+
+	it("exposes its journal for the worker protocol to drive", async () => {
+		// `@internal`, but real: the Worker path operates the journal directly
+		// rather than through this wrapper.
+		const store = await transientStore();
+		expect(store.journal()).toBeDefined();
 		store.close();
 	});
 

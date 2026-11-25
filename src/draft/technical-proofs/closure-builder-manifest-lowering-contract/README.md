@@ -38,9 +38,11 @@ corepack pnpm --prefix src\draft\technical-proofs\closure-builder-manifest-lower
 The package typecheck covers source files only; runtime `node:test` files remain validated by the
 same test command through `tsx` instead of requiring repo-global Node type definitions.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the lowering boundary.
 - `architecture/pacts/` - PACT contract for the SDK conformance consumer boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

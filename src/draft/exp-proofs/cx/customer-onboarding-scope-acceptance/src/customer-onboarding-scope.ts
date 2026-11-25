@@ -59,12 +59,12 @@ export const CUSTOMER_ONBOARDING_SCOPE = {
     "Define Customer Onboarding M0 scope so pilot customer entry, first-run success criteria, support handoffs, and follow-up proof requirements are accepted before customer onboarding design or implementation issues fan out.",
   sourceRefs: [
     "Linear HOBO-449 issue body",
-    "urn:hobo:requirement:customer-onboarding",
-    "urn:hobo:requirement:workspace-onboarding-ux",
-    "urn:hobo:requirement:persona-operating-profile",
-    "urn:hobo:requirement:pre-launch-outcome-contract",
-    "urn:hobo:requirement:beta-pilot-feedback",
-    "urn:hobo:requirement:support-sla-channels",
+    "docs/design/customer-onboarding.md",
+    "docs/design/workspace-onboarding-ux.md",
+    "docs/design/persona-operating-profile.md",
+    "docs/design/pre-launch-outcome-contract.md",
+    "docs/design/beta-pilot-feedback.md",
+    "docs/design/support-sla-channels.md",
   ],
   personas: [
     {

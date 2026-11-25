@@ -352,7 +352,7 @@ interval (572 passes at two seconds, not a doubled 28-minute loop) — and logs
 step's 21-minute timeout), so an overrun exits with a
 `release-promotion-timeout` verdict instead of sitting silent until the step is
 cancelled.
-See [release channels](urn:hobo:requirement:release-channels#hobo-releases-through-hobo-cd).
+See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
 
 "Merged" is not "live": check the `gh-pages` commit message for the sha it was built
 from before saying a site change has shipped. **Agents must not** wait on, cancel, or

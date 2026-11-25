@@ -2,7 +2,7 @@ import type { CommandModule, YardRuntime } from "@hobo/cli";
 import { DEFAULT_TENANT } from "@hobo/cli";
 import {
 	collectStream,
-	providerRegistrationFacts,
+	registerProviderFact,
 	registryCatalogProjection,
 } from "@hobo/cloud";
 import type { PrincipalRef } from "@hobo/core";
@@ -11,6 +11,7 @@ import { REGISTRY_STREAM } from "./add-command.js";
 import { createProviderFromPorts } from "./local-provider.js";
 
 export interface GenerateCommandDeps {
+	// The shared Yard runtime whose registry stream the generated provider lands in.
 	readonly runtime?: YardRuntime;
 }
 
@@ -18,6 +19,13 @@ const GENERATE_ACTOR: PrincipalRef = { kind: "user", id: "user:generator" };
 
 const DEFAULT_PORTS = ["kv"];
 
+// `hobo generate <name> [ports...]` — request provider generation. It
+// synthesizes a real Capability-Manifest-bearing provider from a port spec
+// (`createProviderFromPorts`) and registers it into the catalog via a durable
+// `provider.Registered` fact, so `hobo registry` and the Planner immediately see
+// the generated provider. Reads/writes only the local event store; no cloud
+// call, no credential. HONEST SCOPE: deterministic generation from the declared
+// port spec; AI-assisted provider synthesis is a follow-up.
 export function createGenerateCommand(
 	deps: GenerateCommandDeps = {},
 ): CommandModule {
@@ -67,10 +75,10 @@ export function createGenerateCommand(
 				};
 			}
 
-			const facts = providerRegistrationFacts(provider);
+			const fact = registerProviderFact(provider);
 			const lastSeq =
 				events.length > 0 ? must(events[events.length - 1]).seq : 0;
-			await runtime.store.append(REGISTRY_STREAM, facts, {
+			await runtime.store.append(REGISTRY_STREAM, [fact], {
 				expectedSeq: lastSeq,
 				actor: GENERATE_ACTOR,
 				tenant: DEFAULT_TENANT,

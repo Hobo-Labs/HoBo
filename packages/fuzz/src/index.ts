@@ -3,21 +3,11 @@ export {
 	type FuzzResponse,
 	handleControlRequest,
 } from "./api-fuzz.js";
-export {
-	type NightlyCampaignOptions,
-	type NightlyCampaignReport,
-	runNightlyCampaign,
-} from "./campaign.js";
-export {
-	type ControlFuzzServer,
-	createControlFuzzServer,
-} from "./control-http.js";
 export { dockerAvailable, schemathesisAvailable } from "./env.js";
 export {
 	fuzzBindleManifest,
 	fuzzEventEnvelope,
 	fuzzPolicyDocument,
-	type HarnessOutcome,
 	MAX_HARNESS_BYTES,
 } from "./harness.js";
 export {
@@ -41,11 +31,8 @@ export {
 	type Verb,
 	verdict,
 } from "./model.js";
-export {
-	runSchemathesis,
-	type SchemathesisOptions,
-	type SchemathesisRun,
-} from "./schemathesis.js";
+export { describeNightlyPlan, type NightlyPlan } from "./nightly.js";
+export { runSchemathesis, type SchemathesisRun } from "./schemathesis.js";
 export {
 	fuzzTrainable,
 	silverEvidenceFromCorpus,

@@ -2,8 +2,8 @@
 
 This draft pins the HOBO-84 token broker skeleton for `ctx.token(...)` and the
 MCP `request_token` path from
-[Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06) and
-[ADR-0008](urn:hobo:decision:adr-0008).
+[Plan 6](../../../../docs/design/ai-native-agent-auth.md#plan-06) and
+[ADR-0008](../../../../docs/design/adr/02-identity-security.md#adr-0008).
 
 ## Contract Surface
 
@@ -43,9 +43,11 @@ out-of-SVID-scope fail-closed ordering, API-key fallback marking, audit
 redaction, `ctx.token(...)`, and MCP `request_token` delegation.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Token Broker Skeleton Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -2,6 +2,25 @@
 	"schema": "hobo.promotions-ledger/v1",
 	"promotions": [
 		{
+			"proof": "src/draft/technical-proofs/deterministic-replay-engine/src",
+			"promotedTo": "packages/runtime/src/replay",
+			"status": "frozen",
+			"note": "Promoted with typing/format hardening; the package copy is canonical (GAPS.md IMPL-005).",
+			"digests": {
+				"context.ts": "sha256:48a51b61ccb05ea48594807606df36302afb85b66c0dbfc3745434a0b6b5496c",
+				"divergence.ts": "sha256:a8c77f88bcb0efd871a4ed901b727b9d1f920d998fd08d376bdddb50dd000da2",
+				"equivalence.ts": "sha256:04077d6947c3abcb35ca55f04d076005371288962a1cfa59585d9134786dde74",
+				"index.ts": "sha256:3b9f6ddd2ad0d3c9ab36a759f26a551ca3732625e5f943ef1b4633d3f0649f81",
+				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba",
+				"parse.ts": "sha256:a402a2ad6bc8b54fcff0cfe4b976c72b15f15191d878d7849e8cab5b2686f2db",
+				"recorder.ts": "sha256:16a25034f056cbdf3897026bacf09b1d96d41758c8f59c577d692c819058dac4",
+				"replayer.ts": "sha256:7c3f56a75c9a3db84c0151cd648c9b756e242747ac7284de12d90b639fe7caba",
+				"store.ts": "sha256:c1558f0b7f931f7ef49943aac00637ef43e294c27357406430aeb2ccb49534e4",
+				"test-runtime.ts": "sha256:62a1b5aeda764d54e768619c89630e8932114d26e68a526b40ad19f4a9af701b",
+				"types.ts": "sha256:b93daf16499ad79ab5377e211ae89a863d461ff72193e2d73bc4d0264308d2ad"
+			}
+		},
+		{
 			"proof": "src/draft/technical-proofs/training-engine-port-contract/src",
 			"promotedTo": "packages/core/src/ports/training-engine.ts + packages/wit/wit/deps/hobo-training-engine",
 			"status": "frozen",
@@ -24,27 +43,27 @@
 		{
 			"proof": "src/draft/technical-proofs/hobo-componentize/src",
 			"promotedTo": "packages/componentize/src",
-			"status": "frozen",
-			"note": "Component build, OCI descriptors, source inventory, and runtime smoke are implemented in the package.",
-			"digests": {
-				"componentize.ts": "sha256:a907df20ef246cd9d35f23011da65406bdfbf29a090b0e59da832b7125c98d99",
-				"index.ts": "sha256:7b7eb825b6acd53dec165b56a2a9a4684725bc1fd3bbcba3bfed921560b5cc26",
-				"json.ts": "sha256:afd8557797ca73ff8fa7cae6b134549d5fd6865a1c40c0a17c41f22d5aacb9fe",
-				"oci.ts": "sha256:52047e1eda40ae50855f6d98c496de6d829f331587f059873790276fbff2464e",
-				"parse.ts": "sha256:6e5b739dbaf029fafc38a796afe03528b64be957103e288db62f6bb6ba8f9b66",
-				"smoke.ts": "sha256:2fa36c9501c56d5b323f693b19e32a774a637593b0c54be62ea5865b0e7cc466",
-				"sources.ts": "sha256:a6e8a3cc5c9209368c35bffe0eaeed7881adb22b2583641d026a17f7a3c233de",
-				"types.ts": "sha256:2cb1900a6dccc02fa378ca91dadcb1033b6a6a8fe6556c1d3131a4cc8de2cd23",
-				"validate.ts": "sha256:e2b83681acde19f43dd8e5176128ead8b8f09728526a8c7cf5769f8a7a9ea1dd"
-			}
+			"status": "reference",
+			"note": "Partial promotion (S0 scope, ADR-0105): oci/smoke/sources modules are S1+ scope and stay in the proof as reference (GAPS.md IMPL-006)."
 		},
 		{
 			"proof": "src/draft/technical-proofs/hobo-codegen-cli-contract/src",
 			"promotedTo": "packages/cli/src/codegen",
 			"status": "frozen",
-			"note": "The CLI and build gate use the production project codegen engine.",
+			"note": "HOBO-152 promotion: project codegen engine typed and split (types/engine/tree/fixture/run-codegen), injectable CodegenEngine; the CLI and build gate no longer dynamic-import the proof (GAPS.md IMPL-004).",
 			"digests": {
 				"codegen-cli-contract.ts": "sha256:c7503ccf1a86cfdff67728d3084c9bf293cc3ba8c2f379fc4ada2bb7c967e438",
+				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
+			}
+		},
+		{
+			"proof": "src/draft/technical-proofs/dispatcher-maximize-credits-contract/src",
+			"promotedTo": "packages/dispatcher/src",
+			"status": "frozen",
+			"note": "ADR-0071 promotion: typed engine with traffic-backend category, EventInput-shaped facts (no proof envelope), parse-don't-validate boundaries; reservation-hardening invariants folded in.",
+			"digests": {
+				"dispatcher.d.ts": "sha256:00aac63a6d4af4e04e8a3f81dd464c8fc1fcb2b8b31ae936a602eb9f928b09dd",
+				"dispatcher.ts": "sha256:d8325dc768c215c72edcc90beebf304edbcfab1e601de3016302c131e8f20c2f",
 				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
 			}
 		},
@@ -52,23 +71,23 @@
 			"proof": "src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools",
 			"promotedTo": "packages/schema-tools",
 			"status": "frozen",
-			"note": "Production is canonical. This executable proof was refrozen to share generated TypeScript normalization and isolate its tests; its original Buf template and proof-scoped drift check remain independent.",
+			"note": "S0-04 promotion gate: production codegen orchestrator. Promoted with nested-package + buf.yaml opt-in discovery and strict-tsconfig fixes; the POC copy remains its own executable proof fixture. Its json-envelope cwd is scoped to the POC tree because the frozen generator predates production's import_extension=js, and promoted @hobo/schema-tools owns the whole-repo check.",
 			"digests": {
-				"contracts/pacts/schema_tools_codegen_report.pact.json": "sha256:cd782130c9f864333caf74c8b60696d5ef74ab2f71268ade397b434a81373c1a",
+				"contracts/pacts/schema_tools_codegen_report.pact.json": "sha256:bc246cf883752dc4ca4bd8e70d24df2177deed49d578c013f9789c388275bbba",
 				"data-models/buf.yaml": "sha256:b91555931d75c55b4ab15530a6be430649a9a1de07577a3963612b90b186434c",
 				"data-models/codegen_report.cue": "sha256:b7f492bc670ef15d9c43ac9e1b449ce18a6eeb133211249031f38ec4de6d42af",
 				"data-models/fixtures/invalid/negative-duration.json": "sha256:dd87d538183e3cc8a699c463f6eb85678d81765f9c67dd7d27ca2a61d2c21818",
 				"data-models/fixtures/valid/clean-report.json": "sha256:6ee3ef6b78daffc96962deff1c333c6191711ac10d0445097857c6d5fb7a6476",
 				"data-models/hobo/schematools/v1/codegen_report.proto": "sha256:de5cb403525016175c1e511e4292a580b7b74f718cefc908db694adcc1389afa",
 				"package.json": "sha256:6ab362f11ef3a3ecfe640c58b8ee513d50805540aeaf5f5bbc96827802132ee3",
-				"src/_generated/hobo/schematools/v1/codegen_report_pb.ts": "sha256:50364b79569b29be4f3506c7f0d45b9e3f9243d9b85fe37e187673971d8aafcf",
+				"src/_generated/hobo/schematools/v1/codegen_report_pb.ts": "sha256:f882b88ea9305180334fa8e46ed9e3c600c2e62e6225810782ca56061becb105",
 				"src/cli.ts": "sha256:a6408260db5ba1912f02de0d24fb940553fa8ee789d05e90b2a14ae870dd92f2",
-				"src/codegen.ts": "sha256:44887d79b311771930d2289b4bcaf1c13e93fd2d58d26f5edcbe5ac84b5b87ab",
-				"src/cue.ts": "sha256:e23e865e3cb4e9db057b2a00a6839d96c08328162a45a1b17ea94b3ff99ddd67",
-				"src/discover.ts": "sha256:db42aa430689d276e2a24b826278ddbb7f98d7d7e98beccef7c251f964f24ac1",
-				"src/parse.ts": "sha256:a27a09348c0c52749881c7888953380a45285aed5f8174bfdd01f13912f880be",
+				"src/codegen.ts": "sha256:9b7acd6261683d9b03cea8d85f380add0a3c535f16cf4212c1b5f7a2a231f1c0",
+				"src/cue.ts": "sha256:6cce81529b610a3a02e12982620d5dfd708aab5e38935f1d0751af8c851b6247",
+				"src/discover.ts": "sha256:685f5decd7f27d0522503c97246c917c9bcdb5d2812d87d13833c5856dc721c7",
+				"src/parse.ts": "sha256:2750ed6d6ac8d3ed6bcbe60c6f1f9a06f43b6903398d615fce901781c6dd0b4a",
 				"src/types.ts": "sha256:2fd23e4a87f8feb36d65841ad16b9fa90bcab6d6cfb4a18df206d244807fdbac",
-				"test/codegen-pipeline.test.ts": "sha256:9cadc96225bb581c769e5011f5013fb22860520d5cc4f2e8da2b3973378f9a56",
+				"test/codegen-pipeline.test.ts": "sha256:7d7eb8a6614ef9506c30238e144864f2a4ab35f7d682bc4c4deb29eccc304d90",
 				"tsconfig.json": "sha256:72909bdc6a21c90a32d98bf1a5bc1b40109b130f1d71e3b22b8b90f0ef36fb0b"
 			}
 		},
@@ -79,6 +98,26 @@
 			"note": "ADR-0134 promotion: DNS-shaped saga re-expressed over TrafficRoutingPort — fail-closed preconditions (validated change, live incumbent via port.status, TTL lowered + waited => effective RTO), rollback hysteresis (consecutive failures), refusal/TtlLowered/Started/RampAdvanced/RoutingChanged/RolledBack event ladder.",
 			"digests": {
 				"domain-cutover-saga.ts": "sha256:575ea5edd8ee69d9b46d06bcfe1e089beb4d08c07fe92bfcddcc834309af649e",
+				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
+			}
+		},
+		{
+			"proof": "src/draft/technical-proofs/upgrade-rollback-dry-run-contract/src",
+			"promotedTo": "packages/trails/src/upgrade-preflight.ts",
+			"status": "frozen",
+			"note": "HOBO-499 M1 promotion: typed 11-field compatibility inputs, dry-run contract + four fixtures, rollback-evidence parser, scope-boundary register with fail-closed guard.",
+			"digests": {
+				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba",
+				"upgrade-rollback-dry-run.ts": "sha256:846377abf9222051b48ee5fa08457fea80f253073f0625bd0c370ccbfbb1acd7"
+			}
+		},
+		{
+			"proof": "src/draft/technical-proofs/event-body-upcaster-gate/src",
+			"promotedTo": "packages/events/src/upcaster.ts",
+			"status": "frozen",
+			"note": "M4 promotion: typed golden-replay corpus + upcaster-totality can-deploy gate (coverage, append-only baseline, total chain, purity, replay); migration.* v1 corpus pinned in packages/events/corpus.",
+			"digests": {
+				"event-body-upcaster-gate.ts": "sha256:7bac097f619e18c6b07d42016a4614dc6fd4f098a506da250455b80f3d93051a",
 				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
 			}
 		},

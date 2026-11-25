@@ -1,15 +1,22 @@
 {
   "layer": "technical",
   "slug": "manifest-resource-intent-bridge-contract",
-  "title": "Manifest \u2192 ResourceIntent Bridge Contract",
+  "title": "Manifest → ResourceIntent Bridge Contract",
   "linear": "HOBO-696",
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/control-plane.md",
+      "docs/design/finops-budget-routing-control-plane.md"
+    ]
   },
   "artifacts": {
-    "diagrams": []
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
   },
   "waivers": []
 }

@@ -105,23 +105,23 @@ export const BETA_PILOT_FEEDBACK_CONTRACT = {
   ],
   dependencies: [
     {
-      source: "urn:hobo:requirement:beta-pilot-feedback",
+      source: "docs/design/beta-pilot-feedback.md",
       reason: "Durable beta program scope and intake record."
     },
     {
-      source: "urn:hobo:requirement:developer-experience#plan-07",
+      source: "docs/design/developer-experience.md#plan-07",
       reason: "Owns user-facing workspace, dashboard, plan, release-note, and support-facing DX surfaces."
     },
     {
-      source: "urn:hobo:requirement:walkthrough",
+      source: "docs/design/walkthrough.md",
       reason: "Defines role workflows that beta feedback must identify and classify."
     },
     {
-      source: "urn:hobo:requirement:reliability-observability-cost#plan-05",
+      source: "docs/design/reliability-observability-cost.md#plan-05",
       reason: "Defines telemetry and operational evidence used by beta triage."
     },
     {
-      source: "urn:hobo:decision:adr-0082",
+      source: "docs/design/adr/02-identity-security.md#adr-0082",
       reason: "Keeps launch evidence tied to reproducible verification instead of unsupported claims."
     }
   ]

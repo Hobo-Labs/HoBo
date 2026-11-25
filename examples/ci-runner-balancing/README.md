@@ -17,10 +17,14 @@ and rebalancing is nothing more than patching that repository variable. The
 dispatcher picks the target provider by **(a) reported usage against each
 provider's budget envelope, then (b) declared billable cost — optimizing free
 credits before realtime billing starts** (the `maximize-credits` objective,
-[ADR-0071](urn:hobo:decision:adr-0071)).
+[ADR-0071](../../docs/design/adr/01-architecture-core.md#adr-0071)).
 
-The example implements credit-aware ranking and runner failover in its `src`
-directory. The shared dispatcher implementation lives in `packages/dispatcher`.
+The implementation is repurposed from QuickDeployAI's
+`monorepo/apps/ci-routing-control-plane` (reactive variable-patching router,
+hysteresis, hard-block classification) and `deployment-watcher`'s CI runner
+failover (infrastructure-failure regexes), re-cut onto HoBo's dispatcher
+vocabulary from the `dispatcher-maximize-credits-contract` and
+`execution-host-provider-contract` draft proofs.
 
 ## How a pass works
 
@@ -66,7 +70,7 @@ apply mode: patch Actions variables → exec.Succeeded events
 | Path | What it is |
 |---|---|
 | `data-models/runner_balancing.{proto,cue}` | Protobuf records + CUE constraints for every shape below. |
-| `src/_generated/runner_balancing_pb.ts` | Generated runtime types (`pnpm --dir ../.. exec node --import tsx packages/schema-tools/src/cli.ts --packages-root examples --filter examples/ci-runner-balancing`). |
+| `src/_generated/runner_balancing_pb.ts` | Generated runtime types (`buf generate data-models --template ../../buf.gen.yaml -o src/_generated`). |
 | `src/parse.ts` | The parse boundary: untrusted registry/usage JSON → derived domain types. |
 | `src/ledger.ts` | `CreditLedgerView` projection (effective marginal cost per provider). |
 | `src/decide.ts` | Pure dispatcher — no I/O, no clock, no provider names. |
@@ -89,11 +93,9 @@ pnpm --filter @hobo/example-ci-runner-balancing rebalance -- \
 # tests
 pnpm --filter @hobo/example-ci-runner-balancing test
 
+# live plan against a repository (read-only; reads GITHUB_TOKEN from its environment)
 HOBO_RB_REPO=owner/repo pnpm --filter @hobo/example-ci-runner-balancing rebalance
 ```
-
-The last command plans live against a repository. It is read-only and reads
-`GITHUB_TOKEN` from its environment.
 
 Live `--mode apply` patches repository variables with `VARS_ADMIN_TOKEN` from
 its environment. Agents never store either token or write repository variables
@@ -198,7 +200,7 @@ HoBo routes its own CI through this example: every non-matrix Linux job in
 the CLI on a daily schedule (plan always; apply when `VARS_ADMIN_TOKEN` is
 configured). The rebalance controller itself stays pinned to `ubuntu-latest`
 so it can never be stranded by the variable it manages. See
-[`urn:hobo:requirement:ci-runner-balancing-example`](urn:hobo:requirement:ci-runner-balancing-example)
+[`docs/design/ci-runner-balancing-example.md`](../../docs/design/ci-runner-balancing-example.md)
 for the full dogfood record and rollout posture.
 
 ## How this maps to HoBo's architecture
@@ -228,7 +230,7 @@ variable-write service boundaries are pinned by the executable PACTs in
 ## Scope boundary
 
 This is a reference example, not a hosted service with an SLA
-([example-apps](urn:hobo:requirement:example-apps) proof modes: contract
+([example-apps](../../docs/design/example-apps.md) proof modes: contract
 tests + reference fixtures + a simulated live lane). It does not implement
 billing (HoBo charges no money, ADR-0064), provider SDK integrations beyond
 declared usage, reservation-CAS double-spend protection

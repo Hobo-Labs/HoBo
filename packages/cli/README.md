@@ -9,11 +9,23 @@ The **product** `hobo` / `hobo-mcp` binaries ship from **`@hobo/hobo`**
 end. This package is the library surface (`dispatchCommand`, `CANONICAL_VERBS`,
 command factories). Prefer `@hobo/hobo` for end-user CLI use.
 
+**Dual-bin / install story:** the composed product bin is `@hobo/hobo`. Treat
+this package as the shell/factories dependency, not as a second product CLI.
+Ship and publish policy: [ADR-0140](../../docs/design/adr/07-portability-extensibility.md#adr-0140) and
+[`docs/design/launch-ship-targets.md`](../../docs/design/launch-ship-targets.md).
+
+Promotes:
+
+- `src/draft/technical-proofs/hobo-cli-shell-contract/` (CLI shell, parser, registry, renderer, dispatch seam)
+- `src/draft/technical-proofs/hobo-new-scaffold-contract/` (`hobo new` offline scaffolds)
+
 `hobo new -t todo|api|agent|fullstack` is a compatibility adapter. File bodies
-come from `@hobo/patterns` `starter.cli.*` catalog trees. Aliases
+come from `@hobo/patterns` `starter.cli.*` catalog trees (ADR-0153). Aliases
 stay the public contract; do not fork starter text back into this package.
 Scaffold validation checks the generated runtime and template-specific store
 exports as well as the project files.
+- `src/draft/technical-proofs/hobo-build-cli-contract/` (`hobo build` orchestration, HOBO-613 / S1-23)
+- `src/draft/epic-proofs/cli-mcp-developer-experience/` (CLI↔MCP parity boundary)
 
 The product `hobo build` produces executable Node bundles, real WASM components,
 or complete OCI image archives. It checks codegen freshness first and atomically
@@ -39,11 +51,6 @@ Global flags: `--json`, `--camp <camp>`, `--cwd <path>`, `--verbose`, `-q`, `--h
 The composed `hobo doctor --offline --json` command reports the selected local
 backend and actionable setup guidance without contacting cloud providers. Use
 `hobo --help` to discover the doctor command and other canonical verbs.
-
-The checked-in `agent-docs` artifacts are generated from the canonical verb
-registry. Run `pnpm --filter @hobo/cli agent-docs:write` after changing that
-registry; `pnpm --filter @hobo/cli agent-docs:check` checks for missing,
-changed, and extra artifacts. Package lint runs the same check.
 
 Yard desired-state delivery retains resources omitted from a declaration by
 default; use `--mode complete` to remove them through the deployment gate.
@@ -81,7 +88,8 @@ equal to its CD subcommands, and `test/cd-md-examples.test.ts` runs every
 
 `hobo ci` shows setup help. `hobo ci enable` (alias `connect`) connects a GitHub
 repository; `list`/`ls`, `inspect`, `logs`, `grep`, and `rerun` operate on its
-GitHub Actions runs using the authenticated GitHub CLI (`gh`). `status` inspects
+GitHub Actions runs through the GitHub REST API with installation tokens of
+HoBo's GitHub App, minted from the owner's store session. `status` inspects
 the relay connection. A sole Git remote is selected automatically; pass
 `--remote <name>` to select among several. After connection, use `runs-on: hobo`
 in an Actions workflow and push a commit. `hobo ci --help` also lists `hobo ci deploy` and its options: the composed product's verb for deploying the hosted relay to Vercel from a git ref (preview by default, `--dry-run` sends nothing); this package only owns its help text and passes its options through to the `ci` command untouched.
@@ -114,14 +122,12 @@ node packages/cli/dist/bin/hobo.js new my-app -t api
 Product composition (recommended for end-to-end local lane):
 
 ```bash
-pnpm hobo --help
+pnpm hobo --help          # root script: builds @hobo/hobo on first use
+# or: node packages/hobo/dist/bin/hobo.js --help
 ```
 
-The root script builds `@hobo/hobo` on first use. You can also run
-`node packages/hobo/dist/bin/hobo.js --help` after building it.
-
-The stable external installation of `@hobo/*` is not published to npm. Use the
-monorepo workspace.
+**Pre-release:** `@hobo/*` is **not published to npm** as a stable external
+install story yet. Prefer the monorepo workspace until publish hygiene lands.
 The composed product provides persistent self-hosted local deployments and
 explicitly selected live provider paths; see [`packages/hobo/README.md`](../hobo/README.md).
 
@@ -134,12 +140,6 @@ explicitly selected live provider paths; see [`packages/hobo/README.md`](../hobo
 Data models live in `data-models/` (protobuf + CUE), including `build_manifest.*` for `hobo build` records and `build.*` event families.
 
 ## Executable application generation
-
-During a long-lived `hobo dev` session, source edits trigger debounced code
-generation. Generated output is excluded from the watch, and a generation failure
-is reported while the server continues running. `hobo dev --once` runs a single
-probe and exits without watching files. Regeneration updates artifacts; it does
-not reload the running handler.
 
 `hobo codegen` selects the app's source of truth. Explicit
 `.hobo/sources/zod/resources.json` metadata uses the recursive schema engine;
@@ -227,19 +227,17 @@ adapter uses the existing runtime workflow engine, claims a fresh run before
 execution, and resumes committed steps after reopening the durable store.
 Retrying a terminal run returns its recorded result without executing it again.
 
-The host owns the EventStore and supplies authenticated actor and tenant context.
-While the runtime is configured, use `api.resources.<declared-name>` for query,
-get, put, remove, and subscribe operations.
-
 ```ts
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";
 import {
-  createGeneratedRuntime, configureGeneratedRuntime,
+  api, createGeneratedRuntime, configureGeneratedRuntime,
 } from "./src/_generated/api-tree.js";
 
 const store = createRuntimeLocalEventStore({ dataDir: ".hobo/data" });
 const runtime = createGeneratedRuntime({ store, tenant: "local", project: "shop" });
 const unconfigure = configureGeneratedRuntime(runtime);
+// Use api.resources.<declared-name>.query/get/put/remove/subscribe.
+// The host owns its EventStore and authenticated actor/tenant context.
 unconfigure();
 runtime.close();
 store.close();

@@ -1,3 +1,21 @@
+/**
+ * The CI store contract (`ci-store-contract.test.ts`) ported to the relay's
+ * cache store on the in-memory ephemeral-state engine.
+ *
+ * Scenarios about durable history are deliberately not ported (ADR-0179 and
+ * docs/design/hosted-relay-stateless.md, "Former tables"):
+ * - configuration compare-and-swap through the store: config is read-only on
+ *   the hosted relay, written by `hobo ci` to the config service; the store
+ *   refuses writes (covered below as a refusal instead);
+ * - control-record round trip and monotonic terminal status: the
+ *   `hobo_ci_control_records` table is gone; operations live in `hobo ci`;
+ * - webhook claim/ack/back-off/quarantine: the inbox is replaced by Vercel
+ *   Queue intake (phase 4b); a delivery that cannot be admitted is logged and
+ *   dropped, not quarantined. Dedupe and replay-guard are kept;
+ * - every journal-index scenario (SQLite lease and account indexes, Postgres
+ *   partition lock, account stamping, digit-growth ordering): there is no
+ *   journal; the per-account change ring replaces it for live changes only.
+ */
 import { randomUUID } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import { ConnectionSchema, eventJob } from "@hobo/ci";

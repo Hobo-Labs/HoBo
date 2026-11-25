@@ -17,7 +17,7 @@ test("golden path links SDK consumer, manifest IR, CLI transcript, API, MCP, and
   assert.equal(proof.cliTranscript.fixtureId, proof.fixtureId);
   assert.equal(proof.apiContract.fixtureId, proof.fixtureId);
   assert.equal(proof.mcpResult.fixtureId, proof.fixtureId);
-  assert.equal(proof.proofNote, "urn:hobo:proof:sdk-to-cli-golden-path");
+  assert.equal(proof.proofNote, "docs/design/proofs/sdk-to-cli-golden-path/README.md");
   assert.deepEqual(validateSdkToCliGoldenPathProof(proof), { ok: true, errors: [] });
 });
 
@@ -86,17 +86,20 @@ test("contract artifacts name protobuf, CUE, and Pact fixture boundaries", () =>
   });
 });
 
-test("package README and contract artifacts preserve scope-out boundaries", () => {
+test("proof README and contract artifacts exist and preserve scope-out boundaries", () => {
   const packageReadme = readPackageFile("README.md");
+  const packageAdr = readPackageFile("ADR.md");
   const proto = readPackageFile("architecture/sdk_to_cli_golden_path.proto");
   const cue = readPackageFile("architecture/sdk_to_cli_golden_path.cue");
   const pact = JSON.parse(readPackageFile("architecture/pacts/sdk_to_cli_golden_path.pact.json"));
+  const proofReadme = readRepoFile("docs/design/proofs/sdk-to-cli-golden-path/README.md");
 
   assert.match(packageReadme, /dx\.lifecycle\.shop-api\.v1/);
+  assert.match(packageAdr, /sdkToCliGoldenPath\.TranscriptAccepted/);
   assert.match(proto, /message SdkToCliGoldenPathRecord/);
   assert.match(cue, /#SdkToCliGoldenPathRecord/);
   assert.equal(pact.interactions[0].response.body.issue, "HOBO-576");
-  assert.match(packageReadme, /does not publish.*production app scaffold.*real deploy URL/s);
+  assert.match(proofReadme, /No production app scaffold, real deploy URL, package publication/);
 });
 
 test("validation rejects scope creep into production deploys, package publishing, live MCP, or dashboard screenshots", () => {
@@ -112,4 +115,8 @@ test("validation rejects scope creep into production deploys, package publishing
 
 function readPackageFile(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+function readRepoFile(path: string) {
+  return readFileSync(new URL(`../../../../../../${path}`, import.meta.url), "utf8");
 }

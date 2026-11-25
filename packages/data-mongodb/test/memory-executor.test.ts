@@ -1,3 +1,7 @@
+// The in-memory executor is only useful if it behaves like a server where a
+// test would otherwise be fooled. These pin the behaviours that matter; the
+// pact replay and the parity test in the live lane compare it with a real
+// replica set.
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
@@ -47,6 +51,7 @@ function deferred(): Deferred {
 	return { promise, resolve: () => release() };
 }
 
+/** A turn of the timer queue: long enough for anything not waiting to finish. */
 function settle(): Promise<void> {
 	return new Promise((resolve) => {
 		setTimeout(resolve, 20);
@@ -133,6 +138,8 @@ describe("in-memory executor: _id order and ranges", () => {
 				id("", "9"),
 				id("a", "1"),
 				id("a", "2"),
+				// U+FFFD (EF BF BD) sorts before U+1F600 (F0 9F 98 80) in UTF-8,
+				// and after it in UTF-16 code units.
 				id("a", "�"),
 				id("a", "\u{1F600}"),
 				id("ab", "1"),
@@ -344,6 +351,7 @@ describe("in-memory executor: transactions and changes", () => {
 			["3"],
 		);
 		assert.ok(rest.drained);
+		// Drained means the whole log was considered, other collections too.
 		assert.notEqual(rest.token, rest.events[0]?.token);
 		const again = await executor.readChanges({
 			collection: "c",
@@ -365,6 +373,7 @@ describe("in-memory executor: transactions and changes", () => {
 });
 
 describe("in-memory executor: the 16 MiB document limit", () => {
+	// { _id: "big", s: <n bytes> } is 26 + n bytes of BSON.
 	const sized = (bytes: number): MongoDocument => ({
 		_id: "big",
 		s: "x".repeat(bytes - 26),
@@ -386,6 +395,7 @@ describe("in-memory executor: the 16 MiB document limit", () => {
 			}),
 			10334,
 		);
+		// Lengths only: a failure here must not print 16 MiB of text.
 		const [stored] = await all(executor);
 		assert.equal(
 			String(stored?.s).length,
@@ -409,6 +419,7 @@ describe("in-memory executor: transactions interleave", () => {
 				collection: "c",
 				select: { kind: "range" },
 			});
+			// Committed by someone else while this transaction is open.
 			await put(executor, { _id: "2" });
 			const after = await session.find({
 				collection: "c",
@@ -428,7 +439,9 @@ describe("in-memory executor: transactions interleave", () => {
 				operations: [{ kind: "insert", document: { _id: "1" } }],
 			}),
 		);
+		// The body has returned. A reader that does not wait sees nothing yet…
 		assert.deepEqual(await all(executor), []);
+		// …and one that waits for the collection's transactions sees the commit.
 		await executor.awaitTransactions({ collection: "c" });
 		assert.equal((await all(executor)).length, 1);
 		await writing;
@@ -439,6 +452,7 @@ describe("in-memory executor: transactions interleave", () => {
 		const reached = deferred();
 		const gate = deferred();
 		const open = executor.transaction(async (session) => {
+			// A read is enough to have touched it.
 			await session.find({ collection: "c", select: { kind: "range" } });
 			reached.resolve();
 			await gate.promise;

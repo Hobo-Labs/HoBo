@@ -10,7 +10,8 @@
     "expProofs": [
       "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
       "src/draft/exp-proofs/ux/vibe-workspace-project-states"
-    ]
+    ],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

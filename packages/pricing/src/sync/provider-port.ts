@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
 
-/* oxlint-disable anti-slop/no-runtime-typeof */
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: FOCUS billing rows are parsed once at the provider billing JSON boundary. */
+
+/**
+ * Provider billing port — lives outside the pure quote/rating path (§12 Phase 5).
+ * Implementations must not perform live network I/O in unit tests; use fixture ports.
+ */
 
 export type SyntheticProviderCredentials = Readonly<{
 	authorization: string;
@@ -41,9 +46,7 @@ export function createSyntheticProviderCredentials(): SyntheticProviderCredentia
 }
 
 function requiredString(value: JsonValue | undefined): string | undefined {
-	return typeof value === "string" && value.trim().length > 0
-		? value
-		: undefined;
+	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 export function parseFocusBillingRow(
@@ -86,12 +89,10 @@ export function parseFocusBillingRow(
 		completeness,
 	};
 	let parsed: FocusBillingRow = row;
-	if (value.effectiveCostDecimal !== undefined) {
-		if (typeof value.effectiveCostDecimal !== "string") return undefined;
+	if (typeof value.effectiveCostDecimal === "string") {
 		parsed = { ...parsed, effectiveCostDecimal: value.effectiveCostDecimal };
 	}
-	if (value.focusVersion !== undefined) {
-		if (typeof value.focusVersion !== "string") return undefined;
+	if (typeof value.focusVersion === "string") {
 		parsed = { ...parsed, focusVersion: value.focusVersion };
 	}
 	return parsed;

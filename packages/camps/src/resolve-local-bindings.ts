@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: manifest sorting is a local JSON compatibility boundary and token resolution is guarded by the wiring manifest contract. */
 import { createHash } from "node:crypto";
 
 import { LAZY_TOKEN_PATTERN, type WiringManifest } from "@hobo/bindles/wiring";
@@ -19,6 +19,11 @@ export class BindingResolutionError extends Error {
 
 export type ResolvedEnv = Readonly<Record<string, string>>;
 
+/**
+ * Resolve lazy binding tokens for a Camp running on the local provider.
+ * Provider is inherited from the enclosing Yard (derivedProviderId) or
+ * explicitly required as "local" for bare-metal camps.
+ */
 export async function resolveLocalBindings(
 	manifest: WiringManifest,
 	camp: Camp,

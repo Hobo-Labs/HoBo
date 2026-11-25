@@ -118,12 +118,16 @@ describe("defineAggregate write-model fold", () => {
 
 	it("throws the typed retryable conflict error on an optimistic seq collision", async () => {
 		const s = store();
+		// Seed the real stream so its current length is 1.
 		await s.append(
 			"order:1004",
 			[{ type: "order.Placed", data: { orderId: "1004", totalCents: 1 } }],
 			{ expectedSeq: 0, actor: ctx.actor, tenant: ctx.tenant },
 		);
 
+		// Wrap the real store so the aggregate FOLDS an empty view (expectedSeq 0)
+		// while the underlying append still targets the real stream at seq 1 — a
+		// genuine optimistic collision the real EventStore rejects.
 		const staleStore = {
 			...s,
 			read() {

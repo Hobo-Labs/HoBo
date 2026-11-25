@@ -8,6 +8,7 @@ import {
 	type JsonValue,
 } from "../json.js";
 
+// public-contract: manifest discriminator included in canonical deployment hashes.
 export const MANIFEST_SCHEMA = "hobo.manifest/v1" as const;
 
 const RESOURCE_TYPES = new Set(["data.v1", "component.v1", "website.v1"]);
@@ -51,6 +52,7 @@ type ManifestRecord = {
 	};
 	resources: Record<string, ResourceRecord>;
 	triggerEdges?: TriggerEdgeRecord[];
+	/** Scope policy is part of the canonical deployment input and hash. */
 	policy?: JsonObject;
 };
 
@@ -283,25 +285,6 @@ function validateResource(
 		);
 	}
 
-	if (resource.env !== undefined) {
-		assertRecord(resource.env, `resources.${id}.env`);
-		for (const [key, value] of Object.entries(resource.env)) {
-			if (!isJsonString(value))
-				throw new ManifestParseError(
-					`resources.${id}.env.${key}`,
-					"must be a string",
-				);
-		}
-	}
-	if (
-		resource.connectionString !== undefined &&
-		!isJsonString(resource.connectionString)
-	)
-		throw new ManifestParseError(
-			`resources.${id}.connectionString`,
-			"must be a string",
-		);
-
 	if (resource.links !== undefined && !Array.isArray(resource.links)) {
 		throw new ManifestParseError(`resources.${id}.links`, "must be an array");
 	}
@@ -313,6 +296,7 @@ function validateResource(
 		);
 	}
 
+	// SAFETY: assertion required at this I/O or test boundary.
 	return structuredClone(resource) as ResourceRecord;
 }
 
@@ -462,6 +446,7 @@ function sortKeys<T>(value: T): JsonValue {
 function brandManifest(record: ManifestRecord): ManifestV1 {
 	return {
 		brand: manifestV1Brand,
+		// SAFETY: assertion required at this I/O or test boundary.
 		value: Object.freeze(structuredClone(record)) as ManifestRecord,
 	};
 }

@@ -14,7 +14,7 @@ const expectedProviders = [
   "ComponentizeBuildBoundary",
   "CiFabricBoundary",
   "ArtifactTrustBoundary",
-  "SourcePolicyBoundary",
+  "HardeningTraceabilityBoundary",
 ];
 
 test("foundations simulation satisfies every declared Pact boundary", async () => {
@@ -26,7 +26,7 @@ test("foundations simulation satisfies every declared Pact boundary", async () =
     loadPact("componentize-build-boundary.pact.json"),
     loadPact("ci-fabric-boundary.pact.json"),
     loadPact("artifact-trust-boundary.pact.json"),
-    loadPact("source-policy-boundary.pact.json"),
+    loadPact("hardening-traceability-boundary.pact.json"),
   ]);
 
   assert.deepEqual(result.contracts.covered.sort(), expectedProviders.sort());

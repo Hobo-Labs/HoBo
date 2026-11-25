@@ -1,3 +1,6 @@
+/**
+ * Admission and telemetry for deps-build Docker headroom.
+ */
 import { z } from "zod";
 import {
 	depsBuildDockerReserve as computeDepsBuildDockerReserve,

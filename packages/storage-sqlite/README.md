@@ -1,12 +1,12 @@
 # `@hobo/storage-sqlite`
 
-Driver-neutral SQLite schema, initialization, codecs, and commit semantics for HoBo’s
+Driver-neutral SQLite schema, migrations, codecs, and commit semantics for HoBo’s
 default durable EventStore / runtime journal.
 
 SQLite is the **default engine**, not the public architecture boundary. Callers
 depend on `@hobo/core` ports; native (`node:sqlite`) and browser (SQLite WASM +
-OPFS) adapters implement a thin `SqliteDriver` and share this package’s SQL and
-initialization logic.
+OPFS) adapters implement a thin `SqliteDriver` and share this package’s SQL +
+migration logic.
 
 ## Ownership model
 
@@ -16,17 +16,9 @@ time. Scale by partitions, not multi-writer WAL over shared network filesystems.
 memory databases and temporary paths, including SQLite memory URIs. Use
 `createMemoryNodeSqliteDriver` explicitly for ephemeral tests and views.
 
-Append commits enforce the expected stream sequence and optional fencing token.
-Queue, timer, and outbox effects are staged in the same transaction. Durable
-subscriptions and outbox dispatch are at least once; idempotency keys prevent
-duplicate recorded effects, but do not guarantee exactly-once external effects.
-
 ## Schema version
 
-An empty database is initialized transactionally and stamped with the current
-`PRAGMA user_version`. On reopen, the journal verifies its tables and indexes
-against the current schema. An incompatible version, a changed schema, or an
-unstamped database containing objects is rejected without altering its data.
+`PRAGMA user_version` tracks schema revisions. Current: **2**.
 
 ## Engine profiles
 

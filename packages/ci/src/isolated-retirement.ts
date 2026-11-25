@@ -1,6 +1,7 @@
 import { clone, toJsonString } from "@bufbuild/protobuf";
 import { type Lease, LeaseSchema } from "./_generated/ci_pb.js";
 
+/** Only monotonic, session-bound retirement bookkeeping may outlive admission. */
 export function isIsolatedRetirementTransition(
 	before: Lease,
 	after: Lease,

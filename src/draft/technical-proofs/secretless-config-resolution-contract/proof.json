@@ -10,7 +10,11 @@
       "src/draft/technical-proofs/oidc-federation-sts-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/authoring-resources-wiring.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

@@ -6,6 +6,8 @@ import type { CodegenInvocation } from "./types.js";
 const DRAFT_POC_PACKAGES =
 	"src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages";
 
+// The schema-tools package is wherever this module lives, so the report
+// envelope validates against its own data-models regardless of checkout.
 function defaultSchemaToolsDir(): string {
 	return resolve(dirname(fileURLToPath(import.meta.url)), "..");
 }
@@ -13,6 +15,8 @@ function defaultSchemaToolsDir(): string {
 function defaultPackagesRoot(repoRoot: string): string {
 	const production = resolve(repoRoot, "packages");
 	const draft = resolve(repoRoot, DRAFT_POC_PACKAGES);
+	// Production wins once @hobo/schema-tools is promoted under packages/
+	// (the S0-04 promotion gate); the draft POC remains for its frozen proof.
 	if (existsSync(resolve(production, "schema-tools", "package.json")))
 		return production;
 	if (existsSync(draft)) return draft;

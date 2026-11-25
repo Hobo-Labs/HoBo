@@ -1,5 +1,10 @@
-import { divideDecimalAtMost } from "@hobo/pricing";
+import { divideDecimalAtMost } from "./accounting.js";
 
+/**
+ * Convert a remaining shared 2-vCPU Linux minute balance to minutes usable by
+ * one selected runner SKU. Unknown labels are refused rather than guessing a
+ * conversion. The caller must obtain an authoritative, current account balance.
+ */
 export function providerFreeRunnerMinutes(input: {
 	provider: "blacksmith" | "depot";
 	runsOn: string;

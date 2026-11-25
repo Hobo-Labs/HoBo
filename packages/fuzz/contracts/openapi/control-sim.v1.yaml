@@ -1,0 +1,86 @@
+openapi: 3.0.3
+info:
+  title: HoBo in-process control-plane simulator
+  version: 0.1.0
+  description: >
+    Fixture for Schemathesis. Targets the in-memory adapter in @hobo/fuzz,
+    never Azure, AWS, GCP, or paid SaaS. The live local control plane also
+    serves GET /v1/openapi.json from @hobo/control-api.
+paths:
+  /v1/bindles:
+    post:
+      summary: create bindle
+      parameters:
+        - in: header
+          name: x-hobo-tenant
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bindleId, manifestHash]
+              properties:
+                bindleId: { type: string }
+                manifestHash: { type: string }
+      responses:
+        "200": { description: created }
+        "400": { description: invalid or polluted }
+        "403": { description: tenant required }
+  /v1/bindles/{bindleId}/apply:
+    post:
+      summary: apply bindle
+      parameters:
+        - in: path
+          name: bindleId
+          required: true
+          schema: { type: string }
+        - in: header
+          name: x-hobo-tenant
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idempotencyKey]
+              properties:
+                idempotencyKey: { type: string }
+      responses:
+        "200": { description: applied }
+        "400": { description: missing idempotency key }
+        "403": { description: cross-tenant }
+  /v1/bindles/{bindleId}/destroy:
+    post:
+      summary: destroy bindle resources
+      parameters:
+        - in: path
+          name: bindleId
+          required: true
+          schema: { type: string }
+        - in: header
+          name: x-hobo-tenant
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: destroyed }
+        "403": { description: tenant required }
+  /v1/tenants/{tenantId}/resources:
+    get:
+      summary: list tenant resources
+      parameters:
+        - in: path
+          name: tenantId
+          required: true
+          schema: { type: string }
+        - in: header
+          name: x-hobo-tenant
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: resources }
+        "403": { description: cross-tenant }

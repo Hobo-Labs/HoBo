@@ -38,16 +38,16 @@ test("M0 record states entitlement and plan-limit goal, personas, scope, and bou
 
 test("M0 record maps authoritative design sources and owning initiative dependencies", () => {
   assert.deepEqual(ENTITLEMENTS_PLAN_LIMITS_SCOPE.designRefs, [
-    "urn:hobo:requirement:usage-metering",
-    "urn:hobo:requirement:billing-launch-policy",
-    "urn:hobo:requirement:tenant-isolation-quotas",
-    "urn:hobo:requirement:reliability-observability-cost#plan-05",
-    "urn:hobo:requirement:security-networking#plan-50",
+    "docs/design/usage-metering.md",
+    "docs/design/billing-launch-policy.md",
+    "docs/design/tenant-isolation-quotas.md",
+    "docs/design/reliability-observability-cost.md#plan-05",
+    "docs/design/security-networking.md#plan-50",
   ]);
   assert.deepEqual(ENTITLEMENTS_PLAN_LIMITS_SCOPE.adrRefs, [
-    "urn:hobo:decision:adr-0039",
-    "urn:hobo:decision:adr-0074",
-    "urn:hobo:decision:adr-0064",
+    "docs/design/adr/02-identity-security.md#adr-0039",
+    "docs/design/adr/02-identity-security.md#adr-0074",
+    "docs/design/adr/07-portability-extensibility.md#adr-0064",
   ]);
   assert.ok(
     ENTITLEMENTS_PLAN_LIMITS_SCOPE.initiativeDependencies.some(

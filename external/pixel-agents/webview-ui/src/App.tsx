@@ -29,9 +29,13 @@ import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 
+// Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
 const editorState = new EditorState();
 
+// Test-only observability hooks (message/sound logs, addAgent wrapper, selectAgent).
+// Installed only under the e2e harness so they never patch prototypes or grow
+// unbounded logs in a real user's session.
 if (isE2E) installTestHooks(officeStateRef);
 
 function getOfficeState(): OfficeState {
@@ -42,7 +46,12 @@ function getOfficeState(): OfficeState {
 }
 
 function App() {
+  // Browser runtime (dev or static dist): dispatch mock messages after the
+  // useExtensionMessages listener has been registered.
   useEffect(() => {
+    // browserMock is for Vite dev mode only (UI prototyping without a server).
+    // In standalone server mode, the server sends all state over WebSocket.
+    // In VS Code mode, the extension sends all state via postMessage.
     if (isBrowserRuntime && import.meta.env.DEV) {
       void import('./browserMock.js').then(({ dispatchMockMessages }) => dispatchMockMessages());
     }
@@ -74,7 +83,6 @@ function App() {
     setWatchAllSessions,
     alwaysShowLabels,
     hooksEnabled,
-    hooksAvailable,
     setHooksEnabled,
     hooksInfoShown,
     areaMappings,
@@ -83,6 +91,7 @@ function App() {
     setShowAreas,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
+  // Show migration notice once layout reset is detected
   const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState(false);
   const showMigrationNotice = layoutWasReset && !migrationNoticeDismissed;
 
@@ -104,6 +113,7 @@ function App() {
     transport.send({ type: 'setLastSeenVersion', version: currentMajorMinor });
   }, [currentMajorMinor]);
 
+  // Sync alwaysShowOverlay from persisted settings
   useEffect(() => {
     setAlwaysShowOverlay(alwaysShowLabels);
   }, [alwaysShowLabels]);
@@ -121,6 +131,8 @@ function App() {
     transport.send({ type: 'focusAgent', id });
   }, []);
 
+  // Mutate folder→Area mappings locally + send to server. Updates OfficeState in
+  // the same tick so a follow-up agentCreated picks up the new mapping.
   const handleAreaMappingChange = useCallback(
     (folderName: string, areaLabel: string, action: 'add' | 'remove') => {
       const current = areaMappings[folderName] ?? [];
@@ -144,16 +156,25 @@ function App() {
     [areaMappings, setAreaMappings],
   );
 
+  // Toggle global Show Areas — persisted via setShowAreas message; runs server-
+  // side through configPersistence.
   const onToggleShowAreas = useCallback(() => {
     const next = !showAreas;
     setShowAreas(next);
     transport.send({ type: 'setShowAreas', enabled: next });
   }, [showAreas, setShowAreas]);
 
+  // When AREA_PAINT is active in the editor, force the overlay on even if the
+  // user has toggled Show Areas off globally — they need to see what they're
+  // editing. The selected area's overlay is alpha-bumped via activeAreaLabel.
   const isEditingAreas = editor.isEditMode && editorState.activeTool === EditTool.AREA_PAINT;
   const effectiveShowAreas = isEditingAreas || showAreas;
   const activeAreaLabel = isEditingAreas ? editor.selectedAreaLabel : null;
 
+  // e2e: register the component-scoped editor-action drivers + the effective
+  // show-areas gate on the test-hooks namespace (module-load installTestHooks
+  // can't reach these React callbacks). Bypasses only canvas pixel→tile
+  // geometry — the handlers still own undo/dirty/rebuild. Guarded on isE2E.
   useEffect(() => {
     if (!isE2E || typeof window === 'undefined') return;
     const hooks = (window.__pixelAgentsTestHooks ??= {});
@@ -182,6 +203,7 @@ function App() {
   }, []);
 
   const handleClick = useCallback((agentId: number) => {
+    // If clicked agent is a sub-agent, focus the parent's terminal instead
     const os = getOfficeState();
     const meta = os.subagentMeta.get(agentId);
     const focusId = meta ? meta.parentAgentId : agentId;
@@ -190,6 +212,9 @@ function App() {
 
   const officeState = getOfficeState();
 
+  // Merged set of folders the Areas dropdown can map: real workspace folders plus
+  // every distinct folder an agent has run in this session (deduped by name; name
+  // is the areaMappings key / seat-bias identity, path is only the React list key).
   const areaFolders = useMemo(() => {
     const byName = new Map<string, { name: string; path: string }>();
     for (const f of workspaceFolders) byName.set(f.name, f);
@@ -199,6 +224,10 @@ function App() {
     return [...byName.values()];
   }, [workspaceFolders, agentFolderNames]);
 
+  // Areas authoring is available when the layout already defines areas, or when
+  // there is at least one mappable folder. Decouples the Areas UI from VS Code
+  // multi-root workspaces (fixes single-root VS Code AND standalone, where
+  // workspaceFolders is always empty).
   const areasAvailable = (officeState.getLayout().areas?.length ?? 0) > 0 || areaFolders.length > 0;
 
   const handleExportLayout = useCallback(() => {
@@ -207,6 +236,8 @@ function App() {
 
   const handleImportLayout = useCallback(
     (file: File) => {
+      // Browser-native import (standalone): read + validate + apply directly,
+      // bypassing the layoutLoaded message whose dirty guard would skip it.
       if (
         isEditDirty() &&
         !window.confirm('Replace the current layout? Unsaved edits will be lost.')
@@ -217,6 +248,8 @@ function App() {
       reader.onload = () => {
         try {
           const imported = JSON.parse(String(reader.result)) as Record<string, unknown>;
+          // Match the VS Code guard, plus the furniture-array check VS Code omits
+          // (migrate + rebuild iterate furniture and would throw on a non-array).
           if (
             imported.version !== 1 ||
             !Array.isArray(imported.tiles) ||
@@ -242,8 +275,10 @@ function App() {
     [isEditDirty, editor],
   );
 
+  // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
   void editorTickForKeyboard;
 
+  // Show "Press R to rotate" hint when a rotatable item is selected or being placed
   const showRotateHint =
     editor.isEditMode &&
     (() => {
@@ -291,7 +326,7 @@ function App() {
         <>
           <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
 
-          {}
+          {/* Vignette overlay */}
           <div
             className="absolute inset-0 pointer-events-none"
             style={{ background: 'var(--vignette)' }}
@@ -384,7 +419,7 @@ function App() {
         />
       )}
 
-      {}
+      {/* Hooks first-run tooltip */}
       {!hooksInfoShown && !hooksTooltipDismissed && (
         <Tooltip
           title="Instant Detection Active"
@@ -410,7 +445,7 @@ function App() {
         </Tooltip>
       )}
 
-      {}
+      {/* Hooks info modal */}
       <Modal
         isOpen={isHooksInfoOpen}
         onClose={() => setIsHooksInfoOpen(false)}
@@ -481,7 +516,6 @@ function App() {
           transport.send({ type: 'setWatchAllSessions', enabled: newVal });
         }}
         hooksEnabled={hooksEnabled}
-        hooksAvailable={hooksAvailable}
         onToggleHooksEnabled={() => {
           const newVal = !hooksEnabled;
           setHooksEnabled(newVal);

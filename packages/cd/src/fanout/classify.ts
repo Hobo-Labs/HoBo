@@ -1,3 +1,12 @@
+// Per-Camp outcome rules (D21), pure. A Camp in flight is:
+// - succeeded: its promotion qualified the Freight here and `min_success_ms`
+//   has elapsed since, with the promotion not failed or rolled back;
+// - failed: rejected, apply failure, verification FAIL/INCONCLUSIVE (the
+//   promotion reports FAILED/ROLLED_BACK), or `progress_deadline_ms` elapsed;
+// - deferred: its promotion was superseded by newer Freight (it catches up);
+// - otherwise still in flight.
+// Deferral at the Camp's turn (taint, unreachable, closed window) is decided
+// by `eligibility`, before any promotion is requested.
 import {
 	CampConditionType,
 	CampManagement,
@@ -90,6 +99,7 @@ export function classify(
 	return { kind: "in-flight" };
 }
 
+/** Why a Camp must be deferred at its turn, or undefined when it may start. */
 export function eligibility(
 	input: Readonly<{
 		campId: string;

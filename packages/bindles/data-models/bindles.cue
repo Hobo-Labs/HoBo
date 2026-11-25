@@ -36,35 +36,19 @@ package data_models
 	option:   string & !=""
 }
 
-#HttpHealthCheck: {
-	type: "http"
-	path: string & =~"^/([^/].*)?$"
-	intervalMs?: int & >=1 & <=300000
-	timeoutMs?:  int & >=1 & <=300000
-	if intervalMs != _|_ && timeoutMs != _|_ {
-		_intervalFits: true & (intervalMs <= timeoutMs)
-	}
-	if intervalMs == _|_ && timeoutMs != _|_ {
-		_defaultIntervalFits: true & (250 <= timeoutMs)
-	}
-}
-
 #BindleResourceRecord: {
 	kind:      string & !=""
 	name:      string & !=""
 	stable_id: #StableId
 	declared_allow: [...string]
-	annotations:    [...#ProviderAnnotation]
-	depends_on:     [...string]
-	generated_id?:       string & !=""
-	identity_occurrence?: int & >0
+	annotations: [...#ProviderAnnotation]
+	depends_on: [...string]
 }
 
 #BindleGraph: {
 	name: string & !=""
 	resources: [string]: #BindleResourceRecord
-	edges:     [...#BindleEdge]
-	deployment_identity?: "generated"
+	edges: [...#BindleEdge]
 }
 
 #KvAllowVerb:         "get" | "set" | "delete"

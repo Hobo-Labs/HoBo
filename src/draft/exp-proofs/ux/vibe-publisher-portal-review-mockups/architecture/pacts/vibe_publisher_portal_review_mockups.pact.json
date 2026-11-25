@@ -18,15 +18,15 @@
           "issue": "HOBO-548",
           "phase": "M1",
           "packagePath": "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups",
-          "proofPath": "urn:hobo:proof:vibe-publisher-portal-review-mockups",
+          "proofPath": "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md",
           "designRefs": [
-            "urn:hobo:requirement:publisher-portal",
-            "urn:hobo:requirement:capability-review-approval",
-            "urn:hobo:requirement:marketplace-publisher-trust-evidence",
-            "urn:hobo:requirement:marketplace-payout-hooks",
-            "urn:hobo:requirement:org-catalogs",
-            "urn:hobo:requirement:launch-support-escalation",
-            "urn:hobo:proof:resource-lifecycle-quickstart-examples"
+            "docs/design/publisher-portal.md",
+            "docs/design/capability-review-approval.md",
+            "docs/design/marketplace-publisher-trust-evidence.md",
+            "docs/design/marketplace-payout-hooks.md",
+            "docs/design/org-catalogs.md",
+            "docs/design/launch-support-escalation.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
           ],
           "quickstartFixtureRefs": [
             {

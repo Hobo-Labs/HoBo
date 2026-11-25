@@ -7,7 +7,11 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/proofs/hobo-422-publisher-portal/README.md",
+      "docs/design/publisher-portal.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

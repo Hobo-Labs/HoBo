@@ -1,3 +1,16 @@
+/**
+ * Tier 2 staleness checks: the ones that cost too much to run on every session
+ * boot. Shelling out to git, walking workspaces, resolving hook script paths,
+ * and validating ignore lists against the live rule registry all belong here.
+ *
+ * The boot tier answers "did an older Impeccable write this". This tier also
+ * asks "does it still describe the code", which no file comparison can settle
+ * on its own. Where the answer needs judgment, the finding reports a measured
+ * proxy and says it is a proxy. It never claims a document is wrong because a
+ * number is large.
+ *
+ * Same finding shape and severities as lib/staleness.mjs.
+ */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,6 +33,8 @@ const HOOK_SCRIPT_MARKERS = [
   'skills/impeccable/scripts/hook-before-edit.mjs',
 ];
 
+// Retired live-mode state locations. impeccable-paths still reads these as
+// fallbacks; reporting them is what eventually lets the fallbacks go.
 const LEGACY_LIVE_PATHS = ['.impeccable-live.json', '.impeccable-live'];
 
 function finding({ id, artifact, filePath = null, severity, summary, fix }) {
@@ -55,7 +70,15 @@ function git(args, cwd) {
   }
 }
 
+// ─── DESIGN.md truth drift ─────────────────────────────────────────────────
 
+/**
+ * How much UI work has landed since DESIGN.md was last touched, measured in
+ * commits to the visual source directories. A proxy, and reported as one: a
+ * large number means the document is worth re-reading, not that it is wrong.
+ * Silent outside a git repo, on an untracked DESIGN.md, and when the count is
+ * small enough to be ordinary maintenance.
+ */
 export function checkDesignDrift({ designPath, projectRoot, threshold = 25 }) {
   if (!designPath || !projectRoot) return [];
   if (!git(['rev-parse', '--is-inside-work-tree'], projectRoot)) return [];
@@ -84,10 +107,16 @@ export function checkDesignDrift({ designPath, projectRoot, threshold = 25 }) {
     summary: `${commits} commits have touched ${dirs.join(', ')} since ${relDesign} was last edited`
       + `${when ? ` (${when})` : ''}. This counts commits, not contradictions: it says the document is worth `
       + 're-reading, not that it is wrong.',
-    fix: 'Complete any unfinished behavior, then remove the design document.',
+    fix: 'Read DESIGN.md against the current tokens and components before trusting it as authority. '
+      + 'If it has genuinely drifted, `document` regenerates it from the code.',
   })];
 }
 
+/**
+ * Canonical DESIGN.md sections that carry nothing. Distinct from truth drift:
+ * a section can be absent because it never applied, so this is reported as a
+ * documentation gap for a human to judge, never as an error.
+ */
 function hasCoverageValue(value) {
   if (Array.isArray(value)) return value.some(hasCoverageValue);
   if (value && typeof value === 'object') {
@@ -128,11 +157,18 @@ export function checkDesignCoverage({ design, designPath, parseDesignMd }) {
     summary: `${designPath || 'DESIGN.md'} has no ${missing.join(', ')} section. `
       + 'Agents generating new screens get no normative guidance for those, and the live design panel renders '
       + 'generic approximations in their place.',
-    fix: 'Complete any unfinished behavior, then remove the design document.',
+    fix: 'Ask whether the section never applied or was never written. `document` fills it from the code if the '
+      + 'project has the answer in its CSS.',
   })];
 }
 
+// ─── detector ignore lists ─────────────────────────────────────────────────
 
+/**
+ * Ignore entries that no longer match anything: rule ids the engine dropped or
+ * renamed, and file paths that are gone. Both read as working suppressions
+ * until someone checks, and a dead rule ignore also hides that the rule left.
+ */
 export function checkDetectorIgnores({ projectRoot, knownRuleIds = null }) {
   const findings = [];
   if (!projectRoot) return findings;
@@ -183,6 +219,7 @@ export function checkDetectorIgnores({ projectRoot, knownRuleIds = null }) {
   return findings;
 }
 
+// ─── hook installation ─────────────────────────────────────────────────────
 
 function collectHookCommands(value, out = []) {
   if (typeof value === 'string') {
@@ -201,6 +238,18 @@ function collectHookCommands(value, out = []) {
 
 const HOOK_MARKER = /skills\/impeccable\/scripts\/hook(?:-before-edit)?\.mjs/;
 
+// Pull the script-path token out of a hook command line, placeholders intact.
+// The forms our manifests ship:
+//   * bare:            node "${CLAUDE_PROJECT_DIR}/.../hook.mjs"
+//   * bundle-relative: node ".agents/.../hook.mjs"
+//   * legacy unquoted: node .claude/.../hook.mjs
+//   * guarded (#399):  [ ! -f "PATH" ] || node "PATH"   (PATH twice, identical)
+//   * absolute:        node "/Users/.../hook.mjs"        (user-level installs)
+//   * github portable: node "$(git rev-parse --show-toplevel)/.../hook.mjs"
+// A quoted path wins; the guard's two occurrences are identical, so the first
+// quoted match is the path. Otherwise fall back to the whitespace/metachar-
+// delimited token that ends at the marker, so we don't absorb `node`, `[`, `!`
+// or `||`. Returns the token verbatim; resolution happens separately.
 function hookScriptTokenFrom(command) {
   const str = String(command);
   if (!HOOK_MARKER.test(str)) return null;
@@ -210,14 +259,41 @@ function hookScriptTokenFrom(command) {
   return bare ? bare[1] : null;
 }
 
+// Resolve a script token to an absolute path the doctor can existsSync, or null
+// when the doctor cannot know where it points — in which case the caller must
+// NOT report it missing (a doctor never asserts a negative it cannot verify).
+//
+// Per-placeholder policy, mirroring what each runtime actually expands:
+//   ${CLAUDE_PROJECT_DIR}  → the project root being scanned. This is exactly the
+//                            runtime mapping (Claude Code sets it to the project
+//                            dir at hook time), so we EXPAND it against `root`.
+//                            Not doing so was the #402 bug: the literal
+//                            `${CLAUDE_PROJECT_DIR}/...` string never exists.
+//   ${CLAUDE_PLUGIN_ROOT}  → plugin-package install dir, set by the harness to
+//   ${PLUGIN_ROOT}           wherever the plugin/codex/grok bundle was unpacked
+//   ${GROK_PLUGIN_ROOT}      (grok aliases CLAUDE_PLUGIN_ROOT). The doctor has no
+//                            way to know that location → SKIP (return null).
+//   $(...) / backticks     → command substitution, e.g. GitHub's
+//                            `$(git rev-parse --show-toplevel)`. Not statically
+//                            resolvable → SKIP.
+//   any other ${VAR}/$VAR  → unknown to the doctor → SKIP.
+// A token with no placeholder is a literal path: absolute as-is, else relative
+// to `root`.
 function resolveHookScriptPath(token, root) {
   if (!token) return null;
+  // Command substitution or backtick expansion we can't evaluate.
   if (token.includes('$(') || token.includes('`')) return null;
   const expanded = token.replace(/\$\{CLAUDE_PROJECT_DIR\}/g, root);
+  // Any placeholder or shell variable still present is one we can't map.
   if (/\$\{[^}]*\}|\$[A-Za-z_]/.test(expanded)) return null;
   return path.isAbsolute(expanded) ? expanded : path.join(root, expanded);
 }
 
+/**
+ * A hook whose script path does not resolve is a silent no-op, and the user
+ * believes the project is covered. Also catches the contradiction of an
+ * installed manifest against `hook.enabled: false`.
+ */
 export function checkHookInstallation({ projectRoot, repoRoot, providerId }) {
   const findings = [];
   const manifests = HOOK_MANIFESTS_BY_PROVIDER[providerId] || [];
@@ -239,6 +315,7 @@ export function checkHookInstallation({ projectRoot, repoRoot, providerId }) {
         const token = hookScriptTokenFrom(command);
         if (!token) return false;
         const abs = resolveHookScriptPath(token, root);
+        // Unresolvable placeholder or command substitution: never assert missing.
         if (!abs) return false;
         return !fs.existsSync(abs);
       });
@@ -281,6 +358,7 @@ export function checkHookInstallation({ projectRoot, repoRoot, providerId }) {
   return findings;
 }
 
+// ─── retired locations ─────────────────────────────────────────────────────
 
 export function checkLegacyLiveState({ projectRoot }) {
   if (!projectRoot) return [];
@@ -298,7 +376,16 @@ export function checkLegacyLiveState({ projectRoot }) {
   })];
 }
 
+// ─── monorepo sweep ────────────────────────────────────────────────────────
 
+/**
+ * Per-workspace context, plus the case worth acting on: a workspace with
+ * native build files inheriting a repo-root PRODUCT.md that says web. Each
+ * such app gets web guidance and never loads the native references, and
+ * nothing at boot reports it because the root record parses cleanly.
+ *
+ * `candidates` comes from context.mjs's discovery so the walk is not repeated.
+ */
 export function checkWorkspaces({ repoRoot, candidates = [], checkNativePlatformEvidence, extractPlatform, readFile }) {
   if (!repoRoot || !candidates.length) return { findings: [], workspaces: [] };
   const findings = [];
@@ -339,7 +426,8 @@ export function checkWorkspaces({ repoRoot, candidates = [], checkNativePlatform
             : 'has a PRODUCT.md'
         } that resolves to web, but the workspace itself carries native build files. ${entry.summary}`,
         fix: candidate.productStatus === 'inherited'
-          ? `Use the implemented sources in \`${candidate.path}\` to choose the matching platform guidance.`
+          ? `Give \`${candidate.path}\` its own PRODUCT.md with the right \`## Platform\`. `
+            + 'An inherited record cannot describe two platforms at once.'
           : entry.fix,
       }));
     }
@@ -355,15 +443,25 @@ export function checkWorkspaces({ repoRoot, candidates = [], checkNativePlatform
       summary: `${inherited.length} of ${workspaces.length} workspace(s) inherit the repo-root PRODUCT.md: `
         + `${inherited.map((entry) => `\`${entry.path}\``).join(', ')}. Inheritance is intended; whether one `
         + 'record truthfully describes these apps is not something this check can tell.',
-      fix: 'Use each workspace\'s implemented source and explicit requirements for context.',
+      fix: 'Ask the user whether the inherited record describes each app. Where it does not, `init` in that '
+        + 'workspace writes a child PRODUCT.md that overrides it.',
     }));
   }
 
   return { findings, workspaces };
 }
 
+// ─── rule registry ─────────────────────────────────────────────────────────
 
+/**
+ * Rule ids from the bundled detector, or null when it cannot be resolved (a
+ * partial install, or a harness that ships the skill without the engine).
+ * Null means "cannot check", which the ignore-rule check treats as skip rather
+ * than as every id being unknown.
+ */
 export async function loadKnownRuleIds(scriptsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')) {
+  // Same two locations detect.mjs resolves: the bundled copy in an installed
+  // skill, then the source-repo engine when running from a checkout.
   const candidates = [
     path.join(scriptsDir, 'detector', 'detect-antipatterns.mjs'),
     path.join(scriptsDir, '..', '..', 'cli', 'engine', 'detect-antipatterns.mjs'),

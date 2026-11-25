@@ -1,3 +1,24 @@
+/**
+ * Lakebed capsule resolver (ADR-0182 I14, D6; ADR-0127).
+ *
+ * Lakebed's hosting product is a Capsule deployment. Its realization path is
+ * the `lakebed-deploy` driver: one `hobo.driver-program/v1` per deployment id,
+ * built by the same `realizeResourcePlans` the CloudProvider uses, so kv, file
+ * store and reactive-db resources ride inside the capsule program rather than
+ * being separately delivered.
+ *
+ * The injected `LakebedDeployHost` is the only seam (the driver process the
+ * reconciler runs next to; a test double). It receives the deployment-scoped
+ * deploy token the host resolves from `credentialRef` at call time. The token
+ * never reaches a desired bag, an outcome or an error message (I9).
+ *
+ * Everything the host reports crosses `parseCapsuleRecord`: a capsule URL must
+ * be `https://*.lakebed.app` with no userinfo, port, query or fragment. Readiness
+ * is an observation: a GET of that exact URL through the caller's transport
+ * (I5). A deployment id runs one artifact; replacing it in place is not a
+ * staged transition, so a digest change on a live capsule is refused and the
+ * remediation names a new deployment id.
+ */
 import {
 	type CapabilityPortKind,
 	createResolverRegistry,
@@ -38,21 +59,25 @@ const PROBE_TIMEOUT_MS = 5_000;
 const PROBE_MAX_BYTES = 64 * 1024;
 const MAX_RESOURCES = 32;
 
+/** What the driver host reports about a deployment; untrusted until parsed. */
 export type LakebedCapsuleRecord =
 	| {
 			readonly state: "live";
 			readonly deploymentId: string;
 			readonly url: string;
+			/** The content address of the artifact the capsule serves, if known. */
 			readonly artifactDigest?: string;
 	  }
 	| { readonly state: "retired"; readonly deploymentId: string };
 
+/** The seam the `lakebed-deploy` driver implements. */
 export interface LakebedDeployHost {
 	deploy(input: {
 		readonly program: DriverProgram;
 		readonly artifactDigest: string;
 		readonly token: string;
 	}): Promise<{ readonly deploymentId: string }>;
+	/** `undefined` means Lakebed has never seen this deployment id. */
 	describe(input: {
 		readonly deploymentId: string;
 		readonly token: string;
@@ -65,6 +90,7 @@ export interface LakebedDeployHost {
 
 export interface LakebedResolverOptions extends ResolverTelemetryOptions {
 	readonly host: LakebedDeployHost;
+	/** Host-side credential lookup: locator in, deploy token out. */
 	readonly resolveCredential: (credentialRef: string) => Promise<string>;
 }
 
@@ -115,7 +141,7 @@ function parseResources(
 			reject(`Lakebed desired.resources[${index}] is not an object`);
 		for (const key of Object.keys(entry))
 			if (!RESOURCE_KEYS.has(key))
-				reject(`Lakebed desired.resources[${index}].${key} is not supported`);
+				reject(`Lakebed desired.resources[${index}].${key} is not implemented`);
 		const { name, port, deps } = entry;
 		if (!isJsonString(name) || !RESOURCE_NAME.test(name) || names.has(name))
 			reject(`Lakebed desired.resources[${index}].name is invalid or repeated`);
@@ -131,6 +157,7 @@ function parseResources(
 				: isJsonArray(deps) && deps.every((dep) => isJsonString(dep))
 					? deps.filter(isJsonString)
 					: reject(`Lakebed desired.resources[${index}].deps must be names`);
+		// SAFETY: isRealizablePort narrowed port to a Lakebed-hostable capability port.
 		return { name, port: port as CapabilityPortKind, deps: parsedDeps };
 	});
 	for (const resource of resources)
@@ -152,7 +179,7 @@ function target(raw: ResolveRequest): Target {
 		);
 	for (const key of Object.keys(request.desired))
 		if (!DESIRED_KEYS.has(key))
-			reject(`Lakebed capsule does not support desired.${key}`);
+			reject(`Lakebed capsule does not implement desired.${key}`);
 	const deploymentId = request.desired.deploymentId ?? request.ref.logicalId;
 	if (!isJsonString(deploymentId) || !DEPLOYMENT_ID.test(deploymentId))
 		reject("Lakebed desired.deploymentId is not a valid deployment id");
@@ -238,6 +265,7 @@ function plans(parsed: Target): ResourcePlan[] {
 	});
 }
 
+/** Build the Lakebed resolvers over an injected deploy-driver host. */
 export function createLakebedResolvers(
 	options: LakebedResolverOptions,
 ): readonly ResourceResolver[] {
@@ -279,6 +307,7 @@ export function createLakebedResolvers(
 			return await run();
 		} catch (error) {
 			if (error instanceof ResolverError) throw error;
+			// The host's own message may echo request material; it is not forwarded.
 			reject(`Lakebed driver host failed to ${operation}`, HOST_REMEDIATION);
 		}
 	}
@@ -351,6 +380,7 @@ export function createLakebedResolvers(
 			absenceConfirmed: false,
 			lifecycleStatus: ready ? "ready" : "pending",
 		};
+		// Only a ready capsule names a serving endpoint (I5).
 		const serving = ready
 			? { ...observedOutputs, servingEndpoint: observed.url }
 			: observedOutputs;
@@ -450,6 +480,7 @@ export function createLakebedResolvers(
 	return Object.freeze([resolver]);
 }
 
+/** Registry of every Lakebed hosting product with a shipped resolver (I14). */
 export function lakebedResolverRegistry(options: LakebedResolverOptions) {
 	return createResolverRegistry(
 		instrumentResolvers(createLakebedResolvers(options), options),

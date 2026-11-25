@@ -6,7 +6,9 @@ interface ItemSelectProps {
   selected: boolean;
   onClick: () => void;
   title: string;
+  /** Called to draw content onto the canvas. Canvas is pre-sized and cleared. */
   draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
+  /** Dependencies that trigger a redraw */
   deps: unknown[];
 }
 

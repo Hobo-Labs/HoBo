@@ -1,3 +1,11 @@
+/**
+ * `@hobo/manifest-request` — the request manifest.
+ *
+ * One shape: `SelectionCandidate`, the catalog offer the capability selector
+ * gates and ranks. Decomposed out of `@hobo/capability-profiles` so the schema
+ * has one owner; `@hobo/capability-profiles` re-exports these names, so no
+ * consumer imports change.
+ */
 export {
 	type CandidateContinuity,
 	type CandidateContinuityRecord,

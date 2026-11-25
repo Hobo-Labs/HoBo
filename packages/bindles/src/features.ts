@@ -1,3 +1,7 @@
+/**
+ * Bindle IfC surface for features, experiments, and rollouts (ADR-0044 / ADR-0083).
+ * Schema is the committed layout; runtime values live in FeatureFlagStore.
+ */
 
 import { createHash } from "node:crypto";
 import {
@@ -8,6 +12,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+// public-contract: bindle features schema version.
 export const BINDLE_FEATURES_SCHEMA = "hobo.bindle-features/v1" as const;
 
 export type FeatureState = "ENABLED" | "DISABLED";
@@ -28,6 +33,7 @@ export type FeatureFlagSpec = Readonly<{
 			variant: string;
 		}>[];
 	}>;
+	/** 0–100 boolean ramp when fractional not set. */
 	percentage?: number;
 	killSwitch?: boolean;
 	metadata?: Readonly<Record<string, string>>;
@@ -79,6 +85,10 @@ export type RolloutDeclaration = Readonly<{
 	contentHash: `sha256:${string}`;
 }>;
 
+/**
+ * Declare application feature flags in a Bindle (IfC).
+ * Zero required config for a simple boolean: features({ "x": {} }).
+ */
 export function features(
 	defs: Readonly<Record<string, FeatureFlagSpec>>,
 ): FeaturesDeclaration {
@@ -167,6 +177,9 @@ export function rollout(spec: RolloutSpec): RolloutDeclaration {
 	});
 }
 
+/**
+ * Convert Bindle features declaration into FeatureFlagStore.define inputs.
+ */
 export function featureSpecsToStoreInputs(decl: FeaturesDeclaration): readonly {
 	readonly key: string;
 	readonly state?: FeatureState;
@@ -237,6 +250,7 @@ function stableStringify(value: JsonValue): string {
 	if (Array.isArray(value)) {
 		return `[${value.map(stableStringify).join(",")}]`;
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = value as JsonObject;
 	const keys = Object.keys(obj).sort();
 	return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k] ?? null)}`).join(",")}}`;

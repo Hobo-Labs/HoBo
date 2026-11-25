@@ -132,7 +132,7 @@ State labels follow the research contract.
 - **Event-sourced authority with replay** (*implemented*, ADR-0135).
 - **Application description is provider-abstract and survives the platform** (*implemented*).
 - **Honest caveat.** Wayfinder ships governed multi-cloud self-service today; HoBo's equivalent
-  provisioning breadth is partial (see the [live provider matrix](urn:hobo:requirement:live-provider-matrix)).
+  provisioning breadth is partial (see the [live provider matrix](../design/live-provider-matrix.md)).
 
 ## Adversarial critique
 

@@ -34,11 +34,11 @@ test("HOBO-408 M0 record names launch goal, personas, refs, and hard scope bound
     ],
   );
   assert.ok(
-    launchSupportEscalationMatrix.designRefs.includes("urn:hobo:requirement:operators-sre#plan-40"),
+    launchSupportEscalationMatrix.designRefs.includes("docs/design/operators-sre.md#plan-40"),
   );
   assert.ok(
     launchSupportEscalationMatrix.designRefs.includes(
-      "urn:hobo:requirement:developer-experience#plan-49",
+      "docs/design/developer-experience.md#plan-49",
     ),
   );
   assert.ok(

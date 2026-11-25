@@ -4,7 +4,7 @@ Executable M0 proof for HOBO-443, defining Resource Garbage Collection scope and
 later design or implementation work fans out.
 
 The authoritative design record is
-[`urn:hobo:requirement:resource-garbage-collection`](urn:hobo:requirement:resource-garbage-collection).
+[`docs/design/resource-garbage-collection.md`](../../../../../docs/design/resource-garbage-collection.md).
 
 ## Focused Gate
 
@@ -37,9 +37,11 @@ This proof deliberately does not build provider adapters, live sweepers, destruc
 runtime, drift detection, rollback compensation, legal retention policy, billing, ticketing, or
 customer notification implementation.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Resource Garbage Collection Scope Acceptance.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

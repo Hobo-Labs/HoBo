@@ -1,3 +1,6 @@
+// Canonical ↔ BSON, one type at a time. The rule under test is the annex's:
+// a value is stored exactly, in the native type the annex names, or it is
+// refused loudly. Storing it altered is the one outcome that never happens.
 import assert from "node:assert/strict";
 import {
 	type CanonicalRecord,
@@ -69,6 +72,7 @@ function record(overrides: JsonObject = {}): CanonicalRecord {
 	return parseCanonicalRecord(SCHEMA, { ...RAW, ...overrides });
 }
 
+/** Encode then decode one canonical value; the result is re-normalised. */
 function roundTrip(type: CanonicalType, value: JsonValue): JsonValue {
 	const canonical = normalizeCanonicalValue(type, value, "field");
 	return normalizeCanonicalValue(
@@ -248,6 +252,8 @@ describe("exact types", () => {
 	});
 
 	test("a date in years 0000–0099 is not shifted into the 1900s", () => {
+		// The canonical parser currently refuses these years, so they cannot
+		// reach the codec through a record; the codec itself is exact on them.
 		const stored = encodeValue("date", "0001-01-01", "due");
 		assert.deepEqual(stored, { $date: { $numberLong: "-62135596800000" } });
 		assert.equal(decodeValue("date", stored, "due"), "0001-01-01");
@@ -279,6 +285,7 @@ describe("constrained types refuse loudly", () => {
 		assertRoundTrips("decimal", fits);
 		assertRoundTrips("decimal", "0.000000000000000000000000000001");
 		assertRoundTrips("decimal", "-1234.5600");
+		// 37 digits, but only one of them significant: exact as 1E+36.
 		assertRoundTrips("decimal", "1000000000000000000000000000000000000");
 
 		const tooLong = "1234567890123456789012345678901234567890.123456789";
@@ -286,6 +293,7 @@ describe("constrained types refuse loudly", () => {
 		assert.equal(error.code, "MONGODB_VALUE_NOT_REPRESENTABLE");
 		assert.equal(error.detail.constraint, "DECIMAL128_PRECISION");
 		assert.equal(error.detail.field, "price");
+		// The refusal names the field and the rule, never the value.
 		assert.ok(!error.message.includes("1234567890"));
 		assert.ok(!JSON.stringify(error.detail).includes("1234567890"));
 		refusal(() =>
@@ -353,6 +361,7 @@ describe("constrained types refuse loudly", () => {
 		]);
 		assertRoundTrips("json", "a bare string");
 		assertRoundTrips("json", 42);
+		// A key named __proto__ is data, not a prototype.
 		const parsed: JsonValue = JSON.parse('{"__proto__":{"x":1},"b":2}');
 		const back = roundTrip("json", parsed);
 		assert.equal(canonicalEncode(back), '{"__proto__":{"x":1},"b":2}');

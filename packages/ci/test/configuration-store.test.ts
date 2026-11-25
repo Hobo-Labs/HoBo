@@ -73,6 +73,7 @@ function original() {
 	});
 }
 
+/** Seed authentic settled history, rather than changing a new GH lease's original payer. */
 function historicalSandbox(paidMicros = 0) {
 	const database = new DatabaseSync(":memory:");
 	const store = new LeaseStore(":memory:", database);

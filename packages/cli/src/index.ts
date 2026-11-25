@@ -107,7 +107,10 @@ export {
 	resolveFamilyProject,
 } from "./commands/lifecycle-family.js";
 export { createLoginCommand, type LoginCommandDeps } from "./commands/login.js";
-export { scaffoldHoboProject } from "./commands/new.js";
+export {
+	scaffoldHoboProject,
+	validateScaffoldProject,
+} from "./commands/new.js";
 export { createPlanCommand, type PlanCommandDeps } from "./commands/plan.js";
 export { createStubCommand } from "./commands/stub.js";
 export { createUpCommand, type UpCommandDeps } from "./commands/up.js";

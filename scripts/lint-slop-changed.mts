@@ -16,7 +16,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import process from "node:process";
 
-import { hasSameProgramStructure } from "./check-architecture-guardrails.mjs";
 import { reachRemedy } from "./lib/base-ref.ts";
 import {
 	type CommandInvocation,
@@ -37,16 +36,6 @@ function git(args: string[]): string | undefined {
 	});
 	if (result.error || result.status !== 0) return undefined;
 	return result.stdout.trim();
-}
-
-function gitContent(ref: string, file: string): string | undefined {
-	const result = spawnSync("git", ["show", `${ref}:${file}`], {
-		encoding: "utf8",
-		maxBuffer: 32 * 1024 * 1024,
-		env: sanitizeNodeOptions(),
-	});
-	if (result.error || result.status !== 0) return undefined;
-	return result.stdout;
 }
 
 /**
@@ -77,19 +66,6 @@ const baseFlag = args.find((arg) => arg.startsWith("--base="));
 const base =
 	baseFlag === undefined ? "HEAD~1" : baseFlag.slice("--base=".length);
 
-function structurallyChanged(file: string): boolean {
-	const beforeRef = staged
-		? "HEAD"
-		: (git(["merge-base", base, "HEAD"]) ?? base);
-	const before = gitContent(beforeRef, file);
-	const after = gitContent(staged ? "" : "HEAD", file);
-	return (
-		before === undefined ||
-		after === undefined ||
-		!hasSameProgramStructure(file, before, after)
-	);
-}
-
 function cannotLint(why: string): void {
 	console.error(`fail  lint:slop:changed — ${why}`);
 }
@@ -115,8 +91,7 @@ function oxlint(chunk: string[]): CommandInvocation {
 
 const files = changedFiles(staged, base)
 	.filter((file) => LINTABLE.test(file))
-	.filter((file) => existsSync(file))
-	.filter(structurallyChanged);
+	.filter((file) => existsSync(file));
 
 if (files.length === 0) {
 	console.log("ok  lint:slop:changed — no changed lintable files.");

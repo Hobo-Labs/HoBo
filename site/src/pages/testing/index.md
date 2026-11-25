@@ -49,6 +49,6 @@ HoBo collapses a lot of “special testing tools” into one idea: **every bound
 
 ## Related
 
-- [System model](/HoBo/system/) — EventStore default, package map.
+- [Architecture](/HoBo/architecture/) — EventStore default, package map.
 - [The Bridge](/HoBo/troubleshooting/bridge/) — local/remote development on the same modes.
 - [Reference: effects](/HoBo/reference/effects/) · [EventStore](/HoBo/reference/eventstore/) · [contracts](/HoBo/reference/contracts/)

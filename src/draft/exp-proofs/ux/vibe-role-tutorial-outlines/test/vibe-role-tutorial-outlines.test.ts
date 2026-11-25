@@ -24,7 +24,7 @@ test("HOBO-552 tutorial outline proof pins issue, phase, package path, and proof
   assert.equal(parsed.issue, "HOBO-552");
   assert.equal(parsed.phase, "M1");
   assert.equal(parsed.packagePath, "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines");
-  assert.equal(parsed.proofPath, "urn:hobo:proof:vibe-role-tutorial-outlines");
+  assert.equal(parsed.proofPath, "docs/design/proofs/vibe-role-tutorial-outlines/README.md");
   assert.deepEqual(parsed.roles, REQUIRED_TUTORIAL_ROLES);
 });
 
@@ -48,7 +48,7 @@ test("outlines map to the existing role walkthrough and canonical CLI/MCP surfac
   const parsed = parseVibeRoleTutorialOutlines(VIBE_ROLE_TUTORIAL_OUTLINES);
 
   for (const outline of parsed.outlines) {
-    assert.match(outline.walkthroughAnchor, /^urn:hobo:requirement:walkthrough#/);
+    assert.match(outline.walkthroughAnchor, /^docs\/design\/walkthrough\.md#/);
     assert.ok(outline.mcpTools.length > 0, `${outline.role} needs MCP tool names`);
 
     for (const command of outline.commandPath) {
@@ -108,6 +108,7 @@ test("Pact and CUE artifacts stay aligned with the parsed tutorial outline shape
     ),
   );
   const pactOutlines = parseVibeRoleTutorialOutlines(
+    // SAFETY: `pact.interactions[0].response.body as typeof VIBE_ROLE_TUTORIAL_OUTLINES,` is required at this I/O or test boundary.
     pact.interactions[0].response.body as typeof VIBE_ROLE_TUTORIAL_OUTLINES,
   );
 

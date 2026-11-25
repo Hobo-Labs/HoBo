@@ -6,9 +6,9 @@ boundary shape, and guards against implementation creep into portal UI, review
 decisioning, live Registry storage, payouts, billing, or support tooling.
 
 The authoritative design record is
-[`urn:hobo:requirement:publisher-portal`](urn:hobo:requirement:publisher-portal).
+[`docs/design/publisher-portal.md`](../../../../../docs/design/publisher-portal.md).
 Branch evidence is summarized in
-[`urn:hobo:proof:hobo-422-publisher-portal`](urn:hobo:proof:hobo-422-publisher-portal).
+[`docs/design/proofs/hobo-422-publisher-portal`](../../../../../docs/design/proofs/hobo-422-publisher-portal/README.md).
 
 ## Proof
 
@@ -31,10 +31,12 @@ The tests prove:
 - excluded UI, approval-service, Registry, payout, billing, and support tooling
   work is rejected by the scope validator.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Publisher
   Portal Scope Contract.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

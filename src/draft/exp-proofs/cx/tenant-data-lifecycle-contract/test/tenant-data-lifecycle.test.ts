@@ -66,12 +66,12 @@ test("deletion and account-closure obligations separate supported, manual, defer
 
 test("authoritative dependencies link legal/privacy, security, backup/restore, and support projects", () => {
   assert.deepEqual(TENANT_DATA_LIFECYCLE_SCOPE.designRefs, [
-    "urn:hobo:requirement:legal-privacy-terms-readiness",
-    "urn:hobo:requirement:security-verification",
-    "urn:hobo:requirement:backup-restore",
-    "urn:hobo:requirement:support-sla-channels",
-    "urn:hobo:requirement:provenance-retention",
-    "urn:hobo:requirement:tenant-isolation-quotas",
+    "docs/design/legal-privacy-terms-readiness.md",
+    "docs/design/security-verification.md",
+    "docs/design/backup-restore.md",
+    "docs/design/support-sla-channels.md",
+    "docs/design/provenance-retention.md",
+    "docs/design/tenant-isolation-quotas.md",
   ]);
   assert.ok(
     TENANT_DATA_LIFECYCLE_SCOPE.initiativeDependencies.some(

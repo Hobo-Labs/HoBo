@@ -1,3 +1,11 @@
+// The command the HoBo CI Fabric workflow runs after a green main build:
+// `node --import tsx packages/ci/src/freight-cli.ts --out <dir> ...
+//   --deliverable <id>=<file>`.
+// It writes every CI output of the build (src/freight.ts) under <dir> at its
+// output path, plus `ci-result.json`, the passing `ci.PipelineResultObserved`
+// shape a HOBO_CI source reads. A deliverable this run did not build is named
+// on stdout, never invented. Nothing is recorded in CD from here: the outputs
+// are what a HOBO_CI source re-reads and verifies (I15).
 import { appendFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -13,6 +21,7 @@ import {
 
 export type CiFreightCliIo = Readonly<{
 	write?: (text: string) => void;
+	/** `$GITHUB_OUTPUT`, when the CI reads step outputs from a file. */
 	githubOutput?: string;
 }>;
 

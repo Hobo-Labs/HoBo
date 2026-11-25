@@ -231,27 +231,27 @@ export const BREAK_GLASS_BOUNDARY_CONTRACT: BreakGlassBoundaryContract = {
   ],
   dependencies: [
     {
-      source: "urn:hobo:requirement:admin-console",
+      source: "docs/design/admin-console.md",
       reason: "Names admin-console visibility, action-intent, audit, and break-glass visibility boundaries.",
     },
     {
-      source: "urn:hobo:requirement:member-rbac-administration",
+      source: "docs/design/member-rbac-administration.md",
       reason: "Defines role, approval, and no-self-escalation obligations.",
     },
     {
-      source: "urn:hobo:requirement:support-sla-channels",
+      source: "docs/design/support-sla-channels.md",
       reason: "Defines support handoff and unsupported request routing.",
     },
     {
-      source: "urn:hobo:requirement:launch-support-escalation",
+      source: "docs/design/launch-support-escalation.md",
       reason: "Defines incident severity, communications ownership, and redaction prerequisites.",
     },
     {
-      source: "urn:hobo:requirement:audit-explorer",
+      source: "docs/design/audit-explorer.md",
       reason: "Defines audit fact and export evidence shapes consumed by emergency access records.",
     },
     {
-      source: "urn:hobo:requirement:security-verification",
+      source: "docs/design/security-verification.md",
       reason: "Defines launch-blocking security verification, embargo, and fix evidence boundaries.",
     },
   ],

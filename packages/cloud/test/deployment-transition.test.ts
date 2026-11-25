@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +19,7 @@ import {
 	runCompensation,
 	runOrchestrator,
 } from "../src/index.js";
+import { iacProgramFor } from "../src/orchestrator/resource-actor.js";
 
 const actor = { kind: "service", id: "station" } as const;
 const tenant = "tenant";
@@ -243,6 +245,62 @@ it("keeps rollback active after a crash and resumes the same transition", async 
 	}
 });
 
+it("puts a legacy in-flight prune behind a new CAS barrier before resuming", async () => {
+	const f = fixture();
+	try {
+		await f.store.append(
+			`deployment:${deploymentId}`,
+			[deploymentPlanned({ deploymentId, planHash: "sha256:test", plan })],
+			{ expectedSeq: 0, tenant, actor },
+		);
+		await runOrchestrator(f.deps, plan, deploymentId, f.context);
+		const prior = await events(f.store);
+		const program = iacProgramFor(
+			deploymentId,
+			{ ...resource, deploymentId },
+			"destroy",
+			tenant,
+		);
+		await f.store.append(
+			`deployment:${deploymentId}`,
+			[
+				{
+					type: "resource.Destroying",
+					data: {
+						deploymentId,
+						resourceId: "web",
+						reason: "legacy",
+						operationGeneration: randomUUID(),
+						programHash: `sha256:${createHash("sha256").update(JSON.stringify(program)).digest("hex")}`,
+						specHash: desiredSpecHash(resource),
+					},
+				},
+			],
+			{ expectedSeq: prior.at(-1)?.seq ?? 0, tenant, actor },
+		);
+		const executor: Executor = {
+			async run(program, credential, options) {
+				if (program.action === "destroy")
+					expect(
+						(await events(f.store)).some(
+							(event) => event.type === "deployment.TransitionStarted",
+						),
+					).toBe(true);
+				return f.deps.executor.run(program, credential, options);
+			},
+		};
+		const resumed = await runOrchestrator(
+			{ ...f.deps, executor },
+			emptyPlan,
+			deploymentId,
+			{ ...f.context, mode: "complete" },
+		);
+		expect(resumed.status).toBe("deployed");
+	} finally {
+		f.store.close();
+	}
+});
+
 it("resumes a crashed prune under the same barrier before applying anything else", async () => {
 	const f = fixture();
 	try {
@@ -283,6 +341,175 @@ it("resumes a crashed prune under the same barrier before applying anything else
 				(event) => event.type === "deployment.TransitionCompleted",
 			),
 		).toHaveLength(1);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("does not silently reopen an ambiguous legacy rollback", async () => {
+	const f = fixture();
+	try {
+		await runOrchestrator(f.deps, plan, deploymentId, f.context);
+		const before = await events(f.store);
+		await f.store.append(
+			`deployment:${deploymentId}`,
+			[
+				{
+					type: "deployment.RolledBack",
+					data: { deploymentId, targetSetId: "old", reason: "legacy" },
+				},
+			],
+			{ expectedSeq: before.at(-1)?.seq ?? 0, tenant, actor },
+		);
+		const result = await runOrchestrator(f.deps, plan, deploymentId, f.context);
+		expect(result.status).toBe("needs-human");
+		expect(
+			result.events.some((event) => event.type === "deployment.Reopened"),
+		).toBe(false);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("can reopen a legacy rollback whose later destroy facts prove completion", async () => {
+	const f = fixture();
+	try {
+		await runOrchestrator(f.deps, plan, deploymentId, f.context);
+		const before = await events(f.store);
+		await f.store.append(
+			`deployment:${deploymentId}`,
+			[
+				{
+					type: "deployment.RolledBack",
+					data: { deploymentId, targetSetId: "old", reason: "legacy" },
+				},
+				{
+					type: "resource.Destroying",
+					data: { deploymentId, resourceId: "web", reason: "legacy" },
+				},
+				{
+					type: "resource.Destroyed",
+					data: { deploymentId, resourceId: "web", finalStateHash: "old" },
+				},
+			],
+			{ expectedSeq: before.at(-1)?.seq ?? 0, tenant, actor },
+		);
+		const reopened = await runOrchestrator(
+			f.deps,
+			plan,
+			deploymentId,
+			f.context,
+		);
+		expect(reopened.status).toBe("deployed");
+		expect(
+			reopened.events.some((event) => event.type === "deployment.Reopened"),
+		).toBe(true);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("can replay a legacy rollback and a previously completed legacy redeploy", async () => {
+	const f = fixture();
+	try {
+		await runOrchestrator(f.deps, plan, deploymentId, f.context);
+		const before = await events(f.store);
+		await f.store.append(
+			`deployment:${deploymentId}`,
+			[
+				{
+					type: "deployment.RolledBack",
+					data: { deploymentId, targetSetId: "old", reason: "legacy" },
+				},
+				{
+					type: "resource.Destroying",
+					data: { deploymentId, resourceId: "web", reason: "legacy" },
+				},
+				{
+					type: "resource.Destroyed",
+					data: { deploymentId, resourceId: "web", finalStateHash: "old" },
+				},
+				{
+					type: "resource.Provisioning",
+					data: {
+						deploymentId,
+						resourceId: "web",
+						execId: "old",
+						programHash: "old",
+						providerId: "local",
+						specHash: desiredSpecHash(resource),
+					},
+				},
+				{
+					type: "resource.Provisioned",
+					data: {
+						deploymentId,
+						resourceId: "web",
+						execId: "old",
+						outputs: {},
+						specHash: desiredSpecHash(resource),
+					},
+				},
+				{
+					type: "deployment.Deployed",
+					data: { deploymentId, setId: "old", resourceIds: ["web"] },
+				},
+			],
+			{ expectedSeq: before.at(-1)?.seq ?? 0, tenant, actor },
+		);
+		const result = await runOrchestrator(f.deps, plan, deploymentId, f.context);
+		expect(result.status).toBe("deployed");
+	} finally {
+		f.store.close();
+	}
+});
+
+it.each([
+	false,
+	true,
+])("refuses to infer that an interrupted legacy redeploy is complete (terminal=%s)", async (terminal) => {
+	const f = fixture();
+	try {
+		await runOrchestrator(f.deps, plan, deploymentId, f.context);
+		const before = await events(f.store);
+		await f.store.append(
+			`deployment:${deploymentId}`,
+			[
+				{
+					type: "deployment.RolledBack",
+					data: { deploymentId, targetSetId: "old", reason: "legacy" },
+				},
+				{
+					type: "resource.Destroying",
+					data: { deploymentId, resourceId: "web", reason: "legacy" },
+				},
+				{
+					type: "resource.Destroyed",
+					data: { deploymentId, resourceId: "web", finalStateHash: "old" },
+				},
+				{
+					type: "resource.Provisioning",
+					data: {
+						deploymentId,
+						resourceId: "web",
+						execId: "old",
+						programHash: "old",
+					},
+				},
+				...(terminal
+					? [
+							{
+								type: "deployment.Deployed",
+								data: { deploymentId, setId: "old", resourceIds: ["web"] },
+							},
+						]
+					: []),
+			],
+			{ expectedSeq: before.at(-1)?.seq ?? 0, tenant, actor },
+		);
+		await expect(
+			runOrchestrator(f.deps, plan, deploymentId, f.context),
+		).rejects.toMatchObject({ code: "DEPLOYMENT_TRANSITION_BLOCKED" });
 	} finally {
 		f.store.close();
 	}
@@ -357,10 +584,8 @@ it("rejects a transition history that crossed an unresolved apply", async () => 
 					data: {
 						deploymentId,
 						resourceId: "web",
-						execId: "exec-web",
-						programHash: `sha256:${"b".repeat(64)}`,
-						providerId: "local",
-						specHash: desiredSpecHash(resource),
+						execId: "legacy",
+						programHash: "legacy",
 					},
 				},
 				{

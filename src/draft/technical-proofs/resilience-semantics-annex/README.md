@@ -1,17 +1,17 @@
 # Resilience Semantics Annex POC
 
 Independent POC for HOBO-516, extended by HOBO-518. It turns the DX SDK
-resilience semantics matrix from `urn:hobo:requirement:dx-sdk-resilience-semantics`
+resilience semantics matrix from `docs/design/dx-sdk-resilience-semantics.md`
 into executable facts for the later SDK conformance lane.
 
 ## Requirements Source
 
-- `urn:hobo:requirement:dx-sdk-resilience-semantics`: HOBO-515 vocabulary and target
+- `docs/design/dx-sdk-resilience-semantics.md`: HOBO-515 vocabulary and target
   vectors.
-- `urn:hobo:requirement:sdk-contracts`: SDK public-contract map and resilience
+- `docs/design/sdk-contracts.md`: SDK public-contract map and resilience
   conformance sequencing.
 - `src/draft/technical-proofs/idiom-semantics-annex`: existing HOBO-31 semantics lane.
-- `packages/runtimes/runtime-local`: deterministic retry timing and
+- `src/draft/technical-proofs/queue-clock-runtime-port-contract`: deterministic retry timing and
   clock facts.
 - `src/draft/technical-proofs/runtime-local-execution-limits-contract`: interruption, cleanup,
   and audit-fact shape.
@@ -134,10 +134,12 @@ npm.cmd --prefix src\draft\technical-proofs\resilience-semantics-annex test
 npm.cmd --prefix src\draft\technical-proofs\resilience-semantics-annex run diagnostics
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - [`proto/resilience_semantics_annex.proto`](./proto/resilience_semantics_annex.proto) — protobuf data shapes for the spec, fixtures, facts, and case results.
 - [`cue/resilience_semantics_annex.cue`](./cue/resilience_semantics_annex.cue) — CUE constraints for every protobuf type.
 - [`contracts/pacts/resilience-conformance-lane.pact.json`](./contracts/pacts/resilience-conformance-lane.pact.json) — PACT for the SDK conformance-lane boundary.
+- [`ADR.md`](./ADR.md) — parse-don't-validate and event-architecture evidence.

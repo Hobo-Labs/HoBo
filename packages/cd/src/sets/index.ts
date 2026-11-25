@@ -1,3 +1,4 @@
+// "./sets" (WP4): Sets, Deltas and per-Camp desired state.
 export {
 	DELTA_INTENTS,
 	managementOf,

@@ -100,7 +100,7 @@ export type VibeMarketplaceInstallabilityMockups = {
   readonly issue: "HOBO-546";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups";
-  readonly proofPath: "urn:hobo:proof:vibe-marketplace-installability-mockups";
+  readonly proofPath: "docs/design/proofs/vibe-marketplace-installability-mockups/README.md";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly MarketplaceQuickstartFixtureReference[];
   readonly personas: readonly MarketplacePersona[];
@@ -128,7 +128,7 @@ const FIXTURES: readonly MarketplaceListingFixture[] = [
     state: "preview-only",
     fixtureId: "hobo-546-marketplace-preview-only",
     visibleState: "Preview only",
-    evidenceSource: "urn:hobo:requirement:marketplace-publisher-trust-evidence#launch-limitations",
+    evidenceSource: "docs/design/marketplace-publisher-trust-evidence.md#launch-limitations",
     ownerRoute: "Marketplace Publisher Trust Evidence",
     customerSafeMessage:
       "Preview listing is visible for evaluation but cannot be presented as installable.",
@@ -141,7 +141,7 @@ const FIXTURES: readonly MarketplaceListingFixture[] = [
     state: "limited-beta",
     fixtureId: "hobo-546-marketplace-limited-beta",
     visibleState: "Limited beta",
-    evidenceSource: "urn:hobo:requirement:capability-review-approval#approval-outcomes",
+    evidenceSource: "docs/design/capability-review-approval.md#approval-outcomes",
     ownerRoute: "Capability Review & Approval",
     customerSafeMessage:
       "Limited-beta listing is available only to allowed scopes with explicit missing-evidence limits.",
@@ -154,7 +154,7 @@ const FIXTURES: readonly MarketplaceListingFixture[] = [
     state: "installable",
     fixtureId: "hobo-546-marketplace-installable",
     visibleState: "Installable with evidence",
-    evidenceSource: "urn:hobo:requirement:marketplace-ux#installability-outcomes",
+    evidenceSource: "docs/design/marketplace-ux.md#installability-outcomes",
     ownerRoute: "Capability Review & Approval",
     customerSafeMessage:
       "Listing is installable only because provenance, conformance, security review, catalog, and policy evidence are present.",
@@ -167,7 +167,7 @@ const FIXTURES: readonly MarketplaceListingFixture[] = [
     state: "policy-blocked",
     fixtureId: "hobo-546-marketplace-policy-blocked",
     visibleState: "Blocked by policy",
-    evidenceSource: "urn:hobo:requirement:org-catalogs#entry-states",
+    evidenceSource: "docs/design/org-catalogs.md#entry-states",
     ownerRoute: "Org Catalogs",
     customerSafeMessage:
       "Listing is blocked for this workspace by catalog, policy, trust, or approval state.",
@@ -180,7 +180,7 @@ const FIXTURES: readonly MarketplaceListingFixture[] = [
     state: "deprecated",
     fixtureId: "hobo-546-marketplace-deprecated",
     visibleState: "Deprecated",
-    evidenceSource: "urn:hobo:requirement:org-catalogs#entry-states",
+    evidenceSource: "docs/design/org-catalogs.md#entry-states",
     ownerRoute: "Registry Distribution",
     customerSafeMessage:
       "Deprecated listing remains visible only for migration guidance and existing-use explanation.",
@@ -193,7 +193,7 @@ const FIXTURES: readonly MarketplaceListingFixture[] = [
     state: "yanked",
     fixtureId: "hobo-546-marketplace-yanked",
     visibleState: "Yanked",
-    evidenceSource: "urn:hobo:requirement:capability-review-approval#review-queue-states",
+    evidenceSource: "docs/design/capability-review-approval.md#review-queue-states",
     ownerRoute: "Support Workflow",
     customerSafeMessage:
       "Yanked listing is removed from new selection and routed to support or migration guidance.",
@@ -246,13 +246,13 @@ export const VIBE_MARKETPLACE_INSTALLABILITY_MOCKUPS: VibeMarketplaceInstallabil
   issue: "HOBO-546",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups",
-  proofPath: "urn:hobo:proof:vibe-marketplace-installability-mockups",
+  proofPath: "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
   designRefs: [
-    "urn:hobo:requirement:marketplace-ux",
-    "urn:hobo:requirement:marketplace-publisher-trust-evidence",
-    "urn:hobo:requirement:capability-review-approval",
-    "urn:hobo:requirement:org-catalogs",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/marketplace-ux.md",
+    "docs/design/marketplace-publisher-trust-evidence.md",
+    "docs/design/capability-review-approval.md",
+    "docs/design/org-catalogs.md",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   quickstartFixtureRefs: QUICKSTART_REFS,
   personas: REQUIRED_MARKETPLACE_PERSONAS,
@@ -417,7 +417,7 @@ export function validateVibeMarketplaceInstallabilityMockups(
   if (mockups.packagePath !== "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (mockups.proofPath !== "urn:hobo:proof:vibe-marketplace-installability-mockups") {
+  if (mockups.proofPath !== "docs/design/proofs/vibe-marketplace-installability-mockups/README.md") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(mockups.personas, REQUIRED_MARKETPLACE_PERSONAS)) {

@@ -10,7 +10,8 @@
     "expProofs": [
       "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups",
       "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states"
-    ]
+    ],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

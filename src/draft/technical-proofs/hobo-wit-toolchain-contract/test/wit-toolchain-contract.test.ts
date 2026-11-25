@@ -20,6 +20,8 @@ import {
 } from "../src/wit-toolchain-contract.js";
 
 const requireFromPackage = createRequire(join(PACKAGE_ROOT, "package.json"));
+// These tests run the jco generator up to three times: about 1 s alone, over the
+// 10 s default on a loaded CI runner.
 const GENERATOR_TIMEOUT = { timeout: 30_000 };
 
 test("hobo:sdk WIT package skeleton validates without filling downstream interfaces", async () => {
@@ -45,7 +47,7 @@ test("toolchain lock pins the canonical generator and vendored WIT dependencies"
 
   assert.equal(result.canonicalGenerator, "@bytecodealliance/jco@1.24.3");
   assert.equal(result.deps, 3);
-  assert.equal(lock.compatFloor.policy, "urn:hobo:decision:adr-0024");
+  assert.ok(lock.compatFloor.policy.endsWith("07-portability-extensibility.md#adr-0024"));
 
   await assert.rejects(
     () =>
@@ -128,7 +130,7 @@ test("uncommitted generator output drift fails closed", GENERATOR_TIMEOUT, async
 
   await withTempDir(async (dir) => {
     await writeGeneratedBindings({ outDir: dir });
-    await writeFile(join(dir, "sdk.d.ts"), "export {};\n");
+    await writeFile(join(dir, "sdk.d.ts"), "// drifted\n");
     await assert.rejects(
       () => assertGeneratedMatches({ generatedRoot: dir }),
       /generated_content_drift: sdk\.d\.ts/,

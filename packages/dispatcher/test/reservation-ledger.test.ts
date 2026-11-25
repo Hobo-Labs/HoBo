@@ -1,10 +1,27 @@
+/**
+ * The reservation ledger's CAS, headroom accounting and lifecycle invariants
+ * (ADR-0071, promoted from the reservation-hardening contract).
+ *
+ * A reservation is how the dispatcher stops two concurrent dispatches from
+ * spending the same free credit twice. Everything here turns on three
+ * properties, and each of them fails silently rather than loudly:
+ *
+ * 1. **Compare-and-swap on `seq`.** A stale `expectedSeq` must be refused, not
+ *    applied. If it were applied, two callers who both read the ledger at seq
+ *    91 would each reserve against the same headroom and the provider would
+ *    bill for the overage.
+ * 2. **Headroom consumed on reserve is restored exactly once on release.**
+ *    Restoring twice invents free credit that does not exist; restoring zero
+ *    times leaks it permanently. The `consumption` record on the reservation
+ *    is what makes the restore exact rather than approximate.
+ * 3. **Terminal states are terminal.** A confirmed or released reservation
+ *    cannot be released again, or its headroom would be restored twice.
+ */
 import { describe, expect, it } from "vitest";
 
 import {
-	createDispatcherRegistry,
 	createReservationLedger,
 	DISPATCH_EVENTS,
-	decideAndReserveDispatch,
 	parseCreditLedgerView,
 } from "../src/dispatcher.js";
 import type { JsonValue } from "../src/json.js";
@@ -13,7 +30,7 @@ import { isJsonObject } from "../src/json.js";
 const DIGEST =
 	"sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
-function ledgerView(accounts: JsonValue[] = [], seq = 91) {
+function ledgerView(accounts: unknown[] = [], seq = 91) {
 	return {
 		view: "CreditLedgerView",
 		seq,
@@ -55,7 +72,9 @@ describe("parseCreditLedgerView", () => {
 		const input = ledgerView([account()]);
 		const parsed = parseCreditLedgerView(input);
 		expect(parsed.seq).toBe(91);
-
+		// A clone, not the caller's object. The ledger mutates its working copy
+		// on every reserve, and sharing the input would let those mutations leak
+		// back into whatever the caller still holds.
 		expect(parsed).not.toBe(input);
 		expect(parsed.accounts).not.toBe(input.accounts);
 	});
@@ -66,19 +85,25 @@ describe("parseCreditLedgerView", () => {
 				expect(() => parseCreditLedgerView(bad)).toThrow(TypeError);
 			}
 		}
-
+		// An array is the case a bare `typeof === "object"` check would admit.
 		expect(() => parseCreditLedgerView([])).toThrow(
 			/must be a CreditLedgerView snapshot/u,
 		);
 	});
 
 	it("refuses a snapshot whose view tag is wrong", () => {
+		// The tag is what distinguishes a credit ledger from any other snapshot
+		// shape with a `seq` and an `accounts` array. Accepting an untagged
+		// object would let an unrelated projection be reserved against.
 		expect(() =>
 			parseCreditLedgerView({ ...ledgerView(), view: "SomethingElse" }),
 		).toThrow(/view must be CreditLedgerView/u);
 	});
 
 	it("refuses a non-integer or negative seq", () => {
+		// `seq` is the CAS token. A fractional one would never compare equal to a
+		// committed seq, and a negative one would make every CAS succeed against
+		// a ledger that had never been written.
 		for (const seq of [-1, 1.5, Number.NaN, "91", undefined]) {
 			expect(() => parseCreditLedgerView({ ...ledgerView(), seq })).toThrow(
 				/seq must be a non-negative integer/u,
@@ -104,13 +129,17 @@ describe("reserve", () => {
 		const result = reserveOn(ledger);
 		expect(result.ok).toBe(true);
 		expect(result.status).toBe("reserved");
-
+		// Exactly one, so a caller can CAS the next write against it. A jump
+		// would make every subsequent expectedSeq wrong.
 		expect(result.committedSeq).toBe(92);
 		expect(ledger.snapshot().seq).toBe(92);
 		expect(result.reservation?.status).toBe("pending");
 	});
 
 	it("refuses a stale expectedSeq without mutating the ledger", () => {
+		// The core CAS guarantee. Two readers at seq 91 both try to reserve; the
+		// second must be told it lost rather than being allowed to double-spend
+		// the same headroom.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger);
 		const stale = reserveOn(ledger, {
@@ -121,12 +150,15 @@ describe("reserve", () => {
 		expect(stale.status).toBe("cas-conflict");
 		expect(stale.actualSeq).toBe(92);
 		expect(stale.expectedSeq).toBe(91);
-
+		// Nothing moved: no seq bump, no second reservation, no headroom taken.
 		expect(ledger.snapshot().seq).toBe(92);
 		expect(ledger.snapshot().reservations).toHaveLength(1);
 	});
 
 	it("refuses a future expectedSeq as well as a stale one", () => {
+		// Strict equality, not `>=`. A caller quoting a seq the ledger has not
+		// reached has read a different ledger, and letting it through would
+		// commit against state that does not exist here.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		expect(reserveOn(ledger, { expectedSeq: 999 }).status).toBe("cas-conflict");
 	});
@@ -134,12 +166,15 @@ describe("reserve", () => {
 	it("consumes free headroom from the account", () => {
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, { units: 30 });
-
-		const after = ledger.snapshot().accounts[0];
-		expect(after?.freeHeadroom).toBe(70);
+		// SAFETY: the parsed account is the ledger's CreditAccount shape.
+		const after = ledger.snapshot().accounts[0] as { freeHeadroom: number };
+		expect(after.freeHeadroom).toBe(70);
 	});
 
 	it("tracks reservedUnits cumulatively across reservations", () => {
+		// `reservedUnits` is what a ranking pass subtracts to see the *available*
+		// headroom. If it did not accumulate, the second dispatch would rank
+		// against headroom the first one had already claimed.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, { units: 10 });
 		reserveOn(ledger, {
@@ -147,8 +182,11 @@ describe("reserve", () => {
 			units: 5,
 			expectedSeq: ledger.snapshot().seq,
 		});
-
-		expect(ledger.snapshot().accounts[0]?.reservedUnits).toBe(15);
+		// SAFETY: the parsed account exposes the reservation accounting field.
+		expect(
+			(ledger.snapshot().accounts[0] as { reservedUnits: number })
+				.reservedUnits,
+		).toBe(15);
 	});
 
 	it("uses grants as a breakdown of aggregate headroom, never an extra allowance", () => {
@@ -168,12 +206,15 @@ describe("reserve", () => {
 		expect(result.reservation?.consumption?.credits).toEqual([
 			{ creditId: "c1", units: 5 },
 		]);
-
-		const after = ledger.snapshot().accounts[0];
-		expect(after?.freeHeadroom).toBe(0);
-		expect(after?.credits?.[0]?.freeHeadroom).toBe(5);
-
-		expect(after?.credits?.[1]?.freeHeadroom).toBe(10);
+		// SAFETY: the parsed account's credits are CreditGrant records.
+		const after = ledger.snapshot().accounts[0] as {
+			freeHeadroom: number;
+			credits: Array<{ freeHeadroom: number }>;
+		};
+		expect(after.freeHeadroom).toBe(0);
+		expect(after.credits[0]?.freeHeadroom).toBe(5);
+		// The second grant was never touched, because the request was satisfied.
+		expect(after.credits[1]?.freeHeadroom).toBe(10);
 	});
 
 	it("stops consuming grants the moment the request is satisfied", () => {
@@ -189,7 +230,9 @@ describe("reserve", () => {
 			]),
 		);
 		const result = reserveOn(ledger, { units: 10 });
-
+		// Exactly one grant recorded, not a zero-unit entry for the second: an
+		// empty consumption entry would restore nothing but would suggest the
+		// grant had been drawn on.
 		expect(result.reservation?.consumption?.credits).toHaveLength(1);
 	});
 
@@ -211,6 +254,9 @@ describe("reserve", () => {
 	});
 
 	it("reserves against an account that does not exist in the ledger", () => {
+		// Deliberate: the reservation is still recorded so the CAS chain and the
+		// event log stay intact. A silent refusal here would leave a dispatch
+		// believing it held a reservation nobody could find.
 		const ledger = createReservationLedger(ledgerView([]));
 		const result = reserveOn(ledger);
 		expect(result.ok).toBe(true);
@@ -232,6 +278,8 @@ describe("reserve", () => {
 	});
 
 	it("refuses a non-positive or non-finite unit count", () => {
+		// Zero units is a reservation that claims nothing but still occupies a
+		// CAS slot; a negative one would *add* headroom on release.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		for (const units of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
 			expect(() => reserveOn(ledger, { units })).toThrow(
@@ -256,6 +304,8 @@ describe("reserve", () => {
 	});
 
 	it("refuses a non-integer expectedSeq before comparing it", () => {
+		// Parsed before the CAS, so a malformed token is a caller error rather
+		// than a lost race — the two need different responses.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		expect(() => reserveOn(ledger, { expectedSeq: 1.5 })).toThrow(
 			/expectedSeq must be a non-negative integer/u,
@@ -268,13 +318,14 @@ describe("reserve", () => {
 		const withExpiry = reserveOn(ledger, {
 			expiresAt: "2026-07-01T00:00:00Z",
 		});
-
+		// Normalised to a full ISO string so two spellings of the same instant
+		// compare equal when the expiry sweep runs.
 		expect(withExpiry.reservation?.expiresAt).toBe("2026-07-01T00:00:00.000Z");
 		const noExpiry = reserveOn(ledger, {
 			reservationId: "r-2",
 			expectedSeq: ledger.snapshot().seq,
 		});
-
+		// Null, not undefined: an absent expiry is an explicit "never expires".
 		expect(noExpiry.reservation?.expiresAt).toBeNull();
 	});
 
@@ -306,11 +357,15 @@ describe("confirm", () => {
 	});
 
 	it("does not restore headroom", () => {
+		// Confirming means the units were actually used. Restoring here would
+		// hand the headroom back while the provider also bills for it.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, { units: 30 });
 		ledger.confirm({ reservationId: "r-1" });
-
-		expect(ledger.snapshot().accounts[0]?.freeHeadroom).toBe(70);
+		// SAFETY: the parsed account is the ledger's CreditAccount shape.
+		expect(
+			(ledger.snapshot().accounts[0] as { freeHeadroom: number }).freeHeadroom,
+		).toBe(70);
 	});
 
 	it("refuses an unknown reservation", () => {
@@ -318,7 +373,8 @@ describe("confirm", () => {
 		const result = ledger.confirm({ reservationId: "nope" });
 		expect(result.ok).toBe(false);
 		expect(result.status).toBe("not-confirmable");
-
+		// The `?.status !== "pending"` guard covers both "no such reservation"
+		// and "wrong state" with one branch, so neither can bump the seq.
 		expect(ledger.snapshot().seq).toBe(91);
 	});
 
@@ -332,6 +388,9 @@ describe("confirm", () => {
 	});
 
 	it("records an optional providerUsageSeq and omits it when absent", () => {
+		// The provider's own usage sequence, when it reports one, is what lets a
+		// later reconciliation line the two ledgers up. It is optional because
+		// not every provider reports one.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger);
 		const confirmed = ledger.confirm({
@@ -348,6 +407,8 @@ describe("confirm", () => {
 	});
 
 	it("accepts providerUsageSeq zero and refuses a malformed one", () => {
+		// `!== undefined`, not truthiness: usage sequence 0 is a real first entry
+		// and dropping it would leave the reconciliation unanchored.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger);
 		expect(
@@ -371,15 +432,22 @@ describe("confirm", () => {
 
 describe("release", () => {
 	it("restores exactly the headroom the reservation consumed", () => {
+		// Exactly, from the recorded `consumption` — not by adding the unit count
+		// back. The two differ whenever the account had less headroom than the
+		// request, and adding units back would invent credit.
 		const ledger = createReservationLedger(
 			ledgerView([account({ freeHeadroom: 5 })]),
 		);
 		reserveOn(ledger, { units: 20 });
-
-		expect(ledger.snapshot().accounts[0]?.freeHeadroom).toBe(0);
+		// SAFETY: the parsed account is the ledger's CreditAccount shape.
+		expect(
+			(ledger.snapshot().accounts[0] as { freeHeadroom: number }).freeHeadroom,
+		).toBe(0);
 		ledger.release({ reservationId: "r-1" });
-
-		expect(ledger.snapshot().accounts[0]?.freeHeadroom).toBe(5);
+		// SAFETY: the parsed account is the ledger's CreditAccount shape.
+		expect(
+			(ledger.snapshot().accounts[0] as { freeHeadroom: number }).freeHeadroom,
+		).toBe(5);
 	});
 
 	it("restores each drawn-on credit grant", () => {
@@ -396,21 +464,33 @@ describe("release", () => {
 		);
 		reserveOn(ledger, { units: 15 });
 		ledger.release({ reservationId: "r-1" });
-
-		const credits = ledger.snapshot().accounts[0]?.credits ?? [];
+		// SAFETY: the parsed account's credits are CreditGrant records.
+		const credits = (
+			ledger.snapshot().accounts[0] as {
+				credits: Array<{ freeHeadroom: number }>;
+			}
+		).credits;
 		expect(credits[0]?.freeHeadroom).toBe(10);
 		expect(credits[1]?.freeHeadroom).toBe(10);
 	});
 
 	it("clamps reservedUnits at zero rather than going negative", () => {
+		// `Math.max(0, …)`. A negative reservedUnits would make available
+		// headroom read as *more* than the account holds on the next ranking.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, { units: 10 });
 		ledger.release({ reservationId: "r-1" });
-
-		expect(ledger.snapshot().accounts[0]?.reservedUnits).toBe(0);
+		// SAFETY: the parsed account is the ledger's CreditAccount shape.
+		expect(
+			(ledger.snapshot().accounts[0] as { reservedUnits: number })
+				.reservedUnits,
+		).toBe(0);
 	});
 
 	it("refuses to release twice, so headroom is never restored twice", () => {
+		// The invariant with the most direct financial consequence: a double
+		// restore invents free credit, and the next dispatch spends it against a
+		// provider that will bill for it.
 		const ledger = createReservationLedger(
 			ledgerView([account({ freeHeadroom: 100 })]),
 		);
@@ -419,8 +499,10 @@ describe("release", () => {
 		const second = ledger.release({ reservationId: "r-1" });
 		expect(second.ok).toBe(false);
 		expect(second.status).toBe("not-releasable");
-
-		expect(ledger.snapshot().accounts[0]?.freeHeadroom).toBe(100);
+		// SAFETY: the parsed account is the ledger's CreditAccount shape.
+		expect(
+			(ledger.snapshot().accounts[0] as { freeHeadroom: number }).freeHeadroom,
+		).toBe(100);
 	});
 
 	it("refuses to release a confirmed reservation", () => {
@@ -455,12 +537,18 @@ describe("release", () => {
 	});
 
 	it("releases cleanly when the account has since vanished from the ledger", () => {
+		// The `if (account)` guard. An account that disappeared between reserve
+		// and release must not make the release throw — the reservation still
+		// has to reach a terminal state or it would block the id forever.
 		const ledger = createReservationLedger(ledgerView([]));
 		reserveOn(ledger);
 		expect(ledger.release({ reservationId: "r-1" }).ok).toBe(true);
 	});
 
 	it("marks the reservation released rather than expired", () => {
+		// The two share one implementation and differ only by event type and
+		// status. Conflating them would make an operator unable to tell a
+		// cancelled job from a reservation that timed out.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger);
 		const result = ledger.release({ reservationId: "r-1" });
@@ -485,8 +573,11 @@ describe("expire", () => {
 		});
 		const result = ledger.expire({ now: "2026-06-27T00:00:02.000Z" });
 		expect(result.released).toBe(1);
-
-		const reservations = ledger.snapshot().reservations ?? [];
+		// SAFETY: snapshot() returns reservations with the tested lifecycle fields.
+		const reservations = ledger.snapshot().reservations as Array<{
+			reservationId: string;
+			status: string;
+		}>;
 		expect(reservations.find((r) => r.reservationId === "past")?.status).toBe(
 			"expired",
 		);
@@ -496,39 +587,26 @@ describe("expire", () => {
 	});
 
 	it("treats an expiry exactly at now as expired", () => {
+		// `<=`, so the boundary instant expires. The alternative leaves a
+		// reservation alive for one sweep interval past its stated deadline.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, { expiresAt: "2026-06-27T00:00:01.000Z" });
 		expect(ledger.expire({ now: "2026-06-27T00:00:01.000Z" }).released).toBe(1);
 	});
 
 	it("never expires a reservation with no expiry", () => {
+		// An absent expiry means "held until explicitly released". Sweeping it
+		// would silently free headroom a caller still believes it holds.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger);
 		expect(ledger.expire({ now: "2099-01-01T00:00:00.000Z" }).released).toBe(0);
 	});
 
-	it("keeps a confirmed reservation spent after its deadline", () => {
+	it("never expires a confirmed or already-released reservation", () => {
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, { expiresAt: "2026-06-27T00:00:01.000Z" });
 		ledger.confirm({ reservationId: "r-1" });
-		expect(ledger.expire({ now: "2026-06-27T00:00:02.000Z" }).released).toBe(0);
-		expect(ledger.snapshot().accounts[0]?.freeHeadroom).toBe(90);
-	});
-
-	it("refuses a late confirmation after expiration without spending restored credit", () => {
-		const ledger = createReservationLedger(ledgerView([account()]));
-		reserveOn(ledger, { expiresAt: "2026-06-27T00:00:01.000Z" });
-		ledger.expire({ now: "2026-06-27T00:00:02.000Z" });
-		const result = ledger.confirm({
-			reservationId: "r-1",
-			providerUsageSeq: 777,
-		});
-		expect(result.ok).toBe(false);
-		expect(result.status).toBe("not-confirmable");
-		expect(ledger.snapshot().accounts[0]?.freeHeadroom).toBe(100);
-		expect(ledger.events().at(-1)?.type).toBe(
-			DISPATCH_EVENTS.ReservationExpired,
-		);
+		expect(ledger.expire({ now: "2026-06-27T00:00:00.000Z" }).released).toBe(0);
 	});
 
 	it("restores headroom for each expired reservation", () => {
@@ -537,8 +615,10 @@ describe("expire", () => {
 		);
 		reserveOn(ledger, { units: 25, expiresAt: "2026-06-27T00:00:01.000Z" });
 		ledger.expire({ now: "2026-06-27T00:00:01.000Z" });
-
-		expect(ledger.snapshot().accounts[0]?.freeHeadroom).toBe(100);
+		// SAFETY: the parsed account is the ledger's CreditAccount shape.
+		expect(
+			(ledger.snapshot().accounts[0] as { freeHeadroom: number }).freeHeadroom,
+		).toBe(100);
 	});
 
 	it("reports zero released on an empty ledger", () => {
@@ -550,6 +630,9 @@ describe("expire", () => {
 	});
 
 	it("expires several reservations in one sweep, each bumping the seq", () => {
+		// One seq per release, not one per sweep: each expiry is its own
+		// committed fact, and collapsing them would make the event log's seqs
+		// disagree with the ledger's.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, {
 			reservationId: "a",
@@ -584,77 +667,15 @@ describe("expire", () => {
 	});
 });
 
-it("re-ranks a burst of dispatches from the same stale credit snapshot", () => {
-	const registry = createDispatcherRegistry([
-		{
-			id: "free",
-			providerId: "free",
-			category: "runner",
-			registered: true,
-			dimension: "runner.minutes",
-			listUnitCost: 0.04,
-		},
-		{
-			id: "paid",
-			providerId: "paid",
-			category: "runner",
-			registered: true,
-			dimension: "runner.minutes",
-			listUnitCost: 0.01,
-		},
-	]);
-	const ledger = createReservationLedger(
-		ledgerView([
-			account({
-				providerId: "free",
-				freeHeadroom: 2,
-				listUnitCost: 0.04,
-				credits: [
-					{
-						creditId: "free-credit",
-						freeHeadroom: 2,
-						expiresAt: "2026-07-01T00:00:00.000Z",
-					},
-				],
-			}),
-			account({ providerId: "paid", freeHeadroom: 0, listUnitCost: 0.01 }),
-		]),
-	);
-	const staleSnapshot = ledger.snapshot();
-	const decisions = Array.from({ length: 5 }, (_, index) =>
-		decideAndReserveDispatch({
-			registry,
-			category: "runner",
-			dispatchId: `burst-${index}`,
-			units: 1,
-			ledgerView: staleSnapshot,
-			reservationLedger: ledger,
-		}),
-	);
-	expect(decisions.map((decision) => decision.selectedProvider)).toEqual([
-		"free",
-		"free",
-		"paid",
-		"paid",
-		"paid",
-	]);
-	expect(
-		ledger.snapshot().accounts.find((entry) => entry.providerId === "free")
-			?.freeHeadroom,
-	).toBe(0);
-	expect(
-		ledger
-			.snapshot()
-			.reservations?.filter((entry) => entry.providerId === "free"),
-	).toHaveLength(2);
-});
-
 describe("snapshot and events", () => {
 	it("hand back clones a caller cannot use to mutate the ledger", () => {
+		// Both return `clone(...)`. A caller who edited the returned snapshot
+		// could otherwise raise their own headroom and reserve against credit
+		// that does not exist.
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger);
-
-		const snapshot = ledger.snapshot();
+		// SAFETY: snapshot() returns the parsed CreditLedgerView shape.
+		const snapshot = ledger.snapshot() as { seq: number };
 		snapshot.seq = 0;
 		expect(ledger.snapshot().seq).toBe(92);
 

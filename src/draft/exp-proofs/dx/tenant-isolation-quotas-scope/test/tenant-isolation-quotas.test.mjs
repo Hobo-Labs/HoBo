@@ -30,17 +30,17 @@ test("M0 record states tenant isolation and quota goal, personas, scope, and bou
 test("M0 dependencies map owning initiatives and design sources for M1 proof", () => {
   assert.ok(
     TENANT_ISOLATION_QUOTAS_SCOPE.designRefs.includes(
-      "urn:hobo:requirement:security-networking#plan-50",
+      "docs/design/security-networking.md#plan-50",
     ),
   );
   assert.ok(
     TENANT_ISOLATION_QUOTAS_SCOPE.adrRefs.includes(
-      "urn:hobo:decision:adr-0079",
+      "docs/design/adr/02-identity-security.md#adr-0079",
     ),
   );
   assert.ok(
     TENANT_ISOLATION_QUOTAS_SCOPE.adrRefs.includes(
-      "urn:hobo:decision:adr-0080",
+      "docs/design/adr/02-identity-security.md#adr-0080",
     ),
   );
   assert.ok(

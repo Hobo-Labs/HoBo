@@ -133,7 +133,9 @@ export function createPnpmStoreMaintenance(
 				JSON.parse(await fs.readFile(lockPath, "utf8")),
 			);
 			if (isProcessAlive(lock.pid)) return false;
-		} catch {}
+		} catch {
+			// An unreadable or malformed lock is stale.
+		}
 		await fs.unlink(lockPath);
 		try {
 			await createLock(startedAt);

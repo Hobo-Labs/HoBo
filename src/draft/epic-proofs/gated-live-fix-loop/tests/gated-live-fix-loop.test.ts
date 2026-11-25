@@ -118,6 +118,7 @@ describe("gated live-fix loop (HOBO-654)", () => {
   });
 
   it("architecture artifacts pin protobuf, CUE, Pact, and ADR boundaries", () => {
+    const adr = readFileSync(new URL("../ADR.md", import.meta.url), "utf8");
     const proto = readFileSync(
       new URL("../architecture/gated_live_fix_loop.proto", import.meta.url),
       "utf8",
@@ -138,6 +139,13 @@ describe("gated live-fix loop (HOBO-654)", () => {
     assert.equal(pact.consumer.name, "GatedLiveFixLoopConsumer");
     assert.equal(pact.provider.name, "GatedLiveFixLoopBoundary");
     assert.equal(pact.interactions[0].response.body.ok, true);
+    assert.match(adr, /parse, don't validate/i);
+    assert.match(adr, /Command/i);
+    assert.match(adr, /Event/i);
+    assert.match(adr, /Actor/i);
+    assert.match(adr, /event store/i);
+    assert.match(adr, /projection/i);
+    assert.match(adr, /read store/i);
   });
 });
 

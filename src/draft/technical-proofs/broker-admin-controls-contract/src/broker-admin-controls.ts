@@ -188,9 +188,9 @@ export const BROKER_ADMIN_CONTROLS_CONTRACT: BrokerAdminControlsContract = Objec
   designRefs: Object.freeze([
     "Linear HOBO-527 issue body",
     "Linear HOBO-521 issue body",
-    "urn:hobo:requirement:meta-cloud-broker",
-    "urn:hobo:requirement:admin-console",
-    "urn:hobo:requirement:capability-review-approval",
+    "docs/design/meta-cloud-broker.md",
+    "docs/design/admin-console.md",
+    "docs/design/capability-review-approval.md",
   ]),
   proofArtifacts: Object.freeze([
     "src/draft/technical-proofs/broker-admin-controls-contract/src/broker-admin-controls.ts",

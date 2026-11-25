@@ -1,10 +1,4 @@
-import {
-	canonicalJson,
-	type ProviderTerms,
-	providerTermsFor,
-	sortKeys,
-	stableDigest,
-} from "@hobo/core";
+import { canonicalJson, sortKeys, stableDigest } from "@hobo/core";
 
 import {
 	isJsonArray,
@@ -76,10 +70,16 @@ export const COST_SOURCE: CostProvenance = {
  * usage HoBo will drive; GitHub's Actions terms in particular restrict
  * commercial resale of Actions and per-VM sharing.
  */
+export interface ProviderTerms {
+	readonly url: string;
+	readonly reviewedOn: string;
+}
+
 // public-contract: GitHub's additional product terms covering Actions.
-export const PROVIDER_TERMS: ProviderTerms = providerTermsFor(
-	"@hobo/runner-github",
-);
+export const PROVIDER_TERMS: ProviderTerms = {
+	url: "https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features",
+	reviewedOn: "2026-07-27",
+};
 
 export const COST_FACTS = {
 	[RUNNER_CATEGORY]: {
@@ -369,7 +369,6 @@ export function publishCapabilityManifest(
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
 		executionHostSchema: EXECUTION_HOST_MANIFEST_SCHEMA,
-		terms: PROVIDER_TERMS,
 		documents,
 	};
 

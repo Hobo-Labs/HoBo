@@ -9,7 +9,8 @@
       "src/draft/technical-proofs/provider-capability-conformance-suites"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

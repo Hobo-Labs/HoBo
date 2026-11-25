@@ -15,6 +15,8 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const runner = join(root, "scripts/run-relevant-checks.ts");
+// See run-relevant-checks-git-failure.test.ts: only tsx maps the runner's
+// `./relevant-check-policy.js` import to its source.
 const tsx = import.meta.resolve("tsx");
 
 const scratch: string[] = [];
@@ -28,6 +30,8 @@ function tempDir(): string {
 	return dir;
 }
 
+// Node, git and sh, and no package manager: the directory node ships in also
+// holds pnpm.
 const nodeBin = join(tempDir(), "bin");
 mkdirSync(nodeBin);
 symlinkSync(process.execPath, join(nodeBin, "node"));
@@ -60,10 +64,14 @@ function runChecks(cwd: string, ...flags: string[]) {
 	);
 }
 
+// A gate that cannot start is a failed gate, and the person committing has to
+// be told which one and why: the runner used to print only its `▶` line.
 describe("agent:check when a check cannot start", () => {
 	it("says which check could not start and why", () => {
 		const repo = tempDir();
 		git(repo, ["init", "--quiet"]);
+		// A root package.json with none of the selected scripts keeps them on
+		// pnpm, and there is no pnpm here.
 		write(repo, "package.json", "{}\n");
 		write(repo, "docs/note.md", "# note\n");
 		git(repo, ["add", "."]);
@@ -84,12 +92,14 @@ describe("agent:check when a check cannot start", () => {
 		write(repo, "packages/foo/package.json", '{ "name": "foo" }\n');
 		write(repo, "packages/foo/src/a.ts", "export const a = 1;\n");
 		git(repo, ["add", "."]);
+		// Every `pnpm run` gate this change selects passes, through the
+		// launcher; only the workspace tests are an exec of turbo, which is not
+		// installed.
 		const explained = runChecks(repo, "--explain");
 		assert.equal(explained.status, 0, explained.stderr);
 		const names = [...explained.stdout.matchAll(/^- pnpm run (\S+)/gmu)].map(
 			(match) => match[1] ?? "",
 		);
-		assert.match(explained.stdout, /^- pnpm exec turbo run build/mu);
 		assert.match(explained.stdout, /^- pnpm exec turbo run test/mu);
 		const scripts = Object.fromEntries(names.map((name) => [name, "true"]));
 		write(repo, "package.json", JSON.stringify({ scripts }));
@@ -102,7 +112,7 @@ describe("agent:check when a check cannot start", () => {
 		assert.equal(result.status, 1, result.stdout + result.stderr);
 		assert.match(
 			result.stderr,
-			/fail {2}pnpm exec turbo run build .*node_modules\/\.bin\/turbo is not installed/u,
+			/fail {2}pnpm exec turbo run test .*node_modules\/\.bin\/turbo is not installed/u,
 		);
 		assert.doesNotMatch(result.stderr, /^\s+at /mu);
 	});

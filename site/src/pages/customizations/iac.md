@@ -25,4 +25,4 @@ Executors apply infrastructure through **IaC adapters** behind ports — sandbox
 
 ## Related
 
-[Custom providers](/HoBo/customizations/providers/) · [Control plane](/HoBo/system/control-plane/) · [Stations & Conductor](/HoBo/primitives/stations/)
+[Custom providers](/HoBo/customizations/providers/) · [Control plane](/HoBo/architecture/control-plane/) · [Stations & Conductor](/HoBo/primitives/stations/)

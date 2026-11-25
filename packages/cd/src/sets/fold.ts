@@ -1,3 +1,7 @@
+// Pure folds (materialized views) over the per-Camp streams. Desired state is
+// the fold of `cd-camp-<id>` (spec); observations fold from
+// `cd-camp-status-<id>` (status). Replay of the same journal always yields the
+// same projection (I8).
 import type { EventEnvelope } from "@hobo/core";
 import type {
 	CampManagement,
@@ -28,8 +32,10 @@ export type DeltaEntry = Readonly<{
 
 export type CampSpecState = Readonly<{
 	campId: string;
+	/** Seq of the last folded event; the expected version for the next append. */
 	seq: number;
 	current?: ParsedSet;
+	/** Oldest first. */
 	sets: readonly ParsedSet[];
 	deltas: ReadonlyMap<string, DeltaEntry>;
 	openDeltaId?: string;
@@ -71,6 +77,7 @@ function sameCamp(
 		);
 }
 
+/** Reducer for one spec-stream event. Unknown event types are carried over unchanged. */
 export function applyCampSpecEvent(
 	state: CampSpecState,
 	event: EventEnvelope,
@@ -194,12 +201,21 @@ const STATUS_TYPES: ReadonlySet<string> = new Set([
 	CD_EVENTS.ReconcileBlocked,
 ]);
 
+/** The decimal FenceToken (cd.proto), or undefined when it is malformed. */
 function fenceOf(observation: ReconcileObservationRecord): bigint | undefined {
 	return /^(0|[1-9]\d*)$/.test(observation.fenceToken)
 		? BigInt(observation.fenceToken)
 		: undefined;
 }
 
+/**
+ * Latest observation on a status stream. An observation carrying a fence lower
+ * than one already seen came from a superseded lease holder and is ignored (I4).
+ * An observation whose fence is not a decimal FenceToken is ignored too
+ * (fail-closed): it cannot prove it holds the lease. Bodies are read through
+ * parseStatusBody: the reconcile transport's `{ schema, observation }`
+ * envelope, or the legacy bare record; an unknown schema is skipped.
+ */
 export function foldCampStatus(
 	events: Iterable<EventEnvelope>,
 ): ReconcileObservationRecord | undefined {
@@ -217,6 +233,7 @@ export function foldCampStatus(
 	return latest;
 }
 
+/** Management carried on the inventory stream (WP22 writes it); last one wins. */
 export function foldManagement(
 	events: Iterable<EventEnvelope>,
 ): CampManagement | undefined {

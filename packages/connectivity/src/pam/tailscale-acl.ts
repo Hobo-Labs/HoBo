@@ -1,7 +1,13 @@
+/**
+ * Pure Tailscale ACL document for environment network isolation.
+ * Apply via Tailscale API (createTailscaleApiClient) when credentials present.
+ */
+
 import type { IsolationClass } from "../env-isolation/types.js";
 import { ISOLATION_CLASSES } from "../env-isolation/types.js";
 import type { JsonValue } from "../json.js";
 
+// public-contract: generated ACL schema version.
 export const ENV_ISOLATION_TAILSCALE_ACL_SCHEMA =
 	"hobo.env-isolation-tailscale-acl/v1" as const;
 
@@ -13,12 +19,20 @@ export type TailscaleAclGrant = Readonly<{
 
 export type EnvIsolationTailscaleAcl = Readonly<{
 	schemaVersion: typeof ENV_ISOLATION_TAILSCALE_ACL_SCHEMA;
+	/** tagOwners for env isolation tags. */
 	tagOwners: Readonly<Record<string, readonly string[]>>;
+	/** Default deny across env tags; same-env allow. */
 	acls: readonly TailscaleAclGrant[];
+	/** Optional via routes — never sufficient alone for production. */
 	via?: readonly string[];
+	/** Human-readable notes for operators. */
 	notes: readonly string[];
 }>;
 
+/**
+ * Render a fail-closed Tailscale ACL: each isolation class can only talk to itself
+ * unless an explicit cross-env grant tag is present (time-bound grants are policy-side).
+ */
 export function renderEnvIsolationTailscaleAcl(input?: {
 	readonly classes?: readonly IsolationClass[];
 	readonly tagOwnerGroup?: string;
@@ -34,8 +48,10 @@ export function renderEnvIsolationTailscaleAcl(input?: {
 	const acls: TailscaleAclGrant[] = [];
 
 	for (const cls of classes) {
+		// Tailscale tags use tag:name form; map env:production → tag:env-production
 		const tsTag = `tag:env-${cls}`;
 		tagOwners[tsTag] = Object.freeze([owner]);
+		// Same-env allow (src=dst tag).
 		acls.push(
 			Object.freeze({
 				src: Object.freeze([tsTag]),
@@ -45,6 +61,7 @@ export function renderEnvIsolationTailscaleAcl(input?: {
 		);
 	}
 
+	// Explicit cross-env grant tags (optional, time-bound membership is still required in PolicyEngine).
 	for (const g of input?.crossEnvGrantTags ?? []) {
 		const grantTag = g.grantTag.startsWith("tag:")
 			? g.grantTag
@@ -59,6 +76,7 @@ export function renderEnvIsolationTailscaleAcl(input?: {
 		);
 	}
 
+	// Local-dev has no remote overlay peers by policy note.
 	return Object.freeze({
 		schemaVersion: ENV_ISOLATION_TAILSCALE_ACL_SCHEMA,
 		tagOwners: Object.freeze(tagOwners),
@@ -72,8 +90,13 @@ export function renderEnvIsolationTailscaleAcl(input?: {
 	});
 }
 
+/**
+ * Apply generated ACL tagOwners merge into a Tailscale split-DNS / policy document
+ * shape operators can PUT. Does not call the network unless client provided.
+ */
 export async function applyEnvIsolationAclHints(input: {
 	readonly acl: EnvIsolationTailscaleAcl;
+	/** Optional live client — when present, set DNS preferences for env zones only. */
 	readonly tailscale?: {
 		readonly setDnsPreferences: (prefs: {
 			readonly magicDNS?: boolean;
@@ -101,6 +124,7 @@ export async function applyEnvIsolationAclHints(input: {
 	}
 	await input.tailscale.setDnsPreferences({ magicDNS: true });
 	if (input.tailscale.putSplitDns) {
+		// Env-scoped hierarchical names stay on operator-configured resolvers.
 		await input.tailscale.putSplitDns(
 			["hobo.test", "hobo.internal"],
 			["100.100.100.100"],

@@ -21,6 +21,8 @@ import {
 
 const app = bindle(
   "catalog",
+  // This host-defined capability name must be registered and assessed by the
+  // host as eventual, read-only KV; it does not stand for full HoBo KV.
   { require: ["http", "kv-eventual-read"], runtimes: ["javascript"] },
   (b) => {
     const cache = b.kv().allow("get");
@@ -32,20 +34,17 @@ const app = bindle(
   },
 );
 
+// Supplied by the host's durable grant registry. This illustrative value must
+// be unique to this grant incarnation and stable on retries.
 const grantEpoch = `sha256:${"1".repeat(64)}`;
+// Stable for this namespace's lifetime; a new namespace gets a fresh epoch.
 const namespaceEpoch = `sha256:${"4".repeat(64)}`;
+// Keep `app` for other targets. This view is only for the Cloudflare mapping.
 export const cloudflareApp = withCloudflareEventualKv(app, {
   cache: { mode: "read-only", grantEpoch, namespaceEpoch },
 });
 export default bindleCloudflareWorker(cloudflareApp, "web");
 ```
-
-The host registers and assesses `kv-eventual-read` as eventual, read-only KV;
-it does not stand for full HoBo KV. The host's durable grant registry supplies
-`grantEpoch`, unique to this grant incarnation and stable on retries; the
-values above are illustrative. `namespaceEpoch` is stable for the namespace's
-lifetime, and a new namespace gets a fresh epoch. `cloudflareApp` is only for
-the Cloudflare mapping; keep `app` for other targets.
 
 The imported Worker module and the mapping must use the same namespace and
 grant epochs; a mismatch is refused before deployment.
@@ -60,6 +59,8 @@ import {
   cloudflareNativeKvBindleMappers,
 } from "@hobo/iac-alchemy/cloudflare/kv";
 
+// Establish sourceFence before importing the application module. It must
+// authenticate and fence both the app graph and the installed proxy graph.
 const mapped = mapBindleToAlchemy(
   cloudflareApp,
   cloudflareNativeKvBindleMappers({
@@ -81,14 +82,11 @@ const sourceRequirements = [
     mode: "read-only", grantEpoch, namespaceEpoch, allow: ["get"],
   }),
 ];
+// Supply sourceRequirements to the composite guard and mapped to the Alchemy
+// stack. The host independently verifies the generated proxy identity.
+// Scope cloudflareKvNamespaceClaim("catalog", "cache", namespaceEpoch)
+// as a Cloudflare.KV.Namespace in the financial target inventory.
 ```
-
-The host establishes `sourceFence` before importing the application module; it
-authenticates and fences both the app graph and the installed proxy graph. It
-supplies `sourceRequirements` to the composite guard and `mapped` to the
-Alchemy stack, independently verifies the generated proxy identity, and scopes
-`cloudflareKvNamespaceClaim("catalog", "cache", namespaceEpoch)` as a
-`Cloudflare.KV.Namespace` in the financial target inventory.
 
 To inspect this opt-in mapping, call `describeAlchemyPrimitiveSupport(catalog,
 cloudflareNativeKvBindleMappers(options))`. Its KV entry is `partial` and

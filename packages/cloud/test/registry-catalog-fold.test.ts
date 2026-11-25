@@ -28,7 +28,6 @@ import {
 	definitionsFor,
 	foldRegistryStream,
 	parseRegisteredDefinitions,
-	providerRegistrationFacts,
 	type RegistrableProvider,
 	registerProviderFact,
 } from "../src/index.js";
@@ -713,57 +712,6 @@ describe("the event-backed registry", () => {
 });
 
 describe("the registration and approval facts", () => {
-	test("registration emits one auditable fact per definition", () => {
-		const facts = providerRegistrationFacts(
-			provider({ ports: ["database", "queue"] }),
-		);
-		expect(facts.map((fact) => fact.type)).toEqual([
-			CLOUD_EVENTS.ProviderRegistered,
-			CLOUD_EVENTS.ResourceDefinitionRegistered,
-			CLOUD_EVENTS.ResourceDefinitionRegistered,
-		]);
-		expect(
-			facts
-				.slice(1)
-				.map(
-					(fact) =>
-						(fact.data as { definition: { port: string } }).definition.port,
-				),
-		).toEqual(["database", "queue"]);
-	});
-
-	test("definition updates replace their recorded catalog entry", () => {
-		const registered = providerRegistrationFacts(
-			provider({
-				manifestCapabilities: [
-					{ port: "database", features: ["transactions"] },
-				],
-			}),
-		);
-		const updated = providerRegistrationFacts(
-			provider({
-				manifestCapabilities: [
-					{ port: "database", features: ["transactions", "replicas"] },
-				],
-			}),
-			"updated",
-		);
-		const fold = foldRegistryStream([
-			...registered,
-			{ type: CLOUD_EVENTS.ProviderApproved, data: { providerId: "acme" } },
-			...updated,
-		]);
-		expect(fold.installed.get("acme")?.[0]?.features).toEqual([
-			"transactions",
-			"replicas",
-		]);
-		expect(
-			updated
-				.slice(1)
-				.every((fact) => fact.type === CLOUD_EVENTS.ResourceDefinitionUpdated),
-		).toBe(true);
-	});
-
 	test("a registration fact carries the definitions and a manifest digest", () => {
 		// The digest is how a later reader confirms the recorded definitions came
 		// from the manifest the provider actually published.

@@ -18,12 +18,12 @@
           "issue": "HOBO-561",
           "phase": "M2",
           "targetPackage": "src/draft/exp-proofs/ux/vibe-topology-status-prototype",
-          "proofNote": "urn:hobo:proof:vibe-topology-status-prototype",
+          "proofNote": "docs/design/proofs/vibe-topology-status-prototype/README.md",
           "designRefs": [
-            "urn:hobo:requirement:deployment-dashboard-topology-explorer",
-            "urn:hobo:requirement:developer-experience#plan-07",
-            "urn:hobo:requirement:data-plane#plan-32",
-            "urn:hobo:proof:resource-lifecycle-quickstart-examples"
+            "docs/design/deployment-dashboard-topology-explorer.md",
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/data-plane.md#plan-32",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
           ],
           "sourceDependencies": [
             {
@@ -42,7 +42,7 @@
               "issue": "HOBO-577",
               "title": "Vibe resource lifecycle quickstart examples",
               "status": "accepted",
-              "evidence": "urn:hobo:proof:resource-lifecycle-quickstart-examples"
+              "evidence": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
             }
           ],
           "quickstartFixtureRefs": [

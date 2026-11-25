@@ -30,22 +30,22 @@ test("M0 record states goal, personas, scope, non-goals, and boundaries", () => 
 
 test("M0 dependencies map authoritative design sources and owning initiatives", () => {
   assert.deepEqual(TEARDOWN_RECOVERY_SCOPE.designRefs, [
-    "urn:hobo:requirement:control-plane#plan-04",
-    "urn:hobo:requirement:reliability-observability-cost#plan-05",
-    "urn:hobo:requirement:developer-experience#plan-07",
-    "urn:hobo:requirement:platform-engineering#plan-25",
-    "urn:hobo:requirement:environment-lifecycle",
-    "urn:hobo:requirement:resource-garbage-collection",
-    "urn:hobo:requirement:backup-restore",
-    "urn:hobo:requirement:upgrade-migration-engine",
-    "urn:hobo:requirement:support-sla-channels",
+    "docs/design/control-plane.md#plan-04",
+    "docs/design/reliability-observability-cost.md#plan-05",
+    "docs/design/developer-experience.md#plan-07",
+    "docs/design/platform-engineering.md#plan-25",
+    "docs/design/environment-lifecycle.md",
+    "docs/design/resource-garbage-collection.md",
+    "docs/design/backup-restore.md",
+    "docs/design/upgrade-migration-engine.md",
+    "docs/design/support-sla-channels.md",
   ]);
   assert.deepEqual(TEARDOWN_RECOVERY_SCOPE.adrRefs, [
-    "urn:hobo:decision:adr-0004",
-    "urn:hobo:decision:adr-0006",
-    "urn:hobo:decision:adr-0058",
-    "urn:hobo:decision:adr-0041",
-    "urn:hobo:decision:adr-0094",
+    "docs/design/adr/01-architecture-core.md#adr-0004",
+    "docs/design/adr/01-architecture-core.md#adr-0006",
+    "docs/design/adr/03-data-plane.md#adr-0058",
+    "docs/design/adr/07-portability-extensibility.md#adr-0041",
+    "docs/design/adr/02-identity-security.md#adr-0094",
   ]);
   assert.deepEqual(
     TEARDOWN_RECOVERY_SCOPE.initiativeDependencies.map((dependency) => dependency.owner),

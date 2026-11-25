@@ -2,7 +2,7 @@
 	"name": "@hobo/control-api",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "Local-first HTTP and SSE control-plane adapter over @hobo/management.",
+	"description": "Local-first HTTP + SSE control-plane adapter over @hobo/management for the Yard game UI.",
 	"type": "module",
 	"files": [
 		"LICENSE",

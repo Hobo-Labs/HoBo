@@ -7,11 +7,16 @@
     "technicalProofs": [
       "src/draft/technical-proofs/actor-host-runtime-port-contract",
       "src/draft/technical-proofs/camp-eventstore-runtime-port-contract",
+      "src/draft/technical-proofs/queue-clock-runtime-port-contract",
       "src/draft/technical-proofs/runtime-port-conformance-contract",
       "src/draft/technical-proofs/streamer-runtime-port-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/data-plane.md",
+      "docs/design/sdk-api.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

@@ -1,12 +1,9 @@
-import { parseIdempotencyKey, parseQueueName, parseRunId } from "@hobo/core";
-import { type JsonObject, isJsonNumber, isJsonObject } from "../json.js";
+import { type JsonObject } from "../json.js";
 import type { RuntimeDurabilityBackend } from "./types.js";
 
 export async function proveCheckoutDurability(backend: RuntimeDurabilityBackend) {
   const runId = "checkout:run-1";
   const streamId = runId;
-  const payments = parseQueueName("payments");
-  const chargeKey = parseIdempotencyKey(`charge:${runId}`);
   const { eventStore, queue, clock, actorHost } = backend;
 
   await eventStore.append(
@@ -32,26 +29,23 @@ export async function proveCheckoutDurability(backend: RuntimeDurabilityBackend)
     appendOptions(1, "checkout-reserved"),
   );
 
-  clock.sleep(parseRunId(runId), 30_000, {
+  clock.sleep(runId, 30_000, {
     idempotencyKey: `timeout:${runId}`,
     label: "payment-timeout",
   });
   const queued = await queue.enqueue(
-    payments,
+    "payments",
     { runId, cents: 4200 },
-    { idempotencyKey: chargeKey },
+    { idempotencyKey: `charge:${runId}` },
   );
   await queue.enqueue(
-    payments,
+    "payments",
     { runId, cents: 4200 },
-    { idempotencyKey: chargeKey },
+    { idempotencyKey: `charge:${runId}` },
   );
 
   const queueEffects: string[] = [];
-  await queue.handle(payments, async (message) => {
-    if (!isJsonObject(message.body) || !isJsonNumber(message.body.cents)) {
-      throw new TypeError("payment message requires cents");
-    }
+  await queue.handle("payments", async (message: { idempotencyKey: string; body: { cents: number } }) => {
     queueEffects.push(message.idempotencyKey);
     await eventStore.append(
       streamId,
@@ -60,7 +54,7 @@ export async function proveCheckoutDurability(backend: RuntimeDurabilityBackend)
     );
   });
   queue.simulateRedelivery(queued.messageId);
-  await queue.handle(payments, async (message) => {
+  await queue.handle("payments", async (message: { idempotencyKey: string }) => {
     queueEffects.push(message.idempotencyKey);
   });
 

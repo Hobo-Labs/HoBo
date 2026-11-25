@@ -1,6 +1,6 @@
 # Session Replay contracts (technical proof)
 
-Pins the wire contracts and dual-fixture path for **Session Replay** ([ADR-0137](urn:hobo:decision:adr-0137)).
+Pins the wire contracts and dual-fixture path for **Session Replay** ([ADR-0137](../../../../docs/design/adr/03-data-plane.md#adr-0137)).
 
 Parse, don't validate: fixtures exercise `parseSessionRecord` and related constructors so invalid
 metadata never becomes a **derived domain type** beyond the boundary.

@@ -19,14 +19,13 @@ import type {
 	SubscriptionCheckpoint,
 	SubscriptionId,
 	SubscriptionLease,
-} from "@hobo/core/eventstore";
+} from "@hobo/core";
 import {
 	CheckpointRegressionError,
 	EVENTSTORE_LIMITS,
 	FENCING_COMPAT,
 	MissingFenceError,
 	OptimisticSequenceConflictError,
-	parseDurableEffect,
 	parseEventEnvelope,
 	parseEventPosition,
 	parseFenceToken,
@@ -34,7 +33,7 @@ import {
 	parseSubscriptionId,
 	SnapshotAheadError,
 	StaleFenceError,
-} from "@hobo/core/eventstore";
+} from "@hobo/core";
 import {
 	DEFAULT_METADATA_CODEC,
 	DEFAULT_PAYLOAD_CODEC,
@@ -65,14 +64,15 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
+import { migrateToCurrent } from "./migrate.js";
 import { NATIVE_PRAGMAS } from "./schema.js";
-import { initializeJournalSchema } from "./schema-initialization.js";
 
 export interface JournalOpenOptions {
 	readonly clock?: Clock;
 	readonly partitionId?: string;
 	/** Apply native WAL/FULL pragmas (default true for node drivers). */
 	readonly nativePragmas?: boolean;
+	readonly now?: string;
 }
 
 export interface ParsedEventInput {
@@ -128,7 +128,6 @@ export class SqliteJournal {
 		this.db = db;
 		this.partitionId = options.partitionId ?? "default";
 		this.clock = options.clock ?? { now: () => new Date().toISOString() };
-		initializeJournalSchema(this.db);
 
 		if (options.nativePragmas !== false && db.kind === "node") {
 			this.db.exec(`PRAGMA journal_mode = ${NATIVE_PRAGMAS.journal_mode}`);
@@ -144,6 +143,7 @@ export class SqliteJournal {
 			}
 		}
 
+		migrateToCurrent(this.db, { now: options.now ?? this.clock.now() });
 		// A deterministic clock can restart at the same instant after reopen.
 		// Seed from durable state, then check under the append transaction so
 		// independent handles and clock rewinds cannot reuse an existing ID.
@@ -202,10 +202,7 @@ export class SqliteJournal {
 		const streamId = requireNonEmpty(request.streamId, "streamId");
 		const opts = request.append;
 		const inputs = parseEventInputs(request.events);
-		const rawEffects = request.effects === undefined ? [] : request.effects;
-		if (!Array.isArray(rawEffects))
-			throw new TypeError("effects must be an array");
-		const effects = rawEffects.map(parseDurableEffect);
+		const effects = request.effects ?? [];
 		if (inputs.length > EVENTSTORE_LIMITS.maxBatchEvents) {
 			throw new TypeError(
 				`events batch exceeds maxBatchEvents=${EVENTSTORE_LIMITS.maxBatchEvents}`,

@@ -74,7 +74,7 @@ The agent's input/output shapes are protobuf-first: `data-models/agent_run.proto
 with matching CUE constraints in `data-models/agent_run.cue`, and `src/agent.ts`
 imports the **generated** `OrderCommand`/`OrderReceipt` types from
 `src/_generated/agent_run_pb.ts` (run
-`pnpm --dir ../.. exec node --import tsx packages/schema-tools/src/cli.ts --packages-root examples --filter examples/durable-agent` to
+`buf generate data-models --template ../../buf.gen.yaml -o src/_generated` to
 regenerate). Following **parse, don't validate**, untrusted input crosses a
 single parse boundary (`parseOrderCommand`) that returns the **derived domain
 type** (`OrderCommand`) — the agent body never re-checks raw fields.

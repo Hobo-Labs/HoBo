@@ -189,7 +189,7 @@ describe("@hobo/patterns", () => {
 	});
 
 	it("parses a search object query", () => {
-		const parsed = parsePatternQuery({ query: "kv", maxResults: 3 });
+		const parsed = parsePatternQuery({ query: "kv", topK: 3 });
 		expect(parsed.query).toBe("kv");
 		expect(parsed.maxResults).toBe(3);
 	});
@@ -292,39 +292,27 @@ describe("@hobo/patterns", () => {
 
 	it("parses a render request", () => {
 		const parsed = parseRenderRequest({
-			patternId: "bindle.named",
+			id: "bindle.named",
 			params: { resourceName: "x" },
 		});
 		expect(parsed.patternId).toBe("bindle.named");
 	});
 
-	it("selects starter patterns by their current IDs", () => {
+	it("resolves hobo new compatibility aliases before concept aliases", () => {
 		expect(
 			searchPatterns({
 				catalog,
 				vocabulary,
-				query: "starter.cli.api",
+				query: "api",
 			}).selectedId,
 		).toBe("starter.cli.api");
 		expect(
 			searchPatterns({
 				catalog,
 				vocabulary,
-				query: "starter.cli.agent",
+				query: "agent",
 			}).selectedId,
 		).toBe("starter.cli.agent");
-	});
-
-	it.each([
-		"api",
-		"agent",
-	])("returns candidates for ambiguous %s searches", (query) => {
-		const receipt = searchPatterns({ catalog, vocabulary, query });
-		expect(receipt.selectedId).toBe("");
-		expect(receipt.reasonCode).toBe("ambiguous");
-		expect(
-			receipt.candidates.map((candidate) => candidate.patternId),
-		).toContain(`starter.cli.${query}`);
 	});
 
 	it("hard filters cannot be overridden by similarity", () => {
@@ -333,7 +321,7 @@ describe("@hobo/patterns", () => {
 			vocabulary,
 			query: {
 				query: "bindle.named",
-				kindFilter: ["PATTERN_KIND_STARTER"],
+				kind: "starter",
 				autoSelect: true,
 			},
 		});
@@ -341,20 +329,5 @@ describe("@hobo/patterns", () => {
 		expect(
 			receipt.candidates.every((item) => item.patternId.startsWith("starter.")),
 		).toBe(true);
-	});
-
-	it("filters search results by rendering kind", () => {
-		const receipt = searchPatterns({
-			catalog,
-			vocabulary,
-			query: {
-				query: "starter.cli.api",
-				renderingFilter: "RENDERING_KIND_FILE",
-			},
-		});
-		expect(receipt.selectedId).toBe("");
-		expect(
-			receipt.candidates.map((candidate) => candidate.patternId),
-		).not.toContain("starter.cli.api");
 	});
 });

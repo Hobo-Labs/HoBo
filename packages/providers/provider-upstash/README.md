@@ -266,15 +266,13 @@ service.
 A catalog owner who needs the stronger claim should re-run the suite against a
 real database and re-sign the ref.
 
-`advanceTime(ms)` waits on the live endpoint's clock, splitting long waits into
-safe timer delays and rejecting durations above `Number.MAX_SAFE_INTEGER`.
-Tests inject the reference server's deterministic clock through the executor's
-`wait` option. A harness
-that removes time control still reports `incomplete` and cannot substantiate
-TTL behavior.
+The adapter exposes no `advanceTime`: a real endpoint has a real clock, and
+offering one would let the suite "prove" TTL behaviour it never observed. The
+offline harness borrows the *reference server's* clock instead, and a test pins
+the degradation — with no clock the run reports `incomplete`, which projects to
+`unknown` conformance, which selection rejects.
 
-Substantiated by the offline adapter tests: `ttl`, `atomicIncrement`,
-`atomicCompareAndSet`, `sortedSets`, `restTransport`,
+Substantiated: `ttl`, `atomicIncrement`, `sortedSets`, `restTransport`,
 `redisCommandSemantics`. Not substantiated and not advertised: `maxValueBytes`.
 
 ## Ephemeral state over REST
@@ -309,7 +307,7 @@ A half-set pair is an error that names the missing variable; a URL off the
 `*.upstash.io` data plane is refused without being echoed; the token is read
 at call time. Which pair the Vercel Marketplace integration injects, and how
 the relay falls back to a self-hosted Valkey, is in
-[`urn:hobo:requirement:relay-ephemeral-state`](urn:hobo:requirement:relay-ephemeral-state).
+[`docs/design/relay-ephemeral-state.md`](../../../docs/design/relay-ephemeral-state.md).
 
 **Failed commands are replies.** Upstash answers a failed command with HTTP
 400 and `{"error": "..."}`. The executor returns that as an error reply rather

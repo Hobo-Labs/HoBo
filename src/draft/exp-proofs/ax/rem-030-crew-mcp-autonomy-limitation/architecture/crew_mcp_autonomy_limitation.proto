@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for REM-030 / HOBO-697.
+
+message CrewMcpAutonomyLimitationRow {
+  string limitation = 1;
+  string state = 2;
+  string affected_persona = 3;
+  string user_visible_impact = 4;
+  string workaround = 5;
+  string owner = 6;
+  string follow_up_issue = 7;
+}
+
+message CrewMcpAutonomyLimitationEvidence {
+  string issue = 1;
+  string gap = 2;
+  CrewMcpAutonomyLimitationRow register_row = 3;
+  bool contract_in_sync = 4;
+}

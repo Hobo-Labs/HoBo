@@ -1,1 +1,2 @@
-Package-local PACT fixtures live under `contracts/pacts/`. The core contract surface exercises a reference consumer against a mock; the provider fixtures test the harness and do not verify a deployed provider.
+Package-local PACT evidence lives under `contracts/pacts/`. See
+[`ARCHITECTURE.md`](../ARCHITECTURE.md) for parse-don't-validate and event-flow notes.

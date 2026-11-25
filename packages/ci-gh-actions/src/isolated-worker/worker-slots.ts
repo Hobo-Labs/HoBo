@@ -1,3 +1,8 @@
+/**
+ * The box's slot split. It comes from the committed `runnerRouting.box` in
+ * `.hobo/ci.json` (ADR-0181, decision 4), never from the environment: whether the
+ * box serves `hobo-trunk` decides routing, so it is committed policy.
+ */
 export type WorkerSlotConfig = Readonly<{
 	slots: number;
 	trunkSlots: number;
@@ -5,8 +10,10 @@ export type WorkerSlotConfig = Readonly<{
 	prCapWithTrunk: number;
 }>;
 
+/** The slot fields of `runnerRouting.box`; a field left out takes its default. */
 export type WorkerSlotPolicy = Readonly<Partial<WorkerSlotConfig>>;
 
+/** The code's defaults, which the committed `runnerRouting.box` equals. */
 export const DEFAULT_WORKER_SLOTS = 2;
 export const DEFAULT_WORKER_MERGE_GROUP_LEASES = 1;
 export const DEFAULT_WORKER_PR_CAP_WITH_TRUNK = 1;
@@ -14,6 +21,11 @@ export const DEFAULT_WORKER_PR_CAP_WITH_TRUNK = 1;
 const whole = (value: number, min: number, max: number) =>
 	Number.isInteger(value) && value >= min && value <= max;
 
+/**
+ * The slot split, from the committed policy. One slot is reserved for trunk
+ * by default when there are at least two. Throws on a value the policy
+ * schema would refuse, so a daemon handed one refuses to start.
+ */
 export function resolveWorkerSlotConfig(
 	policy: WorkerSlotPolicy = {},
 ): WorkerSlotConfig {

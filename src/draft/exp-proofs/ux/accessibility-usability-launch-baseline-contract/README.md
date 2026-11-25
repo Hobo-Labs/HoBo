@@ -27,9 +27,11 @@ npm.cmd --prefix src\draft\exp-proofs\accessibility-usability-launch-baseline-co
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Accessibility Usability Launch Baseline Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

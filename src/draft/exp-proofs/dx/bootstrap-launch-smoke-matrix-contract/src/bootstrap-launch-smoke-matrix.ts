@@ -325,15 +325,15 @@ export const BOOTSTRAP_LAUNCH_SMOKE_MATRIX: BootstrapLaunchSmokeMatrix = Object.
     "Secret persistence, customer environment scanning, uninstall cleanup runtime, or support ticket workflow implementation.",
   ]),
   designRefs: Object.freeze([
-    "urn:hobo:requirement:bootstrap-installer",
-    "urn:hobo:requirement:developer-experience#plan-07",
-    "urn:hobo:requirement:walkthrough",
-    "urn:hobo:requirement:dogfood-yard",
+    "docs/design/bootstrap-installer.md",
+    "docs/design/developer-experience.md#plan-07",
+    "docs/design/walkthrough.md",
+    "docs/design/dogfood-yard.md",
   ]),
   adrRefs: Object.freeze([
-    "urn:hobo:decision:adr-0092",
-    "urn:hobo:decision:adr-0036",
-    "urn:hobo:decision:adr-0008",
+    "docs/design/adr/01-architecture-core.md#adr-0092",
+    "docs/design/adr/07-portability-extensibility.md#adr-0036",
+    "docs/design/adr/02-identity-security.md#adr-0008",
   ]),
 });
 

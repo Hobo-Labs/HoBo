@@ -2,14 +2,9 @@
 
 Camp **component host** backend for `componentHost=wasm` (alias: `isolated-wasm`).
 
-Private bindle components are componentized to the HoBo HTTP world and run in
-real **Wasmtime OS-process sandboxes**. The world exports the standard WASI HTTP
-incoming handler and imports the outgoing handler without requiring standard
-input. The vendored standard `wasi:http/proxy` world remains available with its
-original imports. Public web stays process-local (wired by `@hobo/hobo`).
-
-The WASI HTTP interface semantics are defined by the
-[upstream 0.2.3 specification](https://github.com/WebAssembly/wasi-http/tree/v0.2.3/wit).
+Private bindle components are componentized to wasi:http/proxy `.wasm` and run in
+real **Wasmtime OS-process sandboxes**. Public web stays process-local (wired by
+`@hobo/hobo`).
 
 ```ts
 import { createWasmRuntimeHost, ensureWasmRuntime } from "@hobo/runtime-wasm";
@@ -36,8 +31,6 @@ partial binary). Tests share one warm cache: `test/wasmtime-global-setup.ts`
 (vitest `globalSetup` in the root `vitest.config.ts`) pre-installs wasmtime once
 into the default HOBO_HOME and exports `HOBO_WASMTIME_BIN`, so tests using
 throwaway HOBO_HOME dirs don't re-download per test under parallel sweeps.
-Componentization uses `$HOBO_HOME/cache` for its compiler cache and passes only
-that cache location into the compiler's initialization environment.
 
 ## Architecture rules
 
@@ -52,4 +45,4 @@ self-contained guards; it cannot reference TypeScript host-only helper names.
 `packages/hobo/test/wasm-guest-generic.test.ts` componentizes and executes a guest
 in Wasmtime and checks tenant environment injection. This is an execution gate
 beyond the runtime's TypeScript build: template contents are compiled separately
-by esbuild and componentize-js.
+by esbuild and jco. No Protobuf, CUE, or WIT record changes are introduced.

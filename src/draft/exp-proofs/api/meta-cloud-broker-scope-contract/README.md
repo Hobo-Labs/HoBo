@@ -20,7 +20,9 @@ replacement, or provider Capability Manifest replacement.
 - Architecture guard evidence exists for the future broker boundary: PACT, protobuf, CUE,
   parse-derived domain types, and event architecture vocabulary.
 
-## Executable evidence
+## Architecture Evidence
+
+- `ADR.md` records the parse, don't validate boundary, derived domain types, commands,
   events, actor, event-store, materialized view/projection, snapshot, and read store.
 - `contracts/pacts/meta-cloud-broker-resolution.pact.json` records the executable PACT contract
   for receipt and rejection outcomes.
@@ -43,5 +45,5 @@ npm.cmd run architecture:guard -- --base=origin/main
 
 The proof is also referenced by the design record:
 
-- [Meta-cloud Broker design record](urn:hobo:requirement:meta-cloud-broker)
-- [HOBO-521 proof record](urn:hobo:proof:hobo-521-meta-cloud-broker)
+- [Meta-cloud Broker design record](../../../../../docs/design/meta-cloud-broker.md)
+- [HOBO-521 proof record](../../../../../docs/design/proofs/hobo-521-meta-cloud-broker/README.md)

@@ -1,3 +1,6 @@
+// CUE constraints for every protobuf type in compliance.proto, so the
+// architecture guard can confirm the compliance shapes are bounded at parse
+// time.
 
 package policy
 
@@ -20,7 +23,7 @@ package policy
 	control_id: string & !=""
 	title:      string & !=""
 	evidence: [...#ControlEvidenceRefRecord] & [_, ...]
-	status: "implemented"
+	status: "implemented" | "partial" | "planned"
 }
 
 #ControlEvidencePackRecord: {

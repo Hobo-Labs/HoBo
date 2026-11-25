@@ -1,101 +1,81 @@
 {
-  "consumer": { "name": "TrainingLoopConsumer" },
-  "provider": { "name": "PromotionGateProvider" },
-  "metadata": {
-    "pactSpecification": { "version": "4.0.0" },
-    "transport": "library-call"
+  "consumer": {
+    "name": "TrainingLoopConsumer"
+  },
+  "provider": {
+    "name": "PromotionGateProvider"
   },
   "interactions": [
     {
-      "description": "Promote a challenger with enough passing metric samples",
-      "type": "Synchronous/Messages",
-      "request": { "contents": { "contentType": "application/json", "encoded": false, "content": {
-        "candidateId": "candidate-1",
-        "conformance": true,
-        "policy": true,
-        "championId": "champion-1",
-        "evalResult": {
-          "rubricRef": "rubric://support/classification@1.0.0",
-          "scores": { "accuracy": 0.92 },
-          "sampleCount": 128,
-          "metricSampleCounts": { "accuracy": 128 },
-          "source": "live-eval"
-        },
-        "thresholds": { "metricFloors": { "accuracy": 0.85 }, "minSamples": 100 }
-      } } },
-      "response": [{ "contents": { "contentType": "application/json", "encoded": false, "content": {
-        "candidateId": "candidate-1",
-        "outcome": "PROMOTION_OUTCOME_PROMOTE",
-        "passed": { "conformance": true, "eval": true, "policy": true }
-      } } }]
+      "description": "a challenger that clears every lens is promoted over the champion",
+      "request": {
+        "method": "POST",
+        "path": "/promotion-gate/evaluate",
+        "body": {
+          "candidateId": "candidate-optimize-request-1",
+          "conformance": true,
+          "policy": true,
+          "championId": "champion-1",
+          "evalResult": {
+            "rubricRef": "rubric://support/classification@1.0.0",
+            "scores": { "accuracy": 0.92 },
+            "sampleCount": 128,
+            "source": "live-eval"
+          },
+          "thresholds": {
+            "metricFloors": { "accuracy": 0.85 },
+            "minSamples": 100
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "candidateId": "candidate-optimize-request-1",
+          "outcome": "PROMOTION_OUTCOME_PROMOTE",
+          "passed": { "conformance": true, "eval": true, "policy": true },
+          "failures": [],
+          "championChallenger": {
+            "championId": "champion-1",
+            "challengerId": "candidate-optimize-request-1"
+          }
+        }
+      }
     },
     {
-      "description": "Refuse a challenger whose metric falls below its floor",
-      "type": "Synchronous/Messages",
-      "request": { "contents": { "contentType": "application/json", "encoded": false, "content": {
-        "candidateId": "candidate-2",
-        "conformance": true,
-        "policy": true,
-        "evalResult": {
-          "rubricRef": "rubric://support/classification@1.0.0",
-          "scores": { "accuracy": 0.71 },
-          "sampleCount": 128,
-          "metricSampleCounts": { "accuracy": 128 },
-          "source": "live-eval"
-        },
-        "thresholds": { "metricFloors": { "accuracy": 0.85 }, "minSamples": 100 }
-      } } },
-      "response": [{ "contents": { "contentType": "application/json", "encoded": false, "content": {
-        "candidateId": "candidate-2",
-        "outcome": "PROMOTION_OUTCOME_REFUSE",
-        "passed": { "conformance": true, "eval": false, "policy": true },
-        "failures": ["eval: accuracy 0.71 below floor 0.85"]
-      } } }]
-    },
-    {
-      "description": "Refuse a metric scored on too few trajectories",
-      "type": "Synchronous/Messages",
-      "request": { "contents": { "contentType": "application/json", "encoded": false, "content": {
-        "candidateId": "candidate-3",
-        "conformance": true,
-        "policy": true,
-        "evalResult": {
-          "rubricRef": "rubric://support/classification@1.0.0",
-          "scores": { "accuracy": 1 },
-          "sampleCount": 128,
-          "metricSampleCounts": { "accuracy": 1 },
-          "source": "live-eval"
-        },
-        "thresholds": { "metricFloors": { "accuracy": 0.85 }, "minSamples": 100 }
-      } } },
-      "response": [{ "contents": { "contentType": "application/json", "encoded": false, "content": {
-        "candidateId": "candidate-3",
-        "outcome": "PROMOTION_OUTCOME_REFUSE",
-        "passed": { "conformance": true, "eval": false, "policy": true },
-        "failures": ["eval: metric accuracy has 1 sample below min 100"]
-      } } }]
-    },
-    {
-      "description": "Refuse a legacy result without per-metric sample counts",
-      "type": "Synchronous/Messages",
-      "request": { "contents": { "contentType": "application/json", "encoded": false, "content": {
-        "candidateId": "candidate-4",
-        "conformance": true,
-        "policy": true,
-        "evalResult": {
-          "rubricRef": "rubric://support/classification@1.0.0",
-          "scores": { "accuracy": 1 },
-          "sampleCount": 128,
-          "source": "live-eval"
-        },
-        "thresholds": { "metricFloors": { "accuracy": 0.85 }, "minSamples": 100 }
-      } } },
-      "response": [{ "contents": { "contentType": "application/json", "encoded": false, "content": {
-        "candidateId": "candidate-4",
-        "outcome": "PROMOTION_OUTCOME_REFUSE",
-        "passed": { "conformance": true, "eval": false, "policy": true },
-        "failures": ["eval: metric accuracy has no valid sample count"]
-      } } }]
+      "description": "a challenger below the metric floor is refused with the failing lens recorded",
+      "request": {
+        "method": "POST",
+        "path": "/promotion-gate/evaluate",
+        "body": {
+          "candidateId": "candidate-optimize-request-2",
+          "conformance": true,
+          "policy": true,
+          "evalResult": {
+            "rubricRef": "rubric://support/classification@1.0.0",
+            "scores": { "accuracy": 0.71 },
+            "sampleCount": 128,
+            "source": "live-eval"
+          },
+          "thresholds": {
+            "metricFloors": { "accuracy": 0.85 },
+            "minSamples": 100
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "candidateId": "candidate-optimize-request-2",
+          "outcome": "PROMOTION_OUTCOME_REFUSE",
+          "passed": { "conformance": true, "eval": false, "policy": true }
+        }
+      }
     }
-  ]
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
 }

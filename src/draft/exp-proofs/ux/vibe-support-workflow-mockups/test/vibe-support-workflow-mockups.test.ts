@@ -32,7 +32,7 @@ test("HOBO-550 mockup proof pins issue, phase, package path, proof path, persona
   );
   assert.equal(
     parsed.proofPath,
-    "urn:hobo:proof:vibe-support-workflow-mockups",
+    "docs/design/proofs/vibe-support-workflow-mockups/README.md",
   );
   assert.deepEqual(parsed.personas, REQUIRED_SUPPORT_WORKFLOW_MOCKUP_PERSONAS);
   assert.deepEqual(

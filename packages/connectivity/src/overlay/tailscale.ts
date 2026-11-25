@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as joinPath } from "node:path";
 
 import {
 	createUsageEvent,
@@ -16,16 +19,32 @@ import {
 	type TenantId,
 } from "@hobo/core";
 
+function withSecretFile<T>(secret: string, use: (path: string) => T): T {
+	const dir = mkdtempSync(joinPath(tmpdir(), "hobo-overlay-"));
+	try {
+		const path = joinPath(dir, "auth-key");
+		writeFileSync(path, secret, { mode: 0o600, flag: "wx" });
+		return use(path);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
 export type TailscaleRunner = (
 	args: readonly string[],
 	env?: NodeJS.ProcessEnv,
 ) => { ok: boolean; stdout: string; stderr: string };
 
+/**
+ * Tailscale overlay adapter with MagicDNS split DNS and Funnel gateway automation.
+ * Uses the official `tailscale` CLI when present; otherwise degrades offline-friendly.
+ */
 export function createTailscaleOverlay(options?: {
 	readonly metering?: MeteringBus;
 	readonly policy?: PolicyEngine;
 	readonly bin?: string;
 	readonly run?: TailscaleRunner;
+	/** Default MagicDNS domains for hierarchical overlay names. */
 	readonly defaultMagicDnsDomains?: readonly string[];
 	readonly apiKey?: string;
 	readonly tailnet?: string;
@@ -132,16 +151,17 @@ export function createTailscaleOverlay(options?: {
 			}
 
 			if (join.authKey) {
-				const up = run([
-					"up",
-					"--authkey",
-					join.authKey,
-					"--hostname",
-					join.hostname,
-					"--advertise-tags",
-					tags.join(","),
-					"--accept-dns=true",
-				]);
+				const up = withSecretFile(join.authKey, (path) =>
+					run([
+						"up",
+						`--auth-key=file:${path}`,
+						"--hostname",
+						join.hostname,
+						"--advertise-tags",
+						tags.join(","),
+						"--accept-dns=true",
+					]),
+				);
 				if (!up.ok) {
 					notes.push(
 						`tailscale up failed: ${up.stderr.trim() || up.stdout.trim()}`,
@@ -149,10 +169,11 @@ export function createTailscaleOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"no authKey provided; assuming existing tailscale session (set HOBO_TAILSCALE_AUTHKEY to enroll)",
+					"no authKey provided; assuming existing tailscale session (enroll this device to receive an OverlayJoin from the fleet authority)",
 				);
 			}
 
+			// Ensure MagicDNS acceptance for hierarchical resolution.
 			const setDns = run(["set", "--accept-dns=true"]);
 			if (!setDns.ok) {
 				notes.push(
@@ -164,6 +185,7 @@ export function createTailscaleOverlay(options?: {
 			let overlayIps: string[] = [];
 			let dnsName: string | undefined;
 			try {
+				// SAFETY: assertion required at this I/O or test boundary.
 				const parsed = JSON.parse(statusProbe.stdout) as {
 					Self?: {
 						ID?: string;
@@ -240,6 +262,7 @@ export function createTailscaleOverlay(options?: {
 			let localAccepted = false;
 			let controlPlaneApplied = false;
 
+			// 1) Local CLI: accept MagicDNS on this node.
 			const accept = run(["set", "--accept-dns=true"]);
 			if (!accept.ok) {
 				notes.push(
@@ -250,10 +273,8 @@ export function createTailscaleOverlay(options?: {
 				notes.push("localAccepted=true (tailscale set --accept-dns=true)");
 			}
 
-			const apiKey =
-				options?.apiKey ??
-				process.env.TS_API_KEY ??
-				process.env.HOBO_TS_API_KEY;
+			// 2) Control-plane API: push split DNS for hierarchical hobo zones.
+			const apiKey = options?.apiKey;
 			if (apiKey) {
 				try {
 					const { createTailscaleApiClient } = await import(
@@ -284,10 +305,11 @@ export function createTailscaleOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"controlPlaneApplied=false: TS_API_KEY/HOBO_TS_API_KEY unset",
+					"controlPlaneApplied=false: owner://TS_API_KEY unset (no apiKey from the owner's store)",
 				);
 			}
 
+			// 3) Optional local CLI dns helpers (does not imply control-plane).
 			const dnsHelp = run(["dns", "--help"]);
 			if (dnsHelp.ok) {
 				for (const domain of domains) {
@@ -310,6 +332,7 @@ export function createTailscaleOverlay(options?: {
 				`split-dns domains=[${domains.join(",")}] nameservers=[${nameservers.join(",")}] tenant=${config.tenantId}`,
 			);
 
+			// applied means something useful succeeded; control-plane is explicit in notes/metadata.
 			const applied = localAccepted || controlPlaneApplied;
 
 			await options?.metering?.emit(
@@ -352,6 +375,7 @@ export function createTailscaleOverlay(options?: {
 				notes.push("Funnel target must be an absolute local HTTP(S) URL");
 			}
 
+			// Funnel is public; `tailscale serve` is tailnet-private and cannot confirm it.
 			const attempts: readonly (readonly string[])[] = target
 				? [["funnel", "--bg", target]]
 				: [];
@@ -379,6 +403,7 @@ export function createTailscaleOverlay(options?: {
 			}
 
 			if (!gatewayHostname && funnel.hostnameHint) {
+				// Only accept *.ts.net style hints — never raw IPs.
 				const hint = funnel.hostnameHint.replace(/\.$/, "").toLowerCase();
 				if (hint.endsWith(".ts.net") || hint.endsWith(".tailscale.com")) {
 					gatewayHostname = hint;
@@ -391,9 +416,11 @@ export function createTailscaleOverlay(options?: {
 			}
 
 			if (!gatewayHostname && current) {
+				// Derive from MagicDNS name if available via status.
 				const status = run(["status", "--json"]);
 				if (status.ok) {
 					try {
+						// SAFETY: assertion required at this I/O or test boundary.
 						const parsed = JSON.parse(status.stdout) as {
 							Self?: { DNSName?: string };
 						};
@@ -402,7 +429,9 @@ export function createTailscaleOverlay(options?: {
 							gatewayHostname = dns;
 							notes.push(`derived funnel host from MagicDNS ${dns}`);
 						}
-					} catch {}
+					} catch {
+						// ignore
+					}
 				}
 			}
 
@@ -437,7 +466,9 @@ export function createTailscaleOverlay(options?: {
 						},
 					}),
 				);
-			} catch {}
+			} catch {
+				// A confirmed provider side effect remains authoritative.
+			}
 
 			return result;
 		},

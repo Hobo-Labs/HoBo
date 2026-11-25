@@ -166,7 +166,7 @@ auditable one.
   `@hobo/runtime-browser` mean a developer can run the model on a laptop. Facets is SaaS.
 - **Open codebase, no per-seat platform licence.**
 - **Honest caveat.** On shipped provisioning breadth Facets is ahead today; see the
-  [live provider matrix](urn:hobo:requirement:live-provider-matrix) for HoBo's real coverage.
+  [live provider matrix](../design/live-provider-matrix.md) for HoBo's real coverage.
 
 ## Adversarial critique
 

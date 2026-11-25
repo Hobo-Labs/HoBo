@@ -14,7 +14,7 @@ import {
 	SUBMIT_SECRET_VALUE_TOOL,
 	URL_ELICITATION_REQUIRED,
 } from "../src/index.js";
-import { isJsonObject, isJsonString, type JsonValue } from "../src/json.js";
+import type { JsonValue } from "../src/json.js";
 import {
 	http,
 	leakWatch,
@@ -75,41 +75,9 @@ type TicketView = {
 	key: { kty: "EC"; crv: "P-256"; x: string; y: string };
 };
 
-function publicKeyOf(value: JsonValue | undefined): TicketView["key"] {
-	if (
-		!isJsonObject(value) ||
-		value.kty !== "EC" ||
-		value.crv !== "P-256" ||
-		!isJsonString(value.x) ||
-		!isJsonString(value.y)
-	)
-		throw new Error("expected a capture public key");
-	return { kty: "EC", crv: "P-256", x: value.x, y: value.y };
-}
-
-function ticketView(value: JsonValue): TicketView {
-	if (
-		!isJsonObject(value) ||
-		!isJsonString(value.ticketId) ||
-		!isJsonString(value.name) ||
-		!isJsonString(value.state) ||
-		!isJsonString(value.channel)
-	)
-		throw new Error("expected a capture ticket");
-	const ticket: TicketView = {
-		ticketId: value.ticketId,
-		name: value.name,
-		state: value.state,
-		channel: value.channel,
-		key: publicKeyOf(value.key),
-	};
-	if (isJsonString(value.ref)) ticket.ref = value.ref;
-	if (isJsonString(value.url)) ticket.url = value.url;
-	return ticket;
-}
-
 function ticketOf(outcome: SecretCaptureOutcome): TicketView {
-	return ticketView(result(outcome).structuredContent);
+	// The view is JSON: a round trip reads it as the recorded shape.
+	return JSON.parse(JSON.stringify(result(outcome).structuredContent));
 }
 
 describe("host negotiation (MCP Apps 2026-01-26, MCP 2025-11-25 elicitation)", () => {
@@ -152,6 +120,7 @@ describe("the tool and resource surface", () => {
 		expect(submit?._meta).toEqual({
 			ui: { resourceUri: SECRET_CAPTURE_RESOURCE_URI, visibility: ["app"] },
 		});
+		// The capture tool takes no value: there is no field to put one in.
 		expect(JSON.stringify(capture?.inputSchema)).not.toMatch(/"value"/u);
 		expect(app.resources(APPS)).toEqual([
 			expect.objectContaining({
@@ -252,6 +221,7 @@ describe("the MCP App channel", () => {
 			ref: "secref://runtime/HOBO_CI_WEBHOOK_SECRET",
 			status: "stored",
 		});
+		// It reached the store, and only the store.
 		const read = await store.runtime.access("HOBO_CI_WEBHOOK_SECRET");
 		expect(read.status === "ok" && read.material).toBe(value);
 
@@ -269,7 +239,6 @@ describe("the MCP App channel", () => {
 		watch.record(app.events());
 		expect(app.events().map((event) => event.type)).toEqual([
 			"secret.CaptureOpened",
-			"secret.CaptureWriteStarted",
 			"secret.CaptureStored",
 		]);
 		expect(watch.assertNever(value)).toBeGreaterThan(0);
@@ -326,10 +295,9 @@ describe("the MCP App channel", () => {
 		expect(result(replayed).structuredContent).toMatchObject({
 			code: "SECRET_CAPTURE_SEAL_INVALID",
 		});
-		if (!isJsonObject(sealed) || !isJsonString(sealed.ciphertext))
-			throw new Error("expected a sealed value");
-		const copy = { ...sealed };
-		const bytes = Buffer.from(sealed.ciphertext, "base64url");
+		// SAFETY: test-side copy of the sealed record the form built.
+		const copy = { ...(sealed as Record<string, string>) };
+		const bytes = Buffer.from(copy.ciphertext ?? "", "base64url");
 		bytes[0] = (bytes[0] ?? 0) ^ 1;
 		const tampered = watch.outcome(
 			await app.callTool(
@@ -648,18 +616,14 @@ describe("the fallback: URL-mode elicitation to a loopback page", () => {
 		);
 		if (outcome.kind !== "error") throw new Error("expected -32042");
 		expect(outcome.error.code).toBe(URL_ELICITATION_REQUIRED);
-		const data = outcome.error.data;
-		if (!isJsonObject(data) || !Array.isArray(data.elicitations))
-			throw new Error("expected elicitations");
-		const [elicitation] = data.elicitations;
-		if (
-			!isJsonObject(elicitation) ||
-			!isJsonString(elicitation.url) ||
-			!isJsonString(elicitation.elicitationId)
-		)
-			throw new Error("expected a URL elicitation");
-		expect(elicitation.mode).toBe("url");
-		const url = new URL(elicitation.url);
+		// SAFETY: test-side read of the elicitation the app built.
+		const [elicitation] = (
+			outcome.error.data as {
+				elicitations: { mode: string; url: string; elicitationId: string }[];
+			}
+		).elicitations;
+		expect(elicitation?.mode).toBe("url");
+		const url = new URL(elicitation?.url ?? "");
 		expect(url.origin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/u);
 		expect(url.search).toBe("");
 
@@ -672,19 +636,21 @@ describe("the fallback: URL-mode elicitation to a loopback page", () => {
 		);
 		expect(page.headers["cache-control"]).toBe("no-store");
 		expect(page.headers["referrer-policy"]).toBe("no-referrer");
+		// The fragment token is never in the page.
 		expect(page.body).not.toContain(url.hash.slice(1));
 
-		const config: JsonValue = JSON.parse(
-			/<script type="application\/json" id="hobo-capture-config">(.*?)<\/script>/su.exec(
-				page.body,
-			)?.[1] ?? "{}",
-		);
-		if (!isJsonObject(config) || !isJsonObject(config.ticket))
-			throw new Error("expected capture configuration");
 		const ticket = {
-			ticketId: elicitation.elicitationId,
+			ticketId: elicitation?.elicitationId ?? "",
 			name: "HOBO_CI_WEBHOOK_SECRET",
-			key: publicKeyOf(config.ticket.key),
+			key:
+				// SAFETY: the embedded config is the page's own JSON.
+				(
+					JSON.parse(
+						/<script type="application\/json" id="hobo-capture-config">(.*?)<\/script>/su.exec(
+							page.body,
+						)?.[1] ?? "{}",
+					) as { ticket: { key: TicketView["key"] } }
+				).ticket.key,
 		};
 		const sealed = await sealAsTheFormDoes(ticket, value);
 		const posted = await http(`${url.origin}${url.pathname}`, {
@@ -712,6 +678,7 @@ describe("the fallback: URL-mode elicitation to a loopback page", () => {
 				params: { elicitationId: ticket.ticketId },
 			},
 		]);
+		// The client's retry of the original call gets the stored capture.
 		const retried = watch.outcome(
 			await app.callTool(
 				CAPTURE_SECRET_TOOL,
@@ -722,6 +689,7 @@ describe("the fallback: URL-mode elicitation to a loopback page", () => {
 		expect(result(retried).structuredContent).toMatchObject({
 			state: "stored",
 		});
+		// The page is closed now.
 		expect(
 			(
 				await http(`${url.origin}${url.pathname}`, {
@@ -777,6 +745,7 @@ describe("the fallback: URL-mode elicitation to a loopback page", () => {
 			404,
 		);
 		expect(store.runtime.names()).toEqual([]);
+		// The right page still works afterwards.
 		expect((await post({ origin: url.origin }, url.hash.slice(1))).status).toBe(
 			200,
 		);
@@ -793,7 +762,9 @@ describe("the fallback: a host with neither", () => {
 				NEITHER,
 			),
 		);
-		const ticket = ticketView(answer.structuredContent);
+		const ticket: TicketView = JSON.parse(
+			JSON.stringify(answer.structuredContent),
+		);
 		expect(ticket.channel).toBe("loopback-page");
 		expect(ticket.url).toMatch(
 			/^http:\/\/127\.0\.0\.1:\d+\/capture\/cap_[A-Za-z0-9_-]{22}#[A-Za-z0-9_-]{43}$/u,

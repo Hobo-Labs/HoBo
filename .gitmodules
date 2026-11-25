@@ -2,4 +2,8 @@
 	path = external/ts-autocode
 	url = https://github.com/Tyler-R-Kendrick/ts-autocode.git
 	branch = main
+	# The submodule builds into its own packages/*/.turbo caches. This repo's
+	# root gitignore does not reach inside another repository's working tree,
+	# so without this every clean checkout reports the submodule as dirty.
+	# `untracked` still surfaces real committed changes to the submodule.
 	ignore = untracked

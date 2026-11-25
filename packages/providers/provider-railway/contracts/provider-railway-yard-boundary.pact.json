@@ -43,10 +43,6 @@
 			"response": {
 				"body": {
 					"providerId": "@hobo/provider-railway",
-					"terms": {
-						"reviewedOn": "2026-11-18",
-						"url": "https://railway.com/legal/terms"
-					},
 					"published": {},
 					"capabilities": {
 						"capabilities": [

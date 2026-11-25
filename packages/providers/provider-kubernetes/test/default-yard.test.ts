@@ -7,10 +7,20 @@ import {
 	kubernetesYardSpec,
 } from "../src/index.js";
 
+/**
+ * Every published capability profile, derived from `@hobo/core`'s catalog
+ * rather than restated here.
+ *
+ * This used to be a hand-written list, and it drifted the moment a factory was
+ * pointed at a more specific profile — the test failed for the list's reason,
+ * not the catalog's. Deriving it means a profile the core vocabulary adds is
+ * automatically legal, and a profile it does not define still fails.
+ */
 const REAL_PROFILES: readonly string[] = Object.values(capability).flatMap(
 	(family) => Object.values(family),
 );
 
+/** Entries declared for one slot, or an empty list when the slot is absent. */
 function slotEntries(slot: CapabilitySlot) {
 	return KUBERNETES_DEFAULT_BINDINGS[slot] ?? [];
 }
@@ -35,12 +45,24 @@ describe("the Kubernetes Yard is an allocatable catalog", () => {
 		}
 	});
 
+	/**
+	 * The load-bearing honesty test. Kubernetes provides no database, cache,
+	 * queue or topic — those arrive through operators, which are third-party
+	 * software this package cannot see, let alone install. A row for one would
+	 * be a claim about somebody else's software.
+	 */
 	it("leaves the slots that need an operator empty", () => {
 		for (const slot of ["data", "kv", "queue", "topic"] as const) {
 			expect(slotEntries(slot)).toEqual([]);
 		}
 	});
 
+	/**
+	 * A cluster offers several distinct controllers for the same capability and
+	 * a workload picks between them for reasons only it knows — stable identity
+	 * for a StatefulSet, one-pod-per-node for a DaemonSet. Every one of them is
+	 * a row.
+	 */
 	it("declares every built-in controller that satisfies a capability", () => {
 		expect(slotEntries("web").map((entry) => entry.productId)).toEqual(
 			expect.arrayContaining([
@@ -121,6 +143,11 @@ describe("kubernetesYardSpec emits raw, canonical rows", () => {
 		expect(kubernetesYardSpec().bindings).toHaveLength(declared);
 	});
 
+	/**
+	 * `deployment()` and `deploymentWorker()` emit the same productId under
+	 * different profiles. Rows key on `(profile, productId, connectivityId)`,
+	 * so both survive — a dedup on productId alone would silently drop one.
+	 */
 	it("keeps one product reached through two profiles as two rows", () => {
 		const rows = kubernetesYardSpec().bindings.filter(
 			(row) => row.productId === "kubernetes.deployment/v1",

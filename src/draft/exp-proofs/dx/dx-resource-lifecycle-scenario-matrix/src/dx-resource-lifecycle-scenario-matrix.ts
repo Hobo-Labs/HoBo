@@ -64,7 +64,7 @@ export type DxResourceLifecycleScenarioMatrix = {
   readonly issue: "HOBO-567";
   readonly phase: "M1";
   readonly targetPackage: "src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix";
-  readonly proofNote: "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix";
+  readonly proofNote: "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md";
   readonly designRefs: readonly string[];
   readonly designTerms: readonly RequiredDesignTerm[];
   readonly scopeOut: readonly string[];
@@ -83,17 +83,17 @@ export const DX_RESOURCE_LIFECYCLE_SCENARIO_MATRIX = {
   issue: "HOBO-567",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix",
-  proofNote: "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix",
+  proofNote: "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md",
   designRefs: [
-    "urn:hobo:requirement:developer-experience#plan-07",
-    "urn:hobo:requirement:cli-spec",
-    "urn:hobo:requirement:control-plane#plan-04",
-    "urn:hobo:requirement:platform-engineering#plan-25",
-    "urn:hobo:requirement:authoring-resources-wiring#plan-21",
-    "urn:hobo:requirement:contracts-policy-flags#plan-29",
-    "urn:hobo:requirement:data-plane#plan-11",
-    "urn:hobo:requirement:walkthrough",
-    "urn:hobo:requirement:worked-example",
+    "docs/design/developer-experience.md#plan-07",
+    "docs/design/cli-spec.md",
+    "docs/design/control-plane.md#plan-04",
+    "docs/design/platform-engineering.md#plan-25",
+    "docs/design/authoring-resources-wiring.md#plan-21",
+    "docs/design/contracts-policy-flags.md#plan-29",
+    "docs/design/data-plane.md#plan-11",
+    "docs/design/walkthrough.md",
+    "docs/design/worked-example.md",
   ],
   designTerms: [...REQUIRED_DESIGN_TERMS],
   scopeOut: [
@@ -447,7 +447,7 @@ export function parseDxResourceLifecycleScenarioMatrix(
   );
   assertLiteral(
     matrix.proofNote,
-    "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix",
+    "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md",
     "proofNote",
   );
   assertNonEmptyStringArray(matrix.designRefs, "designRefs");

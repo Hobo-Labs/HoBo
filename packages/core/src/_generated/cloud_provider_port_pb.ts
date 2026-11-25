@@ -6,133 +6,338 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
+/**
+ * Describes the file cloud_provider_port.proto.
+ */
 export const file_cloud_provider_port: GenFile = /*@__PURE__*/
   fileDesc("ChljbG91ZF9wcm92aWRlcl9wb3J0LnByb3RvEgxob2JvLmNvcmUudjEiWAoRUG9ydFJlcXVlc3RSZWNvcmQSDAoEcG9ydBgBIAEoCRIQCghmZWF0dXJlcxgCIAMoCRITCgtuZWdvdGlhdGlvbhgDIAEoCRIOCgZyZWdpb24YBCABKAkiNgoVQ2FwYWJpbGl0eU1hdGNoUmVjb3JkEgwKBGtpbmQYASABKAkSDwoHbWlzc2luZxgCIAMoCSI/Cg5GcmVlVGllclJlY29yZBIMCgR1bml0GAEgASgJEhAKCGluY2x1ZGVkGAIgASgBEg0KBXJlc2V0GAMgASgJIrgBChBDb3N0U2lnbmFsUmVjb3JkEhAKCGN1cnJlbmN5GAEgASgJEgsKA3NrdRgCIAEoCRIMCgR1bml0GAMgASgJEhYKDm1hcmdpbmFsX3ByaWNlGAQgASgJEi8KCWZyZWVfdGllchgFIAEoCzIcLmhvYm8uY29yZS52MS5GcmVlVGllclJlY29yZBIbCg5wcmljaW5nX3N0YXR1cxgGIAEoCUgAiAEBQhEKD19wcmljaW5nX3N0YXR1cyJnChFJYWNSZXNvdXJjZVJlY29yZBIMCgRuYW1lGAEgASgJEgwKBHR5cGUYAiABKAkSEAoIcHJvdmlkZXIYAyABKAkSEwoLaW5wdXRzX2pzb24YBCABKAkSDwoHb3V0cHV0cxgFIAMoCSKfAgoQSWFjUHJvZ3JhbVJlY29yZBITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEhAKCHByb3ZpZGVyGAMgASgJEhUKDWRlcGxveW1lbnRfaWQYBCABKAkSDQoFc3RhY2sYBSABKAkSMgoJcmVzb3VyY2VzGAYgAygLMh8uaG9iby5jb3JlLnYxLklhY1Jlc291cmNlUmVjb3JkEkcKDXN0YWNrX291dHB1dHMYByADKAsyMC5ob2JvLmNvcmUudjEuSWFjUHJvZ3JhbVJlY29yZC5TdGFja091dHB1dHNFbnRyeRozChFTdGFja091dHB1dHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIkEKE0J1aWxkQXJ0aWZhY3RSZWNvcmQSCgoCaWQYASABKAkSDgoGc291cmNlGAIgASgJEg4KBnRhcmdldBgDIAEoCSJVCg9CdWlsZFNwZWNSZWNvcmQSDAoEa2luZBgBIAEoCRI0CglhcnRpZmFjdHMYAiADKAsyIS5ob2JvLmNvcmUudjEuQnVpbGRBcnRpZmFjdFJlY29yZCLRAQoSUmVzb3VyY2VQbGFuUmVjb3JkEgwKBG5hbWUYASABKAkSDAoEcG9ydBgCIAEoCRIQCghwcm92aWRlchgDIAEoCRIUCgxvcHRpb25zX2pzb24YBCADKAkSDAoEZGVwcxgFIAMoCRIQCghzdHJhdGVneRgGIAEoCRIOCgZyZWdpb24YByABKAkSFQoNZGVwbG95bWVudF9pZBgIIAEoCRIwCgVidWlsZBgJIAEoCzIhLmhvYm8uY29yZS52MS5CdWlsZEFydGlmYWN0UmVjb3JkYgZwcm90bzM");
 
+/**
+ * @generated from message hobo.core.v1.PortRequestRecord
+ */
 export type PortRequestRecord = Message<"hobo.core.v1.PortRequestRecord"> & {
+  /**
+   * @generated from field: string port = 1;
+   */
   port: string;
 
+  /**
+   * @generated from field: repeated string features = 2;
+   */
   features: string[];
 
+  /**
+   * "prefer" | "require"
+   *
+   * @generated from field: string negotiation = 3;
+   */
   negotiation: string;
 
+  /**
+   * @generated from field: string region = 4;
+   */
   region: string;
 };
 
+/**
+ * Describes the message hobo.core.v1.PortRequestRecord.
+ * Use `create(PortRequestRecordSchema)` to create a new message.
+ */
 export const PortRequestRecordSchema: GenMessage<PortRequestRecord> = /*@__PURE__*/
   messageDesc(file_cloud_provider_port, 0);
 
+/**
+ * @generated from message hobo.core.v1.CapabilityMatchRecord
+ */
 export type CapabilityMatchRecord = Message<"hobo.core.v1.CapabilityMatchRecord"> & {
+  /**
+   * "full" | "partial" | "none"
+   *
+   * @generated from field: string kind = 1;
+   */
   kind: string;
 
+  /**
+   * @generated from field: repeated string missing = 2;
+   */
   missing: string[];
 };
 
+/**
+ * Describes the message hobo.core.v1.CapabilityMatchRecord.
+ * Use `create(CapabilityMatchRecordSchema)` to create a new message.
+ */
 export const CapabilityMatchRecordSchema: GenMessage<CapabilityMatchRecord> = /*@__PURE__*/
   messageDesc(file_cloud_provider_port, 1);
 
+/**
+ * @generated from message hobo.core.v1.FreeTierRecord
+ */
 export type FreeTierRecord = Message<"hobo.core.v1.FreeTierRecord"> & {
+  /**
+   * @generated from field: string unit = 1;
+   */
   unit: string;
 
+  /**
+   * @generated from field: double included = 2;
+   */
   included: number;
 
+  /**
+   * @generated from field: string reset = 3;
+   */
   reset: string;
 };
 
+/**
+ * Describes the message hobo.core.v1.FreeTierRecord.
+ * Use `create(FreeTierRecordSchema)` to create a new message.
+ */
 export const FreeTierRecordSchema: GenMessage<FreeTierRecord> = /*@__PURE__*/
   messageDesc(file_cloud_provider_port, 2);
 
+/**
+ * @generated from message hobo.core.v1.CostSignalRecord
+ */
 export type CostSignalRecord = Message<"hobo.core.v1.CostSignalRecord"> & {
+  /**
+   * @generated from field: string currency = 1;
+   */
   currency: string;
 
+  /**
+   * @generated from field: string sku = 2;
+   */
   sku: string;
 
+  /**
+   * @generated from field: string unit = 3;
+   */
   unit: string;
 
+  /**
+   * @generated from field: string marginal_price = 4;
+   */
   marginalPrice: string;
 
+  /**
+   * @generated from field: hobo.core.v1.FreeTierRecord free_tier = 5;
+   */
   freeTier?: FreeTierRecord | undefined;
 
+  /**
+   * Static hints are estimates; unknown is never a verified zero price.
+   *
+   * @generated from field: optional string pricing_status = 6;
+   */
   pricingStatus?: string | undefined;
 };
 
+/**
+ * Describes the message hobo.core.v1.CostSignalRecord.
+ * Use `create(CostSignalRecordSchema)` to create a new message.
+ */
 export const CostSignalRecordSchema: GenMessage<CostSignalRecord> = /*@__PURE__*/
   messageDesc(file_cloud_provider_port, 3);
 
+/**
+ * @generated from message hobo.core.v1.IacResourceRecord
+ */
 export type IacResourceRecord = Message<"hobo.core.v1.IacResourceRecord"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
   name: string;
 
+  /**
+   * @generated from field: string type = 2;
+   */
   type: string;
 
+  /**
+   * @generated from field: string provider = 3;
+   */
   provider: string;
 
+  /**
+   * JSON-serialized inputs object.
+   *
+   * @generated from field: string inputs_json = 4;
+   */
   inputsJson: string;
 
+  /**
+   * @generated from field: repeated string outputs = 5;
+   */
   outputs: string[];
 };
 
+/**
+ * Describes the message hobo.core.v1.IacResourceRecord.
+ * Use `create(IacResourceRecordSchema)` to create a new message.
+ */
 export const IacResourceRecordSchema: GenMessage<IacResourceRecord> = /*@__PURE__*/
   messageDesc(file_cloud_provider_port, 4);
 
+/**
+ * @generated from message hobo.core.v1.IacProgramRecord
+ */
 export type IacProgramRecord = Message<"hobo.core.v1.IacProgramRecord"> & {
+  /**
+   * Always "hobo.iac-program/v1".
+   *
+   * @generated from field: string api_version = 1;
+   */
   apiVersion: string;
 
+  /**
+   * Always "iac-program".
+   *
+   * @generated from field: string kind = 2;
+   */
   kind: string;
 
+  /**
+   * @generated from field: string provider = 3;
+   */
   provider: string;
 
+  /**
+   * @generated from field: string deployment_id = 4;
+   */
   deploymentId: string;
 
+  /**
+   * @generated from field: string stack = 5;
+   */
   stack: string;
 
+  /**
+   * @generated from field: repeated hobo.core.v1.IacResourceRecord resources = 6;
+   */
   resources: IacResourceRecord[];
 
+  /**
+   * @generated from field: map<string, string> stack_outputs = 7;
+   */
   stackOutputs: { [key: string]: string };
 };
 
+/**
+ * Describes the message hobo.core.v1.IacProgramRecord.
+ * Use `create(IacProgramRecordSchema)` to create a new message.
+ */
 export const IacProgramRecordSchema: GenMessage<IacProgramRecord> = /*@__PURE__*/
   messageDesc(file_cloud_provider_port, 5);
 
+/**
+ * @generated from message hobo.core.v1.BuildArtifactRecord
+ */
 export type BuildArtifactRecord = Message<"hobo.core.v1.BuildArtifactRecord"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
   id: string;
 
+  /**
+   * @generated from field: string source = 2;
+   */
   source: string;
 
+  /**
+   * @generated from field: string target = 3;
+   */
   target: string;
 };
 
+/**
+ * Describes the message hobo.core.v1.BuildArtifactRecord.
+ * Use `create(BuildArtifactRecordSchema)` to create a new message.
+ */
 export const BuildArtifactRecordSchema: GenMessage<BuildArtifactRecord> = /*@__PURE__*/
   messageDesc(file_cloud_provider_port, 6);
 
+/**
+ * @generated from message hobo.core.v1.BuildSpecRecord
+ */
 export type BuildSpecRecord = Message<"hobo.core.v1.BuildSpecRecord"> & {
+  /**
+   * Always "hobo.build-spec/v1".
+   *
+   * @generated from field: string kind = 1;
+   */
   kind: string;
 
+  /**
+   * @generated from field: repeated hobo.core.v1.BuildArtifactRecord artifacts = 2;
+   */
   artifacts: BuildArtifactRecord[];
 };
 
+/**
+ * Describes the message hobo.core.v1.BuildSpecRecord.
+ * Use `create(BuildSpecRecordSchema)` to create a new message.
+ */
 export const BuildSpecRecordSchema: GenMessage<BuildSpecRecord> = /*@__PURE__*/
   messageDesc(file_cloud_provider_port, 7);
 
+/**
+ * @generated from message hobo.core.v1.ResourcePlanRecord
+ */
 export type ResourcePlanRecord = Message<"hobo.core.v1.ResourcePlanRecord"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
   name: string;
 
+  /**
+   * @generated from field: string port = 2;
+   */
   port: string;
 
+  /**
+   * @generated from field: string provider = 3;
+   */
   provider: string;
 
+  /**
+   * JSON-serialized provider typed-option blocks (ADR-0007).
+   *
+   * @generated from field: repeated string options_json = 4;
+   */
   optionsJson: string[];
 
+  /**
+   * @generated from field: repeated string deps = 5;
+   */
   deps: string[];
 
+  /**
+   * @generated from field: string strategy = 6;
+   */
   strategy: string;
 
+  /**
+   * @generated from field: string region = 7;
+   */
   region: string;
 
+  /**
+   * @generated from field: string deployment_id = 8;
+   */
   deploymentId: string;
 
+  /**
+   * @generated from field: hobo.core.v1.BuildArtifactRecord build = 9;
+   */
   build?: BuildArtifactRecord | undefined;
 };
 
+/**
+ * Describes the message hobo.core.v1.ResourcePlanRecord.
+ * Use `create(ResourcePlanRecordSchema)` to create a new message.
+ */
 export const ResourcePlanRecordSchema: GenMessage<ResourcePlanRecord> = /*@__PURE__*/
   messageDesc(file_cloud_provider_port, 8);
 

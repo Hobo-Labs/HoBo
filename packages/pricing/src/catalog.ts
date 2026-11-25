@@ -17,12 +17,14 @@ import {
 	legacyPricingOrder,
 	type PricingOrder,
 } from "./ordering.js";
-import { intervalCovers, PricingFault } from "./state.js";
 import {
-	legacyPricingTimeOrder,
-	type PricingTimeOrder,
-	utcPricingTimeOrder,
-} from "./time-order.js";
+	exactPricingTimeOrder,
+	intervalCovers,
+	LEGACY_TIME,
+	PricingFault,
+	type TemporalPolicy,
+} from "./state.js";
+import { type PricingTimeOrder, utcPricingTimeOrder } from "./time-order.js";
 import type { PricingRejectionCode } from "./types.js";
 
 function validateTierBoundaries(tiers: readonly Tier[]): void {
@@ -135,13 +137,14 @@ export function resolveRateCard(
 	agreement: ProviderAgreement,
 	at: string,
 	horizon: string,
-	order: PricingTimeOrder = legacyPricingTimeOrder,
+	order: PricingTimeOrder = exactPricingTimeOrder,
+	time: TemporalPolicy = LEGACY_TIME,
 ): RateCard {
 	const schedule = agreement.rateSchedule
 		.filter(
 			(entry) =>
 				entry.effective !== undefined &&
-				intervalCovers(entry.effective, at, horizon),
+				intervalCovers(entry.effective, at, horizon, time),
 		)
 		.sort((left, right) =>
 			order(right.effective?.start, left.effective?.start),
@@ -169,7 +172,7 @@ export function resolveRateCard(
 		(card) =>
 			card.id === selected.rateCardId &&
 			card.effective !== undefined &&
-			intervalCovers(card.effective, at, horizon),
+			intervalCovers(card.effective, at, horizon, time),
 	);
 	const card = cards[0];
 	if (cards.length !== 1 || card === undefined) {

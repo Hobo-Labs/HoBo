@@ -18,9 +18,14 @@ export type RelevantCheckPolicyOptions = {
 	all?: boolean;
 	includeBuild?: boolean;
 	includeBroadSweeps?: boolean;
+	/**
+	 * The caller requires separate jobs to run all selected workspace tests
+	 * and the scripts lane (`workspace_tests` and `scripts-tests` in CI).
+	 */
 	workspaceTestsCoveredExternally?: boolean;
 	rootPackageJsonScriptsOnlyChanged?: boolean;
 	workspacePackageExists?: (workspace: string) => boolean;
+	/** Whether a changed TypeScript file under packages/ names a ts-autocode module (default: reads it). */
 	importsTsAutocode?: (file: string) => boolean;
 };
 
@@ -42,7 +47,7 @@ export function workspaceFor(file: string) {
 	);
 	if (exp) return `src/draft/exp-proofs/${exp[1]}/${exp[2]}`;
 	const production = normalized.match(
-		/^(packages|examples)\/(?:(adapters|connectors|packs|runtimes|providers|iac|build)\/)?([^/]+)\//u,
+		/^(packages|examples)\/(?:(runtimes|providers|iac|build)\/)?([^/]+)\//u,
 	);
 	if (!production) return undefined;
 	return production[2]
@@ -57,12 +62,12 @@ function workspaceTestRelevant(file: string) {
 
 	const relative = normalized.slice(workspace.length + 1);
 	return (
-		/^(src|app|apps|test|tests|type-tests|features|contracts|simulation|scripts|data-models|wit)\//u.test(
+		/^(src|app|apps|test|tests|type-tests|features|contracts|simulation|scripts|data-models)\//u.test(
 			relative,
 		) ||
 		/^(package|tsconfig(?:\.[^.]+)?)\.json$/u.test(relative) ||
 		/^(pnpm-lock\.yaml|turbo\.json)$/u.test(relative) ||
-		/\.(?:proto|cue|wit|pact\.json)$/u.test(relative)
+		/\.(?:proto|cue|pact\.json)$/u.test(relative)
 	);
 }
 
@@ -96,9 +101,15 @@ function defaultWorkspaceTestInfo(
 }
 
 const PACKAGE_TYPESCRIPT = /^packages\/.+\.(?:[cm]?ts|tsx)$/u;
+/** In any quote, a template literal's included: the surface test scans those too. */
 const TS_AUTOCODE_SPECIFIER =
 	/["'`]ts-autocode(?:-[a-z]+)?(?:\/[^"'`]*)?["'`]/u;
 
+/**
+ * What the grounding drift test compiles granular.ts with, beyond ts-autocode
+ * itself: the types its conversion assigns to and the compiler options. None
+ * of them imports ts-autocode, so the import check alone would not select it.
+ */
 const GROUNDING_DRIFT_INPUTS = new Set([
 	"packages/runtime/src/json.ts",
 	"packages/runtime/src/training/types.ts",
@@ -106,10 +117,12 @@ const GROUNDING_DRIFT_INPUTS = new Set([
 	"tsconfig.base.json",
 ]);
 
+/** Whether source text names a ts-autocode module specifier. */
 export function namesTsAutocode(text: string) {
 	return TS_AUTOCODE_SPECIFIER.test(text);
 }
 
+/** A file that is gone (deleted, renamed away) imports nothing. */
 function defaultImportsTsAutocode(file: string) {
 	try {
 		return namesTsAutocode(readFileSync(file, "utf8"));
@@ -118,6 +131,7 @@ function defaultImportsTsAutocode(file: string) {
 	}
 }
 
+/** The tests that hold signed local runs (pnpm ci:attest) to their rules. */
 export const SIGNED_LOCAL_RUN_TESTS = [
 	"scripts/test/attestation.test.ts",
 	"scripts/test/verify-attestation.test.ts",
@@ -148,12 +162,14 @@ const SIGNED_LOCAL_RUN_GUARDED = new Set([
 	"scripts/ci/github-status-permission.mts",
 	"scripts/ci/github-merge-group.mts",
 	"scripts/ci/route-runner.mts",
+	// The route script loads it, so it is on the attested path too.
 	"scripts/ci/runner-routing.mts",
 	"scripts/lib/workflow-job-steps.mts",
 	"scripts/lint-actions.ts",
 	...SIGNED_LOCAL_RUN_TESTS,
 ]);
 
+/** Whether a changed file is one the signed-local-run guards protect. */
 function guardsSignedLocalRuns(file: string): boolean {
 	return (
 		SIGNED_LOCAL_RUN_GUARDED.has(file) ||
@@ -270,6 +286,7 @@ export function selectRelevantChecks(
 			/^test\/visual-tokens\.test\.ts$/u,
 			/^turbo\.json$/u,
 			/^packages\/connect-ui\/(?:src\/client\/styles\.css|test\/connect-ui-design-lint\.test\.ts)$/u,
+			/^packages\/control-yard\/(?:public\/yard\.css|test\/design-lint\.test\.ts)$/u,
 			/^packages\/mcp\/(?:src\/secret-capture\/html\.ts|test\/secret-capture-design-lint\.test\.ts)$/u,
 			/^packages\/status-page\/(?:src\/tokens\.ts|test\/status-page-design-lint\.test\.ts)$/u,
 			/(?:^|\/)(?:palette|visual-tokens?|themes?)(?:\.[^/]+)?$/u,
@@ -279,9 +296,12 @@ export function selectRelevantChecks(
 		uiChanged ||
 		uiDiscoveryManifestChanged;
 	const behaviorChanged =
-		rootConfigChanged ||
-		files.some(workspaceTestRelevant) ||
 		touched(["tests/behavior"]) ||
+		// Feature files and step definitions live inside proof packages
+		// (src/draft/<kind>/<slug>/features/...), so match the path segment,
+		// not a repo-root prefix. The cucumber config is cucumber.yaml.
+		// Catalog starter trees may ship Gherkin fixtures; they are not the
+		// repository behavior lane.
 		files.some(
 			(file) =>
 				!/(^|\/)\.optimizexp\/features\//u.test(file) &&
@@ -302,12 +322,22 @@ export function selectRelevantChecks(
 			/(^|\/)(prompts?|agent-evals?)(\/|$)/iu,
 			/\.(?:prompt|eval)\.(?:ts|md|json)$/iu,
 		]);
+	const deploymentDeltaChanged =
+		touched(["docs/design/proofs/hobo-50-deployment-set-delta"]) ||
+		touchedAny([/^scripts\/validate-deployment-set-delta\.ts$/u]);
 	const optimizexpChanged = touchedAny([
 		/(^|\/)\.optimizexp(\/|$)/u,
 		/^\.(agents|claude)\/skills\/optimizexp(\/|$)/u,
 		/^\.(agents|claude)\/skills\/sdlc(\/|$)/u,
 		/^scripts\/check-optimizexp\.mts$/u,
 	]);
+	const traceabilityChanged =
+		touched(["docs/design/proofs"]) ||
+		touchedAny([
+			/^docs\/design\/(?:traceability|index)\.md$/u,
+			/^docs\/design\/adr\//u,
+			/^scripts\/validate-traceability\.ts$/u,
+		]);
 
 	const checks: Check[] = [];
 	checks.push({
@@ -543,6 +573,21 @@ export function selectRelevantChecks(
 		checks.push({
 			command: "pnpm",
 			args: [
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				...draftWorkspaces.map((workspace) => `--filter=./${workspace}^...`),
+				"--output-logs=new-only",
+				turboConcurrencyArg(),
+			],
+			reason:
+				"build the workspace packages changed proofs import before running their examples",
+			serial: true,
+		});
+		checks.push({
+			command: "pnpm",
+			args: [
 				"run",
 				staged ? "draft:artifacts:staged" : "draft:artifacts",
 				"--",
@@ -615,6 +660,9 @@ export function selectRelevantChecks(
 		});
 	}
 
+	// The guards on signed local runs must run on the changes they guard: the
+	// workflows that skip jobs for one, the verifier, the trusted keys, the
+	// description a local run executes, and the lint that pins all of it.
 	if (files.some(guardsSignedLocalRuns)) {
 		checks.push({
 			command: "node",
@@ -637,6 +685,7 @@ export function selectRelevantChecks(
 				file === "scripts/test/read-stdin.test.ts" ||
 				file === "scripts/test/job-scope.test.ts" ||
 				file === "scripts/ci/job-scope.mts" ||
+				file === "scripts/ci/state-machine-scope.mts" ||
 				file === "scripts/ci/dependent-tests.mts" ||
 				file === "scripts/ci/impact-classifier.mts",
 		)
@@ -652,6 +701,51 @@ export function selectRelevantChecks(
 			],
 			reason:
 				"changed-path stdin readers must keep surviving a late writer on a non-blocking pipe (EAGAIN)",
+		});
+	}
+
+	if (
+		files.some(
+			(file) =>
+				file === "scripts/ci/state-machine-scope.mts" ||
+				file === "scripts/test/state-machine-scope.test.ts" ||
+				file === "scripts/ci/job-scope.mts" ||
+				file === "scripts/ci/affected-lanes.mts" ||
+				file === "scripts/verify-all-state-machines.sh" ||
+				file === "scripts/verify-state-machine.sh" ||
+				file.startsWith(".agents/skills/verify-"),
+		)
+	) {
+		checks.push({
+			command: "node",
+			args: [
+				"--import",
+				"tsx",
+				"--test",
+				"scripts/test/state-machine-scope.test.ts",
+			],
+			reason:
+				"the PR impact plan skips state-machine verification only when no changed path reaches the verification skills",
+		});
+	}
+
+	if (
+		files.some(
+			(file) =>
+				file === "scripts/verify-all-state-machines.sh" ||
+				file === "scripts/test/verify-all-state-machines.test.ts",
+		)
+	) {
+		checks.push({
+			command: "node",
+			args: [
+				"--import",
+				"tsx",
+				"--test",
+				"scripts/test/verify-all-state-machines.test.ts",
+			],
+			reason:
+				"the aggregate state-machine verifier must keep its selection, shards and bounded parallel jobs",
 		});
 	}
 
@@ -681,96 +775,6 @@ export function selectRelevantChecks(
 		});
 	}
 
-	const pixelSource = (file: string, directory: string) =>
-		file.startsWith(`external/pixel-agents/${directory}/`) &&
-		/\.(?:[cm]?[jt]sx?|json)$/u.test(file);
-	const pixelManifestChanged = files.some(
-		(file) => file === "external/pixel-agents/package.json",
-	);
-	const pixelProtocolFiles = new Set([
-		"external/pixel-agents/core/asyncapi.yaml",
-		"external/pixel-agents/core/src/messages.ts",
-		"external/pixel-agents/scripts/generate-messages.ts",
-		"external/pixel-agents/scripts/validate-asyncapi.mjs",
-		"external/pixel-agents/scripts/protocol-check.test.mjs",
-		"external/pixel-agents/.prettierrc.json",
-		"external/pixel-agents/eslint.config.mjs",
-		"external/pixel-agents/eslint-rules/pixel-agents-rules.mjs",
-	]);
-	const pixelProtocolChanged =
-		pixelManifestChanged || files.some((file) => pixelProtocolFiles.has(file));
-	const pixelChecks: Check[] = [];
-	if (
-		pixelProtocolChanged ||
-		files.some(
-			(file) =>
-				pixelSource(file, "core") ||
-				pixelSource(file, "server") ||
-				pixelSource(file, "adapters/vscode") ||
-				file === "external/pixel-agents/esbuild.js" ||
-				file === "external/pixel-agents/scripts/build-hooks.cjs",
-		)
-	) {
-		pixelChecks.push({
-			command: "npm",
-			args: [
-				"--prefix",
-				"external/pixel-agents/server",
-				"test",
-				"--",
-				"--maxWorkers=1",
-			],
-			reason:
-				"Pixel Agents server behavior and provider changes must pass their own tests",
-		});
-	}
-	if (
-		pixelProtocolChanged ||
-		files.some(
-			(file) => pixelSource(file, "core") || pixelSource(file, "webview-ui"),
-		)
-	) {
-		pixelChecks.push({
-			command: "npm",
-			args: [
-				"--prefix",
-				"external/pixel-agents/webview-ui",
-				"test",
-				"--",
-				"--maxWorkers=1",
-			],
-			reason:
-				"Pixel Agents shared protocol and webview changes must pass their own tests",
-		});
-	}
-	if (pixelProtocolChanged) {
-		pixelChecks.push({
-			command: "npm",
-			args: ["--prefix", "external/pixel-agents", "run", "test:protocol"],
-			reason:
-				"Pixel Agents protocol changes must validate the schema and keep generated messages current",
-		});
-	}
-	if (pixelChecks.length > 0)
-		checks.push(
-			{
-				command: "npm",
-				args: [
-					"--prefix",
-					"external/pixel-agents",
-					"install",
-					"--no-audit",
-					"--no-fund",
-					"--ignore-scripts",
-					"--no-package-lock",
-				],
-				reason:
-					"Pixel Agents keeps its own npm workspaces, which the root pnpm install does not provide",
-				serial: true,
-			},
-			...pixelChecks,
-		);
-
 	if (uiChanged) {
 		checks.push({
 			command: "pnpm",
@@ -784,7 +788,14 @@ export function selectRelevantChecks(
 		});
 	}
 
-	if (behaviorChanged) {
+	const parityChanged = touchedAny([
+		/^features\/hobo-ci-parity\//u,
+		/^docs\/ci\/parity-scorecard\.md$/u,
+		/^scripts\/ci\/parity-scorecard\.mts$/u,
+		/^packages\/(ci|ci-gh-actions|ci-dashboard)\/(src|test\/support)\//u,
+		/^packages\/hobo\/(src\/ci-|test\/support\/ci-)/u,
+	]);
+	if (behaviorChanged || parityChanged) {
 		checks.push({
 			command: "pnpm",
 			args: [
@@ -794,21 +805,35 @@ export function selectRelevantChecks(
 				"build",
 				"--filter={./src/draft/epic-proofs/*}^...",
 				"--filter={./src/draft/projects/*}^...",
+				// features/steps/**/*.ts loads on every run and imports these
+				// packages from source; their dependencies resolve through dist/.
 				"--filter=@hobo/conformance^...",
 				"--filter=@hobo/example-cd-conformance-kit^...",
+				"--filter=@hobo/hobo^...",
+				"--filter=@hobo/ci-gh-actions^...",
+				"--filter=@hobo/ci-dashboard^...",
+				"--filter=@hobo/fleet-authority...",
 				"--output-logs=new-only",
-				turboConcurrencyArg(),
+				"--concurrency=100%",
 			],
 			reason:
 				"behavior steps import the proofs' and root steps' workspace dependencies from dist, which a scoped run has not built",
 			serial: true,
 		});
+	}
+	if (behaviorChanged)
 		checks.push({
 			command: "pnpm",
 			args: ["run", "test:behavior"],
 			reason: "browser-driven behavior specs; never full-stack E2E",
 		});
-	}
+	if (parityChanged)
+		checks.push({
+			command: "pnpm",
+			args: ["run", "ci:parity-scorecard:check"],
+			reason:
+				"the parity scorecard is generated from the parity scenarios and must not go stale",
+		});
 	if (visualChanged)
 		checks.push({
 			command: "pnpm",
@@ -874,6 +899,8 @@ export function selectRelevantChecks(
 		});
 	}
 
+	// Every test under scripts/test (finding 0144). A staged commit leaves it
+	// to the pull request, and CI runs it in the required job scripts-tests.
 	if (
 		touched(["scripts", "test", ".github"]) &&
 		!staged &&
@@ -897,6 +924,8 @@ export function selectRelevantChecks(
 		});
 	}
 
+	// Any manifest or lockfile edit can change outbound licence metadata or
+	// pull in a dependency whose licence is not on the allowlist.
 	if (
 		rootConfigChanged ||
 		touchedAny([
@@ -950,6 +979,27 @@ export function selectRelevantChecks(
 		});
 	}
 
+	if (sourceChanged || automationChanged) {
+		checks.push({
+			command: "pnpm",
+			args: staged
+				? ["run", "docs:freshness:staged"]
+				: ["run", "docs:freshness", "--", `--base=${options.base}`],
+			reason: "docs freshness gate for code/config changes",
+		});
+	}
+	if (traceabilityChanged)
+		checks.push({
+			command: "node",
+			args: ["--import", "tsx", "scripts/validate-traceability.ts"],
+			reason: "traceability evidence changed",
+		});
+	if (deploymentDeltaChanged)
+		checks.push({
+			command: "node",
+			args: ["--import", "tsx", "scripts/validate-deployment-set-delta.ts"],
+			reason: "deployment delta proof changed",
+		});
 	if (optimizexpChanged)
 		checks.push({
 			command: "pnpm",

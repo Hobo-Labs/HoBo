@@ -1,3 +1,20 @@
+/**
+ * Two small, unglamorous modules that decide a lot.
+ *
+ * `parseConnectivityConfig` is the boundary where a user's YAML becomes typed
+ * configuration. Its whole job is to be total: any input at all, including
+ * hostile or half-written input, has to produce a usable config rather than an
+ * object with undefined fields that fails somewhere far away. The interesting
+ * cases are all the ones where a field is present but wrong — a string where a
+ * list belongs, an unrecognised provider name, a boolean spelled as text — and
+ * they are exactly the cases a well-formed fixture never reaches.
+ *
+ * `probePortless` decides whether the local path can offer named HTTPS URLs. It
+ * must never throw, because a missing optional binary is the normal state on
+ * most machines, and it must respect an explicit off switch even when the binary
+ * is present. Its `enabled` field folds three inputs — the mode, the binary's
+ * presence, and the env — and each combination is a branch worth naming.
+ */
 import { describe, expect, test } from "vitest";
 
 import {
@@ -12,6 +29,8 @@ import {
 
 describe("parseConnectivityConfig: totality", () => {
 	test("a null, undefined or non-object input yields the defaults", () => {
+		// A config file that failed to parse must still start the system with a
+		// working default rather than crashing at first use.
 		for (const raw of [null, undefined, "text", 42, true]) {
 			expect(parseConnectivityConfig(raw)).toEqual(DEFAULT_CONNECTIVITY_CONFIG);
 		}
@@ -22,10 +41,14 @@ describe("parseConnectivityConfig: totality", () => {
 	});
 
 	test("an array is treated as an object and yields the defaults", () => {
+		// `typeof [] === "object"`, so this takes the object path; every field
+		// lookup misses and the defaults fill in. Pinned so the behaviour is
+		// deliberate rather than incidental.
 		expect(parseConnectivityConfig([])).toEqual(DEFAULT_CONNECTIVITY_CONFIG);
 	});
 
 	test("a partially-specified section keeps the defaults for the rest", () => {
+		// Someone setting one field must not silently blank out its neighbours.
 		const config = parseConnectivityConfig({
 			naming: { defaultEnv: "staging" },
 		});
@@ -34,35 +57,28 @@ describe("parseConnectivityConfig: totality", () => {
 		expect(config.naming.overlayTld).toBe("test");
 	});
 
-	test("non-overlay sections of the wrong type keep their defaults", () => {
+	test("a section of the wrong type falls back rather than throwing", () => {
+		// `overlay: "tailscale"` is a plausible mistake — a string where an object
+		// belongs. Indexing into it yields undefined for every field, which the
+		// defaults absorb.
 		expect(() =>
-			parseConnectivityConfig({ dns: 42, naming: null }),
+			parseConnectivityConfig({ overlay: "tailscale", dns: 42, naming: null }),
 		).not.toThrow();
 	});
 });
 
 describe("parseConnectivityConfig: overlay", () => {
-	test("uses the default for an omitted provider and accepts supported providers", () => {
-		expect(parseConnectivityConfig({ overlay: {} }).overlay.provider).toBe(
-			"wireguard",
-		);
-		for (const provider of ["wireguard", "tailscale", "netbird"]) {
+	test("netbird is recognised and anything else falls back to tailscale", () => {
+		// An unrecognised overlay name must not become the literal string — the
+		// value is used to select an adapter, and an unknown one has no adapter.
+		expect(
+			parseConnectivityConfig({ overlay: { provider: "netbird" } }).overlay
+				.provider,
+		).toBe("netbird");
+		for (const provider of ["wireguard", "", 42, null, undefined]) {
 			expect(
 				parseConnectivityConfig({ overlay: { provider } }).overlay.provider,
-			).toBe(provider);
-		}
-	});
-
-	test("rejects invalid providers and malformed overlay sections", () => {
-		for (const provider of ["", "unknown", 42, null]) {
-			expect(() => parseConnectivityConfig({ overlay: { provider } })).toThrow(
-				"overlay.provider must be wireguard, tailscale, or netbird",
-			);
-		}
-		for (const overlay of [null, "tailscale", 42, []]) {
-			expect(() => parseConnectivityConfig({ overlay })).toThrow(
-				"overlay must be an object",
-			);
+			).toBe("tailscale");
 		}
 	});
 
@@ -81,6 +97,8 @@ describe("parseConnectivityConfig: overlay", () => {
 	});
 
 	test("an explicitly empty magicDnsDomains list is respected", () => {
+		// Distinct from absent: an operator who wrote `[]` meant none, and
+		// falling back to the defaults there would re-enable domains they removed.
 		expect(
 			parseConnectivityConfig({ overlay: { magicDnsDomains: [] } }).overlay
 				.magicDnsDomains,
@@ -88,6 +106,9 @@ describe("parseConnectivityConfig: overlay", () => {
 	});
 
 	test("enableFunnel is on unless explicitly false", () => {
+		// Opt-out rather than opt-in, so a config that omits it keeps working.
+		// Only the boolean `false` disables — the string "false" does not, which
+		// is worth pinning because it is a plausible YAML mistake.
 		expect(parseConnectivityConfig({ overlay: {} }).overlay.enableFunnel).toBe(
 			true,
 		);
@@ -119,6 +140,8 @@ describe("parseConnectivityConfig: dns", () => {
 	});
 
 	test("an unrecognised provider falls back to none rather than passing through", () => {
+		// The provider name selects a DNS adapter. An unknown one that reached the
+		// config would fail at the point of use, far from the typo.
 		expect(
 			parseConnectivityConfig({ dns: { public: { provider: "cloudflare" } } })
 				.dns.public.provider,
@@ -148,6 +171,8 @@ describe("parseConnectivityConfig: dns", () => {
 	});
 
 	test("an absent zone is omitted rather than set undefined", () => {
+		// Callers branch on `"zone" in config`; an explicit undefined would make
+		// that check answer true for a zone nobody configured.
 		const config = parseConnectivityConfig({ dns: { public: {} } });
 		expect("zone" in config.dns.public).toBe(false);
 	});
@@ -160,6 +185,8 @@ describe("parseConnectivityConfig: dns", () => {
 	});
 
 	test("credentials keep only string values", () => {
+		// A credential map with a nested object or number in it would be passed
+		// to a provider SDK that expects strings.
 		const config = parseConnectivityConfig({
 			dns: {
 				public: {
@@ -180,6 +207,9 @@ describe("parseConnectivityConfig: dns", () => {
 	});
 
 	test("allowedGatewaySuffixes keeps only strings and is omitted when absent", () => {
+		// This list is a security boundary — it constrains which gateway
+		// hostnames DNS records may point at — so a non-string sneaking in would
+		// be a suffix nothing can match rather than a rejected config.
 		const config = parseConnectivityConfig({
 			dns: { public: { allowedGatewaySuffixes: [".hobo.dev", 42, null] } },
 		});
@@ -202,6 +232,8 @@ describe("parseConnectivityConfig: dns", () => {
 
 describe("parseConnectivityConfig: naming, metering, tenancy, policy", () => {
 	test("multiTenant requires the boolean true", () => {
+		// Multi-tenancy changes how every name is scoped. A truthy string turning
+		// it on would silently reshape every hostname in the deployment.
 		expect(
 			parseConnectivityConfig({ naming: { multiTenant: true } }).naming
 				.multiTenant,
@@ -234,6 +266,8 @@ describe("parseConnectivityConfig: naming, metering, tenancy, policy", () => {
 	});
 
 	test("metering sinks keep only the three known names", () => {
+		// An unknown sink name would be handed to a dispatcher with no handler,
+		// silently dropping usage events.
 		const config = parseConnectivityConfig({
 			metering: { sinks: ["memory", "kafka", "log", 42, "billing"] },
 		});
@@ -253,6 +287,10 @@ describe("parseConnectivityConfig: naming, metering, tenancy, policy", () => {
 	});
 
 	test("the isolation mode accepts its two hard values and defaults to soft", () => {
+		// Falling back to `soft` rather than to a hard mode is the right default
+		// for a misconfiguration: it fails toward working, and the operator who
+		// wanted hard isolation will notice it is not in effect. Silently
+		// selecting a hard mode from a typo would break connectivity instead.
 		for (const mode of ["hard-overlay", "hard-control-plane"]) {
 			expect(
 				parseConnectivityConfig({ tenancy: { defaultIsolationMode: mode } })
@@ -292,6 +330,9 @@ describe("parseConnectivityConfig: naming, metering, tenancy, policy", () => {
 	});
 
 	test("an opa url is kept even when the engine is tag-acl", () => {
+		// The two fields are parsed independently. Worth pinning: a config that
+		// names a URL but leaves the engine at its default does not silently
+		// switch engines, and does not lose the URL either.
 		const config = parseConnectivityConfig({
 			policy: { opaUrl: "http://opa:8181" },
 		});
@@ -306,6 +347,8 @@ describe("resolvePortlessMode", () => {
 	});
 
 	test("every documented off spelling turns it off", () => {
+		// Operators write these differently and all of them have to work, because
+		// an off switch that silently fails to switch off is worse than none.
 		for (const raw of ["0", "false", "off", "no", "OFF", " off ", "False"]) {
 			expect(resolvePortlessMode({ HOBO_PORTLESS: raw })).toBe("off");
 		}
@@ -318,6 +361,8 @@ describe("resolvePortlessMode", () => {
 	});
 
 	test("an unrecognised value falls back to auto rather than to on", () => {
+		// Auto is the safe reading of a value nobody understands: probe for the
+		// binary and behave accordingly, rather than forcing a mode.
 		for (const raw of ["maybe", "2", ""]) {
 			expect(resolvePortlessMode({ HOBO_PORTLESS: raw })).toBe("auto");
 		}
@@ -328,6 +373,8 @@ describe("resolvePortlessMode", () => {
 	});
 
 	test("HOBO_PORTLESS wins over the alias", () => {
+		// One name has to take precedence or a machine with both set behaves
+		// unpredictably.
 		expect(
 			resolvePortlessMode({ HOBO_PORTLESS: "on", HOBO_NAMED_ENDPOINTS: "off" }),
 		).toBe("on");
@@ -335,7 +382,9 @@ describe("resolvePortlessMode", () => {
 });
 
 describe("probePortless", () => {
+	/** A probe runner that reports the binary as present with a version. */
 	const found = () => ({ ok: true, stdout: "1.2.3 (build abc)" });
+	/** A probe runner that reports the binary as absent. */
 	const missing = () => ({ ok: false, stdout: "" });
 
 	test("a present binary in auto mode is available and enabled", () => {
@@ -347,6 +396,9 @@ describe("probePortless", () => {
 	});
 
 	test("a missing binary in auto mode is unavailable and hints how to fix it", () => {
+		// This is the normal state on most machines, so the hint has to name both
+		// the tool and the way to silence it — otherwise it becomes noise people
+		// learn to ignore.
 		const probe = probePortless({ env: {}, runVersion: missing });
 		expect(probe.available).toBe(false);
 		expect(probe.enabled).toBe(false);
@@ -355,6 +407,8 @@ describe("probePortless", () => {
 	});
 
 	test("off mode disables it even when the binary is present", () => {
+		// An explicit off switch that a present binary could override would not
+		// be an off switch.
 		const probe = probePortless({
 			env: { HOBO_PORTLESS: "off" },
 			runVersion: found,
@@ -364,6 +418,8 @@ describe("probePortless", () => {
 	});
 
 	test("off mode silences the hint", () => {
+		// Having asked for it off, the operator should not keep being told about
+		// it — that is what the documented opt-out is for.
 		expect(
 			probePortless({ env: { HOBO_PORTLESS: "off" }, runVersion: missing })
 				.hint,
@@ -371,6 +427,8 @@ describe("probePortless", () => {
 	});
 
 	test("on mode still cannot enable a binary that is not there", () => {
+		// Forcing the mode does not conjure the tool. Reporting enabled here
+		// would make the local serve path promise named URLs it cannot deliver.
 		const probe = probePortless({
 			env: { HOBO_PORTLESS: "on" },
 			runVersion: missing,
@@ -381,6 +439,8 @@ describe("probePortless", () => {
 	});
 
 	test("the version is the first whitespace-delimited token", () => {
+		// `portless --version` prints extra build detail on some builds; the
+		// version field should be comparable, not a whole line.
 		expect(probePortless({ env: {}, runVersion: found }).version).toBe("1.2.3");
 	});
 
@@ -394,6 +454,10 @@ describe("probePortless", () => {
 	});
 
 	test("a configured path that does not exist on disk is skipped, not spawned", () => {
+		// The `existsSync` guard. A path-shaped candidate that is not there gets
+		// skipped before any spawn, which is why a stale HOBO_PORTLESS_BIN
+		// pointing at an old install does not cost a failed process launch on
+		// every probe — the bare name is tried instead.
 		const seen: string[] = [];
 		probePortless({
 			env: { HOBO_PORTLESS_BIN: "/nonexistent/from/env" },
@@ -407,6 +471,9 @@ describe("probePortless", () => {
 	});
 
 	test("an explicit bin path that exists is preferred over the bare name", () => {
+		// `process.execPath` is a real file, so it survives the existence check
+		// and becomes the first candidate — which is the behaviour an operator
+		// pointing at a specific install is relying on.
 		const seen: string[] = [];
 		const probe = probePortless({
 			env: {},
@@ -435,6 +502,8 @@ describe("probePortless", () => {
 	});
 
 	test("probing stops at the first candidate that answers", () => {
+		// Each candidate costs a process spawn; continuing past a working one
+		// would be pure waste on the common path.
 		const seen: string[] = [];
 		const probe = probePortless({
 			env: { HOBO_PORTLESS_BIN: process.execPath },
@@ -448,6 +517,8 @@ describe("probePortless", () => {
 	});
 
 	test("an empty bin path in the env is skipped", () => {
+		// An unset variable often arrives as an empty string; spawning it would
+		// be a wasted failure on every probe.
 		const seen: string[] = [];
 		probePortless({
 			env: { HOBO_PORTLESS_BIN: "" },
@@ -466,6 +537,7 @@ describe("probePortless", () => {
 	});
 
 	test("it never throws, whatever the environment holds", () => {
+		// A probe for an optional tool must not be able to take down the caller.
 		expect(() =>
 			probePortless({
 				env: { HOBO_PORTLESS: "maybe", HOBO_PORTLESS_BIN: "/nonexistent/x" },
@@ -477,6 +549,8 @@ describe("probePortless", () => {
 
 describe("registerPortlessRoute", () => {
 	test("the first CLI shape that works is used", async () => {
+		// The portless CLI surface varies by version, so the shapes are tried in
+		// order; continuing past a success would run the same registration twice.
 		const calls: string[][] = [];
 		const result = await registerPortlessRoute({
 			hostname: "app.hobo.test",
@@ -507,6 +581,9 @@ describe("registerPortlessRoute", () => {
 	});
 
 	test("every shape failing reports unregistered with an explanatory note", async () => {
+		// Best-effort: the local serve path keeps working without the proxy
+		// binding, so this must not throw — but the note is what tells the user
+		// why their named URL is not resolving.
 		const result = await registerPortlessRoute({
 			hostname: "app.hobo.test",
 			backendUrl: "http://127.0.0.1:3000",
@@ -526,6 +603,7 @@ describe("registerPortlessRoute", () => {
 	});
 
 	test("the hostname and backend are passed through verbatim", async () => {
+		// A mangled hostname would register a route nothing resolves to.
 		const calls: string[][] = [];
 		await registerPortlessRoute({
 			hostname: "my-app.tenant.hobo.test",

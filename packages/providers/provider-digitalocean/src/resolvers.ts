@@ -676,7 +676,7 @@ async function resolveToken(
 	if (ref.trim().length === 0) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_MISSING",
-			'digitalocean resolver: credentialRef is empty. Supply a locator such as "env://DIGITALOCEAN_TOKEN" or "secret://camp/digitalocean-pat" and register it with the host credential resolver; the resolver never accepts inline credential material',
+			'digitalocean resolver: credentialRef is empty. Supply a locator such as "owner://DIGITALOCEAN_TOKEN" or "secret://camp/digitalocean-pat" and register it with the host credential resolver; the resolver never accepts inline credential material',
 		);
 	}
 	const trimmed = ref.trim();
@@ -689,7 +689,7 @@ async function resolveToken(
 	if (!CREDENTIAL_REF_PATTERN.test(trimmed)) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_NOT_A_REF",
-			`digitalocean resolver: credentialRef ${JSON.stringify(redactDigitalOceanText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "env://DIGITALOCEAN_TOKEN"`,
+			`digitalocean resolver: credentialRef ${JSON.stringify(redactDigitalOceanText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "owner://DIGITALOCEAN_TOKEN"`,
 		);
 	}
 	let material: string;

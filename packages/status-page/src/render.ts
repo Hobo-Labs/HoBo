@@ -1,3 +1,12 @@
+/**
+ * Static status-page HTML renderer (HoBo Rubberhose, ADR-0149).
+ *
+ * Pure `render*` functions: model in, HTML string out — no IO, no clocks.
+ * Every interpolated value passes through `escapeHtml`. The page ships a
+ * strict inline CSP, day/night inversion with a `data-theme` toggle, film
+ * grain, sticker-shadow cards, and flat status lamps (lamps are inert —
+ * "pressable = raised" means only pressables get the sticker shadow).
+ */
 import { STATUS_PAGE_TOKENS } from "./tokens.js";
 import type {
 	ComponentStatusRecord,
@@ -165,6 +174,7 @@ function renderMaintenance(maintenance: MaintenanceRecord): string {
 </article>`;
 }
 
+/** Render one status page as a self-contained static HTML document. */
 export function renderStatusPageHtml(model: StatusPageModel): string {
 	const componentsMarkup =
 		model.components.length > 0

@@ -5,9 +5,9 @@ SVID-authenticated outbound reverse tunnel acceptance.
 
 This package pins the connected-private Relay boundary from:
 
-- `urn:hobo:requirement:platform-engineering`: the Relay is an outbound-only TCP 443 reverse tunnel from a customer private network to the Yard, with Executors behind it and work/results flowing over the tunnel.
-- `urn:hobo:requirement:security-networking`: the Relay is control-plane traffic, not part of the tenant data-plane connectivity tiers, and one Relay can route multiple private targets by target id.
-- `urn:hobo:decision:adr-0074`: `relay register` and `relay attach` are governed control-plane actions and must be deny-by-default.
+- `docs/design/platform-engineering.md`: the Relay is an outbound-only TCP 443 reverse tunnel from a customer private network to the Yard, with Executors behind it and work/results flowing over the tunnel.
+- `docs/design/security-networking.md`: the Relay is control-plane traffic, not part of the tenant data-plane connectivity tiers, and one Relay can route multiple private targets by target id.
+- `docs/design/adr/02-identity-security.md#adr-0074`: `relay register` and `relay attach` are governed control-plane actions and must be deny-by-default.
 - `src/draft/technical-proofs/mtls-data-path-contract`: attach consumes the existing SVID-keyed mTLS data-path evaluator rather than defining a second identity model.
 
 The proof covers:
@@ -28,9 +28,11 @@ The proof covers:
 Scope boundary: this POC does not implement a real TCP tunnel, executor sandbox, provider credentials, SVID issuance, air-gapped disconnected mode, or data-plane connectivity tiers. It defines and tests the branch-sized Relay contract those later slices consume.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Relay Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

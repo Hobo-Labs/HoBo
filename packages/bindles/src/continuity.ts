@@ -1,34 +1,3 @@
-/**
- * The continuity trait (ADR-0145): how much of a stateful resource's data a
- * failure may lose, how fast HoBo moves it to another backend, how many
- * copies it keeps, and whether it keeps migrating to the cheapest backend
- * that still meets all of that.
- *
- * It declares intent only; nothing here names a provider. The fleet runtime
- * (`continuityFleetPlan` in `@hobo/backend-fleet`) turns it into the policy
- * the fleet decides with, the standbys placement asks for, and the cadence
- * the copy runs at. Every copy and every move is a step the next tick resumes
- * or undoes, so an interrupted migration continues instead of starting over
- * or stopping the workload.
- *
- * ```ts
- * const journal = b.data().with(continuity({ tier: "standard" }));
- * const cache = b.kv().with(continuity({ tier: "rebuildable" }));
- * ```
- *
- * Tiers are cost-balanced starting points; any field may be overridden:
- *
- * | tier          | loses at most | fails over after | standbys | backups      |
- * | ------------- | ------------- | ---------------- | -------- | ------------ |
- * | `rebuildable` | everything    | 1 min            | 0        | none         |
- * | `standard`    | 5 min         | 1 min            | 1        | daily, 7     |
- * | `critical`    | 30 s          | 15 s             | 2        | hourly, 48   |
- *
- * `rebuildable` is for state the workload can rebuild from its sources (a
- * cache, a lease table): it keeps no copy, and a move starts the new backend
- * cold. The other tiers keep standbys on other vendors where one is
- * configured, so one vendor's outage is a failover rather than a stop.
- */
 import { isJsonObject, type JsonObject } from "./json.js";
 import type { BindleDefinition, ProviderAnnotation } from "./types.js";
 

@@ -5,8 +5,6 @@ import {
 	createTestHarness,
 	deployInProcess,
 	destroyInProcess,
-	type EphemeralCampDeployRequest,
-	type EphemeralCampDriver,
 	parseEphemeralCampTarget,
 	TestHarnessError,
 } from "../src/index.js";
@@ -73,100 +71,14 @@ describe("ephemeral-camp lane gates", () => {
 		expect(Object.isFrozen(target)).toBe(true);
 	});
 
-	it("requires a Camp driver", async () => {
+	it("refuses at deploy rather than serving an in-process graph", async () => {
 		const harness = createTestHarness(
 			{ lane: "ephemeral-camp", yard: YARD_LIKE },
 			{ env: CAMP_ENV },
 		);
 		await expect(harness.deploy(fakeBindle())()).rejects.toMatchObject({
-			code: "HARNESS_CAMP_DRIVER_REQUIRED",
+			code: "HARNESS_LANE_UNIMPLEMENTED",
 		});
-	});
-
-	it("deploys and destroys real Camp resources through the driver", async () => {
-		const requests: EphemeralCampDeployRequest[] = [];
-		let destroyed = 0;
-		const campDriver: EphemeralCampDriver = {
-			async deploy(request) {
-				requests.push(request);
-				return {
-					resources: [
-						{
-							alias: "api",
-							kind: "api",
-							endpoint: "https://pr-42.example.test",
-						},
-						{ alias: "db", kind: "data" },
-						{ alias: "cache", kind: "kv" },
-					],
-					outputs: {
-						api: { endpoint: "https://pr-42.example.test" },
-						db: { locator: "postgres://brokered" },
-						cache: { locator: "redis://brokered" },
-					},
-					async destroy() {
-						destroyed += 1;
-					},
-				};
-			},
-		};
-		const bindle = fakeBindle();
-		const harness = createTestHarness(
-			{
-				lane: "ephemeral-camp",
-				stage: "pr-42",
-				yard: YARD_LIKE,
-				campDriver,
-			},
-			{ env: CAMP_ENV },
-		);
-		const graph = await harness.deploy(bindle)();
-		expect(requests).toEqual([
-			expect.objectContaining({
-				bindle,
-				stage: "pr-42",
-				yardName: "yard:aws",
-				providerId: "aws",
-				credentialRef: "hobo-secret://tenant-1/yard-aws/deploy",
-			}),
-		]);
-		expect(graph.lane).toBe("ephemeral-camp");
-		expect(graph.http("api").baseUrl).toBe("https://pr-42.example.test");
-		expect(graph.resource("db").fidelity).toBe("real");
-		expect(graph.outputs()).toEqual({
-			api: { endpoint: "https://pr-42.example.test" },
-			db: { locator: "postgres://brokered" },
-			cache: { locator: "redis://brokered" },
-		});
-		expect(graph.fidelity()).toMatchObject({
-			byFidelity: { real: 3, simulated: 0, mocked: 0, "camp-only": 0 },
-			prodReadinessClaimable: false,
-		});
-		await harness.destroy(bindle)();
-		expect(destroyed).toBe(1);
-	});
-
-	it("destroys an invalid driver deployment", async () => {
-		let destroyed = 0;
-		const campDriver: EphemeralCampDriver = {
-			async deploy() {
-				return {
-					resources: [{ alias: "api", kind: "wrong" }],
-					outputs: {},
-					async destroy() {
-						destroyed += 1;
-					},
-				};
-			},
-		};
-		const harness = createTestHarness(
-			{ lane: "ephemeral-camp", yard: YARD_LIKE, campDriver },
-			{ env: CAMP_ENV },
-		);
-		await expect(harness.deploy(fakeBindle())()).rejects.toMatchObject({
-			code: "HARNESS_CAMP_DEPLOYMENT_INVALID",
-		});
-		expect(destroyed).toBe(1);
 	});
 });
 

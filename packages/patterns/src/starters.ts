@@ -33,7 +33,7 @@ export function assertCatalogStarter(template: CliStarterAlias): void {
 	}
 }
 
-function details(template: CliStarterAlias) {
+function details(template: CliStarterAlias): Record<string, string> {
 	switch (template) {
 		case "todo":
 			return {
@@ -65,7 +65,7 @@ function details(template: CliStarterAlias) {
 				resourceName: "fullstackStore",
 				route: "/app",
 				seedKey: "home",
-				message: "Your first note lives here.",
+				message: "Fullstack shell ready",
 			};
 	}
 }

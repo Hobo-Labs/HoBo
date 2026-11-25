@@ -21,8 +21,10 @@ This package validates the M0 scope record. It does not build final troubleshoot
 pnpm.cmd --prefix src\draft\exp-proofs\troubleshooting-guides-scope-acceptance test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Troubleshooting Guides Scope Acceptance.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "mcp",
+  "builtAt": "2026-11-17T18:35:43.828Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "packages/mcp/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "425b804e3d87d479ecca0be25dc0c97731e8534fe5903c1b8b094b5ea9fdecce",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

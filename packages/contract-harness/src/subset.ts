@@ -1,3 +1,4 @@
+/** Recursive subset: every field in `expected` must exist with equal value in `actual`. */
 export function isRecursiveSubset(
 	expected: unknown,
 	actual: unknown,
@@ -46,6 +47,7 @@ export function isRecursiveSubset(
 	return false;
 }
 
+/** Find first path where expected is not a subset of actual. */
 export function subsetMismatchPath(
 	expected: unknown,
 	actual: unknown,

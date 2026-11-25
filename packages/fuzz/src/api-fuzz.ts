@@ -1,8 +1,11 @@
+/**
+ * In-process control-plane request oracle. Schemathesis/RESTler wrap the
+ * same fail-closed rules against an ephemeral server; this stays in-memory.
+ */
+
 import type { FuzzValue } from "./manifest.js";
 import { hasPrototypePollution } from "./manifest.js";
 import type { ControlModel } from "./model.js";
-
-const BINDLE_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/u;
 
 export interface FuzzRequest {
 	readonly method: string;
@@ -43,52 +46,32 @@ export function handleControlRequest(
 		const rec = asRecord(req.body);
 		const bindleId = stringField(rec, "bindleId");
 		const manifestHash = stringField(rec, "manifestHash");
-		if (
-			!bindleId ||
-			!BINDLE_ID.test(bindleId) ||
-			!manifestHash ||
-			Array.from(manifestHash).length > 256 ||
-			Object.keys(rec).some(
-				(key) => key !== "bindleId" && key !== "manifestHash",
-			)
-		)
-			return fail(400, "invalid-bindle");
+		if (!bindleId || !manifestHash) return fail(400, "invalid-bindle");
 		const created = world.createBindle(tenantId, bindleId, manifestHash);
 		if (!created.ok) return fail(409, created.reason);
 		return ok({ bindleId, tenantId });
 	}
 
 	if (req.method === "POST" && applyMatch) {
-		const bindleId = decodePathSegment(applyMatch[1]);
-		if (bindleId === undefined || !BINDLE_ID.test(bindleId))
-			return fail(400, "invalid-path");
+		const bindleId = applyMatch[1] ?? "";
 		const owned = world.bindles.get(bindleId);
 		if (!owned) return fail(404, "bindle-missing");
 		if (owned.tenantId !== tenantId) return fail(403, "cross-tenant");
 		const rec = asRecord(req.body);
 		const idempotencyKey = stringField(rec, "idempotencyKey");
-		if (
-			!idempotencyKey ||
-			Array.from(idempotencyKey).length > 256 ||
-			Object.keys(rec).some((key) => key !== "idempotencyKey")
-		)
-			return fail(400, "idempotency-required");
+		if (!idempotencyKey) return fail(400, "idempotency-required");
 		const resource = world.apply(tenantId, bindleId, idempotencyKey);
 		return ok({ id: resource.id, idempotencyKey, status: resource.status });
 	}
 
 	if (req.method === "POST" && destroyMatch) {
-		const bindleId = decodePathSegment(destroyMatch[1]);
-		if (bindleId === undefined || !BINDLE_ID.test(bindleId))
-			return fail(400, "invalid-path");
-		const destroyed = world.destroy(tenantId, bindleId);
+		const destroyed = world.destroy(tenantId, destroyMatch[1] ?? "");
 		if (!destroyed.ok) return fail(403, destroyed.reason);
 		return ok({ destroyed: true });
 	}
 
 	if (req.method === "GET" && tenantMatch) {
-		const requested = decodePathSegment(tenantMatch[1]);
-		if (requested === undefined) return fail(400, "invalid-path");
+		const requested = tenantMatch[1] ?? "";
 		if (requested !== tenantId) return fail(403, "cross-tenant");
 		return ok({
 			resources: [...world.resources.values()]
@@ -119,6 +102,7 @@ function fail(status: number, code: string): FuzzResponse {
 
 function asRecord(value: FuzzValue | undefined): Record<string, FuzzValue> {
 	if (!value || Object(value) !== value || Array.isArray(value)) return {};
+	// SAFETY: Object identity and the array exclusion establish a record input.
 	return value as Record<string, FuzzValue>;
 }
 
@@ -128,14 +112,6 @@ function stringField(
 ): string | undefined {
 	const value = record[key];
 	if (value?.constructor !== String || value.length === 0) return undefined;
+	// SAFETY: String constructor identity establishes the primitive string contract.
 	return value as string;
-}
-
-function decodePathSegment(value: string | undefined): string | undefined {
-	if (value === undefined) return undefined;
-	try {
-		return decodeURIComponent(value);
-	} catch {
-		return undefined;
-	}
 }

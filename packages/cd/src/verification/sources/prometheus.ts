@@ -1,7 +1,12 @@
-import { createHash } from "node:crypto";
+// Prometheus HTTP API health source: GET /api/v1/query_range with the step
+// aligned to the window. The query is PromQL as authored; the cohort is
+// selected from the returned matrix by the declared label (no query
+// templating), so the expression must keep that label, e.g.
+// `sum by (track) (rate(http_requests_total{code=~"5.."}[1m]))`.
+
 import { HealthSourceKind } from "../../_generated/cd_pb.js";
 import type { HealthSource } from "../../ports.js";
-import { isJsonArray, isJsonNumber, isJsonObject } from "../json.js";
+import { isJsonArray, isJsonObject } from "../json.js";
 import {
 	byKey,
 	cohortSelector,
@@ -10,13 +15,16 @@ import {
 	invalid,
 	requestJson,
 	type SourceDeps,
+	samplesOutcome,
 	sampleValue,
 	stableKey,
 } from "./http.js";
 
+/** At most this many points per series; the step grows with the window. */
 export const PROMETHEUS_MAX_POINTS = 60;
 export const PROMETHEUS_MIN_STEP_SECONDS = 15;
 
+/** Step in whole seconds that divides the window into at most 60 points. */
 export function prometheusStepSeconds(fromMs: number, toMs: number): number {
 	const windowSeconds = Math.max(1, Math.floor((toMs - fromMs) / 1000));
 	return Math.max(
@@ -37,6 +45,7 @@ export function createPrometheusSource(deps: SourceDeps): HealthSource {
 			const credential = await credentialFor(deps, query, input.campId);
 			if (!credential.ok) return credential;
 			const step = prometheusStepSeconds(input.fromMs, input.toMs);
+			// Align start and end to the step so the same window always asks for the same points.
 			const start = Math.floor(input.fromMs / 1000 / step) * step;
 			const end = Math.floor(input.toMs / 1000 / step) * step;
 			const url = new URL(
@@ -67,13 +76,7 @@ export function createPrometheusSource(deps: SourceDeps): HealthSource {
 					"Prometheus answer is not a successful matrix",
 				);
 			}
-			const series: Array<
-				Readonly<{
-					key: string;
-					correlationKey: string;
-					points: Array<{ value: number; observedAtMs: number }>;
-				}>
-			> = [];
+			const series: Array<Readonly<{ key: string; values: number[] }>> = [];
 			for (const item of body.data.result) {
 				if (
 					!isJsonObject(item) ||
@@ -86,54 +89,21 @@ export function createPrometheusSource(deps: SourceDeps): HealthSource {
 					item.metric[selector.value.label] !== selector.value.value
 				)
 					continue;
-				const points: Array<{ value: number; observedAtMs: number }> = [];
+				const values: number[] = [];
 				for (const point of item.values) {
 					if (!isJsonArray(point) || point.length !== 2)
 						return invalid(query.name, "malformed Prometheus point");
 					const value = sampleValue(point[1]);
-					if (value === undefined) continue;
-					if (!isJsonNumber(point[0]))
-						return invalid(query.name, "malformed Prometheus timestamp");
-					const observedAtMs = Math.round(point[0] * 1000);
-					if (
-						!Number.isSafeInteger(observedAtMs) ||
-						observedAtMs < 0 ||
-						observedAtMs > 8_640_000_000_000_000
-					) {
-						return invalid(query.name, "malformed Prometheus timestamp");
-					}
-					points.push({ value, observedAtMs });
+					if (value !== undefined) values.push(value);
 				}
-				points.sort((a, b) => a.observedAtMs - b.observedAtMs);
-				const labels = Object.fromEntries(
-					Object.entries(item.metric).filter(([name]) => name !== "__name__"),
-				);
-				series.push({
-					key: stableKey(item.metric),
-					correlationKey: createHash("sha256")
-						.update(stableKey(labels))
-						.digest("hex"),
-					points,
-				});
+				series.push({ key: stableKey(item.metric), values });
 			}
 			series.sort(byKey);
-			const points = series.flatMap((item) => {
-				const seriesKey = createHash("sha256").update(item.key).digest("hex");
-				return item.points.map((point) => ({
-					...point,
-					seriesKey,
-					correlationKey: item.correlationKey,
-				}));
-			});
-			return {
-				ok: true,
-				value: {
-					values: points.map((point) => point.value),
-					fromMs: input.fromMs,
-					toMs: input.toMs,
-					points,
-				},
-			};
+			return samplesOutcome(
+				series.flatMap((item) => item.values),
+				input.fromMs,
+				input.toMs,
+			);
 		},
 	};
 }

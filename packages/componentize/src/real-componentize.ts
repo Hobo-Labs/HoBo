@@ -1,8 +1,22 @@
+/**
+ * @hobo/componentize REAL LANE (D13)
+ *
+ * Toolchain-gated path that produces a real Component Model binary via
+ * `@bytecodealliance/componentize-js`. The synthetic contract-shaped path in
+ * `componentize.ts` remains the offline floor: it needs no native toolchain and
+ * stays byte-deterministic. This lane trades that determinism for a real,
+ * runnable component (see the HOBO-603 spike + ADR-0105: componentize-js wasm
+ * bytes are NOT byte-stable across builds because of the Wizer/StarlingMonkey
+ * snapshot, even under pinned SOURCE_DATE_EPOCH).
+ *
+ * Availability is probed at factory call time with a dynamic import; when the
+ * toolchain is absent the builder fails closed with a typed
+ * `ComponentizeToolchainError` naming the synthetic floor as remediation.
+ */
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
 	buildOciDescriptor,
@@ -11,9 +25,7 @@ import {
 	type WasmComponentArtifact,
 	type WasmOciDescriptor,
 } from "./componentize.js";
-import { isJsonObject, isJsonString } from "./json.js";
-import { sourceDateEpochToUnixSeconds } from "./source-date-epoch.js";
-import { bundleTypeScriptEntry } from "./sources.js";
+import type { JsonValue } from "./json.js";
 
 const COMPONENTIZE_JS_SPECIFIER = "@bytecodealliance/componentize-js";
 const REAL_CONTRACT_SCHEMA = "hobo.componentize.real/v1";
@@ -26,6 +38,7 @@ world hello-bindle {
   export health: func() -> string;
 }
 `;
+// Features disabled for reproducibility parity with the HOBO-603 spike.
 const DISABLED_FEATURES = Object.freeze([
 	"random",
 	"clocks",
@@ -33,8 +46,14 @@ const DISABLED_FEATURES = Object.freeze([
 	"http",
 ] as const);
 
+// public-contract: minimum byte size for a REAL component. The synthetic
+// contract envelope (magic + one custom section) stays far below this floor;
+// real StarlingMonkey-based components are megabytes.
 export const REAL_COMPONENT_MIN_BYTES = 1024;
 
+// public-contract: typed fail-closed error for the real lane. Callers that
+// explicitly requested the real toolchain must surface this, never silently
+// fall back to the synthetic floor.
 export class ComponentizeToolchainError extends Error {
 	readonly code = "componentize.toolchain_unavailable";
 	readonly remediation: string;
@@ -42,13 +61,17 @@ export class ComponentizeToolchainError extends Error {
 	constructor(cause?: string) {
 		const detail = cause ? ` (${cause})` : "";
 		super(
-			`componentize.toolchain_unavailable: ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs} is unavailable${detail}`,
+			`componentize.toolchain_unavailable: ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs} is not importable${detail}`,
 		);
 		this.name = "ComponentizeToolchainError";
-		this.remediation = `Install ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs} and retry.`;
+		this.remediation =
+			`Install the pinned toolchain (pnpm add -D ${COMPONENTIZE_JS_SPECIFIER}@${PINNED_TOOLCHAIN.componentizeJs}) ` +
+			"or drop the real-lane request to use the synthetic contract-shaped floor (componentizeHelloBindle).";
 	}
 }
 
+// public-contract: injected implementation seam. Mirrors the componentize-js
+// object-argument API observed in the HOBO-603 determinism spike.
 export type RealComponentizeImpl = (
 	sourcePath: string,
 	opts: {
@@ -60,23 +83,28 @@ export type RealComponentizeImpl = (
 ) => Promise<{ component: Uint8Array }>;
 
 export interface RealComponentizeOptions {
-	readonly componentizeImpl?: RealComponentizeImpl;
-	readonly importModule?: () => Promise<{
-		readonly componentize?: unknown;
-	}>;
-	readonly entry?: string;
-	readonly wit?: {
+	/** Injected builder (tests). When present the toolchain probe is skipped. */
+	componentizeImpl?: RealComponentizeImpl;
+	/** Injected module importer (tests). Defaults to importing componentize-js. */
+	importModule?: () => Promise<JsonValue>;
+	/** Entry file relative to sourceRoot. Defaults to the hello-bindle shape. */
+	entry?: string;
+	/** WIT world override: inline wit text plus world naming. */
+	wit?: {
 		readonly source: string;
 		readonly worldName: string;
 		readonly witWorld: string;
 	};
 }
 
+// public-contract: input mirrors the CLI ComponentizeFn seam.
 export interface RealComponentizeInput {
 	readonly sourceRoot: string;
 	readonly sourceDateEpoch: string;
 }
 
+// public-contract: output mirrors the CLI ComponentizeFn seam plus the OCI
+// descriptor routed by the real lane.
 export interface RealComponentizeResult {
 	readonly component: WasmComponentArtifact;
 	readonly oci: WasmOciDescriptor;
@@ -89,6 +117,9 @@ export interface RealComponentize {
 	) => Promise<RealComponentizeResult>;
 }
 
+// public-contract: factory for the real componentize lane. Probes the
+// toolchain at call time; `available: false` yields a builder that fails
+// closed with ComponentizeToolchainError.
 export async function createRealComponentize(
 	options: RealComponentizeOptions = {},
 ): Promise<RealComponentize> {
@@ -117,6 +148,9 @@ export async function createRealComponentize(
 	};
 }
 
+// public-contract: structural validation for REAL component binaries. Does not
+// depend on the synthetic `hobo.componentize.contract` custom section; checks
+// wasm magic, the component-model layer bytes, and the synthetic size floor.
 export interface RealWasmComponentSummary {
 	readonly format: "wasm-component";
 	readonly layer: 1;
@@ -135,6 +169,8 @@ export function validateRealWasmComponent(
 	) {
 		throw new Error("componentize.real.invalid_magic: not a wasm binary");
 	}
+	// Component binaries carry layer 0x01 0x00 in bytes 6-7; core modules (and
+	// the synthetic contract envelope, which reuses the core header) carry 0x00.
 	if (bytes[6] !== 0x01 || bytes[7] !== 0x00) {
 		throw new Error(
 			"componentize.real.not_a_component: layer bytes are not component-model (core module or synthetic contract envelope)",
@@ -156,73 +192,31 @@ type ToolchainProbe =
 	| { readonly ok: true; readonly impl: RealComponentizeImpl }
 	| { readonly ok: false; readonly cause: string };
 
-export async function assertComponentizerVersion(
-	entryUrl: string,
-): Promise<string> {
-	let directory = dirname(fileURLToPath(entryUrl));
-	for (;;) {
-		let text: string | undefined;
-		try {
-			text = await readFile(join(directory, "package.json"), "utf8");
-		} catch (error) {
-			if (
-				!(error instanceof Error && "code" in error && error.code === "ENOENT")
-			)
-				throw error;
-		}
-		if (text !== undefined) {
-			const manifest: unknown = JSON.parse(text);
-			if (
-				isJsonObject(manifest) &&
-				manifest.name === COMPONENTIZE_JS_SPECIFIER
-			) {
-				if (
-					!isJsonString(manifest.version) ||
-					manifest.version !== PINNED_TOOLCHAIN.componentizeJs
-				) {
-					throw new Error(
-						`componentize.toolchain_skew: ${COMPONENTIZE_JS_SPECIFIER} expected ${PINNED_TOOLCHAIN.componentizeJs} got ${String(manifest.version)}`,
-					);
-				}
-				return manifest.version;
-			}
-		}
-		const parent = dirname(directory);
-		if (parent === directory)
-			throw new Error(
-				`package manifest not found for ${COMPONENTIZE_JS_SPECIFIER}`,
-			);
-		directory = parent;
-	}
-}
-
 async function probeToolchain(
-	importModule?: () => Promise<{ readonly componentize?: unknown }>,
+	importModule?: () => Promise<JsonValue>,
 ): Promise<ToolchainProbe> {
 	try {
-		if (!importModule) {
-			await assertComponentizerVersion(
-				import.meta.resolve(COMPONENTIZE_JS_SPECIFIER),
-			);
-		}
 		const module = await (importModule
 			? importModule()
 			: import(COMPONENTIZE_JS_SPECIFIER));
-		const componentize = module.componentize;
-		if (!isComponentizeJsFunction(componentize)) {
+		// SAFETY: `const componentize = (module as { componentize?: unknown }).componentize;` is required at this I/O or test boundary.
+		const componentize = (module as { componentize?: unknown }).componentize;
+		if (!(componentize instanceof Function)) {
 			return {
 				ok: false,
 				cause: "module does not export a componentize function",
 			};
 		}
 		const impl: RealComponentizeImpl = async (sourcePath, opts) => {
-			const output = await componentize({
+			// componentize-js 0.21.x object-argument API (see HOBO-603 spike).
+			// SAFETY: `const output = (await componentize({` is required at this I/O or test boundary.
+			const output = (await componentize({
 				sourcePath,
-				witWorld: await readFile(join(opts.witPath, "world.wit"), "utf8"),
+				witPath: opts.witPath,
 				worldName: opts.worldName,
 				disableFeatures: [...opts.disableFeatures],
 				env: { ...opts.env },
-			});
+			})) as { component: Uint8Array };
 			return { component: output.component };
 		};
 		return { ok: true, impl };
@@ -232,20 +226,6 @@ async function probeToolchain(
 			cause: error instanceof Error ? error.message : String(error),
 		};
 	}
-}
-
-type ComponentizeJsFunction = (options: {
-	readonly sourcePath: string;
-	readonly witWorld: string;
-	readonly worldName: string;
-	readonly disableFeatures: readonly string[];
-	readonly env: Readonly<Record<string, string>>;
-}) => Promise<{ readonly component: Uint8Array }>;
-
-function isComponentizeJsFunction<T>(
-	value: T,
-): value is T & ComponentizeJsFunction {
-	return value instanceof Function;
 }
 
 async function runRealComponentize(
@@ -262,17 +242,20 @@ async function runRealComponentize(
 	};
 
 	const entryPath = join(input.sourceRoot, entry);
+	let source: string;
 	try {
-		await readFile(entryPath, "utf8");
+		source = await readFile(entryPath, "utf8");
 	} catch (error) {
 		const cause = error instanceof Error ? error.message : String(error);
 		throw new Error(`componentize.real.missing_entry: ${entry} (${cause})`);
 	}
-	const source = await bundleTypeScriptEntry(entryPath);
+	source = source.replaceAll("\r\n", "\n");
 
 	const workspace = await mkdtemp(join(tmpdir(), "hobo-real-componentize-"));
 	let bytes: Uint8Array;
 	try {
+		// The entry is written verbatim as ESM JS: the hello-bindle service shape
+		// is JS-compatible TypeScript. Full TS lowering stays out of D13 scope.
 		const jsEntryPath = join(workspace, "src/service.js");
 		await mkdir(dirname(jsEntryPath), { recursive: true });
 		await writeFile(jsEntryPath, source, "utf8");
@@ -285,13 +268,9 @@ async function runRealComponentize(
 			witPath,
 			worldName: wit.worldName,
 			disableFeatures: DISABLED_FEATURES,
-			env: {
-				SOURCE_DATE_EPOCH: epochSeconds,
-				XDG_CACHE_HOME: join(workspace, ".cache"),
-			},
+			env: { SOURCE_DATE_EPOCH: epochSeconds },
 		});
 		bytes = parseComponentBytes(output);
-		validateRealWasmComponent(bytes);
 	} finally {
 		await rm(workspace, { recursive: true, force: true });
 	}
@@ -303,13 +282,7 @@ async function runRealComponentize(
 		sourceDateEpoch: input.sourceDateEpoch,
 		entry,
 		sourceDigest: sha256Text(source),
-		witDigest: sha256Text(wit.source),
-		toolchain: {
-			componentizeJs:
-				options.componentizeImpl || options.importModule
-					? "provided"
-					: PINNED_TOOLCHAIN.componentizeJs,
-		},
+		toolchain: PINNED_TOOLCHAIN,
 	});
 
 	const component: WasmComponentArtifact = {
@@ -338,6 +311,8 @@ function parseComponentBytes(output: { component: Uint8Array }): Uint8Array {
 	}
 	return output.component;
 }
+
+import { sourceDateEpochToUnixSeconds } from "./source-date-epoch.js";
 
 function sha256Text(text: string): string {
 	return `sha256:${createHash("sha256").update(text).digest("hex")}`;

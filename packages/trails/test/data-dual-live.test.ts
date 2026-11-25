@@ -1,3 +1,6 @@
+// Phase-7 milestone: a trail run against TWO REAL SQLite-backed stores.
+// CDC dual-write replicates source writes to the target; the dual oracle
+// asserts zero loss from live data. Injected divergence auto-compensates.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,12 +64,14 @@ test("milestone: trail cutover over two real SQLite stores with zero-loss dual o
 	const dual = createSqliteDataDualPort({ sourcePath, targetPath });
 	cleanups.push(() => dual.close());
 
+	// Business writes land on the source via CDC dual-write…
 	dual.writeSource([
 		{ id: "order-1", doc: { total: 100 } },
 		{ id: "order-2", doc: { total: 250 } },
 		{ id: "order-3", doc: { total: 75 } },
 	]);
 	assert.equal(dual.lag(), 3);
+	// …the CDC tail replicates them to the target before the oracle judges.
 	assert.equal(dual.replicate(), 3);
 	assert.equal(dual.lag(), 0);
 
@@ -98,6 +103,7 @@ test("milestone: injected divergence in the live target auto-compensates", () =>
 	]);
 	dual.replicate();
 
+	// Inject divergence: a rogue write mutates the TARGET behind CDC's back.
 	const rogue = new DatabaseSync(targetPath);
 	rogue
 		.prepare("UPDATE records SET doc = ? WHERE id = ?")
@@ -128,6 +134,7 @@ test("milestone: unreplicated CDC lag is a zero-loss violation, not a silent pas
 
 	dual.writeSource([{ id: "order-1", doc: { total: 100 } }]);
 	dual.replicate();
+	// A write arrives after the last replication cycle…
 	dual.writeSource([{ id: "order-2", doc: { total: 55 } }]);
 	assert.equal(dual.lag(), 1);
 
@@ -137,8 +144,10 @@ test("milestone: unreplicated CDC lag is a zero-loss violation, not a silent pas
 		dataDual: dual,
 	});
 	const result = runner.run(migrationTrail());
+	// …so the oracle sees source ≠ target and compensates instead of cutting over.
 	assert.equal(result.compensated, true);
 
+	// Catch up and rerun: zero loss proven, cutover proceeds.
 	assert.equal(dual.replicate(), 1);
 	const retry = new TrailRunner({
 		tenant: "tenant-live",
@@ -151,6 +160,7 @@ test("milestone: unreplicated CDC lag is a zero-loss violation, not a silent pas
 
 test("pooled → siloed: tenant-scoped replication ignores other tenants' rows", () => {
 	const { sourcePath, targetPath } = tempStores();
+	// Pooled source: rows for two tenants; target is tenant-a's silo.
 	const pooledWriter = createSqliteDataDualPort({ sourcePath, targetPath });
 	pooledWriter.writeSource([
 		{ id: "order-1", doc: { total: 10 }, tenant: "tenant-a" },

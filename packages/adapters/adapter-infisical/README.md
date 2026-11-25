@@ -2,7 +2,7 @@
 
 Optional `SecretsPort` adapter (kind `infisical`) for
 [Infisical](https://infisical.com). It is the first binding of the hosted CI
-relay's config service (ADR-0179 (`urn:hobo:decision:hosted-relay-stateless`, from PR #1887)):
+relay's config service (ADR-0179 (`docs/design/adr/hosted-relay-stateless.md`, from PR #1887)):
 the relay reads its configuration and secrets from one Infisical folder, signing
 in with the Vercel OIDC token it already has, so it keeps no secret to fetch its
 secrets.
@@ -73,6 +73,24 @@ take it explicitly.
 | Create | `POST /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/create> |
 | Update | `PATCH /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/update> |
 | Revoke an access token this client obtained | `POST /api/v1/auth/token/revoke` `{accessToken}` (no Authorization header) | <https://infisical.com/docs/api-reference/endpoints/universal-auth/revoke-access-token> |
+
+Agent Vault (`src/agent-vault.ts`, `client.agentVault()`), for the proxy
+HoBo runs for the owner's verbs; from Infisical's OpenAPI document
+(<https://app.infisical.com/api/docs/json>, read 2026-11-23). Every call but
+the session's own service listing uses the owner's access token; no answer
+carries a credential value, and errors carry codes, never ids or tokens:
+
+| Call | Endpoint |
+|---|---|
+| Agent Vault projects | `GET /api/v1/projects?type=agent-vault&limit=100&offset` |
+| A project's services (name, type, host pattern) | `GET /api/v1/agent-vault/services?projectId&limit=100&offset` |
+| A project's proxies | `GET /api/v1/agent-vault/proxies?projectId&limit=100&offset` |
+| Register a proxy (`service-hosts` traffic policy, 10 s poll) | `POST /api/v1/agent-vault/proxies` → `{proxy, proxyToken}` |
+| Rotate its token (earlier tokens stop, the CA changes) | `POST /api/v1/agent-vault/proxies/{proxyId}/token-auth/proxy-token` → `{proxy, proxyToken}` |
+| Its certificate authority | `GET /api/v1/agent-vault/proxies/{proxyId}/ca` → `{ca: {certificate, fingerprint}}` |
+| Start a session for named services | `POST /api/v1/agent-vault/sessions` `{projectId, services, ttl, label}` → `{session: {id, token, expiresAt}}` (never retried) |
+| What the session's services need (session token) | `GET /api/v1/agent-vault/session/services` → hosts, `credential {type, header, addedByProxy}`, placeholders |
+| End a session | `POST /api/v1/agent-vault/sessions/{sessionId}/revoke` |
 
 Provisioning a store HoBo created or was handed (`src/admin.ts`, ADR-0179
 amendment "Secret store chosen at deploy, provisioned by claim"), from

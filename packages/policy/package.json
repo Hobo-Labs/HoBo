@@ -5,8 +5,7 @@
 	"type": "module",
 	"files": [
 		"LICENSE",
-		"dist",
-		"wit"
+		"dist"
 	],
 	"exports": {
 		".": {
@@ -20,19 +19,13 @@
 		"./posture": {
 			"types": "./dist/posture/index.d.ts",
 			"default": "./dist/posture/index.js"
-		},
-		"./wit/world.wit": "./wit/world.wit"
+		}
 	},
 	"publishConfig": {
 		"access": "public"
 	},
-	"dependencies": {
-		"@bufbuild/protobuf": "2.12.1"
-	},
 	"devDependencies": {
-		"@bytecodealliance/jco": "1.24.3",
 		"@types/node": "^22.15.29",
-		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"
 	},
 	"scripts": {

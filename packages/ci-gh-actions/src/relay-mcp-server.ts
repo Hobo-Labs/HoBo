@@ -1,10 +1,21 @@
-import { create, type DescMessage, toJsonString } from "@bufbuild/protobuf";
+import {
+	create,
+	type DescMessage,
+	type JsonValue,
+	toJson,
+	toJsonString,
+} from "@bufbuild/protobuf";
 import {
 	accountOwnsJob,
 	type CiObserver,
 	type Lease,
 	type SequencedCiEvent,
 } from "@hobo/ci";
+import {
+	FleetVerdictSchema,
+	FleetViewSchema,
+	MemberRecordSchema,
+} from "@hobo/fleet";
 import {
 	McpServer,
 	ResourceTemplate,
@@ -21,7 +32,6 @@ import {
 	UnsubscribeRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
 import {
 	type RelayMcpEvent,
 	RelayMcpEventsSchema,
@@ -43,12 +53,14 @@ import {
 	retryQuarantinedDelivery,
 } from "./account-operations.js";
 import { reportRelayFailure } from "./failure-log.js";
-import type { HostedRelay } from "./hosted-relay.js";
 import {
-	createMeshNodesReader,
-	type MeshNodesReader,
-} from "./mesh-nodes-reader.js";
-import { meshNodeReportsForAccount } from "./mesh-records.js";
+	type RelayFleet,
+	relayFleetMemberList,
+	relayFleetVerdict,
+	relayFleetView,
+	relayMemberRecords,
+} from "./hosted-control.js";
+import type { HostedRelay } from "./hosted-relay.js";
 import { CURSOR_START, type CursorCodec } from "./relay-mcp-cursor.js";
 import {
 	eventView,
@@ -63,22 +75,32 @@ export const RELAY_MCP_LEASES_URI = "hobo-ci://leases";
 export const RELAY_MCP_EVENTS_URI = "hobo-ci://events";
 // public-contract: the MCP resource URI template of one lease.
 export const RELAY_MCP_LEASE_URI_TEMPLATE = "hobo-ci://leases/{leaseId}";
-// public-contract: the MCP resource URI of the relay mesh's nodes.
-export const RELAY_MCP_MESH_NODES_URI = "hobo-ci://mesh/nodes";
+// public-contract: the MCP resource URI of the members of the fleet the relay reads.
+export const RELAY_MCP_FLEET_MEMBERS_URI = "hobo-ci://fleet/members";
 
 const LEASE_ID =
 	/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const LEASE_URI = /^hobo-ci:\/\/leases\/([a-f0-9-]{36})$/;
+/** How many of the account's events one read looks through for the ones a caller asked for. */
 const EVENT_WINDOW = 500;
+/**
+ * How many reads in a row one `wait_for_events` call makes while the account
+ * has more events after the ones it looked through and none of them matched.
+ * Past that it hands the cursor back and says there is more, so that no call
+ * works without end.
+ */
 const WAIT_CATCH_UP_READS = 8;
+/** How many of a lease's latest events `get_lease` returns. */
 const LEASE_EVENTS = 20;
 const READ_SCOPE = "policy:read";
 const WRITE_SCOPE = "operations:write";
 
+/** The MCP resource URI of one lease. */
 export function relayMcpLeaseUri(leaseId: string): string {
 	return `${RELAY_MCP_LEASES_URI}/${leaseId}`;
 }
 
+/** Whether a URI names a resource this server can report changes to. */
 export function isRelayMcpResource(uri: string): boolean {
 	return (
 		uri === RELAY_MCP_LEASES_URI ||
@@ -87,29 +109,50 @@ export function isRelayMcpResource(uri: string): boolean {
 	);
 }
 
+/**
+ * What the MCP server reads and the one thing it writes itself. The reads are
+ * an observer's: they take no partition lock, so nothing an agent asks is
+ * queued in front of webhook admission.
+ */
 export type RelayMcpStore = CiObserver &
 	Pick<AccountOperationsStore, "retryQuarantinedWebhook">;
 
+/** What a tool or resource is given by the host that serves it. */
 export type RelayMcpServices = Readonly<{
 	store: RelayMcpStore;
+	/** The relay over the current configuration, for a reconciliation. */
 	relay: () => Promise<Pick<HostedRelay, "reconcile">>;
 	ready: () => Promise<boolean>;
-	meshNodes?: MeshNodesReader | undefined;
+	fleet?: RelayFleet | undefined;
 	engineId: string;
 	waitDefaultMs: number;
 	waitMaxMs: number;
 	pollMs: number;
+	/** The cursors of one account: a journal position as the caller holds it. */
 	cursors: (accountId: string) => CursorCodec;
+	/**
+	 * Take one of the account's places for a tool or resource in progress;
+	 * false when the account already holds all of them.
+	 */
 	beginCall: (accountId: string) => boolean;
 	endCall: (accountId: string) => void;
+	/**
+	 * Admit one more blocked `wait_for_events`: the account's share, then the
+	 * host's. A wait takes one of these and not a call's place: it is parked,
+	 * not working, and must not keep the account's other calls out.
+	 */
 	beginWait: (accountId: string) => boolean;
 	endWait: (accountId: string) => void;
+	/** The limits above, as `get_relay_status` reports them. */
 	accountCalls: number;
 	accountWaits: number;
 	requestMessages: number;
 	now: () => number;
+	/** Resolves after `ms`, or as soon as the signal aborts. */
 	sleep: (ms: number, signal: AbortSignal) => Promise<void>;
+	/** Hands the event loop back: resolves on a later turn, not in this one. */
 	pause: () => Promise<void>;
+	/** Present on a host that keeps sessions: resource subscriptions for one session. */
 	subscriptions?: Readonly<{
 		subscribe(accountId: string, uri: string): Promise<void>;
 		unsubscribe(uri: string): void;
@@ -118,12 +161,18 @@ export type RelayMcpServices = Readonly<{
 
 type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
+/** Who a request acts as, and the signal that ends its work early. */
 type Caller = Readonly<{
 	accountId: string;
 	scopes: readonly string[];
 	signal: AbortSignal;
 }>;
 
+/**
+ * The caller the HTTP layer authenticated for this request. It arrives as the
+ * transport's auth info: the account as its client, the credential's scopes,
+ * and the HTTP request's own abort signal beside the protocol's.
+ */
 function callerOf(extra: Extra): Caller {
 	const auth = extra.authInfo;
 	if (!auth?.clientId)
@@ -141,14 +190,18 @@ function callerOf(extra: Extra): Caller {
 
 const Structured = z.record(z.string(), z.unknown());
 
+/** The generated message a schema describes. */
 type ViewOf<Desc extends DescMessage> = Parameters<
 	typeof toJsonString<Desc>
 >[1];
 
+/** A tool result: the view as protobuf JSON, as text and as structured content. */
 function result<Desc extends DescMessage>(
 	schema: Desc,
 	message: ViewOf<Desc>,
 ): CallToolResult {
+	// Zero and empty fields are written out: a caller reads `timedOut: false`
+	// and an empty `events` list, not their absence.
 	const text = toJsonString(schema, message, { alwaysEmitImplicit: true });
 	return {
 		content: [{ type: "text", text }],
@@ -172,6 +225,20 @@ function resource<Desc extends DescMessage>(
 	};
 }
 
+type FleetMembersAnswer = Readonly<{
+	configured: boolean;
+	fleet: string;
+	members: JsonValue[];
+}>;
+
+function json(answer: FleetMembersAnswer): CallToolResult {
+	const text = JSON.stringify(answer);
+	return {
+		content: [{ type: "text", text }],
+		structuredContent: Structured.parse(JSON.parse(text)),
+	};
+}
+
 function refusal(message: string): CallToolResult {
 	return { isError: true, content: [{ type: "text", text: message }] };
 }
@@ -183,8 +250,14 @@ const BUSY =
 	"too many calls in progress for this account; retry when one has finished";
 const WAITING = "too many callers are waiting on this relay; retry shortly";
 
+/** Which of the account's shares a call takes a place in while it runs. */
 type Place = "call" | "wait";
 
+/**
+ * Run one tool or resource read for a caller holding `scope`, inside the
+ * account's share of what may run at once. However many calls one request or
+ * one account sends, only that many touch the store together.
+ */
 async function forCaller<Answer>(
 	services: RelayMcpServices,
 	scope: string,
@@ -209,6 +282,7 @@ async function forCaller<Answer>(
 	}
 }
 
+/** Run a tool; a refusal is a tool error, not a thrown one. */
 async function asTool(
 	services: RelayMcpServices,
 	name: string,
@@ -223,6 +297,7 @@ async function asTool(
 		return await forCaller(services, scope, place, caller, run);
 	} catch (error) {
 		if (error instanceof ControlError) return refusal(error.message);
+		// The caller went away; there is nobody to answer.
 		if (caller?.signal.aborted) throw error;
 		reportRelayFailure(
 			"hobo_ci_mcp_tool_failed",
@@ -233,6 +308,7 @@ async function asTool(
 	}
 }
 
+/** Read a resource for a caller holding the read scope. */
 async function asResource(
 	services: RelayMcpServices,
 	extra: Extra,
@@ -257,6 +333,7 @@ async function asResource(
 	}
 }
 
+/** Which events a caller asked for, beyond their being the account's. */
 type EventFilter = Readonly<{
 	leaseId?: string | undefined;
 	repository?: string | undefined;
@@ -274,13 +351,23 @@ function matches(event: RelayMcpEvent, filter: EventFilter): boolean {
 	);
 }
 
+/** What one read of the account's journal found, and where the next one starts. */
 type EventRead = Readonly<{
 	events: RelayMcpEvent[];
+	/**
+	 * Where the next read starts, and the position the caller's cursor stands
+	 * for: the last of the account's own events this read looked at, or the
+	 * position it was given when it saw none. It is never a position of
+	 * another account's, so it does not move while only others journal.
+	 */
 	position: number;
+	/** The account has events after the ones this read looked at or returned. */
 	more: boolean;
+	/** A read of the newest events left older ones of the account unread. */
 	truncated: boolean;
 }>;
 
+/** The position a caller's cursor stands for; a cursor not issued to it is refused. */
 function positionOf(codec: CursorCodec, cursor: string): number {
 	const position = codec.decode(cursor);
 	if (position === undefined)
@@ -291,6 +378,10 @@ function positionOf(codec: CursorCodec, cursor: string): number {
 	return position;
 }
 
+/**
+ * One read of the account's journal: the matching events after `after`, or
+ * the newest matching ones without it.
+ */
 async function readEvents(
 	services: RelayMcpServices,
 	accountId: string,
@@ -313,10 +404,15 @@ async function readEvents(
 	if (after === undefined)
 		return {
 			events: found.slice(-limit).map((entry) => entry.view),
+			// The account's newest event, matched or not; zero when it has none.
 			position: page.cursor,
 			more: false,
+			// Older events went unread: matches that did not fit, or events
+			// beyond the window that were never looked at.
 			truncated: found.length > limit || page.truncated,
 		};
+	// More matched than fit: resume after the last one returned, not after
+	// the ones left behind.
 	const last = found.length > limit ? found[limit - 1] : undefined;
 	if (last)
 		return {
@@ -333,6 +429,7 @@ async function readEvents(
 	};
 }
 
+/** A read as the caller receives it: the views, and the cursor to continue from. */
 function eventsResult(
 	services: RelayMcpServices,
 	accountId: string,
@@ -351,6 +448,22 @@ function eventsResult(
 	);
 }
 
+/**
+ * Hold the request until the account's journal has a matching event after
+ * the cursor, or the timeout passes. The journal is polled here, once, so
+ * that no client has to poll the relay.
+ *
+ * Every pass begins by handing the event loop back, so a store that answers
+ * in the same turn cannot keep webhooks, health checks, the worker or this
+ * caller's own cancellation waiting while the wait catches up. A pass reads
+ * the account's own events after the last one it looked at, through the
+ * account's index, so its cost does not depend on what other accounts have
+ * journalled. A call that has looked through `WAIT_CATCH_UP_READS` windows
+ * of the account's events without a match returns the cursor with `more`.
+ *
+ * Every position here is one of the account's own events, so the cursor
+ * handed back does not tick with other accounts' activity.
+ */
 async function waitForEvents(
 	services: RelayMcpServices,
 	caller: Caller,
@@ -364,6 +477,8 @@ async function waitForEvents(
 	const { now, sleep, pollMs, pause } = services;
 	const { accountId, signal } = caller;
 	const deadline = now() + wait.timeoutMs;
+	// Without a cursor the wait starts now: only what happens next counts, so
+	// it starts after the account's own newest event (zero when it has none).
 	let after =
 		wait.after ??
 		(await services.store.eventsSince({ accountId, limit: 1 })).cursor;
@@ -383,6 +498,9 @@ async function waitForEvents(
 			return eventsResult(services, accountId, read, false);
 		const remaining = deadline - now();
 		if (read.more) {
+			// The account has more events than this pass looked through, so
+			// this is not a timeout either: read on, within this call's share
+			// of work and time.
 			behind += 1;
 			if (behind >= WAIT_CATCH_UP_READS || remaining <= 0)
 				return eventsResult(services, accountId, read, false);
@@ -393,6 +511,7 @@ async function waitForEvents(
 	}
 }
 
+/** Newest first: a lease's creation time, then its id for a stable order. */
 function newestFirst(
 	a: Pick<Lease, "createdAt" | "id">,
 	b: Pick<Lease, "createdAt" | "id">,
@@ -407,6 +526,7 @@ async function leaseDetail(
 ) {
 	const lease = await accountLease(services.store, accountId, leaseId);
 	const codec = services.cursors(accountId);
+	// By the lease's id, so they are found whatever else the journal holds.
 	const events = await services.store.leaseEvents({
 		accountId,
 		leaseId: lease.id,
@@ -418,6 +538,8 @@ async function leaseDetail(
 	});
 }
 
+// The pattern admits what a cursor can look like; whether it is one this
+// relay issued to this account is decided when it is deciphered.
 const Cursor = z
 	.string()
 	.regex(/^(0|[A-Za-z0-9_-]{22})$/)
@@ -430,6 +552,10 @@ const Repository = z
 	.min(1)
 	.max(200)
 	.describe("A repository as owner/name; case is ignored.");
+const Label = z
+	.string()
+	.regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/)
+	.describe("A runner label, for example hobo or hobo-trunk.");
 const EventTypes = z
 	.array(z.string().regex(/^ci\.[A-Za-z]{1,60}$/))
 	.max(32)
@@ -441,23 +567,25 @@ const INSTRUCTIONS = [
 	"The HoBo CI relay: leases (a runner reserved for one GitHub Actions job), queued jobs and the journal of every change to them, for the authenticated account only.",
 	"To follow job state without polling, call wait_for_events with the cursor of your last result; it returns as soon as something changes, or with timedOut true. Start from list_events or list_leases.",
 	"On a host that keeps sessions (get_relay_status reports subscriptions: true) you can instead subscribe to hobo-ci://events, hobo-ci://leases or hobo-ci://leases/{leaseId} and read the resource when notified.",
-	"list_mesh_nodes (or the hobo-ci://mesh/nodes resource) shows the runner nodes behind the relay: which are live, their free capacity and how far each is trusted. It belongs to the relay, not to one account, and a relay with no mesh answers mesh: not-configured.",
+	"list_fleet_members (or the hobo-ci://fleet/members resource), get_fleet_view and get_fleet_verdict show the fleet of machines behind the relay as its fleet authority sees it: members and their state, live capacity, and whether new work for a label should go to the fleet. They only read; the fleet belongs to the relay, not to one account, and a relay with no fleet answers configured: false.",
 ].join(" ");
 
+/**
+ * The relay's MCP server for one transport: the tools and resources over an
+ * account's leases, queued jobs and journal. It holds no state of its own;
+ * every call reads the store as the caller the HTTP layer authenticated.
+ */
 export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 	const { store } = services;
-	const meshNodes = services.meshNodes ?? createMeshNodesReader();
-	const meshNodesFor = async (accountId: string) => {
-		const connections =
-			(await store.configuration())?.configuration?.connections ?? [];
-		return meshNodeReportsForAccount(
-			await meshNodes(),
-			new Set(
-				connections
-					.filter((entry) => entry.accountId === accountId)
-					.map((entry) => entry.repository),
-			),
-		);
+	const fleetMembers = async (): Promise<FleetMembersAnswer> => {
+		if (!services.fleet) return { configured: false, fleet: "", members: [] };
+		return {
+			configured: true,
+			fleet: services.fleet.fleetId,
+			members: relayMemberRecords(
+				await relayFleetMemberList(services.fleet),
+			).map((record) => toJson(MemberRecordSchema, record)),
+		};
 	};
 	const server = new McpServer(
 		{ name: "hobo-ci-relay", version: "1.0.0" },
@@ -684,25 +812,55 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 						accountWaits: services.accountWaits,
 						requestMessages: services.requestMessages,
 						mesh:
-							services.meshNodes === undefined
-								? "not-configured"
-								: "configured",
+							services.fleet === undefined ? "not-configured" : "configured",
 					}),
 				);
 			}),
 	);
 
 	server.registerTool(
-		"list_mesh_nodes",
+		"list_fleet_members",
 		{
-			title: "List the relay mesh's nodes",
+			title: "List the relay fleet's members",
 			description:
-				'Every node of the relay mesh as this relay sees it: its state (live, unhealthy, or lost once it stops advertising) and since when, total and free runner slots, free memory and disk, platform, labels, the share of recent jobs it delivered, and its trust level. `trusted` means its signing key is in the mesh\'s trusted set, `unverified` that the key is not, `invalid` that its signature failed (such a node is never ranked). A signature shows which key wrote an advertisement, not what software the node runs. `mesh: "not-configured"` means this relay has no mesh; that is an answer, not a failure.',
+				"Every member of the fleet behind the relay as its fleet authority recorded it: id, kind, display name, state (pending, active, suspended, locked, revoked, rejected), memberships and roles, platform, attestation tier and agent version. `configured: false` means this relay reads no fleet; that is an answer, not a failure.",
 			annotations: readOnly,
 		},
 		(extra) =>
-			asTool(services, "list_mesh_nodes", READ_SCOPE, extra, async (caller) =>
-				result(MeshNodeReportsSchema, await meshNodesFor(caller.accountId)),
+			asTool(services, "list_fleet_members", READ_SCOPE, extra, async () =>
+				json(await fleetMembers()),
+			),
+	);
+
+	server.registerTool(
+		"get_fleet_view",
+		{
+			title: "Fleet view",
+			description:
+				"The fleet's live view from its authority: each member's availability, health, free and total slots, memory, disk, labels, sandbox tiers and measured reliability, with the fleet's total capacity.",
+			annotations: readOnly,
+		},
+		(extra) =>
+			asTool(services, "get_fleet_view", READ_SCOPE, extra, async () =>
+				result(FleetViewSchema, await relayFleetView(services.fleet)),
+			),
+	);
+
+	server.registerTool(
+		"get_fleet_verdict",
+		{
+			title: "Fleet verdict",
+			description:
+				"Whether new work for one runner label should go to the fleet now: OPEN, BUSY (its members are busy with their own work; routing treats it as open), NO_CAPACITY or NO_MEMBER, with the members and free slots counted and until when the answer holds.",
+			inputSchema: { label: Label },
+			annotations: readOnly,
+		},
+		({ label }, extra) =>
+			asTool(services, "get_fleet_verdict", READ_SCOPE, extra, async () =>
+				result(
+					FleetVerdictSchema,
+					await relayFleetVerdict(services.fleet, label),
+				),
 			),
 	);
 
@@ -796,6 +954,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 				WRITE_SCOPE,
 				extra,
 				async (caller) => {
+					// The retry is fenced on the configuration it was decided under.
 					const { revision } = await configurationState(store);
 					await retryQuarantinedDelivery(
 						store,
@@ -890,22 +1049,24 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 	);
 
 	server.registerResource(
-		"mesh-nodes",
-		RELAY_MCP_MESH_NODES_URI,
+		"fleet-members",
+		RELAY_MCP_FLEET_MEMBERS_URI,
 		{
-			title: "Mesh nodes",
+			title: "Fleet members",
 			description:
-				"The relay mesh's nodes: availability, capacity and trust, with a capacity summary. The same answer as list_mesh_nodes.",
+				"The members of the fleet behind the relay, as its fleet authority recorded them. The same answer as list_fleet_members.",
 			mimeType: "application/json",
 		},
 		(uri, extra) =>
-			asResource(services, extra, async (caller) =>
-				resource(
-					uri,
-					MeshNodeReportsSchema,
-					await meshNodesFor(caller.accountId),
-				),
-			),
+			asResource(services, extra, async () => ({
+				contents: [
+					{
+						uri: uri.href,
+						mimeType: "application/json",
+						text: JSON.stringify(await fleetMembers()),
+					},
+				],
+			})),
 	);
 
 	const subscriptions = services.subscriptions;

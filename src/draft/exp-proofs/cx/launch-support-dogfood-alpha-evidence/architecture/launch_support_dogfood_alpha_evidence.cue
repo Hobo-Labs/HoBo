@@ -10,7 +10,7 @@ package architecture_evidence
 #LaunchSupportEvidenceRecord: {
 	id:              string & !=""
 	owner_project:   string & !=""
-	source:          string & =~"^urn:hobo:requirement:"
+	source:          string & =~"^docs/design/"
 	proves:          string & !=""
 	status:          #LaunchSupportEvidenceStatus
 	follow_up_title: string
@@ -29,7 +29,7 @@ package architecture_evidence
 
 #LaunchSupportDependencyRecord: {
 	owner_project:   string & !=""
-	cutline_ref:     string & =~"^urn:hobo:requirement:"
+	cutline_ref:     string & =~"^docs/design/"
 	required_for_m1: bool
 	consumes:        string & !=""
 }

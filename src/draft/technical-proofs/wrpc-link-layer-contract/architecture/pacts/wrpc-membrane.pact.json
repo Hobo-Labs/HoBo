@@ -1,0 +1,105 @@
+{
+  "consumer": { "name": "RuntimeLocalComponentCaller" },
+  "provider": { "name": "WrpcMembraneLinkLayer" },
+  "interactions": [
+    {
+      "description": "establish-link success returns negotiated wire minor",
+      "request": {
+        "method": "POST",
+        "path": "/wrpc/establish-link",
+        "body": {
+          "componentId": "api",
+          "importInterface": "wasi:keyvalue/store@1.2.0",
+          "providerId": "local-kv",
+          "exportInterface": "wasi:keyvalue/store@1.2.0",
+          "callerVersions": ["1.2.0"],
+          "providerVersions": ["1.2.0", "1.3.0"],
+          "floor": "1.2.0"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "negotiatedWire": {
+            "minor": "1.2",
+            "version": "1.2.0"
+          }
+        }
+      }
+    },
+    {
+      "description": "establish-link below-floor returns version-incompatible",
+      "request": {
+        "method": "POST",
+        "path": "/wrpc/establish-link",
+        "body": {
+          "componentId": "api",
+          "importInterface": "wasi:keyvalue/store@1.2.0",
+          "providerId": "local-kv",
+          "exportInterface": "wasi:keyvalue/store@1.2.0",
+          "callerVersions": ["1.2.0"],
+          "providerVersions": ["1.2.5"],
+          "floor": "1.3.0"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "version-incompatible",
+          "reason": "shared-minor-below-floor",
+          "phase": "link-establishment",
+          "floor": "1.3.0",
+          "sharedVersions": ["1.2.0"]
+        }
+      }
+    },
+    {
+      "description": "call on unlinked import returns no-route",
+      "request": {
+        "method": "POST",
+        "path": "/wrpc/call-import",
+        "body": {
+          "componentId": "worker",
+          "importInterface": "wasi:keyvalue/store@0.2.0",
+          "operation": "get",
+          "payload": { "key": "session" }
+        }
+      },
+      "response": {
+        "status": 404,
+        "body": { "code": "no-route" }
+      }
+    },
+    {
+      "description": "linked call returns result and link.Called evidence with deadline",
+      "request": {
+        "method": "POST",
+        "path": "/wrpc/call-import",
+        "body": {
+          "componentId": "api",
+          "importInterface": "wasi:keyvalue/store@0.2.0",
+          "operation": "get",
+          "payload": { "key": "session" },
+          "deadline": "2026-06-25T15:45:00.000Z",
+          "establishFirst": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "result": { "value": "stored:session" },
+          "linkCalled": {
+            "transport": "in-process",
+            "boundaryMode": "live",
+            "codec": "json-wit",
+            "deadline": "2026-06-25T15:45:00.000Z"
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "wrpc-membrane",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

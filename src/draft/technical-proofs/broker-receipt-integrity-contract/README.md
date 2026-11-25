@@ -13,6 +13,7 @@ evidence for tamper, replay, downgrade, expiration, and cross-boundary reuse cas
   Ed25519 key pair.
 - `verifyResolutionReceipt` parses a raw receipt at the broker/Yard handoff boundary and returns
   either an accepted receipt-derived evidence record or a structured, support-safe rejection.
+- Architecture evidence lives in `ADR.md`, `architecture/*.proto`,
   `architecture/*.cue`, and `architecture/pacts/*.pact.json`.
 
 ## Acceptance Mapping

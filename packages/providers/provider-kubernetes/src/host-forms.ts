@@ -1,3 +1,19 @@
+/**
+ * Host forms: which of this provider's already-declared compute products could
+ * host a self-managed, stateful, TCP-served data store such as PostgreSQL.
+ *
+ * Each entry names a product this package already declares (a Yard `productId`
+ * from `./slots.ts`, or an equivalence `resourceClass` from
+ * `./equivalence.ts`) and cites, facet by facet, what the vendor's own
+ * documentation says it provides or does not. Nothing here adds a product, and
+ * nothing here changes the published Capability Manifest: this is a separate,
+ * sourced-and-dated declaration read by `assessSelfHostedDataStore` in
+ * `@hobo/core`. Sources were read on 2026-11-10. A facet with no claim is left
+ * unstated on purpose and keeps the form `undetermined`.
+ *
+ * HONEST SCOPE: cited documentation, not exercised behaviour. No data store
+ * has been deployed onto any of these products from this repository.
+ */
 import { parseRegisteredHostForm, type RegisteredHostForm } from "@hobo/core";
 
 // public-contract: the cited host forms the self-host assessment reads for this provider.

@@ -3,10 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkCliDocs } from "./check-cli-docs.ts";
 import { checkCompetitorDocs } from "./check-competitor-docs.ts";
-import {
-	checkDocumentationLinks,
-	isMaintainedDocumentation,
-} from "./check-documentation-links.ts";
+import { checkDesignDocs } from "./check-design-docs.ts";
 import { reachRemedy } from "./lib/base-ref.ts";
 import { GIT_OUTPUT_MAX_BUFFER } from "./lib/git-output.ts";
 
@@ -28,6 +25,7 @@ const base =
 const staged = args.has("--staged");
 const all = args.has("--all");
 
+/** The command's output, or `undefined` when it failed. */
 function tryCapture(
 	command: string,
 	commandArgs: string[],
@@ -48,6 +46,12 @@ function splitFiles(output: string) {
 		.filter(Boolean);
 }
 
+/**
+ * A listing the linters are chosen from. A git failure (an unknown or
+ * unfetched base, a shallow clone, no repository) used to read as "no changed
+ * markdown files", so the gate skipped every linter and passed. It is an
+ * error instead.
+ */
 function listing(
 	commandArgs: string[],
 	failure: string,
@@ -82,8 +86,32 @@ function isMarkdown(file: string) {
 }
 
 function cliFiles(markdownFiles: string[]) {
+	if (markdownFiles.includes("docs/cli-verbs.md")) return undefined;
 	return markdownFiles.filter((file) => {
-		return file === "README.md" || file === "CLAUDE.md";
+		return (
+			file === "README.md" ||
+			file === "CLAUDE.md" ||
+			file.startsWith("docs/design/")
+		);
+	});
+}
+
+function designFiles(markdownFiles: string[]) {
+	const fullScanInputs = new Set([
+		"docs/design/glossary.md",
+		"docs/design/adr/index.md",
+		"docs/design/event-families.md",
+		"docs/design/traceability.md",
+	]);
+	if (markdownFiles.some((file) => fullScanInputs.has(file))) return undefined;
+	return markdownFiles.filter((file) => {
+		return (
+			file === "README.md" ||
+			file === "CLAUDE.md" ||
+			file === "docs/index.md" ||
+			file === "docs/agent-tooling.md" ||
+			file.startsWith("docs/design/")
+		);
 	});
 }
 
@@ -109,16 +137,17 @@ if (markdownFiles.length === 0) {
 }
 
 const cliTargets = cliFiles(markdownFiles);
-const documentationTargets = markdownFiles.filter(isMaintainedDocumentation);
+const designTargets = designFiles(markdownFiles);
 const cliProblems =
 	cliTargets?.length === 0
 		? []
 		: (await checkCliDocs({ root, files: cliTargets })).problems;
-const documentationProblems =
-	documentationTargets.length === 0
+const designProblems =
+	designTargets?.length === 0
 		? []
-		: (await checkDocumentationLinks({ root, files: documentationTargets }))
-				.problems;
+		: (await checkDesignDocs({ root, files: designTargets })).problems;
+// The corpus is cross-referential — one changed capture can invalidate a category
+// page or the generated matrix — so any touch re-checks the whole of it.
 const competitorProblems = competitorTouched(markdownFiles)
 	? (await checkCompetitorDocs({ root })).problems
 	: [];
@@ -127,18 +156,18 @@ console.log(
 	[
 		`lint: markdown changed=${markdownFiles.length}`,
 		`cli=${cliTargets ? cliTargets.length : "full"}`,
-		`links=${documentationTargets.length}`,
+		`design=${designTargets ? designTargets.length : "full"}`,
 		`competitors=${competitorTouched(markdownFiles) ? "full" : "skipped"}`,
 	].join(" "),
 );
 
 printProblems("cli-docs", cliProblems);
-printProblems("documentation-links", documentationProblems);
+printProblems("design-docs", designProblems);
 printProblems("competitor-docs", competitorProblems);
 
 if (
 	cliProblems.length > 0 ||
-	documentationProblems.length > 0 ||
+	designProblems.length > 0 ||
 	competitorProblems.length > 0
 ) {
 	process.exit(1);

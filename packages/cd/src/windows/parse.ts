@@ -1,3 +1,7 @@
+// The parse boundary for change-window documents (protobuf JSON, as authored
+// in files, the CLI or the control API). D10: rollback is allowed by default,
+// so a document that omits `rollbackAllowed` allows it; only an explicit
+// `false` forbids rollback during that window.
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import {
 	type ChangeWindowRecord,

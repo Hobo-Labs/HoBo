@@ -1,8 +1,10 @@
 import { capIsolatedContainerTimeoutMs } from "./container-timeout.js";
 import { lookupByJobName } from "./matrix-job-name.js";
 
+/** GitHub `timeout-minutes` for jobs where routing `reservedMinutes` can underestimate. */
 const WORKFLOW_JOB_TIMEOUT_MINUTES = new Map<string, number>([
 	["Main full gate", 20],
+	// Also checks the deps layer and runs main's secret scan (finding 154).
 	["Main workspace plan", 20],
 	["CI deps layer (pnpm)", 20],
 	["CI fabric contract guard", 20],

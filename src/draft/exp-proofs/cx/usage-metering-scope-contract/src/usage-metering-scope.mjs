@@ -85,27 +85,27 @@ export const USAGE_METERING_SCOPE = {
   },
   dependencies: [
     {
-      source: "urn:hobo:requirement:reliability-observability-cost#plan-05",
+      source: "docs/design/reliability-observability-cost.md#plan-05",
       reason: "Defines MeteringView, usage dimensions, showback, quota, and cost-signal concepts consumed by this M0 scope.",
     },
     {
-      source: "urn:hobo:requirement:data-plane#plan-11",
+      source: "docs/design/data-plane.md#plan-11",
       reason: "Defines event-log and replay behavior that metering evidence must preserve without building a new runtime.",
     },
     {
-      source: "urn:hobo:requirement:billing-launch-policy",
+      source: "docs/design/billing-launch-policy.md",
       reason: "Defines launch billing boundaries consumed as reconciliation handoff, while invoice/payment work remains out of scope.",
     },
     {
-      source: "urn:hobo:requirement:tax-currency-receipt-obligations",
+      source: "docs/design/tax-currency-receipt-obligations.md",
       reason: "Defines legal/tax boundaries that metering must not silently absorb inside M0.",
     },
     {
-      source: "urn:hobo:decision:adr-0039",
+      source: "docs/design/adr/02-identity-security.md#adr-0039",
       reason: "Separates showback and quota policy from billing-engine implementation.",
     },
     {
-      source: "urn:hobo:decision:adr-0071",
+      source: "docs/design/adr/01-architecture-core.md#adr-0071",
       reason: "Pins Dispatcher/CreditLedger cost signals as a dependency, not usage metering scope.",
     },
   ],
@@ -197,35 +197,35 @@ export const USAGE_METERING_SCOPE = {
       kind: "meter-event-fact-catalog",
       owner: "platform engineer",
       proofMode: "design-record",
-      source: "urn:hobo:requirement:usage-metering#metering-fact-classes",
+      source: "docs/design/usage-metering.md#metering-fact-classes",
       proves: "Each accepted usage fact class names owner, source event family, sensitivity, and excluded implementation scope.",
     },
     {
       kind: "usage-dimension-matrix",
       owner: "finops owner",
       proofMode: "reference-fixture",
-      source: "urn:hobo:requirement:usage-metering#usage-dimension-matrix",
+      source: "docs/design/usage-metering.md#usage-dimension-matrix",
       proves: "Showback dimensions cover tenant, project, run, resource, team, Camp, Bindle, and reporting period attribution.",
     },
     {
       kind: "reconciliation-fixture",
       owner: "billing/support operator",
       proofMode: "contract-test",
-      source: "urn:hobo:requirement:usage-metering#evidence-required-for-m1",
+      source: "docs/design/usage-metering.md#evidence-required-for-m1",
       proves: "Usage facts can reconcile into billing-policy/support evidence without generating invoices.",
     },
     {
       kind: "privacy-redaction-policy",
       owner: "security/compliance reviewer",
       proofMode: "privacy-review",
-      source: "urn:hobo:requirement:usage-metering#service-ux-security-and-support-boundaries",
+      source: "docs/design/usage-metering.md#service-ux-security-and-support-boundaries",
       proves: "Usage evidence declares retention, redaction, replay, and live-data exclusion boundaries.",
     },
     {
       kind: "support-dispute-handoff",
       owner: "billing/support operator",
       proofMode: "support-handoff",
-      source: "urn:hobo:requirement:usage-metering#owning-initiative-dependencies",
+      source: "docs/design/usage-metering.md#owning-initiative-dependencies",
       proves: "Support can trace disputed usage to fact lineage and adjustment evidence without owning billing corrections.",
     },
   ],
@@ -278,12 +278,12 @@ export function validateUsageMeteringScope(scope) {
   }
 
   const requiredSources = [
-    "urn:hobo:requirement:reliability-observability-cost#plan-05",
-    "urn:hobo:requirement:data-plane#plan-11",
-    "urn:hobo:requirement:billing-launch-policy",
-    "urn:hobo:requirement:tax-currency-receipt-obligations",
-    "urn:hobo:decision:adr-0039",
-    "urn:hobo:decision:adr-0071",
+    "docs/design/reliability-observability-cost.md#plan-05",
+    "docs/design/data-plane.md#plan-11",
+    "docs/design/billing-launch-policy.md",
+    "docs/design/tax-currency-receipt-obligations.md",
+    "docs/design/adr/02-identity-security.md#adr-0039",
+    "docs/design/adr/01-architecture-core.md#adr-0071",
   ];
   const sources = (scope.dependencies ?? []).map((dependency) => dependency.source);
   if (JSON.stringify(sources) !== JSON.stringify(requiredSources)) {

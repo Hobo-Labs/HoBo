@@ -29,9 +29,11 @@ pnpm --dir src\draft\support-debug-tools-scope-contract test
 pnpm --dir src\draft\support-debug-tools-scope-contract typecheck
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Support & Debug Tools Scope.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

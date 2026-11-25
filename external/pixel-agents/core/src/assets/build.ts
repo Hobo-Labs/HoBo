@@ -1,3 +1,10 @@
+/**
+ * Build-time asset generators — shared between Vite plugin, extension host,
+ * and future standalone backends.
+ *
+ * Reads furniture manifests and asset directories and produces
+ * catalog and index structures.
+ */
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -6,6 +13,7 @@ import type { FurnitureManifest, InheritedProps, ManifestGroup } from './manifes
 import { flattenManifest } from './manifestUtils.js';
 import type { CatalogEntry } from './types.js';
 
+// ── Furniture catalog ─────────────────────────────────────────────────────────
 
 export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
   const furnitureDir = path.join(assetsDir, 'furniture');
@@ -25,6 +33,7 @@ export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as FurnitureManifest;
 
       if (manifest.type === 'asset') {
+        // Single-asset manifest — validate required fields
         if (
           manifest.width === undefined ||
           manifest.width === null ||
@@ -56,6 +65,7 @@ export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
           groupId: manifest.id,
         });
       } else {
+        // Group manifest — flatten into individual assets
         if (!manifest.members) continue;
         const inherited: InheritedProps = {
           groupId: manifest.id,
@@ -81,11 +91,13 @@ export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
         }
       }
     } catch {
+      // skip malformed manifests
     }
   }
   return catalog;
 }
 
+// ── Asset index ───────────────────────────────────────────────────────────────
 
 export function buildAssetIndex(assetsDir: string) {
   function listSorted(subdir: string, pattern: RegExp): string[] {

@@ -1,3 +1,6 @@
+// `@hobo/cd/telemetry` — DORA, reconcile lag, CI/CD semconv spans and
+// metrics, fleet and policy gauges, the OTLP/HTTP JSON sink, alert rules and
+// SLOs (WP19, C13, D17).
 export {
 	type AlertSeverity,
 	CD_ALERT_RULES,
@@ -23,11 +26,11 @@ export {
 	type TelemetryFailureCode,
 } from "./errors.js";
 export {
+	type CampMetricSources,
 	campInventoryPoints,
-	collectFleetMetrics,
+	collectCampMetrics,
 	compliancePoints,
 	FANOUT_SLOT_STATES,
-	type FleetSources,
 	failoverCountPoints,
 	fanoutCampsPoints,
 } from "./fleet.js";

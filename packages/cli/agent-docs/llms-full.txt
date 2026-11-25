@@ -107,6 +107,13 @@ Product: hobo
 - MCP tool: `cd`
 - Capability: { port: hobo:mcp, resource: tool:cd, verb: call }
 
+### fleet
+- Role: control plane
+- Summary: Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)
+- CLI: `hobo fleet`
+- MCP tool: `fleet`
+- Capability: { port: hobo:mcp, resource: tool:fleet, verb: call }
+
 ### incident
 - Role: delivery
 - Summary: CD failure disposition: A2H handoff or sandboxed self-heal
@@ -165,7 +172,7 @@ Product: hobo
 
 ### logs
 - Role: read-only
-- Summary: Read or follow local deployment logs
+- Summary: Live-tail Camp runtime streams
 - CLI: `hobo logs`
 - MCP tool: `logs`
 - Capability: { port: hobo:mcp, resource: tool:logs, verb: call }
@@ -298,7 +305,7 @@ Product: hobo
 
 ### serve
 - Role: control plane
-- Summary: Serve the local control-plane HTTP and SSE API
+- Summary: Local control-plane HTTP+SSE for the Yard game UI
 - CLI: `hobo serve`
 - MCP tool: `serve`
 - Capability: { port: hobo:mcp, resource: tool:serve, verb: call }
@@ -312,7 +319,7 @@ Product: hobo
 
 ### derivative
 - Role: extensibility
-- Summary: Inspect a derived HoBo descriptor
+- Summary: Manage derived HoBo implementations
 - CLI: `hobo derivative`
 - MCP tool: `derivative`
 - Capability: { port: hobo:mcp, resource: tool:derivative, verb: call }

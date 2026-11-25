@@ -4,7 +4,7 @@ import {
 	createDispatcherRegistry,
 	createReservationLedger,
 	decideAndReserveDispatch,
-	decideCreditDispatch,
+	decideDispatch,
 	replayDispatchDecision,
 } from "../src/dispatcher.js";
 
@@ -92,7 +92,7 @@ describe("budget-aware dispatch properties", () => {
 							accounts,
 						},
 					};
-					const result = decideCreditDispatch({
+					const result = decideDispatch({
 						...request,
 						registry: createDispatcherRegistry(providers),
 					});
@@ -107,7 +107,7 @@ describe("budget-aware dispatch properties", () => {
 					expect(winner).toBeDefined();
 					expect(winner?.cost).toBe(Math.min(...eligible.map((c) => c.cost)));
 					expect(result.dispatchEvent.data.ledgerInput.seq).toBe(7);
-					const reversed = decideCreditDispatch({
+					const reversed = decideDispatch({
 						...request,
 						registry: createDispatcherRegistry([...providers].reverse()),
 					});
@@ -130,7 +130,7 @@ describe("budget-aware dispatch properties", () => {
 					const spentCents = 1 + (rawSpent % (capCents - 1));
 					const price = (capCents - spentCents) / 100;
 					const input = oneProvider(price, capCents / 100, spentCents / 100);
-					const result = decideCreditDispatch({
+					const result = decideDispatch({
 						...input,
 						category: "runner",
 						dispatchId: "exact-budget",
@@ -151,7 +151,7 @@ describe("budget-aware dispatch properties", () => {
 		const spent = 0.12345678901234566;
 		const cap = 0.24567901123456787;
 		const input = oneProvider(price, cap, spent);
-		const result = decideCreditDispatch({
+		const result = decideDispatch({
 			...input,
 			category: "runner",
 			dispatchId: "decimal-boundary",
@@ -175,7 +175,7 @@ describe("budget-aware dispatch properties", () => {
 			fc.property(fc.integer({ min: 1, max: 4 }), (multiple) => {
 				const price = multiple * 1e-13;
 				const input = oneProvider(price, 0, 0);
-				const result = decideCreditDispatch({
+				const result = decideDispatch({
 					...input,
 					category: "runner",
 					dispatchId: "positive-charge",
@@ -208,7 +208,7 @@ describe("budget-aware dispatch properties", () => {
 					const amount = (value: number) => Number(`${value}e-15`);
 					const input = oneProvider(amount(price), amount(cap), amount(spent));
 					const fits = spent + price * units <= cap;
-					const decision = decideCreditDispatch({
+					const decision = decideDispatch({
 						...input,
 						category: "runner",
 						dispatchId: "small-exact",
@@ -264,7 +264,7 @@ describe("budget-aware dispatch properties", () => {
 	it("does not round a slightly unaffordable price down to the cap", () => {
 		const input = oneProvider(0.2000000000001, 0.2, 0);
 		expect(
-			decideCreditDispatch({
+			decideDispatch({
 				...input,
 				category: "runner",
 				dispatchId: "over-cap",
@@ -286,7 +286,7 @@ describe("budget-aware dispatch properties", () => {
 	it("admits an exactly affordable fractional-unit charge", () => {
 		const input = oneProvider(0.2, 0.02, 0);
 		expect(
-			decideCreditDispatch({
+			decideDispatch({
 				...input,
 				category: "runner",
 				dispatchId: "fractional",
@@ -423,7 +423,7 @@ describe("budget-aware dispatch properties", () => {
 				},
 			],
 		};
-		const result = decideCreditDispatch({
+		const result = decideDispatch({
 			registry,
 			ledgerView,
 			category: "runner",

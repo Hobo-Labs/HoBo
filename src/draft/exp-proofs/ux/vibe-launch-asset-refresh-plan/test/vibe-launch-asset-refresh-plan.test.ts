@@ -22,7 +22,7 @@ test("refresh plan names every required launch-demo asset and ownership field", 
   );
   assert.equal(
     VIBE_LAUNCH_ASSET_REFRESH_PLAN.proofNotePath,
-    "urn:hobo:proof:vibe-launch-asset-refresh-plan",
+    "docs/design/proofs/vibe-launch-asset-refresh-plan/README.md",
   );
 
   for (const kind of REQUIRED_ASSET_KINDS) {

@@ -111,7 +111,7 @@ export type VibeRepresentativeA11yUsabilityChecks = {
   readonly issue: "HOBO-565";
   readonly phase: "M2";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks";
-  readonly proofPath: "urn:hobo:proof:vibe-representative-a11y-usability-checks";
+  readonly proofPath: "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md";
   readonly designRefs: readonly string[];
   readonly sourceIssues: readonly RepresentativeSourceIssue[];
   readonly quickstartFixtureRefs: readonly RepresentativeQuickstartFixtureReference[];
@@ -311,19 +311,19 @@ export const VIBE_REPRESENTATIVE_A11Y_USABILITY_CHECKS: VibeRepresentativeA11yUs
   issue: "HOBO-565",
   phase: "M2",
   packagePath: "src/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks",
-  proofPath: "urn:hobo:proof:vibe-representative-a11y-usability-checks",
+  proofPath: "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md",
   designRefs: [
-    "urn:hobo:requirement:accessibility-usability-launch-baseline",
-    "urn:hobo:requirement:workspace-onboarding-ux",
-    "urn:hobo:requirement:plan-diff-viewer",
-    "urn:hobo:requirement:deployment-dashboard-topology-explorer",
-    "urn:hobo:requirement:marketplace-ux",
-    "urn:hobo:requirement:docs-portal",
-    "urn:hobo:requirement:support-workflow",
-    "urn:hobo:requirement:publisher-portal",
-    "urn:hobo:requirement:launch-demo-golden-path",
-    "urn:hobo:proof:vibe-accessibility-usability-checklist",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/accessibility-usability-launch-baseline.md",
+    "docs/design/workspace-onboarding-ux.md",
+    "docs/design/plan-diff-viewer.md",
+    "docs/design/deployment-dashboard-topology-explorer.md",
+    "docs/design/marketplace-ux.md",
+    "docs/design/docs-portal.md",
+    "docs/design/support-workflow.md",
+    "docs/design/publisher-portal.md",
+    "docs/design/launch-demo-golden-path.md",
+    "docs/design/proofs/vibe-accessibility-usability-checklist/README.md",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   sourceIssues: REQUIRED_REPRESENTATIVE_SOURCE_ISSUES,
   quickstartFixtureRefs: QUICKSTART_FIXTURE_REFS,
@@ -442,7 +442,7 @@ export function validateVibeRepresentativeA11yUsabilityChecks(
   if (checks.packagePath !== "src/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (checks.proofPath !== "urn:hobo:proof:vibe-representative-a11y-usability-checks") {
+  if (checks.proofPath !== "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(checks.sourceIssues, REQUIRED_REPRESENTATIVE_SOURCE_ISSUES)) {

@@ -1,3 +1,21 @@
+/**
+ * The Messaging port's parse layer and tenant scoping.
+ *
+ * Two things here are worth more than their line count.
+ *
+ * **Tenant scoping is idempotent on purpose.** `tenantScopedTopicName` prefixes
+ * a topic with its tenant unless it already carries that prefix. Without the
+ * check, a name that made a round trip through the scoping function would
+ * become `t1.t1.orders` — a physically distinct topic that silently receives
+ * nothing. Both the `.` and `/` separator forms are recognised, and both are
+ * pinned, because a scoping check that knows one separator is a scoping check
+ * that double-prefixes for the other.
+ *
+ * **A delivery guarantee is never guessed.** `assertDeliverySupported` is what
+ * stops a backend that offers at-least-once from being handed an exactly-once
+ * workload; a permissive parse upstream would make that check unreachable.
+ */
+
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/json.js";
 
@@ -21,6 +39,7 @@ describe("branded id parsing", () => {
 	});
 
 	it.each(["", null, undefined, 7])("rejects the topic name %s", (value) => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => parseTopicName(value as string)).toThrow(MessagingParseError);
 	});
 });
@@ -42,6 +61,9 @@ describe("parseDeliveryGuarantee", () => {
 		undefined,
 		1,
 	])("rejects %s", (value) => {
+		// A permissive parse here would make assertDeliverySupported
+		// unreachable, since an unrecognised value never matches a
+		// capability list.
 		expect(() => parseDeliveryGuarantee(value)).toThrow(MessagingParseError);
 	});
 
@@ -66,10 +88,13 @@ describe("tenant scoping", () => {
 	});
 
 	it("does not double-prefix a dot-scoped name", () => {
+		// The bug this guard exists for: a round trip would otherwise produce
+		// t1.t1.orders, a physically distinct topic that receives nothing.
 		expect(tenantScopedTopicName("t1", "t1.orders")).toBe("t1.orders");
 	});
 
 	it("does not double-prefix a slash-scoped name", () => {
+		// A check that knows one separator double-prefixes for the other.
 		expect(tenantScopedTopicName("t1", "t1/orders")).toBe("t1/orders");
 	});
 
@@ -79,6 +104,8 @@ describe("tenant scoping", () => {
 	});
 
 	it("still prefixes a name that merely starts with the tenant text", () => {
+		// "t1x" is not tenant "t1"; without the separator the prefix check would
+		// wrongly treat it as already scoped.
 		expect(tenantScopedTopicName("t1", "t1x-orders")).toBe("t1.t1x-orders");
 	});
 
@@ -87,6 +114,7 @@ describe("tenant scoping", () => {
 	});
 
 	it.each(["", null, undefined])("rejects the tenant %s", (tenant) => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => tenantScopedTopicName(tenant as string, "orders")).toThrow(
 			MessagingParseError,
 		);
@@ -124,6 +152,8 @@ describe("parseTopicSpec", () => {
 	});
 
 	it("defaults delivery to at-least-once", () => {
+		// The safe default: a consumer that may see a duplicate is recoverable,
+		// one that silently drops a message is not.
 		expect(parseTopicSpec(topic()).delivery).toBe("at-least-once");
 	});
 
@@ -223,6 +253,7 @@ describe("parseSubscriptionSpec", () => {
 	});
 
 	it("defaults max delivery attempts rather than leaving redelivery unbounded", () => {
+		// An unbounded default means a poison message is retried forever.
 		expect(parseSubscriptionSpec(subscription()).maxDeliveryAttempts).toBe(5);
 	});
 
@@ -241,6 +272,8 @@ describe("parseSubscriptionSpec", () => {
 	});
 
 	it.each([0, -1, 1.5])("rejects the attempt limit %s", (value) => {
+		// Zero attempts is not a retry policy, it is a subscription that never
+		// delivers.
 		expect(() =>
 			parseSubscriptionSpec(subscription({ maxDeliveryAttempts: value })),
 		).toThrow(MessagingParseError);
@@ -295,6 +328,7 @@ describe("parseMessagingSpec", () => {
 	});
 
 	it("defaults the backend to local-memory", () => {
+		// So `hobo dev` works with no broker configured.
 		expect(parseMessagingSpec(spec()).backend).toBe("local-memory");
 	});
 
@@ -327,6 +361,8 @@ describe("parseMessagingSpec", () => {
 	});
 
 	it("propagates a nested parse failure rather than dropping the entry", () => {
+		// Dropping a malformed topic would produce a spec that looks valid and
+		// is missing a topic somebody declared.
 		expect(() =>
 			parseMessagingSpec(spec({ topics: [{ tenantId: "t1" }] })),
 		).toThrow(MessagingParseError);
@@ -345,6 +381,7 @@ describe("parseMessagingSpec", () => {
 });
 
 describe("assertDeliverySupported", () => {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const capabilities = {
 		deliveryGuarantees: ["at-least-once", "at-most-once"],
 	} as never;
@@ -356,6 +393,9 @@ describe("assertDeliverySupported", () => {
 	});
 
 	it("refuses an unsupported one", () => {
+		// The check that stops an at-least-once backend being handed an
+		// exactly-once workload — silently downgrading it would lose the
+		// guarantee the author asked for.
 		expect(() => assertDeliverySupported(capabilities, "exactly-once")).toThrow(
 			MessagingCapabilityError,
 		);
@@ -370,6 +410,7 @@ describe("assertDeliverySupported", () => {
 	it("refuses everything when the backend supports nothing", () => {
 		expect(() =>
 			assertDeliverySupported(
+				// SAFETY: assertion required at this I/O or test boundary.
 				{ deliveryGuarantees: [] } as never,
 				"at-least-once",
 			),

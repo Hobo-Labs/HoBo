@@ -6,7 +6,6 @@ import {
   createMockBoundaryRecorder,
   scenarioBoundaries,
 } from "../adapters/mocked-boundaries.js";
-import { decideCrewPolicy } from "./policy.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const refRoot = path.resolve(moduleDir, "..");
@@ -43,8 +42,8 @@ export const boundaryCatalog = [
     provider: "policy engine",
     protocol: "wit/json",
     pactFile: `${repoRelativeRoot}/contracts/pacts/sre-policy-engine.pact.json`,
-    providerVerification: "in-process policy evaluation",
-    mockedInSimulation: false,
+    providerVerification: "mocked provider unavailable",
+    mockedInSimulation: true,
     status: "consumer_tested",
   },
   {
@@ -181,7 +180,7 @@ export async function runCrewReferenceSimulation(options = {}) {
 
   for (const scenarioId of scenarioIds) {
     const fixture = await loadCrewReferenceFixture(scenarioId);
-    scenarios.push(runScenario(fixture, humanDecisions[scenarioId], recorder, options.policyPack));
+    scenarios.push(runScenario(fixture, humanDecisions[scenarioId], recorder));
   }
 
   return {
@@ -196,36 +195,32 @@ export async function runCrewReferenceSimulation(options = {}) {
   };
 }
 
-function runScenario(fixture, humanDecision, recorder, policyPack) {
+function runScenario(fixture, humanDecision, recorder) {
   const boundaries = scenarioBoundaries(boundaryCatalog, scenarioBoundaryIds[fixture.id]);
 
   for (const boundary of boundaries) {
     recorder.call(boundary.id, fixture.mockInteractions[boundary.id], {
       incidentId: fixture.incidentId,
       scenarioId: fixture.id,
-    }, { mocked: boundary.mocked });
+    });
   }
-  const policy = decideCrewPolicy(fixture, policyPack);
 
   if (fixture.id === "provider-degraded-api") {
-    return providerDegradedScenario(fixture, boundaries, policy);
+    return providerDegradedScenario(fixture, boundaries);
   }
   if (fixture.id === "prod-contract-skew") {
-    return contractSkewScenario(fixture, humanDecision, boundaries, policy);
+    return contractSkewScenario(fixture, humanDecision, boundaries);
   }
   if (fixture.id === "ambiguous-runaway-remediation") {
-    return runawayScenario(fixture, boundaries, policy);
+    return runawayScenario(fixture, boundaries);
   }
   if (fixture.id === "regional-dr-failover") {
-    return drFailoverScenario(fixture, boundaries, policy);
+    return drFailoverScenario(fixture, boundaries);
   }
   throw new Error(`Unknown scenario fixture: ${fixture.id}`);
 }
 
-function providerDegradedScenario(fixture, boundaries, policy) {
-  if (policy.effect !== "allow") {
-    return deniedScenario(fixture, boundaries, policy);
-  }
+function providerDegradedScenario(fixture, boundaries) {
   return scenarioResult(fixture, "resolved", boundaries, [
     event("slo.BudgetBurned", fixture.incidentId, {
       service: fixture.service,
@@ -251,7 +246,10 @@ function providerDegradedScenario(fixture, boundaries, policy) {
       action: "failover-provider",
       effect: "canary_with_auto_rollback",
     }),
-    event("policy.Decided", fixture.incidentId, policy),
+    event("policy.Decided", fixture.incidentId, {
+      decision: "allow_canary",
+      obligations: ["watch-error-budget", "rollback-on-regression"],
+    }),
     event("liveFix.CanaryStarted", fixture.incidentId, {
       targetCamp: "prod-azure-east",
       percent: 5,
@@ -275,7 +273,7 @@ function providerDegradedScenario(fixture, boundaries, policy) {
   ]);
 }
 
-function contractSkewScenario(fixture, humanDecision, boundaries, policy) {
+function contractSkewScenario(fixture, humanDecision, boundaries) {
   const baseEvents = [
     event("compat.GateFailed", fixture.incidentId, {
       producer: fixture.producer,
@@ -297,7 +295,10 @@ function contractSkewScenario(fixture, humanDecision, boundaries, policy) {
       action: "dual-publish-shim",
       effect: "require_approval",
     }),
-    event("policy.Decided", fixture.incidentId, policy),
+    event("policy.Decided", fixture.incidentId, {
+      decision: "require_approval",
+      obligations: ["on-call-ack", "operator-console-approval"],
+    }),
     event("crew.handoffRequested", fixture.incidentId, {
       to: "on-call",
       package: "contract-skew-shim-approval",
@@ -307,9 +308,6 @@ function contractSkewScenario(fixture, humanDecision, boundaries, policy) {
     }),
   ];
 
-  if (policy.effect !== "allow" && policy.effect !== "require-approval") {
-    return scenarioResult(fixture, "escalated", boundaries, baseEvents);
-  }
   if (humanDecision !== "approve") {
     return scenarioResult(fixture, "waiting_for_human_approval", boundaries, baseEvents);
   }
@@ -337,7 +335,7 @@ function contractSkewScenario(fixture, humanDecision, boundaries, policy) {
   ]);
 }
 
-function runawayScenario(fixture, boundaries, policy) {
+function runawayScenario(fixture, boundaries) {
   return scenarioResult(fixture, "escalated", boundaries, [
     event("resource.DriftDetected", fixture.incidentId, {
       resource: fixture.resource,
@@ -355,7 +353,10 @@ function runawayScenario(fixture, boundaries, policy) {
       reason: "self-caused-remediation-loop",
       cooldownMinutes: fixture.cooldownMinutes,
     }),
-    event("policy.Decided", fixture.incidentId, policy),
+    event("policy.Decided", fixture.incidentId, {
+      decision: "deny_write_escalate",
+      obligations: ["human-review", "runbook-revision"],
+    }),
     event("crew.handoffRequested", fixture.incidentId, {
       to: "on-call",
       package: "runaway-remediation-loop",
@@ -369,10 +370,7 @@ function runawayScenario(fixture, boundaries, policy) {
   ]);
 }
 
-function drFailoverScenario(fixture, boundaries, policy) {
-  if (policy.effect !== "allow") {
-    return deniedScenario(fixture, boundaries, policy);
-  }
+function drFailoverScenario(fixture, boundaries) {
   return scenarioResult(fixture, "integrity_certified", boundaries, [
     event("dr.RegionLossDetected", fixture.incidentId, {
       region: fixture.failedRegion,
@@ -393,7 +391,10 @@ function drFailoverScenario(fixture, boundaries, policy) {
       replayedEvents: fixture.replayedEvents,
       replayHash: fixture.replayHash,
     }),
-    event("policy.Decided", fixture.incidentId, policy),
+    event("policy.Decided", fixture.incidentId, {
+      decision: "allow_failover",
+      obligations: ["publish-status-page", "postmortem"],
+    }),
     event("crew.actionProposed", fixture.incidentId, {
       action: "regional-traffic-shift",
       effect: "canary_with_auto_rollback",
@@ -404,14 +405,6 @@ function drFailoverScenario(fixture, boundaries, policy) {
     event("incident.Resolved", fixture.incidentId, {
       mttrMinutes: fixture.slo.mttrMinutes,
     }),
-  ]);
-}
-
-function deniedScenario(fixture, boundaries, policy) {
-  return scenarioResult(fixture, "escalated", boundaries, [
-    event("incident.Opened", fixture.incidentId, { severity: fixture.severity, correlationId: fixture.correlationId }),
-    event("policy.Decided", fixture.incidentId, policy),
-    event("crew.handoffRequested", fixture.incidentId, { to: "on-call", package: "policy-denied-remediation" }),
   ]);
 }
 

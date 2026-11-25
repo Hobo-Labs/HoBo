@@ -1,3 +1,24 @@
+/**
+ * GitHub onboarding on the stateless hosted relay (ADR-0179 phase 5): the
+ * same OAuth session flow and installation verification as
+ * `createHostedAppOnboarding`, on the cache instead of the platform-App and
+ * session tables, and an owner bootstrap that creates nothing.
+ *
+ * - **Sessions and OAuth `state`**: `CacheGithubOAuthSessionStore`, records
+ *   named by an HMAC under the session key and sealed with a key derived
+ *   from it; `state` single-use, ten minutes; sessions fifteen.
+ * - **Installations**: an operator who proves they administer an
+ *   installation (`createGithubInstallationAdminVerifier`) gets it for a day
+ *   (`CacheVerifiedInstallations`); the relay logs it for `hobo ci` to write
+ *   into the config service, which stays the only source of configuration.
+ * - **Owner bootstrap**: the App already exists (`hobo ci` created it, into
+ *   the config service). The owner redeems the invitation the config service
+ *   holds (`HOBO_CI_BOOTSTRAP_TOKEN_SHA256`, `HOBO_CI_INVITATION_EXPIRES_AT`)
+ *   once, through a consumed marker in the cache, and gets a ten-minute owner
+ *   session that stands for the onboarding control token
+ *   (`HOBO_CI_ONBOARDING_CONTROL_TOKEN`). The routes that created an App in
+ *   the relay answer 410.
+ */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { EphemeralStatePort } from "@hobo/core";
 import { z } from "zod";
@@ -23,8 +44,11 @@ const COOKIE_TOKEN = /^[A-Za-z0-9_-]{43}$/u;
 
 export type StatelessOwnerInvitation = Readonly<{
 	accountId: string;
+	/** SHA-256 (hex) of the invitation token `hobo ci` handed the owner. */
 	tokenSha256: string;
+	/** Epoch milliseconds; an invitation without one is never accepted. */
 	expiresAt: number | undefined;
+	/** The owner's onboarding control token, which an owner session stands for. */
 	controlToken: string | undefined;
 }>;
 
@@ -39,6 +63,7 @@ export type StatelessAppOnboardingOptions = Readonly<{
 	github: OnboardingGithubPort;
 	authenticate: ControlAuthenticator;
 	owner?: StatelessOwnerInvitation | undefined;
+	/** Hears each verified installation, by id: a log line for the operator. */
 	onVerified?: (accountId: string, installationId: number) => void;
 	fetch?: typeof fetch;
 	now?: () => number;
@@ -78,6 +103,7 @@ function sameDigest(a: string, b: string): boolean {
 	);
 }
 
+/** Compose onboarding on the cache. `handle` answers its routes and returns undefined for others. */
 export function createStatelessAppOnboarding(
 	options: StatelessAppOnboardingOptions,
 ) {
@@ -101,6 +127,7 @@ export function createStatelessAppOnboarding(
 	const origin = new URL(options.publicOrigin).origin;
 	const owner = options.owner;
 
+	/** The onboarding control token, for a request carrying a live owner session. */
 	async function trustedBootstrapControl(
 		request: Request,
 	): Promise<string | undefined> {
@@ -127,6 +154,7 @@ export function createStatelessAppOnboarding(
 		vault: installations,
 		github: options.github,
 		authority: {
+			// The App is created with `hobo ci`; only installation is served here.
 			authorize: async (actor, purpose) =>
 				purpose === "install" && (await oauth.githubToken(actor)) !== undefined,
 			verifyInstallationAdmin: createGithubInstallationAdminVerifier({
@@ -159,6 +187,7 @@ export function createStatelessAppOnboarding(
 		},
 	});
 
+	/** Redeem the owner's invitation once and open a ten-minute owner session. */
 	async function redeem(request: Request): Promise<Response> {
 		const supplied = request.headers.get("origin");
 		if (supplied && supplied !== origin)
@@ -193,6 +222,7 @@ export function createStatelessAppOnboarding(
 	}
 
 	return {
+		/** Control principals, with the installations their account verified in the last day. */
 		authenticate: async (authorization: string | undefined) => {
 			const principal = await options.authenticate(authorization);
 			if (!principal) return undefined;

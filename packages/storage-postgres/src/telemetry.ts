@@ -1,3 +1,9 @@
+/**
+ * Metric emission. The shapes are structurally those of `OtelMetricPoint`
+ * and `TelemetrySink.metrics` in `@hobo/cd` (frozen ports), so a CD
+ * `TelemetrySink` can be passed straight in; this package does not import
+ * `@hobo/cd`.
+ */
 export type StoreMetricAttributes = Readonly<
 	Record<string, string | number | boolean>
 >;
@@ -15,6 +21,7 @@ export interface StoreTelemetrySink {
 	metrics(points: readonly StoreMetricPoint[]): Promise<void>;
 }
 
+/** Metric names this store emits. */
 export const STORAGE_POSTGRES_METRICS = Object.freeze({
 	commitDuration: "hobo.storage.postgres.commit.duration",
 	eventsAppended: "hobo.storage.postgres.events.appended",
@@ -28,9 +35,14 @@ export const STORAGE_POSTGRES_METRICS = Object.freeze({
 
 export interface StoreMetrics {
 	emit(points: readonly Omit<StoreMetricPoint, "atMs">[]): void;
+	/** Wait for every emission started so far (tests, graceful shutdown). */
 	flush(): Promise<void>;
 }
 
+/**
+ * Wrap a sink so a failing or slow sink can never fail or block a store
+ * operation. Emission is fire-and-forget; failures are counted, not thrown.
+ */
 export function createStoreMetrics(
 	sink: StoreTelemetrySink | undefined,
 	nowMs: () => number,

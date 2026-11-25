@@ -55,7 +55,8 @@ const baseOptions: ts.CompilerOptions = {
 	noEmit: true,
 };
 
-function overlayProgram(root: string, options: ts.CompilerOptions): ts.Program {
+/** A program as codegen builds one: through its overlay compiler host. */
+function program(root: string, options: ts.CompilerOptions): ts.Program {
 	const settings = { ...baseOptions, ...options };
 	return ts.createProgram(
 		["app.ts", "helper.ts", "test/app.test.ts", "local.d.ts"].map((file) =>
@@ -69,7 +70,7 @@ function overlayProgram(root: string, options: ts.CompilerOptions): ts.Program {
 const isSourceOf = (root: string) => (file: string) =>
 	sourceCandidate(root, file, GENERATED_ROOTS);
 
-const diagnosticMessages = (diagnostics: readonly ts.Diagnostic[]) =>
+const text = (diagnostics: readonly ts.Diagnostic[]) =>
 	diagnostics.map(
 		(diagnostic) =>
 			`${diagnostic.file?.fileName ?? "<global>"}:${diagnostic.start} TS${diagnostic.code} ${ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")}`,
@@ -77,7 +78,9 @@ const diagnosticMessages = (diagnostics: readonly ts.Diagnostic[]) =>
 
 const es2017 = { strict: true, lib: ["lib.es2017.d.ts"] };
 
-const diagnosticCases = [
+// Each row's test file is not a source, so its own errors are never reported,
+// but a global type its syntax needs and the lib lacks (TS2318) always was.
+const cases = [
 	{ name: "strict", options: { strict: true, skipLibCheck: false } },
 	{ name: "skipLibCheck", options: { strict: true, skipLibCheck: true } },
 	{ name: "no default lib", options: { strict: true, noLib: true } },
@@ -109,9 +112,10 @@ afterAll(async () => {
 	await rm(scratch, { recursive: true, force: true });
 });
 
+// Each case builds whole programs over the default lib: seconds of CPU on a busy runner.
 describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 	it.each(
-		diagnosticCases,
+		cases,
 	)("match a whole-program check filtered to sources ($name)", async ({
 		options,
 		test,
@@ -121,15 +125,16 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 			test === undefined ? {} : { "test/app.test.ts": test },
 		);
 		const isSource = isSourceOf(root);
-		const whole = overlayProgram(root, options);
+		const whole = program(root, options);
+		// What codegen reported before: check everything, then keep source and file-less diagnostics.
 		const expected = [
 			...whole.getSyntacticDiagnostics(),
 			...whole.getSemanticDiagnostics(),
 		].filter(
 			(diagnostic) => !diagnostic.file || isSource(diagnostic.file.fileName),
 		);
-		const actual = sourceDiagnostics(overlayProgram(root, options), isSource);
-		expect(diagnosticMessages(actual)).toEqual(diagnosticMessages(expected));
+		const actual = sourceDiagnostics(program(root, options), isSource);
+		expect(text(actual)).toEqual(text(expected));
 		expect(actual.length).toBeGreaterThan(0);
 		if (global)
 			expect(
@@ -141,8 +146,10 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 
 	it("never type-checks a declaration file", async () => {
 		const root = await project();
-		const real = overlayProgram(root, { strict: true, skipLibCheck: false });
+		const real = program(root, { strict: true, skipLibCheck: false });
 		const asked: (string | undefined)[] = [];
+		// Program methods are closures over the program, so a copy with one
+		// method replaced records what is asked of it.
 		const recording: ts.Program = {
 			...real,
 			getSemanticDiagnostics(file) {

@@ -1,3 +1,10 @@
+/**
+ * Auth section -> resolved, preference-ordered flows.
+ *
+ * Flow type names are the ones the Capability Manifest design already uses
+ * (docs/design/ai-native-agent-auth.md §6.1); this module only maps the
+ * manifest's structured variants onto them.
+ */
 import { authMdDocumentUrl, protectedResourceMetadataUrl } from "@hobo/auth-md";
 import type {
 	AuthFlow,

@@ -1,3 +1,9 @@
+/**
+ * Netbird management API client (self-hosted or cloud).
+ * Auth: setup key for agent enrollment; PAT / service user token for admin DNS.
+ *
+ * Endpoints follow Netbird Management HTTP API shapes (peers, setup-keys, dns).
+ */
 import {
 	cloneAsJson,
 	isJsonObject,
@@ -10,7 +16,9 @@ import {
 
 export interface NetbirdApiOptions {
 	readonly managementUrl: string;
+	/** Admin/service token for management API. */
 	readonly accessToken?: string;
+	/** Setup key for peer enrollment (agent join). */
 	readonly setupKey?: string;
 	readonly fetchImpl?: typeof fetch;
 }
@@ -38,6 +46,7 @@ export interface NetbirdDnsNameserverGroup {
 
 export interface NetbirdApiClient {
 	readonly managementUrl: string;
+	/** Register/enroll this host via setup key (returns peer identity when supported). */
 	enrollPeer(input: {
 		readonly name: string;
 		readonly setupKey?: string;
@@ -77,6 +86,7 @@ export function createNetbirdApiClient(
 			headers.authorization = `Bearer ${options.accessToken}`;
 		}
 		if (auth === "setup" && (options.setupKey || body)) {
+			// setup-key may ride in body; also send header when present
 			if (options.setupKey) {
 				headers.authorization = `Token ${options.setupKey}`;
 			}
@@ -108,6 +118,7 @@ export function createNetbirdApiClient(
 					notes: ["netbird: setupKey required for peer enrollment"],
 				};
 			}
+			// Netbird agent typically uses gRPC; HTTP management exposes setup-keys validation.
 			const res = await api(
 				"POST",
 				"/api/setup-keys/validate",
@@ -115,6 +126,7 @@ export function createNetbirdApiClient(
 				"none",
 			);
 			if (!res.ok) {
+				// Try alternate enrollment path used by some versions.
 				const alt = await api(
 					"POST",
 					"/api/peers",
@@ -160,6 +172,7 @@ export function createNetbirdApiClient(
 		async listDnsNameserverGroups() {
 			const res = await api("GET", "/api/dns/nameservers");
 			if (!res.ok) {
+				// Older path
 				const alt = await api("GET", "/api/dns/nameserver-groups");
 				if (!alt.ok) {
 					throw new Error(`netbird list dns failed (${res.status})`);
@@ -206,6 +219,7 @@ export function createNetbirdApiClient(
 			if (!res.ok) {
 				throw new Error(`netbird create setup key failed (${res.status})`);
 			}
+			// SAFETY: assertion required at this I/O or test boundary.
 			const body = res.body as { id?: string; key?: string };
 			if (!body.key || !body.id) {
 				throw new Error("netbird create setup key: missing id/key in response");
@@ -217,6 +231,7 @@ export function createNetbirdApiClient(
 
 function normalizePeer(raw: JsonValue): NetbirdPeer | null {
 	if (!raw || !isJsonObject(raw)) return null;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const o = raw as JsonObject;
 	const id = String(o.id ?? o.ID ?? "");
 	const name = String(o.name ?? o.Name ?? "");
@@ -248,13 +263,17 @@ function normalizeDnsList(raw: JsonValue): NetbirdDnsNameserverGroup[] {
 
 function normalizeDnsGroup(raw: JsonValue): NetbirdDnsNameserverGroup | null {
 	if (!raw || !isJsonObject(raw)) return null;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const o = raw as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const nameserversRaw = (o.nameservers ?? o.NameServers ?? []) as unknown[];
+	// SAFETY: assertion required at this I/O or test boundary.
 	const domains = (o.domains ?? o.Domains ?? []) as unknown[];
 	return {
 		...(isJsonString(o.id) ? { id: o.id } : undefined),
 		name: String(o.name ?? o.Name ?? "hobo"),
 		nameservers: nameserversRaw.map((ns) => {
+			// SAFETY: assertion required at this I/O or test boundary.
 			const n = ns as JsonObject;
 			return {
 				ip: String(n.ip ?? n.IP ?? ""),

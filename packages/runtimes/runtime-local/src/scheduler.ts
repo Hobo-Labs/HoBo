@@ -1,6 +1,5 @@
 import {
-	type CronExpressionSchedule,
-	type CronExpressionSpec,
+	CronExpressionUnsupportedError,
 	type CronSchedule,
 	type FiredTimer,
 	type IntervalCronSpec,
@@ -11,100 +10,51 @@ import {
 	type SchedulerPort,
 	type VirtualClock,
 } from "@hobo/core";
-import {
-	isJsonNumber,
-	isJsonObject,
-	isJsonString,
-	type JsonValue,
-} from "./json.js";
+import { isJsonNumber, isJsonObject, type JsonValue } from "./json.js";
 
-export type ScheduledJobHandler =
-	| ((fire: FiredTimer) => void)
-	| ((fire: FiredTimer) => PromiseLike<void>);
+// Local hobo:scheduler port served over the deterministic clock's cron
+// (src/clock.ts) — the D14 delegation seam. A scheduled bindle resource
+// (manifest kind `schedule`, catalog portRef `hobo:scheduler`) registers its
+// interval job through this port; fires ride the clock's `advance` loop so
+// scheduling stays deterministic and replayable.
+//
+// v1 LIMITATION (recorded decision, D14): interval-only (`IntervalCronSpec`).
+// The WIT `cron(expr)` cron-expression form fails closed
+// (`CronExpressionUnsupportedError`) — there is NO cron-expression parser in
+// the repo; adding one is a separate, flagged cost.
+
+export type ScheduledJobHandler = (fire: FiredTimer) => void;
 
 export interface LocalScheduler extends SchedulerPort {
+	/** Register an interval job: cron schedule plus a handler run per fire. */
 	registerJob(
 		scheduleId: ScheduleId,
 		spec: IntervalCronSpec,
 		onFire: ScheduledJobHandler,
 	): CronSchedule;
-	registerCronJob(
-		scheduleId: ScheduleId,
-		spec: CronExpressionSpec,
-		onFire: ScheduledJobHandler,
-	): CronExpressionSchedule;
+	/** Advance virtual time, dispatching registered job handlers on cron fires. */
 	advance(deltaMs: number): readonly FiredTimer[];
-	advanceAsync(deltaMs: number): Promise<readonly FiredTimer[]>;
+	/**
+	 * Provider export table for serving this port to components — the same
+	 * shape `CapabilityLinkTable.registerProvider` / the component host accept
+	 * (see capability/link-table.ts), keyed by the `hobo:scheduler` port token.
+	 */
 	providerExports(): SchedulerProviderExports;
 }
 
 export interface SchedulerProviderExports {
 	readonly [port: string]: {
-		readonly every: (payload: JsonValue) => {
-			readonly scheduleId: ScheduleId;
-			readonly spec: {
-				readonly tag: "every";
-				readonly val: {
-					readonly everyMs: number;
-					readonly startAtMs?: number;
-					readonly jitterMs?: number;
-				};
-			};
-		};
-		readonly cron: (payload: JsonValue) => {
-			readonly scheduleId: ScheduleId;
-			readonly spec: {
-				readonly tag: "cron";
-				readonly val: { readonly expr: string; readonly timezone: string };
-			};
-		};
+		readonly every: (payload: JsonValue) => CronSchedule;
+		readonly cron: (payload: JsonValue) => never;
 	};
 }
 
 export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 	const jobs = new Map<string, ScheduledJobHandler>();
-	let advancing = false;
-
-	function nextProviderScheduleId(): ScheduleId {
-		const registered = new Set(
-			clock
-				.trace()
-				.flatMap((entry) =>
-					entry.type === "cron.scheduled" ||
-					entry.type === "cron.expression-scheduled"
-						? [entry.scheduleId]
-						: [],
-				),
-		);
-		let sequence = 1;
-		while (registered.has(`scheduler:${sequence}`)) sequence += 1;
-		return parseScheduleId(`scheduler:${sequence}`);
-	}
-
-	function beginAdvance(): void {
-		if (advancing) throw new Error("scheduler is already advancing");
-		advancing = true;
-	}
-
-	function jobFor(fire: FiredTimer): ScheduledJobHandler | undefined {
-		return fire.kind === "cron" && fire.scheduleId !== undefined
-			? jobs.get(fire.scheduleId)
-			: undefined;
-	}
-
-	function jobFailure(fire: FiredTimer, cause: unknown): Error {
-		return new Error(`Scheduled job ${fire.fireId} failed`, { cause });
-	}
 
 	const scheduler: LocalScheduler = {
 		every(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule {
 			return clock.cron(scheduleId, spec);
-		},
-		cron(
-			scheduleId: ScheduleId,
-			spec: CronExpressionSpec,
-		): CronExpressionSchedule {
-			return clock.cronExpression(scheduleId, spec);
 		},
 
 		registerJob(
@@ -116,108 +66,42 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 			jobs.set(schedule.scheduleId, onFire);
 			return schedule;
 		},
-		registerCronJob(scheduleId, spec, onFire) {
-			const schedule = clock.cronExpression(scheduleId, spec);
-			jobs.set(schedule.scheduleId, onFire);
-			return schedule;
-		},
 
 		advance(deltaMs: number): readonly FiredTimer[] {
-			beginAdvance();
-			try {
-				const fired = clock.advance(deltaMs);
-				const failures: Error[] = [];
-				for (const fire of fired) {
-					try {
-						const result = jobFor(fire)?.(fire);
-						if (isPromiseLike(result)) {
-							void Promise.resolve(result).catch(() => {});
-							throw new TypeError(
-								"asynchronous scheduled jobs require advanceAsync",
-							);
-						}
-					} catch (error) {
-						failures.push(jobFailure(fire, error));
-					}
+			const fired = clock.advance(deltaMs);
+			for (const fire of fired) {
+				if (fire.kind !== "cron" || fire.scheduleId === undefined) {
+					continue;
 				}
-				if (failures.length > 0)
-					throw new AggregateError(failures, "Scheduled jobs failed");
-				return fired;
-			} finally {
-				advancing = false;
+				jobs.get(fire.scheduleId)?.(fire);
 			}
-		},
-
-		async advanceAsync(deltaMs: number): Promise<readonly FiredTimer[]> {
-			beginAdvance();
-			try {
-				const fired = clock.advance(deltaMs);
-				const failures: Error[] = [];
-				for (const fire of fired) {
-					try {
-						await jobFor(fire)?.(fire);
-					} catch (error) {
-						failures.push(jobFailure(fire, error));
-					}
-				}
-				if (failures.length > 0)
-					throw new AggregateError(failures, "Scheduled jobs failed");
-				return fired;
-			} finally {
-				advancing = false;
-			}
+			return fired;
 		},
 
 		providerExports() {
 			return {
 				[SCHEDULER_PORT]: {
-					every: (payload: JsonValue) => {
+					every: (payload: JsonValue): CronSchedule => {
 						const record = isJsonObject(payload) ? payload : {};
-						if (
-							Object.keys(record).some(
-								(key) => !["everyMs", "startAtMs", "jitterMs"].includes(key),
-							)
-						) {
-							throw new TypeError("invalid interval schedule fields");
-						}
-						const everyMs = record.everyMs;
-						const startAtMs = record.startAtMs;
-						const jitterMs = record.jitterMs;
+						const everyMs = record.everyMs ?? record.every_ms;
+						const startAtMs = record.startAtMs ?? record.start_at_ms;
 						if (!isJsonNumber(everyMs)) {
 							throw new TypeError("everyMs must be a number");
 						}
-						if (startAtMs !== undefined && !isJsonNumber(startAtMs)) {
-							throw new TypeError("startAtMs must be a number");
-						}
-						if (jitterMs !== undefined && !isJsonNumber(jitterMs)) {
-							throw new TypeError("jitterMs must be a number");
-						}
 						const spec = parseIntervalCronSpec({
-							everyMs,
-							...(isJsonNumber(startAtMs) ? { startAtMs } : undefined),
-							...(isJsonNumber(jitterMs) ? { jitterMs } : undefined),
+							every_ms: everyMs,
+							...(isJsonNumber(startAtMs)
+								? { start_at_ms: startAtMs }
+								: undefined),
 						});
-						const schedule = scheduler.every(nextProviderScheduleId(), spec);
-						return Object.freeze({
-							scheduleId: schedule.scheduleId,
-							spec: Object.freeze({ tag: "every" as const, val: spec }),
-						});
+						return scheduler.every(
+							parseScheduleId(String(record.scheduleId ?? "")),
+							spec,
+						);
 					},
-					cron: (payload: JsonValue) => {
-						if (!isJsonString(payload) || payload.trim().length === 0) {
-							throw new TypeError("expr must be a non-empty string");
-						}
-						const schedule = scheduler.cron(nextProviderScheduleId(), {
-							expression: payload,
-							timezone: "UTC",
-						});
-						return Object.freeze({
-							scheduleId: schedule.scheduleId,
-							spec: Object.freeze({
-								tag: "cron" as const,
-								val: Object.freeze({ expr: payload, timezone: "UTC" }),
-							}),
-						});
+					cron: (payload: JsonValue): never => {
+						const expr = isJsonObject(payload) ? payload.expr : undefined;
+						throw new CronExpressionUnsupportedError(String(expr ?? ""));
 					},
 				},
 			};
@@ -225,15 +109,4 @@ export function createLocalScheduler(clock: VirtualClock): LocalScheduler {
 	};
 
 	return Object.freeze(scheduler);
-}
-
-function isPromiseLike(
-	value: void | PromiseLike<void>,
-): value is PromiseLike<void> {
-	return (
-		value !== undefined &&
-		value !== null &&
-		Object(value) === value &&
-		value.then instanceof Function
-	);
 }

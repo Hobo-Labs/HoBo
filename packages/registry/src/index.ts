@@ -17,7 +17,6 @@ export {
 	type HeldProvider,
 	type PlannerRegistry,
 	parseRegisteredDefinitions,
-	providerRegistrationFacts,
 	type RegistrableCapability,
 	type RegistrableProvider,
 	type RegistryCatalogRow,

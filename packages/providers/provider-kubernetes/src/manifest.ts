@@ -5,13 +5,14 @@ import {
 	canonicalJson,
 	digestRef,
 	MANIFEST_SCHEMA,
-	providerTermsFor,
 	stableDigest,
 } from "@hobo/core";
 import type { InitialCapabilityPort } from "./equivalence.js";
 import { EQUIVALENCE_CLASSES } from "./equivalence.js";
 import { cloneAsJson } from "./json.js";
 
+// The schema ids are platform contract, so they live in @hobo/core and are
+// re-exported here to keep this package's public surface unchanged.
 export {
 	AUTH_SCHEMA,
 	CAPABILITIES_SCHEMA,
@@ -21,10 +22,16 @@ export {
 
 // public-contract: the provider id every published document carries.
 export const KUBERNETES_PROVIDER_ID = "@hobo/provider-kubernetes";
-export const PROVIDER_TERMS = providerTermsFor(KUBERNETES_PROVIDER_ID);
 
+// A cluster has no region list of its own: where its nodes run is a fact about
+// the infrastructure underneath it, which this provider cannot see and will not
+// guess. The published default is therefore the one honest value — the cluster
+// itself — and an operator who knows the topology passes real zone labels in.
 export const DEFAULT_REGIONS = ["in-cluster"];
 
+// A `type` alias (not an interface) so it keeps an implicit index signature
+// and stays assignable to @hobo/core's `PublishedManifestDocuments`
+// (Record<string, string>) on CapabilityManifest.published (ADR-0156).
 export type PublishedManifestDocuments = {
 	"/.well-known/capability-manifest/index.json": string;
 	"/.well-known/capability-manifest/capabilities.json": string;
@@ -32,6 +39,16 @@ export type PublishedManifestDocuments = {
 	"/.well-known/capability-manifest/cost.json": string;
 };
 
+// Declared marginal-cost facts per equivalence class — REAL public list-price
+// magnitudes (representative SKUs, declared-provider source), so min-cost
+// ranking has honest inputs. Kubernetes is the one provider in this repo whose
+// declared price is a *structural* zero rather than a transcribed one, and it
+// says so rather than inventing a number: the Kubernetes API charges nothing
+// for a Deployment. The nodes it schedules onto are billed by whoever owns the
+// cluster — EKS, GKE, a DOKS pool, or a rack — and that bill belongs to the
+// provider underneath, which HoBo already prices through that provider's own
+// facts. A nonzero figure here would double-count it, and `included: 0` keeps
+// the fact from reading as a free tier.
 // parallel-type-allowed: provider-owned pricing transcription (ADR-0129), not a protobuf message
 interface CostFact {
 	sku: string;
@@ -65,12 +82,18 @@ export function publishCapabilityManifest(
 	const providerId = input.providerId ?? KUBERNETES_PROVIDER_ID;
 	const regions = input.regions ?? DEFAULT_REGIONS;
 	const ports = input.ports ?? Object.keys(EQUIVALENCE_CLASSES);
+	// SAFETY: equivalence-class keys are the InitialCapabilityPort set.
 	const declaredPorts = ports as InitialCapabilityPort[];
 	const capabilitiesDocument = {
 		schema: CAPABILITIES_SCHEMA,
 		providerId,
 		equivalenceClasses: declaredPorts.map((port) => {
 			const mapping = EQUIVALENCE_CLASSES[port];
+			// `features` is a readonly tuple on the mapping, and a readonly array
+			// is not a `JsonValue` — spreading the mapping wholesale carries that
+			// readonly-ness into the document and the digest call rejects it.
+			// Copying is what publishing means here anyway: the document is a
+			// snapshot, not a live view of the table it was built from.
 			return {
 				class: port,
 				...mapping,
@@ -91,6 +114,13 @@ export function publishCapabilityManifest(
 			};
 		}),
 	};
+	// Kubernetes is the one provider here with real first-class workload
+	// identity: a ServiceAccount token is a projected, audience-scoped,
+	// short-lived OIDC token, which is exactly the posture published below
+	// rather than an approximation of it. The Yard broker still holds custody
+	// and hands the resolver a *locator* (`scheme://path`); `staticSecrets:
+	// false` is a parse-enforced claim about this package, which stores no
+	// material anywhere.
 	const authDocument = {
 		schema: AUTH_SCHEMA,
 		providerId,
@@ -125,6 +155,8 @@ export function publishCapabilityManifest(
 				source: {
 					type: "declared-provider",
 					documentRef: digestRef(`cost:${providerId}:${fact.sku}`),
+					// Transcribed from the vendor's public pricing page, not
+					// attested by the provider (ADR-0129 §5).
 					transcribedOn: "2026-08-19",
 				},
 			};
@@ -151,7 +183,6 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
-		terms: PROVIDER_TERMS,
 		documents,
 	};
 

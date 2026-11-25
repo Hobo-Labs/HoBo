@@ -23,13 +23,27 @@ export type MigrateOptions = Readonly<{
 	schema: SchemaName;
 	minServerMajorVersion: number;
 	now: string;
+	/** Override for tests that prove drift and schema-ahead refusals. */
 	migrations?: readonly Migration[];
 }>;
 
+/** Major version from `server_version_num` (e.g. 160015 → 16). */
 export function serverMajorVersion(serverVersionNum: number): number {
 	return Math.floor(serverVersionNum / 10_000);
 }
 
+/**
+ * Bring one schema to the newest migration this build ships.
+ *
+ * Runs in one transaction under a transaction-scoped advisory lock keyed by
+ * the schema, so concurrent starters (several `hobo serve cd` replicas)
+ * migrate exactly once and the others see the finished result. DDL is
+ * transactional in PostgreSQL: a failure leaves the schema as it was.
+ *
+ * Refuses (fail closed) when the server is older than the minimum, when an
+ * applied migration's checksum differs from the shipped one, or when the
+ * schema is newer than this build.
+ */
 export async function migrateSchema(
 	client: PgClientLike,
 	options: MigrateOptions,

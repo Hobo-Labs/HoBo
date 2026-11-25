@@ -1,3 +1,16 @@
+/**
+ * `redactClusterText` is the shared redactor (`@hobo/provider-redaction`)
+ * plus the kubeconfig's embedded blobs and an imagePullSecret's
+ * dockerconfigjson. Before the move it had its own copy, and three of its
+ * shapes backtracked on an apiserver body: the JWT shape started again at
+ * every `eyJ`, the private-key shape searched from every BEGIN for an END, and
+ * the dockerconfigjson shape from every `"auths":{` for a `}`. These pin that
+ * nothing it redacted leaks now and that it is linear.
+ *
+ * This is the fast tier: `shared-redaction.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
+ */
+
 import { KEPT_LOCATOR } from "@hobo/provider-redaction";
 import { assertRevealsNoMore } from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
@@ -23,12 +36,17 @@ describe("redactClusterText", () => {
 	});
 
 	it("now also redacts a dockerconfigjson whose closing brace was cut off", () => {
+		// Before, the shape needed a `}` and left this whole.
 		expect(
 			redactClusterText('secret {"auths": {"r": {"auth": "dXNlcjpwYXNz"'),
 		).toBe("secret {[redacted]");
 	});
 });
 
+// The same three secrets, redacted whole, by every caller of the shared
+// redactor: a JWT with a long header and signature (a generic long-run rule
+// searched first split one and left its payload), a private key, and a URL
+// with credentials.
 describe("the shared shapes, through this caller", () => {
 	const header = `eyJ${"h".repeat(53)}`;
 	const payload = "eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJyb290In0";
@@ -46,6 +64,10 @@ describe("the shared shapes, through this caller", () => {
 	});
 });
 
+// Against the redactor this caller had before (vendored under test/fixtures):
+// on generated texts full of credential shapes, separators and control
+// characters, every marker half the old one hid stays hidden, and every
+// pattern this caller adds is linear on every class and pair of classes.
 describe("against the redactor it replaced", () => {
 	const LONG = 1_000_000;
 	it("on 5k texts, hides every marker the base branch's redactor hid", () => {

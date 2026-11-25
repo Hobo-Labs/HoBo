@@ -1,3 +1,20 @@
+/**
+ * The premise of this module is stated in its own header: network membership is
+ * never sufficient alone for elevated or production access. Everything here is
+ * the machinery that enforces that, which means every test worth writing is
+ * about a refusal or an expiry.
+ *
+ * Two properties carry the weight. **Dual control** — a production cross-env
+ * grant needs an approver, and a break-glass approver must not be the person who
+ * requested it. Both are trivially defeated by an off-by-one or a missing
+ * comparison, and neither shows up on a well-formed call. **Time bounding** —
+ * every grant expires, and the expiry has to be enforced on *read*, not merely
+ * recorded at issue, or a grant stays usable forever as long as nobody
+ * re-examines it.
+ *
+ * So the tests below drive the refusals, and drive each accessor across its
+ * expiry boundary rather than trusting the `expiresAt` field to mean something.
+ */
 import { describe, expect, test } from "vitest";
 
 import { ACCESS_EVENTS } from "../src/env-isolation/events.js";
@@ -11,11 +28,11 @@ import {
 	BREAK_GLASS_TTL_SECONDS,
 	ELEVATED_CAPABILITY_TTL_SECONDS,
 } from "../src/env-isolation/types.js";
-import { isJsonString } from "../src/json.js";
 
 const TENANT = "tenant-a";
 const T0 = "2026-01-01T00:00:00.000Z";
 
+/** A clock that can be advanced between calls. */
 function clock(start = T0) {
 	let current = Date.parse(start);
 	return {
@@ -37,19 +54,20 @@ function breakGlass(now: () => string = () => T0) {
 	return new BreakGlassService({ tenant: TENANT, now });
 }
 
-function codeOf<T>(fn: () => T): string {
+function codeOf(fn: () => unknown): string {
 	try {
 		fn();
 	} catch (error) {
-		return error instanceof Error && "code" in error && isJsonString(error.code)
-			? error.code
-			: `<no code: ${String(error)}>`;
+		const code = (error as { code?: unknown }).code;
+		return typeof code === "string" ? code : `<no code: ${String(error)}>`;
 	}
 	return "<did not throw>";
 }
 
 describe("cross-env grants: issue refusals", () => {
 	test("a grant between identical classes is refused", () => {
+		// A same-class grant is not a boundary crossing; issuing one would create
+		// a real, auditable capability that grants nothing and confuses review.
 		const store = crossEnvStore();
 		expect(() =>
 			store.issue({
@@ -62,6 +80,8 @@ describe("cross-env grants: issue refusals", () => {
 	});
 
 	test("a production grant with no approver is refused under dual control", () => {
+		// This is the rule. One person must not be able to open a path into
+		// production on their own.
 		const store = crossEnvStore();
 		expect(
 			codeOf(() =>
@@ -76,6 +96,8 @@ describe("cross-env grants: issue refusals", () => {
 	});
 
 	test("an empty approver list is not an approver", () => {
+		// `[]` is what an omitted field deserialises to; reading it as satisfied
+		// would make the check trivially bypassable from the wire.
 		const store = crossEnvStore();
 		expect(
 			codeOf(() =>
@@ -104,6 +126,8 @@ describe("cross-env grants: issue refusals", () => {
 	});
 
 	test("a non-production grant needs no approver", () => {
+		// Dual control is scoped to production deliberately; requiring it
+		// everywhere would push people to work around it.
 		const store = crossEnvStore();
 		expect(() =>
 			store.issue({
@@ -116,6 +140,8 @@ describe("cross-env grants: issue refusals", () => {
 	});
 
 	test("a refused grant leaves no record behind", () => {
+		// A refusal that still emitted an event would show a granted crossing in
+		// the audit trail for something that never happened.
 		const store = crossEnvStore();
 		codeOf(() =>
 			store.issue({
@@ -159,6 +185,8 @@ describe("cross-env grants: issued shape", () => {
 	});
 
 	test("the expiry is derived from the default TTL when none is given", () => {
+		// A grant with no expiry would be a permanent standing crossing, which is
+		// exactly what the time-bound obligation exists to prevent.
 		const grant = crossEnvStore().issue({
 			fromClass: "development",
 			toClass: "staging",
@@ -184,6 +212,8 @@ describe("cross-env grants: issued shape", () => {
 	});
 
 	test("the default obligations are audit-session and time-bound", () => {
+		// These travel with the grant to whatever enforces it; dropping them
+		// would let a crossing run unrecorded.
 		expect(
 			crossEnvStore().issue({
 				fromClass: "development",
@@ -220,6 +250,8 @@ describe("cross-env grants: issued shape", () => {
 	});
 
 	test("issuing emits an event naming the classes, expiry and reason", () => {
+		// The reason is the audit trail's only account of *why* the boundary was
+		// crossed; a grant recorded without it cannot be reviewed.
 		const store = crossEnvStore();
 		store.issue({
 			fromClass: "development",
@@ -251,6 +283,9 @@ describe("cross-env grants: expiry on read", () => {
 	});
 
 	test("an expired grant reads as absent and is dropped", () => {
+		// Enforcing on read is what makes the TTL real. Returning a stale grant
+		// and leaving it to the caller to check would be a capability that never
+		// actually expires.
 		const c = clock();
 		const store = crossEnvStore(c.now);
 		const grant = store.issue({
@@ -262,6 +297,8 @@ describe("cross-env grants: expiry on read", () => {
 		});
 		c.advanceSeconds(101);
 		expect(store.getActive(grant.id)).toBeNull();
+		// Dropped from the store, so a second read cannot resurrect it even if
+		// the clock were wound back.
 		expect(store.getActive(grant.id, T0)).toBeNull();
 	});
 
@@ -283,6 +320,8 @@ describe("cross-env grants: expiry on read", () => {
 	});
 
 	test("an explicit now overrides the store clock", () => {
+		// A caller evaluating a request at a specific instant must be able to ask
+		// about that instant, not about wall time.
 		const store = crossEnvStore(() => T0);
 		const grant = store.issue({
 			fromClass: "development",
@@ -314,12 +353,15 @@ describe("cross-env grants: allows", () => {
 			reason: "r",
 			issuedBy: "alice",
 			ttlSeconds: 100,
-			...(principalIds !== undefined ? { principalIds } : undefined),
+			...(principalIds !== undefined ? { principalIds } : {}),
 		});
 		return store;
 	}
 
 	test("a grant with no principal list applies to everyone", () => {
+		// An empty list means unscoped, which is the broadest reading — pinned
+		// deliberately, because the alternative reading (nobody) would make an
+		// unscoped grant useless rather than dangerous.
 		const store = storeWith(undefined);
 		expect(
 			store.allows({
@@ -349,6 +391,9 @@ describe("cross-env grants: allows", () => {
 	});
 
 	test("the direction of the crossing matters", () => {
+		// A grant from development into staging must not authorise the reverse;
+		// treating the pair as unordered would open a path out of the more
+		// sensitive class.
 		const store = storeWith(undefined);
 		expect(
 			store.allows({
@@ -422,6 +467,8 @@ describe("cross-env grants: allows", () => {
 
 describe("break-glass: request", () => {
 	test("a request starts in the requested state with no approvers", () => {
+		// It must not be usable before approval — that is the entire point of the
+		// two-step flow.
 		const grant = breakGlass().request({
 			subject: "alice",
 			isolationClass: "production",
@@ -446,6 +493,8 @@ describe("break-glass: request", () => {
 	});
 
 	test("the four standing obligations are attached at request time", () => {
+		// They ride along from the very first record so that no later step can
+		// produce a grant that lacks them.
 		expect(
 			breakGlass().request({
 				subject: "alice",
@@ -500,6 +549,8 @@ describe("break-glass: approval refusals", () => {
 	}
 
 	test("the requester cannot approve their own request", () => {
+		// The dual-control rule. Without this comparison, break-glass is a
+		// single-party self-elevation into production.
 		const svc = breakGlass();
 		const grant = requested(svc);
 		expect(
@@ -516,6 +567,8 @@ describe("break-glass: approval refusals", () => {
 	});
 
 	test("an already-granted request cannot be approved twice", () => {
+		// A second approval would reset the expiry, silently extending an
+		// elevated session past its bound.
 		const svc = breakGlass();
 		const grant = requested(svc);
 		svc.approve({ grantId: grant.id, approver: "bob" });
@@ -587,6 +640,8 @@ describe("break-glass: approval", () => {
 	});
 
 	test("the review is due a week out, independent of the TTL", () => {
+		// The session expires in minutes; the post-incident review is a separate,
+		// longer obligation and must not inherit the short TTL.
 		const granted = approved(breakGlass(), { ttlSeconds: 60 });
 		expect(
 			Date.parse(String(granted.reviewDue)) -
@@ -600,6 +655,8 @@ describe("break-glass: approval", () => {
 	});
 
 	test("a second approver identical to the first is not double-counted", () => {
+		// Otherwise one person could satisfy a two-approver requirement by
+		// naming themselves twice.
 		const granted = approved(breakGlass(), { secondApprover: "bob" });
 		expect(granted.approvers).toEqual(["bob"]);
 	});
@@ -621,6 +678,8 @@ describe("break-glass: approval", () => {
 	});
 
 	test("the original request fields survive approval", () => {
+		// The reason and requester are the audit trail; an approval that rebuilt
+		// the record from scratch would lose them.
 		const granted = approved(breakGlass());
 		expect(granted.reason).toBe("outage");
 		expect(granted.requester).toBe("alice");
@@ -648,6 +707,8 @@ describe("break-glass: expiry and use", () => {
 	});
 
 	test("an expired grant reads as absent and is marked expired", () => {
+		// Marking rather than deleting keeps the record for the post-incident
+		// review, which is one of the four standing obligations.
 		const c = clock();
 		const { svc, id } = grantedWith(c);
 		c.advanceSeconds(101);
@@ -673,6 +734,8 @@ describe("break-glass: expiry and use", () => {
 	});
 
 	test("allows matches on both subject and isolation class", () => {
+		// A break-glass into production must not authorise the same person into
+		// a different class, nor a different person into production.
 		const c = clock();
 		const { svc } = grantedWith(c);
 		expect(
@@ -715,6 +778,7 @@ describe("break-glass: expiry and use", () => {
 	});
 
 	test("allows refuses a grant that has been reviewed", () => {
+		// Review closes the incident; a reviewed grant must not still be usable.
 		const c = clock();
 		const { svc, id } = grantedWith(c);
 		svc.markReviewed({ grantId: id, reviewer: "carol" });
@@ -763,6 +827,8 @@ describe("break-glass: review", () => {
 	});
 
 	test("reviewing an unknown grant is refused", () => {
+		// A review recorded against nothing would satisfy the post-incident
+		// obligation without anyone having looked at the actual session.
 		expect(
 			codeOf(() =>
 				breakGlass().markReviewed({ grantId: "bg_999", reviewer: "carol" }),
@@ -771,6 +837,8 @@ describe("break-glass: review", () => {
 	});
 
 	test("a request may be reviewed without ever having been approved", () => {
+		// A denied or abandoned request still needs closing out; requiring
+		// approval first would leave it pending forever.
 		const svc = breakGlass();
 		const grant = svc.request({
 			subject: "alice",
@@ -825,6 +893,8 @@ describe("both stores are tenant-scoped and clock-injected", () => {
 	});
 
 	test("the injected clock stamps issue and request times", () => {
+		// Without an injectable clock neither expiry could be tested at all, and
+		// a replay would not be reproducible.
 		const store = crossEnvStore(() => "2026-06-06T00:00:00.000Z");
 		expect(
 			store.issue({

@@ -43,7 +43,7 @@
             "Pact compatibility",
             "can-deploy"
           ],
-          "proofNote": "urn:hobo:proof:cli-migration-transcript-prototype"
+          "proofNote": "docs/design/proofs/cli-migration-transcript-prototype/README.md"
         }
       }
     }

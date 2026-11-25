@@ -1,4 +1,11 @@
+/**
+ * In-memory control-plane reference model. Provider simulators only.
+ * Drives `@hobo/bindles` parse/hash; apply/retry/destroy live in this ledger.
+ */
+
+// public-contract: property-oracle record schema id
 export const FUZZ_INVARIANT_SCHEMA = "hobo.fuzz.invariant-verdict/v1" as const;
+// public-contract: property-oracle trace schema id
 export const FUZZ_TRACE_SCHEMA = "hobo.fuzz.trace/v1" as const;
 
 export const ALL_VERBS = [
@@ -48,6 +55,7 @@ export interface ModelEvent {
 	readonly payload: Readonly<Record<string, string>>;
 }
 
+// domain-view: parsed invariant verdict; wire form is InvariantVerdict in data-models/fuzz.proto
 export interface InvariantVerdict {
 	readonly schema: typeof FUZZ_INVARIANT_SCHEMA;
 	readonly invariant: string;
@@ -167,6 +175,7 @@ export class ControlModel {
 	}
 
 	restore(raw: string): void {
+		// SAFETY: snapshots are written by serialize() using the SnapshotBlob shape.
 		const blob = JSON.parse(raw) as SnapshotBlob;
 		this.clock = blob.clock;
 		this.bindles.clear();
@@ -245,7 +254,6 @@ export class ControlModel {
 		capabilityId: string,
 		verbs: readonly Verb[],
 	): void {
-		const ownedVerbs = Object.freeze(checkedVerbs(verbs));
 		const existing = this.capabilities.get(capabilityId);
 		if (existing && existing.tenantId !== tenantId) {
 			this.tick();
@@ -253,14 +261,10 @@ export class ControlModel {
 			return;
 		}
 		this.tick();
-		this.capabilities.set(capabilityId, {
-			id: capabilityId,
-			tenantId,
-			verbs: ownedVerbs,
-		});
+		this.capabilities.set(capabilityId, { id: capabilityId, tenantId, verbs });
 		this.append(tenantId, "capability.added", {
 			capabilityId,
-			verbs: ownedVerbs.join(","),
+			verbs: verbs.join(","),
 		});
 	}
 
@@ -269,7 +273,6 @@ export class ControlModel {
 		capabilityId: string,
 		keep: readonly Verb[],
 	): void {
-		const ownedKeep = checkedVerbs(keep);
 		const cap = this.capabilities.get(capabilityId);
 		if (!cap) return;
 		if (cap.tenantId !== tenantId) {
@@ -279,7 +282,7 @@ export class ControlModel {
 		}
 		this.tick();
 		const allowed = new Set(cap.verbs);
-		cap.verbs = ownedKeep.filter((verb) => allowed.has(verb));
+		cap.verbs = keep.filter((verb) => allowed.has(verb));
 		this.append(cap.tenantId, "capability.attenuated", {
 			capabilityId,
 			verbs: cap.verbs.join(","),
@@ -410,6 +413,7 @@ export class ControlModel {
 				"no snapshot at target; rollback is a no-op",
 			);
 		}
+		// SAFETY: snapshot values are produced by serialize() in this model.
 		const blob = JSON.parse(shot) as SnapshotBlob;
 		const expected = tenantFingerprint(blob, tenantId);
 		this.restoreTenant(tenantId, blob);
@@ -592,21 +596,11 @@ function tenantFingerprint(blob: SnapshotBlob, tenantId: string): string {
 	return scratch.fingerprint(tenantId);
 }
 
-function isVerb(value: string): value is Verb {
-	return ALL_VERBS.some((verb) => verb === value);
-}
-
-function checkedVerbs(verbs: readonly Verb[]): Verb[] {
-	const owned = [...verbs];
-	if (!owned.every(isVerb)) throw new TypeError("invalid capability verb");
-	return owned;
-}
-
 function parseVerbs(raw: string | undefined): Verb[] {
-	if (raw === undefined || raw === "") return [];
-	const verbs = raw.split(",");
-	if (!verbs.every(isVerb)) throw new TypeError("invalid capability verb");
-	return verbs;
+	return (raw ?? "").split(",").filter((verb): verb is Verb =>
+		// SAFETY: ALL_VERBS is the runtime source for the Verb union.
+		(ALL_VERBS as readonly string[]).includes(verb),
+	);
 }
 
 export function verdict(

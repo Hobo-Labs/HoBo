@@ -1,16 +1,37 @@
+/**
+ * Carpet sprite cache + dual-color colorization for marching-squares autotiling.
+ *
+ * Wire format: `setCarpetSprites(sets)` receives `sets[variant][msCase]` where
+ * each entry is a 16×16 SpriteData. Marching-squares case is a 4-bit bitmask
+ * over the four tiles surrounding a junction (NW=1, NE=2, SE=4, SW=8).
+ *
+ * Dual-color: each variant is classified once at registration time by sorting
+ * unique source pixels by luminance — darkest → `mainRgb`, brightest →
+ * `accentRgb`. At render time, the base sprite is masked into two layers,
+ * each flat-colorized with the user's `color` / `accentColor`, then merged.
+ */
 
 import type { ColorValue } from '../../components/ui/types.js';
 import { CARPET_DEFAULT_ACCENT_COLOR, CARPET_DEFAULT_COLOR } from '../../constants.js';
 import { flatColorizeSprite } from '../colorize.js';
 import type { CarpetTile, SpriteData } from '../types.js';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Module state
+// ─────────────────────────────────────────────────────────────────────────────
 
+/** `carpetSets[variant][msCase] = SpriteData` — 16 marching-squares cases per variant. */
 let carpetSets: SpriteData[][] = [];
 
+/** Per-variant palette classification, computed once per `setCarpetSprites` call. */
 let carpetVariantPalettes: Array<{ mainRgb: string | null; accentRgb: string | null }> = [];
 
+/** Cache of fully-colorized + merged sprites, keyed by `${variant}:${msCase}:${paletteKey}`. */
 const carpetCache: Map<string, SpriteData> = new Map();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Register carpet sprite sheets. Invalidates the dual-color cache.
@@ -42,10 +63,12 @@ export function getCarpetVariantSprites(variant: number): SpriteData[] | undefin
   return carpetSets[variant];
 }
 
+/** Stable key for a single ColorValue used in cache and palette keys. */
 export function getCarpetColorKey(color: ColorValue): string {
   return `${color.h}|${color.s}|${color.b}|${color.c}|${color.colorize ? 1 : 0}`;
 }
 
+/** Composite key for the (main, accent) color pair used to invalidate the cache. */
 export function getCarpetPaletteKey(color: ColorValue, accentColor: ColorValue): string {
   return `${getCarpetColorKey(color)}#${getCarpetColorKey(accentColor)}`;
 }
@@ -86,6 +109,13 @@ export function getCarpetJunctionSprite(
   return getDualColorizedCarpetSprite(cacheKey, baseSprite, palette, color, accentColor);
 }
 
+/**
+ * Compute the 4-bit marching-squares case for a junction at `(jx, jy)` from the
+ * four tiles around it: NW=1, NE=2, SE=4, SW=8. Shared by the renderer
+ * (`getCarpetJunctionSprite`) and the e2e observability hook so a test asserts
+ * the real autotiling logic, not a copy. When `paletteKey` is omitted the
+ * neighbor check ignores per-tile colors (matches any carpet of `variant`).
+ */
 export function carpetJunctionCase(
   jx: number,
   jy: number,
@@ -103,7 +133,16 @@ export function carpetJunctionCase(
   return msCase;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Junction participation predicate
+// ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Returns true iff cell (col, row) is inside the grid, has a CarpetTile, the
+ * tile's variant matches, and (when paletteKey provided) the tile's palette
+ * key matches. The palette match prevents two carpets of the same variant but
+ * different colors from merging across the junction.
+ */
 function tileHasVariant(
   col: number,
   row: number,
@@ -124,7 +163,20 @@ function tileHasVariant(
   return true;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Palette classification
+// ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Scan every sprite of a variant once, collect the unique non-empty hex strings,
+ * sort by luminance ascending, and assign:
+ *   - lowest luminance  → mainRgb
+ *   - highest luminance → accentRgb
+ *
+ * Edge cases:
+ *   - 0 unique colors → { mainRgb: null, accentRgb: null }   (variant fully transparent)
+ *   - 1 unique color  → { mainRgb: color, accentRgb: color } (single-pass colorize)
+ */
 function classifyCarpetPalette(variantSprites: SpriteData[]): {
   mainRgb: string | null;
   accentRgb: string | null;
@@ -135,6 +187,7 @@ function classifyCarpetPalette(variantSprites: SpriteData[]): {
     for (const row of sprite) {
       for (const pixel of row) {
         if (pixel === '') continue;
+        // Strip optional alpha so '#RRGGBBAA' and '#RRGGBB' share a bucket.
         const rgb = pixel.length === 9 ? pixel.slice(0, 7) : pixel;
         unique.add(rgb);
       }
@@ -157,6 +210,7 @@ function classifyCarpetPalette(variantSprites: SpriteData[]): {
   };
 }
 
+/** Rec. 601 relative luminance from `#RRGGBB` (or `#RRGGBBAA`, alpha ignored). */
 function luminanceFromRgb(rgb: string): number {
   const r = parseInt(rgb.slice(1, 3), 16);
   const g = parseInt(rgb.slice(3, 5), 16);
@@ -164,7 +218,23 @@ function luminanceFromRgb(rgb: string): number {
   return 0.299 * r + 0.587 * g + 0.114 * b;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Dual-color colorization
+// ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Produce the merged main+accent colorized sprite. Memoizes per cache key.
+ *
+ * Algorithm:
+ *   1. Mask base sprite → mainSprite (only `mainRgb` pixels survive).
+ *   2. Mask base sprite → accentSprite (only `accentRgb` pixels survive).
+ *   3. flatColorizeSprite each with the user-supplied ColorValue.
+ *   4. Merge: accent over main (accent takes precedence on overlapping pixels).
+ *
+ * When mainRgb === accentRgb (variant has one color), the two masks are
+ * identical; merge collapses to a single-color result and the user's `color`
+ * is overpainted by `accentColor`.
+ */
 function getDualColorizedCarpetSprite(
   cacheKey: string,
   baseSprite: SpriteData,
@@ -190,6 +260,10 @@ function getDualColorizedCarpetSprite(
   return merged;
 }
 
+/**
+ * Return a SpriteData identical in dimensions to `sprite`, but with only the
+ * pixels whose RGB component equals `rgb` retained. Alpha is preserved.
+ */
 function maskCarpetSprite(sprite: SpriteData, rgb: string): SpriteData {
   return sprite.map((row) =>
     row.map((pixel) => {
@@ -200,6 +274,11 @@ function maskCarpetSprite(sprite: SpriteData, rgb: string): SpriteData {
   );
 }
 
+/**
+ * Merge two layers: pixel from `accent` if non-empty, else from `base`. Both
+ * layers must have identical dimensions (they always derive from the same
+ * source sprite, so this is guaranteed by construction).
+ */
 function mergeCarpetLayers(base: SpriteData, accent: SpriteData): SpriteData {
   const rows = base.length;
   const result: SpriteData = new Array(rows);

@@ -13,7 +13,6 @@ import {
 } from "@hobo/mcp";
 import { z } from "zod";
 import {
-	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
@@ -29,33 +28,45 @@ import {
 	type StoreChoiceSupport,
 } from "./mcp-store-choice.js";
 
+// The MCP stdio protocol layer for the composed `hobo-mcp` binary.
+// Newline-delimited JSON-RPC 2.0 per the MCP
+// stdio transport; no SDK dependency — the protocol subset the surface needs
+// (initialize / tools/list / tools/call / resources/list / resources/read /
+// ping) is small enough for the standard library. All verb dispatch flows
+// through the injected HoboMcpServer, which routes every call through the
+// SAME @hobo/cli command registry the CLI uses (NFR-004 parity) with
+// deny-by-default auth ahead of dispatch. With an McpStdioSession the
+// secret-capture MCP App's tools and its `ui://` resource are served beside
+// the verbs, gated by the same SVID scope; their results never hold a value.
+
 export {
 	HOBO_MCP_PROTOCOL_VERSION,
 	HOBO_MCP_SERVER_NAME,
 	HOBO_MCP_SERVER_VERSION,
 } from "./mcp-handshake.js";
 
-type JsonRpcValue =
-	| string
-	| number
-	| boolean
-	| null
-	| readonly JsonRpcValue[]
-	| { readonly [key: string]: JsonRpcValue | undefined };
-
-type CliToolArguments = { cwd?: string; camp?: string; args?: string[] };
+interface JsonRpcRequest {
+	readonly jsonrpc: "2.0";
+	readonly id?: number | string | null;
+	readonly method: string;
+	readonly params?: JsonObject;
+}
 
 export interface JsonRpcResponse {
 	readonly jsonrpc: "2.0";
 	readonly id: number | string | null;
-	readonly result?: JsonRpcValue;
+	readonly result?: unknown;
 	readonly error?: {
 		readonly code: number;
 		readonly message: string;
-		readonly data?: JsonRpcValue;
+		readonly data?: unknown;
 	};
 }
 
+// The local operator context the stdio binary runs with: the invoking user's
+// authority, scoped to exactly the derived tool surface (or the subset named
+// in HOBO_MCP_TOOLS). Same trust model as running `hobo` directly — and the
+// server still audits every decision and denies unknown tools/scopes.
 export function localOperatorAuth(
 	env: Record<string, string | undefined> = process.env,
 ): AuthContext {
@@ -89,6 +100,10 @@ export function localOperatorAuth(
 	};
 }
 
+// The per-connection state of the secret-capture MCP App (ADR-0179
+// amendment "Deploy secrets captured by an MCP App into the secret store"):
+// the app, and what the client said it supports at `initialize` (MCP Apps,
+// URL-mode elicitation). Absent, the server is the CLI verb surface only.
 export interface McpStdioSession {
 	readonly capture: SecretCaptureApp;
 	support: SecretCaptureHostSupport;
@@ -115,15 +130,18 @@ function captureAllowed(auth: AuthContext, tool: string): boolean {
 	return scopeAuthorizesCapability(auth.scope, capabilityForTool(tool));
 }
 
+// Handle one JSON-RPC message. Returns the response to write, or null for
+// notifications (which get no response per JSON-RPC 2.0).
 export async function handleMcpMessage(
 	server: HoboMcpServer,
 	auth: AuthContext,
 	raw: string,
 	session?: McpStdioSession,
 ): Promise<JsonRpcResponse | null> {
-	let parsed: JsonValue;
+	let request: JsonRpcRequest;
 	try {
-		parsed = JSON.parse(raw);
+		// SAFETY: assertion required at this I/O or test boundary.
+		request = JSON.parse(raw) as JsonRpcRequest;
 	} catch {
 		return {
 			jsonrpc: "2.0",
@@ -131,40 +149,22 @@ export async function handleMcpMessage(
 			error: { code: -32700, message: "parse error" },
 		};
 	}
-	if (
-		!isJsonObject(parsed) ||
-		parsed.jsonrpc !== "2.0" ||
-		!isJsonString(parsed.method)
-	)
-		return {
-			jsonrpc: "2.0",
-			id: null,
-			error: { code: -32600, message: "invalid request" },
-		};
-	const requestId = parsed.id;
-	if (
-		requestId !== undefined &&
-		requestId !== null &&
-		!isJsonString(requestId) &&
-		!(isJsonNumber(requestId) && Number.isFinite(requestId))
-	)
-		return {
-			jsonrpc: "2.0",
-			id: null,
-			error: { code: -32600, message: "invalid request" },
-		};
-	const id = requestId ?? null;
-	const isNotification = requestId === undefined;
-	const params = isJsonObject(parsed.params) ? parsed.params : {};
 
-	switch (parsed.method) {
+	const id = request.id ?? null;
+	const isNotification = request.id === undefined;
+
+	switch (request.method) {
 		case "initialize": {
-			const requested = isJsonString(params.protocolVersion)
-				? params.protocolVersion
-				: undefined;
+			// SAFETY: assertion required at this I/O or test boundary.
+			const requested = (request.params as { protocolVersion?: string })
+				?.protocolVersion;
 			if (session !== undefined) {
-				session.support = negotiateSecretCaptureSupport(params.capabilities);
-				session.storeSupport = negotiateStoreChoiceSupport(params.capabilities);
+				session.support = negotiateSecretCaptureSupport(
+					request.params?.capabilities,
+				);
+				session.storeSupport = negotiateStoreChoiceSupport(
+					request.params?.capabilities,
+				);
 			}
 			return {
 				jsonrpc: "2.0",
@@ -217,7 +217,7 @@ export async function handleMcpMessage(
 				},
 			};
 		case "resources/read": {
-			const uri = params.uri;
+			const uri = request.params?.uri;
 			const contents =
 				session !== undefined && isJsonString(uri)
 					? (session.capture.readResource(uri) ??
@@ -232,6 +232,11 @@ export async function handleMcpMessage(
 			return { jsonrpc: "2.0", id, result: contents };
 		}
 		case "tools/call": {
+			// SAFETY: assertion required at this I/O or test boundary.
+			const params = (request.params ?? {}) as {
+				name?: unknown;
+				arguments?: unknown;
+			};
 			if (!isJsonString(params.name)) {
 				return {
 					jsonrpc: "2.0",
@@ -263,11 +268,7 @@ export async function handleMcpMessage(
 				return { jsonrpc: "2.0", id, result: outcome };
 			}
 			if (session?.capture.handles(params.name)) {
-				const authorization = await server.authorizeCaptureTool(
-					params.name,
-					auth,
-				);
-				if (!authorization.ok)
+				if (!captureAllowed(auth, params.name))
 					return {
 						jsonrpc: "2.0",
 						id,
@@ -275,7 +276,7 @@ export async function handleMcpMessage(
 							content: [
 								{
 									type: "text",
-									text: `${authorization.code}: ${authorization.error?.message ?? "Capture authorization failed."}`,
+									text: `MCP_SCOPE_DENIED: ${params.name} is not in this caller's scope.`,
 								},
 							],
 							isError: true,
@@ -286,16 +287,31 @@ export async function handleMcpMessage(
 					isJsonObject(params.arguments) ? params.arguments : {},
 					session.support,
 				);
+				// A URL elicitation is a JSON-RPC error by design (-32042); every
+				// other outcome is a CallToolResult. Neither holds a secret value.
 				return outcome.kind === "error"
 					? { jsonrpc: "2.0", id, error: outcome.error }
 					: { jsonrpc: "2.0", id, result: outcome.result };
 			}
-			const args = isJsonObject(params.arguments) ? params.arguments : {};
-			const input: CliToolArguments = {};
-			if (isJsonString(args.cwd)) input.cwd = args.cwd;
-			if (isJsonString(args.camp)) input.camp = args.camp;
-			if (Array.isArray(args.args)) input.args = args.args.filter(isJsonString);
-			const result = await server.callTool(params.name, input, auth);
+			// SAFETY: assertion required at this I/O or test boundary.
+			const args = (params.arguments ?? {}) as {
+				cwd?: unknown;
+				camp?: unknown;
+				args?: unknown;
+			};
+			const result = await server.callTool(
+				params.name,
+				{
+					...(isJsonString(args.cwd) ? { cwd: args.cwd } : undefined),
+					...(isJsonString(args.camp) ? { camp: args.camp } : undefined),
+					...(Array.isArray(args.args)
+						? {
+								args: args.args.filter((a): a is string => isJsonString(a)),
+							}
+						: undefined),
+				},
+				auth,
+			);
 			return {
 				jsonrpc: "2.0",
 				id,
@@ -317,7 +333,7 @@ export async function handleMcpMessage(
 			return {
 				jsonrpc: "2.0",
 				id,
-				error: { code: -32601, message: `method not found: ${parsed.method}` },
+				error: { code: -32601, message: `method not found: ${request.method}` },
 			};
 	}
 }
@@ -325,6 +341,7 @@ export async function handleMcpMessage(
 /** A JSON-RPC request id (a string or a number), as the map key we keep. */
 const REQUEST_ID = z.union([z.string(), z.number()]).transform(String);
 
+// Serve newline-delimited JSON-RPC over the given streams until input ends.
 // Two-way: a tool call may send the client a request (an elicitation) and
 // wait for its answer, so each incoming request is handled without blocking
 // the reader, and a response to one of the server's requests is routed back.
@@ -457,6 +474,12 @@ export async function serveMcpStdio(options: {
 				if (requestId.success) cancelled(requestId.data);
 				continue;
 			}
+			if (
+				options.session !== undefined &&
+				isJsonObject(parsed) &&
+				parsed.method === "notifications/initialized"
+			)
+				write({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
 			const own = new Set<string>();
 			const parsedId = REQUEST_ID.safeParse(
 				isJsonObject(parsed) ? parsed.id : undefined,

@@ -1,3 +1,17 @@
+/**
+ * The wire boundary: generated protobuf types in, parsed domain types out.
+ *
+ * `data-models/rift_workspace.proto` is the schema of record, and
+ * `src/_generated/rift_workspace_pb.ts` is generated from it. The domain types
+ * in `workspace.ts` are deliberately *not* those types — they are the parsed
+ * form: a branded `WorkspaceName`, a string-literal tier, and overlay layers
+ * present only for the tier that has them. Conversion happens here, once.
+ *
+ * Keeping the mapping in one typed place is what makes the schema load-bearing
+ * rather than documentation: rename a field or drop an enum value in the proto
+ * and this file stops compiling.
+ */
+
 import { CowTier as CowTierPb } from "./_generated/rift_workspace_pb.js";
 import type { Capability, CowTier } from "./capability.js";
 import type { WorkspaceRecord } from "./workspace.js";
@@ -20,6 +34,7 @@ export function tierToWire(tier: CowTier): CowTierPb {
 	return TIER_TO_WIRE[tier];
 }
 
+/** Unknown/unspecified is not a tier we can act on, so it parses to null. */
 export function tierFromWire(tier: CowTierPb): CowTier | null {
 	if (tier === TIER_TO_WIRE.reflink) return "reflink";
 	if (tier === TIER_TO_WIRE.overlayfs) return "overlayfs";
@@ -28,6 +43,7 @@ export function tierFromWire(tier: CowTierPb): CowTier | null {
 	return null;
 }
 
+/** Field-for-field wire form of a capability probe. */
 interface CapabilityWire {
 	tier: CowTierPb;
 	available: CowTierPb[];
@@ -44,6 +60,11 @@ export function capabilityToWire(capability: Capability): CapabilityWire {
 	};
 }
 
+/**
+ * Wire form of a workspace. Absent overlay layers become empty strings because
+ * proto3 has no optional scalar presence here — the domain type keeps the
+ * distinction, the wire form does not need it.
+ */
 interface WorkspaceWire {
 	name: string;
 	path: string;

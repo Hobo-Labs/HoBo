@@ -18,7 +18,7 @@ import {
 	parseTestTopology,
 	teardownOrder,
 } from "../src/index.js";
-import { CAMP_ENV, fakeBindle, YARD_LIKE } from "./fixtures.js";
+import { fakeBindle } from "./fixtures.js";
 
 it("verifies the in-process harness consumer pact against its actual functions", async () => {
 	expect(
@@ -42,67 +42,6 @@ it("verifies the in-process harness consumer pact against its actual functions",
 		async handle(request) {
 			const body = isJsonObject(request.body) ? request.body : {};
 			try {
-				if (
-					request.method === "POST" &&
-					request.path === "/harness/deploy" &&
-					body.lane === "ephemeral-camp" &&
-					body.bindle === "demo" &&
-					isJsonString(body.stage) &&
-					isJsonObject(body.yard) &&
-					body.yard.name === YARD_LIKE.name &&
-					body.yard.providerId === YARD_LIKE.providerId
-				) {
-					const stage = body.stage;
-					const harness = createTestHarness(
-						{
-							lane: "ephemeral-camp",
-							stage,
-							yard: YARD_LIKE,
-							campDriver: {
-								async deploy() {
-									return {
-										resources: [
-											{
-												alias: "api",
-												kind: "api",
-												endpoint: `https://${stage}.example.test`,
-											},
-											{ alias: "db", kind: "data" },
-											{ alias: "cache", kind: "kv" },
-										],
-										outputs: {},
-										async destroy() {},
-									};
-								},
-							},
-						},
-						{ env: CAMP_ENV },
-					);
-					const bindle = fakeBindle();
-					const graph = await harness.deploy(bindle)();
-					try {
-						const report = graph.fidelity();
-						return {
-							status: 200,
-							body: {
-								contract: "hobo.test-harness/v1",
-								stage: graph.stage,
-								lane: graph.lane,
-								handles: ["api", "cache", "db"].map((alias) =>
-									graph.resource(alias),
-								),
-								fidelity: {
-									by_fidelity: report.byFidelity,
-									asserted_against: report.assertedAgainst,
-									prod_readiness_claimable: report.prodReadinessClaimable,
-								},
-								teardown_order: teardownOrder(parseTestTopology(bindle)),
-							},
-						};
-					} finally {
-						await harness.destroy(bindle)();
-					}
-				}
 				if (
 					request.method === "POST" &&
 					request.path === "/harness/deploy" &&

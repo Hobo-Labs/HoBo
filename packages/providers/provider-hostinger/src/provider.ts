@@ -8,7 +8,6 @@ import {
 	COST_FACTS,
 	DEFAULT_REGIONS,
 	HOSTINGER_PROVIDER_ID,
-	PROVIDER_TERMS,
 	publishCapabilityManifest,
 } from "./manifest.js";
 import { realizeResourcePlan } from "./realize.js";
@@ -101,7 +100,6 @@ export function createHostingerProvider(
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: HOSTINGER_PROVIDER_ID,
-				terms: PROVIDER_TERMS,
 				published,
 				capabilities: parseJsonObject(
 					published["/.well-known/capability-manifest/capabilities.json"] ??

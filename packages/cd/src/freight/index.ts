@@ -1,3 +1,5 @@
+// "@hobo/cd/freight" (WP1): the Freight ledger, the hobo.freight-manifest/v1
+// boundary, deterministic ids and aliases, and the D18 retention decision.
 export { ALIAS_ADJECTIVES, ALIAS_NOUNS, freightAlias } from "./alias.js";
 export {
 	createFreightLedger,

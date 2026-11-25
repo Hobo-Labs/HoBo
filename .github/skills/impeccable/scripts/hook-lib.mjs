@@ -1367,6 +1367,14 @@ function canonicalPath(p) {
   return canonical;
 }
 
+// Containment gate shared by the before-edit hook and both scan passes. A
+// session routinely touches files that belong to no project or to a
+// different one — harness scratchpad dirs under the system temp root,
+// sibling checkouts, one-off throwaway HTML — and findings against those are
+// judged with THIS project's config and DESIGN.md palette, which is never
+// right. Skip them (audit reason: outside-project). Paths are canonicalized
+// first so a symlinked root (macOS /tmp -> /private/tmp) doesn't split the
+// comparison.
 export function isScanTargetInsideProject(filePath, projectCwd) {
   if (!filePath || !projectCwd) return false;
   return isInsideProject(canonicalPath(filePath), canonicalPath(projectCwd));
@@ -1575,12 +1583,20 @@ export function shouldEmitAckForFile(filePath, config = null) {
   return Boolean(configured && configured.engine === 'html');
 }
 
-export function designSystemOptions() {
-  return {};
+export function designSystemOptions(config, detector, projectCwd) {
+  if (config?.designSystem?.enabled === false) return {};
+  if (!detector || typeof detector.loadDesignSystemForCwd !== 'function') return {};
+  try {
+    const designSystem = detector.loadDesignSystemForCwd(projectCwd);
+    return designSystem ? { designSystem } : {};
+  } catch {
+    return {};
+  }
 }
 
-export function appendDesignSystemNote(text) {
-  return text;
+export function appendDesignSystemNote(text, scanOptions) {
+  if (!text || !scanOptions?.designSystem?.mdNewerThanJson) return text;
+  return `${text}\n\n${ENVELOPE_PREFIX} DESIGN.md is newer than .impeccable/design.json. Run ${IMPECCABLE_COMMAND} document to refresh the design-system sidecar.`;
 }
 
 // The directive footer is the part of the hook output that steers model

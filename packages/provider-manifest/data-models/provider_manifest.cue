@@ -22,11 +22,6 @@ package data_models
 	description?: string
 }
 
-#ProviderTerms: {
-	url:        #HttpsUrl
-	reviewedOn: #Date
-}
-
 #SourceRef: {
 	url:       #HttpsUrl
 	checkedAt: #Date
@@ -300,7 +295,6 @@ package data_models
 #ProviderManifest: {
 	schema:        "hobo.provider-manifest/v1"
 	provider:      #ProviderIdentity
-	terms:         #ProviderTerms
 	auth?:         #AuthSection
 	capabilities?: #CapabilitySection
 	billing?:      #BillingSection

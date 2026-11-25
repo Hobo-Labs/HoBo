@@ -1,8 +1,8 @@
 # HoBo static-key escape hatch contract
 
 Independent POC for HOBO-275. It hardens the last-resort static-secret branch
-from [Plan 21](urn:hobo:requirement:authoring-resources-wiring#plan-21)
-and [ADR-0023](urn:hobo:decision:adr-0023)
+from [Plan 21](../../../../docs/design/authoring-resources-wiring.md#plan-21)
+and [ADR-0023](../../../../docs/design/adr/02-identity-security.md#adr-0023)
 without implementing the OIDC federation path, KMS adapter internals, or the
 resolution ladder covered by HOBO-222.
 
@@ -42,9 +42,11 @@ per-fetch audit and opt-in, envelope-only persistence, and no plaintext in
 events/logs/spans/training trajectories.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Static Key Escape Hatch Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

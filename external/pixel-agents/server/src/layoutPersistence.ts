@@ -48,9 +48,22 @@ export function writeLayoutToFile(layout: Record<string, unknown>): void {
 
 interface LayoutLoadResult {
   layout: Record<string, unknown>;
+  /** True when the user's saved layout was replaced by a newer bundled default */
   wasReset: boolean;
 }
 
+/**
+ * Load layout from file. Falls back to bundled default if the file is empty.
+ * Resets to the bundled default when a newer revision is bundled.
+ *
+ * Migration from VS Code workspaceState happens earlier, in
+ * adapters/vscode/migrateVsCodeState.ts (run on extension activate). By the
+ * time this is called, the file is the only source of truth.
+ *
+ * 1. If file exists → return it (reset if bundled default has a newer revision)
+ * 2. Else if defaultLayout provided → write to file, return it
+ * 3. Else → return null
+ */
 export function loadLayout(
   defaultLayout?: Record<string, unknown> | null,
 ): LayoutLoadResult | null {
@@ -78,6 +91,10 @@ export function loadLayout(
   return null;
 }
 
+/**
+ * Watch ~/.pixel-agents/layout.json for external changes (other VS Code windows).
+ * Uses hybrid fs.watch + polling (same pattern as JSONL watching).
+ */
 export function watchLayoutFile(
   onExternalChange: (layout: Record<string, unknown>) => void,
 ): LayoutWatcher {
@@ -88,11 +105,13 @@ export function watchLayoutFile(
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let disposed = false;
 
+  // Initialize lastMtime
   try {
     if (fs.existsSync(filePath)) {
       lastMtime = fs.statSync(filePath).mtimeMs;
     }
   } catch {
+    /* ignore */
   }
 
   function checkForChange(): void {
@@ -125,16 +144,20 @@ export function watchLayoutFile(
         checkForChange();
       });
       fsWatcher.on('error', (err) => {
+        // fs.watch can be unreliable on macOS (kqueue) and may hit inotify limits on Linux
         console.log(`[Pixel Agents] Layout: fs.watch error: ${err.message}`);
         fsWatcher?.close();
         fsWatcher = null;
       });
     } catch {
+      // File may not exist yet — polling will retry
     }
   }
 
+  // Start fs.watch if file exists
   startFsWatch();
 
+  // Polling backup (also starts fs.watch if file appears)
   pollTimer = setInterval(() => {
     if (disposed) return;
     if (!fsWatcher) {
@@ -146,11 +169,13 @@ export function watchLayoutFile(
   return {
     markOwnWrite(): void {
       skipNextChange = true;
+      // Update lastMtime preemptively so a near-instant poll doesn't miss the flag
       try {
         if (fs.existsSync(filePath)) {
           lastMtime = fs.statSync(filePath).mtimeMs;
         }
       } catch {
+        /* ignore */
       }
     },
     dispose(): void {

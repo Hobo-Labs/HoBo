@@ -1,3 +1,37 @@
+/**
+ * Staleness detection for Impeccable's own project artifacts: PRODUCT.md,
+ * DESIGN.md and its `.impeccable/design.json` sidecar, `.impeccable/config.json`,
+ * and persisted surface briefs.
+ *
+ * Three kinds of drift live under "out of date", and they want different
+ * handling:
+ *
+ *   1. Tool version drift. The installed skill is older than the published one.
+ *      Owned by computeUpdateDirective in context.mjs, not by this module.
+ *   2. Schema drift. An artifact was written by an older Impeccable: fields it
+ *      no longer reads, fields it now expects, files in retired locations.
+ *      Deterministic, and mostly fixable without asking anyone.
+ *   3. Truth drift. The code moved on and the document no longer describes it.
+ *      Not mechanical. `document` and `init` own the rewrite; the most this
+ *      module does is measure a proxy and name it as a proxy.
+ *
+ * Two tiers, because the boot path runs on every session:
+ *
+ *   Tier 1 (collectBootFindings) spends only what a boot already spends. It
+ *   parses markdown context.mjs has in memory, stats a bounded set of paths,
+ *   and reads the two small JSON files the boot reads anyway. No directory
+ *   walks, no git, no cross-workspace sweep.
+ *
+ *   Tier 2 (the doctor pass) is on demand and may walk, shell out to git, and
+ *   compare declared tokens against real CSS.
+ *
+ * Findings are data, not prose, so both tiers and the JSON output render the
+ * same set. Severity says what should happen, not how bad it is:
+ *
+ *   'auto'    fix it silently the next time that file is written anyway
+ *   'mention' state it once, offer the fix, carry on with the user's task
+ *   'route'   needs a specific command, so name the command and the gap
+ */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,9 +40,15 @@ import {
   PRODUCT_SCHEMA_VERSION,
   PRODUCT_DEPRECATED_SECTIONS,
   PRODUCT_V4_SECTIONS,
+  DESIGN_SIDECAR_SCHEMA_VERSION,
   readProductSchemaVersion,
+  readSidecarSchemaVersion,
 } from './artifact-schema.mjs';
 
+// Top-level keys any reader honors: `hook` and `detector` subtrees (hook-lib's
+// readConfig), `updateCheck` (context.mjs), `projectRoots` (context.mjs's
+// monorepo resolution), plus `stalenessCheck` below. `$schema` and `version`
+// are allowed as conventional metadata nobody reads.
 const KNOWN_CONFIG_KEYS = new Set([
   'hook',
   'detector',
@@ -19,6 +59,9 @@ const KNOWN_CONFIG_KEYS = new Set([
   'version',
 ]);
 
+// `detector` is a closed set, so a typo here is worth reporting. `hook` is not
+// checked: it carries runtime settings from several writers and the false
+// positive rate would outweigh the catch.
 const KNOWN_DETECTOR_KEYS = new Set([
   'ignoreRules',
   'ignoreFiles',
@@ -27,6 +70,10 @@ const KNOWN_DETECTOR_KEYS = new Set([
   'extensions',
 ]);
 
+// Evidence that a project ships a native app. Checked only to catch a
+// PRODUCT.md that says web (or says nothing, which resolves to web) on a
+// project that is plainly not: that combination silently skips the iOS and
+// Android references for the whole session.
 const NATIVE_EVIDENCE_PATHS = Object.freeze([
   { rel: 'pubspec.yaml', platform: 'adaptive', reason: 'a Flutter pubspec.yaml' },
   { rel: 'ios/Podfile', platform: 'ios', reason: 'an ios/Podfile' },
@@ -45,6 +92,12 @@ function finding({ id, artifact, filePath = null, severity, summary, fix }) {
   return { id, artifact, path: filePath, severity, summary, fix };
 }
 
+/**
+ * Every location a design sidecar may live, canonical first. Pure so that both
+ * impeccable-paths (which resolves the project root) and context.mjs (which
+ * cannot import impeccable-paths without a cycle) share one definition of
+ * where the retired locations are.
+ */
 export function designSidecarCandidatesFor(projectRoot, contextDir = projectRoot) {
   const candidates = [
     path.join(projectRoot, '.impeccable', 'design.json'),
@@ -63,6 +116,14 @@ function readJson(filePath) {
   }
 }
 
+function mtimeMs(filePath) {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
 function hasSection(markdown, heading) {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`^##\\s+${escaped}\\s*$`, 'im').test(String(markdown || ''));
@@ -76,7 +137,12 @@ function toRelative(filePath, root) {
     : filePath;
 }
 
+// ─── PRODUCT.md ────────────────────────────────────────────────────────────
 
+/**
+ * Pure: schema drift visible in a PRODUCT.md body. `productPath` is used for
+ * reporting only.
+ */
 export function checkProduct(product, productPath = 'PRODUCT.md') {
   if (!product) return [];
   const findings = [];
@@ -89,7 +155,8 @@ export function checkProduct(product, productPath = 'PRODUCT.md') {
       filePath: productPath,
       severity: 'mention',
       summary: `PRODUCT.md still carries a \`## ${heading}\` section. ${reason}`,
-      fix: 'Complete any unfinished behavior represented by the section, then remove it.',
+      fix: `Treat \`## ${heading}\` as absent for every decision this session. `
+        + 'Offer to delete the section; do not let its value influence the work either way.',
     }));
   }
 
@@ -102,7 +169,8 @@ export function checkProduct(product, productPath = 'PRODUCT.md') {
       severity: 'route',
       summary: 'PRODUCT.md has no schema stamp and none of the sections the current record adds '
         + `(${PRODUCT_V4_SECTIONS.join(', ')}), so it predates this version of the product record.`,
-      fix: 'Use the existing source and product behavior for the current work.',
+      fix: 'Offer `init`, which preserves confirmed answers and fills the gaps by interview. '
+        + 'Do not rewrite the file from inference.',
     }));
   } else if (stamped !== null && stamped < PRODUCT_SCHEMA_VERSION) {
     findings.push(finding({
@@ -111,15 +179,21 @@ export function checkProduct(product, productPath = 'PRODUCT.md') {
       filePath: productPath,
       severity: 'route',
       summary: `PRODUCT.md is stamped product-schema ${stamped}; the current record is ${PRODUCT_SCHEMA_VERSION}.`,
-      fix: 'Use the existing source and product behavior for the current work.',
+      fix: 'Offer `init` to bring the record current, preserving confirmed answers.',
     }));
   }
 
   return findings;
 }
 
+/**
+ * A project that resolves to web while carrying native build files. Bounded:
+ * a handful of stats plus one package.json read at the project root.
+ */
 export function checkNativePlatformEvidence({ projectRoot, platform, product, productPath }) {
   if (!projectRoot) return [];
+  // Only the web resolution is worth checking. An explicit native value is
+  // already honored, and an unrecognized value already gets its own warning.
   if (platform && platform !== 'web') return [];
 
   const evidence = [];
@@ -152,23 +226,82 @@ export function checkNativePlatformEvidence({ projectRoot, platform, product, pr
     severity: 'mention',
     summary: `${declared}, but the project carries ${evidence.map((entry) => entry.reason).join(' and ')}. `
       + 'Web guidance is being applied to a native codebase, and the iOS and Android references never load.',
-    fix: `Inspect the native build files and use the \`${suggested}\` platform guidance that matches the implementation.`,
+    fix: `Ask the user whether \`## Platform\` should be \`${suggested}\`. `
+      + 'If it should, write the value and load the matching native reference before designing.',
   })];
 }
 
+// ─── DESIGN.md and the design.json sidecar ─────────────────────────────────
 
-export function checkDesignSidecar({ sidecarCandidates = [], projectRoot }) {
-  return sidecarCandidates.filter((candidate) => fs.existsSync(candidate)).map((candidate) => finding({
-    id: 'design-artifact-present',
-    artifact: 'design.json',
-    filePath: toRelative(candidate, projectRoot),
-    severity: 'mention',
-    summary: `${toRelative(candidate, projectRoot)} is a design artifact prohibited by repository policy.`,
-    fix: 'Complete any unfinished behavior, then remove the artifact.',
-  }));
+/**
+ * Sidecar drift: retired location, schema version behind, or older than the
+ * DESIGN.md it extends. Costs three stats and one small JSON read.
+ *
+ * `sidecarCandidates` comes from impeccable-paths' resolver so this module
+ * stays out of the business of knowing where sidecars may live; the first
+ * entry is the canonical location.
+ */
+export function checkDesignSidecar({ designPath, sidecarCandidates = [], projectRoot }) {
+  const findings = [];
+  const canonical = sidecarCandidates[0] || null;
+  const present = sidecarCandidates.find((candidate) => fs.existsSync(candidate)) || null;
+  if (!present) return findings;
+
+  const relPresent = toRelative(present, projectRoot);
+
+  if (canonical && path.resolve(present) !== path.resolve(canonical)) {
+    findings.push(finding({
+      id: 'design-sidecar-legacy-path',
+      artifact: 'design.json',
+      filePath: relPresent,
+      severity: 'auto',
+      summary: `The design sidecar sits at ${relPresent}, a location kept only for backward compatibility.`,
+      fix: `Move it to ${toRelative(canonical, projectRoot)} the next time the sidecar is written. `
+        + 'No user decision is needed.',
+    }));
+  }
+
+  const sidecar = readJson(present);
+  const schemaVersion = readSidecarSchemaVersion(sidecar);
+  if (sidecar && (schemaVersion === null || schemaVersion < DESIGN_SIDECAR_SCHEMA_VERSION)) {
+    findings.push(finding({
+      id: 'design-sidecar-schema-outdated',
+      artifact: 'design.json',
+      filePath: relPresent,
+      severity: 'route',
+      summary: `${relPresent} is schemaVersion ${schemaVersion === null ? 'unset' : schemaVersion}; `
+        + `the current sidecar is ${DESIGN_SIDECAR_SCHEMA_VERSION}. Token primitives moved to the DESIGN.md `
+        + 'frontmatter, so the old shape carries values that are now read from two places.',
+      fix: 'Offer `document` to regenerate the sidecar. It reads the existing DESIGN.md, so no interview is needed.',
+    }));
+  }
+
+  if (designPath) {
+    const designMtime = mtimeMs(designPath);
+    const sidecarMtime = mtimeMs(present);
+    if (designMtime !== null && sidecarMtime !== null && designMtime > sidecarMtime) {
+      findings.push(finding({
+        id: 'design-sidecar-stale',
+        artifact: 'design.json',
+        filePath: relPresent,
+        severity: 'mention',
+        summary: `DESIGN.md was edited after ${relPresent} was generated, so the sidecar's ramps, `
+          + 'shadows, motion tokens, and component snippets may contradict it.',
+        fix: 'Offer `document` to refresh the sidecar, preserving DESIGN.md.',
+      }));
+    }
+  }
+
+  return findings;
 }
 
+// ─── .impeccable/config.json ───────────────────────────────────────────────
 
+/**
+ * Unrecognized keys in the shared and local configs. A key nothing reads is
+ * indistinguishable from a working setting until someone checks, which is how
+ * a singular `ignoreRule` silences nothing for months.
+ */
 export function checkConfig({ projectRoot, repoRoot }) {
   const findings = [];
   const roots = [...new Set([projectRoot, repoRoot].filter(Boolean).map((root) => path.resolve(root)))];
@@ -212,19 +345,45 @@ export function checkConfig({ projectRoot, repoRoot }) {
   return findings;
 }
 
+// ─── Surface briefs ────────────────────────────────────────────────────────
 
-export function checkSurfaceBriefs({ candidates = [] }) {
-  return candidates.map((brief) => finding({
-    id: 'surface-brief-present',
+/**
+ * A brief whose primary target no longer exists still resolves and still gets
+ * injected as authority for a surface that is gone. Route and URL targets have
+ * no file to check and are skipped.
+ */
+export function checkSurfaceBriefs({ candidates = [], projectRoot }) {
+  if (!projectRoot) return [];
+  const orphaned = [];
+  for (const brief of candidates) {
+    const target = brief?.primaryTarget;
+    if (!target || typeof target !== 'string') continue;
+    if (/^https?:\/\//i.test(target) || target.startsWith('route:')) continue;
+    if (!fs.existsSync(path.join(projectRoot, target))) orphaned.push(brief);
+  }
+  if (!orphaned.length) return [];
+  return [finding({
+    id: 'surface-brief-orphaned',
     artifact: 'surface brief',
-    filePath: brief.path || null,
+    filePath: orphaned.map((brief) => brief.path).filter(Boolean).join(', ') || null,
     severity: 'mention',
-    summary: `${brief.path || 'A surface brief'} is prohibited by repository policy.`,
-    fix: 'Complete any unfinished behavior, then remove the brief.',
-  }));
+    summary: `${orphaned.length} persisted surface brief(s) name a primary target that no longer exists: `
+      + `${orphaned.map((brief) => `${brief.path} → ${brief.primaryTarget}`).join('; ')}.`,
+    fix: 'Ask whether the surface moved (repoint the brief) or was removed (delete the brief). '
+      + 'Until then the brief is authority for a file that is gone.',
+  })];
 }
 
+// ─── Monorepo structure ────────────────────────────────────────────────────
 
+/**
+ * `projectRoots` globs that match no directory. When every pattern misses,
+ * candidate discovery returns nothing, the repo root silently becomes the
+ * active project, and no other signal fires.
+ *
+ * Takes the candidate list rather than computing it: the boot path has already
+ * paid for that walk, and this module must not pay for it twice.
+ */
 export function checkProjectRoots({ patterns = [], candidates = [], configuredIn = '.impeccable/config.json' }) {
   const positive = patterns.filter((pattern) => pattern && !String(pattern).trim().startsWith('!'));
   if (!positive.length || candidates.length) return [];
@@ -239,6 +398,12 @@ export function checkProjectRoots({ patterns = [], candidates = [], configuredIn
   })];
 }
 
+/**
+ * Workspaces that inherit the repo-root PRODUCT.md. Inheritance is a feature,
+ * not a defect, so this is reported as information for the doctor pass rather
+ * than emitted at boot: the judgment call is whether the inherited record
+ * actually describes that app.
+ */
 export function describeWorkspaceContext(candidates = []) {
   return candidates.map((candidate) => ({
     name: candidate.name,
@@ -250,7 +415,12 @@ export function describeWorkspaceContext(candidates = []) {
   }));
 }
 
+// ─── Tier 1 orchestration ──────────────────────────────────────────────────
 
+/**
+ * Everything a boot can afford. `ctx` is the loadContext result; `extras`
+ * carries values the caller already computed so nothing is recomputed here.
+ */
 export function collectBootFindings(ctx, extras = {}) {
   if (!ctx) return [];
   const projectRoot = ctx.projectRoot || process.cwd();
@@ -259,6 +429,9 @@ export function collectBootFindings(ctx, extras = {}) {
 
   return [
     ...checkProduct(ctx.product, ctx.productPath || 'PRODUCT.md'),
+    // Only checked once a PRODUCT.md exists. Without one the boot already
+    // emits NO_PRODUCT_MD and routes into init, which asks for the platform
+    // directly; a second signal saying the same thing is noise.
     ...(ctx.product
       ? checkNativePlatformEvidence({
           projectRoot,

@@ -22,18 +22,6 @@ export interface TimerOptions {
 export interface IntervalCronSpec {
 	readonly everyMs: number;
 	readonly startAtMs?: number;
-	readonly jitterMs?: number;
-}
-
-export interface CronExpressionSpec {
-	readonly expression: string;
-	readonly timezone: string;
-}
-
-export interface CronExpressionSchedule extends CronExpressionSpec {
-	readonly scheduleId: ScheduleId;
-	readonly nextFireAt: IsoInstant;
-	readonly deduped: boolean;
 }
 
 export interface ScheduledTimer {
@@ -44,6 +32,7 @@ export interface ScheduledTimer {
 	readonly deduped: boolean;
 }
 
+// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface CronSchedule {
 	readonly scheduleId: ScheduleId;
 	readonly everyMs: number;
@@ -99,14 +88,6 @@ export type ClockTraceEntry =
 			readonly scheduleId: string;
 			readonly everyMs: number;
 			readonly startAtMs: number;
-			readonly jitterMs: number;
-	  }
-	| {
-			readonly type: "cron.expression-scheduled";
-			readonly scheduleId: string;
-			readonly expression: string;
-			readonly timezone: string;
-			readonly startAtMs: number;
 	  }
 	| {
 			readonly type: "cron.fired";
@@ -153,18 +134,16 @@ export interface ClockReplayResult {
 	readonly finalNow: IsoInstant;
 }
 
+/** Read-only clock facet for timestamp queries. */
 export interface Clock {
 	now(): IsoInstant;
 	nowMs(): number;
 }
 
+/** Deterministic virtual clock port with sleep, cron, and advance. */
 export interface VirtualClock extends Clock {
 	sleep(runId: RunId, delayMs: number, options: TimerOptions): ScheduledTimer;
 	cron(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule;
-	cronExpression(
-		scheduleId: ScheduleId,
-		spec: CronExpressionSpec,
-	): CronExpressionSchedule;
 	advance(deltaMs: number): readonly FiredTimer[];
 	trace(): readonly ClockTraceEntry[];
 }
@@ -191,18 +170,22 @@ export class NondeterministicClockError extends Error {
 }
 
 export function parseIsoInstant(value: string): IsoInstant {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return isoTimestamp(value, "instant", ClockParseError) as IsoInstant;
 }
 
 export function parseTimerId(value: string): TimerId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "timerId", ClockParseError) as TimerId;
 }
 
 export function parseScheduleId(value: string): ScheduleId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "scheduleId", ClockParseError) as ScheduleId;
 }
 
 export function parseFireId(value: string): FireId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "fireId", ClockParseError) as FireId;
 }
 

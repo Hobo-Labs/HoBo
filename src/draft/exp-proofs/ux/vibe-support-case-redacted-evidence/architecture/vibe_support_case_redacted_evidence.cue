@@ -11,7 +11,7 @@ package architecture_evidence
 #ConsumedSupportWorkflowMockupRef: {
 	sourceIssue:     "HOBO-550"
 	mockupId:        #ConsumedSupportWorkflowMockupId
-	sourceProofPath: "urn:hobo:proof:vibe-support-workflow-mockups"
+	sourceProofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md"
 	supportCaseUse:  string & !=""
 }
 
@@ -44,7 +44,7 @@ package architecture_evidence
 	issue:                               "HOBO-564"
 	phase:                               "M2"
 	packagePath:                         "src/draft/exp-proofs/ux/vibe-support-case-redacted-evidence"
-	proofPath:                           "urn:hobo:proof:vibe-support-case-redacted-evidence"
+	proofPath:                           "docs/design/proofs/vibe-support-case-redacted-evidence/README.md"
 	designRefs:                          #NonEmptyStringList
 	consumedSupportWorkflowMockupRefs:    [#ConsumedSupportWorkflowMockupRef, ...#ConsumedSupportWorkflowMockupRef]
 	evidencePacks:                        [#SupportCaseEvidencePack, ...#SupportCaseEvidencePack]

@@ -1,3 +1,10 @@
+// Credential-gated Convex Management API client. Honesty rules
+// (docs/design/live-provider-matrix.md): the live path activates only when a
+// broker-supplied deploy key is present, requests are formed against an
+// injected fetch so tests never need the network, and a missing credential
+// FAILS CLOSED with a remediation naming the broker path — never a silent
+// no-op. Env inspection is presence-only; values are never logged or echoed.
+
 import {
 	isJsonArray,
 	isJsonObject,

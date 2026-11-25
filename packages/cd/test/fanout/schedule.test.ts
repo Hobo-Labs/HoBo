@@ -1,3 +1,5 @@
+// Pure fan-out rules (D21, I20): plan parsing, the scheduler, outcome
+// classification, deferral, data classification and the effective decision.
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

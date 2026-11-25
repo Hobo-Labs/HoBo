@@ -1,3 +1,4 @@
+// D7 lowering, ramp defaults and the stage plan the orchestrator hands Station cutover.
 import { describe, expect, it } from "vitest";
 import { RolloutStrategy } from "../../src/_generated/cd_pb.js";
 import { CD_RAMP_DEFAULTS, PROGRESSIVE_UNSUPPORTED } from "../../src/events.js";
@@ -18,6 +19,7 @@ import {
 import { camp, T0, TENANT } from "./fakes.js";
 
 const rollout = (): RolloutId => {
+	// SAFETY: literal test id.
 	return "rollout-x" as RolloutId;
 };
 

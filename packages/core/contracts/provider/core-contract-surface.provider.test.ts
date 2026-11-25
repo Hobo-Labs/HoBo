@@ -12,8 +12,8 @@ const pactsDir = path.resolve(
 	"pacts",
 );
 
-describe("core-contract-surface harness fixtures", () => {
-	it("accepts a matching fixture and rejects a skewed fixture", async () => {
+describe("core-contract-surface provider verification", () => {
+	it("verifies the real stub and rejects the skewed stub", async () => {
 		const pacts = await loadPactDirectory(pactsDir);
 		const pact = pacts.find(
 			(entry) => entry.provider.name === "CoreContractSurface",

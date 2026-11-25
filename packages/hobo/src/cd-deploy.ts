@@ -1,4 +1,15 @@
-/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion */
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: CLI flags and caught errors are untrusted input parsed here (text/list/num/oneOf); result data is an envelope payload serialized by cd-render, never read back. */
+/**
+ * `hobo deploy` CD subcommands (ADR-0182 C2).
+ *
+ * Every subcommand is a thin, typed call into the composed
+ * `ContinuousDelivery` facade (`@hobo/cd/compose`): this file parses flags,
+ * calls one module method, and renders the result. It makes no delivery
+ * decision and holds no fixture: the facade it receives is the real one, or
+ * the labelled `--simulate` one the caller composed.
+ *
+ * `deploy` stays the one canonical verb; these are its subcommands.
+ */
 
 import { create } from "@bufbuild/protobuf";
 import {
@@ -26,7 +37,10 @@ import {
 	type VerificationId,
 	WindowOverrideRecordSchema,
 } from "@hobo/cd";
+import { generateReconcilerKeys, reconcilerEnrollment } from "@hobo/cd/agent";
 import type { CommandResult } from "@hobo/cli";
+import { parseTenantId } from "@hobo/core";
+import { parseFleetId } from "@hobo/fleet";
 import {
 	type DeliveryModule,
 	deliveryRecordCount,
@@ -43,12 +57,18 @@ import {
 } from "./cd-render.js";
 import { isJsonNumber, isJsonString, type JsonObject } from "./json.js";
 
+const CD_AGENT_VERSION = "1.0.0";
+
+/** What the subcommands run against. */
 export interface CdDeployHost {
 	readonly cd: ContinuousDelivery;
 	readonly ctx: CdContext;
 	readonly cwd: string;
+	/** True when composed with --simulate; echoed in every result. */
 	readonly simulated: boolean;
+	/** One in-process conductor for these Camps (`deploy reconcile`). */
 	readonly conductor?: (campIds: readonly CampId[]) => CampReconciler;
+	/** Run this process as an agent-mode reconciler until aborted (`deploy agent run`). */
 	readonly runAgent?: (
 		input: Readonly<{ flags: JsonObject }>,
 	) => Promise<Outcome<Readonly<{ reconcilerId: string; stoppedAt: string }>>>;
@@ -63,6 +83,8 @@ type Run = (
 ) => Promise<CommandResult>;
 
 type Sub = Readonly<{ usage: string; summary: string; run: Run }>;
+
+// ── Flag parsing (parse, don't validate) ─────────────────────────────────
 
 function text(flags: JsonObject, name: string): string | undefined {
 	const v = flags[name];
@@ -94,7 +116,9 @@ function bool(flags: JsonObject, name: string): boolean {
 	return v === true || v === "true";
 }
 
+// SAFETY: CLI arguments are opaque ids; the owning module parses and refuses unknown ones.
 const asCamp = (id: string) => id as CampId;
+// SAFETY: see asCamp.
 const asFreight = (id: string) => id as FreightId;
 
 class Usage extends Error {
@@ -150,6 +174,7 @@ const MODES = {
 	PUBLISHER: ReconcilerMode.PUBLISHER,
 } as const;
 
+/** Deterministic idempotency key (I12): the same request twice is one request. */
 function idempotencyKey(
 	flags: JsonObject,
 	...parts: readonly (string | undefined)[]
@@ -160,6 +185,8 @@ function idempotencyKey(
 		parts.map((p) => p ?? "").join("|")
 	);
 }
+
+// ── Result helpers ─────────────────────────────────────────────────────────
 
 function outcome<T>(
 	host: CdDeployHost,
@@ -323,6 +350,8 @@ function defineFrom<K extends keyof DeliveryModule>(
 		);
 	};
 }
+
+// ── Subcommands ────────────────────────────────────────────────────────────
 
 export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 	Object.freeze({
@@ -555,6 +584,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 								: r,
 						)
 					: await loadDeliveryFile(file, opts);
+				// A JSON exports object may carry more than pipelines; re-read it whole.
 				const module =
 					isJson && loaded.ok && loaded.value.pipelines.length === 0
 						? await loadDeliveryFile(file, opts)
@@ -813,6 +843,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 							to,
 							reason,
 						),
+						// SAFETY: an opaque Set id the Delta ledger verifies.
 						...(to ? { toSetId: to as SetId } : undefined),
 					},
 					host.ctx,
@@ -930,6 +961,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 					"<verification-id>",
 					CD_DEPLOY_SUBCOMMANDS["verify show"]?.usage ?? "",
 				);
+				// SAFETY: an opaque verification id.
 				const result = await host.cd.verification.get(id as VerificationId);
 				if (!result)
 					return notFound(
@@ -953,7 +985,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			usage:
 				"hobo deploy agent token --camp-set <set> --camp <a,b> [--mode agent|publisher] [--ttl-ms <ms>]",
 			summary:
-				"Issue a single-use bootstrap token scoped to one Camp set (D19)",
+				"Issue a single-use bootstrap token scoped to one Camp set (D19); alias of `hobo fleet token create`",
 			run: async (host, _args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent token"]?.usage ?? "";
 				const campSet = need(text(flags, "camp-set"), "--camp-set", usage);
@@ -980,57 +1012,130 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"agent enroll": {
 			usage:
-				"hobo deploy agent enroll --token <bootstrap> --jwk-file <public.jwk.json>",
-			summary: "Enroll an agent's public key; PENDING until both grants (I24)",
+				"hobo deploy agent enroll (enrolls as hobo fleet enroll does; refuses --token and --jwk-file)",
+			summary:
+				"Generate this agent's keys and enroll it; PENDING until both grants (I24); alias of `hobo fleet enroll --token-file`",
 			run: async (host, _args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent enroll"]?.usage ?? "";
-				const token = need(text(flags, "token"), "--token", usage);
-				const jwkFile = need(text(flags, "jwk-file"), "--jwk-file", usage);
-				const { readFile } = await import("node:fs/promises");
-				const { resolve } = await import("node:path");
-				let publicJwk: JsonObject;
-				try {
-					const parsed: unknown = JSON.parse(
-						await readFile(resolve(host.cwd, jwkFile), "utf8"),
-					);
-					if (
-						typeof parsed !== "object" ||
-						parsed === null ||
-						Array.isArray(parsed) ||
-						"d" in parsed
-					)
-						throw new Error(
-							"expected a public JWK object (no private member `d`)",
+				const jwkFile = text(flags, "jwk-file");
+				if (jwkFile !== undefined) {
+					const { readFile } = await import("node:fs/promises");
+					const { resolve } = await import("node:path");
+					let isPrivate = false;
+					try {
+						isPrivate = /"d"\s*:/u.test(
+							await readFile(resolve(host.cwd, jwkFile), "utf8"),
 						);
-					publicJwk = parsed as JsonObject;
-				} catch (error) {
+					} catch {}
 					return moduleRefusal("agent enroll", format, {
 						code: "agent-jwk-invalid",
-						message: error instanceof Error ? error.message : String(error),
+						message: isPrivate
+							? "--jwk-file holds a private key; the private key never leaves the agent"
+							: "--jwk-file is refused: the fleet enrollment generates the agent's keys",
 						remediation:
-							"Pass the agent's PUBLIC JWK; the private key never leaves the agent.",
+							"Pass --key-dir <dir>; `agent enroll` generates the agent's keys there (as `hobo fleet enroll --token-file` does).",
 					});
 				}
+				if (flags.token !== undefined)
+					return moduleRefusal("agent enroll", format, {
+						code: "token-on-command-line",
+						message:
+							"--token is refused: a bootstrap token never goes on a command line",
+						remediation:
+							"Write the token to a file readable only by you and pass --token-file <path> (as for `hobo fleet enroll`).",
+					});
+				const tokenFile = need(
+					text(flags, "token-file"),
+					"--token-file",
+					usage,
+				);
+				const authority = need(text(flags, "authority"), "--authority", usage);
+				const tenant = need(text(flags, "tenant"), "--tenant", usage);
+				const fleet = need(text(flags, "fleet"), "--fleet", usage);
+				const keyDir = need(text(flags, "key-dir"), "--key-dir", usage);
+				const { mkdir, readFile, writeFile } = await import("node:fs/promises");
+				const { join, resolve } = await import("node:path");
+				let token: string;
+				try {
+					token = (await readFile(resolve(host.cwd, tokenFile), "utf8")).trim();
+				} catch (error) {
+					return moduleRefusal("agent enroll", format, {
+						code: "token-file-unreadable",
+						message: error instanceof Error ? error.message : String(error),
+						remediation:
+							"Pass --token-file naming the file `agent token` wrote.",
+					});
+				}
+				let fleetId: ReturnType<typeof parseFleetId>;
+				try {
+					fleetId = parseFleetId(fleet);
+				} catch (error) {
+					throw new Usage(
+						error instanceof Error ? error.message : String(error),
+						usage,
+					);
+				}
+				const keys = generateReconcilerKeys();
+				const dir = resolve(host.cwd, keyDir);
+				await mkdir(dir, { recursive: true, mode: 0o700 });
+				try {
+					for (const [name, jwk] of Object.entries(keys))
+						await writeFile(
+							join(dir, `${name}.jwk.json`),
+							JSON.stringify(jwk),
+							{
+								mode: 0o600,
+								flag: "wx",
+							},
+						);
+				} catch (error) {
+					return moduleRefusal("agent enroll", format, {
+						code: "agent-keys-exist",
+						message: error instanceof Error ? error.message : String(error),
+						remediation:
+							"An agent's keys are never replaced in place: pass a new --key-dir, or revoke the old agent first.",
+					});
+				}
+				const built = await reconcilerEnrollment({
+					keys,
+					token,
+					tenant: parseTenantId(tenant),
+					fleet: fleetId,
+					origin: authority,
+					nowMs: host.ctx.now(),
+					agentVersion: CD_AGENT_VERSION,
+				});
 				const result = await host.cd.enrollment.enroll(
-					{ token, publicJwk, claims: [] },
+					{
+						request: built.request,
+						dpopProof: built.dpopProof,
+						campIds: list(flags, "camp").map(asCamp),
+					},
 					host.ctx,
 				);
 				return outcome(host, "agent enroll", format, result, (r) => ({
 					code: "HOBO_CD_AGENT_ENROLLED",
 					summary: `agent ${r.reconciler.reconcilerId} enrolled; next: agent approve-key and agent accept`,
-					data: { reconciler: r.reconciler, state: r.state },
+					data: {
+						reconciler: r.reconciler,
+						state: r.state,
+						memberId: built.memberId,
+						signKeyFile: join(dir, "sign.jwk.json"),
+					},
 				}));
 			},
 		},
 		"agent approve-key": {
 			usage: "hobo deploy agent approve-key <reconciler-id>",
-			summary: "Grant 1: the key belongs to a legitimate agent",
+			summary:
+				"Grant 1: the key belongs to a legitimate agent; alias of `hobo fleet member approve`",
 			run: async (host, args, _flags, format) => {
 				const id = need(
 					args[0],
 					"<reconciler-id>",
 					CD_DEPLOY_SUBCOMMANDS["agent approve-key"]?.usage ?? "",
 				);
+				// SAFETY: an opaque reconciler id the enrollment ledger verifies.
 				const result = await host.cd.enrollment.approveKey(
 					id as ReconcilerId,
 					host.ctx,
@@ -1050,12 +1155,14 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"agent accept": {
 			usage: "hobo deploy agent accept <reconciler-id> --camp <a,b>",
-			summary: "Grant 2: the agent may serve these Camps",
+			summary:
+				"Grant 2: the agent may serve these Camps; alias of `hobo fleet member accept`",
 			run: async (host, args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent accept"]?.usage ?? "";
 				const id = need(args[0], "<reconciler-id>", usage);
 				const campIds = list(flags, "camp").map(asCamp);
 				if (campIds.length === 0) throw new Usage("missing --camp", usage);
+				// SAFETY: see agent approve-key.
 				const result = await host.cd.enrollment.accept(
 					{ reconcilerId: id as ReconcilerId, campIds },
 					host.ctx,
@@ -1071,7 +1178,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			usage:
 				"hobo deploy agent run --feed <https://station/v1/cd/> --reconciler <id> --key-file <private.jwk.json> --svid-file <svid> --camp <a,b>",
 			summary:
-				"Run this process as an agent-mode reconciler (outbound HTTPS only)",
+				"Run this process as an agent-mode reconciler (outbound HTTPS only); alias of `hobo fleet run`",
 			run: async (host, _args, flags, format) => {
 				if (!host.runAgent)
 					return moduleRefusal("agent run", format, {
@@ -1090,11 +1197,13 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"agent revoke": {
 			usage: "hobo deploy agent revoke <reconciler-id> --reason <text>",
-			summary: "Revoke an agent; refused on its next request",
+			summary:
+				"Revoke an agent; refused on its next request; alias of `hobo fleet member revoke`",
 			run: async (host, args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent revoke"]?.usage ?? "";
 				const id = need(args[0], "<reconciler-id>", usage);
 				const reason = need(text(flags, "reason"), "--reason", usage);
+				// SAFETY: see agent approve-key.
 				const result = await host.cd.enrollment.revoke(
 					id as ReconcilerId,
 					reason,
@@ -1405,6 +1514,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			run: async (host, args, flags, format) => {
 				const id = args[0];
 				if (id) {
+					// SAFETY: an opaque fan-out id.
 					const fanout = await host.cd.fanout.get(id as FanoutId);
 					if (!fanout)
 						return notFound(
@@ -1446,6 +1556,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 				const usage = CD_DEPLOY_SUBCOMMANDS["fanout halt"]?.usage ?? "";
 				const id = need(args[0], "<fanout-id>", usage);
 				const reason = need(text(flags, "reason"), "--reason", usage);
+				// SAFETY: see fanout show.
 				const result = await host.cd.fanout.halt(
 					id as FanoutId,
 					reason,
@@ -1467,6 +1578,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 					"<fanout-id>",
 					CD_DEPLOY_SUBCOMMANDS["fanout resume"]?.usage ?? "",
 				);
+				// SAFETY: see fanout show.
 				const result = await host.cd.fanout.resume(id as FanoutId, host.ctx);
 				return outcome(host, "fanout resume", format, result, (fanout) => ({
 					code: "HOBO_CD_FANOUT_RESUMED",
@@ -1482,6 +1594,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 				const usage = CD_DEPLOY_SUBCOMMANDS["fanout rollback"]?.usage ?? "";
 				const id = need(args[0], "<fanout-id>", usage);
 				const reason = need(text(flags, "reason"), "--reason", usage);
+				// SAFETY: see fanout show.
 				const result = await host.cd.fanout.rollback(
 					id as FanoutId,
 					reason,
@@ -1523,6 +1636,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 					"<failover-id>",
 					CD_DEPLOY_SUBCOMMANDS["failover approve"]?.usage ?? "",
 				);
+				// SAFETY: an opaque failover id.
 				const result = await host.cd.failover.approve(
 					id as FailoverId,
 					host.ctx,
@@ -1601,6 +1715,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 	});
 
+/** The authorized action each mutating subcommand performs (D15), for docs and audits. */
 export const CD_DEPLOY_ACTIONS: Readonly<Record<string, CdAction>> =
 	Object.freeze({
 		"freight record": "freight.record",
@@ -1631,10 +1746,12 @@ export const CD_DEPLOY_ACTIONS: Readonly<Record<string, CdAction>> =
 		rebalance: "rebalance",
 	});
 
+/** Every CD subcommand's usage line, in table order (`hobo deploy --help`). */
 export function cdDeployUsage(): readonly string[] {
 	return Object.values(CD_DEPLOY_SUBCOMMANDS).map((s) => s.usage);
 }
 
+/** Resolve `args` to a subcommand: two-word groups first, then one word. */
 export function matchCdSubcommand(
 	args: readonly string[],
 ): Readonly<{ name: string; rest: readonly string[] }> | undefined {
@@ -1647,6 +1764,7 @@ export function matchCdSubcommand(
 	return undefined;
 }
 
+/** True when `args` names a CD subcommand (or a CD group such as `freight`). */
 export function isCdSubcommand(args: readonly string[]): boolean {
 	if (matchCdSubcommand(args)) return true;
 	const group = args[0];
@@ -1656,6 +1774,7 @@ export function isCdSubcommand(args: readonly string[]): boolean {
 	);
 }
 
+/** Dispatch one `hobo deploy` CD subcommand against a composed host. */
 export async function runCdDeploySubcommand(
 	host: CdDeployHost,
 	args: readonly string[],

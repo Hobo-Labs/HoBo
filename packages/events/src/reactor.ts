@@ -5,13 +5,7 @@ import type {
 	StreamerWritable,
 	Subscription,
 } from "@hobo/core";
-import { parseRunId, StreamerBackpressureError } from "@hobo/core";
-import type {
-	Aggregate,
-	AggregateDeps,
-	CommandContext,
-	CommandResult,
-} from "@hobo/data";
+import { parseRunId } from "@hobo/core";
 
 import {
 	createSubscriptionClosedEvent,
@@ -21,6 +15,9 @@ import {
 	type ReactiveFact,
 } from "./events.js";
 
+// A materialization is a deterministic fold over subscribed event types, exposed
+// as a subscribable observable (data-plane.md Plan 32 "The model in one
+// paragraph"). The fold is read-only + replayable.
 export interface Materialization<S> {
 	name: string;
 	readSet: readonly string[];
@@ -38,24 +35,13 @@ export function defineMaterialization<S>(
 	return definition;
 }
 
-export interface MaterializedSnapshot<S> {
-	value: S;
-	seq: number;
-}
-
-export interface MaterializedFrame<S> extends MaterializedSnapshot<S> {
-	streamSeqs: Readonly<Record<string, number>>;
-}
-
 export interface SubscriptionHandle<S> {
 	readonly subscriptionId: string;
-	current(): MaterializedSnapshot<S>;
-	currentStream(streamId: string): MaterializedSnapshot<S>;
-	awaitStreamSeq(
-		streamId: string,
-		seq: number,
-		options?: { signal?: AbortSignal },
-	): Promise<MaterializedSnapshot<S>>;
+	// Current materialized value + the monotonic log position it was computed at.
+	current(): { value: S; seq: number };
+	// Reads-your-writes: resolve once the subscription has advanced to >= seq.
+	awaitSeq(seq: number): Promise<{ value: S; seq: number }>;
+	// The subscription.*/push facts emitted so far (Opened/Recomputed/Pushed).
 	facts(): ReactiveFact[];
 	close(reason?: string): void;
 }
@@ -63,37 +49,8 @@ export interface SubscriptionHandle<S> {
 export interface Reactor {
 	subscribe<S>(
 		materialization: Materialization<S>,
-		options: {
-			subscriptionId: string;
-			replayStreamId?: string;
-			maxBufferedEvents?: number;
-			maxTrackedStreams?: number;
-		},
+		options: { subscriptionId: string; replayStreamId?: string },
 	): Promise<SubscriptionHandle<S>>;
-	execute<S, C>(
-		aggregate: Aggregate<S, C>,
-		options: {
-			actorHost: AggregateDeps["actorHost"];
-			streamId: string;
-			command: C;
-			context: CommandContext;
-			signal?: AbortSignal;
-		},
-	): Promise<CommandResult<S>>;
-}
-
-export class CommandObservationError<S> extends Error {
-	constructor(
-		readonly result: CommandResult<S>,
-		readonly subscriptionId: string,
-		cause: Error,
-	) {
-		super(
-			`command committed at ${result.streamId}:${result.seq} but ${subscriptionId} did not advance`,
-			{ cause },
-		);
-		this.name = "CommandObservationError";
-	}
 }
 
 function clone<T>(value: T): T {
@@ -104,66 +61,23 @@ function hashReadSet(readSet: readonly string[], seq: number): string {
 	return `${[...readSet].sort().join(",")}@${seq}`;
 }
 
-function limit(value: number | undefined, name: string): number {
-	const result = value ?? 10_000;
-	if (!Number.isSafeInteger(result) || result < 1)
-		throw new RangeError(`${name} must be a positive safe integer`);
-	return result;
-}
-
+// The Reactor grain: per subscription it holds { materialization, readSet,
+// lastSeq, state } and pushes recomputed snapshots over the Streamer port.
 export function createReactor(deps: {
 	store: EventStore;
 	streamer: Streamer;
 }): Reactor {
-	const active = new Set<{
-		subscriptionId: string;
-		readSet: ReadonlySet<string>;
-		waitFor(
-			streamId: string,
-			seq: number,
-			options?: { signal?: AbortSignal },
-		): Promise<MaterializedSnapshot<unknown>>;
-	}>();
 	return {
 		async subscribe(materialization, options) {
 			const { subscriptionId } = options;
-			const maxBufferedEvents = limit(
-				options.maxBufferedEvents,
-				"maxBufferedEvents",
-			);
-			const maxTrackedStreams = limit(
-				options.maxTrackedStreams,
-				"maxTrackedStreams",
-			);
 			const readSet = new Set(materialization.readSet);
-			const activeSubscription = { subscriptionId, readSet, waitFor };
-			const runId = parseRunId(subscriptionId);
-			let state = clone(materialization.initialState);
-			const run = deps.streamer.createRun({ runId });
-			let writable: StreamerWritable;
-			try {
-				writable = run.getWritable();
-			} catch (error) {
-				deps.streamer.teardownRun(runId, "subscription-failed");
-				throw error;
-			}
-			let lastSeq = 0;
-			let storeSub: Subscription | undefined;
-			let replaying = true;
-			let closed = false;
-			let terminalError: Error | undefined;
-			let replayError: Error | undefined;
-			let pendingPush: MaterializedFrame<typeof state> | undefined;
-			let pushing = false;
-			let retryTimer: ReturnType<typeof setTimeout> | undefined;
-			let retryDelayMs = 25;
-			let rejectReplay: (error: Error) => void = () => {};
-			const replayFailure = new Promise<never>((_resolve, reject) => {
-				rejectReplay = reject;
+			const run = deps.streamer.createRun({
+				runId: parseRunId(subscriptionId),
 			});
-			void replayFailure.catch(() => {});
-			const buffered: EventEnvelope[] = [];
-			const streamSeqs = new Map<string, number>();
+			const writable: StreamerWritable = run.getWritable();
+
+			let state = clone(materialization.initialState);
+			let lastSeq = 0;
 			const facts: ReactiveFact[] = [
 				createSubscriptionOpenedEvent({
 					subscriptionId,
@@ -171,331 +85,72 @@ export function createReactor(deps: {
 					readSet: materialization.readSet,
 				}),
 			];
-			const waiters: Array<{
-				streamId: string;
-				seq: number;
-				resolve: (result: MaterializedSnapshot<typeof state>) => void;
-				reject: (error: Error) => void;
-				cleanup: () => void;
-			}> = [];
-
-			function unsubscribeStore(): Error | undefined {
-				const current = storeSub;
-				storeSub = undefined;
-				try {
-					current?.unsubscribe();
-					return undefined;
-				} catch (error) {
-					return error instanceof Error ? error : new Error(String(error));
-				}
-			}
-
-			function terminate(reason: string, error?: Error): void {
-				if (closed) return;
-				closed = true;
-				active.delete(activeSubscription);
-				terminalError = error ?? new Error(`subscription closed: ${reason}`);
-				if (retryTimer !== undefined) clearTimeout(retryTimer);
-				retryTimer = undefined;
-				pendingPush = undefined;
-				if (replaying && error && !replayError) {
-					replayError = error;
-					rejectReplay(error);
-				}
-				const cleanupErrors: Error[] = [];
-				const unsubscribeError = unsubscribeStore();
-				if (unsubscribeError) cleanupErrors.push(unsubscribeError);
-				try {
-					deps.streamer.teardownRun(runId, reason);
-				} catch (cleanupError) {
-					cleanupErrors.push(
-						cleanupError instanceof Error
-							? cleanupError
-							: new Error(String(cleanupError)),
-					);
-				}
-				if (cleanupErrors.length > 0)
-					terminalError = new AggregateError(
-						[terminalError, ...cleanupErrors],
-						"subscription cleanup failed",
-					);
-				for (const waiter of waiters.splice(0)) {
-					waiter.cleanup();
-					waiter.reject(terminalError);
-				}
-				facts.push(createSubscriptionClosedEvent({ subscriptionId, reason }));
-				if (!error && cleanupErrors.length > 0) throw terminalError;
-			}
-
-			function snapshot(streamId?: string): MaterializedSnapshot<typeof state> {
-				return {
-					value: clone(state),
-					seq:
-						streamId === undefined ? lastSeq : (streamSeqs.get(streamId) ?? 0),
-				};
-			}
-
-			function resolveWaiters(): void {
-				for (let index = waiters.length - 1; index >= 0; index -= 1) {
-					const waiter = waiters[index];
-					if (!waiter) continue;
-					const position = streamSeqs.get(waiter.streamId) ?? 0;
-					if (position >= waiter.seq) {
-						waiters.splice(index, 1);
-						waiter.cleanup();
-						waiter.resolve(snapshot(waiter.streamId));
-					}
-				}
-			}
-
-			function push(): void {
-				if (
-					closed ||
-					replaying ||
-					pushing ||
-					retryTimer !== undefined ||
-					!pendingPush
-				)
-					return;
-				const frame = pendingPush;
-				pendingPush = undefined;
-				pushing = true;
-				void Promise.resolve()
-					.then(() => writable.write(frame))
-					.then(
-						() => {
-							if (closed) return;
-							retryDelayMs = 25;
-							facts.push(
-								createSubscriptionPushedEvent({
-									subscriptionId,
-									seq: frame.seq,
-									resultCount: Array.isArray(frame.value)
-										? frame.value.length
-										: 1,
-								}),
-							);
-						},
-						(error) => {
-							if (closed) return;
-							if (!(error instanceof StreamerBackpressureError)) {
-								terminate(
-									"stream-failed",
-									error instanceof Error ? error : new Error(String(error)),
-								);
-								return;
-							}
-							pendingPush ??= frame;
-							const delay = retryDelayMs;
-							retryDelayMs = Math.min(retryDelayMs * 2, 1_000);
-							retryTimer = setTimeout(() => {
-								retryTimer = undefined;
-								push();
-							}, delay);
-							retryTimer.unref();
-						},
-					)
-					.finally(() => {
-						pushing = false;
-						push();
-					});
-			}
+			const waiters: Array<{ seq: number; resolve: () => void }> = [];
 
 			function apply(event: EventEnvelope): void {
-				const previous = streamSeqs.get(event.streamId);
-				if (previous !== undefined && event.seq <= previous) return;
-				if (previous === undefined && streamSeqs.size >= maxTrackedStreams)
-					throw new Error("subscription stream limit exceeded");
-				const relevant = readSet.has(event.type);
-				if (relevant)
-					state = materialization.fold(state, Object.freeze(clone(event)));
-				streamSeqs.set(event.streamId, event.seq);
-				if (relevant) {
-					lastSeq = Math.max(lastSeq, event.seq);
-					facts.push(
-						createSubscriptionRecomputedEvent({
-							subscriptionId,
-							seq: lastSeq,
-							readSetHash: hashReadSet(materialization.readSet, lastSeq),
-						}),
-					);
-				}
-				if (!replaying) queuePush();
-				resolveWaiters();
-			}
-
-			function queuePush(): void {
-				pendingPush = {
-					seq: lastSeq,
-					value: clone(state),
-					streamSeqs: Object.fromEntries(streamSeqs),
-				};
-				push();
-			}
-
-			function onEvent(event: EventEnvelope): void {
-				if (closed || replayError) return;
-				if (replaying) {
-					if (buffered.length >= maxBufferedEvents) {
-						replayError = new Error(
-							"subscription replay buffer limit exceeded",
-						);
-						const cleanupError = unsubscribeStore();
-						if (cleanupError)
-							replayError = new AggregateError(
-								[replayError, cleanupError],
-								"subscription replay cleanup failed",
-							);
-						rejectReplay(replayError);
-					} else buffered.push(event);
-					return;
-				}
-				try {
-					apply(event);
-				} catch (error) {
-					terminate(
-						"fold-failed",
-						error instanceof Error ? error : new Error(String(error)),
-					);
-				}
-			}
-
-			function waitFor(
-				streamId: string,
-				seq: number,
-				options: { signal?: AbortSignal } = {},
-			): Promise<MaterializedSnapshot<typeof state>> {
-				if (!Number.isSafeInteger(seq) || seq < 0)
-					return Promise.reject(
-						new RangeError("seq must be a non-negative safe integer"),
-					);
-				if (!streamId)
-					return Promise.reject(new TypeError("streamId is required"));
-				if (options.signal?.aborted)
-					return Promise.reject(options.signal.reason);
-				if (closed) return Promise.reject(terminalError);
-				const current = snapshot(streamId);
-				if (current.seq >= seq) return Promise.resolve(current);
-				return new Promise((resolve, reject) => {
-					const signal = options.signal;
-					const onAbort = () => {
-						const index = waiters.indexOf(waiter);
-						if (index >= 0) waiters.splice(index, 1);
-						waiter.cleanup();
-						reject(signal?.reason);
-					};
-					const waiter = {
-						streamId,
-						seq,
-						resolve,
-						reject,
-						cleanup: () => signal?.removeEventListener("abort", onAbort),
-					};
-					waiters.push(waiter);
-					signal?.addEventListener("abort", onAbort, { once: true });
-				});
-			}
-
-			try {
-				storeSub = deps.store.subscribe({}, onEvent);
-				await Promise.race([
-					storeSub.ready ?? Promise.resolve(),
-					replayFailure,
-				]);
-				if (options.replayStreamId) {
-					const iterator = deps.store
-						.read(options.replayStreamId)
-						[Symbol.asyncIterator]();
-					let completed = false;
-					const readReplay = async () => {
-						for (;;) {
-							const item = await iterator.next();
-							if (replayError) throw replayError;
-							if (item.done) {
-								completed = true;
-								return;
-							}
-							apply(item.value);
-						}
-					};
-					try {
-						await Promise.race([readReplay(), replayFailure]);
-					} finally {
-						if (!completed && iterator.return) {
-							const cleanup = iterator.return();
-							if (replayError) void cleanup.catch(() => {});
-							else await cleanup;
-						}
-					}
-				}
-				while (buffered.length > 0) {
-					if (replayError) throw replayError;
-					for (const event of buffered.splice(0)) apply(event);
-				}
-				if (replayError) throw replayError;
-				replaying = false;
-				if (streamSeqs.size > 0) queuePush();
-			} catch (error) {
-				terminate(
-					"subscription-failed",
-					error instanceof Error ? error : new Error(String(error)),
-				);
-				throw terminalError ?? error;
-			}
-
-			active.add(activeSubscription);
-			return {
-				subscriptionId,
-				current: () => snapshot(),
-				currentStream: (streamId) => {
-					if (!streamId) throw new TypeError("streamId is required");
-					return snapshot(streamId);
-				},
-				awaitStreamSeq: (streamId, seq, waitOptions) =>
-					waitFor(streamId, seq, waitOptions),
-				facts: () => [...facts],
-				close: (reason = "client-closed") => terminate(reason),
-			};
-		},
-		async execute(aggregate, options) {
-			options.signal?.throwIfAborted();
-			const subscriptions = [...active];
-			const result = await aggregate.execute(
-				{ store: deps.store, actorHost: options.actorHost },
-				options.streamId,
-				options.command,
-				options.context,
-			);
-			const eventTypes = new Set(result.appended.map((event) => event.type));
-			const affected = subscriptions.filter((subscription) =>
-				[...subscription.readSet].some((type) => eventTypes.has(type)),
-			);
-			const controller = new AbortController();
-			const signal = options.signal
-				? AbortSignal.any([options.signal, controller.signal])
-				: controller.signal;
-			try {
-				await Promise.all(
-					affected.map(async (subscription) => {
-						try {
-							await subscription.waitFor(result.streamId, result.seq, {
-								signal,
-							});
-						} catch (error) {
-							throw new CommandObservationError(
-								result,
-								subscription.subscriptionId,
-								error instanceof Error
-									? error
-									: new Error("subscription wait failed"),
-							);
-						}
+				if (!readSet.has(event.type)) return;
+				state = materialization.fold(state, Object.freeze(clone(event)));
+				lastSeq = Math.max(lastSeq, event.seq);
+				facts.push(
+					createSubscriptionRecomputedEvent({
+						subscriptionId,
+						seq: lastSeq,
+						readSetHash: hashReadSet(materialization.readSet, lastSeq),
 					}),
 				);
-			} finally {
-				controller.abort();
+				// Push the recomputed snapshot to the client over the Streamer port.
+				void writable.write({ seq: lastSeq, value: clone(state) });
+				facts.push(
+					createSubscriptionPushedEvent({
+						subscriptionId,
+						seq: lastSeq,
+						resultCount: Array.isArray(state) ? state.length : 1,
+					}),
+				);
+				for (let i = waiters.length - 1; i >= 0; i -= 1) {
+					if (lastSeq >= waiters[i].seq) {
+						waiters[i].resolve();
+						waiters.splice(i, 1);
+					}
+				}
 			}
-			return result;
+
+			// Replay-then-live: fold the current stream to its head, then go live.
+			if (options.replayStreamId) {
+				for await (const event of deps.store.read(options.replayStreamId)) {
+					apply(event);
+				}
+			}
+
+			const storeSub: Subscription = deps.store.subscribe({}, (event) => {
+				apply(event);
+			});
+
+			return {
+				subscriptionId,
+				current() {
+					return { value: clone(state), seq: lastSeq };
+				},
+				awaitSeq(seq) {
+					if (lastSeq >= seq) {
+						return Promise.resolve({ value: clone(state), seq: lastSeq });
+					}
+					return new Promise((resolve) => {
+						waiters.push({
+							seq,
+							resolve: () => resolve({ value: clone(state), seq: lastSeq }),
+						});
+					});
+				},
+				facts() {
+					return [...facts];
+				},
+				close(reason = "client-closed") {
+					storeSub.unsubscribe();
+					deps.streamer.teardownRun(parseRunId(subscriptionId), reason);
+					facts.push(createSubscriptionClosedEvent({ subscriptionId, reason }));
+				},
+			};
 		},
 	};
 }

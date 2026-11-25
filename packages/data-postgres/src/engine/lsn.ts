@@ -1,7 +1,14 @@
+/**
+ * Write-ahead-log positions. An LSN is a 64-bit byte offset the server prints
+ * as two hexadecimal halves (`16/B374D848`); it is the `Position` this engine
+ * mints. Text comparison would order `9/0` after `10/0`, so every comparison
+ * goes through the parsed integer.
+ */
 import { CapturePositionError } from "@hobo/data-core";
 
 const LSN_PATTERN = /^([0-9A-Fa-f]{1,8})\/([0-9A-Fa-f]{1,8})$/u;
 
+/** The one constructor for an LSN. A position minted elsewhere is refused. */
 export function parseLsn(text: string): bigint {
 	const match = LSN_PATTERN.exec(text);
 	if (match === null) {

@@ -26,10 +26,10 @@
           "issue": "HOBO-547",
           "phase": "M1",
           "targetPackage": "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states",
-          "proofNote": "urn:hobo:proof:vibe-marketplace-trust-copy-states",
+          "proofNote": "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
           "designRefs": [
-            "urn:hobo:requirement:marketplace-ux",
-            "urn:hobo:requirement:org-catalogs"
+            "docs/design/marketplace-ux.md",
+            "docs/design/org-catalogs.md"
           ],
           "quickstartFixtureRefs": [
             {
@@ -90,7 +90,7 @@
               "proofMode": "reference-fixture",
               "audience": "app developer",
               "ownerRoute": "Marketplace Publisher Trust Evidence",
-              "evidenceSource": "urn:hobo:requirement:marketplace-publisher-trust-evidence",
+              "evidenceSource": "docs/design/marketplace-publisher-trust-evidence.md",
               "safeClaim": "Preview listings are visible only with explicit missing-evidence limits.",
               "copy": {
                 "headline": "Preview listing",
@@ -116,7 +116,7 @@
               "proofMode": "live",
               "audience": "workspace administrator",
               "ownerRoute": "Capability Review & Approval",
-              "evidenceSource": "urn:hobo:requirement:capability-review-approval",
+              "evidenceSource": "docs/design/capability-review-approval.md",
               "safeClaim": "Installable wording is allowed only when required evidence is linked.",
               "copy": {
                 "headline": "Installable with linked evidence",
@@ -142,7 +142,7 @@
               "proofMode": "simulated",
               "audience": "workspace administrator",
               "ownerRoute": "Org Catalogs",
-              "evidenceSource": "urn:hobo:requirement:org-catalogs",
+              "evidenceSource": "docs/design/org-catalogs.md",
               "safeClaim": "Policy-blocked listings name the catalog or policy evidence that prevents new use.",
               "copy": {
                 "headline": "Blocked for this workspace",
@@ -168,7 +168,7 @@
               "proofMode": "reference-fixture",
               "audience": "app developer",
               "ownerRoute": "Registry Distribution",
-              "evidenceSource": "urn:hobo:decision:adr-0062",
+              "evidenceSource": "docs/design/adr/07-portability-extensibility.md#adr-0062",
               "safeClaim": "Deprecated listings remain visible only for existing-use and migration guidance.",
               "copy": {
                 "headline": "Deprecated listing",
@@ -194,7 +194,7 @@
               "proofMode": "simulated",
               "audience": "support operator",
               "ownerRoute": "Support Workflow",
-              "evidenceSource": "urn:hobo:requirement:support-workflow",
+              "evidenceSource": "docs/design/support-workflow.md",
               "safeClaim": "Yanked listings route customers to support or migration guidance.",
               "copy": {
                 "headline": "Yanked from new selection",
@@ -220,7 +220,7 @@
               "proofMode": "scope-out",
               "audience": "marketplace operator",
               "ownerRoute": "Marketplace UX",
-              "evidenceSource": "urn:hobo:requirement:marketplace-ux",
+              "evidenceSource": "docs/design/marketplace-ux.md",
               "safeClaim": "Hidden listings are not visible until required evidence exists.",
               "copy": {
                 "headline": "Listing hidden",
@@ -258,7 +258,7 @@
     },
     "hobo": {
       "issue": "HOBO-547",
-      "proof": "urn:hobo:proof:vibe-marketplace-trust-copy-states"
+      "proof": "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md"
     }
   }
 }

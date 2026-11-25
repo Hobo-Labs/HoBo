@@ -6,7 +6,12 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md",
+      "docs/design/adr/07-portability-extensibility.md",
+      "docs/design/wasm-runtime-wit.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

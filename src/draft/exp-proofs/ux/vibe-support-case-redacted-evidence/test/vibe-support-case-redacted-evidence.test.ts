@@ -29,7 +29,7 @@ test("HOBO-564 support case proof pins issue, phase, package path, proof path, a
   );
   assert.equal(
     parsed.proofPath,
-    "urn:hobo:proof:vibe-support-case-redacted-evidence",
+    "docs/design/proofs/vibe-support-case-redacted-evidence/README.md",
   );
   assert.deepEqual(
     parsed.consumedSupportWorkflowMockupRefs.map((ref) => ref.mockupId),

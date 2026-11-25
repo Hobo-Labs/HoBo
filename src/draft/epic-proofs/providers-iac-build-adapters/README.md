@@ -124,9 +124,11 @@ Deferred:
 
 Fly and Vercel provider changes are absorbed without changing preview, apply, refresh, or controller-driven behavior.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Providers Iac Build Adapters.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `architecture.md` — parse-don't-validate and event-architecture evidence.

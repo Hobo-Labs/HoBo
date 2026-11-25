@@ -36,16 +36,12 @@ await store.ready(); // optional: connect and migrate now instead of on first us
 | No lost or duplicate checkpoint | `commitCheckpoint` runs under the lease row lock, is forward-only (`CHECKPOINT_REGRESSION`), and appends each advance once to `checkpoint_log`, the audit trail of every movement. |
 | Snapshots, fold, quarantine | As runtime-local: a poison event is quarantined once, durably, even across restarts. |
 | Idempotency | Per-stream idempotency keys (unique index) and in-batch duplicates are returned as `deduped`. |
-| Live wake across nodes | Await `subscription.ready` before relying on live delivery. Events committed while `LISTEN` starts are caught up from the sampled head. A lost listener reconnects and catches up from the last dispatched position. Durable consumers use leases and `readAll` instead. |
+| Live wake across nodes | `subscribe` handlers run in position order for events from any process; commits `pg_notify`, and the store `LISTEN`s on a dedicated connection. Durable consumers use leases and `readAll` instead. |
 | Deterministic ids | Event ids are ULID-shaped, derived from timestamp and global position: unique across processes, with no RNG. |
 
 `getStreamHead` (synchronous in the port) is not provided, because a server
 cannot answer synchronously. Callers fall back to reading the stream;
 `loadStreamHead` is the asynchronous equivalent.
-
-If initial listener setup fails, `subscription.ready` rejects. Unsubscribe and
-create a new subscription after correcting the connection. Live subscriptions
-do not replay events committed before their initial head was sampled.
 
 ## Protecting actor streams from direct SQL
 
@@ -114,7 +110,7 @@ Member names do not verify independent vendors.
   from a partitioned writer), whose writes fall inside the plan's recovery
   point.
 - `tick()` runs `reconcileFleet` with the declared policy (`plan`, from
-  `continuityFleetPlan` in `@hobo/backend-fleet`) to copy standbys and decide
+  `continuityFleetPlan` in `@hobo/backend-routing`) to copy standbys and decide
   whether to switch writers, then takes a scheduled backup when one is due.
 - **Scheduled backups** (`plan.backups`: `backupEveryMs`, `backupsKept`) are
   kept on `backupTo`, else the first witness (`src/fleet-backups.ts`). Each is

@@ -28,7 +28,7 @@ launch claims without evidence.
 - CUE constraints: `architecture/vibe_troubleshooting_decision_trees.cue`
 - Pact-style fixture: `architecture/pacts/vibe_troubleshooting_decision_trees.pact.json`
 - Executable acceptance: `test/vibe-troubleshooting-decision-trees.test.ts`
-- Design proof note: `urn:hobo:proof:vibe-troubleshooting-decision-trees`
+- Design proof note: `docs/design/proofs/vibe-troubleshooting-decision-trees/README.md`
 
 ## Verification
 
@@ -40,9 +40,11 @@ The workspace lockfile importer list is kept current with this proof package and
 recently landed sibling vibe proof packages so `pnpm install --frozen-lockfile`
 stays clean after rebasing on `origin/main`.
 
-## Executable evidence
+## Architecture Evidence
+
 - Parse, don't validate: raw fixture input parses once into the derived domain
   type `ParsedVibeTroubleshootingDecisionTrees`.
+- `ADR.md` names the troubleshooting command family, event family,
   `TroubleshootingGuideActor`, fixture event-store stream,
   `TroubleshootingGuideProjection` materialized view / projection, read store
   snapshots, and downstream consumers.

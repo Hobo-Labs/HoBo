@@ -11,6 +11,12 @@ import { readLocalDeployment } from "../src/local-deployment.js";
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL("../dist/bin/hobo.js", import.meta.url));
 
+// One template carries the packaged lifecycle. The four starters share one
+// project tree (packages/patterns/patterns/starter/cli/<template>/project are
+// byte-identical) and differ only in the names and route filled into it, and
+// `new → codegen → build → /proof` for every template runs in-process in
+// packages/cli/test/starter-end-to-end.test.ts. What this file adds, the
+// packaged `up` → HTTP → `down`, does not depend on the template.
 describe("canonical starter through real self-hosted deployment", () => {
 	it.for(["fullstack"])(
 		"new → codegen → build → packaged up → HTTP → down for %s",
@@ -57,11 +63,15 @@ describe("canonical starter through real self-hosted deployment", () => {
 					status: "deployed",
 					data: { persistent: true },
 				});
-				const response = await fetch(`${up.data.primaryUrl}/app`);
+				const response = await fetch(`${up.data.primaryUrl}/proof`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ real: true }),
+				});
 				expect(response.status).toBe(200);
 				expect(await response.json()).toMatchObject({
 					template,
-					path: "/app",
+					path: "/proof",
 					record: {
 						key: expect.any(String),
 						value: { message: expect.any(String) },

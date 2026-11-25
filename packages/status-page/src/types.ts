@@ -1,6 +1,20 @@
+/**
+ * Status-page domain model (ADR-0077 / Plan 49 §C).
+ *
+ * Parse-don't-validate: every record on a status page is built through a
+ * parse function that throws `StatusPageParseError` on malformed input and
+ * returns a frozen value. Wire forms live in `data-models/status_page.proto`;
+ * CUE constraints in `data-models/status_page.cue`.
+ *
+ * The freshness rule is load-bearing: a component whose last signal is older
+ * than the freshness budget renders as `unknown` ("status delayed / unknown"),
+ * never as a stale `operational` (ADR-0077 §4).
+ */
 
+// public-contract: schema tag on every status-page snapshot/model record.
 export const STATUS_PAGE_SCHEMA = "hobo.status-page/v1" as const;
 
+// public-contract: closed component status vocabulary (worst-of ordering below).
 export const COMPONENT_STATUSES = [
 	"operational",
 	"maintenance",
@@ -11,6 +25,7 @@ export const COMPONENT_STATUSES = [
 ] as const;
 export type ComponentStatus = (typeof COMPONENT_STATUSES)[number];
 
+/** Severity rank for worst-of rollups. `unknown` outranks `operational`. */
 const COMPONENT_STATUS_RANK = {
 	operational: 0,
 	maintenance: 1,
@@ -32,6 +47,7 @@ export function worstComponentStatus(
 	return worst;
 }
 
+// public-contract: customer-safe incident lifecycle (HOBO-497 vocabulary).
 export const INCIDENT_STATES = [
 	"investigating",
 	"identified",
@@ -40,6 +56,7 @@ export const INCIDENT_STATES = [
 ] as const;
 export type IncidentState = (typeof INCIDENT_STATES)[number];
 
+/** Forward-only lifecycle rank; late/out-of-order events must never regress. */
 export const INCIDENT_STATE_RANK = {
 	investigating: 0,
 	identified: 1,
@@ -47,9 +64,11 @@ export const INCIDENT_STATE_RANK = {
 	resolved: 3,
 };
 
+// public-contract: incident impact vocabulary (statuspage-v2 compatible).
 export const INCIDENT_IMPACTS = ["minor", "major", "critical"] as const;
 export type IncidentImpact = (typeof INCIDENT_IMPACTS)[number];
 
+// public-contract: maintenance lifecycle (HOBO-497 vocabulary).
 export const MAINTENANCE_STATES = [
 	"scheduled",
 	"in-progress",
@@ -65,6 +84,7 @@ const MAINTENANCE_STATE_RANK = {
 	canceled: 2,
 };
 
+// public-contract: the availability slices a page can project.
 export const STATUS_SCOPE_KINDS = [
 	"station",
 	"primitives",
@@ -73,6 +93,7 @@ export const STATUS_SCOPE_KINDS = [
 ] as const;
 export type StatusScopeKind = (typeof STATUS_SCOPE_KINDS)[number];
 
+// public-contract: overall page indicator (statuspage-v2 + `unknown`).
 export const OVERALL_INDICATORS = [
 	"none",
 	"minor",
@@ -105,12 +126,14 @@ export class StatusPageParseError extends TypeError {
 const ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const INCIDENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
+// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
 export interface StatusScope {
 	readonly kind: StatusScopeKind;
 	readonly id: string;
 	readonly label: string;
 }
 
+// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
 export interface ComponentSpec {
 	readonly id: string;
 	readonly label: string;
@@ -118,6 +141,7 @@ export interface ComponentSpec {
 	readonly description?: string;
 }
 
+// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
 export interface IncidentUpdateRecord {
 	readonly state: IncidentState;
 	readonly body: string;
@@ -125,6 +149,7 @@ export interface IncidentUpdateRecord {
 	readonly public: boolean;
 }
 
+// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
 export interface IncidentRecord {
 	readonly id: string;
 	readonly title: string;
@@ -137,6 +162,7 @@ export interface IncidentRecord {
 	readonly updates: readonly IncidentUpdateRecord[];
 }
 
+// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
 export interface MaintenanceRecord {
 	readonly id: string;
 	readonly title: string;
@@ -174,12 +200,15 @@ type ParsedIncident = {
 	updates: readonly IncidentUpdateRecord[];
 };
 
+/** One UTC day of observed history for a component (uptime bar cell). */
+// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
 export interface DailyStatusRecord {
 	readonly date: string;
 	readonly worst: ComponentStatus;
 	readonly samples: number;
 }
 
+// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
 export interface ComponentStatusRecord {
 	readonly spec: ComponentSpec;
 	readonly status: ComponentStatus;
@@ -187,6 +216,7 @@ export interface ComponentStatusRecord {
 	readonly attainment?: number;
 	readonly target?: number;
 	readonly history: readonly DailyStatusRecord[];
+	/** True when the freshness budget forced this component to `unknown`. */
 	readonly delayed: boolean;
 }
 
@@ -299,6 +329,7 @@ export function parseComponentSpec(input: JsonValue): ComponentSpec {
 			`must match ${ID_PATTERN} (got "${id}")`,
 		);
 	}
+	// SAFETY: every field is parsed immediately above, and the optional description is added only after parsing.
 	const result: ParsedComponent = {
 		id,
 		label: expectString(raw.label, "component.label"),
@@ -346,6 +377,7 @@ export function parseIncidentRecord(input: JsonValue): IncidentRecord {
 			"resolved incidents must carry resolvedAt",
 		);
 	}
+	// SAFETY: every field is parsed immediately above, and resolvedAt is added only after the state invariant.
 	const result: ParsedIncident = {
 		id,
 		title: expectString(raw.title, "incident.title"),
@@ -397,6 +429,7 @@ export function parseMaintenanceRecord(input: JsonValue): MaintenanceRecord {
 	});
 }
 
+/** Forward-only maintenance transition guard. */
 export function advanceMaintenanceState(
 	current: MaintenanceState,
 	next: MaintenanceState,
@@ -406,6 +439,7 @@ export function advanceMaintenanceState(
 		: current;
 }
 
+/** Forward-only incident transition guard. */
 export function advanceIncidentState(
 	current: IncidentState,
 	next: IncidentState,

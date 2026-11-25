@@ -9,14 +9,16 @@
 			"src/draft/technical-proofs/session-replay-contracts"
 		],
 		"epicProofs": [],
-		"expProofs": []
+		"expProofs": [],
+		"designDocs": [
+			"docs/design/adr/03-data-plane.md#adr-0137",
+			"packages/replay/README.md"
+		]
 	},
 	"artifacts": {
 		"examples": "examples",
 		"notebook": "notebook.ipynb",
-		"diagrams": [
-			"README.md"
-		]
+		"diagrams": ["README.md"]
 	},
 	"waivers": []
 }

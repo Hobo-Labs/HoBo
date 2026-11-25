@@ -1,9 +1,3 @@
-export {
-	type MigrationCutOverEventData,
-	MigrationCutOverEventDataSchema,
-	type MigrationPhaseAppliedEventData,
-	MigrationPhaseAppliedEventDataSchema,
-} from "./_generated/data_core_pb.js";
 export * from "./canonical.js";
 export * from "./conformance.js";
 export * from "./crash-injection.js";
@@ -36,4 +30,5 @@ export * from "./selector.js";
 export * from "./spi.js";
 export * from "./type-mapping.js";
 
+// public-contract: package id consumers assert against.
 export const HOBO_DATA_CORE_PACKAGE = "@hobo/data-core";

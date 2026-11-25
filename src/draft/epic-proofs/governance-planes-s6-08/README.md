@@ -1,7 +1,7 @@
 # Governance Planes S6-08 — Stage-6 Evidence Rollup
 
 Independent draft POC for **HOBO-663**. Productionizes the four Stage-6
-governance evidence items from `urn:hobo:requirement:governance-planes` (Plan 46) as
+governance evidence items from `docs/design/governance-planes.md` (Plan 46) as
 one runnable reference architecture. Promotes scenarios from
 `src/draft/epic-proofs/contracts-policy-governance/` and the AI-safety gates of
 `src/draft/epic-proofs/generation-pipeline-training-ai-safety/` without
@@ -62,8 +62,11 @@ pnpm --prefix src/draft/epic-proofs/governance-planes-s6-08 test
 - The validated capability-indexed discovery proof is included in this rollup; its deterministic simulation contract is unchanged.
 - Consent registry (in-memory fixture)
 
-## Executable evidence
+## Architecture evidence
+
 - `architecture/` — protobuf + CUE + PACT boundary contract
+- `ADR.md` — parse-don't-validate + event architecture notes
+- `architecture.md` — service boundary map
 
 ## Scope out
 

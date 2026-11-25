@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+// Data-shape definitions for the HOBO-524 post-core cross-cutting delta pattern.
+// These records define docs-pattern evidence only; no broker runtime, project automation,
+// backlog migration, Yard planner, provider adapter, admin UI, or Gatekeeper behavior lives here.
+package hobo.post_core_delta_pattern.v1;
+
+enum DeltaGateDecision {
+  DELTA_GATE_DECISION_UNSPECIFIED = 0;
+  DELTA_GATE_DECISION_ACCEPTED = 1;
+  DELTA_GATE_DECISION_REJECTED = 2;
+}
+
+message PostCoreDeltaRecord {
+  string issue_id = 1;
+  string capability = 2;
+  string linear_project = 3;
+  string m0_acceptance_record = 4;
+  string design_index_row = 5;
+  string proof_readme = 6;
+  string traceability_row = 7;
+}
+
+message DeltaArtifactEvidence {
+  string source_issue = 1;
+  string proof_path = 2;
+  string proof_mode = 3;
+  repeated string blocked_follow_up_issues = 4;
+}
+
+message DeltaTraceabilityRecord {
+  string source_issue = 1;
+  string source_record = 2;
+  string proof_package = 3;
+  string acceptance_assertion = 4;
+}
+
+message DeltaGateDecisionRecord {
+  string issue_id = 1;
+  DeltaGateDecision decision = 2;
+  string reason = 3;
+}

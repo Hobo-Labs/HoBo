@@ -41,9 +41,11 @@ Under `turbo`, `envMode: "strict"` means the variable also has to be listed in
 `globalPassThroughEnv` (it is; see AGENTS.md).
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Wrpc Wit Baseline Poc.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

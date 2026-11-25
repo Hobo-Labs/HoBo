@@ -7,7 +7,14 @@ description: "Asset pipeline utilities for 2D game projects: validate an asset m
 
 Use the bundled scripts in `scripts/` to keep your game's art pipeline consistent and debuggable.
 
-## Asset indexes
+## Asset Index Learnings (from Rocky Roads)
+
+Keep a short “worked example” doc in your own repo whenever you establish an asset-index convention.
+
+In this repo, the practical “what worked / what didn’t” notes from building a Love2D asset index live at:
+- `docs/asset-index-learnings.md`
+
+Key takeaways to apply when building/managing an asset index:
 - Prefer a **native** manifest format (Lua table for Love2D), but keep it **JSON-shaped** for export.
 - Categorize by **how you use the asset** (`backgrounds`, `tilesets`, `images`, `spritesheets`), not by size alone.
 - Pick a **tile size** first for tilesets (this pack is consistently **16×16**), then derive `columns/rows`.

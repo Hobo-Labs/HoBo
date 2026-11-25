@@ -6,43 +6,104 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
+/**
+ * Describes the file cd_vercel.proto.
+ */
 export const file_cd_vercel: GenFile = /*@__PURE__*/
   fileDesc("Cg9jZF92ZXJjZWwucHJvdG8SEWhvYm8uY2QudmVyY2VsLnYxIokBCg5DZFN0b3JlQmluZGluZxIMCgRraW5kGAEgASgJEhAKCGVuZHBvaW50GAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkSEwoLZW52aXJvbm1lbnQYBCABKAkSEwoLc2VjcmV0X3BhdGgYBSABKAkSGQoRcmVsYXlfaWRlbnRpdHlfaWQYBiABKAkiOgoKQ2ROb3RSZWFkeRINCgVyZWFkeRgBIAEoCBIPCgdzdGFydGVkGAIgASgIEgwKBGNvZGUYAyABKAkiJgoIQ2RIZWFsdGgSCgoCb2sYASABKAgSDgoGY29tbWl0GAIgASgJYgZwcm90bzM");
 
+/**
+ * @generated from message hobo.cd.vercel.v1.CdStoreBinding
+ */
 export type CdStoreBinding = Message<"hobo.cd.vercel.v1.CdStoreBinding"> & {
+  /**
+   * @generated from field: string kind = 1;
+   */
   kind: string;
 
+  /**
+   * @generated from field: string endpoint = 2;
+   */
   endpoint: string;
 
+  /**
+   * @generated from field: string project_id = 3;
+   */
   projectId: string;
 
+  /**
+   * @generated from field: string environment = 4;
+   */
   environment: string;
 
+  /**
+   * @generated from field: string secret_path = 5;
+   */
   secretPath: string;
 
+  /**
+   * @generated from field: string relay_identity_id = 6;
+   */
   relayIdentityId: string;
 };
 
+/**
+ * Describes the message hobo.cd.vercel.v1.CdStoreBinding.
+ * Use `create(CdStoreBindingSchema)` to create a new message.
+ */
 export const CdStoreBindingSchema: GenMessage<CdStoreBinding> = /*@__PURE__*/
   messageDesc(file_cd_vercel, 0);
 
+/**
+ * /readyz while CD cannot compose: why, by code.
+ *
+ * @generated from message hobo.cd.vercel.v1.CdNotReady
+ */
 export type CdNotReady = Message<"hobo.cd.vercel.v1.CdNotReady"> & {
+  /**
+   * @generated from field: bool ready = 1;
+   */
   ready: boolean;
 
+  /**
+   * @generated from field: bool started = 2;
+   */
   started: boolean;
 
+  /**
+   * @generated from field: string code = 3;
+   */
   code: string;
 };
 
+/**
+ * Describes the message hobo.cd.vercel.v1.CdNotReady.
+ * Use `create(CdNotReadySchema)` to create a new message.
+ */
 export const CdNotReadySchema: GenMessage<CdNotReady> = /*@__PURE__*/
   messageDesc(file_cd_vercel, 1);
 
+/**
+ * /healthz: the function is up, and the build's commit.
+ *
+ * @generated from message hobo.cd.vercel.v1.CdHealth
+ */
 export type CdHealth = Message<"hobo.cd.vercel.v1.CdHealth"> & {
+  /**
+   * @generated from field: bool ok = 1;
+   */
   ok: boolean;
 
+  /**
+   * @generated from field: string commit = 2;
+   */
   commit: string;
 };
 
+/**
+ * Describes the message hobo.cd.vercel.v1.CdHealth.
+ * Use `create(CdHealthSchema)` to create a new message.
+ */
 export const CdHealthSchema: GenMessage<CdHealth> = /*@__PURE__*/
   messageDesc(file_cd_vercel, 2);
 

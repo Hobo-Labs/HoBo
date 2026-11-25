@@ -27,6 +27,10 @@
       "types": "./dist/client.d.ts",
       "default": "./dist/client.js"
     },
+    "./owner-login": {
+      "types": "./dist/relay-owner-login-protocol.d.ts",
+      "default": "./dist/relay-owner-login-protocol.js"
+    },
     "./project-config": {
       "types": "./dist/project-config.d.ts",
       "default": "./dist/project-config.js"
@@ -34,10 +38,6 @@
     "./runner-integrations": {
       "types": "./dist/runner-integrations.d.ts",
       "default": "./dist/runner-integrations.js"
-    },
-    "./mesh-nats": {
-      "types": "./dist/mesh-nats.d.ts",
-      "default": "./dist/mesh-nats.js"
     },
     "./cli-serve": {
       "types": "./dist/cli-serve-entry.d.ts",
@@ -51,25 +51,47 @@
       "types": "./dist/runner-host.d.ts",
       "default": "./dist/runner-host.js"
     },
+    "./machine-worker": {
+      "types": "./dist/machine-worker/index.d.ts",
+      "default": "./dist/machine-worker/index.js"
+    },
+    "./machine-worker/testing": {
+      "types": "./dist/machine-worker/testing.d.ts",
+      "default": "./dist/machine-worker/testing.js"
+    },
+    "./machine-worker/macos": {
+      "types": "./dist/machine-worker/macos/index.d.ts",
+      "default": "./dist/machine-worker/macos/index.js"
+    },
     "./relay-cache": {
       "types": "./dist/relay-cache/index.d.ts",
       "default": "./dist/relay-cache/index.js"
     },
+    "./relay-checks": {
+      "types": "./dist/relay-checks/index.d.ts",
+      "default": "./dist/relay-checks/index.js"
+    },
     "./schema/ci-project.schema.json": "./schema/ci-project.schema.json",
-    "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json"
+    "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json",
+    "./read-api": {
+      "types": "./dist/read-api.d.ts",
+      "default": "./dist/read-api.js"
+    },
+    "./schema/read-api.openapi.json": "./schema/read-api.openapi.json",
+    "./provider-usage": {
+      "types": "./dist/provider-usage/index.d.ts",
+      "default": "./dist/provider-usage/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "biome check .",
-    "mesh:demo": "node --experimental-strip-types --no-warnings scripts/mesh-demo.mts",
-    "mesh:trust": "node --experimental-strip-types --no-warnings scripts/mesh-trust.mts",
     "test": "vitest run",
     "test:deep": "vitest run --config vitest.deep.config.ts",
     "start": "node dist/main.js",
     "test:act": "node --import tsx scripts/act-harness.ts",
     "act:install": "node --import tsx scripts/act-install.ts",
-    "local:runner": "node --import tsx scripts/local-runner.ts",
     "test:acceptance": "node --import tsx scripts/acceptance.ts",
     "test:pact": "vitest run contracts/local-runner.pact.test.ts contracts/local-github.pact.test.ts",
     "test:pact:broker": "node --import tsx scripts/pact-broker.ts",
@@ -89,13 +111,12 @@
     "@hobo/broker": "workspace:*",
     "@hobo/ci": "workspace:*",
     "@hobo/core": "workspace:*",
-    "@hobo/pricing": "workspace:*",
+    "@hobo/fleet": "workspace:*",
+    "@hobo/fleet-agent": "workspace:*",
+    "@hobo/fleet-nats": "workspace:*",
     "@hobo/provider-redaction": "workspace:*",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "@nats-io/jetstream": "3.4.0",
-    "@nats-io/kv": "3.4.0",
-    "@nats-io/transport-node": "3.4.0",
-    "pg": "8.22.0",
+    "yaml": "2.9.0",
     "zod": "^4.1.13"
   },
   "devDependencies": {
@@ -109,7 +130,8 @@
     "@pact-foundation/pact": "17.1.4",
     "@types/pg": "8.15.5",
     "esbuild": "0.28.1",
-    "testcontainers": "11.8.1",
-    "yaml": "2.9.0"
+    "fast-check": "^4.9.0",
+    "pg": "8.22.0",
+    "testcontainers": "11.8.1"
   }
 }

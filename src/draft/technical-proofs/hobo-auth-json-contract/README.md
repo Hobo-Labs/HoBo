@@ -1,8 +1,8 @@
 # HoBo auth.json Flow Contract POC
 
 This draft pins the HOBO-48 contract for the Capability Manifest `auth.json`
-surface from [Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06)
-and [ADR-0009](urn:hobo:decision:adr-0009).
+surface from [Plan 6](../../../../docs/design/ai-native-agent-auth.md#plan-06)
+and [ADR-0009](../../../../docs/design/adr/02-identity-security.md#adr-0009).
 
 ## Contract Surface
 
@@ -47,9 +47,11 @@ The checks prove:
 - duplicate flow entries fail closed.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Auth Json Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -1,4 +1,3 @@
-/* oxlint-disable anti-slop/no-known-value-widening, anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type */
 import type { Trajectory, TrajectoryHash } from "@hobo/core";
 import { diagnosticJson, hashTrajectory, parseTrajectory } from "@hobo/core";
 import {
@@ -9,6 +8,20 @@ import {
 	TrajectoryCaptureParseError,
 } from "./trace-context.js";
 
+// Trajectory capture (IMPL-003 remaining slice): OTel-shaped span records
+// with OpenInference semantic-convention attributes around agent actions
+// (agent step, tool call, LLM call, eval), assembled into the stored
+// Trajectory record @hobo/provider-agentv grades — so capture → grade →
+// aggregate → promotion gate closes the loop. Spans leave through a port
+// (SpanExporterPort); no network exporter is bundled here — a real
+// OTLP/OpenInference exporter is an adapter someone wires later. The
+// serialization boundary is the generated Trajectory wire shape
+// (core data-models/training_engine.proto): assembly lowers span records to
+// proto-JSON and re-ingests them through core's parseTrajectory — parse,
+// don't validate, even for spans this module produced itself.
+
+// OpenInference span kinds (Arize OpenInference semantic conventions); the
+// wire form is core's generated OpenInferenceSpanKind enum.
 const OPENINFERENCE_SPAN_KINDS = [
 	"AGENT",
 	"CHAIN",
@@ -25,32 +38,52 @@ const OPENINFERENCE_SPAN_KINDS = [
 export type CapturedSpanKind = (typeof OPENINFERENCE_SPAN_KINDS)[number];
 
 const SPAN_KIND_SET: ReadonlySet<string> = new Set(OPENINFERENCE_SPAN_KINDS);
+
+// public-contract: OpenInference semconv span-kind key — consumers match spans on this exact string.
 export const ATTR_OPENINFERENCE_SPAN_KIND = "openinference.span.kind";
+// public-contract: OpenInference input value attribute key.
 export const ATTR_INPUT_VALUE = "input.value";
+// public-contract: OpenInference input mime-type attribute key.
 export const ATTR_INPUT_MIME_TYPE = "input.mime_type";
+// public-contract: OpenInference output value attribute key.
 export const ATTR_OUTPUT_VALUE = "output.value";
+// public-contract: OpenInference output mime-type attribute key.
 export const ATTR_OUTPUT_MIME_TYPE = "output.mime_type";
+// public-contract: OTel status code lowered into attributes (generated OpenInferenceSpan has no status field).
 export const ATTR_OTEL_STATUS_CODE = "otel.status_code";
+// public-contract: OTel span status message attribute key.
 export const ATTR_OTEL_STATUS_MESSAGE = "otel.status_message";
+// public-contract: mime type recorded for JSON input/output values.
 export const MIME_TYPE_JSON = "application/json";
 
 export type SpanStatusCode = "OK" | "ERROR";
+
+// domain-view: parse-don't-validate span status (OTel status shape); lowered
+// into the generated OpenInferenceSpan attribute map on assembly.
 export interface SpanStatus {
 	readonly code: SpanStatusCode;
 	readonly message?: string;
 }
+
+// domain-view: OTel-shaped finished span record (traceId/spanId/parentSpanId/
+// status) — a deliberately richer parse-don't-validate view whose wire form
+// is the generated OpenInferenceSpan (core data-models/training_engine.proto).
 export interface CapturedSpan {
 	readonly traceId: string;
 	readonly spanId: string;
+	/** Empty string for a local root span. */
 	readonly parentSpanId: string;
 	readonly name: string;
 	readonly kind: CapturedSpanKind;
+	/** ISO-8601 UTC timestamp. */
 	readonly startTime: string;
+	/** ISO-8601 UTC timestamp, never before startTime. */
 	readonly endTime: string;
 	readonly attributes: Readonly<Record<string, string>>;
 	readonly status: SpanStatus;
 }
 
+/** The port finished spans leave through; adapters export them elsewhere. */
 export interface SpanExporterPort {
 	export(span: CapturedSpan): void;
 }
@@ -60,6 +93,7 @@ export interface InMemorySpanExporter extends SpanExporterPort {
 	clear(): void;
 }
 
+/** In-memory exporter adapter: collects finished spans (tests, assembly). */
 export function createInMemorySpanExporter(): InMemorySpanExporter {
 	const spans: CapturedSpan[] = [];
 	return {
@@ -81,9 +115,11 @@ export interface SpanIdGenerator {
 }
 
 export interface TrajectoryCaptureOptions {
+	/** Inbound W3C traceparent to join; omitted = new root trace. */
 	readonly traceparent?: string;
 	readonly exporter?: SpanExporterPort;
 	readonly idGenerator?: SpanIdGenerator;
+	/** Injected ISO-8601 clock. */
 	readonly now?: () => string;
 }
 
@@ -98,6 +134,7 @@ export interface SpanHandle {
 	readonly spanId: string;
 	readonly name: string;
 	readonly kind: CapturedSpanKind;
+	/** W3C traceparent naming this span — propagate it to children/downstream. */
 	readonly traceparent: string;
 	end(options?: EndSpanOptions): CapturedSpan;
 }
@@ -111,10 +148,15 @@ export interface StartSpanOptions {
 
 export interface TrajectoryCapture {
 	readonly traceId: string;
+	/** The trace context of this capture (root parent for new spans). */
 	readonly traceparent: string;
 	startSpan(name: string, options: StartSpanOptions): SpanHandle;
 	openSpanCount(): number;
 	finishedSpans(): readonly CapturedSpan[];
+	/**
+	 * Assembles the finished spans into the stored Trajectory record; throws
+	 * a typed error while any span is still open.
+	 */
 	toTrajectory(options: AssembleTrajectoryOptions): CapturedTrajectory;
 }
 
@@ -164,6 +206,11 @@ function stringAttributes(
 	return attributes;
 }
 
+/**
+ * Parses one finished OTel/OpenInference span record at the ingestion
+ * boundary: invalid ids, malformed or pre-epoch timestamps, end-before-start,
+ * unfinished spans, and unknown kinds all throw typed errors.
+ */
 export function parseCapturedSpan(value: unknown): CapturedSpan {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		fail("span", "span record object", value);
@@ -248,6 +295,11 @@ const DEFAULT_ID_GENERATOR: SpanIdGenerator = {
 	spanId: generateSpanId,
 };
 
+/**
+ * Starts a trajectory capture: spans are started/ended around agent actions
+ * (AGENT step, TOOL call, LLM call, EVALUATOR run, ...), carry OpenInference
+ * semantic-convention attributes, and propagate W3C trace context.
+ */
 export function createTrajectoryCapture(
 	options: TrajectoryCaptureOptions = {},
 ): TrajectoryCapture {
@@ -261,6 +313,8 @@ export function createTrajectoryCapture(
 			: parseTraceContext(options.traceparent);
 	const traceId = inbound?.traceId ?? validTraceId(idGenerator.traceId());
 	const flags = inbound?.flags ?? "01";
+	// A remote parent is context, not a span of this trajectory: local roots
+	// keep parentSpanId "" so the assembled trajectory has a single root.
 	const captureTraceparent =
 		options.traceparent ??
 		formatTraceparent({
@@ -366,9 +420,9 @@ export function createTrajectoryCapture(
 						attributes: attributesAtEnd,
 						status,
 					});
-					exporter.export(span);
 					openSpans.delete(spanId);
 					finished.push(span);
+					exporter.export(span);
 					return span;
 				},
 			};
@@ -422,6 +476,10 @@ export interface AssembleTrajectoryOptions {
 			readonly owner: string;
 		};
 	};
+	/**
+	 * The reward slot attached at capture time; live-eval grading
+	 * (@hobo/provider-agentv) later computes the authoritative reward.
+	 */
 	readonly reward: {
 		readonly source: string;
 		readonly rubricRef: string;
@@ -430,15 +488,24 @@ export interface AssembleTrajectoryOptions {
 		readonly observedAt?: string;
 	};
 	readonly payloads?: Readonly<Record<string, unknown>>;
+	/** W3C trace-flags for the assembled traceparent; defaults to "01". */
 	readonly flags?: string;
 }
 
 export interface CapturedTrajectory {
+	/** The parsed generated Trajectory record (core wire shape). */
 	readonly trajectory: Trajectory;
+	/** The proto-JSON wire form the record round-tripped through. */
 	readonly trajectoryJson: Record<string, unknown>;
+	/** Canonical provenance hash (core hashTrajectory). */
 	readonly hash: TrajectoryHash;
 }
 
+/**
+ * Assembles finished span records into the stored Trajectory record. Every
+ * span is re-parsed at this ingestion boundary; the result round-trips
+ * through the generated proto wire shape via core's parseTrajectory.
+ */
 export function assembleTrajectory(
 	spans: readonly unknown[],
 	options: AssembleTrajectoryOptions,
@@ -498,6 +565,9 @@ export function assembleTrajectory(
 			observedAt: options.reward.observedAt ?? "",
 		},
 	};
+
+	// The serialization boundary: the assembled record must survive the
+	// generated proto wire shape and core's CUE-mirrored invariants.
 	const trajectory = parseTrajectory(
 		JSON.parse(JSON.stringify(trajectoryJson)),
 	);
@@ -523,6 +593,7 @@ function lowerSpan(
 	}
 	return {
 		id: span.spanId,
+		// A parent outside this trajectory (remote trace context) lowers to "".
 		parentId: spanIds.has(span.parentSpanId) ? span.parentSpanId : "",
 		kind: `OPEN_INFERENCE_SPAN_KIND_${span.kind}`,
 		name: span.name,

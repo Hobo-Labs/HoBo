@@ -98,7 +98,7 @@ type VibeDeploymentDashboardMockups = {
   readonly issue: "HOBO-544";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups";
-  readonly proofPath: "urn:hobo:proof:vibe-deployment-dashboard-mockups";
+  readonly proofPath: "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly DashboardQuickstartFixtureReference[];
   readonly personas: readonly DashboardMockupPersona[];
@@ -240,14 +240,14 @@ export const VIBE_DEPLOYMENT_DASHBOARD_MOCKUPS: VibeDeploymentDashboardMockups =
   issue: "HOBO-544",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups",
-  proofPath: "urn:hobo:proof:vibe-deployment-dashboard-mockups",
+  proofPath: "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md",
   designRefs: [
-    "urn:hobo:requirement:deployment-dashboard-topology-explorer",
-    "urn:hobo:requirement:developer-experience#plan-07",
-    "urn:hobo:requirement:developer-experience#plan-49",
-    "urn:hobo:requirement:data-plane#plan-32",
-    "urn:hobo:requirement:reliability-observability-cost#plan-05",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/deployment-dashboard-topology-explorer.md",
+    "docs/design/developer-experience.md#plan-07",
+    "docs/design/developer-experience.md#plan-49",
+    "docs/design/data-plane.md#plan-32",
+    "docs/design/reliability-observability-cost.md#plan-05",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   quickstartFixtureRefs: QUICKSTART_FIXTURE_REFS,
   personas: REQUIRED_DASHBOARD_MOCKUP_PERSONAS,
@@ -401,7 +401,7 @@ export function validateVibeDeploymentDashboardMockups(
   if (mockups.packagePath !== "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (mockups.proofPath !== "urn:hobo:proof:vibe-deployment-dashboard-mockups") {
+  if (mockups.proofPath !== "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(mockups.personas, REQUIRED_DASHBOARD_MOCKUP_PERSONAS)) {

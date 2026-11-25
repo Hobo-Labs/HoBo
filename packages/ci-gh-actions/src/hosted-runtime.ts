@@ -23,9 +23,11 @@ import {
 import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { createOfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
+import type { PeerCapacityWitness } from "./peer-capacity.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 
+/** The inbox stores only signature-verified GitHub delivery bytes. */
 export interface HostedInboxStore extends HostedRelayStore {
 	ready(): Promise<boolean>;
 	latestLeaseIntents(ids: readonly string[]): Promise<CiEvent[]>;
@@ -81,11 +83,13 @@ const QueuedJobDelivery = z.object({
 	}),
 });
 
+/** A lease's lifecycle step, as a host schedules it (ADR-0179: one queue message per step). */
 export type HostedLeaseStepKind =
 	| "dispatch-check"
 	| "claim-timeout"
 	| "reconcile";
 
+/** An outcome after which the relay should admit pending work. */
 function wantsDispatch(outcome: string): boolean {
 	return (
 		outcome === "queued" ||
@@ -94,6 +98,7 @@ function wantsDispatch(outcome: string): boolean {
 	);
 }
 
+/** A lease run by an isolated host (Vercel Sandbox or a box worker) under a sandbox name. */
 function isolatedSandboxLease(lease: Lease): boolean {
 	return (
 		(lease.provider === "vercel" ||
@@ -103,6 +108,7 @@ function isolatedSandboxLease(lease: Lease): boolean {
 	);
 }
 
+/** A lease whose state records an in-flight external call. */
 function holdsIntent(lease: Lease): boolean {
 	return (
 		lease.state === "dispatching" ||
@@ -113,6 +119,11 @@ function holdsIntent(lease: Lease): boolean {
 	);
 }
 
+/**
+ * How long an in-flight intent may stay open before the lease is uncertain:
+ * two minutes, or 17 for a Sandbox operation (a Vercel Function can run for
+ * up to 800 seconds).
+ */
 export function intentCutoffMs(sandbox: boolean): number {
 	return sandbox ? 1_020_000 : 120_000;
 }
@@ -126,6 +137,7 @@ export type HostedRelayTickTiming = Readonly<{
 	pendingCount: number;
 }>;
 
+/** Public API and bounded worker share the durable inbox and lease authority. */
 export function createHostedRelayRuntime(options: {
 	store: HostedInboxStore;
 	github: GithubTransport;
@@ -133,11 +145,16 @@ export function createHostedRelayRuntime(options: {
 	webhookSecret: string;
 	isolatedHost?: IsolatedRunnerHost;
 	denyUnisolated?: boolean;
+	/** Shared across ticks; a relay is rebuilt per tick and would forget it. */
 	jobDurations?: JobDurations;
+	/** See `HostedRelay`: maximum active leases for shared-label runners. */
 	generalLeaseLimit?: number;
+	/** See `HostedRelay`: maximum distinct merge groups with active leases. */
 	mergeGroupLeaseLimit?: number;
 	jobPickupMetadata?: JobPickupMetadataCache;
+	/** See `HostedRelay`: whether shared-label runs may borrow trunk slots. */
 	lendTrunkSlots?: boolean;
+	/** See `HostedRelay`: local trunk slot count for fleet deferral. */
 	trunkSlots?: number;
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
@@ -152,19 +169,20 @@ export function createHostedRelayRuntime(options: {
 		typeof HostedRelay
 	>[0]["headroomFleetDeferMs"];
 	fleetCapacity?: Readonly<{
-		snapshot: () => Promise<
-			Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
-		>;
+		snapshot: () => Promise<PeerCapacityWitness & { hoboFreeSlots: number }>;
 	}>;
+	/** Release reservations that never launch within policy bounds. */
 	unlaunchedReservationRelease?: ConstructorParameters<
 		typeof HostedRelay
 	>[0]["unlaunchedReservationRelease"];
 	parallelLaunchCapacity?: ConstructorParameters<
 		typeof HostedRelay
 	>[0]["parallelLaunchCapacity"];
+	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
 	onTickTiming?: (timing: HostedRelayTickTiming) => void;
+	/** A lease whose reconciliation threw this tick; the lease is retained and retried. */
 	onLeaseFailure?: (leaseId: string) => void;
 	inboxDeliveryTimeoutMs?: number;
 	inboxDrainBudgetMs?: number;
@@ -246,6 +264,7 @@ export function createHostedRelayRuntime(options: {
 			github: options.github,
 			identity: options.identity,
 			webhookSecret: options.webhookSecret,
+			// Every tick ends in `dispatchPending`, which reserves in admission order.
 			deferReservation: true,
 			admissionOrder,
 			sharedLabelTrunkJobs,
@@ -286,6 +305,12 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.parallelLaunchCapacity = options.parallelLaunchCapacity;
 		return new HostedRelay(relayOptions);
 	}
+	/**
+	 * A function can die after committing intent and before recording the
+	 * external response. An in-flight intent older than its cutoff makes the
+	 * lease uncertain; it is never retried blind. Returns the leases as they
+	 * stand afterwards.
+	 */
 	async function recoverStaleIntents(leases: readonly Lease[]) {
 		const events = await options.store.latestLeaseIntents(
 			leases.filter(holdsIntent).map((lease) => lease.id),
@@ -303,6 +328,8 @@ export function createHostedRelayRuntime(options: {
 					: lease.state === "claiming"
 						? "ci.RunnerClaimed"
 						: "ci.SandboxCreated";
+			// A Vercel Function can run for up to 800 seconds. Wait longer
+			// before treating its in-flight Sandbox operation as abandoned.
 			const cutoff = Date.parse(now()) - intentCutoffMs(sandbox);
 			const intent = [...events]
 				.reverse()
@@ -328,6 +355,11 @@ export function createHostedRelayRuntime(options: {
 		}
 		return out;
 	}
+	/**
+	 * Reconcile one lease against its host, when its state calls for it:
+	 * false when there was nothing to do. Throws what the host threw; the
+	 * caller decides whether a failure is retried now or later.
+	 */
 	async function reconcileOne(
 		entry: Lease,
 		controller: HostedRelay,
@@ -351,6 +383,10 @@ export function createHostedRelayRuntime(options: {
 			lease.sandboxName
 		) {
 			const host = options.isolatedHost ?? options.isolatedRecoveryHost;
+			// An uncertain lease whose runner GitHub has assigned the job to, and
+			// still shows running it, is adopted rather than stopped: stopping it
+			// would fail the job. It is stopped and settled once GitHub reports
+			// the job finished (a lease rebuilt from a lost cache is the case).
 			if (
 				host &&
 				options.isolatedHost &&
@@ -416,6 +452,7 @@ export function createHostedRelayRuntime(options: {
 		else await controller.discover(lease.id);
 		return true;
 	}
+	/** Whether GitHub shows the lease's job in progress on the lease's runner. */
 	async function assignedJobRunning(lease: Lease): Promise<boolean> {
 		try {
 			const job = await getJob(
@@ -430,9 +467,12 @@ export function createHostedRelayRuntime(options: {
 				job.runner_name === lease.runnerName
 			);
 		} catch {
+			// An unanswered read keeps the job running: stopping is the step that
+			// cannot be undone, so it waits for an answer.
 			return true;
 		}
 	}
+	/** Whether GitHub shows the lease's job completed on the lease's runner. */
 	async function assignedJobFinished(lease: Lease): Promise<boolean> {
 		const jobId = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
 		try {
@@ -448,6 +488,7 @@ export function createHostedRelayRuntime(options: {
 				job.runner_name === lease.runnerName
 			);
 		} catch {
+			// Failed or ambiguous GitHub reads cannot authorize a stop.
 			return false;
 		}
 	}
@@ -559,7 +600,9 @@ export function createHostedRelayRuntime(options: {
 					);
 					return "foreign-runner" as const;
 				}
-			} catch {}
+			} catch {
+				// GitHub read failure: fall through to duplicate recheck.
+			}
 			try {
 				const recheck = await (await relay()).processWebhook(
 					Buffer.from(input.rawBody),
@@ -570,6 +613,7 @@ export function createHostedRelayRuntime(options: {
 					? ("requeued" as const)
 					: ("duplicate" as const);
 			} catch {
+				// Fail-open for poll recovery: coalesce must not strand jobs on GitHub.
 				return "requeued" as const;
 			}
 		},
@@ -589,6 +633,11 @@ export function createHostedRelayRuntime(options: {
 				(await options.store.configuration())?.configuration !== undefined
 			);
 		},
+		/**
+		 * One verified delivery a queue pushed (a host with no inbox): process
+		 * it, then admit what it queued. Throws when processing fails, so the
+		 * queue redelivers it.
+		 */
 		async processDelivery(delivery: {
 			event: "workflow_job" | "workflow_run";
 			rawBody: Uint8Array;
@@ -601,6 +650,12 @@ export function createHostedRelayRuntime(options: {
 			if (wantsDispatch(outcome)) await controller.dispatchPending();
 			return outcome;
 		},
+		/**
+		 * One lifecycle step of one lease, in place of a scan over every lease:
+		 * recover a stale intent, then either admit pending work (a lease
+		 * still `reserved` at its dispatch check) or reconcile the lease with
+		 * its host. Throws what the host threw.
+		 */
 		async step(lease: Lease, kind: HostedLeaseStepKind): Promise<void> {
 			if (!ACTIVE_STATES.has(lease.state)) return;
 			const [current] = await recoverStaleIntents([lease]);
@@ -612,6 +667,11 @@ export function createHostedRelayRuntime(options: {
 			}
 			await reconcileOne(current, controller);
 		},
+		/**
+		 * Process a bounded inbox batch, then drain and inspect known leases.
+		 * With `admit: false` (a draining worker) it only inspects leases: no
+		 * delivery is taken and no pending job is reserved or launched.
+		 */
 		async drainInbox(tickOptions: { maxDeliveries?: number } = {}) {
 			if (tickOptions.maxDeliveries === undefined)
 				return drainWebhookInbox(inboxDrainBase());
@@ -626,6 +686,8 @@ export function createHostedRelayRuntime(options: {
 			const limit = admit ? (tickOptions.maxDeliveries ?? 10) : 0;
 			if (!Number.isInteger(limit) || limit < 0 || limit > 50)
 				throw new Error("invalid delivery batch size");
+			// A function can die after committing intent and before recording the
+			// external response. Old in-flight intent becomes uncertain, never retried.
 			await recoverStaleIntents(await options.store.activeLeases());
 			let ingressWantsDispatch = false;
 			let deliveriesMs = 0;
@@ -651,6 +713,7 @@ export function createHostedRelayRuntime(options: {
 				try {
 					if (await reconcileOne(lease, controller)) reconcileDispatched = true;
 				} catch {
+					/* Retain ambiguous reservations until a later verified reconciliation. */
 					reconcileDispatched = true;
 					options.onLeaseFailure?.(lease.id);
 				}

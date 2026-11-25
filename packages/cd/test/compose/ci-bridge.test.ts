@@ -6,6 +6,7 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import {
 	HOBO_CI_COMPONENTS,
+	hoboCiDogfoodSources,
 	hoboSelfDeliverySources,
 } from "../../src/compose/ci-bridge.js";
 
@@ -43,5 +44,9 @@ describe("HoBo delivering itself through CD (ci-bridge)", () => {
 			pipeline: "hobo-ci-relay",
 		});
 		expect(Object.isFrozen(HOBO_CI_COMPONENTS.relay)).toBe(true);
+	});
+
+	it("keeps the former name as a deprecated alias of hoboSelfDeliverySources", () => {
+		expect(hoboCiDogfoodSources).toBe(hoboSelfDeliverySources);
 	});
 });

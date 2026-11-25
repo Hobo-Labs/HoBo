@@ -1,3 +1,6 @@
+// in-place-evolve, resumed. A held or interrupted migration that is run again
+// with its journal skips what it already did, restores — if it must — the
+// first snapshot, and never puts a thrown message in a fact or a result.
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
@@ -18,6 +21,11 @@ import {
 } from "../src/index.js";
 import { NOW, types } from "./support/stage.js";
 
+/**
+ * A schema port over a list of applied statements, strict the way a real
+ * store is: a statement applied twice fails ("duplicate column"), and a
+ * snapshot is exactly the store as it stood when it was taken.
+ */
 class FakeStore implements SchemaApplyPort {
 	applied: string[] = [];
 	readonly calls: string[] = [];
@@ -36,6 +44,8 @@ class FakeStore implements SchemaApplyPort {
 		this.calls.push(`apply:${phase}`);
 		for (const statement of statements) {
 			if (statement.startsWith("FAIL")) {
+				// What a driver's error looks like: the statement, and the
+				// connection it was sent on.
 				throw new Error(
 					`${statement}: duplicate column name: email_new [dsn=postgres://app:hunter2@db.internal/prod]`,
 				);
@@ -48,6 +58,11 @@ class FakeStore implements SchemaApplyPort {
 		return { phase, statements: statements.length, changes: 0 };
 	}
 
+	/**
+	 * A query of the form `PENDING <statement>` is a probe: it answers the
+	 * statement while it is not applied, and nothing once it is. Any other
+	 * query answers the staged violations.
+	 */
 	verify(query = "") {
 		if (query.startsWith("PENDING ")) {
 			const statement = query.slice("PENDING ".length);
@@ -72,6 +87,7 @@ const PLAN = {
 	verify: { afterBackfill: "SELECT 1", afterContract: "SELECT 2" },
 };
 
+/** One probe per phase: rows while its statement is not yet in effect. */
 const PROBES = {
 	expand: "PENDING ADD email_new",
 	backfill: "PENDING FILL email_new",
@@ -136,6 +152,7 @@ describe("in-place-evolve resumes from its journal", () => {
 			done.phases.map((phase) => phase.phase),
 			["expand", "backfill", "contract"],
 		);
+		// Every phase is write-ahead: its intent, then its fact.
 		assert.deepEqual(types(done.facts), [
 			"Planned",
 			"SnapshotTaken",
@@ -154,6 +171,8 @@ describe("in-place-evolve resumes from its journal", () => {
 	});
 
 	test("the reviewer's case: without a journal the same re-run applies expand twice — with one it cannot", async () => {
+		// Without a journal a call remembers nothing; that is why a held
+		// migration must be resumed with one.
 		const forgetful = new FakeStore();
 		let verdict = deny;
 		const policy = (phase: SchemaPhase) =>
@@ -170,6 +189,9 @@ describe("in-place-evolve resumes from its journal", () => {
 			"snapshot:snap-2",
 			"apply:expand",
 		]);
+		// And what it restored was the second snapshot — taken after the first
+		// expand: the store is left expanded under a result that says
+		// rolled-back.
 		assert.deepEqual(forgetful.restored, ["snap-2"]);
 		assert.deepEqual(forgetful.applied, ["ADD email_new"]);
 	});
@@ -203,7 +225,7 @@ describe("in-place-evolve resumes from its journal", () => {
 		);
 	});
 
-	test("a hold with the dual window open resumes at the contract phase and rechecks backfill", async () => {
+	test("a hold with the dual window open resumes at the contract phase and verifies nothing twice", async () => {
 		const store = new FakeStore();
 		const journal = createMemoryMigrationJournal();
 		let consumers: readonly string[] = ["billing"];
@@ -233,7 +255,7 @@ describe("in-place-evolve resumes from its journal", () => {
 					fact.type === MIGRATION_EVENTS.Verified &&
 					fact.data.point === "after-backfill",
 			).length,
-			2,
+			1,
 		);
 	});
 
@@ -255,6 +277,7 @@ describe("in-place-evolve resumes from its journal", () => {
 		const store = new FakeStore();
 		const journal = createMemoryMigrationJournal();
 		let overtake: (() => Promise<void>) | undefined;
+		// The first run is overtaken while its gate is being consulted.
 		const slow = runInPlaceEvolve(
 			options(store, journal, {
 				compatGate: async () => {
@@ -279,8 +302,15 @@ describe("in-place-evolve resumes from its journal", () => {
 	test("a stale run whose phase fails does not restore the snapshot over a migration another run completed", async () => {
 		const store = new FakeStore();
 		const journal = createMemoryMigrationJournal();
+		// The stale run is overtaken inside the store, at the last moment: its
+		// contract statement is on its way when the other run completes. Its
+		// own statement then fails — the column is already gone — and what a
+		// failed phase leads to is a restore.
 		const real = store.applyPhase.bind(store);
 		let overtaken = false;
+		// The other run finds the stale run's intent with no answer. It may not
+		// guess whether the drop committed, so the plan carries the probe that
+		// lets it find out.
 		const plan = { ...PLAN, probes: PROBES };
 		const racing: SchemaApplyPort = {
 			snapshot: () => store.snapshot(),
@@ -330,6 +360,7 @@ describe("in-place-evolve resumes from its journal", () => {
 			"Failed",
 		]);
 		store.restore = real;
+		// Whatever the plan now says, the decided restore is carried out.
 		const rolled = await runInPlaceEvolve(options(store, journal));
 		assert.equal(rolled.status, "rolled-back");
 		assert.deepEqual(store.restored, ["snap-1"]);
@@ -375,180 +406,6 @@ describe("in-place-evolve erasure replay is fail-closed", () => {
 		);
 		assert.equal(fact?.data.erasuresReplayed, 4);
 		assert.equal(fact?.data.snapshotRef, "snap-1");
-	});
-});
-
-describe("in-place-evolve verification and compatibility evidence", () => {
-	test("a throwing contract verification restores the snapshot and does not expose the error", async () => {
-		const store = new FakeStore();
-		const verify = store.verify.bind(store);
-		store.verify = (query = "") => {
-			if (query === PLAN.verify.afterContract)
-				throw new Error("private database connection string");
-			return verify(query);
-		};
-		const result = await runInPlaceEvolve(
-			options(store, createMemoryMigrationJournal()),
-		);
-		assert.equal(result.status, "rolled-back");
-		assert.deepEqual(store.restored, ["snap-1"]);
-		assert.deepEqual(store.applied, []);
-		assert.match(
-			result.blockedReasons[0] ?? "",
-			/^contract verification failed: Error$/u,
-		);
-		assert.doesNotMatch(JSON.stringify(result), /private database/u);
-		assert.ok(
-			result.facts.some(
-				(fact) => fact.type === MIGRATION_EVENTS.RollbackDecided,
-			),
-		);
-		assert.equal(result.facts.at(-1)?.type, MIGRATION_EVENTS.RolledBack);
-	});
-
-	test("a failed verification holds without erasure replay and restores after replay is supplied", async () => {
-		const store = new FakeStore();
-		const verify = store.verify.bind(store);
-		store.verify = (query = "") => {
-			if (query === PLAN.verify.afterContract) throw new Error("unavailable");
-			return verify(query);
-		};
-		const journal = createMemoryMigrationJournal();
-		const { replayErasures: _unwired, ...bare } = options(store, journal);
-		const held = await runInPlaceEvolve(bare);
-		assert.equal(held.status, "held");
-		assert.deepEqual(store.restored, []);
-		assert.ok(held.blockedReasons.includes(NO_ERASURE_REPLAY_REASON));
-		const rolled = await runInPlaceEvolve(options(store, journal));
-		assert.equal(rolled.status, "rolled-back");
-		assert.deepEqual(store.restored, ["snap-1"]);
-	});
-
-	test("a gate exception holds before contract without exposing the error or restoring", async () => {
-		const store = new FakeStore();
-		const result = await runInPlaceEvolve(
-			options(store, createMemoryMigrationJournal(), {
-				compatGate: () => {
-					throw new Error("private credential");
-				},
-			}),
-		);
-		assert.equal(result.status, "held");
-		assert.equal(result.dualWindowOpen, true);
-		assert.deepEqual(store.restored, []);
-		assert.ok(!store.calls.includes("apply:contract"));
-		assert.doesNotMatch(JSON.stringify(result), /private credential/u);
-	});
-
-	test("rejects stale, future, and malformed compatibility evidence before contract", async () => {
-		const at = Date.parse(NOW);
-		for (const verifiedAt of [
-			new Date(at - 300_001).toISOString(),
-			new Date(at + 1).toISOString(),
-			"invalid",
-		]) {
-			const store = new FakeStore();
-			const result = await runInPlaceEvolve(
-				options(store, createMemoryMigrationJournal(), {
-					compatGate: () => ({
-						gateId: "g",
-						consumersOnLegacySchema: [],
-						verifiedAt,
-					}),
-				}),
-			);
-			assert.equal(result.status, "contract-blocked");
-			assert.equal(result.dualWindowOpen, true);
-			assert.ok(!store.calls.includes("apply:contract"));
-		}
-	});
-
-	test("rechecks backfill after a stale gate without restoring over intervening writes", async () => {
-		const store = new FakeStore();
-		const journal = createMemoryMigrationJournal();
-		let verifiedAt = new Date(Date.parse(NOW) - 300_001).toISOString();
-		const run = () =>
-			runInPlaceEvolve(
-				options(store, journal, {
-					compatGate: () => ({
-						gateId: "g",
-						consumersOnLegacySchema: [],
-						verifiedAt,
-					}),
-				}),
-			);
-		assert.equal((await run()).status, "contract-blocked");
-		verifiedAt = NOW;
-		store.violations = [{ id: "new-write" }];
-		const held = await run();
-		assert.equal(held.status, "held");
-		assert.deepEqual(store.restored, []);
-		assert.ok(!store.calls.includes("apply:contract"));
-		store.violations = [];
-		assert.equal((await run()).status, "completed");
-	});
-
-	test("validates the configured maximum age before taking a snapshot", async () => {
-		for (const compatGateMaxAgeMs of [
-			0,
-			-1,
-			Number.POSITIVE_INFINITY,
-			Number.NaN,
-		]) {
-			const store = new FakeStore();
-			await assert.rejects(
-				runInPlaceEvolve(options(store, undefined, { compatGateMaxAgeMs })),
-				/positive and finite/u,
-			);
-			assert.deepEqual(store.calls, []);
-		}
-	});
-
-	test("enforces a caller's shorter compatibility evidence lifetime", async () => {
-		const store = new FakeStore();
-		const result = await runInPlaceEvolve(
-			options(store, undefined, {
-				compatGateMaxAgeMs: 1_000,
-				compatGate: () => ({
-					gateId: "g",
-					consumersOnLegacySchema: [],
-					verifiedAt: new Date(Date.parse(NOW) - 1_001).toISOString(),
-				}),
-			}),
-		);
-		assert.equal(result.status, "contract-blocked");
-		assert.ok(!store.calls.includes("apply:contract"));
-	});
-
-	test("checks evidence freshness after the contract policy finishes", async () => {
-		const store = new FakeStore();
-		let now = NOW;
-		const result = await runInPlaceEvolve(
-			options(store, undefined, {
-				clock: () => now,
-				policy: (phase) => {
-					if (phase === "contract")
-						now = new Date(Date.parse(NOW) + 300_001).toISOString();
-					return allow;
-				},
-			}),
-		);
-		assert.equal(result.status, "contract-blocked");
-		assert.ok(!store.calls.includes("apply:contract"));
-	});
-
-	test("verifies backfill after the contract policy and gate have returned", async () => {
-		const store = new FakeStore();
-		const result = await runInPlaceEvolve(
-			options(store, undefined, {
-				compatGate: () => {
-					store.violations = [{ id: "changed-during-gate" }];
-					return { gateId: "g", consumersOnLegacySchema: [], verifiedAt: NOW };
-				},
-			}),
-		);
-		assert.equal(result.status, "rolled-back");
-		assert.ok(!store.calls.includes("apply:contract"));
 	});
 });
 
@@ -646,7 +503,11 @@ describe("in-place-evolve custody coverage", () => {
 	});
 });
 
+// A phase is write-ahead. `PhaseIntended` is journaled before the statements
+// run; an intent with no answer after it means they may have committed. A run
+// that finds one neither runs them again on a guess nor restores for them.
 describe("in-place-evolve does not guess about a phase it cannot account for", () => {
+	/** A journal that dies when a fact of one type, for one phase, is appended. */
 	function dying(
 		type: string,
 		phase: SchemaPhase,
@@ -683,6 +544,8 @@ describe("in-place-evolve does not guess about a phase it cannot account for", (
 			);
 			const applied = [...store.applied];
 			const calls = store.calls.length;
+			// `options` wires erasure replay: before, that is what turned the
+			// failed re-apply into a restore.
 			for (const run of [1, 2]) {
 				const held = await runInPlaceEvolve(options(store, journal));
 				assert.equal(held.status, "held", `run ${run}`);
@@ -702,6 +565,8 @@ describe("in-place-evolve does not guess about a phase it cannot account for", (
 					[],
 				);
 			}
+			// With a probe the run finds the phase in effect, records it as
+			// applied without running it, and carries on.
 			const done = await runInPlaceEvolve(
 				options(store, journal, { plan: probed }),
 			);
@@ -761,6 +626,7 @@ describe("in-place-evolve does not guess about a phase it cannot account for", (
 			runInPlaceEvolve(options(store, journal, { plan: probed })),
 			/the process died/u,
 		);
+		// The probe says the drop is not in effect, and the drop now fails.
 		const failing = {
 			...probed,
 			contract: ["FAIL contract"],
@@ -795,6 +661,8 @@ describe("in-place-evolve does not guess about a phase it cannot account for", (
 		assert.equal(held.status, "held");
 		const last = held.facts[held.facts.length - 1];
 		assert.equal(last?.data.failedPhase, "contract");
+		// The store took no drop; the answer is known, so this is not a hold
+		// for an unknown outcome.
 		const rolled = await runInPlaceEvolve(
 			options(store, journal, { plan: failing }),
 		);

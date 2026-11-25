@@ -28,6 +28,7 @@ const RequestBody = z
 	.object({ purpose: z.enum(["register", "install"]) })
 	.strict();
 
+/** Tokens must be resolved server-side for the already-authenticated subject. */
 export function createGithubInstallationAdminVerifier(options: {
 	github: OnboardingGithubPort;
 	getUserToken: (actor: Actor) => Promise<string | undefined>;
@@ -73,6 +74,7 @@ export function createGithubInstallationAdminVerifier(options: {
 	};
 }
 
+/** Authenticate is a trusted session verifier; NEVER construct its actor from request JSON. */
 export function createAppRegistrationHandler(options: {
 	registration: ReturnType<typeof createAppRegistration>;
 	authenticate: (request: Request) => Promise<Actor | undefined>;

@@ -39,7 +39,7 @@ import "list"
 	issue:              "HOBO-569"
 	phase:              "M1"
 	targetPackage:      "src/draft/exp-proofs/api/control-plane-api-resource-lifecycle-shapes"
-	proofNote:          "urn:hobo:proof:control-plane-api-resource-lifecycle-shapes"
+	proofNote:          "docs/design/proofs/control-plane-api-resource-lifecycle-shapes/README.md"
 	designRefs:         [...string] & list.MinItems(1)
 	operations:         [...#ControlPlaneApiOperation] & list.MinItems(8)
 	refusalEnvelopes:   [...#ControlPlaneApiRefusalEnvelope] & list.MinItems(8)

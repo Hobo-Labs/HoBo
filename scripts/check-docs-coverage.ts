@@ -2,8 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { checkIssueWorkerGuardrails } from "./issue-worker-guardrails.js";
-
 const REQUIRED_FILES = [
 	"README.md",
 	"CONTRIBUTING.md",
@@ -12,8 +10,8 @@ const REQUIRED_FILES = [
 	"SUPPORT.md",
 	"AGENTS.md",
 	"docs/index.md",
+	"docs/design/index.md",
 	"docs/agent-tooling.md",
-	"docs/automations/hobo-issue-worker.md",
 	"src/draft/README.md",
 	".github/pull_request_template.md",
 ];
@@ -84,15 +82,6 @@ export function checkDocsCoverage(root: string) {
 			content: read(root, "CONTRIBUTING.md"),
 			patterns: REQUIRED_CONTRIBUTING_PATTERNS,
 		});
-	}
-
-	const issueWorkerPath = "docs/automations/hobo-issue-worker.md";
-	if (fs.existsSync(path.join(root, issueWorkerPath))) {
-		for (const problem of checkIssueWorkerGuardrails(
-			read(root, issueWorkerPath),
-		)) {
-			problems.push(`${issueWorkerPath}: ${problem}`);
-		}
 	}
 
 	return problems;

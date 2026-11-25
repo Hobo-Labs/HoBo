@@ -43,41 +43,6 @@ signal handler, so a host that embeds it keeps its own signal handling. SIGKILL 
 crash are out of reach.
 Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.ts`).
 
-`hobo logs` reads stdout, stderr, and component events from the project's local
-deployment. The most recent 200 lines are shown by default; use `--lines` or
-`--tail` to choose up to 10,000, or `--follow` to stream additions until
-interrupted. `--json` returns a bounded snapshot with a truncation indicator;
-with `--follow`, it emits one JSON log or gap record per line. A gap record
-means a rotation or truncation may have caused some output to be missed. Local
-logs are stored in `.hobo/local-deployment.log` and retained across restarts.
-
-The local component host starts independent HTTP components concurrently and
-initializes each dependent after its declared HTTP component dependencies are
-serving. It makes dependency addresses available through service discovery
-before calling each component's entrypoint. Bindle environment values are also
-available during initialization. The host tears components down in reverse
-dependency order; a cycle stops startup.
-
-An HTTP component can require a successful readiness response before its
-dependents initialize:
-
-```ts
-const api = b.api(() => () => new Response("ready")).with({
-  provider: "hobo",
-  option: "health",
-  config: { type: "http", path: "/ready" },
-});
-```
-
-The local host retries non-successful responses every 250 ms for up to 30
-seconds. Set `intervalMs` and `timeoutMs` in the configuration to adjust those
-limits. A failed or timed-out check stops startup and tears down components
-that have already started.
-
-`hobo doctor` reports quarantined event incidents from the current tenant's
-durable journal. `hobo inspect quarantines --json` returns their source and
-record locations, fold, and reason. If the report contains a `nextPosition`,
-pass it to `hobo inspect quarantines <position>` to continue the scan.
 ### Owner store session over MCP
 
 `hobo-mcp`'s `choose_secret_store` connects the owner's secret store when an agent
@@ -90,9 +55,118 @@ owner channel. The opened store stays in the server's memory, keyed by project. 
 the CD runtime: `owner://<NAME>` reads the store's CD entry and is the only locator it
 resolves; an `env://<NAME>` locator is refused with a pointer to `choose_secret_store`,
 because the process environment never holds credentials. Hostinger's resolvers receive
-the owner's `HOSTINGER_API_TOKEN` only in their request header. Results, `doctor`'s
-`ownerStoreSession`, and refusals carry a status and the store's label only. A host
-without form elicitation or MCP Apps gets `secure-form-unavailable`.
+the owner's `HOSTINGER_API_TOKEN` only in their request header. For an Infisical
+store without that entry, `hobo ci fleet` reaches Hostinger through Infisical Agent
+Vault instead (`agent-vault-broker.ts`): HoBo starts a one-hour session for the
+project's `http` service covering `developers.hostinger.com`, runs
+`infisical agent-vault proxy` itself on `127.0.0.1` with its proxy token only in
+the child's environment, routes the calls through it, and revokes the session and
+stops the proxy when the session closes ([CI.md](CI.md#hostinger-through-infisical-agent-vault)).
+Results, `doctor`'s `ownerStoreSession` (with `agentVault`: project, service and
+proxy names and hosts once reached), and refusals carry a status, the store's label
+and those names only. A host
+without form elicitation or MCP Apps (a Claude Code cloud session, for one) gets
+`owner-page`: HoBo's own page (`mcp-owner-page.ts`), which the agent publishes as a
+claude.ai Artifact with the `db` capability. The page encrypts the owner's answer in
+their browser (ECDH P-256, HKDF-SHA256, AES-256-GCM) to a one-use key that only this
+server holds, saves the sealed text to `hobo-owner-page/<page>` in the artifact's
+database, and the agent passes that text unchanged to `submit_owner_page`. HoBo opens
+it once, within 30 minutes, records the store choice and hands the store's sign-in to
+the waiting run. The agent carries only ciphertext. `choose_secret_store` with
+`channel: "page"` returns the page even where the host declares form elicitation,
+for hosts that declare it but never show the form. The page takes the store choice and
+the store's sign-in (Infisical's copied session) only. A `sign-in-needed` result carries
+the refusal's `reason` with links and identifiers redacted (`publicReason`).
+
+`relay_login` reconnects a restarted server to the owner's already configured
+HoBo CI relay instead of the store form (`src/mcp-relay-login.ts`,
+`src/relay-owner-session.ts`): the owner gives the relay address in a host form or
+on the sealed owner page (`openRelay`/`unsealRelay`), confirms one GitHub device
+code, and the relay's session stays in this server's memory. While no store
+session is established for a project, the composed CLI resolves
+`owner://HOBO_CI_ACCOUNT_TOKEN` and `github-app://<owner>/<repo>` through it
+(`withRelaySession`); other entries are refused because the relay hands out only
+short-lived values. The `hobo` binary does the same per process with
+`hobo login --relay <origin>` and `--relay` on `hobo ci` and `hobo cd`; nothing is
+written ([CI.md](CI.md#reconnect-after-a-restart-hobo-login---relay)).
+
+`store_owner_entries` is the optional later step that joins a Hostinger fleet: it fills the store with the provider entries HoBo reads
+(`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
+each value checked for shape and written with the session's `entries(cwd).write`,
+never returned. It needs form elicitation and an established session. The server
+declares `tools.listChanged` and sends `notifications/tools/list_changed` after
+`notifications/initialized`, so a host that reconnects to a restarted server lists
+its current tools.
+
+## HoBo Fleet: `hobo fleet …`
+
+`src/fleet-command.ts` holds every command of the fleet CLI ; `src/fleet-runtime.ts` is the production composition and
+`src/fleet-cli.ts` the binary's entry (the composed `hobo` hands `fleet` words
+over before the shell's global option parser). Each command parses strictly
+(`parseArgs`, a subcommand allowlist) and calls exactly the `FleetClient`
+methods and local functions the §6.15 "Calls" column names, in order;
+`test/fleet-command.contract.test.ts` (O25) asserts this against a copy of
+that table with a recording fake client.
+
+| Command | Calls |
+|---|---|
+| `login [--device] [--provider] [--tenant]` | `signInStart`, then `signInComplete` (loopback redirect) or `signInPoll` |
+| `logout` | local: delete the stored person token |
+| `enroll --token-file <path\|-> \| --oidc <path\|->` | local key generation, then `enroll` through `createFleetAgent(...).enroll` |
+| `enroll --fleet <id>` | key generation; the person signs in with the device identity key (D44), then `enroll` |
+| `run [--fleets a,b]` | local `createFleetAgent(...).start()` until SIGINT/SIGTERM, then drain and stop |
+| `service install\|uninstall\|status` | local `installService` (uninstall/status remove or report the definition it writes) |
+| `status [--fleet]` | `listFleets`, then `fleetView` per fleet (`hobo ci status` shows the same table) |
+| `doctor` | `authorityDiscovery`, `discovery`, `jwks`; key store, sandbox tiers, a bus TCP connect, a p2p self-start |
+| `token`, `member`, `fleet`, `submit`, `work`, `audit`, `leave` | the client methods of the same meaning |
+| `connect <member> --order <id> [--forward L:R]`, `cp <member>:<digest> <path>` | `grantSession`, then `selectTransport` (`FleetTransport.dial`); shell and forward are line-batched (D56) |
+| `ops provision\|ceremony\|rotate-key\|backup\|restore --config <path>` | local `provisionTopology`, `runCeremony`, `rotateKey`, `backup`, `restore` |
+
+- **Tokens never travel on the command line.** `--token` and any argument
+  that looks like a bootstrap token (`hft_…`) are refused with a pointer to
+  `--token-file` (`-` reads standard input). `token create` prints the new
+  token once and never puts it in `--json` data.
+- **`HOBO_FLEET_HOME`** (default `~/.hobo/fleet`, `hoboFleetHome`) holds the device key store,
+  `person.json` (0600: the DPoP-bound person token and the ES256 sign-in key
+  it is bound to) and `enrollment.json` (the discovery document; no secret;
+  overlay join credentials are used once at enrollment and never written).
+- **`hobo fleet run`** composes `createFleetAgent` with `createFileKeyStore`
+  (or `createExternalSignerKeyStore` for `HOBO_FLEET_KEYSTORE=external-signer:<command>`),
+  `sandboxDrivers` (capped by `HOBO_FLEET_SANDBOX`), `createEgressProxyFactory`,
+  `createHostCapacity`, `createNatsBusConnector`, the oci-command and GitHub
+  Actions runners, and the transports in `HOBO_FLEET_TRANSPORTS` order:
+  `createP2pTransport`, `createOverlayTransport` over each overlay `enroll`
+  joined with the authority's `OverlayJoin`, and
+  `createBusRelayTransport(() => agent.bus())`.
+- **Session-close facts.** Both sides of a `connect` or `cp` session publish
+  a signed `SessionClose` with byte counts. The acceptor's
+  comes from `serveSessions`; the CLI publishes its own initiator fact,
+  signed with this device's SIGN key on its own events subjects, when it
+  runs on an enrolled device whose bus it reaches. A person's CLI on a device
+  that is not enrolled has no member record or bus (D59: no `relay:` party
+  form for a person), so it publishes none; the acceptor's fact still bills.
+- **Device-authenticated commands** (`member rotate`, `leave`) obtain an SVID
+  through the credentials protocol the agent follows (nonce on disk first,
+  generation written back). Stop `hobo fleet run` first: two processes
+  refreshing one key store lock the device (F7).
+- **A person's CLI has no member record** (D59): `connect` and `cp` initiate
+  over `p2p` and `overlay` with ephemeral keys, never `bus-relay`, and so
+  publish no initiator session-close fact (the acceptor publishes its own).
+- **`ops`** reads the operations configuration `@hobo/fleet-authority` reads.
+  `ceremony` prints the two shares and writes them nowhere. `provision` stores
+  the static users' credentials at `<prefix>/nats-<user>`, each scoped signing
+  seed as the slot `<prefix>/scoped-<role>` and, when absent, a callout xkey at
+  `<prefix>/callout-xkey`. This package has no OpenBao adapter yet, so the
+  default build answers `unavailable` for `ops`; a composition root passes
+  `openSecrets`.
+- **`credential-presenter.ts`** presents the authority-issued person token
+  (DPoP with its sign-in key) when `HOBO_FLEET_AUTHORITY_URL` is set and a
+  person is signed in; agent SVIDs are minted through `@hobo/identity`'s
+  `JwtSvidIssuer` (RS256, in-memory key for offline development, never HMAC)
+  and DPoP proofs through `@hobo/fleet/keys`.
+- The bare-metal internal router is `INTERNAL_ROUTER_HOST`
+  (`installInternalRouter`, `internalRouterBase`); "mesh" names only the fleet's
+  coordination plane.
 
 ## CLI verification and remote deployment safety
 
@@ -123,7 +197,7 @@ journal and two SQLite authority connections. It covers admission races, shared
 free allocation, tampering, restart, reservation adoption and final settlement.
 The wire contracts and CUE/PACT fixtures live with `@hobo/cloud` and
 `@hobo/broker`; these offline tests do not verify a live provider API. See the
-[hosting transition design](urn:hobo:requirement:hosting-budget-transitions).
+[hosting transition design](../../docs/design/hosting-budget-transitions.md).
 
 `createProductionYardRuntime` is the async production composition. It requires a
 caller-owned persistent directory and trusted clock. `configureHosting` receives
@@ -459,20 +533,17 @@ currently adopts and verifies a Git-sourced deployment; it does not run this
 deploy command.
 
 Delivery planning also reads declared secret projections from Yards in the
-relay's own Junction, keeping each projection under its source Yard and
-offering it in the relay Yard's regions, where the relay reads it. A declared
+relay's own Junction, keeping each projection under its source Yard. A declared
 Junction is not evidence that provider ownership or connectivity has been
 verified; the changed cross-Yard path still needs that evidence.
 
-From the repository root, the first command sends nothing and reads no token.
-The second runs with the owner's store session (HoBo MCP's
-`choose_secret_store`) and deploys production, built by HoBo with the store
-coordinates bundled in and the cache attached first.
-
 ```sh
+# From the repository root. Nothing is sent; no token is read.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
   --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
+# With the owner's store session (HoBo MCP's choose_secret_store): production,
+# built by HoBo with the store coordinates bundled in, the cache attached first.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
   --sha <40-hex commit> --target production --build prebuilt --provision --wait
 ```
@@ -489,8 +560,12 @@ hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--root-directory <dir>` | sent as `projectSettings.rootDirectory`, which Vercel saves on the project |
 | `--create-project` | create the project when Vercel has none by that name, with the Yard's `rootDirectory`; without it a missing project is a refusal |
 | `--provision` | attach the Marketplace bindings the Camp chooses first, idempotently, with the Vercel CLI (`src/ci-relay-provision.ts`); a failure is reported, not fatal |
-| `--wait` | wait up to 15 minutes for READY and verify the relay; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR, CANCELED or timeout is `HOBO_CI_DEPLOY_NOT_READY` |
+| `--wait` | drive the deployment to READY and verify the relay with a 20-minute budget checked between passes; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR or CANCELED is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--dry-run` | print the plan and send nothing |
+
+An in-flight provider operation can outlast the wait budget. The relay path
+does not durably fence it across lease expiry, processes or restarts: inspect
+the provider and CD journal to establish its outcome before another deploy.
 
 A real run reads the deploy token from the owner's secret store as the
 dedicated deploy reader, with the store coordinates from the owner store
@@ -564,7 +639,7 @@ Requests to https://api.vercel.com:
      always: one deployment, built by Vercel from the commit
 ```
 
-**Credentials from OpenSesame (`HOBO_CREDENTIALS=opensesame`, [ADR-0170](urn:hobo:decision:adr-0170)).**
+**Credentials from OpenSesame (`HOBO_CREDENTIALS=opensesame`, [ADR-0170](../../docs/design/adr/02-identity-security.md#adr-0170)).**
 The composed `hobo` then relaunches itself once, before composing anything, as
 `opensesame dev --agent --schema <generated> run -- <this invocation>` (through
 [`@hobo/adapter-opensesame`](../adapters/adapter-opensesame/README.md)), reading
@@ -601,7 +676,7 @@ found outside OpenSesame, which only brokers Vercel's token.
 
 Related execution paths:
 
-- **`hobo login`** — fixture/OIDC session under `HOBO_HOME`; full production OIDC/SPIRE is not the default (`src/login-command.ts` `HONEST SCOPE`).
+- **`hobo login`** — fixture/OIDC session under `HOBO_HOME`; full production OIDC/SPIRE is not the default (`src/login-command.ts` `HONEST SCOPE`). `hobo login --relay <origin>` signs in to the owner's CI relay for the process only and writes nothing.
 - **Build paths** — compiler-backed app imprints produce real Node bundles with
   runtime assets. Product WASM builds require the real componentizer; product
   container builds use a service Dockerfile with Docker Buildx or self-hosted
@@ -610,7 +685,9 @@ Related execution paths:
   diff IDs verified. All output files and the manifest are replaced together
   after successful generation. Toolchain failures preserve the previous build.
 
-**Pre-release:** `@hobo/hobo` is **not published to npm** as a stable install story yet. Prefer the monorepo workspace binary until publish hygiene and CI-proven release land.
+**Pre-release:** `@hobo/hobo` is **not published to npm** as a stable install story yet. Prefer the monorepo workspace binary until publish hygiene and CI-proven release land. Ship targets: [`docs/design/launch-ship-targets.md`](../../docs/design/launch-ship-targets.md), [ADR-0140](../../docs/design/adr/07-portability-extensibility.md#adr-0140).
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for layering and runtime assembly.
 
 Validate integration changes with `pnpm --filter @hobo/hobo run test`. Vitest loads workspace packages' built `dist` exports through Node rather than re-transforming that dependency graph through Vite; hobo's own source and tests still use the Vite loader. `@hobo/cli` stays on the Vite loader so dynamic bindle imports resolve `.js` specifiers in TypeScript sources.
 
@@ -675,7 +752,7 @@ because nothing was probed.
 |---|---|---|
 | `process` | seed rows (`real` / `simulated`) | reuses `seedLocalhostYard()`, whose labels are already audited (Node HTTP server `real`, in-memory queue `simulated`) |
 | `wsl2` | seed rows (`real` / `simulated`) | detected from *inside* the guest, so hosting is the same in-process Node executor as `yard:local` |
-| `wasm` | `simulated` | `runtime-local` does not execute real `.wasm` bytes today ([`urn:hobo:requirement:yard-bindings`](urn:hobo:requirement:yard-bindings)); a `wasmtime` binary on the box does not change what HoBo executes |
+| `wasm` | `simulated` | `runtime-local` does not execute real `.wasm` bytes today ([`docs/design/yard-bindings.md`](../../docs/design/yard-bindings.md)); a `wasmtime` binary on the box does not change what HoBo executes |
 | `oci` | `camp-only` | `@hobo/runtime-oci` schedules through kubectl against a cluster; there is no path that places a workload into the local daemon |
 | `lxc`, `nspawn`, `firecracker` | `camp-only` | the substrate is genuinely on the box, but HoBo has no local placement path — satisfying the profile needs a Camp |
 
@@ -826,12 +903,6 @@ refused rather than shadowed.
 
 ## Local server and guest execution checks
 
-Local Bindle serving releases listeners, component hosts, and its mesh hook if
-startup fails. On failure or close, it restores environment values that still
-match its own injections and leaves later external changes intact. Overlapping
-serving scopes retain their active environment injections when closed in either
-order. A requested port of zero publishes the actual port assigned by the OS.
-
 `serve control` removes both signal handlers when either shutdown signal fires,
 and propagates close failures to the command rather than producing an unhandled
 rejection. `test/serve-control-command.test.ts` exercises binding, shutdown on
@@ -839,3 +910,69 @@ either signal, and returned URLs; it does not directly assert listener counts
 or inject a close failure. The WASM guest execution test also checks tenant
 environment injection through the separately bundled guest entry, which host
 typechecking cannot cover.
+
+## `hobo ci` command table
+
+A `hobo ci` command added for the relay build is one file that
+exports a `CiCommand` and one entry in `CI_COMMANDS`
+([`src/ci-commands.ts`](src/ci-commands.ts)). `ci-command.ts` looks a name up
+there only when it is not one of `BUILT_IN_CI_COMMANDS`, and hands the command
+its own arguments, the flags, the environment, the transport, the clock and a
+way to find the local repository. The command parses its own options.
+
+## `hobo ci activity`, `usage` and `performance`
+
+Three read-only commands show what a connected relay keeps about an account's
+CI (ADR-0183). They find the relay the way `hobo ci status` does: `--relay`,
+then `.hobo/ci.json` at the checkout's root (so they work from any
+subdirectory), then `HOBO_CI_RELAY_URL`, then the link `hobo ci setup` saved
+for the checkout. Only a project file that sets `allowInsecureLoopback` may
+name a loopback `http://` relay. They read it with the account
+credential, `owner://HOBO_CI_ACCOUNT_TOKEN` from the owner's store session
+(connected with HoBo MCP's `choose_secret_store`; without it they stop with
+`HOBO_CI_AUTH_REQUIRED`) or a mounted file named by `--token-file`, and ask only the
+read API's frozen `GET /v1/accounts/self/...` paths. Each takes `--json`.
+
+| Command | Read API path | What it shows |
+| --- | --- | --- |
+| [`hobo ci activity`](src/ci-activity.ts) | `routes` | Each relay job: where it ran, why, and every order step passed over, built with `activityFeed` from `@hobo/ci`. Filters `--repo`, `--since` (default 90 days, the journal's retention), `--runner <step>`, `--outcome`, `--machine`; pages newest first with `--limit` and the printed `--cursor` |
+| [`hobo ci usage`](src/ci-usage.ts) | `usage` | Billed minutes per runner type and day, short jobs and the minutes they waste, minutes kept off GitHub-hosted runners priced at GitHub's rate, relay jobs answered without a billed minute, and the included minutes left with the burn rate |
+| [`hobo ci performance`](src/ci-performance.ts) | `job-times`, `signals` | Workflow, job and runner times; each runner against `ubuntu-latest` (the median of its per-job speedups); the nine signals with their thresholds, a breakdown by person, repository, workflow, branch and event, and a per-day trend |
+
+A relay that keeps no journal or run history (the stateless hosted relay)
+answers `not-stored-here`, and the commands report `HOBO_CI_NOT_STORED_HERE`.
+`activity` has nothing else to read: no history of route decisions exists
+outside the journal. `usage` and `performance` take `--source github`
+instead: they read the repository's recent runs from the GitHub REST API with
+an installation token of HoBo's GitHub App on that repository (`--runs`,
+default 50), fold each run and job through the same webhook parser a relay
+uses (`parseInsightWebhook`, `foldInsightWebhook`), and compute the same
+reports, so both sources print and answer alike. Without the owner's store
+session (HoBo MCP `choose_secret_store`) or the App installed on the repository
+(`hobo ci app create`), they answer `HOBO_CI_GITHUB_APP_NEEDED`. With
+`--source github` the included minutes come from GitHub's billing usage API
+with the same installation token and read "not measured" when it may not see
+billing. Kept minutes are priced at
+GitHub's standard Linux rate (`GITHUB_STANDARD_RATE`, with the page and day it
+was read).
+
+The tests serve the frozen records from the in-memory ports through a fake
+read API ([`test/support/ci-read-api-fake.ts`](test/support/ci-read-api-fake.ts))
+and check that a report computed from GitHub's history equals the relay's for
+the same runs. Gauntlet cases I01, I03, I04 and I05 run the commands through
+the `hobo` CLI in `features/hobo-ci-parity/insights.feature`. The channel to a
+deployed relay's read API is built, not proven, until a production read is
+linked.
+
+## Wiring: turning the built pieces on
+
+`hobo ci serve` turns on three relay pieces of ADR-0183 only when asked:
+relay mode follows the project's `.hobo/ci.json` `relayJobs.answer` (never
+the shell), automatic retry needs `HOBO_CI_AUTO_RETRY=1`, and the dashboard
+with its read API needs `HOBO_CI_DASHBOARD=1`. The pull-admission poller runs
+relay mode's rescue and sweep after each poll without waiting for them, and
+the serve supplies the `@hobo/ci-dashboard` route. See
+[CI.md](CI.md#host-a-local-relay) and the
+[relay wiring](../ci-gh-actions/README.md#wiring-turning-the-built-pieces-on).
+`test/ci-serve.test.ts` drives the serve and its poller with each flag on
+and off. Built, not proven: no serve has claimed a check job from GitHub yet.

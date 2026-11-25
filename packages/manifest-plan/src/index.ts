@@ -1,14 +1,71 @@
+/**
+ * The plan manifest: the resolved DAG the Planner emits and the control plane
+ * content-addresses.
+ *
+ * Parse, don't validate. The types below are the parsed derived domain types a
+ * consumer works with; their protobuf wire forms live in
+ * `data-models/resource_plan.proto` and their CUE constraints in
+ * `data-models/resource_plan.cue`. `parseResourcePlan` and
+ * `parseDeploymentPlan` are the only way to obtain a value of these types —
+ * they are branded, so a raw record cannot be cast into one by accident and no
+ * downstream code has to re-validate.
+ *
+ * ### Why this package owns the canonical form
+ *
+ * A `DeploymentPlan` is content-addressed: `hashDeploymentPlan` is compared
+ * across packages, and `packages/cloud/test/planner.test.ts` pins the digest of
+ * `test/fixtures/golden-plan.json` as a committed constant. So the
+ * canonicalization is not an implementation detail of a serializer, it is part
+ * of the contract, and it is reproduced here byte-for-byte rather than
+ * borrowed:
+ *
+ * `@hobo/core` exports a `sortKeys` that looks interchangeable with the one
+ * `@hobo/cloud` keeps private, but it is not. Core sorts with
+ * `String.prototype.localeCompare` (ICU collation); cloud sorts with the
+ * default comparator (UTF-16 code unit order). They disagree whenever two keys
+ * differ only in case or in where an underscore falls — `{Tier, tier}` sorts
+ * `["Tier","tier"]` under cloud and `["tier","Tier"]` under core. Plan digests
+ * would be stable for the fixed field names and silently fork on
+ * `realizationParameters`, whose keys are author-supplied. This module
+ * therefore carries cloud's comparator, and `test/canonical-form.test.ts` pins
+ * the divergence so a future "just reuse the shared helper" cannot land
+ * quietly.
+ *
+ * ### Where this sits in the event architecture
+ *
+ * A `DeploymentPlan` is not itself a command or an event: the `deploy` command
+ * produces it, the `deployment.Planned` event carries it together with its
+ * hash, and the deployment saga actor replays that event from the event store
+ * to rebuild its state. The deployment-view projection materializes the plan
+ * into a read store as a materialized view keyed by deployment id, and an
+ * actor snapshot records the plan hash rather than the plan, which is what
+ * makes the hash worth being exact about.
+ */
 
 import { createHash } from "node:crypto";
 
+// The schema discriminant of a DeploymentPlan record. It is hashed as part of
+// the plan, so a consumer pins this exact string rather than deriving it.
+// public-contract: plan schema discriminant, hashed into every plan digest.
 export const DEPLOYMENT_PLAN_SCHEMA = "hobo.deployment-plan/v1" as const;
 
 const objectTag = Object.prototype.toString;
 
+/**
+ * A JSON object. Interface (not a `Record` alias) so consumers stay anti-slop
+ * clean when they mention this type.
+ */
 export interface JsonObject {
 	readonly [key: string]: JsonValue;
 }
 
+/**
+ * An arbitrary JSON value, matching `google.protobuf.Value`.
+ *
+ * `undefined` is deliberately absent: it is not a JSON value, `JSON.stringify`
+ * silently drops object properties holding it, and a silent drop changes the
+ * plan digest. `parseResourcePlan` refuses it rather than normalizing it.
+ */
 export type JsonValue =
 	| null
 	| boolean
@@ -17,12 +74,21 @@ export type JsonValue =
 	| readonly JsonValue[]
 	| JsonObject;
 
+/** Realization-parameter JSON. Same contract as {@link JsonValue}. */
 export type PlanParameterValue = JsonValue;
 
+/**
+ * Untrusted object at the parse boundary: JSON fields plus values this parser
+ * refuses rather than normalizes (`undefined`, `Date`, functions).
+ */
 export interface PlanParseObject {
 	readonly [key: string]: PlanParseInput | undefined;
 }
 
+/**
+ * Untrusted parse-boundary input. Broader than {@link JsonValue} so the
+ * boundary can still name and refuse non-JSON values.
+ */
 export type PlanParseInput =
 	| JsonValue
 	| bigint
@@ -42,8 +108,6 @@ type ResourcePlanDraft = {
 	port: string;
 	provider: string;
 	deps: readonly string[];
-	readyDeps?: readonly string[];
-	completedDeps?: readonly string[];
 	strategy?: string;
 	region?: string;
 	deploymentId?: string;
@@ -54,13 +118,12 @@ type ResourcePlanDraft = {
 
 declare const resourcePlanBrand: unique symbol;
 
+// domain-view: parsed plan node; wire form is ResourcePlan in data-models/resource_plan.proto.
 export type ResourcePlan = {
 	readonly name: string;
 	readonly port: string;
 	readonly provider: string;
 	readonly deps: readonly string[];
-	readonly readyDeps?: readonly string[];
-	readonly completedDeps?: readonly string[];
 	readonly strategy?: string;
 	readonly region?: string;
 	readonly deploymentId?: string;
@@ -72,6 +135,7 @@ export type ResourcePlan = {
 
 declare const deploymentPlanBrand: unique symbol;
 
+// domain-view: parsed content-addressed plan DAG; wire form is DeploymentPlan in data-models/resource_plan.proto.
 export type DeploymentPlan = {
 	readonly schema: typeof DEPLOYMENT_PLAN_SCHEMA;
 	readonly resources: readonly ResourcePlan[];
@@ -85,8 +149,6 @@ export interface ResourcePlanAuthoring {
 	port: string;
 	provider: string;
 	deps: string[];
-	readyDeps?: readonly string[];
-	completedDeps?: readonly string[];
 	strategy?: string;
 	region?: string;
 	deploymentId?: string;
@@ -106,6 +168,7 @@ export type PlanHash = `sha256:${string}`;
 
 export class ResourcePlanError extends Error {
 	readonly code = "INVALID_RESOURCE_PLAN" as const;
+	/** Dotted path of the offending field, e.g. `resources[2].productId`. */
 	readonly path: string;
 
 	constructor(path: string, detail: string) {
@@ -126,6 +189,16 @@ export class DeploymentPlanError extends Error {
 	}
 }
 
+/**
+ * Property keys that read as a secret value rather than a locator.
+ *
+ * Character-for-character `CREDENTIAL_KEY_PATTERN` in
+ * `packages/yards/src/canonical.ts`. That boundary already refuses these when a
+ * Yard binding row is authored; refusing them again here is not redundancy but
+ * the second half of the same law — a plan assembled by any route other than
+ * the planner would otherwise carry credential material into a record that gets
+ * hashed, logged and projected.
+ */
 const CREDENTIAL_KEY_PATTERN =
 	/(secret|password|token|credential|private[_-]?key|api[_-]?key)/i;
 
@@ -134,8 +207,6 @@ const RESOURCE_PLAN_KEYS = [
 	"port",
 	"provider",
 	"deps",
-	"readyDeps",
-	"completedDeps",
 	"strategy",
 	"region",
 	"deploymentId",
@@ -187,6 +258,10 @@ function isJsonRecord(value: JsonValue): value is JsonObject {
 	return value !== null && objectTag.call(value) === "[object Object]";
 }
 
+/**
+ * Objects `typeof` would have called `"object"` after excluding null and
+ * arrays: plain records, null-prototype records, Date, Map, class instances.
+ */
 function isPlanParseObject(value: PlanParseInput): value is PlanParseObject {
 	if (value === null || value === undefined) return false;
 	if (Array.isArray(value)) return false;
@@ -272,6 +347,17 @@ function requiredString(
 	return value;
 }
 
+/**
+ * Read an optional field under `exactOptionalPropertyTypes`.
+ *
+ * Absent and present-but-`undefined` are different inputs and this boundary
+ * keeps them different: an absent key yields `undefined` and the caller omits
+ * the property entirely, while a key that is present holding `undefined` (or
+ * `null`) is refused. Normalizing the second into the first is the conflation
+ * the flag exists to prevent, and it is not cosmetic here — `JSON.stringify`
+ * drops a property whose value is `undefined`, so accepting it would let a
+ * caller believe it set a field that never reached the digest.
+ */
 function optionalString(
 	source: PlanParseObject,
 	key: string,
@@ -323,6 +409,9 @@ function parameterValue(
 	if (value === null) return null;
 	if (isPrimitiveBoolean(value) || isPrimitiveString(value)) return value;
 	if (isPrimitiveNumber(value)) {
+		// NaN and ±Infinity are not JSON. `JSON.stringify` turns each into
+		// `null`, so admitting one would mean the parsed value and the value
+		// that gets hashed disagree — a silent digest mutation.
 		if (!Number.isFinite(value)) {
 			fail(
 				path,
@@ -339,6 +428,12 @@ function parameterValue(
 		);
 	}
 	if (isPlanParseObject(value)) {
+		// Plain objects only. A Date, a Map, or any class instance is object-like
+		// with no own enumerable keys, so walking it as a record would quietly
+		// produce `{}` — while `JSON.stringify` would produce something else
+		// entirely (a Date serializes to a string through `toJSON`). The parsed
+		// value and the value that gets hashed would then disagree, which is the
+		// one thing this boundary exists to prevent.
 		const prototype = Object.getPrototypeOf(value);
 		if (prototype !== Object.prototype && prototype !== null) {
 			fail(
@@ -386,6 +481,8 @@ function realizationParameters(
 }
 
 function freezeResourcePlan(draft: ResourcePlanDraft): ResourcePlan {
+	// SAFETY: ResourcePlan is branded with a unique symbol this parser mints;
+	// every field has already been parsed and optionals are omitted, not undefined.
 	return Object.freeze(draft) as ResourcePlan;
 }
 
@@ -395,6 +492,8 @@ function freezeDeploymentPlan(draft: {
 	dependencyOrder: readonly string[];
 	objective: string;
 }): DeploymentPlan {
+	// SAFETY: DeploymentPlan is branded with a unique symbol this parser mints;
+	// every field has already been parsed.
 	return Object.freeze(draft) as DeploymentPlan;
 }
 
@@ -426,27 +525,9 @@ export function parseResourcePlan(
 		);
 	}
 	const deps = stringArray(source.deps, `${path}.deps`, fail, true);
-	const readyDeps = parseReadinessDependencies(
-		source,
-		"readyDeps",
-		deps,
-		path,
-		fail,
-	);
-	const completedDeps = parseReadinessDependencies(
-		source,
-		"completedDeps",
-		deps,
-		path,
-		fail,
-	);
-	if (readyDeps?.some((dependency) => completedDeps?.includes(dependency))) {
-		fail(
-			`${path}.completedDeps`,
-			"dependency cannot require both readiness and completion",
-		);
-	}
 
+	// `strategy`, `region` and `deploymentId` admit "" to match the CUE
+	// constraint they were decomposed from. `productId` does not.
 	const strategy = optionalString(source, "strategy", path, fail, true);
 	const region = optionalString(source, "region", path, fail, true);
 	const deploymentId = optionalString(source, "deploymentId", path, fail, true);
@@ -480,6 +561,10 @@ export function parseResourcePlan(
 		rows = stringArray(raw, `${path}.nonPortableRows`, fail, false);
 	}
 
+	// Assign-if-present, never `key: undefined`: under
+	// exactOptionalPropertyTypes the two are different values, and the second
+	// one disappears from the canonical JSON without disappearing from
+	// `Object.keys`.
 	const parsed: ResourcePlanDraft = {
 		name,
 		port,
@@ -487,8 +572,6 @@ export function parseResourcePlan(
 		deps,
 	};
 	if (strategy !== undefined) parsed.strategy = strategy;
-	if (readyDeps !== undefined) parsed.readyDeps = readyDeps;
-	if (completedDeps !== undefined) parsed.completedDeps = completedDeps;
 	if (region !== undefined) parsed.region = region;
 	if (deploymentId !== undefined) parsed.deploymentId = deploymentId;
 	if (productId !== undefined) parsed.productId = productId;
@@ -497,28 +580,21 @@ export function parseResourcePlan(
 	return freezeResourcePlan(parsed);
 }
 
-function parseReadinessDependencies(
-	source: PlanParseObject,
-	field: "readyDeps" | "completedDeps",
-	deps: readonly string[],
-	path: string,
-	fail: Fail,
-): readonly string[] | undefined {
-	if (!Object.hasOwn(source, field)) return undefined;
-	const values = stringArray(source[field], `${path}.${field}`, fail, false);
-	if (
-		values.length === 0 ||
-		new Set(values).size !== values.length ||
-		values.some((value) => !deps.includes(value))
-	) {
-		fail(
-			`${path}.${field}`,
-			"must be non-empty, unique, and reference declared dependencies",
-		);
-	}
-	return values;
-}
-
+/**
+ * Parse-don't-validate boundary for a whole plan DAG.
+ *
+ * What this refuses is structural: shape, presence, unknown fields, duplicate
+ * resource names. What it deliberately does **not** refuse is a
+ * `dependencyOrder` that is not a topological order, or a `deps` entry naming a
+ * resource outside the plan. Both are admitted by the producing planner today
+ * (`packages/cloud/src/planner/plan.ts` skips unknown deps outright and appends
+ * the members of a dependency cycle alphabetically rather than rejecting), so
+ * refusing them here would reject plans the system currently emits. See the
+ * README.
+ *
+ * @throws {DeploymentPlanError} for plan-level faults.
+ * @throws {ResourcePlanError} for a fault inside one node.
+ */
 export function parseDeploymentPlan(input: PlanParseInput): DeploymentPlan {
 	const path = "plan";
 	const fail: Fail = (at, detail) => {
@@ -586,9 +662,6 @@ function resourcePlanJson(resource: ResourcePlan): JsonObject {
 		deps: [...resource.deps],
 	};
 	if (resource.strategy !== undefined) out.strategy = resource.strategy;
-	if (resource.readyDeps !== undefined) out.readyDeps = [...resource.readyDeps];
-	if (resource.completedDeps !== undefined)
-		out.completedDeps = [...resource.completedDeps];
 	if (resource.region !== undefined) out.region = resource.region;
 	if (resource.deploymentId !== undefined)
 		out.deploymentId = resource.deploymentId;
@@ -611,6 +684,16 @@ function deploymentPlanJson(plan: DeploymentPlan): JsonObject {
 	};
 }
 
+/**
+ * Key-sorted at every depth, arrays left in their given order.
+ *
+ * The comparator is `Array.prototype.sort`'s default — UTF-16 code unit order —
+ * and **not** `localeCompare`. This is load-bearing: `@hobo/core`'s exported
+ * `sortKeys` uses `localeCompare`, the two disagree on keys differing only by
+ * case or underscore placement, and `realizationParameters` keys are
+ * author-supplied. Swapping the comparator changes plan digests that are
+ * already committed as constants elsewhere in the repo.
+ */
 function sortKeys(value: JsonValue): JsonValue {
 	if (Array.isArray(value)) return value.map(sortKeys);
 	if (isJsonRecord(value)) {
@@ -625,10 +708,16 @@ function sortKeys(value: JsonValue): JsonValue {
 	return value;
 }
 
+/**
+ * The byte-stable form a plan is content-addressed by.
+ *
+ * No indentation and no trailing newline — both are part of the digest.
+ */
 export function canonicalPlanJson(plan: DeploymentPlan): string {
 	return JSON.stringify(sortKeys(deploymentPlanJson(plan)));
 }
 
+/** SHA-256 over {@link canonicalPlanJson}. */
 export function hashDeploymentPlan(plan: DeploymentPlan): PlanHash {
 	const digest = createHash("sha256")
 		.update(canonicalPlanJson(plan))

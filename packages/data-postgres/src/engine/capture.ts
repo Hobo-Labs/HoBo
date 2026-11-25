@@ -1,3 +1,15 @@
+/**
+ * Change capture over logical decoding.
+ *
+ * A subscription is a publication for the dataset's table plus a logical
+ * replication slot using the `pgoutput` plugin. Changes are fetched through
+ * the server's SQL decoding functions, so no replication-protocol connection
+ * is needed — any session that can run a query can tail the log.
+ *
+ * Positions are write-ahead-log locations. A change's position is where its
+ * transaction's commit record ends, so every change of one transaction shares
+ * a position and a read never returns part of a transaction.
+ */
 import {
 	type CaptureBatch,
 	CapturePositionError,
@@ -39,6 +51,12 @@ import {
 	nativeTextToCanonical,
 } from "./types.js";
 
+/**
+ * Session settings the decoding call runs under. Logical decoding emits each
+ * value through its type's output function, which obeys the session: without
+ * these, a timestamp would arrive in the session's zone and style, bytes in
+ * whichever `bytea_output` was configured, and a float possibly rounded.
+ */
 export const CAPTURE_SESSION_SETTINGS = Object.freeze({
 	TimeZone: "UTC",
 	DateStyle: "ISO, YMD",
@@ -54,13 +72,29 @@ const PIN_SETTINGS = `SELECT ${Object.entries(CAPTURE_SESSION_SETTINGS)
 	)
 	.join(", ")}`;
 
+/** Rows a first decoding call may return, per requested change. */
 const ROWS_PER_CHANGE = 4;
 const MINIMUM_ROW_BUDGET = 64;
 const MAXIMUM_ROW_BUDGET = 1_000_000_000;
 
+/**
+ * How a slot that cannot decode the log says so.
+ *
+ * A logical slot is created by reading the log until every transaction open
+ * at that moment has ended. A transaction that created a table while the slot
+ * was still finding its footing is not seen as having changed the catalog; a
+ * second transaction that wrote to that table before the slot was consistent,
+ * and committed after, is then decoded with a catalog in which the table does
+ * not exist. The server gives up on it — SQLSTATE `XX000`, "could not map
+ * filenumber … to relation OID" — and does so again on every later read,
+ * because each read replays the same log from the same place. The table need
+ * not be one this binding knows: the slot decodes the whole database before
+ * the publication filters anything out.
+ */
 const INTERNAL_ERROR = "XX000";
 const UNMAPPED_RELATION = /could not map file(?:node|number)/u;
 
+/** True for the one failure that means "this slot was created at a bad moment". */
 export function isUndecodableSlotError(cause: unknown): boolean {
 	return (
 		sqlStateOf(cause) === INTERNAL_ERROR &&
@@ -69,24 +103,40 @@ export function isUndecodableSlotError(cause: unknown): boolean {
 	);
 }
 
+/**
+ * A transaction id newer than every transaction open now. It has to be one
+ * the server assigns: a snapshot's upper bound is only one past the newest
+ * transaction that has *ended*, and the transaction to wait for may well be
+ * newer than that and still open.
+ */
+// public-contract: the horizon query of the slot proof; a scripted executor answers it by this text.
 export const SLOT_HORIZON = "SELECT pg_current_xact_id()::text AS horizon";
 
+/** Whether every transaction up to a horizon has ended. */
+// public-contract: the settled query of the slot proof; a scripted executor answers it by this text.
 export const SLOT_SETTLED =
 	"SELECT (pg_snapshot_xmin(pg_current_snapshot()) > $1::xid8)::text AS settled";
 
+/** Decode everything the slot holds, and count it: the proof that it can. */
+// public-contract: the decoding probe of the slot proof; a scripted executor answers it by this text.
 export const SLOT_PROBE =
 	"SELECT count(*)::text AS decoded FROM pg_logical_slot_peek_binary_changes($1::name, NULL, NULL, 'proto_version', '1', 'publication_names', $2::text)";
 
+/** Slots created before giving up on a database that keeps poisoning them. */
 const SLOT_ATTEMPTS = 5;
+/** Polls for open transactions to end before a slot is given up as unproven. */
 const SETTLE_POLLS = 600;
 
 export interface CapturePortOptions {
+	/** How long to wait between two looks at the transactions still open. */
 	readonly pollIntervalMs: number;
 	readonly wait: (milliseconds: number) => Promise<void>;
 }
 
+/** A durable reader of one dataset's log, as the registry records it. */
 export interface CaptureSubscription {
 	readonly dataset: string;
+	/** The tenant the name is bound to; empty spans the dataset. */
 	readonly tenant: string;
 	readonly start: string;
 	readonly objects: PostgresCaptureObjects;
@@ -128,6 +178,11 @@ function tenantOf(tuple: PgOutputTuple, old?: PgOutputTuple): string {
 	return settledCell(tuple, old, TENANT_COLUMN) ?? "";
 }
 
+/**
+ * The canonical key of a decoded tuple, from its key columns alone. `old` is
+ * the image to complete an update's new row from: a large key the update did
+ * not touch arrives there, not in the row.
+ */
 function keyOf(
 	schema: DatasetSchema,
 	tuple: PgOutputTuple,
@@ -172,6 +227,9 @@ export async function mutationsOf(
 	reread: (tenant: string, key: string) => Promise<RecordMutation | undefined>,
 ): Promise<readonly RecordMutation[]> {
 	if (change.op === "truncate") {
+		// A truncate names no keys, so it cannot become record changes. The
+		// truncate guard refuses it at the source; reaching here means the
+		// guard was removed, and silently dropping it would diverge the target.
 		throw new PostgresDataError(
 			"CAPTURE_STREAM_UNDECODABLE",
 			`dataset ${schema.name} was truncated; a truncate cannot be captured as record changes`,
@@ -181,6 +239,7 @@ export async function mutationsOf(
 	if (change.op === "delete") {
 		return [deleteMutation(tenantOf(change.old), keyOf(schema, change.old))];
 	}
+	// The old image of an update, whichever kind: enough to complete the key.
 	const image = change.op === "update" ? change.old : undefined;
 	const tenant = tenantOf(change.row, image);
 	const key = keyOf(schema, change.row, image);
@@ -188,10 +247,14 @@ export async function mutationsOf(
 	if (image !== undefined) {
 		const oldTenant = tenantOf(image);
 		const oldKey = keyOf(schema, image);
+		// A changed key is a move: the record leaves one key and lands on
+		// another, in that order.
 		if (oldTenant !== tenant || oldKey !== key) {
 			out.push(deleteMutation(oldTenant, oldKey));
 		}
 	}
+	// A full old row completes any column; a key image completes the key
+	// columns and nothing else. What neither covers is re-read from the store.
 	const full =
 		change.op === "update" && change.oldImage === "full"
 			? change.old
@@ -206,6 +269,7 @@ export async function mutationsOf(
 	const missing = unchangedColumns(change.row);
 	if (missing.some((column) => !covered(column))) {
 		const current = await reread(tenant, key);
+		// Gone by now: its delete follows later in the log.
 		if (current !== undefined) out.push(current);
 		return out;
 	}
@@ -220,12 +284,15 @@ export async function mutationsOf(
 
 interface Peek {
 	readonly confirmed: bigint;
+	/** A log location known to be a record boundary with nothing unflushed before it. */
 	readonly quiescentHead: bigint | undefined;
 	readonly messages: readonly Uint8Array[];
 }
 
 export interface CapturePort extends ChangeCapturePort {
+	/** The registry's record of one subscription, when there is one. */
 	describe(subscription: string): Promise<CaptureSubscription | undefined>;
+	/** Drop every subscription this namespace holds, and the log each pinned. */
 	stopAll(): Promise<void>;
 }
 
@@ -274,8 +341,15 @@ export function createCapturePort(
 			[slot],
 		);
 
+	/**
+	 * Wait until every transaction that was open when the slot became
+	 * consistent has ended. Only those can be decoded wrongly (see
+	 * `isUndecodableSlotError`), and only once they have committed can a
+	 * decoding pass meet them.
+	 */
 	const settled = async (): Promise<boolean> => {
 		const horizon = (await executor.query(SLOT_HORIZON)).rows[0]?.horizon;
+		// An executor that cannot answer has no transactions to wait for.
 		if (horizon === null || horizon === undefined) return true;
 		for (let poll = 0; poll < SETTLE_POLLS; poll += 1) {
 			const state = await executor.query(SLOT_SETTLED, [horizon]);
@@ -285,6 +359,17 @@ export function createCapturePort(
 		return false;
 	};
 
+	/**
+	 * Create the slot and prove it decodes, before its position is handed to
+	 * anyone. A slot poisoned at creation fails every read for ever, so it is
+	 * found here — where dropping it and creating another loses nothing,
+	 * because nothing has been read from it — and never by a tail in the
+	 * middle of a migration.
+	 *
+	 * This is the one place the binding repeats a statement, and it repeats it
+	 * for exactly one failure: the server's "could not map filenumber" on the
+	 * decoding probe. Anything else is thrown as it came.
+	 */
 	const createProvenSlot = async (
 		subscription: string,
 		objects: PostgresCaptureObjects,
@@ -328,6 +413,7 @@ export function createCapturePort(
 		name: string,
 		objects: PostgresCaptureObjects,
 		after: bigint,
+		/** Rows after which the server may stop; `undefined` decodes to the end. */
 		budget: number | undefined,
 	): Promise<Peek> =>
 		executor.transaction(async (tx) => {
@@ -350,6 +436,11 @@ export function createCapturePort(
 					`changes before ${formatLsn(confirmed)} were acknowledged and released; subscription ${name} cannot be read from ${formatLsn(after)}`,
 				);
 			}
+			// When everything inserted is also flushed, that location is a
+			// record boundary with no commit pending behind it, so it is a safe
+			// resume point even though no change of ours sits there. A bare
+			// flush location is not: it can fall inside a commit record, and
+			// acknowledging it would make the server skip that transaction.
 			const quiescentHead =
 				row.flushed !== null && row.flushed === row.inserted
 					? parseLsn(row.flushed ?? "")
@@ -365,6 +456,10 @@ export function createCapturePort(
 				)
 				.catch((cause) => {
 					if (!isUndecodableSlotError(cause)) throw cause;
+					// `start` proves a slot before anyone reads it, so this is a
+					// slot from before that proof, or a server that changed under
+					// it. Named, so it is not mistaken for an outage: no retry
+					// will ever read past it.
 					throw new PostgresDataError(
 						"CAPTURE_STREAM_UNDECODABLE",
 						`the replication slot behind subscription ${name} cannot decode a transaction in its log and never will; stop the subscription and start it again`,
@@ -417,6 +512,9 @@ export function createCapturePort(
 	const start = async (request: CaptureStartRequest): Promise<string> => {
 		const existing = await find(request.subscription);
 		if (existing !== undefined) {
+			// A name is one reader of one scope. Answering its position to a
+			// reader of another dataset or tenant would start that reader where
+			// it never asked to be, with changes from before it existed.
 			if (
 				existing.dataset !== request.scope.dataset ||
 				existing.tenant !== request.scope.tenant
@@ -435,8 +533,11 @@ export function createCapturePort(
 			namespace,
 			request.subscription,
 		);
+		// Leftovers of a start that died before it recorded itself.
 		await dropObjects(objects);
 		try {
+			// The publication first: decoding resolves it as of the log
+			// position being decoded, so it has to predate the slot.
 			await executor.query(
 				`CREATE PUBLICATION ${quoteIdentifier(objects.publication)} FOR TABLE ${qualifiedName(namespace, schema.name)}`,
 			);
@@ -454,6 +555,7 @@ export function createCapturePort(
 			);
 			return position;
 		} catch (cause) {
+			// A slot nobody recorded would pin the log for ever.
 			await dropObjects(objects).catch(() => undefined);
 			throw cause;
 		}
@@ -469,6 +571,8 @@ export function createCapturePort(
 			);
 		}
 		if (subscription.dataset !== request.scope.dataset) {
+			// The slot only carries the dataset it was started on; reading it
+			// for another would return nothing and look like "no changes".
 			throw new PostgresDataError(
 				"CAPTURE_SUBSCRIPTION_LOST",
 				`subscription ${request.subscription} captures ${subscription.dataset}, not ${request.scope.dataset}`,
@@ -491,6 +595,8 @@ export function createCapturePort(
 
 		let budget = Math.max(MINIMUM_ROW_BUDGET, limit * ROWS_PER_CHANGE);
 		for (;;) {
+			// Past what the server's integer argument can carry, stop
+			// budgeting and decode to the end of the log.
 			const bounded = budget <= MAXIMUM_ROW_BUDGET;
 			const peeked = await peek(
 				request.subscription,
@@ -500,11 +606,16 @@ export function createCapturePort(
 			);
 			const decoded = decodePgOutputTransactions(peeked.messages, known);
 			for (const [oid, relation] of decoded.relations) known.set(oid, relation);
+			// The server stops a decoding call at the first transaction
+			// boundary past the row budget; fewer rows than the budget means
+			// it ran to the end of the log.
 			const exhausted = !bounded || peeked.messages.length < budget;
 			const pending = decoded.transactions.filter(
 				(transaction) => transaction.endLsn > after,
 			);
 			if (pending.length === 0 && !exhausted) {
+				// Everything decoded so far sits at or before `after` — an
+				// unacknowledged backlog. Look further.
 				budget *= 2;
 				continue;
 			}
@@ -517,6 +628,8 @@ export function createCapturePort(
 					request.scope.tenant,
 					transaction,
 				);
+				// Whole transactions only. The first one is always taken, so a
+				// transaction larger than the limit still makes progress.
 				if (changes.length > 0 && changes.length + envelopes.length > limit) {
 					cut = true;
 					break;
@@ -552,6 +665,9 @@ export function createCapturePort(
 			const position = formatLsn(parseLsn(request.position));
 			const existing = await find(request.subscription);
 			if (existing === undefined) return;
+			// A location past the end of the log was never read. The server
+			// would not refuse it: it advances the slot as far as the log goes,
+			// and so releases every change the reader has yet to be handed.
 			const head = await executor.query(
 				"SELECT ($1::pg_lsn > pg_current_wal_insert_lsn())::text AS ahead",
 				[position],
@@ -562,6 +678,8 @@ export function createCapturePort(
 					`${position} is past the end of the write-ahead log; nothing was read there, so it cannot be acknowledged`,
 				);
 			}
+			// Advancing backwards is an error to the server and a no-op to the
+			// contract, so the guard is in the statement.
 			await executor.query(
 				"SELECT pg_replication_slot_advance(slot_name, $2::pg_lsn)::text AS advanced FROM pg_replication_slots WHERE slot_name = $1::name AND confirmed_flush_lsn < $2::pg_lsn",
 				[existing.objects.slot, position],

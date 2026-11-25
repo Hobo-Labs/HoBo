@@ -101,7 +101,12 @@ export const REQUIRED_SECTIONS = [
 ] as const;
 
 /** Files under docs/competitors/ that are navigation or synthesis, not captures. */
-const NON_CAPTURE = new Set(["index.md", "matrix.md", "metadata-contract.md"]);
+const NON_CAPTURE = new Set([
+	"index.md",
+	"matrix.md",
+	"gap-analysis.md",
+	"metadata-contract.md",
+]);
 
 const STALE_AFTER_DAYS = 180;
 const marker = (name: string, edge: "BEGIN" | "END") =>
@@ -472,7 +477,7 @@ function checkLinks(
 	for (const match of text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
 		// SAFETY: assertion to `] as string; if ` is required at this boundary.
 		const target = match[1] as string;
-		if (/^(https?:|mailto:|urn:|#)/.test(target)) continue;
+		if (/^(https?:|mailto:|#)/.test(target)) continue;
 		const [rel] = target.split("#");
 		if (!rel) continue;
 		const resolved = path.resolve(dir, rel);

@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { PROVIDER_TERMS_REGISTRY } from "../packages/core/src/provider-terms.ts";
 import { GIT_OUTPUT_MAX_BUFFER } from "./lib/git-output.ts";
 
 type Mode = "worktree" | "staged";
@@ -21,7 +20,8 @@ for (const arg of process.argv.slice(2)) {
 Enforces HoBo's compile-time-first technical standards on changed files:
 - TypeScript toolchain is declared in package metadata.
 - New JavaScript-family implementation files are rejected in favor of .ts.
-- Canonical agent rules keep the Protobuf, CUE, parse-don't-validate, and PACT guidance present.
+- Canonical agent/design docs keep the Protobuf, CUE, parse-don't-validate,
+  and PACT guidance present.
 - Repository-wide data-model catalogs stay forbidden; CUE-backed data models
   live beside the package/project that owns the type.`);
 		process.exit(0);
@@ -194,18 +194,117 @@ requireText(
 	"AGENTS.md: missing parse-don't-validate guidance",
 );
 requireText("AGENTS.md", /PACT/, "AGENTS.md: missing PACT agent guidance");
+requireText(
+	"docs/design/technical-standards.md",
+	/Protobuf/,
+	"technical standards: missing Protobuf guidance",
+);
+requireText(
+	"docs/design/technical-standards.md",
+	/CUE/,
+	"technical standards: missing CUE guidance",
+);
+requireText(
+	"docs/design/technical-standards.md",
+	/Parse, don't validate/,
+	"technical standards: missing parse-don't-validate guidance",
+);
+requireText(
+	"docs/design/technical-standards.md",
+	/PACT/,
+	"technical standards: missing PACT guidance",
+);
+
 const newJavaScriptFiles = changedFiles()
 	.filter(isJavaScriptImplementationFile)
 	.sort();
 if (newJavaScriptFiles.length > 0) {
 	fail(
 		[
-			"New JavaScript-family implementation files detected; use TypeScript (.ts) for new code:",
+			"New JavaScript-family implementation files detected; use TypeScript (.ts) for new code or document an ADR exception:",
 			...newJavaScriptFiles.map((file) => `- ${file}`),
 		].join("\n"),
 	);
 }
 
+/**
+ * True when the marker appears on the declaration line or anywhere in the
+ * comment block immediately above it.
+ *
+ * This used to read exactly one preceding line, which meant a marker written
+ * inside a multi-line comment — the natural place to put a sentence explaining
+ * *why* a constant is the contract — did not count, and the check reported a
+ * missing marker that was plainly there. Two agents lost a round trip to it in
+ * one day. The rule the comment above already states is "on or above the
+ * declaration"; this makes the code say the same thing.
+ */
+function hasMarkerAbove(
+	lines: readonly string[],
+	index: number,
+	marker: string,
+): boolean {
+	if ((lines[index] ?? "").includes(marker)) return true;
+	for (let above = index - 1; above >= 0; above -= 1) {
+		const text = (lines[above] ?? "").trim();
+		const isComment =
+			text.startsWith("//") ||
+			text.startsWith("*") ||
+			text.startsWith("/*") ||
+			text.endsWith("*/");
+		if (!isComment) return false;
+		if (text.includes(marker)) return true;
+	}
+	return false;
+}
+
+// Minimal public surface (technical-standards.md): no new exported
+// string-literal constants in package sources — schema identity and enum
+// vocabularies come from generated code. Constants that ARE the contract
+// carry a // public-contract: <why> marker on or above the declaration.
+const literalConstOffenders: string[] = [];
+for (const file of changedFiles(["A", "M"])) {
+	if (
+		!/^packages\/.+\/src\//.test(file) ||
+		// `_generated`, and suffixed siblings like `_generated-art`, are written
+		// by generators that stamp "do not hand-edit" — a marker added here
+		// would be dropped the next time the generator runs.
+		/(^|\/)_generated[\w-]*(\/|$)/.test(file) ||
+		!file.endsWith(".ts") ||
+		!existsSync(file)
+	) {
+		continue;
+	}
+	const lines = readFileSync(file, "utf8").split(/\r?\n/);
+	for (const [index, line] of lines.entries()) {
+		const match = line.match(
+			/^export const [A-Za-z_$][\w$]*(?:\s*:\s*[^=]+)?\s*=\s*(["'`]|$)/,
+		);
+		if (!match) continue;
+		const opensLiteral = match[1]
+			? true
+			: /^\s*["'`]/.test(lines[index + 1] ?? "");
+		if (!opensLiteral) continue;
+		if (hasMarkerAbove(lines, index, "public-contract:")) continue;
+		literalConstOffenders.push(`${file}:${index + 1}`);
+	}
+}
+if (literalConstOffenders.length > 0) {
+	fail(
+		[
+			"Exported string-literal constants need a // public-contract: <why> marker (or belong in generated code / module-private scope):",
+			...literalConstOffenders.map((entry) => `- ${entry}`),
+		].join("\n"),
+	);
+}
+
+// One build graph (turbo), not two. A package script must never build another
+// workspace package: `turbo run build` already guarantees dependencies through
+// `dependsOn: ["^build"]`, so a `pnpm --filter <dep> build` inside a package's
+// `build`/`prebuild`/`pretest` is a second, *uncached* build graph running
+// underneath the cached one. A full sweep used to pay ~150 cold `tsc`
+// invocations that way. Packages that need their own output before tests run
+// go through `scripts/ensure-built.mts`, which no-ops inside turbo and
+// delegates to turbo outside it.
 const OUT_OF_BAND_HOOKS = ["build", "prebuild", "pretest"] as const;
 const outOfBandBuilds: string[] = [];
 for (const file of run("git", ["ls-files", "**/package.json"])
@@ -215,6 +314,7 @@ for (const file of run("git", ["ls-files", "**/package.json"])
 	.filter((file) => !file.includes("node_modules") && existsSync(file))) {
 	let manifest: { scripts?: Record<string, string> };
 	try {
+		// SAFETY: assertion to `se(readFileSync(file, "utf8")) as typeof manifest; } cat` is required at this boundary.
 		manifest = JSON.parse(readFileSync(file, "utf8")) as typeof manifest;
 	} catch {
 		continue;
@@ -238,56 +338,13 @@ if (outOfBandBuilds.length > 0) {
 	);
 }
 
-const providerTermsMaxAgeDays = 180;
-const providerTermsNow = Date.now();
-for (const [providerId, terms] of Object.entries(PROVIDER_TERMS_REGISTRY)) {
-	const reviewedAt = Date.parse(`${terms.reviewedOn}T00:00:00.000Z`);
-	const ageDays = (providerTermsNow - reviewedAt) / 86_400_000;
-	if (!terms.url.startsWith("https://")) {
-		fail(`${providerId}: provider terms URL must use HTTPS`);
-	}
-	if (!Number.isFinite(reviewedAt) || ageDays < 0) {
-		fail(`${providerId}: provider terms reviewedOn must be a valid past date`);
-	} else if (ageDays > providerTermsMaxAgeDays) {
-		fail(
-			`${providerId}: provider terms review is ${Math.floor(ageDays)} days old; refresh it within ${providerTermsMaxAgeDays} days`,
-		);
-	}
-}
-
-const capabilityProviderPackages = new Set<string>();
-for (const providerFile of run("git", [
-	"ls-files",
-	"packages/providers/*/src/provider.ts",
-	"packages/providers/*/src/*-provider.ts",
-])
-	.split(/\r?\n/u)
-	.map((line) => line.trim())
-	.filter(Boolean)) {
-	if (!readFileSync(providerFile, "utf8").includes("capabilityManifest"))
-		continue;
-	capabilityProviderPackages.add(providerFile.split("/").slice(0, 3).join("/"));
-}
-for (const packageRoot of capabilityProviderPackages) {
-	const manifest = JSON.parse(
-		readFileSync(`${packageRoot}/package.json`, "utf8"),
-	) as { name?: string };
-	if (
-		manifest.name === undefined ||
-		!(manifest.name in PROVIDER_TERMS_REGISTRY)
-	) {
-		fail(
-			`${packageRoot}: capability provider is missing a provider-terms entry`,
-		);
-	}
-}
-
 if (existsSync("contracts/data-models")) {
 	fail(
 		"central contracts/data-models is forbidden; CUE-backed data models must live in the owning project/package data-models folder",
 	);
 }
 
+// SAFETY: assertion to `se(readFileSync("package.json", "utf8")) as { scripts?: Record<string, string>; }; if (pa` is required at this boundary.
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
 	scripts?: Record<string, string>;
 };

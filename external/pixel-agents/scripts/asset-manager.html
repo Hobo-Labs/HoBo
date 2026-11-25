@@ -8,6 +8,7 @@
     html, body { height: 100%; }
     body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden; }
 
+    /* Toolbar */
     #toolbar { padding: 8px 12px; background: #16213e; border-bottom: 1px solid #333; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     #toolbar button, #toolbar select { font-size: 12px; padding: 5px 10px; border-radius: 3px; border: 1px solid #555; background: #2a2a4a; color: #e0e0e0; cursor: pointer; }
     #toolbar button:hover { background: #1a5276; }
@@ -16,8 +17,10 @@
     #toolbar label { font-size: 11px; color: #aaa; }
     .sep { width: 1px; height: 22px; background: #444; flex-shrink: 0; }
 
+    /* Main 3-panel layout */
     #main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 
+    /* Left: Asset List */
     #list-panel { width: 260px; display: flex; flex-direction: column; background: #16213e; border-right: 1px solid #333; flex-shrink: 0; }
     #list-header { padding: 8px 10px; font-size: 12px; font-weight: 600; border-bottom: 1px solid #333; background: #0f3460; display: flex; justify-content: space-between; align-items: center; }
     #search-box { padding: 6px 8px; border-bottom: 1px solid #333; }
@@ -39,11 +42,14 @@
     .badge { display: inline-block; padding: 1px 5px; border-radius: 2px; font-size: 8px; font-weight: 600; margin-left: 4px; vertical-align: middle; }
     .badge-discard { background: #c0392b; color: #fff; }
 
+    /* Resize handle */
     .resize-handle { width: 4px; background: #333; cursor: col-resize; user-select: none; flex-shrink: 0; }
     .resize-handle:hover { background: #3498db; }
 
+    /* Center: Split preview panel */
     #center-panel { flex: 1; display: flex; flex-direction: row; min-width: 400px; }
 
+    /* Left half: Tileset */
     #tileset-pane { flex: 1; display: flex; flex-direction: column; background: #1a1a2e; border-right: 1px solid #333; min-width: 150px; }
     #tileset-pane .pane-header { padding: 8px 10px; font-size: 12px; font-weight: 600; border-bottom: 1px solid #333; background: #0f3460; display: flex; justify-content: space-between; align-items: center; }
     #tileset-pane .pane-header select { font-size: 11px; padding: 2px 6px; background: #2a2a4a; border: 1px solid #555; color: #e0e0e0; border-radius: 2px; cursor: pointer; }
@@ -57,9 +63,11 @@
     .add-mode-bar button { font-size: 11px; padding: 3px 10px; background: #6b2020; border: 1px solid #8b3030; color: #e0e0e0; border-radius: 2px; cursor: pointer; }
     .add-mode-bar button:hover { background: #8b3030; }
 
+    /* Center resize handle */
     #handle-center { width: 4px; background: #333; cursor: col-resize; user-select: none; flex-shrink: 0; }
     #handle-center:hover { background: #3498db; }
 
+    /* Right half: Asset preview */
     #preview-pane { flex: 1; display: flex; flex-direction: column; background: #1a1a2e; min-width: 150px; }
     #preview-pane .pane-header { padding: 8px 10px; font-size: 12px; font-weight: 600; border-bottom: 1px solid #333; background: #0f3460; display: flex; justify-content: space-between; align-items: center; }
     #preview-pane .pane-header select { font-size: 11px; padding: 2px 6px; background: #2a2a4a; border: 1px solid #555; color: #e0e0e0; border-radius: 2px; cursor: pointer; }
@@ -81,6 +89,7 @@
     #toolbar button.add-btn:hover { background: #2a8a3a; }
     #toolbar button.add-btn.active { background: #2ecc71; border-color: #27ae60; color: #000; font-weight: 600; }
 
+    /* Right: Editor */
     #editor-panel { width: 340px; display: flex; flex-direction: column; background: #16213e; flex-shrink: 0; }
     #editor-header { padding: 8px 10px; font-size: 12px; font-weight: 600; border-bottom: 1px solid #333; background: #0f3460; }
     #editor-form { flex: 1; overflow-y: auto; padding: 12px; }
@@ -126,6 +135,7 @@
     .group-member-row .gm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .group-member-row select { font-size: 10px; padding: 2px 4px; background: #2a2a4a; border: 1px solid #555; color: #e0e0e0; border-radius: 2px; width: 70px; flex-shrink: 0; }
 
+    /* Group wrapper in asset list */
     .group-wrapper {
       margin: 3px 4px; border: 1px solid #333; border-radius: 4px; background: #161630; overflow: hidden;
     }
@@ -142,11 +152,13 @@
     .group-wrapper .asset-item { margin: 0; border-radius: 0; border-left: none; border-right: none; border-top: none; border-bottom: 1px solid #2a2a4a; }
     .group-wrapper .asset-item:last-child { border-bottom: none; }
 
+    /* Compound group: member unit rows */
     .group-member-row.group-unit { background: #1a1a3e; border-radius: 2px; padding: 5px 6px; }
     .group-member-row .gm-type-badge { font-size: 8px; font-weight: 600; padding: 1px 5px; border-radius: 2px; margin-right: 4px; flex-shrink: 0; }
     .gm-type-badge.animation { background: #1a4a2a; color: #2ecc71; }
     .gm-type-badge.state { background: #4a3a0a; color: #f1c40f; }
     .gm-type-badge.rotation { background: #1a4a6a; color: #5dade2; }
+    /* Nested group wrappers */
     .group-wrapper .group-wrapper { margin: 0; border-left: 2px solid #444; border-top: none; border-right: none; border-bottom: none; border-radius: 0; background: #141428; }
     .group-wrapper .group-wrapper.group-selected { border-left-color: #9b59b6; background: #1e1640; }
     .group-wrapper .group-wrapper .group-header { background: #161630; font-size: 9px; padding: 3px 8px; }
@@ -166,8 +178,10 @@
     #editor-buttons button.primary { background: #27ae60; border-color: #2ecc71; font-weight: 600; }
     #editor-buttons button.primary:hover { background: #2ecc71; }
 
+    /* Status bar */
     #status { padding: 6px 12px; background: #0f3460; font-size: 11px; color: #888; border-top: 1px solid #333; display: flex; justify-content: space-between; }
 
+    /* Scrollbar styling */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #1a1a2e; }
     ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
@@ -176,6 +190,7 @@
 </head>
 <body>
 
+<!-- Toolbar -->
 <div id="toolbar">
   <div style="position:relative; display:inline-block;">
     <button id="btn-file-menu" style="background:#1a5276; border-color:#2980b9; font-weight:600;">File ▾</button>
@@ -207,7 +222,9 @@
   <button id="btn-export" style="background:#8e44ad; border-color:#9b59b6; font-weight:600;">Export Assets</button>
 </div>
 
+<!-- Main 3-panel layout -->
 <div id="main">
+  <!-- Left: Asset List -->
   <div id="list-panel">
     <div id="list-header">
       <span>Assets</span>
@@ -221,7 +238,9 @@
 
   <div class="resize-handle" id="handle-left"></div>
 
+  <!-- Center: Split panes -->
   <div id="center-panel">
+    <!-- Left half: Tileset overview -->
     <div id="tileset-pane">
       <div class="pane-header">
         <span>Tileset</span>
@@ -249,6 +268,7 @@
 
     <div id="handle-center"></div>
 
+    <!-- Right half: Asset preview -->
     <div id="preview-pane">
       <div class="pane-header">
         <span>Asset Preview</span>
@@ -275,9 +295,11 @@
 
   <div class="resize-handle" id="handle-right"></div>
 
+  <!-- Right: Editor -->
   <div id="editor-panel">
     <div id="editor-header">Editor</div>
     <div id="editor-form">
+      <!-- Geometry -->
       <div class="section-title">Geometry <button id="btn-redraw" style="float:right; font-size:10px; padding:2px 8px; background:#1a5276; border:1px solid #2980b9; color:#e0e0e0; border-radius:2px; cursor:pointer; text-transform:none; letter-spacing:0; font-weight:400;" title="Visually reselect this asset's region on the tileset">Redraw on Tileset</button></div>
       <div class="geo-row">
         <label>X:</label>
@@ -314,6 +336,7 @@
         <span id="fp-h" class="fp-label"></span>
       </div>
 
+      <!-- Metadata -->
       <div class="section-title">Metadata</div>
       <div class="field">
         <label class="field-label">Label</label>
@@ -345,6 +368,7 @@
           </div>
         </div>
 
+        <!-- Flags -->
         <div class="section-title">Flags</div>
         <div class="checkbox-group">
           <div class="checkbox-item">
@@ -358,6 +382,7 @@
         </div>
       </div>
 
+      <!-- Group Membership (shown when asset is in a group) -->
       <div id="group-membership" style="display:none">
         <div class="section-title">Group Membership</div>
         <div id="group-info" style="font-size:11px; line-height:1.6;"></div>
@@ -368,6 +393,7 @@
         </div>
       </div>
 
+      <!-- Multi-select group creation (shown when 2+ assets selected) -->
       <div id="group-creator" style="display:none">
         <div class="section-title">Create Group <span style="font-weight:400; text-transform:none; letter-spacing:0; color:#aaa;" id="group-creator-count"></span></div>
         <div class="field">
@@ -429,6 +455,7 @@
         </div>
       </div>
 
+      <!-- Discard -->
       <div class="section-title">Discard</div>
       <div class="discard-section">
         <div class="checkbox-item">
@@ -446,6 +473,7 @@
   </div>
 </div>
 
+<!-- Export Modal -->
 <div id="export-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
   <div style="background:#1a1a2e; border:2px solid #8e44ad; border-radius:6px; width:480px; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.5);">
     <div style="padding:12px 16px; background:#16213e; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;">
@@ -481,40 +509,48 @@
   </div>
 </div>
 
+<!-- Status bar -->
 <div id="status">
   <span id="status-msg">Ready</span>
   <span id="status-counts"></span>
 </div>
 
+<!-- Hidden file inputs -->
 <input type="file" id="json-file" accept="application/json" style="display:none">
 <input type="file" id="png-file" accept="image/png" style="display:none">
 
 <script>
+// ════════════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════════════
 
-let data = null
-let tilesetImg = null
-let selectedIdx = -1
-let selectedIndices = new Set()
-let lastClickedIdx = -1
-let selectedGroupId = null
-let selectedGroupUnits = new Set()
-let filtered = []
+let data = null          // Full JSON (version, assets[], etc.)
+let tilesetImg = null    // Loaded tileset Image
+let selectedIdx = -1     // Index into data.assets (primary selection for form/preview)
+let selectedIndices = new Set()  // Multi-select set
+let lastClickedIdx = -1  // Anchor for shift-click range select
+let selectedGroupId = null // Currently group-selected group ID (first click selects group, second drills into item)
+let selectedGroupUnits = new Set()  // Set of groupIds selected as compound units (for Ctrl+click on group headers)
+let filtered = []        // Indices into data.assets matching current filter
 let previewZoom = 4
-let savedSnapshot = null
-let saveTimer = null
-let jsonFileHandle = null
+let savedSnapshot = null // Deep copy for Reset button
+let saveTimer = null     // Debounced localStorage save
+let jsonFileHandle = null // File System Access API handle for direct save
 
+// Add Asset mode / Redraw mode
 let addMode = false
-let redrawMode = false
+let redrawMode = false  // true when redrawing an existing asset's region
 let tilesetZoom = 2
-let dragStart = null
-let dragEnd = null
+let dragStart = null     // {x, y} in tileset pixels
+let dragEnd = null       // {x, y} in tileset pixels
 let isDragging = false
 
+// Eraser
 let eraserActive = false
 let isErasing = false
-let lastErasePx = null
+let lastErasePx = null   // {x, y} last erased pixel for line interpolation
 
+// Undo/redo
 const undoStack = []
 const redoStack = []
 const MAX_UNDO = 20
@@ -525,7 +561,12 @@ const assetListEl = document.getElementById('asset-list')
 const previewCanvas = document.getElementById('preview-canvas')
 const previewCtx = previewCanvas.getContext('2d')
 
+// ════════════════════════════════════════════════════════════════════════
+// FILE LOADING
+// ════════════════════════════════════════════════════════════════════════
 
+// New Project — start with empty data
+// File dropdown menu toggle
 const fileMenuBtn = document.getElementById('btn-file-menu')
 const fileDropdown = document.getElementById('file-dropdown')
 fileMenuBtn.onclick = (e) => {
@@ -552,6 +593,7 @@ document.getElementById('btn-new-project').onclick = () => {
 }
 
 document.getElementById('btn-load-json').onclick = async () => {
+  // Try File System Access API first (Chromium) — gives us a handle for direct save-back
   if (window.showOpenFilePicker) {
     try {
       const [handle] = await window.showOpenFilePicker({
@@ -565,16 +607,17 @@ document.getElementById('btn-load-json').onclick = async () => {
       statusMsg.textContent = '\u2713 Loaded ' + data.assets.length + ' assets from ' + file.name
       return
     } catch (err) {
-      if (err.name === 'AbortError') return
+      if (err.name === 'AbortError') return // user cancelled
       console.warn('File System Access API failed, falling back:', err)
     }
   }
+  // Fallback: classic file input
   document.getElementById('json-file').click()
 }
 document.getElementById('json-file').onchange = (e) => {
   const file = e.target.files[0]
   if (!file) return
-  jsonFileHandle = null
+  jsonFileHandle = null // no handle from classic file input
   const reader = new FileReader()
   reader.onload = (ev) => {
     try {
@@ -585,7 +628,7 @@ document.getElementById('json-file').onchange = (e) => {
     }
   }
   reader.readAsText(file)
-  e.target.value = ''
+  e.target.value = '' // Allow re-loading same file
 }
 
 document.getElementById('btn-load-png').onclick = () => document.getElementById('png-file').click()
@@ -597,6 +640,7 @@ document.getElementById('png-file').onchange = (e) => {
     const img = new Image()
     img.onload = () => {
       tilesetImg = img
+      // Auto-initialize empty project if no data loaded yet
       if (!data) {
         loadJsonData({
           version: 1,
@@ -657,6 +701,7 @@ function updateSaveButton() {
   }
 }
 
+// Auto-load from localStorage
 window.addEventListener('load', () => {
   updateTilesetVisibility()
   try {
@@ -670,6 +715,9 @@ window.addEventListener('load', () => {
   } catch {}
 })
 
+// ════════════════════════════════════════════════════════════════════════
+// PERSISTENCE (localStorage, debounced)
+// ════════════════════════════════════════════════════════════════════════
 
 function scheduleSave() {
   if (saveTimer) clearTimeout(saveTimer)
@@ -680,6 +728,9 @@ function scheduleSave() {
   }, 2000)
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// UNDO / REDO
+// ════════════════════════════════════════════════════════════════════════
 
 function pushUndo() {
   undoStack.push(JSON.stringify({ assets: data.assets, groups: data.groups || [] }))
@@ -706,6 +757,7 @@ function redo() {
 }
 
 function refreshAfterUndoRedo() {
+  // Clamp selectedIdx
   selectedGroupId = null
   selectedGroupUnits.clear()
   if (selectedIdx >= data.assets.length) selectedIdx = data.assets.length - 1
@@ -721,6 +773,9 @@ function refreshAfterUndoRedo() {
   statusMsg.textContent = 'Undo/Redo applied'
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// FILTERING
+// ════════════════════════════════════════════════════════════════════════
 
 document.getElementById('filter-cat').onchange = () => updateFilter()
 document.getElementById('search').oninput = () => updateFilter()
@@ -752,6 +807,9 @@ function updateCounts() {
   statusCounts.textContent = approved + ' approved, ' + discarded + ' discarded'
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// ASSET LIST RENDERING
+// ════════════════════════════════════════════════════════════════════════
 
 function renderAssetItem(idx) {
   const asset = data.assets[idx]
@@ -762,6 +820,7 @@ function renderAssetItem(idx) {
   div.dataset.idx = idx
   div.onclick = (e) => { e.stopPropagation(); handleListClick(idx, e) }
 
+  // Thumbnail
   const thumb = document.createElement('canvas')
   thumb.width = 40; thumb.height = 40
   thumb.className = 'asset-thumb'
@@ -788,6 +847,7 @@ function renderAssetItem(idx) {
   }
   div.appendChild(thumb)
 
+  // Info
   const meta = document.createElement('div')
   meta.className = 'asset-meta'
   const group = findGroupForAsset(asset)
@@ -797,6 +857,7 @@ function renderAssetItem(idx) {
   const listFpH = Math.max(1, Math.round(asset.paddedHeight / 16))
   nameHtml += '  \u2022  ' + listFpW + '\u00d7' + listFpH + ' tiles'
   nameHtml += '</div>'
+  // Show role within group (no need for full group badge since we have the wrapper)
   if (group) {
     let role = ''
     if (group.memberRoles && group.memberRoles[asset.id]) {
@@ -824,11 +885,14 @@ function renderList() {
   if (!data) return
   assetListEl.innerHTML = ''
 
+  // Build set of asset indices that belong to sub-groups (whose parent is a compound group)
+  // These should be rendered inside their parent group wrapper, not standalone
   const subGroupAssetIndices = new Set()
   const topLevelGroupIds = new Set()
   if (data.groups) {
     for (const g of data.groups) {
       if (g.members.some(m => m.startsWith('@'))) {
+        // This is a compound group — collect all leaf assets from sub-groups
         for (const mid of g.members) {
           if (mid.startsWith('@')) {
             const leafIds = resolveGroupAssets(mid)
@@ -840,19 +904,22 @@ function renderList() {
         }
       }
     }
+    // Identify top-level groups (not sub-groups of another)
     for (const g of data.groups) {
       if (!findParentGroup(g.id)) topLevelGroupIds.add(g.id)
     }
   }
 
-  const groupFilteredMap = {}
-  const ungroupedOrdered = []
+  // Pre-collect filtered indices per top-level group
+  const groupFilteredMap = {} // groupId → [filtered indices]
+  const ungroupedOrdered = [] // { type: 'item', idx } | { type: 'group', groupId }
   const seenGroups = new Set()
 
   for (const idx of filtered) {
     const asset = data.assets[idx]
     const group = findGroupForAsset(asset)
     if (group) {
+      // Find the top-level group for this asset
       let topGroup = group
       let parent = findParentGroup(topGroup.id)
       while (parent) { topGroup = parent; parent = findParentGroup(topGroup.id) }
@@ -868,6 +935,7 @@ function renderList() {
     }
   }
 
+  // Helper to render a group wrapper (possibly with nested sub-group wrappers)
   function renderGroupWrapper(groupId, filteredIndices) {
     const group = data.groups.find(g => g.id === groupId)
     if (!group) return null
@@ -877,6 +945,7 @@ function renderList() {
     wrapper.className = 'group-wrapper' + (isSelected ? ' group-selected' : '')
     wrapper.dataset.groupId = groupId
 
+    // Group header
     const header = document.createElement('div')
     header.className = 'group-header'
     let typeLabel = group.type === 'rotation' ? 'Rotation' : group.type === 'state' ? 'State' : 'Animation'
@@ -889,12 +958,15 @@ function renderList() {
     header.onclick = (e) => { e.stopPropagation(); handleGroupHeaderClick(groupId, e) }
     wrapper.appendChild(header)
 
+    // Check if this is a compound group
     const hasSubGroups = group.members.some(m => m.startsWith('@'))
 
     if (hasSubGroups) {
+      // Render members in order, with sub-group wrappers for @refs
       for (const mid of group.members) {
         if (mid.startsWith('@')) {
           const subGroupId = mid.slice(1)
+          // Collect filtered indices that belong to this sub-group
           const subLeafIds = new Set(resolveGroupAssets(mid))
           const subIndices = filteredIndices.filter(idx => subLeafIds.has(data.assets[idx].id))
           if (subIndices.length > 0) {
@@ -902,6 +974,7 @@ function renderList() {
             if (subWrapper) wrapper.appendChild(subWrapper)
           }
         } else {
+          // Direct asset member
           const idx = data.assets.findIndex(a => a.id === mid)
           if (idx >= 0 && filteredIndices.includes(idx)) {
             wrapper.appendChild(renderAssetItem(idx))
@@ -909,6 +982,7 @@ function renderList() {
         }
       }
     } else {
+      // Simple group: render all items directly
       for (const gIdx of filteredIndices) {
         wrapper.appendChild(renderAssetItem(gIdx))
       }
@@ -917,6 +991,7 @@ function renderList() {
     return wrapper
   }
 
+  // Render in order
   for (const entry of ungroupedOrdered) {
     if (entry.type === 'item') {
       assetListEl.appendChild(renderAssetItem(entry.idx))
@@ -929,15 +1004,19 @@ function renderList() {
     }
   }
 
+  // Scroll selected into view
   const sel = assetListEl.querySelector('.selected')
   if (sel) sel.scrollIntoView({ block: 'nearest' })
 }
 
+// Click on group header — select all group members (multi-select)
+// With Ctrl: add group as a compound unit for compound group creation
 function handleGroupHeaderClick(groupId, e) {
   if (!data || !data.groups) return
   const group = data.groups.find(g => g.id === groupId)
   if (!group) return
 
+  // Resolve all leaf asset indices for this group (handles @sub-group refs)
   function resolveGroupIndices(g) {
     const indices = []
     for (const mid of g.members) {
@@ -953,12 +1032,15 @@ function handleGroupHeaderClick(groupId, e) {
   }
 
   if (e && e.ctrlKey) {
+    // Ctrl+click: toggle this group as a compound unit
     selectedGroupId = null
     if (selectedGroupUnits.has(groupId)) {
+      // Toggle off: remove group and its member indices
       selectedGroupUnits.delete(groupId)
       const groupIndices = resolveGroupIndices(group)
       groupIndices.forEach(i => selectedIndices.delete(i))
     } else {
+      // Toggle on: add group and its member indices
       selectedGroupUnits.add(groupId)
       const groupIndices = resolveGroupIndices(group)
       groupIndices.forEach(i => selectedIndices.add(i))
@@ -966,6 +1048,7 @@ function handleGroupHeaderClick(groupId, e) {
     selectedIdx = selectedIndices.size === 1 ? [...selectedIndices][0] : -1
     lastClickedIdx = [...selectedIndices][0] || -1
   } else {
+    // Normal click: select just this group
     selectedGroupId = groupId
     selectedGroupUnits = new Set([groupId])
     selectedIndices.clear()
@@ -987,12 +1070,14 @@ function handleListClick(idx, e) {
   const group = findGroupForAsset(asset)
 
   if (e.shiftKey && lastClickedIdx >= 0) {
+    // Range select — keep existing group units, add range to selectedIndices
     selectedGroupId = null
     const posA = filtered.indexOf(lastClickedIdx)
     const posB = filtered.indexOf(idx)
     if (posA >= 0 && posB >= 0) {
       const lo = Math.min(posA, posB), hi = Math.max(posA, posB)
       if (!e.ctrlKey) {
+        // Clear only non-group-unit indices, keep group unit indices
         const groupUnitIndices = new Set()
         for (const gid of selectedGroupUnits) {
           const g = data.groups.find(gr => gr.id === gid)
@@ -1011,11 +1096,14 @@ function handleListClick(idx, e) {
       for (let i = lo; i <= hi; i++) selectedIndices.add(filtered[i])
     }
   } else if (e.ctrlKey) {
+    // Toggle individual asset — preserve existing group units
     selectedGroupId = null
     if (selectedIndices.has(idx)) selectedIndices.delete(idx)
     else selectedIndices.add(idx)
     lastClickedIdx = idx
   } else if (group) {
+    // Grouped item: drill-down logic
+    // Build the full ancestor chain for this asset's group: [directGroup, parent, grandparent, ...]
     const ancestorChain = []
     let cur = group
     while (cur) {
@@ -1023,32 +1111,39 @@ function handleListClick(idx, e) {
       cur = findParentGroup(cur.id)
       if (cur) cur = data.groups.find(g => g.id === cur.id)
     }
+    // ancestorChain[0] = direct group, ancestorChain[last] = top-level group
 
     if (!selectedGroupId) {
+      // No group selected yet: select the top-level group
       const topGroup = ancestorChain[ancestorChain.length - 1]
       handleGroupHeaderClick(topGroup.id)
       return
     }
 
+    // Find where selectedGroupId sits in the chain
     const selectedLevel = ancestorChain.findIndex(g => g.id === selectedGroupId)
     if (selectedLevel < 0) {
+      // selectedGroupId is not an ancestor of this asset — select its top-level group
       const topGroup = ancestorChain[ancestorChain.length - 1]
       handleGroupHeaderClick(topGroup.id)
       return
     }
 
     if (selectedLevel > 0) {
+      // Drill down one level: select the next sub-group
       const nextGroup = ancestorChain[selectedLevel - 1]
       handleGroupHeaderClick(nextGroup.id)
       return
     }
 
+    // selectedLevel === 0: we're at the direct group already, drill into individual asset
     selectedGroupId = null
     selectedGroupUnits.clear()
     selectedIndices.clear()
     selectedIndices.add(idx)
     lastClickedIdx = idx
   } else {
+    // Normal click (ungrouped item)
     selectedGroupId = null
     selectedGroupUnits.clear()
     selectedIndices.clear()
@@ -1056,6 +1151,7 @@ function handleListClick(idx, e) {
     lastClickedIdx = idx
   }
 
+  // Update selectedIdx: if exactly one selected, use it; otherwise -1
   if (selectedIndices.size === 1) {
     selectedIdx = [...selectedIndices][0]
   } else {
@@ -1074,6 +1170,9 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// SELECTION & FORM
+// ════════════════════════════════════════════════════════════════════════
 
 function selectAsset(idx) {
   if (!data || idx < 0 || idx >= data.assets.length) return
@@ -1100,14 +1199,18 @@ function deactivateEraser() {
   previewCanvas.classList.remove('eraser-active')
 }
 
+// Convert a label string to an ID: uppercase, spaces/hyphens → underscores, strip non-alphanumeric
 function labelToId(label) {
   return label.trim().toUpperCase().replace(/[\s\-]+/g, '_').replace(/[^A-Z0-9_]/g, '')
 }
 
+// Deduplicate IDs: when multiple assets share the same ID, append _2, _3, etc.
+// Preserves manually-set and group-assigned IDs; only deduplicates collisions.
 function deduplicateIds() {
   if (!data) return
-  const seen = {}
+  const seen = {}  // id → count seen so far
   for (const asset of data.assets) {
+    // Use the asset's current ID (which may have been manually set or group-assigned)
     const baseId = asset.id || labelToId(asset.label) || 'UNNAMED'
     if (!seen[baseId]) {
       seen[baseId] = 1
@@ -1120,26 +1223,32 @@ function deduplicateIds() {
   }
 }
 
+// Track whether user has manually edited the ID field
 let idManuallyEdited = false
 
+// Live-update ID preview as label is typed (unless user manually edited ID)
 document.getElementById('f-label').oninput = () => {
   if (idManuallyEdited) return
   const label = document.getElementById('f-label').value
   document.getElementById('f-id').value = labelToId(label) || ''
 }
 
+// Mark ID as manually edited when user types in it
 document.getElementById('f-id').oninput = () => {
   idManuallyEdited = true
 }
 
+// Track whether user has manually edited the group ID field
 let groupIdManuallyEdited = false
 
+// Live-update group ID from group name
 document.getElementById('group-name-input').oninput = () => {
   if (groupIdManuallyEdited) return
   const name = document.getElementById('group-name-input').value
   document.getElementById('group-id-input').value = labelToId(name) || ''
 }
 
+// Mark group ID as manually edited when user types in it
 document.getElementById('group-id-input').oninput = () => {
   groupIdManuallyEdited = true
 }
@@ -1152,6 +1261,7 @@ function loadForm(idx) {
   document.getElementById('geo-h').value = a.paddedHeight
   document.getElementById('f-label').value = a.label || ''
   document.getElementById('f-id').value = a.id || labelToId(a.label || '')
+  // Reset manual edit tracking — if the current ID matches labelToId, it wasn't manually edited
   idManuallyEdited = !!(a.id && a.id !== labelToId(a.label || ''))
   document.getElementById('f-category').value = a.category || 'misc'
   updateFootprintDisplay()
@@ -1162,6 +1272,7 @@ function loadForm(idx) {
   updateGroupMembershipDisplay(a)
 }
 
+// Compute footprint from W/H and update the display labels
 function updateFootprintDisplay() {
   const w = +document.getElementById('geo-w').value || 0
   const h = +document.getElementById('geo-h').value || 0
@@ -1171,17 +1282,23 @@ function updateFootprintDisplay() {
   document.getElementById('fp-h').textContent = fpH + ' tile' + (fpH > 1 ? 's' : '')
 }
 
+// Background tiles live preview
 document.getElementById('f-bgtiles').oninput = () => {
   renderPreview()
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// GEOMETRY INPUTS (live preview)
+// ════════════════════════════════════════════════════════════════════════
 
+// Snap W/H to multiples of 16 on blur
 ;['geo-w', 'geo-h'].forEach(id => {
   document.getElementById(id).onblur = () => {
     const el = document.getElementById(id)
     const raw = +el.value
     const snapped = Math.max(16, Math.round(raw / 16) * 16)
     if (snapped !== raw) el.value = snapped
+    // Push to asset
     if (selectedIdx >= 0 && data) {
       const a = data.assets[selectedIdx]
       a.paddedWidth = +document.getElementById('geo-w').value || 16
@@ -1193,6 +1310,7 @@ document.getElementById('f-bgtiles').oninput = () => {
   }
 })
 
+// Number input live update
 ;['geo-x', 'geo-y', 'geo-w', 'geo-h'].forEach(id => {
   document.getElementById(id).oninput = () => {
     if (selectedIdx < 0 || !data) return
@@ -1207,6 +1325,7 @@ document.getElementById('f-bgtiles').oninput = () => {
   }
 })
 
+// Stepper buttons
 document.querySelectorAll('.step-btn').forEach(btn => {
   btn.onclick = () => {
     if (selectedIdx < 0 || !data) return
@@ -1224,22 +1343,28 @@ document.querySelectorAll('.step-btn').forEach(btn => {
   }
 })
 
+// ════════════════════════════════════════════════════════════════════════
+// SAVE / RESET / EXPORT
+// ════════════════════════════════════════════════════════════════════════
 
 document.getElementById('btn-save').onclick = () => {
   if (selectedIdx < 0 || !data) return
   pushUndo()
 
   const a = data.assets[selectedIdx]
-  const oldId = a.id
+  const oldId = a.id  // capture before rename
+  // Geometry
   a.paddedX = +document.getElementById('geo-x').value
   a.paddedY = +document.getElementById('geo-y').value
   a.paddedWidth = Math.max(16, Math.round((+document.getElementById('geo-w').value || a.paddedWidth) / 16) * 16)
   a.paddedHeight = Math.max(16, Math.round((+document.getElementById('geo-h').value || a.paddedHeight) / 16) * 16)
+  // Metadata — ID from field (may be manually edited or auto-generated from label)
   a.label = document.getElementById('f-label').value.trim() || a.label
   const fieldId = document.getElementById('f-id').value.trim()
   a.id = fieldId || labelToId(a.label) || a.id
   a.name = a.id
 
+  // Sync ID change into groups
   if (oldId !== a.id && data.groups) {
     for (const g of data.groups) {
       const memberIdx = g.members.indexOf(oldId)
@@ -1257,11 +1382,14 @@ document.getElementById('btn-save').onclick = () => {
   a.footprintW = Math.max(1, a.paddedWidth / 16)
   a.footprintH = Math.max(1, a.paddedHeight / 16)
   a.backgroundTiles = +document.getElementById('f-bgtiles').value || 0
+  // Flags — isDesk derived from category
   a.isDesk = a.category === 'desks'
   a.canPlaceOnWalls = document.getElementById('f-walls').checked
   a.canPlaceOnSurfaces = document.getElementById('f-ontop').checked
+  // Discard
   a.discard = document.getElementById('f-discard').checked
 
+  // Deduplicate IDs across all assets
   deduplicateIds()
 
   updateFilter()
@@ -1337,10 +1465,12 @@ function buildSummary() {
   return approved + ' approved + ' + (data.assets.length - approved) + ' discarded assets'
 }
 
+// Save — write to file handle, acquiring one on first use if needed
 document.getElementById('btn-save-file').onclick = async () => {
   if (!data) return
   const json = buildOutputJson()
 
+  // Acquire a handle if we don't have one yet
   if (!jsonFileHandle && window.showSaveFilePicker) {
     try {
       jsonFileHandle = await window.showSaveFilePicker({
@@ -1366,6 +1496,7 @@ document.getElementById('btn-save-file').onclick = async () => {
     }
   }
 
+  // Fallback: browser download (Firefox etc.)
   const blob = new Blob([json], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -1376,10 +1507,12 @@ document.getElementById('btn-save-file').onclick = async () => {
   statusMsg.textContent = '\u2713 Downloaded tileset-metadata-final.json \u2014 ' + buildSummary()
 }
 
+// Save As — open file picker (or fallback to download)
 document.getElementById('btn-save-as').onclick = async () => {
   if (!data) return
   const json = buildOutputJson()
 
+  // Try File System Access API save picker
   if (window.showSaveFilePicker) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -1394,11 +1527,12 @@ document.getElementById('btn-save-as').onclick = async () => {
       statusMsg.textContent = '\u2713 Saved to ' + handle.name + ' \u2014 ' + buildSummary()
       return
     } catch (err) {
-      if (err.name === 'AbortError') return
+      if (err.name === 'AbortError') return // user cancelled
       console.warn('showSaveFilePicker failed, falling back to download:', err)
     }
   }
 
+  // Fallback: browser download
   const blob = new Blob([json], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -1409,6 +1543,9 @@ document.getElementById('btn-save-as').onclick = async () => {
   statusMsg.textContent = '\u2713 Downloaded \u2014 ' + buildSummary()
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// PREVIEW RENDERING
+// ════════════════════════════════════════════════════════════════════════
 
 document.getElementById('preview-zoom').onchange = (e) => {
   previewZoom = +e.target.value
@@ -1417,6 +1554,7 @@ document.getElementById('preview-zoom').onchange = (e) => {
 
 function renderPreview() {
   if (!data || selectedIdx < 0 || selectedIdx >= data.assets.length) {
+    // Multi-select / group preview: show all selected assets side by side
     if (data && selectedIndices.size > 1 && tilesetImg) {
       renderGroupPreview()
       return
@@ -1433,6 +1571,7 @@ function renderPreview() {
   const w = asset.paddedWidth * previewZoom
   const h = asset.paddedHeight * previewZoom
 
+  // Validation
   const invalid = w <= 0 || h <= 0
   previewCanvas.classList.toggle('invalid', invalid)
   if (invalid) {
@@ -1448,6 +1587,7 @@ function renderPreview() {
   previewCtx.imageSmoothingEnabled = false
   previewCtx.clearRect(0, 0, w, h)
 
+  // Draw tileset region
   if (tilesetImg) {
     const srcX = Math.max(0, asset.paddedX)
     const srcY = Math.max(0, asset.paddedY)
@@ -1468,6 +1608,7 @@ function renderPreview() {
     }
   }
 
+  // 16px grid overlay
   previewCtx.strokeStyle = 'rgba(255,255,255,0.15)'
   previewCtx.lineWidth = 1
   for (let x = 0; x <= w; x += 16 * previewZoom) {
@@ -1477,6 +1618,7 @@ function renderPreview() {
     previewCtx.beginPath(); previewCtx.moveTo(0, y + 0.5); previewCtx.lineTo(w, y + 0.5); previewCtx.stroke()
   }
 
+  // Erased pixels overlay (from stage 2)
   if (asset.erasedPixels && asset.erasedPixels.length > 0) {
     previewCtx.fillStyle = 'rgba(255, 0, 0, 0.35)'
     for (const p of asset.erasedPixels) {
@@ -1484,11 +1626,13 @@ function renderPreview() {
     }
   }
 
+  // Footprint overlay — shows blocked rows (orange) vs background rows (blue)
   const fpW = Math.max(1, Math.round(asset.paddedWidth / 16))
   const fpH = Math.max(1, Math.round(asset.paddedHeight / 16))
   const bgTiles = +document.getElementById('f-bgtiles').value || 0
   if (fpW > 0 && fpH > 0) {
     const tileZoom = 16 * previewZoom
+    // Footprint is anchored to the bottom-left of the sprite
     const fpStartY = h - fpH * tileZoom
     for (let dr = 0; dr < fpH; dr++) {
       const isBackground = dr < bgTiles
@@ -1502,6 +1646,7 @@ function renderPreview() {
         previewCtx.strokeRect(tx + 0.5, ty + 0.5, tileZoom - 1, tileZoom - 1)
       }
     }
+    // Labels
     if (bgTiles > 0) {
       previewCtx.font = `${Math.max(9, previewZoom * 3)}px sans-serif`
       previewCtx.textAlign = 'center'
@@ -1516,6 +1661,7 @@ function renderPreview() {
     }
   }
 
+  // Border
   previewCtx.strokeStyle = '#3498db'
   previewCtx.lineWidth = 2
   previewCtx.strokeRect(0, 0, w, h)
@@ -1528,7 +1674,7 @@ function renderGroupPreview() {
 
   previewCanvas.classList.remove('invalid')
 
-  const gap = 4
+  const gap = 4  // px gap between assets (in sprite pixels)
   const maxH = Math.max(...assets.map(a => a.paddedHeight))
   const totalW = assets.reduce((sum, a) => sum + a.paddedWidth, 0) + gap * (assets.length - 1)
 
@@ -1543,8 +1689,10 @@ function renderGroupPreview() {
   for (const asset of assets) {
     const aw = asset.paddedWidth * previewZoom
     const ah = asset.paddedHeight * previewZoom
+    // Bottom-align each asset
     const dy = ch - ah
 
+    // Draw tileset region
     const srcX = Math.max(0, asset.paddedX)
     const srcY = Math.max(0, asset.paddedY)
     const offX = Math.max(0, -asset.paddedX)
@@ -1562,6 +1710,7 @@ function renderGroupPreview() {
       )
     }
 
+    // Erased pixels
     if (asset.erasedPixels && asset.erasedPixels.length > 0) {
       previewCtx.fillStyle = 'rgba(255, 0, 0, 0.35)'
       for (const p of asset.erasedPixels) {
@@ -1569,10 +1718,12 @@ function renderGroupPreview() {
       }
     }
 
+    // Border per asset
     previewCtx.strokeStyle = 'rgba(52, 152, 219, 0.6)'
     previewCtx.lineWidth = 1
     previewCtx.strokeRect(curX + 0.5, dy + 0.5, aw - 1, ah - 1)
 
+    // Label below top
     const label = asset.id || asset.label || ''
     if (label) {
       const fontSize = Math.max(8, previewZoom * 3)
@@ -1587,25 +1738,34 @@ function renderGroupPreview() {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// GROUPS SYSTEM
+// ════════════════════════════════════════════════════════════════════════
 
 let groupCreatorType = 'rotation'
-let rotationScheme = '4-way'
-let editingGroupId = null
+let rotationScheme = '4-way'  // '4-way' | '3-way-mirror' | '2-way'
+let editingGroupId = null  // non-null when editing an existing group
 
+// Ensure data.groups exists
 function ensureGroups() {
   if (data && !data.groups) data.groups = []
 }
 
+// Find the group that contains a given asset
 function findGroupForAsset(asset) {
   if (!data || !data.groups || !asset.groupId) return null
   return data.groups.find(g => g.id === asset.groupId) || null
 }
 
+// Find the parent group that contains a sub-group reference
 function findParentGroup(groupId) {
   if (!data || !data.groups) return null
   return data.groups.find(g => g.members.includes('@' + groupId)) || null
 }
 
+// Resolve all leaf asset IDs from a member reference
+// If starts with '@' → find the group, recursively resolve its members
+// Otherwise → return [memberId] (it's a leaf asset)
 function resolveGroupAssets(memberId) {
   if (memberId.startsWith('@')) {
     const gid = memberId.slice(1)
@@ -1620,14 +1780,17 @@ function resolveGroupAssets(memberId) {
   return [memberId]
 }
 
+// Resolve full metadata for an asset by walking up the group hierarchy
 function resolveAssetMetadata(assetId) {
   const meta = {}
   const asset = data.assets.find(a => a.id === assetId)
   if (!asset || !asset.groupId) return meta
 
+  // Find direct group
   const directGroup = data.groups.find(g => g.id === asset.groupId)
   if (!directGroup) return meta
 
+  // Get role from direct group's memberRoles
   if (directGroup.memberRoles) {
     const role = directGroup.memberRoles[assetId]
     if (directGroup.type === 'rotation') meta.orientation = role
@@ -1635,12 +1798,14 @@ function resolveAssetMetadata(assetId) {
     else if (directGroup.type === 'animation') meta.animationFrame = directGroup.members.indexOf(assetId)
   }
 
+  // Walk up to parent
   const parent = findParentGroup(directGroup.id)
   if (parent && parent.memberRoles) {
     const parentRole = parent.memberRoles['@' + directGroup.id]
     if (parent.type === 'rotation') meta.orientation = parentRole
     else if (parent.type === 'state') meta.state = parentRole
 
+    // Walk up one more level
     const grandparent = findParentGroup(parent.id)
     if (grandparent && grandparent.memberRoles) {
       const gpRole = grandparent.memberRoles['@' + parent.id]
@@ -1652,15 +1817,18 @@ function resolveAssetMetadata(assetId) {
   return meta
 }
 
+// Check if a group is a sub-group of any compound group
 function isSubGroup(groupId) {
   return !!findParentGroup(groupId)
 }
 
+// Get all top-level groups (groups that are not sub-groups of another group)
 function getTopLevelGroups() {
   if (!data || !data.groups) return []
   return data.groups.filter(g => !findParentGroup(g.id))
 }
 
+// Migrate: rebuild data.groups from per-asset fields if groups[] is missing
 function migrateGroupsFromAssets() {
   if (!data || data.groups) return
   data.groups = []
@@ -1678,6 +1846,7 @@ function migrateGroupsFromAssets() {
   }
 }
 
+// Sync group definition -> per-asset fields
 function syncGroupToAssets(group) {
   if (!data) return
   for (let i = 0; i < group.members.length; i++) {
@@ -1686,6 +1855,7 @@ function syncGroupToAssets(group) {
     asset.groupId = group.id
     asset.partOfGroup = true
     if (group.type === 'rotation') {
+      // Try to infer orientation from suffix, or use position-based default
       const suffixes = ['front', 'right', 'back', 'left']
       const nameLower = (asset.id || '').toLowerCase()
       const matched = suffixes.find(s => nameLower.endsWith('_' + s))
@@ -1698,24 +1868,29 @@ function syncGroupToAssets(group) {
   }
 }
 
+// Remove asset from its group
 function removeAssetFromGroup(asset) {
   if (!data || !asset.groupId) return
   ensureGroups()
   const group = data.groups.find(g => g.id === asset.groupId)
   if (group) {
     group.members = group.members.filter(id => id !== asset.id)
+    // Also remove from memberRoles
     if (group.memberRoles) delete group.memberRoles[asset.id]
 
     if (group.members.length < 2) {
+      // Dissolve the group — remove per-asset fields from remaining member too
       for (const mid of group.members) {
         if (mid.startsWith('@')) continue
         const m = data.assets.find(a => a.id === mid)
         if (m) { m.groupId = undefined; m.partOfGroup = false; m.orientation = undefined; m.state = undefined; m.animationFrame = undefined }
       }
+      // If this group is a sub-group of a compound group, remove the reference
       const parent = findParentGroup(group.id)
       if (parent) {
         parent.members = parent.members.filter(m => m !== '@' + group.id)
         if (parent.memberRoles) delete parent.memberRoles['@' + group.id]
+        // Dissolve parent if < 2 members
         if (parent.members.length < 2) {
           for (const mid of parent.members) {
             if (mid.startsWith('@')) continue
@@ -1735,6 +1910,7 @@ function removeAssetFromGroup(asset) {
   asset.animationFrame = undefined
 }
 
+// Show group membership info for a single selected asset
 function updateGroupMembershipDisplay(asset) {
   const el = document.getElementById('group-membership')
   const catFlags = document.getElementById('individual-category-flags')
@@ -1745,9 +1921,11 @@ function updateGroupMembershipDisplay(asset) {
     return
   }
   el.style.display = ''
+  // Restore all buttons for individual asset view
   document.getElementById('btn-edit-group').style.display = ''
   document.getElementById('btn-dissolve-group').style.display = ''
   document.getElementById('btn-remove-from-group').style.display = ''
+  // Hide individual category/flags — they're managed at the group level
   catFlags.style.display = 'none'
   const typeLabel = group.type === 'rotation' ? 'Rotation' : group.type === 'state' ? 'State' : 'Animation'
   let role = ''
@@ -1767,6 +1945,7 @@ function updateGroupMembershipDisplay(asset) {
   if (asset.backgroundTiles) flagsStr += 'BG:' + asset.backgroundTiles
   const schemeLabel = group.type === 'rotation' ? (group.rotationScheme === '3-way-mirror' ? '3-way + Mirror' : group.rotationScheme === '2-way' ? '2-way' : '4-way') : ''
 
+  // Show compound group hierarchy
   let hierarchyHtml = ''
   const parent = findParentGroup(group.id)
   if (parent) {
@@ -1777,6 +1956,7 @@ function updateGroupMembershipDisplay(asset) {
       ' (role: ' + escHtml(parentRole) + ')' +
       '</div>'
 
+    // Check for grandparent
     const grandparent = findParentGroup(parent.id)
     if (grandparent) {
       const gpType = grandparent.type === 'rotation' ? 'Rotation' : grandparent.type === 'state' ? 'State' : 'Animation'
@@ -1800,15 +1980,18 @@ function updateGroupMembershipDisplay(asset) {
     hierarchyHtml
 }
 
+// Update editor panel based on selection count
 function updateEditorForSelection() {
   const form = document.getElementById('editor-form')
   const creator = document.getElementById('group-creator')
   const header = document.getElementById('editor-header')
 
+  // Detect if exactly one group is selected with no extra items
   let singleSelectedGroup = null
   if (selectedIndices.size > 1 && selectedGroupId && data.groups) {
     const group = data.groups.find(g => g.id === selectedGroupId)
     if (group) {
+      // Check that selected indices exactly match this group's leaf assets
       const leafIds = new Set()
       for (const mid of group.members) {
         for (const aid of resolveGroupAssets(mid)) leafIds.add(aid)
@@ -1821,6 +2004,7 @@ function updateEditorForSelection() {
   }
 
   if (singleSelectedGroup) {
+    // Single group selected: show group info panel (not the creator)
     for (const child of form.children) {
       if (child.id !== 'group-membership') child.style.display = 'none'
     }
@@ -1829,6 +2013,7 @@ function updateEditorForSelection() {
     const typeLabel = group.type === 'rotation' ? 'Rotation' : group.type === 'state' ? 'State' : 'Animation'
     header.textContent = escHtml(group.name || group.id)
 
+    // Resolve first leaf asset for category/flags display
     const firstLeafId = resolveGroupAssets(group.members[0])[0]
     const firstMember = firstLeafId ? data.assets.find(a => a.id === firstLeafId) : null
     const catLabel = ((group.category || (firstMember && firstMember.category) || 'misc'))
@@ -1842,6 +2027,7 @@ function updateEditorForSelection() {
     if (bgTiles) flagsStr += 'BG:' + bgTiles
     const schemeLabel = group.type === 'rotation' ? (group.rotationScheme === '3-way-mirror' ? '3-way + Mirror' : group.rotationScheme === '2-way' ? '2-way' : '4-way') : ''
 
+    // List members with roles
     let membersHtml = ''
     for (const mid of group.members) {
       const role = group.memberRoles ? (group.memberRoles[mid] || '') : ''
@@ -1858,6 +2044,7 @@ function updateEditorForSelection() {
 
     const el = document.getElementById('group-membership')
     el.style.display = ''
+    // Show Edit Group + Dissolve, hide Remove from Group (doesn't apply to group view)
     document.getElementById('btn-edit-group').style.display = ''
     document.getElementById('btn-dissolve-group').style.display = ''
     document.getElementById('btn-remove-from-group').style.display = 'none'
@@ -1871,6 +2058,7 @@ function updateEditorForSelection() {
       '<div style="margin-top:6px;"><b>Members (' + group.members.length + '):</b></div>' +
       membersHtml
   } else if (selectedIndices.size > 1) {
+    // Multi-select: hide form fields, show group creator
     for (const child of form.children) {
       if (child.id !== 'group-creator') child.style.display = 'none'
     }
@@ -1891,11 +2079,13 @@ function updateEditorForSelection() {
     editingGroupId = null
     initGroupCreator()
   } else {
+    // Single or no selection: show form fields, hide group creator
     for (const child of form.children) {
       child.style.display = ''
     }
     creator.style.display = 'none'
     header.textContent = 'Editor'
+    // Check if all selected are in same group — if editing from "Edit Group" button
     if (selectedIdx >= 0) {
       updateGroupMembershipDisplay(data.assets[selectedIdx])
     } else {
@@ -1904,6 +2094,7 @@ function updateEditorForSelection() {
   }
 }
 
+// Detect common prefix of asset IDs
 function commonPrefix(ids) {
   if (ids.length === 0) return ''
   let prefix = ids[0]
@@ -1912,10 +2103,12 @@ function commonPrefix(ids) {
       prefix = prefix.substring(0, prefix.length - 1)
     }
   }
+  // Trim trailing underscore
   if (prefix.endsWith('_')) prefix = prefix.slice(0, -1)
   return prefix
 }
 
+// Auto-detect group type from name suffixes
 function detectGroupType(assets) {
   const ids = assets.map(a => (a.id || '').toUpperCase())
   const orientations = ['FRONT', 'BACK', 'LEFT', 'RIGHT', 'SIDE']
@@ -1925,6 +2118,7 @@ function detectGroupType(assets) {
   return 'rotation'
 }
 
+// Auto-detect rotation scheme from assets in the group
 function detectRotationScheme(assets) {
   const suffixes = new Set()
   for (const asset of assets) {
@@ -1937,15 +2131,19 @@ function detectRotationScheme(assets) {
   return '4-way'
 }
 
+// Initialize the group creator panel for current multi-selection
 function initGroupCreator() {
   const indices = [...selectedIndices]
   const assets = indices.map(i => data.assets[i])
   const units = getSelectedMemberUnits()
   const ids = units.map(u => u.type === 'group' ? u.groupId : u.id)
 
+  // Reset manual edit tracking for group ID
   groupIdManuallyEdited = false
 
+  // Check if all selected units are already members of the same parent group (compound edit)
   if (units.length >= 2 && data.groups) {
+    // For compound groups: check if all units (group refs + assets) belong to the same parent
     let candidateParent = null
     for (const g of data.groups) {
       const memberSet = new Set(g.members)
@@ -1968,6 +2166,7 @@ function initGroupCreator() {
       document.getElementById('group-name-input').value = candidateParent.name || ''
       document.getElementById('group-id-input').value = candidateParent.id
       groupIdManuallyEdited = !!(candidateParent.id && candidateParent.name && candidateParent.id !== labelToId(candidateParent.name))
+      // Resolve first leaf asset for defaults
       const firstLeafId = resolveGroupAssets(candidateParent.members[0])[0]
       const firstMember = firstLeafId ? data.assets.find(a => a.id === firstLeafId) : null
       document.getElementById('group-category').value = candidateParent.category || (firstMember && firstMember.category) || 'misc'
@@ -1981,6 +2180,7 @@ function initGroupCreator() {
     }
   }
 
+  // Check if all assets are already in the same simple group (legacy / non-compound)
   const groups = assets.map(a => a.groupId).filter(Boolean)
   const uniqueGroups = [...new Set(groups)]
   if (selectedGroupUnits.size === 0 && uniqueGroups.length === 1 && data.groups) {
@@ -2010,9 +2210,11 @@ function initGroupCreator() {
 
   editingGroupId = null
 
+  // Auto-detect type based on selected units
   let detected = 'rotation'
   const hasGroupUnits = units.some(u => u.type === 'group')
   if (hasGroupUnits) {
+    // Suggest "next level up" type based on sub-group types
     const subTypes = units.filter(u => u.type === 'group').map(u => u.groupType)
     if (subTypes.some(t => t === 'state')) detected = 'rotation'
     else if (subTypes.some(t => t === 'animation')) detected = 'state'
@@ -2035,6 +2237,7 @@ function initGroupCreator() {
   selectGroupTypeBtn(detected)
   document.getElementById('group-name-input').value = ''
   document.getElementById('group-id-input').value = commonPrefix(ids) || ''
+  // Default category/flags from first selected asset
   const first = assets[0]
   document.getElementById('group-category').value = first.category || 'misc'
   document.getElementById('group-bgtiles').value = first.backgroundTiles || 0
@@ -2049,6 +2252,7 @@ function selectGroupTypeBtn(type) {
   document.querySelectorAll('.group-type-btn').forEach(btn => {
     btn.classList.toggle('selected', btn.dataset.type === type)
   })
+  // Show/hide rotation scheme selector
   const schemeField = document.getElementById('rotation-scheme-field')
   schemeField.style.display = type === 'rotation' ? '' : 'none'
   updateRotationSchemeHint()
@@ -2072,7 +2276,7 @@ function updateRotationSchemeHint() {
 function getOrientationsForScheme(scheme) {
   if (scheme === '3-way-mirror') return ['front', 'back', 'right']
   if (scheme === '2-way') return ['front', 'right']
-  return ['front', 'right', 'back', 'left']
+  return ['front', 'right', 'back', 'left']  // 4-way
 }
 
 document.querySelectorAll('.group-type-btn').forEach(btn => {
@@ -2085,13 +2289,16 @@ document.getElementById('rotation-scheme').onchange = (e) => {
   renderGroupMembers()
 }
 
+// Build member units from selection: groups (from selectedGroupUnits) + individual assets
 function getSelectedMemberUnits() {
-  const units = []
+  const units = []  // { type: 'group'|'asset', id, groupId?, indices, label, groupType? }
   const coveredIndices = new Set()
 
+  // First: group units
   for (const gid of selectedGroupUnits) {
     const group = data.groups.find(g => g.id === gid)
     if (!group) continue
+    // Resolve all leaf indices for this group
     const leafAssetIds = []
     for (const mid of group.members) {
       leafAssetIds.push(...resolveGroupAssets(mid))
@@ -2104,6 +2311,7 @@ function getSelectedMemberUnits() {
     units.push({ type: 'group', id: '@' + gid, groupId: gid, indices, label: group.name || gid, groupType: group.type })
   }
 
+  // Then: individual assets not in any selected group unit
   for (const idx of selectedIndices) {
     if (coveredIndices.has(idx)) continue
     const asset = data.assets[idx]
@@ -2117,6 +2325,7 @@ function renderGroupMembers() {
   const units = getSelectedMemberUnits()
   const orientations = getOrientationsForScheme(rotationScheme)
 
+  // When editing an existing compound group, restore roles from memberRoles
   let existingRoles = null
   if (editingGroupId) {
     const existing = data.groups.find(g => g.id === editingGroupId)
@@ -2135,12 +2344,14 @@ function renderGroupMembers() {
 
     html += '<span class="gm-name">' + escHtml(unit.label) + '</span>'
 
+    // Determine current role
     const ref = isGroup ? '@' + unit.groupId : unit.id
     let cur = existingRoles ? existingRoles[ref] : null
 
     if (groupCreatorType === 'rotation') {
       if (!cur) {
         if (isGroup) {
+          // Try to infer from group name
           cur = inferOrientation(unit.groupId) || orientations[i % orientations.length]
         } else {
           const asset = data.assets[unit.indices[0]]
@@ -2191,6 +2402,7 @@ function inferState(id) {
   return null
 }
 
+// Validate and create/update group
 document.getElementById('btn-create-group').onclick = () => {
   if (!data || selectedIndices.size < 2) return
   const units = getSelectedMemberUnits()
@@ -2217,16 +2429,19 @@ document.getElementById('btn-create-group').onclick = () => {
     return
   }
 
+  // Validate: animation groups cannot contain sub-groups
   if (groupCreatorType === 'animation' && units.some(u => u.type === 'group')) {
     showGroupValidation('Animation groups can only contain individual assets')
     return
   }
 
+  // Validate: no circular references
   if (units.some(u => u.type === 'group' && u.groupId === groupId)) {
     showGroupValidation('A group cannot contain itself')
     return
   }
 
+  // Validate hierarchy: state groups cannot contain rotation groups, etc.
   const groupUnits = units.filter(u => u.type === 'group')
   for (const gu of groupUnits) {
     if (groupCreatorType === 'state' && gu.groupType === 'rotation') {
@@ -2239,6 +2454,7 @@ document.getElementById('btn-create-group').onclick = () => {
     }
   }
 
+  // Check for duplicate orientations in rotation groups
   if (groupCreatorType === 'rotation') {
     const selects = document.querySelectorAll('#group-members-list .gm-role-select')
     const orientations = [...selects].map(s => s.value)
@@ -2254,6 +2470,7 @@ document.getElementById('btn-create-group').onclick = () => {
     }
   }
 
+  // Check for duplicate or empty states in state groups
   if (groupCreatorType === 'state') {
     const stateInputs = document.querySelectorAll('#group-members-list .gm-role-input')
     const stateValues = [...stateInputs].map(s => s.value.trim().toLowerCase())
@@ -2273,11 +2490,13 @@ document.getElementById('btn-create-group').onclick = () => {
 
   const isEditing = !!editingGroupId
 
+  // Remove old group if editing
   if (editingGroupId) {
     const oldGroup = data.groups.find(g => g.id === editingGroupId)
     if (oldGroup) {
+      // Clear old simple asset members that are no longer in the group
       for (const mid of oldGroup.members) {
-        if (mid.startsWith('@')) continue
+        if (mid.startsWith('@')) continue  // sub-group refs don't need per-asset cleanup
         const m = data.assets.find(a => a.id === mid)
         const stillIncluded = units.some(u => u.type === 'asset' && u.indices.some(idx => data.assets[idx] === m))
         if (m && !stillIncluded) {
@@ -2288,14 +2507,17 @@ document.getElementById('btn-create-group').onclick = () => {
     }
   }
 
+  // Read group-level category/flags
   const groupCategory = document.getElementById('group-category').value
   const groupBgTiles = +document.getElementById('group-bgtiles').value || 0
   const groupWalls = document.getElementById('group-walls').checked
   const groupOnTop = document.getElementById('group-ontop').checked
 
+  // Collect roles from dropdowns or text inputs
   const selects = document.querySelectorAll('#group-members-list .gm-role-select')
   const stateInputs = document.querySelectorAll('#group-members-list .gm-role-input')
 
+  // Build member refs and memberRoles
   const memberRefs = []
   const memberRoles = {}
   const hasCompoundMembers = units.some(u => u.type === 'group')
@@ -2307,22 +2529,27 @@ document.getElementById('btn-create-group').onclick = () => {
     } else {
       role = selects[i] ? selects[i].value : (groupCreatorType === 'animation' ? String(i) : undefined)
     }
-    const ref = unit.type === 'group' ? '@' + unit.groupId : null
+    const ref = unit.type === 'group' ? '@' + unit.groupId : null  // asset refs will be updated after rename
 
     if (unit.type === 'group') {
       memberRefs.push(ref)
       if (role) memberRoles[ref] = role
 
+      // Rename leaf assets within the sub-group based on compound hierarchy
       const subGroup = data.groups.find(g => g.id === unit.groupId)
       if (subGroup) {
+        // Build the role suffix for this sub-group in the parent
         const roleSuffix = role ? role.toUpperCase() : ''
         const sideLabel = (rotationScheme !== '4-way' && role === 'right') ? 'SIDE' : roleSuffix
 
+        // Walk sub-group members and rename
         renameSubGroupAssets(subGroup, groupId, groupCreatorType === 'rotation' ? sideLabel : roleSuffix, groupCreatorType, groupName, groupCategory, groupBgTiles, groupWalls, groupOnTop)
       }
     } else {
+      // Individual asset member
       const asset = data.assets[unit.indices[0]]
 
+      // Remove from any existing group first
       if (asset.groupId && asset.groupId !== groupId) removeAssetFromGroup(asset)
 
       asset.groupId = groupId
@@ -2357,12 +2584,14 @@ document.getElementById('btn-create-group').onclick = () => {
         asset.name = asset.id
       }
 
+      // For non-compound groups, use asset id directly
       const assetRef = asset.id
       memberRefs.push(assetRef)
       if (role) memberRoles[assetRef] = role
     }
   })
 
+  // Create group entry
   const newGroup = {
     id: groupId, name: groupName, type: groupCreatorType, members: memberRefs,
     ...(hasCompoundMembers ? { memberRoles } : {}),
@@ -2372,6 +2601,7 @@ document.getElementById('btn-create-group').onclick = () => {
   }
   data.groups.push(newGroup)
 
+  // Select first member asset
   const firstIdx = units[0].indices[0]
   selectAsset(firstIdx)
   updateFilter()
@@ -2382,12 +2612,15 @@ document.getElementById('btn-create-group').onclick = () => {
   editingGroupId = null
 }
 
+// Rename assets within a sub-group based on their position in a compound hierarchy
 function renameSubGroupAssets(subGroup, parentId, parentRoleSuffix, parentType, groupName, groupCategory, groupBgTiles, groupWalls, groupOnTop) {
   for (let i = 0; i < subGroup.members.length; i++) {
     const mid = subGroup.members[i]
     if (mid.startsWith('@')) {
+      // Nested sub-group: recurse
       const nestedGroup = data.groups.find(g => g.id === mid.slice(1))
       if (nestedGroup) {
+        // Build suffix for this level
         let subRole = ''
         if (subGroup.memberRoles && subGroup.memberRoles[mid]) {
           subRole = subGroup.memberRoles[mid].toUpperCase()
@@ -2399,6 +2632,7 @@ function renameSubGroupAssets(subGroup, parentId, parentRoleSuffix, parentType, 
       const asset = data.assets.find(a => a.id === mid)
       if (!asset) continue
 
+      // Apply group-level properties
       asset.label = groupName
       asset.category = groupCategory
       asset.isDesk = groupCategory === 'desks'
@@ -2406,8 +2640,10 @@ function renameSubGroupAssets(subGroup, parentId, parentRoleSuffix, parentType, 
       asset.canPlaceOnWalls = groupWalls
       asset.canPlaceOnSurfaces = groupOnTop
 
+      // Build the full ID based on hierarchy
       let suffix = parentRoleSuffix
 
+      // Add sub-group role (state or animation frame)
       if (subGroup.type === 'state') {
         const role = (subGroup.memberRoles && subGroup.memberRoles[mid]) || asset.state || (i === 0 ? 'off' : 'on')
         suffix = suffix ? suffix + '_' + role.toUpperCase() : role.toUpperCase()
@@ -2419,7 +2655,9 @@ function renameSubGroupAssets(subGroup, parentId, parentRoleSuffix, parentType, 
       }
 
       const newId = parentId + (suffix ? '_' + suffix : '')
+      // Update the sub-group's member list to reflect the new ID
       subGroup.members[i] = newId
+      // Update memberRoles keys if needed
       if (subGroup.memberRoles && subGroup.memberRoles[mid] && mid !== newId) {
         subGroup.memberRoles[newId] = subGroup.memberRoles[mid]
         delete subGroup.memberRoles[mid]
@@ -2443,9 +2681,12 @@ function showGroupValidation(msg) {
   setTimeout(() => { el.style.display = 'none' }, 3000)
 }
 
+// Edit Group button — select all members of the group
+// For compound groups, selects the parent group with sub-group units
 document.getElementById('btn-edit-group').onclick = () => {
   if (!data) return
 
+  // Find the group to edit: either from selectedGroupId (group view) or from selected asset
   let group = null
   if (selectedGroupId && data.groups) {
     group = data.groups.find(g => g.id === selectedGroupId)
@@ -2456,6 +2697,7 @@ document.getElementById('btn-edit-group').onclick = () => {
   }
   if (!group) return
 
+  // Set up selection to match this group's members for the group creator
   selectedGroupId = null
   selectedGroupUnits = new Set()
   selectedIndices.clear()
@@ -2482,9 +2724,11 @@ document.getElementById('btn-edit-group').onclick = () => {
   renderList()
 }
 
+// Dissolve Group button — removes the group, leaving assets ungrouped
 document.getElementById('btn-dissolve-group').onclick = () => {
   if (!data || !data.groups) return
 
+  // Find the group: from group view or from selected asset
   let group = null
   if (selectedGroupId) {
     group = data.groups.find(g => g.id === selectedGroupId)
@@ -2498,8 +2742,11 @@ document.getElementById('btn-dissolve-group').onclick = () => {
 
   pushUndo()
 
+  // Clear per-asset fields for all leaf assets
   for (const mid of group.members) {
     if (mid.startsWith('@')) {
+      // Sub-group: leave the sub-group intact, just detach from parent
+      // (the sub-group becomes a standalone group)
     } else {
       const asset = data.assets.find(a => a.id === mid)
       if (asset) {
@@ -2512,11 +2759,13 @@ document.getElementById('btn-dissolve-group').onclick = () => {
     }
   }
 
+  // Remove sub-group references from parent if this group is a sub-group
   const parent = findParentGroup(group.id)
   if (parent) {
     parent.members = parent.members.filter(m => m !== '@' + group.id)
     if (parent.memberRoles) delete parent.memberRoles['@' + group.id]
     if (parent.members.length < 2) {
+      // Dissolve parent too
       for (const mid of parent.members) {
         if (mid.startsWith('@')) continue
         const m = data.assets.find(a => a.id === mid)
@@ -2526,8 +2775,10 @@ document.getElementById('btn-dissolve-group').onclick = () => {
     }
   }
 
+  // Remove the group itself
   data.groups = data.groups.filter(g => g.id !== group.id)
 
+  // Reset selection
   selectedGroupId = null
   selectedGroupUnits.clear()
   if (selectedIdx < 0 && selectedIndices.size > 0) {
@@ -2545,6 +2796,7 @@ document.getElementById('btn-dissolve-group').onclick = () => {
   statusMsg.textContent = '\u2713 Dissolved group: ' + (group.name || group.id)
 }
 
+// Remove from Group button
 document.getElementById('btn-remove-from-group').onclick = () => {
   if (selectedIdx < 0 || !data) return
   pushUndo()
@@ -2557,6 +2809,9 @@ document.getElementById('btn-remove-from-group').onclick = () => {
   statusMsg.textContent = '\u2713 Removed from group'
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// PIXEL ERASER
+// ════════════════════════════════════════════════════════════════════════
 
 document.getElementById('btn-eraser').onclick = () => {
   eraserActive = !eraserActive
@@ -2576,6 +2831,7 @@ document.getElementById('btn-clear-erased').onclick = () => {
   statusMsg.textContent = 'Cleared erased pixels for ' + asset.label
 }
 
+// Bresenham line: all integer pixels between two points
 function bresenham(x0, y0, x1, y1) {
   const pts = []
   const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0)
@@ -2629,6 +2885,7 @@ previewCanvas.onmousedown = (e) => {
 previewCanvas.onmousemove = (e) => {
   if (!isErasing) return
   const p = previewPixelAt(e)
+  // Interpolate from last point for smooth strokes
   const pts = lastErasePx ? bresenham(lastErasePx.x, lastErasePx.y, p.x, p.y) : [p]
   lastErasePx = p
   erasePixels(pts)
@@ -2651,6 +2908,9 @@ previewCanvas.onmouseleave = () => {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// TILESET PANE (always visible)
+// ════════════════════════════════════════════════════════════════════════
 
 const tilesetCanvas = document.getElementById('tileset-canvas')
 const tilesetCtx = tilesetCanvas.getContext('2d')
@@ -2667,6 +2927,7 @@ function updateTilesetVisibility() {
 
 document.getElementById('btn-add-asset').onclick = () => {
   if (!tilesetImg) { alert('Load a tileset PNG first'); return }
+  // Auto-initialize empty project if needed
   if (!data) {
     loadJsonData({
       version: 1,
@@ -2707,6 +2968,7 @@ function toggleAddMode(on) {
   document.getElementById('btn-add-asset').classList.toggle('active', on && !redrawMode)
   tilesetWrap.style.cursor = on ? 'crosshair' : 'default'
 
+  // Show/hide the add mode instruction bar
   addModeBar.style.display = on ? '' : 'none'
   document.getElementById('add-mode-label').textContent = on && redrawMode
     ? 'Drag to redefine the asset region' : 'Drag to select a region on the tileset'
@@ -2721,6 +2983,7 @@ function renderTileset() {
   tilesetCtx.imageSmoothingEnabled = false
   tilesetCtx.drawImage(tilesetImg, 0, 0, tilesetCanvas.width, tilesetCanvas.height)
 
+  // Draw existing asset bounding boxes
   if (data) {
     data.assets.forEach((asset, i) => {
       if (asset.discard) return
@@ -2730,34 +2993,40 @@ function renderTileset() {
       const h = asset.paddedHeight * tilesetZoom
 
       if (redrawMode && i === selectedIdx) {
+        // Redraw target: dashed red
         tilesetCtx.strokeStyle = 'rgba(231, 76, 60, 0.8)'
         tilesetCtx.lineWidth = 2
         tilesetCtx.setLineDash([4, 4])
         tilesetCtx.strokeRect(x + 0.5, y + 0.5, w, h)
         tilesetCtx.setLineDash([])
       } else if (i === selectedIdx) {
+        // Selected asset: bright green highlight
         tilesetCtx.fillStyle = 'rgba(46, 204, 113, 0.12)'
         tilesetCtx.fillRect(x, y, w, h)
         tilesetCtx.strokeStyle = 'rgba(46, 204, 113, 0.9)'
         tilesetCtx.lineWidth = 2
         tilesetCtx.strokeRect(x + 0.5, y + 0.5, w, h)
+        // Label
         tilesetCtx.font = `${Math.max(9, tilesetZoom * 4)}px sans-serif`
         tilesetCtx.fillStyle = 'rgba(46, 204, 113, 0.95)'
         tilesetCtx.textAlign = 'left'
         tilesetCtx.textBaseline = 'bottom'
         tilesetCtx.fillText(asset.id, x + 2, y - 2)
       } else if (i === tilesetHoverIdx) {
+        // Hovered asset: yellow highlight
         tilesetCtx.fillStyle = 'rgba(241, 196, 15, 0.1)'
         tilesetCtx.fillRect(x, y, w, h)
         tilesetCtx.strokeStyle = 'rgba(241, 196, 15, 0.8)'
         tilesetCtx.lineWidth = 2
         tilesetCtx.strokeRect(x + 0.5, y + 0.5, w, h)
+        // Label
         tilesetCtx.font = `${Math.max(9, tilesetZoom * 4)}px sans-serif`
         tilesetCtx.fillStyle = 'rgba(241, 196, 15, 0.9)'
         tilesetCtx.textAlign = 'left'
         tilesetCtx.textBaseline = 'bottom'
         tilesetCtx.fillText(asset.id, x + 2, y - 2)
       } else {
+        // Other assets: subtle blue
         tilesetCtx.strokeStyle = 'rgba(52, 152, 219, 0.5)'
         tilesetCtx.lineWidth = 1
         tilesetCtx.strokeRect(x + 0.5, y + 0.5, w, h)
@@ -2766,9 +3035,11 @@ function renderTileset() {
   }
 }
 
-let clickStartPos = null
-let tilesetHoverIdx = -1
+// Tileset mouse handlers — click to select existing asset OR drag to create/redraw
+let clickStartPos = null  // track initial mousedown position for click vs drag detection
+let tilesetHoverIdx = -1  // index of asset hovered on tileset
 
+// Find the asset at a given tileset pixel coordinate (smallest bbox wins)
 function assetAtTilesetPos(px, py) {
   if (!data) return -1
   let bestIdx = -1
@@ -2788,7 +3059,7 @@ function assetAtTilesetPos(px, py) {
 }
 
 tilesetCanvas.onmousemove = (e) => {
-  if (addMode && isDragging) return
+  if (addMode && isDragging) return  // handled by tilesetWrap.onmousemove
   if (addMode) return
   const rect = tilesetCanvas.getBoundingClientRect()
   const px = (e.clientX - rect.left) / tilesetZoom
@@ -2849,6 +3120,7 @@ tilesetWrap.onmouseup = (e) => {
     const py = (e.clientY - rect.top) / tilesetZoom
     dragEnd = snapCoord(px, py)
 
+    // Compute selected region
     const x1 = Math.min(dragStart.x, dragEnd.x)
     const y1 = Math.min(dragStart.y, dragEnd.y)
     const x2 = Math.max(dragStart.x, dragEnd.x)
@@ -2858,6 +3130,7 @@ tilesetWrap.onmouseup = (e) => {
 
     if (w < 1 || h < 1) {
       selectRect.style.display = 'none'
+      // Tiny drag in add mode = treat as click-to-select
       if (addMode) return
     } else {
       if (redrawMode) {
@@ -2869,6 +3142,7 @@ tilesetWrap.onmouseup = (e) => {
     }
   }
 
+  // Click-to-select: find the asset whose bounding box contains the click point
   if (!addMode && startPos && data && e.target === tilesetCanvas) {
     const dx = Math.abs(e.clientX - startPos.x)
     const dy = Math.abs(e.clientY - startPos.y)
@@ -2905,6 +3179,7 @@ function updateSelectRect() {
 }
 
 function createNewAsset(x, y, w, h) {
+  // Snap W/H to multiples of 16
   w = Math.max(16, Math.round(w / 16) * 16)
   h = Math.max(16, Math.round(h / 16) * 16)
 
@@ -2934,6 +3209,7 @@ function createNewAsset(x, y, w, h) {
   deduplicateIds()
   const newIdx = data.assets.length - 1
 
+  // Stay in add mode — just reset drag state so user can draw another
   dragStart = null
   dragEnd = null
   selectRect.style.display = 'none'
@@ -2954,6 +3230,7 @@ function createNewAsset(x, y, w, h) {
 
 function redrawAsset(x, y, w, h) {
   if (selectedIdx < 0 || !data) return
+  // Snap W/H to multiples of 16
   w = Math.max(16, Math.round(w / 16) * 16)
   h = Math.max(16, Math.round(h / 16) * 16)
   pushUndo()
@@ -2974,6 +3251,9 @@ function redrawAsset(x, y, w, h) {
   statusMsg.textContent = '\u2713 Redrawn ' + a.label + ' (' + w + '\u00d7' + h + 'px)'
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// RESIZE HANDLES
+// ════════════════════════════════════════════════════════════════════════
 
 let resizing = null
 
@@ -2994,6 +3274,7 @@ document.onmousemove = (e) => {
       const w = Math.max(250, Math.min(editorW, mainRect.width - 400))
       document.getElementById('editor-panel').style.width = w + 'px'
     } else if (resizing === 'center') {
+      // Resize tileset vs preview pane within center-panel
       const centerPanel = document.getElementById('center-panel')
       const centerRect = centerPanel.getBoundingClientRect()
       const relX = e.clientX - centerRect.left
@@ -3007,27 +3288,34 @@ document.onmousemove = (e) => {
 
 document.onmouseup = () => {
   resizing = null
+  // Cancel tileset drag if mouse released outside
   if (isDragging) {
     isDragging = false
     selectRect.style.display = 'none'
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════════════════════════════════
 
 document.onkeydown = (e) => {
   const tag = e.target.tagName
   const inInput = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA'
 
+  // Ctrl+Z / Ctrl+Y always work
   if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); return }
   if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); return }
   if (e.ctrlKey && e.shiftKey && e.key === 'Z') { e.preventDefault(); redo(); return }
 
+  // Enter saves from anywhere
   if (e.key === 'Enter' && !e.ctrlKey) {
     e.preventDefault()
     document.getElementById('btn-save').click()
     return
   }
 
+  // Escape: cancel add mode → clear search → deselect
   if (e.key === 'Escape') {
     if (addMode) {
       toggleAddMode(false)
@@ -3050,6 +3338,7 @@ document.onkeydown = (e) => {
 
   if (inInput) return
 
+  // Arrow keys navigate filtered list
   if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
     e.preventDefault()
     if (!data || filtered.length === 0) return
@@ -3064,6 +3353,9 @@ document.onkeydown = (e) => {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// EXPORT ASSETS
+// ════════════════════════════════════════════════════════════════════════
 
 function showExportModal() {
   if (!data || !tilesetImg) {
@@ -3100,11 +3392,13 @@ document.getElementById('export-modal').onclick = (e) => {
   if (e.target === document.getElementById('export-modal')) hideExportModal()
 }
 
+// Collect all export units: { folderId, manifest, leafAssets, category }
 function collectExportItems() {
   if (!data) return []
   const items = []
   const groupedAssetIds = new Set()
 
+  // Process top-level groups
   const topGroups = getTopLevelGroups()
   for (const group of topGroups) {
     const leafIds = []
@@ -3125,12 +3419,15 @@ function collectExportItems() {
     })
   }
 
+  // Ungrouped, non-discarded assets
   for (const asset of data.assets) {
     if (asset.discard || groupedAssetIds.has(asset.id)) continue
     if (asset.groupId && !groupedAssetIds.has(asset.id)) {
+      // Part of a sub-group already handled
       const directGroup = data.groups ? data.groups.find(g => g.members.includes(asset.id)) : null
       if (directGroup && isSubGroup(directGroup.id)) continue
     }
+    // Skip if already in a group we processed
     if (asset.partOfGroup) continue
 
     const manifest = buildManifestUngrouped(asset)
@@ -3165,6 +3462,8 @@ function buildManifest(group, leafAssets) {
   return manifest
 }
 
+// Recursively build the members array for a group
+// Each entry is either { type: "asset", ... } or { type: "group", ... }
 function buildMembersList(group, parentType, rootScheme) {
   const members = []
   for (let i = 0; i < group.members.length; i++) {
@@ -3176,9 +3475,11 @@ function buildMembersList(group, parentType, rootScheme) {
 
       const parentRole = group.memberRoles ? group.memberRoles[mid] : undefined
       const subEntry = { type: 'group', groupType: subGroup.type }
+      // Assign the role from the parent group
       if (parentType === 'rotation' && parentRole) subEntry.orientation = resolveOrientation(parentRole, rootScheme)
       if (parentType === 'state' && parentRole) subEntry.state = parentRole
       if (parentType === 'animation') subEntry.frame = i
+      // Recurse into sub-group
       subEntry.members = buildMembersList(subGroup, subGroup.type, rootScheme)
       members.push(subEntry)
     } else {
@@ -3193,6 +3494,7 @@ function buildMembersList(group, parentType, rootScheme) {
   return members
 }
 
+// Apply role fields to an asset entry based on group type
 function applyRoleToEntry(entry, groupType, role, asset, scheme, index) {
   if (groupType === 'rotation') {
     const orientation = role || asset.orientation || 'front'
@@ -3205,6 +3507,7 @@ function applyRoleToEntry(entry, groupType, role, asset, scheme, index) {
   if (groupType === 'animation') entry.frame = index
 }
 
+// Resolve orientation label: 2-way and 3-way-mirror use "side" instead of "right"
 function resolveOrientation(orientation, scheme) {
   if ((scheme === '2-way' || scheme === '3-way-mirror') && orientation === 'right') return 'side'
   return orientation
@@ -3238,6 +3541,7 @@ function buildAssetMember(asset) {
   }
 }
 
+// Extract a single asset as a PNG Blob from the tileset canvas
 function extractAssetPngBlob(asset) {
   return new Promise((resolve) => {
     const w = asset.paddedWidth
@@ -3247,6 +3551,7 @@ function extractAssetPngBlob(asset) {
     canvas.height = h
     const ctx = canvas.getContext('2d')
 
+    // Draw the tileset region
     const srcX = Math.max(0, asset.paddedX)
     const srcY = Math.max(0, asset.paddedY)
     const offX = Math.max(0, -asset.paddedX)
@@ -3258,6 +3563,7 @@ function extractAssetPngBlob(asset) {
       ctx.drawImage(tilesetImg, srcX, srcY, srcW, srcH, offX, offY, srcW, srcH)
     }
 
+    // Apply erased pixels
     if (asset.erasedPixels && asset.erasedPixels.length > 0) {
       const imgData = ctx.getImageData(0, 0, w, h)
       for (const p of asset.erasedPixels) {
@@ -3312,11 +3618,13 @@ async function exportAssets() {
       }
       const groupDir = await parentDir.getDirectoryHandle(item.folderId, { create: true })
 
+      // Write manifest.json
       const mHandle = await groupDir.getFileHandle('manifest.json', { create: true })
       const mWritable = await mHandle.createWritable()
       await mWritable.write(JSON.stringify(item.manifest, null, 2))
       await mWritable.close()
 
+      // Write PNGs
       for (const asset of item.leafAssets) {
         const blob = await extractAssetPngBlob(asset)
         const filename = (asset.name || asset.id) + '.png'

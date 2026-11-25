@@ -6,6 +6,7 @@ trajectories without re-running the agent, Microsoft-Trace-style: agentV's
 deterministic assertion runners (`equals` / `contains` / `icontains` / `regex` /
 `is-json`) and caller-wired `custom` scorers grade the recorded root-span output
 per metric, producing the reward vector the optimization loop consumes.
+See [`ADR.md`](./ADR.md).
 
 ## Honest scope
 

@@ -129,6 +129,8 @@ describe("persistent interchangeable pipeline scheduler", () => {
 		expect(
 			(await h.scheduler.execute(h.account, pipeline("second"))).backend,
 		).toBe("gh-actions");
+		// Each pipeline reserves two minutes and settles one. Consume the remaining
+		// free minute on each initial backend before selecting the paid CF host.
 		expect(
 			(await h.scheduler.execute(h.account, pipeline("third"))).backend,
 		).toBe("dagger");

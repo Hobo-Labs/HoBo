@@ -165,4 +165,5 @@ export {
 	type SessionStatus,
 } from "./types.js";
 
+// public-contract: package id consumers assert against.
 export const HOBO_REPLAY_PACKAGE = "@hobo/replay";

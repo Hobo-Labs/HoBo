@@ -6,11 +6,18 @@ package hobo.cd.v1;
 
 // ── Shared ──────────────────────────────────────────────────────────────────
 
+message ReasonStructuredDetail {
+  string credential_ref = 1;
+  string requested_scope = 2;
+  string detail_kind = 3;
+}
+
 message ReasonRecord {
   string code = 1;
   string message = 2;
   string remediation = 3;
   string subject = 4;
+  ReasonStructuredDetail structured = 5;
 }
 
 message SelectorRecord {
@@ -429,20 +436,6 @@ enum Aggregation {
   AGGREGATION_SUM = 6;
 }
 
-message HealthSamplePointRecord {
-  double value = 1;
-  double observed_at_ms = 2;
-  string series_key = 3;
-  string correlation_key = 4;
-}
-
-message HealthSamplesRecord {
-  repeated double values = 1;
-  double from_ms = 2;
-  double to_ms = 3;
-  repeated HealthSamplePointRecord points = 4;
-}
-
 message ThresholdCheckRecord {
   HealthQueryRecord query = 1;
   Aggregation aggregation = 2;
@@ -482,18 +475,6 @@ message SuiteCheckRecord {
   string suite = 1;
 }
 
-message SloGateRecord {
-  HealthQueryRecord burn_rate = 1;
-  HealthQueryRecord remaining_budget_ratio = 2;
-  optional double rollback_burn_rate = 3;
-  optional double min_remaining_budget_ratio = 4;
-  optional double hold_burn_rate = 5;
-  optional double hold_remaining_budget_ratio = 6;
-  uint32 sustained_breach_count = 7;
-  uint32 sustained_healthy_count = 8;
-  uint64 max_sample_age_ms = 9;
-}
-
 message VerificationSpecRecord {
   uint64 window_ms = 1;
   uint32 required_observations = 2;
@@ -504,7 +485,6 @@ message VerificationSpecRecord {
   repeated ComparisonCheckRecord comparisons = 7;
   repeated ProbeCheckRecord probes = 8;
   repeated SuiteCheckRecord suites = 9;
-  SloGateRecord slo_gate = 10;
 }
 
 enum VerificationVerdict {
@@ -533,7 +513,6 @@ message VerificationResultRecord {
   string started_at = 6;
   string finished_at = 7;
   repeated ReasonRecord reasons = 8;
-  string evidence_digest = 9;
 }
 
 message EvidenceObservationRecord {
@@ -544,8 +523,6 @@ message EvidenceObservationRecord {
   string observed_at = 5;
   string source = 6;
   Cohort cohort = 7;
-  string series_key = 8;
-  string correlation_key = 9;
 }
 
 // ── Rollout ─────────────────────────────────────────────────────────────────

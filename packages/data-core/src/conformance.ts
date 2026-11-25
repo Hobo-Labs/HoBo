@@ -1,3 +1,17 @@
+/**
+ * The engine conformance kit (ADR-0177 §9 of the design note).
+ *
+ * One suite, run against any `EngineBinding` through a harness that creates
+ * fresh bindings. It proves the ports mean what the SPI says they mean, and
+ * then proves the patterns built on them: zero loss under load, a single
+ * write authority, resume at every phase boundary, a lossless soak, and a
+ * rollback that cannot resurrect an erased subject.
+ *
+ * The fold is pessimistic on purpose. A case that fails is `fail`; a case
+ * whose port the engine declares but whose check could not run is `not-run`,
+ * which makes the outcome `unknown`; and `unknown` is as non-selectable as
+ * `fail`. The only way to be selected is to have actually run the checks.
+ */
 import { inspect } from "node:util";
 import type { DataClassification } from "@hobo/core";
 import {
@@ -75,6 +89,7 @@ import {
 	sharedNativeProfile,
 } from "./spi.js";
 
+// public-contract: reference id of the engine conformance suite; recorded with every report.
 export const ENGINE_CONFORMANCE_SUITE = "hobo.data-engine-conformance/v1";
 
 export const CONFORMANCE_STATUSES = [
@@ -82,26 +97,51 @@ export const CONFORMANCE_STATUSES = [
 	"fail",
 	"blocked",
 	"not-run",
+	// The engine does not hold the property and its declaration says so, in an
+	// impedance code. Not a pass: the case ran and the property is not there.
 	"declared-limit",
 ] as const;
 export type ConformanceStatus = (typeof CONFORMANCE_STATUSES)[number];
 
+// domain-view: recorded result; wire form is EngineConformanceResult in data-models/data_core.proto.
 export interface EngineConformanceResult {
 	readonly caseId: string;
 	readonly status: ConformanceStatus;
+	/** Operator-facing detail. Never contains record payload or credentials. */
 	readonly detail: string;
 }
 
+// domain-view: recorded report; wire form is EngineConformanceReport in data-models/data_core.proto.
 export interface EngineConformanceReport {
 	readonly suite: typeof ENGINE_CONFORMANCE_SUITE;
 	readonly engine: string;
 	readonly outcome: ConformanceOutcome;
 	readonly results: readonly EngineConformanceResult[];
+	/** Cases skipped because the engine does not declare the port. */
 	readonly skipped: readonly string[];
+	/**
+	 * The case ids the run was restricted to; empty when the whole suite ran.
+	 * A restricted run proves what it ran and nothing else, so it never folds
+	 * to `pass`.
+	 */
 	readonly only: readonly string[];
 	readonly checkedAt: string;
 }
 
+/**
+ * Fold case results into one outcome. Any failure is `fail`; anything
+ * unproven is `unknown`. Shared by every engine package so "passes
+ * conformance" means the same thing everywhere.
+ *
+ * A `declared-limit` is neither: like a port an engine does not declare, it is
+ * a stated fact about the engine, recorded in the report for whoever selects
+ * it, and it does not make the outcome worse.
+ *
+ * `only` is the filter the run was restricted to. A restricted run can fail,
+ * but it cannot pass: the cases it left out are unproven, so the best it
+ * folds to is `unknown` — which is as non-selectable as `fail`. One case run
+ * on its own can therefore never be presented as conformance.
+ */
 export function foldConformance(
 	results: readonly EngineConformanceResult[],
 	only: readonly string[] = [],
@@ -119,45 +159,112 @@ export function foldConformance(
 		: "pass";
 }
 
+/** SQL an engine with a `schema` port supplies so in-place-evolve can be proven. */
 export interface SchemaFixture {
+	/** Statements that create and populate the starting table. */
 	readonly setup: readonly string[];
 	readonly plan: InPlaceEvolvePlan;
+	/** A violations query that must return rows once the contract phase ran. */
 	readonly provesContractApplied: string;
+	/** A statement that must fail, to prove a failed phase rolls back. */
 	readonly failingStatement: string;
+	/**
+	 * Two statements with separate, visible effects, for the probes that put
+	 * more than one statement where one belongs. Without them those cases
+	 * apply but cannot run.
+	 */
 	readonly probes?: SchemaStatementProbes;
 }
 
+/** Two independent statements, and a query that shows each one ran. */
 export interface SchemaStatementProbes {
 	readonly first: string;
 	readonly second: string;
+	/** A violations query that returns rows once `first` has run, and none before. */
 	readonly provesFirst: string;
+	/** A violations query that returns rows once `second` has run, and none before. */
 	readonly provesSecond: string;
 }
 
+/** Two fresh bindings an engine's native profile can transfer between. */
 export interface NativePair {
 	readonly source: EngineBinding;
 	readonly target: EngineBinding;
 }
 
 export interface EngineHarness {
+	/** A fresh, empty binding. `label` distinguishes several within one case. */
 	create(label: string): Awaitable<EngineBinding>;
 	dispose?(binding: EngineBinding): Awaitable<void>;
 	readonly schemaFixture?: SchemaFixture;
+	/**
+	 * A source and a target, both fresh and empty, placed so the engine's
+	 * native profile can run between them — the same schema name in two
+	 * databases, say, with the target told how to reach the source. Only an
+	 * engine that declares a native profile needs it, and only when two
+	 * bindings from `create` would not already do.
+	 */
 	createNativePair?(label: string): Awaitable<NativePair>;
+	/**
+	 * Names the engine keeps for its own bookkeeping, tried as dataset names
+	 * in addition to the ones the kit already knows engines to use.
+	 */
 	readonly reservedDatasetNames?: readonly string[];
+	/**
+	 * Properties this engine does not hold, and says it does not: case id to
+	 * the impedance code in its declaration that states the limit. Honoured
+	 * only for the cases the kit allows a limit on, and only for a code the
+	 * declaration really lists — anything else is refused before a case runs.
+	 *
+	 * The case still runs. Failing its expectations, it is reported
+	 * `declared-limit` instead of `fail`. Passing, it is a failure: the
+	 * declaration then states a limit the engine does not have.
+	 */
 	readonly declaredLimits?: Readonly<Record<string, string>>;
+	/**
+	 * A second binding over the same store as `binding`: another connection to
+	 * the same database, another handle on the same file. Needed to prove what
+	 * two bindings do to each other; a harness for an engine with a `schema`
+	 * port supplies it, or those cases apply but cannot run.
+	 */
 	attach?(binding: EngineBinding, label: string): Awaitable<EngineBinding>;
+	/**
+	 * A well-formed capture position past `head`, the position a caught-up
+	 * read just answered: one the engine could mint later and has not minted
+	 * yet. Positions are opaque to the kit, so only the harness can make one.
+	 * An engine with a `capture` port supplies it, or the case that proves a
+	 * position past the head is refused applies but cannot run.
+	 */
 	positionPastHead?(head: string): string;
 }
 
 export interface RunEngineConformanceInput {
 	readonly engine: EngineHarness;
+	/**
+	 * The other side of the pattern cases. Defaults to `engine`, which proves a
+	 * same-engine move; pass another engine's harness to prove a cross-engine one.
+	 */
 	readonly peer?: EngineHarness;
+	/** Injected instant, RFC 3339. */
 	readonly now: string;
+	/**
+	 * Restrict to these case ids; absent runs every case. The report records
+	 * the restriction and never folds to `pass` under one.
+	 */
 	readonly only?: readonly string[];
+	/**
+	 * Diagnostics for whoever runs the kit: the raw error of a case that
+	 * failed, as thrown. It may carry a connection string or a record, which is
+	 * why the report keeps only its class — what this receives must stay out of
+	 * evidence too.
+	 */
 	readonly onFailure?: (caseId: string, error: Error) => void;
 }
 
+/**
+ * A harness for the reference engine: fresh in-memory engines, plus what the
+ * kit cannot derive for itself. Useful as the `peer` of a cross-engine run.
+ */
 export function referenceEngineHarness(
 	options: ReferenceEngineOptions = {},
 ): EngineHarness {
@@ -169,24 +276,45 @@ export function referenceEngineHarness(
 
 interface CaseContext {
 	readonly input: RunEngineConformanceInput;
+	/** The native profile engine and peer share for the case's pattern. */
 	readonly nativeProfile: string | undefined;
 	open(label: string): Promise<EngineBinding>;
 	openPeer(label: string): Promise<EngineBinding>;
 	openNativePair(label: string): Promise<NativePair>;
+	/** A second binding on the store behind one `open` returned. */
 	attach(binding: EngineBinding, label: string): Promise<EngineBinding>;
 }
 
 interface ConformanceCase {
 	readonly id: string;
+	/** Ports the engine under test must declare for the case to apply. */
 	readonly requires: readonly SpiPortName[];
+	/**
+	 * Set on a case that proves a `native` realization of this pattern. It
+	 * applies only when engine and peer declare a shared native profile for
+	 * the pattern; otherwise it is skipped, exactly as a case whose port the
+	 * engine does not declare is skipped.
+	 */
 	readonly native?: MigrationPatternId;
+	/**
+	 * True when an engine may declare this property a limit instead of holding
+	 * it (`EngineHarness.declaredLimits`). False for everything a migration's
+	 * safety rests on: no declaration excuses a fence that lets a write past.
+	 */
 	readonly limitable?: boolean;
+	/**
+	 * Something the declaration must state, beyond its ports, for the case to
+	 * apply — a size bound, say. An engine that does not state it is skipped,
+	 * like one that does not declare a port: the kit never invents the value.
+	 */
 	readonly declares?: (declaration: EngineDeclaration) => boolean;
+	/** Ports the peer must declare; a peer without them makes the case `not-run`. */
 	readonly peerRequires?: readonly SpiPortName[];
 	readonly dependsOn?: readonly string[];
 	run(context: CaseContext): Promise<void>;
 }
 
+/** A failed expectation inside a case. Its message is the recorded detail. */
 class Expectation extends Error {
 	constructor(message: string) {
 		super(message);
@@ -198,9 +326,15 @@ function expect(condition: boolean, message: string): asserts condition {
 	if (!condition) throw new Expectation(message);
 }
 
+// ── fixtures ────────────────────────────────────────────────────────────────
 
+// public-contract: dataset name every conformance case provisions; engines isolate by store, not by name.
 export const CONFORMANCE_DATASET = "hobo_conformance_orders";
 
+/**
+ * One field of every canonical type. An engine that cannot carry a type says
+ * so in its annex and the kit leaves that field out of the schema it uses.
+ */
 const ALL_FIELDS: readonly JsonObject[] = Object.freeze([
 	{ name: "id", type: "string", nullable: false },
 	{ name: "qty", type: "int64", nullable: false },
@@ -216,6 +350,7 @@ const ALL_FIELDS: readonly JsonObject[] = Object.freeze([
 	{ name: "card", type: "encrypted", nullable: true },
 ]);
 
+/** The conformance schema restricted to types every given engine can carry. */
 export function conformanceSchema(
 	bindings: readonly EngineBinding[],
 ): DatasetSchema {
@@ -237,6 +372,7 @@ export function conformanceSchema(
 	});
 }
 
+/** The sentinel appears in a payload and must never appear in evidence. */
 const PAYLOAD_SENTINEL = "hobo-conformance-payload-sentinel";
 
 const RAW_RECORD: JsonObject = Object.freeze({
@@ -266,6 +402,8 @@ function recordFor(
 	raw.id = id;
 	for (const field of schema.fields) {
 		if (field.name === "id") continue;
+		// An override is taken as given — `null` and `""` included. Falling
+		// through on `null` would mean no probe ever stored one.
 		raw[field.name] = Object.hasOwn(overrides, field.name)
 			? (overrides[field.name] ?? null)
 			: (RAW_RECORD[field.name] ?? null);
@@ -312,6 +450,11 @@ async function refuses(
 
 const RETENTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * A custody path the kit's migrations are allowed over: one point for every
+ * role, so whichever pattern and realization a case runs, no copy it creates
+ * is off the path. A bounded copy is retained for a week past `now`.
+ */
 function allowingPath(now: string): CustodyPath {
 	const retainUntil = new Date(
 		Date.parse(now) + RETENTION_WINDOW_MS,
@@ -416,6 +559,7 @@ function copyOptions(
 	};
 }
 
+/** The token of a raised fence: raising a raised fence answers it. */
 async function raisedToken(binding: EngineBinding): Promise<string> {
 	const grant = await requirePort(binding, "fence").raise({
 		scope: scopeOf(CONFORMANCE_DATASET),
@@ -424,6 +568,11 @@ async function raisedToken(binding: EngineBinding): Promise<string> {
 	return grant.fenceToken;
 }
 
+/**
+ * Names engines are known to keep for their own bookkeeping. A dataset given
+ * one of them must be refused, or must be harmless: the engine's own tables
+ * are not a place a caller's schema may land.
+ */
 const KNOWN_METADATA_NAMES: readonly string[] = Object.freeze([
 	"hobo_data_datasets",
 	"hobo_data_fences",
@@ -435,14 +584,17 @@ const KNOWN_METADATA_NAMES: readonly string[] = Object.freeze([
 	"hobo_dual_run_pin",
 ]);
 
+/** A long key no engine can compress away: 2,500 characters of digest text. */
 const LARGE_KEY = Array.from({ length: 40 }, (_, index) =>
 	sha256Hex(`hobo-conformance-large-key-${index}`),
 )
 	.join("")
 	.slice(0, 2500);
 
+/** Not a position any engine mints. */
 const GARBAGE_POSITION = "hobo-conformance-not-a-position";
 
+// public-contract: dataset name of the open-schema conformance probe.
 export const CONFORMANCE_OPEN_DATASET = "hobo_conformance_open";
 
 const NATIVE_SOURCE: readonly SpiPortName[] = ["verify", "fence", "retire"];
@@ -473,10 +625,17 @@ function nativeOptions(context: CaseContext): Partial<CopyMigrationOptions> {
 }
 
 interface WriterTally {
+	/** Ids of writes the source acknowledged, in order. */
 	readonly acknowledged: string[];
+	/** Anything other than "landed" or "refused by the fence". */
 	readonly problems: string[];
 }
 
+/**
+ * A writer that keeps writing to the source until it is told to stop or the
+ * fence refuses it. Every write is its own transaction; some revisit a record
+ * the same writer wrote earlier, so the tail carries updates as well.
+ */
 async function keepWriting(
 	pair: Pair,
 	name: string,
@@ -501,12 +660,16 @@ async function keepWriting(
 	}
 }
 
+/** Well-formed text that is no fence's token. */
 const FOREIGN_TOKEN = "hobo-conformance-not-a-fence-token";
 
+// public-contract: dataset name of the uuid-keyed conformance probe.
 export const CONFORMANCE_REFS_DATASET = "hobo_conformance_refs";
 
+// public-contract: dataset name of the second dataset a capture probe binds a subscription name against.
 export const CONFORMANCE_SECOND_DATASET = "hobo_conformance_second";
 
+/** The largest declared record bound the kit will build a record past. */
 const LARGEST_PROBED_RECORD_BYTES = 256 * 1024 * 1024;
 
 async function recordOf(
@@ -530,24 +693,37 @@ async function countIn(binding: EngineBinding, tenant = ""): Promise<number> {
 	return digest.count;
 }
 
+/**
+ * Everything an error shows someone who logs it: its message and stack, every
+ * property it carries, enumerable or not, and every cause beneath it.
+ */
 function exposureOf(error: Error): string {
 	const shown = [inspect(error, { depth: null, showHidden: true })];
 	try {
 		shown.push(JSON.stringify(error) ?? "");
 	} catch {
+		// A cyclic error has no JSON form; `inspect` above already walked it.
 	}
 	shown.push(String(error));
 	return shown.join("\n");
 }
 
+// ── crash windows ───────────────────────────────────────────────────────────
 
+/** Where write authority is, as the application's router sees it. */
 interface AuthorityTrace {
 	side: "source" | "target";
+	/** Authority has been on the target at some point. */
 	everOnTarget: boolean;
 	readonly flips: AuthorityFlip["direction"][];
+	/**
+	 * The highest journal head the router has applied, per migration: a flip
+	 * decided at a lower one is refused, as a real router must refuse it.
+	 */
 	readonly applied: Map<string, number>;
 }
 
+/** One staged migration a crash is injected into. */
 interface CrashWorld {
 	readonly migrationId: string;
 	readonly pair: Pair;
@@ -557,14 +733,23 @@ interface CrashWorld {
 
 interface CrashScenario {
 	readonly name: string;
+	/** Side effects a crash is injected at, by name; each before it ran and after. */
 	readonly windows: readonly string[];
+	/** Windows the crash-free run must pass through, or the scenario proves nothing. */
 	readonly required: readonly string[];
+	/** A fresh, seeded source and target. */
 	stage(): Promise<Pair>;
+	/** Options every run of the scenario carries — the realization, say. */
 	readonly base?: Partial<CopyMigrationOptions>;
+	/** Bring a fresh world to where the crashing run starts. */
 	prepare?(world: CrashWorld): Promise<void>;
+	/** The run crashes are injected into. */
 	readonly crashing: Partial<CopyMigrationOptions>;
+	/** What the supervisor asks for on every resume. */
 	readonly resuming: Partial<CopyMigrationOptions>;
+	/** What the crash-free run must have come to. */
 	baseline(world: CrashWorld, result: MigrationRunResult): Promise<void>;
+	/** Runs between the crash and the first resume. */
 	repair?(world: CrashWorld): Promise<void>;
 	settled(
 		world: CrashWorld,
@@ -574,6 +759,8 @@ interface CrashScenario {
 }
 
 async function fencedAt(binding: EngineBinding): Promise<boolean> {
+	// A store the migration has not provisioned yet has nothing to fence, and
+	// one without the port cannot be fenced at all.
 	if (binding.fence === undefined) return false;
 	if (
 		(await binding.datasets.describeDataset(CONFORMANCE_DATASET)) === undefined
@@ -584,6 +771,11 @@ async function fencedAt(binding: EngineBinding): Promise<boolean> {
 	return status.fenced;
 }
 
+/**
+ * What must hold at every moment, crashed or not: once authority has moved,
+ * the two stores are never both taking writes. With authority on the target
+ * the source is fenced; back on the source, the target is.
+ */
 async function expectNeverTwoWriters(
 	world: CrashWorld,
 	where: string,
@@ -621,6 +813,7 @@ async function crashWorld(
 	return world;
 }
 
+/** One run of the migration; with an injector, every side effect goes through it. */
 function attemptRun(
 	context: CaseContext,
 	world: CrashWorld,
@@ -630,6 +823,8 @@ function attemptRun(
 ): Promise<MigrationRunResult> {
 	const { pair, journal, authority } = world;
 	const move = (flip: AuthorityFlip): void => {
+		// Compare-and-set on the head the flip was decided at, in the same
+		// step that moves authority: a stale flip throws and moves nothing.
 		admitAuthorityMove(authority.applied, flip);
 		authority.flips.push(flip.direction);
 		authority.side = flip.direction === "to-target" ? "target" : "source";
@@ -664,10 +859,17 @@ function attemptRun(
 	);
 }
 
+/**
+ * Kill the scenario at each of its windows in turn — before the side effect
+ * ran, and after it ran but before anyone heard back — and hold every resumed
+ * run to one consistent outcome.
+ */
 async function sweepCrashWindows(
 	context: CaseContext,
 	scenario: CrashScenario,
 ): Promise<void> {
+	// A crash-free run first: which windows the scenario passes through on
+	// this engine, and how often.
 	const clean = await crashWorld(scenario, "baseline");
 	const tracer = new CrashInjector();
 	const crashing = { ...scenario.base, ...scenario.crashing };
@@ -701,6 +903,7 @@ async function sweepCrashWindows(
 				);
 				await expectNeverTwoWriters(world, `${where}, after the crash`);
 				await scenario.repair?.(world);
+				// Run until the migration leaves its hold, as a supervisor would.
 				let resumed: MigrationRunResult | undefined;
 				for (let round = 0; round < 6; round += 1) {
 					resumed = await attemptRun(context, world, undefined, resuming);
@@ -717,6 +920,7 @@ async function sweepCrashWindows(
 	}
 }
 
+/** The forward path ended: the target is the only writer, the source retired. */
 async function expectCutOverCompleted(
 	world: CrashWorld,
 	result: MigrationRunResult,
@@ -759,6 +963,7 @@ async function expectCutOverCompleted(
 	);
 }
 
+// ── cases ───────────────────────────────────────────────────────────────────
 
 const CASES: readonly ConformanceCase[] = Object.freeze([
 	{
@@ -859,11 +1064,14 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const binding = await context.open("a");
 			const schema = conformanceSchema([binding]);
 			await binding.datasets.ensureDataset(schema);
+			// Values at the edge of what an engine may store. Each must either
+			// round-trip exactly or be refused; storing it altered is the failure.
 			const probes: readonly JsonObject[] = [
 				{ placed_at: "2026-01-02T03:04:05.678901Z" },
 				{ price: "1234567890123456789012345678901234567890.123456789" },
 				{ qty: "-9223372036854775808" },
 				{ weight: 1.7976931348623157e308 },
+				// U+0000 in text, and JSON keys some engines reserve.
 				{ note: "nul \u0000 inside" },
 				{ attrs: { $reserved: 1, "dotted.key": 2 } },
 			];
@@ -894,6 +1102,11 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const binding = await context.open("a");
 			const schema = conformanceSchema([binding]);
 			await binding.datasets.ensureDataset(schema);
+			// Years before 0100 are where engines and their drivers disagree
+			// (two-digit-year rules, a missing year zero). Each value must
+			// round-trip exactly or be refused when it is written. What may
+			// never happen is the third thing: accepted on write, and then
+			// every read of the dataset fails.
 			const probes: readonly JsonObject[] = [
 				{ placed_at: "0001-01-01T00:00:00Z" },
 				{ placed_at: "0099-12-31T23:59:59.999999Z" },
@@ -955,10 +1168,15 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				keyFields: ["id"],
 				fields: [{ name: "id", type: "string", nullable: false }],
 			});
+			// An engine may refuse an open schema outright. What it may not do
+			// is accept one and then lose a field.
 			const unsupported = await refuses(async () => {
 				await binding.datasets.ensureDataset(schema);
 			});
 			if (unsupported !== undefined) return;
+			// Undeclared fields whose names are also names on every object. A
+			// store that collects fields by assignment silently drops
+			// `__proto__`; built from entries here so the field is really there.
 			const record = parseCanonicalRecord(
 				schema,
 				Object.fromEntries([
@@ -1016,6 +1234,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const binding = await context.open("a");
 			const schema = conformanceSchema([binding]);
 			await binding.datasets.ensureDataset(schema);
+			// A mutation that names one key and carries another key's record.
+			// Wherever an engine put it, some other engine would look for it
+			// somewhere else; the only portable answer is to refuse it.
 			const claimed = keyOf(schema, "order-claimed");
 			const carried = recordFor(schema, "order-carried");
 			const refused = await refuses(async () => {
@@ -1069,6 +1290,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					await binding.datasets.ensureDataset(squat);
 				});
 				if (refused !== undefined) continue;
+				// Accepted: then it has to be an ordinary dataset.
 				const record = parseCanonicalRecord(squat, { id: "s-1", note: "n" });
 				const key = encodeRecordKey(squat, record);
 				await binding.records.write({
@@ -1086,6 +1308,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					`a dataset named ${name} was accepted but does not behave as a dataset`,
 				);
 			}
+			// Whatever was accepted, the engine's own bookkeeping must still
+			// work: every port that leans on it is exercised once more.
 			const described = await binding.datasets.describeDataset(schema.name);
 			expect(
 				described !== undefined &&
@@ -1203,6 +1427,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// A conditional apply is how a migration keeps a driver that has been
+		// superseded from writing over its successor: it names the watermark it
+		// believes is current, and the store refuses the batch when it is not.
 		id: "apply.stale-watermark-is-refused",
 		requires: ["apply"],
 		dependsOn: ["apply.idempotent-with-watermark"],
@@ -1268,6 +1495,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				(await watermark()) === "20" && (await qty("order-1")) === "2",
 				"a batch that names the recorded watermark lands and advances it",
 			);
+			// The stale driver: it still holds a batch read after "10".
 			const stale = await refuses(async () => {
 				await apply.apply({
 					dataset,
@@ -1304,6 +1532,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				empty instanceof StaleApplyError && (await watermark()) === "20",
 				"an empty stale batch is refused too: it would move the watermark",
 			);
+			// Two appliers that both name the current watermark: one lands.
 			const racers = await Promise.allSettled(
 				["a", "b"].map(async (id) => {
 					await apply.apply({
@@ -1336,6 +1565,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					(await qty(`order-${loser}`)) === undefined,
 				"the watermark and the records are the winner's, and only the winner's",
 			);
+			// Watermarks are per source, and an apply that names none is
+			// unconditional, as it always was.
 			await apply.apply({
 				dataset,
 				changes: [],
@@ -1558,10 +1789,15 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const capture = requirePort(binding, "capture");
 			const scope = scopeOf(schema.name);
 			const start = await capture.start({ scope, subscription: "sub_k" });
+			// A key long enough that an engine stores it out of line. An update
+			// that leaves such a key alone is where a log may send a placeholder
+			// in the new row and the value only in the old one.
 			const key = keyOf(schema, LARGE_KEY);
 			const refused = await refuses(() =>
 				write(binding, [upsert(schema, "", LARGE_KEY, { qty: "1" })]),
 			);
+			// An engine may bound its key length, loudly. Then there is nothing
+			// to capture and nothing was stored.
 			if (refused !== undefined) {
 				await capture.stop("sub_k");
 				return;
@@ -1597,6 +1833,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const scope = scopeOf(schema.name);
 			await capture.start({ scope, subscription: "sub_g" });
 			await write(binding, [upsert(schema, "", "order-1")]);
+			// A position this engine never minted. Answering it with an empty,
+			// caught-up batch would tell a tail it had finished when it had
+			// read nothing.
 			const refused = await refuses(async () => {
 				await capture.read({
 					scope,
@@ -1660,6 +1899,10 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const schema = conformanceSchema([binding]);
 			await binding.datasets.ensureDataset(schema);
 			const scope = scopeOf(schema.name);
+			// Writes are in flight when the fence is raised. Each must either
+			// land before `raise` returns or be refused — none may land after.
+			// Each outcome is captured as it settles — the error a refused write
+			// threw, or nothing — so a refusal is never an unhandled rejection.
 			const writes = Array.from({ length: 24 }, (_, index) =>
 				refuses(() => write(binding, [upsert(schema, "", `racing-${index}`)])),
 			);
@@ -1754,6 +1997,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// A null and an empty value are different values. An engine that stores
+		// one as the other moves data that digests equal on both sides and is
+		// still not the data that was written.
 		id: "records.null-and-empty-are-distinct",
 		requires: ["records"],
 		dependsOn: ["records.round-trip-canonical"],
@@ -1766,6 +2012,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				scope,
 				subscription: "sub_v",
 			});
+			// Each probe names the fields it sets; a field the engine cannot
+			// carry is not in the schema and is left out.
 			const probes: readonly (readonly [string, JsonObject])[] = [
 				["null", { note: null, card: null }],
 				["empty-text", { note: "" }],
@@ -1784,6 +2032,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				written.push(mutation);
 				await write(binding, [mutation]);
 			}
+			// One record taken through each value in turn: an engine that keeps
+			// the old value when the new one is null or empty shows up here.
 			const turns: readonly JsonObject[] = [
 				{ note: null, attrs: {}, blob: "" },
 				{ note: "", attrs: [], blob: "AA==" },
@@ -1888,6 +2138,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				await binding.capture.stop("sub_v");
 			}
 			if (binding.apply !== undefined) {
+				// The same records arriving through `apply`, on a second store.
 				const replica = await context.open("replica");
 				await replica.datasets.ensureDataset(schema);
 				await requirePort(replica, "apply").apply({
@@ -1912,6 +2163,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// One spelling per key. A key that reaches a store in any other
+		// spelling is either refused or lands on the same one row; a delete,
+		// which names a key and nothing else, is refused.
 		id: "records.keys-are-canonical",
 		requires: ["records"],
 		dependsOn: ["records.key-must-match-record"],
@@ -1922,6 +2176,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const scope = scopeOf(schema.name);
 			await write(binding, [upsert(schema, "", "order-1", { qty: "1" })]);
 			const canonical = keyOf(schema, "order-1");
+			// The same key value, spelled as no canonical encoder spells it.
 			const spellings = [
 				`[ ${JSON.stringify("order-1")} ]`,
 				JSON.stringify("order-1"),
@@ -1945,6 +2200,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					]),
 				);
 				if (upserted === undefined) {
+					// Accepted: then it landed on the one row, under its key.
 					expect(
 						(await recordOf(binding, schema, "", "order-1"))?.qty === "2",
 						"an upsert under a non-canonical key spelling must land on the canonical key",
@@ -1962,6 +2218,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					"key spellings must never make a second row",
 				);
 			}
+			// A uuid key: the uppercase spelling names the same record.
 			const carriesUuid = schema.fields.some((field) => field.type === "uuid");
 			if (!carriesUuid) return;
 			const refs = parseDatasetSchema({
@@ -2033,6 +2290,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// Only an engine that states a bound is probed; the kit invents none.
 		id: "records.oversize-record-refuses-the-batch",
 		requires: ["records"],
 		declares: (declaration) => declaration.maxRecordBytes !== undefined,
@@ -2048,6 +2306,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			}
 			const schema = conformanceSchema([binding]);
 			await binding.datasets.ensureDataset(schema);
+			// One field alone is past the bound, so the record is, however the
+			// engine counts the rest.
 			const oversize = upsert(schema, "", "oversize", {
 				note: "x".repeat(bound + 1),
 			});
@@ -2093,6 +2353,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				scope: tenant,
 				subscription: "sub_wt",
 			});
+			// One write of five mutations across two tenants, then one more.
 			await write(binding, [
 				upsert(schema, "tenant-a", "a-1", { qty: "1" }),
 				upsert(schema, "tenant-b", "b-1", { qty: "2" }),
@@ -2103,6 +2364,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			await write(binding, [upsert(schema, "tenant-a", "a-4", { qty: "6" })]);
 			const qtys = (batch: { readonly changes: readonly RecordMutation[] }) =>
 				batch.changes.map((change) => String(change.record?.qty)).join(",");
+			// A limit smaller than the write: the write still comes back whole.
 			const first = await capture.read({
 				scope: whole,
 				subscription: "sub_w",
@@ -2127,6 +2389,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				qtys(rest) === "6" && rest.caughtUp,
 				`the position after a whole write resumes at the next write, got ${qtys(rest)}`,
 			);
+			// Under a tenant scope: that tenant's share of the write, whole.
 			const scoped = await capture.read({
 				scope: tenant,
 				subscription: "sub_wt",
@@ -2152,6 +2415,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// An engine with no per-reader log has nothing an acknowledgement
+		// releases, and may declare so: the executors acknowledge to free log,
+		// and never rely on an acknowledgement being refused.
 		id: "capture.acknowledged-positions-are-final",
 		limitable: true,
 		requires: ["capture"],
@@ -2184,6 +2450,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				rest.changes.length === 2 && rest.caughtUp,
 				"the remaining two writes are read to the head",
 			);
+			// A position nobody minted is not an acknowledgement.
 			const garbage = await refuses(async () => {
 				await capture.acknowledge({ subscription, position: GARBAGE_POSITION });
 			});
@@ -2201,6 +2468,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				untouched.changes.length === 3,
 				"a refused acknowledgement must release nothing",
 			);
+			// A real acknowledgement is final: what it released cannot be read.
 			await capture.acknowledge({ subscription, position: first.position });
 			const below = await refuses(async () => {
 				await capture.read({ scope, subscription, after: start, limit: 10 });
@@ -2221,6 +2489,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				from.changes.length === 2 && from.caughtUp,
 				"reading from the acknowledged position returns everything after it",
 			);
+			// Acknowledging an older position afterwards rewinds nothing.
 			await refuses(async () => {
 				await capture.acknowledge({ subscription, position: start });
 			});
@@ -2231,6 +2500,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				still !== undefined,
 				"acknowledging an older position must not bring released changes back",
 			);
+			// A position past the head: well-formed, and never read. Accepting
+			// it would release changes nobody was handed.
 			const past = context.input.engine.positionPastHead;
 			if (past === undefined) {
 				throw new NotRun(
@@ -2279,6 +2550,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				id: "s-early",
 				note: "",
 			});
+			// Written after the name was bound to tenant-a and before anyone
+			// asked for it anywhere else.
 			await write(binding, [
 				upsert(schema, "tenant-b", "b-early", { qty: "1" }),
 			]);
@@ -2296,6 +2569,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					position = await capture.start({ scope: other, subscription });
 				});
 				if (refused !== undefined || position === undefined) continue;
+				// Accepted: then it is a reader of its own, starting now. The
+				// first scope's position would hand it changes from before it
+				// asked.
 				const batch = await capture.read({
 					scope: other,
 					subscription,
@@ -2307,6 +2583,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					"the same subscription name on another scope must be refused or independent; it was answered the first scope's position",
 				);
 			}
+			// Either way the first reader is where it was.
 			const mine = await capture.read({
 				scope: home,
 				subscription,
@@ -2338,6 +2615,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				upsert(schema, "tenant-a", "before", { qty: "1" }),
 			]);
 			const grant = await fence.raise({ scope, reason: "conformance" });
+			// A fence on the whole dataset is a fence on every tenant in it.
 			for (const tenant of ["tenant-a", "tenant-b", ""]) {
 				const named = tenant === "" ? "the untenanted records" : tenant;
 				const refused = await refuses(() =>
@@ -2360,6 +2638,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					(await recordOf(binding, schema, "tenant-a", "before"))?.qty === "1",
 				"a dataset-wide fence must refuse a tenant-scoped delete too",
 			);
+			// The holder writes through its own fence, into any tenant.
 			await write(
 				binding,
 				[upsert(schema, "tenant-a", "order-2")],
@@ -2390,6 +2669,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				grant.fenceToken !== other.fenceToken,
 				"two fences have two tokens",
 			);
+			// A token is one fence's. Any other text — another fence's token
+			// included — opens nothing.
 			const wrong: readonly (readonly [string, string])[] = [
 				["a token that is not the fence's", `${grant.fenceToken}-not`],
 				["an unrelated token", FOREIGN_TOKEN],
@@ -2409,6 +2690,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				(await recordOf(binding, schema, "tenant-a", "order-1")) === undefined,
 				"a write refused for its token must not land",
 			);
+			// One batch across both fences needs both tokens; it has one.
 			const mixed = await refuses(() =>
 				write(
 					binding,
@@ -2437,6 +2719,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// `apply` is a write. A port that lands changes in a fenced scope
+		// without the token is a second write authority.
 		id: "fence.apply-honours-the-fence",
 		requires: ["fence", "apply"],
 		dependsOn: [
@@ -2464,6 +2748,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				const refused = await refuses(async () => {
 					await apply.apply({
 						dataset,
+						// The other tenant's change comes first: refused whole, it
+						// must not land either.
 						changes: [
 							upsert(schema, "tenant-b", "order-1"),
 							upsert(schema, "tenant-a", "order-1"),
@@ -2514,6 +2800,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					(await watermark()) === "3",
 				"an apply presenting the fence's token lands and records its watermark",
 			);
+			// A dataset-wide fence stops a tokenless apply into any tenant.
 			await fence.release({ scope, fenceToken: grant.fenceToken });
 			const whole = scopeOf(dataset);
 			const wide = await fence.raise({ scope: whole, reason: "conformance" });
@@ -2556,6 +2843,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const grant = await fence.raise({ scope: mine, reason: "conformance" });
 			const other = await fence.raise({ scope: theirs, reason: "conformance" });
 			const expected = await verify.digest({ scope: mine, buckets: 8 });
+			// The fence is up and the digest matches. Only the token is wrong.
 			const foreign: readonly (readonly [string, string])[] = [
 				["another fence's token", other.fenceToken],
 				["a token that is not the fence's", `${grant.fenceToken}-not`],
@@ -2575,6 +2863,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					`retire refused for ${named} must remove nothing`,
 				);
 			}
+			// A tenant's fence is not a fence on the dataset.
 			const whole = scopeOf(schema.name);
 			const all = await verify.digest({ scope: whole, buckets: 8 });
 			const widened = await refuses(async () => {
@@ -2664,6 +2953,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// A retire whose answer was lost is sent again. It has to be safe to.
 		id: "retire.redelivery-is-harmless",
 		requires: ["retire", "fence", "verify"],
 		dependsOn: ["retire.foreign-token-is-refused"],
@@ -2710,6 +3000,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// What a retire removed is gone, not a change to be delivered: replayed
+		// to a later reader as deletes, it would empty the store that reader
+		// feeds — which may be the one the records were moved to.
 		id: "retire.leaves-nothing-to-capture",
 		requires: ["retire", "fence", "verify", "capture"],
 		dependsOn: ["retire.refused-unless-proven", "capture.tenant-scope"],
@@ -2754,6 +3047,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					"a subscription started after a retire must be handed nothing of the retired scope",
 				);
 			}
+			// The reader is live all the same: a write after it started arrives.
 			await write(binding, [upsert(schema, "tenant-b", "order-4")]);
 			const later = await capture.read({
 				scope: whole,
@@ -2770,6 +3064,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// A refusal is logged, shipped to an error tracker, shown to a person.
+		// It may say what was refused; it may not carry the credential or the
+		// record.
 		id: "errors.refusals-carry-no-secrets",
 		requires: ["fence"],
 		dependsOn: ["fence.wrong-token-is-refused"],
@@ -2779,6 +3076,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			await binding.datasets.ensureDataset(schema);
 			const dataset = schema.name;
 			const scope = scopeOf(dataset, "tenant-a");
+			// Every record below carries the payload sentinel in its `note`.
 			const payload = upsert(schema, "tenant-a", "order-1");
 			expect(
 				canonicalEncode(payload.record ?? null).includes(PAYLOAD_SENTINEL),
@@ -2905,8 +3203,10 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		],
 		async run(context) {
 			const pair = await seededPair(context, 40);
+			// The router keeps the highest journal head it applied (see `AuthorityMoveRef`).
 			const applied = new Map<string, number>();
 			let flipped = false;
+			// Writes keep arriving between every phase: updates, inserts, deletes.
 			const load = async (phase: MigrationPhase): Promise<void> => {
 				if (flipped) return;
 				await write(pair.source, [
@@ -3041,10 +3341,12 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				held.status === "held" && held.rollback === "lossless",
 				"soak holds losslessly",
 			);
+			// The target is now the authority; these writes exist only there.
 			await write(pair.target, [
 				upsert(pair.schema, "", "written-after-flip", { qty: "99" }),
 				deleteMutation("", keyOf(pair.schema, "order-3")),
 			]);
+			// The router keeps the highest journal head it applied (see `AuthorityMoveRef`).
 			const applied = new Map<string, number>();
 			const directions: string[] = [];
 			const rolled = await runSnapshotAndTail(
@@ -3084,6 +3386,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		dependsOn: ["pattern.snapshot-and-tail.zero-loss-under-load"],
 		async run(context) {
 			const seeded = await seededPair(context, 6);
+			// No reverse tail: the source goes stale at the flip, so a rollback
+			// is to-snapshot. An erasure made meanwhile must still hold.
 			const pair: Pair = {
 				...seeded,
 				target: withoutPorts(seeded.target, ["capture"]),
@@ -3168,6 +3472,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// Retiring the source is the last thing a migration does. It must stay
+		// on the source: carried to the target, or replayed to a later reader of
+		// the source's log, it would arrive as deletes of everything just moved.
 		id: "pattern.snapshot-and-tail.retire-stays-on-the-source",
 		requires: COPY_SOURCE,
 		peerRequires: COPY_TARGET,
@@ -3209,6 +3516,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				compareDigests(moved, kept).equal,
 				"retiring the source must not reach the migration's own target",
 			);
+			// A reader that arrives on the retired source afterwards — a second
+			// migration, say — is handed nothing: no deletes to carry anywhere.
 			const capture = requirePort(pair.source, "capture");
 			const start = await capture.start({ scope, subscription: "sub_late" });
 			const batch = await capture.read({
@@ -3222,6 +3531,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				"a reader started on the retired source must not be handed the retire as deletes",
 			);
 			await capture.stop("sub_late");
+			// Run again, a completed migration changes nothing.
 			const again = await runSnapshotAndTail(
 				copyOptions(pair, runtime("retire-stays", context.input.now, journal)),
 			);
@@ -3232,6 +3542,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// The cutover, killed at each of its side effects — the fence raised and
+		// nobody told, authority moved and the process gone, the retire
+		// committed with no fact after it. Every resume ends in the one outcome.
 		id: "pattern.snapshot-and-tail.crash-windows.cutover",
 		requires: COPY_SOURCE,
 		peerRequires: COPY_TARGET,
@@ -3263,6 +3576,10 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// Verification under the fence fails, and the run gives authority back:
+		// it journals the hold and releases the fence. Killed either side of
+		// that release, the source must end up the one writer, and the run must
+		// still complete once the cause is gone.
 		id: "pattern.snapshot-and-tail.crash-windows.compensation",
 		requires: COPY_SOURCE,
 		peerRequires: COPY_TARGET,
@@ -3280,6 +3597,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				],
 				required: ["source.fence.raise", "source.fence.release"],
 				stage: () => seededPair(context, rows),
+				// Reach the read ramp cleanly, then put a record on the target
+				// behind the migration's back: the comparison under the fence
+				// fails, and the crashing run is the one that compensates.
 				async prepare(world) {
 					const paused = await attemptRun(
 						context,
@@ -3307,6 +3627,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 						"a compensated run leaves the source the authority, and writable",
 					);
 				},
+				// The cause goes away, and the supervisor runs it again.
 				async repair(world) {
 					expect(
 						world.authority.side === "source",
@@ -3322,6 +3643,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// A rollback from soak under a reverse tail, killed at each side effect:
+		// it must end rolled back, the source the one writer, nothing lost.
 		id: "pattern.snapshot-and-tail.crash-windows.rollback",
 		requires: [...COPY_SOURCE, "apply"],
 		peerRequires: [...COPY_TARGET, "capture", "fence"],
@@ -3386,6 +3709,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					"source.fence.release",
 				],
 				stage: () => seededPair(context, rows),
+				// Reach the soak window, and let the new authority take writes.
 				async prepare(world) {
 					const held = await attemptRun(context, world, undefined, {
 						soakDecision: () => "hold",
@@ -3421,6 +3745,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const journal = createMemoryMigrationJournal();
 			const tally: WriterTally = { acknowledged: [], problems: [] };
 			let quiet = false;
+			// The router keeps the highest journal head it applied (see `AuthorityMoveRef`).
 			const applied = new Map<string, number>();
 			let flips = 0;
 			let writers: Promise<void>[] = [];
@@ -3435,6 +3760,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				await Promise.all(writers);
 				writers = [];
 			};
+			// Writers run concurrently with the engine's own copy and tail,
+			// pause while the two sides are compared unfenced, and then race
+			// the fence itself: each either lands before it or is refused.
 			const load = async (phase: MigrationPhase): Promise<void> => {
 				if (phase === "gate") start(["during-copy-a", "during-copy-b"]);
 				if (phase === "converge") {
@@ -3528,6 +3856,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				!facts.includes(await raisedToken(pair.source)),
 				"migration facts must not carry the fence token; it is a credential",
 			);
+			// Finishing retires the source. The engine's own transport must be
+			// gone by then: carried across it, the retirement would arrive at
+			// the new authority as deletes.
 			const moved = await requirePort(pair.target, "verify").digest({
 				scope: scopeOf(CONFORMANCE_DATASET),
 				buckets: 8,
@@ -3582,6 +3913,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 						afterPhase: async (phase) => {
 							if (phase === boundary && !crashed) {
 								crashed = true;
+								// A write the crashed run never saw: the resumed run
+								// has to carry it, wherever the crash fell.
 								if (phase !== "fence-and-flip" && phase !== "soak") {
 									await write(pair.source, [
 										upsert(pair.schema, "", "order-0", { note: phase }),
@@ -3644,6 +3977,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// The same cutover with the engine's own transport carrying the
+		// records: killed around the fence, around each stop of the transfer,
+		// around the flip and the retire.
 		id: "pattern.snapshot-and-tail.native.crash-windows.cutover",
 		native: "snapshot-and-tail",
 		requires: NATIVE_SOURCE,
@@ -3790,6 +4126,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// Two bindings on one store each take a snapshot. They must be two
+		// snapshots: a second that overwrote the first would leave the first
+		// binding restoring a state it never saw.
 		id: "schema.snapshots-are-per-binding",
 		requires: ["schema"],
 		dependsOn: ["pattern.in-place-evolve.failure-restores"],
@@ -3819,6 +4158,8 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 				(await port.verify(fixture.provesContractApplied)).length === 0,
 				"the first binding's snapshot must still restore after a second binding took its own",
 			);
+			// What came back is the first snapshot — taken before the expand
+			// phase — and not the second: the expand phase applies again.
 			const expanded = await refuses(async () => {
 				await port.applyPhase("expand", fixture.plan.expand);
 			});
@@ -3829,6 +4170,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		// One entry of a phase is one statement to the caller. An engine that
+		// compiles the first statement of an entry and drops the rest reports a
+		// phase applied that was not.
 		id: "schema.multi-statement-entry-is-whole-or-refused",
 		requires: ["schema"],
 		dependsOn: ["pattern.in-place-evolve.gated-and-restorable"],
@@ -3877,6 +4221,9 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			const binding = await context.open("a");
 			const port = requirePort(binding, "schema");
 			await port.applyPhase("expand", fixture.setup);
+			// A violations query with a statement after it. Run, the statement
+			// would change the store from inside a check; dropped, the check
+			// would have verified something other than what it was handed.
 			const refused = await refuses(async () => {
 				await port.verify(`${probes.provesFirst}; ${probes.second}`);
 			});
@@ -3892,6 +4239,7 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 	},
 ]);
 
+/** Thrown by a case that applies but cannot be exercised. */
 class NotRun extends Error {
 	constructor(message: string) {
 		super(message);
@@ -3903,6 +4251,10 @@ export const ENGINE_CONFORMANCE_CASE_IDS: readonly string[] = Object.freeze(
 	CASES.map((entry) => entry.id),
 );
 
+/**
+ * The cases that prove a `native` realization. They run only when engine and
+ * peer declare a shared native profile, and are reported as skipped otherwise.
+ */
 export const NATIVE_CONFORMANCE_CASE_IDS: readonly string[] = Object.freeze(
 	CASES.filter((entry) => entry.native !== undefined).map((entry) => entry.id),
 );
@@ -3914,6 +4266,11 @@ function declares(
 	return ports.every((port) => binding.declaration.ports.includes(port));
 }
 
+/**
+ * Run the suite. A case whose ports the engine does not declare is skipped —
+ * skipping is not forgiveness, the pattern that needs the port simply becomes
+ * ineligible at selection. A case that applies but could not run is `not-run`.
+ */
 export async function runEngineConformance(
 	input: RunEngineConformanceInput,
 ): Promise<EngineConformanceReport> {
@@ -3939,6 +4296,7 @@ export async function runEngineConformance(
 		);
 	}
 	if (input.only !== undefined && input.only.length === 0) {
+		// A filter that selects nothing would run nothing and fail nothing.
 		throw new DataCoreError(
 			"CONFORMANCE_SUITE_INVALID",
 			"only must name at least one case; leave it out to run them all",
@@ -3949,6 +4307,9 @@ export async function runEngineConformance(
 	const limits = input.engine.declaredLimits ?? {};
 	for (const [caseId, code] of Object.entries(limits)) {
 		const claimed = CASES.find((entry) => entry.id === caseId);
+		// A limit is the kit's to allow and the declaration's to state. A
+		// harness that could wave any case away would make the report mean
+		// nothing.
 		if (
 			claimed?.limitable !== true ||
 			!probe.declaration.impedance.includes(code)
@@ -3988,6 +4349,8 @@ export async function runEngineConformance(
 							testCase.native,
 						);
 			if (testCase.native !== undefined && nativeProfile === undefined) {
+				// No shared fast path is a declaration, like an absent port: the
+				// selector then offers no native candidate for the pattern.
 				skipped.push(testCase.id);
 				continue;
 			}
@@ -4040,6 +4403,7 @@ export async function runEngineConformance(
 						input.engine,
 						`${testCase.id}:${label}:${counter}`,
 					);
+					// The target is closed first: its side reads from the source.
 					opened.push({ binding: pair.target, harness: input.engine });
 					opened.push({ binding: pair.source, harness: input.engine });
 					return pair;
@@ -4073,6 +4437,7 @@ export async function runEngineConformance(
 						binding,
 						`${testCase.id}:${label}:${counter}`,
 					);
+					// Closed before the binding it shares a store with.
 					opened.unshift({ binding: second, harness: input.engine });
 					return second;
 				},
@@ -4110,6 +4475,8 @@ export async function runEngineConformance(
 					results.push({
 						caseId: testCase.id,
 						status: "fail",
+						// An expectation's message is ours and safe to record. Anything
+						// else may carry a connection string, so only its class is kept.
 						detail:
 							error instanceof Expectation
 								? error.message
@@ -4126,6 +4493,7 @@ export async function runEngineConformance(
 						await binding.close();
 						await harness.dispose?.(binding);
 					} catch {
+						// Cleanup is best-effort; a case result is already recorded.
 					}
 				}
 			}

@@ -16,7 +16,7 @@ export const launchDemoGoldenPath = {
   phase: "M0",
   sampleApp: {
     id: "snapshop",
-    source: "urn:hobo:requirement:worked-example#plan-19",
+    source: "docs/design/worked-example.md#plan-19",
     reason: "Snapshop is already the compressed end-to-end HoBo product story.",
   },
   primaryPersona: {
@@ -46,17 +46,17 @@ export const launchDemoGoldenPath = {
     {
       id: "accepted-example-apps-scope",
       requirement: "Example Apps M0 scope is accepted before launch-demo assets consume it.",
-      evidenceSource: "urn:hobo:requirement:example-apps#m0-acceptance-record",
+      evidenceSource: "docs/design/example-apps.md#m0-acceptance-record",
     },
     {
       id: "claim-register",
       requirement: "Launch claims use proof-mode labels before publication.",
-      evidenceSource: "urn:hobo:requirement:launch-messaging-claims#claim-states",
+      evidenceSource: "docs/design/launch-messaging-claims.md#claim-states",
     },
     {
       id: "no-provider-secrets",
       requirement: "The path starts with fixtures and simulated/reference boundaries; no provider credentials are required.",
-      evidenceSource: "urn:hobo:requirement:example-apps#scope-out-and-non-goals",
+      evidenceSource: "docs/design/example-apps.md#scope-out-and-non-goals",
     },
   ],
   commandPath: [
@@ -182,7 +182,7 @@ export const launchDemoGoldenPath = {
       kind: "screenshots",
       owner: "demo maintainer",
       proofMode: "live-product",
-      source: "urn:hobo:proof:hobo-488-launch-demo-golden-path#required-assets",
+      source: "docs/design/proofs/hobo-488-launch-demo-golden-path/README.md#required-assets",
       refreshTrigger: "Any screen, command wording, output, or proof-mode label changes.",
     },
     {
@@ -210,7 +210,7 @@ export const launchDemoGoldenPath = {
       kind: "docs",
       owner: "Example Apps",
       proofMode: "design-record",
-      source: "urn:hobo:requirement:launch-demo-golden-path",
+      source: "docs/design/launch-demo-golden-path.md",
       refreshTrigger: "Any acceptance, owner, scope, or public-claim boundary changes.",
     },
   ],

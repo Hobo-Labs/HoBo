@@ -8,7 +8,7 @@ import {
   buildFixturePublication,
   createResolutionProofInput,
   publishBrokerEnvironmentSnapshot,
-	validateContractEvidence,
+  validateArchitectureEvidence,
 } from "../src/broker-environment-publication.js";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -121,7 +121,8 @@ test("Broker Environment snapshots are immutable inputs to resolution proof", ()
   assert.equal(Object.hasOwn(proofInput, "finalYardDecision"), false);
 });
 
-test("contract evidence pins protobuf, CUE, and PACT boundaries", async () => {
+test("architecture evidence names protobuf, CUE, PACT, parsed types, and event boundary", async () => {
+  const architecture = await readFile(path.join(packageRoot, "ARCHITECTURE.md"), "utf8");
   const proto = await readFile(
     path.join(packageRoot, "architecture", "broker_environment_publication.proto"),
     "utf8",
@@ -137,5 +138,5 @@ test("contract evidence pins protobuf, CUE, and PACT boundaries", async () => {
     ),
   );
 
-	assert.deepEqual(validateContractEvidence({ proto, cue, pact }), []);
+  assert.deepEqual(validateArchitectureEvidence({ architecture, proto, cue, pact }), []);
 });

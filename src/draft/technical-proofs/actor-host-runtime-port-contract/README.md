@@ -2,7 +2,7 @@
 
 Independent draft POC for [HOBO-21](https://linear.app/quickdeploy-ai/issue/HOBO-21) and
 [HOBO-595](https://linear.app/quickdeploy-ai/issue/HOBO-595). Pins the `ActorHost` runtime-port
-behavior from `urn:hobo:requirement:sdk-api#plan-02`, `urn:hobo:requirement:data-plane#plan-11`,
+behavior from `docs/design/sdk-api.md#plan-02`, `docs/design/data-plane.md#plan-11`,
 ADR-0002, and ADR-0053.
 
 ## Contract Surface
@@ -37,6 +37,8 @@ Excluded:
 pnpm --prefix src/draft/technical-proofs/actor-host-runtime-port-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf + CUE for `LeaseInfo`, `ActorEventRecord`, `AppendReceipt`, `ActorStateSnapshot`.
 - `architecture/pacts/actor_host_runtime_port_contract.pact.json` — consumer `@hobo/conformance`, provider `@hobo/runtime-local`.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

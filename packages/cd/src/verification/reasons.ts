@@ -1,7 +1,10 @@
+// Every typed failure the verification engine and health sources report. Each
+// code carries a remediation, so a FAIL or a refusal always says what to do.
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
 
+// public-contract: verification reason codes and their remediations.
 export const VERIFICATION_REASONS = Object.freeze({
 	"verification-spec-invalid":
 		"Fix the named field of the VerificationSpec; data-models/verification.cue lists the constraints.",
@@ -15,8 +18,6 @@ export const VERIFICATION_REASONS = Object.freeze({
 		'max_error_budget_burn needs a threshold or comparison query whose unit is "burn_rate"; add one or set the ceiling to 0.',
 	"verification-probe-interval-exceeds-window":
 		"Lower the probe interval_ms below window_ms so the window can hold an observation.",
-	"verification-slo-breach":
-		"The SLO remained beyond its rollback threshold for consecutive samples.",
 	"verification-no-data":
 		"The health source returned no samples for the window. Check the query, the cohort label and that the target emits the metric; absent evidence never passes.",
 	"verification-insufficient-observations":

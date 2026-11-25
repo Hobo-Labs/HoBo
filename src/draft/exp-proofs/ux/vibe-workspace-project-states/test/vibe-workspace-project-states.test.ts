@@ -18,7 +18,7 @@ describe("vibe workspace/project state proof", () => {
 
     assert.equal(model.issue, "HOBO-541");
     assert.equal(model.targetPackage, "src/draft/exp-proofs/ux/vibe-workspace-project-states");
-    assert.equal(model.proofNote, "urn:hobo:proof:vibe-workspace-project-states");
+    assert.equal(model.proofNote, "docs/design/proofs/vibe-workspace-project-states/README.md");
     assert.deepEqual(
       model.fixtures.map((fixture) => fixture.state),
       WORKSPACE_PROJECT_STATES,
@@ -34,7 +34,7 @@ describe("vibe workspace/project state proof", () => {
       assert.ok(fixture.providerReadiness.status.length > 0);
       assert.ok(fixture.blockerOwner.length > 0);
       assert.ok(fixture.safeNextAction.label.length > 0);
-      assert.match(fixture.evidenceLink.href, /^urn:hobo:proof:[a-z0-9-]+#/);
+      assert.match(fixture.evidenceLink.href, /^docs\/design\/proofs\/[a-z0-9-]+\/README\.md#/);
       assert.equal(fixture.safeNextAction.destructive, false);
       assert.equal(fixture.safeNextAction.opensLiveProvider, false);
     }

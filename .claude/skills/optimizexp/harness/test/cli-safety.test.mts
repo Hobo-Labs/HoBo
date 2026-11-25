@@ -331,11 +331,6 @@ describe("project selection and write safety", () => {
 				assert.notEqual(result.status, 0, `${cli}: ${result.stderr}`);
 				assert.deepEqual(snapshot(root), before);
 			}
-			for (const cli of ["explore-app", "generate-feature", "generate-persona"]) {
-				const result = invoke(root, cli, ["--mode=unexpected", "--project=site"]);
-				assert.notEqual(result.status, 0, `${cli}: ${result.stderr}`);
-				assert.deepEqual(snapshot(root), before);
-			}
 		});
 	});
 
@@ -349,6 +344,11 @@ describe("project selection and write safety", () => {
 				["init", ["ensure-config", "code"]],
 				["capture-evidence", ["init-feature", "code", "--id=sample"]],
 				["capture-evidence", ["--mode=init-feature", "validate", "--id=sample"]],
+				["generate-feature", ["--mode=from-catalog", "code"]],
+				["generate-feature", ["--mode=plan", "one", "two"]],
+				["generate-feature", ["--mode=plan", "--seed=one", "two"]],
+				["generate-persona", ["--mode=validate", "code"]],
+				["generate-persona", ["--seed=one", "two"]],
 			];
 			for (const [cli, args] of invalid) {
 				const result = invoke(root, cli, args);

@@ -16,9 +16,11 @@ The POC intentionally does not implement provider realization, runtime injection
 planner ordering, `.with()` provider-specific typing, DNS, or cross-Camp wiring.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Bind Reference Wiring Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

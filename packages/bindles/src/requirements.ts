@@ -8,32 +8,30 @@ import {
 
 import type { BindleDefinition, ProviderAnnotation } from "./types.js";
 
+// public-contract: callers branch on this stable provider-selection error code.
 export const BINDLE_PROVIDER_SELECTION_FORBIDDEN =
 	"bindle-provider-selection-forbidden" as const;
 
+// public-contract: tooling presents this remediation for the stable error code.
 export const BINDLE_PROVIDER_SELECTION_REMEDIATION =
 	"Provider selection belongs on a Yard. Declare or request a provider-specific Yard and attach this Bindle deployment to it." as const;
 
+/** Platform annotations that are not cloud provider pins. */
 const PLATFORM_PROVIDERS = new Set(["hobo", "hobo:build"]);
 const PLATFORM_OPTIONS = new Set([
 	"cadence",
 	"continuity",
 	"endpoint",
 	"env",
-	"health",
 	"dependency",
 	"session-replay",
 	"status-page",
 	"webapp",
 ]);
 
-const BINDLE_REQUIREMENT_KEYS = {
-	require: true,
-	prefer: true,
-	runtimes: true,
-	labels: true,
-} satisfies Record<keyof BindleRequirements, true>;
-
+/**
+ * Provider-neutral Bindle workload requirements (not resolver control).
+ */
 export interface BindleRequirements {
 	readonly require: readonly string[];
 	readonly prefer: readonly string[];
@@ -45,8 +43,11 @@ export type BindleRequirementsHash = `sha256:${string}`;
 
 export function emptyBindleRequirements(): BindleRequirements {
 	return Object.freeze({
+		// SAFETY: assertion required at this I/O or test boundary.
 		require: Object.freeze([] as string[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		prefer: Object.freeze([] as string[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		runtimes: Object.freeze([] as string[]),
 		labels: Object.freeze({}),
 	});
@@ -61,19 +62,17 @@ export function parseBindleRequirements<T>(input: T): BindleRequirements {
 		throw new TypeError("bindle requirements must be an object");
 	}
 	const raw = json;
+	// Reject provider-selection keys on requirements.
 	for (const key of Object.keys(raw)) {
 		assertProviderNeutralKey(key, "bindle.requirements");
-		if (!Object.hasOwn(BINDLE_REQUIREMENT_KEYS, key)) {
-			throw new TypeError(`bindle requirements have unknown property: ${key}`);
-		}
 	}
 	const labels = canonicalizeLabels(raw.labels);
 	for (const key of Object.keys(labels)) {
 		assertProviderNeutralKey(key, "bindle.requirements.labels");
 	}
-	const require = canonicalizeList(asStringArray(raw.require));
-	const prefer = canonicalizeList(asStringArray(raw.prefer));
-	const runtimes = canonicalizeList(asStringArray(raw.runtimes));
+	const require = canonicalizeList(asStringArray(raw.require ?? raw.requires));
+	const prefer = canonicalizeList(asStringArray(raw.prefer ?? raw.prefers));
+	const runtimes = canonicalizeList(asStringArray(raw.runtimes ?? raw.runtime));
 	for (const item of [...require, ...prefer, ...runtimes]) {
 		assertProviderNeutralCapability(item);
 	}
@@ -97,6 +96,10 @@ export function hashBindleRequirements(
 	return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
 }
 
+/**
+ * Reject Bindle annotations that select a cloud provider or provider resolver.
+ * Platform annotations (`env`, `dependency` with provider `hobo`) are allowed.
+ */
 export function assertNoBindleProviderSelection(
 	definition: BindleDefinition,
 ): void {
@@ -117,6 +120,17 @@ export function assertNoBindleProviderSelection(
 	}
 }
 
+/**
+ * @deprecated Use assertNoBindleProviderSelection. Provider pins on Bindles
+ * are forbidden; this always returns [] after asserting none exist, or throws.
+ */
+export function collectExplicitProviderPins(
+	definition: BindleDefinition,
+): readonly string[] {
+	assertNoBindleProviderSelection(definition);
+	return Object.freeze([]);
+}
+
 export function isPlatformAnnotation(annotation: ProviderAnnotation): boolean {
 	if (PLATFORM_OPTIONS.has(annotation.option)) {
 		return PLATFORM_PROVIDERS.has(annotation.provider);
@@ -129,6 +143,7 @@ function assertAnnotationAllowed(
 	resourceName: string,
 ): void {
 	if (isPlatformAnnotation(annotation)) {
+		// Still reject cloud provider class names in config keys.
 		for (const key of Object.keys(annotation.config ?? {})) {
 			if (
 				/^(provider|providerId|resolverId|subscriptionId|accountId|projectId|resourceGroup)$/i.test(
@@ -142,6 +157,7 @@ function assertAnnotationAllowed(
 		}
 		return;
 	}
+	// Any non-platform annotation with a cloud provider is forbidden.
 	throw bindleProviderForbidden(
 		`resource ${resourceName} .with({ provider: "${annotation.provider}", option: "${annotation.option}" })`,
 	);
@@ -159,6 +175,8 @@ function assertProviderNeutralKey(key: string, path: string): void {
 }
 
 function assertProviderNeutralCapability(value: string): void {
+	// Capability strings are provider-neutral requirements (e.g. managed-http-runtime).
+	// Reject explicit provider.* resolver pins.
 	if (/^(azure|aws|gcp|cloudflare)\./i.test(value)) {
 		throw bindleProviderForbidden(`capability ${value}`);
 	}
@@ -182,6 +200,7 @@ function bindleProviderForbidden(path: string): Error {
 
 function asStringArray(value: JsonValue | undefined): string[] {
 	if (value === undefined) return [];
+	if (isJsonString(value)) return [value];
 	if (!Array.isArray(value)) {
 		throw new TypeError("expected string array");
 	}

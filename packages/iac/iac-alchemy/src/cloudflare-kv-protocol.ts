@@ -1,11 +1,17 @@
+import { readCloudflareByteStream } from "./cloudflare-byte-stream.js";
+
 export const CLOUDFLARE_KV_MAX_KEY_BYTES = 512;
 export const CLOUDFLARE_KV_MAX_VALUE_BYTES = 1_048_576;
 
 export type CloudflareKvMode = "read-only" | "write-only";
+const hasOwnDescriptor = Object.hasOwn;
+
 export type CloudflareKvOperation = "get" | "set" | "delete";
 export interface CloudflareKvGrant {
 	readonly mode: CloudflareKvMode;
+
 	readonly grantEpoch: string;
+
 	readonly namespaceEpoch: string;
 }
 
@@ -46,8 +52,14 @@ export function cloudflareKvGrant(
 	const properties = Object.getOwnPropertyDescriptors(input);
 	const allowed: string[] = [];
 	for (let index = 0; index < input.length; index++) {
-		const entry = properties[String(index)];
-		if (entry === undefined || !("value" in entry) || !entry.enumerable)
+		const entry = hasOwnDescriptor(properties, String(index))
+			? properties[String(index)]
+			: undefined;
+		if (
+			entry === undefined ||
+			!hasOwnDescriptor(entry, "value") ||
+			!entry.enumerable
+		)
 			throw new CloudflareKvError(
 				"KV_GRANT_INVALID",
 				"the allow list is invalid",
@@ -82,20 +94,31 @@ export function cloudflareEventualKv(grant: CloudflareKvGrant) {
 			"a grant choice is required",
 		);
 	const properties = Object.getOwnPropertyDescriptors(grant);
-	const mode = properties.mode;
-	const epoch = properties.grantEpoch;
-	const namespace = properties.namespaceEpoch;
+	const mode = hasOwnDescriptor(properties, "mode")
+		? properties.mode
+		: undefined;
+	const epoch = hasOwnDescriptor(properties, "grantEpoch")
+		? properties.grantEpoch
+		: undefined;
+	const namespace = hasOwnDescriptor(properties, "namespaceEpoch")
+		? properties.namespaceEpoch
+		: undefined;
 	if (
 		Object.getOwnPropertySymbols(grant).length !== 0 ||
 		Object.keys(properties).length !== 3 ||
 		mode === undefined ||
-		!("value" in mode) ||
+		!hasOwnDescriptor(mode, "value") ||
+		(mode.value !== "read-only" && mode.value !== "write-only") ||
 		!mode.enumerable ||
 		epoch === undefined ||
-		!("value" in epoch) ||
+		!hasOwnDescriptor(epoch, "value") ||
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the host epoch is an external input. */
+		typeof epoch.value !== "string" ||
 		!epoch.enumerable ||
 		namespace === undefined ||
-		!("value" in namespace) ||
+		!hasOwnDescriptor(namespace, "value") ||
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the host namespace epoch is an external input. */
+		typeof namespace.value !== "string" ||
 		!namespace.enumerable
 	)
 		throw new CloudflareKvError(
@@ -171,65 +194,33 @@ export function decodeCloudflareKvKey(input: string | null): string {
 	}
 }
 
-export async function readCloudflareKvBytes(
+export function readCloudflareKvBytes(
 	body: ReadableStream<Uint8Array> | null,
 ): Promise<ArrayBuffer> {
-	if (body === null) return new Uint8Array().buffer;
-	let reader: ReadableStreamBYOBReader;
-	try {
-		reader = body.getReader({ mode: "byob" });
-	} catch {
-		void body.cancel().catch(() => {});
-		throw new CloudflareKvError(
-			"KV_STREAM_INVALID",
-			"a bounded byte stream is required",
-		);
-	}
-	const chunks: Uint8Array[] = [];
-	let total = 0;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const deadline = new Promise<never>((_, reject) => {
-		timer = setTimeout(
-			() =>
-				reject(
-					new CloudflareKvError("KV_STREAM_TIMEOUT", "value stream timed out"),
-				),
-			10_000,
-		);
-	});
-	try {
-		while (true) {
-			const size = Math.min(65_536, CLOUDFLARE_KV_MAX_VALUE_BYTES - total + 1);
-			const result = await Promise.race([
-				reader.read(new Uint8Array(size)),
-				deadline,
-			]);
-			if (result.done) break;
-			if (!(result.value instanceof Uint8Array) || chunks.length >= 4096)
-				throw new CloudflareKvError(
-					"KV_VALUE_INVALID",
-					"value stream is invalid",
+	return readCloudflareByteStream(
+		body,
+		CLOUDFLARE_KV_MAX_VALUE_BYTES,
+		true,
+		(kind) => {
+			if (kind === "unsupported")
+				return new CloudflareKvError(
+					"KV_STREAM_INVALID",
+					"a bounded byte stream is required",
 				);
-			total += result.value.byteLength;
-			if (total > CLOUDFLARE_KV_MAX_VALUE_BYTES)
-				throw new CloudflareKvError(
+			if (kind === "large")
+				return new CloudflareKvError(
 					"KV_VALUE_TOO_LARGE",
 					"value exceeds the configured limit",
 				);
-			chunks.push(new Uint8Array(result.value));
-		}
-	} catch (error) {
-		void reader.cancel().catch(() => {});
-		throw error;
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
-		reader.releaseLock();
-	}
-	const result = new Uint8Array(total);
-	let offset = 0;
-	for (const chunk of chunks) {
-		result.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	return result.buffer;
+			if (kind === "timeout")
+				return new CloudflareKvError(
+					"KV_STREAM_TIMEOUT",
+					"value stream timed out",
+				);
+			return new CloudflareKvError(
+				"KV_VALUE_INVALID",
+				"value stream is invalid",
+			);
+		},
+	);
 }

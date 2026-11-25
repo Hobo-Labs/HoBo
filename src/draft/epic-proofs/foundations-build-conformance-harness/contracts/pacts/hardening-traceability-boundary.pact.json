@@ -1,0 +1,18 @@
+{
+  "consumer": { "name": "FoundationsReferenceApp" },
+  "provider": { "name": "HardeningTraceabilityBoundary" },
+  "interactions": [
+    {
+      "description": "prove package namespace and ADR or plan traceability hardening stay aligned",
+      "request": { "method": "POST", "path": "/hardening/traceability" },
+      "response": {
+        "status": 200,
+        "body": {
+          "namespace": { "secretRefPackage": "@hobo/bindles" },
+          "traceability": { "plan10": "HOBO-1" }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

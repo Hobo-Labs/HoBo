@@ -1,3 +1,8 @@
+/**
+ * Pluggable metering / usage events.
+ * Full billing engines plug in as sinks that aggregate these events.
+ */
+
 import type { TenantId } from "./tenant.js";
 
 export type UsageEventType =
@@ -26,7 +31,11 @@ export type UsageEventType =
 	| "messaging.publish"
 	| "messaging.consume"
 	| "messaging.actor.activate"
-	| "messaging.dapr.sidecar_lifetime";
+	| "messaging.dapr.sidecar_lifetime"
+	| "fleet.member.active"
+	| "fleet.work.sandbox"
+	| "fleet.transport.relay"
+	| "fleet.transport.direct";
 
 export interface UsageEvent {
 	readonly tenantId: TenantId;

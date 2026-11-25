@@ -16,7 +16,6 @@ describe("toPricingCatalog", () => {
 		const manifest = mustParse(`
 schema: hobo.provider-manifest/v1
 provider: { id: keyless, displayName: Keyless }
-terms: { url: https://keyless.example.com/terms, reviewedOn: 2026-11-18 }
 auth:
   issuer: https://auth.example.com
   flows:

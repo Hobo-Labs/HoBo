@@ -1,3 +1,6 @@
+// The engine conformance kit against real SQLite files. No simulation: every
+// case opens stores on disk, and the cross-engine runs move real records
+// between SQLite and the in-memory reference engine in both directions.
 import assert from "node:assert/strict";
 import {
 	assertBindingMatchesDeclaration,
@@ -18,6 +21,10 @@ describe("SQLite engine conformance", () => {
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "sqlite");
+		// SQLite declares every port, so no case is skipped for a missing one.
+		// It states no record bound, so the size case has nothing to probe,
+		// and it declares no native fast path, so a case that proves one does
+		// not apply — and nothing else may hide behind either.
 		assert.deepEqual(report.skipped, [
 			"records.oversize-record-refuses-the-batch",
 			...NATIVE_CONFORMANCE_CASE_IDS,

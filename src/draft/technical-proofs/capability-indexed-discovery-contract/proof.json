@@ -8,7 +8,8 @@
       "src/draft/technical-proofs/capability-spec-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

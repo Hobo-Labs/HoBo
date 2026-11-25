@@ -27,14 +27,14 @@ describe("vibe marketplace trust copy states", () => {
     );
     assert.equal(
       proof.proofNote,
-      "urn:hobo:proof:vibe-marketplace-trust-copy-states",
+      "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
     );
     assert.deepEqual(
       proof.scenarios.map((scenario) => scenario.kind),
       REQUIRED_MARKETPLACE_COPY_SCENARIOS,
     );
-    assert.ok(proof.designRefs.includes("urn:hobo:requirement:marketplace-ux"));
-    assert.ok(proof.designRefs.includes("urn:hobo:requirement:org-catalogs"));
+    assert.ok(proof.designRefs.includes("docs/design/marketplace-ux.md"));
+    assert.ok(proof.designRefs.includes("docs/design/org-catalogs.md"));
   });
 
   it("cites accepted HOBO-577 quickstart fixture ids and proof-mode labels", () => {

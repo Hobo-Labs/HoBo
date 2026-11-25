@@ -9,10 +9,6 @@ provider:
   homepage: https://acme-cloud.example.com
   description: Fictional provider used to exercise the manifest format.
 
-terms:
-  url: https://acme-cloud.example.com/terms
-  reviewedOn: 2026-11-18
-
 auth:
   issuer: https://auth.acme-cloud.example.com
   resourceIndicators:

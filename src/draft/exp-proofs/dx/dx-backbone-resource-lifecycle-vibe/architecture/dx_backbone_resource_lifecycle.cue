@@ -4,7 +4,7 @@ package dx_backbone_resource_lifecycle
 #Phase: "M1" | "M2"
 
 #DesignAnchor: {
-	source: =~"^urn:hobo:requirement:[a-z0-9-]+#plan-[0-9]+$"
+	source: =~"^docs/design/[a-z0-9-]+\\.md#plan-[0-9]+$"
 	reason: string & != ""
 }
 
@@ -13,7 +13,7 @@ package dx_backbone_resource_lifecycle
 	title: string & != ""
 	phase: #Phase
 	targetPackage: =~"^src/draft/exp-proofs/(dx|ux|cx|ax|api)/[a-z0-9-]+$"
-	proofNote: =~"^urn:hobo:proof:[a-z0-9-]+$"
+	proofNote: =~"^docs/design/proofs/[a-z0-9-]+/README.md$"
 	coverage: [...string]
 	dependsOn: [...=~"^HOBO-[0-9]+$"]
 	scopeOut: [...string]
@@ -29,13 +29,13 @@ package dx_backbone_resource_lifecycle
 #DxBackboneRecord: {
 	issue: "HOBO-566"
 	targetPackage: "src/draft/exp-proofs/dx/dx-backbone-resource-lifecycle-vibe"
-	proofNote: "urn:hobo:proof:dx-backbone-resource-lifecycle-vibe"
+	proofNote: "docs/design/proofs/dx-backbone-resource-lifecycle-vibe/README.md"
 	designAnchors: [
-		#DesignAnchor & {source: "urn:hobo:requirement:developer-experience#plan-07"},
-		#DesignAnchor & {source: "urn:hobo:requirement:sdk-api#plan-02"},
-		#DesignAnchor & {source: "urn:hobo:requirement:control-plane#plan-04"},
-		#DesignAnchor & {source: "urn:hobo:requirement:platform-engineering#plan-25"},
-		#DesignAnchor & {source: "urn:hobo:requirement:data-plane#plan-11"},
+		#DesignAnchor & {source: "docs/design/developer-experience.md#plan-07"},
+		#DesignAnchor & {source: "docs/design/sdk-api.md#plan-02"},
+		#DesignAnchor & {source: "docs/design/control-plane.md#plan-04"},
+		#DesignAnchor & {source: "docs/design/platform-engineering.md#plan-25"},
+		#DesignAnchor & {source: "docs/design/data-plane.md#plan-11"},
 	]
 	proofModes: ["live", "simulated", "reference fixture", "scope-out"]
 	childSlices: [...#ChildSlice]

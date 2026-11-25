@@ -154,11 +154,7 @@ describe("@hobo/stations", () => {
 					budgetUsd: 0,
 					spendCapUsd: 0,
 				},
-				delivery: {
-					reconcilerMode: "conductor",
-					syncMode: "auto",
-					prune: false,
-				},
+				delivery: { engine: "in-proc", syncMode: "auto", prune: false },
 				requiredConnectorKinds: [],
 			}),
 		);

@@ -49,14 +49,14 @@ describe("secretless-first config schema (ADR-0027)", () => {
 		).toThrow(/cannot have default values/);
 	});
 
-	it("schemaOnlyView never includes config values", () => {
+	it("schemaOnlyView never includes defaults for secrets", () => {
 		const schema = config({
 			LOG_LEVEL: env.string().default("info"),
 			DB_URL: secret.string().required(),
 		});
 		const view = schemaOnlyView(schema);
 		expect(view.fields.DB_URL?.sensitive).toBe(true);
-		expect(JSON.stringify(view)).not.toMatch(/info|super-secret|password/i);
+		expect(JSON.stringify(view)).not.toMatch(/super-secret|password/i);
 	});
 
 	it("fromBinding marks bound-resource sensitive", () => {

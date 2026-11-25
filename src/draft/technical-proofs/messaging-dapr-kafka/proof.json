@@ -8,15 +8,20 @@
 			"src/draft/technical-proofs/actor-host-runtime-port-contract"
 		],
 		"epicProofs": [],
-		"expProofs": []
+		"expProofs": [],
+		"designDocs": [
+			"docs/design/adr/01-architecture-core.md#adr-0138",
+			"docs/competitors/dapr.md",
+			"docs/design/wasm-runtime-wit.md",
+			"docs/design/sdk-api.md",
+			"docs/design/authoring-resources-wiring.md"
+		]
 	},
 	"artifacts": {
 		"examples": "examples",
 		"notebook": "notebook.ipynb",
 		"bench": "bench",
-		"diagrams": [
-			"README.md"
-		]
+		"diagrams": ["README.md"]
 	},
 	"waivers": []
 }

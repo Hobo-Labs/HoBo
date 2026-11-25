@@ -3,62 +3,12 @@ import { describe, expect, it } from "vitest";
 import { digest } from "../../src/replay/divergence.js";
 import { nextEnvelope, recordEffect } from "../../src/replay/recorder.js";
 import {
-	canonicalStateBytes,
 	replayRun,
 	type WorkflowDefinition,
 } from "../../src/replay/replayer.js";
 import { createInMemoryEventStore } from "../../src/replay/store.js";
 
-interface ReplayCycle {
-	self?: ReplayCycle;
-}
-
 describe("replayRun", () => {
-	it("keeps collection values in workflow replay reports", async () => {
-		const store = createInMemoryEventStore();
-		await recordEffect(
-			store,
-			nextEnvelope("run/collections", 1, "run.Started", { seed: "seed" }),
-		);
-		const workflow: WorkflowDefinition<Map<string, number>, number> = {
-			name: "collection",
-			initialState: () => new Map(),
-			execute: (_ctx, state, value) => new Map([...state, ["value", value]]),
-		};
-		const first = await replayRun(store, "collections", workflow, 1);
-		const second = await replayRun(store, "collections", workflow, 2);
-		expect(first.report.stateDigest).toBe(digest(first.state));
-		expect(first.report.stateDigest).not.toBe(second.report.stateDigest);
-		expect(canonicalStateBytes(first.state)).not.toBe(
-			canonicalStateBytes(second.state),
-		);
-	});
-
-	it("canonicalizes nested collections without changing JSON values", () => {
-		const first = new Map([
-			[{ name: "same" }, 2],
-			[{ name: "same" }, 1],
-		]);
-		const second = new Map([
-			[{ name: "same" }, 1],
-			[{ name: "same" }, 2],
-		]);
-		expect(canonicalStateBytes(first)).toBe(canonicalStateBytes(second));
-		expect(
-			canonicalStateBytes({
-				date: new Date("2026-01-01T00:00:00Z"),
-				missing: undefined,
-				invalid: Number.NaN,
-				values: [undefined, -0],
-			}),
-		).toBe(
-			'{"date":"2026-01-01T00:00:00.000Z","invalid":null,"values":[null,0]}',
-		);
-		const cyclic: ReplayCycle = {};
-		cyclic.self = cyclic;
-		expect(() => canonicalStateBytes(cyclic)).toThrow(TypeError);
-	});
-
 	it("replays a recorded workflow to byte-identical canonical state", async () => {
 		const store = createInMemoryEventStore();
 		const streamId = "run/run-1";

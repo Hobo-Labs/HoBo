@@ -12,8 +12,8 @@ import {
 	type BudgetSettlementEvidence,
 } from "@hobo/broker";
 import type { BudgetPolicyEvaluationContext } from "@hobo/core";
-import { allocationQuote } from "@hobo/pricing";
 import { z } from "zod";
+import { allocationQuote } from "./accounting.js";
 import {
 	accountEventPage,
 	type EventCursor,
@@ -21,7 +21,6 @@ import {
 	jobAccountId,
 } from "./event-log.js";
 import type { PipelineUsageObservation } from "./execution.js";
-import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
 import {
 	ACTIVE_STATES,
 	type Account,
@@ -56,6 +55,7 @@ import {
 	ciBudgetPolicyJson,
 	ciQueueBudgetMs,
 } from "./policy.js";
+import { shouldAbortIsolatedLease } from "./runner-routing/tiers.js";
 import {
 	type CiSharedBudgetHooks,
 	ciExecutionDigest,
@@ -64,6 +64,7 @@ import {
 	ciReservationId,
 } from "./shared-budget.js";
 
+/** A conservative bootstrap increase is operator policy, not a new usage observation. */
 function observedSandboxPricing(pricing: SandboxPricing | undefined): string {
 	if (!pricing) return "";
 	const observed = clone(SandboxPricingSchema, pricing);
@@ -71,6 +72,7 @@ function observedSandboxPricing(pricing: SandboxPricing | undefined): string {
 	return toJsonString(SandboxPricingSchema, observed);
 }
 
+/** Fields that identify the original payer and approved reservation never follow mutable aliases. */
 export function leaseFinancialIdentity(lease: Lease): string {
 	return JSON.stringify([
 		lease.id,
@@ -216,6 +218,7 @@ function ciQueueDeadlineAt(
 		: "";
 }
 
+/** Measured CI-local context; financial bounds are independently supplied by the parent hook. */
 export function ciLeasePolicyMeasurements(
 	lease: Lease,
 	leases: readonly Lease[],
@@ -253,6 +256,7 @@ export function ciLeasePolicyMeasurements(
 	];
 }
 
+/** A trusted publisher confirms an existing conservative, zero-credit rate. */
 export interface RateReattestation {
 	accountId: string;
 	offerId: string;
@@ -261,6 +265,7 @@ export interface RateReattestation {
 	sourceUrl: string;
 }
 
+/** A journal row as the event it stores and its position. */
 function sequenced(row: Record<string, SQLOutputValue>): SequencedCiEvent {
 	return create(SequencedCiEventSchema, {
 		seq: z.number().int().parse(row.seq),
@@ -268,9 +273,16 @@ function sequenced(row: Record<string, SQLOutputValue>): SequencedCiEvent {
 	});
 }
 
+/**
+ * One account's events, through the index on the account each event names.
+ * An event that names no account (a partition event, or a job event
+ * journalled before its owner was recorded) has no key there and is in no
+ * account's range.
+ */
 const ACCOUNT_EVENTS =
 	"SELECT seq, body FROM events INDEXED BY events_account_seq WHERE json_extract(body,'$.accountId')=?";
 
+/** Single-writer partition. Events and their materialized lease view commit together. */
 export class LeaseStore {
 	private readonly db: DatabaseSync;
 	private transactionDepth = 0;
@@ -307,6 +319,7 @@ export class LeaseStore {
 	close(): void {
 		this.db.close();
 	}
+	/** Run `fn` in this partition's write transaction (nested calls become savepoints). */
 	atomic<T>(fn: () => T): T {
 		return this.transaction(fn);
 	}
@@ -347,8 +360,20 @@ export class LeaseStore {
 			.all()
 			.map((row) => fromJsonString(CiEventSchema, z.string().parse(row.body)));
 	}
+	/**
+	 * An account's events after a journal position, oldest first; without a
+	 * position, its newest ones. `seq` is the journal's own key, so a position
+	 * handed back as `after` never skips or repeats an event.
+	 *
+	 * The statement names the account index it reads through, so the read
+	 * touches the account's own events and nothing of any other account's,
+	 * however long the journal is. Left to choose, SQLite could walk the whole
+	 * journal, which stops this single-threaded store, and its host, for as
+	 * long as the journal is long; without the index the read fails instead.
+	 */
 	eventsSince(cursor: EventCursor): CiEventPage {
 		const { accountId, after, limit } = eventCursorBounds(cursor);
+		// One more than the page holds, to say whether the account has more.
 		const rows =
 			after === undefined
 				? this.db
@@ -360,6 +385,7 @@ export class LeaseStore {
 						.all(accountId, after, limit + 1);
 		return accountEventPage(rows.map(sequenced), cursor);
 	}
+	/** The journal's newest position; zero while it is empty. */
 	journalHead(): number {
 		return z
 			.number()
@@ -369,6 +395,7 @@ export class LeaseStore {
 					?.head,
 			);
 	}
+	/** The account whose connection holds this job's repository right now. */
 	private jobOwner(job: Job): string {
 		return jobAccountId(
 			this.configuration()?.configuration?.connections ?? [],
@@ -551,6 +578,7 @@ export class LeaseStore {
 				}
 		}
 	}
+	/** Compare-and-swap platform policy, with its audit event in the lease partition. */
 	configure(
 		configuration: Configuration,
 		expectedRevision: number,
@@ -722,6 +750,7 @@ export class LeaseStore {
 			return state;
 		});
 	}
+	/** Commit account settings and desired intent in one revision-fenced transaction. */
 	configureWithRecord(
 		configuration: Configuration,
 		expectedRevision: number,
@@ -736,6 +765,7 @@ export class LeaseStore {
 			return state;
 		});
 	}
+	/** Renew only rate evidence; never advance the financial usage watermark. */
 	reattestRate(
 		input: RateReattestation,
 		expectedRevision: number,
@@ -999,6 +1029,7 @@ export class LeaseStore {
 			return undefined;
 		});
 	}
+	/** Re-admit the exact held offer against durable policy immediately before allocation. */
 	authorizePipelineStart(
 		id: string,
 		account: Account,
@@ -1109,6 +1140,7 @@ export class LeaseStore {
 			.run(lease.id, this.leaseKey(lease), body);
 	}
 	reserve(account: Account, job: Job, at: string): Lease | undefined {
+		// This local adapter only launches trusted GitHub workflow bridges.
 		if (job.isolatedRequired) return undefined;
 		return this.transaction(() => {
 			const configuration = this.configuration()?.configuration;
@@ -1461,6 +1493,7 @@ export class LeaseStore {
 				Math.min(Date.parse(at), Date.parse(lease.createdAt), ...receipts),
 		);
 	}
+	/** Expire only untouched demand. Once provider work may exist, keep its hold. */
 	expireQueued(job: Job, at: string, expectedRevision?: number): boolean {
 		return this.transaction(() => {
 			if (
@@ -1589,6 +1622,7 @@ export class LeaseStore {
 				}
 			: undefined;
 	}
+	/** Call only after GitHub verifies this exact job is queued and its owner is terminal. */
 	clearAssignedJob(
 		job: Job,
 		leaseId: string,
@@ -1675,6 +1709,8 @@ export class LeaseStore {
 							.get(`${job.repositoryId}:${job.id}:${job.runAttempt}`)
 					)
 						return;
+					// GitHub can assign a different queued job to this label. Release
+					// only duplicate reservations that have not launched a host yet.
 					if (job.action === "in_progress" || job.action === "completed") {
 						if (job.action === "in_progress") {
 							const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
@@ -1724,6 +1760,7 @@ export class LeaseStore {
 					}
 				}
 			}
+			// Original-job completion NEVER releases a host reservation.
 		});
 	}
 	settle(
@@ -1828,6 +1865,7 @@ export class LeaseStore {
 			this.append(lease, "ci.PipelineResultObserved", at);
 		});
 	}
+	/** Positive provider final usage, bound to the durable execution identity. */
 	settlePipelineUsage(
 		id: string,
 		observation: PipelineUsageObservation,
@@ -1894,6 +1932,7 @@ export class LeaseStore {
 			return lease;
 		});
 	}
+	/** Reconcile delayed native financial finality without creating any execution resource. */
 	reconcileSharedBudget(
 		id: string,
 		paidMicros: number,
@@ -1975,6 +2014,7 @@ export class LeaseStore {
 			this.queueInside(job, at);
 		});
 	}
+	/** Drop box demand when GitHub assigned the job elsewhere; never re-queue. */
 	withdrawQueuedJob(
 		job: Job,
 		at: string,
@@ -2003,7 +2043,7 @@ export class LeaseStore {
 					.find((account) => account.id === lease.accountId)
 					?.offers.find((candidate) => candidate.id === lease.offerId);
 				if (
-					!shouldAbortIsolatedFleetLease(
+					!shouldAbortIsolatedLease(
 						lease.provider,
 						offer
 							? { backend: offer.backend, runsOn: offer.runsOn }
@@ -2041,7 +2081,7 @@ export class LeaseStore {
 				.find((account) => account.id === lease.accountId)
 				?.offers.find((candidate) => candidate.id === lease.offerId);
 			if (
-				!shouldAbortIsolatedFleetLease(
+				!shouldAbortIsolatedLease(
 					lease.provider,
 					offer ? { backend: offer.backend, runsOn: offer.runsOn } : undefined,
 				)
@@ -2055,6 +2095,8 @@ export class LeaseStore {
 	recover(at: string): void {
 		for (const lease of this.all()) {
 			if (lease.pipelineId && lease.state === "reserved") {
+				// No backend call can precede PipelineStarted. Release untouched
+				// reservations so a restarted coordinator can re-admit current policy.
 				this.transition(
 					lease.id,
 					["reserved"],
@@ -2079,6 +2121,7 @@ export class LeaseStore {
 			);
 		}
 	}
+	/** Rebuild query state from the append-only event log; terminal tombstones are separate intake state. */
 	rebuild(): void {
 		this.transaction(() => {
 			this.db.exec(

@@ -18,7 +18,6 @@ export {
 	type BudgetSignalState,
 	budgetSignalEventInputs,
 	foldBudgetSignals,
-	latestBudgetTransition,
 } from "./budget-signals.js";
 export {
 	buildCedarRequest,

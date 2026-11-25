@@ -1,5 +1,15 @@
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
+/**
+ * ULID-shaped event id derived from the event's timestamp and its global
+ * position. Positions are allocated under the partition-head row lock, so
+ * they are unique within a store schema; deriving the id from them makes ids
+ * unique across every process writing that schema, with no RNG and no
+ * per-process counter (replay- and test-deterministic, I8).
+ *
+ * Layout: 10 Crockford characters of epoch milliseconds, then 16 characters
+ * (80 bits) of the position.
+ */
 export function eventIdFor(timestampMs: number, position: bigint): string {
 	if (!Number.isSafeInteger(timestampMs) || timestampMs < 0) {
 		throw new TypeError("timestampMs must be a non-negative safe integer");

@@ -1,4 +1,8 @@
-import type { EventEnvelope, QuarantineRecord } from "@hobo/core";
+// Typed errors for the CQRS write-model kernel. Commands surface two failure
+// classes an agent/caller must tell apart: an invariant violation (the command
+// is illegal against current aggregate state — do NOT retry) and an optimistic
+// concurrency conflict (someone else appended first — retry after re-folding).
+
 import { type ErrorSignal, isJsonString } from "./json.js";
 
 export type { ErrorSignal } from "./json.js";
@@ -16,6 +20,7 @@ function errorCode(
 ): string | undefined {
 	if (error == null) return undefined;
 	if (!("code" in error)) return undefined;
+	// SAFETY: `in` established `code`; tag check parses the string conflict signal.
 	const code = (error as ErrorSignal).code;
 	return isJsonString(code) ? code : undefined;
 }
@@ -29,6 +34,9 @@ export class AggregateInvariantError extends Error {
 	}
 }
 
+// Thrown when an append is rejected because the stream advanced past the seq the
+// command folded against. Retryable: re-load the stream, re-check invariants,
+// re-append. Mirrors the runtime EventStore's OptimisticSequenceConflictError.
 export class AggregateConflictError extends Error {
 	readonly code = "AGGREGATE_CONFLICT" as const;
 	readonly retryable = true as const;
@@ -45,6 +53,8 @@ export class AggregateConflictError extends Error {
 	}
 }
 
+// A projection or materialization tried to reach a write capability. Read-model
+// folds are deterministic + read-only by construction; this guards the boundary.
 export class ProjectionWriteError extends Error {
 	readonly code = "PROJECTION_WRITE_FORBIDDEN" as const;
 	constructor(message: string) {
@@ -53,46 +63,8 @@ export class ProjectionWriteError extends Error {
 	}
 }
 
-export class ProjectionFoldError extends Error {
-	readonly projection: string;
-	readonly streamId: string;
-	readonly seq: number;
-	readonly eventType: string;
-	override readonly cause: Error;
-
-	constructor(projection: string, event: EventEnvelope, cause: Error) {
-		super(
-			`projection ${projection} failed at ${event.streamId}@${event.seq} (${event.type}): ${cause.message}`,
-			{ cause },
-		);
-		this.name = "ProjectionFoldError";
-		this.projection = projection;
-		this.streamId = event.streamId;
-		this.seq = event.seq;
-		this.eventType = event.type;
-		this.cause = cause;
-	}
-}
-
-export class DurableEffectUnavailableError extends Error {
-	readonly code = "DURABLE_EFFECT_UNAVAILABLE" as const;
-	constructor() {
-		super("aggregate effects require a durable event store");
-		this.name = "DurableEffectUnavailableError";
-	}
-}
-
-export class UnpersistedQuarantineError extends Error {
-	readonly code = "UNPERSISTED_QUARANTINE" as const;
-	constructor(
-		readonly streamId: string,
-		readonly quarantined: readonly QuarantineRecord[],
-	) {
-		super(`aggregate stream ${streamId} has events requiring quarantine`);
-		this.name = "UnpersistedQuarantineError";
-	}
-}
-
+// Recognizes the runtime EventStore's optimistic-conflict signal without taking a
+// hard dependency on the runtime package (inward-only: @hobo/data → @hobo/core).
 export function isOptimisticConflict(
 	error: Error | ErrorSignal | null | undefined,
 ): boolean {

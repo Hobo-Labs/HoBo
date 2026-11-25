@@ -81,7 +81,7 @@ export const RELEASE_NOTES_PRIVATE_BETA_EVIDENCE: ReleaseNotesPrivateBetaEvidenc
       id: "release-notes-private-beta-outline",
       status: "accepted",
       owningProject: "V1 Release Notes & Upgrade Guide",
-      proofSource: ["urn:hobo:requirement:release-notes-upgrade-guide", "HOBO-407"],
+      proofSource: ["docs/design/release-notes-upgrade-guide.md", "HOBO-407"],
       feeds: ["release-summary", "known-limitations", "migration-notes"]
     },
     {
@@ -95,35 +95,35 @@ export const RELEASE_NOTES_PRIVATE_BETA_EVIDENCE: ReleaseNotesPrivateBetaEvidenc
       id: "upgrade-dry-run-private-beta-status",
       status: "accepted-substitute",
       owningProject: "Upgrade & Migration Engine",
-      proofSource: ["urn:hobo:requirement:upgrade-migration-engine", "HOBO-499"],
+      proofSource: ["docs/design/upgrade-migration-engine.md", "HOBO-499"],
       feeds: ["upgrade-paths", "rollback-guidance"]
     },
     {
       id: "upgrade-test-suite-private-beta-results",
       status: "accepted-substitute",
       owningProject: "Upgrade Test Suite",
-      proofSource: ["urn:hobo:requirement:upgrade-test-suite", "HOBO-433"],
+      proofSource: ["docs/design/upgrade-test-suite.md", "HOBO-433"],
       feeds: ["compatibility-matrix", "migration-notes"]
     },
     {
       id: "beta-feedback-docs-gap-routing",
       status: "accepted",
       owningProject: "V1 Beta Pilot & Feedback Loop",
-      proofSource: ["urn:hobo:requirement:beta-pilot-feedback", "HOBO-404"],
+      proofSource: ["docs/design/beta-pilot-feedback.md", "HOBO-404"],
       feeds: ["known-limitations", "follow-up-routing"]
     },
     {
       id: "support-safe-escalation-coverage",
       status: "accepted",
       owningProject: "Support Workflow",
-      proofSource: ["urn:hobo:requirement:support-workflow", "urn:hobo:requirement:launch-support-escalation"],
+      proofSource: ["docs/design/support-workflow.md", "docs/design/launch-support-escalation.md"],
       feeds: ["support-contacts", "rollback-guidance"]
     },
     {
       id: "docs-copy-owner-and-limitation-register",
       status: "accepted",
       owningProject: "V1 Docs",
-      proofSource: ["urn:hobo:requirement:docs-portal", "urn:hobo:proof:hobo-407-release-notes-upgrade-guide"],
+      proofSource: ["docs/design/docs-portal.md", "docs/design/proofs/hobo-407-release-notes-upgrade-guide/index.md"],
       feeds: ["known-limitations", "customer-safe-copy-ownership"]
     }
   ],
@@ -180,12 +180,12 @@ export const RELEASE_NOTES_PRIVATE_BETA_EVIDENCE: ReleaseNotesPrivateBetaEvidenc
       },
       {
         project: "Support Workflow",
-        issueOrRecord: "urn:hobo:requirement:support-workflow",
+        issueOrRecord: "docs/design/support-workflow.md",
         cutlineRole: "support-safe contact and escalation source"
       },
       {
         project: "V1 Docs",
-        issueOrRecord: "urn:hobo:requirement:docs-portal",
+        issueOrRecord: "docs/design/docs-portal.md",
         cutlineRole: "copy ownership and limitation register"
       }
     ]

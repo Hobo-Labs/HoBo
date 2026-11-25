@@ -27,7 +27,7 @@ competitor:
 > Captured for HoBo competitive analysis; researched August 2026. This file documents
 > **Wasp's** offering faithfully; the HoBo↔Wasp mapping/parity tracker lives in the
 > [Primitive mapping](#primitive-mapping) section below. Posture per
-> [ADR-0144](urn:hobo:decision:adr-0144): thin,
+> [ADR-0144](../design/adr/07-portability-extensibility.md#adr-0144): thin,
 > inspirational alignment only — no dual authoring, no runtime embedding.
 
 ## What it is
@@ -95,7 +95,7 @@ Wasp is a framework and HoBo is a control plane; the overlap is philosophical ra
 | `authoring` | Declarative app-level intent producing generated wiring — the same bet HoBo makes with Bindles, at a smaller scope |
 | `app-graph` | The spec is a description of the application, though a single-stack one |
 
-Per [ADR-0144](urn:hobo:decision:adr-0144) the posture is thin,
+Per [ADR-0144](../design/adr/07-portability-extensibility.md#adr-0144) the posture is thin,
 inspirational alignment only: no dual authoring, no runtime embedding.
 
 ## Where Wasp is stronger
@@ -141,12 +141,12 @@ State labels follow the research contract; this capture predates it, so "design-
 
 | Wasp concept | HoBo equivalent | Notes |
 |---|---|---|
-| `main.wasp` declarative app spec | **Bindle** (TypeScript closure builder, IfC) | ➕ Bindle is provider-agnostic IR with matching + audit, not compiler input ([Plan 25](urn:hobo:requirement:platform-engineering#plan-25)) |
-| Entities (Prisma models) | `data` resources + projections | ◐ HoBo's data plane is event-sourced ([Plan 11](urn:hobo:requirement:data-plane#plan-11)); Prisma-style ORM ergonomics are thinner today |
-| `query`/`action` + generated RPC | Handlers/operations + generated `_generated/` client ([ADR-0037](urn:hobo:decision:adr-0037)) | ✅ same "declare once, typed client for free" bet |
-| `job` (cron/background) | `schedule` + `job` resource kinds, durable workflows | ➕ durable, replayable ([Plan 02](urn:hobo:requirement:sdk-api#plan-02)) |
-| `app.auth` one-liner | `auth` resource kind + identity plane (SVIDs, OIDC) | ➕ agent principals included ([Plan 06](urn:hobo:requirement:ai-native-agent-auth#plan-06)) |
-| Open-SaaS starter kit | **App Kits / Resource Packs** — curated, signed bundles | 🔜 the borrow: ship opinionated kits (auth+payments+admin) as Packs ([Plan 25](urn:hobo:requirement:platform-engineering#plan-25)) |
+| `main.wasp` declarative app spec | **Bindle** (TypeScript closure builder, IfC) | ➕ Bindle is provider-agnostic IR with matching + audit, not compiler input ([Plan 25](../design/platform-engineering.md#plan-25)) |
+| Entities (Prisma models) | `data` resources + projections | ◐ HoBo's data plane is event-sourced ([Plan 11](../design/data-plane.md#plan-11)); Prisma-style ORM ergonomics are thinner today |
+| `query`/`action` + generated RPC | Handlers/operations + generated `_generated/` client ([ADR-0037](../design/adr/01-architecture-core.md#adr-0037)) | ✅ same "declare once, typed client for free" bet |
+| `job` (cron/background) | `schedule` + `job` resource kinds, durable workflows | ➕ durable, replayable ([Plan 02](../design/sdk-api.md#plan-02)) |
+| `app.auth` one-liner | `auth` resource kind + identity plane (SVIDs, OIDC) | ➕ agent principals included ([Plan 06](../design/ai-native-agent-auth.md#plan-06)) |
+| Open-SaaS starter kit | **App Kits / Resource Packs** — curated, signed bundles | 🔜 the borrow: ship opinionated kits (auth+payments+admin) as Packs ([Plan 25](../design/platform-engineering.md#plan-25)) |
 | `wasp deploy` (Fly/Railway) | `hobo up` with Matching-selected providers | ➕ provider-negotiated, `match.Decided`-audited |
 | `wasp build` standard bundle | Packaging path: existing Wasp app via `@hobo/wasp` `waspApp` + `b.web(...)`; deps via OCI containers / external connectors | ✅ one-directional adoption, no dual authoring |
 
@@ -187,7 +187,7 @@ generated React glue stay out of scope.
 
 - **Borrow** — modular, spec-style feature composition, and the Open-SaaS-shaped kit as **App Kit /
   Resource Pack** inspiration: curated, signed bundles at the Bindle/Pack layer
-  ([Plan 25](urn:hobo:requirement:platform-engineering#plan-25), ADR-0145 §2 Distribution).
+  ([Plan 25](../design/platform-engineering.md#plan-25), ADR-0145 §2 Distribution).
 - **Packaging path** — an existing Wasp app is adoptable one-directionally through `@hobo/wasp`
   (`waspApp` plus `b.web(...)`), with dependencies from OCI containers or `b.external` connectors.
   No dual authoring, and never HoBo-owned Open-SaaS images.

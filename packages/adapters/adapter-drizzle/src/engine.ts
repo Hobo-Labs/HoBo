@@ -1,3 +1,20 @@
+/**
+ * The drizzle-kit schema-diff engine.
+ *
+ * HoBo keeps ownership of the plan: `diff` delegates to the canonical
+ * `diffSchemaIr` in `@hobo/core` and stamps this engine's id and version onto
+ * the result. The stamp is not decoration — `engineVersion` participates in the
+ * plan digest, so upgrading the toolchain changes the digest and therefore
+ * shows up as a visible plan change instead of silent SQL drift (ADR-0160).
+ *
+ * SQL emission is the other half, and it is gated. This package does not bundle
+ * drizzle-kit, so it cannot render SQL on its own; `emitSql` refuses with
+ * `TOOLCHAIN_UNAVAILABLE` unless the host both declares the toolchain present
+ * and wires an emitter. It never approximates, and it never silently returns
+ * nothing — a half-emitted migration applied to a real database is worse than a
+ * refusal a human can act on.
+ */
+
 import {
 	diffSchemaIr,
 	type MigrationPlan,
@@ -7,30 +24,39 @@ import {
 } from "@hobo/core";
 import { DrizzleAdapterError } from "./errors.js";
 
-export const DRIZZLE_ENGINE_ID = "drizzle-kit";
+export const DRIZZLE_ENGINE_ID = "drizzle-kit"; // public-contract: engine identity stamped into every migration plan
 
-export const DEFAULT_DRIZZLE_ENGINE_VERSION = "0.31.11";
+/**
+ * The drizzle-kit release this adapter's ingestion shape-reading was written
+ * against. Hosts that run a different drizzle-kit MUST pass `version` so the
+ * plan digest reflects the toolchain that will actually render the SQL.
+ */
+export const DEFAULT_DRIZZLE_ENGINE_VERSION = "0.31.1"; // public-contract: participates in the plan digest, per the note above
 
 export interface EmittedSqlStatement {
 	readonly step: MigrationStep;
 	readonly sql: string;
 }
 
+/** Supplied by a host that owns a real drizzle-kit install. */
 export type DrizzleSqlEmitter = (
 	plan: MigrationPlan,
 ) => readonly EmittedSqlStatement[];
 
 export interface DrizzleDiffEngineOptions {
+	/** Pinned engine version; participates in the plan digest. */
 	readonly version?: string;
+	/** Whether the drizzle-kit toolchain is available to this process. */
 	readonly toolchainPresent?: boolean;
+	/** The emitter the declared toolchain exposes. Required for SQL emission. */
 	readonly emitSql?: DrizzleSqlEmitter;
 }
 
 const TOOLCHAIN_ABSENT_REMEDIATION =
-	"Use the bundled asynchronous `generateDrizzleMigration` API, or declare a host toolchain with `createDrizzleDiffEngine({ toolchainPresent: true, emitSql })`.";
+	"Install drizzle-kit in the deploying environment, then construct the engine with `createDrizzleDiffEngine({ toolchainPresent: true, emitSql })`. Until then, apply the migration plan through a schema-apply port that renders its own SQL.";
 
 const EMITTER_MISSING_REMEDIATION =
-	"`toolchainPresent: true` was declared but no synchronous `emitSql` emitter was wired. Supply a host emitter or use `generateDrizzleMigration`.";
+	"`toolchainPresent: true` was declared but no `emitSql` emitter was wired. @hobo/adapter-drizzle does not bundle drizzle-kit, so the host must pass the emitter its drizzle-kit install provides.";
 
 export function createDrizzleDiffEngine(
 	options?: DrizzleDiffEngineOptions,
@@ -50,7 +76,7 @@ export function createDrizzleDiffEngine(
 			if (!toolchainPresent) {
 				throw new DrizzleAdapterError(
 					"TOOLCHAIN_UNAVAILABLE",
-					"Synchronous SQL emission requires a declared host toolchain.",
+					"SQL emission requires the drizzle-kit toolchain, which is not present.",
 					TOOLCHAIN_ABSENT_REMEDIATION,
 				);
 			}
@@ -66,59 +92,28 @@ export function createDrizzleDiffEngine(
 	});
 }
 
+/**
+ * Every step must come back with SQL. A shorter result would mean part of the
+ * plan silently never runs, which is exactly the drift this port exists to
+ * prevent, so an incomplete emission is refused rather than returned.
+ */
 function freezeEmitted(
 	plan: MigrationPlan,
 	emitted: readonly EmittedSqlStatement[],
 ): readonly EmittedSqlStatement[] {
-	groupEmittedSql(plan, emitted);
-	return Object.freeze(
-		emitted.map((entry) =>
-			Object.freeze({ step: Object.freeze({ ...entry.step }), sql: entry.sql }),
-		),
-	);
-}
-
-export function groupEmittedSql(
-	plan: MigrationPlan,
-	emitted: readonly EmittedSqlStatement[],
-): ReadonlyMap<string, readonly string[]> {
-	const steps = new Map(plan.steps.map((step) => [stepKey(step), step]));
-	if (steps.size !== plan.steps.length) {
-		throw emissionError("The migration plan contains duplicate steps.");
-	}
-	const grouped = new Map<string, string[]>();
-	for (const entry of emitted) {
-		const key = stepKey(entry.step);
-		const expected = steps.get(key);
-		if (
-			expected === undefined ||
-			entry.step.destructive !== expected.destructive
-		) {
-			throw emissionError(`Emitted SQL refers to an unexpected step: ${key}.`);
-		}
-		if (entry.sql.trim().length === 0) {
-			throw emissionError(`Emitted SQL is empty for step: ${key}.`);
-		}
-		const statements = grouped.get(key) ?? [];
-		statements.push(entry.sql);
-		grouped.set(key, statements);
-	}
+	const covered = new Set(emitted.map((entry) => stepKey(entry.step)));
 	const missing = plan.steps
-		.filter((step) => !grouped.has(stepKey(step)))
+		.filter((step) => !covered.has(stepKey(step)))
 		.map((step) => stepKey(step));
 	if (missing.length > 0) {
-		throw emissionError(
+		throw new DrizzleAdapterError(
+			"SQL_EMISSION_INCOMPLETE",
 			`The drizzle-kit emitter returned no SQL for ${missing.length} plan step(s): ${missing.join(", ")}.`,
+			"Regenerate the SQL with a drizzle-kit version that understands every step kind in the plan, or narrow the plan before emitting.",
 		);
 	}
-	return grouped;
-}
-
-function emissionError(message: string): DrizzleAdapterError {
-	return new DrizzleAdapterError(
-		"SQL_EMISSION_INCOMPLETE",
-		message,
-		"Use a compatible drizzle-kit emitSql emitter for every plan step before applying the migration.",
+	return Object.freeze(
+		emitted.map((entry) => Object.freeze({ step: entry.step, sql: entry.sql })),
 	);
 }
 

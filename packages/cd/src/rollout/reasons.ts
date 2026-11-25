@@ -1,8 +1,12 @@
+// Every typed failure the rollout orchestrator and its adapters report. Each
+// code carries a remediation, so a refusal, hold or rollback always says what
+// to do next (production obligation).
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import { PROGRESSIVE_UNSUPPORTED, WINDOW_CLOSED } from "../events.js";
 import type { Refusal } from "../ports.js";
 
+// public-contract: rollout reason codes and their remediations.
 export const ROLLOUT_REASONS = Object.freeze({
 	[PROGRESSIVE_UNSUPPORTED]:
 		"No traffic offering on this Camp can realize the strategy (edge.canary, lb.weighted, dns.weighted, inprocess.weighted), or policy forbids the fallback rung. Add a traffic profile for the provider, or choose ROLLOUT_STRATEGY_ALL_AT_ONCE explicitly.",
@@ -27,8 +31,6 @@ export const ROLLOUT_REASONS = Object.freeze({
 		"The target Camp's reconciler reported BLOCKED for the promoted Set; a blocked report does not progress, so the rollout fails the Camp closed and rolls back without waiting for the progress deadline. Fix the cause in the reconciler's reasons and promote again.",
 	"rollout-traffic-unconverged":
 		"The provider acknowledged the shift but observed traffic is not the requested split; the rollout re-observes until the progress deadline. Provider self-report never counts as convergence.",
-	"rollout-slo-evidence-pending":
-		"The rollout is waiting for consecutive fresh SLO observations.",
 	"rollout-progress-deadline":
 		"Observation did not confirm progress before the progress deadline; the rollout fails closed and rolls back. Inspect the Camp's reconcile status and the Station routing state.",
 	"rollout-verification-failed":

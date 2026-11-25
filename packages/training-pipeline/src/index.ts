@@ -54,14 +54,6 @@ export {
 	TRAINING_TRAJECTORY_CAPTURED,
 	trajectoryCapturedEvent,
 } from "./trajectory/events.js";
-export type {
-	OtlpSpanExporter,
-	OtlpSpanExporterOptions,
-} from "./trajectory/otlp.js";
-export {
-	createOtlpSpanExporter,
-	OtlpPartialSuccessError,
-} from "./trajectory/otlp.js";
 export type { TraceContext } from "./trajectory/trace-context.js";
 export {
 	formatTraceparent,

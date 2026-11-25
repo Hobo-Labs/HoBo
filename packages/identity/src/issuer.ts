@@ -5,13 +5,9 @@ import {
 	generateKeyPairSync,
 	type KeyObject,
 } from "node:crypto";
-import {
-	isJsonNumber,
-	isJsonObject,
-	isJsonString,
-	type JsonObject,
-} from "./json.js";
+import { isJsonNumber, isJsonString, type JsonObject } from "./json.js";
 
+// public-contract: the JWS algorithm every issued JWT-SVID names; verifiers pin it.
 export const JWT_ALGORITHM = "RS256";
 
 export type KmsLike = Readonly<{
@@ -19,6 +15,8 @@ export type KmsLike = Readonly<{
 	generateRsaKey(kid: string): void;
 	sign(kid: string, payload: string): Buffer;
 	publicJwk(kid: string): JsonObject;
+	keyIds?(): readonly string[];
+	activeKeyId?(): string;
 }>;
 
 export function createInMemoryKms(): KmsLike {
@@ -123,7 +121,11 @@ export class JwtSvidIssuer {
 	}
 
 	jwks(): JsonWebKeySet {
-		return { keys: this.jwksKeyIds.map((kid) => this.kms.publicJwk(kid)) };
+		return {
+			keys: this.jwksKeyIds
+				.filter((kid) => this.kms.hasKey(kid))
+				.map((kid) => this.kms.publicJwk(kid)),
+		};
 	}
 
 	async signJwtSvid(claims: JwtSvidClaims): Promise<string> {
@@ -153,31 +155,29 @@ export async function verifyJwtWithJwks(
 	header: JsonObject;
 	claims: JsonObject;
 }> {
-	const segments = token.split(".");
-	const [encodedHeader, encodedClaims, encodedSignature] = segments;
-	if (
-		segments.length !== 3 ||
-		!encodedHeader ||
-		!encodedClaims ||
-		!encodedSignature
-	) {
+	const [encodedHeader, encodedClaims, encodedSignature] = token.split(".");
+	if (!encodedHeader || !encodedClaims || !encodedSignature) {
 		throw new Error("JWT must have three segments");
 	}
-	if (!Number.isFinite(options.now)) {
-		throw new Error("JWT verification clock is invalid");
-	}
-	const header = parseJwtObject(encodedHeader);
-	const claims = parseJwtObject(encodedClaims);
+
+	// SAFETY: assertion to `JSON.parse( fromBase64Url(encodedHeader).toString("utf8"), ) as JsonObject` is required at this boundary.
+	const header = JSON.parse(
+		fromBase64Url(encodedHeader).toString("utf8"),
+	) as JsonObject;
+	// SAFETY: assertion to `JSON.parse( fromBase64Url(encodedClaims).toString("utf8"), ) as JsonObject` is required at this boundary.
+	const claims = JSON.parse(
+		fromBase64Url(encodedClaims).toString("utf8"),
+	) as JsonObject;
 	const kid = header.kid;
 	if (!isJsonString(kid)) {
 		throw new Error("JWT header missing kid");
 	}
 	const key = jwks.keys.find((candidate) => candidate.kid === kid);
 	if (!key) {
-		throw new Error("JWKS does not contain the signing key");
+		throw new Error(`JWKS does not contain kid ${kid}`);
 	}
 	if (header.alg !== JWT_ALGORITHM) {
-		throw new Error("unsupported JWT algorithm");
+		throw new Error(`unsupported alg ${String(header.alg)}`);
 	}
 
 	const verifier = createVerify("RSA-SHA256")
@@ -199,10 +199,10 @@ export async function verifyJwtWithJwks(
 	}
 	const exp = claims.exp;
 	const nbf = claims.nbf;
-	if (!isJsonNumber(exp) || !Number.isFinite(exp) || exp <= options.now) {
+	if (!isJsonNumber(exp) || exp <= options.now) {
 		throw new Error("JWT is expired");
 	}
-	if (!isJsonNumber(nbf) || !Number.isFinite(nbf) || nbf > options.now) {
+	if (!isJsonNumber(nbf) || nbf > options.now) {
 		throw new Error("JWT is not yet valid");
 	}
 
@@ -217,27 +217,6 @@ function toBase64Url(value: Buffer): string {
 	return Buffer.from(value).toString("base64url");
 }
 
-function parseJwtObject(value: string): JsonObject {
-	const text = fromBase64Url(value).toString("utf8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(text);
-	} catch {
-		throw new Error("JWT contains invalid JSON");
-	}
-	if (!isJsonObject(parsed)) {
-		throw new Error("JWT header and claims must be objects");
-	}
-	return parsed;
-}
-
 function fromBase64Url(value: string): Buffer {
-	if (!/^[A-Za-z0-9_-]+$/u.test(value)) {
-		throw new Error("JWT contains invalid base64url");
-	}
-	const decoded = Buffer.from(value, "base64url");
-	if (decoded.toString("base64url") !== value) {
-		throw new Error("JWT contains invalid base64url");
-	}
-	return decoded;
+	return Buffer.from(value, "base64url");
 }

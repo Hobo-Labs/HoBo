@@ -16,8 +16,8 @@ promotes the near-production draft proof
 - `TokenBroker` — holds one vaulted root credential and mints per-deploy,
   scope-bound, TTL'd tokens for an SVID, emitting `token.Granted` / `token.Used`
   / `token.Revoked`.
-- **Residual secrets backends** ([ADR-0027](urn:hobo:decision:adr-0027) /
-  [ADR-0113](urn:hobo:decision:adr-0113)) — secretless-first
+- **Residual secrets backends** ([ADR-0027](../../docs/design/adr/02-identity-security.md#adr-0027) /
+  [ADR-0113](../../docs/design/adr/02-identity-security.md#adr-0113)) — secretless-first
   ladder is bound-resource → provider-federation → camp-value → static-escape.
   Built-in residual adapters in `@hobo/identity` (never primary identity):
   - **`createMemorySecretsPort`** — default in-memory residual (local Station / fixtures)
@@ -34,18 +34,18 @@ promotes the near-production draft proof
     relay's config service (ADR-0179). Not a default dependency.
 - Every identity and token event carries the never-compact
   `CREDENTIAL_AUDIT_RETENTION` descriptor.
-- **Continuous Identity Migration Plane** ([ADR-0132](urn:hobo:decision:adr-0132))
+- **Continuous Identity Migration Plane** ([ADR-0132](../../docs/design/adr/02-identity-security.md#adr-0132))
   — dual-path PrincipalRef continuity when adapters, residency, spectrum, or
   Yard placement change. **Nothing is required in the Bindle** for continuous
   migration: Matching + policy activate dual mode; progressive ramp uses
-  existing Harness cohort flags; dual fixtures extend [ADR-0070](urn:hobo:decision:adr-0070)
+  existing Harness cohort flags; dual fixtures extend [ADR-0070](../../docs/design/adr/02-identity-security.md#adr-0070)
   for offline `hobo dev` / tests. Observe with `hobo identity status` /
   `hobo identity inspect <id>` and `hobo doctor`. Composed into **HoBo Trails**
-  ([ADR-0134](urn:hobo:decision:adr-0134),
+  ([ADR-0134](../../docs/design/adr/02-identity-security.md#adr-0134),
   `@hobo/trails`) as the platform recipe `identity.continuous` — pure identity
   continuous cases still require **zero Trail authoring**.
-- **The Harness** ([ADR-0083](urn:hobo:decision:adr-0083) /
-  [ADR-0044](urn:hobo:decision:adr-0044)) — progressive
+- **The Harness** ([ADR-0083](../../docs/design/adr/02-identity-security.md#adr-0083) /
+  [ADR-0044](../../docs/design/adr/02-identity-security.md#adr-0044)) — progressive
   delivery as a native plane: single `FeatureFlagStore` (shared with identity
   migration cohorts — **no parallel store**), OpenFeature-only app API
   (`HoboOpenFeatureProvider` / `HoboFeatureClient`), OpenDelivery staged
@@ -222,13 +222,39 @@ svc.start({
 // JIT link keeps both adapters valid until cutover (ADR-0100 grace patterns).
 ```
 
-## Keyless provider-STS exchange
+## Deferred: keyless provider-STS exchange (S3-03)
 
-`TokenBroker` prefers a configured `ProviderStsExchange`, mints a short-lived
-OIDC assertion scoped to the attested workload, and exchanges it for a narrowed
-provider credential. `createInMemoryProviderStsExchange` supplies deterministic
-offline and test behavior. Vault-derived credentials remain the bounded fallback
-when federation is unavailable.
+The broker returns a deterministic fixture-scoped token derived inside the
+vault. The real keyless OIDC-federation / provider-STS token exchange is a later
+item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
+
+## HoBo Fleet additions
+
+- **`loadSecretStoreKms(secrets, { prefix })`** — the fleet authority's
+  token-signing key, shared by every replica and kept across restarts. One
+  secret named `prefix` holds a JSON key ring
+  (`{"keys":[{"kid","privateKey" (PKCS#8 PEM),"retiredAt"?}]}`). At start it is
+  read once (or created once, with kid `<prefix>#1`; replicas that start
+  together adopt the first version written) and held in memory behind the
+  synchronous `KmsLike`. Rotate with `JwtSvidIssuer.rotateSigningKey("<prefix>#<n+1>")`:
+  the previous key stops signing at once, stays in the key set for 15 minutes
+  (the longest token lifetime) so its tokens still verify, and
+  then leaves `jwks()` everywhere. The rotation is written back to the store in
+  the background, merged with what is there; another replica sees it when it
+  next loads. The active key is the highest `n` for which `hasKey` is true. A
+  store refusal other than `secret-not-found`, or a value without material,
+  fails closed. `createInMemoryKms` remains for tests and offline development.
+- **`createDeviceHostAttestor(signer)`** — a fleet device as attestation host.
+  It takes the device's SIGN key (`<member id>#sign`), uses the member id as
+  `hostId`, and signs the launch measurement's JSON bytes as a fleet envelope
+  under `hobo-fleet/host-attestation/v1`. `hostSignature.algorithm` is
+  `hobo-fleet-envelope/eddsa` or `…/es256` (`envelopeAlgorithmOf` and
+  `envelopeAlgorithmName` map the names); `value` is
+  `base64url(payload).base64url(signature)`. `publicKeys()` is empty: the
+  verifier passes the SIGN key from the member's key bundle as
+  `verificationKey`. `verifyWorkloadAttestation` checks the signature over the
+  received bytes, then that they are the document's launch measurement.
+  `createFixtureHostAttestor` (HMAC) stays for tests.
 
 ## Exports
 

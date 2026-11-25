@@ -3,11 +3,7 @@ import crypto from "node:crypto";
 import { must, mustGet } from "@hobo/core/total-access";
 import {
 	cloneAsJson,
-	isJsonBigInt,
-	isJsonBoolean,
-	isJsonNumber,
 	isJsonObject,
-	isJsonString,
 	type JsonObject,
 	type JsonValue,
 } from "../json.js";
@@ -19,12 +15,14 @@ import type {
 	ReplayMode,
 	ReplayReport,
 	SeqVector,
+	UpcastFn,
 } from "./types.js";
 
 export interface AssertReplayEqualsLiveInput<S> {
 	events: EventEnvelope[];
 	fold: FoldFn<S>;
 	initialState: S;
+	upcast?: UpcastFn;
 	targetSeq?: SeqVector;
 	seed?: string;
 	normalize?: (value: JsonValue) => JsonValue;
@@ -35,6 +33,7 @@ export function assertReplayEqualsLive<S>({
 	events,
 	fold,
 	initialState,
+	upcast = (event) => event,
 	targetSeq = seqVector(events),
 	seed = "hobo-replay-live",
 	normalize = stableValue,
@@ -47,6 +46,7 @@ export function assertReplayEqualsLive<S>({
 		events: eventSlice,
 		fold,
 		initialState,
+		upcast,
 		seed,
 		mode: "live",
 		ambientNow: 1_900_000_000_000,
@@ -57,14 +57,15 @@ export function assertReplayEqualsLive<S>({
 		events: replayEvents,
 		fold,
 		initialState,
+		upcast,
 		seed,
 		mode: "replay",
 		ambientNow: 2_000_000_000_000,
 		ambientRandom: 0.999999999,
 	});
 
-	const normalizedLive = normalize(replayJson(liveState));
-	const normalizedReplay = normalize(replayJson(replayState));
+	const normalizedLive = normalize(cloneAsJson(liveState));
+	const normalizedReplay = normalize(cloneAsJson(replayState));
 
 	try {
 		assert.deepEqual(normalizedLive, normalizedReplay);
@@ -95,6 +96,7 @@ export interface RunFoldInput<S> {
 	events: EventEnvelope[];
 	fold: FoldFn<S>;
 	initialState: S;
+	upcast: UpcastFn;
 	seed: string;
 	mode: ReplayMode;
 	ambientNow: number;
@@ -105,6 +107,7 @@ export function runFold<S>({
 	events,
 	fold,
 	initialState,
+	upcast,
 	seed,
 	mode,
 	ambientNow,
@@ -121,7 +124,8 @@ export function runFold<S>({
 					mode,
 					eventKey: eventKey(event),
 				});
-				state = fold(state, clone(event), context);
+				const lifted = upcast(clone(event), context);
+				state = fold(state, lifted, context);
 			}
 
 			return state;
@@ -191,88 +195,46 @@ export function compareCanonicalEventOrder(
 	);
 }
 
-export function replayJson<T>(value: T): JsonValue {
-	const ancestors = new Set<object>();
-	function convert<T>(item: T): JsonValue {
-		if (item == null) return null;
-		if (isJsonString(item)) return String(item);
-		if (isJsonBoolean(item)) return Boolean(item);
-		if (isJsonNumber(item)) {
-			const number = Number(item);
-			return Number.isFinite(number)
-				? Object.is(number, -0)
-					? 0
-					: number
-				: null;
-		}
-		if (isJsonBigInt(item))
-			throw new TypeError("BigInt is not JSON serializable");
-		if (
-			!isJsonObject(item) &&
-			!Array.isArray(item) &&
-			!(item instanceof Map) &&
-			!(item instanceof Set) &&
-			!(item instanceof Date)
-		)
-			return cloneAsJson(item);
-		if (ancestors.has(item))
-			throw new TypeError("Cyclic replay state is not serializable");
-		ancestors.add(item);
-		try {
-			if (item instanceof Map) {
-				return [...item.entries()]
-					.map(([key, entry]) => [convert(key), convert(entry)])
-					.sort((left, right) =>
-						stableStringify(left).localeCompare(stableStringify(right)),
-					);
-			}
-			if (item instanceof Set) {
-				return [...item]
-					.map(convert)
-					.sort((left, right) =>
-						stableStringify(left).localeCompare(stableStringify(right)),
-					);
-			}
-			if (Array.isArray(item)) return Array.from(item, convert);
-			if ("toJSON" in item && item.toJSON instanceof Function)
-				return convert(item.toJSON());
-			if (isJsonObject(item)) {
-				return Object.fromEntries(
-					Object.entries(item)
-						.filter(
-							([, entry]) =>
-								entry !== undefined &&
-								!(entry instanceof Function) &&
-								Object.prototype.toString.call(entry) !== "[object Symbol]",
-						)
-						.map(([key, entry]) => [key, convert(entry)]),
-				);
-			}
-			return cloneAsJson(item);
-		} finally {
-			ancestors.delete(item);
-		}
+export function stableValue(value: JsonValue): JsonValue {
+	if (value instanceof Map) {
+		return [...value.entries()]
+			.map(([key, entry]) => [stableValue(key), stableValue(entry)])
+			.sort(([left], [right]) =>
+				stableStringify(left ?? null).localeCompare(
+					stableStringify(right ?? null),
+				),
+			);
 	}
-	return convert(value);
-}
 
-export function stableValue<T>(value: T): JsonValue {
-	return sortJson(replayJson(value));
-}
+	if (value instanceof Set) {
+		return [...value]
+			.map(stableValue)
+			.sort((left, right) =>
+				stableStringify(left ?? null).localeCompare(
+					stableStringify(right ?? null),
+				),
+			);
+	}
 
-function sortJson(value: JsonValue): JsonValue {
-	if (Array.isArray(value)) return value.map(sortJson);
+	if (Array.isArray(value)) {
+		return value.map(stableValue);
+	}
+
 	if (value && isJsonObject(value)) {
 		return stableObject(
 			Object.fromEntries(
-				Object.entries(value).map(([key, entry]) => [key, sortJson(entry)]),
+				Object.entries(value).map(([key, entry]) => [
+					key,
+					stableValue(entry ?? null),
+				]),
 			),
 		);
 	}
+
 	return value;
 }
 
-export function stableStringify<T>(value: T): string {
+export function stableStringify(value: JsonValue): string {
 	return JSON.stringify(stableValue(value));
 }
 
@@ -294,6 +256,7 @@ function seededUnit(input: string): number {
 }
 
 function stableObject<T extends JsonObject>(value: T): T {
+	// SAFETY: assertion to `Object.fromEntries( Object.entries(value).sort(([left], [right]) => left.localeCompare(right)), ) as T` is required at this boundary.
 	return Object.fromEntries(
 		Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
 	) as T;
@@ -303,6 +266,7 @@ function clone<T>(value: T): T {
 	if (structuredClone instanceof Function) {
 		return structuredClone(value);
 	}
+	// SAFETY: assertion to `JSON.parse(JSON.stringify(value)) as T` is required at this boundary.
 	return JSON.parse(JSON.stringify(value)) as T;
 }
 

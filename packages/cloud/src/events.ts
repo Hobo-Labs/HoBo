@@ -27,17 +27,13 @@ export const CLOUD_EVENTS = Object.freeze({
 	// matchable by the Planner (walkthrough Part 0/2: a cloud's "default
 	// providers approved" is a durable fact, not config).
 	ProviderApproved: "provider.Approved",
-	ResourceDefinitionRegistered: "resourcedef.Registered",
-	ResourceDefinitionUpdated: "resourcedef.Updated",
 	ResourcePlanning: "resource.Planning",
 	ResourceProvisioning: "resource.Provisioning",
 	ResourceProvisioned: "resource.Provisioned",
 	ResourceFailed: "resource.Failed",
-	ResourceCompensationFailed: "resource.CompensationFailed",
 	ResourceReconciled: "resource.Reconciled",
 	ResourceDestroying: "resource.Destroying",
 	ResourceDestroyed: "resource.Destroyed",
-	IncidentEscalationRequested: "incident.EscalationRequested",
 	ExecDiff: "exec.Diff",
 	ExecSucceeded: "exec.Succeeded",
 	DeploymentDeployed: "deployment.Deployed",
@@ -55,6 +51,11 @@ export const CLOUD_EVENTS = Object.freeze({
 	// Adopt an existing estate in place: bring resources that ALREADY exist under
 	// HoBo management by recording them as a deployment, without provisioning.
 	DeploymentImported: "deployment.Imported",
+	// Derived-HoBo (fork) upgrade ceremony (ADR-0057): check the derivative.json
+	// descriptor, run pinned upcasters, rerun seam conformance.
+	DerivativeUpgradeStarted: "derivative.UpgradeStarted",
+	DerivativeUpgradeSucceeded: "derivative.UpgradeSucceeded",
+	DerivativeUpgradeFailed: "derivative.UpgradeFailed",
 	// Credential-audit facts (NFR-018): the per-resource scoped-credential
 	// lifecycle the Orchestrator brokers around each apply. Folded by
 	// `credentialAuditProjection` into a grant -> use -> revoke trail.
@@ -96,6 +97,30 @@ export function deploymentImported(data: {
 	resources: string[];
 }): EventInput {
 	return { type: CLOUD_EVENTS.DeploymentImported, data };
+}
+
+export function derivativeUpgradeStarted(data: {
+	name: string;
+	fromVersion: string;
+	toVersion: string;
+	upcasters: string[];
+}): EventInput {
+	return { type: CLOUD_EVENTS.DerivativeUpgradeStarted, data };
+}
+
+export function derivativeUpgradeSucceeded(data: {
+	name: string;
+	toVersion: string;
+	upcastersRun: string[];
+}): EventInput {
+	return { type: CLOUD_EVENTS.DerivativeUpgradeSucceeded, data };
+}
+
+export function derivativeUpgradeFailed(data: {
+	name: string;
+	reason: string;
+}): EventInput {
+	return { type: CLOUD_EVENTS.DerivativeUpgradeFailed, data };
 }
 
 // Fold the erased-subject set from a stream's events. Append-only crypto-shred:
@@ -184,22 +209,6 @@ export function providerApproved(data: {
 	return { type: CLOUD_EVENTS.ProviderApproved, data };
 }
 
-export function resourceDefinitionRegistered(data: {
-	providerId: string;
-	definition: JsonObject;
-	manifestIndexDigest: string;
-}): EventInput {
-	return { type: CLOUD_EVENTS.ResourceDefinitionRegistered, data };
-}
-
-export function resourceDefinitionUpdated(data: {
-	providerId: string;
-	definition: JsonObject;
-	manifestIndexDigest: string;
-}): EventInput {
-	return { type: CLOUD_EVENTS.ResourceDefinitionUpdated, data };
-}
-
 // ---- S2-03a/b: Orchestrator + ResourceActor FSM + Executor facts ----
 // Past-tense facts the provisioning path appends. The per-resource subject rides
 // the fact body's `resourceId`/`deploymentId` fields, never the type string.
@@ -209,8 +218,10 @@ export interface ResourceProvisioningData {
 	resourceId: string;
 	execId: string;
 	programHash: string;
-	specHash: string;
-	providerId: string;
+	/** `desiredSpecHash` of the resource being applied (upsert detection). */
+	specHash?: string;
+	/** Provider that may have received the apply; absent on legacy facts. */
+	providerId?: string;
 	operationGeneration?: string;
 }
 
@@ -225,7 +236,8 @@ export interface ResourceProvisionedData {
 	resourceId: string;
 	outputs: Record<string, string>;
 	execId: string;
-	specHash: string;
+	/** `desiredSpecHash` the resource now matches; absent on legacy facts. */
+	specHash?: string;
 }
 
 export function resourceProvisioned(data: ResourceProvisionedData): EventInput {
@@ -258,31 +270,6 @@ export type ResourceFailedData = ResourceFailedBase &
 
 export function resourceFailed(data: ResourceFailedData): EventInput {
 	return { type: CLOUD_EVENTS.ResourceFailed, data };
-}
-
-export interface ResourceCompensationFailedData {
-	deploymentId: string;
-	resourceId: string;
-	reason: string;
-	outcome: "destroy-failed" | "destroy-outcome-unknown";
-}
-
-export function resourceCompensationFailed(
-	data: ResourceCompensationFailedData,
-): EventInput {
-	return { type: CLOUD_EVENTS.ResourceCompensationFailed, data };
-}
-
-export interface IncidentEscalationRequestedData {
-	deploymentId: string;
-	resourceId: string;
-	reason: "compensation-failed";
-}
-
-export function incidentEscalationRequested(
-	data: IncidentEscalationRequestedData,
-): EventInput {
-	return { type: CLOUD_EVENTS.IncidentEscalationRequested, data };
 }
 
 export interface ResourceReconciledData {
@@ -352,6 +339,7 @@ export function execSucceeded(data: ExecSucceededData): EventInput {
 
 export interface DeploymentDeployedData {
 	deploymentId: string;
+	setId: string;
 	resourceIds: string[];
 }
 
@@ -361,6 +349,8 @@ export function deploymentDeployed(data: DeploymentDeployedData): EventInput {
 
 export interface DeploymentRolledBackData {
 	deploymentId: string;
+	targetSetId: string;
+	reason: string;
 }
 
 export function deploymentRolledBack(

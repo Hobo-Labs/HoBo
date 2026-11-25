@@ -1,3 +1,7 @@
+// The fan-out scheduler (D21, I20), pure: given the plan and every Camp's
+// slot, which Camps may be tried next, whether the failure budget is
+// exceeded, and whether the run is complete. No clock, no I/O, no RNG; the
+// controller feeds it folded journal state and acts on the answer.
 import type { FanoutGroup, FanoutPlan } from "./policy.js";
 
 export type SlotState =
@@ -10,12 +14,19 @@ export type SlotState =
 export type SlotView = Readonly<{ campId: string; state: SlotState }>;
 
 export type Schedule = Readonly<{
+	/** Camps to try in order: pending first, then deferred retries. Each try needs a free slot. */
 	candidates: readonly string[];
+	/** Free concurrency slots right now (max_concurrency − in flight). */
 	free: number;
+	/** Index (in run order) of the group the run is working on. */
 	groupIndex: number;
+	/** True when nothing is pending or in flight; deferred Camps may remain. */
 	complete: boolean;
+	/** True while no Camp is in flight: the only point a supersede may land. */
 	atGroupBoundary: boolean;
+	/** A mandatory group has a failed Camp: remaining groups never start. */
 	mandatoryFailed: boolean;
+	/** Mandatory groups are not yet all succeeded: only they may run. */
 	mandatoryGate: boolean;
 }>;
 
@@ -46,6 +57,7 @@ function busy(
 	});
 }
 
+/** Failures counted against the budget: failed Camps since the last resume. Deferred never count (I20). */
 export function failuresAgainstBudget(
 	slots: ReadonlyMap<string, SlotView>,
 	baseline: number,
@@ -96,6 +108,7 @@ export function schedule(
 		return { ...base, candidates: [] };
 
 	if (options.catchUp) {
+		// After completion only late entrants move: deferred Camps catch up.
 		return {
 			...base,
 			candidates: (mandatoryGate ? mandatoryCamps : all).filter(
@@ -106,6 +119,7 @@ export function schedule(
 
 	let window: readonly FanoutGroup[];
 	if (plan.strategy === "PROGRESSIVE_PER_GROUP") {
+		// One group at a time; earlier groups' deferred Camps retry alongside.
 		window = activeIndex < 0 ? scope : scope.slice(0, activeIndex + 1);
 	} else {
 		window = scope;

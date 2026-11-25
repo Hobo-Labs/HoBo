@@ -6,6 +6,17 @@ import type {
 } from "../plan-types.js";
 import type { ResourceDefinition } from "../registry/catalog.js";
 
+// E19 placement-constraint evaluation. Placement
+// criteria are HARD, deterministic candidate filters applied between
+// capability negotiation and objective ranking, so the lexicographic
+// `specificity → priority → objective → definition id` ranking (ADR-0033,
+// ADR-0088) is preserved untouched among the survivors. The vocabulary records
+// what the Planner PLANS; spread/anti-affinity EXECUTION stays delegated to
+// wadm (adr/01-architecture-core.md:419).
+
+// A placement already decided earlier in the same plan pass — the context
+// affinity/anti-affinity/spread rules evaluate against. Deterministic because
+// the Planner visits intents in the byte-stable lowered order.
 export interface DecidedPlacement {
 	resource: string;
 	port: string;
@@ -15,11 +26,6 @@ export interface DecidedPlacement {
 
 export interface PlacementContext {
 	placements: DecidedPlacement[];
-}
-
-interface EligibleRegions {
-	regions: string[];
-	rejection?: string;
 }
 
 export function emptyPlacementContext(): PlacementContext {
@@ -32,6 +38,9 @@ function parseNumber(raw: string | undefined): number | undefined {
 	return Number.isFinite(value) ? value : undefined;
 }
 
+// Resolve a selector key to the candidate's advertised values. Well-known keys
+// map onto the Resource Definition record; any other key reads `key=value`
+// entries (or the bare token, for `exists`) from the definition's features.
 function resolveProperty(def: ResourceDefinition, key: string): string[] {
 	if (key === "region") return [...def.regions];
 	if (key === "provider") return [def.providerId];
@@ -57,6 +66,7 @@ function numericCompare(
 	});
 }
 
+// Evaluate one property selector; returns a rejection reason or undefined.
 export function selectorRejection(
 	def: ResourceDefinition,
 	selector: PlacementPropertySelector,
@@ -110,6 +120,9 @@ function targetsOf(
 	return context.placements.filter((p) => p.port === rule.targetPort);
 }
 
+// Evaluate one affinity/anti-affinity rule against the placements already
+// decided this pass. A rule referencing a class with no decided placement yet
+// is vacuously satisfied (deterministic, given the byte-stable intent order).
 export function affinityRejection(
 	def: ResourceDefinition,
 	rule: PlacementAffinityRule,
@@ -131,6 +144,8 @@ export function affinityRejection(
 		}
 		return undefined;
 	}
+	// scope === "region": co-location is judged on advertised regions; the
+	// concrete region choice happens in pickPlacementRegion.
 	if (targetRegions.size === 0) return undefined;
 	const overlap = def.regions.some((region) => targetRegions.has(region));
 	const hasEscapeRegion = def.regions.some(
@@ -145,82 +160,27 @@ export function affinityRejection(
 	return undefined;
 }
 
+// Full pre-ranking placement verdict for one candidate: first failing
+// selector/affinity reason, or undefined when the candidate survives.
 export function placementRejection(
 	def: ResourceDefinition,
 	criteria: PlacementCriteria,
 	context: PlacementContext,
-	region?: string,
 ): string | undefined {
-	return eligibleRegions(def, criteria, context, region).rejection;
-}
-
-function eligibleRegions(
-	def: ResourceDefinition,
-	criteria: PlacementCriteria,
-	context: PlacementContext,
-	requestedRegion?: string,
-): EligibleRegions {
-	let regions = [...def.regions].sort();
-	if (requestedRegion !== undefined) {
-		if (!regions.includes(requestedRegion)) {
-			return {
-				regions: [],
-				rejection: `placement: requested region ${requestedRegion} is not advertised by ${def.id}`,
-			};
-		}
-		regions = [requestedRegion];
-	}
 	for (const selector of criteria.selectors) {
-		if (selector.key !== "region") {
-			const reason = selectorRejection(def, selector);
-			if (reason !== undefined) return { regions: [], rejection: reason };
-			continue;
-		}
-		const candidates = regions.filter(
-			(region) =>
-				selectorRejection({ ...def, regions: [region] }, selector) ===
-				undefined,
-		);
-		if (candidates.length === 0) {
-			return {
-				regions: [],
-				rejection:
-					selectorRejection({ ...def, regions }, selector) ??
-					`placement: selector region ${selector.op} [${selector.values.join(", ")}] leaves no eligible region`,
-			};
-		}
-		regions = candidates;
+		const reason = selectorRejection(def, selector);
+		if (reason !== undefined) return reason;
 	}
 	for (const rule of criteria.affinities) {
-		if (rule.scope !== "region") {
-			const reason = affinityRejection(def, rule, context);
-			if (reason !== undefined) return { regions: [], rejection: reason };
-			continue;
-		}
-		const targetRegions = new Set(
-			targetsOf(rule, context)
-				.map((target) => target.region)
-				.filter((region) => region !== ""),
-		);
-		if (targetRegions.size === 0) continue;
-		const candidates = regions.filter((region) =>
-			rule.mode === "affinity"
-				? targetRegions.has(region)
-				: !targetRegions.has(region),
-		);
-		if (candidates.length === 0) {
-			return {
-				regions: [],
-				rejection:
-					affinityRejection({ ...def, regions }, rule, context) ??
-					`placement: ${rule.mode} to class ${rule.targetPort} leaves no eligible region`,
-			};
-		}
-		regions = candidates;
+		const reason = affinityRejection(def, rule, context);
+		if (reason !== undefined) return reason;
 	}
-	return { regions };
+	return undefined;
 }
 
+// Spread across yards, evaluated as a deterministic hard filter: keep only the
+// candidates whose provider currently carries the minimum number of same-class
+// placements. Ranking among the survivors stays lexicographic (ADR-0033).
 export function spreadSurvivors(
 	candidates: ResourceDefinition[],
 	intent: ResourceIntent,
@@ -237,20 +197,37 @@ export function spreadSurvivors(
 	return candidates.filter((c) => usage(c.providerId) === min);
 }
 
+// Deterministic region choice honoring region-scoped affinity/anti-affinity
+// and region spread. Falls back to the pre-E19 rule (lexicographically
+// smallest advertised region) when no criterion narrows the set.
 export function pickPlacementRegion(
 	intent: ResourceIntent,
 	def: ResourceDefinition,
 	context: PlacementContext,
 ): string {
+	if (intent.region) return intent.region;
+	let regions = [...def.regions].sort();
 	const criteria = intent.placement;
-	let { regions } = eligibleRegions(
-		def,
-		criteria ?? { selectors: [], affinities: [] },
-		context,
-		intent.region,
-	);
+	if (criteria === undefined) return regions[0] ?? "";
 
-	if (criteria?.spread?.dimension === "region" && regions.length > 1) {
+	for (const rule of criteria.affinities) {
+		if (rule.scope !== "region") continue;
+		const targetRegions = new Set(
+			targetsOf(rule, context)
+				.map((t) => t.region)
+				.filter((r) => r !== ""),
+		);
+		if (targetRegions.size === 0) continue;
+		if (rule.mode === "affinity") {
+			const kept = regions.filter((region) => targetRegions.has(region));
+			if (kept.length > 0) regions = kept;
+		} else {
+			const kept = regions.filter((region) => !targetRegions.has(region));
+			if (kept.length > 0) regions = kept;
+		}
+	}
+
+	if (criteria.spread?.dimension === "region" && regions.length > 1) {
 		const usage = (region: string): number =>
 			context.placements.filter(
 				(p) => p.port === intent.port && p.region === region,

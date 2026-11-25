@@ -10,7 +10,7 @@ tags: [hobo, cd, runbook, inventory]
 Conditions, claims, taints and Camp sets. This page is assembled from the **Runbook** section of `packages/cd/src/inventory/README.md`,
 which stays the source of truth; update that section and re-assemble. The
 symptom index is [index.md](./index.md); the design is
-[continuous-delivery.md](urn:hobo:requirement:continuous-delivery).
+[continuous-delivery.md](../../design/continuous-delivery.md).
 
 ## Procedures
 

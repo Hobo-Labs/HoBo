@@ -1,0 +1,24 @@
+{
+  "consumer": { "name": "control-yard-exp-proof" },
+  "provider": { "name": "@hobo/control-api" },
+  "interactions": [
+    {
+      "description": "yard snapshot for experience proof fixtures",
+      "request": {
+        "method": "GET",
+        "path": "/v1/yard/snapshot",
+        "query": { "stationId": "station:local" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "data": {
+            "occupancy": { "stationId": "station:local", "status": "open" }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

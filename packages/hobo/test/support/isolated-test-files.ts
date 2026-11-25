@@ -1,8 +1,17 @@
+/**
+ * Test files that change process-wide state: environment variables, a global
+ * such as `fetch`, the working directory, or a vitest mock or spy. They keep
+ * vitest's per-file module isolation. Every other hobo test file shares its
+ * worker's module graph, so the CLI is composed once per worker instead of
+ * once per file (about 105 s of import time across the suite).
+ *
+ * `test/isolated-test-files.test.ts` fails when a file starts changing that
+ * state without being listed here, or stays listed after it stops.
+ */
 export const ISOLATED_TEST_FILES = [
 	"test/auth-md-https.test.ts",
-	"test/bare-metal-mesh.test.ts",
+	"test/bare-metal-router.test.ts",
 	"test/bare-metal-yard.test.ts",
-	"test/binding-delivery-startup.test.ts",
 	"test/ci-relay-delivery.test.ts",
 	"test/ci-relay-deploy.test.ts",
 	"test/ci-relay-prebuilt.test.ts",
@@ -13,14 +22,7 @@ export const ISOLATED_TEST_FILES = [
 	"test/evals/ceremony-explorer.eval.test.ts",
 	"test/evals/mcp-store-choice.eval.test.ts",
 	"test/import-command.test.ts",
-	"test/local-component-order.test.ts",
-	"test/local-host-environment.test.ts",
-	"test/local-host-startup-failure.test.ts",
-	"test/local-serve-scope.test.ts",
-	"test/logs-command.test.ts",
-	"test/multi-host-startup-env.test.ts",
 	"test/pinned-git-source.test.ts",
-	"test/quarantine-diagnostics.test.ts",
 	"test/serve-control-command.test.ts",
 	"test/vercel-deploy.test.ts",
 	"test/vercel-git-deploy.test.ts",

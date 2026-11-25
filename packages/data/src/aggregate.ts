@@ -1,8 +1,6 @@
-import { create } from "@bufbuild/protobuf";
 import type {
 	AppendOptions,
 	DurableEffectInput,
-	DurableEffectReceipt,
 	DurableEventStore,
 	EventEnvelope,
 	EventInput,
@@ -10,21 +8,14 @@ import type {
 	PrincipalRef,
 	QuarantineRecord,
 } from "@hobo/core";
-import { EVENTSTORE_LIMITS, parseDurableEffect } from "@hobo/core";
 
-import {
-	AggregateQuarantinedEventDataSchema,
-	type QuarantineReprocessFinding,
-} from "./_generated/data_pb.js";
 import type { ActorHost } from "./actor-host.js";
 import {
 	AggregateConflictError,
 	AggregateInvariantError,
 	AggregateStaleFenceError,
-	DurableEffectUnavailableError,
 	isOptimisticConflict,
 	isStaleFenceError,
-	UnpersistedQuarantineError,
 } from "./errors.js";
 import {
 	createActorActivatedEvent,
@@ -32,24 +23,19 @@ import {
 	createActorStateAppendedEvent,
 	type DataFact,
 } from "./events.js";
-import {
-	AGGREGATE_QUARANTINE_EVENT,
-	type Evolve,
-	type FoldFailureClassifier,
-	foldEvents,
-} from "./fold.js";
+import { type Evolve, foldEvents } from "./fold.js";
 import {
 	hasFunctionTag,
 	type Inspectable,
 	isJsonString,
 	type JsonObject,
 } from "./json.js";
-import {
-	parseAggregateQuarantine,
-	parseEventStoreQuarantine,
-	quarantineSequence,
-} from "./quarantine-facts.js";
+import type { UpcasterRegistry } from "./upcaster.js";
 
+// Emit surface handed to a command: it stages past-tense facts to append. It is
+// the typed, domain-write sibling of an actor signal — no reads, no side effects.
+// stageEffect() records durable side effects for the same transaction as append
+// when the store implements DurableEventStore.commit; decide() stays pure (no I/O).
 export interface EventEmitOptions {
 	v?: number;
 }
@@ -68,9 +54,11 @@ export type Decide<S, C> = (
 export interface AggregateDefinition<S, C> {
 	name: string;
 	initialState: S;
+	// Write-model fold: applied on load to derive authoritative state.
 	evolve: Evolve<S>;
+	// Invariant check + fact production. Throw AggregateInvariantError to reject.
 	decide: Decide<S, C>;
-	classifyFailure?: FoldFailureClassifier;
+	upcasters?: UpcasterRegistry;
 }
 
 export interface CommandContext {
@@ -85,11 +73,14 @@ export interface CommandContext {
 
 export interface CommandResult<S> {
 	streamId: string;
+	// The seq of the last appended fact — the client advances its subscriptions to
+	// >= this before the write acks (reads-your-writes, wired in @hobo/events).
 	seq: number;
 	state: S;
 	appended: EventEnvelope[];
-	effects: readonly DurableEffectReceipt[];
 	fenceToken: bigint;
+	// Emitted actor.* lifecycle facts for this command (Activated/StateAppended/
+	// Passivated). A durable host persists these; tests assert on them.
 	lifecycle: DataFact[];
 	quarantined: QuarantineRecord[];
 }
@@ -101,11 +92,9 @@ export interface AggregateDeps {
 
 export interface Aggregate<S, C> {
 	readonly name: string;
+	// Load the write-model fold for a stream (authoritative state + next seq).
 	load(store: EventStore, streamId: string): Promise<{ state: S; seq: number }>;
-	inspectQuarantines(
-		store: EventStore,
-		streamId: string,
-	): Promise<QuarantineReprocessFinding[]>;
+	// Run a command inside the aggregate's single-writer boundary.
 	execute(
 		deps: AggregateDeps,
 		streamId: string,
@@ -136,6 +125,7 @@ function parseFactType(type: Inspectable): string {
 
 function isDurableEventStore(store: EventStore): store is DurableEventStore {
 	if (!("commit" in store)) return false;
+	// SAFETY: DurableEventStore is the EventStore subtype that exposes commit(); tag check proves it is callable.
 	const commit = (store as DurableEventStore).commit;
 	return hasFunctionTag(commit);
 }
@@ -146,19 +136,14 @@ export function defineAggregate<S, C>(
 	if (!definition.name) throw new TypeError("aggregate name is required");
 
 	const foldSpec = {
-		name: definition.name,
 		initialState: definition.initialState,
 		evolve: definition.evolve,
-		...(definition.classifyFailure === undefined
-			? undefined
-			: { classifyFailure: definition.classifyFailure }),
+		upcasters: definition.upcasters,
 	};
 
 	async function load(store: EventStore, streamId: string) {
 		const events = await readStream(store, streamId);
 		const outcome = foldEvents(events, foldSpec);
-		if (outcome.quarantined.length > 0)
-			throw new UnpersistedQuarantineError(streamId, outcome.quarantined);
 		return { state: outcome.state, seq: outcome.seq };
 	}
 
@@ -167,56 +152,9 @@ export function defineAggregate<S, C>(
 
 		load,
 
-		async inspectQuarantines(store, streamId) {
-			const events = await readStream(store, streamId);
-			const bySeq = new Map(events.map((event) => [event.seq, event]));
-			for (const record of events) {
-				if (record.type === AGGREGATE_QUARANTINE_EVENT) {
-					const data = parseAggregateQuarantine(record);
-					if (data.fold !== definition.name) continue;
-					const target = bySeq.get(quarantineSequence(data.offendingSeq));
-					if (
-						!target ||
-						target.type === AGGREGATE_QUARANTINE_EVENT ||
-						target.type.endsWith(".Quarantined") ||
-						target.id !== data.offendingEventId ||
-						target.type !== data.offendingType ||
-						target.seq >= record.seq
-					) {
-						throw new Error(
-							"aggregate quarantine target does not match the source event",
-						);
-					}
-				} else if (record.type.endsWith(".Quarantined")) {
-					const data = parseEventStoreQuarantine(record);
-					const target = bySeq.get(quarantineSequence(data.offendingSeq));
-					if (
-						!target ||
-						target.type === AGGREGATE_QUARANTINE_EVENT ||
-						target.type.endsWith(".Quarantined") ||
-						target.seq >= record.seq ||
-						(data.offendingType && data.offendingType !== target.type) ||
-						(record.meta?.quarantines !== undefined &&
-							record.meta.quarantines !== target.id)
-					) {
-						throw new Error(
-							"event-store quarantine target does not match the source event",
-						);
-					}
-				}
-			}
-			const outcome = foldEvents(events, {
-				...foldSpec,
-				inspectQuarantines: true,
-			});
-			if (outcome.quarantined.length > 0) {
-				throw new UnpersistedQuarantineError(streamId, outcome.quarantined);
-			}
-			return outcome.reprocessCandidates ?? [];
-		},
-
 		async execute(deps, streamId, command, context) {
 			const holderId = context.holderId ?? `${definition.name}:${streamId}`;
+			// Acquire the single-writer lease + fencing token for this aggregate.
 			const lease = deps.actorHost.acquire(streamId, { holderId });
 			const lifecycle: DataFact[] = [
 				createActorActivatedEvent({
@@ -228,9 +166,41 @@ export function defineAggregate<S, C>(
 			let finalSeq = 0;
 
 			try {
+				// Fold to authoritative write-model state at the current seq.
 				const events = await readStream(deps.store, streamId);
 				const outcome = foldEvents(events, foldSpec);
-				finalSeq = outcome.seq;
+
+				// Run the command: invariant check against current state + emit.
+				const staged: EventInput[] = [];
+				const stagedEffects: DurableEffectInput[] = [];
+				const emitter: CommandEmitter = {
+					emit(type, data, options) {
+						staged.push({
+							type: parseFactType(type),
+							v: options?.v ?? 1,
+							data: data ?? EMPTY_EVENT_DATA,
+						});
+					},
+					stageEffect(effect) {
+						stagedEffects.push(effect);
+					},
+				};
+				definition.decide(outcome.state, command, emitter);
+
+				if (staged.length === 0 && stagedEffects.length === 0) {
+					finalSeq = outcome.seq;
+					return {
+						streamId,
+						seq: outcome.seq,
+						state: outcome.state,
+						appended: [],
+						fenceToken: lease.fenceToken,
+						lifecycle,
+						quarantined: outcome.quarantined,
+					};
+				}
+
+				// Append under optimistic concurrency + actor fence.
 				const appendOptions: AppendOptions = {
 					expectedSeq: outcome.seq,
 					actor: context.actor,
@@ -245,136 +215,7 @@ export function defineAggregate<S, C>(
 					appendOptions.correlationId = context.correlationId;
 				if (context.lane !== undefined) appendOptions.lane = context.lane;
 
-				const quarantined: QuarantineRecord[] = [];
-				async function persistQuarantines(
-					candidates: readonly QuarantineRecord[],
-					source: readonly EventEnvelope[],
-				): Promise<EventEnvelope[]> {
-					const eventsBySeq = new Map(
-						source.map((event) => [event.seq, event]),
-					);
-					const quarantineInputs: EventInput[] = candidates.map((entry) => {
-						const offending = eventsBySeq.get(entry.offendingSeq);
-						if (!offending)
-							throw new Error("quarantine target is missing from the stream");
-						const data = create(AggregateQuarantinedEventDataSchema, {
-							offendingSeq: BigInt(offending.seq),
-							offendingType: offending.type,
-							offendingEventId: offending.id,
-							fold: definition.name,
-							foldKind: "aggregate",
-							reason: entry.reason,
-						});
-						return {
-							type: AGGREGATE_QUARANTINE_EVENT,
-							data: {
-								offendingSeq: Number(data.offendingSeq),
-								offendingType: data.offendingType,
-								offendingEventId: data.offendingEventId,
-								fold: data.fold,
-								foldKind: data.foldKind,
-								reason: data.reason,
-							},
-							meta: {
-								quarantines: offending.id,
-								idempotencyKey: `aggregate-quarantine:${definition.name}:${offending.id}`,
-							},
-						};
-					});
-					const persisted: EventEnvelope[] = [];
-					for (
-						let offset = 0;
-						offset < quarantineInputs.length;
-						offset += EVENTSTORE_LIMITS.maxBatchEvents
-					) {
-						const batch = quarantineInputs.slice(
-							offset,
-							offset + EVENTSTORE_LIMITS.maxBatchEvents,
-						);
-						try {
-							const result = await deps.store.append(
-								streamId,
-								batch,
-								appendOptions,
-							);
-							if (result.appended.length !== batch.length)
-								throw new AggregateConflictError(
-									streamId,
-									appendOptions.expectedSeq,
-								);
-							persisted.push(...result.appended);
-							appendOptions.expectedSeq =
-								result.appended.at(-1)?.seq ?? appendOptions.expectedSeq;
-							finalSeq = appendOptions.expectedSeq;
-						} catch (error) {
-							if (error instanceof Error && isOptimisticConflict(error))
-								throw new AggregateConflictError(
-									streamId,
-									appendOptions.expectedSeq,
-								);
-							if (error instanceof Error && isStaleFenceError(error))
-								throw new AggregateStaleFenceError(streamId);
-							throw error;
-						}
-					}
-					for (const [index, entry] of candidates.entries()) {
-						const recorded = persisted[index];
-						if (!recorded)
-							throw new Error("quarantine append did not return its event");
-						quarantined.push({
-							...entry,
-							type: AGGREGATE_QUARANTINE_EVENT,
-							quarantineSeq: recorded.seq,
-						});
-					}
-					return persisted;
-				}
-				const quarantineEvents = await persistQuarantines(
-					outcome.quarantined,
-					events,
-				);
-
-				const staged: EventInput[] = [];
-				const stagedEffects: DurableEffectInput[] = [];
-				const emitter: CommandEmitter = {
-					emit(type, data, options) {
-						staged.push({
-							type: parseFactType(type),
-							v: options?.v ?? 1,
-							data: data ?? EMPTY_EVENT_DATA,
-						});
-					},
-					stageEffect(effect) {
-						stagedEffects.push(parseDurableEffect(effect));
-					},
-				};
-				definition.decide(outcome.state, command, emitter);
-				if (stagedEffects.length > 0 && !isDurableEventStore(deps.store))
-					throw new DurableEffectUnavailableError();
-
-				if (staged.length === 0 && stagedEffects.length === 0) {
-					if (quarantineEvents.length > 0)
-						lifecycle.push(
-							createActorStateAppendedEvent({
-								streamId,
-								seq: finalSeq,
-								fenceToken: lease.fenceToken,
-							}),
-						);
-					return {
-						streamId,
-						seq: finalSeq,
-						state: outcome.state,
-						appended: quarantineEvents,
-						effects: [],
-						fenceToken: lease.fenceToken,
-						lifecycle,
-						quarantined,
-					};
-				}
-
 				let appended: EventEnvelope[];
-				let effects: readonly DurableEffectReceipt[] = [];
 				try {
 					if (isDurableEventStore(deps.store)) {
 						const result = await deps.store.commit({
@@ -384,7 +225,8 @@ export function defineAggregate<S, C>(
 							effects: stagedEffects,
 						});
 						appended = result.appended;
-						effects = result.effects;
+					} else if (staged.length === 0) {
+						appended = [];
 					} else {
 						const result = await deps.store.append(
 							streamId,
@@ -395,10 +237,7 @@ export function defineAggregate<S, C>(
 					}
 				} catch (error) {
 					if (error instanceof Error && isOptimisticConflict(error)) {
-						throw new AggregateConflictError(
-							streamId,
-							appendOptions.expectedSeq,
-						);
+						throw new AggregateConflictError(streamId, outcome.seq);
 					}
 					if (error instanceof Error && isStaleFenceError(error)) {
 						throw new AggregateStaleFenceError(streamId);
@@ -406,41 +245,35 @@ export function defineAggregate<S, C>(
 					throw error;
 				}
 
-				appendOptions.expectedSeq =
-					appended.at(-1)?.seq ?? appendOptions.expectedSeq;
-				finalSeq = appendOptions.expectedSeq;
-				const updated = foldEvents(appended, {
-					...foldSpec,
-					initialState: outcome.state,
-				});
-				const newQuarantines = await persistQuarantines(
-					updated.quarantined,
-					appended,
-				);
-				const newSeq = appendOptions.expectedSeq;
+				// Fold the freshly appended facts onto state to return current value.
+				let state = outcome.state;
+				for (const event of appended) {
+					const upcast = definition.upcasters
+						? definition.upcasters.upcast(event)
+						: event;
+					state = definition.evolve(state, upcast);
+				}
+				const lastAppended = appended.at(-1);
+				const newSeq =
+					lastAppended === undefined ? outcome.seq : lastAppended.seq;
+
 				finalSeq = newSeq;
-				if (
-					quarantineEvents.length > 0 ||
-					appended.length > 0 ||
-					newQuarantines.length > 0
-				)
-					lifecycle.push(
-						createActorStateAppendedEvent({
-							streamId,
-							seq: newSeq,
-							fenceToken: lease.fenceToken,
-						}),
-					);
+				lifecycle.push(
+					createActorStateAppendedEvent({
+						streamId,
+						seq: newSeq,
+						fenceToken: lease.fenceToken,
+					}),
+				);
 
 				return {
 					streamId,
 					seq: newSeq,
-					state: updated.state,
-					appended: [...quarantineEvents, ...appended, ...newQuarantines],
-					effects: [...effects],
+					state,
+					appended,
 					fenceToken: lease.fenceToken,
 					lifecycle,
-					quarantined,
+					quarantined: outcome.quarantined,
 				};
 			} finally {
 				lease.release();

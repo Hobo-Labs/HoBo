@@ -1,3 +1,9 @@
+/**
+ * Pure PNG decoding utilities — shared between the extension host, Vite build
+ * scripts, and future standalone backend.
+ *
+ * No VS Code dependency. Only uses pngjs and shared constants.
+ */
 
 import { PNG } from 'pngjs';
 
@@ -26,11 +32,22 @@ import {
 } from './constants.js';
 import type { CharacterDirectionSprites, PetSpriteFrames } from './types.js';
 
+// ── Sprite decoding ──────────────────────────────────────────
 
+/**
+ * Strip trailing bytes after the PNG IEND chunk.
+ *
+ * Aseprite-generated PNGs sometimes include trailing null bytes after IEND,
+ * which causes `pngjs` to throw. The IEND chunk layout is:
+ *   4 bytes length (0x00000000) + 4 bytes type ('IEND') + 4 bytes CRC = 12 bytes
+ * Some encoders emit ≤4 bytes of trailing garbage, so we scan from `buf.length - 8`
+ * (not `-12`) to find the IEND type marker.
+ */
 function sanitizePngBuffer(buf: Buffer): Buffer {
+  // IEND type bytes: 0x49 0x45 0x4E 0x44 ('I' 'E' 'N' 'D')
   for (let i = buf.length - 8; i >= 8; i--) {
     if (buf[i] === 0x49 && buf[i + 1] === 0x45 && buf[i + 2] === 0x4e && buf[i + 3] === 0x44) {
-      const endPos = i + 4 + 4;
+      const endPos = i + 4 + 4; // past type bytes + 4-byte CRC
       if (buf.length > endPos) {
         return buf.subarray(0, endPos);
       }
@@ -40,6 +57,10 @@ function sanitizePngBuffer(buf: Buffer): Buffer {
   return buf;
 }
 
+/**
+ * Convert a PNG buffer to SpriteData (2D array of hex color strings).
+ * '' = transparent, '#RRGGBB' = opaque, '#RRGGBBAA' = semi-transparent.
+ */
 export function pngToSpriteData(pngBuffer: Buffer, width: number, height: number): string[][] {
   try {
     const png = PNG.sync.read(sanitizePngBuffer(pngBuffer));
@@ -77,6 +98,10 @@ export function pngToSpriteData(pngBuffer: Buffer, width: number, height: number
   }
 }
 
+/**
+ * Parse a single wall PNG (64×128, 4×4 grid of 16×32 pieces) into 16 bitmask sprites.
+ * Piece at bitmask M: col = M % 4, row = floor(M / 4).
+ */
 export function parseWallPng(pngBuffer: Buffer): string[][][] {
   const png = PNG.sync.read(sanitizePngBuffer(pngBuffer));
   const sprites: string[][][] = [];
@@ -101,6 +126,16 @@ export function parseWallPng(pngBuffer: Buffer): string[][][] {
   return sprites;
 }
 
+/**
+ * Parse a single carpet PNG (64×64, 4×4 grid of 16×16 pieces) into 16
+ * marching-squares sprites. The piece at case N is located at
+ * col = N % 4, row = floor(N / 4); piece 0 (empty junction) is included
+ * but the renderer skips it.
+ *
+ * Returns sprites[msCase][row][col] of hex strings. Pixel encoding matches
+ * the floor and wall convention: '' = transparent, '#RRGGBB' = opaque,
+ * '#RRGGBBAA' = semi-transparent.
+ */
 export function parseCarpetPng(pngBuffer: Buffer): string[][][] {
   const png = PNG.sync.read(pngBuffer);
   const sprites: string[][][] = [];
@@ -125,6 +160,10 @@ export function parseCarpetPng(pngBuffer: Buffer): string[][][] {
   return sprites;
 }
 
+/**
+ * Decode a single character PNG (112×96) into direction-keyed frame arrays.
+ * Each PNG has 3 direction rows (down, up, right) × 7 frames (16×32 each).
+ */
 export function decodeCharacterPng(pngBuffer: Buffer): CharacterDirectionSprites {
   const png = PNG.sync.read(sanitizePngBuffer(pngBuffer));
   const charData: CharacterDirectionSprites = { down: [], up: [], right: [] };
@@ -157,10 +196,26 @@ export function decodeCharacterPng(pngBuffer: Buffer): CharacterDirectionSprites
   return charData;
 }
 
+/**
+ * Decode a single floor tile PNG (16×16 grayscale pattern).
+ */
 export function decodeFloorPng(pngBuffer: Buffer): string[][] {
   return pngToSpriteData(pngBuffer, FLOOR_TILE_SIZE, FLOOR_TILE_SIZE);
 }
 
+/**
+ * Decode a single pet PNG (96×96) into direction- and state-keyed frame arrays.
+ *
+ * Layout (52be7e8 spec):
+ *   Row 0 (y=0..32):   6 frames × 16w — walkDown[0..2] then idleDown[0..2]
+ *   Row 1 (y=32..64):  6 frames × 16w — walkUp[0..2]   then idleUp[0..2]
+ *   Row 2 (y=64..96):  3 frames × 32w — walkRight[0..2]
+ *
+ * walkLeft / idleLeft are derived at render time by horizontal flip (webview).
+ *
+ * Safe-fallback: returns all-empty frames on any decode error so a broken
+ * spritesheet doesn't abort the pet asset broadcast.
+ */
 export function decodePetPng(pngBuffer: Buffer): PetSpriteFrames {
   try {
     const png = PNG.sync.read(sanitizePngBuffer(pngBuffer));
@@ -187,6 +242,7 @@ export function decodePetPng(pngBuffer: Buffer): PetSpriteFrames {
       return sprite;
     }
 
+    // Row 0 (y=0): 6 frames @ 16w — walkDown[0..2] + idleDown[0..2]
     const walkDown: string[][][] = [];
     for (let f = 0; f < PET_WALK_FRAMES_VERT; f++) {
       walkDown.push(extractFrame(f * PET_FRAME_W_SMALL, 0, PET_FRAME_W_SMALL, PET_FRAME_H));
@@ -203,6 +259,7 @@ export function decodePetPng(pngBuffer: Buffer): PetSpriteFrames {
       );
     }
 
+    // Row 1 (y=32): 6 frames @ 16w — walkUp[0..2] + idleUp[0..2]
     const walkUp: string[][][] = [];
     for (let f = 0; f < PET_WALK_FRAMES_VERT; f++) {
       walkUp.push(extractFrame(f * PET_FRAME_W_SMALL, PET_FRAME_H, PET_FRAME_W_SMALL, PET_FRAME_H));
@@ -219,6 +276,7 @@ export function decodePetPng(pngBuffer: Buffer): PetSpriteFrames {
       );
     }
 
+    // Row 2 (y=64): 3 frames @ 32w — walkRight[0..2]
     const walkRight: string[][][] = [];
     for (let f = 0; f < PET_WALK_FRAMES_HORIZ; f++) {
       walkRight.push(

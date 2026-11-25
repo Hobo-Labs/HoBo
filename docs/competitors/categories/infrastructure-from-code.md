@@ -36,4 +36,4 @@ HoBo's authoring surface is an IfC surface. This category is the most direct con
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)

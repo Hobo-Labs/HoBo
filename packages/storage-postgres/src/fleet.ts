@@ -37,14 +37,13 @@
  * itself). Sequences travel with their tables, so positions keep increasing
  * on the new writer.
  */
+
 import {
-	assignmentKey,
 	type ContinuityFleetPlan,
 	continuityBudgetCheck,
 	type FleetBudgetCheck,
 	type FleetFinancialModel,
-	readCurrentAssignment,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import type {
 	AppendOptions,
 	AppendResult,
@@ -62,10 +61,10 @@ import type {
 	Subscription,
 } from "@hobo/core";
 import {
-	FLEET_LOCK_CLASS,
-	type FleetBackend,
-	type FleetReconcileReport,
-	type FleetSchemaRole,
+	POSTGRES_FLEET_LOCK_CLASS,
+	type PostgresBackend,
+	type PostgresFleetReconcileReport,
+	type PostgresFleetSchemaRole,
 	parseFleetLayout,
 	readAssignmentRows,
 	reconcileFleet,
@@ -73,15 +72,16 @@ import {
 	type SqlSession,
 	sqlAssignmentRegister,
 } from "@hobo/data-postgres";
+import { assignmentKey, readCurrentAssignment } from "@hobo/fleet/assignment";
 import pg from "pg";
 
 import { POSTGRES_STORE_DEFAULTS, parsePostgresStoreConfig } from "./config.js";
 import { StoragePostgresError } from "./errors.js";
 import {
 	createFleetBackups,
-	type FleetBackup,
-	type FleetBackupOutcome,
-	type FleetBackups,
+	type PostgresFleetBackup,
+	type PostgresFleetBackupOutcome,
+	type PostgresFleetBackups,
 } from "./fleet-backups.js";
 import { parseSchemaName, quoteSchema } from "./identifiers.js";
 import {
@@ -136,8 +136,8 @@ export type PostgresFleetEventStoreOptions = Readonly<{
 }>;
 
 /** A tick's report, with the scheduled backup it took or skipped. */
-export type PostgresFleetTickReport = FleetReconcileReport &
-	Readonly<{ backup: FleetBackupOutcome | undefined }>;
+export type PostgresFleetTickReport = PostgresFleetReconcileReport &
+	Readonly<{ backup: PostgresFleetBackupOutcome | undefined }>;
 
 export interface PostgresFleetEventStore extends DurableEventStore {
 	/** One fleet tick: settle, copy, decide, act, then back up when due. */
@@ -145,7 +145,7 @@ export interface PostgresFleetEventStore extends DurableEventStore {
 	/** Whether the plan's backups have a member to be kept on. */
 	backupsPlaced(): boolean;
 	/** The scheduled backups held, newest first (none without a schedule). */
-	backups(): Promise<readonly FleetBackup[]>;
+	backups(): Promise<readonly PostgresFleetBackup[]>;
 	/**
 	 * Copy a backup (the newest by default) into a member's journal. The
 	 * member the register names writer is refused; restore to a standby first
@@ -154,7 +154,7 @@ export interface PostgresFleetEventStore extends DurableEventStore {
 	restore(input: {
 		readonly into: string;
 		readonly name?: string;
-	}): Promise<FleetBackup>;
+	}): Promise<PostgresFleetBackup>;
 	/** The writer the store last resolved, if any. */
 	writer(): string | undefined;
 	end(): Promise<void>;
@@ -267,22 +267,24 @@ export function createPostgresFleetEventStore(
 	const pools = new Map<string, PgPoolLike>();
 	const backupPools = new Set<PgPoolLike>();
 	const stores = new Map<string, PostgresEventStore>();
-	const backends: FleetBackend[] = options.members.map((member) => {
+	const backends: PostgresBackend[] = options.members.map((member) => {
 		const pool = (options.pool ?? memberPool)(member, schema);
 		pools.set(member.id, pool);
 		return { id: member.id, executor: executorOf(pool) };
 	});
-	const witnesses: FleetBackend[] = (options.witnesses ?? []).map((member) => {
-		const pool = (options.pool ?? memberPool)(member, schema);
-		pools.set(member.id, pool);
-		return { id: member.id, executor: executorOf(pool) };
-	});
+	const witnesses: PostgresBackend[] = (options.witnesses ?? []).map(
+		(member) => {
+			const pool = (options.pool ?? memberPool)(member, schema);
+			pools.set(member.id, pool);
+			return { id: member.id, executor: executorOf(pool) };
+		},
+	);
 	const register = sqlAssignmentRegister([...backends, ...witnesses], layout);
 	const backupMember =
 		options.plan.backups.everyMs > 0
 			? (options.backupTo ?? options.witnesses?.[0])
 			: undefined;
-	const backups: FleetBackups | undefined =
+	const backups: PostgresFleetBackups | undefined =
 		backupMember === undefined
 			? undefined
 			: createFleetBackups({
@@ -398,8 +400,8 @@ export function createPostgresFleetEventStore(
 	};
 
 	const ensureSchema = async (
-		backend: FleetBackend,
-		_role: FleetSchemaRole,
+		backend: PostgresBackend,
+		_role: PostgresFleetSchemaRole,
 	): Promise<void> => {
 		await storeFor(backend.id).ready();
 	};
@@ -431,6 +433,7 @@ export function createPostgresFleetEventStore(
 			graceMs: options.graceMs ?? 5_000,
 			ensureSchema,
 			checkBudget: continuityBudgetCheck(options.plan, options.checkBudget),
+			meter: undefined,
 			limits: undefined,
 			decidedBy: options.decidedBy,
 			now,
@@ -495,7 +498,7 @@ export function createPostgresFleetEventStore(
 					// lock. Hold it for the entire restore, not just the check.
 					const lock = await to.query(
 						"SELECT pg_try_advisory_xact_lock($1::int, hashtext($2))::text AS locked",
-						[FLEET_LOCK_CLASS, layout.assignmentTable],
+						[POSTGRES_FLEET_LOCK_CLASS, layout.assignmentTable],
 					);
 					if (lock.rows[0]?.locked !== "true")
 						throw unavailable(`${into} is busy with another fleet operation`);

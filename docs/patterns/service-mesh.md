@@ -38,12 +38,12 @@ minimal Rust proxy.
 
 HoBo takes the mesh's *goals* and relocates them; the mesh itself is an
 **optional adapter, never the model**
-(ADR-0143 non-goals; [ADR-0143 non-goals](urn:hobo:decision:adr-0143):
+(ADR-0143 non-goals; [ADR-0143 non-goals](../design/adr/07-portability-extensibility.md#adr-0143):
 no Istio/Envoy xDS/Linkerd/Gateway API types in `@hobo/core`):
 
 - **Identity/mTLS** → SPIFFE-shaped workload identity and token brokering are
   first-class in the identity plane
-  ([Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06)) — same SVID idea, no
+  ([Plan 6](../design/ai-native-agent-auth.md#plan-06)) — same SVID idea, no
   per-hop proxy required.
 - **The interposition point** → where a mesh interposes on network hops, HoBo
   interposes on **WIT links** (the membrane, ADR-0069): calls cross a typed

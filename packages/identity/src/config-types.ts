@@ -1,3 +1,7 @@
+/**
+ * Structural mirror of bindles ConfigSchema so identity does not depend on
+ * @hobo/bindles (identity stays inward of bindles).
+ */
 export type SecretSourceRank =
 	| "bound-resource"
 	| "provider-federation"
@@ -29,19 +33,3 @@ export type ConfigSchema = Readonly<{
 	fields: Readonly<Record<string, ConfigFieldDef>>;
 	schemaHash: `sha256:${string}`;
 }>;
-
-export function configSensitivity(field: {
-	readonly sensitive?: boolean;
-	readonly sensitivity?: ConfigSensitivity;
-}): ConfigSensitivity {
-	if (field.sensitive !== undefined && field.sensitive !== false)
-		return "sensitive";
-	if (field.sensitivity === undefined) return "public";
-	if (
-		field.sensitivity === "public" ||
-		field.sensitivity === "internal" ||
-		field.sensitivity === "sensitive"
-	)
-		return field.sensitivity;
-	return "sensitive";
-}

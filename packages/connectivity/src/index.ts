@@ -1,3 +1,4 @@
+// Re-export pure naming / tenancy from core so consumers can depend on one package.
 export {
 	createMeteringBus,
 	createUsageEvent,
@@ -26,30 +27,6 @@ export {
 	type ConnectivityHostResponse,
 	createConnectivityHostHandler,
 } from "./connectivity-host.js";
-export {
-	accessTokenHash,
-	createDpopJtiCache,
-	type DpopJtiCache,
-	type DpopKeyPair,
-	exportDpopPrivateJwk,
-	generateDpopKeyPair,
-	importDpopKeyPair,
-	type JsonWebKeyPublic,
-	type MintDpopProofInput,
-	mintDpopProof,
-	type VerifiedDpopProof,
-	verifyDpopProof,
-} from "./crypto/dpop.js";
-export {
-	DEFAULT_SVID_HMAC_SECRET,
-	generateSvidIssuerKeys,
-	type JwtSvidClaims,
-	type MintedJwtSvid,
-	mintJwtSvid,
-	resolveSvidHmacSecret,
-	spiffeIdForAgent,
-	verifyJwtSvid,
-} from "./crypto/jwt-svid.js";
 export {
 	type AwsCredentials,
 	createRoute53SigV4Signer,
@@ -81,12 +58,16 @@ export {
 	parseListResourceRecordSets,
 	type Route53DnsProviderOptions,
 } from "./dns/route53-provider.js";
+// Environment network isolation + elevated access + break-glass (ADR-0133).
 export * from "./env-isolation/index.js";
 export {
 	createJunctionAgent,
 	type JunctionAgent,
 	type JunctionAgentConfig,
 	type JunctionAgentRole,
+	type JunctionAgentStart,
+	type JunctionFleet,
+	type JunctionFleetAgent,
 } from "./junction-agent.js";
 export {
 	attachNamedEndpoints,
@@ -128,6 +109,11 @@ export {
 	createInMemoryMeteringSink,
 	createLogMeteringSink,
 } from "./metering/sinks.js";
+export {
+	createNetbirdCredentialMinter,
+	createTailscaleCredentialMinter,
+	type OverlayMinterOptions,
+} from "./minters/index.js";
 export { createNetbirdOverlay } from "./overlay/netbird.js";
 export {
 	createNetbirdApiClient,
@@ -147,10 +133,8 @@ export {
 	type TailscaleApiOptions,
 	type TailscaleSplitDnsMap,
 } from "./overlay/tailscale-api.js";
-export {
-	createWireguardOverlay,
-	type WireguardRunner,
-} from "./overlay/wireguard.js";
+export { createOverlayTransport } from "./overlay-transport.js";
+// Privileged Access Gateway (optional Station capability) — full secretless brokers.
 export * from "./pam/index.js";
 export {
 	createOpaPolicyEngine,
@@ -198,6 +182,7 @@ export {
 	type TenantIsolationRegistry,
 	type TenantIsolationRegistryOptions,
 	type TenantOverlayPlane,
+	type TenantOverlays,
 	tenantFromSlug,
 } from "./tenancy/isolation.js";
 export {

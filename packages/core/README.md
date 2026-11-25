@@ -12,21 +12,19 @@ lock and capped-ring helpers; bindings in `@hobo/kv-redis-compatible` and
 `TrafficRoutingPort` adds provider-neutral, tenant-scoped multi-backend routing
 intent with explicit `full | partial | none` realization and capability notes.
 
-`readThroughCache` reads a string from an `EphemeralStatePort`, loads a missing
-value from the supplied source, and caches a present result for the requested
-TTL. Missing values are not cached. Cache and source errors propagate to the
-caller; the source remains authoritative after expiration or eviction. Cached
-values can be stale until they expire or are deleted, and deletion does not
-cancel a source read already in progress.
+The asynchronous `DurableMessaging` port exposes finite limits and makes committed, rejected, unknown, and expired outcomes explicit. Implementations live outside core; the accompanying finite-state tests exercise bounded scenarios and do not prove an implementation correct.
 
-## Residency evaluation
-
-`evaluateResidency` checks the requested region against the configured jurisdiction
-catalog and transfer rules. It rejects unmapped regions, denies every region when
-`global` is denied, and refuses an unrestricted footprint when any jurisdiction
-is excluded. Azure's published default regions are mapped; provider placement
-hints alone do not establish where data is stored or processed. Enforcement
-requires the deployment path to call the evaluator with reliable provider evidence.
+`Messaging.ack` and `Messaging.nack` are asynchronous and must be awaited. Live
+adapters report a transport failure or deadline as `MESSAGING_SETTLEMENT_UNKNOWN`:
+the broker may have applied the operation. The adapter refuses another
+settlement for that delivery while its outcome is unknown. This protection is
+local to the adapter instance; the host must reconcile uncertain operations and
+enforce any cross-process lease fencing required by its provider.
+`MESSAGING_SETTLEMENT_COMMITTED` means settlement succeeded but local event
+observation failed; callers must not retry that settlement.
+The bounded `model/MessagingSettlement.tla` checks an abstraction of local
+settlement and lease replacement; it does not prove the implementation or
+provider behavior.
 
 ## Honest scope
 
@@ -52,14 +50,6 @@ pipeline and no `ctx.bindings` here: nothing in this package intercepts a
 capability access, so enforcement happens where a host calls
 `assertCapabilityPhase` — a host that never calls it is never protected.
 
-The schema-diff plan digest binds the normalized current and desired schemas as
-well as the ordered steps and engine identity. The canonical engine version is
-`6.0.0`: its digests differ from earlier versions, so existing plans must be
-regenerated before comparison or execution. Replacing an index with the same
-name drops and recreates it in the contract phase; HoBo's PostgreSQL schema port
-applies each phase in one transaction. A replaced primary key is removed before
-its replacement is added.
-
 `ports/schema-diff.ts` (ADR-0160) owns the canonical schema IR and the
 forward-only expand/backfill/contract differ. What it deliberately does **not**
 do: it emits **no SQL** (`CANONICAL_SCHEMA_DIFF_ENGINE` has no `emitSql`; SQL
@@ -74,27 +64,23 @@ mis-described; the type-widening lattice is a small documented set
 `char→varchar→text`, plus parameter growth like `varchar(32)→varchar(64)`) and
 every conversion outside it is classified as a **narrowing** — conservative on
 purpose, because calling an unknown conversion safe is how an expand phase
-loses data. The differ does not model index renames, so distinct names are
-treated as a drop and an add.
+loses data. Redefining an index in place (same name, different columns or
+uniqueness) yields both an `expand` add and a `contract` drop of that name; the
+differ does not model index renames, so distinct names are expected.
 
 ## Data-store vocabulary, catalog records and self-hosting
 
 `ports/data-store-offerings.ts` is the portable data-store vocabulary bound to
-the generic offering resolver. Provider ids identify either a service that
-offers multiple engines (`aws-rds`, `gcp-cloudsql`) or a specific product
-(`aws-rds-postgres`, `aws-aurora-postgres`, `azure-postgres-flexible`,
-`neon-postgres`, …).
+the generic offering resolver. Provider ids come in two grains: the original
+engine-agnostic family ids (`aws-rds`, `gcp-cloudsql`, `azure-sql`) keep
+parsing unchanged, and product ids (`aws-rds-postgres`, `aws-aurora-postgres`,
+`azure-postgres-flexible`, `neon-postgres`, …) name one PostgreSQL product
+each; `DATA_STORE_PROVIDER_FAMILIES` maps a product to the family it refines.
 Offering ids cover topology (`replica.multi-region`, `write.multi-writer`,
 `ha.failover`), logical replication by direction
 (`replicate.logical-publish`, `replicate.logical-subscribe`) and connection
 facts (`pool.transaction`, `auth.password`, `auth.identity-token`,
 `tls.public-ca`).
-
-For offering requests, `require` accepts only stable, real native capabilities.
-`prefer` may select a fallback or a preview, experimental, simulated, mocked,
-or Camp-only offering; the result is partial and names any degraded offerings.
-When no single provider meets a strict request, remediation lists the providers
-that actually supply each requested capability.
 
 `ports/data-store-catalog.ts` adds evidence: `parseDataStoreCatalogEntry`
 refuses an asserted claim that names no dated vendor source, `unknown` is the
@@ -106,7 +92,8 @@ reasons. A provider package can add cited, per-product **host forms**
 (`parseRegisteredHostForm`) about products it already declares; the assessment
 then lists every form, so one provider can show a form that qualifies beside
 one that does not. Core holds no vendor facts; the PostgreSQL catalog built from these
-is in [`@hobo/cloud-providers`](../cloud-providers/README.md).
+is in `@hobo/cloud-providers`. See
+[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
 
 ## Durable lifecycle gate leases
 

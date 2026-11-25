@@ -173,7 +173,7 @@ export async function runCiSecretStoreConnect(
 	try {
 		const subject = await resolveDeploySubject({
 			repository,
-			env: input.env,
+			credentials: input.credentials,
 			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 		});
 		trust = githubDeployTrust(subject);
@@ -205,6 +205,8 @@ export async function runCiSecretStoreConnect(
 			}),
 		);
 	} catch (error) {
+		if (error instanceof SecretStoreBindingRefusal)
+			return refusedConnect(error.code, error.message);
 		if (error instanceof SecretStoreError)
 			return refusedConnect(
 				error.code === "SECRET_STORE_OIDC_SUBJECT_UNRESOLVED"

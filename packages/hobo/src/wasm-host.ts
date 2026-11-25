@@ -1,3 +1,15 @@
+/**
+ * Local Yard serve dispatch (glossary-aligned).
+ *
+ * Yard = control plane (`hobo yard init`).
+ * Camp = placement target created when serving a Bindle.
+ * Component host = Camp capability that executes components:
+ *   - local: process-local mesh (`@hobo/runtime-local`)
+ *   - wasm: Wasmtime OS-process sandboxes (`@hobo/runtime-wasm`)
+ *   - oci: WASM-on-OCI / Kubernetes (`@hobo/runtime-oci`)
+ *   - cloud-native: multi-cloud registry (`@hobo/runtime-cloud-native`)
+ */
+
 import { must } from "@hobo/core/total-access";
 import {
 	createInProcessWasmtimeEngine,
@@ -25,7 +37,11 @@ export interface WasmHostProbe {
 		readonly wasm: string;
 		readonly oci: string;
 		readonly "cloud-native": string;
+		/** @deprecated alias of wasm */
+		readonly "isolated-wasm": string;
 	};
+	/** @deprecated use componentHosts */
+	readonly tiers: WasmHostProbe["componentHosts"];
 }
 
 export function probeWasmHostInstall(
@@ -46,6 +62,8 @@ export function probeWasmHostInstall(
 		oci: "WASM-on-OCI scheduled on Kubernetes" as const,
 		"cloud-native":
 			"multi-cloud host registry (aws/gcp/azure/vercel/cloudflare)" as const,
+		"isolated-wasm":
+			"wasmtime OS-process sandboxes for private components" as const,
 	};
 
 	let lastError = "wasmtime not found";
@@ -69,6 +87,7 @@ export function probeWasmHostInstall(
 				wasmtimeCliAvailable: true,
 				notes,
 				componentHosts,
+				tiers: componentHosts,
 			};
 		} catch (error) {
 			lastError = error instanceof Error ? error.message : String(error);
@@ -90,16 +109,38 @@ export function probeWasmHostInstall(
 		wasmtimeCliAvailable: false,
 		notes,
 		componentHosts,
+		tiers: componentHosts,
 	};
 }
 
+/** @deprecated use serveBindleOnLocalYard */
+export async function serveProjectOnWasmHost(
+	options: Parameters<typeof serveBindleOnLocalYard>[0],
+): Promise<BareMetalServeResult & { readonly componentHost: string }> {
+	const result = await serveBindleOnLocalYard(options);
+	return { ...result, componentHost: "local" };
+}
+
+/** Place a Bindle on the local Yard using the configured Camp component host. */
 export async function serveProjectOnLocalYard(options: {
 	readonly projectDir: string;
 	readonly yard?: BareMetalYard;
 	readonly port?: number;
 	readonly hoboHome?: string;
 	readonly emitProgress?: (message: string) => void;
-	readonly componentHost?: ComponentHostKind;
+	readonly componentHost?:
+		| ComponentHostKind
+		| "bare-metal"
+		| "runtime-local"
+		| "isolated-wasm"
+		| string;
+	/** @deprecated use componentHost */
+	readonly host?:
+		| ComponentHostKind
+		| "bare-metal"
+		| "runtime-local"
+		| "isolated-wasm"
+		| string;
 }): Promise<
 	BareMetalServeResult & {
 		readonly componentHost: string;
@@ -123,6 +164,13 @@ export async function serveProjectOnLocalYard(options: {
 				})
 			: null;
 	const yard = options.yard ?? must(owned);
+	const componentHost = normalizeComponentHostKind(
+		options.componentHost ??
+			options.host ??
+			yard.config.componentHost ??
+			yard.config.host,
+	);
+
 	const wrapClose = <T extends { close: () => Promise<void> }>(
 		result: T,
 	): T => {
@@ -131,34 +179,26 @@ export async function serveProjectOnLocalYard(options: {
 		return {
 			...result,
 			close: async () => {
-				try {
-					await inner();
-				} finally {
-					owned.close();
-				}
+				await inner();
+				owned.close();
 			},
 		};
 	};
 
-	try {
-		const componentHost = normalizeComponentHostKind(
-			options.componentHost ?? yard.config.componentHost,
-		);
-		if (componentHost === "local") {
-			const result = await serveBindleOnLocalYard({
-				...options,
-				yard,
-			});
-			return wrapClose({ ...result, componentHost: "local" });
-		}
-		const result = await serveProjectOnHost({
+	// local keeps the dedicated path (runtime-local component host lifecycle
+	// for both public and private) for back-compat with existing tests.
+	if (componentHost === "local") {
+		const result = await serveBindleOnLocalYard({
 			...options,
 			yard,
-			componentHost,
 		});
-		return wrapClose(result);
-	} catch (error) {
-		owned?.close();
-		throw error;
+		return wrapClose({ ...result, componentHost: "local" });
 	}
+
+	const result = await serveProjectOnHost({
+		...options,
+		yard,
+		componentHost,
+	});
+	return wrapClose(result);
 }

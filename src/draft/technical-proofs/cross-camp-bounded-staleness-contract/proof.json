@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "cross-camp-bounded-staleness-contract",
+  "title": "Cross-Camp Bounded-Staleness Projection Contract",
+  "linear": "HOBO-261",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/native-log-projection-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

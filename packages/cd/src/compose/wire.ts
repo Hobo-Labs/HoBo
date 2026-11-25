@@ -29,6 +29,7 @@ import type {
 	ArtifactStoreConfig,
 	CampId,
 	CampInventory,
+	CampMembers,
 	CampPolicy,
 	CampReconciler,
 	CdAuthorizer,
@@ -39,6 +40,7 @@ import type {
 	CiEventReader,
 	ContinuousDelivery,
 	CredentialResolver,
+	DeliveryFleet,
 	DeltaLedger,
 	DeployGate,
 	DesiredStateReader,
@@ -70,6 +72,7 @@ import type {
 } from "../ports.js";
 import { placedCampsFrom } from "../promotion/placed.js";
 import type { PromotionServiceDeps } from "../promotion/service.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { ComposeError } from "./errors.js";
 import {
 	unconfiguredFanoutCost,
@@ -175,6 +178,8 @@ export type CdComposeInput = Readonly<{
 	telemetry?: TelemetrySink;
 	telemetryEndpoint?: string;
 	telemetryHeaders?: Readonly<Record<string, string>>;
+	members?: CampMembers;
+	fleet?: DeliveryFleet;
 }>;
 
 export type ComposedContinuousDelivery = ContinuousDelivery &
@@ -333,6 +338,7 @@ export function wireContinuousDelivery(
 			desired,
 			authorizer,
 			telemetry: sink,
+			members: input.members,
 		}),
 	);
 	const placement = put(
@@ -484,6 +490,7 @@ export function wireContinuousDelivery(
 		authorizer,
 		rails,
 		inventory,
+		fleet: input.fleet,
 	});
 	const feed = f.createDeliveryFeedHandler({
 		...base,
@@ -502,23 +509,19 @@ export function wireContinuousDelivery(
 	): CampReconciler {
 		const realizer = a.realizer(r.mode, scope);
 		if (realizer === undefined) {
-			sink
-				.metrics([
-					{
-						name: COMPOSE_METRICS.failures,
-						kind: "counter",
-						value: 1,
-						unit: "1",
-						atMs: base.now(),
-						attributes: {
-							"hobo.cd.compose.code": "compose-realizer-missing",
-							"hobo.cd.reconciler.mode": reconcilerModeName(r.mode),
-						},
+			emitMetrics(sink, [
+				{
+					name: COMPOSE_METRICS.failures,
+					kind: "counter",
+					value: 1,
+					unit: "1",
+					atMs: base.now(),
+					attributes: {
+						"hobo.cd.compose.code": "compose-realizer-missing",
+						"hobo.cd.reconciler.mode": reconcilerModeName(r.mode),
 					},
-				])
-				.catch(() => {
-					// Best-effort.
-				});
+				},
+			]);
 			throw new ComposeError(
 				"compose-realizer-missing",
 				`no realizer for ${reconcilerModeName(r.mode)} reconciler ${r.reconcilerId}`,
@@ -546,20 +549,16 @@ export function wireContinuousDelivery(
 		});
 	}
 
-	sink
-		.metrics([
-			{
-				name: COMPOSE_METRICS.modules,
-				kind: "gauge",
-				value: Object.keys(built).length,
-				unit: "1",
-				atMs: base.now(),
-				attributes: { "hobo.tenant": base.tenant },
-			},
-		])
-		.catch(() => {
-			// Best-effort.
-		});
+	emitMetrics(sink, [
+		{
+			name: COMPOSE_METRICS.modules,
+			kind: "gauge",
+			value: Object.keys(built).length,
+			unit: "1",
+			atMs: base.now(),
+			attributes: { "hobo.tenant": base.tenant },
+		},
+	]);
 
 	return Object.freeze({
 		freight,
@@ -601,16 +600,20 @@ export function conductorFor(
 		campIds: readonly CampId[];
 		holderId: string;
 		reconcilerId?: ReconcilerId;
+		transport?: ReconcilerTransport;
 	}>,
 ): CampReconciler {
-	return cd.createReconciler({
+	const options = {
 		mode: ReconcilerMode.CONDUCTOR,
 		// SAFETY: a conductor's id is derived from its holder; it is never enrolled.
 		reconcilerId:
 			input.reconcilerId ?? (`conductor:${input.holderId}` as ReconcilerId),
 		campIds: input.campIds,
 		holderId: input.holderId,
-	});
+	};
+	return input.transport === undefined
+		? cd.createReconciler(options)
+		: cd.createReconciler({ ...options, transport: input.transport });
 }
 
 /** The default retention policy (D18): CD_DEFAULTS applied to every Bindle (empty bindle). */

@@ -274,9 +274,10 @@ export function createInProcessExecutor(
 				}
 			}
 
-			let stage: "preview" | "apply" | "destroy" = "preview";
 			let mutationStarted = false;
 			try {
+				// preview then apply, inside the sandbox (control-plane.md resolution
+				// pipeline step 4: "IaC adapter runs preview then apply … with scoped creds").
 				const diff = await iac.preview(program);
 				push("exec.Diff", { summary: diff.summary, changes: diff.changes });
 				if (program.action === "preview") {
@@ -292,7 +293,6 @@ export function createInProcessExecutor(
 				}
 
 				if (program.action === "destroy") {
-					stage = "destroy";
 					mutationStarted = true;
 					await iac.destroy(program);
 					push("exec.Succeeded", {
@@ -308,7 +308,6 @@ export function createInProcessExecutor(
 					};
 				}
 
-				stage = "apply";
 				mutationStarted = true;
 				const outputs = await iac.apply(program);
 				push("exec.Succeeded", { outputsHash: hashRef(outputs) });
@@ -330,7 +329,7 @@ export function createInProcessExecutor(
 					push,
 					sandbox,
 					uncertain ? "fatal" : "retryable",
-					`executor.${stage}_failed: ${failure.reason}`,
+					`executor.apply_failed: ${failure.reason}`,
 					uncertain ? reconciliation : undefined,
 				);
 			}

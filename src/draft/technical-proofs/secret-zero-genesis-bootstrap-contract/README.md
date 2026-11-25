@@ -1,10 +1,10 @@
 # Secret-Zero Genesis Bootstrap Contract
 
 HOBO-262 adversarial proof for the identity genesis bootstrap trust chain from
-[Plan 06](urn:hobo:requirement:ai-native-agent-auth#plan-06),
-[Plan 12](urn:hobo:requirement:security-networking#plan-12),
-[ADR-0008](urn:hobo:decision:adr-0008),
-and [ADR-0074](urn:hobo:decision:adr-0074).
+[Plan 06](../../../../docs/design/ai-native-agent-auth.md#plan-06),
+[Plan 12](../../../../docs/design/security-networking.md#plan-12),
+[ADR-0008](../../../../docs/design/adr/02-identity-security.md#adr-0008),
+and [ADR-0074](../../../../docs/design/adr/02-identity-security.md#adr-0074).
 
 ## Contract Surface
 
@@ -27,9 +27,11 @@ npm.cmd --prefix src\draft\technical-proofs\secret-zero-genesis-bootstrap-contra
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Secret Zero Genesis Bootstrap Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

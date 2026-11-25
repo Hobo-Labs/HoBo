@@ -6,7 +6,7 @@ event-sourced executions over draft runtime-port mocks.
 
 Promotes:
 
-- `packages/wit/wit/deps/hobo-runtime/` (runtime WIT)
+- `src/draft/technical-proofs/hobo-runtime-primitives/` (WIT / SDK_PRIMITIVE_TABLE)
 - `src/draft/technical-proofs/camp-eventstore-runtime-port-contract/` (EventStore)
 - `src/draft/technical-proofs/actor-host-runtime-port-contract/` (ActorHost)
 - `src/draft/technical-proofs/replay-live-equivalence-poc/` (replay == live)
@@ -20,7 +20,10 @@ Production target: `packages/runtime/` (`@hobo/runtime`) + `packages/events/` fa
 pnpm exec turbo run test --filter ./src/draft/technical-proofs/hobo-runtime-ts-primitives
 ```
 
-## Executable evidence
+## Architecture Evidence
+
+See [`ADR.md`](./ADR.md), [`architecture/`](./architecture), and [`architecture/pacts/`](./architecture/pacts).
+
 ## Event catalog (fixed)
 
 `run.Started` · `run.StepScheduled` · `run.StepCompleted` · `run.StepFailed` · `run.SleepScheduled` ·

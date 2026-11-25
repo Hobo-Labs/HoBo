@@ -1,8 +1,10 @@
+// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export interface CliClients {
 	readonly readApi: string;
 	readonly runtime: string;
 }
 
+// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export interface CliContext {
 	readonly cwd: string;
 	readonly projectDir: string | null;
@@ -10,6 +12,7 @@ export interface CliContext {
 	readonly clients: CliClients;
 }
 
+// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export interface CliEnvelope {
 	readonly ok: boolean;
 	readonly verb: string;

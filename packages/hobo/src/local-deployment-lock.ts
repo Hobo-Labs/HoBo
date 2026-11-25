@@ -4,6 +4,7 @@ import {
 	LocalStateLockBusyError,
 } from "./local-state-lock.js";
 
+/** The operating system releases this exclusive lock even if the CLI is killed. */
 export function acquireLocalDeploymentLock(directory: string): () => void {
 	try {
 		return acquireLocalStateLock(

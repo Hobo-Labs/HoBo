@@ -8,15 +8,16 @@
 		"epicProofs": [],
 		"expProofs": [
 			"src/draft/exp-proofs/dx/session-replay-local-path"
+		],
+		"designDocs": [
+			"docs/design/adr/03-data-plane.md#adr-0137"
 		]
 	},
 	"artifacts": {
 		"examples": "examples",
 		"notebook": "notebook.ipynb",
 		"bench": "bench",
-		"diagrams": [
-			"README.md"
-		]
+		"diagrams": ["README.md"]
 	},
 	"waivers": []
 }

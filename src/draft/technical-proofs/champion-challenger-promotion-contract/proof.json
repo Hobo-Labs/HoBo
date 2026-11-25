@@ -8,10 +8,14 @@
       "src/draft/technical-proofs/training-engine-port-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
-    "diagrams": []
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
   },
   "waivers": []
 }

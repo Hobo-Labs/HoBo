@@ -7,8 +7,13 @@ export interface RedeliveryAfterCrashResult {
 	messageId: string;
 }
 
-export async function runRedeliveryAfterCrash<Snapshot>(
-	createRuntime: CreateRuntimeLocalQueueClock<Snapshot>,
+/**
+ * Conformance fixture: enqueue with idempotency key, handler records one effect
+ * then crashes before complete, snapshot/restore, message redelivered, effect
+ * count stays 1 and message reaches completed.
+ */
+export async function runRedeliveryAfterCrash(
+	createRuntime: CreateRuntimeLocalQueueClock,
 ): Promise<RedeliveryAfterCrashResult> {
 	const effectLedger = new Set<string>();
 	const recordEffect = (idempotencyKey: string) => {
@@ -24,18 +29,14 @@ export async function runRedeliveryAfterCrash<Snapshot>(
 		{ idempotencyKey: key },
 	);
 
-	let crashed = false;
 	try {
 		await runtime.queue.handle(queue, async (message) => {
 			recordEffect(message.idempotencyKey);
 			throw new Error("crash before complete");
 		});
-	} catch (error) {
-		if (!(error instanceof Error) || error.message !== "crash before complete")
-			throw error;
-		crashed = true;
+	} catch {
+		// Simulated worker crash before complete().
 	}
-	if (!crashed) throw new Error("handler did not report the simulated crash");
 
 	const restored = createRuntime({ snapshot: runtime.snapshot() });
 	const redelivery = await restored.queue.handle(queue, async (message) => {

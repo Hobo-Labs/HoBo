@@ -1,3 +1,4 @@
+/** Shared, non-expiring admission gate for supervised application lifecycle. */
 import { createHash, randomUUID } from "node:crypto";
 import type { PrincipalRef } from "../envelope.js";
 import { isJsonObject, isJsonString, type JsonObject } from "../json.js";
@@ -14,7 +15,9 @@ export type DurableLifecyclePhase =
 export interface DurableLifecycleGateScope {
 	readonly tenantId: string;
 	readonly app: "ci" | "cd";
+	/** Stable logical service identity shared by all overlapping deployments. */
 	readonly serviceId: string;
+	/** An independently approved immutable storage/incarnation identity. */
 	readonly incarnationId: string;
 }
 export interface DurableLifecycleGateStatus {
@@ -32,6 +35,7 @@ export interface DurableLifecycleGateOptions {
 	readonly actorHost: AsyncActorLeaseHost;
 	readonly actor: PrincipalRef;
 	readonly nowMs: () => number;
+	/** Authenticates the exact supervisor operation and its live Broker hold. */
 	readonly authorize: (input: {
 		readonly scope: DurableLifecycleGateScope;
 		readonly scopeDigest: string;
@@ -46,6 +50,8 @@ export interface DurableLifecycleGateOptions {
 		readonly operationId: string;
 		readonly fenceId?: string;
 	}) => Promise<void>;
+	/** A fresh independent provider read of every queue partition and Sandbox.
+	 * A zero participant count alone is never evidence of an empty queue. */
 	readonly verifyDrained: (input: {
 		readonly scope: DurableLifecycleGateScope;
 		readonly scopeDigest: string;
@@ -60,6 +66,7 @@ export interface DurableLifecycleGateOptions {
 		readonly observedAtMs: number;
 		readonly expiresAtMs: number;
 	}>;
+	/** Proves a crashed participant and all its effects are terminated. */
 	readonly verifyParticipantTerminated: (input: {
 		readonly scope: DurableLifecycleGateScope;
 		readonly scopeDigest: string;
@@ -97,6 +104,9 @@ export type DurableLifecycleGate = ReturnType<
 	typeof createDurableLifecycleGate
 >;
 
+/** The store must enforce the exact actor fence on `hosting-lifecycle-gate:`.
+ * Every request registers before work; stopping is linearized against those
+ * registrations and a crashed participant is never removed on time alone. */
 export function createDurableLifecycleGate(
 	options: DurableLifecycleGateOptions,
 ) {
@@ -154,6 +164,7 @@ export function createDurableLifecycleGate(
 					(!isJsonString(value.fenceId) || !NAME.test(value.fenceId)))
 			)
 				fail();
+			// SAFETY: the validated phase is one of the durable lifecycle phases.
 			state.phase = value.phase as DurableLifecyclePhase;
 			if (isJsonString(value.fenceId)) state.fenceId = value.fenceId;
 			for (const entry of value.participants) {
@@ -276,6 +287,11 @@ export function createDurableLifecycleGate(
 		}
 		return state;
 	}
+	/** Acquire budgets. Supervisor transitions fail fast (~800ms) so the caller
+	 * sees contention; finishing or retiring a participant must not leak it, so
+	 * those back off exponentially (10ms doubling to 500ms) for ~60s. Both throw
+	 * once exhausted and callers retry (finish() is idempotent; check status()
+	 * before re-retiring a participant). */
 	const FAST_ACQUIRE = { attempts: 80, maxDelayMs: 10 } as const;
 	const PATIENT_ACQUIRE = { attempts: 130, maxDelayMs: 500 } as const;
 	async function lock<T>(
@@ -306,6 +322,10 @@ export function createDurableLifecycleGate(
 			await lease.release().catch(() => undefined);
 			throw error;
 		}
+		// The work is committed. A lost release only delays the next holder until
+		// the lease expires; it must never turn a committed result into a failure
+		// (a begin() caller would lose its participant handle and seal() would
+		// wait forever).
 		await lease.release().catch(() => undefined);
 		return result;
 	}
@@ -329,6 +349,8 @@ export function createDurableLifecycleGate(
 			},
 			events: [{ type, data: { scopeDigest, ...data } }],
 		});
+		// Snapshots are only hints: the authoritative, actor-fenced checkpoint
+		// pins their complete state hash. An overwritten snapshot fails closed.
 		if (options.store.loadSnapshot && (state.seq + 1) % 128 === 0) {
 			try {
 				const current = await read();
@@ -354,7 +376,10 @@ export function createDurableLifecycleGate(
 				await options.store.snapshot(streamId, value, current.seq + 1, {
 					fenceToken: lease.fenceToken,
 				});
-			} catch {}
+			} catch {
+				// The operation is already committed. A later request replays the
+				// old snapshot and can retry the checkpoint without losing work.
+			}
 		}
 	}
 	async function authorize(

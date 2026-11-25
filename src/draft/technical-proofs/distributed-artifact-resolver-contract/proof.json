@@ -8,7 +8,8 @@
       "src/draft/technical-proofs/distributed-artifact-version-policy"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

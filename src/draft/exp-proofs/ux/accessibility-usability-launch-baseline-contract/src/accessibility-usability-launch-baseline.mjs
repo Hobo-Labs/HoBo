@@ -188,23 +188,23 @@ export const ACCESSIBILITY_USABILITY_BASELINE = {
   ],
   dependencies: [
     {
-      source: "urn:hobo:requirement:workspace-onboarding-ux",
+      source: "docs/design/workspace-onboarding-ux.md",
       reason: "Names onboarding surfaces and explicitly scopes accessibility audit output out of workspace M0.",
     },
     {
-      source: "urn:hobo:requirement:launch-blocker-taxonomy",
+      source: "docs/design/launch-blocker-taxonomy.md",
       reason: "Defines launch blockers, high-risk non-blockers, launch notes, and exception boundaries.",
     },
     {
-      source: "urn:hobo:requirement:beta-pilot-feedback",
+      source: "docs/design/beta-pilot-feedback.md",
       reason: "Routes usability beta feedback to Product UX and launch cutline owners.",
     },
     {
-      source: "urn:hobo:requirement:pre-launch-outcome-contract",
+      source: "docs/design/pre-launch-outcome-contract.md",
       reason: "Maps launch evidence into plan/diff, go/no-go, telemetry, support, and release-note surfaces.",
     },
     {
-      source: "urn:hobo:requirement:ai-generation-launch-posture",
+      source: "docs/design/ai-generation-launch-posture.md",
       reason: "Keeps generated UI as proposal until UX and accessibility evidence accepts it.",
     },
   ],

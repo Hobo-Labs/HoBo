@@ -9,7 +9,8 @@
       "src/draft/technical-proofs/metering-view-projection-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

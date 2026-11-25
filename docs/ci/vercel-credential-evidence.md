@@ -1,7 +1,8 @@
 ---
 type: Evidence
 title: "Vercel credential evidence"
-description: "Read-only workflow checks for Vercel credential availability."
+description: "Read-only verification of configured Vercel credential access to the enrolled project."
+tags: [hobo, ci, vercel, evidence]
 ---
 
 # Vercel credential evidence

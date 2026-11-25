@@ -88,27 +88,27 @@ export const BOOTSTRAP_INSTALLER_SCOPE = {
   },
   dependencies: [
     {
-      source: "urn:hobo:requirement:developer-experience#plan-07",
+      source: "docs/design/developer-experience.md#plan-07",
       reason: "Defines developer setup, CLI, dashboard, and status experience that Bootstrap Installer must prepare without implementing.",
     },
     {
-      source: "urn:hobo:requirement:walkthrough",
+      source: "docs/design/walkthrough.md",
       reason: "Defines role journeys where SaaS, self-host, and local/dev bootstrap paths surface to app developers and operators.",
     },
     {
-      source: "urn:hobo:requirement:dogfood-yard",
+      source: "docs/design/dogfood-yard.md",
       reason: "Defines hosted and self-hosted Yard acceptance scenarios consumed as bootstrap smoke evidence.",
     },
     {
-      source: "urn:hobo:decision:adr-0092",
+      source: "docs/design/adr/01-architecture-core.md#adr-0092",
       reason: "Pins self-host bootstrap as disposable seed Yard, provenance import, Identity handover, and recovery table.",
     },
     {
-      source: "urn:hobo:decision:adr-0036",
+      source: "docs/design/adr/07-portability-extensibility.md#adr-0036",
       reason: "Defines air-gapped and sovereign Yard constraints that bootstrap evidence must not overclaim.",
     },
     {
-      source: "urn:hobo:decision:adr-0008",
+      source: "docs/design/adr/02-identity-security.md#adr-0008",
       reason: "Defines keyless agent identity and token broker boundaries consumed by seed/auth handoff evidence.",
     },
   ],
@@ -166,42 +166,42 @@ export const BOOTSTRAP_INSTALLER_SCOPE = {
       kind: "install-path-matrix",
       owner: "platform engineer",
       proofMode: "design-record",
-      source: "urn:hobo:requirement:bootstrap-installer#install-path-matrix",
+      source: "docs/design/bootstrap-installer.md#install-path-matrix",
       proves: "SaaS, self-host, and local/dev setup modes each name user, stages, evidence, and unsupported states.",
     },
     {
       kind: "bootstrap-seed-and-auth-handoff-record",
       owner: "security/compliance reviewer",
       proofMode: "security-review",
-      source: "urn:hobo:requirement:bootstrap-installer#seed-auth-and-secret-handling",
+      source: "docs/design/bootstrap-installer.md#seed-auth-and-secret-handling",
       proves: "Seed credential, Identity handoff, token broker, and secret-handling assumptions are explicit before implementation.",
     },
     {
       kind: "first-project-and-first-deploy-smoke-shape",
       owner: "app developer",
       proofMode: "smoke-matrix",
-      source: "urn:hobo:requirement:bootstrap-installer#evidence-required-for-m1",
+      source: "docs/design/bootstrap-installer.md#evidence-required-for-m1",
       proves: "First project and first deploy smoke checks are shaped without claiming real deploy execution in M0.",
     },
     {
       kind: "failure-recovery-and-uninstall-boundary",
       owner: "devops operator",
       proofMode: "reference-fixture",
-      source: "urn:hobo:requirement:bootstrap-installer#failure-recovery-and-cleanup-boundaries",
+      source: "docs/design/bootstrap-installer.md#failure-recovery-and-cleanup-boundaries",
       proves: "Failed install, retry, recovery, and cleanup states have named evidence and remain separate from implementation.",
     },
     {
       kind: "support-troubleshooting-handoff",
       owner: "support engineer",
       proofMode: "support-handoff",
-      source: "urn:hobo:requirement:bootstrap-installer#owning-initiative-dependencies",
+      source: "docs/design/bootstrap-installer.md#owning-initiative-dependencies",
       proves: "Support can route bootstrap failures with setup-stage diagnostics and unsupported-state labels.",
     },
     {
       kind: "security-secret-handling-review",
       owner: "security/compliance reviewer",
       proofMode: "security-review",
-      source: "urn:hobo:requirement:bootstrap-installer#service-ux-security-and-support-boundaries",
+      source: "docs/design/bootstrap-installer.md#service-ux-security-and-support-boundaries",
       proves: "M1 proof must document no secret persistence, no live environment scan, and no unaudited seed credential path.",
     },
   ],
@@ -253,12 +253,12 @@ export function validateBootstrapInstallerScope(scope) {
   }
 
   const requiredSources = [
-    "urn:hobo:requirement:developer-experience#plan-07",
-    "urn:hobo:requirement:walkthrough",
-    "urn:hobo:requirement:dogfood-yard",
-    "urn:hobo:decision:adr-0092",
-    "urn:hobo:decision:adr-0036",
-    "urn:hobo:decision:adr-0008",
+    "docs/design/developer-experience.md#plan-07",
+    "docs/design/walkthrough.md",
+    "docs/design/dogfood-yard.md",
+    "docs/design/adr/01-architecture-core.md#adr-0092",
+    "docs/design/adr/07-portability-extensibility.md#adr-0036",
+    "docs/design/adr/02-identity-security.md#adr-0008",
   ];
   const sources = (scope.dependencies ?? []).map((dependency) => dependency.source);
   if (JSON.stringify(sources) !== JSON.stringify(requiredSources)) {

@@ -1,4 +1,3 @@
-import { providerTermsFor } from "@hobo/core";
 import {
 	VERCEL_QUEUE_PRODUCT_ID,
 	VERCEL_SCHEDULE_PRODUCT_ID,
@@ -109,7 +108,6 @@ export function createVercelProvider(): CloudProvider {
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: `@hobo/provider-${PROVIDER_TARGET}`,
-				terms: providerTermsFor("@hobo/provider-vercel"),
 				published: {},
 				capabilities: {
 					capabilities: capabilities.map((c) => ({

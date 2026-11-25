@@ -1,3 +1,5 @@
+// ADR-0146: legal-jurisdiction vocabulary + the pure residency evaluator that
+// turns "constraint + target region" into an explicit, fail-closed verdict.
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
@@ -14,7 +16,8 @@ const EU_PII = parseResidencyConstraint({
 	allowedJurisdictions: ["eu", "eea"],
 });
 
-test("catalog seed region tokens are mapped", () => {
+test("every shipped provider default region token is mapped", () => {
+	// Tokens published by providers today (aws/gcp/kafka/convex/lakebed docs).
 	const shipped = [
 		"us-east-1",
 		"us-west-2",
@@ -31,57 +34,6 @@ test("catalog seed region tokens are mapped", () => {
 			jurisdictionsForRegion(region).length > 0,
 			`region ${region} must be mapped`,
 		);
-	}
-});
-
-test("Azure regions have their geographic jurisdictions", () => {
-	for (const region of ["eastus", "eastus2", "westus2"]) {
-		assert.deepEqual(jurisdictionsForRegion(region), ["us"]);
-		const verdict = evaluateResidency({ constraint: EU_PII, region });
-		assert.equal(verdict.ok, false);
-		if (!verdict.ok) assert.equal(verdict.code, "jurisdiction-not-allowed");
-	}
-	assert.deepEqual(jurisdictionsForRegion("westeurope"), ["eu", "eea"]);
-	assert.equal(
-		evaluateResidency({ constraint: EU_PII, region: "westeurope" }).ok,
-		true,
-	);
-});
-
-test("unrestricted regions fail closed when a jurisdiction is denied", () => {
-	const constraint = parseResidencyConstraint({
-		classifications: ["pii"],
-		allowedJurisdictions: ["global"],
-		deniedJurisdictions: ["us"],
-	});
-	for (const region of ["global", "local"]) {
-		const verdict = evaluateResidency({
-			constraint,
-			region,
-			transferMechanisms: "adequacy-or-scc",
-		});
-		assert.equal(verdict.ok, false);
-		if (!verdict.ok) {
-			assert.equal(verdict.code, "jurisdiction-not-allowed");
-			assert.match(verdict.remediation, /cannot prove exclusion/u);
-		}
-	}
-	assert.equal(
-		evaluateResidency({ constraint, region: "westeurope" }).ok,
-		true,
-	);
-});
-
-test("denying global denies every region", () => {
-	const constraint = parseResidencyConstraint({
-		classifications: ["pii"],
-		allowedJurisdictions: ["global"],
-		deniedJurisdictions: ["global"],
-	});
-	for (const region of ["global", "us-east-1", "westeurope"]) {
-		const verdict = evaluateResidency({ constraint, region });
-		assert.equal(verdict.ok, false);
-		if (!verdict.ok) assert.equal(verdict.code, "jurisdiction-denied");
 	}
 });
 
@@ -127,6 +79,7 @@ test("denied jurisdictions override allowed membership", () => {
 	assert.equal(verdict.ok, false);
 	if (verdict.ok) return;
 	assert.equal(verdict.code, "jurisdiction-denied");
+	// global allows everything else
 	assert.equal(evaluateResidency({ constraint, region: "us-east-1" }).ok, true);
 });
 

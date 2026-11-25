@@ -2,13 +2,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertNoBindleProviderSelection } from "@hobo/bindles";
 import { loadBindleDefinition } from "@hobo/cli";
 import { must } from "@hobo/core/total-access";
 import { afterEach, describe, expect, it } from "vitest";
 import { initBareMetalYard } from "../src/bare-metal-yard.js";
 import { createComposedHoboCli } from "../src/cli.js";
 import {
+	collectExplicitProviderPins,
 	ensureEmbeddedBroker,
 	resolveBindlePlacement,
 	WASM_SANDBOX_PROVIDER_ID,
@@ -33,6 +33,7 @@ describe("embedded broker-runtime", () => {
 		const init = await cli.run(["yard", "init", "--home", hoboHome, "--json"], {
 			cwd: hoboHome,
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(init.stdout) as {
 			ok: boolean;
 			data: {
@@ -42,7 +43,7 @@ describe("embedded broker-runtime", () => {
 		};
 		expect(envelope.ok).toBe(true);
 		expect(envelope.data.broker.brokerId).toMatch(/^broker:local\//);
-		expect(["wasm", "local"]).toContain(
+		expect(["wasm", "isolated-wasm", "local"]).toContain(
 			envelope.data.broker.preferredComponentHost,
 		);
 		expect(envelope.data.config.componentHost).toBe(
@@ -53,9 +54,9 @@ describe("embedded broker-runtime", () => {
 	it("hello-bindle has no provider pins (defaults only)", async () => {
 		const definition = await loadBindleDefinition(helloBindleDir);
 		expect(definition).not.toBeNull();
-		expect(() =>
-			assertNoBindleProviderSelection(must(definition, "definition")),
-		).not.toThrow();
+		expect(collectExplicitProviderPins(must(definition, "definition"))).toEqual(
+			[],
+		);
 	});
 
 	it("places hello-bindle via yard-first broker and selects camp inside yard", async () => {
@@ -84,6 +85,7 @@ describe("embedded broker-runtime", () => {
 			await loadBindleDefinition(helloBindleDir),
 			"(await loadBindleDefinition(helloBindleDir))",
 		);
+		// Synthesize a forbidden cloud provider pin on the Bindle.
 		const pinned = {
 			...definition,
 			resources: {
@@ -125,6 +127,7 @@ describe("embedded broker-runtime", () => {
 		const up = await cli.run(["up", "--home", hoboHome, "--json"], {
 			cwd: helloBindleDir,
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(up.stdout) as {
 			ok: boolean;
 			code: string;
@@ -140,6 +143,7 @@ describe("embedded broker-runtime", () => {
 		};
 		expect(envelope.ok).toBe(true);
 		expect(envelope.code).toBe("HOBO_OK");
+		// Composed CLI may take event-sourced yard lane or broker-runtime path.
 		if (envelope.data.bindleName !== undefined) {
 			expect(envelope.data.bindleName).toBe("hello-bindle");
 		}

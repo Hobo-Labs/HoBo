@@ -44,10 +44,12 @@ pnpm --prefix src/draft/projects/s6-06-finops-plane test
 | Existing spend plus estimate crosses hard budget | same — `blocks deploy when existing MeteringView spend plus estimate crosses the hard limit` |
 | Showback reconciles against recorded spend | same — `showbackReconciled` |
 
-## Executable evidence
+## Architecture evidence
+
 - `architecture/finops_plane.proto` + `finops_plane.cue`
 - `contracts/pacts/finops_plane_boundary.pact.json`
 - `features/finops-plane.feature`
+- `ADR.md`
 
 ## Cascade reconciliation (83d9b5c92)
 

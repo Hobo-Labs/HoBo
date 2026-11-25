@@ -7,7 +7,11 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/meta-cloud-broker.md",
+      "docs/design/proofs/hobo-521-meta-cloud-broker/README.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

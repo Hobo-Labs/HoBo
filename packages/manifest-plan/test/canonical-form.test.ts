@@ -9,6 +9,20 @@ import {
 	parseDeploymentPlan,
 } from "../src/index.js";
 
+/**
+ * The canonical form is part of the contract, so the one thing that could
+ * quietly change every plan digest gets its own suite.
+ *
+ * `@hobo/core` exports a `sortKeys` with the same name, the same signature and
+ * the same doc-comment intent as the one `@hobo/cloud` keeps private, and
+ * "reuse the shared helper" is an obvious, plausible, and wrong change to make
+ * to this package. It is wrong because the two comparators are different:
+ * core sorts with `localeCompare` (ICU collation, case-insensitive at the
+ * primary level), and the plan digest is defined over the default comparator
+ * (UTF-16 code unit order). This test pins the disagreement so the swap cannot
+ * land silently.
+ */
+
 const planWith = (parameters: JsonObject) => ({
 	schema: DEPLOYMENT_PLAN_SCHEMA,
 	resources: [

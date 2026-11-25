@@ -15,9 +15,9 @@ import {
 } from "../../slo-as-code-contract/src/slo-contract.js";
 import {
   computeSloStatus,
-  makeSloBudgetEvent,
-  parseSloDefinition,
-} from "@hobo/core";
+  createFixtureSliSource,
+  makeBudgetBurnedEvent,
+} from "../../slo-computation-engine-contract/src/slo-computation-engine.js";
 import {
   evaluateAlertRouting,
 } from "../../alertmanager-routing-contract/src/alertmanager-routing.js";
@@ -50,9 +50,8 @@ export async function runObservabilityDriftLoopE2E(input = {}) {
     now,
   });
 
-  const slo = await evaluateSloBurnAlert({
+  const slo = evaluateSloBurnAlert({
     now,
-    eventContext: input.sloEventContext,
     sloDefinition: input.sloDefinition,
     sliSamples: input.sliSamples,
     alertPolicy: input.alertPolicy,
@@ -172,9 +171,8 @@ export function exportControlAndDataPlaneTelemetry({ traceparent, tenant, deploy
   };
 }
 
-export async function evaluateSloBurnAlert({
+export function evaluateSloBurnAlert({
   now = DEFAULT_NOW,
-  eventContext,
   sloDefinition,
   sliSamples,
   alertPolicy,
@@ -186,17 +184,16 @@ export async function evaluateSloBurnAlert({
     ...minuteSamples("2026-07-02T03:00:00.000Z", 5, 800, 1000),
   ];
 
-  const parsed = parseSloDefinition(definition);
-  const status = await computeSloStatus({
-    definition: parsed,
-    sliSource: { readRatioSamples: () => samples },
+  const status = computeSloStatus({
+    definition,
+    sliSource: createFixtureSliSource(samples),
     now,
   });
-  const alerting = status.status === "burning" || status.status === "budget-exhausted";
-  if (alerting && !eventContext) throw new Error("SLO event context is required for burn alerts");
-  const budgetEvent = alerting
-    ? makeSloBudgetEvent(status, parsed.spec.objectives[0].displayName, eventContext)
-    : null;
+  const budgetEvent = makeBudgetBurnedEvent(status, {
+    id: "evt-slo-burn-1",
+    seq: 1,
+    time: now,
+  });
 
   const alertResult = budgetEvent
     ? evaluateAlertRouting({

@@ -15,11 +15,13 @@ export interface EventEnvelope {
 
 export type SeqVector = Record<string, number>;
 
+// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface SeqVectorEntry {
 	streamId: string;
 	seq: number;
 }
 
+// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface ReplayReport {
 	runId: string;
 	seqVector: readonly SeqVectorEntry[];
@@ -51,3 +53,8 @@ export type FoldFn<S> = (
 	event: EventEnvelope,
 	context: DeterministicContext,
 ) => S;
+
+export type UpcastFn = (
+	event: EventEnvelope,
+	context: DeterministicContext,
+) => EventEnvelope;

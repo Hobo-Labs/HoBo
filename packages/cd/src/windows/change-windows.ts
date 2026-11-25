@@ -1,3 +1,6 @@
+// `createChangeWindows`: the ChangeWindows port (D10). Commands append
+// `window.Defined` / `window.Overridden` to `cd-window-<name>`; queries read a
+// catch-up projection and evaluate purely at the instant the caller passes.
 import { clone, create, type JsonValue } from "@bufbuild/protobuf";
 import {
 	type ChangeWindowRecord,
@@ -37,9 +40,11 @@ import { refuse, WINDOW_METRIC, WINDOW_REASON } from "./reasons.js";
 
 export type ChangeWindowsDeps = CdBase & {
 	readonly authorizer: CdAuthorizer;
+	/** Optional: metrics. Telemetry is advisory; the journal is the record. */
 	readonly telemetry?: TelemetrySink | undefined;
 };
 
+/** Digest of what a definition says, independent of who defined it. */
 export function windowDigest(record: ChangeWindowRecord): string {
 	const copy = clone(ChangeWindowRecordSchema, record);
 	copy.definedBy = "";

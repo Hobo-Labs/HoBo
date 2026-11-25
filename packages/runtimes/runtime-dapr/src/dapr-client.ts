@@ -1,3 +1,11 @@
+/**
+ * Harnessable daprd sidecar client (ADR-0138).
+ *
+ * Live Dapr fidelity requires an injected client implementing this interface.
+ * Unit tests use {@link createInMemoryDaprClient}; production injects an HTTP
+ * client against daprd. Never label fidelity `live` without a client.
+ */
+
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 
 export interface DaprPublishRequest {
@@ -38,8 +46,8 @@ export interface DaprReminderRequest {
 
 export interface DaprSidecarClient {
 	readonly kind: "dapr-sidecar-client";
-	readonly fidelity?: "simulated" | "live";
 	publish(request: DaprPublishRequest): Promise<{ id: string }>;
+	/** Pull-style drain for harnessed tests (real daprd is push; adapter buffers). */
 	drain(
 		pubsubName: string,
 		topic: string,
@@ -61,6 +69,7 @@ export interface DaprSidecarClient {
 	registerReminder(
 		request: DaprReminderRequest,
 	): Promise<{ reminderId: string }>;
+	/** Optional readiness probe used by doctor/live detection. */
 	health?(): Promise<boolean>;
 }
 
@@ -81,6 +90,10 @@ interface GroupCursor {
 	attempts: Map<string, number>;
 }
 
+/**
+ * In-process daprd API harness. Exercises the same client methods a real
+ * HTTP/gRPC daprd adapter would call (publish, drain/ack, actor invoke, state).
+ */
 export function createInMemoryDaprClient(
 	options: InMemoryDaprClientOptions = {},
 ): DaprSidecarClient {
@@ -103,7 +116,6 @@ export function createInMemoryDaprClient(
 
 	const client: DaprSidecarClient = {
 		kind: "dapr-sidecar-client",
-		fidelity: "simulated",
 
 		async publish(request) {
 			const id = `dapr-msg-${++seq}`;
@@ -159,6 +171,8 @@ export function createInMemoryDaprClient(
 		},
 
 		async invokeActor(request) {
+			// Placement notifications only — single-writer is enforced by
+			// createDaprActorHost lease+fence (HoBo semantic), not this client.
 			const key = `${request.actorType}/${request.actorId}`;
 			const current = actors.get(key) ?? { fence: 0n };
 			if (request.method === "acquire") {
@@ -199,6 +213,11 @@ export function createInMemoryDaprClient(
 	return Object.freeze(client);
 }
 
+/**
+ * Resolve a live daprd client from env when available.
+ * HOBO_DAPR_LIVE_CLIENT=memory → harness client (test live path).
+ * HOBO_DAPR_ENDPOINT + createLive factory → real sidecar client.
+ */
 export function resolveDaprClientFromEnv(
 	env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 	options: {

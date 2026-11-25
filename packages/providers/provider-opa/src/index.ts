@@ -10,6 +10,31 @@ import {
 
 export type { JsonObject, JsonValue } from "./json.js";
 
+// The OPA/Rego policy engine behind the broker's gate-plane port, extracted
+// from `@hobo/broker` (the broker re-exports this
+// adapter, so `createOpaGatePlane` keeps its original import surface). Rego
+// is the broker's first-class external policy language
+// (contracts-policy-flags.md: the policy-engine port genuinely accepts
+// OPA/Rego and Cedar providers; the in-proc TypeScript policy pack stays the
+// default). This adapter maps the broker's Policy IR decision request onto an
+// OPA `input` document, queries the OPA Data API decision at
+// `hobo/broker/decision`, and lowers the Rego result back onto the
+// engine-neutral gate decision.
+//
+// The types below are STRUCTURAL mirrors of the broker's gate-plane port
+// (`@hobo/broker` planes.ts) — declared here so the dependency points
+// provider→contracts only and the broker can depend on this package without
+// a cycle. TypeScript's structural typing keeps them assignable.
+//
+// The Rego decision document contract (see docs/design/hobo-broker.md
+// §Policy languages for the reference policy):
+//   input:  { request: <Policy IR decision request>, costQuota: {...} }
+//   result: { effect: "allow"|"allow-degraded"|"deny"|"require-approval",
+//             reasons: [{ code, message, plane? }], policyIds?: [string] }
+//
+// Fail-closed: transport errors, non-200s, and undefined results DENY with
+// `policy-engine-unavailable` — an unreachable policy engine never allows.
+
 // public-contract: the Rego decision path the broker queries on the OPA Data API.
 export const OPA_DECISION_PATH = "hobo/broker/decision";
 // public-contract: the engine id recorded on OPA-evaluated policy.Decided facts.

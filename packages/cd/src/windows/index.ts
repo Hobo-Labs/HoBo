@@ -1,3 +1,4 @@
+// `@hobo/cd/windows` (WP5): change windows (D10, I17).
 export type { ChangeWindowsDeps } from "./change-windows.js";
 export { createChangeWindows, windowDigest } from "./change-windows.js";
 export type {

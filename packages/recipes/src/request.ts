@@ -1,3 +1,11 @@
+/**
+ * What the provider-neutral Bindle asks for.
+ *
+ * A deployment request is the compiler's view of a Bindle: capability slots
+ * with semantic requirements, the dependencies between them, and the semantics
+ * the caller was promised. No provider identity appears anywhere in it, which
+ * is why the same request can be answered by several recipes.
+ */
 import type {
 	BindlePrimitive,
 	CapabilityRequirement,
@@ -6,11 +14,13 @@ import type {
 import type { RecipeSemantics } from "./recipe.js";
 
 export type BindleCapabilityRequest = {
+	/** Stable slot name inside the Bindle, e.g. `inbox`, `db`, `site`. */
 	readonly capabilityRef: string;
 	readonly primitive: BindlePrimitive;
 	readonly requirement: CapabilityRequirement;
 };
 
+/** A consumer capability that needs a binding to a producer capability. */
 export type CapabilityDependency = {
 	readonly fromCapabilityRef: string;
 	readonly toCapabilityRef: string;
@@ -44,6 +54,13 @@ export class DeploymentRequestError extends Error {
 
 const PROVIDER_PIN_PATTERN = /(provider|vendor|account|tenant)/iu;
 
+/**
+ * Parse-don't-validate boundary for a request.
+ *
+ * Capability slots are rejected when they look like provider pins: a Bindle
+ * that names `vercelDb` has already lost the portability the recipe layer
+ * exists to protect.
+ */
 export function parseDeploymentRequest(
 	input: DeploymentRequestInput,
 ): DeploymentRequest {

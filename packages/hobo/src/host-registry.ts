@@ -1,3 +1,7 @@
+/**
+ * Registry of Camp component-host runtimes (local | wasm | oci | cloud-native).
+ * Composition root only — packages/runtimes/* do not import each other.
+ */
 import type {
 	FetchHandler,
 	HoboRuntimeHost,
@@ -32,6 +36,7 @@ export function getRuntimeHost(kind: ComponentHostKind): HoboRuntimeHost {
 		case "wasm":
 			return createWasmRuntimeHost();
 		case "oci":
+			// Real kubectl client (HOBO_KUBECTL_BIN / PATH). No in-memory fake.
 			return createOciRuntimeHost();
 		case "cloud-native":
 			return createCloudNativeRuntimeHost({ defaultProvider: "mock" });
@@ -66,6 +71,12 @@ export async function ensureAllRuntimeHosts(options: {
 	return results;
 }
 
+/**
+ * Build private component specs for a host.
+ * - local / cloud-native: in-process handlers
+ * - wasm: componentize via runtime-wasm
+ * - oci: componentize via runtime-wasm then pass wasmPath (kubectl schedules it)
+ */
 export async function buildPrivateComponentSpecs(options: {
 	readonly kind: ComponentHostKind;
 	readonly projectDir: string;
@@ -91,6 +102,7 @@ export async function buildPrivateComponentSpecs(options: {
 		}));
 	}
 
+	// wasm + oci: build .wasm via runtime-wasm (no adapter cross-deps).
 	await ensureIsolatedWasmToolchain({
 		hoboHome: options.hoboHome,
 		emitProgress: emit,
@@ -116,6 +128,7 @@ export async function buildPrivateComponentSpecs(options: {
 					: undefined),
 			});
 		} else {
+			// oci: packed wasm artifact; mesh traffic goes through real port-forward.
 			specs.push({
 				resourceName: entry.name,
 				projectDir: options.projectDir,

@@ -1,9 +1,5 @@
 import { collectStream, manifestHostingPolicy } from "@hobo/cloud";
-import {
-	deploymentIdFor,
-	loadProjectManifest,
-	missingProjectBindle,
-} from "../cloud/manifest.js";
+import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
 import { downWhatIf } from "../cloud/what-if.js";
@@ -37,7 +33,7 @@ export function createDownCommand(deps: DownCommandDeps = {}): CommandModule {
 			const projectDir = context.projectDir ?? context.cwd;
 			const bindle = await loadProjectManifest(projectDir);
 			if (!bindle) {
-				return missingProjectBindle("down", projectDir);
+				return stubResult("down");
 			}
 
 			await runtime.registry.refresh?.();

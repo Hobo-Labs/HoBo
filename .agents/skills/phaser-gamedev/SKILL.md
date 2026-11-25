@@ -67,10 +67,10 @@ scenes/
 ### Scene Transitions
 
 ```ts
-this.scene.start('GameScene', { level: 1 });
-this.scene.launch('UIScene');
-this.scene.pause('GameScene');
-this.scene.stop('UIScene');
+this.scene.start('GameScene', { level: 1 }); // Stop current, start new
+this.scene.launch('UIScene');                // Run in parallel
+this.scene.pause('GameScene');               // Pause
+this.scene.stop('UIScene');                  // Stop
 ```
 
 ## Core Patterns
@@ -96,13 +96,23 @@ const config: Phaser.Types.Core.GameConfig = {
 
 ### Scene Lifecycle
 
-`init(data)` receives transition data, `preload()` loads assets, and `create()`
-sets up the scene. `update(time, delta)` runs each frame.
+```ts
+class GameScene extends Phaser.Scene {
+  init(data: unknown) {} // Receive data from previous scene
+  preload() {}           // Load assets (runs before create)
+  create() {}            // Set up game objects, physics, input
+  update(time: number, delta: number) {} // Game loop; use delta for frame-rate independence
+}
+```
 
 ### Frame-Rate Independent Movement
 
 ```ts
+// Correct: scales with frame rate
 this.player.x += this.speed * (delta / 1000);
+
+// Wrong: varies with frame rate
+this.player.x += this.speed;
 ```
 
 ## Anti-Patterns to Avoid

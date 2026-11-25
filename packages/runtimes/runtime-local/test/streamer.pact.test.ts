@@ -59,10 +59,17 @@ describe("streamer-port pact", () => {
 			await stdout.write("overflow");
 			throw new Error("expected backpressure");
 		} catch (error) {
-			if (!(error instanceof StreamerBackpressureError)) throw error;
-			expect(error.code).toBe("STREAMER_BACKPRESSURE");
-			expect(error.runId).toBe(backpressureRunId);
-			expect(error.bufferLimit).toBe(2);
+			expect(error).toBeInstanceOf(StreamerBackpressureError);
+			// SAFETY: assertion to `error as StreamerBackpressureError` is required at this boundary.
+			expect((error as StreamerBackpressureError).code).toBe(
+				"STREAMER_BACKPRESSURE",
+			);
+			// SAFETY: assertion to `error as StreamerBackpressureError` is required at this boundary.
+			expect((error as StreamerBackpressureError).runId).toBe(
+				backpressureRunId,
+			);
+			// SAFETY: assertion to `error as StreamerBackpressureError` is required at this boundary.
+			expect((error as StreamerBackpressureError).bufferLimit).toBe(2);
 		}
 
 		const closedRunId = parseRunId("run:closed");
@@ -75,9 +82,11 @@ describe("streamer-port pact", () => {
 			await closedStdout.write("late");
 			throw new Error("expected closed");
 		} catch (error) {
-			if (!(error instanceof StreamerClosedError)) throw error;
-			expect(error.code).toBe("STREAMER_CLOSED");
-			expect(error.runId).toBe(closedRunId);
+			expect(error).toBeInstanceOf(StreamerClosedError);
+			// SAFETY: assertion to `error as StreamerClosedError` is required at this boundary.
+			expect((error as StreamerClosedError).code).toBe("STREAMER_CLOSED");
+			// SAFETY: assertion to `error as StreamerClosedError` is required at this boundary.
+			expect((error as StreamerClosedError).runId).toBe(closedRunId);
 		}
 	});
 });

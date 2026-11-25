@@ -36,13 +36,13 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     PROVENANCE_RETENTION_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:governance-planes#plan-46",
-      "urn:hobo:requirement:platform-engineering#plan-25",
-      "urn:hobo:requirement:contracts-policy-flags#plan-29",
-      "urn:hobo:decision:adr-0062",
-      "urn:hobo:decision:adr-0073",
-      "urn:hobo:decision:adr-0046",
-      "urn:hobo:decision:adr-0023",
+      "docs/design/governance-planes.md#plan-46",
+      "docs/design/platform-engineering.md#plan-25",
+      "docs/design/contracts-policy-flags.md#plan-29",
+      "docs/design/adr/07-portability-extensibility.md#adr-0062",
+      "docs/design/adr/07-portability-extensibility.md#adr-0073",
+      "docs/design/adr/02-identity-security.md#adr-0046",
+      "docs/design/adr/02-identity-security.md#adr-0023",
     ],
   );
 });

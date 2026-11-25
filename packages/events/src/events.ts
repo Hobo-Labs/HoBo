@@ -1,4 +1,9 @@
-export const EVENTS_EVENT_SCHEMA_VERSION = "hobo.reactive-events/v1";
+// Past-tense facts for the reactive-streams / saga leg of the data plane
+// (data-plane.md Plan 32 event catalog: `subscription.*`, `saga.*`,
+// `data.Changed`). Plain fact bodies; a runtime wraps them in the shared
+// EventEnvelope from @hobo/core.
+
+export const EVENTS_EVENT_SCHEMA_VERSION = "hobo.reactive-events/v1"; // public-contract: schemaVersion stamped on every reactive fact body
 
 type FactValue = string | number | readonly string[];
 type FactData = Record<string, FactValue>;
@@ -109,24 +114,16 @@ export function createSagaCompletedEvent(input: {
 	});
 }
 
-type DataChangedInput = {
+export function createDataChangedEvent(input: {
 	resource: string;
 	key: string;
 	op: "insert" | "update" | "delete";
 	sourceSeq: number;
-	sourceStreamId?: string;
-	rowJson?: string;
-};
-
-export function createDataChangedEvent(input: DataChangedInput): ReactiveFact {
-	const data: DataChangedInput = {
+}): ReactiveFact {
+	return fact("data.Changed", {
 		resource: input.resource,
 		key: input.key,
 		op: input.op,
 		sourceSeq: input.sourceSeq,
-	};
-	if (input.sourceStreamId !== undefined)
-		data.sourceStreamId = input.sourceStreamId;
-	if (input.rowJson !== undefined) data.rowJson = input.rowJson;
-	return fact("data.Changed", data);
+	});
 }

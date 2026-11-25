@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260731-all-eq",
+  "rankedAt": "2026-07-31T15:41:08.543Z",
+  "implementableUpliftRemaining": 0,
+  "items": [
+    {
+      "id": "fr-product-personas-schema-v2-backfill",
+      "title": "Backfill product-* personas to schema v2 KYC models",
+      "problem": "Most product personas still v1 without cognitive thresholds / psychographics.",
+      "desiredOutcome": "All product-* personas schemaVersion 2 with segment + thresholds.",
+      "hypothesis": "If we deliver \"All product-* personas schemaVersion 2 with segment + thresholds.\", positive metrics rise on bash scripts/setup-agent-tools.sh --help, pnpm run doctor.",
+      "source": "survey",
+      "sourceRefs": [
+        ".optimizexp/runs/20260731-all-eq/survey/product-coding-agent.json"
+      ],
+      "personas": [
+        "product-coding-agent"
+      ],
+      "featureIds": [
+        "agent-tooling-setup",
+        "cli-help-and-doctor"
+      ],
+      "surfaces": [
+        "bash scripts/setup-agent-tools.sh --help",
+        "pnpm run doctor"
+      ],
+      "experiences": [
+        "ax",
+        "dx"
+      ],
+      "impactOn": {
+        "excitement": 1,
+        "easeOfUse": 0,
+        "perceivedOptimality": 2
+      },
+      "effort": "M",
+      "priorityScore": 40,
+      "status": "done",
+      "antiGoals": [],
+      "smallestExperiment": "Scaffold v2 sections for product-* personas via generate-persona rewrite batch.",
+      "createdAt": "2026-07-31T15:41:08.543Z",
+      "updatedAt": "2026-07-31T15:41:08.631Z",
+      "runId": "20260731-all-eq"
+    },
+    {
+      "id": "fr-agent-check-multi-gate-wait",
+      "title": "Narrow multi-scope agent:check concurrency messaging",
+      "problem": "When package.json + docs + skills stage together, wait feels multi-gate without ranked progress.",
+      "desiredOutcome": "Staged check prints ordered gate list with expected duration class.",
+      "hypothesis": "If we deliver \"Staged check prints ordered gate list with expected duration class.\", positive metrics rise on pnpm run doctor.",
+      "source": "survey",
+      "sourceRefs": [
+        ".optimizexp/runs/20260731-all-eq/survey/product-app-developer.json"
+      ],
+      "personas": [
+        "product-app-developer"
+      ],
+      "featureIds": [
+        "cli-help-and-doctor"
+      ],
+      "surfaces": [
+        "pnpm run doctor"
+      ],
+      "experiences": [
+        "dx",
+        "ax"
+      ],
+      "impactOn": {
+        "excitement": 1,
+        "easeOfUse": 2,
+        "perceivedOptimality": 2
+      },
+      "effort": "L",
+      "priorityScore": 40,
+      "status": "ready",
+      "antiGoals": [],
+      "smallestExperiment": "Impact-policy progress lines per selected gate (L-effort).",
+      "createdAt": "2026-07-31T15:41:08.543Z",
+      "updatedAt": "2026-07-31T15:41:08.543Z",
+      "runId": "20260731-all-eq"
+    },
+    {
+      "id": "fr-design-lint-agent-first-path",
+      "title": "Keep design:lint as primary in agent first paths",
+      "problem": "Agents historically bound docs:design-lint for DESIGN.md.",
+      "desiredOutcome": "AGENTS/docs and optimizexp bindings stay on design:lint.",
+      "hypothesis": "If we deliver \"AGENTS/docs and optimizexp bindings stay on design:lint.\", positive metrics rise on pnpm run design:lint.",
+      "source": "survey",
+      "sourceRefs": [
+        ".optimizexp/runs/20260731-all-eq/survey/product-designer.json"
+      ],
+      "personas": [
+        "product-designer"
+      ],
+      "featureIds": [
+        "design-system-contract"
+      ],
+      "surfaces": [
+        "pnpm run design:lint"
+      ],
+      "experiences": [
+        "ux",
+        "dx"
+      ],
+      "impactOn": {
+        "excitement": 0,
+        "easeOfUse": 0,
+        "perceivedOptimality": 1
+      },
+      "effort": "S",
+      "priorityScore": 30,
+      "status": "done",
+      "antiGoals": [],
+      "smallestExperiment": "Already rewired; document only if drift recurs.",
+      "createdAt": "2026-07-31T15:41:08.543Z",
+      "updatedAt": "2026-07-31T15:41:08.631Z",
+      "runId": "20260731-all-eq"
+    },
+    {
+      "id": "fr-public-site-optional-web-capture",
+      "title": "Optional web-driver evidence for public-site-first-impression",
+      "problem": "CLI nav check cannot score visual excitement.",
+      "desiredOutcome": "Optional Playwright capture of site home when browser available.",
+      "hypothesis": "If we deliver \"Optional Playwright capture of site home when browser available.\", positive metrics rise on pnpm run docs:site-nav.",
+      "source": "survey",
+      "sourceRefs": [
+        ".optimizexp/runs/20260731-all-eq/survey/product-end-user.json"
+      ],
+      "personas": [
+        "product-end-user"
+      ],
+      "featureIds": [
+        "public-site-first-impression"
+      ],
+      "surfaces": [
+        "pnpm run docs:site-nav"
+      ],
+      "experiences": [
+        "ux"
+      ],
+      "impactOn": {
+        "excitement": 2,
+        "easeOfUse": 0,
+        "perceivedOptimality": 1
+      },
+      "effort": "L",
+      "priorityScore": 20,
+      "status": "ready",
+      "antiGoals": [],
+      "smallestExperiment": "Wire feature driver web with degraded CLI fallback (L).",
+      "createdAt": "2026-07-31T15:41:08.543Z",
+      "updatedAt": "2026-07-31T15:41:08.543Z",
+      "runId": "20260731-all-eq"
+    }
+  ]
+}

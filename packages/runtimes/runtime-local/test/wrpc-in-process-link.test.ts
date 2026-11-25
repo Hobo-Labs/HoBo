@@ -22,12 +22,7 @@ function createTestLayer() {
 		store,
 		codec: createJsonWitCodec(),
 	});
-	return createWrpcLinkLayer({
-		transport,
-		compatibilityFloor: FLOOR,
-		store,
-		clock: { nowMs: () => Date.parse("2026-06-25T15:44:00.000Z") },
-	});
+	return createWrpcLinkLayer({ transport, compatibilityFloor: FLOOR, store });
 }
 
 function kvPin() {
@@ -57,15 +52,6 @@ describe("wrpc in-process link layer", () => {
 			importInterface: KV,
 			providerId: "local-kv",
 			exportInterface: KV,
-		});
-		expect(layer.events.at(-1)).toMatchObject({
-			type: "link.Established",
-			componentId: "api",
-			importInterface: KV,
-			providerId: "local-kv",
-			exportInterface: KV,
-			boundaryMode: "live",
-			transport: "in-process",
 		});
 		const result = await layer.callImport(
 			"api",

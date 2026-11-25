@@ -9,19 +9,18 @@ export type {
 	DispatchFact,
 	DispatchObjective,
 	DispatchProviderInput,
-	DispatchRequest,
 	DispatchReservation,
 	HysteresisInput,
 	ReservationLedger,
 } from "./dispatcher.js";
 export {
-	CREDIT_DISPATCH_SCHEMA,
 	canonicalJson,
 	createDispatcherRegistry,
 	createReservationLedger,
 	DISPATCH_EVENTS,
+	DISPATCHER_SCHEMA_VERSION,
 	decideAndReserveDispatch,
-	decideCreditDispatch,
+	decideDispatch,
 	decidePlacement,
 	parseCreditLedgerView,
 	replayDispatchDecision,
@@ -29,20 +28,19 @@ export {
 } from "./dispatcher.js";
 export type {
 	DispatchBudgetDisclosure,
+	DispatchCandidateV2,
+	DispatchCategoryV2,
 	DispatchCostQuote,
-	PricedDispatchCandidate,
-	PricedDispatchCategory,
-	PricedDispatchDecision,
-	PricedDispatchEventRanking,
-	PricedDispatchRanking,
-	PricedDispatchRejection,
-	PricedDispatchRequest,
-} from "./priced-dispatch.js";
+	DispatchDecisionV2,
+	DispatchRankingV2,
+	DispatchRejectionV2,
+	DispatchRequestV2,
+} from "./dispatcher-v2.js";
 export {
-	decidePricedDispatch,
-	PRICED_DISPATCH_OBJECTIVE,
-	PRICED_DISPATCH_SCHEMA,
-} from "./priced-dispatch.js";
+	DISPATCHER_V2_OBJECTIVE,
+	DISPATCHER_V2_SCHEMA_VERSION,
+	decideDispatchV2,
+} from "./dispatcher-v2.js";
 export * from "./iac-route.js";
 export * from "./iac-route-recovery.js";
 export * from "./iac-target-routing.js";

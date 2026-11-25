@@ -29,7 +29,7 @@ package architecture_evidence
 #DxResourceLifecycleFixtureCorpus: {
 	issue:              "HOBO-572"
 	package_path:       "src/draft/exp-proofs/dx/dx-resource-lifecycle-fixture-corpus"
-	proof_note:         "urn:hobo:proof:dx-resource-lifecycle-fixture-corpus"
+	proof_note:         "docs/design/proofs/dx-resource-lifecycle-fixture-corpus/README.md"
 	source_refs:        [...string]
 	boundary_contracts: [...string]
 	consumers:          [...string]

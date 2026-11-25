@@ -50,7 +50,9 @@ npm.cmd --prefix src\draft\exp-proofs\vibe-first-customer-pilot-storyboard test
 | Downstream pilot story consumes accepted HOBO-577 quickstart fixtures. | `quickstartFixtureRefs` pins source issue, accepted fixture ids, and pilot-use notes. |
 | Scope out remains hard. | `classifyPilotStoryboardRequest` rejects CRM, automation, support tooling, live customer data, production tenant mutation, provider deployment, and proofless launch claims. |
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` - protobuf data shapes and CUE constraints for the pilot
   storyboard record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
+- `ADR.md` - parse-don't-validate and event/projection architecture note.

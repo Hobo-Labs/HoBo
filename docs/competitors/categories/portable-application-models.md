@@ -42,4 +42,4 @@ HoBo's Bindle kinds, BoundaryContracts and PortabilityReport are exactly an appl
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)

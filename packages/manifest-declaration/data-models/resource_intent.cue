@@ -52,7 +52,7 @@ package hobo
 	values: [...string]
 	// "exists" is a presence test and takes no operands; every other op reads
 	// at least one.
-	_operandArity:    true & (op != "exists" | len(values) == 0)
+	_operandArity: true & (op != "exists" | len(values) == 0)
 	_operandsPresent: true & (op == "exists" | len(values) > 0)
 }
 
@@ -88,11 +88,9 @@ package hobo
 	prefer: [...string & !=""]
 	negotiation: #Negotiation
 	deps: [...string & !=""]
-	readyDeps?: [string & !="", ...string & !=""]
-	completedDeps?: [string & !="", ...string & !=""]
 	// Absent or a real region. Never present-and-empty: see note 1.
-	region?:    string & !=""
-	objective:  string & !=""
+	region?:   string & !=""
+	objective: string & !=""
 	placement?: #PlacementCriteria
 	// A schedule's five-field cron expression (the Bindle's cadence trait).
 	cadence?: string & =~"^\\S+(\\s+\\S+){4}$"

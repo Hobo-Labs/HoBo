@@ -1,69 +1,5 @@
 # @hobo/runtime-local
 
-In-process wRPC providers receive an `AbortSignal` in their invocation context.
-When a call reaches its deadline, the signal aborts with the same
-`DeadlineExceededError` returned to the caller. Providers should observe the
-signal to stop work promptly; a provider that ignores it retains its in-flight
-slot until it settles. A pending deadline keeps a standalone Node process alive
-until the call completes or the deadline expires.
-Nested calls inherit the parent deadline and may request an earlier deadline;
-they cannot extend it. Concurrent calls keep their deadlines isolated. Dispatched
-calls produce a `link.Called` event: successful calls omit `outcome`, while
-failures record their outcome and runtime failure kind. Deadline failures record
-whether cancellation was signaled to the provider. Calls rejected before
-dispatch do not produce a call event.
-Thrown values without a recognized failure signal are classified as fatal,
-including `null`, `undefined`, and values that cannot be converted to a string.
-
-The in-memory actor host snapshots state when an actor passivates and replays
-only later events on reactivation. It reuses a snapshot only with the same
-snapshot key (the fold function by default) and equivalent initial state.
-Snapshots live in the host process and do not survive its restart.
-
-The local streamer retains at most `bufferLimit` frames per run. Active readers
-apply backpressure before an unread frame is discarded. A reader that requests
-an older, evicted sequence receives `StreamerHistoryExpiredError` with the
-first available sequence. `start` runs a workflow asynchronously and closes its
-stream when the workflow completes or fails. Finished runs leave the streamer's
-registry; the returned handle can still drain retained frames and observe the
-result. Tearing down an active run closes its stream but does not cancel the
-workflow.
-
-The local scheduler supports interval schedules and five- or six-field cron
-expressions. Cron expressions use the specified IANA time zone, while the
-provider's `cron` operation uses UTC. The first occurrence is strictly after registration, and
-advancing virtual time emits every due occurrence. Expression schedules survive
-snapshots and participate in trace replay. Each provider registration returns a
-new schedule id, including repeated registrations with the same specification.
-Time-zone behavior uses the host's time-zone data.
-
-Interval schedules may set `jitterMs` to a nonnegative value smaller than the
-interval. Each occurrence is delayed by up to that amount, with a deterministic
-offset derived from the clock seed, schedule id, and occurrence. The offsets
-survive snapshots and are reproduced when the trace is replayed.
-
-Reusing a schedule id with a different interval, explicit start, expression, or
-time zone or jitter is rejected, as is a nonnumeric explicit start. When a job handler
-throws, the scheduler still invokes the other due handlers and then throws an
-`AggregateError` containing each failed fire and its cause. The clock has
-already advanced when this happens.
-
-Use `scheduler.advanceAsync(deltaMs)` for jobs that return promises. It awaits
-each due job in fire order, continues after failures, and rejects with an
-`AggregateError` once all due jobs have settled. A second advance is rejected
-while dispatch is in progress. `advance` handles synchronous jobs; if a job
-returns a promise, it reports that `advanceAsync` is required after the job has
-started, so the asynchronous work may still finish.
-
-When a queue batch handler fails, the runtime releases the remaining messages
-whose leases it still owns. It checks each lease before invoking the handler and
-leaves a lease held by another consumer untouched.
-
-Restoring a queue snapshot clears in-process handler state while retaining each
-lease and its expiry. Once the old runtime has stopped, an in-flight message can
-be retried after its visibility timeout. Queue handlers must tolerate at-least-once
-delivery when a snapshot predates their completed effects.
-
 > **Naming:** `packages/runtimes/*` are concrete **runtime backends** (this
 > package: the local/sqlite substrate). The singular `packages/runtime`
 > (`@hobo/runtime`) is the app-facing **SDK primitives** package — a
@@ -86,10 +22,6 @@ CLI version gate).
 **Out:** wRPC cross-process transport, fuel/epoch limits, real `.wasm` byte execution,
 OCI/wasmCloud adapters, conformance suite, grant inference from manifests.
 
-`WrpcLinkPort.manifestIr()` returns a snapshot of established links and their
-negotiated wire versions. Re-establishing a component import replaces its entry;
-the snapshot contains no entry for a link that failed to establish.
-
 ## Usage
 
 ```ts
@@ -106,18 +38,15 @@ const host = createRuntimeLocalComponentHost({
 pnpm --filter @hobo/runtime-local test
 ```
 
+## Architecture evidence
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for protobuf/CUE contracts, PACT boundary,
+parse-don't-validate parsers, and event-sourced state naming.
+
 Promoted from `src/draft/technical-proofs/runtime-local-component-host` in S1-02
 (HOBO-591). wRPC link layer promoted in S1-03 (HOBO-592 / PR #784). Capability
 enforcement promoted from `src/draft/technical-proofs/capability-enforcement-contract`
 in S1-04 (HOBO-593). Binding resolver adapter added in S1-15 (HOBO-605).
-
-## Storage worker
-
-`StorageWorkerClient` runs a SQLite journal in a worker thread. It preserves
-JSON values and native bigint positions across worker messages, rejects pending
-calls if the worker exits, and starts a replacement for later calls. Closing a
-client stops its current worker; a later call starts another one. The default
-`createRuntimeLocalEventStore` uses its own synchronous journal.
 
 ## Durable EventStore reopen coverage
 

@@ -103,7 +103,7 @@ describe("sets fold (golden journal)", () => {
 	});
 });
 
-describe("HOBO-50 projection rules (promoted from urn:hobo:proof:hobo-50-deployment-set-delta)", () => {
+describe("HOBO-50 projection rules (promoted from docs/design/proofs/hobo-50-deployment-set-delta)", () => {
 	it("rejects overlapping open Deltas for the same Camp", () => {
 		const opened = (id: string) => ({
 			type: CD_EVENTS.DeltaOpened,

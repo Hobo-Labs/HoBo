@@ -26,18 +26,6 @@ message StationRecord {
   uint64 seq = 11;
 }
 
-message RailDeliveryPublisher {
-  string target = 1;
-  optional string repository = 2;
-}
-
-message RailDeliveryPolicy {
-  string reconciler_mode = 1;
-  RailDeliveryPublisher publisher = 2;
-  string sync_mode = 3;
-  bool prune = 4;
-}
-
 message RailRecord {
   string id = 1;
   string name = 2;
@@ -49,7 +37,6 @@ message RailRecord {
   string catalog_snapshot_pin = 8;
   bool is_bootstrap = 9;
   string published_at = 10;
-  RailDeliveryPolicy delivery_policy = 11;
 }
 
 // Declared Station capability (ADR-0155). id = capability:<kind>:<slug>.

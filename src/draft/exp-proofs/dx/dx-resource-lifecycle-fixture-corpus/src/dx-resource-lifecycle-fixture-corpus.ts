@@ -51,13 +51,13 @@ export const REQUIRED_CONSUMERS = [
 
 const VALID_PROOF_MODES = new Set(["reference fixture", "simulated", "live", "scope-out"]);
 const REQUIRED_SOURCE_REFS = [
-  "urn:hobo:requirement:developer-experience#plan-07",
-  "urn:hobo:requirement:cli-spec",
-  "urn:hobo:requirement:authoring-resources-wiring#plan-21",
-  "urn:hobo:requirement:control-plane#plan-04",
-  "urn:hobo:requirement:data-plane#plan-32",
-  "urn:hobo:requirement:walkthrough",
-  "urn:hobo:requirement:worked-example#plan-19",
+  "docs/design/developer-experience.md#plan-07",
+  "docs/design/cli-spec.md",
+  "docs/design/authoring-resources-wiring.md#plan-21",
+  "docs/design/control-plane.md#plan-04",
+  "docs/design/data-plane.md#plan-32",
+  "docs/design/walkthrough.md",
+  "docs/design/worked-example.md#plan-19",
 ] as const;
 
 const SCOPE_CREEP_PATTERNS = [
@@ -170,7 +170,7 @@ function lifecycleFixtureFacts(scenarioId: RequiredScenario): LifecycleFixtureFa
 export const DX_RESOURCE_LIFECYCLE_FIXTURE_CORPUS: ResourceLifecycleFixtureCorpus = {
   issue: "HOBO-572",
   packagePath: "src/draft/exp-proofs/dx/dx-resource-lifecycle-fixture-corpus",
-  proofNote: "urn:hobo:proof:dx-resource-lifecycle-fixture-corpus",
+  proofNote: "docs/design/proofs/dx-resource-lifecycle-fixture-corpus/README.md",
   audience: [
     "app developer",
     "platform engineer",
@@ -341,7 +341,7 @@ export function validateDxResourceLifecycleFixtureCorpus(corpus: ResourceLifecyc
   if (corpus.packagePath !== "src/draft/exp-proofs/dx/dx-resource-lifecycle-fixture-corpus") {
     errors.push("target package path must match the Linear issue");
   }
-  if (corpus.proofNote !== "urn:hobo:proof:dx-resource-lifecycle-fixture-corpus") {
+  if (corpus.proofNote !== "docs/design/proofs/dx-resource-lifecycle-fixture-corpus/README.md") {
     errors.push("target proof note must match the Linear issue");
   }
   if (!Array.isArray(corpus.sourceRefs)) {

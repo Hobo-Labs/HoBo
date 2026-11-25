@@ -12,10 +12,10 @@ export const launchSupportEscalationMatrix = {
   goal:
     "Define the launch support escalation matrix, coverage assumptions, and incident communication templates before beta and GA readiness work proceeds.",
   designRefs: [
-    "urn:hobo:requirement:operators-sre#plan-40",
-    "urn:hobo:requirement:developer-experience#plan-49",
-    "urn:hobo:requirement:reliability-observability-cost#plan-05",
-    "urn:hobo:decision:adr-0058",
+    "docs/design/operators-sre.md#plan-40",
+    "docs/design/developer-experience.md#plan-49",
+    "docs/design/reliability-observability-cost.md#plan-05",
+    "docs/design/adr/03-data-plane.md#adr-0058",
   ],
   personas: [
     {

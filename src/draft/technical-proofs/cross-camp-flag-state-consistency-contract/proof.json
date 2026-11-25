@@ -8,10 +8,19 @@
       "src/draft/technical-proofs/flag-event-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md",
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/contracts-policy-flags.md",
+      "docs/design/reliability-observability-cost.md"
+    ]
   },
   "artifacts": {
-    "diagrams": []
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
   },
   "waivers": []
 }

@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import {
 	ControlModel,
-	dockerAvailable,
+	describeNightlyPlan,
 	handleControlRequest,
+	runSchemathesis,
 } from "../../src/index.js";
 
 describe("in-process API fuzz oracles", () => {
@@ -127,11 +128,15 @@ describe("in-process API fuzz oracles", () => {
 		);
 	});
 
-	it("disables Docker probes when requested", () => {
+	it("skips Schemathesis and docker-gated nightly tools when absent", () => {
 		const previous = process.env.HOBO_FUZZ_DOCKER;
 		process.env.HOBO_FUZZ_DOCKER = "0";
 		try {
-			expect(dockerAvailable()).toBe(false);
+			const nightly = describeNightlyPlan();
+			expect(nightly.liveClouds).toBe("forbidden");
+			expect(nightly.docker).toBe(false);
+			expect(nightly.skipped).toContain("restler");
+			expect(runSchemathesis().ran).toBe(false);
 		} finally {
 			if (previous === undefined) delete process.env.HOBO_FUZZ_DOCKER;
 			else process.env.HOBO_FUZZ_DOCKER = previous;

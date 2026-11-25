@@ -27,8 +27,3 @@ sha512 = "d1ca2e7b0616a94a3b39d1b9450bb3fb595b01fd94a8626ad75433038dde40988ecb41
 url = "https://github.com/WebAssembly/wasi-sockets/archive/main.tar.gz"
 sha256 = "2bc0f65a8046207ee3330ad7d63f6fafeafd4cc0ea4084f081bd5e4f7b177e74"
 sha512 = "3e5490e41547dffa78d52631825d93da8d60f4af0246cbaf97e1ecb879285953a86d5f1f390b10c32f91dd7eaec6f43e625a26b1c92c32a0c86fde428aedaaab"
-
-[http]
-url = "https://github.com/WebAssembly/wasi-http/archive/refs/tags/v0.2.3.tar.gz"
-sha256 = "9f5f34a720180eff513ad9e7166b005ebcae2414669b84e5ee33c7c7b29560a4"
-sha512 = "96078be4340468a016f9d35fcf0245106b8041dbbf2008282b5aca233ca7c68be35c6c3c5822deb3711377bc0e14a22b1e00845c112df3eff947c284c72ffcb1"

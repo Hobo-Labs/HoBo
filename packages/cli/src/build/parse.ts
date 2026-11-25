@@ -3,11 +3,13 @@ import type { CliFlags } from "../shell/parse.js";
 import type { CliContext } from "../types/envelope.js";
 import { BuildError } from "./errors.js";
 
+// public-contract: the manifest's `schema` version discriminator — the constant is the contract.
 export const BUILD_MANIFEST_SCHEMA = "hobo.build-manifest/v1" as const;
 const DEFAULT_SOURCE_DATE_EPOCH = "2026-01-01T00:00:00.000Z";
 
 export type ArtifactKind = "wasm-component" | "oci-container" | "node-app";
 
+// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export type ServiceDeclaration = {
 	readonly name: string;
 	readonly language: string;
@@ -16,6 +18,7 @@ export type ServiceDeclaration = {
 	readonly entrypoint: string;
 };
 
+// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export type BuildArtifact = {
 	readonly service: string;
 	readonly kind: ArtifactKind;
@@ -28,6 +31,7 @@ export type BuildArtifact = {
 	readonly source: string;
 };
 
+// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export type BuildManifest = {
 	readonly schema: typeof BUILD_MANIFEST_SCHEMA;
 	readonly generatedBy: "hobo build";
@@ -73,6 +77,7 @@ export function parseServiceDeclaration(raw: JsonValue): ServiceDeclaration {
 		);
 	}
 
+	// SAFETY: `const record = raw as JsonObject;` is required at this I/O or test boundary.
 	const record = raw as JsonObject;
 	const name = String(record.name ?? "");
 	if (!/^[a-z][a-z0-9-]*$/u.test(name)) {
@@ -113,6 +118,7 @@ export function parseBuildManifest(json: JsonValue): BuildManifest {
 		);
 	}
 
+	// SAFETY: `const record = json as JsonObject;` is required at this I/O or test boundary.
 	const record = json as JsonObject;
 	if (record.schema !== BUILD_MANIFEST_SCHEMA) {
 		throw new BuildError(
@@ -146,6 +152,7 @@ function parseBuildArtifact(raw: JsonValue): BuildArtifact {
 		);
 	}
 
+	// SAFETY: `const record = raw as JsonObject;` is required at this I/O or test boundary.
 	const record = raw as JsonObject;
 	const kind = String(record.kind ?? "");
 	if (
@@ -251,6 +258,7 @@ export function normalizeTargetRuntime(runtime: string): TargetRuntime {
 		normalized === "component" ||
 		normalized === "container"
 	) {
+		// SAFETY: `return normalized === "component" ? "wasm" : (normalized as TargetRuntime);` is required at this I/O or test boundary.
 		return normalized === "component" ? "wasm" : (normalized as TargetRuntime);
 	}
 	throw new BuildError(

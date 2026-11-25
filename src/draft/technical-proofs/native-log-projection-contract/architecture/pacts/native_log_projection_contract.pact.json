@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "NativeLogProjectionContractConsumer"
+  },
+  "provider": {
+    "name": "NativeLogProjectionContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Native Log Projection Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/native-log-projection-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.native_log_projection_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,5 +1,11 @@
 import { isText } from "../../src/authz/json.js";
 
+// Snapshot of the OpenTelemetry semantic-conventions registry entries @hobo/cd
+// emits, pinned at the release recorded in src/telemetry/STANDARDS.lock.json
+// (v1.41.0: model/cicd, model/deployment, model/error). Golden tests validate
+// every CD span and CI/CD metric against this snapshot; an upgrade regenerates
+// it from the new tag (R8).
+
 export const REGISTRY_VERSION = "1.41.0";
 
 type AttributeSpec = Readonly<{
@@ -56,6 +62,7 @@ const ATTRIBUTE_SPECS = new Map<string, AttributeSpec>(
 	Object.entries(REGISTRY_ATTRIBUTES),
 );
 
+/** Registry namespaces: any key under them must be a registry attribute. */
 export const REGISTRY_NAMESPACES = ["cicd.", "deployment.", "error."];
 
 export const SPAN_DEFINITIONS = {
@@ -111,10 +118,12 @@ export const METRIC_DEFINITIONS = {
 
 const METRIC_SPECS = new Map(Object.entries(METRIC_DEFINITIONS));
 
+/** The pinned definition of a CI/CD metric, when the registry has one. */
 export function metricDefinition(name: string) {
 	return METRIC_SPECS.get(name);
 }
 
+/** Problems with one attribute set against the snapshot (empty = valid). */
 export function attributeProblems(
 	attributes: Readonly<Record<string, string | number | boolean>>,
 ): string[] {

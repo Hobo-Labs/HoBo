@@ -10,7 +10,6 @@ import {
 	type PatternRenderReceipt,
 } from "./_generated/patterns_pb.js";
 import type { PatternCatalog } from "./catalog.js";
-import { isJsonArray, isJsonObject, isJsonString } from "./json.js";
 import { PatternParseError } from "./parse.js";
 import { searchPatterns } from "./retrieve.js";
 import type { HoboVocabulary } from "./vocabulary.js";
@@ -42,7 +41,7 @@ export function validatePatternCatalog(input: {
 			issues.push(`${pattern.id}: provenance`);
 		const defaults = pattern.renderings.filter((item) => item.isDefault);
 		if (defaults.length !== 1) issues.push(`${pattern.id}: default rendering`);
-		for (const alias of pattern.aliases) {
+		for (const alias of [...pattern.aliases, ...pattern.legacyAliases]) {
 			const key = alias.trim().toLowerCase();
 			if (!key) continue;
 			const prior = exactAliases.get(key);
@@ -167,19 +166,22 @@ export function parseEvalCases(raw: string): PatternEvalCase[] {
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => {
-			const rec = JSON.parse(line);
-			if (
-				!isJsonObject(rec) ||
-				!isJsonString(rec.id) ||
-				!isJsonString(rec.query)
-			) {
+			const rec = JSON.parse(line) as {
+				id?: unknown;
+				query?: unknown;
+				expectedIds?: unknown;
+				expectAbstain?: unknown;
+			};
+			if (typeof rec.id !== "string" || typeof rec.query !== "string") {
 				throw new PatternParseError("eval case needs id and query");
 			}
 			return create(PatternEvalCaseSchema, {
 				id: rec.id,
 				query: rec.query,
-				expectedIds: isJsonArray(rec.expectedIds)
-					? rec.expectedIds.filter(isJsonString)
+				expectedIds: Array.isArray(rec.expectedIds)
+					? rec.expectedIds.filter(
+							(item): item is string => typeof item === "string",
+						)
 					: [],
 				expectAbstain: rec.expectAbstain === true,
 			});

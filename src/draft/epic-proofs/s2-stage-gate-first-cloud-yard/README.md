@@ -46,7 +46,7 @@ CI-runnable drill under `examples/hello-bindle` without live cloud credentials.
 Mocked boundaries only — no live Cloudflare, Yard process, Postgres event
 store, or credentialed CI runner. Production promotion to
 `examples/hello-bindle` drill wiring and `packages/cloud` awaits S2-07..S2-10
-merge. Evidence attaches to `urn:hobo:requirement:stage-2-first-cloud-yard-acceptance`
+merge. Evidence attaches to `docs/design/stage-2-first-cloud-yard-acceptance.md`
 (S2-01) after that record merges.
 
 ## Verification
@@ -56,10 +56,12 @@ pnpm exec turbo run test --filter ./src/draft/epic-proofs/s2-stage-gate-first-cl
 node --import tsx src/draft/epic-proofs/s2-stage-gate-first-cloud-yard/scripts/run-stage-gate-drill.ts
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf + CUE for drill record shapes.
 - `architecture/pacts/` — PACT boundary for the drill consumer.
+- `ADR.md` — parse-don't-validate and event-architecture vocabulary.
 
 ## Maintenance
 
-Docs-only companion: `urn:hobo:proof:hobo-626-s2-stage-gate-first-cloud-yard`.
+Docs-only companion: `docs/design/proofs/hobo-626-s2-stage-gate-first-cloud-yard/README.md`.

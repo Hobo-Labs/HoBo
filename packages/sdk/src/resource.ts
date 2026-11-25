@@ -8,19 +8,31 @@ import {
 } from "./errors.js";
 import { RESOURCE_DEFINITION_SCHEMA } from "./schema.js";
 
+// `defineResource` is an authoring factory over @hobo/cloud's EXISTING
+// `ResourceDefinition` (packages/cloud/src/registry/catalog.ts) — the exact
+// record the Registry projection catalogs and Matching ranks. The SDK adds the
+// walkthrough's authoring surface (type/engine/class/with/match) and lowers it
+// onto that target type; it invents no second definition shape.
+
 export interface ResourceRealization {
+	/** Owning provider id ("azure"); inferred from definitionId when omitted. */
 	providerId?: string;
+	/** Concrete definition id ("azure.flexiblePostgres"). */
 	definitionId?: string;
 	regions?: string[];
 	cost?: { sku: string; unit: string; marginalPrice: string };
+	/** Provider-specific realization properties (ha: true, consistency: …). */
 	properties?: Record<string, unknown>;
 }
 
 export interface DefineResourceSpec {
+	/** Abstract capability port ("database", "kv", "bucket"). */
 	type: string;
 	engine?: string;
 	class?: string;
+	/** The provider realization this definition pins — a provider package value. */
 	with: ResourceRealization;
+	/** Specificity selectors; a definition wins over `{}` defaults by match keys. */
 	match?: Record<string, string>;
 	features?: string[];
 	regions?: string[];
@@ -89,6 +101,8 @@ export function defineResource(
 		[providerId, port, ...(spec.class !== undefined ? [spec.class] : [])].join(
 			".",
 		);
+	// An authored definition outscores the provider's `{}` default by carrying
+	// every match selector and feature as specificity.
 	const specificity = Object.keys(match).length + features.length;
 	const cost = realization.cost ?? {
 		sku: id,

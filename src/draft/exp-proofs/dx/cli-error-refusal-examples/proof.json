@@ -9,7 +9,8 @@
     "epicProofs": [],
     "expProofs": [
       "src/draft/exp-proofs/dx/dx-resource-lifecycle-fixture-corpus"
-    ]
+    ],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -1,11 +1,13 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 
+/** Portable offline floor. */
 export const SIMPLE_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	provider: "simple",
 	offerings: [offering("inprocess.weighted", { features: ["static-weights"] })],
 	fallbacks: [],
 };
 
+/** Cloudflare Load Balancing — lifecycle create/update/delete + weighted. */
 export const CLOUDFLARE_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	{
 		provider: "cloudflare",
@@ -23,6 +25,7 @@ export const CLOUDFLARE_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 		fallbacks: ["dns.weighted", "inprocess.weighted"],
 	};
 
+/** Vercel edge canary + path/header routes. */
 export const VERCEL_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	provider: "vercel",
 	offerings: [
@@ -33,6 +36,9 @@ export const VERCEL_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	fallbacks: ["inprocess.weighted"],
 };
 
+/** Lakebed dual-layer: in-process + deploy-time driver bind. Mirrors
+ * `@hobo/provider-lakebed`'s profile (asserted in
+ * `@hobo/hobo`'s catalog tests). */
 export const LAKEBED_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	provider: "lakebed",
 	offerings: [
@@ -46,6 +52,12 @@ export const LAKEBED_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	fallbacks: [],
 };
 
+/**
+ * Netlify: no Netlify routing adapter ships, and
+ * Netlify's split testing splits by git branch, so the only realized offering
+ * is in-process weighting between immutable deploy permalinks. Kind `other`:
+ * the core union has no Netlify member. Mirrors `@hobo/provider-netlify`.
+ */
 export const NETLIFY_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	provider: "other",
 	offerings: [
@@ -56,6 +68,7 @@ export const NETLIFY_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	fallbacks: [],
 };
 
+/** Tailscale Funnel via Junction overlay — single and multi-backend compose. */
 export const FUNNEL_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	provider: "funnel",
 	offerings: [

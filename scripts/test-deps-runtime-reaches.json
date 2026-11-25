@@ -1,9 +1,29 @@
 {
 	"reaches": [
 		{
+			"from": "packages/runtimes/runtime-rivet/test/durable-topic-async-live.test.ts",
+			"needs": ["@hobo/wit#build"],
+			"why": "loads WIT sources and component tools from the sibling workspace"
+		},
+		{
 			"from": "packages/iac/iac-alchemy/test/core-isolation.test.ts",
 			"needs": ["@hobo/core#build"],
 			"why": "inspects shared package source and metadata through computed paths; the test dependency checker conservatively schedules core's build even though the scan does not execute it"
+		},
+		{
+			"from": "packages/runtime/test/durable-messaging-async-component.test.ts",
+			"needs": ["@hobo/core#build", "@hobo/wit#build"],
+			"why": "builds a real component using the WIT package's tools and sources, then loads core's built messaging limits by a computed file URL"
+		},
+		{
+			"from": "packages/extension-alchemy-rivet/test/rivet-topic-live.mjs",
+			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime-rivet#build"],
+			"why": "runs a spawned fixture that loads the adapter and runtime through computed module paths"
+		},
+		{
+			"from": "packages/control-yard/test/evidence-launch.test.ts",
+			"stubOnly": true,
+			"reason": "creates a temporary checkout and evidence tree to test symlink handling; it does not load the draft workspace"
 		},
 		{
 			"from": "packages/cli/test/generated-runtime-execution.test.ts",
@@ -25,16 +45,6 @@
 			"why": "links packages/bindles into a generated project's node_modules/@hobo, compiles the generated code against its dist/ types and imports it, which imports it by name"
 		},
 		{
-			"from": "packages/cli/test/codegen-resource-aliases.test.ts",
-			"needs": ["@hobo/bindles#build"],
-			"why": "loads packages/bindles/dist/index.js in a generated bindle"
-		},
-		{
-			"from": "packages/cli/test/collect-resource-identities.test.ts",
-			"needs": ["@hobo/bindles#build"],
-			"why": "loads packages/bindles/dist/index.js in a generated bindle"
-		},
-		{
 			"from": "packages/cli/test/typescript-project-codegen-ambient-and-aliases.test.ts",
 			"needs": ["@hobo/core#build", "@hobo/runtime#build"],
 			"why": "links packages/runtime and packages/core by a name it computes into a generated project's node_modules/@hobo, compiles the generated code against their dist/ types and imports it, which imports them by name"
@@ -53,21 +63,6 @@
 			"from": "packages/hobo/test/persistent-local-deployment.test.ts",
 			"needs": ["@hobo/bindles#build"],
 			"why": "loads ../../bindles/dist/index.js by URL"
-		},
-		{
-			"from": "packages/patterns/test/trainable-greeting.test.ts",
-			"needs": ["@hobo/runtime#build"],
-			"why": "links @hobo/runtime into the generated application and executes its trainable greeting"
-		},
-		{
-			"from": "packages/patterns/test/yard-merge.test.ts",
-			"needs": ["@hobo/camps#build", "@hobo/yards#build"],
-			"why": "links the camps and yards packages into the generated workspace and executes the rendered fragment"
-		},
-		{
-			"from": "src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools/test/codegen-pipeline.test.ts",
-			"needs": ["@hobo/schema-tools#build"],
-			"why": "runs the draft codegen against copied fixture packages; the draft codegen imports generated-typescript from the built production schema-tools package"
 		},
 		{
 			"from": "packages/hobo/src/ci-up-relay.ts",

@@ -63,6 +63,8 @@ describe("HoBo's own deliverables as Freight", () => {
 	});
 
 	it("writes the same canonical hobo.freight-manifest/v1 bytes @hobo/cd writes", () => {
+		// The fixture is @hobo/cd's writeFreightManifest output for this input;
+		// @hobo/ci cannot import @hobo/cd (cd -> stations -> ci would cycle).
 		const bundle = new TextEncoder().encode("relay bundle bytes");
 		const statement = ciProvenanceStatement(build, [
 			{ name: "relay/bundle", digest: `sha256:${sha(bundle)}` },
@@ -140,6 +142,7 @@ describe("HoBo's own deliverables as Freight", () => {
 			statement.predicate.buildDefinition.resolvedDependencies[0].digest,
 		).toEqual({ gitCommit: build.commit });
 		expect(provenance.digest).toBe(`sha256:${sha(provenance.bytes)}`);
+		// Unsigned: CD records the reference but never counts it as verified.
 		expect(provenance.ref).toMatchObject({ verified: false, verifier: "" });
 	});
 
@@ -202,6 +205,8 @@ describe("HoBo's own deliverables as Freight", () => {
 				artifacts,
 			}),
 		});
+		// The structural read @hobo/cd's CiEventReader driver makes (I15):
+		// match by path, then hash the bytes it reads back.
 		const json = JSON.parse(toJsonString(LeaseSchema, lease));
 		expect(json.pipelineId).toBe("hobo-main");
 		expect(json.result.status).toBe("passed");
@@ -342,6 +347,7 @@ describe("the HoBo CI Fabric workflow writes HoBo's own Freight", () => {
 		expect(freight).toContain("github.event_name == 'push'");
 		expect(freight).toContain("github.ref == 'refs/heads/main'");
 		expect(freight).toContain("needs.main_gate_finish.result == 'success'");
+		// The finish gate requires the plan job, which runs the secret scan.
 		expect(jobBlock("main_gate_finish")).toMatch(
 			/needs: \[[^\]]*main-gate-plan/,
 		);

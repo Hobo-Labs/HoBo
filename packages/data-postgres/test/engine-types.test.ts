@@ -1,3 +1,6 @@
+// The type-mapping annex and the two conversions behind it. Always on: the
+// native text forms below are what a PostgreSQL server produces (the live
+// lane proves that against a real one), so the conversion itself needs none.
 import assert from "node:assert/strict";
 import {
 	CANONICAL_TYPES,
@@ -24,6 +27,7 @@ import {
 } from "../src/index.js";
 import { EVERY_TYPE_RECORD, EVERY_TYPE_SCHEMA } from "./engine-support.js";
 
+/** Answer a column from a row the way the binding's accessors do. */
 function cellsOf(
 	row: PostgresRow,
 ): (column: string) => string | null | undefined {
@@ -75,6 +79,7 @@ describe("type-mapping annex", () => {
 			}
 		}
 		const byType = new Map(annex.edges.map((edge) => [edge.canonical, edge]));
+		// The constraint the contract asks to be honest about.
 		assert.equal(byType.get("string")?.write, "constrained");
 		assert.match(byType.get("string")?.note ?? "", /U\+0000/u);
 		assert.equal(byType.get("int64")?.write, "exact");
@@ -122,6 +127,7 @@ describe("canonical → native", () => {
 			encodeParameter("int64", "-9223372036854775808", "f"),
 			"-9223372036854775808",
 		);
+		// The shortest text that parses back to the same double.
 		assert.equal(
 			encodeParameter("float64", 1.7976931348623157e308, "f"),
 			"1.7976931348623157e+308",
@@ -143,6 +149,7 @@ describe("canonical → native", () => {
 
 	test("text the server would alter or reject is refused before it is sent", () => {
 		refused(() => encodeParameter("string", "a\u0000b", "note"), "NUL");
+		// UTF-8 encoding would silently turn each of these into U+FFFD.
 		refused(
 			() => encodeParameter("string", "\ud800", "note"),
 			"high surrogate",
@@ -155,6 +162,7 @@ describe("canonical → native", () => {
 			() => encodeParameter("string", "\udc00\ud800", "note"),
 			"reversed pair",
 		);
+		// A well-formed pair is one code point and passes.
 		assert.equal(encodeParameter("string", "😀", "note"), "😀");
 	});
 });
@@ -277,6 +285,7 @@ describe("native → canonical", () => {
 			["timestamp", "0044-03-15T12:00:00 BC", "select"],
 			["timestamp", "0044-03-15 12:00:00+00 BC", "decoded"],
 			["timestamp", "10000-01-01T00:00:00", "select"],
+			// Not UTC: the capture session pins UTC, so anything else is wrong.
 			["timestamp", "2026-01-02 05:04:05+02", "decoded"],
 			["json", "{not json", "select"],
 		];
@@ -286,6 +295,8 @@ describe("native → canonical", () => {
 				`${type} ${text}`,
 			);
 		}
+		// NaN and the infinities do arrive as eight bytes; the canonical
+		// normaliser is what refuses them.
 		const schema = parseDatasetSchema({
 			name: "t",
 			keyFields: ["id"],
@@ -309,6 +320,7 @@ describe("native → canonical", () => {
 
 	test("a whole row reads back byte-identical to the canonical record", () => {
 		const expected = parseCanonicalRecord(EVERY_TYPE_SCHEMA, EVERY_TYPE_RECORD);
+		// What the select expressions return for that record on a real server.
 		const selected: PostgresRow = {
 			tenant_id: "",
 			id: "order-1",
@@ -335,6 +347,7 @@ describe("native → canonical", () => {
 			),
 			canonicalEncode(expected),
 		);
+		// And the same record as logical decoding spells it.
 		const decoded: PostgresRow = {
 			...selected,
 			weight: "0.1",
@@ -372,6 +385,7 @@ describe("native → canonical", () => {
 		assert.deepEqual(
 			canonicalFromNative(open, (column) => cells[column], "select"),
 			{
+				// A declared column always wins over an overflow key of the same name.
 				id: "a",
 				body: null,
 				extra: [1, "two"],

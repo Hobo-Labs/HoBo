@@ -1,3 +1,51 @@
+/**
+ * Can a registered compute provider host a self-managed, stateful, TCP-served
+ * data store (PostgreSQL is the motivating case)?
+ *
+ * The answer is derived from what a provider has *declared*, never from its
+ * name: the compute capabilities of its Capability Manifest (the feature
+ * tokens of each `compute` equivalence class) and the capability profiles of
+ * its Yard catalog rows. There is deliberately no list of provider ids that
+ * pass.
+ *
+ * Hosting such a store needs four things ({@link SELF_HOST_FACETS}):
+ *
+ *   1. a long-running container or VM (not request-scoped, not scale-to-zero);
+ *   2. a volume or disk that survives restarts and redeploys;
+ *   3. inbound TCP on a private or public address (not HTTP-only ingress);
+ *   4. enough control of the host to run backups.
+ *
+ * What a declaration can establish, token by token:
+ *
+ *   - `vm` — a virtual machine. The operator owns the OS, the process table,
+ *     the network interface and the machine's own disk, so all four facets
+ *     hold by what a VM is. A `bucket.filesystem/v1` row in the Yard catalog
+ *     additionally shows a volume that outlives the machine; without one the
+ *     data shares the VM's lifetime, which is reported as a caveat, not a no.
+ *   - `container` — a container runtime, and nothing more. Containers are sold
+ *     request-scoped, scale-to-zero, HTTP-only and diskless at least as often
+ *     as not, so each facet must be declared with its own token
+ *     (`long-running`, `persistent-volume`, `tcp`, `exec`). A filesystem
+ *     volume elsewhere in the same catalog does not show the container can
+ *     mount it.
+ *   - anything else (`static`, `edge`, `worker`, …) is not a host form.
+ *
+ * A provider package can say more than tokens do with a **host form**
+ * ({@link RegisteredHostForm}): one compute product it already declares (a Yard
+ * `productId`, or an equivalence `resourceClass`), stated to be a VM or a
+ * container, with each facet it does or does not provide cited to the
+ * vendor's documentation. Forms are assessed per product, so one provider can
+ * have a form that can and a form that cannot, and the assessment lists both.
+ * A form that names a `resourceClass` supersedes that class's token reading.
+ *
+ * Three verdicts, and the middle one is the honest one: `can` when one compute
+ * capability establishes every facet, `cannot` when nothing declared is a VM
+ * or container at all, `undetermined` when a host form is declared but the
+ * declaration is too coarse to tell — with exactly which facets are missing,
+ * so the fix (enrich that provider's declaration) is nameable.
+ *
+ * Pure and deterministic: no clock, no environment, no I/O.
+ */
 import {
 	cloneAsJson,
 	isJsonBoolean,
@@ -31,17 +79,20 @@ export const SELF_HOST_FORMS = Object.freeze(["vm", "container"] as const);
 
 export type SelfHostForm = (typeof SELF_HOST_FORMS)[number];
 
+/** One `compute` capability as a provider's Capability Manifest declares it. */
 export interface RegisteredComputeCapability {
 	readonly resourceClass: string;
 	readonly providerService: string;
 	readonly features: readonly string[];
 }
 
+/** One Yard catalog row: the capability profile and the product behind it. */
 export interface RegisteredCatalogRow {
 	readonly profile: string;
 	readonly productId?: string;
 }
 
+/** One facet of one host form, cited: the product provides it, or does not. */
 export interface RegisteredHostFacetClaim {
 	readonly facet: SelfHostFacet;
 	readonly holds: boolean;
@@ -49,6 +100,14 @@ export interface RegisteredHostFacetClaim {
 	readonly sources: readonly DataStoreClaimSource[];
 }
 
+/**
+ * A compute product a provider already declares, described as a self-host
+ * target. `productId` is a Yard catalog product, `resourceClass` an
+ * equivalence class; at least one is present and both must already exist in
+ * the provider's own declarations. `volumeProductId` names the Yard
+ * `bucket.filesystem/v1` product that realizes the persistent volume, when the
+ * provider's catalog has one.
+ */
 export interface RegisteredHostForm {
 	readonly productId?: string;
 	readonly resourceClass?: string;
@@ -59,6 +118,7 @@ export interface RegisteredHostForm {
 	readonly facets: readonly RegisteredHostFacetClaim[];
 }
 
+/** Everything a registered provider has declared that this question reads. */
 export interface RegisteredHostDeclaration {
 	readonly providerId: string;
 	readonly compute: readonly RegisteredComputeCapability[];
@@ -72,7 +132,9 @@ export interface SelfHostFacetFinding {
 	readonly reason: string;
 }
 
+/** The verdict for one compute form of a provider. */
 export interface SelfHostFormAssessment {
+	/** The Yard product id, or the equivalence resource class, assessed. */
 	readonly target: string;
 	readonly providerService: string;
 	readonly verdict: SelfHostVerdict;
@@ -84,10 +146,14 @@ export interface SelfHostFormAssessment {
 export interface SelfHostAssessment {
 	readonly providerId: string;
 	readonly verdict: SelfHostVerdict;
+	/** The compute form the verdict rests on, when one is a host form. */
 	readonly resourceClass?: string;
 	readonly findings: readonly SelfHostFacetFinding[];
+	/** Facets the declaration does not establish; empty unless `undetermined`. */
 	readonly missing: readonly SelfHostFacet[];
+	/** True-but-qualified facts a `can` verdict still carries. */
 	readonly caveats: readonly string[];
+	/** Every compute form assessed, best first: which qualify and which do not. */
 	readonly forms: readonly SelfHostFormAssessment[];
 	readonly summary: string;
 }
@@ -111,6 +177,10 @@ const RANK: Readonly<Record<SelfHostVerdict, number>> = Object.freeze({
 	cannot: 2,
 });
 
+/**
+ * Parse a host form. The evidence rule is the catalog's: the form itself and
+ * every facet claim must cite at least one dated vendor source.
+ */
 export function parseRegisteredHostForm(
 	value: JsonValue | undefined,
 	path = "hostForm",
@@ -164,6 +234,7 @@ export function parseRegisteredHostForm(
 	});
 }
 
+/** Assess one provider's declaration. */
 export function assessSelfHostedDataStore(
 	declaration: RegisteredHostDeclaration,
 ): SelfHostAssessment {
@@ -218,6 +289,7 @@ export function assessSelfHostedDataStore(
 	});
 }
 
+/** Assess every declaration, in the order given. */
 export function assessSelfHostedDataStores(
 	declarations: readonly RegisteredHostDeclaration[],
 ): readonly SelfHostAssessment[] {

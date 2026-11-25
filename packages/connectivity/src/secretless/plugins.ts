@@ -1,3 +1,7 @@
+/**
+ * Extensible secretless protocol plugins (ADR-0027).
+ * First-class: postgres, tcp, mysql, redis. Plugin interface is open for more.
+ */
 import { createHash } from "node:crypto";
 
 export type SecretlessProtocolId =
@@ -9,7 +13,12 @@ export type SecretlessProtocolId =
 
 export type ProtocolPlugin = Readonly<{
 	id: SecretlessProtocolId;
+	/** Default local base port for leases of this protocol. */
 	defaultBasePort: number;
+	/**
+	 * Perform mediated handshake using closed-over credential.
+	 * Must never return the credential or include it in outputs.
+	 */
 	handshake: (input: {
 		targetRef: string;
 		credentialMaterial: string;

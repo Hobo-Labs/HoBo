@@ -1,8 +1,9 @@
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: topology files are untrusted module exports; each record is parsed once with its generated cd_topology schema before it is used. */
 /** public-contract: declared Camp topology composed from @hobo/yards and cd_topology records. */
 
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
-import { fromJson } from "@bufbuild/protobuf";
+import { fromJson, type JsonValue as ProtoJson } from "@bufbuild/protobuf";
 import {
 	type CampId,
 	CampManagement,
@@ -21,22 +22,23 @@ import {
 	defaultModuleImporter,
 	type ModuleImporter,
 } from "./cd-delivery-module.js";
-import {
-	cloneAsJson,
-	isJsonObject,
-	isJsonString,
-	type JsonObject,
-	type JsonValue,
-} from "./json.js";
+import { isJsonObject, isJsonString, type JsonObject } from "./json.js";
 
+// The @hobo/yards contract a topology Yard carries. Typed from `Yard`, so a
+// contract change in @hobo/yards fails to compile here. Not imported at run
+// time: this module stays free of the yards runtime (and its module graph)
+// that only the type is needed from.
 const TOPOLOGY_CONTRACT_VERSION: Yard["contract"] = "hobo.topology-objects/v1";
 
+// public-contract: the Camp label that declares a Camp OBSERVE_ONLY (D5).
 export const CD_MANAGEMENT_LABEL = "hobo.cd/management";
 
 export function campIdOf(yardName: string, campId: string): CampId {
+	// SAFETY: the Yard-scoped id placement and the journal use for a Camp.
 	return `${yardName}/${campId}` as CampId;
 }
 
+// domain-view: the part of a @hobo/yards Yard the topology reads (a Yard, or its parsed CdTopologyYard).
 export type DeclaredYard = Readonly<{
 	name: string;
 	providerId: string;
@@ -49,6 +51,7 @@ export type DeclaredYard = Readonly<{
 	}>[];
 }>;
 
+/** Project Yards (and their Camps) as declared CD topology. */
 export function yardTopology(
 	yards: readonly (Yard | DeclaredYard)[],
 	stationId: string,
@@ -90,6 +93,7 @@ export class TopologyConflictError extends Error {
 	}
 }
 
+/** A static reader over declared Camps. */
 export function staticTopologyReader(
 	camps: readonly CampTopology[],
 ): TopologyReader {
@@ -109,6 +113,7 @@ export function staticTopologyReader(
 	});
 }
 
+/** Merge readers; a Camp declared by two readers refuses (fail closed). */
 export function mergeTopologyReaders(
 	readers: readonly TopologyReader[],
 ): TopologyReader {
@@ -137,6 +142,9 @@ export function mergeTopologyReaders(
 	});
 }
 
+// ── Topology files (`hobo deploy --yard`, HOBO_CD_TOPOLOGY) ─────────────────
+
+// public-contract: the environment variable naming topology files for every CD command.
 export const CD_TOPOLOGY_ENV = "HOBO_CD_TOPOLOGY";
 
 export type TopologyRefusal = Readonly<{
@@ -156,7 +164,7 @@ export type TopologyOutcome =
 const INVALID_REMEDIATION =
 	"A topology file default-exports a @hobo/yards Yard, or exports `yards` (Yards) and/or `camps` (records with campId `<yard>/<camp>`, yardId, provider, envType, optional logicalId, regions, labels, stationId, management); see packages/hobo/CD.md.";
 
-function splitFiles(value: JsonValue | undefined): string[] {
+function splitFiles(value: unknown): string[] {
 	return isJsonString(value)
 		? value
 				.split(",")
@@ -165,6 +173,7 @@ function splitFiles(value: JsonValue | undefined): string[] {
 		: [];
 }
 
+/** Topology files a CD command loads: HOBO_CD_TOPOLOGY first, then `--yard`. */
 export function topologyFilesOf(
 	flags: JsonObject,
 	env: Readonly<Record<string, string | undefined>>,
@@ -193,10 +202,7 @@ class TopologyParseError extends Error {
 	}
 }
 
-function arrayExport(
-	name: string,
-	value: JsonValue | undefined,
-): readonly JsonValue[] {
+function arrayExport(name: string, value: unknown): readonly unknown[] {
 	if (value === undefined) return [];
 	if (!Array.isArray(value))
 		throw new TopologyParseError(
@@ -206,37 +212,26 @@ function arrayExport(
 	return value;
 }
 
-function invalid(at: string, error: Error | string): TopologyParseError {
+function invalid(at: string, error: unknown): TopologyParseError {
 	return new TopologyParseError(
 		"cd-topology-invalid",
-		`${at}: ${error instanceof Error ? error.message : error}`,
+		`${at}: ${error instanceof Error ? error.message : String(error)}`,
 	);
 }
 
-function jsonExport<T>(
-	name: string,
-	value: T,
-	source: string,
-): JsonValue | undefined {
-	if (value === undefined) return undefined;
-	try {
-		return cloneAsJson(value);
-	} catch (error) {
-		throw invalid(
-			`${source}: export ${name}`,
-			error instanceof Error ? error : String(error),
-		);
-	}
-}
-
-function parseYard(item: JsonValue, at: string): CdTopologyYard {
+function parseYard(item: unknown, at: string): CdTopologyYard {
 	let parsed: CdTopologyYard;
 	try {
-		parsed = fromJson(CdTopologyYardSchema, item, {
-			ignoreUnknownFields: true,
-		});
+		// A Yard carries more than the topology reads (bindings, properties):
+		// the generated schema reads its fields and ignores the rest.
+		parsed = fromJson(
+			CdTopologyYardSchema,
+			// SAFETY: a JSON round trip; fromJson parses the result.
+			JSON.parse(JSON.stringify(item ?? null)) as ProtoJson,
+			{ ignoreUnknownFields: true },
+		);
 	} catch (error) {
-		throw invalid(at, error instanceof Error ? error : String(error));
+		throw invalid(at, error);
 	}
 	if (
 		parsed.kind !== "yard" ||
@@ -252,16 +247,13 @@ function parseYard(item: JsonValue, at: string): CdTopologyYard {
 	return parsed;
 }
 
-function parseCamp(
-	item: JsonValue,
-	at: string,
-	stationId: string,
-): CampTopology {
+function parseCamp(item: unknown, at: string, stationId: string): CampTopology {
 	let parsed: CdTopologyCamp;
 	try {
-		parsed = fromJson(CdTopologyCampSchema, item);
+		// SAFETY: fromJson parses and rejects anything that is not the schema's JSON form.
+		parsed = fromJson(CdTopologyCampSchema, (item ?? null) as ProtoJson);
 	} catch (error) {
-		throw invalid(at, error instanceof Error ? error : String(error));
+		throw invalid(at, error);
 	}
 	const local = parsed.campId.slice(parsed.yardId.length + 1);
 	if (
@@ -320,35 +312,20 @@ function parseCamp(
 	});
 }
 
-export type TopologyExports<Default, Yards, Camps> = Readonly<{
-	default?: Default;
-	yards?: Yards;
-	camps?: Camps;
-}>;
-
-type TopologyRoot = Readonly<{
-	yards: JsonValue | undefined;
-	camps: JsonValue | undefined;
-}>;
-
-export function parseTopologyExports<Default, Yards, Camps>(
-	exports: TopologyExports<Default, Yards, Camps>,
+/** Parse a topology file's exports once with the generated schemas. */
+export function parseTopologyExports(
+	exports: Readonly<Record<string, unknown>>,
 	options: Readonly<{ stationId: string; source: string }>,
 ): TopologyOutcome {
+	const yards: unknown[] = [];
+	const camps: unknown[] = [];
+	const fallback = exports.default;
+	const roots: Readonly<Record<string, unknown>>[] = [exports];
+	if (isJsonObject(fallback)) {
+		if (fallback.kind === "yard") yards.push(fallback);
+		else roots.push(fallback);
+	}
 	try {
-		const yards: JsonValue[] = [];
-		const camps: JsonValue[] = [];
-		const roots: TopologyRoot[] = [
-			{
-				yards: jsonExport("yards", exports.yards, options.source),
-				camps: jsonExport("camps", exports.camps, options.source),
-			},
-		];
-		const fallback = jsonExport("default", exports.default, options.source);
-		if (isJsonObject(fallback)) {
-			if (fallback.kind === "yard") yards.push(fallback);
-			else roots.push({ yards: fallback.yards, camps: fallback.camps });
-		}
 		for (const root of roots) {
 			yards.push(...arrayExport("yards", root.yards));
 			camps.push(...arrayExport("camps", root.camps));
@@ -379,6 +356,12 @@ export function parseTopologyExports<Default, Yards, Camps>(
 	}
 }
 
+/**
+ * Load topology files: `.json` (an exports object) or a module (a Yard module
+ * such as packages/ci-vercel/deploy/yard.ts, or a delivery module exporting
+ * `yards`/`camps`). Other exports of a module are not topology and are left
+ * to their own readers. Any refusal refuses the whole set.
+ */
 export async function loadTopologyFiles(
 	files: readonly string[],
 	options: Readonly<{
@@ -390,7 +373,7 @@ export async function loadTopologyFiles(
 	const out: CampTopology[] = [];
 	for (const file of files) {
 		const path = resolve(options.cwd, file);
-		let exports: TopologyExports<unknown, unknown, unknown>;
+		let exports: Readonly<Record<string, unknown>>;
 		try {
 			if (extname(path) === ".json") {
 				const parsed: unknown = JSON.parse(await readFile(path, "utf8"));

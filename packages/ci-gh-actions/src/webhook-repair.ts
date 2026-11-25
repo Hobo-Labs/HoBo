@@ -1,8 +1,10 @@
 import { createSign } from "node:crypto";
 import { z } from "zod";
 
+/** Must claim atomically across all worker instances before attempting redelivery. */
 export interface WebhookRepairClaims {
 	claim(appId: string, guid: string, now: number): Promise<boolean>;
+	/** Serialize an incremental scan across all workers. */
 	startScan(appId: string): Promise<
 		| {
 				cursor: string | undefined;
@@ -29,6 +31,9 @@ const DeliveryId = z
 	])
 	.transform((value) => String(value));
 
+/** GitHub specifies a signed int64. Node 22+ exposes each original numeric
+ * lexeme to the JSON reviver; a rounded fraction can otherwise look like a
+ * safe integer. Never use the parsed number when the source is unavailable. */
 function parseDeliveryJson(body: string) {
 	return JSON.parse(body, (key, value, context?: { source?: string }) => {
 		if (key !== "id") return value;
@@ -85,6 +90,7 @@ const DeliveryStatusProbe = z
 	)
 	.max(100);
 
+/** Classify invalid IDs without logging their values. */
 function idKind(
 	id: z.infer<typeof DeliveryStatusProbe>[number]["id"],
 ): string | undefined {
@@ -103,6 +109,8 @@ function idKind(
 	return "other-type";
 }
 
+/** Field names and fixed phases aid operations without recording webhook data,
+ * provider responses, exception messages, tokens, or database URLs. */
 function reportRepairFailure(
 	phase: WebhookRepairPhase,
 	error: Error | undefined,
@@ -129,7 +137,9 @@ function reportRepairFailure(
 	}
 	try {
 		console.error(JSON.stringify(event));
-	} catch {}
+	} catch {
+		// Diagnostic output must not alter retry, lock release, or cleanup.
+	}
 }
 
 async function closeRepairScan(close: () => Promise<void>) {
@@ -141,10 +151,12 @@ async function closeRepairScan(close: () => Promise<void>) {
 	}
 }
 
+/** App-level JWT only; installation tokens cannot access the App deliveries API. */
 export function createWebhookRepair(options: {
 	appId: string;
 	privateKey: string;
 	claims: WebhookRepairClaims;
+	/** True when the verified delivery has already been durably admitted. */
 	isAccepted?: (deliveryId: string) => Promise<boolean>;
 	fetch?: typeof fetch;
 	now?: () => number;
@@ -234,6 +246,7 @@ export function createWebhookRepair(options: {
 			const current = now();
 			const initial = "https://api.github.com/app/hook/deliveries?per_page=100";
 			let url: string | undefined = scan.cursor ?? initial;
+			// Validate even persisted cursors. Never send an App token to another host.
 			if (url !== initial) url = nextPage(`<${url}>; rel="next"`);
 			const seenUrls = new Set<string>();
 			const pages: {

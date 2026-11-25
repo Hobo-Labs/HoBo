@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -10,8 +10,6 @@ import {
 	serializeManifest,
 } from "@hobo/bindles";
 
-import { RESOURCE_IDENTITY_FILE } from "../cloud/loader.js";
-import { missingProjectBindle } from "../cloud/manifest.js";
 import { stubResult } from "../cloud/stub.js";
 import type { JsonObject } from "../json.js";
 import type { CommandModule } from "../shell/registry.js";
@@ -35,55 +33,13 @@ export function createCollectCommand(
 			const target =
 				deps.target ?? (await deps.resolveTarget?.(projectDir)) ?? null;
 			if (!target) {
-				return deps.resolveTarget
-					? missingProjectBindle("collect", projectDir, { sourceOnly: true })
-					: stubResult("collect");
-			}
-			if (flags.initResourceIds) {
-				if (flags.check || !target.identityLedger) {
-					return {
-						ok: false,
-						status: "error",
-						code: "HOBO_RESOURCE_IDENTITY_UNAVAILABLE",
-						message:
-							"resource IDs require a builder-defined Bindle and cannot be initialized with --check",
-						data: { command: "collect" },
-					};
-				}
-				try {
-					await writeFile(
-						path.join(projectDir, RESOURCE_IDENTITY_FILE),
-						`${JSON.stringify(target.identityLedger, null, 2)}\n`,
-						{ flag: "wx" },
-					);
-				} catch (error) {
-					if (
-						error instanceof Error &&
-						"code" in error &&
-						error.code === "EEXIST"
-					) {
-						return {
-							ok: false,
-							status: "error",
-							code: "HOBO_RESOURCE_IDENTITY_EXISTS",
-							message: `${RESOURCE_IDENTITY_FILE} already exists`,
-							data: { command: "collect" },
-						};
-					}
-					throw error;
-				}
-				return {
-					ok: true,
-					status: "ok",
-					code: "HOBO_OK",
-					message: `created ${RESOURCE_IDENTITY_FILE}; generated IDs change deployment identities. Review the mapping and run hobo collect`,
-					data: { command: "collect", file: RESOURCE_IDENTITY_FILE },
-				};
+				return stubResult("collect");
 			}
 			emitProgress(
 				`hobo collect: running resource collection on ${target.bindleId}`,
 			);
 			const result = collectBindleManifest(target);
+			// SAFETY: `const manifestValue = JSON.parse(` is required at this I/O or test boundary.
 			const manifestValue = JSON.parse(
 				serializeManifest(result.manifest),
 			) as JsonObject;
@@ -136,11 +92,6 @@ export function createCollectCommand(
 					},
 				};
 			}
-
-			await writeFile(
-				path.join(projectDir, COLLECT_GOLDEN_FILE),
-				`${manifestIr}\n`,
-			);
 
 			return {
 				ok: true,

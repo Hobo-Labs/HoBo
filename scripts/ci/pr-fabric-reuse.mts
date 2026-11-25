@@ -107,6 +107,27 @@ function commitTree(answer: CommitAnswer | undefined): string | undefined {
 	return tree !== undefined && SHA.test(tree) ? tree : undefined;
 }
 
+function isGreenRunFor(
+	run: PullRequestRun,
+	input: Readonly<{ repository: string; workflowBasename: string }>,
+	number: number,
+	prHead: string,
+): run is PullRequestRun & { id: number } {
+	return (
+		run.event === "pull_request" &&
+		run.path === `.github/workflows/${input.workflowBasename}` &&
+		run.status === "completed" &&
+		run.conclusion === "success" &&
+		sameRepository(run.repository?.full_name, input.repository) &&
+		sameRepository(run.head_repository?.full_name, input.repository) &&
+		run.pull_requests?.some((pr) => pr.number === number) === true &&
+		lower(run.head_sha) === prHead &&
+		run.id !== undefined &&
+		Number.isSafeInteger(run.id) &&
+		run.id > 0
+	);
+}
+
 export async function decidePrFabricReuse(
 	input: Readonly<{
 		eventName: string;
@@ -152,16 +173,7 @@ export async function decidePrFabricReuse(
 		return refuse("the pull request's head is in another repository");
 	let sawRunForThisHead = false;
 	for (const run of input.runs) {
-		if (run.event !== "pull_request") continue;
-		if (run.path !== `.github/workflows/${input.workflowBasename}`) continue;
-		if (run.status !== "completed" || run.conclusion !== "success") continue;
-		if (!sameRepository(run.repository?.full_name, input.repository)) continue;
-		if (!sameRepository(run.head_repository?.full_name, input.repository))
-			continue;
-		if (!run.pull_requests?.some((pr) => pr.number === entry.number)) continue;
-		if (lower(run.head_sha) !== prHead) continue;
-		if (run.id === undefined || !Number.isSafeInteger(run.id) || run.id <= 0)
-			continue;
+		if (!isGreenRunFor(run, input, entry.number, prHead)) continue;
 		sawRunForThisHead = true;
 		const head = await input.reads.commit(prHead);
 		if (head === undefined) return refuse(AWAITING_EVIDENCE_REASON);
@@ -184,6 +196,126 @@ export async function decidePrFabricReuse(
 			? "no green PR Fabric run tested this tree with the base contained in its head"
 			: "no green PR Fabric run tested this pull request's current head",
 	);
+}
+
+export const PR_FABRIC_TESTED_ARTIFACT = "pr-fabric-tested";
+const TESTED_ARTIFACT_NAME = new RegExp(
+	`^${PR_FABRIC_TESTED_ARTIFACT}-([0-9a-f]{40})-([0-9a-f]{40})$`,
+	"u",
+);
+
+export function prFabricTestedArtifactName(
+	mergeSha: string,
+	tree: string,
+): string {
+	return `${PR_FABRIC_TESTED_ARTIFACT}-${mergeSha}-${tree}`;
+}
+
+export type RunArtifact = Readonly<{
+	name?: string | undefined;
+	expired?: boolean | undefined;
+}>;
+
+export type ProvenTreeReads = Readonly<{
+	pull: (number: number) => Promise<PullAnswer | undefined>;
+	runs: (prHead: string) => Promise<readonly PullRequestRun[] | undefined>;
+	artifacts: (runId: number) => Promise<readonly RunArtifact[] | undefined>;
+	commit: (sha: string) => Promise<CommitAnswer | undefined>;
+	contains: (
+		ancestor: string,
+		descendant: string,
+	) => Promise<boolean | undefined>;
+}>;
+
+export type ProvenTreeDecision = Readonly<{
+	proven: boolean;
+	reason: string;
+	base?: string;
+	tree?: string;
+	runId?: number;
+	pr?: number;
+}>;
+
+export async function decideProvenTreeDelta(
+	input: Readonly<{
+		eventName: string;
+		ref: string;
+		enabled: boolean;
+		repository: string;
+		workflowBasename: string;
+		baseSha: string;
+		reads: ProvenTreeReads;
+	}>,
+): Promise<ProvenTreeDecision> {
+	const refuse = (reason: string): ProvenTreeDecision => ({
+		proven: false,
+		reason,
+	});
+	if (!input.enabled) return refuse(`${PR_FABRIC_REUSE_SETTING} is false`);
+	if (input.eventName !== "merge_group") return refuse("not a merge group");
+	const entry = mergeQueueEntry(input.ref);
+	if (!entry) return refuse("the merge-queue branch is not readable");
+	if ((lower(input.baseSha) ?? "") !== entry.base)
+		return refuse("the branch's base does not match the event");
+	const pull = await input.reads.pull(entry.number);
+	if (pull === undefined || pull.number !== entry.number)
+		return refuse(`pull request ${entry.number} could not be read`);
+	if (pull.base?.ref !== "main")
+		return refuse("the pull request is not based on main");
+	const prHead = lower(pull.head?.sha) ?? "";
+	if (!SHA.test(prHead))
+		return refuse("the pull request's head commit is not known");
+	if (!sameRepository(pull.head?.repo?.full_name, input.repository))
+		return refuse("the pull request's head is in another repository");
+	const runs = await input.reads.runs(prHead);
+	if (runs === undefined) return refuse(UNREAD_RUNS_REASON);
+	const green = runs
+		.filter((run) => isGreenRunFor(run, input, entry.number, prHead))
+		.sort((left, right) => (right.id ?? 0) - (left.id ?? 0));
+	if (green.length === 0)
+		return refuse(
+			"no green PR Fabric run tested this pull request's current head",
+		);
+	for (const run of green) {
+		const artifacts = await input.reads.artifacts(run.id);
+		if (artifacts === undefined)
+			return refuse(`the artifacts of run ${run.id} could not be read`);
+		const recorded = artifacts
+			.filter((artifact) => artifact.expired !== true)
+			.map((artifact) => TESTED_ARTIFACT_NAME.exec(artifact.name ?? ""))
+			.find((match) => match !== null);
+		if (!recorded?.[1] || !recorded[2]) continue;
+		const [, proven, tree] = recorded;
+		const commit = await input.reads.commit(proven);
+		if (commit === undefined)
+			return refuse(`the tested commit ${proven} could not be read`);
+		if (commitTree(commit) !== tree)
+			return refuse("the tested commit's tree is not the recorded tree");
+		const parents = (commit.parents ?? []).map((parent) => lower(parent.sha));
+		if (parents.length !== 2 || parents[1] !== prHead)
+			return refuse(
+				"the tested commit is not a merge of the pull request's head",
+			);
+		const tested = parents[0] ?? "";
+		if (!SHA.test(tested))
+			return refuse("the tested commit's base is not known");
+		const contained = await input.reads.contains(tested, entry.base);
+		if (contained === undefined)
+			return refuse("the ancestry of the tested base could not be read");
+		if (!contained)
+			return refuse(
+				"the tested base is not an ancestor of the merge group's base",
+			);
+		return {
+			proven: true,
+			reason: `proven-tree delta from ${proven} (pr ${entry.number}, run ${run.id})`,
+			base: proven,
+			tree,
+			runId: run.id,
+			pr: entry.number,
+		};
+	}
+	return refuse("no green PR Fabric run recorded the tree it tested");
 }
 
 export type FetchJson = (
@@ -337,6 +469,73 @@ export function prFabricReads(options: {
 	return { commit, pull, mergeBase };
 }
 
+function runArtifact(value: JsonValue): RunArtifact | undefined {
+	const answer = asObject(value);
+	if (!answer) return undefined;
+	return {
+		name: asText(answer.name),
+		expired: answer.expired === true,
+	};
+}
+
+export function provenTreeReads(options: {
+	apiUrl: string;
+	repository: string;
+	token: string;
+	workflowBasename: string;
+	fetch: FetchJson;
+}): ProvenTreeReads {
+	const [owner, repo] = options.repository.split("/");
+	const usable = Boolean(owner && repo && options.token);
+	const base = `${options.apiUrl.replace(/\/$/u, "")}/repos/${owner}/${repo}`;
+	const read = async (path: string) => {
+		if (!usable) return undefined;
+		try {
+			return await readGithubJson(
+				options.fetch,
+				`${base}${path}`,
+				options.token,
+			);
+		} catch {
+			return undefined;
+		}
+	};
+	const pull = async (number: number) =>
+		pullAnswer(await read(`/pulls/${number}`));
+	const runs = async (
+		prHead: string,
+	): Promise<readonly PullRequestRun[] | undefined> => {
+		if (!SHA.test(prHead)) return undefined;
+		const rows = (
+			await read(
+				`/actions/workflows/${encodeURIComponent(options.workflowBasename)}/runs?event=pull_request&status=success&head_sha=${prHead}&per_page=${PR_FABRIC_RUN_LOOKUPS}`,
+			)
+		)?.workflow_runs;
+		if (!Array.isArray(rows)) return undefined;
+		return rows.flatMap((row) => pullRequestRun(row) ?? []);
+	};
+	const artifacts = async (
+		runId: number,
+	): Promise<readonly RunArtifact[] | undefined> => {
+		const rows = (await read(`/actions/runs/${runId}/artifacts?per_page=100`))
+			?.artifacts;
+		if (!Array.isArray(rows)) return undefined;
+		return rows.flatMap((row) => runArtifact(row) ?? []);
+	};
+	const commit = async (sha: string) =>
+		SHA.test(sha) ? commitAnswer(await read(`/commits/${sha}`)) : undefined;
+	const contains = async (
+		ancestor: string,
+		descendant: string,
+	): Promise<boolean | undefined> => {
+		if (!SHA.test(ancestor) || !SHA.test(descendant)) return undefined;
+		const answer = await read(`/compare/${ancestor}...${descendant}`);
+		const sha = lower(asText(asObject(answer?.merge_base_commit)?.sha));
+		return sha !== undefined && SHA.test(sha) ? sha === ancestor : undefined;
+	};
+	return { pull, runs, artifacts, commit, contains };
+}
+
 function readCommittedPolicy(): string | undefined {
 	try {
 		return readFileSync(
@@ -364,6 +563,52 @@ export function writeDecisionOutputs(
 	else process.stdout.write(lines);
 }
 
+export function logProvenTree(decision: ProvenTreeDecision): void {
+	console.log(
+		`proven-tree delta: ${decision.proven ? "yes" : "no"}: ${decision.reason}`,
+	);
+}
+
+export function writeProvenTreeOutputs(
+	env: NodeJS.ProcessEnv,
+	decision: ProvenTreeDecision,
+): void {
+	const output = env.GITHUB_OUTPUT?.trim();
+	const lines = [
+		`proven-base=${decision.base ?? ""}`,
+		`proven-tree=${decision.tree ?? ""}`,
+		`proven-run=${decision.runId ?? ""}`,
+		`proven-pr=${decision.pr ?? ""}`,
+		"",
+	].join("\n");
+	if (output) appendFileSync(output, lines);
+	else process.stdout.write(lines);
+}
+
+async function decideReuse(
+	withoutEvidence: Parameters<typeof decidePrFabricReuse>[0],
+	evidence: Readonly<{ apiUrl: string; token: string; fetch: FetchJson }>,
+): Promise<PrFabricDecision> {
+	const cheap = await decidePrFabricReuse(withoutEvidence);
+	if (cheap.reason !== AWAITING_EVIDENCE_REASON) return cheap;
+	const runs = await fetchPullRequestRuns({
+		...evidence,
+		repository: withoutEvidence.repository,
+		workflowBasename: withoutEvidence.workflowBasename,
+	});
+	return runs === undefined
+		? { reuse: false, reason: UNREAD_RUNS_REASON }
+		: decidePrFabricReuse({
+				...withoutEvidence,
+				runs,
+				reads: prFabricReads({
+					...evidence,
+					repository: withoutEvidence.repository,
+					entryBase: mergeQueueEntry(withoutEvidence.ref)?.base ?? "",
+				}),
+			});
+}
+
 export async function main(env: NodeJS.ProcessEnv): Promise<PrFabricDecision> {
 	const repository = env.GITHUB_REPOSITORY ?? "";
 	const workflowBasename = env.WORKFLOW_BASENAME ?? "hobo-ci.yml";
@@ -371,53 +616,45 @@ export async function main(env: NodeJS.ProcessEnv): Promise<PrFabricDecision> {
 	const ref = env.GITHUB_REF ?? "";
 	const headSha = env.HEAD_SHA ?? env.GITHUB_SHA ?? "";
 	const baseSha = env.BASE_SHA ?? env.GITHUB_EVENT_BASE_SHA ?? "";
-	const withoutEvidence = {
-		eventName,
-		ref,
-		enabled: reusePrFabricSetting(readCommittedPolicy()),
-		repository,
-		workflowBasename,
-		headSha,
-		baseSha,
-		runs: [],
-		reads: {
-			commit: async () => undefined,
-			pull: async () => undefined,
-			mergeBase: async () => undefined,
+	const enabled = reusePrFabricSetting(readCommittedPolicy());
+	const evidence = {
+		apiUrl: env.GITHUB_API_URL ?? "https://api.github.com",
+		token: env.GITHUB_TOKEN?.trim() ?? "",
+		fetch: ((url, init) => globalThis.fetch(url, init)) satisfies FetchJson,
+	};
+	const decision = await decideReuse(
+		{
+			eventName,
+			ref,
+			enabled,
+			repository,
+			workflowBasename,
+			headSha,
+			baseSha,
+			runs: [],
+			reads: {
+				commit: async () => undefined,
+				pull: async () => undefined,
+				mergeBase: async () => undefined,
+			},
 		},
-	} as const;
-	const cheap = await decidePrFabricReuse(withoutEvidence);
-	if (cheap.reason !== AWAITING_EVIDENCE_REASON) {
-		logDecision(cheap);
-		writeDecisionOutputs(env, cheap);
-		return cheap;
-	}
-	const fetchJson: FetchJson = (url, init) => globalThis.fetch(url, init);
-	const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
-	const token = env.GITHUB_TOKEN?.trim() ?? "";
-	const runs = await fetchPullRequestRuns({
-		apiUrl,
-		repository,
-		token,
-		workflowBasename,
-		fetch: fetchJson,
-	});
-	const decision =
-		runs === undefined
-			? { reuse: false, reason: UNREAD_RUNS_REASON }
-			: await decidePrFabricReuse({
-					...withoutEvidence,
-					runs,
-					reads: prFabricReads({
-						apiUrl,
-						repository,
-						token,
-						entryBase: mergeQueueEntry(ref)?.base ?? "",
-						fetch: fetchJson,
-					}),
-				});
+		evidence,
+	);
 	logDecision(decision);
 	writeDecisionOutputs(env, decision);
+	const proven = decision.reuse
+		? { proven: false, reason: "the whole tree is reused" }
+		: await decideProvenTreeDelta({
+				eventName,
+				ref,
+				enabled,
+				repository,
+				workflowBasename,
+				baseSha,
+				reads: provenTreeReads({ ...evidence, repository, workflowBasename }),
+			});
+	logProvenTree(proven);
+	writeProvenTreeOutputs(env, proven);
 	return decision;
 }
 

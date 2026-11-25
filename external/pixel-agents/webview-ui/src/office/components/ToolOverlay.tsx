@@ -23,6 +23,10 @@ import type { OfficeState } from '../engine/officeState.js';
 import type { ToolActivity } from '../types.js';
 import { CharacterState, TILE_SIZE } from '../types.js';
 
+// Both turn-end states show the green checkmark bubble. A finished turn (Stop)
+// shows ONLY the checkmark (the label falls through to its normal idle text);
+// going idle waiting on the user (Notification(idle_prompt)) additionally
+// surfaces this label. Driven by Character.waitingAwaitingInput.
 const WAITING_INPUT_ACTIVITY_TEXT = 'Waiting for input';
 
 interface ToolOverlayProps {
@@ -37,6 +41,7 @@ interface ToolOverlayProps {
   alwaysShowOverlay: boolean;
 }
 
+/** Derive a short human-readable activity string from tools/status */
 function getActivityText(
   agentId: number,
   agentTools: Record<number, ToolActivity[]>,
@@ -45,15 +50,20 @@ function getActivityText(
   waitingAwaitingInput: boolean,
 ): string {
   if (bubbleType === 'permission') return 'Needs approval';
+  // Only the idle case ("Waiting for input") gets a dedicated label. A finished
+  // turn (Stop, waitingAwaitingInput=false) falls through so the checkmark alone
+  // signals "done", same as the original behavior.
   if (bubbleType === 'waiting' && waitingAwaitingInput) return WAITING_INPUT_ACTIVITY_TEXT;
 
   const tools = agentTools[agentId];
   if (tools && tools.length > 0) {
+    // Find the latest non-done tool
     const activeTool = [...tools].reverse().find((t) => !t.done);
     if (activeTool) {
       if (activeTool.permissionWait) return 'Needs approval';
       return activeTool.status;
     }
+    // All tools done but agent still active (mid-turn) — keep showing last tool status
     if (isActive) {
       const lastTool = tools[tools.length - 1];
       if (lastTool) return lastTool.status;
@@ -107,6 +117,7 @@ export function ToolOverlay({
   const selectedId = officeState.selectedAgentId;
   const hoveredId = officeState.hoveredAgentId;
 
+  // All character IDs
   const allIds = [...agents, ...subagentCharacters.map((s) => s.id)];
 
   return (
@@ -119,13 +130,21 @@ export function ToolOverlay({
         const isHovered = hoveredId === id;
         const isSub = ch.isSubagent;
 
+        // Only show for hovered or selected agents (unless always-show is on)
         if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
 
+        // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
         const screenX = (deviceOffsetX + ch.x * zoom) / dpr;
         const screenY =
           (deviceOffsetY + (ch.y + sittingOffset - TOOL_OVERLAY_VERTICAL_OFFSET) * zoom) / dpr;
 
+        // A "Done" agent (finished turn: waiting bubble without awaitingInput)
+        // shows ONLY its floating green checkmark bubble, never the label panel
+        // (the panel would cover the bubble). Render an empty positioned marker
+        // so overlay counts stay stable and hover/select can still bring the
+        // panel back. When always-show is off, the early return above already
+        // keeps the panel hidden for idle agents.
         const isDone = ch.bubbleType === 'waiting' && !ch.waitingAwaitingInput;
         if (isDone && !isSelected && !isHovered) {
           return (
@@ -139,10 +158,13 @@ export function ToolOverlay({
           );
         }
 
+        // Get activity text
         const hasWaitingBubble = ch.bubbleType === 'waiting';
         const subHasPermission = isSub && ch.bubbleType === 'permission';
         let activityText: string;
         if (hasWaitingBubble && ch.waitingAwaitingInput) {
+          // Idle, waiting on the user -> dedicated label. A finished turn (Stop)
+          // shows only the checkmark and falls through to the normal idle text.
           activityText = WAITING_INPUT_ACTIVITY_TEXT;
         } else if (isSub) {
           if (subHasPermission) {
@@ -161,6 +183,7 @@ export function ToolOverlay({
           );
         }
 
+        // Determine dot color
         const tools = agentTools[id];
         const hasPermission = subHasPermission || tools?.some((t) => t.permissionWait && !t.done);
         const hasActiveTools = tools?.some((t) => !t.done);
@@ -174,6 +197,7 @@ export function ToolOverlay({
           dotColor = 'var(--color-status-active)';
         }
 
+        // Team info
         const isTeamAgent = !!ch.teamName;
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
         const totalTokens = ch.inputTokens + ch.outputTokens;

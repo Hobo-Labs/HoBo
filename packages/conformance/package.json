@@ -12,10 +12,6 @@
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
 		},
-		"./sdk": {
-			"types": "./dist/sdk/index.d.ts",
-			"default": "./dist/sdk/index.js"
-		},
 		"./runtime-port": {
 			"types": "./dist/suites/runtime-port/index.d.ts",
 			"default": "./dist/suites/runtime-port/index.js"
@@ -44,7 +40,6 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
@@ -65,11 +60,9 @@
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"build-corpus": "node --import tsx src/corpus/record.ts",
-		"codegen:sdk": "node --import tsx ../../scripts/generate-sdk-conformance.mts",
 		"conformance:live": "node --import tsx src/live/cli.ts",
 		"test": "vitest run",
 		"test:deep": "vitest run --config vitest.deep.config.ts",
-		"test:contract:consumer": "vitest run contracts/consumer",
-		"test:schema": "node --import tsx ../../scripts/generate-sdk-conformance.mts --check"
+		"test:contract:consumer": "vitest run contracts/consumer"
 	}
 }

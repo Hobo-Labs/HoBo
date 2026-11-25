@@ -1,301 +1,65 @@
 {
-  "consumer": {
-    "name": "RoutingControlLoopConsumer"
-  },
-  "provider": {
-    "name": "DispatcherDecisionBoundary"
-  },
-  "metadata": {
-    "pactSpecification": {
-      "version": "4.0.0"
-    },
-    "transport": "library-call"
-  },
-  "interactions": [
-    {
-      "type": "Synchronous/Messages",
-      "description": "budget pressure rejects the unaffordable backend and selects the cheaper one",
-      "request": {
-        "contents": {
-          "contentType": "application/json",
-          "encoded": false,
-          "content": {
-            "registryCandidates": [
-              {
-                "providerId": "vercel-primary",
-                "category": "traffic-backend",
-                "listUnitCost": 0.05
-              },
-              {
-                "providerId": "lakebed-cheap",
-                "category": "traffic-backend",
-                "listUnitCost": 0.01
-              }
-            ],
-            "category": "traffic-backend",
-            "objective": "maximize-credits",
-            "dispatchId": "route-swap-pact",
-            "units": 100,
-            "ledgerView": {
-              "view": "CreditLedgerView",
-              "seq": 7,
-              "accounts": [
-                {
-                  "providerId": "vercel-primary",
-                  "dimension": "traffic.requests",
-                  "listUnitCost": 0.05,
-                  "budgetCap": 4,
-                  "spendToDate": 1
-                },
-                {
-                  "providerId": "lakebed-cheap",
-                  "dimension": "traffic.requests",
-                  "listUnitCost": 0.01,
-                  "budgetCap": 4,
-                  "spendToDate": 1
-                }
-              ]
-            }
-          }
-        }
-      },
-      "response": [
-        {
-          "contents": {
-            "contentType": "application/json",
-            "encoded": false,
-            "content": {
-              "ok": true,
-              "selectedProvider": "lakebed-cheap",
-              "dispatchEvent": {
-                "type": "dispatch.Decided"
-              },
-              "ranking": [
-                {
-                  "providerId": "lakebed-cheap"
-                },
-                {
-                  "providerId": "vercel-primary",
-                  "eligible": false
-                }
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type": "Synchronous/Messages",
-      "description": "no registered candidates fails closed without a decision event",
-      "request": {
-        "contents": {
-          "contentType": "application/json",
-          "encoded": false,
-          "content": {
-            "registryCandidates": [],
-            "category": "runner",
-            "objective": "maximize-credits",
-            "dispatchId": "no-candidates-pact",
-            "ledgerView": {
-              "view": "CreditLedgerView",
-              "seq": 7,
-              "accounts": []
-            }
-          }
-        }
-      },
-      "response": [
-        {
-          "contents": {
-            "contentType": "application/json",
-            "encoded": false,
-            "content": {
-              "ok": false,
-              "reason": "no registered runner candidates"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type": "Synchronous/Messages",
-      "description": "all registered backends exceeding the hard budget fail closed",
-      "request": {
-        "contents": {
-          "contentType": "application/json",
-          "encoded": false,
-          "content": {
-            "registryCandidates": [
-              {
-                "providerId": "cloud",
-                "category": "traffic-backend",
-                "listUnitCost": 1
-              }
-            ],
-            "category": "traffic-backend",
-            "objective": "maximize-credits",
-            "dispatchId": "hard-cap-pact",
-            "units": 2,
-            "ledgerView": {
-              "view": "CreditLedgerView",
-              "seq": 8,
-              "accounts": [
-                {
-                  "providerId": "cloud",
-                  "dimension": "traffic.requests",
-                  "budgetCap": 1,
-                  "spendToDate": 0,
-                  "listUnitCost": 1
-                }
-              ]
-            }
-          }
-        }
-      },
-      "response": [
-        {
-          "contents": {
-            "contentType": "application/json",
-            "encoded": false,
-            "content": {
-              "ok": false,
-              "reason": "no eligible candidates within budget and capacity"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type": "Synchronous/Messages",
-      "description": "min-cost chooses the lowest paid amount",
-      "request": {
-        "contents": {
-          "contentType": "application/json",
-          "encoded": false,
-          "content": {
-            "registryCandidates": [
-              {
-                "providerId": "paid",
-                "category": "runner",
-                "listUnitCost": 1
-              },
-              {
-                "providerId": "credit",
-                "category": "runner",
-                "listUnitCost": 10
-              }
-            ],
-            "category": "runner",
-            "objective": "min-cost",
-            "dispatchId": "objective-min-cost",
-            "units": 10,
-            "ledgerView": {
-              "view": "CreditLedgerView",
-              "seq": 0,
-              "accounts": [
-                {
-                  "providerId": "paid",
-                  "dimension": "runner.minutes",
-                  "freeHeadroom": 0,
-                  "listUnitCost": 1
-                },
-                {
-                  "providerId": "credit",
-                  "dimension": "runner.minutes",
-                  "freeHeadroom": 1,
-                  "listUnitCost": 10
-                }
-              ]
-            }
-          }
-        }
-      },
-      "response": [
-        {
-          "contents": {
-            "contentType": "application/json",
-            "encoded": false,
-            "content": {
-              "ok": true,
-              "selectedProvider": "paid",
-              "objective": "min-cost",
-              "dispatchEvent": {
-                "type": "dispatch.Decided",
-                "data": {
-                  "objective": "min-cost",
-                  "selectedProvider": "paid"
-                }
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
-      "type": "Synchronous/Messages",
-      "description": "maximize-credits chooses credited units before cost",
-      "request": {
-        "contents": {
-          "contentType": "application/json",
-          "encoded": false,
-          "content": {
-            "registryCandidates": [
-              {
-                "providerId": "paid",
-                "category": "runner",
-                "listUnitCost": 1
-              },
-              {
-                "providerId": "credit",
-                "category": "runner",
-                "listUnitCost": 10
-              }
-            ],
-            "category": "runner",
-            "objective": "maximize-credits",
-            "dispatchId": "objective-maximize-credits",
-            "units": 10,
-            "ledgerView": {
-              "view": "CreditLedgerView",
-              "seq": 0,
-              "accounts": [
-                {
-                  "providerId": "paid",
-                  "dimension": "runner.minutes",
-                  "freeHeadroom": 0,
-                  "listUnitCost": 1
-                },
-                {
-                  "providerId": "credit",
-                  "dimension": "runner.minutes",
-                  "freeHeadroom": 1,
-                  "listUnitCost": 10
-                }
-              ]
-            }
-          }
-        }
-      },
-      "response": [
-        {
-          "contents": {
-            "contentType": "application/json",
-            "encoded": false,
-            "content": {
-              "ok": true,
-              "selectedProvider": "credit",
-              "objective": "maximize-credits",
-              "dispatchEvent": {
-                "type": "dispatch.Decided",
-                "data": {
-                  "objective": "maximize-credits",
-                  "selectedProvider": "credit"
-                }
-              }
-            }
-          }
-        }
-      ]
-    }
-  ]
+	"consumer": {
+		"name": "RoutingControlLoopConsumer"
+	},
+	"provider": {
+		"name": "DispatcherDecisionBoundary"
+	},
+	"interactions": [
+		{
+			"description": "budget-pressured traffic dispatch selects the cheapest in-budget backend",
+			"request": {
+				"method": "POST",
+				"path": "/dispatcher/decide",
+				"body": {
+					"category": "traffic-backend",
+					"objective": "maximize-credits",
+					"units": 100
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"selectedProvider": "lakebed-cheap",
+					"dispatchEvent": { "type": "dispatch.Decided" }
+				}
+			}
+		},
+		{
+			"description": "no registered candidates fails closed without a dispatch.Decided fact",
+			"request": {
+				"method": "POST",
+				"path": "/dispatcher/decide",
+				"body": {
+					"category": "runner",
+					"objective": "maximize-credits"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": false,
+					"reason": "no registered runner candidates"
+				}
+			}
+		},
+		{
+			"description": "all registered hosting backends exceed the hard budget and no decision fact is emitted",
+			"request": {
+				"method": "POST",
+				"path": "/dispatcher/decide",
+				"body": { "category": "traffic-backend", "objective": "maximize-credits", "units": 2 }
+			},
+			"response": {
+				"status": 200,
+				"body": { "ok": false, "reason": "no eligible candidates within budget and capacity" }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
 }

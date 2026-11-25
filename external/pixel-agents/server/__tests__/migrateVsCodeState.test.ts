@@ -3,11 +3,17 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Mock the `vscode` module so migrateVsCodeState.ts is importable from a non-VS Code test env.
+// vi.hoisted pattern is required because vi.mock is hoisted above imports.
 const { showWarningMessage } = vi.hoisted(() => ({ showWarningMessage: vi.fn() }));
 vi.mock('vscode', () => ({
   window: { showWarningMessage },
 }));
 
+// Mock os.homedir() for cross-platform temp-home isolation. Overriding
+// process.env.HOME is not portable: os.homedir() reads USERPROFILE on Windows.
+// `tempHome` is the temp dir we always clean up; `homeOverride` is what
+// homedir() returns (usually tempHome, but a bogus path in the write-failure test).
 let tempHome: string;
 let homeOverride: string;
 vi.mock('os', async () => {
@@ -19,6 +25,7 @@ import { migrateVsCodeState } from '../../adapters/vscode/migrateVsCodeState.js'
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../src/layoutPersistence.js';
 
+/** Lightweight in-memory Memento for workspaceState/globalState simulation. */
 function createMemento(seed: Record<string, unknown> = {}): {
   store: Record<string, unknown>;
   memento: {
@@ -160,14 +167,17 @@ describe('migrateVsCodeState', () => {
 
     migrateVsCodeState(context, adapter);
 
+    // File preserved (not overwritten); legacy key cleared.
     expect(readLayoutFromFile()).toEqual(existingLayout);
     expect(workspaceStore).toEqual({});
   });
 
   it('warns + keeps legacy keys if file write fails (simulated via read-only HOME)', () => {
+    // Make ~/.pixel-agents/ unwritable by pointing HOME at a non-writable path.
+    // Simulate by replacing with a file (so mkdirSync fails on subpath).
     const blocker = path.join(tempHome, 'blocker');
     fs.writeFileSync(blocker, 'x');
-    homeOverride = blocker;
+    homeOverride = blocker; // home is now a file; can't mkdir inside
 
     const { context, globalStore } = makeContext({
       'pixel-agents.soundEnabled': false,
@@ -175,6 +185,7 @@ describe('migrateVsCodeState', () => {
     const adapter = new FileStateAdapter({ namespace: 'vscode' });
     migrateVsCodeState(context, adapter);
 
+    // Legacy key remains because the write silently failed -> verify !== legacy
     expect(globalStore['pixel-agents.soundEnabled']).toBe(false);
     expect(showWarningMessage).toHaveBeenCalledOnce();
   });

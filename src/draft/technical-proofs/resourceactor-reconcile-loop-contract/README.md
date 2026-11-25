@@ -25,14 +25,16 @@ npm.cmd --prefix src\draft\technical-proofs\resourceactor-reconcile-loop-contrac
 
 Relevant design records:
 
-- `urn:hobo:requirement:control-plane`: ResourceActor reconcile loop and resolution pipeline.
-- `urn:hobo:decision:01-architecture-core`: ADR-0004 virtual actors and ADR-0006 per-resource stacks.
-- `urn:hobo:requirement:platform-engineering`: provider/IaC platform boundary carried by PLAN-25.
+- `docs/design/control-plane.md`: ResourceActor reconcile loop and resolution pipeline.
+- `docs/design/adr/01-architecture-core.md`: ADR-0004 virtual actors and ADR-0006 per-resource stacks.
+- `docs/design/platform-engineering.md`: provider/IaC platform boundary carried by PLAN-25.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Resourceactor Reconcile Loop Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

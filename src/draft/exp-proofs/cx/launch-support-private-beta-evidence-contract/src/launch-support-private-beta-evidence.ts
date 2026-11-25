@@ -19,35 +19,35 @@ export const launchSupportPrivateBetaEvidence = {
     {
       id: "support-escalation-baseline",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      evidenceSource: "urn:hobo:requirement:launch-support-escalation",
+      evidenceSource: "docs/design/launch-support-escalation.md",
       proves: "SEV0-SEV3 severity, first responder, escalation owner, customer communication, and handoff rules are accepted for private beta.",
       status: "accepted"
     },
     {
       id: "support-workflow-intake",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      evidenceSource: "urn:hobo:requirement:support-workflow",
+      evidenceSource: "docs/design/support-workflow.md",
       proves: "Support intake, triage, redacted evidence, owner route, and customer-safe update states are accepted before support execution.",
       status: "accepted"
     },
     {
       id: "support-sla-channel-language",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      evidenceSource: "urn:hobo:requirement:support-sla-channels",
+      evidenceSource: "docs/design/support-sla-channels.md",
       proves: "Private beta support promises are separated from internal targets and GA contractual commitments.",
       status: "accepted"
     },
     {
       id: "incident-communication-redaction",
       ownerProject: "Incident Communications",
-      evidenceSource: "urn:hobo:requirement:incident-communications",
+      evidenceSource: "docs/design/incident-communications.md",
       proves: "Customer-visible incident updates require source evidence, redaction approval, and no customer-private data.",
       status: "accepted"
     },
     {
       id: "security-escalation-route",
       ownerProject: "Security Verification",
-      evidenceSource: "urn:hobo:requirement:security-verification",
+      evidenceSource: "docs/design/security-verification.md",
       proves: "Security-sensitive support issues route to the launch-blocker process and do not become support-owned promises.",
       status: "accepted"
     },

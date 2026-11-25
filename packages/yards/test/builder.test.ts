@@ -459,6 +459,33 @@ describe("every existing refusal still fires through the builder", () => {
 		}
 	});
 
+	it("camp-provider-selection-forbidden", () => {
+		try {
+			buildYard("azure", "prod-eu", (y) => {
+				y.web(containerApps);
+				y.camp("api", (c) => c.provider("aws"));
+			});
+			expect.unreachable("expected a refusal");
+		} catch (error) {
+			// SAFETY: `expect((error as { code?: string }).code).toBe(` is required at this I/O or test boundary.
+			expect((error as { code?: string }).code).toBe(
+				"camp-provider-selection-forbidden",
+			);
+		}
+	});
+
+	it("camp-bindle-ownership-forbidden", () => {
+		try {
+			buildCamp("api", (c) => c.bindle({ name: "acme-app" }));
+			expect.unreachable("expected a refusal");
+		} catch (error) {
+			// SAFETY: `expect((error as { code?: string }).code).toBe(` is required at this I/O or test boundary.
+			expect((error as { code?: string }).code).toBe(
+				"camp-bindle-ownership-forbidden",
+			);
+		}
+	});
+
 	it("refuses an unusable provider before the callback body runs", () => {
 		// Under the old `y.on(provider)` shape a Yard could be half-authored
 		// against no provider at all, and the refusal arrived from yard() after

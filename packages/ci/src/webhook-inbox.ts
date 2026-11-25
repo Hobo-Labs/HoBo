@@ -24,6 +24,7 @@ export function isWebhookDeliveryId(deliveryId: string): boolean {
 	return /^[A-Za-z0-9-]{1,128}$/.test(deliveryId);
 }
 
+/** One parser for every inbox engine: the envelope, its identity, and its replay key. */
 export interface WebhookEnvelope {
 	readonly receivedMs: number;
 	readonly fingerprint: string;
@@ -52,6 +53,8 @@ export function parseWebhookEnvelope(input: WebhookInput): WebhookEnvelope {
 		.update("\0")
 		.update(input.rawBody)
 		.digest("hex");
+	// GitHub signs body bytes only, not delivery ID or event headers. Exact
+	// signed-body replays have identical semantics and need no extra row.
 	const bodyHash = createHash("sha256").update(input.rawBody).digest("hex");
 	return { receivedMs, fingerprint, bodyHash };
 }

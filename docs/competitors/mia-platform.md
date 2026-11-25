@@ -138,8 +138,8 @@ Names are similar in places; the semantics are not. Mapped only where the behavi
 | ------------ | -------------------- | --------------------- |
 | Company | Tenant | Close. Both are the ownership/billing boundary. |
 | Project | Bindle (application) | **Partial.** A Project is a configured collection of microservices; a Bindle is an abstract topology mapped to ports, with provider matching still to happen. Mia's Project already knows its runtime; a Bindle deliberately does not. |
-| Environment | Camp / Yard | **Partial.** Both are deployment scopes; HoBo's Yard/Camp additionally carry residency and provider-escape scoping ([ADR-0144](urn:hobo:decision:adr-0144), [ADR-0146](urn:hobo:decision:02-identity-security)). |
-| Marketplace item | Bindle kind / trait / Resource Pack | **Partial.** Marketplace items are concrete component templates; Bindle kinds are abstract capability contracts with impedance limits. A trait ([ADR-0145](urn:hobo:decision:adr-0145)) attaches behaviour by annotation, which has no Marketplace analog. |
+| Environment | Camp / Yard | **Partial.** Both are deployment scopes; HoBo's Yard/Camp additionally carry residency and provider-escape scoping ([ADR-0144](../design/adr/07-portability-extensibility.md#adr-0144), [ADR-0146](../design/adr/02-identity-security.md)). |
+| Marketplace item | Bindle kind / trait / Resource Pack | **Partial.** Marketplace items are concrete component templates; Bindle kinds are abstract capability contracts with impedance limits. A trait ([ADR-0145](../design/adr/01-architecture-core.md#adr-0145)) attaches behaviour by annotation, which has no Marketplace analog. |
 | Catalog | Event-sourced control-plane state + materialized views | **Different authority.** Catalog is a maintained metadata map; HoBo's is a derived read model over an append-only log. |
 | Scorecards / Campaigns | `@hobo/policy` packs + policy decisions | **Partial.** Both encode standards; HoBo's decisions are events (`policy.Decided`) rather than dashboard scores. |
 | Catalog MCP Server | HoBo agent surface | Close in shape, different in guarantees: HoBo gates agent actions through boundary contracts and records them. |
@@ -171,16 +171,16 @@ Labelled by state, per the research contract:
   impedance limits (ADR-0144) make "this will move" a measured statement. Mia's multi-cloud claim is
   "it runs on your clusters".
 - **Event-sourced control plane with replay** (*implemented*). Decisions are events on a durable
-  SQLite-backed EventStore ([ADR-0135](urn:hobo:decision:03-data-plane-sqlite-default)); the platform's
+  SQLite-backed EventStore ([ADR-0135](../design/adr/03-data-plane-sqlite-default.md)); the platform's
   history is queryable and replayable. Mia's authority is a maintained catalog plus Git.
 - **No Kubernetes premise** (*implemented*). HoBo runs local, in-browser, or hosted
   (`@hobo/runtime-local`, `@hobo/runtime-browser`). Mia-Platform assumes enterprise Kubernetes.
 - **Fail-closed residency/jurisdiction** (*implemented*). `evaluateResidency` in `@hobo/core`
   (ADR-0146) is a typed, fail-closed port. Mia documents multi-cloud reach, not residency evaluation.
 - **Contract effects and visible resiliency** (*implemented*). `EffectSpec` on BoundaryContract
-  ([ADR-0136](urn:hobo:decision:03-data-plane-effects-resiliency)) has no documented Mia analog.
+  ([ADR-0136](../design/adr/03-data-plane-effects-resiliency.md)) has no documented Mia analog.
 - **Honest caveats.** HoBo's default Pulumi stand-in is in-memory and the packages are not on npm
-  (see the [live provider matrix](urn:hobo:requirement:live-provider-matrix)). Against a shipping enterprise
+  (see the [live provider matrix](../design/live-provider-matrix.md)). Against a shipping enterprise
   suite, HoBo's advantage is architectural, not operational maturity.
 
 ## Adversarial critique

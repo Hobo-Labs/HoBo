@@ -1,12 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type {
-	JsonObject,
-	JsonValue,
-	Messaging,
-	Queue,
-	SchedulerPort,
-	VirtualClock,
-} from "@hobo/core";
+import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
 import type {
 	DeliveryPort,
@@ -45,7 +38,6 @@ import {
 } from "./readiness.js";
 import { parseRunnerAdapter, requireRunner } from "./runner.js";
 import {
-	type BindleInput,
 	DEFAULT_LANE,
 	DEFAULT_STAGE,
 	type DeployedGraph,
@@ -59,9 +51,10 @@ import {
 
 const STAGE_PATTERN = /^[a-z][a-z0-9-]*$/u;
 
-function parseLane(value: Lane | undefined): Lane {
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these functions parse the public lane, stage and resource-handle inputs. */
+function parseLane(value: unknown): Lane {
 	if (value === undefined) return DEFAULT_LANE;
-	if (!LANES.includes(value)) {
+	if (typeof value !== "string" || !LANES.includes(value)) {
 		throw new TestHarnessError(
 			"HARNESS_LANE_INVALID",
 			`unknown harness lane ${JSON.stringify(value)}`,
@@ -71,9 +64,9 @@ function parseLane(value: Lane | undefined): Lane {
 	return value as Lane;
 }
 
-function parseStage(value: string | undefined): string {
+function parseStage(value: unknown): string {
 	if (value === undefined) return DEFAULT_STAGE;
-	if (!STAGE_PATTERN.test(value)) {
+	if (typeof value !== "string" || !STAGE_PATTERN.test(value)) {
 		throw new TestHarnessError(
 			"HARNESS_STAGE_INVALID",
 			`stage ${JSON.stringify(value)} is not a lowercase slug`,
@@ -83,10 +76,13 @@ function parseStage(value: string | undefined): string {
 	return value;
 }
 
-function isResourceHandle(
-	value: string | ResourceHandle,
-): value is ResourceHandle {
-	return Object(value) === value;
+function isResourceHandle(value: unknown): value is ResourceHandle {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as ResourceHandle).alias === "string" &&
+		typeof (value as ResourceHandle).fidelity === "string"
+	);
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion */
 
@@ -113,28 +109,10 @@ function buildFidelityReport(
 
 interface HarnessState {
 	readonly graph: DeployedGraph;
-	readonly deployment: HarnessDeployment;
+	readonly deployment: InProcessDeployment;
 	readonly handles: ReadonlyMap<string, ResourceHandle>;
 	readonly asserted: Set<string>;
 }
-
-type HarnessDeployment = Pick<
-	InProcessDeployment,
-	| "handles"
-	| "queues"
-	| "topics"
-	| "secrets"
-	| "data"
-	| "schedules"
-	| "kv"
-	| "buckets"
-	| "flags"
-	| "rollouts"
-	| "experiments"
-> & {
-	readonly outputs: JsonObject;
-	destroy(): Promise<void>;
-};
 
 function unknownAlias(alias: string, known: readonly string[]): never {
 	throw new TestHarnessError(
@@ -149,7 +127,7 @@ function unknownAlias(alias: string, known: readonly string[]): never {
 function buildGraph(
 	stage: string,
 	lane: Lane,
-	deployment: HarnessDeployment,
+	deployment: InProcessDeployment,
 	asserted: Set<string>,
 ): DeployedGraph {
 	const handles = deployment.handles;
@@ -213,14 +191,16 @@ function buildGraph(
 	return Object.freeze({
 		stage,
 		lane,
-		outputs<T extends JsonObject = JsonObject>(): T {
-			const outputs: Record<string, JsonValue> = {};
+		// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: this preserves the existing caller-typed open binding map.
+		outputs<T = Record<string, unknown>>(): T {
+			// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: each value comes from the parsed deployment bindings.
+			const record: Record<string, unknown> = {};
 			for (const alias of aliases) {
 				asserted.add(alias);
-				const output = deployment.outputs[alias];
-				if (output !== undefined) outputs[alias] = output;
+				record[alias] = deployment.bindings[alias];
 			}
-			return Object.freeze(outputs) as T;
+			// SAFETY: the caller selects the existing generic outputs view.
+			return Object.freeze(record) as T;
 		},
 		resource(alias: string): ResourceHandle {
 			const handle = handles.get(alias);
@@ -359,7 +339,9 @@ function buildGraph(
 }
 
 export interface CreateTestHarnessInternals {
+	/** Injectable readiness probe; defaults to the platform `fetch`. */
 	readonly probe?: ReadinessProbe;
+	/** Injectable environment for the ephemeral-camp credential gate. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
@@ -372,6 +354,8 @@ export function createTestHarness(
 	const stage = parseStage(options.stage);
 	const env = internals.env ?? process.env;
 
+	// A supplied adapter is parsed; otherwise the active runner must be
+	// detectable. Guessing hook names produces a suite that never deploys.
 	if (options.runner !== undefined) parseRunnerAdapter(options.runner);
 	else requireRunner(env);
 
@@ -381,67 +365,26 @@ export function createTestHarness(
 			: undefined;
 
 	const probe = internals.probe ?? createFetchReadinessProbe();
-	const states = new Map<BindleInput, Promise<HarnessState>>();
-	const destroying = new Map<BindleInput, Set<Promise<void>>>();
-	const deployments = new Map<BindleInput, Set<HarnessDeployment>>();
+	const states = new Map<unknown, Promise<HarnessState>>();
+	const destroying = new Map<unknown, Set<Promise<void>>>();
+	const deployments = new Map<unknown, Set<InProcessDeployment>>();
 	const deploying = new AsyncLocalStorage<{
-		bindle: BindleInput;
+		bindle: unknown;
 		active: boolean;
 	}>();
 	let latest: HarnessState | undefined;
 
-	async function deployLane(bindle: BindleInput): Promise<HarnessDeployment> {
-		if (campTarget !== undefined) {
-			const camp = await deployEphemeralCamp(
-				campTarget,
-				bindle,
-				stage,
-				options.campDriver,
-			);
-			return Object.freeze({
-				handles: camp.handles,
-				outputs: camp.outputs,
-				queues: new Map(),
-				topics: new Map(),
-				secrets: new Map(),
-				data: new Map(),
-				schedules: new Map(),
-				kv: new Map(),
-				buckets: new Map(),
-				flags: new Map(),
-				rollouts: new Map(),
-				experiments: new Map(),
-				destroy: () => camp.destroy(),
-			});
-		}
-		const deployment = await deployInProcess(bindle, stage, options.emulators);
-		return Object.freeze({
-			handles: deployment.handles,
-			outputs: deployment.bindings,
-			queues: deployment.queues,
-			topics: deployment.topics,
-			secrets: deployment.secrets,
-			data: deployment.data,
-			schedules: deployment.schedules,
-			kv: deployment.kv,
-			buckets: deployment.buckets,
-			flags: deployment.flags,
-			rollouts: deployment.rollouts,
-			experiments: deployment.experiments,
-			async destroy(): Promise<void> {
-				await destroyInProcess(deployment);
-			},
-		});
-	}
-
-	async function ensure(bindle: BindleInput): Promise<HarnessState> {
+	async function ensure(bindle: unknown): Promise<HarnessState> {
 		const existing = states.get(bindle);
 		if (existing !== undefined) return existing;
 		const pending = (async (): Promise<HarnessState> => {
+			if (campTarget !== undefined) await deployEphemeralCamp(campTarget);
 			const frame = { bindle, active: true };
-			let deployment: HarnessDeployment;
+			let deployment: InProcessDeployment;
 			try {
-				deployment = await deploying.run(frame, () => deployLane(bindle));
+				deployment = await deploying.run(frame, () =>
+					deployInProcess(bindle, stage, options.emulators),
+				);
 			} finally {
 				frame.active = false;
 			}
@@ -469,10 +412,10 @@ export function createTestHarness(
 	}
 
 	return Object.freeze({
-		deploy(bindle: BindleInput): () => Promise<DeployedGraph> {
+		deploy(bindle: unknown): () => Promise<DeployedGraph> {
 			return async () => (await ensure(bindle)).graph;
 		},
-		destroy(bindle: BindleInput): () => Promise<void> {
+		destroy(bindle: unknown): () => Promise<void> {
 			return async () => {
 				const frame = deploying.getStore();
 				if (frame?.active && frame.bindle === bindle)
@@ -490,7 +433,7 @@ export function createTestHarness(
 						const state = await pending;
 						if (latest === state) latest = undefined;
 						try {
-							await state.deployment.destroy();
+							await destroyInProcess(state.deployment);
 						} finally {
 							const activeDeployments = deployments.get(bindle);
 							activeDeployments?.delete(state.deployment);
@@ -541,14 +484,18 @@ export function createTestHarness(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters */
 
+/**
+ * The two-line runner swap's payoff: wire deploy/destroy into whichever
+ * runner's lifecycle hooks the suite is using.
+ */
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- SAFETY: runner hook return values are deliberately ignored; Bindle validation occurs on deploy. */
 export function bindHarnessLifecycle(
 	runner: {
-		readonly beforeAll: (fn: () => Promise<void>) => void;
-		readonly afterAll: (fn: () => Promise<void>) => void;
+		readonly beforeAll: (fn: () => Promise<void>) => unknown;
+		readonly afterAll: (fn: () => Promise<void>) => unknown;
 	},
 	harness: TestHarness,
-	bindle: BindleInput,
+	bindle: unknown,
 ): void {
 	const deploy = harness.deploy(bindle);
 	const destroy = harness.destroy(bindle);

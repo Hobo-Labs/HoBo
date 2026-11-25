@@ -12,18 +12,29 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** Absolute repo root, resolved from this module's location. */
 export const REPO_ROOT = fileURLToPath(new URL("../../../..", import.meta.url));
 
+/** Static fixture workspace: one codegen-opted-in package (`widgets`). */
 export const FIXTURE_WORKSPACE = fileURLToPath(
 	new URL("../fixtures/workspace", import.meta.url),
 );
 
 export interface TempRepoOptions {
+	/** Copy the repo's buf.gen.yaml into the temp root (default true). */
 	readonly withBufTemplate?: boolean;
+	/** Link the repo's cached CUE binary into the temp root (default true). */
 	readonly withCueCache?: boolean;
+	/** Fixture workspace directory to copy in; omit for an empty packages/. */
 	readonly workspace?: string | undefined;
 }
 
+/**
+ * Scaffold a throwaway repo root that the schema-tools CLI can run against
+ * hermetically: the vendored buf binary resolves module-relative, the CUE
+ * binary is linked from the real repo's .tools cache (no network), and the
+ * package tree comes from a static fixture.
+ */
 export async function makeTempRepo(
 	options: TempRepoOptions = {},
 ): Promise<string> {
@@ -47,6 +58,12 @@ export async function makeTempRepo(
 	return root;
 }
 
+/**
+ * Fixture .proto/.cue files are checked in with a .txt suffix so the
+ * architecture guard's misplaced-data-model rule (schemas only under a real
+ * package's data-models/) does not fire on test fixtures; restore the real
+ * extensions in the scaffolded copy.
+ */
 async function restoreSchemaExtensions(root: string): Promise<void> {
 	const entries = await readdir(root, { withFileTypes: true, recursive: true });
 	for (const entry of entries) {

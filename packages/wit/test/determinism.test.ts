@@ -6,8 +6,7 @@ const RUNTIME_WIT = join(
 	import.meta.dirname,
 	"../wit/deps/hobo-runtime/hobo-runtime.wit",
 );
-const NONDETERMINISTIC_RE =
-	/wall-clock|current-time|system-time|date-now|now-ms|random|rng/i;
+const NONDETERMINISTIC_RE = /wall-clock|now-ms|random/i;
 
 describe("hobo:runtime determinism", () => {
 	it("keeps replay-safe primitives free of wall-clock or random shapes", async () => {

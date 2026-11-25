@@ -1,0 +1,29 @@
+# OptimizeXP CLI evidence
+command: pnpm run design:lint
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+spawnStatus: 0
+durationMs: 915
+screen: ?x? (cols x rows)
+capturedAt: 2026-07-31T15:39:21.790Z
+
+## stdout
+
+> hobo-design@ design:lint /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --import tsx scripts/check-design-md.mts
+
+design-md: 2 web UI project(s) — linting with designmd
+  - packages/control-yard (DESIGN.md present)
+  - site (web-ui root)
+
+✔ packages/control-yard/DESIGN.md
+  errors=0 warnings=0
+
+✔ site/DESIGN.md
+  errors=0 warnings=0
+
+design-md check ok
+
+
+## stderr
+(empty)

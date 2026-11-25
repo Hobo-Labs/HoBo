@@ -38,10 +38,12 @@ regional legal notices, or legal advice text. It does not implement legal
 workflow, contract lifecycle, billing, paid-launch mechanics, commercial terms,
 or compliance certification claims.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the GA handoff
   evidence record.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

@@ -130,6 +130,7 @@ export type PruneHeldJobsOptions = {
 	log?: HeldJobPruneLog;
 };
 
+/** Drop local demand GitHub has already ended, without touching GitHub. */
 export function mergeHeldPruneWitness(
 	a: HeldJobPollWitness,
 	b: HeldJobPollWitness,
@@ -164,6 +165,7 @@ function terminalRunReason(
 	return "run-completed";
 }
 
+/** Refresh witness for runs still referenced locally when poll lookback missed them. */
 export async function refreshHeldPruneWitnessFromStore(options: {
 	store: HeldJobPruneStore;
 	github: GithubTransport;

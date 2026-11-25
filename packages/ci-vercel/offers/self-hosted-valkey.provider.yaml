@@ -9,10 +9,6 @@ provider:
   displayName: Self-hosted Valkey
   description: Valkey on infrastructure the owner runs, bound over RESP with VALKEY_URL.
 
-terms:
-  url: https://www.apache.org/licenses/LICENSE-2.0
-  reviewedOn: 2026-11-18
-
 capabilities:
   regions: [self-hosted]
   mappings:

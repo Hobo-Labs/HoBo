@@ -65,12 +65,12 @@ test("unavailable legal artifacts are blockers or explicit launch limitations", 
 
 test("authoritative dependencies link legal, privacy, security, backup, support, and tenant data handoffs", () => {
   assert.deepEqual(CUSTOMER_ASSURANCE_EVIDENCE_PACKET.designRefs, [
-    "urn:hobo:requirement:legal-privacy-terms-readiness",
-    "urn:hobo:requirement:tenant-data-lifecycle",
-    "urn:hobo:requirement:security-verification",
-    "urn:hobo:requirement:backup-restore",
-    "urn:hobo:requirement:support-sla-channels",
-    "urn:hobo:requirement:provenance-retention",
+    "docs/design/legal-privacy-terms-readiness.md",
+    "docs/design/tenant-data-lifecycle.md",
+    "docs/design/security-verification.md",
+    "docs/design/backup-restore.md",
+    "docs/design/support-sla-channels.md",
+    "docs/design/provenance-retention.md",
   ]);
   assert.ok(
     CUSTOMER_ASSURANCE_EVIDENCE_PACKET.initiativeDependencies.some(

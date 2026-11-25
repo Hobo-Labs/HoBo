@@ -89,4 +89,4 @@ Requires Station context when available (`HOBO_STATION` / profile / `--station`)
 
 ### Related
 
-[Control plane](/HoBo/system/control-plane/) · [Security](/HoBo/security/) · [Matching](/HoBo/reference/matching/) · [CLI](/HoBo/reference/cli/) · [Connectivity](/HoBo/reference/connectivity/)
+[Control plane](/HoBo/architecture/control-plane/) · [Security](/HoBo/security/) · [Matching](/HoBo/reference/matching/) · [CLI](/HoBo/reference/cli/) · [Connectivity](/HoBo/reference/connectivity/)

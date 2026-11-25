@@ -6,7 +6,11 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/adr/07-portability-extensibility.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",
@@ -16,11 +20,13 @@
   "waivers": [
     {
       "requirement": "bench",
-      "reason": "Phase 1 renders a small fixed office; no performance-critical path exists yet to benchmark."
+      "reason": "Phase 1 renders a small fixed office; no performance-critical path exists yet to benchmark.",
+      "adr": "ADR.md"
     },
     {
       "requirement": "features",
-      "reason": "Phase 1 behavior is covered by vitest unit and HTTP smoke tests; cucumber features land with the interaction phase."
+      "reason": "Phase 1 behavior is covered by vitest unit and HTTP smoke tests; cucumber features land with the interaction phase.",
+      "adr": "ADR.md"
     }
   ]
 }

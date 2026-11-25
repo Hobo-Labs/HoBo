@@ -29,6 +29,10 @@ export default defineConfig([
     rules: {
       'simple-import-sort/imports': 'error',
       'simple-import-sort/exports': 'error',
+      // These react-hooks rules misfire on this project's imperative game-state patterns:
+      // - immutability: singleton OfficeState/EditorState mutations are by design
+      // - refs: containerRef reads during render feed canvas pipeline, not React state
+      // - set-state-in-effect: timer-based animations and async error handling are legitimate
       'react-hooks/immutability': 'off',
       'react-hooks/refs': 'off',
       'react-hooks/set-state-in-effect': 'off',

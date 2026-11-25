@@ -29,7 +29,7 @@ The name is the philosophy. A hobo travels light, works where the work is, and m
 | Path | Start here |
 |---|---|
 | **Guide** | [Getting started](/HoBo/guide/getting-started/) · [Core concepts](/HoBo/guide/concepts/) · [Trail map](/HoBo/guide/status/) · [CLI intro](/HoBo/guide/cli/) |
-| **System model** | [Overview](/HoBo/system/) · data / control planes · WASM · air-gap |
+| **Architecture** | [Overview](/HoBo/architecture/) · data / control planes · WASM · air-gap |
 | **Security** | [Identity](/HoBo/security/identity/) · multi-tenant · credentials |
 | **CI/CD** | [Continuous migration](/HoBo/cicd/migration/) · progressive delivery |
 | **Primitives** | Bindle, Camp, Yard, Junction, Station, Trail |

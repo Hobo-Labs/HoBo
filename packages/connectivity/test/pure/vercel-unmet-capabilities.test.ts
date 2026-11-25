@@ -1,33 +1,50 @@
+/**
+ * What Vercel *cannot* do with a routing plan, and how it says so.
+ *
+ * `vercel-traffic-routing.test.ts` covers the refusals that stop a plan before
+ * it starts — no credential, no project, a reused plan id. This covers the
+ * other half: a plan that is well-formed but asks for more than Vercel's two
+ * realizations can express.
+ *
+ * The reporting is in **two layers, and the distinction is the interesting
+ * part**:
+ *
+ * In **auto mode** the adapter first has to pick a realization from the plan's
+ * shape. A plan matching neither Rolling Releases nor rewrites gets a single
+ * `mode` in `unmet` — because at that point the adapter genuinely does not know
+ * which realization the operator was reaching for, and guessing in order to
+ * produce a more specific complaint would be inventing intent.
+ *
+ * In a **forced mode** the operator has already said which realization they
+ * want, so the adapter can be specific: `availability-constraints`,
+ * `rules[0].path-prefix`, `backend-count`. That is why pinning a mode is the
+ * documented way to find out *why* a plan will not realize.
+ *
+ * Underneath both is the rule that matters: **an unrealizable plan is declined,
+ * never approximated**. Applying the part that fits is the tempting behaviour
+ * and the dangerous one — an operator who asked for a canary gated on a header,
+ * and got an ungated canary, has shipped to everybody.
+ */
 import { describe, expect, it } from "vitest";
-import type { JsonObject, JsonValue } from "../../src/json.js";
-import {
-	createVercelTrafficRouting,
-	type VercelTrafficRoutingOptions,
-} from "../../src/traffic-routing/vercel.js";
 
-type FixtureBackend = {
-	id: string;
-	service: string;
-	weight?: number;
-	endpoint?: string;
-};
-type FixtureRule = {
-	weightStrategy: string;
-	backends: FixtureBackend[];
-	match?: { pathPrefix?: string; headers?: Record<string, string> } | undefined;
-};
+import { createVercelTrafficRouting } from "../../src/traffic-routing/vercel.js";
 
-function stubFetch(
-	body: JsonValue = { version: { id: "ver_1" } },
-): typeof fetch {
-	return async () => {
-		const response = new Response(null, { status: 200 });
-		response.json = async () => body;
-		return response;
-	};
+/** A Vercel API that accepts everything and returns a stageable version. */
+function stubFetch(body: unknown = { version: { id: "ver_1" } }) {
+	return (async () =>
+		({
+			ok: true,
+			status: 200,
+			json: async () => body,
+		}) as unknown as Response) as unknown as typeof fetch;
 }
 
-const routing = (options: Partial<VercelTrafficRoutingOptions> = {}) =>
+/**
+ * Rolling Releases need a Vercel deployment id per backend. The fixture
+ * supplies the map so that an unrealizable plan is unrealizable for its
+ * *shape*, which is what these tests vary.
+ */
+const routing = (options: Record<string, unknown> = {}) =>
 	createVercelTrafficRouting({
 		token: "vt-token",
 		projectIdOrName: "proj",
@@ -40,9 +57,10 @@ const routing = (options: Partial<VercelTrafficRoutingOptions> = {}) =>
 			c: "dpl_c",
 		},
 		...options,
-	});
+	} as never);
 
-const canaryRule = (overrides: Partial<FixtureRule> = {}) => ({
+/** Two weighted backends under one static rule — the rolling-release shape. */
+const canaryRule = (overrides: Record<string, unknown> = {}) => ({
 	weightStrategy: "static",
 	backends: [
 		{ id: "stable", service: "web", weight: 90 },
@@ -51,7 +69,8 @@ const canaryRule = (overrides: Partial<FixtureRule> = {}) => ({
 	...overrides,
 });
 
-const rewriteRule = (overrides: Partial<FixtureRule> = {}) => ({
+/** One endpoint under a path prefix — the rewrites shape. */
+const rewriteRule = (overrides: Record<string, unknown> = {}) => ({
 	weightStrategy: "static",
 	match: { pathPrefix: "/api" },
 	backends: [
@@ -62,7 +81,7 @@ const rewriteRule = (overrides: Partial<FixtureRule> = {}) => ({
 
 let planCounter = 0;
 
-const plan = (rules: FixtureRule[], intent: JsonObject = {}) => {
+const plan = (rules: unknown[], intent: Record<string, unknown> = {}) => {
 	planCounter += 1;
 	return {
 		planId: `plan-${planCounter}`,
@@ -73,9 +92,9 @@ const plan = (rules: FixtureRule[], intent: JsonObject = {}) => {
 };
 
 const applyWith = async (
-	options: Partial<VercelTrafficRoutingOptions>,
-	rules: FixtureRule[],
-	intent: JsonObject = {},
+	options: Record<string, unknown>,
+	rules: unknown[],
+	intent: Record<string, unknown> = {},
 ) => {
 	const result = await routing(options).apply(plan(rules, intent));
 	return {
@@ -87,12 +106,12 @@ const applyWith = async (
 	};
 };
 
-const auto = (rules: FixtureRule[], intent: JsonObject = {}) =>
+const auto = (rules: unknown[], intent: Record<string, unknown> = {}) =>
 	applyWith({}, rules, intent);
 const forced = (
 	mode: "rolling-release" | "rewrites",
-	rules: FixtureRule[],
-	intent: JsonObject = {},
+	rules: unknown[],
+	intent: Record<string, unknown> = {},
 ) => applyWith({ mode }, rules, intent);
 
 describe("a plan Vercel can realize", () => {
@@ -102,12 +121,16 @@ describe("a plan Vercel can realize", () => {
 	});
 
 	it("claims the weighted-backends capability it actually configured", async () => {
+		// The positive half of the honesty: claiming a capability that was not
+		// configured is the same failure as hiding one that was not available.
 		expect((await auto([canaryRule()])).capabilities).toEqual([
 			"weighted-backends",
 		]);
 	});
 
 	it("reports no unmet capabilities when everything fits", async () => {
+		// A spurious entry would send an operator looking for a limitation that
+		// does not apply to them.
 		expect((await auto([canaryRule()])).unmet).toEqual([]);
 	});
 
@@ -123,6 +146,8 @@ describe("a plan Vercel can realize", () => {
 
 describe("auto mode, when no realization fits", () => {
 	it("reports a single mode verdict rather than guessing at specifics", async () => {
+		// The adapter genuinely does not know which realization the operator was
+		// reaching for; a more specific complaint would be inventing intent.
 		const result = await auto([canaryRule()], {
 			availability: { zones: ["us-east-1a"] },
 		});
@@ -130,6 +155,7 @@ describe("auto mode, when no realization fits", () => {
 	});
 
 	it("says the plan is neither realization, in words", async () => {
+		// The note is what a human reads first; the code is for machines.
 		const result = await auto([canaryRule()], { resiliency: { retries: 3 } });
 		expect(result.notes.join(" ")).toMatch(
 			/not a Vercel rolling-release or rewrites/u,
@@ -157,11 +183,14 @@ describe("auto mode, when no realization fits", () => {
 	});
 
 	it("declines an empty rule list rather than succeeding at nothing", async () => {
+		// Reporting success for a plan that routes nothing would have a caller
+		// believe their traffic moved.
 		const result = await auto([]);
 		expect(result.realized).toBe("none");
 	});
 
 	it("claims no capabilities when it declines", async () => {
+		// Capabilities on a denial would read as a partial application.
 		expect((await auto([])).capabilities).toEqual([]);
 	});
 
@@ -172,6 +201,8 @@ describe("auto mode, when no realization fits", () => {
 
 describe("a forced mode names the specific constraint", () => {
 	it("names an availability constraint", async () => {
+		// Vercel's edge decides placement; a plan pinning zones asks for
+		// something the platform does not expose.
 		const result = await forced("rolling-release", [canaryRule()], {
 			availability: { zones: ["us-east-1a"] },
 		});
@@ -186,6 +217,8 @@ describe("a forced mode names the specific constraint", () => {
 	});
 
 	it("names the weight strategy it cannot use, not just that it cannot", async () => {
+		// "unsupported strategy" without the name leaves an operator guessing
+		// which of their rules to change.
 		const result = await forced("rolling-release", [
 			canaryRule({ weightStrategy: "latency-based" }),
 		]);
@@ -193,6 +226,7 @@ describe("a forced mode names the specific constraint", () => {
 	});
 
 	it("names a backend count that is not exactly two", async () => {
+		// A Rolling Release is stable-plus-canary by construction.
 		const result = await forced("rolling-release", [
 			canaryRule({
 				backends: [
@@ -221,6 +255,8 @@ describe("a forced mode names the specific constraint", () => {
 	});
 
 	it("names a header match a Rolling Release cannot gate on", async () => {
+		// This is the case the whole design exists for: an ungated canary
+		// shipped in place of a header-gated one reaches everybody.
 		const result = await forced("rolling-release", [
 			canaryRule({ match: { headers: { "x-canary": "1" } } }),
 		]);
@@ -228,6 +264,8 @@ describe("a forced mode names the specific constraint", () => {
 	});
 
 	it("lists every unmet constraint rather than stopping at the first", async () => {
+		// A plan with several problems must not require several round trips to
+		// fix.
 		const result = await forced(
 			"rolling-release",
 			[canaryRule({ match: { pathPrefix: "/api" } })],
@@ -237,6 +275,7 @@ describe("a forced mode names the specific constraint", () => {
 	});
 
 	it("indexes the rule a rewrite constraint came from", async () => {
+		// With several rules, an unindexed complaint does not say which one.
 		const result = await forced("rewrites", [
 			rewriteRule(),
 			rewriteRule({ match: undefined, backends: [{ id: "b", service: "b" }] }),
@@ -245,6 +284,8 @@ describe("a forced mode names the specific constraint", () => {
 	});
 
 	it("names a rewrite rule with no path prefix", async () => {
+		// A rewrite with no source path matches everything, which is not what a
+		// rule scoped to one service asked for.
 		const result = await forced("rewrites", [
 			{
 				weightStrategy: "static",
@@ -257,6 +298,8 @@ describe("a forced mode names the specific constraint", () => {
 	});
 
 	it("names a rewrite backend with no endpoint", async () => {
+		// There is nowhere to rewrite *to*; realizing it would produce a route
+		// pointing at nothing.
 		const result = await forced("rewrites", [
 			rewriteRule({ backends: [{ id: "api", service: "api" }] }),
 		]);
@@ -276,6 +319,8 @@ describe("a forced mode names the specific constraint", () => {
 	});
 
 	it("declines a canary-shaped plan when rewrites is forced", async () => {
+		// An operator who pinned the mode wants that mode or an error, not a
+		// silent fallback to the other one.
 		expect((await forced("rewrites", [canaryRule()])).realized).toBe("none");
 	});
 
@@ -288,6 +333,8 @@ describe("a forced mode names the specific constraint", () => {
 
 describe("missing deployment mappings", () => {
 	it("names the backend whose deployment is unmapped", async () => {
+		// This is a configuration gap rather than a plan-shape problem, and
+		// naming the backend is what tells the operator which id to supply.
 		const result = await applyWith(
 			{ deploymentIdsByBackend: { stable: "dpl_stable" } },
 			[canaryRule()],
@@ -314,6 +361,8 @@ describe("missing deployment mappings", () => {
 
 describe("a provider that does not answer as expected", () => {
 	it("declines when the route stage returns no version id", async () => {
+		// Without it there is nothing to promote, so the route was staged and
+		// never went live. Reporting success would claim traffic moved.
 		const result = await applyWith(
 			{ mode: "rewrites", fetchImpl: stubFetch({}) },
 			[rewriteRule()],
@@ -331,6 +380,8 @@ describe("a provider that does not answer as expected", () => {
 	});
 
 	it("distinguishes a provider failure from an unrealizable plan", async () => {
+		// They need different fixes — one is a retry, the other is a plan edit —
+		// so they must not share a code.
 		const providerFailure = await applyWith(
 			{ mode: "rewrites", fetchImpl: stubFetch({}) },
 			[rewriteRule()],

@@ -1,12 +1,12 @@
 # `@hobo/provider-vercel-blob`
 
 The Vercel Blob binding of `EphemeralStatePort` (`@hobo/core`), so the hosted
-CI relay ([ADR-0179](urn:hobo:decision:adr-0179))
+CI relay ([ADR-0179](../../../docs/design/adr/hosted-relay-stateless.md#adr-0179))
 can keep its loss-tolerant cache in a private Blob store connected to its own
 Vercel project, authenticated by the deployment's OIDC token with no stored
 secret. Semantics are the Redis binding's, checked by the same 24-case
 conformance suite from `@hobo/kv-redis-compatible`. Design:
-[Relay Ephemeral State](urn:hobo:requirement:relay-ephemeral-state#vercel-blob).
+[Relay Ephemeral State](../../../docs/design/relay-ephemeral-state.md#vercel-blob).
 
 ```ts
 import { createVercelBlobEphemeralStateFromEnv } from "@hobo/provider-vercel-blob";
@@ -176,11 +176,11 @@ month, and blocks Blob for 30 days once one is exceeded. Rate limits: Pro
 
 The design's reference load is 1,000 leases a day, each an acquire, a renew, a
 release and one feed append
-([command budget](urn:hobo:requirement:relay-ephemeral-state#command-budget)):
+([command budget](../../../docs/design/relay-ephemeral-state.md#command-budget)):
 
 | Binding | Per lease | A month (30,000 leases) | Against |
 |---|---|---|---|
-| Upstash REST (`@hobo/provider-upstash`) | 6 commands | 180,000 commands | 500,000 commands a month free ([ADR-0179 cost table](urn:hobo:requirement:hosted-relay-stateless)) |
+| Upstash REST (`@hobo/provider-upstash`) | 6 commands | 180,000 commands | 500,000 commands a month free ([ADR-0179 cost table](../../../docs/design/hosted-relay-stateless.md)) |
 | Turso (`@hobo/provider-turso`) | 6 requests; at most 6 rows read and 6 written | at most 180,000 rows written | 10 million rows written a month free, per that package's README |
 | **Vercel Blob (this package)** | 4 simple, 4 advanced, 2 free deletes | 120,000 simple + 120,000 advanced | **Pro: about $0.65** of the $20 credit; **Hobby: over its 2,000 advanced operations after about 500 leases** |
 

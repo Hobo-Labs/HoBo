@@ -1,11 +1,34 @@
-/* oxlint-disable anti-slop/no-shape-in-symbol-names, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion */
+/**
+ * Camp authoring, and the two things a Camp is forbidden to do.
+ *
+ * `camp.test.ts` covers the shape; this covers the refusals and the
+ * canonicalization, which are where the topology model is actually enforced.
+ *
+ * **A Camp does not own a Bindle and does not choose a provider.** Both are
+ * refused with their own error code and a remediation naming the correct call,
+ * because the failure they prevent is architectural: a Camp that pinned a
+ * provider would make the Bindle→Camp→Yard layering a suggestion rather than a
+ * rule, and the whole portability story rests on it being a rule.
+ *
+ * **`envType` is inferred; `tier` never is.** That asymmetry is deliberate and
+ * documented in the source, and it is worth pinning precisely because it looks
+ * like an inconsistency someone would "fix": inferring tier from a name would
+ * make a Camp called `data-migration` silently a data-tier segment.
+ *
+ * Canonicalization — sorted, de-duplicated lists and sorted labels — is what
+ * lets two Camps written in different orders hash the same, so it is asserted
+ * rather than assumed.
+ */
+/* oxlint-disable anti-slop/no-shape-in-symbol-names, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test helpers intentionally inspect controlled Camp compatibility fixtures. */
 import { describe, expect, it } from "vitest";
 
 import {
 	attachCampToYard,
-	CAMP_PROVIDER_SELECTION_FORBIDDEN,
+	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
+	CAMP_MIGRATION_CODE,
 	camp,
-	campToContract,
+	campToShape,
+	parseLegacyCampMappings,
 	withResolvers,
 } from "../src/camp.js";
 
@@ -35,12 +58,6 @@ describe("camp()", () => {
 		expect(() => camp("prod", config as never)).toThrow(TypeError);
 	});
 
-	it("rejects unknown configuration properties", () => {
-		expect(() => camp("prod", { requre: ["node"] } as never)).toThrow(
-			/camp config has unknown property: requre/u,
-		);
-	});
-
 	it("takes the last segment of a slash-qualified name as the env", () => {
 		expect(camp("acme/prod").env).toBe("prod");
 	});
@@ -50,11 +67,53 @@ describe("camp()", () => {
 	});
 });
 
-describe("provider-neutral labels", () => {
+describe("a Camp may not own a Bindle", () => {
+	it("refuses a bindle in the config", () => {
+		expect(codeOf(() => camp("prod", { bindle: {} } as never))).toBe(
+			CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
+		);
+	});
+
+	it("names the correct call in the remediation", () => {
+		// An architectural refusal without the alternative is a dead end.
+		try {
+			camp("prod", { bindle: {} } as never);
+		} catch (error) {
+			expect((error as { remediation?: string }).remediation).toMatch(
+				/deploy\(bindle/u,
+			);
+		}
+	});
+});
+
+describe("a Camp may not select a provider", () => {
+	it.each([
+		"defaultProvider",
+		"tiers",
+		"bindings",
+	])("refuses %s in the config", (key) => {
+		// The layering the whole portability story rests on: a Camp that
+		// pinned a provider would make Bindle→Camp→Yard a suggestion.
+		expect(codeOf(() => camp("prod", { [key]: {} } as never))).toBe(
+			CAMP_MIGRATION_CODE,
+		);
+	});
+
+	it("points at yard() in the remediation", () => {
+		try {
+			camp("prod", { defaultProvider: {} } as never);
+		} catch (error) {
+			expect((error as { remediation?: string }).remediation).toMatch(
+				/yard\(/u,
+			);
+		}
+	});
+
 	it("refuses a provider-shaped label", () => {
+		// The same rule, one level down: a label is not an escape hatch.
 		expect(
 			codeOf(() => camp("prod", { labels: { provider: "aws" } } as never)),
-		).toBe(CAMP_PROVIDER_SELECTION_FORBIDDEN);
+		).toBe(CAMP_MIGRATION_CODE);
 	});
 
 	it.each([
@@ -66,7 +125,7 @@ describe("provider-neutral labels", () => {
 	])("refuses the label %s in any case", (key) => {
 		expect(
 			codeOf(() => camp("prod", { labels: { [key]: "aws" } } as never)),
-		).toBe(CAMP_PROVIDER_SELECTION_FORBIDDEN);
+		).toBe(CAMP_MIGRATION_CODE);
 	});
 
 	it("allows an unrelated label", () => {
@@ -129,6 +188,8 @@ describe("tier is never inferred", () => {
 	});
 
 	it("does not infer a tier from the Camp's name", () => {
+		// The documented asymmetry with envType, and the reason for it: a Camp
+		// called "data-migration" must not silently become a data-tier segment.
 		expect(camp("data-migration")).not.toHaveProperty("tier");
 	});
 
@@ -149,6 +210,7 @@ describe("tier is never inferred", () => {
 
 describe("canonicalization", () => {
 	it("sorts and de-duplicates the require list", () => {
+		// Two Camps written in different orders must hash the same.
 		expect(camp("prod", { require: ["b", "a", "b"] }).require).toEqual([
 			"a",
 			"b",
@@ -183,9 +245,9 @@ describe("canonicalization", () => {
 		expect(Object.isFrozen(built.require)).toBe(true);
 	});
 
-	it("preserves provider words in the id and env", () => {
+	it("strips a legacy provider suffix from the id but keeps the env", () => {
 		const built = camp("prod-aws");
-		expect(built.id).toBe("prod-aws");
+		expect(built.id).toBe("prod");
 		expect(built.env).toBe("prod-aws");
 	});
 
@@ -197,8 +259,8 @@ describe("canonicalization", () => {
 		"cloudflare",
 		"oci",
 		"wasm-sandbox",
-	])("preserves the suffix -%s", (provider) => {
-		expect(camp(`prod-${provider}`).id).toBe(`prod-${provider}`);
+	])("strips the legacy suffix -%s", (provider) => {
+		expect(camp(`prod-${provider}`).id).toBe("prod");
 	});
 
 	it("does not strip a suffix that is the whole name", () => {
@@ -221,6 +283,7 @@ describe("attachCampToYard", () => {
 	});
 
 	it("derives the provider from the yard", () => {
+		// Derived, never chosen — which is the whole point of attachment.
 		expect(
 			attachCampToYard(camp("prod"), { yardId: "y1", providerId: "aws" })
 				.derivedProviderId,
@@ -292,38 +355,138 @@ describe("attachCampToYard", () => {
 	});
 });
 
-describe("campToContract", () => {
+describe("parseLegacyCampMappings", () => {
+	it("accepts mappings whose provider equals the yard's", () => {
+		const result = parseLegacyCampMappings(
+			{ bindings: { db: { providerId: "aws", selector: "rds" } } as never },
+			"aws",
+		);
+		expect(result.resourceMappings).toHaveLength(1);
+	});
+
+	it("refuses a mapping naming a different provider", () => {
+		// Accepting it would let a Camp override its Yard by the back door.
+		expect(
+			codeOf(() =>
+				parseLegacyCampMappings(
+					{ bindings: { db: { providerId: "gcp" } } as never },
+					"aws",
+				),
+			),
+		).toBe(CAMP_MIGRATION_CODE);
+	});
+
+	it("checks defaultProvider as well as bindings", () => {
+		expect(
+			codeOf(() =>
+				parseLegacyCampMappings(
+					{ defaultProvider: { providerId: "gcp" } as never },
+					"aws",
+				),
+			),
+		).toBe(CAMP_MIGRATION_CODE);
+	});
+
+	it("checks tiers as well", () => {
+		expect(
+			codeOf(() =>
+				parseLegacyCampMappings(
+					{ tiers: { data: { providerId: "gcp" } } as never },
+					"aws",
+				),
+			),
+		).toBe(CAMP_MIGRATION_CODE);
+	});
+
+	it("maps a binding to a resource-name selector", () => {
+		const result = parseLegacyCampMappings(
+			{ bindings: { db: { providerId: "aws", selector: "rds" } } as never },
+			"aws",
+		);
+		expect(result.resourceMappings[0]?.selector).toEqual({
+			resourceName: "db",
+		});
+	});
+
+	it("maps a tier to a resource-kind selector", () => {
+		const result = parseLegacyCampMappings(
+			{ tiers: { data: { providerId: "aws", selector: "rds" } } as never },
+			"aws",
+		);
+		expect(result.resourceMappings[0]?.selector).toEqual({
+			resourceKind: "data",
+		});
+	});
+
+	it("maps a default provider to an empty selector", () => {
+		const result = parseLegacyCampMappings(
+			{ defaultProvider: { providerId: "aws", selector: "any" } as never },
+			"aws",
+		);
+		expect(result.resourceMappings.at(-1)?.selector).toEqual({});
+	});
+
+	it("omits the default rule when it names no selector", () => {
+		const result = parseLegacyCampMappings(
+			{ defaultProvider: { providerId: "aws" } as never },
+			"aws",
+		);
+		expect(result.resourceMappings).toHaveLength(0);
+	});
+
+	it("returns a deprecation note explaining what was stripped", () => {
+		// Silence would let the legacy form look supported.
+		expect(parseLegacyCampMappings({}, "aws").deprecation).toMatch(
+			/stripped from canonical camp/u,
+		);
+	});
+
+	it("accepts an empty input", () => {
+		expect(parseLegacyCampMappings({}, "aws").resourceMappings).toEqual([]);
+	});
+
+	it("freezes the mappings", () => {
+		expect(
+			Object.isFrozen(parseLegacyCampMappings({}, "aws").resourceMappings),
+		).toBe(true);
+	});
+});
+
+describe("campToShape", () => {
 	it("keeps the local id for an unattached Camp", () => {
-		expect(campToContract(camp("prod")).id).toBe("prod");
+		expect(campToShape(camp("prod")).id).toBe("prod");
 	});
 
 	it("strips the yard prefix from an attached Camp", () => {
+		// A shape is Yard-relative, so carrying the Yard id would double it.
 		const attached = attachCampToYard(camp("prod"), {
 			yardId: "y1",
 			providerId: "aws",
 		});
-		expect(campToContract(attached).id).toBe("prod");
+		expect(campToShape(attached).id).toBe("prod");
 	});
 
 	it("carries env, envType and the canonical lists", () => {
-		const contract = campToContract(camp("prod", { require: ["a"] }));
-		expect(contract).toMatchObject({
+		const shape = campToShape(camp("prod", { require: ["a"] }));
+		expect(shape).toMatchObject({
 			env: "prod",
 			envType: "production",
 			require: ["a"],
 		});
 	});
 
-	it("does not leak the derived provider into the contract", () => {
+	it("does not leak the derived provider into the shape", () => {
+		// A shape is the provider-neutral projection; including the derivation
+		// would put provider detail back where it was refused.
 		const attached = attachCampToYard(camp("prod"), {
 			yardId: "y1",
 			providerId: "aws",
 		});
-		expect(campToContract(attached)).not.toHaveProperty("derivedProviderId");
+		expect(campToShape(attached)).not.toHaveProperty("derivedProviderId");
 	});
 
-	it("freezes the contract", () => {
-		expect(Object.isFrozen(campToContract(camp("prod")))).toBe(true);
+	it("freezes the shape", () => {
+		expect(Object.isFrozen(campToShape(camp("prod")))).toBe(true);
 	});
 });
 

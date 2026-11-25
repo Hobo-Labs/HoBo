@@ -10,7 +10,7 @@ stay downstream of accepted quickstart and envelope evidence instead of inventin
 - `src/vibe-gap-closure.ts` contains a deterministic child issue matrix for HOBO-540 through
   HOBO-565 plus the corrected DX backbone graph for HOBO-566 through HOBO-577.
 - Tests prove each child targets `src/draft/exp-proofs/<slug>` and
-  `urn:hobo:proof:<issue-slug>`.
+  `docs/design/proofs/<issue-slug>/README.md`.
 - Tests prove the DX backbone keeps `dx-first`, `api`, `sdk`, `cli`, and `contract` label coverage
   across CLI, MCP & Developer Experience slices.
 - Tests prove M1 shape slices block M2 deploy/manage/migrate transcript work before HOBO-577
@@ -74,11 +74,15 @@ Feature: V1 vibe example backlog closure
 - `tests/vibe-gap-closure.test.ts`
 - `contracts/consumer/vibe-gap-boundaries.test.ts`
 - `contracts/pact-inventory.md`
+- `poc-rollup-ledger.md`
 - `reference-implementation.yaml`
+- `architecture.md`
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the child backlog and evaluation.
 - `architecture/pacts/` - Pact fixture for the package boundary.
+- `architecture.md` - parse-don't-validate and event-architecture evidence.

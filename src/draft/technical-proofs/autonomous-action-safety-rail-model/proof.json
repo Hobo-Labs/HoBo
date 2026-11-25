@@ -6,7 +6,10 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",
@@ -16,7 +19,8 @@
   "waivers": [
     {
       "requirement": "bench",
-      "reason": "Documentation-only POC by accepted decision: ADR-0094 keeps this spike free of runtime code, so there is no executable hot path to measure; the in-package ADR records the deliberate scope."
+      "reason": "Documentation-only POC by accepted decision: ADR-0094 keeps this spike free of runtime code, so there is no executable hot path to measure; the in-package ADR records the deliberate scope.",
+      "adr": "ADR.md"
     }
   ]
 }

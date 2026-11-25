@@ -6,7 +6,10 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/reliability-observability-cost.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

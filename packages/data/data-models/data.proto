@@ -2,12 +2,18 @@ syntax = "proto3";
 
 package hobo.data.v1;
 
+// Wire records for the @hobo/data CQRS fold kernel (S1-15a). Design source:
+// docs/design/data-plane.md (Plan 11 + Plan 32). These are the persisted/cached
+// shapes; the runtime EventEnvelope (packages/core) carries the event bodies.
+
 enum ReactivityClass {
   REACTIVITY_CLASS_UNSPECIFIED = 0;
   REACTIVITY_CLASS_REACTIVE = 1;
   REACTIVITY_CLASS_NON_REACTIVE = 2;
 }
 
+// Aggregate write-model snapshot: a fold result + the seq it covers, so actor
+// activation replays only the tail. A cache, never a source of truth.
 message AggregateSnapshotRecord {
   string stream_id = 1;
   uint64 seq = 2;
@@ -16,19 +22,16 @@ message AggregateSnapshotRecord {
   string saved_at = 5;
 }
 
+// Projection read-model checkpoint: the folded rows + the log position reached.
+// Rebuildable from zero by replay; the checkpoint only skips already-folded tail.
 message ProjectionCheckpointRecord {
   string projection = 1;
   uint64 seq = 2;
   string rows_json = 3;
   string saved_at = 4;
-  string read_model = 5;
-  ProjectionRowSchema row_schema = 6;
-  repeated string index_hints = 7;
-  repeated string read_set = 8;
-  ReactivityClass reactivity_class = 9;
-  map<string, double> stream_sequences = 10;
 }
 
+// A poison event neutralized deterministically by a *.Quarantined fact.
 message QuarantineRecord {
   uint64 offending_seq = 1;
   uint64 quarantine_seq = 2;
@@ -36,60 +39,14 @@ message QuarantineRecord {
   string reason = 4;
 }
 
-message AggregateQuarantinedEventData {
-  uint64 offending_seq = 1;
-  string offending_type = 2;
-  string offending_event_id = 3;
-  string fold = 4;
-  string fold_kind = 5;
-  string reason = 6;
+// A registered forward-only upcaster in the chain for an event type.
+message UpcasterRegistration {
+  string type = 1;
+  uint32 from_version = 2;
+  uint32 to_version = 3;
 }
 
-message ProjectionQuarantinedEventData {
-  string projection = 1;
-  string source_stream_id = 2;
-  uint64 offending_seq = 3;
-  string offending_event_id = 4;
-  string offending_type = 5;
-  string reason = 6;
-}
-
-message EventStoreQuarantinedEventData {
-  uint64 offending_seq = 1;
-  string offending_type = 2;
-  string reason = 3;
-}
-
-message QuarantineFinding {
-  string source_stream_id = 1;
-  uint64 offending_seq = 2;
-  string offending_event_id = 3;
-  string offending_type = 4;
-  string fold = 5;
-  string fold_kind = 6;
-  string reason = 7;
-  string record_stream_id = 8;
-  uint64 record_seq = 9;
-  string code = 10;
-  string severity = 11;
-  string remediation = 12;
-}
-
-message QuarantineReport {
-  repeated QuarantineFinding findings = 1;
-  bool complete = 2;
-  string next_position = 3;
-}
-
-message QuarantineReprocessFinding {
-  string code = 1;
-  string source_stream_id = 2;
-  uint64 offending_seq = 3;
-  string offending_event_id = 4;
-  string fold = 5;
-  string fold_kind = 6;
-}
-
+// actor.* lifecycle facts emitted by the aggregate single-writer boundary.
 message ActorActivatedData {
   string stream_id = 1;
   string holder_id = 2;
@@ -107,23 +64,11 @@ message ActorPassivatedData {
   uint64 seq = 2;
 }
 
-message ProjectionRowField {
-  string name = 1;
-  string type = 2;
-}
-
-message ProjectionRowSchema {
-  string wit_record = 1;
-  repeated ProjectionRowField fields = 2;
-}
-
+// projection.* facts: declaration read-set, lag signal, sink rebind.
 message ProjectionDeclaredData {
   string projection = 1;
   repeated string read_set = 2;
   ReactivityClass reactivity_class = 3;
-  string read_model = 4;
-  ProjectionRowSchema row_schema = 5;
-  repeated string index_hints = 6;
 }
 
 message ProjectionLaggedData {
@@ -135,109 +80,4 @@ message ProjectionLaggedData {
 message ProjectionSinkReboundData {
   string projection = 1;
   string match_decided_ref = 2;
-  string from_sink_id = 3;
-  string to_sink_id = 4;
-  string config_hash = 5;
-  uint64 verified_position = 6;
-  string migration_id = 7;
-}
-
-message ProjectionReplicatedEventData {
-  string event_json = 1;
-  uint64 source_position = 2;
-}
-
-message ProjectionReplicationCheckedData {
-  string source_stream_id = 1;
-  uint64 source_position = 2;
-  uint64 checked_at_ms = 3;
-  bool caught_up = 4;
-}
-
-message ProjectionReplicaConfiguredData {
-  string projection = 1;
-  string owner_camp_id = 2;
-  string replica_camp_id = 3;
-  string source_stream_id = 4;
-  uint64 bound_ms = 5;
-  string read_class = 6;
-}
-
-message CrossCampProjectionLagData {
-  string projection = 1;
-  string owner_camp_id = 2;
-  string replica_camp_id = 3;
-  uint64 source_position = 4;
-  uint64 bound_ms = 5;
-  uint64 observed_lag_ms = 6;
-}
-
-message ProjectionReadEvidence {
-  string source = 1;
-  string read_class = 2;
-}
-
-message ProjectionReplicaObservation {
-  string projection = 1;
-  string owner_camp_id = 2;
-  string replica_camp_id = 3;
-  string replica_stream_id = 4;
-  string source_stream_id = 5;
-  uint64 source_position = 6;
-  uint64 bound_ms = 7;
-  string staleness_status = 8;
-  optional uint64 checked_at_ms = 9;
-  optional uint64 observed_lag_ms = 10;
-  bool lag_signal_active = 11;
-  bool missing_lag_signal = 12;
-  repeated ProjectionReadEvidence supported_reads = 13;
-  string default_read_class = 14;
-  optional uint64 lag_since_ms = 15;
-}
-
-message ProjectionReplicaReport {
-  repeated ProjectionReplicaObservation replicas = 1;
-}
-
-message PaginatedChangeData {
-  string resource = 1;
-  string key = 2;
-  string op = 3;
-  double source_seq = 4;
-  string source_stream_id = 5;
-  string row_json = 6;
-}
-
-message PaginatedCursorData {
-  string resource = 1;
-  string order_by = 2;
-  string key_json = 3;
-  string row_id = 4;
-  string stream_id = 5;
-  string tenant = 6;
-}
-
-message PaginatedPageData {
-  repeated string items_json = 1;
-  string next_cursor = 2;
-  map<string, double> seq = 3;
-}
-
-message ProjectionRebuildRowRecord {
-  string config_hash = 1;
-  string key = 2;
-  string row_json = 3;
-  bool deleted = 4;
-}
-
-message ProjectionRebuildSeedRecord {
-  string config_hash = 1;
-  bool seeded = 2;
-  uint64 source_position = 3;
-  string rows_json = 4;
-}
-
-message ProjectionRebuildCheckpointRecord {
-  string config_hash = 1;
-  uint64 source_position = 2;
 }

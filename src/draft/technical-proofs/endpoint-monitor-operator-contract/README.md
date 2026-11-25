@@ -3,7 +3,7 @@
 Independent POC for HOBO-272.
 
 This package models the Endpoint Monitor slice from
-[Plan 40](urn:hobo:requirement:operators-sre#plan-40): synthetic probe and
+[Plan 40](../../../../docs/design/operators-sre.md#plan-40): synthetic probe and
 drift signals are read by a built-in operator principal, SLO burn and alert
 facts are emitted, and the resulting SRE-facing signal composes with the
 existing SRE skeleton.
@@ -36,9 +36,11 @@ npm.cmd --prefix src\draft\technical-proofs\endpoint-monitor-operator-contract t
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Endpoint Monitor Operator Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

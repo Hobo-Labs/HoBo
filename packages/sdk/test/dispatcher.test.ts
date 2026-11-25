@@ -1,7 +1,15 @@
+/**
+ * Two concerns as data, and one thing that is genuinely not a concern.
+ *
+ * `runner.*` is a namespace of factories and `dispatcher()` is a function, so
+ * both are case files. The last test is a cross-package integration — it feeds
+ * the declaration into `@hobo/dispatcher`'s real engine — and that is a
+ * sequence, not an input/output pair, so it stays hand-written.
+ */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeConcern } from "@hobo/contract-harness";
-import { decideCreditDispatch } from "@hobo/dispatcher";
+import { decideDispatch } from "@hobo/dispatcher";
 import { describe, expect, it } from "vitest";
 import * as sdkDispatcher from "../src/dispatcher.js";
 import { dispatcher, runner } from "../src/dispatcher.js";
@@ -20,52 +28,26 @@ describeConcern("dispatcher", {
 });
 
 describe("the declaration the engine actually consumes", () => {
-	it.each([
-		["min-cost", "cheap"],
-		["maximize-credits", "credited"],
-	] as const)("honors the %s objective", (objective, selectedProvider) => {
-		const fleet = dispatcher({ objective }, [
-			runner.github({ id: "cheap", listUnitCost: 1 }),
-			runner.depot({ id: "credited", listUnitCost: 10 }),
-		]);
-		const decision = decideCreditDispatch({
-			category: "runner",
-			objective: fleet.objective,
-			dispatchId: "job-objective",
-			units: 10,
-			registry: fleet.registry,
-			ledgerView: {
-				view: "CreditLedgerView",
-				seq: 0,
-				accounts: [
-					{ providerId: "cheap", dimension: "runner.minutes", freeHeadroom: 0 },
-					{
-						providerId: "credited",
-						dimension: "runner.minutes",
-						freeHeadroom: 1,
-					},
-				],
-			},
-		});
-		expect(decision.selectedProvider).toBe(selectedProvider);
-	});
-
-	it("feeds decideCreditDispatch and records dispatch.Decided", () => {
+	it("feeds decideDispatch and records dispatch.Decided", () => {
+		// The walkthrough §5.2 fleet: cost-routed CI runners.
 		const fleet = dispatcher({ objective: "min-cost" }, [
 			runner.selfHosted({ behind: "relay" }),
 			runner.github({ listUnitCost: 2 }),
 			runner.depot({ listUnitCost: 3 }),
 			runner.blacksmith({ listUnitCost: 4 }),
 		]);
-		const decision = decideCreditDispatch({
+		const decision = decideDispatch({
 			category: "runner",
-			objective: fleet.objective,
+			objective: fleet.engineObjective,
 			dispatchId: "ci-job-1",
 			registry: fleet.registry,
 			ledgerView: { view: "CreditLedgerView", seq: 0, accounts: [] },
 		});
+		// The positive shape cannot be a case: `dispatcher` refuses candidates it
+		// cannot see were authored by `runner.*`, so its input has to be built
+		// rather than written down. The refusals are data; this is not.
 		expect(fleet.schema).toBe(DISPATCHER_DECLARATION_SCHEMA);
-		expect(fleet.objective).toBe("min-cost");
+		expect(fleet.engineObjective).toBe("maximize-credits");
 		expect(Object.isFrozen(fleet.runners)).toBe(true);
 		expect(fleet.registry.records).toHaveLength(4);
 		expect(fleet.registry.byCategory.get("runner")).toHaveLength(4);

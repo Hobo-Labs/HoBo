@@ -160,11 +160,11 @@ export const DX_RESULT_REFUSAL_PROOF_ENVELOPES = {
     "Production telemetry",
   ],
   references: [
-    "urn:hobo:requirement:developer-experience",
-    "urn:hobo:requirement:sdk-api",
-    "urn:hobo:requirement:control-plane",
-    "urn:hobo:requirement:platform-engineering",
-    "urn:hobo:requirement:data-plane",
+    "docs/design/developer-experience.md",
+    "docs/design/sdk-api.md",
+    "docs/design/control-plane.md",
+    "docs/design/platform-engineering.md",
+    "docs/design/data-plane.md",
   ],
   envelopes: [
     envelope("success", "success", {

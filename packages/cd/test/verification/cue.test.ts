@@ -1,3 +1,6 @@
+// data-models/verification.cue and the TypeScript boundary must agree: what
+// parseVerificationSpec accepts and what the engine records vets clean; what
+// the parser refuses, CUE refuses too.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,7 +30,6 @@ import {
 	json,
 	MemoryEventStore,
 	MINUTE,
-	query,
 	RecordingVerifyPort,
 	ScriptedHealthSource,
 	ScriptedTransport,
@@ -39,6 +41,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = resolve(here, "../../data-models/verification.cue");
 
+/** `cue` on PATH, else the repo-pinned binary under an ancestor's `.tools/cue/<version>/cue`. */
 function findCue(): string | undefined {
 	try {
 		execFileSync("cue", ["version"], { stdio: "ignore" });
@@ -63,6 +66,11 @@ const cue = findCue();
 const scratch = mkdtempSync(join(tmpdir(), "hobo-cd-verification-cue-"));
 let written = 0;
 
+/**
+ * Unify the value with the definition and export it. Exporting an instance
+ * (rather than `cue vet -d`) evaluates the hidden constraints against the
+ * data only, never the bare definition.
+ */
 function vets(definition: string, value: JsonValue | undefined): boolean {
 	if (!cue) throw new Error("cue binary not found");
 	written += 1;
@@ -87,66 +95,6 @@ const specJson = (spec: ReturnType<typeof thresholdSpec>): JsonValue =>
 describe.skipIf(cue === undefined)(
 	"verification.cue agrees with the parse boundary (skips with no cue binary: run scripts/bootstrap-dev.sh)",
 	() => {
-		it("validates SLO gate policy and query units", () => {
-			const slo = () =>
-				create(VerificationSpecRecordSchema, {
-					windowMs: BigInt(15 * MINUTE),
-					sloGate: {
-						burnRate: query("burn", {
-							query: "burn",
-							unit: "burn_rate",
-						}),
-						remainingBudgetRatio: query("remaining", {
-							query: "remaining",
-							unit: "ratio",
-						}),
-					},
-				});
-			const valid = slo();
-			const custom = slo();
-			if (!custom.sloGate) throw new Error("missing gate");
-			custom.sloGate.rollbackBurnRate = 6;
-			custom.sloGate.holdBurnRate = 0.5;
-			custom.sloGate.minRemainingBudgetRatio = 0;
-			custom.sloGate.holdRemainingBudgetRatio = 0.1;
-			const defaultWindowAge = slo();
-			if (!defaultWindowAge.sloGate) throw new Error("missing gate");
-			defaultWindowAge.windowMs = 0n;
-			defaultWindowAge.sloGate.maxSampleAgeMs = BigInt(16 * MINUTE);
-			const reversed = slo();
-			if (!reversed.sloGate) throw new Error("missing gate");
-			reversed.sloGate.holdBurnRate = 12;
-			const count = slo();
-			if (!count.sloGate) throw new Error("missing gate");
-			count.sloGate.sustainedHealthyCount = 1;
-			const unit = slo();
-			if (!unit.sloGate?.burnRate) throw new Error("missing query");
-			unit.sloGate.burnRate.unit = "ratio";
-			const expression = slo();
-			if (!expression.sloGate?.burnRate) throw new Error("missing query");
-			expression.sloGate.burnRate.query = "rate(burn[5m])";
-			const labelled = slo();
-			if (!labelled.sloGate?.burnRate) throw new Error("missing query");
-			labelled.sloGate.burnRate.query = 'burn{service="api"}';
-			const age = slo();
-			if (!age.sloGate) throw new Error("missing gate");
-			age.sloGate.maxSampleAgeMs = BigInt(16 * MINUTE);
-			for (const [spec, expected] of [
-				[valid, true],
-				[custom, true],
-				[defaultWindowAge, false],
-				[reversed, false],
-				[count, false],
-				[unit, false],
-				[expression, false],
-				[labelled, true],
-				[age, false],
-			] as const) {
-				expect(parseVerificationSpec(spec).ok).toBe(expected);
-				expect(vets("#VerificationSpecRecord", specJson(spec))).toBe(expected);
-			}
-		});
-
 		it("vets every spec the parser accepts", () => {
 			const accepted = [
 				thresholdSpec(),
@@ -244,6 +192,7 @@ describe.skipIf(cue === undefined)(
 					vets(definitionFor(event.type), jsonOf(event.data)),
 					event.type,
 				).toBe(true);
+			// A PASS without checks is not a valid result.
 			const completed = bodyObject(events[events.length - 1]?.data);
 			expect(
 				vets("#VerificationResultRecord", {

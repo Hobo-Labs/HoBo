@@ -1,7 +1,9 @@
 # @hobo/contracts
 
 The Contract IR + `can-deploy` compatibility engine + the composed **Gatekeeper**
-for HoBo's contract and policy planes (S2-07).
+for HoBo's contract and policy planes (S2-07). See
+[`ARCHITECTURE.md`](./ARCHITECTURE.md); design source:
+[`docs/design/contracts-policy-flags.md`](../../docs/design/contracts-policy-flags.md).
 
 The Gatekeeper sits in front of every deploy and composes four gates into one
 explainable, machine-readable decision — the can-deploy contract check, the

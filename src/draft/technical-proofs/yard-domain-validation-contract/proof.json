@@ -11,7 +11,8 @@
       "src/draft/technical-proofs/hobo-gateway-port"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

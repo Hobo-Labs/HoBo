@@ -74,11 +74,11 @@ describe("replayer EventStore consumer boundary", () => {
 				})();
 			},
 			append: async () => {
-				throw new Error("replayer consumer fixture is read-only");
+				throw new Error("not implemented");
 			},
 			subscribe: () => ({ unsubscribe() {} }),
 			snapshot: async () => {
-				throw new Error("replayer consumer fixture does not store snapshots");
+				throw new Error("not implemented");
 			},
 		});
 

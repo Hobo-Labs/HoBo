@@ -1,3 +1,7 @@
+/**
+ * Runtime guards for the engine binding. Tag checks rather than `typeof`, so
+ * a boxed value from another realm is classified the same way a primitive is.
+ */
 import type { JsonObject } from "@hobo/data-core";
 
 const tagOf = Object.prototype.toString;

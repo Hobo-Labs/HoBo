@@ -1,5 +1,4 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { create } from "@bufbuild/protobuf";
@@ -11,7 +10,6 @@ import {
 } from "@hobo/broker";
 import {
 	collectStream,
-	createHttpDependencyObserver,
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
 	type IacProgram,
@@ -34,7 +32,6 @@ import {
 	createYardClient,
 	type YardRuntime,
 } from "../src/index.js";
-import { isJsonString } from "../src/json.js";
 
 // A failed provider call may have changed infrastructure before it timed out.
 
@@ -137,58 +134,6 @@ async function project(): Promise<string> {
 }
 
 describe("availability-aware up", () => {
-	it("reports readiness waits and resumes with the configured observer", async () => {
-		const applied: string[] = [];
-		let ready = false;
-		const server = createServer((_request, response) => {
-			response.writeHead(ready ? 204 : 503).end();
-		});
-		await new Promise<void>((resolve) =>
-			server.listen(0, "127.0.0.1", resolve),
-		);
-		const address = server.address();
-		if (!address || isJsonString(address)) throw new Error("missing listener");
-		const client = createYardClient({
-			...runtimeWith(new Set(), applied),
-			observeDependency: createHttpDependencyObserver({
-				resolveUrl: () => `http://127.0.0.1:${address.port}/ready`,
-			}),
-		});
-		const bindle = parseManifest({
-			...DB_ONLY,
-			resources: {
-				db: { type: "data.v1", port: "sql" },
-				api: {
-					type: "data.v1",
-					port: "sql",
-					annotations: { waitFor: [{ to: "db", until: "ready" }] },
-				},
-			},
-		});
-		const options = {
-			deploymentId: "readiness",
-			session: createFixtureSession(),
-		};
-		try {
-			const waiting = await client.up(bindle, options);
-			expect(waiting.status).toBe("waiting");
-			if (waiting.status === "rejected") throw new Error(waiting.reason);
-			expect(waiting.progress).toContainEqual({
-				type: "dependency.waiting",
-				resourceId: "api",
-				detail: "Waiting for db to become ready (observation: pending).",
-			});
-			expect(applied).toEqual(["db@neon"]);
-			ready = true;
-			expect((await client.up(bindle, options)).status).toBe("deployed");
-			expect(applied).toEqual(["db@neon", "api@neon"]);
-		} finally {
-			await new Promise<void>((resolve, reject) =>
-				server.close((error) => (error ? reject(error) : resolve())),
-			);
-		}
-	});
-
 	it("deploys on the cheapest provider when it answers", async () => {
 		const applied: string[] = [];
 		const cli = createHoboCli({

@@ -7,6 +7,7 @@ linear_url: "https://linear.app/quickdeploy-ai/project/operators-and-sre-the-cre
 branch: "contacttylerkendrick/operators-sre-crew/epic-rollup-036f25f3-sprawl-20260629T014222Z-0fdf"
 pr_url: "https://github.com/Tyler-R-Kendrick/HoBo/pull/410"
 reference_impl_root: "src/draft/epic-proofs/operators-sre-crew"
+ledger: "src/draft/epic-proofs/operators-sre-crew/poc-rollup-ledger.md"
 pact_inventory: "src/draft/epic-proofs/operators-sre-crew/contracts/pact-inventory.md"
 simulation_command: "npm.cmd --prefix src/draft/epic-proofs/operators-sre-crew run simulate"
 last_linear_marker: "EPIC_ROLLUP_ACTIVE phase=pr_opened"

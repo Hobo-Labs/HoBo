@@ -39,10 +39,12 @@ on-call scheduling, status-page publication, live customer support operations, p
 data access, commercial support terms, customer-facing SLA commitments, or GA support readiness
 claims.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the release-candidate support
   evidence record.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

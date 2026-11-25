@@ -4,15 +4,12 @@ Draft proof for the production `@hobo/schema-tools` package. Implements determin
 protobuf→TypeScript codegen via `buf` + `protoc-gen-es`, CUE constraint vetting, and a
 `--check` drift gate that never mutates the working tree.
 
-Production code lives in `packages/schema-tools/`. This proof retains its own
-Buf template and checks the same output-normalization policy as production.
-The proof tests use temporary copies, so generation and drift checks do not
-modify checked-in files. The intentionally refreshed frozen-file digests live
-in `scripts/promotions.json`.
-
-CLI arguments become parsed types under the parse, don't validate rule. The
-command produces JSON reports and generated snapshots; this build-time tool
-runs without an actor, event store, projection, or read store.
+Promotes patterns from `hobo-codegen-cli-contract`, `domain-event-body-contract`, and
+`control-plane-event-schema-contract`. Production promotion target: `packages/schema-tools/`
+once S0-01/S0-03 land on `main`. Promoted; this copy is `frozen` in
+`scripts/promotions.json`: production is canonical, and this suite's json-envelope
+check is scoped to this POC tree because the frozen generator predates production's
+`import_extension=js` — the promoted suite owns the whole-repo assertion.
 
 ## Layout
 
@@ -36,7 +33,7 @@ root `test:schema` does not depend on Unix-style shims.
 
 ## Proven surface
 
-- `runCodegen` writes normalized `src/_generated/` output per package; byte-identical on repeat
+- `runCodegen` writes checked-in `src/_generated/` per package; byte-identical on repeat
 - `checkCodegen` regenerates to temp, reports path-level drift, never mutates disk
 - `--json` emits one `CodegenReport` object; exit 0 only when `status` is CLEAN
 - CUE vet: valid fixtures pass, invalid fixtures fail closed

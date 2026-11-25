@@ -23,7 +23,8 @@ pnpm.cmd --prefix src\draft\exp-proofs\dogfood-yard-private-beta-evidence-contra
 - `classifyDogfoodPrivateBetaWork` routes adjacent runtime, admin UI, provider, and support
   implementation to owning projects instead of expanding HOBO-462.
 
-## Executable evidence
+## Architecture Guardrail Evidence
+
 - PACT: `architecture/pacts/dogfood_yard_private_beta_evidence_contract.pact.json` fixes the M2
   boundary between Dogfood Yard private beta evidence and release/support consumers.
 - Protobuf + CUE: `architecture/dogfood_yard_private_beta_evidence_contract.proto` and

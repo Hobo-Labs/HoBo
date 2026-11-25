@@ -1,3 +1,23 @@
+/**
+ * Upgrade & Migration Engine — M1 Dogfood/Alpha evidence surface.
+ *
+ * Canonical home of the promoted `upgrade-rollback-dry-run-contract` draft
+ * proof (HOBO-499; scope record HOBO-430 M0 in
+ * docs/design/upgrade-migration-engine.md). Delivers the four outstanding
+ * rows of the "Evidence Required For M1" table as production code:
+ *
+ * - compatibility-input-matrix — `parseCompatibilityInputs` (the 11-field
+ *   minimum input set) + `COMPATIBILITY_INPUT_MATRIX` reference fixture, one
+ *   row per upgrade path class.
+ * - migration-dry-run-contract — `evaluateUpgradeDryRun` + the four
+ *   deterministic fixtures (clean / blocked / failed-migration /
+ *   rollback-ready). A dry-run is evidence, not execution.
+ * - rollback-evidence-fixture — `parseRollbackEvidence`; rollback evidence is
+ *   required before an upgrade path may be described as recoverable.
+ * - scope-boundary-register — `UPGRADE_SCOPE_BOUNDARIES` policy fixture +
+ *   `assertUpgradeScopeBoundary`, failing closed on live-execution asks that
+ *   belong to owning initiatives.
+ */
 import { createHash } from "node:crypto";
 import {
 	isJsonObject,
@@ -6,9 +26,8 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+// public-contract: dry-run report schema id consumers pin.
 export const UPGRADE_DRY_RUN_SCHEMA = "hobo.upgrade-rollback-dry-run/v1";
-export const UPGRADE_DRY_RUN_ACTION = "evaluate-upgrade-dry-run";
-export type UpgradeDryRunAction = typeof UPGRADE_DRY_RUN_ACTION;
 
 export type UpgradeDeploymentMode =
 	| "hosted-control-plane"
@@ -34,6 +53,11 @@ export type BackupPrerequisite =
 	| "optional-local-snapshot-present"
 	| "not-required";
 
+/**
+ * The 11-field minimum compatibility input set from
+ * docs/design/upgrade-migration-engine.md#compatibility-inputs. The future
+ * compatibility-matrix engine consumes exactly these fields.
+ */
 export interface CompatibilityInputs {
 	readonly currentVersion: string;
 	readonly targetVersion: string;
@@ -42,8 +66,10 @@ export interface CompatibilityInputs {
 	readonly manifestVersion: string;
 	readonly contractCompatibility: ContractCompatibilityResult;
 	readonly dataSchemaPosture: DataSchemaPosture;
+	/** Provider/IaC state dependency fact, or null when none. */
 	readonly providerStateDependency: string | null;
 	readonly backupPrerequisite: BackupPrerequisite;
+	/** Link to rollback evidence, or null when rollback is unavailable. */
 	readonly rollbackEvidenceRef: string | null;
 	readonly supportHandoffOwner: string;
 }
@@ -54,6 +80,7 @@ export type RollbackState =
 	| "required-before-execution"
 	| "recoverable";
 
+/** Rollback and recovery boundary evidence (#rollback-and-recovery-boundaries). */
 export interface RollbackEvidence {
 	readonly state: RollbackState;
 	readonly immutableSetRef: string | null;
@@ -63,6 +90,7 @@ export interface RollbackEvidence {
 	readonly escalationOwner: string;
 }
 
+/** Release-notes / support handoff record (#service-ux-security-support boundaries). */
 export interface SupportHandoffRecord {
 	readonly owner: string;
 	readonly handoff: string;
@@ -142,22 +170,6 @@ function nullableStr(
 	return str(value, path);
 }
 
-function onlyKeys(
-	input: JsonObject,
-	allowed: readonly string[],
-	path: string,
-): void {
-	for (const key of Object.keys(input)) {
-		if (!allowed.includes(key)) {
-			throw new UpgradePreflightParseError(
-				`${path}.${key}`,
-				`only fields ${allowed.join(", ")}`,
-				input[key],
-			);
-		}
-	}
-}
-
 function member<T extends string>(
 	value: JsonValue,
 	allowed: ReadonlySet<T>,
@@ -178,23 +190,6 @@ export function parseCompatibilityInputs(
 	path = "compatibilityInputs",
 ): CompatibilityInputs {
 	const input = record(value, path);
-	onlyKeys(
-		input,
-		[
-			"currentVersion",
-			"targetVersion",
-			"deploymentMode",
-			"componentHostPin",
-			"manifestVersion",
-			"contractCompatibility",
-			"dataSchemaPosture",
-			"providerStateDependency",
-			"backupPrerequisite",
-			"rollbackEvidenceRef",
-			"supportHandoffOwner",
-		],
-		path,
-	);
 	return Object.freeze({
 		currentVersion: str(input.currentVersion, `${path}.currentVersion`),
 		targetVersion: str(input.targetVersion, `${path}.targetVersion`),
@@ -240,18 +235,6 @@ export function parseRollbackEvidence(
 	path = "rollbackEvidence",
 ): RollbackEvidence {
 	const input = record(value, path);
-	onlyKeys(
-		input,
-		[
-			"state",
-			"immutableSetRef",
-			"snapshotRef",
-			"restorePrerequisite",
-			"blockedRestoreReason",
-			"escalationOwner",
-		],
-		path,
-	);
 	const state = member(input.state, ROLLBACK_STATES, `${path}.state`);
 	const evidence: RollbackEvidence = {
 		state,
@@ -280,6 +263,7 @@ export function parseRollbackEvidence(
 			: undefined),
 		escalationOwner: str(input.escalationOwner, `${path}.escalationOwner`),
 	};
+	// A path may only be called recoverable/available with concrete evidence.
 	if (
 		(state === "available" || state === "recoverable") &&
 		evidence.immutableSetRef === null &&
@@ -294,6 +278,10 @@ export function parseRollbackEvidence(
 	return Object.freeze(evidence);
 }
 
+/**
+ * Compatibility-input-matrix reference fixture: one row per upgrade path
+ * class (#upgrade-path-classes), each carrying the full 11-field input set.
+ */
 export const COMPATIBILITY_INPUT_MATRIX: readonly CompatibilityInputs[] =
 	Object.freeze(
 		(
@@ -368,6 +356,10 @@ export const COMPATIBILITY_INPUT_MATRIX: readonly CompatibilityInputs[] =
 		).map((row) => parseCompatibilityInputs(row)),
 	);
 
+/**
+ * Scope-boundary register (policy fixture): the six Scope-Out categories from
+ * HOBO-430 M0, each routed to its owning initiative.
+ */
 export const UPGRADE_SCOPE_BOUNDARIES = Object.freeze([
 	Object.freeze({
 		id: "no-upgrade-execution",
@@ -407,14 +399,23 @@ export const UPGRADE_SCOPE_BOUNDARIES = Object.freeze([
 	}),
 ] as const);
 
+const OUT_OF_SCOPE_PATTERN =
+	/\b(live migration|execute|runner|rollback executor|backup restore|provider state rewrite|support automation|support ticket|publish release notes)\b/i;
+
+/** Promoted scope guard: classify a decision as in/out of dry-run scope. */
 export function classifyUpgradeDryRunDecision(
 	decision: string,
 ): UpgradeDryRunDecision {
-	return decision === UPGRADE_DRY_RUN_ACTION
-		? { owner: "Upgrade & Migration Engine", inScope: true }
-		: { owner: "Out of scope", inScope: false };
+	if (OUT_OF_SCOPE_PATTERN.test(decision)) {
+		return { owner: "Out of scope", inScope: false };
+	}
+	return { owner: "Upgrade & Migration Engine", inScope: true };
 }
 
+/**
+ * Fail-closed policy guard: refuse requested actions the M0 scope record
+ * routes to owning initiatives. Dry-runs are evidence, not execution.
+ */
 export function assertUpgradeScopeBoundary(requestedAction: string): void {
 	const verdict = classifyUpgradeDryRunDecision(requestedAction);
 	if (!verdict.inScope) {
@@ -433,7 +434,6 @@ export interface UpgradeDryRunMigrationStep {
 
 export interface UpgradeDryRunRequest {
 	readonly id: string;
-	readonly action?: UpgradeDryRunAction;
 	readonly compatibility: CompatibilityInputs;
 	readonly migration: {
 		readonly steps: readonly UpgradeDryRunMigrationStep[];
@@ -467,172 +467,27 @@ export interface UpgradeDryRunReport {
 	readonly releaseNotes: UpgradeDryRunRequest["releaseNotes"];
 	readonly supportHandoff: SupportHandoffRecord;
 	readonly unsupportedPath: UpgradeDryRunRequest["unsupportedPath"] | null;
+	/** Always empty: a dry-run must not mutate anything. */
 	readonly mutationCommands: readonly never[];
 	readonly digest: string;
 }
 
-const MIGRATION_PHASES = new Set<UpgradeDryRunMigrationStep["phase"]>([
-	"expand",
-	"backfill",
-	"contract",
-]);
-
-function list(value: JsonValue, path: string): readonly JsonValue[] {
-	if (!Array.isArray(value)) {
-		throw new UpgradePreflightParseError(path, "array", value);
-	}
-	return value;
-}
-
-function optionalString(value: JsonValue, path: string): string | undefined {
-	return value === undefined ? undefined : str(value, path);
-}
-
-export function parseUpgradeDryRunRequest(
-	value: JsonValue,
-): UpgradeDryRunRequest {
-	const input = record(value, "upgradeDryRun");
-	onlyKeys(
-		input,
-		[
-			"id",
-			"action",
-			"compatibility",
-			"migration",
-			"rollback",
-			"unsupportedPath",
-			"releaseNotes",
-			"support",
-		],
-		"upgradeDryRun",
-	);
-	const action = optionalString(input.action, "requestedAction");
-	if (action !== undefined) assertUpgradeScopeBoundary(action);
-	const migration = record(input.migration, "migration");
-	onlyKeys(migration, ["steps", "failure"], "migration");
-	const steps = list(migration.steps, "migration.steps").map((value, index) => {
-		const path = `migration.steps[${index}]`;
-		const step = record(value, path);
-		onlyKeys(step, ["phase", "summary"], path);
-		return Object.freeze({
-			phase: member(step.phase, MIGRATION_PHASES, `${path}.phase`),
-			summary: str(step.summary, `${path}.summary`),
-		});
-	});
-	const order = [...MIGRATION_PHASES];
-	for (let index = 1; index < steps.length; index += 1) {
-		const previous = steps[index - 1];
-		const current = steps[index];
-		if (
-			previous &&
-			current &&
-			order.indexOf(previous.phase) > order.indexOf(current.phase)
-		) {
-			throw new UpgradePreflightParseError(
-				`migration.steps[${index}].phase`,
-				"phases in expand, backfill, contract order",
-				current.phase,
-			);
-		}
-	}
-	const failure =
-		migration.failure === undefined
-			? undefined
-			: record(migration.failure, "migration.failure");
-	if (failure) onlyKeys(failure, ["phase", "reason"], "migration.failure");
-	const release = record(input.releaseNotes, "releaseNotes");
-	onlyKeys(release, ["requiredInputs", "knownLimitation"], "releaseNotes");
-	const knownLimitation = optionalString(
-		release.knownLimitation,
-		"releaseNotes.knownLimitation",
-	);
-	const support = record(input.support, "support");
-	onlyKeys(
-		support,
-		["owner", "handoff", "nextAction", "escalation"],
-		"support",
-	);
-	const nextAction = optionalString(support.nextAction, "support.nextAction");
-	const escalation = optionalString(support.escalation, "support.escalation");
-	const unsupported =
-		input.unsupportedPath === undefined
-			? undefined
-			: record(input.unsupportedPath, "unsupportedPath");
-	if (unsupported)
-		onlyKeys(unsupported, ["reason", "remediation"], "unsupportedPath");
-	return Object.freeze({
-		id: str(input.id, "id"),
-		...(action === undefined ? undefined : { action: UPGRADE_DRY_RUN_ACTION }),
-		compatibility: parseCompatibilityInputs(
-			input.compatibility,
-			"compatibility",
-		),
-		migration: Object.freeze({
-			steps: Object.freeze(steps),
-			...(failure === undefined
-				? undefined
-				: {
-						failure: Object.freeze({
-							phase: member(
-								failure.phase,
-								MIGRATION_PHASES,
-								"migration.failure.phase",
-							),
-							reason: str(failure.reason, "migration.failure.reason"),
-						}),
-					}),
-		}),
-		rollback: parseRollbackEvidence(input.rollback, "rollback"),
-		...(unsupported === undefined
-			? undefined
-			: {
-					unsupportedPath: Object.freeze({
-						reason: str(unsupported.reason, "unsupportedPath.reason"),
-						remediation: str(
-							unsupported.remediation,
-							"unsupportedPath.remediation",
-						),
-					}),
-				}),
-		releaseNotes: Object.freeze({
-			requiredInputs: Object.freeze(
-				list(release.requiredInputs, "releaseNotes.requiredInputs").map(
-					(entry, index) => str(entry, `releaseNotes.requiredInputs[${index}]`),
-				),
-			),
-			...(knownLimitation === undefined ? undefined : { knownLimitation }),
-		}),
-		support: Object.freeze({
-			owner: str(support.owner, "support.owner"),
-			handoff: str(support.handoff, "support.handoff"),
-			...(nextAction === undefined ? undefined : { nextAction }),
-			...(escalation === undefined ? undefined : { escalation }),
-		}),
-	});
-}
-
+/**
+ * Evaluate an upgrade dry-run. Pure evidence: blocked on unsupported
+ * compatibility or missing required backup; failed when the migration plan
+ * itself records a failing phase. Never mutates live state.
+ */
 export function evaluateUpgradeDryRun(
 	request: UpgradeDryRunRequest,
 ): UpgradeDryRunReport {
-	const input = parseUpgradeDryRunRequest(JSON.parse(JSON.stringify(request)));
 	const blockedReasons: string[] = [];
-	if (input.compatibility.contractCompatibility === "unsupported") {
+	if (request.compatibility.contractCompatibility === "unsupported") {
 		blockedReasons.push("contract-compatibility-unsupported");
 	}
-	if (input.compatibility.contractCompatibility === "needs-review") {
-		blockedReasons.push("contract-compatibility-needs-review");
-	}
-	if (input.compatibility.backupPrerequisite === "required-but-missing") {
+	if (request.compatibility.backupPrerequisite === "required-but-missing") {
 		blockedReasons.push("backup-prerequisite-missing");
 	}
-	if (
-		input.migration.steps.some((step) => step.phase === "contract") &&
-		(input.rollback.state === "unavailable" ||
-			input.rollback.state === "required-before-execution")
-	) {
-		blockedReasons.push("rollback-evidence-unavailable");
-	}
-	const failed = input.migration.failure !== undefined;
+	const failed = request.migration.failure !== undefined;
 	const status = failed
 		? "failed"
 		: blockedReasons.length > 0
@@ -640,7 +495,7 @@ export function evaluateUpgradeDryRun(
 			: "passed";
 	return Object.freeze({
 		schema: UPGRADE_DRY_RUN_SCHEMA,
-		fixtureId: input.id,
+		fixtureId: request.id,
 		status,
 		preflight: Object.freeze({
 			status,
@@ -651,22 +506,22 @@ export function evaluateUpgradeDryRun(
 				"rollback",
 			]),
 		}),
-		compatibility: input.compatibility,
-		backupRequirement: input.compatibility.backupPrerequisite,
-		migrationPlan:
-			status === "blocked"
-				? Object.freeze({ steps: Object.freeze([]) })
-				: input.migration,
+		compatibility: request.compatibility,
+		backupRequirement: request.compatibility.backupPrerequisite,
+		migrationPlan: request.migration,
 		blockedReasons: Object.freeze(blockedReasons),
-		rollbackEvidence: input.rollback,
-		releaseNotes: input.releaseNotes,
-		supportHandoff: input.support,
-		unsupportedPath: input.unsupportedPath ?? null,
+		rollbackEvidence: request.rollback,
+		releaseNotes: request.releaseNotes,
+		supportHandoff: request.support,
+		unsupportedPath: request.unsupportedPath ?? null,
+		// SAFETY: dry-run reports intentionally expose no executable mutations.
 		mutationCommands: Object.freeze([]) as readonly never[],
-		digest: stableDigest(JSON.parse(JSON.stringify(input)) as JsonObject),
+		// SAFETY: JSON round-trip gives the digest the parsed boundary shape.
+		digest: stableDigest(JSON.parse(JSON.stringify(request)) as JsonObject),
 	});
 }
 
+/** Deterministic sha256 over a stable (key-sorted) JSON encoding. */
 export function stableDigest(value: JsonObject): string {
 	return createHash("sha256").update(stableStringify(value)).digest("hex");
 }
@@ -693,6 +548,13 @@ function matrixRow(mode: UpgradeDeploymentMode): CompatibilityInputs {
 	return row;
 }
 
+/**
+ * The four deterministic dry-run fixtures promoted from HOBO-499:
+ * clean, blocked, failed-migration, rollback-ready.
+ */
+// eli5: annotated as Record<string, …> the known fixture names vanish from the
+// type, so every read needs a `!`. `satisfies` keeps the same checking and the
+// literal keys, which is what callers actually want.
 export const UPGRADE_DRY_RUN_FIXTURES = Object.freeze({
 	cleanUpgrade: Object.freeze({
 		id: "clean-upgrade",

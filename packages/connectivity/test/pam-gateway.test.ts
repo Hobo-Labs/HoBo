@@ -1,7 +1,32 @@
+/**
+ * The Privileged Access Gateway brokers secretless sessions into privileged
+ * targets, and its own header states the rule it exists to enforce: production
+ * requires an elevated capability, not network membership. It had no direct test
+ * file, which is a poor place for a gap — every meaningful behaviour here is a
+ * refusal, and a refusal that quietly stops firing looks exactly like one that
+ * never had to.
+ *
+ * Four boundaries carry the weight:
+ *
+ *   - **Secretless-only.** A request that does not opt into secretless brokering
+ *     is refused outright (ADR-0027), so there is no path that mints a long-lived
+ *     credential.
+ *   - **No env bridging.** A gateway for one isolation class must not broker into
+ *     a target in another, and must *record the denial* — a silent refusal leaves
+ *     no evidence that someone tried.
+ *   - **Elevated capability for production.** Missing, malformed, wrong-audience
+ *     and wrong-class tokens all have to be rejected, each denial audited.
+ *   - **Lifecycle.** Nothing brokers before `start`; `stop` ends every live
+ *     session rather than orphaning it.
+ *
+ * The tests below drive each of those, and check the audit trail alongside the
+ * throw — for this component the record is half the deliverable.
+ */
 import { describe, expect, test } from "vitest";
-
-import { mintElevatedAccessCapability } from "../src/env-isolation/elevated-capability.js";
-import type { IsolationClass } from "../src/env-isolation/types.js";
+import {
+	type ElevatedCapabilityIssuer,
+	mintElevatedAccessCapability,
+} from "../src/env-isolation/elevated-capability.js";
 import { isJsonString } from "../src/json.js";
 import {
 	createBoundaryPamGateway,
@@ -11,11 +36,23 @@ import {
 	createTeleportPamGateway,
 	railEnablesPam,
 } from "../src/pam/gateway.js";
-import type { SessionRequest, StationContext } from "../src/pam/types.js";
+import type {
+	IsolationClass,
+	SessionRequest,
+	StationContext,
+} from "../src/pam/types.js";
 import { PAM_GATEWAY_SCHEMA } from "../src/pam/types.js";
+import { createTestElevatedIssuer } from "./support/elevated-issuer.js";
 
+// Anchored to real time rather than a fixed literal. The gateway mints session
+// tokens using its injected `now` but calls `verifySessionToken` *without* a
+// `now`, so verification reads the wall clock — see the "clock consistency"
+// test at the bottom, which pins that gap deliberately. A fixed 2026-01-01
+// clock would therefore make every minted token instantly "expired" and the
+// renewal tests would be measuring that mismatch rather than renewal.
 const T0 = new Date().toISOString();
-const HMAC = "test-elevated-secret-not-for-production";
+const ISSUER = createTestElevatedIssuer();
+const TRUST = { issuer: ISSUER.issuerUrl, verify: ISSUER.verify };
 
 function station(
 	isolationClass: IsolationClass = "development",
@@ -36,11 +73,12 @@ function gateway(
 		kind: "native",
 		isolationClass,
 		now: () => T0,
-		elevatedHmacSecret: HMAC,
+		elevatedTrust: TRUST,
 		...overrides,
 	});
 }
 
+/** A started gateway plus its station context. */
 async function started(
 	isolationClass: IsolationClass = "development",
 	overrides: Partial<Parameters<typeof createPrivilegedAccessGateway>[0]> = {},
@@ -58,36 +96,52 @@ function sessionRequest(
 		target: "ssh:web-1",
 		preferSecretless: true,
 		...overrides,
-	} as SessionRequest;
+	};
 }
 
-function elevatedToken(
+function errorCode(error: Error): string | undefined {
+	return "code" in error && isJsonString(error.code) ? error.code : undefined;
+}
+
+function uncheckedRequest(
+	request: Omit<SessionRequest, "preferSecretless"> & {
+		preferSecretless?: boolean;
+	},
+): SessionRequest {
+	return JSON.parse(JSON.stringify(request));
+}
+
+/**
+ * Mint a real elevated token for the given class. `evidence` and `issuedBy` are
+ * required by the mint — a capability with no record of *why* it was granted is
+ * not something this system is willing to produce.
+ */
+async function elevatedToken(
 	isolationClass: IsolationClass = "production",
 	overrides: {
 		audience?: string;
 		ttlSeconds?: number;
-		hmacSecret?: string;
+		issuer?: ElevatedCapabilityIssuer;
 	} = {},
-) {
-	return mintElevatedAccessCapability({
+): Promise<string> {
+	const minted = await mintElevatedAccessCapability({
 		subject: "user:alice",
 		isolationClass,
 		issuedBy: "user:bob",
 		evidence: { kind: "dual-approval", ref: "approval-1" },
-		hmacSecret: HMAC,
-		allowDefaultSecret: false,
+		issuer: ISSUER,
 		now: T0,
 		...overrides,
-	}).token;
+	});
+	return minted.token;
 }
 
 async function codeOfAsync<T>(fn: () => Promise<T>): Promise<string> {
 	try {
 		await fn();
 	} catch (error) {
-		return error instanceof Error && "code" in error && isJsonString(error.code)
-			? error.code
-			: `<no code: ${String(error)}>`;
+		const code = error instanceof Error ? errorCode(error) : undefined;
+		return code ?? `<no code: ${String(error)}>`;
 	}
 	return "<did not throw>";
 }
@@ -101,6 +155,8 @@ describe("lifecycle", () => {
 	});
 
 	test("brokering before start is refused", () => {
+		// Without a station context there is no tenant to audit against, so a
+		// session brokered here would be an unattributable privileged access.
 		return expect(
 			codeOfAsync(() => gateway().brokerSession(sessionRequest())),
 		).resolves.toBe("pam-not-running");
@@ -113,6 +169,9 @@ describe("lifecycle", () => {
 	});
 
 	test("a station in another isolation class cannot start the gateway", () => {
+		// The gateway's class is its whole security scope. Letting a production
+		// Station start a development gateway would place a privileged broker
+		// inside the wrong boundary.
 		const gw = gateway("development");
 		return expect(
 			codeOfAsync(() => gw.start(station("production"))),
@@ -128,6 +187,8 @@ describe("lifecycle", () => {
 	});
 
 	test("stopping ends every live session and records each ending", async () => {
+		// Sessions that outlived the gateway would be credentials nothing is
+		// tracking any more.
 		const gw = await started();
 		await gw.brokerSession(sessionRequest());
 		await gw.brokerSession(sessionRequest({ target: "ssh:web-2" }));
@@ -150,6 +211,8 @@ describe("lifecycle", () => {
 	});
 
 	test("stopping a never-started gateway does not record a stop", async () => {
+		// There is no context to attribute it to; an event naming an unknown
+		// station would be noise in the audit stream.
 		const gw = gateway();
 		await gw.stop();
 		expect(gw.auditEvents.some((e) => e.type === "pam.GatewayStopped")).toBe(
@@ -168,6 +231,8 @@ describe("lifecycle", () => {
 
 describe("target registration", () => {
 	test("a target in another isolation class is refused", () => {
+		// The catalog must not contain a target the gateway is forbidden to
+		// reach; registering one would make the mismatch a runtime surprise.
 		const gw = gateway("development");
 		let code = "<did not throw>";
 		try {
@@ -177,7 +242,7 @@ describe("target registration", () => {
 				isolationClass: "production",
 			});
 		} catch (error) {
-			code = String((error as { code?: unknown }).code);
+			code = String(error instanceof Error ? errorCode(error) : error);
 		}
 		expect(code).toBe("pam-target-env-mismatch");
 	});
@@ -196,26 +261,41 @@ describe("target registration", () => {
 
 describe("secretless enforcement", () => {
 	test("a request that does not opt into secretless is refused", async () => {
+		// ADR-0027. There is deliberately no code path that brokers a long-lived
+		// credential, and this flag is what makes that explicit at the call site.
 		const gw = await started();
-		const request = sessionRequest();
-		Reflect.deleteProperty(request, "preferSecretless");
-		expect(await codeOfAsync(() => gw.brokerSession(request))).toBe(
-			"secretless-required",
-		);
+		expect(
+			await codeOfAsync(() =>
+				gw.brokerSession(
+					uncheckedRequest({
+						subject: "user:alice",
+						target: "ssh:web-1",
+					}),
+				),
+			),
+		).toBe("secretless-required");
 	});
 
 	test("preferSecretless false is refused, not merely falsy-checked", async () => {
 		const gw = await started();
-		const request = sessionRequest();
-		Object.defineProperty(request, "preferSecretless", { value: false });
-		expect(await codeOfAsync(() => gw.brokerSession(request))).toBe(
-			"secretless-required",
-		);
+		expect(
+			await codeOfAsync(() =>
+				gw.brokerSession(
+					uncheckedRequest({
+						subject: "user:alice",
+						target: "ssh:web-1",
+						preferSecretless: false,
+					}),
+				),
+			),
+		).toBe("secretless-required");
 	});
 });
 
 describe("isolation-class bridging", () => {
 	test("a target in another class is refused and the denial is recorded", async () => {
+		// Both halves matter. The refusal stops the access; the audit event is
+		// what tells a reviewer somebody tried to cross the boundary.
 		const gw = await started("development");
 		expect(
 			await codeOfAsync(() =>
@@ -238,6 +318,8 @@ describe("isolation-class bridging", () => {
 	});
 
 	test("a string target inherits the gateway's class and is allowed", async () => {
+		// String targets carry no class of their own, so they are parsed into the
+		// gateway's — otherwise every convenience call would look cross-env.
 		const gw = await started("development");
 		await expect(
 			gw.brokerSession(sessionRequest({ target: "ssh:web-1" })),
@@ -255,6 +337,8 @@ describe("isolation-class bridging", () => {
 		] as const) {
 			const handle = await gw.brokerSession(sessionRequest({ target }));
 			expect(handle.targetId).toBe(target);
+			// The protocol frame is derived from the gateway kind, but the target
+			// id survives verbatim so the audit names what was actually reached.
 			expect(expected).toBeTruthy();
 		}
 	});
@@ -262,6 +346,7 @@ describe("isolation-class bridging", () => {
 
 describe("elevated capability for production", () => {
 	test("a production session with no elevated token is refused", async () => {
+		// The headline rule: network membership is not enough.
 		const gw = await started("production");
 		expect(await codeOfAsync(() => gw.brokerSession(sessionRequest()))).toBe(
 			"elevated-required",
@@ -286,7 +371,7 @@ describe("elevated capability for production", () => {
 						kind: "ssh",
 						isolationClass: "production",
 					},
-					elevatedToken: elevatedToken("production"),
+					elevatedToken: await elevatedToken("production"),
 				}),
 			),
 		).resolves.toBeDefined();
@@ -311,7 +396,14 @@ describe("elevated capability for production", () => {
 	});
 
 	test("a token minted for another isolation class is refused", async () => {
-		const staging = elevatedToken("staging");
+		// This is the interesting forgery: a real, correctly-signed token that
+		// simply authorises the wrong environment. Accepting it would let a
+		// staging elevation open a production session.
+		//
+		// The token is minted *before* the assertion so a mint failure surfaces
+		// as its own error rather than being swallowed by `codeOfAsync` and
+		// counted as the refusal under test.
+		const staging = await elevatedToken("staging");
 		const gw = await started("production");
 		const code = await codeOfAsync(() =>
 			gw.brokerSession(
@@ -329,9 +421,10 @@ describe("elevated capability for production", () => {
 		expect(code).not.toContain("TypeError");
 	});
 
-	test("a token minted under a different secret is refused", async () => {
-		const foreign = elevatedToken("production", {
-			hmacSecret: "some-other-secret",
+	test("a token minted by a different issuer is refused", async () => {
+		// Signature verification actually happening, rather than the token being
+		const foreign = await elevatedToken("production", {
+			issuer: createTestElevatedIssuer(ISSUER.issuerUrl),
 		});
 		const gw = await started("production");
 		const code = await codeOfAsync(() =>
@@ -351,11 +444,15 @@ describe("elevated capability for production", () => {
 	});
 
 	test("a development session needs no elevated token", async () => {
+		// Requiring it everywhere would make the requirement routine, which is
+		// how a control stops being taken seriously.
 		const gw = await started("development");
 		await expect(gw.brokerSession(sessionRequest())).resolves.toBeDefined();
 	});
 
 	test("a class named in capabilityRequiredClasses also requires a token", async () => {
+		// The requirement is configurable upward, so an operator can protect
+		// staging the same way without editing code.
 		const gw = await started("staging", {
 			capabilityRequiredClasses: ["staging"],
 		});
@@ -365,6 +462,9 @@ describe("elevated capability for production", () => {
 	});
 
 	test("production requires a token even when the configured list omits it", async () => {
+		// Production is hard-coded alongside the configurable list. An operator
+		// narrowing the list must not be able to switch production's requirement
+		// off by accident.
 		const gw = await started("production", {
 			capabilityRequiredClasses: ["staging"],
 		});
@@ -397,6 +497,8 @@ describe("a brokered session", () => {
 	});
 
 	test("the minted token verifies against the gateway's own keys", async () => {
+		// Round-tripping proves the token is real rather than an opaque string
+		// that nothing ever checks.
 		const gw = await started();
 		const handle = await gw.brokerSession(sessionRequest());
 		const verified = gw.verifyLocalSession(handle.sessionToken);
@@ -404,6 +506,8 @@ describe("a brokered session", () => {
 	});
 
 	test("a token from one gateway does not verify against another", async () => {
+		// Each gateway generates its own keys, so a session cannot be replayed
+		// into a different broker.
 		const a = await started();
 		const b = await started();
 		const handle = await a.brokerSession(sessionRequest());
@@ -420,6 +524,8 @@ describe("a brokered session", () => {
 	});
 
 	test("brokering records a session-started event with the credential ref", async () => {
+		// The ref, not the credential — the audit stream must never carry
+		// material.
 		const gw = await started();
 		const handle = await gw.brokerSession(
 			sessionRequest({ reason: "incident triage" }),
@@ -448,6 +554,8 @@ describe("a brokered session", () => {
 
 describe("renewal", () => {
 	test("renewing issues a fresh token and extends the expiry", async () => {
+		// The point of a short TTL is that renewal is cheap; a renewal that
+		// returned the same token would leave the original expiry standing.
 		const gw = await started();
 		const handle = await gw.brokerSession(sessionRequest({ ttlSeconds: 60 }));
 		const renewed = await gw.renewSession(handle.sessionId, 300);
@@ -471,6 +579,8 @@ describe("renewal", () => {
 	});
 
 	test("renewing an unknown session is refused", async () => {
+		// A renewal that created a session would be a way to obtain one without
+		// ever passing the elevated-capability check.
 		const gw = await started();
 		expect(await codeOfAsync(() => gw.renewSession("pam_native_ghost"))).toBe(
 			"session-missing",
@@ -478,6 +588,8 @@ describe("renewal", () => {
 	});
 
 	test("renewing records an audit event naming the original subject", async () => {
+		// The subject is read back out of the verified token rather than trusted
+		// from the caller, so the record cannot be reattributed.
 		const gw = await started();
 		const handle = await gw.brokerSession(sessionRequest());
 		await gw.renewSession(handle.sessionId);
@@ -507,6 +619,8 @@ describe("ending a session", () => {
 	});
 
 	test("ending an unknown session is a silent no-op", async () => {
+		// Cleanup runs against sessions that may already be gone; throwing would
+		// make an idempotent shutdown fail on the second pass.
 		const gw = await started();
 		await gw.endSession("pam_native_ghost");
 		expect(gw.auditEvents.some((e) => e.type === "pam.SessionEnded")).toBe(
@@ -535,6 +649,8 @@ describe("ending a session", () => {
 
 describe("handoff to a resident adapter", () => {
 	test("handing off transfers the session out of the gateway", async () => {
+		// Ownership moves; leaving a copy behind would let the same
+		// authorisation be used from two places at once.
 		const gw = await started();
 		const handle = await gw.brokerSession(sessionRequest());
 		const handed = gw.handoffSession(handle.sessionId);
@@ -548,7 +664,7 @@ describe("handoff to a resident adapter", () => {
 		try {
 			gw.handoffSession("pam_native_ghost");
 		} catch (error) {
-			code = String((error as { code?: unknown }).code);
+			code = String(error instanceof Error ? errorCode(error) : error);
 		}
 		expect(code).toBe("pam-session-not-found");
 	});
@@ -561,7 +677,7 @@ describe("handoff to a resident adapter", () => {
 		try {
 			gw.handoffSession(handle.sessionId);
 		} catch (error) {
-			code = String((error as { code?: unknown }).code);
+			code = String(error instanceof Error ? errorCode(error) : error);
 		}
 		expect(code).toBe("pam-session-not-found");
 	});
@@ -577,6 +693,8 @@ describe("the kind-specific constructors", () => {
 	});
 
 	test("the kind appears in the session id", async () => {
+		// Session ids end up in audit streams and support tickets; knowing which
+		// broker minted one without a lookup is the point of the prefix.
 		const gw = createTeleportPamGateway({
 			isolationClass: "development",
 			now: () => T0,
@@ -593,6 +711,8 @@ describe("railEnablesPam", () => {
 	});
 
 	test("the metadata flag must be the exact string true", () => {
+		// A truthy-but-wrong value like "yes" must not enable a privileged
+		// broker; this is the fail-closed reading of an unrecognised config.
 		expect(railEnablesPam([], { privilegedAccessGateway: "yes" })).toBe(false);
 		expect(railEnablesPam([], { privilegedAccessGateway: "false" })).toBe(
 			false,
@@ -604,6 +724,8 @@ describe("railEnablesPam", () => {
 	});
 
 	test("a pack merely mentioning privileged-access enables it", () => {
+		// Deliberately loose, so a differently-namespaced pack still turns the
+		// gateway on rather than silently leaving privileged access unbrokered.
 		expect(railEnablesPam(["org:custom-privileged-access-v2"])).toBe(true);
 	});
 
@@ -619,13 +741,16 @@ describe("railEnablesPam", () => {
 
 describe("the audit sink", () => {
 	test("a supplied sink receives the events instead of the default", async () => {
+		// Production drains to the Yard event store; the default in-memory sink
+		// is a local fallback, and the injection point is what makes that
+		// swappable.
 		const captured: Array<{ type: string }> = [];
 		const gw = await started("development", {
 			auditSink: {
-				async append(event: { type: string }) {
+				async append(event) {
 					captured.push(event);
 				},
-			} as never,
+			},
 		});
 		await gw.brokerSession(sessionRequest());
 		expect(captured.map((e) => e.type)).toEqual([
@@ -641,6 +766,8 @@ describe("the audit sink", () => {
 	});
 
 	test("every event carries the tenant and isolation class", async () => {
+		// An audit record that cannot be attributed to a tenant is not much of an
+		// audit record.
 		const gw = await started("development");
 		await gw.brokerSession(sessionRequest());
 		await gw.stop();
@@ -661,20 +788,41 @@ describe("the audit sink", () => {
 
 describe("clock consistency between minting and verification", () => {
 	test("a session minted under a past injected clock does not verify", async () => {
+		// A gap worth recording rather than papering over. The gateway *mints*
+		// session tokens with `Math.floor(Date.parse(now()) / 1000)` — its
+		// injected clock — but every call to `verifySessionToken` (in
+		// `verifyLocalSession`, `renewSession` and `endSession`) omits the `now`
+		// argument the verifier accepts, so verification reads the wall clock.
+		//
+		// In production the two agree, because `now` defaults to wall time. They
+		// diverge the moment a clock is injected: a gateway wound to any instant
+		// more than one TTL away from real time mints tokens it will immediately
+		// reject, and `endSession` then records the subject as "unknown" because
+		// it could not read the claims back.
+		//
+		// This test pins the behaviour as it stands. It is not asserting that the
+		// behaviour is right — passing `now: Math.floor(Date.parse(now())/1000)`
+		// at each of those three call sites would make the component honour its
+		// own clock — but that changes a security-relevant verification path, so
+		// it is a decision for the owner rather than a change to slip into a
+		// coverage pass.
 		const past = "2020-01-01T00:00:00.000Z";
 		const gw = createPrivilegedAccessGateway({
 			kind: "native",
 			isolationClass: "development",
 			now: () => past,
-			elevatedHmacSecret: HMAC,
+			elevatedTrust: TRUST,
 		});
 		await gw.start(station("development"));
 		const handle = await gw.brokerSession(sessionRequest());
 
+		// Minted happily against the injected clock...
 		expect(handle.sessionToken).toBeTruthy();
+		// ...and rejected by the same gateway, because verification used wall time.
 		const verified = gw.verifyLocalSession(handle.sessionToken);
 		expect(verified.ok).toBe(false);
 
+		// The visible consequence: the ending audit record loses the subject.
 		await gw.endSession(handle.sessionId, "done");
 		const ended = gw.auditEvents.find((e) => e.type === "pam.SessionEnded");
 		expect(ended?.subject).toBe("unknown");

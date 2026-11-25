@@ -1,3 +1,15 @@
+/**
+ * Bounded in-memory index of recently ingested spans, keyed by
+ * `${traceId}:${spanId}`. A real OTel collector sends each service's spans in
+ * separate ExportTraceServiceRequests, so a cross-camp parent/child pair often
+ * arrives split across requests. The mapper records every ingested span here
+ * and resolves a child's `parentSpanId` against it when the parent is not in
+ * the same payload.
+ *
+ * Bounds: at most TRACE_INDEX_MAX_ENTRIES entries, and entries older than
+ * TRACE_INDEX_TTL_MS are evicted — both enforced lazily on record/lookup, so
+ * memory stays flat under continuous ingest.
+ */
 import type { SpanKind } from "./model.js";
 
 export const TRACE_INDEX_MAX_ENTRIES = 10_000;
@@ -12,6 +24,7 @@ export interface IndexedSpan {
 	campId: string;
 	startMs: number;
 	endMs: number;
+	/** Ingestion-time clock (ms) used for TTL eviction. */
 	recordedAt: number;
 }
 
@@ -31,9 +44,11 @@ export class TraceIndex {
 		return this.spans.size;
 	}
 
+	/** Record a span; evicts expired entries and trims to the max size. */
 	record(entry: Omit<IndexedSpan, "recordedAt">, at: number): void {
 		this.evict(at);
 		const key = keyFor(entry.traceId, entry.spanId);
+		// Refresh insertion order so re-ingested spans keep their recency.
 		this.spans.delete(key);
 		this.spans.set(key, { ...entry, recordedAt: at });
 		while (this.spans.size > this.maxEntries) {
@@ -43,6 +58,7 @@ export class TraceIndex {
 		}
 	}
 
+	/** Look up a span by traceId+spanId; expired entries count as absent. */
 	lookup(traceId: string, spanId: string, at: number): IndexedSpan | undefined {
 		const key = keyFor(traceId, spanId);
 		const entry = this.spans.get(key);

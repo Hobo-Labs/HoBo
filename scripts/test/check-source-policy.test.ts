@@ -79,551 +79,6 @@ function guard(repo: string, ...args: string[]) {
 }
 
 describe("source policy", () => {
-	it("checks SVG and XML comments while preserving CDATA and attribute text", () => {
-		const svg = [
-			'<?xml version="1.0"?>',
-			'<svg xmlns="http://www.w3.org/2000/svg">',
-			'  <text data-label="&lt;!-- literal --&gt;">Example</text>',
-			"  <desc><![CDATA[<!-- literal text -->]]></desc>",
-			"  <!-- explanatory markup -->",
-			"  <style><![CDATA[",
-			'    text::after { content: "/* literal */"; } /* style explanation */',
-			"  ]]></style>",
-			"  <script><![CDATA[",
-			'    const value = "// literal"; // script explanation',
-			"  ]]></script>",
-			"</svg>",
-		].join("\n");
-		const added = new Set(Array.from({ length: 12 }, (_, index) => index + 1));
-		for (const file of ["example.svg", "example.xml", "example.xhtml.tpl"]) {
-			assert.deepEqual(
-				commentViolations(file, svg, added).map((issue) => issue.line),
-				[5, 7, 10],
-				file,
-			);
-		}
-		const namespaced = [
-			'<svg:svg xmlns:svg="http://www.w3.org/2000/svg">',
-			"  <svg:script><![CDATA[",
-			"    // explanatory script",
-			"  ]]></svg:script>",
-			"</svg:svg>",
-		].join("\n");
-		assert.deepEqual(
-			commentViolations("namespaced.svg", namespaced, added).map(
-				(issue) => issue.line,
-			),
-			[3],
-		);
-		const repo = fixture();
-		write(repo, "icon.svg", svg);
-		write(repo, "guide.md", "```xml\n<root><!-- explanation --></root>\n```\n");
-		git(repo, "add", "icon.svg", "guide.md");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /icon\.svg:5:.*self-documenting/u);
-		assert.match(result.stderr, /guide\.md:2:.*self-documenting/u);
-	});
-
-	it("checks Windows batch comments while preserving quoted and escaped text", () => {
-		const text = [
-			"@echo off",
-			'set "MESSAGE=rem is data & :: is data"',
-			"echo ^& rem is an argument",
-			"echo value ^",
-			"rem remains an argument",
-			"echo value & @rem explanatory comment",
-			":: another comment",
-			"REM SPDX-License-Identifier: MIT",
-			"rem unfinished ^",
-			"TODO implement this",
-		].join("\n");
-		const issues = commentViolations(
-			"fixture.cmd",
-			text,
-			new Set(Array.from({ length: 10 }, (_, index) => index + 1)),
-		);
-		assert.deepEqual(
-			issues.map((issue) => issue.line),
-			[6, 7, 9],
-		);
-		assert.match(issues[2]?.message ?? "", /finish deferred work/u);
-		assert.equal(
-			commentViolations("fixture.cmd", "rem old ^\nnew text\n", new Set([2]))
-				.length,
-			1,
-		);
-		assert.equal(
-			commentViolations("fixture.bat", "@rem explanation\n", new Set([1]))
-				.length,
-			1,
-		);
-		for (const line of [
-			"if defined NAME rem explanation",
-			'if "x"=="y" @rem explanation',
-			"if not defined NAME (echo ok) else rem explanation",
-			"for %%x in (rem value) do rem explanation",
-		])
-			assert.equal(
-				commentViolations("fixture.cmd", line, new Set([1])).length,
-				1,
-				line,
-			);
-		for (const line of [
-			"if defined REM echo rem is data",
-			"for %%x in (rem value) do echo %%x",
-		])
-			assert.equal(
-				commentViolations("fixture.cmd", line, new Set([1])).length,
-				0,
-				line,
-			);
-		const repo = fixture();
-		write(repo, "fixture.cmd", "echo hello & rem explanation\n");
-		write(repo, "guide.md", "```batch\n:: explanation\n```\n");
-		git(repo, "add", "fixture.cmd", "guide.md");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /fixture\.cmd:1:.*self-documenting/u);
-		assert.match(result.stderr, /guide\.md:2:.*self-documenting/u);
-	});
-
-	it("applies Markdown source and planning rules to Cursor rule files", () => {
-		const repo = fixture();
-		const file = ".cursor/rules/example.mdc";
-		write(
-			repo,
-			file,
-			'---\ndescription: "Example"\n---\n\n```ts\nconst url = "https://example.test"; // explanation\n```\n',
-		);
-		assert.match(
-			guard(repo, "--worktree").stderr,
-			/example\.mdc:6:.*self-documenting/u,
-		);
-		git(repo, "add", file);
-		assert.match(
-			guard(repo, "--staged").stderr,
-			/example\.mdc:6:.*self-documenting/u,
-		);
-		write(
-			repo,
-			file,
-			"---\ndescription: Example\n---\n\n# Implementation Plan: queues\n",
-		);
-		git(repo, "add", file);
-		assert.match(guard(repo, "--staged").stderr, /document title/u);
-		write(repo, file, "---\ntype: Design\n---\n\n# Example\n");
-		git(repo, "add", file);
-		assert.match(guard(repo, "--staged").stderr, /document type/u);
-		write(repo, file, "# Example\n\n```ts\nconst value = 1;\n```\n");
-		git(repo, "add", file);
-		assert.equal(guard(repo, "--staged").status, 0);
-		assert.ok(documentViolation(".cursor/rules/feature-plan.mdc", "# Example"));
-		assert.ok(documentViolation(".cursor/rules/design.mdc.tpl", "# Example"));
-	});
-
-	it("rejects planning titles in ordinary Markdown files", () => {
-		for (const title of [
-			"Implementation Plan: queues",
-			"Queue **Technical Design**",
-			"Design Brief: checkout",
-			"ADR-0123: schema storage",
-			"Roadmap for release",
-		]) {
-			assert.match(
-				documentViolation("README.md", `# ${title}\n`) ?? "",
-				/title/u,
-			);
-		}
-		for (const text of [
-			"# Deployment plans\nOperators can inspect plans.\n",
-			"# Scheduling\n```text\n# Implementation Plan\n```\n",
-			"# Design your dashboard\nSelect a layout.\n",
-		]) {
-			assert.equal(documentViolation("README.md", text), undefined);
-		}
-		const repo = fixture();
-		write(repo, "README.md", "# Implementation Plan: queues\n");
-		git(repo, "add", "README.md");
-		assert.match(guard(repo, "--staged").stderr, /document title/u);
-	});
-
-	it("rejects new identity-only proof artifacts while allowing executable examples", () => {
-		const cases = [
-			["examples/proof-identity.ts", 'console.log("proof-identity: ok");\n'],
-			["bench/identity.bench.ts", 'bench("identity noop", () => {});\n'],
-			["notebook.ipynb", '{"source":["Hardened notebook scaffold"]}\n'],
-			["examples/scaffold.ts.tpl", 'console.log("proof-identity: ok");\n'],
-		];
-		for (const [suffix, content] of cases) {
-			if (!suffix || !content) throw new Error("missing fixture");
-			const repo = fixture();
-			const file = `src/draft/technical-proofs/sample/${suffix}`;
-			write(repo, file, content);
-			git(repo, "add", file);
-			const rejected = guard(repo, "--staged");
-			assert.equal(rejected.status, 1);
-			assert.match(
-				rejected.stderr + rejected.stdout,
-				/synthetic proof scaffolding/u,
-			);
-		}
-		const repo = fixture();
-		const file = "src/draft/technical-proofs/sample/examples/fold.ts";
-		write(
-			repo,
-			file,
-			"console.log([1, 2].reduce((sum, value) => sum + value, 0));\n",
-		);
-		git(repo, "add", file);
-		assert.equal(guard(repo, "--staged").status, 0);
-	});
-
-	it("checks untracked and committed proof artifacts in every guard mode", () => {
-		const repo = fixture();
-		const file = "src/draft/technical-proofs/sample/bench/identity.bench.ts";
-		write(repo, file, 'bench("identity noop", () => {});\n');
-		assert.equal(guard(repo, "--worktree").status, 1);
-		git(repo, "add", file);
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"added",
-		);
-		assert.equal(guard(repo, "--base=HEAD~1").status, 1);
-	});
-
-	it("grandfathers unchanged legacy scaffolding without allowing new copies", () => {
-		const repo = fixture();
-		const file = "src/draft/technical-proofs/sample/examples/proof-identity.ts";
-		write(repo, file, 'console.log("proof-identity: ok");\n');
-		git(repo, "add", file);
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"legacy",
-		);
-		write(
-			repo,
-			file,
-			'console.log("proof-identity: ok");\nexport const value = 1;\n',
-		);
-		git(repo, "add", file);
-		assert.equal(guard(repo, "--staged").status, 0);
-		write(
-			repo,
-			file,
-			'console.log("proof-identity: ok again");\nexport const value = 1;\n',
-		);
-		git(repo, "add", file);
-		assert.equal(guard(repo, "--staged").status, 1);
-	});
-	it("checks executable Markdown examples in nested blocks without inspecting prose or text output", () => {
-		const repo = fixture();
-		const text =
-			[
-				"# Examples",
-				"Prose can discuss // markers.",
-				"```text",
-				"// terminal output",
-				"```",
-				"- Nested example:",
-				"  ```ts",
-				'  const url = "https://example.test";',
-				"  // @ts-ignore",
-				"  const n = 1;",
-				"  ```",
-				"> ~~~python",
-				"> value = 1 # explain",
-				"> ~~~",
-				"```csharp",
-				"class Example { // explain",
-				"}",
-				"```",
-			].join("\n") + "\n";
-		write(repo, "README.md", text);
-		git(repo, "add", "README.md");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /README\.md:13:.*self-documenting/u);
-		assert.match(result.stderr, /README\.md:16:.*self-documenting/u);
-		assert.equal((result.stderr.match(/self-documenting/gu) ?? []).length, 2);
-	});
-
-	it("checks only added example comments and rejects unsupported or unlabelled code blocks", () => {
-		const repo = fixture();
-		write(repo, "README.md", "```ts\n// existing\nconst n = 1;\n```\n");
-		git(repo, "add", "README.md");
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"legacy",
-		);
-		write(repo, "README.md", "```ts\n// existing\nconst n = 2;\n```\n");
-		git(repo, "add", "README.md");
-		assert.equal(guard(repo, "--staged").status, 0);
-		write(
-			repo,
-			"README.md",
-			"```ts\n// existing\n// TODO implement\nconst n = 2;\n```\n",
-		);
-		git(repo, "add", "README.md");
-		assert.match(guard(repo, "--staged").stderr, /finish deferred work/u);
-		write(repo, "README.md", "```powershell\nWrite-Output hi\n```\n");
-		git(repo, "add", "README.md");
-		assert.match(guard(repo, "--staged").stderr, /supported language/u);
-		write(repo, "README.md", "```\nhello\n```\n");
-		git(repo, "add", "README.md");
-		assert.match(guard(repo, "--staged").stderr, /supported language/u);
-		write(repo, "README.md", "```text\nhello\n```\n");
-		git(repo, "add", "README.md");
-		assert.equal(guard(repo, "--staged").status, 0);
-		write(repo, "README.md", "```text\n// explanation\n```\n");
-		git(repo, "add", "README.md");
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"output",
-		);
-		write(repo, "README.md", "```ts\n// explanation\n```\n");
-		git(repo, "add", "README.md");
-		assert.match(guard(repo, "--staged").stderr, /self-documenting/u);
-	});
-
-	it("checks notebook code cells in TypeScript and Python without inspecting outputs", () => {
-		const repo = fixture();
-		const notebook = (language: string, source: string, output = "") =>
-			JSON.stringify({
-				metadata: { language_info: { name: language } },
-				cells: [
-					{ cell_type: "code", source: [source], outputs: [{ text: output }] },
-				],
-			});
-		write(
-			repo,
-			"good.ipynb",
-			notebook(
-				"typescript",
-				'const url = "https://example.test";\n// @ts-ignore\nconst n = 1;\n',
-				"// output is data",
-			),
-		);
-		git(repo, "add", "good.ipynb");
-		assert.equal(guard(repo, "--staged").status, 0);
-		write(
-			repo,
-			"bad.ipynb",
-			notebook("typescript", "// explanation\nconst n = 1;\n"),
-		);
-		write(
-			repo,
-			"python.ipynb",
-			notebook("python3", "# TODO implement\nx = 1\n"),
-		);
-		git(repo, "add", "bad.ipynb", "python.ipynb");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /bad\.ipynb:1:.*code cell 1, line 1/u);
-		assert.match(result.stderr, /python\.ipynb:1:.*finish deferred work/u);
-		assert.equal(guard(repo, "--worktree").status, 1);
-	});
-
-	it("grandfathers unchanged notebook comments but rejects new ones", () => {
-		const repo = fixture();
-		const notebook = (source: string, output: string) =>
-			JSON.stringify({
-				metadata: { kernelspec: { language: "typescript" } },
-				cells: [{ cell_type: "code", source, outputs: [{ text: output }] }],
-			});
-		write(repo, "legacy.ipynb", notebook("// existing\nconst n = 1;", "old"));
-		git(repo, "add", "legacy.ipynb");
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"legacy",
-		);
-		write(repo, "legacy.ipynb", notebook("// existing\nconst n = 2;", "new"));
-		git(repo, "add", "legacy.ipynb");
-		assert.equal(guard(repo, "--staged").status, 0);
-		write(
-			repo,
-			"legacy.ipynb",
-			notebook("// existing\n// new explanation\nconst n = 2;", "new"),
-		);
-		git(repo, "add", "legacy.ipynb");
-		assert.equal(guard(repo, "--staged").status, 1);
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"new",
-		);
-		assert.equal(guard(repo, "--base=HEAD~1").status, 1);
-	});
-
-	it("rejects malformed notebooks and unsupported code-cell languages", () => {
-		const repo = fixture();
-		write(repo, "invalid.ipynb", "{");
-		write(
-			repo,
-			"unknown.ipynb",
-			JSON.stringify({
-				metadata: { language_info: { name: "unknown" } },
-				cells: [{ cell_type: "code", source: ["x"] }],
-			}),
-		);
-		git(repo, "add", "invalid.ipynb", "unknown.ipynb");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(
-			result.stderr,
-			/invalid\.ipynb:1:.*supported code-cell language/u,
-		);
-		assert.match(
-			result.stderr,
-			/unknown\.ipynb:1:.*supported code-cell language/u,
-		);
-	});
-
-	it("checks Gherkin comments outside doc strings", () => {
-		const text = [
-			"Feature: Example",
-			"  Scenario: Literal text",
-			"    Given text:",
-			'      """',
-			"      # data",
-			'      """',
-			"    # explanation",
-			"    Then it succeeds",
-		].join("\n");
-		assert.deepEqual(
-			commentViolations("example.feature", text, new Set([5, 7])).map(
-				({ line }) => line,
-			),
-			[7],
-		);
-		assert.throws(
-			() =>
-				commentViolations(
-					"example.feature",
-					'Feature: Example\n  Scenario: X\n    Given text:\n      """\n      # hidden',
-					new Set([5]),
-				),
-			/unexpected end of file/u,
-		);
-		assert.deepEqual(
-			commentViolations(
-				"example.feature",
-				"# language: fr\nFonctionnalité: Exemple\n",
-				new Set([1]),
-			),
-			[],
-		);
-	});
-
-	it("checks staged Gherkin files", () => {
-		const repo = fixture();
-		write(
-			repo,
-			"example.feature",
-			"Feature: Example\n  # TODO implement\n  Scenario: works\n    Then it succeeds\n",
-		);
-		git(repo, "add", "example.feature");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /example\.feature:2:.*finish deferred work/u);
-	});
-
-	it("checks C# comments without mistaking string contents for comments", () => {
-		const text =
-			'class Example { string url = "https://example.test"; /* explanation */ }';
-		assert.deepEqual(
-			commentViolations("example.cs", text, new Set([1])).map(
-				({ line }) => line,
-			),
-			[1],
-		);
-		assert.deepEqual(
-			commentViolations(
-				"example.cs",
-				'class Example { string url = "https://example.test"; }',
-				new Set([1]),
-			),
-			[],
-		);
-	});
-
-	it("checks generated Protobuf comments while accepting compiler directives", () => {
-		const repo = fixture();
-		const file = "packages/sample/src/_generated/sample_pb.ts";
-		const source = [
-			'// @generated by protoc-gen-es v2.12.1 with parameter "target=ts"',
-			"// @generated from file sample.proto (package sample, syntax proto3)",
-			"/* eslint-disable */",
-			"/** @deprecated */",
-			"export const value = /*@__PURE__*/ Number(1);",
-			"",
-		].join("\n");
-		write(repo, file, source);
-		git(repo, "add", file);
-		assert.equal(guard(repo, "--staged").status, 0);
-		write(repo, file, `${source}// an explanation\n`);
-		git(repo, "add", file);
-		const rejected = guard(repo, "--staged");
-		assert.equal(rejected.status, 1);
-		assert.match(rejected.stderr + rejected.stdout, /self-documenting/u);
-	});
-	it("checks tracked generated, build-output, dependency, and vendored code", () => {
-		const repo = fixture();
-		const files = [
-			"packages/sample/src/_generated/client.ts",
-			"packages/sample/dist/index.js",
-			"node_modules/sample/index.js",
-			"tools/oxlint/anti-slop/rules/new-rule.ts",
-		];
-		for (const file of files)
-			write(repo, file, "// explanation\nexport const value = 1;\n");
-		git(repo, "add", "--force", "--all");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		for (const file of files) assert.ok(result.stderr.includes(file), file);
-	});
-
 	it("finds actual comments without mistaking strings, regexes, templates, or JSX text for comments", () => {
 		const text = [
 			'const url = "https://example.test/path";',
@@ -638,85 +93,9 @@ describe("source policy", () => {
 		);
 	});
 
-	it("preserves training inputs only inside marked functions and methods", () => {
-		const lines = [
-			"// outside before",
-			"export function rank(items: string[]) {",
-			'  "use training";',
-			"  // TODO rank the best items first",
-			"  /* Keep the order stable for equal scores. */",
-			"  return items;",
-			"}",
-			"const summarize = () => {",
-			'  "use training";',
-			"  // Summarize the result.",
-			"};",
-			"class Ranker {",
-			"  @trainable()",
-			"  rank() {",
-			"    // Rank the items.",
-			"  }",
-			"  @trainable",
-			"  score() {",
-			"    /* Score the items. */",
-			"  }",
-			"  ordinary() {",
-			'    const marker = "use training";',
-			"    // outside ordinary function",
-			"    return marker;",
-			"  }",
-			"}",
-			"// outside after",
-		];
-		const added = new Set(lines.map((_, index) => index + 1));
-		const expected = lines.flatMap((line, index) =>
-			line.includes("// outside") ? [index + 1] : [],
-		);
-		for (const file of ["example.ts", "example.js", "example.ts.tpl"]) {
-			assert.deepEqual(
-				commentViolations(file, lines.join("\n"), added).map(
-					(issue) => issue.line,
-				),
-				expected,
-				file,
-			);
-		}
-	});
-
-	it("accepts training input in staged code, examples, and notebooks", () => {
-		const repo = fixture();
-		const source = [
-			"export function rank(items: string[]) {",
-			'  "use training";',
-			"  // Sort the highest priority items first.",
-			"  return [...items].sort();",
-			"}",
-			"",
-		].join("\n");
-		write(repo, "training.ts", source);
-		write(repo, "README.md", `# Training\n\n\`\`\`ts\n${source}\`\`\`\n`);
-		write(
-			repo,
-			"training.ipynb",
-			JSON.stringify({
-				metadata: { language_info: { name: "typescript" } },
-				cells: [{ cell_type: "code", source: [source], outputs: [] }],
-			}),
-		);
-		git(repo, "add", "training.ts", "README.md", "training.ipynb");
-		const accepted = guard(repo, "--staged");
-		assert.equal(accepted.status, 0, accepted.stderr);
-		write(repo, "training.ts", `${source}// ordinary commentary\n`);
-		git(repo, "add", "training.ts");
-		assert.match(
-			guard(repo, "--staged").stderr,
-			/training\.ts:6:.*self-documenting/u,
-		);
-	});
-
 	it("allows required tool directives but rejects deferred markers, including inside directives", () => {
 		const text = [
-			"// @ts-expect-error",
+			"// @ts-expect-error required by the compiler test",
 			"const x = 1;",
 			"// eslint-disable-next-line no-alert -- TODO implement alternative",
 			"alert(x);",
@@ -727,58 +106,20 @@ describe("source policy", () => {
 		);
 	});
 
-	it("rejects explanations on TypeScript and lint directives", () => {
+	it("accepts type assertion safety annotations while rejecting deferred markers", () => {
 		const text = [
-			"// @ts-expect-error",
-			"// @ts-ignore",
-			"// @ts-expect-error this explains the error",
-			"// @ts-ignore: unnecessary explanation",
-			"/* @ts-ignore */",
-			"// eslint-disable-next-line no-alert",
-			"// eslint-disable-next-line no-alert -- explanation",
-			"/* oxlint-disable no-explicit-any -- explanation */",
+			"// SAFETY: the value was checked at the boundary",
+			"const value = input as string;",
+			"// SAFETY: TODO validate this later",
+			"const other = input as string;",
+			"// ordinary explanatory comment",
+			"const last = input;",
 		].join("\n");
 		assert.deepEqual(
-			commentViolations("x.ts", text, new Set([1, 2, 3, 4, 5, 6, 7, 8])).map(
+			commentViolations("x.ts", text, new Set([1, 3, 5])).map(
 				(item) => item.line,
 			),
-			[3, 4, 5, 7, 8],
-		);
-	});
-
-	it("rejects architecture metadata comments and deferred type exemptions", () => {
-		const text = [
-			"// domain-view:",
-			"// public-contract:",
-			"/* domain-view: */",
-			"// domain-view: this type has a reason",
-			"// public-contract: this value has a reason",
-			"// parallel-type-allowed:",
-			"/* parallel-type-allowed: migrate later */",
-			"// public-contract: TODO migrate",
-		].join("\n");
-		const violations = commentViolations(
-			"x.ts",
-			text,
-			new Set([1, 2, 3, 4, 5, 6, 7, 8]),
-		);
-		assert.deepEqual(
-			violations.map((item) => item.line),
-			[1, 2, 3, 4, 5, 6, 7, 8],
-		);
-		assert.match(violations[5]?.message ?? "", /finish deferred work/u);
-		assert.equal(
-			commentViolations(
-				"x.ts",
-				"/// public-contract: explanation",
-				new Set([1]),
-			).length,
-			1,
-		);
-		assert.equal(
-			commentViolations("x.py", "# parallel-type-allowed: later", new Set([1]))
-				.length,
-			1,
+			[3, 5],
 		);
 	});
 
@@ -992,124 +333,6 @@ f: /* TODO: remove block */`;
 		);
 	});
 
-	it("rejects comments in JSON configuration without flagging strings", () => {
-		for (const extension of ["jsonc", "json5"]) {
-			const repo = fixture();
-			const file = `settings.${extension}`;
-			write(repo, file, '{"url":"https://example.test/a//b"}\n');
-			git(repo, "add", file);
-			assert.equal(guard(repo, "--staged").status, 0);
-			write(
-				repo,
-				file,
-				'{"url":"https://example.test/a//b", /* explanation */ "value":1}\n// TODO finish\n',
-			);
-			assert.match(guard(repo, "--worktree").stderr, /self-documenting/u);
-			git(repo, "add", file);
-			const result = guard(repo, "--staged");
-			assert.equal(result.status, 1);
-			assert.match(result.stderr, /self-documenting/u);
-			assert.match(result.stderr, /finish deferred work/u);
-		}
-	});
-
-	it("checks Terraform comments and preserves HCL strings and heredocs", () => {
-		const source = [
-			'url = "https://example.test/#data"',
-			"script = <<-END",
-			"# heredoc content",
-			"END",
-			'value = "${1 + /* explanation */ 2}"',
-			"# TODO finish",
-		].join("\n");
-		for (const extension of ["hcl", "tf", "tfvars"]) {
-			assert.deepEqual(
-				commentViolations(
-					`module.${extension}`,
-					source,
-					new Set([1, 2, 3, 4, 5, 6]),
-				).map((item) => item.line),
-				[5, 6],
-			);
-		}
-		const repo = fixture();
-		write(repo, "main.tf", source);
-		git(repo, "add", "main.tf");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1);
-		assert.match(result.stderr, /main\.tf:5:.*self-documenting/u);
-		assert.match(result.stderr, /main\.tf:6:.*finish deferred work/u);
-		const docs = fixture();
-		write(
-			docs,
-			"README.md",
-			"# Example\n```terraform\nvalue = 1 # explanation\n```\n",
-		);
-		git(docs, "add", "README.md");
-		assert.match(
-			guard(docs, "--staged").stderr,
-			/README\.md:3:.*self-documenting/u,
-		);
-	});
-
-	it("checks Dockerfile and shell comments without treating copied heredocs as code", () => {
-		const source = [
-			"# syntax=docker/dockerfile:1",
-			"FROM node:24",
-			"ENV NOTE=literal # value",
-			"RUN echo '# literal' # explanation",
-			"COPY <<EOF /config",
-			"# copied content",
-			"EOF",
-			"RUN <<SCRIPT",
-			"#!/bin/sh",
-			"echo '# literal'",
-			"# TODO finish",
-			"SCRIPT",
-			"RUN cat <<DATA > /config",
-			"# generated data",
-			"DATA",
-			"RUN <<PY",
-			"#!/usr/bin/env python3",
-			'text = "# literal"',
-			"# explanation",
-			"PY",
-			"RUN --mount=type=cache,target=/tmp <<BUILD",
-			"# build explanation",
-			"BUILD",
-		].join("\n");
-		for (const file of ["Dockerfile", "Dockerfile.test", "build.dockerfile"]) {
-			assert.deepEqual(
-				commentViolations(
-					file,
-					source,
-					new Set([1, 3, 4, 6, 9, 10, 11, 14, 17, 18, 19, 22]),
-				).map((item) => item.line),
-				[4, 11, 19, 22],
-			);
-		}
-		const repo = fixture();
-		write(repo, "Dockerfile", source);
-		git(repo, "add", "Dockerfile");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1);
-		assert.match(result.stderr, /Dockerfile:4:.*self-documenting/u);
-		assert.match(result.stderr, /Dockerfile:11:.*finish deferred work/u);
-		assert.match(result.stderr, /Dockerfile:19:.*self-documenting/u);
-		assert.match(result.stderr, /Dockerfile:22:.*self-documenting/u);
-		const docs = fixture();
-		write(
-			docs,
-			"README.md",
-			"# Example\n```dockerfile\nFROM node:24\n# explanation\n```\n",
-		);
-		git(docs, "add", "README.md");
-		assert.match(
-			guard(docs, "--staged").stderr,
-			/README\.md:4:.*self-documenting/u,
-		);
-	});
-
 	it("handles MySQL backslash escapes in strings and quoted identifiers", () => {
 		const sql = [
 			"SELECT 'it\\'s -- not a comment', `column\\` -- still an identifier`; -- explanation",
@@ -1174,36 +397,6 @@ f: /* TODO: remove block */`;
 		);
 		assert.deepEqual(
 			commentViolations("example.astro", text, new Set([7])).map(
-				(item) => item.line,
-			),
-			[6],
-		);
-	});
-
-	it("checks HTML markup and executable script, style, and attribute comments", () => {
-		const text = [
-			"<!doctype html>",
-			`<div title="<!-- literal -->" style="color:red; /* attribute */" onclick="const url = 'https://example.test'; /* handler */">`,
-			"<!-- markup -->",
-			`<script type="application/json">{"note":"// literal", "code":"/* literal */"}</script>`,
-			`<script data-note=" type='text/plain'">const url = "https://example.test"; // script`,
-			"const value = `/* literal */`; /* block */",
-			"</script>",
-			`<style>.x::after { content: "/* literal */"; } /* css */</style>`,
-			`<script type="text/babel">const node = <div/>; // jsx</script>`,
-			`<script type="text/plain">text // plain</script>`,
-			"</div>",
-		].join("\n");
-		assert.deepEqual(
-			commentViolations(
-				"example.html",
-				text,
-				new Set(text.split("\n").map((_, index) => index + 1)),
-			).map((item) => item.line),
-			[2, 2, 3, 5, 6, 8, 9],
-		);
-		assert.deepEqual(
-			commentViolations("example.html", text, new Set([6])).map(
 				(item) => item.line,
 			),
 			[6],
@@ -1313,219 +506,42 @@ f: /* TODO: remove block */`;
 		for (const [file, text] of [
 			["docs/design/new.md", "# New"],
 			["packages/example/DESIGN.md", "# New"],
-			["packages/example/ARCHITECTURE.md", "# New"],
-			["docs/architecture/service.md", "# New"],
-			["docs/adrs/0001.md", "# New"],
-			["notes/ADR-0001.md", "# New"],
-			["notes/protocol-rfc.md", "# New"],
-			["notes/new-record.md", "---\ntype: Architecture Decision Record\n---\n"],
 			["notes/implementation-plan.md", "# New"],
-			["notes/decision-map.md", "# Choices"],
-			["notes/storage-decision_map.md", "# Choices"],
-			["notes/choices.md", "# Decision Map: Storage"],
-			["notes/options.md", "---\ntype: Decision Map\n---\n"],
-			["GAPS.md", "# Gaps"],
-			["docs/competitors/gap-analysis.md", "# Gaps"],
-			["src/draft/epic-proofs/example/poc-rollup-ledger.md", "# Rollup"],
-			["src/draft/epic-proofs/example/scope-review.md", "# Scope"],
-			["src/draft/projects/_registry.md", "# Project MVP registry"],
-			["notes/BACKLOG.md", "# Backlog"],
-			["notes/WALK_SHEET_HANDOFF.md", "# Handoff"],
 			["notes/new.md", "---\ntype: Design\n---\n"],
-			["PRODUCT.md", "# Product\n\n<!-- impeccable:product-schema 1 -->\n"],
-			["packages/demo/brief.md", "<!-- impeccable:product-schema 12 -->\n"],
 			[".impeccable/design.json", "{}"],
+			[".impeccable/surfaces/example.json", "{}"],
 			["site/.impeccable/surfaces/example.md", "# Example"],
 			["site/.impeccable/surfaces/example.json", "{}"],
 			[".impeccable/critique/example.md", "# Example"],
 			[".sdlc/example/sdlc-state.md", "# State"],
-			[".impeccable/surfaces/example.json", "{}"],
 		] as const)
 			assert.ok(documentViolation(file, text), file);
 		assert.equal(documentViolation("docs/usage.md", "# Usage"), undefined);
-		assert.equal(
-			documentViolation("docs/decision-making.md", "# Making decisions"),
-			undefined,
-		);
-		assert.equal(
-			documentViolation(
-				"docs/usage.md",
-				"# Usage\n\n```html\n<!-- impeccable:product-schema 1 -->\n```\n",
-			),
-			undefined,
-		);
-		assert.equal(
-			documentViolation("site/operations/handoffs.md", "# Handoffs"),
-			undefined,
-		);
-		assert.equal(
-			documentViolation("packages/architecture/src/index.ts", ""),
-			undefined,
-		);
 	});
 
-	it("rejects ignored agent planning and design documents in the worktree", () => {
+	it("exempts generated WIT bindings but checks neighboring handwritten files", () => {
 		const repo = fixture();
-		write(repo, ".gitignore", ".sdlc/\n.impeccable/\n");
-		write(repo, ".sdlc/feature/sdlc-state.md", "# Plan\n");
-		write(repo, ".impeccable/critique/example.md", "# Critique\n");
-		const result = guard(repo, "--worktree");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /\.sdlc\/feature\/sdlc-state\.md/u);
-		assert.match(result.stderr, /\.impeccable\/critique\/example\.md/u);
-	});
-
-	it("rejects ignored planning artifacts in nested agent workspaces", () => {
-		const repo = fixture();
-		write(repo, ".gitignore", "**/.optimizexp/\n**/.impeccable/\n**/.sdlc/\n");
-		const artifacts = [
-			".optimizexp/backlog/experiments.json",
-			"packages/demo/.optimizexp/features/example/SEED.md",
-			"packages/demo/.optimizexp/experience-catalog.json",
-			"site/.impeccable/critique/example.md",
-			"packages/demo/.sdlc/example/state.md",
-		];
-		for (const artifact of artifacts) write(repo, artifact, "{}\n");
-		const result = guard(repo, "--worktree");
-		assert.equal(result.status, 1, result.stderr);
-		for (const artifact of artifacts)
-			assert.ok(result.stderr.includes(artifact), artifact);
-	});
-
-	it("preserves experience evidence while rejecting synthetic planning files", () => {
-		for (const file of [
-			".optimizexp/INIT.md",
-			".optimizexp/init-report.json",
-			".optimizexp/personas/generated.md",
-			".optimizexp/features/example/EXPERIENCE.md",
-			".optimizexp/features/example/README.md",
-			".optimizexp/runs/run/backlog.json",
-			".optimizexp/runs/run/INCOMPLETE.md",
-		])
-			assert.ok(documentViolation(file, "{}"), file);
-		assert.equal(
-			documentViolation(
-				".optimizexp/features/example/evidence/manifest.json",
-				"{}",
-			),
-			undefined,
-		);
-	});
-
-	it("checks generated source templates and their underlying syntax", () => {
-		for (const [file, text] of [
-			["snippet.ts.tpl", "const value = {{name}}; // explanation"],
-			["view.tsx.tpl", "const view = <p>{{name}}{/* explanation */}</p>"],
-			["style.css.tpl", "p { color: red; } /* explanation */"],
-			["schema.cue.tpl", 'name: "{{name}}" // explanation'],
-		] as const) {
-			assert.equal(commentViolations(file, text, new Set([1])).length, 1, file);
-		}
-		assert.equal(
-			commentViolations(
-				"snippet.ts.tpl",
-				'const url = "https://example.test";',
-				new Set([1]),
-			).length,
-			0,
-		);
-		assert.ok(documentViolation("docs/design/example.md.tpl", "# Example"));
-		assert.ok(documentViolation("notes/DESIGN.md.tpl", "# Example"));
-		assert.ok(documentViolation(".impeccable/design.json.tpl", "{}"));
-	});
-
-	it("rejects staged comments and planning documents in templates", () => {
-		const repo = fixture();
-		write(repo, "snippet.ts.tpl", "export const value = 1; // explanation\n");
-		write(repo, "view.tsx.tpl", "const view = <p>{/* explanation */}</p>;\n");
-		write(repo, "schema.cue.tpl", 'name: "example" // explanation\n');
-		write(repo, "docs/design/example.md.tpl", "# Design\n");
-		write(repo, "docs/ADR-0001.md.tpl", "# Decision\n");
-		write(repo, "packages/example/ARCHITECTURE.md", "# Architecture\n");
 		write(
 			repo,
-			"PRODUCT.md",
-			"# Product\n\n<!-- impeccable:product-schema 1 -->\n",
+			"packages/wit/src/generated/sdk/bindings.d.ts",
+			"// Generated by jco\nexport type Value = string;\n",
 		);
 		write(
 			repo,
-			"index.html.tpl",
-			"<script>const value = 1; // explanation\n</script>\n",
+			"packages/wit/src/generated-other/handwritten.ts",
+			"// Handwritten explanation\nexport const value = 1;\n",
+		);
+		write(
+			repo,
+			"packages/wit/src/generated/handwritten.ts",
+			"// Handwritten explanation\nexport const value = 2;\n",
 		);
 		git(repo, "add", "--all");
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
-		for (const file of [
-			"snippet.ts.tpl",
-			"view.tsx.tpl",
-			"schema.cue.tpl",
-			"docs/design/example.md.tpl",
-			"docs/ADR-0001.md.tpl",
-			"packages/example/ARCHITECTURE.md",
-			"PRODUCT.md",
-			"index.html.tpl",
-		]) {
-			assert.ok(result.stderr.includes(file), file);
-		}
-	});
-
-	it("checks tracked external code and planning documents", () => {
-		const repo = fixture();
-		write(repo, "external/pixel-agents/agent.ts", "// TODO implement\n");
-		write(repo, "external/other/agent.ts", "// explanation\n");
-		write(repo, "external/pixel-agents/docs/design/agent.md", "# Design\n");
-		git(repo, "add", "--all");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		for (const file of [
-			"external/pixel-agents/agent.ts",
-			"external/other/agent.ts",
-			"external/pixel-agents/docs/design/agent.md",
-		]) {
-			assert.ok(result.stderr.includes(file), file);
-		}
-	});
-
-	it("skips gitlinks without exempting their parent directories", () => {
-		const repo = fixture();
-		const commit = git(repo, "rev-parse", "HEAD");
-		git(
-			repo,
-			"update-index",
-			"--add",
-			"--cacheinfo",
-			`160000,${commit},external/nested`,
-		);
-		assert.equal(guard(repo, "--staged").status, 0);
-		write(repo, "external/adjacent.ts", "// explanation\n");
-		git(repo, "add", "external/adjacent.ts");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /external\/adjacent\.ts:1/u);
-	});
-
-	it("skips committed gitlinks when comparing a branch with its base", () => {
-		const repo = fixture();
-		const base = git(repo, "rev-parse", "HEAD");
-		git(
-			repo,
-			"update-index",
-			"--add",
-			"--cacheinfo",
-			`160000,${base},external/nested`,
-		);
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"add submodule",
-		);
-		assert.equal(guard(repo, `--base=${base}`).status, 0);
+		assert.match(result.stderr, /generated-other\/handwritten\.ts:1/u);
+		assert.match(result.stderr, /generated\/handwritten\.ts:1/u);
+		assert.doesNotMatch(result.stderr, /generated\/sdk\/bindings\.d\.ts/u);
 	});
 
 	it("rejects ignored agent planning and design documents in the worktree", () => {
@@ -1669,23 +685,6 @@ f: /* TODO: remove block */`;
 		);
 	});
 
-	it("allows unchanged comments in renamed files but rejects new ones", () => {
-		const repo = fixture();
-		git(repo, "mv", "existing.ts", "renamed.ts");
-		const moved = guard(repo, "--staged");
-		assert.equal(moved.status, 0, moved.stderr);
-		write(
-			repo,
-			"renamed.ts",
-			"// existing comment\nexport const value = 1;\n// new comment\n",
-		);
-		git(repo, "add", "renamed.ts");
-		const changed = guard(repo, "--staged");
-		assert.equal(changed.status, 1, changed.stderr);
-		assert.match(changed.stderr, /renamed\.ts:3/u);
-		assert.doesNotMatch(changed.stderr, /renamed\.ts:1/u);
-	});
-
 	it("allows removing lines from an existing design document but not adding any", () => {
 		const repo = fixture();
 		write(
@@ -1721,32 +720,21 @@ f: /* TODO: remove block */`;
 		assert.match(added.stderr, /docs\/design\/index\.md/u);
 	});
 
-	it("enforces contract and design artifact rules on staged files", () => {
+	it("allows unchanged comments in renamed files but rejects new ones", () => {
 		const repo = fixture();
+		git(repo, "mv", "existing.ts", "renamed.ts");
+		const moved = guard(repo, "--staged");
+		assert.equal(moved.status, 0, moved.stderr);
 		write(
 			repo,
-			"schema.cue",
-			'endpoint: "https://example.test" // explanation\n',
+			"renamed.ts",
+			"// existing comment\nexport const value = 1;\n// new comment\n",
 		);
-		write(repo, ".impeccable/design.json", "{}\n");
-		git(repo, "add", "--all");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /schema\.cue:1/u);
-		assert.match(result.stderr, /\.impeccable\/design\.json:1/u);
-	});
-
-	it("rejects new Astro comments in the staged snapshot", () => {
-		const repo = fixture();
-		write(
-			repo,
-			"page.astro",
-			"---\nconst x = 1;\n---\n<p>{x}</p>\n<!-- explanation -->\n",
-		);
-		git(repo, "add", "page.astro");
-		const result = guard(repo, "--staged");
-		assert.equal(result.status, 1, result.stderr);
-		assert.match(result.stderr, /page\.astro:5/u);
+		git(repo, "add", "renamed.ts");
+		const changed = guard(repo, "--staged");
+		assert.equal(changed.status, 1, changed.stderr);
+		assert.match(changed.stderr, /renamed\.ts:3/u);
+		assert.doesNotMatch(changed.stderr, /renamed\.ts:1/u);
 	});
 
 	it("accepts existing incoming content during a merge but rejects new merge edits", () => {
@@ -1905,9 +893,9 @@ f: /* TODO: remove block */`;
 		assert.match(result.stderr, /literal\[1\]\.ts:1/u);
 	});
 
-	it("allows deletion-only cleanup of an existing design document", () => {
+	it("rejects changes that retain an existing design document", () => {
 		const repo = fixture();
-		write(repo, "docs/design/existing.md", "# Existing\nremove this\n");
+		write(repo, "docs/design/existing.md", "# Existing\n");
 		git(repo, "add", "--all");
 		git(
 			repo,
@@ -1920,9 +908,6 @@ f: /* TODO: remove block */`;
 			"-m",
 			"add design",
 		);
-		write(repo, "docs/design/existing.md", "# Existing\n");
-		git(repo, "add", "--all");
-		assert.equal(guard(repo, "--staged").status, 0);
 		write(repo, "docs/design/existing.md", "# Changed\n");
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 1);

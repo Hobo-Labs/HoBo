@@ -7,6 +7,7 @@ linear_url: "https://linear.app/quickdeploy-ai/project/reliability-observability
 branch: "contacttylerkendrick/reliability-observability-cost-finops/epic-rollup-b36b40c8-sprawl-20260629T025939Z-4a28"
 pr_url: "https://github.com/Tyler-R-Kendrick/HoBo/pull/418"
 reference_impl_root: "src/draft/epic-proofs/reliability-observability-cost-finops"
+ledger: "src/draft/epic-proofs/reliability-observability-cost-finops/poc-rollup-ledger.md"
 pact_inventory: "src/draft/epic-proofs/reliability-observability-cost-finops/contracts/pact-inventory.md"
 simulation_command: "npm.cmd --prefix src/draft/epic-proofs/reliability-observability-cost-finops run simulate"
 last_linear_marker: "EPIC_ROLLUP_PR"

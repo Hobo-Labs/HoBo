@@ -4,8 +4,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { expect } from "vitest";
-import { isNodeTestFile } from "../scripts/lib/unit-test-selection.ts";
 import { nodeTestArguments } from "../scripts/lib/node-test-arguments.ts";
+import { isNodeTestFile } from "../scripts/lib/unit-test-selection.ts";
 
 const categoryGlobs = [
 	"src/draft/*/*/contracts/consumer/*test.ts",

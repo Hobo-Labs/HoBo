@@ -32,7 +32,7 @@ test("HOBO-559 walkthrough pins issue, package path, proof path, and M1 source c
   );
   assert.equal(
     parsed.proofPath,
-    "urn:hobo:proof:vibe-clickable-first-run-walkthrough",
+    "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
   );
   assert.equal(parsed.consumedActivationRail.sourceIssue, "HOBO-540");
   assert.equal(parsed.consumedWorkspaceProjectStates.sourceIssue, "HOBO-541");
@@ -59,7 +59,7 @@ test("walkthrough consumes HOBO-540 activation rail and HOBO-541 workspace/proje
     assert.match(step.clickableAction, /snapshop|workspace|project|plan|recover|proof|fixture/i);
     assert.match(step.snapshopFixture.snapshopContext, /snapshop/i);
     assert.match(step.snapshopFixture.quickstartFixtureId, /^rlq-[a-z0-9-]+-v[0-9]+$/);
-    assert.match(step.docsHandoff, /^urn:hobo:proof:/);
+    assert.match(step.docsHandoff, /^docs\/design\/proofs\//);
     assert.match(step.supportHandoff, /support|owner|route|redact/i);
   }
 });
@@ -88,7 +88,7 @@ test("docs and support handoff routes cover portal, tutorials, troubleshooting, 
 
   for (const route of parsed.handoffRoutes) {
     assert.match(route.trigger, /workspace|project|blocked|stale|recovery|support|tutorial/i);
-    assert.match(route.evidenceAnchor, /^urn:hobo:proof:/);
+    assert.match(route.evidenceAnchor, /^docs\/design\/proofs\//);
     assert.match(route.customerSafeMessage, /fixture|simulated|redact|support|docs|owner|evidence/i);
   }
 });
@@ -141,7 +141,8 @@ test("parser rejects missing scenario coverage and consumed source drift", () =>
         ...VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH,
         consumedWorkspaceProjectStates: {
           ...VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH.consumedWorkspaceProjectStates,
-          proofPath: "urn:hobo:proof:other" as never,
+          // SAFETY: `proofPath: "docs/design/proofs/other/README.md" as never,` is required at this I/O or test boundary.
+          proofPath: "docs/design/proofs/other/README.md" as never,
         },
       }),
     VibeClickableFirstRunWalkthroughParseError,

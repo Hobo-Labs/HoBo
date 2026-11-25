@@ -1504,6 +1504,8 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	const plan = (path: string) =>
 		scoped(planDependentTests([path], (tree ??= readRepo())));
 
+	// The packages whose `vitest.config.ts` merges the root config to leave the
+	// `*.deep.test.ts` tier out of `test` (docs/design/provider-redaction.md).
 	const tiered = [
 		"packages/auth-md",
 		"packages/claims",

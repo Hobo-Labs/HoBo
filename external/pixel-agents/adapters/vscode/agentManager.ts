@@ -14,12 +14,14 @@ import {
 } from '../../server/src/fileWatcher.js';
 import { loadLayout } from '../../server/src/layoutPersistence.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
-import { buildLaunchCommand } from '../../server/src/providers/hook/claude/claude.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
 import type { AgentState, PersistedAgent } from '../../server/src/types.js';
 
 export function getProjectDirPath(cwd?: string): string {
+  // Fall back to home directory when no workspace folder is open (common on Linux/macOS
+  // when VS Code is launched without a folder). The provider's getSessionDirs already
+  // implements the Windows case-insensitive fallback for drive-letter casing.
   const workspacePath = cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
   const dirs = claudeProvider.getSessionDirs?.(workspacePath) ?? [];
   if (dirs.length === 0) {
@@ -48,6 +50,9 @@ export async function launchNewTerminal(
   suppressShow?: boolean,
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
+  // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
+  // This ensures the terminal starts in a predictable location that matches the project
+  // dir hash Claude Code will use for JSONL transcript files.
   const cwd = folderPath || folders?.[0]?.uri.fsPath || os.homedir();
   const isMultiRoot = !!(folders && folders.length > 1);
   const idx = nextTerminalIndexRef.current++;
@@ -55,20 +60,32 @@ export async function launchNewTerminal(
     name: `${CLAUDE_TERMINAL_NAME_PREFIX} #${idx}`,
     cwd,
   });
+  // When suppressShow is set (auto-spawn + autoShowPanel), keep the panel view
+  // on Pixel Agents instead of switching to Terminal. Claude Code still runs
+  // via sendText below; user can click the character to focus the terminal via
+  // the existing focusAgent message handler.
   if (!suppressShow) {
     terminal.show();
   }
 
   const sessionId = crypto.randomUUID();
-  const launch = buildLaunchCommand(sessionId, cwd, { bypassPermissions });
+  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
+  if (!launch) {
+    throw new Error('claudeProvider.buildLaunchCommand is not implemented');
+  }
   terminal.sendText([launch.command, ...launch.args].join(' '));
 
   const projectDir = getProjectDirPath(cwd);
 
+  // Pre-register expected JSONL file so project scan won't treat it as a /clear file
   const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
   knownJsonlFiles.add(expectedFile);
 
+  // Create agent immediately (before JSONL file exists)
   const id = nextAgentIdRef.current++;
+  // areaMappings is keyed by WorkspaceFolder.name, which can differ from the dir
+  // basename, so seat placement needs that name. Pick the most specific containing
+  // folder (longest path wins for nested folders).
   const owningFolder = (folders ?? [])
     .filter((f) => cwd === f.uri.fsPath || cwd.startsWith(f.uri.fsPath + path.sep))
     .sort((a, b) => b.uri.fsPath.length - a.uri.fsPath.length)[0];
@@ -121,6 +138,7 @@ export async function launchNewTerminal(
     persistAgents,
   );
 
+  // Poll for the specific JSONL file to appear
   const createdAt = Date.now();
   let pollCount = 0;
   console.log(`[Pixel Agents] Terminal: Agent ${id} - waiting for JSONL at ${agent.jsonlFile}`);
@@ -144,6 +162,7 @@ export async function launchNewTerminal(
         );
         readNewLines(id, agents, waitingTimers, permissionTimers);
       } else if (pollCount === 10) {
+        // After 10s of polling, warn with path details to help diagnose path encoding mismatches
         const dirExists = fs.existsSync(projectDir);
         let dirContents = '';
         if (dirExists) {
@@ -164,6 +183,8 @@ export async function launchNewTerminal(
             `Expected: ${agent.jsonlFile}. ${dirContents}`,
         );
       } else if (pollCount > 10) {
+        // Possible /resume: terminal started a different session than expected.
+        // Check every tick for a file modified after the agent was created.
         try {
           const trackedFiles = new Set([...agents.values()].map((a) => path.resolve(a.jsonlFile)));
           const candidates = fs
@@ -174,7 +195,7 @@ export async function launchNewTerminal(
               return { file: full, mtime: fs.statSync(full).mtimeMs };
             })
             .filter((c) => !trackedFiles.has(path.resolve(c.file)) && c.mtime > createdAt)
-            .sort((a, b) => b.mtime - a.mtime);
+            .sort((a, b) => b.mtime - a.mtime); // newest first
 
           if (candidates.length > 0) {
             console.log(
@@ -193,9 +214,13 @@ export async function launchNewTerminal(
               persistAgents,
             );
           }
-        } catch {}
+        } catch {
+          /* ignore scan errors */
+        }
       }
-    } catch {}
+    } catch {
+      /* file may not exist yet */
+    }
   }, JSONL_POLL_INTERVAL_MS);
   jsonlPollTimers.set(id, pollTimer);
 }
@@ -212,12 +237,14 @@ export function removeAgent(
   const agent = store.get(agentId);
   if (!agent) return;
 
+  // Stop JSONL poll timer
   const jpTimer = jsonlPollTimers.get(agentId);
   if (jpTimer) {
     clearInterval(jpTimer);
   }
   jsonlPollTimers.delete(agentId);
 
+  // Stop file watching
   fileWatchers.get(agentId)?.close();
   fileWatchers.delete(agentId);
   const pt = pollingTimers.get(agentId);
@@ -226,9 +253,11 @@ export function removeAgent(
   }
   pollingTimers.delete(agentId);
 
+  // Cancel timers
   cancelWaitingTimer(agentId, waitingTimers);
   cancelPermissionTimer(agentId, permissionTimers);
 
+  // Remove from store (fires agentRemoved event) and persist
   store.delete(agentId);
   store.persist();
 }
@@ -284,9 +313,16 @@ export function restoreAgents(
   let maxIdx = 0;
   let restoredProjectDir: string | null = null;
 
+  // IDs of agents we ACTUALLY restored in this call (newly added to the store).
+  // The cleanup pass below targets only these; pre-existing agents (e.g., a
+  // freshly launched one whose webview just remounted and re-fired
+  // webviewReady) must not be culled by this restore-time grace period, since
+  // their JSONL may still be on its way (heuristic /resume path waits ~11s).
   const justRestoredTerminalIds: number[] = [];
 
   for (const p of persisted) {
+    // Skip agents already in the map — prevents duplicate file watchers on re-entry
+    // (webviewReady fires on every panel focus, re-calling restoreAgents each time)
     if (store.has(p.id)) {
       knownJsonlFiles.add(p.jsonlFile);
       continue;
@@ -296,12 +332,14 @@ export function restoreAgents(
     const isExternal = p.isExternal ?? false;
 
     if (isExternal) {
+      // External agents — restore if JSONL file still exists on disk
       try {
         if (!fs.existsSync(p.jsonlFile)) continue;
       } catch {
         continue;
       }
     } else {
+      // Terminal agents — find matching terminal by name
       terminal = liveTerminals.find((t) => t.name === p.terminalName);
       if (!terminal) continue;
     }
@@ -352,6 +390,7 @@ export function restoreAgents(
     }
 
     if (p.id > maxId) maxId = p.id;
+    // Extract terminal index from name like "Claude Code #3"
     const match = p.terminalName.match(/#(\d+)$/);
     if (match) {
       const idx = parseInt(match[1], 10);
@@ -360,6 +399,7 @@ export function restoreAgents(
 
     restoredProjectDir = p.projectDir;
 
+    // Start file watching if JSONL exists, skipping to end of file
     try {
       if (fs.existsSync(p.jsonlFile)) {
         const stat = fs.statSync(p.jsonlFile);
@@ -374,6 +414,7 @@ export function restoreAgents(
           permissionTimers,
         );
       } else {
+        // Poll for the file to appear
         const pollTimer = setInterval(() => {
           try {
             if (fs.existsSync(agent.jsonlFile)) {
@@ -392,13 +433,23 @@ export function restoreAgents(
                 permissionTimers,
               );
             }
-          } catch {}
+          } catch {
+            /* file may not exist yet */
+          }
         }, JSONL_POLL_INTERVAL_MS);
         jsonlPollTimers.set(p.id, pollTimer);
       }
-    } catch {}
+    } catch {
+      /* ignore errors during restore */
+    }
   }
 
+  // After a short delay, remove terminal agents that we JUST restored from
+  // workspaceState and which never received data. These are dead terminals
+  // restored by VS Code (e.g., after a window reload) where Claude is no
+  // longer running. Only target the IDs the loop above actually added — never
+  // pre-existing agents from launchNewTerminal in the same session whose
+  // expected JSONL may still be on its way (heuristic /resume waits ~11s).
   if (justRestoredTerminalIds.length > 0) {
     setTimeout(() => {
       for (const id of justRestoredTerminalIds) {
@@ -419,9 +470,10 @@ export function restoreAgents(
           );
         }
       }
-    }, 10_000);
+    }, 10_000); // 10 seconds grace period
   }
 
+  // Advance counters past restored IDs
   if (maxId >= nextAgentIdRef.current) {
     nextAgentIdRef.current = maxId + 1;
   }
@@ -429,8 +481,10 @@ export function restoreAgents(
     nextTerminalIndexRef.current = maxIdx + 1;
   }
 
+  // Re-persist cleaned-up list (removes entries whose terminals are gone)
   store.persist();
 
+  // Start project scan for /clear detection
   if (restoredProjectDir) {
     ensureProjectScan(
       restoredProjectDir,
@@ -460,8 +514,10 @@ export function sendExistingAgents(
   }
   agentIds.sort((a, b) => a - b);
 
+  // Include persisted palette/seatId from separate key
   const agentMeta = adapter.loadSeats();
 
+  // Include folderName and isExternal per agent
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   for (const [id, agent] of agents) {
@@ -483,6 +539,8 @@ export function sendExistingAgents(
     folderNames,
     externalAgents,
   });
+  // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
+  // so that agentStatus/agentToolStart messages arrive after characters are created.
 }
 
 export function sendCurrentAgentStatuses(
@@ -491,6 +549,7 @@ export function sendCurrentAgentStatuses(
 ): void {
   if (!webview) return;
   for (const [agentId, agent] of agents) {
+    // Re-send active tools
     for (const [toolId, status] of agent.activeToolStatuses) {
       const toolName = agent.activeToolNames.get(toolId) ?? '';
       webview.postMessage({
@@ -501,6 +560,7 @@ export function sendCurrentAgentStatuses(
         toolName,
       });
     }
+    // Re-send waiting status
     if (agent.isWaiting) {
       webview.postMessage({
         type: 'agentStatus',
@@ -508,6 +568,7 @@ export function sendCurrentAgentStatuses(
         status: 'waiting',
       });
     }
+    // Re-send team metadata
     if (agent.teamName) {
       webview.postMessage({
         type: 'agentTeamInfo',
@@ -519,6 +580,7 @@ export function sendCurrentAgentStatuses(
         teamUsesTmux: agent.teamUsesTmux,
       });
     }
+    // Re-send token usage
     if (agent.inputTokens > 0 || agent.outputTokens > 0) {
       webview.postMessage({
         type: 'agentTokenUsage',

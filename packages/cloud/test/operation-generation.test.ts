@@ -137,7 +137,7 @@ it("does not claim an imported resource was rolled back without destroy provenan
 					type: "deployment.Imported",
 					data: {
 						deploymentId: "deployment",
-						bindleHash: "imported",
+						bindleHash: "legacy",
 						resources: ["api"],
 					},
 				},
@@ -164,6 +164,95 @@ it("does not claim an imported resource was rolled back without destroy provenan
 				(event) => event.type === "deployment.TransitionStarted",
 			),
 		).toBe(false);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("does not forget a legacy live baseline after a no-effect failure", async () => {
+	const f = fixture();
+	try {
+		await f.store.append(
+			"deployment:deployment",
+			[
+				{
+					type: "resource.Provisioned",
+					data: {
+						deploymentId: "deployment",
+						resourceId: "api",
+						execId: "legacy",
+						outputs: {},
+					},
+				},
+				{
+					type: "resource.Failed",
+					data: {
+						deploymentId: "deployment",
+						resourceId: "api",
+						reason: "preview failed before any change",
+						classification: "retryable",
+						crossedNoGoThreshold: false,
+					},
+				},
+			],
+			{ expectedSeq: 0, tenant: f.ctx.tenant, actor: f.ctx.actor },
+		);
+		const plan: DeploymentPlan = {
+			schema: "hobo.deployment-plan/v1",
+			objective: "min-cost",
+			dependencyOrder: ["api"],
+			resources: [f.resource],
+		};
+		const result = await runCompensation(
+			f.deps,
+			plan,
+			f.ctx.deploymentId,
+			{ resourceId: "api", reason: "test" },
+			f.ctx,
+		);
+		expect(result.status).toBe("needs-human");
+		expect(result.provenanceMismatches).toEqual(["api"]);
+		expect(f.calls).toEqual([]);
+		expect(
+			result.events.some((event) => event.type === "deployment.RolledBack"),
+		).toBe(false);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("does not infer a legacy destroy specification from a planned target", async () => {
+	const f = fixture();
+	try {
+		const plan: DeploymentPlan = {
+			schema: "hobo.deployment-plan/v1",
+			objective: "min-cost",
+			dependencyOrder: ["api"],
+			resources: [f.resource],
+		};
+		await f.store.append(
+			"deployment:deployment",
+			[
+				{
+					type: "deployment.Planned",
+					data: { deploymentId: "deployment", planHash: "legacy", plan },
+				},
+				{
+					type: "resource.Provisioned",
+					data: {
+						deploymentId: "deployment",
+						resourceId: "api",
+						execId: "legacy",
+						outputs: {},
+					},
+				},
+			],
+			{ expectedSeq: 0, tenant: f.ctx.tenant, actor: f.ctx.actor },
+		);
+		const result = await destroyResource(f.deps, f.resource, f.ctx);
+		expect(result.kind).toBe("failed");
+		expect(result.reason).toMatch(/provenance/i);
+		expect(f.calls).toEqual([]);
 	} finally {
 		f.store.close();
 	}
@@ -371,7 +460,7 @@ it.each([
 	}
 });
 
-it("blocks a changed in-flight operation for reconciliation before executing it", async () => {
+it("blocks a changed or legacy in-flight operation for reconciliation before executing it", async () => {
 	const f = fixture();
 	try {
 		const crashed: Executor = {
@@ -394,6 +483,37 @@ it("blocks a changed in-flight operation for reconciliation before executing it"
 		expect(f.calls).toHaveLength(0);
 	} finally {
 		f.store.close();
+	}
+	const legacy = fixture();
+	try {
+		await legacy.store.append(
+			"deployment:deployment",
+			[
+				{
+					type: "resource.Provisioning",
+					data: {
+						deploymentId: "deployment",
+						resourceId: "api",
+						execId: "legacy",
+						programHash: "old",
+						providerId: "local",
+					},
+				},
+			],
+			{ expectedSeq: 0, tenant: "tenant", actor: legacy.ctx.actor },
+		);
+		const result = await reconcileResource(
+			legacy.deps,
+			legacy.resource,
+			legacy.ctx,
+		);
+		expect(result).toMatchObject({
+			kind: "reconciliation-required",
+			snapshot: { state: "ReconciliationRequired" },
+		});
+		expect(legacy.calls).toHaveLength(0);
+	} finally {
+		legacy.store.close();
 	}
 });
 

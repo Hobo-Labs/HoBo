@@ -44,7 +44,14 @@ function fixtureRoot(): string {
 test("repository discovery checks the real site and every registered UI palette", () => {
 	assert.deepEqual(
 		listWebUiProjects().map((project) => project.rel),
-		["packages/connect-ui", "packages/mcp", "packages/status-page", "site"],
+		[
+			"packages/ci-dashboard",
+			"packages/connect-ui",
+			"packages/control-yard",
+			"packages/mcp",
+			"packages/status-page",
+			"site",
+		],
 	);
 	assert.deepEqual(checkRepositoryVisualTokens(), []);
 });
@@ -267,11 +274,14 @@ test("the relevant check selects source-based visual validation for UI changes",
 	const visualFiles = [
 		"site/src/styles/global.css",
 		"site/DESIGN.md",
+		"packages/control-yard/DESIGN.md",
 		"scripts/check-visual-tokens.mts",
 		"scripts/visual-token-contract.json",
 		"test/visual-tokens.test.ts",
 		"packages/connect-ui/src/client/styles.css",
 		"packages/connect-ui/test/connect-ui-design-lint.test.ts",
+		"packages/control-yard/public/yard.css",
+		"packages/control-yard/test/design-lint.test.ts",
 		"packages/mcp/src/secret-capture/html.ts",
 		"packages/mcp/test/secret-capture-design-lint.test.ts",
 		"packages/status-page/src/tokens.ts",

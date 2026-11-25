@@ -1,3 +1,7 @@
+/**
+ * Rails: Station-owned, content-addressed policy profiles (ADR Station occupancy).
+ */
+
 import { createHash } from "node:crypto";
 import {
 	cloneAsJson,
@@ -16,8 +20,27 @@ import {
 	type RailDeliveryPolicy,
 } from "./types.js";
 
+/** Pre-WP16 wire shape of the delivery policy. Deprecated; mapped on parse. */
+export type LegacyRailDeliveryPolicy = Readonly<{
+	engine: "argo" | "in-proc";
+	syncMode: "auto" | "manual";
+	prune: boolean;
+}>;
+
+// public-contract: the publisher a legacy `argo` delivery engine maps to (D14).
+export const LEGACY_ARGO_PUBLISHER = "argo-cd" as const;
+
 const RECONCILER_MODES = ["conductor", "agent", "publisher"] as const;
 
+/**
+ * Parse a delivery policy into its neutral form (ADR-0182 D14).
+ *
+ * - A neutral policy (`reconcilerMode`) is kept; `publisher` is required in
+ *   `publisher` mode and refused elsewhere.
+ * - A legacy policy (`engine`) is mapped: `argo` becomes the `argo-cd`
+ *   GitOps publisher, `in-proc` the in-process conductor. Any legacy
+ *   destination fields are never read.
+ */
 export function neutralRailDeliveryPolicy<T>(value: T): RailDeliveryPolicy {
 	const json = cloneAsJson(value);
 	if (!isJsonObject(json)) {
@@ -25,43 +48,32 @@ export function neutralRailDeliveryPolicy<T>(value: T): RailDeliveryPolicy {
 			"rail-delivery-policy-invalid: deliveryPolicy must be an object",
 		);
 	}
-	const syncMode = json.syncMode === undefined ? "auto" : json.syncMode;
-	if (syncMode !== "auto" && syncMode !== "manual") {
-		throw new TypeError(
-			"rail-delivery-policy-invalid: syncMode must be auto or manual",
-		);
-	}
+	const syncMode = json.syncMode === "manual" ? "manual" : "auto";
 	const prune = json.prune === true;
+	if (json.reconcilerMode === undefined && json.engine !== undefined) {
+		return json.engine === "argo"
+			? Object.freeze({
+					reconcilerMode: "publisher" as const,
+					publisher: LEGACY_ARGO_PUBLISHER,
+					syncMode,
+					prune,
+				})
+			: Object.freeze({
+					reconcilerMode: "conductor" as const,
+					syncMode,
+					prune,
+				});
+	}
 	const mode = RECONCILER_MODES.find((m) => m === json.reconcilerMode);
 	if (mode === undefined) {
 		throw new TypeError(
 			`rail-delivery-policy-invalid: reconcilerMode must be one of ${RECONCILER_MODES.join("|")} (remediation: set deliveryPolicy.reconcilerMode)`,
 		);
 	}
-	let publisher: RailDeliveryPolicy["publisher"];
-	if (json.publisher !== undefined) {
-		if (
-			!isJsonObject(json.publisher) ||
-			!isJsonString(json.publisher.target) ||
-			!json.publisher.target.trim() ||
-			(json.publisher.repository !== undefined &&
-				(!isJsonString(json.publisher.repository) ||
-					!json.publisher.repository.trim()))
-		) {
-			throw new TypeError(
-				"rail-delivery-policy-invalid: publisher must name a target and an optional repository",
-			);
-		}
-		publisher = Object.freeze({
-			target: json.publisher.target,
-			...(isJsonString(json.publisher.repository)
-				? { repository: json.publisher.repository }
-				: undefined),
-		});
-	}
-	if (mode === "publisher" && publisher === undefined) {
+	const publisher = isJsonString(json.publisher) ? json.publisher : undefined;
+	if (mode === "publisher" && (publisher === undefined || publisher === "")) {
 		throw new TypeError(
-			"rail-delivery-policy-invalid: reconcilerMode publisher requires a publisher target",
+			"rail-delivery-policy-invalid: reconcilerMode publisher requires a publisher target (remediation: set deliveryPolicy.publisher, e.g. argo-cd or flux)",
 		);
 	}
 	if (mode !== "publisher" && publisher !== undefined) {
@@ -77,6 +89,7 @@ export function neutralRailDeliveryPolicy<T>(value: T): RailDeliveryPolicy {
 	});
 }
 
+/** Parse the opaque Rail `delivery` object: any JSON object, kept verbatim. */
 function parseRailDelivery(
 	value: JsonValue | undefined,
 ): RailDeliveryObject | undefined {
@@ -156,7 +169,6 @@ export function parseRail<T>(value: T): Rail {
 			: undefined;
 	const now = isJsonString(json.publishedAt) ? json.publishedAt : undefined;
 	const delivery = parseRailDelivery(json.delivery);
-	const deliveryPolicy = neutralRailDeliveryPolicy(json.deliveryPolicy);
 	const rail = createRail({
 		id: isJsonString(json.id) ? json.id : "",
 		name: isJsonString(json.name) ? json.name : "",
@@ -174,11 +186,11 @@ export function parseRail<T>(value: T): Rail {
 		...(catalogSnapshotPin !== undefined ? { catalogSnapshotPin } : undefined),
 		...(activationStatus !== undefined ? { activationStatus } : undefined),
 		...(now !== undefined ? { now } : undefined),
-		deliveryPolicy,
 		...(delivery !== undefined ? { delivery } : undefined),
 	});
 	const hash = json.contentHash;
 	if (isJsonString(hash) && hash.startsWith("sha256:")) {
+		// SAFETY: persisted rails carry a content-addressed sha256 hash.
 		const contentHash = hash as `sha256:${string}`;
 		return Object.freeze({ ...rail, contentHash });
 	}
@@ -202,7 +214,8 @@ export function createRail(input: {
 	readonly policyEngine?: Rail["policyEngine"];
 	readonly placementDefaults?: Rail["placementDefaults"];
 	readonly billingPolicy?: Rail["billingPolicy"];
-	readonly deliveryPolicy?: RailDeliveryPolicy;
+	readonly deliveryPolicy?: RailDeliveryPolicy | LegacyRailDeliveryPolicy;
+	/** Opaque delivery object (D20); hashed into the content digest. */
 	readonly delivery?: RailDeliveryObject;
 	readonly requiredConnectorKinds?: readonly string[];
 	readonly catalogSnapshotPin?: string;
@@ -233,6 +246,7 @@ export function createRail(input: {
 			input.placementDefaults ?? {
 				objective: "min-cost" as const,
 				allowedProviders: Object.freeze(["local"]),
+				// SAFETY: assertion required at this I/O or test boundary.
 				deniedProviders: Object.freeze([] as string[]),
 				allowedRegions: Object.freeze(["local"]),
 			},
@@ -265,6 +279,7 @@ export function createRail(input: {
 		...(input.catalogSnapshotPin !== undefined
 			? { catalogSnapshotPin: input.catalogSnapshotPin }
 			: undefined),
+		// Present only when set, so a Rail without it keeps its canonical body.
 		...(delivery !== undefined ? { delivery } : undefined),
 	};
 	const contentHash = railContentHash(body);
@@ -276,6 +291,10 @@ export function createRail(input: {
 	});
 }
 
+/**
+ * Sealed bootstrap Rail: local catalog only, hard least-privilege.
+ * Production posture should detect if left active (doctor + policy).
+ */
 export function createBootstrapRail(stationId: string, now?: string): Rail {
 	return createRail({
 		id: "rail-bootstrap",
@@ -286,16 +305,19 @@ export function createBootstrapRail(stationId: string, now?: string): Rail {
 		activationStatus: "active",
 		policyPacks: Object.freeze([
 			"hobo.bootstrap.least-privilege/v1",
+			// Soft floor always available; Station may also pin env isolation pack.
 			"hobo.env-network-isolation/v1",
 		]),
 		policyEngine: { kind: "ts" },
 		placementDefaults: {
 			objective: "pinned",
 			allowedProviders: Object.freeze(["local"]),
+			// SAFETY: assertion required at this I/O or test boundary.
 			deniedProviders: Object.freeze([] as string[]),
 			allowedRegions: Object.freeze(["local"]),
 		},
 		approvedProviders: Object.freeze(["local"]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		requiredConnectorKinds: Object.freeze([] as string[]),
 		catalogSnapshotPin: "local-host",
 		metadata: Object.freeze({
@@ -306,6 +328,7 @@ export function createBootstrapRail(stationId: string, now?: string): Rail {
 	});
 }
 
+/** Import former hobo.broker.json policy document as a Rail body under a Station. */
 export function railFromBrokerConfig(
 	stationId: string,
 	brokerConfig: JsonObject,
@@ -318,16 +341,10 @@ export function railFromBrokerConfig(
 	const brokerId = isJsonString(brokerConfig.brokerId)
 		? brokerConfig.brokerId
 		: "imported";
+	// SAFETY: assertion required at this I/O or test boundary.
 	const billing = (brokerConfig.billing ?? {}) as JsonObject;
-	const delivery =
-		brokerConfig.delivery === undefined
-			? { reconcilerMode: "conductor" }
-			: brokerConfig.delivery;
-	if (!isJsonObject(delivery)) {
-		throw new TypeError(
-			"rail-delivery-policy-invalid: delivery must be an object",
-		);
-	}
+	// SAFETY: assertion required at this I/O or test boundary.
+	const delivery = (brokerConfig.delivery ?? {}) as JsonObject;
 	return createRail({
 		id: options?.id ?? `rail-from-broker-${brokerId}`,
 		name: options?.name ?? `imported-${brokerId}`,
@@ -338,6 +355,7 @@ export function railFromBrokerConfig(
 		placementDefaults: {
 			objective: "min-cost",
 			allowedProviders: Object.freeze(["local"]),
+			// SAFETY: assertion required at this I/O or test boundary.
 			deniedProviders: Object.freeze([] as string[]),
 			allowedRegions: Object.freeze(["local"]),
 		},
@@ -350,10 +368,11 @@ export function railFromBrokerConfig(
 			budgetUsd: isJsonNumber(billing.budgetUsd) ? billing.budgetUsd : 0,
 			spendCapUsd: isJsonNumber(billing.spendCapUsd) ? billing.spendCapUsd : 0,
 		},
+		// Legacy `argo` maps to the argo-cd publisher; the destination
+		// namespace is deprecated and never read (D14).
 		deliveryPolicy: neutralRailDeliveryPolicy({
-			reconcilerMode: delivery.reconcilerMode,
-			publisher: delivery.publisher,
-			syncMode: delivery.syncMode === undefined ? "manual" : delivery.syncMode,
+			engine: delivery.engine === "argo" ? "argo" : "in-proc",
+			syncMode: delivery.syncMode === "manual" ? "manual" : "auto",
 			prune: delivery.prune === true,
 		}),
 		metadata: Object.freeze({ importedFrom: "hobo.broker.json" }),

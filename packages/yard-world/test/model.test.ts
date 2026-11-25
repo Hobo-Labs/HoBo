@@ -295,7 +295,7 @@ describe("ActivityLog", () => {
 		const activity = log.for("s1/svc");
 		expect(activity.spans).toHaveLength(ACTIVITY_LIMIT);
 		expect(activity.logs).toHaveLength(ACTIVITY_LIMIT);
-
+		// Newest first; oldest retained entry is the 10th ever recorded.
 		expect(activity.spans[0]?.spanId).toBe(`sp-${ACTIVITY_LIMIT + 9}`);
 		expect(activity.logs[activity.logs.length - 1]?.message).toBe("log 10");
 	});

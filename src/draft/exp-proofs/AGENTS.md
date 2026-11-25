@@ -12,4 +12,4 @@ Experience packages live under `src/draft/exp-proofs/<type>/<slug>`:
 | `ax` | Agents | MCP transcripts or tool-schema fixtures |
 | `api` | API and SDK consumers | Type tests |
 
-Keep `proof.json` aligned with the type folder. Run the package tests, runnable examples, required notebook checks, and relevant staged artifact and cascade gates. Update and test affected referencing packages when behavior changes, and remove obsolete proofs and artifacts after their behavior moves to its owning package.
+Keep `proof.json` aligned with the type folder. Run the package tests, runnable examples, required notebook checks, and relevant staged artifact and cascade gates. Update and test affected referencing packages when behavior changes.

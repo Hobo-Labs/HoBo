@@ -25,6 +25,7 @@ planner behavior, provider adapters, Gatekeeper policy changes, or live service 
 - Protobuf: [`architecture/broker_admin_controls.proto`](./architecture/broker_admin_controls.proto)
 - CUE: [`architecture/broker_admin_controls.cue`](./architecture/broker_admin_controls.cue)
 - Pact fixture: [`architecture/pacts/broker_admin_controls.pact.json`](./architecture/pacts/broker_admin_controls.pact.json)
+- Architecture note: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 
 Run:
 

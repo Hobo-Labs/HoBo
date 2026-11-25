@@ -12,6 +12,11 @@ import {
 	training,
 } from "../src/index.js";
 
+// `defineGrounding` is what the registrations `hobo stub` generates call
+// (ts-autocode-grounding's emitter names that callee). The options below are
+// the emitter's own output for a scanned ambient class, so every identity in
+// them is derived from source by the machinery, never typed here.
+
 afterEach(() => {
 	resetTrainables();
 });

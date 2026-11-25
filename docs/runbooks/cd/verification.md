@@ -10,7 +10,7 @@ tags: [hobo, cd, runbook, verification]
 Verification verdicts and health sources. This page is assembled from the **Runbook** section of `packages/cd/src/verification/README.md`,
 which stays the source of truth; update that section and re-assemble. The
 symptom index is [index.md](./index.md); the design is
-[continuous-delivery.md](urn:hobo:requirement:continuous-delivery).
+[continuous-delivery.md](../../design/continuous-delivery.md).
 
 ## Procedures
 
@@ -32,12 +32,6 @@ symptom index is [index.md](./index.md); the design is
    data on the next tick.
 2. No failures → too few samples: lower the source step, widen `window_ms`,
    or lower `required_observations`.
-
-**Symptom: a rollout remains at `rollout-slo-evidence-pending`.** Check that
-both SLO recording-rule selectors and their `timestamp()` queries return one
-matching series for the selected cohort. Confirm both source times advance and
-are within `max_sample_age_ms`; the range query's evaluation time alone does
-not establish freshness. The rollout resumes when sufficient evidence arrives.
 
 **Symptom: a canary FAILs with `verification-canary-worse` and the operator
 believes it is fine.** The test is two-sided at the declared sensitivity and

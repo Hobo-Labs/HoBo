@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "IntentAlignmentIter2Consumer"
+  },
+  "provider": {
+    "name": "IntentAlignmentIter2Boundary"
+  },
+  "interactions": [
+    {
+      "description": "Intent-alignment iter2 contract validates GAPS register shape",
+      "request": {
+        "method": "GET",
+        "path": "/intent-alignment-iter2/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.intent_alignment_iter2/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

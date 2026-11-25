@@ -1,15 +1,23 @@
+/**
+ * Template / componentize auto-wiring for web Bindles.
+ * Zero required config beyond accepting defaults; HOBO_REPLAY=0 forces off.
+ */
 import { REPLAY_ENV_KILL, REPLAY_FLAG_KEY } from "./policy.js";
 import { defaultPrivacyPolicy } from "./types.js";
 
 export type ReplayAutowireSnippet = Readonly<{
+	/** Import path for generated apps. */
 	importLine: string;
+	/** Init snippet inserted into web entry. */
 	initSnippet: string;
+	/** Bindle feature declaration (progressive; can disable per-env). */
 	bindleFeature: Readonly<{
 		key: typeof REPLAY_FLAG_KEY;
 		localDefault: true;
 		productionDefault: false;
 		killEnv: typeof REPLAY_ENV_KILL;
 	}>;
+	/** Documented footprint budget. */
 	performanceBudget: Readonly<{
 		batchIntervalMs: number;
 		batchSize: number;
@@ -18,6 +26,9 @@ export type ReplayAutowireSnippet = Readonly<{
 	}>;
 }>;
 
+/**
+ * Returns the default auto-wire snippet for web UI templates.
+ */
 export function webReplayAutowire(): ReplayAutowireSnippet {
 	const privacy = defaultPrivacyPolicy();
 	return Object.freeze({
@@ -48,6 +59,9 @@ export function webReplayAutowire(): ReplayAutowireSnippet {
 	});
 }
 
+/**
+ * componentize / extreme-template marker: feature is progressive.
+ */
 export function isReplayAutoWired(
 	env: Readonly<Record<string, string | undefined>>,
 ): boolean {

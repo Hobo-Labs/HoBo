@@ -18,6 +18,7 @@ import {
 } from "./execution.js";
 import type { LeaseStore } from "./store.js";
 
+/** Backend bindings are scoped to the authenticated account's real execution contexts. */
 export class PipelineScheduler {
 	constructor(
 		private readonly store: LeaseStore,
@@ -35,6 +36,7 @@ export class PipelineScheduler {
 			externalOperationId: lease.externalOperationId,
 		};
 	}
+	/** Read-only provider reconciliation remains available after cancellation, restart and deadlines. */
 	async reconcile(leaseId: string): Promise<Lease | undefined> {
 		const lease = this.store.get(leaseId);
 		if (!lease?.pipelineId || lease.accountId !== this.accountId)
@@ -246,6 +248,7 @@ export class PipelineScheduler {
 					);
 					throw error;
 				}
+				// Only definitive pre-allocation refusal permits another provider attempt.
 				this.store.transition(
 					lease.id,
 					["running"],

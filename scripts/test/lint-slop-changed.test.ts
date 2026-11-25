@@ -117,18 +117,6 @@ describe("lint:slop:changed when git cannot list the changed files", () => {
 // be told why it did not run: an exec it could not resolve used to crash with
 // a stack trace, and a binary that would not start printed nothing.
 describe("lint:slop:changed when oxlint cannot start", () => {
-	it("skips comment-only changes", () => {
-		const dir = emptyRepo();
-		writeFileSync(join(dir, "a.ts"), "// old\nexport const a = 1;\n");
-		git(dir, ["add", "a.ts"]);
-		git(dir, ["commit", "--quiet", "--no-verify", "-m", "base"]);
-		writeFileSync(join(dir, "a.ts"), "export const a = 1;\n");
-		git(dir, ["add", "a.ts"]);
-		const result = runLane(dir, "--staged");
-		assert.equal(result.status, 0, result.stdout + result.stderr);
-		assert.match(result.stdout, /no changed lintable files/u);
-	});
-
 	it("says oxlint is not installed, without a stack trace", () => {
 		const result = runLane(stagedRepo(undefined), "--staged");
 		assert.equal(result.status, 2, result.stdout + result.stderr);

@@ -10,12 +10,16 @@
       "src/draft/technical-proofs/metrics-catalog-pipeline-contract",
       "src/draft/technical-proofs/otel-traces-pipeline-contract",
       "src/draft/technical-proofs/slo-as-code-contract",
+      "src/draft/technical-proofs/slo-computation-engine-contract",
       "src/draft/technical-proofs/structured-log-pipeline-contract"
     ],
     "epicProofs": [
       "src/draft/epic-proofs/reliability-observability-cost-finops"
     ],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/reliability-observability-cost.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

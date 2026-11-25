@@ -1,9 +1,3 @@
-import type { WrpcCallEvent as WrpcCallEventWire } from "../_generated/wrpc_call_pb.js";
-import type {
-	WrpcLinkManifestWire as NegotiatedManifestWire,
-	WrpcLinkManifestEntry as WrpcLinkManifestEntryWire,
-	WrpcLinkManifest as WrpcLinkManifestWire,
-} from "../_generated/wrpc_link_manifest_pb.js";
 import { isJsonString, type JsonValue } from "../json.js";
 
 const SEMVER_RE =
@@ -33,7 +27,6 @@ export interface TransportInvocation {
 	operation: string;
 	payload: JsonValue;
 	deadline: string | null;
-	signal?: AbortSignal;
 }
 
 export interface WrpcTransport {
@@ -88,19 +81,6 @@ export interface EstablishedLink {
 	readonly negotiatedWire: NegotiatedWire;
 }
 
-export type WrpcLinkManifestEntry = Readonly<
-	Omit<WrpcLinkManifestEntryWire, "$typeName" | "wire"> & {
-		wire: Readonly<Omit<NegotiatedManifestWire, "$typeName">>;
-	}
->;
-
-export type WrpcLinkManifest = Readonly<
-	Omit<WrpcLinkManifestWire, "$typeName" | "schema" | "links"> & {
-		schema: "hobo.manifest.wrpc-links/v1";
-		links: readonly WrpcLinkManifestEntry[];
-	}
->;
-
 export interface LinkEstablishedEvent {
 	type: "link.Established";
 	componentId: string;
@@ -112,41 +92,18 @@ export interface LinkEstablishedEvent {
 	negotiatedWire: NegotiatedWire;
 }
 
-export type LinkCalledEvent = Readonly<
-	Omit<
-		WrpcCallEventWire,
-		| "$typeName"
-		| "type"
-		| "boundaryMode"
-		| "transport"
-		| "deadline"
-		| "outcome"
-		| "failureKind"
-		| "cancellation"
-	> & {
-		type: "link.Called";
-		boundaryMode: "live";
-		transport: TransportKind;
-		deadline: string | null;
-	} & (
-			| { outcome?: never; failureKind?: never; cancellation?: never }
-			| {
-					outcome: "deadline-exceeded";
-					failureKind: "cancelled";
-					cancellation?: "signaled" | "unavailable";
-			  }
-			| {
-					outcome: "error";
-					failureKind:
-						| "retryable"
-						| "fatal"
-						| "cancelled"
-						| "version-incompatible"
-						| "ambiguous-commit";
-					cancellation?: "signaled" | "unavailable";
-			  }
-		)
->;
+export interface LinkCalledEvent {
+	type: "link.Called";
+	componentId: string;
+	importInterface: string;
+	providerId: string;
+	exportInterface: string;
+	operation: string;
+	boundaryMode: "live";
+	transport: TransportKind;
+	codec: string;
+	deadline: string | null;
+}
 
 export interface LinkRejectedEvent {
 	type: "link.Rejected";
@@ -167,7 +124,6 @@ export interface WrpcLinkPort {
 	registerComponent(c: ComponentRegistration): void;
 	registerProvider(p: ProviderRegistration): void;
 	establishLink(req: LinkRequest): EstablishedLink;
-	manifestIr(): WrpcLinkManifest;
 	callImport(
 		componentId: string,
 		importInterface: string,
@@ -263,6 +219,7 @@ export function parseInterfaceId(raw: string): InterfaceId {
 	if (!INTERFACE_ID_RE.test(raw)) {
 		throw new Error(`wrpc.invalid_interface_id: ${raw}`);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return raw as InterfaceId;
 }
 

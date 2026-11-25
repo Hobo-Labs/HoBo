@@ -15,7 +15,7 @@ Linear: [HOBO-619](https://linear.app/quickdeploy-ai/issue/HOBO-619)
 - Emits `deployment.Planned` with per-resource rationale in plan `meta`.
 - Emits `match.Decided` evidence per resolved resource.
 - Fails closed with `deployment.PlanRejected` and a precise reason for
-  unsatisfiable `require` (FR-032, `urn:hobo:requirement:control-plane` Plan 04).
+  unsatisfiable `require` (FR-032, `docs/design/control-plane.md` Plan 04).
 
 Production promotion target: `packages/cloud/src/planner/` after S2-03 Yard
 shell lands.
@@ -35,6 +35,13 @@ shell lands.
 pnpm exec turbo run test --filter ./src/draft/technical-proofs/s2-04-planner-deployment-plan-dag-poc
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf + CUE guard evidence
 - `architecture/pacts/` — boundary PACT stub
+- `ADR.md` — parse-don't-validate + event vocabulary
+
+## Maintenance
+
+Docs considered: this README is the maintenance note for the HOBO-619 draft POC.
+Gates: package `test`, `architecture:guard`, `docs:freshness` (via this file).

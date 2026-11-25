@@ -33,7 +33,7 @@ export function planReason(
 ): string | undefined {
 	if (file.startsWith("plans/") || file.startsWith("docs/plans/"))
 		return "it is in a plans directory, and the repository keeps none";
-	if (!/\.md(?:x|c)?$/i.test(file)) return undefined;
+	if (!/\.mdx?$/i.test(file)) return undefined;
 	const type = frontmatterType(read());
 	return type !== undefined && planTypes().has(type)
 		? `its frontmatter type is "${type}"`

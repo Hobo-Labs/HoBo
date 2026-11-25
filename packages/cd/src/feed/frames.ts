@@ -1,3 +1,9 @@
+// DeliveryFeedFrame construction (D5, D25). The frame carries the Set, the
+// Camp's management mode (OBSERVE_ONLY from either the spec or the declared
+// topology wins), the posture observe_fields, the policy binding, and the
+// canonical resolved set inline when its blob is ≤ 256 KiB and verifies
+// against its digest; otherwise only the digest, and the agent fetches
+// `GET /v1/cd/blobs/{digest}` (which refuses a missing or corrupt blob).
 import { createHash } from "node:crypto";
 import { create, toJson } from "@bufbuild/protobuf";
 import {
@@ -30,6 +36,7 @@ export async function verifiedBlob(
 	digest: string,
 ): Promise<"missing" | "corrupt" | Uint8Array> {
 	if (!/^sha256:[0-9a-f]{64}$/u.test(digest)) return "missing";
+	// SAFETY: the pattern above proves the digest form.
 	const bytes = await artifacts.get(digest as Digest);
 	if (!bytes) return "missing";
 	return digestOf(bytes) === digest ? bytes : "corrupt";

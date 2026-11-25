@@ -11,7 +11,8 @@
       "src/draft/technical-proofs/x509-svid-mtls-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

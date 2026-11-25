@@ -1,7 +1,7 @@
 # @hobo/provider-lakebed
 
 The Lakebed deploy-target `CloudProvider` (HOBO-714,
-[ADR-0127](urn:hobo:decision:adr-0127)):
+[ADR-0127](../../../docs/design/adr/07-portability-extensibility.md#adr-0127)):
 HoBo's portability promise demonstrated against the **head-on competitor** —
 the same Bindle that targets AWS/Azure/GCP lands on the closed Capsule PaaS,
 with the gaps stated honestly instead of papered over.

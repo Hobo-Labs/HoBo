@@ -16,17 +16,22 @@ export interface DynamicDnsTarget {
 	readonly env?: string;
 	readonly branch?: string;
 	readonly project?: string;
+	/** Backend for Funnel when publishing a public gateway. */
 	readonly backendUrl?: string;
+	/** If set, skip Funnel and use this gateway hostname directly. */
 	readonly gatewayHostname?: string;
 }
 
 export interface JunctionDynamicDnsRegistrar {
+	/** Register/replace targets advertised by this junction. */
 	setTargets(targets: readonly DynamicDnsTarget[]): void;
+	/** Called on junction heartbeat — reconciles DNS + optional Funnel. */
 	onHeartbeat(): Promise<{
 		readonly registered: number;
 		readonly skipped: number;
 		readonly notes: readonly string[];
 	}>;
+	/** Last known public gateway for a resource. */
 	gatewayFor(resource: string): string | null;
 	readonly lastResults: readonly DynamicDnsRegistrationResult[];
 }
@@ -39,6 +44,13 @@ export interface DynamicDnsRegistrationResult {
 	readonly note?: string;
 }
 
+/**
+ * Dynamic DNS from junction heartbeats:
+ * 1. Optionally publish Funnel gateway for each target backend.
+ * 2. Resolve hierarchical hostname via getNamedEndpointHost (overlay mode).
+ * 3. Policy-check dns.dynamic_register.
+ * 4. Reconcile public DNS entrypoint (CNAME → authenticated gateway only).
+ */
 export function createJunctionDynamicDnsRegistrar(options: {
 	readonly tenantId: TenantId | string;
 	readonly dns: PublicDnsManager;

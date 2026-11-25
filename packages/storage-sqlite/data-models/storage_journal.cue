@@ -1,5 +1,6 @@
 package storage_sqlite
 
+// CUE constraints for storage journal boundary records.
 
 #PositionedEventWire: {
 	global_position: =~"^(0|[1-9][0-9]*)$"
@@ -46,4 +47,6 @@ package storage_sqlite
 	expires_at:      string & !=""
 }
 
-#StorageErrorCode: int & >=0 & <=10
+// StorageErrorCode enum: optimistic-concurrency, fencing, checkpoint,
+// schema/codec, and persistence failure classes (storage_journal.proto).
+#StorageErrorCode: int & >=0 & <=11

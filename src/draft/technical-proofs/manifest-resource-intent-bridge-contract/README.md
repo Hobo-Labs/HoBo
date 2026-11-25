@@ -8,8 +8,8 @@ tags: [hobo, proof, finops, ifc]
 # Manifest → ResourceIntent Bridge Contract
 
 HOBO-696 / REM-027 proof for the manifest→ResourceIntent bridge documented in
-[finops-budget-routing-control-plane.md](urn:hobo:requirement:finops-budget-routing-control-plane#ifc-and-hobo-plan-spine)
-and [control-plane.md](urn:hobo:requirement:control-plane#plan-04).
+[finops-budget-routing-control-plane.md](../../../../docs/design/finops-budget-routing-control-plane.md#ifc-and-hobo-plan-spine)
+and [control-plane.md](../../../../docs/design/control-plane.md#plan-04).
 
 ## What This Proves
 
@@ -31,9 +31,11 @@ proofs.
 pnpm --prefix src/draft/technical-proofs/manifest-resource-intent-bridge-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for the bridge boundary.
 - `architecture/pacts/` — PACT contract for the Planner→FinOps consumer boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

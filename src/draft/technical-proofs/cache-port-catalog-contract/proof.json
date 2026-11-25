@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "cache-port-catalog-contract",
+  "title": "Cache port (hobo:cache) vs durable kv — ADR-0118 catalog contract",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/03-data-plane.md",
+      "docs/design/authoring-resources-wiring.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "bench": "bench",
+    "diagrams": ["README.md"]
+  },
+  "waivers": []
+}

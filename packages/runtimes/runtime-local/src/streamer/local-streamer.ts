@@ -47,14 +47,8 @@ export function createLocalStreamer(
 
 	const streamer: Streamer = {
 		createRun<TChunk = unknown>(runOptions: { runId?: RunId } = {}) {
-			let runId: RunId;
-			if (runOptions.runId === undefined) {
-				do {
-					runId = parseRunId(`${runIdPrefix}-${nextRunCounter++}`);
-				} while (runs.has(runId));
-			} else {
-				runId = parseRunId(runOptions.runId);
-			}
+			const runId =
+				runOptions.runId ?? parseRunId(`${runIdPrefix}-${nextRunCounter++}`);
 			if (runs.has(runId)) {
 				throw new Error(`streamer run already exists: ${runId}`);
 			}
@@ -64,45 +58,12 @@ export function createLocalStreamer(
 				bufferLimit,
 				openedAt: new Date(0).toISOString(),
 			});
+			// SAFETY: assertion to `journal as FrameJournal<unknown>` is required at this boundary.
 			runs.set(runId, journal as FrameJournal<unknown>);
 			return toRunHandle(journal);
 		},
-		start<TChunk = unknown>(
-			workflow: (
-				context: Pick<StreamerRunHandle<TChunk>, "runId" | "getWritable">,
-			) => void | PromiseLike<void>,
-			runOptions: { runId?: RunId } = {},
-		) {
-			if (!(workflow instanceof Function)) {
-				throw new TypeError("workflow must be a function");
-			}
-			const run = streamer.createRun<TChunk>(runOptions);
-			const journal = getJournal(runs, run.runId);
-			function close(status: "completed" | "failed", reason: string): void {
-				journal.close(
-					createStreamerRunResult({ runId: run.runId, status, reason }),
-				);
-				if (runs.get(run.runId) === journal) runs.delete(run.runId);
-			}
-			void Promise.resolve()
-				.then(() =>
-					workflow({ runId: run.runId, getWritable: run.getWritable }),
-				)
-				.then(
-					() => close("completed", "workflow completed"),
-					(error) => {
-						let reason = "workflow failed";
-						try {
-							const detail =
-								error instanceof Error ? error.message : String(error);
-							if (detail.trim().length > 0) reason = detail;
-						} catch {}
-						close("failed", reason);
-					},
-				);
-			return run;
-		},
 		getRun<TChunk = unknown>(runId: RunId) {
+			// SAFETY: assertion to `getJournal(runs, runId) as FrameJournal<TChunk>` is required at this boundary.
 			const journal = getJournal(runs, runId) as FrameJournal<TChunk>;
 			if (foldLifecycleStatus(journal.lifecycleEvents) !== "open") {
 				throw new Error(`streamer run is not open: ${runId}`);
@@ -112,13 +73,13 @@ export function createLocalStreamer(
 		teardownRun(runId: RunId, reason = "teardown") {
 			const journal = getJournal(runs, runId);
 			const result = createStreamerRunResult({
-				runId,
+				run_id: runId,
 				status: "closed",
 				reason,
 			});
-			const closed = journal.close(result);
+			journal.close(result);
 			runs.delete(runId);
-			return closed;
+			return result;
 		},
 	};
 
@@ -128,19 +89,14 @@ export function createLocalStreamer(
 function toRunHandle<TChunk>(
 	journal: FrameJournal<TChunk>,
 ): StreamerRunHandle<TChunk> {
-	function read(options: { fromSeq?: Seq } = {}) {
-		const fromSeq = defaultFromSeq(options.fromSeq);
-		return {
-			[Symbol.asyncIterator]() {
-				return journal.attachReader(fromSeq)[Symbol.asyncIterator]();
-			},
-		};
-	}
+	const readable = journal.attachReader(defaultFromSeq());
 
 	return {
 		runId: journal.runId,
-		readable: read(),
-		read,
+		readable,
+		read(options: { fromSeq?: Seq } = {}) {
+			return journal.attachReader(defaultFromSeq(options.fromSeq));
+		},
 		getWritable<T = TChunk>(
 			stream: StreamName = DEFAULT_STREAM_NAME,
 		): StreamerWritable<T> {
@@ -148,6 +104,7 @@ function toRunHandle<TChunk>(
 			return {
 				stream: streamName,
 				async write(chunk: T) {
+					// SAFETY: writable stream chunks match the journal TChunk at this boundary.
 					journal.write(streamName, chunk as never);
 				},
 			};
@@ -168,8 +125,8 @@ function getJournal(
 }
 
 function normalizeBufferLimit(value: number): number {
-	if (!Number.isSafeInteger(value) || value < 1) {
-		throw new TypeError("bufferLimit must be a positive safe integer");
+	if (!Number.isInteger(value) || value < 1) {
+		throw new TypeError("bufferLimit must be a positive integer");
 	}
 	return value;
 }
@@ -198,7 +155,7 @@ export function createFailedRunResult(
 	reason: string,
 ): StreamerRunResult {
 	return createStreamerRunResult({
-		runId,
+		run_id: runId,
 		status: "failed" satisfies StreamerRunStatus,
 		reason,
 	});

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "self-host-station",
+  "builtAt": "2026-11-17T18:35:43.718Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "examples/self-host-station/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "2257abbaf1b7c98dcab1bf583ba8f95584d553d9ecd9ee41c12cb97d29a54d5d",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

@@ -10,10 +10,10 @@ Independent POC for HOBO-5. It pins the branch-sized contract for the
 
 ## Requirements Source
 
-- `urn:hobo:requirement:generated-stack#plan-09`: `@hobo/conformance` is the trust boundary for generated and third-party adapters.
-- `urn:hobo:decision:adr-0010`: generated providers are certified only by satisfying the target WIT port and conformance suite.
-- `urn:hobo:decision:adr-0072`: SDK idiom layers are gated by golden-IR lowering equivalence plus replay.
-- `urn:hobo:decision:adr-0093`: SDK semantics annex is a separate required lane from golden-IR equality.
+- `docs/design/generated-stack.md#plan-09`: `@hobo/conformance` is the trust boundary for generated and third-party adapters.
+- `docs/design/adr/03-data-plane.md#adr-0010`: generated providers are certified only by satisfying the target WIT port and conformance suite.
+- `docs/design/adr/01-architecture-core.md#adr-0072`: SDK idiom layers are gated by golden-IR lowering equivalence plus replay.
+- `docs/design/adr/01-architecture-core.md#adr-0093`: SDK semantics annex is a separate required lane from golden-IR equality.
 
 ## Contract Surface
 
@@ -44,9 +44,11 @@ npm.cmd test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Conformance Port Suite Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

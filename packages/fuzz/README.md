@@ -5,11 +5,10 @@ control-plane invariants. The package drives in-memory adapters and provider
 simulators. It never calls Azure, AWS, GCP, or paid SaaS.
 
 Wire shapes live in [`data-models/fuzz.proto`](./data-models/fuzz.proto)
-(documentation-only; no `buf.yaml`) and native Pact message interactions verify
-the Bindle hash boundary in
+(documentation-only; no `buf.yaml`) and the Bindle hash boundary is fixtured in
 [`contracts/pacts/fuzz-bindles-canonical.pact.json`](./contracts/pacts/fuzz-bindles-canonical.pact.json).
 The in-process API surface is described by
-[`contracts/openapi/control-sim.v1.json`](./contracts/openapi/control-sim.v1.json).
+[`contracts/openapi/control-sim.v1.yaml`](./contracts/openapi/control-sim.v1.yaml).
 
 ## Lanes
 
@@ -18,17 +17,7 @@ The in-process API surface is described by
 | `pnpm --filter @hobo/fuzz test` | fast-check properties + harness/API smoke | yes, via Turbo when this package changes |
 | `pnpm run test:property` | bounded fast-check command traces | yes, also when Bindle manifest code changes |
 | `pnpm run test:fuzz` | Jazzer-shaped serialized-input smoke | yes, as part of the package `test` script |
-| `pnpm run test:fuzz:nightly` | seeded model and parser campaigns plus isolated RESTler and fault injection | no |
-| `pnpm --filter @hobo/fuzz run test:fuzz:api` | require Schemathesis against the loopback simulator and CLI | no |
-| `pnpm --filter @hobo/fuzz run test:fuzz:docker` | require the isolated RESTler and fault-injection campaign | no |
-| `pnpm --filter @hobo/fuzz run test:fuzz:jazzer` | require the seeded native Jazzer campaign | no |
-
-Pass the seed and run count to replay a campaign with the same inputs:
-`-- --seed 1742 --runs 5000`. The command prints the seed and number of
-cases completed in each campaign.
-
-The reference model rejects unknown capability verbs and sparse verb arrays during
-creation and attenuation before changing its clock, state, or event history.
+| `pnpm run test:fuzz:nightly` | prints the docker-gated nightly plan | no |
 
 Trainable gold/silver: `fuzzTrainable(fn, seeds)` runs seed-holds,
 determinism, fail-closed, pollution, and bound checks against a live
@@ -40,28 +29,14 @@ runs gold + silver on every `/run`.
 
 Jazzer.js is the coverage-guided entry
 [`src/jazzer-entry.ts`](./src/jazzer-entry.ts). PR smoke calls the same
-functions with generated buffers. Run the native seeded campaign with
-`pnpm --filter @hobo/fuzz run test:fuzz:jazzer -- --seed 1742 --runs 100000`.
+functions with generated buffers. A long campaign is
+`npx --package=@jazzer.js/core jazzer packages/fuzz/src/jazzer-entry.ts`
+and is reserved for nightly.
 
-Schemathesis runs all API checks against an owned loopback simulator. Install
-Schemathesis 4.33.4 and pass `--api` to the nightly command. The command fails
-if the executable is unavailable or its checks fail.
-
-The Docker campaign requires a local Docker daemon and builds RESTler from a
-pinned upstream revision. On its first run it downloads pinned container images
-and builds the RESTler image. It starts the control simulator, Toxiproxy,
-PostgreSQL, Redis, and a registry on a private internal network without
-published ports. It exercises latency, bandwidth, timeouts, connection resets,
-network cuts, retry idempotency, registry recovery, and RESTler API coverage.
-The command fails if any required evidence is missing or reports a failure.
-Containers and the network are removed when the campaign finishes or is
-interrupted. Docker configuration and credentials are not passed to the
-campaign containers.
-
-Use `--no-docker` or set `HOBO_FUZZ_DOCKER=0` for the model and parser
-campaigns alone. Pass `--docker` to require Docker even when that environment
-variable is set. Default `agent:check` runs the bounded package tests without
-starting Docker.
+Schemathesis runs only when the binary is on `PATH` **and**
+`HOBO_FUZZ_API_URL` points at an ephemeral local control plane
+(`@hobo/control-api` serves `GET /v1/openapi.json`). Missing tools skip.
+`HOBO_FUZZ_DOCKER=0` disables Toxiproxy / Testcontainers / RESTler.
 
 ## Invariants
 

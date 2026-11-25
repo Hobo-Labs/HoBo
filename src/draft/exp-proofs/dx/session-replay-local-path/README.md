@@ -28,4 +28,4 @@ sequenceDiagram
 
 - Unit/contract tests in `@hobo/replay`
 - This package: end-to-end dual-fixture experience + evidence pack
-- Production: [ADR-0137](urn:hobo:decision:adr-0137)
+- Production: [ADR-0137](../../../../docs/design/adr/03-data-plane.md#adr-0137)

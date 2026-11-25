@@ -1,14 +1,28 @@
+/** Single source of truth for header and sidebar navigation. */
 
 export type NavItem = { label: string; slug: string };
 export type NavGroup = { label: string; slug: string; items: NavItem[] };
 
+/**
+ * Sections — the layer the header actually renders.
+ *
+ * Fourteen top-level groups did not fit: 129 characters of label needs roughly
+ * 1300px in an 1160px container, so the nav was clipped at every width above
+ * the 760px hamburger breakpoint. It was only ever usable collapsed.
+ *
+ * Five sections, named for what a visitor is *doing* rather than what the
+ * codebase is organised as. The fourteen groups survive underneath — this
+ * nests them, it does not renumber them, so every existing slug still
+ * resolves and the sidebar can finally show one section instead of all 109
+ * links on every page.
+ */
 export type NavSection = { label: string; slug: string; groups: string[] };
 
 export const sections: NavSection[] = [
 	{
 		label: "Learn",
 		slug: "/guide/",
-		groups: ["Guide", "Primitives", "System", "Roles"],
+		groups: ["Guide", "Primitives", "Architecture", "Roles"],
 	},
 	{
 		label: "Examples",
@@ -30,12 +44,31 @@ export const sections: NavSection[] = [
 	{ label: "Agents", slug: "/agents/", groups: ["The Crew"] },
 ];
 
+/** The groups belonging to a section, in declared order. */
 export function groupsOf(section: NavSection, groups: NavGroup[]): NavGroup[] {
 	return section.groups
 		.map((label) => groups.find((g) => g.label === label))
 		.filter((g): g is NavGroup => g !== undefined);
 }
 
+/**
+ * Which section owns a path.
+ *
+ * Listing a page is not owning it. `/reference/session-replay/` is *listed*
+ * under both Observability and Reference, so a plain `find` badged it with
+ * whichever came first — "Observability".
+ *
+ * Longest-match does not fix that: the two groups list the page under the
+ * identical slug string, so length can never break the tie. The discriminator
+ * is which **namespace root** the path falls under. A section slug or a group
+ * slug is a root; an item slug is only a listing. `/reference/session-replay/`
+ * sits under the Reference group's `/reference/` and under no other root, so
+ * Reference owns it however many groups link to it.
+ *
+ * Roots are checked longest-first so a nested root beats its parent. Only when
+ * no root claims the path do we fall back to whoever lists it — that fallback
+ * is what still resolves pages living outside every group's namespace.
+ */
 export function sectionFor(
 	path: string,
 	groups: NavGroup[],
@@ -81,14 +114,14 @@ export const nav: NavGroup[] = [
 		],
 	},
 	{
-		label: "System",
-		slug: "/system/",
+		label: "Architecture",
+		slug: "/architecture/",
 		items: [
-			{ label: "System model", slug: "/system/" },
-			{ label: "Data plane", slug: "/system/data-plane/" },
-			{ label: "Control plane", slug: "/system/control-plane/" },
-			{ label: "WASM & WIT surface", slug: "/system/wasm/" },
-			{ label: "Air-gapped & sovereign", slug: "/system/air-gapped/" },
+			{ label: "Architecture overview", slug: "/architecture/" },
+			{ label: "Data plane", slug: "/architecture/data-plane/" },
+			{ label: "Control plane", slug: "/architecture/control-plane/" },
+			{ label: "WASM & WIT surface", slug: "/architecture/wasm/" },
+			{ label: "Air-gapped & sovereign", slug: "/architecture/air-gapped/" },
 		],
 	},
 	{
@@ -113,6 +146,7 @@ export const nav: NavGroup[] = [
 		],
 	},
 	{
+		// Where CI jobs run, as opposed to CI/CD above: how HoBo ships an app.
 		label: "HoBo CI",
 		slug: "/ci/",
 		items: [
@@ -120,6 +154,7 @@ export const nav: NavGroup[] = [
 			{ label: "Providers", slug: "/ci/providers/" },
 			{ label: "Fleet balancing", slug: "/ci/fleet-balancing/" },
 			{ label: "Route table", slug: "/ci/route-table/" },
+			{ label: "Runner order", slug: "/ci/runner-order/" },
 			{ label: "Host health", slug: "/ci/host-health/" },
 		],
 	},

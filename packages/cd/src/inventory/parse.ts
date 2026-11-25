@@ -1,3 +1,6 @@
+// Parse boundaries for inventory commands (parse, don't validate): each
+// returns a branded record or typed refusals with remediation. The CUE
+// constraints in data-models/inventory.cue mirror these rules.
 import { create } from "@bufbuild/protobuf";
 import {
 	type CampClaimRecord,
@@ -86,6 +89,7 @@ export function parseCampSet(set: CampSetRecord): Outcome<ParsedCampSet> {
 		campIds: [...set.campIds].sort(),
 		definedBy: set.definedBy,
 	});
+	// SAFETY: checked above; the brand records that.
 	return { ok: true, value: parsed as ParsedCampSet };
 }
 
@@ -154,6 +158,7 @@ export function parseTaint(taint: TaintRecord): Outcome<ParsedTaint> {
 				: taint.source,
 		reason: taint.reason,
 	});
+	// SAFETY: checked above; the brand records that.
 	return { ok: true, value: parsed as ParsedTaint };
 }
 
@@ -198,6 +203,7 @@ export function parseClaims(
 	if (reasons.length > 0) return { ok: false, reasons };
 	return {
 		ok: true,
+		// SAFETY: checked above; the brand records that.
 		value: claims.map(
 			(claim) => create(CampClaimRecordSchema, claim) as ParsedClaim,
 		),

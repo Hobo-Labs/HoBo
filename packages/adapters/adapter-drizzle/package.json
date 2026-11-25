@@ -2,7 +2,7 @@
 	"name": "@hobo/adapter-drizzle",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "PostgreSQL Drizzle schema ingestion and phased SQL generation for HoBo migrations.",
+	"description": "HoBo drizzle-kit schema-diff adapter: structural ingestion of Drizzle schema modules into the canonical schema IR, and a toolchain-gated SQL emission engine behind the core SchemaDiffEngine port.",
 	"type": "module",
 	"files": [
 		"LICENSE",
@@ -18,18 +18,15 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@hobo/core": "workspace:*",
-		"drizzle-kit": "0.31.11",
-		"drizzle-orm": "0.44.7"
+		"@hobo/core": "workspace:*"
 	},
 	"devDependencies": {
-		"@electric-sql/pglite": "0.3.14",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"typecheck": "tsc --noEmit -p tsconfig.test.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
 		"test": "vitest run test/",

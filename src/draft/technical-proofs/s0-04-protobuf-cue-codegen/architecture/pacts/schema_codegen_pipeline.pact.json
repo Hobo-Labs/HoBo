@@ -1,0 +1,15 @@
+{
+  "consumer": { "name": "SchemaCodegenPipelineDraft" },
+  "provider": { "name": "SchemaCodegenPipelineBoundary" },
+  "interactions": [
+    {
+      "description": "architecture guard boundary",
+      "request": { "method": "GET", "path": "/schema-codegen-pipeline/contract" },
+      "response": {
+        "status": 200,
+        "body": { "status": "valid", "issue": "HOBO-581" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

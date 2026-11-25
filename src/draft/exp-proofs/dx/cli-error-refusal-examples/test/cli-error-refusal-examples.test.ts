@@ -28,7 +28,7 @@ describe("CLI error and refusal examples", () => {
 
     assert.equal(catalog.issue, "HOBO-558");
     assert.equal(catalog.targetPackage, "src/draft/exp-proofs/dx/cli-error-refusal-examples");
-    assert.equal(catalog.proofNote, "urn:hobo:proof:cli-error-refusal-examples");
+    assert.equal(catalog.proofNote, "docs/design/proofs/cli-error-refusal-examples/README.md");
 
     for (const caseId of REQUIRED_ERROR_CASES) {
       assert.ok(cases.has(caseId), `missing case ${caseId}`);

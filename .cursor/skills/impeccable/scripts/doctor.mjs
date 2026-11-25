@@ -1,4 +1,23 @@
 #!/usr/bin/env node
+/**
+ * Deep staleness pass over Impeccable's own project artifacts.
+ *
+ *   node doctor.mjs                 # human-readable report
+ *   node doctor.mjs --json          # machine-readable, for the skill command
+ *   node doctor.mjs --fix           # apply the mechanical migrations only
+ *   node doctor.mjs --target <path> # pick a monorepo workspace
+ *
+ * The boot check in context.mjs reports what a session can afford to measure.
+ * This runs everything: git drift, per-workspace sweep, ignore-list validation
+ * against the live rule registry, hook script resolution.
+ *
+ * `--fix` is deliberately narrow. It performs only the migrations marked
+ * severity 'auto', the ones with no judgment in them: stamp the product record,
+ * move a sidecar out of a retired location. Anything that needs an answer from
+ * the user (a platform value, whether an inherited record still describes an
+ * app, whether a document has drifted from the code) is reported and left
+ * alone. Exit code is 0 unless the run itself failed; findings are not errors.
+ */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { loadContext, extractPlatform, resolveTargetSelection } from './context.mjs';
 import { parseTargetOptions } from './lib/target-args.mjs';
 import { IMPECCABLE_COMMAND, IMPECCABLE_PROVIDER_ID } from './lib/provider.mjs';
+import { parseDesignMd } from './lib/design-parser.mjs';
 import {
   PRODUCT_SCHEMA_VERSION,
   readProductSchemaVersion,
@@ -22,6 +42,8 @@ import {
   designSidecarCandidatesFor,
 } from './lib/staleness.mjs';
 import {
+  checkDesignCoverage,
+  checkDesignDrift,
   checkDetectorIgnores,
   checkHookInstallation,
   checkLegacyLiveState,
@@ -60,7 +82,7 @@ function usage() {
     '.impeccable/config.json, surface briefs, and the design hook.',
     '',
     '  --json           Emit findings as JSON.',
-    '  --fix            Apply supported automatic fixes without moving design artifacts.',
+    '  --fix            Apply the mechanical migrations (severity "auto") only.',
     '  --target <path>  Select a workspace in a monorepo.',
   ].join('\n');
 }
@@ -95,14 +117,8 @@ async function collect(cwd, targetOptions) {
         })
       : []),
     ...checkDesignSidecar({ designPath: absDesignPath, sidecarCandidates, projectRoot }),
-    ...(absDesignPath ? [{
-      id: 'design-document-present',
-      artifact: 'DESIGN.md',
-      path: rel(absDesignPath, projectRoot),
-      severity: 'mention',
-      summary: `${rel(absDesignPath, projectRoot)} is a design document prohibited by repository policy.`,
-      fix: 'Complete any unfinished behavior, then remove the document.',
-    }] : []),
+    ...checkDesignDrift({ designPath: absDesignPath, projectRoot }),
+    ...checkDesignCoverage({ design: ctx.design, designPath: ctx.designPath, parseDesignMd }),
     ...checkConfig({ projectRoot, repoRoot: ctx.repoRoot }),
     ...checkDetectorIgnores({ projectRoot, knownRuleIds }),
     ...checkSurfaceBriefs({ candidates: ctx.surfaceBriefCandidates, projectRoot }),
@@ -130,6 +146,8 @@ async function collect(cwd, targetOptions) {
   };
 }
 
+// Read straight from disk rather than importing context.mjs's private reader.
+// Only the positive/negative pattern strings matter here.
 function readProjectRootPatterns(repoRoot) {
   if (!repoRoot) return [];
   const patterns = [];
@@ -141,27 +159,49 @@ function readProjectRootPatterns(repoRoot) {
           if (typeof entry === 'string' && entry.trim()) patterns.push(entry.trim());
         }
       }
-    } catch {   }
+    } catch { /* missing or malformed: nothing to check */ }
   }
   return patterns;
 }
 
+/**
+ * Apply the migrations that carry no decision. Returns what was done and what
+ * was deliberately left for the user.
+ */
 function applyFixes(report) {
   const applied = [];
   const skipped = [];
 
   for (const entry of report.findings) {
     if (entry.severity !== 'auto') {
-      skipped.push({ id: entry.id, reason: 'no automatic fix' });
+      skipped.push({ id: entry.id, reason: 'needs a decision from the user' });
+      continue;
+    }
+    if (entry.id === 'design-sidecar-legacy-path') {
+      const canonical = report.sidecarCandidates[0];
+      const present = report.sidecarCandidates.find((candidate) => fs.existsSync(candidate));
+      if (!canonical || !present || path.resolve(canonical) === path.resolve(present)) continue;
+      if (fs.existsSync(canonical)) {
+        skipped.push({ id: entry.id, reason: `${rel(canonical, report.projectRoot)} already exists; not overwriting` });
+        continue;
+      }
+      fs.mkdirSync(path.dirname(canonical), { recursive: true });
+      fs.renameSync(present, canonical);
+      applied.push(`Moved ${rel(present, report.projectRoot)} to ${rel(canonical, report.projectRoot)}.`);
       continue;
     }
     if (entry.id === 'legacy-live-state') {
+      // Reported, never deleted here: a running live session still reads these,
+      // and losing session state to a doctor run is a worse outcome than a
+      // stale file. The report says what to remove and when.
       skipped.push({ id: entry.id, reason: 'delete by hand once no live session is running' });
       continue;
     }
     skipped.push({ id: entry.id, reason: 'no automatic migration implemented' });
   }
 
+  // Stamping the product record is additive and safe, and it is what stops a
+  // later version proposing an interview the user has already sat through.
   const productPath = report.absProductPath;
   if (productPath && report.ctx.product && readProductSchemaVersion(report.ctx.product) === null
     && !report.findings.some((entry) => entry.id === 'product-schema-legacy')) {

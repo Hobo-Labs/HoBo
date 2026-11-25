@@ -7,14 +7,7 @@ export {
 	probeReflink,
 	removeCopyOnWriteTree,
 } from "./capability.js";
-export { RiftRegistryError } from "./errors.js";
-export {
-	appendEvent,
-	journalPath,
-	projectWorkspaces,
-	readEvents,
-	type WorkspaceEvent,
-} from "./journal.js";
+export * from "./journal.js";
 export * from "./names.js";
 export * from "./wire.js";
 export {

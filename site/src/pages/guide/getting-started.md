@@ -24,13 +24,13 @@ Time to leave home. This guide takes you from an empty directory to an app that 
 ## Run the local lane (clone — not npm)
 
 ```sh
-git clone --recurse-submodules https://github.com/Hobo-Labs/HoBo.git
+git clone --recurse-submodules https://github.com/Tyler-R-Kendrick/HoBo.git
 cd HoBo
 pnpm install
 pnpm hobo doctor --cwd examples/hello-bindle
 pnpm hobo plan --cwd examples/hello-bindle
 pnpm hobo up --cwd examples/hello-bindle
-pnpm hobo dev --cwd examples/hello-bindle
+pnpm hobo dev --cwd examples/hello-bindle   # serves a live local URL
 ```
 
 `pnpm hobo` is the supported invocation — it builds `@hobo/hobo` and
@@ -50,28 +50,34 @@ pnpm hobo plan --cwd examples/try-site/apps/todo-api
 
 ## Step 1 — Pack your bindle
 
-The checked-in example declares an API and a web app in `examples/hello-bindle/src/bindle.ts`:
+The bindle is the first thing HoBo looks for and the only thing it ships. It's plain code — no YAML sidecar, no config dialect:
 
 ```ts
-import { honoEntrypoint } from "@hobo/adapter-hono";
-import { bindle, env } from "@hobo/bindles";
+// src/bindle.ts
+import { bindle } from "@hobo/bindles";
 
-import { app as api } from "./api.js";
-import { app as web } from "./webapp.js";
+import { app as api } from "./api";
+import { app as web } from "./webapp";
 
-const campEnv = env({ GREETING_PREFIX: "howdy", APP_TITLE: "howdy" });
+export default bindle("my-app", (b) => {
+ const db = b.data().allow("read", "write"); // a SQL-ish data port, least-privilege verbs inline
+ const jobs = b.queue().allow("enqueue"); // background work
 
-export default bindle("hello-bindle", (builder) => {
-	const apiService = builder.api(honoEntrypoint(api)).with(campEnv);
-	const webService = builder
-		.web(honoEntrypoint(web))
-		.with(campEnv)
-		.dependsOn(apiService);
-	return { api: apiService, web: webService };
+ const apiSvc = b
+.api(() => api.fetch) // HTTP API entrypoint
+.dependsOn(db, jobs); // typed bindings, injected at runtime
+
+ const webSvc = b.web(() => web.fetch).dependsOn(apiSvc);
+
+ return { db, jobs, api: apiSvc, web: webSvc };
 });
 ```
 
-The returned object names the two services. The web service declares its dependency on the API with `.dependsOn(apiService)`, and both services receive the same local environment values.
+Three things to internalize — they're what make everything later cheap:
+
+- **Resource names come from the returned object keys.** `{ db, jobs, api, web }` is your app's topology; the object *is* the manifest.
+- **`.dependsOn(...)` is the wiring.** It declares edges *and* injects typed bindings at runtime. Nothing reaches a backend it didn't declare — deny by default.
+- **`.allow(...)` is inline least privilege.** Verbs are scoped to the resource's kind — `"read"`/`"write"` on a data port, `"enqueue"` on a queue, `"get"`/`"set"` on a kv store. Permissions travel *in* the bindle, so they move when the app moves. That's the trick: a bindle carries everything needed to unpack it anywhere, which is exactly what makes migrating to a cheaper home a routine event instead of a rewrite.
 
 That's a complete description. Against a **built** `@hobo/hobo` binary, `hobo up --cwd examples/hello-bindle` converges on the default **local lane** (offline, durable SQLite journal, in-memory Pulumi stand-in — not live multi-cloud). If a committed `hobo.bindle.json` is present it wins; otherwise the manifest is compiled from `src/bindle.ts`.
 
@@ -82,6 +88,7 @@ That's a complete description. Against a **built** `@hobo/hobo` binary, `hobo up
 A **camp** answers *what environment is this?* — not *which cloud account*. Camps declare env type, labels, and runtime **requirements**. They do **not** own the Bindle and do **not** select providers.
 
 ```ts
+// src/camps.ts — optional; omit entirely for inferred local camps
 import { camp } from "@hobo/camps";
 
 export const prod = camp("prod", {
@@ -93,6 +100,7 @@ export const prod = camp("prod", {
 **Provider selection belongs on the Yard** (advanced — day one can skip this and use the local lane):
 
 ```ts
+// src/yard.ts
 import { yard } from "@hobo/yards";
 import { prod } from "./camps";
 
@@ -106,9 +114,9 @@ export default yard("aws-east", {
 Converge:
 
 ```sh
-pnpm hobo plan --camp prod
-pnpm hobo up --camp prod
-pnpm hobo logs --camp prod
+hobo plan --camp prod   # dry run: placement, cost, warnings — read-only
+hobo up --camp prod     # build, plan, gate, provision, deploy
+hobo logs --camp prod   # live-tail through the camp runtime
 ```
 
 Useful truths:
@@ -152,7 +160,7 @@ One yard per provider. Multi-region = several camps under one yard. Multi-cloud 
 
 ### Junction: many yards, many clouds
 
-> **Early-stage:** `junction()` authoring and plan derivation ship; each yard still realizes its own half. See [current status](/HoBo/guide/status/) for the limits of multi-cloud realization.
+> **Early-stage:** `junction()` authoring and plan derivation ship; each yard still realizes its own half. Full multi-cloud realization is on the [trail map](/HoBo/guide/status/).
 
 ```ts
 import { junction } from "@hobo/junctions";

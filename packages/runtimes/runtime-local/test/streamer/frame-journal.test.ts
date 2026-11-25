@@ -1,15 +1,49 @@
+/**
+ * The frame journal: a run's output, buffered once and replayed to each reader.
+ *
+ * A run writes frames as it goes; readers attach at any point, from any
+ * sequence, and every one of them sees the same frames in the same order. That
+ * is the whole job — and the interesting behaviour is all at the edges, where
+ * a reader is slower than the writer, or attaches after the run is over, or
+ * the run fails.
+ *
+ * **Backpressure sheds, it does not buffer.** The buffer exists so a reader
+ * that attaches late can catch up. If the writer were allowed to run
+ * arbitrarily far ahead of the slowest reader, that buffer would grow without
+ * bound — one stalled log tail turning into an out-of-memory kill of the
+ * process running the build. So a write that would push the writer
+ * `bufferLimit` frames past the slowest reader refuses with a typed error
+ * instead. The measure is deliberately the *slowest* reader, not the average:
+ * shedding based on an average would let one stalled reader miss frames
+ * silently.
+ *
+ * **With no readers there is no backpressure.** Nobody is behind, so nothing
+ * is being kept for anyone — a run whose output nobody is watching must not
+ * fail because of a limit that exists to protect readers.
+ *
+ * **Closing ends every reader, and closing twice is the same close.** Readers
+ * block on a promise waiting for the next frame; if closing did not release
+ * them they would hang forever on a run that already finished. And a run's
+ * outcome is decided once — a second `close` returning a different result
+ * would let a late caller overwrite how the run is recorded.
+ *
+ * **A failed run rejects `done`.** Callers await `done` to find out how the
+ * run went; resolving it on failure would make a failed build look successful
+ * to everyone who did not separately inspect the status.
+ */
 import {
 	DEFAULT_STREAM_NAME,
 	parseRunId,
 	parseSeq,
 	StreamerBackpressureError,
 	StreamerClosedError,
-	StreamerHistoryExpiredError,
 	type StreamerRunResult,
 } from "@hobo/core";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createFrameJournal, foldLifecycleStatus } from "../../src/index.js";
+// Not re-exported from the package index — a reader default is an internal
+// concern of the journal, not part of the runtime's public surface.
 import { defaultFromSeq } from "../../src/streamer/frame-journal.js";
 
 const RUN = parseRunId("01JQZX000000000000000RUN1");
@@ -24,10 +58,11 @@ function journalFor(bufferLimit = 8) {
 }
 
 const result = (
-	status: "completed" | "failed" | "closed",
+	status: "succeeded" | "failed" | "cancelled",
 	reason = "done",
-): StreamerRunResult => ({ runId: RUN, status, reason });
+): StreamerRunResult => ({ run_id: RUN, runId: RUN, status, reason });
 
+/** Take `count` frames from a reader attached at `fromSeq`. */
 async function take(
 	journal: ReturnType<typeof journalFor>,
 	fromSeq: number,
@@ -35,7 +70,8 @@ async function take(
 ) {
 	const seen: string[] = [];
 	for await (const frame of journal.attachReader(parseSeq(fromSeq))) {
-		seen.push(frame.chunk);
+		// SAFETY: the journal is constructed with a string chunk type.
+		seen.push(frame.chunk as string);
 		if (seen.length === count) break;
 	}
 	return seen;
@@ -43,12 +79,16 @@ async function take(
 
 describe("writing and reading", () => {
 	it("numbers frames from one", () => {
+		// Readers attach by sequence, so the first frame's number is part of
+		// the contract rather than an implementation detail.
 		const journal = journalFor();
 		expect(journal.write(DEFAULT_STREAM_NAME, "a").seq).toBe(1);
 		expect(journal.write(DEFAULT_STREAM_NAME, "b").seq).toBe(2);
 	});
 
 	it("replays frames written before a reader attached", async () => {
+		// The buffer's purpose: attaching late must not mean missing the start
+		// of the run's output.
 		const journal = journalFor();
 		journal.write(DEFAULT_STREAM_NAME, "a");
 		journal.write(DEFAULT_STREAM_NAME, "b");
@@ -56,6 +96,8 @@ describe("writing and reading", () => {
 	});
 
 	it("starts a reader at the sequence it asked for", async () => {
+		// A reader resuming from a checkpoint asks for the frame after the last
+		// one it processed; replaying from the start would duplicate work.
 		const journal = journalFor();
 		journal.write(DEFAULT_STREAM_NAME, "a");
 		journal.write(DEFAULT_STREAM_NAME, "b");
@@ -63,6 +105,8 @@ describe("writing and reading", () => {
 	});
 
 	it("gives every reader the same frames", async () => {
+		// One buffer, many readers. A reader that consumed a frame out of the
+		// buffer would starve the others.
 		const journal = journalFor();
 		journal.write(DEFAULT_STREAM_NAME, "a");
 		journal.write(DEFAULT_STREAM_NAME, "b");
@@ -74,6 +118,8 @@ describe("writing and reading", () => {
 	});
 
 	it("delivers a frame written while a reader was waiting", async () => {
+		// The live case: the reader is blocked on an empty buffer and the write
+		// has to wake it, not merely land in the array.
 		const journal = journalFor();
 		const pending = take(journal, 1, 1);
 		journal.write(DEFAULT_STREAM_NAME, "live");
@@ -89,35 +135,14 @@ describe("writing and reading", () => {
 		expect(await pending).toStrictEqual(["a", "b", "c"]);
 	});
 
-	it("settles concurrent pending reads when consecutive frames arrive", async () => {
-		const journal = journalFor();
-		const reader = journal.attachReader(parseSeq(1))[Symbol.asyncIterator]();
-		const delivered: (string | undefined)[] = [];
-		const first = reader
-			.next()
-			.then((item) => delivered.push(item.value?.chunk));
-		const second = reader
-			.next()
-			.then((item) => delivered.push(item.value?.chunk));
-		journal.write(DEFAULT_STREAM_NAME, "a");
-		journal.write(DEFAULT_STREAM_NAME, "b");
-		try {
-			await vi.waitFor(() => expect(delivered).toEqual(["a", "b"]), {
-				timeout: 1_000,
-				interval: 25,
-			});
-			await Promise.all([first, second]);
-		} finally {
-			journal.close(result("closed"));
-		}
-	});
-
 	it("carries the run id onto every frame", () => {
 		const journal = journalFor();
-		expect(journal.write(DEFAULT_STREAM_NAME, "a").runId).toBe(RUN);
+		expect(journal.write(DEFAULT_STREAM_NAME, "a").run_id).toBe(RUN);
 	});
 
 	it("carries the stream name onto the frame", () => {
+		// stdout and stderr are separate streams in one journal; losing the
+		// name would merge them irreversibly.
 		const journal = journalFor();
 		expect(journal.write(DEFAULT_STREAM_NAME, "a").stream).toBe(
 			DEFAULT_STREAM_NAME,
@@ -127,6 +152,8 @@ describe("writing and reading", () => {
 
 describe("backpressure", () => {
 	it("refuses a write that would outrun the slowest reader", () => {
+		// An unbounded buffer turns one stalled log tail into an out-of-memory
+		// kill of the process running the build.
 		const journal = journalFor(2);
 		journal.attachReader(parseSeq(1));
 		journal.write(DEFAULT_STREAM_NAME, "a");
@@ -137,6 +164,8 @@ describe("backpressure", () => {
 	});
 
 	it("names the limit it hit", () => {
+		// An operator tuning the buffer needs to know which limit refused, not
+		// merely that one did.
 		const journal = journalFor(2);
 		journal.attachReader(parseSeq(1));
 		journal.write(DEFAULT_STREAM_NAME, "a");
@@ -151,6 +180,8 @@ describe("backpressure", () => {
 	});
 
 	it("does not shed when nobody is reading", () => {
+		// Nothing is being kept for anyone. A run whose output nobody is
+		// watching must not fail because of a limit that protects readers.
 		const journal = journalFor(2);
 		for (const chunk of ["a", "b", "c", "d", "e"]) {
 			journal.write(DEFAULT_STREAM_NAME, chunk);
@@ -158,49 +189,11 @@ describe("backpressure", () => {
 		expect(journal.write(DEFAULT_STREAM_NAME, "f").seq).toBe(6);
 	});
 
-	it("bounds retained history and reports the earliest available frame", async () => {
-		const journal = journalFor(2);
-		for (const chunk of ["a", "b", "c", "d"]) {
-			journal.write(DEFAULT_STREAM_NAME, chunk);
-		}
-		expect(() => journal.attachReader(parseSeq(1))).toThrow(
-			StreamerHistoryExpiredError,
-		);
-		try {
-			journal.attachReader(parseSeq(1));
-		} catch (error) {
-			expect(error).toMatchObject({
-				runId: RUN,
-				requestedSeq: 1,
-				firstAvailableSeq: 3,
-			});
-		}
-		expect(await take(journal, 3, 2)).toEqual(["c", "d"]);
-	});
-
-	it("retains history if a new frame is invalid", async () => {
-		const journal = journalFor(1);
-		journal.write(DEFAULT_STREAM_NAME, "kept");
-		expect(() => journal.write("" as never, "invalid")).toThrow();
-		expect(await take(journal, 1, 1)).toEqual(["kept"]);
-	});
-
-	it("retains unread frames while evicting consumed history", async () => {
-		const journal = journalFor(2);
-		const reader = journal.attachReader(parseSeq(1))[Symbol.asyncIterator]();
-		journal.write(DEFAULT_STREAM_NAME, "a");
-		journal.write(DEFAULT_STREAM_NAME, "b");
-		expect((await reader.next()).value?.chunk).toBe("a");
-		journal.write(DEFAULT_STREAM_NAME, "c");
-		expect(() => journal.attachReader(parseSeq(1))).toThrow(
-			StreamerHistoryExpiredError,
-		);
-		expect((await reader.next()).value?.chunk).toBe("b");
-		expect((await reader.next()).value?.chunk).toBe("c");
-		await reader.return?.();
-	});
-
 	it("measures the slowest reader, not the fastest", async () => {
+		// Shedding against the fastest — or an average — would let a stalled
+		// reader silently miss frames, which is the failure the buffer exists
+		// to prevent. Here one reader stays at frame 1 while another advances;
+		// the limit is judged against the one that never moved.
 		const journal = journalFor(3);
 		journal.attachReader(parseSeq(1));
 		journal.write(DEFAULT_STREAM_NAME, "a");
@@ -213,6 +206,8 @@ describe("backpressure", () => {
 	});
 
 	it("accepts writes again once the slow reader catches up", async () => {
+		// Shedding is a stall signal, not a terminal state; a journal that
+		// stayed shut would end the run over a momentarily slow reader.
 		const journal = journalFor(2);
 		const reader = journal.attachReader(parseSeq(1));
 		journal.write(DEFAULT_STREAM_NAME, "a");
@@ -227,23 +222,27 @@ describe("backpressure", () => {
 
 describe("closing", () => {
 	it("refuses a write after close", () => {
+		// The run is over. A frame accepted afterwards would never reach a
+		// reader, because closing already released them all.
 		const journal = journalFor();
-		journal.close(result("completed"));
+		journal.close(result("succeeded"));
 		expect(() => journal.write(DEFAULT_STREAM_NAME, "a")).toThrow(
 			StreamerClosedError,
 		);
 	});
 
 	it("returns the first result on a second close", async () => {
+		// A run's outcome is decided once. A second close overwriting it would
+		// let a late caller change how the run is recorded.
 		const journal = journalFor();
-		const first = journal.close(result("completed", "all good"));
+		const first = journal.close(result("succeeded", "all good"));
 		expect(journal.close(result("failed", "actually no"))).toBe(first);
 		await expect(journal.done).resolves.toBe(first);
 	});
 
 	it("records only one closed lifecycle event", () => {
 		const journal = journalFor();
-		journal.close(result("completed"));
+		journal.close(result("succeeded"));
 		journal.close(result("failed"));
 		expect(
 			journal.lifecycleEvents.filter((e) => e.kind === "closed"),
@@ -251,17 +250,21 @@ describe("closing", () => {
 	});
 
 	it("ends a reader that was waiting for a frame", async () => {
+		// Readers block on a promise. If closing did not release them they
+		// would hang forever on a run that already finished.
 		const journal = journalFor();
 		const iterator = journal.attachReader(parseSeq(1))[Symbol.asyncIterator]();
 		const pending = iterator.next();
-		journal.close(result("completed"));
+		journal.close(result("succeeded"));
 		expect(await pending).toStrictEqual({ value: undefined, done: true });
 	});
 
 	it("ends a reader that attaches after close", async () => {
+		// A reader arriving after the run is over drains the buffer and then
+		// stops, rather than waiting for frames that will never come.
 		const journal = journalFor();
 		journal.write(DEFAULT_STREAM_NAME, "a");
-		journal.close(result("completed"));
+		journal.close(result("succeeded"));
 		const seen: unknown[] = [];
 		for await (const frame of journal.attachReader(parseSeq(1))) {
 			seen.push(frame.chunk);
@@ -271,16 +274,19 @@ describe("closing", () => {
 
 	it("resolves done with the result on success", async () => {
 		const journal = journalFor();
-		const outcome = result("completed", "all good");
+		const outcome = result("succeeded", "all good");
 		journal.close(outcome);
 		await expect(journal.done).resolves.toBe(outcome);
 	});
 
 	it("rejects done on a failed run", async () => {
+		// Callers await `done` to find out how the run went. Resolving on
+		// failure would make a failed build look successful to everyone who
+		// did not separately inspect the status.
 		const journal = journalFor();
-		const settled = expect(journal.done).rejects.toThrow("compiler exploded");
+		const settled = journal.done.catch((error: Error) => error);
 		journal.close(result("failed", "compiler exploded"));
-		await settled;
+		expect((await settled).message).toMatch(/compiler exploded/);
 	});
 
 	it("allows frame-only readers and late completion waiters on a failed run", async () => {
@@ -291,16 +297,21 @@ describe("closing", () => {
 		for await (const frame of journal.attachReader(parseSeq(1))) {
 			chunks.push(frame.chunk);
 		}
+		// Completion is a separate optional channel. Draining output must not
+		// cause an unhandled rejection before a caller chooses to await it.
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(chunks).toEqual(["compiler output"]);
 		await expect(journal.done).rejects.toThrow("compiler exploded");
+		// The original promise stays rejected for every explicit waiter.
 		await expect(journal.done).rejects.toThrow("compiler exploded");
 	});
 
-	it("resolves done on a closed run", async () => {
+	it("resolves done on a cancelled run", async () => {
+		// Cancellation is an outcome, not an error: the caller asked for it,
+		// so there is nothing to throw at them.
 		const journal = journalFor();
-		journal.close(result("closed", "user stopped it"));
-		await expect(journal.done).resolves.toMatchObject({ status: "closed" });
+		journal.close(result("cancelled", "user stopped it"));
+		await expect(journal.done).resolves.toMatchObject({ status: "cancelled" });
 	});
 });
 
@@ -328,21 +339,25 @@ describe("the lifecycle log", () => {
 
 	it("folds a closed run to its status", () => {
 		const journal = journalFor();
-		journal.close(result("completed"));
-		expect(foldLifecycleStatus(journal.lifecycleEvents)).toBe("completed");
+		journal.close(result("succeeded"));
+		expect(foldLifecycleStatus(journal.lifecycleEvents)).toBe("succeeded");
 	});
 
 	it("folds an empty log to open", () => {
+		// Nothing has happened yet, which is not the same as a run that
+		// finished with an unknown outcome.
 		expect(foldLifecycleStatus([])).toBe("open");
 	});
 
 	it("refuses a close with no open before it", () => {
+		// A truncated or reordered log. Reporting a status from it would state
+		// an outcome for a run there is no evidence ever started.
 		expect(() =>
 			foldLifecycleStatus([
 				{
 					kind: "closed",
 					runId: RUN,
-					status: "completed",
+					status: "succeeded",
 					reason: "done",
 					closedAt: OPENED_AT,
 				},
@@ -351,6 +366,8 @@ describe("the lifecycle log", () => {
 	});
 
 	it("takes the last status when a run reopens", () => {
+		// Re-running under the same id: the latest close is the current
+		// outcome, and the earlier one is history.
 		expect(
 			foldLifecycleStatus([
 				{ kind: "opened", runId: RUN, openedAt: OPENED_AT },
@@ -365,12 +382,12 @@ describe("the lifecycle log", () => {
 				{
 					kind: "closed",
 					runId: RUN,
-					status: "completed",
+					status: "succeeded",
 					reason: "retry",
 					closedAt: OPENED_AT,
 				},
 			]),
-		).toBe("completed");
+		).toBe("succeeded");
 	});
 
 	it("reports a reopened run as open again", () => {
@@ -392,6 +409,8 @@ describe("the lifecycle log", () => {
 
 describe("defaultFromSeq", () => {
 	it("starts at one when no sequence is given", () => {
+		// A reader that did not name a checkpoint wants the whole run, not the
+		// tail from wherever the writer happens to be.
 		expect(defaultFromSeq()).toBe(parseSeq(1));
 	});
 

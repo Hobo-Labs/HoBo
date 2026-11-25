@@ -8,7 +8,6 @@ import {
 	CONVEX_PROVIDER_ID,
 	COST_FACTS,
 	DEFAULT_REGIONS,
-	PROVIDER_TERMS,
 	publishCapabilityManifest,
 } from "./manifest.js";
 import { realizeResourcePlan } from "./realize.js";
@@ -107,7 +106,6 @@ export function createConvexProvider(
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: CONVEX_PROVIDER_ID,
-				terms: PROVIDER_TERMS,
 				published,
 				capabilities: parseJsonObject(
 					published["/.well-known/capability-manifest/capabilities.json"],

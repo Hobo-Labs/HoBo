@@ -1,3 +1,6 @@
+/**
+ * Evidence pack: include session recording alongside Playwright/CDP artifacts.
+ */
 import type { RrwebEvent, SessionRecord } from "./types.js";
 
 export type EvidencePack = Readonly<{
@@ -6,6 +9,7 @@ export type EvidencePack = Readonly<{
 	recording: readonly RrwebEvent[];
 	screenshots: readonly Readonly<{ name: string; sha256: string }>[];
 	assertionLog: readonly string[];
+	/** Playwright / CDP companion refs (paths or content hashes). */
 	playwrightRefs: readonly string[];
 }>;
 

@@ -1,0 +1,15 @@
+{
+  "name": "@hobo-draft/runtime-primitives",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the hobo:runtime primitive WIT contract from HOBO-13.",
+  "scripts": {
+    "build:guest": "tsc --noEmit",
+    "generate": "jco types wit --out-dir generated",
+    "test": "npm run generate && npm run build:guest && vitest run --root ."
+  },
+  "devDependencies": {
+    "@bytecodealliance/jco": "1.24.3"
+  }
+}

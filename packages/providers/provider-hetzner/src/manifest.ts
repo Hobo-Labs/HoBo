@@ -5,7 +5,6 @@ import {
 	canonicalJson,
 	digestRef,
 	MANIFEST_SCHEMA,
-	providerTermsFor,
 	stableDigest,
 } from "@hobo/core";
 import {
@@ -25,7 +24,6 @@ export {
 
 // public-contract: the provider id every published document carries.
 export const HETZNER_PROVIDER_ID = "@hobo/provider-hetzner";
-export const PROVIDER_TERMS = providerTermsFor(HETZNER_PROVIDER_ID);
 
 // Hetzner's location slugs (Falkenstein, Nuremberg, Helsinki, Ashburn,
 // Hillsboro, Singapore). Transcribed from the public locations list, not
@@ -175,7 +173,6 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
-		terms: PROVIDER_TERMS,
 		documents,
 	};
 

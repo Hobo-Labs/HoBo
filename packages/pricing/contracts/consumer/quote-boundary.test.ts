@@ -32,19 +32,15 @@ describe("pricing quote consumer boundary", () => {
 
 		for (const value of interactions) {
 			const interaction = object(value);
-			expect(interaction.type).toBe("Synchronous/Messages");
-			const request = object(object(interaction.request).contents);
-			const responses = interaction.response;
-			if (!Array.isArray(responses) || responses.length !== 1)
-				throw new Error("PACT response is missing");
-			const response = object(object(responses[0]).contents);
-			expect(request.contentType).toBe("application/json");
-			expect(response.contentType).toBe("application/json");
-			const result = quoteScenarioJson(request.content);
+			const request = object(interaction.request);
+			const response = object(interaction.response);
+			expect(request.method).toBe("POST");
+			expect(request.path).toBe("/pricing/v1/quote");
+			const result = quoteScenarioJson(request.body);
 			if (!isQuoteVector(result)) {
 				throw new Error(`${result.code}: ${result.message}`);
 			}
-			expect(quoteVectorToJson(result)).toMatchObject(object(response.content));
+			expect(quoteVectorToJson(result)).toMatchObject(object(response.body));
 		}
 	});
 });

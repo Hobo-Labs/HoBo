@@ -121,11 +121,8 @@ function nextSteps(entry: RunnerIntegration): string[] {
 			];
 		case "secret-ref": {
 			const ref = entry.auth.secretRef ?? "";
-			const [kind, name] = ref.split(":");
 			return [
-				kind === "github-secret"
-					? `Store the credential yourself with \`gh secret set ${name}\` (it prompts; never pass the value on the command line).`
-					: `Export ${name} in the runner environment yourself; HoBo only stores the name.`,
+				`Have the owner keep the credential in their secret store under ${ref.slice("owner://".length)}; connect that store with HoBo MCP's choose_secret_store and HoBo resolves ${ref} through the owner store session. HoBo only records the name.`,
 				"Prefer the provider's GitHub App or OIDC when available.",
 			];
 		}

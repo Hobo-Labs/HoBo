@@ -1,17 +1,12 @@
 package hobo
 
-#DerivativeDescriptor: {
-	name:    string & =~"\\S"
-	version: string & =~"\\S"
-}
-
 // The package's fixture gate accepts each persisted composition record.
 #Composition: #CiRepositoryLink | #ComposedRuntimeManifest | #LocalDeploymentReceipt | #LocalDeploymentLaunch | #LocalDeploymentLifecycleEvent
 
 #CiRepositoryLink: {
 	relayOrigin: string & =~"^https://[^/?#@]+$"
-	accountId:   string & =~"^[A-Za-z0-9_-]{1,80}$"
-	repository:  string & =~"^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+	accountId: string & =~"^[A-Za-z0-9_-]{1,80}$"
+	repository: string & =~"^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$"
 }
 
 // The legacy explicit fixture manifest remains pinned to its mock backend.
@@ -65,17 +60,4 @@ package hobo
 #LocalDeploymentLifecycleEvent: {
 	receipt: #LocalDeploymentReceipt
 	reason:  "up" | "down" | "expired" | "process-exited" | "signal" | "startup-abandoned" | "startup-failed"
-}
-
-#LocalLogResources: {
-	names: [...string & !=""]
-}
-
-#LocalLogRecord: {
-	type:      "log"
-	message:   string
-	resource?: string & !=""
-} | {
-	type:   "gap"
-	reason: "rotated" | "truncated" | "overflow"
 }

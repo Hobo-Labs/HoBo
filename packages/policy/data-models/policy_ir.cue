@@ -1,10 +1,10 @@
 package data_models
 
 #PolicySubject: {
-	kind: string & !=""
-	id:   string & !=""
-	roles?: [...string]
-	scopes?: [...string]
+	kind:          string & !=""
+	id:            string & !=""
+	roles?:        [...string]
+	scopes?:       [...string]
 	delegated_by?: string
 }
 
@@ -22,26 +22,10 @@ package data_models
 	input_hash:     string & =~"^sha256:[a-f0-9]{64}$"
 }
 
-#DecisionEvidence: #JsonDecisionEvidence | #WitDecisionEvidence
-
-#JsonDecisionEvidence: {
-	policyIds?: [...string]
-	inputHash:    string & =~"^sha256:[a-f0-9]{64}$"
-	engine:       string & !=""
-	packId?:      string & !=""
-	packVersion?: string & !=""
-	if packId != _|_ {packVersion: string & !=""}
-	if packVersion != _|_ {packId: string & !=""}
-}
-
-#WitDecisionEvidence: {
+#DecisionEvidence: {
 	policy_ids: [...string]
-	input_hash:    string & =~"^sha256:[a-f0-9]{64}$"
-	engine:        string & !=""
-	pack_id?:      string & !=""
-	pack_version?: string & !=""
-	if pack_id != _|_ {pack_version: string & !=""}
-	if pack_version != _|_ {pack_id: string & !=""}
+	input_hash: string & =~"^sha256:[a-f0-9]{64}$"
+	engine:     string & !=""
 }
 
 #PolicyDecision: {

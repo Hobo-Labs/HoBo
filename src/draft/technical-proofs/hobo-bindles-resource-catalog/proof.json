@@ -6,7 +6,10 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/authoring-resources-wiring.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

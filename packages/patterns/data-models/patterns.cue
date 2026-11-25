@@ -13,7 +13,9 @@ package patterns
 	"PATTERN_MATURITY_UNSPECIFIED" |
 	"PATTERN_MATURITY_STABLE" |
 	"PATTERN_MATURITY_PARTIAL" |
-	"PATTERN_MATURITY_EXPERIMENTAL"
+	"PATTERN_MATURITY_EXPERIMENTAL" |
+	"PATTERN_MATURITY_LEGACY" |
+	"PATTERN_MATURITY_DEPRECATED"
 
 #RenderingKind:
 	"RENDERING_KIND_UNSPECIFIED" |
@@ -46,6 +48,7 @@ package patterns
 	"SEARCH_CHANNEL_FTS5" |
 	"SEARCH_CHANNEL_ONTOLOGY_VECTOR" |
 	"SEARCH_CHANNEL_OPTIONAL_DENSE" |
+	"SEARCH_CHANNEL_COMPATIBILITY" |
 	"SEARCH_CHANNEL_COMPOSITION"
 
 #SearchDecision:
@@ -177,6 +180,8 @@ package patterns
 	provenance: [...#PatternProvenance] & [_, ...]
 	limitations?: [...string]
 	validations?: [...#ValidationObligation]
+	replacementId?: string
+	legacyAliases?: [...string]
 	contentDigest:  string
 }
 

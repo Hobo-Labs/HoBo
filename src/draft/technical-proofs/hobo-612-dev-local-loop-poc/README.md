@@ -28,9 +28,11 @@ pnpm --prefix src/draft/technical-proofs/hobo-612-dev-local-loop-poc test
 node --import tsx scripts/ci/dev-cold-loop-timing.mts
 ```
 
-## Executable evidence
+## Architecture evidence
+
 - `data-models/dev_loop.proto` + `dev_loop.cue` — records, `dev.*` events, CUE constraints
 - `contracts/cli-dev-runtime-local.pact.json`, `contracts/cli-dev-codegen.pact.json`
+- `ADR.md` — parse-don't-validate + CQRS event architecture
 
 ## Promotion path
 

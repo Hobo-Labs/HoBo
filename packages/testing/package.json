@@ -2,7 +2,7 @@
   "name": "@hobo/testing",
   "version": "0.0.1",
   "license": "MIT",
-  "description": "HoBo application test harness for in-process graphs and driver-backed ephemeral Camps with fidelity labels on every handle.",
+  "description": "HoBo out-of-box application test harness: deploy a collected Bindle topology, assert against it, and destroy it, across an in-process whole-graph lane and a credential-gated ephemeral-Camp lane, with an ADR-0042 fidelity attestation on every handle.",
   "type": "module",
   "files": [
     "LICENSE",

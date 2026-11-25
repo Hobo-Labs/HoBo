@@ -74,7 +74,7 @@ export const AI_GENERATION_LAUNCH_POSTURE = {
       allowedForGa: true,
       safetyBoundary: "Intent and requirement text is treated as untrusted instruction material until policy and guardrails approve it.",
       customerFacingLimit: "HoBo can use intent to scaffold proposals, but customers must review generated plans and code before governed launch.",
-      architectureEvidence: "urn:hobo:requirement:generated-stack#plan-23",
+      architectureEvidence: "docs/design/generated-stack.md#plan-23",
     },
     {
       id: "wit-port-and-conformance-contracts",
@@ -82,7 +82,7 @@ export const AI_GENERATION_LAUNCH_POSTURE = {
       allowedForGa: true,
       safetyBoundary: "WIT ports and conformance suites are authoritative and cannot be overridden by natural-language material.",
       customerFacingLimit: "Generated artifacts may only claim the ports and capabilities they pass through conformance.",
-      architectureEvidence: "urn:hobo:requirement:generated-stack#plan-09",
+      architectureEvidence: "docs/design/generated-stack.md#plan-09",
     },
     {
       id: "provider-docs-openapi-terraform",
@@ -90,7 +90,7 @@ export const AI_GENERATION_LAUNCH_POSTURE = {
       allowedForGa: true,
       safetyBoundary: "Provider docs, OpenAPI descriptions, Terraform comments, and traces are sanitized as untrusted material.",
       customerFacingLimit: "Provider material can guide generation, but it cannot expand the authoritative contract or grant capabilities.",
-      architectureEvidence: "urn:hobo:decision:adr-0010",
+      architectureEvidence: "docs/design/adr/03-data-plane.md#adr-0010",
     },
     {
       id: "recorded-traces-and-fixtures",
@@ -98,7 +98,7 @@ export const AI_GENERATION_LAUNCH_POSTURE = {
       allowedForGa: true,
       safetyBoundary: "Trace payloads inherit data classification, redaction, retention, and opt-out boundaries before generation use.",
       customerFacingLimit: "Trace-based generation is only as broad as the recorded, redacted, and governed evidence attached to the run.",
-      architectureEvidence: "urn:hobo:decision:adr-0099",
+      architectureEvidence: "docs/design/adr/03-data-plane.md#adr-0099",
     },
     {
       id: "design-md-and-ui-intent",
@@ -106,7 +106,7 @@ export const AI_GENERATION_LAUNCH_POSTURE = {
       allowedForGa: true,
       safetyBoundary: "UI generation remains constrained by design.md, typed materializations, and output guardrails.",
       customerFacingLimit: "Generated UI is a reviewable proposal until accessibility, usability, and release evidence accept it.",
-      architectureEvidence: "urn:hobo:decision:adr-0056",
+      architectureEvidence: "docs/design/adr/03-data-plane.md#adr-0056",
     },
   ],
   prohibitedUseCases: [
@@ -179,7 +179,7 @@ export const AI_GENERATION_LAUNCH_POSTURE = {
     },
     {
       id: "red-team-regression-evidence",
-      evidence: "urn:hobo:requirement:governance-planes#plan-46",
+      evidence: "docs/design/governance-planes.md#plan-46",
       beta: "seeded-regression-set",
       ga: "required-for-launch-claims",
       customerFacingLimit: "Red-team findings become regression tests; absence of a run is a limitation, not a safety claim.",
@@ -264,7 +264,7 @@ export const AI_GENERATION_LAUNCH_POSTURE = {
     {
       id: "contract-first-generation",
       approvedText: "HoBo generation starts from contracts and must pass conformance, policy, and review gates before governed launch.",
-      architectureCitation: "urn:hobo:requirement:generated-stack#plan-23",
+      architectureCitation: "docs/design/generated-stack.md#plan-23",
       proofCitation: "src/draft/technical-proofs/generation-safety-gate-contract/README.md",
       knownLimitation: "This is a launch-posture record, not a guarantee that every generated artifact is correct.",
       reviewOwner: "Threat Model & Security Review",
@@ -272,7 +272,7 @@ export const AI_GENERATION_LAUNCH_POSTURE = {
     {
       id: "sandboxed-validation",
       approvedText: "Generation validation runs in a no-egress sandbox unless an explicit hosted-model grant is approved at a separate boundary.",
-      architectureCitation: "urn:hobo:decision:adr-0061",
+      architectureCitation: "docs/design/adr/02-identity-security.md#adr-0061",
       proofCitation: "src/draft/technical-proofs/no-egress-generation-sandbox-contract/README.md",
       knownLimitation: "Hosted model calls require explicit residency-checked egress grants and cannot be implied by the sandbox proof.",
       reviewOwner: "Threat Model & Security Review",
@@ -280,8 +280,8 @@ export const AI_GENERATION_LAUNCH_POSTURE = {
     {
       id: "customer-facing-limitations",
       approvedText: "HoBo documents beta and GA limitations for generated outputs, safety controls, and review obligations.",
-      architectureCitation: "urn:hobo:requirement:governance-planes#plan-46",
-      proofCitation: "urn:hobo:requirement:ai-generation-launch-posture",
+      architectureCitation: "docs/design/governance-planes.md#plan-46",
+      proofCitation: "docs/design/ai-generation-launch-posture.md",
       knownLimitation: "HoBo exports responsible-AI facts; it does not run an external attestation program in this issue.",
       reviewOwner: "V1 Legal, Privacy & Terms Readiness",
     },

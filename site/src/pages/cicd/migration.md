@@ -50,4 +50,4 @@ App-owned recipes compose platform steps (schema dual, junction rebind, `identit
 
 ## Related
 
-[Progressive delivery](/HoBo/cicd/progressive-delivery/) · [Control plane](/HoBo/system/control-plane/) · [Matching](/HoBo/reference/matching/)
+[Progressive delivery](/HoBo/cicd/progressive-delivery/) · [Control plane](/HoBo/architecture/control-plane/) · [Matching](/HoBo/reference/matching/)

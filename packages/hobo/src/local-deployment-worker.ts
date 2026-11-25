@@ -12,7 +12,6 @@ import {
 	clearLocalDeployment,
 	LOCAL_DEPLOYMENT_SCHEMA,
 } from "./local-deployment.js";
-import { installLocalResourceLogCapture } from "./local-resource-logs.js";
 import { serveProjectOnLocalYard } from "./wasm-host.js";
 
 const token = process.env.HOBO_LOCAL_CONTROL_TOKEN;
@@ -74,35 +73,13 @@ process.on("message", (message) => {
 	void (async () => {
 		if (!token) throw new Error("Local control authority is missing");
 		const launch = fromJson(LocalDeploymentLaunchSchema, rawLaunch);
-		const componentHost = normalizeComponentHostKind(launch.componentHost);
-		const capture =
-			componentHost === "local"
-				? installLocalResourceLogCapture({
-						projectDir: launch.projectDir,
-						stdout: process.stdout,
-						stderr: process.stderr,
-					})
-				: undefined;
-		let served: Awaited<ReturnType<typeof serveProjectOnLocalYard>>;
-		try {
-			served = await serveProjectOnLocalYard({
-				projectDir: launch.projectDir,
-				hoboHome: launch.hoboHome,
-				componentHost,
-				port: launch.port,
-				emitProgress: (message) => process.stdout.write(`${message}\n`),
-			});
-		} catch (error) {
-			capture?.close();
-			throw error;
-		}
-		closeServe = async () => {
-			try {
-				await served.close();
-			} finally {
-				capture?.close();
-			}
-		};
+		const served = await serveProjectOnLocalYard({
+			projectDir: launch.projectDir,
+			hoboHome: launch.hoboHome,
+			componentHost: normalizeComponentHostKind(launch.componentHost),
+			port: launch.port,
+		});
+		closeServe = served.close;
 		if (served.probe.status < 100 || served.probe.status >= 500)
 			throw new Error(
 				`Local HTTP server failed its readiness probe (HTTP ${served.probe.status})`,

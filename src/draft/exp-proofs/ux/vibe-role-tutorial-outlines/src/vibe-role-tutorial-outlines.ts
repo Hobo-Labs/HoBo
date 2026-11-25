@@ -84,7 +84,7 @@ type VibeRoleTutorialOutlines = {
   readonly issue: "HOBO-552";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines";
-  readonly proofPath: "urn:hobo:proof:vibe-role-tutorial-outlines";
+  readonly proofPath: "docs/design/proofs/vibe-role-tutorial-outlines/README.md";
   readonly designRefs: readonly string[];
   readonly roles: readonly TutorialRole[];
   readonly quickstartFixtureRefs: readonly TutorialQuickstartFixtureRef[];
@@ -121,15 +121,15 @@ export const VIBE_ROLE_TUTORIAL_OUTLINES: VibeRoleTutorialOutlines = {
   issue: "HOBO-552",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines",
-  proofPath: "urn:hobo:proof:vibe-role-tutorial-outlines",
+  proofPath: "docs/design/proofs/vibe-role-tutorial-outlines/README.md",
   designRefs: [
-    "urn:hobo:requirement:tutorials-walkthroughs",
-    "urn:hobo:requirement:walkthrough",
-    "urn:hobo:requirement:worked-example#plan-19",
-    "urn:hobo:requirement:developer-experience#plan-07",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
-    "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix",
-    "urn:hobo:proof:cli-mcp-parity-resource-lifecycle-contracts",
+    "docs/design/tutorials-walkthroughs.md",
+    "docs/design/walkthrough.md",
+    "docs/design/worked-example.md#plan-19",
+    "docs/design/developer-experience.md#plan-07",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+    "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md",
+    "docs/design/proofs/cli-mcp-parity-resource-lifecycle-contracts/README.md",
   ],
   roles: allRoles,
   quickstartFixtureRefs: [
@@ -213,7 +213,7 @@ export const VIBE_ROLE_TUTORIAL_OUTLINES: VibeRoleTutorialOutlines = {
   outlines: [
     {
       role: "app developer",
-      walkthroughAnchor: "urn:hobo:requirement:walkthrough#part-1--app-developer-one-command-to-live",
+      walkthroughAnchor: "docs/design/walkthrough.md#part-1--app-developer-one-command-to-live",
       personaGoal: "Move from a sample app idea to collect, plan, deploy simulation, inspect, and recovery evidence without choosing providers.",
       prerequisites: [
         "accepted snapshop resource lifecycle quickstart fixtures",
@@ -253,7 +253,7 @@ export const VIBE_ROLE_TUTORIAL_OUTLINES: VibeRoleTutorialOutlines = {
     },
     {
       role: "platform engineer",
-      walkthroughAnchor: "urn:hobo:requirement:walkthrough#part-2--platform-engineer-map-platform-defaults",
+      walkthroughAnchor: "docs/design/walkthrough.md#part-2--platform-engineer-map-platform-defaults",
       personaGoal: "Evaluate provider defaults, resource definitions, and approval boundaries before app teams rely on inferred Camps.",
       prerequisites: [
         "accepted resource definition and plan-preview fixtures",
@@ -290,7 +290,7 @@ export const VIBE_ROLE_TUTORIAL_OUTLINES: VibeRoleTutorialOutlines = {
     },
     {
       role: "GitOps",
-      walkthroughAnchor: "urn:hobo:requirement:walkthrough#part-3--gitops-git-is-the-trigger-hobo-up-is-the-engine",
+      walkthroughAnchor: "docs/design/walkthrough.md#part-3--gitops-git-is-the-trigger-hobo-up-is-the-engine",
       personaGoal: "Turn PR-driven plan, preview, promotion, rollback, and drift evidence into a tutorial outline that stays CLI-first.",
       prerequisites: [
         "CI fixture can render hobo plan and hobo up output as reference transcript",
@@ -327,7 +327,7 @@ export const VIBE_ROLE_TUTORIAL_OUTLINES: VibeRoleTutorialOutlines = {
     },
     {
       role: "SecOps",
-      walkthroughAnchor: "urn:hobo:requirement:walkthrough#part-4--secops-trust-as-code-secrets-never-typed",
+      walkthroughAnchor: "docs/design/walkthrough.md#part-4--secops-trust-as-code-secrets-never-typed",
       personaGoal: "Review policy, proof evidence, denial, and waiver boundaries for tutorial steps without granting hidden authority.",
       prerequisites: [
         "Gatekeeper and policy-denial fixtures are accepted",
@@ -362,7 +362,7 @@ export const VIBE_ROLE_TUTORIAL_OUTLINES: VibeRoleTutorialOutlines = {
     },
     {
       role: "DevOps",
-      walkthroughAnchor: "urn:hobo:requirement:walkthrough#part-5--devops-run-the-control-plane-and-the-ci-fabric",
+      walkthroughAnchor: "docs/design/walkthrough.md#part-5--devops-run-the-control-plane-and-the-ci-fabric",
       personaGoal: "Outline self-host bootstrap, runner health, import preview, and restore evidence while keeping control-plane implementation out of scope.",
       prerequisites: [
         "seed Yard and runner examples are represented as fixtures only",
@@ -399,7 +399,7 @@ export const VIBE_ROLE_TUTORIAL_OUTLINES: VibeRoleTutorialOutlines = {
     },
     {
       role: "SRE",
-      walkthroughAnchor: "urn:hobo:requirement:walkthrough#part-6--sre-slos-runbooks-and-an-ai-on-call-thats-governed",
+      walkthroughAnchor: "docs/design/walkthrough.md#part-6--sre-slos-runbooks-and-an-ai-on-call-thats-governed",
       personaGoal: "Teach incident inspection, logs, stale projections, rollback preview, and support-safe escalation from replayable evidence.",
       prerequisites: [
         "incident and projection examples are reference fixtures",
@@ -492,7 +492,7 @@ export function validateVibeRoleTutorialOutlines(
   if (outlines.packagePath !== "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (outlines.proofPath !== "urn:hobo:proof:vibe-role-tutorial-outlines") {
+  if (outlines.proofPath !== "docs/design/proofs/vibe-role-tutorial-outlines/README.md") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(outlines.roles, REQUIRED_TUTORIAL_ROLES)) {
@@ -527,7 +527,7 @@ function validateOutlines(
 
   const proofModes = new Set<TutorialProofMode>();
   for (const outline of outlines) {
-    if (!outline.walkthroughAnchor.startsWith("urn:hobo:requirement:walkthrough#")) {
+    if (!outline.walkthroughAnchor.startsWith("docs/design/walkthrough.md#")) {
       errors.push({ code: "missing-walkthrough-anchor", message: `${outline.role} must cite walkthrough.md` });
     }
     validateString(outline.personaGoal, `${outline.role}.personaGoal`, errors);

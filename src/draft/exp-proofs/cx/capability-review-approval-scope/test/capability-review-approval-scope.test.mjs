@@ -35,11 +35,11 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     CAPABILITY_REVIEW_APPROVAL_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:marketplace-publisher-trust-evidence",
-      "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
-      "urn:hobo:decision:adr-0062",
-      "urn:hobo:decision:adr-0074",
-      "urn:hobo:decision:adr-0075",
+      "docs/design/marketplace-publisher-trust-evidence.md",
+      "docs/design/sbom-vulnerability-notice-evidence.md",
+      "docs/design/adr/07-portability-extensibility.md#adr-0062",
+      "docs/design/adr/02-identity-security.md#adr-0074",
+      "docs/design/adr/07-portability-extensibility.md#adr-0075",
       "src/draft/technical-proofs/curated-catalog-policy-contract/README.md",
       "src/draft/technical-proofs/trust-tier-policy-contract/README.md",
     ],

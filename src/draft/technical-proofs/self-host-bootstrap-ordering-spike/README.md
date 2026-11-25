@@ -2,7 +2,7 @@
 
 This draft package makes the HOBO-59 bootstrap decision executable while the runtime remains
 greenfield. The decision itself is recorded in
-[ADR-0092](urn:hobo:decision:adr-0092).
+[ADR-0092](../../../../docs/design/adr/01-architecture-core.md#adr-0092).
 
 The proof models the bootstrap as a bounded state machine:
 
@@ -22,9 +22,11 @@ npm.cmd --prefix src\draft\technical-proofs\self-host-bootstrap-ordering-spike t
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Self Host Bootstrap Ordering Spike.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

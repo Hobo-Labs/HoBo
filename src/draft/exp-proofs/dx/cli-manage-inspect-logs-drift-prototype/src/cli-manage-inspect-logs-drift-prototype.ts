@@ -77,7 +77,7 @@ type ManageTranscriptPrototype = {
   readonly issue: "HOBO-574";
   readonly phase: "M2";
   readonly targetPackage: "src/draft/exp-proofs/dx/cli-manage-inspect-logs-drift-prototype";
-  readonly proofNote: "urn:hobo:proof:cli-manage-inspect-logs-drift-prototype";
+  readonly proofNote: "docs/design/proofs/cli-manage-inspect-logs-drift-prototype/README.md";
   readonly designRefs: readonly string[];
   readonly scenes: readonly ManageTranscriptScene[];
   readonly scopeOut: readonly string[];
@@ -91,13 +91,13 @@ export const CLI_MANAGE_TRANSCRIPT_PROTOTYPE: ManageTranscriptPrototype = {
   issue: "HOBO-574",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/dx/cli-manage-inspect-logs-drift-prototype",
-  proofNote: "urn:hobo:proof:cli-manage-inspect-logs-drift-prototype",
+  proofNote: "docs/design/proofs/cli-manage-inspect-logs-drift-prototype/README.md",
   designRefs: [
-    "urn:hobo:requirement:developer-experience#plan-07",
-    "urn:hobo:requirement:data-plane#plan-11",
-    "urn:hobo:requirement:support-debug-tools",
-    "urn:hobo:requirement:drift-reconciliation",
-    "urn:hobo:requirement:audit-explorer",
+    "docs/design/developer-experience.md#plan-07",
+    "docs/design/data-plane.md#plan-11",
+    "docs/design/support-debug-tools.md",
+    "docs/design/drift-reconciliation.md",
+    "docs/design/audit-explorer.md",
     "src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix/README.md",
     "src/draft/exp-proofs/ax/cli-mcp-parity-resource-lifecycle-contracts/README.md",
   ],
@@ -227,7 +227,7 @@ export function parseManageTranscriptPrototype(
   );
   assertLiteral(
     value.proofNote,
-    "urn:hobo:proof:cli-manage-inspect-logs-drift-prototype",
+    "docs/design/proofs/cli-manage-inspect-logs-drift-prototype/README.md",
     "proofNote",
   );
 

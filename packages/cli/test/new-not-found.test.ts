@@ -1,3 +1,13 @@
+/**
+ * `isNotFound`: whether a caught value is a filesystem ENOENT, the ordinary
+ * case of `hobo new` writing into a directory that does not exist yet.
+ *
+ * It reads `code` from any object, as it did before it was retyped: an Error
+ * from another realm (a vm context, a worker's structured clone) is not an
+ * `instanceof Error` here, and a library may throw a plain `{ code }` object.
+ * Either one answered "something else", so `hobo new` rethrew the ordinary
+ * case as an internal error.
+ */
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 

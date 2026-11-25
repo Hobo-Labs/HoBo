@@ -7,8 +7,7 @@ import {
 	type AgentPrincipal,
 	replaySessionFacts,
 } from "@hobo/connector-acp";
-import { afterAll, describe, it } from "vitest";
-import { createSweWorkspace } from "../../../../test/setup/swe-workspace.js";
+import { describe, it } from "vitest";
 
 import {
 	createGeminiTranscriptAgent,
@@ -33,18 +32,16 @@ const PRINCIPAL: AgentPrincipal = {
 	delegatedBy: { kind: "user", id: "tyler" },
 };
 
-const workspace = createSweWorkspace();
-afterAll(workspace.cleanup);
-
 const TASK = {
 	taskId: "fix-tests",
 	instruction: "fix the failing tests",
-	workspace: workspace.directory,
+	workspace: "/workspace/shop",
 };
 
 function harness() {
 	let agent: TranscriptAcpAgent | undefined;
 	return {
+		// SAFETY: assertion to `agent as TranscriptAcpAgent` is required at this boundary.
 		agent: () => agent as TranscriptAcpAgent,
 		run: () =>
 			runSweTask({
@@ -60,6 +57,8 @@ function harness() {
 
 describe("swe-gemini: governed SWE task over stock ACP (golden-transcript replay lane)", () => {
 	it("stock ACP handshake: the connector's protocol version passes through UNPATCHED", () => {
+		// The adapter ships no translation layer — both sides share the one
+		// constant, matching the pact-recorded handshake.
 		assert.equal(STOCK_ACP_PROTOCOL_VERSION, ACP_PROTOCOL_VERSION);
 		assert.equal(
 			pact.interactions[0].response.body.protocolVersion,
@@ -78,6 +77,7 @@ describe("swe-gemini: governed SWE task over stock ACP (golden-transcript replay
 		assert.deepEqual([...report.edits], recorded.edits);
 		assert.deepEqual([...report.refusals], recorded.refusals);
 		assert.equal(report.completed, recorded.completed);
+		// The workspace read AND the edit both flowed (SWE posture).
 		assert.deepEqual(run.agent().observed.granted, [
 			"workspace:read src",
 			"workspace:write edit src/index.ts",
@@ -91,6 +91,7 @@ describe("swe-gemini: governed SWE task over stock ACP (golden-transcript replay
 		assert.equal(replayed.principal?.svid, PRINCIPAL.svid);
 		assert.equal(replayed.decisions.length, 2);
 		assert.ok(replayed.closed);
+		// Deterministic: replaying the identical task yields identical facts.
 		const second = await harness().run();
 		assert.deepEqual(second.facts, facts);
 	});

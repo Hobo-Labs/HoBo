@@ -12,10 +12,14 @@ import {
 import { slow } from "./support/slow.js";
 import { compile, fixture, write } from "./support/typescript-project.js";
 
+// Generated code imported in-process registers trainables in the shared
+// registry; with files sharing a worker (isolate: false), clear it after each test.
 afterEach(() => {
 	resetTrainables();
 });
 
+// One of four files split from typescript-project-codegen.test.ts so the
+// files can spread across workers; helpers are in ./support/typescript-project.ts.
 describe("TypeScript app codegen executes the compiler-inferred app contract: sources, entrypoints and generated models", {
 	timeout: slow(60_000),
 }, () => {
@@ -43,7 +47,7 @@ void result; void service; void echoed;
 `,
 			);
 			await compile(root);
-
+			// SAFETY: the test compiled these local generated modules and knows their fixture exports.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -148,7 +152,7 @@ void result; void service; void echoed;
 				{ engine: createTypeScriptProjectCodegenEngine() },
 			);
 			await compile(root);
-
+			// SAFETY: fixture exports are compiled above and invoked via their generated module names.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -182,7 +186,7 @@ void result; void service; void echoed;
 			const engine = createTypeScriptProjectCodegenEngine();
 			await runCodegen({ projectRoot: root, check: false }, { engine });
 			await compile(root);
-
+			// SAFETY: the fixture's default export is an actual Bindle with an api HTTP entrypoint.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -236,7 +240,7 @@ void result; void service; void echoed;
 				await readFile(join(root, ".hobo/generated/other-tool.json"), "utf8"),
 			).toContain("other");
 			await compile(root);
-
+			// SAFETY: fixture handler returns the generated model's literal boolean.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as { app: { "source/app.ts": { run(): boolean } } };

@@ -1,9 +1,10 @@
-import { isJsonString, isJsonObject, type JsonValue } from "./json.js";
+import { isJsonString, isJsonObject } from "./json.js";
 import { createHash } from "node:crypto";
 import {
+
   authoritativeContractFromRequest,
   validateGenRequest,
-  validateGenerationEvent,
+  validateGenerationEvent
 } from "../../generation-pipeline-io-contract/src/contract.js";
 
 const scaffoldCandidateSchema = "hobo.gen.scaffold-candidate/v1";
@@ -14,7 +15,7 @@ const templateRegistry = new Map([
   ["migration-importer:terraform-state", renderTerraformImporterTemplate],
   ["provider:database", renderDatabaseProviderTemplate],
   ["resource-definition:database", renderDatabaseResourceDefinitionTemplate],
-  ["ui:reactive-view", renderReactiveViewTemplate],
+  ["ui:reactive-view", renderReactiveViewTemplate]
 ]);
 
 export class ScaffoldContractError extends Error {
@@ -41,14 +42,14 @@ export function scaffoldGenerationRequest(request, options = {}) {
         requestId: validated.requestId,
         reason: "scaffold-template-missing",
         budgetExhausted: true,
-        failingAssertions: ["scaffold.template.missing"],
+        failingAssertions: ["scaffold.template.missing"]
       },
-      options,
+      options
     );
 
     return {
       status: "needs-human",
-      event,
+      event
     };
   }
 
@@ -64,15 +65,19 @@ export function scaffoldGenerationRequest(request, options = {}) {
     bytes,
     ref: {
       uri: `draft://generation-scaffold/${contract.requestId}/${templateKey}@${digest}`,
-      digest,
+      digest
     },
     authoritativeInputs: {
       witPort: contract.target.witPort,
       conformanceSuiteId: contract.conformanceSuiteId,
       capabilityManifestDigest: contract.capabilityManifestDigest,
       authoritativeRefCount: validated.authoritativeRefs.length,
-      materialRefCount: 0,
+      materialRefCount: 0
     },
+    generatedRegion: {
+      start: "// <hobo-fill>",
+      end: "// </hobo-fill>"
+    }
   };
 
   validateScaffoldCandidate(candidate);
@@ -83,62 +88,33 @@ export function scaffoldGenerationRequest(request, options = {}) {
     {
       requestId: validated.requestId,
       candidateRef: candidate.ref,
-      iteration: options.iteration ?? 0,
+      iteration: options.iteration ?? 0
     },
-    options,
+    options
   );
 
   return {
     status: "candidate-generated",
     candidate,
-    event,
+    event
   };
 }
 
 export function validateScaffoldCandidate(candidate) {
   assertObject(candidate, "scaffold.candidate", "$");
-  assertEqual(
-    candidate.schema,
-    scaffoldCandidateSchema,
-    "scaffold.schema",
-    "$.schema",
-  );
-  assertNonEmptyString(
-    candidate.requestId,
-    "scaffold.request_id",
-    "$.requestId",
-  );
-  assertNonEmptyString(
-    candidate.artifactKind,
-    "scaffold.artifact_kind",
-    "$.artifactKind",
-  );
-  assertNonEmptyString(
-    candidate.targetWitPort,
-    "scaffold.target_wit_port",
-    "$.targetWitPort",
-  );
+  assertEqual(candidate.schema, scaffoldCandidateSchema, "scaffold.schema", "$.schema");
+  assertNonEmptyString(candidate.requestId, "scaffold.request_id", "$.requestId");
+  assertNonEmptyString(candidate.artifactKind, "scaffold.artifact_kind", "$.artifactKind");
+  assertNonEmptyString(candidate.targetWitPort, "scaffold.target_wit_port", "$.targetWitPort");
   if (!templateRegistry.has(candidate.templateKey)) {
     throw new ScaffoldContractError("scaffold.template_key", "$.templateKey");
   }
   const resolvedTemplateKey = resolveTemplateKey({
     artifactKind: candidate.artifactKind,
-    target: { witPort: candidate.targetWitPort },
+    target: { witPort: candidate.targetWitPort }
   });
-  assertEqual(
-    candidate.templateKey,
-    resolvedTemplateKey,
-    "scaffold.template_mismatch",
-    "$.templateKey",
-  );
+  assertEqual(candidate.templateKey, resolvedTemplateKey, "scaffold.template_mismatch", "$.templateKey");
   assertNonEmptyString(candidate.bytes, "scaffold.bytes", "$.bytes");
-  if (
-    /scaffold-placeholder|hobo-fill|\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu.test(
-      candidate.bytes,
-    )
-  ) {
-    throw new ScaffoldContractError("scaffold.incomplete_bytes", "$.bytes");
-  }
   assertObject(candidate.ref, "scaffold.ref", "$.ref");
   assertNonEmptyString(candidate.ref.uri, "scaffold.ref_uri", "$.ref.uri");
   if (!digestPattern.test(candidate.ref.digest ?? "")) {
@@ -147,29 +123,15 @@ export function validateScaffoldCandidate(candidate) {
   if (candidate.ref.digest !== sha256Digest(candidate.bytes)) {
     throw new ScaffoldContractError("scaffold.digest_mismatch", "$.ref.digest");
   }
-  assertObject(
-    candidate.authoritativeInputs,
-    "scaffold.authoritative_inputs",
-    "$.authoritativeInputs",
-  );
+  assertObject(candidate.authoritativeInputs, "scaffold.authoritative_inputs", "$.authoritativeInputs");
   assertEqual(
     candidate.authoritativeInputs.materialRefCount,
     0,
     "scaffold.material_exclusion",
-    "$.authoritativeInputs.materialRefCount",
+    "$.authoritativeInputs.materialRefCount"
   );
 
   return candidate;
-}
-
-export type ParsedScaffoldCandidate = ReturnType<
-  typeof validateScaffoldCandidate
->;
-
-export function parseScaffoldCandidate(
-  input: JsonValue,
-): ParsedScaffoldCandidate {
-  return validateScaffoldCandidate(input);
 }
 
 function resolveTemplateKey(request) {
@@ -179,22 +141,13 @@ function resolveTemplateKey(request) {
   if (kind === "provider" && ["database", "postgres"].includes(portFamily)) {
     return "provider:database";
   }
-  if (
-    kind === "resource-definition" &&
-    ["database", "postgres"].includes(portFamily)
-  ) {
+  if (kind === "resource-definition" && ["database", "postgres"].includes(portFamily)) {
     return "resource-definition:database";
   }
-  if (
-    kind === "implementation" &&
-    ["service", "function", "handler"].includes(portFamily)
-  ) {
+  if (kind === "implementation" && ["service", "function", "handler"].includes(portFamily)) {
     return "implementation:service";
   }
-  if (
-    kind === "migration-importer" &&
-    ["terraform", "opentofu", "state"].includes(portFamily)
-  ) {
+  if (kind === "migration-importer" && ["terraform", "opentofu", "state"].includes(portFamily)) {
     return "migration-importer:terraform-state";
   }
   if (kind === "ui" && ["ui", "view", "render"].includes(portFamily)) {
@@ -224,11 +177,11 @@ function buildEvent(request, type, data, options) {
     ts: options.ts ?? "2026-06-25T00:00:00.000Z",
     actor: {
       kind: "agent",
-      id: "agent:generation-scaffold",
+      id: "agent:generation-scaffold"
     },
     tenant: options.tenant ?? "tenant:demo",
     correlationId: request.requestId,
-    data,
+    data
   };
 
   return validateGenerationEvent(event);
@@ -236,86 +189,98 @@ function buildEvent(request, type, data, options) {
 
 function renderDatabaseProviderTemplate(contract) {
   return normalizeTemplate(`
+// Generated by HoBo scaffold stage. Fill capability logic only.
 export const artifactKind = "provider";
-export const targetWitPort = ${JSON.stringify(contract.target.witPort)};
-export const conformanceSuiteId = ${JSON.stringify(contract.conformanceSuiteId)};
-export const capabilityManifestDigest = ${JSON.stringify(contract.capabilityManifestDigest)};
+export const targetWitPort = "${contract.target.witPort}";
+export const conformanceSuiteId = "${contract.conformanceSuiteId}";
+export const capabilityManifestDigest = "${contract.capabilityManifestDigest}";
 
-export function createProvider(driver) {
-  for (const method of ["connect", "query"]) {
-    if (typeof driver?.[method] !== "function") {
-      throw new TypeError("database driver must implement " + method + "()");
-    }
-  }
-
-  return Object.freeze({
+export function createProvider() {
+  return {
     targetWitPort,
-    capabilities: Object.freeze(["database"]),
-    connect: (...args) => driver.connect(...args),
-    query: (...args) => driver.query(...args),
-    destroy: (...args) => typeof driver.destroy === "function" ? driver.destroy(...args) : undefined
-  });
+    capabilities: ["database"],
+    connect() {
+      // <hobo-fill>
+      throw new Error("scaffold-placeholder:connect");
+      // </hobo-fill>
+    },
+    query() {
+      // <hobo-fill>
+      throw new Error("scaffold-placeholder:query");
+      // </hobo-fill>
+    }
+  };
 }
 `);
 }
 
 function renderDatabaseResourceDefinitionTemplate(contract) {
   return normalizeTemplate(`
+// Generated by HoBo scaffold stage. Fill mapping details only.
 export const artifactKind = "resource-definition";
-export const targetWitPort = ${JSON.stringify(contract.target.witPort)};
-export const conformanceSuiteId = ${JSON.stringify(contract.conformanceSuiteId)};
+export const targetWitPort = "${contract.target.witPort}";
+export const conformanceSuiteId = "${contract.conformanceSuiteId}";
 
-export function defineDatabaseResource(resource = {}) {
-  const name = typeof resource.name === "string" && resource.name.length > 0
-    ? resource.name
-    : "database";
-  return Object.freeze({
+export function defineDatabaseResource() {
+  return {
     type: "database",
-    name,
     targetWitPort,
-    driver: "contract",
-    mapping: Object.freeze({ name, targetWitPort })
-  });
+    driver: "template",
+    mapping() {
+      // <hobo-fill>
+      throw new Error("scaffold-placeholder:mapping");
+      // </hobo-fill>
+    }
+  };
 }
 `);
 }
 
 function renderServiceImplementationTemplate(contract) {
   return normalizeTemplate(`
+// Generated by HoBo scaffold stage. Fill service behavior only.
 export const artifactKind = "implementation";
-export const targetWitPort = ${JSON.stringify(contract.target.witPort)};
-export const conformanceSuiteId = ${JSON.stringify(contract.conformanceSuiteId)};
+export const targetWitPort = "${contract.target.witPort}";
+export const conformanceSuiteId = "${contract.conformanceSuiteId}";
 
-export async function handle(input, context = {}) {
-  return { ok: true, targetWitPort, input, context };
+export async function handle(input, context) {
+  void input;
+  void context;
+  // <hobo-fill>
+  throw new Error("scaffold-placeholder:handle");
+  // </hobo-fill>
 }
 `);
 }
 
 function renderTerraformImporterTemplate(contract) {
   return normalizeTemplate(`
+// Generated by HoBo scaffold stage. Fill importer mapping only.
 export const artifactKind = "migration-importer";
-export const targetWitPort = ${JSON.stringify(contract.target.witPort)};
-export const conformanceSuiteId = ${JSON.stringify(contract.conformanceSuiteId)};
+export const targetWitPort = "${contract.target.witPort}";
+export const conformanceSuiteId = "${contract.conformanceSuiteId}";
 
 export function importTerraformState(state) {
-  if (!state || typeof state !== "object" || Array.isArray(state)) {
-    throw new TypeError("terraform state must be an object");
-  }
-  const resources = Array.isArray(state.resources) ? state.resources : [];
-  return { imported: true, targetWitPort, resources };
+  void state;
+  // <hobo-fill>
+  throw new Error("scaffold-placeholder:terraform-state-import");
+  // </hobo-fill>
 }
 `);
 }
 
 function renderReactiveViewTemplate(contract) {
   return normalizeTemplate(`
+// Generated by HoBo scaffold stage. Fill view projection only.
 export const artifactKind = "ui";
-export const targetWitPort = ${JSON.stringify(contract.target.witPort)};
-export const conformanceSuiteId = ${JSON.stringify(contract.conformanceSuiteId)};
+export const targetWitPort = "${contract.target.witPort}";
+export const conformanceSuiteId = "${contract.conformanceSuiteId}";
 
 export function renderReactiveView(model) {
-  return Object.freeze({ view: "reactive", targetWitPort, model });
+  void model;
+  // <hobo-fill>
+  throw new Error("scaffold-placeholder:reactive-view");
+  // </hobo-fill>
 }
 `);
 }

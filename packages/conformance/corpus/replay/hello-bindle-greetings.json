@@ -2,6 +2,7 @@
 	"id": "hello-bindle-greetings",
 	"description": "hello-bindle greeting read model recorded under seeded Clock + ULID",
 	"seed": "hobo.s1-16.hello-bindle",
+	"requiresUpcaster": false,
 	"events": [
 		{
 			"id": "01KDVDNA00NPF4ABNT68R2E8VY",
@@ -19,7 +20,7 @@
 			"streamId": "greeting:HoBo",
 			"seq": 2,
 			"type": "greeting.Served",
-			"v": 1,
+			"v": 2,
 			"ts": "2026-01-01T00:00:01.000Z",
 			"data": {
 				"name": "HoBo",
@@ -42,7 +43,7 @@
 			"streamId": "greeting:world",
 			"seq": 2,
 			"type": "greeting.Served",
-			"v": 1,
+			"v": 2,
 			"ts": "2026-01-01T00:00:03.000Z",
 			"data": {
 				"name": "world",

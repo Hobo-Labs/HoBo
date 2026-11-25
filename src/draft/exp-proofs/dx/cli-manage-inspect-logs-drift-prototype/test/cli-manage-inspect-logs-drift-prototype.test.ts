@@ -25,7 +25,7 @@ describe("CLI manage inspect/logs/drift prototype", () => {
     );
     assert.equal(
       proof.proofNote,
-      "urn:hobo:proof:cli-manage-inspect-logs-drift-prototype",
+      "docs/design/proofs/cli-manage-inspect-logs-drift-prototype/README.md",
     );
     assert.deepEqual(
       proof.scenes.map((scene) => scene.state),

@@ -1,3 +1,11 @@
+// Replays contracts/pacts/mongo-executor.pact.json against a MongoExecutor.
+//
+// The pact is the executor boundary written down; this is what makes it
+// executable evidence instead of prose. Interactions run in order against one
+// executor and share its state. The two Pact v3 mechanisms the file uses are
+// implemented here and nothing more: `matchingRules` with a `type` matcher
+// (resume tokens are opaque), and a `ProviderState` generator (a later request
+// is given the token an earlier response returned).
 import { readFileSync } from "node:fs";
 import {
 	canonicalEncode,
@@ -23,11 +31,13 @@ const PACT_URL = new URL(
 );
 
 export function loadExecutorPact(): JsonObject {
+	// SAFETY: JSON.parse yields a JSON value at this document boundary.
 	const pact = JSON.parse(readFileSync(PACT_URL, "utf8")) as JsonValue;
 	if (!isJsonObject(pact)) throw new Error("the pact must be a JSON object");
 	return pact;
 }
 
+/** The body of a transaction that the pact says must not commit. */
 class Abort extends Error {}
 
 interface Reply {
@@ -133,6 +143,7 @@ async function reply(
 	}
 }
 
+/** Paths under `matchingRules.body` that carry a `type` matcher. */
 function typeMatched(response: JsonObject): ReadonlySet<string> {
 	const rules = response.matchingRules;
 	const body = isJsonObject(rules) ? rules.body : undefined;
@@ -188,6 +199,7 @@ function differences(
 			];
 }
 
+/** Request body with every `ProviderState` generator applied. */
 function generated(
 	request: JsonObject,
 	state: ReadonlyMap<string, JsonValue>,
@@ -211,6 +223,10 @@ function generated(
 	);
 }
 
+/**
+ * Replay every interaction, in order, against one executor. Returns one line
+ * per mismatch; an empty array means the provider honours the pact.
+ */
 export async function replayExecutorPact(
 	executor: MongoExecutor,
 ): Promise<string[]> {

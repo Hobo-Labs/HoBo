@@ -11,15 +11,17 @@ Source issue: HOBO-531.
 
 This proof closes the parent closure-builder v1 API item without reimplementing
 child scope. It verifies that the accepted child/RCR evidence for HOBO-532
-through HOBO-538 is present, Done, and mapped to the public API contract that
-makes closure builder the explicit v1 Bindle authoring model.
+through HOBO-538 is present, Done, and mapped to the canonical public design
+record that makes closure builder the explicit v1 Bindle authoring model.
 
 ## Scope
 
 - Confirm child/RCR evidence exists for HOBO-532, HOBO-533, HOBO-534,
   HOBO-535, HOBO-536, HOBO-537, and HOBO-538.
 - Confirm each accepted evidence record links a `src/draft/` proof package and
-  a requirement or proof identifier.
+  a `docs/design/` system-of-record page.
+- Confirm v1 public docs lead with `bindle(name, builderFn)` from
+  `@hobo/bindles`.
 - Reject legacy explicit-Bindle vocabulary such as `b.use(...)`, named builder
   resource arguments, and relationship verbs other than `dependsOn()`.
 
@@ -39,9 +41,12 @@ The test suite proves:
 
 - the HOBO-531 parent record carries every accepted child/RCR issue;
 - every child/RCR evidence row is Done and points at branch proof;
-- every evidence reference is a stable requirement or proof identifier.
+- design docs index the closure-builder public API as the v1 Bindle authoring
+  contract and link this finalization proof; and
+- traceability carries both the parent row and the child rows.
 
-## Executable evidence
+## Architecture Evidence
+
 Protobuf data shapes live in [`architecture/`](./architecture). CUE constraints
 bound every protobuf type. The Pact contract under
 [`architecture/pacts/`](./architecture/pacts) records the consumer/provider
@@ -61,10 +66,10 @@ Event architecture:
 - Actor: the SDK contract actor owns the parent closure-builder finalization
   record.
 - Event store: accepted finalization evidence events append to the
-  contract event store.
-- Materialized view / projection: release readiness consumers read the
-  closure-builder v1 finalization projection.
+  design-contract event store.
+- Materialized view / projection: release readiness and SDK documentation
+  consumers read the closure-builder v1 finalization projection.
 - Snapshot: this package's tests, README, and Pact fixture are the review
   snapshot.
-- Read store: downstream release-readiness records consume the finalization
-  snapshot instead of reinterpreting raw issue text.
+- Read store: downstream v1 docs and release-readiness records consume the
+  finalization snapshot instead of reinterpreting raw Linear issue text.

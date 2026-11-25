@@ -1,3 +1,19 @@
+/**
+ * Legal-jurisdiction vocabulary + residency evaluation (ADR-0146).
+ *
+ * Regions are provider facts (free tokens in capability manifests);
+ * jurisdictions are legal facts; this module owns the typed join and the
+ * pure, deterministic evaluator that turns "constraint + target region" into
+ * an explicit verdict. It produces the `residencyConflict` inputs that
+ * `can-trail` / `can-migrate` already consume and the `residency` gate reason
+ * Gatekeeper reports. Open-spec anchors for the seed vocabulary: GDPR
+ * territorial scope + EU adequacy decisions, the EEA, FedRAMP's US federal
+ * boundary, and provider sovereignty controls (e.g. Cloudflare's
+ * `jurisdiction: "eu" | "fedramp"` knob) — cited as legalBasis strings, never
+ * depended on (ADR-0144 posture).
+ */
+
+// domain-view: parse-time vocabulary; wire form in data-models/jurisdiction.proto.
 import {
 	isJsonObject,
 	isJsonString,
@@ -19,6 +35,7 @@ export type JurisdictionId =
 	| "br"
 	| "global";
 
+/** Data-classification labels (governance-planes Plan 46), now typed. */
 export type DataClassification =
 	| "public"
 	| "internal"
@@ -27,27 +44,35 @@ export type DataClassification =
 	| "pci"
 	| "secret";
 
+// domain-view: parse-time catalog entry; wire form is JurisdictionRecord in data-models/jurisdiction.proto (_generated/jurisdiction_pb.ts).
 export interface JurisdictionRecord {
 	readonly id: JurisdictionId;
 	readonly name: string;
+	/** Citations (spec/program names), informational — never a dependency. */
 	readonly legalBasis: readonly string[];
 }
 
 export interface ResidencyConstraint {
+	/** Classifications the constraint applies to; empty = all data. */
 	readonly classifications: readonly DataClassification[];
 	readonly allowedJurisdictions: readonly JurisdictionId[];
 	readonly deniedJurisdictions?: readonly JurisdictionId[];
 }
 
+/** Which lawful transfer mechanisms an evaluation may rely on. Default is
+ * "none": a region must sit directly inside an allowed jurisdiction. */
 export type TransferMechanismMode = "none" | "adequacy" | "adequacy-or-scc";
 
+// domain-view: catalog entry; wire form is TransferMechanismRecord in data-models/jurisdiction.proto.
 export interface TransferMechanismEdge {
 	readonly fromJurisdiction: JurisdictionId;
 	readonly toJurisdiction: JurisdictionId;
 	readonly mechanism: "adequacy" | "scc";
+	/** Citations (decision/instrument names), informational — never a dependency. */
 	readonly legalBasis: readonly string[];
 }
 
+// domain-view: evaluation output; wire form is TransferBasisRecord in data-models/jurisdiction.proto.
 export interface TransferBasis {
 	readonly mechanism: "intra-jurisdiction" | "adequacy" | "scc";
 	readonly fromJurisdiction: JurisdictionId;
@@ -107,11 +132,16 @@ const CLASSIFICATIONS = new Set<DataClassification>([
 export function parseJurisdictionId(
 	value: JsonValue | undefined,
 ): JurisdictionId {
-	if (!isJsonString(value) || !JURISDICTION_IDS.has(value as JurisdictionId)) {
+	if (
+		!isJsonString(value) ||
+		// SAFETY: assertion required at this I/O or test boundary.
+		!JURISDICTION_IDS.has(value as JurisdictionId)
+	) {
 		throw new JurisdictionParseError(
 			`unknown jurisdiction id: ${String(value)}`,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as JurisdictionId;
 }
 
@@ -120,12 +150,14 @@ export function parseDataClassification(
 ): DataClassification {
 	if (
 		!isJsonString(value) ||
+		// SAFETY: assertion required at this I/O or test boundary.
 		!CLASSIFICATIONS.has(value as DataClassification)
 	) {
 		throw new JurisdictionParseError(
 			`unknown data classification: ${String(value)}`,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as DataClassification;
 }
 
@@ -135,6 +167,7 @@ export function parseResidencyConstraint(
 	if (!isJsonObject(value) || value === null) {
 		throw new JurisdictionParseError("residency constraint must be an object");
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const input = value as JsonObject;
 	const classifications = Array.isArray(input.classifications)
 		? input.classifications.map(parseDataClassification)
@@ -162,6 +195,7 @@ export function parseResidencyConstraint(
 	});
 }
 
+/** Seed jurisdiction catalog with informational legal-basis citations. */
 export const JURISDICTIONS: readonly JurisdictionRecord[] = Object.freeze(
 	(
 		[
@@ -216,10 +250,26 @@ export const JURISDICTIONS: readonly JurisdictionRecord[] = Object.freeze(
 	),
 );
 
+/**
+ * Region-token → jurisdictions seed map. Region tokens are the ones providers
+ * actually publish today (aws/gcp style, coarse doc tokens, cloudflare colos
+ * modeled as `global`, and the local/dev token). Membership is deliberately
+ * conservative: an EU region is `["eu", "eea"]`; a UK region is only `["uk"]`.
+ * `local` maps to `global` (self-host: the operator's own premises are their
+ * own legal problem — HoBo does not guess).
+ */
+/**
+ * Seed transfer-mechanism catalog (ADR-0146 v2): real adequacy decisions and
+ * the SCC instrument as data edges. Deliberately small and honest — every
+ * edge cites its instrument; absence of an edge means the transfer has no
+ * recognized basis here (fail-closed).
+ */
 export const TRANSFER_MECHANISMS: readonly TransferMechanismEdge[] =
 	Object.freeze(
+		// SAFETY: assertion required at this I/O or test boundary.
 		(
 			[
+				// EU/EEA adequacy decisions (GDPR Art. 45).
 				...(["eu", "eea"] as const).flatMap((from): TransferMechanismEdge[] => [
 					{
 						fromJurisdiction: from,
@@ -262,6 +312,7 @@ export const TRANSFER_MECHANISMS: readonly TransferMechanismEdge[] =
 						],
 					},
 				]),
+				// UK retained-GDPR mirrors of the same instruments.
 				{
 					fromJurisdiction: "uk",
 					toJurisdiction: "eu",
@@ -292,26 +343,25 @@ export const TRANSFER_MECHANISMS: readonly TransferMechanismEdge[] =
 export const REGION_JURISDICTIONS: Readonly<
 	Record<string, readonly JurisdictionId[]>
 > = Object.freeze({
+	// aws-style
 	"us-east-1": ["us"],
 	"us-west-2": ["us"],
 	"eu-west-1": ["eu", "eea"],
 	"eu-central-1": ["eu", "eea"],
+	// gcp-style
 	"us-central1": ["us"],
 	"us-east1": ["us"],
 	"europe-west1": ["eu", "eea"],
-	eastus: ["us"],
-	eastus2: ["us"],
-	westus2: ["us"],
-	westeurope: ["eu", "eea"],
+	// coarse doc tokens
 	us: ["us"],
 	"us-east": ["us"],
 	"eu-west": ["eu", "eea"],
 	eu: ["eu", "eea"],
 	"ap-south": ["in"],
 	uk: ["uk"],
+	// sovereign/federal
 	"us-gov-west-1": ["us", "us-gov"],
-	"cloudflare-r2-eu": ["eu", "eea"],
-	"cloudflare-r2-fedramp": ["us", "us-gov"],
+	// provider-neutral
 	global: ["global"],
 	local: ["global"],
 });
@@ -320,6 +370,7 @@ function normalizeRegion(region: string): string {
 	return region.trim().toLowerCase();
 }
 
+/** Jurisdictions a region token sits in, or empty when unmapped. */
 export function jurisdictionsForRegion(
 	region: string,
 	catalog: Readonly<
@@ -329,10 +380,21 @@ export function jurisdictionsForRegion(
 	return catalog[normalizeRegion(region)] ?? Object.freeze([]);
 }
 
+/**
+ * Pure, deterministic residency evaluation. Fail-closed: an unmapped region
+ * is a conflict, never a pass — geography the platform cannot attest is
+ * geography the constraint cannot allow.
+ */
 export function evaluateResidency(input: {
 	readonly constraint: ResidencyConstraint;
 	readonly region: string;
 	readonly catalog?: Readonly<Record<string, readonly JurisdictionId[]>>;
+	/**
+	 * Lawful transfer mechanisms the evaluation may rely on when the region is
+	 * not directly inside an allowed jurisdiction (ADR-0146 v2). Default
+	 * "none" preserves strict fail-closed behavior; opting in never bypasses
+	 * denied jurisdictions or unmapped regions.
+	 */
 	readonly transferMechanisms?: TransferMechanismMode;
 	readonly mechanismCatalog?: readonly TransferMechanismEdge[];
 }): ResidencyEvaluation {
@@ -348,9 +410,7 @@ export function evaluateResidency(input: {
 		});
 	}
 	const denied = input.constraint.deniedJurisdictions ?? [];
-	const deniedHit = denied.includes("global")
-		? "global"
-		: regionJurisdictions.find((entry) => denied.includes(entry));
+	const deniedHit = regionJurisdictions.find((entry) => denied.includes(entry));
 	if (deniedHit !== undefined) {
 		return Object.freeze({
 			ok: false,
@@ -358,15 +418,6 @@ export function evaluateResidency(input: {
 			region,
 			regionJurisdictions,
 			remediation: `region "${region}" sits in denied jurisdiction "${deniedHit}"`,
-		});
-	}
-	if (regionJurisdictions.includes("global") && denied.length > 0) {
-		return Object.freeze({
-			ok: false,
-			code: "jurisdiction-not-allowed" as const,
-			region,
-			regionJurisdictions,
-			remediation: `region "${region}" has an unrestricted footprint; it cannot prove exclusion of denied jurisdictions [${denied.join(", ")}]`,
 		});
 	}
 	const allowed = input.constraint.allowedJurisdictions;
@@ -383,6 +434,7 @@ export function evaluateResidency(input: {
 				mechanism: "intra-jurisdiction" as const,
 				fromJurisdiction: inside,
 				toJurisdiction: inside,
+				// SAFETY: assertion required at this I/O or test boundary.
 				legalBasis: Object.freeze([] as string[]),
 			}),
 		});

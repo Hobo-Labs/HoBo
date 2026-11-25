@@ -2,23 +2,22 @@ syntax = "proto3";
 
 package hobo.core.v1;
 
-import "google/protobuf/struct.proto";
+enum StreamerRunStatus {
+  STREAMER_RUN_STATUS_UNSPECIFIED = 0;
+  STREAMER_RUN_STATUS_COMPLETED = 1;
+  STREAMER_RUN_STATUS_CLOSED = 2;
+  STREAMER_RUN_STATUS_FAILED = 3;
+}
 
 message StreamerFrame {
   string run_id = 1;
-  double seq = 2;
+  int64 seq = 2;
   string stream = 3;
-  google.protobuf.Value chunk = 4;
+  bytes chunk = 4;
 }
 
 message StreamerRunResult {
   string run_id = 1;
-  string status = 2;
+  StreamerRunStatus status = 2;
   string reason = 3;
-}
-
-message StreamerHistoryExpired {
-  string run_id = 1;
-  double requested_seq = 2;
-  double first_available_seq = 3;
 }

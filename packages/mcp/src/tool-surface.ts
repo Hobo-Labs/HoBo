@@ -98,8 +98,8 @@ export function assertToolSurfaceParity(
 ): ParityReport {
 	const canonicalVerbs = verbs.map((verb) => verb.name);
 	const toolVerbs = surface.map((tool) => tool.verb);
-	const canonicalSet = new Set<string>(canonicalVerbs);
-	const toolSet = new Set<string>(toolVerbs);
+	const canonicalSet = new Set(canonicalVerbs);
+	const toolSet = new Set(toolVerbs);
 	const missing = canonicalVerbs.filter((verb) => !toolSet.has(verb));
 	const extra = toolVerbs.filter((verb) => !canonicalSet.has(verb));
 	const sameLength = toolVerbs.length === canonicalVerbs.length;

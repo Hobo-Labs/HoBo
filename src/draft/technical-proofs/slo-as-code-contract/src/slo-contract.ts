@@ -242,21 +242,13 @@ export function initialBudgetView(definition) {
   };
 }
 
-export function applyBudgetEvent(view, _definition, event) {
+export function applyBudgetEvent(view, definition, event) {
   const parsedEvent = validateSloEvent(event);
   if (!parsedEvent.ok) {
     throw new Error(parsedEvent.errors.join("\n"));
   }
   if (!view.gateable || parsedEvent.event.data.sloName !== view.sloName) {
     return view;
-  }
-
-  if (parsedEvent.event.type !== "slo.BudgetBurned" && parsedEvent.event.type !== "slo.BudgetExhausted") {
-    return view;
-  }
-  if (view.lastSeq !== null && parsedEvent.event.seq <= view.lastSeq) {
-    if (parsedEvent.event.seq === view.lastSeq && parsedEvent.event.id === view.lastEventId) return view;
-    throw new Error("slo budget event sequence must advance");
   }
 
   if (parsedEvent.event.type === "slo.BudgetExhausted") {
@@ -269,8 +261,16 @@ export function applyBudgetEvent(view, _definition, event) {
       lastEventId: parsedEvent.event.id,
     };
   }
-  const remainingBudgetRatio = roundRatio(parsedEvent.event.data.remainingBudgetRatio);
-  const consumedBudgetRatio = roundRatio(1 - remainingBudgetRatio);
+  if (parsedEvent.event.type !== "slo.BudgetBurned") {
+    return view;
+  }
+
+  const target = primaryObjectiveTarget(definition);
+  const errorBudget = 1 - target;
+  const errorRate = (parsedEvent.event.data.total - parsedEvent.event.data.good) / parsedEvent.event.data.total;
+  const burnedBudgetRatio = errorRate / errorBudget;
+  const consumedBudgetRatio = roundRatio(clamp(view.consumedBudgetRatio + burnedBudgetRatio, 0, 1));
+  const remainingBudgetRatio = roundRatio(clamp(1 - consumedBudgetRatio, 0, 1));
 
   return {
     ...view,
@@ -416,9 +416,6 @@ function validateBurnRateThresholds(spec, errors) {
     if (lookbackSeconds && samplingSeconds && lookbackSeconds < samplingSeconds) {
       errors.push(`${path}.lookbackWindow must be >= samplingInterval`);
     }
-    if (timeWindowSeconds && lookbackSeconds && lookbackSeconds > timeWindowSeconds) {
-      errors.push(`${path}.lookbackWindow must not exceed spec.timeWindow.duration`);
-    }
     if (timeWindowSeconds && samplingSeconds && timeWindowSeconds < samplingSeconds) {
       errors.push(`${path}.samplingInterval must not exceed spec.timeWindow.duration`);
     }
@@ -501,9 +498,7 @@ function clamp(value, min, max) {
 }
 
 function roundRatio(value) {
-  const rounded = Number(value.toFixed(12));
-  if ((rounded === 0 && value > 0) || (rounded === 1 && value !== 1)) return value;
-  return rounded;
+  return Number(value.toFixed(12));
 }
 
 function deepMerge(base, overrides) {

@@ -1,3 +1,6 @@
+// data-models/rollout.cue and the TypeScript boundary must agree: every
+// ledger body the live orchestrator writes vets clean against its definition,
+// and what the parse boundary refuses, CUE refuses too.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,6 +24,7 @@ import { rig } from "./rig.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = resolve(here, "../../data-models/rollout.cue");
 
+/** `cue` on PATH, else the repo-pinned binary under an ancestor's `.tools/cue/<version>/cue`. */
 function findCue(): string | undefined {
 	try {
 		execFileSync("cue", ["version"], { stdio: "ignore" });
@@ -137,6 +141,7 @@ describe.skipIf(cue === undefined)(
 				[5, 50],
 			]) {
 				const parsed = stagePercentsFor(RolloutStrategy.CANARY, percents);
+				// The parser appends 100 to a short ramp; CUE vets the stored (completed) plan.
 				const stored = parsed.ok ? parsed.value : percents;
 				expect(vets("#RolloutPlanRecord", plan(stored))).toBe(parsed.ok);
 			}

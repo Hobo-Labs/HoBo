@@ -1,11 +1,13 @@
 import type { GithubRunWorkflowJob, GithubTransport } from "./github.js";
 import {
 	getJob,
+	IncompleteGithubRunListing,
 	listInProgressWorkflowRunIds,
 	listRunWorkflowJobs,
 } from "./github.js";
 import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "./isolated-worker/container-timeout.js";
 
+/** GitHub job statuses that keep a JIT runner registered and busy. */
 export const RUNNER_HELD_JOB_STATUSES = new Set([
 	"queued",
 	"in_progress",
@@ -14,10 +16,22 @@ export const RUNNER_HELD_JOB_STATUSES = new Set([
 	"requested",
 ]);
 
+export const RUNNER_EXECUTING_JOB_STATUSES = new Set([
+	"in_progress",
+	"waiting",
+	"pending",
+	"requested",
+]);
+
+export function isUnknownRunnerJobStatus(status: string): boolean {
+	return status !== "completed" && !RUNNER_HELD_JOB_STATUSES.has(status);
+}
+
 export type ResolvedRunnerAssignment = Readonly<{
 	jobId: number;
 	runId: number;
 	status: string;
+	incomplete?: true;
 }>;
 
 export type RunnerRunCorrelation = Readonly<
@@ -31,11 +45,10 @@ function runnerMatchesJob(
 	runnerName: string,
 	runnerId: number,
 ): boolean {
-	if (runnerId > 0 && job.runner_id === runnerId) return true;
-	const name = job.runner_name?.trim();
-	return name !== undefined && name !== "" && name === runnerName.trim();
+	return runnerMatchesGitHubJob({ runnerId, runnerName }, job);
 }
 
+/** Which workflow job on this run GitHub bound to an ephemeral box JIT runner. */
 export function correlateRunnerOnRun(
 	jobs: readonly GithubRunWorkflowJob[],
 	reservedJobId: number,
@@ -46,7 +59,19 @@ export function correlateRunnerOnRun(
 		runnerMatchesJob(job, runnerName, runnerId),
 	);
 	if (served.length === 0) return { kind: "unassigned" };
-	const reserved = served.find((job) => job.id === reservedJobId);
+	const executing = served.filter((job) =>
+		RUNNER_EXECUTING_JOB_STATUSES.has(job.status),
+	);
+	const unknown = served.filter((job) => isUnknownRunnerJobStatus(job.status));
+	const held = served.filter((job) => RUNNER_HELD_JOB_STATUSES.has(job.status));
+	const candidates = executing.length
+		? executing
+		: unknown.length
+			? unknown
+			: held.length
+				? held
+				: served;
+	const reserved = candidates.find((job) => job.id === reservedJobId);
 	if (reserved) {
 		return {
 			kind: "served-reserved",
@@ -54,7 +79,7 @@ export function correlateRunnerOnRun(
 			status: reserved.status,
 		};
 	}
-	const other = served[0];
+	const other = candidates[0];
 	if (!other) return { kind: "unassigned" };
 	return { kind: "served-other", jobId: other.id, status: other.status };
 }
@@ -80,24 +105,22 @@ function servedOnRun(
 export function runnerHoldsActiveJob(
 	assignment: ResolvedRunnerAssignment | undefined,
 ): boolean {
-	return !!assignment && RUNNER_HELD_JOB_STATUSES.has(assignment.status);
+	return (
+		!!assignment &&
+		(RUNNER_HELD_JOB_STATUSES.has(assignment.status) ||
+			isUnknownRunnerJobStatus(assignment.status))
+	);
 }
-
-export const RUNNER_EXECUTING_JOB_STATUSES = new Set([
-	"in_progress",
-	"waiting",
-	"pending",
-	"requested",
-]);
 
 export function runnerMatchesGitHubJob(
 	lease: Readonly<{ runnerId: number; runnerName: string }>,
 	job: Readonly<{
-		runner_id?: number | null;
-		runner_name?: string | null;
+		runner_id?: number | null | undefined;
+		runner_name?: string | null | undefined;
 	}>,
 ): boolean {
-	if (lease.runnerId > 0 && job.runner_id === lease.runnerId) return true;
+	if (lease.runnerId > 0 && (job.runner_id ?? 0) > 0)
+		return job.runner_id === lease.runnerId;
 	const name = job.runner_name?.trim();
 	return name !== undefined && name !== "" && name === lease.runnerName.trim();
 }
@@ -110,7 +133,11 @@ export function servedGitHubJobBlocksSettlement(
 		runner_name?: string | null;
 	}>,
 ): boolean {
-	if (!RUNNER_EXECUTING_JOB_STATUSES.has(job.status)) return false;
+	if (
+		!RUNNER_EXECUTING_JOB_STATUSES.has(job.status) &&
+		!isUnknownRunnerJobStatus(job.status)
+	)
+		return false;
 	return runnerMatchesGitHubJob(lease, job);
 }
 
@@ -121,10 +148,21 @@ export function assignmentBlocksRunnerTeardown(
 	queuedBoundGraceMs = ISOLATED_JIT_QUEUED_BOUND_GRACE_MS,
 ): boolean {
 	if (!assignment) return false;
-	if (RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status)) return true;
+	if (
+		RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status) ||
+		isUnknownRunnerJobStatus(assignment.status)
+	)
+		return true;
 	if (assignment.status === "queued") {
-		if (!Number.isFinite(boundSinceMs)) return true;
-		return nowMs - boundSinceMs < queuedBoundGraceMs;
+		if (
+			!Number.isFinite(boundSinceMs) ||
+			!Number.isFinite(nowMs) ||
+			!Number.isFinite(queuedBoundGraceMs) ||
+			queuedBoundGraceMs < 0
+		)
+			return true;
+		const elapsed = nowMs - boundSinceMs;
+		return !Number.isFinite(elapsed) || elapsed < queuedBoundGraceMs;
 	}
 	return false;
 }
@@ -145,6 +183,7 @@ export async function evaluateRunnerTeardownGuard(
 	opts?: Readonly<{
 		failClosed?: boolean;
 		queuedBoundGraceMs?: number;
+		/** When false, defer only on resolved assignment (no served-job getJob). */
 		observeServedJob?: boolean;
 	}>,
 ): Promise<boolean> {
@@ -166,6 +205,7 @@ export async function evaluateRunnerTeardownGuard(
 				preferRunIds: fields.preferRunIds,
 			},
 		);
+		if (assignment?.incomplete && opts?.failClosed === true) return true;
 		if (
 			assignmentBlocksRunnerTeardown(
 				assignment,
@@ -177,7 +217,9 @@ export async function evaluateRunnerTeardownGuard(
 			return true;
 		if (!observeServedJob) return false;
 	} catch {
-		if (!observeServedJob) return opts?.failClosed === true;
+		if (opts?.failClosed === true) return true;
+		if (!observeServedJob) return false;
+		// Fall through to direct observation of the served workflow job.
 	}
 	try {
 		const job = await getJob(
@@ -195,16 +237,24 @@ export async function evaluateRunnerTeardownGuard(
 		if (
 			observed.status === "queued" &&
 			runnerMatchesGitHubJob(leaseRef, observed) &&
-			Number.isFinite(fields.boundSinceMs) &&
-			fields.nowMs - fields.boundSinceMs < grace
+			assignmentBlocksRunnerTeardown(
+				{ jobId: job.id, runId: job.run_id, status: observed.status },
+				fields.boundSinceMs,
+				fields.nowMs,
+				grace,
+			)
 		)
 			return true;
 		return false;
 	} catch {
-		return opts?.failClosed === true && fields.runnerId > 0;
+		return opts?.failClosed === true;
 	}
 }
 
+/**
+ * Resolve which workflow job GitHub assigned to a box JIT runner, including when
+ * the job is on another workflow run than the lease's reserved job.
+ */
 export async function resolveRunnerAssignedJob(
 	api: GithubTransport,
 	installationId: number,
@@ -232,22 +282,43 @@ export async function resolveRunnerAssignedJob(
 		);
 		return servedOnRun(jobs, reservedJobId, runnerName, runnerId);
 	};
-	for (const runId of options?.preferRunIds ?? []) {
-		const hit = await scanRun(runId);
-		if (hit && RUNNER_HELD_JOB_STATUSES.has(hit.status)) return hit;
-	}
-	const runIds = await listInProgressWorkflowRunIds(
-		api,
-		installationId,
-		repository,
-		options?.inProgressRunLimit ?? 25,
-	);
+	let unknown: ResolvedRunnerAssignment | undefined;
+	let queued: ResolvedRunnerAssignment | undefined;
 	let inactive: ResolvedRunnerAssignment | undefined;
-	for (const runId of runIds) {
-		const hit = await scanRun(runId);
-		if (!hit) continue;
-		if (RUNNER_HELD_JOB_STATUSES.has(hit.status)) return hit;
-		inactive ??= hit;
+	try {
+		for (const runId of options?.preferRunIds ?? []) {
+			const hit = await scanRun(runId);
+			if (hit && RUNNER_EXECUTING_JOB_STATUSES.has(hit.status)) return hit;
+			if (hit && isUnknownRunnerJobStatus(hit.status)) unknown ??= hit;
+			else if (hit?.status === "queued") queued ??= hit;
+		}
+		let runIds: readonly number[];
+		let incomplete = false;
+		try {
+			runIds = await listInProgressWorkflowRunIds(
+				api,
+				installationId,
+				repository,
+				options?.inProgressRunLimit ?? 25,
+			);
+		} catch (error) {
+			if (!(error instanceof IncompleteGithubRunListing)) throw error;
+			runIds = error.runIds;
+			incomplete = true;
+		}
+		for (const runId of runIds) {
+			const hit = await scanRun(runId);
+			if (!hit) continue;
+			if (RUNNER_EXECUTING_JOB_STATUSES.has(hit.status)) return hit;
+			if (isUnknownRunnerJobStatus(hit.status)) unknown ??= hit;
+			else if (hit.status === "queued") queued ??= hit;
+			else inactive ??= hit;
+		}
+		if (incomplete) throw new Error("GitHub runner assignment scan incomplete");
+	} catch (error) {
+		if (unknown) return { ...unknown, incomplete: true };
+		if (queued) return { ...queued, incomplete: true };
+		throw error;
 	}
-	return inactive;
+	return unknown ?? queued ?? inactive;
 }

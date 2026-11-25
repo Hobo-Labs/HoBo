@@ -3,18 +3,11 @@
 The reactive-streams + saga kernel for the HoBo data plane (S1-15b): `emit` /
 `subscribe` over the event log, a **Reactor** that folds materializations and
 pushes recomputed snapshots over the `Streamer` port with reads-your-writes via
-per-stream positions, and `defineSaga` for cross-aggregate choreography with compensation.
+`seq`, and `defineSaga` for cross-aggregate choreography with compensation.
 
 Builds on [`@hobo/data`](../data) (aggregates/commands) and
-[`@hobo/core`](../core) (EventEnvelope, EventStore, Streamer ports).
-
-`subscribeCacheInvalidation` observes `data.Changed` events and invalidates the
-tags selected by the caller. Await `ready` before publishing changes, and await
-`drain()` to wait for already queued invalidations and receive any errors. Pass
-`replayStreams` to replay those event streams before `ready` resolves. Live
-changes are buffered during replay; exceeding `maxBufferedEvents` rejects
-`ready` and closes the subscription. With no replay streams, it observes live
-changes only.
+[`@hobo/core`](../core) (EventEnvelope, EventStore, Streamer ports). See
+[`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ```ts
 import { createReactor, defineMaterialization, defineSaga } from "@hobo/events";
@@ -29,47 +22,9 @@ const openOrders = defineMaterialization({
 
 const reactor = createReactor({ store, streamer });
 const sub = await reactor.subscribe(openOrders, { subscriptionId: "sub:orders" });
-const result = await reactor.execute(orders, {
-  actorHost: deps.actorHost,
-  streamId: "order:1",
-  command: cmd,
-  context: ctx,
-});
+const { seq } = await orders.execute(deps, "order:1", cmd, ctx);
+await sub.awaitSeq(seq); // reads-your-writes: the just-placed order is now visible
 ```
-
-`reactor.execute` waits for subscriptions that were active when the command
-started and whose read sets match an appended event. If an affected subscription
-fails or its wait is aborted, `CommandObservationError` carries the full
-committed command result. A pre-aborted signal prevents command execution.
-Pass an `AbortSignal` to bound the wait. Subscriptions started later must use
-replay to reconstruct earlier events.
-
-`replayStreamId` rebuilds one stream before live events are applied. The Reactor
-buffers events while replay runs and ignores events already folded from that
-stream. Other streams are observed from the live subscription's readiness point;
-they are not reconstructed by this option. `awaitStreamSeq` waits for a specific
-stream, including events outside the read set.
-
-Each pushed frame includes `streamSeqs`. A slow reader leaves at most one latest
-snapshot pending while the Reactor retries backpressure; it receives the latest
-state and stream positions when it resumes.
-
-`createOptimisticSubscription` accepts those frames and overlays pending command
-patches on a copy of the authoritative value. Pass each command's expected
-stream positions as `seqFloor`; a frame that reaches every position reconciles
-the patch. Rejecting a command removes its patch and reapplies the remaining
-ones. Patches whose sequence floors are ordered run in that order; otherwise the
-earliest submitted eligible patch runs first. Patch functions must be deterministic and
-free of side effects because they can run again after each frame or rejection.
-The visible `seq` and `streamSeqs` always come from the authoritative frame.
-The subscription rejects regressing frames and keeps its previous state if a
-patch throws while a change is being evaluated. It also preserves an optional
-`stale` flag from the authoritative frame. Its audit log is in memory.
-
-`maxBufferedEvents` and `maxTrackedStreams` each default to 10,000. Exceeding a
-limit closes the subscription and rejects pending waits. Closing a subscription
-also rejects pending waits; a failed initial listener or replay cleans up the
-subscription and its Streamer run.
 
 ## Pinned event bodies
 
@@ -78,10 +33,7 @@ the `migration.*` family, one evolution contract per type, and
 `corpus/golden-replay-baseline.json` is the append-only record of every body
 ever pinned. `runCanDeployUpcasterGate` replays each pinned body through its
 upcaster chain to the current version; a body that cannot be lifted fails the
-test lane. Each contract declares one schema for every version from 1 through
-current and unique upcasters and corpus entries for its event type. The gate
-checks each step twice for every replayed body, including intermediate bodies,
-and reports inconsistent results.
+test lane.
 
 A body schema is a list of tagged fields: `stringField`, `u32Field`,
 `boolField`, `stringsField` (a list of strings) and `jsonField` (a JSON object,

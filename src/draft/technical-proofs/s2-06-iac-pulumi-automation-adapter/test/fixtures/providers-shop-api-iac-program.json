@@ -1,0 +1,31 @@
+{
+  "apiVersion": "hobo.iac-program/v1",
+  "kind": "iac-program",
+  "provider": "pulumi",
+  "deploymentId": "shop-demo",
+  "stack": "tenant/shop-demo",
+  "resources": [
+    {
+      "name": "cache",
+      "type": "wasi:keyvalue/store",
+      "provider": "cloudflare",
+      "inputs": { "durability": "ephemeral" },
+      "outputs": ["endpoint", "resourceId"]
+    },
+    {
+      "name": "assets",
+      "type": "wasi:blobstore/container",
+      "provider": "cloudflare",
+      "inputs": {
+        "cacheEndpoint": "${resources.cache.outputs.endpoint}"
+      },
+      "outputs": ["endpoint", "resourceId"]
+    }
+  ],
+  "stackOutputs": {
+    "assetEndpoint": "${resources.assets.outputs.endpoint}",
+    "cacheEndpoint": "${resources.cache.outputs.endpoint}"
+  },
+  "buildSpecRef": "build:shop-api:wasm",
+  "links": ["component:shop-api imports wasi:sql/postgres -> provider:aws-rds"]
+}

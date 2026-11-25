@@ -42,4 +42,4 @@ Cross-aggregate workflows are eventually consistent. Test sagas with correlation
 
 ## Related
 
-[Data plane](/HoBo/system/data-plane/) · [ActorHost](/HoBo/reference/actor-host/) · [Unit tests](/HoBo/testing/unit/)
+[Data plane](/HoBo/architecture/data-plane/) · [ActorHost](/HoBo/reference/actor-host/) · [Unit tests](/HoBo/testing/unit/)

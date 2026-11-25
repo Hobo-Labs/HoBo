@@ -59,7 +59,7 @@ describe("@hobo/provider-kafka", () => {
 		});
 		expect(result.secretless).toBe(true);
 		expect(result.messagingBackend).toBe("native-kafka");
-		expect(result.witExports[0]).toContain("wasi:messaging");
+		expect(result.witExports).toEqual([]);
 		expect(result.topics[0]?.partitions).toBe(6);
 	});
 
@@ -92,16 +92,34 @@ describe("@hobo/provider-kafka", () => {
 	it("provider capability manifest is secretless", () => {
 		const provider = createKafkaProvider({ tenantId: "acme" });
 		const docs = provider.capabilityManifest();
-		const auth = JSON.parse(docs["/.well-known/capability-manifest/auth.json"]);
 		const index = JSON.parse(
 			docs["/.well-known/capability-manifest/index.json"],
 		);
+		expect(index.witExports).toEqual([]);
+		expect(index.nativeMessaging).toEqual({
+			contract: "hobo.messaging-port/v2",
+			componentWit: false,
+		});
+		const auth = JSON.parse(docs["/.well-known/capability-manifest/auth.json"]);
 		expect(auth.staticSecrets).toBe(false);
 		expect(auth.mode).toBe("secretless-first");
-		expect(index.terms).toEqual({
-			url: "https://www.apache.org/licenses/LICENSE-2.0",
-			reviewedOn: "2026-11-18",
-		});
+		const capabilities = JSON.parse(
+			docs["/.well-known/capability-manifest/capabilities.json"],
+		);
+		expect(capabilities.capabilities).toEqual([]);
+		expect(provider.capabilities.deadLetter).toBe(false);
+		expect(() =>
+			provider.realize({
+				topics: [
+					{
+						name: "t",
+						partitions: 1,
+						replicationFactor: 1,
+						deadLetterTopic: "dead",
+					},
+				],
+			}),
+		).toThrow(/dead-letter/);
 		const realized = provider.realize({
 			topics: [{ name: "t", partitions: 1, replicationFactor: 1 }],
 		});

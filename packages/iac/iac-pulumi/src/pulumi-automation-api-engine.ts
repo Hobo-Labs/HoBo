@@ -67,9 +67,9 @@ interface AutomationStackLike {
 	preview(): Promise<{
 		changeSummary?: Record<string, number>;
 	}>;
-	up(): Promise<UpResult | void>;
-	refresh(): Promise<RefreshResult | void>;
-	destroy(): Promise<DestroyResult | void>;
+	up(): Promise<UpResult>;
+	refresh(): Promise<RefreshResult>;
+	destroy(): Promise<DestroyResult>;
 	outputs(): Promise<Record<string, { value: unknown }>>;
 }
 
@@ -108,7 +108,6 @@ export function createPulumiAutomationApiEngine(
 	const stateDir = join(options.workDir, "state");
 	const runPassphrase = statePassphrase(
 		options.statePassphrase,
-		env.PULUMI_CONFIG_PASSPHRASE,
 		options.ephemeralState,
 	);
 	const programsDir = join(options.workDir, "programs");

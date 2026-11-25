@@ -242,7 +242,12 @@ cache_exported_file=""
 deps_uses_containerd_image_store() {
   [[ "$(docker info --format '{{json .DriverStatus}}' 2>/dev/null)" == *io.containerd.snapshotter* ]]
 }
-if deps_uses_containerd_image_store; then
+deps_build_supports_registry_cache() {
+  local help
+  help="$(docker build --help 2>/dev/null || true)"
+  grep -q -- '--cache-to' <<<"$help"
+}
+if deps_uses_containerd_image_store && deps_build_supports_registry_cache; then
   if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
     cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")
     if [[ "${HOBO_CI_DEPS_EXPORT_BUILDCACHE:-0}" == "1" ]]; then
@@ -250,6 +255,8 @@ if deps_uses_containerd_image_store; then
       cache_exported_file="${HOBO_CI_DEPS_BUILDCACHE_EXPORTED_FILE:-}"
     fi
   fi
+elif ! deps_build_supports_registry_cache; then
+  echo "deps registry cache import skipped: docker build lacks --cache-to"
 else
   echo "deps registry cache import skipped: classic image store"
 fi

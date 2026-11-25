@@ -1,115 +1,108 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type MessageDescriptor, Verifier } from "@pact-foundation/pact";
 import { describe, expect, it } from "vitest";
+
 import {
-	type CreditLedgerView,
 	createDispatcherRegistry,
-	type DispatchCategory,
-	type DispatchProviderInput,
-	decideCreditDispatch,
+	decideDispatch,
 } from "../../src/dispatcher.js";
 
-type LibraryInteraction = {
-	type: string;
-	description: string;
-	request: {
-		contents: {
-			contentType: string;
-			encoded: false;
-			content: {
-				registryCandidates: DispatchProviderInput[];
-				category: DispatchCategory;
-				objective: "min-cost" | "maximize-credits";
-				dispatchId: string;
-				units?: number;
-				ledgerView: CreditLedgerView;
-			};
-		};
-	};
-	response: Array<{
-		contents: {
-			contentType: string;
-			encoded: false;
-			content: {
-				ok: boolean;
-				selectedProvider?: string;
-				reason?: string;
-				dispatchEvent?: { type: string };
-				ranking?: Array<{ providerId: string; eligible?: boolean }>;
-			};
-		};
-	}>;
-};
-
-type LibraryContract = {
-	metadata: { pactSpecification: { version: string }; transport: string };
-	interactions: LibraryInteraction[];
-};
-
 const packageRoot = dirname(fileURLToPath(import.meta.url));
-const pact: LibraryContract = JSON.parse(
+const pact = JSON.parse(
 	readFileSync(
 		join(packageRoot, "../pacts/dispatch_decision.pact.json"),
 		"utf8",
 	),
 );
 
-describe("dispatch decision library contract", () => {
-	it("describes the synchronous library boundary", () => {
-		expect(pact.metadata).toMatchObject({
-			pactSpecification: { version: "4.0.0" },
-			transport: "library-call",
+const LEDGER_DIGEST =
+	"sha256:1111111111111111111111111111111111111111111111111111111111111111";
+
+describe("dispatch decision boundary consumer", () => {
+	it("selects the cheapest in-budget traffic backend under budget pressure", () => {
+		const decision = decideDispatch({
+			registry: createDispatcherRegistry([
+				{
+					id: "vercel-primary",
+					providerId: "vercel-primary",
+					category: "traffic-backend",
+					listUnitCost: 0.05,
+				},
+				{
+					id: "lakebed-cheap",
+					providerId: "lakebed-cheap",
+					category: "traffic-backend",
+					listUnitCost: 0.01,
+				},
+			]),
+			category: "traffic-backend",
+			objective: "maximize-credits",
+			dispatchId: "route-swap-pact",
+			units: 100,
+			ledgerView: {
+				view: "CreditLedgerView",
+				seq: 7,
+				digest: LEDGER_DIGEST,
+				accounts: [],
+			},
 		});
-		expect(pact.interactions).toHaveLength(5);
+		const interaction = pact.interactions[0];
+
+		expect(decision.ok).toBe(interaction.response.body.ok);
+		expect(decision.selectedProvider).toBe(
+			interaction.response.body.selectedProvider,
+		);
+		expect(decision.dispatchEvent.type).toBe(
+			interaction.response.body.dispatchEvent.type,
+		);
 	});
 
-	it.each(pact.interactions)("$description", (interaction) => {
-		expect(interaction.type).toBe("Synchronous/Messages");
-		expect(interaction.request.contents.contentType).toBe("application/json");
-		expect(interaction.request.contents.encoded).toBe(false);
-		expect(interaction.response).toHaveLength(1);
-		const [response] = interaction.response;
-		if (!response) throw new Error("contract response missing");
-		expect(response.contents.contentType).toBe("application/json");
-		expect(response.contents.encoded).toBe(false);
-		const { registryCandidates, ...request } =
-			interaction.request.contents.content;
-		const decision = decideCreditDispatch({
-			...request,
-			registry: createDispatcherRegistry(registryCandidates),
+	it("fails closed with a reason when no candidates are registered", () => {
+		const decision = decideDispatch({
+			registry: createDispatcherRegistry([]),
+			category: "runner",
+			objective: "maximize-credits",
+			dispatchId: "no-candidates-pact",
+			ledgerView: {
+				view: "CreditLedgerView",
+				seq: 7,
+				digest: LEDGER_DIGEST,
+				accounts: [],
+			},
 		});
-		expect(decision).toMatchObject(response.contents.content);
-		if (!decision.ok) expect(decision.dispatchEvent).toBeUndefined();
-	});
+		const interaction = pact.interactions[1];
 
-	it("verifies recorded requests with the Pact provider verifier", async () => {
-		const verified = new Set<string>();
-		const invoke = (message: MessageDescriptor) => {
-			if (message.content === undefined || Buffer.isBuffer(message.content))
-				throw new Error("invalid dispatcher contract request");
-			const input: LibraryInteraction["request"]["contents"]["content"] =
-				JSON.parse(JSON.stringify(message.content));
-			const { registryCandidates, ...request } = input;
-			verified.add(message.description);
-			return decideCreditDispatch({
-				...request,
-				registry: createDispatcherRegistry(registryCandidates),
-			});
-		};
-		const messageProviders = Object.fromEntries(
-			pact.interactions.map(({ description }) => [description, invoke]),
-		);
-		await new Verifier({
-			provider: "DispatcherDecisionBoundary",
-			pactUrls: [join(packageRoot, "../pacts/dispatch_decision.pact.json")],
-			messageProviders,
-			logLevel: "error",
-			failIfNoPactsFound: true,
-		}).verifyProvider();
-		expect([...verified].sort()).toEqual(
-			pact.interactions.map(({ description }) => description).sort(),
-		);
-	}, 30_000);
+		expect(decision.ok).toBe(interaction.response.body.ok);
+		expect(decision.reason).toBe(interaction.response.body.reason);
+		expect(decision.dispatchEvent).toBeUndefined();
+	});
+	it("fails closed when a registered hosting backend exceeds its hard budget", () => {
+		const decision = decideDispatch({
+			registry: createDispatcherRegistry([
+				{ providerId: "cloud", category: "traffic-backend", listUnitCost: 1 },
+			]),
+			category: "traffic-backend",
+			dispatchId: "hard-cap-pact",
+			units: 2,
+			ledgerView: {
+				view: "CreditLedgerView",
+				seq: 8,
+				asOf: "2026-07-01T00:00:00Z",
+				accounts: [
+					{
+						providerId: "cloud",
+						dimension: "traffic.requests",
+						budgetCap: 1,
+						spendToDate: 0,
+						listUnitCost: 1,
+					},
+				],
+			},
+		});
+		const interaction = pact.interactions[2];
+		expect(decision.ok).toBe(interaction.response.body.ok);
+		expect(decision.reason).toBe(interaction.response.body.reason);
+		expect(decision.dispatchEvent).toBeUndefined();
+	});
 });

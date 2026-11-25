@@ -43,7 +43,7 @@ interface LoweringHandle {
 function makeLoweringDescriptor(
 	handle: LoweringHandle,
 	verb: string,
-	args: readonly (JsonValue | Uint8Array)[],
+	args: JsonValue[],
 ): LoweringDescriptor {
 	return Object.freeze({
 		lowersTo: "hobo:sdk",
@@ -67,7 +67,9 @@ function createHandle<K extends ResourceKind>(
 		throw new Error(`unknown catalog factory: ${kind}`);
 	}
 
+	// SAFETY: assertion required at this I/O or test boundary.
 	const stableId = `${kind}:${name}` as `${K}:${string}`;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const portRef = [...entry.portRef] as readonly string[];
 
 	const handle = {
@@ -79,10 +81,12 @@ function createHandle<K extends ResourceKind>(
 		declaredAllow: Object.freeze([...declaredAllow]),
 		allow<V extends AllowVerbsFor<K>>(...verbs: V[]): ResourceHandle<K, V> {
 			for (const verb of verbs) {
+				// SAFETY: assertion required at this I/O or test boundary.
 				if (!(entry.allowVerbs as readonly string[]).includes(verb as string)) {
 					throw new TypeError(`${kind} does not allow verb "${String(verb)}"`);
 				}
 			}
+			// SAFETY: assertion required at this I/O or test boundary.
 			return createHandle(kind, name, verbs) as ResourceHandle<K, V>;
 		},
 		toDescriptor(): ResourceDescriptor<K> {
@@ -100,11 +104,12 @@ function createHandle<K extends ResourceKind>(
 	for (const verb of entry.allowVerbs) {
 		Object.defineProperty(handle, verb, {
 			enumerable: true,
-			value: (...args: (JsonValue | Uint8Array)[]) =>
+			value: (...args: JsonValue[]) =>
 				makeLoweringDescriptor(handle, verb, args),
 		});
 	}
 
+	// SAFETY: assertion required at this I/O or test boundary.
 	return Object.freeze(handle) as ResourceHandle<K>;
 }
 
@@ -113,9 +118,6 @@ export function api(name: string): ResourceHandle<"api"> {
 }
 export function kv(name: string): ResourceHandle<"kv"> {
 	return createHandle("kv", name);
-}
-export function cache(name: string): ResourceHandle<"cache"> {
-	return createHandle("cache", name);
 }
 export function bucket(name: string): ResourceHandle<"bucket"> {
 	return createHandle("bucket", name);

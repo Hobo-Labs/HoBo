@@ -119,6 +119,7 @@ describe.each(journals)("%s journal", (_name, open) => {
 			false,
 		);
 		expect(await journal.has("")).toBe(false);
+		// The settled record is still the settled one, not the published copy.
 		expect((await journal.settled("k1"))?.reason).toBe("low-confidence");
 	});
 

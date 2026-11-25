@@ -8,7 +8,6 @@ import {
 	COST_FACTS,
 	DEFAULT_REGIONS,
 	DIGITALOCEAN_PROVIDER_ID,
-	PROVIDER_TERMS,
 	publishCapabilityManifest,
 } from "./manifest.js";
 import { realizeResourcePlan } from "./realize.js";
@@ -105,7 +104,6 @@ export function createDigitalOceanProvider(
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: DIGITALOCEAN_PROVIDER_ID,
-				terms: PROVIDER_TERMS,
 				published,
 				capabilities: parseJsonObject(
 					published["/.well-known/capability-manifest/capabilities.json"] ??

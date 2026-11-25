@@ -82,7 +82,7 @@ The status API is protobuf-first: its shapes live in `data-models/status.proto`
 with matching CUE constraints in `data-models/status.cue`, and `src/api.ts`
 imports the **generated** `ComponentStatus`/`StatusPage`/`IncidentReport`/
 `IncidentAck` types from `src/_generated/status_pb.ts` (run
-`pnpm --dir ../.. exec node --import tsx packages/schema-tools/src/cli.ts --packages-root examples --filter examples/self-host-yard` to
+`buf generate data-models --template ../../buf.gen.yaml -o src/_generated` to
 regenerate). Following **parse, don't validate**, untrusted incident JSON
 crosses a single parse boundary (`parseIncidentReport`) that returns the
 **derived domain type** (`IncidentReport`) instead of re-checking raw fields

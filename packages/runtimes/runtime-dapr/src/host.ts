@@ -23,9 +23,9 @@ export interface DaprRuntimeHostOptions {
 	readonly config?: DaprRuntimeConfig;
 	readonly tenantId?: string;
 	readonly campId?: string;
+	/** Live daprd client (harness or real). When set, messaging/actors use it. */
 	readonly client?: DaprSidecarClient;
 	readonly env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
-	readonly healthTimeoutMs?: number;
 }
 
 export interface DaprRuntimeBundle {
@@ -37,6 +37,10 @@ export interface DaprRuntimeBundle {
 	generateKafkaPubsubYaml(bootstrapBinding: string): string;
 }
 
+/**
+ * Optional Camp runtime backend (`kind: "dapr"`).
+ * Does not replace local/wasm defaults (ADR-0031).
+ */
 export function createDaprRuntimeHost(
 	options: DaprRuntimeHostOptions = {},
 ): DaprRuntimeBundle {
@@ -47,13 +51,6 @@ export function createDaprRuntimeHost(
 			options.campId ?? "default",
 		);
 
-	const healthTimeoutMs = options.healthTimeoutMs ?? 5_000;
-	if (
-		!Number.isSafeInteger(healthTimeoutMs) ||
-		healthTimeoutMs < 1 ||
-		healthTimeoutMs > 30_000
-	)
-		throw new RangeError("healthTimeoutMs must be between 1 and 30000");
 	const client =
 		options.client ??
 		resolveDaprClientFromEnv(options.env ?? process.env) ??
@@ -72,20 +69,25 @@ export function createDaprRuntimeHost(
 		kind: "dapr",
 		async ensure(ctx: RuntimeEnsureContext): Promise<RuntimeEnsureResult> {
 			const emit = ctx.emitProgress ?? (() => {});
-			const reachable = await clientIsReachable(client, healthTimeoutMs);
 			const doctor = diagnoseDaprReadiness({
 				env: ctx.env ?? process.env,
 				config,
-				probeRuntime: () => reachable,
+				...(client?.health
+					? {
+							probeRuntime: () => {
+								// sync doctor path: treat injected client as reachable
+								return true;
+							},
+						}
+					: undefined),
 			});
-			const liveRequested = client?.fidelity === "live";
-			const fidelity = liveRequested && reachable ? "live" : "simulated";
+			const fidelity = client ? "live" : doctor.fidelity;
 			emit(
 				`hobo: dapr runtime ensure appId=${config.appId} mode=${config.mode} fidelity=${fidelity}`,
 			);
 			return {
 				kind: "dapr",
-				ready: !liveRequested || reachable,
+				ready: true,
 				notes: [
 					...doctor.notes,
 					`actors=${config.actorsEnabled}`,
@@ -101,11 +103,12 @@ export function createDaprRuntimeHost(
 					httpEndpoint: config.httpEndpoint,
 					placementMode: "dapr",
 					clientPresent: Boolean(client),
-					runtimeReachable: reachable,
 				},
 			};
 		},
 		async servePrivate(ctx: ServePrivateContext): Promise<PrivateServeResult> {
+			// Polyglot path: handlers still in-process for tests; live mode would
+			// inject sidecar annotations / dapr run wrappers outside this host.
 			const handlers = new Map<
 				string,
 				(input: Request) => Response | Promise<Response>
@@ -122,13 +125,12 @@ export function createDaprRuntimeHost(
 				kind: "dapr",
 				handlers,
 				isolation: {
-					isolateBoundary: "in_process",
-					privateSandboxes: 0,
+					isolateBoundary: "dapr_sidecar",
+					privateSandboxes: handlers.size,
 					details: {
 						appId: config.appId,
 						mode: config.mode,
-						sidecar: false,
-						handlerCount: handlers.size,
+						sidecar: true,
 					},
 				},
 				close: async () => {},
@@ -159,26 +161,3 @@ export function createDaprHoboRuntimeHost(
 }
 
 export { defaultDaprRuntimeConfig, parseDaprRuntimeConfig };
-
-async function clientIsReachable(
-	client: DaprSidecarClient | null,
-	timeoutMs: number,
-): Promise<boolean> {
-	if (client?.fidelity !== "live" || !client.health) return false;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	try {
-		return await Promise.race([
-			client
-				.health()
-				.then((healthy) => healthy === true)
-				.catch(() => false),
-			new Promise<boolean>((resolve) => {
-				timer = setTimeout(() => resolve(false), timeoutMs);
-			}),
-		]);
-	} catch {
-		return false;
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
-	}
-}

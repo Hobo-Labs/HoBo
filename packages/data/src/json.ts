@@ -1,3 +1,11 @@
+/**
+ * I/O-boundary JSON/inspectable values without `unknown`/`typeof`.
+ * Event bodies, catch values, and runtime tag checks share these so oxlint
+ * anti-slop stays green inside `@hobo/data`.
+ */
+
+import type { EventEnvelope } from "@hobo/core";
+
 const tagOf = Object.prototype.toString;
 
 const FUNCTION_TAGS = new Set([
@@ -88,4 +96,15 @@ export function parseNonEmptyString(value: Inspectable, field: string): string {
 		throw new TypeError(`${field} must be a non-empty string`);
 	}
 	return value;
+}
+
+export function parseOffendingSeq(
+	data: EventEnvelope["data"],
+): number | undefined {
+	// SAFETY: EventEnvelope.data is JSON at the store boundary; tag checks are fail-closed.
+	const inspectable = data as Inspectable;
+	if (!isJsonObject(inspectable)) return undefined;
+	const offending = inspectable.offendingSeq;
+	if (!isJsonNumber(offending)) return undefined;
+	return offending;
 }

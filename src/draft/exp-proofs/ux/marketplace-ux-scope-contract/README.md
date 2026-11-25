@@ -8,9 +8,9 @@ scope-in, scope-out, service/UX/security/support boundaries, authoritative depen
 initiative dependencies, listing states, installability outcomes, M1 evidence, and follow-up gate.
 
 The durable design record lives in
-[`urn:hobo:requirement:marketplace-ux`](urn:hobo:requirement:marketplace-ux). Branch evidence is
+[`docs/design/marketplace-ux.md`](../../../../../docs/design/marketplace-ux.md). Branch evidence is
 summarized in
-[`urn:hobo:proof:hobo-421-marketplace-ux`](urn:hobo:proof:hobo-421-marketplace-ux).
+[`docs/design/proofs/hobo-421-marketplace-ux`](../../../../../docs/design/proofs/hobo-421-marketplace-ux/README.md).
 
 ## Contract Surface
 
@@ -32,9 +32,11 @@ customer-visible installability claims without evidence source and owner route.
 npm.cmd --prefix src\draft\exp-proofs\marketplace-ux-scope-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Marketplace UX Scope.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

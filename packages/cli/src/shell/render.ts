@@ -1,4 +1,3 @@
-import { CollectionEngineError } from "@hobo/bindles";
 import { isJsonString } from "../json.js";
 import type {
 	CliContext,
@@ -27,23 +26,6 @@ export function renderSuccess(input: {
 		: envelope.code === "HOBO_BUILD_USAGE" || envelope.code === "HOBO_CLI_USAGE"
 			? 2
 			: 1;
-	if (input.verb === "logs" && envelope.ok && envelope.data.followed === true)
-		return okText("", exitCode);
-
-	if (
-		input.flags.json &&
-		input.verb === "logs" &&
-		envelope.ok &&
-		Array.isArray(envelope.data.records)
-	) {
-		const records = envelope.data.records.map((record) =>
-			JSON.stringify(record),
-		);
-		return okText(
-			records.length > 0 ? `${records.join("\n")}\n` : "",
-			exitCode,
-		);
-	}
 
 	if (input.flags.json) {
 		return okText(`${JSON.stringify(envelope)}\n`, exitCode);
@@ -54,16 +36,6 @@ export function renderSuccess(input: {
 			return { exitCode, stdout: "", stderr: `${envelope.message}\n` };
 		}
 		return okText("", exitCode);
-	}
-
-	if (input.verb === "logs" && envelope.ok) {
-		const lines = Array.isArray(envelope.data.lines)
-			? envelope.data.lines.filter(isJsonString)
-			: [];
-		return okText(
-			`${lines.length > 0 ? lines.join("\n") : envelope.message}\n`,
-			exitCode,
-		);
 	}
 
 	if (input.verb === "new" && envelope.ok) {
@@ -90,6 +62,7 @@ ${next}`,
 }
 
 export function renderError(
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding has no type; it is only narrowed with instanceof and summarized.
 	cause: unknown,
 	input: {
 		readonly verb: string | null;
@@ -97,17 +70,6 @@ export function renderError(
 		readonly context?: CliContext;
 	},
 ): CliRunResult {
-	if (
-		cause instanceof CollectionEngineError &&
-		cause.code === "HOBO_BINDING_DELIVERY"
-	) {
-		return renderError(
-			new CliError(cause.message, 1, cause.code, [
-				"Use linked bindings for credentials.",
-			]),
-			input,
-		);
-	}
 	if (cause instanceof CliError) {
 		if (input.flags.json) {
 			const envelope: CliEnvelope = {
@@ -182,10 +144,12 @@ export function renderError(
 	};
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding, narrowed with instanceof before use.
 function errorMessage(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding, narrowed with instanceof before use.
 function verboseDiagnostics(cause: unknown, verbose: boolean): string {
 	if (!verbose) {
 		return "";

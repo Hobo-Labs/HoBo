@@ -19,18 +19,20 @@ npm.cmd --prefix src\draft\technical-proofs\hobo-realize-emission-contract test
 
 Relevant design records:
 
-- `urn:hobo:requirement:control-plane`: provider `realize(plan): { iac; build? }`, adapter families,
+- `docs/design/control-plane.md`: provider `realize(plan): { iac; build? }`, adapter families,
   resolution pipeline, provider authoring
-- `urn:hobo:requirement:platform-engineering`: co-provisioning, placeholders, drivers
-- `urn:hobo:decision:01-architecture-core`: ADR-0005 and ADR-0006
+- `docs/design/platform-engineering.md`: co-provisioning, placeholders, drivers
+- `docs/design/adr/01-architecture-core.md`: ADR-0005 and ADR-0006
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Realize Emission Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.
 
 ## Testing
 

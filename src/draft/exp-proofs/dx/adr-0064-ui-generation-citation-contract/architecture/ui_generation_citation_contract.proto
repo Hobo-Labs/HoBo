@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the ADR-0064 UI generation
+// citation contract draft package reasons about. Documents the records/objects
+// this package owns so the architecture guard has a language-neutral schema
+// reference. Not compiled at runtime; this is a design-time contract artifact.
+
+message UiGenerationCitationTarget {
+  string id = 1;
+  string path = 2;
+}
+
+message UiGenerationCitationCheckResult {
+  string id = 1;
+  string path = 2;
+  bool ok = 3;
+  repeated string violations = 4;
+}
+
+message UiGenerationCitationReport {
+  string issue = 1;
+  repeated UiGenerationCitationCheckResult results = 2;
+}

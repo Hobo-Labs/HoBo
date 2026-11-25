@@ -15,6 +15,7 @@ import {
 	writeSurfaceMap,
 } from "./lib/surface-map.mts";
 
+
 function parseArgs(argv: string[]) {
 	const out: Record<string, string> = { mode: "explore" };
 	for (let i = 0; i < argv.length; i++) {
@@ -29,6 +30,7 @@ function parseArgs(argv: string[]) {
 				out.projects = out.projects ? `${out.projects},${value}` : value;
 			}
 		} else if (a === "--all-projects") out.projects = out.projects ? `${out.projects},all` : "all";
+		else if (a === "--personas") out.personas = argv[++i] ?? "";
 		else if (a === "--skip-probes") out.skipProbes = "1";
 		else if (a === "--probe-bin") out.probeBin = "1";
 		else if (a === "--primary-bin-only") out.primaryBinOnly = "1";
@@ -83,7 +85,7 @@ function validTargetDirectory(root: string, projectPath: string): boolean {
 
 function main() {
 	const input = normalizeCliOptions(process.argv.slice(2), {
-		values: ["--mode", "--project", "--projects"],
+		values: ["--mode", "--project", "--projects", "--personas"],
 		flags: ["--help", "-h", "--all-projects", "--skip-probes", "--probe-bin", "--primary-bin-only", "--with-catalog"],
 		inlineValues: ["--confirm-surface-current"],
 	});
@@ -153,6 +155,7 @@ function main() {
 	}
 
 	const confirmedSurfaces = (args.confirmedSurfaces || "").split(",").filter(Boolean);
+
 	for (const project of targets) {
 		if (args.mode === "validate") {
 			const map = readSurfaceMap(project, root);

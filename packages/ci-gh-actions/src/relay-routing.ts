@@ -67,6 +67,7 @@ function mergeJsonObjects(
 ): CiProjectJsonObject {
 	const merged: z.infer<typeof JsonObjectSchema> = { ...base };
 	for (const key of Object.keys(override)) {
+		// SAFETY: override is a parsed JSON object; keys index JsonValue entries.
 		const value = override[key] as z.infer<typeof JsonValue>;
 		const inherited = merged[key];
 		const inheritedObject = JsonObjectSchema.safeParse(inherited);
@@ -106,6 +107,10 @@ export interface ResolvedCiRelayRoute {
 	readonly isForkPullRequest: boolean;
 }
 
+/**
+ * The committed `runnerRouting` block of `.hobo/ci.json` (ADR-0181, "Routing list"), or
+ * nothing when the file has none or it is not a policy. Never throws.
+ */
 export function parseCiRunnerRouting(json: string): RunnerRouting | undefined {
 	try {
 		const document = JsonObjectSchema.safeParse(JSON.parse(json));
@@ -126,6 +131,7 @@ export function parseCiProjectSelection(
 	);
 }
 
+/** Merge a gitignored local overlay onto committed project JSON (environments only). */
 export function mergeCiProjectLocalOverlay(
 	committedJson: string,
 	localJson: string,
@@ -190,6 +196,7 @@ export function isForkPullRequestRun(
 	);
 }
 
+/** Config ref is a branch name or 40-char commit SHA for GitHub contents API. */
 export function resolveCiConfigRefForRun(
 	run: GithubRun,
 	baseRepositoryId: number,
@@ -213,7 +220,9 @@ export function inferJobAdmission(
 		try {
 			const host = new URL(environment.relayOrigin).hostname;
 			if (host === "127.0.0.1" || host === "localhost") return "pull";
-		} catch {}
+		} catch {
+			/* fall through */
+		}
 	}
 	return "push";
 }
@@ -287,6 +296,7 @@ export function resolveCiRelayRoute(options: {
 	});
 }
 
+/** Only forward to origins declared in the resolved project config document. */
 export function assertRelayOriginAllowed(
 	route: ResolvedCiRelayRoute,
 	config: CiProjectConfig,

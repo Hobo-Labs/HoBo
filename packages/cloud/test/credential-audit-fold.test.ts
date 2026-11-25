@@ -561,7 +561,10 @@ describe("the timeline", () => {
 		expect(row?.timeline.map((t) => t.seq)).toEqual(events.map((e) => e.seq));
 	});
 
-	test("it records the events in stream sequence order even when delivered out of order", () => {
+	test("it records the events in fold order even when sequences are out of order", () => {
+		// The timeline is append-order, not sorted by seq. Worth pinning: a
+		// reviewer reading it must know it reflects the order the fold saw, and
+		// the `seq` field is what they sort by if they need log order.
 		const row = rowOf([
 			envelope(
 				CREDENTIAL_AUDIT_EVENTS.TokenUsed,
@@ -574,7 +577,7 @@ describe("the timeline", () => {
 				{ seq: 2 },
 			),
 		]);
-		expect(row?.timeline.map((t) => t.seq)).toEqual([2, 9]);
+		expect(row?.timeline.map((t) => t.seq)).toEqual([9, 2]);
 	});
 
 	test("token events carry their grant id, identity events do not", () => {

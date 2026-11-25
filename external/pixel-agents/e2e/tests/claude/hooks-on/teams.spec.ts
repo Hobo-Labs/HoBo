@@ -46,6 +46,11 @@ async function expectTeammateActivity(frame: Frame, text: string): Promise<void>
   await expectNoOverlayWithTexts(frame, ['LEAD', text]);
 }
 
+// All four tests are scenario-driven (mocking rule 1) with ~3s phases so run
+// videos show each routing step and the mock narrates it — in the Claude Code
+// terminal for internal leads, in the external-sessions monitor for external
+// ones. Inline teammates share the lead transcript; tmux teammates have a
+// separate session and send hooks with that session's identity.
 test.describe('Hooks ON / teams', () => {
   test('internal terminal lead with inline teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
@@ -121,6 +126,9 @@ test.describe('Hooks ON / teams', () => {
       withTmuxTeammateSession(claudeScenario('internal tmux teammate routing hooks on'))
         .at(500)
         .appendJsonl(buildTeamMetadataRecord(teamName))
+        // Lead's Agent tool_use with run_in_background — the lead overlay shows
+        // "Subtask: Delegate research" as its activity (team gate suppresses a
+        // basic sub-character because the lead has a teamName by now).
         .at(3_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-a5-team-spawn', 'Agent', {
@@ -231,6 +239,8 @@ test.describe('Hooks ON / teams', () => {
         .build(),
     });
 
+    // Workspace JSONL polling remains authoritative while hooks are enabled, so
+    // this session may be adopted before the delayed t+7s PreToolUse confirms it.
     narrator.step('waiting for JSONL discovery or PreToolUse to adopt the external lead');
     await expectOverlayCount(frame, 1);
     await expectOverlayVisibleWithTexts(frame, ['LEAD']);

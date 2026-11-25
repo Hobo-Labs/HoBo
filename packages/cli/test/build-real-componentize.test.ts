@@ -40,7 +40,6 @@ const fakeReal: RealComponentize = {
 			component,
 			oci: {
 				artifactType: component.mediaType,
-				manifestDigest: FIXED_DIGEST,
 				manifest: {
 					schemaVersion: 2,
 					mediaType: "application/vnd.oci.image.manifest.v1+json",
@@ -68,6 +67,7 @@ const fakeReal: RealComponentize = {
 	},
 };
 
+// Restore what the runner set, rather than clear it for later files in the worker.
 const runnerComponentizeReal = process.env.HOBO_COMPONENTIZE_REAL;
 afterEach(() => {
 	if (runnerComponentizeReal === undefined)
@@ -91,6 +91,7 @@ describe("HOBO_COMPONENTIZE_REAL wiring in runBuild", () => {
 			await expect(failure).rejects.toMatchObject({
 				code: "HOBO_BUILD_COMPONENTIZE_TOOLCHAIN",
 			});
+			// Fail-closed: no manifest, no silent synthetic fallback.
 			await expect(
 				access(join(projectRoot, BUILD_MANIFEST_PATH)),
 			).rejects.toMatchObject({ code: "ENOENT" });
@@ -119,6 +120,7 @@ describe("HOBO_COMPONENTIZE_REAL wiring in runBuild", () => {
 	});
 
 	it("permits the contract floor only for explicitly selected library fixtures", async () => {
+		// The case is about the flag being absent; a runner that exports it must not decide it.
 		delete process.env.HOBO_COMPONENTIZE_REAL;
 		await withSeededProject(async (projectRoot) => {
 			const result = await runBuild({

@@ -61,6 +61,10 @@ export async function spawnInternalAgentAndWait(
   tmpHome: string,
   mockLogFile: string,
 ): Promise<InternalAgentSpawn> {
+  // Count invocations BEFORE clicking, then wait for a NEW one. Polling for a
+  // merely non-empty log is satisfied instantly by a PRIOR agent's entry, so a
+  // second spawn in the same test could read a stale log and return the first
+  // agent's identity.
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
   narrate.step('clicking "+ Agent" — a terminal launches the mock claude');
   await clickAddAgent(frame);
@@ -107,6 +111,10 @@ export async function spawnInternalAgentAndWaitForInvocation(
   workspaceDir: string,
   mockLogFile: string,
 ): Promise<InternalAgentSpawn> {
+  // Count invocations BEFORE clicking, then wait for a NEW one. Polling for a
+  // merely non-empty log is satisfied instantly by a PRIOR agent's entry, so a
+  // second spawn in the same test could read a stale log and return the first
+  // agent's identity.
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
   narrate.step('clicking "+ Agent" — a terminal launches the mock claude');
   await clickAddAgent(frame);
@@ -135,6 +143,15 @@ export async function spawnInternalAgentAndWaitForInvocation(
   };
 }
 
+/**
+ * Spawn an agent bound to a specific workspace FOLDER in a multi-root window.
+ * The plain "+ Agent" click opens a folder picker (BottomToolbar.tsx); we click
+ * the named folder entry, which sends `launchAgent { folderPath }` so the agent
+ * gets `folderName = <folder basename>` (adapters/vscode/agentManager.ts). Then
+ * we wait for the spawn exactly like spawnInternalAgentAndWait. The seated
+ * character surfaces via the getAgentSeats / getSeats test hooks (filter by
+ * folderName), so callers correlate without an agent id here.
+ */
 export async function addAgentForFolder(
   frame: Frame,
   folderName: string,
@@ -144,6 +161,9 @@ export async function addAgentForFolder(
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
   narrate.step(`clicking "+ Agent" and picking the "${folderName}" folder`);
   await frame.locator('button', { hasText: '+ Agent' }).click();
+  // The folder-picker entries are <button> DropdownItems; scope to the button
+  // role so we don't collide with the same folder name shown as a <span> in an
+  // Area card's mapped-folders list (when the folder is already area-mapped).
   const folderItem = frame.getByRole('button', { name: folderName, exact: true });
   await expect(folderItem).toBeVisible({ timeout: INTERNAL_AGENT_TIMEOUT_MS });
   await folderItem.click();

@@ -164,7 +164,17 @@ unindexed new finding files as notices.
 - [Finding 155: merge queue vitest file shards and release integration lane](./findings/0155-merge-queue-vitest-file-shards-and-release-integration-lane.md)
 - [Finding 156: merge queue tree reuse](./findings/0156-merge-queue-tree-reuse.md)
 - [Finding 157: release publish critical path](./findings/0157-release-publish-critical-path.md)
+- [Finding 159: preflight downloaded tools the job never ran](./findings/0159-preflight-downloaded-tools-the-job-never-ran.md)
 - [Finding 160: ARC pods installed from a cold store every job](./findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)
+- [Finding 161: every job rebuilt a pull request's runner image](./findings/0161-every-job-rebuilt-a-pull-requests-runner-image.md)
+- [Finding 162: merge-queue shards rebuilt every package one at a time](./findings/0162-merge-queue-shards-rebuilt-every-package-one-at-a-time.md)
+- [Finding 163: merge groups retested what the pull request run proved](./findings/0163-merge-groups-retested-what-the-pull-request-run-proved.md)
+- [Finding 164: the App credentials workflow failed before any job started](./findings/0164-the-app-credentials-workflow-failed-before-any-job-started.md)
+- [Finding 165: release jobs never reused the runner's deps layer](./findings/0165-release-jobs-never-reused-the-runners-deps-layer.md)
+- [Finding 166: scripts tests waited for a separate build job](./findings/0166-scripts-tests-waited-for-a-separate-build-job.md)
+- [Finding 167: PR batches diverted to a cold trunk pool](./findings/0167-pr-batches-diverted-to-a-cold-trunk-pool.md)
+- [Finding 168: a lockfile change rebuilt every package](./findings/0168-a-lockfile-change-rebuilt-every-package.md)
+- [Finding 169: state-machine verification ran on every change](./findings/0169-state-machine-verification-ran-on-every-change.md)
 <!-- findings-index:end -->
 
 ## Data

@@ -1,31 +1,3 @@
-/**
- * What each cache backend costs and allows, and the marks the relay switches
- * at: declared configuration, with defaults derived from the relay's offer
- * catalog (phase 5): each backend's offer is a provider manifest in
- * `offers/*.provider.yaml`, lowered into an `@hobo/pricing` catalog by
- * `scripts/generate-offers.mts` (`src/_generated-assets/relay-offers.ts`).
- * The figures are the vendor tiers the ADR-0179 amendment records (read
- * 2026-11-11; re-check at provisioning).
- *
- * The record is `RelayCacheOffers` in `data-models/cache_offers.proto`
- * (constrained by `data-models/cache-offers/cache_offers.cue`); it arrives as
- * the JSON value of `HOBO_CI_CACHE_OFFERS_JSON`, from the config service or
- * the environment. Parse, don't validate: `parseCacheOffers` turns it into
- * the derived `FleetOffer`s and `FleetRoutingMarks` of `@hobo/backend-fleet`
- * once, and an invalid document is an error naming the key, never quoting it.
- *
- * | Backend | Default | Source |
- * |---|---|---|
- * | `upstash` | free: 500,000 commands a month, then blocked | upstash.com/pricing |
- * | `valkey` | free: no command cap (Aiven for Valkey free, or self-hosted) | aiven.io free-tier docs |
- * | `redis` | none: nobody has said what `REDIS_URL` is, so it is never moved to for budget reasons | — |
- * | `turso` | free: 500 million rows read and 10 million written a month, then blocked | turso.tech/pricing |
- * | `blob` | pay-as-you-go: $0.40 a million simple and $5 a million advanced operations, cap $0 | vercel.com/pricing (unverified for this store) |
- * | `memory` | free, no cap (tests and local runs) | — |
- *
- * A cap of zero means no money: a pay-as-you-go backend is a candidate only
- * once an owner declares a cap for it.
- */
 import {
 	DEFAULT_FLEET_ROUTING_MARKS,
 	type FleetAllowance,
@@ -34,7 +6,7 @@ import {
 	parseFleetFinancialModel,
 	parseFleetOffer,
 	parseFleetRoutingMarks,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import { z } from "zod";
 import { RELAY_CACHE_OFFER_DEFAULTS } from "./_generated-assets/relay-offers.js";
 import {
@@ -159,6 +131,7 @@ const Document = z
 	.object({
 		offers: z.array(Offer).max(CACHE_BACKEND_IDS.length).optional(),
 		marks: Marks.optional(),
+		membershipEpochs: z.boolean().optional(),
 	})
 	.strict();
 
@@ -173,6 +146,7 @@ export const DEFAULT_CACHE_ROUTING_MARKS: FleetRoutingMarks =
 export type CacheOffers = Readonly<{
 	offers: ReadonlyMap<CacheBackendId, FleetOffer>;
 	marks: FleetRoutingMarks;
+	membershipEpochs: boolean;
 }>;
 
 /**
@@ -187,7 +161,11 @@ export function parseCacheOffers(
 ): CacheOffers {
 	const offers = new Map(defaultCacheOffers(commands));
 	if (json === undefined || json === "")
-		return { offers, marks: DEFAULT_CACHE_ROUTING_MARKS };
+		return {
+			offers,
+			marks: DEFAULT_CACHE_ROUTING_MARKS,
+			membershipEpochs: false,
+		};
 	let document: z.infer<typeof Document>;
 	try {
 		document = Document.parse(JSON.parse(json));
@@ -222,6 +200,7 @@ export function parseCacheOffers(
 		const marks = document.marks ?? {};
 		return {
 			offers,
+			membershipEpochs: document.membershipEpochs ?? false,
 			marks: parseFleetRoutingMarks({
 				switchAt:
 					marks.switchAtPercent === undefined

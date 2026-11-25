@@ -24,17 +24,24 @@ import {
 import type { PulumiAutomationAdapter } from "./pulumi-iac-provider.js";
 
 export interface ImportCommandDeps {
+	// The shared Yard runtime whose durable log records the adoption.
 	readonly runtime?: YardRuntime;
 	// Explicit environment snapshot for tests or an embedding host. Without one,
 	// use the same filtered process environment as `hobo up`/`hobo drift`.
 	readonly env?: Record<string, string | undefined>;
+	// Explicit Pulumi adapter override (tests): discover the estate from THIS
+	// adapter's state backend.
 	readonly adapter?: PulumiAutomationAdapter;
 }
 
 const IMPORT_ACTOR: PrincipalRef = { kind: "user", id: "user:importer" };
 
+// public-contract: per-resource adoption fact for each DISCOVERED estate resource (adopt-in-place proof).
 export const RESOURCE_ADOPTED_EVENT = "resource.Adopted";
 
+// domain-view: one adopted-manifest resource entry produced by estate
+// discovery — the adopt-in-place record for a resource that already exists in
+// the IaC state backend but is not (or not fully) declared in the Bindle.
 export interface AdoptedResourceEntry {
 	readonly type: string;
 	readonly externalId: string;
@@ -47,10 +54,12 @@ function stableJson(value: JsonValue | undefined): string {
 		return `[${value.map((item) => stableJson(item)).join(",")}]`;
 	}
 	if (value && isJsonObject(value)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		return `{${Object.keys(value as JsonObject)
 			.sort()
 			.map(
 				(key) =>
+					// SAFETY: assertion required at this I/O or test boundary.
 					`${JSON.stringify(key)}:${stableJson((value as JsonObject)[key])}`,
 			)
 			.join(",")}}`;
@@ -64,6 +73,24 @@ function isEngineUnavailable(error: Error): error is Error & { code: string } {
 	);
 }
 
+// `hobo import` — adopt an existing estate in place. Two adoption sources fold
+// into ONE adopted manifest:
+//   - DISCOVERY: enumerate the IaC state backend's per-resource stacks (the
+//     estate the backend actually holds — the in-memory backend, or the real
+//     pulumi CLI's stacks under HOBO_PULUMI_LIVE=1, binary-gated with a typed
+//     fail-closed error) and produce an adopt-in-place manifest entry per
+//     discovered resource (outputs + externalId; reconcile drift-detect-only,
+//     destroy retain — per the adopt-in-place-contract draft proof).
+//   - DECLARATION: the project's Bindle (resources that ALREADY exist) merges
+//     in as-is; declared entries win over discovered ones with the same name.
+// Adoption is recorded by appending a single `deployment.Imported` fact plus
+// one `resource.Adopted` fact per discovered resource — no provisioning runs.
+// The DeploymentView then reflects the adopted deployment as deployed (with
+// `imported: true`), so `inspect`/`drift` operate on it like any other.
+// HONEST SCOPE: discovery reads the estate held by the SELECTED IaC state
+// backend (in-memory or live pulumi stacks); estates held only by a foreign
+// tool's state (raw Terraform, console-created resources) are out of reach
+// until that backend is pointed at them.
 export function createImportCommand(
 	deps: ImportCommandDeps = {},
 ): CommandModule {
@@ -104,6 +131,7 @@ export function createImportCommand(
 				};
 			}
 
+			// DISCOVERY: enumerate the estate the IaC state backend actually holds.
 			const adapter = selectPulumiEstateAdapter({
 				store: runtime.store,
 				env,
@@ -139,6 +167,7 @@ export function createImportCommand(
 				}
 			}
 
+			// DECLARATION: the project's Bindle, when present.
 			const manifest = await loadProjectManifest(projectDir);
 			if (!manifest && discovered.length === 0) {
 				return {
@@ -154,6 +183,8 @@ export function createImportCommand(
 				};
 			}
 
+			// Merge into the adopted manifest: declared entries win; every
+			// discovered-but-undeclared resource gains an adopt-in-place entry.
 			const declaredResources = manifest ? manifest.value.resources : {};
 			const adoptedEntries: Record<string, AdoptedResourceEntry> = {};
 			for (const state of discovered) {

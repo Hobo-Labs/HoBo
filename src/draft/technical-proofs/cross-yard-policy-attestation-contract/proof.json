@@ -6,7 +6,12 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/adr/07-portability-extensibility.md",
+      "docs/design/contracts-policy-flags.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

@@ -26,11 +26,11 @@
           "issue": "HOBO-577",
           "phase": "M2",
           "targetPackage": "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples",
-          "proofNote": "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+          "proofNote": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
           "designRefs": [
-            "urn:hobo:requirement:developer-experience#plan-07",
-            "urn:hobo:requirement:sdk-api#plan-02",
-            "urn:hobo:requirement:control-plane#plan-04"
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/sdk-api.md#plan-02",
+            "docs/design/control-plane.md#plan-04"
           ],
           "scopeOut": [
             "marketing copy not backed by transcripts",
@@ -441,7 +441,7 @@
     },
     "hobo": {
       "issue": "HOBO-577",
-      "proof": "urn:hobo:proof:resource-lifecycle-quickstart-examples"
+      "proof": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
     }
   }
 }

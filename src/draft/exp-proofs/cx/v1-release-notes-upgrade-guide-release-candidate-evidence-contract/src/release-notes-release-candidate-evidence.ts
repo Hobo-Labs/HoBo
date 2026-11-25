@@ -97,7 +97,7 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
     {
       id: "m0-outline-baseline",
       ownerProject: "V1 Release Notes & Upgrade Guide",
-      source: "urn:hobo:requirement:release-notes-upgrade-guide#proof",
+      source: "docs/design/release-notes-upgrade-guide.md#proof",
       proofMode: "design-record",
       status: "accepted",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -113,7 +113,7 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
     {
       id: "release-candidate-notes-draft",
       ownerProject: "V1 Release Notes & Upgrade Guide",
-      source: "urn:hobo:requirement:release-notes-upgrade-guide#m3-release-candidate-evidence",
+      source: "docs/design/release-notes-upgrade-guide.md#m3-release-candidate-evidence",
       proofMode: "docs-draft",
       status: "accepted",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -121,7 +121,7 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
     {
       id: "install-path-smoke-map",
       ownerProject: "Bootstrap Installer",
-      source: "urn:hobo:requirement:bootstrap-installer",
+      source: "docs/design/bootstrap-installer.md",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Cross-project dependencies are reflected in the release cutline.",
@@ -129,7 +129,7 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
     {
       id: "upgrade-rollback-evidence-map",
       ownerProject: "Upgrade & Migration Engine",
-      source: "urn:hobo:requirement:upgrade-migration-engine",
+      source: "docs/design/upgrade-migration-engine.md",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Cross-project dependencies are reflected in the release cutline.",
@@ -137,7 +137,7 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
     {
       id: "compatibility-surface-map",
       ownerProject: "Compatibility Matrix",
-      source: "urn:hobo:requirement:compatibility-matrix",
+      source: "docs/design/compatibility-matrix.md",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Blockers and accepted risks are recorded.",
@@ -145,7 +145,7 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
     {
       id: "support-contact-handoff",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      source: "urn:hobo:requirement:launch-support-escalation#m3-release-candidate-evidence",
+      source: "docs/design/launch-support-escalation.md#m3-release-candidate-evidence",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Cross-project dependencies are reflected in the release cutline.",
@@ -195,7 +195,7 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
       ownerProject: "V1 Release Notes & Upgrade Guide",
       readinessDomain: "documentation",
       cutlineCategory: "v1-blocker.documentation",
-      source: "urn:hobo:requirement:release-notes-upgrade-guide#m3-release-candidate-evidence",
+      source: "docs/design/release-notes-upgrade-guide.md#m3-release-candidate-evidence",
     },
     {
       id: "release-candidate-owner-signoff",
@@ -209,21 +209,21 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
       ownerProject: "V1 Dogfood Yard & Hosted Operations",
       readinessDomain: "operations-readiness",
       cutlineCategory: "v1-blocker.operations-readiness",
-      source: "urn:hobo:requirement:dogfood-yard",
+      source: "docs/design/dogfood-yard.md",
     },
     {
       id: "support-contact-source-map",
       ownerProject: "V1 Launch Support Desk & Escalation",
       readinessDomain: "support",
       cutlineCategory: "v1-blocker.support",
-      source: "urn:hobo:requirement:launch-support-escalation#m3-release-candidate-evidence",
+      source: "docs/design/launch-support-escalation.md#m3-release-candidate-evidence",
     },
     {
       id: "compatibility-source-map",
       ownerProject: "Compatibility Matrix",
       readinessDomain: "compatibility",
       cutlineCategory: "v1-blocker.productization",
-      source: "urn:hobo:requirement:compatibility-matrix",
+      source: "docs/design/compatibility-matrix.md",
     },
   ],
   followUps: [

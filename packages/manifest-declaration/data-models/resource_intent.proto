@@ -65,8 +65,6 @@ message ResourceIntent {
   // When a schedule runs: a five-field cron expression from the Bindle's
   // `cadence` trait. Explicit presence, like `region`.
   optional string cadence = 10;
-  repeated string ready_deps = 11;
-  repeated string completed_deps = 12;
 }
 
 // ---- E19: placement-constraint vocabulary (HoBo-native shapes; semantics

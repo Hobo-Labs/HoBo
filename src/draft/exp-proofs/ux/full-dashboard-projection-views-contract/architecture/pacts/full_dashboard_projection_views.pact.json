@@ -41,9 +41,9 @@
             "replay-diff"
           ],
           "designRefs": [
-            "urn:hobo:requirement:developer-experience#plan-07",
-            "urn:hobo:requirement:deployment-dashboard-topology-explorer",
-            "NFR-016"
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/deployment-dashboard-topology-explorer.md",
+            "docs/archive/requirements/requirements.md#nfr-016"
           ],
           "epicFixtureRefs": [
             "src/draft/epic-proofs/cli-mcp-developer-experience",

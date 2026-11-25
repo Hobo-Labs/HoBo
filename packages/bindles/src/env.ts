@@ -1,6 +1,13 @@
 import { type ConfigFieldDef, envField } from "./config-schema.js";
 import type { ProviderAnnotation } from "./types.js";
 
+/**
+ * Dual surface (ADR-0027 + Plan 21):
+ *
+ * 1. `env({ KEY: value })` — injectable Camp annotation for resources
+ *    (not a provider pin; option "env").
+ * 2. `env.string()/.boolean()/.int()/.json()` — typed config schema fields.
+ */
 function envAnnotation(
 	config: Readonly<Record<string, string | number | boolean>>,
 ): ProviderAnnotation {

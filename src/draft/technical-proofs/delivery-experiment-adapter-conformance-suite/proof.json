@@ -9,7 +9,8 @@
       "src/draft/technical-proofs/hobo-experiment-port"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

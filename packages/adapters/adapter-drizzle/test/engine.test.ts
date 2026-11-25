@@ -30,7 +30,7 @@ const DESIRED = ingestDrizzleSchema(representativeSchemaModule()).schema;
 function echoEmitter(plan: MigrationPlan): readonly EmittedSqlStatement[] {
 	return plan.steps.map((step) => ({
 		step,
-		sql: `SELECT '${stepKey(step)}'`,
+		sql: `-- ${stepKey(step)}`,
 	}));
 }
 
@@ -122,8 +122,8 @@ describe("emitSql toolchain gate", () => {
 	});
 
 	const remediationCases: [string, boolean, string][] = [
-		["absent toolchain", false, "bundled asynchronous"],
-		["declared toolchain, no emitter", true, "no synchronous"],
+		["absent toolchain", false, "install drizzle-kit"],
+		["declared toolchain, no emitter", true, "does not bundle drizzle-kit"],
 	];
 
 	it.each(
@@ -137,6 +137,7 @@ describe("emitSql toolchain gate", () => {
 			expect.unreachable("emitSql must refuse without a wired toolchain");
 		} catch (error) {
 			expect(error).toBeInstanceOf(DrizzleAdapterError);
+			// SAFETY: assertion to `error as DrizzleAdapterError` is required at this boundary.
 			const remediation = (error as DrizzleAdapterError).remediation;
 			expect(remediation.toLowerCase()).toContain(expected.toLowerCase());
 		}

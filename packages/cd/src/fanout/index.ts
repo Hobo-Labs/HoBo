@@ -1,3 +1,4 @@
+// "./fanout" (WP23): fan-out over a recorded placement decision (D21, I20).
 export { type Classification, classify, eligibility } from "./classify.js";
 export {
 	campKey,

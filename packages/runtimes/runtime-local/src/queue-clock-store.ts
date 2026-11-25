@@ -10,6 +10,7 @@ import {
 	isJsonObject,
 	isJsonString,
 	type JsonValue,
+	parseJsonValue,
 } from "./json.js";
 
 export interface QueueMessageRecord {
@@ -38,28 +39,13 @@ export interface SleepTimerRecord {
 	firedOrder: number | null;
 }
 
-interface CronScheduleRecordBase {
+export interface CronScheduleRecord {
 	scheduleId: string;
+	everyMs: number;
 	startAtMs: number;
 	nextFireAtMs: number;
 	occurrence: number;
 }
-
-export type CronScheduleRecord = CronScheduleRecordBase &
-	(
-		| {
-				everyMs: number;
-				jitterMs: number;
-				expression?: never;
-				timezone?: never;
-		  }
-		| {
-				everyMs?: never;
-				jitterMs?: never;
-				expression: string;
-				timezone: string;
-		  }
-	);
 
 export interface QueueClockStore {
 	version: string;
@@ -138,10 +124,21 @@ export function normalizeNonNegativeInteger(
 }
 
 export function cloneStore<T>(value: T): T {
-	return structuredClone(value);
+	if (value === undefined) {
+		return value;
+	}
+	if (structuredClone instanceof Function) {
+		return structuredClone(value);
+	}
+	const cloned = parseJsonValue(JSON.stringify(value));
+	// SAFETY: JSON round-trip preserves the caller-owned store snapshot type.
+	return cloned as T;
 }
 
 function deepFreeze<T>(value: T): T {
+	// Arrays as well as plain objects: `store.trace` and every queue's
+	// `messages` are arrays, so a guard that admitted only plain objects would
+	// hand back a "frozen" snapshot whose queues could still be pushed to.
 	if (Array.isArray(value) || isJsonObject(value)) {
 		Object.freeze(value);
 		for (const nested of Object.values(value)) {
@@ -155,59 +152,19 @@ export function appendTrace(
 	store: QueueClockStore,
 	event: ClockTraceEntry,
 ): void {
+	// SAFETY: assertion to `deepFreeze({ ...event }) as ClockTraceEntry` is required at this boundary.
 	store.trace.push(deepFreeze({ ...event }) as ClockTraceEntry);
 }
 
 export function normalizeStore(
 	options: RuntimeLocalQueueClockOptions = {},
 ): QueueClockStore {
-	if (options.snapshot !== undefined) {
+	if (options.snapshot) {
 		const snapshot = cloneStore(options.snapshot);
-		if (!isJsonObject(snapshot)) {
-			throw new TypeError("snapshot must be an object");
-		}
-		if (snapshot.version !== QUEUE_CLOCK_RUNTIME_PORT_CONTRACT_VERSION) {
-			throw new TypeError(
-				"snapshot.version does not match the queue-clock contract",
-			);
-		}
-		if (!isJsonObject(snapshot.queues)) {
-			throw new TypeError("snapshot.queues must be an object");
-		}
-		for (const [name, value] of [
-			["timers", snapshot.timers],
-			["cronSchedules", snapshot.cronSchedules],
-			["trace", snapshot.trace],
-		] as const) {
-			if (!Array.isArray(value)) {
-				throw new TypeError(`snapshot.${name} must be an array`);
-			}
-		}
-		for (const schedule of snapshot.cronSchedules) {
-			if (schedule.everyMs !== undefined) {
-				const everyMs = normalizePositiveInteger(
-					schedule.everyMs,
-					"schedule.everyMs",
-				);
-				const jitterMs = normalizeNonNegativeInteger(
-					schedule.jitterMs,
-					"schedule.jitterMs",
-				);
-				if (jitterMs >= everyMs)
-					throw new TypeError("schedule.jitterMs must be less than everyMs");
-			}
-		}
 		if (options.seed !== undefined && options.seed !== snapshot.seed) {
 			throw new NondeterministicClockError(
 				`snapshot seed mismatch: expected ${snapshot.seed}, got ${options.seed}`,
 			);
-		}
-		const queues = snapshot.queues;
-		for (const queue of Object.values(queues)) {
-			if (!isJsonObject(queue) || !Array.isArray(queue.messages)) {
-				throw new TypeError("snapshot queue must contain messages");
-			}
-			for (const message of queue.messages) message.processing = false;
 		}
 		return {
 			version: QUEUE_CLOCK_RUNTIME_PORT_CONTRACT_VERSION,
@@ -229,10 +186,10 @@ export function normalizeStore(
 				snapshot.nextFireSeq,
 				"snapshot.nextFireSeq",
 			),
-			queues,
-			timers: snapshot.timers,
-			cronSchedules: snapshot.cronSchedules,
-			trace: snapshot.trace,
+			queues: snapshot.queues ?? {},
+			timers: snapshot.timers ?? [],
+			cronSchedules: snapshot.cronSchedules ?? [],
+			trace: snapshot.trace ?? [],
 		};
 	}
 
@@ -272,19 +229,8 @@ export function snapshotStore(store: QueueClockStore): QueueClockSnapshot {
 
 export function getQueue(store: QueueClockStore, queueName: string) {
 	const name = requireNonEmptyString(queueName, "queueName");
-	const existing = Object.hasOwn(store.queues, name)
-		? store.queues[name]
-		: undefined;
-	if (existing) return existing;
-	const messages: QueueMessageRecord[] = [];
-	const queue = { name, messages };
-	Object.defineProperty(store.queues, name, {
-		value: queue,
-		writable: true,
-		enumerable: true,
-		configurable: true,
-	});
-	return queue;
+	store.queues[name] ??= { name, messages: [] };
+	return store.queues[name];
 }
 
 export function findMessageById(

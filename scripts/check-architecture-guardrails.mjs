@@ -1,9 +1,18 @@
+// Enforcement tiers, so nobody mistakes one for the other:
+// - Structural checks (data-models presence, PACT contract validity,
+//   proto<->CUE type coverage, parallel-proto-type) inspect real artifacts
+//   and cannot be satisfied by prose.
+// - Documentation-presence checks (missing-parse-derived-type,
+//   missing-event-architecture) grep for the vocabulary the architecture
+//   rules require the package to document. They verify the package SAYS how
+//   it applies parse-don't-validate and the event architecture, not that the
+//   code does — behavioral verification lives in each package's tests and
+//   PACT contracts.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
 
 const IMPLEMENTATION_EXTENSIONS = new Set([
 	".cjs",
@@ -19,20 +28,6 @@ const IMPLEMENTATION_EXTENSIONS = new Set([
 ]);
 
 const DOC_ONLY_EXTENSIONS = new Set([".md", ".mdx", ".txt"]);
-const SOURCE_EXTENSIONS = new Set([
-	".cjs",
-	".cts",
-	".js",
-	".jsx",
-	".mjs",
-	".mts",
-	".ts",
-	".tsx",
-]);
-const LEXICAL_STRUCTURE_EXTENSIONS = new Set([".cue", ".proto", ".wit"]);
-const SOURCE_DIRECTORIES = new Set(["services", "src"]);
-const STRUCTURAL_COMMENT =
-	/@(?:cc_on|jsx|jsxFrag|jsxImportSource|jsxRuntime|license|preserve|ts-(?:check|expect-error|ignore|nocheck)|type|typedef|param|returns?|property|template|satisfies|implements|extends|import|deprecated|internal|public|override|readonly|enum|constant|this|generated|vite-ignore)|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)|(?:istanbul|c8|v8)\s+ignore|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*source(?:Mapping)?URL=|<reference\b|SPDX-License-Identifier:|copyright\b/iu;
 const DRAFT_PROOF_KINDS = new Set([
 	"technical-proofs",
 	"exp-proofs",
@@ -44,6 +39,7 @@ const TEXT_EXTENSIONS = new Set([
 	".cue",
 	".js",
 	".json",
+	".md",
 	".mjs",
 	".mts",
 	".proto",
@@ -51,7 +47,12 @@ const TEXT_EXTENSIONS = new Set([
 	".wit",
 ]);
 
+// Production packages under packages/ require full scaffolding (contracts/,
+// data-models/). Barebones examples under examples/ are demos — only src/ +
+// tests; they must not be forced to ship contracts/data-models/deploy in git.
 const PRODUCTION_PACKAGE_PARENTS = new Set(["packages"]);
+// Nested categories hold one package per subdirectory (e.g. runtimes/local,
+// adapters/adapter-hono); the category dir itself is not a package.
 const NESTED_PRODUCTION_CATEGORIES = new Set([
 	"adapters",
 	"runtimes",
@@ -110,19 +111,20 @@ const REQUIRED_CHECKS = [
 	},
 	{
 		code: "missing-parse-derived-type",
-		message: "Parser boundaries must return explicit derived domain types.",
+		message:
+			"Document or implement parse-don't-validate derived types for constrained values.",
 		passes: (evidence) => evidence.hasParseDerivedTypes,
 	},
 	{
 		code: "missing-event-architecture",
 		message:
-			"Stateful command/event code must expose a deterministic transition model or complete runtime symbols.",
+			"Name command/event, actor, event-store, materialized-view/projection, snapshot, and read-store behavior.",
 		passes: (evidence) => evidence.hasEventArchitecture,
 	},
 	{
 		code: "parallel-proto-type",
 		message: (evidence) =>
-			`Import generated types from src/_generated/**_pb.ts or register deliberate domain views in scripts/schema-domain-views.json. Offenders: ${evidence.parallelTypeDeclarations.join(", ")}`,
+			`Import generated types from src/_generated/**_pb.ts instead of hand-declaring proto-shaped types (technical-standards.md); annotate deliberate exceptions with // parallel-type-allowed: <why>. Offenders: ${evidence.parallelTypeDeclarations.join(", ")}`,
 		passes: (evidence) => evidence.parallelTypeDeclarations.length === 0,
 	},
 ];
@@ -155,12 +157,11 @@ export async function checkArchitectureGuardrails({
 		(packageRoot) => !frozen.has(packageRoot),
 	);
 	const problems = foreignLockfileProblems(normalizedFiles);
-	const domainViews = registeredDomainViews(root);
 
 	const evidenceByPackage = await Promise.all(
 		packageRoots.map(async (packageRoot) => ({
 			packageRoot,
-			evidence: await collectEvidence(root, packageRoot, domainViews),
+			evidence: await collectEvidence(root, packageRoot),
 		})),
 	);
 
@@ -188,6 +189,10 @@ export async function checkArchitectureGuardrails({
 	return { packageRoots, problems };
 }
 
+// Frozen promoted proofs (scripts/promotions.json) are read-only by the
+// promoted-proof drift gate — their canonical successors in packages/ carry
+// the architecture evidence now. Evaluating them here would demand edits the
+// drift gate forbids, so they are excluded from guard evaluation.
 function frozenPromotedProofRoots(root) {
 	try {
 		const ledger = JSON.parse(
@@ -221,12 +226,12 @@ export function implementationPackageRoots(files) {
 	return unique(roots);
 }
 
-async function collectEvidence(root, packageRoot, domainViews) {
+async function collectEvidence(root, packageRoot) {
 	const absolutePackageRoot = path.join(root, ...packageRoot.split("/"));
 	const files = existsSync(absolutePackageRoot)
 		? await listFiles(absolutePackageRoot, absolutePackageRoot)
 		: [];
-	const implementationSources = [];
+	const text = [];
 	const typeScriptSources = [];
 	const protoTypes = new Set();
 	const cueTexts = [];
@@ -284,16 +289,10 @@ async function collectEvidence(root, packageRoot, domainViews) {
 				path.join(absolutePackageRoot, file),
 				"utf8",
 			);
-			if (
-				SOURCE_EXTENSIONS.has(ext) &&
-				isSourceLocation(normalized) &&
-				!/(^|\/)_generated(\/|$)/.test(normalized)
-			) {
-				implementationSources.push({ file: normalized, contents });
-			}
+			text.push(contents);
 			if (
 				ext === ".ts" &&
-				isSourceLocation(normalized) &&
+				normalized.startsWith("src/") &&
 				!/(^|\/)_generated(\/|$)/.test(normalized)
 			) {
 				typeScriptSources.push({ file: normalized, contents });
@@ -301,6 +300,7 @@ async function collectEvidence(root, packageRoot, domainViews) {
 		}
 	}
 
+	const combinedText = text.join("\n");
 	const combinedCueText = cueTexts.join("\n");
 
 	return {
@@ -311,197 +311,100 @@ async function collectEvidence(root, packageRoot, domainViews) {
 			[...protoTypes].every((typeName) =>
 				cueDefinesType(combinedCueText, typeName),
 			),
-		hasParseDerivedTypes: hasParseDerivedTypes(implementationSources),
-		hasEventArchitecture: hasEventArchitecture(implementationSources),
+		hasParseDerivedTypes:
+			/parse,?\s+don['’]?t\s+validate/i.test(combinedText) &&
+			/\b(derived|parsed)\s+(?:domain\s+)?types?\b/i.test(combinedText),
+		hasEventArchitecture:
+			/\bcommand/i.test(combinedText) &&
+			/\bevents?\b/i.test(combinedText) &&
+			/\bactors?\b/i.test(combinedText) &&
+			/\bevent[-\s]?stores?\b/i.test(combinedText) &&
+			/\b(materialized\s+views?|projections?)\b/i.test(combinedText) &&
+			/\bsnapshots?\b/i.test(combinedText) &&
+			/\bread\s+stores?\b/i.test(combinedText),
 		hasDataModelsProto,
 		hasDataModelsCue,
 		hasMisplacedDataModel,
 		hasContractsPact,
 		parallelTypeDeclarations: parallelTypeDeclarations(
-			packageRoot,
 			typeScriptSources,
 			protoTypes,
-			domainViews,
 		),
 	};
 }
 
-function registeredDomainViews(root) {
-	const file = path.join(root, "scripts", "schema-domain-views.json");
-	if (!existsSync(file)) return new Map();
-	const parsed = JSON.parse(readFileSync(file, "utf8"));
-	if (!isJsonObject(parsed)) {
-		throw new TypeError("scripts/schema-domain-views.json must be an object");
+// Hand-declared TS types that duplicate a proto message/enum name are the
+// "parallel interfaces" the architecture rules forbid — record types must be
+// the generated ones (technical-standards.md). Two markers on the
+// declaration line (or the line above) suppress a hit, for the two legitimate
+// cases the standard recognizes:
+//   // domain-view: <why>          — a deliberately richer parse-don't-validate
+//                                     domain type (branded ids, generics, extra
+//                                     fields) whose generated *_pb.ts is its
+//                                     wire form; permanent by design.
+//   // parallel-type-allowed: <why> — temporary debt awaiting migration.
+const PARALLEL_TYPE_MARKERS = ["domain-view:", "parallel-type-allowed:"];
+
+/**
+ * True when the marker sits on the declaration line or anywhere in the comment
+ * block immediately above it.
+ *
+ * This read exactly one preceding line, so a marker written as the *first* line
+ * of a multi-line block — the natural place, since the reason usually needs a
+ * sentence — was silently ignored and the guard reported an unannotated type
+ * that was in fact annotated. `check-technical-standards.ts` had the identical
+ * bug for `// public-contract:`; both are fixed, and they should stay
+ * symmetric, because an author who learns the rule from one gate will apply it
+ * at the other.
+ */
+function hasMarkerAbove(lines, index, marker) {
+	if ((lines[index] ?? "").includes(marker)) return true;
+	for (let above = index - 1; above >= 0; above -= 1) {
+		const text = (lines[above] ?? "").trim();
+		const isComment =
+			text.startsWith("//") ||
+			text.startsWith("*") ||
+			text.startsWith("/*") ||
+			text.endsWith("*/");
+		if (!isComment) return false;
+		if (text.includes(marker)) return true;
 	}
-	return new Map(
-		Object.entries(parsed).map(([source, names]) => {
-			if (
-				!Array.isArray(names) ||
-				names.some((name) => !isJsonString(name) || name.length === 0)
-			) {
-				throw new TypeError(
-					`scripts/schema-domain-views.json entry ${source} must be a string array`,
-				);
-			}
-			return [normalizePath(source), new Set(names)];
-		}),
-	);
+	return false;
 }
-
-function isJsonObject(value) {
-	return (
-		value !== null &&
-		!Array.isArray(value) &&
-		Object.prototype.toString.call(value) === "[object Object]"
-	);
-}
-
-function isJsonString(value) {
-	return Object.prototype.toString.call(value) === "[object String]";
-}
-
-function hasParseDerivedTypes(sources) {
-	const declarations = sources.flatMap(({ contents }) => [
-		...contents.matchAll(
-			/\bexport\s+(?:async\s+)?function\s+(?:parse|decode|deserialize)[A-Z_$][\w$]*\s*\([^)]*\)\s*(?::\s*([^={\n]+))?/gu,
-		),
-	]);
-	if (declarations.length === 0) {
-		const hasRawJson = sources.some(({ contents }) =>
-			/\bJSON\.parse\s*\(|\brequest\.json\s*\(/u.test(contents),
-		);
-		if (!hasRawJson && hasValidatingNamedFactory(sources)) return true;
-		return !sources.some(({ contents }) =>
-			/\bJSON\.parse\s*\(|\brequest\.json\s*\(|:\s*unknown\b/u.test(contents),
-		);
-	}
-	return declarations.some((declaration) => {
-		const result = declaration[1]?.trim();
-		return Boolean(
-			result &&
-				!/^(?:any|boolean|number|object|string|symbol|unknown|void)(?:\s|\[|\||$)/u.test(
-					result,
-				),
-		);
-	});
-}
-
-function hasValidatingNamedFactory(sources) {
-	return sources.some(({ file, contents }) => {
-		const source = ts.createSourceFile(
-			file,
-			contents,
-			ts.ScriptTarget.Latest,
-			true,
-		);
-		return source.statements.some((statement) => {
-			if (
-				!ts.isFunctionDeclaration(statement) ||
-				!statement.modifiers?.some(
-					(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-				) ||
-				!statement.name ||
-				!statement.type ||
-				!ts.isTypeReferenceNode(statement.type) ||
-				!ts.isIdentifier(statement.type.typeName) ||
-				statement.name.text.toLowerCase() !==
-					statement.type.typeName.text.toLowerCase() ||
-				!statement.body
-			)
-				return false;
-			const parameters = new Set(
-				statement.parameters
-					.filter((parameter) => ts.isIdentifier(parameter.name))
-					.map((parameter) => parameter.name.text),
-			);
-			function contains(node, predicate) {
-				if (predicate(node)) return true;
-				return (
-					ts.forEachChild(node, (child) => contains(child, predicate)) === true
-				);
-			}
-			let validates = false;
-			function visit(node) {
-				if (
-					ts.isIfStatement(node) &&
-					contains(
-						node.expression,
-						(part) => ts.isIdentifier(part) && parameters.has(part.text),
-					) &&
-					contains(node.thenStatement, ts.isThrowStatement)
-				)
-					validates = true;
-				if (!validates) ts.forEachChild(node, visit);
-			}
-			visit(statement.body);
-			return validates;
-		});
-	});
-}
-
-function isSourceLocation(file) {
-	return SOURCE_DIRECTORIES.has(file.split("/", 1)[0]);
-}
-
-function hasEventArchitecture(sources) {
-	const text = sources.map(({ contents }) => contents).join("\n");
-	const declaration = (suffix) =>
-		new RegExp(
-			`\\b(?:class|interface|type)\\s+[A-Za-z_$][\\w$]*${suffix}\\b`,
-			"u",
-		).test(text);
-	const command = declaration("Command");
-	const event = declaration("Event");
-	const snapshot =
-		declaration("Snapshot") || /\bsnapshot\s*\([^)]*\)\s*[{;]/u.test(text);
-	const replay = /\breplay\s*\([^)]*\)\s*(?::\s*[^={;\n]+)?\s*[{;]/u.test(text);
-	if (!command || !event) return true;
-	const deterministicModel =
-		(snapshot && replay) ||
-		/\b(?:apply|fold|project|reduce)[A-Z_$][\w$]*\s*\([^)]*\)/u.test(text);
-	const completeRuntime =
-		declaration("Actor") &&
-		declaration("EventStore") &&
-		(declaration("Projection") || declaration("MaterializedView")) &&
-		snapshot &&
-		declaration("ReadStore");
-	return deterministicModel || completeRuntime;
-}
-
-const PROTO_RECORD_SUFFIXES = ["EventData", "Record"];
-
-function parallelTypeDeclarations(
-	packageRoot,
-	typeScriptSources,
-	protoTypes,
-	domainViews,
-) {
+function parallelTypeDeclarations(typeScriptSources, protoTypes) {
 	if (protoTypes.size === 0) return [];
-	const normalizedProtoTypes = new Set(
-		[...protoTypes].map((name) =>
-			PROTO_RECORD_SUFFIXES.reduce(
-				(current, suffix) =>
-					current.endsWith(suffix) ? current.slice(0, -suffix.length) : current,
-				name,
-			),
-		),
-	);
 	const offenders = [];
 	for (const { file, contents } of typeScriptSources) {
 		const lines = contents.split(/\r?\n/u);
 		for (const [index, line] of lines.entries()) {
+			// Declarations only: `interface X ...` or `type X = {` (an alias whose
+			// right-hand side derives from another type is a legitimate narrowing,
+			// and `type X,` inside import/export lists is not a declaration).
 			const match = line.match(
 				/^\s*(?:export\s+)?(?:interface\s+([A-Za-z_$][\w$]*)[\s<{]|type\s+([A-Za-z_$][\w$]*)(?:<[^>]*>)?\s*=\s*\{)/u,
 			);
 			const name = match?.[1] ?? match?.[2];
-			if (!name || !normalizedProtoTypes.has(name)) continue;
-			if (domainViews.get(`${packageRoot}/${file}`)?.has(name)) continue;
+			if (!name || !protoTypes.has(name)) continue;
+			if (
+				PARALLEL_TYPE_MARKERS.some((marker) =>
+					hasMarkerAbove(lines, index, marker),
+				)
+			) {
+				continue;
+			}
 			offenders.push(`${file}:${index + 1} ${name}`);
 		}
 	}
 	return offenders;
 }
 
+/**
+ * Comments are stripped first, because this scrapes declarations out of prose
+ * otherwise. A doc comment reading "a proto enum is a varint" registered a type
+ * named `is`, and `missing-cue-constraints` then demanded a CUE constraint for
+ * it — naming no type the author could find, because there wasn't one. Two
+ * swarms lost a round trip to that in one day.
+ */
 function protoTypeNames(content) {
 	const withoutComments = content
 		.replace(/\/\*[\s\S]*?\*\//g, " ")
@@ -558,6 +461,9 @@ function changedFiles(args) {
 	const base =
 		baseArg?.slice("--base=".length) ?? process.env.HOBO_ARCHITECTURE_BASE;
 
+	// Full-repo mode: evaluate every production package regardless of diff.
+	// Used by check:all and the CI main gate, where a fresh checkout has no
+	// diff and the bare invocation would otherwise pass vacuously.
 	if (args.has("--all")) {
 		return split(git(["ls-files", "packages", "examples"]));
 	}
@@ -580,131 +486,10 @@ function changedFiles(args) {
 	]);
 }
 
-function structuralComments(text) {
-	const scanner = ts.createScanner(
-		ts.ScriptTarget.Latest,
-		false,
-		ts.LanguageVariant.JSX,
-		text,
-	);
-	const comments = [];
-	for (
-		let token = scanner.scan();
-		token !== ts.SyntaxKind.EndOfFileToken;
-		token = scanner.scan()
-	) {
-		if (
-			(token === ts.SyntaxKind.SingleLineCommentTrivia ||
-				token === ts.SyntaxKind.MultiLineCommentTrivia) &&
-			STRUCTURAL_COMMENT.test(scanner.getTokenText())
-		) {
-			comments.push(scanner.getTokenText());
-		}
-	}
-	return comments;
-}
-
-function scriptKind(file) {
-	const extension = path.extname(file).toLowerCase();
-	if (extension === ".jsx") return ts.ScriptKind.JSX;
-	if (extension === ".tsx") return ts.ScriptKind.TSX;
-	if ([".js", ".cjs", ".mjs"].includes(extension)) return ts.ScriptKind.JS;
-	return ts.ScriptKind.TS;
-}
-
-function lexicalTokens(text) {
-	const scanner = ts.createScanner(
-		ts.ScriptTarget.Latest,
-		true,
-		ts.LanguageVariant.Standard,
-		text,
-	);
-	const tokens = [];
-	for (
-		let token = scanner.scan();
-		token !== ts.SyntaxKind.EndOfFileToken;
-		token = scanner.scan()
-	) {
-		tokens.push([token, scanner.getTokenText()]);
-	}
-	return tokens;
-}
-
-export function hasSameProgramStructure(file, before, after) {
-	const extension = path.extname(file).toLowerCase();
-	if (LEXICAL_STRUCTURE_EXTENSIONS.has(extension)) {
-		return (
-			JSON.stringify(structuralComments(before)) ===
-				JSON.stringify(structuralComments(after)) &&
-			JSON.stringify(lexicalTokens(before)) ===
-				JSON.stringify(lexicalTokens(after))
-		);
-	}
-	const parse = (text) =>
-		ts.createSourceFile(
-			file,
-			text,
-			ts.ScriptTarget.Latest,
-			true,
-			scriptKind(file),
-		);
-	const beforeSource = parse(before);
-	const afterSource = parse(after);
-	if (
-		beforeSource.parseDiagnostics.length ||
-		afterSource.parseDiagnostics.length
-	) {
-		return false;
-	}
-	if (
-		JSON.stringify(structuralComments(before)) !==
-		JSON.stringify(structuralComments(after))
-	) {
-		return false;
-	}
-	const printer = ts.createPrinter({ removeComments: true });
-	return printer.printFile(beforeSource) === printer.printFile(afterSource);
-}
-
-function contentAt(ref, file) {
-	return git(["show", `${ref}:${file}`]);
-}
-
-function structurallyChangedFiles(files, args) {
-	if (args.has("--all")) return files;
-	const baseArg = [...args].find((arg) => arg.startsWith("--base="));
-	const base =
-		baseArg?.slice("--base=".length) ?? process.env.HOBO_ARCHITECTURE_BASE;
-	let beforeRef = "HEAD";
-	if (!args.has("--staged") && base) {
-		const commit = git(["rev-parse", "--verify", `${base}^{commit}`]);
-		beforeRef = git(["merge-base", commit, "HEAD"]);
-	}
-
-	return files.filter((file) => {
-		const extension = path.extname(file).toLowerCase();
-		if (
-			!SOURCE_EXTENSIONS.has(extension) &&
-			!LEXICAL_STRUCTURE_EXTENSIONS.has(extension)
-		)
-			return true;
-		try {
-			const before = contentAt(beforeRef, file);
-			const after = args.has("--staged")
-				? contentAt("", file)
-				: base
-					? contentAt("HEAD", file)
-					: readFileSync(file, "utf8");
-			return !hasSameProgramStructure(file, before, after);
-		} catch {
-			return true;
-		}
-	});
-}
-
 function git(args) {
 	return execFileSync("git", args, {
 		encoding: "utf8",
+		// monorepo `git ls-files` exceeds Node's default 1 MiB maxBuffer
 		maxBuffer: 32 * 1024 * 1024,
 	}).trim();
 }
@@ -720,6 +505,8 @@ function implementationPackageRoot(file) {
 
 	if (parts[0] !== "src" || parts[1] !== "draft" || !parts[2]) return undefined;
 
+	// Aggregate metadata (underscore-prefixed like _templates/_grandfathered.json/_registry.md)
+	// and loose files directly under src/draft/<kind>/ are never proof packages.
 	const isPackageDir = (segment, next) =>
 		segment && !segment.startsWith("_") && next !== undefined;
 
@@ -747,7 +534,6 @@ function isImplementationFile(file) {
 	if (DOC_ONLY_EXTENSIONS.has(ext)) return false;
 
 	const basename = path.basename(file);
-	if (basename === "proof.json") return false;
 	if (
 		basename === "package.json" ||
 		basename === "pnpm-lock.yaml" ||
@@ -794,10 +580,7 @@ function trackedForeignLockfiles() {
 
 async function main() {
 	const args = new Set(process.argv.slice(2));
-	const files = unique([
-		...structurallyChangedFiles(changedFiles(args), args),
-		...trackedForeignLockfiles(),
-	]);
+	const files = unique([...changedFiles(args), ...trackedForeignLockfiles()]);
 	const result = await checkArchitectureGuardrails({ files });
 
 	if (result.problems.length > 0) {

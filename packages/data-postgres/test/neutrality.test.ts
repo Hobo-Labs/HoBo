@@ -1,3 +1,11 @@
+/**
+ * Provider neutrality, checked mechanically.
+ *
+ * The rule "no provider identity in a provider-neutral package" is easy to
+ * state and easy to violate by accident — one `// works on Neon` comment, one
+ * `prisma` in an example, and the package quietly becomes a place where the
+ * next provider has to argue for equal treatment. So it is a test.
+ */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +15,15 @@ import * as api from "../src/index.js";
 
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 
+/**
+ * Ecosystem tool names are not provider identity.
+ *
+ * `prisma-migrate` and `drizzle-kit` name open-source schema tools that run
+ * against any conformant server; a product declares compatibility with them the
+ * same way it declares `flyway`. What would be a violation is a *product* — a
+ * hosted database — appearing in this package. So the scan strips the closed
+ * migration-tool vocabulary first and then looks for what is left.
+ */
 const TOOL_LITERALS: readonly string[] = POSTGRES_MIGRATION_TOOLS;
 
 function stripToolNames(line: string): string {
@@ -15,6 +32,10 @@ function stripToolNames(line: string): string {
 	return out;
 }
 
+/**
+ * Names of products and vendors that must not appear. `postgres` itself is of
+ * course fine — it is the capability, not a provider.
+ */
 const PROVIDER_TOKENS = [
 	"neon",
 	"prisma",
@@ -107,14 +128,16 @@ describe("provider neutrality", () => {
 			new URL("../package.json", import.meta.url),
 		);
 		type PackageManifest = { readonly dependencies?: Record<string, string> };
+		// SAFETY: package.json is the local repository manifest and has the declared shape.
 		const manifest = JSON.parse(
 			readFileSync(manifestPath, "utf8"),
 		) as PackageManifest;
 		const names = Object.keys(manifest.dependencies ?? {});
 		expect(names).toEqual([
-			"@hobo/backend-fleet",
+			"@hobo/backend-routing",
 			"@hobo/capability-profiles",
 			"@hobo/data-core",
+			"@hobo/fleet",
 		]);
 	});
 

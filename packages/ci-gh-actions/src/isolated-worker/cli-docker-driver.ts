@@ -2,6 +2,10 @@ import { execFile, spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { promisify } from "node:util";
 import { z } from "zod";
+import {
+	type ContainerHardening,
+	hardenedContainerFlags,
+} from "./container-flags.js";
 import type { DepsImageDockerPort } from "./deps-image.js";
 import type {
 	ContainerResourceWeights,
@@ -13,6 +17,7 @@ import type { WorkerImage } from "./image-gc.js";
 import type { WorkerStorageDockerDriver } from "./storage-admission.js";
 
 const exec = promisify(execFile);
+/** An image reference as `docker pull` takes it: no option shape, no whitespace. */
 const IMAGE_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,511}$/u;
 const dockerImage = z.object({
 	ID: z.string().min(1),
@@ -44,13 +49,12 @@ const dockerContainer = z.object({
 });
 
 export function dockerSocketMountCreateArgs(
-	env: NodeJS.ProcessEnv,
-	stat: (path: string) => { gid: number } = (path) => statSync(path),
+	allowed: boolean,
+	gid: () => number = () => statSync("/var/run/docker.sock").gid,
 ): string[] {
-	if (env.HOBO_CI_MOUNT_DOCKER_SOCKET === "0") return [];
+	if (!allowed) return [];
 	const socketPath = "/var/run/docker.sock";
-	const gid = stat(socketPath).gid;
-	return ["-v", `${socketPath}:${socketPath}`, "--group-add", String(gid)];
+	return ["-v", `${socketPath}:${socketPath}`, "--group-add", String(gid())];
 }
 
 export function builderPruneArgs(keepStorage: string): string[] {
@@ -140,9 +144,13 @@ function parseDockerPsJson(stdout: string): DockerContainer[] {
 	});
 }
 
+/** Operator-owned Docker engine on a free VM; not invoked from Vercel serverless. */
 export function createCliDockerDriver(options: {
 	env?: NodeJS.ProcessEnv;
 	binary?: string;
+	hardening?: ContainerHardening;
+	hostDocker?: () => boolean;
+	socketGid?: () => number;
 	log?: (
 		event: "hobo_ci_blkio_weight_unsupported",
 		fields: Readonly<Record<string, string | number | boolean>>,
@@ -152,6 +160,7 @@ export function createCliDockerDriver(options: {
 	Pick<DepsImageDockerPort, "pull"> {
 	const docker = options.binary ?? "docker";
 	const env = options.env ?? process.env;
+	const hardened = hardenedContainerFlags(options.hardening ?? {});
 	let blkioWeightSupported = true;
 	let blkioFailureLogged = false;
 	const withBlkioFallback = async <T>(
@@ -288,6 +297,7 @@ export function createCliDockerDriver(options: {
 				throw error;
 			}
 		},
+		/** `docker pull <ref>`: a runner-host controller image, pinned by the caller. */
 		async pull(image) {
 			if (!IMAGE_REFERENCE.test(image))
 				throw new Error("invalid image reference");
@@ -321,6 +331,7 @@ export function createCliDockerDriver(options: {
 					[
 						"run",
 						"--rm",
+						...hardened,
 						"--network",
 						"none",
 						"--user",
@@ -396,7 +407,9 @@ export function createCliDockerDriver(options: {
 					if (container.name.startsWith("hobo-"))
 						merged.set(container.containerId, container);
 				}
-			} catch {}
+			} catch {
+				/* legacy worker containers may lack the isolated label */
+			}
 			return [...merged.values()];
 		},
 		async create(spec: IsolatedContainerSpec) {
@@ -404,6 +417,8 @@ export function createCliDockerDriver(options: {
 				const args = [
 					"create",
 					"--rm",
+					// `sleep infinity` as PID 1 ignores SIGTERM, so without an init every
+					// `docker stop` waited out its full timeout while the slot stayed held.
 					"--init",
 					"--name",
 					spec.name,
@@ -413,6 +428,7 @@ export function createCliDockerDriver(options: {
 					"hobo.ci/isolated=1",
 					"--label",
 					`hobo.ci/timeout-ms=${spec.timeoutMs}`,
+					...hardened,
 				];
 				if (spec.runAsUser) args.push("--user", spec.runAsUser);
 				if (spec.memoryMb !== undefined) {
@@ -426,7 +442,12 @@ export function createCliDockerDriver(options: {
 					);
 				}
 				args.push(...containerResourceArgs(spec, includeBlkio));
-				args.push(...dockerSocketMountCreateArgs(env));
+				args.push(
+					...dockerSocketMountCreateArgs(
+						options.hostDocker?.() === true,
+						options.socketGid,
+					),
+				);
 				for (const volume of spec.volumes ?? []) {
 					if (
 						!/^[A-Za-z0-9][A-Za-z0-9_.-]*$|^\/[^:,]+$/.test(volume.source) ||
@@ -614,6 +635,7 @@ export function createCliDockerDriver(options: {
 				});
 				return true;
 			} catch (error) {
+				// `test` exits 1 for a missing path; docker's own failures are 125-127.
 				if (
 					error instanceof Error &&
 					Object.getOwnPropertyDescriptor(error, "code")?.value === 1

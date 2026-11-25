@@ -2,16 +2,13 @@
 
 Camp **component host** for `componentHost=cloud-native`.
 
-Registry of multi-cloud host providers:
+Registry of multi-cloud host providers. Scaffold includes:
 
 | Provider | Status |
 |----------|--------|
 | `mock` | In-process handlers for setup/parity tests |
-| `cloudflare` | Credential-gated token verification and remote endpoint handlers |
-| `aws` | Credential-gated Lambda endpoint handlers |
-| `gcp` | Credential-gated Cloud Run endpoint handlers |
-| `azure` | Credential-gated Functions endpoint handlers |
-| `vercel` | Credential-gated Functions endpoint handlers |
+| `cloudflare` | **Real (credential-gated)** — token verify + remote-proxy mesh handlers |
+| `aws` / `gcp` / `azure` / `vercel` | Declared-unimplemented stubs (ensure ok, serve fails closed with `HOBO_CLOUD_NATIVE_UNIMPLEMENTED`) |
 
 ```ts
 import { createCloudNativeRuntimeHost } from "@hobo/runtime-cloud-native";
@@ -20,26 +17,46 @@ const host = createCloudNativeRuntimeHost({ defaultProvider: "mock" });
 await host.ensure({ hoboHome });
 ```
 
-The mock provider restores an injected environment value when its host closes
-only if the value still matches the injection, preserving later changes made by
-the caller.
+## The FetchHandler mesh contract is the hard seam for remote providers
 
-## Remote providers
-
-Every provider realizes the same
+Every provider — local mock or remote cloud — realizes the same
 `servePrivate` contract: a `Map<resourceName, FetchHandler>` plus isolation
-information.
+info. For remote providers the handler cannot run the component in-process,
+so the seam is proven by **request formation + credential gating**, not by
+faking execution:
 
-- `ensure` returns `ready: false` and names missing credential variables.
-- Credential values are not included in results or progress messages.
-- Cloudflare verifies its token before reporting ready.
-- Other providers accept their standard static, profile, workload identity,
-  or managed identity environment credentials.
-- `servePrivate` proxies each request through
-  `bindleEnv["HOBO_CLOUD_NATIVE_ENDPOINT_<RESOURCE>"]`.
-- Request paths stay on the bound endpoint origin. Redirects within that origin
-  are returned to the caller; redirects outside it return `502`.
-- An unbound resource returns HTTP 501 with a machine-readable remediation.
+- **`ensure` is credential-gated and fails closed.** Without the API token
+  the host passes in (`defaultCloudNativeProviders({ apiToken })`, resolved from
+  the owner's store as `owner://CLOUDFLARE_API_TOKEN`; the environment is never
+  read for it) or `CLOUDFLARE_ACCOUNT_ID` (presence-only checks; values are
+  never logged) it returns `ready: false` with
+  `details.credentialGated: true` and the exact `missing` env-var names.
+  With credentials it verifies the token via
+  `GET https://api.cloudflare.com/client/v4/user/tokens/verify` through an
+  injected fetch (parse-don't-validate: `success: true` +
+  `result.status === "active"`); anything else throws a typed
+  `CloudflareCloudNativeError` with remediation text.
+- **`servePrivate` returns honest remote-proxy handlers.** A resource whose
+  public endpoint is bound via
+  `bindleEnv["HOBO_CLOUD_NATIVE_ENDPOINT_<RESOURCE>"]` gets a handler that
+  proxies the incoming request (method, path, query, headers, body) to that
+  endpoint and relays status + body verbatim. The request path cannot change
+  the bound endpoint origin. Redirects within that origin are returned to the
+  caller; redirects outside it return `502`. An unbound resource answers
+  `501` with a machine-readable body
+  `{ error: "cloudflare-remote-handler-unbound", resource, remediation }` —
+  an honest partial realization, never a fake `200`. Isolation reports
+  `isolateBoundary: "cloudflare-worker"`, `privateSandboxes: 0`,
+  `details.mode: "remote-proxy"`.
 
-The default registry remains ready when optional cloud credentials are absent;
-selecting a cloud provider still exposes its credential gate directly.
+`aws` / `gcp` / `azure` / `vercel` remain declared-unimplemented and fail
+closed: `ensure` reports `implemented: false` and `servePrivate` throws
+`HOBO_CLOUD_NATIVE_UNIMPLEMENTED`. The registry's `ensure` surfaces a
+credential-gated provider's gate in its notes without blocking overall
+registry readiness (the default serving path is `mock`).
+
+## Architecture rules
+
+Parse, don't validate: cloud-native deployment and runtime inputs are parsed
+once at the host boundary into derived types; controllers downstream operate
+on those parsed domain values instead of re-validating raw manifests.

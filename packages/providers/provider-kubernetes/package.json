@@ -19,7 +19,6 @@
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
 		"test": "vitest run",
-		"test:strict-live": "tsx acceptance/strict-runner-pod.mts",
 		"test:deep": "vitest run --config vitest.deep.config.ts"
 	},
 	"dependencies": {

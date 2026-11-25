@@ -1,8 +1,8 @@
 # HOBO-161 GCP Provider Contract POC
 
 This draft package proves the `@hobo/provider-gcp` contract slice for
-[PLAN-04](urn:hobo:requirement:control-plane#plan-04) and
-[ADR-0024](urn:hobo:decision:adr-0024).
+[PLAN-04](../../../../docs/design/control-plane.md#plan-04) and
+[ADR-0024](../../../../docs/design/adr/07-portability-extensibility.md#adr-0024).
 
 It covers the seed GCP provider surface:
 
@@ -32,10 +32,12 @@ npm.cmd --prefix src\draft\technical-proofs\provider-gcp-contract test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Provider Gcp Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
 - `type-tests/provider-gcp-types.ts` — public declaration consumer for the typed GCP provider API.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

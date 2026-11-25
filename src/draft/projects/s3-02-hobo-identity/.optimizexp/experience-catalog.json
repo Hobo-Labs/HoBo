@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "s3-02-hobo-identity",
+  "builtAt": "2026-11-17T18:35:43.926Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "src/draft/projects/s3-02-hobo-identity/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "2c7ed3b3d4ca8ce7f1ee6421e9fae910ce53a15e3cb1a9ebbb94f2db1c14eb02",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

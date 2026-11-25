@@ -1,10 +1,4 @@
-import {
-	canonicalJson,
-	type ProviderTerms,
-	providerTermsFor,
-	sortKeys,
-	stableDigest,
-} from "@hobo/core";
+import { canonicalJson, sortKeys, stableDigest } from "@hobo/core";
 
 import {
 	BUILD_MACHINE_CATEGORY,
@@ -15,6 +9,7 @@ import {
 	EXECUTION_HOST_MANIFEST_SCHEMA,
 	type ExecutionHostCategory,
 	type ExecutionHostManifest,
+	type ProviderTerms,
 	RUNNER_CATEGORY,
 } from "@hobo/runner-github";
 
@@ -54,9 +49,10 @@ export const COST_SOURCE: CostProvenance = {
 // service bureau or otherwise letting third parties use the Services — the
 // adapter is only ever pointed at the operator's OWN Blacksmith org
 // (ADR-0129 §1).
-export const PROVIDER_TERMS: ProviderTerms = providerTermsFor(
-	"@hobo/runner-blacksmith",
-);
+export const PROVIDER_TERMS: ProviderTerms = {
+	url: "https://docs.blacksmith.sh/about/terms-of-service",
+	reviewedOn: "2026-07-27",
+};
 
 export const COST_FACTS = {
 	[RUNNER_CATEGORY]: {
@@ -262,7 +258,6 @@ export function publishCapabilityManifest(
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
 		executionHostSchema: EXECUTION_HOST_MANIFEST_SCHEMA,
-		terms: PROVIDER_TERMS,
 		documents,
 	};
 

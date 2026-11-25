@@ -34,7 +34,7 @@ type SupportCaseRedactionState =
 type ConsumedSupportWorkflowMockupRef = {
   readonly sourceIssue: "HOBO-550";
   readonly mockupId: SupportCaseConsumedMockupId;
-  readonly sourceProofPath: "urn:hobo:proof:vibe-support-workflow-mockups";
+  readonly sourceProofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md";
   readonly supportCaseUse: string;
 };
 
@@ -80,7 +80,7 @@ type VibeSupportCaseRedactedEvidence = {
   readonly issue: "HOBO-564";
   readonly phase: "M2";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-support-case-redacted-evidence";
-  readonly proofPath: "urn:hobo:proof:vibe-support-case-redacted-evidence";
+  readonly proofPath: "docs/design/proofs/vibe-support-case-redacted-evidence/README.md";
   readonly designRefs: readonly string[];
   readonly consumedSupportWorkflowMockupRefs: readonly ConsumedSupportWorkflowMockupRef[];
   readonly evidencePacks: readonly SupportCaseEvidencePack[];
@@ -104,37 +104,37 @@ const CONSUMED_MOCKUP_REFS: readonly ConsumedSupportWorkflowMockupRef[] = [
   {
     sourceIssue: "HOBO-550",
     mockupId: "wf-received-intake",
-    sourceProofPath: "urn:hobo:proof:vibe-support-workflow-mockups",
+    sourceProofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md",
     supportCaseUse: "case prototype starts from accepted requester, channel, affected surface, and first customer-safe summary",
   },
   {
     sourceIssue: "HOBO-550",
     mockupId: "wf-classified-triage",
-    sourceProofPath: "urn:hobo:proof:vibe-support-workflow-mockups",
+    sourceProofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md",
     supportCaseUse: "severity and owner route are copied from the accepted triage mockup, not inferred from raw ticket text",
   },
   {
     sourceIssue: "HOBO-550",
     mockupId: "wf-evidence-linked",
-    sourceProofPath: "urn:hobo:proof:vibe-support-workflow-mockups",
+    sourceProofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md",
     supportCaseUse: "redacted logs, incident refs, admin context, docs, and proof package links remain explicit evidence pack fields",
   },
   {
     sourceIssue: "HOBO-550",
     mockupId: "wf-owner-routed",
-    sourceProofPath: "urn:hobo:proof:vibe-support-workflow-mockups",
+    sourceProofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md",
     supportCaseUse: "support case owner route preserves security, incident, release, docs, and support boundaries",
   },
   {
     sourceIssue: "HOBO-550",
     mockupId: "wf-customer-updated",
-    sourceProofPath: "urn:hobo:proof:vibe-support-workflow-mockups",
+    sourceProofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md",
     supportCaseUse: "customer update text is gated by redaction state and next update condition",
   },
   {
     sourceIssue: "HOBO-550",
     mockupId: "wf-closed",
-    sourceProofPath: "urn:hobo:proof:vibe-support-workflow-mockups",
+    sourceProofPath: "docs/design/proofs/vibe-support-workflow-mockups/README.md",
     supportCaseUse: "closure cites approved docs, follow-up owner, or unsupported-state explanation without building support runtime",
   },
 ];
@@ -154,7 +154,7 @@ const EVIDENCE_PACKS: readonly SupportCaseEvidencePack[] = [
     incidentRefs: ["incident://none-customer-impacting-confirmed"],
     supportRefs: ["support://case/sc-happy-doc-answer-v1"],
     adminContext: "workspace acme-prod, project launch-demo, environment preview; tenant ids redacted",
-    docsSource: "urn:hobo:requirement:support-workflow#required-support-evidence",
+    docsSource: "docs/design/support-workflow.md#required-support-evidence",
     proofPackageLink: "src/draft/exp-proofs/ux/vibe-support-workflow-mockups/README.md",
     redactionState: "customer-safe",
     nextUpdateCondition: "when docs owner approves the final customer-safe answer",
@@ -171,8 +171,8 @@ const EVIDENCE_PACKS: readonly SupportCaseEvidencePack[] = [
     incidentRefs: ["incident://candidate/inc-launch-window-17"],
     supportRefs: ["support://case/sc-incident-handoff-v1"],
     adminContext: "affected launch-demo project and environment only; no customer payloads or secrets",
-    docsSource: "urn:hobo:requirement:incident-communications#communication-surfaces",
-    proofPackageLink: "urn:hobo:proof:vibe-support-workflow-mockups",
+    docsSource: "docs/design/incident-communications.md#communication-surfaces",
+    proofPackageLink: "docs/design/proofs/vibe-support-workflow-mockups/README.md",
     redactionState: "internal-only",
     nextUpdateCondition: "after incident commander confirms customer-visible impact and approved wording",
     proofMode: "simulated",
@@ -188,8 +188,8 @@ const EVIDENCE_PACKS: readonly SupportCaseEvidencePack[] = [
     incidentRefs: ["incident://not-open-stale-proof"],
     supportRefs: ["support://case/sc-stale-proof-v1"],
     adminContext: "workspace acme-prod, plan review snapshot, freshness state stale; customer identifiers redacted",
-    docsSource: "urn:hobo:requirement:known-limitations-register",
-    proofPackageLink: "urn:hobo:proof:resource-lifecycle-quickstart-examples#fixture-ids",
+    docsSource: "docs/design/known-limitations-register.md",
+    proofPackageLink: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#fixture-ids",
     redactionState: "customer-safe",
     nextUpdateCondition: "once release owner accepts limitation wording or refreshes the proof fixture",
     proofMode: "reference fixture",
@@ -205,7 +205,7 @@ const EVIDENCE_PACKS: readonly SupportCaseEvidencePack[] = [
     incidentRefs: ["incident://security-review/raw-data-request-withheld"],
     supportRefs: ["support://case/sc-security-blocked-v1"],
     adminContext: "raw tenant data request withheld; support can see route, not payload",
-    docsSource: "urn:hobo:requirement:security-verification#customer-communication",
+    docsSource: "docs/design/security-verification.md#customer-communication",
     proofPackageLink: "src/draft/exp-proofs/ux/vibe-support-case-redacted-evidence/README.md",
     redactionState: "requires-security-approval",
     nextUpdateCondition: "before any customer-visible evidence leaves security and legal review",
@@ -217,14 +217,14 @@ export const VIBE_SUPPORT_CASE_REDACTED_EVIDENCE: VibeSupportCaseRedactedEvidenc
   issue: "HOBO-564",
   phase: "M2",
   packagePath: "src/draft/exp-proofs/ux/vibe-support-case-redacted-evidence",
-  proofPath: "urn:hobo:proof:vibe-support-case-redacted-evidence",
+  proofPath: "docs/design/proofs/vibe-support-case-redacted-evidence/README.md",
   designRefs: [
-    "urn:hobo:requirement:support-workflow",
-    "urn:hobo:requirement:support-sla-channels",
-    "urn:hobo:requirement:incident-communications",
-    "urn:hobo:requirement:launch-support-escalation",
-    "urn:hobo:proof:vibe-support-workflow-mockups",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/support-workflow.md",
+    "docs/design/support-sla-channels.md",
+    "docs/design/incident-communications.md",
+    "docs/design/launch-support-escalation.md",
+    "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   consumedSupportWorkflowMockupRefs: CONSUMED_MOCKUP_REFS,
   evidencePacks: EVIDENCE_PACKS,
@@ -321,7 +321,7 @@ export function validateVibeSupportCaseRedactedEvidence(
   if (record.packagePath !== "src/draft/exp-proofs/ux/vibe-support-case-redacted-evidence") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (record.proofPath !== "urn:hobo:proof:vibe-support-case-redacted-evidence") {
+  if (record.proofPath !== "docs/design/proofs/vibe-support-case-redacted-evidence/README.md") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
 
@@ -358,7 +358,7 @@ function validateConsumedMockups(
     if (ref.sourceIssue !== "HOBO-550") {
       errors.push({ code: "wrong-mockup-source", message: `${ref.mockupId} must cite HOBO-550` });
     }
-    if (ref.sourceProofPath !== "urn:hobo:proof:vibe-support-workflow-mockups") {
+    if (ref.sourceProofPath !== "docs/design/proofs/vibe-support-workflow-mockups/README.md") {
       errors.push({ code: "wrong-mockup-proof", message: `${ref.mockupId} must cite the HOBO-550 proof path` });
     }
     if (!ref.supportCaseUse) {

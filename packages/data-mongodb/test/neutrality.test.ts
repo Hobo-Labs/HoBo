@@ -1,3 +1,6 @@
+// The runtime package has no driver. This is enforced here, not by
+// convention: the driver and its BSON library are devDependencies, and
+// nothing under src/ may import them.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, test } from "vitest";

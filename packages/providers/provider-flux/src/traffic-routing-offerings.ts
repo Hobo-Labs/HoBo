@@ -1,10 +1,24 @@
-import type { TrafficRoutingProviderProfile } from "@hobo/core";
+import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
+/**
+ * Flux TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
+ *
+ * FluxOS spreads an app's instances across nodes and its domain manager
+ * balances requests across them evenly. A tenant controls neither weights nor
+ * health policy, and one registered app runs one image set, so there is no
+ * canary between versions. What remains is the portable in-process floor: the
+ * caller's router splits traffic between two registered apps it owns.
+ * `provider` is `other`: the core union has no Flux member.
+ */
 export const FLUX_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	Object.freeze({
 		provider: "other",
-		offerings: Object.freeze([]),
+		offerings: Object.freeze([
+			offering("inprocess.weighted", {
+				features: ["fallback-floor", "caller-owned-router"],
+			}),
+		]),
 		fallbacks: Object.freeze(["inprocess.weighted"] as const),
 	});
 
@@ -15,6 +29,7 @@ const ONE_IMAGE_SET =
 const NO_DNS =
 	"Flux app domains are managed by FluxOS with no tenant weighted or failover DNS";
 
+/** Offerings Flux cannot realize, declared absent rather than preview. */
 export const FLUX_TRAFFIC_ROUTING_ABSENT: readonly AbsentTrafficOffering[] =
 	Object.freeze(
 		(
@@ -25,10 +40,6 @@ export const FLUX_TRAFFIC_ROUTING_ABSENT: readonly AbsentTrafficOffering[] =
 				["edge.canary", ONE_IMAGE_SET],
 				["edge.header", ONE_IMAGE_SET],
 				["edge.path", ONE_IMAGE_SET],
-				[
-					"inprocess.weighted",
-					"The in-process router is a portable Station fallback, not a native provider offering",
-				],
 				["lb.health", EVEN],
 				["lb.lifecycle", EVEN],
 				["lb.locality", EVEN],

@@ -1,12 +1,15 @@
 ---
 name: implement
-description: Implement and validate the work requested by the user.
+description: "Implement a piece of work based on a PRD or set of issues."
 disable-model-invocation: true
 ---
 
-Follow `AGENTS.md`. Inspect existing behavior, complete the requested changes,
-and verify them with tests and type checks appropriate to the affected code.
-Resolve routine choices from available context and preserve unrelated work.
+Implement the work described by the user in the PRD or issues.
 
-Use incremental commits and stacked pull requests when the user requests them.
-Do not create planning documents or defer implementation to later issues.
+Use /tdd where possible, at pre-agreed seams.
+
+Run typechecking regularly, single test files regularly, and the full test suite once at the end.
+
+Once done, use /review to review the work.
+
+Commit your work to the current branch.

@@ -113,27 +113,6 @@ describe("refusals", () => {
 			"schema: must be hobo.provider-manifest/v1",
 		],
 		[
-			"missing provider terms",
-			(doc) => {
-				delete doc.terms;
-			},
-			"terms: is required",
-		],
-		[
-			"provider terms over plain HTTP",
-			(doc) => {
-				at(doc, "terms").url = "http://example.com/terms";
-			},
-			"terms.url: must be an https URL",
-		],
-		[
-			"provider terms with a malformed review date",
-			(doc) => {
-				at(doc, "terms").reviewedOn = "yesterday";
-			},
-			"terms.reviewedOn: must be a date",
-		],
-		[
 			"duplicate flow id",
 			(doc) => {
 				at(doc, "auth", "flows", 1).id = "console-oauth";

@@ -75,16 +75,16 @@ const VALID_PROOF_MODES = new Set<ProofMode>([
 ]);
 
 const REQUIRED_DEPENDENCIES = [
-  "urn:hobo:requirement:developer-experience#plan-07",
-  "urn:hobo:requirement:organization-workspace-model",
-  "urn:hobo:requirement:settings-project-lifecycle",
-  "urn:hobo:requirement:member-rbac-administration",
-  "urn:hobo:requirement:tenant-isolation-quotas",
-  "urn:hobo:requirement:support-sla-channels",
-  "urn:hobo:requirement:security-networking#plan-50",
-  "urn:hobo:decision:adr-0074",
-  "urn:hobo:decision:adr-0077",
-  "urn:hobo:decision:adr-0080",
+  "docs/design/developer-experience.md#plan-07",
+  "docs/design/organization-workspace-model.md",
+  "docs/design/settings-project-lifecycle.md",
+  "docs/design/member-rbac-administration.md",
+  "docs/design/tenant-isolation-quotas.md",
+  "docs/design/support-sla-channels.md",
+  "docs/design/security-networking.md#plan-50",
+  "docs/design/adr/02-identity-security.md#adr-0074",
+  "docs/design/adr/02-identity-security.md#adr-0077",
+  "docs/design/adr/02-identity-security.md#adr-0080",
 ];
 
 const FORBIDDEN_SCOPE_PATTERNS = [
@@ -159,43 +159,43 @@ export const ADMIN_CONSOLE_SCOPE: AdminConsoleScope = {
   },
   dependencies: [
     {
-      source: "urn:hobo:requirement:developer-experience#plan-07",
+      source: "docs/design/developer-experience.md#plan-07",
       reason: "Defines the dashboard and operations experience where Admin Console surfaces are later exposed.",
     },
     {
-      source: "urn:hobo:requirement:organization-workspace-model",
+      source: "docs/design/organization-workspace-model.md",
       reason: "Supplies account, organization, workspace, project, tenant, and environment nouns the console must display without redefining them.",
     },
     {
-      source: "urn:hobo:requirement:settings-project-lifecycle",
+      source: "docs/design/settings-project-lifecycle.md",
       reason: "Defines project state, settings ownership, and lifecycle transitions consumed as read-model inputs.",
     },
     {
-      source: "urn:hobo:requirement:member-rbac-administration",
+      source: "docs/design/member-rbac-administration.md",
       reason: "Defines role, membership, approval, and audit boundaries for later admin actions.",
     },
     {
-      source: "urn:hobo:requirement:tenant-isolation-quotas",
+      source: "docs/design/tenant-isolation-quotas.md",
       reason: "Defines tenant and quota dimensions the console may expose while leaving enforcement out of scope.",
     },
     {
-      source: "urn:hobo:requirement:support-sla-channels",
+      source: "docs/design/support-sla-channels.md",
       reason: "Defines support context, SLA, and escalation handoffs consumed by support-visible console views.",
     },
     {
-      source: "urn:hobo:requirement:security-networking#plan-50",
+      source: "docs/design/security-networking.md#plan-50",
       reason: "Defines tenant isolation and security/networking boundaries for admin visibility.",
     },
     {
-      source: "urn:hobo:decision:adr-0074",
+      source: "docs/design/adr/02-identity-security.md#adr-0074",
       reason: "Pins org governance, RBAC, mandatory policy rules, deny ceilings, and audit obligations.",
     },
     {
-      source: "urn:hobo:decision:adr-0077",
+      source: "docs/design/adr/02-identity-security.md#adr-0077",
       reason: "Pins projects and environments as grouping dimensions for operations dashboards and status surfaces.",
     },
     {
-      source: "urn:hobo:decision:adr-0080",
+      source: "docs/design/adr/02-identity-security.md#adr-0080",
       reason: "Pins tenant isolation by construction and cross-tenant leak conformance as hard security boundaries.",
     },
   ],

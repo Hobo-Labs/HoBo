@@ -1,12 +1,10 @@
 import {
-	type CronExpressionSchedule,
-	type CronExpressionSpec,
 	type CronSchedule,
 	type FiredTimer,
 	type IntervalCronSpec,
+	parseCronEveryMs,
 	parseDelayMs,
 	parseFireId,
-	parseIntervalCronSpec,
 	parseIsoInstant,
 	parseRunId,
 	parseScheduleId,
@@ -18,7 +16,6 @@ import {
 	type VirtualClock,
 } from "@hobo/core";
 
-import { nextCronExpressionFire } from "./cron-expression.js";
 import {
 	appendTrace,
 	type CronScheduleRecord,
@@ -84,48 +81,23 @@ export function createLocalClock(store: QueueClockStore): VirtualClock {
 
 		cron(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule {
 			const id = scheduleId;
-			const interval = parseIntervalCronSpec(spec);
-			const everyMs = interval.everyMs;
-			const jitterMs = interval.jitterMs ?? 0;
-			const requestedStartAtMs =
-				interval.startAtMs === undefined
-					? undefined
-					: normalizeNonNegativeInteger(interval.startAtMs, "spec.startAtMs");
 			const previous = store.cronSchedules.find(
 				(schedule) => schedule.scheduleId === id,
 			);
 			if (previous) {
-				if (previous.expression !== undefined) {
-					throw new TypeError(`Schedule ${id} already uses a cron expression`);
-				}
-				if (
-					previous.everyMs !== everyMs ||
-					previous.jitterMs !== jitterMs ||
-					(requestedStartAtMs !== undefined &&
-						previous.startAtMs !== requestedStartAtMs)
-				) {
-					throw new TypeError(`Schedule ${id} already has another recurrence`);
-				}
 				return publicCronSchedule(previous, true);
 			}
 
+			const everyMs = parseCronEveryMs(spec.everyMs);
 			const startAtMs = normalizeNonNegativeInteger(
-				requestedStartAtMs ?? store.nowMs + everyMs,
+				spec.startAtMs ?? store.nowMs + everyMs,
 				"spec.startAtMs",
 			);
 			const schedule: CronScheduleRecord = {
 				scheduleId: id,
 				everyMs,
-				jitterMs,
 				startAtMs,
-				nextFireAtMs: intervalFireAt(
-					store.seed,
-					id,
-					startAtMs,
-					everyMs,
-					jitterMs,
-					0,
-				),
+				nextFireAtMs: startAtMs,
 				occurrence: 0,
 			};
 			store.cronSchedules.push(schedule);
@@ -134,52 +106,9 @@ export function createLocalClock(store: QueueClockStore): VirtualClock {
 				scheduleId: id,
 				everyMs,
 				startAtMs,
-				jitterMs,
 			});
 
 			return publicCronSchedule(schedule, false);
-		},
-
-		cronExpression(
-			scheduleId: ScheduleId,
-			spec: CronExpressionSpec,
-		): CronExpressionSchedule {
-			const previous = store.cronSchedules.find(
-				(schedule) => schedule.scheduleId === scheduleId,
-			);
-			if (previous) {
-				if (
-					previous.expression !== spec.expression ||
-					previous.timezone !== spec.timezone
-				) {
-					throw new TypeError(
-						`Schedule ${scheduleId} already has another recurrence`,
-					);
-				}
-				return publicExpressionSchedule(previous, true);
-			}
-			const nextFireAtMs = nextCronExpressionFire(
-				spec.expression,
-				spec.timezone,
-				store.nowMs,
-			);
-			const schedule: CronScheduleRecord = {
-				scheduleId,
-				expression: spec.expression,
-				timezone: spec.timezone,
-				startAtMs: store.nowMs,
-				nextFireAtMs,
-				occurrence: 0,
-			};
-			store.cronSchedules.push(schedule);
-			appendTrace(store, {
-				type: "cron.expression-scheduled",
-				scheduleId,
-				expression: spec.expression,
-				timezone: spec.timezone,
-				startAtMs: store.nowMs,
-			});
-			return publicExpressionSchedule(schedule, false);
 		},
 
 		advance(deltaMs: number): readonly FiredTimer[] {
@@ -252,8 +181,8 @@ function nextDueFire(store: QueueClockStore): DueFire | undefined {
 }
 
 function fireDue(store: QueueClockStore, due: DueFire): FiredTimer {
+	const order = store.nextFireSeq++;
 	if (due.kind === "sleep") {
-		const order = store.nextFireSeq++;
 		due.timer.firedAtMs = due.fireAtMs;
 		due.timer.firedOrder = order;
 		const fired = Object.freeze({
@@ -278,26 +207,10 @@ function fireDue(store: QueueClockStore, due: DueFire): FiredTimer {
 		return fired;
 	}
 
-	const fireAtMs = due.schedule.nextFireAtMs;
-	const nextFireAtMs =
-		due.schedule.expression !== undefined
-			? nextCronExpressionFire(
-					due.schedule.expression,
-					due.schedule.timezone,
-					fireAtMs,
-				)
-			: intervalFireAt(
-					store.seed,
-					due.schedule.scheduleId,
-					due.schedule.startAtMs,
-					due.schedule.everyMs,
-					due.schedule.jitterMs,
-					due.schedule.occurrence + 1,
-				);
-	const order = store.nextFireSeq++;
 	due.schedule.occurrence += 1;
 	const occurrence = due.schedule.occurrence;
-	due.schedule.nextFireAtMs = nextFireAtMs;
+	const fireAtMs = due.schedule.nextFireAtMs;
+	due.schedule.nextFireAtMs += due.schedule.everyMs;
 	const fired = Object.freeze({
 		fireId: parseFireId(`cron:${due.schedule.scheduleId}:${occurrence}`),
 		kind: "cron" as const,
@@ -317,31 +230,6 @@ function fireDue(store: QueueClockStore, due: DueFire): FiredTimer {
 	return fired;
 }
 
-function intervalFireAt(
-	seed: string,
-	scheduleId: string,
-	startAtMs: number,
-	everyMs: number,
-	jitterMs: number,
-	occurrence: number,
-): number {
-	let hash = 14695981039346656037n;
-	for (const character of JSON.stringify([seed, scheduleId, occurrence])) {
-		hash = BigInt.asUintN(
-			64,
-			(hash ^ BigInt(character.codePointAt(0) ?? 0)) * 1099511628211n,
-		);
-	}
-	const offset = Number(hash % (BigInt(jitterMs) + 1n));
-	const atMs = startAtMs + occurrence * everyMs + offset;
-	if (!Number.isSafeInteger(atMs) || atMs > 8_640_000_000_000_000) {
-		throw new RangeError(
-			"schedule fire time is outside the supported clock range",
-		);
-	}
-	return atMs;
-}
-
 function publicSleepTimer(
 	timer: SleepTimerRecord,
 	deduped: boolean,
@@ -356,25 +244,12 @@ function publicSleepTimer(
 }
 
 function publicCronSchedule(
-	schedule: CronScheduleRecord & { everyMs: number },
+	schedule: CronScheduleRecord,
 	deduped: boolean,
 ): CronSchedule {
 	return Object.freeze({
 		scheduleId: parseScheduleId(schedule.scheduleId),
 		everyMs: schedule.everyMs,
-		nextFireAt: parseIsoInstant(formatInstant(schedule.nextFireAtMs)),
-		deduped,
-	});
-}
-
-function publicExpressionSchedule(
-	schedule: CronScheduleRecord & { expression: string; timezone: string },
-	deduped: boolean,
-): CronExpressionSchedule {
-	return Object.freeze({
-		scheduleId: parseScheduleId(schedule.scheduleId),
-		expression: schedule.expression,
-		timezone: schedule.timezone,
 		nextFireAt: parseIsoInstant(formatInstant(schedule.nextFireAtMs)),
 		deduped,
 	});

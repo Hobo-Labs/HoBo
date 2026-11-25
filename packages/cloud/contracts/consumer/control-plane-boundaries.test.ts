@@ -157,7 +157,7 @@ describe("ResourceDefinitionCatalog boundary (consumer contract)", () => {
 		const outcome = matchResource(intent, reg);
 		expect(outcome.ok).toBe(true);
 		if (!outcome.ok) return;
-		expect(outcome.decision.catalogContentHash).toBe(reg.catalogHash);
+		expect(outcome.decision.catalogHash).toBe(reg.catalogHash);
 		expect(outcome.decision.winner).toBe("@hobo/provider-cloudflare.compute");
 	});
 });

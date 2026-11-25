@@ -1,3 +1,13 @@
+/**
+ * Static status-site writer. Rendering stays pure; this module is the only
+ * place that touches the filesystem (the `visual.ts` split convention).
+ *
+ * Layout per page (cState/Upptime-style static hosting, statuspage-v2 API):
+ *   <root>/<slug>/index.html
+ *   <root>/<slug>/api/v2/summary.json
+ *   <root>/<slug>/api/v2/status.json
+ *   <root>/index.html                  (portfolio directory of all pages)
+ */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
@@ -8,12 +18,14 @@ import { STATUS_PAGE_SCHEMA, type StatusPageModel } from "./types.js";
 
 export interface StatusSitePage {
 	readonly model: StatusPageModel;
+	/** Directory slug; defaults to `<scope.kind>-<scope.id>`. */
 	readonly slug?: string;
 }
 
 export interface WriteStatusSiteOptions {
 	readonly rootDir: string;
 	readonly pages: readonly StatusSitePage[];
+	/** Base URL recorded in the statuspage-v2 `page.url` field. */
 	readonly baseUrl?: string;
 }
 
@@ -64,6 +76,7 @@ function renderDirectoryHtml(
 				)}"><div class="row"><a class="name" href="./${escapeHtml(entry.slug)}/">${escapeHtml(entry.model.scope.label)}</a><span class="state">${escapeHtml(entry.model.overall.description)}</span></div></li>`,
 		)
 		.join("\n");
+	// The directory is a components-list page of links in the same chrome.
 	const generatedAt = entries
 		.map((entry) => entry.model.generatedAt)
 		.sort()
@@ -85,6 +98,7 @@ function renderDirectoryHtml(
 	);
 }
 
+/** Write every page (HTML + statuspage-v2 JSON) plus a portfolio index. */
 export function writeStatusSite(
 	options: WriteStatusSiteOptions,
 ): readonly WrittenStatusPage[] {

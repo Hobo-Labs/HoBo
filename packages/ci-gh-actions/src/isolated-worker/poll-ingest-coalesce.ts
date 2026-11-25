@@ -1,3 +1,4 @@
+/** Ingest outcomes that mean re-polling the same queued job cannot help yet. */
 const QUIET_RESULTS = new Set([
 	"ignored",
 	"waiting-for-budget-or-capacity",
@@ -13,6 +14,7 @@ export type PollIngestCoalesceOptions = Readonly<{
 	maxMs?: number;
 }>;
 
+/** Back off re-ingesting the same queued job when the store already holds it. */
 export function createPollIngestCoalesce(
 	options: PollIngestCoalesceOptions = {},
 ) {

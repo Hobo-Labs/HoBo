@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "IacPulumiAutomationAdapterConsumer"
+  },
+  "provider": {
+    "name": "IacPulumiAutomationAdapterBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Iac Pulumi Automation Adapter boundary returns recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/iac-pulumi-automation-adapter/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.iac_pulumi_automation_adapter/v1",
+          "stackModel": "per-resource-stack"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

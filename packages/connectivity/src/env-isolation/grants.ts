@@ -1,3 +1,7 @@
+/**
+ * Cross-env grants, elevated access capabilities, and break-glass model.
+ * Network membership is never sufficient alone for elevated/production access.
+ */
 import {
 	ACCESS_EVENTS,
 	type AccessEvent,
@@ -10,8 +14,11 @@ import {
 	isExpired,
 } from "./types.js";
 
+// public-contract: cross-env grant schema.
 export const CROSS_ENV_GRANT_SCHEMA = "hobo.cross-env-grant/v1" as const;
+// public-contract: elevated access capability schema.
 export const ELEVATED_ACCESS_SCHEMA = "hobo.elevated-access/v1" as const;
+// public-contract: break-glass grant schema.
 export const BREAK_GLASS_SCHEMA = "hobo.break-glass/v1" as const;
 
 export type CrossEnvGrant = Readonly<{
@@ -38,6 +45,7 @@ export type ElevatedAccessCapability = Readonly<{
 	expiresAt: string;
 	priorAuthnClass?: IsolationClass;
 	obligations: readonly string[];
+	/** Opaque token ref (JWT-SVID jti or tokenref). */
 	tokenRef: string;
 }>;
 
@@ -148,6 +156,7 @@ export class CrossEnvGrantStore {
 		return g;
 	}
 
+	/** Whether a principal may cross from→to under any active grant. */
 	allows(input: {
 		readonly principalId: string;
 		readonly fromClass: IsolationClass;
@@ -204,6 +213,7 @@ export class BreakGlassService {
 			reason: input.reason,
 			requestedAt: t,
 			requester: input.requester,
+			// SAFETY: assertion required at this I/O or test boundary.
 			approvers: Object.freeze([] as string[]),
 			status: "requested",
 			obligations: Object.freeze([
@@ -231,6 +241,9 @@ export class BreakGlassService {
 		return grant;
 	}
 
+	/**
+	 * Dual-approve break-glass. Approver must differ from requester.
+	 */
 	approve(input: {
 		readonly grantId: string;
 		readonly approver: string;
@@ -308,6 +321,7 @@ export class BreakGlassService {
 		return g;
 	}
 
+	/** Active break-glass for subject → isolationClass. */
 	allows(input: {
 		readonly subject: string;
 		readonly isolationClass: IsolationClass;

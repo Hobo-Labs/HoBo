@@ -1,3 +1,11 @@
+// The pure verdict function (D9, I5, I8). Given a parsed spec, the evidence
+// recorded on a cd-verification stream and an instant, it decides every check
+// and the overall verdict. The engine calls it live; replay calls it with the
+// recorded evidence and finished_at and must get the same answer.
+//
+// Fail closed: no data is FAIL (or INCONCLUSIVE when fail_on_no_data is
+// false), never PASS; a check that still lacks evidence at the progress
+// deadline is INCONCLUSIVE, which the rollout treats as FAIL.
 import { create } from "@bufbuild/protobuf";
 import {
 	Aggregation,
@@ -7,7 +15,6 @@ import {
 	Comparator,
 	type EvidenceObservationRecord,
 	type HealthQueryRecord,
-	HealthSourceKind,
 	type ReasonRecord,
 	VerificationVerdict,
 } from "../_generated/cd_pb.js";
@@ -19,13 +26,6 @@ import {
 	type ParsedVerificationSpec,
 	probeCheckId,
 	RATIO_UNIT,
-	SLO_BUDGET_CHECK,
-	SLO_BUDGET_TIME_AFTER_CHECK,
-	SLO_BUDGET_TIME_BEFORE_CHECK,
-	SLO_BURN_CHECK,
-	SLO_BURN_TIME_AFTER_CHECK,
-	SLO_BURN_TIME_BEFORE_CHECK,
-	SLO_CHECK,
 	suiteCheckId,
 	thresholdCheckId,
 } from "./spec.js";
@@ -37,11 +37,16 @@ export type EvaluationInput = Readonly<{
 	evidence: readonly EvidenceObservationRecord[];
 	startedAtMs: number;
 	atMs: number;
-
+	/**
+	 * Checks whose health source refused at this instant. Live only: such a
+	 * check stays pending (it is retried) until the progress deadline, after
+	 * which an empty check is no data like any other.
+	 */
 	unavailable?: ReadonlySet<string>;
 }>;
 
 export type Evaluation = Readonly<{
+	/** False while any check is still waiting for evidence before the deadline. */
 	complete: boolean;
 	verdict: VerificationVerdict;
 	checks: readonly CheckOutcomeRecord[];
@@ -52,6 +57,7 @@ type Decided = CheckOutcomeRecord | "pending";
 
 type Clock = Readonly<{ windowEnded: boolean; deadlinePassed: boolean }>;
 
+/** The cohort a threshold reads: the canary when traffic is split, else everything. */
 export function thresholdCohort(cohortAware: boolean): Cohort {
 	return cohortAware ? Cohort.CANARY : Cohort.ALL;
 }
@@ -106,6 +112,7 @@ function noData(
 	);
 }
 
+/** Shared "enough evidence yet?" rule for every sampled check. */
 function sufficiency(
 	check: string,
 	counts: readonly number[],
@@ -154,30 +161,15 @@ function nearestRank(sorted: readonly number[], quantile: number): number {
 	return sorted[index] ?? Number.NaN;
 }
 
-function scaledTotal(values: readonly number[]) {
-	const scale = values.reduce(
-		(largest, value) => Math.max(largest, Math.abs(value)),
-		0,
-	);
-	return {
-		scale,
-		total: values.reduce((sum, value) => sum + value / scale, 0),
-	};
-}
-
+/** Thresholds per aggregation; percentiles use the nearest-rank method. */
 export function aggregate(
 	values: readonly number[],
 	aggregation: Aggregation,
 ): number {
 	const sorted = [...values].sort((a, b) => a - b);
 	switch (aggregation) {
-		case Aggregation.MEAN: {
-			const total = sorted.reduce((sum, value) => sum + value, 0);
-			if (Number.isFinite(total) || !sorted.every(Number.isFinite))
-				return total / sorted.length;
-			const scaled = scaledTotal(sorted);
-			return (scaled.total / sorted.length) * scaled.scale;
-		}
+		case Aggregation.MEAN:
+			return sorted.reduce((sum, value) => sum + value, 0) / sorted.length;
 		case Aggregation.P50:
 			return nearestRank(sorted, 0.5);
 		case Aggregation.P95:
@@ -186,13 +178,8 @@ export function aggregate(
 			return nearestRank(sorted, 0.99);
 		case Aggregation.MAX:
 			return sorted[sorted.length - 1] ?? Number.NaN;
-		case Aggregation.SUM: {
-			const total = sorted.reduce((sum, value) => sum + value, 0);
-			if (Number.isFinite(total) || !sorted.every(Number.isFinite))
-				return total;
-			const scaled = scaledTotal(sorted);
-			return scaled.total * scaled.scale;
-		}
+		case Aggregation.SUM:
+			return sorted.reduce((sum, value) => sum + value, 0);
 		default:
 			return Number.NaN;
 	}
@@ -230,220 +217,6 @@ function comparatorText(comparator: Comparator): string {
 		default:
 			return "?";
 	}
-}
-
-type SloSeries = Readonly<{
-	values: Map<number, number>;
-	correlationKey: string | undefined;
-}>;
-
-function sloSeries(
-	input: EvaluationInput,
-	check: string,
-	cohort: Cohort,
-	fromMs: number,
-): SloSeries | undefined {
-	const timestamps = new Map<number, number>();
-	const keys = new Set<string>();
-	const correlationKeys = new Set<string>();
-	let missingCorrelation = false;
-	for (const point of input.evidence) {
-		if (point.signal !== check || point.cohort !== cohort) continue;
-		const at = Date.parse(point.observedAt);
-		if (!Number.isFinite(at) || !point.seriesKey) return undefined;
-		if (at < fromMs) continue;
-		if (at > input.atMs || !point.healthy || !Number.isFinite(point.value))
-			return undefined;
-		if (point.value < 0 || (check === SLO_BUDGET_CHECK && point.value > 1))
-			return undefined;
-		keys.add(point.seriesKey);
-		if (point.correlationKey) correlationKeys.add(point.correlationKey);
-		else missingCorrelation = true;
-		const previous = timestamps.get(at);
-		if (previous !== undefined && previous !== point.value) return undefined;
-		timestamps.set(at, point.value);
-	}
-	if (keys.size !== 1 || timestamps.size === 0 || correlationKeys.size > 1)
-		return undefined;
-	return {
-		values: timestamps,
-		correlationKey: missingCorrelation
-			? undefined
-			: correlationKeys.values().next().value,
-	};
-}
-
-function sloSourceTime(
-	query: HealthQueryRecord | undefined,
-	at: number,
-	before: SloSeries | undefined,
-	after: SloSeries | undefined,
-): number | undefined {
-	if (query?.source !== HealthSourceKind.PROMETHEUS) return at;
-	const seconds = before?.values.get(at);
-	if (seconds === undefined || seconds !== after?.values.get(at))
-		return undefined;
-	const milliseconds = Math.round(seconds * 1000);
-	return Number.isSafeInteger(milliseconds) && milliseconds >= 0
-		? milliseconds
-		: undefined;
-}
-
-function evaluateSlo(input: EvaluationInput): Decided {
-	const gate = input.spec.sloGate;
-	if (!gate) return "pending";
-	const cohort = thresholdCohort(input.cohortAware);
-	const fromMs = Math.max(
-		input.startedAtMs,
-		input.atMs - Number(input.spec.windowMs),
-	);
-	const maxAgeMs = Number(gate.maxSampleAgeMs);
-	const burn = sloSeries(input, SLO_BURN_CHECK, cohort, fromMs);
-	const budget = sloSeries(input, SLO_BUDGET_CHECK, cohort, fromMs);
-	if (!burn || !budget) return "pending";
-	const burnBefore = sloSeries(
-		input,
-		SLO_BURN_TIME_BEFORE_CHECK,
-		cohort,
-		fromMs,
-	);
-	const burnAfter = sloSeries(input, SLO_BURN_TIME_AFTER_CHECK, cohort, fromMs);
-	const budgetBefore = sloSeries(
-		input,
-		SLO_BUDGET_TIME_BEFORE_CHECK,
-		cohort,
-		fromMs,
-	);
-	const budgetAfter = sloSeries(
-		input,
-		SLO_BUDGET_TIME_AFTER_CHECK,
-		cohort,
-		fromMs,
-	);
-	if (
-		gate.burnRate?.source === HealthSourceKind.PROMETHEUS &&
-		(!burnBefore ||
-			!burnAfter ||
-			!burn.correlationKey ||
-			burn.correlationKey !== burnBefore.correlationKey ||
-			burn.correlationKey !== burnAfter.correlationKey)
-	)
-		return "pending";
-	if (
-		gate.remainingBudgetRatio?.source === HealthSourceKind.PROMETHEUS &&
-		(!budgetBefore ||
-			!budgetAfter ||
-			!budget.correlationKey ||
-			budget.correlationKey !== budgetBefore.correlationKey ||
-			budget.correlationKey !== budgetAfter.correlationKey)
-	)
-		return "pending";
-	const timestamps = [
-		...new Set([...burn.values.keys(), ...budget.values.keys()]),
-	].sort((a, b) => a - b);
-	let burnBreaches = 0;
-	let budgetBreaches = 0;
-	let healthy = 0;
-	let last = -1;
-	let lastBurnSource = -1;
-	let lastBudgetSource = -1;
-	let latestBurnSource = -1;
-	let latestBudgetSource = -1;
-	for (const at of timestamps) {
-		const burnRate = burn.values.get(at);
-		const remaining = budget.values.get(at);
-		const burnSource = sloSourceTime(gate.burnRate, at, burnBefore, burnAfter);
-		const budgetSource = sloSourceTime(
-			gate.remainingBudgetRatio,
-			at,
-			budgetBefore,
-			budgetAfter,
-		);
-		if (
-			burnRate === undefined ||
-			remaining === undefined ||
-			burnSource === undefined ||
-			budgetSource === undefined ||
-			burnSource < fromMs ||
-			budgetSource < fromMs ||
-			burnSource > at ||
-			budgetSource > at ||
-			at - burnSource > maxAgeMs ||
-			at - budgetSource > maxAgeMs
-		) {
-			burnBreaches = 0;
-			budgetBreaches = 0;
-			healthy = 0;
-			lastBurnSource = -1;
-			lastBudgetSource = -1;
-			latestBurnSource = -1;
-			latestBudgetSource = -1;
-			last = at;
-			continue;
-		}
-		if (last >= 0 && at - last > maxAgeMs) {
-			burnBreaches = 0;
-			budgetBreaches = 0;
-			healthy = 0;
-			lastBurnSource = -1;
-			lastBudgetSource = -1;
-		}
-		if (burnSource < lastBurnSource || budgetSource < lastBudgetSource) {
-			burnBreaches = 0;
-			budgetBreaches = 0;
-			healthy = 0;
-			lastBurnSource = -1;
-			lastBudgetSource = -1;
-		}
-		const burnBreached = burnRate >= (gate.rollbackBurnRate ?? 12);
-		const budgetBreached = remaining <= (gate.minRemainingBudgetRatio ?? 0.08);
-		const isHealthy =
-			burnRate < (gate.holdBurnRate ?? 1) &&
-			remaining > (gate.holdRemainingBudgetRatio ?? 0.2);
-		if (!burnBreached) burnBreaches = 0;
-		if (!budgetBreached) budgetBreaches = 0;
-		if (!isHealthy) healthy = 0;
-		if (burnSource > lastBurnSource && budgetSource > lastBudgetSource) {
-			if (burnBreached) burnBreaches += 1;
-			if (budgetBreached) budgetBreaches += 1;
-			if (isHealthy) healthy += 1;
-			lastBurnSource = burnSource;
-			lastBudgetSource = budgetSource;
-		}
-		latestBurnSource = burnSource;
-		latestBudgetSource = budgetSource;
-		last = at;
-	}
-	if (
-		last < 0 ||
-		input.atMs - last > maxAgeMs ||
-		latestBurnSource < 0 ||
-		latestBudgetSource < 0 ||
-		input.atMs - latestBurnSource > maxAgeMs ||
-		input.atMs - latestBudgetSource > maxAgeMs ||
-		!burn.values.has(last) ||
-		!budget.values.has(last)
-	)
-		return "pending";
-	if (
-		burnBreaches >= gate.sustainedBreachCount ||
-		budgetBreaches >= gate.sustainedBreachCount
-	)
-		return outcome(
-			SLO_CHECK,
-			VerificationVerdict.FAIL,
-			{ samplesCanary: Math.max(burnBreaches, budgetBreaches) },
-			{
-				code: "verification-slo-breach",
-				message:
-					"SLO burn or remaining budget breached its rollback threshold in consecutive samples",
-			},
-		);
-	if (healthy >= gate.sustainedHealthyCount)
-		return outcome(SLO_CHECK, VerificationVerdict.PASS, {
-			samplesCanary: healthy,
-		});
-	return "pending";
 }
 
 export function evaluateVerification(input: EvaluationInput): Evaluation {
@@ -496,21 +269,6 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 			continue;
 		}
 		const value = aggregate(values, threshold.aggregation);
-		if (!Number.isFinite(value)) {
-			decided.set(
-				check,
-				outcome(
-					check,
-					VerificationVerdict.FAIL,
-					{ samplesCanary: values.length },
-					{
-						code: "verification-invalid-sample",
-						message: `${check} has a non-finite aggregate`,
-					},
-				),
-			);
-			continue;
-		}
 		const ok = holds(value, threshold.comparator, threshold.value);
 		decided.set(
 			check,
@@ -697,10 +455,7 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 					),
 				);
 			} else {
-				const peak = burn.reduce(
-					(maximum, value) => Math.max(maximum, value),
-					Number.NEGATIVE_INFINITY,
-				);
+				const peak = Math.max(...burn);
 				const ok = peak <= spec.maxErrorBudgetBurn;
 				decided.set(
 					ERROR_BUDGET_CHECK,
@@ -720,16 +475,8 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 		}
 	}
 
-	if (spec.sloGate) decided.set(SLO_CHECK, evaluateSlo(input));
-
 	const pending = [...decided.values()].some((value) => value === "pending");
-	const failedBeforePending =
-		spec.sloGate &&
-		[...decided.values()].some(
-			(value) =>
-				value !== "pending" && value.verdict === VerificationVerdict.FAIL,
-		);
-	if (!clock.windowEnded || (pending && !failedBeforePending)) {
+	if (!clock.windowEnded || pending) {
 		return {
 			complete: false,
 			verdict: VerificationVerdict.UNSPECIFIED,
@@ -765,6 +512,10 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 	return { complete: true, verdict, checks, reasons };
 }
 
+/**
+ * The only verdict that qualifies Freight or advances a stage. INCONCLUSIVE
+ * and FAIL both stop the rollout (D9, I5).
+ */
 export function qualifies(verdict: VerificationVerdict): boolean {
 	return verdict === VerificationVerdict.PASS;
 }

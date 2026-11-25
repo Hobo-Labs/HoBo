@@ -1,3 +1,6 @@
+// Durable ActorHost backed by @hobo/storage-sqlite actor_leases table.
+// In-memory host remains the deterministic default for pure unit tests.
+
 import {
 	type ActorHost,
 	type AggregateLease,
@@ -41,23 +44,22 @@ export function createDurableActorHost(
 				"request.holderId",
 			);
 			try {
-				const {
-					key: grantedKey,
-					holderId: grantedHolderId,
-					fenceToken,
-					expiresAt,
-				} = journal.acquireActorLease({
+				const lease = journal.acquireActorLease({
 					key,
 					holderId,
 					leaseTtlMs,
 				});
 				return Object.freeze({
-					key: grantedKey,
-					holderId: grantedHolderId,
-					fenceToken,
-					expiresAt,
+					key: lease.key,
+					holderId: lease.holderId,
+					fenceToken: lease.fenceToken,
+					expiresAt: lease.expiresAt,
 					release() {
-						journal.releaseActorLease(grantedKey, grantedHolderId, fenceToken);
+						journal.releaseActorLease(
+							lease.key,
+							lease.holderId,
+							lease.fenceToken,
+						);
 					},
 				});
 			} catch (error) {

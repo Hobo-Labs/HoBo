@@ -17,13 +17,6 @@
  * instead of something an operator has to reconcile by hand. `delete()` treats
  * "already gone" as success for the same reason.
  *
- * Credentials are locators, never material. A resolver is constructed with an
- * injected `resolveCredential(ref)`; `ResolveRequest.credentialRef` must look
- * like a reference (`env://CLOUDFLARE_API_TOKEN`, `secret://…`) and a value that
- * looks like the token itself is refused, because a raw token in a request
- * record is a token in the event log. A credential that cannot be resolved is
- * a typed refusal with remediation, never a silent skip.
- *
  * Nothing here reaches for a global `fetch`, and nothing reads a clock or a
  * random source: request bodies are a pure function of the request.
  *
@@ -76,10 +69,6 @@ import {
 	type JsonValue,
 	parseJsonObject,
 } from "./json.js";
-import {
-	cloudflareR2ResidencyEvidence,
-	isR2Jurisdiction,
-} from "./residency.js";
 import { cronTriggers, d1, kv, pages, queues, r2, workers } from "./slots.js";
 import {
 	CLOUDFLARE_MAX_RESPONSE_BYTES,
@@ -500,7 +489,7 @@ async function resolveToken(
 	if (ref.trim().length === 0) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_MISSING",
-			'cloudflare resolver: credentialRef is empty. Supply a locator such as "env://CLOUDFLARE_API_TOKEN" or "secret://camp/cloudflare-api-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
+			'cloudflare resolver: credentialRef is empty. Supply a locator such as "owner://CLOUDFLARE_API_TOKEN" or "secret://camp/cloudflare-api-token" and register it with the host credential resolver; the resolver never accepts inline credential material',
 		);
 	}
 	const trimmed = ref.trim();
@@ -513,7 +502,7 @@ async function resolveToken(
 	if (!CREDENTIAL_REF_PATTERN.test(trimmed)) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_NOT_A_REF",
-			`cloudflare resolver: credentialRef ${JSON.stringify(redactCloudflareText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "env://CLOUDFLARE_API_TOKEN"`,
+			`cloudflare resolver: credentialRef ${JSON.stringify(redactCloudflareText(trimmed, 60))} is not a locator. Expected "<scheme>://<path>", for example "owner://CLOUDFLARE_API_TOKEN"`,
 		);
 	}
 	let material: string;
@@ -616,43 +605,23 @@ function createResolver(
 function r2Headers(
 	context: CloudflareResolverContext,
 ): Readonly<Record<string, string>> {
-	const jurisdiction = r2Jurisdiction(context);
+	const jurisdiction = optionalString(context.desired, "jurisdiction");
 	return jurisdiction === undefined
 		? {}
 		: { "cf-r2-jurisdiction": jurisdiction };
-}
-
-function r2Jurisdiction(context: CloudflareResolverContext) {
-	const jurisdiction = optionalString(context.desired, "jurisdiction");
-	if (jurisdiction === undefined) return undefined;
-	if (!isR2Jurisdiction(jurisdiction)) {
-		throw new ResolverError(
-			"RESOLVER_PRODUCT_UNSUPPORTED",
-			`${CLOUDFLARE_R2_PRODUCT_ID}: jurisdiction must be eu or fedramp`,
-		);
-	}
-	return jurisdiction;
 }
 
 function r2Path(context: CloudflareResolverContext, suffix = ""): string {
 	return `/accounts/${encodeURIComponent(context.accountId)}/r2/buckets${suffix}`;
 }
 
-function r2Outputs(context: CloudflareResolverContext, record: JsonObject) {
+function r2Outputs(name: string, record: JsonObject) {
 	const location = optionalString(record, "location");
 	const storageClass = optionalString(record, "storage_class");
-	const jurisdiction = r2Jurisdiction(context);
 	return {
-		bucketName: context.name,
+		bucketName: name,
 		...(location !== undefined ? { location } : undefined),
 		...(storageClass !== undefined ? { storageClass } : undefined),
-		...(jurisdiction === undefined
-			? undefined
-			: {
-					residencyEvidence: parseJsonObject(
-						JSON.stringify(cloudflareR2ResidencyEvidence(jurisdiction)),
-					),
-				}),
 	};
 }
 
@@ -705,7 +674,7 @@ const R2_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 		return outcome(
 			settledAction(context),
 			context.name,
-			r2Outputs(context, observed),
+			r2Outputs(context.name, observed),
 			r2Diagnostics(context, observed),
 		);
 	},
@@ -715,7 +684,7 @@ const R2_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 			return outcome(
 				settledAction(context),
 				context.name,
-				r2Outputs(context, observed),
+				r2Outputs(context.name, observed),
 				r2Diagnostics(context, observed),
 			);
 		}
@@ -738,7 +707,7 @@ const R2_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 		return outcome(
 			"create",
 			context.name,
-			r2Outputs(context, created),
+			r2Outputs(context.name, created),
 			r2Diagnostics(context, created),
 		);
 	},

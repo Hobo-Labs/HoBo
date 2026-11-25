@@ -14,6 +14,7 @@ describe("ReplayDivergenceError", () => {
 		try {
 			assertReplayEqualsLive({
 				events,
+				// SAFETY: assertion to `[] as string[]` is required at this boundary.
 				initialState: { seen: [] as string[] },
 				fold: (state, currentEvent) => ({
 					seen: [...state.seen, `${currentEvent.streamId}:${currentEvent.seq}`],
@@ -23,12 +24,15 @@ describe("ReplayDivergenceError", () => {
 			expect.fail("expected divergence");
 		} catch (error) {
 			expect(error).toBeInstanceOf(ReplayDivergenceError);
+			// SAFETY: assertion to `error as ReplayDivergenceError` is required at this boundary.
 			const divergence = (error as ReplayDivergenceError).divergence;
 			expect(divergence.runId).toBe("divergence-case");
+			// SAFETY: assertion to `error as ReplayDivergenceError` is required at this boundary.
 			expect((error as ReplayDivergenceError).liveOrder.length).toBeGreaterThan(
 				0,
 			);
 			expect(
+				// SAFETY: assertion to `error as ReplayDivergenceError` is required at this boundary.
 				(error as ReplayDivergenceError).replayOrder.length,
 			).toBeGreaterThan(0);
 			expect(divergence.liveStateDigest).not.toBe(divergence.replayStateDigest);

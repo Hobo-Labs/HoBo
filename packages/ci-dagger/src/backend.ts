@@ -19,10 +19,6 @@ import {
 	PipelineStepResultSchema,
 	parseRelativePath,
 } from "@hobo/ci";
-import {
-	type BoundDaggerBackend,
-	normalizeDaggerEndpoint,
-} from "@hobo/ci/fleet-v2";
 
 /** The SDK fluent command port, narrowed from the real Dagger client surface. */
 export interface DaggerContainerPort {
@@ -59,33 +55,6 @@ export interface DaggerBackendOptions {
 	readonly image: string;
 	readonly connect?: DaggerConnector;
 	readonly sdk?: ConnectOpts;
-}
-
-export interface BoundDaggerBackendOptions {
-	readonly sourceDirectory: string;
-	readonly image: string;
-	readonly endpoint: string;
-	readonly connect: (
-		endpoint: string,
-		signal: AbortSignal,
-	) => Promise<DaggerConnection>;
-}
-
-export function createBoundDaggerBackend(
-	options: BoundDaggerBackendOptions,
-): BoundDaggerBackend {
-	const endpoint = normalizeDaggerEndpoint(options.endpoint);
-	const backend = createDaggerBackend({
-		sourceDirectory: options.sourceDirectory,
-		image: options.image,
-		connect: (signal) => options.connect(endpoint, signal),
-	});
-	return {
-		kind: "dagger",
-		endpoint,
-		capabilities: backend.capabilities,
-		open: (pipeline, signal, scope) => backend.open(pipeline, signal, scope),
-	};
 }
 
 /** Compile-time witness that this port is actually implemented by the pinned SDK. */

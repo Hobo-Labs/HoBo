@@ -1,3 +1,37 @@
+/**
+ * Platform golden-replay corpus: the pinned wire bodies of the `migration.*`
+ * event family (ADR-0032, extended by ADR-0177). Append-only — bumping any of
+ * these event bodies requires (a) a total upcaster from the version before and
+ * (b) a NEW corpus entry for the new version; removing or editing a pinned
+ * entry fails the gate. The CI test in `test/upcaster-gate.test.ts` runs
+ * `runCanDeployUpcasterGate` over every contract here, so an unliftable body
+ * fails the test lane (and with it can-deploy).
+ *
+ * Two kinds of change are made here, and they are not interchangeable:
+ *
+ * - **An optional field is added to the current version** when nothing that
+ *   was valid stops being valid and nothing changes meaning: a count beside a
+ *   verification, a flag beside a hold. An old body is still a body of that
+ *   version.
+ * - **A new version, with an upcaster,** when a body really changed: a
+ *   required field stopped being required, a field changed type, a field was
+ *   withdrawn. `migration.CutOver` is the clearest case — the fence token it
+ *   once carried is a write-authority credential, so v2 has only its digest
+ *   and the upcaster computes one and drops the other.
+ *
+ * `test/migration-fact-contracts.test.ts` runs every `@hobo/data-core`
+ * executor and validates each fact it emits against the current version here,
+ * so the two cannot drift apart unnoticed.
+ *
+ * v1 is what was written, not what was first pinned. The first pins of
+ * `migration.Planned` and `migration.PhaseApplied` described bodies no
+ * executor emitted — `phases` as one comma-joined string, a `PhaseApplied`
+ * that always had `statements` and never a checkpoint. Their v1 schemas now
+ * read the bodies the 65a46a72 executors appended (recorded in
+ * `test/fixtures/journal-65a46a72.json`), with one of each pinned beside the
+ * original. The original pins are untouched on the wire: a string and a
+ * one-element list of strings are the same bytes, so their digests stand.
+ */
 import { createHash } from "node:crypto";
 import {
 	boolField,
@@ -18,16 +52,20 @@ import {
 } from "./upcaster.js";
 
 interface PinnedBody {
+	/** Suffix of the corpus id; the entry is `<type>-v<n>` or `<type>-v<n>-<id>`. */
 	readonly id?: string;
 	readonly body: EventBody;
 }
 
 interface PinnedVersion {
 	readonly fields: readonly EventFieldSpec[];
+	/** At least one real body per version; never edited once pinned. */
 	readonly pinned: readonly PinnedBody[];
+	/** How a body of the version before becomes one of this version. */
 	readonly from?: Pick<EventBodyUpcaster, "reason" | "upcast">;
 }
 
+/** A contract over consecutive versions, the first being v1. */
 function contract(
 	type: string,
 	versions: readonly PinnedVersion[],
@@ -70,17 +108,28 @@ function v1Contract(
 
 const OPTIONAL = { required: false } as const;
 
+/**
+ * What a journal keeps of a fence token: `sha256:<hex of the token>`. The
+ * same digest `@hobo/data-core`'s `fenceTokenDigest` computes; the contract
+ * test holds the two together.
+ */
 function fenceTokenDigest(fenceToken: string): string {
 	return `sha256:${createHash("sha256").update(fenceToken, "utf8").digest("hex")}`;
 }
 
+/** The phases only the in-place executor plans. */
 const IN_PLACE_PHASES = ["expand", "backfill", "contract"];
 
+/**
+ * `phases` as the list it stands for. The first v1 pin wrote it as one
+ * comma-joined string, which on the wire is a list of one.
+ */
 function phaseList(phases: EventBody[string]): readonly string[] {
 	const listed = Array.isArray(phases) ? phases : [phases];
 	return listed.flatMap((entry) => String(entry).split(","));
 }
 
+/** A checkpoint with its fence token replaced by the token's digest. */
 function withoutFenceToken(checkpoint: EventJsonObject): EventJsonObject {
 	const { fenceToken, ...kept } = checkpoint;
 	return fenceToken === undefined
@@ -97,10 +146,14 @@ function isJsonObject(value: EventBody[string]): value is EventJsonObject {
 	);
 }
 
+/** One evolution contract per `migration.*` event type. */
 export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 	Object.freeze([
 		contract("migration.Planned", [
 			{
+				// What v1 executors wrote: `phases` as a list, and — from the
+				// pattern executors — the pattern, the decision and custody
+				// digests, and the two engines and the dataset.
 				fields: [
 					stringField("migrationId", 1),
 					stringsField("phases", 2),
@@ -114,6 +167,8 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				],
 				pinned: [
 					{
+						// The first pin: one comma-joined string, which is these
+						// same bytes read as a list of one.
 						body: {
 							migrationId: "mig-001",
 							phases: ["expand,backfill,contract"],
@@ -121,6 +176,7 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 						},
 					},
 					{
+						// Recorded from a 65a46a72 snapshot-and-tail run.
 						id: "executor",
 						body: {
 							migrationId: "m",
@@ -150,6 +206,11 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				],
 			},
 			{
+				// `phases` is the list the executors emit, under a new tag: v1
+				// pinned it as one comma-joined string, which nothing ever wrote.
+				// The rest says what was planned — the pattern, the realization
+				// that runs (binding on every resume), and the decision and
+				// custody digests when the caller supplied them.
 				fields: [
 					stringField("migrationId", 1),
 					stringField("plannedAt", 3),
@@ -166,6 +227,9 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				from: {
 					reason:
 						"phases moved to its own tag as a list of phase names, and a plan names its pattern: one that planned expand, backfill and contract was the in-place executor's",
+					// Everything a v1 plan said is carried: the pattern above all,
+					// which is what a resume is checked against, and the digests
+					// that tie the run to its decision.
 					upcast: ({ phases, ...kept }) => {
 						const listed = phaseList(phases);
 						const inPlace =
@@ -221,6 +285,9 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 		),
 		contract("migration.PhaseApplied", [
 			{
+				// What v1 executors wrote: an in-place phase its statement count,
+				// a phase of the uniform model a checkpoint — which, for the
+				// fence-and-flip phase, carried the fence token itself.
 				fields: [
 					stringField("migrationId", 1),
 					stringField("phase", 2),
@@ -239,6 +306,7 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 						},
 					},
 					{
+						// Recorded from a 65a46a72 snapshot-and-tail run.
 						id: "fence-token",
 						body: {
 							migrationId: "m",
@@ -259,6 +327,11 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				],
 			},
 			{
+				// A checkpoint holds positions, counts and digests. v2 withdraws
+				// the one thing a v1 checkpoint held that is none of those: the
+				// fence token, a write-authority credential, replaced by its
+				// digest. `recovered` marks an in-place phase the plan's probe
+				// found already in effect.
 				fields: [
 					stringField("migrationId", 1),
 					stringField("phase", 2),
@@ -296,6 +369,8 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				stringField("migrationId", 1),
 				stringField("point", 2),
 				stringField("verifiedAt", 3),
+				// Optional additions (ADR-0177): what was verified, and whether a
+				// comparison was actually made. Never a record.
 				u32Field("count", 4, OPTIONAL),
 				stringField("digest", 5, OPTIONAL),
 				boolField("compared", 6, OPTIONAL),
@@ -311,6 +386,9 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				fields: [
 					stringField("migrationId", 1),
 					stringField("cutOverAt", 2),
+					// What the copy and log executors wrote at v1 before the
+					// token was kept out of the journal. Declared so that such
+					// a body can be read, and lifted, at all.
 					stringField("fenceToken", 3, OPTIONAL),
 					u32Field("count", 4, OPTIONAL),
 					stringField("digest", 5, OPTIONAL),
@@ -342,6 +420,10 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				],
 			},
 			{
+				// No `fenceToken`: a fence token is a write-authority credential
+				// and a journal is evidence. v2 carries its digest, and the
+				// instant the source was first fenced from — where a rollback's
+				// erasure replay is windowed from.
 				fields: [
 					stringField("migrationId", 1),
 					stringField("cutOverAt", 2),
@@ -402,6 +484,10 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				],
 			},
 			{
+				// A copy pattern rolls back to the old store, not to a snapshot,
+				// so `snapshotRef` is no longer required. `lossless` says whether
+				// the old store was current; `erasuresReplayed` how many erasures
+				// were re-applied to a store that was not.
 				fields: [
 					stringField("migrationId", 1),
 					stringField("reason", 2),
@@ -474,6 +560,8 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				importedAt: "2026-08-03T00:00:08.000Z",
 			},
 		),
+		// ADR-0177: the uniform phase model's hold / resume / complete facts,
+		// emitted by the `@hobo/data-core` pattern executors.
 		v1Contract(
 			"migration.Held",
 			[
@@ -481,8 +569,14 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				stringField("phase", 2),
 				stringField("reason", 3),
 				stringField("heldAt", 4),
+				// Optional additions. `compensated`: the hold followed a failed
+				// verification under a fence, and write authority was given
+				// back. `before`: the phase the run was about to enter, for a
+				// hold that fell between two phases.
 				boolField("compensated", 5, OPTIONAL),
 				stringField("before", 6, OPTIONAL),
+				// The in-place phase whose statements the port reported as
+				// failed: an answer to that phase's intent.
 				stringField("failedPhase", 7, OPTIONAL),
 			],
 			{
@@ -519,10 +613,13 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				completedAt: "2026-11-10T01:00:00.000Z",
 			},
 		),
+		// Two of the write-ahead facts: each is journaled, as a compare-and-set,
+		// before the side effect it names.
 		v1Contract(
 			"migration.FenceRequested",
 			[
 				stringField("migrationId", 1),
+				// `source` or `target`: the store about to be fenced.
 				stringField("side", 2),
 				stringField("phase", 3),
 				stringField("requestedAt", 4),
@@ -540,9 +637,17 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				stringField("migrationId", 1),
 				boolField("lossless", 2),
 				stringField("decidedAt", 3),
+				// Where erasure replay is windowed from, for a rollback to a
+				// stale store.
 				stringField("erasuresFrom", 4, OPTIONAL),
+				// What both sides digested to, for a rollback under a reverse tail.
 				u32Field("count", 5, OPTIONAL),
 				stringField("digest", 6, OPTIONAL),
+				// Optional additions. `targetFenced`: whether the target was
+				// fenced before authority went back — a rollback to a stale
+				// source does not wait for a target that cannot be reached.
+				// `policyFindings`: the finding codes of the negative verdict
+				// the rollback was asked for under.
 				boolField("targetFenced", 7, OPTIONAL),
 				stringsField("policyFindings", 8, OPTIONAL),
 			],
@@ -553,6 +658,9 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				decidedAt: "2026-11-10T00:30:00.000Z",
 			},
 		),
+		// Written after a fence is raised: the digest of the token the raise
+		// answered — never the token — so a later run can prove a fence it
+		// finds standing is this migration's own.
 		v1Contract(
 			"migration.FenceRaised",
 			[
@@ -571,13 +679,18 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				raisedAt: "2026-11-10T00:00:03.500Z",
 			},
 		),
+		// The third write-ahead fact: journaled, as a compare-and-set, before
+		// an in-place phase runs its statements.
 		v1Contract(
 			"migration.PhaseIntended",
 			[
 				stringField("migrationId", 1),
+				// `expand`, `backfill` or `contract`.
 				stringField("phase", 2),
 				u32Field("statements", 3),
 				stringField("intendedAt", 4),
+				// The phase is applied again after its probe found it not in
+				// effect.
 				boolField("retry", 5, OPTIONAL),
 			],
 			{
@@ -589,6 +702,7 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 		),
 	]);
 
+/** The schema a `migration.*` body of this type is written against today. */
 export function currentMigrationEventSchema(
 	type: string,
 ): EventBodySchema | undefined {
@@ -598,6 +712,11 @@ export function currentMigrationEventSchema(
 	);
 }
 
+/**
+ * Append-only baseline over every pinned entry across all contracts: the
+ * first body pinned for each type, then every later one, so an addition comes
+ * after what was already pinned rather than between.
+ */
 export function migrationCorpusBaseline(): CorpusBaseline {
 	return createCorpusBaseline([
 		...MIGRATION_EVENT_CONTRACTS.flatMap((entry) =>

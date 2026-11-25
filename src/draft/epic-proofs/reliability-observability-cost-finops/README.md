@@ -101,12 +101,14 @@ npm.cmd --prefix src/draft/epic-proofs/reliability-observability-cost-finops tes
 
 OpenInference trajectory-capture and reliability-SLA changes are absorbed without changing telemetry, status, or rollback behavior.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Reliability Observability Cost Finops.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `architecture.md` — parse-don't-validate and event-architecture evidence.
 
 ## Cascade reconciliation (83d9b5c92)
 

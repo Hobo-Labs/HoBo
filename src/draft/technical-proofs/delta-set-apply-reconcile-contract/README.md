@@ -26,14 +26,16 @@ npm.cmd --prefix src\draft\technical-proofs\delta-set-apply-reconcile-contract t
 
 Relevant design records:
 
-- `urn:hobo:requirement:platform-engineering`: Deployment Sets, Deltas, promote, rollback, and incremental deploy
-- `urn:hobo:requirement:control-plane`: level-triggered ResourceActor reconciliation and Orchestrator choreography
-- `urn:hobo:decision:01-architecture-core`: ADR-0003 event sourcing and ADR-0028 environment-group atomicity
+- `docs/design/platform-engineering.md`: Deployment Sets, Deltas, promote, rollback, and incremental deploy
+- `docs/design/control-plane.md`: level-triggered ResourceActor reconciliation and Orchestrator choreography
+- `docs/design/adr/01-architecture-core.md`: ADR-0003 event sourcing and ADR-0028 environment-group atomicity
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Delta Set Apply Reconcile Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

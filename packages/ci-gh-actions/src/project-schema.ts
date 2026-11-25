@@ -4,6 +4,8 @@ import {
 	CI_PROJECT_PROVIDERS_SCHEMA_REF,
 	CiProjectProviderSchema,
 } from "./project-providers.js";
+import { RelayJobsSettingsSchema } from "./relay-answer/ci-file.js";
+import { ChecksBlock } from "./relay-checks/config.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
 import { RunnerOrderDocumentSchema } from "./runner-order-config.js";
 import { RunnerRoutingSchema } from "./runner-routing.js";
@@ -55,6 +57,7 @@ const budget = z
 	.strict()
 	.meta({ id: "Budget" });
 const safeQuantity = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+// Both Unicode-aware and flagless JSON Schema engines must accept astral characters and exclude C0/C1.
 const controlFree = /^(?:[\u0020-\u007e\u00a0-\uffff]|[^\0-\uffff])*$/u;
 const scopeName = z.string().min(1).max(200).regex(controlFree);
 const commonBudget = z
@@ -133,6 +136,7 @@ const policy = z
 	})
 	.strict()
 	.meta({ id: "Policy" });
+// Legacy templates permit partial object fragments, but keep every field typed.
 const partialPolicy = policy
 	.extend({
 		pool: z.union([pool.partial(), reference("pools")]).optional(),
@@ -141,6 +145,7 @@ const partialPolicy = policy
 	})
 	.partial();
 const jobAdmission = z.enum(["push", "pull"]);
+/** Worker lease journal: a local SQLite file, the only store. */
 const workerStore = z
 	.object({ kind: z.literal("sqlite") })
 	.strict()
@@ -215,6 +220,7 @@ const definitions = z
 	})
 	.strict()
 	.meta({ id: "Definitions" });
+/** An `https` URL and nothing else: the action writes it to `GITHUB_ENV` and sends the token to it. */
 export const TURBO_CACHE_API_PATTERN = /^https:\/\/[A-Za-z0-9._:/-]+$/u;
 export const TurboCacheSchema = z
 	.object({
@@ -225,12 +231,46 @@ export const TurboCacheSchema = z
 	})
 	.strict()
 	.meta({ id: "TurboCache" });
+const absoluteHostPath = z
+	.string()
+	.min(2)
+	.max(1024)
+	.regex(/^\/[^\0]*$/u);
+
+export const BoxMemberSettingsSchema = z
+	.object({
+		authorityUrl: z
+			.string()
+			.max(2048)
+			.regex(
+				/^https:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:\/[A-Za-z0-9._~/-]*)?$/u,
+			),
+		fleet: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/u),
+		tenant: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u),
+		region: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/u),
+		memberName: z
+			.string()
+			.regex(/^[a-z0-9][a-z0-9_-]{0,62}$/u)
+			.optional(),
+		sandbox: z
+			.object({
+				runtime: absoluteHostPath.optional(),
+				cache: absoluteHostPath.optional(),
+				download: z.boolean().optional(),
+			})
+			.strict()
+			.optional(),
+	})
+	.strict()
+	.meta({ id: "BoxMemberSettings" });
+
 export const CiProjectDocumentSchema = z
 	.object({
 		$schema: z.string().max(2048).optional(),
 		defaultEnvironment: name.optional(),
 		selection: selection.optional(),
 		definitions: definitions.optional(),
+		/** Third-party runner providers. References only; never secret values. */
 		integrations: RunnerIntegrationsSchema.optional(),
 		templates: z
 			.record(name, template)
@@ -245,11 +285,31 @@ export const CiProjectDocumentSchema = z
 			.refine((entries) => Object.keys(entries).length <= 32)
 			.meta({ maxProperties: 32 })
 			.optional(),
+		/**
+		 * The optional CI agent (`@hobo/ci-agent`): merge-queue planning and
+		 * model-backed conflict resolution. This package only carries the block
+		 * and refuses credential values in it; the agent package owns its shape.
+		 */
 		agent: z.record(z.string(), z.json()).optional(),
+		/**
+		 * Committed routing policy (ADR-0181): labels, limits, the
+		 * box's slot split and the variables the relay retires. Read by the
+		 * route job and the box; never by the relay's environment selection.
+		 */
 		runnerRouting: RunnerRoutingSchema.optional(),
 
 		runnerOrder: RunnerOrderDocumentSchema.optional(),
+		fleet: BoxMemberSettingsSchema.optional(),
+		/**
+		 * The shared Turborepo cache (`.github/actions/turbo-cache`). `api` is
+		 * the base URL of a self-hosted cache server
+		 * (`packages/ci-gh-actions/deploy/turbo-cache`); empty uses Vercel's. Not
+		 * a secret: the token stays the `TURBO_TOKEN` secret. Committed, so no
+		 * repository variable carries it (ADR-0181).
+		 */
 		turboCache: TurboCacheSchema.optional(),
+		relayJobs: RelayJobsSettingsSchema.optional(),
+		checks: ChecksBlock.optional(),
 	})
 	.strict();
 
@@ -259,6 +319,7 @@ const localDefinitionRef = z
 	.object({ $ref: z.string().regex(/^#\/\$defs\/.+$/) })
 	.loose();
 
+/** `$defs` names reachable from `root` through local `#/$defs/` references. */
 function reachableDefinitions(
 	root: JsonData,
 	definitions: Readonly<Record<string, JsonData>>,
@@ -285,6 +346,11 @@ function reachableDefinitions(
 	return reachable;
 }
 
+/**
+ * The shipped editor schema and runtime parser share this authoring contract.
+ * Provider shapes live in the sibling `ci-project-providers.schema.json`, so
+ * the inlined provider definitions are dropped once `Provider` points there.
+ */
 export function ciProjectJsonSchema() {
 	const { $defs, ...root } = z.toJSONSchema(CiProjectDocumentSchema, {
 		target: "draft-2020-12",
@@ -308,6 +374,7 @@ export function ciProjectJsonSchema() {
 const referencePattern =
 	/^#\/definitions\/(pools|routing|budgets|providers|secrets)\/([A-Za-z][A-Za-z0-9_-]{0,63})$/;
 
+/** Resolve only validated, concrete, local component definitions. Never performs I/O. */
 export function resolveCiProjectReferences(
 	input: z.infer<typeof CiProjectDocumentSchema>,
 ): JsonData {
@@ -344,8 +411,11 @@ export function resolveCiProjectReferences(
 		integrations: _integrations,
 		agent: _agent,
 		runnerRouting: _runnerRouting,
+		fleet: _fleet,
 		runnerOrder: _runnerOrder,
 		turboCache: _turboCache,
+		relayJobs: _relayJobs,
+		checks: _checks,
 		...document
 	} = input;
 	return expand(z.json().parse(document), 0);

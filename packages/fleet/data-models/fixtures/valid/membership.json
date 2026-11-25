@@ -1,0 +1,8 @@
+{
+  "fleet": "ci",
+  "name": "box-a",
+  "roles": [
+    "ROLE_EXECUTOR"
+  ],
+  "joinedAt": "2026-11-12T10:00:00.000Z"
+}

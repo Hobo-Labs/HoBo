@@ -1,3 +1,20 @@
+/**
+ * Typed realization output contract (`hobo.realization-result/v1`, Plan 25
+ * Driver surface).
+ *
+ * What a realization engine — an IaC program (terraform/pulumi/crossplane
+ * adapters, which already converge on `{resources, stackOutputs, bindings}`)
+ * or a provider recipe/driver program (Radius-semantics
+ * `{values, secrets, resources}`) — reports back after apply. Parse, don't
+ * validate: `parseRealizationResult` returns the frozen, canonically ordered
+ * derived type or throws a typed error. The ref-only secret rule is
+ * fail-closed: `secrets` carries URI-shaped references (e.g.
+ * `secretRef: "broker://tenant/db"`) and NEVER values, and a raw
+ * secret-looking value anywhere in `values`, `bindings`, or resource
+ * `outputs` is a parse error — engines do not launder credentials through
+ * this record.
+ */
+
 import { CoreParseError } from "../errors.js";
 import {
 	cloneAsJson,
@@ -9,8 +26,10 @@ import {
 } from "../json.js";
 import { deepFreeze } from "../parse-utils.js";
 
+// public-contract: the schema id every realization engine reports back under.
 export const REALIZATION_RESULT_SCHEMA = "hobo.realization-result/v1";
 
+/** Why a raw realization result was rejected. */
 export type RealizationResultRejection =
 	| "not-an-object"
 	| "schema-mismatch"
@@ -44,32 +63,56 @@ export class RealizationResultParseError extends CoreParseError {
 	}
 }
 
+// domain-view: parsed derived type; wire form is RealizedResourceRecord in data-models/realization_result.proto (outputs JSON-encoded on the wire).
 export interface RealizedResourceRecord {
+	/** Logical resource name inside the deployment set. */
 	readonly name: string;
+	/** Resource class/type token (e.g. `bucket`, `kv`, `convex.function`). */
 	readonly resourceClass: string;
+	/**
+	 * Stable provider-side id: adapter URN, workspace key, adopted external id
+	 * (`terraform://…`), or OCI digest for artifact resources.
+	 */
 	readonly providerId: string;
+	/** Non-sensitive outputs of this resource; secret values never ride here. */
 	readonly outputs: JsonObject;
 }
 
+// domain-view: parsed derived type; wire form is SecretRefRecord in data-models/realization_result.proto.
 export interface SecretRefRecord {
+	/** URI-shaped reference (e.g. `broker://tenant/db`) — never the value. */
 	readonly secretRef: string;
 }
 
+// domain-view: parsed derived type; wire form is RealizationBindingRecord in data-models/realization_result.proto (value JSON-encoded on the wire).
 export interface RealizationBindingRecord {
+	/** Binding key or `${resources.<name>.outputs.<key>}` placeholder. */
 	readonly key: string;
 	readonly value: JsonValue;
 }
 
+// domain-view: parsed derived type; wire form is RealizationResultRecord in data-models/realization_result.proto.
 export interface RealizationResult {
 	readonly schema: typeof REALIZATION_RESULT_SCHEMA;
+	/** Realized/adopted backing resources, sorted by name. */
 	readonly resources: readonly RealizedResourceRecord[];
+	/** Non-sensitive stack outputs for dependents, keys sorted. */
 	readonly values: JsonObject;
+	/** Resolved binding entries, sorted by key. */
 	readonly bindings: readonly RealizationBindingRecord[];
+	/** REFERENCES ONLY — the fail-closed ref-only rule, keys sorted. */
 	readonly secrets: Readonly<Record<string, SecretRefRecord>>;
 }
 
+/** URI-shaped secret reference: `<scheme>://<non-empty rest>`. */
 const SECRET_REF_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i;
 
+/**
+ * Heuristic for keys that name credentials: secret/password/token/credential,
+ * `apiKey`/`api_key`-style compounds, and a bare `key` segment. Deliberately
+ * fail-closed — a matching key must hold a ref (or non-string), never a raw
+ * string value.
+ */
 const SECRET_KEY_PATTERN =
 	/secret|password|passwd|credential|token|api[_-]?key|private[_-]?key|access[_-]?key|(^|[._-])key([._-]|$)/i;
 
@@ -111,7 +154,8 @@ function plainObject(
 	if (!value || !isJsonObject(value) || Array.isArray(value)) {
 		throw new RealizationResultParseError(rejection, path, "object", value);
 	}
-	return value;
+	// SAFETY: assertion required at this I/O or test boundary.
+	return value as JsonObject;
 }
 
 function requireString(
@@ -134,12 +178,7 @@ function sortedRecord<T>(entries: readonly (readonly [string, T])[]) {
 	const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 	const record: { [key: string]: T } = {};
 	for (const [key, value] of sorted) {
-		Object.defineProperty(record, key, {
-			value,
-			enumerable: true,
-			writable: true,
-			configurable: true,
-		});
+		record[key] = value;
 	}
 	return record;
 }
@@ -194,6 +233,12 @@ function parseSecretRef(
 	return { secretRef: candidate };
 }
 
+/**
+ * Parse, don't validate: returns the frozen, canonically ordered
+ * `RealizationResult` (resources sorted by name, bindings by key, map keys
+ * sorted) or throws `RealizationResultParseError`. Fail-closed on secrets: a
+ * raw secret-looking string value anywhere is a rejection, never a warning.
+ */
 export function parseRealizationResult(
 	raw: JsonValue | undefined,
 ): RealizationResult {
@@ -306,6 +351,7 @@ export function parseRealizationResult(
 	});
 }
 
+/** The `{resources, stackOutputs, bindings}` triple every IaC adapter emits. */
 export interface IacOutputsLike {
 	readonly resources: Readonly<
 		Record<
@@ -321,6 +367,13 @@ export interface IacOutputsLike {
 	readonly bindings?: JsonObject;
 }
 
+/**
+ * Map the IaC engine output triple (`terraform-adapter.ts` / the pulumi and
+ * crossplane mirrors) onto a parsed `RealizationResult`. Binding or stack
+ * output entries whose key looks secret-like AND whose value already is a
+ * ref string are hoisted into `secrets`; raw secret values are left in place
+ * so the parse rejects them (fail-closed — the adapter never launders).
+ */
 export function fromIacOutputs(
 	outputs: IacOutputsLike,
 	options: { readonly defaultResourceClass?: string } = {},
@@ -377,8 +430,10 @@ export function fromIacOutputs(
 	);
 }
 
+/** Radius-semantics driver/recipe result: `{values, secrets, resources}`. */
 export interface RecipeOutputsLike {
 	readonly values?: JsonObject;
+	/** Refs only — bare ref strings and `{secretRef}` / `{ref}` records. */
 	readonly secrets?: JsonObject;
 	readonly resources?: readonly {
 		readonly name?: unknown;
@@ -390,6 +445,13 @@ export interface RecipeOutputsLike {
 	}[];
 }
 
+/**
+ * Map a provider driver-program/recipe result (clean-room Radius
+ * `{values, secrets, resources}` semantics — no Radius dependency) onto a
+ * parsed `RealizationResult`. Secret entries are normalized to
+ * `{secretRef}`; anything that is not a ref reaches the parser unchanged and
+ * is rejected there (fail-closed).
+ */
 export function fromRecipeOutputs(
 	outputs: RecipeOutputsLike,
 	options: { readonly defaultResourceClass?: string } = {},

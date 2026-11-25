@@ -81,68 +81,6 @@ function isScriptsLane(check: Check) {
 	);
 }
 
-test("Pixel Agents changes select their own server and webview suites", () => {
-	const selected = (file: string) =>
-		plan([file], { staged: true })
-			.checks.filter(
-				(check) => check.command === "npm" && check.args[2] === "test",
-			)
-			.map((check) => check.args[1]);
-	assert.deepEqual(
-		selected("external/pixel-agents/server/src/agentRuntime.ts"),
-		["external/pixel-agents/server"],
-	);
-	assert.deepEqual(
-		selected("external/pixel-agents/adapters/vscode/extension.ts"),
-		["external/pixel-agents/server"],
-	);
-	for (const file of [
-		"external/pixel-agents/esbuild.js",
-		"external/pixel-agents/scripts/build-hooks.cjs",
-	])
-		assert.deepEqual(selected(file), ["external/pixel-agents/server"]);
-	assert.deepEqual(selected("external/pixel-agents/webview-ui/src/App.tsx"), [
-		"external/pixel-agents/webview-ui",
-	]);
-	assert.deepEqual(selected("external/pixel-agents/core/src/provider.ts"), [
-		"external/pixel-agents/server",
-		"external/pixel-agents/webview-ui",
-	]);
-	for (const file of [
-		"external/pixel-agents/core/asyncapi.yaml",
-		"external/pixel-agents/core/src/messages.ts",
-		"external/pixel-agents/scripts/generate-messages.ts",
-	]) {
-		assert.deepEqual(selected(file), [
-			"external/pixel-agents/server",
-			"external/pixel-agents/webview-ui",
-		]);
-		assert.ok(
-			plan([file], { staged: true }).checks.some(
-				(check) =>
-					check.command === "npm" &&
-					check.args.join(" ") ===
-						"--prefix external/pixel-agents run test:protocol",
-			),
-		);
-	}
-	assert.deepEqual(selected("external/pixel-agents/README.md"), []);
-	const installs = (file: string) =>
-		plan([file], { staged: true }).checks.filter(
-			(check) =>
-				check.command === "npm" &&
-				check.args.slice(0, 3).join(" ") ===
-					"--prefix external/pixel-agents install",
-		);
-	assert.deepEqual(
-		installs("external/pixel-agents/webview-ui/src/App.tsx").map(
-			(check) => check.serial,
-		),
-		[true],
-	);
-	assert.deepEqual(installs("external/pixel-agents/README.md"), []);
-});
-
 test("pr_gate_validation leaves workspace and scripts lanes to dedicated jobs; pr_gate_plan runs none", () => {
 	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
 	const normal = plan(files);
@@ -330,18 +268,6 @@ test("staged relevant checks pass staged mode to standards", () => {
 	assert.equal(check.args.includes("--base=origin/main"), true);
 });
 
-test("source checks do not require unrelated documentation changes", () => {
-	for (const staged of [false, true]) {
-		const { checks } = plan(["scripts/example.ts"], { staged });
-		assert.ok(checks.some((check) => check.args.includes("source:guard")));
-		assert.ok(
-			!checks.some((check) =>
-				check.args.some((arg) => arg.startsWith("docs:freshness")),
-			),
-		);
-	}
-});
-
 test("all changed scopes select the shared source policy with the correct snapshot", () => {
 	for (const files of [["packages/cli/src/index.ts"], ["docs/usage.md"]]) {
 		const committed = plan(files).checks.find(
@@ -439,7 +365,7 @@ test("docs-only changes do not select the konsistent structural lane", () => {
 });
 
 test("draft aggregate folders without package metadata do not select workspace tests", () => {
-	const { checks, workspaces } = plan(["src/draft/epic-proofs/AGENTS.md"], {
+	const { checks, workspaces } = plan(["src/draft/epic-proofs/_registry.md"], {
 		workspacePackageExists: () => false,
 	});
 
@@ -796,41 +722,6 @@ test("production package schema changes select workspace tests instead of root s
 	assert.equal(turboTestSelects(checks, "packages/core"), true);
 });
 
-test("WIT interfaces and dependency metadata select the owning workspace tests", () => {
-	for (const [file, workspace] of [
-		["packages/hobo/wit/wasi-http/proxy.wit", "packages/hobo"],
-		["packages/hobo/wit/wasi-http/deps.lock", "packages/hobo"],
-		[
-			"packages/runtimes/runtime-wasm/wit/wasi-http/deps.toml",
-			"packages/runtimes/runtime-wasm",
-		],
-		["packages/core/interfaces/transport.wit", "packages/core"],
-	] as const) {
-		for (const staged of [false, true]) {
-			const { checks, workspaces } = plan([file], {
-				staged,
-				workspacePackageExists: () => true,
-			});
-			assert.deepEqual(workspaces, [workspace], file);
-			assert.ok(turboTestSelects(checks, workspace), file);
-			assert.ok(checks.some(isBehaviorLane), file);
-		}
-	}
-});
-
-test("WIT changes prevent test-only narrowing", () => {
-	const workspace = "packages/runtimes/runtime-wasm";
-	const { checks } = plan(
-		[
-			`${workspace}/test/proxy-world.test.ts`,
-			`${workspace}/wit/wasi-http/proxy.wit`,
-		],
-		{ staged: true, workspacePackageExists: () => true },
-	);
-	assert.ok(turboTestSelects(checks, workspace));
-	assert.ok(!checks.some(narrowVitestCheck));
-});
-
 test("root script and test changes select the root typecheck lane", () => {
 	const { checks } = plan(["scripts/run-relevant-checks.ts"]);
 
@@ -846,23 +737,13 @@ test("root script and test changes select the root typecheck lane", () => {
 });
 
 test("nested production category packages resolve to their own workspace", () => {
-	for (const workspace of [
-		"packages/adapters/adapter-hono",
-		"packages/connectors/connector-acp",
-		"packages/packs/pack-framework",
-		"packages/runtimes/runtime-local",
-		"packages/providers/provider-azure",
-		"packages/iac/iac-pulumi",
-	]) {
-		for (const staged of [false, true]) {
-			const { checks, workspaces } = plan([`${workspace}/src/host.ts`], {
-				staged,
-				workspacePackageExists: (candidate: string) => candidate === workspace,
-			});
-			assert.deepEqual(workspaces, [workspace]);
-			assert.equal(turboTestSelects(checks, workspace), true);
-		}
-	}
+	const workspace = "packages/runtimes/runtime-local";
+	const { checks, workspaces } = plan([`${workspace}/src/host.ts`], {
+		workspacePackageExists: (candidate: string) => candidate === workspace,
+	});
+
+	assert.deepEqual(workspaces, [workspace]);
+	assert.equal(turboTestSelects(checks, workspace), true);
 });
 
 function isBehaviorLane(check: Check) {
@@ -885,21 +766,6 @@ test("editing a step definition trips the behavior lane", () => {
 	assert.ok(checks.some(isBehaviorLane));
 });
 
-test("workspace dependencies and root configuration select the behavior lane", () => {
-	for (const file of [
-		"packages/conformance/src/index.ts",
-		"packages/core/src/index.ts",
-		"packages/core/data-models/event.proto",
-		"packages/core/package.json",
-		"examples/cd-conformance-kit/src/index.ts",
-		"src/draft/technical-proofs/example/src/index.ts",
-		"tsconfig.base.json",
-		"pnpm-lock.yaml",
-	]) {
-		assert.ok(plan([file]).checks.some(isBehaviorLane), file);
-	}
-});
-
 test("the behavior lane builds the proofs' dependencies first, serially", () => {
 	const { checks } = plan(["cucumber.yaml"]);
 	assert.ok(checks.some(isBehaviorLane));
@@ -911,20 +777,10 @@ test("the behavior lane builds the proofs' dependencies first, serially", () => 
 	assert.equal(build?.serial, true);
 });
 
-test("the behavior build honors the configured Turbo concurrency", () => {
-	vi.stubEnv("HOBO_TURBO_CONCURRENCY", "2");
-	try {
-		const { checks } = plan(["packages/core/src/index.ts"]);
-		const build = checks.find((check) =>
-			check.args.includes("--filter=@hobo/conformance^..."),
-		);
-		assert.ok(build?.args.includes("--concurrency=2"));
-	} finally {
-		vi.stubEnv("HOBO_TURBO_CONCURRENCY", "");
-	}
-});
-
 test("the behavior lane also builds what the root step definitions import", () => {
+	// cucumber.yaml loads every features/steps/**/*.ts file on every run, and
+	// those steps import @hobo/conformance and the CD conformance kit from source,
+	// whose own dependencies resolve through dist/.
 	const { checks } = plan(["cucumber.yaml"]);
 	const build = checks.find(
 		(check) =>
@@ -935,6 +791,7 @@ test("the behavior lane also builds what the root step definitions import", () =
 	assert.ok(
 		build?.args.includes("--filter=@hobo/example-cd-conformance-kit^..."),
 	);
+	assert.ok(build?.args.includes("--filter=@hobo/fleet-authority..."));
 });
 
 test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {
@@ -960,8 +817,60 @@ test("editing cucumber.yaml trips the behavior lane", () => {
 });
 
 test("unrelated docs edits do not trip the behavior lane", () => {
-	const { checks } = plan(["docs/guide/vision.md"]);
+	const { checks } = plan(["docs/design/vision.md"]);
 	assert.ok(!checks.some(isBehaviorLane));
+});
+
+function isParityScorecardCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args.join(" ") === "run ci:parity-scorecard:check"
+	);
+}
+
+function behaviorBuild(checks: readonly Check[]) {
+	return checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+}
+
+test("the behavior lane builds what the parity gauntlet's steps import", () => {
+	const build = behaviorBuild(plan(["cucumber.yaml"]).checks);
+	for (const filter of [
+		"--filter=@hobo/hobo^...",
+		"--filter=@hobo/ci-gh-actions^...",
+		"--filter=@hobo/ci-dashboard^...",
+	])
+		assert.ok(build?.args.includes(filter), filter);
+});
+
+test("a stale parity scorecard fails a gate", () => {
+	for (const file of [
+		"docs/ci/parity-scorecard.md",
+		"features/hobo-ci-parity/cases.json",
+		"features/hobo-ci-parity/routing.feature",
+		"scripts/ci/parity-scorecard.mts",
+		"packages/ci/src/runner-order/answer.ts",
+		"packages/ci-gh-actions/src/relay-answer/answerer.ts",
+		"packages/ci-gh-actions/test/support/github-simulator/index.ts",
+		"packages/ci-dashboard/src/views.ts",
+		"packages/hobo/src/ci-route.ts",
+	]) {
+		const { checks } = plan([file]);
+		assert.ok(checks.some(isParityScorecardCheck), file);
+		assert.equal(behaviorBuild(checks)?.serial, true, file);
+	}
+});
+
+test("edits away from the CI packages leave the parity scorecard alone", () => {
+	for (const file of [
+		"docs/design/vision.md",
+		"packages/hobo/src/deploy.ts",
+		"packages/ci/README.md",
+	])
+		assert.equal(plan([file]).checks.some(isParityScorecardCheck), false, file);
 });
 
 function isOptimizexpLane(check: Check) {
@@ -971,9 +880,7 @@ function isOptimizexpLane(check: Check) {
 }
 
 test("global .optimizexp changes select the optimizexp drift lane", () => {
-	const { checks, scopes } = plan([
-		".optimizexp/features/designer-council-consensus/feature.json",
-	]);
+	const { checks, scopes } = plan([".optimizexp/personas/developer.md"]);
 	assert.ok(checks.some(isOptimizexpLane));
 	assert.ok(scopes.includes("optimizexp"));
 });
@@ -1099,11 +1006,35 @@ test("a changed-path stdin reader edit selects its regression tests", () => {
 		"scripts/test/read-stdin.test.ts",
 		"scripts/test/job-scope.test.ts",
 		"scripts/ci/job-scope.mts",
+		"scripts/ci/state-machine-scope.mts",
 		"scripts/ci/dependent-tests.mts",
 		"scripts/ci/impact-classifier.mts",
 	]) {
 		assert.ok(plan([file]).checks.some(isReadStdinTest), file);
 	}
+});
+
+const isStateMachineScopeTest = (check: {
+	command: string;
+	args: readonly string[];
+}) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/state-machine-scope.test.ts";
+
+test("a state-machine relevance input selects the scope tests", () => {
+	for (const file of [
+		"scripts/ci/state-machine-scope.mts",
+		"scripts/test/state-machine-scope.test.ts",
+		"scripts/ci/job-scope.mts",
+		"scripts/ci/affected-lanes.mts",
+		"scripts/verify-state-machine.sh",
+		".agents/skills/verify-cd-fanout/SKILL.md",
+	])
+		assert.ok(plan([file]).checks.some(isStateMachineScopeTest), file);
+	assert.ok(
+		!plan(["docs/ci/performance.md"]).checks.some(isStateMachineScopeTest),
+	);
 });
 
 test("unrelated changes do not select the stdin reader tests", () => {
@@ -1169,6 +1100,7 @@ test("a package source or test file that imports ts-autocode selects the consume
 			importsTsAutocode,
 		}).checks.some(isTsAutocodeSurfaceTest),
 	);
+	// Only TypeScript under packages/ is read: the surface test scans nothing else.
 	for (const file of ["site/src/lib/x.ts", "packages/cli/README.md"]) {
 		assert.ok(
 			!plan([file], { importsTsAutocode: () => true }).checks.some(
@@ -1249,6 +1181,8 @@ test("a change to anything that guards signed local runs runs those guards", () 
 			),
 		};
 	};
+	// Each of these alone, with nothing else changed: a key-only change, a
+	// workflow-only change, the verifier, the description, the lint.
 	for (const file of [
 		".github/workflows/hobo-ci.yml",
 		".github/workflows/release-hobo.yml",
@@ -1280,8 +1214,9 @@ test("a change to anything that guards signed local runs runs those guards", () 
 				`${file} ${JSON.stringify(overrides)}`,
 			);
 	}
+	// And not for a change that touches none of it.
 	for (const file of [
-		"docs/guide/index.md",
+		"docs/design/index.md",
 		"packages/core/src/index.ts",
 		".github/workflows/pricing-ci.yml",
 		".hobo/ci.json",

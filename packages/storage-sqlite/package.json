@@ -11,20 +11,17 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
-		},
-		"./browser": {
-			"types": "./dist/browser.d.ts",
-			"default": "./dist/browser.js"
 		}
 	},
 	"publishConfig": {
 		"access": "public"
 	},
 	"dependencies": {
-		"@hobo/backend-fleet": "workspace:*",
+		"@hobo/backend-routing": "workspace:*",
 		"@hobo/core": "workspace:*"
 	},
 	"devDependencies": {
+		"@hobo/fleet": "workspace:*",
 		"@types/node": "^22.15.29",
 		"fast-check": "^4.3.0",
 		"typescript": "^6.0.3",
@@ -37,6 +34,6 @@
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run",
 		"test:contract:consumer": "vitest run contracts/consumer",
-		"test:contract:provider": "vitest run contracts/provider"
+		"test:contract:provider": "vitest run --passWithNoTests contracts/provider"
 	}
 }

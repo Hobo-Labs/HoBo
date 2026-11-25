@@ -6,9 +6,10 @@ schema-valid responses.
 
 ## Requirements Source
 
-- `urn:hobo:requirement:generated-stack#plan-23` — stub semantics, partial overrides, trace-as-spec
-- `urn:hobo:decision:adr-0076` — `mock` boundary mode, `stub.Recorded`
-- `urn:hobo:requirement:event-families` — `stub.*` family
+- `docs/design/generated-stack.md#plan-23` — stub semantics, partial overrides, trace-as-spec
+- `docs/archive/requirements/requirements.md` — **FR-040**, **TR-082**
+- `docs/design/adr/02-identity-security.md#adr-0076` — `mock` boundary mode, `stub.Recorded`
+- `docs/design/event-families.md` — `stub.*` family
 
 ## Contract Surface
 
@@ -28,7 +29,7 @@ schema-valid responses.
 ## Scope Boundary
 
 Does not promote into `packages/runtime/`, wire Camp persistence, LLM stub fill,
-or full WIT codegen. Composes patterns from `packages/runtimes/runtime-local` and
+or full WIT codegen. Composes patterns from `wrpc-in-process-link-contract` and
 `conformance-port-suite-contract` replay traces.
 
 ## Verification
@@ -37,6 +38,8 @@ or full WIT codegen. Composes patterns from `packages/runtimes/runtime-local` an
 pnpm --prefix src/draft/technical-proofs/wit-port-stub-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf + CUE
 - `architecture/pacts/` — PACT boundary
+- `ADR.md` — parse-don't-validate + event vocabulary

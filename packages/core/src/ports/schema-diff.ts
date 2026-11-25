@@ -1,3 +1,30 @@
+/**
+ * Canonical schema IR + schema-diff port (ADR-0160).
+ *
+ * HoBo owns the canonical intermediate representation of a relational schema
+ * and the plan that moves one schema to another; toolchains (drizzle-kit,
+ * atlas, hand-written SQL) are *adapters* behind `SchemaDiffEngine` that ingest
+ * into this IR and emit dialect SQL out of it. That ownership is the whole
+ * point: if the plan lived inside a vendor tool, an upgrade of that tool would
+ * silently change the SQL a deploy runs. Here the engine id and version ride in
+ * the plan and participate in its digest, so an engine upgrade is a *visible*
+ * plan change that a review can see.
+ *
+ * The plan is phased expand / backfill / contract — the same three phase names
+ * `@hobo/trails` already executes (`SchemaPhase`, `DataMigrationPlan`), so a
+ * `MigrationPlan` converts mechanically into an executable data migration
+ * without a translation table. Additions land in `expand`, data population in
+ * `backfill`, and every removal or narrowing lands in `contract` marked
+ * `destructive`. The differ is forward-only (ADR-0032): it never emits a
+ * down/inverse step, because a "rollback" that drops a column written to in
+ * production is data loss wearing a safety label.
+ *
+ * Purity is load-bearing. `diffSchemaIr` reads no clock, draws no randomness,
+ * sorts every collection, and hashes canonical JSON — the same two schemas
+ * always produce the same digest, which is what makes a plan reviewable and a
+ * drift check meaningful.
+ */
+
 import { createHash } from "node:crypto";
 import { CoreParseError } from "../errors.js";
 import {
@@ -15,11 +42,15 @@ export const SCHEMA_IR_CONTRACT = "hobo.schema-ir/v1";
 // public-contract: the schema id a phased migration plan is published under.
 export const MIGRATION_PLAN_CONTRACT = "hobo.migration-plan/v1";
 
+/** The canonical differ's identity. Stamped into every plan it produces. */
 export const CANONICAL_SCHEMA_DIFF_ENGINE_ID = "hobo-canonical"; // public-contract: differ identity stamped into every plan it produces
-export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "6.0.0";
+/** Bump deliberately: the version participates in every plan digest. */
+export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "1.0.0"; // public-contract: participates in every plan digest
 
+/** Unquoted SQL identifier, bounded by postgres' NAMEDATALEN (63 bytes). */
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]*$/u;
 const MAX_IDENTIFIER_LENGTH = 63;
+/** Type tokens are structural only: no statement separators, no comments. */
 const TYPE_PATTERN = /^[A-Za-z][A-Za-z0-9_ ,.()'[\]]*$/u;
 const MAX_TYPE_LENGTH = 128;
 
@@ -54,6 +85,7 @@ export interface SchemaIr {
 	readonly tables: readonly SchemaTable[];
 }
 
+/** The three phases `@hobo/trails` already executes — reused verbatim. */
 export const MIGRATION_PHASES = Object.freeze([
 	"expand",
 	"backfill",
@@ -61,6 +93,11 @@ export const MIGRATION_PHASES = Object.freeze([
 ] as const);
 export type MigrationPhaseName = (typeof MIGRATION_PHASES)[number];
 
+/**
+ * Declared in emission-safe order: within one phase and table a step never
+ * depends on a step that sorts after it (a table is created before its indexes;
+ * a column is dropped before its table).
+ */
 export const MIGRATION_STEP_KINDS = Object.freeze([
 	"create-table",
 	"add-column",
@@ -90,9 +127,15 @@ export interface MigrationPlan {
 	readonly steps: readonly MigrationStep[];
 	readonly engineId: string;
 	readonly engineVersion: string;
+	/** Canonical-JSON hash over `{steps, engineId, engineVersion}`. */
 	readonly digest: string;
 }
 
+/**
+ * The port a toolchain adapter implements. `diff` must be pure; `emitSql` is
+ * optional because emitting dialect SQL requires a toolchain that may not be
+ * installed — an adapter without it fails closed rather than guessing SQL.
+ */
 export interface SchemaDiffEngine {
 	readonly id: string;
 	readonly version: string;
@@ -114,6 +157,12 @@ export class SchemaIrParseError extends CoreParseError {
 	}
 }
 
+/**
+ * Parse boundary for an authored or ingested schema IR. Returns a deeply
+ * frozen, canonically ordered derived type or throws. Ordering is by name at
+ * every level except an index's column list, where position is semantic
+ * (a composite index on `(a, b)` is not the index on `(b, a)`).
+ */
 export function parseSchemaIr(value: JsonValue | undefined): SchemaIr {
 	const source = expectRecord(value, "schemaIr");
 	assertOnlyKeys(source, "schemaIr", ["contract", "dialect", "tables"]);
@@ -150,6 +199,7 @@ export function parseSchemaIr(value: JsonValue | undefined): SchemaIr {
 		return table;
 	});
 	tables.sort((left, right) => compare(left.name, right.name));
+	// SAFETY: assertion required at this I/O or test boundary.
 	return deepFreeze({
 		contract: SCHEMA_IR_CONTRACT,
 		dialect: "postgres",
@@ -157,55 +207,55 @@ export function parseSchemaIr(value: JsonValue | undefined): SchemaIr {
 	}) as SchemaIr;
 }
 
+/**
+ * Canonical differ. Pure, deterministic, forward-only. Destructive steps are
+ * always phase "contract".
+ */
 export function diffSchemaIr(
 	current: SchemaIr,
 	desired: SchemaIr,
 	engine?: { id: string; version: string },
 ): MigrationPlan {
-	const normalizedCurrent = parseSchemaIr(cloneAsJson(current));
-	const normalizedDesired = parseSchemaIr(cloneAsJson(desired));
-	if (normalizedCurrent.dialect !== normalizedDesired.dialect) {
+	if (current.dialect !== desired.dialect) {
 		throw new SchemaIrParseError(
 			"diffSchemaIr.dialect",
-			`both schemas in dialect ${normalizedCurrent.dialect}`,
-			normalizedDesired.dialect,
+			`both schemas in dialect ${current.dialect}`,
+			desired.dialect,
 			"diffSchemaIr: refusing to diff across dialects — a cross-dialect plan would be a portability claim this differ cannot make",
 		);
 	}
 	const engineId = engine?.id ?? CANONICAL_SCHEMA_DIFF_ENGINE_ID;
 	const engineVersion = engine?.version ?? CANONICAL_SCHEMA_DIFF_ENGINE_VERSION;
 
-	const currentTables = byName(normalizedCurrent.tables);
-	const desiredTables = byName(normalizedDesired.tables);
+	const currentTables = byName(current.tables);
+	const desiredTables = byName(desired.tables);
 	const steps: MigrationStep[] = [];
 
-	for (const table of normalizedDesired.tables) {
+	for (const table of desired.tables) {
 		const before = currentTables.get(table.name);
 		if (before === undefined) {
 			steps.push(step("expand", "create-table", table.name, {}));
+			for (const index of table.indexes) {
+				steps.push(
+					step("expand", "add-index", table.name, { index: index.name }),
+				);
+			}
 			continue;
 		}
 		diffColumns(before, table, steps);
+		diffIndexes(before, table, steps);
 	}
 
-	for (const table of normalizedCurrent.tables) {
+	for (const table of current.tables) {
 		if (!desiredTables.has(table.name)) {
 			steps.push(step("contract", "drop-table", table.name, {}));
 		}
 	}
-	diffIndexes(normalizedCurrent.tables, normalizedDesired.tables, steps);
 
-	return freezePlan(
-		dedupe(steps).sort((left, right) =>
-			compareSteps(left, right, currentTables, desiredTables),
-		),
-		engineId,
-		engineVersion,
-		normalizedCurrent,
-		normalizedDesired,
-	);
+	return freezePlan(dedupe(steps).sort(compareSteps), engineId, engineVersion);
 }
 
+/** The differ this package ships, exposed as the port other packages consume. */
 export const CANONICAL_SCHEMA_DIFF_ENGINE: SchemaDiffEngine = Object.freeze({
 	id: CANONICAL_SCHEMA_DIFF_ENGINE_ID,
 	version: CANONICAL_SCHEMA_DIFF_ENGINE_VERSION,
@@ -228,24 +278,18 @@ function diffColumns(
 	for (const column of after.columns) {
 		const previous = beforeColumns.get(column.name);
 		if (previous === undefined) {
+			// A column added to a populated table is only safe to add nullable;
+			// making it NOT NULL needs the rows filled first, which is exactly the
+			// expand → backfill → contract dance.
 			steps.push(
 				step("expand", "add-column", after.name, { column: column.name }),
 			);
-			const requiresBackfill =
-				!column.nullable &&
-				column.defaultExpression === undefined &&
-				!hasImplicitSequenceDefault(column.type);
-			if (requiresBackfill) {
+			if (!column.nullable && column.defaultExpression === undefined) {
 				steps.push(
 					step("backfill", "backfill-column", after.name, {
 						column: column.name,
 					}),
 				);
-			}
-			if (
-				requiresBackfill ||
-				(column.primaryKey && before.columns.some((entry) => entry.primaryKey))
-			) {
 				steps.push(
 					step("contract", "narrow-column", after.name, {
 						column: column.name,
@@ -264,17 +308,6 @@ function diffColumns(
 			);
 		}
 	}
-}
-
-function hasImplicitSequenceDefault(type: string): boolean {
-	return [
-		"smallserial",
-		"serial2",
-		"serial",
-		"serial4",
-		"bigserial",
-		"serial8",
-	].includes(type.trim().toLowerCase());
 }
 
 function diffColumnAttributes(
@@ -307,52 +340,41 @@ function diffColumnAttributes(
 	if (!before.unique && after.unique) narrow();
 	if (before.unique && !after.unique) widen();
 
+	// Primary-key churn is never a safe online widening in either direction:
+	// gaining one demands uniqueness plus NOT NULL, losing one drops a
+	// constraint other objects may depend on.
 	if (before.primaryKey !== after.primaryKey) narrow();
 
+	// A default only affects future inserts, so changing or removing one is a
+	// metadata change — but it is never silently dropped from the plan.
 	if (before.defaultExpression !== after.defaultExpression) widen();
 }
 
 function diffIndexes(
-	before: readonly SchemaTable[],
-	after: readonly SchemaTable[],
+	before: SchemaTable,
+	after: SchemaTable,
 	steps: MigrationStep[],
 ): void {
-	const beforeIndexes = indexesByName(before);
-	const afterIndexes = indexesByName(after);
-	const remainingTables = byName(after);
+	const beforeIndexes = byName(before.indexes);
+	const afterIndexes = byName(after.indexes);
 
-	for (const [name, next] of afterIndexes) {
-		const previous = beforeIndexes.get(name);
-		if (previous === undefined) {
-			steps.push(step("expand", "add-index", next.table, { index: name }));
-		} else if (
-			previous.table !== next.table ||
-			!sameIndexLayout(previous.index, next.index)
-		) {
+	for (const index of after.indexes) {
+		const previous = beforeIndexes.get(index.name);
+		if (previous === undefined || !sameIndexLayout(previous, index)) {
 			steps.push(
-				step("contract", "drop-index", previous.table, { index: name }),
-				step("contract", "add-index", next.table, { index: name }),
+				step("expand", "add-index", after.name, { index: index.name }),
 			);
 		}
 	}
 
-	for (const [name, previous] of beforeIndexes) {
-		if (!afterIndexes.has(name) && remainingTables.has(previous.table)) {
+	for (const index of before.indexes) {
+		const next = afterIndexes.get(index.name);
+		if (next === undefined || !sameIndexLayout(index, next)) {
 			steps.push(
-				step("contract", "drop-index", previous.table, { index: name }),
+				step("contract", "drop-index", after.name, { index: index.name }),
 			);
 		}
 	}
-}
-
-function indexesByName(
-	tables: readonly SchemaTable[],
-): Map<string, { table: string; index: SchemaIndex }> {
-	return new Map(
-		tables.flatMap((table) =>
-			table.indexes.map((index) => [index.name, { table: table.name, index }]),
-		),
-	);
 }
 
 function sameIndexLayout(left: SchemaIndex, right: SchemaIndex): boolean {
@@ -363,6 +385,11 @@ function sameIndexLayout(left: SchemaIndex, right: SchemaIndex): boolean {
 	);
 }
 
+/**
+ * Type-change classification over a deliberately small, documented lattice.
+ * Anything outside it is treated as a narrowing — fail closed, because calling
+ * an unknown conversion "safe" is how an expand phase loses data.
+ */
 export function classifyTypeChange(
 	from: string,
 	to: string,
@@ -392,6 +419,7 @@ export function classifyTypeChange(
 		: "narrow";
 }
 
+/** Widening chains, narrowest first. Cross-family changes are narrowings. */
 const TYPE_FAMILIES: readonly (readonly string[])[] = Object.freeze([
 	Object.freeze(["smallint", "integer", "bigint", "numeric"]),
 	Object.freeze(["real", "double precision"]),
@@ -417,6 +445,7 @@ function normalizeType(raw: string) {
 	const match = collapsed.match(/^([^(]+?)\s*\(([^)]*)\)$/u);
 	const rawBase = (match?.[1] ?? collapsed).trim();
 	const base =
+		// SAFETY: assertion required at this I/O or test boundary.
 		(TYPE_ALIASES as Readonly<Record<string, string | undefined>>)[rawBase] ??
 		rawBase;
 	const parameters =
@@ -463,17 +492,10 @@ function stepTarget(candidate: MigrationStep): string {
 	return candidate.column ?? candidate.index ?? "";
 }
 
-function compareSteps(
-	left: MigrationStep,
-	right: MigrationStep,
-	current: ReadonlyMap<string, SchemaTable>,
-	desired: ReadonlyMap<string, SchemaTable>,
-): number {
+function compareSteps(left: MigrationStep, right: MigrationStep): number {
 	return (
 		MIGRATION_PHASES.indexOf(left.phase) -
 			MIGRATION_PHASES.indexOf(right.phase) ||
-		contractStepOrder(left, current, desired) -
-			contractStepOrder(right, current, desired) ||
 		compare(left.table, right.table) ||
 		MIGRATION_STEP_KINDS.indexOf(left.kind) -
 			MIGRATION_STEP_KINDS.indexOf(right.kind) ||
@@ -481,41 +503,15 @@ function compareSteps(
 	);
 }
 
-function contractStepOrder(
-	candidate: MigrationStep,
-	current: ReadonlyMap<string, SchemaTable>,
-	desired: ReadonlyMap<string, SchemaTable>,
-): number {
-	if (candidate.phase !== "contract") return 0;
-	if (candidate.kind === "drop-index") return 0;
-	if (candidate.kind === "add-index") return 4;
-	if (candidate.kind === "narrow-column" && candidate.column) {
-		const before = current
-			.get(candidate.table)
-			?.columns.find((column) => column.name === candidate.column);
-		const after = desired
-			.get(candidate.table)
-			?.columns.find((column) => column.name === candidate.column);
-		if (before?.primaryKey && !after?.primaryKey) return 1;
-		if (!before?.primaryKey && after?.primaryKey) return 3;
-	}
-	return 2;
-}
-
 function freezePlan(
 	steps: readonly MigrationStep[],
 	engineId: string,
 	engineVersion: string,
-	current: SchemaIr,
-	desired: SchemaIr,
 ): MigrationPlan {
 	const digest = `sha256:${createHash("sha256")
-		.update(
-			canonicalJson(
-				cloneAsJson({ steps, engineId, engineVersion, current, desired }),
-			),
-		)
+		.update(canonicalJson(cloneAsJson({ steps, engineId, engineVersion })))
 		.digest("hex")}`;
+	// SAFETY: assertion required at this I/O or test boundary.
 	return deepFreeze({
 		contract: MIGRATION_PLAN_CONTRACT,
 		steps,
@@ -525,11 +521,13 @@ function freezePlan(
 	}) as MigrationPlan;
 }
 
+/** Key-sorted JSON with no whitespace: the same value always hashes the same. */
 function canonicalJson(value: JsonValue | undefined): string {
 	if (Array.isArray(value)) {
 		return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
 	}
 	if (value !== null && isJsonObject(value)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const entries = Object.entries(value as JsonObject)
 			.filter(([, entry]) => entry !== undefined)
 			.sort(([left], [right]) => compare(left, right));
@@ -736,6 +734,7 @@ function expectRecord(value: JsonValue | undefined, path: string): JsonObject {
 	if (!isJsonObject(value) || value === null || Array.isArray(value)) {
 		throw new SchemaIrParseError(path, "object", value);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as JsonObject;
 }
 
@@ -755,6 +754,7 @@ function assertOnlyKeys(
 	}
 }
 
+/** Code-unit comparison: locale-independent so ordering is reproducible. */
 function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }

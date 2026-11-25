@@ -235,11 +235,11 @@ export const BACKUP_RESTORE_LAUNCH_DRILL = Object.freeze({
     { id: "release-notes", owner: "Release Notes & Upgrade Guide" },
   ]),
   designRefs: Object.freeze([
-    "urn:hobo:requirement:backup-restore",
-    "urn:hobo:requirement:bootstrap-installer",
-    "urn:hobo:requirement:launch-support-escalation",
-    "urn:hobo:requirement:customer-assurance-evidence-packet",
-    "urn:hobo:requirement:release-notes-upgrade-guide",
+    "docs/design/backup-restore.md",
+    "docs/design/bootstrap-installer.md",
+    "docs/design/launch-support-escalation.md",
+    "docs/design/customer-assurance-evidence-packet.md",
+    "docs/design/release-notes-upgrade-guide.md",
   ]),
 });
 

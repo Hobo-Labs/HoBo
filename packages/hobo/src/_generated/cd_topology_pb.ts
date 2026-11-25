@@ -6,72 +6,193 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
+/**
+ * Describes the file cd_topology.proto.
+ */
 export const file_cd_topology: GenFile = /*@__PURE__*/
   fileDesc("ChFjZF90b3BvbG9neS5wcm90bxIMaG9iby5ob2JvLnYxIqoCCg5DZFRvcG9sb2d5Q2FtcBIPCgdjYW1wX2lkGAEgASgJEg8KB3lhcmRfaWQYAiABKAkSEgoKc3RhdGlvbl9pZBgDIAEoCRIQCghwcm92aWRlchgEIAEoCRIPCgdyZWdpb25zGAUgAygJEhAKCGVudl90eXBlGAYgASgJEjgKBmxhYmVscxgHIAMoCzIoLmhvYm8uaG9iby52MS5DZFRvcG9sb2d5Q2FtcC5MYWJlbHNFbnRyeRIwCgptYW5hZ2VtZW50GAggASgOMhwuaG9iby5ob2JvLnYxLkNhbXBNYW5hZ2VtZW50EhIKCmxvZ2ljYWxfaWQYCSABKAkaLQoLTGFiZWxzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKtAQoSQ2RUb3BvbG9neVlhcmRDYW1wEgwKBGtpbmQYASABKAkSCgoCaWQYAiABKAkSEAoIZW52X3R5cGUYAyABKAkSPAoGbGFiZWxzGAQgAygLMiwuaG9iby5ob2JvLnYxLkNkVG9wb2xvZ3lZYXJkQ2FtcC5MYWJlbHNFbnRyeRotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIv4BCg5DZFRvcG9sb2d5WWFyZBIMCgRraW5kGAEgASgJEhAKCGNvbnRyYWN0GAIgASgJEgwKBG5hbWUYAyABKAkSEwoLcHJvdmlkZXJfaWQYBCABKAkSDwoHcmVnaW9ucxgFIAMoCRI4CgZsYWJlbHMYBiADKAsyKC5ob2JvLmhvYm8udjEuQ2RUb3BvbG9neVlhcmQuTGFiZWxzRW50cnkSLwoFY2FtcHMYByADKAsyIC5ob2JvLmhvYm8udjEuQ2RUb3BvbG9neVlhcmRDYW1wGi0KC0xhYmVsc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEqcAoOQ2FtcE1hbmFnZW1lbnQSHwobQ0FNUF9NQU5BR0VNRU5UX1VOU1BFQ0lGSUVEEAASGwoXQ0FNUF9NQU5BR0VNRU5UX01BTkFHRUQQARIgChxDQU1QX01BTkFHRU1FTlRfT0JTRVJWRV9PTkxZEAJiBnByb3RvMw");
 
+/**
+ * One declared Camp, in the shape @hobo/cd's TopologyReader returns.
+ *
+ * @generated from message hobo.hobo.v1.CdTopologyCamp
+ */
 export type CdTopologyCamp = Message<"hobo.hobo.v1.CdTopologyCamp"> & {
+  /**
+   * Yard-scoped id, `<yard>/<camp>`.
+   *
+   * @generated from field: string camp_id = 1;
+   */
   campId: string;
 
+  /**
+   * @generated from field: string yard_id = 2;
+   */
   yardId: string;
 
+  /**
+   * Empty: the Station the CD runtime composes. Any other Station is refused.
+   *
+   * @generated from field: string station_id = 3;
+   */
   stationId: string;
 
+  /**
+   * @generated from field: string provider = 4;
+   */
   provider: string;
 
+  /**
+   * Declared regions; residency is evaluated only against these.
+   *
+   * @generated from field: repeated string regions = 5;
+   */
   regions: string[];
 
+  /**
+   * @generated from field: string env_type = 6;
+   */
   envType: string;
 
+  /**
+   * @generated from field: map<string, string> labels = 7;
+   */
   labels: { [key: string]: string };
 
+  /**
+   * @generated from field: hobo.hobo.v1.CampManagement management = 8;
+   */
   management: CampManagement;
 
+  /**
+   * Stable CD identity when a Camp moves between Yards. Empty uses camp_id.
+   *
+   * @generated from field: string logical_id = 9;
+   */
   logicalId: string;
 };
 
+/**
+ * Describes the message hobo.hobo.v1.CdTopologyCamp.
+ * Use `create(CdTopologyCampSchema)` to create a new message.
+ */
 export const CdTopologyCampSchema: GenMessage<CdTopologyCamp> = /*@__PURE__*/
   messageDesc(file_cd_topology, 0);
 
+/**
+ * The part of a @hobo/yards Camp the topology reads.
+ *
+ * @generated from message hobo.hobo.v1.CdTopologyYardCamp
+ */
 export type CdTopologyYardCamp = Message<"hobo.hobo.v1.CdTopologyYardCamp"> & {
+  /**
+   * "camp".
+   *
+   * @generated from field: string kind = 1;
+   */
   kind: string;
 
+  /**
+   * @generated from field: string id = 2;
+   */
   id: string;
 
+  /**
+   * @generated from field: string env_type = 3;
+   */
   envType: string;
 
+  /**
+   * @generated from field: map<string, string> labels = 4;
+   */
   labels: { [key: string]: string };
 };
 
+/**
+ * Describes the message hobo.hobo.v1.CdTopologyYardCamp.
+ * Use `create(CdTopologyYardCampSchema)` to create a new message.
+ */
 export const CdTopologyYardCampSchema: GenMessage<CdTopologyYardCamp> = /*@__PURE__*/
   messageDesc(file_cd_topology, 1);
 
+/**
+ * The part of a @hobo/yards Yard the topology reads.
+ *
+ * @generated from message hobo.hobo.v1.CdTopologyYard
+ */
 export type CdTopologyYard = Message<"hobo.hobo.v1.CdTopologyYard"> & {
+  /**
+   * "yard".
+   *
+   * @generated from field: string kind = 1;
+   */
   kind: string;
 
+  /**
+   * "hobo.topology-objects/v1".
+   *
+   * @generated from field: string contract = 2;
+   */
   contract: string;
 
+  /**
+   * @generated from field: string name = 3;
+   */
   name: string;
 
+  /**
+   * @generated from field: string provider_id = 4;
+   */
   providerId: string;
 
+  /**
+   * @generated from field: repeated string regions = 5;
+   */
   regions: string[];
 
+  /**
+   * @generated from field: map<string, string> labels = 6;
+   */
   labels: { [key: string]: string };
 
+  /**
+   * @generated from field: repeated hobo.hobo.v1.CdTopologyYardCamp camps = 7;
+   */
   camps: CdTopologyYardCamp[];
 };
 
+/**
+ * Describes the message hobo.hobo.v1.CdTopologyYard.
+ * Use `create(CdTopologyYardSchema)` to create a new message.
+ */
 export const CdTopologyYardSchema: GenMessage<CdTopologyYard> = /*@__PURE__*/
   messageDesc(file_cd_topology, 2);
 
+/**
+ * Whether CD acts on a Camp. UNSPECIFIED takes the `hobo.cd/management` label.
+ *
+ * @generated from enum hobo.hobo.v1.CampManagement
+ */
 export enum CampManagement {
+  /**
+   * @generated from enum value: CAMP_MANAGEMENT_UNSPECIFIED = 0;
+   */
   UNSPECIFIED = 0,
 
+  /**
+   * @generated from enum value: CAMP_MANAGEMENT_MANAGED = 1;
+   */
   MANAGED = 1,
 
+  /**
+   * @generated from enum value: CAMP_MANAGEMENT_OBSERVE_ONLY = 2;
+   */
   OBSERVE_ONLY = 2,
 }
 
+/**
+ * Describes the enum hobo.hobo.v1.CampManagement.
+ */
 export const CampManagementSchema: GenEnum<CampManagement> = /*@__PURE__*/
   enumDesc(file_cd_topology, 0);
 

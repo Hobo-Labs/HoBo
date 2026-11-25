@@ -1,4 +1,3 @@
-import { evaluateBindingDeliveryGate } from "./binding-delivery.js";
 import {
 	isJsonObject,
 	isJsonString,
@@ -18,10 +17,16 @@ import type {
 	WasmComponentDependencyOptions,
 } from "./types.js";
 
+/** Required Camp component-host runtimes implied by bindle dependencies. */
 export type RequiredRuntimeKind = "wasm" | "oci";
 
+// public-contract: serialized option name read by brokers and Camp hosts.
 export const DEPENDENCY_OPTION = "dependency" as const;
 
+/**
+ * Build the dependency annotation stored on external/container/wasm-component
+ * resources (and readable by broker + Camp hosts).
+ */
 export function dependencyAnnotation(config: {
 	readonly runtime: "wasm" | "oci" | "none";
 	readonly kind: "external" | "container" | "wasm-component";
@@ -132,6 +137,12 @@ export function dependencyRuntimeOf(
 	return undefined;
 }
 
+/**
+ * Runtimes the broker must have installed for this bindle to place.
+ * - container deps → oci
+ * - wasm-component deps → wasm
+ * External BYO (runtime: none) does not require a special host runtime.
+ */
 export function collectRequiredRuntimes(
 	definition: BindleDefinition,
 ): readonly RequiredRuntimeKind[] {
@@ -147,6 +158,9 @@ export function collectRequiredRuntimes(
 	return Object.freeze([...required].sort());
 }
 
+/**
+ * Parse dependency config from a resource's annotations (first match).
+ */
 export function readDependencyConfig(
 	annotations: readonly ProviderAnnotation[],
 ): JsonObject | null {
@@ -158,17 +172,24 @@ export function readDependencyConfig(
 	return null;
 }
 
+/**
+ * Public endpoint discovery only (ADR-0141).
+ * Never emits ConnectionStrings__* or credential-bearing values.
+ * Resource access is via WIT links / ctx.bindings — not process env secrets.
+ */
 export function discoveryEnvForDependency(
 	resourceName: string,
 	config: JsonObject | null,
 	resolved: {
 		readonly httpUrl?: string;
+		/** Ignored — connection strings must not enter process env (ADR-0141). */
 		readonly connectionString?: string;
 	},
 ): DiscoveryEnv {
 	return discoveryEndpointsForDependency(resourceName, config, resolved);
 }
 
+/** Alias: public HTTP/named endpoints only. */
 export function discoveryEndpointsForDependency(
 	resourceName: string,
 	config: JsonObject | null,
@@ -178,6 +199,7 @@ export function discoveryEndpointsForDependency(
 	},
 ): DiscoveryEnv {
 	const env: DiscoveryEnv = {};
+	// Intentionally ignore connectionString — dual-path credential env is banned.
 	void resolved.connectionString;
 	void config?.connectionString;
 	if (resolved.httpUrl !== undefined) {
@@ -187,17 +209,12 @@ export function discoveryEndpointsForDependency(
 		isJsonObject(config.endpoints) &&
 		config.endpoints !== null
 	) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const endpoints = config.endpoints as JsonObject;
 		const http = endpoints.http;
 		if (isJsonString(http) && http.length > 0) {
 			env[`services__${resourceName}__http__0`] = http;
 		}
-	}
-	const delivery = evaluateBindingDeliveryGate({ env });
-	if (!delivery.ok) {
-		throw new TypeError(
-			`${delivery.summary}: ${delivery.reasons.map((reason) => reason.message).join("; ")}`,
-		);
 	}
 	return env;
 }

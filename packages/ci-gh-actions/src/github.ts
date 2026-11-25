@@ -2,6 +2,11 @@ import { createSign } from "node:crypto";
 import { z } from "zod";
 
 export interface GithubTransport {
+	/**
+	 * `ifNoneMatch` makes a GET conditional: GitHub answers 304 when the ETag
+	 * still matches, and a 304 does not count against the installation's rate
+	 * limit. A transport may ignore it; the caller then just sees a 200.
+	 */
 	request(
 		installationId: number,
 		path: string,
@@ -91,7 +96,9 @@ const RunWorkflowJob = z.object({
 	status: z.string(),
 	labels: z.array(z.string()).optional(),
 	runner_name: z.string().nullable().optional(),
+	// Queued jobs are unassigned: GitHub may send 0 or null.
 	runner_id: z.number().int().nonnegative().nullable().optional(),
+	runner_group_id: z.number().int().nonnegative().nullable().optional(),
 });
 
 export type GithubRunWorkflowJob = z.infer<typeof RunWorkflowJob>;
@@ -104,14 +111,29 @@ const WorkflowRunPage = z.object({
 	),
 });
 
+export class IncompleteGithubRunListing extends Error {
+	readonly runIds: readonly number[];
+	constructor(runIds: readonly number[]) {
+		super("GitHub runner assignment scan incomplete");
+		this.name = "IncompleteGithubRunListing";
+		this.runIds = [...runIds];
+	}
+}
+
+/** Recent in-progress workflow runs for cross-run runner assignment lookup. */
 export async function listInProgressWorkflowRunIds(
 	api: GithubTransport,
 	installationId: number,
 	repository: string,
 	limit = 25,
 ): Promise<readonly number[]> {
+	if (!Number.isSafeInteger(limit) || limit < 1)
+		throw new RangeError(
+			"GitHub in-progress run limit must be a positive safe integer",
+		);
 	const ids: number[] = [];
-	for (let page = 1; page <= 3 && ids.length < limit; page++) {
+	const seen = new Set<number>();
+	for (let page = 1; page <= 3; page++) {
 		const perPage = Math.min(100, limit);
 		const response = await api.request(
 			installationId,
@@ -120,13 +142,18 @@ export async function listInProgressWorkflowRunIds(
 		if (!response.ok)
 			throw new Error(`GitHub run listing failed (${response.status})`);
 		const parsed = WorkflowRunPage.parse(await response.json());
+		if (parsed.workflow_runs.length > perPage)
+			throw new Error("invalid GitHub run listing page");
 		for (const run of parsed.workflow_runs) {
+			if (seen.has(run.id))
+				throw new Error("duplicate GitHub run in assignment scan");
+			if (ids.length >= limit) throw new IncompleteGithubRunListing(ids);
+			seen.add(run.id);
 			ids.push(run.id);
-			if (ids.length >= limit) break;
 		}
-		if (parsed.workflow_runs.length < perPage) break;
+		if (parsed.workflow_runs.length < perPage) return ids;
 	}
-	return ids;
+	throw new IncompleteGithubRunListing(ids);
 }
 
 export async function listRunWorkflowJobs(
@@ -135,16 +162,32 @@ export async function listRunWorkflowJobs(
 	repository: string,
 	runId: number,
 ): Promise<readonly GithubRunWorkflowJob[]> {
-	const response = await api.request(
-		installationId,
-		`/repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
-	);
-	if (!response.ok)
-		throw new Error(`GitHub run jobs lookup failed (${response.status})`);
-	const result = z
-		.object({ jobs: z.array(RunWorkflowJob) })
-		.parse(await response.json());
-	return result.jobs;
+	const jobs: GithubRunWorkflowJob[] = [];
+	const seen = new Set<number>();
+	for (let page = 1; page <= 100; page++) {
+		const suffix = page === 1 ? "" : `&page=${page}`;
+		const response = await api.request(
+			installationId,
+			`/repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100${suffix}`,
+		);
+		if (!response.ok)
+			throw new Error(`GitHub run jobs lookup failed (${response.status})`);
+		const result = z
+			.object({ jobs: z.array(RunWorkflowJob) })
+			.parse(await response.json());
+		if (result.jobs.length > 100)
+			throw new Error("invalid GitHub run jobs page");
+		for (const job of result.jobs) {
+			if (job.run_id !== runId)
+				throw new Error("GitHub job belongs to another run");
+			if (seen.has(job.id))
+				throw new Error("duplicate GitHub job in assignment scan");
+			seen.add(job.id);
+			jobs.push(job);
+		}
+		if (result.jobs.length < 100) return jobs;
+	}
+	throw new Error("GitHub run jobs lookup incomplete");
 }
 
 export async function rerunWorkflowRun(
@@ -160,6 +203,7 @@ export async function rerunWorkflowRun(
 	);
 }
 
+/** Re-run one workflow job without cancelling the rest of the run. */
 export async function rerunWorkflowJob(
 	api: GithubTransport,
 	installationId: number,
@@ -194,6 +238,7 @@ export async function getJob(
 			name: z.string().optional(),
 			runner_name: z.string().nullable().optional(),
 			runner_id: z.number().int().nonnegative().nullable().optional(),
+			runner_group_id: z.number().int().nonnegative().nullable().optional(),
 			run_attempt: z.number().int().positive().optional(),
 			created_at: z.string().optional(),
 		})
@@ -204,6 +249,7 @@ export interface GithubAppTransport extends GithubTransport {
 	appRequest(path: string): Promise<Response>;
 }
 
+/** Only relative GitHub API paths; encoded separators cannot change the resource scope. */
 export function githubApiUrl(path: string): string {
 	const [pathname] = path.split("?");
 	if (
@@ -286,12 +332,18 @@ export function githubApiUrl(path: string): string {
 	return url.href;
 }
 
+/** App keys never leave the relay; concurrent lookups share short-lived installation tokens. */
 export function createGithubAppTransport(options: {
 	appId: string;
 	privateKey: string;
 	fetch?: typeof fetch;
 	now?: () => number;
 }): GithubAppTransport & {
+	/**
+	 * A short-lived installation token for an in-process caller that speaks a
+	 * protocol this transport does not (GraphQL, git over HTTPS). The App key
+	 * still never leaves the relay.
+	 */
 	installationToken(installationId: number): Promise<string>;
 } {
 	const send = options.fetch ?? fetch;

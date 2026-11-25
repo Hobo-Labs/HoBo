@@ -1,23 +1,15 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-	CANONICAL_VERBS,
-	CLI_IMPLEMENTATION_REFERENCES,
-	RETIRED_CLI_ALIASES,
-} from "../packages/cli/src/shell/verbs.js";
 
-const DEFAULT_SCAN_PATHS = ["docs", "README.md", "CLAUDE.md"];
+const SPEC_PATH = path.join("docs", "cli-verbs.md");
+const DEFAULT_SCAN_PATHS = [
+	path.join("docs", "design"),
+	"README.md",
+	"CLAUDE.md",
+];
 
-type CliSpec = {
-	verbs: ReadonlyArray<{
-		name: string;
-		role: string;
-		summary: string;
-		implementationIssues: readonly string[];
-	}>;
-	retiredAliases: ReadonlyArray<{ name: string; replacement: string }>;
-};
+type CliSpec = Awaited<ReturnType<typeof loadCliSpec>>;
 
 type CliDocProblem = {
 	file: string;
@@ -31,17 +23,28 @@ type CheckCliDocsOptions = {
 	files?: string[] | undefined;
 };
 
-export async function loadCliSpec(_root: string): Promise<CliSpec> {
-	return {
-		verbs: CANONICAL_VERBS.map((verb) => ({
-			...verb,
-			implementationIssues: CLI_IMPLEMENTATION_REFERENCES[verb.name],
-		})),
-		retiredAliases: RETIRED_CLI_ALIASES,
-	};
+export async function loadCliSpec(root: string) {
+	const text = await readFile(path.join(root, SPEC_PATH), "utf8");
+
+	const verbs = parseTableSection(text, "Canonical CLI Verbs").map((row) => ({
+		name: cleanCell(row[0]!),
+		role: cleanCell(row[1]!),
+		implementationIssues: extractIssues(row[3]!),
+	}));
+
+	const retiredAliases = parseTableSection(
+		text,
+		"Retired or Rejected Commands",
+	).map((row) => ({
+		name: cleanCell(row[0]!),
+		replacement: cleanCell(row[1]!),
+	}));
+
+	return { verbs, retiredAliases };
 }
 
 export async function checkCliDocs(
+	// SAFETY: assertion to `{} as CheckCliDocsOptions` is required at this boundary.
 	{ root, files }: CheckCliDocsOptions = {} as CheckCliDocsOptions,
 ) {
 	const spec = await loadCliSpec(root);
@@ -72,29 +75,18 @@ export function lintMarkdownContent(
 		]),
 	);
 	const problems: CliDocProblem[] = [];
-	let inFence = false;
 
 	content.split(/\r?\n/).forEach((line, index) => {
 		if (/^\s*```/.test(line)) {
-			inFence = !inFence;
 			return;
 		}
 
-		const commandLines = inFence
-			? [line]
-			: [
-					...[...line.matchAll(/`([^`]+)`/g)].map((match) => match[1]!),
-					...(/^\s*(?:[-*+]\s+)?(?:[$>]\s*)?(?:npx\s+)?hobo\s/u.test(line)
-						? [line]
-						: []),
-				];
-		for (const commandLine of commandLines)
-			problems.push(
-				...lintCommandsInLine(file, index + 1, commandLine, allowed, retired),
-			);
+		problems.push(
+			...lintCommandsInLine(file, index + 1, line, allowed, retired),
+		);
 
-		if (/^\s*cli\/\s+@hobo\/cli\s+hobo\s+/u.test(line)) {
-			const [, summary] = line.match(/@hobo\/cli\s+hobo\s+([^`\r\n]+)/u) ?? [];
+		if (line.includes("@hobo/cli") && line.includes("hobo ")) {
+			const [, summary] = line.match(/\bhobo\s+([^`\r\n]+)/) ?? [];
 			if (summary) {
 				const commands = summary
 					.split("|")
@@ -205,7 +197,6 @@ async function walkMarkdown(root: string, dir: string): Promise<string[]> {
 	for (const entry of await readdir(dir, { withFileTypes: true })) {
 		const absolute = path.join(dir, entry.name);
 		if (entry.isDirectory()) {
-			if (entry.name === "archive") continue;
 			found.push(...(await walkMarkdown(root, absolute)));
 		} else if (entry.isFile() && entry.name.endsWith(".md")) {
 			found.push(path.relative(root, absolute));
@@ -213,6 +204,35 @@ async function walkMarkdown(root: string, dir: string): Promise<string[]> {
 	}
 
 	return found;
+}
+
+function parseTableSection(text: string, heading: string) {
+	const lines = text.split(/\r?\n/);
+	const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
+	if (start === -1) {
+		throw new Error(`Missing section: ${heading}`);
+	}
+
+	const rows: string[][] = [];
+	for (const line of lines.slice(start + 1)) {
+		if (/^##\s+/.test(line)) break;
+		if (!line.trim().startsWith("|")) continue;
+		if (/^\|\s*-+/.test(line)) continue;
+		if (/^\|\s*(Verb|Command)\s*\|/.test(line)) continue;
+		rows.push(line.split("|").slice(1, -1));
+	}
+
+	return rows;
+}
+
+function cleanCell(value: string) {
+	return value.replace(/`/g, "").trim();
+}
+
+function extractIssues(value: string) {
+	return [...value.matchAll(/HOBO-\d+/g), ...value.matchAll(/ADR-\d+/g)].map(
+		(match) => match[0],
+	);
 }
 
 async function main() {

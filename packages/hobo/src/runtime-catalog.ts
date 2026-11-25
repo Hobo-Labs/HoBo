@@ -1,3 +1,8 @@
+/**
+ * Installable Camp component-host runtimes for `hobo add runtime-*`.
+ * These are Capability-Manifest-bearing catalog entries so the broker junction
+ * and planner can see which hosts are available on this yard.
+ */
 import type { RegistrableProvider } from "@hobo/cloud";
 
 import type { ComponentHostKind } from "./bare-metal-yard.js";
@@ -10,6 +15,7 @@ export const RUNTIME_PROVIDER_IDS = {
 	"cloud-native": "@hobo/runtime-cloud-native",
 } as const;
 
+/** Legacy alias used by embedded broker wasm-sandbox equip. */
 export const WASM_SANDBOX_PROVIDER_ID = "@hobo/provider-wasm-sandbox" as const;
 export const OCI_PROVIDER_ID = "@hobo/provider-oci" as const;
 
@@ -90,6 +96,7 @@ export function createRuntimeInstallableFactory(
 	return createCloudNativeRuntimeCatalogEntry;
 }
 
+/** Map provider catalog ids → component host kind. */
 export function providerIdToHost(
 	providerId: string,
 ): ComponentHostKind | undefined {

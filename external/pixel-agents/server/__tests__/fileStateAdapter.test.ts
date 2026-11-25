@@ -5,12 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PersistedAgent } from '../../core/src/schemas.js';
 
+// Mock os.homedir() so the adapter resolves to an isolated temp dir on every
+// platform. Overriding process.env.HOME is not portable: os.homedir() reads
+// USERPROFILE on Windows, so a HOME-only override would still hit the real
+// home directory.
 let tempHome: string;
 vi.mock('os', async () => {
   const actual = await vi.importActual<typeof import('os')>('os');
   return { ...actual, homedir: () => tempHome };
 });
 
+// Must import AFTER mock setup.
 const { FileStateAdapter } = await import('../src/fileStateAdapter.js');
 
 describe('FileStateAdapter', () => {
@@ -22,6 +27,7 @@ describe('FileStateAdapter', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
+  // ── Settings (shared config.json, per-namespace section) ────
 
   it('returns defaults when config file does not exist', () => {
     const adapter = new FileStateAdapter({ namespace: 'standalone' });
@@ -93,6 +99,7 @@ describe('FileStateAdapter', () => {
     expect(parsed.standalone['pixel-agents.soundEnabled']).toBeUndefined();
   });
 
+  // ── Per-namespace state file (agents + seats) ───────────────
 
   it('returns empty arrays/objects when state file does not exist', () => {
     const adapter = new FileStateAdapter({ namespace: 'standalone' });

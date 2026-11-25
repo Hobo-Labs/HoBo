@@ -1,3 +1,12 @@
+/**
+ * AUTO-GENERATED FROM core/asyncapi.yaml. DO NOT EDIT MANUALLY.
+ *
+ * Run `npm run asyncapi:generate` to regenerate.
+ *
+ * Source of truth: the yaml at core/asyncapi.yaml.
+ * Editors and clients in any language can consume the spec directly.
+ */
+
 export type ServerMessage =
   | ProviderCapabilities
   | AgentCreated
@@ -255,7 +264,6 @@ export interface SettingsLoaded {
   watchAllSessions: boolean;
   alwaysShowLabels: boolean;
   hooksEnabled: boolean;
-  hooksAvailable?: boolean;
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
   showAreas: boolean;

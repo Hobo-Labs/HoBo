@@ -1,11 +1,22 @@
+/**
+ * Identifier handling for the engine binding.
+ *
+ * `@hobo/data-core` already restricts dataset and field names to portable
+ * lowercase identifiers. They are quoted here anyway: quoting costs nothing,
+ * and it means a name that happens to be a reserved word (`user`, `order`)
+ * is still a column rather than a syntax error.
+ */
 import { sha256Hex } from "@hobo/data-core";
 import { PostgresDataError } from "../errors.js";
 
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9_]{0,62}$/u;
 
+// public-contract: tenant column present on every dataset table; part of each primary key.
 export const TENANT_COLUMN = "tenant_id";
+// public-contract: overflow column holding the undeclared fields of an open dataset schema.
 export const OPEN_FIELDS_COLUMN = "hobo_extra";
 
+/** Metadata tables the binding keeps beside the dataset tables. */
 export const METADATA_TABLES = Object.freeze({
 	datasets: "hobo_data_datasets",
 	fences: "hobo_data_fences",
@@ -17,10 +28,12 @@ export const METADATA_TABLES = Object.freeze({
 	schemaSnapshots: "hobo_data_schema_snapshots",
 } as const);
 
+/** Names a dataset or a schema-port table may not take. */
 export const RESERVED_TABLE_NAMES: readonly string[] = Object.freeze(
 	Object.values(METADATA_TABLES),
 );
 
+/** The one constructor for a namespace (a server-side schema) name. */
 export function parseNamespace(value: string): string {
 	if (!NAMESPACE_PATTERN.test(value) || value.startsWith("pg_")) {
 		throw new PostgresDataError(
@@ -32,6 +45,7 @@ export function parseNamespace(value: string): string {
 	return value;
 }
 
+/** The one constructor for a table name the schema port is configured with. */
 export function parseTableName(value: string): string {
 	if (!NAMESPACE_PATTERN.test(value) || RESERVED_TABLE_NAMES.includes(value)) {
 		throw new PostgresDataError(
@@ -51,11 +65,23 @@ export function qualifiedName(namespace: string, name: string): string {
 	return `${quoteIdentifier(namespace)}.${quoteIdentifier(name)}`;
 }
 
+// domain-view: derived names; wire form is PostgresCaptureObjects in data-models/postgres_engine.proto.
 export interface PostgresCaptureObjects {
 	readonly slot: string;
 	readonly publication: string;
 }
 
+/**
+ * Slot and publication names for a subscription.
+ *
+ * A replication slot is cluster-wide and a publication is database-wide, but
+ * a subscription name is only unique within one binding's namespace, and may
+ * contain characters a slot name cannot (a slot allows lowercase letters,
+ * digits, and underscore, at most 63 bytes). So both names are derived by
+ * hashing: one half identifies the database and namespace, the other the
+ * subscription. Two bindings never collide, and every slot one namespace
+ * owns shares a prefix an operator can list.
+ */
 export function captureObjectNames(
 	database: string,
 	namespace: string,
@@ -69,10 +95,16 @@ export function captureObjectNames(
 	});
 }
 
+/** A fresh server-side schema name for one schema-port snapshot. */
 export function snapshotNamespace(namespace: string, nonce: string): string {
 	return `hobo_snap_${sha256Hex(namespace).slice(0, 12)}_${nonce}`;
 }
 
+/**
+ * The prefix every slot and publication one namespace owns shares. An
+ * operator lists a namespace's objects by it, and a test that checks for
+ * leaked objects counts only its own namespaces' with it.
+ */
 export function captureObjectPrefixes(
 	database: string,
 	namespace: string,
@@ -84,10 +116,19 @@ export function captureObjectPrefixes(
 	});
 }
 
+/** What every native subscription one namespace created is named after. */
 export function nativeSubscriptionPrefix(namespace: string): string {
 	return `hobo_n_${sha256Hex(namespace).slice(0, 12)}_`;
 }
 
+/**
+ * The name of the server-side subscription behind a native transfer.
+ *
+ * A subscription is database-wide on the target, and the target derives the
+ * name from what it knows on its own — its namespace and the transfer — so it
+ * can find and drop the subscription again without being told anything by the
+ * source.
+ */
 export function nativeSubscriptionName(
 	namespace: string,
 	transfer: string,
@@ -95,8 +136,10 @@ export function nativeSubscriptionName(
 	return `${nativeSubscriptionPrefix(namespace)}${sha256Hex(transfer).slice(0, 24)}`;
 }
 
+// public-contract: prefix of the hobo_data_subscriptions key a native transfer's source half is recorded under.
 export const NATIVE_TRANSFER_KEY_PREFIX = "native:";
 
+/** The key a native transfer's publication and slot are recorded under. */
 export function nativeTransferKey(transfer: string): string {
 	return `${NATIVE_TRANSFER_KEY_PREFIX}${transfer}`;
 }

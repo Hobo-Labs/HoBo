@@ -14,8 +14,8 @@ and proof-mode labels.
 - In scope: deterministic representative check fixtures, artifact-to-owner
   routing, quickstart fixture references, scenario paths, proof-mode labels, and
   scope-out guards.
-- Source checklist: `urn:hobo:proof:vibe-accessibility-usability-checklist`.
-- Quickstart dependency: `urn:hobo:proof:resource-lifecycle-quickstart-examples`.
+- Source checklist: `docs/design/proofs/vibe-accessibility-usability-checklist/README.md`.
+- Quickstart dependency: `docs/design/proofs/resource-lifecycle-quickstart-examples/README.md`.
 - Consumed but not owned: product UI remediation, full audit execution,
   automated accessibility suite buildout, launch waiver approval, customer data,
   and public launch claims.
@@ -37,7 +37,9 @@ pnpm.cmd run test:file src/draft/exp-proofs/ux/vibe-representative-a11y-usabilit
 | Source blocker artifacts are consumed without importing unmerged runtime code. | `sourceIssues` pins HOBO-554 and HOBO-577; `quickstartFixtureRefs` pins accepted quickstart fixture ids and consuming artifacts. |
 | Scope out remains hard. | `classifyRepresentativeCheckRequest` rejects full audits, product UI remediation, automated suite buildout, waiver approval, customer data, and proofless launch claims. |
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` - protobuf data shapes and CUE constraints for the
   representative check record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
+- `ADR.md` - parse-don't-validate and event/projection architecture note.

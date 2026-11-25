@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package hobo.cache.v1;
+
+// Protobuf shapes for the ADR-0118 cache contract: `hobo:cache` is ephemeral, TTL-first,
+// evictable, and never a source of truth — distinct from the durable `kv` store.
+
+// The outcome of a cache read. A cold, expired, or evicted key is a MISS, never an error.
+enum CacheReadOutcome {
+  CACHE_READ_OUTCOME_UNSPECIFIED = 0;
+  CACHE_READ_OUTCOME_HIT = 1;
+  CACHE_READ_OUTCOME_MISS = 2;
+}
+
+// A single cache entry. Every entry carries a TTL; the provider MAY evict earlier.
+message CacheEntry {
+  string key = 1;
+  bytes value = 2;
+  uint32 ttl_seconds = 3;      // required; a cache entry always expires
+  repeated string tags = 4;    // for tag-scoped invalidation
+}
+
+// The app's write intent (a command), not an authoritative fact.
+message CacheSetCommand {
+  CacheEntry entry = 1;
+}
+
+// Tag-scoped invalidation command; rides existing data.* events (no new event family).
+message CacheInvalidateCommand {
+  string tag = 1;
+}

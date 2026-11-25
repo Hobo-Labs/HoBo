@@ -14,7 +14,7 @@ bindle(b => {
 })
 ```
 
-## Implementation
+## Architecture
 
 ```mermaid
 flowchart TB

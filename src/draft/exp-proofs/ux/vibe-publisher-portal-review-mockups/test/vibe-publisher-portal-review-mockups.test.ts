@@ -28,7 +28,7 @@ test("HOBO-548 proof pins issue, phase, package path, proof path, personas, and 
   assert.equal(parsed.issue, "HOBO-548");
   assert.equal(parsed.phase, "M1");
   assert.equal(parsed.packagePath, "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups");
-  assert.equal(parsed.proofPath, "urn:hobo:proof:vibe-publisher-portal-review-mockups");
+  assert.equal(parsed.proofPath, "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md");
   assert.deepEqual(parsed.personas, REQUIRED_PUBLISHER_PORTAL_PERSONAS);
   assert.deepEqual(
     parsed.mockups.map((mockup) => mockup.state),
@@ -83,13 +83,13 @@ test("scenario paths, proof modes, accessibility notes, and dependency refs cove
   }
 
   for (const requiredRef of [
-    "urn:hobo:requirement:publisher-portal",
-    "urn:hobo:requirement:capability-review-approval",
-    "urn:hobo:requirement:marketplace-publisher-trust-evidence",
-    "urn:hobo:requirement:marketplace-payout-hooks",
-    "urn:hobo:requirement:org-catalogs",
-    "urn:hobo:requirement:launch-support-escalation",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/publisher-portal.md",
+    "docs/design/capability-review-approval.md",
+    "docs/design/marketplace-publisher-trust-evidence.md",
+    "docs/design/marketplace-payout-hooks.md",
+    "docs/design/org-catalogs.md",
+    "docs/design/launch-support-escalation.md",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ]) {
     assert.ok(VIBE_PUBLISHER_PORTAL_REVIEW_MOCKUPS.designRefs.includes(requiredRef));
   }

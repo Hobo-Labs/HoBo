@@ -1,8 +1,4 @@
 export { type EmitResult, emit, subscribe } from "./bus.js";
-export {
-	type CacheInvalidationConnection,
-	subscribeCacheInvalidation,
-} from "./cache-invalidation.js";
 export { SagaCompensationError } from "./errors.js";
 export {
 	createDataChangedEvent,
@@ -18,17 +14,6 @@ export {
 	type ReactiveFact,
 } from "./events.js";
 export {
-	createOptimisticSubscription,
-	type OptimisticAudit,
-	type OptimisticFrame,
-	type OptimisticPatch,
-	OptimisticSeqRegressionError,
-	type OptimisticSequence,
-	type OptimisticSubscription,
-	type OptimisticView,
-	parseOptimisticSequence,
-} from "./optimistic-subscription.js";
-export {
 	SUBSCRIPTION_GATEWAY_INTERFACE,
 	SUBSCRIPTION_GATEWAY_PORT,
 } from "./port.js";
@@ -37,12 +22,9 @@ export {
 	pricingCorpusBaseline,
 } from "./pricing-event-contracts.js";
 export {
-	CommandObservationError,
 	createReactor,
 	defineMaterialization,
 	type Materialization,
-	type MaterializedFrame,
-	type MaterializedSnapshot,
 	type Reactor,
 	type SubscriptionHandle,
 } from "./reactor.js";
@@ -89,4 +71,5 @@ export {
 	migrationCorpusBaseline,
 } from "./upcaster-corpus.js";
 
+// public-contract: the package identity consumers assert in boundary contracts.
 export const HOBO_EVENTS_PACKAGE = "@hobo/events";

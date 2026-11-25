@@ -1,3 +1,8 @@
+/**
+ * Explicit payload codecs for durable boundary records.
+ * No ambiguous "JSON-looking BLOB" without codec metadata.
+ */
+
 import {
 	isJsonObject,
 	type JsonObject,
@@ -30,6 +35,15 @@ export function encodeJson<T>(value: T): Uint8Array {
 export function decodeJson(bytes: Uint8Array): JsonValue {
 	const text = new TextDecoder().decode(bytes);
 	if (text.length === 0) return null;
+	return parseJsonValue(text);
+}
+
+/** Legacy TEXT columns stored as UTF-8 JSON strings. */
+export function encodeLegacyJsonText<T>(value: T): string {
+	return JSON.stringify(value ?? null);
+}
+
+export function decodeLegacyJsonText(text: string): JsonValue {
 	return parseJsonValue(text);
 }
 

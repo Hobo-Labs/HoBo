@@ -8,7 +8,6 @@ import {
 	AZURE_PROVIDER_ID,
 	COST_FACTS,
 	DEFAULT_REGIONS,
-	PROVIDER_TERMS,
 	publishCapabilityManifest,
 } from "./manifest.js";
 import { realizeResourcePlan } from "./realize.js";
@@ -111,7 +110,6 @@ export function createAzureProvider(
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: AZURE_PROVIDER_ID,
-				terms: PROVIDER_TERMS,
 				published,
 				capabilities: parseJsonObject(
 					published["/.well-known/capability-manifest/capabilities.json"] ??

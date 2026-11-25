@@ -6,8 +6,7 @@ opts in by giving its `data-models/` a `buf.yaml` module marker; generated
 TypeScript lands in each package's checked-in `src/_generated/`, and
 `hobo-codegen --check` is the drift gate CI runs. That directory belongs only
 to protobuf codegen; other generators use a suffixed sibling such as
-`src/_generated-assets/` or `src/_generated-art/`. Generated TypeScript retains
-required tool directives and deprecation markers without explanatory comments.
+`src/_generated-assets/` or `src/_generated-art/`. See [`ADR.md`](./ADR.md).
 
 A package may declare `data-models/buf.gen.yaml` when its generated module format
 requires package-specific options, such as `import_extension=js` for cross-file
@@ -42,10 +41,6 @@ pnpm --filter @hobo/schema-tools run typecheck
 pnpm --filter @hobo/schema-tools run lint
 pnpm --filter @hobo/schema-tools run test
 ```
-
-The package exposes the built CLI as `hobo-codegen`; build the package before
-running it from a workspace checkout. Package contents include the executable
-and compiled modules.
 
 Offline failure tests mock `fetch`; they never depend on a real CUE download
 failing on the host. Toolchain selection requires a successful version probe

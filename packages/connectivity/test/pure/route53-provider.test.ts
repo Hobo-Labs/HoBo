@@ -1,3 +1,23 @@
+/**
+ * Tests for the Route53 DNS provider.
+ *
+ * The module sat at 43% statements and 23.7% branches. Most of what was
+ * uncovered is the part that matters: the rules deciding when a failed `list`
+ * may fall back to the local mirror. Those rules exist because each wrong
+ * answer is a distinct incident —
+ *
+ *   - falling back on an HTTP 4xx hides an auth or permission failure behind a
+ *     cache that looks healthy;
+ *   - falling back on a truncated body serves stale records as current;
+ *   - reporting an unreadable body as an empty zone invites a reconciler to
+ *     recreate every record it thinks is missing.
+ *
+ * A comment explaining that is not a test. These are.
+ *
+ * `fetchImpl` and `signRequest` are both injected, so nothing here signs with
+ * real credentials or touches the network.
+ */
+
 import { parseTenantId } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
@@ -18,15 +38,18 @@ type Call = {
 	body?: string;
 };
 
+/** A fetch stand-in returning a scripted sequence, recording every call. */
 function scripted(
 	responses: ({ status: number; text: string } | { throws: string })[],
 ) {
 	const calls: Call[] = [];
 	let index = 0;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const impl = (async (url: string | URL, init?: RequestInit) => {
 		calls.push({
 			url: String(url),
 			method: init?.method ?? "GET",
+			// SAFETY: assertion required at this I/O or test boundary.
 			headers: (init?.headers ?? {}) as Record<string, string>,
 			...(isJsonString(init?.body) ? { body: init.body } : undefined),
 		});
@@ -34,6 +57,7 @@ function scripted(
 		index += 1;
 		if (next && "throws" in next) throw new Error(next.throws);
 		const status = next?.status ?? 200;
+		// SAFETY: assertion required at this I/O or test boundary.
 		return {
 			ok: status >= 200 && status < 300,
 			status,
@@ -252,6 +276,7 @@ describe("list and the offline mirror", () => {
 	});
 
 	it("never serves the mirror for a truncated body, even with offlineCache on", async () => {
+		// Seed the mirror with a successful write first.
 		const { impl } = scripted([
 			{ status: 200, text: "" },
 			{ status: 200, text: listXml([], { complete: false }) },
@@ -262,6 +287,8 @@ describe("list and the offline mirror", () => {
 			type: "A",
 			content: "203.0.113.1",
 		});
+		// The mirror has a record, but an unreadable answer must not serve it:
+		// the request reached Route53 and came back, we just could not read it.
 		await expect(p.list(TENANT, ZONE)).rejects.toThrow(
 			/incomplete ListResourceRecordSetsResponse/,
 		);
@@ -315,6 +342,7 @@ describe("list and the offline mirror", () => {
 			type: "A",
 			content: "203.0.113.1",
 		});
+		// A different tenant must not see acme's mirrored records.
 		expect(await p.list(parseTenantId("other"), ZONE)).toEqual([]);
 	});
 });
@@ -347,6 +375,7 @@ describe("remove", () => {
 		await provider(impl).remove(TENANT, ZONE, `web.${ZONE}`, "A");
 		expect(calls[0]?.method).toBe("GET");
 		expect(calls[1]?.body).toContain("<Action>DELETE</Action>");
+		// Route53 DELETE needs the real content; it must come from the listing.
 		expect(calls[1]?.body).toContain("203.0.113.1");
 	});
 
@@ -474,6 +503,8 @@ describe("createDnsProviderFromConfig", () => {
 			credentials: { accessKeyId: "a", secretAccessKey: "s" },
 			fetchImpl: impl,
 		});
+		// With signing on and no signer override, the built-in SigV4 signer runs;
+		// the provider is constructed either way, and the flag is what differs.
 		expect(unsigned).toBeDefined();
 	});
 

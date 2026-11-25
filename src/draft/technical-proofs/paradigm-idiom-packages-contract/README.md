@@ -6,10 +6,10 @@ Matching/Dispatcher logic, `.raw`, `@hobo/vector`, or `@hobo/graph`.
 
 ## Requirements Source
 
-- `urn:hobo:requirement:data-plane#plan-32`: opt-in paradigm packages lower to `hobo:projection`.
-- `urn:hobo:decision:adr-0081`: paradigm packages carry portability honesty and
+- `docs/design/data-plane.md#plan-32`: opt-in paradigm packages lower to `hobo:projection`.
+- `docs/design/adr/03-data-plane.md#adr-0081`: paradigm packages carry portability honesty and
   canonical WIT schema sharing without silent cross-paradigm swaps.
-- `urn:hobo:decision:adr-0072`: SDK idiom layers stay thin and lower to the
+- `docs/design/adr/01-architecture-core.md#adr-0072`: SDK idiom layers stay thin and lower to the
   same WIT bindings and manifest IR.
 
 ## What This Proves
@@ -34,9 +34,11 @@ npm.cmd --prefix src\draft\technical-proofs\paradigm-idiom-packages-contract tes
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Paradigm Idiom Packages Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

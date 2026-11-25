@@ -7,14 +7,14 @@ equivalent TypeScript Bindle, emits L2 SDK stubs through the checked-in
 
 ## Requirements Source
 
-- `urn:hobo:requirement:authoring-resources-wiring#plan-21`: Hobo Code DSL,
+- `docs/design/authoring-resources-wiring.md#plan-21`: Hobo Code DSL,
   two-level authoring, stable canonical AST, no host imports or collection-time
   side effects.
-- `urn:hobo:decision:adr-0049`: Hobo Code is the
+- `docs/design/adr/01-architecture-core.md#adr-0049`: Hobo Code is the
   configuration + code DSL and adds no runtime semantics beyond the shared IR.
-- `urn:hobo:decision:adr-0037`: codegen emits checked-in
+- `docs/design/adr/01-architecture-core.md#adr-0037`: codegen emits checked-in
   `_generated/` artifacts and `codegen --check` fails on drift.
-- `urn:hobo:requirement:sdk-api#plan-02`: typed bindings and generated code are the
+- `docs/design/sdk-api.md#plan-02`: typed bindings and generated code are the
   authoring contract for resource bindings, steps, and workflows.
 
 ## What This Proves
@@ -42,9 +42,11 @@ npm.cmd --prefix src\draft\technical-proofs\hobo-code-dsl-contract test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Code Dsl Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

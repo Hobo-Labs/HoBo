@@ -1,6 +1,6 @@
 # Standards — ecosystem reference
 
-> Faithful captures of **open specifications / schemas / standards** HoBo should align with or adopt, each with an analysis of its relevance to the [design suite](urn:hobo:requirement:index). Sibling to [`../technologies/`](../technologies/index.md) (tools) and [`../patterns/`](../patterns/index.md) (techniques). HoBo's bet is to **speak existing standards** at its boundaries (events, telemetry, SLOs, GitOps, policy decisions, security schema) rather than invent proprietary ones — these are the standards in scope.
+> Faithful captures of **open specifications / schemas / standards** HoBo should align with or adopt, each with an analysis of its relevance to the [design suite](../design/index.md). Sibling to [`../technologies/`](../technologies/index.md) (tools) and [`../patterns/`](../patterns/index.md) (techniques). HoBo's bet is to **speak existing standards** at its boundaries (events, telemetry, SLOs, GitOps, policy decisions, security schema) rather than invent proprietary ones — these are the standards in scope.
 
 ## Per-entry shape
 Each file has: **What it is** · **Key features** (the documentation) · **Relevance to HoBo** (the analysis — adopt-at-the-boundary / emit-this / align-our-model, with Plan/ADR links) · **Sources**.
@@ -20,7 +20,7 @@ Each file has: **What it is** · **Key features** (the documentation) · **Relev
 | **OAM** (+ KubeVela) | Application/Component/Trait/Scope app-delivery spec; vocabulary alignment + wadm render target, never the model | [`oam.md`](./oam.md) |
 | **OSCAL** (NIST) | Machine-readable control catalogs/implementations/assessments; vocabulary for control→evidence packs, emit-at-boundary | [`oscal.md`](./oscal.md) |
 
-> See also: the **feature-flags pattern** lives in [`../patterns/feature-flags.md`](../patterns/feature-flags.md) (OpenFeature is its standard); telemetry standards underpin both observability ([Plan 5](urn:hobo:requirement:reliability-observability-cost#plan-05)) and the training reward signal ([Plan 23](urn:hobo:requirement:generated-stack#plan-23)); cost standards ground showback ([ADR-0039](urn:hobo:decision:adr-0039)) and the [FinOps budget-routing control plane](urn:hobo:requirement:finops-budget-routing-control-plane#standards-baseline).
+> See also: the **feature-flags pattern** lives in [`../patterns/feature-flags.md`](../patterns/feature-flags.md) (OpenFeature is its standard); telemetry standards underpin both observability ([Plan 5](../design/reliability-observability-cost.md#plan-05)) and the training reward signal ([Plan 23](../design/generated-stack.md#plan-23)); cost standards ground showback ([ADR-0039](../design/adr/02-identity-security.md#adr-0039)) and the [FinOps budget-routing control plane](../design/finops-budget-routing-control-plane.md#standards-baseline).
 
 ## Sources & fair use
 Third-party reference captures; factual spec surface quoted under fair use for commentary/interoperability analysis, limited to what's needed to map each to HoBo. Trademarks/copyright remain their owners'; not part of the HoBo product.

@@ -2,15 +2,21 @@ package mcp_secret_capture
 
 import "strings"
 
+// Constraints for the secret-capture MCP App's records (secret_capture.proto).
+// Field names are the protobuf JSON names. Every definition is closed: a
+// record that tries to carry the secret itself (a `value`, `secret` or
+// `plaintext` field) does not unify with any of them.
 
 #Name:    string & =~"^[A-Z][A-Z0-9_]{0,63}$"
 #Target:  "runtime" | "deploy" | "writer"
 #Channel: "mcp-app" | "url-elicitation" | "loopback-page"
-#State:   "awaiting-owner" | "stored" | "authorized" | "expired" | "uncertain" | "closed"
+#State:   "awaiting-owner" | "stored" | "authorized" | "expired" | "closed"
 #Ticket:  string & =~"^cap_[A-Za-z0-9_-]{22}$"
 #Time:    string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,3})?Z$"
 #B64u:    string & =~"^[A-Za-z0-9_-]+$"
-#Ref: string & =~"^(infisical|secref|hobo-writer-session|handoff)://[A-Za-z0-9._~/:@-]{1,512}$"
+// A store reference: the entry's infisical:// SecretRef, a fixture store's
+// secref://, or a writer session's hobo-writer-session://.
+#Ref: string & =~"^(infisical|secref|hobo-writer-session)://[A-Za-z0-9._~/:@-]{1,512}$"
 
 #SecretCaptureSpec: close({
 	name:     #Name
@@ -45,7 +51,10 @@ import "strings"
 	purpose?:  string & =~"^[^\n]{1,240}$"
 	charset?:  "printable-line" | "printable-multiline"
 	maxBytes?: int & >=1 & <=32768
+	// A stored or authorized capture names where it went.
 	if state == "stored" || state == "authorized" {ref: #Ref}
+	// Only the fallback channels have a page; only the app channel seals in
+	// the host.
 	if channel == "mcp-app" {url?: _|_}
 })
 
@@ -75,8 +84,7 @@ import "strings"
 
 #SecretCaptureEvent: close({
 	schemaVersion: "hobo.secret-capture/v1"
-	type:          "secret.CaptureOpened" | "secret.CaptureWriteStarted" | "secret.CaptureWriteUncertain" | "secret.CaptureWriterSessionEnded" | "secret.CaptureWriterSessionUncertain" | "secret.CaptureStored" | "secret.CaptureAuthorized" | "secret.CaptureRejected" | "secret.CaptureRefused" | "secret.CaptureExpired" | "secret.CaptureClosed"
-	id?:           string & =~"^sec_[a-f0-9]{32}$"
+	type:          "secret.CaptureOpened" | "secret.CaptureStored" | "secret.CaptureAuthorized" | "secret.CaptureRejected" | "secret.CaptureRefused" | "secret.CaptureExpired" | "secret.CaptureClosed"
 	seq:           int & >=1
 	time:          #Time
 	ticketId?:     #Ticket
@@ -88,4 +96,6 @@ import "strings"
 	if type == "secret.CaptureStored" || type == "secret.CaptureAuthorized" {ref: #Ref}
 })
 
+// The scoped fixture corpus (fixtures/secret_capture/) is vetted against
+// this union.
 #SecretCapture: #SecretCaptureSpec | #SecretCaptureTicket | #SecretCaptureSealed | #SecretCaptureReceipt | #SecretCaptureRefusal | #SecretCaptureEvent

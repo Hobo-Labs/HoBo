@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "adr-0064-ui-generation-citation-contract",
+  "experienceType": "dx",
+  "title": "ADR-0064 UI generation citation contract (HOBO-704)",
+  "linear": "HOBO-704",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

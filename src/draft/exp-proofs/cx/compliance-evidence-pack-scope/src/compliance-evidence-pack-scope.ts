@@ -253,7 +253,7 @@ export const COMPLIANCE_EVIDENCE_PACK_SCOPE: ComplianceEvidencePackScope = Objec
     assuranceSection({
       id: "security-posture",
       ownerProject: "Security Verification",
-      sourceRecord: "urn:hobo:requirement:security-verification",
+      sourceRecord: "docs/design/security-verification.md",
       betaReadiness: "manual",
       gaReadiness: "blocked-until-evidence",
       blockerRoute: "Security Verification triage and V1 Release Program & Cutline exception record.",
@@ -262,7 +262,7 @@ export const COMPLIANCE_EVIDENCE_PACK_SCOPE: ComplianceEvidencePackScope = Objec
     assuranceSection({
       id: "tenant-data-lifecycle",
       ownerProject: "Tenant Data Lifecycle",
-      sourceRecord: "urn:hobo:requirement:tenant-data-lifecycle",
+      sourceRecord: "docs/design/tenant-data-lifecycle.md",
       betaReadiness: "accepted",
       gaReadiness: "accepted",
       blockerRoute: "Compliance Evidence Pack routes missing data-class or deletion/export evidence back to HOBO-492 follow-ups.",
@@ -271,7 +271,7 @@ export const COMPLIANCE_EVIDENCE_PACK_SCOPE: ComplianceEvidencePackScope = Objec
     assuranceSection({
       id: "sbom-vulnerability-notices",
       ownerProject: "Compliance Evidence Pack",
-      sourceRecord: "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
+      sourceRecord: "docs/design/sbom-vulnerability-notice-evidence.md",
       betaReadiness: "limited",
       gaReadiness: "blocked-until-evidence",
       blockerRoute: "Security Verification and release cutline decide vulnerability, notice, provenance, and retention gaps.",
@@ -280,7 +280,7 @@ export const COMPLIANCE_EVIDENCE_PACK_SCOPE: ComplianceEvidencePackScope = Objec
     assuranceSection({
       id: "legal-privacy-terms",
       ownerProject: "Legal, Privacy & Terms Readiness",
-      sourceRecord: "urn:hobo:requirement:tenant-data-lifecycle",
+      sourceRecord: "docs/design/tenant-data-lifecycle.md",
       betaReadiness: "blocked",
       gaReadiness: "blocked-until-evidence",
       blockerRoute: "Legal, Privacy & Terms Readiness owns DPA, subprocessors, privacy notice, terms, and retained exceptions.",
@@ -289,7 +289,7 @@ export const COMPLIANCE_EVIDENCE_PACK_SCOPE: ComplianceEvidencePackScope = Objec
     assuranceSection({
       id: "backup-restore-dr",
       ownerProject: "Backup & Restore",
-      sourceRecord: "urn:hobo:requirement:backup-restore",
+      sourceRecord: "docs/design/backup-restore.md",
       betaReadiness: "manual",
       gaReadiness: "blocked-until-evidence",
       blockerRoute: "Backup & Restore owns RPO/RTO drill gaps and restore-evidence handoff.",
@@ -298,7 +298,7 @@ export const COMPLIANCE_EVIDENCE_PACK_SCOPE: ComplianceEvidencePackScope = Objec
     assuranceSection({
       id: "support-sla-escalation",
       ownerProject: "Support Workflow",
-      sourceRecord: "urn:hobo:requirement:support-sla-channels",
+      sourceRecord: "docs/design/support-sla-channels.md",
       betaReadiness: "manual",
       gaReadiness: "blocked-until-evidence",
       blockerRoute: "Support Workflow and Launch Support Escalation route support evidence gaps.",
@@ -307,7 +307,7 @@ export const COMPLIANCE_EVIDENCE_PACK_SCOPE: ComplianceEvidencePackScope = Objec
     assuranceSection({
       id: "release-cutline-risk",
       ownerProject: "V1 Release Program & Cutline",
-      sourceRecord: "urn:hobo:requirement:launch-blocker-taxonomy",
+      sourceRecord: "docs/design/launch-blocker-taxonomy.md",
       betaReadiness: "manual",
       gaReadiness: "blocked-until-evidence",
       blockerRoute: "Release Program records go/no-go, accepted risk, exception expiry, and owner.",
@@ -315,18 +315,18 @@ export const COMPLIANCE_EVIDENCE_PACK_SCOPE: ComplianceEvidencePackScope = Objec
     }),
   ]),
   designRefs: Object.freeze([
-    "urn:hobo:requirement:security-verification",
-    "urn:hobo:requirement:tenant-data-lifecycle",
-    "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
-    "urn:hobo:requirement:support-sla-channels",
-    "urn:hobo:requirement:backup-restore",
-    "urn:hobo:requirement:launch-blocker-taxonomy",
+    "docs/design/security-verification.md",
+    "docs/design/tenant-data-lifecycle.md",
+    "docs/design/sbom-vulnerability-notice-evidence.md",
+    "docs/design/support-sla-channels.md",
+    "docs/design/backup-restore.md",
+    "docs/design/launch-blocker-taxonomy.md",
   ]),
   adrRefs: Object.freeze([
-    "urn:hobo:decision:adr-0023",
-    "urn:hobo:decision:adr-0060",
-    "urn:hobo:decision:adr-0074",
-    "urn:hobo:decision:adr-0064",
+    "docs/design/adr/02-identity-security.md#adr-0023",
+    "docs/design/adr/02-identity-security.md#adr-0060",
+    "docs/design/adr/02-identity-security.md#adr-0074",
+    "docs/design/adr/07-portability-extensibility.md#adr-0064",
   ]),
   owningInitiativeDependencies: Object.freeze([
     dependency({

@@ -124,7 +124,7 @@ export type MarketplaceDiscoveryPrototype = {
   readonly issue: "HOBO-562";
   readonly phase: "M2";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype";
-  readonly proofNote: "urn:hobo:proof:vibe-marketplace-discovery-prototype";
+  readonly proofNote: "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md";
   readonly designRefs: readonly string[];
   readonly sourceIssues: readonly MarketplaceDiscoverySourceIssue[];
   readonly catalog: readonly MarketplaceDiscoveryCatalogFixture[];
@@ -162,32 +162,32 @@ export const MARKETPLACE_DISCOVERY_PROTOTYPE: MarketplaceDiscoveryPrototype = {
   issue: "HOBO-562",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype",
-  proofNote: "urn:hobo:proof:vibe-marketplace-discovery-prototype",
+  proofNote: "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md",
   designRefs: [
-    "urn:hobo:requirement:marketplace-ux",
-    "urn:hobo:requirement:org-catalogs",
-    "urn:hobo:requirement:capability-review-approval",
-    "urn:hobo:requirement:marketplace-publisher-trust-evidence",
-    "urn:hobo:requirement:support-workflow",
-    "urn:hobo:proof:vibe-marketplace-installability-mockups",
-    "urn:hobo:proof:vibe-marketplace-trust-copy-states",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/marketplace-ux.md",
+    "docs/design/org-catalogs.md",
+    "docs/design/capability-review-approval.md",
+    "docs/design/marketplace-publisher-trust-evidence.md",
+    "docs/design/support-workflow.md",
+    "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
+    "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   sourceIssues: [
     {
       issue: "HOBO-546",
       packagePath: "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups",
-      proofPath: "urn:hobo:proof:vibe-marketplace-installability-mockups",
+      proofPath: "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
     },
     {
       issue: "HOBO-547",
       packagePath: "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states",
-      proofPath: "urn:hobo:proof:vibe-marketplace-trust-copy-states",
+      proofPath: "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
     },
     {
       issue: "HOBO-577",
       packagePath: "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples",
-      proofPath: "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+      proofPath: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
     },
   ],
   catalog: [
@@ -455,7 +455,7 @@ export function validateMarketplaceDiscoveryPrototype(
   if (prototype.targetPackage !== "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype") {
     errors.push({ code: "wrong-package", message: "target package drifted" });
   }
-  if (prototype.proofNote !== "urn:hobo:proof:vibe-marketplace-discovery-prototype") {
+  if (prototype.proofNote !== "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md") {
     errors.push({ code: "wrong-proof-note", message: "target proof note drifted" });
   }
 

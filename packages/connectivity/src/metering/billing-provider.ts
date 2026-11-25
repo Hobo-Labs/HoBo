@@ -1,3 +1,8 @@
+/**
+ * Pluggable billing provider + durable invoice store.
+ * Events → BillingAggregator → BillingProvider.charge / export.
+ */
+
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { TenantId } from "@hobo/core";
@@ -21,7 +26,9 @@ export interface BillingChargeResult {
 
 export interface BillingProvider {
 	readonly providerId: string;
+	/** Submit a closed invoice for collection / ledger. */
 	charge(invoice: Invoice): Promise<BillingChargeResult>;
+	/** Optional customer upsert. */
 	ensureCustomer?(input: {
 		readonly tenantId: TenantId;
 		readonly email?: string;
@@ -29,6 +36,7 @@ export interface BillingProvider {
 	}): Promise<{ readonly customerId: string }>;
 }
 
+/** Durable JSONL invoice ledger under a data directory. */
 export interface InvoiceLedger {
 	append(invoice: Invoice): void;
 	list(tenantId?: TenantId): readonly Invoice[];
@@ -44,8 +52,11 @@ export function createFileInvoiceLedger(dataDir: string): InvoiceLedger {
 		const lines = readFileSync(path, "utf8").split("\n").filter(Boolean);
 		for (const line of lines) {
 			try {
+				// SAFETY: assertion required at this I/O or test boundary.
 				cache.push(JSON.parse(line) as Invoice);
-			} catch {}
+			} catch {
+				// skip corrupt lines
+			}
 		}
 	}
 	return {
@@ -69,6 +80,10 @@ export function createFileInvoiceLedger(dataDir: string): InvoiceLedger {
 	};
 }
 
+/**
+ * Ledger-only provider: records invoices durably without calling a PSP.
+ * Always succeeds with status "recorded".
+ */
 export function createLedgerBillingProvider(options?: {
 	readonly ledger?: InvoiceLedger;
 	readonly dataDir?: string;
@@ -93,6 +108,10 @@ export function createLedgerBillingProvider(options?: {
 	};
 }
 
+/**
+ * Stripe-shaped billing provider using the PaymentIntents / Invoice Items API
+ * via REST (no SDK). Requires secret key; test mode keys work.
+ */
 export function createStripeBillingProvider(options: {
 	readonly secretKey: string;
 	readonly apiBase?: string;
@@ -117,12 +136,14 @@ export function createStripeBillingProvider(options: {
 			headers: {
 				authorization: `Bearer ${options.secretKey}`,
 				"content-type": "application/x-www-form-urlencoded",
+				// Idempotency for charge path is set by caller via fields; also allow header.
 				...(fields["metadata[invoice_id]"]
 					? { "Idempotency-Key": fields["metadata[invoice_id]"] }
 					: undefined),
 			},
 			body,
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const json = (await res.json().catch(() => ({}))) as JsonObject;
 		return { ok: res.ok, status: res.status, body: json };
 	}
@@ -144,6 +165,7 @@ export function createStripeBillingProvider(options: {
 		},
 		async charge(invoice) {
 			ledger?.append(invoice);
+			// Create a PaymentIntent for the invoice total (amount in minor units).
 			const customer = await this.ensureCustomer?.({
 				tenantId: invoice.tenantId,
 			});
@@ -159,6 +181,7 @@ export function createStripeBillingProvider(options: {
 			if (customer?.customerId) {
 				fields.customer = customer.customerId;
 			}
+			// Amount is always minor currency units (cents). Idempotency-Key = invoiceId.
 			const res = await stripeForm("/payment_intents", {
 				...fields,
 				confirm: "false",
@@ -180,6 +203,7 @@ export function createStripeBillingProvider(options: {
 	};
 }
 
+/** Export invoice as Stripe-like line items JSON for external systems. */
 export function exportInvoiceStripeLines(invoice: Invoice) {
 	return {
 		currency: invoice.currency.toLowerCase(),

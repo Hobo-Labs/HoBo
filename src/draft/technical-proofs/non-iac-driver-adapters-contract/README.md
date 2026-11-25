@@ -30,14 +30,16 @@ npm.cmd --prefix src\draft\technical-proofs\non-iac-driver-adapters-contract tes
 
 Relevant design records:
 
-- `urn:hobo:requirement:platform-engineering`: Driver taxonomy, Driver interface, `echo`, `template`,
+- `docs/design/platform-engineering.md`: Driver taxonomy, Driver interface, `echo`, `template`,
   `container`, `custom-webhook`, scoped Executors, and placeholder outputs
-- `urn:hobo:requirement:control-plane`: `IacProvider` as one Driver in the broader taxonomy
+- `docs/design/control-plane.md`: `IacProvider` as one Driver in the broader taxonomy
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Non Iac Driver Adapters Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

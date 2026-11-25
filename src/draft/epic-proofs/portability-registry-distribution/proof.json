@@ -22,7 +22,8 @@
       "src/draft/technical-proofs/registry-import-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -1,3 +1,8 @@
+// Observation hygiene (D22, D25, I9). A realizer's raw observation is stamped
+// with the reconciler identity and fence, its attributes are trimmed to the
+// bound packs' observe_fields, secret-scanned and bounded to 16 KiB per
+// resource (truncated or dropped with a reason, never silently), retained
+// fields are applied, claims are attributed, and handover outputs are scanned.
 import { createHash } from "node:crypto";
 import { clone, create } from "@bufbuild/protobuf";
 import { type ResolvedDeploymentSet, toSecretFreeOutputs } from "@hobo/cloud";
@@ -10,7 +15,7 @@ import {
 	type ResourceObservation,
 } from "../_generated/cd_pb.js";
 import { OBSERVE_ATTRIBUTES_LIMIT_BYTES } from "../events.js";
-import { reason } from "./errors.js";
+import { reason, sanitizeReasons } from "./errors.js";
 import { applyRetained, mappingRetained, mergeRetained } from "./retained.js";
 
 const encoder = new TextEncoder();
@@ -31,7 +36,14 @@ function digest(text: string): string {
 	return `sha256:${createHash("sha256").update(text).digest("hex")}`;
 }
 
+function safeObservedAt(value: string, fallback: string): string {
+	const parsed = Date.parse(value);
+	return Number.isFinite(parsed) ? new Date(parsed).toISOString() : fallback;
+}
+
+/** Replace a secret-looking value with its secretRef; undefined when clean. */
 export function redactSecret(key: string, value: string): string | undefined {
+	// A string value only produces a ref when it was redacted as secret.
 	return toSecretFreeOutputs({ [key]: value }).secretRefs[0];
 }
 
@@ -40,6 +52,10 @@ export type AttributeTrim = Readonly<{
 	reasons: readonly ReasonRecord[];
 }>;
 
+/**
+ * Trim one resource's attributes to the declared observe_fields, redact
+ * secrets, and bound the total (key + value UTF-8 bytes) to `limitBytes`.
+ */
 export function trimAttributes(
 	input: Readonly<{
 		resource: string;
@@ -105,7 +121,7 @@ export function trimAttributes(
 		reasons.push(
 			reason(
 				"attribute-undeclared",
-				`removed attributes outside observe_fields: ${undeclared.join(", ")}`,
+				"Removed attributes outside the declared observe fields.",
 				input.resource,
 			),
 		);
@@ -127,6 +143,7 @@ export type SanitizeInput = Readonly<{
 	resolved?: ResolvedDeploymentSet;
 }>;
 
+/** Stamp and clean a realizer observation before it is reported. */
 export function sanitizeObservation(
 	input: SanitizeInput,
 ): ReconcileObservationRecord {
@@ -135,8 +152,8 @@ export function sanitizeObservation(
 	next.campId = input.campId;
 	next.reconcilerId = input.reconcilerId;
 	next.fenceToken = input.fence.toString(10);
-	if (next.observedAt === "") next.observedAt = observedAt;
-	const reasons: ReasonRecord[] = [...next.reasons];
+	next.observedAt = safeObservedAt(next.observedAt, observedAt);
+	const reasons = sanitizeReasons(next.reasons, input.campId, "realizer");
 	const mapping = input.resolved
 		? mappingRetained(input.resolved)
 		: new Map<string, readonly string[]>();
@@ -161,7 +178,7 @@ export function sanitizeObservation(
 	next.claims = next.claims.map((claim) => {
 		const stamped = { ...claim };
 		stamped.reportedBy = input.reconcilerId;
-		if (stamped.observedAt === "") stamped.observedAt = observedAt;
+		stamped.observedAt = safeObservedAt(stamped.observedAt, observedAt);
 		return stamped;
 	});
 	const handover: Record<string, string> = {};
@@ -179,6 +196,8 @@ export function sanitizeObservation(
 		handover[key] = redacted ?? value;
 	}
 	next.handover = handover;
+	// Status follows the retained-filtered resources: retained-only changes are
+	// not drift, and a "converged" report that still shows drift is drift.
 	const drifted = next.resources.some((resource) => resource.driftKind !== "");
 	if (next.status === ReconcileStatus.DRIFTED && !drifted)
 		next.status = ReconcileStatus.CONVERGED;
@@ -192,6 +211,7 @@ export function sanitizeObservation(
 	return next;
 }
 
+/** A blocked observation that never touched the target. */
 export function blockedObservation(
 	input: Readonly<{
 		campId: string;
@@ -213,6 +233,7 @@ export function blockedObservation(
 	});
 }
 
+/** True when the observation proves the Camp runs `setId` with no drift. */
 export function isConvergedOn(
 	observation: ReconcileObservationRecord,
 	setId: string,

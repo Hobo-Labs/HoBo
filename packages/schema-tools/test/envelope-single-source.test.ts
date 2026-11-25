@@ -3,6 +3,16 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { REPO_ROOT } from "./support/temp-workspace.js";
 
+// GAPS IMPL-009: event_envelope.{proto,cue} is authored once, in
+// packages/core/data-models/. The runtime-local copies exist only because the
+// architecture guard requires every package's data-models to carry its own
+// .proto+.cue; they are header-marked mirrors, and this test is the drift
+// guard that turns silent duplication into a failing check.
+//
+// To change the envelope schema: edit the core files, re-copy the schema body
+// into the runtime-local mirrors (keeping the mirror header and, for the
+// proto, the hobo.runtime_local.v1 package line), then run codegen.
+
 const CORE_DATA_MODELS = join(REPO_ROOT, "packages", "core", "data-models");
 const RUNTIME_LOCAL_DATA_MODELS = join(
 	REPO_ROOT,
@@ -12,6 +22,7 @@ const RUNTIME_LOCAL_DATA_MODELS = join(
 	"data-models",
 );
 
+/** Drop comment lines (the mirror header) and trailing whitespace noise. */
 function stripComments(content: string): string {
 	return content
 		.split("\n")

@@ -7,15 +7,16 @@ import { scaffoldGenerationRequest } from "../../generation-scaffold-stage-contr
 import {
   assertCandidateCompiles,
   emitCandidatePackage,
-  type EmittedCandidatePackage,
+  type EmittedCandidatePackage
 } from "./emit-package.js";
 import { buildForgeEvent, type ForgeEvent } from "./events.js";
 import {
   fetchFixtureSources,
   parseIngestionSources,
-  type ParsedIngestion,
+  type ParsedIngestion
 } from "./parse-sources.js";
 import { type JsonValue } from "./json.js";
+
 
 export type ReasoningEngine = {
   id: string;
@@ -26,7 +27,7 @@ export type ReasoningEngine = {
 };
 
 export const scaffoldOnlyReasoningEngine: ReasoningEngine = {
-  id: "scaffold-only",
+  id: "scaffold-only"
 };
 
 export type ForgeIngestionResult =
@@ -57,10 +58,9 @@ export type ForgeIngestionOptions = {
 
 export async function runForgeIngestion(
   fixtureUrl: string,
-  options: ForgeIngestionOptions = {},
+  options: ForgeIngestionOptions = {}
 ): Promise<ForgeIngestionResult> {
-  const reasoningEngine =
-    options.reasoningEngine ?? scaffoldOnlyReasoningEngine;
+  const reasoningEngine = options.reasoningEngine ?? scaffoldOnlyReasoningEngine;
   const events: ForgeEvent[] = [];
   let seq = 1;
   const ts = options.ts ?? "2026-07-02T00:00:00.000Z";
@@ -77,9 +77,9 @@ export async function runForgeIngestion(
       data: {
         requestId: index.requestId,
         fixtureUrl,
-        reasoningEngineId: reasoningEngine.id,
-      },
-    }),
+        reasoningEngineId: reasoningEngine.id
+      }
+    })
   );
 
   for (const source of sources) {
@@ -94,9 +94,9 @@ export async function runForgeIngestion(
           requestId: index.requestId,
           kind: source.kind,
           ref: source.ref,
-          digest: source.digest,
-        },
-      }),
+          digest: source.digest
+        }
+      })
     );
   }
 
@@ -112,24 +112,21 @@ export async function runForgeIngestion(
         requestId: index.requestId,
         providerId: parsed.providerId,
         targetWitPort: parsed.targetWitPort,
-        openapiTitle:
-          (parsed.openapi.info as { title?: string } | undefined)?.title ?? "",
+        // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
+        openapiTitle: (parsed.openapi.info as { title?: string } | undefined)?.title ?? "",
         equivalenceClassCount: parsed.equivalenceClasses.length,
-        terraformHintCount: parsed.terraformHints.length,
-      },
-    }),
+        terraformHintCount: parsed.terraformComments.length
+      }
+    })
   );
 
   const generationRequest = buildGenerationRequest(parsed);
-  const sanitization = sanitizeGenerationMaterials(
-    generationRequest,
-    parsed.materials,
-    {
-      seq: seq++,
-      ts,
-      tenant,
-    },
-  );
+  const sanitization = sanitizeGenerationMaterials(generationRequest, parsed.materials, {
+    seq: seq++,
+    ts,
+    tenant
+  });
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   events.push(sanitization.event as ForgeEvent);
 
   if (sanitization.status === "material-refused") {
@@ -138,40 +135,37 @@ export async function runForgeIngestion(
       requestId: index.requestId,
       events,
       eventTypes: events.map((event) => event.type),
-      reason: "material.injection_detected",
+      reason: "material.injection_detected"
     };
   }
 
-  const requestedEvent = buildGenRequestedEvent(
-    sanitization.sanitizedRequest,
-    seq++,
-    ts,
-    tenant,
-  );
+  const requestedEvent = buildGenRequestedEvent(sanitization.sanitizedRequest, seq++, ts, tenant);
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   events.push(requestedEvent as ForgeEvent);
 
   const scaffold = scaffoldGenerationRequest(sanitization.sanitizedRequest, {
     seq: seq++,
     ts,
-    tenant,
+    tenant
   });
 
   if (scaffold.status === "needs-human") {
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     events.push(scaffold.event as ForgeEvent);
     return {
       status: "material-refused",
       requestId: index.requestId,
       events,
       eventTypes: events.map((event) => event.type),
-      reason: scaffold.event.data.reason as string,
+      // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
+      reason: scaffold.event.data.reason as string
     };
   }
 
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   events.push(scaffold.event as ForgeEvent);
 
-  let emitted = await emitCandidatePackage(parsed, {
-    outputDir: options.outputDir,
-  });
+  let emitted = await emitCandidatePackage(parsed, { outputDir: options.outputDir });
   if (reasoningEngine.augmentPackage) {
     emitted = reasoningEngine.augmentPackage({ parsed, emitted });
   }
@@ -188,9 +182,9 @@ export async function runForgeIngestion(
         providerId: emitted.providerId,
         packageRef: emitted.packageRef,
         fileCount: emitted.files.length,
-        scaffoldDigest: scaffold.candidate.ref.digest,
-      },
-    }),
+        scaffoldDigest: scaffold.candidate.ref.digest
+      }
+    })
   );
 
   assertCandidateCompiles(emitted.rootDir);
@@ -205,9 +199,9 @@ export async function runForgeIngestion(
         requestId: index.requestId,
         packageRef: emitted.packageRef,
         compiler: "typescript",
-        mode: "noEmit",
-      },
-    }),
+        mode: "noEmit"
+      }
+    })
   );
 
   return {
@@ -217,7 +211,7 @@ export async function runForgeIngestion(
     packageDir: emitted.rootDir,
     packageRef: emitted.packageRef,
     events,
-    eventTypes: events.map((event) => event.type),
+    eventTypes: events.map((event) => event.type)
   };
 }
 
@@ -228,24 +222,24 @@ function buildGenerationRequest(parsed: ParsedIngestion) {
     requestId: parsed.requestId,
     artifactKind: parsed.artifactKind,
     target: {
-      witPort: parsed.targetWitPort,
+      witPort: parsed.targetWitPort
     },
     capabilityManifestRef: {
       uri: `fixture://${parsed.requestId}/capability-manifest`,
-      digest: digestForPayload(manifestPayload),
+      digest: digestForPayload(manifestPayload)
     },
     authoritativeRefs: [
       {
         kind: "wit",
-        ref: `wit://${parsed.targetWitPort.split("@", 1)[0]}`,
+        ref: `wit://${parsed.targetWitPort.split("@", 1)[0]}`
       },
       {
         kind: "conformance-suite",
         suiteId: parsed.conformanceSuiteId,
-        ref: `fixture://${parsed.requestId}/conformance-suite`,
-      },
+        ref: `fixture://${parsed.requestId}/conformance-suite`
+      }
     ],
-    materialRefs: [],
+    materialRefs: []
   };
 }
 
@@ -253,7 +247,7 @@ function buildGenRequestedEvent(
   request: ReturnType<typeof validateGenRequest>,
   seq: number,
   ts: string,
-  tenant: string,
+  tenant: string
 ) {
   return {
     id: `01GENREQ${String(seq).padStart(4, "0")}`,
@@ -264,11 +258,11 @@ function buildGenRequestedEvent(
     ts,
     actor: {
       kind: "agent",
-      id: "agent:forge-ingestion",
+      id: "agent:forge-ingestion"
     },
     tenant,
     correlationId: request.requestId,
-    data: request,
+    data: request
   };
 }
 

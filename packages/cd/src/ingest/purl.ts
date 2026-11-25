@@ -1,3 +1,6 @@
+// Package URLs (purl spec) at the ingest boundary: attestation subjects and
+// CDEvent artifact ids are purls. Parsing is total: anything that is not a
+// purl returns undefined, never a partial value.
 import { create } from "@bufbuild/protobuf";
 import {
 	ArtifactKind,
@@ -85,6 +88,7 @@ const GIT_HOSTS: ReadonlySet<string> = new Set([
 	"bitbucket",
 ]);
 
+/** One attestation subject as an artifact. The subject name is the coordinate. */
 export function artifactFromSubject(
 	name: string,
 	sha256Hex: string,
@@ -112,6 +116,7 @@ export function artifactFromSubject(
 	});
 }
 
+/** `scheme://host[:port]/path[:tag][@digest]` → `host[:port]/path`, lowercased. */
 function stripLocator(locator: string): string {
 	let stripped = locator
 		.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
@@ -123,6 +128,11 @@ function stripLocator(locator: string): string {
 	return stripped.replace(/\.git$/, "").toLowerCase();
 }
 
+/**
+ * Sources whose subscriptions watch the purl's repository. A match only
+ * schedules a poll, which is a verified read, so this errs toward matching
+ * (an extra poll is harmless; a missed one waits for the next interval).
+ */
 export function sourcesForPurl(
 	purl: Purl,
 	sources: readonly FreightSourceRecord[],

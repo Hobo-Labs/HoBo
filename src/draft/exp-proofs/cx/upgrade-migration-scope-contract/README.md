@@ -6,7 +6,7 @@ implementation creep into production upgrade runners, live migrations, rollback 
 restore, provider state rewrites, compatibility UI, release publication, or support automation.
 
 The authoritative design record is
-[`urn:hobo:requirement:upgrade-migration-engine`](urn:hobo:requirement:upgrade-migration-engine).
+[`docs/design/upgrade-migration-engine.md`](../../../../../docs/design/upgrade-migration-engine.md).
 
 ## Proof
 
@@ -28,10 +28,12 @@ The tests prove:
 - excluded live upgrade runner, migration execution, rollback, backup restore, provider state,
   compatibility UI, release publication, and support automation work is routed out.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - [`proto/upgrade_migration_scope.proto`](./proto/upgrade_migration_scope.proto) — protobuf data shapes for the M0 scope record.
 - [`cue/upgrade_migration_scope.cue`](./cue/upgrade_migration_scope.cue) — CUE constraints for every protobuf type.
 - [`contracts/pacts/m0-scope-acceptance-gate.pact.json`](./contracts/pacts/m0-scope-acceptance-gate.pact.json) — PACT for the follow-up acceptance-gate boundary.
+- [`ADR.md`](./ADR.md) — parse-don't-validate and event-architecture evidence.

@@ -88,7 +88,7 @@ test("cross-project dependencies are reflected in release cutline domains", asyn
       ownerProject: "V1 Dogfood Yard & Hosted Operations",
       readinessDomain: "operations-readiness",
       cutlineCategory: "operations",
-      source: "urn:hobo:requirement:dogfood-yard",
+      source: "docs/design/dogfood-yard.md",
     },
   ];
 

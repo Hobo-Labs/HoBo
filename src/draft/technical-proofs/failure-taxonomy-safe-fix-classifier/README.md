@@ -5,7 +5,7 @@ Independent POC for HOBO-267. It pins the M0 classifier that maps documented SRE
 ## Contract Surface
 
 - `classifyFailureSignal(signal)` returns `{ failureClass, strategy, decisionBranch, action }`.
-- Every documented class from `urn:hobo:requirement:operators-sre` is represented in `failureTaxonomyEntries`.
+- Every documented class from `docs/design/operators-sre.md` is represented in `failureTaxonomyEntries`.
 - Unknown signals fail closed to `escalate`.
 - Ambiguous matches choose the most restrictive branch: `escalate` over `propose` over `auto-fix`.
 - `requiresHuman` signals short-circuit to escalation before taxonomy matching.
@@ -22,9 +22,11 @@ npm.cmd test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Failure Taxonomy Safe Fix Classifier.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

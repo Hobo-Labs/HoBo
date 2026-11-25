@@ -258,6 +258,7 @@ test("work classifier keeps full UI and hosted runtime work outside this POC", (
 });
 
 test("architecture artifacts pin protobuf, CUE, Pact, and event-store boundaries", () => {
+  const architecture = readFileSync(new URL("../ARCHITECTURE.md", import.meta.url), "utf8");
   const proto = readFileSync(new URL("../architecture/broker_admin_controls.proto", import.meta.url), "utf8");
   const cue = readFileSync(new URL("../architecture/broker_admin_controls.cue", import.meta.url), "utf8");
   const pact = JSON.parse(
@@ -281,4 +282,11 @@ test("architecture artifacts pin protobuf, CUE, Pact, and event-store boundaries
   assert.equal(pact.consumer.name, "AdminConsoleBrokerControls");
   assert.equal(pact.provider.name, "MetaCloudBrokerAdminBoundary");
   assert.ok(pact.interactions.length >= 3);
+  assert.match(architecture, /parse, don't validate/i);
+  assert.match(architecture, /Command/i);
+  assert.match(architecture, /Event/i);
+  assert.match(architecture, /Actor/i);
+  assert.match(architecture, /event store/i);
+  assert.match(architecture, /projection/i);
+  assert.match(architecture, /read store/i);
 });

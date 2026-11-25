@@ -4,7 +4,7 @@ import {
 	componentizeHelloBindle,
 	DEFAULT_CI_MATRIX,
 	PINNED_TOOLCHAIN,
-	runContractSmoke,
+	runWasmtimeSmoke,
 	validateWasmComponentArtifact,
 } from "../src/index.js";
 
@@ -49,17 +49,17 @@ describe("@hobo/componentize hello-bindle", () => {
 		expect(first.ciMatrix.toolchain.componentizeJs).toBe("0.21.0");
 	});
 
-	it("runs the contract smoke for the health export", async () => {
+	it("runs wasmtime-shaped smoke for health export", async () => {
 		const result = await componentizeHelloBindle({
 			sourceRoot: HELLO_BINDLE_ROOT,
 			sourceDateEpoch: "2026-01-01T00:00:00.000Z",
 		});
 
 		await expect(
-			runContractSmoke(result.component, { exportName: "health" }),
+			runWasmtimeSmoke(result.component, { exportName: "health" }),
 		).resolves.toEqual({
-			command: "contract invoke dist/hello-bindle.component.wasm health",
-			engine: "component-contract",
+			command: "wasmtime run dist/hello-bindle.component.wasm --invoke health",
+			engine: "wasmtime",
 			exitCode: 0,
 			stdout: "hello-bindle:ok\n",
 		});

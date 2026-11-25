@@ -4,6 +4,8 @@ import {
 	type TransportResponse,
 } from "./http-transport.js";
 
+/** WHATWG transport with an enforced total deadline and a streaming memory bound.
+ * Compose with guardTransport for provider-specific origin and path authority. */
 export function createBoundedFetchTransport(options: {
 	readonly fetchImpl: typeof globalThis.fetch;
 }): HttpTransport {

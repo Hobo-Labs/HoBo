@@ -9,9 +9,9 @@ dependencies, communication surfaces, incident states, template kinds, M1 eviden
 gate.
 
 The durable design record lives in
-[`urn:hobo:requirement:incident-communications`](urn:hobo:requirement:incident-communications). Branch
+[`docs/design/incident-communications.md`](../../../../../docs/design/incident-communications.md). Branch
 evidence is summarized in
-[`urn:hobo:proof:hobo-450-incident-communications`](urn:hobo:proof:hobo-450-incident-communications).
+[`docs/design/proofs/hobo-450-incident-communications`](../../../../../docs/design/proofs/hobo-450-incident-communications/README.md).
 
 ## Contract Surface
 
@@ -38,9 +38,11 @@ redaction is not approved, customer data is present, or contractual SLA language
 pnpm --prefix src\draft\exp-proofs\cx\incident-communications-scope-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Incident Communications scope.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

@@ -2,11 +2,11 @@ import {strict as assert} from 'node:assert';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 const root=process.env.BUDGET_ROUTER_VERIFY_PACKAGE_ROOT ?? path.resolve('packages/dispatcher');
-const {createDispatcherRegistry,createReservationLedger,decideCreditDispatch}=await import(pathToFileURL(path.join(root,'src/dispatcher.ts')).href);
+const {createDispatcherRegistry,createReservationLedger,decideDispatch}=await import(pathToFileURL(path.join(root,'src/dispatcher.ts')).href);
 function check(price:number,cap:number,spent:number) {
   const registry=createDispatcherRegistry([{providerId:'p',category:'runner',listUnitCost:price}]);
   const ledgerView={view:'CreditLedgerView',seq:0,accounts:[{providerId:'p',dimension:'runner.minutes',currency:'USD',listUnitCost:price,freeHeadroom:0,budgetCap:cap,spendToDate:spent}]};
-  const decision=decideCreditDispatch({registry,category:'runner',dispatchId:'repro',units:1,ledgerView});
+  const decision=decideDispatch({registry,category:'runner',dispatchId:'repro',units:1,ledgerView});
   const ledger=createReservationLedger(ledgerView);
   const reservation=ledger.reserve({providerId:'p',dimension:'runner.minutes',reservationId:'repro',units:1,expectedSeq:0});
   return {decision:decision.ok,reservation:reservation.ok,reservedCost:ledger.snapshot().accounts[0].reservedCost ?? 0};

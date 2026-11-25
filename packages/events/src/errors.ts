@@ -1,3 +1,5 @@
+// A saga step failed and its compensation was (or must be) run. Carries the
+// underlying cause so an operator/incident can see why the choreography unwound.
 export class SagaCompensationError extends Error {
 	readonly code = "SAGA_COMPENSATED" as const;
 	readonly sagaId: string;

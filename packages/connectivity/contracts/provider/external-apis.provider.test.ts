@@ -1,3 +1,15 @@
+/**
+ * Provider verification for external HTTP boundaries.
+ *
+ * Live Cloudflare / Route53 / Tailscale / Netbird / Stripe / OPA endpoints
+ * require credentials and are not exercised in CI. Offline verification:
+ *   1. each pact loads with PascalCase provider identity
+ *   2. createMockProviderFromPact self-satisfies verifyPact (contract integrity)
+ *   3. inventory drift gate covers every pact file
+ *
+ * Consumer tests drive the real clients through createPactFetch against these
+ * same documents — that is the integration-boundary enforcement path.
+ */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -54,6 +66,7 @@ describe("external API provider contracts (offline)", () => {
 	});
 
 	it("no external pact uses live network in provider suite", async () => {
+		// Guard: this suite must never call real endpoints — only pact mocks.
 		const pacts = await loadPactDirectory(path.join(contractsDir, "pacts"));
 		for (const { provider } of EXTERNAL_PROVIDERS) {
 			const pact = requirePact(pacts, provider);

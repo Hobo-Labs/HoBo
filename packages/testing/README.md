@@ -62,13 +62,13 @@ What it does **not** do:
 - contact a provider, broker a credential, or write to `.hobo/` using its
   built-in implementations. Custom factories execute caller-supplied code.
 
-**The `ephemeral-camp` lane deploys through a Camp driver.**
-`createTestHarness({ lane: "ephemeral-camp", yard, campDriver })` requires an
-explicit Yard, a brokered credential locator in
-`HOBO_TESTING_CAMP_CREDENTIAL_REF`, and a driver that deploys and destroys the
-Bindle on that Yard. Driver results must contain every Bindle resource once,
-with matching kinds and valid HTTP endpoints. Every returned handle is
-labelled `real`; an invalid result is destroyed and refused.
+**The `ephemeral-camp` lane's gates are implemented; its provisioning is not.**
+`createTestHarness({ lane: "ephemeral-camp", yard })` really does require an
+explicit Yard and a brokered credential locator in
+`HOBO_TESTING_CAMP_CREDENTIAL_REF`, and refuses each missing piece with its own
+code. `deploy()` then refuses with `HARNESS_LANE_UNIMPLEMENTED`. It never
+degrades to `in-process`: a suite that believes it hit real providers and
+actually hit a loopback stub is worse than a suite that failed.
 
 **`prodReadinessClaimable` is not a pass/fail flag.** It is always false for
 the current in-process lane. Accessing a handle does not prove that a test
@@ -252,7 +252,6 @@ fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
 | `api` | `http` | Serve an explicitly supplied Fetch handler |
 | `kv` | `port` | Pinned WASI key-value subset; process-local bytes |
 | `bucket` | `port` | Pinned blob metadata subset; body inspection is test-only; no blob events |
-| `cache` | `placeholder` | `@hobo/kv-redis-compatible` `createMemoryEphemeralState` covers TTL-bound state; it is not wired into this graph |
 | `queue` | `port` | HoBo Queue and virtual clock; no provider protocol or durability |
 | `topic` | `port` | HoBo Messaging; no external broker |
 | `secret` | `port` | Identity SecretsPort with fixture material only |
@@ -305,10 +304,9 @@ await driver.advance(3_000);
 
 Register a handler explicitly for each interval schedule. The built-in driver
 deduplicates schedules by ID, including schedules created through the shared
-port or raw clock. Re-registering an ID with the same interval, jitter and start
-time replaces any prior handler; a different recurrence for the same ID is
-refused with a `TypeError`. The returned schedule has `deduped: true` and
-reports the actual interval and next fire time.
+port or raw clock. Re-registering an ID keeps its original interval and start
+time even if the new spec differs, but replaces any prior handler. The returned
+schedule has `deduped: true` and reports the actual interval and next fire time.
 The replacement handler receives fires collected after registration; a batch
 already collected retains its earlier handler.
 
@@ -361,9 +359,9 @@ alive until that handler finishes.
   `detectRunner`, `requireRunner`, `bindHarnessLifecycle`. Detection is
   environment-based and **fails closed** — `HARNESS_RUNNER_UNDETECTED` with
   remediation rather than a guess at hook names.
-- Lane primitives: `deployInProcess`, `destroyInProcess`,
-  `parseEphemeralCampTarget`, `deployEphemeralCamp`, and the
-  `EphemeralCampDriver` contract.
+- Lane primitives, exported so a suite can assert on them directly:
+  `deployInProcess`, `destroyInProcess` (returns the teardown order it walked),
+  `parseEphemeralCampTarget`, `deployEphemeralCamp`.
 - Graph primitives: `parseTestTopology`, `deploymentOrder`, `teardownOrder`.
 - Fidelity: `FIDELITIES`, `inProcessFidelity`, `CAMP_ONLY_KINDS`,
   `HTTP_SERVED_KINDS`, `emptyFidelityCounts`.

@@ -1,0 +1,36 @@
+{
+  "consumer": {
+    "name": "HOBO-702-automation-spec-consumer"
+  },
+  "provider": {
+    "name": "issue-worker-guardrail-mapping-contract"
+  },
+  "interactions": [
+    {
+      "description": "automation spec consumer reads accepted BR-011 / Plan 06 guardrail mapping",
+      "request": {
+        "method": "GET",
+        "path": "/automation/issue-worker/guardrail-mapping"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "parentIssue": "HOBO-702",
+          "automationDocPath": "docs/automations/hobo-issue-worker.md",
+          "authoritativeRefs": [
+            "BR-011",
+            "FR-022",
+            "Plan 06",
+            "Plan 29",
+            "ADR-0094"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

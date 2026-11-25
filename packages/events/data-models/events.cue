@@ -71,6 +71,4 @@ package hobo
   key:       string & != ""
   op:        #ChangeOp
   sourceSeq: int & >= 0
-  sourceStreamId?: string & != ""
-  rowJson?: string & != ""
 }

@@ -20,7 +20,7 @@ scope creep.
 
 - `src/launch-messaging-claim-register.mjs` exports the register plus validation helpers.
 - `test/launch-messaging-claim-register.test.mjs` is the acceptance contract for HOBO-406.
-- [`urn:hobo:requirement:launch-messaging-claims`](urn:hobo:requirement:launch-messaging-claims)
+- [`../../../../../docs/design/launch-messaging-claims.md`](../../../../../docs/design/launch-messaging-claims.md)
   records the human-readable M0 claim register.
 
 ## Verification
@@ -35,9 +35,11 @@ This proof does not build the launch site, publish final copy, create demo recor
 production readiness without linked evidence.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Launch Messaging Claim Register.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

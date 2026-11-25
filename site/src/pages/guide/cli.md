@@ -52,7 +52,7 @@ hobo down --camp pr-123
 | `broker` | governance | Conductor resolve / config / matrix (placement plane). |
 | `yard` | control plane | Install and inspect the default bare-metal Yard. |
 | `station` | control plane | Station ops/setup (`init` \| `up` \| `down` \| `status` \| `rails *`) — not lifecycle. |
-| `serve` | control plane | Serve the local control-plane HTTP and SSE API. |
+| `serve` | control plane | Local control-plane HTTP+SSE for the Yard game UI. |
 | `replay` | observability | Session Replay list/get/open/summarize/retention/doctor. |
 | `derivative` | extensibility | Manage derived HoBo implementations. |
 | `runbook` | SRE | Execute or replay incident runbooks under policy. |

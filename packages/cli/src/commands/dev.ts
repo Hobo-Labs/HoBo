@@ -1,15 +1,10 @@
-import {
-	deploymentIdFor,
-	loadProjectManifest,
-	missingProjectBindle,
-} from "../cloud/manifest.js";
+import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { stubResult } from "../cloud/stub.js";
 import {
 	bootLocalCamp,
 	DEV_COLD_BUDGET_MS,
 	type DevRuntime,
 } from "../dev/local-camp.js";
-import { watchCodegen } from "../dev/watch-codegen.js";
 import { isJsonNumber, isJsonString } from "../json.js";
 import type { CommandModule } from "../shell/registry.js";
 
@@ -107,15 +102,10 @@ export function createDevCommand(deps: DevCommandDeps = {}): CommandModule {
 					const bootMs = Date.now() - startedAt;
 					const ok = serve.probe.status === 200 && bootMs <= DEV_COLD_BUDGET_MS;
 					if (!once) {
-						const watcher = await watchCodegen({ projectDir, emitProgress });
 						emitProgress(
 							`hobo dev: listening on ${serve.primaryUrl} (Ctrl-C to stop)`,
 						);
-						try {
-							await serve.waitUntilStopped();
-						} finally {
-							await watcher.close();
-						}
+						await serve.waitUntilStopped();
 					} else {
 						await serve.close();
 					}
@@ -180,7 +170,7 @@ export function createDevCommand(deps: DevCommandDeps = {}): CommandModule {
 
 			const bindle = await loadProjectManifest(projectDir);
 			if (!bindle) {
-				return missingProjectBindle("dev", projectDir);
+				return stubResult("dev");
 			}
 
 			const deploymentId = deploymentIdFor(projectDir);

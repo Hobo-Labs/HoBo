@@ -1,5 +1,8 @@
 package hobo
 
+// CUE constraints for the Depot execution-host wire records. One constraint
+// per protobuf message in runner_depot.proto.
+
 #DepotCapabilityRecord: {
 	port:      "hobo:runner" | "hobo:build-machine"
 	interface: "hobo:runner/job" | "hobo:build-machine/host"
@@ -33,13 +36,11 @@ package hobo
 }
 
 #CacheHitObservedRecord: {
-	type?:         "build.CacheHitObserved"
 	buildId:       string & !=""
 	depotBuildId:  string & !=""
-	providerId:    string & !=""
+	providerId:    "@hobo/runner-depot"
 	cacheLane:     "depot-shared-cache"
-	cacheHitRatio: (number & >=0 & <=1) | =~"^(0(\\.[0-9]+)?|1(\\.0+)?)$"
-	meteredUnits:  (number & >=0) | =~"^[0-9]+(\\.[0-9]+)?$"
-	estimatedUnits?: number & >0
+	cacheHitRatio: =~"^(0(\\.[0-9]+)?|1(\\.0+)?)$"
+	meteredUnits:  =~"^[0-9]+(\\.[0-9]+)?$"
 	source:        "observed-executor"
 }

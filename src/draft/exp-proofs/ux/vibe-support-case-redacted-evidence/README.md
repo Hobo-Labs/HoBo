@@ -39,8 +39,10 @@ pnpm.cmd --prefix src\draft\exp-proofs\vibe-support-case-redacted-evidence test
 | Happy, blocked, stale/unknown evidence, support handoff, accessibility notes, and proof-mode labels are covered. | `scenarioPaths`, `accessibilityNotes`, and proof-mode validation cover each required path and label. |
 | Scope out remains hard. | `classifySupportCasePrototypeRequest` rejects helpdesk, support queue, customer-data, incident-command, on-call, production UI, SLA, commercial support creep, and proofless launch claims. |
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` - protobuf data shapes and CUE constraints for the support
   case record.
 - `architecture/pacts/` - Pact-style package boundary fixture that parses
   through `parseVibeSupportCaseRedactedEvidence`.
+- `ADR.md` - parse-don't-validate and event/projection architecture note.

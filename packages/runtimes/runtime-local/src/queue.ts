@@ -37,38 +37,32 @@ export function createLocalQueue(store: QueueClockStore): Queue {
 			body: TBody,
 			options: EnqueueOptions,
 		): Promise<EnqueueResult> {
-			const name = parseQueueName(queueName);
-			const idempotencyKey = parseIdempotencyKey(options.idempotencyKey);
-			const existingQueue = Object.hasOwn(store.queues, name)
-				? store.queues[name]
-				: undefined;
-			const previous = existingQueue?.messages.find(
+			const queue = getQueue(store, queueName);
+			const idempotencyKey = options.idempotencyKey;
+			const previous = queue.messages.find(
 				(message) => message.idempotencyKey === idempotencyKey,
 			);
 
 			if (previous) {
 				appendTrace(store, {
 					type: "queue.enqueue.deduped",
-					queueName: name,
+					queueName: queue.name,
 					messageId: previous.messageId,
 					idempotencyKey,
 				});
 				return queueEnqueueResult(previous, true);
 			}
 
-			const payload = cloneAsJson(body);
-			const availableAtMs = normalizeNonNegativeInteger(
-				options.availableAtMs ?? store.nowMs,
-				"options.availableAtMs",
-			);
-			const queue = existingQueue ?? getQueue(store, name);
 			const message: QueueMessageRecord = {
 				messageId: `msg-${store.nextMessageSeq++}`,
 				queueName: queue.name,
 				idempotencyKey,
-				body: payload,
+				body: cloneAsJson(body),
 				state: "pending",
-				availableAtMs,
+				availableAtMs: normalizeNonNegativeInteger(
+					options.availableAtMs ?? store.nowMs,
+					"options.availableAtMs",
+				),
 				deliveryAttempt: 0,
 				leaseId: null,
 				leaseExpiresAtMs: null,
@@ -121,26 +115,22 @@ export function createLocalQueue(store: QueueClockStore): Queue {
 			const handled: MessageId[] = [];
 			const deduped: MessageId[] = [];
 
-			for (const [index, message] of leased.entries()) {
+			for (const message of leased) {
+				const record = findMessageById(store, message.messageId);
+				if (record.completedAtMs !== null) {
+					this.complete(message.messageId, message.leaseId);
+					deduped.push(message.messageId);
+					continue;
+				}
+
 				try {
-					const record = findMessageById(store, message.messageId);
-					if (record.completedAtMs !== null) {
-						this.complete(message.messageId, message.leaseId);
-						deduped.push(message.messageId);
-						continue;
-					}
-					validateLease(record, message.leaseId);
 					record.processing = true;
 					await handler(message);
 					this.complete(message.messageId, message.leaseId);
 					handled.push(message.messageId);
 				} catch (error) {
-					for (const pending of leased.slice(index)) {
-						const record = findMessageById(store, pending.messageId);
-						if (record.completedAtMs === null) {
-							releaseForRetry(record, store, pending.leaseId);
-						}
-					}
+					record.processing = false;
+					releaseForRetry(record, store, message.leaseId);
 					throw error;
 				}
 			}
@@ -218,18 +208,21 @@ export function createLocalQueue(store: QueueClockStore): Queue {
 }
 
 function publicMessage(message: QueueMessageRecord): LeasedMessage {
-	if (message.leaseId === null || message.leaseExpiresAtMs === null) {
-		throw new QueueLeaseLostError(`lease missing for ${message.messageId}`);
-	}
 	return Object.freeze({
 		messageId: parseMessageId(message.messageId),
 		queueName: parseQueueName(message.queueName),
 		idempotencyKey: parseIdempotencyKey(message.idempotencyKey),
 		body: cloneStore(message.body),
-		leaseId: parseLeaseId(message.leaseId),
-		leaseExpiresAt: formatInstant(message.leaseExpiresAtMs),
+		leaseId: parseLeaseId(message.leaseId ?? ""),
+		leaseExpiresAt: formatInstant(
+			message.leaseExpiresAtMs ?? storeFallbackMs(message),
+		),
 		deliveryAttempt: message.deliveryAttempt,
 	});
+}
+
+function storeFallbackMs(message: QueueMessageRecord): number {
+	return message.leaseExpiresAtMs ?? 0;
 }
 
 function queueEnqueueResult(
@@ -253,6 +246,7 @@ function validateLease(message: QueueMessageRecord, leaseId: LeaseId): void {
 function releaseForRetry(
 	message: QueueMessageRecord,
 	store: QueueClockStore,
+	// SAFETY: assertion to `message.leaseId as LeaseId | null` is required at this boundary.
 	leaseId: LeaseId | null = message.leaseId as LeaseId | null,
 ): boolean {
 	if (message.leaseId !== leaseId) {

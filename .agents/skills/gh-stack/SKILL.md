@@ -65,16 +65,14 @@ gh stack init sdlc/feat-01-schema
 gh stack add sdlc/feat-02-impl
 # commits...
 gh stack view --json
-gh stack sync
-gh stack rebase --upstack
+gh stack sync                      # unpushed local layers only
+gh stack rebase --upstack          # after mid-stack fix, unpushed layers only
 gh stack rebase --continue         # after resolving conflicts
-git merge origin/main
-gh pr create --base main --head sdlc/feat-02-impl
-gh pr merge 42 --merge
+git merge origin/main              # update a pushed layer with trunk
+gh pr create --base main --head sdlc/feat-02-impl   # one PR: the top of the stack
+gh pr merge 42 --merge             # land the whole stack through top PR #42
 gh stack top | bottom | up | down | trunk
 ```
-
-`gh stack sync` and `gh stack rebase` are for unpushed local layers only. Update a pushed layer by merging `origin/main` in, open one pull request for the top of the stack, and land the whole stack through it with a merge commit.
 
 ## Agent workflow snippets
 
@@ -95,11 +93,10 @@ gh pr create --base main --head layer-b --title "feat(scope): …" --body "…"
 gh stack checkout layer-a
 # fix + commit
 gh stack top
-git merge layer-a
+git merge layer-a                  # pushed layers: merge the fix up
+# unpushed layers only: gh stack rebase --upstack
 git push
 ```
-
-Merge the fix up into pushed layers; `gh stack rebase --upstack` is only for unpushed layers.
 
 **Parse status**
 

@@ -35,15 +35,15 @@ test("M0 record maps dependencies to authoritative marketplace and governance so
   assert.deepEqual(
     PUBLISHER_PORTAL_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:marketplace-publisher-trust-evidence",
-      "urn:hobo:requirement:capability-review-approval",
-      "urn:hobo:requirement:marketplace-payout-hooks",
-      "urn:hobo:requirement:org-catalogs",
-      "urn:hobo:requirement:billing-launch-policy",
-      "urn:hobo:requirement:launch-support-escalation",
-      "urn:hobo:decision:adr-0062",
-      "urn:hobo:decision:adr-0074",
-      "urn:hobo:decision:adr-0064",
+      "docs/design/marketplace-publisher-trust-evidence.md",
+      "docs/design/capability-review-approval.md",
+      "docs/design/marketplace-payout-hooks.md",
+      "docs/design/org-catalogs.md",
+      "docs/design/billing-launch-policy.md",
+      "docs/design/launch-support-escalation.md",
+      "docs/design/adr/07-portability-extensibility.md#adr-0062",
+      "docs/design/adr/02-identity-security.md#adr-0074",
+      "docs/design/adr/07-portability-extensibility.md#adr-0064",
     ],
   );
 });

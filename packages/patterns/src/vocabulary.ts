@@ -13,6 +13,7 @@ export type HoboVocabulary = {
 	readonly aliases: Readonly<Record<string, readonly string[]>>;
 };
 
+// public-contract: ontology-vector encoder identity pinned by receipts.
 export const ONTOLOGY_ENCODER_ID = "hobo-ontology-vector-v1" as const;
 
 export function defaultAliasPath(): string {

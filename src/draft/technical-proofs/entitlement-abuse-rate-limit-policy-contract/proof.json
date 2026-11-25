@@ -6,7 +6,11 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/entitlements-plan-limits.md",
+      "docs/design/proofs/hobo-491-entitlement-abuse-rate-limit-policy/README.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

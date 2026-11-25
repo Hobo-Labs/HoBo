@@ -22,9 +22,11 @@ The proof package covers:
 Scope boundary: this package does not implement production Junction realization, provider networking, DNS promotion, trust or policy federation, or Relay behavior. It only decides and proves the pure inference seam that HOBO-159 should implement.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Junction Connectivity Inference Spike.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

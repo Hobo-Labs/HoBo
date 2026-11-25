@@ -1,3 +1,14 @@
+/**
+ * Statuspage-v2-compatible JSON emitter.
+ *
+ * githubstatus.com and status.claude.com are Atlassian Statuspage instances
+ * exposing `/api/v2/summary.json`; emitting the same shape makes HoBo status
+ * pages consumable by the existing ecosystem of status widgets and clients.
+ *
+ * Honest mapping caveat: statuspage has no `unknown` component status. HoBo
+ * `unknown` maps to `degraded_performance` with a "status delayed / unknown"
+ * description so a delayed component can never read as green downstream.
+ */
 import type {
 	IncidentRecord,
 	MaintenanceRecord,
@@ -81,6 +92,8 @@ export interface StatuspageSummary {
 const COMPONENT_STATUS_MAP = {
 	operational: "operational",
 	maintenance: "under_maintenance",
+	// No `unknown` in statuspage-v2 — degraded is the conservative,
+	// never-stale-operational mapping (ADR-0077 §4).
 	unknown: "degraded_performance",
 	degraded: "degraded_performance",
 	partial_outage: "partial_outage",
@@ -162,6 +175,7 @@ function toMaintenance(
 	};
 }
 
+/** Emit the `/api/v2/summary.json` document for a status-page model. */
 export function toStatuspageSummary(
 	model: StatusPageModel,
 	options: StatuspageSummaryOptions = {},
@@ -204,6 +218,7 @@ export function toStatuspageSummary(
 	};
 }
 
+/** Emit the minimal `/api/v2/status.json` document. */
 export function toStatuspageStatus(
 	model: StatusPageModel,
 	options: StatuspageSummaryOptions = {},

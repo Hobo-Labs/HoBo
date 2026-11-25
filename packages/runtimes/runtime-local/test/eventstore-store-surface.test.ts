@@ -1,3 +1,34 @@
+/**
+ * The runtime-local durable EventStore, driven against a real SQLite file.
+ *
+ * This is the default EventStore behind the storage ports (ADR-0135): one
+ * partition, one writer, stream-head CAS. Everything worth holding here is
+ * about what happens when two writers disagree, because that is the whole
+ * point of an event store and the one thing a naive implementation gets wrong
+ * silently.
+ *
+ * **A stale expected sequence must be refused, not merged.** Two writers who
+ * both read head 3 and both append at 4 would otherwise interleave their
+ * events into one stream, and neither would know. The CAS is what turns that
+ * into a conflict one of them can retry.
+ *
+ * **A snapshot ahead of the stream head is a conflict, not a snapshot.** It
+ * describes state the stream never reached, so storing it would make a later
+ * fold start from a fiction. The store translates that into the same
+ * optimistic-conflict error a stale append gets, so callers have one thing to
+ * handle rather than two.
+ *
+ * **The parse boundary runs before the write, not after.** A malformed event
+ * that reached SQLite would be durable; refusing it at the door keeps the
+ * store's contents parseable by construction. That boundary enforces
+ * vocabulary as well as shape — an event type must read `family.PastTenseFact`
+ * and an actor kind must be one of four known values — so a stream cannot come
+ * to hold a name the rest of the system has no way to interpret.
+ *
+ * The manual clock makes every recorded instant deterministic, so a test that
+ * asserts ordering is asserting the store's ordering rather than the wall
+ * clock's.
+ */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +57,7 @@ function store(options: { partitionId?: string } = {}) {
 	});
 }
 
+/** Append options the parse boundary accepts. */
 const appendAt = (
 	expectedSeq: number,
 	overrides: Record<string, unknown> = {},
@@ -35,12 +67,15 @@ const appendAt = (
 		actor: { kind: "user", id: "local-developer" },
 		tenant: "tenant-1",
 		...overrides,
+		// SAFETY: the store reads exactly the fields AppendOptions names.
 	}) as never;
 
+/** One well-formed event. */
 const event = (type = "thing.Happened", data: unknown = { a: 1 }) =>
 	({
 		type,
 		data,
+		// SAFETY: the store reads exactly the fields an EventInput names.
 	}) as never;
 
 describe("the manual clock", () => {
@@ -63,11 +98,15 @@ describe("the manual clock", () => {
 	});
 
 	it("accepts a zero advance", () => {
+		// Zero is a legitimate step — a caller stepping a loop should not have to
+		// special-case the iteration that costs no time.
 		const clock = createManualClock("2020-01-01T00:00:00.000Z");
 		expect(clock.advance(0)).toBe("2020-01-01T00:00:00.000Z");
 	});
 
 	it("refuses to run backwards", () => {
+		// A clock that went backwards would let a later event carry an earlier
+		// instant, and every ordering assertion downstream would be wrong.
 		expect(() => createManualClock().advance(-1)).toThrow(TypeError);
 	});
 
@@ -82,12 +121,17 @@ describe("the manual clock", () => {
 	});
 
 	it("is frozen", () => {
+		// The clock is handed to the store; a caller swapping `now` after the
+		// fact would break the store's ordering invisibly.
 		expect(Object.isFrozen(createManualClock())).toBe(true);
 	});
 });
 
 describe("appending to a stream", () => {
 	it("reports no head at all for a stream that does not exist", async () => {
+		// Not `{ seq: 0 }`: a stream that was never written has no head record,
+		// and the store says so rather than inventing an empty one. A caller
+		// opening a new stream reads `undefined` and appends at 0.
 		expect(await store().getStreamHead("stream-1")).toBeUndefined();
 	});
 
@@ -110,14 +154,16 @@ describe("appending to a stream", () => {
 			[event("thing.Alpha"), event("thing.Beta")],
 			appendAt(0),
 		);
-
+		// A batch is one CAS, not several: appending two events must move the
+		// head by two, or a concurrent writer could slot in between them.
 		expect((await eventStore.getStreamHead("stream-1")).revision).toBe(2);
 	});
 
 	it("refuses an append at a sequence the stream has passed", async () => {
 		const eventStore = store();
 		await eventStore.append("stream-1", [event()], appendAt(0));
-
+		// This is the concurrent-writer case. Both read head 0; the second must
+		// be told it lost rather than having its event interleaved.
 		await expect(
 			eventStore.append("stream-1", [event()], appendAt(0)),
 		).rejects.toThrow();
@@ -131,6 +177,8 @@ describe("appending to a stream", () => {
 	});
 
 	it("refuses an event that is not an object", async () => {
+		// The parse runs before the write; a malformed event that reached SQLite
+		// would be durable.
 		await expect(
 			store().append("stream-1", ["nope" as never], appendAt(0)),
 		).rejects.toThrow(TypeError);
@@ -143,6 +191,8 @@ describe("appending to a stream", () => {
 	});
 
 	it("refuses an empty event list", async () => {
+		// An empty append would take the CAS and move nothing, which is a
+		// no-op that still costs another writer their turn.
 		await expect(store().append("stream-1", [], appendAt(0))).rejects.toThrow(
 			/non-empty array/,
 		);
@@ -157,7 +207,7 @@ describe("appending to a stream", () => {
 	it("keeps two streams independent", async () => {
 		const eventStore = store();
 		await eventStore.append("stream-1", [event()], appendAt(0));
-
+		// One stream's head advancing another's would make every CAS meaningless.
 		expect(await eventStore.getStreamHead("stream-2")).toBeUndefined();
 	});
 });
@@ -187,9 +237,11 @@ describe("reading a stream back", () => {
 		);
 		const seen: string[] = [];
 		for await (const item of eventStore.read("stream-1")) {
+			// SAFETY: every envelope the store yields carries its type.
 			seen.push((item as { type: string }).type);
 		}
-
+		// Order is the store's entire contract; a fold over a reordered stream
+		// computes a state the system was never in.
 		expect(seen).toEqual(["thing.Alpha", "thing.Beta", "thing.Gamma"]);
 	});
 
@@ -202,7 +254,8 @@ describe("reading a stream back", () => {
 		);
 		const seen = [];
 		for await (const item of eventStore.read("stream-1", 2)) seen.push(item);
-
+		// Resuming from a checkpoint is the normal read; re-reading from 1 every
+		// time would make every subscriber O(stream).
 		expect(seen).toHaveLength(1);
 	});
 
@@ -234,7 +287,10 @@ describe("snapshots", () => {
 	it("translates a snapshot ahead of the head into an optimistic conflict", async () => {
 		const eventStore = store();
 		await eventStore.append("stream-1", [event()], appendAt(0));
-
+		// A snapshot at seq 9 describes state the stream never reached. Storing
+		// it would make a later fold start from a fiction. Callers already
+		// handle optimistic conflicts, so it arrives as one rather than as a
+		// second error type nobody catches.
 		await expect(
 			eventStore.snapshot("stream-1", { count: 9 }, 9),
 		).rejects.toThrow(OptimisticSequenceConflictError);
@@ -255,6 +311,8 @@ describe("snapshots", () => {
 
 describe("partitioning and durability", () => {
 	it("defaults to the `default` partition", async () => {
+		// One partition, one writer (ADR-0135). The default has to be a real
+		// named partition rather than an empty string, or checkpoints collide.
 		const eventStore = store();
 		await eventStore.append("stream-1", [event()], appendAt(0));
 		expect((await eventStore.getStreamHead("stream-1")).revision).toBe(1);
@@ -273,7 +331,8 @@ describe("partitioning and durability", () => {
 			"deeper",
 		);
 		dirs.push(dataDir);
-
+		// The store is opened by a runtime that may never have run here before;
+		// requiring the directory to pre-exist would fail on first boot.
 		expect(() =>
 			createRuntimeLocalEventStore({ dataDir, clock: createManualClock() }),
 		).not.toThrow();
@@ -291,17 +350,28 @@ describe("partitioning and durability", () => {
 			dataDir,
 			clock: createManualClock(),
 		});
-
+		// "Durable" is the word in the type name. A store that lost its stream
+		// on reopen would be an in-memory store with extra steps.
 		expect((await second.getStreamHead("stream-1")).revision).toBe(1);
 	});
 
 	it("is frozen", () => {
+		// The store handle is passed across a runtime; a caller replacing
+		// `append` would bypass the parse boundary entirely.
 		expect(Object.isFrozen(store())).toBe(true);
 	});
 });
 
 describe("the envelope's own naming constraints", () => {
+	/**
+	 * These are not shape checks — they are vocabulary checks, and they run on
+	 * the write path, so a stream cannot come to contain a name the rest of the
+	 * system has no way to interpret.
+	 */
 	it("requires an event type in `family.PastTenseFact` form", async () => {
+		// An event store is a log of things that already happened. A type like
+		// `placeOrder` reads as a command, and a projection keyed on it would be
+		// reacting to an intention rather than a fact.
 		await expect(
 			store().append("stream-1", [event("placeOrder")], appendAt(0)),
 		).rejects.toThrow(/family.PastTenseFact/);
@@ -314,6 +384,8 @@ describe("the envelope's own naming constraints", () => {
 	});
 
 	it("refuses a lower-case fact name", async () => {
+		// `thing.happened` is the spelling most people reach for first, and it
+		// is refused — the capital is what marks the fact half of the name.
 		await expect(
 			store().append("stream-1", [event("thing.happened")], appendAt(0)),
 		).rejects.toThrow(/family.PastTenseFact/);
@@ -332,6 +404,8 @@ describe("the envelope's own naming constraints", () => {
 	});
 
 	it("refuses an actor kind outside that set", async () => {
+		// The actor kind decides how an event is attributed in an audit trail.
+		// An invented kind would attribute work to a class nothing can read.
 		await expect(
 			store().append(
 				"stream-1",
@@ -352,6 +426,8 @@ describe("the envelope's own naming constraints", () => {
 	});
 
 	it("requires a tenant", async () => {
+		// Every event is tenant-scoped; an untenanted one could be read by the
+		// wrong tenant's projection.
 		await expect(
 			store().append("stream-1", [event()], appendAt(0, { tenant: undefined })),
 		).rejects.toThrow(/tenant/);

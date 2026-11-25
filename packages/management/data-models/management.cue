@@ -1,5 +1,7 @@
 package management
 
+// CUE constraints for every protobuf message in management.proto.
+
 #ManagementEnvelope: {
 	ok:      bool
 	code:    string
@@ -39,11 +41,13 @@ package management
 }
 
 #MeteringView: {
-	quota_used:           number & >=0
-	quota_limit:          number & >=0
-	spend_cap_usd:        number & >=0
-	budget_usd:           number & >=0
-	traffic_rate:         number & >=0
+	quota_used:    number & >=0
+	quota_limit:   number & >=0
+	spend_cap_usd: number & >=0
+	budget_usd:    number & >=0
+	traffic_rate:  number & >=0
+	// Provenance badge (HIGHBALL "kill or badge"): synthetic until real
+	// metering signals flow.
 	traffic_rate_source?: "synthetic" | "otlp"
 }
 
@@ -51,9 +55,12 @@ package management
 	connector_kind: string
 	status:         "offline" | "idle" | "working" | "error"
 	connection_id?: string
+	// Provenance badge: statically derived until live agent telemetry flows.
 	status_source?: "derived-static" | "otlp"
 }
 
+// Envelope only: DeploymentView row shapes are owned by package cloud
+// (packages/cloud/data-models/cloud.cue) — referenced, not duplicated.
 #DeploymentViewProjectionView: {
 	available: bool
 	source:    "yard-eventstore" | "none"
@@ -63,14 +70,14 @@ package management
 	json_deployments?: string
 }
 
+// Envelope only: CredentialAuditRecord shapes are owned by package cloud
+// (packages/cloud/data-models/cloud.cue) — referenced, not duplicated.
 #CredentialAuditProjectionView: {
-	available?: bool
-	sources?: [...("connections-store" | "yard-eventstore" | "mcp-audit")]
-	count?:    uint
-	seq?:      uint | (string & =~"^(0|[1-9][0-9]*)$")
-	jsonRows?: string
-	partial?:  bool
-	skippedSources?: [...string]
+	available: bool
+	sources: [...("connections-store" | "yard-eventstore")]
+	count:      uint
+	seq:        uint
+	json_rows?: string
 }
 
 #DoctorView: {
@@ -80,11 +87,11 @@ package management
 }
 
 #YardProjectionSnapshot: {
-	occupancy: #StationOccupancyView
+	occupancy:   #StationOccupancyView
 	rails: [...#RailView]
 	connections: [...#ConnectionPublicView]
-	metering: #MeteringView
+	metering:    #MeteringView
 	activity: [...#ConnectorActivityView]
-	doctor: #DoctorView
-	seq:    uint
+	doctor:      #DoctorView
+	seq:         uint
 }

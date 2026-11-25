@@ -83,7 +83,7 @@ test("cross-project release-note dependencies are reflected in release cutline d
       ownerProject: "V1 Release Notes & Upgrade Guide",
       readinessDomain: "documentation",
       cutlineCategory: "documentation",
-      source: "urn:hobo:requirement:release-notes-upgrade-guide",
+      source: "docs/design/release-notes-upgrade-guide.md",
     },
   ];
 

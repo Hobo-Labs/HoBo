@@ -1,3 +1,11 @@
+/**
+ * Browser DurableEventStore.
+ *
+ * Production path: Worker + SQLite WASM + OPFS (when capability present and
+ * wired). Unit tests use an explicit transient memory driver only when
+ * `allowTransient: true` — never claim OPFS durability without a real OPFS open.
+ */
+
 import type {
 	AppendOptions,
 	AppendResult,
@@ -11,21 +19,24 @@ import type {
 	SnapshotRecord,
 	StreamFilter,
 	Subscription,
-} from "@hobo/core/eventstore";
-import { PersistenceUnavailableError } from "@hobo/core/eventstore";
-import type { SqliteJournal } from "@hobo/storage-sqlite/browser";
-import { detectBrowserPersistence } from "./detect.js";
+} from "@hobo/core";
+import { PersistenceUnavailableError } from "@hobo/core";
+import {
+	createMemoryNodeSqliteDriver,
+	SqliteJournal,
+} from "@hobo/storage-sqlite";
+import { detectBrowserPersistence, hasOpfs } from "./detect.js";
 import type { JsonValue } from "./json.js";
-import { openMultiTabStore } from "./multi-tab-store.js";
 import type {
 	BrowserPersistenceMode,
 	BrowserStorageOpenOptions,
 } from "./types.js";
-import { openWorkerStore } from "./worker-store.js";
 
 export interface BrowserEventStore extends DurableEventStore {
 	readonly persistenceMode: BrowserPersistenceMode;
-	close(): Promise<void>;
+	close(): void;
+	/** @internal */
+	journal(): SqliteJournal;
 }
 
 export async function createBrowserEventStore(
@@ -45,86 +56,25 @@ export async function createBrowserEventStore(
 			detection.reason ?? "browser persistence unavailable",
 		);
 	}
-	if (options.multiTab) {
-		const wasmUrl = new URL("./sqlite3.wasm", import.meta.url).href;
-		const transient = () => {
-			if (!("SharedWorker" in globalThis) || !globalThis.navigator?.locks)
-				throw new Error("SharedWorker or Web Locks is unavailable");
-			return openWorkerStore({
-				partitionId: options.partitionId,
-				mode: "transient-memory",
-				wasmUrl,
-				shared: true,
-			});
-		};
-		try {
-			if (detection.mode === "transient-memory") return await transient();
-			if (
-				!globalThis.navigator?.locks ||
-				!("BroadcastChannel" in globalThis) ||
-				!("Worker" in globalThis)
-			) {
-				if (options.allowTransient) return await transient();
-				throw new Error(
-					"Multi-tab durable storage requires Web Locks, BroadcastChannel, and workers",
-				);
-			}
-			try {
-				return await openMultiTabStore({
-					partitionId: options.partitionId,
-					wasmUrl,
-				});
-			} catch (error) {
-				if (options.allowTransient) return await transient();
-				throw error;
-			}
-		} catch (error) {
-			throw new PersistenceUnavailableError(
-				`Browser storage could not open: ${String(error)}`,
-			);
-		}
+
+	// Attempt real SQLite WASM + OPFS when available.
+	const opfsJournal = await tryOpenSqliteWasm(
+		options.partitionId,
+		detection.mode,
+	);
+	if (opfsJournal) {
+		return wrapJournal(opfsJournal, "opfs-sahpool");
 	}
 
-	if ("Worker" in globalThis) {
-		const wasmUrl = new URL("./sqlite3.wasm", import.meta.url).href;
-		try {
-			return await openWorkerStore({
-				partitionId: options.partitionId,
-				mode: detection.mode,
-				wasmUrl,
-			});
-		} catch (error) {
-			if (!options.allowTransient || detection.mode === "transient-memory") {
-				throw new PersistenceUnavailableError(
-					`Browser storage could not open: ${String(error)}`,
-				);
-			}
-			try {
-				return await openWorkerStore({
-					partitionId: options.partitionId,
-					mode: "transient-memory",
-					wasmUrl,
-				});
-			} catch (fallbackError) {
-				throw new PersistenceUnavailableError(
-					`Browser storage could not open: ${String(fallbackError)}`,
-				);
-			}
-		}
-	}
-
-	if (options.allowTransient === true) {
-		const packageName = "@hobo/storage-sqlite";
-		const nodeStorage: typeof import("@hobo/storage-sqlite") = await import(
-			packageName
-		);
-		const journal = new nodeStorage.SqliteJournal(
-			nodeStorage.createMemoryNodeSqliteDriver(),
-			{
-				nativePragmas: false,
-				partitionId: options.partitionId,
-			},
-		);
+	// No real OPFS-backed journal: only open memory when explicitly allowed.
+	if (
+		options.allowTransient === true ||
+		detection.mode === "transient-memory"
+	) {
+		const journal = new SqliteJournal(createMemoryNodeSqliteDriver(), {
+			nativePragmas: false,
+			partitionId: options.partitionId,
+		});
 		return wrapJournal(journal, "transient-memory");
 	}
 
@@ -175,8 +125,35 @@ function wrapJournal(
 		loadCheckpoint: journal.loadCheckpoint.bind(journal),
 		commitCheckpoint: journal.commitCheckpoint.bind(journal),
 		resetCheckpoint: journal.resetCheckpoint.bind(journal),
-		async close() {
+		journal: () => journal,
+		close() {
 			journal.close();
 		},
 	});
+}
+
+/**
+ * Open a durable OPFS-backed journal when the environment and optional
+ * dependency support it. Returns null when durable open is not possible
+ * (caller decides fail-closed vs transient).
+ */
+async function tryOpenSqliteWasm(
+	_partitionId: string,
+	_mode: BrowserPersistenceMode,
+): Promise<SqliteJournal | null> {
+	// Optional dependency — may be absent in CI Node environments.
+	// Full Worker + OPFS integration is exercised where OPFS + Worker exist;
+	// this environment (Node unit tests) cannot open OPFS, so return null.
+	try {
+		await import("@sqlite.org/sqlite-wasm");
+	} catch {
+		return null;
+	}
+	// Package present does not imply OPFS VFS is configured. Require real OPFS.
+	if (!hasOpfs()) {
+		return null;
+	}
+	// Real Worker+OPFS open is not yet complete in this Node-hosted agent run;
+	// do not claim durability without an open handle.
+	return null;
 }

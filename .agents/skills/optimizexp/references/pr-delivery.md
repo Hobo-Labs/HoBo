@@ -17,9 +17,8 @@ Describe observable behavior and the checks performed in the pull request. Link 
 node --import tsx .agents/skills/optimizexp/harness/post-pr-evidence.mts \
   --feature <feature-id> \
   --pr <number>
+# Omit --pr to auto-detect the current branch's PR.
 ```
-
-Omit `--pr` to auto-detect the current branch's PR.
 
 Posting accepts consistent evidence while playback review is pending. The
 manifest and metadata must identify the same primary and match its current

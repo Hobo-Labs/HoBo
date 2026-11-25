@@ -6,42 +6,98 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
+/**
+ * Describes the file alchemy_iac.proto.
+ */
 export const file_alchemy_iac: GenFile = /*@__PURE__*/
   fileDesc("ChFhbGNoZW15X2lhYy5wcm90bxITaG9iby5pYWMuYWxjaGVteS52MSKCAQoNUmVzb3VyY2VTY29wZRITCgtyZXNvdXJjZV9pZBgBIAEoCRIVCg1yZXNvdXJjZV90eXBlGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhwKFHByb3ZpZGVyX2FjY291bnRfcmVmGAQgASgJEhIKCnByb2R1Y3RfaWQYBSABKAki3AEKBlRhcmdldBIRCgl0YXJnZXRfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhIKCnN0YWNrX25hbWUYAyABKAkSDQoFc3RhZ2UYBCABKAkSGwoTcHJvZ3JhbV9yZXNvdXJjZV9pZBgFIAEoCRIVCg1zb3VyY2VfZGlnZXN0GAYgASgJEh4KFmludmVudG9yeV9ldmlkZW5jZV9yZWYYByABKAkSNQoJcmVzb3VyY2VzGAggAygLMiIuaG9iby5pYWMuYWxjaGVteS52MS5SZXNvdXJjZVNjb3BlYgZwcm90bzM");
 
+/**
+ * @generated from message hobo.iac.alchemy.v1.ResourceScope
+ */
 export type ResourceScope = Message<"hobo.iac.alchemy.v1.ResourceScope"> & {
+  /**
+   * @generated from field: string resource_id = 1;
+   */
   resourceId: string;
 
+  /**
+   * @generated from field: string resource_type = 2;
+   */
   resourceType: string;
 
+  /**
+   * @generated from field: string provider_id = 3;
+   */
   providerId: string;
 
+  /**
+   * @generated from field: string provider_account_ref = 4;
+   */
   providerAccountRef: string;
 
+  /**
+   * @generated from field: string product_id = 5;
+   */
   productId: string;
 };
 
+/**
+ * Describes the message hobo.iac.alchemy.v1.ResourceScope.
+ * Use `create(ResourceScopeSchema)` to create a new message.
+ */
 export const ResourceScopeSchema: GenMessage<ResourceScope> = /*@__PURE__*/
   messageDesc(file_alchemy_iac, 0);
 
+/**
+ * @generated from message hobo.iac.alchemy.v1.Target
+ */
 export type Target = Message<"hobo.iac.alchemy.v1.Target"> & {
+  /**
+   * @generated from field: string target_id = 1;
+   */
   targetId: string;
 
+  /**
+   * @generated from field: string tenant_id = 2;
+   */
   tenantId: string;
 
+  /**
+   * @generated from field: string stack_name = 3;
+   */
   stackName: string;
 
+  /**
+   * @generated from field: string stage = 4;
+   */
   stage: string;
 
+  /**
+   * @generated from field: string program_resource_id = 5;
+   */
   programResourceId: string;
 
+  /**
+   * @generated from field: string source_digest = 6;
+   */
   sourceDigest: string;
 
+  /**
+   * @generated from field: string inventory_evidence_ref = 7;
+   */
   inventoryEvidenceRef: string;
 
+  /**
+   * @generated from field: repeated hobo.iac.alchemy.v1.ResourceScope resources = 8;
+   */
   resources: ResourceScope[];
 };
 
+/**
+ * Describes the message hobo.iac.alchemy.v1.Target.
+ * Use `create(TargetSchema)` to create a new message.
+ */
 export const TargetSchema: GenMessage<Target> = /*@__PURE__*/
   messageDesc(file_alchemy_iac, 1);
 

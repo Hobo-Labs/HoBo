@@ -7,7 +7,11 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/marketplace-ux.md",
+      "docs/design/proofs/hobo-421-marketplace-ux/README.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

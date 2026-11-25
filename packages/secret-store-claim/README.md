@@ -3,7 +3,7 @@
 The `secrets.config-service/v1` capability: the config/secret store a HoBo
 deployment chooses **when it runs**, provisions, and hands to its owner **by
 claim** (ADR-0179 amendment
-[Secret store chosen at deploy, provisioned by claim](urn:hobo:decision:hosted-relay-stateless#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
+[Secret store chosen at deploy, provisioned by claim](../../docs/design/adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
 No human pre-setup, nothing in Vercel environment secrets, nothing in GitHub
 secrets or variables.
 

@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "rem-030-crew-mcp-autonomy-limitation",
+  "experienceType": "ax",
+  "title": "REM-030 Crew/MCP Autonomy Known-Limitation Proof",
+  "linear": "HOBO-697",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/cx/known-limitations-register-contract"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

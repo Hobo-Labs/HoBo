@@ -104,6 +104,10 @@ function hitsIn(file: string): readonly Hit[] {
  * removed, fails below.
  */
 const ALLOWANCES = {
+	"packages/ci/test/workspace-backend.test.ts": {
+		literals: { "/nonexistent/hobo-program": 1 },
+		why: 'a program path handed to spawn, which only tries to execute it: the child\'s error event becomes "command could not start" (src/workspace-backend.ts:143-145); nothing writes there',
+	},
 	"packages/componentize/test/real-componentize.test.ts": {
 		literals: { "/nowhere": 2 },
 		why: "the toolchain probe fails first, so componentize rejects without opening sourceRoot (src/real-componentize.ts:137-142)",
@@ -119,6 +123,10 @@ const ALLOWANCES = {
 	"packages/hobo/test/claim-ceremony-verbs.test.ts": {
 		literals: { "/nonexistent/elsewhere": 1 },
 		why: "a decoy HOBO_HOME that is compared, never opened: ceremony() passes flags.home (test :150), so claim-ceremony.ts:71-72 takes it and defaultHoboHome(env) at :73 does not run",
+	},
+	"packages/hobo/test/derivative-descriptor-and-conformance.test.ts": {
+		literals: { "/nonexistent": 1 },
+		why: "the command returns HOBO_NO_RUNTIME (src/derivative-command.ts:354-358) before it reads flags.cwd or context.cwd (:382-385)",
 	},
 	"packages/hobo/test/local-substrates.test.ts": {
 		literals: { "/definitely/not/here": 1 },
@@ -300,7 +308,7 @@ describe("the literal scan", () => {
 
 	it("reports a literal the allowances do not cover, an extra copy of one they do, and an allowance with no literal", () => {
 		const file =
-			"packages/iac/iac-pulumi/test/pulumi-automation-api-engine.test.ts";
+			"packages/hobo/test/derivative-descriptor-and-conformance.test.ts";
 		const { offenders, stale } = audit([
 			{
 				file: "packages/hobo/test/unlisted.test.ts",
@@ -312,9 +320,9 @@ describe("the literal scan", () => {
 			{ file, line: 12, literal: "/nonexistent/other" },
 		]);
 		expect(offenders).toEqual([
-			"packages/hobo/test/unlisted.test.ts:7  /nowhere",
 			`${file}:9  /nonexistent`,
 			`${file}:12  /nonexistent/other`,
+			"packages/hobo/test/unlisted.test.ts:7  /nowhere",
 		]);
 		expect(stale).toContain(
 			"packages/management/test/projections.test.ts  /nowhere x1",

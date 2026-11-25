@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "slo-rollback-decision-correctness-spike",
+  "title": "SLO Rollback Decision Correctness Spike",
+  "linear": "HOBO-356",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/slo-gated-rollback-analysis-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

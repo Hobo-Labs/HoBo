@@ -39,17 +39,17 @@ test("M0 record states goal, personas, scope, non-goals, and operating boundarie
 
 test("M0 dependencies map authoritative design sources and owning initiatives", () => {
   assert.deepEqual(UPGRADE_MIGRATION_SCOPE.designRefs, [
-    "urn:hobo:requirement:release-notes-upgrade-guide",
-    "urn:hobo:requirement:contracts-policy-flags#plan-29",
-    "urn:hobo:requirement:data-plane#plan-32",
-    "urn:hobo:requirement:wasm-runtime-wit#plan-20",
-    "urn:hobo:requirement:walkthrough",
+    "docs/design/release-notes-upgrade-guide.md",
+    "docs/design/contracts-policy-flags.md#plan-29",
+    "docs/design/data-plane.md#plan-32",
+    "docs/design/wasm-runtime-wit.md#plan-20",
+    "docs/design/walkthrough.md",
   ]);
   assert.deepEqual(UPGRADE_MIGRATION_SCOPE.adrRefs, [
-    "urn:hobo:decision:adr-0032",
-    "urn:hobo:decision:adr-0041",
-    "urn:hobo:decision:adr-0057",
-    "urn:hobo:decision:adr-0095",
+    "docs/design/adr/03-data-plane.md#adr-0032",
+    "docs/design/adr/07-portability-extensibility.md#adr-0041",
+    "docs/design/adr/07-portability-extensibility.md#adr-0057",
+    "docs/design/adr/07-portability-extensibility.md#adr-0095",
   ]);
   assert.ok(
     UPGRADE_MIGRATION_SCOPE.initiativeDependencies.some(

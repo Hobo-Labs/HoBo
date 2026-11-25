@@ -15,6 +15,15 @@ inputs:
       tools mise reports missing, so a pin bumped before an image rebuild self-heals.
     required: false
     default: "true"
+  tools:
+    description: >-
+      The job-scoped mise tools this job runs (betterleaks, python, syft),
+      space-separated, or `all`. The core tools are always installed and
+      checked; a job-scoped tool the job does not name is neither downloaded
+      nor checked, so a fleet image that lags a new pin costs only the jobs
+      that use it.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -51,6 +60,17 @@ runs:
         RUNNER_ENVIRONMENT: ${{ runner.environment }}
         HOBO_CI_HOSTED_BROWSER: ${{ inputs.browser }}
       run: bash "${GITHUB_ACTION_PATH}/hosted-toolchain.sh"
+    - name: Scope the job's mise tools
+      shell: bash
+      env:
+        HOBO_CI_JOB_TOOLS: ${{ inputs.tools }}
+      run: |
+        set -euo pipefail
+        echo "HOBO_CI_JOB_TOOLS=${HOBO_CI_JOB_TOOLS}" >> "$GITHUB_ENV"
+        if [ "${HOBO_CI_JOB_TOOLS}" != "all" ]; then
+          echo "MISE_EXEC_AUTO_INSTALL=false" >> "$GITHUB_ENV"
+          echo "MISE_NOT_FOUND_AUTO_INSTALL=false" >> "$GITHUB_ENV"
+        fi
     - shell: bash
       if: inputs.install-toolchain == 'true'
       run: |
@@ -58,7 +78,8 @@ runs:
         export MISE_EXPERIMENTAL=1
         if command -v mise >/dev/null 2>&1; then
           mise trust ./mise.toml
-          mise install --locked
+          mapfile -t tools < <(node --no-warnings scripts/ci-runner-preflight.mts --print-job-tools)
+          mise install --locked "${tools[@]}"
         fi
     - shell: bash
       run: |

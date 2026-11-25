@@ -1,24 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	assertDeliverySupported,
 	createInMemoryMessaging,
-	MESSAGING_EVENTS,
-	MESSAGING_WIT_INTERFACE,
+	MessagingDeliveryExhaustedError,
 	PORTABLE_MESSAGING_CAPABILITIES,
 	parseActorPlacementMode,
+	parseConsumerGroupId,
 	parseDeliveryGuarantee,
 	parseMessagingSpec,
+	parseSubscriptionName,
+	parseTopicName,
 	parseTopicSpec,
 	tenantScopedTopicName,
 } from "../src/ports/messaging.js";
+import { parseTenantId } from "../src/ports/tenant.js";
 import { first } from "../src/total-access.js";
 
 describe("@hobo/core messaging port", () => {
-	it("pins wasi:messaging interface ref", () => {
-		expect(MESSAGING_WIT_INTERFACE).toBe("wasi:messaging/messaging@0.2.0");
-	});
-
 	it("parses topic + messaging specs", () => {
 		const topic = parseTopicSpec({
 			name: "orders",
@@ -56,11 +55,14 @@ describe("@hobo/core messaging port", () => {
 	it("publish/subscribe round-trip with consumer groups", async () => {
 		const bus = createInMemoryMessaging({ tenantId: "t1" });
 		await bus.ensureTopic({
+			// SAFETY: assertion required at this I/O or test boundary.
 			name: "events" as never,
+			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: "t1" as never,
 			delivery: "at-least-once",
 		});
 		const pub = await bus.publish(
+			// SAFETY: assertion required at this I/O or test boundary.
 			"events" as never,
 			{ hello: "world" },
 			{
@@ -69,6 +71,7 @@ describe("@hobo/core messaging port", () => {
 		);
 		expect(pub.deduped).toBe(false);
 		const dedup = await bus.publish(
+			// SAFETY: assertion required at this I/O or test boundary.
 			"events" as never,
 			{ hello: "world" },
 			{
@@ -77,46 +80,119 @@ describe("@hobo/core messaging port", () => {
 		);
 		expect(dedup.deduped).toBe(true);
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		const consumed = await bus.consume("events" as never, "workers" as never, {
 			maxMessages: 10,
 		});
 		expect(consumed).toHaveLength(1);
 		expect(consumed[0]?.body).toEqual({ hello: "world" });
-		bus.ack(first(consumed).messageId, first(consumed).leaseId);
+		const acknowledgement = bus.ack(
+			first(consumed).messageId,
+			first(consumed).leaseId,
+		);
+		expect(acknowledgement).toBeInstanceOf(Promise);
+		await acknowledgement;
+		await expect(
+			bus.ack(first(consumed).messageId, first(consumed).leaseId),
+		).rejects.toThrow(/no inflight message/);
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		const again = await bus.consume("events" as never, "workers" as never);
 		expect(again).toHaveLength(0);
 
 		const types = bus.events().map((e) => e.type);
-		expect(types).toContain(MESSAGING_EVENTS.TopicCreated);
-		expect(types).toContain(MESSAGING_EVENTS.MessagePublished);
-		expect(types).toContain(MESSAGING_EVENTS.MessageAcknowledged);
+		expect(types).toContain("messaging.topic.created");
+		expect(types).toContain("messaging.published");
+		expect(types).toContain("messaging.acked");
 	});
 
-	it("dead-letters after max attempts", async () => {
+	it("leaves exhausted deliveries unsettled and rejects unavailable dead-letter configuration", async () => {
 		const bus = createInMemoryMessaging({ tenantId: "t1" });
-		await bus.ensureSubscription({
-			name: "s1" as never,
-			topic: "fail" as never,
-			consumerGroup: "g1" as never,
-			tenantId: "t1" as never,
-			delivery: "at-least-once",
+		const spec = {
+			name: parseSubscriptionName("s1"),
+			topic: parseTopicName("fail"),
+			consumerGroup: parseConsumerGroupId("g1"),
+			tenantId: parseTenantId("t1"),
+			delivery: "at-least-once" as const,
 			maxDeliveryAttempts: 2,
-		});
-		await bus.publish("fail" as never, { x: 1 });
-		const r1 = await bus.subscribe("fail" as never, "g1" as never, async () => {
+		};
+		expect(bus.capabilities.deadLetter).toBe(false);
+		await expect(
+			bus.ensureSubscription({
+				...spec,
+				deadLetterTopic: parseTopicName("dead"),
+			}),
+		).rejects.toMatchObject({ code: "MESSAGING_CAPABILITY" });
+		await bus.ensureSubscription(spec);
+		await bus.publish(parseTopicName("fail"), { x: 1 });
+		const fail = async () => {
 			throw new Error("boom");
-		});
-		expect(r1.handled).toBe(0);
-		const r2 = await bus.subscribe("fail" as never, "g1" as never, async () => {
-			throw new Error("boom");
-		});
-		expect(r2.deadLettered).toBe(1);
+		};
+		await bus.subscribe(
+			parseTopicName("fail"),
+			parseConsumerGroupId("g1"),
+			fail,
+		);
+		const error = await bus
+			.subscribe(parseTopicName("fail"), parseConsumerGroupId("g1"), fail)
+			.catch((caught: Error) => caught);
+		expect(error).toBeInstanceOf(MessagingDeliveryExhaustedError);
+		if (!(error instanceof MessagingDeliveryExhaustedError))
+			throw new Error("expected exhaustion");
+		expect(error.handled).toBe(0);
 		expect(
-			bus
-				.events()
-				.some((e) => e.type === MESSAGING_EVENTS.DeliveryPermanentlyFailed),
-		).toBe(true);
+			bus.events().some((event) => event.type === "messaging.dead_lettered"),
+		).toBe(false);
+		await bus.nack(error.delivery.messageId, error.delivery.leaseId);
+		const redelivered = await bus.consume(
+			parseTopicName("fail"),
+			parseConsumerGroupId("g1"),
+		);
+		expect(redelivered[0]?.messageId).toBe(error.delivery.messageId);
+		const claim = first(redelivered);
+		await bus.nack(claim.messageId, claim.leaseId);
+		const handler = vi.fn(async () => {});
+		await expect(
+			bus.subscribe(
+				parseTopicName("fail"),
+				parseConsumerGroupId("g1"),
+				handler,
+			),
+		).rejects.toBeInstanceOf(MessagingDeliveryExhaustedError);
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("rejects expired leases while keeping consumer groups independent", async () => {
+		let time = Date.parse("2026-01-01T00:00:00.000Z");
+		const bus = createInMemoryMessaging({
+			tenantId: "t1",
+			now: () => new Date(time).toISOString(),
+		});
+		const topic = parseTopicName("orders");
+		await bus.publish(topic, { id: 1 });
+		const firstGroup = first(
+			await bus.consume(topic, parseConsumerGroupId("a"), {
+				visibilityTimeoutMs: 10,
+			}),
+		);
+		const secondGroup = first(
+			await bus.consume(topic, parseConsumerGroupId("b"), {
+				visibilityTimeoutMs: 10,
+			}),
+		);
+		await bus.ack(secondGroup.messageId, secondGroup.leaseId);
+		time += 10;
+		await expect(
+			bus.ack(firstGroup.messageId, firstGroup.leaseId),
+		).rejects.toThrow(/lease expired/);
+		await expect(
+			bus.nack(firstGroup.messageId, firstGroup.leaseId),
+		).rejects.toThrow(/lease expired/);
+		const redelivery = first(
+			await bus.consume(topic, parseConsumerGroupId("a")),
+		);
+		expect(redelivery.leaseId).not.toBe(firstGroup.leaseId);
+		await bus.ack(redelivery.messageId, redelivery.leaseId);
 	});
 
 	it("guards unsupported delivery guarantees", () => {

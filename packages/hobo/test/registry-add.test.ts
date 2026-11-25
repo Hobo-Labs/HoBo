@@ -111,7 +111,7 @@ describe("hobo registry add", () => {
 		const { run, runtime } = cli();
 		const file = tempManifest(
 			"bad.yaml",
-			"schema: hobo.provider-manifest/v1\nprovider: { id: Bad Id, displayName: Bad }\nterms: { url: https://bad.example.com/terms, reviewedOn: 2026-11-18 }\ncapabilities: { mappings: [] }\n",
+			"schema: hobo.provider-manifest/v1\nprovider: { id: Bad Id, displayName: Bad }\ncapabilities: { mappings: [] }\n",
 		);
 		const result = await run("registry", "add", file);
 		expect(result.ok).toBe(false);
@@ -129,7 +129,7 @@ describe("hobo registry add", () => {
 		const { run } = cli();
 		const file = tempManifest(
 			"auth-only.yaml",
-			"schema: hobo.provider-manifest/v1\nprovider: { id: keyless, displayName: Keyless }\nterms: { url: https://keyless.example.com/terms, reviewedOn: 2026-11-18 }\nauth:\n  issuer: https://auth.example.com\n  flows:\n    - id: federation\n      oidcFederation: { audience: hobo }\n",
+			"schema: hobo.provider-manifest/v1\nprovider: { id: keyless, displayName: Keyless }\nauth:\n  issuer: https://auth.example.com\n  flows:\n    - id: federation\n      oidcFederation: { audience: hobo }\n",
 		);
 		const result = await run("registry", "add", file);
 		expect(result.code).toBe("HOBO_REGISTRY_ADD_NO_CAPABILITIES");
@@ -142,7 +142,7 @@ describe("hobo registry add", () => {
 		if (!/^[a-z0-9][a-z0-9._-]*$/u.test(builtIn)) return;
 		const file = tempManifest(
 			"squat.yaml",
-			`schema: hobo.provider-manifest/v1\nprovider: { id: ${builtIn}, displayName: Squat }\nterms: { url: https://squat.example.com/terms, reviewedOn: 2026-11-18 }\ncapabilities:\n  regions: [r]\n  mappings:\n    - { id: kv, port: kv, providerService: squat.kv }\n`,
+			`schema: hobo.provider-manifest/v1\nprovider: { id: ${builtIn}, displayName: Squat }\ncapabilities:\n  regions: [r]\n  mappings:\n    - { id: kv, port: kv, providerService: squat.kv }\n`,
 		);
 		expect((await run("registry", "add", file)).code).toBe(
 			"HOBO_REGISTRY_ADD_CONFLICT",
@@ -181,13 +181,11 @@ describe("hobo registry add: pricing catalog persistence", () => {
 		const events = await stream(runtime);
 		expect(events.map((event) => event.type)).toEqual([
 			"provider.Registered",
-			"resourcedef.Registered",
-			"resourcedef.Registered",
-			"resourcedef.Registered",
 			"pricing.CatalogRegistered",
 		]);
-		expect(events.at(-1)?.seq).toBe(
-			events[0]?.seq === undefined ? -1 : events[0].seq + events.length - 1,
+		// Same append, so the registration never exists without its prices.
+		expect(events[0]?.seq).toBe(
+			events[1]?.seq === undefined ? -1 : events[1].seq - 1,
 		);
 	});
 
@@ -269,7 +267,7 @@ describe("hobo registry add: pricing catalog persistence", () => {
 		const { run, runtime } = cli();
 		const file = tempManifest(
 			"no-billing.yaml",
-			"schema: hobo.provider-manifest/v1\nprovider: { id: free-host, displayName: Free Host }\nterms: { url: https://free-host.example.com/terms, reviewedOn: 2026-11-18 }\ncapabilities:\n  regions: [r]\n  mappings:\n    - { id: kv, port: kv, providerService: free.kv }\n",
+			"schema: hobo.provider-manifest/v1\nprovider: { id: free-host, displayName: Free Host }\ncapabilities:\n  regions: [r]\n  mappings:\n    - { id: kv, port: kv, providerService: free.kv }\n",
 		);
 		const result = await run("registry", "add", file);
 		expect(result.data.pricingCatalog).toMatchObject({
@@ -279,7 +277,6 @@ describe("hobo registry add: pricing catalog persistence", () => {
 		});
 		expect((await stream(runtime)).map((event) => event.type)).toEqual([
 			"provider.Registered",
-			"resourcedef.Registered",
 		]);
 	});
 
@@ -435,11 +432,6 @@ describe("hobo registry add: refreshing when the manifest's prices change", () =
 		expect(result.data.registration).toEqual({ refreshed: true });
 		expect(gpuRate(runtime)).toBe("0.0006");
 		expect(runtime.registry.providers()).toContain("acme-cloud");
-		expect(
-			(await collectStream(runtime.store, REGISTRY_STREAM)).filter(
-				(event) => event.type === "resourcedef.Updated",
-			),
-		).toHaveLength(3);
 	});
 
 	it("appends rather than rewrites, and reads back the latest", async () => {
@@ -562,7 +554,7 @@ describe("hobo registry add: only manifest registrations are refreshable", () =>
 	function manifestFor(id: string): string {
 		return tempManifest(
 			`${id}.yaml`,
-			`schema: hobo.provider-manifest/v1\nprovider: { id: ${id}, displayName: X }\nterms: { url: https://${id}.example.com/terms, reviewedOn: 2026-11-18 }\ncapabilities:\n  regions: [r]\n  mappings:\n    - { id: kv, port: kv, providerService: x.kv }\n`,
+			`schema: hobo.provider-manifest/v1\nprovider: { id: ${id}, displayName: X }\ncapabilities:\n  regions: [r]\n  mappings:\n    - { id: kv, port: kv, providerService: x.kv }\n`,
 		);
 	}
 

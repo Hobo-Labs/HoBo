@@ -3,7 +3,7 @@
 Independent HOBO-694 proof for `hobo dev` local multi-service orchestration.
 
 The contract models dependency-gated startup for the annotation classes pinned in
-[Plan 7](urn:hobo:requirement:developer-experience#the-inner-loop-hobo-dev) without
+[Plan 7](../../docs/design/developer-experience.md#the-inner-loop-hobo-dev) without
 implementing the runtime-local engine, container engine, or CLI watch loop.
 
 It proves:
@@ -24,9 +24,11 @@ Run:
 pnpm --prefix src/draft/technical-proofs/local-dev-orchestration-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Local Dev Orchestration Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

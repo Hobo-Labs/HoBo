@@ -2,47 +2,103 @@
 // @generated from file streamer_port.proto (package hobo.core.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Value } from "@bufbuild/protobuf/wkt";
-import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
+/**
+ * Describes the file streamer_port.proto.
+ */
 export const file_streamer_port: GenFile = /*@__PURE__*/
-  fileDesc("ChNzdHJlYW1lcl9wb3J0LnByb3RvEgxob2JvLmNvcmUudjEiYwoNU3RyZWFtZXJGcmFtZRIOCgZydW5faWQYASABKAkSCwoDc2VxGAIgASgBEg4KBnN0cmVhbRgDIAEoCRIlCgVjaHVuaxgEIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZSJDChFTdHJlYW1lclJ1blJlc3VsdBIOCgZydW5faWQYASABKAkSDgoGc3RhdHVzGAIgASgJEg4KBnJlYXNvbhgDIAEoCSJcChZTdHJlYW1lckhpc3RvcnlFeHBpcmVkEg4KBnJ1bl9pZBgBIAEoCRIVCg1yZXF1ZXN0ZWRfc2VxGAIgASgBEhsKE2ZpcnN0X2F2YWlsYWJsZV9zZXEYAyABKAFiBnByb3RvMw", [file_google_protobuf_struct]);
+  fileDesc("ChNzdHJlYW1lcl9wb3J0LnByb3RvEgxob2JvLmNvcmUudjEiSwoNU3RyZWFtZXJGcmFtZRIOCgZydW5faWQYASABKAkSCwoDc2VxGAIgASgDEg4KBnN0cmVhbRgDIAEoCRINCgVjaHVuaxgEIAEoDCJkChFTdHJlYW1lclJ1blJlc3VsdBIOCgZydW5faWQYASABKAkSLwoGc3RhdHVzGAIgASgOMh8uaG9iby5jb3JlLnYxLlN0cmVhbWVyUnVuU3RhdHVzEg4KBnJlYXNvbhgDIAEoCSqbAQoRU3RyZWFtZXJSdW5TdGF0dXMSIwofU1RSRUFNRVJfUlVOX1NUQVRVU19VTlNQRUNJRklFRBAAEiEKHVNUUkVBTUVSX1JVTl9TVEFUVVNfQ09NUExFVEVEEAESHgoaU1RSRUFNRVJfUlVOX1NUQVRVU19DTE9TRUQQAhIeChpTVFJFQU1FUl9SVU5fU1RBVFVTX0ZBSUxFRBADYgZwcm90bzM");
 
+/**
+ * @generated from message hobo.core.v1.StreamerFrame
+ */
 export type StreamerFrame = Message<"hobo.core.v1.StreamerFrame"> & {
+  /**
+   * @generated from field: string run_id = 1;
+   */
   runId: string;
 
-  seq: number;
+  /**
+   * @generated from field: int64 seq = 2;
+   */
+  seq: bigint;
 
+  /**
+   * @generated from field: string stream = 3;
+   */
   stream: string;
 
-  chunk?: Value | undefined;
+  /**
+   * @generated from field: bytes chunk = 4;
+   */
+  chunk: Uint8Array;
 };
 
+/**
+ * Describes the message hobo.core.v1.StreamerFrame.
+ * Use `create(StreamerFrameSchema)` to create a new message.
+ */
 export const StreamerFrameSchema: GenMessage<StreamerFrame> = /*@__PURE__*/
   messageDesc(file_streamer_port, 0);
 
+/**
+ * @generated from message hobo.core.v1.StreamerRunResult
+ */
 export type StreamerRunResult = Message<"hobo.core.v1.StreamerRunResult"> & {
+  /**
+   * @generated from field: string run_id = 1;
+   */
   runId: string;
 
-  status: string;
+  /**
+   * @generated from field: hobo.core.v1.StreamerRunStatus status = 2;
+   */
+  status: StreamerRunStatus;
 
+  /**
+   * @generated from field: string reason = 3;
+   */
   reason: string;
 };
 
+/**
+ * Describes the message hobo.core.v1.StreamerRunResult.
+ * Use `create(StreamerRunResultSchema)` to create a new message.
+ */
 export const StreamerRunResultSchema: GenMessage<StreamerRunResult> = /*@__PURE__*/
   messageDesc(file_streamer_port, 1);
 
-export type StreamerHistoryExpired = Message<"hobo.core.v1.StreamerHistoryExpired"> & {
-  runId: string;
+/**
+ * @generated from enum hobo.core.v1.StreamerRunStatus
+ */
+export enum StreamerRunStatus {
+  /**
+   * @generated from enum value: STREAMER_RUN_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
 
-  requestedSeq: number;
+  /**
+   * @generated from enum value: STREAMER_RUN_STATUS_COMPLETED = 1;
+   */
+  COMPLETED = 1,
 
-  firstAvailableSeq: number;
-};
+  /**
+   * @generated from enum value: STREAMER_RUN_STATUS_CLOSED = 2;
+   */
+  CLOSED = 2,
 
-export const StreamerHistoryExpiredSchema: GenMessage<StreamerHistoryExpired> = /*@__PURE__*/
-  messageDesc(file_streamer_port, 2);
+  /**
+   * @generated from enum value: STREAMER_RUN_STATUS_FAILED = 3;
+   */
+  FAILED = 3,
+}
+
+/**
+ * Describes the enum hobo.core.v1.StreamerRunStatus.
+ */
+export const StreamerRunStatusSchema: GenEnum<StreamerRunStatus> = /*@__PURE__*/
+  enumDesc(file_streamer_port, 0);
 

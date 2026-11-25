@@ -1,10 +1,10 @@
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 export const REQUIRED_DESIGN_ANCHORS = [
-  "urn:hobo:requirement:developer-experience#plan-07",
-  "urn:hobo:requirement:sdk-api#plan-02",
-  "urn:hobo:requirement:control-plane#plan-04",
-  "urn:hobo:requirement:platform-engineering#plan-25",
-  "urn:hobo:requirement:data-plane#plan-11",
+  "docs/design/developer-experience.md#plan-07",
+  "docs/design/sdk-api.md#plan-02",
+  "docs/design/control-plane.md#plan-04",
+  "docs/design/platform-engineering.md#plan-25",
+  "docs/design/data-plane.md#plan-11",
 ] as const;
 
 export const REQUIRED_PROOF_MODES = ["live", "simulated", "reference fixture", "scope-out"] as const;
@@ -58,7 +58,7 @@ interface ChildSlice {
   title: string;
   phase: Phase;
   targetPackage: ExpProofPackagePath;
-  proofNote: `urn:hobo:proof:${string}`;
+  proofNote: `docs/design/proofs/${string}/README.md`;
   coverage: Coverage[];
   dependsOn: `HOBO-${number}`[];
   scopeOut: string[];
@@ -76,7 +76,7 @@ interface DownstreamConsumerGate {
 interface DxBackboneRecord {
   issue: "HOBO-566";
   targetPackage: "src/draft/exp-proofs/dx/dx-backbone-resource-lifecycle-vibe";
-  proofNote: "urn:hobo:proof:dx-backbone-resource-lifecycle-vibe";
+  proofNote: "docs/design/proofs/dx-backbone-resource-lifecycle-vibe/README.md";
   designAnchors: DesignAnchor[];
   proofModes: ProofMode[];
   childSlices: ChildSlice[];
@@ -106,26 +106,26 @@ const TYPED_EXP_PROOF_PATH = /^src\/draft\/exp-proofs\/(dx|ux|cx|ax|api)\/[a-z0-
 export const DX_BACKBONE_RECORD: DxBackboneRecord = {
   issue: "HOBO-566",
   targetPackage: "src/draft/exp-proofs/dx/dx-backbone-resource-lifecycle-vibe",
-  proofNote: "urn:hobo:proof:dx-backbone-resource-lifecycle-vibe",
+  proofNote: "docs/design/proofs/dx-backbone-resource-lifecycle-vibe/README.md",
   designAnchors: [
     {
-      source: "urn:hobo:requirement:developer-experience#plan-07",
+      source: "docs/design/developer-experience.md#plan-07",
       reason: "Defines terminal-first lifecycle commands, MCP parity, projection reads, and proof-mode honesty.",
     },
     {
-      source: "urn:hobo:requirement:sdk-api#plan-02",
+      source: "docs/design/sdk-api.md#plan-02",
       reason: "Defines WIT-first SDK object graph, thin idiom layer, manifest IR, and generated type expectations.",
     },
     {
-      source: "urn:hobo:requirement:control-plane#plan-04",
+      source: "docs/design/control-plane.md#plan-04",
       reason: "Defines DeploymentPlan, ResourceActor, Gatekeeper, Gateway, and API/MCP ingress constraints.",
     },
     {
-      source: "urn:hobo:requirement:platform-engineering#plan-25",
+      source: "docs/design/platform-engineering.md#plan-25",
       reason: "Defines Deployment Sets, Deltas, matching, Gatekeeper application, import/adopt, and migration gating.",
     },
     {
-      source: "urn:hobo:requirement:data-plane#plan-11",
+      source: "docs/design/data-plane.md#plan-11",
       reason: "Defines event families, projection reads, migration events, and support/audit facts consumed by DX fixtures.",
     },
   ],
@@ -288,7 +288,7 @@ export function validateDxBackboneRecord(record: JsonValue): BackboneValidation 
   if (candidate.targetPackage !== "src/draft/exp-proofs/dx/dx-backbone-resource-lifecycle-vibe") {
     errors.push("target package must be the HOBO-566 exp proof");
   }
-  if (candidate.proofNote !== "urn:hobo:proof:dx-backbone-resource-lifecycle-vibe") {
+  if (candidate.proofNote !== "docs/design/proofs/dx-backbone-resource-lifecycle-vibe/README.md") {
     errors.push("proof note must be the HOBO-566 design proof README");
   }
 
@@ -331,7 +331,7 @@ export function validateDxBackboneRecord(record: JsonValue): BackboneValidation 
     if (!TYPED_EXP_PROOF_PATH.test(targetPackage)) {
       errors.push(`${label} must target src/draft/exp-proofs/<type>/<slug>`);
     }
-    if (proofNote !== `urn:hobo:proof:${slug}`) {
+    if (proofNote !== `docs/design/proofs/${slug}/README.md`) {
       errors.push(`${label} proof note must mirror its target package slug`);
     }
     if (scopeOut.length === 0) {
@@ -351,7 +351,8 @@ export function validateDxBackboneRecord(record: JsonValue): BackboneValidation 
         phase: slice.phase,
         // SAFETY: `targetPackage: targetPackage as ExpProofPackagePath,` is required at this I/O or test boundary.
         targetPackage: targetPackage as ExpProofPackagePath,
-        proofNote: proofNote as `urn:hobo:proof:${string}`,
+        // SAFETY: `proofNote: proofNote as `docs/design/proofs/${string}/README.md`,` is required at this I/O or test boundary.
+        proofNote: proofNote as `docs/design/proofs/${string}/README.md`,
         // SAFETY: `coverage: sliceCoverage as Coverage[],` is required at this I/O or test boundary.
         coverage: sliceCoverage as Coverage[],
         dependsOn: dependsOn.filter(isHoboIssue),
@@ -500,7 +501,7 @@ function childSlice(
   return {
     ...slice,
     targetPackage: `src/draft/exp-proofs/${experienceType}/${slug}`,
-    proofNote: `urn:hobo:proof:${slug}`,
+    proofNote: `docs/design/proofs/${slug}/README.md`,
   };
 }
 

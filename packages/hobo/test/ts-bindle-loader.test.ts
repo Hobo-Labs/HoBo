@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import helloBindle from "../../../examples/hello-bindle/src/bindle.js";
 import { createComposedHoboCli } from "../src/cli.js";
 import { createDefaultYardRuntime } from "../src/compose.js";
+import type { JsonObject } from "../src/json.js";
 
 // Verification: a fresh project with only a bindle
 // source (no hobo.bindle.json) runs collect → plan → up against the local
@@ -145,17 +146,27 @@ export default {
 		expect(envelope.data.served.body).toContain("hi from loader /");
 	});
 
-	it("collect writes the source manifest for subsequent drift checks", async () => {
+	it("a committed hobo.bindle.json still wins over the source path", async () => {
 		const projectDir = await scaffoldProject();
+		// Compile the source once, commit the artifact, then verify collect
+		// --check agrees (artifact and source describe the same manifest).
 		const cli = createComposedHoboCli();
 		const collected = await cli.run(["collect", "--json"], {
 			cwd: projectDir,
 		});
-		expect(collected.exitCode).toBe(0);
+		// SAFETY: assertion required at this I/O or test boundary.
+		const envelope = JSON.parse(collected.stdout) as {
+			data: { manifest: JsonObject };
+		};
+		await writeFile(
+			path.join(projectDir, "hobo.manifest.json"),
+			JSON.stringify(envelope.data.manifest, null, 2),
+		);
 		const check = await cli.run(["collect", "--check", "--json"], {
 			cwd: projectDir,
 		});
-		expect(check.exitCode, check.stdout).toBe(0);
+		expect(check.exitCode).toBe(0);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const checkEnvelope = JSON.parse(check.stdout) as { code: string };
 		expect(checkEnvelope.code).toBe("HOBO_OK");
 		expect(

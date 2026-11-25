@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import {
 	type ComponentRegistration,
 	type EstablishedLink,
@@ -10,132 +9,77 @@ import {
 	type ProviderRegistration,
 	parseInterfaceId,
 	parseWireVersion,
-	type TransportInvocation,
 	WireVersionIncompatibleError,
-	type WrpcLinkCalledEvent,
 	type WrpcLinkPort,
 	type WrpcTransport,
 } from "@hobo/core";
 import {
-	classifyToRuntimeError,
 	DeadlineExceededError,
 	MembraneBackpressureError,
-	RuntimeMembraneError,
 } from "../failure/taxonomy.js";
 import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 import { createInProcessTransport } from "./in-process-transport.js";
 import { negotiateWireVersion } from "./wire-version.js";
 
+/**
+ * A monotonic-enough source of wall-clock milliseconds, injectable so tests
+ * can drive deadline enforcement deterministically. Defaults to `Date.now`.
+ */
 export interface LinkClock {
 	nowMs(): number;
 }
 
 const DEFAULT_LINK_CLOCK: LinkClock = { nowMs: () => Date.now() };
-const MAX_TIMER_MS = 2_147_483_647;
-const activeDeadline = new AsyncLocalStorage<{
-	readonly iso: string;
-	readonly milliseconds: number;
-}>();
 
+/**
+ * Race a link invocation against its carried deadline. A call that settles
+ * before the remaining budget elapses wins (synchronous/fast providers resolve
+ * on the microtask queue and beat even a zero-length timer); a slow provider
+ * loses to the timer and is cancelled with a typed {@link DeadlineExceededError}.
+ * The losing invocation's settlement is consumed so it never leaks as an
+ * unhandled rejection.
+ */
 function raceDeadline<T>(
 	work: Promise<T>,
-	deadlineMs: number,
-	clock: LinkClock,
-	makeError: (observedNowMs: number) => DeadlineExceededError,
-	abort: AbortController,
+	remainingMs: number,
+	makeError: () => DeadlineExceededError,
 ): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
 		let settled = false;
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		const fail = (error: RuntimeMembraneError) => {
-			if (settled) return;
+		const timer = setTimeout(() => {
+			if (settled) {
+				return;
+			}
 			settled = true;
-			clearTimeout(timer);
-			abort.abort(error);
-			reject(error);
-		};
-		const schedule = () => {
-			if (settled) return;
-			let observedNowMs: number;
-			try {
-				observedNowMs = checkedNow(clock);
-			} catch {
-				fail(new RuntimeMembraneError("fatal", "wrpc.invalid_clock"));
-				return;
-			}
-			const remaining = deadlineMs - observedNowMs;
-			if (remaining <= 0) {
-				fail(makeError(observedNowMs));
-				return;
-			}
-			timer = setTimeout(schedule, Math.min(remaining, MAX_TIMER_MS));
-		};
-		schedule();
-		const finish = (complete: () => void) => {
-			if (settled) return;
-			try {
-				const observedNowMs = checkedNow(clock);
-				if (observedNowMs >= deadlineMs) {
-					fail(makeError(observedNowMs));
+			reject(makeError());
+		}, remainingMs);
+		if (isJsonObject(timer) && timer && timer.unref instanceof Function) {
+			timer.unref();
+		}
+		work.then(
+			(value) => {
+				if (settled) {
 					return;
 				}
-			} catch {
-				fail(new RuntimeMembraneError("fatal", "wrpc.invalid_clock"));
-				return;
-			}
-			settled = true;
-			clearTimeout(timer);
-			complete();
-		};
-		work.then(
-			(value) => finish(() => resolve(value)),
-			(error: Error) => finish(() => reject(error)),
+				settled = true;
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error: Error) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				clearTimeout(timer);
+				reject(error);
+			},
 		);
 	});
 }
 
-function parseDeadlineMs(iso: string): number {
-	if (!isJsonString(iso) || iso.length > 128)
-		throw new RuntimeMembraneError("fatal", "wrpc.invalid_deadline");
-	const match =
-		/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:Z|[+-](\d{2}):(\d{2}))$/u.exec(
-			iso,
-		);
-	if (!match) throw new RuntimeMembraneError("fatal", "wrpc.invalid_deadline");
-	const year = Number(match[1]);
-	const month = Number(match[2]);
-	const day = Number(match[3]);
-	const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-	const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-	if (
-		month < 1 ||
-		month > 12 ||
-		day < 1 ||
-		day > (days[month - 1] ?? 0) ||
-		Number(match[4]) > 23 ||
-		Number(match[5]) > 59 ||
-		Number(match[6]) > 59 ||
-		Number(match[8] ?? 0) > 23 ||
-		Number(match[9] ?? 0) > 59
-	) {
-		throw new RuntimeMembraneError("fatal", "wrpc.invalid_deadline");
-	}
+function parseDeadlineMs(iso: string): number | null {
 	const ms = Date.parse(iso);
-	if (!Number.isFinite(ms))
-		throw new RuntimeMembraneError("fatal", "wrpc.invalid_deadline");
-	return ms;
-}
-
-function checkedNow(clock: LinkClock): number {
-	let now: number;
-	try {
-		now = clock.nowMs();
-	} catch {
-		throw new RuntimeMembraneError("fatal", "wrpc.invalid_clock");
-	}
-	if (!Number.isFinite(now))
-		throw new RuntimeMembraneError("fatal", "wrpc.invalid_clock");
-	return now;
+	return Number.isNaN(ms) ? null : ms;
 }
 
 type IndexedPins = Map<
@@ -164,7 +108,13 @@ export function createWrpcLinkLayer(options: {
 	transport: WrpcTransport;
 	compatibilityFloor: string;
 	store?: ProviderHandlerStore;
+	/**
+	 * Membrane backpressure bound: the maximum number of concurrent in-flight
+	 * calls per provider before the link sheds load with a typed
+	 * {@link MembraneBackpressureError}. Defaults to unbounded (carry-only).
+	 */
 	maxInFlight?: number;
+	/** Clock used to enforce carried deadlines. Defaults to `Date.now`. */
 	clock?: LinkClock;
 }): WrpcLinkPort {
 	const floor = parseWireVersion(options.compatibilityFloor);
@@ -200,19 +150,6 @@ export function createWrpcLinkLayer(options: {
 				exports: indexPins(provider.exports),
 			});
 			store.register(provider);
-		},
-
-		manifestIr() {
-			return {
-				schema: "hobo.manifest.wrpc-links/v1",
-				links: [...links.values()].map((link) => ({
-					componentId: link.componentId,
-					importInterface: link.importInterface,
-					providerId: link.providerId,
-					exportInterface: link.exportInterface,
-					wire: { ...link.negotiatedWire },
-				})),
-			};
 		},
 
 		establishLink(request: LinkRequest): EstablishedLink {
@@ -306,34 +243,8 @@ export function createWrpcLinkLayer(options: {
 				});
 			}
 
-			let deadlineIso = options.deadline ?? null;
-			let deadlineMs =
-				deadlineIso === null ? null : parseDeadlineMs(deadlineIso);
-			const parent = activeDeadline.getStore();
-			if (
-				parent &&
-				(deadlineMs === null || parent.milliseconds <= deadlineMs)
-			) {
-				deadlineIso = parent.iso;
-				deadlineMs = parent.milliseconds;
-			}
-			const startedAtMs = deadlineMs === null ? null : checkedNow(clock);
-			if (
-				deadlineIso !== null &&
-				deadlineMs !== null &&
-				startedAtMs !== null &&
-				deadlineMs <= startedAtMs
-			) {
-				throw new DeadlineExceededError({
-					componentId,
-					importInterface: parsedInterface,
-					operation,
-					deadline: deadlineIso,
-					deadlineMs,
-					observedNowMs: startedAtMs,
-				});
-			}
-
+			// Membrane backpressure: a saturated provider sheds load with a
+			// typed retryable error rather than buffering unboundedly.
 			const providerId = link.providerId;
 			const current = inFlight.get(providerId) ?? 0;
 			if (current >= maxInFlight) {
@@ -346,95 +257,56 @@ export function createWrpcLinkLayer(options: {
 				});
 			}
 
+			// Each link is a timeout boundary: a carried deadline is enforced,
+			// not merely propagated. A call still in flight past the deadline is
+			// cancelled with a typed `cancelled`/deadline-exceeded error.
+			const deadlineIso = options.deadline ?? null;
+			const deadlineMs =
+				deadlineIso !== null ? parseDeadlineMs(deadlineIso) : null;
+			const startedAtMs = clock.nowMs();
+
 			inFlight.set(providerId, current + 1);
-			const abort = new AbortController();
-			const release = () => {
-				const remaining = (inFlight.get(providerId) ?? 1) - 1;
-				if (remaining === 0) inFlight.delete(providerId);
-				else inFlight.set(providerId, remaining);
-			};
-			const callEvent: WrpcLinkCalledEvent = {
-				type: "link.Called",
-				componentId: link.componentId,
-				importInterface: link.importInterface,
-				providerId: link.providerId,
-				exportInterface: link.exportInterface,
-				operation,
-				boundaryMode: link.boundaryMode,
-				transport: link.transport,
-				codec: codecName,
-				deadline: deadlineIso,
-			};
 			try {
-				let invocation: Promise<JsonValue>;
-				const transportInvocation: TransportInvocation = {
+				const invocation = transport.invoke({
 					link,
 					operation,
 					payload,
 					deadline: deadlineIso,
-				};
-				if (transport.kind === "in-process") {
-					transportInvocation.signal = abort.signal;
-				}
-				try {
-					const invoke = () => transport.invoke(transportInvocation);
-					invocation = Promise.resolve(
-						deadlineIso !== null && deadlineMs !== null
-							? activeDeadline.run(
-									{ iso: deadlineIso, milliseconds: deadlineMs },
-									invoke,
-								)
-							: invoke(),
-					);
-				} catch (error) {
-					release();
-					throw error;
-				}
-				const tracked = invocation.finally(release);
+				});
 
 				const result =
-					deadlineMs !== null && deadlineIso !== null
+					deadlineMs !== null
 						? await raceDeadline(
-								tracked,
-								deadlineMs,
-								clock,
-								(observedNowMs) =>
+								invocation,
+								Math.max(0, deadlineMs - startedAtMs),
+								() =>
 									new DeadlineExceededError({
 										componentId,
 										importInterface: parsedInterface,
 										operation,
-										deadline: deadlineIso,
+										// SAFETY: assertion to `deadlineIso as string` is required at this boundary.
+										deadline: deadlineIso as string,
 										deadlineMs,
-										observedNowMs,
+										observedNowMs: startedAtMs,
 									}),
-								abort,
 							)
-						: await tracked;
+						: await invocation;
 
-				events.push(callEvent);
-				return result;
-			} catch (error) {
-				const failure =
-					error instanceof DeadlineExceededError
-						? ({
-								outcome: "deadline-exceeded",
-								failureKind: "cancelled",
-							} as const)
-						: ({
-								outcome: "error",
-								failureKind: classifyToRuntimeError(error).tag,
-							} as const);
 				events.push({
-					...callEvent,
-					...failure,
-					...(abort.signal.aborted
-						? {
-								cancellation:
-									transport.kind === "in-process" ? "signaled" : "unavailable",
-							}
-						: undefined),
+					type: "link.Called",
+					componentId: link.componentId,
+					importInterface: link.importInterface,
+					providerId: link.providerId,
+					exportInterface: link.exportInterface,
+					operation,
+					boundaryMode: link.boundaryMode,
+					transport: link.transport,
+					codec: codecName,
+					deadline: deadlineIso,
 				});
-				throw error;
+				return result;
+			} finally {
+				inFlight.set(providerId, (inFlight.get(providerId) ?? 1) - 1);
 			}
 		},
 

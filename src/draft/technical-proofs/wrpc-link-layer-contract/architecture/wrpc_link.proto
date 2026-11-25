@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package hobo.runtime_local.wrpc.v1;
+
+message InterfacePin {
+  string interface_id = 1;
+  string stability = 2;
+  repeated string versions = 3;
+}
+
+message NegotiatedWire {
+  string interface_id = 1;
+  string version = 2;
+  string minor = 3;
+  string stability = 4;
+  string floor = 5;
+}
+
+message LinkEstablished {
+  string component_id = 1;
+  string import_interface = 2;
+  string provider_id = 3;
+  string export_interface = 4;
+  string transport = 5;
+  string boundary_mode = 6;
+  NegotiatedWire negotiated_wire = 7;
+}
+
+message LinkCalled {
+  string component_id = 1;
+  string import_interface = 2;
+  string provider_id = 3;
+  string export_interface = 4;
+  string operation = 5;
+  string boundary_mode = 6;
+  string transport = 7;
+  string codec = 8;
+  optional string deadline = 9;
+}
+
+message LinkRejected {
+  string code = 1;
+  string reason = 2;
+  string component_id = 3;
+  string provider_id = 4;
+  string interface_id = 5;
+  string floor = 6;
+}

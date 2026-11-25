@@ -219,18 +219,18 @@ export const ENTITLEMENT_ABUSE_RATE_LIMIT_POLICY = Object.freeze({
     },
   ]),
   designRefs: Object.freeze([
-    "urn:hobo:requirement:entitlements-plan-limits",
-    "urn:hobo:requirement:billing-launch-policy",
-    "urn:hobo:requirement:usage-metering",
-    "urn:hobo:requirement:tenant-isolation-quotas",
-    "urn:hobo:requirement:security-verification",
-    "urn:hobo:requirement:support-sla-channels",
+    "docs/design/entitlements-plan-limits.md",
+    "docs/design/billing-launch-policy.md",
+    "docs/design/usage-metering.md",
+    "docs/design/tenant-isolation-quotas.md",
+    "docs/design/security-verification.md",
+    "docs/design/support-sla-channels.md",
   ]),
   adrRefs: Object.freeze([
-    "urn:hobo:decision:adr-0039",
-    "urn:hobo:decision:adr-0074",
-    "urn:hobo:decision:adr-0077",
-    "urn:hobo:decision:adr-0080",
+    "docs/design/adr/02-identity-security.md#adr-0039",
+    "docs/design/adr/02-identity-security.md#adr-0074",
+    "docs/design/adr/02-identity-security.md#adr-0077",
+    "docs/design/adr/02-identity-security.md#adr-0080",
   ]),
 });
 

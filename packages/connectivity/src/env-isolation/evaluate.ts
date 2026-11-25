@@ -1,6 +1,14 @@
+/**
+ * Shared env-isolation evaluation used by TagAcl and rego-lite paths.
+ * Fail closed; network membership is a signal only.
+ */
+
 import type { PolicyRequest } from "@hobo/core";
 import { isJsonString } from "../json.js";
-import { verifyElevatedAccessCapability } from "./elevated-capability.js";
+import {
+	type ElevatedCapabilityTrust,
+	verifyElevatedAccessCapability,
+} from "./elevated-capability.js";
 import type { BreakGlassService, CrossEnvGrantStore } from "./grants.js";
 import type { EnvMembershipService } from "./membership.js";
 import { assertMembershipIntegrity } from "./membership.js";
@@ -15,15 +23,25 @@ import {
 } from "./types.js";
 
 export type EnvIsolationEvalContext = Readonly<{
+	/** Control-plane membership service (optional; when absent, tag-only soft path with integrity fail for critical). */
 	membership?: EnvMembershipService;
 	crossEnvGrants?: CrossEnvGrantStore;
 	breakGlass?: BreakGlassService;
 	policyPack?: EnvNetworkIsolationPolicyPack;
+	/** Elevated capability JWT if presented. */
 	elevatedToken?: string;
+	elevatedTrust?: ElevatedCapabilityTrust;
+	/** Cross-env grant id if presented. */
 	crossEnvGrantId?: string;
+	/** Simulated engine failure → fail closed. */
 	engineUnavailable?: boolean;
 	now?: string;
+	/** When true (default), missing env denies. */
 	requireEnv?: boolean;
+	/**
+	 * When true, client env: tags must match control-plane membership.
+	 * Default true for production-class resources.
+	 */
 	enforceMembershipIntegrity?: boolean;
 }>;
 
@@ -35,10 +53,15 @@ export type EnvIsolationVerdict = Readonly<{
 	code?: string;
 }>;
 
-export function evaluateEnvIsolation(
+/**
+ * Evaluate environment isolation for a PolicyRequest.
+ * Order: engine down → missing env → membership integrity → same env →
+ * cross-env grant / elevated / break-glass → deny.
+ */
+export async function evaluateEnvIsolation(
 	request: PolicyRequest,
 	ctx: EnvIsolationEvalContext = {},
-): EnvIsolationVerdict {
+): Promise<EnvIsolationVerdict> {
 	const pack = ctx.policyPack ?? DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK;
 	const requireEnv = ctx.requireEnv !== false;
 
@@ -83,6 +106,7 @@ export function evaluateEnvIsolation(
 		};
 	}
 
+	// Membership integrity for isolation-critical resource classes.
 	const critical =
 		resourceClass === "production" ||
 		resourceClass === "staging" ||
@@ -93,6 +117,7 @@ export function evaluateEnvIsolation(
 		ctx.membership &&
 		subjectClass
 	) {
+		await ctx.membership.refresh();
 		const mem = ctx.membership.getActive(
 			request.subject.identity,
 			subjectClass,
@@ -104,6 +129,7 @@ export function evaluateEnvIsolation(
 			principalId: request.subject.identity,
 		});
 		if (!integrity.ok) {
+			// Agent principals: same or stricter
 			const isAgent =
 				request.subject.tags.includes("principal:agent") ||
 				request.subject.attributes?.principalKind === "agent" ||
@@ -133,6 +159,7 @@ export function evaluateEnvIsolation(
 		};
 	}
 
+	// Cross-env path: require explicit grant / elevated / break-glass.
 	const now = ctx.now ?? new Date().toISOString();
 
 	if (
@@ -181,11 +208,11 @@ export function evaluateEnvIsolation(
 
 	if (ctx.elevatedToken && resourceClass) {
 		const audience = `${resourceClass}-access`;
-		const verified = verifyElevatedAccessCapability({
+		const verified = await verifyElevatedAccessCapability({
 			token: ctx.elevatedToken,
 			expectedAudience: audience,
 			expectedIsolationClass: resourceClass,
-			allowDefaultSecret: true,
+			trust: ctx.elevatedTrust,
 			now,
 		});
 		if (verified.ok) {
@@ -219,16 +246,17 @@ export function evaluateEnvIsolation(
 		}
 	}
 
+	// Context may carry elevated token / grant on request.context
 	const ctxElevated = isJsonString(request.context?.elevatedToken)
 		? request.context.elevatedToken
 		: undefined;
 	if (ctxElevated && resourceClass && !ctx.elevatedToken) {
 		const audience = `${resourceClass}-access`;
-		const verified = verifyElevatedAccessCapability({
+		const verified = await verifyElevatedAccessCapability({
 			token: ctxElevated,
 			expectedAudience: audience,
 			expectedIsolationClass: resourceClass,
-			allowDefaultSecret: true,
+			trust: ctx.elevatedTrust,
 			now,
 		});
 		if (verified.ok) {

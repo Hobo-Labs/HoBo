@@ -16,7 +16,8 @@ Run the focused proof:
 pnpm --dir src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures test
 ```
 
-## Executable evidence
+## Design Alignment
+
 - PLAN-32 / Deployment Dashboard & Topology Explorer: fixture states describe projection freshness, tenant/RBAC scope, safe customer wording, and support owner routing.
 - ADR-0050: read-state fixtures are projection-shaped and event-friendly without adding a read-store runtime.
 - ADR-0077: tenant-first scope and RBAC role fields are parsed into the fixture object before consumers render them.

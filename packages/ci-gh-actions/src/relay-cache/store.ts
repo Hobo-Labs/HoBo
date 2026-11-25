@@ -1,3 +1,20 @@
+/**
+ * The hosted relay's store on a cache (ADR-0179, phase 4a).
+ *
+ * Everything here is short-lived state in an `EphemeralStatePort`: one lease
+ * record per job attempt, one job record (taken marker, pending demand,
+ * assignment fence and terminal tombstone), a small per-account in-flight
+ * index, a pending-demand set, webhook dedupe markers, sandbox counters and a
+ * per-account change ring. Configuration is read-only, supplied by the config
+ * service. There is no partition lock: every write is a compare-and-set on
+ * one key, and the expected-state checks of the lease stores (`SqliteCiStore`)
+ * are kept on each of them. Lease ids are deterministic (`lease-id.ts`), so a lost record
+ * is found again by name (`rebuild.ts`).
+ *
+ * What the removed Postgres store kept as durable history is gone by design: no event
+ * journal, no completed-lease ledger, no inbox. Budget exposure is what
+ * providers report plus the holds of in-flight leases.
+ */
 import { randomUUID } from "node:crypto";
 import { clone, create } from "@bufbuild/protobuf";
 import {
@@ -5,6 +22,7 @@ import {
 	type Account,
 	AccountSchema,
 	accountEventPage,
+	allocationQuote,
 	type CiEvent,
 	type CiEventPage,
 	CiEventSchema,
@@ -40,7 +58,7 @@ import {
 	SequencedCiEventSchema,
 	sandboxProxyOnlyUsageQuote,
 	sandboxUsageQuote,
-	shouldAbortIsolatedFleetLease,
+	shouldAbortIsolatedLease,
 	type WebhookInput,
 } from "@hobo/ci";
 import { leaseFinancialIdentity, pinCiQueueDeadline } from "@hobo/ci/store";
@@ -52,7 +70,6 @@ import {
 	type EphemeralTtlMs,
 	type EphemeralVersion,
 } from "@hobo/core";
-import { allocationQuote } from "@hobo/pricing";
 import {
 	RelayCacheAssignmentSchema,
 	RelayCacheDeliverySchema,
@@ -101,38 +118,51 @@ import {
 	relaySandboxCounterTtl,
 } from "./records.js";
 
+/** Read-only configuration as the config service supplies it. */
 export type RelayConfigSnapshot = Readonly<{
 	state: ConfigurationState;
+	/** Desired CI policy per account (`ci-policy:<accountId>` today). */
 	policies: readonly Readonly<{ accountId: string; bodyJson: string }>[];
 }>;
 
+/** Where the store reads configuration. It never writes there. */
 export interface RelayConfigSource {
 	read(): Promise<RelayConfigSnapshot>;
 }
 
+/** A fixed snapshot: tests, and a host that refreshes by rebuilding the store. */
 export function staticRelayConfig(
 	snapshot: RelayConfigSnapshot,
 ): RelayConfigSource {
 	return { read: async () => snapshot };
 }
 
+/**
+ * Spend a provider reports for an account, from Vercel's and GitHub's usage
+ * APIs once a client for them exists (none is in the repository; ADR-0179
+ * phase 5 defers it). Budget exposure is this plus in-flight holds.
+ */
 export type ProviderUsageObservation = Readonly<{
 	observedAt: string;
 	accountSpentMicros?: number;
+	/** Spend per offer id. */
 	offerSpentMicros?: Readonly<Record<string, number>>;
 }>;
 export interface ProviderUsagePort {
 	observed(accountId: string): Promise<ProviderUsageObservation | undefined>;
 }
+/** No pulled usage: exposure is configured spend plus holds. */
 export const NO_PROVIDER_USAGE: ProviderUsagePort = {
 	observed: async () => undefined,
 };
 
+/** A verified webhook the relay accepted, handed to intake (Vercel Queue in phase 4b). */
 export type RelayAcceptedDelivery = Readonly<WebhookInput>;
 export interface RelayWebhookIntake {
 	enqueue(delivery: RelayAcceptedDelivery): Promise<void>;
 }
 
+/** A write this store refuses because configuration lives in the config service. */
 export class RelayConfigReadOnlyError extends Error {
 	readonly code = "HOBO_CI_RELAY_CONFIG_READ_ONLY";
 	constructor(what: string) {
@@ -144,18 +174,29 @@ export class RelayConfigReadOnlyError extends Error {
 export type RelayCacheStoreOptions = Readonly<{
 	state: EphemeralStatePort;
 	config: RelayConfigSource;
+	/** Key namespace: `hobo-ci:<environment>:`. */
 	environment: string;
 	intake?: RelayWebhookIntake;
 	usage?: ProviderUsagePort;
+	/** Key for derived sandbox proxy tokens; sandbox proxy paths refuse without it. */
 	proxyTokenKey?: ProxyTokenKey | undefined;
+	/** Called with a fixed event name and counts only; never values. */
 	onDiagnostic?: (
 		event: string,
 		detail: Readonly<Record<string, number | string>>,
 	) => void;
+	/** Wall clock for sandbox proxy rate windows. */
 	nowMs?: () => number;
+	/**
+	 * Called after every lease record this store writes, with the state the
+	 * lease had before (absent for a new record). The hosted relay schedules
+	 * its per-lease queue steps from it. A hook that throws is reported, not
+	 * propagated: the write it follows has already happened.
+	 */
 	onLeaseChange?: (change: RelayLeaseChange) => Promise<void> | void;
 }>;
 
+/** One lease write, as `onLeaseChange` sees it. */
 export type RelayLeaseChange = Readonly<{
 	lease: Lease;
 	type: string;
@@ -163,6 +204,13 @@ export type RelayLeaseChange = Readonly<{
 	previousState: string | undefined;
 }>;
 
+/**
+ * Lease events the change ring keeps although the lease's state did not
+ * change: each says something a state cannot. Every other lease write that
+ * leaves the state alone (an observed job id, a sandbox sub-stage, a proxy
+ * binding) stays out of the ring: MCP follows job state, and a reader that
+ * wants a lease's detail reads the lease.
+ */
 const FEED_SAME_STATE_EVENTS = new Set([
 	"ci.BudgetOverrun",
 	"ci.AssignmentUnknown",
@@ -190,6 +238,7 @@ const SANDBOX_FIELDS = [
 
 type Slot<T> = { version: EphemeralVersion; record: T };
 type LeaseSlot = Slot<RelayCacheLease> & { lease: Lease };
+/** An account's in-flight index as read: the stored slot, or a fresh empty record. */
 type IndexRead = {
 	slot?: Slot<RelayCacheInflight>;
 	record: RelayCacheInflight;
@@ -209,10 +258,12 @@ function isIsolatedCiOffer(offer: Offer | undefined): boolean {
 	);
 }
 
+/** Priced offers pause while the in-flight holds are unknown; free capacity keeps admitting. */
 function isPricedOffer(offer: Offer): boolean {
 	return offer.priceMicrosPerMinute > 0 || offer.backend === "sandbox";
 }
 
+/** Validate provider-confirmed terminal usage before using it in accounting. */
 function measuredUsage(
 	usage: SandboxMeasuredUsage | undefined,
 	sessionId: string,
@@ -275,6 +326,7 @@ function counterValue(value: string | undefined): number {
 	return parsed;
 }
 
+/** The relay's store on the cache. See the package README for every key and TTL. */
 export class RelayCacheStore {
 	private readonly state: EphemeralStatePort;
 	private readonly keys: RelayCacheKeys;
@@ -282,6 +334,13 @@ export class RelayCacheStore {
 	private readonly rings = new Map<string, EphemeralRing>();
 	private readonly nowMs: () => number;
 	private casLosses = 0;
+	/**
+	 * The lease records this instance wrote last, by id, so the next write
+	 * of the same lease (a launch is a run of transitions) can compare-and-set
+	 * without reading first. A slot is taken out when used: if another
+	 * instance wrote in between, the compare-and-set fails and the write is
+	 * redone from a fresh read. Bounded; never served to a plain read.
+	 */
 	private readonly written = new Map<string, LeaseSlot>();
 
 	constructor(private readonly options: RelayCacheStoreOptions) {
@@ -291,9 +350,14 @@ export class RelayCacheStore {
 		this.nowMs = options.nowMs ?? Date.now;
 	}
 
+	/** Compare-and-set races this instance lost and retried (diagnostic). */
 	casRetries(): number {
 		return this.casLosses;
 	}
+
+	// -------------------------------------------------------------------------
+	// Primitives
+	// -------------------------------------------------------------------------
 
 	private async retry<T>(
 		what: string,
@@ -307,6 +371,7 @@ export class RelayCacheStore {
 		throw new Error(`${what}: compare-and-set kept losing; retry later`);
 	}
 
+	/** Create (no version) or compare-and-set (version); the new version, or undefined when the race was lost. */
 	private async write(
 		key: EphemeralKey,
 		version: EphemeralVersion | undefined,
@@ -355,6 +420,7 @@ export class RelayCacheStore {
 		}
 	}
 
+	/** The lease to write next: this instance's last write of it, else a read. */
 	private async leaseForWrite(
 		id: string,
 	): Promise<{ slot: LeaseSlot | undefined; remembered: boolean }> {
@@ -372,6 +438,7 @@ export class RelayCacheStore {
 			: relayLeaseTtl(lease);
 	}
 
+	/** Write a lease back under its version, keeping the latest intent of each kind. */
 	private async writeLease(
 		slot: LeaseSlot,
 		lease: Lease,
@@ -431,6 +498,7 @@ export class RelayCacheStore {
 		);
 	}
 
+	/** Every lease of a job attempt that still has a record, generation 0 first. */
 	private async jobLeases(
 		job: { repositoryId: number; jobId: number; runAttempt: number },
 		upTo: number,
@@ -456,6 +524,7 @@ export class RelayCacheStore {
 		return ring;
 	}
 
+	/** Append a change to the account's ring. Loss-tolerant: a failed append is reported, not thrown. */
 	private async emit(
 		type: string,
 		at: string,
@@ -476,6 +545,10 @@ export class RelayCacheStore {
 		}
 	}
 
+	/**
+	 * After a lease write: tell the host, then append to the change ring when
+	 * the lease's state changed or the event is one MCP needs regardless.
+	 */
 	private async emitLease(
 		lease: Lease,
 		type: string,
@@ -497,6 +570,10 @@ export class RelayCacheStore {
 			lease.id,
 		);
 	}
+
+	// -------------------------------------------------------------------------
+	// Configuration (read-only)
+	// -------------------------------------------------------------------------
 
 	private snapshot(): Promise<RelayConfigSnapshot> {
 		return this.options.config.read();
@@ -550,6 +627,7 @@ export class RelayCacheStore {
 		};
 	}
 
+	/** Policy records are served from config; every other control record is gone with the relay's control tables. */
 	async controlRecord(key: string): Promise<ControlRecord | undefined> {
 		const match = /^ci-policy:([A-Za-z0-9_-]{1,80})$/.exec(key);
 		if (!match) return undefined;
@@ -584,6 +662,10 @@ export class RelayCacheStore {
 			new RelayConfigReadOnlyError("putControlRecordMonotonic"),
 		);
 	}
+
+	// -------------------------------------------------------------------------
+	// In-flight index and pending set
+	// -------------------------------------------------------------------------
 
 	private parseIndex(
 		accountId: string,
@@ -621,6 +703,7 @@ export class RelayCacheStore {
 		return relayLeaseTtl({ reservedMinutes: minutes + 60 });
 	}
 
+	/** Read-modify-CAS the account's index; `change` returns false for no write. */
 	private async mutateIndex(
 		accountId: string,
 		change: (record: RelayCacheInflight) => boolean,
@@ -642,6 +725,7 @@ export class RelayCacheStore {
 		});
 	}
 
+	/** Move ended or vanished leases out of the in-flight set. */
 	private async retireFromIndex(
 		accountId: string,
 		leaseIds: readonly string[],
@@ -704,6 +788,7 @@ export class RelayCacheStore {
 		});
 	}
 
+	/** Add (or keep) an index entry for a lease that exists; used by rebuild. */
 	async holdInIndex(lease: Lease): Promise<void> {
 		if (TERMINAL.has(lease.state)) return;
 		await this.mutateIndex(lease.accountId, (record) => {
@@ -714,6 +799,11 @@ export class RelayCacheStore {
 		});
 	}
 
+	/**
+	 * Configured accounts whose in-flight holds are not known: their index is
+	 * missing (a new or emptied cache) or was recreated without a rebuild. One
+	 * read. Priced offers stay paused for these until `markHoldsKnown`.
+	 */
 	async accountsAwaitingRebuild(): Promise<string[]> {
 		const indexes = await this.readIndexes(
 			this.accountIds(await this.snapshot()),
@@ -723,6 +813,7 @@ export class RelayCacheStore {
 			.map(([id]) => id);
 	}
 
+	/** A rebuild pass restored this account's holds: priced offers may admit again. */
 	async markHoldsKnown(accountId: string, at: string): Promise<void> {
 		await this.mutateIndex(accountId, (record) => {
 			if (record.holdsKnown) return false;
@@ -771,10 +862,15 @@ export class RelayCacheStore {
 		);
 	}
 
+	// -------------------------------------------------------------------------
+	// Reads
+	// -------------------------------------------------------------------------
+
 	async get(id: string): Promise<Lease | undefined> {
 		return (await this.readLease(id))?.lease;
 	}
 
+	/** In-flight leases of these accounts, pruning index entries whose lease ended or vanished. */
 	private async inflight(
 		accountIds: readonly string[],
 		recent: boolean,
@@ -835,6 +931,7 @@ export class RelayCacheStore {
 		return this.inflight([accountId], true);
 	}
 
+	/** In-flight leases and the recently ended ones each index remembers. Not a history. */
 	async all(): Promise<Lease[]> {
 		return this.inflight(this.accountIds(await this.snapshot()), true);
 	}
@@ -857,6 +954,9 @@ export class RelayCacheStore {
 				jobs.push(decodeRecord(JobSchema, record.pendingJobJson));
 			else stale.add(keys[index] ?? "");
 		}
+		// A key whose record left `pending` (or lapsed) is pruned here, once,
+		// by compare-and-set on the set as just read: nothing else removes a
+		// key, so taking, expiring or completing a job costs the set nothing.
 		if (stale.size > 0)
 			await this.mutatePending(
 				(current) =>
@@ -868,6 +968,7 @@ export class RelayCacheStore {
 		return jobs;
 	}
 
+	/** Latest dispatch/claim/sandbox intent of each lease, from the lease records. */
 	async latestLeaseIntents(ids: readonly string[]): Promise<CiEvent[]> {
 		const slots = await this.readLeases(ids);
 		const events: CiEvent[] = [];
@@ -897,6 +998,10 @@ export class RelayCacheStore {
 			: undefined;
 	}
 
+	// -------------------------------------------------------------------------
+	// Demand
+	// -------------------------------------------------------------------------
+
 	private bindingAccount(
 		snapshot: RelayConfigSnapshot,
 		job: Job,
@@ -915,6 +1020,11 @@ export class RelayCacheStore {
 		return jobAccountId(snapshot.state.configuration?.connections ?? [], job);
 	}
 
+	/**
+	 * Queue a job unless it is terminal, assigned, already pending or held by
+	 * an active lease. `githubCreatedAt` (GitHub's `created_at`) pins the queue
+	 * deadline from when GitHub queued the job, not when the relay saw it.
+	 */
 	private async queueInside(
 		snapshot: RelayConfigSnapshot,
 		job: Job,
@@ -996,6 +1106,7 @@ export class RelayCacheStore {
 		await this.queueInside(snapshot, job, at, githubCreatedAt);
 	}
 
+	/** Leave the pending state for `next` unless already done; returns whether the record changed. */
 	private async settleJobRecord(
 		key: string,
 		change: (record: RelayCacheJob | undefined) => RelayCacheJob | undefined,
@@ -1069,6 +1180,10 @@ export class RelayCacheStore {
 		return true;
 	}
 
+	// -------------------------------------------------------------------------
+	// Admission
+	// -------------------------------------------------------------------------
+
 	private async applyUsage(account: Account): Promise<Account> {
 		const observed = await this.usage.observed(account.id);
 		if (!observed) return account;
@@ -1084,6 +1199,7 @@ export class RelayCacheStore {
 		return next;
 	}
 
+	/** Every account's in-flight holds as leases routing can count; the reserving account's index too. */
 	private async routingView(snapshot: RelayConfigSnapshot, accountId: string) {
 		const ids = [...new Set([...this.accountIds(snapshot), accountId])];
 		const indexes = await this.readIndexes(ids);
@@ -1120,6 +1236,7 @@ export class RelayCacheStore {
 		);
 		if (!current) throw new Error("account revoked");
 		const effective = await this.applyUsage(this.effective(snapshot, current));
+		// Broker budget-policy accounts need a durable shared ledger the hosted relay does not have.
 		if (ciBudgetPolicy(effective)) return undefined;
 		const identity = {
 			repositoryId: job.repositoryId,
@@ -1190,6 +1307,7 @@ export class RelayCacheStore {
 			});
 			if (!admitted) return undefined;
 
+			// One lease record per id: concurrent reservers derive the same id, so only one creates it.
 			const created = await this.write(
 				this.keys.lease(id),
 				undefined,
@@ -1215,6 +1333,8 @@ export class RelayCacheStore {
 				});
 			const lease = created ? admitted : (await this.readLease(id))?.lease;
 			if (!lease || !ACTIVE_STATES.has(lease.state)) {
+				// This generation's id is spent (its record outlived a lost job
+				// record): drop the hold just added and move the job past it.
 				this.casLosses += 1;
 				await this.retireFromIndex(effective.id, [id]);
 				if (lease)
@@ -1240,6 +1360,7 @@ export class RelayCacheStore {
 				slot,
 			);
 			if (taken === "lost") {
+				// The job went terminal or was assigned while this lease was being made.
 				await this.transition(
 					lease.id,
 					["reserved"],
@@ -1258,6 +1379,7 @@ export class RelayCacheStore {
 		throw new Error("reserve: compare-and-set kept losing; retry later");
 	}
 
+	/** Point the job record at the lease; `pendingJobs` prunes its pending key. */
 	private async takeJob(
 		key: string,
 		lease: Lease,
@@ -1294,6 +1416,7 @@ export class RelayCacheStore {
 		});
 	}
 
+	/** Route against every in-flight hold and add this lease to its account's index by CAS. */
 	private async admit(
 		snapshot: RelayConfigSnapshot,
 		effective: Account,
@@ -1381,6 +1504,10 @@ export class RelayCacheStore {
 		});
 	}
 
+	// -------------------------------------------------------------------------
+	// Transitions
+	// -------------------------------------------------------------------------
+
 	async transition(
 		id: string,
 		expected: readonly string[],
@@ -1392,6 +1519,8 @@ export class RelayCacheStore {
 		const snapshot = await this.checkRevision(expectedRevision);
 		const result = await this.retry("transition", async () => {
 			const { slot, remembered } = await this.leaseForWrite(id);
+			// A remembered slot is only a guess at the current record: whatever
+			// it rejects is decided again on a fresh read.
 			if (!slot || !expected.includes(slot.lease.state))
 				return remembered ? RETRY : undefined;
 			const before = clone(LeaseSchema, slot.lease);
@@ -1471,6 +1600,7 @@ export class RelayCacheStore {
 		)
 			return false;
 		const { leases } = await this.routingView(snapshot, lease.accountId);
+		// Queue time is a budget-policy measurement only; such accounts are refused here.
 		const job = ciBudgetPolicy(effective)
 			? await this.readJob(relayJobKey(lease))
 			: undefined;
@@ -1554,7 +1684,7 @@ export class RelayCacheStore {
 				.find((account) => account.id === lease.accountId)
 				?.offers.find((candidate) => candidate.id === lease.offerId);
 			if (
-				!shouldAbortIsolatedFleetLease(
+				!shouldAbortIsolatedLease(
 					lease.provider,
 					offer ? { backend: offer.backend, runsOn: offer.runsOn } : undefined,
 				)
@@ -1591,7 +1721,7 @@ export class RelayCacheStore {
 			.find((account) => account.id === lease.accountId)
 			?.offers.find((candidate) => candidate.id === lease.offerId);
 		if (
-			!shouldAbortIsolatedFleetLease(
+			!shouldAbortIsolatedLease(
 				lease.provider,
 				offer ? { backend: offer.backend, runsOn: offer.runsOn } : undefined,
 			)
@@ -1601,6 +1731,10 @@ export class RelayCacheStore {
 		if (!cancelled) return;
 		await this.queueInside(snapshot, job, at);
 	}
+
+	// -------------------------------------------------------------------------
+	// Observation of GitHub job state
+	// -------------------------------------------------------------------------
 
 	async observe(
 		job: Job,
@@ -1620,6 +1754,8 @@ export class RelayCacheStore {
 		const needsJob =
 			job.action === "completed" || (!!leaseId && job.action === "in_progress");
 		if (!needsJob && !leaseId) return;
+		// One round trip for the records this observation reads first; each
+		// read serves its record's first compare-and-set attempt only.
 		const found = await this.state.getMany([
 			...(needsJob ? [this.keys.job(key)] : []),
 			...(leaseId ? [this.keys.lease(leaseId)] : []),
@@ -1639,6 +1775,7 @@ export class RelayCacheStore {
 			jobRead = undefined;
 			return slot;
 		};
+		// The job record as last written here: tells which follow-up writes are needed.
 		let known: RelayCacheJob | undefined;
 		if (job.action === "completed") {
 			let taken = false;
@@ -1666,6 +1803,8 @@ export class RelayCacheStore {
 				},
 				firstJob,
 			);
+			// A job a lease held is followed through that lease's settlement;
+			// the ring records completion only for a job no lease took.
 			if (changed && !taken)
 				await this.emit(
 					"ci.JobCompleted",
@@ -1703,6 +1842,8 @@ export class RelayCacheStore {
 			const type = settledSandbox(lease)
 				? "ci.LateJobObserved"
 				: "ci.JobObserved";
+			// Already recorded (a redelivery, or completion after the
+			// in-progress observation set it): nothing to write.
 			if (lease.actualJobId === job.id && type === "ci.JobObserved")
 				return { lease, type, written: false };
 			const next = clone(LeaseSchema, lease);
@@ -1721,10 +1862,12 @@ export class RelayCacheStore {
 			const assigned = await this.retry("assign job", async () => {
 				const slot = await firstJob();
 				const record = slot?.record;
+				// Terminal observations win over delayed in-progress deliveries.
 				if (record?.state === "terminal") return "terminal" as const;
 				if (record?.assigned && record.assigned.leaseId !== lease.id)
 					throw new Error("job assigned to another runner");
 				known = record;
+				// A redelivered in-progress observation keeps the assignment it made.
 				if (record?.assigned) return record.assigned.version;
 				const version = randomUUID();
 				known = create(RelayCacheJobSchema, {
@@ -1743,6 +1886,7 @@ export class RelayCacheStore {
 			});
 			if (assigned === "terminal") return;
 		}
+		// Other generations' reservations for this job lose to the runner GitHub chose.
 		const generation = known?.generation ?? 0;
 		if (generation === 0 && (!known?.leaseId || known.leaseId === lease.id))
 			return;
@@ -1755,6 +1899,7 @@ export class RelayCacheStore {
 				await this.cancel(duplicate.lease.id, ["reserved"], at);
 	}
 
+	/** Clear only after fresh GitHub queued proof and a terminal owner, with an exact token fence. */
 	async clearAssignedJob(
 		job: Job,
 		leaseId: string,
@@ -1787,6 +1932,10 @@ export class RelayCacheStore {
 			);
 		return !!cleared;
 	}
+
+	// -------------------------------------------------------------------------
+	// Settlement
+	// -------------------------------------------------------------------------
 
 	private async settleInside(
 		id: string,
@@ -1894,16 +2043,22 @@ export class RelayCacheStore {
 		);
 	}
 
+	// -------------------------------------------------------------------------
+	// Sandbox egress and proxy caps
+	// -------------------------------------------------------------------------
+
 	private tokenKey(): ProxyTokenKey {
 		if (!this.options.proxyTokenKey)
 			throw new Error("sandbox proxy token key not configured");
 		return this.options.proxyTokenKey;
 	}
 
+	/** The proxy session token for a lease, derived; the controller hands it to the proxy VM. */
 	sandboxProxyToken(leaseId: string): string {
 		return deriveSandboxProxyToken(this.tokenKey(), leaseId);
 	}
 
+	/** Bind a quota to the verified lease and sandbox. The caller is the trusted control plane. */
 	async configureSandboxEgress(
 		accountId: string,
 		leaseId: string,
@@ -1960,6 +2115,7 @@ export class RelayCacheStore {
 			: undefined;
 	}
 
+	/** Add bytes under the cap; an add that would cross it is taken back and refused. */
 	private async addEgress(
 		sandboxId: string,
 		bytes: number,
@@ -1973,6 +2129,7 @@ export class RelayCacheStore {
 		return false;
 	}
 
+	/** Reserve bytes before forwarding (guest-only sandboxes without a proxy VM). */
 	async reserveSandboxEgress(
 		sandboxId: string,
 		byteCount: number,
@@ -2000,6 +2157,10 @@ export class RelayCacheStore {
 		);
 	}
 
+	/**
+	 * Accept only the lease's derived token (as its SHA-256 digest, as the
+	 * controller passes it). Nothing is stored: the token can be re-derived.
+	 */
 	async configureSandboxProxy(
 		accountId: string,
 		leaseId: string,
@@ -2022,6 +2183,7 @@ export class RelayCacheStore {
 			throw new Error("sandbox proxy binding invalid");
 		if (!sandboxProxyDigestMatches(this.tokenKey(), leaseId, tokenSha256))
 			throw new Error("sandbox proxy token is not the lease's derived token");
+		// The call meter exists from binding on, so settlement can tell "bound, no calls" from "never bound".
 		await this.state.increment(
 			this.keys.proxyCalls(leaseId),
 			0,
@@ -2050,6 +2212,12 @@ export class RelayCacheStore {
 		);
 	}
 
+	/**
+	 * Authenticate the proxy by its raw token. A token names its lease and is
+	 * checked against the derived one; every authenticated attempt counts
+	 * against the lease's control-call cap. A bare SHA-256 digest cannot be
+	 * resolved without a table and is refused.
+	 */
 	async authenticateSandboxProxy(
 		credential: string,
 	): Promise<
@@ -2080,6 +2248,7 @@ export class RelayCacheStore {
 		};
 	}
 
+	/** A unique authorization grants one forwarding operation; duplicates fail closed. */
 	async reserveSandboxProxyEgress(
 		leaseId: string,
 		proxySessionId: string,
@@ -2153,6 +2322,14 @@ export class RelayCacheStore {
 		return this.addEgress(sandboxId, byteCount, binding.maxBytes, ttl);
 	}
 
+	/**
+	 * Record what the lease's proxy VM reports it reserved and how many quota
+	 * calls it made, read from the VM before it is stopped (ADR-0179 §10: the
+	 * VM is the authority). Kept as the largest report seen, so a late or
+	 * repeated read never lowers it. Settlement charges the larger of this
+	 * and the relay's own counters, and uses it alone when the cache lost
+	 * them (a rebuilt lease).
+	 */
 	async recordSandboxProxyMeter(
 		leaseId: string,
 		proxySessionId: string,
@@ -2216,6 +2393,7 @@ export class RelayCacheStore {
 		};
 	}
 
+	/** The proxy VM's own report for this proxy session, if one was read. */
 	private proxyReport(
 		meters: { proxy: RelayCacheProxyMeter | undefined },
 		leaseId: string,
@@ -2232,6 +2410,7 @@ export class RelayCacheStore {
 			: undefined;
 	}
 
+	/** Trusted accounting reads byte and call totals after the proxy has stopped. */
 	async sandboxProxyUsage(
 		accountId: string,
 		leaseId: string,
@@ -2269,12 +2448,14 @@ export class RelayCacheStore {
 			if (!bound && !preJit && !report) return undefined;
 			bytes = bound ? (meters.used ?? 0) : 0;
 		} else if (lease.sandboxStage !== "pending") return undefined;
+		// The proxy VM is the authority; never charge less than either count.
 		return {
 			bytes: Math.max(bytes, report?.bytes ?? 0),
 			calls: Math.max(meters.calls ?? 0, report?.calls ?? 0),
 		};
 	}
 
+	/** Read proxy bytes only for the exact authenticated account, lease and VM. */
 	async sandboxEgressUsage(
 		accountId: string,
 		leaseId: string,
@@ -2296,6 +2477,7 @@ export class RelayCacheStore {
 		return meters.used ?? 0;
 	}
 
+	/** Settle verified native runner cost without assuming per-minute billing. */
 	async settleSandboxObserved(
 		id: string,
 		at: string,
@@ -2382,6 +2564,7 @@ export class RelayCacheStore {
 		return settled;
 	}
 
+	/** The Postgres store's sandbox settlement fences, with meters read from the cache counters. */
 	private async checkSandboxSettlement(
 		lease: Lease,
 		at: string,
@@ -2567,6 +2750,10 @@ export class RelayCacheStore {
 			throw new Error("sandbox free allowance expired");
 	}
 
+	// -------------------------------------------------------------------------
+	// Webhook intake (dedupe only; the queue is the inbox)
+	// -------------------------------------------------------------------------
+
 	async hasWebhook(deliveryId: string): Promise<boolean> {
 		if (!isWebhookDeliveryId(deliveryId)) return false;
 		return (await this.state.get(this.keys.delivery(deliveryId))) !== undefined;
@@ -2576,6 +2763,7 @@ export class RelayCacheStore {
 		return this.acceptDelivery(input, false);
 	}
 
+	/** Remember authenticated deliveries for installations without a current connection. */
 	acceptIgnoredWebhook(input: WebhookInput): Promise<{ duplicate: boolean }> {
 		return this.acceptDelivery(input, true);
 	}
@@ -2613,6 +2801,7 @@ export class RelayCacheStore {
 		const undo = async () => {
 			await this.state.delete(deliveryKey, marker.version);
 		};
+		// GitHub signs body bytes only: the same signed body under a new id is a replay.
 		const bodyKey = this.keys.deliveryBody(input.installationId, bodyHash);
 		const body = await this.state.putIfAbsent(
 			bodyKey,
@@ -2641,6 +2830,7 @@ export class RelayCacheStore {
 					rawBody: Uint8Array.from(input.rawBody),
 				});
 			} catch (error) {
+				// Let GitHub's redelivery admit it again.
 				await undo();
 				await this.state.delete(bodyKey, body.version);
 				throw error;
@@ -2649,6 +2839,7 @@ export class RelayCacheStore {
 		return { duplicate: false };
 	}
 
+	/** Intake is pushed by the queue (phase 4b); there is no inbox to claim from. */
 	async claimWebhook(): Promise<undefined> {
 		return undefined;
 	}
@@ -2658,6 +2849,7 @@ export class RelayCacheStore {
 	async failWebhook(): Promise<"stale"> {
 		return "stale";
 	}
+	/** No quarantine list: a delivery that cannot be admitted is logged and dropped. */
 	async quarantinedWebhooks(
 		accountId: string,
 		expectedRevision: number,
@@ -2670,6 +2862,10 @@ export class RelayCacheStore {
 		return false;
 	}
 
+	// -------------------------------------------------------------------------
+	// MCP change feed
+	// -------------------------------------------------------------------------
+
 	private sequenced(
 		entries: readonly { seq: number; value: string }[],
 	): SequencedCiEvent[] {
@@ -2681,6 +2877,12 @@ export class RelayCacheStore {
 		);
 	}
 
+	/**
+	 * An account's changes after a cursor, or its newest. A cursor the ring no
+	 * longer covers (entries evicted, or the ring lost and restarted) answers
+	 * the newest changes with `truncated: true`: the caller re-reads the
+	 * in-flight list instead of trusting it saw everything.
+	 */
 	async eventsSince(cursor: EventCursor): Promise<CiEventPage> {
 		const { accountId, after, limit } = eventCursorBounds(cursor);
 		const ring = this.ring(accountId);
@@ -2700,6 +2902,7 @@ export class RelayCacheStore {
 		return page;
 	}
 
+	/** The newest changes of one lease still in its account's ring. */
 	async leaseEvents(query: LeaseEventsQuery): Promise<SequencedCiEvent[]> {
 		const { accountId, leaseId, limit } = leaseEventsBounds(query);
 		const read = await this.ring(accountId).read(0);
@@ -2712,10 +2915,15 @@ export class RelayCacheStore {
 			.slice(-limit);
 	}
 
+	/**
+	 * Rings are per account, so there is no relay-wide head. Zero makes a new
+	 * subscriber's first read report the ring's present changes once.
+	 */
 	async journalHead(): Promise<number> {
 		return 0;
 	}
 
+	/** Every configured account's recent changes, oldest first (the account API's lease view). */
 	async events(): Promise<CiEvent[]> {
 		const events: { at: string; seq: number; event: CiEvent }[] = [];
 		for (const accountId of this.accountIds(await this.snapshot())) {
@@ -2747,11 +2955,17 @@ export class RelayCacheStore {
 		};
 	}
 
+	// -------------------------------------------------------------------------
+	// Rebuild hooks (see rebuild.ts)
+	// -------------------------------------------------------------------------
+
+	/** Raw reads the rebuild pass needs; not part of the relay's port. */
 	rebuildAccess() {
 		return {
 			readJob: (key: string) => this.readJob(key),
 			readLeases: (ids: readonly string[]) => this.readLeases(ids),
 			snapshot: () => this.snapshot(),
+			/** Create a reconstructed lease record; false when one already exists. */
 			createLease: async (
 				lease: Lease,
 				generation: number,
@@ -2781,6 +2995,7 @@ export class RelayCacheStore {
 				);
 				return true;
 			},
+			/** Point the job record at a lease (or mark it terminal) after a rebuild. */
 			restoreJob: (
 				key: string,
 				change: (

@@ -5,8 +5,8 @@ Atomic copyable patterns live in [`packages/patterns`](../packages/patterns/READ
 `examples/*` are HoBo's reference example apps: runnable, production-grade
 packages that make the product story inspectable without becoming a hidden
 implementation lane (scope and proof modes:
-[`urn:hobo:requirement:example-apps`](urn:hobo:requirement:example-apps)). Examples are
-tests — they double as CI fixtures ([`architecture.md`](urn:hobo:requirement:architecture#plan-10))
+[`docs/design/example-apps.md`](../docs/design/example-apps.md)). Examples are
+tests — they double as CI fixtures ([`architecture.md`](../docs/design/architecture.md#plan-10))
 — and every example is a production package under the architecture guard:
 protobuf + CUE in `data-models/`, generated runtime types in
 `src/_generated/`, executable PACTs in `contracts/`, parse-don't-validate
@@ -55,7 +55,7 @@ catalogs, terminal output, or browser storage.
   `typecheck`, `lint` (see [`hello-bindle/package.json`](./hello-bindle/package.json)).
 - All `.proto`/`.cue` live under the package-local `data-models/` only; every
   proto message carries a matching CUE `#Type:` constraint; generated output
-  is checked in under `src/_generated/`. From the repository root, regenerate
-  with `pnpm exec node --import tsx packages/schema-tools/src/cli.ts --packages-root examples`.
+  is checked in under `src/_generated/` (`buf generate data-models --template
+  ../../buf.gen.yaml -o src/_generated`).
 - Service boundaries ship executable PACT contracts under `contracts/pacts/`.
 - `npm run architecture:guard` must pass for any example change.

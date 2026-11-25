@@ -1,0 +1,43 @@
+{
+  "consumer": {
+    "name": "dx-sdk-resilience-scope-consumer"
+  },
+  "provider": {
+    "name": "dx-sdk-resilience-scope-contract"
+  },
+  "interactions": [
+    {
+      "description": "read the accepted HOBO-514 scope matrix",
+      "providerStates": [
+        {
+          "name": "HOBO-514 parent scope is accepted"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/dx-sdk-resilience/scope/hobo-514"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-514",
+          "project": "DX SDK Resilience Semantics",
+          "phases": ["M0", "M1", "M2", "M3", "M4"],
+          "guardrails": [
+            "denial-never-retries",
+            "cancellation-is-not-hidden-retry",
+            "inspection-uses-event-facts"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

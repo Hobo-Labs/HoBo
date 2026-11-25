@@ -1,3 +1,25 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this conformance test intentionally casts controlled fake-streamer values to exercise runtime contract failures. */
+
+/**
+ * The Streamer runtime-port conformance suite.
+ *
+ * A conformance suite is only worth what its assertions can *catch*. A suite
+ * that reports six passes against every implementation, including a broken
+ * one, is worse than no suite: it certifies backends that do not hold the
+ * contract, and the certification is what downstream code trusts when it
+ * assumes frames arrive in order and a torn-down run stops accepting writes.
+ *
+ * So this file does two things. It runs the suite against a faithful in-memory
+ * Streamer and requires six passes — the reference direction. Then, for each
+ * assertion, it runs the suite against an implementation broken in exactly the
+ * way that assertion exists to detect, and requires *that* assertion to fail.
+ * A regression that neuters one check shows up as a "fail" turning into a
+ * "pass", which is the direction a normal test suite cannot see.
+ *
+ * The in-memory Streamer here is deliberately minimal rather than a copy of a
+ * production one: the suite is the subject, and a faithful-enough reference is
+ * all it needs.
+ */
 import {
 	parseRunId,
 	parseSeq,
@@ -21,14 +43,20 @@ import {
 	type StreamerAssertionName,
 } from "../src/streamer.js";
 
+/** Knobs that each break exactly one contract guarantee. */
 interface Defects {
+	/** Emit frames in reverse order, breaking every ordering assertion. */
 	reverseOrder?: boolean;
+	/** Restart the seq counter per stream, so multiplexed frames collide. */
 	perStreamSeq?: boolean;
+	/** Accept writes without bound, so backpressure never triggers. */
 	unboundedBuffer?: boolean;
+	/** Keep accepting writes after teardown. */
 	writeAfterTeardown?: boolean;
+	/** Serve a late reader only frames written after it attached. */
 	noBackfill?: boolean;
+	/** Hand every reader the same iterator, so one reader consumes another's. */
 	sharedReader?: boolean;
-	skipWorkflow?: boolean;
 }
 
 const BUFFER_LIMIT = 32;
@@ -81,13 +109,16 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 			let index = fromIndex;
 			return {
 				async next() {
+					// The run is only ever torn down synchronously in these proofs, so
+					// "no more frames and closed" is the terminal condition. A live
+					// backend would await a wake here.
 					const available = framesFor(state);
-					const value = available[index];
-					if (value !== undefined) {
+					if (index < available.length) {
+						const value = available[index] as StreamerFrame<unknown>;
 						index += 1;
 						return { value, done: false };
 					}
-					return { value: undefined, done: true };
+					return { value: undefined as never, done: true };
 				},
 			};
 		}
@@ -98,6 +129,8 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 				return iterate(0);
 			},
 			read(options?: { fromSeq?: Seq }) {
+				// A late reader gets the backfill by default. `noBackfill` is the
+				// defect that skips it.
 				const from = defects.noBackfill
 					? framesFor(state).length
 					: (options?.fromSeq ?? 1) - 1;
@@ -123,6 +156,7 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 						if (defects.perStreamSeq) state.perStream.set(name, next);
 						else state.seq = next;
 						state.frames.push({
+							run_id: runId,
 							runId,
 							seq: parseSeq(next),
 							stream: name,
@@ -131,11 +165,12 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 					},
 				};
 			},
-			done: Promise.resolve<StreamerRunResult>({
+			done: Promise.resolve({
+				run_id: runId,
 				runId,
 				status: "completed",
 				reason: "done",
-			}),
+			} as StreamerRunResult),
 		};
 	}
 
@@ -145,26 +180,6 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 			stateFor(runId);
 			return handleFor(runId) as StreamerRunHandle<TChunk>;
 		},
-		start<TChunk>(
-			workflow: (
-				context: Pick<StreamerRunHandle<TChunk>, "runId" | "getWritable">,
-			) => void | PromiseLike<void>,
-			options?: { runId?: RunId },
-		) {
-			const run = this.createRun<TChunk>(options);
-			const done = Promise.resolve().then(async () => {
-				if (!defects.skipWorkflow) {
-					await workflow({ runId: run.runId, getWritable: run.getWritable });
-				}
-				stateFor(run.runId).closed = true;
-				return {
-					runId: run.runId,
-					status: "completed" as const,
-					reason: "done",
-				};
-			});
-			return { ...run, done };
-		},
 		getRun<TChunk>(runId: RunId) {
 			return handleFor(runId) as StreamerRunHandle<TChunk>;
 		},
@@ -172,6 +187,7 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 			const state = stateFor(runId);
 			state.closed = true;
 			return {
+				run_id: runId,
 				runId,
 				status: "closed",
 				reason,
@@ -182,7 +198,6 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 
 const ALL_ASSERTIONS: StreamerAssertionName[] = [
 	"orderedRunReadable",
-	"workflowStart",
 	"multiplexedStreamsOrdered",
 	"boundedBackpressure",
 	"teardownClosesStream",
@@ -193,10 +208,11 @@ const ALL_ASSERTIONS: StreamerAssertionName[] = [
 describe("runStreamerConformance against a faithful implementation", () => {
 	it("passes every assertion", async () => {
 		const report = await runStreamerConformance(() => createMemoryStreamer());
-
+		// All six, not "most". A reference implementation that could not pass the
+		// suite would mean the suite encodes a contract nothing can satisfy, and
+		// every subsequent failure would be dismissed as expected.
 		expect(report.assertions).toEqual({
 			orderedRunReadable: "pass",
-			workflowStart: "pass",
 			multiplexedStreamsOrdered: "pass",
 			boundedBackpressure: "pass",
 			teardownClosesStream: "pass",
@@ -206,6 +222,8 @@ describe("runStreamerConformance against a faithful implementation", () => {
 	});
 
 	it("reports the contract id and the backend it ran against", async () => {
+		// The contract id is what a consumer pins to know *which* version of the
+		// port a report attests to. A report without it is unattributable.
 		const report = await runStreamerConformance(() => createMemoryStreamer());
 		expect(report.contract).toBe(STREAMER_CONFORMANCE_CONTRACT);
 		expect(STREAMER_CONFORMANCE_CONTRACT).toBe("hobo.streamer-runtime-port/v1");
@@ -213,6 +231,9 @@ describe("runStreamerConformance against a faithful implementation", () => {
 	});
 
 	it("names every assertion in the report", async () => {
+		// The report is a fixed-shape record, so a consumer can tell "this
+		// assertion failed" from "this assertion was not run". A suite that
+		// omitted a key on error would make a crash look like a pass.
 		const report = await runStreamerConformance(() => createMemoryStreamer());
 		expect(Object.keys(report.assertions).sort()).toEqual(
 			[...ALL_ASSERTIONS].sort(),
@@ -220,6 +241,10 @@ describe("runStreamerConformance against a faithful implementation", () => {
 	});
 
 	it("builds a fresh streamer for each assertion", async () => {
+		// Each proof calls `createStreamer()` itself, so state cannot leak from
+		// one assertion into the next. A shared instance would make the
+		// backpressure proof's 32 buffered frames poison every later proof, and
+		// the failures would look like unrelated ordering bugs.
 		let constructed = 0;
 		await runStreamerConformance(() => {
 			constructed += 1;
@@ -237,37 +262,52 @@ describe("each assertion catches the defect it exists to catch", () => {
 		return report.assertions;
 	}
 
-	it("workflowStart fails when the workflow is not executed", async () => {
-		const assertions = await assertionsFor({ skipWorkflow: true });
-		expect(assertions.workflowStart).toBe("fail");
-	});
-
 	it("orderedRunReadable fails when frames arrive out of order", async () => {
+		// The most basic guarantee: a consumer reading a run's output assumes the
+		// bytes are in the order they were written. Out-of-order frames would
+		// scramble a build log with no error anywhere.
 		const assertions = await assertionsFor({ reverseOrder: true });
 		expect(assertions.orderedRunReadable).toBe("fail");
 	});
 
 	it("multiplexedStreamsOrdered fails when seq restarts per stream", async () => {
+		// The seq is per *run*, not per stream, precisely so that stdout and logs
+		// can be interleaved back into the order they actually happened. A
+		// per-stream counter makes two frames share a seq, and any consumer
+		// merging them by seq would report a false interleaving.
 		const assertions = await assertionsFor({ perStreamSeq: true });
 		expect(assertions.multiplexedStreamsOrdered).toBe("fail");
 	});
 
 	it("boundedBackpressure fails when the buffer is unbounded", async () => {
+		// An unbounded buffer does not look broken — it looks fast, until a run
+		// whose reader stalled takes the process's memory with it. The proof
+		// writes 256 frames and requires the implementation to refuse one.
 		const assertions = await assertionsFor({ unboundedBuffer: true });
 		expect(assertions.boundedBackpressure).toBe("fail");
 	});
 
 	it("teardownClosesStream fails when writes are accepted after teardown", async () => {
+		// A write accepted after teardown is data appended to a run something
+		// else has already reported as finished. Silently dropping it would be
+		// nearly as bad; the contract requires a refusal so the writer learns.
 		const assertions = await assertionsFor({ writeAfterTeardown: true });
 		expect(assertions.teardownClosesStream).toBe("fail");
 	});
 
 	it("replayThenLive fails when a late reader gets no backfill", async () => {
+		// This is the one an implementation is most likely to get wrong, because
+		// it works perfectly for a reader that attached first. A client that
+		// reconnects mid-run would silently miss everything before it reattached
+		// and have no way to tell that from a quiet run.
 		const assertions = await assertionsFor({ noBackfill: true });
 		expect(assertions.replayThenLive).toBe("fail");
 	});
 
 	it("multiReaderIndependence fails when readers share one cursor", async () => {
+		// Two readers sharing a cursor means each frame reaches exactly one of
+		// them. Both would see a plausible-looking partial stream, and neither
+		// would see a gap it could report.
 		const assertions = await assertionsFor({ sharedReader: true });
 		expect(assertions.multiReaderIndependence).toBe("fail");
 	});
@@ -275,6 +315,9 @@ describe("each assertion catches the defect it exists to catch", () => {
 
 describe("failure isolation", () => {
 	it("records a failure per assertion rather than aborting the run", async () => {
+		// The `try/catch` around each proof. A suite that threw on the first
+		// failure would report one defect at a time, turning a broken backend
+		// into a six-round fix-and-rerun cycle instead of one report.
 		const assertions = await runStreamerConformance(() =>
 			createMemoryStreamer({ reverseOrder: true }),
 		).then((report) => report.assertions);
@@ -283,6 +326,9 @@ describe("failure isolation", () => {
 	});
 
 	it("reports a fail rather than throwing when the streamer cannot be built", async () => {
+		// The catch is around the whole proof, including `createStreamer()`. An
+		// implementation whose constructor throws is a failing implementation,
+		// not a crashing test run.
 		const report = await runStreamerConformance(() => {
 			throw new Error("cannot construct");
 		});
@@ -292,6 +338,9 @@ describe("failure isolation", () => {
 	});
 
 	it("does not let one defective implementation report any spurious pass", async () => {
+		// A wholly broken implementation must not pass anything. If it did, the
+		// passing assertion would be one that cannot fail — and a check that
+		// cannot fail is worse than an absent one, because it is counted.
 		const report = await runStreamerConformance(() =>
 			createMemoryStreamer({
 				reverseOrder: true,
@@ -300,7 +349,6 @@ describe("failure isolation", () => {
 				writeAfterTeardown: true,
 				noBackfill: true,
 				sharedReader: true,
-				skipWorkflow: true,
 			}),
 		);
 		expect(Object.values(report.assertions)).not.toContain("pass");

@@ -22,6 +22,7 @@ function isGatewayHostname(
 	allowed: readonly string[],
 ): boolean {
 	const host = hostname.toLowerCase().replace(/\.$/, "");
+	// Reject raw IPv4 / IPv6
 	if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false;
 	if (host.includes(":")) return false;
 	return allowed.some(
@@ -29,6 +30,10 @@ function isGatewayHostname(
 	);
 }
 
+/**
+ * Configuration-driven public DNS manager.
+ * When managedBy is cloud-provider|none, HoBo never writes the zone.
+ */
 export function createPublicDnsManager(options: {
 	readonly config: PublicDnsConfig;
 	readonly provider?: DnsProvider;
@@ -102,6 +107,7 @@ export function createPublicDnsManager(options: {
 					"managedBy=hobo requires dns.public.zone and a concrete DnsProvider",
 				);
 			}
+			// SAFETY: assertion required at this I/O or test boundary.
 			await provider.upsert(input.tenantId as TenantId, zone, suggested);
 			if (metering) {
 				await metering.emit(

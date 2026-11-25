@@ -5,8 +5,5 @@
   "scripts": {
     "test": "vitest run --root .",
     "simulate": "node simulation/run-simulation.ts"
-  },
-  "dependencies": {
-    "@hobo/core": "workspace:*"
   }
 }

@@ -145,12 +145,6 @@ describe("deployable relay partition", () => {
 			value: false,
 			error: /capability confinement/,
 		},
-		{
-			name: "relay entry without strict fleet runtime",
-			path: ["spec", "template", "spec", "containers", 0, "command", 2],
-			value: "dist/main.js",
-			error: /strict fleet relay entry/,
-		},
 	])("refuses Kubernetes $name before deployment", async ({
 		path,
 		value,
@@ -163,88 +157,6 @@ describe("deployable relay partition", () => {
 		);
 		if (!deployment) throw new Error("missing deployment fixture");
 		deployment.setIn(path, value);
-		expect(() =>
-			checkDeployment({
-				...files,
-				kubernetes: documents
-					.map((document) => document.toString())
-					.join("\n---\n"),
-			}),
-		).toThrow(error);
-	});
-
-	it.each([
-		{
-			name: "required strict fleet policy path",
-			path: [
-				"spec",
-				"template",
-				"spec",
-				"containers",
-				0,
-				"env",
-				4,
-				"valueFrom",
-				"configMapKeyRef",
-				"optional",
-			],
-			error: /optional strict fleet policy/,
-		},
-		{
-			name: "required strict fleet database",
-			path: [
-				"spec",
-				"template",
-				"spec",
-				"containers",
-				0,
-				"env",
-				5,
-				"valueFrom",
-				"secretKeyRef",
-				"optional",
-			],
-			error: /optional strict fleet PostgreSQL/,
-		},
-		{
-			name: "required strict fleet partition",
-			path: [
-				"spec",
-				"template",
-				"spec",
-				"containers",
-				0,
-				"env",
-				6,
-				"valueFrom",
-				"configMapKeyRef",
-				"optional",
-			],
-			error: /optional strict fleet partition/,
-		},
-		{
-			name: "required strict fleet policy volume",
-			path: ["spec", "template", "spec", "volumes", 4, "configMap", "optional"],
-			error: /optional strict fleet policy/,
-		},
-		{
-			name: "optional primary relay configuration",
-			path: ["spec", "template", "spec", "volumes", 1, "configMap", "optional"],
-			value: true,
-			error: /required relay configuration/,
-		},
-	])("keeps legacy deployments compatible with $name", async ({
-		path,
-		error,
-		value,
-	}) => {
-		const files = await shipped();
-		const documents = parseAllDocuments(files.kubernetes);
-		const deployment = documents.find(
-			(document) => document.get("kind") === "Deployment",
-		);
-		if (!deployment) throw new Error("missing deployment fixture");
-		deployment.setIn(path, value ?? false);
 		expect(() =>
 			checkDeployment({
 				...files,

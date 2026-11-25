@@ -2,6 +2,15 @@ syntax = "proto3";
 
 package hobo.mcp.v1;
 
+// Wire records for @hobo/mcp (S3-01/S3-02): the MCP control-surface tool
+// descriptors, tool-call request/result envelopes, and the capability-scoped
+// auth decision records. Design source: docs/design/ai-native-agent-auth.md
+// §6.4 (MCP control surface) + §6.1-6.2 (identity), ADR-0023 item 3 (inert
+// tool output). These are the persisted / exchanged shapes; the TypeScript
+// surface in src/ follows parse-don't-validate, narrowing these wire forms into
+// derived domain types built only by this package's constructors. See mcp.cue
+// for one CUE constraint per type.
+
 // The audited decision effect for a tool call — deny-by-default.
 enum McpToolDecisionEffect {
   MCP_TOOL_DECISION_EFFECT_UNSPECIFIED = 0;

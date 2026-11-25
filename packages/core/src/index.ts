@@ -1,5 +1,3 @@
-export type { BuildCostObservationRecord } from "./_generated/build_cost_pb.js";
-export { BuildCostObservationRecordSchema } from "./_generated/build_cost_pb.js";
 export {
 	BudgetPolicyConstraintRecordSchema,
 	BudgetPolicyEvaluationContextRecordSchema,
@@ -8,23 +6,6 @@ export {
 	BudgetPolicyRecordSchema,
 	BudgetScopeIdentityRecordSchema,
 } from "./_generated/budget_policy_pb.js";
-export {
-	SloBudgetObservationRecordSchema,
-	SloBudgetProjectionRecordSchema,
-	SloDeclaredRecordSchema,
-	SloDefinitionRecordSchema,
-	SloEvaluationRecordSchema,
-} from "./_generated/slo_pb.js";
-export {
-	CacheEntryRecordSchema,
-	CacheInvalidateCommandRecordSchema,
-	CacheReadRecordSchema,
-	TaggedCacheEntryRecordSchema,
-	TaggedCacheReadRecordSchema,
-	TaggedCacheTagEpochRecordSchema,
-} from "./_generated/tagged_cache_pb.js";
-export { WrpcCallEventSchema } from "./_generated/wrpc_call_pb.js";
-export { WrpcLinkManifestSchema } from "./_generated/wrpc_link_manifest_pb.js";
 export type {
 	CapabilityDenialCode,
 	CapabilityDiagnostic,
@@ -43,13 +24,6 @@ export {
 	inferCapabilityUsage,
 	parseCapabilityGrant,
 } from "./capability/index.js";
-export type {
-	AgentConfigFieldInput,
-	AgentConfigFieldView,
-	AgentConfigSchemaInput,
-	AgentConfigSchemaView,
-} from "./config-schema-view.js";
-export { createAgentConfigSchemaView } from "./config-schema-view.js";
 export type { Container } from "./container.js";
 export { createContainer } from "./container.js";
 export type {
@@ -81,6 +55,8 @@ export {
 	ExtensionRegistryError,
 	parseExtensionPointId,
 } from "./extension-registry.js";
+// The JSON view `diagnosticJson` returns and every parse boundary accepts: a
+// package exporting those cannot keep the name of their type to itself.
 export type { JsonObject, JsonValue } from "./json.js";
 export type {
 	CapabilityManifestBundle,
@@ -149,6 +125,14 @@ export {
 	parseActorCompoundKey,
 	parseLogicalActorIdentity,
 } from "./ports/actor-identity.js";
+// `./ports/aws-sigv4.js` is deliberately NOT re-exported here. `@hobo/core`'s
+// flagship surface is provider-neutral, and `validatePublicTypeSurface` fails
+// closed on a provider symbol or a provider credential field name reaching
+// `dist/index.d.ts` — `AwsCredentials.accessKeyId` is exactly what that guard
+// exists to catch. The SigV4 primitive is reached through the narrow
+// `@hobo/core/aws-sigv4` subpath declared in this package's `exports` instead,
+// so one copy of the algorithm serves `@hobo/connectivity` and the layer-2
+// AWS adapter without widening the neutral surface.
 export type {
 	ActorCommit,
 	ActorConcurrency,
@@ -196,9 +180,6 @@ export {
 	parseBudgetPolicyDocumentJson,
 	parseBudgetPolicyJson,
 } from "./ports/budget-policy.js";
-export { readThroughCache } from "./ports/cache-aside.js";
-export type { CacheClient, CacheRead } from "./ports/cache-client.js";
-export { createCacheClient } from "./ports/cache-client.js";
 export type { CampTier } from "./ports/camp-tier.js";
 export {
 	CAMP_TIER_EGRESS,
@@ -258,8 +239,6 @@ export {
 export type {
 	ClockReplayResult,
 	ClockTraceEntry,
-	CronExpressionSchedule,
-	CronExpressionSpec,
 	CronSchedule,
 	FiredTimer,
 	FireId,
@@ -362,6 +341,7 @@ export type {
 export {
 	DATA_STORE_ENGINES,
 	DATA_STORE_OFFERING_IDS,
+	DATA_STORE_PROVIDER_FAMILIES,
 	DATA_STORE_PROVIDERS,
 	DATA_STORE_RESOURCE_CLASS,
 	DataStoreOfferingParseError,
@@ -396,6 +376,33 @@ export {
 	type DurableLifecyclePhase,
 	type LifecycleParticipantKind,
 } from "./ports/durable-lifecycle-gate.js";
+export type {
+	DurableMessaging,
+	DurableMessagingAckReceipt,
+	DurableMessagingAttribute,
+	DurableMessagingCompactionReceipt,
+	DurableMessagingDeadLetter,
+	DurableMessagingDeadLetterCause,
+	DurableMessagingDelivery,
+	DurableMessagingEvent,
+	DurableMessagingLimits,
+	DurableMessagingMessage,
+	DurableMessagingNackReceipt,
+	DurableMessagingOperation,
+	DurableMessagingOutcome,
+	DurableMessagingPublishReceipt,
+	DurableMessagingRejectionCode,
+	DurableMessagingSubscription,
+	DurableMessagingSubscriptionReceipt,
+} from "./ports/durable-messaging.js";
+export {
+	DURABLE_MESSAGING_CONTRACT,
+	DURABLE_MESSAGING_LIMITS,
+	DURABLE_MESSAGING_WIT_INTERFACE,
+	durableMessagingOperation,
+	parseDurableMessagingLeaseId,
+	parseDurableMessagingOperation,
+} from "./ports/durable-messaging.js";
 export type {
 	EphemeralEntry,
 	EphemeralKey,
@@ -467,7 +474,6 @@ export type {
 	SubscriptionLease,
 	TimerEffectInput,
 } from "./ports/eventstore.js";
-export { parseDurableEffect } from "./ports/durable-effects.js";
 export {
 	CheckpointRegressionError,
 	EVENTSTORE_LIMITS,
@@ -492,6 +498,12 @@ export {
 	UnsupportedSchemaVersionError,
 } from "./ports/eventstore.js";
 export { createBoundedFetchTransport } from "./ports/fetch-http-transport.js";
+export {
+	GITHUB_APP_CREDENTIAL_SCHEME,
+	type GithubAppRepository,
+	githubAppInstallationRef,
+	parseGithubAppInstallationRef,
+} from "./ports/github-app-credential.js";
 export type {
 	HttpTransport,
 	TransportGuardErrorCode,
@@ -539,7 +551,6 @@ export type {
 	Messaging,
 	MessagingCapabilities,
 	MessagingEvent,
-	MessagingEventType,
 	MessagingLeaseId,
 	MessagingMessageId,
 	MessagingSpec,
@@ -551,15 +562,16 @@ export type {
 	TopicSpec,
 } from "./ports/messaging.js";
 export {
+	assertDeadLetterSupported,
 	assertDeliverySupported,
 	createInMemoryMessaging,
 	createPublishResult,
-	MESSAGING_EVENTS,
 	MESSAGING_PORT_CONTRACT_VERSION,
-	MESSAGING_WIT_INTERFACE,
 	MessagingCapabilityError,
 	MessagingDeliveryError,
+	MessagingDeliveryExhaustedError,
 	MessagingParseError,
+	MessagingSettlementCommittedError,
 	PORTABLE_MESSAGING_CAPABILITIES,
 	parseActorPlacementMode,
 	parseConsumerGroupId,
@@ -574,6 +586,15 @@ export {
 	tenantScopedConsumerGroup,
 	tenantScopedTopicName,
 } from "./ports/messaging.js";
+export type { MessagingSettlementOperation } from "./ports/messaging-settlement.js";
+export {
+	createMessagingSettlementTracker,
+	MESSAGING_SETTLEMENT_ID_LIMIT,
+	MESSAGING_SETTLEMENT_LIMIT,
+	MESSAGING_SETTLEMENT_TIMEOUT_MS,
+	MessagingSettlementPendingError,
+	MessagingSettlementUnknownError,
+} from "./ports/messaging-settlement.js";
 export type {
 	MeteringBus,
 	MeteringSink,
@@ -786,61 +807,6 @@ export {
 	SELF_HOST_FORMS,
 } from "./ports/self-hosted-data-store.js";
 export type {
-	SloBudgetingMethod,
-	SloBurnThreshold,
-	SloCalendar,
-	SloDefinition,
-	SloDuration,
-	SloMetadata,
-	SloObjective,
-	SloSpec,
-	SloTelemetry,
-	SloTimeWindow,
-} from "./ports/slo.js";
-export {
-	hashSloDefinition,
-	OPEN_SLO_API_VERSION,
-	parseSloDefinition,
-	parseSloDuration,
-	SLO_SCHEMA,
-	SloDefinitionError,
-	serializeSloDefinition,
-	sloDurationMs,
-} from "./ports/slo.js";
-export type {
-	BuiltInSloQueries,
-	SloMetricQueries,
-} from "./ports/slo-builtins.js";
-export { createBuiltInSloDefinitions } from "./ports/slo-builtins.js";
-export type {
-	SliSample,
-	SliSource,
-	SloBurnEvaluation,
-	SloEvaluation,
-	SloEvaluationStatus,
-	SloObjectiveEvaluation,
-	SloWindowEvaluation,
-} from "./ports/slo-computation.js";
-export {
-	computeSloStatus,
-	SLO_COMPUTATION_SCHEMA,
-} from "./ports/slo-computation.js";
-export type {
-	SloBudgetObservation,
-	SloBudgetProjection,
-	SloDeclared,
-	SloEventContext,
-} from "./ports/slo-events.js";
-export {
-	applySloBudgetEvent,
-	initialSloBudgetProjection,
-	makeSloBudgetEvent,
-	makeSloDeclaredEvent,
-	replaySloBudgetProjection,
-	SLO_EVENT_SCHEMA,
-	SloBudgetProjectionError,
-} from "./ports/slo-events.js";
-export type {
 	RunId,
 	Seq,
 	Streamer,
@@ -862,11 +828,8 @@ export {
 	parseStreamName,
 	StreamerBackpressureError,
 	StreamerClosedError,
-	StreamerHistoryExpiredError,
 	StreamerParseError,
 } from "./ports/streamer.js";
-export type { TaggedCachePort, TaggedCacheRead } from "./ports/tagged-cache.js";
-export { createTaggedCache, TaggedCacheError } from "./ports/tagged-cache.js";
 export type {
 	TemporaryEnvironmentStationInput,
 	TemporaryEnvironmentStationResult,
@@ -1033,8 +996,6 @@ export type {
 	TransportKind,
 	WireVersion,
 	WitCodec,
-	WrpcLinkManifest,
-	WrpcLinkManifestEntry,
 	WrpcLinkPort,
 	WrpcTransport,
 } from "./ports/wrpc-link.js";
@@ -1054,11 +1015,6 @@ export type {
 	RuntimePort,
 } from "./ports.js";
 export { createPortDescriptor } from "./ports.js";
-export type { ProviderTerms, ProviderTermsId } from "./provider-terms.js";
-export {
-	PROVIDER_TERMS_REGISTRY,
-	providerTermsFor,
-} from "./provider-terms.js";
 export type { PublicTypeSurfaceResult } from "./surface-guard.js";
 export {
 	assertCoreApiSnapshot,

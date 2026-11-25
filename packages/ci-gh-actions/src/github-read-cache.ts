@@ -18,6 +18,7 @@ type CacheEntry = Readonly<{
 	expiresAt: number;
 }>;
 
+/** Short TTL + conditional GET cache for hot reconcile/poll paths (saves installation rate limit). */
 export function withGithubReadCache(
 	api: GithubTransport,
 	ttlMs = DEFAULT_TTL_MS,

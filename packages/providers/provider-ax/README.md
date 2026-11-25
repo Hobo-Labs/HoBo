@@ -6,7 +6,7 @@ built on [ax (`@ax-llm/ax`)](https://github.com/ax-llm/ax) per ADR-0125.
 ax's GEPA/bootstrap optimization over recorded trajectories and emits a
 provenance-pinned `TrainingCandidate` with a serialized optimized program.
 Engine-internal: selected behind the WIT port per tenant/Camp, never part of
-the SDK surface.
+the SDK surface. See [`ADR.md`](./ADR.md).
 
 ## Honest scope
 

@@ -89,7 +89,7 @@ this surface.
 
 | Contested HoBo surface | The contest |
 | ---------------------- | ----------- |
-| `finops` | **Plan-time cost estimation** — designed in HoBo ([Plan 5](urn:hobo:requirement:reliability-observability-cost#plan-05)), shipped here |
+| `finops` | **Plan-time cost estimation** — designed in HoBo ([Plan 5](../design/reliability-observability-cost.md#plan-05)), shipped here |
 | `governance` | Cost thresholds and tagging rules as merge gates against `@hobo/policy` admission |
 | `delivery` | The gate lives in the pull request; HoBo's lives at `can-deploy` |
 

@@ -39,6 +39,9 @@ async function githubJson<Schema extends z.ZodType>(
 	return schema.parse(await response.json());
 }
 
+/** Build a bridge-free connection only from the account-bound App installation.
+ * GitHub's repository and installation identity are verified before any local
+ * configuration is changed. The server supplies isolatedHostAvailable. */
 export async function prepareIsolatedConnection(options: {
 	github: OnboardingGithubPort;
 	principal: ControlPrincipal;

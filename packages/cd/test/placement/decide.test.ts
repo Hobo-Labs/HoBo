@@ -1,3 +1,6 @@
+// WP22 pure `decide` (D20): determinism under any input order (I18), expired
+// scores ignored, claims never granting (I19), unbound sets invisible, spread
+// refusals naming the key, and every exclusion carrying a code.
 import { create, toBinary } from "@bufbuild/protobuf";
 import type { ResidencyConstraint } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -111,6 +114,7 @@ function codeOf(result: ReturnType<typeof decidePlacement>, code: string) {
 		: result.reasons.find((entry) => entry.code === code);
 }
 
+/** Deterministic Fisher-Yates driven by a 32-bit LCG (no RNG in the code under test; the test owns its seed). */
 function shuffle<T>(items: readonly T[], seed: number): T[] {
 	const out = [...items];
 	let state = seed >>> 0;
@@ -225,7 +229,7 @@ describe("decidePlacement determinism (I18)", () => {
 					: undefined,
 			).toEqual(bytes);
 		}
-	}, 30_000);
+	});
 
 	it("records the inventory digest and the digests of the score snapshots it used", () => {
 		const views = [view(topology("a")), view(topology("b"))];

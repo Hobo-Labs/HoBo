@@ -11,6 +11,7 @@
 	kind:      string & !=""
 	fidelity:  #FidelityLabel
 	endpoint?: #Endpoint
+	// Only a served handle may advertise an endpoint.
 	_endpointImpliesExecution: true & (endpoint == _|_ | fidelity == "simulated" | fidelity == "real")
 }
 
@@ -37,15 +38,15 @@
 	handles: [...#ResourceHandleRecord]
 	fidelity: #FidelityReportRecord
 	teardown_order: [...#Alias]
+	// Teardown covers exactly the deployed handles.
 	_teardownIsTotal: true & (len(teardown_order) == len(handles))
 }
 
 #HarnessRefusalCode: "HARNESS_ALIAS_UNKNOWN" | "HARNESS_BINDLE_INVALID" |
-	"HARNESS_CAMP_DEPLOYMENT_INVALID" | "HARNESS_CAMP_DRIVER_REQUIRED" |
 	"HARNESS_CREDENTIAL_NOT_A_REF" | "HARNESS_CREDENTIALS_REQUIRED" |
 	"HARNESS_CYCLIC_DEPENDENCY" | "HARNESS_ENDPOINT_UNAVAILABLE" |
 	"HARNESS_EMULATOR_INVALID" | "HARNESS_EMULATOR_UNAVAILABLE" |
-	"HARNESS_LANE_INVALID" |
+	"HARNESS_LANE_INVALID" | "HARNESS_LANE_UNIMPLEMENTED" |
 	"HARNESS_READINESS_EXHAUSTED" | "HARNESS_READINESS_OPTIONS_INVALID" |
 	"HARNESS_READINESS_REJECTED" | "HARNESS_RUNNER_INVALID" |
 	"HARNESS_RUNNER_UNDETECTED" | "HARNESS_STAGE_INVALID" |
@@ -54,6 +55,8 @@
 #HarnessRefusalRecord: {
 	code:    #HarnessRefusalCode
 	message: string & !=""
+	// A refusal that does not say what to change is a dead end.
 	remediation: string & !=""
+	// Locators only: a refusal never carries a credential value.
 	_noCredentialValue: true & (remediation !~ "(?i)(password|api[_-]?key|secret=)")
 }

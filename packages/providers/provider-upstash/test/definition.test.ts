@@ -150,7 +150,6 @@ describe("selection for a store requirement", () => {
 			requirement: redisCompatible.store({
 				ttl: true,
 				atomicIncrement: true,
-				atomicCompareAndSet: true,
 				sortedSets: true,
 				restTransport: true,
 			}),
@@ -274,10 +273,7 @@ describe("the legacy resource definition half", () => {
 			kind: "full",
 		});
 		expect(
-			UPSTASH_RESOURCE_DEFINITION.satisfies({
-				port: "kv",
-				features: ["ttl", "atomicCompareAndSet"],
-			}),
+			UPSTASH_RESOURCE_DEFINITION.satisfies({ port: "kv", features: ["ttl"] }),
 		).toEqual({ kind: "full" });
 	});
 

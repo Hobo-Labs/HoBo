@@ -1,3 +1,7 @@
+// Alert rules and SLOs for the CD plane (WP19; handed to WP21 for the
+// operator docs). Vendor-neutral data over the metric names in semconv.ts: an
+// adapter renders them for whatever alerting backend a Station runs. Each
+// threshold comes from CD_DEFAULTS or the R12/R13 decisions, never a guess.
 import { CD_DEFAULTS } from "../events.js";
 import { CD_METRICS, CICD_METRICS } from "./semconv.js";
 
@@ -6,9 +10,11 @@ export type AlertSeverity = "page" | "ticket";
 export type CdAlertRule = Readonly<{
 	name: string;
 	metric: string;
+	/** Attribute filter applied before the comparison. */
 	where?: Readonly<Record<string, string>>;
 	op: ">" | ">=" | "<" | "<=";
 	threshold: number;
+	/** The condition must hold this long before firing. */
 	forMs: number;
 	severity: AlertSeverity;
 	summary: string;
@@ -26,6 +32,7 @@ export type CdSlo = Readonly<{
 const RUNBOOK = "packages/cd/src/telemetry/README.md#runbook";
 const AUTHZ_RUNBOOK = "packages/cd/src/authz/README.md#runbook";
 
+// public-contract: CD plane alert rules (names are stable identifiers).
 export const CD_ALERT_RULES: readonly CdAlertRule[] = Object.freeze([
 	{
 		name: "CdReconcileLagHigh",
@@ -159,6 +166,7 @@ export const CD_ALERT_RULES: readonly CdAlertRule[] = Object.freeze([
 	},
 ]);
 
+// public-contract: CD plane SLOs.
 export const CD_SLOS: readonly CdSlo[] = Object.freeze([
 	{
 		name: "reconcile-convergence",

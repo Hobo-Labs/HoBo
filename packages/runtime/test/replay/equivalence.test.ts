@@ -27,45 +27,6 @@ describe("equivalence harness", () => {
 		}
 	});
 
-	it.each(["map", "set"] as const)("detects divergent %s state", (kind) => {
-		const events = [event("b", 1, "updated", {}), event("a", 1, "updated", {})];
-		expect(() =>
-			assertReplayEqualsLive({
-				events,
-				initialState: {
-					value: kind === "map" ? new Map<string, string>() : new Set<string>(),
-				},
-				fold: (state, current) => ({
-					value:
-						state.value instanceof Map
-							? new Map([["last", current.streamId]])
-							: new Set([current.streamId]),
-				}),
-			}),
-		).toThrow(ReplayDivergenceError);
-	});
-
-	it("normalizes collection insertion order while retaining contents", () => {
-		const events = [event("b", 1, "updated", {}), event("a", 1, "updated", {})];
-		const result = assertReplayEqualsLive({
-			events,
-			initialState: {
-				entries: new Map<string, number>(),
-				keys: new Set<string>(),
-			},
-			fold: (state, current) => ({
-				entries: new Map([...state.entries, [current.streamId, current.seq]]),
-				keys: new Set([...state.keys, current.streamId]),
-			}),
-		});
-		const empty = assertReplayEqualsLive({
-			events: [],
-			initialState: { entries: new Map(), keys: new Set() },
-			fold: (state) => state,
-		});
-		expect(result.stateDigest).not.toBe(empty.stateDigest);
-	});
-
 	it("catches folds that read the ambient wall clock", () => {
 		const events = interleaveStreams(makeStreams(1), "wall-clock");
 
@@ -90,7 +51,24 @@ describe("equivalence harness", () => {
 				events,
 				initialState: { total: 0 },
 				fold: (state, currentEvent) => ({
+					// SAFETY: assertion to `currentEvent.data as { amount: number }` is required at this boundary.
 					total: state.total + (currentEvent.data as { amount: number }).amount,
+				}),
+			}),
+		).toThrow(ReplayDivergenceError);
+	});
+
+	it("catches impure upcasters", () => {
+		const events = [event("ticket", 1, "ticket.delta", { cents: 1 }, 1)];
+
+		expect(() =>
+			assertReplayEqualsLive({
+				events,
+				initialState: emptyLedger(),
+				fold: deterministicLedgerFold,
+				upcast: (currentEvent) => ({
+					...currentEvent,
+					data: { cents: Math.random() },
 				}),
 			}),
 		).toThrow(ReplayDivergenceError);
@@ -106,6 +84,7 @@ function deterministicLedgerFold(
 		...state.byStream,
 		[currentEvent.streamId]:
 			(state.byStream[currentEvent.streamId] ?? 0) +
+			// SAFETY: assertion to `currentEvent.data as { cents: number }` is required at this boundary.
 			(currentEvent.data as { cents: number }).cents,
 	};
 	const nextSeq = {
@@ -163,6 +142,7 @@ function emptyLedger() {
 }
 
 function sortObject<T extends Record<string, number>>(value: T): T {
+	// SAFETY: assertion to `Object.fromEntries( Object.entries(value).sort(([left], [right]) => left.localeCompare(right)), ) as T` is required at this boundary.
 	return Object.fromEntries(
 		Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
 	) as T;

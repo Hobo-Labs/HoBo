@@ -48,7 +48,7 @@ Code Review Checklist:
 ☐ Check for syntax errors
 ☐ Verify variable names
 ☐ Test all functions
-☐ Check that code explains itself
+☐ Add comments
 ```
 
 **Better Approach**:

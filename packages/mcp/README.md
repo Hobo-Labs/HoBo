@@ -14,6 +14,9 @@ by the caller's SVID scope (deny-by-default), with inert tool output.
 
 - `src/secret-capture/` — the secret-capture MCP App (below).
 
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) and
+[`ai-native-agent-auth.md`](../../docs/design/ai-native-agent-auth.md) §6.4.
+
 ## Scripts
 
 - `pnpm --filter @hobo/mcp run build` — `tsc`
@@ -26,7 +29,7 @@ by the caller's SVID scope (deny-by-default), with inert tool output.
 
 When an agent runs a HoBo deployment and a secret is missing, the owner types
 it into a HoBo form and it goes to the secret store without passing through
-the agent ([ADR-0179 amendment](urn:hobo:decision:hosted-relay-stateless#amendment-secretless-first)).
+the agent ([ADR-0179 amendment](../../docs/design/adr/hosted-relay-stateless.md#amendment-secretless-first)).
 Built against the MCP Apps extension `io.modelcontextprotocol/ui`,
 specification **2026-01-26** (`github.com/modelcontextprotocol/ext-apps`, the
 types of `@modelcontextprotocol/ext-apps` 2.0.4, read 2026-11-12), and MCP

@@ -35,16 +35,12 @@ const env = {
 
 type RequestBody = {
 	slotId: string;
-	claimId?: string;
+	claimId: string;
+	accountId: string;
+	profileId: string;
 	runnerName: string;
 	bindingSecret: string;
-	executionKey?: { githubJob: typeof githubJob };
-	githubContext?: {
-		repository: string;
-		repositoryId: string;
-		runId: string;
-		runAttempt: number;
-	};
+	executionKey: { githubJob: typeof githubJob };
 };
 
 type Handler = (body: RequestBody, response: ServerResponse) => void;
@@ -59,9 +55,11 @@ function receipt(body: RequestBody) {
 	return {
 		authorized: true,
 		slotId: body.slotId,
-		claimId: body.claimId ?? `github-${"a".repeat(64)}`,
+		claimId: body.claimId,
+		accountId: body.accountId,
+		profileId: body.profileId,
 		runnerName: body.runnerName,
-		executionKey: body.executionKey ?? { githubJob },
+		executionKey: body.executionKey,
 	};
 }
 
@@ -162,46 +160,7 @@ describe("strict pre-job hook", () => {
 		expect(result.output).not.toContain(secret);
 		expect(received).toHaveLength(1);
 		expect(received[0]?.bindingSecret).toBe(secret);
-		expect(received[0]?.executionKey?.githubJob).toEqual(githubJob);
-	});
-
-	it("accepts the verified actual job without a preassigned execution key", async () => {
-		handler = (body, response) =>
-			sendJson(response, {
-				...receipt(body),
-				executionKey: { githubJob: { ...githubJob, jobId: "24" } },
-			});
-		const result = await runHook({
-			HOBO_EXECUTION_KEY_JSON: "",
-			HOBO_CLAIM_ID: "",
-			GITHUB_REPOSITORY_ID: "101",
-		});
-		expect(result.code).toBe(0);
-		expect(result.output).not.toContain(secret);
-		expect(received[0]?.githubContext).toEqual({
-			repository: "owner/repository",
-			repositoryId: "101",
-			runId: "900",
-			runAttempt: 2,
-		});
-		expect(received[0]?.executionKey).toBeUndefined();
-	});
-
-	it("rejects an actual-job receipt with a different repository, run, or claim", async () => {
-		const overrides = {
-			HOBO_EXECUTION_KEY_JSON: "",
-			HOBO_CLAIM_ID: "",
-			GITHUB_REPOSITORY_ID: "101",
-		};
-		for (const change of [
-			{ executionKey: { githubJob: { ...githubJob, repositoryId: "102" } } },
-			{ executionKey: { githubJob: { ...githubJob, runId: "901" } } },
-			{ claimId: "claim-1" },
-		]) {
-			handler = (body, response) =>
-				sendJson(response, { ...receipt(body), ...change });
-			expect((await runHook(overrides)).code).not.toBe(0);
-		}
+		expect(received[0]?.executionKey.githubJob).toEqual(githubJob);
 	});
 
 	it.each([

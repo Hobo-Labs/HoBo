@@ -73,7 +73,7 @@ package architecture_evidence
 	issue:                 "HOBO-576"
 	phase:                 "M1"
 	fixture_id:            "dx.lifecycle.shop-api.v1"
-	proof_note:            "urn:hobo:proof:sdk-to-cli-golden-path"
+	proof_note:            "docs/design/proofs/sdk-to-cli-golden-path/README.md"
 	sdk_consumer:          #SdkToCliConsumer
 	manifest_ir:           #SdkToCliManifestIr
 	cli_transcript:        [...#SdkToCliTranscriptStep]

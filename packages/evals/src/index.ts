@@ -1,11 +1,26 @@
 import type { ResidencyGateVerdict } from "@hobo/contracts";
 
+// Rubric + promotion-gate engine (design PLAN-23).
+// Rubrics are schema-versioned records; scoring is a deterministic pure
+// function producing a frozen report that mirrors the @hobo/conformance
+// suite/report vocabulary (schema id, ok, failures with machine-readable
+// codes); the promotion verdict is shaped as a Gatekeeper precomputed
+// dimension ({ok, reasons}) so callers hand it to Gatekeeper composition as
+// the evals dimension. Parse, don't validate: raw definitions and
+// observations lower onto parsed derived types or throw typed errors — no
+// unchecked shapes escape this boundary. Evaluators are ports; this package
+// hosts no models.
 
+// public-contract: rubric record schema id promotion tooling pins.
 export const EVALS_RUBRIC_SCHEMA = "hobo.evals.rubric/v1";
+// public-contract: rubric report schema id scored-run evidence pins.
 export const EVALS_RUBRIC_REPORT_SCHEMA = "hobo.evals.rubric-report/v1";
+// public-contract: promotion verdict schema id the Gatekeeper evals dimension pins.
 export const EVALS_PROMOTION_VERDICT_SCHEMA = "hobo.evals.promotion-verdict/v1";
+// public-contract: default golden suite for trainable code (exact-match)
 export const GOLDEN_DEFAULT_SUITE_ID =
 	"hobo.evals.trainable-golden/v1" as const;
+// public-contract: default silver suite for trainable code (property/fuzz)
 export const SILVER_DEFAULT_SUITE_ID =
 	"hobo.evals.trainable-silver/v1" as const;
 
@@ -58,6 +73,7 @@ export type EvalsFailureCode =
 	| "criterion.required-failed"
 	| "rubric.total-below-threshold";
 
+/** Typed parse failure raised at the rubric authoring boundary. */
 export class RubricParseError extends TypeError {
 	constructor(message: string) {
 		super(message);
@@ -65,6 +81,7 @@ export class RubricParseError extends TypeError {
 	}
 }
 
+/** Typed parse failure raised at the observation ingestion boundary. */
 export class ObservationParseError extends TypeError {
 	constructor(message: string) {
 		super(message);
@@ -72,6 +89,7 @@ export class ObservationParseError extends TypeError {
 	}
 }
 
+/** Typed parse failure raised at the promotion-gate boundary. */
 export class PromotionGateParseError extends TypeError {
 	constructor(message: string) {
 		super(message);
@@ -82,19 +100,25 @@ export class PromotionGateParseError extends TypeError {
 export interface RubricCriterionDefinition {
 	id: string;
 	description?: string;
+	/** Relative weight in the weighted total; finite and > 0. */
 	weight: number;
 	kind: ScoringKind;
+	/** Scale criteria only: score floor in [0,1]; boolean/golden-match imply 1. */
 	passThreshold?: number;
+	/** Golden-match criteria only: the blessed expected value (JSON data). */
 	expected?: EvaluationValue;
+	/** Hard gate: a failing required criterion fails the rubric outright. */
 	required?: boolean;
 }
 
 export interface RubricDefinition {
 	id: string;
+	/** Weighted-total floor in [0,1] the rubric as a whole must reach. */
 	passThreshold: number;
 	criteria: RubricCriterionDefinition[];
 }
 
+// domain-view: parse-produced criterion (unknown golden payload, literal kind union); wire form is RubricCriterion in data-models/evals.proto.
 export interface RubricCriterion {
 	readonly id: string;
 	readonly description: string;
@@ -105,6 +129,7 @@ export interface RubricCriterion {
 	readonly required: boolean;
 }
 
+// domain-view: parse-produced rubric record; wire form is Rubric in data-models/evals.proto.
 export interface Rubric {
 	readonly schema: typeof EVALS_RUBRIC_SCHEMA;
 	readonly id: string;
@@ -112,19 +137,25 @@ export interface Rubric {
 	readonly criteria: readonly RubricCriterion[];
 }
 
+/** One raw observation per criterion; scoreRubric parses it by criterion kind. */
 export interface RubricObservationInput {
 	criterionId: string;
+	/** Boolean criteria. */
 	passed?: boolean;
+	/** Scale criteria: score in [0,1]. */
 	score?: number;
+	/** Golden-match criteria: the actual value to compare canonically. */
 	actual?: EvaluationValue;
 }
 
+// domain-view: first-divergence record over unknown values; wire form is ValueDiff (JSON-encoded sides) in data-models/evals.proto.
 export interface ValueDiff {
 	readonly path: string;
 	readonly expected: EvaluationValue;
 	readonly actual: EvaluationValue;
 }
 
+// domain-view: scored criterion with literal kind union and optional structured diff; wire form is CriterionScore in data-models/evals.proto.
 export interface CriterionScore {
 	readonly criterionId: string;
 	readonly kind: ScoringKind;
@@ -135,12 +166,14 @@ export interface CriterionScore {
 	readonly diff?: ValueDiff;
 }
 
+// domain-view: machine-readable failure with literal code union; wire form is EvalsFailure in data-models/evals.proto.
 export interface EvalsFailure {
 	readonly code: EvalsFailureCode;
 	readonly criterionId?: string;
 	readonly message: string;
 }
 
+// domain-view: frozen scored-run report (literal schema type); wire form is RubricReport in data-models/evals.proto.
 export interface RubricReport {
 	readonly schema: typeof EVALS_RUBRIC_REPORT_SCHEMA;
 	readonly ok: boolean;
@@ -151,21 +184,31 @@ export interface RubricReport {
 	readonly failures: readonly EvalsFailure[];
 }
 
+// domain-view: machine-readable gate reason; wire form is GateReason in data-models/evals.proto.
 export interface GateReason {
 	readonly code: string;
 	readonly message: string;
 }
 
+// domain-view: Gatekeeper-dimension-shaped verdict ({ok, reasons}); wire form is PromotionGateVerdict in data-models/evals.proto.
 export interface PromotionGateVerdict {
 	readonly ok: boolean;
 	readonly reasons: ReadonlyArray<GateReason>;
 }
 
 export interface PromotionGateThresholds {
+	/** Extra weighted-total floor in [0,1] beyond the rubric's own passThreshold. */
 	minWeightedTotal?: number;
+	/** Require report.ok itself (default true). */
 	requireRubricPass?: boolean;
 }
 
+/**
+ * Parse a raw rubric definition into the schema-versioned, deeply frozen
+ * rubric record. Parse, don't validate: every constraint (non-empty ids,
+ * positive finite weights, [0,1] thresholds, kind-specific fields,
+ * duplicate-free criteria) is enforced here so scoring never re-checks.
+ */
 export function defineRubric(definition: RubricDefinition): Rubric {
 	if (!definition || valueKind(definition) !== "object") {
 		throw new RubricParseError("rubric definition is required");
@@ -272,6 +315,14 @@ function parseCriterion(
 	return parsed;
 }
 
+/**
+ * Deterministically score a rubric against one observation per criterion,
+ * producing the frozen scored-run report. Observations parse by criterion
+ * kind (boolean/scale/golden-match) or throw ObservationParseError; the
+ * report carries per-criterion scores, the weighted total, and
+ * machine-readable failures — same shape discipline as the conformance
+ * PortSuiteReport.
+ */
 export function scoreRubric(
 	rubric: Rubric,
 	observations: readonly RubricObservationInput[],
@@ -415,6 +466,12 @@ function scoreCriterion(
 	return score;
 }
 
+/**
+ * Golden-match scoring primitive: compare an expected/actual pair by
+ * canonical JSON (object key order is irrelevant); on mismatch, report the
+ * first diverging path — the same first-diff vocabulary the conformance
+ * golden checks use.
+ */
 export function matchGolden<
 	T extends EvaluationValue,
 	U extends EvaluationValue,
@@ -438,6 +495,7 @@ interface MutableMatchGoldenResult {
 	diff?: ValueDiff;
 }
 
+/** Canonical JSON encoding: recursively key-sorted, so comparison is order-independent. */
 export function canonicalJson<T>(
 	value: T,
 	seen: WeakSet<object> = new WeakSet(),
@@ -448,10 +506,12 @@ export function canonicalJson<T>(
 	if (kind === "symbol") return JSON.stringify(String(value));
 	if (kind === "function") {
 		return JSON.stringify(
+			// SAFETY: valueKind(value) is "function", whose optional name is standard.
 			`fn:${(value as { name?: string }).name || "anonymous"}`,
 		);
 	}
 	if (kind === "number") {
+		// SAFETY: valueKind(value) is "number", so the numeric operations are valid.
 		const numberValue = value as number;
 		if (Number.isNaN(numberValue)) return "NaN";
 		if (Object.is(value, -0)) return "-0";
@@ -486,6 +546,8 @@ export function canonicalJson<T>(
 	if (Array.isArray(value)) {
 		return `[${value.map((entry) => canonicalJson(entry, seen)).join(",")}]`;
 	}
+	// SAFETY: valueKind(value) is "object", so property enumeration is valid.
+	// SAFETY: valueKind(value) is "object", so property enumeration is valid.
 	const entries = Object.entries(value as object);
 	return `{${entries
 		.sort()
@@ -495,6 +557,12 @@ export function canonicalJson<T>(
 		.join(",")}}`;
 }
 
+/**
+ * Evaluate the promotion gate over a scored-run report, producing the
+ * verdict Gatekeeper composes as its evals dimension: structurally the same
+ * {ok, reasons: [{code, message}]} shape as the contracts package's
+ * precomputed ResidencyGateVerdict / CanMigrateGateVerdict dimensions.
+ */
 export function evaluatePromotionGate(input: {
 	rubricReport: RubricReport;
 	thresholds?: PromotionGateThresholds;
@@ -548,6 +616,12 @@ export function evaluatePromotionGate(input: {
 	return deepFreeze({ ok: reasons.length === 0, reasons });
 }
 
+/**
+ * Compile-time proof (and zero-cost upcast) that the evals verdict slots
+ * into Gatekeeper's precomputed-dimension shape: assignability to the
+ * contracts package's ResidencyGateVerdict is checked by tsc, so a caller
+ * can hand the verdict straight to Gatekeeper composition.
+ */
 export function asGateDimension(
 	verdict: PromotionGateVerdict,
 ): ResidencyGateVerdict {
@@ -612,7 +686,9 @@ function firstDiff<T extends EvaluationValue, U extends EvaluationValue>(
 		return null;
 	}
 	if (valueKind(expected) === "object") {
+		// SAFETY: the object kind branch guarantees both values are objects here.
 		const expectedObject = expected as object;
+		// SAFETY: differing value kinds returned above; this branch makes actual an object too.
 		const actualObject = actual as object;
 		if (seen.has(expectedObject) || seen.has(actualObject)) {
 			return { path, expected: "[Cycle]", actual: "[Cycle]" };
@@ -646,6 +722,7 @@ function joinPath(path: string, key: string): string {
 
 function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
 	if (value === null || valueKind(value) !== "object") return value;
+	// SAFETY: valueKind(value) is "object", so the object operations are valid.
 	const objectValue = value as object;
 	if (seen.has(objectValue)) return value;
 	seen.add(objectValue);
@@ -670,6 +747,10 @@ export interface TrainableGoldenRegion {
 	readonly cases: readonly TrainableGoldenCase[];
 }
 
+/**
+ * Default golden suite for one trainable region: exact-match over
+ * contract examples and recorded traces (ADR-0025). Not occupancy state.
+ */
 export function defineTrainableGoldenRubric(
 	region: TrainableGoldenRegion,
 ): Rubric {
@@ -758,6 +839,10 @@ export interface TrainableSuiteScore {
 	readonly reports: readonly RubricReport[];
 }
 
+/**
+ * Silver suite for one trainable region: property/fuzz oracles over the
+ * same gold seeds. Exact-match stays on the gold suite.
+ */
 export function defineTrainableSilverRubric(
 	evidence: TrainableSilverEvidence,
 ): Rubric {
@@ -910,6 +995,7 @@ function isPolluted<T>(
 	seen: WeakSet<object> = new WeakSet(),
 ): boolean {
 	if (!value || valueKind(value) !== "object") return false;
+	// SAFETY: the object kind branch guarantees value is an object here.
 	const objectValue = value as object;
 	if (seen.has(objectValue)) return false;
 	seen.add(objectValue);
@@ -919,5 +1005,6 @@ function isPolluted<T>(
 	) {
 		return true;
 	}
+	// SAFETY: valueKind(value) is "object", so Object.values accepts it.
 	return Object.values(objectValue).some((entry) => isPolluted(entry, seen));
 }

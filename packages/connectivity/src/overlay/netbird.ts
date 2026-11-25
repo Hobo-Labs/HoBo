@@ -19,7 +19,6 @@ export function createNetbirdOverlay(options?: {
 	readonly metering?: MeteringBus;
 	readonly managementUrl?: string;
 	readonly accessToken?: string;
-	readonly setupKey?: string;
 	readonly fetchImpl?: typeof fetch;
 	readonly api?: NetbirdApiClient;
 }): OverlayNetwork {
@@ -32,15 +31,11 @@ export function createNetbirdOverlay(options?: {
 	function client(): NetbirdApiClient | null {
 		if (options?.api) return options.api;
 		if (!managementUrl) return null;
-		const accessToken = options?.accessToken ?? process.env.NETBIRD_TOKEN;
-		const setupKey = options?.setupKey ?? process.env.NETBIRD_SETUP_KEY;
+		const accessToken = options?.accessToken;
 		return createNetbirdApiClient({
 			managementUrl,
 			...(accessToken !== undefined && accessToken.length > 0
 				? { accessToken }
-				: undefined),
-			...(setupKey !== undefined && setupKey.length > 0
-				? { setupKey }
 				: undefined),
 			...(options?.fetchImpl !== undefined
 				? { fetchImpl: options.fetchImpl }
@@ -78,6 +73,7 @@ export function createNetbirdOverlay(options?: {
 					nodeId = enrolled.peer.id;
 					if (enrolled.peer.ip) overlayIps = [enrolled.peer.ip];
 				}
+				// ready requires concrete peer identity (id and/or ip), not mere key validation.
 				if (enrolled.enrolled && !enrolled.peer?.id && !enrolled.peer?.ip) {
 					try {
 						const peers = await api.listPeers();
@@ -104,7 +100,7 @@ export function createNetbirdOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"netbird: set NETBIRD_MANAGEMENT_URL + NETBIRD_SETUP_KEY (or accessToken) for live join",
+					"netbird: set NETBIRD_MANAGEMENT_URL and join with the OverlayJoin from fleet enrollment for a live join",
 				);
 			}
 
@@ -185,7 +181,7 @@ export function createNetbirdOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"netbird DNS requires management URL + access token (NETBIRD_TOKEN)",
+					"netbird DNS requires management URL + accessToken from the owner's store (owner://NETBIRD_TOKEN)",
 				);
 			}
 			await options?.metering?.emit(
@@ -202,6 +198,7 @@ export function createNetbirdOverlay(options?: {
 			funnel: FunnelPublishOptions,
 		): Promise<FunnelPublishResult> {
 			const notes: string[] = [];
+			// Netbird reverse-proxy / public access: use configured gateway hostname.
 			let gateway =
 				funnel.hostnameHint &&
 				(funnel.hostnameHint.endsWith(".netbird.selfhosted") ||
@@ -245,7 +242,9 @@ export function createNetbirdOverlay(options?: {
 						},
 					}),
 				);
-			} catch {}
+			} catch {
+				// Public-route capability remains authoritative when observation fails.
+			}
 			return {
 				enabled: false,
 				confirmed: false,

@@ -150,6 +150,7 @@ test("integration: HOBO-651 recorded trace adapts into S5-07 generation input", 
 });
 
 test("architecture artifacts pin protobuf, CUE, Pact, and ADR boundaries", () => {
+  const adr = readFileSync(new URL("../ADR.md", import.meta.url), "utf8");
   const proto = readFileSync(
     new URL("../architecture/stub_implementation_generation_contract.proto", import.meta.url),
     "utf8"
@@ -173,4 +174,11 @@ test("architecture artifacts pin protobuf, CUE, Pact, and ADR boundaries", () =>
   assert.equal(pact.consumer.name, "StubImplementationGenerationContractConsumer");
   assert.equal(pact.provider.name, "StubImplementationGenerationContractBoundary");
   assert.equal(pact.interactions[0].response.body.ok, true);
+  assert.match(adr, /parse, don't validate/i);
+  assert.match(adr, /Command/i);
+  assert.match(adr, /Event/i);
+  assert.match(adr, /Actor/i);
+  assert.match(adr, /event store/i);
+  assert.match(adr, /projection/i);
+  assert.match(adr, /read store/i);
 });

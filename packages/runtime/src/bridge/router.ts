@@ -22,6 +22,7 @@ const MAX_RECORDED_CALLS = 1_000;
 
 type Handler<I, O> = (input: I) => O | Promise<O>;
 
+/** Canonical (key-sorted) JSON so structurally equal inputs match. */
 function canonical<T>(value: T): string {
 	return JSON.stringify(sortKeys(cloneAsJson(value)));
 }
@@ -36,6 +37,10 @@ function sortKeys(value: JsonValue | undefined): JsonValue {
 	);
 }
 
+/**
+ * PACT-style subset match: every key the expectation declares must be
+ * present and equal in the actual value (extra actual keys are fine).
+ */
 export function isSubsetMatch(
 	expected: JsonValue | undefined,
 	actual: JsonValue | undefined,
@@ -51,7 +56,9 @@ export function isSubsetMatch(
 		if (!actual || !isJsonObject(actual) || Array.isArray(actual)) {
 			return false;
 		}
+		// SAFETY: assertion to `expected as JsonObject` is required at this boundary.
 		return Object.entries(expected as JsonObject).every(([key, value]) =>
+			// SAFETY: assertion to `actual as JsonObject` is required at this boundary.
 			isSubsetMatch(value, (actual as JsonObject)[key]),
 		);
 	}
@@ -61,6 +68,7 @@ export function isSubsetMatch(
 interface BoundaryState {
 	live?: Handler<JsonValue, JsonValue>;
 	mock?: readonly BoundaryExample[];
+	/** Bridged handlers by session tag; "" is the catch-all bridge. */
 	bridges: Map<string, Handler<JsonValue, JsonValue>>;
 	shadow?: Handler<JsonValue, JsonValue>;
 	fault?: FaultOptions | undefined;
@@ -72,13 +80,23 @@ interface BoundaryState {
 
 export interface Boundary<I = JsonValue, O = JsonValue> {
 	readonly name: string;
+	/** The upstream (deployed/remote) implementation of this boundary. */
 	live(handler: Handler<I, O>): Boundary<I, O>;
+	/** PACT-derived canned responses — no hand-written mocks (ADR-0076). */
 	mock(examples: readonly BoundaryExample<I, O>[]): Boundary<I, O>;
+	/**
+	 * Bridge the boundary to a local implementation. Contract-verified
+	 * BEFORE activation; session-scoped unless no session is given.
+	 */
 	bridge(handler: Handler<I, O>, options?: BridgeOptions<I, O>): Promise<void>;
+	/** Tear the bridge down (one session, or every bridge when omitted). */
 	unbridge(session?: string): void;
+	/** Duplicate served traffic to a candidate; its output is never returned. */
 	shadow(candidate: Handler<I, O>): Boundary<I, O>;
+	/** Chaos at the boundary — optionally scoped to one dev session. */
 	fault(options: FaultOptions): Boundary<I, O>;
 	clearFault(): void;
+	/** Serve recorded outputs instead of calling anything. */
 	replay(enabled?: boolean): Boundary<I, O>;
 	call(input: I, context?: { session?: string }): Promise<O>;
 	calls(): readonly RecordedBoundaryCall<I, O>[];
@@ -121,6 +139,13 @@ async function verifyContract<I, O>(
 	}
 }
 
+/**
+ * Create a boundary router — the in-process seam every service boundary
+ * routes through. A Camp's host wires real transports behind it; tests and
+ * `hobo dev` wire it directly. All ADR-0076 modes compose per boundary,
+ * and bridged routing is per dev session, which is what turns "fork the
+ * whole environment" into "fork exactly your requests".
+ */
 export function createBoundaryRouter(): BoundaryRouter {
 	const boundaries = new Map<string, BoundaryState>();
 
@@ -169,8 +194,11 @@ export function createBoundaryRouter(): BoundaryRouter {
 		const runShadow = (input: I, served: JsonValue): void => {
 			const candidate = state.shadow;
 			if (!candidate) return;
+			// Fire the candidate on the same input; its result is captured
+			// for comparison and always discarded.
 			void Promise.resolve()
 				.then(() => {
+					// SAFETY: erased shadow handler is invoked with the boundary input.
 					return candidate(input as never);
 				})
 				.then((result) => {
@@ -181,6 +209,7 @@ export function createBoundaryRouter(): BoundaryRouter {
 						matched: canonical(result) === canonical(served),
 						order: state.shadowDiffs.length,
 					});
+					// SAFETY: shadow diffs are stored erased across boundary I/O types.
 					state.shadowDiffs.push(diff as never);
 				})
 				.catch((error) => {
@@ -193,6 +222,7 @@ export function createBoundaryRouter(): BoundaryRouter {
 						matched: false,
 						order: state.shadowDiffs.length,
 					});
+					// SAFETY: shadow diffs are stored erased across boundary I/O types.
 					state.shadowDiffs.push(diff as never);
 				});
 		};
@@ -211,6 +241,7 @@ export function createBoundaryRouter(): BoundaryRouter {
 					served,
 					...(session !== undefined ? { session } : undefined),
 				};
+				// SAFETY: recorded calls are stored erased across boundary I/O types.
 				record(state, recorded as never);
 				if (served === "live" || served === "bridge") {
 					runShadow(input, cloneAsJson(output));
@@ -223,6 +254,7 @@ export function createBoundaryRouter(): BoundaryRouter {
 					served,
 					...(session !== undefined ? { session } : undefined),
 				};
+				// SAFETY: recorded calls are stored erased across boundary I/O types.
 				record(state, recorded as never);
 				throw error;
 			}
@@ -231,10 +263,12 @@ export function createBoundaryRouter(): BoundaryRouter {
 		const boundary: Boundary<I, O> = {
 			name,
 			live(handler) {
+				// SAFETY: generic live handler is stored erased at the router boundary.
 				state.live = handler as never;
 				return boundary;
 			},
 			mock(examples) {
+				// SAFETY: assertion to ` as readonly BoundaryExample[]; re` is required at this boundary.
 				state.mock = examples as readonly BoundaryExample[];
 				return boundary;
 			},
@@ -242,13 +276,18 @@ export function createBoundaryRouter(): BoundaryRouter {
 				if (options.contract) {
 					await verifyContract(name, handler, options.contract);
 				}
-				state.bridges.set(options.session ?? "", handler as never);
+				state.bridges.set(
+					options.session ?? "",
+					// SAFETY: generic bridge handler is stored erased at the router boundary.
+					handler as never,
+				);
 			},
 			unbridge(session) {
 				if (session === undefined) state.bridges.clear();
 				else state.bridges.delete(session);
 			},
 			shadow(candidate) {
+				// SAFETY: generic shadow handler is stored erased at the router boundary.
 				state.shadow = candidate as never;
 				return boundary;
 			},
@@ -280,6 +319,7 @@ export function createBoundaryRouter(): BoundaryRouter {
 					(session !== undefined ? state.bridges.get(session) : undefined) ??
 					state.bridges.get("");
 				if (bridged) {
+					// SAFETY: erased handler is invoked with the boundary's input type.
 					return serve(
 						input,
 						"bridge",
@@ -300,10 +340,12 @@ export function createBoundaryRouter(): BoundaryRouter {
 							`boundary "${name}" is replaying but has no recorded output for input ${key}`,
 						);
 					}
+					// SAFETY: assertion to `.output as O); }` is required at this boundary.
 					return serve(input, "replay", session, () => recorded.output as O);
 				}
 				if (state.live) {
 					const live = state.live;
+					// SAFETY: erased live handler is invoked with the boundary's input type.
 					return serve(input, "live", session, () => live(input as never) as O);
 				}
 				if (state.mock) {
@@ -319,6 +361,7 @@ export function createBoundaryRouter(): BoundaryRouter {
 								`boundary "${name}" has an empty mock — give it PACT examples`,
 							);
 						}
+						// SAFETY: assertion to `tput as O; });` is required at this boundary.
 						return example.output as O;
 					});
 				}
@@ -327,9 +370,11 @@ export function createBoundaryRouter(): BoundaryRouter {
 				);
 			},
 			calls() {
+				// SAFETY: recorded calls are restored to the boundary's I/O types.
 				return [...state.calls] as never;
 			},
 			shadowDiffs() {
+				// SAFETY: shadow diffs are restored to the boundary's input type.
 				return [...state.shadowDiffs] as never;
 			},
 			status() {

@@ -1,10 +1,10 @@
 # Cross-Camp Flag-State Consistency Contract
 
 Independent POC for HOBO-384. It proves the Harness flag-state consistency contract from
-[Plan 29](urn:hobo:requirement:contracts-policy-flags#plan-29),
-[Plan 05](urn:hobo:requirement:reliability-observability-cost#plan-05),
-[ADR-0040](urn:hobo:decision:adr-0040), and
-[ADR-0044](urn:hobo:decision:adr-0044).
+[Plan 29](../../../../docs/design/contracts-policy-flags.md#plan-29),
+[Plan 05](../../../../docs/design/reliability-observability-cost.md#plan-05),
+[ADR-0040](../../../../docs/design/adr/01-architecture-core.md#adr-0040), and
+[ADR-0044](../../../../docs/design/adr/02-identity-security.md#adr-0044).
 
 - A feature flag declares a `single-writer-camp` topology with one writer Camp and follower Camps.
 - Follower reads consume the writer's replicated flag read-stream and always carry bounded-staleness labels.
@@ -26,9 +26,11 @@ npm.cmd --prefix src\draft\technical-proofs\cross-camp-flag-state-consistency-co
 The tests cover bounded follower labels, catch-up freshness, stale-not-fresh reads, partition-suspected serving, active-active convergence, kill-switch propagation latency, and writer-order rejection.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Cross Camp Flag State Consistency Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

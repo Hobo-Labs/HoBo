@@ -5,6 +5,8 @@ import {
 	type Lease,
 } from "@hobo/ci";
 
+/** Repricing is feasibility only. The durable store must still claim the exact
+ * financial reservation, including strict native proof, before any provider effect. */
 export function heldRoutingOptions(
 	account: Account,
 	lease: Lease,
@@ -14,6 +16,7 @@ export function heldRoutingOptions(
 	return {
 		phase: "plan",
 		attempt: lease.runAttempt + (lease.budgetAdmissionAttempt || 1) - 1,
+		// A pinned earlier deadline is conservatively older than the policy horizon.
 		queueDurationMs: Math.max(
 			0,
 			queueBound !== undefined && lease.queueDeadlineAt

@@ -160,6 +160,18 @@
       }
     },
     {
+      "name": "fleet",
+      "role": "control plane",
+      "summary": "Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)",
+      "cli": "hobo fleet",
+      "mcpTool": "fleet",
+      "capability": {
+        "port": "hobo:mcp",
+        "resource": "tool:fleet",
+        "verb": "call"
+      }
+    },
+    {
       "name": "incident",
       "role": "delivery",
       "summary": "CD failure disposition: A2H handoff or sandboxed self-heal",
@@ -258,7 +270,7 @@
     {
       "name": "logs",
       "role": "read-only",
-      "summary": "Read or follow local deployment logs",
+      "summary": "Live-tail Camp runtime streams",
       "cli": "hobo logs",
       "mcpTool": "logs",
       "capability": {
@@ -486,7 +498,7 @@
     {
       "name": "serve",
       "role": "control plane",
-      "summary": "Serve the local control-plane HTTP and SSE API",
+      "summary": "Local control-plane HTTP+SSE for the Yard game UI",
       "cli": "hobo serve",
       "mcpTool": "serve",
       "capability": {
@@ -510,7 +522,7 @@
     {
       "name": "derivative",
       "role": "extensibility",
-      "summary": "Inspect a derived HoBo descriptor",
+      "summary": "Manage derived HoBo implementations",
       "cli": "hobo derivative",
       "mcpTool": "derivative",
       "capability": {

@@ -46,11 +46,11 @@ export const SECURITY_VERIFICATION_SCOPE = {
     "Define Security Verification M0 scope so v1 release owners know the security launch gate, evidence owners, support handoffs, and follow-up proof requirements before threat review or live workflow work begins.",
   sourceRefs: [
     "Linear HOBO-441 issue body",
-    "urn:hobo:requirement:security-verification",
-    "urn:hobo:requirement:launch-blocker-taxonomy",
-    "urn:hobo:requirement:launch-support-escalation",
-    "urn:hobo:requirement:public-status-page-incident-communication",
-    "urn:hobo:requirement:legal-privacy-terms-readiness",
+    "docs/design/security-verification.md",
+    "docs/design/launch-blocker-taxonomy.md",
+    "docs/design/launch-support-escalation.md",
+    "docs/design/public-status-page-incident-communication.md",
+    "docs/design/legal-privacy-terms-readiness.md",
   ],
   personas: [
     {

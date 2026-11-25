@@ -89,9 +89,12 @@ describe("account allocation routing", () => {
 		const github = offer("gh", 0, 1);
 		a.offers = [arc, github];
 
+		// Legacy fleet routing keeps ARC even when GitHub overflow is cheaper.
 		expect(route(a, [], now)?.offer.id).toBe("arc");
+		// Shared policy explicitly requests the lowest paid cost across offers.
 		a.budgetPolicy = common({ objective: "min-cost" });
 		expect(route(a, [], now)?.offer.id).toBe("gh");
+		// Admission constraints apply before legacy fleet preference too.
 		a.budgetPolicy = undefined;
 		arc.budgetMicros = 999;
 		expect(route(a, [], now)?.offer.id).toBe("gh");

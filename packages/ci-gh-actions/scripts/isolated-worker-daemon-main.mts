@@ -1,17 +1,23 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	statfsSync,
+	statSync,
+} from "node:fs";
 import { cpus, homedir, hostname, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from its own SQLite journal. */
 import { toJsonString } from "@bufbuild/protobuf";
-import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
 import {
-	createTrustedMeshBoard,
-	meshAdvertRejected,
-	meshLeaderId,
-} from "@hobo/ci/mesh";
+	ConfigurationSchema,
+	type Lease,
+	memoryAdmitHeadroom,
+	parseConfiguration,
+} from "@hobo/ci";
 import {
 	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
@@ -25,8 +31,6 @@ import {
 	createCompositeIsolatedHost,
 	createContainerStallGuard,
 	createDepsImageEnsurer,
-	createFleetPickupMemory,
-	createFleetVerdictHolds,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
@@ -37,18 +41,18 @@ import {
 	createJobDurations,
 	createMemoryPeaks,
 	createMergeQueuePositionCache,
-	createMeshTrust,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollIngestCoalesce,
 	createPollLogFilter,
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
+	createRoutingHolds,
 	createRoutingSlipIssuer,
 	createRoutingStallWatch,
+	createRunnerPickupMemory,
 	createStoragePeaks,
 	createWorkerMemoryAdmission,
-	createWorkerMesh,
 	createWorkerStorageAdmission,
 	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
 	DEPS_BUILD_ADMISSION_ID,
@@ -58,27 +62,22 @@ import {
 	defaultGitMirrorFallbackRoot,
 	defaultGitMirrorPreferredRoot,
 	describeWaitingJobs,
-	evaluateFleetVerdict,
-	type FleetJobsSeen,
-	type FleetRunnersView,
-	freeDiskMb,
+	evaluateRoutingSlip,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
+	hostPressureBlocksAdmission,
 	hostResourcePressureLogFields,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
-	loadMeshIdentity,
 	localWorkerFreeSlots,
-	type MeshJournal,
 	mainShardParallelLaunchCapacity,
-	memoryRequestForJob,
 	mergeHeldPruneWitness,
-	meshReliabilityJournal,
-	meshReliabilityResetToken,
-	meshSettingsFromEnv,
 	parseWorkerStopMode,
+	type RepositoryRunnersView,
 	ROUTING_SLIP_SAMPLE_MS,
+	type RunnerJobsSeen,
 	readAvailableMemoryMb,
+	readBoxMemberSettings,
 	readBoxRoutingPolicy,
 	readHandedWorkerSecrets,
 	readHostHealthSample,
@@ -95,6 +94,7 @@ import {
 	resolveWorkerStorePlan,
 	retireRepositoryVariables,
 	routingEnvironmentNamesSet,
+	routingSlipLeader,
 	runnerRoutingLabels,
 	runningAsControllerRelease,
 	singleFlight,
@@ -106,13 +106,34 @@ import {
 	withGithubReadCache,
 	workerAdmissionPaused,
 	workerHostFiles,
-	writeWorkerMeshAdvert,
 } from "@hobo/ci-gh-actions";
+import type { FleetView, MemberId } from "@hobo/fleet";
+import { z } from "zod";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
 import { loadWorkerBudgetAdapter } from "./worker-budget-adapter.mts";
 
 const exec = promisify(execFile);
+
+function memberNameOf(host: string): string {
+	const name = host
+		.toLowerCase()
+		.replace(/[^a-z0-9_-]/gu, "-")
+		.replace(/^[^a-z0-9]+/u, "")
+		.slice(0, 63);
+	return name === "" ? "box" : name;
+}
+
+function ciGhActionsVersion(): string {
+	const manifest = z
+		.object({ version: z.string().min(1) })
+		.safeParse(
+			JSON.parse(
+				readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+			),
+		);
+	return manifest.success ? manifest.data.version : "0.0.0";
+}
 
 function required(name: string): string {
 	const value = process.env[name];
@@ -131,20 +152,16 @@ function inodeReserve(name: string, fallback: number): number {
 	return reserve;
 }
 
-/** Optional NATS credentials, from the variable or its `_FILE`. */
-function natsCredentials() {
-	const read = (name: string) => {
-		const file = process.env[`${name}_FILE`];
-		const value = file
-			? readFileSync(file, "utf8").trimEnd()
-			: process.env[name];
-		return value ? value : undefined;
-	};
-	return {
-		token: read("HOBO_CI_NATS_TOKEN"),
-		user: read("HOBO_CI_NATS_USER"),
-		password: read("HOBO_CI_NATS_PASSWORD"),
-	};
+function freeDiskMbOf(path: string): number | undefined {
+	try {
+		const stats = statfsSync(path);
+		const megabytes = Math.floor((stats.bavail * stats.bsize) / (1024 * 1024));
+		return Number.isSafeInteger(megabytes) && megabytes >= 0
+			? megabytes
+			: undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 function storageLeases(leases: readonly Lease[]) {
@@ -159,17 +176,6 @@ function secretOrFile(name: string): string {
 	const file = process.env[`${name}_FILE`];
 	return file ? readFileSync(file, "utf8").trimEnd() : required(name);
 }
-
-/**
- * Set once the worker has joined a mesh: its own log events say what became
- * of the jobs it took, and that is what its reliability is scored from.
- */
-let meshOutcomes:
-	| ((
-			event: string,
-			fields: Readonly<Record<string, string | number | boolean>>,
-	  ) => void)
-	| undefined;
 
 // Off unless OTEL_EXPORTER_OTLP_ENDPOINT (or the traces-specific variable) or
 // HOBO_CI_TRACE_FILE is set. Every log event below is also a span, and so is
@@ -218,7 +224,6 @@ function log(
 	fields: Readonly<Record<string, string | number | boolean>> = {},
 ) {
 	console.error(JSON.stringify({ event, ...fields }));
-	meshOutcomes?.(event, fields);
 	relayTrace.event(event, fields);
 	ciEvents.emit(event, fields);
 }
@@ -288,27 +293,11 @@ const privateKey =
 	(process.env.HOBO_CI_GITHUB_APP_KEY_FILE
 		? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
 		: secretOrFile("HOBO_CI_GITHUB_APP_PRIVATE_KEY"));
-// A worker's configuration is its own file or variable. One that has
-// neither and is told where a mesh is asks the mesh, so adding a box takes a
-// NATS address and App credentials and nothing else.
-const meshBootSettings = meshSettingsFromEnv(process.env, hostname());
 const localConfiguration = process.env.HOBO_CI_CONFIG
 	? readFileSync(process.env.HOBO_CI_CONFIG, "utf8")
 	: process.env.HOBO_CI_CONFIG_JSON;
-const sharedConfiguration =
-	localConfiguration === undefined && meshBootSettings
-		? await (await import("@hobo/ci-gh-actions/mesh-nats")).readNatsMeshConfig({
-				servers: meshBootSettings.servers,
-				namespace: meshBootSettings.namespace,
-				replicas: meshBootSettings.replicas,
-				name: `hobo-ci-worker ${meshBootSettings.nodeId} (configuration)`,
-				...natsCredentials(),
-			})
-		: undefined;
 const configuration = parseConfiguration(
-	localConfiguration ??
-		sharedConfiguration?.value ??
-		required("HOBO_CI_CONFIG_JSON"),
+	localConfiguration ?? required("HOBO_CI_CONFIG_JSON"),
 );
 const workerAccountId = required("HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID");
 // No ingress in pull mode, so the origin is informational (runner container env).
@@ -461,16 +450,10 @@ if (
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void> = async () => {};
-// The worker's own SQLite journal, when it has one: where its mesh
-// reliability record is kept, and beside which its identity key lives.
-let meshJournal: MeshJournal | undefined;
 // Where this worker meets its host's CD agent (`hobo deploy agent run`): the
-// agent closes admission with a marker file here and reads the advert this
-// worker writes here (src/runner-host-worker-jobs.ts).
 const runnerHostFiles = workerHostFiles(plan.store.path);
 const admissionPausedByAgent = () => workerAdmissionPaused(runnerHostFiles);
 // The release this worker runs, when its daemon's supervisor started it at
-// one (runner-controller-process.ts): the advert file names it for the agent.
 const controllerDigest = controllerDigestFromEnv(process.env);
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
@@ -485,7 +468,6 @@ try {
 	);
 	store = sqlite;
 	closeStore = async () => sqlite.close();
-	meshJournal = sqlite;
 	// This worker owns its journal, so the operator's config file is the policy
 	// source: apply it when it changed. A refused change (for example an active
 	// lease pinning a provider identity) keeps the stored policy and says why.
@@ -589,7 +571,12 @@ try {
 		throw new Error(
 			"pnpm store and work root must share a filesystem for hardlinks",
 		);
-	const docker = createCliDockerDriver({ env: process.env, log });
+	let fleetHostDocker = () => false;
+	const docker = createCliDockerDriver({
+		env: process.env,
+		log,
+		hostDocker: () => fleetHostDocker(),
+	});
 	const workFs = createNodeWorkerStorageFileSystem();
 	const retiredSweep = createRetiredWorkDirectorySweeper({
 		fs: workFs,
@@ -902,14 +889,10 @@ try {
 	const localFleetCapacitySnapshot = async () => {
 		const active = await store.activeLeases();
 		const hoboFreeSlots = localWorkerFreeSlots(slots, active);
-		const meshCap = await mesh?.observe();
-		if (!meshCap) return { hoboFreeSlots };
-		const meshFree = meshCap.freeSlots;
-		return {
-			hoboFreeSlots,
-			meshFreeSlots: meshFree,
-			arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
-		};
+		const capacity = await fleetMember?.daemon.fleetCapacity();
+		return capacity === undefined
+			? { hoboFreeSlots }
+			: { hoboFreeSlots, fleetFreeSlots: capacity.freeSlots };
 	};
 	const headroomFleetDeferMs = routing.box.trunkHeadroomFleetDeferMs;
 	const unlaunchedReserveMs = Number(
@@ -940,7 +923,24 @@ try {
 		!Number.isInteger(unlaunchedReReserveCooldownMs)
 	)
 		throw new Error("invalid HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS");
-	let mesh: ReturnType<typeof createWorkerMesh> | undefined;
+	let fleetMemberDraining = false;
+	let fleetMember:
+		| Readonly<{
+				daemon: Readonly<{
+					fleetCapacity(): Promise<{ freeSlots: number } | undefined>;
+					fleetView(): Promise<FleetView | undefined>;
+					memberId(): MemberId | undefined;
+					hostDocker(): boolean;
+					refreshFleet(): Promise<void>;
+					agent: Readonly<{
+						start(): Promise<void>;
+						drain(): Promise<void>;
+						stop(): Promise<void>;
+					}>;
+				}>;
+				timer: ReturnType<typeof setInterval>;
+		  }>
+		| undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -987,184 +987,155 @@ try {
 		inboxDrainBudgetMs,
 		onInboxDeliveryEvent: (event, fields) => log(event, fields),
 	});
-	const meshSettings =
-		plan.admission === "pull"
-			? meshSettingsFromEnv(process.env, hostname())
-			: undefined;
-	const natsMesh = meshSettings
-		? (await import("@hobo/ci-gh-actions/mesh-nats")).createNatsMesh({
-				servers: meshSettings.servers,
-				namespace: meshSettings.namespace,
-				replicas: meshSettings.replicas,
-				name: `hobo-ci-worker ${meshSettings.nodeId}`,
-				onStatus: (status) => log("hobo_ci_mesh_nats", { status }),
-				onNodesCapped: (limit) => log("hobo_ci_mesh_nodes_capped", { limit }),
-				...natsCredentials(),
-			})
-		: undefined;
-	let meshDraining = false;
-	// The worker's identity: an Ed25519 key made on first start and kept
-	// beside its journal, readable by its owner only. The private half never
-	// leaves this file; the public half travels with every advertisement.
-	const meshIdentity = meshSettings
-		? await loadMeshIdentity(
-				process.env.HOBO_CI_MESH_KEY_FILE ??
-					join(dirname(plan.store.path), "mesh-node.key"),
+	const memberSettings = readBoxMemberSettings(checkoutRoot, process.env, {
+		journalDirectory: dirname(plan.store.path),
+	});
+	const memberKeys = memberSettings
+		? (await import("@hobo/fleet-agent")).createFileKeyStore(
+				memberSettings.home,
 			)
 		: undefined;
-	// Which keys the mesh's operator vouches for, read from the mesh on every
-	// beat. With none listed this worker trusts only its own key.
-	const meshTrust = createMeshTrust({
-		store: natsMesh?.trust,
-		selfPublicKey: meshIdentity?.publicKey,
-		log,
-	});
-	// Signs what this worker advertises, and says of every advertisement it
-	// reads how far it is trusted. One whose signature fails is never ranked.
-	const meshBoard = natsMesh
-		? createTrustedMeshBoard({
-				board: natsMesh.board,
-				identity: meshIdentity,
-				policy: meshTrust.policy,
-			})
-		: undefined;
-	// The record of the jobs this worker took, kept in its journal so a
-	// restart does not clear it. HOBO_CI_MESH_RELIABILITY_RESET=<token> starts
-	// it again once per token, for an operator who has repaired the box.
-	const meshReliability =
-		meshSettings && meshJournal
-			? meshReliabilityJournal(
-					meshJournal,
-					meshSettings.nodeId,
-					(message) =>
-						log("hobo_ci_mesh_reliability_journal_failed", { message }),
-					meshReliabilityResetToken(process.env.HOBO_CI_MESH_RELIABILITY_RESET),
-				)
-			: undefined;
-	const storedReliability = await meshReliability?.load();
-	mesh =
-		meshSettings && natsMesh && meshBoard
-			? createWorkerMesh({
-					settings: meshSettings,
-					board: meshBoard,
-					claims: natsMesh.claims,
-					requireTrusted: meshTrust.requireTrusted,
-					initialReliability: storedReliability?.record,
-					persistReliability: (record) => void meshReliability?.save(record),
-					freeSlots: () => Math.max(0, slots - liveLaunchSlotsInUse),
-					totalSlots: slots,
-					// Closed admission is not healthy: others stop deferring to it.
-					healthy: () => !meshDraining && !admissionPausedByAgent(),
-					servesTrunk: trunkSlots > 0,
-					// Memory a new job could have: what the worker's budget has
-					// left, and no more than the host can spare above its reserve.
-					free: () => {
-						const budgetLeftMb = memoryConfig.budgetMb - inUseWorkerMemoryMb;
-						const availableMb = readAvailableMemoryMb();
-						return {
-							memoryMb: Math.max(
-								0,
-								Math.floor(
-									availableMb === undefined
-										? budgetLeftMb
-										: Math.min(
-												budgetLeftMb,
-												availableMb -
-													memoryConfig.reserveMb -
-													capacityVolatilityMb,
-											),
-								),
-							),
-							// Measured on the filesystem jobs check out and build on.
-							diskMb: freeDiskMb(workRoot),
-						};
-					},
-					platform: { os: process.platform, arch: process.arch },
-					// A job is sized by the same memory class the worker would
-					// reserve for it at launch.
-					needs: (job) => ({
-						memoryMb: memoryRequestForJob(job.name, memoryConfig).memoryMb,
-					}),
-					log,
-				})
-			: undefined;
-	meshOutcomes = mesh?.record;
-	log("hobo_ci_mesh", {
-		enabled: mesh !== undefined,
-		configuration:
-			localConfiguration !== undefined
-				? "local"
-				: sharedConfiguration
-					? "mesh"
-					: "none",
-		nodeId: meshSettings?.nodeId ?? "",
-		// The public half of the identity key, to list in the trusted set.
-		publicKey: meshIdentity?.publicKey ?? "",
-		reliabilityRestored: storedReliability?.record !== undefined,
-		reliabilityReset: storedReliability?.reset ?? false,
-		namespace: meshSettings?.namespace ?? "",
-		servers: meshSettings?.servers.length ?? 0,
-		stepMs: meshSettings?.stepMs ?? 0,
-	});
-	// Every 10 s: read the trust settings, say what this worker can take,
-	// and read what the mesh can.
-	const meshBeat = async () => {
-		await meshTrust.refresh();
-		await mesh?.advertise();
-		if (mesh)
-			await writeWorkerMeshAdvert(
-				runnerHostFiles,
-				mesh.self(),
-				controllerDigest,
-			).catch((error) =>
-				log("hobo_ci_mesh_advert_file_failed", {
-					message: error instanceof Error ? error.message : "unknown",
-				}),
-			);
-		await mesh?.observe();
-	};
-	const meshAdvertTimer = mesh
-		? setInterval(() => void meshBeat(), 10_000)
-		: undefined;
-	meshAdvertTimer?.unref();
-	// Keep the mesh's copy of the configuration in step with this worker's.
-	// A worker with its own file never has it overwritten: a difference is
-	// reported, and an operator decides which side is right.
-	const syncMeshConfiguration = async () => {
-		if (!natsMesh) return;
-		const mine = toJsonString(ConfigurationSchema, configuration);
-		const shared = await natsMesh.config.read();
-		if (!shared) {
-			const published = await natsMesh.config.publish(mine);
-			log("hobo_ci_mesh_config_published", {
-				revision: published === "conflict" ? 0 : published.revision,
-				conflict: published === "conflict",
-			});
-		} else if (
-			toJsonString(ConfigurationSchema, parseConfiguration(shared.value)) !==
-			mine
-		)
-			log("hobo_ci_mesh_config_drift", {
-				revision: shared.revision,
-				source: localConfiguration === undefined ? "mesh" : "local",
-			});
-	};
-	// The first connection is made in the background; advertise as soon as it is up.
-	void natsMesh?.ready.then(
-		async () => {
-			await meshBeat();
-			await syncMeshConfiguration().catch((error) =>
-				log("hobo_ci_mesh_config_sync_failed", {
-					message: error instanceof Error ? error.message : "unknown",
-				}),
-			);
-		},
-		(error) =>
-			log("hobo_ci_mesh_nats", {
-				status: "failed",
-				message: error instanceof Error ? error.message : "unknown",
+	const memberEnrolled =
+		memberKeys !== undefined &&
+		(await memberKeys.readState()).trust !== undefined;
+	if (
+		memberSettings &&
+		memberKeys &&
+		(memberEnrolled || memberSettings.bootstrapTokenFile !== undefined)
+	) {
+		const authorityUrl = memberSettings.authorityUrl;
+		const fleetName = memberSettings.fleet;
+		const tenant = memberSettings.tenant;
+		for (const [name, value] of [
+			["HOBO_FLEET_SANDBOX_RUNTIME", memberSettings.sandbox.runtime],
+			["HOBO_FLEET_SANDBOX_CACHE", memberSettings.sandbox.cache],
+			[
+				"HOBO_FLEET_SANDBOX_DOWNLOAD",
+				memberSettings.sandbox.download ? undefined : "0",
+			],
+		] as const) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+		const [ciGh, fleetAgent, fleetNats, core] = await Promise.all([
+			import("@hobo/ci-gh-actions"),
+			import("@hobo/fleet-agent"),
+			import("@hobo/fleet-nats"),
+			import("@hobo/core"),
+		]);
+		const fleetLog = (
+			event: string,
+			fields: Readonly<Record<string, string | number | boolean>>,
+		) => log(event, fields);
+		const connections = async () =>
+			(await store.configuration())?.configuration?.connections ?? [];
+		const keys = memberKeys;
+		const standardDiskMb = Math.ceil(
+			storageReserveForClass("standard").workRootBytes / (1024 * 1024),
+		);
+		let daemon: ReturnType<typeof ciGh.composeFleetDaemon>;
+		const egress = fleetAgent.createEgressProxyFactory({
+			fleetAllow: () => daemon.fleetAllow(),
+			log: fleetLog,
+		});
+		daemon = ciGh.composeFleetDaemon({
+			keys,
+			authorityUrl,
+			tenant: core.parseTenantId(tenant),
+			fleet: fleetName,
+			connector: fleetNats.createNatsBusConnector(),
+			host: fleetAgent.createHostCapacity({
+				slots,
+				workRoot,
+				labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
 			}),
-	);
+			admission: {
+				slots,
+				labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
+				read: async () => {
+					const availableMb = readAvailableMemoryMb();
+					const freeDisk = freeDiskMbOf(workRoot);
+					const budgetLeftMb = memoryConfig.budgetMb - inUseWorkerMemoryMb;
+					return {
+						usedSlots: liveLaunchSlotsInUse,
+						hostHealth: hostHealth.current().state,
+						draining: fleetMemberDraining,
+						memoryAdmits:
+							!hostPressureBlocksAdmission(hostPressureSample()) &&
+							memoryAdmitHeadroom(
+								availableMb,
+								memoryConfig.classes.standard,
+								memoryConfig.reserveMb,
+								capacityVolatilityMb,
+							),
+						storageAdmits: freeDisk === undefined || freeDisk >= standardDiskMb,
+						freeMemoryMb:
+							availableMb === undefined
+								? budgetLeftMb
+								: Math.min(
+										budgetLeftMb,
+										availableMb - memoryConfig.reserveMb - capacityVolatilityMb,
+									),
+						freeDiskMb: freeDisk,
+					};
+				},
+			},
+			work: {
+				source: ciGh.createGithubActionsWorkSource({
+					poller: {
+						github,
+						durations: jobDurations,
+						connections,
+						ingest: (delivery) => runtime.ingestWebhook(delivery),
+					},
+					mintRegistration: ciGh.createJitRegistrationMinter({
+						github,
+						connections,
+					}),
+					now: Date.now,
+					log: fleetLog,
+				}),
+				runner: ciGh.createGithubActionsWorkRunner(),
+			},
+			sandboxes: await fleetAgent.sandboxDrivers({ log: fleetLog }),
+			egress,
+			agentVersion: controllerDigest ?? ciGhActionsVersion(),
+			now: Date.now,
+			log: fleetLog,
+			fetch,
+		});
+		if (!memberEnrolled && memberSettings.bootstrapTokenFile !== undefined) {
+			const enrolled = await daemon.agent.enroll(
+				ciGh.boxEnrollment({
+					tenant: core.parseTenantId(tenant),
+					fleet: fleetName,
+					name: memberSettings.memberName ?? memberNameOf(hostname()),
+					bootstrapToken: readFileSync(
+						memberSettings.bootstrapTokenFile,
+						"utf8",
+					).trim(),
+					region: memberSettings.region,
+					platform: { os: process.platform, arch: process.arch },
+				}),
+			);
+			if (!enrolled.ok)
+				throw new Error(`fleet enrollment failed: ${enrolled.error.code}`);
+		}
+		await daemon.agent.start();
+		fleetHostDocker = () => daemon.hostDocker();
+		const timer = setInterval(() => {
+			void daemon.refreshFleet().catch(() => undefined);
+		}, 10_000);
+		timer.unref();
+		void daemon.refreshFleet().catch(() => undefined);
+		fleetMember = { daemon, timer };
+	}
+	log("hobo_ci_fleet_member", {
+		enabled: fleetMember !== undefined,
+		fleet: memberSettings?.fleet ?? "",
+		configured: memberSettings !== undefined,
+		enrolled: memberEnrolled,
+	});
 	const pollIngestCoalesce = createPollIngestCoalesce();
 	const heldJobPruner =
 		plan.admission === "pull"
@@ -1176,7 +1147,7 @@ try {
 				})
 			: undefined;
 	const poller =
-		plan.admission === "pull"
+		plan.admission === "pull" && fleetMember === undefined
 			? createGithubJobPoller({
 					github,
 					durations: jobDurations,
@@ -1185,7 +1156,6 @@ try {
 					connections: async () =>
 						(await store.configuration())?.configuration?.connections ?? [],
 					ingest: (delivery) => runtime.ingestWebhook(delivery),
-					claim: async (job) => (mesh ? mesh.claim(job) : true),
 					onIngestError: (jobId, message) =>
 						log("hobo_ci_isolated_worker_job_ingest_failed", {
 							jobId,
@@ -1211,10 +1181,8 @@ try {
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();
-	// What the fleet verdict reporter reads of GitHub: the last completed
-	// poll's jobs on fleet labels, and the jobs runners took lately.
-	const fleetPickups = createFleetPickupMemory();
-	let latestFleetJobs: FleetJobsSeen | undefined;
+	const runnerPickups = createRunnerPickupMemory();
+	let latestRunnerJobs: RunnerJobsSeen | undefined;
 
 	let draining = false;
 	let workerDrainStartedAtMs: number | undefined;
@@ -1337,10 +1305,10 @@ try {
 						terminalJobs: [],
 					},
 				);
-				const { waiting, fleetJobs, ...counts } = summary;
-				if (fleetJobs) {
-					latestFleetJobs = fleetJobs;
-					fleetPickups.remember(fleetJobs);
+				const { waiting, runnerJobs, ...counts } = summary;
+				if (runnerJobs) {
+					latestRunnerJobs = runnerJobs;
+					runnerPickups.remember(runnerJobs);
 				}
 				const pruned = (await heldJobPruner?.maybePrune()) ?? 0;
 				if (summary.accepted > 0 || pruned > 0)
@@ -1492,16 +1460,18 @@ try {
 	}
 	runDepsImageEnsure();
 
-	// The routing slip (ADR-0181). Every 10 s, on its own
-	// unreferenced timer, the mesh leader decides each connected repository's
-	// routing and writes it to refs/hobo/routing-slip when it changes and as a
-	// heartbeat. Nothing in admission, dispatch or the poller awaits it.
-	const fleetLabels =
+	const routedLabels =
 		trunkSlots > 0
 			? [routing.labels.fleet, routing.labels.trunk]
 			: [routing.labels.fleet];
-	const evaluateFleet = async (
-		runners: FleetRunnersView | undefined,
+	const memberFleet = async () => {
+		const self = fleetMember?.daemon.memberId();
+		if (!fleetMember || self === undefined) return undefined;
+		const view = await fleetMember.daemon.fleetView().catch(() => undefined);
+		return view === undefined ? undefined : { view, self };
+	};
+	const evaluateRouting = async (
+		runners: RepositoryRunnersView | undefined,
 		active: Awaited<ReturnType<typeof store.activeLeases>>,
 	) => {
 		const nowMs = Date.now();
@@ -1511,29 +1481,17 @@ try {
 			!depsImageWorkRunning &&
 			warmContainersStarting === 0 &&
 			gcInFlight === undefined;
-		const pickups = fleetPickups.list(nowMs);
+		const pickups = runnerPickups.list(nowMs);
 		const ownLeaseIds = new Set<string>();
 		for (const id of boxLeaseIdsOf(pickups))
 			if (await store.get(id)) ownLeaseIds.add(id);
-		// A board that cannot be read throws: no report, and the relay's
-		// entry lapses (R3).
-		const peers =
-			mesh && meshBoard
-				? (await meshBoard.nodes())
-						.filter(
-							(node) =>
-								node.id !== mesh?.self().id &&
-								node.validUntilMs > nowMs &&
-								node.healthy &&
-								!meshAdvertRejected(node, nowMs),
-						)
-						.map((node) => ({ labels: node.labels, freeSlots: node.freeSlots }))
-				: undefined;
-		const seen = latestFleetJobs;
-		return evaluateFleetVerdict({
+		const seen = latestRunnerJobs;
+		return evaluateRoutingSlip({
 			nowMs,
-			labels: fleetLabels,
+			labels: routedLabels,
 			idle,
+			freeSlots: Math.max(0, slots - liveLaunchSlotsInUse),
+			draining,
 			host: {
 				availableMb: readAvailableMemoryMb(),
 				pressure: hostPressureSample(),
@@ -1558,19 +1516,19 @@ try {
 							})),
 						},
 			runners: { view: runners },
-			mesh: peers,
+			fleet: await memberFleet(),
 			ownLeaseIds,
 			pickups,
 		});
 	};
 	// GitHub's runner list per repository, read only when pools are declared
 	// and no more than every 30 s; a failed read is unknown (R3).
-	const runnerViews = new Map<string, FleetRunnersView | undefined>();
+	const runnerViews = new Map<string, RepositoryRunnersView | undefined>();
 	const runnerViewReadAt = new Map<string, number>();
 	const readRunners = async (
 		installationId: number,
 		repository: string,
-	): Promise<FleetRunnersView | undefined> => {
+	): Promise<RepositoryRunnersView | undefined> => {
 		const nowMs = Date.now();
 		if (routing.externalPools.length === 0)
 			return { readAtMs: nowMs, runners: [] };
@@ -1596,10 +1554,7 @@ try {
 			installationId,
 		}));
 	};
-	const slipHolds = new Map<
-		string,
-		ReturnType<typeof createFleetVerdictHolds>
-	>();
+	const slipHolds = new Map<string, ReturnType<typeof createRoutingHolds>>();
 	const STALL_WAITING_STATES = new Set([
 		"reserved",
 		"dispatching",
@@ -1621,41 +1576,20 @@ try {
 			(entry) => entry.repository === repository,
 		);
 		const active = await store.activeLeases();
-		const evaluation = await evaluateFleet(
+		const evaluation = await evaluateRouting(
 			target ? await readRunners(target.installationId, repository) : undefined,
 			active,
 		);
 		let holds = slipHolds.get(repository);
 		if (!holds) {
-			holds = createFleetVerdictHolds({
-				labels: fleetLabels,
+			holds = createRoutingHolds({
+				labels: routedLabels,
 				enterMs: routing.verdict.enterMs,
 				exitMs: routing.verdict.exitMs,
 			});
 			slipHolds.set(repository, holds);
 		}
 		holds.observe(nowMs, new Set(evaluation.blocked.keys()));
-		// Live nodes serving each label, and which of them have a free slot.
-		const served = new Set<string>();
-		const free = new Set<string>();
-		if (!draining) {
-			for (const label of fleetLabels) served.add(label);
-			if (slots - liveLaunchSlotsInUse > 0)
-				for (const label of fleetLabels) free.add(label);
-		}
-		if (mesh && meshBoard)
-			for (const node of await meshBoard.nodes()) {
-				if (
-					node.id === mesh.self().id ||
-					node.validUntilMs <= nowMs ||
-					meshAdvertRejected(node, nowMs)
-				)
-					continue;
-				for (const label of node.labels) {
-					served.add(label);
-					if (node.healthy && node.freeSlots > 0) free.add(label);
-				}
-			}
 		// A label stalls on the box, whatever repository its work came from, so
 		// the watch sees every lease: filtered per repository, a running job of
 		// another repository would read as a fresh start on every pass. Work is
@@ -1673,32 +1607,27 @@ try {
 		);
 		return decideRoutingSlipClasses({
 			policy: routing,
-			served,
+			served: evaluation.served,
 			refused: holds.blocked(),
 			stalled,
-			full: new Set(fleetLabels.filter((label) => !free.has(label))),
+			full: evaluation.full,
 		});
 	};
-	const slipNodeId =
-		meshSettings?.nodeId ??
-		hostname()
-			.replace(/[^A-Za-z0-9_-]/g, "-")
-			.slice(0, 64);
+	const hostSlipNodeId = hostname()
+		.replace(/[^A-Za-z0-9_-]/g, "-")
+		.slice(0, 64);
+	const slipNodeId = fleetMember?.daemon.memberId() ?? hostSlipNodeId;
 	const slipIssuer = daemonCommit
 		? createRoutingSlipIssuer({
 				github,
 				labels: runnerRoutingLabels(routing),
 				relay: { nodeId: slipNodeId, commit: daemonCommit },
-				// The existing election: the live node with the lowest id leads;
-				// a box without a mesh leads itself.
-				leader: async () =>
-					!mesh || !meshBoard
-						? true
-						: meshLeaderId(
-								await meshBoard.nodes(),
-								Date.now(),
-								mesh.self().id,
-							) === mesh.self().id,
+				leader: async () => {
+					if (!fleetMember) return true;
+					const fleet = await memberFleet();
+					if (fleet === undefined) return true;
+					return routingSlipLeader(fleet, Date.now()) === fleet.self;
+				},
 				targets: connectedTargets,
 				decide: decideSlip,
 				enabled: () => !draining,
@@ -1743,10 +1672,11 @@ try {
 			if (gcTimer) clearInterval(gcTimer);
 			await worker.discardWarm().catch(() => undefined);
 			log("hobo_ci_isolated_worker_draining", { signal });
-			// Tell the mesh at once: the others stop waiting for this node's turn.
-			meshDraining = true;
-			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
-			await mesh?.advertise();
+			fleetMemberDraining = true;
+			if (fleetMember) {
+				clearInterval(fleetMember.timer);
+				await fleetMember.daemon.agent.drain().catch(() => undefined);
+			}
 			// No more slips: the last one expires on its own (ADR-0181).
 			if (slipTimer) clearInterval(slipTimer);
 			const backgroundKinds = (): (
@@ -1801,7 +1731,6 @@ try {
 					drainStartedAtMs: workerDrainStartedAtMs,
 				});
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
-				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
 				liveLaunchSlotsInUse = countLiveBoxContainers(
 					await store.activeLeases(),
 				);
@@ -1859,7 +1788,7 @@ try {
 			if (stopMode === "drain") await retiredSweep.drain();
 			await closeStore();
 			await Promise.race([
-				natsMesh?.close().catch(() => undefined),
+				fleetMember?.daemon.agent.stop().catch(() => undefined),
 				new Promise((resolve) => setTimeout(resolve, 2000).unref()),
 			]);
 			await closeTrace();

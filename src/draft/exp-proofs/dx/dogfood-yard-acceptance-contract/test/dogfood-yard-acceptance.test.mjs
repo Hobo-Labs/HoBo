@@ -38,12 +38,12 @@ test("M0 record maps dependencies to authoritative Yard and operations design so
   assert.deepEqual(
     DOGFOOD_YARD_ACCEPTANCE.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:control-plane#plan-04",
-      "urn:hobo:requirement:walkthrough",
-      "urn:hobo:requirement:developer-experience#plan-07",
-      "urn:hobo:requirement:reliability-observability-cost#plan-05",
-      "urn:hobo:requirement:operators-sre#plan-40",
-      "urn:hobo:decision:adr-0092",
+      "docs/design/control-plane.md#plan-04",
+      "docs/design/walkthrough.md",
+      "docs/design/developer-experience.md#plan-07",
+      "docs/design/reliability-observability-cost.md#plan-05",
+      "docs/design/operators-sre.md#plan-40",
+      "docs/design/adr/01-architecture-core.md#adr-0092",
     ],
   );
 });

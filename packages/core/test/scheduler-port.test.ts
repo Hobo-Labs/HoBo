@@ -29,50 +29,38 @@ describe("hobo:scheduler port descriptor", () => {
 		);
 	});
 
-	it("parses interval specs", () => {
-		expect(parseIntervalCronSpec({ everyMs: 1_000 })).toEqual({
+	it("parses interval specs (v1 is interval-only)", () => {
+		expect(parseIntervalCronSpec({ every_ms: 1_000 })).toEqual({
 			everyMs: 1_000,
 		});
-		expect(parseIntervalCronSpec({ everyMs: 500, startAtMs: 0 })).toEqual({
+		expect(parseIntervalCronSpec({ every_ms: 500, start_at_ms: 0 })).toEqual({
 			everyMs: 500,
 			startAtMs: 0,
-		});
-		expect(parseIntervalCronSpec({ everyMs: 500, jitterMs: 25 })).toEqual({
-			everyMs: 500,
-			jitterMs: 25,
 		});
 	});
 
 	it("rejects non-positive intervals and negative starts", () => {
-		expect(() => parseIntervalCronSpec({ everyMs: 0 })).toThrow(
+		expect(() => parseIntervalCronSpec({ every_ms: 0 })).toThrow(
 			SchedulerParseError,
 		);
 		expect(() =>
-			parseIntervalCronSpec({ everyMs: 1_000, startAtMs: -1 }),
+			parseIntervalCronSpec({ every_ms: 1_000, start_at_ms: -1 }),
 		).toThrow(SchedulerParseError);
-		for (const jitterMs of [-1, 1_000, Number.NaN]) {
-			expect(() => parseIntervalCronSpec({ everyMs: 1_000, jitterMs })).toThrow(
-				SchedulerParseError,
-			);
-		}
-		const extraField = { everyMs: 1_000, unexpected: true };
-		expect(() => parseIntervalCronSpec(extraField)).toThrow(
-			SchedulerParseError,
-		);
 		try {
-			parseIntervalCronSpec({ everyMs: -5 });
+			parseIntervalCronSpec({ every_ms: -5 });
 			expect.unreachable();
 		} catch (error) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as SchedulerParseError).code).toBe(
 				"HOBO_CORE_SCHEDULER_PARSE",
 			);
 		}
 	});
 
-	it("describes an unsupported cron expression", () => {
+	it("fails closed on the WIT cron-expression form", () => {
 		const error = new CronExpressionUnsupportedError("*/5 * * * *");
 		expect(error.code).toBe("SCHEDULER_CRON_UNSUPPORTED");
-		expect(error.message).toMatch(/unsupported/);
+		expect(error.message).toMatch(/interval-only/);
 		expect(error.message).toMatch(/\*\/5 \* \* \* \*/);
 	});
 });

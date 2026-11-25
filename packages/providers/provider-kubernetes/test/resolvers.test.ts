@@ -1,3 +1,13 @@
+/**
+ * Kubernetes resolver tests, driven entirely through an injected fake
+ * `HttpTransport`.
+ *
+ * The fake is the whole apiserver: that is what lets a test assert "reconcile
+ * twice made exactly one create call" at all, which is the property the
+ * resolvers exist to have. Nothing here touches a network, a credential, or a
+ * cluster — see the HONEST SCOPE section of `src/resolvers.ts`.
+ */
+
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +51,7 @@ const pact = JSON.parse(
 
 const API_SERVER = "https://cluster.example:6443";
 const CREDENTIAL_REF = "secret://camp/cluster-token";
+/** A compact JWS, as a projected ServiceAccount token looks. */
 const TOKEN =
 	"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzeXN0ZW06c2VydmljZWFjY291bnQ6c2hvcDpob2JvIn0.c2lnbmF0dXJlLXZhbHVl";
 
@@ -120,6 +131,7 @@ function notFound(): TransportResponse {
 }
 
 function bodyOf(call: RecordedCall): Rec {
+	// SAFETY: assertion to `ON.parse(call.body) as Rec);` is required at this boundary.
 	return call.body === undefined ? {} : (JSON.parse(call.body) as Rec);
 }
 
@@ -172,6 +184,7 @@ async function codeOf(run: () => Promise<void>): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
+		// SAFETY: assertion to `ror as ResolverError).` is required at this boundary.
 		return (error as ResolverError).code ?? "NO_CODE";
 	}
 	return "NO_ERROR_THROWN";
@@ -199,15 +212,25 @@ async function messageOf(run: () => Promise<void>): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
+		// SAFETY: assertion to `ror as Error).` is required at this boundary.
 		return (error as Error).message;
 	}
 	return "NO_ERROR_THROWN";
 }
 
+/** Every outcome must survive core's outcome parse boundary. */
 function checked(outcome: ResolveOutcome): ResolveOutcome {
 	return parseResolveOutcome(outcome);
 }
 
+// ---------------------------------------------------------------------------
+// A fake apiserver holding one namespaced collection
+// ---------------------------------------------------------------------------
+
+/**
+ * Models one kind's collection under one namespace: GET/POST/PATCH/DELETE at
+ * the paths the resolvers compose, and 404 for anything not stored.
+ */
 function collection(
 	collectionPath: string,
 	initial?: Rec,
@@ -223,6 +246,7 @@ function collection(
 			object = {
 				...sent,
 				metadata: {
+					// SAFETY: assertion to `nt.metadata as Rec) ` is required at this boundary.
 					...(sent.metadata as Rec),
 					uid: "11111111-2222-3333-4444-555555555555",
 				},
@@ -231,6 +255,7 @@ function collection(
 		}
 		if (call.method === "PATCH" && call.path === itemPath) {
 			const sent = bodyOf(call);
+			// SAFETY: assertion to `ject as Rec),` is required at this boundary.
 			object = { ...(object as Rec), spec: sent.spec };
 			return json(200, object);
 		}
@@ -260,11 +285,19 @@ const DEPLOYMENT_REQUEST = {
 	desired: { namespace: "shop", spec: { replicas: 2 } },
 } as const;
 
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Secret
+// ---------------------------------------------------------------------------
+
 const SECRET_NAMESPACE = "shop";
 const SECRET_PATH = `/api/v1/namespaces/${SECRET_NAMESPACE}/secrets`;
 const SECRET_OBJECT_PATH = `${SECRET_PATH}/api-credentials`;
+/** Material the host's custody hands over. Never expected outside one body. */
 const SECRET_MATERIAL = Object.freeze({
 	password: "c0rrect-horse-battery-staple",
+	// Non-ASCII on purpose: latin1 base64 would corrupt it.
 	note: "naïve-café-😀",
 });
 
@@ -299,6 +332,7 @@ function secretRequest(desired: Rec = {}): ResolveRequest {
 	});
 }
 
+/** A cluster that starts without the Secret and remembers what was written. */
 function secretWorld(): Fake {
 	let existing: Rec | undefined;
 	return fakeTransport((call) => {
@@ -321,6 +355,7 @@ function secretWorld(): Fake {
 	});
 }
 
+/** Every place a value could escape: outputs, diagnostics, and the URL. */
 function leaks(outcome: ResolveOutcome, fake: Fake): boolean {
 	const surfaces = [
 		JSON.stringify(outcome.outputs),
@@ -342,19 +377,23 @@ describe("the Secret resolver converges material that never reaches the log", ()
 		expect(outcome.action).toBe("create");
 		expect(outcome.physicalId).toBe(`${SECRET_NAMESPACE}/api-credentials`);
 		const create = fake.calls.find((call) => call.method === "POST");
+		// SAFETY: assertion to ` as RecordedCall).data` is required at this boundary.
 		const data = bodyOf(create as RecordedCall).data as Rec;
 		expect(data.password).toBe(base64Utf8(SECRET_MATERIAL.password));
 	});
 
+	/** `btoa` alone is latin1 and would corrupt this. */
 	it("base64-encodes UTF-8, not latin1", async () => {
 		const fake = secretWorld();
 		const resolver = resolverFor(KUBERNETES_SECRET_PRODUCT_ID);
 		await resolver.reconcile(secretRequest(), fake.transport);
 		const create = fake.calls.find((call) => call.method === "POST");
+		// SAFETY: assertion to ` as RecordedCall).data` is required at this boundary.
 		const data = bodyOf(create as RecordedCall).data as Rec;
 		expect(data.note).toBe(base64Utf8(SECRET_MATERIAL.note));
 	});
 
+	/** The property the whole design exists to have. */
 	it("reconciles twice into one Secret and one create", async () => {
 		const fake = secretWorld();
 		const resolver = resolverFor(KUBERNETES_SECRET_PRODUCT_ID);
@@ -368,6 +407,7 @@ describe("the Secret resolver converges material that never reaches the log", ()
 		expect(fake.countOf("PATCH")).toBe(0);
 	});
 
+	/** The load-bearing test: material goes in the body and nowhere else. */
 	it("publishes key names and never a value", async () => {
 		const fake = secretWorld();
 		const resolver = resolverFor(KUBERNETES_SECRET_PRODUCT_ID);
@@ -401,9 +441,11 @@ describe("the Secret resolver converges material that never reaches the log", ()
 		);
 		expect(outcome.action).toBe("update");
 		const patch = fake.calls.find((call) => call.method === "PATCH");
+		// SAFETY: assertion to `as RecordedCall).data` is required at this boundary.
 		expect((bodyOf(patch as RecordedCall).data as Rec).password).toBe(
 			base64Utf8(rotated),
 		);
+		// Neither the old nor the new value is named anywhere readable.
 		expect(JSON.stringify(outcome.diagnostics)).not.toContain(rotated);
 		expect(JSON.stringify(outcome.outputs)).not.toContain(rotated);
 	});
@@ -450,6 +492,7 @@ describe("the Secret resolver converges material that never reaches the log", ()
 		expect(fake.countOf("POST")).toBe(0);
 	});
 
+	/** A read needs no material, so the host's custody is never touched. */
 	it("never asks for material on a read", async () => {
 		let asked = 0;
 		const fake = secretWorld();
@@ -500,6 +543,12 @@ describe("the registry covers the built-in objects and only those", () => {
 		}
 	});
 
+	/**
+	 * The Secret used to be excluded on the grounds that creating one means
+	 * putting material in `desired`. It does not: the contents arrive through
+	 * an injected resolver, the same way every other credential in this repo
+	 * does, so `desired` stays clean and the object still converges.
+	 */
 	it("leaves no catalogued object without a resolver", () => {
 		const registry = kubernetesResolverRegistry(options());
 		expect(KUBERNETES_UNRESOLVED_PRODUCT_IDS).toEqual([]);
@@ -601,6 +650,7 @@ describe("built-in objects converge", () => {
 			fake.transport,
 		);
 		const create = fake.calls.find((call) => call.method === "POST");
+		// SAFETY: assertion to ` as RecordedCall); e` is required at this boundary.
 		const sent = bodyOf(create as RecordedCall);
 		expect(sent.apiVersion).toBe("apps/v1");
 		expect(sent.kind).toBe("Deployment");
@@ -630,6 +680,7 @@ describe("built-in objects converge", () => {
 		expect(outcome.action).toBe("update");
 		const patch = fake.calls.find((call) => call.method === "PATCH");
 		expect(patch?.headers["content-type"]).toBe("application/merge-patch+json");
+		// SAFETY: assertion to `as RecordedCall)).toE` is required at this boundary.
 		expect(bodyOf(patch as RecordedCall)).toEqual({ spec: { replicas: 2 } });
 	});
 
@@ -698,6 +749,11 @@ describe("built-in objects converge", () => {
 });
 
 describe("immutable specs are reported, never converged", () => {
+	/**
+	 * A Job's pod template is immutable and a PVC's storage class is fixed at
+	 * creation; "converging" either means deleting the object, which for a PVC
+	 * destroys data and for a Job discards a completed run.
+	 */
 	it.each([
 		[KUBERNETES_JOB_PRODUCT_ID, "service", JOBS],
 		[KUBERNETES_PVC_PRODUCT_ID, "bucket", PVCS],
@@ -819,6 +875,10 @@ describe("credentials are locators and never leak", () => {
 		expect(code).toBe("RESOLVER_CREDENTIAL_MISSING");
 	});
 
+	/**
+	 * An apiserver `Status` routinely quotes the object that caused it, and
+	 * those objects carry ServiceAccount tokens and imagePullSecrets.
+	 */
 	it("redacts a token the apiserver echoed back in a Status message", async () => {
 		const fake = fakeTransport(() =>
 			status(403, "Forbidden", `rejected object with token ${TOKEN}`),
@@ -868,6 +928,12 @@ describe("the transport guard bounds where a token can be sent", () => {
 		).rejects.toThrow();
 	});
 
+	/**
+	 * The documented capability difference between this path and the driver's:
+	 * `kubectl proxy` serves cleartext on loopback, the driver supports it
+	 * behind an explicit opt-in, and the resolver path does not — because core's
+	 * guard is HTTPS-only and a projected token is in every header here.
+	 */
 	it("refuses a kubectl-proxy apiserver at construction time, with the reason", () => {
 		expect(() =>
 			kubernetesResolvers(options({ apiServerUrl: "http://127.0.0.1:8001" })),

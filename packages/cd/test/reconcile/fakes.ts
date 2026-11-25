@@ -333,8 +333,6 @@ export type ResourceSpec = Readonly<{
 	port?: string;
 	provider?: string;
 	deps?: readonly string[];
-	readyDeps?: readonly string[];
-	completedDeps?: readonly string[];
 	version?: string;
 	retain?: string;
 }>;
@@ -350,8 +348,6 @@ export function resolvedFor(
 			port: r.port ?? "compute",
 			provider: r.provider ?? "fake",
 			deps: [...(r.deps ?? [])],
-			...(r.readyDeps ? { readyDeps: [...r.readyDeps] } : {}),
-			...(r.completedDeps ? { completedDeps: [...r.completedDeps] } : {}),
 			realizationParameters: {
 				version: r.version ?? "1",
 				...(r.retain ? { "hobo.cd/retain": r.retain } : {}),

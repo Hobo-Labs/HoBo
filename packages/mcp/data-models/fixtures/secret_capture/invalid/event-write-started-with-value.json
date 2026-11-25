@@ -1,8 +1,0 @@
-{
-	"schemaVersion": "hobo.secret-capture/v1",
-	"type": "secret.CaptureWriteStarted",
-	"id": "sec_0123456789abcdef0123456789abcdef",
-	"seq": 2,
-	"time": "2026-11-12T10:01:00.000Z",
-	"value": "synthetic-should-never-be-here"
-}

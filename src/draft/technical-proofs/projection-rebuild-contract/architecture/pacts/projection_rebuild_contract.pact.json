@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProjectionRebuildContractConsumer"
+  },
+  "provider": {
+    "name": "ProjectionRebuildContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Projection Rebuild Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/projection-rebuild-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.projection_rebuild_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -106,7 +106,7 @@ function boundedName(value: unknown): value is string {
 	);
 }
 
-export function parseAlchemyTarget(input: unknown): Target {
+export function captureAlchemyTarget(input: unknown): Target {
 	try {
 		const data = dataRecord(input, TARGET_KEYS, "hobo.iac.alchemy.v1.Target");
 		if (data === undefined) throw new Error("invalid target");
@@ -192,7 +192,7 @@ export function captureAlchemyTargetOption(options: unknown): Target {
 			!property.enumerable
 		)
 			throw new Error("invalid target option");
-		return parseAlchemyTarget(property.value);
+		return captureAlchemyTarget(property.value);
 	} catch (error) {
 		if (error instanceof AlchemyIacError) throw error;
 		throw new AlchemyIacError(

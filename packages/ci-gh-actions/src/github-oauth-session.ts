@@ -77,12 +77,15 @@ function response(status: number, value: { error: string }): Response {
 	return Response.json(value, { status, headers: headers() });
 }
 
+/** GitHub OAuth sessions bind an existing scoped HoBo credential to a verified GitHub user. */
 export function createGithubOAuthSession(options: {
 	publicOrigin: string;
 	clientId: string;
 	clientSecret: string;
 	store: GithubOAuthSessionStore;
 	authenticateControl: ControlAuthenticator;
+	/** Resolve an already verified, server-side bootstrap session to its scoped
+	 * control token. The token never enters the page or browser storage. */
 	trustedBootstrapControl?: (request: Request) => Promise<string | undefined>;
 	fetch?: typeof fetch;
 	now?: () => number;

@@ -149,31 +149,31 @@ export const MARKETPLACE_PAYOUT_HOOKS_SCOPE: MarketplacePayoutHooksScope = {
   },
   dependencies: [
     {
-      source: "urn:hobo:requirement:marketplace-publisher-trust-evidence",
+      source: "docs/design/marketplace-publisher-trust-evidence.md",
       reason: "Defines publisher trust tiers and explicitly keeps paid marketplace and payout claims as launch limitations until evidence exists.",
     },
     {
-      source: "urn:hobo:requirement:capability-review-approval",
+      source: "docs/design/capability-review-approval.md",
       reason: "Defines review states, approval outcomes, trust-tier evidence, and security/conformance handoffs consumed before payout readiness can be visible.",
     },
     {
-      source: "urn:hobo:requirement:org-catalogs",
+      source: "docs/design/org-catalogs.md",
       reason: "Defines private listing, catalog approval, policy, and support evidence that payout readiness must consume without taking catalog scope.",
     },
     {
-      source: "urn:hobo:requirement:billing-launch-policy",
+      source: "docs/design/billing-launch-policy.md",
       reason: "Defines commercial billing lifecycle and provider boundaries while keeping money movement and payment providers out of this issue.",
     },
     {
-      source: "urn:hobo:requirement:tax-currency-receipt-obligations",
+      source: "docs/design/tax-currency-receipt-obligations.md",
       reason: "Defines tax, currency, receipt, invoice metadata, and marketplace payout tax-document limitations.",
     },
     {
-      source: "urn:hobo:requirement:launch-support-escalation",
+      source: "docs/design/launch-support-escalation.md",
       reason: "Defines customer-safe support escalation and gap-routing posture for payout holds, unsupported states, and release blockers.",
     },
     {
-      source: "urn:hobo:decision:adr-0064",
+      source: "docs/design/adr/07-portability-extensibility.md#adr-0064",
       reason: "Keeps monetization mechanics outside HoBo's meta-cloud core; this M0 record is launch-readiness scope, not core platform behavior.",
     },
   ],
@@ -225,42 +225,42 @@ export const MARKETPLACE_PAYOUT_HOOKS_SCOPE: MarketplacePayoutHooksScope = {
       kind: "publisher-eligibility-fixture",
       owner: "marketplace operator",
       proofMode: "reference-fixture",
-      source: "urn:hobo:requirement:marketplace-payout-hooks#publisher-payout-readiness-states",
+      source: "docs/design/marketplace-payout-hooks.md#publisher-payout-readiness-states",
       proves: "Publisher trust, catalog approval, and review state prerequisites are visible before payout readiness is claimed.",
     },
     {
       kind: "payout-state-model",
       owner: "marketplace operator",
       proofMode: "contract-test",
-      source: "urn:hobo:requirement:marketplace-payout-hooks#publisher-payout-readiness-states",
+      source: "docs/design/marketplace-payout-hooks.md#publisher-payout-readiness-states",
       proves: "Not eligible, review, required handoff, approved, held, and disabled states are deterministic.",
     },
     {
       kind: "tax-identity-handoff",
       owner: "billing/compliance owner",
       proofMode: "compliance-review",
-      source: "urn:hobo:requirement:tax-currency-receipt-obligations#launch-mode-mapping",
+      source: "docs/design/tax-currency-receipt-obligations.md#launch-mode-mapping",
       proves: "Tax identity and payout-document requirements are explicit handoffs, not implemented in payout scope.",
     },
     {
       kind: "billing-reconciliation-handoff",
       owner: "billing/compliance owner",
       proofMode: "design-record",
-      source: "urn:hobo:requirement:billing-launch-policy#provider-integration-boundary",
+      source: "docs/design/billing-launch-policy.md#provider-integration-boundary",
       proves: "Billing and provider assumptions are named without payout execution or settlement machinery.",
     },
     {
       kind: "support-hold-reason-export",
       owner: "support operator",
       proofMode: "support-handoff",
-      source: "urn:hobo:requirement:launch-support-escalation#gap-routing",
+      source: "docs/design/launch-support-escalation.md#gap-routing",
       proves: "Support can route holds, disabled states, and unsupported claims to named owners with safe wording.",
     },
     {
       kind: "scope-boundary-register",
       owner: "release owner",
       proofMode: "design-record",
-      source: "urn:hobo:requirement:marketplace-payout-hooks#scope-out-and-non-goals",
+      source: "docs/design/marketplace-payout-hooks.md#scope-out-and-non-goals",
       proves: "Live payout provider, settlement, tax, UI, KYC/KYB, and revenue-share implementation work stays out.",
     },
   ],
@@ -319,13 +319,13 @@ export function validateMarketplacePayoutHooksScope(scope: MarketplacePayoutHook
   }
 
   const requiredSources = [
-    "urn:hobo:requirement:marketplace-publisher-trust-evidence",
-    "urn:hobo:requirement:capability-review-approval",
-    "urn:hobo:requirement:org-catalogs",
-    "urn:hobo:requirement:billing-launch-policy",
-    "urn:hobo:requirement:tax-currency-receipt-obligations",
-    "urn:hobo:requirement:launch-support-escalation",
-    "urn:hobo:decision:adr-0064",
+    "docs/design/marketplace-publisher-trust-evidence.md",
+    "docs/design/capability-review-approval.md",
+    "docs/design/org-catalogs.md",
+    "docs/design/billing-launch-policy.md",
+    "docs/design/tax-currency-receipt-obligations.md",
+    "docs/design/launch-support-escalation.md",
+    "docs/design/adr/07-portability-extensibility.md#adr-0064",
   ];
   const sources = (scope.dependencies ?? []).map((dependency) => dependency.source);
   if (JSON.stringify(sources) !== JSON.stringify(requiredSources)) {

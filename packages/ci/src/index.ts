@@ -1,6 +1,13 @@
 export * from "./_generated/ci_pb.js";
+export * from "./_generated/job_retried_pb.js";
 export * from "./_generated/policy_pb.js";
+export * from "./_generated/relay_job_pb.js";
 export * from "./_generated/runner_route_pb.js";
+export { allocationQuote } from "./accounting.js";
+export {
+	memoryAdmitHeadroom,
+	memoryAdmitParallelCount,
+} from "./admission/memory.js";
 export { parseConfiguration, positiveId } from "./config.js";
 export {
 	accountEventPage,
@@ -32,22 +39,6 @@ export {
 	shellQuote,
 	supportsPipeline,
 } from "./execution.js";
-export * from "./fleet/index.js";
-export {
-	DEFAULT_GITHUB_MACHINE_TYPE,
-	type FleetBackend,
-	type FleetMember,
-	type FleetSelection,
-	type FleetVerificationSelection,
-	isGithubLatestLabel,
-	isIsolatedFleetProvider,
-	isOverflowRunnerLabel,
-	queuedDemandLabels,
-	selectFleetBackend,
-	selectFleetVerification,
-	shouldAbortIsolatedFleetLease,
-} from "./fleet-overflow.js";
-export * from "./fleet-v2/index.js";
 export {
 	CI_FREIGHT_MANIFEST_SCHEMA,
 	CI_FREIGHT_MANIFEST_SUFFIX,
@@ -104,7 +95,61 @@ export {
 	providerOffer,
 	route,
 } from "./routing.js";
+export {
+	ACTIVITY_JOURNAL_READ_LIMIT,
+	ACTIVITY_OUTCOMES,
+	ACTIVITY_PAGE_MAX,
+	ACTIVITY_PAGE_SIZE,
+	type ActivityCursor,
+	type ActivityEntry,
+	type ActivityFilter,
+	type ActivityOutcome,
+	type ActivityPage,
+	activityFeed,
+	journalActivity,
+} from "./runner-order/activity.js";
 export * from "./runner-order/index.js";
+export {
+	type GeneratedMachineIdentity,
+	generateMachineIdentity,
+	MACHINE_PUBLIC_KEY,
+	MACHINE_SIGNATURE,
+	type MachineIdentity,
+	machineIdentityFromPem,
+} from "./runner-order/machine-identity.js";
+export {
+	findMachine,
+	MACHINE_ADVERT_SIGNING_CONTEXT,
+	MACHINE_ADVERT_TTL_MS,
+	type MachineAdvertRefusal,
+	type MachineAdvertVerdict,
+	type MachineChange,
+	type MachineEvent,
+	type MachineEventType,
+	MachineRegistryError,
+	type MachineRegistryRefusal,
+	machineAdvertSigningPayload,
+	machineCandidates,
+	machineOnline,
+	receiveMachineAdvert,
+	registryMachineCandidates,
+	removeMachine,
+	type SignedMachineAdvert,
+	setMachinePaused,
+	setMachineSharing,
+	signMachineAdvert,
+	verifyMachineAdvert,
+} from "./runner-order/machine-registry.js";
+export {
+	billedMinutes,
+	type FinishedJobSource,
+	LedgerSpendReader,
+	type LedgerSpendReaderDeps,
+	listPriceOfJob,
+	monthStartMs,
+	type SpendLedger,
+} from "./runner-order/spend.js";
+export * from "./runner-routing/index.js";
 export {
 	sandboxProxyOnlyUsageQuote,
 	sandboxReservationMicros,

@@ -1,12 +1,18 @@
-import { create, toJson } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 import { diagnosticJson } from "@hobo/core";
 import {
 	type EvalResult,
 	EvalResultSchema,
 } from "./_generated/promotion_decision_pb.js";
-import { PromotionGateParseError, parseEvalResult } from "./gate.js";
+import { PromotionGateParseError } from "./gate.js";
+
+// Live-eval aggregation (IMPL-003): fold per-trajectory grader scores (e.g.
+// @hobo/provider-agentv's AgentVGrade.namedScores) into the generated
+// EvalResult the promotion gate consumes — per-metric mean over the graded
+// sample, sampleCount = number of trajectories graded.
 
 export interface GradedSample {
+	/** Per-metric scores in [0, 1] for one graded trajectory. */
 	readonly scores: Readonly<Record<string, number>>;
 }
 
@@ -15,6 +21,11 @@ export interface AggregateEvalOptions {
 	readonly source: string;
 }
 
+/**
+ * Aggregate per-trajectory grades into the gate's EvalResult: each metric's
+ * score is the mean over the samples that report it; sampleCount is the
+ * number of graded trajectories.
+ */
 export function aggregateEvalResults(
 	samples: readonly GradedSample[],
 	options: AggregateEvalOptions,
@@ -49,22 +60,13 @@ export function aggregateEvalResults(
 			.map(([metric, { total, count }]) => [metric, total / count] as const)
 			.sort(([left], [right]) => left.localeCompare(right)),
 	);
-	const metricSampleCounts = Object.fromEntries(
-		[...sums.entries()]
-			.map(([metric, { count }]) => [metric, count] as const)
-			.sort(([left], [right]) => left.localeCompare(right)),
-	);
 
-	return parseEvalResult(
-		toJson(
-			EvalResultSchema,
-			create(EvalResultSchema, {
-				rubricRef: options.rubricRef,
-				scores,
-				sampleCount: samples.length,
-				source: options.source,
-				metricSampleCounts,
-			}),
-		),
+	return Object.freeze(
+		create(EvalResultSchema, {
+			rubricRef: options.rubricRef,
+			scores,
+			sampleCount: samples.length,
+			source: options.source,
+		}),
 	);
 }

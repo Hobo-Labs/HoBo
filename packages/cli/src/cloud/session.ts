@@ -7,8 +7,8 @@ import { isJsonString } from "../json.js";
 import type { YardSession } from "./yard-client.js";
 
 export const SESSION_FILE = path.join(".hobo", "session.json");
-export const DEFAULT_TENANT = "hobo-dev";
-export const ANONYMOUS_SUBJECT = "anonymous";
+export const DEFAULT_TENANT = "hobo-dev"; // public-contract: tenant id recorded for a session opened without one
+export const ANONYMOUS_SUBJECT = "anonymous"; // public-contract: subject recorded for an unauthenticated session
 
 function sessionPath(dir: string): string {
 	return path.join(dir, SESSION_FILE);
@@ -42,6 +42,7 @@ export async function persistSession(
 export async function loadSession(dir: string): Promise<YardSession | null> {
 	try {
 		const raw = await readFile(sessionPath(dir), "utf8");
+		// SAFETY: `const parsed = JSON.parse(raw) as YardSession;` is required at this I/O or test boundary.
 		const parsed = JSON.parse(raw) as YardSession;
 		if (
 			parsed &&

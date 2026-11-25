@@ -144,7 +144,7 @@ registry fact; Matching folds the registry materialized view and records
 `match.Decided`; the single-writer ResourceActor dispatches realization; and
 `normalizeDigitalOceanYardSignal` folds native App Platform and VPC signals into
 `yard.*` events. Read stores rebuild from the log, so no snapshot here is
-load-bearing.
+load-bearing. See [`ADR.md`](./ADR.md) for the full command/event walk.
 
 ## API surface reached
 
@@ -175,4 +175,4 @@ is cited to the vendor's documentation with the date it was read. It adds no
 product and does not change the published Capability Manifest; it is read by
 `assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
 has been deployed onto these products from this repository. See
-[`urn:hobo:requirement:postgres-backend-catalog`](urn:hobo:requirement:postgres-backend-catalog).
+[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).

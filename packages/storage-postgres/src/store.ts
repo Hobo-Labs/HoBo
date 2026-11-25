@@ -25,7 +25,6 @@ import {
 	OptimisticSequenceConflictError,
 	type PositionedEvent,
 	parseEventEnvelope,
-	parseDurableEffect,
 	parseEventPosition,
 	type ReadAllOptions,
 	type ResetCheckpointOptions,
@@ -107,11 +106,16 @@ import {
 
 export type PostgresEventStoreOptions = Readonly<{
 	config: PostgresStoreConfigInput;
+	/** Share an existing pool; the caller owns its lifecycle (`end()` leaves it open). */
 	pool?: PgPoolLike;
+	/** Factory for the dedicated LISTEN connection used by `subscribe`. */
 	listener?: () => PgListenerLike;
+	/** Injected clock (I8). Every stored timestamp and lease expiry comes from it. */
 	clock?: Clock;
 	telemetry?: StoreTelemetrySink;
+	/** Monotonic milliseconds for durations only; never used in decisions. */
 	monotonicMs?: () => number;
+	/** Immutable schema-wide stream prefixes requiring a live actor lease. */
 	protectedActorStreamPrefixes?: readonly string[];
 	/**
 	 * Runs first in every transaction, on its connection: a fleet member checks
@@ -129,16 +133,18 @@ export type StoreHealth = Readonly<{
 
 export type { SnapshotWriteOptions } from "@hobo/core";
 
+/** The PostgreSQL DurableEventStore. Every optional port method is present. */
 export interface PostgresEventStore extends DurableEventStore {
 	readonly schema: SchemaName;
 	readonly partitionId: string;
 	readonly config: PostgresStoreConfig;
+	/** Distributed lease host sharing this journal and its write fence. */
 	readonly actorLeaseHost: AsyncActorLeaseHost;
-	subscribe(
-		filter: StreamFilter,
-		handler: (event: EventEnvelope) => void | Promise<void>,
-	): Subscription & { readonly ready: Promise<void> };
+	/** Read the installed policy from the primary; does not configure it. */
 	verifyActorStreamProtection(prefix: string): Promise<void>;
+	/** Verify that a separately authenticated application role cannot alter the
+	 * journal or assume a role that can. The supervisor connection remains the
+	 * sole writer; the application must submit changes through that supervisor. */
 	verifyApplicationRoleIsolation(input: {
 		applicationRole: string;
 		protectedPrefix: string;
@@ -151,11 +157,13 @@ export interface PostgresEventStore extends DurableEventStore {
 			supervisorRole: string;
 		}>
 	>;
+	/** Connect and migrate (also done lazily by the first operation). */
 	ready(): Promise<MigrationReport>;
 	fold<S>(
 		streamId: string,
 		opts: { initialState: S; handlers: FoldHandlers<S>; fenceToken?: bigint },
 	): Promise<FoldResult<S>>;
+	/** A protected or leased stream refuses a snapshot without its live fence. */
 	snapshot(
 		streamId: string,
 		state: JsonValue,
@@ -163,6 +171,7 @@ export interface PostgresEventStore extends DurableEventStore {
 		opts?: SnapshotWriteOptions,
 	): Promise<SnapshotRecord>;
 	loadSnapshot<S>(streamId: string): Promise<SnapshotRecord<S> | undefined>;
+	/** Asynchronous stream head (the port's synchronous `getStreamHead` cannot reach a server). */
 	loadStreamHead(streamId: string): Promise<StreamHead | undefined>;
 	claimSubscription(
 		options: ClaimSubscriptionOptions,
@@ -186,13 +195,17 @@ export interface PostgresEventStore extends DurableEventStore {
 	resetCheckpoint(
 		options: ResetCheckpointOptions,
 	): Promise<SubscriptionCheckpoint>;
+	/** Audit log of every checkpoint movement for one subscription partition. */
 	checkpointLog(options: {
 		subscriptionId: string;
 		partitionId: string;
 	}): Promise<readonly CheckpointLogEntry[]>;
 	health(): Promise<StoreHealth>;
+	/** Wait for pending metric emissions. */
 	flushTelemetry(): Promise<void>;
+	/** Close without waiting (conformance factories need a synchronous close). */
 	close(): void;
+	/** Close and wait for the pool and listener to end. */
 	end(): Promise<void>;
 }
 
@@ -223,6 +236,13 @@ function cloneJson<T>(value: T): T {
 	return structuredClone(value);
 }
 
+/**
+ * Create a PostgreSQL-backed DurableEventStore.
+ *
+ * Creation is synchronous; connecting and migrating happen on the first
+ * operation (or `ready()`), so the store drops into factories that must
+ * return synchronously.
+ */
 export function createPostgresEventStore(
 	options: PostgresEventStoreOptions,
 ): PostgresEventStore {
@@ -351,6 +371,9 @@ export function createPostgresEventStore(
 								"invalid-config",
 								"actor lease stream policy may not remove established protection",
 							);
+						// Each append holds a shared lock on this policy row through its
+						// commit. The exclusive lock above drains old writes before the
+						// new protections become effective; no process can downgrade it.
 						await client.query(
 							`UPDATE ${s}.actor_lease_policy SET prefixes = $1 WHERE id = 1`,
 							[wanted],
@@ -387,6 +410,8 @@ export function createPostgresEventStore(
 			readyPromise = attempt;
 			attempt.catch((error) => {
 				countError(asError(error));
+				// Retry only transient failures; drift, schema-ahead and old
+				// servers stay refused for the life of this store.
 				if (
 					error instanceof StoragePostgresError &&
 					(error.failure === "unavailable" ||
@@ -399,6 +424,7 @@ export function createPostgresEventStore(
 		return readyPromise;
 	}
 
+	/** Run `fn` in one READ COMMITTED transaction; retry serialization/deadlock aborts. */
 	async function tx<T>(fn: (client: PgClientLike) => Promise<T>): Promise<T> {
 		await ready();
 		for (let attempt = 1; ; attempt += 1) {
@@ -446,6 +472,8 @@ export function createPostgresEventStore(
 	async function lockedActorPolicy(
 		client: PgClientLike,
 	): Promise<readonly string[]> {
+		// This shared row prevents policy activation racing a transaction that
+		// read the previous policy: the lock remains held through commit.
 		const result = await client.query(
 			`SELECT prefixes FROM ${s}.actor_lease_policy WHERE id = 1 FOR SHARE`,
 		);
@@ -611,6 +639,7 @@ SELECT EXISTS (
 						await requireActorPrimary(client);
 						await lockedActorPolicy(client);
 						await lockActorStream(client, key);
+						// A delayed release can never release a later holder.
 						await client.query(
 							`UPDATE ${s}.actor_leases SET released = true WHERE stream_id = $1 AND holder_id = $2 AND fence_token = $3`,
 							[key, holderId, grant.fenceToken.toString()],
@@ -621,6 +650,7 @@ SELECT EXISTS (
 		},
 	});
 
+	/** Run a read-only statement outside a transaction. */
 	async function read<T>(fn: (client: PgClientLike) => Promise<T>): Promise<T> {
 		await ready();
 		const client = await connect();
@@ -641,16 +671,14 @@ SELECT EXISTS (
 		}
 	}
 
+	// ── live wake (in-process handlers fed in position order) ──────────────
+
 	const live = new Set<LiveSub>();
 	let liveCursor: bigint | undefined;
 	let liveStart: Promise<void> | undefined;
-	let liveGeneration = 0;
-	let liveReady = false;
 	const earlyLocalFirsts: bigint[] = [];
 	let listener: PgListenerLike | undefined;
 	let listening: Promise<void> | undefined;
-	let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-	let retryDelayMs = 500;
 	let pumping: Promise<void> | undefined;
 	let pumpAgain = false;
 
@@ -674,8 +702,6 @@ SELECT EXISTS (
 				if (listener === client) {
 					listener = undefined;
 					listening = undefined;
-					void client.end().catch(() => undefined);
-					if (liveReady) scheduleReconnect();
 				}
 			});
 			client.onNotification((channel) => {
@@ -689,7 +715,6 @@ SELECT EXISTS (
 			if (listener === client) {
 				listener = undefined;
 				listening = undefined;
-				if (liveReady) scheduleReconnect();
 			}
 			void client.end().catch(() => undefined);
 		});
@@ -697,35 +722,15 @@ SELECT EXISTS (
 	}
 
 	async function stopListener(): Promise<void> {
-		if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
-		reconnectTimer = undefined;
 		const client = listener;
 		listener = undefined;
 		listening = undefined;
 		if (client !== undefined) await client.end().catch(() => undefined);
 	}
 
-	function scheduleReconnect(): void {
-		if (reconnectTimer !== undefined || closed || live.size === 0 || !liveReady)
-			return;
-		const delay = retryDelayMs;
-		retryDelayMs = Math.min(retryDelayMs * 2, 30_000);
-		reconnectTimer = setTimeout(() => {
-			reconnectTimer = undefined;
-			if (closed || live.size === 0 || !liveReady) return;
-			void startListener()
-				.then(() => schedulePump())
-				.catch(() => undefined);
-		}, delay);
-		reconnectTimer.unref();
-	}
-
 	function startLive(): void {
-		const generation = ++liveGeneration;
-		liveReady = false;
 		liveStart = (async () => {
 			const head = await headPosition();
-			if (generation !== liveGeneration || live.size === 0 || closed) return;
 			const earliest = earlyLocalFirsts.reduce<bigint | undefined>(
 				(min, first) =>
 					min === undefined || first - 1n < min ? first - 1n : min,
@@ -733,39 +738,31 @@ SELECT EXISTS (
 			);
 			earlyLocalFirsts.length = 0;
 			liveCursor = earliest !== undefined && earliest < head ? earliest : head;
-			await startListener();
-			if (generation !== liveGeneration || live.size === 0 || closed) return;
-			liveReady = true;
-			schedulePump();
+			await startListener().catch(() => undefined);
 		})();
 		liveStart.catch((error) => countError(asError(error)));
 	}
 
-	async function pumpOnce(generation: number): Promise<void> {
+	async function pumpOnce(): Promise<void> {
 		if (liveStart !== undefined) await liveStart;
-		if (
-			generation !== liveGeneration ||
-			live.size === 0 ||
-			liveCursor === undefined
-		)
-			return;
+		if (live.size === 0 || liveCursor === undefined) return;
 		if (listener === undefined && !closed)
 			void startListener().catch(() => undefined);
 		for (;;) {
 			const page: PositionedEvent[] = [];
 			for await (const item of readAllPage({ after: asPosition(liveCursor) }))
 				page.push(item);
-			if (generation !== liveGeneration || closed) return;
 			if (page.length === 0) return;
 			for (const { position, event } of page) {
-				if (generation !== liveGeneration || closed) return;
 				liveCursor = position;
 				for (const sub of live) {
 					if (!matches(sub.filter, event)) continue;
 					try {
 						const outcome = sub.handler(cloneJson(event));
 						if (outcome instanceof Promise) outcome.catch(() => undefined);
-					} catch {}
+					} catch {
+						// A failing live handler never fails the store or other handlers.
+					}
 				}
 			}
 		}
@@ -777,29 +774,21 @@ SELECT EXISTS (
 			pumpAgain = true;
 			return;
 		}
-		const generation = liveGeneration;
 		pumping = (async () => {
 			try {
 				do {
 					pumpAgain = false;
-					await pumpOnce(generation);
-					if (generation === liveGeneration) retryDelayMs = 500;
-				} while (
-					pumpAgain &&
-					generation === liveGeneration &&
-					live.size > 0 &&
-					!closed
-				);
+					await pumpOnce();
+				} while (pumpAgain && live.size > 0 && !closed);
 			} catch (error) {
 				countError(asError(error));
-				if (generation === liveGeneration) scheduleReconnect();
 			} finally {
 				pumping = undefined;
-				if (generation !== liveGeneration && live.size > 0 && !closed)
-					schedulePump();
 			}
 		})();
 	}
+
+	// ── reads ──────────────────────────────────────────────────────────────
 
 	function readAllPage(
 		options: ReadAllOptions = {},
@@ -892,6 +881,8 @@ SELECT EXISTS (
 		});
 	}
 
+	// ── commit ─────────────────────────────────────────────────────────────
+
 	function nextOwnerEpoch(
 		streamId: string,
 		stored: bigint,
@@ -939,6 +930,11 @@ SELECT EXISTS (
 		});
 	}
 
+	/**
+	 * Refuse a write to a protected or leased stream unless `fenceToken` names
+	 * the live lease and the head's owner epoch. Call with the stream head row
+	 * locked FOR UPDATE and the actor policy row locked.
+	 */
 	async function checkActorWrite(
 		client: PgClientLike,
 		actorPolicy: readonly string[],
@@ -984,6 +980,8 @@ SELECT EXISTS (
 		effects: DurableCommitRequest["effects"],
 	): Promise<DurableCommitResult & { lastPositionRaw: bigint | undefined }> {
 		const effectList = effects ?? [];
+		// An empty commit is a no-op. In particular it must not create a stream
+		// head before the lease boundary has authorized an actual write.
 		if (inputs.length === 0 && effectList.length === 0)
 			return Object.freeze({
 				streamId,
@@ -1057,6 +1055,8 @@ SELECT EXISTS (
 				lastPositionRaw: undefined,
 			});
 		}
+		// Only new writes are fenced: a retry whose events already committed
+		// reads them back above, even after its lease has expired.
 		await checkActorWrite(
 			client,
 			actorPolicy,
@@ -1074,6 +1074,8 @@ SELECT EXISTS (
 			);
 		}
 
+		// Position allocation: the partition-head row lock is taken last and
+		// held to commit, so positions are gapless and visible in order.
 		const allocated = await client.query(
 			`UPDATE ${s}.partition_head SET last_position = last_position + $1
        WHERE id = 1 RETURNING last_position`,
@@ -1187,6 +1189,7 @@ SELECT EXISTS (
 		return undefined;
 	}
 
+	/** Measure an operation; count conflicts and errors by code. */
 	async function measured<T>(
 		operation: string,
 		fn: () => Promise<T>,
@@ -1254,20 +1257,16 @@ SELECT EXISTS (
 		const streamId = requireNonEmpty(request.streamId, "streamId");
 		const inputs = parseEventInputs(request.events);
 		const append = parseAppendOptions(request.append);
-		const effects = request.effects === undefined ? [] : request.effects;
+		const effects = request.effects ?? [];
 		if (!Array.isArray(effects)) {
 			throw new StoragePostgresError(
 				"invalid-input",
 				"effects must be an array",
 			);
 		}
-		const parsedEffects = effects.map(parseDurableEffect);
 		const result = await measured(
 			"commit",
-			() =>
-				tx((client) =>
-					commitIn(client, streamId, inputs, append, parsedEffects),
-				),
+			() => tx((client) => commitIn(client, streamId, inputs, append, effects)),
 			(value) => {
 				if (value.appended.length > 0) {
 					metrics.emit([
@@ -1295,6 +1294,8 @@ SELECT EXISTS (
 			deduped: cloneJson(rest.deduped),
 		});
 	}
+
+	// ── snapshots and fold ─────────────────────────────────────────────────
 
 	async function snapshot(
 		streamId: string,
@@ -1329,6 +1330,7 @@ SELECT EXISTS (
          VALUES ($1, 0, 0, $2, $2) ON CONFLICT (stream_id) DO NOTHING`,
 				[id, savedAt],
 			);
+			// FOR UPDATE serialises against acquire's owner-epoch bump, as appends do.
 			const head = await client.query(
 				`SELECT revision, owner_epoch FROM ${s}.streams WHERE stream_id = $1 FOR UPDATE`,
 				[id],
@@ -1377,6 +1379,7 @@ SELECT EXISTS (
 			);
 			const row: PgRow | undefined = result.rows[0];
 			if (row === undefined) return undefined;
+			// SAFETY: the caller names the state type it snapshotted; the column holds that JSON.
 			const state = decodeJsonColumn(row, "state", "state_codec") as S;
 			return Object.freeze({
 				streamId: id,
@@ -1411,6 +1414,9 @@ SELECT EXISTS (
 		if (event.correlationId !== undefined) {
 			appendOptions.correlationId = event.correlationId;
 		}
+		// The stream head is observable state, not evidence that this caller
+		// holds its lease. Pass only the fence explicitly supplied by the caller;
+		// the regular commit boundary verifies it before writing the marker.
 		if (fenceToken !== undefined) appendOptions.fenceToken = fenceToken;
 		const aggregate = event.type.split(".")[0] ?? "event";
 		const result = await commit({
@@ -1502,6 +1508,8 @@ SELECT EXISTS (
 		});
 	}
 
+	// ── subscriptions ──────────────────────────────────────────────────────
+
 	function leaseClaimMetric(outcome: string): void {
 		metrics.emit([
 			{
@@ -1567,6 +1575,9 @@ SELECT EXISTS (
 						"required actor stream protection is not installed",
 					);
 				await requireActorCommitProtection(client);
+				// All reachable roles are considered, including NOINHERIT grants a
+				// session may explicitly assume with SET ROLE. PUBLIC grants are
+				// included by PostgreSQL's privilege predicates.
 				const result = await client.query(
 					`
 WITH application AS (
@@ -1716,7 +1727,7 @@ SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity
 		subscribe(
 			filter: StreamFilter,
 			handler: (event: EventEnvelope) => void | Promise<void>,
-		): Subscription & { readonly ready: Promise<void> } {
+		): Subscription {
 			if (!(handler instanceof Function)) {
 				throw new StoragePostgresError(
 					"invalid-input",
@@ -1726,20 +1737,12 @@ SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity
 			const sub: LiveSub = { filter: Object.freeze({ ...filter }), handler };
 			live.add(sub);
 			if (live.size === 1 && liveStart === undefined) startLive();
-			const ready = liveStart;
-			if (ready === undefined)
-				throw new Error("live subscription did not start");
 			return Object.freeze({
-				ready,
 				unsubscribe: () => {
 					live.delete(sub);
 					if (live.size === 0) {
-						liveGeneration += 1;
-						liveReady = false;
-						retryDelayMs = 500;
 						liveCursor = undefined;
 						liveStart = undefined;
-						earlyLocalFirsts.length = 0;
 						void stopListener();
 					}
 				},
@@ -1922,8 +1925,6 @@ SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity
 		end(): Promise<void> {
 			if (ending !== undefined) return ending;
 			closed = true;
-			liveGeneration += 1;
-			liveReady = false;
 			live.clear();
 			ending = (async () => {
 				await stopListener();

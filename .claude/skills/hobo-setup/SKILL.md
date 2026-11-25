@@ -75,6 +75,23 @@ and admits no exceptions.
   with the cluster kubeconfig `owner://HOSTINGER_ARC_KUBECONFIG`; never run
   kubectl for it. On `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`, call
   `choose_secret_store` first.
+- Setup ends at `established`. Joining a Hostinger fleet is optional and
+  comes later, during development, when the owner asks for it: then call
+  `store_owner_entries` (same `cwd`) so HoBo asks the owner, one private host
+  form per entry, for `HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG` or
+  `HOBO_CI_ACCOUNT_TOKEN` and writes each straight into the store. Entries the store already holds are kept unless
+  `replace: true`. Its result lists entry names only (`stored`, `kept`,
+  `skipped`, `failed`).
+- Infisical Agent Vault: with an Infisical store that has no
+  `HOSTINGER_API_TOKEN` entry, the fleet verbs use the owner's Agent Vault
+  instead. HoBo runs the proxy itself; never start
+  `infisical agent-vault proxy` or create sessions yourself. The owner needs
+  one Agent Vault project their signed-in identity reaches (as an Agent Vault
+  admin, or through an access bundle) with an `http` service covering
+  `developers.hostinger.com`. `doctor`'s `ownerStoreSession.agentVault` and
+  the fleet's `data.credentialSource` name the service and hosts only. On
+  `HOBO_AGENT_VAULT_PROJECT_AMBIGUOUS`, ask the owner which project HoBo
+  should use; they sign in with an identity that reaches only that one.
 - `sign-in-needed` (with a code): the choice is kept; call
   `choose_secret_store` again when the owner is ready. Do not claim the store
   is connected.
@@ -82,10 +99,42 @@ and admits no exceptions.
   submit it.
 - `decline` or `invalid`: nothing was recorded; ask again only when the owner
   wants to.
-- `secure-form-unavailable`: this host renders neither form elicitation nor
-  MCP Apps. Report that this host cannot provide a secure HoBo owner hand-off.
+- `owner-page`: this host renders neither form elicitation nor MCP Apps, so
+  HoBo made its own page. Write `structuredContent.html` unchanged to a file
+  and publish it as an Artifact with `capabilities: {"db": {}}`; tell the
+  owner its key fingerprint. Ask them with your host's question prompt
+  whether they sent it. Then read the document `structuredContent.document`
+  from that artifact's database and call `submit_owner_page` with its
+  `sealed` field, unchanged. The answer is encrypted to HoBo; never ask for
+  any of it in chat. `refused` means the page expired, was already used, or
+  was altered: call `choose_secret_store` for a new one.
+- If the host declares forms but the owner never sees them (a form times
+  out or comes back cancelled at once), call `choose_secret_store` with
+  `channel: "page"`. HoBo's owner page then also takes the store's sign-in
+  (Infisical's copied session) and nothing else. A `sign-in-needed` result
+  carries a `reason` with links and identifiers redacted.
+- `secure-form-unavailable`: no private channel is wired. Report that this
+  host cannot provide a secure HoBo owner hand-off.
 
 Pass `reselect: true` only when the owner wants a different store.
+
+## Working with the owner
+
+- Show a form through the channel that actually displays it: when MCP forms
+  do not appear, use `channel: "page"` and publish the owner page. Open the
+  published page yourself and confirm it renders before pointing the owner at
+  it.
+- Never ask the owner to test, sign in again or re-submit. Verify results
+  yourself. Ask again only when `sign-in-needed` carries a `reason`, and quote
+  it; a Stop hook blocks other asks.
+- Never kill or restart HoBo's MCP server while an owner page or form is open:
+  it holds the one-use key and the sealed answer in memory. The pre-tool hook
+  refuses those commands; let the form finish.
+- Before building a credential, flow or provider, search the code and ADRs for
+  the existing one (HoBo's GitHub App, the owner store session, the owner
+  page). List the hard constraints (no stored secrets, GitHub only through the
+  App, `hobo login --relay` after a restart) against the goal and report a
+  contradiction before building.
 
 If the host or HoBo cannot provide that private flow, report which capability
 is missing. Continue safe implementation and verification authorized by the

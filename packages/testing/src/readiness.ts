@@ -1,3 +1,18 @@
+/**
+ * Bounded readiness polling that distinguishes propagation from an answer.
+ *
+ * ADR-0159 §3: "auth-shaped responses fail fast; propagation-shaped 404/5xx
+ * retry". A 401 is not a slow DNS record — it is the endpoint telling you your
+ * request is wrong, and retrying it twenty times converts a one-line fix into
+ * a two-minute timeout with a misleading message. So the status classifier is
+ * explicit and closed: a small retry set, a small fail-fast set, and anything
+ * else treated as an answer.
+ *
+ * Delay is exponential from `initialDelayMs`, doubling per attempt, capped at
+ * `READINESS_MAX_DELAY_MS` so the default 20 attempts cannot become an
+ * unbounded wait.
+ */
+
 import { TestHarnessError } from "./errors.js";
 
 export interface ReadinessResponse {
@@ -15,10 +30,12 @@ export const DEFAULT_READINESS_ATTEMPTS = 20;
 export const DEFAULT_READINESS_INITIAL_DELAY_MS = 500;
 export const READINESS_MAX_DELAY_MS = 5_000;
 
+/** Deliberate rejections: an answer, not a propagation delay. */
 export const READINESS_FAIL_FAST_STATUSES: readonly number[] = Object.freeze([
 	400, 401, 403,
 ]);
 
+/** Propagation-shaped: the resource may simply not be visible yet. */
 export const READINESS_RETRY_STATUSES: readonly number[] = Object.freeze([
 	404, 408, 425, 429,
 ]);
@@ -43,6 +60,10 @@ export interface UntilReadyRunOptions extends UntilReadyOptions {
 	readonly sleep?: (ms: number) => Promise<void>;
 }
 
+/**
+ * Poll `url` through `probe` until it answers ready, answers deliberately, or
+ * the attempt budget is exhausted. Network throws count as propagation.
+ */
 export async function untilReadyWith(
 	probe: ReadinessProbe,
 	url: string,
@@ -110,6 +131,7 @@ export async function untilReadyWith(
 	);
 }
 
+/** Default probe: the platform `fetch`, status only, body discarded. */
 export function createFetchReadinessProbe(
 	fetchImpl?: typeof globalThis.fetch,
 ): ReadinessProbe {

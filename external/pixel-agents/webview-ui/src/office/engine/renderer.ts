@@ -73,6 +73,7 @@ import { getCharacterSprite } from './characters.js';
 import { renderMatrixEffect } from './matrixEffect.js';
 import { getPetSpriteData } from './petEntity.js';
 
+// ── Render functions ────────────────────────────────────────────
 
 /**
  * Render the carpet layer. Called AFTER renderTileGrid and BEFORE seat
@@ -115,10 +116,10 @@ export function renderCarpetLayer(
       >();
 
       const adjacent = [
-        { col: jx - 1, row: jy - 1 },
-        { col: jx, row: jy - 1 },
-        { col: jx, row: jy },
-        { col: jx - 1, row: jy },
+        { col: jx - 1, row: jy - 1 }, // NW
+        { col: jx, row: jy - 1 }, // NE
+        { col: jx, row: jy }, // SE
+        { col: jx - 1, row: jy }, // SW
       ];
 
       for (const pos of adjacent) {
@@ -138,6 +139,7 @@ export function renderCarpetLayer(
 
       if (localGroups.size === 0) continue;
 
+      // Ascending order → drawn lowest first; highest-order layer ends on top.
       const ordered = [...localGroups.values()].sort((a, b) => a.order - b.order);
       for (const { variant, color, accentColor, paletteKey } of ordered) {
         const sprite = getCarpetJunctionSprite(
@@ -228,6 +230,7 @@ export function renderAreaLabels(
   const colorMap = new Map<string, string>();
   for (const a of areas) colorMap.set(a.label, a.color);
 
+  // Centroid accumulator: label → { sumX, sumY, count }.
   const centroids = new Map<string, { sumX: number; sumY: number; count: number }>();
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -257,10 +260,12 @@ export function renderAreaLabels(
     const cx = offsetX + (acc.sumX / acc.count + 0.5) * s;
     const cy = offsetY + (acc.sumY / acc.count + 0.5) * s;
 
+    // Pixel-art drop shadow (1px right + down, no blur).
     ctx.globalAlpha = AREA_LABEL_SHADOW_ALPHA;
     ctx.fillStyle = AREA_LABEL_SHADOW_COLOR;
     ctx.fillText(label, cx + 1, cy + 1);
 
+    // Main label — area's own color, falling back to white if missing.
     ctx.globalAlpha = AREA_LABEL_ALPHA;
     ctx.fillStyle = colorMap.get(label) ?? AREA_LABEL_FALLBACK_COLOR;
     ctx.fillText(label, cx, cy);
@@ -284,13 +289,16 @@ export function renderTileGrid(
   const tmCols = tmRows > 0 ? tileMap[0].length : 0;
   const layoutCols = cols ?? tmCols;
 
+  // Floor tiles + wall base color
   for (let r = 0; r < tmRows; r++) {
     for (let c = 0; c < tmCols; c++) {
       const tile = tileMap[r][c];
 
+      // Skip VOID tiles entirely (transparent)
       if (tile === TileType.VOID) continue;
 
       if (tile === TileType.WALL || !useSpriteFloors) {
+        // Wall tiles or fallback: solid color
         if (tile === TileType.WALL) {
           const colorIdx = r * layoutCols + c;
           const wallColor = tileColors?.[colorIdx];
@@ -302,6 +310,7 @@ export function renderTileGrid(
         continue;
       }
 
+      // Floor tile: get colorized sprite
       const colorIdx = r * layoutCols + c;
       const color = tileColors?.[colorIdx] ?? { h: 0, s: 0, b: 0, c: 0 };
       const sprite = getColorizedFloorSprite(tile, color);
@@ -330,6 +339,7 @@ export function renderScene(
 ): void {
   const drawables: ZDrawable[] = [];
 
+  // Furniture
   for (const f of furniture) {
     const cached = getCachedSprite(f.sprite, zoom);
     const fx = offsetX + f.x * zoom;
@@ -355,16 +365,23 @@ export function renderScene(
     }
   }
 
+  // Characters
   for (const ch of characters) {
     const sprites = getCharacterSprites(ch.palette, ch.hueShift);
     const spriteData = getCharacterSprite(ch, sprites);
     const cached = getCachedSprite(spriteData, zoom);
+    // Sitting offset: shift character down when seated so they visually sit in the chair
     const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
+    // Anchor at bottom-center of character — round to integer device pixels
     const drawX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
     const drawY = Math.round(offsetY + (ch.y + sittingOffset) * zoom - cached.height);
 
+    // Sort characters by bottom of their tile (not center) so they render
+    // in front of same-row furniture (e.g. chairs) but behind furniture
+    // at lower rows (e.g. desks, bookshelves that occlude from below).
     const charZY = ch.y + TILE_SIZE / 2 + CHARACTER_Z_SORT_OFFSET;
 
+    // Matrix spawn/despawn effect — skip outline, use per-pixel rendering
     if (ch.matrixEffect) {
       const mDrawX = drawX;
       const mDrawY = drawY;
@@ -379,16 +396,17 @@ export function renderScene(
       continue;
     }
 
+    // White outline: full opacity for selected, 50% for hover
     const isSelected = selectedAgentId !== null && ch.id === selectedAgentId;
     const isHovered = hoveredAgentId !== null && ch.id === hoveredAgentId;
     if (isSelected || isHovered) {
       const outlineAlpha = isSelected ? SELECTED_OUTLINE_ALPHA : HOVERED_OUTLINE_ALPHA;
       const outlineData = getOutlineSprite(spriteData);
       const outlineCached = getCachedSprite(outlineData, zoom);
-      const olDrawX = drawX - zoom;
-      const olDrawY = drawY - zoom;
+      const olDrawX = drawX - zoom; // 1 sprite-pixel offset, scaled
+      const olDrawY = drawY - zoom; // outline follows sitting offset via drawY
       drawables.push({
-        zY: charZY - OUTLINE_Z_SORT_OFFSET,
+        zY: charZY - OUTLINE_Z_SORT_OFFSET, // sort just before character
         draw: (c) => {
           c.save();
           c.globalAlpha = outlineAlpha;
@@ -406,15 +424,19 @@ export function renderScene(
     });
   }
 
+  // ── Pets ──────────────────────────────────────────────
   for (const pet of pets) {
     const petSprites = getPetSprites(pet.petType);
     const spriteData = getPetSpriteData(pet, petSprites);
     if (!spriteData) continue;
 
     const cached = getCachedSprite(spriteData, zoom);
+    // Anchor at bottom-center at (pet.x, pet.y) — round to integer device pixels
     const drawX = Math.round(offsetX + pet.x * zoom - cached.width / 2);
     const drawY = Math.round(offsetY + pet.y * zoom - cached.height);
 
+    // Z-sort key: matches the chair/character "row boundary" formula.
+    // pet.y is the pixel center, so + TILE_SIZE/2 lifts us to the row's bottom edge.
     const petZY = pet.y + TILE_SIZE / 2;
 
     drawables.push({
@@ -425,6 +447,7 @@ export function renderScene(
     });
   }
 
+  // Sort by Y (lower = in front = drawn later)
   drawables.sort((a, b) => a.zY - b.zY);
 
   for (const d of drawables) {
@@ -432,6 +455,7 @@ export function renderScene(
   }
 }
 
+// ── Seat indicators ─────────────────────────────────────────────
 
 function renderSeatIndicators(
   ctx: CanvasRenderingContext2D,
@@ -447,6 +471,7 @@ function renderSeatIndicators(
   const selectedChar = characters.get(selectedAgentId);
   if (!selectedChar) return;
 
+  // Only show indicator for the hovered seat tile
   for (const [uid, seat] of seats) {
     if (seat.seatCol !== hoveredTile.col || seat.seatRow !== hoveredTile.row) continue;
 
@@ -455,10 +480,13 @@ function renderSeatIndicators(
     const y = offsetY + seat.seatRow * s;
 
     if (selectedChar.seatId === uid) {
+      // Selected agent's own seat — blue
       ctx.fillStyle = SEAT_OWN_COLOR;
     } else if (!seat.assigned) {
+      // Available seat — green
       ctx.fillStyle = SEAT_AVAILABLE_COLOR;
     } else {
+      // Busy (assigned to another agent) — red
       ctx.fillStyle = SEAT_BUSY_COLOR;
     }
     ctx.fillRect(x, y, s, s);
@@ -466,6 +494,7 @@ function renderSeatIndicators(
   }
 }
 
+// ── Edit mode overlays ──────────────────────────────────────────
 
 /** @internal */
 export function renderGridOverlay(
@@ -481,11 +510,13 @@ export function renderGridOverlay(
   ctx.strokeStyle = GRID_LINE_COLOR;
   ctx.lineWidth = 1;
   ctx.beginPath();
+  // Vertical lines — offset by 0.5 for crisp 1px lines
   for (let c = 0; c <= cols; c++) {
     const x = offsetX + c * s + 0.5;
     ctx.moveTo(x, offsetY);
     ctx.lineTo(x, offsetY + rows * s);
   }
+  // Horizontal lines
   for (let r = 0; r <= rows; r++) {
     const y = offsetY + r * s + 0.5;
     ctx.moveTo(offsetX, y);
@@ -493,6 +524,7 @@ export function renderGridOverlay(
   }
   ctx.stroke();
 
+  // Draw faint dashed outlines on VOID tiles
   if (tileMap) {
     ctx.save();
     ctx.strokeStyle = VOID_TILE_OUTLINE_COLOR;
@@ -509,6 +541,7 @@ export function renderGridOverlay(
   }
 }
 
+/** Draw faint expansion placeholders 1 tile outside grid bounds (ghost border). */
 function renderGhostBorder(
   ctx: CanvasRenderingContext2D,
   offsetX: number,
@@ -522,11 +555,14 @@ function renderGhostBorder(
   const s = TILE_SIZE * zoom;
   ctx.save();
 
+  // Collect ghost border tiles: one ring around the grid
   const ghostTiles: Array<{ c: number; r: number }> = [];
+  // Top and bottom rows
   for (let c = -1; c <= cols; c++) {
     ghostTiles.push({ c, r: -1 });
     ghostTiles.push({ c, r: rows });
   }
+  // Left and right columns (excluding corners already added)
   for (let r = 0; r < rows; r++) {
     ghostTiles.push({ c: -1, r });
     ghostTiles.push({ c: cols, r });
@@ -573,6 +609,7 @@ export function renderGhostPreview(
   } else {
     ctx.drawImage(cached, x, y);
   }
+  // Tint overlay — reset transform for correct fill position
   ctx.restore();
   ctx.save();
   ctx.globalAlpha = GHOST_PREVIEW_TINT_ALPHA;
@@ -615,16 +652,19 @@ export function renderDeleteButton(
   zoom: number,
 ): DeleteButtonBounds {
   const s = TILE_SIZE * zoom;
+  // Position at top-right corner of selected furniture
   const cx = offsetX + (col + w) * s + 1;
   const cy = offsetY + row * s - 1;
   const radius = Math.max(BUTTON_MIN_RADIUS, zoom * BUTTON_RADIUS_ZOOM_FACTOR);
 
+  // Circle background
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.fillStyle = DELETE_BUTTON_BG;
   ctx.fill();
 
+  // X mark
   ctx.strokeStyle = BUTTON_ICON_COLOR;
   ctx.lineWidth = Math.max(BUTTON_LINE_WIDTH_MIN, zoom * BUTTON_LINE_WIDTH_ZOOM_FACTOR);
   ctx.lineCap = 'round';
@@ -651,23 +691,28 @@ function renderRotateButton(
   zoom: number,
 ): RotateButtonBounds {
   const s = TILE_SIZE * zoom;
+  // Position to the left of the delete button (which is at top-right corner)
   const radius = Math.max(BUTTON_MIN_RADIUS, zoom * BUTTON_RADIUS_ZOOM_FACTOR);
   const cx = offsetX + col * s - 1;
   const cy = offsetY + row * s - 1;
 
+  // Circle background
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.fillStyle = ROTATE_BUTTON_BG;
   ctx.fill();
 
+  // Circular arrow icon
   ctx.strokeStyle = BUTTON_ICON_COLOR;
   ctx.lineWidth = Math.max(BUTTON_LINE_WIDTH_MIN, zoom * BUTTON_LINE_WIDTH_ZOOM_FACTOR);
   ctx.lineCap = 'round';
   const arcR = radius * BUTTON_ICON_SIZE_FACTOR;
   ctx.beginPath();
+  // Draw a 270-degree arc
   ctx.arc(cx, cy, arcR, -Math.PI * 0.8, Math.PI * 0.7);
   ctx.stroke();
+  // Draw arrowhead at the end of the arc
   const endAngle = Math.PI * 0.7;
   const endX = cx + arcR * Math.cos(endAngle);
   const endY = cy + arcR * Math.sin(endAngle);
@@ -682,6 +727,7 @@ function renderRotateButton(
   return { cx, cy, radius };
 }
 
+// ── Speech bubbles ──────────────────────────────────────────────
 
 function renderBubbles(
   ctx: CanvasRenderingContext2D,
@@ -692,17 +738,24 @@ function renderBubbles(
 ): void {
   for (const ch of characters) {
     if (!ch.bubbleType) continue;
+    // The green checkmark bubble only represents "done" (turn finished). The
+    // idle "Waiting for input" state communicates via its overlay label, not a
+    // bubble, so skip the bubble for it.
     if (ch.bubbleType === 'waiting' && ch.waitingAwaitingInput) continue;
 
     const sprite =
       ch.bubbleType === 'permission' ? BUBBLE_PERMISSION_SPRITE : BUBBLE_WAITING_SPRITE;
 
+    // Compute opacity: permission = full, waiting = fade in last 0.5s
     let alpha = 1.0;
     if (ch.bubbleType === 'waiting' && ch.bubbleTimer < BUBBLE_FADE_DURATION_SEC) {
       alpha = ch.bubbleTimer / BUBBLE_FADE_DURATION_SEC;
     }
 
     const cached = getCachedSprite(sprite, zoom);
+    // Position: centered above the character's head
+    // Character is anchored bottom-center at (ch.x, ch.y), sprite is 16x24
+    // Place bubble above head with a small gap; follow sitting offset
     const sittingOff = ch.state === CharacterState.TYPE ? BUBBLE_SITTING_OFFSET_PX : 0;
     const bubbleX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
     const bubbleY = Math.round(
@@ -728,12 +781,16 @@ function renderPetBubbles(
 
     const sprite = BUBBLE_HEART_SPRITE;
 
+    // Fade in the last BUBBLE_FADE_DURATION_SEC of the lifetime
     let alpha = 1.0;
     if (pet.bubbleTimer < BUBBLE_FADE_DURATION_SEC) {
       alpha = Math.max(0, pet.bubbleTimer / BUBBLE_FADE_DURATION_SEC);
     }
 
     const cached = getCachedSprite(sprite, zoom);
+    // Anchor: centered above the pet's head. Pet is anchored bottom-center at
+    // (pet.x, pet.y); sprite is ~16 tall, so back up TILE_SIZE pixels and add
+    // a 1-sprite-pixel gap (scaled by zoom).
     const bubbleX = Math.round(offsetX + pet.x * zoom - cached.width / 2);
     const bubbleY = Math.round(offsetY + (pet.y - TILE_SIZE) * zoom - cached.height - 1 * zoom);
 
@@ -745,8 +802,11 @@ function renderPetBubbles(
 }
 
 export interface ButtonBounds {
+  /** Center X in device pixels */
   cx: number;
+  /** Center Y in device pixels */
   cy: number;
+  /** Radius in device pixels */
   radius: number;
 }
 
@@ -766,10 +826,15 @@ export interface EditorRenderState {
   selectedH: number;
   hasSelection: boolean;
   isRotatable: boolean;
+  /** Updated each frame by renderDeleteButton */
   deleteButtonBounds: DeleteButtonBounds | null;
+  /** Updated each frame by renderRotateButton */
   rotateButtonBounds: RotateButtonBounds | null;
+  /** Whether to show ghost border (expansion tiles outside grid) */
   showGhostBorder: boolean;
+  /** Hovered ghost border tile col (-1 to cols) */
   ghostBorderHoverCol: number;
+  /** Hovered ghost border tile row (-1 to rows) */
   ghostBorderHoverRow: number;
 }
 
@@ -803,26 +868,33 @@ export function renderFrame(
   activeAreaLabel?: string | null,
   pets?: Pet[],
 ): { offsetX: number; offsetY: number } {
+  // Clear
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
+  // Use layout dimensions (fallback to tileMap size)
   const cols = layoutCols ?? (tileMap.length > 0 ? tileMap[0].length : 0);
   const rows = layoutRows ?? tileMap.length;
 
+  // Center map in viewport + pan offset (integer device pixels)
   const mapW = cols * TILE_SIZE * zoom;
   const mapH = rows * TILE_SIZE * zoom;
   const offsetX = Math.floor((canvasWidth - mapW) / 2) + Math.round(panX);
   const offsetY = Math.floor((canvasHeight - mapH) / 2) + Math.round(panY);
 
+  // Draw tiles (floor + wall base color)
   renderTileGrid(ctx, tileMap, offsetX, offsetY, zoom, tileColors, layoutCols);
 
+  // Carpet layer (above floor, below seat indicators / furniture / characters)
   if (carpetTiles && carpetTiles.length > 0) {
     renderCarpetLayer(ctx, carpetTiles, cols, rows, offsetX, offsetY, zoom);
   }
 
+  // Area overlay (translucent color wash) — above carpets, below seat indicators
   if (showAreas) {
     renderAreaOverlay(ctx, areaTiles, areas, cols, rows, offsetX, offsetY, zoom, activeAreaLabel);
   }
 
+  // Seat indicators (below furniture/characters, on top of floor)
   if (selection) {
     renderSeatIndicators(
       ctx,
@@ -836,9 +908,11 @@ export function renderFrame(
     );
   }
 
+  // Build wall instances for z-sorting with furniture and characters
   const wallInstances = hasWallSprites() ? getWallInstances(tileMap, tileColors, layoutCols) : [];
   const allFurniture = wallInstances.length > 0 ? [...wallInstances, ...furniture] : furniture;
 
+  // Draw walls + furniture + characters (z-sorted)
   const selectedId = selection?.selectedAgentId ?? null;
   const hoveredId = selection?.hoveredAgentId ?? null;
   renderScene(
@@ -853,15 +927,19 @@ export function renderFrame(
     pets ?? [],
   );
 
+  // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom);
+  // Pet heart bubbles (same overlay pass)
   if (pets && pets.length > 0) {
     renderPetBubbles(ctx, pets, offsetX, offsetY, zoom);
   }
 
+  // Area labels (above bubbles + characters, below editor overlays)
   if (showAreas) {
     renderAreaLabels(ctx, areaTiles, areas, cols, rows, offsetX, offsetY, zoom);
   }
 
+  // Editor overlays
   if (editor) {
     if (editor.showGrid) {
       renderGridOverlay(ctx, offsetX, offsetY, zoom, cols, rows, tileMap);

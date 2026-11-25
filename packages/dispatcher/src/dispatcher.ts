@@ -1,19 +1,17 @@
+// ADR-0071 Dispatcher: credit/budget-aware deterministic selection across
+// registered providers for placement, dispatch, and traffic. Promoted from
+// src/draft/technical-proofs/dispatcher-maximize-credits-contract (decision
+// ranking, hysteresis, reservation CAS) and
+// dispatcher-reservation-hardening-contract (reserve/confirm/release/expire
+// invariants). Decisions are pure functions of (registry, CreditLedgerView@seq,
+// request): identical inputs replay to identical dispatch.Decided facts.
+
 import { createHash } from "node:crypto";
-import {
-	cloneAsJson,
-	isJsonNumber,
-	isJsonObject,
-	isJsonString,
-	type JsonBag,
-	type JsonObject,
-	type JsonValue,
-	parseJsonObject,
-} from "./json.js";
+import { isJsonObject, isJsonString } from "./json.js";
 import {
 	addAvailable,
 	addUpper,
 	availableCredits,
-	chargeWithinBudget,
 	costForUnits,
 	exposureWithinBudget,
 	moneySumExceeds,
@@ -21,8 +19,10 @@ import {
 	subtractAvailable,
 	subtractUpper,
 } from "./money.js";
+import { compareCodeUnits } from "./order.js";
 
-export const CREDIT_DISPATCH_SCHEMA = "hobo.dispatcher/credit";
+// public-contract: consumers pin the dispatcher wire schema by this id.
+export const DISPATCHER_SCHEMA_VERSION = "hobo.dispatcher/v1";
 
 export const DISPATCH_EVENTS = Object.freeze({
 	DispatchDecided: "dispatch.Decided",
@@ -36,9 +36,15 @@ export const DISPATCH_EVENTS = Object.freeze({
 } as const);
 
 export type DispatchCategory = "runner" | "build-machine" | "traffic-backend";
-export type DispatchObjective = "min-cost" | "maximize-credits";
+export type DispatchObjective = "maximize-credits";
 export type CreditFacts = "present" | "present-empty" | "missing" | "invalid";
 
+const OBJECTIVES = new Set<DispatchObjective>(["maximize-credits"]);
+const DISPATCH_CATEGORIES = new Set<DispatchCategory>([
+	"runner",
+	"build-machine",
+	"traffic-backend",
+]);
 const CATEGORY_DIMENSIONS: Readonly<Record<DispatchCategory, string>> =
 	Object.freeze({
 		runner: "runner.minutes",
@@ -66,6 +72,7 @@ export interface CreditAccount {
 	budgetCap?: number;
 	spendToDate?: number;
 	reservedUnits?: number;
+	/** Pending monetary exposure, in the same currency as budgetCap. */
 	reservedCost?: number;
 	credits?: CreditGrant[];
 }
@@ -113,68 +120,6 @@ interface ReservedConsumption {
 	concurrencySlots?: number;
 }
 
-type InputObject = JsonObject;
-
-interface ParsedCandidate {
-	readonly category: string;
-	readonly definitionId: string;
-	readonly dimension: string;
-	readonly id?: string;
-	readonly listUnitCost: number;
-	readonly priority?: number;
-	readonly providerId: string;
-	readonly region?: string | undefined;
-	readonly registered: boolean;
-	readonly resourceType?: string;
-	readonly source: InputObject;
-	readonly specificity?: number;
-	readonly switchingCost: number;
-}
-
-interface CreditSummary {
-	readonly budgetHeadroom: number;
-	readonly concurrencyHeadroom: number;
-	readonly freeHeadroom: number;
-	readonly listUnitCost: number;
-	readonly rateHeadroom: number;
-	readonly status: CreditFacts;
-	readonly valid: boolean;
-}
-
-interface RankedCandidate extends ParsedCandidate {
-	readonly baseCost: number;
-	readonly budgetExceeded: boolean;
-	readonly creditFacts: CreditFacts;
-	readonly decisionVector: readonly number[];
-	readonly effectiveMarginalCost: number;
-	readonly eligible: boolean;
-	readonly freeUnits: number;
-	readonly nextCreditExpiresAt: string | null;
-	readonly objectiveScore: number;
-	readonly paidUnits: number;
-	readonly rankVector: readonly (number | string)[];
-	readonly rationale: string;
-	readonly rejectionReason: string | undefined;
-	readonly totalCost: number;
-}
-
-interface RankedCandidateWithRank extends RankedCandidate {
-	readonly rank: number;
-}
-
-interface ReservationAttempt {
-	readonly actualSeq?: number;
-	readonly committedSeq?: number;
-	readonly ledgerView: CreditLedgerView;
-	readonly ok: boolean;
-	readonly status: string;
-}
-
-export interface ReservationLedgerPort {
-	reserve(request: ReserveRequest): ReservationAttempt;
-	snapshot(): CreditLedgerView;
-}
-
 export interface DispatchProviderInput {
 	id?: string;
 	providerId?: string;
@@ -185,110 +130,17 @@ export interface DispatchProviderInput {
 	switchingCost?: number;
 }
 
-export interface PlacementCandidateInput {
-	definitionId?: string;
-	dimension: string;
-	id?: string;
-	listUnitCost?: number;
-	priority?: number;
-	providerId?: string;
-	region?: string;
-	registered?: boolean;
-	resourceType: string;
-	specificity?: number;
-	switchingCost?: number;
-}
-
-export interface ReserveRequest {
-	decisionInputJson?: string;
-	dimension: string;
-	dispatchRequestHash?: string;
-	estimatedCost?: number;
-	expectedSeq: number;
-	expiresAt?: string | null;
-	providerId: string;
-	reservationId: string;
-	switchingCost?: number;
-	unitCost?: number;
-	units?: number;
-}
-
-interface StartRequest {
-	committedSeq?: number;
-	reservationId: string;
-}
-
-interface ConfirmRequest {
-	actualCost?: number;
-	providerUsageSeq?: number;
-	reservationId: string;
-	usageEvidenceRef?: string;
-	usageFinalized?: boolean;
-}
-
-interface ReleaseRequest {
-	reason?: string;
-	reservationId: string;
-}
-
-interface ExpireRequest {
-	now: string;
-}
-
 export interface HysteresisInput {
 	incumbentProviderId: string;
 	minimumSavings: number;
 	dwellWindow: string;
 	observedAt: string;
+	/** First continuously qualifying observation, bound to this challenger. */
 	savingsSince?: string;
 	challengerProviderId?: string;
 }
 
-export interface DispatchRequest {
-	category: DispatchCategory;
-	dispatchId: string;
-	hysteresis?: HysteresisInput | null;
-	incumbentProviderId?: string;
-	ledgerView: CreditLedgerView;
-	objective?: DispatchObjective;
-	registry: DispatcherRegistry | DispatchProviderInput[];
-	reservationId?: string;
-	units?: number;
-}
-
-export interface DispatchAndReserveRequest
-	extends Omit<DispatchRequest, "ledgerView"> {
-	estimatedCost?: number;
-	ledgerView?: CreditLedgerView;
-	maxAttempts?: number;
-	reservationExpiresAt?: string | null;
-	reservationLedger: ReservationLedgerPort;
-}
-
-export interface DispatchReplayInput {
-	candidates: DispatchProviderInput[];
-	category: DispatchCategory;
-	dispatchId: string;
-	hysteresis?: HysteresisInput | null;
-	incumbentProviderId?: string;
-	ledgerView: CreditLedgerView;
-	objective: DispatchObjective;
-	reservationId: string;
-	units: number;
-}
-
-export interface PlacementRequest {
-	candidates?: readonly PlacementCandidateInput[];
-	catalogContentHash?: string;
-	incumbentProviderId?: string;
-	ledgerView: CreditLedgerView;
-	objective?: DispatchObjective;
-	resourceId: string;
-	resourceType: string;
-	units?: number;
-}
-
-export interface DispatchFact<T = object> {
+export interface DispatchFact<T = unknown> {
 	type: string;
 	data: T;
 }
@@ -311,9 +163,11 @@ export interface DispatchDecidedData {
 	}[];
 }
 
+// Parse-don't-validate boundary: raw provider declarations become a frozen
+// registry of derived candidate records before any ranking runs.
 export function createDispatcherRegistry(
-	providers: readonly (DispatchProviderInput | JsonValue)[] = [],
-): DispatcherRegistry {
+	providers: DispatchProviderInput[] = [],
+) {
 	if (!Array.isArray(providers)) {
 		throw new TypeError("providers must be an array");
 	}
@@ -333,35 +187,44 @@ export function createDispatcherRegistry(
 	}
 
 	return {
-		schema: `${CREDIT_DISPATCH_SCHEMA}.registry`,
+		schema: `${DISPATCHER_SCHEMA_VERSION}.registry`,
 		records,
 		byCategory,
 	};
 }
 
-export interface DispatcherRegistry {
-	readonly schema: string;
-	readonly records: ParsedCandidate[];
-	readonly byCategory: Map<string, ParsedCandidate[]>;
-}
+export type DispatcherRegistry = ReturnType<typeof createDispatcherRegistry>;
 
-function decideDispatchInput(request: DispatchRequest) {
-	if (!isJsonObject(request)) throw new TypeError("request must be an object");
+type ReplayOrdering = "code-unit-v1" | "legacy-locale";
+const compareLocale = (left: string, right: string): number =>
+	left.localeCompare(right);
+export function decideDispatch(request) {
+	return decideDispatchWithOrdering(request, "code-unit-v1");
+}
+function decideDispatchWithOrdering(request, orderingVersion: ReplayOrdering) {
+	const compare =
+		orderingVersion === "legacy-locale" ? compareLocale : compareCodeUnits;
+	let comparedDistinctStrings = false;
+	const compareStrings = (left: string, right: string): number => {
+		if (left !== right) comparedDistinctStrings = true;
+		return compare(left, right);
+	};
+	assertObject(request, "request");
 	const category = requireCategory(request.category);
-	const objective = requireObjective(request.objective ?? "min-cost");
+	const objective = requireObjective(request.objective ?? "maximize-credits");
 	const dispatchId = requireString(request.dispatchId, "request.dispatchId");
 	const units = requirePositiveNumber(request.units ?? 1, "request.units");
 	const registry = parseRegistry(request.registry);
 	const candidates = registry.byCategory.get(category) ?? [];
 	const ledgerView = parseCreditLedgerView(request.ledgerView);
+	const estimatedCost = nonNegativeNumber(
+		request.estimatedCost,
+		"request.estimatedCost",
+		0,
+	);
 	const hysteresisInput = parseHysteresis(request.hysteresis);
 	const incumbentProviderId =
-		request.incumbentProviderId === undefined
-			? hysteresisInput?.incumbentProviderId
-			: requireString(
-					request.incumbentProviderId,
-					"request.incumbentProviderId",
-				);
+		request.incumbentProviderId ?? hysteresisInput?.incumbentProviderId;
 	const reservationId = requireString(
 		request.reservationId ?? `reservation-intent-${dispatchId}`,
 		"request.reservationId",
@@ -377,8 +240,9 @@ function decideDispatchInput(request: DispatchRequest) {
 	const ranked = rankCreditCandidates({
 		candidates,
 		ledgerView,
-		objective,
 		units,
+		compareStrings,
+		minimumReservationCost: estimatedCost,
 		incumbentProviderId,
 	});
 	const eligible = ranked.filter((candidate) => candidate.eligible);
@@ -397,7 +261,6 @@ function decideDispatchInput(request: DispatchRequest) {
 		...ranked.filter((candidate) => !candidate.eligible),
 	];
 	const winner = finalRanked[0];
-	if (!winner) throw new TypeError("dispatcher produced no ranked candidate");
 	const dispatchEvent: DispatchFact<DispatchDecidedData> = {
 		type: DISPATCH_EVENTS.DispatchDecided,
 		data: {
@@ -421,17 +284,20 @@ function decideDispatchInput(request: DispatchRequest) {
 
 	return {
 		ok: true as const,
-		schema: CREDIT_DISPATCH_SCHEMA,
+		schema: DISPATCHER_SCHEMA_VERSION,
 		objective,
 		selectedProvider: winner.providerId,
 		ranking: publicDispatchRanking(finalRanked),
 		hysteresis: hysteresis.public,
 		dispatchEvent,
 		replayInput: {
+			orderingVersion: comparedDistinctStrings ? orderingVersion : undefined,
 			category,
 			dispatchId,
 			objective,
 			units,
+			estimatedCost:
+				request.estimatedCost === undefined ? undefined : estimatedCost,
 			incumbentProviderId,
 			hysteresis: hysteresisInput,
 			reservationId,
@@ -441,10 +307,9 @@ function decideDispatchInput(request: DispatchRequest) {
 	};
 }
 
-export function decideCreditDispatch(request: DispatchRequest) {
-	return decideDispatchInput(request);
-}
-
+// Snapshots produced by dispatch-and-reserve can contain prior replay inputs.
+// Exclude those nested inputs to bound growth, while keeping legacy snapshots
+// byte-identical and retaining the original ledger identity in the decision.
 function replayLedgerView(ledgerView: CreditLedgerView): CreditLedgerView {
 	if (
 		!ledgerView.reservations?.some(
@@ -459,21 +324,11 @@ function replayLedgerView(ledgerView: CreditLedgerView): CreditLedgerView {
 	};
 }
 
-export function createReservationLedger(
-	initialLedgerView: CreditLedgerView | JsonValue,
-) {
+export function createReservationLedger(initialLedgerView) {
 	let current = parseCreditLedgerView(initialLedgerView);
 	const eventLog: DispatchFact[] = [];
 
-	function releaseReservation({
-		reservationId,
-		reason,
-		eventType,
-	}: {
-		readonly reservationId: string;
-		readonly reason: string;
-		readonly eventType: string;
-	}) {
+	function releaseReservation({ reservationId, reason, eventType }) {
 		const next = clone(current);
 		const reservation = findReservation(next, reservationId);
 		if (reservation?.status !== "pending") {
@@ -509,7 +364,7 @@ export function createReservationLedger(
 				reservation.units,
 			);
 		}
-		const committedSeq = next.seq + 1;
+		const committedSeq = advanceLedgerSequence(next.seq);
 		reservation.status =
 			eventType === DISPATCH_EVENTS.ReservationExpired ? "expired" : "released";
 		reservation.releaseReason = reason;
@@ -540,9 +395,8 @@ export function createReservationLedger(
 		events() {
 			return clone(eventLog);
 		},
-		reserve(request: ReserveRequest) {
-			if (!isJsonObject(request))
-				throw new TypeError("request must be an object");
+		reserve(request) {
+			assertObject(request, "request");
 			const providerId = requireString(
 				request.providerId,
 				"request.providerId",
@@ -667,13 +521,9 @@ export function createReservationLedger(
 			const account = findLedgerAccount(next, providerId, dimension);
 			const priced = rankCreditCandidate({
 				candidate: {
-					category: "reservation",
-					definitionId: providerId,
 					providerId,
 					dimension,
 					listUnitCost: unitCost,
-					registered: true,
-					source: {},
 					switchingCost,
 				},
 				ledgerView: current,
@@ -771,7 +621,7 @@ export function createReservationLedger(
 				account.reservedCost = totalHeld;
 				account.reservedUnits = totalUnits;
 			}
-			const committedSeq = next.seq + 1;
+			const committedSeq = advanceLedgerSequence(next.seq);
 			const reservation: DispatchReservation = {
 				reservationId,
 				providerId,
@@ -823,9 +673,8 @@ export function createReservationLedger(
 				ledgerView: clone(current),
 			};
 		},
-		start(request: StartRequest) {
-			if (!isJsonObject(request))
-				throw new TypeError("request must be an object");
+		start(request) {
+			assertObject(request, "request");
 			const reservationId = requireString(
 				request.reservationId,
 				"request.reservationId",
@@ -872,11 +721,9 @@ export function createReservationLedger(
 				};
 			const next = clone(current);
 			const started = findReservation(next, reservationId);
-			if (!started)
-				throw new TypeError("reservation disappeared from snapshot");
 			started.status = "running";
-			started.startedSeq = next.seq + 1;
-			next.seq += 1;
+			started.startedSeq = advanceLedgerSequence(next.seq);
+			next.seq = started.startedSeq;
 			current = next;
 			eventLog.push(
 				reservationFact(DISPATCH_EVENTS.ReservationStarted, started, {
@@ -890,9 +737,8 @@ export function createReservationLedger(
 				ledgerView: clone(current),
 			};
 		},
-		confirm(request: ConfirmRequest) {
-			if (!isJsonObject(request))
-				throw new TypeError("request must be an object");
+		confirm(request) {
+			assertObject(request, "request");
 			const reservationId = requireString(
 				request.reservationId,
 				"request.reservationId",
@@ -936,7 +782,7 @@ export function createReservationLedger(
 					ledgerView: clone(current),
 				};
 
-			const committedSeq = next.seq + 1;
+			const committedSeq = advanceLedgerSequence(next.seq);
 			const actualCost = nonNegativeNumber(
 				request.actualCost,
 				"request.actualCost",
@@ -988,9 +834,7 @@ export function createReservationLedger(
 			eventLog.push(
 				reservationFact(DISPATCH_EVENTS.ReservationConfirmed, reservation, {
 					ledgerSeq: current.seq,
-					...(reservation.providerUsageSeq === undefined
-						? undefined
-						: { providerUsageSeq: reservation.providerUsageSeq }),
+					providerUsageSeq: reservation.providerUsageSeq,
 				}),
 			);
 
@@ -1010,9 +854,8 @@ export function createReservationLedger(
 				ledgerView: clone(current),
 			};
 		},
-		release(request: ReleaseRequest) {
-			if (!isJsonObject(request))
-				throw new TypeError("request must be an object");
+		release(request) {
+			assertObject(request, "request");
 			const reservationId = requireString(
 				request.reservationId,
 				"request.reservationId",
@@ -1027,19 +870,13 @@ export function createReservationLedger(
 				eventType: DISPATCH_EVENTS.ReservationReleased,
 			});
 		},
-		expire(request: ExpireRequest) {
-			if (!isJsonObject(request))
-				throw new TypeError("request must be an object");
+		expire(request) {
+			assertObject(request, "request");
 			const now = requireInstant(request.now, "request.now");
 			if (current.asOf && Date.parse(now) < Date.parse(current.asOf))
 				throw new TypeError("request.now must not precede ledger.asOf");
-			if (!current.asOf || Date.parse(now) > Date.parse(current.asOf)) {
-				current = { ...current, asOf: now, seq: current.seq + 1 };
-				eventLog.push({
-					type: DISPATCH_EVENTS.LedgerTimeAdvanced,
-					data: { asOf: now, ledgerSeq: current.seq },
-				});
-			}
+			const advancesTime =
+				!current.asOf || Date.parse(now) > Date.parse(current.asOf);
 			const expiredIds = (current.reservations ?? [])
 				.filter((reservation) => reservation.status === "pending")
 				.filter(
@@ -1048,6 +885,21 @@ export function createReservationLedger(
 						Date.parse(reservation.expiresAt) <= Date.parse(now),
 				)
 				.map((reservation) => reservation.reservationId);
+			advanceLedgerSequence(
+				current.seq,
+				expiredIds.length + (advancesTime ? 1 : 0),
+			);
+			if (advancesTime) {
+				current = {
+					...current,
+					asOf: now,
+					seq: advanceLedgerSequence(current.seq),
+				};
+				eventLog.push({
+					type: DISPATCH_EVENTS.LedgerTimeAdvanced,
+					data: { asOf: now, ledgerSeq: current.seq },
+				});
+			}
 			const releases = expiredIds.map((reservationId) =>
 				releaseReservation({
 					reservationId,
@@ -1067,21 +919,18 @@ export function createReservationLedger(
 
 export type ReservationLedger = ReturnType<typeof createReservationLedger>;
 
-export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
-	if (!isJsonObject(request)) throw new TypeError("request must be an object");
-	if (!isReservationLedger(request.reservationLedger)) {
+export function decideAndReserveDispatch(request) {
+	assertObject(request, "request");
+	const reservationLedger = request.reservationLedger;
+	if (
+		!reservationLedger ||
+		!(reservationLedger.snapshot instanceof Function) ||
+		!(reservationLedger.reserve instanceof Function)
+	) {
 		throw new TypeError(
 			"request.reservationLedger must be a reservation ledger",
 		);
 	}
-	const reservationLedger = request.reservationLedger;
-	const objective = requireObjective(request.objective ?? "min-cost");
-	const dispatchId = requireString(request.dispatchId, "request.dispatchId");
-	const reservationId =
-		request.reservationId === undefined
-			? `reserve-${dispatchId}`
-			: requireString(request.reservationId, "request.reservationId");
-	const units = requirePositiveNumber(request.units ?? 1, "request.units");
 
 	const maxAttempts = requirePositiveInteger(
 		request.maxAttempts ?? 3,
@@ -1090,9 +939,9 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 	const registry = parseRegistry(request.registry);
 	const requestHash = stableHash({
 		category: requireCategory(request.category),
-		dispatchId,
-		objective,
-		units,
+		dispatchId: requireString(request.dispatchId, "request.dispatchId"),
+		objective: requireObjective(request.objective ?? "maximize-credits"),
+		units: requirePositiveNumber(request.units ?? 1, "request.units"),
 		estimatedCost: nonNegativeNumber(
 			request.estimatedCost,
 			"request.estimatedCost",
@@ -1107,14 +956,30 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 		providers: registry.records.map((record) => record.source),
 	});
 	const existingSnapshot = reservationLedger.snapshot();
-	const existing = findReservation(existingSnapshot, reservationId);
+	if (
+		(existingSnapshot.reservations ?? []).some(
+			(reservation) =>
+				reservation.status !== "released" &&
+				reservation.status !== "expired" &&
+				reservation.decisionInputJson !== undefined &&
+				!reservationMatchesReplay(reservation),
+		)
+	)
+		return failedDecision({
+			objective: request.objective ?? "maximize-credits",
+			reason: "ledger-reconciliation-required",
+		});
+	const existing = findReservation(
+		existingSnapshot,
+		request.reservationId ?? `reserve-${request.dispatchId}`,
+	);
 	if (existing) {
 		if (
 			existing.dispatchRequestHash !== requestHash ||
 			!existing.decisionInputJson
 		)
 			return failedDecision({
-				objective,
+				objective: request.objective ?? "maximize-credits",
 				reason: "reservation-id-conflict",
 			});
 		if (
@@ -1124,12 +989,22 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 				Date.parse(existing.expiresAt) <= Date.parse(existingSnapshot.asOf))
 		)
 			return failedDecision({
-				objective,
+				objective: request.objective ?? "maximize-credits",
 				reason: "reservation-terminal-or-expired",
 			});
 		const decision = replayDispatchDecision(
-			parseJsonObject(existing.decisionInputJson),
+			JSON.parse(existing.decisionInputJson),
 		);
+		if (
+			!decision.ok ||
+			!optionalNonNegativeNumber(existing.reservedCost) ||
+			existing.reservedCost <
+				nonNegativeNumber(request.estimatedCost, "request.estimatedCost", 0)
+		)
+			return failedDecision({
+				objective: request.objective ?? "maximize-credits",
+				reason: "reservation-replay-scope-or-cost-conflict",
+			});
 		return {
 			...decision,
 			reservation: {
@@ -1156,11 +1031,11 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 	}[] = [];
 
 	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-		const decision = decideDispatchInput({
+		const decision = decideDispatch({
 			...request,
 			registry,
 			ledgerView,
-			reservationId,
+			reservationId: request.reservationId ?? `reserve-${request.dispatchId}`,
 		});
 		if (!decision.ok) {
 			return {
@@ -1169,15 +1044,27 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 			};
 		}
 
-		const selectedRecord = registry.records.find(
-			(record) => record.providerId === decision.selectedProvider,
-		);
+		const selectedCategory = decision.dispatchEvent.data.category;
+		const selectedRecord = registry.byCategory
+			.get(selectedCategory)
+			?.find(
+				(record) =>
+					record.category === selectedCategory &&
+					record.providerId === decision.selectedProvider &&
+					record.registered,
+			);
+		if (!selectedRecord)
+			return {
+				...failedDecision({
+					objective: decision.objective,
+					reason: "selected provider missing from dispatch category",
+				}),
+				attempts,
+			};
 		const selectedCost = decision.ranking.find(
 			(candidate) => candidate.providerId === decision.selectedProvider,
 		);
-		const dimension =
-			selectedRecord?.dimension ??
-			CATEGORY_DIMENSIONS[decision.dispatchEvent.data.category];
+		const dimension = selectedRecord.dimension;
 		const accountPrice = findLedgerAccount(
 			ledgerView,
 			decision.selectedProvider,
@@ -1186,21 +1073,15 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 		const reservation = reservationLedger.reserve({
 			providerId: decision.selectedProvider,
 			dimension,
-			units,
+			units: request.units ?? 1,
 			expectedSeq: ledgerView.seq,
 			reservationId: decision.dispatchEvent.data.ledgerInput.reservationId,
-			...(request.reservationExpiresAt === undefined
-				? undefined
-				: { expiresAt: request.reservationExpiresAt }),
-			...(optionalNonNegativeNumber(accountPrice)
-				? { unitCost: accountPrice }
-				: selectedRecord?.listUnitCost === undefined
-					? undefined
-					: { unitCost: selectedRecord.listUnitCost }),
+			expiresAt: request.reservationExpiresAt,
+			unitCost: optionalNonNegativeNumber(accountPrice)
+				? accountPrice
+				: selectedRecord.listUnitCost,
 			switchingCost: selectedCost?.switchingCost ?? 0,
-			...(request.estimatedCost === undefined
-				? undefined
-				: { estimatedCost: request.estimatedCost }),
+			estimatedCost: request.estimatedCost,
 			dispatchRequestHash: requestHash,
 			decisionInputJson: JSON.stringify(decision.replayInput),
 		});
@@ -1209,8 +1090,7 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 			status: reservation.status,
 			selectedProvider: decision.selectedProvider,
 			expectedSeq: ledgerView.seq,
-			actualSeq:
-				reservation.actualSeq ?? reservation.committedSeq ?? ledgerView.seq,
+			actualSeq: reservation.actualSeq ?? reservation.committedSeq,
 		});
 
 		if (reservation.ok) {
@@ -1235,51 +1115,62 @@ export function decideAndReserveDispatch(request: DispatchAndReserveRequest) {
 
 	return {
 		ok: false as const,
-		schema: CREDIT_DISPATCH_SCHEMA,
-		objective,
+		schema: DISPATCHER_SCHEMA_VERSION,
+		objective: request.objective ?? "maximize-credits",
 		reason: `reservation CAS failed after ${maxAttempts} attempts`,
 		ranking: [],
 		attempts,
 	};
 }
 
-export function replayDispatchDecision(
-	replayInput: DispatchReplayInput | JsonObject,
-) {
-	const parsed = cloneAsJson(replayInput);
-	if (!isJsonObject(parsed)) {
-		throw new TypeError("replayInput must be an object");
-	}
-	const incumbentProviderId =
-		parsed.incumbentProviderId === undefined
-			? undefined
-			: requireString(
-					parsed.incumbentProviderId,
-					"replayInput.incumbentProviderId",
-				);
-	return decideDispatchInput({
-		category: requireCategory(parsed.category),
-		dispatchId: requireString(parsed.dispatchId, "replayInput.dispatchId"),
-		hysteresis: parseHysteresis(parsed.hysteresis),
-		...(incumbentProviderId === undefined
-			? undefined
-			: { incumbentProviderId }),
-		ledgerView: parseCreditLedgerView(parsed.ledgerView ?? null),
-		objective: requireObjective(parsed.objective),
-		registry: createDispatcherRegistry(
-			requireArray(parsed.candidates, "replayInput.candidates"),
-		),
-		reservationId: requireString(
-			parsed.reservationId,
-			"replayInput.reservationId",
-		),
-		units: requirePositiveNumber(parsed.units, "replayInput.units"),
-	});
+export function replayDispatchDecision(replayInput) {
+	assertObject(replayInput, "replayInput");
+	const orderingVersion =
+		replayInput.orderingVersion === undefined
+			? "legacy-locale"
+			: replayInput.orderingVersion;
+	if (orderingVersion !== "code-unit-v1" && orderingVersion !== "legacy-locale")
+		throw new TypeError("unknown replay ordering version");
+	return decideDispatchWithOrdering(
+		{
+			...clone(replayInput),
+			registry: createDispatcherRegistry(replayInput.candidates ?? []),
+		},
+		orderingVersion,
+	);
 }
 
-export function decidePlacement(request: PlacementRequest) {
-	if (!isJsonObject(request)) throw new TypeError("request must be an object");
-	const objective = requireObjective(request.objective ?? "min-cost");
+function reservationMatchesReplay(reservation: DispatchReservation): boolean {
+	try {
+		const decision = replayDispatchDecision(
+			JSON.parse(reservation.decisionInputJson ?? ""),
+		);
+		if (!decision.ok) return false;
+		const selected = decision.ranking.find(
+			(candidate) => candidate.providerId === decision.selectedProvider,
+		);
+		const estimate = reservation.estimatedCost ?? 0;
+		return (
+			selected !== undefined &&
+			decision.selectedProvider === reservation.providerId &&
+			selected.dimension === reservation.dimension &&
+			decision.replayInput.units === reservation.units &&
+			decision.dispatchEvent.data.ledgerInput.reservationId ===
+				reservation.reservationId &&
+			decision.dispatchEvent.data.ledgerInput.seq === reservation.expectedSeq &&
+			optionalNonNegativeNumber(reservation.reservedCost) &&
+			optionalNonNegativeNumber(estimate) &&
+			reservation.reservedCost >= selected.totalCost &&
+			reservation.reservedCost >= estimate
+		);
+	} catch {
+		return false;
+	}
+}
+
+export function decidePlacement(request) {
+	assertObject(request, "request");
+	const objective = requireObjective(request.objective ?? "maximize-credits");
 	const resourceId = requireString(request.resourceId, "request.resourceId");
 	const resourceType = requireString(
 		request.resourceType,
@@ -1288,11 +1179,8 @@ export function decidePlacement(request: PlacementRequest) {
 	const units = requirePositiveNumber(request.units ?? 1, "request.units");
 	const ledgerView = parseCreditLedgerView(request.ledgerView);
 	const rejectedCandidates: { definitionId: string; reason: string }[] = [];
-	const candidates: ParsedCandidate[] = [];
+	const candidates = [];
 
-	if (request.candidates !== undefined && !Array.isArray(request.candidates)) {
-		throw new TypeError("request.candidates must be an array");
-	}
 	for (const candidate of request.candidates ?? []) {
 		const parsed = parsePlacementCandidate(candidate);
 		if (!parsed.registered) {
@@ -1323,16 +1211,8 @@ export function decidePlacement(request: PlacementRequest) {
 	const ranked = rankCreditCandidates({
 		candidates,
 		ledgerView,
-		objective,
 		units,
-		...(request.incumbentProviderId === undefined
-			? undefined
-			: {
-					incumbentProviderId: requireString(
-						request.incumbentProviderId,
-						"request.incumbentProviderId",
-					),
-				}),
+		incumbentProviderId: request.incumbentProviderId,
 	});
 	const winner = ranked.find((candidate) => candidate.eligible);
 	if (!winner)
@@ -1369,7 +1249,7 @@ export function decidePlacement(request: PlacementRequest) {
 
 	return {
 		ok: true as const,
-		schema: CREDIT_DISPATCH_SCHEMA,
+		schema: DISPATCHER_SCHEMA_VERSION,
 		objective,
 		winner: winner.definitionId,
 		selectedProvider: winner.providerId,
@@ -1383,37 +1263,30 @@ export function decidePlacement(request: PlacementRequest) {
 function rankCreditCandidates({
 	candidates,
 	ledgerView,
-	objective,
 	units,
+	compareStrings = compareCodeUnits,
+	minimumReservationCost = 0,
 	incumbentProviderId,
-}: {
-	readonly candidates: readonly ParsedCandidate[];
-	readonly ledgerView: CreditLedgerView;
-	readonly objective: DispatchObjective;
-	readonly units: number;
-	readonly incumbentProviderId?: string | undefined;
-}): RankedCandidateWithRank[] {
+}) {
 	return candidates
 		.map((candidate) =>
 			rankCreditCandidate({
 				candidate,
 				ledgerView,
-				objective,
 				units,
+				minimumReservationCost,
+				compareStrings,
 				incumbentProviderId,
 			}),
 		)
-		.sort(compareRankedCandidates)
+		.sort((left, right) => compareRankedCandidates(left, right, compareStrings))
 		.map((candidate, index) => ({
 			...candidate,
 			rank: index + 1,
 		}));
 }
 
-function applyHysteresis(
-	ranked: readonly RankedCandidateWithRank[],
-	hysteresis: HysteresisInput | null,
-) {
+function applyHysteresis(ranked, hysteresis: HysteresisInput | null) {
 	if (!hysteresis) {
 		return {
 			ranked,
@@ -1530,20 +1403,13 @@ function applyHysteresis(
 function rankCreditCandidate({
 	candidate,
 	ledgerView,
-	objective = "min-cost",
 	units,
 	incumbentProviderId,
 	chargeSwitching = false,
 	unitCostOverride = undefined,
-}: {
-	readonly candidate: ParsedCandidate;
-	readonly ledgerView: CreditLedgerView;
-	readonly objective?: DispatchObjective;
-	readonly units: number;
-	readonly incumbentProviderId?: string | undefined;
-	readonly unitCostOverride?: number | undefined;
-	readonly chargeSwitching?: boolean;
-}): RankedCandidate {
+	minimumReservationCost = 0,
+	compareStrings = compareCodeUnits,
+}) {
 	const account = findLedgerAccount(
 		ledgerView,
 		candidate.providerId,
@@ -1572,23 +1438,20 @@ function rankCreditCandidate({
 		optionalNonNegativeNumber(account.budgetCap) &&
 		optionalNonNegativeNumber(account.spendToDate ?? 0) &&
 		optionalNonNegativeNumber(account.reservedCost ?? 0)
-			? !chargeWithinBudget(
+			? !exposureWithinBudget(
 					units,
 					freeUnits,
 					listUnitCost,
 					switchingCost,
+					minimumReservationCost,
 					account.budgetCap,
 					account.spendToDate ?? 0,
 					account.reservedCost ?? 0,
 				)
-			: totalCost > credit.budgetHeadroom;
+			: Math.max(totalCost, minimumReservationCost) > credit.budgetHeadroom;
 	const hardBudgetInvalid =
-		account !== null &&
-		((account.budgetCap !== undefined && !credit.valid) ||
-			(account.spendToDate !== undefined &&
-				!optionalNonNegativeNumber(account.spendToDate)) ||
-			(account.reservedCost !== undefined &&
-				!optionalNonNegativeNumber(account.reservedCost)));
+		account?.budgetCap !== undefined &&
+		(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0));
 	const capacityExceeded =
 		account !== null &&
 		((account.rateHeadroom !== undefined &&
@@ -1606,15 +1469,10 @@ function rankCreditCandidate({
 				? "capacity-exceeded"
 				: undefined;
 	const effectiveMarginalCost = roundCost(totalCost / units);
-	const creditScore = -freeUnits;
-	const objectiveVector =
-		objective === "maximize-credits"
-			? [creditScore, totalCost]
-			: [totalCost, creditScore];
 	const freeButNotDepletable =
 		credit.valid && credit.freeHeadroom > 0 && freeUnits === 0;
 	const nextCreditExpiresAt = credit.valid
-		? nextCreditExpiry(account, ledgerView.asOf)
+		? nextCreditExpiry(account, ledgerView.asOf, compareStrings)
 		: null;
 	const concurrencyScore = Number.isFinite(credit.concurrencyHeadroom)
 		? credit.concurrencyHeadroom
@@ -1626,7 +1484,6 @@ function rankCreditCandidate({
 	const rationale = rationaleFor({
 		credit,
 		ledgerView,
-		objective,
 		freeUnits,
 		paidUnits,
 		switchingCost,
@@ -1648,12 +1505,11 @@ function rankCreditCandidate({
 		rejectionReason,
 		creditFacts: credit.status,
 		nextCreditExpiresAt,
-		objectiveScore:
-			objective === "maximize-credits" ? creditScore : effectiveMarginalCost,
+		objectiveScore: effectiveMarginalCost,
 		rationale,
 		decisionVector: [
 			eligible ? 0 : 1,
-			...objectiveVector,
+			totalCost,
 			expiryScore,
 			-concurrencyScore,
 			listUnitCost,
@@ -1661,7 +1517,7 @@ function rankCreditCandidate({
 		],
 		rankVector: [
 			eligible ? 0 : 1,
-			...objectiveVector,
+			totalCost,
 			expiryScore,
 			-concurrencyScore,
 			listUnitCost,
@@ -1674,11 +1530,12 @@ function rankCreditCandidate({
 
 function creditFactsFor(
 	account: CreditAccount | null,
-	candidate: ParsedCandidate,
+	candidate,
 	asOf?: string,
-): CreditSummary {
+) {
 	if (!account) {
 		return {
+			// SAFETY: assertion required at this I/O or test boundary.
 			status: "missing" as CreditFacts,
 			valid: false,
 			listUnitCost: nonNegativeNumber(
@@ -1718,6 +1575,7 @@ function creditFactsFor(
 
 	if (!valid) {
 		return {
+			// SAFETY: assertion required at this I/O or test boundary.
 			status: "invalid" as CreditFacts,
 			valid: false,
 			listUnitCost: nonNegativeNumber(
@@ -1733,6 +1591,7 @@ function creditFactsFor(
 	}
 
 	return {
+		// SAFETY: assertion required at this I/O or test boundary.
 		status: (freeHeadroom > 0 ? "present" : "present-empty") as CreditFacts,
 		valid: true,
 		listUnitCost,
@@ -1758,6 +1617,7 @@ function freeHeadroomFor(account: CreditAccount, asOf?: string) {
 		allGrants.push(credit.freeHeadroom);
 		if (grantIsLive(credit, asOf)) liveGrants.push(credit.freeHeadroom);
 	}
+	// Account headroom is an aggregate cap; grants describe its composition.
 	return availableCredits(account.freeHeadroom, allGrants, liveGrants);
 }
 
@@ -1779,8 +1639,9 @@ function grantExpiry(credit: CreditGrant): string | undefined {
 
 function nextCreditExpiry(
 	account: CreditAccount | null,
-	asOf?: string,
-): string | null {
+	asOf: string | undefined,
+	compareStrings: (left: string, right: string) => number,
+) {
 	const expiries = (account?.credits ?? [])
 		.filter(
 			(credit) =>
@@ -1789,18 +1650,15 @@ function nextCreditExpiry(
 				grantIsLive(credit, asOf),
 		)
 		.map(grantExpiry)
-		.filter(
-			(value): value is string =>
-				isJsonString(value) && !Number.isNaN(Date.parse(value)),
-		)
+		.filter((value) => isJsonString(value) && !Number.isNaN(Date.parse(value)))
 		.sort(
 			(left, right) =>
-				Date.parse(left) - Date.parse(right) || left.localeCompare(right),
+				Date.parse(left) - Date.parse(right) || compareStrings(left, right),
 		);
 	return expiries[0] ?? null;
 }
 
-function budgetHeadroomFor(account: CreditAccount): number {
+function budgetHeadroomFor(account: CreditAccount) {
 	if (account.budgetCap === undefined && account.spendToDate === undefined) {
 		return LARGE_SCORE;
 	}
@@ -1820,9 +1678,10 @@ function budgetHeadroomFor(account: CreditAccount): number {
 }
 
 function compareRankedCandidates(
-	left: RankedCandidate,
-	right: RankedCandidate,
-): number {
+	left,
+	right,
+	compareStrings: (left: string, right: string) => number,
+) {
 	for (
 		let index = 0;
 		index < Math.max(left.rankVector.length, right.rankVector.length);
@@ -1831,7 +1690,8 @@ function compareRankedCandidates(
 		const leftValue = left.rankVector[index];
 		const rightValue = right.rankVector[index];
 		if (isJsonString(leftValue) || isJsonString(rightValue)) {
-			const comparison = String(leftValue ?? "").localeCompare(
+			const comparison = compareStrings(
+				String(leftValue ?? ""),
 				String(rightValue ?? ""),
 			);
 			if (comparison !== 0) return comparison;
@@ -1843,10 +1703,7 @@ function compareRankedCandidates(
 	return 0;
 }
 
-function compareDecisionVector(
-	left: RankedCandidate,
-	right: RankedCandidate,
-): number {
+function compareDecisionVector(left, right) {
 	for (
 		let index = 0;
 		index < Math.max(left.decisionVector.length, right.decisionVector.length);
@@ -1860,7 +1717,7 @@ function compareDecisionVector(
 	return 0;
 }
 
-function publicDispatchRanking(ranked: readonly RankedCandidateWithRank[]) {
+function publicDispatchRanking(ranked) {
 	return ranked.map((candidate) => ({
 		providerId: candidate.providerId,
 		category: candidate.category,
@@ -1881,7 +1738,7 @@ function publicDispatchRanking(ranked: readonly RankedCandidateWithRank[]) {
 	}));
 }
 
-function publicPlacementRanking(ranked: readonly RankedCandidateWithRank[]) {
+function publicPlacementRanking(ranked) {
 	return ranked.map((candidate) => ({
 		definitionId: candidate.definitionId,
 		region: candidate.region,
@@ -1896,24 +1753,14 @@ function publicPlacementRanking(ranked: readonly RankedCandidateWithRank[]) {
 function rationaleFor({
 	credit,
 	ledgerView,
-	objective,
 	freeUnits,
 	paidUnits,
 	switchingCost,
 	freeButNotDepletable,
 	budgetExceeded,
-}: {
-	readonly credit: CreditSummary;
-	readonly ledgerView: CreditLedgerView;
-	readonly objective: DispatchObjective;
-	readonly freeUnits: number;
-	readonly paidUnits: number;
-	readonly switchingCost: number;
-	readonly freeButNotDepletable: boolean;
-	readonly budgetExceeded: boolean;
-}): string {
+}) {
 	const parts = [
-		`objective=${objective}`,
+		"objective=maximize-credits",
 		`ledgerSeq=${ledgerView.seq}`,
 		`credit-facts=${credit.status}`,
 		`freeUnits=${freeUnits}`,
@@ -1942,14 +1789,12 @@ function findLedgerAccount(
 	);
 }
 
-function parseDispatchProvider(
-	provider: DispatchProviderInput | JsonValue,
-): ParsedCandidate {
-	const source = requireJsonObject(cloneAsJson(provider), "provider");
-	const category = requireCategory(source.category);
-	const id = requireString(source.id ?? source.providerId, "provider.id");
+function parseDispatchProvider(provider) {
+	assertObject(provider, "provider");
+	const category = requireCategory(provider.category);
+	const id = requireString(provider.id ?? provider.providerId, "provider.id");
 	const providerId = requireString(
-		source.providerId ?? id,
+		provider.providerId ?? id,
 		"provider.providerId",
 	);
 	return {
@@ -1957,75 +1802,70 @@ function parseDispatchProvider(
 		providerId,
 		definitionId: id,
 		category,
-		registered: source.registered !== false,
-		dimension: requireString(
-			source.dimension ?? CATEGORY_DIMENSIONS[category],
-			"provider.dimension",
-		),
+		registered: provider.registered !== false,
+		dimension: provider.dimension ?? CATEGORY_DIMENSIONS[category],
 		listUnitCost: nonNegativeNumber(
-			source.listUnitCost,
+			provider.listUnitCost,
 			"provider.listUnitCost",
 			0,
 		),
 		switchingCost: nonNegativeNumber(
-			source.switchingCost ?? 0,
+			provider.switchingCost ?? 0,
 			"provider.switchingCost",
 			0,
 		),
-		source,
+		source: clone(provider),
 	};
 }
 
-function parsePlacementCandidate(
-	candidate: PlacementCandidateInput | JsonValue,
-): ParsedCandidate {
-	const source = requireJsonObject(cloneAsJson(candidate), "candidate");
+function parsePlacementCandidate(candidate) {
+	assertObject(candidate, "candidate");
 	const definitionId = requireString(
-		source.definitionId ?? source.id,
+		candidate.definitionId ?? candidate.id,
 		"candidate.definitionId",
 	);
 	const providerId = requireString(
-		source.providerId ?? definitionId,
+		candidate.providerId ?? definitionId,
 		"candidate.providerId",
 	);
 	return {
 		definitionId,
 		providerId,
 		category: "placement",
-		registered: source.registered !== false,
-		resourceType: requireString(source.resourceType, "candidate.resourceType"),
-		dimension: requireString(source.dimension, "candidate.dimension"),
+		registered: candidate.registered !== false,
+		resourceType: requireString(
+			candidate.resourceType,
+			"candidate.resourceType",
+		),
+		dimension: requireString(candidate.dimension, "candidate.dimension"),
 		listUnitCost: nonNegativeNumber(
-			source.listUnitCost,
+			candidate.listUnitCost,
 			"candidate.listUnitCost",
 			0,
 		),
-		specificity: isJsonNumber(source.specificity) ? source.specificity : 0,
-		priority:
-			isJsonNumber(source.priority) && Number.isInteger(source.priority)
-				? source.priority
-				: 0,
+		specificity: Number.isFinite(candidate.specificity)
+			? candidate.specificity
+			: 0,
+		priority: Number.isInteger(candidate.priority) ? candidate.priority : 0,
 		region:
-			isJsonString(source.region) && source.region.length > 0
-				? source.region
+			isJsonString(candidate.region) && candidate.region.length > 0
+				? candidate.region
 				: undefined,
 		switchingCost: nonNegativeNumber(
-			source.switchingCost ?? 0,
+			candidate.switchingCost ?? 0,
 			"candidate.switchingCost",
 			0,
 		),
-		source,
+		source: clone(candidate),
 	};
 }
 
-function parseRegistry(
-	registry: DispatcherRegistry | (DispatchProviderInput | JsonValue)[],
-): DispatcherRegistry {
+function parseRegistry(registry) {
 	if (Array.isArray(registry)) {
 		return createDispatcherRegistry(registry);
 	}
 	if (
-		!isJsonObject(registry) ||
+		!registry ||
 		!(registry.byCategory instanceof Map) ||
 		!Array.isArray(registry.records)
 	) {
@@ -2034,65 +1874,91 @@ function parseRegistry(
 	return registry;
 }
 
-export function parseCreditLedgerView(
-	ledgerInput: CreditLedgerView | JsonValue,
-): CreditLedgerView {
-	const ledgerView = cloneAsJson(ledgerInput);
-	if (!isJsonObject(ledgerView)) {
+// Parse-don't-validate boundary: an untrusted CreditLedgerView snapshot is
+// parsed once here; every ranking/reservation path receives the derived view.
+export function parseCreditLedgerView(ledgerView): CreditLedgerView {
+	if (!ledgerView || !isJsonObject(ledgerView) || Array.isArray(ledgerView)) {
 		throw new TypeError("ledgerView must be a CreditLedgerView snapshot");
 	}
 	if (ledgerView.view !== "CreditLedgerView") {
 		throw new TypeError("ledgerView.view must be CreditLedgerView");
 	}
-	const seq = requireNonNegativeInteger(ledgerView.seq, "ledgerView.seq");
+	requireNonNegativeInteger(ledgerView.seq, "ledgerView.seq");
 	if (!Array.isArray(ledgerView.accounts)) {
 		throw new TypeError("ledgerView.accounts must be an array");
 	}
-	const accounts = ledgerView.accounts.map(parseCreditAccount);
-	const reservations = requireArray(
-		ledgerView.reservations,
-		"ledgerView.reservations",
-	).map(parseDispatchReservation);
-	const digest = optionalString(ledgerView.digest, "ledgerView.digest");
-	const balanceHash = optionalString(
-		ledgerView.balanceHash,
-		"ledgerView.balanceHash",
-	);
-	const asOf =
-		ledgerView.asOf === undefined
-			? undefined
-			: requireInstant(ledgerView.asOf, "ledgerView.asOf");
+	if (ledgerView.asOf !== undefined)
+		requireInstant(ledgerView.asOf, "ledgerView.asOf");
 	const accountKeys = new Set<string>();
-	for (const account of accounts) {
-		const key = canonicalJson([account.providerId, account.dimension]);
+	for (const account of ledgerView.accounts) {
+		assertObject(account, "ledgerView.account");
+		const key = canonicalJson([
+			requireString(account.providerId, "account.providerId"),
+			requireString(account.dimension, "account.dimension"),
+		]);
 		if (accountKeys.has(key)) throw new TypeError("duplicate ledger account");
 		accountKeys.add(key);
 		const grantIds = new Set<string>();
 		for (const grant of account.credits ?? []) {
-			if (grantIds.has(grant.creditId)) {
-				throw new TypeError("duplicate credit grant id");
-			}
-			grantIds.add(grant.creditId);
+			assertObject(grant, "account.credit");
+			const id = requireString(grant.creditId, "credit.creditId");
+			if (grantIds.has(id)) throw new TypeError("duplicate credit grant id");
+			grantIds.add(id);
+			if (grant.expiresAt !== undefined)
+				requireInstant(grant.expiresAt, "credit.expiresAt");
+			if (grant.windowEnd !== undefined)
+				requireInstant(grant.windowEnd, "credit.windowEnd");
 		}
 	}
 	const reservationIds = new Set<string>();
-	for (const reservation of reservations) {
-		if (reservationIds.has(reservation.reservationId)) {
-			throw new TypeError("duplicate reservation id");
+	for (const reservation of ledgerView.reservations ?? []) {
+		assertObject(reservation, "ledgerView.reservation");
+		const id = requireString(
+			reservation.reservationId,
+			"reservation.reservationId",
+		);
+		if (reservationIds.has(id)) throw new TypeError("duplicate reservation id");
+		reservationIds.add(id);
+		requireString(reservation.providerId, "reservation.providerId");
+		requireString(reservation.dimension, "reservation.dimension");
+		requirePositiveNumber(reservation.units, "reservation.units");
+		requireNonNegativeInteger(
+			reservation.expectedSeq,
+			"reservation.expectedSeq",
+		);
+		requireNonNegativeInteger(
+			reservation.committedSeq,
+			"reservation.committedSeq",
+		);
+		for (const key of [
+			"startedSeq",
+			"confirmedSeq",
+			"releasedSeq",
+			"providerUsageSeq",
+		]) {
+			if (reservation[key] !== undefined)
+				requireNonNegativeInteger(reservation[key], `reservation.${key}`);
 		}
-		reservationIds.add(reservation.reservationId);
+		if (
+			!["pending", "running", "confirmed", "released", "expired"].includes(
+				reservation.status,
+			)
+		)
+			throw new TypeError("invalid reservation status");
+		if (reservation.consumption !== undefined)
+			validateReservationConsumption(
+				reservation.consumption,
+				reservation.units,
+			);
+		if (reservation.reservedCost !== undefined)
+			nonNegativeNumber(
+				reservation.reservedCost,
+				"reservation.reservedCost",
+				0,
+			);
 	}
-	const parsed: CreditLedgerView = {
-		view: "CreditLedgerView",
-		seq,
-		accounts,
-		...(digest === undefined ? undefined : { digest }),
-		...(balanceHash === undefined ? undefined : { balanceHash }),
-		...(asOf === undefined ? undefined : { asOf }),
-		...(ledgerView.reservations === undefined ? undefined : { reservations }),
-	};
-	for (const account of parsed.accounts) {
-		const holds = (parsed.reservations ?? []).filter(
+	for (const account of ledgerView.accounts) {
+		const holds = (ledgerView.reservations ?? []).filter(
 			(reservation) =>
 				reservation.providerId === account.providerId &&
 				reservation.dimension === account.dimension &&
@@ -2117,214 +1983,93 @@ export function parseCreditLedgerView(
 				"account reservedCost omits outstanding reservation exposure",
 			);
 	}
-	return parsed;
+	return clone(ledgerView);
 }
 
-function parseCreditAccount(value: JsonValue): CreditAccount {
-	const account = requireJsonObject(value, "ledgerView.account");
-	const currency = optionalString(account.currency, "account.currency");
-	const credits = requireArray(account.credits, "account.credits").map(
-		parseCreditGrant,
-	);
-	return {
-		providerId: requireString(account.providerId, "account.providerId"),
-		dimension: requireString(account.dimension, "account.dimension"),
-		...(currency === undefined ? undefined : { currency }),
-		...optionalNumberProperty("listUnitCost", account.listUnitCost),
-		...optionalNumberProperty("freeHeadroom", account.freeHeadroom),
-		...optionalNumberProperty("rateHeadroom", account.rateHeadroom),
-		...optionalNumberProperty(
-			"concurrencyHeadroom",
-			account.concurrencyHeadroom,
-		),
-		...optionalNumberProperty("budgetCap", account.budgetCap),
-		...optionalNumberProperty("spendToDate", account.spendToDate),
-		...optionalNumberProperty("reservedUnits", account.reservedUnits),
-		...optionalNumberProperty("reservedCost", account.reservedCost),
-		...(account.credits === undefined ? undefined : { credits }),
-	};
-}
-
-function parseCreditGrant(value: JsonValue): CreditGrant {
-	const grant = requireJsonObject(value, "account.credit");
-	const expiresAt =
-		grant.expiresAt === undefined
-			? undefined
-			: requireInstant(grant.expiresAt, "credit.expiresAt");
-	const windowEnd =
-		grant.windowEnd === undefined
-			? undefined
-			: requireInstant(grant.windowEnd, "credit.windowEnd");
-	return {
-		creditId: requireString(grant.creditId, "credit.creditId"),
-		freeHeadroom: numericFact(grant.freeHeadroom),
-		...(expiresAt === undefined ? undefined : { expiresAt }),
-		...(windowEnd === undefined ? undefined : { windowEnd }),
-	};
-}
-
-function parseDispatchReservation(value: JsonValue): DispatchReservation {
-	const reservation = requireJsonObject(value, "ledgerView.reservation");
-	const expiresAt = optionalInstant(
-		reservation.expiresAt,
-		"reservation.expiresAt",
-	);
-	const consumption =
-		reservation.consumption === undefined
-			? undefined
-			: parseReservedConsumption(reservation.consumption);
-	return {
-		reservationId: requireString(
-			reservation.reservationId,
-			"reservation.reservationId",
-		),
-		providerId: requireString(reservation.providerId, "reservation.providerId"),
-		dimension: requireString(reservation.dimension, "reservation.dimension"),
-		units: requirePositiveNumber(reservation.units, "reservation.units"),
-		expectedSeq: requireNonNegativeInteger(
-			reservation.expectedSeq,
-			"reservation.expectedSeq",
-		),
-		committedSeq: requireNonNegativeInteger(
-			reservation.committedSeq,
-			"reservation.committedSeq",
-		),
-		status: requireReservationStatus(reservation.status),
-		...(reservation.expiresAt === undefined ? undefined : { expiresAt }),
-		...optionalNumberProperty("confirmedSeq", reservation.confirmedSeq),
-		...optionalNumberProperty("releasedSeq", reservation.releasedSeq),
-		...optionalStringProperty("releaseReason", reservation.releaseReason),
-		...optionalNumberProperty("providerUsageSeq", reservation.providerUsageSeq),
-		...optionalNumberProperty("startedSeq", reservation.startedSeq),
-		...(consumption === undefined ? undefined : { consumption }),
-		...optionalNumberProperty("reservedCost", reservation.reservedCost),
-		...optionalNumberProperty("actualCost", reservation.actualCost),
-		...optionalStringProperty("commandHash", reservation.commandHash),
-		...optionalNumberProperty("unitCost", reservation.unitCost),
-		...optionalNumberProperty("switchingCost", reservation.switchingCost),
-		...optionalStringProperty(
-			"dispatchRequestHash",
-			reservation.dispatchRequestHash,
-		),
-		...optionalStringProperty(
-			"decisionInputJson",
-			reservation.decisionInputJson,
-		),
-		...optionalNumberProperty("estimatedCost", reservation.estimatedCost),
-		...optionalStringProperty("usageEvidenceRef", reservation.usageEvidenceRef),
-	};
-}
-
-function parseReservedConsumption(value: JsonValue): ReservedConsumption {
-	const consumption = requireJsonObject(value, "reservation.consumption");
-	const credits = requireArray(
-		consumption.credits,
-		"reservation.consumption.credits",
-	).map((entry) => {
-		const credit = requireJsonObject(entry, "reservation.consumption.credit");
-		return {
-			creditId: requireString(
-				credit.creditId,
-				"reservation.consumption.creditId",
-			),
-			units: requirePositiveNumber(
-				credit.units,
-				"reservation.consumption.units",
-			),
-		};
-	});
-	return {
-		freeHeadroom: nonNegativeNumber(
-			consumption.freeHeadroom,
-			"reservation.consumption.freeHeadroom",
-			0,
-		),
-		credits,
-		...optionalNumberProperty("rateUnits", consumption.rateUnits),
-		...optionalNumberProperty("concurrencySlots", consumption.concurrencySlots),
-	};
-}
-
-function numericFact(value: JsonValue | undefined): number {
-	return isJsonNumber(value) ? value : Number.NaN;
-}
-
-function optionalNumberProperty(
-	key: string,
-	value: JsonValue | undefined,
-): Readonly<Record<string, number>> | undefined {
-	return value === undefined ? undefined : { [key]: numericFact(value) };
-}
-
-function optionalStringProperty(
-	key: string,
-	value: JsonValue | undefined,
-): Readonly<Record<string, string>> | undefined {
-	return value === undefined ? undefined : { [key]: requireString(value, key) };
-}
-
-function optionalString(
-	value: JsonValue | undefined,
-	fieldName: string,
-): string | undefined {
-	return value === undefined ? undefined : requireString(value, fieldName);
-}
-
-function requireReservationStatus(
-	value: JsonValue | undefined,
-): DispatchReservation["status"] {
-	if (
-		value === "pending" ||
-		value === "running" ||
-		value === "confirmed" ||
-		value === "released" ||
-		value === "expired"
-	) {
-		return value;
+function validateReservationConsumption(consumption, units: number): void {
+	assertObject(consumption, "reservation.consumption");
+	for (const key of ["freeHeadroom", "rateUnits"]) {
+		const amount = consumption[key];
+		if (
+			amount !== undefined &&
+			(!optionalNonNegativeNumber(amount) || amount > units)
+		)
+			throw new TypeError(
+				`reservation.consumption.${key} exceeds reserved units or is invalid`,
+			);
 	}
-	throw new TypeError("invalid reservation status");
+	if (
+		consumption.concurrencySlots !== undefined &&
+		(!Number.isInteger(consumption.concurrencySlots) ||
+			consumption.concurrencySlots < 0 ||
+			consumption.concurrencySlots > 1)
+	)
+		throw new TypeError(
+			"reservation.consumption.concurrencySlots must be zero or one",
+		);
+	if (consumption.credits === undefined) return;
+	if (!Array.isArray(consumption.credits))
+		throw new TypeError("reservation.consumption.credits must be an array");
+	const creditIds = new Set<string>();
+	let remaining = units;
+	for (const credit of consumption.credits) {
+		assertObject(credit, "reservation.consumption.credit");
+		const creditId = requireString(
+			credit.creditId,
+			"reservation.consumption.creditId",
+		);
+		if (creditIds.has(creditId))
+			throw new TypeError("duplicate reservation.consumption credit");
+		creditIds.add(creditId);
+		const used = requirePositiveNumber(
+			credit.units,
+			"reservation.consumption.credit units",
+		);
+		if (used > remaining)
+			throw new TypeError(
+				"reservation.consumption credits exceed reserved units",
+			);
+		remaining = subtractUpper(remaining, used);
+	}
 }
 
-function parseHysteresis(
-	hysteresis: HysteresisInput | JsonValue | undefined,
-): HysteresisInput | null {
+function parseHysteresis(hysteresis): HysteresisInput | null {
 	if (hysteresis === undefined || hysteresis === null) return null;
-	const value = requireJsonObject(
-		cloneAsJson(hysteresis),
-		"request.hysteresis",
-	);
-	const dwellWindow = requireString(
-		value.dwellWindow,
-		"request.hysteresis.dwellWindow",
-	);
-	dwellDurationMs(dwellWindow);
+	assertObject(hysteresis, "request.hysteresis");
+	dwellDurationMs(hysteresis.dwellWindow);
 	const observedAt = requireInstant(
-		value.observedAt,
+		hysteresis.observedAt,
 		"request.hysteresis.observedAt",
 	);
 	const savingsSince =
-		value.savingsSince === undefined
+		hysteresis.savingsSince === undefined
 			? undefined
-			: requireInstant(value.savingsSince, "request.hysteresis.savingsSince");
+			: requireInstant(
+					hysteresis.savingsSince,
+					"request.hysteresis.savingsSince",
+				);
 	if (savingsSince && Date.parse(savingsSince) > Date.parse(observedAt))
 		throw new TypeError("savingsSince must not follow observedAt");
 	const parsed: HysteresisInput = {
 		incumbentProviderId: requireString(
-			value.incumbentProviderId,
+			hysteresis.incumbentProviderId,
 			"request.hysteresis.incumbentProviderId",
 		),
 		minimumSavings: nonNegativeNumber(
-			value.minimumSavings ?? 0,
+			hysteresis.minimumSavings ?? 0,
 			"request.hysteresis.minimumSavings",
 			0,
 		),
-		dwellWindow,
+		dwellWindow: requireString(
+			hysteresis.dwellWindow,
+			"request.hysteresis.dwellWindow",
+		),
 		observedAt,
 	};
 	if (savingsSince) parsed.savingsSince = savingsSince;
-	if (value.challengerProviderId !== undefined)
+	if (hysteresis.challengerProviderId !== undefined)
 		parsed.challengerProviderId = requireString(
-			value.challengerProviderId,
+			hysteresis.challengerProviderId,
 			"request.hysteresis.challengerProviderId",
 		);
 	return parsed;
@@ -2396,7 +2141,7 @@ function consumeReservedFreeHeadroom(
 			(left, right) =>
 				Date.parse(grantExpiry(left) ?? "9999-12-31") -
 					Date.parse(grantExpiry(right) ?? "9999-12-31") ||
-				left.creditId.localeCompare(right.creditId),
+				compareCodeUnits(left.creditId, right.creditId),
 		);
 	for (const credit of ordered) {
 		if (!optionalNonNegativeNumber(credit?.freeHeadroom)) continue;
@@ -2440,21 +2185,10 @@ function restoreReservedFreeHeadroom(
 	}
 }
 
-function failedDecision({
-	objective,
-	reason,
-	rejectedCandidates = [],
-}: {
-	readonly objective: DispatchObjective;
-	readonly reason: string;
-	readonly rejectedCandidates?: readonly {
-		readonly definitionId: string;
-		readonly reason: string;
-	}[];
-}) {
+function failedDecision({ objective, reason, rejectedCandidates = [] }) {
 	return {
 		ok: false as const,
-		schema: CREDIT_DISPATCH_SCHEMA,
+		schema: DISPATCHER_SCHEMA_VERSION,
 		objective,
 		reason,
 		ranking: [],
@@ -2462,79 +2196,66 @@ function failedDecision({
 	};
 }
 
-function ledgerBalanceHash(ledgerView: CreditLedgerView): string {
+function ledgerBalanceHash(ledgerView: CreditLedgerView) {
 	return parseHashRef(
 		ledgerView.balanceHash ?? ledgerView.digest ?? stableHash(ledgerView),
 	);
 }
 
-function parseHashRef(value: string): string {
+function parseHashRef(value) {
 	if (isJsonString(value) && SHA256_REF.test(value)) return value;
 	if (isJsonString(value) && /^[a-f0-9]{64}$/.test(value))
 		return `sha256:${value}`;
 	return stableHash(value);
 }
 
-export function stableHash<T>(value: T): string {
+export function stableHash(value): string {
 	return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
 
-export function canonicalJson<T>(value: T): string {
-	return JSON.stringify(sortKeys(cloneAsJson(value))) ?? "null";
+export function canonicalJson(value): string {
+	return JSON.stringify(sortKeys(value));
 }
 
-function sortKeys(value: JsonValue): JsonValue {
+function sortKeys(value) {
 	if (Array.isArray(value)) return value.map(sortKeys);
-	if (!isJsonObject(value)) return value;
-	const sorted: JsonBag = {};
-	for (const key of Object.keys(value).sort()) {
-		const entry = value[key];
-		if (entry !== undefined) sorted[key] = sortKeys(entry);
-	}
-	return sorted;
-}
-
-function requireCategory(category: JsonValue | undefined): DispatchCategory {
-	if (
-		category === "runner" ||
-		category === "build-machine" ||
-		category === "traffic-backend"
-	) {
-		return category;
-	}
-	throw new TypeError(
-		"category must be runner, build-machine, or traffic-backend",
+	if (!value || !isJsonObject(value)) return value;
+	return Object.fromEntries(
+		Object.keys(value)
+			.sort()
+			.map((key) => [key, sortKeys(value[key])]),
 	);
 }
 
-function requireObjective(objective: JsonValue | undefined): DispatchObjective {
-	if (objective === "min-cost" || objective === "maximize-credits")
-		return objective;
-	throw new TypeError("objective must be min-cost or maximize-credits");
+function requireCategory(category): DispatchCategory {
+	if (!DISPATCH_CATEGORIES.has(category)) {
+		throw new TypeError(
+			"category must be runner, build-machine, or traffic-backend",
+		);
+	}
+	return category;
 }
 
-function requireString(
-	value: JsonValue | undefined,
-	fieldName: string,
-): string {
+function requireObjective(objective): DispatchObjective {
+	if (!OBJECTIVES.has(objective)) {
+		throw new TypeError("objective must be maximize-credits");
+	}
+	return objective;
+}
+
+function requireString(value, fieldName: string): string {
 	if (!isJsonString(value) || value.length === 0) {
 		throw new TypeError(`${fieldName} must be a non-empty string`);
 	}
 	return value;
 }
 
-function optionalInstant(
-	value: JsonValue | undefined,
-	fieldName: string,
-): string | null {
+function optionalInstant(value, fieldName: string): string | null {
 	if (value === undefined || value === null) return null;
 	return requireInstant(value, fieldName);
 }
 
-function requireInstant(
-	value: JsonValue | undefined,
-	fieldName: string,
-): string {
+function requireInstant(value, fieldName: string): string {
 	const timestamp = requireString(value, fieldName);
 	const parsed = Date.parse(timestamp);
 	if (Number.isNaN(parsed)) {
@@ -2543,41 +2264,41 @@ function requireInstant(
 	return new Date(parsed).toISOString();
 }
 
-function requirePositiveNumber(
-	value: JsonValue | undefined,
-	fieldName: string,
-): number {
-	if (!isJsonNumber(value) || !Number.isFinite(value) || value <= 0) {
+function requirePositiveNumber(value, fieldName: string): number {
+	if (!Number.isFinite(value) || value <= 0) {
 		throw new TypeError(`${fieldName} must be greater than 0`);
 	}
 	return value;
 }
 
-function requirePositiveInteger(
-	value: JsonValue | undefined,
-	fieldName: string,
-): number {
-	if (!isJsonNumber(value) || !Number.isInteger(value) || value <= 0) {
+function requirePositiveInteger(value, fieldName: string): number {
+	if (!Number.isInteger(value) || value <= 0) {
 		throw new TypeError(`${fieldName} must be a positive integer`);
 	}
 	return value;
 }
 
-function requireNonNegativeInteger(
-	value: JsonValue | undefined,
-	fieldName: string,
-): number {
-	if (!isJsonNumber(value) || !Number.isInteger(value) || value < 0) {
+function requireNonNegativeInteger(value, fieldName: string): number {
+	if (!Number.isInteger(value) || value < 0)
 		throw new TypeError(`${fieldName} must be a non-negative integer`);
-	}
+	if (!Number.isSafeInteger(value))
+		throw new TypeError(`${fieldName} must be a safe integer`);
 	return value;
 }
 
-function nonNegativeNumber(
-	value: JsonValue | undefined,
-	fieldName: string,
-	fallback: number,
-): number {
+function advanceLedgerSequence(seq: number, steps = 1): number {
+	if (
+		!Number.isSafeInteger(seq) ||
+		seq < 0 ||
+		!Number.isSafeInteger(steps) ||
+		steps < 0 ||
+		steps > Number.MAX_SAFE_INTEGER - seq
+	)
+		throw new RangeError("ledger sequence exhausted");
+	return seq + steps;
+}
+
+function nonNegativeNumber(value, fieldName: string, fallback: number): number {
 	if (value === undefined) return fallback;
 	if (!optionalNonNegativeNumber(value)) {
 		throw new TypeError(`${fieldName} must be a non-negative number`);
@@ -2585,40 +2306,14 @@ function nonNegativeNumber(
 	return value;
 }
 
-function optionalNonNegativeNumber(
-	value: JsonValue | undefined,
-): value is number {
-	return isJsonNumber(value) && Number.isFinite(value) && value >= 0;
+function optionalNonNegativeNumber(value): boolean {
+	return Number.isFinite(value) && value >= 0;
 }
 
-function requireArray(
-	value: JsonValue | undefined,
-	fieldName: string,
-): readonly JsonValue[] {
-	if (value === undefined) return [];
-	if (!Array.isArray(value))
-		throw new TypeError(`${fieldName} must be an array`);
-	return value;
-}
-
-function isReservationLedger(
-	value: ReservationLedgerPort | JsonValue | undefined,
-): value is ReservationLedgerPort {
-	return (
-		isJsonObject(value) &&
-		value.reserve instanceof Function &&
-		value.snapshot instanceof Function
-	);
-}
-
-function requireJsonObject(
-	value: JsonValue | undefined,
-	fieldName: string,
-): JsonObject {
-	if (!isJsonObject(value)) {
+function assertObject(value, fieldName: string) {
+	if (!value || !isJsonObject(value) || Array.isArray(value)) {
 		throw new TypeError(`${fieldName} must be an object`);
 	}
-	return value;
 }
 
 function roundCost(value: number): number {
@@ -2626,5 +2321,5 @@ function roundCost(value: number): number {
 }
 
 function clone<T>(value: T): T {
-	return structuredClone(value);
+	return JSON.parse(JSON.stringify(value));
 }

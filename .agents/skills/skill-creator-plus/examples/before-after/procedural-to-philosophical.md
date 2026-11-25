@@ -21,7 +21,7 @@ description: Review code
 3. Verify variable names are descriptive
 4. Check for proper indentation
 5. Look for code duplication
-6. Check that names and types make behavior clear
+6. Verify functions are documented
 7. Check for security issues
 8. Test the changes
 9. Leave comments
@@ -41,7 +41,7 @@ description: Review code
 
 ## AFTER: Philosophical Code Review Skill
 
-````markdown
+```markdown
 ---
 name: code-review
 description: "Perform thoughtful, constructive code reviews that improve both code quality and team collaboration. Use when reviewing pull requests, providing code feedback, or conducting technical assessments."
@@ -112,8 +112,8 @@ Does this fit the system well?
 ### Layer 3: Clarity (MEDIUM - Should Fix)
 Will the next person understand this?
 - **Unclear naming** that obscures intent
-- **Unclear contracts** between functions
-- **Complex logic** whose intent is hidden by its structure
+- **Missing documentation** for non-obvious behavior
+- **Complex logic** that needs comments
 - **Inconsistent patterns** with surrounding code
 
 **Tone**: Suggesting improvements
@@ -222,7 +222,7 @@ Is there a constraint I'm missing?
 ### Reviewing Urgent Hotfix
 - **Security and correctness only**: Skip style
 - **Fast turnaround**: Don't block on nice-to-haves
-- **Complete requested fixes**: Resolve consequential defects before concluding
+- **Follow-up PR**: Note improvements for later
 - **Verify the fix works**: Test the specific bug
 
 ### Reviewing Experimental/Prototype Code
@@ -260,7 +260,7 @@ No changes needed. Great work!
 Code review is a **conversation**, not a **judgment**.
 
 These guidelines help you be a thoughtful reviewer—they don't replace thinking about the specific code and context in front of you. When in doubt, be kind and explain your reasoning.
-````
+```
 
 ### What Changed
 

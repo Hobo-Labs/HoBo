@@ -12,7 +12,8 @@
       "src/draft/technical-proofs/sre-diagnose-projection-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

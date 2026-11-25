@@ -26,12 +26,12 @@
           "issue": "HOBO-545",
           "phase": "M1",
           "targetPackage": "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures",
-          "proofNote": "urn:hobo:proof:vibe-dashboard-freshness-rbac-fixtures",
+          "proofNote": "docs/design/proofs/vibe-dashboard-freshness-rbac-fixtures/README.md",
           "designRefs": [
-            "urn:hobo:requirement:deployment-dashboard-topology-explorer",
-            "urn:hobo:requirement:data-plane#plan-32",
-            "urn:hobo:decision:adr-0050",
-            "urn:hobo:decision:adr-0077"
+            "docs/design/deployment-dashboard-topology-explorer.md",
+            "docs/design/data-plane.md#plan-32",
+            "docs/design/adr/03-data-plane.md#adr-0050",
+            "docs/design/adr/02-identity-security.md#adr-0077"
           ],
           "proofModeLabels": [
             "live",

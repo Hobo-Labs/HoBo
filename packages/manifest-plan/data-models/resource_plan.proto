@@ -82,8 +82,6 @@ message ResourcePlan {
   // parameters, so a PortabilityReport can attribute the loss rather than
   // merely report that something was lost.
   NonPortableRows non_portable_rows = 10;
-  repeated string ready_deps = 11;
-  repeated string completed_deps = 12;
 }
 
 // The content-addressed DeploymentPlan DAG.

@@ -9,7 +9,8 @@
       "src/draft/technical-proofs/control-plane-action-taxonomy-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

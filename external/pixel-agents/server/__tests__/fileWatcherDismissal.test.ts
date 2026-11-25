@@ -3,6 +3,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// fileWatcher.ts does `import * as vscode from 'vscode'` at module load; the 'vscode'
+// package only resolves inside the extension host. Stub the two APIs fileWatcher actually
+// touches at runtime (vscode.window.activeTerminal / terminals) so the module loads
+// under vitest. Must be declared BEFORE the fileWatcher import.
 vi.mock('vscode', () => ({
   window: {
     activeTerminal: undefined,
@@ -28,11 +32,19 @@ import {
 import { PathSet } from '../src/pathKey.js';
 import type { AgentState } from '../src/types.js';
 
+/**
+ * Tests for the DismissalTracker integration with fileWatcher's scanner functions.
+ * These were originally written against the raw module-global Maps (Pre-P2) and
+ * now exercise the same behavior via the DismissalTracker class. If any assertion
+ * flips compared to the original, the tracker has a behavioral regression.
+ */
 
 describe('fileWatcher dismissal state', () => {
   let tmpDir: string;
   let projectDir: string;
   let tracker: DismissalTracker;
+  // PathSet, not Set — mirrors AgentRuntime.knownJsonlFiles so the case-varied
+  // path cases below exercise the real membership semantics.
   let knownJsonlFiles: PathSet;
   let nextAgentIdRef: { current: number };
   let agents: AgentStateStore;
@@ -84,38 +96,44 @@ describe('fileWatcher dismissal state', () => {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {
+      /* ignore */
     }
   });
 
+  // ── dismissedJsonlFiles: user-close cooldown ───────────────────────
 
   describe('dismissedJsonlFiles: user-close cooldown', () => {
     it('blocks external adoption when dismissed < DISMISSED_COOLDOWN_MS ago', () => {
       const file = writeJsonlFile('sess-1.jsonl', '{"type":"assistant"}\n');
+      // Dismissed 10 seconds ago — well within the 3-minute cooldown window.
       tracker.dismiss(file, Date.now() - 10_000);
 
       runExternalScan();
 
       expect(agents.size).toBe(0);
-      expect(tracker.isDismissed(file)).toBe(true);
+      expect(tracker.isDismissed(file)).toBe(true); // still within cooldown
     });
 
     it('expires dismissal and allows adoption after cooldown', () => {
       const file = writeJsonlFile('sess-1.jsonl', '{"type":"assistant"}\n');
+      // Dismissed just over the cooldown boundary.
       tracker.dismiss(file, Date.now() - DISMISSED_COOLDOWN_MS - 1_000);
 
       runExternalScan();
 
       expect(agents.size).toBe(1);
-      expect(tracker.isDismissed(file)).toBe(false);
+      expect(tracker.isDismissed(file)).toBe(false); // expired
     });
 
     it('leaves non-dismissed, recently-modified files adoptable', () => {
       writeJsonlFile('sess-1.jsonl', '{"type":"assistant"}\n');
+      // No dismissal entry at all.
       runExternalScan();
       expect(agents.size).toBe(1);
     });
   });
 
+  // ── clearDismissedFiles: permanent block ───────────────────────────
 
   describe('clearDismissedFiles: permanent block', () => {
     it('never re-adopts a file in the permanent-dismiss set', () => {
@@ -125,7 +143,7 @@ describe('fileWatcher dismissal state', () => {
       runExternalScan();
 
       expect(agents.size).toBe(0);
-      expect(tracker.isPermanentlyDismissed(file)).toBe(true);
+      expect(tracker.isPermanentlyDismissed(file)).toBe(true); // never auto-expires
     });
 
     it('blocks across multiple scanner invocations', () => {
@@ -146,12 +164,14 @@ describe('fileWatcher dismissal state', () => {
 
       runExternalScan();
 
+      // Only the un-blocked file adopts.
       expect(agents.size).toBe(1);
       const adopted = [...agents.values()][0];
       expect(adopted.jsonlFile).toContain('new.jsonl');
     });
   });
 
+  // ── seededMtimes: mtime-change detection ───────────────────────────
 
   describe('seededMtimes: mtime-change detection (--resume signal)', () => {
     it('leaves seeded file in known set when mtime unchanged', () => {
@@ -162,6 +182,7 @@ describe('fileWatcher dismissal state', () => {
 
       runExternalScan();
 
+      // Untouched: still seeded, no adoption (already known).
       expect(tracker.hasSeededMtime(file)).toBe(true);
       expect(knownJsonlFiles.has(file)).toBe(true);
       expect(agents.size).toBe(0);
@@ -169,17 +190,22 @@ describe('fileWatcher dismissal state', () => {
 
     it('removes seeded file from tracking when mtime changed', () => {
       const file = writeJsonlFile('seeded.jsonl', '{"type":"assistant"}\n');
+      // Seed with an OLD mtime so the file looks "modified since seeding".
       tracker.seedMtime(file, fs.statSync(file).mtimeMs - 60_000);
       knownJsonlFiles.add(file);
 
       runExternalScan();
 
+      // mtime-changed branch removes from BOTH tracking Maps and returns early
+      // (no adoption on the same tick — lets agentManager detect /resume first).
       expect(tracker.hasSeededMtime(file)).toBe(false);
       expect(knownJsonlFiles.has(file)).toBe(false);
       expect(agents.size).toBe(0);
     });
 
     it('does NOT adopt as external on the mtime-change tick', () => {
+      // Seeding + mtime change should hand off to the extension's /resume
+      // detection, not produce a spurious external agent.
       const file = writeJsonlFile('seeded.jsonl', '{"type":"assistant"}\n');
       tracker.seedMtime(file, fs.statSync(file).mtimeMs - 30_000);
       knownJsonlFiles.add(file);
@@ -190,6 +216,7 @@ describe('fileWatcher dismissal state', () => {
     });
   });
 
+  // ── pendingClearFiles: two-tick delay for /clear content ───────────
 
   describe('pendingClearFiles: two-tick delay for /clear content', () => {
     const clearJsonl = '{"type":"user","content":"/clear</command-name>"}\n';
@@ -206,8 +233,8 @@ describe('fileWatcher dismissal state', () => {
     it('second tick: /clear file is cleared from pending and adopted', () => {
       const file = writeJsonlFile('sess-clear.jsonl', clearJsonl);
 
-      runExternalScan();
-      runExternalScan();
+      runExternalScan(); // first tick -> pending
+      runExternalScan(); // second tick -> adopt
 
       expect(agents.size).toBe(1);
       expect(tracker.hasPendingClear(file)).toBe(false);
@@ -222,6 +249,7 @@ describe('fileWatcher dismissal state', () => {
     });
   });
 
+  // ── scanForNewJsonlFiles (project-scan helper) ─────────────────────
 
   describe('scanForNewJsonlFiles: project scanner', () => {
     function runProjectScan(): void {
@@ -245,15 +273,20 @@ describe('fileWatcher dismissal state', () => {
 
       runProjectScan();
 
+      // No adoption — the file is known, not new.
       expect(agents.size).toBe(0);
     });
 
     it('skips files expired in dismissedJsonlFiles during project scan', () => {
+      // Project scan (used by the internal terminal adoption path) also
+      // honors dismissal cooldown. Seed the file as dismissed very recently.
       const file = writeJsonlFile('sess-1.jsonl', '{"type":"assistant"}\n');
       tracker.dismiss(file, Date.now() - 5_000);
 
       runProjectScan();
 
+      // No active-terminal agent is present, so adoption shouldn't fire regardless.
+      // Primarily: dismissal entry should NOT get erased by this pass.
       expect(tracker.isDismissed(file)).toBe(true);
     });
   });
@@ -333,6 +366,10 @@ describe('fileWatcher dismissal state', () => {
     });
 
     it('honors a dismissal recorded under a different path spelling', () => {
+      // Windows only: the user closes a hook-adopted agent (Claude's spelling of the
+      // transcript path) and the scanner then rediscovers the same file under VS Code's
+      // spelling. An exact-string dismissal key missed and the file was re-adopted
+      // seconds later, mid-cooldown.
       const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
       try {
         const file = writeJsonlFile('closed-session.jsonl', '{"type":"assistant"}\n');
@@ -396,8 +433,10 @@ describe('fileWatcher dismissal state', () => {
     });
   });
 
+  // ── Constants sanity check ────────────────────────────────────────
 
   it('constants are within sensible bounds', () => {
+    // Guards against accidental changes that would make these tests lie.
     expect(DISMISSED_COOLDOWN_MS).toBeGreaterThan(60_000);
     expect(EXTERNAL_ACTIVE_THRESHOLD_MS).toBeGreaterThan(30_000);
   });

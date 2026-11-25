@@ -144,18 +144,16 @@ export {
 	evaluateUpgradeDryRun,
 	parseCompatibilityInputs,
 	parseRollbackEvidence,
-	parseUpgradeDryRunRequest,
 	type RollbackEvidence,
 	type SupportHandoffRecord,
 	stableDigest,
-	UPGRADE_DRY_RUN_ACTION,
 	UPGRADE_DRY_RUN_FIXTURES,
 	UPGRADE_DRY_RUN_SCHEMA,
 	UPGRADE_SCOPE_BOUNDARIES,
-	type UpgradeDryRunAction,
 	type UpgradeDryRunReport,
 	type UpgradeDryRunRequest,
 	UpgradePreflightParseError,
 } from "./upgrade-preflight.js";
 
+// public-contract: package id consumers assert against.
 export const HOBO_TRAILS_PACKAGE = "@hobo/trails";

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
 	type ActorHost,
 	type ActorLease,
@@ -9,30 +8,20 @@ import {
 	type LogicalActorIdentity,
 	parseLogicalActorIdentity,
 } from "@hobo/core";
-import type { ActorLocalJournal, JournalFactRecord } from "./journal.js";
-import {
-	cloneAsJson,
-	isJsonNumber,
-	isJsonObject,
-	isJsonString,
-	type JsonObject,
-	type JsonValue,
-	parseJsonValue,
-} from "./json.js";
-import type { RivetOutboxEffectInput } from "./outbox.js";
+import type { ActorLocalJournal } from "./journal.js";
+import { cloneAsJson, type JsonValue, parseJsonValue } from "./json.js";
 import { parseRivetActorFidelity } from "./parse.js";
-import {
-	type AcceptCommandResult,
-	type InboxCommand,
-	RivetJournalError,
-} from "./types.js";
+import { RivetJournalError } from "./types.js";
 
+/** Core `ActorLease` (ADR-0156) tagged with the Rivet placement. */
 export interface RivetActorLease extends ActorLease {
 	readonly placement: "rivet";
 }
 
+/** The canonical `@hobo/core` state handle (ADR-0156), under its Rivet name. */
 export type RivetActorStateHandle<S> = ActorStateHandle<S>;
 
+/** The core ActorHost port (ADR-0156) plus Rivet-specific journal members. */
 export interface RivetActorHost extends ActorHost {
 	readonly placementMode: "rivet";
 	readonly fidelity: "local-sqlite";
@@ -43,17 +32,11 @@ export interface RivetActorHost extends ActorHost {
 		commandType: string;
 		payload: JsonValue;
 		expectedRevision: number;
-	}): AcceptCommandResult & { digest: string };
+	}): { status: string; duplicate: boolean; digest: string };
 	processNext(
 		identity: JsonValue,
 		fold: (state: JsonValue, event: FoldEvent) => JsonValue,
 		initialState: JsonValue,
-		options?: {
-			effects?: (
-				state: JsonValue,
-				event: FoldEvent,
-			) => readonly RivetOutboxEffectInput[];
-		},
 	): { revision: number; commandId: string } | undefined;
 }
 
@@ -64,118 +47,14 @@ export class RivetLeaseConflictError extends Error {
 	}
 }
 
-const ACTOR_STATE_METADATA = JSON.stringify({
-	format: "hobo.rivet.actor-state/v1",
-});
-
-const COMMAND_EVENT_METADATA = JSON.stringify({
-	format: "hobo.rivet.command-event/v1",
-});
-
-function foldJournalFacts(
-	streamId: string,
-	facts: readonly JournalFactRecord[],
-	initialState: JsonValue,
-	fold: (state: JsonValue, event: FoldEvent) => JsonValue,
-): JsonValue {
-	let state = initialState;
-	for (const fact of facts) {
-		if (fact.metadataJson !== COMMAND_EVENT_METADATA)
-			throw new RivetJournalError(
-				"PARSE",
-				`invalid command event metadata at ${streamId}:${fact.seq}`,
-			);
-		state = fold(state, {
-			type: fact.type,
-			payload: parseJsonValue(new TextDecoder().decode(fact.payload)),
-		});
-	}
-	return state;
-}
-
-function completeCommittedCommand(
-	journal: ActorLocalJournal,
-	streamId: string,
-	command: InboxCommand,
-) {
-	if (command.resultJson === undefined)
-		throw new RivetJournalError(
-			"PARSE",
-			`committed command ${command.commandId} has no receipt`,
-		);
-	const receipt = parseJsonValue(command.resultJson);
-	if (
-		!isJsonObject(receipt) ||
-		!isJsonNumber(receipt.revision) ||
-		!Number.isSafeInteger(receipt.revision) ||
-		receipt.revision < 0
-	)
-		throw new RivetJournalError(
-			"PARSE",
-			`invalid committed receipt for command ${command.commandId}`,
-		);
-	const revision = receipt.revision;
-	if (command.status === "committed")
-		journal.completeCommand(
-			streamId,
-			command.commandId,
-			JSON.stringify({ revision }),
-		);
-	return { revision, commandId: command.commandId };
-}
-
-function rejectStaleCommand(
-	journal: ActorLocalJournal,
-	streamId: string,
-	command: InboxCommand,
-	actualRevision: number,
-) {
-	const receipt = JSON.stringify({
-		code: "STALE_REVISION",
-		expectedRevision: command.expectedRevision,
-		actualRevision,
-	});
-	if (!journal.rejectCommand(streamId, command.commandId, receipt)) {
-		const current = journal.loadCommand(streamId, command.commandId);
-		if (
-			current &&
-			(current.status === "committed" || current.status === "completed")
-		)
-			return completeCommittedCommand(journal, streamId, current);
-		throw new RivetJournalError(
-			"INBOX_CONFLICT",
-			`command ${command.commandId} is not pending`,
-		);
-	}
-	throw new RivetJournalError(
-		"STALE_REVISION",
-		`expected revision ${command.expectedRevision}, found ${actualRevision}`,
-	);
-}
-
 export function createRivetActorHost(options: {
 	journal: ActorLocalJournal;
 	fidelity?: "local-sqlite";
-	tenantId?: string;
-	nowMs?: () => number;
-	leaseTtlMs?: number;
 }): RivetActorHost {
 	parseRivetActorFidelity(options.fidelity);
-	const leases = new Map<
-		string,
-		{ lease: RivetActorLease; holderId: string; fenceToken: bigint }
-	>();
+	const leases = new Map<string, RivetActorLease>();
 	const journal = options.journal;
-	const tenantId = options.tenantId ?? "local";
-	const leaseTtlMs = options.leaseTtlMs ?? 30_000;
-	if (!tenantId.trim() || !Number.isSafeInteger(leaseTtlMs) || leaseTtlMs <= 0)
-		throw new RivetJournalError("PARSE", "invalid actor host options");
-	const nowMs = options.nowMs ?? Date.now;
-	const stateStreamId = (key: string) => {
-		if (!key.trim())
-			throw new RivetJournalError("PARSE", "actor key is required");
-		return `rivet:state:${JSON.stringify([tenantId, key])}`;
-	};
+	let epoch = 0n;
 
 	const streamIdFor = (identity: LogicalActorIdentity): string =>
 		actorCompoundKey(identity).join("/");
@@ -184,95 +63,46 @@ export function createRivetActorHost(options: {
 		placementMode: "rivet",
 		fidelity: "local-sqlite",
 		acquire(key, request) {
-			const streamId = stateStreamId(key);
-			const holderId = request.holderId;
-			const now = nowMs();
-			const expiresAt = new Date(now + leaseTtlMs).toISOString();
-			const acquired = journal.acquireLease(
-				streamId,
-				holderId,
-				now,
-				leaseTtlMs,
-			);
-			if (!acquired)
+			const held = leases.get(key);
+			if (held && held.holderId !== request.holderId) {
 				throw new RivetLeaseConflictError(
 					`rivet placement conflict for ${key}`,
 				);
-			const lease: RivetActorLease = Object.freeze<RivetActorLease>({
+			}
+			epoch += 1n;
+			const lease: RivetActorLease = {
 				key,
-				holderId,
-				fenceToken: acquired.fenceToken,
-				expiresAt,
+				holderId: request.holderId,
+				fenceToken: epoch,
+				expiresAt: new Date(Date.now() + 30_000).toISOString(),
 				placement: "rivet",
 				release() {
-					journal.releaseLease(streamId, holderId, acquired.fenceToken);
-					if (leases.get(key)?.lease === lease) leases.delete(key);
+					if (leases.get(key) === lease) leases.delete(key);
 				},
-			});
-			leases.set(key, { lease, holderId, fenceToken: acquired.fenceToken });
+			};
+			leases.set(key, lease);
 			return lease;
 		},
 		state(key, request) {
-			const streamId = stateStreamId(key);
+			const events: FoldEvent[] = [];
 			return {
 				append(lease, event) {
-					const current = leases.get(key);
-					if (!current || current.lease !== lease)
+					if (leases.get(key) !== lease) {
 						throw new RivetLeaseConflictError(`stale rivet lease for ${key}`);
-					const record = cloneAsJson(event);
-					if (
-						!isJsonObject(record) ||
-						!isJsonString(record.type) ||
-						!record.type.trim()
-					)
-						throw new RivetJournalError(
-							"PARSE",
-							"actor event type is required",
-						);
-					const appended = journal.appendLeased(
-						streamId,
-						current.holderId,
-						current.fenceToken,
-						nowMs(),
-						[
-							{
-								type: record.type,
-								eventId: randomUUID(),
-								payload: new TextEncoder().encode(JSON.stringify(record)),
-								metadataJson: ACTOR_STATE_METADATA,
-								tenant: tenantId,
-							},
-						],
-					);
-					if (!appended)
-						throw new RivetLeaseConflictError(`stale rivet lease for ${key}`);
+					}
+					events.push(event);
 					return {
 						streamId: key,
-						seq: appended.revision,
-						fenceToken: current.fenceToken,
+						seq: events.length,
+						fenceToken: lease.fenceToken,
 					};
 				},
 				read() {
-					const facts = journal.readFacts(streamId);
 					let state = request.initialState;
-					for (const fact of facts) {
-						const event = parseJsonValue(
-							new TextDecoder().decode(fact.payload),
-						);
-						if (
-							fact.metadataJson !== ACTOR_STATE_METADATA ||
-							!isJsonObject(event) ||
-							!isJsonString(event.type) ||
-							event.type !== fact.type
-						)
-							throw new RivetJournalError(
-								"PARSE",
-								`invalid actor state event at ${key}:${fact.seq}`,
-							);
-						const record: JsonObject = event;
-						state = request.fold(state, { ...record, type: fact.type });
+					for (const event of events) {
+						state = request.fold(state, event);
 					}
-					return { streamId: key, seq: facts.at(-1)?.seq ?? 0, state };
+					return { streamId: key, seq: events.length, state };
 				},
 			};
 		},
@@ -295,70 +125,42 @@ export function createRivetActorHost(options: {
 			});
 			return { ...accepted, digest };
 		},
-		processNext(identityInput, fold, initialState, commandOptions) {
+		processNext(identityInput, fold, initialState) {
 			const identity = parseLogicalActorIdentity(identityInput);
 			const streamId = streamIdFor(identity);
 			const claimed = journal.claimNext(streamId);
 			if (!claimed) return undefined;
-			if (claimed.status === "committed")
-				return completeCommittedCommand(journal, streamId, claimed);
 			const facts = journal.readFacts(streamId);
-			const replayedRevision = facts.at(-1)?.seq ?? 0;
-			if (replayedRevision !== claimed.expectedRevision)
-				return rejectStaleCommand(journal, streamId, claimed, replayedRevision);
-			const state = foldJournalFacts(streamId, facts, initialState, fold);
-			const event: FoldEvent = {
+			let state = initialState;
+			for (const fact of facts) {
+				state = fold(state, {
+					type: fact.type,
+					payload: parseJsonValue(new TextDecoder().decode(fact.payload)),
+				});
+			}
+			const decided = fold(state, {
 				type: claimed.commandType,
 				payload: parseJsonValue(claimed.payloadJson),
-			};
-			const nextState = fold(state, event);
-			const effects = commandOptions?.effects?.(nextState, event) ?? [];
-			const payload = new TextEncoder().encode(claimed.payloadJson);
-			let committed: { revision: number };
-			try {
-				committed = journal.commitCommand({
-					streamId,
-					commandId: claimed.commandId,
-					expectedRevision: replayedRevision,
-					effects,
-					facts: [
-						{
-							type: claimed.commandType,
-							eventId: claimed.commandId,
-							payload,
-							metadataJson: COMMAND_EVENT_METADATA,
-							tenant: identity.tenantId,
-							project: identity.projectId,
-							...(identity.lane !== undefined
-								? { lane: identity.lane }
-								: undefined),
-						},
-					],
-				});
-			} catch (error) {
-				if (
-					error instanceof RivetJournalError &&
-					error.code === "STALE_REVISION"
-				)
-					return rejectStaleCommand(
-						journal,
-						streamId,
-						claimed,
-						journal.head(streamId).revision,
-					);
-				if (
-					error instanceof RivetJournalError &&
-					error.code === "INBOX_CONFLICT"
-				) {
-					const current = journal.loadCommand(streamId, claimed.commandId);
-					if (
-						current &&
-						(current.status === "committed" || current.status === "completed")
-					)
-						return completeCommittedCommand(journal, streamId, current);
-				}
-				throw error;
-			}
+			});
+			const payload = new TextEncoder().encode(JSON.stringify(decided));
+			const committed = journal.commitCommand({
+				streamId,
+				commandId: claimed.commandId,
+				expectedRevision: journal.head(streamId).revision,
+				facts: [
+					{
+						type: claimed.commandType,
+						eventId: claimed.commandId,
+						payload,
+						metadataJson: "{}",
+						tenant: identity.tenantId,
+						project: identity.projectId,
+						...(identity.lane !== undefined
+							? { lane: identity.lane }
+							: undefined),
+					},
+				],
+			});
 			journal.completeCommand(
 				streamId,
 				claimed.commandId,

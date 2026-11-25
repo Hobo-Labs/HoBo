@@ -11,7 +11,6 @@ function manifestWithFlows(flows: string): ReturnType<typeof mustParse> {
 	return mustParse(`
 schema: hobo.provider-manifest/v1
 provider: { id: p, displayName: P }
-terms: { url: https://p.example.com/terms, reviewedOn: 2026-11-18 }
 auth:
   issuer: https://auth.example.com
   flows:

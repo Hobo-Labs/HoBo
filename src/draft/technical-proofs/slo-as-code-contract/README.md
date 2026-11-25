@@ -13,10 +13,7 @@ WIT sketch pin the public contract surface.
 - In scope: OpenSLO-aligned SLO declarations, SLI sources, objectives,
   error-budget windows, burn-rate thresholds, `slo.Declared`,
   `slo.BudgetBurned`, `slo.BudgetExhausted`, and the replayable remaining-budget
-  projection. Each burn event reports the objective window's remaining budget;
-  the projection replaces the previous observation as the rolling window moves.
-  Replaying the same event is idempotent; older or conflicting sequence numbers
-  are rejected.
+  projection.
 - Consumed but not owned: the telemetry envelope from HOBO-104. This POC validates
   only the minimal envelope boundary needed by SLO events: `type`, stream fields,
   and `meta.traceparent`.
@@ -30,9 +27,11 @@ npm.cmd --prefix src\draft\technical-proofs\slo-as-code-contract test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Slo As Code Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

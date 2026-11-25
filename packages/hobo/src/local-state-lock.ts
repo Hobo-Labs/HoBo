@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 
 export class LocalStateLockBusyError extends Error {}
 
+/** OS-owned mutex: closing the connection or process death releases ownership. */
 export function acquireLocalStateLock(path: string): () => void {
 	const database = new DatabaseSync(path);
 	try {

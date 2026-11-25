@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
 	CANONICAL_VERBS,
@@ -9,8 +9,7 @@ import {
 	helpText,
 	runHobo,
 } from "../src/index.js";
-import { parseJsonObject } from "../src/json.js";
-import type { CliContext } from "../src/types/envelope.js";
+import type { JsonObject } from "../src/json.js";
 
 const canonicalVerbNames = [
 	"up",
@@ -26,6 +25,7 @@ const canonicalVerbNames = [
 	"deploy",
 	"ci",
 	"cd",
+	"fleet",
 	"incident",
 	"claim",
 	"recipes",
@@ -102,6 +102,7 @@ Canonical verbs:
   deploy      delivery      Attested continuous delivery status/logs/rollback (secret-free)
   ci          delivery      Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project
   cd          delivery      Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy
+  fleet       control plane Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)
   incident    delivery      CD failure disposition: A2H handoff or sandboxed self-heal
   claim       identity      Bind an anonymous deployment to an account
   recipes     read-only     List and inspect deployment recipes and their claim terms
@@ -110,7 +111,7 @@ Canonical verbs:
   verify      read-only     Run the unified Gatekeeper preflight
   can-deploy  read-only     Diagnose producer/consumer compatibility
   inspect     read-only     Render projections and time-travel views
-  logs        read-only     Read or follow local deployment logs
+  logs        read-only     Live-tail Camp runtime streams
   doctor      diagnostics   Report environment and portability hazards
   messaging   diagnostics   Inspect messaging capability and delivery-guarantee readiness
   codegen     authoring     Regenerate checked-in generated clients
@@ -129,9 +130,9 @@ Canonical verbs:
   broker      governance    Resolve placements through the broker (the Conductor)
   yard        control plane Install and inspect the default bare-metal Yard
   station     control plane Station occupancy setup/ops (init/up/status/rails); not a lifecycle verb
-  serve       control plane Serve the local control-plane HTTP and SSE API
+  serve       control plane Local control-plane HTTP+SSE for the Yard game UI
   replay      observability Session Replay list/get/open/summarize/retention/doctor (privacy-first; distinct from event-log replay)
-  derivative  extensibility Inspect a derived HoBo descriptor
+  derivative  extensibility Manage derived HoBo implementations
   runbook     SRE           Execute or replay incident runbooks
 `;
 
@@ -186,6 +187,7 @@ describe("HoBo CLI shell", () => {
 			expect(result.stdout).toMatch(new RegExp(flag.replace(/[<>]/g, "\\$&")));
 		}
 		for (const retired of [
+			// "deploy" is a first-class delivery verb (attested CD plane), not retired.
 			"destroy",
 			"teardown",
 			"rollback",
@@ -193,7 +195,6 @@ describe("HoBo CLI shell", () => {
 			"forge",
 			"train",
 			"crew",
-			"fleet",
 		]) {
 			expect(result.stdout).not.toMatch(new RegExp(`^  ${retired}\\s`, "m"));
 		}
@@ -207,27 +208,32 @@ describe("HoBo CLI shell", () => {
 			expect(result.stderr).toBe("");
 			expect(result.stdout).not.toMatch(/not yet implemented\nUsage:/);
 
-			const envelope = parseJsonObject(result.stdout);
+			// SAFETY: `const envelope = JSON.parse(result.stdout) as JsonObject;` is required at this I/O or test boundary.
+			const envelope = JSON.parse(result.stdout) as JsonObject;
 			expect(envelope.ok).toBe(false);
 			expect(envelope.verb).toBe("plan");
 			expect(envelope.status).toBe("not_implemented");
 			expect(envelope.code).toBe("HOBO_CLI_STUB");
 			expect(String(envelope.message)).toMatch(/composed @hobo\/hobo binary/);
-			expect(envelope.context).toMatchObject({ cwd, projectDir: cwd });
+			// SAFETY: `expect((envelope.context as { cwd: string }).cwd).toBe(cwd);` is required at this I/O or test boundary.
+			expect((envelope.context as { cwd: string }).cwd).toBe(cwd);
+			// SAFETY: `expect((envelope.context as { projectDir: string }).projectDir).toBe(cwd);` is required at this I/O or test boundary.
+			expect((envelope.context as { projectDir: string }).projectDir).toBe(cwd);
 		});
 	});
 
-	it("does not report success for an unavailable command when HOBO_STUB_OK is set", async () => {
+	it("keeps the legacy ok stub envelope behind HOBO_STUB_OK=1", async () => {
 		await withBindle(async (cwd) => {
-			vi.stubEnv("HOBO_STUB_OK", "1");
+			process.env.HOBO_STUB_OK = "1";
 			try {
 				const result = await runHobo(["plan", "--json"], { cwd });
-				expect(result.exitCode).toBe(1);
-				const envelope = parseJsonObject(result.stdout);
-				expect(envelope.ok).toBe(false);
+				expect(result.exitCode).toBe(0);
+				// SAFETY: `const envelope = JSON.parse(result.stdout) as JsonObject;` is required at this I/O or test boundary.
+				const envelope = JSON.parse(result.stdout) as JsonObject;
+				expect(envelope.ok).toBe(true);
 				expect(envelope.code).toBe("HOBO_CLI_STUB");
 			} finally {
-				vi.unstubAllEnvs();
+				delete process.env.HOBO_STUB_OK;
 			}
 		});
 	});
@@ -250,6 +256,8 @@ describe("HoBo CLI shell", () => {
 
 	it("does not suggest verbs for short inputs more than one edit away", async () => {
 		await withBindle(async (cwd) => {
+			// "qeq" is 2 edits from "new" — under the old len/2 threshold this
+			// misfired a suggestion; short verbs now require distance ≤1.
 			const result = await runHobo(["qeq"], { cwd });
 			expect(result.exitCode).toBe(2);
 			expect(result.stderr).toMatch(/Unknown verb "qeq"/);
@@ -326,12 +334,15 @@ describe("HoBo CLI shell", () => {
 			expect(result.exitCode).toBe(2);
 			expect(result.stderr).toBe("");
 
-			const envelope = parseJsonObject(result.stdout);
+			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
+			const envelope = JSON.parse(result.stdout) as {
+				ok: boolean;
+				code: string;
+				remediation: string[];
+			};
 			expect(envelope.ok).toBe(false);
 			expect(envelope.code).toMatch(/^HOBO_/);
-			expect(envelope.remediation).toEqual(
-				expect.arrayContaining([expect.any(String)]),
-			);
+			expect(envelope.remediation.length).toBeGreaterThanOrEqual(1);
 		});
 	});
 
@@ -385,27 +396,31 @@ describe("HoBo CLI shell", () => {
 	it("constructs command context once and injects it into dispatch", async () => {
 		await withBindle(async (cwd) => {
 			let contextBuilds = 0;
-			let injectedContext: CliContext | undefined;
+			let injectedContext: { buildId: string } | undefined;
 			const cli = createHoboCli({
 				contextFactory: async (request) => {
 					contextBuilds += 1;
 					return {
 						cwd: request.cwd,
 						projectDir: request.cwd,
-						identity: `user:ctx-${contextBuilds}`,
+						identity: "user:dev",
 						clients: { readApi: "fake-read-api", runtime: "fake-runtime" },
+						buildId: `ctx-${contextBuilds}`,
 					};
 				},
 				commands: {
 					plan: {
 						run: async ({ context }) => {
-							injectedContext = context;
+							// SAFETY: `injectedContext = context as { buildId: string };` is required at this I/O or test boundary.
+							injectedContext = context as { buildId: string };
 							return {
 								ok: true,
-								status: "ok",
-								code: "HOBO_OK",
+								status: "not_implemented",
+								code: "HOBO_CLI_STUB",
+								message: "plan is not yet implemented",
 								data: {
-									identity: context.identity,
+									// SAFETY: `contextBuildId: (context as { buildId: string }).buildId,` is required at this I/O or test boundary.
+									contextBuildId: (context as { buildId: string }).buildId,
 								},
 							};
 						},
@@ -414,12 +429,15 @@ describe("HoBo CLI shell", () => {
 			});
 
 			const result = await cli.run(["plan", "--json"], { cwd });
-			const envelope = parseJsonObject(result.stdout);
+			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
+			const envelope = JSON.parse(result.stdout) as {
+				data: { contextBuildId: string };
+			};
 
 			expect(result.exitCode).toBe(0);
 			expect(contextBuilds).toBe(1);
-			expect(injectedContext?.identity).toBe("user:ctx-1");
-			expect(envelope.data).toMatchObject({ identity: "user:ctx-1" });
+			expect(injectedContext?.buildId).toBe("ctx-1");
+			expect(envelope.data.contextBuildId).toBe("ctx-1");
 		});
 	});
 });

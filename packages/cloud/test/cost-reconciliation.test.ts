@@ -1,3 +1,29 @@
+/**
+ * Estimate versus actual.
+ *
+ * Written before the implementation. The whole claim of HOBO-819's sibling gap
+ * (N4) is that HoBo holds both halves — what a plan said a deployment would
+ * cost, and what it actually cost — and never compares them. Infracost
+ * estimates and never sees the bill; Kubecost, Vantage and OpenCost measure the
+ * bill and never see the estimate. Nobody closes the loop, so nobody can learn
+ * that their estimates are systematically wrong.
+ *
+ * The rules these tests hold are the ones that decide whether a finance team
+ * believes the number:
+ *
+ *   - **It must sum to the invoice.** An actual with no matching estimate is
+ *     reported as unestimated, never dropped. OpenCost's idle-as-residual
+ *     design exists because a cost surface that quietly omits a line is a cost
+ *     surface nobody trusts twice.
+ *   - **A short window is not a saving.** Three days of actuals against a
+ *     month's estimate is a 90% "underspend" that is entirely an artifact.
+ *     Comparing them at all is the bug.
+ *   - **An estimate for something never built is not an underspend.** It is an
+ *     estimate that was never tested, and the two must not be added together.
+ *   - **Integer minor units, one currency.** Floating-point USD accumulates
+ *     error, and a total that disagrees with the invoice by a cent is a total
+ *     that gets the whole surface disbelieved.
+ */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -83,6 +109,8 @@ describe("variance", () => {
 	});
 
 	it("does not report a divergence inside the tolerance", () => {
+		// Metered billing rounds. A report that fires on every cent is a report
+		// with an ignore-list bolted on by the second week.
 		const report = reconcileCost(
 			inputs({ actual: [actual("web", 10_050)], toleranceBasisPoints: 100 }),
 		);
@@ -105,6 +133,8 @@ describe("variance", () => {
 
 describe("actuals with no estimate", () => {
 	it("reports them rather than dropping them", () => {
+		// The line that decides whether finance believes the total. A surface
+		// that silently omits a charge is one nobody trusts twice.
 		const report = reconcileCost(
 			inputs({ actual: [actual("web", 10_000), actual("mystery", 4_000)] }),
 		);
@@ -124,6 +154,8 @@ describe("actuals with no estimate", () => {
 
 describe("estimates for resources that never materialized", () => {
 	it("reports them separately rather than as an underspend", () => {
+		// An estimate that was never tested is not a saving. Adding it to the
+		// variance would let a failed deployment look like good cost control.
 		const report = reconcileCost(
 			inputs({
 				estimated: [estimate("web", 10_000), estimate("ghost", 6_000)],
@@ -160,6 +192,8 @@ describe("estimates for resources that never materialized", () => {
 
 describe("the observed window", () => {
 	it("refuses to compare a partial window against a full-period estimate", () => {
+		// Three days against a month is a 90% "saving" that is entirely an
+		// artifact of the clock.
 		const report = reconcileCost(
 			inputs({
 				observedWindowMs: 3 * 24 * 60 * 60 * 1000,
@@ -171,6 +205,7 @@ describe("the observed window", () => {
 	});
 
 	it("still reports both totals when the window is short", () => {
+		// Refusing the comparison is not refusing the facts.
 		const report = reconcileCost(
 			inputs({
 				observedWindowMs: 3 * 24 * 60 * 60 * 1000,
@@ -204,6 +239,8 @@ describe("the observed window", () => {
 
 describe("currency", () => {
 	it("refuses to reconcile actuals in a different currency", () => {
+		// Summing two currencies produces a number that is wrong in a way no
+		// reader can see. Refusing is the only honest answer without an FX rate.
 		const report = reconcileCost(
 			inputs({ actual: [actual("web", 10_000, { currency: "EUR" })] }),
 		);
@@ -275,6 +312,7 @@ describe("report shape", () => {
 	});
 
 	it("sums repeated actual lines for one resource", () => {
+		// A metered bill arrives as many lines per resource, not one.
 		const report = reconcileCost(
 			inputs({ actual: [actual("web", 6_000), actual("web", 4_000)] }),
 		);

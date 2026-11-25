@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { it } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { discoverCode, pickPrimaryCommand } from "../lib/code-discovery.mts";
 
 function fixture(run: (root: string, featureDir: string) => void) {
@@ -54,5 +56,33 @@ it("does not promote prose, other flags, or shell expressions as help", () => {
 			'`hobo access --reason "$(echo wrong)"`',
 			'`hobo access --reason "$HOME"`',
 		]) assert.equal(primary(root, dir, seed), null, seed);
+	});
+});
+
+it("generates and runs the default help binding end to end", () => {
+	fixture((root, dir) => {
+		const personaDir = path.join(root, ".optimizexp/personas");
+		const binDir = path.join(root, "bin");
+		mkdirSync(personaDir, { recursive: true });
+		mkdirSync(binDir);
+		writeFileSync(path.join(personaDir, "developer.md"), "---\nid: developer\nexperiences: [dx]\ninterfaces: [cli]\n---\nUses the CLI.\n");
+		const bin = path.join(binDir, "hobo");
+		writeFileSync(bin, '#!/bin/sh\nprintf "observed help: %s\\n" "$*"\n');
+		chmodSync(bin, 0o755);
+		const harness = fileURLToPath(new URL("../generate-feature.mts", import.meta.url));
+		const env = { ...process.env, HOME: root, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` };
+		const scaffold = spawnSync(process.execPath, ["--experimental-strip-types", harness, "--mode=scaffold", "--project=root", "--id=example", "--seed=Run `hobo --help`", "--personas=developer", "--force-low-quality"], { cwd: root, env, encoding: "utf8" });
+		assert.equal(scaffold.status, 0, scaffold.stderr);
+		const feature = JSON.parse(readFileSync(path.join(dir, "feature.json"), "utf8")) as { primaryCommand?: string; implementationStatus?: string };
+		assert.equal(feature.primaryCommand, "hobo --help");
+		assert.equal(feature.implementationStatus, "wired");
+		const implementations = pathToFileURL(path.join(dir, "steps/implementations.ts")).href;
+		const world = pathToFileURL(path.join(dir, "steps/world.ts")).href;
+		const script = `import { createWorld } from ${JSON.stringify(world)}; import { exerciseSurface } from ${JSON.stringify(implementations)}; const w=createWorld("example"); exerciseSurface(w); console.log(JSON.stringify({exit:w.lastExitCode,output:w.lastStdout}));`;
+		const run = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], { cwd: root, env, encoding: "utf8" });
+		assert.equal(run.status, 0, run.stderr);
+		const observed = JSON.parse(run.stdout) as { exit: number | null; output: string };
+		assert.equal(observed.exit, 0);
+		assert.match(observed.output, /observed help: --help/);
 	});
 });

@@ -36,13 +36,17 @@ pnpm exec turbo run test --filter ./src/draft/technical-proofs/cross-cloud-junct
 
 This POC does not ship `packages/junctions/` production code, live AWS/Azure networking, or credentialed cloud E2E. It promotes the cross-cloud bind and mirrored Junction-halves scenarios from `src/draft/epic-proofs/networking-connectivity-dns-relay/` into a branch-sized HOBO-642 acceptance surface.
 
-## Executable evidence
+## Architecture evidence
+
 - `architecture/` — protobuf + CUE constraints
 - `architecture/pacts/` — PACT boundary contract
+- `architecture.md` — parse-don't-validate + event architecture evidence
+- `ADR.md` — design rationale
 
-## Executable evidence
-- [Plan 12 — Security & connectivity](urn:hobo:requirement:security-networking#plan-12)
-- [ADR-0043 — Junction federation](urn:hobo:decision:adr-0043)
+## Design refs
+
+- [Plan 12 — Security & connectivity](../../../docs/design/security-networking.md#plan-12)
+- [ADR-0043 — Junction federation](../../../docs/design/adr/07-portability-extensibility.md#adr-0043)
 
 ## Maintenance
 

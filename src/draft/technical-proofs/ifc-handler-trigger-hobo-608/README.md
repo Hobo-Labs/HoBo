@@ -23,7 +23,9 @@ Extends the HOBO-79 authoring contract with `queue.worker`, `schedule.every`, lo
 pnpm --prefix src/draft/technical-proofs/ifc-handler-trigger-hobo-608 test
 ```
 
-## Executable evidence
+## Architecture evidence
+
 - `data-models/trigger_edge.{proto,cue}` — TriggerEdge protobuf + CUE constraints.
 - `architecture/pacts/bindles_collector_triggers.pact.json` — bindles→collector boundary.
 - `architecture/pacts/dispatcher_ports.pact.json` — dispatcher→runtime-local ports boundary.
+- `ADR.md` — parse-don't-validate and CQRS event emission.

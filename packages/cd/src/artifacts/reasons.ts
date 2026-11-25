@@ -1,7 +1,11 @@
+// Typed failures for the artifact store and verifier (WP3, C14, D3). Every
+// code carries a remediation an operator can act on; none carries a
+// credential, a header, or a response body.
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
 
+// public-contract: refusal and error codes the artifact store and verifier return.
 export const ARTIFACT_REASON = Object.freeze({
 	digestInvalid: "artifact-digest-invalid",
 	corrupt: "artifact-corrupt",
@@ -40,6 +44,12 @@ export function refusal(reasons: readonly ReasonRecord[]): Refusal {
 	return { ok: false, reasons };
 }
 
+/**
+ * The store port returns plain values (`ArtifactRef`, bytes, `void`), so a
+ * failure is thrown as this error. It carries the same code and remediation a
+ * refusal would, and its message is built only from codes, digests and HTTP
+ * status numbers, so it is safe to log.
+ */
 export class ArtifactStoreError extends Error {
 	readonly code: ArtifactReasonCode;
 	readonly remediation: string;

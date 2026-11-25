@@ -4,9 +4,9 @@ The libSQL binding of `EphemeralStatePort` (`@hobo/core`), so a Turso database
 — attached to the relay's Vercel project through the Marketplace — can back
 the hosted CI relay's cache. Semantics are the Redis binding's, checked by the
 same 24-case conformance suite from `@hobo/kv-redis-compatible`. Design:
-[Relay Ephemeral State](urn:hobo:requirement:relay-ephemeral-state) and the
+[Relay Ephemeral State](../../../docs/design/relay-ephemeral-state.md) and the
 "Options routed by budget" amendment of
-[ADR-0179](urn:hobo:decision:adr-0179).
+[ADR-0179](../../../docs/design/adr/hosted-relay-stateless.md#adr-0179).
 
 ```ts
 import { createTursoEphemeralState } from "@hobo/provider-turso";

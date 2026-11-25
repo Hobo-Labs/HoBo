@@ -1,3 +1,20 @@
+// createCampReconciler (D5, I2–I5). One loop per Camp lease `cd:camp:<id>`:
+//
+//   1. claim (or renew) the fenced Camp lease; a held lease backs off with
+//      jitter derived from hash(reconcilerId, camp);
+//   2. read the feed; for the newest change fetch the resolved blob by digest
+//      (a missing blob blocks with a reason);
+//   3. observe first; converge only when the observation does not already
+//      prove the Set (a crash between execute and observe therefore never
+//      repeats a mutation: the resumed pass observes and stops);
+//   4. report status (ReconcileStarted → StatusObserved → Converged /
+//      ReconcileBlocked) and checkpoint only after convergence;
+//   5. without a new change, re-observe periodically: drift is routed by the
+//      DriftPolicy (reconcile, propose, ignore, escalate) with flapping
+//      suppression and an oscillation guard.
+//
+// OBSERVE_ONLY Camps take the read path only; `mutate` is the single call
+// site of Realizer.converge and refuses them (architecture-tested).
 import { clone, create } from "@bufbuild/protobuf";
 import type { PrincipalRef } from "@hobo/core";
 import {
@@ -37,7 +54,7 @@ import {
 	planDeparture,
 } from "./departure.js";
 import { driftFindings, driftFingerprint } from "./drift.js";
-import { messageOf, reason } from "./errors.js";
+import { reason, sanitizeReasons } from "./errors.js";
 import {
 	blockedObservation,
 	isConvergedOn,
@@ -45,8 +62,10 @@ import {
 	sanitizeObservation,
 } from "./observation.js";
 
+// public-contract: interval between re-observations of a converged Camp.
 export const RECONCILE_OBSERVE_INTERVAL_MS = 60_000 as const;
 
+// public-contract: metric names the reconciler emits through TelemetrySink.
 export const RECONCILE_METRICS = Object.freeze({
 	passes: "hobo.cd.reconcile.passes",
 	duration: "hobo.cd.reconcile.duration",
@@ -66,12 +85,16 @@ export type CampReconcilerDeps = CdBase & {
 	readonly realizer: Realizer;
 	readonly drift: DriftPolicy;
 	readonly telemetry: TelemetrySink;
+	/** DepartureAction for a `depart` Set; default CD_DEFAULTS (ORPHAN_DATA). */
 	readonly departureAction?: (
 		campId: CampId,
 		set: SetRecord,
 	) => DepartureAction | Promise<DepartureAction>;
+	/** Re-observation interval for a Camp with no new change. */
 	readonly observeIntervalMs?: number;
+	/** Remediations of one drift fingerprint before it escalates. */
 	readonly maxRemediations?: number;
+	/** Sleep between `run` passes; injectable for tests. */
 	readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 	readonly principal?: PrincipalRef;
 };
@@ -136,6 +159,7 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		try {
 			await d.telemetry.metrics(points);
 		} catch {
+			// Telemetry never fails a reconcile pass.
 		}
 	}
 
@@ -182,6 +206,27 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		);
 	}
 
+	function cancelled(
+		campId: CampId,
+		setId = "",
+		fence = 0n,
+	): ReconcileObservationRecord {
+		return blockedObservation({
+			campId,
+			setId,
+			reconcilerId: d.reconcilerId,
+			fence,
+			nowMs: d.now(),
+			reasons: [
+				reason(
+					"reconcile-cancelled",
+					"Reconciliation was cancelled before a target mutation.",
+					campId,
+				),
+			],
+		});
+	}
+
 	function realizeInput(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
@@ -206,29 +251,45 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 	): Promise<ReconcileObservationRecord> {
 		const out = await d.transport.report(lease, observation);
 		if (out.ok) return observation;
-		return withReasons(observation, out.reasons, ReconcileStatus.BLOCKED);
+		return withReasons(
+			observation,
+			sanitizeReasons(out.reasons, lease.campId, "transport"),
+			ReconcileStatus.BLOCKED,
+		);
 	}
 
 	async function guarded(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
 		call: () => Promise<ReconcileObservationRecord>,
-		code: "realize-failed",
+		code: "realize-failed" | "realize-outcome-unknown",
 	): Promise<ReconcileObservationRecord> {
 		try {
 			return await call();
-		} catch (error) {
+		} catch {
 			return blockedObservation({
 				campId: lease.campId,
 				setId: change.set.setId,
 				reconcilerId: d.reconcilerId,
 				fence: lease.fence,
 				nowMs: d.now(),
-				reasons: [reason(code, messageOf(error), lease.campId)],
+				reasons: [
+					reason(
+						code,
+						code === "realize-outcome-unknown"
+							? "The dispatched realizer operation has an unknown outcome."
+							: "The realizer could not complete the operation.",
+						lease.campId,
+					),
+				],
 			});
 		}
 	}
 
+	/**
+	 * The only path that calls Realizer.converge. OBSERVE_ONLY Camps are refused
+	 * here, and the lease is re-checked before every mutation (I4).
+	 */
 	async function mutate(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
@@ -245,11 +306,13 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 				reconcilerId: d.reconcilerId,
 				fence: lease.fence,
 				nowMs: d.now(),
-				reasons: renewed.reasons,
+				reasons: sanitizeReasons(renewed.reasons, lease.campId, "transport"),
 			});
 		}
 		held.set(lease.campId, renewed.value);
-		await report(
+		if (ctx.signal?.aborted)
+			return cancelled(lease.campId, change.set.setId, lease.fence);
+		const started = await report(
 			lease,
 			create(ReconcileObservationRecordSchema, {
 				campId: lease.campId,
@@ -260,12 +323,15 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 				observedAt: new Date(d.now()).toISOString(),
 			}),
 		);
+		if (started.status === ReconcileStatus.BLOCKED) return started;
 		await metric([point(RECONCILE_METRICS.mutations, 1, lease.campId)]);
+		if (ctx.signal?.aborted)
+			return cancelled(lease.campId, change.set.setId, lease.fence);
 		const raw = await guarded(
 			lease,
 			change,
 			() => d.realizer.converge(input, ctx),
-			"realize-failed",
+			"realize-outcome-unknown",
 		);
 		return sanitize(lease, change, raw, input);
 	}
@@ -325,12 +391,13 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		if (!committed.ok)
 			return withReasons(
 				observation,
-				committed.reasons,
+				sanitizeReasons(committed.reasons, lease.campId, "transport"),
 				ReconcileStatus.BLOCKED,
 			);
 		return observation;
 	}
 
+	/** Handle the newest desired-state change for a leased Camp. */
 	async function apply(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
@@ -348,10 +415,12 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 					reconcilerId: d.reconcilerId,
 					fence: lease.fence,
 					nowMs: d.now(),
-					reasons: resolved.reasons,
+					reasons: sanitizeReasons(resolved.reasons, lease.campId, "transport"),
 				}),
 			);
 		}
+		if (ctx.signal?.aborted)
+			return cancelled(lease.campId, change.set.setId, lease.fence);
 		const input = realizeInput(lease, change, resolved.value, ctx);
 		const observed = sanitize(
 			lease,
@@ -365,9 +434,12 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 			input,
 		);
 		m.lastObservedAtMs = d.now();
+		// Without a successful observation nothing is applied: an unknown
+		// target state is resolved by observation only (I5).
 		if (observed.status === ReconcileStatus.BLOCKED)
 			return report(lease, observed);
 		if (change.management !== CampManagement.MANAGED) {
+			// OBSERVE_ONLY: read, report and record drift; never apply.
 			const findings = driftFindings(observed);
 			const reported = await report(
 				lease,
@@ -386,6 +458,8 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 				: checkpoint(lease, change, reported);
 		}
 		const plan = await departure(lease, change, input, observed);
+		// The target already runs this Set but diverged: that is drift, routed
+		// by policy, never a silent re-apply.
 		if (
 			!plan &&
 			observed.setId === change.set.setId &&
@@ -415,6 +489,7 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		return reported;
 	}
 
+	/** Periodic re-observation of the current Set: drift detection + routing. */
 	async function reobserve(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
@@ -431,9 +506,11 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 					reconcilerId: d.reconcilerId,
 					fence: lease.fence,
 					nowMs: d.now(),
-					reasons: resolved.reasons,
+					reasons: sanitizeReasons(resolved.reasons, lease.campId, "transport"),
 				}),
 			);
+		if (ctx.signal?.aborted)
+			return cancelled(lease.campId, change.set.setId, lease.fence);
 		const input = realizeInput(lease, change, resolved.value, ctx);
 		const observed = sanitize(
 			lease,
@@ -450,6 +527,10 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		return routeDrift(lease, change, input, observed, ctx);
 	}
 
+	/**
+	 * Drift detection and routing for a Camp that runs `change.set`: flapping
+	 * suppression, DriftPolicy routing and the oscillation guard.
+	 */
 	async function routeDrift(
 		lease: ReconcilerLease,
 		change: DesiredStateChange,
@@ -471,6 +552,7 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 			return report(lease, observed);
 		}
 		const fingerprint = driftFingerprint(change.set.setId, findings);
+		// Flapping: the same drift as last pass, already handled, emits nothing.
 		if (fingerprint === m.lastDriftFingerprint) return observed;
 		m.lastDriftFingerprint = fingerprint;
 		const detected = reason(
@@ -547,6 +629,8 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 								),
 							])
 						: after;
+				// A confirmed reconverge makes the same fingerprint new drift next
+				// time (the oscillation guard still bounds remediations).
 				if (remediated.status === ReconcileStatus.CONVERGED)
 					m.lastDriftFingerprint = undefined;
 				return report(lease, remediated);
@@ -572,7 +656,8 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 			holderId: d.holderId,
 			ttlMs: CD_DEFAULTS.leaseTtlMs,
 		});
-		if (!claimed.ok) return [...claimed.reasons];
+		if (!claimed.ok)
+			return sanitizeReasons(claimed.reasons, campId, "transport");
 		held.set(campId, claimed.value);
 		return claimed.value;
 	}
@@ -584,6 +669,7 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 	): Promise<ReconcileObservationRecord> {
 		const started = d.now();
 		const m = mem(campId);
+		if (ctx.signal?.aborted) return cancelled(campId, m.current?.set.setId);
 		const got = await lease(campId);
 		if (Array.isArray(got)) {
 			m.attempt += 1;
@@ -602,12 +688,16 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 		const current = got;
 		let observation: ReconcileObservationRecord | undefined;
 		try {
+			if (ctx.signal?.aborted)
+				return cancelled(campId, m.current?.set.setId, current.fence);
 			let newest: DesiredStateChange | undefined;
 			for await (const change of d.transport.feed({
 				lease: current,
 				signal: ctx.signal ?? new AbortController().signal,
 			}))
 				newest = change;
+			if (ctx.signal?.aborted)
+				return cancelled(campId, newest?.set.setId, current.fence);
 			if (newest) observation = await apply(current, newest, ctx);
 			else if (
 				m.current &&
@@ -688,6 +778,8 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 						await pass(campId, ctx, true);
 					}
 					if (signal.aborted) break;
+					// Wake every service tick: leases renew well inside their TTL and
+					// backed-off Camps are skipped until their retry time.
 					await sleep(CD_DEFAULTS.serviceTickMs, signal);
 				}
 			} finally {

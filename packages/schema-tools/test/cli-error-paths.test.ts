@@ -19,6 +19,8 @@ describe("argv errors", () => {
 	});
 
 	it("reports argv errors on stderr even when --json was requested", async () => {
+		// Parsing throws before the invocation exists, so the json error
+		// envelope cannot apply yet — pinned so the contract stays deliberate.
 		const result = await runCli(["--json", "--frobnicate"]);
 		expect(result.exitCode).toBe(1);
 		expect(result.stdout).toBe("");

@@ -7,14 +7,17 @@ tags: [hobo, ci, routing, fleet, relay, verdict, monitoring, operations]
 
 # Finding 145: fleet verdict channel operating record
 
-**Status:** built in the stack `sdlc/routing-01` to `sdlc/routing-07`; no gate of the operating checklist has
-been passed yet. Fill in each row's **Measured** cell, with links, as its gate is passed, and only then start
-the next.
+**Status:** closed without a gate passed. Built in the stack `sdlc/routing-01` to `sdlc/routing-07`; the
+hosted verdict channel was then retired before any gate of the operating checklist was passed
+([ADR-0181](../../design/adr/routing-slips.md#adr-0181), which supersedes ADR-0180's hosted transport):
+its routes answer 404 and its store, reporter and enrollment are removed. The fleet ADR keeps it retired: the
+hosted relay keeps no fleet verdict ([No fleet verdicts](../../../packages/ci-vercel/README.md)). The rows below
+stay unfilled as the record of what was never observed.
 
 Design and authority:
-[ADR-0180](urn:hobo:decision:adr-0180-amendment) and its
-[routing rules amendment](urn:hobo:decision:adr-0180-rules). Runbooks:
-[Fleet verdict operations](../../../packages/ci-vercel/README.md#fleet-verdict-operations). Monitor: the CI health
+[ADR-0180](../../design/adr/fleet-verdict.md#adr-0180-amendment) and its
+[routing rules amendment](../../design/adr/fleet-verdict.md#adr-0180-rules). The hosted
+verdict runbooks were removed with the verdict store. Monitor: the CI health
 monitor, [`docs/ci/health-monitor.md`](../health-monitor.md).
 
 ## Evidence
@@ -45,7 +48,7 @@ consumer then fell back silently to a default.
   and asks again before shards.
 - **Loud fallbacks** ([CI health monitor](../health-monitor.md)). Every fallback leaves a titled annotation; `ci-health.yml` reads them every two
   hours and opens an issue per breach.
-- **Retirement** ([ADR-0180, Retirement](urn:hobo:decision:adr-0180-retirement)). The `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` publishers are removed; no
+- **Retirement** ([ADR-0180, Retirement](../../design/adr/fleet-verdict.md#adr-0180-retirement)). The `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` publishers are removed; no
   workflow may read a fleet variable (lint).
 - **The smoke check probes the public origin.** `relay-deploy.yml` requires the verdict read at the origin
   `.hobo/ci.json` names to answer a verdict for this repository.

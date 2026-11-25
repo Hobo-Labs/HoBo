@@ -52,18 +52,18 @@ test("authoritative dependencies map service, UX, security, support, legal, and 
     assert.ok(boundary.rule, `${boundary.id} missing rule`);
   }
   assert.deepEqual(COMPLIANCE_EVIDENCE_PACK_SCOPE.designRefs, [
-    "urn:hobo:requirement:security-verification",
-    "urn:hobo:requirement:tenant-data-lifecycle",
-    "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
-    "urn:hobo:requirement:support-sla-channels",
-    "urn:hobo:requirement:backup-restore",
-    "urn:hobo:requirement:launch-blocker-taxonomy",
+    "docs/design/security-verification.md",
+    "docs/design/tenant-data-lifecycle.md",
+    "docs/design/sbom-vulnerability-notice-evidence.md",
+    "docs/design/support-sla-channels.md",
+    "docs/design/backup-restore.md",
+    "docs/design/launch-blocker-taxonomy.md",
   ]);
   assert.deepEqual(COMPLIANCE_EVIDENCE_PACK_SCOPE.adrRefs, [
-    "urn:hobo:decision:adr-0023",
-    "urn:hobo:decision:adr-0060",
-    "urn:hobo:decision:adr-0074",
-    "urn:hobo:decision:adr-0064",
+    "docs/design/adr/02-identity-security.md#adr-0023",
+    "docs/design/adr/02-identity-security.md#adr-0060",
+    "docs/design/adr/02-identity-security.md#adr-0074",
+    "docs/design/adr/07-portability-extensibility.md#adr-0064",
   ]);
   assert.ok(
     COMPLIANCE_EVIDENCE_PACK_SCOPE.owningInitiativeDependencies.some(

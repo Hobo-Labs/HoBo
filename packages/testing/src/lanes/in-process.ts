@@ -1,3 +1,25 @@
+/**
+ * The in-process whole-graph lane (ADR-0159 §2a) — and its honest boundary.
+ *
+ * WHAT THIS EXECUTES. The collected topology is ordered dependencies-first.
+ * For every HTTP-shaped alias whose collected entrypoint factory resolves to a
+ * fetch handler, a real `node:http` listener is opened on an ephemeral
+ * loopback port and requests are adapted to/from the platform `Request`/
+ * `Response` types. Real application code runs; real HTTP crosses the wire.
+ * Binding values for the whole graph are served through `runtime-local`'s
+ * `createLocalBindingResolver`, so the lane resolves bindings the same way the
+ * local runtime does.
+ *
+ * WHAT THIS DOES NOT EXECUTE. `runtime-local` does not execute real `.wasm`
+ * component bytes today, so nothing here is the deployed artifact on the
+ * deployed host — hence `simulated`, never `real`. Queue, topic, secret, data,
+ * schedule, kv, bucket and flag resources expose local port implementations.
+ * Auth and the rest get only a handle and a binding locator: they are labelled
+ * `mocked`.
+ * `container` and `wasm-component` are labelled `camp-only`. Built-in
+ * emulators contact no provider, broker no credentials and write no `.hobo/`
+ * state. Caller-supplied factories run their own code.
+ */
 
 import {
 	createServer,
@@ -365,6 +387,10 @@ function validateEmulator(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion */
 
+/**
+ * Boot the collected graph in dependency order. Every handle carries its
+ * ADR-0042 fidelity label; nothing is labelled `real`.
+ */
 /* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: parseTestTopology checks the collected Bindle before deployment. */
 export async function deployInProcess(
 	bindle: unknown,
@@ -567,6 +593,10 @@ export async function deployInProcess(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters */
 
+/**
+ * Tear down in reverse dependency order and report the order walked, so a
+ * suite can assert the ordering rather than take it on trust.
+ */
 export async function destroyInProcess(
 	deployment: InProcessDeployment,
 ): Promise<readonly string[]> {

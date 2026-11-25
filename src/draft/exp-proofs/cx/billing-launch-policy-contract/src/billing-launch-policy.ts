@@ -182,7 +182,7 @@ export const BILLING_LAUNCH_POLICY = {
       id: "privacy.billing-data-retention",
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
       launchDisposition: "limitation",
-      evidenceLink: "urn:hobo:requirement:governance-planes#plan-46",
+      evidenceLink: "docs/design/governance-planes.md#plan-46",
     },
     {
       id: "compliance.tax-currency-receipts",

@@ -1,10 +1,14 @@
+/** Per-job backoff after a JIT runner exits without receiving work (job still queued). */
+
 export type JitEmptyExitState = Readonly<{
 	count: number;
 	nextLaunchMs: number;
 }>;
 
 export type JitEmptyExitBackoffOptions = Readonly<{
+	/** First delay after the first empty exit (default 30s). */
 	baseMs?: number;
+	/** Cap per delay (default 10m). */
 	maxMs?: number;
 }>;
 

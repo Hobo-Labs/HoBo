@@ -35,6 +35,8 @@ pnpm.cmd --dir src\draft\exp-proofs\vibe-plan-diff-review-prototype test
 | Happy path, blocked path, stale/unknown evidence path, support handoff, accessibility notes, and proof-mode labels are covered. | `scenarios`, `supportHandoff`, `accessibilityNotes`, and proof-mode validation cover each acceptance state. |
 | Scope out remains hard. | `classifyPlanDiffRequest` rejects planner/apply/approval, live cost API, production UI, and proofless launch requests. |
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` - protobuf data shapes and CUE constraints for golden plan/diff fixtures.
 - `architecture/pacts/` - Pact-style package boundary fixture.
+- `ADR.md` - parse-don't-validate composition note over accepted M1 proofs.

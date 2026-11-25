@@ -14,12 +14,12 @@ bound variable or the provider's conventional ones (`VERCEL_TOKEN`,
 `VERCEL_API_TOKEN`) already hold a real token. It cannot see a token under a name
 the allowlist lets through (`HOBO_PAT`, `HOBO_DEPLOY_KEY`), in `passEnv` (passed as
 given), or in files the command can read as you (`HOME` and `XDG_*` point at them).
-[ADR-0170](urn:hobo:decision:adr-0170) lists what is not
+[ADR-0170](../../../docs/design/adr/02-identity-security.md#adr-0170) lists what is not
 proven.
 
 It is a `SecretsPort` of kind `opensesame` (ADR-0113 residual port, ADR-0027
 rank `provider-federation`): `access()` returns the run's surrogate and nothing
-else. See [ADR-0170](urn:hobo:decision:adr-0170).
+else. See [ADR-0170](../../../docs/design/adr/02-identity-security.md#adr-0170).
 
 ## Scope, honestly
 

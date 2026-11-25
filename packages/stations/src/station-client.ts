@@ -1,3 +1,8 @@
+/**
+ * Local Station store + client used by Broker (Conductor) and CLI.
+ * Durable state lives under HOBO_HOME/stations/<id>/; Conductor holds no long-lived secrets.
+ */
+
 import {
 	existsSync,
 	mkdirSync,
@@ -28,11 +33,21 @@ export type StationClient = Readonly<{
 	load: () => StationState;
 	occupancy: () => StationOccupancy;
 	activeRail: () => Rail;
+	/** Pins for receipts — always complete (stationId + active railHash). */
 	pins: () => StationPins;
 }>;
 
 export function stationRoot(hoboHome: string, stationId: string): string {
 	const safe = stationId.replace(/[^a-zA-Z0-9._:-]/g, "_");
+	// Replacing separators is not enough on its own, because `.` is inside the
+	// safe class: a station id of `..` sanitized to `..` and `join` then
+	// normalized it away, so `stationRoot(home, "..")` returned HOBO_HOME itself
+	// and `persistStationEvents` wrote `HOBO_HOME/events.jsonl` — outside the
+	// per-station directory entirely (`"."` landed on `stations/events.jsonl`
+	// the same way). A station id reaches here from `--station`, HOBO_STATION,
+	// and the profile, so it is attacker-adjacent input. A name that is only
+	// dots has no legitimate use, so neutralize it rather than rejecting: the
+	// resulting directory is still deterministic and still inside HOBO_HOME.
 	const contained = /^\.+$/u.test(safe) ? safe.replace(/\./g, "_") : safe;
 	return join(hoboHome, "stations", contained);
 }
@@ -133,9 +148,14 @@ export type InitStationResult = Readonly<{
 	occupancy: StationOccupancy;
 	bootstrap: Rail;
 	created: boolean;
+	/** Non-bootstrap Rail activated from an imported policy document, if any. */
 	activatedRailHash?: `sha256:${string}`;
 }>;
 
+/**
+ * Create Station under HOBO_HOME. Idempotent: re-init returns existing Station.
+ * No silent auto-create elsewhere — callers must invoke init explicitly.
+ */
 export function initStation(input: {
 	readonly hoboHome: string;
 	readonly id?: string;
@@ -144,6 +164,10 @@ export function initStation(input: {
 	readonly residency?: string;
 	readonly airgap?: boolean;
 	readonly trustDomain?: string;
+	/**
+	 * Optional policy document (e.g. project hobo.broker.json) published and
+	 * activated as the Station's non-bootstrap Rail at init time.
+	 */
 	readonly importRailDocPath?: string;
 }): InitStationResult {
 	const name = input.name ?? "local";
@@ -191,6 +215,7 @@ export function initStation(input: {
 	let activatedRailHash: `sha256:${string}` | undefined;
 	const railDocPath = input.importRailDocPath;
 	if (railDocPath && existsSync(railDocPath)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const raw = JSON.parse(readFileSync(railDocPath, "utf8")) as JsonObject;
 		const imported = railFromBrokerConfig(stationId, raw);
 		const published = svc.publishRail({
@@ -214,6 +239,8 @@ export function initStation(input: {
 	persistStationEvents(input.hoboHome, stationId, svc.events);
 	const snap = svc.snapshot();
 	if (snap === null || snap === undefined) {
+		// The service just created this station, so a missing snapshot means the
+		// create path silently failed — surface that rather than dereferencing.
 		throw new Error(
 			`station ${stationId}: no snapshot after create; the station was not initialized`,
 		);
@@ -228,6 +255,7 @@ export function initStation(input: {
 	};
 }
 
+/** List station ids under HOBO_HOME/stations. */
 export function listStationIds(hoboHome: string): readonly string[] {
 	const root = join(hoboHome, "stations");
 	if (!existsSync(root)) return [];
@@ -239,6 +267,10 @@ export function listStationIds(hoboHome: string): readonly string[] {
 	);
 }
 
+/**
+ * Resolve Station context: flags → env → profile → single local Station → fail.
+ * Never auto-creates durable Station state.
+ */
 export interface ResolvedStationContext {
 	readonly stationId: string;
 	readonly client: StationClient;
@@ -279,6 +311,10 @@ export function resolveStationContext(input: {
 			"events.jsonl",
 		);
 		if (existsSync(eventsPath)) {
+			// Prefer the id from the first event when the directory name is
+			// escaped. An empty or unreadable first line means the file carries no
+			// usable id, so fall back to the directory rather than dereferencing
+			// nothing.
 			const firstLine = readFileSync(eventsPath, "utf8")
 				.split("\n")
 				.find((line) => line.length > 0);
@@ -309,6 +345,9 @@ export function resolveStationContext(input: {
 	);
 }
 
+/**
+ * Cross-Station Connection use fails closed without an explicit federation grant.
+ */
 export function assertConnectionStationAccess(input: {
 	readonly connectionStationId: string;
 	readonly requestStationId: string;

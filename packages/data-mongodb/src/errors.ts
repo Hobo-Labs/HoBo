@@ -1,16 +1,48 @@
+/**
+ * Stable error codes for the MongoDB engine binding.
+ *
+ * Two classes, for two sides of the executor boundary. An executor reports a
+ * refused command as a `MongoCommandError` carrying the server's numeric code
+ * and nothing else; the binding turns that into a `MongoDataError` a caller
+ * can act on. Contract-level refusals (a fenced write, a refused retire, a
+ * differing schema) stay `DataCoreError`s from `@hobo/data-core`, so they mean
+ * the same thing on every engine.
+ *
+ * Neither class ever carries a server message, and neither carries a `cause`.
+ * MongoDB quotes the offending key in a duplicate-key error and the offending
+ * document in a validation error, and a driver error can hold the address it
+ * dialled; all of that is payload or deployment detail. A chained `cause` is
+ * printed by `util.inspect`, by every logger, and by an uncaught-exception
+ * report, so the only safe chain is no chain: what survives a refused command
+ * is its numeric code, its code name, and its labels.
+ */
+
 export const MONGO_DATA_ERROR_CODES = [
+	/** The engine options were refused at construction. */
 	"MONGODB_INVALID_OPTIONS",
+	/** A port was called with an argument outside its contract. */
 	"MONGODB_INVALID_REQUEST",
+	/** A canonical value falls outside what its declared native type can hold. */
 	"MONGODB_VALUE_NOT_REPRESENTABLE",
+	/** A stored value has no canonical form; it was written outside the binding. */
 	"MONGODB_NON_CANONICAL_VALUE",
+	/** The collection's validator refused the document. */
 	"MONGODB_DOCUMENT_REJECTED",
+	/** The document reaches the 16 MiB BSON limit. */
 	"MONGODB_DOCUMENT_TOO_LARGE",
+	/** Multi-document transactions are not available (a standalone server). */
 	"MONGODB_TRANSACTIONS_UNAVAILABLE",
+	/** One atomic unit outgrew a transaction's size or lifetime. */
 	"MONGODB_TRANSACTION_LIMIT",
+	/** Change streams are not available (a standalone server). */
 	"MONGODB_CAPTURE_UNAVAILABLE",
+	/** The position is no longer in the oplog, or is not a resume token. */
 	"MONGODB_CAPTURE_POSITION_LOST",
+	/** The stream reported an event that is not a record change (drop, rename). */
 	"MONGODB_CAPTURE_UNSUPPORTED_EVENT",
+	/** The subscription name already belongs to a reader of another scope. */
 	"MONGODB_CAPTURE_SUBSCRIPTION_CONFLICT",
+	/** Any other refused command; `detail.serverCode` names it. */
 	"MONGODB_COMMAND_FAILED",
 ] as const;
 
@@ -46,18 +78,35 @@ export function isMongoDataError(
 	return value instanceof MongoDataError;
 }
 
+/** What an executor knows about a refused command: codes, never messages. */
+// domain-view: the thrown form of the wire record MongoCommandFailure in data-models/data_mongodb.proto.
 export interface MongoCommandFailure {
+	/**
+	 * The server's numeric error code. 0 when the refusal was client-side and
+	 * has no server code; an adapter that knows which server refusal a
+	 * client-side one stands in for reports that code instead.
+	 */
 	readonly code: number;
+	/** The server's code name, or the client error class when `code` is 0. */
 	readonly codeName: string;
+	/** Server error labels, e.g. `TransientTransactionError`. */
 	readonly labels?: readonly string[];
 }
 
+/** A code name or a label: an identifier, so it cannot smuggle a message. */
 const NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
 
 function nameOnly(text: string): string {
 	return NAME_PATTERN.test(text) ? text : "";
 }
 
+/**
+ * Thrown by a `MongoExecutor` when the server (or the driver) refuses.
+ *
+ * It takes a failure record and nothing else — there is deliberately no way
+ * to chain the driver's own error, whose message quotes keys, documents, and
+ * addresses. A code name or label that is not a plain identifier is dropped.
+ */
 export class MongoCommandError extends Error {
 	readonly code: number;
 	readonly codeName: string;
@@ -79,6 +128,7 @@ export class MongoCommandError extends Error {
 	}
 }
 
+/** Server error codes the binding gives a meaning to. */
 export const MONGO_SERVER_CODES = Object.freeze({
 	illegalOperation: 20,
 	namespaceExists: 48,
@@ -169,6 +219,12 @@ const CODE_MEANING: ReadonlyMap<number, readonly [MongoDataErrorCode, string]> =
 		],
 	]);
 
+/**
+ * Give a refused command the meaning a caller can act on. Only the numeric
+ * code and its name cross over, as detail. The refusal itself is not chained
+ * as `cause`: an executor is foreign code, and whatever it hung on its error
+ * would otherwise be one `util.inspect` away from a log.
+ */
 export function toMongoDataError(failure: MongoCommandError): MongoDataError {
 	const [code, message] = CODE_MEANING.get(failure.code) ?? [
 		"MONGODB_COMMAND_FAILED",
@@ -182,6 +238,7 @@ export function toMongoDataError(failure: MongoCommandError): MongoDataError {
 	});
 }
 
+/** True when the refusal is a duplicate `_id`: a lost race, not a failure. */
 export function isDuplicateKey(cause: unknown): boolean {
 	return (
 		cause instanceof MongoCommandError &&

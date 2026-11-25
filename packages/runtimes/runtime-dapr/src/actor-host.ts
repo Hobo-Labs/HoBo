@@ -1,3 +1,13 @@
+/**
+ * Dapr-backed ActorHost: maps HoBo single-writer lease + fence onto Dapr
+ * virtual-actor single-threaded concurrency + placement.
+ *
+ * Residual divergence (declared): Dapr reminders/timers are optional; state may
+ * fold from HoBo event stream (default) or Dapr state store when configured.
+ * Fencing is emulated with monotonic tokens per actor key for parity with
+ * native ActorHost conformance assertions.
+ */
+
 import {
 	type ActorHost,
 	type ActorLease,
@@ -11,16 +21,21 @@ import { mustGet } from "@hobo/core/total-access";
 import type { DaprSidecarClient } from "./dapr-client.js";
 import type { DaprRuntimeConfig } from "./types.js";
 
+/** Core `ActorLease` (ADR-0156) tagged with the Dapr placement. */
 export interface DaprActorLease extends ActorLease {
 	readonly placement: "dapr";
 }
 
+/** The canonical `@hobo/core` state handle (ADR-0156), under its Dapr name. */
 export type DaprActorStateHandle<S> = ActorStateHandle<S>;
 
+/** The core ActorHost port (ADR-0156) plus Dapr-specific members. */
 export interface DaprActorHost extends ActorHost {
 	readonly placementMode: "dapr";
+	/** `live` when a daprd client was injected for reminders/invoke. */
 	readonly fidelity: "simulated" | "live";
 	acquire(key: string, request: { holderId: string }): DaprActorLease;
+	/** Reminder registration (maps to Dapr actor reminders). */
 	registerReminder(
 		key: string,
 		name: string,
@@ -73,6 +88,11 @@ export interface CreateDaprActorHostOptions {
 	readonly leaseTtlMs?: number;
 	readonly nowMs?: () => number;
 	readonly metering?: MeteringBus;
+	/**
+	 * When set, reminders + optional actor invoke ride the daprd client path
+	 * (fidelity=`live`). Lease/fence single-writer remains local for parity
+	 * with native ActorHost conformance (Dapr concurrency mapped here).
+	 */
 	readonly client?: DaprSidecarClient;
 }
 
@@ -82,7 +102,7 @@ export function createDaprActorHost(
 	const leaseTtlMs = options.leaseTtlMs ?? 30_000;
 	const nowMs = options.nowMs ?? (() => Date.now());
 	const client = options.client;
-	const fidelity = client?.fidelity === "live" ? "live" : "simulated";
+	const fidelity: "simulated" | "live" = client ? "live" : "simulated";
 	const leases = new Map<string, LeaseRec>();
 	const streams = new Map<string, StreamRec>();
 	const lifecycle: DaprActorLifecycleEvent[] = [];
@@ -112,6 +132,7 @@ export function createDaprActorHost(
 					`dapr actor placement conflict for ${actorKey}: held by ${current.holderId}`,
 				);
 			}
+			// Live client path: also invoke daprd actor acquire for placement.
 			if (client) {
 				const [actorType, ...rest] = actorKey.split("/");
 				void client.invokeActor({
@@ -138,6 +159,7 @@ export function createDaprActorHost(
 			if (options.metering) {
 				void options.metering.emit(
 					createUsageEvent({
+						// SAFETY: assertion required at this I/O or test boundary.
 						tenantId: options.config.tenantId as TenantId,
 						eventType: "messaging.actor.activate",
 						resource: actorKey,

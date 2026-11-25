@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Mock the asset loaders so we can assert WHICH loader runs for root vs external
+// dirs (the load-vs-loadExternal asymmetry) without needing real PNG fixtures.
 vi.mock('../src/assetLoader.js', () => ({
   loadFurnitureAssets: vi.fn((dir: string) =>
     Promise.resolve({ catalog: [{ id: `furn:${dir}` }], sprites: new Map([[`s:${dir}`, []]]) }),
@@ -48,6 +50,7 @@ describe('assetReload helpers', () => {
     const result = await loadAllCharacters('root', ['e1', 'e2']);
 
     expect(result?.characters).toEqual(['char-root:root', 'char-ext:e1', 'char-ext:e2']);
+    // Root → loadCharacterSprites only; externals → loadExternalCharacterSprites only.
     expect(vi.mocked(assetLoader.loadCharacterSprites).mock.calls.map((c) => c[0])).toEqual([
       'root',
     ]);
@@ -71,6 +74,7 @@ describe('assetReload helpers', () => {
     const result = await loadAllFurniture('root', ['e1', 'e2']);
 
     expect(result?.catalog).toEqual([{ id: 'furn:root' }, { id: 'furn:e1' }, { id: 'furn:e2' }]);
+    // Furniture: loadFurnitureAssets for BOTH root and externals (no separate external loader).
     expect(vi.mocked(assetLoader.loadFurnitureAssets).mock.calls.map((c) => c[0])).toEqual([
       'root',
       'e1',
@@ -88,9 +92,11 @@ describe('assetReload helpers', () => {
   it('buildAssetCache reproduces the wrap/unwrap asymmetry', async () => {
     const cache = await buildAssetCache('dist', []);
 
+    // Wrapped: characters/pets/furniture keep their wrapper objects.
     expect(cache.characters).toEqual({ characters: ['char-root:dist'] });
     expect(cache.pets).toEqual({ pets: ['pet-root:dist'], manifests: [{ name: 'm:dist' }] });
     expect(cache.furniture?.catalog).toEqual([{ id: 'furn:dist' }]);
+    // Unwrapped: floor/wall/carpet store the inner array, not the wrapper.
     expect(cache.floorTiles).toEqual([['floor:dist']]);
     expect(cache.wallTiles).toEqual([['wall:dist']]);
     expect(cache.carpetTiles).toEqual([['carpet:dist']]);
@@ -103,6 +109,7 @@ describe('assetReload helpers', () => {
     expect(cache.characters?.characters).toEqual(['char-root:dist', 'char-ext:ext']);
     expect(cache.pets?.pets).toEqual(['pet-root:dist', 'pet-ext:ext']);
     expect(cache.furniture?.catalog).toEqual([{ id: 'furn:dist' }, { id: 'furn:ext' }]);
+    // Floor/wall/carpet are bundled-only: loaded from dist, never from the external dir.
     expect(vi.mocked(assetLoader.loadFloorTiles).mock.calls.map((c) => c[0])).toEqual(['dist']);
   });
 });

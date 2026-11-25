@@ -45,9 +45,11 @@ Production promotion target: `packages/identity/src/broker/` (blocked on S3-02 /
 pnpm --prefix src/draft/technical-proofs/token-broker-exchange-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.
 
 ## Scope (out)
 

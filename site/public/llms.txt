@@ -23,11 +23,11 @@ The full docs dump is at https://tyler-r-kendrick.github.io/HoBo/llms-full.txt.
 
 ## Architecture
 
-- [Architecture overview](https://tyler-r-kendrick.github.io/HoBo/system/)
-- [Data plane](https://tyler-r-kendrick.github.io/HoBo/system/data-plane/)
-- [Control plane](https://tyler-r-kendrick.github.io/HoBo/system/control-plane/)
-- [WASM & WIT surface](https://tyler-r-kendrick.github.io/HoBo/system/wasm/)
-- [Air-gapped & sovereign](https://tyler-r-kendrick.github.io/HoBo/system/air-gapped/)
+- [Architecture overview](https://tyler-r-kendrick.github.io/HoBo/architecture/)
+- [Data plane](https://tyler-r-kendrick.github.io/HoBo/architecture/data-plane/)
+- [Control plane](https://tyler-r-kendrick.github.io/HoBo/architecture/control-plane/)
+- [WASM & WIT surface](https://tyler-r-kendrick.github.io/HoBo/architecture/wasm/)
+- [Air-gapped & sovereign](https://tyler-r-kendrick.github.io/HoBo/architecture/air-gapped/)
 
 ## Security
 
@@ -50,16 +50,17 @@ The full docs dump is at https://tyler-r-kendrick.github.io/HoBo/llms-full.txt.
 - [Providers](https://tyler-r-kendrick.github.io/HoBo/ci/providers/)
 - [Fleet balancing](https://tyler-r-kendrick.github.io/HoBo/ci/fleet-balancing/)
 - [Route table](https://tyler-r-kendrick.github.io/HoBo/ci/route-table/)
+- [Runner order](https://tyler-r-kendrick.github.io/HoBo/ci/runner-order/)
 - [Host health](https://tyler-r-kendrick.github.io/HoBo/ci/host-health/)
 
 ## HoBo CD
 
 HoBo CD (`@hobo/cd`) is the delivery sibling of HoBo CI. It moves immutable Freight (one content-addressed Bindle version) through a pipeline graph of Camps by pull: Freight sources poll registries and Git hosts, any CI can push by OIDC trusted publishing or in-toto/SLSA, every promotion is a Delta through the Gatekeeper and change windows, fenced per-Camp reconcilers (conductor, outbound-only agent, GitOps publisher) converge every platform, verification is deterministic and fails on no data, and rollback is a Delta. Fleets use deterministic Placement, fan-out under a failure budget and governed failover; Rails are delivered INFORM then ENFORCE and observed as posture. CLI: `hobo deploy`, `hobo serve cd`, `hobo incident`. Source docs:
 
-- [Design](https://github.com/tyler-r-kendrick/HoBo/blob/main/urn:hobo:requirement:continuous-delivery)
-- [Decisions (ADR-0182)](https://github.com/tyler-r-kendrick/HoBo/blob/main/urn:hobo:decision:adr-0182)
+- [Design](https://github.com/tyler-r-kendrick/HoBo/blob/main/docs/design/continuous-delivery.md)
+- [Decisions (ADR-0182)](https://github.com/tyler-r-kendrick/HoBo/blob/main/docs/design/adr/01-architecture-core.md#adr-0182)
 - [Runbooks](https://github.com/tyler-r-kendrick/HoBo/blob/main/docs/runbooks/cd/index.md)
-- [Resolver component authoring](https://github.com/tyler-r-kendrick/HoBo/blob/main/urn:hobo:requirement:resolver-component-authoring)
+- [Resolver component authoring](https://github.com/tyler-r-kendrick/HoBo/blob/main/docs/design/resolver-component-authoring.md)
 
 ## Primitives
 

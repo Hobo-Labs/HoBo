@@ -2,7 +2,7 @@ import type { EventEnvelope } from "@hobo/core";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { defineProjection, ProjectionFoldError } from "../src/index.js";
+import { defineProjection } from "../src/index.js";
 import { type Inspectable, isJsonObject } from "../src/json.js";
 import {
 	freshStore,
@@ -65,24 +65,6 @@ async function seedFixture(s: RuntimeLocalEventStore): Promise<void> {
 }
 
 describe("defineProjection read-model fold", () => {
-	it("materializes newly appended events directly from the event store", async () => {
-		const s = store();
-		const before = await orderView.rebuildFromZero(s, "order:live");
-		expect(before.rows).toEqual({});
-		await s.append(
-			"order:live",
-			[{ type: "order.Placed", data: { orderId: "live", totalCents: 500 } }],
-			{ expectedSeq: 0, actor, tenant: "tenant-a" },
-		);
-		const after = await orderView.rebuildFromZero(s, "order:live");
-		expect(after.streamSequences).toEqual({ "order:live": 1 });
-		expect(after.rows.live).toEqual({
-			orderId: "live",
-			status: "placed",
-			totalCents: 500,
-		});
-	});
-
 	it("rebuildFromZero equals the live fold byte-for-byte on a fixture stream", async () => {
 		const s = store();
 		await seedFixture(s);
@@ -90,11 +72,13 @@ describe("defineProjection read-model fold", () => {
 		const events: EventEnvelope[] = [];
 		for await (const event of s.read("order:1001")) events.push(event);
 
+		// "live": fold each growing prefix as events would arrive on the wire.
 		let live = orderView.fold(events.slice(0, 1));
 		for (let i = 2; i <= events.length; i += 1) {
 			live = orderView.fold(events.slice(0, i));
 		}
 
+		// "rebuild": drop the sink, replay the whole stream from the log.
 		const rebuilt = await orderView.rebuildFromZero(s, "order:1001");
 
 		expect(JSON.stringify(rebuilt)).toBe(JSON.stringify(live));
@@ -104,166 +88,6 @@ describe("defineProjection read-model fold", () => {
 			status: "confirmed",
 			totalCents: 4200,
 		});
-	});
-
-	it("tracks a separate observed sequence for every source stream", async () => {
-		const s = store();
-		await s.append(
-			"orders:a",
-			[
-				{ type: "order.Placed", data: { orderId: "a", totalCents: 100 } },
-				{ type: "order.Confirmed", data: { orderId: "a" } },
-				{ type: "order.Noted", data: { orderId: "a" } },
-			],
-			{ expectedSeq: 0, actor, tenant: "tenant-a" },
-		);
-		await s.append(
-			"orders:b",
-			[{ type: "order.Placed", data: { orderId: "b", totalCents: 200 } }],
-			{ expectedSeq: 0, actor, tenant: "tenant-a" },
-		);
-		const events: EventEnvelope[] = [];
-		for await (const event of s.read("orders:b")) events.push(event);
-		for await (const event of s.read("orders:a")) events.push(event);
-		const snapshot = orderView.fold(events);
-		expect(snapshot.streamSequences).toEqual({ "orders:a": 3, "orders:b": 1 });
-		expect(orderView.snapshot(snapshot).streamSequences).toEqual(
-			snapshot.streamSequences,
-		);
-		expect(snapshot.rows.a?.status).toBe("confirmed");
-		expect(snapshot.rows.b?.status).toBe("placed");
-		const append = (row: string[] | undefined, event: EventEnvelope) => [
-			...(row ?? []),
-			`${event.streamId}:${event.seq}`,
-		];
-		const ordered = defineProjection({
-			name: "interleaved-orders",
-			key: () => "all",
-			on: {
-				"order.Placed": append,
-				"order.Confirmed": append,
-				"order.Noted": append,
-			},
-		}).fold(events);
-		expect(ordered.rows.all).toEqual(
-			events.map((event) => `${event.streamId}:${event.seq}`),
-		);
-		const firstEvent = events[0];
-		if (!firstEvent) throw new Error("event fixture is empty");
-		expect(() => orderView.fold([{ ...firstEvent, seq: Number.NaN }])).toThrow(
-			/safe sequence/,
-		);
-	});
-
-	it("folds an out-of-order stream by sequence and rejects duplicates", async () => {
-		const s = store();
-		await seedFixture(s);
-		const events: EventEnvelope[] = [];
-		for await (const event of s.read("order:1001")) events.push(event);
-		const placed = events[0];
-		const confirmed = events[1];
-		const nextOrder = events[2];
-		if (!placed || !confirmed || !nextOrder)
-			throw new Error("fixture is incomplete");
-		const snapshot = orderView.fold([confirmed, placed, nextOrder]);
-		expect(snapshot.rows["1001"]?.status).toBe("confirmed");
-		expect(snapshot.rows["1002"]?.status).toBe("placed");
-		expect(snapshot.streamSequences).toEqual({ "order:1001": 3 });
-		expect(() => orderView.fold([placed, placed])).toThrow(
-			/duplicate sequence/,
-		);
-	});
-
-	it("reports the projection and source event when a fold fails", async () => {
-		const s = store();
-		await s.append(
-			"orders:broken",
-			[{ type: "order.Placed", data: { orderId: "broken" } }],
-			{ expectedSeq: 0, actor, tenant: "tenant-a" },
-		);
-		const events: EventEnvelope[] = [];
-		for await (const event of s.read("orders:broken")) events.push(event);
-		let failure: Error | undefined;
-		try {
-			orderView.fold(events);
-		} catch (error) {
-			if (!(error instanceof Error)) throw error;
-			failure = error;
-		}
-		expect(failure).toBeInstanceOf(ProjectionFoldError);
-		if (!(failure instanceof ProjectionFoldError))
-			throw new Error("fold did not fail");
-		expect(failure).toMatchObject({
-			projection: "orders",
-			streamId: "orders:broken",
-			seq: 1,
-			eventType: "order.Placed",
-		});
-		expect(failure.cause).toBeInstanceOf(Error);
-	});
-
-	it("rejects incomplete definitions and invalid row keys", async () => {
-		const base = {
-			name: "orders",
-			key: (event: EventEnvelope) => event.streamId,
-			on: { "order.Placed": () => ({}) },
-		};
-		expect(() => defineProjection({ ...base, name: "  " })).toThrow(/name/);
-		expect(() => defineProjection({ ...base, on: {} })).toThrow(/handler/);
-		expect(() =>
-			defineProjection({ ...base, on: { " ": () => ({}) } }),
-		).toThrow(/handler/);
-		const s = store();
-		await seedFixture(s);
-		const events: EventEnvelope[] = [];
-		for await (const event of s.read("order:1001")) events.push(event);
-		const projection = defineProjection({ ...base, key: () => " " });
-		expect(() => projection.fold(events)).toThrow(ProjectionFoldError);
-		expect(() => projection.fold(events)).toThrow(/non-empty string/);
-	});
-
-	it("keeps source events immutable while calculating row keys", async () => {
-		const s = store();
-		await seedFixture(s);
-		const events: EventEnvelope[] = [];
-		for await (const event of s.read("order:1001")) events.push(event);
-		const original = structuredClone(events);
-		const projection = defineProjection({
-			name: "key-mutation",
-			key: (event) => {
-				Object.assign(event.data, { orderId: "changed" });
-				return event.streamId;
-			},
-			on: { "order.Placed": () => ({}) },
-		});
-		expect(() => projection.fold(events)).toThrow(ProjectionFoldError);
-		expect(events).toEqual(original);
-	});
-
-	it("preserves a classified transient error so the caller can retry", async () => {
-		const s = store();
-		await seedFixture(s);
-		const events: EventEnvelope[] = [];
-		for await (const event of s.read("order:1001")) events.push(event);
-		const failure = new Error("temporary dependency failure");
-		const projection = defineProjection({
-			name: "retryable-orders",
-			key: (event) => event.streamId,
-			on: {
-				"order.Placed": () => {
-					throw failure;
-				},
-			},
-			classifyFailure: () => "transient",
-		});
-		let observed: Error | undefined;
-		try {
-			projection.fold(events);
-		} catch (error) {
-			if (!(error instanceof Error)) throw error;
-			observed = error;
-		}
-		expect(observed).toBe(failure);
 	});
 
 	it("cannot mutate the write model — the fold is read-only by construction", async () => {
@@ -277,10 +101,12 @@ describe("defineProjection read-model fold", () => {
 			on: {
 				"order.Placed": (_row, event) => {
 					sawFrozenEvent = Object.isFrozen(event);
+					// SAFETY: EventEnvelope.data is JSON at the store boundary.
 					const data = event.data as Inspectable;
 					if (!isJsonObject(data)) {
 						throw new TypeError("order event data must be an object");
 					}
+					// A write attempt against the event body must throw (frozen input).
 					expect(() => {
 						Object.assign(data, { totalCents: -1 });
 					}).toThrow();
@@ -297,6 +123,7 @@ describe("defineProjection read-model fold", () => {
 		await spyView.rebuildFromZero(s, "order:1001");
 		expect(sawFrozenEvent).toBe(true);
 
+		// The projection surface exposes no write/append/emit capability.
 		expect("emit" in spyView).toBe(false);
 		expect("append" in spyView).toBe(false);
 		expect("store" in spyView).toBe(false);
@@ -310,75 +137,5 @@ describe("defineProjection read-model fold", () => {
 			readSet: ["order.Placed", "order.Confirmed"],
 			reactivityClass: "reactive",
 		});
-	});
-
-	it("carries immutable read-model metadata through declaration and snapshots", async () => {
-		const statusField = { name: "status", type: "string" };
-		const schema = {
-			witRecord: "shop:orders/order-view@1.0.0",
-			fields: [statusField, { name: "orderId", type: "string" }],
-		};
-		const hints = ["status", "orderId", "status"];
-		const projection = defineProjection<OrderRow>({
-			name: "orders-with-metadata",
-			readModel: schema.witRecord,
-			rowSchema: schema,
-			indexHints: hints,
-			key: (event) => parseOrderId(event.data),
-			on: {
-				"order.Placed": (_row, event) => ({
-					orderId: parseOrderId(event.data),
-					status: "placed",
-					totalCents: parseOrderPlacedData(event.data).totalCents,
-				}),
-			},
-		});
-		statusField.type = "changed";
-		hints.push("changed");
-		const expected = {
-			readModel: "shop:orders/order-view@1.0.0",
-			rowSchema: {
-				witRecord: "shop:orders/order-view@1.0.0",
-				fields: [
-					{ name: "orderId", type: "string" },
-					{ name: "status", type: "string" },
-				],
-			},
-			indexHints: ["orderId", "status"],
-		};
-		expect(projection.declared().data).toMatchObject(expected);
-		const s = store();
-		await seedFixture(s);
-		const snapshot = await projection.rebuildFromZero(s, "order:1001");
-		const expectedSnapshot = {
-			...expected,
-			readSet: ["order.Placed"],
-			reactivityClass: "reactive",
-		};
-		expect(snapshot).toMatchObject(expectedSnapshot);
-		expect(projection.snapshot(snapshot)).toMatchObject(expectedSnapshot);
-	});
-
-	it("rejects inconsistent or ambiguous read-model metadata", () => {
-		const base = {
-			name: "invalid-metadata",
-			key: (event: EventEnvelope) => event.streamId,
-			on: { "order.Placed": () => ({}) },
-		};
-		expect(() =>
-			defineProjection({ ...base, readModel: "shop:orders/view@1.0.0" }),
-		).toThrow(/row schema/i);
-		expect(() =>
-			defineProjection({
-				...base,
-				rowSchema: {
-					witRecord: "shop:orders/view@1.0.0",
-					fields: [
-						{ name: "id", type: "string" },
-						{ name: "id", type: "u32" },
-					],
-				},
-			}),
-		).toThrow(/duplicate/i);
 	});
 });

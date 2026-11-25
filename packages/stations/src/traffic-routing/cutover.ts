@@ -1,3 +1,5 @@
+// External routing mutations have noRollback effects: an ambiguous response
+// requires observation/reconciliation, never a blind retry or a claimed undo.
 
 import { createHash } from "node:crypto";
 import {
@@ -50,6 +52,8 @@ export const routingCutoverEffects = createEffectSpec({
 	capabilities: ["decides", "suspends"],
 	domains: ["network", "externalCall", "policyEval", "eventEmit", "clock"],
 });
+// The existing applicator enforces attempts, not wall-clock deadlines. Mutation
+// retries are forbidden; durable supervision owns deadlines and reconciliation.
 export const routingMutationResilience = createResilienceProfile({
 	id: "routing-mutation-once",
 	strategies: [
@@ -82,6 +86,8 @@ export type CutoverHealthObservation = Readonly<
 		"healthy" | "observedAt" | "observationId" | "backendId" | "planId"
 	>
 >;
+/** The callback is an observation boundary; structured evidence is mandatory
+ * when minObservationSeconds is declared. It must not replay provider writes. */
 export type CutoverHealthGate = (input: {
 	percent: number;
 	phase: "ramp" | "restore";
@@ -95,6 +101,7 @@ export type CutoverHealthGate = (input: {
 function isBooleanHealthObservation(
 	observation: boolean | CutoverHealthObservation,
 ): observation is boolean {
+	// Legacy trusted callbacks return booleans; distinguish that wire variant at the health I/O boundary.
 	// oxlint-disable-next-line anti-slop/no-runtime-typeof
 	return typeof observation === "boolean";
 }
@@ -141,6 +148,7 @@ export type CutoverTtlPrecondition = Readonly<
 		"previousTtlSeconds" | "loweredTtlSeconds" | "waitedSeconds"
 	>
 >;
+// domain-view: required/optional authoring refinements of the generated wire.
 export type CutoverPrecondition = Readonly<
 	Omit<
 		Pick<
@@ -174,10 +182,12 @@ export interface RoutingCutoverOptions {
 	consecutiveFailuresToRollback?: number;
 	precondition?: CutoverPrecondition;
 	minObservationSeconds?: number;
+	/** Structured health evidence must be this recent at acceptance (default 30s). */
 	maxObservationAgeSeconds?: number;
 	clock?: () => string;
 	planIdPrefix?: string;
 	onFact?: (fact: DispatchFact) => void;
+	/** Durable supervisor checkpoints the intent before the external write. */
 	beforeApply?: (
 		plan: RoutingPlan,
 		phase: "ramp" | "restore",
@@ -546,6 +556,7 @@ export async function executeRoutingCutover(
 			),
 		};
 	};
+	// Reject an infeasible final shape before the first external effect.
 	const finalPlan = synthesizeAt(100);
 	if (finalPlan.kind === "denied")
 		return refuse(
@@ -637,6 +648,8 @@ export async function executeRoutingCutover(
 				percent,
 				synthesis.plan,
 			);
+		// Authorization, checkpointing and native writes may take arbitrarily
+		// long. Only confirmed realization starts the service observation window.
 		const restoreStartedAt = Date.parse(clock());
 		let recoveryHealth: Awaited<ReturnType<CutoverHealthGate>>;
 		try {

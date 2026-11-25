@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-rem-038-stage6-notify-separation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

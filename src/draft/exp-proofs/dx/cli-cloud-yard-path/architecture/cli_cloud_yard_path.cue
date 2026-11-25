@@ -67,7 +67,7 @@ package architecture_evidence
 	phase:          "M1"
 	fixture_id:     "dx.lifecycle.hello-bindle.v1"
 	bindle:         "examples/hello-bindle"
-	proof_note:     "urn:hobo:proof:cli-cloud-yard-path"
+	proof_note:     "docs/design/proofs/cli-cloud-yard-path/README.md"
 	j1_journey:     [...#CliCloudJourneyStep]
 	gateway_routes: [...string] & [_, ...]
 	scope_out:      [...string] & [_, ...]

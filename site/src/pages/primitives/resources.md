@@ -8,7 +8,7 @@ description: "Bindle resource factories grouped as App Kits vs Infra Kits: api, 
 
 App resources are declared in **`hobo/bindles`** — the app authoring surface — not in lower-level runtime ports. Names come from record keys the builder returns; explicit Bindle v1 methods do not take resource name arguments.
 
-Resources group as **App Kits** (entrypoint surfaces) and **Infra Kits** (platform resources). Ports and providers link via WIT/WASM ([WASM & WIT](/HoBo/system/wasm/)).
+Resources group as **App Kits** (entrypoint surfaces) and **Infra Kits** (platform resources). Ports and providers link via WIT/WASM ([WASM & WIT](/HoBo/architecture/wasm/)).
 
 ## App Kits
 

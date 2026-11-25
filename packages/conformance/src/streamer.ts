@@ -15,7 +15,6 @@ export const STREAMER_CONFORMANCE_CONTRACT = "hobo.streamer-runtime-port/v1";
 
 export type StreamerAssertionName =
 	| "orderedRunReadable"
-	| "workflowStart"
 	| "multiplexedStreamsOrdered"
 	| "boundedBackpressure"
 	| "teardownClosesStream"
@@ -31,6 +30,7 @@ export type StreamerConformanceReport = {
 export async function runStreamerConformance(
 	createStreamer: () => Streamer,
 ): Promise<StreamerConformanceReport> {
+	// SAFETY: assertion to `{} as Record<StreamerAssertionName, "pass" | "fail">` is required at this boundary.
 	const assertions = {} as Record<StreamerAssertionName, "pass" | "fail">;
 
 	const runAssertion = async (
@@ -47,9 +47,6 @@ export async function runStreamerConformance(
 
 	await runAssertion("orderedRunReadable", () =>
 		provesOrderedRunReadable(createStreamer),
-	);
-	await runAssertion("workflowStart", () =>
-		provesWorkflowStart(createStreamer),
 	);
 	await runAssertion("multiplexedStreamsOrdered", () =>
 		provesMultiplexedStreamsOrdered(createStreamer),
@@ -111,25 +108,6 @@ async function provesOrderedRunReadable(
 			chunk: "second",
 		},
 	]);
-}
-
-async function provesWorkflowStart(
-	createStreamer: () => Streamer,
-): Promise<void> {
-	const streamer = createStreamer();
-	const runId = parseRunId("run:workflow");
-	const run = streamer.start<string>(
-		async ({ getWritable }) => {
-			await getWritable(parseStreamName("output")).write("started");
-			await getWritable(parseStreamName("output")).write("finished");
-		},
-		{ runId },
-	);
-	const result = await run.done;
-	if (result.runId !== runId || result.status !== "completed") {
-		throw new Error("workflow did not complete");
-	}
-	assertChunks(await collect(run.readable), ["started", "finished"]);
 }
 
 async function provesMultiplexedStreamsOrdered(

@@ -12,7 +12,8 @@
       "src/draft/technical-proofs/provider-vercel-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

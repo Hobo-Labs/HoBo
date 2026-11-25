@@ -1,13 +1,32 @@
+/**
+ * Usage metering: what a host actually sent to each backend this period.
+ *
+ * A plan's allowance is spent by use, and a provider's dashboard is not
+ * something a scheduled job can read. So the host counts what it sends (one
+ * statement is one operation) and adds the count to a per-period row on the
+ * backend the statements went to. "Operations used this month" is then a
+ * measurement the policy can project from, not an estimate.
+ *
+ * The count is a lower bound. An instance that is stopped before it flushes
+ * loses what it had not yet written; a host bounds that by flushing often.
+ */
 import {
 	billingPeriod,
 	FLEET_USAGE_UNITS,
 	type FleetUsageUnit,
-} from "@hobo/backend-fleet";
-import { isJsonString } from "@hobo/data-core";
+} from "@hobo/backend-routing";
 import { PostgresDataError } from "../errors.js";
 import type { FleetLayout } from "./layout.js";
-import { column, type FleetBackend, inTransaction, parseCount } from "./sql.js";
+import { column, type PostgresBackend, parseCount } from "./sql.js";
 
+export {
+	type BillingPeriod,
+	billingPeriod,
+	FLEET_USAGE_UNITS,
+	type FleetUsageUnit,
+} from "@hobo/backend-routing";
+
+// parallel-type-allowed: the parsed in-process measurement read back through readUsage; the proto PostgresFleetUsage is its wire projection.
 export type PostgresFleetUsage = {
 	readonly period: string;
 	readonly unit: FleetUsageUnit;
@@ -24,85 +43,30 @@ function parseUnit(value: string): FleetUsageUnit {
 	return unit;
 }
 
-export type PostgresFleetUsageObservation = {
-	readonly observationId: string;
-	readonly observedAtMs: number;
-	readonly statements: number;
-};
-
-export async function recordUsage(
-	backend: FleetBackend,
+/** Add `amount` to a backend's counter for one period and unit. */
+export async function addUsage(
+	backend: PostgresBackend,
 	layout: FleetLayout,
-	observation: PostgresFleetUsageObservation,
-): Promise<"recorded" | "duplicate"> {
-	const { observationId, observedAtMs, statements } = observation;
-	if (
-		!isJsonString(observationId) ||
-		!/^[A-Za-z0-9][A-Za-z0-9:._-]{0,199}$/u.test(observationId) ||
-		!Number.isSafeInteger(statements) ||
-		statements < 0
-	) {
+	usage: PostgresFleetUsage,
+): Promise<void> {
+	if (!Number.isSafeInteger(usage.used) || usage.used < 0)
 		throw new PostgresDataError(
 			"FLEET_RECORD_INVALID",
-			"usage needs an observation id and a non-negative integer count",
+			"usage must be a non-negative integer",
 		);
-	}
-	const period = billingPeriod(observedAtMs).id;
-	return inTransaction(
-		backend.executor,
-		"BEGIN ISOLATION LEVEL READ COMMITTED",
-		async (session) => {
-			const inserted = await session.query(
-				`INSERT INTO ${layout.usageObservationsTable} (observation_id, observed_at_ms, period, unit, used)
-			VALUES ($1::text, $2::bigint, $3::text, $4::text, $5::bigint)
-			ON CONFLICT (observation_id) DO NOTHING RETURNING observation_id::text AS observation_id`,
-				[observationId, observedAtMs, period, "operations", statements],
-			);
-			if (inserted.rows.length === 0) {
-				const previous = await session.query(
-					`SELECT observed_at_ms::text AS observed_at_ms, period, unit, used::text AS used FROM ${layout.usageObservationsTable}
-				WHERE observation_id = $1::text`,
-					[observationId],
-				);
-				const row = previous.rows[0];
-				if (
-					!row ||
-					parseCount(column(row, "observed_at_ms"), "observed_at_ms") !==
-						observedAtMs ||
-					column(row, "period") !== period ||
-					column(row, "unit") !== "operations" ||
-					parseCount(column(row, "used"), "used") !== statements
-				) {
-					throw new PostgresDataError(
-						"FLEET_RECORD_INVALID",
-						"usage observation id was reused with different data",
-					);
-				}
-				return "duplicate";
-			}
-			if (statements > 0) {
-				const updated = await session.query(
-					`INSERT INTO ${layout.usageTable} (period, unit, used, updated_at)
-				VALUES ($1::text, $2::text, $3::bigint, clock_timestamp())
-				ON CONFLICT (period, unit) DO UPDATE
-				SET used = ${layout.usageTable}.used + EXCLUDED.used, updated_at = EXCLUDED.updated_at
-				WHERE ${layout.usageTable}.used <= 9007199254740991 - EXCLUDED.used
-				RETURNING used::text AS used`,
-					[period, "operations", statements],
-				);
-				if (updated.rows.length !== 1)
-					throw new PostgresDataError(
-						"FLEET_RECORD_INVALID",
-						"usage exceeds the safe integer range",
-					);
-			}
-			return "recorded";
-		},
+	if (usage.used === 0) return;
+	await backend.executor.query(
+		`INSERT INTO ${layout.usageTable} (period, unit, used, updated_at)
+		VALUES ($1::text, $2::text, $3::bigint, clock_timestamp())
+		ON CONFLICT (period, unit) DO UPDATE
+		SET used = ${layout.usageTable}.used + EXCLUDED.used, updated_at = EXCLUDED.updated_at`,
+		[usage.period, usage.unit, usage.used],
 	);
 }
 
+/** A backend's counters for one period. */
 export async function readUsage(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 	period: string,
 ): Promise<readonly PostgresFleetUsage[]> {
@@ -118,11 +82,61 @@ export async function readUsage(
 	}));
 }
 
+/** The size of the backend's database, the measurement for a storage allowance. */
 export async function measureStorageBytes(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 ): Promise<number> {
 	const result = await backend.executor.query(
 		"SELECT pg_database_size(current_database())::text AS bytes",
 	);
 	return parseCount(column(result.rows[0] ?? {}, "bytes"), "bytes");
+}
+
+export type UsageMeter = {
+	/** Count statements sent to one backend. */
+	record(backendId: string, statements?: number): void;
+	/** Statements counted and not yet written for one backend. */
+	pending(backendId: string): number;
+	/** Write every backend's pending count to that backend, keeping what fails. */
+	flush(
+		backends: readonly PostgresBackend[],
+		layout: FleetLayout,
+		nowMs: number,
+	): Promise<void>;
+};
+
+/**
+ * In-memory statement counters, written out by `flush`. A backend that cannot
+ * be reached keeps its count for the next flush; nothing is dropped and
+ * nothing is counted twice.
+ */
+export function createUsageMeter(): UsageMeter {
+	const counts = new Map<string, number>();
+	return {
+		record(backendId, statements = 1) {
+			counts.set(backendId, (counts.get(backendId) ?? 0) + statements);
+		},
+		pending(backendId) {
+			return counts.get(backendId) ?? 0;
+		},
+		async flush(backends, layout, nowMs) {
+			const period = billingPeriod(nowMs).id;
+			await Promise.all(
+				backends.map(async (backend) => {
+					const used = counts.get(backend.id) ?? 0;
+					if (used === 0) return;
+					counts.set(backend.id, 0);
+					try {
+						await addUsage(backend, layout, {
+							period,
+							unit: "operations",
+							used,
+						});
+					} catch {
+						counts.set(backend.id, (counts.get(backend.id) ?? 0) + used);
+					}
+				}),
+			);
+		},
+	};
 }

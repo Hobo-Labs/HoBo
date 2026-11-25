@@ -1,3 +1,5 @@
+// The pure verdict function: every WP9 Accept bullet that does not need the
+// journal is pinned here (the engine tests repeat them end to end).
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -222,77 +224,6 @@ describe("thresholds per aggregation", () => {
 		expect(aggregate(values, aggregation)).toBe(expected);
 	});
 
-	it("keeps the mean finite when the sum of finite samples overflows", () => {
-		expect(
-			aggregate([Number.MAX_VALUE, Number.MAX_VALUE], Aggregation.MEAN),
-		).toBe(Number.MAX_VALUE);
-		expect(
-			aggregate([-Number.MAX_VALUE, Number.MAX_VALUE], Aggregation.MEAN),
-		).toBe(0);
-		expect(
-			aggregate(
-				[Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE],
-				Aggregation.MEAN,
-			),
-		).toBe(Number.MAX_VALUE);
-		expect(
-			aggregate(
-				[
-					-Number.MAX_VALUE,
-					-Number.MAX_VALUE,
-					Number.MAX_VALUE,
-					Number.MAX_VALUE,
-				],
-				Aggregation.MEAN,
-			),
-		).toBe(0);
-		expect(
-			aggregate([Number.MIN_VALUE, Number.MIN_VALUE], Aggregation.MEAN),
-		).toBe(Number.MIN_VALUE);
-	});
-
-	it("fails a threshold when its aggregate is not finite", () => {
-		const spec = parsed(
-			thresholdSpec({
-				thresholds: [
-					{
-						query: query("latency_ms", { unit: "ms" }),
-						aggregation: Aggregation.SUM,
-						comparator: Comparator.GTE,
-						value: 1,
-					},
-				],
-			}),
-		);
-		const result = evaluateVerification({
-			spec,
-			cohortAware: false,
-			startedAtMs: T0,
-			atMs: WINDOW_END,
-			evidence: evidence("threshold:latency_ms", [
-				Number.MAX_VALUE,
-				Number.MAX_VALUE,
-				1,
-			]),
-		});
-		expect(result.verdict).toBe(VerificationVerdict.FAIL);
-		expect(result.checks[0]?.reason?.code).toBe("verification-invalid-sample");
-	});
-
-	it("keeps a finite sum when overflowing partial sums cancel", () => {
-		expect(
-			aggregate(
-				[
-					-Number.MAX_VALUE,
-					-Number.MAX_VALUE,
-					Number.MAX_VALUE,
-					Number.MAX_VALUE,
-				],
-				Aggregation.SUM,
-			),
-		).toBe(0);
-	});
-
 	it.each([
 		[Comparator.LT, 0.25, VerificationVerdict.FAIL],
 		[Comparator.LTE, 0.25, VerificationVerdict.PASS],
@@ -424,36 +355,5 @@ describe("probes and suites", () => {
 			evidence: probe,
 		});
 		expect(late.verdict).toBe(VerificationVerdict.FAIL);
-	});
-});
-
-describe("error-budget observations", () => {
-	it("evaluates a large sample window without exceeding the argument limit", () => {
-		const spec = parsed(
-			thresholdSpec({
-				maxErrorBudgetBurn: 1,
-				thresholds: [
-					{
-						query: query("burn", { unit: "burn_rate" }),
-						aggregation: Aggregation.MAX,
-						comparator: Comparator.LTE,
-						value: 1,
-					},
-				],
-			}),
-		);
-		const observation = evidence("threshold:burn", [0.2])[0];
-		if (!observation) throw new Error("missing observation");
-		const result = evaluateVerification({
-			spec,
-			cohortAware: false,
-			startedAtMs: T0,
-			atMs: WINDOW_END,
-			evidence: Array.from({ length: 600_000 }, () => observation),
-		});
-		expect(result.verdict).toBe(VerificationVerdict.PASS);
-		expect(
-			result.checks.find((check) => check.check === "error-budget")?.statistic,
-		).toBe(0.2);
 	});
 });

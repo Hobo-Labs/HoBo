@@ -36,14 +36,14 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     MARKETPLACE_UX_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:marketplace-publisher-trust-evidence",
-      "urn:hobo:requirement:capability-review-approval",
-      "urn:hobo:requirement:org-catalogs",
-      "urn:hobo:requirement:accessibility-usability-launch-baseline",
-      "urn:hobo:requirement:product-notifications-lifecycle",
-      "urn:hobo:requirement:launch-messaging-claims",
-      "urn:hobo:decision:adr-0062",
-      "urn:hobo:decision:adr-0074",
+      "docs/design/marketplace-publisher-trust-evidence.md",
+      "docs/design/capability-review-approval.md",
+      "docs/design/org-catalogs.md",
+      "docs/design/accessibility-usability-launch-baseline.md",
+      "docs/design/product-notifications-lifecycle.md",
+      "docs/design/launch-messaging-claims.md",
+      "docs/design/adr/07-portability-extensibility.md#adr-0062",
+      "docs/design/adr/02-identity-security.md#adr-0074",
     ],
   );
 });

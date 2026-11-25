@@ -49,6 +49,8 @@ npm --prefix src/draft/technical-proofs/s2-03-cloud-yard-shell-hobo-618 test
 - Stage-2 acceptance record merge (HOBO-616)
 - Production `packages/cloud/` layout and `hobo yard up` CLI wiring
 
-## Executable evidence
+## Architecture evidence
+
 - `architecture/cloud_yard_shell.proto` + `.cue` — protobuf/CUE contract shapes
 - `architecture/pacts/gateway_boundary.pact.json` — Gateway boundary PACT
+- `ADR.md` — parse-don't-validate derived types and event-architecture evidence

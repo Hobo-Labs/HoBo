@@ -4,7 +4,7 @@ Independent proof for HOBO-129.
 
 This package pins the M2 tier-four networking realization contract from:
 
-- `urn:hobo:requirement:security-networking`: cross-provider edges without native private peering fall back to a HoBo-managed WireGuard/eBPF overlay mesh.
+- `docs/design/security-networking.md`: cross-provider edges without native private peering fall back to a HoBo-managed WireGuard/eBPF overlay mesh.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: HOBO-89's `ConnectivityPlan` and tier enum.
 - `src/draft/technical-proofs/tier-three-private-interconnect-contract`: HOBO-127's deterministic handoff to tier 4 when no private interconnect is available.
 - `src/draft/technical-proofs/mtls-data-path-contract`: HOBO-117's SVID-keyed mTLS decision contract.
@@ -26,9 +26,11 @@ The proof covers:
 Scope boundary: this POC does not call cloud APIs, configure real WireGuard/eBPF, implement tier 5 public+mTLS, build a global data-plane load balancer, implement Junction inference, author governance mesh-policy rules, or change Planner ranking/cost objectives. It models the narrow tier-four realization seam those later slices consume.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Tier Four Overlay Mesh Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

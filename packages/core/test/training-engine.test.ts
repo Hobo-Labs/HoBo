@@ -130,6 +130,7 @@ test("rejects a malformed traceparent", () => {
 
 test("rejects an unknown OpenInference span kind", () => {
 	const trajectory = goldenTrajectory();
+	// SAFETY: assertion required at this I/O or test boundary.
 	(trajectory.spans[0] as { kind: string }).kind = "MYSTERY";
 	assert.throws(() => parseTrajectory(trajectory), TrainingEngineParseError);
 });
@@ -188,6 +189,7 @@ test("parses a patch candidate and rejects out-of-region edits (ADR-0048)", () =
 			edits: [{ startOffset: 14, endOffset: 34, replacement: "return x;" }],
 		},
 	};
+	// SAFETY: assertion required at this I/O or test boundary.
 	const candidate = parseTrainingCandidate(base, goldenRegion() as never);
 	assert.equal(candidate.body.case, "patch");
 
@@ -199,6 +201,7 @@ test("parses a patch candidate and rejects out-of-region edits (ADR-0048)", () =
 		},
 	};
 	assert.throws(
+		// SAFETY: assertion required at this I/O or test boundary.
 		() => parseTrainingCandidate(outOfRegion, goldenRegion() as never),
 		TrainingEngineParseError,
 	);

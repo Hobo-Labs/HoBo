@@ -29,7 +29,7 @@ describe("vibe accessibility usability checklist", () => {
     );
     assert.equal(
       parsed.proofPath,
-      "urn:hobo:proof:vibe-accessibility-usability-checklist",
+      "docs/design/proofs/vibe-accessibility-usability-checklist/README.md",
     );
     assert.deepEqual(
       parsed.surfaceChecklist.map((surface) => surface.surface),

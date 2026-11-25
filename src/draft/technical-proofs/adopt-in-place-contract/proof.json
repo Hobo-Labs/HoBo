@@ -8,7 +8,8 @@
       "src/draft/technical-proofs/portability-report-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

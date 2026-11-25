@@ -54,6 +54,7 @@ function found(...positions: number[]): SequencedCiEvent[] {
 		}),
 	);
 }
+/** One account, or two, each with a zero-price box and one connected repository. */
 function configuration(owner: "mine" | "theirs" = "mine") {
 	const account = (id: string) =>
 		create(AccountSchema, {
@@ -101,10 +102,13 @@ function configuration(owner: "mine" | "theirs" = "mine") {
 describe("account event journal", () => {
 	it("names a job's owner by the connection that holds its repository", () => {
 		expect(jobAccountId(connections, job(7))).toBe("mine");
+		// The same repository number under another installation is not the
+		// connection the account made.
 		expect(jobAccountId(connections, job(7, 101, 11))).toBe("");
 		expect(jobAccountId(connections, job(7, 202))).toBe("");
 		expect(accountOwnsJob(connections, "mine", job(7))).toBe(true);
 		expect(accountOwnsJob(connections, "other", job(7))).toBe(false);
+		// Nobody owns an unconnected repository's job, least of all "nobody".
 		expect(accountOwnsJob(connections, "", job(7, 202))).toBe(false);
 		expect(
 			eventJob(
@@ -139,10 +143,13 @@ describe("account event journal", () => {
 
 	it("leaves the cursor on the account's own last event, or where it was", () => {
 		const cursor = { accountId: "mine", after: 5, limit: 2 };
+		// Exactly a page: nothing was left behind, so there is no more.
 		const caughtUp = accountEventPage(found(7, 9), cursor);
 		expect(caughtUp.events.map((entry) => entry.seq)).toEqual([7, 9]);
 		expect(caughtUp.cursor).toBe(9);
 		expect(caughtUp.more).toBe(false);
+		// Nothing of the account's after the cursor: it does not move, wherever
+		// the journal's end has got to.
 		const idle = accountEventPage([], cursor);
 		expect(idle.events).toEqual([]);
 		expect(idle.cursor).toBe(5);
@@ -156,11 +163,14 @@ describe("account event journal", () => {
 		expect(all.cursor).toBe(8);
 		expect(all.truncated).toBe(false);
 		expect(all.more).toBe(false);
+		// One more than the page holds was found: the oldest stays behind.
 		const full = accountEventPage(found(3, 7, 8), cursor);
 		expect(full.events.map((entry) => entry.seq)).toEqual([7, 8]);
 		expect(full.cursor).toBe(8);
 		expect(full.truncated).toBe(true);
+		// Fewer than asked for is everything the account has.
 		expect(accountEventPage(found(8), cursor).truncated).toBe(false);
+		// An account with no events reads on from the journal's start.
 		expect(accountEventPage([], cursor).cursor).toBe(0);
 	});
 
@@ -185,6 +195,7 @@ describe("LeaseStore event journal", () => {
 		try {
 			store.configure(configuration("mine"), 0, at);
 			store.queue(job(1), at);
+			// The repository moves to another account; its history does not.
 			store.configure(configuration("theirs"), 1, at);
 			store.queue(job(2), at);
 			const mine = store.eventsSince({
@@ -209,6 +220,7 @@ describe("LeaseStore event journal", () => {
 					eventJob(entry.event ?? create(CiEventSchema))?.id,
 				]),
 			).toEqual([["ci.JobQueued", 2]]);
+			// Configuration changes are the partition's, and nobody's to read.
 			expect(
 				store.eventsSince({ accountId: "nobody", after: 0, limit: 10 }).events,
 			).toEqual([]);
@@ -222,6 +234,11 @@ describe("LeaseStore event journal", () => {
 		const store = new LeaseStore(":memory:", database);
 		try {
 			store.putControlRecord("first", "mine", "{}", at);
+			// A neighbour writes far more than the old bounded scan covered
+			// (10,000 rows). The store writes the neighbour's first event; the
+			// rest are copies of that row, made in one statement: writing them
+			// through the store is slow, and the read under test only needs the
+			// rows to be there.
 			const neighbour = 20_500;
 			store.putControlRecord("n", "theirs", "{}", at);
 			database
@@ -234,6 +251,8 @@ describe("LeaseStore event journal", () => {
 			const head = neighbour + 2;
 			expect(store.journalHead()).toBe(head);
 
+			// From the start: both of the account's events in one read, with
+			// nothing more to read, and the cursor on the account's own last.
 			const all = store.eventsSince({
 				accountId: "mine",
 				after: 0,
@@ -242,6 +261,7 @@ describe("LeaseStore event journal", () => {
 			expect(all.events.map((entry) => entry.seq)).toEqual([1, head]);
 			expect(all.cursor).toBe(head);
 			expect(all.more).toBe(false);
+			// A page of one stops at the page, not at the neighbour's rows.
 			const first = store.eventsSince({
 				accountId: "mine",
 				after: 0,
@@ -259,6 +279,8 @@ describe("LeaseStore event journal", () => {
 			expect(last.cursor).toBe(head);
 			expect(last.more).toBe(false);
 
+			// The newest read reaches behind the neighbour's rows for the
+			// account's older event; only the page's size leaves one unread.
 			const newest = store.eventsSince({ accountId: "mine", limit: 10 });
 			expect(newest.events.map((entry) => entry.seq)).toEqual([1, head]);
 			expect(newest.cursor).toBe(head);
@@ -267,6 +289,7 @@ describe("LeaseStore event journal", () => {
 			expect(one.events.map((entry) => entry.seq)).toEqual([head]);
 			expect(one.truncated).toBe(true);
 
+			// The neighbour journals on; this account's cursor does not move.
 			store.putControlRecord("n2", "theirs", "{}", at);
 			const idle = store.eventsSince({
 				accountId: "mine",
@@ -290,6 +313,8 @@ describe("LeaseStore event journal", () => {
 			store.putControlRecord("first", "mine", "{}", at);
 			const mine =
 				"SELECT seq, body FROM events INDEXED BY events_account_seq WHERE json_extract(body,'$.accountId')=?";
+			// SQLite's own plan for both reads: a search of the account index,
+			// already in journal order, and no scan of the journal.
 			for (const [statement, values] of [
 				[`${mine} ORDER BY seq DESC LIMIT ?`, ["mine", 11]],
 				[`${mine} AND seq>? ORDER BY seq LIMIT ?`, ["mine", 0, 11]],
@@ -302,6 +327,8 @@ describe("LeaseStore event journal", () => {
 				expect(plan).toMatch(/SEARCH events USING INDEX events_account_seq/);
 				expect(plan).not.toMatch(/SCAN events|TEMP B-TREE/);
 			}
+			// Without the index the read fails. It does not quietly fall back
+			// to a walk of the whole journal, which would stop the host.
 			database.exec("DROP INDEX events_account_seq");
 			expect(() =>
 				store.eventsSince({ accountId: "mine", after: 0, limit: 10 }),
@@ -316,6 +343,8 @@ describe("LeaseStore event journal", () => {
 
 	it("builds the account index on a journal written before it existed", () => {
 		const database = new DatabaseSync(":memory:");
+		// A journal as an earlier release left it: no account index, a job
+		// event from before owners were recorded, and one that names its owner.
 		database.exec(
 			"CREATE TABLE events (seq INTEGER PRIMARY KEY, body TEXT NOT NULL)",
 		);
@@ -329,6 +358,7 @@ describe("LeaseStore event journal", () => {
 					.eventsSince({ accountId: "mine", after: 0, limit: 10 })
 					.events.map((entry) => [entry.seq, entry.event?.type]),
 			).toEqual([[2, "ci.LeaseReserved"]]);
+			// The unowned job event is still in the journal and in nobody's feed.
 			expect(store.events().map((event) => event.type)).toEqual([
 				"ci.JobQueued",
 				"ci.LeaseReserved",

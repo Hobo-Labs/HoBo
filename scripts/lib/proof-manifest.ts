@@ -29,22 +29,28 @@ export const proofManifestSchema = z
 				technicalProofs: z.array(repoPath).default([]),
 				epicProofs: z.array(repoPath).default([]),
 				expProofs: z.array(repoPath).default([]),
+				designDocs: z.array(repoPath).default([]),
 			})
 			.default({
 				technicalProofs: [],
 				epicProofs: [],
 				expProofs: [],
+				designDocs: [],
 			}),
 		artifacts: z
 			.object({
-				examples: relPath.optional(),
-				notebook: relPath.optional(),
+				examples: relPath.default("examples"),
+				notebook: relPath.default("notebook.ipynb"),
 				features: relPath.optional(),
 				bench: relPath.optional(),
 				diagrams: z.array(relPath).default([]),
 				assets: relPath.optional(),
 			})
-			.default({ diagrams: [] }),
+			.default({
+				examples: "examples",
+				notebook: "notebook.ipynb",
+				diagrams: [],
+			}),
 		waivers: z
 			.array(
 				z.object({
@@ -58,6 +64,7 @@ export const proofManifestSchema = z
 						"cascade",
 					]),
 					reason: z.string().min(10),
+					adr: relPath.optional(),
 				}),
 			)
 			.default([]),

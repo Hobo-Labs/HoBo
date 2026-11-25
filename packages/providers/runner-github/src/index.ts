@@ -1,4 +1,3 @@
-export type { ProviderTerms } from "@hobo/core";
 export {
 	BUILD_WORKFLOW_DEFAULT,
 	CREDIT_EXHAUSTED,
@@ -12,7 +11,6 @@ export {
 	type GithubRunnerCatalogEntry,
 } from "./catalog-entry.js";
 export {
-	type BuildCostObservation,
 	type CreditLedgerView,
 	createExecutionHostRegistry,
 	DISPATCH_DECIDED,
@@ -25,22 +23,22 @@ export {
 	type ExecutionHostRegistry,
 	emptyLedgerView,
 	OBJECTIVES,
-	projectBuildCosts,
 	selectExecutionHost,
 } from "./dispatch.js";
 export {
 	type BrokeredTokenProvider,
 	createGithubActionsClient,
-	envTokenProvider,
 	GITHUB_API_ERROR,
 	GITHUB_API_VERSION,
 	GITHUB_CREDENTIALS_MISSING,
 	type GithubActionsClient,
 	type GithubActionsClientOptions,
 	GithubApiError,
+	type GithubCredentialResolver,
 	GithubCredentialsMissingError,
 	type GithubFetch,
 	type GithubFetchResponse,
+	githubAppTokenProvider,
 	type WorkflowDispatchInput,
 	type WorkflowRun,
 } from "./github-actions-client.js";
@@ -59,6 +57,7 @@ export {
 	type GithubRunnerManifestInput,
 	MANIFEST_SCHEMA,
 	PROVIDER_TERMS,
+	type ProviderTerms,
 	type PublishedManifestDocuments,
 	type PublishedManifestParseResult,
 	parseExecutionHostManifest,
@@ -93,4 +92,5 @@ export {
 	type RunnerResult,
 } from "./types.js";
 
+// public-contract: the package id consumers assert against.
 export const HOBO_RUNNER_GITHUB_PACKAGE = "@hobo/runner-github";

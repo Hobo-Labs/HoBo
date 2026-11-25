@@ -1,7 +1,7 @@
 # Supervision Child Lifetime Contract
 
 Independent proof for HOBO-519. It extends the DX SDK resilience semantics work
-from `urn:hobo:requirement:dx-sdk-resilience-semantics` and composes with the
+from `docs/design/dx-sdk-resilience-semantics.md` and composes with the
 HOBO-516 `resilience-semantics-annex` instead of replacing it.
 
 ## Contract
@@ -40,7 +40,8 @@ The adversarial fixtures fail with stable codes:
 - `supervision.cleanup_not_audited`
 - `supervision.retry_budget_reset`
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
@@ -48,3 +49,4 @@ This package ships the architecture-guard evidence required by
   facts, fixtures, case results, and reports.
 - `architecture/pacts/` — PACT contract for the supervision conformance report
   boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

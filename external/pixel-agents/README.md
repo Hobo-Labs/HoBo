@@ -30,7 +30,7 @@ It ships in two forms from the same codebase:
 - **VS Code extension** — [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents spawn into VS Code terminals; characters render in the panel area.
 - **Standalone CLI** — `npx pixel-agents` starts a local server and serves the same office as a browser app, useful for tmux, remote, and non-VS Code workflows.
 
-Typed hook, file, and stream providers connect agent activity to the office. Claude Code supports hook and file polling modes, and OpenTelemetry traces use the stream provider.
+The architecture is fully agent-agnostic and platform-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
 
 ![Pixel Agents screenshot](webview-ui/public/office.png)
 
@@ -103,11 +103,8 @@ Use a fixed address or port when needed:
 ```bash
 pixel-agents --port 3100
 pixel-agents --host 127.0.0.1 --port 3100
-pixel-agents --file-only
 pixel-agents --help
 ```
-
-`--file-only` reads Claude transcripts without installing or removing hooks. Hook events and the hook toggle are disabled for that server instance.
 
 The default bind address is `127.0.0.1`. Binding to `0.0.0.0` exposes the UI and WebSocket to the local network; do this only on a trusted network.
 

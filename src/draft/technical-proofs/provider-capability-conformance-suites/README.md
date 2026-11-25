@@ -32,9 +32,11 @@ The suite runner proves a provider may only claim a capability when a matching s
 This is the per-capability suite contract from HOBO-102. It intentionally does not implement the generic `@hobo/conformance` harness, signing, publishing, runtime-port suites, or concrete cloud adapters.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Provider Capability Conformance Suites.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

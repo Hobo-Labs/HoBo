@@ -1,3 +1,6 @@
+/**
+ * Station-local Session Replay service: start/stop, list, open, summarize, retention.
+ */
 import { evaluateReplayAccess } from "./access.js";
 import { buildCorrelation } from "./correlation.js";
 import { REPLAY_BOUNDARIES } from "./http-surface.js";
@@ -54,6 +57,7 @@ export type ReplayService = Readonly<{
 		defaultLocalOn: boolean;
 		killEnv: string;
 		honestScope: readonly string[];
+		/** Integration boundary ids (PACT inventory). */
 		boundaries: readonly string[];
 	}>;
 }>;
@@ -184,6 +188,7 @@ export function createReplayService(input: {
 	});
 }
 
+/** Offline contract-asserted fixtures for agents (schemaOnlyView). */
 export function createContractAssertedReplayFixtures(input?: {
 	readonly stationId?: string;
 	readonly tenant?: string;

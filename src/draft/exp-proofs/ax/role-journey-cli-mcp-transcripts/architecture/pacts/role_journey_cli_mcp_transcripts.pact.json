@@ -26,16 +26,16 @@
           "issue": "HOBO-557",
           "phase": "M2",
           "targetPackage": "src/draft/exp-proofs/ax/role-journey-cli-mcp-transcripts",
-          "proofNote": "urn:hobo:proof:role-journey-cli-mcp-transcripts",
+          "proofNote": "docs/design/proofs/role-journey-cli-mcp-transcripts/README.md",
           "sourceQuickstartIssue": "HOBO-577",
-          "sourceQuickstartProof": "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+          "sourceQuickstartProof": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
           "designRefs": [
-            "urn:hobo:requirement:developer-experience#plan-07",
-            "urn:hobo:requirement:cli-spec",
-            "urn:hobo:requirement:walkthrough",
-            "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix",
-            "urn:hobo:proof:cli-mcp-parity-resource-lifecycle-contracts",
-            "urn:hobo:proof:resource-lifecycle-quickstart-examples"
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/cli-spec.md",
+            "docs/design/walkthrough.md",
+            "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md",
+            "docs/design/proofs/cli-mcp-parity-resource-lifecycle-contracts/README.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
           ],
           "scopeOut": [
             "production CLI implementation",

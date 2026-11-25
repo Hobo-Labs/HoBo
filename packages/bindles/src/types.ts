@@ -9,11 +9,6 @@ export const CATALOG_ROWS = [
 		allowVerbs: ["get", "set", "delete"],
 	},
 	{
-		factory: "cache",
-		portRef: ["hobo:cache"],
-		allowVerbs: ["get", "set", "delete", "invalidate"],
-	},
-	{
 		factory: "bucket",
 		portRef: ["wasi:blobstore", "hobo:blob-events"],
 		allowVerbs: ["read", "write", "delete"],
@@ -25,7 +20,7 @@ export const CATALOG_ROWS = [
 	},
 	{
 		factory: "topic",
-		portRef: ["wasi:messaging"],
+		portRef: ["hobo:durable-messaging"],
 		allowVerbs: ["publish", "subscribe"],
 	},
 	{
@@ -94,7 +89,6 @@ export type ResourceKind = (typeof CATALOG_ROWS)[number]["factory"];
 export type AllowVerbsByKind = {
 	api: never;
 	kv: "get" | "set" | "delete";
-	cache: "get" | "set" | "delete" | "invalidate";
 	bucket: "read" | "write" | "delete";
 	queue: "enqueue" | "dequeue";
 	topic: "publish" | "subscribe";
@@ -127,6 +121,7 @@ export interface ResourceCatalogEntry {
 	readonly allowVerbs: readonly string[];
 }
 
+// domain-view: branded parse-don't-validate view over the generated wire form.
 export interface LoweringDescriptor {
 	readonly lowersTo: "hobo:sdk";
 	readonly kind: ResourceKind;
@@ -137,6 +132,7 @@ export interface LoweringDescriptor {
 	readonly args: readonly unknown[];
 }
 
+// domain-view: generic, branded stableId view over the generated wire form.
 export interface ResourceDescriptor<K extends ResourceKind = ResourceKind> {
 	readonly kind: K;
 	readonly name: string;
@@ -146,23 +142,8 @@ export interface ResourceDescriptor<K extends ResourceKind = ResourceKind> {
 	readonly declaredAllow: readonly string[];
 }
 
-type VerbArgument<
-	K extends ResourceKind,
-	V extends AllowVerbsFor<K>,
-> = K extends "cache"
-	? V extends "set"
-		? JsonValue | Uint8Array
-		: JsonValue
-	: K extends "bucket"
-		? V extends "write"
-			? JsonValue | Uint8Array
-			: JsonValue
-		: JsonValue;
-
 type VerbMethodsFor<K extends ResourceKind> = {
-	[V in AllowVerbsFor<K>]: (
-		...args: VerbArgument<K, V>[]
-	) => LoweringDescriptor;
+	[V in AllowVerbsFor<K>]: (...args: JsonValue[]) => LoweringDescriptor;
 };
 
 export type ResourceHandle<K extends ResourceKind, A = never> = {
@@ -187,6 +168,7 @@ export interface SecretRef {
 	readonly lowersTo: "hobo:sdk";
 }
 
+// domain-view: readonly parse-don't-validate view over the generated wire form.
 export interface ProviderAnnotation {
 	readonly provider: string;
 	readonly option: string;
@@ -198,6 +180,7 @@ export interface ConnectorAuthDefinition {
 	readonly discovery: string;
 }
 
+/** Metadata owned by a connector package, never by application code. */
 export interface ConnectorDefinition<
 	Id extends string = string,
 	Capability extends string = string,
@@ -210,6 +193,7 @@ export interface ConnectorDefinition<
 	readonly capabilities: readonly Capability[];
 }
 
+/** Opaque value exported by connector packages and consumed by b.connector(). */
 export type ConnectorSymbol<
 	D extends ConnectorDefinition = ConnectorDefinition,
 > = symbol & { readonly __hoboConnectorDefinition?: D };
@@ -238,21 +222,28 @@ export interface BindleConnectorRecord {
 	readonly allow: readonly string[];
 }
 
+/** Runtime connector membrane supplied by the Station hosting the Bindle. */
 export interface BindleRuntimeContext {
+	/**
+	 * Resolves the declaration against Station Connection inventory. The result
+	 * may represent personal, team, or organization-authorized access. Token
+	 * issuance remains Station/broker-owned; application code never reads local
+	 * provider credentials.
+	 */
 	connector(binding: ConnectorBinding): ConnectionClient;
 }
 
+// domain-view: readonly parse-don't-validate view over the generated wire form.
 export interface BindleEdge {
 	readonly from: string;
 	readonly to: string;
 }
 
+// domain-view: generic, branded parse-don't-validate view over the wire form.
 export interface BindleResourceRecord<K extends ResourceKind = ResourceKind> {
 	readonly kind: K;
 	readonly name: string;
 	readonly stableId: `${K}:${string}`;
-	readonly generatedId?: string;
-	readonly identityOccurrence?: number;
 	readonly declaredAllow: readonly string[];
 	readonly annotations: readonly ProviderAnnotation[];
 	readonly dependsOn: readonly string[];
@@ -260,27 +251,13 @@ export interface BindleResourceRecord<K extends ResourceKind = ResourceKind> {
 
 export type BindleDependency = BindleResource | ConnectorBinding;
 
-declare const bindleMessageType: unique symbol;
-
-export interface BindleResource<
-	K extends ResourceKind = ResourceKind,
-	Message = unknown,
-> {
+export interface BindleResource<K extends ResourceKind = ResourceKind> {
 	readonly kind: K;
-	readonly generatedId: string;
-	readonly [bindleMessageType]?: Message;
-	dependsOn(...deps: BindleDependency[]): BindleResource<K, Message>;
-	withReference(...deps: BindleDependency[]): BindleResource<K, Message>;
-	allow(...verbs: AllowVerbsFor<K>[]): BindleResource<K, Message>;
-	with(...annotations: ProviderAnnotation[]): BindleResource<K, Message>;
+	dependsOn(...deps: BindleDependency[]): BindleResource<K>;
+	withReference(...deps: BindleDependency[]): BindleResource<K>;
+	allow(...verbs: AllowVerbsFor<K>[]): BindleResource<K>;
+	with(...annotations: ProviderAnnotation[]): BindleResource<K>;
 }
-
-export type BindleResourceMessage<R extends BindleResource> =
-	R extends BindleResource<infer K, infer Message>
-		? K extends "queue" | "topic"
-			? Message
-			: never
-		: never;
 
 export interface BindleRequirements {
 	readonly require: readonly string[];
@@ -291,27 +268,11 @@ export interface BindleRequirements {
 
 export interface BindleDefinition {
 	readonly name: string;
-	readonly deploymentIdentity?: "generated";
 	readonly resources: Readonly<Record<string, BindleResourceRecord>>;
 	readonly connectors?: Readonly<Record<string, BindleConnectorRecord>>;
 	readonly edges: readonly BindleEdge[];
 	readonly requirements: BindleRequirements;
 	entrypoint(name: string): BindleEntrypoint | undefined;
-}
-
-export interface ResourceIdentityEntry {
-	readonly kind: ResourceKind;
-	readonly occurrence: number;
-	readonly generatedId: string;
-}
-
-export interface ResourceIdentityLedger {
-	readonly bindleName: string;
-	readonly entries: readonly ResourceIdentityEntry[];
-}
-
-export interface BindleOptions {
-	readonly identityLedger: ResourceIdentityLedger;
 }
 
 export type DeclaredComponent = new () => object;
@@ -320,6 +281,7 @@ export interface BindleHandlerObject {
 	readonly [key: string]: JsonValue | undefined;
 }
 
+/** Framework-neutral HTTP handler accepted by the local component hosts. */
 export type BindleFetchHandler = (
 	request: Request,
 ) => Response | Promise<Response>;
@@ -332,11 +294,21 @@ export type BindleEntrypoint = (
 	| BindleFetchHandler
 	| { readonly fetch: BindleFetchHandler };
 
+/** App entrypoint factory; the Station supplies runtime context when serving. */
 export type ComponentBinding = BindleEntrypoint | DeclaredComponent;
 
 export interface ExternalDependencyOptions {
 	readonly connectionString?: string;
 	readonly endpoints?: Readonly<Record<string, string>>;
+	/**
+	 * The provider that provisions and runs this service on our behalf (Neon
+	 * or Supabase attached through the Vercel Marketplace). Only such a
+	 * service may be an external of a Bindle placed in a Yard; anything else
+	 * another vendor runs belongs to a Yard of its own, joined by a junction
+	 * (externalBoundaryViolations).
+	 * This declaration does not itself prove a Marketplace relationship;
+	 * placement refuses it until that relationship can be verified.
+	 */
 	readonly managedBy?: {
 		readonly provider: string;
 		readonly via: "marketplace";
@@ -361,10 +333,15 @@ export interface BindleBuilder {
 	api(binding?: ComponentBinding): BindleResource<"api">;
 	web(binding?: ComponentBinding): BindleResource<"web">;
 	kv(): BindleResource<"kv">;
-	cache(): BindleResource<"cache">;
 	bucket(): BindleResource<"bucket">;
-	queue<Message = JsonValue>(): BindleResource<"queue", Message>;
-	topic<Message = JsonValue>(): BindleResource<"topic", Message>;
+	// biome-ignore-start lint/correctness/noUnusedVariables: `T` is documentary.
+	// Callers write `b.queue<OrderEvent>()` to record the message type at the
+	// authoring site; it does not yet flow into BindleResource. Dropping the
+	// parameter would break those call sites, so it stays until the resource
+	// type carries it.
+	queue<_T = JsonValue>(): BindleResource<"queue">;
+	topic<_T = JsonValue>(): BindleResource<"topic">;
+	// biome-ignore-end lint/correctness/noUnusedVariables: see above
 	secret(): BindleResource<"secret">;
 	data(): BindleResource<"data">;
 	schedule(): BindleResource<"schedule">;

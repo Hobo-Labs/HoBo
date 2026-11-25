@@ -16,8 +16,7 @@ description: "DurableEventStore port, stream heads, fencing, positions, transact
 ### Positioned events
 
 ```ts
-import type { EventEnvelope, EventPosition } from "@hobo/core";
-
+type EventPosition = bigint; // branded / parse-don't-validate
 interface PositionedEvent {
   position: EventPosition;
   event: EventEnvelope;
@@ -60,11 +59,6 @@ Legacy streams migrate with `owner_epoch = 0` (unfenced); first fenced append en
 ## Transactional effects
 
 `commit` may stage: queue messages, actor signals, timers, cron mutations, outbox rows — **same transaction** as domain events. Network dispatch happens **outside** the transaction (at-least-once + idempotency).
-
-Durable effects are parsed before commit. Destinations, identifiers, schedules,
-and JSON payloads must be valid. Aggregate commands require a
-`DurableEventStore` when staging effects and return the committed effect
-receipts in `result.effects`.
 
 ## Delivery guarantees
 

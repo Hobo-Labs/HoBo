@@ -1,6 +1,7 @@
 # Bo action sheets — site use only
 
-Five generated Bo animation sheets, for use on **sites**.
+Five generated Bo animation sheets, for use on **sites**. They are deliberately
+**not** game assets: `@hobo/control-yard` does not load them.
 
 ## The sheets
 
@@ -28,9 +29,9 @@ rediscover this by eye.
 ## Provenance, and why they are here
 
 These were generated during the HIGHBALL pixel-RPG work and removed by
-[ADR-0148](urn:hobo:decision:adr-0148),
+[ADR-0148](../../../docs/design/adr/07-portability-extensibility.md#adr-0148),
 which retired them along with the rubberhose identity.
-[ADR-0149](urn:hobo:decision:adr-0149)
+[ADR-0149](../../../docs/design/adr/07-portability-extensibility.md#adr-0149)
 restored the identity but initially left these out, on the reading that the
 owner had rejected them. That was too broad: what was rejected was the *game*
 surface built from renderer-drawn primitives. The owner has since asked for
@@ -42,7 +43,7 @@ The hand-authored Bo lives in [`../parallax/`](../parallax/) —
 
 ## Rules
 
-- **Site surfaces only.**
+- **Site surfaces only.** Do not import these into `@hobo/control-yard`.
 - **Anchor at the feet.** See above.
 - **They do not override the parallax Bo.** Where an idle or walk cycle is
   needed, use `../parallax/`; these cover actions that art does not.

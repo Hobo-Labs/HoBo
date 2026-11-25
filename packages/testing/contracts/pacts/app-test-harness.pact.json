@@ -39,48 +39,6 @@
 			}
 		},
 		{
-			"description": "the ephemeral-camp lane deploys real resources through its Camp driver without claiming readiness",
-			"request": {
-				"method": "POST",
-				"path": "/harness/deploy",
-				"body": {
-					"lane": "ephemeral-camp",
-					"stage": "pr-42",
-					"bindle": "demo",
-					"yard": { "name": "yard:aws", "providerId": "aws" }
-				}
-			},
-			"response": {
-				"status": 200,
-				"body": {
-					"contract": "hobo.test-harness/v1",
-					"stage": "pr-42",
-					"lane": "ephemeral-camp",
-					"handles": [
-						{
-							"alias": "api",
-							"kind": "api",
-							"fidelity": "real",
-							"endpoint": "https://pr-42.example.test"
-						},
-						{ "alias": "cache", "kind": "kv", "fidelity": "real" },
-						{ "alias": "db", "kind": "data", "fidelity": "real" }
-					],
-					"fidelity": {
-						"by_fidelity": {
-							"real": 3,
-							"simulated": 0,
-							"mocked": 0,
-							"camp-only": 0
-						},
-						"asserted_against": [],
-						"prod_readiness_claimable": false
-					},
-					"teardown_order": ["api", "db", "cache"]
-				}
-			}
-		},
-		{
 			"description": "accessing simulated resources does not claim production readiness",
 			"request": {
 				"method": "GET",

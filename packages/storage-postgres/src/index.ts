@@ -32,7 +32,10 @@ export {
 	type PostgresFleetMember,
 	type PostgresFleetTickReport,
 } from "./fleet.js";
-export type { FleetBackup, FleetBackupOutcome } from "./fleet-backups.js";
+export type {
+	PostgresFleetBackup,
+	PostgresFleetBackupOutcome,
+} from "./fleet-backups.js";
 export {
 	notifyChannel,
 	parseSchemaName,
@@ -75,4 +78,5 @@ export {
 	type StoreTelemetrySink,
 } from "./telemetry.js";
 
+// public-contract: the package identity consumers and tooling assert.
 export const HOBO_STORAGE_POSTGRES_PACKAGE = "@hobo/storage-postgres";

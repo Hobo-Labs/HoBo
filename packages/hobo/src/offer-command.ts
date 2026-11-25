@@ -17,11 +17,31 @@ import {
 	type SolutionRecipe,
 } from "./recipe-plane.js";
 
+// `hobo offer` — compile the proposal a human is asked to consent to, before
+// anything is provisioned. It is read-only by construction: the offer names
+// providers, deadlines, custody and disclosures, and the compiler that
+// produces it performs no provider call.
+//
+//   hobo offer <recipe-id> [--now <ms>] [--home <dir>]
+//
+// The offer is signed so acceptance can be bound to it. The CLI signs with a
+// local key derived from the Station home rather than shipping an unsigned
+// offer: an unsigned proposal cannot be matched to the consent it produced.
+
 export interface OfferCommandDeps {
 	readonly runtime: YardRuntime;
+	/** Overridable for tests; production reads the wall clock once, here. */
 	readonly now?: () => number;
 }
 
+/**
+ * The CLI's offer signer.
+ *
+ * `@hobo/recipes` implements no cryptography and states only what it needs: a
+ * key id and a signature over canonical bytes. A local deployment signs with a
+ * keyed digest over the Station's own key material; a hosted Broker signs with
+ * its Ed25519 resolution key on the same bytes.
+ */
 function localOfferSigner(home: string) {
 	const keyId = `hobo-local:${createHash("sha256").update(home).digest("hex").slice(0, 16)}`;
 	return {
@@ -54,16 +74,22 @@ export function createOfferCommand(deps: OfferCommandDeps): CommandModule {
 				};
 			}
 
+			// An explicit `--cwd` wins: the shell infers a project directory by
+			// walking up, and the caller who named one meant it.
 			const projectDir =
 				(isJsonString(flags.cwd) && flags.cwd.length > 0
 					? flags.cwd
 					: undefined) ??
+				// SAFETY: assertion required at this I/O or test boundary.
 				(context as { projectDir?: string }).projectDir ??
 				context.cwd;
 			const home =
 				isJsonString(flags.home) && flags.home.length > 0
 					? flags.home
 					: defaultHoboHome();
+			// `--at <ms>` pins the evaluation instant so an offer can be
+			// recompiled deterministically from a receipt.
+			// SAFETY: assertion required at this I/O or test boundary.
 			const atFlag = (flags as JsonObject).at;
 			const nowMs = isJsonNumber(atFlag) ? atFlag : now();
 
@@ -146,6 +172,8 @@ export function createOfferCommand(deps: OfferCommandDeps): CommandModule {
 				signer: localOfferSigner(home),
 			});
 
+			// A leaked credential in an offer would reach the browser and the
+			// terminal, so the check runs on the way out, not only in tests.
 			assertOfferIsSecretFree(offer);
 
 			return {

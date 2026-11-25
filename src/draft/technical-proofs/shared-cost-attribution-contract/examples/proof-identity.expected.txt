@@ -1,0 +1,3 @@
+slug: shared-cost-attribution-contract
+layer: technical
+proof-identity: ok

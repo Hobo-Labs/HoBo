@@ -339,7 +339,7 @@ export function createScheduleEmulator(): ScheduleEmulator {
 	});
 	scheduleExecutions.set(driver.advance, executing);
 	return {
-		port: Object.freeze({ every: scheduler.every, cron: scheduler.cron }),
+		port: Object.freeze({ every: scheduler.every }),
 		clock: exposedClock,
 		driver,
 		fidelity: "simulated",

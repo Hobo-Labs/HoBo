@@ -1,3 +1,13 @@
+/**
+ * Scope derivation: the three availability slices of ADR-0077 / Plan 49.
+ *
+ * - **station**: HoBo control-plane capability surfaces on one Station.
+ * - **primitives**: the closed Bindle-primitive vocabulary (web, api, kv, …)
+ *   imported from `@hobo/capability-profiles` — no fourth duplicated list.
+ * - **project / bindle**: the user-centric slices. Every Bindle gets a page
+ *   (default-on with opt-out, session-replay convention); Projects group
+ *   Bindle pages plus their configured service dependencies.
+ */
 import {
 	type BindleDefinition,
 	type BindleResourceRecord,
@@ -14,6 +24,7 @@ import {
 	parseStatusScope,
 } from "./types.js";
 
+/** Default project grouping when a Bindle declares none (ADR-0077 §1). */
 export const DEFAULT_PROJECT = "default" as const;
 
 const LABEL_SAFE = /[^a-z0-9._-]+/g;
@@ -24,6 +35,7 @@ function safeId(value: string): string {
 	return trimmed.length > 0 ? trimmed : "unnamed";
 }
 
+/** Station slice: one component per station capability surface. */
 export function stationStatusScope(stationId: string): StatusScope {
 	return parseStatusScope({
 		kind: "station",
@@ -52,6 +64,7 @@ export function stationCapabilityComponents(
 	return Object.freeze(specs);
 }
 
+/** Primitives slice: the closed HoBo primitive vocabulary, one component each. */
 export function primitivesStatusScope(id = "hobo"): StatusScope {
 	return parseStatusScope({
 		kind: "primitives",
@@ -82,6 +95,10 @@ export interface BindleStatusPlan {
 	readonly project: string;
 	readonly components: readonly ComponentSpec[];
 	readonly disabledComponents: readonly DisabledComponent[];
+	/**
+	 * Why this plan exists. `default-on` is the ADR-0145 platform-applied
+	 * trait path — a page for every Bindle without any annotation.
+	 */
 	readonly reason: "default-on" | "annotated";
 }
 
@@ -96,6 +113,13 @@ function dependencyLabel(record: BindleResourceRecord): string {
 	return record.name;
 }
 
+/**
+ * Derive the status-page plan for one Bindle. Read-side default-on: every
+ * Bindle gets a plan whether or not it carries a `status-page` annotation
+ * (the session-replay opt-out convention, ADR-0137/ADR-0145). App Kits and
+ * declared dependencies become components; `statusPage({ enabled: false })`
+ * on a resource excludes that component but never deletes the page.
+ */
 export function deriveBindleStatusPlan(
 	definition: BindleDefinition,
 ): BindleStatusPlan {
@@ -150,9 +174,16 @@ export interface ProjectStatusPlan {
 	readonly scope: StatusScope;
 	readonly project: string;
 	readonly bindles: readonly BindleStatusPlan[];
+	/** One rollup component per Bindle plus deduplicated dependencies. */
 	readonly components: readonly ComponentSpec[];
 }
 
+/**
+ * Group Bindle plans into project pages. Every project referenced by at
+ * least one Bindle gets a page; a Bindle with no project lands in
+ * `default`. Duplicate dependency components across Bindles deduplicate by
+ * id so a shared database shows once.
+ */
 export function deriveProjectStatusPlans(
 	definitions: readonly BindleDefinition[],
 ): readonly ProjectStatusPlan[] {

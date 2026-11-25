@@ -25,7 +25,9 @@ Console workflows.
 | No rejection case emits a partial or unsigned receipt. | The same test asserts signed rejection evidence, `partialReceiptEmitted: false`, and no Yard planning. |
 | Rejection output is safe for support/debug use without secrets. | The support/debug test injects unsafe material and asserts it is absent from serialized output. |
 
-## Executable evidence
+## Architecture Evidence
+
+- `ARCHITECTURE.md` records parse boundaries, command/event/actor/projection vocabulary, and scope
   boundaries.
 - `architecture/meta_cloud_broker_rejection_matrix.proto` pins the protobuf data contract.
 - `architecture/meta_cloud_broker_rejection_matrix.cue` pins CUE constraints for the protobuf types.

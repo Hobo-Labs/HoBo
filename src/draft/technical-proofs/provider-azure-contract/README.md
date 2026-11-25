@@ -1,10 +1,10 @@
 # HOBO-157 Azure Provider Contract POC
 
 This draft package proves the `@hobo/provider-azure` contract slice for
-[PLAN-04](urn:hobo:requirement:control-plane#plan-04),
-[PLAN-25](urn:hobo:requirement:platform-engineering#plan-25),
-[ADR-0024](urn:hobo:decision:adr-0024),
-and [ADR-0035](urn:hobo:decision:adr-0035).
+[PLAN-04](../../../../docs/design/control-plane.md#plan-04),
+[PLAN-25](../../../../docs/design/platform-engineering.md#plan-25),
+[ADR-0024](../../../../docs/design/adr/07-portability-extensibility.md#adr-0024),
+and [ADR-0035](../../../../docs/design/adr/07-portability-extensibility.md#adr-0035).
 
 It covers the seed Azure provider surface:
 
@@ -35,10 +35,12 @@ pnpm.cmd --prefix src\draft\technical-proofs\provider-azure-contract test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Provider Azure Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.
 - `type-tests/provider-azure.ts` — public declaration consumer for the typed Azure provider API.

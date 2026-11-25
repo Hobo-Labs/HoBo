@@ -22,7 +22,9 @@ import, production tenant mutation, or provider-backed customer launch.
   or sales surfaces, proofless customer-facing claims, and M0-backed production
   launch or go-live claims is rejected.
 
-## Executable evidence
+## Architecture Evidence
+
+- `ARCHITECTURE.md` records the parse, don't validate boundary, derived domain
   types, commands, events, actor, event-store, materialized view/projection,
   snapshot, and read store.
 - `contracts/pacts/customer-onboarding-scope.pact.json` records the PACT
@@ -46,5 +48,5 @@ pnpm.cmd run architecture:guard -- --base=origin/main
 
 The proof is also referenced by the design records:
 
-- [Customer Onboarding design record](urn:hobo:requirement:customer-onboarding)
-- [HOBO-449 proof record](urn:hobo:proof:hobo-449-customer-onboarding-scope)
+- [Customer Onboarding design record](../../../../docs/design/customer-onboarding.md)
+- [HOBO-449 proof record](../../../../docs/design/proofs/hobo-449-customer-onboarding-scope/README.md)

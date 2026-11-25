@@ -2,42 +2,61 @@ syntax = "proto3";
 
 package hobo.cloud.v1;
 
+// Wire records for the Yard control-plane kernel (S2-01) and the Planner
+// (S2-02). These are the protobuf definitions of the provider-neutral planner
+// IR and of the control-plane event bodies (control-plane.md "The Planner" and
+// the command/event API surface). Every record carries a matching CUE constraint
+// in cloud.cue; the TypeScript domain-view types (parse-don't-validate parsed
+// derived types) narrow these wire shapes with branded fields.
 
+// Step 0 output: a manifest IR node lowered to a provider-neutral intent.
 message ResourceIntent {
   string name = 1;
-  string port = 2;
-  repeated string require = 3;
-  repeated string prefer = 4;
-  string negotiation = 5;
-  repeated string deps = 6;
-  string region = 7;
-  string objective = 8;
-  PlacementCriteria placement = 9;
-  repeated string ready_deps = 10;
-  repeated string completed_deps = 11;
+  string port = 2;                 // capability class: compute | kv | objectStore | ...
+  repeated string require = 3;     // required capability features
+  repeated string prefer = 4;      // preferred (degradable) features
+  string negotiation = 5;          // "require" | "prefer"
+  repeated string deps = 6;        // bind-edge dependency ids
+  string region = 7;               // explicit region, if pinned
+  string objective = 8;            // routing objective (default: min-cost)
+  PlacementCriteria placement = 9; // optional placement-constraint vocabulary (E19)
 }
 
+// ---- E19: placement-constraint vocabulary (HoBo-native shapes; semantics
+// cited from KubeFleet property-aware placement — no Kubernetes types cross
+// this boundary, ADR-0107 non-goal). The vocabulary records what the Planner
+// PLANS; spread/anti-affinity EXECUTION stays delegated to the runtime
+// scheduler (wadm — adr/01-architecture-core.md:419).
 
+// A property selector over a Resource Definition candidate: well-known keys
+// (cost | region | provider | capacity | latency) or a custom feature key.
 message PlacementPropertySelector {
-  string key = 1;
-  string op = 2;
-  repeated string values = 3;
+  string key = 1;                  // "cost" | "region" | "provider" | "capacity" | "latency" | custom key
+  string op = 2;                   // "eq" | "ne" | "in" | "not-in" | "lt" | "lte" | "gt" | "gte" | "exists"
+  repeated string values = 3;      // comparison operands (empty for "exists")
 }
 
+// Affinity/anti-affinity between resource classes (capability ports): the
+// matched candidate must co-locate with (affinity) or avoid (anti-affinity)
+// the placements already decided for the target class, at the given scope.
 message PlacementAffinityRule {
-  string mode = 1;
-  string target_port = 2;
-  string scope = 3;
+  string mode = 1;                 // "affinity" | "anti-affinity"
+  string target_port = 2;          // the referenced resource class (capability port)
+  string scope = 3;                // "region" | "yard"
 }
 
+// Spread the placements of one resource class across a topology dimension.
 message PlacementSpread {
-  string dimension = 1;
+  string dimension = 1;            // "region" | "yard"
 }
 
+// pickN cardinality: matching must find at least `count` distinct satisfying
+// candidates (the full ranking records them); the Planner still places one.
 message PlacementPickN {
   uint32 count = 1;
 }
 
+// The composed placement-constraint set carried by a ResourceIntent.
 message PlacementCriteria {
   repeated PlacementPropertySelector selectors = 1;
   repeated PlacementAffinityRule affinities = 2;
@@ -45,8 +64,9 @@ message PlacementCriteria {
   PlacementPickN pick_n = 4;
 }
 
+// A Resource Definition candidate indexed by the Registry catalog projection.
 message ResourceDefinitionRef {
-  string id = 1;
+  string id = 1;                   // "<providerId>:<port>"
   string provider_id = 2;
   string port = 3;
   repeated string features = 4;
@@ -60,11 +80,13 @@ message ResourceDefinitionRef {
   optional string product_id = 12;
 }
 
+// Capability negotiation verdict: full | partial(missing) | none.
 message CapabilityVerdict {
-  string kind = 1;
+  string kind = 1;                 // "full" | "partial" | "none"
   repeated string missing = 2;
 }
 
+// deployment stream body for match.Decided (one per resolved resource).
 message RankedCandidate {
   string definition_id = 1;
   string provider_id = 2;
@@ -80,23 +102,33 @@ message RejectedCandidate {
 message MatchDecided {
   string deployment_id = 1;
   string resource = 2;
-  string winner = 3;
+  string winner = 3;               // "<providerId>.<port>"
   string provider_id = 4;
   string port = 5;
   uint32 specificity = 6;
-  string objective = 7;
-  string region = 8;
-  string rationale = 9;
-  repeated RankedCandidate ranking = 10;
-  repeated RejectedCandidate rejected_candidates = 11;
-  bool tie = 12;
-  string catalog_content_hash = 13;
-  string product_id = 14;
-  repeated string applied_rows = 15;
-  map<string, string> realization_parameters = 16;
-  repeated string non_portable_rows = 17;
+  repeated string rejected = 7;    // deprecated alias of rejected_candidates ids
+  string objective = 8;
+  string region = 9;
+  string rationale = 10;
+  string catalog_hash = 11;        // deprecated alias of catalog_content_hash
+  repeated RankedCandidate ranking = 12;
+  repeated RejectedCandidate rejected_candidates = 13;
+  bool tie = 14;
+  string catalog_content_hash = 15;
+  // ADR-0157 Yard binding authority. Present only when a Yard's rows
+  // constrained this decision; absent means no Yard supplied a catalog to
+  // select from, never "any product will do".
+  string product_id = 16;
+  repeated string applied_rows = 17;
+  // Provider-native realization parameters merged from the applied rows.
+  // Non-string JSON values are carried as canonical JSON text in this wire
+  // form. Credential-shaped keys are refused at the parse boundary, so this
+  // map never carries material.
+  map<string, string> realization_parameters = 18;
+  repeated string non_portable_rows = 19;
 }
 
+// A resolved node of the DeploymentPlan DAG (control-plane.md step 6).
 message ResourcePlan {
   string name = 1;
   string port = 2;
@@ -105,13 +137,22 @@ message ResourcePlan {
   string strategy = 5;
   string region = 6;
   string deployment_id = 7;
+  // The provider offering this node resolves to (ADR-0157). A deployment
+  // driver keys its resolver lookup on this. Absent on the legacy port-only
+  // planning path; absent means "not decided here", so a driver that cannot
+  // find a product must fail closed rather than infer one from the port.
   string product_id = 8;
+  // Yard-scoped, provider-native realization parameters. Non-string JSON
+  // values are carried as canonical JSON text in this wire form. Never carries
+  // credential material — the parse boundary refuses credential-shaped keys
+  // before a row reaches a plan.
   map<string, string> realization_parameters = 9;
+  // Applied rows that contributed parameters, so the PortabilityReport can
+  // attribute the loss rather than merely report that something was lost.
   repeated string non_portable_rows = 10;
-  repeated string ready_deps = 11;
-  repeated string completed_deps = 12;
 }
 
+// The content-addressed DeploymentPlan DAG.
 message DeploymentPlan {
   string schema = 1;
   repeated ResourcePlan resources = 2;
@@ -119,12 +160,14 @@ message DeploymentPlan {
   string objective = 4;
 }
 
+// deployment.Planned body: the content-addressed plan + its hash.
 message DeploymentPlanned {
   string deployment_id = 1;
   string plan_hash = 2;
   DeploymentPlan plan = 3;
 }
 
+// Machine-readable remediation carried by a rejection (agent self-correction).
 message PlanRemediation {
   string resource = 1;
   string code = 2;
@@ -135,128 +178,128 @@ message PlanRemediation {
   string remediation = 7;
 }
 
+// deployment.PlanRejected body.
 message DeploymentPlanRejected {
   string deployment_id = 1;
   string reason = 2;
   repeated PlanRemediation remediations = 3;
 }
 
+// Registry catalog projection row: a provider's Capability Manifest snapshot.
 message RegistryCatalogEntry {
   string provider_id = 1;
   repeated ResourceDefinitionRef definitions = 2;
   string manifest_index_digest = 3;
 }
 
+// Approval fact body for a registered provider (provider.Approved). Only
+// approved providers are matchable by the Planner (walkthrough Part 0/2
+// "default providers approved"); registration alone leaves a provider held.
 message ProviderApprovedRecord {
   string provider_id = 1;
   string approved_by = 2;
 }
 
-message ResourceDefinitionCostRecord {
-  string sku = 1;
-  string unit = 2;
-  string marginal_price = 3;
-  optional string pricing_status = 4;
-}
+// ---- S2-03a/b: Orchestrator + ResourceActor FSM + Executor wire records ----
+// control-plane.md "The ResourceActor reconciliation FSM" + "Executor sandbox
+// model". The provisioning path: a durable ResourceActor folds its own stream
+// to an FSM snapshot, previews a diff, dispatches an IacProgram to a sandboxed
+// Executor, and on exec.Succeeded emits resource.Provisioned. Compensation is
+// choreographed via deployment.RolledBack + reverse-order resource.Destroying.
 
-message ResourceDefinitionEventRecord {
-  string id = 1;
-  optional string product_id = 2;
-  string provider_id = 3;
-  string port = 4;
-  repeated string features = 5;
-  repeated string regions = 6;
-  uint32 specificity = 7;
-  uint32 priority = 8;
-  ResourceDefinitionCostRecord cost = 9;
-}
-
-message ResourceDefinitionChanged {
-  string provider_id = 1;
-  ResourceDefinitionEventRecord definition = 2;
-  string manifest_index_digest = 3;
-}
-
-
+// The program a CloudProvider realizes and the Orchestrator dispatches to an
+// Executor (control-plane.md "A CloudProvider composes ... emits an IacProgram").
 message IacProgram {
   string program_id = 1;
   string deployment_id = 2;
   string resource_id = 3;
   string provider = 4;
-  string driver = 5;
-  string action = 6;
-  string stack_name = 7;
-  ResourcePlan resource = 8;
-  optional string operation_generation = 9;
+  string driver = 5;               // iac driver: pulumi | terraform | container | ...
+  string action = 6;               // "preview" | "apply" | "destroy"
+  string stack_name = 7;           // per-resource stack key: tenant/deployment/resource
+  ResourcePlan resource = 8;       // desired declaration to realize, when supplied
+  optional string operation_generation = 9; // persisted before provider work, reused on retry
 }
 
+// A short-lived, capability-scoped token injected per-exec (control-plane.md:
+// "no ambient cloud creds ... a short-lived, capability-scoped token").
 message ScopedCredential {
   string id = 1;
-  string scope = 2;
+  string scope = 2;                // tenant:<t>/resource:<r>/job:<k>/action:<a>
   uint32 ttl_seconds = 3;
-  bool ambient = 4;
+  bool ambient = 4;                // always false — creds arrive only by injection
 }
 
+// exec.Output: streamed stdout/stderr line from a running Executor.
 message ExecOutputRecord {
   string exec_id = 1;
-  string stream = 2;
+  string stream = 2;               // "stdout" | "stderr"
   string line = 3;
 }
 
+// exec.Diff: the preview diff summary streamed before apply.
 message ExecDiffRecord {
   string exec_id = 1;
   string summary = 2;
   uint32 changes = 3;
 }
 
+// exec.Succeeded: terminal success carrying captured stack outputs.
 message ExecSucceededRecord {
   string exec_id = 1;
   string outputs_hash = 2;
   map<string, string> outputs = 3;
 }
 
+// exec.Failed: terminal failure with a classified error (retryable | fatal).
 message ExecFailedRecord {
   string exec_id = 1;
-  string classification = 2;
+  string classification = 2;       // "retryable" | "fatal"
   string reason = 3;
   optional bool requires_reconciliation = 4;
   optional string reservation_id = 5;
   optional string reconciliation_operation = 6; // "preview" | "apply" | "destroy"
 }
 
+// The durable ResourceActor FSM snapshot, folded from the resource's own facts.
 message ResourceActorSnapshot {
   string deployment_id = 1;
   string resource_id = 2;
-  string state = 3;
+  string state = 3;                // Pending|Planning|Provisioning|Provisioned|Updating|Failed|ReconciliationRequired|Compensating|Destroying|Destroyed
   uint32 sequence = 4;
   map<string, string> outputs = 5;
   repeated string deps = 6;
-  optional string spec_hash = 7;
 }
 
+// resource.Provisioning: apply dispatched to an Executor (transition to Provisioning).
 message ResourceProvisioningRecord {
   string deployment_id = 1;
   string resource_id = 2;
   string exec_id = 3;
   string program_hash = 4;
-  string spec_hash = 5;
-  string provider_id = 6;
-  optional string operation_generation = 7;
+  // desiredSpecHash of the resource being applied; absent on legacy facts.
+  optional string spec_hash = 5;
+  // Provider that may have received the apply; absent on legacy facts.
+  optional string provider_id = 6;
+  optional string operation_generation = 7; // absent on legacy in-flight operations
 }
 
+// resource.Provisioned: apply ok, outputs recorded (unblocks dependents).
 message ResourceProvisionedRecord {
   string deployment_id = 1;
   string resource_id = 2;
   map<string, string> outputs = 3;
   string exec_id = 4;
-  string spec_hash = 5;
+  // desiredSpecHash the resource now matches (upsert/no-op detection).
+  optional string spec_hash = 5;
 }
 
+// resource.Failed: apply error with classified reason + no-go threshold flag.
 message ResourceFailedRecord {
   string deployment_id = 1;
   string resource_id = 2;
   string reason = 3;
-  string classification = 4;
+  string classification = 4;       // "retryable" | "fatal"
   bool crossed_no_go_threshold = 5;
   optional bool requires_reconciliation = 6;
   optional string reservation_id = 7;
@@ -282,25 +325,7 @@ message ResourceReconciledRecord {
   optional string restored_state = 15; // "provisioned" | "destroyed" | "failed" after no-effect
 }
 
-message ResourceCompensationFailedData {
-  string deployment_id = 1;
-  string resource_id = 2;
-  string reason = 3;
-  string outcome = 4;
-}
-
-message CompensationBlockedResource {
-  string resource_id = 1;
-  string reason = 2;
-  repeated string dependents = 3;
-}
-
-message IncidentEscalationRequestedData {
-  string deployment_id = 1;
-  string resource_id = 2;
-  string reason = 3;
-}
-
+// resource.Destroying: choreographed compensation started for this actor.
 message ResourceDestroyingRecord {
   string deployment_id = 1;
   string resource_id = 2;
@@ -310,25 +335,32 @@ message ResourceDestroyingRecord {
   optional string spec_hash = 6;
 }
 
+// resource.Destroyed: compensation applied; slice removed.
 message ResourceDestroyedRecord {
   string deployment_id = 1;
   string resource_id = 2;
   string final_state_hash = 3;
 }
 
+// deployment.Deployed: every resource actor reached Provisioned.
 message DeploymentDeployedRecord {
   string deployment_id = 1;
-  repeated string resource_ids = 2;
+  string set_id = 2;
+  repeated string resource_ids = 3;
 }
 
+// deployment.RolledBack: compensation completed after the transition closed.
 message DeploymentRolledBackRecord {
   string deployment_id = 1;
+  string target_set_id = 2;
+  string reason = 3;
 }
 
+// deployment.TransitionStarted / deployment.TransitionCompleted: CAS-fenced work.
 message DeploymentTransitionRecord {
   string deployment_id = 1;
   string transition_id = 2;
-  string kind = 3;
+  string kind = 3; // "rollback" | "prune"
   string plan_hash = 4;
   repeated string resource_ids = 5;
   optional string trigger_resource = 6;
@@ -340,6 +372,7 @@ message ReopenedResource {
   string spec_hash = 2;
 }
 
+// deployment.Reopened: explicitly start a new reviewed run after rollback.
 message DeploymentReopenedRecord {
   string deployment_id = 1;
   string rollback_event_id = 2;
@@ -347,6 +380,9 @@ message DeploymentReopenedRecord {
   repeated ReopenedResource resources = 4;
 }
 
+// ---- S3-04: CredentialAudit projection (ai-native-agent-auth.md §6.2/§6.8) ----
+// The read-model fold over identity/token/session events, correlated by
+// correlationId. Never compacted (NFR-018 retention floor).
 
 message CredentialAuditScope {
   string port = 1;
@@ -354,12 +390,13 @@ message CredentialAuditScope {
   string action = 3;
 }
 
+// The per-grant lifecycle fold: grant -> use -> revoke.
 message CredentialGrantAudit {
   string grant_id = 1;
   string svid_subject = 2;
   CredentialAuditScope scope = 3;
   string token_ref = 4;
-  string status = 5;
+  string status = 5;               // "granted" | "used" | "revoked"
   string granted_at = 6;
   string used_at = 7;
   string revoked_at = 8;
@@ -367,27 +404,14 @@ message CredentialGrantAudit {
   uint32 use_count = 10;
 }
 
+// A single ordered step in a correlation's credential timeline.
 message CredentialAuditTimelineEntry {
   uint32 seq = 1;
   string type = 2;
   string grant_id = 3;
-  string event_id = 4;
-  string stream_id = 5;
-  string time = 6;
-  string actor_kind = 7;
-  string actor_id = 8;
-  string tool = 9;
-  string subject = 10;
-  string effect = 11;
-  string reason = 12;
-  string name = 13;
-  string ref = 14;
-  string code = 15;
-  string ticket_id = 16;
-  string target = 17;
-  string channel = 18;
 }
 
+// The CredentialAudit read-model row, one per correlationId.
 message CredentialAuditRecord {
   string correlation_id = 1;
   repeated CredentialGrantAudit grants = 2;
@@ -397,16 +421,9 @@ message CredentialAuditRecord {
   uint32 grant_count = 6;
   uint32 use_count = 7;
   uint32 revoke_count = 8;
-  string tenant = 9;
-  repeated string connection_ids = 10;
-  repeated string config_names = 11;
-  repeated string secret_value_refs = 12;
-  repeated string migration_ids = 13;
-  uint32 config_resolve_count = 14;
-  uint32 secret_access_count = 15;
-  uint32 migration_event_count = 16;
 }
 
+// Continuous Delivery plane (attested apply + progressive + A2H).
 message ResolvedDeploymentSetRecord {
   string schema_version = 1;
   string set_id = 2;
@@ -460,15 +477,20 @@ message A2HHandoffRecord {
   string obligation_id = 9;
 }
 
+// ---- E21: TopologyView app-graph read model (deployment-dashboard-topology
+// explorer surface). A pure fold over the deployment event stream: nodes are
+// the bindle, its resources, and the yards they land on; edges are bindings
+// (bind-edge dependencies) and placements (resource -> yard). Traffic routing
+// stays with the stations RoutingTopology — this is the APP graph.
 
 message TopologyNode {
-  string id = 1;
-  string kind = 2;
+  string id = 1;                   // "<kind>:<name>"
+  string kind = 2;                 // "bindle" | "resource" | "yard"
   string label = 3;
-  string port = 4;
-  string provider_id = 5;
+  string port = 4;                 // resource nodes: capability class
+  string provider_id = 5;          // resource/yard nodes: backing provider
   string region = 6;
-  string lifecycle = 7;
+  string lifecycle = 7;            // resource nodes: provisioning|provisioned|failed|reconciliation-required|destroying|destroyed
   optional string reconciliation_event_id = 8;
   repeated string other_reconciliation_event_ids = 9;
 }
@@ -476,7 +498,7 @@ message TopologyNode {
 message TopologyEdge {
   string from = 1;
   string to = 2;
-  string kind = 3;
+  string kind = 3;                 // "binding" | "placement"
   string region = 4;
 }
 

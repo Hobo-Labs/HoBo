@@ -1,0 +1,13 @@
+{
+  "schema": "hobo.runtime.noop-guest-imports/v1",
+  "world": "runtime-primitives",
+  "imports": [
+    "hobo:runtime/workflow@0.1.0",
+    "hobo:runtime/actor@0.1.0",
+    "hobo:runtime/saga@0.1.0",
+    "hobo:runtime/agent@0.1.0",
+    "hobo:runtime/command@0.1.0",
+    "hobo:runtime/subscribe@0.1.0"
+  ],
+  "exports": []
+}

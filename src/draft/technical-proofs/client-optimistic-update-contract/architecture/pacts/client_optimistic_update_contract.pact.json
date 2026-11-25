@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ClientOptimisticUpdateContractConsumer"
+  },
+  "provider": {
+    "name": "ClientOptimisticUpdateContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Client Optimistic Update Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/client-optimistic-update-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.client_optimistic_update_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

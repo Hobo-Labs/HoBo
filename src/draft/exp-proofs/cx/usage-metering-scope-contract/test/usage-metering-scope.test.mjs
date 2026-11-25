@@ -34,12 +34,12 @@ test("M0 record maps dependencies to authoritative design sources", () => {
   assert.deepEqual(
     USAGE_METERING_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:reliability-observability-cost#plan-05",
-      "urn:hobo:requirement:data-plane#plan-11",
-      "urn:hobo:requirement:billing-launch-policy",
-      "urn:hobo:requirement:tax-currency-receipt-obligations",
-      "urn:hobo:decision:adr-0039",
-      "urn:hobo:decision:adr-0071",
+      "docs/design/reliability-observability-cost.md#plan-05",
+      "docs/design/data-plane.md#plan-11",
+      "docs/design/billing-launch-policy.md",
+      "docs/design/tax-currency-receipt-obligations.md",
+      "docs/design/adr/02-identity-security.md#adr-0039",
+      "docs/design/adr/01-architecture-core.md#adr-0071",
     ],
   );
 });

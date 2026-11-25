@@ -3,29 +3,9 @@ import path from "node:path";
 
 import { type ManifestV1, parseManifest } from "@hobo/bindles";
 import type { JsonValue } from "../json.js";
-import type { CommandResult } from "../types/envelope.js";
 import { compileProjectManifest } from "./loader.js";
 
-export const BINDLE_MANIFEST_FILE = "hobo.bindle.json";
-
-export function missingProjectBindle(
-	verb: string,
-	projectDir: string,
-	options: { readonly sourceOnly?: boolean } = {},
-): CommandResult {
-	return {
-		ok: false,
-		status: "error",
-		code: "HOBO_NO_BINDLE",
-		message: `hobo ${verb}: no loadable Bindle in ${projectDir}`,
-		remediation: [
-			options.sourceOnly
-				? "Run the command in a project with a loadable Bindle source."
-				: "Run the command in a project with a loadable Bindle source or manifest.",
-		],
-		data: { command: verb, projectDir },
-	};
-}
+export const BINDLE_MANIFEST_FILE = "hobo.bindle.json"; // public-contract: manifest file name read from user projects
 
 export async function loadProjectManifest(
 	projectDir: string,

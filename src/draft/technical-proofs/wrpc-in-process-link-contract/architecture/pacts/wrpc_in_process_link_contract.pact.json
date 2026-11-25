@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "WrpcInProcessLinkContractConsumer"
+  },
+  "provider": {
+    "name": "WrpcInProcessLinkContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Wrpc In Process Link Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/wrpc-in-process-link-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.wrpc_in_process_link_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

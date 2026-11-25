@@ -64,25 +64,30 @@ export function parseProjectName(raw: string): ProjectName {
 			["Pick a name that is not a reserved Windows device name."],
 		);
 	}
+	// SAFETY: `return raw as ProjectName;` is required at this I/O or test boundary.
 	return raw as ProjectName;
 }
 
 export function parseTemplateId(raw: string): ParsedTemplateId {
+	// SAFETY: `if (!VALID_TEMPLATES.includes(raw as TemplateId)) {` is required at this I/O or test boundary.
 	if (!VALID_TEMPLATES.includes(raw as TemplateId)) {
 		throw new UsageError(
 			`Unknown template "${raw}". Valid templates: ${VALID_TEMPLATES.join(", ")}.`,
 			[`Pass -t with one of: ${VALID_TEMPLATES.join(", ")}.`],
 		);
 	}
+	// SAFETY: `return raw as ParsedTemplateId;` is required at this I/O or test boundary.
 	return raw as ParsedTemplateId;
 }
 
+// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export interface ScaffoldRequest {
 	readonly name: ProjectName;
 	readonly template: ParsedTemplateId;
 	readonly force: boolean;
 }
 
+// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export interface ScaffoldResult {
 	readonly projectDir: string;
 	readonly name: ProjectName;

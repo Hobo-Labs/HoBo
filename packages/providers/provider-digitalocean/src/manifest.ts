@@ -5,7 +5,6 @@ import {
 	canonicalJson,
 	digestRef,
 	MANIFEST_SCHEMA,
-	providerTermsFor,
 	stableDigest,
 } from "@hobo/core";
 import {
@@ -25,7 +24,6 @@ export {
 
 // public-contract: the provider id every published document carries.
 export const DIGITALOCEAN_PROVIDER_ID = "@hobo/provider-digitalocean";
-export const PROVIDER_TERMS = providerTermsFor(DIGITALOCEAN_PROVIDER_ID);
 
 // DigitalOcean's datacenter slugs. Transcribed from the public regions list,
 // not discovered from the account — a region this list is missing is a gap in
@@ -196,7 +194,6 @@ export function publishCapabilityManifest(
 		schema: "hobo.capability-manifest-index/v1",
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
-		terms: PROVIDER_TERMS,
 		documents,
 	};
 

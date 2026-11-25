@@ -12,6 +12,10 @@ inputs:
     description: Whether to fetch submodules after sparse checkout
     required: false
     default: "false"
+  materialize-paths:
+    description: Newline-separated paths that must exist on disk after checkout (promisor rematerialize)
+    required: false
+    default: ""
   ref:
     description: Optional git ref to checkout (defaults to the triggering commit)
     required: false
@@ -68,9 +72,10 @@ runs:
           CODE_OF_CONDUCT.md
           CONTRIBUTING.md
           DX.md
-          GEMINI.md
+          GAPS.md
           LICENSE
           NOTES.md
+          PRODUCT.md
           README.md
           SECURITY.md
           SUPPORT.md
@@ -97,11 +102,23 @@ runs:
           done
           return 1
         }
+        looks_like_nested_file() {
+          local candidate="$1"
+          case "$candidate" in
+            */*)
+              local base="${candidate##*/}"
+              case "$base" in
+                *.*) return 0 ;;
+              esac
+              ;;
+          esac
+          return 1
+        }
         dir_cones=()
         checkout_root=()
         while IFS= read -r path; do
           [ -z "$path" ] && continue
-          if is_root_file "$path"; then
+          if is_root_file "$path" || looks_like_nested_file "$path"; then
             checkout_root+=("$path")
           else
             dir_cones+=("$path")
@@ -229,6 +246,58 @@ runs:
         for path in "${nested[@]}"; do
           git sparse-checkout add --skip-checks -- "$path"
           git checkout HEAD -- "$path"
+        done
+    - name: Materialize required sparse paths
+      if: inputs.materialize-paths != ''
+      shell: bash
+      env:
+        MATERIALIZE_PATHS: ${{ inputs.materialize-paths }}
+      run: |
+        set -euo pipefail
+        mapfile -t paths <<< "$MATERIALIZE_PATHS"
+        assert_wit_station_file() {
+          local wit_dir="$1"
+          local wit_file="${wit_dir}/station.wit"
+          if [ ! -s "$wit_file" ]; then
+            echo "::error::sparse checkout missing or empty ${wit_file} after materializing ${wit_dir}"
+            exit 1
+          fi
+          local expected actual
+          expected=$(git rev-parse "HEAD:${wit_file}")
+          actual=$(git hash-object "$wit_file")
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::${wit_file} on disk does not match HEAD (expected blob ${expected}, got ${actual}); rematerialize required on reused worktrees"
+            exit 1
+          fi
+        }
+        materialize_path() {
+          local target="$1"
+          if ! git rev-parse --verify "HEAD:${target}" >/dev/null 2>&1 \
+            && ! git rev-parse --verify "HEAD:${target%/}" >/dev/null 2>&1; then
+            echo "::error::required sparse path missing from HEAD: ${target}"
+            exit 1
+          fi
+          git sparse-checkout add --skip-checks -- "$target"
+          git checkout HEAD -- "$target"
+          if [ ! -e "$target" ]; then
+            echo "::error::sparse checkout did not materialize required path: ${target}"
+            exit 1
+          fi
+        }
+        for path in "${paths[@]}"; do
+          [ -z "$path" ] && continue
+          materialize_path "$path"
+        done
+        for path in "${paths[@]}"; do
+          [ -z "$path" ] && continue
+          case "$path" in
+            */wit)
+              echo "::group::Materialized wit tree ${path}"
+              ls -la "$path" || true
+              echo "::endgroup::"
+              assert_wit_station_file "$path"
+              ;;
+          esac
         done
     - name: Initialize submodules (sparse cone via pins:fetch in job)
       if: inputs.submodules == 'true'

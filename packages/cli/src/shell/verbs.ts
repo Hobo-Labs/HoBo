@@ -4,7 +4,7 @@ export interface Verb {
 	readonly summary: string;
 }
 
-export const CANONICAL_VERBS = [
+export const CANONICAL_VERBS: readonly Verb[] = [
 	{
 		name: "up",
 		role: "lifecycle",
@@ -70,6 +70,12 @@ export const CANONICAL_VERBS = [
 			"Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy",
 	},
 	{
+		name: "fleet",
+		role: "control plane",
+		summary:
+			"Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)",
+	},
+	{
 		name: "incident",
 		role: "delivery",
 		summary: "CD failure disposition: A2H handoff or sandboxed self-heal",
@@ -108,7 +114,7 @@ export const CANONICAL_VERBS = [
 	{
 		name: "logs",
 		role: "read-only",
-		summary: "Read or follow local deployment logs",
+		summary: "Live-tail Camp runtime streams",
 	},
 	{
 		name: "doctor",
@@ -204,7 +210,7 @@ export const CANONICAL_VERBS = [
 	{
 		name: "serve",
 		role: "control plane",
-		summary: "Serve the local control-plane HTTP and SSE API",
+		summary: "Local control-plane HTTP+SSE for the Yard game UI",
 	},
 	{
 		name: "replay",
@@ -215,84 +221,13 @@ export const CANONICAL_VERBS = [
 	{
 		name: "derivative",
 		role: "extensibility",
-		summary: "Inspect a derived HoBo descriptor",
+		summary: "Manage derived HoBo implementations",
 	},
 	{
 		name: "runbook",
 		role: "SRE",
 		summary: "Execute or replay incident runbooks",
 	},
-] as const satisfies readonly Verb[];
-
-export const CLI_IMPLEMENTATION_REFERENCES = {
-	up: [
-		"HOBO-130",
-		"HOBO-164",
-		"HOBO-198",
-		"HOBO-203",
-		"HOBO-208",
-		"HOBO-213",
-		"HOBO-219",
-		"HOBO-224",
-	],
-	down: ["HOBO-132"],
-	dev: ["HOBO-122", "HOBO-190", "HOBO-198", "HOBO-392", "HOBO-612"],
-	new: ["HOBO-118", "HOBO-198"],
-	login: ["HOBO-136", "HOBO-184"],
-	connection: ["ADR-0131"],
-	identity: ["ADR-0132"],
-	trails: ["ADR-0134"],
-	access: ["ADR-0133"],
-	feature: ["ADR-0044", "ADR-0083"],
-	deploy: ["ADR-0083", "ADR-0008", "ADR-0182"],
-	ci: ["ADR-0071", "ADR-0083"],
-	cd: ["ADR-0182"],
-	incident: ["ADR-0082", "ADR-0094", "ADR-0076", "ADR-0182"],
-	claim: ["HOBO-136", "HOBO-164", "ADR-0151"],
-	recipes: ["ADR-0151"],
-	offer: ["ADR-0151"],
-	plan: ["HOBO-125", "HOBO-203", "HOBO-208"],
-	verify: ["HOBO-146", "HOBO-227"],
-	"can-deploy": ["HOBO-123", "HOBO-146"],
-	inspect: ["HOBO-140", "HOBO-216"],
-	logs: ["HOBO-143", "HOBO-216"],
-	doctor: ["HOBO-147", "HOBO-184", "HOBO-190"],
-	messaging: ["ADR-0138"],
-	codegen: ["HOBO-152"],
-	build: ["HOBO-156"],
-	collect: ["HOBO-160"],
-	stub: ["HOBO-160", "HOBO-392"],
-	drift: ["HOBO-216", "HOBO-369"],
-	add: ["HOBO-362", "HOBO-365"],
-	registry: ["HOBO-350", "HOBO-383"],
-	import: ["HOBO-225", "HOBO-369"],
-	generate: ["HOBO-207", "HOBO-348"],
-	sandbox: ["HOBO-190", "HOBO-392"],
-	test: ["HOBO-190", "HOBO-392"],
-	attest: ["HOBO-175", "HOBO-196", "HOBO-282"],
-	erase: ["HOBO-295"],
-	broker: ["HOBO-521", "HOBO-525", "HOBO-528", "HOBO-529"],
-	yard: ["ADR-0131"],
-	station: ["ADR-0131"],
-	serve: ["ADR-0150"],
-	replay: ["ADR-0137"],
-	derivative: ["HOBO-36", "HOBO-336", "HOBO-386"],
-	runbook: ["HOBO-260", "HOBO-285"],
-} as const satisfies Record<
-	(typeof CANONICAL_VERBS)[number]["name"],
-	readonly string[]
->;
-
-export const RETIRED_CLI_ALIASES = [
-	{ name: "destroy", replacement: "down" },
-	{ name: "ship", replacement: "up" },
-	{ name: "teardown", replacement: "down" },
-	{ name: "rollback", replacement: "up --rollback" },
-	{ name: "promote", replacement: "up --to <revision>" },
-	{ name: "forge", replacement: "build" },
-	{ name: "train", replacement: "up" },
-	{ name: "crew", replacement: "inspect" },
-	{ name: "fleet", replacement: "inspect" },
 ] as const;
 
 export const GLOBAL_FLAGS = [
@@ -304,11 +239,9 @@ export const GLOBAL_FLAGS = [
 	"--help",
 ] as const;
 
-export const verbNames = new Set<string>(
-	CANONICAL_VERBS.map((verb) => verb.name),
-);
+export const verbNames = new Set(CANONICAL_VERBS.map((verb) => verb.name));
 
-export const projectScopedVerbs = new Set<string>(
+export const projectScopedVerbs = new Set(
 	CANONICAL_VERBS.map((verb) => verb.name).filter(
 		(verb) =>
 			![
@@ -318,6 +251,7 @@ export const projectScopedVerbs = new Set<string>(
 
 				"ci",
 				"cd",
+				"fleet",
 				"claim",
 				"identity",
 				"trails",
@@ -389,36 +323,6 @@ export function verbHelpText(
 				? "Status: implemented in this composition\n"
 				: "Status: not yet implemented in this composition\n";
 
-	if (verb.name === "logs") {
-		return `HoBo logs
-
-Usage:
-  hobo logs [resource] [--lines <count> | --tail <count>] [--follow] [--json]
-
-Role: ${verb.role}
-${statusLine}
-Read stdout, stderr, and component events from the local deployment for this
-project. An optional resource name selects that resource's output.
---lines or --tail selects up to 10000 recent lines (default 200).
---follow prints new lines until interrupted; with --json, each line is a JSON
-log or gap record. --follow cannot be combined with -q.
-`;
-	}
-
-	if (verb.name === "inspect") {
-		return `HoBo inspect
-
-Usage:
-  hobo inspect [graph]
-  hobo inspect quarantines [position]
-
-Role: ${verb.role}
-${statusLine}
-Inspect deployment projections or persisted quarantine incidents. The quarantine
-report covers the current tenant; pass its next position to continue a scan.
-`;
-	}
-
 	if (verb.name === "cd") {
 		return `HoBo CD
 
@@ -473,7 +377,17 @@ Usage:
   hobo ci diagnose [run]           Why a run's jobs failed, and whether a re-run is likely to help
   hobo ci route                    Answer one relay job against the runner order and show the walk
                                    (see route options)
+  hobo ci machine status [<id>]    Connected machines: online, paused, busy slots, sharing
+  hobo ci machine pause <id>       Take no new jobs on a machine; running jobs finish (resume undoes it)
+  hobo ci machine share <id> <who> Take jobs for only_me or anyone who may read the repository
+  hobo ci machine remove <id>      Forget a machine and its key at once
+  hobo ci machine connect --repo <owner/name>
+                                   Run jobs routed to this computer, each in a fresh container; Ctrl-C drains
   hobo ci status                  Inspect the relay connection
+  hobo ci provider-health          Hosted runner types the relay stopped routing to; clear <provider> <label> lets one through
+  hobo ci activity                 Each relay job from the relay's journal: where it ran and why (--since, --runner, --outcome)
+  hobo ci usage                    Billed minutes, short jobs, minutes kept off GitHub and the included minutes left (--source github)
+  hobo ci performance              Workflow, job and runner times against ubuntu-latest, and the signals by slice and day
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
   hobo ci secret-store plan       Choose the relay's config/secret store for this deployment
@@ -498,7 +412,6 @@ Connection options:
   --remote <name>              Select the Git remote
   --repo <owner/repository>    Select a GitHub repository explicitly
   --relay <https-origin>      Select the HoBo CI relay
-  --token-file <path>         Read the account credential from a file
   --installation-id <id>      Select an installed GitHub App
   --accept-all-matching-jobs  Allow isolated runners for matching repository jobs
   -y, --yes                   Skip the connection confirmation
@@ -523,7 +436,7 @@ Integration options (hobo ci connect <provider>):
   --runs-on <label>           Runner label (repeatable)
   --org <github-org>          GitHub organization the provider app is installed on
   --project-id <id>           Depot project for OIDC trust relationships
-  --secret-ref <ref>          github-secret:NAME or env:NAME (a reference, never a value)
+  --secret-ref <ref>          owner://NAME in the owner's store (a reference, never a value)
   --id <name>                 Integration id (default: provider)
   --config <path>             Alternate ci.json path
   --dry-run                   Print the entry without writing
@@ -633,9 +546,11 @@ Run options:
 unstructured; use --grep for text filtering.
 
 Use runs-on: hobo in a GitHub Actions workflow, then push a commit.
-Authentication: HOBO_CI_ACCOUNT_TOKEN, HOBO_CI_ACCOUNT_TOKEN_FILE or --token-file.
+Authentication: owner://HOBO_CI_ACCOUNT_TOKEN from the owner's store session
+(HoBo MCP choose_secret_store); no token file or environment variable is read.
 Relay selection: --relay or HOBO_CI_RELAY_URL on first connection. Run commands
-use the authenticated GitHub CLI (gh). Credentials are never written to the
+read GitHub with installation tokens of HoBo's GitHub App (hobo ci app create)
+minted from the owner's store session. Credentials are never written to the
 repository. Use --json, --format json or -F json for machine-readable output.
 HoBo runs existing Actions workflows; Vercel's Turbo task tags and invocation
 IDs do not apply.
@@ -670,8 +585,10 @@ Promotion:
   hobo deploy preview create <freight> --source-camp <camp> | preview list
   hobo deploy verify show <verification-id>
   hobo deploy metrics [--window-ms <ms>]
-Agents (double opt-in):
+Agents (double opt-in; a reconciler is a fleet device with role RECONCILER):
   hobo deploy agent token|enroll|approve-key|accept|run|revoke
+  aliases of hobo fleet token create|enroll --token-file|member approve|
+  member accept|run|member revoke; --token <value> is refused
 Fleet and policy:
   hobo deploy campset define|list
   hobo deploy camp list|show|taint|untaint|manage
@@ -792,13 +709,12 @@ Example:
 		return `HoBo collect
 
 Usage:
-  hobo collect [global flags] [--check | --init-resource-ids]
+  hobo collect [global flags] [--check]
 
 Role: ${verb.role}
 ${statusLine}
-Run resource collection over the project Bindle, print the manifest IR, and
-write hobo.manifest.json. Pass --check to compare against the saved manifest.
-Pass --init-resource-ids to create a reviewed resource identity ledger.
+Run resource collection over the project Bindle and print the manifest IR.
+Pass --check to enforce the golden manifest instead of printing.
 
 Example:
   hobo collect --json
@@ -829,6 +745,7 @@ Example:
 
 Usage:
   hobo login [global flags] [--home <path>] [--broker <uri>]
+  hobo login --relay <https-origin>
 
 Role: ${verb.role}
 ${statusLine}
@@ -836,8 +753,14 @@ Obtain a dev session/identity context and persist it to .hobo/session.json
 so hobo up / hobo down run under it. --broker targets a remote Conductor
 endpoint (--broker-uri is an accepted alias).
 
+--relay signs in to an already configured HoBo CI relay instead: the owner
+confirms one code at GitHub, and the session lives only in this process's
+memory; nothing is written. hobo ci and hobo cd take --relay <https-origin>
+to sign in the same way when a credential is first needed.
+
 Example:
   hobo login
+  hobo login --relay https://relay.example
 `;
 	}
 

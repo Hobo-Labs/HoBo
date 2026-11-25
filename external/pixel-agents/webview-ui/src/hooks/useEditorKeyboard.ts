@@ -19,6 +19,7 @@ export function useEditorKeyboard(
     if (!isEditMode) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // Multi-stage Esc: deselect item → close tool → deselect placed → close editor
         if (editorState.activeTool === EditTool.FURNITURE_PICK) {
           editorState.activeTool = EditTool.FURNITURE_PLACE;
           editorState.clearGhost();
@@ -29,9 +30,11 @@ export function useEditorKeyboard(
           editorState.selectedFurnitureType = '';
           editorState.clearGhost();
         } else if (editorState.activeTool === EditTool.CARPET_PICK) {
+          // First Esc inside carpet sub-flow: drop pick → back to paint
           editorState.activeTool = EditTool.CARPET_PAINT;
           editorState.clearGhost();
         } else if (editorState.activeTool === EditTool.CARPET_PAINT) {
+          // Second Esc: close carpet sub-panel (back to furniture place)
           editorState.activeTool = EditTool.FURNITURE_PLACE;
           editorState.carpetStrokeInitialLayout = null;
           editorState.carpetDragErasing = null;
@@ -40,9 +43,11 @@ export function useEditorKeyboard(
           editorState.activeTool === EditTool.AREA_PAINT &&
           editorState.selectedAreaLabel !== null
         ) {
+          // First Esc inside Areas: drop area selection (keep AREA_PAINT active)
           editorState.selectedAreaLabel = null;
           editorState.areaDragErasing = null;
         } else if (editorState.activeTool === EditTool.AREA_PAINT) {
+          // Second Esc inside Areas: close the panel (back to SELECT)
           editorState.activeTool = EditTool.SELECT;
           editorState.areaDragErasing = null;
           editorState.clearGhost();

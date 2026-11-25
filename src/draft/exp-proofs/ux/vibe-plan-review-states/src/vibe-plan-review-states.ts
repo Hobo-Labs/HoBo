@@ -100,7 +100,7 @@ type VibePlanReviewStates = {
   readonly issue: "HOBO-542";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-plan-review-states";
-  readonly proofPath: "urn:hobo:proof:vibe-plan-review-states";
+  readonly proofPath: "docs/design/proofs/vibe-plan-review-states/README.md";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly PlanReviewQuickstartFixtureRef[];
   readonly personas: readonly PlanReviewPersona[];
@@ -305,14 +305,14 @@ export const VIBE_PLAN_REVIEW_STATES: VibePlanReviewStates = {
   issue: "HOBO-542",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-plan-review-states",
-  proofPath: "urn:hobo:proof:vibe-plan-review-states",
+  proofPath: "docs/design/proofs/vibe-plan-review-states/README.md",
   designRefs: [
-    "urn:hobo:requirement:plan-diff-viewer",
-    "urn:hobo:requirement:developer-experience#plan-07",
-    "urn:hobo:requirement:control-plane#plan-04",
-    "urn:hobo:requirement:platform-engineering#plan-25",
-    "urn:hobo:requirement:contracts-policy-flags#plan-29",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/plan-diff-viewer.md",
+    "docs/design/developer-experience.md#plan-07",
+    "docs/design/control-plane.md#plan-04",
+    "docs/design/platform-engineering.md#plan-25",
+    "docs/design/contracts-policy-flags.md#plan-29",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   quickstartFixtureRefs: QUICKSTART_FIXTURE_REFS,
   personas: REQUIRED_PLAN_REVIEW_PERSONAS,
@@ -415,7 +415,7 @@ export function validateVibePlanReviewStates(
   if (states.packagePath !== "src/draft/exp-proofs/ux/vibe-plan-review-states") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (states.proofPath !== "urn:hobo:proof:vibe-plan-review-states") {
+  if (states.proofPath !== "docs/design/proofs/vibe-plan-review-states/README.md") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(states.personas, REQUIRED_PLAN_REVIEW_PERSONAS)) {

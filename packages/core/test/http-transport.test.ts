@@ -1,3 +1,10 @@
+// The credentialed HTTPS boundary the direct-provider-API deploy path runs
+// over. The cases below pin every one of the six refusals, because each is a
+// way a single bad config value could send a provider token to an origin
+// nobody allowlisted, plus the two normalization decisions that are easy to
+// get wrong in the other direction: WHATWG case folding of the request host
+// is fine, case folding the policy is not, and a percent-encoded dot segment
+// is refused rather than decoded.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -199,6 +206,7 @@ describe("guardTransport refusals", () => {
 	});
 
 	it("counts utf-8 bytes rather than code units, so a multibyte body cannot slip under the cap", async () => {
+		// 200 four-byte code points = 800 bytes, but only 400 UTF-16 units.
 		const guarded = guardTransport(
 			stub(reply({ body: "\u{1f600}".repeat(200) })).transport,
 			policy,
@@ -243,7 +251,9 @@ describe("guardTransport refusals", () => {
 		);
 		const error = await guarded(request()).catch((cause: unknown) => cause);
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect((error as TransportGuardError).message).toMatch(/never follows/u);
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect((error as TransportGuardError).message).not.toMatch(/evil\.test/u);
 	});
 
@@ -255,7 +265,9 @@ describe("guardTransport refusals", () => {
 
 		expect(error).toBeInstanceOf(TransportGuardError);
 		expect(error).toBeInstanceOf(Error);
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect((error as TransportGuardError).name).toBe("TransportGuardError");
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect((error as TransportGuardError).code).toBe(
 			"TRANSPORT_SCHEME_FORBIDDEN",
 		);
@@ -283,6 +295,19 @@ describe("guardTransport refusals", () => {
 	});
 });
 
+/**
+ * `allowedHostSuffixes` exists for one shape: a provider whose per-tenant
+ * origin is minted at deploy time, so the exact host cannot be written down.
+ * Upstash's data plane is the case — `<name>-<id>.upstash.io`.
+ *
+ * The risk it carries is that a suffix is a *weakening* of the exact-match
+ * rule, so what matters is not that the happy path works but that everything
+ * around it stays as strict as it was. Hence a table: the same suffix policy,
+ * probed against each of the guard's other rules in turn. A suffix match must
+ * not waive the scheme, the port, the userinfo ban, the path prefix, or the
+ * percent-encoded-separator refusal — and it must not admit the bare parent
+ * domain or a sibling that merely ends with the same letters.
+ */
 describe("allowedHostSuffixes", () => {
 	const suffixPolicy: TransportGuardPolicy = {
 		allowedHosts: ["upstash.com"],
@@ -324,6 +349,11 @@ describe("allowedHostSuffixes", () => {
 		});
 	}
 
+	/**
+	 * Every row states the *specific* refusal, not merely that something threw.
+	 * A row that only asserted "throws" would pass whether the suffix arm ran
+	 * at all, which is the failure mode this repo has shipped before.
+	 */
 	const refused = [
 		[
 			"the bare parent domain, with no label in front of the dot",
@@ -350,6 +380,9 @@ describe("allowedHostSuffixes", () => {
 			/^host evilupstash\.io is not exactly one of the allowlisted/u,
 		],
 		[
+			// The end-anchoring, specifically: this host *contains*
+			// `.upstash.io`, so a containment test would admit an origin the
+			// attacker owns outright.
 			"the parent domain appearing in the middle of an attacker's name",
 			"https://db.upstash.io.evil.example/get/key",
 			"TRANSPORT_HOST_FORBIDDEN",
@@ -368,6 +401,10 @@ describe("allowedHostSuffixes", () => {
 			/^request url must use https, got http$/u,
 		],
 		[
+			// The suffix rule widens which *host* is reachable and nothing else;
+			// a port this policy never named is still refused. Anchored on the
+			// port so it cannot pass on the generic host refusal, and on the
+			// allowed set so it cannot pass if the policy silently widens.
 			"a non-default port on a host the suffix does match",
 			"https://fake-mallard-000000.upstash.io:8443/get/key",
 			"TRANSPORT_HOST_FORBIDDEN",
@@ -409,6 +446,15 @@ describe("allowedHostSuffixes", () => {
 	});
 });
 
+/**
+ * The suffix list is validated before any URL is judged, so an unusable entry
+ * refuses every request rather than quietly changing what the policy reaches.
+ *
+ * Both rejected forms are the ones that were reachable in the per-provider
+ * copy this field replaces: written without the leading dot, `endsWith`
+ * admits `evilupstash.io`; written as a bare registry level, it admits the
+ * registry.
+ */
 describe("allowedHostSuffixes policy validation", () => {
 	const unusable = [
 		["a missing leading dot", "upstash.io"],
@@ -428,6 +474,9 @@ describe("allowedHostSuffixes policy validation", () => {
 				maxTimeoutMs: 15_000,
 				maxResponseBytes: 1_024,
 			};
+			// The URL below matches `allowedHosts` exactly and is otherwise
+			// entirely legal: it is refused only because the policy is not
+			// usable, which is what "fail closed on the policy" means.
 			let thrown: unknown;
 			try {
 				assertAllowedEndpoint("https://api.example.com/v1/projects", bad);
@@ -435,9 +484,11 @@ describe("allowedHostSuffixes policy validation", () => {
 				thrown = error;
 			}
 			expect(thrown).toBeInstanceOf(TransportGuardError);
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((thrown as TransportGuardError).code).toBe(
 				"TRANSPORT_HOST_FORBIDDEN",
 			);
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((thrown as TransportGuardError).message).toBe(
 				`policy allowedHostSuffixes entry ${JSON.stringify(suffix)} must start with "." and carry at least one further dot: "upstash.io" would also match evilupstash.io, and ".com" would match the registry`,
 			);
@@ -457,6 +508,11 @@ describe("allowedHostSuffixes policy validation", () => {
 	});
 });
 
+/**
+ * The field is additive, and "additive" has to be asserted rather than assumed:
+ * eight provider policies in this repo omit it, and one of them
+ * (`provider-netlify`) pins the host refusal message anchored at both ends.
+ */
 describe("a policy without allowedHostSuffixes behaves exactly as before", () => {
 	const legacy: TransportGuardPolicy = {
 		allowedHosts: ["api.netlify.com"],
@@ -479,6 +535,7 @@ describe("a policy without allowedHostSuffixes behaves exactly as before", () =>
 			} catch (error) {
 				thrown = error;
 			}
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((thrown as TransportGuardError).message).toBe(
 				"host api.netlify.com.attacker.example is not exactly one of the allowlisted provider hosts (api.netlify.com)",
 			);

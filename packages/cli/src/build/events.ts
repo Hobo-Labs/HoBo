@@ -60,6 +60,9 @@ export function projectBuildManifest(
 	};
 }
 
+// `unknown`: this serializes and never reads a field, so a `JsonValue`
+// parameter is a promise it neither needs nor checks -- paid for by callers
+// laundering records that are about to be stringified anyway.
 export function stableStringify(value: unknown): string {
 	return `${JSON.stringify(value, replacer)}\n`;
 

@@ -30,7 +30,9 @@ emits either a signed Resolution Receipt or a structured Resolution Rejection.
 - Implicit provider defaults are refused unless an approved broker mapping names them.
 - Yard-local matching fallback is never invoked from broker resolution.
 
-## Executable evidence
+## Architecture Evidence
+
+- `ADR.md` records the parse boundary, command/event/actor/projection vocabulary, and
   scope boundaries.
 - `architecture/meta_cloud_broker_resolution.proto` pins the protobuf data contract.
 - `architecture/meta_cloud_broker_resolution.cue` pins CUE constraints for the protobuf types.

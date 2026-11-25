@@ -37,7 +37,6 @@ export {
 	auth,
 	bucket,
 	CATALOG,
-	cache,
 	catalogFactoryNames,
 	crypto,
 	data,
@@ -51,6 +50,7 @@ export {
 	queue,
 	rolloutResource,
 	schedule,
+	// secret is dual-exported from secret-surface.ts (resource + field builders)
 	service,
 	topic,
 	ui,
@@ -82,7 +82,11 @@ export {
 	type SecretlessConfigGateInput,
 	type SecretlessConfigGateResult,
 } from "./config-can-deploy.js";
-export { generateCtxConfigSource } from "./config-codegen.js";
+export {
+	type GeneratedAgentConfigView,
+	generateCtxConfigSource,
+	materializeAgentConfigView,
+} from "./config-codegen.js";
 export {
 	assertSourceAllowed,
 	type ConfigFieldDef,
@@ -164,15 +168,12 @@ export {
 	BINDLE_PROVIDER_SELECTION_FORBIDDEN,
 	BINDLE_PROVIDER_SELECTION_REMEDIATION,
 	type BindleRequirementsHash,
+	collectExplicitProviderPins,
 	emptyBindleRequirements,
 	hashBindleRequirements,
 	isPlatformAnnotation,
 	parseBindleRequirements,
 } from "./requirements.js";
-export {
-	applyResourceIdentityLedger,
-	resourceIdentityLedger,
-} from "./resource-identity.js";
 export { secretRef } from "./secret-ref.js";
 export { secret } from "./secret-surface.js";
 export {
@@ -196,10 +197,8 @@ export type {
 	BindleDefinition,
 	BindleDependency,
 	BindleEdge,
-	BindleOptions,
 	BindleRequirements,
 	BindleResource,
-	BindleResourceMessage,
 	BindleResourceRecord,
 	BindleRuntimeContext,
 	ConnectorAuthDefinition,
@@ -214,8 +213,6 @@ export type {
 	ResourceCatalogEntry,
 	ResourceDescriptor,
 	ResourceHandle,
-	ResourceIdentityEntry,
-	ResourceIdentityLedger,
 	ResourceKind,
 	SecretRef,
 	WasmComponentDependencyOptions,
@@ -243,6 +240,7 @@ export {
 	service as wiringService,
 } from "./wiring/index.js";
 
+// public-contract: package identity used by generated manifests and tooling.
 export const HOBO_BINDLES_PACKAGE = "@hobo/bindles";
 
 export type {

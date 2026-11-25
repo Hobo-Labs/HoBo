@@ -1,5 +1,5 @@
 {
-	"consumer": { "name": "@hobo/hobo" },
+	"consumer": { "name": "@hobo/control-yard" },
 	"provider": { "name": "@hobo/control-api" },
 	"interactions": [
 		{

@@ -15,10 +15,14 @@
     "epicProofs": [],
     "expProofs": [
       "src/draft/exp-proofs/api/xaa-scope-inference-contract"
-    ]
+    ],
+    "designDocs": []
   },
   "artifacts": {
-    "diagrams": []
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
   },
   "waivers": []
 }

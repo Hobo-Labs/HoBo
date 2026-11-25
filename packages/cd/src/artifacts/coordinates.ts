@@ -1,3 +1,7 @@
+// Coordinate parsing at the verifier boundary. A coordinate is attacker-
+// influenced text (it arrives in a manifest), so parsing is total: anything
+// that is not a well-formed purl, OCI digest reference or https base URL is
+// undefined, and every URL the verifier will fetch is https without userinfo.
 
 export type Purl = Readonly<{
 	type: string;
@@ -15,6 +19,7 @@ function decode(value: string): string | undefined {
 	}
 }
 
+/** Package URL (purl spec). */
 export function parsePurl(value: string): Purl | undefined {
 	if (!value.startsWith("pkg:") || /\s/.test(value)) return undefined;
 	let rest = value.slice("pkg:".length).replace(/^\/+/, "");
@@ -64,12 +69,18 @@ export function parsePurl(value: string): Purl | undefined {
 }
 
 export type OciReference = Readonly<{
+	/** Registry host as written (docker.io is mapped to registry-1.docker.io). */
 	registry: string;
 	repository: string;
 	tag: string;
+	/** `sha256:<hex>` the reference pins, or "" for a tag-only reference. */
 	digest: string;
 }>;
 
+/**
+ * `[oci://]host[:port]/repo/path[:tag][@sha256:<hex>]`. Docker Hub short
+ * names are expanded the way the Docker CLI expands them.
+ */
 export function parseOciReference(value: string): OciReference | undefined {
 	let rest = value.startsWith("oci://") ? value.slice("oci://".length) : value;
 	if (rest === "" || /\s/.test(rest) || rest.includes("://")) return undefined;
@@ -112,6 +123,7 @@ export function registryHost(reference: OciReference): string {
 		: reference.registry;
 }
 
+/** An https base URL with no userinfo, query or fragment; trailing slashes removed. */
 export function httpsBase(value: string): string | undefined {
 	let url: URL;
 	try {
@@ -125,6 +137,7 @@ export function httpsBase(value: string): string | undefined {
 	return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
+/** True when an absolute URL is https, carries no userinfo, and is on `host`. */
 export function sameHttpsHost(value: string, host: string): boolean {
 	try {
 		const url = new URL(value);

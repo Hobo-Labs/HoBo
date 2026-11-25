@@ -1,0 +1,1 @@
+{"format":1,"entries":[{"epoch":"1","active":"primary","reason":"bootstrap","decidedBy":"cache-fleet"},{"epoch":"2","active":"primary","sealed":true,"target":"standby","reason":"switch","decidedAtMs":"1794268000000","decidedBy":"cache-fleet:box-a"},{"epoch":"3","active":"standby","reason":"switch","decidedAtMs":"1794268005000","decidedBy":"cache-fleet:box-a"}]}

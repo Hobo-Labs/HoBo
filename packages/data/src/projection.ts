@@ -1,127 +1,63 @@
-import { create } from "@bufbuild/protobuf";
-import {
-	type AppendOptions,
-	EVENTSTORE_LIMITS,
-	type EventEnvelope,
-	type EventInput,
-	type EventStore,
-	type PrincipalRef,
-} from "@hobo/core";
-import {
-	ProjectionQuarantinedEventDataSchema,
-	type ProjectionRowField as ProjectionRowFieldWire,
-	type ProjectionRowSchema as ProjectionRowSchemaWire,
-	type QuarantineReprocessFinding,
-} from "./_generated/data_pb.js";
-import {
-	isOptimisticConflict,
-	ProjectionFoldError,
-	ProjectionWriteError,
-} from "./errors.js";
+import type { EventEnvelope, EventStore } from "@hobo/core";
+import { ProjectionWriteError } from "./errors.js";
 import {
 	createProjectionDeclaredEvent,
 	createProjectionLaggedEvent,
 	createProjectionSinkReboundEvent,
 	type DataFact,
 } from "./events.js";
-import { type FoldFailureClassifier, shouldQuarantineFailure } from "./fold.js";
 import {
 	hasFunctionTag,
 	type Inspectable,
-	isJsonString,
 	isObjectLike,
+	parseOffendingSeq,
 } from "./json.js";
-import {
-	parseEventStoreQuarantine,
-	parseProjectionQuarantine,
-	quarantineReprocessFinding,
-	quarantineSequence,
-} from "./quarantine-facts.js";
+import type { UpcasterRegistry } from "./upcaster.js";
 
+// A projection is the read-model fold: a deterministic, read-only `(row, event)
+// -> row` per subscribed event type, keyed into rows. It is derived and
+// rebuildable-from-zero; a snapshot is only a cache, never a source of truth
+// (data-plane.md §Projections). The apply surface has NO write capability by
+// construction — the read fold can never mutate the write model.
 export type ApplyHandler<Row> = (
 	row: Row | undefined,
 	event: EventEnvelope,
 ) => Row;
 
-export type ProjectionRowField = Readonly<
-	Pick<ProjectionRowFieldWire, "name" | "type">
->;
-
-export type ProjectionRowSchema = Readonly<
-	Pick<ProjectionRowSchemaWire, "witRecord"> & {
-		fields: readonly ProjectionRowField[];
-	}
->;
-
 export interface ProjectionDefinition<Row> {
 	name: string;
+	// Row identity: which read-model row an event lands in.
 	key: (event: EventEnvelope) => string;
+	// Per-event-type fold handlers. Object.keys(on) is the read-set.
 	on: Record<string, ApplyHandler<Row>>;
 	reactivityClass?: "reactive" | "non-reactive";
-	readModel?: string;
-	rowSchema?: ProjectionRowSchema;
-	indexHints?: readonly string[];
-	classifyFailure?: FoldFailureClassifier;
+	upcasters?: UpcasterRegistry;
 }
 
 export interface ProjectionSnapshot<Row> {
 	projection: string;
 	seq: number;
-	streamSequences: Readonly<Record<string, number>>;
 	rows: Record<string, Row>;
-	readModel?: string;
-	rowSchema?: ProjectionRowSchema;
-	indexHints?: readonly string[];
-	readSet?: readonly string[];
-	reactivityClass?: "reactive" | "non-reactive";
 }
 
 export interface Projection<Row> {
 	readonly name: string;
 	readonly readSet: readonly string[];
+	// Pure read-model fold over an event iterable (rebuildable from zero).
 	fold(events: Iterable<EventEnvelope>): ProjectionSnapshot<Row>;
+	// Drop the sink and replay the stream — the test that the LOG is authoritative.
 	rebuildFromZero(
 		store: EventStore,
 		streamId: string,
 	): Promise<ProjectionSnapshot<Row>>;
+	// Queryable read surface over the current materialization.
 	query(snapshot: ProjectionSnapshot<Row>): Row[];
 	get(snapshot: ProjectionSnapshot<Row>, key: string): Row | undefined;
+	// A snapshot is a cache: seed a fold with it, but rebuildFromZero ignores it.
 	snapshot(state: ProjectionSnapshot<Row>): ProjectionSnapshot<Row>;
 	declared(): DataFact;
 	lagged(lagSeq: number, bound: number): DataFact;
 	rebound(matchDecidedRef: string): DataFact;
-}
-
-export interface ProjectionQuarantineOptions {
-	quarantineStore: EventStore;
-	quarantineStreamId: string;
-	tenant: string;
-	actor: PrincipalRef;
-	fenceToken?: bigint;
-}
-
-export interface ProjectionQuarantineRecord {
-	sourceStreamId: string;
-	offendingSeq: number;
-	offendingEventId: string;
-	offendingType: string;
-	reason: string;
-	recordedSeq: number;
-}
-
-export interface QuarantinableProjection<Row> extends Projection<Row> {
-	inspectQuarantines(
-		events: Iterable<EventEnvelope>,
-		records?: Iterable<EventEnvelope>,
-	): QuarantineReprocessFinding[];
-	rebuildWithQuarantine(
-		store: EventStore,
-		streamId: string,
-		options: ProjectionQuarantineOptions,
-	): Promise<{
-		snapshot: ProjectionSnapshot<Row>;
-		quarantined: ProjectionQuarantineRecord[];
-	}>;
 }
 
 function clone<T>(value: T): T {
@@ -131,6 +67,7 @@ function clone<T>(value: T): T {
 
 function deepFreeze<T>(value: T): T {
 	if (value === undefined || value === null) return value;
+	// SAFETY: freeze walks own properties of object-like values; primitives return above.
 	const inspectable = value as Inspectable;
 	if (!isObjectLike(inspectable) || Object.isFrozen(inspectable)) return value;
 	Object.freeze(inspectable);
@@ -148,238 +85,50 @@ function isQuarantineFact(event: EventEnvelope): boolean {
 	return event.type.endsWith(".Quarantined");
 }
 
-const PROJECTION_QUARANTINE_EVENT = "projection.QuarantineRecorded";
-
-function eventKey(
-	tenant: string,
-	streamId: string,
-	seq: number,
-	eventId?: string,
-): string {
-	return JSON.stringify([tenant, streamId, seq, eventId ?? null]);
-}
-
-function orderProjectionEvents(
-	events: readonly EventEnvelope[],
-): EventEnvelope[] {
-	const streams = new Map<string, EventEnvelope[]>();
-	for (const event of events) {
-		if (!event.streamId || !Number.isSafeInteger(event.seq) || event.seq < 0) {
-			throw new TypeError(
-				"projection events require a stream and a non-negative safe sequence",
-			);
-		}
-		const stream = streams.get(event.streamId) ?? [];
-		stream.push(event);
-		streams.set(event.streamId, stream);
-	}
-	for (const [streamId, stream] of streams) {
-		stream.sort((a, b) => a.seq - b.seq);
-		for (let index = 1; index < stream.length; index += 1) {
-			if (stream[index]?.seq === stream[index - 1]?.seq) {
-				throw new TypeError(
-					`projection stream ${streamId} has a duplicate sequence`,
-				);
-			}
-		}
-	}
-	const offsets = new Map<string, number>();
-	return events.map((event) => {
-		const offset = offsets.get(event.streamId) ?? 0;
-		const ordered = streams.get(event.streamId)?.[offset];
-		if (!ordered)
-			throw new Error(
-				`projection stream ${event.streamId} is missing an event`,
-			);
-		offsets.set(event.streamId, offset + 1);
-		return ordered;
-	});
-}
-
-function projectionMetadata<Row>(definition: ProjectionDefinition<Row>) {
-	const schema = definition.rowSchema;
-	if (!schema) {
-		if (definition.readModel !== undefined || definition.indexHints?.length) {
-			throw new TypeError(
-				"projection read-model metadata requires a row schema",
-			);
-		}
-		return undefined;
-	}
-	const witRecord = schema.witRecord.trim();
-	if (!witRecord || schema.fields.length === 0) {
-		throw new TypeError(
-			"projection row schema requires a WIT record and fields",
-		);
-	}
-	const readModel = definition.readModel?.trim() ?? witRecord;
-	if (readModel !== witRecord) {
-		throw new TypeError(
-			"projection read model must match the row schema WIT record",
-		);
-	}
-	const fields = schema.fields
-		.map((field) => ({ name: field.name.trim(), type: field.type.trim() }))
-		.sort((a, b) => a.name.localeCompare(b.name));
-	if (fields.some((field) => !field.name || !field.type)) {
-		throw new TypeError("projection row schema fields require names and types");
-	}
-	if (new Set(fields.map((field) => field.name)).size !== fields.length) {
-		throw new TypeError("projection row schema has duplicate field names");
-	}
-	const hints = (definition.indexHints ?? []).map((hint) => hint.trim());
-	if (hints.some((hint) => !hint)) {
-		throw new TypeError("projection index hints must be non-empty");
-	}
-	return deepFreeze({
-		readModel,
-		rowSchema: { witRecord, fields },
-		indexHints: [...new Set(hints)].sort(),
-	});
-}
-
 export function defineProjection<Row>(
 	definition: ProjectionDefinition<Row>,
-): QuarantinableProjection<Row> {
-	if (!definition.name.trim())
-		throw new TypeError("projection name is required");
+): Projection<Row> {
+	if (!definition.name) throw new TypeError("projection name is required");
 	if (!hasFunctionTag(definition.key)) {
 		throw new TypeError("projection key must be a function");
 	}
 	const handlers = new Map<string, ApplyHandler<Row>>(
 		Object.entries(definition.on),
 	);
-	if (handlers.size === 0) {
-		throw new TypeError("projection requires at least one event handler");
-	}
-	for (const [eventType, handler] of handlers) {
-		if (!eventType.trim() || !hasFunctionTag(handler)) {
-			throw new TypeError(
-				"projection event handlers require a type and function",
-			);
-		}
-	}
 	const readSet = Object.freeze([...handlers.keys()]);
 	const reactivityClass = definition.reactivityClass ?? "reactive";
-	const metadata = projectionMetadata(definition);
 
-	function foldInternal(
-		materialized: readonly EventEnvelope[],
-		records: readonly EventEnvelope[],
-		collectFailures: boolean,
-		inspectQuarantines = false,
-	) {
+	function fold(events: Iterable<EventEnvelope>): ProjectionSnapshot<Row> {
 		const rows: Record<string, Row> = {};
-		const quarantinedEvents = new Set<string>();
-		for (const event of [...materialized, ...records]) {
+		const quarantinedSeqs = new Set<number>();
+		const materialized = [...events];
+		for (const event of materialized) {
 			if (isQuarantineFact(event)) {
-				const offending = quarantineSequence(
-					parseEventStoreQuarantine(event).offendingSeq,
-				);
-				quarantinedEvents.add(
-					eventKey(event.tenant, event.streamId, offending),
-				);
-			} else if (event.type === PROJECTION_QUARANTINE_EVENT) {
-				const data = parseProjectionQuarantine(event);
-				const offending = quarantineSequence(data.offendingSeq);
-				if (data.projection === definition.name)
-					quarantinedEvents.add(
-						eventKey(
-							event.tenant,
-							data.sourceStreamId,
-							offending,
-							data.offendingEventId,
-						),
-					);
+				const offending = parseOffendingSeq(event.data);
+				if (offending !== undefined) quarantinedSeqs.add(offending);
 			}
 		}
 
 		let seq = 0;
-		const streamSequences = new Map<string, number>();
-		const failures: Array<{ event: EventEnvelope; reason: string }> = [];
-		const reprocessCandidates: QuarantineReprocessFinding[] = [];
-		for (const event of orderProjectionEvents(materialized)) {
+		for (const event of materialized) {
 			seq = Math.max(seq, event.seq);
-			streamSequences.set(
-				event.streamId,
-				Math.max(streamSequences.get(event.streamId) ?? 0, event.seq),
-			);
-			if (isQuarantineFact(event) || event.type === PROJECTION_QUARANTINE_EVENT)
-				continue;
-			const quarantined =
-				quarantinedEvents.has(
-					eventKey(event.tenant, event.streamId, event.seq),
-				) ||
-				quarantinedEvents.has(
-					eventKey(event.tenant, event.streamId, event.seq, event.id),
-				);
-			if (quarantined && !inspectQuarantines) continue;
+			if (isQuarantineFact(event) || quarantinedSeqs.has(event.seq)) continue;
 			const handler = handlers.get(event.type);
 			if (!handler) continue;
-			let key: string;
-			let nextRow: Row;
-			try {
-				const input = deepFreeze(clone(event));
-				key = definition.key(input);
-				if (!isJsonString(key) || !key.trim()) {
-					throw new TypeError("projection key must be a non-empty string");
-				}
-				nextRow = clone(
-					handler(
-						rows[key] === undefined ? undefined : deepFreeze(clone(rows[key])),
-						input,
-					),
-				);
-			} catch (error) {
-				if (quarantined) continue;
-				const failure =
-					error instanceof Error ? error : new Error(String(error));
-				if (!collectFailures) {
-					if (error instanceof ProjectionWriteError) throw error;
-					if (
-						definition.classifyFailure &&
-						!shouldQuarantineFailure(failure, event, definition.classifyFailure)
-					)
-						throw error;
-					throw new ProjectionFoldError(definition.name, event, failure);
-				}
-				if (
-					!shouldQuarantineFailure(failure, event, definition.classifyFailure)
-				)
-					throw error;
-				failures.push({
-					event,
-					reason: failure.message,
-				});
-				continue;
-			}
-			if (quarantined)
-				reprocessCandidates.push(
-					quarantineReprocessFinding(event, definition.name, "projection"),
-				);
-			else rows[key] = nextRow;
+			const upcast = definition.upcasters
+				? definition.upcasters.upcast(event)
+				: event;
+			const key = definition.key(upcast);
+			// Read-only boundary: the handler sees frozen state + a frozen event and
+			// returns the next row. It is handed no store/emit capability.
+			const nextRow = handler(
+				rows[key] === undefined ? undefined : deepFreeze(clone(rows[key])),
+				deepFreeze(clone(upcast)),
+			);
+			rows[key] = clone(nextRow);
 		}
 
-		const snapshot: ProjectionSnapshot<Row> = {
-			projection: definition.name,
-			seq,
-			streamSequences: Object.fromEntries(
-				[...streamSequences].sort(([a], [b]) => a.localeCompare(b)),
-			),
-			rows,
-		};
-		if (metadata) {
-			Object.assign(snapshot, metadata, { readSet, reactivityClass });
-		}
-		return {
-			snapshot,
-			failures,
-			reprocessCandidates,
-		};
-	}
-
-	function fold(events: Iterable<EventEnvelope>): ProjectionSnapshot<Row> {
-		return foldInternal([...events], [], false).snapshot;
+		return { projection: definition.name, seq, rows };
 	}
 
 	return {
@@ -387,224 +136,11 @@ export function defineProjection<Row>(
 		readSet,
 		fold,
 
-		inspectQuarantines(events, records = []) {
-			const source = [...events];
-			const quarantineRecords = [...records];
-			const byPosition = new Map(
-				source.map((event) => [
-					eventKey(event.tenant, event.streamId, event.seq),
-					event,
-				]),
-			);
-			for (const record of [...source, ...quarantineRecords]) {
-				if (isQuarantineFact(record)) {
-					const data = parseEventStoreQuarantine(record);
-					const target = byPosition.get(
-						eventKey(
-							record.tenant,
-							record.streamId,
-							quarantineSequence(data.offendingSeq),
-						),
-					);
-					if (
-						!target ||
-						target.seq >= record.seq ||
-						isQuarantineFact(target) ||
-						target.type === PROJECTION_QUARANTINE_EVENT ||
-						(data.offendingType && data.offendingType !== target.type) ||
-						(record.meta?.quarantines !== undefined &&
-							record.meta.quarantines !== target.id)
-					) {
-						throw new Error(
-							"event-store quarantine target does not match the source event",
-						);
-					}
-				} else if (record.type === PROJECTION_QUARANTINE_EVENT) {
-					const data = parseProjectionQuarantine(record);
-					if (data.projection !== definition.name) continue;
-					const target = byPosition.get(
-						eventKey(
-							record.tenant,
-							data.sourceStreamId,
-							quarantineSequence(data.offendingSeq),
-						),
-					);
-					if (
-						!target ||
-						isQuarantineFact(target) ||
-						target.type === PROJECTION_QUARANTINE_EVENT ||
-						target.id !== data.offendingEventId ||
-						target.type !== data.offendingType
-					) {
-						throw new Error(
-							"projection quarantine target does not match the source event",
-						);
-					}
-				}
-			}
-			return foldInternal(source, quarantineRecords, false, true)
-				.reprocessCandidates;
-		},
-
 		async rebuildFromZero(store, streamId) {
 			const events: EventEnvelope[] = [];
+			// fromSeq omitted -> replays the whole stream from the first event.
 			for await (const event of store.read(streamId)) events.push(event);
 			return fold(events);
-		},
-
-		async rebuildWithQuarantine(store, streamId, options) {
-			if (
-				!streamId.trim() ||
-				!options.quarantineStreamId.trim() ||
-				!options.tenant.trim()
-			)
-				throw new TypeError(
-					"source stream, quarantine stream, and tenant are required",
-				);
-			if (
-				store === options.quarantineStore &&
-				streamId === options.quarantineStreamId
-			)
-				throw new TypeError("quarantine records require a separate stream");
-			for (let attempt = 0; attempt < 8; attempt += 1) {
-				const events: EventEnvelope[] = [];
-				for await (const event of store.read(streamId)) {
-					if (
-						event.tenant !== options.tenant ||
-						event.streamId !== streamId ||
-						event.seq !== events.length + 1
-					)
-						throw new Error(
-							"source stream has an unexpected event or sequence",
-						);
-					events.push(event);
-				}
-				const bySeq = new Map(events.map((event) => [event.seq, event]));
-				const records: EventEnvelope[] = [];
-				const quarantined: ProjectionQuarantineRecord[] = [];
-				let recordSeq = 0;
-				for await (const record of options.quarantineStore.read(
-					options.quarantineStreamId,
-				)) {
-					if (record.seq !== recordSeq + 1)
-						throw new Error("quarantine stream has a sequence gap");
-					recordSeq = record.seq;
-					if (
-						record.tenant !== options.tenant ||
-						record.type !== PROJECTION_QUARANTINE_EVENT
-					)
-						throw new Error("quarantine stream contains an unexpected event");
-					const data = parseProjectionQuarantine(record);
-					if (
-						data.projection !== definition.name ||
-						data.sourceStreamId !== streamId
-					)
-						continue;
-					const offendingSeq = Number(data.offendingSeq);
-					const offending = bySeq.get(offendingSeq);
-					if (
-						!Number.isSafeInteger(offendingSeq) ||
-						offendingSeq < 1 ||
-						!offending ||
-						offending.id !== data.offendingEventId ||
-						offending.type !== data.offendingType
-					)
-						throw new Error(
-							"projection quarantine target does not match the source event",
-						);
-					records.push(record);
-					quarantined.push({
-						sourceStreamId: streamId,
-						offendingSeq,
-						offendingEventId: offending.id,
-						offendingType: offending.type,
-						reason: data.reason,
-						recordedSeq: record.seq,
-					});
-				}
-				const result = foldInternal(events, records, true);
-				if (result.failures.length === 0)
-					return { snapshot: result.snapshot, quarantined };
-				const inputs: EventInput[] = result.failures.map(
-					({ event, reason }) => {
-						const data = create(ProjectionQuarantinedEventDataSchema, {
-							projection: definition.name,
-							sourceStreamId: streamId,
-							offendingSeq: BigInt(event.seq),
-							offendingEventId: event.id,
-							offendingType: event.type,
-							reason,
-						});
-						return {
-							type: PROJECTION_QUARANTINE_EVENT,
-							data: {
-								projection: data.projection,
-								sourceStreamId: data.sourceStreamId,
-								offendingSeq: Number(data.offendingSeq),
-								offendingEventId: data.offendingEventId,
-								offendingType: data.offendingType,
-								reason: data.reason,
-							},
-							meta: {
-								quarantines: event.id,
-								idempotencyKey: `projection-quarantine:${definition.name}:${event.id}`,
-							},
-						};
-					},
-				);
-				const appendOptions: AppendOptions = {
-					expectedSeq: recordSeq,
-					actor: options.actor,
-					tenant: options.tenant,
-				};
-				if (options.fenceToken !== undefined)
-					appendOptions.fenceToken = options.fenceToken;
-				let retry = false;
-				for (
-					let offset = 0;
-					offset < inputs.length;
-					offset += EVENTSTORE_LIMITS.maxBatchEvents
-				) {
-					const batch = inputs.slice(
-						offset,
-						offset + EVENTSTORE_LIMITS.maxBatchEvents,
-					);
-					try {
-						const appended = await options.quarantineStore.append(
-							options.quarantineStreamId,
-							batch,
-							appendOptions,
-						);
-						if (appended.appended.length !== batch.length) {
-							retry = true;
-							break;
-						}
-						for (const record of appended.appended) {
-							const data = parseProjectionQuarantine(record);
-							quarantined.push({
-								sourceStreamId: data.sourceStreamId,
-								offendingSeq: Number(data.offendingSeq),
-								offendingEventId: data.offendingEventId,
-								offendingType: data.offendingType,
-								reason: data.reason,
-								recordedSeq: record.seq,
-							});
-						}
-						appendOptions.expectedSeq =
-							appended.appended.at(-1)?.seq ?? appendOptions.expectedSeq;
-					} catch (error) {
-						if (error instanceof Error && isOptimisticConflict(error)) {
-							retry = true;
-							break;
-						}
-						throw error;
-					}
-				}
-				if (!retry) return { snapshot: result.snapshot, quarantined };
-			}
-			throw new Error(
-				"projection quarantine stream remained busy after retries",
-			);
 		},
 
 		query(snapshot) {
@@ -624,7 +160,6 @@ export function defineProjection<Row>(
 				projection: definition.name,
 				readSet,
 				reactivityClass,
-				...metadata,
 			});
 		},
 

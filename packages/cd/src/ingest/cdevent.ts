@@ -1,3 +1,8 @@
+// Inbound CDEvents (D3, D17): `dev.cdevents.artifact.published` and
+// `.packaged`, bare or as the data of a CloudEvent. A CDEvent is a nudge: it
+// names a purl, and the only way it can carry Freight is an in-toto statement
+// plus a signature bundle under `customData["hobo.cd/attestation"]`, which the
+// ingest verifies exactly like a pushed attestation (I15).
 import type { JsonObject } from "@bufbuild/protobuf";
 import {
 	isJsonObject,
@@ -10,7 +15,9 @@ import type { Outcome } from "../ports.js";
 import { type Purl, parsePurl } from "./purl.js";
 import { INGEST_REASON } from "./reasons.js";
 
+// public-contract: customData key that carries an attestation on a CDEvent.
 export const CDEVENT_ATTESTATION_KEY = "hobo.cd/attestation" as const;
+// public-contract: largest inbound CDEvent body, in bytes.
 export const CDEVENT_MAX_BYTES = 1_048_576 as const;
 
 const ARTIFACT_EVENT =
@@ -29,6 +36,11 @@ export type ArtifactCdEvent = Readonly<{
 	purl: Purl;
 	subjectId: string;
 	attestation: CarriedAttestation | undefined;
+	/**
+	 * Why a carried attestation could not be read (bad base64). The nudge is
+	 * still valid: the ingest schedules polls first, then refuses the
+	 * attestation as an unverified trigger.
+	 */
 	attestationError: string | undefined;
 }>;
 
@@ -55,6 +67,7 @@ function base64(text: string | undefined): Uint8Array | undefined {
 	return bytes.length > 0 ? new Uint8Array(bytes) : undefined;
 }
 
+/** The CDEvent itself: the body, or the `data` of a CloudEvents 1.0 envelope. */
 function unwrap(raw: JsonObject): JsonObject {
 	return stringAt(raw, "specversion") === "1.0"
 		? (objectAt(raw, "data") ?? raw)

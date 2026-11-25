@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "WireVersionNegotiationContractConsumer"
+  },
+  "provider": {
+    "name": "WireVersionNegotiationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Wire Version Negotiation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/wire-version-negotiation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.wire_version_negotiation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -34,9 +34,11 @@ This proof deliberately does not build Yard runtime, hosted operations runtime, 
 installer, provider adapters, observability pipelines, release notes, or release cutline decisions.
 It does not call production providers or use live customer data.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Dogfood Yard M1 evidence.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

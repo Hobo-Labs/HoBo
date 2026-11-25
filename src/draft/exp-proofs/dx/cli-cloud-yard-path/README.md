@@ -26,11 +26,13 @@ provider is required.
 pnpm.cmd --prefix src\draft\exp-proofs\cli-cloud-yard-path test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/cli_cloud_yard_path.proto` — protobuf record shapes.
 - `architecture/cli_cloud_yard_path.cue` — parse-time constraints including NFR-017 remediation
   minimum.
 - `architecture/pacts/cli_cloud_yard_path.pact.json` — Gateway boundary interactions.
+- `ADR.md` — event flow and parse-don't-validate evidence.
 
 ## Scope Out
 

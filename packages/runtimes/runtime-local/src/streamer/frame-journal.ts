@@ -7,7 +7,6 @@ import {
 	StreamerBackpressureError,
 	StreamerClosedError,
 	type StreamerFrame,
-	StreamerHistoryExpiredError,
 	type StreamerRunResult,
 	type StreamerRunStatus,
 	type StreamName,
@@ -55,15 +54,16 @@ export function createFrameJournal<TChunk>(options: {
 	bufferLimit: number;
 	openedAt: string;
 }): FrameJournal<TChunk> {
-	if (!Number.isSafeInteger(options.bufferLimit) || options.bufferLimit < 1) {
-		throw new TypeError("bufferLimit must be a positive safe integer");
-	}
 	const frames: StreamerFrame<TChunk>[] = [];
 	const readers = new Map<symbol, ReaderState<TChunk>>();
 	let nextSeq = 1;
 	let closed = false;
 	let closeResult: StreamerRunResult | undefined;
 	const done = createDeferred<StreamerRunResult>();
+	// The journal owns completion even when consumers read only frames. Observe
+	// rejection immediately without replacing the original promise: explicit
+	// completion waiters must still receive the failed run's error, including
+	// callers that attach after close.
 	void done.promise.catch(() => undefined);
 	const lifecycleEvents: LifecycleEvent[] = [
 		{ kind: "opened", runId: options.runId, openedAt: options.openedAt },
@@ -75,14 +75,6 @@ export function createFrameJournal<TChunk>(options: {
 		lifecycleEvents,
 		done: done.promise,
 		attachReader(fromSeq: Seq) {
-			const firstAvailableSeq = frames[0]?.seq ?? parseSeq(nextSeq);
-			if (fromSeq < firstAvailableSeq) {
-				throw new StreamerHistoryExpiredError(
-					options.runId,
-					fromSeq,
-					firstAvailableSeq,
-				);
-			}
 			const readerId = Symbol("reader");
 			readers.set(readerId, {
 				nextSeq: fromSeq,
@@ -123,17 +115,11 @@ export function createFrameJournal<TChunk>(options: {
 									return { value: undefined, done: true };
 								}
 
-								return { value, done: false };
+								if (value.seq === reader.nextSeq) {
+									reader.nextSeq += 1;
+									return { value, done: false };
+								}
 							}
-						},
-						async return() {
-							const reader = readers.get(readerId);
-							readers.delete(readerId);
-							if (reader) {
-								for (const waiter of reader.waiters.splice(0))
-									waiter(END_OF_STREAM);
-							}
-							return { value: undefined, done: true };
 						},
 					};
 				},
@@ -148,13 +134,12 @@ export function createFrameJournal<TChunk>(options: {
 
 			const frame = createStreamerFrame<TChunk>(
 				{
-					runId: options.runId,
+					run_id: options.runId,
 					seq: nextSeq,
 					stream,
 				},
 				chunk,
 			);
-			if (frames.length >= options.bufferLimit) frames.shift();
 			frames.push(frame);
 			nextSeq += 1;
 			notifyReaders(frame);
@@ -162,6 +147,7 @@ export function createFrameJournal<TChunk>(options: {
 		},
 		close(result: StreamerRunResult) {
 			if (closed) {
+				// SAFETY: assertion to `closeResult as StreamerRunResult` is required at this boundary.
 				return closeResult as StreamerRunResult;
 			}
 
@@ -209,7 +195,6 @@ export function createFrameJournal<TChunk>(options: {
 			if (reader.nextSeq === frame.seq) {
 				const waiter = reader.waiters.shift();
 				if (waiter) {
-					reader.nextSeq += 1;
 					waiter(frame);
 				}
 			}

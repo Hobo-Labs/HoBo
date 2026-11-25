@@ -35,7 +35,9 @@ export type MemoryLease = Readonly<{
 	sandboxStage?: string;
 	provider?: string;
 	pipelineId?: string;
+	/** The job the lease is for, so a job never counts its own reservation. */
 	jobId?: number;
+	/** When the relay began launching the lease; the start of its ramp. */
 	dispatchingAt?: string;
 }>;
 export type MemoryAdmissionLog = (
@@ -84,6 +86,7 @@ export type MemoryAdmissionRequest = Readonly<{
 	rank: number;
 	activeLeases: readonly MemoryLease[];
 	generalLeaseIds: ReadonlySet<string>;
+	/** Rank-0 active leases; label-based general IDs remain a fallback for direct callers. */
 	trunkLeaseIds?: ReadonlySet<string>;
 }>;
 
@@ -99,7 +102,16 @@ export function createWorkerMemoryAdmission(
 		hostCores?: () => number;
 		trunkJobCpuRequest?: number;
 		cpuVolatilityCpus?: number;
+		/**
+		 * How long a started job's reservation stays counted against host
+		 * memory while it grows into it. Zero stops counting running jobs.
+		 */
 		memoryRampMs?: number;
+		/**
+		 * Admission reads the lowest MemAvailable seen over this window, so a
+		 * momentary gap in other work on the host does not admit a job. Zero
+		 * uses the current reading alone.
+		 */
 		availableWindowMs?: number;
 	} = {},
 ) {
@@ -173,6 +185,7 @@ export function createWorkerMemoryAdmission(
 
 	function launchingLeases(activeLeases: readonly MemoryLease[]) {
 		return activeLeases.filter((lease) => {
+			// SAFETY: MemoryLease carries the occupancy fields `leaseOccupiesWorkerResources` reads.
 			const full = lease as Lease;
 			return leaseOccupiesWorkerResources(full);
 		});
@@ -180,11 +193,17 @@ export function createWorkerMemoryAdmission(
 
 	function admittedMemoryLeases(activeLeases: readonly MemoryLease[]) {
 		return activeLeases.filter((lease) => {
+			// SAFETY: MemoryLease carries the occupancy fields worker memory reads.
 			const full = lease as Lease;
 			return leaseOccupiesWorkerMemory(full);
 		});
 	}
 
+	/**
+	 * Lowest MemAvailable over the window. Other work on a shared host comes
+	 * and goes, and one reading taken in a gap says more is free than a job
+	 * will find once that work is back.
+	 */
 	function lowWaterAvailableMb(): number | undefined {
 		const currentMb = options.availableMemoryMb?.();
 		if (currentMb === undefined || availableWindowMs === 0) return currentMb;
@@ -204,6 +223,10 @@ export function createWorkerMemoryAdmission(
 		);
 	}
 
+	/**
+	 * A lease of ours that ended gave memory back, so readings from before it
+	 * ended understate what is free now; drop them rather than wait them out.
+	 */
 	function noteReleasedLeases(admittedLeases: readonly MemoryLease[]): void {
 		const ids = new Set(admittedLeases.map((lease) => lease.id));
 		for (const id of occupyingLeaseIds) {
@@ -224,6 +247,12 @@ export function createWorkerMemoryAdmission(
 		);
 	}
 
+	/**
+	 * Memory promised to admitted jobs that MemAvailable does not show yet: all
+	 * of a reservation until its container runs, then a share that falls away
+	 * over the ramp. Without it every job admitted in the same few seconds is
+	 * checked against the same free memory.
+	 */
 	function committedHostMb(
 		admittedLeases: readonly MemoryLease[],
 		skip?: (lease: MemoryLease) => boolean,
@@ -250,6 +279,7 @@ export function createWorkerMemoryAdmission(
 
 	function unlaunchedReservedLeases(activeLeases: readonly MemoryLease[]) {
 		return activeLeases.filter((lease) => {
+			// SAFETY: MemoryLease carries reserved/sandbox fields for unlaunched detection.
 			const full = lease as Lease;
 			return (
 				full.state === "reserved" && !full.sandboxName && !full.sandboxSessionId
@@ -294,6 +324,12 @@ export function createWorkerMemoryAdmission(
 		);
 	}
 
+	/**
+	 * CPUs of standard and heavier jobs that have started but that the
+	 * 1-minute load average does not show yet. Dropping the whole reservation
+	 * the moment a container runs let the next job in before the first had
+	 * used any CPU the average could see.
+	 */
 	function startedTrunkCpuReservationCpus(
 		admittedLeases: readonly MemoryLease[],
 	): number {
@@ -381,6 +417,8 @@ export function createWorkerMemoryAdmission(
 				: 0;
 		const budgetFits =
 			inUse - trunkBudgetBiasMb + request.memoryMb <= config.budgetMb;
+		// A job asked about again does not count its own reservation, and the
+		// trunk may take what a general job holds without having launched.
 		const committedMb = committedHostMb(
 			admittedLeases,
 			(lease) =>
@@ -520,6 +558,7 @@ export function createWorkerMemoryAdmission(
 		},
 		releaseWarm,
 		consumeWarm: releaseWarm,
+		/** What admission takes as free host memory: the low-water reading. */
 		availableLowWaterMb: lowWaterAvailableMb,
 	};
 }

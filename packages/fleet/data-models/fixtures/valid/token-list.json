@@ -1,0 +1,11 @@
+{
+  "tokens": [
+    {
+      "tokenHash": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+      "fleet": "ci",
+      "name": "box-a",
+      "issuedBy": "github:1234",
+      "expiresAt": "2026-11-12T10:20:00.000Z"
+    }
+  ]
+}

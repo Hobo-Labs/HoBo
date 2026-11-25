@@ -24,23 +24,18 @@ as a `dispatch.Decided` fact. GitHub declares its real list price
 wins while free headroom remains and loses to the cheapest remaining
 registered host once exhausted.
 
-`projectBuildCosts` applies ordered, sequenced `build.CacheHitObserved` facts
-to a ledger snapshot for one build ID. It estimates a provider's cost from the
-latest observed metered units divided by that build's estimated units and the
-provider's declared unit price. Pass the same build ID when selecting a host;
-the projection rejects observations without a positive estimate and rejects
-stale sequences. Free headroom is measured in metered units. The estimate is
-based on the last measurement and does not guarantee the cost of a later run.
-
 ## Lanes
 
 - **Replay lane (default):** the `fetch` transport is injected; tests
   exercise exact request formation + response parsing against the
   PACT-recorded responses with no network.
-- **Live lane (credential-gated):** set `HOBO_GITHUB_LIVE=1`,
-  `GITHUB_INSTALLATION_TOKEN` (a broker-minted short-lived installation
-  token — no PATs), `HOBO_GITHUB_OWNER`, `HOBO_GITHUB_REPO` and optionally
-  `HOBO_GITHUB_WORKFLOW` to dispatch and track a real run.
+- **Live lane (credential-gated):** a caller holding the owner store session
+  passes `githubAppTokenProvider(credentials, { owner, repo })`, which resolves
+  `github-app://<owner>/<repo>`: the session mints a short-lived installation
+  token from HoBo's GitHub App (`hobo ci app create`) for that repository — no
+  personal tokens; the environment is never read — with `HOBO_GITHUB_OWNER`,
+  `HOBO_GITHUB_REPO` and optionally `HOBO_GITHUB_WORKFLOW`, to dispatch and
+  track a real run.
 
 ## Install
 

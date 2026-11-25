@@ -2,20 +2,24 @@ import type { SpriteData } from '../types.js';
 
 const zoomCaches = new Map<number, WeakMap<SpriteData, HTMLCanvasElement>>();
 
+// ── Outline sprite generation ─────────────────────────────────
 
 const outlineCache = new WeakMap<SpriteData, SpriteData>();
 
+/** Generate a 1px white outline SpriteData (2px larger in each dimension) */
 export function getOutlineSprite(sprite: SpriteData): SpriteData {
   const cached = outlineCache.get(sprite);
   if (cached) return cached;
 
   const rows = sprite.length;
   const cols = sprite[0].length;
+  // Expanded grid: +2 in each dimension for 1px border
   const outline: string[][] = [];
   for (let r = 0; r < rows + 2; r++) {
     outline.push(new Array<string>(cols + 2).fill(''));
   }
 
+  // For each opaque pixel, mark its 4 cardinal neighbors as white
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (sprite[r][c] === '') continue;
@@ -28,6 +32,7 @@ export function getOutlineSprite(sprite: SpriteData): SpriteData {
     }
   }
 
+  // Clear pixels that overlap with original opaque pixels
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (sprite[r][c] !== '') {

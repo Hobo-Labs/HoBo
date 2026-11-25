@@ -435,14 +435,6 @@ import "list"
 	changes?:    int & >=0
 	// An in-place phase the plan's probe found already in effect.
 	recovered?: bool
-	projection?: string & !=""
-	targetSinkId?: string & !=""
-	schemaVersion?: string & !=""
-	backfillKind?: "deterministic-replay" | "recorded-output"
-	strategy?: "rebuild-from-zero" | "snapshot-tail" | "recorded-output-backfill"
-	checkpointed?: bool
-	sourcePosition?: =~"^(0|[1-9][0-9]*)$"
-	configHash?: #Sha256Ref
 	// Positions, counts, and digests — never a record, and never a fence
 	// token: a checkpoint names the fence it was taken under by digest.
 	checkpoint?: {
@@ -485,10 +477,6 @@ import "list"
 	// When the source's fence was first requested: where a rollback's erasure
 	// replay is windowed from.
 	fencedFrom?: #Instant
-	projection?: string & !=""
-	fromSinkId?: string & !=""
-	toSinkId?: string & !=""
-	cutover?: "blue-green"
 }
 
 #MigrationRolledBackEventData: {

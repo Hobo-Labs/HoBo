@@ -15,7 +15,8 @@
       "src/draft/technical-proofs/run-inspector-projection-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

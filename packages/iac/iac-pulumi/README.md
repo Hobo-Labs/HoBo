@@ -1,6 +1,9 @@
 # @hobo/iac-pulumi
 
-Infrastructure-as-Code backend for HoBo built on the Pulumi Automation API.
+Production Infrastructure-as-Code backend for HoBo built on the Pulumi Automation
+API. S2-05 promotes the near-production draft proof
+(`src/draft/technical-proofs/s2-06-iac-pulumi-automation-adapter/`) into
+`packages/iac/iac-pulumi/`.
 
 The adapter satisfies the `IacProvider` port with a per-resource stack model:
 each resource in an `IacProgram` gets its own Pulumi stack
@@ -28,11 +31,6 @@ today, all pinned to `PINNED_PULUMI_AUTOMATION_VERSION` (`3.130.0`):
 - **CLI** (`createPulumiCliAutomationEngine`) — drives the pinned `pulumi` binary
   directly; kept for the `HOBO_PULUMI_BIN` test seam and as an explicit opt-in.
   Invalid preview JSON fails dirty so apply cannot mistake it for a clean plan.
-
-The local Automation API test runs a real Pulumi preview with an isolated state
-directory and automatic provider installation disabled. It verifies that preview
-reaches the engine and reports the missing provider plugin; it does not provision
-or verify a cloud provider.
 
 The composed runtime's live lane (`HOBO_PULUMI_LIVE=1`, see `@hobo/hobo`
 `compose.ts`) defaults to the Automation API engine; `HOBO_PULUMI_LIVE_ENGINE=cli`
@@ -68,8 +66,9 @@ Both engines keep their state under a local `file://` backend. Pulumi encrypts
 the secrets in it with `PULUMI_CONFIG_PASSPHRASE`; an empty passphrase leaves
 them readable by any process that can read the state directory. For a retained
 workspace, pass a recoverable non-empty `statePassphrase` from the caller's
-secret store (the legacy `PULUMI_CONFIG_PASSPHRASE` environment variable is
-also accepted). Reuse the same key when reopening the state. Without one,
+secret store; `PULUMI_CONFIG_PASSPHRASE` in the caller's environment is not
+read, and the engine sets it only in the Pulumi child's environment for that
+call. Reuse the same key when reopening the state. Without one,
 operations refuse before creating or changing state. A caller that guarantees a
 workspace is disposable may explicitly set `ephemeralState: true`; its key is
 random, kept in memory, and lost when the process ends.

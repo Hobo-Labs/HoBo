@@ -1,3 +1,9 @@
+// `createTelemetrySink` (WP19, D17): an OTLP/HTTP JSON exporter over the core
+// `HttpTransport` port — no OpenTelemetry SDK dependency. Each call exports
+// its spans or points in batches of at most `maxBatch`, retrying retryable
+// failures (429, 502, 503, 504, transport errors) with capped exponential
+// backoff that honours `Retry-After`, per the OTLP/HTTP specification.
+// Backoff has no jitter so tests and replays are deterministic.
 import type { HttpTransport, JsonValue, TransportResponse } from "@hobo/core";
 import {
 	isFiniteNumber,
@@ -14,6 +20,7 @@ import type {
 import { TelemetryError } from "./errors.js";
 import { encodeMetrics, encodeTraces } from "./otlp.js";
 
+// public-contract: OTLP/HTTP defaults (opentelemetry-specification, exporter).
 export const OTLP_DEFAULTS = Object.freeze({
 	endpoint: "http://localhost:4318",
 	tracesPath: "/v1/traces",
@@ -32,6 +39,7 @@ export type TelemetrySinkOptions = Readonly<{
 	endpoint?: string;
 	http: HttpTransport;
 	headers?: Readonly<Record<string, string>>;
+	/** OTLP resource attributes; default `service.name=hobo-cd`. */
 	resource?: OtelAttributes;
 	maxBatch?: number;
 	maxAttempts?: number;
@@ -64,6 +72,7 @@ type MutableStats = {
 export type OtlpTelemetrySink = TelemetrySink &
 	Readonly<{ endpoint: string; stats(): ExportStats }>;
 
+/** Parse the endpoint once; an invalid one is a construction-time error. */
 export function parseOtlpEndpoint(raw: string): string {
 	let url: URL;
 	try {
@@ -71,15 +80,20 @@ export function parseOtlpEndpoint(raw: string): string {
 	} catch {
 		throw new TelemetryError(
 			"otlp-endpoint-invalid",
-			`OTLP endpoint is not a URL: ${raw}`,
+			"OTLP endpoint is not a valid URL.",
 		);
 	}
 	if (url.protocol !== "http:" && url.protocol !== "https:")
 		throw new TelemetryError(
 			"otlp-endpoint-invalid",
-			`OTLP endpoint must be http(s): ${url.protocol}`,
+			"OTLP endpoint must use HTTP or HTTPS.",
 		);
-	if (url.search !== "" || url.hash !== "" || url.username !== "")
+	if (
+		url.search !== "" ||
+		url.hash !== "" ||
+		url.username !== "" ||
+		url.password !== ""
+	)
 		throw new TelemetryError(
 			"otlp-endpoint-invalid",
 			"OTLP endpoint must carry no query, fragment or credentials",
@@ -109,10 +123,12 @@ function retryAfterMs(response: TransportResponse): number | undefined {
 	return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1_000 : undefined;
 }
 
-type PartialSuccess = Readonly<{ rejected: number; message: string }>;
+/** The OTLP `partialSuccess` member of an export response, parsed. */
+type PartialSuccess = Readonly<{ rejected: number }>;
 
-const NO_PARTIAL: PartialSuccess = { rejected: 0, message: "" };
+const NO_PARTIAL: PartialSuccess = { rejected: 0 };
 
+/** OTLP JSON encodes int64 counts as strings or numbers. */
 function count(value: JsonValue | undefined): number {
 	const n = isText(value) ? Number(value) : isFiniteNumber(value) ? value : 0;
 	return Number.isFinite(n) && n > 0 ? n : 0;
@@ -123,10 +139,8 @@ function parsePartialSuccess(body: string): PartialSuccess {
 	if (!isJsonObject(parsed)) return NO_PARTIAL;
 	const partial = parsed.partialSuccess;
 	if (!isJsonObject(partial)) return NO_PARTIAL;
-	const message = partial.errorMessage;
 	return {
 		rejected: count(partial.rejectedSpans) + count(partial.rejectedDataPoints),
-		message: isText(message) ? message : "",
 	};
 }
 
@@ -165,7 +179,6 @@ export function createTelemetrySink(
 		for (let attempt = 1; ; attempt += 1) {
 			stats.requests += 1;
 			let response: TransportResponse | undefined;
-			let failure = "";
 			try {
 				response = await options.http({
 					method: "POST",
@@ -175,15 +188,13 @@ export function createTelemetrySink(
 					timeoutMs,
 					maxResponseBytes: OTLP_DEFAULTS.maxResponseBytes,
 				});
-			} catch (error) {
-				failure = error instanceof Error ? error.message : String(error);
-			}
+			} catch {}
 			if (response && response.status >= 200 && response.status < 300) {
 				const partial = parsePartialSuccess(response.body);
 				if (partial.rejected > 0)
 					throw new TelemetryError(
 						"otlp-partial-success",
-						`collector rejected ${partial.rejected} item(s): ${partial.message}`,
+						`collector rejected ${partial.rejected} item(s)`,
 						response.status,
 					);
 				return;
@@ -197,7 +208,7 @@ export function createTelemetrySink(
 			if (attempt >= maxAttempts)
 				throw new TelemetryError(
 					"otlp-retries-exhausted",
-					`${path} failed after ${attempt} attempt(s): ${response ? `status ${response.status}` : failure}`,
+					`${path} failed after ${attempt} attempt(s)`,
 					response?.status,
 				);
 			const backoff = Math.min(cap, base * 2 ** (attempt - 1));
@@ -220,10 +231,32 @@ export function createTelemetrySink(
 				await post(path, JSON.stringify(encode(batch)));
 				onSent(batch.length);
 			} catch (error) {
-				const typed =
-					error instanceof TelemetryError
-						? error
-						: new TelemetryError("otlp-retries-exhausted", String(error));
+				let code:
+					| "otlp-rejected"
+					| "otlp-partial-success"
+					| "otlp-retries-exhausted" = "otlp-retries-exhausted";
+				let status: number | undefined;
+				try {
+					if (error instanceof TelemetryError) {
+						if (
+							error.code === "otlp-rejected" ||
+							error.code === "otlp-partial-success"
+						)
+							code = error.code;
+						if (
+							error.status !== undefined &&
+							Number.isInteger(error.status) &&
+							error.status >= 100 &&
+							error.status <= 599
+						)
+							status = error.status;
+					}
+				} catch {}
+				const typed = new TelemetryError(
+					code,
+					"The telemetry export could not be completed.",
+					status,
+				);
 				if (typed.code === "otlp-partial-success") onSent(batch.length);
 				else onDropped(batch.length);
 				stats.lastError = { code: typed.code, message: typed.message };

@@ -36,7 +36,9 @@ Target paths: `packages/cli/src/commands/collect.ts`,
 pnpm exec turbo run test --filter ./src/draft/technical-proofs/s1-21-collect-codegen-cli-poc
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `data-models/` — protobuf + CUE envelope constraints
 - `contracts/pacts/` — CLI→collector and CLI→codegen-pipeline consumer pacts
 - `architecture/` — package boundary evidence
+- `ADR.md` — parse-don't-validate and event-architecture evidence

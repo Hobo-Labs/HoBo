@@ -15,10 +15,10 @@ function isImmediateFleetMainTrunkPickupJob(
 }
 
 import {
-	type FleetCapacityWitness,
-	type FleetWitnessFields,
-	fleetWitnessFields,
-} from "./fleet-absorb.js";
+	type PeerCapacityWitness,
+	type PeerWitnessFields,
+	peerWitnessFields,
+} from "./peer-capacity.js";
 
 export type TrunkWaitReason =
 	| "lease-capacity"
@@ -40,6 +40,7 @@ export type TrunkWaitState = Readonly<{
 
 export type TrunkWaitCache = Map<string, TrunkWaitState>;
 
+/** Default wait before admission-blocked main trunk work is offered to fleet. */
 // public-contract: bounds box memory hold without lowering standard class sizes.
 export const DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS = 45_000;
 
@@ -77,7 +78,7 @@ export type TrunkFleetDeferDecision = Readonly<{
 	deferMs?: number;
 	shardIndex?: number;
 }> &
-	FleetWitnessFields;
+	PeerWitnessFields;
 
 export function evaluateMainTrunkFleetDefer(
 	input: Readonly<{
@@ -87,12 +88,16 @@ export function evaluateMainTrunkFleetDefer(
 		deferMs: number;
 		nowMs: number;
 		trunkSlots: number | undefined;
+		/**
+		 * ADDITIONAL standard launches that still fit in box memory right now
+		 * (`mainShardParallelLaunchCapacity`, #1926) — remaining room, not a total.
+		 */
 		parallelTrunkLaunchCapacity?: number;
 		localTrunkReserved: number;
-		fleetWitness: FleetCapacityWitness | undefined;
+		fleetWitness: PeerCapacityWitness | undefined;
 	}>,
 ): TrunkFleetDeferDecision {
-	const fields = fleetWitnessFields(input.fleetWitness);
+	const fields = peerWitnessFields(input.fleetWitness);
 	const effectiveDeferMs = effectiveTrunkFleetDeferMs(
 		input.deferMs,
 		fields.peerAbsorbSlots,
@@ -107,6 +112,9 @@ export function evaluateMainTrunkFleetDefer(
 		effectiveDeferMs,
 		input.nowMs,
 	);
+	// Memory capacity is remaining room, so the box's trunk ceiling is what is
+	// already reserved plus what still fits (same shape as
+	// `effectiveParallelLaunchSlots`), never below the configured trunk slots.
 	const trunkSlotCeiling = Math.max(
 		input.trunkSlots ?? 0,
 		input.parallelTrunkLaunchCapacity === undefined
@@ -127,7 +135,7 @@ export function evaluateMainTrunkFleetDefer(
 		deferMs: number;
 		waitReason?: TrunkWaitReason;
 		shardIndex?: number;
-	} & FleetWitnessFields;
+	} & PeerWitnessFields;
 	const meta: DeferMeta = { waitedMs, deferMs: effectiveDeferMs, ...fields };
 	if (waitReason !== undefined) meta.waitReason = waitReason;
 	if (shardIndex !== undefined) meta.shardIndex = shardIndex;

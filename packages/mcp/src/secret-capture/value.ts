@@ -1,12 +1,23 @@
+/**
+ * A captured secret value, once it has passed its spec's checks. It is the
+ * only type that holds a value, and it redacts itself everywhere a value
+ * could leak by accident: `String(x)`, template strings, `JSON.stringify`,
+ * `util.inspect` and `console.log` all print `[redacted secret]`. The value
+ * is read once, with `reveal()`, at the store boundary.
+ */
+
 import { SecretCaptureError } from "./errors.js";
 import type { ParsedSecretCaptureSpec } from "./spec.js";
 
 const REDACTED = "[redacted secret]";
 const INSPECT = Symbol.for("nodejs.util.inspect.custom");
 
+/** Printable ASCII, one line. */
 const PRINTABLE_LINE = /^[\x20-\x7e]+$/u;
+/** Printable ASCII plus CR and LF (a PEM key). */
 const PRINTABLE_MULTILINE = /^[\x20-\x7e\r\n]+$/u;
 
+/** Why a value was refused; the only detail a refusal carries about it. */
 export type SecretValueRejection =
 	| "empty"
 	| "too-short"
@@ -35,6 +46,10 @@ export class CapturedSecret {
 		this.byteLength = Buffer.byteLength(value, "utf8");
 	}
 
+	/**
+	 * Check `raw` against the spec and hold it. A refusal names the reason
+	 * (`SecretValueRejection`), never the value or any part of it.
+	 */
 	static parse(spec: ParsedSecretCaptureSpec, raw: string): CapturedSecret {
 		const reason = rejection(spec, raw);
 		if (reason !== undefined)
@@ -46,12 +61,9 @@ export class CapturedSecret {
 		return new CapturedSecret(spec.name, raw);
 	}
 
+	/** The value, for the store write only. */
 	reveal(): string {
 		return this.#value;
-	}
-
-	isContainedIn(text: string): boolean {
-		return text.includes(this.#value);
 	}
 
 	toString(): string {

@@ -1,3 +1,21 @@
+/**
+ * Ephemeral state: short-lived, loss-tolerant key/value state with TTL,
+ * compare-and-set, and atomic counters.
+ *
+ * This is the port for state a service may lose. Every write carries a TTL, so
+ * nothing written through it outlives its usefulness, and a caller must be able
+ * to rebuild anything it reads from an authoritative source (GitHub, Vercel,
+ * the event store). It is deliberately not an `EventStore`: there is no stream,
+ * no position, no durability claim, and no fencing beyond the per-key version.
+ *
+ * The primitives are the ones a Redis-protocol store can serve atomically in a
+ * single round trip — a server-side script per conditional write — so the same
+ * port binds to a hosted REST cache, a self-hosted Valkey/Redis over TCP, or an
+ * in-memory engine, with identical semantics. Implementations live outside
+ * core (`@hobo/kv-redis-compatible`, `@hobo/provider-upstash`); the lock and
+ * ring helpers below are built only on the port, so they behave identically on
+ * every binding.
+ */
 import { CoreParseError } from "../errors.js";
 import type { JsonValue } from "../json.js";
 
@@ -5,11 +23,20 @@ import type { JsonValue } from "../json.js";
 export const EPHEMERAL_STATE_PORT_CONTRACT_VERSION =
 	"hobo.core.ephemeral-state/v1" as const;
 
+/** Longest TTL the port accepts. Ephemeral means days, not forever. */
 export const EPHEMERAL_STATE_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** Longest key the port accepts, in characters (printable ASCII only). */
 export const EPHEMERAL_STATE_MAX_KEY_LENGTH = 512;
+/** Longest opaque version token an implementation may hand out. */
 export const EPHEMERAL_STATE_MAX_VERSION_LENGTH = 128;
 
 export type EphemeralKey = string & { readonly __brand: "EphemeralKey" };
+/**
+ * Opaque, per-key version token. Each successful write of a key yields a token
+ * that no earlier write of that key — including a write to a previous
+ * incarnation that was deleted or expired — ever yielded, so a stale
+ * compare-and-set cannot succeed against a recreated key (no ABA).
+ */
 export type EphemeralVersion = string & {
 	readonly __brand: "EphemeralVersion";
 };
@@ -21,38 +48,68 @@ export interface EphemeralEntry {
 	readonly version: EphemeralVersion;
 }
 
+/** Outcome of a conditional write. `applied: false` is a lost race, not an error. */
 export type EphemeralWrite =
 	| { readonly applied: true; readonly version: EphemeralVersion }
 	| { readonly applied: false };
 
+/**
+ * `on-create` sets the TTL only when the counter is created, so a fixed window
+ * (a rate counter) expires on schedule however often it is bumped. `refresh`
+ * resets it on every increment, so an active counter (a sequence) never lapses.
+ */
 export type IncrementTtlMode = "on-create" | "refresh";
 
 export interface EphemeralStatePort {
+	/** Current value and version, or `undefined` when absent or expired. */
 	get(key: EphemeralKey): Promise<EphemeralEntry | undefined>;
+	/** `get` for several keys in one round trip; the result is index-aligned. */
 	getMany(
 		keys: readonly EphemeralKey[],
 	): Promise<readonly (EphemeralEntry | undefined)[]>;
+	/** Create the key with `ttlMs` unless it exists. Exactly one concurrent caller wins. */
 	putIfAbsent(
 		key: EphemeralKey,
 		value: string,
 		ttlMs: EphemeralTtlMs,
 	): Promise<EphemeralWrite>;
+	/**
+	 * Replace the value only when the stored version is `expected`; the TTL is
+	 * reset to `ttlMs`. Absent keys never match.
+	 */
 	compareAndSet(
 		key: EphemeralKey,
 		expected: EphemeralVersion,
 		value: string,
 		ttlMs: EphemeralTtlMs,
 	): Promise<EphemeralWrite>;
+	/** Delete; with `expected`, only when the stored version matches. True when a key was removed. */
 	delete(key: EphemeralKey, expected?: EphemeralVersion): Promise<boolean>;
+	/**
+	 * Atomically add `by` (a safe integer, may be negative or zero) and return
+	 * the new value. A missing key starts at zero and is created with `ttlMs`.
+	 * A key holding a non-integer value is a rejected call, not a reset.
+	 */
 	increment(
 		key: EphemeralKey,
 		by: number,
 		ttlMs: EphemeralTtlMs,
 		mode?: IncrementTtlMode,
 	): Promise<number>;
+	/** Reset the TTL of an existing key. False when the key is absent. */
 	expire(key: EphemeralKey, ttlMs: EphemeralTtlMs): Promise<boolean>;
 }
 
+/**
+ * Steady-state backend commands (round trips) each call issues on a
+ * Redis-protocol binding — the unit a hosted cache bills by.
+ *
+ * Every conditional write is one server-side script call (`EVALSHA`). The
+ * first call of each script against a server whose script cache does not hold
+ * it costs one extra command (`EVALSHA` answers `NOSCRIPT`, then `EVAL`), and
+ * a restarted or flushed server pays that again. `getMany` of zero keys and a
+ * ring read of an empty range issue nothing for the empty part.
+ */
 // public-contract: per-operation command budget the relay meters against.
 export const EPHEMERAL_STATE_COMMAND_COST = Object.freeze({
 	get: 1,
@@ -65,7 +122,9 @@ export const EPHEMERAL_STATE_COMMAND_COST = Object.freeze({
 	"lock.acquire": 1,
 	"lock.renew": 1,
 	"lock.release": 1,
+	/** increment(seq) + putIfAbsent(entry) + delete(evicted); 2 until the ring first fills. */
 	"ring.append": 3,
+	/** get(seq) + getMany(window); 1 when the window is empty. */
 	"ring.read": 2,
 } as const);
 
@@ -97,6 +156,7 @@ export function parseEphemeralKey(value: string): EphemeralKey {
 			value.length > 64 ? `${value.slice(0, 61)}...` : value,
 		);
 	}
+	// SAFETY: the brand is applied only after the shape check above.
 	return value as EphemeralKey;
 }
 
@@ -112,6 +172,7 @@ export function parseEphemeralVersion(value: string): EphemeralVersion {
 			value.slice(0, EPHEMERAL_STATE_MAX_VERSION_LENGTH),
 		);
 	}
+	// SAFETY: the brand is applied only after the shape check above.
 	return value as EphemeralVersion;
 }
 
@@ -127,6 +188,7 @@ export function parseEphemeralTtlMs(value: number): EphemeralTtlMs {
 			Number.isFinite(value) ? value : String(value),
 		);
 	}
+	// SAFETY: the brand is applied only after the range check above.
 	return value as EphemeralTtlMs;
 }
 
@@ -140,6 +202,13 @@ export function parseIncrementBy(value: number): number {
 	}
 	return value;
 }
+
+// ---------------------------------------------------------------------------
+// Locks: putIfAbsent to acquire, compareAndSet to renew, versioned delete to
+// release. A lease is only as good as its TTL — a holder that stalls past it
+// has lost the lock, and its release then fails instead of freeing a lock
+// someone else now holds.
+// ---------------------------------------------------------------------------
 
 // domain-view: lease carrying the branded key and version; its generated ephemeral_state_pb.ts EphemeralLockLease is the wire form.
 export interface EphemeralLockLease {
@@ -159,6 +228,7 @@ function parseOwner(owner: string): string {
 	return owner;
 }
 
+/** One command. `undefined` when another owner (or a live earlier lease of this owner) holds it. */
 export async function acquireEphemeralLock(
 	port: EphemeralStatePort,
 	key: EphemeralKey,
@@ -172,6 +242,7 @@ export async function acquireEphemeralLock(
 		: undefined;
 }
 
+/** One command. Returns the renewed lease, or `undefined` when the lease was lost. */
 export async function renewEphemeralLock(
 	port: EphemeralStatePort,
 	lease: EphemeralLockLease,
@@ -186,6 +257,7 @@ export async function renewEphemeralLock(
 	return write.applied ? { ...lease, version: write.version } : undefined;
 }
 
+/** One command. True only when this lease still held the lock. */
 export async function releaseEphemeralLock(
 	port: EphemeralStatePort,
 	lease: EphemeralLockLease,
@@ -193,12 +265,26 @@ export async function releaseEphemeralLock(
 	return port.delete(lease.key, lease.version);
 }
 
+// ---------------------------------------------------------------------------
+// Ring: a capped, append-only feed with a monotonic sequence.
+//
+// Layout: one counter key `ring:{<name>}:seq` and one entry key per sequence
+// number `ring:{<name>}:e:<seq>`. The braces are a Redis Cluster hash tag, so
+// every key of a ring lands in one slot and a multi-key read is legal on a
+// clustered Valkey too. Every key carries the ring TTL; the counter's TTL is
+// refreshed on each append, so it always outlives every entry, and an idle
+// ring disappears whole and restarts at sequence 1 — which `read` reports as
+// `reset` rather than letting a cursor silently point past the head.
+// ---------------------------------------------------------------------------
+
 export const EPHEMERAL_RING_MAX_CAPACITY = 10_000;
-const RING_NAME = /^[\x21-\x7a\x7c\x7e]{1,128}$/u;
+const RING_NAME = /^[\x21-\x7a\x7c\x7e]{1,128}$/u; // printable ASCII without `{` or `}`
 
 export interface EphemeralRingOptions {
 	readonly name: string;
+	/** Entries retained; older ones are evicted on append. */
 	readonly capacity: number;
+	/** TTL of every ring key; an idle ring disappears after this. */
 	readonly ttlMs: EphemeralTtlMs;
 }
 
@@ -210,10 +296,19 @@ export interface EphemeralRingEntry {
 
 // domain-view: read window over the ring; its generated ephemeral_state_pb.ts EphemeralRingRead is the wire form.
 export interface EphemeralRingRead {
+	/** Present entries in ascending sequence order. */
 	readonly entries: readonly EphemeralRingEntry[];
+	/** Highest sequence allocated so far (0 for an empty or expired ring). */
 	readonly head: number;
+	/** Pass as `afterSeq` to continue. */
 	readonly next: number;
+	/**
+	 * Sequence numbers inside the window with no entry: an append whose entry
+	 * write has not landed yet (or never will — its writer died). Re-read from
+	 * `gap - 1` to pick a late one up; it is evicted like any other entry.
+	 */
 	readonly gaps: readonly number[];
+	/** True when `afterSeq` was beyond the head: the ring expired and restarted. */
 	readonly reset: boolean;
 }
 
@@ -271,6 +366,8 @@ export function createEphemeralRing(
 			const seq = await port.increment(seqKey, 1, ttlMs, "refresh");
 			const write = await port.putIfAbsent(entryKey(seq), value, ttlMs);
 			if (!write.applied) {
+				// The counter always outlives every entry, so an existing entry key
+				// at a freshly allocated sequence means something else wrote it.
 				throw new EphemeralRingError(
 					`ring ${name}: an entry already exists at freshly allocated sequence ${seq}`,
 				);

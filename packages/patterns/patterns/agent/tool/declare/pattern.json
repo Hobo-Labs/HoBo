@@ -56,5 +56,6 @@
       "rationale": "curated from production authoring APIs"
     }
   ],
-  "limitations": []
+  "limitations": [],
+  "legacyAliases": []
 }

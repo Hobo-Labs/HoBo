@@ -5,91 +5,74 @@
   "provider": {
     "name": "SchemaToolsCodegen"
   },
-  "metadata": {
-    "pactSpecification": {
-      "version": "4.0.0"
-    },
-    "transport": "cli-json"
-  },
   "interactions": [
     {
-      "type": "Synchronous/Messages",
-      "description": "a current generated tree passes the JSON check",
-      "providerStates": [
-        {
-          "name": "generated output is current"
-        }
-      ],
+      "description": "codegen check returns CLEAN envelope for CI",
       "request": {
-        "contents": {
-          "contentType": "application/json",
-          "encoded": false,
-          "content": {
-            "argv": [
-              "--check",
-              "--json"
-            ]
-          }
+        "method": "POST",
+        "path": "/schema-tools/codegen/check",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "json": true
         }
       },
-      "response": [
-        {
-          "contents": {
-            "contentType": "application/json",
-            "encoded": false,
-            "content": {
-              "exitCode": 0,
-              "report": {
-                "status": "CLEAN",
-                "drift": [],
-                "cueViolations": []
-              }
-            }
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "status": "CLEAN",
+          "drift": [],
+          "cueViolations": [],
+          "durationMs": 0
+        },
+        "matchingRules": {
+          "body": {
+            "$.status": { "matchers": [{ "match": "type" }] },
+            "$.drift": { "matchers": [{ "match": "type" }] },
+            "$.cueViolations": { "matchers": [{ "match": "type" }] },
+            "$.durationMs": { "matchers": [{ "match": "integer" }] }
           }
         }
-      ]
+      }
     },
     {
-      "type": "Synchronous/Messages",
-      "description": "modified generated output fails the JSON check",
-      "providerStates": [
-        {
-          "name": "the event envelope output is modified"
-        }
-      ],
+      "description": "codegen check reports drift paths on mismatch",
       "request": {
-        "contents": {
-          "contentType": "application/json",
-          "encoded": false,
-          "content": {
-            "argv": [
-              "--check",
-              "--json"
-            ]
-          }
+        "method": "POST",
+        "path": "/schema-tools/codegen/check",
+        "body": {
+          "json": true,
+          "scenario": "drift"
         }
       },
-      "response": [
-        {
-          "contents": {
-            "contentType": "application/json",
-            "encoded": false,
-            "content": {
-              "exitCode": 1,
-              "report": {
-                "status": "DRIFT",
-                "drift": [
-                  {
-                    "path": "core/hobo/core/v1/event_envelope_pb.ts",
-                    "kind": "changed"
-                  }
-                ],
-                "cueViolations": []
-              }
+      "response": {
+        "status": 409,
+        "body": {
+          "status": "DRIFT",
+          "drift": [
+            {
+              "path": "packages/core/src/_generated/example_pb.ts",
+              "kind": "changed"
             }
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.status": { "matchers": [{ "match": "type" }] },
+            "$.drift": { "matchers": [{ "match": "type", "min": 1 }] },
+            "$.drift[*].path": { "matchers": [{ "match": "type" }] }
           }
         }
-      ]
+      }
     }
-  ]
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
 }

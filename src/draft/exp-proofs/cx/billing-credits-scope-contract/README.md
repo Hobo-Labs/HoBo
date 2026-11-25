@@ -30,7 +30,9 @@ node scripts\validate-traceability.mjs
 git diff origin/main...HEAD --check
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` contains protobuf data shapes and CUE constraints for this contract.
 - `architecture/pacts/billing_credits_scope_contract.pact.json` pins the boundary response.
+- `ADR.md` names the parse boundary and event/CQRS proof vocabulary required by the repo
   architecture guard.

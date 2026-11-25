@@ -12,6 +12,7 @@
 			"!**/_generated/**",
 			"!**/.hobo/**",
 			"!**/*.snap",
+			"!**/contracts/api.snapshot.d.ts",
 			"!**/*.json"
 		]
 	},

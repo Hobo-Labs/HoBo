@@ -136,3 +136,9 @@ export function hoboSelfDeliverySources(
 		}),
 	];
 }
+
+/**
+ * @deprecated Use `hoboSelfDeliverySources`; this alias keeps earlier callers
+ * compiling and will be removed once they have moved.
+ */
+export const hoboCiDogfoodSources = hoboSelfDeliverySources;

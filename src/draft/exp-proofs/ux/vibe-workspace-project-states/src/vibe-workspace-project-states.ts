@@ -68,7 +68,7 @@ export type WorkspaceProjectStateFixture = {
   };
   readonly evidenceLink: {
     readonly label: string;
-    readonly href: `urn:hobo:proof:${string}#${string}`;
+    readonly href: `docs/design/proofs/${string}/README.md#${string}`;
     readonly fixtureId: string;
     readonly freshness: EvidenceFreshness;
     readonly proofMode: ProofMode;
@@ -112,7 +112,7 @@ export type VibeWorkspaceProjectStateModel = {
   readonly issue: "HOBO-541";
   readonly phase: "M1";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-workspace-project-states";
-  readonly proofNote: "urn:hobo:proof:vibe-workspace-project-states";
+  readonly proofNote: "docs/design/proofs/vibe-workspace-project-states/README.md";
   readonly designRefs: readonly string[];
   readonly scopeOut: readonly string[];
   readonly modeNotes: readonly WorkspaceProjectModeNote[];
@@ -132,17 +132,17 @@ const requiredScopeOut = [
 ] as const;
 
 const evidenceProof = (anchor: string) =>
-  `urn:hobo:proof:resource-lifecycle-quickstart-examples#${anchor}` as const;
+  `docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#${anchor}` as const;
 
 export const VIBE_WORKSPACE_PROJECT_STATE_MODEL = {
   issue: "HOBO-541",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/ux/vibe-workspace-project-states",
-  proofNote: "urn:hobo:proof:vibe-workspace-project-states",
+  proofNote: "docs/design/proofs/vibe-workspace-project-states/README.md",
   designRefs: [
-    "urn:hobo:requirement:workspace-onboarding-ux",
-    "urn:hobo:requirement:outcome-activation-rail",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/workspace-onboarding-ux.md",
+    "docs/design/outcome-activation-rail.md",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   scopeOut: requiredScopeOut,
   modeNotes: [
@@ -410,7 +410,7 @@ export function parseVibeWorkspaceProjectStateModel(
   );
   assertLiteral(
     model.proofNote,
-    "urn:hobo:proof:vibe-workspace-project-states",
+    "docs/design/proofs/vibe-workspace-project-states/README.md",
     "proofNote",
   );
   assertNonEmptyStringArray(model.designRefs, "designRefs");

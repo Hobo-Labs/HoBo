@@ -15,8 +15,15 @@ import {
 	type ReactiveFact,
 } from "./events.js";
 
+// A saga is cross-aggregate choreography: on a trigger fact, emit the next
+// command(s) into other aggregates; on a step failure, run compensation
+// (data-plane.md: "cross-aggregate flows are sagas ... never a silent
+// distributed transaction"). Per-aggregate serializability is preserved; the
+// saga only sequences commands and unwinds them.
+
 export interface SagaContext {
 	readonly sagaId: string;
+	// Emit a command into an aggregate as a saga step (records saga.StepEmitted).
 	dispatch<S, C>(
 		step: string,
 		aggregate: Aggregate<S, C>,
@@ -28,8 +35,11 @@ export interface SagaContext {
 
 export interface SagaDefinition {
 	name: string;
+	// Trigger event type (e.g. "order.Placed").
 	trigger: string;
+	// Forward path: emit the next command(s); throw to trigger compensation.
 	step: (event: EventEnvelope, ctx: SagaContext) => Promise<void> | void;
+	// Unwind path: emit compensating command(s).
 	compensate: (
 		event: EventEnvelope,
 		ctx: SagaContext,
@@ -109,8 +119,8 @@ export function defineSaga(definition: SagaDefinition): Saga {
 						: cause instanceof Error
 							? cause.message
 							: String(cause);
-				await definition.compensate(triggerEvent, ctx, cause);
 				facts.push(createSagaCompensatedEvent({ sagaId, step, reason }));
+				await definition.compensate(triggerEvent, ctx, cause);
 				facts.push(
 					createSagaCompletedEvent({ sagaId, outcome: "compensated" }),
 				);

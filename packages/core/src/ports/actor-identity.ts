@@ -1,3 +1,8 @@
+/**
+ * Logical durable-actor identity. Resolver-neutral: Rivet compound keys,
+ * native lease keys, and Trail export records all parse through here.
+ */
+
 import { createHash } from "node:crypto";
 import { CoreParseError } from "../errors.js";
 import {
@@ -91,7 +96,9 @@ export function parseLogicalActorIdentity(
 	if (!isJsonObject(input) || input === null || Array.isArray(input)) {
 		throw new ActorIdentityParseError("identity", "object", input);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const record = input as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = parseBoundedIdent(
 		record.tenantId ?? record.tenant_id,
 		"tenantId",
@@ -102,6 +109,7 @@ export function parseLogicalActorIdentity(
 		"projectId",
 		MAX_ACTOR_TYPE_BYTES,
 	);
+	// SAFETY: assertion required at this I/O or test boundary.
 	const actorTypeId = parseBoundedIdent(
 		record.actorTypeId ?? record.actor_type_id,
 		"actorTypeId",
@@ -122,6 +130,7 @@ export function parseLogicalActorIdentity(
 			rawSegments,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const keySegments = rawSegments.map((segment, index) =>
 		parseBoundedIdent(
 			segment,
@@ -157,6 +166,10 @@ export function parseLogicalActorIdentity(
 	});
 }
 
+/**
+ * Rivet-facing compound array key. Never delimiter-concatenated.
+ * Tenant/project are server-bound; callers must not treat the array as authz.
+ */
 export function actorCompoundKey(
 	identity: LogicalActorIdentity,
 ): readonly string[] {
@@ -204,6 +217,7 @@ function canonicalJson(value: JsonValue | undefined): string {
 	if (Array.isArray(value)) {
 		return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const record = value as JsonObject;
 	const keys = Object.keys(record).sort();
 	return `{${keys
@@ -244,5 +258,6 @@ export function actorCommandDigest(
 			policyEpoch: input.policyEpoch ?? "",
 		}),
 	);
+	// SAFETY: assertion required at this I/O or test boundary.
 	return createHash("sha256").update(material).digest("hex") as CommandDigest;
 }

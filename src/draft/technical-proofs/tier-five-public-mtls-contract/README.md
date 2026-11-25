@@ -4,7 +4,7 @@ Independent proof for HOBO-134.
 
 This package pins the M2 tier-five networking realization contract from:
 
-- `urn:hobo:requirement:security-networking#plan-12`: public + mTLS is the last-resort connectivity tier.
+- `docs/design/security-networking.md#plan-12`: public + mTLS is the last-resort connectivity tier.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: HOBO-89's `ConnectivityPlan` and `PUBLIC_MTLS` tier.
 - `src/draft/technical-proofs/mtls-data-path-contract`: HOBO-117's workload-SVID keyed mTLS decision contract.
 - `src/draft/technical-proofs/connectivity-policy-enforcement-contract`: HOBO-210's consumed can-deploy policy decision seam.
@@ -32,9 +32,11 @@ npm.cmd --prefix src\draft\technical-proofs\tier-five-public-mtls-contract test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Tier Five Public Mtls Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

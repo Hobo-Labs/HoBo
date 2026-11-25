@@ -77,6 +77,7 @@ function fixture() {
 					if (leases.get(key) !== token) throw new Error("stale lease");
 				},
 				async release() {
+					// A lost release leaves the lease held until it expires.
 					if (releaseFailures > 0) {
 						releaseFailures--;
 						throw new Error("release lost");
@@ -141,6 +142,8 @@ function fixture() {
 			if (!terminated) throw new Error("termination unknown");
 		},
 	};
+	// SAFETY: this fixture supplies the exact store operations exercised by the
+	// gate and enforces a matching actor fence before each in-memory commit.
 	const gate = createDurableLifecycleGate(options as never);
 	return {
 		gate,
@@ -164,9 +167,11 @@ function fixture() {
 		failNextRelease() {
 			releaseFailures++;
 		},
+		/** Simulates lease expiry at the shared authority. */
 		expireLease(key: string) {
 			leases.delete(key);
 		},
+		/** Another holder keeps the lease for `ms` before releasing it. */
 		holdLease(key: string, ms: number) {
 			if (leases.has(key)) throw new Error("busy");
 			const token = ++fence;
@@ -195,6 +200,8 @@ describe("durable application lifecycle gate", () => {
 						...f.options.scope,
 						[field]: `${f.options.scope[field]}${suffix}`,
 					};
+					// SAFETY: the fixture supplies the same fenced store as the valid case;
+					// this call tests only the malformed scope identity.
 					expect(() =>
 						createDurableLifecycleGate({ ...f.options, scope } as never),
 					).toThrow();

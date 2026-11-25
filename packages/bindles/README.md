@@ -7,41 +7,17 @@ Manifest scope `policy` metadata survives parsing and canonical serialization. B
 limits and contract-effect/resilience references therefore participate in the manifest
 hash; removing or changing them changes the deployment input. Malformed policy objects
 are rejected. Financial enforcement belongs to the hosting planner and shared authority
-([budgeted hosting transitions](urn:hobo:requirement:hosting-budget-transitions)).
+([budgeted hosting transitions](../../docs/design/hosting-budget-transitions.md)).
 
 Use `b.project()` for an infrastructure project that owns or groups other
 resources. It is a deployment dependency, not an HTTP entrypoint; use `b.web()`
 or `b.api()` for the application that serves requests.
-
-Builder resources expose generated IDs that are independent of returned aliases.
-Existing Bindles keep their alias-based deployment IDs. Run
-`hobo collect --init-resource-ids` to create `hobo.resource-identities.json`,
-then review and commit it with the application. Collection and deployment use
-the reviewed mapping when the file exists. Library callers may instead pass an
-`identityLedger` as the third argument to `bindle` and obtain an initial ledger
-with `resourceIdentityLedger(definition)`. The ledger must map every resource kind and declaration occurrence
-exactly once. Update and review the mapping when declarations of the same kind
-are inserted, removed, or reordered. Enabling generated IDs changes an existing
-Bindle's manifest resource IDs; inspect the resulting deployment plan and
-migrate existing resources before applying it. `hobo codegen` also generates
-`ResourceAliases` declarations that map each authoring alias to its ID and kind.
 
 The canonical shared budget language is `policy.budgetPolicy` with discriminator
 `hobo.budget-policy/v1`. Parsing uses `@hobo/core`'s typed policy contract and
 rejects unknown controls, unsupported objectives/currencies, malformed funding
 windows and per-resource placement of this shared scope policy. The complete
 declaration survives serialization and participates in the manifest hash.
-
-## Binding delivery
-
-The binding-delivery gate rejects credential-shaped environment keys, including
-token and private-key names, and values containing URI credentials or
-`password`/`pwd` connection-string fields. Rejections name the affected resource
-or key without returning its value. Use explicit links and bindings for access;
-the gate detects common credential formats rather than every possible secret.
-Structured endpoint metadata is inspected recursively; cyclic or oversized
-metadata is rejected. Authored environment values must be strings, numbers, or
-booleans so collection does not silently discard them.
 
 ## Features · experiments · rollouts (Harness IfC)
 
@@ -86,8 +62,8 @@ export const canary = rollout({
 ```
 
 Runtime evaluation and progressive composition live in `@hobo/identity`
-(`FeatureFlagStore`, `createHarness`) — see [ADR-0044](urn:hobo:decision:adr-0044)
-and [ADR-0083](urn:hobo:decision:adr-0083).
+(`FeatureFlagStore`, `createHarness`) — see [ADR-0044](../../docs/design/adr/02-identity-security.md#adr-0044)
+and [ADR-0083](../../docs/design/adr/02-identity-security.md#adr-0083).
 `featureSpecsToStoreInputs` returns flag-store inputs and omits `targeting`
 when a feature does not define it.
 
@@ -114,7 +90,7 @@ backend that still meets the policy; `on-failure` moves only when the writer
 fails), `backupEveryMs`/`backupsKept`, and `monthlyBudgetMicros`. A policy
 that cannot keep its promise is refused (`restore` with no standby and no
 backup; a recovery point under a second with standbys). The trait names no
-provider; `continuityFleetPlan` in `@hobo/backend-fleet` turns it into the
+provider; `continuityFleetPlan` in `@hobo/backend-routing` turns it into the
 fleet's policy, the standbys placement asks for and the copy cadence. Schema:
 `data-models/bindles.{proto,cue}` `ContinuityPolicy`.
 

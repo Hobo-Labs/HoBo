@@ -1,3 +1,11 @@
+/**
+ * Placement and teardown, in terms of the parsed records.
+ *
+ * This file holds no HTTP and no JSON. It orders the three creates, refuses to
+ * call a rollout finished on anything weaker than the controller's own
+ * agreement, and is honest about the fact that a namespace DELETE is an
+ * acceptance, not a completion.
+ */
 import type {
 	DeploymentRecord,
 	NamespaceRecord,
@@ -23,6 +31,7 @@ export type ProvisionReceipt = {
 	readonly namespace: NamespaceRecord;
 	readonly deployment: DeploymentRecord;
 	readonly service: ServiceRecord;
+	/** In-cluster address only. No ingress is created, so none is promised. */
 	readonly endpointUrl: string;
 	readonly adopted: boolean;
 };
@@ -34,6 +43,7 @@ export type CleanupOutcome = {
 	readonly namespace: string;
 	readonly state: CleanupState;
 	readonly observedAtMs: number;
+	/** Present only for `retained`; empty otherwise. */
 	readonly retainedReason: string;
 };
 
@@ -42,12 +52,21 @@ export type ProvisionInput = {
 	readonly placement: WorkloadPlacement;
 };
 
+/**
+ * Namespace, then Deployment, then Service.
+ *
+ * The order is not cosmetic: a Service created before its Deployment has an
+ * endpoint list that is empty for as long as the rollout takes, and anything
+ * watching it sees a resolvable name that refuses connections.
+ */
 export async function provisionWorkload(
 	input: ProvisionInput,
 ): Promise<ProvisionReceipt> {
 	const { client, placement } = input;
 	const namespace = await client.createOrAdoptNamespace(placement);
 	if (namespace.phase === "Terminating") {
+		// Objects created in a Terminating namespace are deleted by the
+		// namespace controller as fast as they appear.
 		throw new KubernetesProviderError(
 			"PROVISIONING_CONFLICT",
 			`namespace ${namespace.name} is terminating; nothing placed in it would survive`,
@@ -70,6 +89,13 @@ export async function provisionWorkload(
 	});
 }
 
+/**
+ * Read the rollout once and say what it is.
+ *
+ * There is deliberately no polling loop here: a driver that waits owns a
+ * deadline, a backoff and a cancellation story, and all three belong to the
+ * caller that knows what the deploy is for.
+ */
 export async function observeRollout(
 	input: ProvisionInput,
 ): Promise<DeploymentRecord> {
@@ -96,9 +122,17 @@ export type CleanupInput = {
 	readonly client: KubernetesApiClient;
 	readonly receipt: ProvisionReceipt;
 	readonly now: () => number;
+	/** Re-read the namespace after the delete to see whether it is already gone. */
 	readonly confirm?: boolean;
 };
 
+/**
+ * Tear down what this driver created — and only that.
+ *
+ * An adopted namespace is retained. It was the operator's before this deploy
+ * existed, it holds objects nobody here enumerated, and deleting it is the
+ * single most destructive thing this package could do.
+ */
 export async function cleanupWorkload(
 	input: CleanupInput,
 ): Promise<CleanupOutcome> {
@@ -128,6 +162,9 @@ export async function cleanupWorkload(
 		}
 	}
 
+	// The apiserver accepted the delete and answered Terminating. Finalizers
+	// decide when the objects actually go; reporting "deleted" here would be
+	// reporting an intention as an observation.
 	return Object.freeze({
 		namespace,
 		state: "deleting" as const,

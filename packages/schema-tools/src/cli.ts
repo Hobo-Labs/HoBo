@@ -64,7 +64,7 @@ function formatHuman(report: {
 	return `${lines.join("\n")}\n`;
 }
 
-export async function main(): Promise<void> {
+async function main(): Promise<void> {
 	const result = await runCli(process.argv.slice(2));
 	if (result.stdout) process.stdout.write(result.stdout);
 	if (result.stderr) process.stderr.write(result.stderr);

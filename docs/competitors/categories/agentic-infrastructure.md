@@ -34,4 +34,4 @@ HoBo is AI-native by design. This category tests whether HoBo's policy-gated, au
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)

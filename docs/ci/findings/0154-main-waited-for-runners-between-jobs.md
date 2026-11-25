@@ -51,7 +51,7 @@ A reused main run is the route job (GitHub-hosted), one trunk job (plan, about 2
 
 - **Warm runners.** The box's spare container is off whenever a work root is set, which production always sets ([finding 62](./0062-memory-reservations-were-guesses-held-as-hard-limits.md)): a job's work directory is bind-mounted at container creation under its lease id, so a container cannot be created before its job is known. Keeping a listener registered ahead of a job needs a lease with no job in the controller and reconciler. ARC's trunk scale set starts pods on demand (`minRunners` is not in this repository). Neither is changed here.
 - **The shard reservation.** A shard still reserves 4096 MiB on the box. Routing sends shards elsewhere when the fleet is not taking jobs; it does not make the box admit them sooner.
-- **Capacity-aware routing.** Main's jobs follow the route job, which reads the queue and asks the relay for its fleet verdict ([#1952](https://github.com/Hobo-Labs/HoBo/pull/1952), [ADR-0180](urn:hobo:decision:adr-0180)); nothing about the fleet is passed in through a variable.
+- **Capacity-aware routing.** Main's jobs follow the route job, which reads the queue and asks the relay for its fleet verdict ([#1952](https://github.com/Hobo-Labs/HoBo/pull/1952), [ADR-0180](../../design/adr/fleet-verdict.md#adr-0180)); nothing about the fleet is passed in through a variable.
 - **The deps image key** already hashes the lockfile, workspace file, manifests, patches, platform and toolchain ([finding 60](./0060-the-deps-key-rebuilt-on-recipe-churn.md)). The 42 s install in Main full gate was on ARC pods, which mount no deps layer.
 - **The route job** stays a separate GitHub-hosted job: required pull request checks and the image job hang off it.
 

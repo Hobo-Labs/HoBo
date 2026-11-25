@@ -1,3 +1,10 @@
+// The resolver port's id and directive patterns are written twice: as regex
+// literals in `src/ports/resource-resolver.ts`, which is what runs, and as
+// CUE constraints in `data-models/resource_resolver.cue`, which is the
+// schema. Nothing in the build reads the CUE, so this suite holds the two to
+// one definition: each literal must appear verbatim as its CUE twin, and the
+// running parser must accept exactly the samples the CUE pattern accepts.
+
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -18,6 +25,7 @@ const SOURCE = readFileSync(
 	"utf8",
 );
 
+/** The pattern a CUE definition constrains a string to, as written. */
 function cuePattern(definition: string): string {
 	const match = new RegExp(
 		`^${definition}: =~("(?:[^"\\\\]|\\\\.)*")$`,
@@ -30,6 +38,7 @@ function cuePattern(definition: string): string {
 	return JSON.parse(literal);
 }
 
+/** The source of a regex literal a `const` in the port module is set to. */
 function sourcePattern(name: string): string {
 	const match = new RegExp(`^const ${name} = /(.+)/u;$`, "mu").exec(SOURCE);
 	const body = match?.[1];
@@ -57,6 +66,7 @@ function resolverListing(directives: readonly string[]): ResourceResolver {
 	};
 }
 
+/** Whether the running parser accepts `name` as a directive. */
 function parserAccepts(name: string): boolean {
 	try {
 		parseResolverDirectives(resolverListing([name]));
@@ -67,6 +77,7 @@ function parserAccepts(name: string): boolean {
 	}
 }
 
+/** Whether the registry accepts `id` as a product id. */
 function registryAccepts(id: string): boolean {
 	try {
 		createResolverRegistry([{ ...resolverListing([]), productId: id }]);

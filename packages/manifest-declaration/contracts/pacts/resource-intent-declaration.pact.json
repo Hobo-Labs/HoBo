@@ -45,7 +45,7 @@
 					"accepted": false,
 					"code": "INVALID_RESOURCE_INTENT",
 					"path": "$.provider",
-					"message": "resource intent $.provider: unknown field; expected one of name, port, require, prefer, negotiation, deps, ready_deps, completed_deps, region, objective, placement, cadence"
+					"message": "resource intent $.provider: unknown field; expected one of name, port, require, prefer, negotiation, deps, region, objective, placement, cadence"
 				}
 			}
 		},

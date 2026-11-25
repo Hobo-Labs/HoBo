@@ -22,7 +22,7 @@ const annexVectors = parseSemanticsAnnexVectors(
 );
 
 describe("sdk conformance gate", () => {
-  it("declares the baseline SDK conformance lanes", () => {
+  it("declares the required SDK conformance lanes without resilience-semantics", () => {
     assert.deepEqual(sdkConformanceGateSpec.lanes, [
       "golden-ir-lowering-equivalence",
       "semantics-annex",

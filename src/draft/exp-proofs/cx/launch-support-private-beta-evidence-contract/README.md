@@ -37,10 +37,12 @@ This proof deliberately does not implement helpdesk software, support runtime se
 ticket automation, status-page publication, support staffing, live customer support operations,
 production customer-data access, commercial support terms, or customer-facing SLA commitments.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the private beta support evidence
   record.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

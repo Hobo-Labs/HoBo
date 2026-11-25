@@ -122,12 +122,12 @@ it assumes the infrastructure already exists. The contest is narrow and the less
 
 | Octopus concept | HoBo equivalent | Notes |
 |---|---|---|
-| Release (pinned versions + process snapshot) | **Deployment Set** (immutable) + Deltas | ✅ same immutability bet ([Plan 25](urn:hobo:requirement:platform-engineering#plan-25)) |
+| Release (pinned versions + process snapshot) | **Deployment Set** (immutable) + Deltas | ✅ same immutability bet ([Plan 25](../design/platform-engineering.md#plan-25)) |
 | Environment + Lifecycle phases | Camps with environment types; promote via `can-deploy`/Gatekeeper | ✅➕ promotion is a policy-gated event, replayable |
 | Channels | 🔜 no direct analog; nearest is per-env matching criteria | ◐ |
 | Manual intervention / ITSM gate | `require-approval` policy effect + A2H handoff (ADR-0094) | ✅➕ approvals are policy, not process steps |
 | Tenants + tenant variables | App-tenant model (Plan 50), per-tenant config/quotas; tenant-scoped deploys | ✅ different substrate (streams, not variable scoping) |
-| **Runbooks** | `hobo runbook` verb + StackStorm-informed operator automation ([technologies/stackstorm](../technologies/stackstorm.md), [operators-sre](urn:hobo:requirement:operators-sre#plan-40)) | ◐ HoBo's runbooks are Crew/agent-first; Octopus's human-first maturity is ahead |
+| **Runbooks** | `hobo runbook` verb + StackStorm-informed operator automation ([technologies/stackstorm](../technologies/stackstorm.md), [operators-sre](../design/operators-sre.md#plan-40)) | ◐ HoBo's runbooks are Crew/agent-first; Octopus's human-first maturity is ahead |
 | Guided failure / rolling windows | Progressive rollout engine (Harness/OpenDelivery) + Trails compensation | ✅➕ auto-abort on dual-oracle failure |
 | Audit trail | Event-sourced journal — audit *is* the source of truth | ➕ replay/time-travel |
 | Config-as-Code (OCL) | Bindle TypeScript IR + policy packs in Git | ✅ |
@@ -223,7 +223,7 @@ State labels follow the research contract.
 
 ## HoBo.CD update (2026-11-12)
 
-HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0182](urn:hobo:decision:adr-0182), [continuous-delivery.md](urn:hobo:requirement:continuous-delivery)); the competitor research
+HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182), [continuous-delivery.md](../design/continuous-delivery.md)); the competitor research
 itself was not re-run.
 
 - **Lifecycles → pipelines with lineage.** Freight reaches an environment only after qualifying

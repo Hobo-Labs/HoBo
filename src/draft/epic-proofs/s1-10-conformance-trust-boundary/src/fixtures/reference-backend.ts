@@ -3,7 +3,7 @@ import {
   createManualClock as createEventStoreClock,
   createRuntimeLocalEventStore,
 } from "./eventstore-port.js";
-import { createRuntimeLocalQueueClock } from "@hobo/runtime-local";
+import { createRuntimeLocalQueueClock } from "./queue-clock-port.js";
 import type { RuntimeDurabilityBackend } from "../runtime-port/types.js";
 
 export function createRuntimeLocalDurabilityBackend(): RuntimeDurabilityBackend {

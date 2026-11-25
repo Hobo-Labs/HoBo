@@ -1,6 +1,6 @@
 # FinOps Budget Routing Control Plane
 
-Design: [`urn:hobo:requirement:finops-budget-routing-control-plane`](urn:hobo:requirement:finops-budget-routing-control-plane)
+Design: [`docs/design/finops-budget-routing-control-plane.md`](../../../../docs/design/finops-budget-routing-control-plane.md)
 
 This epic proof composes existing HoBo FinOps, policy, control-plane, and
 adapter evidence into a standards-first budget routing control plane. It is not
@@ -146,12 +146,14 @@ the observation interval under concurrent validation load.
 - No live billing API, provider API, cloud credential, production IaC, policy
   service, dashboard, or external telemetry backend is called.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by HoBo draft
 packages:
 
 - `architecture/` contains Protobuf data shapes and CUE constraints for the
   router contracts.
 - `contracts/pacts/` contains Pact-style consumer fixtures for each boundary.
+- `architecture.md` records parse-don't-validate and event-architecture evidence.
 - `features/finops-budget-routing-control-plane.feature` records the behavior
   suite in Gherkin form.

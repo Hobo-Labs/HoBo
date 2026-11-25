@@ -1,3 +1,11 @@
+// The pgoutput decoder against bytes recorded from a real server. Always on:
+// no database is needed to prove the decoder reads what a server sends,
+// because what a server sends is checked in.
+//
+// The fixture was recorded by `recordPgOutputScenario` (test/engine-support.ts)
+// and the live lane re-runs that scenario to prove the bytes are still
+// representative. A few messages a dataset table can never produce (origin,
+// type, logical message) are built by hand below and labelled as such.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,6 +32,7 @@ import {
 	type RecordedPgOutput,
 } from "./engine-support.js";
 
+// SAFETY: the fixture file is this repository's own recorded document.
 const FIXTURE = JSON.parse(
 	readFileSync(
 		fileURLToPath(
@@ -115,6 +124,7 @@ describe("pgoutput decoder — recorded bytes", () => {
 			first.relation.columns.filter((column) => column.key).map((c) => c.name),
 			["tenant_id", "id"],
 		);
+		// The server re-describes the relation after the identity changes.
 		const described = MESSAGES.map((bytes) => decodePgOutputMessage(bytes))
 			.flatMap((message) =>
 				message.kind === "relation" ? [message.relation.replicaIdentity] : [],
@@ -130,6 +140,8 @@ describe("pgoutput decoder — recorded bytes", () => {
 		assert.equal(mutation?.op, "upsert");
 		assert.equal(mutation?.tenant, "");
 		assert.equal(mutation?.key, '["order-1"]');
+		// Byte-identical: numeric trailing zeros, the UTC instant, hex bytes
+		// and jsonb key order have all been normalised away.
 		assert.equal(
 			canonicalEncode(mutation?.record ?? null),
 			canonicalEncode(canonical({})),
@@ -154,6 +166,7 @@ describe("pgoutput decoder — recorded bytes", () => {
 		assert.equal(inserted?.record?.card, null);
 		const [other] = await mutationsOf(schema, change(2, 1), never);
 		assert.equal(other?.tenant, "tenant-a");
+		// A delete carries the key image only: tenant plus key columns.
 		const removed = change(2, 2);
 		assert.equal(removed.op === "delete" ? removed.oldImage : "", "key");
 		assert.deepEqual(await mutationsOf(schema, removed, never), [
@@ -182,6 +195,7 @@ describe("pgoutput decoder — recorded bytes", () => {
 		if (updated.op !== "update") return;
 		assert.deepEqual(updated.row.get("note"), { kind: "unchanged" });
 		assert.equal(updated.old, undefined);
+		// Default identity: no old image, so the row is completed from the store.
 		const asked: string[] = [];
 		const current: RecordMutation = {
 			tenant: "",
@@ -199,6 +213,7 @@ describe("pgoutput decoder — recorded bytes", () => {
 		);
 		assert.deepEqual(asked, ['|["order-4"]']);
 		assert.deepEqual(completed, [current]);
+		// Gone from the store by now: nothing is emitted; its delete follows.
 		assert.deepEqual(
 			await mutationsOf(schema, updated, async () => undefined),
 			[],
@@ -215,6 +230,7 @@ describe("pgoutput decoder — recorded bytes", () => {
 		assert.equal(mutation?.record?.qty, "42");
 		assert.equal(mutation?.record?.note, LARGE_NOTE);
 		assert.equal(mutation?.key, '["order-4"]');
+		// A full-image delete still yields just the key.
 		assert.deepEqual(await mutationsOf(schema, change(7), never), [
 			deleteMutation("", '["order-4"]'),
 		]);
@@ -240,6 +256,7 @@ describe("pgoutput decoder — recorded bytes", () => {
 
 	test("damaged or incomplete streams are refused, never partly decoded", () => {
 		const insert = MESSAGES[2] ?? new Uint8Array();
+		// Cut short, padded, and retagged.
 		undecodable(() =>
 			decodePgOutputMessage(insert.subarray(0, insert.length - 3)),
 		);
@@ -248,11 +265,15 @@ describe("pgoutput decoder — recorded bytes", () => {
 		);
 		undecodable(() => decodePgOutputMessage(new Uint8Array()));
 		undecodable(() => decodePgOutputMessage(Buffer.from("5a00", "hex")));
+		// A change for a relation nobody described.
 		undecodable(() =>
 			decodePgOutputTransactions(MESSAGES.filter((_, index) => index !== 1)),
 		);
+		// A stream that stops inside a transaction.
 		undecodable(() => decodePgOutputTransactions(MESSAGES.slice(0, 3)));
+		// A change with no transaction around it.
 		undecodable(() => decodePgOutputTransactions(MESSAGES.slice(1, 3)));
+		// A relation described by an earlier call is remembered by the caller.
 		const earlier = decodePgOutputTransactions(MESSAGES.slice(0, 4));
 		const later = decodePgOutputTransactions(
 			MESSAGES.slice(4, 7),
@@ -263,6 +284,8 @@ describe("pgoutput decoder — recorded bytes", () => {
 });
 
 describe("pgoutput decoder — hand-built messages", () => {
+	// Not recorded: a dataset table cannot make a server emit these, so they
+	// are assembled from the protocol documentation.
 	const cstring = (text: string): Buffer =>
 		Buffer.concat([Buffer.from(text, "utf8"), Buffer.from([0])]);
 	const uint32 = (value: number): Buffer => {
@@ -327,6 +350,7 @@ describe("pgoutput decoder — hand-built messages", () => {
 	});
 
 	test("formats this binding never asks for are refused by name", () => {
+		// A binary-format column inside an insert.
 		const binary = Buffer.concat([
 			Buffer.from("I"),
 			uint32(1),
@@ -337,9 +361,11 @@ describe("pgoutput decoder — hand-built messages", () => {
 			Buffer.from([7]),
 		]);
 		undecodable(() => decodePgOutputMessage(binary));
+		// Stream start, which needs protocol version 2.
 		undecodable(() =>
 			decodePgOutputMessage(Buffer.concat([Buffer.from("S"), uint32(1)])),
 		);
+		// Text that is not UTF-8.
 		const invalid = Buffer.concat([
 			Buffer.from("I"),
 			uint32(1),

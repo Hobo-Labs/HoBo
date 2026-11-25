@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "slo-computation-engine-contract",
+  "title": "SLO computation engine contract POC",
+  "linear": "HOBO-277",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/slo-as-code-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

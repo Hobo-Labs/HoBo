@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { mustGet } from "@hobo/core/total-access";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	CLOUDFLARE_REMOTE_HANDLER_UNBOUND,
 	CLOUDFLARE_TOKEN_VERIFY_URL,
@@ -30,6 +30,7 @@ const serveCtx = (
 });
 
 function activeTokenFetch(calls: { url: string; init?: RequestInit }[]) {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return (async (input: URL | RequestInfo, init?: RequestInit) => {
 		calls.push({ url: String(input), ...(init ? { init } : undefined) });
 		return Response.json({
@@ -137,6 +138,7 @@ describe("cloudflare cloud-native provider: token verify (injected fetch)", () =
 	it("throws a typed error on an inactive token", async () => {
 		const provider = createCloudflareCloudNativeProvider({
 			...credentials,
+			// SAFETY: assertion required at this I/O or test boundary.
 			fetchImpl: (async () =>
 				Response.json({
 					success: true,
@@ -154,6 +156,7 @@ describe("cloudflare cloud-native provider: token verify (injected fetch)", () =
 	it("throws a typed error on a malformed payload", async () => {
 		const provider = createCloudflareCloudNativeProvider({
 			...credentials,
+			// SAFETY: assertion required at this I/O or test boundary.
 			fetchImpl: (async () => Response.json({ nope: 1 })) as typeof fetch,
 		});
 		await expect(provider.ensure(ensureCtx)).rejects.toThrow(
@@ -164,6 +167,7 @@ describe("cloudflare cloud-native provider: token verify (injected fetch)", () =
 	it("throws a typed error with remediation on a non-ok response", async () => {
 		const provider = createCloudflareCloudNativeProvider({
 			...credentials,
+			// SAFETY: assertion required at this I/O or test boundary.
 			fetchImpl: (async () =>
 				new Response("nope", { status: 403 })) as typeof fetch,
 		});
@@ -197,6 +201,7 @@ describe("cloudflare cloud-native provider: remote proxy", () => {
 		cleanups.push(
 			() => new Promise((resolve) => server.close(() => resolve())),
 		);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const { port } = server.address() as AddressInfo;
 
 		const provider = createCloudflareCloudNativeProvider({});
@@ -369,9 +374,12 @@ describe("default registry with the real cloudflare entry", () => {
 			(p) => p.id === "cloudflare",
 		);
 		if (!cloudflare) throw new Error("cloudflare provider missing");
+		// No credentials in this environment: fail closed, implemented: true.
 		const result = await cloudflare.ensure(ensureCtx);
 		expect(result.details?.implemented).toBe(true);
 		expect(result.details?.credentialGated).toBe(true);
+		// servePrivate no longer throws HOBO_CLOUD_NATIVE_UNIMPLEMENTED: it
+		// realizes the mesh contract with honest 501 handlers.
 		const serve = await cloudflare.servePrivate(serveCtx());
 		cleanups.push(() => serve.close());
 		expect(
@@ -380,24 +388,33 @@ describe("default registry with the real cloudflare entry", () => {
 		).toBe(501);
 	});
 
+	it("reads no Cloudflare API token from the process environment", async () => {
+		vi.stubEnv("CLOUDFLARE_API_TOKEN", "ambient-token");
+		try {
+			const cloudflare = defaultCloudNativeProviders({
+				accountId: "account",
+			}).find((p) => p.id === "cloudflare");
+			if (!cloudflare) throw new Error("cloudflare provider missing");
+			const result = await cloudflare.ensure(ensureCtx);
+			expect(result.ready).toBe(false);
+			expect(result.details?.missing).toEqual(["CLOUDFLARE_API_TOKEN"]);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
 	it.each([
 		"aws",
 		"gcp",
 		"azure",
 		"vercel",
-	])("provider '%s' realizes the remote endpoint contract", async (id) => {
+	])("stub provider '%s' still throws HOBO_CLOUD_NATIVE_UNIMPLEMENTED", async (id) => {
 		const host = createCloudNativeRuntimeHost({
 			providers: defaultCloudNativeProviders().filter((p) => p.id === id),
 			defaultProvider: id,
 		});
-		const serve = await host.servePrivate(serveCtx());
-		cleanups.push(() => serve.close());
-		expect(
-			(await mustGet(serve.handlers, "api")(new Request("http://internal/")))
-				.status,
-		).toBe(501);
-		expect(serve.isolation.details).toEqual(
-			expect.objectContaining({ mode: "remote-proxy" }),
+		await expect(host.servePrivate(serveCtx())).rejects.toThrow(
+			/HOBO_CLOUD_NATIVE_UNIMPLEMENTED/,
 		);
 	});
 

@@ -1,10 +1,35 @@
+/**
+ * Codec for the published `/.well-known/capability-manifest/*` documents.
+ *
+ * Eight provider packages each carried their own byte-identical copy of this:
+ * the same canonical-JSON writer, the same digest walk, and in four cases the
+ * same parser. They belong here because the schema ids below are *platform*
+ * contract, not any one provider's concern — a provider that spells
+ * `hobo.capabilities/v1` differently is broken, not customised.
+ *
+ * `canonicalJson` was moved verbatim and must stay that way: its output is what
+ * every digest is computed over, so a "tidier" rewrite that reorders a key or
+ * drops the trailing newline changes every digest silently.
+ *
+ * `stableDigest` was **not** kept as-is, and the reasoning is worth recording
+ * because the previous comment here argued the opposite. It used to be a 32-bit
+ * FNV-ish walk emitting `fnv:` + 8 hex digits, described as "not a security
+ * primitive". That description was accurate and that was the problem: these
+ * documents are fetched from a **provider-controlled origin**, so a
+ * document-integrity reference an attacker can collide by brute force in
+ * milliseconds is not integrity, it is a typo detector. Three runner packages
+ * had already reached the same conclusion independently and used SHA-256.
+ *
+ * The reason given for keeping FNV — that changing it would invalidate
+ * published references — did not survive being checked. Nothing in the repo
+ * verifies these values (`runner-github` checks only that the field is a
+ * non-empty string), and no manifest has ever been published from here to a
+ * live provider. The cost of converging was zero and the cost of not
+ * converging was two algorithms behind one name.
+ */
+
 import { createHash } from "node:crypto";
-import {
-	isJsonObject,
-	isJsonString,
-	type JsonObject,
-	type JsonValue,
-} from "../json.js";
+import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
 
 // public-contract: capability-manifest document schema ids (Plan 6 signs).
 export const MANIFEST_SCHEMA = "hobo.capability-manifest/v1";
@@ -25,16 +50,28 @@ export const MANIFEST_PATHS = Object.freeze({
 	cost: "/.well-known/capability-manifest/cost.json",
 } as const);
 
+/** Deterministic JSON: keys sorted at every depth, 2-space indent, trailing newline. */
 export function canonicalJson(value: JsonValue | undefined): string {
 	return `${JSON.stringify(sortKeys(value), null, 2)}\n`;
 }
 
+/**
+ * Key-sorted at every depth, arrays left in order.
+ *
+ * Exported because it is the canonical form itself, not an implementation
+ * detail of the writer: a caller that wants a deterministically-ordered
+ * *object* (rather than a string) needs exactly this, and reimplementing it
+ * is how the two spellings drift apart.
+ */
 export function sortKeys<T>(value: T): T {
 	if (Array.isArray(value)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		return value.map((item) => sortKeys(item)) as T;
 	}
 	if (value && isJsonObject(value)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		return Object.fromEntries(
+			// SAFETY: assertion required at this I/O or test boundary.
 			Object.entries(value as JsonObject)
 				.sort(([left], [right]) => left.localeCompare(right))
 				.map(([key, child]) => [key, sortKeys(child)]),
@@ -43,12 +80,26 @@ export function sortKeys<T>(value: T): T {
 	return value;
 }
 
+/**
+ * SHA-256 over the canonical form, for document-integrity references inside the
+ * published bundle (the Registry hashes the index separately).
+ *
+ * Collision resistance is the point: the bundle is fetched from an origin the
+ * provider controls, so a reference that only detects accidental corruption
+ * lets a hostile origin serve a different document under the indexed digest.
+ */
 export function stableDigest(value: JsonValue | undefined): string {
 	return `sha256:${createHash("sha256")
 		.update(JSON.stringify(sortKeys(value)))
 		.digest("hex")}`;
 }
 
+/**
+ * A digest over a seed string, for cost-fact source references.
+ *
+ * The wrapping object is kept because it is what the providers already emit;
+ * unwrapping it would change every reference for no gain.
+ */
 export function digestRef(seed: string): string {
 	return stableDigest({ seed });
 }
@@ -62,6 +113,15 @@ export interface PublishedManifestParseResult {
 	cost: JsonObject;
 }
 
+/**
+ * Parse-don't-validate boundary: untrusted well-known manifest documents become
+ * a parsed derived type or structured errors — no broad DTO checks downstream.
+ *
+ * The two auth checks are the load-bearing ones. A manifest is fetched from a
+ * provider-controlled origin, so `staticKey`/`clientSecret` appearing at all
+ * means either the provider is publishing a credential or something upstream
+ * rewrote the document; both are refusals, not warnings.
+ */
 export function parsePublishedManifest(
 	documents: Readonly<Record<string, string>>,
 ): PublishedManifestParseResult {
@@ -72,19 +132,9 @@ export function parsePublishedManifest(
 	const auth = JSON.parse(documents[MANIFEST_PATHS.auth] ?? "{}");
 	const cost = JSON.parse(documents[MANIFEST_PATHS.cost] ?? "{}");
 	const errors: string[] = [];
-	const terms = index.terms;
 
 	if (index.manifestSchema !== MANIFEST_SCHEMA) {
 		errors.push(`index.manifestSchema must be ${MANIFEST_SCHEMA}`);
-	}
-	if (
-		!isJsonObject(terms) ||
-		!isJsonString(terms.url) ||
-		!terms.url.startsWith("https://") ||
-		!isJsonString(terms.reviewedOn) ||
-		!/^\d{4}-\d{2}-\d{2}$/u.test(terms.reviewedOn)
-	) {
-		errors.push("index.terms must contain an HTTPS url and reviewedOn date");
 	}
 	if (auth.schema !== AUTH_SCHEMA) {
 		errors.push(`auth.schema must be ${AUTH_SCHEMA}`);

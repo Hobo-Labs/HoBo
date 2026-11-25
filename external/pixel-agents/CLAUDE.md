@@ -1,21 +1,18 @@
 # Pixel Agents — Compressed Reference
 
-Follow the repository-wide rules in [AGENTS.md](../../AGENTS.md): write self-documenting code, complete deferred work, and do not create planning or design documents.
-
 Pixel art office where AI agents (Claude Code terminals today, any tool tomorrow) become animated characters. Ships as a **VS Code extension** and an **`npx pixel-agents` standalone CLI** from the same source tree.
 
 ## Architecture
 
 Strict layering: `core/` depends on nothing; `server/` depends only on `core/`; `webview-ui/` depends only on `core/`; `adapters/vscode/` depends on `core/` and `server/`. The standalone CLI never imports `adapters/vscode/` and vice versa.
 
-```text
+```
 core/                                Protocol + interface definitions (zero runtime side effects)
   asyncapi.yaml                      AsyncAPI 3.0 contract — single source of truth
   src/
     messages.ts                      AUTO-GENERATED discriminated unions (do not edit)
     schemas.ts                       AgentMeta, SpriteData, FurnitureCatalogEntry
-    provider.ts                      HookProvider, FileProvider, AgentEvent
-    streamProvider.ts                StreamProvider
+    provider.ts                      HookProvider, AgentEvent (the integration boundary)
     teamProvider.ts                  Optional TeamProvider (semantic queries for Lead + Teammates)
     transport.ts                     MessageTransport interface, TransportState
     adapter.ts                       StateAdapter, AssetCache, PersistedAgent, AgentSeat
@@ -219,13 +216,11 @@ export type TransportState = 'connecting' | 'connected' | 'reconnecting' | 'disc
 
 ## Provider Abstraction
 
-The runtime accepts `HookProvider` or `FileProvider`; OpenTelemetry implements `StreamProvider`.
+`HookProvider` (`core/src/provider.ts`) is the integration boundary. Today only Claude Code is implemented. The interface:
 
 - **Required**: `normalizeHookEvent(raw)` → `{ sessionId, event: AgentEvent } | null`; `installHooks` / `uninstallHooks` / `areHooksInstalled`; `formatToolStatus`; `permissionExemptTools`, `subagentToolNames`, `readingTools` sets.
-- **Session discovery**: `getSessionDirs(workspace)` and `getAllSessionRoots()` locate transcripts; `buildLaunchCommand(sessionId, cwd, opts)` launches a supported CLI.
+- **Optional file fallback**: `getSessionDirs(workspace)`, `getAllSessionRoots()`, `sessionFilePattern`, `parseTranscriptLine(line)`, `buildLaunchCommand(sessionId, cwd, opts)`. Used when hooks aren't installed.
 - **Optional team extension**: `team?: TeamProvider` for Lead + Teammates support.
-- **File provider**: `matchesSessionFile`, `sessionIdFromFile`, and `processTranscriptLine` drive polling without hooks. The standalone CLI selects Claude's file provider with `--file-only`.
-- **Stream provider**: `ingest(payload)` accepts pushed data. `OtelProvider` consumes OTLP traces.
 
 `AgentEvent.kind` values: `toolStart`, `toolEnd`, `turnEnd`, `subagentStart`, `subagentEnd`, `subagentTurnEnd`, `progress`, `permissionRequest`, `sessionStart`, `sessionEnd`. The runtime dispatches on `kind`, never on CLI-specific tool names.
 
@@ -249,7 +244,23 @@ Teammate dismissal is driven by team config polling (`getTeamMembers(teamName)` 
 
 `AgentRuntime` (`server/src/agentRuntime.ts`) is the shared lifecycle core. Both surfaces (`adapters/vscode/PixelAgentsViewProvider.ts` and `server/src/cli.ts`) compose the same runtime; only the `StateAdapter` namespace, `MessageTransport`, and `TerminalAdapter` differ.
 
-Create the runtime with `new AgentRuntime(store, provider)`. Register lifecycle callbacks and start the scanners needed by the host; call `dispose()` on shutdown.
+```typescript
+export class AgentRuntime {
+  constructor(opts: {
+    store: AgentStateStore;
+    providerRegistry: ProviderRegistry;
+    layoutPersistence: LayoutPersistence;
+    assetCache: AssetCache;
+    config: Pick<AdapterSettings, 'hooksEnabled' | 'watchAllSessions'>;
+    terminalAdapter?: TerminalAdapter;
+    callbacks: RuntimeLifecycleCallbacks;
+  });
+  registerAgent / unregisterAgent / removeAgent / removeTeammate / removeTeammates
+  restoreExternalAgents / handleHookEvent
+  startProjectScan / startExternalScanning / startStaleCheck
+  dispose();
+}
+```
 
 Owns timer Maps (waiting, permission, text-idle, stale), scanners (project-dir 1 s, external 3 s, stale 30 s), `HookEventHandler`, `SessionRouter`, `DismissalTracker`. Scanners are skipped entirely while hooks are flowing (`hookDelivered` is set on every agent). `RuntimeLifecycleCallbacks` is the only seam between runtime and host.
 
@@ -576,7 +587,7 @@ Supporting: `wall-tile-editor.html` (wall sprite editing), `jsonl-viewer.html` (
 - **AgentRuntime** shared lifecycle core, composed by both surfaces.
 - **AgentStateStore** as single source of truth with typed mutations and typed events. No transport calls outside the broadcast layer.
 - **Transport abstraction**: `MessageTransport` interface, `PostMessageTransport` + `WebSocketTransport`. One branching point in the entire UI.
-- **HookProvider**, **FileProvider**, and **StreamProvider** define the supported ingestion boundaries.
+- **HookProvider** as the integration boundary, with optional file fallback. New CLIs are a single subdirectory under `server/src/providers/hook/<id>/`.
 - **TeamProvider** as optional extension. Claude Agent Teams is the only implementation.
 - **Per-adapter namespaced persistence** under `~/.pixel-agents/`. VS Code and standalone never clobber each other.
 - **Verify-before-clear migration** for legacy VS Code state.

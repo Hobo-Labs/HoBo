@@ -29,21 +29,21 @@ test("M0 record states goal, personas, scope, non-goals, and boundaries", () => 
 });
 
 test("M0 dependencies map authoritative design sources and owning initiatives", () => {
-  assert.ok(DRIFT_RECONCILIATION_SCOPE.designRefs.includes("urn:hobo:requirement:control-plane#plan-04"));
+  assert.ok(DRIFT_RECONCILIATION_SCOPE.designRefs.includes("docs/design/control-plane.md#plan-04"));
   assert.ok(
     DRIFT_RECONCILIATION_SCOPE.designRefs.includes(
-      "urn:hobo:requirement:reliability-observability-cost#plan-05",
+      "docs/design/reliability-observability-cost.md#plan-05",
     ),
   );
-  assert.ok(DRIFT_RECONCILIATION_SCOPE.designRefs.includes("urn:hobo:requirement:operators-sre#plan-40"));
+  assert.ok(DRIFT_RECONCILIATION_SCOPE.designRefs.includes("docs/design/operators-sre.md#plan-40"));
   assert.ok(
     DRIFT_RECONCILIATION_SCOPE.adrRefs.includes(
-      "urn:hobo:decision:adr-0004",
+      "docs/design/adr/01-architecture-core.md#adr-0004",
     ),
   );
   assert.ok(
     DRIFT_RECONCILIATION_SCOPE.adrRefs.includes(
-      "urn:hobo:decision:adr-0058",
+      "docs/design/adr/03-data-plane.md#adr-0058",
     ),
   );
   assert.ok(

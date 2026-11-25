@@ -219,6 +219,9 @@ describe("surface discovery", () => {
 						),
 				),
 			);
+			assert.ok(
+				!valid.findings.some((finding) => finding.id === "catalog-coverage"),
+			);
 			writeFileSync(path.join(dir, "package.json"), "not json");
 			const stale = runDoctorCheck({ root, selection });
 			assert.ok(
@@ -529,7 +532,7 @@ describe("discovery evidence boundaries", () => {
 			writeFileSync(path.join(dir, "bin/mcp.mjs"), `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran");\n`);
 			const explorer = fileURLToPath(new URL("../explore-app.mts", import.meta.url));
 			const run = (args: string[]) => spawnSync(process.execPath, [explorer, "--project", "hobo", ...args], { cwd: root, encoding: "utf8" });
-			const result = run(["--probe-bin", "--primary-bin-only"]);
+			const result = run(["--probe-bin", "--primary-bin-only", "--personas", "developer"]);
 			assert.equal(result.status, 0, result.stdout + result.stderr);
 			assert.match(JSON.parse(result.stdout).coverageScope, /secondary binaries.*not assessed/);
 			assert.equal(existsSync(marker), false);
@@ -543,7 +546,7 @@ describe("discovery evidence boundaries", () => {
 			const report = runDoctorCheck({ root, selection: { allProjects: false, projects: [hobo], requested: ["hobo"], unknown: [] }, confirmedSurfaces: [confirmation] });
 			assert.ok(report.findings.some((finding) => finding.id === "surface-scope" && finding.severity === "warn" && /secondary binaries/.test(finding.message)));
 			const doctor = fileURLToPath(new URL("../doctor.mts", import.meta.url));
-			const repaired = spawnSync(process.execPath, [doctor, "repair", "--project", "hobo", "--only", "build-surface-map", "--json", `--confirm-surface-current=${confirmation}`], { cwd: root, encoding: "utf8" });
+			const repaired = spawnSync(process.execPath, [doctor, "repair", "--project", "hobo", "--only", "build-surface-map,build-catalog", "--json", `--confirm-surface-current=${confirmation}`], { cwd: root, encoding: "utf8" });
 			assert.ok(!JSON.parse(repaired.stdout).findings.some((finding: { message: string }) => /confirm-surface-current/.test(finding.message)));
 			const snapshot = (name: string, flags: string[]) => spawnSync(process.execPath, [doctor, "snapshot", "--project", "hobo", "--out", path.join(root, name), "--json", ...flags], { cwd: root, encoding: "utf8" });
 			const unconfirmedSnapshot = snapshot("snapshot-unconfirmed", []);
@@ -614,19 +617,24 @@ describe("discovery evidence boundaries", () => {
 		});
 	});
 
-	it("rejects an old surface map after a previously observed command disappears", () => {
+	it("rejects an old catalog after a previously observed command disappears", () => {
 		fixture((root) => {
 			mkdirSync(path.join(root, ".git"));
 			const dir = path.join(root, "packages/hobo");
 			mkdirSync(path.join(dir, "bin"), { recursive: true });
 			const hobo = { id: "hobo", path: "packages/hobo", kind: "package" as const, label: "hobo" };
 			writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "hobo", bin: { hobo: "bin/hobo.mjs" } }));
+			const personaDir = path.join(root, ".optimizexp/personas");
+			mkdirSync(personaDir, { recursive: true });
+			writeFileSync(path.join(personaDir, "herdr.md"), '---\nid: herdr\nexperiences: [dx]\ninterfaces: [cli]\n---\nInspect status.\n');
 			const bin = path.join(dir, "bin/hobo.mjs");
 			writeFileSync(bin, 'console.log("  up       Start app\\n  status   Inspect status");\n');
 			const first = buildSurfaceMap({ project: hobo, root, probeBinary: true });
 			const catalog = buildExperienceCatalog({ project: hobo, root, personaIds: ["herdr"], surfaceMap: first });
 			assert.ok(catalog.experiences.some((entry) => entry.entryCommand === "hobo status"));
+			catalog.experiences.push({ experienceId: "unknown-verb", personaId: "herdr", intent: "Try an unverified verb", entryCommand: "hobo vanished", driver: "cli", observableSuccess: "Output", observableFailure: "No output", confusionRisks: [], priority: "P0", featureId: "unknown-verb", source: ["manual claim"] });
 			writeSurfaceMap(first, hobo, root);
+			writeExperienceCatalog(catalog, hobo, root);
 			const confirmation = `hobo:${surfaceMapDigest(first)}`;
 			const selection = { allProjects: false, projects: [hobo], requested: ["hobo"], unknown: [] };
 			assert.match(validateCatalogCoverage(catalog, ["herdr"], first, { root }).join("; "), /confirm-surface-current/);

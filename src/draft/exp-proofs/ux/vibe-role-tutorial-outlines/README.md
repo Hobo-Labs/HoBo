@@ -40,13 +40,15 @@ pnpm.cmd --prefix src\draft\exp-proofs\vibe-role-tutorial-outlines test
 |---|---|
 | Each tutorial outline includes persona goal, prerequisites, command path, fixture strategy, expected outputs, failure branch, and proof-mode labels. | `VIBE_ROLE_TUTORIAL_OUTLINES.outlines` carries each field; `parseVibeRoleTutorialOutlines` rejects missing fields. |
 | Outlines map to existing role walkthrough and CLI/MCP surfaces without inventing lifecycle verbs. | Each outline has a `walkthroughAnchor`, canonical `hobo` or `git push` commands, and MCP tool names. |
-| Target package and proof paths are pinned. | Parser rejects drift from `src/draft/exp-proofs/ux/vibe-role-tutorial-outlines` and `urn:hobo:proof:vibe-role-tutorial-outlines`. |
+| Target package and proof paths are pinned. | Parser rejects drift from `src/draft/exp-proofs/ux/vibe-role-tutorial-outlines` and `docs/design/proofs/vibe-role-tutorial-outlines/README.md`. |
 | Happy path, blocked path, stale/unknown evidence path, support handoff, accessibility notes, and proof-mode labels are covered. | `coveragePaths`, outline accessibility notes, proof-mode validation, and HOBO-577 deploy/inspect/recovery fixture checks cover the accepted states and labels. |
 | Scope out remains hard. | `classifyRoleTutorialRequest` rejects final tutorial content, live provider execution, hosted docs implementation, production recordings, customer data, and proofless launch claims. |
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` - protobuf data shapes and CUE constraints for the parsed
   tutorial outline record. CUE uses lower-camel field names matching the
   TypeScript boundary.
 - `architecture/pacts/` - Pact-style package boundary fixture that parses
   through `parseVibeRoleTutorialOutlines`.
+- `ADR.md` - parse-don't-validate and event/projection architecture note.

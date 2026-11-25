@@ -15,6 +15,7 @@ interface ChangelogEntry {
   contributors: ChangelogContributor[];
 }
 
+/** Extract "major.minor" from a semver string (e.g. "1.1.1" → "1.1") */
 export function toMajorMinor(version: string): string {
   const parts = version.split('.');
   return parts.length >= 2 ? `${parts[0]}.${parts[1]}` : version;

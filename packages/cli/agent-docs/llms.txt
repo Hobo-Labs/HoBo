@@ -16,6 +16,7 @@
 - deploy (delivery): Attested continuous delivery status/logs/rollback (secret-free) — CLI `hobo deploy`; MCP tool `deploy`
 - ci (delivery): Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project — CLI `hobo ci`; MCP tool `ci`
 - cd (delivery): Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy — CLI `hobo cd`; MCP tool `cd`
+- fleet (control plane): Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops) — CLI `hobo fleet`; MCP tool `fleet`
 - incident (delivery): CD failure disposition: A2H handoff or sandboxed self-heal — CLI `hobo incident`; MCP tool `incident`
 - claim (identity): Bind an anonymous deployment to an account — CLI `hobo claim`; MCP tool `claim`
 - recipes (read-only): List and inspect deployment recipes and their claim terms — CLI `hobo recipes`; MCP tool `recipes`
@@ -24,7 +25,7 @@
 - verify (read-only): Run the unified Gatekeeper preflight — CLI `hobo verify`; MCP tool `verify`
 - can-deploy (read-only): Diagnose producer/consumer compatibility — CLI `hobo can-deploy`; MCP tool `can-deploy`
 - inspect (read-only): Render projections and time-travel views — CLI `hobo inspect`; MCP tool `inspect`
-- logs (read-only): Read or follow local deployment logs — CLI `hobo logs`; MCP tool `logs`
+- logs (read-only): Live-tail Camp runtime streams — CLI `hobo logs`; MCP tool `logs`
 - doctor (diagnostics): Report environment and portability hazards — CLI `hobo doctor`; MCP tool `doctor`
 - messaging (diagnostics): Inspect messaging capability and delivery-guarantee readiness — CLI `hobo messaging`; MCP tool `messaging`
 - codegen (authoring): Regenerate checked-in generated clients — CLI `hobo codegen`; MCP tool `codegen`
@@ -43,9 +44,9 @@
 - broker (governance): Resolve placements through the broker (the Conductor) — CLI `hobo broker`; MCP tool `broker`
 - yard (control plane): Install and inspect the default bare-metal Yard — CLI `hobo yard`; MCP tool `yard`
 - station (control plane): Station occupancy setup/ops (init/up/status/rails); not a lifecycle verb — CLI `hobo station`; MCP tool `station`
-- serve (control plane): Serve the local control-plane HTTP and SSE API — CLI `hobo serve`; MCP tool `serve`
+- serve (control plane): Local control-plane HTTP+SSE for the Yard game UI — CLI `hobo serve`; MCP tool `serve`
 - replay (observability): Session Replay list/get/open/summarize/retention/doctor (privacy-first; distinct from event-log replay) — CLI `hobo replay`; MCP tool `replay`
-- derivative (extensibility): Inspect a derived HoBo descriptor — CLI `hobo derivative`; MCP tool `derivative`
+- derivative (extensibility): Manage derived HoBo implementations — CLI `hobo derivative`; MCP tool `derivative`
 - runbook (SRE): Execute or replay incident runbooks — CLI `hobo runbook`; MCP tool `runbook`
 
 ## Notes

@@ -1,11 +1,11 @@
 const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
-const { buildHooks } = require('./scripts/build-hooks.cjs');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
+/** Extension version read from package.json at build time, inlined via esbuild `define`. */
 const pkgVersion = JSON.parse(
   fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'),
 ).version;
@@ -13,20 +13,53 @@ const versionDefine = {
   'process.env.PIXEL_AGENTS_VERSION': JSON.stringify(pkgVersion),
 };
 
+/**
+ * Copy assets folder to dist/assets
+ */
 function copyAssets() {
   const srcDir = path.join(__dirname, 'webview-ui', 'public', 'assets');
   const dstDir = path.join(__dirname, 'dist', 'assets');
 
   if (fs.existsSync(srcDir)) {
+    // Remove existing dist/assets if present
     if (fs.existsSync(dstDir)) {
       fs.rmSync(dstDir, { recursive: true });
     }
 
+    // Copy recursively
     fs.cpSync(srcDir, dstDir, { recursive: true });
     console.log('✓ Copied assets/ → dist/assets/');
   } else {
     console.log('ℹ️  assets/ folder not found (optional)');
   }
+}
+
+/**
+ * Bundle hook scripts (TypeScript) to dist/hooks via esbuild.
+ * Produces a self-contained CJS file with shebang for Claude Code to execute.
+ */
+function buildHooks() {
+  const entry = path.join(
+    __dirname,
+    'server',
+    'src',
+    'providers',
+    'hook',
+    'claude',
+    'hooks',
+    'claude-hook.ts',
+  );
+  if (!fs.existsSync(entry)) return;
+  require('esbuild').buildSync({
+    entryPoints: [entry],
+    bundle: true,
+    platform: 'node',
+    target: 'node18',
+    format: 'cjs',
+    outdir: path.join(__dirname, 'dist', 'hooks'),
+    banner: { js: '#!/usr/bin/env node' },
+  });
+  console.log('✓ Built hooks/ → dist/hooks/');
 }
 
 /**
@@ -62,20 +95,24 @@ async function main() {
     external: ['vscode'],
     define: versionDefine,
     logLevel: 'silent',
-    plugins: [esbuildProblemMatcherPlugin],
+    plugins: [
+      /* add to the end of plugins array */
+      esbuildProblemMatcherPlugin,
+    ],
   });
   if (watch) {
     await ctx.watch();
   } else {
     await ctx.rebuild();
     await ctx.dispose();
+    // Copy assets and hooks after build
     copyAssets();
     buildHooks();
-    console.log('✓ Built hooks/ → dist/hooks/');
     await buildCli();
   }
 }
 
+/** Bundle the standalone CLI entry point. */
 async function buildCli() {
   await esbuild.build({
     entryPoints: ['server/src/cli.ts'],

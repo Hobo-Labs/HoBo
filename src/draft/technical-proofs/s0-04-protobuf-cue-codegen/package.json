@@ -5,15 +5,13 @@
   "type": "module",
   "description": "HOBO-581 draft POC: protobuf+CUE codegen pipeline with drift gate",
   "scripts": {
-    "codegen": "pnpm --filter @hobo/schema-tools build && node --import tsx packages/schema-tools/src/cli.ts",
-    "codegen:check": "pnpm --filter @hobo/schema-tools build && node --import tsx packages/schema-tools/src/cli.ts --check",
-    "test": "pnpm --filter @hobo/schema-tools build && vitest run --no-isolate --maxWorkers=1 packages/schema-tools/test",
-    "draft:prepare": "pnpm --filter @hobo/schema-tools build"
+    "codegen": "node --import tsx packages/schema-tools/src/cli.ts",
+    "codegen:check": "node --import tsx packages/schema-tools/src/cli.ts --check",
+    "test": "vitest run --no-isolate --maxWorkers=1 packages/schema-tools/test"
   },
   "devDependencies": {
     "@bufbuild/buf": "1.71.0",
     "@bufbuild/protobuf": "2.12.1",
-    "@bufbuild/protoc-gen-es": "2.12.1",
-    "@hobo/schema-tools": "workspace:*"
+    "@bufbuild/protoc-gen-es": "2.12.1"
   }
 }

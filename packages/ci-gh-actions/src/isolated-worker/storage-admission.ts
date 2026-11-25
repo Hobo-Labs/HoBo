@@ -123,6 +123,7 @@ type StorageGrant = Readonly<{
 	perDevice: readonly DeviceReserve[];
 }>;
 
+/** Shared-root stores: one device pool gets the max slice, not the sum of paths. */
 export function deviceReservesForSamples(
 	samples: readonly StorageSample[],
 ): readonly DeviceReserve[] {
@@ -256,6 +257,7 @@ export function createWorkerStorageAdmission(options: {
 		]);
 		const nowMs = now();
 		for (const [holder, grant] of grants) {
+			// The deps image build holds no lease; its grant lives until released.
 			if (holder === DEPS_BUILD_ADMISSION_ID) continue;
 			if (
 				!activeHolders.has(holder) &&
@@ -570,6 +572,7 @@ export type WorkerStorageAdmission = ReturnType<
 	typeof createWorkerStorageAdmission
 >;
 
+/** Drop inode headroom reserved for a lease and its pre-reserve job holder. */
 export function releaseWorkerStorageGrants(
 	admission: WorkerStorageAdmission | undefined,
 	lease: Readonly<{ id: string; jobId: number }>,

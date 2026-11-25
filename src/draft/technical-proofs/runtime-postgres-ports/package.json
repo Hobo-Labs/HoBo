@@ -6,12 +6,7 @@
     "test": "vitest run --root ."
   },
   "dependencies": {
-    "@hobo/core": "workspace:*",
-    "@hobo/runtime-local": "workspace:*",
     "pg": "^8.16.0",
     "pg-mem": "^3.0.5"
-  },
-  "devDependencies": {
-    "@types/pg": "8.15.5"
   }
 }

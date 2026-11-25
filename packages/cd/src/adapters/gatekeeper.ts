@@ -17,19 +17,12 @@ import {
 	type CostQuotaInput,
 	createPermissiveDefaultPack,
 	evaluateGatekeeper,
-	type EventUpcasterGateVerdict,
 	type GatekeeperDecision,
 	type GatekeeperEffect,
 	type PolicyPack,
 	type ResidencyGateVerdict,
 } from "@hobo/contracts";
 import { evaluateResidency, type JurisdictionId } from "@hobo/core";
-import {
-	type EventEvolutionContract,
-	MIGRATION_EVENT_CONTRACTS,
-	PRICING_EVENT_CONTRACTS,
-	runCanDeployUpcasterGate,
-} from "@hobo/events";
 import {
 	evaluateTrustBundle,
 	type TrustEvidence,
@@ -72,7 +65,6 @@ import type {
 	TopologyReader,
 } from "../ports.js";
 import { previewSourceOf } from "../promotion/ids.js";
-import { PROMOTION_EVENT_CONTRACTS } from "../promotion/event-contracts.js";
 import {
 	digestOf,
 	emitMetric,
@@ -80,28 +72,6 @@ import {
 	type Mutable,
 } from "../promotion/journal.js";
 import { PROMOTION_METRIC, reason } from "../promotion/reasons.js";
-import { POSTURE_EVENT_CONTRACTS } from "../posture/event-contracts.js";
-import { SET_EVENT_CONTRACTS } from "../sets/event-contracts.js";
-
-const EVENT_UPCASTER_CONTRACTS: readonly EventEvolutionContract[] =
-	Object.freeze([
-		...MIGRATION_EVENT_CONTRACTS,
-		...PRICING_EVENT_CONTRACTS,
-		...SET_EVENT_CONTRACTS,
-		...PROMOTION_EVENT_CONTRACTS,
-		...POSTURE_EVENT_CONTRACTS,
-	]);
-
-function evaluateEventUpcasters(): EventUpcasterGateVerdict {
-	const errors = EVENT_UPCASTER_CONTRACTS.flatMap((contract) =>
-		runCanDeployUpcasterGate(contract).errors.map(
-			(error) => `${contract.type}: ${error}`,
-		),
-	);
-	return Object.freeze({ ok: errors.length === 0, errors });
-}
-
-const DEFAULT_EVENT_UPCASTER_VERDICT = evaluateEventUpcasters();
 
 // public-contract: reason codes the deploy gate adds beside Gatekeeper's own.
 export const GATE_REASON = Object.freeze({
@@ -158,7 +128,6 @@ export type DeployGateDeps = CdBase & {
 		requirement: TrustRequirement;
 		evidence: (subjectId: string) => TrustEvidence | undefined;
 	}>;
-	readonly eventUpcasters?: EventUpcasterGateVerdict;
 	readonly costQuota?: (campId: CampId) => CostQuotaInput;
 	readonly telemetry: TelemetrySink;
 };
@@ -479,7 +448,6 @@ export function createDeployGate(d: DeployGateDeps): DeployGate {
 					},
 					contracts: [...contracts.candidate],
 				},
-				eventUpcasters: d.eventUpcasters ?? DEFAULT_EVENT_UPCASTER_VERDICT,
 				costQuota: d.costQuota?.(camp.campId) ?? {
 					quota: "hobo.cd/delta",
 					used: 0,

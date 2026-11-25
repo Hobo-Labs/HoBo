@@ -2,7 +2,7 @@
 
 Draft contract proof for **HOBO-664**. Models the built-in Operator Crew
 (SRE, Endpoint Monitor, GitOps, Platform Engineer) as event-sourced Yard
-services per [Plan 40](urn:hobo:requirement:operators-sre#plan-40).
+services per [Plan 40](../../../../docs/design/operators-sre.md#plan-40).
 
 Promotes scenarios from
 [`operators-sre-crew`](../../epic-proofs/operators-sre-crew/README.md)
@@ -23,9 +23,11 @@ without importing unmerged S6-03/S6-08 production code.
 pnpm --prefix src/draft/technical-proofs/s6-09-operator-crew-yard-services-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

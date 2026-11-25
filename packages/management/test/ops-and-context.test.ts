@@ -344,13 +344,7 @@ describe("station ops", () => {
 		const { ctx, home } = newContext();
 		writeFileSync(
 			join(home, "hobo.broker.json"),
-			JSON.stringify({
-				brokerId: "acme",
-				delivery: {
-					reconcilerMode: "publisher",
-					publisher: { target: "argo-cd" },
-				},
-			}),
+			JSON.stringify({ brokerId: "acme", delivery: { engine: "argo" } }),
 			"utf8",
 		);
 		const result = stationInit(ctx, { name: "local" });

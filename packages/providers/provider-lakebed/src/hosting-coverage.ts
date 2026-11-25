@@ -11,6 +11,7 @@ import {
 	LAKEBED_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
+/** Every Lakebed hosting product with a shipped resolver (I14). */
 export const LAKEBED_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze([
 	LAKEBED_CAPSULE_PRODUCT_ID,
 ]);
@@ -18,6 +19,10 @@ export const LAKEBED_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze([
 const INSIDE_CAPSULE =
 	"declare it in desired.resources of the lakebed.capsule/v1 deployment that uses it";
 
+/**
+ * Lakebed resource classes (equivalence table, realize.ts) that no resolver
+ * delivers on their own. Each is a decision, not a backlog item.
+ */
 export const LAKEBED_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 	Object.freeze([
 		Object.freeze({
@@ -47,6 +52,7 @@ export const LAKEBED_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 		}),
 	]);
 
+/** The I14 coverage document for Lakebed. */
 export const LAKEBED_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	providerId: "lakebed",
 	resolvedProductIds: LAKEBED_RESOLVED_PRODUCT_IDS,
@@ -55,6 +61,7 @@ export const LAKEBED_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	absent: LAKEBED_TRAFFIC_ROUTING_ABSENT,
 });
 
+/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product Lakebed does not realize. */
 export function lakebedProductRefusal(
 	productId: string,
 ): ResolverError | undefined {

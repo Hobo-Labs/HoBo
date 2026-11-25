@@ -25,7 +25,6 @@ export interface CliFlags {
 	readonly strategy: string | null;
 	readonly target: string | null;
 	readonly check: boolean;
-	readonly initResourceIds?: boolean;
 	readonly last: boolean;
 	readonly offline: boolean;
 	readonly template: string | null;
@@ -52,6 +51,7 @@ export interface CliFlags {
 	readonly budgetId?: string | null;
 	readonly whatIf?: boolean;
 	readonly mode?: string | null;
+	readonly relay?: string | null;
 	readonly subcommandOptions?: SubcommandOptions;
 }
 
@@ -91,7 +91,6 @@ export function parseArgv(
 		strategy: null,
 		target: null,
 		check: false,
-		initResourceIds: false,
 		last: false,
 		offline: false,
 		template: null,
@@ -118,6 +117,7 @@ export function parseArgv(
 		budgetId: null,
 		whatIf: false,
 		mode: null,
+		relay: null,
 	};
 	const args: string[] = [];
 	const subcommandOptions = new Map<string, SubcommandOptionValue>();
@@ -333,12 +333,6 @@ function parseOption(
 		case "--check":
 			flags.check = true;
 			return index;
-		case "--init-resource-ids":
-			if (verb === "collect") {
-				flags.initResourceIds = true;
-				return index;
-			}
-			throw unknownOption(token, verb);
 		case "--last":
 			flags.last = true;
 			return index;
@@ -463,6 +457,12 @@ function parseOption(
 		case "--broker":
 			if (verb === "up" || verb === "claim" || verb === "login") {
 				flags.broker = takeValue(argv, index, token);
+				return index + 1;
+			}
+			throw unknownOption(token, verb);
+		case "--relay":
+			if (verb === "login") {
+				flags.relay = takeValue(argv, index, token);
 				return index + 1;
 			}
 			throw unknownOption(token, verb);

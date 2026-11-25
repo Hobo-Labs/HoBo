@@ -244,17 +244,17 @@ export const ARTIFACT_STORE_SCOPE = Object.freeze({
     },
   ]),
   designRefs: Object.freeze([
-    "urn:hobo:requirement:provenance-retention",
-    "urn:hobo:requirement:release-artifact-provenance-retention",
-    "urn:hobo:requirement:sbom-vulnerability-notice-evidence",
-    "urn:hobo:requirement:platform-engineering#plan-25",
-    "urn:hobo:requirement:contracts-policy-flags#plan-29",
-    "urn:hobo:requirement:technical-standards",
+    "docs/design/provenance-retention.md",
+    "docs/design/release-artifact-provenance-retention.md",
+    "docs/design/sbom-vulnerability-notice-evidence.md",
+    "docs/design/platform-engineering.md#plan-25",
+    "docs/design/contracts-policy-flags.md#plan-29",
+    "docs/design/technical-standards.md",
   ]),
   adrRefs: Object.freeze([
-    "urn:hobo:decision:adr-0062",
-    "urn:hobo:decision:adr-0073",
-    "urn:hobo:decision:adr-0085",
+    "docs/design/adr/07-portability-extensibility.md#adr-0062",
+    "docs/design/adr/07-portability-extensibility.md#adr-0073",
+    "docs/design/adr/01-architecture-core.md#adr-0085",
   ]),
   initiativeDependencies: Object.freeze([
     {

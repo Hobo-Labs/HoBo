@@ -7,26 +7,30 @@ import (
 
 #CowTier: "reflink" | "overlayfs" | "hardlink" | "copy"
 
+// A name proven safe to use as a single path segment. Enforced in code by
+// parseWorkspaceName (src/names.ts), which returns the derived WorkspaceName
+// type — the constraint below is the same rule stated declaratively.
 #WorkspaceName: string & !="" & !="." & !=".." & strings.MaxRunes(64)
 
 #Capability: {
 	tier: #CowTier
 	available: [...#CowTier] & list.MinItems(1)
-	reason:                string & !=""
-	isolatesInPlaceWrites: bool
+	reason: string & !=""
+	// hardlink shares inodes, so in-place writes escape to the source. The
+	// constraint keeps that hazard from being reported as safe.
+	isolates_in_place_writes: bool
 	if tier == "hardlink" {
-		isolatesInPlaceWrites: false
+		isolates_in_place_writes: false
 	}
 }
 
 #WorkspaceRecord: {
-	name:      #WorkspaceName
-	path:      string & !=""
-	tier:      #CowTier
-	source:    string & !=""
-	createdAt: string & !=""
-	upper?:    string
-	work?:     string
+	name:       #WorkspaceName
+	path:       string & !=""
+	tier:       #CowTier
+	source:     string & !=""
+	created_at: string & !=""
+	// Overlay layers exist for exactly one tier.
 	if tier == "overlayfs" {
 		upper: string & !=""
 		work:  string & !=""
@@ -37,13 +41,6 @@ import (
 	type: "RootInitialized"
 	at:   string & !=""
 	root: string & !=""
-}
-
-#WorkspaceCreating: {
-	type: "WorkspaceCreating"
-	at:   string & !=""
-	name: #WorkspaceName
-	path: string & !=""
 }
 
 #WorkspaceCreated: {
@@ -58,17 +55,9 @@ import (
 	name: #WorkspaceName
 }
 
-#WorkspaceEvent: #RootInitialized | #WorkspaceCreating | #WorkspaceCreated | #WorkspaceRemoved
+#WorkspaceEvent: #RootInitialized | #WorkspaceCreated | #WorkspaceRemoved
 
 #Registry: {
 	root: string & !=""
 	workspaces: [...#WorkspaceRecord]
-	eventCount: uint & <=4294967295
-}
-
-#RepairResult: {
-	root: string & !=""
-	workspaces: [...#WorkspaceRecord]
-	eventCount:        uint & <=4294967295
-	preservedJournal?: string & !=""
 }

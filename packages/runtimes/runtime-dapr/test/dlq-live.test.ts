@@ -1,4 +1,8 @@
-import { MESSAGING_EVENTS } from "@hobo/core";
+import {
+	MessagingDeliveryExhaustedError,
+	parseConsumerGroupId,
+	parseTopicName,
+} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,8 +11,8 @@ import {
 	defaultDaprRuntimeConfig,
 } from "../src/index.js";
 
-describe("dapr live DLQ", () => {
-	it("honors maxDeliveryAttempts and acks under consumer group", async () => {
+describe("dapr live exhausted delivery", () => {
+	it("retains the delivery after max attempts", async () => {
 		const bus = createDaprMessaging({
 			config: defaultDaprRuntimeConfig("acme", "prod"),
 			client: createInMemoryDaprClient(),
@@ -39,23 +43,30 @@ describe("dapr live DLQ", () => {
 		);
 		expect(r1.deadLettered).toBe(0);
 
-		const r2 = await bus.subscribe(
-			// SAFETY: assertion required at this I/O or test boundary.
-			"fail" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
-			"workers" as never,
-			async () => {
-				throw new Error("boom");
-			},
+		const error = await bus
+			.subscribe(
+				parseTopicName("fail"),
+				parseConsumerGroupId("workers"),
+				async () => {
+					throw new Error("boom");
+				},
+			)
+			.catch((caught: Error) => caught);
+		expect(error).toBeInstanceOf(MessagingDeliveryExhaustedError);
+		if (!(error instanceof MessagingDeliveryExhaustedError))
+			throw new Error("expected exhaustion");
+		expect(bus.capabilities.deadLetter).toBe(false);
+		expect(bus.events().map((event) => event.type)).toContain(
+			"messaging.delivery.exhausted",
 		);
-		expect(r2.deadLettered).toBe(1);
-
-		// SAFETY: assertion required at this I/O or test boundary.
-		const again = await bus.consume("fail" as never, "workers" as never);
-		expect(again).toHaveLength(0);
-
-		const types = bus.events().map((e) => e.type);
-		expect(types).toContain(MESSAGING_EVENTS.MessageDeadLettered);
-		expect(types).toContain(MESSAGING_EVENTS.DeliveryPermanentlyFailed);
+		expect(bus.events().map((event) => event.type)).not.toContain(
+			"messaging.dead_lettered",
+		);
+		await bus.nack(error.delivery.messageId, error.delivery.leaseId);
+		const replay = await bus.consume(
+			parseTopicName("fail"),
+			parseConsumerGroupId("workers"),
+		);
+		expect(replay[0]?.messageId).toBe(error.delivery.messageId);
 	});
 });

@@ -314,7 +314,7 @@ test("navigation links back to the corpus are not mistaken for rows", async () =
 		"docs/competitors/categories/infrastructure-from-code.md": [
 			CATEGORY_PAGE,
 			"",
-			"- [All categories](index.md) · [corpus index](../index.md) · [matrix](../matrix.md)",
+			"- [All categories](index.md) · [corpus index](../index.md) · [matrix](../matrix.md) · [gaps](../gap-analysis.md)",
 			"",
 		].join("\n"),
 	});

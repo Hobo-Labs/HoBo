@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/wrpc-in-process-link-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-18 in-process wRPC link routing over a WIT-shaped link table.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

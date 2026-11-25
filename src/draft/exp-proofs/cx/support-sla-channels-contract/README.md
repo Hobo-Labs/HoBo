@@ -24,7 +24,8 @@ npm.cmd --prefix src\draft\exp-proofs\cx\support-sla-channels-contract test
   Workflow.
 - `canCreateSupportSlaFollowUp` blocks M1-M4 follow-up issues until M0 scope evidence is accepted.
 
-## Executable evidence
+## Architecture Guardrail Evidence
+
 - PACT: `contracts/pacts/support-sla-channel-handoff.pact.json` fixes the Support Workflow consumer
   and support-SLA provider contract for accepted channel coverage and publication gates.
 - Protobuf + CUE: `proto/support_sla_channels.proto` and `cue/support_sla_channels.cue` define the

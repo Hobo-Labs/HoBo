@@ -14,7 +14,7 @@ Each file has: **What it is** · **Key elements** (the documentation) · **Relev
 | **Runtime code-mutation persistence** | Persisting runtime/AI-generated code mutations back to source safely (the TS patch problem) | [`runtime-code-mutation-persistence.md`](./runtime-code-mutation-persistence.md) |
 | **Service mesh (Istio / Linkerd / Envoy)** | Platform-owned identity/mTLS, traffic policy, resilience, telemetry between services — and how HoBo relocates it into the WIT membrane | [`service-mesh.md`](./service-mesh.md) |
 
-> Related: **policy-as-code** (canonical tool [`../technologies/opa-rego.md`](../technologies/opa-rego.md), HoBo [Plan 29](urn:hobo:requirement:contracts-policy-flags#plan-29)); **consumer-driven contracts** (canonical tool [`../technologies/pact.md`](../technologies/pact.md), HoBo [Plan 29](urn:hobo:requirement:contracts-policy-flags#plan-29)).
+> Related: **policy-as-code** (canonical tool [`../technologies/opa-rego.md`](../technologies/opa-rego.md), HoBo [Plan 29](../design/contracts-policy-flags.md#plan-29)); **consumer-driven contracts** (canonical tool [`../technologies/pact.md`](../technologies/pact.md), HoBo [Plan 29](../design/contracts-policy-flags.md#plan-29)).
 
 ## Sources & fair use
 Third-party reference captures; factual surface quoted under fair use for commentary/analysis. Trademarks/copyright remain their owners'; not part of the HoBo product.

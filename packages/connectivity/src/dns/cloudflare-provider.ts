@@ -2,7 +2,9 @@ import type { DnsProvider, DnsRecord, DnsRecordType } from "@hobo/core";
 import { cloneAsJson, type JsonValue } from "../json.js";
 
 export interface CloudflareDnsProviderOptions {
+	/** API token with Zone.DNS edit. Never log. */
 	readonly apiToken: string;
+	/** Zone ID (preferred) or resolve via zone name. */
 	readonly zoneId?: string;
 	readonly apiBase?: string;
 	readonly fetchImpl?: typeof fetch;
@@ -20,6 +22,10 @@ interface CfListResponse {
 	readonly errors?: readonly { readonly message: string }[];
 }
 
+/**
+ * Cloudflare DNS provider via REST API (no SDK hard dependency).
+ * Credentials are never written into record content or logs by this module.
+ */
 export function createCloudflareDnsProvider(
 	options: CloudflareDnsProviderOptions,
 ): DnsProvider & {
@@ -41,6 +47,7 @@ export function createCloudflareDnsProvider(
 		headers.set("Authorization", `Bearer ${options.apiToken}`);
 		headers.set("Content-Type", "application/json");
 		const res = await fetchImpl(`${base}${path}`, { ...init, headers });
+		// SAFETY: assertion required at this I/O or test boundary.
 		const body = cloneAsJson(await res.json().catch(() => ({})));
 		return { ok: res.ok, status: res.status, body };
 	}
@@ -52,6 +59,7 @@ export function createCloudflareDnsProvider(
 		const res = await api(
 			`/zones?name=${encodeURIComponent(zone)}&status=active`,
 		);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const data = res.body as CfListResponse;
 		const id = data.result?.[0]?.id;
 		if (!res.ok || !id) {
@@ -63,6 +71,22 @@ export function createCloudflareDnsProvider(
 		return id;
 	}
 
+	/**
+	 * Looks a record up, or refuses to answer.
+	 *
+	 * The `null` return means one specific thing — *the provider told us there
+	 * is no such record* — and it must not be reachable any other way. Every
+	 * caller treats `null` as licence to create, so any path that reaches it
+	 * without a readable answer turns a bad minute at Cloudflare into a
+	 * duplicate DNS record on every retry.
+	 *
+	 * Two ways that used to happen, both found by the pact chaos matrix. A
+	 * non-2xx (a 500, a 429) parses to an error envelope with no `result`, and
+	 * optional chaining read that as "no records". A 200 whose body was
+	 * truncated or corrupted fails `res.json()`, which `api` softens to `{}` —
+	 * also no `result`, also read as "no records". A response we could not read
+	 * is not evidence of absence, so both now throw and let the caller retry.
+	 */
 	async function findRecord(
 		zoneId: string,
 		name: string,
@@ -76,6 +100,7 @@ export function createCloudflareDnsProvider(
 				`cloudflare: dns lookup for ${type} ${name} failed (${res.status})`,
 			);
 		}
+		// SAFETY: assertion required at this I/O or test boundary.
 		const data = res.body as CfListResponse;
 		if (!Array.isArray(data.result)) {
 			throw new Error(
@@ -108,6 +133,7 @@ export function createCloudflareDnsProvider(
 				});
 				if (!res.ok) {
 					throw new Error(
+						// SAFETY: assertion required at this I/O or test boundary.
 						`cloudflare upsert failed (${res.status}): ${JSON.stringify((res.body as CfListResponse).errors ?? res.body)}`,
 					);
 				}
@@ -119,6 +145,7 @@ export function createCloudflareDnsProvider(
 			});
 			if (!res.ok) {
 				throw new Error(
+					// SAFETY: assertion required at this I/O or test boundary.
 					`cloudflare create failed (${res.status}): ${JSON.stringify((res.body as CfListResponse).errors ?? res.body)}`,
 				);
 			}
@@ -139,10 +166,14 @@ export function createCloudflareDnsProvider(
 			void tenantId;
 			const zoneId = await resolveZoneId(zone);
 			const res = await api(`/zones/${zoneId}/dns_records?per_page=100`);
+			// SAFETY: assertion required at this I/O or test boundary.
 			const data = res.body as CfListResponse;
 			if (!res.ok) {
 				throw new Error(`cloudflare list failed (${res.status})`);
 			}
+			// Same rule as findRecord: an unreadable 200 is not an empty zone.
+			// `?? []` here would report "this zone has no records" to a caller
+			// that may well act on it.
 			if (!Array.isArray(data.result)) {
 				throw new Error(
 					"cloudflare list returned a body with no record list; refusing to report an unreadable response as an empty zone",
@@ -150,6 +181,7 @@ export function createCloudflareDnsProvider(
 			}
 			return data.result.map((r) => ({
 				name: r.name,
+				// SAFETY: assertion required at this I/O or test boundary.
 				type: r.type as DnsRecordType,
 				content: r.content,
 				...(r.ttl !== undefined ? { ttl: r.ttl } : undefined),

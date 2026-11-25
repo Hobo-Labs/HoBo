@@ -1,6 +1,6 @@
 # TrafficRouting offerings & custom providers
 
-Portable multi-backend routing intent ([ADR-0143](urn:hobo:decision:adr-0143)).
+Portable multi-backend routing intent ([ADR-0143](../../../docs/design/adr/07-portability-extensibility.md#adr-0143)).
 This document is the extension surface for built-in and custom providers.
 
 ## Offering catalog
@@ -33,9 +33,7 @@ Core types: `TrafficRoutingProviderProfile`, `matchTrafficRoutingOfferings`,
 5. mesh.optional only if explicitly registered
 ```
 
-Negotiation: `prefer` reports partial results with `missing`, `fallbacks`, or
-`degraded` offerings. `require` accepts only stable, real native offerings and
-reports unmet requirements with provider-specific remediation.
+Negotiation: `prefer` → partial with `missing`/`fallbacks`; `require` → none + remediation.
 
 ## Per-cloud matrix (v1)
 

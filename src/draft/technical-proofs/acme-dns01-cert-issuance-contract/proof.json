@@ -10,7 +10,8 @@
       "src/draft/technical-proofs/obligation-engine-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

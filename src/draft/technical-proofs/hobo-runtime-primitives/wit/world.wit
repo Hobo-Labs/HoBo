@@ -1,0 +1,145 @@
+package hobo:runtime@0.1.0;
+
+interface types {
+  type bytes = list<u8>;
+
+  record event {
+    event-type: string,
+    data: bytes,
+    stream-id: option<string>,
+    idempotency-key: option<string>,
+  }
+
+  record step-opts {
+    retries: u32,
+    timeout-ms: u64,
+    idempotency-key: option<string>,
+  }
+
+  variant runtime-error {
+    retryable(string),
+    fatal(string),
+    cancelled(string),
+    version-incompatible(string),
+    ambiguous-commit(string),
+  }
+
+  record run-handle {
+    run-id: string,
+  }
+
+  record hook-token {
+    id: string,
+  }
+
+  record actor-key {
+    type-name: string,
+    key: string,
+  }
+
+  record state-entry {
+    value: bytes,
+    expected-seq: u64,
+    fence-token: string,
+  }
+
+  record compensation {
+    name: string,
+    input: bytes,
+  }
+
+  record message {
+    name: string,
+    data: bytes,
+    idempotency-key: option<string>,
+  }
+
+  record agent-message {
+    role: string,
+    content: string,
+  }
+
+  record tool-call {
+    name: string,
+    input: bytes,
+    idempotency-key: option<string>,
+  }
+
+  record token-request {
+    provider: string,
+    scope: string,
+    audience: option<string>,
+  }
+
+  record token-handle {
+    ref: string,
+    expires-at-seq: option<u64>,
+  }
+
+  record subscription-filter {
+    event-types: list<string>,
+    from-seq: option<u64>,
+  }
+
+  resource subscription {
+    next: func() -> option<event>;
+    cancel: func();
+  }
+}
+
+interface workflow {
+  use types.{bytes, event, hook-token, run-handle, runtime-error, step-opts};
+
+  run-step: func(name: string, input: bytes, opts: step-opts) -> result<bytes, runtime-error>;
+  sleep: func(duration-ms: u64);
+  emit: func(event: event) -> result<u64, runtime-error>;
+  create-hook: func(name: string) -> hook-token;
+  start: func(workflow-name: string, input: bytes, idempotency-key: option<string>) -> result<run-handle, runtime-error>;
+}
+
+interface actor {
+  use types.{actor-key, message, runtime-error, state-entry};
+
+  get-state: func(key: actor-key) -> result<option<state-entry>, runtime-error>;
+  append-state: func(key: actor-key, entry: state-entry) -> result<u64, runtime-error>;
+  signal: func(key: actor-key, msg: message) -> result<u64, runtime-error>;
+}
+
+interface saga {
+  use types.{compensation, event, runtime-error, subscription, subscription-filter};
+
+  on: func(filter: subscription-filter) -> result<subscription, runtime-error>;
+  emit: func(event: event) -> result<u64, runtime-error>;
+  compensate: func(compensation: compensation) -> result<u64, runtime-error>;
+}
+
+interface agent {
+  use types.{agent-message, bytes, runtime-error, token-handle, token-request, tool-call};
+
+  run: func(name: string, messages: list<agent-message>) -> result<bytes, runtime-error>;
+  tool: func(call: tool-call) -> result<bytes, runtime-error>;
+  token: func(request: token-request) -> result<token-handle, runtime-error>;
+}
+
+interface command {
+  use types.{actor-key, bytes, event, runtime-error};
+
+  execute: func(type-name: string, input: bytes, actor: actor-key, idempotency-key: string) -> result<u64, runtime-error>;
+  emit: func(event: event) -> result<u64, runtime-error>;
+}
+
+interface subscribe {
+  use types.{bytes, runtime-error, subscription, subscription-filter};
+
+  subscribe: func(filter: subscription-filter) -> result<subscription, runtime-error>;
+  snapshot: func(materialization: string, at-seq: option<u64>) -> result<bytes, runtime-error>;
+}
+
+world runtime-primitives {
+  import workflow;
+  import actor;
+  import saga;
+  import agent;
+  import command;
+  import subscribe;
+}

@@ -19,7 +19,6 @@ export {
 } from "./community-flux-policy-pack.js";
 export {
 	CONTROL_EVIDENCE_PACK_SCHEMA,
-	CONTROL_EVIDENCE_REGISTRY,
 	type ControlCoverageReport,
 	type ControlEvidenceKind,
 	type ControlEvidencePack,
@@ -30,8 +29,6 @@ export {
 	evaluateControlCoverage,
 	NIST_800_53_SEED_PACK,
 	parseControlEvidencePack,
-	type RegisteredControlEvidence,
-	resolveControlEvidenceRef,
 } from "./control-evidence-pack.js";
 export {
 	DEFAULT_MESSAGING_POLICY_PACK,
@@ -61,10 +58,7 @@ export {
 	createDecision,
 	createDecisionRequest,
 	createPolicyDecidedEvent,
-	decodePolicyEvidence,
-	encodePolicyEvidence,
 	fromWitDecisionRecord,
-	fromWitDecisionRecordV2,
 	hashDecisionRequest,
 	migratePolicyIrDocument,
 	POLICY_DECIDED_EVENT_TYPE,
@@ -75,7 +69,6 @@ export {
 	parsePolicyIrDocument,
 	serializePolicyIrDocument,
 	toWitDecisionRecord,
-	toWitDecisionRecordV2,
 } from "./policy-ir.js";
 export {
 	DEFAULT_RESIDENCY_POLICY_PACK,

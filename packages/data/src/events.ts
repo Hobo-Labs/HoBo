@@ -1,5 +1,9 @@
+// Past-tense facts the write-model kernel produces about its own actor lifecycle
+// and about projection declarations (data-plane.md event catalog: `actor.*`,
+// `projection.*`). These are plain fact bodies; a runtime wraps them in the shared
+// EventEnvelope. Fence tokens are serialized as strings (bigint is not JSON-safe).
+
 import type { JsonObject } from "./json.js";
-import type { ProjectionRowSchema } from "./projection.js";
 
 export const DATA_EVENT_SCHEMA_VERSION = "hobo.data-events/v1";
 
@@ -55,27 +59,11 @@ export function createProjectionDeclaredEvent(input: {
 	projection: string;
 	readSet: readonly string[];
 	reactivityClass: "reactive" | "non-reactive";
-	readModel?: string;
-	rowSchema?: ProjectionRowSchema;
-	indexHints?: readonly string[];
 }): DataFact {
-	const data = {
+	return fact("projection.Declared", {
 		projection: input.projection,
 		readSet: [...input.readSet],
 		reactivityClass: input.reactivityClass,
-	};
-	if (!input.rowSchema) return fact("projection.Declared", data);
-	return fact("projection.Declared", {
-		...data,
-		readModel: input.readModel ?? input.rowSchema.witRecord,
-		rowSchema: {
-			witRecord: input.rowSchema.witRecord,
-			fields: input.rowSchema.fields.map((field) => ({
-				name: field.name,
-				type: field.type,
-			})),
-		},
-		indexHints: [...(input.indexHints ?? [])],
 	});
 }
 

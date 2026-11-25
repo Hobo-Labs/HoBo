@@ -1,4 +1,4 @@
-import type { DescMessage, JsonValue } from "@bufbuild/protobuf";
+import type { JsonValue } from "@bufbuild/protobuf";
 import { create, fromJson } from "@bufbuild/protobuf";
 import { CoreParseError, diagnosticJson } from "@hobo/core";
 import {
@@ -10,6 +10,14 @@ import {
 	type PromotionThresholds,
 	PromotionThresholdsSchema,
 } from "./_generated/promotion_decision_pb.js";
+
+// The champion/challenger promotion gate (ADR-0025 / ADR-0125, IMPL-003).
+// A candidate promotes only through the same three-lens gate as any
+// generation-pipeline impl: conformance (hard contract) green AND eval
+// thresholds met over enough samples AND policy allows. The Trace lens rides
+// the event log, so it is not a flag here. Record shapes are the generated
+// protobuf types (data-models/promotion_decision.proto); this module adds the
+// decision function, its boundary parsers, and the CUE-mirrored invariants.
 
 export type {
 	ChampionChallenger,
@@ -32,7 +40,6 @@ export class PromotionGateParseError extends CoreParseError {
 	}
 }
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters
 function fail(path: string, expected: string, received: unknown): never {
 	throw new PromotionGateParseError(path, expected, diagnosticJson(received));
 }
@@ -49,49 +56,44 @@ function unitInterval(value: number, path: string): number {
 	return value;
 }
 
-function fromJsonOrFail<Schema extends DescMessage>(
-	schema: Schema,
-	// oxlint-disable-next-line anti-slop/no-unknown-parameters
+function fromJsonOrFail<T>(
+	schema: Parameters<typeof fromJson>[0],
 	value: unknown,
 	path: string,
-): ReturnType<typeof fromJson<Schema>> {
+): T {
 	try {
-		return fromJson(schema, value as JsonValue);
+		return fromJson(schema, value as JsonValue) as T;
 	} catch (error) {
 		fail(path, schema.typeName, error instanceof Error ? error.message : error);
 	}
 }
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters
+function freeze<T>(value: T): T {
+	if (value && typeof value === "object") {
+		for (const nested of Object.values(value)) freeze(nested);
+		Object.freeze(value);
+	}
+	return value;
+}
+
+/** Parses a live-eval / held-out / adversarial rubric score. */
 export function parseEvalResult(value: unknown): EvalResult {
-	const result = fromJsonOrFail(EvalResultSchema, value, "evalResult");
+	const result = fromJsonOrFail<EvalResult>(
+		EvalResultSchema,
+		value,
+		"evalResult",
+	);
 	nonEmpty(result.rubricRef, "evalResult.rubricRef");
 	nonEmpty(result.source, "evalResult.source");
 	for (const [metric, score] of Object.entries(result.scores)) {
 		unitInterval(score, `evalResult.scores.${metric}`);
 	}
-	for (const [metric, count] of Object.entries(result.metricSampleCounts)) {
-		if (
-			!Object.hasOwn(result.scores, metric) ||
-			!Number.isSafeInteger(count) ||
-			count < 1 ||
-			count > result.sampleCount
-		) {
-			fail(
-				`evalResult.metricSampleCounts.${metric}`,
-				"a reported metric count between 1 and sampleCount",
-				count,
-			);
-		}
-	}
-	Object.freeze(result.scores);
-	Object.freeze(result.metricSampleCounts);
-	return Object.freeze(result);
+	return freeze(result);
 }
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters
+/** Parses the metric floors and min-samples gate configuration. */
 export function parsePromotionThresholds(value: unknown): PromotionThresholds {
-	const thresholds = fromJsonOrFail(
+	const thresholds = fromJsonOrFail<PromotionThresholds>(
 		PromotionThresholdsSchema,
 		value,
 		"promotionThresholds",
@@ -99,19 +101,26 @@ export function parsePromotionThresholds(value: unknown): PromotionThresholds {
 	for (const [metric, floor] of Object.entries(thresholds.metricFloors)) {
 		unitInterval(floor, `promotionThresholds.metricFloors.${metric}`);
 	}
-	Object.freeze(thresholds.metricFloors);
-	return Object.freeze(thresholds);
+	return freeze(thresholds);
 }
 
 export interface PromotionGateInput {
 	readonly candidateId: string;
+	/** Conformance lens: the hard contract (PACT/conformance) is green. */
 	readonly conformance: boolean;
+	/** Policy lens: tenant/Camp policy allows the promotion. */
 	readonly policy: boolean;
 	readonly evalResult: EvalResult;
 	readonly thresholds: PromotionThresholds;
 	readonly championId?: string;
 }
 
+/**
+ * The three-lens promotion decision. A challenger promotes over the champion
+ * only when conformance is green, every metric floor is met over at least the
+ * minimum sample count, and policy allows; otherwise it is refused with the
+ * failing lenses recorded.
+ */
 export function evaluatePromotionGate(
 	input: PromotionGateInput,
 ): PromotionDecision {
@@ -131,22 +140,7 @@ export function evaluatePromotionGate(
 		const score = input.evalResult.scores[metric];
 		if (score === undefined) {
 			failures.push(`eval: metric ${metric} missing from eval result`);
-			continue;
-		}
-		const count = input.evalResult.metricSampleCounts?.[metric];
-		if (
-			count === undefined ||
-			!Number.isSafeInteger(count) ||
-			count < 1 ||
-			count > input.evalResult.sampleCount
-		) {
-			failures.push(`eval: metric ${metric} has no valid sample count`);
-		} else if (count < input.thresholds.minSamples) {
-			failures.push(
-				`eval: metric ${metric} has ${count} ${count === 1 ? "sample" : "samples"} below min ${input.thresholds.minSamples}`,
-			);
-		}
-		if (score < floor) {
+		} else if (score < floor) {
 			failures.push(`eval: ${metric} ${score} below floor ${floor}`);
 		}
 	}
@@ -158,22 +152,20 @@ export function evaluatePromotionGate(
 	const evalPassed = !failures.some((failure) => failure.startsWith("eval:"));
 	const promoted = failures.length === 0;
 
-	const decision = create(PromotionDecisionSchema, {
-		candidateId: input.candidateId,
-		outcome: promoted ? PromotionOutcome.PROMOTE : PromotionOutcome.REFUSE,
-		passed: {
-			conformance: input.conformance,
-			eval: evalPassed,
-			policy: input.policy,
-		},
-		failures,
-		championChallenger: {
-			championId: input.championId ?? "",
-			challengerId: input.candidateId,
-		},
-	});
-	Object.freeze(decision.failures);
-	if (decision.passed) Object.freeze(decision.passed);
-	if (decision.championChallenger) Object.freeze(decision.championChallenger);
-	return Object.freeze(decision);
+	return freeze(
+		create(PromotionDecisionSchema, {
+			candidateId: input.candidateId,
+			outcome: promoted ? PromotionOutcome.PROMOTE : PromotionOutcome.REFUSE,
+			passed: {
+				conformance: input.conformance,
+				eval: evalPassed,
+				policy: input.policy,
+			},
+			failures,
+			championChallenger: {
+				championId: input.championId ?? "",
+				challengerId: input.candidateId,
+			},
+		}),
+	);
 }

@@ -22,7 +22,7 @@ describe("resource lifecycle quickstart examples", () => {
 
     assert.equal(quickstart.issue, "HOBO-577");
     assert.equal(quickstart.targetPackage, "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples");
-    assert.equal(quickstart.proofNote, "urn:hobo:proof:resource-lifecycle-quickstart-examples");
+    assert.equal(quickstart.proofNote, "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md");
     assert.deepEqual(
       quickstart.steps.map((step) => step.phase),
       QUICKSTART_PHASES,

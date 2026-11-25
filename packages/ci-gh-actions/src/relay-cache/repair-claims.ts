@@ -1,3 +1,23 @@
+/**
+ * The repair scanners' claims, cursors and rate windows on the cache
+ * (ADR-0179 phase 5), in place of `hobo_ci_webhook_repairs`,
+ * `hobo_ci_webhook_scan_cursors`, `hobo_ci_webhook_successes`,
+ * `hobo_ci_queued_scans` and `hobo_ci_queued_api_budget`.
+ *
+ * - One lock per scanner and App (`acquireEphemeralLock`, a TTL a little
+ *   longer than one pass), renewed at every checkpoint: a scanner that stalls
+ *   past it has lost the lock, and its next checkpoint throws instead of
+ *   writing over the new holder's cursor.
+ * - Cursors in the cache. A lost cursor restarts from the newest page (the
+ *   delivery scan) or from page one (the queued scan); both are bounded per
+ *   tick, so a loss costs a rescan, never a missed or doubled admission:
+ *   redeliveries collapse on the delivery id and admissions on the job key.
+ * - Rate windows as `increment(..., "on-create")` on a key per minute: a lost
+ *   window allows at most one window's worth of extra calls.
+ *
+ * The scanner logic itself is unchanged (`createWebhookRepair`,
+ * `createQueuedJobRepair`); these implement its claim ports.
+ */
 import { randomUUID } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -37,8 +57,11 @@ type QueuedCursor = QueuedScanHandle["cursor"];
 
 export type RelayRepairClaimsOptions = Readonly<{
 	state: EphemeralStatePort;
+	/** Key namespace: `hobo-ci:<environment>:`. */
 	environment: string;
+	/** Wall clock; tests inject one. */
 	now?: () => number;
+	/** The lock owner token; a fresh one per instance by default. */
 	owner?: string;
 }>;
 
@@ -55,6 +78,7 @@ function owner(options: RelayRepairClaimsOptions): string {
 	return options.owner ?? `relay:${randomUUID()}`;
 }
 
+/** Hold a scanner lock; every renewal either keeps it or throws. */
 class ScanLock {
 	constructor(
 		private readonly state: EphemeralStatePort,
@@ -89,6 +113,7 @@ class ScanLock {
 	}
 }
 
+/** Write a record whether or not it exists: compare-and-set on what was read, else create. */
 async function upsert(
 	state: EphemeralStatePort,
 	key: Parameters<EphemeralStatePort["get"]>[0],
@@ -105,6 +130,13 @@ async function upsert(
 	throw new Error("repair cursor contended");
 }
 
+/**
+ * The delivery-history scanner's claims. Per delivery: a claim marker held
+ * for the 15-minute cooldown (`putIfAbsent`), then the App-wide minute
+ * window of 20 redeliveries (`increment`); a claim over the window is given
+ * back. Deliveries GitHub reported delivered are remembered for four days,
+ * written only when not already known (one `getMany` per scan).
+ */
 export class CacheWebhookRepairClaims implements WebhookRepairClaims {
 	private readonly keys: RelayCacheKeys;
 	private readonly now: () => number;
@@ -130,6 +162,7 @@ export class CacheWebhookRepairClaims implements WebhookRepairClaims {
 			"on-create",
 		);
 		if (used <= RELAY_WEBHOOK_REDELIVERIES_PER_MINUTE) return true;
+		// Over the window: give the claim back so the next window may take it.
 		await state.delete(this.keys.webhookClaim(app, guid), claimed.version);
 		return false;
 	}
@@ -237,6 +270,11 @@ function fromCursor(cursor: QueuedCursor): RelayCacheQueuedCursor {
 	});
 }
 
+/**
+ * The queued-job scanner's claims: one lock per App, one cursor record per
+ * repository and run status (read together with one `getMany`), and the
+ * App's REST budget of ten calls a minute as a minute window.
+ */
 export class CacheQueuedJobRepairClaims implements QueuedRepairClaims {
 	private readonly keys: RelayCacheKeys;
 	private readonly now: () => number;

@@ -115,6 +115,14 @@ export function hoboReleaseSparseCones(repoRoot: string): readonly string[] {
 	]);
 }
 
+export const HOBO_RELEASE_PAGES_MATERIALIZE_PATHS = [
+	"examples/browser-runtime/wit",
+] as const;
+
+export function hoboReleasePagesMaterializePaths(): readonly string[] {
+	return Object.freeze([...HOBO_RELEASE_PAGES_MATERIALIZE_PATHS]);
+}
+
 /** gh-pages release job (no root vitest). */
 export function hoboReleasePagesSparseCones(): readonly string[] {
 	return Object.freeze([
@@ -198,6 +206,17 @@ export function formatSparseCheckoutBlock(cones: readonly string[]): string {
 	return `${cones.join("\n")}\n`;
 }
 
+export function sparsePathLooksLikeNestedFile(
+	repoRelativePath: string,
+): boolean {
+	const normalized = repoRelativePath.trim().replace(/^\.\//, "");
+	if (!normalized.includes("/")) {
+		return false;
+	}
+	const base = normalized.slice(normalized.lastIndexOf("/") + 1);
+	return base.includes(".");
+}
+
 /** Git cone mode treats each pattern as a directory; root manifests are checked out separately. */
 export function splitSparseCheckoutPaths(
 	all: readonly string[],
@@ -212,7 +231,10 @@ export function splitSparseCheckoutPaths(
 	for (const path of all) {
 		const normalized = path.trim();
 		if (!normalized) continue;
-		if (rootFileSet.has(normalized)) {
+		if (
+			rootFileSet.has(normalized) ||
+			sparsePathLooksLikeNestedFile(normalized)
+		) {
 			rootFiles.push(normalized);
 			continue;
 		}

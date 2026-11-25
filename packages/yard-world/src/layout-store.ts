@@ -1,3 +1,15 @@
+/**
+ * Per-station layout persistence — NODE-ONLY ENTRY.
+ *
+ * This module imports `node:fs`/`node:os`/`node:path` and is deliberately kept
+ * out of `src/index.ts` so the core package surface stays pure (no I/O).
+ * Import it explicitly via the `@hobo/yard-world/layout-store` subpath from
+ * node-side hosts only.
+ *
+ * Layouts live as JSON under `<YARD_WORLD_HOME>/layouts/<stationId>.json`
+ * (default home: `~/.hobo-yard-world/`). Writes are atomic (tmp file + rename)
+ * and debounced so a burst of editor drags coalesces into one disk write.
+ */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +40,7 @@ export class LayoutStore {
 		return join(this.dir, stationFileName(stationId));
 	}
 
+	/** Load a persisted layout; undefined when absent or unreadable/corrupt. */
 	load(stationId: string): WorldLayout | undefined {
 		try {
 			const raw = readFileSync(this.pathFor(stationId), "utf8");
@@ -39,6 +52,7 @@ export class LayoutStore {
 		}
 	}
 
+	/** Atomic write: serialize to a tmp sibling, then rename over the target. */
 	saveNow(stationId: string, layout: WorldLayout): void {
 		mkdirSync(this.dir, { recursive: true });
 		const target = this.pathFor(stationId);
@@ -47,6 +61,7 @@ export class LayoutStore {
 		renameSync(tmp, target);
 	}
 
+	/** Debounced save — rapid editor changes coalesce into one write. */
 	saveDebounced(
 		stationId: string,
 		layout: WorldLayout,
@@ -62,6 +77,7 @@ export class LayoutStore {
 		this.pending.set(stationId, { layout, timer });
 	}
 
+	/** Flush all debounced writes synchronously (shutdown + tests). */
 	flush(): void {
 		for (const [stationId, entry] of [...this.pending.entries()]) {
 			clearTimeout(entry.timer);

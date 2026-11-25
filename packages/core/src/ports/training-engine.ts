@@ -24,6 +24,11 @@ import {
 } from "../json.js";
 import { deepFreeze } from "../parse-utils.js";
 
+// The hobo:training-engine port (ADR-0025 / ADR-0125). Record shapes are the
+// generated protobuf types (data-models/training_engine.proto); this module
+// adds only the port interface, branded ids, and parse-don't-validate
+// constructors that enforce the CUE-mirrored invariants at the boundary.
+
 // public-contract: the WIT port identity engines register under (ADR-0025).
 export const TRAINING_ENGINE_PORT =
 	"hobo:training-engine/training-engine@0.1.0";
@@ -72,6 +77,10 @@ export class TrainingEngineParseError extends CoreParseError {
 	}
 }
 
+/**
+ * The port every training engine implements; engines are internal providers
+ * selected per tenant/Camp and never part of the SDK surface (ADR-0025).
+ */
 export interface TrainingEnginePort {
 	readonly engineId: TrainingEngineId;
 	optimize(request: OptimizeRequest): Promise<TrainingCandidate>;
@@ -107,6 +116,7 @@ function fromJsonOrFail<T>(
 ): T {
 	if (value === undefined) fail(path, schema.typeName, value);
 	try {
+		// SAFETY: protobuf fromJson yields the generated message for this schema.
 		const parsed = fromJson(schema, value) as T;
 		return parsed;
 	} catch (error) {
@@ -118,6 +128,7 @@ export function parseTraceparent(value: JsonValue | undefined): Traceparent {
 	if (!isJsonString(value) || !TRACEPARENT_PATTERN.test(value)) {
 		fail("traceparent", "W3C traceparent", value);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as Traceparent;
 }
 
@@ -127,6 +138,7 @@ export function parseTrajectoryHash(
 	if (!isJsonString(value) || !SHA256_PATTERN.test(value)) {
 		fail("trajectoryHash", "sha256:<hex64>", value);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as TrajectoryHash;
 }
 
@@ -136,6 +148,7 @@ export function parseTrainingEngineId(
 	if (!isJsonString(value) || value.trim().length === 0) {
 		fail("engineId", "non-empty string", value);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as TrainingEngineId;
 }
 
@@ -199,6 +212,8 @@ function assertTrajectoryInvariants(trajectory: Trajectory): void {
 		fail("trajectory.reward.score", "number in [0, 1]", reward.score);
 	}
 
+	// ADR-0099 fail-closed: sensitive payloads are tokenized or run-scoped
+	// encrypted references; cleartext never enters the trajectory store.
 	for (const [name, payload] of Object.entries(trajectory.payloads)) {
 		if (!SENSITIVE_CLASSIFICATIONS.has(payload.classification)) continue;
 		const tokenized =
@@ -217,6 +232,15 @@ function assertTrajectoryInvariants(trajectory: Trajectory): void {
 }
 
 // domain-view: parse-don't-validate refined views of the generated wire
+// types. The wire shape declares every nested message optional, but the
+// parsers below refuse a document missing any of these fields — and until
+// now the return type did not say so, so every consumer re-hedged with
+// `?.`/`??` fallbacks against absences the boundary had already refused:
+// dead defensive arms guarding a guarantee nobody could read off the type.
+// These types record exactly what the assertions establish, nothing more.
+// Omit-and-replace rather than intersect: intersecting `Trajectory[]` with
+// `ParsedTrajectory[]` leaves `.map` resolving elements as the wire type, so
+// the refinement would be invisible exactly where consumers iterate.
 export type ParsedTrajectory = Omit<
 	Trajectory,
 	"run" | "subject" | "reward"
@@ -251,6 +275,8 @@ export function parseTrajectory(
 		"trajectory",
 	);
 	assertTrajectoryInvariants(trajectory);
+	// SAFETY: assertTrajectoryInvariants established run/agent, subject/
+	// generatedRegion and reward present; the refined type records that.
 	return deepFreeze(trajectory) as ParsedTrajectory;
 }
 
@@ -287,6 +313,9 @@ export function parseOptimizeRequest(
 			contract.allowedRegionId,
 		);
 	}
+	// SAFETY: the assertions above established generatedRegion, rubric and
+	// contract present, and every trajectory passed assertTrajectoryInvariants;
+	// the refined type records that.
 	return deepFreeze(request) as ParsedOptimizeRequest;
 }
 
@@ -312,6 +341,12 @@ export function parseTrainingArtifact(
 	return deepFreeze(artifact);
 }
 
+/**
+ * Serializes a platform-normalized artifact program to the `programJson`
+ * string carried on a `TrainingArtifact` — the symmetric writer for
+ * `parseTrainingArtifactProgram`, so engines build it through the generated
+ * constructor instead of hand-shaping proto JSON (ADR-0125).
+ */
 export function serializeTrainingArtifactProgram(input: {
 	readonly instructions: string;
 	readonly demos?: readonly {
@@ -331,6 +366,7 @@ export function serializeTrainingArtifactProgram(input: {
 	return JSON.stringify(toJson(TrainingArtifactProgramSchema, program));
 }
 
+/** Parses the platform-normalized program carried in `programJson`. */
 export function parseTrainingArtifactProgram(
 	programJson: string,
 ): TrainingArtifactProgram {
@@ -353,6 +389,10 @@ export function parseTrainingArtifactProgram(
 	return deepFreeze(program);
 }
 
+/**
+ * Parses a candidate; for the patch form, every edit must stay inside the
+ * generated region the request named (ADR-0048).
+ */
 export function parseTrainingCandidate(
 	value: JsonValue | undefined,
 	expectedRegion?: GeneratedRegion,
@@ -424,10 +464,12 @@ export function parseTrainingCandidate(
 	return deepFreeze(candidate);
 }
 
+/** Canonical provenance hash of a trajectory (ADR-0125 candidate lineage). */
 export function hashTrajectory(trajectory: Trajectory): TrajectoryHash {
 	const canonical = JSON.stringify(
 		sortKeys(toJson(TrajectorySchema, trajectory)),
 	);
+	// SAFETY: assertion required at this I/O or test boundary.
 	return `sha256:${createHash("sha256")
 		.update(canonical)
 		.digest("hex")}` as TrajectoryHash;
@@ -438,8 +480,10 @@ function sortKeys(value: JsonValue | undefined): JsonValue {
 	if (Array.isArray(value)) return value.map(sortKeys);
 	if (!isJsonObject(value)) return value;
 	return Object.fromEntries(
+		// SAFETY: assertion required at this I/O or test boundary.
 		Object.keys(value as JsonObject)
 			.sort()
+			// SAFETY: assertion required at this I/O or test boundary.
 			.map((key) => [key, sortKeys((value as JsonObject)[key])]),
 	);
 }

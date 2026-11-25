@@ -43,6 +43,7 @@ describe("loadBindleDefinition", () => {
 			'export default { name: "from-app", resources: {}, edges: [] };\n',
 		);
 		const definition = await loadBindleDefinition(dir);
+		// SAFETY: `expect((definition as { name: string }).name).toBe("from-bindle");` is required at this I/O or test boundary.
 		expect((definition as { name: string }).name).toBe("from-bindle");
 	});
 

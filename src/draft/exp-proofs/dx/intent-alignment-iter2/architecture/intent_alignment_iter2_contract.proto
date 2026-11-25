@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+enum IntentAlignmentIter2EvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_ITERATION_LOG = 1;
+  EVIDENCE_KIND_REGISTER_ROW = 2;
+}
+
+message IntentAlignmentIter2Record {
+  string iteration_label = 1;
+  string commit = 2;
+  repeated string gap_ids = 3;
+  repeated string drift_ids = 4;
+}

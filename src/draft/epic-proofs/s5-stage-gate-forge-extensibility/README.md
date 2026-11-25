@@ -74,7 +74,9 @@ Feature: Gated live-fix with auto-rollback
 | Eval promotion | `eval-promotion-gate-contract` |
 | Live-fix rollback | `live-fix-gated-candidate-contract` |
 
-## Executable evidence
+## Architecture evidence
+
 - `architecture/` — protobuf + CUE guard artifacts
+- `architecture.md` — parse-don't-validate and event-sourcing notes
 - `contracts/pacts/` — four mocked service boundaries
 - `tests/reference-architecture.test.ts` — architecture artifact boundary test pins proto/CUE/Pact/event-architecture evidence (S3-08 pattern)

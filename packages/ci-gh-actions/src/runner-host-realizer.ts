@@ -1,5 +1,4 @@
 import { ACTIVE_STATES, type Lease } from "@hobo/ci";
-import type { MeshNode } from "@hobo/ci/mesh";
 import {
 	createResolverRegistry,
 	type HttpTransport,
@@ -12,6 +11,7 @@ import {
 	type ResourceResolver,
 	type TrafficRoutingProviderProfile,
 } from "@hobo/core";
+import { Health, type Observation } from "@hobo/fleet";
 import { z } from "zod";
 import type { DepsImageDockerPort } from "./isolated-worker/deps-image.js";
 import type {
@@ -45,16 +45,24 @@ export const RUNNER_HOST_RETAINED_FIELDS = Object.freeze([
 	"onlineRunners",
 ]);
 
+/** The box worker's drain (`deploy/restart-worker.sh`): two hours. */
 const DEFAULT_DRAIN_DEADLINE_MS = 2 * 60 * 60_000;
 const DEFAULT_VERIFY_DEADLINE_MS = 5 * 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const MAX_DRAIN_DEADLINE_MS = 24 * 60 * 60_000;
+/** The controller is long-lived; the driver labels every container with a timeout. */
 const CONTROLLER_TIMEOUT_MS = 365 * 24 * 60 * 60_000;
 const HOST_ID = /^[a-z0-9][a-z0-9-]{0,62}$/u;
 const DIGEST_HEX = /^[0-9a-f]{64}$/u;
 const IMAGE_BY_DIGEST =
 	/^(?<repository>[a-z0-9][a-z0-9._/:-]{0,254})@sha256:(?<hex>[0-9a-f]{64})$/u;
 
+/**
+ * Traffic routing on a runner host: none. Which host takes a job is decided
+ * by the route job and the relay (`ci/RUNNER-QUEUE.md`), not by CD, so every
+ * offering is declared absent rather than preview. `provider` is `other`: the
+ * core union has no member for a self-hosted runner host.
+ */
 export const RUNNER_HOST_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	Object.freeze({
 		provider: "other",
@@ -65,6 +73,7 @@ export const RUNNER_HOST_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile 
 const JOB_ROUTING =
 	"Jobs reach a runner host through GitHub's queue, the route job and the relay; the host serves no request traffic CD could shift";
 
+/** Every traffic-routing offering, declared absent with the reason. */
 export const RUNNER_HOST_TRAFFIC_ROUTING_ABSENT: readonly Readonly<{
 	offeringId: string;
 	reason: string;
@@ -90,6 +99,7 @@ export const RUNNER_HOST_TRAFFIC_ROUTING_ABSENT: readonly Readonly<{
 	].map((offeringId) => Object.freeze({ offeringId, reason: JOB_ROUTING })),
 );
 
+/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product this realizer does not own. */
 export function runnerHostProductRefusal(
 	productId: string,
 ): ResolverError | undefined {
@@ -101,6 +111,9 @@ export function runnerHostProductRefusal(
 	);
 }
 
+// ── Host ports ─────────────────────────────────────────────────────────────
+
+/** The container interface: the isolated worker's Docker driver plus the deps-image pull. */
 export type RunnerControllerContainers = Pick<
 	DockerDriver,
 	"create" | "start" | "stop" | "remove" | "isRunning"
@@ -108,22 +121,81 @@ export type RunnerControllerContainers = Pick<
 	Required<Pick<DockerDriver, "inspectImage" | "listWorkerContainers">> &
 	Pick<DepsImageDockerPort, "pull">;
 
-export type RunnerHostAdvert = MeshNode &
-	Readonly<{ controllerDigest?: string | undefined }>;
+// public-contract: the label a host's observation carries its controller digest in (`hobo.ci/controller-digest=sha256:<hex>`).
+export const CONTROLLER_DIGEST_LABEL = "hobo.ci/controller-digest";
 
+const DIGEST = /^sha256:[0-9a-f]{64}$/u;
+
+export function observedControllerDigest(
+	observation: Observation,
+): string | undefined {
+	if (DIGEST.test(observation.agentVersion)) return observation.agentVersion;
+	const prefix = `${CONTROLLER_DIGEST_LABEL}=`;
+	const label = observation.labels.find((l) => l.startsWith(prefix));
+	const digest = label?.slice(prefix.length);
+	return digest !== undefined && DIGEST.test(digest) ? digest : undefined;
+}
+
+// domain-view: what the realizer reads from the host's own fleet Observation (times as epoch ms).
+type HostSelf = Readonly<{
+	self: boolean;
+	healthy: boolean;
+	validUntilMs: number;
+	sinceMs?: number | undefined;
+	controllerDigest?: string | undefined;
+	labels: readonly string[];
+	platform?: Readonly<{ os: string; arch: string }> | undefined;
+	totalSlots?: number | undefined;
+	freeSlots: number;
+}>;
+
+function msOf(iso: string): number | undefined {
+	const ms = Date.parse(iso);
+	return Number.isFinite(ms) ? ms : undefined;
+}
+
+function selfOf(observation: Observation | undefined): HostSelf | undefined {
+	if (!observation) return undefined;
+	return {
+		self:
+			observation.memberId !== "" &&
+			observation.observerId === observation.memberId,
+		healthy:
+			observation.health === Health.REACHABLE && observation.ready !== false,
+		validUntilMs: msOf(observation.validUntil) ?? 0,
+		sinceMs: msOf(observation.since),
+		controllerDigest: observedControllerDigest(observation),
+		labels: observation.labels.filter(
+			(l) => !l.startsWith(`${CONTROLLER_DIGEST_LABEL}=`),
+		),
+		platform: observation.platform,
+		totalSlots: observation.capacity?.totalSlots,
+		freeSlots: observation.capacity?.freeSlots ?? 0,
+	};
+}
+
+export type RunnerHostAdvert = Observation;
+
+/** One runner this host registered with GitHub, and its presence. */
 export type RunnerHostRegistration = Readonly<{
 	name: string;
 	presence: GithubRunnerPresence;
 }>;
 
+/** What the host knows about its own work. */
 export interface RunnerHostJobs {
+	/** The host's leases (the worker's lease store). */
 	leases(): Promise<readonly Lease[]>;
+	/** Runners the host registered, with GitHub presence. */
 	runners(): Promise<readonly RunnerHostRegistration[]>;
-	meshAdvert(): Promise<RunnerHostAdvert | undefined>;
+	observation(): Promise<Observation | undefined>;
+	/** Stop admitting new jobs (the worker's drain mode). Running jobs are untouched. */
 	pauseAdmission(): Promise<void>;
+	/** Admit jobs again. */
 	resumeAdmission(): Promise<void>;
 }
 
+/** Where a process-mode controller is in its supervisor's lifecycle. */
 export type RunnerControllerProcessState =
 	| "starting"
 	| "running"
@@ -132,21 +204,38 @@ export type RunnerControllerProcessState =
 	| "exited"
 	| "failed";
 
+/** What the worker daemon's supervisor reports about the controller it runs. */
 export type RunnerControllerProcessStatus = Readonly<{
+	/** The release (`sha256:<hex>`) it runs or last ran; absent when it runs none. */
 	digest?: string | undefined;
 	state: RunnerControllerProcessState;
+	/** The latest request generation the supervisor has acted on. */
 	generation: number;
 	pid?: number | undefined;
+	/** When the current process was started (epoch ms). */
 	startedAtMs?: number | undefined;
 	reason?: string | undefined;
 }>;
 
+/**
+ * The controller as a process the box worker daemon's supervisor runs
+ * (`runner-controller-process.ts`): a release fetched and verified by digest,
+ * swapped and restarted under the supervisor, read back from its status.
+ */
 export interface RunnerControllerProcess {
+	/** Fetch the release `image` names and verify its bytes against the digest; idempotent. */
 	stage(image: string): Promise<void>;
+	/** The supervisor's own status, or undefined when no supervisor has reported. */
 	status(): Promise<RunnerControllerProcessStatus | undefined>;
+	/** Ask the supervisor to run the staged release `digest`, or none; returns the request generation. */
 	run(digest: string | undefined): Promise<number>;
 }
 
+/**
+ * The ports as a host wires them; a missing method is a typed refusal, not a
+ * crash. A host whose controller runs as a container wires `containers`; a
+ * host whose controller is a supervised process wires `process` instead.
+ */
 export type RunnerHostPorts = Readonly<{
 	containers?: Partial<RunnerControllerContainers> | undefined;
 	process?: Partial<RunnerControllerProcess> | undefined;
@@ -166,12 +255,13 @@ const CONTAINER_METHODS = [
 const PROCESS_METHODS = ["run", "stage", "status"] as const;
 const JOB_METHODS = [
 	"leases",
-	"meshAdvert",
+	"observation",
 	"pauseAdmission",
 	"resumeAdmission",
 	"runners",
 ] as const;
 
+/** The port methods a host has not wired (`containers.pull`, `jobs.leases`, ...). */
 export function runnerHostInterfaceGaps(
 	host: RunnerHostPorts,
 ): readonly string[] {
@@ -194,6 +284,7 @@ export function runnerHostInterfaceGaps(
 	]);
 }
 
+/** The controller port a wired host has: its container engine or its supervised process. */
 type ControllerPort =
 	| Readonly<{ mode: "container"; containers: RunnerControllerContainers }>
 	| Readonly<{ mode: "process"; process: RunnerControllerProcess }>;
@@ -211,9 +302,11 @@ function wired(host: RunnerHostPorts): WiredHost {
 			`runner-host-interface-missing: this host has no ${gaps.join(", ")}; the runner-host realizer acts only through the worker's controller port (container driver or supervised process) and job ports, so wire them (packages/ci-gh-actions/README.md, Runner-host realizer) or run this host's upgrades by hand`,
 			RUNNER_HOST_PRODUCT_ID,
 		);
+	// SAFETY: runnerHostInterfaceGaps checked every method of the wired ports above.
 	const jobs = host.jobs as RunnerHostJobs;
 	if (host.process !== undefined)
 		return {
+			// SAFETY: as above, for the process port.
 			controller: {
 				mode: "process",
 				process: host.process as RunnerControllerProcess,
@@ -221,6 +314,7 @@ function wired(host: RunnerHostPorts): WiredHost {
 			jobs,
 		};
 	return {
+		// SAFETY: as above, for the container port.
 		controller: {
 			mode: "container",
 			containers: host.containers as RunnerControllerContainers,
@@ -229,13 +323,17 @@ function wired(host: RunnerHostPorts): WiredHost {
 	};
 }
 
+// ── Options and desired state ───────────────────────────────────────────────
+
 export type RunnerHostRealizerOptions = Readonly<{
 	hostId: string;
+	/** A local runner keeps a registered runner; JIT hosts register per job. */
 	hostKind: RunnerHostKind;
 	host: RunnerHostPorts;
 	now?: () => number;
 	sleep?: (ms: number) => Promise<void>;
 	pollIntervalMs?: number;
+	/** Default drain deadline; `desired.drainDeadlineMs` overrides it per pass. */
 	drainDeadlineMs?: number;
 	verifyDeadlineMs?: number;
 }>;
@@ -282,8 +380,10 @@ const Desired = z
 	})
 	.strict();
 
+/** One controller mount, as the container driver takes it. */
 type ControllerVolume = { source: string; target: string; readonly?: boolean };
 
+/** A mount without an absent `readonly` key (JSON has no undefined). */
 function volumeOf(volume: z.infer<typeof Volume>): ControllerVolume {
 	const mount: ControllerVolume = {
 		source: volume.source,
@@ -296,6 +396,7 @@ function volumeOf(volume: z.infer<typeof Volume>): ControllerVolume {
 type DesiredController = z.infer<typeof Desired> &
 	Readonly<{ repository: string; digest: string }>;
 
+/** What a controller was launched with: the image reference and its config. */
 type LaunchedSpec = Readonly<{
 	image: string;
 	config: DesiredController["config"];
@@ -336,8 +437,15 @@ function parseRequest(raw: ResolveRequest, hostId: string): DesiredController {
 	return { ...parsed.data, repository, digest: `sha256:${hex}` };
 }
 
+// ── Observation ────────────────────────────────────────────────────────────
+
+/**
+ * One controller on the host, whichever way it runs: a container named by
+ * its digest, or the supervised process at a release digest.
+ */
 type Controller = Readonly<{
 	name: string;
+	/** The container id, or `pid:<pid>` for a supervised process. */
 	id: string;
 	digest: string;
 	running: boolean;
@@ -349,7 +457,7 @@ type HostSnapshot = Readonly<{
 	inFlightJobs: number;
 	busyRunners: number;
 	onlineRunners: number;
-	advert: RunnerHostAdvert | undefined;
+	advert: HostSelf | undefined;
 }>;
 
 export const controllerContainerName = (digest: string): string =>
@@ -369,6 +477,7 @@ function controllerOf(container: DockerContainer): Controller | undefined {
 		: undefined;
 }
 
+/** States in which a supervised controller process still exists. */
 const PROCESS_PRESENT = new Set<RunnerControllerProcessState>([
 	"starting",
 	"running",
@@ -377,6 +486,11 @@ const PROCESS_PRESENT = new Set<RunnerControllerProcessState>([
 	"failed",
 ]);
 
+/**
+ * The supervised process as a controller. It counts as running only once the
+ * supervisor has acted on `requested` (the generation this agent last asked
+ * for), so a status written before the request is never read as its answer.
+ */
 function processControllerOf(
 	status: RunnerControllerProcessStatus | undefined,
 	requested: number,
@@ -392,6 +506,7 @@ function processControllerOf(
 	};
 }
 
+/** Jobs this host is carrying: active leases it has not handed to another runner. */
 export function inFlightJobCount(
 	leases: readonly Lease[],
 	runners: readonly RunnerHostRegistration[],
@@ -423,11 +538,11 @@ async function listControllers(
 }
 
 async function snapshot(host: WiredHost, requested = 0): Promise<HostSnapshot> {
-	const [controllers, leases, runners, advert] = await Promise.all([
+	const [controllers, leases, runners, observation] = await Promise.all([
 		listControllers(host.controller, requested),
 		host.jobs.leases(),
 		host.jobs.runners(),
-		host.jobs.meshAdvert(),
+		host.jobs.observation(),
 	]);
 	return {
 		controllers,
@@ -437,10 +552,11 @@ async function snapshot(host: WiredHost, requested = 0): Promise<HostSnapshot> {
 		onlineRunners: runners.filter(
 			(runner) => runner.presence.status === "online",
 		).length,
-		advert,
+		advert: selfOf(observation),
 	};
 }
 
+/** Why the host is not yet observed serving `digest`; empty when it is. */
 function servingGaps(
 	snap: HostSnapshot,
 	input: Readonly<{
@@ -448,7 +564,9 @@ function servingGaps(
 		hostKind: RunnerHostKind;
 		digest: string;
 		nowMs: number;
+		/** Set after a swap: the advert must come from the new controller. */
 		startedAtMs?: number;
+		/** A supervised process's advert must name its controller digest. */
 		advertDigestRequired?: boolean;
 	}>,
 ): readonly string[] {
@@ -465,41 +583,44 @@ function servingGaps(
 				.map((controller) => controller.digest)
 				.join(", ")})`,
 		);
-	if (input.hostKind === "local-runner" && snap.onlineRunners === 0)
+	if (input.hostKind === "developer-device" && snap.onlineRunners === 0)
 		gaps.push("no registered runner is online");
 	const advert = snap.advert;
-	if (!advert) gaps.push("no mesh advert");
+	if (!advert) gaps.push("no fleet observation");
 	else {
-		if (advert.id !== input.hostId)
-			gaps.push(`the mesh advert names ${advert.id}`);
+		if (!advert.self) gaps.push("the fleet observation is not the host's own");
 		if (advert.validUntilMs <= input.nowMs)
-			gaps.push("the mesh advert expired");
-		if (!advert.healthy) gaps.push("the mesh advert is not healthy");
+			gaps.push("the fleet observation expired");
+		if (!advert.healthy) gaps.push("the fleet observation is not healthy");
 		if (
 			advert.controllerDigest !== undefined &&
 			advert.controllerDigest !== input.digest
 		)
-			gaps.push(`the mesh advert is at ${advert.controllerDigest}`);
+			gaps.push(`the fleet observation is at ${advert.controllerDigest}`);
 		if (input.advertDigestRequired && advert.controllerDigest === undefined)
-			gaps.push("the mesh advert names no controller digest");
+			gaps.push("the fleet observation names no controller digest");
 		if (
 			input.startedAtMs !== undefined &&
 			advert.controllerDigest === undefined &&
 			(advert.sinceMs === undefined || advert.sinceMs < input.startedAtMs)
 		)
-			gaps.push("the mesh advert predates the new controller");
+			gaps.push("the fleet observation predates the new controller");
 	}
 	return gaps;
 }
 
-type RunnerHostAdvertOutputs = {
+/** The advert as a resolver outcome reports it. */
+type RunnerHostObservationOutputs = {
 	healthy: boolean;
 	validUntilMs: number;
 	sinceMs?: number;
 	controllerDigest?: string;
+	/** The runner labels the advert says this host serves. */
 	labels: string[];
 };
+/** Observed facts that only narrow placement. */
 type RunnerHostClaims = { platform?: string; capacity?: string };
+/** A runner-host resolver outcome's `outputs`. */
 type RunnerHostOutputs = {
 	hostId: string;
 	controllerDigest: string;
@@ -509,11 +630,12 @@ type RunnerHostOutputs = {
 	inFlightJobs: number;
 	busyRunners: number;
 	onlineRunners: number;
+	/** Observed serving at `controllerDigest` (no serving gaps). */
 	serving: boolean;
 	claims: RunnerHostClaims;
 	retained: string[];
 	freeSlots?: number;
-	meshAdvert?: RunnerHostAdvertOutputs;
+	observation?: RunnerHostObservationOutputs;
 };
 
 function outcome(
@@ -546,15 +668,15 @@ function outcome(
 		const totalSlots = advert.totalSlots ?? advert.freeSlots;
 		claims.capacity = String(Math.max(0, Math.floor(totalSlots)));
 		outputs.freeSlots = Math.max(0, Math.floor(advert.freeSlots));
-		const meshAdvert: RunnerHostAdvertOutputs = {
+		const observed: RunnerHostObservationOutputs = {
 			healthy: advert.healthy,
 			validUntilMs: advert.validUntilMs,
 			labels: [...advert.labels],
 		};
-		if (advert.sinceMs !== undefined) meshAdvert.sinceMs = advert.sinceMs;
+		if (advert.sinceMs !== undefined) observed.sinceMs = advert.sinceMs;
 		if (advert.controllerDigest !== undefined)
-			meshAdvert.controllerDigest = advert.controllerDigest;
-		outputs.meshAdvert = meshAdvert;
+			observed.controllerDigest = advert.controllerDigest;
+		outputs.observation = observed;
 	}
 	return parseResolveOutcome({
 		contract: RESOLVER_CONTRACT,
@@ -565,6 +687,12 @@ function outcome(
 	});
 }
 
+/**
+ * A supervised controller process runs its release as the daemon's
+ * supervisor starts it: there is no container command, env, mount, memory
+ * limit or user to set, so a request that sets one is refused rather than
+ * silently ignored.
+ */
 function processConfigRefusal(desired: DesiredController): void {
 	const { config } = desired;
 	const set = [
@@ -580,13 +708,21 @@ function processConfigRefusal(desired: DesiredController): void {
 		);
 }
 
+// ── The resolver ───────────────────────────────────────────────────────────
+
+/**
+ * The runner-host realizer for one host. The composition registers it for the
+ * runner fleet's Camps (`RUNNER_HOST_REALIZER_BINDING`); the host ports are
+ * checked on every call, so a host without them refuses with a typed
+ * `RESOLVER_PRODUCT_UNSUPPORTED` naming what is missing.
+ */
 export function createRunnerHostResolver(
 	options: RunnerHostRealizerOptions,
 ): ResourceResolver {
 	if (!HOST_ID.test(options.hostId))
 		throw new ResolverError(
 			"RESOLVER_PRODUCT_UNSUPPORTED",
-			`runner-host-id-invalid: ${JSON.stringify(options.hostId)} is not a runner host id (lowercase mesh node id)`,
+			`runner-host-id-invalid: ${JSON.stringify(options.hostId)} is not a runner host id (lowercase device name)`,
 			RUNNER_HOST_PRODUCT_ID,
 		);
 	const hostId = options.hostId;
@@ -596,9 +732,14 @@ export function createRunnerHostResolver(
 		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	const pollMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 	const verifyMs = options.verifyDeadlineMs ?? DEFAULT_VERIFY_DEADLINE_MS;
+	/**
+	 * The latest request generation this agent gave a supervised controller
+	 * process; a status that has not caught up with it is not its answer.
+	 */
 	let requested = 0;
 	const observe = (host: WiredHost) => snapshot(host, requested);
 
+	/** Poll until `probe` answers or the deadline passes. */
 	async function until<T>(
 		deadlineMs: number,
 		probe: () => Promise<T | undefined>,
@@ -612,6 +753,7 @@ export function createRunnerHostResolver(
 		}
 	}
 
+	/** Run `work` with admission closed; admission reopens on every exit. */
 	async function withAdmissionClosed<T>(
 		host: WiredHost,
 		work: () => Promise<T>,
@@ -621,6 +763,7 @@ export function createRunnerHostResolver(
 		try {
 			result = await work();
 		} catch (error) {
+			// The work's error is the one to report; a failed reopen must not hide it.
 			await host.jobs.resumeAdmission().catch(() => undefined);
 			throw error;
 		}
@@ -628,6 +771,7 @@ export function createRunnerHostResolver(
 		return result;
 	}
 
+	/** With admission closed: wait for in-flight jobs; refuse at the deadline. */
 	async function waitForDrain(
 		host: WiredHost,
 		deadlineMs: number,
@@ -643,11 +787,14 @@ export function createRunnerHostResolver(
 		);
 	}
 
+	/** Specs this agent launched, by digest, so a rollback restores what ran. */
 	const launched = new Map<string, LaunchedSpec>();
 
+	/** Stop and remove a controller; observe that it is gone. */
 	async function retire(host: WiredHost, controller: Controller) {
 		const port = host.controller;
 		if (port.mode === "process") {
+			// The supervisor stops its child; the status says when it has.
 			const generation = await port.process.run(undefined);
 			requested = Math.max(requested, generation);
 			const stopped = await until(verifyMs, async () => {
@@ -659,6 +806,10 @@ export function createRunnerHostResolver(
 					: undefined;
 			});
 			if (!stopped) {
+				// The supervisor may still be stopping the child (its stop
+				// deadline can outlast this wait). The stop request must not
+				// outlive this refusal, or the host is left with no controller
+				// once the supervisor finishes: ask for the controller it ran.
 				let restore = `asked the supervisor to run ${controller.digest} again`;
 				if (controller.running)
 					try {
@@ -679,7 +830,10 @@ export function createRunnerHostResolver(
 				await port.containers.stop(controller.name, controller.id);
 			try {
 				await port.containers.remove(controller.name, controller.id);
-			} catch {}
+			} catch {
+				// The driver creates with --rm, so a stopped controller may already
+				// be gone; the listing below decides.
+			}
 		}
 		const still = (await observe(host)).controllers.some(
 			(other) => other.id === controller.id,
@@ -690,6 +844,7 @@ export function createRunnerHostResolver(
 			);
 	}
 
+	/** Fetch the target: pull and inspect the image, or stage the verified release. */
 	async function prepare(host: WiredHost, image: string): Promise<void> {
 		const port = host.controller;
 		if (port.mode === "process") await port.process.stage(image);
@@ -707,6 +862,8 @@ export function createRunnerHostResolver(
 	): Promise<number> {
 		const port = host.controller;
 		if (port.mode === "process") {
+			// Staging is idempotent by digest: a release the supervisor already
+			// ran (a rollback target) is verified again, not fetched again.
 			await port.process.stage(image);
 			const startedAtMs = now();
 			requested = Math.max(requested, await port.process.run(digest));
@@ -734,6 +891,7 @@ export function createRunnerHostResolver(
 		return startedAtMs;
 	}
 
+	/** Whether the controller is still alive at the moment of the check. */
 	async function alive(host: WiredHost, controller: Controller) {
 		const port = host.controller;
 		if (port.mode === "container")
@@ -771,6 +929,11 @@ export function createRunnerHostResolver(
 		return snap ? { snap, gaps: [] } : { gaps };
 	}
 
+	/**
+	 * With admission closed: retire the failed controller and relaunch the
+	 * previous digest. Returns when it was started; refuses when it must not
+	 * or could not be.
+	 */
 	async function restorePrevious(
 		host: WiredHost,
 		desired: DesiredController,
@@ -818,6 +981,13 @@ export function createRunnerHostResolver(
 		}
 	}
 
+	/**
+	 * Undo a failed swap without cancelling anything; always throws. `held`
+	 * is a restore already done while the caller had admission closed;
+	 * otherwise it is done here under a closed admission. Verification runs
+	 * with admission open: a controller that admits nothing never advertises
+	 * healthy.
+	 */
 	async function rollback(
 		host: WiredHost,
 		desired: DesiredController,
@@ -880,9 +1050,12 @@ export function createRunnerHostResolver(
 				desired.drainDeadlineMs ??
 				options.drainDeadlineMs ??
 				DEFAULT_DRAIN_DEADLINE_MS;
+			// Drain, swap and (on a failed swap) restore all run with admission
+			// closed; it reopens on every exit, refusals and port errors included.
 			const swap = await withAdmissionClosed(host, async () => {
 				await waitForDrain(host, drainMs);
 				try {
+					// Stopped controllers left behind by an earlier pass go too.
 					for (const controller of (await observe(host)).controllers)
 						await retire(host, controller);
 					const startedAtMs = await launch(
@@ -969,10 +1142,17 @@ export function createRunnerHostResolver(
 	return Object.freeze(resolver);
 }
 
+/** The registry the hobo composition registers on a runner host's agent. */
 export function runnerHostResolverRegistry(options: RunnerHostRealizerOptions) {
 	return createResolverRegistry([createRunnerHostResolver(options)]);
 }
 
+// ── Camp binding ───────────────────────────────────────────────────────────
+
+/**
+ * Which Camps resolve to this realizer: every Camp of the runner fleet Yard,
+ * `hobo-ci-runners/<host id>`, in the `hobo-ci-runner-fleet` Camp set.
+ */
 export const RUNNER_HOST_REALIZER_BINDING = Object.freeze({
 	providerId: RUNNER_HOST_PROVIDER_ID,
 	productId: RUNNER_HOST_PRODUCT_ID,
@@ -983,6 +1163,7 @@ export const RUNNER_HOST_REALIZER_BINDING = Object.freeze({
 	logicalId: "runner-controller",
 } as const);
 
+/** The host id a runner fleet Camp names, or undefined for any other Camp. */
 export function runnerHostIdForCamp(campId: string): string | undefined {
 	const prefix = `${RUNNER_FLEET_YARD}/`;
 	if (!campId.startsWith(prefix)) return undefined;
@@ -990,6 +1171,10 @@ export function runnerHostIdForCamp(campId: string): string | undefined {
 	return HOST_ID.test(hostId) ? hostId : undefined;
 }
 
+/**
+ * The resolve request for one runner fleet Camp and one image digest, as the
+ * composition builds it from a resolved Set. Refuses a Camp outside the fleet.
+ */
 export function runnerHostResolveRequest(
 	input: Readonly<{
 		campId: string;
@@ -1058,8 +1243,9 @@ export type RunnerHostCampReport = Readonly<{
 
 // public-contract: the claims a runner host's CD agent reports about its own health.
 export const RUNNER_HOST_HEALTH_CLAIMS = Object.freeze({
-	advert: "hobo.ci/mesh-advert",
-	validUntil: "hobo.ci/mesh-advert-valid-until",
+	advert: "hobo.ci/observation",
+	validUntil: "hobo.ci/observation-valid-until",
+	/** `true` only when the controller is observed serving and the advert is fresh and healthy. */
 	ready: "hobo.ci/runner-host-ready",
 } as const);
 
@@ -1073,12 +1259,14 @@ type ParsedAdvert = Readonly<{
 	labels: readonly string[];
 }>;
 
+/** The advert part of an outcome's outputs (`RunnerHostAdvertOutputs`). */
 const AdvertOutputs = z.object({
 	healthy: z.boolean(),
 	validUntilMs: z.number().finite(),
 	labels: z.array(z.string()).default([]),
 });
 
+/** The advert part of an outcome's outputs, parsed; undefined when absent or malformed. */
 function advertOutputs(
 	value: ResolveOutcome["outputs"][string] | undefined,
 ): ParsedAdvert | undefined {
@@ -1086,6 +1274,13 @@ function advertOutputs(
 	return parsed.success ? parsed.data : undefined;
 }
 
+/**
+ * Health evidence as claims: what the host's own advert says (fresh, expired
+ * or missing, and until when), whether the host is ready (serving and a fresh
+ * healthy advert), and while the advert is fresh the runner labels it serves.
+ * Plain claims, so they ride the reconcile observation to the Station, which
+ * turns them into inventory conditions (`runnerHostHealthConditions`).
+ */
 function healthClaims(
 	advert: ParsedAdvert | undefined,
 	serving: boolean,
@@ -1113,6 +1308,14 @@ function healthClaims(
 	];
 }
 
+/**
+ * What a resolver outcome says in a CD reconcile observation: one resource
+ * (the controller, its digest, retained job counts), the observed claims
+ * (platform, capacity) and the host's health claims
+ * (`RUNNER_HOST_HEALTH_CLAIMS` and served labels). Plain protobuf JSON, so the
+ * composition that owns `@hobo/cd` builds the record; this package does not
+ * depend on it.
+ */
 export function runnerHostCampReport(
 	outcome: ResolveOutcome,
 	nowMs: number,
@@ -1134,6 +1337,7 @@ export function runnerHostCampReport(
 				}))
 			: [];
 	const observedAt = new Date(nowMs).toISOString();
+	// Typed, never parsed from diagnostic text: absent or not `true` is unhealthy.
 	const serving = outputs.serving === true;
 	const reportedBy = `runner-host:${attribute("hostId")}`;
 	return Object.freeze({
@@ -1155,12 +1359,13 @@ export function runnerHostCampReport(
 		claims: Object.freeze(
 			[
 				...claims,
-				...healthClaims(advertOutputs(outputs.meshAdvert), serving, nowMs),
+				...healthClaims(advertOutputs(outputs.observation), serving, nowMs),
 			].map((claim) => Object.freeze({ ...claim, reportedBy, observedAt })),
 		),
 	});
 }
 
+/** The report for a host with no controller at all: nothing serving, advert missing. */
 export function runnerHostAbsentReport(
 	hostId: string,
 	nowMs: number,
@@ -1198,6 +1403,7 @@ type HealthConditionStatus =
 
 // domain-view: CampInventory.observe conditions from the health source (protobuf JSON of cd.proto CampConditionRecord).
 export type RunnerHostHealth = Readonly<{
+	/** The advert as the Station reads it at its own clock. */
 	advert: AdvertState;
 	conditions: readonly Readonly<{
 		type: HealthConditionType;
@@ -1241,17 +1447,17 @@ export function runnerHostHealthConditions(
 				healthCondition(
 					"CAMP_CONDITION_TYPE_REACHABLE",
 					"CONDITION_STATUS_UNKNOWN",
-					"mesh-advert-missing",
+					"observation-missing",
 				),
 				healthCondition(
 					"CAMP_CONDITION_TYPE_LEASED",
 					"CONDITION_STATUS_UNKNOWN",
-					"mesh-advert-missing",
+					"observation-missing",
 				),
 				healthCondition(
 					"CAMP_CONDITION_TYPE_READY",
 					"CONDITION_STATUS_UNKNOWN",
-					"mesh-advert-missing",
+					"observation-missing",
 				),
 			]),
 		});
@@ -1262,17 +1468,17 @@ export function runnerHostHealthConditions(
 				healthCondition(
 					"CAMP_CONDITION_TYPE_REACHABLE",
 					"CONDITION_STATUS_FALSE",
-					"mesh-advert-expired",
+					"observation-expired",
 				),
 				healthCondition(
 					"CAMP_CONDITION_TYPE_LEASED",
 					"CONDITION_STATUS_FALSE",
-					"mesh-lease-expired",
+					"observation-validity-expired",
 				),
 				healthCondition(
 					"CAMP_CONDITION_TYPE_READY",
 					"CONDITION_STATUS_FALSE",
-					"mesh-advert-expired",
+					"observation-expired",
 				),
 			]),
 		});
@@ -1282,12 +1488,12 @@ export function runnerHostHealthConditions(
 			healthCondition(
 				"CAMP_CONDITION_TYPE_REACHABLE",
 				"CONDITION_STATUS_TRUE",
-				"mesh-advert-fresh",
+				"observation-fresh",
 			),
 			healthCondition(
 				"CAMP_CONDITION_TYPE_LEASED",
 				"CONDITION_STATUS_TRUE",
-				`mesh-lease-valid-until:${new Date(until).toISOString()}`,
+				`observation-valid-until:${new Date(until).toISOString()}`,
 			),
 			value(RUNNER_HOST_HEALTH_CLAIMS.ready) === "true"
 				? healthCondition(

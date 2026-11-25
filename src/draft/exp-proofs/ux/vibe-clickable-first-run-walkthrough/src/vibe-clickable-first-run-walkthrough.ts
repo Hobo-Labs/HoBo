@@ -46,14 +46,14 @@ type WorkspaceProjectState = (typeof WORKSPACE_PROJECT_STATES)[number];
 type ConsumedActivationRail = {
   readonly sourceIssue: "HOBO-540";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail";
-  readonly proofPath: "urn:hobo:proof:vibe-first-run-activation-rail";
+  readonly proofPath: "docs/design/proofs/vibe-first-run-activation-rail/README.md";
   readonly stages: readonly ActivationRailStage[];
 };
 
 type ConsumedWorkspaceProjectStates = {
   readonly sourceIssue: "HOBO-541";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-workspace-project-states";
-  readonly proofPath: "urn:hobo:proof:vibe-workspace-project-states";
+  readonly proofPath: "docs/design/proofs/vibe-workspace-project-states/README.md";
   readonly states: readonly WorkspaceProjectState[];
 };
 
@@ -108,7 +108,7 @@ export type VibeClickableFirstRunWalkthrough = {
   readonly issue: "HOBO-559";
   readonly phase: "M2";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough";
-  readonly proofPath: "urn:hobo:proof:vibe-clickable-first-run-walkthrough";
+  readonly proofPath: "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md";
   readonly designRefs: readonly string[];
   readonly consumedActivationRail: ConsumedActivationRail;
   readonly consumedWorkspaceProjectStates: ConsumedWorkspaceProjectStates;
@@ -130,25 +130,25 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
   issue: "HOBO-559",
   phase: "M2",
   packagePath: "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough",
-  proofPath: "urn:hobo:proof:vibe-clickable-first-run-walkthrough",
+  proofPath: "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
   designRefs: [
-    "urn:hobo:requirement:workspace-onboarding-ux",
-    "urn:hobo:requirement:outcome-activation-rail",
-    "urn:hobo:requirement:walkthrough",
-    "urn:hobo:proof:vibe-first-run-activation-rail",
-    "urn:hobo:proof:vibe-workspace-project-states",
-    "urn:hobo:proof:resource-lifecycle-quickstart-examples",
+    "docs/design/workspace-onboarding-ux.md",
+    "docs/design/outcome-activation-rail.md",
+    "docs/design/walkthrough.md",
+    "docs/design/proofs/vibe-first-run-activation-rail/README.md",
+    "docs/design/proofs/vibe-workspace-project-states/README.md",
+    "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   consumedActivationRail: {
     sourceIssue: "HOBO-540",
     packagePath: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
-    proofPath: "urn:hobo:proof:vibe-first-run-activation-rail",
+    proofPath: "docs/design/proofs/vibe-first-run-activation-rail/README.md",
     stages: ACTIVATION_RAIL_STAGES,
   },
   consumedWorkspaceProjectStates: {
     sourceIssue: "HOBO-541",
     packagePath: "src/draft/exp-proofs/ux/vibe-workspace-project-states",
-    proofPath: "urn:hobo:proof:vibe-workspace-project-states",
+    proofPath: "docs/design/proofs/vibe-workspace-project-states/README.md",
     states: WORKSPACE_PROJECT_STATES,
   },
   steps: [
@@ -165,7 +165,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
         quickstartFixtureId: "rlq-define-object-graph-v1",
       },
       proofMode: "live",
-      docsHandoff: "urn:hobo:proof:vibe-docs-portal-ia-states#getting-started",
+      docsHandoff: "docs/design/proofs/vibe-docs-portal-ia-states/README.md#getting-started",
       supportHandoff: "support receives invite context only when access prerequisite blocks entry",
       accessibilityNote: "Workspace entry exposes keyboard focus order and text status, not color-only invite state.",
     },
@@ -182,7 +182,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
         quickstartFixtureId: "rlq-collect-manifest-ir-v1",
       },
       proofMode: "simulated",
-      docsHandoff: "urn:hobo:proof:vibe-role-tutorial-outlines#app-developer",
+      docsHandoff: "docs/design/proofs/vibe-role-tutorial-outlines/README.md#app-developer",
       supportHandoff: "support routes missing project prerequisite to workspace onboarding owner",
       accessibilityNote: "Project setup labels owner, blocker, and next action as headings.",
     },
@@ -199,7 +199,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
         quickstartFixtureId: "rlq-plan-safe-preview-v1",
       },
       proofMode: "simulated",
-      docsHandoff: "urn:hobo:proof:vibe-plan-review-states#blocked",
+      docsHandoff: "docs/design/proofs/vibe-plan-review-states/README.md#blocked",
       supportHandoff: "support handoff includes plan id, blocker owner, and customer-safe refusal wording",
       accessibilityNote: "Plan preview announces blocked versus safe states in plain language.",
     },
@@ -216,7 +216,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
         quickstartFixtureId: "rlq-manage-stale-evidence-v1",
       },
       proofMode: "reference fixture",
-      docsHandoff: "urn:hobo:proof:vibe-troubleshooting-decision-trees#stale-evidence",
+      docsHandoff: "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md#stale-evidence",
       supportHandoff: "support receives redacted evidence pack with owner route and next update condition",
       accessibilityNote: "Recovery step never presents stale evidence as a green success state.",
     },
@@ -233,7 +233,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
         quickstartFixtureId: "rlq-deploy-run-accepted-v1",
       },
       proofMode: "scope-out",
-      docsHandoff: "urn:hobo:proof:resource-lifecycle-quickstart-examples#recover",
+      docsHandoff: "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#recover",
       supportHandoff: "support references proof package link without creating live tickets",
       accessibilityNote: "Value proof distinguishes simulated acceptance from live launch claims.",
     },
@@ -270,35 +270,35 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
       surface: "docs-portal",
       trigger: "user needs getting-started or architecture context during workspace entry",
       owner: "docs portal owner",
-      evidenceAnchor: "urn:hobo:proof:vibe-docs-portal-ia-states",
+      evidenceAnchor: "docs/design/proofs/vibe-docs-portal-ia-states/README.md",
       customerSafeMessage: "Docs link references fixture evidence; no live tenant data is exposed.",
     },
     {
       surface: "tutorials",
       trigger: "project setup or first proof needs role tutorial guidance",
       owner: "tutorial owner",
-      evidenceAnchor: "urn:hobo:proof:vibe-role-tutorial-outlines",
+      evidenceAnchor: "docs/design/proofs/vibe-role-tutorial-outlines/README.md",
       customerSafeMessage: "Tutorial path stays simulated and cites accepted quickstart fixture ids.",
     },
     {
       surface: "troubleshooting",
       trigger: "blocked or stale evidence needs diagnostic tree routing",
       owner: "troubleshooting owner",
-      evidenceAnchor: "urn:hobo:proof:vibe-troubleshooting-decision-trees",
+      evidenceAnchor: "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md",
       customerSafeMessage: "Troubleshooting tree names owner and safe next action without live repair.",
     },
     {
       surface: "support-workflow",
       trigger: "recovery or blocked path needs customer-safe support update",
       owner: "support workflow owner",
-      evidenceAnchor: "urn:hobo:proof:vibe-support-workflow-mockups",
+      evidenceAnchor: "docs/design/proofs/vibe-support-workflow-mockups/README.md",
       customerSafeMessage: "Support handoff stays redacted and does not open live queues in this proof.",
     },
   ],
   supportHandoffEvidence: {
     severity: "SEV3 first-run workflow blocked",
     redactionState: "customer-safe redacted snapshop fixture evidence only",
-    evidenceLink: "urn:hobo:proof:vibe-clickable-first-run-walkthrough",
+    evidenceLink: "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
     nextUpdateCondition:
       "support updates customer when owner route accepts evidence or blocker status changes",
   },
@@ -368,7 +368,7 @@ export function validateVibeClickableFirstRunWalkthrough(
   if (walkthrough.packagePath !== "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (walkthrough.proofPath !== "urn:hobo:proof:vibe-clickable-first-run-walkthrough") {
+  if (walkthrough.proofPath !== "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
 
@@ -399,7 +399,7 @@ function validateConsumedActivationRail(
   if (consumed.packagePath !== "src/draft/exp-proofs/ux/vibe-first-run-activation-rail") {
     errors.push({ code: "wrong-consumed-rail-package", message: "HOBO-540 package path drifted" });
   }
-  if (consumed.proofPath !== "urn:hobo:proof:vibe-first-run-activation-rail") {
+  if (consumed.proofPath !== "docs/design/proofs/vibe-first-run-activation-rail/README.md") {
     errors.push({ code: "wrong-consumed-rail-proof", message: "HOBO-540 proof path drifted" });
   }
   if (!arraysEqual(consumed.stages, ACTIVATION_RAIL_STAGES)) {
@@ -423,7 +423,7 @@ function validateConsumedWorkspaceProjectStates(
   if (consumed.packagePath !== "src/draft/exp-proofs/ux/vibe-workspace-project-states") {
     errors.push({ code: "wrong-consumed-state-package", message: "HOBO-541 package path drifted" });
   }
-  if (consumed.proofPath !== "urn:hobo:proof:vibe-workspace-project-states") {
+  if (consumed.proofPath !== "docs/design/proofs/vibe-workspace-project-states/README.md") {
     errors.push({ code: "wrong-consumed-state-proof", message: "HOBO-541 proof path drifted" });
   }
   if (!arraysEqual(consumed.states, WORKSPACE_PROJECT_STATES)) {
@@ -532,7 +532,7 @@ function validateHandoffRoutes(routes: readonly HandoffRoute[], errors: Validati
         errors.push({ code: "missing-handoff-field", message: `${route.surface}.${field} must not be empty` });
       }
     }
-    if (!route.evidenceAnchor.startsWith("urn:hobo:proof:")) {
+    if (!route.evidenceAnchor.startsWith("docs/design/proofs/")) {
       errors.push({
         code: "invalid-handoff-anchor",
         message: `${route.surface} evidence anchor must point to a proof note`,

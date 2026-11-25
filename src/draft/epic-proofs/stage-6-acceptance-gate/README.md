@@ -39,13 +39,17 @@ pnpm --prefix src/draft/epic-proofs/stage-6-acceptance-gate run simulate
 
 ## References
 
-- [ADR-0063](urn:hobo:decision:adr-0063) keep-prior-gates-green
+- [requirements.md Release criteria Stage 6](../../../../docs/archive/requirements/requirements.md)
+- [roadmap.md Stage 6](../../../../docs/archive/roadmap.md)
+- [ADR-0063](../../../../docs/design/adr/07-portability-extensibility.md#adr-0063) keep-prior-gates-green
 - Blocker seams (Done): [multi-region-dr-replay-contract](../../technical-proofs/multi-region-dr-replay-contract/README.md) (HOBO-659), [full-dashboard-projection-views-contract](../../exp-proofs/ux/full-dashboard-projection-views-contract/README.md) (HOBO-662), [s6-09-operator-crew-yard-services-contract](../../technical-proofs/s6-09-operator-crew-yard-services-contract/README.md) (HOBO-664)
-- Proof note: [`urn:hobo:proof:hobo-665-stage-6-acceptance-gate`](urn:hobo:proof:hobo-665-stage-6-acceptance-gate)
+- Proof note: [`docs/design/proofs/hobo-665-stage-6-acceptance-gate/README.md`](../../../../docs/design/proofs/hobo-665-stage-6-acceptance-gate/README.md)
 
-## Executable evidence
+## Architecture evidence
+
 - `architecture/` — protobuf + CUE for drill result records
 - `architecture/pacts/` — package boundary PACT
+- `architecture.md` — parse-don't-validate and event-architecture notes
 
 ## Cascade absorption
 

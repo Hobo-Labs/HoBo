@@ -1,7 +1,7 @@
 # `@hobo/stations`
 
 **Station** is the hard control-plane isolation boundary a Conductor occupies
-([ADR-0131](urn:hobo:decision:adr-0131)). App topology
+([ADR-0131](../../docs/design/adr/01-architecture-core.md#adr-0131)). App topology
 stays **Bindle ⊂ Camp ⊂ Yard ⊂ Junction** — Station does **not** contain Yards.
 
 This package owns Station aggregates, Rails (content-addressed profiles), local
@@ -52,7 +52,7 @@ occupants (`hobo.station-capability/v1`; closed kind vocabulary; provenance
 declared set against host observations **fail-closed** (declared-but-unobserved
 is missing) and produces a `hobo.station-capability-manifest/v1`, persisted
 beside the Station data (`stationCapabilitiesPath` →
-`HOBO_HOME/stations/<id>/capabilities.json`). See `urn:hobo:requirement:stations`.
+`HOBO_HOME/stations/<id>/capabilities.json`). See `docs/design/stations.md`.
 
 ```ts
 import { matchStationCapabilities, stationCapability } from "@hobo/stations";
@@ -172,7 +172,7 @@ Station context, a mismatched/denied policy decision, or a confirmed minimum-
 availability violation returns a typed denial. Known-unhealthy backends are
 excluded; unknown health/location signals produce a degraded best-effort plan
 with explicit notes. Synthesis does not call clouds or take ownership of Junction overlay configuration. See
-[ADR-0143](urn:hobo:decision:adr-0143).
+[ADR-0143](../../docs/design/adr/07-portability-extensibility.md#adr-0143).
 
 ## CI budget routing
 
@@ -278,26 +278,15 @@ pnpm --filter @hobo/stations build
 
 - `@hobo/broker` — pure Conductor (receipts pin `stationId` + `railHash`)
 - `@hobo/connectivity` — overlay / PAM / policy foundations
-- Design: ADR-0131, package map in `urn:hobo:requirement:package-namespaces`
+- Design: ADR-0131, package map in `docs/design/package-namespaces.md`
 
 ## Budget-driven routing transitions
 
 `createRoutingControlLoop` executes routing decisions under an explicitly declared
 `topology.costRouting` (`stateless`, `active-active-eventual`, or
 `pinned-with-replica`). A single-writer or undeclared topology cannot move on a
-price signal. A budget signal must match the latest threshold transition from
-the host's independent budget projection. Supply that transition through
-`budgetSignalEvidence`; supply `budgetSignalPolicy` for scoped budget, period,
-and policy-revision checks. The signal's threshold, spend, transition, cycle,
-and identity are validated before dispatch. The ledger must contain a traffic
-account for each healthy candidate.
-`@hobo/broker` exposes `latestBudgetTransition` to rebuild that evidence from
-the current journal and policy, including a scoped zero-budget reset.
-
-Processed budget cycles are stored in the routing snapshot, so a replay cannot
-initiate a second change after a restart. A signal held by cooldown or rejected
-before a provider effect remains retryable. The fresh ledger and financial
-supervisor authorize the actual transition.
+price signal. Budget signals are tenant-bound triggers; the fresh ledger and
+financial supervisor authorize the actual transition.
 
 A routing change requires `ledgerView`, `persistState`, and `beforeApply`.
 `beforeApply(plan, phase, percent, reason)` must check the supervisor's verified
@@ -308,15 +297,6 @@ incumbent bypasses optimization cooldown/flip limits and may use the explicit
 capabilities refuse the move; the loop never invents a hard budget guarantee from
 an empty ledger. Financial settlement and source retirement belong to the hosting
 transition supervisor, not the traffic-routing port.
-
-The `routing.ReplanProposed`, `routing.ReplanHeld`, `routing.ReplanDenied`,
-`routing.Reapplied`, `routing.ReconciliationRequired`, `routing.ApplyRequested`,
-and `routing.Observed` payloads have
-[Protobuf](./data-models/routing_events.proto) and
-[CUE](./data-models/routing_events.cue) contracts. `routing.RampAdvanced` uses
-the existing [cutover contract](./data-models/traffic_cutover.proto).
-Reconciliation facts from the loop identify the pending plan; cutover facts
-include the observed percent and time, with a plan identifier when available.
 
 The host CAS-persists the generated `RoutingControlStateRecord` under its service
 actor fence. `snapshot()` and `initialState` retain incumbent, stability history,

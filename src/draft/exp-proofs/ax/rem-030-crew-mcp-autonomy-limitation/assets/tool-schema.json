@@ -1,0 +1,8 @@
+{
+  "name": "rem-030-crew-mcp-autonomy-limitation",
+  "description": "MCP tool fixture for rem-030-crew-mcp-autonomy-limitation",
+  "inputSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}

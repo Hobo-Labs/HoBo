@@ -1,3 +1,6 @@
+// M4 GA handoff: the golden-replay corpus / upcaster-totality gate promoted
+// from event-body-upcaster-gate. This test IS the can-deploy wiring — an
+// event body that cannot be lifted to the current version fails this lane.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -18,6 +21,7 @@ import {
 	migrationCorpusBaseline,
 } from "../src/upcaster-corpus.js";
 
+/** The promoted three-version evolution fixture (summary→title→requesterRef). */
 function ticketContract(): EventEvolutionContract {
 	const type = "ticket.Opened";
 	const schemas = [
@@ -106,6 +110,7 @@ test("promoted evolution fixture passes the gate: every pinned body lifts to v3"
 	assert.equal(report.replays.length, 3);
 	for (const replay of report.replays) {
 		assert.equal(replay.currentVersion, 3);
+		// PII invariant carried by the v2→v3 upcaster: no requesterEmail at v3.
 		assert.ok(!("requesterEmail" in replay.currentBody));
 	}
 });
@@ -141,6 +146,7 @@ test("a version bump without a corpus entry fails coverage", () => {
 test("append-only baseline: deleting or editing a pinned entry is detected", () => {
 	const contract = ticketContract();
 	const baseline = createCorpusBaseline(contract.goldenCorpus);
+	// Deletion.
 	const withDeletion = {
 		...contract,
 		goldenCorpus: contract.goldenCorpus.slice(0, 2),
@@ -153,6 +159,7 @@ test("append-only baseline: deleting or editing a pinned entry is detected", () 
 			error.includes("append-only corpus deletion detected"),
 		),
 	);
+	// Digest tamper.
 	const tampered: CorpusBaseline = {
 		...baseline,
 		entries: baseline.entries.map((entry, index) =>
@@ -176,10 +183,12 @@ test("can-deploy: every migration.* contract replays clean against the pinned ba
 		"corpus",
 		"golden-replay-baseline.json",
 	);
+	// SAFETY: the committed baseline file is validated by the gate as CorpusBaseline.
 	const pinned = JSON.parse(
 		readFileSync(baselinePath, "utf8"),
 	) as CorpusBaseline;
 
+	// Migration entries in the shared corpus file must match today's migration baseline.
 	const migrationEntries = pinned.entries.filter((entry) =>
 		entry.key.startsWith("migration."),
 	);

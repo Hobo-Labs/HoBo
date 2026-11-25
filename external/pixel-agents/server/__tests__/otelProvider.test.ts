@@ -3,11 +3,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { StreamProvider } from '../../core/src/streamProvider.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import type { FurnitureAsset } from '../src/assetLoader.js';
 import { TILE_FLOOR_1, TILE_WALL } from '../src/providers/otel/constants.js';
-import type { OtelIngestResult, OtelProviderDeps } from '../src/providers/otel/otelProvider.js';
+import type { OtelProviderDeps } from '../src/providers/otel/otelProvider.js';
 import { OtelProvider } from '../src/providers/otel/otelProvider.js';
 
 function kv(key: string, stringValue: string) {
@@ -152,14 +151,17 @@ describe('OtelProvider', () => {
       isExternal: true,
       folderName: 'payments',
     });
+    // No-camp bindle stays unzoned.
     expect(agents.find((a) => a.sessionId === 'otel-gateway')?.folderName).toBeUndefined();
 
+    // Camp → Area: mapping written, layout materialized with painted tiles.
     expect(mappings['payments']).toEqual(['payments']);
     expect(writtenLayouts.length).toBeGreaterThan(0);
     const finalLayout = layout as { areas?: Array<{ label: string }>; areaTiles?: unknown[] };
     expect(finalLayout.areas?.some((a) => a.label === 'payments')).toBe(true);
     expect(finalLayout.areaTiles?.filter((t) => t === 'payments').length).toBeGreaterThan(0);
 
+    // Two bindles in one camp → two chairs in the area.
     const furniture = (layout as { furniture: Array<{ uid: string }> }).furniture;
     expect(furniture.filter((f) => f.uid.endsWith('-chair'))).toHaveLength(2);
   });
@@ -217,10 +219,8 @@ describe('OtelProvider', () => {
   });
 
   it('tolerates malformed trace bodies', () => {
-    const stream: StreamProvider<unknown, OtelIngestResult> = provider;
-    expect(stream.kind).toBe('stream');
-    expect(stream.ingest(null).spans).toBe(0);
-    expect(stream.ingest({ resourceSpans: 'junk' }).spans).toBe(0);
+    expect(provider.ingest(null).spans).toBe(0);
+    expect(provider.ingest({ resourceSpans: 'junk' }).spans).toBe(0);
     expect(store.size).toBe(0);
   });
 });

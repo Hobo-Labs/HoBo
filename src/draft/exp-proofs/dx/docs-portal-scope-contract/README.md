@@ -6,9 +6,9 @@ shape, and guards against implementation creep into portal UI, CMS, search,
 analytics, support tooling, security intake, hosting, or marketing publication.
 
 The authoritative design record is
-[`urn:hobo:requirement:docs-portal`](urn:hobo:requirement:docs-portal).
+[`docs/design/docs-portal.md`](../../../../../docs/design/docs-portal.md).
 Branch evidence is summarized in
-[`urn:hobo:proof:hobo-434-docs-portal`](urn:hobo:proof:hobo-434-docs-portal).
+[`docs/design/proofs/hobo-434-docs-portal`](../../../../../docs/design/proofs/hobo-434-docs-portal/README.md).
 
 ## Proof
 
@@ -31,10 +31,12 @@ The tests prove:
 - excluded UI, CMS, search service, analytics, support automation, security
   intake, hosting, and public-claim scope is rejected by the validator.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Docs Portal
   Scope Contract.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

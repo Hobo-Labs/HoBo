@@ -13,9 +13,11 @@ It records:
 Scope intentionally excludes OPTO optimizer internals, external Agent Lightning or Microsoft Trace adapters, and live-eval reward attachment.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Training Engine Port Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

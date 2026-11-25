@@ -26,7 +26,7 @@ describe("vibe marketplace discovery prototype", () => {
     );
     assert.equal(
       proof.proofNote,
-      "urn:hobo:proof:vibe-marketplace-discovery-prototype",
+      "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md",
     );
     assert.deepEqual(
       proof.sourceIssues.map((source) => source.issue),

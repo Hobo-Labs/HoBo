@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260731-survey-smoke",
+  "rankedAt": "2026-07-31T15:17:24.535Z",
+  "implementableUpliftRemaining": 1,
+  "items": [
+    {
+      "id": "fr-doctor-gbrain-next-step",
+      "title": "Doctor gbrain warn prints zero-key next command",
+      "problem": "Warn leaves next step ambiguous.",
+      "desiredOutcome": "Transcript includes copy-pasteable remediation line.",
+      "hypothesis": "If we deliver \"Transcript includes copy-pasteable remediation line.\", positive metrics rise on pnpm run doctor.",
+      "source": "survey",
+      "sourceRefs": [
+        ".optimizexp/runs/20260731-survey-smoke/survey/product-app-developer.json"
+      ],
+      "personas": [
+        "product-app-developer"
+      ],
+      "featureIds": [
+        "cli-help-and-doctor"
+      ],
+      "surfaces": [
+        "pnpm run doctor"
+      ],
+      "experiences": [
+        "dx"
+      ],
+      "impactOn": {
+        "excitement": 1,
+        "easeOfUse": 1,
+        "perceivedOptimality": 2
+      },
+      "effort": "S",
+      "priorityScore": 65,
+      "status": "ready",
+      "antiGoals": [
+        "never auto-install gbrain"
+      ],
+      "smallestExperiment": "Add remediation line under gbrain PATH warn in doctor output.",
+      "createdAt": "2026-07-31T15:17:24.535Z",
+      "updatedAt": "2026-07-31T15:17:24.535Z",
+      "runId": "20260731-survey-smoke"
+    }
+  ]
+}

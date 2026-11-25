@@ -74,7 +74,7 @@ test("cross-project dependencies are reflected in release cutline domains", asyn
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
       readinessDomain: "legal",
       cutlineCategory: "legal",
-      source: "urn:hobo:requirement:legal-privacy-terms-readiness",
+      source: "docs/design/legal-privacy-terms-readiness.md",
     },
   ];
 

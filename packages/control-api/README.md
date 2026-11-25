@@ -1,6 +1,6 @@
 # `@hobo/control-api`
 
-Local-first control-plane HTTP and SSE adapter.
+Local-first control-plane HTTP + SSE adapter for the HoBo Yard game UI.
 
 ```ts
 import { createControlApiServer } from "@hobo/control-api";

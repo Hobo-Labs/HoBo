@@ -5,6 +5,7 @@ toolchain checks (boundary lint, architecture guard, schema drift, PACT
 consumer/provider, conformance self-test, sign/verify, hello-bindle determinism
 and health, tamper-refuse), `runStageGate` executes them and captures evidence,
 and the `hobo-stage-gate` CLI emits an append-only `StageGateRecord` JSON file.
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full evidence trail.
 
 ## Honest scope
 

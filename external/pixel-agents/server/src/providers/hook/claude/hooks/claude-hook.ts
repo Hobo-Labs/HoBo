@@ -15,15 +15,32 @@ import { isServerConfig, isServerTarget } from '../../../../serverConfig.js';
 const SERVER_JSON = path.join(os.homedir(), SERVER_JSON_DIR, SERVER_JSON_NAME);
 const SERVERS_REGISTRY_DIR = path.join(os.homedir(), SERVER_JSON_DIR, SERVERS_DIR);
 
+/**
+ * CI / e2e diagnostic: when PIXEL_AGENTS_DEBUG_LOG is set, record the hook
+ * script's outcome at every exit point. The hook delivery chain (spawn
+ * claude-hook.js -> read the registry -> POST to every live server) is
+ * otherwise 100% silent: every failure path resolves quietly, so a dropped
+ * hook is invisible in CI. Logging here lets a failing run show exactly
+ * where delivery dies (bad-stdin, no-server-json, per-server POST
+ * error/timeout/status). Zero cost when the env var is unset.
+ */
+// Env var is the primary source, but it doesn't reliably reach this spawned
+// process across platforms (macOS VS Code terminal profiles with
+// inheritEnv:false, etc.). After reading the registry we fall back to a
+// live server's `debugLog` field, which the server populated from the same
+// env var.
 let debugLogPath = process.env['PIXEL_AGENTS_DEBUG_LOG'];
 function hookDebug(line: string): void {
   if (!debugLogPath) return;
   try {
     fs.appendFileSync(debugLogPath, `${new Date().toISOString()} HOOKSCRIPT ${line}\n`);
   } catch {
+    /* never let diagnostics break the hook */
   }
 }
 
+/** True if a process with this PID is alive. Best-effort: a false positive on
+ *  PID reuse just costs one extra, harmless, failed POST -- never a crash. */
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -33,6 +50,16 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Enumerate every live registry entry under ~/.pixel-agents/servers/, so the
+ * event can fan out to each running server (VS Code embedded + a standalone
+ * `npx pixel-agents`, or several of either, all at once). Entries whose owning
+ * PID is no longer alive are skipped (the owning server prunes its own stale
+ * file on next start; this script only needs to not POST to it). Returns an
+ * empty array when the directory is absent/empty/unreadable -- the caller
+ * falls back to the legacy single-target server.json (forward-compat with a
+ * server that predates the registry).
+ */
 function readRegistry(): ServerConfig[] {
   let files: string[];
   try {
@@ -64,6 +91,12 @@ function readRegistry(): ServerConfig[] {
   return live;
 }
 
+/**
+ * POST one hook event to one server. Best-effort: every failure path (bad
+ * connection, timeout, non-2xx status) resolves quietly -- a dropped delivery
+ * to one server must never affect delivery to any other server, nor the
+ * script's exit code.
+ */
 function postToServer(
   server: ServerTarget,
   body: string,
@@ -130,6 +163,9 @@ async function main(): Promise<void> {
   const eventName = (data.hook_event_name as string | undefined) ?? '?';
   const sid = (data.session_id as string | undefined)?.slice(0, 8) ?? '?';
 
+  // Multi-server fan-out (D4): deliver to every live server in the registry.
+  // Falls back to the single legacy server.json when the registry has no live
+  // entries -- e.g. a server on disk that predates the registry (A1/A2).
   let servers: ServerTarget[] = readRegistry();
   if (servers.length === 0) {
     try {
@@ -146,6 +182,8 @@ async function main(): Promise<void> {
     }
   }
 
+  // Adopt the first live server's debug-log path if the env var didn't reach
+  // us (diagnostic-only; harmless if more than one server has it set).
   if (!debugLogPath) {
     const withDebugLog = servers.find((s) => s.debugLog);
     if (withDebugLog?.debugLog) debugLogPath = withDebugLog.debugLog;

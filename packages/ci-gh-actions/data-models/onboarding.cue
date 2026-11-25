@@ -44,7 +44,7 @@ import "list"
 // secretRef names a GitHub secret or env var; raw credential values never fit.
 #RunnerIntegrationAuth: {
  method: "github-app" | "oidc" | "device" | "secret-ref"
- secretRef?: string & =~"^(github-secret|env):[A-Z][A-Z0-9_]{0,63}$"
+ secretRef?: string & =~"^owner://[A-Z][A-Z0-9_]{0,63}$"
  projectId?: string & =~"^[a-z0-9]{6,32}$"
  if method == "secret-ref" {secretRef: string}
  if method == "oidc" {projectId: string}
@@ -102,78 +102,6 @@ import "list"
 #RelayMcpSetupEntry: string & =~"^[A-Z][A-Z0-9_]{0,63}$"
 #RelayMcpSetupStatus: {state: "configured" | "not-configured" | "config-service-denied" | "config-service-unavailable" | "start-failed", missing?: [...#RelayMcpSetupEntry], invalid?: [...#RelayMcpSetupEntry], providable?: [...#RelayMcpSetupEntry], writable?: bool}
 #RelayMcpSetupResult: {outcome: "written" | "declined" | "cancelled" | "nothing-to-provide" | "nothing-valid" | "form-unavailable" | "store-not-writable" | "writer-refused" | "store-unavailable", written?: [...#RelayMcpSetupEntry], refused?: [...#RelayMcpSetupEntry], remaining?: [...#RelayMcpSetupEntry]}
-#MeshRepository: string & =~"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$"
-#MeshNodeId: string & =~"^[A-Za-z0-9_-]{1,64}$"
-#MeshPublicKey: string & =~"^[A-Za-z0-9_-]{43}$"
-#MeshLabel: string & =~"^.{1,80}$"
-#MeshFree: {memoryMb?: int & >=0 & <=16777216, diskMb?: int & >=0 & <=1073741824}
-#MeshPlatform: {os: string & =~"^.{1,32}$", arch: string & =~"^.{1,32}$"}
-#MeshReliabilitySamples: {delivered?: number & >=0, dropped?: number & >=0}
-#MeshIdentityProof: {publicKey: #MeshPublicKey, signature: string & =~"^[A-Za-z0-9_-]{86}$"}
-#MeshAdvert: {
-	id: #MeshNodeId
-	freeSlots: int & >=0 & <=4096
-	totalSlots?: int & >=0 & <=4096
-	healthy: bool
-	labels: [...#MeshLabel] & list.MaxItems(32)
-	validUntilMs: int & >=0
-	free?: #MeshFree
-	platform?: #MeshPlatform
-	reliability?: number & >=0 & <=1
-	samples?: #MeshReliabilitySamples
-	sinceMs?: int & >=0
-	identity?: #MeshIdentityProof
-	repository?: "" | #MeshRepository
-}
-#MeshTrustedKey: {publicKey: #MeshPublicKey, nodeId?: "" | #MeshNodeId}
-#MeshTrustConfig: {trustedKeys: [...#MeshTrustedKey] & list.MaxItems(256), requireTrusted?: bool}
-#MeshReliabilityRecord: {delivered: number & >=0, dropped: number & >=0, atMs: number & >=0, resetToken?: string & =~"^[A-Za-z0-9._:-]{0,64}$"}
-#MeshNodeReport: {
-	id: #MeshNodeId
-	state: "live" | "unhealthy" | "lost"
-	since?: string
-	healthy?: bool
-	lastSeenAt?: string
-	validUntil: string & !=""
-	totalSlots?: int & >=0 & <=4096
-	freeSlots?: int & >=0 & <=4096
-	freeMemoryMb?: int & >=0
-	freeDiskMb?: int & >=0
-	platform?: #MeshPlatform
-	labels?: [...#MeshLabel]
-	trust: "trusted" | "unverified" | "invalid"
-	publicKey?: "" | #MeshPublicKey
-	reliability?: number & >=0 & <=1
-	delivered?: number & >=0
-	dropped?: number & >=0
-	repository?: "" | #MeshRepository
-}
-#MeshCapacitySummary: {nodes?: int & >=0, healthy?: int & >=0, available?: int & >=0, totalSlots?: int & >=0, freeSlots?: int & >=0, freeMemoryMb?: int & >=0, largestFreeMemoryMb?: int & >=0, freeDiskMb?: int & >=0}
-#MeshNodeReports: {mesh: "configured" | "not-configured" | "unreachable", nodes?: [...#MeshNodeReport], capacity?: #MeshCapacitySummary, readAt?: string, requireTrusted?: bool, truncated?: bool}
-#MeshFleetLabelState: {nodes?: int & >=0, trustedNodes?: int & >=0, freeSlots?: int & >=0}
-#MeshFleetState: {publishedAt: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$", labels: {[=~"^[A-Za-z0-9_.-]{1,80}$"]: #MeshFleetLabelState}}
-// The fleet verdict runner routing asks a relay for: the labels new work
-// should stay off, each with one of two reasons. The relay stamps the times.
-#FleetVerdictReason: "no-node" | "no-capacity"
-#FleetVerdictBlock: {reason: #FleetVerdictReason}
-#FleetVerdictBlocked: {[=~"^[a-z0-9][a-z0-9_.-]{0,79}$"]: #FleetVerdictBlock}
-#FleetVerdictTime: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$"
-#FleetVerdict: {repository: string & =~"^[a-z0-9][a-z0-9_-]{0,38}/[a-z0-9_.-]{1,100}$", blocked: #FleetVerdictBlocked, observedAt?: #FleetVerdictTime, expiresAt?: #FleetVerdictTime}
-#FleetVerdictMode: "shadow" | "report"
-#FleetVerdictReport: {blocked?: #FleetVerdictBlocked, ttlSeconds: int & >=1 & <=180, mode: #FleetVerdictMode}
-// Who may report (public keys only), what the relay remembers of each, and
-// what the status route shows. No record here carries a private key.
-#FleetReporterId: string & =~"^[A-Za-z0-9_-]{1,64}$"
-#FleetVerdictLabel: string & =~"^[a-z0-9][a-z0-9_.-]{0,79}$"
-#FleetReporterEnrollment: {id: #FleetReporterId, publicKey: string & =~"^[A-Za-z0-9_-]{43}$", accountId: string & =~"^[A-Za-z0-9_-]{1,80}$", labels: [#FleetVerdictLabel, ...#FleetVerdictLabel] & list.MaxItems(16)}
-#FleetReporterEnrollments: {reporters: [...#FleetReporterEnrollment] & list.MaxItems(64)}
-#FleetReporterLabelState: {lastBlockedAt?: #FleetVerdictTime, lastClearedAt?: #FleetVerdictTime}
-#FleetReporterState: {lastSequence: string & =~"^[1-9][0-9]{0,19}$", mode: #FleetVerdictMode, lastReportAt: #FleetVerdictTime, labels?: {[#FleetVerdictLabel]: #FleetReporterLabelState}}
-#FleetVerdictLabelAllowance: {windowStart: #FleetVerdictTime, blockedSeconds?: int & >=0, lastCountedAt?: #FleetVerdictTime}
-#FleetVerdictAllowance: {labels: {[#FleetVerdictLabel]: #FleetVerdictLabelAllowance}}
-#FleetReporterStatus: {id: #FleetReporterId, labels: [...#FleetVerdictLabel], live: bool, state?: #FleetReporterState}
-#FleetVerdictAllowanceUse: {usedSeconds: int & >=0, spent: bool, windowStart?: #FleetVerdictTime}
-#FleetReporterStatusList: {repository: string & =~"^[a-z0-9][a-z0-9_-]{0,38}/[a-z0-9_.-]{1,100}$", reporters: [...#FleetReporterStatus], allowance: {[#FleetVerdictLabel]: #FleetVerdictAllowanceUse}, dailyBlockMinutes: int & >=1 & <=1440}
 // The routing slip (ADR-0181): the box relay's current routing answer for one
 // repository, kept as the message of a parentless commit at
 // `refs/hobo/routing-slip`. Times are the relay's `toISOString()` (fixed
@@ -184,7 +112,8 @@ import "list"
 // any self-hosted runner, so no policy or slip may name one.
 #RunnerRoutingLabel: string & =~"^[a-z0-9][a-z0-9_.-]{0,79}$" & !="self-hosted" & !="linux" & !="x64" & !="arm64" & !="windows" & !="macos"
 #RoutingSlipClass: {runner: #RunnerRoutingLabel, tier: "fleet", reason: "fleet-open" | "fleet-busy" | "pinned"} | {runner: #RunnerRoutingLabel, tier: "local" | "github", reason: "no-node" | "no-capacity" | "stalled" | "pinned"}
-#RoutingSlipRelay: {nodeId: #MeshNodeId, commit: string & =~"^[0-9a-f]{7,40}$"}
+#RoutingSlipNodeId: string & =~"^[A-Za-z0-9_-]{1,64}$"
+#RoutingSlipRelay: {nodeId: #RoutingSlipNodeId, commit: string & =~"^[0-9a-f]{7,40}$"}
 #RoutingSlip: {
 	version:    1
 	repository: string & =~"^[a-z0-9][a-z0-9_-]{0,38}/[a-z0-9_.-]{1,100}$"
@@ -253,4 +182,4 @@ import "list"
 #RelayCacheAppState:{purpose: "register" | "install", accountId: #RelayCacheAccountId, subject: string & !="", expiresAtMs: number & >0}
 #RelayCacheVerifiedInstallations: {accountId: #RelayCacheAccountId, appId: number & >0, verifiedIds?: [...(number & >0)] & list.MaxItems(100)}
 #RelayCacheProxyMeter: {leaseId: #RelayCacheLeaseId, proxySessionId: string & =~"^sbx_[A-Za-z0-9_-]+$", bytes?: number & >=0, calls?: number & >=0, readAt: string & !=""}
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #RelayMcpSetupStatus | #RelayMcpSetupResult | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #FleetVerdict | #FleetVerdictReport | #FleetReporterEnrollments | #FleetReporterState | #FleetVerdictAllowance | #FleetReporterStatusList | #RoutingSlip | #RunnerRouting | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #RelayMcpSetupStatus | #RelayMcpSetupResult | #RoutingSlip | #RunnerRouting | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter

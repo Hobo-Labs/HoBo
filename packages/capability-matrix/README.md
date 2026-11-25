@@ -1,7 +1,7 @@
 # @hobo/capability-matrix
 
 The Bindle primitive × runtime coverage view, **derived** rather than curated
-([ADR-0151](urn:hobo:decision:07-portability-extensibility) decision 14).
+([ADR-0151](../../docs/design/adr/07-portability-extensibility.md) decision 14).
 
 There is no coverage table in this package. The grid is the cross product of the
 ten Bindle primitives and the five runtime models exported by
@@ -93,7 +93,7 @@ event-driven control plane honestly:
   and are the only writers; the matrix is downstream of them and never mutates
   what it reads.
 - **Event store** — the durable journal those actors append to
-  ([ADR-0135](urn:hobo:decision:03-data-plane-sqlite-default), SQLite
+  ([ADR-0135](../../docs/design/adr/03-data-plane-sqlite-default.md), SQLite
   behind HoBo-owned ports). This package neither reads nor writes it directly: it
   is handed the already-folded catalog and evidence.
 - **Materialized view / projection** — the registry projection produces the

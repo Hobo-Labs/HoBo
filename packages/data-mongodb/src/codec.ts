@@ -1,3 +1,23 @@
+/**
+ * Canonical record ↔ MongoDB document.
+ *
+ * One document per record:
+ *
+ *   { _id: { t: <tenant>, k: <canonical key> }, <field>: <native value>, … }
+ *
+ * Tenant and key sit in `_id`, so the `_id` index is the tenant index, a
+ * tenant is one contiguous `_id` range, and a delete event (which carries
+ * only the document key) still names both. Fields are top-level in schema
+ * order, each in the BSON type the annex in `./declaration.ts` declares.
+ * Undeclared fields of an open schema go under `_open`, a name no declared
+ * field can take.
+ *
+ * Every rule here follows one principle: a value is stored exactly or it is
+ * refused. `encode*` throws `MONGODB_VALUE_NOT_REPRESENTABLE` for a canonical
+ * value the native type cannot hold; `decode*` throws
+ * `MONGODB_NON_CANONICAL_VALUE` for a stored value with no canonical form.
+ * Neither error ever quotes the value.
+ */
 import {
 	type CanonicalRecord,
 	type CanonicalType,
@@ -37,11 +57,14 @@ import {
 	isWellFormedText,
 } from "./json.js";
 
+/** Where undeclared fields of an open schema are kept. */
+// public-contract: reserved document field holding an open schema's undeclared fields.
 export const MONGO_OPEN_FIELD = "_open";
 
 const MS_PER_DAY = 86_400_000;
 const BINARY_GENERIC = "00";
 const BINARY_UUID = "04";
+/** The one layout a canonical timestamp has: UTC, six fractional digits. */
 const TIMESTAMP_LAYOUT =
 	"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$";
 
@@ -70,6 +93,7 @@ function nonCanonical(
 	);
 }
 
+/** Refuse text a BSON string cannot hold exactly. */
 export function storableText(
 	text: string,
 	field: string,
@@ -86,6 +110,9 @@ export function storableText(
 	return text;
 }
 
+// ── document ids ────────────────────────────────────────────────────────────
+
+/** The `_id` of a record. Field order is part of the identity. */
 export function documentId(tenant: string, key: string): MongoDocument {
 	return {
 		t: storableText(tenant, "tenant", "key"),
@@ -104,6 +131,8 @@ export function identityOf(id: MongoValue | undefined): DocumentIdentity {
 	}
 	return nonCanonical("_id", "key", mongoTypeOf(id ?? null));
 }
+
+// ── json ────────────────────────────────────────────────────────────────────
 
 function encodeJson(value: JsonValue, field: string): MongoValue {
 	if (value === null || isJsonBoolean(value)) return value;
@@ -160,6 +189,8 @@ function decodeJson(value: MongoValue, field: string): JsonValue {
 		wrappedText(value, "$numberInt") ??
 		wrappedText(value, "$numberLong");
 	const parsed = text === undefined ? Number.NaN : Number(text);
+	// A JSON number is a double. An int32 always is one; an int64 only when it
+	// is a safe integer; NaN and the infinities never are.
 	if (
 		!Number.isFinite(parsed) ||
 		(type === "long" && !Number.isSafeInteger(parsed))
@@ -168,6 +199,8 @@ function decodeJson(value: MongoValue, field: string): JsonValue {
 	}
 	return parsed;
 }
+
+// ── scalar types ────────────────────────────────────────────────────────────
 
 function encodeDecimal(value: string, field: string): MongoValue {
 	const text = toDecimal128Text(value);
@@ -185,6 +218,7 @@ function encodeDecimal(value: string, field: string): MongoValue {
 function encodeDate(value: string): MongoValue {
 	const [year = 0, month = 1, day = 1] = value.split("-").map(Number);
 	const instant = new Date(0);
+	// setUTCFullYear takes years 0–99 literally; Date.UTC would add 1900.
 	instant.setUTCFullYear(year, month - 1, day);
 	return mongoDate(instant.getTime());
 }
@@ -296,6 +330,7 @@ function canonicalText(
 			);
 }
 
+/** One canonical value, already in normal form, as its native BSON value. */
 export function encodeValue(
 	type: CanonicalType,
 	value: JsonValue,
@@ -341,6 +376,10 @@ export function encodeValue(
 	}
 }
 
+/**
+ * One stored value as the raw JSON the canonical parser accepts for its
+ * type. Normalisation (and the last word on validity) is the parser's.
+ */
 export function decodeValue(
 	type: CanonicalType,
 	value: MongoValue,
@@ -389,13 +428,20 @@ export function decodeValue(
 	}
 }
 
+// ── documents ───────────────────────────────────────────────────────────────
+
+/** The document that stores `record` under `(tenant, key)`. */
 export function encodeDocument(
 	schema: DatasetSchema,
 	tenant: string,
 	key: string,
 	record: CanonicalRecord,
 ): MongoDocument {
+	// Parse, don't validate: whatever arrives is put in normal form first, so
+	// the encoders below only ever see canonical values.
 	const canonical = parseCanonicalRecord(schema, record);
+	// A record is stored where its own key says. One filed under another
+	// key would sit where no other engine, and no later read, looks for it.
 	if (encodeRecordKey(schema, canonical) !== key) {
 		throw new DataCoreError(
 			"INVALID_RECORD",
@@ -439,6 +485,7 @@ export interface DecodedDocument extends DocumentIdentity {
 	readonly record: CanonicalRecord;
 }
 
+/** The canonical record a stored document holds, and where it sits. */
 export function decodeDocument(
 	schema: DatasetSchema,
 	document: MongoDocument,
@@ -474,6 +521,8 @@ export function decodeDocument(
 		),
 	};
 }
+
+// ── the collection validator ────────────────────────────────────────────────
 
 const JSON_BSON_TYPES = [
 	"object",
@@ -533,6 +582,13 @@ function fieldRule(field: DatasetField): JsonObject {
 	return { bsonType };
 }
 
+/**
+ * The `$jsonSchema` validator a dataset's collection is created with. It pins
+ * every declared field to its native BSON type, so a writer with its own
+ * connection cannot store a string where the schema says `long` without
+ * explicitly bypassing validation. It is what makes the annex's `exact` read
+ * edges true of the store and not only of this binding.
+ */
 export function datasetValidator(schema: DatasetSchema): MongoDocument {
 	const properties = Object.fromEntries<JsonValue>([
 		[

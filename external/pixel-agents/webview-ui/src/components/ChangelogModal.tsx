@@ -52,7 +52,7 @@ export function ChangelogModal({ isOpen, onClose, currentVersion }: ChangelogMod
       zIndex={51}
       className="min-w-sm!"
     >
-      { }
+      {/* Body */}
       <div className="py-4 px-10 max-h-[60vh] overflow-y-auto">
         {entry.sections.map((section) => (
           <div key={section.title} className="mb-12">
@@ -67,7 +67,7 @@ export function ChangelogModal({ isOpen, onClose, currentVersion }: ChangelogMod
           </div>
         ))}
 
-        { }
+        {/* Contributors */}
         {entry.contributors.length > 0 && (
           <div className="mb-8">
             <div className="text-lg text-accent-bright mb-4">Contributors</div>
@@ -91,7 +91,7 @@ export function ChangelogModal({ isOpen, onClose, currentVersion }: ChangelogMod
         )}
       </div>
 
-      { }
+      {/* Footer */}
       <div className="border-t border-border mt-4 flex">
         <a
           href={`${CHANGELOG_REPO_URL}/blob/main/CHANGELOG.md`}

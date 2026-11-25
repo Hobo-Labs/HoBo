@@ -26,6 +26,8 @@ Wire-version negotiation (HOBO-26), NATS lattice (HOBO-27), deterministic retry 
 pnpm --prefix src/draft/technical-proofs/membrane-deadline-backpressure-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf + CUE for Deadline, FailureClassification, link events
 - `architecture/pacts/` — caller↔membrane typed error envelope PACT
+- `ADR.md` — parse-don't-validate and event-architecture evidence

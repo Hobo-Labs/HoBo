@@ -131,6 +131,7 @@ test("M0 scope proof cannot support production launch or go-live claims", () => 
 });
 
 test("architecture evidence names customer-onboarding schema, parsed types, and event boundary", () => {
+  const architecture = readFileSync(new URL("../ARCHITECTURE.md", import.meta.url), "utf8");
   const pact = JSON.parse(
     readFileSync(
       new URL("../contracts/pacts/customer-onboarding-scope.pact.json", import.meta.url),
@@ -158,4 +159,13 @@ test("architecture evidence names customer-onboarding schema, parsed types, and 
     assert.match(cue, new RegExp(`#${typeName}:`));
   }
 
+  assert.match(architecture, /parse, don't validate/i);
+  assert.match(architecture, /derived domain\s+types/i);
+  assert.match(architecture, /Command/i);
+  assert.match(architecture, /Events/i);
+  assert.match(architecture, /Actor/i);
+  assert.match(architecture, /event-store/i);
+  assert.match(architecture, /projection/i);
+  assert.match(architecture, /Snapshot/i);
+  assert.match(architecture, /read store/i);
 });

@@ -6,131 +6,326 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
+/**
+ * Describes the file onboarding.proto.
+ */
 export const file_onboarding: GenFile = /*@__PURE__*/
   fileDesc("ChBvbmJvYXJkaW5nLnByb3RvEhVob2JvLmNpLmdoX2FjdGlvbnMudjEiQwoTT25ib2FyZGluZ1ByaW5jaXBhbBISCgphY2NvdW50X2lkGAEgASgJEhgKEGluc3RhbGxhdGlvbl9pZHMYAiADKAEiPwoOT25ib2FyZGluZ0ZpbGUSDAoEcGF0aBgBIAEoCRIPCgdjb250ZW50GAIgASgJEg4KBnNoYTI1NhgDIAEoCSKEBAoOT25ib2FyZGluZ1BsYW4SEgoKYWNjb3VudF9pZBgBIAEoCRIXCg9pbnN0YWxsYXRpb25faWQYAiABKAESEgoKcmVwb3NpdG9yeRgDIAEoCRIVCg1yZXBvc2l0b3J5X2lkGAQgASgBEhYKDmRlZmF1bHRfYnJhbmNoGAUgASgJEhAKCGJhc2Vfc2hhGAYgASgJEhUKDWJhc2VfdHJlZV9zaGEYByABKAkSFgoOaW5zdGFsbF9icmFuY2gYCCABKAkSEgoKYnJpZGdlX3JlZhgJIAEoCRIXCg9icmlkZ2Vfd29ya2Zsb3cYCiABKAkSFwoPcnVubmVyX2dyb3VwX2lkGAsgASgNEhsKE2Rpc3BhdGNoZXJfYWN0b3JfaWQYDCABKAESFAoMdHJ1c3RlZF9yZWZzGA0gAygJEiAKGHB1YmxpY19yZXBvX2Fja25vd2xlZGdlZBgOIAEoCBInCh90cnVzdGVkX3JlcG9zaXRvcnlfYWNrbm93bGVkZ2VkGA8gASgIEjQKBWZpbGVzGBAgAygLMiUuaG9iby5jaS5naF9hY3Rpb25zLnYxLk9uYm9hcmRpbmdGaWxlEhEKCXJlbGF5X3VybBgRIAEoCRITCgtwbGFuX2RpZ2VzdBgSIAEoCRIfChdhbGxvd19hbGxfcHVsbF9yZXF1ZXN0cxgTIAEoCCKXAQoVT25ib2FyZGluZ0FwcGx5UmVzdWx0Eg4KBnN0YXR1cxgBIAEoCRIbChNwdWxsX3JlcXVlc3RfbnVtYmVyGAIgASgBEhgKEHB1bGxfcmVxdWVzdF91cmwYAyABKAkSDgoGYnJhbmNoGAQgASgJEhIKCmNvbW1pdF9zaGEYBSABKAkSEwoLcGxhbl9kaWdlc3QYBiABKAkipAEKE09uYm9hcmRpbmdPcGVyYXRpb24SCgoCaWQYASABKAkSMwoEcGxhbhgCIAEoCzIlLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5PbmJvYXJkaW5nUGxhbhI8CgZyZXN1bHQYAyABKAsyLC5ob2JvLmNpLmdoX2FjdGlvbnMudjEuT25ib2FyZGluZ0FwcGx5UmVzdWx0Eg4KBnN0YXR1cxgEIAEoCSI2ChdHaXRodWJBcHBIb29rQXR0cmlidXRlcxILCgN1cmwYASABKAkSDgoGYWN0aXZlGAIgASgIItcDChFHaXRodWJBcHBNYW5pZmVzdBIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRJYCg9ob29rX2F0dHJpYnV0ZXMYAyABKAsyLi5ob2JvLmNpLmdoX2FjdGlvbnMudjEuR2l0aHViQXBwSG9va0F0dHJpYnV0ZXNSD2hvb2tfYXR0cmlidXRlcxIiCgxyZWRpcmVjdF91cmwYBCABKAlSDHJlZGlyZWN0X3VybBIcCglzZXR1cF91cmwYBSABKAlSCXNldHVwX3VybBIOCgZwdWJsaWMYBiABKAgSJgoOZGVmYXVsdF9ldmVudHMYByADKAlSDmRlZmF1bHRfZXZlbnRzEnIKE2RlZmF1bHRfcGVybWlzc2lvbnMYCCADKAsyQC5ob2JvLmNpLmdoX2FjdGlvbnMudjEuR2l0aHViQXBwTWFuaWZlc3QuRGVmYXVsdFBlcm1pc3Npb25zRW50cnlSE2RlZmF1bHRfcGVybWlzc2lvbnMSJAoNY2FsbGJhY2tfdXJscxgJIAMoCVINY2FsbGJhY2tfdXJscxo5ChdEZWZhdWx0UGVybWlzc2lvbnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBYgZwcm90bzM");
 
+/**
+ * Bound by the authenticated HoBo control plane, never by request JSON alone.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.OnboardingPrincipal
+ */
 export type OnboardingPrincipal = Message<"hobo.ci.gh_actions.v1.OnboardingPrincipal"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
   accountId: string;
 
+  /**
+   * @generated from field: repeated double installation_ids = 2;
+   */
   installationIds: number[];
 };
 
+/**
+ * Describes the message hobo.ci.gh_actions.v1.OnboardingPrincipal.
+ * Use `create(OnboardingPrincipalSchema)` to create a new message.
+ */
 export const OnboardingPrincipalSchema: GenMessage<OnboardingPrincipal> = /*@__PURE__*/
   messageDesc(file_onboarding, 0);
 
+/**
+ * @generated from message hobo.ci.gh_actions.v1.OnboardingFile
+ */
 export type OnboardingFile = Message<"hobo.ci.gh_actions.v1.OnboardingFile"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
   path: string;
 
+  /**
+   * @generated from field: string content = 2;
+   */
   content: string;
 
+  /**
+   * @generated from field: string sha256 = 3;
+   */
   sha256: string;
 };
 
+/**
+ * Describes the message hobo.ci.gh_actions.v1.OnboardingFile.
+ * Use `create(OnboardingFileSchema)` to create a new message.
+ */
 export const OnboardingFileSchema: GenMessage<OnboardingFile> = /*@__PURE__*/
   messageDesc(file_onboarding, 1);
 
+/**
+ * Reviewable, deterministic intent. The digest detects mutation, not authorization.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.OnboardingPlan
+ */
 export type OnboardingPlan = Message<"hobo.ci.gh_actions.v1.OnboardingPlan"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
   accountId: string;
 
+  /**
+   * @generated from field: double installation_id = 2;
+   */
   installationId: number;
 
+  /**
+   * @generated from field: string repository = 3;
+   */
   repository: string;
 
+  /**
+   * @generated from field: double repository_id = 4;
+   */
   repositoryId: number;
 
+  /**
+   * @generated from field: string default_branch = 5;
+   */
   defaultBranch: string;
 
+  /**
+   * @generated from field: string base_sha = 6;
+   */
   baseSha: string;
 
+  /**
+   * @generated from field: string base_tree_sha = 7;
+   */
   baseTreeSha: string;
 
+  /**
+   * @generated from field: string install_branch = 8;
+   */
   installBranch: string;
 
+  /**
+   * @generated from field: string bridge_ref = 9;
+   */
   bridgeRef: string;
 
+  /**
+   * @generated from field: string bridge_workflow = 10;
+   */
   bridgeWorkflow: string;
 
+  /**
+   * @generated from field: uint32 runner_group_id = 11;
+   */
   runnerGroupId: number;
 
+  /**
+   * @generated from field: double dispatcher_actor_id = 12;
+   */
   dispatcherActorId: number;
 
+  /**
+   * @generated from field: repeated string trusted_refs = 13;
+   */
   trustedRefs: string[];
 
+  /**
+   * @generated from field: bool public_repo_acknowledged = 14;
+   */
   publicRepoAcknowledged: boolean;
 
+  /**
+   * @generated from field: bool trusted_repository_acknowledged = 15;
+   */
   trustedRepositoryAcknowledged: boolean;
 
+  /**
+   * @generated from field: repeated hobo.ci.gh_actions.v1.OnboardingFile files = 16;
+   */
   files: OnboardingFile[];
 
+  /**
+   * @generated from field: string relay_url = 17;
+   */
   relayUrl: string;
 
+  /**
+   * @generated from field: string plan_digest = 18;
+   */
   planDigest: string;
 
+  /**
+   * @generated from field: bool allow_all_pull_requests = 19;
+   */
   allowAllPullRequests: boolean;
 };
 
+/**
+ * Describes the message hobo.ci.gh_actions.v1.OnboardingPlan.
+ * Use `create(OnboardingPlanSchema)` to create a new message.
+ */
 export const OnboardingPlanSchema: GenMessage<OnboardingPlan> = /*@__PURE__*/
   messageDesc(file_onboarding, 2);
 
+/**
+ * @generated from message hobo.ci.gh_actions.v1.OnboardingApplyResult
+ */
 export type OnboardingApplyResult = Message<"hobo.ci.gh_actions.v1.OnboardingApplyResult"> & {
+  /**
+   * @generated from field: string status = 1;
+   */
   status: string;
 
+  /**
+   * @generated from field: double pull_request_number = 2;
+   */
   pullRequestNumber: number;
 
+  /**
+   * @generated from field: string pull_request_url = 3;
+   */
   pullRequestUrl: string;
 
+  /**
+   * @generated from field: string branch = 4;
+   */
   branch: string;
 
+  /**
+   * @generated from field: string commit_sha = 5;
+   */
   commitSha: string;
 
+  /**
+   * @generated from field: string plan_digest = 6;
+   */
   planDigest: string;
 };
 
+/**
+ * Describes the message hobo.ci.gh_actions.v1.OnboardingApplyResult.
+ * Use `create(OnboardingApplyResultSchema)` to create a new message.
+ */
 export const OnboardingApplyResultSchema: GenMessage<OnboardingApplyResult> = /*@__PURE__*/
   messageDesc(file_onboarding, 3);
 
+/**
+ * Durable control-plane state. Only a server-owned plan may be applied.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.OnboardingOperation
+ */
 export type OnboardingOperation = Message<"hobo.ci.gh_actions.v1.OnboardingOperation"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
   id: string;
 
+  /**
+   * @generated from field: hobo.ci.gh_actions.v1.OnboardingPlan plan = 2;
+   */
   plan?: OnboardingPlan | undefined;
 
+  /**
+   * @generated from field: hobo.ci.gh_actions.v1.OnboardingApplyResult result = 3;
+   */
   result?: OnboardingApplyResult | undefined;
 
+  /**
+   * @generated from field: string status = 4;
+   */
   status: string;
 };
 
+/**
+ * Describes the message hobo.ci.gh_actions.v1.OnboardingOperation.
+ * Use `create(OnboardingOperationSchema)` to create a new message.
+ */
 export const OnboardingOperationSchema: GenMessage<OnboardingOperation> = /*@__PURE__*/
   messageDesc(file_onboarding, 4);
 
+/**
+ * @generated from message hobo.ci.gh_actions.v1.GithubAppHookAttributes
+ */
 export type GithubAppHookAttributes = Message<"hobo.ci.gh_actions.v1.GithubAppHookAttributes"> & {
+  /**
+   * @generated from field: string url = 1;
+   */
   url: string;
 
+  /**
+   * @generated from field: bool active = 2;
+   */
   active: boolean;
 };
 
+/**
+ * Describes the message hobo.ci.gh_actions.v1.GithubAppHookAttributes.
+ * Use `create(GithubAppHookAttributesSchema)` to create a new message.
+ */
 export const GithubAppHookAttributesSchema: GenMessage<GithubAppHookAttributes> = /*@__PURE__*/
   messageDesc(file_onboarding, 5);
 
+/**
+ * json_name pins GitHub's manifest wire spelling, not protobuf's camelCase default.
+ *
+ * @generated from message hobo.ci.gh_actions.v1.GithubAppManifest
+ */
 export type GithubAppManifest = Message<"hobo.ci.gh_actions.v1.GithubAppManifest"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
   name: string;
 
+  /**
+   * @generated from field: string url = 2;
+   */
   url: string;
 
+  /**
+   * @generated from field: hobo.ci.gh_actions.v1.GithubAppHookAttributes hook_attributes = 3 [json_name = "hook_attributes"];
+   */
   hookAttributes?: GithubAppHookAttributes | undefined;
 
+  /**
+   * @generated from field: string redirect_url = 4 [json_name = "redirect_url"];
+   */
   redirectUrl: string;
 
+  /**
+   * @generated from field: string setup_url = 5 [json_name = "setup_url"];
+   */
   setupUrl: string;
 
+  /**
+   * @generated from field: bool public = 6;
+   */
   public: boolean;
 
+  /**
+   * @generated from field: repeated string default_events = 7 [json_name = "default_events"];
+   */
   defaultEvents: string[];
 
+  /**
+   * @generated from field: map<string, string> default_permissions = 8 [json_name = "default_permissions"];
+   */
   defaultPermissions: { [key: string]: string };
 
+  /**
+   * @generated from field: repeated string callback_urls = 9 [json_name = "callback_urls"];
+   */
   callbackUrls: string[];
 };
 
+/**
+ * Describes the message hobo.ci.gh_actions.v1.GithubAppManifest.
+ * Use `create(GithubAppManifestSchema)` to create a new message.
+ */
 export const GithubAppManifestSchema: GenMessage<GithubAppManifest> = /*@__PURE__*/
   messageDesc(file_onboarding, 6);
 

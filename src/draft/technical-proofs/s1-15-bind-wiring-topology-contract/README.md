@@ -27,6 +27,8 @@ Regenerate golden manifest:
 UPDATE_GOLDEN=1 pnpm --prefix src/draft/technical-proofs/s1-15-bind-wiring-topology-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf + CUE for wiring/topology records
 - `architecture/pacts/` — manifest lowerer + runtime-local resolver boundaries
+- `ADR.md` — parse-don't-validate + event-architecture evidence

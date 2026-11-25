@@ -2,18 +2,11 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, dirname, extname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse as parseAstro } from "@astrojs/compiler/sync";
 import type { Node as AstroNode } from "@astrojs/compiler/types";
-import {
-	AstBuilder,
-	GherkinClassicTokenMatcher,
-	Parser,
-} from "@cucumber/gherkin";
-import { fromMarkdown } from "mdast-util-from-markdown";
 import ts from "typescript";
-import { z } from "zod";
 import { frontmatterType } from "./check-no-committed-plans.mts";
 import { type CommentDialect, lexComments } from "./source-comment-lexer.mts";
 
@@ -34,11 +27,7 @@ const CODE_EXTENSIONS = new Set([
 	".jsx",
 	".mjs",
 	".cjs",
-	".jsonc",
-	".json5",
 ]);
-const BATCH_EXTENSIONS = new Set([".bat", ".cmd"]);
-const XML_EXTENSIONS = new Set([".svg", ".xml", ".xhtml"]);
 const LEXER_LANGUAGES = new Map<string, CommentDialect>([
 	[".cue", "cue"],
 	[".proto", "proto"],
@@ -55,7 +44,6 @@ const OTHER_LANGUAGES = new Map([
 	[".c", "c"],
 	[".h", "c"],
 	[".cpp", "cpp"],
-	[".cs", "csharp"],
 	[".cc", "cpp"],
 	[".hpp", "cpp"],
 	[".java", "java"],
@@ -68,30 +56,18 @@ const OTHER_LANGUAGES = new Map([
 	[".py", "python"],
 	[".css", "css"],
 	[".html", "html"],
-	[".hcl", "hcl"],
-	[".tf", "hcl"],
-	[".tfvars", "hcl"],
 ]);
 const require = createRequire(import.meta.url);
 const AST_GREP = join(
 	dirname(require.resolve("@ast-grep/cli/package.json")),
 	process.platform === "win32" ? "ast-grep.exe" : "ast-grep",
 );
+const GENERATED_OR_VENDOR =
+	/^(?:external\/|tools\/oxlint\/anti-slop\/|packages\/wit\/src\/generated\/.*\.d\.ts$)|(?:^|\/)(?:_generated|dist|node_modules)\//u;
 const DIRECTIVE =
-	/^(?:\/\/go:[A-Za-z][A-Za-z0-9_]*\b|\/\/(?:line|export|extern)\s|\/\/ (?:#cgo|\+build)\s|(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*|@?rem\s+|::\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|buf:(?:lint|breaking):|atlas:(?:nolint|lint|txmode|delimiter|assert)\b|cue:generate\b|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b))/iu;
-const TYPESCRIPT_DIRECTIVE =
-	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?)@ts-(?:check|nocheck|ignore|expect-error)\b/iu;
-const CONCISE_TYPESCRIPT_DIRECTIVE =
-	/^\/\/\s*@ts-(?:check|nocheck|ignore|expect-error)\s*$/iu;
-const LINT_DIRECTIVE_EXPLANATION =
-	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|<!--\s*)(?:eslint|oxlint|stylelint)-(?:disable|enable)\b[^\r\n]*\s--(?:\s|$)/iu;
+	/^(?:\/\/go:[A-Za-z][A-Za-z0-9_]*\b|\/\/(?:line|export|extern)\s|\/\/ (?:#cgo|\+build)\s|(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|buf:(?:lint|breaking):|atlas:(?:nolint|lint|txmode|delimiter|assert)\b|cue:generate\b|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:|SAFETY\s*:))/iu;
 const VITE_DIRECTIVE = /^\/\*\s*@vite-ignore\s*\*\/$/u;
-const GENERATED_DIRECTIVE =
-	/^\/\/\s*@generated(?:\s+(?:by|from)\s+[^\r\n]+)?\s*$/u;
-const DEPRECATED_DIRECTIVE = /^\/\*\*\s*@deprecated\s*\*\/$/u;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
-const DEFERRED_TYPE_DIRECTIVE =
-	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)parallel-type-allowed:/iu;
 
 function git(args: string[]): string {
 	return execFileSync("git", ["--literal-pathspecs", ...args], {
@@ -201,20 +177,6 @@ function contents(mode: Mode, file: string): string {
 	return readFileSync(file, "utf8");
 }
 
-function submodules(mode: Mode): Set<string> {
-	const entries = git(
-		mode.kind === "base"
-			? ["ls-tree", "-rz", "HEAD"]
-			: ["ls-files", "--stage", "-z"],
-	);
-	return new Set(
-		entries
-			.split("\0")
-			.filter((entry) => entry.startsWith("160000 "))
-			.map((entry) => entry.slice(entry.indexOf("\t") + 1)),
-	);
-}
-
 export function addedLineNumbers(patch: string): Set<number> {
 	const added = new Set<number>();
 	let line: number | undefined;
@@ -282,12 +244,7 @@ export function commentsIn(file: string, text: string): Comment[] {
 
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(sourcePath(file)).toLowerCase();
-	if (isDockerfile(sourcePath(file))) return dockerfileComments(file, text);
-	if (BATCH_EXTENSIONS.has(extension)) return batchComments(text);
 	if (extension === ".astro") return astroComments(file, text);
-	if (extension === ".feature") return gherkinComments(file, text);
-	if (extension === ".html") return htmlComments(file, text);
-	if (XML_EXTENSIONS.has(extension)) return xmlComments(file, text);
 	const lexicalLanguage = LEXER_LANGUAGES.get(extension);
 	if (lexicalLanguage) {
 		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
@@ -310,19 +267,11 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 			: undefined);
 	if (!language) {
 		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
-		const training = trainingRanges(file, text);
-		return commentsIn(file, text)
-			.filter(
-				(comment) =>
-					!training.some(
-						([start, end]) => start <= comment.start && comment.end <= end,
-					),
-			)
-			.map((comment) => ({
-				text: comment.text,
-				first: source.getLineAndCharacterOfPosition(comment.start).line + 1,
-				last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
-			}));
+		return commentsIn(file, text).map((comment) => ({
+			text: comment.text,
+			first: source.getLineAndCharacterOfPosition(comment.start).line + 1,
+			last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
+		}));
 	}
 	const kinds =
 		language === "kotlin"
@@ -332,443 +281,31 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 				: ["rust", "java"].includes(language)
 					? ["line_comment", "block_comment"]
 					: ["comment"];
-	return kinds.flatMap((kind) =>
-		astGrepMatches(file, text, language, kind).map(matchLocation),
-	);
-}
-
-function batchComments(text: string): CommentLocation[] {
-	const lines = text.split(/\r?\n/u);
-	const comments: CommentLocation[] = [];
-	let continued = false;
-	let commandStart = true;
-	let quoted = false;
-	let forCommand = false;
-	let forSetDepth = 0;
-	let forAwaitingBody = false;
-	for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
-		if (!continued) {
-			commandStart = forSetDepth === 0;
-			quoted = false;
-			if (forSetDepth === 0) {
-				forCommand = false;
-				forAwaitingBody = false;
-			}
-		}
-		continued = false;
-		const line = lines[lineNumber] ?? "";
-		for (let index = 0; index < line.length; index++) {
-			const character = line[index];
-			if (commandStart && !quoted) {
-				if (character === " " || character === "\t" || character === "@")
-					continue;
-				const rest = line.slice(index);
-				const condition = batchIfPrefix(rest);
-				if (condition > 0) {
-					index += condition - 1;
-					continue;
-				}
-				if (/^else(?=\s|$)/iu.test(rest)) {
-					index += 3;
-					continue;
-				}
-				if (/^for(?=\s)/iu.test(rest)) forCommand = true;
-				if (/^(?:rem(?:\s|$)|::)/iu.test(line.slice(index))) {
-					const first = lineNumber + 1;
-					let comment = line.slice(index);
-					while (
-						hasBatchContinuation(lines[lineNumber] ?? "") &&
-						lineNumber + 1 < lines.length
-					) {
-						lineNumber++;
-						comment += `\n${lines[lineNumber] ?? ""}`;
-					}
-					comments.push({ first, last: lineNumber + 1, text: comment });
-					break;
-				}
-				commandStart = false;
-			}
-			if (character === "^" && !quoted) {
-				if (index === line.length - 1) continued = true;
-				else index++;
-				continue;
-			}
-			if (character === '"') quoted = !quoted;
-			else if (!quoted && forCommand && character === "(") {
-				forSetDepth++;
-				commandStart = false;
-			} else if (!quoted && forSetDepth > 0 && character === ")") {
-				forSetDepth--;
-				forAwaitingBody = forSetDepth === 0;
-			} else if (
-				!quoted &&
-				forAwaitingBody &&
-				(index === 0 || /\s/u.test(line[index - 1] ?? "")) &&
-				/^do(?=\s|\(|$)/iu.test(line.slice(index))
-			) {
-				index++;
-				forCommand = false;
-				forAwaitingBody = false;
-				commandStart = true;
-			} else if (
-				!quoted &&
-				forSetDepth === 0 &&
-				character &&
-				"&|()".includes(character)
-			)
-				commandStart = true;
-		}
-	}
-	return comments;
-}
-
-function batchIfPrefix(text: string): number {
-	return (
-		/^if\s+(?:\/i\s+)?(?:not\s+)?(?:(?:defined|exist|errorlevel|cmdextversion)\s+(?:"[^"]*"|\S+)|(?:"[^"]*"|\S+?)\s*(?:==|\s(?:equ|neq|lss|leq|gtr|geq)\s)\s*(?:"[^"]*"|\S+))\s+/iu.exec(
-			text,
-		)?.[0].length ?? 0
-	);
-}
-
-function hasBatchContinuation(line: string): boolean {
-	const carets = /\^+$/u.exec(line)?.[0].length ?? 0;
-	return carets % 2 === 1;
-}
-
-function isDockerfile(file: string): boolean {
-	const name = basename(file).toLowerCase();
-	return (
-		name === "dockerfile" ||
-		name.startsWith("dockerfile.") ||
-		name.endsWith(".dockerfile")
-	);
-}
-
-function dockerfileComments(file: string, text: string): CommentLocation[] {
-	const lines = text.split(/\r?\n/u);
-	const instructions: string[] = [];
-	const directives = new Set<number>();
-	let directiveHeader = true;
-	let instruction = "";
-	let continuation = false;
-	let escape = "\\";
-	for (const [index, line] of lines.entries()) {
-		const trimmed = line.trim();
-		if (
-			directiveHeader &&
-			/^#\s*(?:syntax|escape|check)\s*=\s*[^\s#]+\s*$/iu.test(trimmed)
-		) {
-			directives.add(index + 1);
-			const configuredEscape = /^#\s*escape\s*=\s*([\\`])\s*$/iu.exec(
-				trimmed,
-			)?.[1];
-			if (configuredEscape) escape = configuredEscape;
-		} else {
-			directiveHeader = false;
-		}
-		if (trimmed.length > 0 && !trimmed.startsWith("#")) {
-			if (!continuation)
-				instruction = /^([a-z]+)/iu.exec(trimmed)?.[1]?.toUpperCase() ?? "";
-			continuation = trimmed.endsWith(escape);
-		}
-		instructions[index] = instruction;
-	}
-	const comments = astGrepMatches(file, text, "bash", "comment")
-		.map(matchLocation)
-		.filter((comment) => {
-			if (directives.has(comment.first)) return false;
-			const line = lines[comment.first - 1] ?? "";
-			return (
-				line.trimStart().startsWith("#") ||
-				instructions[comment.first - 1] === "RUN"
+	return kinds.flatMap((kind) => {
+		const result = spawnSync(
+			AST_GREP,
+			["run", "--stdin", "--lang", language, "--kind", kind, "--json"],
+			{
+				input: text,
+				encoding: "utf8",
+				maxBuffer: 64 * 1024 * 1024,
+			},
+		);
+		if (result.error || (result.status !== 0 && result.status !== 1)) {
+			throw new Error(
+				`cannot parse ${file}: ${result.error?.message ?? result.stderr}`,
 			);
-		});
-	for (const heredoc of astGrepMatches(
-		file,
-		text,
-		"bash",
-		"heredoc_redirect",
-	)) {
-		const start = heredoc.range.start.line;
-		const end = heredoc.range.end.line;
-		if (instructions[start] !== "RUN" || end <= start + 1) continue;
-		let instructionStart = start;
-		while (
-			instructionStart > 0 &&
-			instructions[instructionStart - 1] === "RUN" &&
-			(lines[instructionStart - 1] ?? "").trimEnd().endsWith(escape)
-		)
-			instructionStart--;
-		const header = lines.slice(instructionStart, start + 1).join(" ");
-		if (!dockerHeredocRunsScript(header)) continue;
-		const body = lines.slice(start + 1, end).join("\n");
-		const language = dockerScriptExtension(body);
-		if (!language) continue;
-		for (const comment of commentLocations(`fragment${language}`, body)) {
-			if (comment.first === 1 && comment.text.startsWith("#!")) continue;
-			comments.push({
-				text: comment.text,
-				first: start + 1 + comment.first,
-				last: start + 1 + comment.last,
-			});
 		}
-	}
-	return comments.sort((left, right) => left.first - right.first);
-}
-
-function dockerHeredocRunsScript(header: string): boolean {
-	const command = header
-		.replace(/^\s*RUN\s+/iu, "")
-		.replace(/<<-?\s*(?:(["'])([^"']+)\1|[a-z_][a-z0-9_.-]*)/iu, "")
-		.replace(/(?:\\|`)\s+/gu, " ")
-		.replace(/(?:^|\s)--[a-z][a-z0-9-]*=(?:"[^"]*"|'[^']*'|[^\s]+)/giu, " ")
-		.trim();
-	return (
-		command.length === 0 ||
-		/^(?:(?:\/usr\/bin\/env\s+)?(?:\/bin\/|\/usr\/bin\/)?(?:ba)?sh)(?:\s+-[a-z]+)*$/iu.test(
-			command,
-		)
-	);
-}
-
-function dockerScriptExtension(body: string): string | undefined {
-	const first = body.split(/\r?\n/u)[0]?.trim() ?? "";
-	if (!first.startsWith("#!")) return ".sh";
-	if (/\bpython(?:\d+(?:\.\d+)?)?\b/iu.test(first)) return ".py";
-	if (/\b(?:node|deno|bun)\b/iu.test(first)) return ".js";
-	if (/(?:^|[\s/])(?:ba)?sh(?:\s|$)/iu.test(first)) return ".sh";
-	return undefined;
-}
-
-function gherkinComments(file: string, text: string): CommentLocation[] {
-	let id = 0;
-	const parser = new Parser(
-		new AstBuilder(() => String(id++)),
-		new GherkinClassicTokenMatcher(),
-	);
-	try {
-		return parser.parse(text).comments.map((comment) => ({
-			text: comment.text,
-			first: comment.location.line,
-			last: comment.location.line,
+		const matches: {
+			text: string;
+			range: { start: { line: number }; end: { line: number; column: number } };
+		}[] = JSON.parse(result.stdout);
+		return matches.map((match) => ({
+			text: match.text,
+			first: match.range.start.line + 1,
+			last: match.range.end.line + (match.range.end.column === 0 ? 0 : 1),
 		}));
-	} catch (error) {
-		throw new Error(
-			`cannot parse ${file}: ${error instanceof Error ? error.message : String(error)}`,
-		);
-	}
-}
-
-type AstGrepMatch = {
-	text: string;
-	range: {
-		byteOffset: { start: number; end: number };
-		start: { line: number };
-		end: { line: number; column: number };
-	};
-};
-
-function astGrepMatches(
-	file: string,
-	text: string,
-	language: string,
-	kind: string,
-): AstGrepMatch[] {
-	const result = spawnSync(
-		AST_GREP,
-		["run", "--stdin", "--lang", language, "--kind", kind, "--json"],
-		{ input: text, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-	);
-	if (result.error || (result.status !== 0 && result.status !== 1)) {
-		throw new Error(
-			`cannot parse ${file}: ${result.error?.message ?? result.stderr}`,
-		);
-	}
-	return JSON.parse(result.stdout);
-}
-
-function matchLocation(match: AstGrepMatch): CommentLocation {
-	return {
-		text: match.text,
-		first: match.range.start.line + 1,
-		last: match.range.end.line + (match.range.end.column === 0 ? 0 : 1),
-	};
-}
-
-function htmlAttribute(
-	text: string,
-): { name: string; value: string } | undefined {
-	const match =
-		/^([^\s=/>]+)\s*=\s*(?:"([\s\S]*?)"|'([\s\S]*?)'|([^\s>]+))/u.exec(text);
-	const name = match?.[1]?.toLowerCase();
-	return name
-		? { name, value: match?.[2] ?? match?.[3] ?? match?.[4] ?? "" }
-		: undefined;
-}
-
-function xmlComments(file: string, text: string): CommentLocation[] {
-	const masked = text.split("");
-	let rawElement: { name: "script" | "style"; start: number } | undefined;
-	const embedded: CommentLocation[] = [];
-	const hide = (start: number, end: number) => {
-		for (let index = start; index < end; index += 1) {
-			if (masked[index] !== "\n" && masked[index] !== "\r") masked[index] = " ";
-		}
-	};
-	for (let index = 0; index < text.length; ) {
-		if (text.startsWith("<!--", index)) {
-			const end = text.indexOf("-->", index + 4);
-			if (end < 0) throw new Error(`unterminated XML comment in ${file}`);
-			index = end + 3;
-		} else if (text.startsWith("<![CDATA[", index)) {
-			const end = text.indexOf("]]>", index + 9);
-			if (end < 0) throw new Error(`unterminated XML CDATA in ${file}`);
-			if (rawElement) {
-				hide(index, index + 9);
-				hide(end, end + 3);
-			} else hide(index, end + 3);
-			index = end + 3;
-		} else if (text.startsWith("<?", index)) {
-			const end = text.indexOf("?>", index + 2);
-			if (end < 0) throw new Error(`unterminated XML instruction in ${file}`);
-			hide(index, end + 2);
-			index = end + 2;
-		} else if (text[index] === "<") {
-			const end = xmlTagEnd(file, text, index);
-			const tag = text.slice(index, end);
-			const match = /^<\s*(\/?)\s*(?:[\w.-]+:)?(script|style)(?=[\s/>])/iu.exec(
-				tag,
-			);
-			if (match) {
-				const name = match[2]?.toLowerCase();
-				if (match[1] === "/" && rawElement && rawElement.name === name) {
-					const first = text.slice(0, rawElement.start).split("\n").length;
-					const fragment = masked.slice(rawElement.start, index).join("");
-					const extension = name === "script" ? ".ts" : ".css";
-					for (const comment of commentLocations(
-						`fragment${extension}`,
-						fragment,
-					)) {
-						embedded.push({
-							...comment,
-							first: first + comment.first - 1,
-							last: first + comment.last - 1,
-						});
-					}
-					hide(rawElement.start, index);
-					rawElement = undefined;
-				} else if (
-					match[1] !== "/" &&
-					!tag.endsWith("/>") &&
-					(name === "script" || name === "style")
-				) {
-					rawElement = { name, start: end };
-				}
-			}
-			index = end;
-		} else index += 1;
-	}
-	return [...htmlComments(file, masked.join("")), ...embedded].sort(
-		(left, right) => left.first - right.first,
-	);
-}
-
-function xmlTagEnd(file: string, text: string, start: number): number {
-	let quote = "";
-	let subsetDepth = 0;
-	for (let index = start + 1; index < text.length; index += 1) {
-		const character = text[index];
-		if (quote) {
-			if (character === quote) quote = "";
-		} else if (character === '"' || character === "'") quote = character;
-		else if (character === "[") subsetDepth += 1;
-		else if (character === "]") subsetDepth -= 1;
-		else if (character === ">" && subsetDepth <= 0) return index + 1;
-	}
-	throw new Error(`unterminated XML tag in ${file}`);
-}
-
-function htmlComments(file: string, text: string): CommentLocation[] {
-	const attributes = astGrepMatches(file, text, "html", "attribute");
-	const found = astGrepMatches(file, text, "html", "comment")
-		.filter(
-			(comment) =>
-				!attributes.some(
-					(attribute) =>
-						attribute.range.byteOffset.start <=
-							comment.range.byteOffset.start &&
-						attribute.range.byteOffset.end >= comment.range.byteOffset.end,
-				),
-		)
-		.map(matchLocation);
-	function inspect(
-		fragment: string,
-		extension: ".ts" | ".tsx" | ".css",
-		first: number,
-	) {
-		for (const comment of commentLocations(`fragment${extension}`, fragment)) {
-			found.push({
-				...comment,
-				first: first + comment.first - 1,
-				last: first + comment.last - 1,
-			});
-		}
-	}
-	for (const [kind, extension] of [
-		["script_element", ".ts"],
-		["style_element", ".css"],
-	] as const) {
-		for (const match of astGrepMatches(file, text, "html", kind)) {
-			let fragmentExtension: ".ts" | ".tsx" | ".css" = extension;
-			const opening =
-				/^<\s*(?:script|style)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/iu.exec(
-					match.text,
-				);
-			if (!opening)
-				throw new Error(`cannot locate an embedded block in ${file}`);
-			if (kind === "script_element") {
-				const openingEnd =
-					match.range.byteOffset.start + Buffer.byteLength(opening[0]);
-				const type = attributes.find(
-					(attribute) =>
-						attribute.range.byteOffset.start >= match.range.byteOffset.start &&
-						attribute.range.byteOffset.end <= openingEnd &&
-						htmlAttribute(attribute.text)?.name === "type",
-				);
-				const value =
-					(type ? htmlAttribute(type.text)?.value : "")?.trim() ?? "";
-				if (
-					value &&
-					!/^(?:module|(?:text|application)\/(?:x-)?(?:(?:java|ecma)script(?:1\.\d)?|typescript|jsx|babel)(?:\s*;.*)?)$/iu.test(
-						value,
-					)
-				)
-					continue;
-				if (/\/(?:jsx|babel)(?:\s*;|$)/iu.test(value))
-					fragmentExtension = ".tsx";
-			}
-			const closing = /<\/\s*(?:script|style)\s*>\s*$/iu.exec(match.text);
-			const fragment = match.text.slice(opening[0].length, closing?.index);
-			const first = match.range.start.line + opening[0].split("\n").length;
-			inspect(fragment, fragmentExtension, first);
-		}
-	}
-	for (const match of attributes) {
-		const attribute = htmlAttribute(match.text);
-		if (!attribute) continue;
-		const { name, value } = attribute;
-		const extension =
-			name === "style" ? ".css" : name.startsWith("on") ? ".ts" : undefined;
-		if (!extension || (!value.includes("/*") && !value.includes("//")))
-			continue;
-		const first =
-			match.range.start.line +
-			match.text.slice(0, match.text.indexOf(value)).split("\n").length;
-		inspect(value, extension, first);
-	}
-	return found.sort(
-		(left, right) => left.first - right.first || left.last - right.last,
-	);
+	});
 }
 
 function astroComments(file: string, text: string): CommentLocation[] {
@@ -843,58 +380,6 @@ function astroComments(file: string, text: string): CommentLocation[] {
 	return found;
 }
 
-function trainingRanges(file: string, text: string): Array<[number, number]> {
-	if (!/\.[cm]?[jt]sx?$/iu.test(sourcePath(file))) return [];
-	const kind = /\.[jt]sx$/iu.test(sourcePath(file))
-		? ts.ScriptKind.TSX
-		: ts.ScriptKind.TS;
-	const source = ts.createSourceFile(
-		file,
-		text,
-		ts.ScriptTarget.Latest,
-		true,
-		kind,
-	);
-	const ranges: Array<[number, number]> = [];
-	function visit(node: ts.Node): void {
-		if (
-			(ts.isFunctionDeclaration(node) ||
-				ts.isFunctionExpression(node) ||
-				ts.isArrowFunction(node) ||
-				ts.isMethodDeclaration(node)) &&
-			node.body &&
-			ts.isBlock(node.body)
-		) {
-			const body = node.body;
-			const first = body.statements[0];
-			const directive =
-				first &&
-				ts.isExpressionStatement(first) &&
-				ts.isStringLiteral(first.expression) &&
-				first.expression.text === "use training"
-					? first
-					: undefined;
-			const decorated =
-				ts.isMethodDeclaration(node) &&
-				ts.getDecorators(node)?.some((decorator) => {
-					const expression = ts.isCallExpression(decorator.expression)
-						? decorator.expression.expression
-						: decorator.expression;
-					return ts.isIdentifier(expression) && expression.text === "trainable";
-				});
-			if (directive || decorated) {
-				ranges.push([
-					directive?.end ?? body.getStart(source) + 1,
-					body.end - 1,
-				]);
-			}
-		}
-		ts.forEachChild(node, visit);
-	}
-	visit(source);
-	return ranges;
-}
-
 export function commentViolations(
 	file: string,
 	text: string,
@@ -910,271 +395,19 @@ export function commentViolations(
 			return false;
 		};
 		if (!intersects(added) || !parentAdditions.every(intersects)) return [];
-		const message = commentMessage(comment.text, first);
-		return message ? [{ file, line: first, message }] : [];
-	});
-}
-
-function commentMessage(text: string, first: number): string | undefined {
-	if (first === 1 && text.startsWith("#!")) return undefined;
-	const deferred = DEFERRED.test(text) || DEFERRED_TYPE_DIRECTIVE.test(text);
-	const concise =
-		(!TYPESCRIPT_DIRECTIVE.test(text) ||
-			CONCISE_TYPESCRIPT_DIRECTIVE.test(text)) &&
-		!LINT_DIRECTIVE_EXPLANATION.test(text);
-	if (
-		!deferred &&
-		concise &&
-		(DIRECTIVE.test(text) ||
-			VITE_DIRECTIVE.test(text) ||
-			GENERATED_DIRECTIVE.test(text) ||
-			DEPRECATED_DIRECTIVE.test(text))
-	)
-		return undefined;
-	return deferred
-		? "finish deferred work instead of adding a marker"
-		: "make the code self-documenting instead of adding a comment";
-}
-
-const notebookSchema = z
-	.object({
-		cells: z.array(
-			z
-				.object({
-					cell_type: z.string(),
-					source: z.union([z.string(), z.array(z.string())]).optional(),
-				})
-				.passthrough(),
-		),
-		metadata: z
-			.object({
-				language_info: z
-					.object({ name: z.string().optional() })
-					.passthrough()
-					.optional(),
-				kernelspec: z
-					.object({ language: z.string().optional() })
-					.passthrough()
-					.optional(),
-			})
-			.passthrough()
-			.optional(),
-	})
-	.passthrough();
-
-const sourceLanguageExtensions = new Map([
-	["typescript", ".ts"],
-	["ts", ".ts"],
-	["javascript", ".js"],
-	["js", ".js"],
-	["tsx", ".tsx"],
-	["jsx", ".jsx"],
-	["python", ".py"],
-	["python3", ".py"],
-	["py", ".py"],
-	["bash", ".sh"],
-	["shell", ".sh"],
-	["sh", ".sh"],
-	["batch", ".cmd"],
-	["bat", ".bat"],
-	["cmd", ".cmd"],
-	["rust", ".rs"],
-	["rs", ".rs"],
-	["go", ".go"],
-	["golang", ".go"],
-	["sql", ".sql"],
-	["yaml", ".yaml"],
-	["yml", ".yaml"],
-	["gherkin", ".feature"],
-	["feature", ".feature"],
-	["json", ".js"],
-	["jsonc", ".js"],
-	["css", ".css"],
-	["html", ".html"],
-	["svg", ".svg"],
-	["xml", ".xml"],
-	["xhtml", ".xhtml"],
-	["astro", ".astro"],
-	["cue", ".cue"],
-	["proto", ".proto"],
-	["protobuf", ".proto"],
-	["wit", ".wit"],
-	["prisma", ".prisma"],
-	["toml", ".toml"],
-	["hcl", ".hcl"],
-	["terraform", ".tf"],
-	["dockerfile", ".dockerfile"],
-	["c", ".c"],
-	["cpp", ".cpp"],
-	["c++", ".cpp"],
-	["csharp", ".cs"],
-	["cs", ".cs"],
-	["java", ".java"],
-	["kotlin", ".kt"],
-	["ruby", ".rb"],
-	["lua", ".lua"],
-	["swift", ".swift"],
-]);
-
-type NotebookComment = {
-	key: string;
-	cell: number;
-	line: number;
-	message: string;
-};
-
-function notebookComments(text: string): NotebookComment[] | undefined {
-	let json: ReturnType<typeof JSON.parse>;
-	try {
-		json = JSON.parse(text);
-	} catch {
-		return undefined;
-	}
-	const parsed = notebookSchema.safeParse(json);
-	if (!parsed.success) return undefined;
-	const notebook = parsed.data;
-	const code = notebook.cells.filter((cell) => cell.cell_type === "code");
-	if (code.length === 0) return [];
-	const language =
-		notebook.metadata?.language_info?.name ??
-		notebook.metadata?.kernelspec?.language;
-	const extension =
-		language === undefined
-			? undefined
-			: sourceLanguageExtensions.get(language.toLowerCase());
-	if (!extension) return undefined;
-	const found: NotebookComment[] = [];
-	for (const [index, cell] of notebook.cells.entries()) {
-		if (cell.cell_type !== "code") continue;
-		if (cell.source === undefined) return undefined;
-		const source = Array.isArray(cell.source)
-			? cell.source.join("")
-			: cell.source;
-		for (const comment of commentLocations(`cell${extension}`, source)) {
-			const message = commentMessage(comment.text, comment.first);
-			if (message)
-				found.push({
-					key: `${index}:${comment.text}`,
-					cell: index + 1,
-					line: comment.first,
-					message,
-				});
-		}
-	}
-	return found;
-}
-
-const textualMarkdownLanguages = new Set([
-	"text",
-	"txt",
-	"plaintext",
-	"console",
-	"shell-session",
-	"http",
-	"diff",
-	"mermaid",
-	"markdown",
-	"md",
-]);
-
-type MarkdownNode = {
-	type: string;
-	children?: readonly MarkdownNode[] | undefined;
-	value?: string | undefined;
-	lang?: string | null | undefined;
-	position?: { start: { line: number }; end: { line: number } } | undefined;
-};
-
-function markdownCodeViolations(
-	file: string,
-	text: string,
-	added: Set<number>,
-): Violation[] {
-	const lines = text.split(/\r?\n/u);
-	const problems: Violation[] = [];
-	function visit(node: MarkdownNode): void {
-		if (node.type === "code" && node.position && node.value !== undefined) {
-			const start = node.position.start.line;
-			const end = node.position.end.line;
-			const language = (node.lang ?? "").toLowerCase();
-			const extension = sourceLanguageExtensions.get(language);
-			const changed = [...added].some((line) => line >= start && line <= end);
-			if (changed && !extension && !textualMarkdownLanguages.has(language)) {
-				problems.push({
-					file,
-					line: start,
-					message:
-						"label code examples with a supported language, or text for non-code",
-				});
-			} else if (extension && changed) {
-				const fenced =
-					/^\s*(?:(?:>\s*)|(?:(?:[-+*]|\d+[.)])\s+))*(?:`{3,}|~{3,})/u.test(
-						lines[start - 1] ?? "",
-					);
-				const first = start + (fenced ? 1 : 0);
-				const localLines =
-					added.has(start) && fenced
-						? new Set(node.value.split(/\r?\n/u).map((_, index) => index + 1))
-						: new Set(
-								[...added]
-									.map((line) => line - first + 1)
-									.filter((line) => line > 0),
-							);
-				for (const problem of commentViolations(
-					`${file}#example${extension}`,
-					node.value,
-					localLines,
-				)) {
-					problems.push({ ...problem, file, line: first + problem.line - 1 });
-				}
-			}
-		}
-		for (const child of node.children ?? []) visit(child);
-	}
-	visit(fromMarkdown(text));
-	return problems;
-}
-
-function priorContents(mode: Mode, file: string): string | undefined {
-	try {
-		const revision =
-			mode.kind === "base"
-				? git(["merge-base", mode.ref, "HEAD"]).trim()
-				: "HEAD";
-		return git(["show", `${revision}:${file}`]);
-	} catch {
-		return undefined;
-	}
-}
-
-function notebookViolations(
-	file: string,
-	current: string,
-	previous: string | undefined,
-): Violation[] {
-	const comments = notebookComments(current);
-	if (!comments)
-		return [
-			{
-				file,
-				line: 1,
-				message: "parse the notebook and use a supported code-cell language",
-			},
-		];
-	const old = previous === undefined ? [] : (notebookComments(previous) ?? []);
-	const counts = new Map<string, number>();
-	for (const item of old) counts.set(item.key, (counts.get(item.key) ?? 0) + 1);
-	return comments.flatMap((comment) => {
-		const count = counts.get(comment.key) ?? 0;
-		if (count > 0) {
-			counts.set(comment.key, count - 1);
+		if (first === 1 && comment.text.startsWith("#!")) return [];
+		if (
+			!DEFERRED.test(comment.text) &&
+			(DIRECTIVE.test(comment.text) || VITE_DIRECTIVE.test(comment.text))
+		)
 			return [];
-		}
 		return [
 			{
 				file,
-				line: 1,
-				message: `${comment.message} (code cell ${comment.cell}, line ${comment.line})`,
+				line: first,
+				message: DEFERRED.test(comment.text)
+					? "finish deferred work instead of adding a marker"
+					: "make the code self-documenting instead of adding a comment",
 			},
 		];
 	});
@@ -1186,44 +419,11 @@ function isExperiencePlanningArtifact(file: string): boolean {
 	);
 }
 
-type MarkdownTextNode = {
-	readonly type: string;
-	readonly value?: string;
-	readonly alt?: string | null | undefined;
-	readonly children?: readonly MarkdownTextNode[];
-};
-
-function markdownText(node: MarkdownTextNode): string {
+function addsLines(args: readonly string[], file: string): boolean {
 	return (
-		node.value ?? node.alt ?? node.children?.map(markdownText).join("") ?? ""
-	);
-}
-
-function planningDocumentTitle(text: string): string | undefined {
-	const heading = fromMarkdown(text).children.find(
-		(node) => node.type === "heading" && node.depth === 1,
-	);
-	if (!heading) return undefined;
-	const title = markdownText(heading).replace(/\s+/gu, " ").trim();
-	if (
-		/^(?:implementation plan|technical design|design document|design brief|architecture document|architecture decision record|decision map|roadmap|proposal|adr\b|rfc\b)(?:\s|:|-|$)/iu.test(
-			title,
-		) ||
-		/\b(?:implementation plan|technical design|design document|design brief|architecture document|architecture decision record|decision map|project roadmap|delivery roadmap)\b/iu.test(
-			title,
-		)
-	)
-		return title;
-	return undefined;
-}
-
-function hasProductBriefStamp(text: string): boolean {
-	return fromMarkdown(text).children.some(
-		(node) =>
-			node.type === "html" &&
-			/^[ \t]*<!--[ \t]*impeccable:product-schema[ \t]+\d+[ \t]*-->[ \t]*$/imu.test(
-				node.value,
-			),
+		addedLineNumbers(
+			git([...args, "--no-color", "--no-ext-diff", "--unified=0", "--", file]),
+		).size > 0
 	);
 }
 
@@ -1234,90 +434,26 @@ export function documentViolation(
 	const sourceFile = sourcePath(file);
 	if (
 		isExperiencePlanningArtifact(sourceFile) ||
-		/(?:^|\/)\.impeccable\/(?:design\.json|surfaces\/|.*\.md(?:x|c)?$)/iu.test(
+		/(?:^|\/)\.impeccable\/(?:design\.json|surfaces\/|.*\.mdx?$)/iu.test(
 			sourceFile,
 		) ||
-		/(?:^|\/)\.sdlc\/.*\.md(?:x|c)?$/iu.test(sourceFile)
+		/(?:^|\/)\.sdlc\/.*\.mdx?$/iu.test(sourceFile)
 	)
-		return "planning, architecture, and design documents are not allowed";
-	if (!/\.md(?:x|c)?$/iu.test(sourceFile)) return undefined;
-	if (hasProductBriefStamp(text))
-		return "agent product design briefs are not allowed";
-	const title = planningDocumentTitle(text);
-	if (title) return `document title "${title}" describes prohibited planning`;
-	if (/^src\/draft\/(?:[^/]+\/)*_registry\.md(?:x|c)?$/iu.test(sourceFile))
-		return "planning, architecture, and design documents are not allowed";
+		return "planning and design documents are not allowed";
+	if (!/\.mdx?$/iu.test(sourceFile)) return undefined;
+	if (/(?:^|\/)(?:design|designs|plans|roadmaps)\//iu.test(sourceFile))
+		return "planning and design documents are not allowed";
 	if (
-		/(?:^|\/)(?:design|designs|plans|roadmaps|architecture|architectures|adr|adrs|rfc|rfcs|proposals|architecture-decision-records)\//iu.test(
+		/(?:^|\/)(?:design|roadmap|(?:implementation[-_])?plan)\.mdx?$/iu.test(
 			sourceFile,
-		)
+		) ||
+		/(?:^|\/)[^/]+[-_](?:design|roadmap|plan)\.mdx?$/iu.test(sourceFile)
 	)
-		return "planning, architecture, and design documents are not allowed";
-	if (
-		/(?:^|\/)(?:design|architecture|roadmap|proposal|(?:implementation[-_])?plan|(?:architecture[-_])?decision[-_]records?|(?:adr|rfc)(?:[-_][^/]+)?)\.md(?:x|c)?$/iu.test(
-			sourceFile,
-		) ||
-		/(?:^|\/)[^/]+[-_](?:design|architecture|roadmap|plan|proposal|adr|rfc)\.md(?:x|c)?$/iu.test(
-			sourceFile,
-		) ||
-		/(?:^|\/)(?:gaps?|gap[-_](?:analysis|register)|backlog|poc[-_]rollup[-_]ledger|scope[-_]review|(?:implementation[-_])?handoff(?:[-_]notes)?)\.md(?:x|c)?$/iu.test(
-			sourceFile,
-		) ||
-		/(?:^|\/)[^/]+[-_]handoff(?:[-_]notes)?\.md(?:x|c)?$/iu.test(sourceFile) ||
-		/(?:^|\/)(?:[^/]+[-_])?decision[-_]map\.md(?:x|c)?$/iu.test(sourceFile)
-	)
-		return "planning, architecture, and design documents are not allowed";
+		return "planning and design documents are not allowed";
 	const type = frontmatterType(text);
-	return type &&
-		/\b(?:plan|design|roadmap|architecture|adr|rfc|proposal|decision map)\b/iu.test(
-			type,
-		)
+	return type && /\b(?:plan|design|roadmap)\b/iu.test(type)
 		? `document type "${type}" is not allowed`
 		: undefined;
-}
-
-function changedLines(
-	args: string[],
-	file: string,
-	text: string,
-	untracked: boolean,
-	source?: string,
-): Set<number> {
-	if (untracked)
-		return new Set(text.split(/\r?\n/u).map((_, index) => index + 1));
-	return addedLineNumbers(
-		git([
-			...args,
-			"--find-renames",
-			"--no-color",
-			"--no-ext-diff",
-			"--unified=0",
-			"--",
-			...(source === undefined ? [file] : [source, file]),
-		]),
-	);
-}
-
-export function proofArtifactViolations(
-	file: string,
-	text: string,
-	added: Set<number>,
-): Violation[] {
-	if (!file.startsWith("src/draft/")) return [];
-	const placeholder =
-		/\b(?:proof-identity:\s*ok|identity\s+noop|Hardened notebook scaffold)\b/iu;
-	return text.split(/\r?\n/u).flatMap((line, index) =>
-		added.has(index + 1) && placeholder.test(line)
-			? [
-					{
-						file,
-						line: index + 1,
-						message:
-							"replace synthetic proof scaffolding with executable behavior",
-					},
-				]
-			: [],
-	);
 }
 
 export function checkSourcePolicy(mode: Mode): Violation[] {
@@ -1329,89 +465,63 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		files: new Set(names(parentArgs, "ACMRT")),
 		renamed: renameSources(parentArgs),
 	}));
-	const changedFromEveryParent = (file: string) =>
-		parents.every((parent) => parent.files.has(file));
 	const files = [...new Set([...names(args, "ACMRT"), ...untracked])];
 	const violations: Violation[] = [];
-	const gitlinks = submodules(mode);
 	for (const file of files) {
-		if (gitlinks.has(file)) continue;
+		if (GENERATED_OR_VENDOR.test(file)) continue;
 		const sourceFile = sourcePath(file);
 		if (
-			isExperiencePlanningArtifact(sourceFile) ||
-			/\.md(?:x|c)?$/iu.test(sourceFile) ||
+			((isExperiencePlanningArtifact(sourceFile) ||
+				/\.mdx?$/iu.test(sourceFile)) &&
+				parents.every((parent) => parent.files.has(file)) &&
+				(untracked.includes(file) || addsLines(args, file))) ||
 			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(sourceFile)
 		) {
-			const text = contents(mode, file);
-			const added = changedLines(args, file, text, untracked.includes(file));
-			const reason = documentViolation(file, text);
-			if (
-				reason &&
-				changedFromEveryParent(file) &&
-				(untracked.includes(file) || added.size > 0)
-			) {
-				violations.push({ file, line: 1, message: reason });
-			}
-		}
-		if (
-			file.startsWith("src/draft/") &&
-			(/\/(?:examples|bench)\/.*\.[cm]?[jt]sx?$/u.test(sourceFile) ||
-				sourceFile.endsWith(".ipynb"))
-		) {
-			const text = contents(mode, file);
-			const added = changedLines(args, file, text, untracked.includes(file));
-			violations.push(...proofArtifactViolations(file, text, added));
-		}
-		if (/\.md(?:x|c)?$/iu.test(sourceFile)) {
-			const text = contents(mode, file);
-			const added = changedLines(args, file, text, untracked.includes(file));
-			violations.push(...markdownCodeViolations(file, text, added));
+			const reason = documentViolation(file, contents(mode, file));
+			if (reason) violations.push({ file, line: 1, message: reason });
 		}
 		const extension = extname(sourceFile).toLowerCase();
-		const dockerfile = isDockerfile(sourceFile);
-		if (extension === ".ipynb") {
-			violations.push(
-				...notebookViolations(
-					file,
-					contents(mode, file),
-					priorContents(mode, file),
-				),
-			);
-			continue;
-		}
 		if (
 			extension &&
 			!file.startsWith(".githooks/") &&
 			extension !== ".astro" &&
-			extension !== ".feature" &&
-			!BATCH_EXTENSIONS.has(extension) &&
-			!XML_EXTENSIONS.has(extension) &&
 			!CODE_EXTENSIONS.has(extension) &&
 			!LEXER_LANGUAGES.has(extension) &&
-			!OTHER_LANGUAGES.has(extension) &&
-			!dockerfile
+			!OTHER_LANGUAGES.has(extension)
 		)
 			continue;
 		const text = contents(mode, file);
-		if (
-			!extension &&
-			!dockerfile &&
-			!file.startsWith(".githooks/") &&
-			!text.startsWith("#!")
-		)
+		if (!extension && !file.startsWith(".githooks/") && !text.startsWith("#!"))
 			continue;
-		const added = changedLines(
-			args,
-			file,
-			text,
-			untracked.includes(file),
-			renamed.get(file),
-		);
-		const parentAdditions = parents.map((parent) =>
-			parent.files.has(file)
-				? changedLines(parent.args, file, text, false, parent.renamed.get(file))
-				: new Set<number>(),
-		);
+		const source = renamed.get(file);
+		const added = untracked.includes(file)
+			? new Set(text.split(/\r?\n/u).map((_, index) => index + 1))
+			: addedLineNumbers(
+					git([
+						...args,
+						"--find-renames",
+						"--no-color",
+						"--no-ext-diff",
+						"--unified=0",
+						"--",
+						...(source === undefined ? [file] : [source, file]),
+					]),
+				);
+		const parentAdditions = parents.map((parent) => {
+			if (!parent.files.has(file)) return new Set<number>();
+			const parentSource = parent.renamed.get(file);
+			return addedLineNumbers(
+				git([
+					...parent.args,
+					"--find-renames",
+					"--no-color",
+					"--no-ext-diff",
+					"--unified=0",
+					"--",
+					...(parentSource === undefined ? [file] : [parentSource, file]),
+				]),
+			);
+		});
 		violations.push(...commentViolations(file, text, added, parentAdditions));
 	}
 	return violations;
@@ -1431,9 +541,7 @@ function main(args: string[]): number {
 				`${violation.file}:${violation.line}: ${violation.message}`,
 			);
 		if (violations.length > 0) return 1;
-		console.log(
-			"source:guard: no new comment, planning-document, or synthetic-proof violations",
-		);
+		console.log("source:guard: no new comment or planning-document violations");
 		return 0;
 	} catch (error) {
 		console.error(

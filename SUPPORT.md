@@ -5,7 +5,7 @@ HoBo is currently a design and executable-proof repository, not a production ser
 ## Where to start
 
 - Project overview: [`README.md`](./README.md)
-- Design suite: [`urn:hobo:requirement:index`](urn:hobo:requirement:index)
+- Design suite: [`docs/design/index.md`](./docs/design/index.md)
 - Contribution workflow: [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 - Security reporting: [`SECURITY.md`](./SECURITY.md)
 - Agent setup: [`docs/agent-tooling.md`](./docs/agent-tooling.md)

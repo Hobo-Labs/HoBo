@@ -5,22 +5,18 @@ Optional **Camp runtime / component-host adapter** realizing HoBo ports onto **D
 | HoBo port / primitive | Dapr realization |
 |---|---|
 | `ActorHost` / `defineActor` | Virtual actors + placement + reminders |
-| `wasi:messaging` / `topic()` | Pub/sub (incl. `pubsub.kafka`) |
+| TypeScript `Messaging` client | Pub/sub (incl. `pubsub.kafka`) |
+
+The client does not implement the native asynchronous `hobo:durable-messaging` component interface.
 | Workflows / steps | **Activity-name mapping only** (permanent non-goal: full engine parity) |
 
-In-process wasm remains the default path. Dapr is opt-in via Camp `runtimeRequirements: ["dapr"]` or explicit wiring.
+**ADR-0031 stands:** in-process wasm remains the default preferred path. Dapr is **opt-in** via Camp `runtimeRequirements: ["dapr"]` or explicit wiring.
 
 ## Fidelity
 
-The in-memory client and clients without a fidelity declaration report
-`simulated`. A caller-supplied client may declare `fidelity: "live"`;
-`live: true` requires that declaration. This is the client's assertion, not
-proof of connectivity. The runtime host's `ensure` checks the declared live
-client's health and reports it unready if the check is missing, fails, or
-returns false. In-memory clients do not establish sidecar readiness.
-
-`servePrivate` currently returns the supplied handlers in process. It does not
-create a sidecar boundary or a private sandbox.
+- No `DaprSidecarClient` → `fidelity: "simulated"`.
+- Client injected (`createInMemoryDaprClient` harness or real daprd HTTP client) → `fidelity: "live"`.
+- `live: true` without client → throws.
 
 ```ts
 import {
@@ -33,17 +29,39 @@ const bundle = createDaprRuntimeHost({
   campId: "prod",
   client: createInMemoryDaprClient(),
 });
+// bundle.messaging.fidelity === "live"
+// bundle.actors.fidelity === "live"
+```
+
+Generate Dapr component YAML (no hand-written secrets):
+
+```ts
 const yaml = bundle.generateKafkaPubsubYaml("fromBinding:kafka-bootstrap");
 ```
 
 ## Modes
+
+Await messaging `ack` and `nack` directly. A timeout or sidecar failure is an
+unknown settlement outcome and blocks another settlement for that delivery in
+the adapter instance. `settlementTimeoutMs` sets a positive deadline of at most
+30 seconds. The sidecar interface does not carry a provider lease token, so the
+host must provide any cross-process fencing and recovery its deployment needs.
+
+The adapter reports `deadLetter: false` and rejects dead-letter topic
+configuration. When a subscription handler exhausts its attempts, `subscribe`
+throws `MessagingDeliveryExhaustedError` without acknowledging that delivery.
+The error includes the lease, the number already handled, and the remaining
+leased messages in the batch. The host must decide how to recover or transfer
+them; an expired lease can allow redelivery.
+Attempt limits depend on the sidecar supplying a durable, accurate delivery
+count; the adapter does not persist that count across sidecar restarts.
 
 - **self-hosted:** `dapr run` / local daprd (`HOBO_DAPR_ENDPOINT`)
 - **kubernetes:** sidecar injector annotations (control-plane emits; this package generates component YAML)
 
 ## Doctor
 
-`diagnoseDaprReadiness()` feeds `hobo doctor`. The host probes an explicitly live client's health before reporting a reachable runtime.
+`diagnoseDaprReadiness()` feeds `hobo doctor`. Absent Dapr → fidelity=`simulated` unless a client is injected.
 
 ## Permanent non-goals
 

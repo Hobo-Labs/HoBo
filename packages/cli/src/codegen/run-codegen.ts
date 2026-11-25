@@ -2,7 +2,6 @@ import { resolve } from "node:path";
 
 import { create, toJson } from "@bufbuild/protobuf";
 import { selectProjectCodegenEngine } from "./project-engine.js";
-import { generateResourceAliases } from "./resource-aliases.js";
 import {
 	compareGeneratedTree,
 	recoverGeneratedTree,
@@ -32,9 +31,7 @@ export async function runCodegen(
 	const projectRoot = resolve(request.projectRoot);
 	await recoverGeneratedTree(projectRoot, deps.engine?.layout);
 	const engine = deps.engine ?? (await selectProjectCodegenEngine(projectRoot));
-	const artifacts = [...(await engine.generate(projectRoot))];
-	const aliases = await generateResourceAliases(projectRoot, engine.layout);
-	if (aliases) artifacts.push(aliases);
+	const artifacts = await engine.generate(projectRoot);
 	const paths = artifacts.map((artifact) => artifact.path);
 
 	if (request.check) {

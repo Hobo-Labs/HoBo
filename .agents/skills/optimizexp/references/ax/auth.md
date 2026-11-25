@@ -39,7 +39,8 @@ Agents should be able to:
 
 ### HoBo product anchors
 
-- Product identity/auth: the `hobo:auth` federation port and agent credential implementations in `packages/identity`.
+- Product identity/auth: `hobo:auth` federation port, agent credentials design, XAA / ID-JAG where
+  documented (`docs/design/ai-native-agent-auth.md`, ADR-0038 family).  
 - Public agent briefing: `site/public/llms.txt` — must not contradict auth posture.  
 - When HoBo ships a public app/API agents call, the **auth.md / AUTH.md** for that origin should
   match WorkOS protocol intent (flows, scopes, register/claim endpoints) — not only a key table.
@@ -105,5 +106,5 @@ bash scripts/setup-agent-tools.sh --help   # points at AUTH for keys/egress resi
 - [specs.md](specs.md) — standing contracts inventory  
 - [mcp.md](mcp.md) — local MCP launchers  
 - [model-routing.md](model-routing.md) — cloud backends that need keys  
-- Product implementation: `packages/identity/src/`
+- Product design: `docs/design/ai-native-agent-auth.md`  
 - Protocol: https://workos.com/auth-md · https://github.com/workos/auth.md  

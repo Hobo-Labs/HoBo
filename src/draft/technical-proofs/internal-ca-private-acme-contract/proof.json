@@ -9,7 +9,8 @@
       "src/draft/technical-proofs/hobo-dns-port-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

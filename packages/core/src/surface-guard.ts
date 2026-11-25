@@ -2,6 +2,7 @@ import { EnvelopeParseError } from "./errors.js";
 import type { JsonValue } from "./json.js";
 import { cloneJson, deepFreeze, expectObject } from "./parse-utils.js";
 
+// public-contract: pins the serialized @hobo/core API snapshot schema.
 export const CORE_SCHEMA_VERSION = "hobo.core/v1";
 
 export const CORE_API_SNAPSHOT = deepFreeze({
@@ -24,11 +25,6 @@ export const CORE_API_SNAPSHOT = deepFreeze({
 		"parseCapabilityManifestBundle",
 		"createPortDescriptor",
 		"createContainer",
-		"AgentConfigFieldInput",
-		"AgentConfigFieldView",
-		"AgentConfigSchemaInput",
-		"AgentConfigSchemaView",
-		"createAgentConfigSchemaView",
 		"assertCoreApiSnapshot",
 		"validatePublicTypeSurface",
 		"CORE_API_SNAPSHOT",
@@ -55,6 +51,7 @@ export const CORE_API_SNAPSHOT = deepFreeze({
 		"TemporaryEnvironmentStationResult",
 		"assertTemporaryEnvironmentStationResult",
 		"temporaryStationToAnonymousSessionView",
+		// ADR-0156 Plugin SPI surface.
 		"CloudProvider",
 		"CapabilityPortKind",
 		"ActorHost",
@@ -91,6 +88,7 @@ export function assertCoreApiSnapshot(
 			"public API snapshot drift: update snapshot deliberately with a breaking-change note",
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return deepFreeze(cloneJson(source)) as typeof CORE_API_SNAPSHOT;
 }
 

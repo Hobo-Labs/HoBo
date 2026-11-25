@@ -17,9 +17,11 @@ This POC proves the end-to-end IfC authoring path on a sample Bindle without tou
 Scope stays integration-only: no cloud deploy, provider planning, runtime handler execution, conformance harness internals, or SLO/policy implementation.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Ifc Author Flow Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -9,7 +9,7 @@ This repository’s root `AUTH.md` currently documents **residual local coding-a
 keys and egress for humans and agents working **on the HoBo design/codebase** (gbrain, SkillOpt
 backends, zero-key setup). That residual content does **not** redefine the WorkOS protocol.
 Product agent-auth design for HoBo as a runtime lives in
-[`urn:hobo:requirement:ai-native-agent-auth`](urn:hobo:requirement:ai-native-agent-auth) and the `hobo:auth`
+[`docs/design/ai-native-agent-auth.md`](docs/design/ai-native-agent-auth.md) and the `hobo:auth`
 ADR family; when public origins ship agent registration, they should publish auth.md per the
 WorkOS format.
 
@@ -60,7 +60,7 @@ gbrain MCP is launched via [`scripts/agent-mcp-gbrain.sh`](scripts/agent-mcp-gbr
 
 1. Never store secrets: no `.env` files, secret environment variables, Actions secrets or variables, key files, or credential stores of your own (`secrets:guard`, `scripts/agent-secret-policy.mts`).
 2. Never paste secret values into issues, bus entries, or skill files — reference `file:line` / env var **names** only.
-3. Prefer identity federation / bound resources over stored secrets in product code ([ADR-0027](urn:hobo:decision:02-identity-security) family).
+3. Prefer identity federation / bound resources over stored secrets in product code ([ADR-0027](docs/design/adr/02-identity-security.md) family).
 4. Decline optional MCP servers (gbrain) when you do not want egress.
 5. OptimizeXP bus transcripts under `.optimizexp/` must redact secret-shaped strings.
 
@@ -76,5 +76,5 @@ gbrain MCP is launched via [`scripts/agent-mcp-gbrain.sh`](scripts/agent-mcp-gbr
 
 - WorkOS auth.md protocol: https://workos.com/auth-md · https://github.com/workos/auth.md
 - [`docs/agent-tooling.md`](docs/agent-tooling.md) § Keys & risks
-- Product agent-auth design: [`urn:hobo:requirement:ai-native-agent-auth`](urn:hobo:requirement:ai-native-agent-auth)
+- Product agent-auth design: [`docs/design/ai-native-agent-auth.md`](docs/design/ai-native-agent-auth.md)
 - OptimizeXP AX auth reference: `.agents/skills/optimizexp/references/ax/auth.md`

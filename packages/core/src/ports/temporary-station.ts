@@ -1,3 +1,12 @@
+/**
+ * Shared Temporary / agent Environment Station contract (provider-neutral).
+ * Cloudflare Temporary Accounts, Lakebed anonymous deploy, and broker
+ * AnonymousSessionResult all project onto this fixture.
+ *
+ * Providers keep vendor transports private; only this result + helpers are shared.
+ */
+
+// public-contract: temporary Environment Station schema id consumers pin.
 import {
 	isJsonNumber,
 	isJsonObject,
@@ -9,6 +18,7 @@ import {
 export const TEMPORARY_ENVIRONMENT_STATION_SCHEMA =
 	"hobo.temporary-environment-station/v1" as const;
 
+/** Default TTL for temporary/agent stations (1h), matching CF Temporary Accounts. */
 export const TEMPORARY_STATION_TTL_MS = 60 * 60 * 1000;
 
 export type TemporaryEnvironmentStationResult = {
@@ -18,7 +28,9 @@ export type TemporaryEnvironmentStationResult = {
 	readonly expiresAt: string;
 	readonly anonymous: true;
 	readonly temporary: true;
+	/** Provider target id (e.g. cloudflare, lakebed). */
 	readonly providerId: string;
+	/** Alias of stationUrl for broker AnonymousSessionResult.primaryUrl. */
 	readonly primaryUrl?: string;
 	readonly ttlSeconds?: number;
 	readonly accountId?: string;
@@ -29,9 +41,15 @@ export type TemporaryEnvironmentStationInput = {
 	readonly stationId: string;
 	readonly providerId: string;
 	readonly fetchImpl?: typeof fetch;
+	/** Opaque provider-specific payload (capsule dir, worker module, …). */
 	readonly artifact?: unknown;
 };
 
+/**
+ * Broker-aligned projection of a temporary station result.
+ * Maps onto AnonymousSessionResult claim/primary/ttl fields without inventing
+ * a second session type.
+ */
 export type TemporaryStationAnonymousSessionView = {
 	readonly stationId: string;
 	readonly providerId: string;
@@ -87,6 +105,7 @@ export function assertTemporaryEnvironmentStationResult(
 	if (value === null || !isJsonObject(value)) {
 		throw new Error("temporary Environment Station result must be an object");
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = value as JsonObject;
 	for (const key of [
 		"stationId",
@@ -107,10 +126,15 @@ export function assertTemporaryEnvironmentStationResult(
 		);
 	}
 	return {
+		// SAFETY: assertion required at this I/O or test boundary.
 		stationId: obj.stationId as string,
+		// SAFETY: assertion required at this I/O or test boundary.
 		stationUrl: obj.stationUrl as string,
+		// SAFETY: assertion required at this I/O or test boundary.
 		claimUrl: obj.claimUrl as string,
+		// SAFETY: assertion required at this I/O or test boundary.
 		expiresAt: obj.expiresAt as string,
+		// SAFETY: assertion required at this I/O or test boundary.
 		providerId: obj.providerId as string,
 		anonymous: true,
 		temporary: true,

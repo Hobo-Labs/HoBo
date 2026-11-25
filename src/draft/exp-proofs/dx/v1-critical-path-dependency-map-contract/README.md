@@ -17,7 +17,8 @@ pnpm.cmd --prefix src\draft\exp-proofs\v1-critical-path-dependency-map-contract 
   routing, downstream gates, or known limitations.
 - `criticalPathByLaunchGate` separates private beta, release-candidate, and GA blockers.
 
-## Executable evidence
+## Architecture Guardrail Evidence
+
 - PACT: `architecture/pacts/v1_critical_path_dependency_map_contract.pact.json` fixes the release
   dependency boundary between the release program consumer and provider.
 - Protobuf + CUE: `architecture/v1_critical_path_dependency_map_contract.proto` and

@@ -1,4 +1,3 @@
-import { providerTermsFor } from "@hobo/core";
 import {
 	EQUIVALENCE_CLASSES,
 	INITIAL_CAPABILITY_PORTS,
@@ -104,7 +103,6 @@ export function createWebernetesProvider(): CloudProvider {
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: `@hobo/provider-${PROVIDER_TARGET}`,
-				terms: providerTermsFor("@hobo/provider-webernetes"),
 				published: {},
 				capabilities: {
 					capabilities: capabilities.map((c) => ({ port: c.port })),

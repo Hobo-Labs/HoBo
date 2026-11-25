@@ -9,7 +9,8 @@
       "src/draft/technical-proofs/deny-ceiling-algebra-poc"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -1,15 +1,8 @@
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-let temporaryHome: string;
-
-vi.mock('os', async () => {
-  const actual = await vi.importActual<typeof import('os')>('os');
-  return { ...actual, homedir: () => temporaryHome };
-});
-
-const { claudeTeamProvider } = await import('../src/providers/hook/claude/claudeTeamProvider.js');
+import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
 
 describe('claudeTeamProvider', () => {
   describe('identity', () => {
@@ -30,8 +23,10 @@ describe('claudeTeamProvider', () => {
     { tool: 'Agent', input: { run_in_background: true }, expected: true },
     { tool: 'Agent', input: { run_in_background: false }, expected: false },
     { tool: 'Agent', input: {}, expected: false },
+    // Non-boolean run_in_background must not trigger the teammate path.
     { tool: 'Agent', input: { run_in_background: 'true' }, expected: false },
     { tool: 'Agent', input: { run_in_background: 1 }, expected: false },
+    // Task/arbitrary tools never spawn teammates regardless of flags.
     { tool: 'Task', input: { run_in_background: true }, expected: false },
     { tool: 'Read', input: {}, expected: false },
     { tool: 'WebSearch', input: { run_in_background: true }, expected: false },
@@ -88,6 +83,7 @@ describe('claudeTeamProvider', () => {
       try {
         fsMod.rmSync(tmpRoot, { recursive: true, force: true });
       } catch {
+        /* ignore */
       }
     });
 
@@ -132,6 +128,7 @@ describe('claudeTeamProvider', () => {
       try {
         fsMod.rmSync(tmpRoot, { recursive: true, force: true });
       } catch {
+        /* ignore */
       }
     });
 
@@ -176,15 +173,20 @@ describe('claudeTeamProvider', () => {
   });
 
   describe('getTeamMembers', () => {
+    // Writes under ~/.claude/teams/<TEAM_NAME>/ and cleans up in afterEach.
     const fs = require('fs') as typeof import('fs');
     const TEAM_NAME = 'test-team-' + Date.now();
 
-    beforeEach(() => {
-      temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-team-'));
-    });
-
     afterEach(() => {
-      fs.rmSync(temporaryHome, { recursive: true, force: true });
+      // Cleanup any test artifacts
+      try {
+        fs.rmSync(path.join(os.homedir(), '.claude', 'teams', TEAM_NAME), {
+          recursive: true,
+          force: true,
+        });
+      } catch {
+        /* ignore */
+      }
     });
 
     it('returns null when the team config does not exist', () => {

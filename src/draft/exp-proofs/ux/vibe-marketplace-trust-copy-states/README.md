@@ -25,12 +25,12 @@ The proof shape is mirrored by:
 
 | Scenario | Path | Proof mode | Owner route | Evidence source |
 |---|---|---|---|---|
-| `preview-warning` | `stale-or-unknown` | `reference-fixture` | Marketplace Publisher Trust Evidence | `urn:hobo:requirement:marketplace-publisher-trust-evidence` |
-| `installable-with-evidence` | `happy` | `live` | Capability Review & Approval | `urn:hobo:requirement:capability-review-approval` |
-| `policy-block` | `blocked` | `simulated` | Org Catalogs | `urn:hobo:requirement:org-catalogs` |
-| `deprecated-guidance` | `stale-or-unknown` | `reference-fixture` | Registry Distribution | `urn:hobo:decision:adr-0062` |
-| `yanked-support-route` | `support-handoff` | `simulated` | Support Workflow | `urn:hobo:requirement:support-workflow` |
-| `hidden-listing` | `blocked` | `scope-out` | Marketplace UX | `urn:hobo:requirement:marketplace-ux` |
+| `preview-warning` | `stale-or-unknown` | `reference-fixture` | Marketplace Publisher Trust Evidence | `docs/design/marketplace-publisher-trust-evidence.md` |
+| `installable-with-evidence` | `happy` | `live` | Capability Review & Approval | `docs/design/capability-review-approval.md` |
+| `policy-block` | `blocked` | `simulated` | Org Catalogs | `docs/design/org-catalogs.md` |
+| `deprecated-guidance` | `stale-or-unknown` | `reference-fixture` | Registry Distribution | `docs/design/adr/07-portability-extensibility.md#adr-0062` |
+| `yanked-support-route` | `support-handoff` | `simulated` | Support Workflow | `docs/design/support-workflow.md` |
+| `hidden-listing` | `blocked` | `scope-out` | Marketplace UX | `docs/design/marketplace-ux.md` |
 
 Each fixture carries customer-safe copy, an owner route, an evidence source, and
 the complete accessibility note set:
@@ -81,6 +81,7 @@ evidence/support paths, support handoff summaries, scope-out enforcement, safe-c
 classification, HOBO-577 quickstart fixture references, and Pact/CUE artifact
 alignment.
 
-## Executable evidence
+## Design Evidence
+
 Branch evidence is summarized in
-[`urn:hobo:proof:vibe-marketplace-trust-copy-states`](urn:hobo:proof:vibe-marketplace-trust-copy-states).
+[`docs/design/proofs/vibe-marketplace-trust-copy-states/README.md`](../../../../../docs/design/proofs/vibe-marketplace-trust-copy-states/README.md).

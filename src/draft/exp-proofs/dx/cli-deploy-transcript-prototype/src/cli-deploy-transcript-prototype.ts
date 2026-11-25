@@ -55,7 +55,7 @@ export interface CliDeployTranscriptPrototype {
   schema: "hobo.cli-deploy-transcript-prototype/v1";
   issue: "HOBO-573";
   targetPackagePath: "src/draft/exp-proofs/dx/cli-deploy-transcript-prototype";
-  proofNotePath: "urn:hobo:proof:cli-deploy-transcript-prototype";
+  proofNotePath: "docs/design/proofs/cli-deploy-transcript-prototype/README.md";
   audience: string[];
   scenarios: CliDeployScenario[];
   scopeOut: string[];
@@ -93,7 +93,7 @@ export const CLI_DEPLOY_TRANSCRIPT_PROTOTYPE: CliDeployTranscriptPrototype = {
   schema: "hobo.cli-deploy-transcript-prototype/v1",
   issue: "HOBO-573",
   targetPackagePath: "src/draft/exp-proofs/dx/cli-deploy-transcript-prototype",
-  proofNotePath: "urn:hobo:proof:cli-deploy-transcript-prototype",
+  proofNotePath: "docs/design/proofs/cli-deploy-transcript-prototype/README.md",
   audience: [
     "app developer validating a first deployment",
     "platform engineer reviewing Gatekeeper output",
@@ -308,7 +308,7 @@ export function parseCliDeployTranscriptPrototype(input: JsonValue) {
   if (record.targetPackagePath !== "src/draft/exp-proofs/dx/cli-deploy-transcript-prototype") {
     errors.push("target package path must match HOBO-573 acceptance");
   }
-  if (record.proofNotePath !== "urn:hobo:proof:cli-deploy-transcript-prototype") {
+  if (record.proofNotePath !== "docs/design/proofs/cli-deploy-transcript-prototype/README.md") {
     errors.push("proof note path must match HOBO-573 acceptance");
   }
   if (!Array.isArray(record.scenarios) || record.scenarios.length < 4) {

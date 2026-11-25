@@ -1,3 +1,21 @@
+// The in-process ReconcilerTransport (conductor mode and `hobo up`). It is the
+// journal-side half of the reconcile boundary; the HTTP transport in ./agent
+// speaks the same contract over the delivery feed.
+//
+//   claim       durable subscription lease `cd:camp:<campId>`, partition =
+//               Camp, holder = `<reconcilerId>/<holderId>`, so two reconcilers
+//               with different ids can never both hold one Camp (I4).
+//   feed        desired-state changes after the committed checkpoint, bounded
+//               to the spec-stream head at call time. The first feed of each
+//               lease re-delivers the Camp's current change when nothing newer
+//               exists (at-least-once), so a restarted reconciler re-observes
+//               without waiting for a new Set.
+//   resolved    the verified resolved-set blob; a missing or corrupt blob is a
+//               typed refusal, never a guess (classified by the thrown error's
+//               typed `code`, never its message).
+//   report      lease re-check, then a fenced append of the status events to
+//               `cd-camp-status-<id>` (never the spec stream).
+//   checkpoint  fenced, monotonic subscription checkpoint.
 import { createHash } from "node:crypto";
 import {
 	type DurableEventStore,
@@ -24,7 +42,7 @@ import type {
 	ReconcilerTransport,
 	TopologyReader,
 } from "../ports.js";
-import { messageOf, refuse } from "./errors.js";
+import { refuse } from "./errors.js";
 import { stableJson } from "./json.js";
 import { observationJson, statusEventsFor } from "./status-events.js";
 
@@ -32,15 +50,18 @@ export type InProcessTransportDeps = CdBase & {
 	readonly desired: DesiredStateReader;
 	readonly posture?: PostureService;
 	readonly topology?: TopologyReader;
+	/** Upper bound on one feed call when the spec head is never reached. */
 	readonly feedTimeoutMs?: number;
 };
 
+// Spec-stream event types that produce a DesiredStateChange (WP4 contract).
 const CHANGE_TYPES: ReadonlySet<string> = new Set([
 	CD_EVENTS.SetCreated,
 	CD_EVENTS.PolicyBindingChanged,
 	CD_EVENTS.CampManagementChanged,
 ]);
 
+/** Lease holder key: the reconciler id is part of it (I4). */
 export function leaseHolder(reconcilerId: string, holderId: string): string {
 	return `${reconcilerId}/${holderId}`;
 }
@@ -51,9 +72,15 @@ function principalFor(reconcilerId: string): PrincipalRef {
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only EventStoreError codes are read.
 function codeOf(error: unknown): string {
-	return error instanceof EventStoreError ? error.code : "";
+	try {
+		return error instanceof EventStoreError ? String(error.code) : "";
+	} catch {
+		return "";
+	}
 }
 
+// Typed codes (DesiredStateError, ArtifactStoreError, ReconcileError) that mean
+// the bytes exist but do not verify. Any other failure is a missing blob.
 const MISMATCH_CODES: ReadonlySet<string> = new Set([
 	"resolved-set-digest-mismatch",
 	"resolved-set-mismatch",
@@ -64,14 +91,20 @@ const MISMATCH_CODES: ReadonlySet<string> = new Set([
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only an Error's `code` property is read and matched against MISMATCH_CODES.
 function typedCodeOf(error: unknown): string {
-	return error instanceof Error && "code" in error ? String(error.code) : "";
+	try {
+		return error instanceof Error && "code" in error ? String(error.code) : "";
+	} catch {
+		return "";
+	}
 }
 
 function asPosition(value: bigint): EventPosition {
+	// SAFETY: positions come from the journal or from a committed checkpoint.
 	return value as EventPosition;
 }
 
 function asFence(value: bigint): FenceToken {
+	// SAFETY: fence tokens are minted by the journal's subscription lease.
 	return value as FenceToken;
 }
 
@@ -109,6 +142,7 @@ export function createInProcessTransport(
 			? await d.posture.observeFields(campId)
 			: change.observeFields;
 		const topology = d.topology ? await d.topology.camp(campId) : undefined;
+		// Most conservative wins: OBSERVE_ONLY from either source never applies.
 		const management =
 			topology?.management === CampManagement.OBSERVE_ONLY ||
 			change.management === CampManagement.OBSERVE_ONLY
@@ -210,7 +244,11 @@ export function createInProcessTransport(
 					`lease fence ${lease.fence} on ${lease.campId} is no longer current`,
 					lease.campId,
 				);
-			return refuse("store-unavailable", messageOf(error), lease.campId);
+			return refuse(
+				"store-unavailable",
+				"The CD journal is unavailable.",
+				lease.campId,
+			);
 		}
 	}
 
@@ -245,7 +283,11 @@ export function createInProcessTransport(
 						`Camp ${input.campId} is leased by another reconciler`,
 						input.campId,
 					);
-				return refuse("store-unavailable", messageOf(error), input.campId);
+				return refuse(
+					"store-unavailable",
+					"The CD journal is unavailable.",
+					input.campId,
+				);
 			}
 		},
 		renew,
@@ -260,6 +302,7 @@ export function createInProcessTransport(
 					fenceToken: lease.fence,
 				});
 			} catch {
+				// A lost lease needs no release; expiry frees it.
 			}
 		},
 		feed,
@@ -280,12 +323,11 @@ export function createInProcessTransport(
 					);
 				return { ok: true as const, value: resolved };
 			} catch (error) {
-				const message = messageOf(error);
 				return refuse(
 					MISMATCH_CODES.has(typedCodeOf(error))
 						? "resolved-set-mismatch"
 						: "resolved-set-missing",
-					`resolved set ${set.resolvedSetDigest} for Set ${set.setId}: ${message}`,
+					"The resolved set could not be loaded or verified.",
 					set.setId,
 				);
 			}
@@ -329,7 +371,11 @@ export function createInProcessTransport(
 							`status append refused for fence ${lease.fence}`,
 							lease.campId,
 						);
-					return refuse("store-unavailable", messageOf(error), lease.campId);
+					return refuse(
+						"store-unavailable",
+						"The CD journal is unavailable.",
+						lease.campId,
+					);
 				}
 			}
 			return refuse(
@@ -366,7 +412,11 @@ export function createInProcessTransport(
 						`checkpoint refused for fence ${lease.fence}`,
 						lease.campId,
 					);
-				return refuse("store-unavailable", messageOf(error), lease.campId);
+				return refuse(
+					"store-unavailable",
+					"The CD journal is unavailable.",
+					lease.campId,
+				);
 			}
 		},
 	} satisfies ReconcilerTransport);

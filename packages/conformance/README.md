@@ -5,11 +5,13 @@ Production package for [HOBO-585](https://linear.app/quickdeploy-ai/issue/HOBO-5
 It promotes the [HOBO-5](https://linear.app/quickdeploy-ai/issue/HOBO-5) proof semantics into a
 typed, event-sourced port-suite harness under `packages/conformance/`.
 
+Run the package lint with `pnpm --filter @hobo/conformance lint`.
+
 ## Requirements Source
 
-- `urn:hobo:requirement:generated-stack#plan-09` — `@hobo/conformance` trust boundary
-- `urn:hobo:decision:adr-0072` — golden-IR equivalence + replay
-- `urn:hobo:decision:adr-0093` — SDK semantics annex lane
+- `docs/design/generated-stack.md#plan-09` — `@hobo/conformance` trust boundary
+- `docs/design/adr/01-architecture-core.md#adr-0072` — golden-IR equivalence + replay
+- `docs/design/adr/01-architecture-core.md#adr-0093` — SDK semantics annex lane
 - `src/draft/technical-proofs/conformance-port-suite-contract/` — reference semantics (HOBO-5)
 
 ## Public API
@@ -24,20 +26,39 @@ typed, event-sourced port-suite harness under `packages/conformance/`.
   (`hobo.camp-eventstore-runtime-port/v1`); provider verification for
   `@hobo/runtime-local` lives in
   `test/runtime-local-eventstore.conformance.test.ts` (dev-only edge to the adapter).
-
-### `@hobo/conformance/sdk`
-
-`runSdkIdiomConformance` executes a supplied adapter against a lowering corpus
-and semantics vectors, then reports idiom-layer, authorship, and coverage
-results. When resilience vectors are supplied, the adapter executes each one
-and its actual result is compared with the expected result. Retry, deadline,
-lifecycle, supervision, cleanup, inspection, and replay helper claims require
-matching resilience vectors. Reports describe only the supplied corpus.
-`encodeSdkConformanceReport` and `decodeSdkConformanceReport` round-trip
-validated reports in protobuf form.
-After changing `data-models/sdk_conformance.proto`, run
-`pnpm --filter @hobo/conformance codegen:sdk`; the package's `test:schema`
-checks that the generated TypeScript matches the schema.
+- `runDurableMessagingConformance(createHarness)` — bounded checks for group
+  isolation, retry receipts, competing leases, expiry-driven DLQ, compaction,
+  audit retention and tenant isolation. The factory receives the case name so
+  capacity and audit-retention cases can select small, bounded limits. Each
+  case must use a fresh instance. The harness must restart the provider, reopen
+  its persisted state, control time, inject faults at the specified points and
+  provide independently authenticated clients and concurrency barriers.
+  The report marks restart, store identity, clock, fault placement, tenant
+  identity, barrier, authority transition and old-owner fence provenance as
+  `unverified`: caller-supplied callbacks cannot authenticate their own
+  execution. Pagination uses the observed retention floor; when too few events
+  remain to exercise pagination, that case is unverified rather than a failure.
+  A separately controlled runner must
+  establish these facts before treating passing cases as provider evidence.
+  In particular, a no-op restart over an in-memory map can pass the behavioral
+  restart case and does not establish durability. The runner bounds and
+  snapshots structured provider receipts, deliveries and audit pages before
+  checking their meaning. Malformed responses remain unknown; explicit
+  assertions report well-formed contradictions as failures. The suite does not
+  validate transport parsing or prove the host's transaction and fencing
+  assumptions.
+  Each case has an in-process deadline covering creation, calls, barriers and
+  close. A timeout, failed creation or failed teardown reports unknown; a
+  behavioral failure also stops the run because a sibling call may be in
+  flight. All later cases remain unrun. A selected single-case diagnostic is
+  identified in the report and is not a full suite. The timer
+  cannot stop provider effects or a blocked event loop, and checking unknown
+  envelopes requires enumerating their own keys. JavaScript promise resolution
+  may also read a returned object's or proxy's `then` property before the runner
+  receives it.
+  An independent host must bound process time and memory, terminate and fence
+  the old execution, and establish durable outcomes before starting any
+  replacement run.
 
 ### `@hobo/conformance/anonymous` — the anonymous/claimable dimension
 
@@ -315,7 +336,7 @@ the anonymous dimension (`data-models/anonymous_conformance.proto` +
 
 HoBo.CI sibling SDKs (`ci`, `ci-gh-actions`, `ci-dagger`, `ci-cf`) are registered
 as application-layer packages in the boundary classifier. They compose the existing
-Dispatcher without provider-layer exceptions.
+Dispatcher without provider-layer exceptions; see `../ci/ADR.md`.
 
 `@hobo/ci-ado` and the existing `@hobo/ci-vercel` transport are registered alongside
 the other CI application SDKs at layer 3;

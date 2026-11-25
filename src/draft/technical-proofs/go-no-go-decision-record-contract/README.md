@@ -21,9 +21,11 @@ npm.cmd --prefix src\draft\technical-proofs\go-no-go-decision-record-contract te
 The package is registered in `pnpm-lock.yaml` so `pnpm run install:check`
 proves workspace dependency graph freshness before release-signoff changes merge.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the decision-record contract.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

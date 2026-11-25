@@ -4,9 +4,9 @@ Independent proof for HOBO-181.
 
 This package pins the hardening conformance gate from:
 
-- `urn:hobo:requirement:security-networking#plan-12`: mTLS-by-default between services, regardless of connectivity tier.
-- `urn:hobo:decision:adr-0023`: secure-by-default, zero-trust, and tenant-scoped trust domains.
-- `urn:hobo:decision:adr-0042`: local vs Camp fidelity tags, including camp-only cross-cloud mTLS handshakes.
+- `docs/design/security-networking.md#plan-12`: mTLS-by-default between services, regardless of connectivity tier.
+- `docs/design/adr/02-identity-security.md#adr-0023`: secure-by-default, zero-trust, and tenant-scoped trust domains.
+- `docs/design/adr/07-portability-extensibility.md#adr-0042`: local vs Camp fidelity tags, including camp-only cross-cloud mTLS handshakes.
 - `src/draft/technical-proofs/mtls-data-path-contract`: HOBO-117's SVID-keyed mTLS decision contract.
 - `src/draft/technical-proofs/tier-one-private-network-contract` through `src/draft/technical-proofs/tier-five-public-mtls-contract`: the realized tier seams this gate consumes.
 
@@ -28,9 +28,11 @@ npm.cmd --prefix src\draft\technical-proofs\mtls-by-default-conformance-gate tes
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Mtls By Default Conformance Gate.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

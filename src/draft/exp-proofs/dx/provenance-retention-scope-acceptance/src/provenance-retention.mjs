@@ -23,13 +23,13 @@ const FORBIDDEN_SCOPE_PATTERNS = [
 ];
 
 const REQUIRED_DEPENDENCIES = [
-  "urn:hobo:requirement:governance-planes#plan-46",
-  "urn:hobo:requirement:platform-engineering#plan-25",
-  "urn:hobo:requirement:contracts-policy-flags#plan-29",
-  "urn:hobo:decision:adr-0062",
-  "urn:hobo:decision:adr-0073",
-  "urn:hobo:decision:adr-0046",
-  "urn:hobo:decision:adr-0023",
+  "docs/design/governance-planes.md#plan-46",
+  "docs/design/platform-engineering.md#plan-25",
+  "docs/design/contracts-policy-flags.md#plan-29",
+  "docs/design/adr/07-portability-extensibility.md#adr-0062",
+  "docs/design/adr/07-portability-extensibility.md#adr-0073",
+  "docs/design/adr/02-identity-security.md#adr-0046",
+  "docs/design/adr/02-identity-security.md#adr-0023",
 ];
 
 export const PROVENANCE_RETENTION_SCOPE = {
@@ -94,37 +94,37 @@ export const PROVENANCE_RETENTION_SCOPE = {
   },
   dependencies: [
     {
-      source: "urn:hobo:requirement:governance-planes#plan-46",
+      source: "docs/design/governance-planes.md#plan-46",
       reason:
         "Defines governance-plane audit, retention, OCSF, and compliance surfaces that consume provenance and retention evidence.",
     },
     {
-      source: "urn:hobo:requirement:platform-engineering#plan-25",
+      source: "docs/design/platform-engineering.md#plan-25",
       reason:
         "Defines resource pack and registry distribution surfaces that require artifact provenance and offline bundle evidence.",
     },
     {
-      source: "urn:hobo:requirement:contracts-policy-flags#plan-29",
+      source: "docs/design/contracts-policy-flags.md#plan-29",
       reason:
         "Defines policy and contract gates for signed, attested, audit-ready artifacts and retention obligations.",
     },
     {
-      source: "urn:hobo:decision:adr-0062",
+      source: "docs/design/adr/07-portability-extensibility.md#adr-0062",
       reason:
         "Pins registry distribution and trust expectations for signed bundles and conformance metadata.",
     },
     {
-      source: "urn:hobo:decision:adr-0073",
+      source: "docs/design/adr/07-portability-extensibility.md#adr-0073",
       reason:
         "Pins Artifact Repo as a port, keeping repository implementation outside this M0 scope.",
     },
     {
-      source: "urn:hobo:decision:adr-0046",
+      source: "docs/design/adr/02-identity-security.md#adr-0046",
       reason:
         "Pins boundary standards, OTEL, OCSF, and identity-aware audit export expectations.",
     },
     {
-      source: "urn:hobo:decision:adr-0023",
+      source: "docs/design/adr/02-identity-security.md#adr-0023",
       reason:
         "Pins security posture expectations for audit retention, SBOM, SLSA provenance, and compliance evidence.",
     },

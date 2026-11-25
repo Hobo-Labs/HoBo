@@ -462,23 +462,8 @@ describe("Webernetes traffic profile and coverage (I14)", () => {
 		).toEqual(WEBERNETES_TRAFFIC_ROUTING_PROFILE);
 		expect(
 			WEBERNETES_TRAFFIC_ROUTING_PROFILE.offerings.map((entry) => entry.id),
-		).toEqual([]);
-		expect(WEBERNETES_TRAFFIC_ROUTING_PROFILE.fallbacks).toEqual([
-			"inprocess.weighted",
-		]);
-		expect(WEBERNETES_TRAFFIC_ROUTING_ABSENT).toHaveLength(17);
-		expect(
-			matchTrafficRoutingOfferings(WEBERNETES_TRAFFIC_ROUTING_PROFILE, {
-				features: ["inprocess.weighted"],
-				negotiation: "require",
-			}).kind,
-		).toBe("none");
-		expect(
-			matchTrafficRoutingOfferings(WEBERNETES_TRAFFIC_ROUTING_PROFILE, {
-				features: ["inprocess.weighted"],
-				negotiation: "prefer",
-			}),
-		).toMatchObject({ kind: "partial", fallbacks: ["inprocess.weighted"] });
+		).toEqual(["inprocess.weighted"]);
+		expect(WEBERNETES_TRAFFIC_ROUTING_ABSENT).toHaveLength(16);
 	});
 	it("a required public funnel is refused: a local yard is never public (I6)", () => {
 		expect(

@@ -1,3 +1,11 @@
+/**
+ * `@hobo/ci-gh-actions/runner-host`: what `hobo deploy agent run` needs on a
+ * runner host and what the CD Station needs to read it, without loading the
+ * relay. The runner-host realizer, the runner fleet's declarations, its health
+ * mapping, the CLI Docker driver the agent wires as the container port, the
+ * supervised-process control port it wires instead on a process host, and
+ * the job ports it reads from the box worker's data directory.
+ */
 export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
 export { defaultWorkerDatabasePath } from "./isolated-worker/worker-store.js";
 export {
@@ -26,7 +34,9 @@ export {
 	runnerHostReferenceParameter,
 } from "./runner-fleet-delivery.js";
 export {
+	CONTROLLER_DIGEST_LABEL,
 	createRunnerHostResolver,
+	observedControllerDigest,
 	RUNNER_HOST_HEALTH_CLAIMS,
 	RUNNER_HOST_PRODUCT_ID,
 	type RunnerControllerProcess,
@@ -45,8 +55,9 @@ export {
 export {
 	createWorkerHostJobs,
 	WORKER_ADMISSION_PAUSED_FILE,
-	WORKER_MESH_ADVERT_FILE,
+	WORKER_OBSERVATION_FILE,
 	WORKER_RUNNER_PRESENCE_FILE,
 	type WorkerHostFiles,
 	workerHostFiles,
+	writeWorkerObservation,
 } from "./runner-host-worker-jobs.js";

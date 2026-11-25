@@ -21,7 +21,9 @@ release gate bypass.
 - Scope creep into scanners, exploit runners, gate bypasses, or legal/advisory
   copy is rejected.
 
-## Executable evidence
+## Architecture Evidence
+
+- `ARCHITECTURE.md` records the parse, don't validate boundary, derived domain
   types, commands, events, actor, event-store, materialized view/projection,
   snapshot, and read store.
 - `contracts/pacts/threat-model-security-review-scope.pact.json` records the
@@ -46,5 +48,5 @@ pnpm.cmd run architecture:guard -- --base=origin/main
 
 The proof is referenced by the design record:
 
-- [Threat Model & Security Review design record](urn:hobo:requirement:threat-model-security-review)
-- [HOBO-451 proof record](urn:hobo:proof:hobo-451-threat-model-security-review)
+- [Threat Model & Security Review design record](../../../../../docs/design/threat-model-security-review.md)
+- [HOBO-451 proof record](../../../../../docs/design/proofs/hobo-451-threat-model-security-review/README.md)

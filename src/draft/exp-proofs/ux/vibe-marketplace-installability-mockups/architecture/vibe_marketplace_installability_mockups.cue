@@ -10,7 +10,7 @@ package vibe_marketplace_installability_mockups
 	issue: "HOBO-546"
 	phase: "M1"
 	packagePath: "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups"
-	proofPath: "urn:hobo:proof:vibe-marketplace-installability-mockups"
+	proofPath: "docs/design/proofs/vibe-marketplace-installability-mockups/README.md"
 	designRefs: [...string]
 	quickstartFixtureRefs: [...#MarketplaceQuickstartFixtureReference]
 	personas: [...#MarketplacePersona]
@@ -42,7 +42,7 @@ package vibe_marketplace_installability_mockups
 	state: #MarketplaceState
 	fixtureId: =~"^hobo-546-marketplace-"
 	visibleState: string & != ""
-	evidenceSource: =~"^urn:hobo:requirement:"
+	evidenceSource: =~"^docs/design/"
 	ownerRoute: string & != ""
 	customerSafeMessage: string & != ""
 	orgCatalogDisposition: string & != ""

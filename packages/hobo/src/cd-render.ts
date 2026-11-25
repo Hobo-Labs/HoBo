@@ -1,4 +1,13 @@
-/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: the output boundary serializes command data (protobuf records, bigints, plain JSON) to the CLI/MCP envelope; values are only classified to choose an encoding, never trusted as a domain type. */
+/**
+ * Rendering for `hobo deploy` CD subcommands.
+ *
+ * One structure for every caller: a human at a terminal, an agent through
+ * MCP and a script with `--json` all receive the same envelope `data`
+ * (records as canonical protobuf JSON). `--format text|json` changes only the
+ * human `message`, never `data`. Every refusal carries a stable code and a
+ * next step (`remediation`).
+ */
 
 import {
 	createRegistry,
@@ -15,7 +24,13 @@ export type CdFormat = "json" | "text";
 
 const registry = createRegistry(file_cd);
 
+/**
+ * The flags a CD command reads: the shell's flags with the options its
+ * subcommand declares (`@hobo/cli` subcommands.ts) merged by name. Callers
+ * that pass a plain flag object (tests, MCP fakes) get it unchanged.
+ */
 export function cdFlagsOf(flags: unknown): JsonObject {
+	// SAFETY: CommandRunInput flags; members are read by name and narrowed by the subcommand.
 	const base = flags as JsonObject;
 	const declared = base.subcommandOptions;
 	if (
@@ -34,6 +49,7 @@ export function cdFlagsOf(flags: unknown): JsonObject {
 	};
 }
 
+/** `--format json|text`; `--json` implies json. Unknown values are a usage error. */
 export function parseCdFormat(
 	flags: JsonObject,
 ): { ok: true; format: CdFormat } | { ok: false; value: string } {
@@ -52,6 +68,11 @@ function isProto(value: unknown): value is Message {
 	);
 }
 
+/**
+ * Any value → JSON: protobuf records become canonical JSON (enum names,
+ * 64-bit integers as strings), bigints become decimal strings, `undefined`
+ * members are dropped.
+ */
 export function cdWire(value: unknown): JsonValue {
 	if (value === null || value === undefined) return null;
 	if (typeof value === "bigint") return value.toString();
@@ -65,6 +86,7 @@ export function cdWire(value: unknown): JsonValue {
 	if (isProto(value)) {
 		const schema = registry.getMessage(value.$typeName);
 		if (schema && isMessage(value, schema as DescMessage))
+			// SAFETY: toJson emits JSON values only.
 			return toJson(schema, value, { alwaysEmitImplicit: false }) as JsonValue;
 	}
 	if (typeof value === "object") {
@@ -98,6 +120,7 @@ function textOf(value: JsonValue, indent = ""): string {
 		.join("\n");
 }
 
+/** A successful CD subcommand result. `data` is identical for every format. */
 export function cdOk(
 	input: Readonly<{
 		code: string;
@@ -115,10 +138,12 @@ export function cdOk(
 			input.format === "text"
 				? `${input.summary}\n${textOf(data)}`
 				: input.summary,
+		// SAFETY: cdWire of a record is a JSON object.
 		data: data as JsonObject,
 	};
 }
 
+/** A refusal: stable code, every reason, and a next step for each. */
 export function cdRefused(
 	input: Readonly<{
 		reasons: readonly ReasonRecord[];
@@ -152,6 +177,7 @@ export function cdRefused(
 	};
 }
 
+/** A usage error, with the usage lines as the next step. */
 export function cdUsage(
 	input: Readonly<{
 		code: string;

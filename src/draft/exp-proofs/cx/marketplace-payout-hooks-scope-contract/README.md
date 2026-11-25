@@ -7,7 +7,7 @@ providers, settlement, tax documents, revenue-share policy, payout UI, KYC/KYB,
 or money movement.
 
 The authoritative design record is
-[`urn:hobo:requirement:marketplace-payout-hooks`](urn:hobo:requirement:marketplace-payout-hooks).
+[`docs/design/marketplace-payout-hooks.md`](../../../../../docs/design/marketplace-payout-hooks.md).
 
 ## Proof
 
@@ -30,10 +30,12 @@ The tests prove:
 - excluded payout provider, settlement, tax, UI, KYC/KYB, and revenue-share work
   is rejected by the scope validator.
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Marketplace
   Payout Hooks Scope Contract.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

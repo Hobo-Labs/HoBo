@@ -27,4 +27,4 @@ HoBo’s primary observability substrate is the **event log** plus rebuildable p
 
 ## Related
 
-[System model](/HoBo/system/) · [Troubleshooting](/HoBo/troubleshooting/) · [Operations](/HoBo/operations/)
+[Architecture](/HoBo/architecture/) · [Troubleshooting](/HoBo/troubleshooting/) · [Operations](/HoBo/operations/)

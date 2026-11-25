@@ -78,31 +78,31 @@ export const TROUBLESHOOTING_GUIDES_SCOPE = {
   },
   dependencies: [
     {
-      source: "urn:hobo:requirement:developer-experience#plan-07",
+      source: "docs/design/developer-experience.md#plan-07",
       reason: "Defines CLI, local-dev, dashboard, and inspection surfaces whose failures troubleshooting guides classify.",
     },
     {
-      source: "urn:hobo:requirement:walkthrough",
+      source: "docs/design/walkthrough.md",
       reason: "Provides role journeys whose stuck states become guide entry points.",
     },
     {
-      source: "urn:hobo:requirement:launch-support-escalation",
+      source: "docs/design/launch-support-escalation.md",
       reason: "Defines launch support escalation matrix and gap routing consumed by guide handoffs.",
     },
     {
-      source: "urn:hobo:requirement:support-sla-channels",
+      source: "docs/design/support-sla-channels.md",
       reason: "Defines channel coverage and unsupported request routing that guides must not override.",
     },
     {
-      source: "urn:hobo:requirement:incident-communications",
+      source: "docs/design/incident-communications.md",
       reason: "Separates troubleshooting guidance from customer-safe incident communications.",
     },
     {
-      source: "urn:hobo:requirement:public-status-page-incident-communication",
+      source: "docs/design/public-status-page-incident-communication.md",
       reason: "Separates public component and incident-state publication from guide evidence collection.",
     },
     {
-      source: "urn:hobo:decision:adr-0064",
+      source: "docs/design/adr/07-portability-extensibility.md#adr-0064",
       reason: "Keeps business mechanics, marketing, and non-platform launch claims outside guide scope.",
     },
   ],

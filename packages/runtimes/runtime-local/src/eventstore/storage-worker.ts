@@ -1,18 +1,19 @@
+/**
+ * Serialized storage-owner Worker Thread protocol for node:sqlite.
+ * Production EventStore calls should route through this boundary so
+ * DatabaseSync never blocks the main runtime event loop unboundedly.
+ */
+
 import { parentPort, workerData } from "node:worker_threads";
 import type {
 	AppendOptions,
-	AppendResult,
 	DurableCommitRequest,
-	DurableCommitResult,
-	EventEnvelope,
 	EventInput,
-	PositionedEvent,
 	ReadAllOptions,
-	SnapshotRecord,
 } from "@hobo/core";
 import { createNodeSqliteDriver, SqliteJournal } from "@hobo/storage-sqlite";
 import {
-	isJsonObject,
+	isJsonBigInt,
 	isJsonString,
 	type JsonValue,
 	parseJsonValue,
@@ -59,27 +60,8 @@ export type StorageWorkerRequest =
 			op: "shutdown";
 	  };
 
-export interface StorageWorkerResults {
-	append: AppendResult;
-	commit: DurableCommitResult;
-	read: EventEnvelope[];
-	readAll: PositionedEvent[];
-	snapshot: SnapshotRecord;
-	loadSnapshot: SnapshotRecord | null;
-	shutdown: null;
-}
-
-export type StorageWorkerSuccess = {
-	[Op in keyof StorageWorkerResults]: {
-		id: string;
-		ok: true;
-		op: Op;
-		result: StorageWorkerResults[Op];
-	};
-}[keyof StorageWorkerResults];
-
 export type StorageWorkerResponse =
-	| StorageWorkerSuccess
+	| { id: string; ok: true; result: JsonValue }
 	| {
 			id: string;
 			ok: false;
@@ -92,9 +74,14 @@ interface SerializedWorkerError {
 	readonly code?: string;
 }
 
+interface CodedError {
+	readonly code?: string;
+}
+
 function serializeError(error: Error): SerializedWorkerError {
-	const code =
-		"code" in error && isJsonString(error.code) ? error.code : undefined;
+	// SAFETY: worker errors may carry a string `code` at this boundary.
+	const coded = error as CodedError;
+	const code = isJsonString(coded.code) ? coded.code : undefined;
 	return {
 		name: error.name,
 		message: error.message,
@@ -106,16 +93,8 @@ async function main(): Promise<void> {
 	if (!parentPort) {
 		throw new Error("storage-worker must run as a worker thread");
 	}
-	const data = parseJsonValue(JSON.stringify(workerData));
-	if (
-		!isJsonObject(data) ||
-		!isJsonString(data.dbPath) ||
-		(data.partitionId !== undefined && !isJsonString(data.partitionId))
-	) {
-		throw new TypeError(
-			"storage worker requires a database path and optional partition id",
-		);
-	}
+	// SAFETY: assertion to `workerData as { dbPath: string; partitionId?: string }` is required at this boundary.
+	const data = workerData as { dbPath: string; partitionId?: string };
 	const driver = createNodeSqliteDriver({ path: data.dbPath });
 	const journal = new SqliteJournal(driver, {
 		nativePragmas: true,
@@ -136,8 +115,7 @@ async function main(): Promise<void> {
 					port.postMessage({
 						id: msg.id,
 						ok: true,
-						op: msg.op,
-						result,
+						result: serializeBigints(result),
 					} satisfies StorageWorkerResponse);
 					break;
 				}
@@ -146,8 +124,7 @@ async function main(): Promise<void> {
 					port.postMessage({
 						id: msg.id,
 						ok: true,
-						op: msg.op,
-						result,
+						result: serializeBigints(result),
 					} satisfies StorageWorkerResponse);
 					break;
 				}
@@ -159,20 +136,18 @@ async function main(): Promise<void> {
 					port.postMessage({
 						id: msg.id,
 						ok: true,
-						op: msg.op,
-						result: events,
+						result: serializeBigints(events),
 					} satisfies StorageWorkerResponse);
 					break;
 				}
 				case "readAll": {
 					const events = [];
 					for await (const e of journal.readAll(msg.options)) {
-						events.push(e);
+						events.push(serializeBigints(e));
 					}
 					port.postMessage({
 						id: msg.id,
 						ok: true,
-						op: msg.op,
 						result: events,
 					} satisfies StorageWorkerResponse);
 					break;
@@ -186,8 +161,7 @@ async function main(): Promise<void> {
 					port.postMessage({
 						id: msg.id,
 						ok: true,
-						op: msg.op,
-						result,
+						result: serializeBigints(result),
 					} satisfies StorageWorkerResponse);
 					break;
 				}
@@ -196,8 +170,7 @@ async function main(): Promise<void> {
 					port.postMessage({
 						id: msg.id,
 						ok: true,
-						op: msg.op,
-						result: result ?? null,
+						result: result === undefined ? null : serializeBigints(result),
 					} satisfies StorageWorkerResponse);
 					break;
 				}
@@ -206,19 +179,19 @@ async function main(): Promise<void> {
 					port.postMessage({
 						id: msg.id,
 						ok: true,
-						op: msg.op,
 						result: null,
 					} satisfies StorageWorkerResponse);
 					break;
 				}
 				default: {
-					const unknownRequest: { id: string; op: string } = msg;
+					const _x: never = msg;
 					port.postMessage({
-						id: unknownRequest.id,
+						// SAFETY: assertion to `msg as { id: string }` is required at this boundary.
+						id: (msg as { id: string }).id,
 						ok: false,
 						error: {
 							name: "StorageWorkerProtocolMismatch",
-							message: `unknown op: ${unknownRequest.op}`,
+							message: `unknown op: ${JSON.stringify(_x)}`,
 							code: "STORAGE_WORKER_PROTOCOL_MISMATCH",
 						},
 					} satisfies StorageWorkerResponse);
@@ -234,6 +207,15 @@ async function main(): Promise<void> {
 			} satisfies StorageWorkerResponse);
 		}
 	});
+}
+
+/** JSON-safe: bigint → decimal string tagged form. */
+function serializeBigints<T>(value: T): JsonValue {
+	return parseJsonValue(
+		JSON.stringify(value, (_k, v) =>
+			isJsonBigInt(v) ? { $bigint: v.toString(10) } : v,
+		),
+	);
 }
 
 void main();

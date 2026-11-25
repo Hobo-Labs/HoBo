@@ -71,7 +71,6 @@ export interface YardRuntime {
 	readonly actorHost: GatewayDeps["actorHost"];
 	readonly executor: OrchestratorDeps["executor"];
 	readonly broker: OrchestratorDeps["broker"];
-	readonly observeDependency?: OrchestratorDeps["observeDependency"];
 	readonly registry: PlannerRegistry;
 	readonly hostingBudgetAuthority?: SharedHostingBudgetAuthority;
 	readonly defaultHostingBudgetId?: string;
@@ -174,12 +173,18 @@ export interface DownResult {
 	readonly progress: ProgressEvent[];
 }
 
+// public-contract: where `hobo build` writes the hobo.freight-manifest/v1 document.
 export const FREIGHT_FILE = ".hobo/freight.json";
+// public-contract: media type of the canonical Bindle bytes stored under declaration_hash.
 export const DECLARATION_MEDIA_TYPE = "application/vnd.hobo.bindle+json";
+// public-contract: artifact name of the stored declaration.
 export const DECLARATION_ARTIFACT = "declaration";
+// public-contract: Freight label marking an anonymous (claimable) deploy.
 export const ANONYMOUS_LABEL = "hobo.dev/anonymous";
+// public-contract: bounded conductor passes before `up` reports "waiting".
 export const DELIVERY_MAX_PASSES = 16;
 
+// public-contract: typed delivery refusals; each carries a remediation.
 export const DELIVERY_REFUSAL = Object.freeze({
 	freightInvalid: "HOBO_FREIGHT_INVALID",
 	freightStale: "HOBO_FREIGHT_STALE",
@@ -196,6 +201,7 @@ export const DELIVERY_REFUSAL = Object.freeze({
 export type DeliveryRefusalCode =
 	(typeof DELIVERY_REFUSAL)[keyof typeof DELIVERY_REFUSAL];
 
+// public-contract: metric names `hobo up`/`down` emit through the TelemetrySink.
 export const DELIVERY_METRIC = Object.freeze({
 	outcome: "hobo.cli.delivery.outcome",
 	passes: "hobo.cli.delivery.passes",
@@ -296,6 +302,7 @@ function progressFrom(events: OrchestratorResult["events"]): ProgressEvent[] {
 		) {
 			continue;
 		}
+		// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 		const data = event.data as {
 			resourceId?: string;
 			summary?: string;
@@ -463,8 +470,6 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 		executor: runtime.executor,
 		broker: runtime.broker,
 	};
-	if (runtime.observeDependency)
-		orchestratorDeps.observeDependency = runtime.observeDependency;
 
 	function pureplan(
 		bindle: ManifestV1,
@@ -611,11 +616,6 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 				resourceId: move.resource,
 				detail: `Cannot move from ${move.from ?? "an unknown provider"} to ${move.to} until the existing resource and any uncertain effects are reconciled.`,
 			}));
-			const waiting = (orchestrated.blockedDependencies ?? []).map((item) => ({
-				type: "dependency.waiting",
-				resourceId: item.resource,
-				detail: `Waiting for ${item.dependency} to become ${item.condition} (observation: ${item.status}).`,
-			}));
 			return {
 				result: {
 					status: orchestrated.status,
@@ -623,11 +623,7 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					planHash: deployResult.planHash,
 					plan: deployResult.plan,
 					provisioned: orchestrated.provisioned,
-					progress: [
-						...progressFrom(orchestrated.events),
-						...blocked,
-						...waiting,
-					],
+					progress: [...progressFrom(orchestrated.events), ...blocked],
 					changes: orchestrated.changes,
 					pruned: orchestrated.pruned,
 					...(orchestrated.pendingOperations !== undefined && {
@@ -769,7 +765,7 @@ const STATUS_EVENT = {
 } as const satisfies Readonly<Record<ReconcileStatus, string>>;
 
 const ANONYMOUS_CLAIM_HINT =
-	"Claim this deployment: `hobo login` then `hobo up` (local Yard), or `hobo claim <account> --broker <uri> --token <token>` (remote).";
+	"Claim this deployment: `hobo login` then `hobo up` (local Yard), or `hobo claim <account> --broker <uri> --token <token>` (remote)."; // public-contract: claim next step printed after `hobo up --anonymous`
 
 function remediationOf(
 	resource: string,
@@ -1424,17 +1420,21 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 }
 
 export function campIdOf(value: string): CampId {
+	// SAFETY: a Camp id is an opaque string; the brand marks where it came from.
 	return value as CampId;
 }
 
 function freightIdOf(value: string): FreightId {
+	// SAFETY: Freight ids come from the ledger or a `--to` the ledger then resolves.
 	return value as FreightId;
 }
 
 function promotionIdOf(value: string): PromotionId {
+	// SAFETY: promotion ids come from the PromotionService's own records.
 	return value as PromotionId;
 }
 
 function reconcilerIdOf(value: string): ReconcilerId {
+	// SAFETY: the conductor id is deterministic per deployment.
 	return value as ReconcilerId;
 }

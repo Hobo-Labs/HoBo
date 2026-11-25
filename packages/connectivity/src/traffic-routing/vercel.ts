@@ -25,13 +25,20 @@ export interface VercelTrafficRouting extends TrafficRoutingPort {
 }
 
 export interface VercelTrafficRoutingOptions {
+	/** Vercel bearer token. Never logged or metered. */
 	readonly token?: string;
+	/** Project id or name used for Rolling Releases and project routes. */
 	readonly projectIdOrName: string;
 	readonly teamId?: string;
 	readonly apiBase?: string;
 	readonly fetchImpl?: typeof fetch;
 	readonly metering?: MeteringBus;
+	/**
+	 * Map HoBo backend ids → Vercel deployment ids for Rolling Release canary.
+	 * Exactly two backends are required for full RR realization.
+	 */
 	readonly deploymentIdsByBackend?: Readonly<Record<string, string>>;
+	/** Force a realization mode; default auto-detects from the plan shape. */
 	readonly mode?: VercelTrafficMode;
 }
 
@@ -45,6 +52,13 @@ interface AppliedPlan {
 	revoked: boolean;
 }
 
+/**
+ * Production Vercel TrafficRouting adapter.
+ *
+ * - Rolling Releases: weighted canary between two mapped deployments.
+ * - Project routes: path-prefix (and optional header) external rewrites,
+ *   staged then promoted to production.
+ */
 export function createVercelTrafficRouting(
 	options: VercelTrafficRoutingOptions,
 ): VercelTrafficRouting {
@@ -77,6 +91,7 @@ export function createVercelTrafficRouting(
 			return {
 				ok: response.ok,
 				status: response.status,
+				// SAFETY: assertion required at this I/O or test boundary.
 				body: cloneAsJson(await response.json().catch(() => null)),
 			};
 		} catch {
@@ -205,6 +220,7 @@ export function createVercelTrafficRouting(
 				);
 			}
 			const routes = projectRoutes(response.body);
+			// SAFETY: assertion required at this I/O or test boundary.
 			const expected = current.expected as {
 				readonly routes: readonly { readonly id: string }[];
 			};
@@ -527,6 +543,7 @@ function rollingReleaseSupport(plan: RoutingPlan) {
 	if (unmet.length > 0 || rule.backends.length !== 2) {
 		return { rule: null, unmet, canaryBackend: null, stableBackend: null };
 	}
+	// Higher weight is treated as stable; lower (or equal second) is canary.
 	const sorted = [...rule.backends].sort(
 		(left, right) => (right.weight ?? 1) - (left.weight ?? 1),
 	);
@@ -639,6 +656,7 @@ function sanitizeId(value: string): string {
 
 function rollingReleaseState(body: JsonValue): string | null {
 	if (!body || !isJsonObject(body)) return null;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const rolling = (body as { rollingRelease?: { state?: unknown } })
 		.rollingRelease;
 	return isJsonString(rolling?.state) ? rolling.state : null;
@@ -648,12 +666,16 @@ function projectRoutes(
 	body: JsonValue,
 ): readonly { readonly id: string; readonly enabled?: boolean }[] {
 	if (!body || !isJsonObject(body)) return [];
+	// SAFETY: assertion required at this I/O or test boundary.
 	const routes = (body as { routes?: unknown }).routes;
 	if (!Array.isArray(routes)) return [];
 	return routes
 		.filter(
 			(route): route is { id: string; enabled?: boolean } =>
-				Boolean(route) && isJsonObject(route) && isJsonString(route.id),
+				Boolean(route) &&
+				isJsonObject(route) &&
+				// SAFETY: assertion required at this I/O or test boundary.
+				isJsonString(route.id),
 		)
 		.map((route) =>
 			route.enabled === undefined
@@ -664,6 +686,7 @@ function projectRoutes(
 
 function routeVersionId(body: JsonValue): string | undefined {
 	if (!body || !isJsonObject(body)) return undefined;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const version = (body as { version?: { id?: unknown } }).version;
 	return isJsonString(version?.id) ? version.id : undefined;
 }
@@ -715,7 +738,9 @@ async function meter(
 				outcome,
 			}),
 		);
-	} catch {}
+	} catch {
+		// Provider realization remains authoritative when observation delivery fails.
+	}
 }
 
 function headersObject(headers: HeadersInit | undefined) {

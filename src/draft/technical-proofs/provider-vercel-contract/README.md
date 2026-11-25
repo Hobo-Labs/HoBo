@@ -29,16 +29,19 @@ npm.cmd --prefix src\draft\technical-proofs\provider-vercel-contract test
 
 Design refs:
 
-- `urn:hobo:requirement:control-plane`: Vercel seed provider row, CloudProvider shape,
+- `docs/design/control-plane.md`: Vercel seed provider row, CloudProvider shape,
   `realize()` pipeline, IaC adapters, provider authoring.
+- `docs/design/architecture.md`: `providers/*` package layer and public type
   surface convention.
-- `urn:hobo:decision:adr-0024`: portability
+- `docs/design/adr/07-portability-extensibility.md#adr-0024`: portability
   conformance and PortabilityReport gate.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Provider Vercel Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -36,6 +36,8 @@ pnpm --prefix src/draft/technical-proofs/s1-stage-gate run gate:s1:conformance
 pnpm --prefix src/draft/technical-proofs/s1-stage-gate run gate:s1:record
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - [`architecture/stage_gate_record.proto`](./architecture/stage_gate_record.proto)
 - [`architecture/stage_gate_record.cue`](./architecture/stage_gate_record.cue)
+- [`ADR.md`](./ADR.md)

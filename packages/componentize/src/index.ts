@@ -10,7 +10,7 @@ export {
 	componentizeHelloBindle,
 	DEFAULT_CI_MATRIX,
 	PINNED_TOOLCHAIN,
-	runContractSmoke,
+	runWasmtimeSmoke,
 	validateWasmComponentArtifact,
 } from "./componentize.js";
 export type {
@@ -27,10 +27,5 @@ export {
 	REAL_COMPONENT_MIN_BYTES,
 	validateRealWasmComponent,
 } from "./real-componentize.js";
-export type {
-	WasmtimeSmokeOptions,
-	WasmtimeSmokeReport,
-} from "./smoke.js";
-export { runWasmtimeSmoke } from "./smoke.js";
 
 export const HOBO_COMPONENTIZE_PACKAGE = "@hobo/componentize";

@@ -6,7 +6,11 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md",
+      "docs/design/control-plane.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

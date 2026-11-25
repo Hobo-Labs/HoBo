@@ -1,3 +1,24 @@
+/**
+ * The fallback capture page, for an MCP host without MCP Apps: the MCP
+ * server process serves the same form on 127.0.0.1, and the owner opens it in
+ * their own browser (the host opens it after the owner consents, for a host
+ * with URL-mode elicitation). The value goes from that browser to this
+ * process over loopback, sealed, and from here to the secret store. The host
+ * and the model see the page's address, never what is typed into it.
+ *
+ * Defences, each covered by a test:
+ * - bound to 127.0.0.1 only, on a port the OS picks;
+ * - the `Host` header must name that exact address and port (DNS rebinding),
+ *   and a POST's `Origin` must be that origin (cross-site form posts);
+ * - the page's one-time token is the URL fragment, which no request carries,
+ *   and is compared against a digest in constant time;
+ * - `Content-Security-Policy` with a per-response nonce, `default-src 'none'`,
+ *   `connect-src 'self'`, no framing, `Referrer-Policy: no-referrer`,
+ *   `Cache-Control: no-store`;
+ * - request bodies are bounded (64 KiB) and never logged; this module writes
+ *   no log line at all.
+ */
+
 import { randomBytes } from "node:crypto";
 import {
 	createServer,
@@ -5,6 +26,7 @@ import {
 	type Server,
 	type ServerResponse,
 } from "node:http";
+import type { AddressInfo } from "node:net";
 import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -13,10 +35,9 @@ const PAGE_PATH = /^\/capture\/(cap_[A-Za-z0-9_-]{22})$/u;
 export type LoopbackAnswer = Readonly<{ status: number; body: JsonValue }>;
 
 export interface LoopbackCaptureHandlers {
-	page(
-		ticketId: string,
-		nonce: string,
-	): string | undefined | Promise<string | undefined>;
+	/** The page for an open ticket, or undefined when it is not open. */
+	page(ticketId: string, nonce: string): string | undefined;
+	/** A form's submission: `token` from the fragment, `sealed` as sent. */
 	submit(
 		ticketId: string,
 		token: string,
@@ -25,6 +46,7 @@ export interface LoopbackCaptureHandlers {
 }
 
 export interface LoopbackCapturePage {
+	/** `http://127.0.0.1:<port>` */
 	readonly origin: string;
 	close(): Promise<void>;
 }
@@ -90,6 +112,7 @@ export async function startLoopbackCapturePage(
 		request: IncomingMessage,
 		response: ServerResponse,
 	): Promise<void> {
+		// DNS rebinding: a name that resolves here is still not this origin.
 		if (request.headers.host !== host) {
 			reply(response, 421, "misdirected", "text/plain; charset=utf-8");
 			return;
@@ -103,7 +126,7 @@ export async function startLoopbackCapturePage(
 		const ticketId = match[1] ?? "";
 		if (request.method === "GET") {
 			const nonce = randomBytes(18).toString("base64url");
-			const page = await handlers.page(ticketId, nonce);
+			const page = handlers.page(ticketId, nonce);
 			if (page === undefined) {
 				reply(response, 410, CLOSED_PAGE, "text/html; charset=utf-8");
 				return;
@@ -157,6 +180,7 @@ export async function startLoopbackCapturePage(
 			else response.end();
 		});
 	});
+	// A malformed request is dropped; nothing about it is logged.
 	server.on("clientError", (_error, socket) => socket.destroy());
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
@@ -165,13 +189,10 @@ export async function startLoopbackCapturePage(
 			resolve();
 		});
 	});
+	// The page must not keep the MCP server alive after its input ends.
 	server.unref();
-	const address = server.address();
-	if (!(address instanceof Object)) {
-		server.close();
-		throw new Error("capture server has no TCP address");
-	}
-	const { port } = address;
+	// SAFETY: a server listening on a TCP port reports an AddressInfo.
+	const { port } = server.address() as AddressInfo;
 	host = `127.0.0.1:${port}`;
 	origin = `http://${host}`;
 	return {

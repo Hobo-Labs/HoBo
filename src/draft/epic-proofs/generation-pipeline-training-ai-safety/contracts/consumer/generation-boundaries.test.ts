@@ -34,7 +34,5 @@ test("generation reference simulation satisfies every declared Pact boundary", a
 });
 
 async function loadPact(name) {
-  return JSON.parse(
-    await readFile(new URL(path.posix.join("./", name), pactRoot), "utf8"),
-  );
+  return JSON.parse(await readFile(new URL(path.posix.join("./", name), pactRoot), "utf8"));
 }

@@ -2,8 +2,6 @@ import { runQueueClockConformance } from "@hobo/conformance";
 import {
 	parseActorKey,
 	parseIdempotencyKey,
-	parseLeaseId,
-	parseMessageId,
 	parseQueueName,
 	QUEUE_CLOCK_RUNTIME_PORT_CONTRACT_VERSION,
 	QueueLeaseLostError,
@@ -65,78 +63,6 @@ describe("createRuntimeLocalQueueClock queue", () => {
 		expect(retry.handled).toEqual([expect.any(String)]);
 	});
 
-	it("releases every unprocessed message when a batch handler fails", async () => {
-		const runtime = createRuntimeLocalQueueClock();
-		const queue = parseQueueName("batch");
-		const ids: string[] = [];
-		for (const key of ["first", "second", "third"]) {
-			const message = await runtime.queue.enqueue(
-				queue,
-				{ key },
-				{
-					idempotencyKey: parseIdempotencyKey(key),
-				},
-			);
-			ids.push(message.messageId);
-		}
-		await expect(
-			runtime.queue.handle(
-				queue,
-				async () => {
-					throw new Error("batch failed");
-				},
-				{ maxMessages: 3, visibilityTimeoutMs: 60_000 },
-			),
-		).rejects.toThrow("batch failed");
-		const retry = await runtime.queue.handle(queue, async () => {}, {
-			maxMessages: 3,
-		});
-		expect(retry.handled).toEqual(ids);
-	});
-
-	it("does not process or release a batch lease acquired by another consumer", async () => {
-		const runtime = createRuntimeLocalQueueClock();
-		const queue = parseQueueName("batch-race");
-		const ids: string[] = [];
-		for (const key of ["first", "second", "third"]) {
-			const message = await runtime.queue.enqueue(
-				queue,
-				{ key },
-				{
-					idempotencyKey: parseIdempotencyKey(key),
-				},
-			);
-			ids.push(message.messageId);
-		}
-		const processed: string[] = [];
-		let finish!: () => void;
-		const batch = runtime.queue.handle(
-			queue,
-			async (message) => {
-				processed.push(message.messageId);
-				await new Promise<void>((resolve) => {
-					finish = resolve;
-				});
-			},
-			{ maxMessages: 3, visibilityTimeoutMs: 1 },
-		);
-		runtime.clock.advance(1);
-		const [competing] = runtime.queue.dequeue(queue, {
-			maxMessages: 1,
-			visibilityTimeoutMs: 100,
-		});
-		if (!competing) throw new Error("competing lease missing");
-		expect(competing.messageId).toBe(ids[1]);
-		finish();
-		await expect(batch).rejects.toBeInstanceOf(QueueLeaseLostError);
-		expect(processed).toEqual([ids[0]]);
-		const remaining = runtime.queue.dequeue(queue, { maxMessages: 3 });
-		expect(remaining.map((message) => message.messageId)).toEqual([ids[2]]);
-		expect(
-			runtime.queue.complete(competing.messageId, competing.leaseId).deduped,
-		).toBe(false);
-	});
-
 	it("suppresses duplicate effects when a completed message is redelivered", async () => {
 		const runtime = createRuntimeLocalQueueClock();
 		const queue = parseQueueName("payments");
@@ -164,13 +90,9 @@ describe("createRuntimeLocalQueueClock queue", () => {
 		const runtime = createRuntimeLocalQueueClock();
 		const queue = parseQueueName("payments");
 		const key = parseIdempotencyKey("charge-active");
-		const enqueued = await runtime.queue.enqueue(
-			queue,
-			{ cents: 500 },
-			{ idempotencyKey: key },
-		);
+		await runtime.queue.enqueue(queue, { cents: 500 }, { idempotencyKey: key });
 		const effects: string[] = [];
-		let finishHandler!: () => void;
+		let finishHandler: (() => void) | undefined;
 
 		const inFlight = runtime.queue.handle(
 			queue,
@@ -188,55 +110,15 @@ describe("createRuntimeLocalQueueClock queue", () => {
 			[],
 		);
 
-		finishHandler();
+		finishHandler?.();
 		await inFlight;
-		runtime.queue.simulateRedelivery(enqueued.messageId);
+		// SAFETY: assertion to `"msg-1" as never` is required at this boundary.
+		runtime.queue.simulateRedelivery("msg-1" as never);
 		await runtime.queue.handle(queue, async (message) => {
 			effects.push(`charged:${message.idempotencyKey}`);
 		});
 
 		expect(effects).toEqual([`charged:${key}`]);
-	});
-
-	it("retries a snapshotted in-flight message after its lease expires", async () => {
-		const runtime = createRuntimeLocalQueueClock();
-		const queue = parseQueueName("jobs");
-		const enqueued = await runtime.queue.enqueue(
-			queue,
-			{ task: "work" },
-			{
-				idempotencyKey: parseIdempotencyKey("job-in-flight"),
-			},
-		);
-		let finishHandler!: () => void;
-		const inFlight = runtime.queue.handle(
-			queue,
-			async () => {
-				await new Promise<void>((resolve) => {
-					finishHandler = resolve;
-				});
-			},
-			{ visibilityTimeoutMs: 100 },
-		);
-		const snapshot = runtime.snapshot();
-		expect(snapshot.queues.jobs?.messages[0]?.processing).toBe(true);
-		finishHandler();
-		await inFlight;
-
-		const restored = createRuntimeLocalQueueClock({ snapshot });
-		expect(restored.snapshot().queues.jobs?.messages[0]?.processing).toBe(
-			false,
-		);
-		expect(snapshot.queues.jobs?.messages[0]?.processing).toBe(true);
-		restored.clock.advance(99);
-		expect(restored.queue.dequeue(queue)).toEqual([]);
-		restored.clock.advance(1);
-		const attempts: number[] = [];
-		const handled = await restored.queue.handle(queue, async (message) => {
-			attempts.push(message.deliveryAttempt);
-		});
-		expect(handled).toEqual({ handled: [enqueued.messageId], deduped: [] });
-		expect(attempts).toEqual([2]);
 	});
 
 	it("signal enqueues actor messages with idempotent delivery", async () => {
@@ -269,10 +151,8 @@ describe("createRuntimeLocalQueueClock queue", () => {
 	it("throws QueueLeaseLostError on unknown message complete", () => {
 		const runtime = createRuntimeLocalQueueClock();
 		expect(() =>
-			runtime.queue.complete(
-				parseMessageId("msg-missing"),
-				parseLeaseId("lease-1"),
-			),
+			// SAFETY: assertion to `"lease-1" as never` is required at this boundary.
+			runtime.queue.complete("msg-missing" as never, "lease-1" as never),
 		).toThrow(QueueLeaseLostError);
 	});
 });

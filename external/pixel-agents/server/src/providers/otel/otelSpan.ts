@@ -1,3 +1,16 @@
+/**
+ * OTLP/JSON trace parsing + span → AgentEvent translation.
+ *
+ * Accepts the OTLP/JSON traces export subset:
+ *   resourceSpans[] → { resource: { attributes }, scopeSpans[] → { spans[] } }
+ * with span fields traceId / spanId / name / kind / status / startTimeUnixNano /
+ * endTimeUnixNano. Anything outside the subset is ignored, never an error.
+ *
+ * Identity mapping (see docs/otel-provider.md):
+ *   - resource attr `hobo.camp`      → office Area name
+ *   - resource attr `hobo.bindle`    → agent (character) identity
+ *   - resource attr `service.name`   → agent identity fallback
+ */
 
 import type { AgentEvent } from '../../../../core/src/provider.js';
 import {
@@ -9,20 +22,27 @@ import {
   OTEL_STATUS_CODE_ERROR,
 } from './constants.js';
 
+// ── Parsed model ─────────────────────────────────────────────
 
+/** How a span maps onto the existing ToolActivity animation states. */
 export type SpanActivity = 'typing' | 'reading';
 
 export interface OtelSpan {
   traceId: string;
   spanId: string;
   name: string;
+  /** Agent identity: hobo.bindle when present, else service.name. */
   bindle: string;
+  /** Camp (Area) name from hobo.camp, when present. */
   camp?: string;
+  /** True when the span record carries an end timestamp (span is complete). */
   hasEnd: boolean;
+  /** True when span status.code === STATUS_CODE_ERROR. */
   isError: boolean;
   activity: SpanActivity;
 }
 
+// ── Attribute helpers ────────────────────────────────────────
 
 type OtlpAttributeValue = {
   stringValue?: string;
@@ -40,6 +60,7 @@ function attrValueToString(value: OtlpAttributeValue | undefined): string | unde
   return undefined;
 }
 
+/** Read OTLP KeyValue[] attributes into a plain string map (drops non-scalars). */
 export function readAttributes(raw: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (!Array.isArray(raw)) return out;
@@ -53,7 +74,14 @@ export function readAttributes(raw: unknown): Record<string, string> {
   return out;
 }
 
+// ── Classification ───────────────────────────────────────────
 
+/**
+ * Classify a span onto the existing ToolActivity states:
+ *   - server/client/internal spans        → 'typing'
+ *   - producer/consumer (messaging) spans → 'reading'
+ *   - spans with db.* / messaging.* attrs → 'reading'
+ */
 export function classifySpan(
   kind: number | undefined,
   spanAttributes: Record<string, string>,
@@ -69,6 +97,7 @@ export function classifySpan(
   return 'typing';
 }
 
+// ── Parsing ──────────────────────────────────────────────────
 
 function parseSpan(
   rawSpan: unknown,
@@ -98,6 +127,10 @@ function parseSpan(
   };
 }
 
+/**
+ * Parse an OTLP/JSON traces body into flat OtelSpan records.
+ * Returns [] for anything that doesn't look like a traces export.
+ */
 export function parseOtlpTraces(body: unknown): OtelSpan[] {
   if (!body || typeof body !== 'object') return [];
   const resourceSpans = (body as Record<string, unknown>).resourceSpans;
@@ -125,11 +158,19 @@ export function parseOtlpTraces(body: unknown): OtelSpan[] {
   return out;
 }
 
+// ── Span → AgentEvent ────────────────────────────────────────
 
+/** Stable toolId for correlating span start/end through the runtime. */
 export function spanToolId(span: OtelSpan): string {
   return `otel-span-${span.spanId}`;
 }
 
+/**
+ * Translate a span into the canonical AgentEvent model. A span record without
+ * an end timestamp is a toolStart; one with an end timestamp is a toolEnd.
+ * (A record carrying both start and end yields both events — see
+ * spanToAgentEvents — so completed-span exports still animate briefly.)
+ */
 export function spanToAgentEvent(span: OtelSpan): AgentEvent {
   if (span.hasEnd) {
     return { kind: 'toolEnd', toolId: spanToolId(span) };
@@ -142,6 +183,7 @@ export function spanToAgentEvent(span: OtelSpan): AgentEvent {
   };
 }
 
+/** Both events for a record, in dispatch order. */
 export function spanToAgentEvents(span: OtelSpan): AgentEvent[] {
   if (!span.hasEnd) return [spanToAgentEvent(span)];
   return [
@@ -155,6 +197,11 @@ export function spanToAgentEvents(span: OtelSpan): AgentEvent[] {
   ];
 }
 
+/**
+ * Display status for a span. The webview derives the character animation from
+ * the status prefix (toolUtils.STATUS_TO_TOOL): "Reading …" → Read → reading
+ * animation; "Running: …" → Bash → typing animation.
+ */
 export function formatSpanStatus(span: OtelSpan): string {
   return span.activity === 'reading' ? `Reading ${span.name}` : `Running: ${span.name}`;
 }

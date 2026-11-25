@@ -18,16 +18,16 @@
           "issue": "HOBO-559",
           "phase": "M2",
           "packagePath": "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough",
-          "proofPath": "urn:hobo:proof:vibe-clickable-first-run-walkthrough",
+          "proofPath": "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
           "consumedActivationRail": {
             "sourceIssue": "HOBO-540",
             "packagePath": "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
-            "proofPath": "urn:hobo:proof:vibe-first-run-activation-rail"
+            "proofPath": "docs/design/proofs/vibe-first-run-activation-rail/README.md"
           },
           "consumedWorkspaceProjectStates": {
             "sourceIssue": "HOBO-541",
             "packagePath": "src/draft/exp-proofs/ux/vibe-workspace-project-states",
-            "proofPath": "urn:hobo:proof:vibe-workspace-project-states"
+            "proofPath": "docs/design/proofs/vibe-workspace-project-states/README.md"
           },
           "scenarioPaths": [
             { "id": "happy-path" },

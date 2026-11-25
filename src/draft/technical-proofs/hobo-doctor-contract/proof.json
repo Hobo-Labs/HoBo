@@ -8,7 +8,8 @@
       "src/draft/technical-proofs/hobo-cli-shell-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

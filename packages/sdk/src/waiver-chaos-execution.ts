@@ -17,7 +17,9 @@ export interface OperatorExecutionContext {
 	readonly store: EventStore;
 	readonly tenant: string;
 	readonly actor: PrincipalRef;
+	/** Roles verified by the host authentication boundary, never accepted from a method argument. */
 	readonly actorRoles?: readonly string[];
+	/** Action grants verified by the host authentication boundary. */
 	readonly actorScopes?: readonly string[];
 	readonly now: () => string;
 }
@@ -60,9 +62,11 @@ export interface WaiverState {
 	readonly policyFingerprint?: string;
 }
 
+/** Project durable approval facts; expiry is checked on every authorization, never by a best-effort timer. */
 export function replayWaiver(events: readonly EventEnvelope[]): WaiverState {
 	let state: WaiverState = { decisionId: "", status: "missing", revision: 0 };
 	for (const event of events) {
+		// SAFETY: these event payloads are the persisted output of this module's parsed declaration boundary.
 		const data = event.data as {
 			decisionId: string;
 			declaration: WaiverDeclaration;
@@ -294,6 +298,7 @@ export interface ChaosTarget {
 	inject(fault: string): Promise<ChaosFaultLease>;
 }
 
+/** A private, process-local fault membrane. It never changes the underlying handler or any production target. */
 export function createFetchChaosTarget(
 	id: string,
 	handler: (request: Request) => Response | Promise<Response>,
@@ -338,6 +343,7 @@ export function createFetchChaosTarget(
 	};
 }
 
+/** An isolated Camp membrane: only registered member hosts are reachable; every injection is reverted. */
 export function createCampChaosTarget(
 	id: string,
 	members: readonly ChaosTarget[],
@@ -447,16 +453,7 @@ export async function executeChaosExperiment(
 		request: options.authorization,
 		pack: options.pack,
 	});
-	await append(
-		options,
-		stream,
-		"policy.Decided",
-		{
-			...authorization.decision,
-			evidence: { ...authorization.decision.evidence },
-		},
-		0,
-	);
+	await append(options, stream, "policy.Decided", authorization.decision, 0);
 	if (authorization.decision.effect !== "allow")
 		throw new Error("chaos policy did not allow execution");
 	const probe = options.checks[declaration.steadyState];

@@ -1,3 +1,4 @@
+// adapters/harness.ts: RolloutEngine over OpenDeliveryEngine (D8, I8).
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -18,6 +19,7 @@ import { clock, context, MemoryEventStore, TENANT } from "./fakes.js";
 
 const ID = "rollout-h1";
 const rolloutId = (): RolloutId => {
+	// SAFETY: literal test id.
 	return ID as RolloutId;
 };
 
@@ -164,6 +166,7 @@ describe("createHarnessRolloutEngine", () => {
 		expect(await rebuilt.engine.get(rolloutId())).toEqual(
 			await live.engine.get(rolloutId()),
 		);
+		// The rebuilt engine continues where the live one stopped.
 		const snap = await rebuilt.engine.advance(
 			rolloutId(),
 			result("b", VerificationVerdict.PASS),

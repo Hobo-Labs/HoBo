@@ -6,9 +6,9 @@ produce.
 
 ## Requirements Source
 
-- `urn:hobo:requirement:sdk-api#plan-02`: WIT-first SDK, Layer 3 topology, Layer 4 runtime primitives.
-- `urn:hobo:decision:adr-0069`: thin SDK, no cloud logic.
-- `urn:hobo:decision:adr-0072`: generated bindings plus a thin idiom layer,
+- `docs/design/sdk-api.md#plan-02`: WIT-first SDK, Layer 3 topology, Layer 4 runtime primitives.
+- `docs/design/adr/01-architecture-core.md#adr-0069`: thin SDK, no cloud logic.
+- `docs/design/adr/01-architecture-core.md#adr-0072`: generated bindings plus a thin idiom layer,
   lowering-equivalence corpus, semantics annex.
 
 ## What This Proves
@@ -36,9 +36,11 @@ npm.cmd --prefix src\draft\technical-proofs\idiom-layer-lowering-contract test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Idiom Layer Lowering Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

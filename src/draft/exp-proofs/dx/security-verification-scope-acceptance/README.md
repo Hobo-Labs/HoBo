@@ -20,7 +20,9 @@ bug bounty, CVE workflow, or runtime security engine.
 - Scope creep into live security services, bug bounty commitments, ticketing
   workflows, legal/advisory text, or proofless public claims is rejected.
 
-## Executable evidence
+## Architecture Evidence
+
+- `ADR.md` records the parse, don't validate boundary, derived domain
   types, commands, events, actor, event-store, materialized view/projection,
   snapshot, and read store.
 - `contracts/pacts/security-verification-scope.pact.json` records the PACT
@@ -44,5 +46,5 @@ pnpm.exe run architecture:guard -- --base=origin/main
 
 The proof is also referenced by the design record:
 
-- [Security Verification design record](urn:hobo:requirement:security-verification)
-- [HOBO-441 proof record](urn:hobo:proof:hobo-441-security-verification)
+- [Security Verification design record](../../../../../docs/design/security-verification.md)
+- [HOBO-441 proof record](../../../../../docs/design/proofs/hobo-441-security-verification/README.md)

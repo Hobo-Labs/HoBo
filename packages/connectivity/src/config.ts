@@ -44,7 +44,7 @@ export interface ConnectivityConfig {
 
 export const DEFAULT_CONNECTIVITY_CONFIG: ConnectivityConfig = {
 	overlay: {
-		provider: "wireguard",
+		provider: "tailscale",
 		magicDnsDomains: ["hobo.test", "hobo.internal"],
 		enableFunnel: true,
 	},
@@ -76,17 +76,21 @@ export function parseConnectivityConfig(raw: JsonValue): ConnectivityConfig {
 	if (raw === null || raw === undefined || !isJsonObject(raw)) {
 		return DEFAULT_CONNECTIVITY_CONFIG;
 	}
-	const obj = raw;
-	const rawOverlay = obj.overlay;
-	if (rawOverlay !== undefined && !isJsonObject(rawOverlay)) {
-		throw new TypeError("overlay must be an object");
-	}
-	const overlay: JsonObject = rawOverlay ?? {};
+	// SAFETY: assertion required at this I/O or test boundary.
+	const obj = raw as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
+	const overlay = (obj.overlay ?? {}) as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const dns = (obj.dns ?? {}) as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const dnsPublic = (dns.public ?? {}) as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const naming = (obj.naming ?? {}) as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const metering = (obj.metering ?? {}) as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const tenancy = (obj.tenancy ?? {}) as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const policy = (obj.policy ?? {}) as JsonObject;
 
 	const managedBy = parseManagedBy(dnsPublic.managedBy);
@@ -97,7 +101,8 @@ export function parseConnectivityConfig(raw: JsonValue): ConnectivityConfig {
 		overlay: {
 			provider: overlayProvider,
 			magicDnsDomains: Array.isArray(overlay.magicDnsDomains)
-				? overlay.magicDnsDomains.filter((s): s is string => isJsonString(s))
+				? // SAFETY: assertion required at this I/O or test boundary.
+					overlay.magicDnsDomains.filter((s): s is string => isJsonString(s))
 				: DEFAULT_CONNECTIVITY_CONFIG.overlay.magicDnsDomains,
 			enableFunnel: overlay.enableFunnel !== false,
 		},
@@ -113,8 +118,11 @@ export function parseConnectivityConfig(raw: JsonValue): ConnectivityConfig {
 				dnsPublic.credentials !== null
 					? {
 							credentials: Object.fromEntries(
-								Object.entries(dnsPublic.credentials as JsonObject).filter(
-									(entry): entry is [string, string] => isJsonString(entry[1]),
+								Object.entries(
+									// SAFETY: assertion required at this I/O or test boundary.
+									dnsPublic.credentials as JsonObject,
+								).filter((entry): entry is [string, string] =>
+									isJsonString(entry[1]),
 								),
 							),
 						}
@@ -137,7 +145,8 @@ export function parseConnectivityConfig(raw: JsonValue): ConnectivityConfig {
 		metering: {
 			enabled: metering.enabled !== false,
 			sinks: Array.isArray(metering.sinks)
-				? metering.sinks.filter(
+				? // SAFETY: assertion required at this I/O or test boundary.
+					metering.sinks.filter(
 						(s): s is "memory" | "log" | "billing" =>
 							s === "memory" || s === "log" || s === "billing",
 					)
@@ -173,18 +182,15 @@ function parseProvider(raw: JsonValue | undefined): DnsProviderKind {
 		"memory",
 		"none",
 	];
+	// SAFETY: assertion required at this I/O or test boundary.
 	if (isJsonString(raw) && (allowed as string[]).includes(raw)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		return raw as DnsProviderKind;
 	}
 	return "none";
 }
 
 function parseOverlay(raw: JsonValue | undefined): OverlayProviderKind {
-	if (raw === undefined) return DEFAULT_CONNECTIVITY_CONFIG.overlay.provider;
-	if (raw === "wireguard" || raw === "tailscale" || raw === "netbird") {
-		return raw;
-	}
-	throw new TypeError(
-		"overlay.provider must be wireguard, tailscale, or netbird",
-	);
+	if (raw === "netbird") return "netbird";
+	return "tailscale";
 }

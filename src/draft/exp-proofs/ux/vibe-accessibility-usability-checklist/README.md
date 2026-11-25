@@ -13,7 +13,7 @@ using customer data, or making unsupported launch claims.
 
 - In scope: checklist records, required check fixtures, surface-to-owner matrix,
   scenario paths, proof-mode labels, accepted-risk routes, and scope-out guards.
-- Source baseline: `urn:hobo:requirement:accessibility-usability-launch-baseline`.
+- Source baseline: `docs/design/accessibility-usability-launch-baseline.md`.
 - Quickstart dependency: `quickstartFixtureRefs` pins the accepted HOBO-577
   fixture ids and proof-mode labels each launch surface consumes before this
   checklist can treat a vibe artifact as useful evidence.
@@ -41,7 +41,9 @@ pnpm.cmd run test:file src/draft/exp-proofs/ux/vibe-accessibility-usability-chec
 | Happy path, blocked path, stale/unknown evidence path, support handoff, accessibility notes, and proof labels are covered. | `scenarios` names the six acceptance paths and their required evidence and safe outcomes. |
 | Scope out remains hard. | `classifyChecklistRequest` rejects product UI remediation, full audit/certification, broad automated suite work, waiver approval, customer data, and unsupported launch claims. |
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` - protobuf data shapes and CUE constraints for the checklist
   record.
 - `architecture/pacts/` - Pact-style package boundary fixture.
+- `ADR.md` - parse-don't-validate and event/projection architecture note.

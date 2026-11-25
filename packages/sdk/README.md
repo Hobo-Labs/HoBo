@@ -10,11 +10,9 @@ required for direct self-hosted execution.
 ## Shared engines
 
 - `dispatcher(options, runners)` lowers runner declarations onto the existing
-  `@hobo/dispatcher` registry. Feed the registry to `decideCreditDispatch`, then pass
+  `@hobo/dispatcher` registry. Feed the registry to `decideDispatch`, then pass
   the selected concrete runner port to `executeRemoteRunner`, or run a direct
   local job with `executeLocalRunner`.
-  Its objective is passed directly to the dispatcher; `min-cost` minimizes paid
-  cost and `maximize-credits` prioritizes available free units.
 - `policyPack` / `rule` compile the existing `@hobo/contracts` policy evaluator's
   rules. Execution records the evaluator's actual `policy.Decided` data rather
   than inventing a second policy decision shape.

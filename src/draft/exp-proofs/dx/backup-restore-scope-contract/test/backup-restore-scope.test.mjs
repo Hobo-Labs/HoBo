@@ -39,12 +39,12 @@ test("M0 dependencies map authoritative design sources", () => {
   assert.deepEqual(
     BACKUP_RESTORE_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:reliability-observability-cost#plan-05",
-      "urn:hobo:requirement:data-plane#plan-11",
-      "urn:hobo:requirement:provenance-retention",
-      "urn:hobo:requirement:bootstrap-installer",
-      "urn:hobo:requirement:launch-support-escalation",
-      "urn:hobo:decision:adr-0082",
+      "docs/design/reliability-observability-cost.md#plan-05",
+      "docs/design/data-plane.md#plan-11",
+      "docs/design/provenance-retention.md",
+      "docs/design/bootstrap-installer.md",
+      "docs/design/launch-support-escalation.md",
+      "docs/design/adr/02-identity-security.md#adr-0082",
     ],
   );
 });

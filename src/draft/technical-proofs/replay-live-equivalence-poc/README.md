@@ -25,7 +25,7 @@ This POC does not implement the Reactor, Streamer transport, snapshot store, cro
 
 ## Promotion
 
-The production implementation is available at `@hobo/runtime/replay`.
+S1-12 (HOBO-601) promotes this spike to production at `@hobo/runtime/replay`. Draft POC ahead of merge: `src/draft/technical-proofs/deterministic-replay-engine/`.
 
 ## Verification
 
@@ -35,9 +35,11 @@ npm.cmd test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Replay Live Equivalence Poc.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

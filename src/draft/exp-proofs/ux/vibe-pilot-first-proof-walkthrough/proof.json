@@ -9,7 +9,8 @@
     "epicProofs": [],
     "expProofs": [
       "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard"
-    ]
+    ],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

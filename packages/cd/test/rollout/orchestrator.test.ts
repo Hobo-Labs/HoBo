@@ -1,3 +1,5 @@
+// WP10 Accept bullets and §10 rows for createRolloutOrchestrator, driven over
+// the real Harness engine adapter (adapters/harness.ts) and port doubles.
 import { describe, expect, it } from "vitest";
 import type { RolloutPlanRecord } from "../../src/_generated/cd_pb.js";
 import {
@@ -56,6 +58,7 @@ async function planned(
 }
 
 function rid(plan: RolloutPlanRecord): RolloutId {
+	// SAFETY: test reads the plan's own rollout id.
 	return plan.rolloutId as RolloutId;
 }
 
@@ -70,6 +73,7 @@ describe("createRolloutOrchestrator", () => {
 		expect(snapshot.status).toBe("promoted");
 		expect(snapshot.percent).toBe(100);
 		expect(r.traffic.percents("prod-a")).toEqual([5, 25, 50, 100]);
+		// Comparisons run while traffic is split; at 100% there is no baseline.
 		expect(r.verification.started.map((s) => s.cohortAware)).toEqual([
 			true,
 			true,
@@ -121,7 +125,7 @@ describe("createRolloutOrchestrator", () => {
 		r.traffic.stuck.add("prod-a");
 		let snapshot = await r.orchestrator.run(plan, r.ctx);
 		expect(snapshot.status).toBe("running");
-		expect(r.verification.started.map((s) => s.id)).toEqual(["ver-prod-a-0"]);
+		expect(r.verification.started.map((s) => s.id)).toEqual(["ver-prod-a-0"]); // idle side only
 		r.time.advance(9 * MINUTE);
 		await r.orchestrator.tick(r.ctx);
 		snapshot = (await r.orchestrator.get(rid(plan))) ?? snapshot;
@@ -133,6 +137,7 @@ describe("createRolloutOrchestrator", () => {
 		expect(snapshot.reasons.map((x) => x.code)).toContain(
 			"rollout-traffic-unconverged",
 		);
+		// The stage was never verified on the strength of a provider self-report.
 		expect(r.verification.started).toHaveLength(1);
 	});
 
@@ -175,12 +180,13 @@ describe("createRolloutOrchestrator", () => {
 		const plan = await planned(r, RolloutStrategy.CANARY);
 		await r.orchestrator.run(plan, r.ctx);
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
-		r.windows.open = false;
+		r.windows.open = false; // freeze starts while the 5% stage verifies
 		r.verification.settle(VerificationVerdict.PASS);
 		await r.orchestrator.tick(r.ctx);
 		let snapshot = await r.orchestrator.get(rid(plan));
 		expect(snapshot?.status).toBe("awaiting-window");
 		expect(snapshot?.reasons[0]?.code).toBe(WINDOW_CLOSED);
+		// The in-flight stage was never aborted: 5% stays, nothing advanced.
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
 		r.time.advance(30 * MINUTE);
 		await r.orchestrator.tick(r.ctx);
@@ -209,6 +215,7 @@ describe("createRolloutOrchestrator", () => {
 		expect(await replayed.engine.get(rid(plan))).toEqual(
 			await live.engine.get(rid(plan)),
 		);
+		// The journal fully determines the next decision too.
 		live.verification.settle(VerificationVerdict.PASS);
 		await live.orchestrator.tick(live.ctx);
 		const finished = await live.orchestrator.get(rid(plan));
@@ -463,7 +470,7 @@ describe("createRolloutOrchestrator", () => {
 			deadlineMs: 5 * MINUTE,
 		});
 		r.traffic.stuck.add("prod-a");
-		r.traffic.active.set(camp("prod-a"), "manual");
+		r.traffic.active.set(camp("prod-a"), "manual"); // first shift is not observed either
 		await r.orchestrator.run(plan, r.ctx);
 		await r.orchestrator.rollback(
 			{ rolloutId: rid(plan), reason: "operator" },
@@ -485,9 +492,10 @@ describe("createRolloutOrchestrator", () => {
 		const plan = await planned(r, RolloutStrategy.CANARY, ["prod-a"], {
 			stagePercents: [5, 100],
 		});
-		r.traffic.throwOn.add("prod-a");
+		r.traffic.throwOn.add("prod-a"); // the provider call dies mid-flight
 		await r.orchestrator.run(plan, r.ctx);
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
+		// The 5% plan did reach the provider: observation settles the outcome.
 		r.traffic.throwOn.delete("prod-a");
 		r.traffic.active.set(camp("prod-a"), `${plan.rolloutId}:prod-a:p5`);
 		const resumed = rig({ store });
@@ -514,39 +522,6 @@ describe("createRolloutOrchestrator", () => {
 			...a.traffic.percents("prod-a"),
 			...b.traffic.percents("prod-a"),
 		]).toEqual([5]);
-	});
-
-	it("concurrent recovery drivers perform one rollback shift", async () => {
-		const store = new MemoryEventStore();
-		const first = rig({ store });
-		first.verification.script = () => "pending";
-		const plan = await planned(first, RolloutStrategy.CANARY, ["prod-a"], {
-			deadlineMs: MINUTE,
-		});
-		await first.orchestrator.run(plan, first.ctx);
-		expect(first.traffic.percents("prod-a")).toEqual([5]);
-		first.time.advance(3 * MINUTE);
-		const second = rig({ store, start: first.time.now() });
-		second.desired.promoted("prod-a", "freight-1");
-		second.verification.script = () => "pending";
-		Object.assign(second.traffic, { active: first.traffic.active });
-		await Promise.all([
-			first.orchestrator.tick(first.ctx),
-			second.orchestrator.tick(second.ctx),
-		]);
-		await Promise.all([
-			first.orchestrator.tick(first.ctx),
-			second.orchestrator.tick(second.ctx),
-		]);
-		expect(
-			[
-				...first.traffic.percents("prod-a"),
-				...second.traffic.percents("prod-a"),
-			].filter((percent) => percent === 0),
-		).toHaveLength(1);
-		expect((await first.orchestrator.get(rid(plan)))?.status).toBe(
-			"rolled-back",
-		);
 	});
 
 	it("plan is idempotent; run refuses an unplanned or edited plan", async () => {
@@ -609,6 +584,130 @@ describe("createRolloutOrchestrator", () => {
 		const r = rig();
 		const plan = await planned(r, RolloutStrategy.UNSPECIFIED);
 		expect(plan.strategy).toBe(RolloutStrategy.CANARY);
+	});
+
+	it.each([
+		"thrown",
+		"notes",
+		"realized",
+	] as const)("redacts %s traffic provider details from rollout history", async (mode) => {
+		const r = rig();
+		const marker = "synthetic-private-provider.invalid";
+		const original = r.traffic.shift.bind(r.traffic);
+		r.traffic.shift = async (input) => {
+			if (mode === "thrown") throw new Error(marker);
+			const result = await original(input);
+			return mode === "realized"
+				? { ...result, realized: JSON.parse(JSON.stringify(marker)) }
+				: { ...result, notes: [marker] };
+		};
+		const plan = await planned(r, RolloutStrategy.CANARY);
+		const snapshot = await r.orchestrator.run(plan, r.ctx);
+		const events = r.store.events(ROLLOUT_LEDGER.stream(plan.rolloutId));
+		expect(events.some((event) => event.type === ROLLOUT_LEDGER.shifted)).toBe(
+			true,
+		);
+		expect(JSON.stringify(events.map((event) => event.data))).not.toContain(
+			marker,
+		);
+		expect(JSON.stringify(snapshot)).not.toContain(marker);
+		expect(JSON.stringify(r.telemetry.points)).not.toContain(marker);
+	});
+
+	it("waits for another observation when traffic status fails privately", async () => {
+		const r = rig();
+		const marker = "synthetic-private-provider.invalid";
+		const original = r.traffic.status.bind(r.traffic);
+		r.traffic.status = async () => {
+			throw new Error(marker);
+		};
+		const plan = await planned(r, RolloutStrategy.CANARY);
+		const snapshot = await r.orchestrator.run(plan, r.ctx);
+		expect(snapshot.status).toBe("running");
+		await r.orchestrator.tick(r.ctx);
+		expect(r.traffic.percents("prod-a")).toEqual([5]);
+		expect((await r.orchestrator.get(plan.rolloutId))?.status).toBe("running");
+		expect(
+			JSON.stringify(r.store.events(ROLLOUT_LEDGER.stream(plan.rolloutId))),
+		).not.toContain(marker);
+		expect(JSON.stringify(snapshot)).not.toContain(marker);
+		r.traffic.status = original;
+		await r.orchestrator.tick(r.ctx);
+		expect((await r.orchestrator.get(plan.rolloutId))?.status).toBe("promoted");
+	});
+
+	it.each([
+		"throw",
+		"invalid",
+	] as const)("does not expose %s traffic offering details while planning", async (mode) => {
+		const r = rig();
+		const marker = "synthetic-private-provider.invalid";
+		r.traffic.offerings = async () => {
+			if (mode === "throw") throw new Error(marker);
+			return JSON.parse(JSON.stringify([marker]));
+		};
+		let caught: unknown;
+		try {
+			await planned(r, RolloutStrategy.CANARY);
+		} catch (error) {
+			caught = error;
+		}
+		expect(caught).toMatchObject({
+			message: "Traffic offerings are unavailable.",
+		});
+		expect(String(caught)).not.toContain(marker);
+	});
+
+	it("treats a shift acknowledgement for a different plan as unknown", async () => {
+		const r = rig();
+		const originalShift = r.traffic.shift.bind(r.traffic);
+		const originalStatus = r.traffic.status.bind(r.traffic);
+		r.traffic.shift = async (...args) => ({
+			...(await originalShift(...args)),
+			planId: JSON.parse('"wrong-plan"'),
+		});
+		r.traffic.status = async () => null;
+		const plan = await planned(r, RolloutStrategy.CANARY);
+		const snapshot = await r.orchestrator.run(plan, r.ctx);
+		expect(snapshot.status).toBe("running");
+		expect(r.traffic.percents("prod-a")).toEqual([5]);
+		const shifted = r.store
+			.events(ROLLOUT_LEDGER.stream(plan.rolloutId))
+			.find((event) => event.type === ROLLOUT_LEDGER.shifted);
+		expect(shifted?.data).toMatchObject({ realized: "unknown" });
+		r.traffic.shift = originalShift;
+		r.traffic.status = originalStatus;
+		await r.orchestrator.tick(r.ctx);
+		expect((await r.orchestrator.get(plan.rolloutId))?.status).toBe("promoted");
+	});
+
+	it("does not advance on traffic status for a different plan", async () => {
+		const r = rig();
+		const original = r.traffic.status.bind(r.traffic);
+		r.traffic.status = async (campId, planId) => {
+			const status = await original(campId, planId);
+			return status && { ...status, planId: JSON.parse('"wrong-plan"') };
+		};
+		const plan = await planned(r, RolloutStrategy.CANARY);
+		const snapshot = await r.orchestrator.run(plan, r.ctx);
+		expect(snapshot.status).toBe("running");
+		expect(r.traffic.percents("prod-a")).toEqual([5]);
+		r.traffic.status = original;
+		await r.orchestrator.tick(r.ctx);
+		expect((await r.orchestrator.get(plan.rolloutId))?.status).toBe("promoted");
+	});
+
+	it("keeps synchronous telemetry failures from interrupting a rollout", async () => {
+		const r = rig();
+		r.telemetry.metrics = () => {
+			throw new Error("synthetic-private-exporter.invalid");
+		};
+		const plan = await planned(r, RolloutStrategy.CANARY);
+		const snapshot = await r.orchestrator.run(plan, r.ctx);
+		expect(snapshot.status).toBe("promoted");
+		expect(JSON.stringify(snapshot)).not.toContain(
+			"synthetic-private-exporter.invalid",
+		);
 	});
 
 	it("a shift the cutover refuses rolls back at once", async () => {

@@ -9,7 +9,8 @@
       "src/draft/technical-proofs/mtls-data-path-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

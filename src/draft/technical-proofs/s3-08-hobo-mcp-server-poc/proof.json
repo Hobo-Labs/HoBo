@@ -10,7 +10,8 @@
       "src/draft/technical-proofs/operations-manifests-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -1,12 +1,9 @@
-import type {
-	OverlayNetwork,
-	OverlayProviderKind,
-	PolicyEngine,
-} from "@hobo/core";
+/**
+ * EnvNetworkIsolationRegistry — parallel to TenantIsolationRegistry.
+ * Soft / hard-overlay / hard-control-plane for environment isolation classes.
+ */
+import type { OverlayNetwork } from "@hobo/core";
 
-import { createNetbirdOverlay } from "../overlay/netbird.js";
-import { createTailscaleOverlay } from "../overlay/tailscale.js";
-import { createWireguardOverlay } from "../overlay/wireguard.js";
 import {
 	defaultTierForClass,
 	type IsolationClass,
@@ -25,6 +22,7 @@ export type EnvControlPlanePartition = Readonly<{
 	isolationClass: IsolationClass;
 	partitionKey: string;
 	eventStreamPrefix: string;
+	/** Distinct tailnet / Netbird network id for hard floor. */
 	overlayControlPlaneId: string;
 }>;
 
@@ -36,47 +34,45 @@ export interface EnvNetworkIsolationRegistry {
 	getPlane(cls: IsolationClass): EnvOverlayPlane | null;
 	getControlPlane(cls: IsolationClass): EnvControlPlanePartition | null;
 	listPlanes(): readonly EnvOverlayPlane[];
+	/**
+	 * Assert two isolation classes cannot share a hard-isolated plane.
+	 * Soft classes share default overlay and rely on PolicyEngine env deny.
+	 */
 	assertEnvironmentIsolation(
 		a: IsolationClass,
 		b: IsolationClass,
 	): { readonly isolated: boolean; readonly reason: string };
+	/** Recommended distinct overlay network id for hard-floor production. */
 	hardFloorOverlayId(cls: IsolationClass): string;
+}
+
+export interface EnvOverlays {
+	readonly shared: OverlayNetwork;
+	readonly forClass?: (cls: IsolationClass) => OverlayNetwork;
 }
 
 export interface EnvNetworkIsolationRegistryOptions {
 	readonly defaultTier?: IsolationTier;
-	readonly sharedOverlay?: OverlayNetwork;
-	readonly policy?: PolicyEngine;
-	readonly overlayProvider?: OverlayProviderKind;
-	readonly createOverlayForClass?: (cls: IsolationClass) => OverlayNetwork;
-}
-
-function createOverlayNetwork(
-	provider: OverlayProviderKind | undefined,
-	policy: PolicyEngine | undefined,
-): OverlayNetwork {
-	if (provider === "netbird") return createNetbirdOverlay();
-	if (provider === "tailscale") {
-		return createTailscaleOverlay(policy === undefined ? {} : { policy });
-	}
-	return createWireguardOverlay(policy === undefined ? {} : { policy });
 }
 
 export function createEnvNetworkIsolationRegistry(
+	overlays: EnvOverlays,
 	options: EnvNetworkIsolationRegistryOptions = {},
 ): EnvNetworkIsolationRegistry {
-	const shared =
-		options.sharedOverlay ??
-		createOverlayNetwork(options.overlayProvider, options.policy);
+	const shared = overlays.shared;
 
 	const planes = new Map<IsolationClass, EnvOverlayPlane>();
 	const controlPlanes = new Map<IsolationClass, EnvControlPlanePartition>();
 
 	function createOverlay(cls: IsolationClass): OverlayNetwork {
-		if (options.createOverlayForClass) {
-			return options.createOverlayForClass(cls);
-		}
-		return createOverlayNetwork(options.overlayProvider, options.policy);
+		if (overlays.forClass === undefined)
+			throw Object.assign(
+				new Error(
+					`isolation class ${cls} needs its own overlay for a hard tier; pass overlays.forClass`,
+				),
+				{ code: "overlay-required" },
+			);
+		return overlays.forClass(cls);
 	}
 
 	return {
@@ -125,6 +121,7 @@ export function createEnvNetworkIsolationRegistry(
 			const pa = planes.get(a);
 			const pb = planes.get(b);
 			if (!pa || !pb) {
+				// Unregistered → fail closed: treat as isolated.
 				return {
 					isolated: true,
 					reason: "one or both isolation classes unregistered",
@@ -168,6 +165,7 @@ export function createEnvNetworkIsolationRegistry(
 	};
 }
 
+/** Stamp isolation class as overlay tags. */
 export function envIsolationTags(cls: IsolationClass): readonly string[] {
 	return Object.freeze([isolationClassTag(cls), `isolation-class:${cls}`]);
 }

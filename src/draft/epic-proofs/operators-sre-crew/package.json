@@ -2,10 +2,6 @@
   "name": "@hobo-draft/operators-sre-crew-reference",
   "private": true,
   "type": "module",
-  "dependencies": {
-    "@hobo/contracts": "workspace:*",
-    "@hobo/policy": "workspace:*"
-  },
   "scripts": {
     "simulate": "node simulation/run.ts",
     "test": "vitest run --root ."

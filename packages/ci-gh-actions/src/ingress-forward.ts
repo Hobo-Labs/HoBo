@@ -3,6 +3,7 @@ import {
 	verifyWebhookSignature,
 } from "./webhook-signature.js";
 
+/** HMAC-SHA256 over the exact webhook bytes for ingress-to-relay forwarding. */
 export function signIngressForward(secret: string, body: Buffer): string {
 	if (Buffer.byteLength(secret, "utf8") < 32)
 		throw new Error("ingress forward secret too short");

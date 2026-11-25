@@ -4,4 +4,4 @@ Follow `src/draft/AGENTS.md` and the repository-wide rules. Implement the reques
 
 Run `pnpm --prefix src/draft/technical-proofs/<slug> test`, then the relevant staged artifact and cascade checks. The artifact gate executes the examples and checks the notebook and applicable benchmark. Record a reason in `proof.json` only when a requirement does not apply; do not waive unfinished behavior.
 
-Update and test affected referencing packages. When a proof is retired, update dependent imports and remove it with its workspace and promotion-ledger entries. Do not create ADRs, design documents, or placeholder proofs.
+Update and test affected referencing packages. Do not create ADRs, design documents, or placeholder proofs.

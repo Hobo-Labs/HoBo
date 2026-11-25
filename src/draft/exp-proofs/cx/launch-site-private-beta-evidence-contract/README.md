@@ -28,7 +28,7 @@ cross-project dependencies, and release-readiness sync.
 - `src/launch-site-private-beta-evidence.ts` exports the contract plus validation helpers.
 - `test/launch-site-private-beta-evidence.test.ts` is the executable acceptance and negative proof.
 - `architecture/` carries the protobuf, CUE, and Pact evidence required by the repo architecture guard.
-- [`urn:hobo:proof:hobo-465-launch-site-private-beta`](urn:hobo:proof:hobo-465-launch-site-private-beta)
+- [`../../../../../docs/design/proofs/hobo-465-launch-site-private-beta/README.md`](../../../../../docs/design/proofs/hobo-465-launch-site-private-beta/README.md)
   summarizes branch evidence.
 
 ## Verification

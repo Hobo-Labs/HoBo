@@ -6,7 +6,7 @@ import {
 	approveProviderFact,
 	collectStream,
 	foldRegistryStream,
-	providerRegistrationFacts,
+	registerProviderFact,
 	registryCatalogProjection,
 } from "@hobo/cloud";
 import type { JsonValue, PrincipalRef } from "@hobo/core";
@@ -81,7 +81,7 @@ export async function runRegistryAdd(
 			message:
 				"hobo registry add needs a provider manifest: `hobo registry add <manifest.yaml>`.",
 			remediation: [
-				"Write a hobo.provider-manifest/v1 document (see urn:hobo:requirement:provider-manifest).",
+				"Write a hobo.provider-manifest/v1 document (see docs/design/provider-manifest.md).",
 			],
 			data: { command: "registry add" },
 		};
@@ -208,17 +208,12 @@ export async function runRegistryAdd(
 					),
 				]
 			: [];
-	const baseFacts = providerRegistrationFacts(
-		provider,
-		installed ? "updated" : "registered",
-	);
-	const registeredFacts = baseFacts.map((fact) => ({
-		...fact,
-		data: { ...(fact.data as object), source: MANIFEST_SOURCE },
-	}));
-	const base = baseFacts[0];
-	if (base === undefined)
-		throw new Error("provider registration facts missing");
+	const base = registerProviderFact(provider);
+	const registered = {
+		...base,
+		// SAFETY: registerProviderFact builds an object body; the stamp is added.
+		data: { ...(base.data as object), source: MANIFEST_SOURCE },
+	};
 	const storedRow = registryCatalogProjection
 		.query(registryCatalogProjection.fold(events))
 		.find((row) => row.providerId === provider.id);
@@ -228,7 +223,7 @@ export async function runRegistryAdd(
 	const registrationChanged =
 		installed && storedRow?.manifestIndexDigest !== newDigest;
 	const refreshFacts = [
-		...(registrationChanged ? registeredFacts : []),
+		...(registrationChanged ? [registered] : []),
 		...catalogFacts,
 	];
 	const pricingCatalog = {
@@ -297,7 +292,7 @@ export async function runRegistryAdd(
 	// at all, so a held provider never exists without the prices it was ranked on.
 	await runtime.store.append(
 		REGISTRY_STREAM,
-		[...registeredFacts, ...catalogFacts],
+		[registered, ...catalogFacts],
 		append,
 	);
 	await runtime.registry.refresh?.();

@@ -15,11 +15,14 @@ import { isReadingToolName } from '../toolUtils.js';
 import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js';
 import { CharacterState, Direction, TILE_SIZE } from '../types.js';
 
+/** Whether a tool should show the reading animation (vs typing). Taxonomy comes
+ *  from the active HookProvider via the `providerCapabilities` message. */
 export function isReadingTool(tool: string | null): boolean {
   if (!tool) return false;
   return isReadingToolName(tool);
 }
 
+/** Pixel center of a tile */
 function tileCenter(col: number, row: number): { x: number; y: number } {
   return {
     x: col * TILE_SIZE + TILE_SIZE / 2,
@@ -27,6 +30,7 @@ function tileCenter(col: number, row: number): { x: number; y: number } {
   };
 }
 
+/** Direction from one tile to an adjacent tile */
 function directionBetween(
   fromCol: number,
   fromRow: number,
@@ -100,12 +104,13 @@ export function updateCharacter(
         ch.frameTimer -= TYPE_FRAME_DURATION_SEC;
         ch.frame = (ch.frame + 1) % 2;
       }
+      // If no longer active, stand up and start wandering (after seatTimer expires)
       if (!ch.isActive) {
         if (ch.seatTimer > 0) {
           ch.seatTimer -= dt;
           break;
         }
-        ch.seatTimer = 0;
+        ch.seatTimer = 0; // clear sentinel
         ch.state = CharacterState.IDLE;
         ch.frame = 0;
         ch.frameTimer = 0;
@@ -117,10 +122,13 @@ export function updateCharacter(
     }
 
     case CharacterState.IDLE: {
+      // No idle animation — static pose
       ch.frame = 0;
-      if (ch.seatTimer < 0) ch.seatTimer = 0;
+      if (ch.seatTimer < 0) ch.seatTimer = 0; // clear turn-end sentinel
+      // If became active, pathfind to seat
       if (ch.isActive) {
         if (!ch.seatId) {
+          // No seat assigned — type in place
           ch.state = CharacterState.TYPE;
           ch.frame = 0;
           ch.frameTimer = 0;
@@ -143,6 +151,7 @@ export function updateCharacter(
             ch.frame = 0;
             ch.frameTimer = 0;
           } else {
+            // Already at seat or no path — sit down
             ch.state = CharacterState.TYPE;
             ch.dir = seat.facingDir;
             ch.frame = 0;
@@ -151,8 +160,10 @@ export function updateCharacter(
         }
         break;
       }
+      // Countdown wander timer
       ch.wanderTimer -= dt;
       if (ch.wanderTimer <= 0) {
+        // Check if we've wandered enough — return to seat for a rest
         if (ch.wanderCount >= ch.wanderLimit && ch.seatId) {
           const seat = seats.get(ch.seatId);
           if (seat) {
@@ -199,18 +210,21 @@ export function updateCharacter(
     }
 
     case CharacterState.WALK: {
+      // Walk animation
       if (ch.frameTimer >= WALK_FRAME_DURATION_SEC) {
         ch.frameTimer -= WALK_FRAME_DURATION_SEC;
         ch.frame = (ch.frame + 1) % 4;
       }
 
       if (ch.path.length === 0) {
+        // Path complete — snap to tile center and transition
         const center = tileCenter(ch.tileCol, ch.tileRow);
         ch.x = center.x;
         ch.y = center.y;
 
         if (ch.isActive) {
           if (!ch.seatId) {
+            // No seat — type in place
             ch.state = CharacterState.TYPE;
           } else {
             const seat = seats.get(ch.seatId);
@@ -222,11 +236,14 @@ export function updateCharacter(
             }
           }
         } else {
+          // Check if arrived at assigned seat — sit down for a rest before wandering again
           if (ch.seatId) {
             const seat = seats.get(ch.seatId);
             if (seat && ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow) {
               ch.state = CharacterState.TYPE;
               ch.dir = seat.facingDir;
+              // seatTimer < 0 is a sentinel from setAgentActive(false) meaning
+              // "turn just ended" — skip the long rest so idle transition is immediate
               if (ch.seatTimer < 0) {
                 ch.seatTimer = 0;
               } else {
@@ -250,6 +267,7 @@ export function updateCharacter(
         break;
       }
 
+      // Move toward next tile in path
       const nextTile = ch.path[0];
       ch.dir = directionBetween(ch.tileCol, ch.tileRow, nextTile.col, nextTile.row);
 
@@ -262,6 +280,7 @@ export function updateCharacter(
       ch.y = fromCenter.y + (toCenter.y - fromCenter.y) * t;
 
       if (ch.moveProgress >= 1) {
+        // Arrived at next tile
         ch.tileCol = nextTile.col;
         ch.tileRow = nextTile.row;
         ch.x = toCenter.x;
@@ -270,6 +289,7 @@ export function updateCharacter(
         ch.moveProgress = 0;
       }
 
+      // If became active while wandering, repath to seat
       if (ch.isActive && ch.seatId) {
         const seat = seats.get(ch.seatId);
         if (seat) {
@@ -295,6 +315,7 @@ export function updateCharacter(
   }
 }
 
+/** Get the correct sprite frame for a character's current state and direction */
 export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
   switch (ch.state) {
     case CharacterState.TYPE:

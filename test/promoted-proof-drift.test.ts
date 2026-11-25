@@ -9,6 +9,10 @@ const repoRoot = path.resolve(
 	"..",
 );
 
+// The promotions ledger (scripts/promotions.json) freezes draft proofs once
+// their content is promoted into packages/*; the guard fails when a frozen
+// proof is edited after promotion (GAPS.md IMPL-005). This test keeps the
+// guard itself green in CI: the working tree must match the ledger digests.
 test("frozen promoted proofs match the promotions ledger", () => {
 	const result = spawnSync(
 		process.execPath,

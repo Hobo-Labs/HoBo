@@ -6,9 +6,9 @@ unless every claimed interface passes.
 
 ## Requirements Source
 
-- `urn:hobo:requirement:generated-stack#plan-09`: `@hobo/conformance` is the trust
+- `docs/design/generated-stack.md#plan-09`: `@hobo/conformance` is the trust
   boundary; conformance is **per WIT interface** and gates provider listing.
-- `urn:hobo:decision:adr-0010`: generated providers certify only
+- `docs/design/adr/03-data-plane.md#adr-0010`: generated providers certify only
   by satisfying the target WIT port and conformance suite.
 - `src/draft/epic-proofs/foundations-build-conformance-harness/`: conformance
   evidence matrix (suite required before adapter trust).
@@ -48,6 +48,8 @@ after S5-01 merges. This is the executable contract slice for that work.
 pnpm --prefix src/draft/technical-proofs/s5-02-wit-interface-conformance-coverage test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf + CUE evidence for the coverage report boundary.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate derived types plus command/event/actor/event-store/projection/snapshot/read-store naming for CQRS promotion.

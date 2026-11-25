@@ -1,3 +1,18 @@
+/**
+ * Conformance of the kubernetes Yard event-store fold.
+ *
+ * The module was 0% covered. Every provider in this workspace ships a fold with
+ * the *same* external contract — a progress signal, a provisioned signal, a
+ * ready signal that fans out to four events, a failure, and an
+ * unrecognized-signal fallback — and that sameness is what lets the control
+ * plane treat providers interchangeably. Nothing tested it, so a provider could
+ * quietly emit a differently-shaped event and only be caught downstream.
+ *
+ * The assertions here are deliberately about the *contract*, not the payload
+ * trivia: which event types are produced, in what order, and that `occurredAt`
+ * is honoured rather than re-stamped.
+ */
+
 import { describe, expect, it } from "vitest";
 import { isJsonObject, type JsonObject } from "../src/json.js";
 
@@ -12,6 +27,7 @@ const AT = "2026-01-01T00:00:00.000Z";
 const signal = (kind: string, payload: JsonObject = {}) => ({
 	providerId: "kubernetes" as const,
 	kind,
+	// SAFETY: assertion to `oad as never, o` is required at this boundary.
 	payload: payload as never,
 	observedAt: AT,
 });
@@ -129,6 +145,7 @@ describe("kubernetes failure", () => {
 	it("treats retryable as strictly boolean true, not merely truthy", () => {
 		for (const retryable of ["true", 1, {}, null, undefined]) {
 			const [event] = normalizeKubernetesYardSignal(
+				// SAFETY: assertion to `tryable } as JsonObject), ` is required at this boundary.
 				signal("generation.failed", { retryable } as JsonObject),
 			);
 			if (event === undefined) {
@@ -161,6 +178,7 @@ describe("kubernetes unrecognized signals", () => {
 		const [event] = normalizeKubernetesYardSignal({
 			providerId: "kubernetes",
 			kind: "unknown",
+			// SAFETY: assertion to `s never, ` is required at this boundary.
 			payload: {} as never,
 		});
 		expect(() => new Date(event?.occurredAt ?? "").toISOString()).not.toThrow();
@@ -183,6 +201,7 @@ describe("kubernetes fold descriptor", () => {
 	});
 
 	it("keeps the resolver id stable, because stored events name it", () => {
+		// A rename orphans every fact already written under the old id.
 		expect(KUBERNETES_EVENT_STORE_RESOLVER_ID).toBe(
 			"kubernetes.yard.event-store/v1",
 		);

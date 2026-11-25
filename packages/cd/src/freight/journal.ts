@@ -1,3 +1,6 @@
+// Journal helpers shared by the Freight ledger and ingest: protobuf-JSON event
+// bodies, tolerant decoding of bodies other work packages own, and principal
+// rendering for the `*_by` fields.
 import {
 	fromJson,
 	type JsonValue,
@@ -7,8 +10,10 @@ import {
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
 import type { PrincipalRef } from "@hobo/core";
 import type { TelemetrySink } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { isJsonObject, isJsonString, jsonOf } from "./json.js";
 
+/** Event body for a generated record: its canonical protobuf JSON. */
 export function body<T extends Message>(
 	schema: GenMessage<T>,
 	record: T,
@@ -16,6 +21,7 @@ export function body<T extends Message>(
 	return toJson(schema, record);
 }
 
+/** Decode a persisted body; undefined when it is not that record (never throws). */
 export function decode<T extends Message, D>(
 	schema: GenMessage<T>,
 	data: D,
@@ -35,6 +41,12 @@ function freightIdIn(json: JsonValue | undefined): string | undefined {
 	return isJsonString(direct) ? direct : undefined;
 }
 
+/**
+ * The Freight a body owned by another work package refers to (a Set, a
+ * promotion), read structurally: `freightId`/`freight_id` at the top level or
+ * one level down. `undefined` means the body is not an object at all, which
+ * callers treat as unreadable; `""` means it names no Freight.
+ */
 export function referencedFreightId<D>(data: D): string | undefined {
 	const json = jsonOf(data);
 	if (!isJsonObject(json)) return undefined;
@@ -47,6 +59,7 @@ export function referencedFreightId<D>(data: D): string | undefined {
 	return "";
 }
 
+/** The first string field of a structurally read body ("" when none). */
 export function stringField<D>(data: D, ...names: readonly string[]): string {
 	const json = jsonOf(data);
 	if (!isJsonObject(json)) return "";
@@ -65,7 +78,12 @@ export function iso(ms: number): string {
 	return new Date(ms).toISOString();
 }
 
-export function emitCounter(
+/**
+ * Emit one counter point. Telemetry is advisory (the journal is the record),
+ * so a failing sink never turns a committed command into an error the caller
+ * would retry.
+ */
+export async function emitCounter(
 	sink: TelemetrySink | undefined,
 	point: Readonly<{
 		name: string;
@@ -74,17 +92,15 @@ export function emitCounter(
 		attributes: Readonly<Record<string, string>>;
 		value?: number;
 	}>,
-): void {
-	sink
-		?.metrics([
-			{
-				name: point.name,
-				kind: "counter",
-				value: point.value ?? 1,
-				unit: point.unit,
-				atMs: point.atMs,
-				attributes: point.attributes,
-			},
-		])
-		.catch(() => undefined);
+): Promise<void> {
+	await emitMetrics(sink, [
+		{
+			name: point.name,
+			kind: "counter",
+			value: point.value ?? 1,
+			unit: point.unit,
+			atMs: point.atMs,
+			attributes: point.attributes,
+		},
+	]);
 }

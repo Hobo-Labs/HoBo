@@ -1,3 +1,12 @@
+/**
+ * HTTP App Kit entrypoint collection + Session Replay wrap (ADR-0137).
+ * Kept free of Yard/compose imports so tests and agents can exercise
+ * Bindle Kit replay without loading the full host graph.
+ *
+ * **App Kit** (not "membrane type"): Bindle-declared application surfaces
+ * (api, web, service, ui, …). Every HTTP App Kit is Session-Replay wrapped.
+ */
+
 import type { BindleDefinition } from "@hobo/bindles";
 import {
 	applySessionReplayToEntrypoints,
@@ -15,13 +24,6 @@ export interface ServableEntrypoint {
 	readonly external: boolean;
 }
 
-export interface ServableEntrypointFactory {
-	readonly name: string;
-	readonly kind: string;
-	readonly external: boolean;
-	readonly createHandler: () => FetchHandler | null;
-}
-
 export type ListServableEntrypointsResult = {
 	readonly entrypoints: ServableEntrypoint[];
 	readonly sessionReplay: BindleSessionReplayPlan;
@@ -33,12 +35,17 @@ type ServableEntrypointOptions = {
 	readonly stationId?: string;
 };
 
+/** HTTP App Kits that host fetch handlers on local Yard / Camp. */
 function isHttpAppKit(kind: string): boolean {
 	return (
 		kind === "api" || kind === "web" || kind === "service" || kind === "ui"
 	);
 }
 
+/**
+ * External exposure policy.
+ * Default: only `web` is public (ingress). `api`/`service` stay private mesh.
+ */
 export function isExternalComponent(
 	kind: string,
 	annotations: readonly {
@@ -61,9 +68,13 @@ function asFetchHandler(
 	if (!(value instanceof Function)) {
 		return null;
 	}
+	// SAFETY: Bindle entrypoint returned a function at the serve boundary.
 	return value as FetchHandler;
 }
 
+/**
+ * Collect api/web/service entrypoints and wrap replayable web surfaces.
+ */
 export function listServableEntrypoints(
 	definition: BindleDefinition,
 	options: ServableEntrypointOptions = {},
@@ -76,14 +87,26 @@ export function listServableEntrypointsWithReplay(
 	options: ServableEntrypointOptions = {},
 ): ListServableEntrypointsResult {
 	const entries: ServableEntrypoint[] = [];
-	for (const factory of listServableEntrypointFactories(definition)) {
-		const handler = factory.createHandler();
-		if (handler === null) continue;
+	for (const [name, record] of Object.entries(definition.resources)) {
+		if (!isHttpAppKit(record.kind)) continue;
+		const thunk = definition.entrypoint(name);
+		if (!(thunk instanceof Function)) continue;
+		const inner = thunk();
+		if (!(inner instanceof Function)) continue;
+		const resolved = asFetchHandler(inner);
+		if (resolved === null) continue;
 		entries.push({
-			name: factory.name,
-			kind: factory.kind,
-			handler,
-			external: factory.external,
+			name,
+			kind: record.kind,
+			handler: resolved,
+			external: isExternalComponent(
+				record.kind,
+				// SAFETY: bindle annotations are JSON config objects at the serve boundary.
+				record.annotations as readonly {
+					readonly option: string;
+					readonly config: JsonObject;
+				}[],
+			),
 		});
 	}
 	const rank = (entry: ServableEntrypoint) => {
@@ -103,31 +126,4 @@ export function listServableEntrypointsWithReplay(
 		sessionReplay: applied.plan,
 		sessionReplayStore: applied.store,
 	};
-}
-
-export function listServableEntrypointFactories(
-	definition: BindleDefinition,
-): ServableEntrypointFactory[] {
-	const entries: ServableEntrypointFactory[] = [];
-	for (const [name, record] of Object.entries(definition.resources)) {
-		if (!isHttpAppKit(record.kind)) continue;
-		const thunk = definition.entrypoint(name);
-		if (!(thunk instanceof Function)) continue;
-		entries.push({
-			name,
-			kind: record.kind,
-			createHandler: () => {
-				const inner = thunk();
-				return inner instanceof Function ? asFetchHandler(inner) : null;
-			},
-			external: isExternalComponent(
-				record.kind,
-				record.annotations as readonly {
-					readonly option: string;
-					readonly config: JsonObject;
-				}[],
-			),
-		});
-	}
-	return entries;
 }

@@ -27,12 +27,14 @@ corepack pnpm --prefix src\draft\technical-proofs\entitlement-abuse-rate-limit-p
 
 The proof is also referenced by the design record:
 
-- [Entitlements & Plan Limits design record](urn:hobo:requirement:entitlements-plan-limits)
-- [HOBO-491 proof record](urn:hobo:proof:hobo-491-entitlement-abuse-rate-limit-policy)
+- [Entitlements & Plan Limits design record](../../../../docs/design/entitlements-plan-limits.md)
+- [HOBO-491 proof record](../../../../docs/design/proofs/hobo-491-entitlement-abuse-rate-limit-policy/README.md)
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the policy contract.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

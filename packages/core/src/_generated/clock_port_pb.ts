@@ -6,134 +6,177 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
+/**
+ * Describes the file clock_port.proto.
+ */
 export const file_clock_port: GenFile = /*@__PURE__*/
-  fileDesc("ChBjbG9ja19wb3J0LnByb3RvEgxob2JvLmNvcmUudjEisAEKClNsZWVwVGltZXISEAoIdGltZXJfaWQYASABKAkSDgoGcnVuX2lkGAIgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRIQCghkZWxheV9tcxgEIAEoAxIXCg9zY2hlZHVsZWRfYXRfbXMYBSABKAMSEgoKZmlyZV9hdF9tcxgGIAEoAxITCgtmaXJlZF9hdF9tcxgHIAEoAxITCgtmaXJlZF9vcmRlchgIIAEoBSLpAQoMQ3JvblNjaGVkdWxlEhMKC3NjaGVkdWxlX2lkGAEgASgJEhAKCGV2ZXJ5X21zGAIgASgDEhMKC3N0YXJ0X2F0X21zGAMgASgDEhcKD25leHRfZmlyZV9hdF9tcxgEIAEoAxISCgpvY2N1cnJlbmNlGAUgASgFEhcKCmV4cHJlc3Npb24YBiABKAlIAIgBARIVCgh0aW1lem9uZRgHIAEoCUgBiAEBEhYKCWppdHRlcl9tcxgIIAEoA0gCiAEBQg0KC19leHByZXNzaW9uQgsKCV90aW1lem9uZUIMCgpfaml0dGVyX21zIuwCCg9DbG9ja1RyYWNlRW50cnkSDAoEdHlwZRgBIAEoCRIMCgRzZWVkGAIgASgJEg0KBWF0X21zGAMgASgDEhAKCGRlbHRhX21zGAQgASgDEg8KB2ZpcmVfaWQYBSABKAkSEgoKb2NjdXJyZW5jZRgGIAEoBRINCgVvcmRlchgHIAEoBRIXCgpleHByZXNzaW9uGAggASgJSACIAQESFQoIdGltZXpvbmUYCSABKAlIAYgBARIYCgtzY2hlZHVsZV9pZBgKIAEoCUgCiAEBEhgKC3N0YXJ0X2F0X21zGAsgASgDSAOIAQESFQoIZXZlcnlfbXMYDCABKANIBIgBARIWCglqaXR0ZXJfbXMYDSABKANIBYgBAUINCgtfZXhwcmVzc2lvbkILCglfdGltZXpvbmVCDgoMX3NjaGVkdWxlX2lkQg4KDF9zdGFydF9hdF9tc0ILCglfZXZlcnlfbXNCDAoKX2ppdHRlcl9tcyKLAQoNQ2xvY2tTbmFwc2hvdBIMCgRzZWVkGAEgASgJEg4KBm5vd19tcxgCIAEoAxIoCgZ0aW1lcnMYAyADKAsyGC5ob2JvLmNvcmUudjEuU2xlZXBUaW1lchIyCg5jcm9uX3NjaGVkdWxlcxgEIAMoCzIaLmhvYm8uY29yZS52MS5Dcm9uU2NoZWR1bGUidgoSU2NoZWR1bGVyRXZlcnlTcGVjEhAKCGV2ZXJ5X21zGAEgASgEEhgKC3N0YXJ0X2F0X21zGAIgASgESACIAQESFgoJaml0dGVyX21zGAMgASgESAGIAQFCDgoMX3N0YXJ0X2F0X21zQgwKCl9qaXR0ZXJfbXMiMwoRU2NoZWR1bGVyQ3JvblNwZWMSDAoEZXhwchgBIAEoCRIQCgh0aW1lem9uZRgCIAEoCSKCAQoUU2NoZWR1bGVyVHJpZ2dlclNwZWMSMQoFZXZlcnkYASABKAsyIC5ob2JvLmNvcmUudjEuU2NoZWR1bGVyRXZlcnlTcGVjSAASLwoEY3JvbhgCIAEoCzIfLmhvYm8uY29yZS52MS5TY2hlZHVsZXJDcm9uU3BlY0gAQgYKBGtpbmQiWwoSU2NoZWR1bGVyUmVmZXJlbmNlEhMKC3NjaGVkdWxlX2lkGAEgASgJEjAKBHNwZWMYAiABKAsyIi5ob2JvLmNvcmUudjEuU2NoZWR1bGVyVHJpZ2dlclNwZWNiBnByb3RvMw");
+  fileDesc("ChBjbG9ja19wb3J0LnByb3RvEgxob2JvLmNvcmUudjEisAEKClNsZWVwVGltZXISEAoIdGltZXJfaWQYASABKAkSDgoGcnVuX2lkGAIgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRIQCghkZWxheV9tcxgEIAEoAxIXCg9zY2hlZHVsZWRfYXRfbXMYBSABKAMSEgoKZmlyZV9hdF9tcxgGIAEoAxITCgtmaXJlZF9hdF9tcxgHIAEoAxITCgtmaXJlZF9vcmRlchgIIAEoBSJ3CgxDcm9uU2NoZWR1bGUSEwoLc2NoZWR1bGVfaWQYASABKAkSEAoIZXZlcnlfbXMYAiABKAMSEwoLc3RhcnRfYXRfbXMYAyABKAMSFwoPbmV4dF9maXJlX2F0X21zGAQgASgDEhIKCm9jY3VycmVuY2UYBSABKAUiggEKD0Nsb2NrVHJhY2VFbnRyeRIMCgR0eXBlGAEgASgJEgwKBHNlZWQYAiABKAkSDQoFYXRfbXMYAyABKAMSEAoIZGVsdGFfbXMYBCABKAMSDwoHZmlyZV9pZBgFIAEoCRISCgpvY2N1cnJlbmNlGAYgASgFEg0KBW9yZGVyGAcgASgFIosBCg1DbG9ja1NuYXBzaG90EgwKBHNlZWQYASABKAkSDgoGbm93X21zGAIgASgDEigKBnRpbWVycxgDIAMoCzIYLmhvYm8uY29yZS52MS5TbGVlcFRpbWVyEjIKDmNyb25fc2NoZWR1bGVzGAQgAygLMhouaG9iby5jb3JlLnYxLkNyb25TY2hlZHVsZWIGcHJvdG8z");
 
+/**
+ * @generated from message hobo.core.v1.SleepTimer
+ */
 export type SleepTimer = Message<"hobo.core.v1.SleepTimer"> & {
+  /**
+   * @generated from field: string timer_id = 1;
+   */
   timerId: string;
 
+  /**
+   * @generated from field: string run_id = 2;
+   */
   runId: string;
 
+  /**
+   * @generated from field: string idempotency_key = 3;
+   */
   idempotencyKey: string;
 
+  /**
+   * @generated from field: int64 delay_ms = 4;
+   */
   delayMs: bigint;
 
+  /**
+   * @generated from field: int64 scheduled_at_ms = 5;
+   */
   scheduledAtMs: bigint;
 
+  /**
+   * @generated from field: int64 fire_at_ms = 6;
+   */
   fireAtMs: bigint;
 
+  /**
+   * @generated from field: int64 fired_at_ms = 7;
+   */
   firedAtMs: bigint;
 
+  /**
+   * @generated from field: int32 fired_order = 8;
+   */
   firedOrder: number;
 };
 
+/**
+ * Describes the message hobo.core.v1.SleepTimer.
+ * Use `create(SleepTimerSchema)` to create a new message.
+ */
 export const SleepTimerSchema: GenMessage<SleepTimer> = /*@__PURE__*/
   messageDesc(file_clock_port, 0);
 
+/**
+ * @generated from message hobo.core.v1.CronSchedule
+ */
 export type CronSchedule = Message<"hobo.core.v1.CronSchedule"> & {
+  /**
+   * @generated from field: string schedule_id = 1;
+   */
   scheduleId: string;
 
+  /**
+   * @generated from field: int64 every_ms = 2;
+   */
   everyMs: bigint;
 
+  /**
+   * @generated from field: int64 start_at_ms = 3;
+   */
   startAtMs: bigint;
 
+  /**
+   * @generated from field: int64 next_fire_at_ms = 4;
+   */
   nextFireAtMs: bigint;
 
+  /**
+   * @generated from field: int32 occurrence = 5;
+   */
   occurrence: number;
-
-  expression?: string | undefined;
-
-  timezone?: string | undefined;
-
-  jitterMs?: bigint | undefined;
 };
 
+/**
+ * Describes the message hobo.core.v1.CronSchedule.
+ * Use `create(CronScheduleSchema)` to create a new message.
+ */
 export const CronScheduleSchema: GenMessage<CronSchedule> = /*@__PURE__*/
   messageDesc(file_clock_port, 1);
 
+/**
+ * @generated from message hobo.core.v1.ClockTraceEntry
+ */
 export type ClockTraceEntry = Message<"hobo.core.v1.ClockTraceEntry"> & {
+  /**
+   * @generated from field: string type = 1;
+   */
   type: string;
 
+  /**
+   * @generated from field: string seed = 2;
+   */
   seed: string;
 
+  /**
+   * @generated from field: int64 at_ms = 3;
+   */
   atMs: bigint;
 
+  /**
+   * @generated from field: int64 delta_ms = 4;
+   */
   deltaMs: bigint;
 
+  /**
+   * @generated from field: string fire_id = 5;
+   */
   fireId: string;
 
+  /**
+   * @generated from field: int32 occurrence = 6;
+   */
   occurrence: number;
 
+  /**
+   * @generated from field: int32 order = 7;
+   */
   order: number;
-
-  expression?: string | undefined;
-
-  timezone?: string | undefined;
-
-  scheduleId?: string | undefined;
-
-  startAtMs?: bigint | undefined;
-
-  everyMs?: bigint | undefined;
-
-  jitterMs?: bigint | undefined;
 };
 
+/**
+ * Describes the message hobo.core.v1.ClockTraceEntry.
+ * Use `create(ClockTraceEntrySchema)` to create a new message.
+ */
 export const ClockTraceEntrySchema: GenMessage<ClockTraceEntry> = /*@__PURE__*/
   messageDesc(file_clock_port, 2);
 
+/**
+ * @generated from message hobo.core.v1.ClockSnapshot
+ */
 export type ClockSnapshot = Message<"hobo.core.v1.ClockSnapshot"> & {
+  /**
+   * @generated from field: string seed = 1;
+   */
   seed: string;
 
+  /**
+   * @generated from field: int64 now_ms = 2;
+   */
   nowMs: bigint;
 
+  /**
+   * @generated from field: repeated hobo.core.v1.SleepTimer timers = 3;
+   */
   timers: SleepTimer[];
 
+  /**
+   * @generated from field: repeated hobo.core.v1.CronSchedule cron_schedules = 4;
+   */
   cronSchedules: CronSchedule[];
 };
 
+/**
+ * Describes the message hobo.core.v1.ClockSnapshot.
+ * Use `create(ClockSnapshotSchema)` to create a new message.
+ */
 export const ClockSnapshotSchema: GenMessage<ClockSnapshot> = /*@__PURE__*/
   messageDesc(file_clock_port, 3);
-
-export type SchedulerEverySpec = Message<"hobo.core.v1.SchedulerEverySpec"> & {
-  everyMs: bigint;
-
-  startAtMs?: bigint | undefined;
-
-  jitterMs?: bigint | undefined;
-};
-
-export const SchedulerEverySpecSchema: GenMessage<SchedulerEverySpec> = /*@__PURE__*/
-  messageDesc(file_clock_port, 4);
-
-export type SchedulerCronSpec = Message<"hobo.core.v1.SchedulerCronSpec"> & {
-  expr: string;
-
-  timezone: string;
-};
-
-export const SchedulerCronSpecSchema: GenMessage<SchedulerCronSpec> = /*@__PURE__*/
-  messageDesc(file_clock_port, 5);
-
-export type SchedulerTriggerSpec = Message<"hobo.core.v1.SchedulerTriggerSpec"> & {
-  kind: {
-    value: SchedulerEverySpec;
-    case: "every";
-  } | {
-    value: SchedulerCronSpec;
-    case: "cron";
-  } | { case: undefined; value?: undefined };
-};
-
-export const SchedulerTriggerSpecSchema: GenMessage<SchedulerTriggerSpec> = /*@__PURE__*/
-  messageDesc(file_clock_port, 6);
-
-export type SchedulerReference = Message<"hobo.core.v1.SchedulerReference"> & {
-  scheduleId: string;
-
-  spec?: SchedulerTriggerSpec | undefined;
-};
-
-export const SchedulerReferenceSchema: GenMessage<SchedulerReference> = /*@__PURE__*/
-  messageDesc(file_clock_port, 7);
 

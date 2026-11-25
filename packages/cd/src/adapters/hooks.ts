@@ -99,7 +99,7 @@ export function createHookRunner(
 				if (result.ok) return undefined;
 				return reason(
 					HOOK_REASON.runbookFailed,
-					`runbook ${hook.ref} failed at ${hookPointName(point)}: ${result.reasons.map((r) => r.message).join("; ")}`,
+					`A runbook hook failed at ${hookPointName(point)}.`,
 					"Fix the runbook or the condition it checks; the promotion retries the hook on its next tick.",
 					subject.campId,
 				);
@@ -116,7 +116,7 @@ export function createHookRunner(
 				if (result.ok) return undefined;
 				return reason(
 					HOOK_REASON.suiteFailed,
-					`suite ${hook.ref} failed at ${hookPointName(point)}: ${result.reasons.map((r) => r.message).join("; ")}`,
+					`A verification suite hook failed at ${hookPointName(point)}.`,
 					"Inspect the suite report; promote Freight that passes it.",
 					subject.campId,
 				);
@@ -163,12 +163,12 @@ export function createHookRunner(
 				let failure: ReasonRecord | undefined;
 				try {
 					failure = await runOne(hook, point, subject, ctx);
-				} catch (error) {
+				} catch {
 					failure = reason(
 						hook.kind === HookKind.SUITE
 							? HOOK_REASON.suiteFailed
 							: HOOK_REASON.runbookFailed,
-						`hook ${hook.ref} threw at ${hookPointName(point)}: ${error instanceof Error ? error.message : String(error)}`,
+						`A hook could not run at ${hookPointName(point)}.`,
 						"Fix the hook target; the promotion retries the hook on its next tick.",
 						subject.campId,
 					);

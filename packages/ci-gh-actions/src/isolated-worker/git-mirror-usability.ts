@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 // public-contract: refusal reason when a bare mirror is not a full clone for CI checkout.
+// Keep in sync with scripts/ci/git-mirror-usability.mts (sparse release checkout).
 export const INCOMPLETE_MIRROR_REASON =
 	"mirror is a partial or promisor clone (blob:none)";
 
@@ -22,6 +23,7 @@ function readBoolConfig(gitDir: string, key: string): boolean {
 	return result.status === 0 && result.stdout.trim() === "true";
 }
 
+/** Bare mirrors used as upload-pack must not be promisor / blob:none partial clones. */
 export function isCompleteGitMirror(gitDir: string): boolean {
 	if (readBoolConfig(gitDir, "remote.origin.promisor")) return false;
 	const partial = readConfig(gitDir, "extensions.partialclonefilter");

@@ -139,11 +139,12 @@ test("assembly rejects invalid span sets with typed errors", () => {
 	const spans = capture.finishedSpans();
 	const first = spans[0] as CapturedSpan;
 
+	// no spans at all
 	assert.throws(
 		() => assembleTrajectory([], ASSEMBLE_OPTIONS),
 		TrajectoryCaptureParseError,
 	);
-
+	// two roots
 	assert.throws(
 		() =>
 			assembleTrajectory(
@@ -152,12 +153,12 @@ test("assembly rejects invalid span sets with typed errors", () => {
 			),
 		TrajectoryCaptureParseError,
 	);
-
+	// duplicate span ids
 	assert.throws(
 		() => assembleTrajectory([...spans, first], ASSEMBLE_OPTIONS),
 		TrajectoryCaptureParseError,
 	);
-
+	// mixed trace ids
 	assert.throws(
 		() =>
 			assembleTrajectory(
@@ -195,11 +196,10 @@ test("wraps the captured trajectory as a training.* family event", () => {
 	assert.deepEqual(event.meta, {
 		traceparent: captured.trajectory.traceparent,
 	});
-	assert.deepEqual(event.data, {
-		trajectoryId: captured.trajectory.id,
-		trajectoryHash: captured.hash,
-		trajectory: captured.trajectoryJson,
-	});
+	const data = event.data as Record<string, unknown>;
+	assert.equal(data.trajectoryId, captured.trajectory.id);
+	assert.equal(data.trajectoryHash, captured.hash);
+	assert.deepEqual(data.trajectory, captured.trajectoryJson);
 });
 
 test("capture and promotion facts ride the same event families", () => {
@@ -211,7 +211,6 @@ test("capture and promotion facts ride the same event families", () => {
 			rubricRef: "rubric://support/classifier@1.0.0",
 			scores: { accuracy: 0.95 },
 			sampleCount: 128,
-			metricSampleCounts: { accuracy: 128 },
 			source: "live-eval",
 		}),
 		thresholds: parsePromotionThresholds({

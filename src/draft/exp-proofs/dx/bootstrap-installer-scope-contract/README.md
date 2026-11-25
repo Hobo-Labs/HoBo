@@ -7,7 +7,7 @@ live provisioning, account/auth implementation, first deploy execution, secret
 collection, or uninstall cleanup.
 
 The authoritative design record is
-[`urn:hobo:requirement:bootstrap-installer`](urn:hobo:requirement:bootstrap-installer).
+[`docs/design/bootstrap-installer.md`](../../../../../docs/design/bootstrap-installer.md).
 
 ## Proof
 
@@ -28,9 +28,11 @@ The tests prove:
 - excluded live installer, provisioning, auth, deploy, secret, and cleanup implementation work is rejected.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Bootstrap Installer Scope Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

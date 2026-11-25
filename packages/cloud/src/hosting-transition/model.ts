@@ -72,9 +72,12 @@ function safeSum(values: readonly number[]): number {
 	return Number(total);
 }
 
+/** Pure constructor: all workload declarations and financial identities participate in its digest. */
 export function createHostingTransitionPlan(
 	input: HostingTransitionPlanInput,
 ): HostingTransitionPlan {
+	// Initializers may mix a spread wire record with plain nested values. Removing
+	// root metadata prevents protobuf create() from skipping nested conversion.
 	const initializer = { ...input };
 	Reflect.deleteProperty(initializer, "$typeName");
 	const plan = clone(
@@ -412,6 +415,7 @@ export function hostingTransitionStream(
 	return `hosting-transition:${encodeURIComponent(hostingName(tenantId, "tenant"))}:${encodeURIComponent(hostingName(transitionId, "transition"))}`;
 }
 
+/** Read-only replay never consults a clock, authority, or provider. */
 export function foldHostingTransition(
 	events: readonly EventEnvelope[],
 ): HostingTransitionState | undefined {

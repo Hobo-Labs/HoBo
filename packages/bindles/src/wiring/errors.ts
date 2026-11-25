@@ -19,6 +19,7 @@ export interface ResourceHandle {
 	manifest(): import("./types.js").ManifestResource;
 }
 
+// domain-view: mutable container endpoint bag, not the wire Endpoint message.
 export interface EndpointRecord {
 	scheme: string;
 	port: number;
@@ -38,6 +39,7 @@ export interface BindMountAnnotation {
 	readOnly: boolean;
 }
 
+// domain-view: wait-for annotation stored on ComponentHandle, not the wire WaitAnnotation message.
 export interface WaitForEntry {
 	to: string;
 	until: string;

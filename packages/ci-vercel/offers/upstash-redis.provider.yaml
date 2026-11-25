@@ -15,10 +15,6 @@ provider:
   homepage: https://upstash.com
   description: Serverless Redis over REST, attached through the Vercel Marketplace.
 
-terms:
-  url: https://upstash.com/trust/terms.pdf
-  reviewedOn: 2026-11-18
-
 capabilities:
   regions: [us-east-1]
   mappings:

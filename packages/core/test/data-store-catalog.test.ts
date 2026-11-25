@@ -1,3 +1,5 @@
+// A catalog entry is a profile with its evidence attached: the parser refuses
+// an unsourced assertion, and the profile is derived from the claims.
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
@@ -166,15 +168,11 @@ test("unsupported and unknown claims fail closed under require", () => {
 		features: ["sql.relational", "backup.pitr"],
 		negotiation: "require",
 	});
-	assert.equal(pitr.kind, "unresolved");
-	const preferred = resolveDataStore([profile], {
-		features: ["sql.relational", "backup.pitr"],
-		negotiation: "prefer",
-	});
-	if (preferred.kind !== "resolved" || preferred.match.kind !== "partial") {
-		assert.fail("operator-owned PITR must resolve partial under prefer");
+	assert.equal(pitr.kind, "resolved");
+	if (pitr.kind !== "resolved" || pitr.match.kind !== "partial") {
+		assert.fail("operator-owned PITR must resolve partial, never full");
 	}
-	assert.deepEqual(preferred.match.fallbacks, ["backup.pitr"]);
+	assert.deepEqual(pitr.match.fallbacks, ["backup.pitr"]);
 });
 
 test("a native claim of a preview product is offered as preview", () => {

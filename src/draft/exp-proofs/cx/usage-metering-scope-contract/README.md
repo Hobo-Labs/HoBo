@@ -7,7 +7,7 @@ Dispatcher/CreditLedger routing, provider billing sync, tax, or live customer
 usage.
 
 The authoritative design record is
-[`urn:hobo:requirement:usage-metering`](urn:hobo:requirement:usage-metering).
+[`docs/design/usage-metering.md`](../../../../../docs/design/usage-metering.md).
 
 ## Proof
 
@@ -30,9 +30,11 @@ The tests prove:
   work is rejected by the scope validator.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Usage Metering Scope Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

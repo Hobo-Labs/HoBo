@@ -1,7 +1,6 @@
 export { addContainer } from "./add-container.js";
 export {
 	BindReferenceError,
-	cache,
 	compileBindleManifest,
 	createComponentHandle,
 	data,

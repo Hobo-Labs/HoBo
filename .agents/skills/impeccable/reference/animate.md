@@ -24,7 +24,7 @@ Ask only when a material constraint cannot be inferred. Do not animate a static 
 
 ## Set the motion thesis
 
-Address these motion concerns in the implementation:
+Write a short plan before implementation:
 
 - **Focal moment:** the one sequence or interaction that deserves authorship, if any.
 - **Continuity:** the state, layout, or navigation changes that need explanation.

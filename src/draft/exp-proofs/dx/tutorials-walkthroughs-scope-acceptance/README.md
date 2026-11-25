@@ -21,8 +21,10 @@ This package validates the M0 scope record. It does not build the docs portal, f
 pnpm --prefix src\draft\exp-proofs\tutorials-walkthroughs-scope-acceptance test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for Tutorials & Walkthroughs Scope Acceptance.
 - `architecture/pacts/` - PACT contract for the package boundary.
+- `ADR.md` - parse-don't-validate and event-architecture evidence.

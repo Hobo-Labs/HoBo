@@ -16,6 +16,7 @@ import {
 
 const maximumBytes = 1024 * 1024;
 
+/** Execute inside the explicitly bound original CI workspace, never the relay's host. */
 export function createWorkspaceBackend(options: {
 	workspace: string;
 	kind: "gh-actions" | "ado";
@@ -142,6 +143,7 @@ export function createWorkspaceBackend(options: {
 					child.once("error", () => {
 						failure = new Error("command could not start");
 					});
+					// A command's background children belong to this command, not the next step.
 					child.once("exit", stop);
 					child.once("close", (code) => {
 						clearTimeout(escalation);
@@ -184,6 +186,7 @@ export function createWorkspaceBackend(options: {
 					const size = Number(metadata.size);
 					const buffer = Buffer.alloc(size + 1);
 					let offset = 0;
+					// FileHandle.read may short-read even before EOF; accumulate the complete snapshot.
 					while (offset < size) {
 						artifactSignal.throwIfAborted();
 						const { bytesRead } = await file.read(
@@ -248,6 +251,7 @@ export function createWorkspaceBackend(options: {
 	};
 }
 
+/** Only host plumbing is inherited. Credentials must be explicit step inputs. */
 export function workspaceEnvironment(
 	env: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {

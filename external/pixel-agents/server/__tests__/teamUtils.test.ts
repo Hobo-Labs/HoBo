@@ -4,6 +4,7 @@ import { AgentStateStore } from '../src/agentStateStore.js';
 import { getInlineTeammates, hasInlineTeammates, isInlineTeammateOf } from '../src/teamUtils.js';
 import type { AgentState } from '../src/types.js';
 
+/** Minimal AgentState for testing -- only the fields teamUtils actually reads. */
 function agent(overrides: Partial<AgentState> = {}): AgentState {
   return {
     id: 0,
@@ -13,6 +14,7 @@ function agent(overrides: Partial<AgentState> = {}): AgentState {
   } as AgentState;
 }
 
+/** Create an AgentStateStore from [id, agent] entries. */
 function storeFrom(entries: Array<[number, AgentState]>): AgentStateStore {
   const s = new AgentStateStore();
   for (const [id, a] of entries) s.set(id, a);
@@ -45,11 +47,11 @@ describe('teamUtils', () => {
   describe('getInlineTeammates', () => {
     it('returns only inline teammates of the given lead', () => {
       const agents = storeFrom([
-        [1, agent({ id: 1 })],
-        [2, agent({ id: 2, leadAgentId: 1 })],
-        [3, agent({ id: 3, leadAgentId: 1, teamUsesTmux: true })],
-        [4, agent({ id: 4, leadAgentId: 99 })],
-        [5, agent({ id: 5, leadAgentId: 1 })],
+        [1, agent({ id: 1 })], // lead
+        [2, agent({ id: 2, leadAgentId: 1 })], // inline teammate of lead 1
+        [3, agent({ id: 3, leadAgentId: 1, teamUsesTmux: true })], // tmux teammate
+        [4, agent({ id: 4, leadAgentId: 99 })], // teammate of a different lead
+        [5, agent({ id: 5, leadAgentId: 1 })], // another inline teammate
       ]);
       const result = getInlineTeammates(1, agents);
       expect(result.map(([id]) => id).sort()).toEqual([2, 5]);

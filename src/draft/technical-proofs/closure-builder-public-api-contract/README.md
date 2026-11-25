@@ -37,7 +37,8 @@ The tests assert:
 - A coding agent can read the checklist and continue HOBO-533 through HOBO-537
   without inventing new vocabulary.
 
-## Executable evidence
+## Architecture Evidence
+
 Protobuf data shapes live in [`architecture/`](./architecture). CUE constraints
 bound every protobuf type. The Pact contract under
 [`architecture/pacts/`](./architecture/pacts) records the consumer/provider

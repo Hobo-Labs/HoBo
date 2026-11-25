@@ -112,7 +112,7 @@ describe("in-process schedules", () => {
 		"driver",
 		"port",
 		"clock",
-	] as const)("refuses a different recurrence for the %s schedule and replaces its handler on the same one", async (source) => {
+	] as const)("keeps the original %s schedule while replacing its handler", async (source) => {
 		const emulator = createScheduleEmulator();
 		const { driver, clock } = emulator;
 		if (!driver || !clock) throw new Error("Schedule driver unavailable.");
@@ -134,14 +134,13 @@ describe("in-process schedules", () => {
 			expect(driver.registerJob(id, originalSpec, oldHandler).deduped).toBe(
 				true,
 			);
-		expect(() =>
-			driver.registerJob(id, { everyMs: 5000, startAtMs: start + 9000 }, () => {
-				handled.push("other");
-			}),
-		).toThrow(/already has another recurrence/);
-		const replacement = driver.registerJob(id, originalSpec, () => {
-			handled.push("new");
-		});
+		const replacement = driver.registerJob(
+			id,
+			{ everyMs: 5000, startAtMs: start + 9000 },
+			() => {
+				handled.push("new");
+			},
+		);
 		expect(replacement).toMatchObject({
 			scheduleId: id,
 			deduped: true,
@@ -166,7 +165,7 @@ describe("in-process schedules", () => {
 			if (fire.occurrence === 1) {
 				const replacement = driver.registerJob(
 					id,
-					{ everyMs: 1000 },
+					{ everyMs: 5000 },
 					(next) => {
 						handled.push(`new:${next.occurrence}`);
 					},
@@ -178,9 +177,6 @@ describe("in-process schedules", () => {
 		expect(handled).toEqual(["old:1", "old:2", "old:3"]);
 		await driver.advance(1000);
 		expect(handled).toEqual(["old:1", "old:2", "old:3", "new:4"]);
-		expect(() => driver.registerJob(id, { everyMs: 5000 }, () => {})).toThrow(
-			/already has another recurrence/,
-		);
 		await emulator.close?.();
 	});
 

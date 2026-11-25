@@ -1,13 +1,21 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { digest, normalizeText } from "../codegen/text.js";
+import type { JsonObject } from "../json.js";
 import {
 	type AgentDocsArtifact,
 	type GenerateAgentDocsInput,
 	generateAgentDocs,
 } from "./generate.js";
+
+// S3-05 — the agent-docs freshness gate. Mirrors src/build/codegen-gate.ts
+// (assertGeneratedFresh): regenerate the artifact set from the single source
+// (CANONICAL_VERBS + the MCP tool surface), diff it against what is checked in,
+// and fail on drift. `hobo codegen --check` is the sibling idiom; this is the
+// same regenerate -> compare -> fail contract for the agent-docs surface. The
+// CI wiring (S3-07) is out of scope; this is the library gate it will call.
 
 export type AgentDocsDriftStatus = "missing" | "changed" | "extra";
 
@@ -22,7 +30,9 @@ export class AgentDocsError extends Error {
 	constructor(
 		readonly code: string,
 		message: string,
-		readonly detail: { readonly drift?: readonly AgentDocsDriftEntry[] } = {},
+		// Carried for reporting, never read back as JSON here -- the drift entries
+		// this is handed are domain records, not `JsonValue` leaves.
+		readonly detail: Readonly<Record<string, unknown>> = {},
 	) {
 		super(message);
 		this.name = "AgentDocsError";
@@ -35,26 +45,17 @@ async function readIfPresent(target: string): Promise<string | undefined> {
 		: undefined;
 }
 
-async function listArtifacts(root: string, dir = root): Promise<string[]> {
-	if (!existsSync(dir)) return [];
-	const entries = await readdir(dir, { withFileTypes: true });
-	const files = await Promise.all(
-		entries.map((entry) => {
-			const target = join(dir, entry.name);
-			return entry.isDirectory()
-				? listArtifacts(root, target)
-				: [relative(root, target).split(sep).join("/")];
-		}),
-	);
-	return files.flat();
-}
-
+/**
+ * Compare a directory of checked-in agent-docs artifacts against a fresh
+ * generation. Returns one drift entry per file that is missing or changed. Pure
+ * relative to the generator, so `hobo`'s `--check` path and any CI gate agree by
+ * construction.
+ */
 export async function compareAgentDocs(
 	dir: string,
 	input: GenerateAgentDocsInput = {},
 ): Promise<readonly AgentDocsDriftEntry[]> {
 	const { artifacts } = generateAgentDocs(input);
-	const expectedPaths = new Set(artifacts.map((artifact) => artifact.path));
 	const drift: AgentDocsDriftEntry[] = [];
 	for (const artifact of artifacts) {
 		const expected = normalizeText(artifact.content);
@@ -76,12 +77,14 @@ export async function compareAgentDocs(
 			});
 		}
 	}
-	for (const path of await listArtifacts(dir)) {
-		if (!expectedPaths.has(path)) drift.push({ path, status: "extra" });
-	}
-	return drift.sort((left, right) => left.path.localeCompare(right.path));
+	return drift;
 }
 
+/**
+ * Assert the checked-in agent-docs artifacts in `dir` are fresh. Throws an
+ * AgentDocsError with HOBO_AGENT_DOCS_DRIFT (carrying the drift entries) when any
+ * artifact is missing or stale — the fail-closed drift gate.
+ */
 export async function assertAgentDocsFresh(
 	dir: string,
 	input: GenerateAgentDocsInput = {},
@@ -90,12 +93,16 @@ export async function assertAgentDocsFresh(
 	if (drift.length > 0) {
 		throw new AgentDocsError(
 			"HOBO_AGENT_DOCS_DRIFT",
-			"agent docs drift detected; run pnpm --filter @hobo/cli agent-docs:write and remove unexpected artifacts",
+			"agent docs drift detected; run generateAgentDocs to refresh llms.txt/llms-full.txt/docs.json",
 			{ drift },
 		);
 	}
 }
 
+/**
+ * Write the generated agent-docs artifacts into `dir` (creating it as needed).
+ * Returns the artifact-relative paths written.
+ */
 export async function writeAgentDocs(
 	dir: string,
 	input: GenerateAgentDocsInput = {},

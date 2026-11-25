@@ -22,6 +22,7 @@ async function attachTextFileIfExists(
       contentType,
     });
   } catch {
+    // Attachment failures are non-fatal in teardown.
   }
 }
 
@@ -38,10 +39,13 @@ async function attachText(
       contentType,
     });
   } catch {
+    // Attachment failures are non-fatal in teardown.
   }
 }
 
 export const test = base.extend<{ standalone: StandaloneContext; _allureLabels: void }>({
+  // Auto-fixture: tag every test with Allure epic + feature derived from its
+  // @area: annotation and enclosing describe path. Runs before standalone.
   _allureLabels: [
     async ({}, use, testInfo) => {
       await applyAllureLabels(testInfo);
@@ -71,6 +75,7 @@ export const test = base.extend<{ standalone: StandaloneContext; _allureLabels: 
           contentType: 'image/png',
         });
       } catch {
+        // Screenshot failures are non-fatal in teardown.
       }
 
       await standalone.cleanup();

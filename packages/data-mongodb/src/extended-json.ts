@@ -1,3 +1,14 @@
+/**
+ * The value language of the executor port: MongoDB Extended JSON v2 in
+ * canonical mode.
+ *
+ * It is plain JSON, so a request or a document can be logged, diffed, put in a
+ * pact, or sent over any transport, and it names every BSON type exactly:
+ * `{ "$numberLong": "9007199254740993" }` is a 64-bit integer and can never be
+ * mistaken for a double. A driver adapter converts with the driver's own
+ * `EJSON.deserialize` / `EJSON.serialize`; this module only builds and reads
+ * the wrappers, so the runtime needs no BSON library.
+ */
 import type { JsonObject, JsonValue } from "@hobo/data-core";
 import {
 	isJsonArray,
@@ -7,7 +18,9 @@ import {
 	isJsonString,
 } from "./json.js";
 
+/** Any BSON value, as canonical Extended JSON. */
 export type MongoValue = JsonValue;
+/** A BSON document, as canonical Extended JSON. */
 export type MongoDocument = JsonObject;
 
 export const MONGO_BSON_TYPES = [
@@ -27,15 +40,19 @@ export const MONGO_BSON_TYPES = [
 	"other",
 ] as const;
 
+/** BSON type names as `$jsonSchema` spells them; `other` is everything else. */
 export type MongoBsonType = (typeof MONGO_BSON_TYPES)[number];
 
+/** Sorts before every other value: the open lower bound of a range. */
 export const MONGO_MIN_KEY: MongoDocument = Object.freeze({ $minKey: 1 });
+/** Sorts after every other value: the open upper bound of a range. */
 export const MONGO_MAX_KEY: MongoDocument = Object.freeze({ $maxKey: 1 });
 
 export function mongoLong(text: string): MongoDocument {
 	return { $numberLong: text };
 }
 
+/** The text a driver prints for a double: integers keep a `.0`. */
 export function doubleText(value: number): string {
 	if (Object.is(value, -0)) return "-0.0";
 	return Number.isInteger(value) && Math.abs(value) < 1e21
@@ -73,11 +90,14 @@ const WRAPPER_TYPES: ReadonlyMap<string, MongoBsonType> = new Map<
 	["$maxKey", "maxKey"],
 ]);
 
+/** The BSON type a canonical Extended JSON value denotes. */
 export function mongoTypeOf(value: MongoValue): MongoBsonType {
 	if (value === null) return "null";
 	if (isJsonBoolean(value)) return "bool";
 	if (isJsonString(value)) return "string";
 	if (isJsonNumber(value)) {
+		// A bare number is relaxed mode. A driver stores an integer as int32
+		// when it fits, as int64 when that fits, and anything else as a double.
 		if (!Number.isInteger(value) || Object.is(value, -0)) return "double";
 		if (value >= -0x80000000 && value <= 0x7fffffff) return "int";
 		return Math.abs(value) < 2 ** 63 ? "long" : "double";
@@ -89,6 +109,7 @@ export function mongoTypeOf(value: MongoValue): MongoBsonType {
 	return (only === undefined ? undefined : WRAPPER_TYPES.get(only)) ?? "other";
 }
 
+/** The string inside a one-key wrapper such as `{ "$numberLong": "5" }`. */
 export function wrappedText(
 	value: MongoValue,
 	wrapper: string,
@@ -100,9 +121,11 @@ export function wrappedText(
 
 export interface MongoBinary {
 	readonly base64: string;
+	/** Two lowercase hexadecimal digits. */
 	readonly subType: string;
 }
 
+/** The payload of a `$binary` wrapper, or `undefined` when it is not one. */
 export function binaryOf(value: MongoValue): MongoBinary | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const inner = value.$binary;
@@ -112,6 +135,7 @@ export function binaryOf(value: MongoValue): MongoBinary | undefined {
 	return { base64, subType: subType.toLowerCase().padStart(2, "0") };
 }
 
+/** Milliseconds since the epoch inside a `$date` wrapper, if it is exact. */
 export function dateOf(value: MongoValue): number | undefined {
 	if (!isJsonObject(value)) return undefined;
 	const text = wrappedText(value.$date ?? null, "$numberLong");

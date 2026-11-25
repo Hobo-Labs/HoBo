@@ -4,8 +4,10 @@ export type JobMemoryConfig = Readonly<{
 	vitestMaxWorkers: number;
 }>;
 
+/** Standard-class floor for raising turbo above one slot. */
 export const MAIN_WORKSPACE_MEMORY_FLOOR_MB = 4096;
 
+/** Estimated native RSS per extra turbo task on a standard shard. */
 export const TURBO_PARALLEL_SLOT_MB = 896;
 
 export function computeTurboConcurrency(input: {

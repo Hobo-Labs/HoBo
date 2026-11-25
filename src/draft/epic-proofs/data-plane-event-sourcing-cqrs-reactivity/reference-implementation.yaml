@@ -7,6 +7,7 @@ linear_url: "https://linear.app/quickdeploy-ai/project/data-plane-event-sourcing
 branch: "contacttylerkendrick/data-plane-event-sourcing-cqrs-reactivity/epic-rollup-7c8e15ca-sprawl-20260629T024709Z-801f"
 pr_url: "https://github.com/Tyler-R-Kendrick/HoBo/pull/417"
 reference_impl_root: "src/draft/epic-proofs/data-plane-event-sourcing-cqrs-reactivity"
+ledger: "src/draft/epic-proofs/data-plane-event-sourcing-cqrs-reactivity/poc-rollup-ledger.md"
 pact_inventory: "src/draft/epic-proofs/data-plane-event-sourcing-cqrs-reactivity/contracts/pact-inventory.md"
 simulation_command: "npm.cmd --prefix src\\draft\\epic-proofs\\data-plane-event-sourcing-cqrs-reactivity run simulate"
 last_linear_marker: "EPIC_ROLLUP_ACTIVE phase=pr_opened"

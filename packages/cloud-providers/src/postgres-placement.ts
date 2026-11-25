@@ -10,17 +10,31 @@ import {
 	postgresBackendProfiles,
 } from "./postgres-backends.js";
 
+// Pure placement ranking; see docs/design/postgres-backend-catalog.md.
+// Probes and failure-domain evidence come from the caller. This function does
+// not create databases, establish replication, wire a fleet, or perform failover.
+
+/** What the host knows about one configured backend at placement time. */
 export interface PostgresOffer {
+	/** The catalog backend this offer is an account on. */
 	readonly provider: DataStoreProvider;
+	/** Distinguishes two accounts on one product (`neon-eu`, `neon-us`). */
 	readonly id?: string;
+	/** `reachable` passed a probe; `unreachable` failed one; `unknown` was not probed. */
 	readonly health: "reachable" | "unreachable" | "unknown";
+	/** Fixed monthly fee in millionths of a US dollar; absent when unknown. */
 	readonly monthlyFeeMicros?: number;
 	readonly probeLatencyMs?: number;
+	/**
+	 * Failure domains verified by the host, including shared vendors and
+	 * underlying infrastructure. Absent or empty means independence is unknown.
+	 */
 	readonly failureDomains?: readonly string[];
 }
 
 export interface PostgresPlacementRequest {
 	readonly request?: DataStorePortRequest;
+	/** Standbys wanted beside the writer (default 1). */
 	readonly standbys?: number;
 }
 
@@ -48,8 +62,10 @@ export interface PostgresPlacement {
 	readonly status: "placed" | "degraded" | "unavailable";
 	readonly writer: PlacedPostgresBackend | undefined;
 	readonly standbys: readonly PlacedPostgresBackend[];
+	/** Writer first: the `backends` order `reconcileFleet` takes. */
 	readonly fleetOrder: readonly string[];
 	readonly skipped: readonly SkippedPostgresBackend[];
+	/** Why the placement is degraded or unavailable; empty when placed. */
 	readonly reasons: readonly string[];
 }
 
@@ -138,6 +154,10 @@ function placed(
 	};
 }
 
+/**
+ * Place a PostgreSQL request on the cheapest reachable fleet of the
+ * configured offers. Pure: probes are the caller's, and nothing is created.
+ */
 export function placePostgresFleet(
 	offers: readonly PostgresOffer[],
 	options: PostgresPlacementRequest = {},
@@ -146,13 +166,6 @@ export function placePostgresFleet(
 	if (!Number.isInteger(wantedStandbys) || wantedStandbys < 0)
 		throw new RangeError("standbys must be a non-negative integer");
 	const profiles = postgresBackendProfiles();
-	const request: DataStorePortRequest = {
-		...options.request,
-		features: options.request?.features?.length
-			? options.request.features
-			: ["sql.relational", "sql.transactions"],
-		negotiation: options.request?.negotiation ?? "require",
-	};
 	const skipped: SkippedPostgresBackend[] = [];
 	const candidates: Candidate[] = [];
 	const seen = new Set<string>();
@@ -176,7 +189,7 @@ export function placePostgresFleet(
 			});
 			continue;
 		}
-		const match = matchDataStoreOfferings(profile, request);
+		const match = matchDataStoreOfferings(profile, options.request ?? {});
 		if (match.kind !== "full") {
 			skipped.push({
 				id,
@@ -220,6 +233,9 @@ export function placePostgresFleet(
 			],
 		};
 
+	// Prefer evidence of independence from all selected members, then a
+	// different vendor, and finally cost. Different vendor names alone are not
+	// evidence that the underlying infrastructure has no common failure domain.
 	const remaining = [...rest];
 	const standbys: Candidate[] = [];
 	while (standbys.length < wantedStandbys && remaining.length > 0) {

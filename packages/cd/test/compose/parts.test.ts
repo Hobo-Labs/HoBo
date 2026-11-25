@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-chained-type-assertions, anti-slop/no-runtime-typeof */
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-chained-type-assertions, anti-slop/no-runtime-typeof -- SAFETY: test inputs stand in for whole ports; casts select the member under test. */
 import { describe, expect, it } from "vitest";
 import {
 	ArtifactKind,
@@ -8,7 +8,7 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import {
 	HOBO_CI_COMPONENTS,
-	hoboSelfDeliverySources,
+	hoboCiDogfoodSources,
 	hoboCiSource,
 } from "../../src/compose/ci-bridge.js";
 import { COMPOSE_FAILURES, ComposeError } from "../../src/compose/errors.js";
@@ -171,7 +171,7 @@ describe("CI bridge and HoBo CI dogfooding seam", () => {
 	});
 
 	it("delivers HoBo's own CI relay and runner fleet as ordinary Freight sources", () => {
-		const sources = hoboSelfDeliverySources({
+		const sources = hoboCiDogfoodSources({
 			ciPipeline: "hobo/hobo",
 			branch: "main",
 		});

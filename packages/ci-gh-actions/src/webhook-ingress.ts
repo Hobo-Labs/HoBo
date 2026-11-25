@@ -77,6 +77,7 @@ async function readBody(
 	return Buffer.concat(chunks);
 }
 
+/** Stateless GitHub App webhook front door: route by repo config at event commit. */
 export function createWebhookIngressHandler(options: {
 	githubWebhookSecret: string;
 	ingressForwardSecret: string;

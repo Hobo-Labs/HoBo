@@ -1,3 +1,11 @@
+// createFreightLedger (WP1, D2, D18): the event-sourced home of Freight.
+//
+// Commands append to `cd-freight-<id>` with expected-seq CAS and an
+// idempotency key per fact, so a retried command records nothing twice (I12)
+// and a concurrent writer is re-read rather than overwritten. Queries fold the
+// stream; `list`/`getByAlias` read a projection over `freight.Recorded` that
+// catches up from its last journal position and is rebuilt from the journal
+// on start.
 import { create } from "@bufbuild/protobuf";
 import type { EventPosition, ReadAllOptions } from "@hobo/core";
 import {
@@ -50,6 +58,7 @@ import {
 	type RetentionPin,
 } from "./retention.js";
 
+// public-contract: metric names the ledger emits through TelemetrySink.
 export const FREIGHT_METRIC = Object.freeze({
 	recorded: "hobo.cd.freight.recorded",
 	refused: "hobo.cd.freight.refused",
@@ -63,6 +72,12 @@ export const FREIGHT_METRIC = Object.freeze({
 export type FreightLedgerDeps = CdBase & {
 	readonly artifacts: ArtifactVerifier;
 	readonly telemetry: TelemetrySink;
+	/**
+	 * Governs `approve` and `yank` (required: without it both fail closed,
+	 * I10). Recording is governed by the ingress that calls `record`
+	 * (FreightIngest, FreightSources); the retention sweep `retire` by the
+	 * compose-owned job that schedules it (see README "Governance").
+	 */
 	readonly authorizer?: CdAuthorizer;
 };
 
@@ -73,6 +88,7 @@ type FreightState = {
 	retired?: FreightRetiredRecord | undefined;
 	qualifications: FreightQualifiedRecord[];
 	approvals: FreightApprovedRecord[];
+	/** An event in the stream could not be decoded; usability fails closed. */
 	unreadable: boolean;
 };
 
@@ -154,6 +170,7 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 		return state;
 	}
 
+	/** Run a command against the folded stream, re-reading on a CAS conflict. */
 	async function mutate<T>(
 		id: string,
 		ctx: CdContext,
@@ -288,6 +305,14 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 		}
 	}
 
+	/**
+	 * Per-Camp desired-state histories, oldest first. A Bindle reaches a Camp
+	 * through `set.Created`; a Rail (subject RAIL, D24) through
+	 * `policy.BindingChanged`, so each Camp has a second `<camp>#rail`
+	 * history. The latest entry of each history is deployed, earlier ones
+	 * count toward rollback depth. A body naming no Freight (a binding
+	 * restore) adds nothing; a body or Camp that cannot be read aborts.
+	 */
 	async function deployments(): Promise<readonly CampDeployments[]> {
 		const byCamp = new Map<string, string[]>();
 		const histories: ReadonlyArray<readonly [string, string]> = [
@@ -517,6 +542,8 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 				input.freightId,
 				ctx,
 				async (state) => {
+					// A retried approve gets a fresh decision id from the
+					// authorizer, so the same grant is matched by content (I12).
 					const prior = state.approvals.find(
 						(item) =>
 							item.campId === input.campId &&
@@ -661,6 +688,8 @@ export function createFreightLedger(deps: FreightLedgerDeps): FreightLedger {
 			const matches = [...index.values()].filter(
 				(record) => record.alias === alias,
 			);
+			// Aliases are for humans; two Freight sharing one is ambiguous and
+			// resolves to nothing rather than to a guess.
 			return matches.length === 1 ? matches[0] : undefined;
 		},
 

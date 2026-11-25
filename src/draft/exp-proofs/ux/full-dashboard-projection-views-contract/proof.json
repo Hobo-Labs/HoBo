@@ -9,7 +9,8 @@
       "src/draft/technical-proofs/multi-cloud-shop-provider-e2e-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

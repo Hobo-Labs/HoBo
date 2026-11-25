@@ -1,9 +1,9 @@
 # HoBo OIDC Federation STS Contract POC
 
 This draft pins the HOBO-110 provider STS exchange slice for
-[Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06),
-[ADR-0008](urn:hobo:decision:adr-0008), and
-[ADR-0027](urn:hobo:decision:adr-0027). It turns
+[Plan 6](../../../../docs/design/ai-native-agent-auth.md#plan-06),
+[ADR-0008](../../../../docs/design/adr/02-identity-security.md#adr-0008), and
+[ADR-0027](../../../../docs/design/adr/02-identity-security.md#adr-0027). It turns
 the HOBO-84 broker dispatch seam into an executable OIDC-federation exchange
 contract for AWS `AssumeRoleWithWebIdentity`, GCP Workload Identity Federation,
 and Azure federated credentials.
@@ -50,9 +50,11 @@ credential bounds, static-secret non-use, audit emission, out-of-SVID-scope
 denial, over-broad STS narrowing/flagging, and expired SVID rejection.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Oidc Federation Sts Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

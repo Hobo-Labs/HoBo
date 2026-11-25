@@ -27,6 +27,7 @@ on:
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/stage-sdk-artifacts.mts"
       - "scripts/ci/build-release-site-prebuild.mts"
+      - "scripts/ci/build-release-browser-wit-on-runner.mts"
       - "scripts/ci/publish-npm-sdk.mts"
       - "scripts/test/publish-npm-sdk.test.ts"
       - "scripts/ci/resolve-release-version.mts"
@@ -62,6 +63,7 @@ on:
       - "scripts/test/release-version.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
+      - "scripts/test/build-release-browser-wit-on-runner.test.ts"
       - "scripts/test/release-freight.test.ts"
       - "scripts/test/release-freight-cli.test.ts"
       - "scripts/test/release-freight-realize.test.ts"
@@ -105,6 +107,7 @@ on:
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/stage-sdk-artifacts.mts"
       - "scripts/ci/build-release-site-prebuild.mts"
+      - "scripts/ci/build-release-browser-wit-on-runner.mts"
       - "scripts/ci/publish-npm-sdk.mts"
       - "scripts/test/publish-npm-sdk.test.ts"
       - "scripts/ci/resolve-release-version.mts"
@@ -140,6 +143,7 @@ on:
       - "scripts/test/release-version.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
+      - "scripts/test/build-release-browser-wit-on-runner.test.ts"
       - "scripts/test/release-freight.test.ts"
       - "scripts/test/release-freight-cli.test.ts"
       - "scripts/test/release-freight-realize.test.ts"
@@ -231,6 +235,8 @@ env:
     pnpm-workspace.yaml
     turbo.json
     tsconfig.base.json
+  RELEASE_PAGES_MATERIALIZE_PATHS: |
+    examples/browser-runtime/wit
 
 jobs:
   route:
@@ -277,7 +283,6 @@ jobs:
             .hobo/ci.json
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
-            packages/ci/src/fleet-overflow.ts
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ steps.routing-base.outputs.sha }}
@@ -289,10 +294,10 @@ jobs:
             .github/actions/route-runner
             .hobo/ci.json
             scripts/ci/route-runner.mts
+            packages/ci/src/fleet-overflow.ts
             scripts/ci/runner-routing.mts
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
-            packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
@@ -408,16 +413,20 @@ jobs:
       - name: Link deps layer or install
         run: |
           set -euo pipefail
-          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
-            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
             && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
-            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+            echo "reusing the runner's deps layer; skip pnpm install"
           else
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
       - name: Shell syntax (changed scripts)
         if: github.event_name != 'push'
         run: pnpm run lint:shell:changed -- --base=HEAD^1
+      - name: Build release-contract script dependencies
+        run: >-
+          pnpm exec turbo run build
+          --filter=@hobo/provider-redaction --filter=@hobo/cd
+          --output-logs=new-only --concurrency=${{ env.HOBO_TURBO_CONCURRENCY }}
       - name: npm scope map + OCI manifest contract
         id: release_contract_tests
         run: >-
@@ -436,6 +445,7 @@ jobs:
           scripts/test/stage-release-oci-app.test.ts
           scripts/test/stage-sdk-artifacts.test.ts
           scripts/test/build-release-site-prebuild.test.ts
+          scripts/test/build-release-browser-wit-on-runner.test.ts
           scripts/test/nbgv-release-version.test.ts
           scripts/test/release-freight.test.ts
           scripts/test/release-freight-cli.test.ts
@@ -560,6 +570,51 @@ jobs:
         with:
           mode: save
 
+  release-pages-browser-wit-smoke:
+    name: Pages browser-wit build (hobo runner)
+    needs: route
+    if: >-
+      !cancelled() && needs.route.result == 'success' &&
+      (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    env:
+      HOBO_RELEASE_CHECKOUT_REF: ${{ github.sha }}
+      HOBO_RELEASE_TURBO_BASE: ""
+      HOBO_TURBO_CONCURRENCY: "1"
+    permissions:
+      contents: read
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 1
+          sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
+          materialize-paths: ${{ env.RELEASE_PAGES_MATERIALIZE_PATHS }}
+          submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
+      - name: Componentize browser WIT runtime (Pages release path)
+        run: node --no-warnings scripts/ci/build-release-browser-wit-on-runner.mts
+
   # The offline proof of the release realizer path: the built hobo CD
   # composition with release/hobo-release.delivery.ts as topology, against the
   # providers' recorded registry and GitHub worlds. It needs the built
@@ -598,10 +653,9 @@ jobs:
       - name: Link deps layer or install
         run: |
           set -euo pipefail
-          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
-            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
             && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
-            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+            echo "reusing the runner's deps layer; skip pnpm install"
           else
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
@@ -719,10 +773,9 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: |
           set -euo pipefail
-          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
-            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
             && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
-            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+            echo "reusing the runner's deps layer; skip pnpm install"
           else
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
@@ -827,7 +880,15 @@ jobs:
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Build the hobo CLI (release Freight through hobo deploy)
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo...
@@ -862,7 +923,7 @@ jobs:
       )
     needs: [route, release-main-train-gate, release-contract]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
@@ -1083,7 +1144,15 @@ jobs:
         run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Resolve and validate release version
         env:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
@@ -1196,6 +1265,113 @@ jobs:
           ghcr-username: ${{ github.actor }}
           ghcr-token: ${{ secrets.GITHUB_TOKEN }}
 
+  release-service-images:
+    name: Fleet service images (build, provenance, bill of materials)
+    if: >-
+      !cancelled() &&
+      needs.release-main-train-gate.result == 'success' &&
+      needs.release-oci-build-tag.result == 'success' &&
+      needs.release-hobo-cli.result == 'success' &&
+      !startsWith(github.ref, 'refs/tags/sdk-v') &&
+      !startsWith(github.ref, 'refs/tags/cli-v') &&
+      (
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        (github.event_name == 'workflow_dispatch' && inputs.push_images)
+      )
+    needs: [release-main-train-gate, release-oci-build-tag, release-hobo-cli]
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    environment: release
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        image_id: [hobo-fleet-authority, hobo-fleet-witness, hobo-fleet-relay]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      HOBO_RELEASE_TURBO_BASE: ""
+      HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
+      HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+      HOBO_RELEASE_REVISION: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 1
+          ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+          sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
+          submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
+      - name: Resolve and validate release version
+        env:
+          HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
+        run: node --no-warnings scripts/ci/materialize-release-version.mts
+      - name: Ensure digest-pinned content-keyed toolchain image
+        timeout-minutes: 5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+      - name: Download the built hobo CLI
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hobo-release-cli
+          path: ${{ runner.temp }}/hobo-release-cli
+      - name: Restore the hobo CLI (release Freight through hobo deploy)
+        env:
+          HOBO_RELEASE_CLI_DIGEST: ${{ needs.release-hobo-cli.outputs.digest }}
+        run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/hobo-release-cli/hobo-release-cli.tgz" --digest "$HOBO_RELEASE_CLI_DIGEST"
+      - name: Build service image, publish it through hobo deploy (release Freight)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/service
+        run: node --no-warnings scripts/ci/push-release-service-image.mts ${{ matrix.image_id }} "${RUNNER_TEMP}/hobo-service-digest.txt"
+      - name: Upload the service image Freight journal
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hobo-service-freight-${{ matrix.image_id }}
+          path: ${{ runner.temp }}/hobo-release-cd/service
+          include-hidden-files: true
+      - name: Require a published digest
+        id: digest
+        env:
+          DIGEST_FILE: ${{ runner.temp }}/hobo-service-digest.txt
+        run: |
+          set -euo pipefail
+          if [ ! -s "${DIGEST_FILE}" ]; then
+            echo "::error::no digest recorded for ${{ matrix.image_id }}; publish must record a registry digest"
+            exit 1
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
+      - uses: $/.github/actions/release-oci-attest
+        if: steps.digest.outputs.present == 'true'
+        with:
+          digest-list-path: ${{ runner.temp }}/hobo-service-digest.txt
+          image-id: ${{ matrix.image_id }}
+          ghcr-username: ${{ github.actor }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
+
   release-npm:
     name: npm publish train (SDK allowlist)
     # The @hobo-labs packages have never been published: the first publish
@@ -1253,7 +1429,15 @@ jobs:
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Resolve and validate release version
         env:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
@@ -1386,6 +1570,7 @@ jobs:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
+          materialize-paths: ${{ env.RELEASE_PAGES_MATERIALIZE_PATHS }}
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
       # The gate answered before this job waited for a runner and for the
@@ -1489,7 +1674,15 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       # HoBo releases itself through HoBo: the release Freight steps run the
       # `hobo deploy` composition of @hobo/cd from the hobo package
       # release-hobo-cli built for this commit.
@@ -1573,7 +1766,15 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       # HoBo releases itself through HoBo: the release Freight steps run the
       # `hobo deploy` composition of @hobo/cd from the hobo package
       # release-hobo-cli built for this commit.
@@ -1646,7 +1847,7 @@ jobs:
   release-pr-gate:
     name: HoBo release PR gate (required)
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
-    needs: [route, release-contract, release-realize]
+    needs: [route, release-contract, release-realize, release-pages-browser-wit-smoke]
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
     runs-on: ubuntu-24.04
@@ -1656,6 +1857,7 @@ jobs:
         env:
           CONTRACT_RESULT: ${{ needs.release-contract.result }}
           REALIZE_RESULT: ${{ needs.release-realize.result }}
+          BROWSER_WIT_SMOKE_RESULT: ${{ needs.release-pages-browser-wit-smoke.result }}
           ROUTE_RESULT: ${{ needs.route.result }}
           ATTESTED: ${{ needs.route.outputs.attested }}
           ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
@@ -1679,6 +1881,10 @@ jobs:
           # The realize proof has no local attestation: it must pass here.
           if [ "${REALIZE_RESULT:-}" != "success" ]; then
             echo "::error::Release Freight realize proof must pass (result=${REALIZE_RESULT:-})"
+            exit 1
+          fi
+          if [ "${BROWSER_WIT_SMOKE_RESULT:-}" != "success" ]; then
+            echo "::error::Pages browser-wit build on hobo runner must pass (result=${BROWSER_WIT_SMOKE_RESULT:-})"
             exit 1
           fi
           case "${CONTRACT_RESULT:-}" in

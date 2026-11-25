@@ -1,11 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { z } from "zod";
 
-import {
-	commandForPlatform,
-	sanitizeNodeOptions,
-	withoutPackageManager,
-} from "./env.ts";
+import { commandForPlatform, sanitizeNodeOptions } from "./env.ts";
 import {
 	DRAFT_VITEST_SHARDS,
 	draftUnitTestFiles,
@@ -59,19 +55,18 @@ function shardInputProblems(
 }
 
 export function unitTestCoverageProblems(): string[] {
-	const direct = withoutPackageManager("pnpm", [
+	const invocation = commandForPlatform("pnpm", [
 		"exec",
 		"turbo",
 		"run",
 		...rootUnitTaskNames,
 		"--dry=json",
 	]);
-	const invocation = commandForPlatform(direct.command, direct.args);
 	const result = spawnSync(invocation.command, invocation.args, {
 		encoding: "utf8",
 		shell: false,
 		env: sanitizeNodeOptions(),
-		maxBuffer: 64 * 1024 * 1024,
+		maxBuffer: 512 * 1024 * 1024,
 	});
 	if (result.status !== 0) {
 		return [`turbo dry run failed: ${result.stderr || result.error?.message}`];

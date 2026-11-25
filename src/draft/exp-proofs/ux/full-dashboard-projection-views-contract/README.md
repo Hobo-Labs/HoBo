@@ -27,6 +27,8 @@ production UI, live Gateway streams, provider APIs, or merged S6-05/S6-06 runtim
 pnpm --prefix src/draft/exp-proofs/ux/full-dashboard-projection-views-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

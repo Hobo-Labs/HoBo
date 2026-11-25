@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
 	clone,
 	create,
+	fromBinary,
 	fromJsonString,
 	toJsonString,
 } from "@bufbuild/protobuf";
@@ -13,7 +14,6 @@ import {
 	type Configuration,
 	ConfigurationSchema,
 	type ConfigurationState,
-	type Connection,
 	ConnectionSchema,
 	type ControlRecord,
 	ciBudgetPolicyJson,
@@ -31,6 +31,20 @@ import {
 	SandboxPricingSchema,
 	SnapshotSchema,
 } from "@hobo/ci";
+import {
+	FLEET_VIEW_CONTEXT,
+	type FleetClient,
+	type FleetFailure,
+	type FleetId,
+	type FleetVerdict,
+	type FleetView,
+	FleetViewSchema,
+	MEMBER_RECORD_CONTEXT,
+	type MemberList,
+	MemberListSchema,
+	type MemberRecord,
+	MemberRecordSchema,
+} from "@hobo/fleet";
 import { z } from "zod";
 import {
 	accountLease,
@@ -42,38 +56,11 @@ import {
 	retryQuarantinedDelivery,
 } from "./account-operations.js";
 import type { ControlAuthenticator, ControlPrincipal } from "./control-auth.js";
-import {
-	FLEET_REPORTERS_PATH,
-	FLEET_VERDICTS_PATH,
-	type FleetVerdictSettings,
-	type FleetVerdictStore,
-	fleetEnrollmentFor,
-	fleetReporterStatusListJson,
-	fleetVerdictJson,
-	noFleetVerdict,
-	parseFleetReportersPath,
-	parseFleetVerdictPath,
-	parseFleetVerdictReport,
-} from "./fleet-verdict.js";
-import {
-	FLEET_VERDICT_HEADERS,
-	isFleetVerdictIssuedAt,
-	isFleetVerdictSequence,
-	verifyFleetVerdictReport,
-} from "./fleet-verdict-auth.js";
 import type { HostedRelay, HostedRelayStore } from "./hosted-relay.js";
 import {
 	IsolatedOnboardingError,
 	prepareIsolatedConnection,
 } from "./isolated-onboarding.js";
-import {
-	createMeshNodesReader,
-	type MeshNodesReader,
-} from "./mesh-nodes-reader.js";
-import {
-	meshNodeReportsForAccount,
-	meshNodeReportsJson,
-} from "./mesh-records.js";
 import {
 	applyOnboarding,
 	connectRepository,
@@ -86,8 +73,8 @@ import {
 	parseOnboardingPlan,
 	prepareOnboarding,
 } from "./onboarding.js";
-import type { GithubWorkflowVerifier } from "./workflow-oidc.js";
 
+/** What the account control plane needs from a store beyond the relay's own port. */
 export interface HostedControlStore extends HostedRelayStore {
 	reattestRate(
 		input: {
@@ -167,6 +154,7 @@ function revision(request: Request): number {
 	return parsed;
 }
 
+/** A newer policy revision does not make an older financial snapshot current. */
 function requireFreshObservation(
 	previousAt: string,
 	incomingAt: string,
@@ -204,9 +192,91 @@ function policyState(state: ConfigurationState, accountId: string): string {
 	return toJsonString(AccountStateSchema, result);
 }
 
-// public-contract: the relay route that lists the mesh's nodes.
-export const MESH_NODES_PATH = "/v1/mesh/nodes";
+// public-contract: the relay route that lists the members of the fleet it reads.
+export const RELAY_FLEET_MEMBERS_PATH = "/v1/fleet/members";
 
+export type RelayFleetReads = Pick<
+	FleetClient,
+	"listMembers" | "fleetView" | "fleetVerdict"
+>;
+
+export type RelayFleet = Readonly<{
+	reads: RelayFleetReads;
+	fleetId: FleetId;
+}>;
+
+export function relayFleetReads(client: FleetClient): RelayFleetReads {
+	return {
+		listMembers: (request) => client.listMembers(request),
+		fleetView: (request) => client.fleetView(request),
+		fleetVerdict: (request) => client.fleetVerdict(request),
+	};
+}
+
+// public-contract: the refusal of a relay composed without a fleet.
+export const RELAY_READS_NO_FLEET = "this relay reads no fleet";
+
+function authorityRefusal(error: FleetFailure): ControlError {
+	const status =
+		error.code === "fleet-unknown" || error.code === "member-unknown"
+			? 404
+			: error.code === "unavailable"
+				? 503
+				: 502;
+	return new ControlError(
+		status,
+		`the fleet authority refused the read (${error.code})`,
+	);
+}
+
+function configured(fleet: RelayFleet | undefined): RelayFleet {
+	if (!fleet) throw new ControlError(503, RELAY_READS_NO_FLEET);
+	return fleet;
+}
+
+export async function relayFleetMemberList(
+	fleet: RelayFleet | undefined,
+): Promise<MemberList> {
+	const { reads, fleetId } = configured(fleet);
+	const answer = await reads.listMembers({ fleet: fleetId });
+	if (!answer.ok) throw authorityRefusal(answer.error);
+	return answer.value;
+}
+
+export function relayMemberRecords(list: MemberList): MemberRecord[] {
+	return list.members
+		.filter((envelope) => envelope.context === MEMBER_RECORD_CONTEXT)
+		.map((envelope) => fromBinary(MemberRecordSchema, envelope.payload));
+}
+
+export async function relayFleetView(
+	fleet: RelayFleet | undefined,
+): Promise<FleetView> {
+	const { reads, fleetId } = configured(fleet);
+	const answer = await reads.fleetView({ fleetId });
+	if (!answer.ok) throw authorityRefusal(answer.error);
+	if (answer.value.context !== FLEET_VIEW_CONTEXT)
+		throw new ControlError(502, "the fleet authority answered another record");
+	return fromBinary(FleetViewSchema, answer.value.payload);
+}
+
+export async function relayFleetVerdict(
+	fleet: RelayFleet | undefined,
+	label: string,
+): Promise<FleetVerdict> {
+	const { reads, fleetId } = configured(fleet);
+	const answer = await reads.fleetVerdict({ fleetId, label });
+	if (!answer.ok) throw authorityRefusal(answer.error);
+	return answer.value;
+}
+
+/**
+ * The control routes that write configuration, or keep records a relay with
+ * a read-only config source has no place for (ADR-0179 §8): policy and
+ * provider writes, budget signals and usage observations, the inbox
+ * quarantine, and repository setup with its operation records. On such a
+ * relay each answers 410 (`readOnlyConfig`).
+ */
 export function isConfigWriteRoute(method: string, path: string): boolean {
 	if (path.startsWith("/v2/accounts/self/inbox/")) return true;
 	if (path.startsWith("/v1/accounts/self/repositories/")) return true;
@@ -225,162 +295,7 @@ export function isConfigWriteRoute(method: string, path: string): boolean {
 	return false;
 }
 
-export type FleetVerdictRefusal =
-	| "bad-request"
-	| "unknown-reporter"
-	| "bad-signature"
-	| "clock-skew"
-	| "replayed"
-	| "not-found"
-	| "invalid-report";
-
-const FLEET_REPORT_SKEW_MS = 120_000;
-
-export type FleetVerdictService = Readonly<{
-	store: FleetVerdictStore;
-	settings(): FleetVerdictSettings | Promise<FleetVerdictSettings>;
-	workflowIdentity?: GithubWorkflowVerifier | undefined;
-	log?:
-		| ((
-				event: "hobo_ci_fleet_verdict_refused",
-				fields: Readonly<Record<string, string>>,
-		  ) => void)
-		| undefined;
-}>;
-
-function fleetRefusal(status: number, reason: FleetVerdictRefusal): Response {
-	return response(
-		status,
-		JSON.stringify({ error: reason.replaceAll("-", " "), reason }),
-	);
-}
-
-async function fleetVerdictRoute(
-	request: Request,
-	url: URL,
-	deps: Readonly<{
-		service: FleetVerdictService | undefined;
-		connections: () => Promise<readonly Connection[]>;
-		publicOrigin: string;
-		nowMs: () => number;
-	}>,
-): Promise<Response | undefined> {
-	const path = url.pathname;
-	const { service } = deps;
-	if (path.startsWith(FLEET_REPORTERS_PATH)) {
-		const repository = parseFleetReportersPath(path);
-		if (!repository) return response(404, '{"error":"not found"}');
-		if (url.search) return fleetRefusal(400, "bad-request");
-		if (request.method !== "GET")
-			return response(405, '{"error":"method not allowed"}');
-		if (!service?.workflowIdentity)
-			return response(503, '{"error":"this relay keeps no fleet verdicts"}');
-		const authorization = request.headers.get("authorization") ?? "";
-		const token = /^Bearer (\S{1,16000})$/u.exec(authorization)?.[1];
-		let asking: string;
-		try {
-			if (!token) throw new Error("no token");
-			asking = (await service.workflowIdentity.verify(token)).repository;
-		} catch {
-			return response(401, '{"error":"workflow identity required"}');
-		}
-		if (asking.toLowerCase() !== repository)
-			return response(403, '{"error":"another repository"}');
-		const connection = (await deps.connections()).find(
-			(entry) => entry.repository.toLowerCase() === repository,
-		);
-		if (!connection) return response(404, '{"error":"not found"}');
-		const settings = await service.settings();
-		return response(
-			200,
-			fleetReporterStatusListJson(
-				await service.store.status(
-					repository,
-					fleetEnrollmentFor(settings, connection.accountId),
-				),
-			),
-		);
-	}
-	if (!path.startsWith(FLEET_VERDICTS_PATH)) return undefined;
-	const repository = parseFleetVerdictPath(path);
-	if (!repository) return response(404, '{"error":"not found"}');
-	if (request.method === "GET") {
-		if (url.search) return fleetRefusal(400, "bad-request");
-		const settings = service && (await service.settings());
-		if (!service || !settings?.serving)
-			return response(200, fleetVerdictJson(noFleetVerdict(repository)));
-		const connection = (await deps.connections()).find(
-			(entry) => entry.repository.toLowerCase() === repository,
-		);
-		return response(
-			200,
-			fleetVerdictJson(
-				connection
-					? await service.store.read(
-							repository,
-							fleetEnrollmentFor(settings, connection.accountId),
-						)
-					: noFleetVerdict(repository),
-			),
-		);
-	}
-	if (request.method !== "PUT")
-		return response(405, '{"error":"method not allowed"}');
-	const settings = service && (await service.settings());
-	if (!service || !settings?.serving)
-		return response(503, '{"error":"this relay is not taking fleet verdicts"}');
-	const reporterId = request.headers.get(FLEET_VERDICT_HEADERS.reporter) ?? "";
-	const refuse = (status: number, reason: FleetVerdictRefusal) => {
-		try {
-			service.log?.("hobo_ci_fleet_verdict_refused", {
-				reporter: reporterId.slice(0, 64),
-				repository,
-				reason,
-			});
-		} catch {}
-		return fleetRefusal(status, reason);
-	};
-	if (url.search) return refuse(400, "bad-request");
-	const reporter = settings.reporters.find((entry) => entry.id === reporterId);
-	if (!reporter) return refuse(401, "unknown-reporter");
-	const body = await readBody(request);
-	const sequence = request.headers.get(FLEET_VERDICT_HEADERS.sequence) ?? "";
-	const issuedAt = request.headers.get(FLEET_VERDICT_HEADERS.issuedAt) ?? "";
-	if (
-		!isFleetVerdictSequence(sequence) ||
-		!isFleetVerdictIssuedAt(issuedAt) ||
-		!verifyFleetVerdictReport(
-			reporter.publicKey,
-			{ origin: deps.publicOrigin, path, body, issuedAt, sequence },
-			request.headers.get(FLEET_VERDICT_HEADERS.signature) ?? "",
-		)
-	)
-		return refuse(401, "bad-signature");
-	if (Math.abs(Date.parse(issuedAt) - deps.nowMs()) > FLEET_REPORT_SKEW_MS)
-		return refuse(401, "clock-skew");
-	const seen = await service.store.lastSequence(repository, reporter.id);
-	if (seen !== undefined && seen >= BigInt(sequence))
-		return refuse(401, "replayed");
-	const connection = (await deps.connections()).find(
-		(entry) =>
-			entry.accountId === reporter.accountId &&
-			entry.repository.toLowerCase() === repository,
-	);
-	if (!connection) return refuse(404, "not-found");
-	const report = parseFleetVerdictReport(body);
-	if (
-		!report ||
-		[...report.blocked.keys()].some((label) => !reporter.labels.includes(label))
-	)
-		return refuse(400, "invalid-report");
-	const accepted = await service.store.accept(
-		{ repository, reporter, sequence: BigInt(sequence), report },
-		fleetEnrollmentFor(settings, reporter.accountId),
-	);
-	if (!accepted.accepted) return refuse(401, accepted.reason);
-	return response(200, fleetVerdictJson(accepted.entry));
-}
-
+/** Account-scoped async control plane for a durable hosted relay. */
 export function createHostedControlPlane(options: {
 	relay: HostedRelay;
 	store: HostedControlStore;
@@ -388,18 +303,28 @@ export function createHostedControlPlane(options: {
 	authenticate: ControlAuthenticator;
 	publicOrigin: string;
 	assets: { workflow: string; bootstrap: string };
+	/**
+	 * Let an account replace its whole policy, offers included, through
+	 * `PUT /v1/accounts/self/policy`. For a relay whose operator owns the
+	 * provider inventory. Off, that route answers 410 and an account can only
+	 * change its v2 desired policy.
+	 */
 	fullAccountUpdates?: boolean;
 	runtimeDiagnostic?: () => {
 		sandboxEnabled: boolean;
 		allowedDomains: readonly string[];
 		deploymentId: string | null;
 	};
-	meshNodes?: MeshNodesReader | undefined;
+	fleet?: RelayFleet | undefined;
+	/**
+	 * The relay reads its configuration from a config service and never
+	 * writes it (the hosted relay, ADR-0179): every `isConfigWriteRoute`
+	 * answers 410 naming where configuration is written instead. Read
+	 * routes are unchanged.
+	 */
 	readOnlyConfig?: Readonly<{ configService: string }> | undefined;
-	fleetVerdicts?: FleetVerdictService | undefined;
 }) {
 	const { store, relay } = options;
-	const meshNodes = options.meshNodes ?? createMeshNodesReader();
 	const state = (): Promise<ConfigurationState> => configurationState(store);
 	async function scope(
 		principal: ControlPrincipal,
@@ -444,30 +369,9 @@ export function createHostedControlPlane(options: {
 		const url = new URL(request.url);
 		const path = url.pathname;
 		if (
-			path.startsWith(FLEET_VERDICTS_PATH) ||
-			path.startsWith(FLEET_REPORTERS_PATH)
-		) {
-			try {
-				return await fleetVerdictRoute(request, url, {
-					service: options.fleetVerdicts,
-					connections: async () =>
-						(await store.configuration())?.configuration?.connections ?? [],
-					publicOrigin: options.publicOrigin,
-					nowMs: () => Date.parse(relay.now()),
-				});
-			} catch (error) {
-				if (error instanceof ControlError)
-					return response(
-						error.status,
-						JSON.stringify({ error: error.message }),
-					);
-				throw error;
-			}
-		}
-		if (
 			!path.startsWith("/v1/accounts/self/") &&
 			!path.startsWith("/v2/accounts/self/") &&
-			path !== MESH_NODES_PATH
+			path !== RELAY_FLEET_MEMBERS_PATH
 		)
 			return undefined;
 		if (options.readOnlyConfig && isConfigWriteRoute(request.method, path))
@@ -502,22 +406,15 @@ export function createHostedControlPlane(options: {
 								: "policy:write";
 			if (!principal.scopes.includes(required))
 				throw new ControlError(403, "account scope required");
-			if (path === MESH_NODES_PATH) {
+			// account credential that may read (`policy:read`) may see it. The
+			if (path === RELAY_FLEET_MEMBERS_PATH) {
 				if (request.method !== "GET")
 					throw new ControlError(405, "method not allowed");
-				const connections =
-					(await store.configuration())?.configuration?.connections ?? [];
 				return response(
 					200,
-					meshNodeReportsJson(
-						meshNodeReportsForAccount(
-							await meshNodes(),
-							new Set(
-								connections
-									.filter((entry) => entry.accountId === principal.accountId)
-									.map((entry) => entry.repository),
-							),
-						),
+					toJsonString(
+						MemberListSchema,
+						await relayFleetMemberList(options.fleet),
 					),
 				);
 			}
@@ -603,6 +500,7 @@ export function createHostedControlPlane(options: {
 				try {
 					desired = parseCiPolicy(input);
 				} catch {
+					// A policy the parser refuses is the caller's to fix, not to retry.
 					throw new ControlError(400, "invalid desired CI policy");
 				}
 				if (desired.accountId !== principal.accountId)
@@ -1000,6 +898,10 @@ export function createHostedControlPlane(options: {
 				const leases = (await store.all())
 					.filter((entry) => entry.accountId === principal.accountId)
 					.slice(-100);
+				// The account's lease and record events, as this route has always
+				// returned them. A job's own events (queued, completed, expired)
+				// now name their account too; they are served by the relay's MCP
+				// server and must not crowd the lease events out of this window.
 				const events = (await store.events())
 					.filter(
 						(entry) =>
@@ -1041,6 +943,7 @@ export function createHostedControlPlane(options: {
 					input,
 					isolatedHostAvailable: !!relay.options.isolatedHost,
 				});
+				// Remote identity reads may overlap revocation or account policy changes.
 				const currentPrincipal = await options.authenticate(
 					request.headers.get("authorization") ?? undefined,
 				);
@@ -1094,6 +997,8 @@ export function createHostedControlPlane(options: {
 							409,
 							"existing connection requires operator migration",
 						);
+					// Identity and authority were checked live above. Revalidation must
+					// preserve custom runner settings, active leases and the revision.
 					return response(
 						200,
 						toJsonString(ConnectionSchema, existing),
@@ -1161,6 +1066,9 @@ export function createHostedControlPlane(options: {
 					input.repository,
 					input.installationId,
 				);
+				// A plan produced here always installs the shared-host bridge. Do not
+				// create an unusable plan on a deployment that denies that execution
+				// path; isolated repositories use the separate isolated-connect route.
 				if (relay.options.denyUnisolated)
 					throw new ControlError(
 						409,
@@ -1259,6 +1167,8 @@ export function createHostedControlPlane(options: {
 					plan.repository,
 					plan.installationId,
 				);
+				// Plans may outlive a deployment or be prepared by another one. Do
+				// not install files or store a connection if this relay cannot run it.
 				if (relay.options.denyUnisolated)
 					throw new ControlError(
 						409,

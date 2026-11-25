@@ -42,11 +42,14 @@ const JOB_CLASSES = {
 	"Attest GHCR images": "light",
 	"Attest hobo-code GHCR image": "light",
 	"CI runner image (mise oci)": "heavy",
+	// Planning is Node-only (turbo plan + cache upload); light admission avoids a 4096 MiB hold on thin main runs.
 	"Main workspace plan": "light",
 	"PR impact gate": "light",
 	"PR impact validation": "heavy",
 	"PR affected package lanes": "heavy",
 	"PR off-path checks (ts-autocode surface, production packages)": "heavy",
+	// Installs, builds some two dozen packages and runs five suites; its two
+	// database servers sit beside the job, outside what admission counts.
 	"Live data engines (PostgreSQL 16, MongoDB 8)": "heavy",
 	"Main full gate": "heavy",
 	"HoBo Code contract, lint, test + OCI image": "heavy",
@@ -243,7 +246,9 @@ export function resolveWorkerMemoryConfig(
 
 // public-contract: workflow job title used for deps-layer learned memory admission.
 export const CI_DEPS_LAYER_JOB_NAME = "CI deps layer (pnpm)";
+/** Class floor; learned peaks may raise the container limit above this. */
 export const CI_DEPS_LAYER_MEMORY_FLOOR_MB = 4096;
+/** Minimum reservation before three samples exist (4097 MiB peak observed on main). */
 export const CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB = 4352;
 
 function ciDepsLayerMemoryRequest(

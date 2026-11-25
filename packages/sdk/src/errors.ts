@@ -1,3 +1,6 @@
+// Typed parse failure shared by every SDK factory. Declarations follow parse,
+// don't validate: invalid authoring input never yields a declaration object —
+// the factory throws before anything is frozen or returned.
 export class SdkDeclarationError extends TypeError {
 	readonly declaration: string;
 	readonly path: string;
@@ -36,6 +39,8 @@ export function requireRecord(
 	return value as Record<string, unknown>;
 }
 
+// Recursively freezes a declaration so the returned contract object is
+// immutable evidence of exactly what was authored.
 export function deepFreeze<T>(value: T): T {
 	if (value === null || typeof value !== "object") return value;
 	for (const key of Object.getOwnPropertyNames(value)) {

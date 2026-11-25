@@ -45,6 +45,8 @@ pnpm --prefix src/draft/technical-proofs/s4-stage-gate-multi-cloud-contract test
 node --import tsx src/draft/technical-proofs/s4-stage-gate-multi-cloud-contract/scripts/run-s4-stage-gate-drill.ts --phase deploy-and-assert --run-id local
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

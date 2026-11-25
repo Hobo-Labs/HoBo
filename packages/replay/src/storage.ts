@@ -1,3 +1,7 @@
+/**
+ * SessionBlobStore + SessionIndex ports and local dual-fixture adapters.
+ * Heavy rrweb blobs: content-addressed. Metadata: index. Offline-first.
+ */
 import { createHash, randomUUID } from "node:crypto";
 import {
 	existsSync,
@@ -69,6 +73,7 @@ function atomicWrite(path: string, payload: string): void {
 	}
 }
 
+/** In-memory dual fixtures (tests / schemaOnlyView). */
 export function createMemoryDualFixtures(seed?: {
 	readonly sessions?: readonly SessionRecord[];
 }): DualFixtureStore {
@@ -170,6 +175,10 @@ export function createMemoryDualFixtures(seed?: {
 	});
 }
 
+/**
+ * Filesystem dual fixtures under a Station data dir (local / air-gap path).
+ * Layout: `<root>/sessions/<id>.json` + `<root>/blobs/<hash>.json`
+ */
 export function createFilesystemDualFixtures(
 	rootDir: string,
 ): DualFixtureStore {
@@ -319,6 +328,9 @@ export function createFilesystemDualFixtures(
 	});
 }
 
+/**
+ * Object-storage port shape (Junction / provider mediated). Not live in default path.
+ */
 export type ObjectStoragePort = {
 	putObject(
 		key: string,
@@ -328,6 +340,7 @@ export type ObjectStoragePort = {
 	getObject(key: string): Promise<Uint8Array | undefined>;
 };
 
+/** Adapter: SessionBlobStore over a secretless object-storage port. */
 export function createObjectStorageBlobStore(
 	port: ObjectStoragePort,
 	prefix = "replay/",

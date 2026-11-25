@@ -21,7 +21,8 @@ This package validates the M0 Performance & Load Tests scope record. It does not
 runner, benchmark lab, browser performance lab, CI execution lane, live-provider stress test,
 production load path, autoscaling implementation, chaos experiment, or launch decision.
 
-## Executable evidence
+## Architecture Evidence
+
 Per the repository architecture guardrails, this package documents how its scope record is
 schematized, parsed, and consumed:
 
@@ -31,6 +32,7 @@ schematized, parsed, and consumed:
   every protobuf type.
 - [`contracts/pacts/m0-scope-acceptance-gate.pact.json`](./contracts/pacts/m0-scope-acceptance-gate.pact.json)
   — PACT contract for the M0 follow-up gate and evidence-gap routing boundary.
+- [`ADR.md`](./ADR.md) — parse-don't-validate discipline and the command/event/actor/
   event-store/projection/snapshot/read-store framing for an accepted scope record.
 
 ## Verification

@@ -15,6 +15,8 @@ enum PatternMaturity {
   PATTERN_MATURITY_STABLE = 1;
   PATTERN_MATURITY_PARTIAL = 2;
   PATTERN_MATURITY_EXPERIMENTAL = 3;
+  PATTERN_MATURITY_LEGACY = 4;
+  PATTERN_MATURITY_DEPRECATED = 5;
 }
 
 enum RenderingKind {
@@ -50,6 +52,7 @@ enum SearchChannel {
   SEARCH_CHANNEL_FTS5 = 5;
   SEARCH_CHANNEL_ONTOLOGY_VECTOR = 6;
   SEARCH_CHANNEL_OPTIONAL_DENSE = 7;
+  SEARCH_CHANNEL_COMPATIBILITY = 8;
   SEARCH_CHANNEL_COMPOSITION = 9;
 }
 
@@ -185,6 +188,8 @@ message PatternManifest {
   repeated PatternProvenance provenance = 21;
   repeated string limitations = 22;
   repeated ValidationObligation validations = 23;
+  string replacement_id = 24;
+  repeated string legacy_aliases = 25;
   string content_digest = 26;
 }
 

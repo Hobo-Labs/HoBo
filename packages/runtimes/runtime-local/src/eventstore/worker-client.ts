@@ -1,3 +1,8 @@
+/**
+ * Main-thread client for the storage worker. Serializes all ops through one
+ * Worker so DatabaseSync never races and never monopolizes the event loop.
+ */
+
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type {
@@ -7,16 +12,15 @@ import type {
 	DurableCommitResult,
 	EventEnvelope,
 	EventInput,
-	PositionedEvent,
 	ReadAllOptions,
 	SnapshotRecord,
 } from "@hobo/core";
 import { StorageWorkerTerminatedError } from "@hobo/core";
-import type { JsonValue } from "../json.js";
+import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
+
 import type {
 	StorageWorkerRequest,
 	StorageWorkerResponse,
-	StorageWorkerSuccess,
 } from "./storage-worker.js";
 
 export interface StorageWorkerClientOptions {
@@ -29,8 +33,7 @@ export class StorageWorkerClient {
 	private readonly pending = new Map<
 		string,
 		{
-			op: StorageWorkerRequest["op"];
-			resolve: (value: StorageWorkerSuccess) => void;
+			resolve: (value: RevivedValue) => void;
 			reject: (error: Error) => void;
 		}
 	>();
@@ -57,53 +60,46 @@ export class StorageWorkerClient {
 			if (!slot) return;
 			this.pending.delete(msg.id);
 			if (msg.ok) {
-				if (msg.op !== slot.op) {
-					slot.reject(
-						new Error(`storage worker replied to ${slot.op} with ${msg.op}`),
-					);
-					return;
-				}
-				slot.resolve(msg);
+				slot.resolve(reviveBigints(msg.result));
 			} else {
-				const error = new Error(msg.error.message);
-				error.name = msg.error.name;
-				if (msg.error.code) Object.assign(error, { code: msg.error.code });
-				slot.reject(error);
+				const err = new Error(msg.error.message);
+				err.name = msg.error.name;
+				if (msg.error.code) {
+					Object.assign(err, { code: msg.error.code });
+				}
+				slot.reject(err);
 			}
 		});
 		worker.on("error", (error: Error) => {
-			if (this.worker !== worker) return;
-			this.worker = null;
 			this.failAll(error);
+			this.worker = null;
 		});
 		worker.on("exit", (code) => {
-			if (this.worker !== worker) return;
+			if (code !== 0) {
+				this.failAll(
+					new StorageWorkerTerminatedError(
+						`storage worker exited with code ${code}`,
+					),
+				);
+			}
 			this.worker = null;
-			this.failAll(
-				new StorageWorkerTerminatedError(
-					`storage worker exited with code ${code}`,
-				),
-			);
 		});
 		this.worker = worker;
 		return worker;
 	}
 
 	private failAll(error: Error): void {
-		for (const slot of this.pending.values()) slot.reject(error);
+		for (const [, slot] of this.pending) {
+			slot.reject(error);
+		}
 		this.pending.clear();
 	}
 
-	private call(request: StorageWorkerRequest): Promise<StorageWorkerSuccess> {
+	private call(request: StorageWorkerRequest): Promise<RevivedValue> {
 		const worker = this.ensureWorker();
 		return new Promise((resolve, reject) => {
-			this.pending.set(request.id, { op: request.op, resolve, reject });
-			try {
-				worker.postMessage(request);
-			} catch (error) {
-				this.pending.delete(request.id);
-				reject(error);
-			}
+			this.pending.set(request.id, { resolve, reject });
+			worker.postMessage(request);
 		});
 	}
 
@@ -116,48 +112,47 @@ export class StorageWorkerClient {
 		events: EventInput[],
 		options: AppendOptions,
 	): Promise<AppendResult> {
-		const response = await this.call({
+		const revived = await this.call({
 			id: this.nextId(),
 			op: "append",
 			streamId,
 			events,
 			options,
 		});
-		if (response.op !== "append")
-			throw new TypeError("expected an append response");
-		return response.result;
+		// SAFETY: append worker payload is AppendResult after bigint revive.
+		return revived as never;
 	}
 
 	async commit(request: DurableCommitRequest): Promise<DurableCommitResult> {
-		const response = await this.call({
+		const revived = await this.call({
 			id: this.nextId(),
 			op: "commit",
 			request,
 		});
-		if (response.op !== "commit")
-			throw new TypeError("expected a commit response");
-		return response.result;
+		// SAFETY: commit worker payload is DurableCommitResult after bigint revive.
+		return revived as never;
 	}
 
 	async read(streamId: string, fromSeq?: number): Promise<EventEnvelope[]> {
-		const request: StorageWorkerRequest =
+		const req: StorageWorkerRequest =
 			fromSeq === undefined
 				? { id: this.nextId(), op: "read", streamId }
 				: { id: this.nextId(), op: "read", streamId, fromSeq };
-		const response = await this.call(request);
-		if (response.op !== "read") throw new TypeError("expected a read response");
-		return response.result;
+		const revived = await this.call(req);
+		// SAFETY: read worker payload is EventEnvelope[] after bigint revive.
+		return revived as never;
 	}
 
-	async readAll(options?: ReadAllOptions): Promise<PositionedEvent[]> {
-		const request: StorageWorkerRequest =
+	async readAll(options?: ReadAllOptions): Promise<RevivedValue[]> {
+		const req: StorageWorkerRequest =
 			options === undefined
 				? { id: this.nextId(), op: "readAll" }
 				: { id: this.nextId(), op: "readAll", options };
-		const response = await this.call(request);
-		if (response.op !== "readAll")
-			throw new TypeError("expected a readAll response");
-		return response.result;
+		const revived = await this.call(req);
+		if (!Array.isArray(revived)) {
+			throw new TypeError("readAll worker payload must be an array");
+		}
+		return revived;
 	}
 
 	async snapshot(
@@ -165,36 +160,61 @@ export class StorageWorkerClient {
 		state: JsonValue,
 		seq: number,
 	): Promise<SnapshotRecord> {
-		const response = await this.call({
+		const revived = await this.call({
 			id: this.nextId(),
 			op: "snapshot",
 			streamId,
 			state,
 			seq,
 		});
-		if (response.op !== "snapshot")
-			throw new TypeError("expected a snapshot response");
-		return response.result;
+		// SAFETY: snapshot worker payload is SnapshotRecord after bigint revive.
+		return revived as never;
 	}
 
 	async loadSnapshot(streamId: string): Promise<SnapshotRecord | undefined> {
-		const response = await this.call({
+		const revived = await this.call({
 			id: this.nextId(),
 			op: "loadSnapshot",
 			streamId,
 		});
-		if (response.op !== "loadSnapshot")
-			throw new TypeError("expected a loadSnapshot response");
-		return response.result ?? undefined;
+		if (revived === null) return undefined;
+		// SAFETY: loadSnapshot worker payload is SnapshotRecord after bigint revive.
+		return revived as never;
 	}
 
 	async close(): Promise<void> {
-		const worker = this.worker;
-		if (!worker) return;
+		if (!this.worker) return;
 		try {
 			await this.call({ id: this.nextId(), op: "shutdown" });
-		} catch {}
-		await worker.terminate();
-		if (this.worker === worker) this.worker = null;
+		} catch {
+			// ignore
+		}
+		await this.worker.terminate();
+		this.worker = null;
 	}
+}
+
+export type RevivedValue = JsonValue | bigint | RevivedValue[] | RevivedBag;
+
+export interface RevivedBag {
+	[key: string]: RevivedValue;
+}
+
+function reviveBigints(value: JsonValue): RevivedValue {
+	if (Array.isArray(value)) return value.map(reviveBigints);
+	if (value && isJsonObject(value)) {
+		if (
+			Object.keys(value).length === 1 &&
+			isJsonString(value.$bigint) &&
+			/^-?\d+$/.test(value.$bigint)
+		) {
+			return BigInt(value.$bigint);
+		}
+		const out: RevivedBag = {};
+		for (const [k, v] of Object.entries(value)) {
+			out[k] = reviveBigints(v);
+		}
+		return out;
+	}
+	return value;
 }

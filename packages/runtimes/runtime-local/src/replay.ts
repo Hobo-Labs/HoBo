@@ -71,17 +71,6 @@ export function replayClockTrace(
 			replay.clock.cron(parseScheduleId(entry.scheduleId), {
 				everyMs: entry.everyMs,
 				startAtMs: entry.startAtMs,
-				jitterMs: entry.jitterMs,
-			});
-		} else if (entry.type === "cron.expression-scheduled") {
-			if (replay.clock.nowMs() !== entry.startAtMs) {
-				throw new NondeterministicClockError(
-					"cron registration time diverged from trace",
-				);
-			}
-			replay.clock.cronExpression(parseScheduleId(entry.scheduleId), {
-				expression: entry.expression,
-				timezone: entry.timezone,
 			});
 		} else if (entry.type === "clock.advanced") {
 			actualFires.push(

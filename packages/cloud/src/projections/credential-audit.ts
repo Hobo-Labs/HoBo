@@ -1,29 +1,36 @@
 import type { EventEnvelope } from "@hobo/core";
-import {
-	defineProjection,
-	type Projection,
-	type ProjectionSnapshot,
-} from "@hobo/data";
-import {
-	isJsonObject,
-	isJsonString,
-	type JsonObject,
-	type JsonValue,
-} from "../json.js";
+import { defineProjection, type Projection } from "@hobo/data";
 
+// The CredentialAudit projection (S3-04 — ai-native-agent-auth.md §6.2/§6.8). It
+// folds the identity/token/session event families into a queryable audit of
+// grant → use → revoke, correlated by `correlationId`, so "which agent reached
+// which resource as which user, when" is always answerable. It is a read-model
+// fold (rebuildable-from-zero — the log is authoritative), and its streams are
+// NEVER compacted (NFR-018 retention floor): a compaction pass over an audit
+// stream drops nothing, so pre-floor events survive for the full retention window.
+
+// The never-compact retention descriptor. Duplicated locally (identical to
+// @hobo/identity's CREDENTIAL_AUDIT_RETENTION) so the read-model does not need an
+// inward cloud → identity dependency edge — cloud depends only on
+// core/bindles/data/events.
 export const CREDENTIAL_AUDIT_RETENTION = Object.freeze({
 	class: "security-audit",
 	neverCompact: true,
 	streamPolicy: "retain-token-identity-session-audit",
 });
 
+// NFR-018 retention floor: audit facts are retained at least this long. Seven
+// years (2555 days) mirrors the credential-audit-projection technical proof.
 export const CREDENTIAL_AUDIT_RETENTION_FLOOR_DAYS = 2555;
 export const CREDENTIAL_AUDIT_RETENTION_FLOOR_MS =
 	CREDENTIAL_AUDIT_RETENTION_FLOOR_DAYS * 24 * 60 * 60 * 1000;
 
+// The identity/token/session event types the audit folds (data-plane.md event
+// catalog). The prefixes classify a stream as a never-compact audit stream.
 export const CREDENTIAL_AUDIT_EVENTS = Object.freeze({
 	IdentityIssued: "identity.Issued",
 	IdentityRotated: "identity.Rotated",
+	/** Continuous identity migration plane (never-compact). */
 	MigrationStarted: "identity.MigrationStarted",
 	DualLinked: "identity.DualLinked",
 	ShadowVerified: "identity.ShadowVerified",
@@ -43,21 +50,10 @@ export const CREDENTIAL_AUDIT_EVENTS = Object.freeze({
 	ConnectionTokenIssued: "connection.TokenIssued",
 	ConnectionRevoked: "connection.Revoked",
 	ConnectionNeedsReauth: "connection.NeedsReauth",
+	/** ADR-0027 secretless-first config resolution (refs only). */
 	ConfigResolved: "config.Resolved",
+	/** ADR-0027 residual secret access (version-id; never plaintext). */
 	SecretAccessed: "secret.Accessed",
-	ToolCallDecided: "mcp.ToolCallDecided",
-	ToolCallThrottled: "mcp.ToolCallThrottled",
-	CaptureOpened: "secret.CaptureOpened",
-	CaptureWriteStarted: "secret.CaptureWriteStarted",
-	CaptureWriteUncertain: "secret.CaptureWriteUncertain",
-	CaptureWriterSessionEnded: "secret.CaptureWriterSessionEnded",
-	CaptureWriterSessionUncertain: "secret.CaptureWriterSessionUncertain",
-	CaptureStored: "secret.CaptureStored",
-	CaptureAuthorized: "secret.CaptureAuthorized",
-	CaptureRejected: "secret.CaptureRejected",
-	CaptureRefused: "secret.CaptureRefused",
-	CaptureExpired: "secret.CaptureExpired",
-	CaptureClosed: "secret.CaptureClosed",
 } as const);
 
 export const CREDENTIAL_AUDIT_EVENT_PREFIXES = Object.freeze([
@@ -67,7 +63,6 @@ export const CREDENTIAL_AUDIT_EVENT_PREFIXES = Object.freeze([
 	"connection.",
 	"config.",
 	"secret.",
-	"mcp.",
 ]);
 
 export function isCredentialAuditEvent(event: EventEnvelope): boolean {
@@ -78,12 +73,16 @@ export function isCredentialAuditEvent(event: EventEnvelope): boolean {
 
 export type CredentialGrantStatus = "granted" | "used" | "revoked";
 
+// The audited (port, resource, action) scope; wire form in cloud.proto.
+// domain-view: parse-don't-validate derived type of CredentialAuditScope.
 export interface CredentialAuditScope {
 	port: string;
 	resource: string;
 	action: string;
 }
 
+// The per-grant lifecycle fold (grant -> use -> revoke); wire form in cloud.proto.
+// domain-view: parse-don't-validate derived type of CredentialGrantAudit.
 export interface CredentialGrantAudit {
 	grantId: string;
 	svidSubject?: string;
@@ -97,388 +96,393 @@ export interface CredentialGrantAudit {
 	useCount: number;
 }
 
+// An ordered step in a correlation's credential timeline; wire form in cloud.proto.
+// domain-view: parse-don't-validate derived type of CredentialAuditTimelineEntry.
 export interface CredentialAuditTimelineEntry {
 	seq: number;
 	type: string;
 	grantId?: string;
-	eventId?: string;
-	streamId?: string;
-	time?: string;
-	actorKind?: string;
-	actorId?: string;
-	tool?: string;
-	subject?: string;
-	effect?: "allow" | "deny";
-	reason?: string;
-	name?: string;
-	ref?: string;
-	code?: string;
-	ticketId?: string;
-	target?: string;
-	channel?: string;
 }
 
+// domain-view: the CredentialAudit read-model row, one per correlationId. Its
+// wire form is CredentialAuditRecord in data-models/cloud.proto.
 export interface CredentialAuditRow {
-	tenant?: string;
 	correlationId: string;
 	grants: Record<string, CredentialGrantAudit>;
 	identityIds: string[];
 	sessionIds: string[];
+	/** First-class Connection ids observed on this correlation chain. */
 	connectionIds: string[];
+	/** Config field names resolved on this correlation (refs only). */
 	configNames: string[];
+	/** Secret refs accessed on this correlation (never values). */
 	secretValueRefs: string[];
+	/** Continuous identity migration ids observed on this correlation. */
 	migrationIds: string[];
 	timeline: CredentialAuditTimelineEntry[];
 	grantCount: number;
 	useCount: number;
 	revokeCount: number;
+	/** Count of config.Resolved / secret.Accessed events (audit). */
 	configResolveCount: number;
 	secretAccessCount: number;
+	/** Count of identity.Migration* events folded. */
 	migrationEventCount: number;
 }
 
-function eventData(event: EventEnvelope): JsonObject {
-	return isJsonObject(event.data) ? event.data : {};
-}
-
-function optionalString(data: JsonObject, key: string): string | undefined {
-	const value = data[key];
-	return isJsonString(value) ? value : undefined;
-}
-
-function requiredString(data: JsonObject, key: string): string {
-	const value = optionalString(data, key);
-	if (value === undefined)
-		throw new TypeError(`CredentialAudit: ${key} must be a string`);
-	return value;
-}
-
-function correlationId(event: EventEnvelope): string {
-	const data = eventData(event);
+function correlationKey(event: EventEnvelope): string {
+	// SAFETY: `const data = event.data as` is required at this I/O or test boundary.
+	const data = event.data as
+		| { correlationId?: string; grantId?: string }
+		| undefined;
 	return (
 		event.correlationId ??
-		optionalString(data, "correlationId") ??
-		optionalString(data, "grantId") ??
+		data?.correlationId ??
+		data?.grantId ??
 		event.streamId
 	);
 }
 
-function auditKey(tenant: string, correlation: string): string {
-	return JSON.stringify([tenant, correlation]);
-}
-
 function base(
 	row: CredentialAuditRow | undefined,
-	event: EventEnvelope,
+	correlationId: string,
 ): CredentialAuditRow {
-	if (row)
-		return {
-			...row,
-			grants: { ...row.grants },
-			identityIds: [...row.identityIds],
-			sessionIds: [...row.sessionIds],
-			connectionIds: [...(row.connectionIds ?? [])],
-			configNames: [...(row.configNames ?? [])],
-			secretValueRefs: [...(row.secretValueRefs ?? [])],
-			migrationIds: [...(row.migrationIds ?? [])],
-			timeline: [...row.timeline],
-		};
-	return {
-		tenant: event.tenant,
-		correlationId: correlationId(event),
-		grants: {},
-		identityIds: [],
-		sessionIds: [],
-		connectionIds: [],
-		configNames: [],
-		secretValueRefs: [],
-		migrationIds: [],
-		timeline: [],
-		grantCount: 0,
-		useCount: 0,
-		revokeCount: 0,
-		configResolveCount: 0,
-		secretAccessCount: 0,
-		migrationEventCount: 0,
-	};
+	return row
+		? {
+				...row,
+				grants: { ...row.grants },
+				identityIds: [...row.identityIds],
+				sessionIds: [...row.sessionIds],
+				connectionIds: [...(row.connectionIds ?? [])],
+				configNames: [...(row.configNames ?? [])],
+				secretValueRefs: [...(row.secretValueRefs ?? [])],
+				migrationIds: [...(row.migrationIds ?? [])],
+				timeline: [...row.timeline],
+			}
+		: {
+				correlationId,
+				grants: {},
+				identityIds: [],
+				sessionIds: [],
+				connectionIds: [],
+				configNames: [],
+				secretValueRefs: [],
+				migrationIds: [],
+				timeline: [],
+				grantCount: 0,
+				useCount: 0,
+				revokeCount: 0,
+				configResolveCount: 0,
+				secretAccessCount: 0,
+				migrationEventCount: 0,
+			};
 }
 
-function appendTimeline(
+function noteConnection(
 	row: CredentialAuditRow,
-	event: EventEnvelope,
-	grantId?: string,
+	connectionId: string | undefined,
 ): void {
-	const entry: CredentialAuditTimelineEntry = {
-		seq: event.seq,
-		type: event.type,
-	};
-	if (grantId !== undefined) entry.grantId = grantId;
-	row.timeline.push(entry);
-}
-
-function addUnique(values: string[], value: string | undefined): void {
-	if (value && !values.includes(value)) values.push(value);
-}
-
-function foldIdentity(
-	row: CredentialAuditRow | undefined,
-	event: EventEnvelope,
-): CredentialAuditRow {
-	const next = base(row, event);
-	addUnique(next.identityIds, optionalString(eventData(event), "identityId"));
-	appendTimeline(next, event);
-	return next;
-}
-
-function foldSession(
-	row: CredentialAuditRow | undefined,
-	event: EventEnvelope,
-): CredentialAuditRow {
-	const next = base(row, event);
-	addUnique(next.sessionIds, optionalString(eventData(event), "sessionId"));
-	appendTimeline(next, event);
-	return next;
-}
-
-function foldConnection(
-	row: CredentialAuditRow | undefined,
-	event: EventEnvelope,
-): CredentialAuditRow {
-	const data = eventData(event);
-	const next = base(row, event);
-	addUnique(next.connectionIds, optionalString(data, "connectionId"));
-	const grantId =
-		event.type === CREDENTIAL_AUDIT_EVENTS.ConnectionTokenIssued
-			? optionalString(data, "grantId")
-			: undefined;
-	appendTimeline(next, event, grantId);
-	return next;
-}
-
-function foldMigration(
-	row: CredentialAuditRow | undefined,
-	event: EventEnvelope,
-): CredentialAuditRow {
-	const next = base(row, event);
-	const migrationId = optionalString(eventData(event), "migrationId");
-	if (migrationId) {
-		addUnique(next.migrationIds, migrationId);
-		next.migrationEventCount += 1;
+	if (!connectionId) return;
+	if (!row.connectionIds.includes(connectionId)) {
+		row.connectionIds = [...row.connectionIds, connectionId];
 	}
-	appendTimeline(next, event);
-	return next;
 }
 
-function parseScope(
-	value: JsonValue | undefined,
-): CredentialAuditScope | undefined {
-	if (value === undefined) return undefined;
-	if (!isJsonObject(value))
-		throw new TypeError("CredentialAudit: scope must be an object");
-	return {
-		port: requiredString(value, "port"),
-		resource: requiredString(value, "resource"),
-		action: requiredString(value, "action"),
-	};
+function noteMigration(
+	row: CredentialAuditRow,
+	migrationId: string | undefined,
+): void {
+	if (!migrationId) return;
+	if (!row.migrationIds.includes(migrationId)) {
+		row.migrationIds = [...row.migrationIds, migrationId];
+	}
+	row.migrationEventCount = (row.migrationEventCount ?? 0) + 1;
 }
 
-function foldToken(
+function foldMigrationEvent(
 	row: CredentialAuditRow | undefined,
 	event: EventEnvelope,
 ): CredentialAuditRow {
-	const data = eventData(event);
-	const grantId = requiredString(data, "grantId");
-	const next = base(row, event);
-	const existing = Object.hasOwn(next.grants, grantId)
-		? next.grants[grantId]
-		: undefined;
-	const grant: CredentialGrantAudit = existing
+	// SAFETY: `const data = event.data as { migrationId?: string };` is required at this I/O or test boundary.
+	const data = event.data as { migrationId?: string };
+	const next = base(row, correlationKey(event));
+	noteMigration(next, data.migrationId);
+	next.timeline = [...next.timeline, { seq: event.seq, type: event.type }];
+	return next;
+}
+
+function grant(row: CredentialAuditRow, grantId: string): CredentialGrantAudit {
+	const existing = row.grants[grantId];
+	return existing
 		? { ...existing }
 		: { grantId, status: "granted", useCount: 0 };
-	if (event.type === CREDENTIAL_AUDIT_EVENTS.TokenGranted) {
-		grant.status = "granted";
-		grant.grantedAt = event.ts;
-		const subject = optionalString(data, "svidSubject");
-		const tokenRef = optionalString(data, "tokenRef");
-		const scope = parseScope(data.scope);
-		if (subject !== undefined) grant.svidSubject = subject;
-		if (tokenRef !== undefined) grant.tokenRef = tokenRef;
-		if (scope !== undefined) grant.scope = scope;
-		addUnique(next.connectionIds, optionalString(data, "connectionId"));
-		next.grantCount += 1;
-	} else if (event.type === CREDENTIAL_AUDIT_EVENTS.TokenUsed) {
-		if (grant.status !== "revoked") grant.status = "used";
-		grant.usedAt = event.ts;
-		grant.useCount += 1;
-		next.useCount += 1;
-	} else {
-		grant.status = "revoked";
-		grant.revokedAt = event.ts;
-		const reason = optionalString(data, "reason");
-		if (reason !== undefined) grant.revokedReason = reason;
-		next.revokeCount += 1;
-	}
-	Object.defineProperty(next.grants, grantId, {
-		value: grant,
-		enumerable: true,
-		writable: true,
-		configurable: true,
+}
+
+export const credentialAuditProjection: Projection<CredentialAuditRow> =
+	defineProjection<CredentialAuditRow>({
+		name: "credential-audit",
+		key: correlationKey,
+		on: {
+			[CREDENTIAL_AUDIT_EVENTS.IdentityIssued]: (row, event) => {
+				// SAFETY: `const data = event.data as { identityId: string };` is required at this I/O or test boundary.
+				const data = event.data as { identityId: string };
+				const next = base(row, correlationKey(event));
+				if (!next.identityIds.includes(data.identityId)) {
+					next.identityIds = [...next.identityIds, data.identityId];
+				}
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.IdentityRotated]: (row, event) => {
+				// SAFETY: `const data = event.data as { identityId: string };` is required at this I/O or test boundary.
+				const data = event.data as { identityId: string };
+				const next = base(row, correlationKey(event));
+				if (!next.identityIds.includes(data.identityId)) {
+					next.identityIds = [...next.identityIds, data.identityId];
+				}
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.MigrationStarted]: (row, event) =>
+				foldMigrationEvent(row, event),
+			[CREDENTIAL_AUDIT_EVENTS.DualLinked]: (row, event) =>
+				foldMigrationEvent(row, event),
+			[CREDENTIAL_AUDIT_EVENTS.ShadowVerified]: (row, event) =>
+				foldMigrationEvent(row, event),
+			[CREDENTIAL_AUDIT_EVENTS.DualConsistencyChecked]: (row, event) =>
+				foldMigrationEvent(row, event),
+			[CREDENTIAL_AUDIT_EVENTS.MigrationProgressed]: (row, event) =>
+				foldMigrationEvent(row, event),
+			[CREDENTIAL_AUDIT_EVENTS.Migrated]: (row, event) =>
+				foldMigrationEvent(row, event),
+			[CREDENTIAL_AUDIT_EVENTS.MigrationCutover]: (row, event) =>
+				foldMigrationEvent(row, event),
+			[CREDENTIAL_AUDIT_EVENTS.MigrationAborted]: (row, event) =>
+				foldMigrationEvent(row, event),
+			[CREDENTIAL_AUDIT_EVENTS.MigrationCompensated]: (row, event) =>
+				foldMigrationEvent(row, event),
+			[CREDENTIAL_AUDIT_EVENTS.TokenGranted]: (row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
+				const data = event.data as {
+					grantId: string;
+					svidSubject?: string;
+					tokenRef?: string;
+					scope?: CredentialAuditScope;
+					connectionId?: string;
+				};
+				const next = base(row, correlationKey(event));
+				const g = grant(next, data.grantId);
+				g.status = "granted";
+				g.grantedAt = event.ts;
+				if (data.svidSubject !== undefined) g.svidSubject = data.svidSubject;
+				if (data.tokenRef !== undefined) g.tokenRef = data.tokenRef;
+				if (data.scope !== undefined) g.scope = data.scope;
+				next.grants[data.grantId] = g;
+				next.grantCount += 1;
+				noteConnection(next, data.connectionId);
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type, grantId: data.grantId },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.ConnectionCreated]: (row, event) => {
+				// SAFETY: `const data = event.data as { connectionId: string };` is required at this I/O or test boundary.
+				const data = event.data as { connectionId: string };
+				const next = base(row, correlationKey(event));
+				noteConnection(next, data.connectionId);
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.ConnectionAuthorized]: (row, event) => {
+				// SAFETY: `const data = event.data as { connectionId: string };` is required at this I/O or test boundary.
+				const data = event.data as { connectionId: string };
+				const next = base(row, correlationKey(event));
+				noteConnection(next, data.connectionId);
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.ConnectionTokenIssued]: (row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
+				const data = event.data as {
+					connectionId: string;
+					grantId?: string;
+				};
+				const next = base(row, correlationKey(event));
+				noteConnection(next, data.connectionId);
+				next.timeline = [
+					...next.timeline,
+					{
+						seq: event.seq,
+						type: event.type,
+						...(data.grantId !== undefined
+							? { grantId: data.grantId }
+							: undefined),
+					},
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.ConnectionRevoked]: (row, event) => {
+				// SAFETY: `const data = event.data as { connectionId: string };` is required at this I/O or test boundary.
+				const data = event.data as { connectionId: string };
+				const next = base(row, correlationKey(event));
+				noteConnection(next, data.connectionId);
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.ConnectionNeedsReauth]: (row, event) => {
+				// SAFETY: `const data = event.data as { connectionId: string };` is required at this I/O or test boundary.
+				const data = event.data as { connectionId: string };
+				const next = base(row, correlationKey(event));
+				noteConnection(next, data.connectionId);
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.TokenUsed]: (row, event) => {
+				// SAFETY: `const data = event.data as { grantId: string };` is required at this I/O or test boundary.
+				const data = event.data as { grantId: string };
+				const next = base(row, correlationKey(event));
+				const g = grant(next, data.grantId);
+				// A use before a grant is folded as an anomaly-tolerant "used" status;
+				// the timeline preserves ordering for the security reviewer either way.
+				if (g.status !== "revoked") g.status = "used";
+				g.usedAt = event.ts;
+				g.useCount += 1;
+				next.grants[data.grantId] = g;
+				next.useCount += 1;
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type, grantId: data.grantId },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.TokenRevoked]: (row, event) => {
+				// SAFETY: `const data = event.data as { grantId: string; reason?: string };` is required at this I/O or test boundary.
+				const data = event.data as { grantId: string; reason?: string };
+				const next = base(row, correlationKey(event));
+				const g = grant(next, data.grantId);
+				g.status = "revoked";
+				g.revokedAt = event.ts;
+				if (data.reason !== undefined) g.revokedReason = data.reason;
+				next.grants[data.grantId] = g;
+				next.revokeCount += 1;
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type, grantId: data.grantId },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.SessionStarted]: (row, event) => {
+				// SAFETY: `const data = event.data as { sessionId: string };` is required at this I/O or test boundary.
+				const data = event.data as { sessionId: string };
+				const next = base(row, correlationKey(event));
+				if (!next.sessionIds.includes(data.sessionId)) {
+					next.sessionIds = [...next.sessionIds, data.sessionId];
+				}
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.SessionRevoked]: (row, event) => {
+				// SAFETY: `const data = event.data as { sessionId: string };` is required at this I/O or test boundary.
+				const data = event.data as { sessionId: string };
+				const next = base(row, correlationKey(event));
+				if (!next.sessionIds.includes(data.sessionId)) {
+					next.sessionIds = [...next.sessionIds, data.sessionId];
+				}
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.ConfigResolved]: (row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
+				const data = event.data as {
+					name?: string;
+					valueRef?: string;
+					source?: string;
+					redacted?: boolean;
+				};
+				const next = base(row, correlationKey(event));
+				if (data.name && !next.configNames.includes(data.name)) {
+					next.configNames = [...next.configNames, data.name];
+				}
+				next.configResolveCount += 1;
+				next.timeline = [
+					...next.timeline,
+					{ seq: event.seq, type: event.type },
+				];
+				return next;
+			},
+			[CREDENTIAL_AUDIT_EVENTS.SecretAccessed]: (row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
+				const data = event.data as {
+					name?: string;
+					valueRef?: string;
+					versionId?: string;
+					grantId?: string;
+					plaintextPresent?: boolean;
+				};
+				// Fail closed in fold if an event claims plaintext (conformance).
+				if (data.plaintextPresent === true) {
+					throw new Error(
+						"CredentialAudit: secret.Accessed claimed plaintextPresent",
+					);
+				}
+				const next = base(row, correlationKey(event));
+				if (data.valueRef && !next.secretValueRefs.includes(data.valueRef)) {
+					next.secretValueRefs = [...next.secretValueRefs, data.valueRef];
+				}
+				next.secretAccessCount += 1;
+				next.timeline = [
+					...next.timeline,
+					{
+						seq: event.seq,
+						type: event.type,
+						...(data.grantId !== undefined
+							? { grantId: data.grantId }
+							: undefined),
+					},
+				];
+				return next;
+			},
+		},
 	});
-	appendTimeline(next, event, grantId);
-	return next;
-}
-
-function foldConfig(
-	row: CredentialAuditRow | undefined,
-	event: EventEnvelope,
-): CredentialAuditRow {
-	const next = base(row, event);
-	addUnique(next.configNames, optionalString(eventData(event), "name"));
-	next.configResolveCount += 1;
-	appendTimeline(next, event);
-	return next;
-}
-
-function foldSecretAccess(
-	row: CredentialAuditRow | undefined,
-	event: EventEnvelope,
-): CredentialAuditRow {
-	const data = eventData(event);
-	if (data.plaintextPresent === true)
-		throw new Error(
-			"CredentialAudit: secret.Accessed claimed plaintextPresent",
-		);
-	const next = base(row, event);
-	addUnique(next.secretValueRefs, optionalString(data, "valueRef"));
-	next.secretAccessCount += 1;
-	appendTimeline(next, event, optionalString(data, "grantId"));
-	return next;
-}
-
-function foldControlEvent(
-	row: CredentialAuditRow | undefined,
-	event: EventEnvelope,
-): CredentialAuditRow {
-	const data = eventData(event);
-	for (const key of ["value", "plaintext", "secret", "ciphertext", "token"]) {
-		if (Object.hasOwn(data, key))
-			throw new TypeError(
-				"CredentialAudit: control event contains secret material",
-			);
-	}
-	const next = base(row, event);
-	const entry: CredentialAuditTimelineEntry = {
-		seq: event.seq,
-		type: event.type,
-		eventId: event.id,
-		streamId: event.streamId,
-		time: optionalString(event.meta ?? {}, "sourceTime") ?? event.ts,
-		actorKind: event.actor.kind,
-		actorId: event.actor.id,
-	};
-	for (const key of [
-		"tool",
-		"subject",
-		"reason",
-		"name",
-		"ref",
-		"code",
-		"ticketId",
-		"target",
-		"channel",
-	] as const) {
-		const value = optionalString(data, key);
-		if (value !== undefined) entry[key] = value;
-	}
-	const effect = optionalString(data, "effect");
-	if (effect !== undefined) {
-		if (effect !== "allow" && effect !== "deny")
-			throw new TypeError("CredentialAudit: invalid tool decision");
-		entry.effect = effect;
-	}
-	if (
-		event.type === CREDENTIAL_AUDIT_EVENTS.ToolCallDecided &&
-		(entry.tool === undefined ||
-			entry.subject === undefined ||
-			(entry.effect !== "allow" && entry.effect !== "deny"))
-	)
-		throw new TypeError("CredentialAudit: invalid tool decision");
-	if (
-		event.type === CREDENTIAL_AUDIT_EVENTS.ToolCallThrottled &&
-		(entry.tool === undefined || entry.subject === undefined)
-	)
-		throw new TypeError("CredentialAudit: invalid tool throttle");
-	next.timeline.push(entry);
-	return next;
-}
-
-const projection = defineProjection<CredentialAuditRow>({
-	name: "credential-audit",
-	key: (event) => auditKey(event.tenant, correlationId(event)),
-	on: {
-		[CREDENTIAL_AUDIT_EVENTS.IdentityIssued]: foldIdentity,
-		[CREDENTIAL_AUDIT_EVENTS.IdentityRotated]: foldIdentity,
-		[CREDENTIAL_AUDIT_EVENTS.SessionStarted]: foldSession,
-		[CREDENTIAL_AUDIT_EVENTS.SessionRevoked]: foldSession,
-		[CREDENTIAL_AUDIT_EVENTS.ConnectionCreated]: foldConnection,
-		[CREDENTIAL_AUDIT_EVENTS.ConnectionAuthorized]: foldConnection,
-		[CREDENTIAL_AUDIT_EVENTS.ConnectionTokenIssued]: foldConnection,
-		[CREDENTIAL_AUDIT_EVENTS.ConnectionRevoked]: foldConnection,
-		[CREDENTIAL_AUDIT_EVENTS.ConnectionNeedsReauth]: foldConnection,
-		[CREDENTIAL_AUDIT_EVENTS.MigrationStarted]: foldMigration,
-		[CREDENTIAL_AUDIT_EVENTS.DualLinked]: foldMigration,
-		[CREDENTIAL_AUDIT_EVENTS.ShadowVerified]: foldMigration,
-		[CREDENTIAL_AUDIT_EVENTS.DualConsistencyChecked]: foldMigration,
-		[CREDENTIAL_AUDIT_EVENTS.MigrationProgressed]: foldMigration,
-		[CREDENTIAL_AUDIT_EVENTS.Migrated]: foldMigration,
-		[CREDENTIAL_AUDIT_EVENTS.MigrationCutover]: foldMigration,
-		[CREDENTIAL_AUDIT_EVENTS.MigrationAborted]: foldMigration,
-		[CREDENTIAL_AUDIT_EVENTS.MigrationCompensated]: foldMigration,
-		[CREDENTIAL_AUDIT_EVENTS.TokenGranted]: foldToken,
-		[CREDENTIAL_AUDIT_EVENTS.TokenUsed]: foldToken,
-		[CREDENTIAL_AUDIT_EVENTS.TokenRevoked]: foldToken,
-		[CREDENTIAL_AUDIT_EVENTS.ConfigResolved]: foldConfig,
-		[CREDENTIAL_AUDIT_EVENTS.SecretAccessed]: foldSecretAccess,
-		[CREDENTIAL_AUDIT_EVENTS.ToolCallDecided]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.ToolCallThrottled]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureOpened]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureWriteStarted]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureWriteUncertain]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureWriterSessionEnded]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureWriterSessionUncertain]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureStored]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureAuthorized]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureRejected]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureRefused]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureExpired]: foldControlEvent,
-		[CREDENTIAL_AUDIT_EVENTS.CaptureClosed]: foldControlEvent,
-	},
-});
-
-export const credentialAuditProjection: Projection<CredentialAuditRow> = {
-	...projection,
-	get(snapshot, correlation) {
-		const matches = Object.values(snapshot.rows).filter(
-			(row) => row.correlationId === correlation,
-		);
-		return matches.length === 1 ? matches[0] : undefined;
-	},
-};
-
-export function getCredentialAuditRow(
-	snapshot: ProjectionSnapshot<CredentialAuditRow>,
-	tenant: string,
-	correlation: string,
-): CredentialAuditRow | undefined {
-	return snapshot.rows[auditKey(tenant, correlation)];
-}
 
 export interface CompactionResult {
 	retained: EventEnvelope[];
 	droppedCount: number;
+	// True when no credential-audit event was removed (NFR-018 never-compact).
 	auditPreserved: boolean;
 }
 
+/**
+ * A compaction pass over a stream that respects the never-compact retention floor
+ * (NFR-018). Credential-audit events (identity/token/session families) are never
+ * dropped; only non-audit events older than the retention floor are compactable.
+ * A test can therefore prove pre-floor audit events survive a compaction pass.
+ */
 export function compactCredentialAuditStream(
 	events: readonly EventEnvelope[],
 	options: { now?: number; retentionFloorMs?: number } = {},
@@ -487,14 +491,16 @@ export function compactCredentialAuditStream(
 	const floorMs =
 		options.retentionFloorMs ?? CREDENTIAL_AUDIT_RETENTION_FLOOR_MS;
 	const auditTotal = events.filter(isCredentialAuditEvent).length;
-	const retained = events.filter(
-		(event) =>
-			isCredentialAuditEvent(event) || now - Date.parse(event.ts) <= floorMs,
-	);
+
+	const retained = events.filter((event) => {
+		if (isCredentialAuditEvent(event)) return true; // never compacted
+		return now - Date.parse(event.ts) <= floorMs;
+	});
+
+	const auditRetained = retained.filter(isCredentialAuditEvent).length;
 	return {
 		retained,
 		droppedCount: events.length - retained.length,
-		auditPreserved:
-			retained.filter(isCredentialAuditEvent).length === auditTotal,
+		auditPreserved: auditRetained === auditTotal,
 	};
 }

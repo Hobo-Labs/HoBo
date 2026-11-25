@@ -11,7 +11,7 @@ import {
 	type ImmutableJournalEntry,
 	ImmutableJournalError,
 	type ImmutableJournalMember,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import {
 	type AppendResult,
 	type DurableCommitRequest,
@@ -472,6 +472,7 @@ function createMaterialized(
 	const driver = createMemoryNodeSqliteDriver();
 	const journal = new SqliteJournal(driver, {
 		clock: { now: () => new Date(timeMs).toISOString() },
+		now: new Date(0).toISOString(),
 	});
 	return {
 		journal,

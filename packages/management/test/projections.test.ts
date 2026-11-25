@@ -1,3 +1,31 @@
+/**
+ * Folding Station and Connection state into the Yard projection.
+ *
+ * `management.test.ts` drives the ops surface; this covers the read model the
+ * game UI actually renders. Everything here is a *derivation*, which is the
+ * awkward category to test: nothing throws when it is wrong, the UI simply
+ * shows something plausible and false.
+ *
+ * Three properties earn most of the attention:
+ *
+ * - **The provenance badges.** `trafficRate` is synthesized from connection
+ *   counts, not measured; `activity.status` is derived from the connection
+ *   lifecycle, not agent telemetry. The badges are the only thing separating a
+ *   number that means something from a number that looks like it does. A
+ *   projection that dropped them would make the UI's honest "synthetic" label
+ *   disappear, and the rate would read as real.
+ * - **Nothing is invented outside the event-sourced services.** The module
+ *   header says the projection never fabricates occupancy, rail, or connection
+ *   state. The tests below hold it to that: with an empty station, the rails and
+ *   connections are empty and the metering figures are zero rather than
+ *   defaults someone thought looked better.
+ * - **Hazards are exhaustive.** A hazard that fails to fire is a warning the
+ *   operator never sees, so each one is asserted on its own and in combination.
+ *
+ * The context is a hand-built fake rather than a real store, because the point
+ * is to control the *input state* precisely — a real store would make several
+ * of these states difficult to reach and impossible to isolate.
+ */
 import { describe, expect, it } from "vitest";
 
 import type { ManagementContext } from "../src/context.js";

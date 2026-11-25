@@ -28,7 +28,7 @@ package vibe_troubleshooting_decision_trees
   issue: "HOBO-553"
   phase: "M1"
   targetPackage: "src/draft/exp-proofs/ux/vibe-troubleshooting-decision-trees"
-  proofNote: "urn:hobo:proof:vibe-troubleshooting-decision-trees"
+  proofNote: "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md"
   designRefs: [...string] & [_, ...]
   proofModes: ["live", "simulated", "reference fixture", "scope-out"]
   cases: [...#TroubleshootingDecisionCase] & [_, ...]

@@ -8,7 +8,6 @@ import {
 	COST_FACTS,
 	DEFAULT_REGIONS,
 	LAKEBED_PROVIDER_ID,
-	PROVIDER_TERMS,
 	publishCapabilityManifest,
 } from "./manifest.js";
 import { realizeResourcePlan } from "./realize.js";
@@ -109,7 +108,6 @@ export function createLakebedProvider(
 		capabilityManifest(): CapabilityManifest {
 			return {
 				providerId: LAKEBED_PROVIDER_ID,
-				terms: PROVIDER_TERMS,
 				published,
 				capabilities: parseJsonObject(
 					published["/.well-known/capability-manifest/capabilities.json"],

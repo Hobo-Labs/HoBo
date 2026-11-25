@@ -50,7 +50,7 @@ export const HOSTED_BROKER_GA_HANDOFF_EVIDENCE = {
     {
       id: "operational-owner-checklist",
       ownerProject: "Meta-cloud Broker",
-      proofSource: "urn:hobo:requirement:meta-cloud-broker",
+      proofSource: "docs/design/meta-cloud-broker.md",
       proves:
         "Broker service, support/debug, versioning, rollback, and release-note owners are named before handoff.",
       status: "accepted",
@@ -58,7 +58,7 @@ export const HOSTED_BROKER_GA_HANDOFF_EVIDENCE = {
     {
       id: "dogfood-yard-readiness-link",
       ownerProject: "V1 Dogfood Yard & Hosted Operations",
-      proofSource: "urn:hobo:requirement:dogfood-yard",
+      proofSource: "docs/design/dogfood-yard.md",
       proves:
         "Dogfood Yard evidence links Resolution Receipt and Resolution Rejection behavior to deploy-readiness questions.",
       status: "accepted",
@@ -74,7 +74,7 @@ export const HOSTED_BROKER_GA_HANDOFF_EVIDENCE = {
     {
       id: "rollback-restore-limits",
       ownerProject: "V1 Dogfood Yard & Hosted Operations",
-      proofSource: "urn:hobo:requirement:go-no-go-decision-record",
+      proofSource: "docs/design/go-no-go-decision-record.md",
       proves:
         "Rollback/restore language stays limited to deterministic receipt replay and documented recovery boundaries.",
       status: "accepted",
@@ -82,7 +82,7 @@ export const HOSTED_BROKER_GA_HANDOFF_EVIDENCE = {
     {
       id: "release-notes-support-entry",
       ownerProject: "V1 Release Notes & Upgrade Guide",
-      proofSource: "urn:hobo:requirement:release-notes-upgrade-guide",
+      proofSource: "docs/design/release-notes-upgrade-guide.md",
       proves:
         "Release notes and support docs have broker-specific entries or explicit non-goals before GA language.",
       status: "accepted",

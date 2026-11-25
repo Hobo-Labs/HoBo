@@ -3,16 +3,12 @@ import type { ActorHost } from "@hobo/data";
 import { emit } from "@hobo/events";
 
 import {
-	CLOUD_EVENTS,
 	type DeploymentTransitionData,
 	deploymentRolledBack,
 	deploymentTransitionCompleted,
 	deploymentTransitionStarted,
-	incidentEscalationRequested,
-	resourceCompensationFailed,
 } from "../events.js";
 import type { CredentialBroker, Executor } from "../executor/executor.js";
-import { isJsonObject } from "../json.js";
 import type { DeploymentPlan } from "../plan-types.js";
 import { currentFenceToken } from "../store/index.js";
 import {
@@ -33,9 +29,16 @@ import {
 	foldResourceActor,
 	hasUnresolvedReconciliation,
 	type ResourceActorDeps,
-	type ResourceActorSnapshot,
 	type ResourceActorState,
 } from "./resource-actor.js";
+
+// Choreographed compensation (control-plane.md "Compensation is also
+// choreographed"): a `resource.Failed` past the no-go threshold emits
+// `deployment.RolledBack`, which each already-`Provisioned` actor observes and
+// reacts to by `Destroying` itself in reverse-dependency order (tracked via the
+// DAG). There is no central saga coordinator — the reverse-topological walk is
+// derived from the plan's dependency edges, and a resource is destroyed only once
+// all of its dependents are already Destroyed.
 
 export interface CompensationDeps {
 	store: EventStore;
@@ -54,25 +57,18 @@ export interface CompensationContext {
 export interface CompensationResult {
 	status: "rolled-back" | "needs-human";
 	destroyedOrder: string[];
-	blocked: CompensationBlockedResource[];
 	events: EventEnvelope[];
 	pendingOperations?: readonly PendingResourceOperation[];
 	provenanceMismatches?: readonly string[];
-}
-
-export interface CompensationBlockedResource {
-	resourceId: string;
-	reason:
-		| "waiting-for-dependent-destroyed"
-		| "destroy-outcome-unknown"
-		| "destroy-failed";
-	dependents: string[];
 }
 
 function streamId(deploymentId: string): string {
 	return `deployment:${deploymentId}`;
 }
 
+// Reverse-topological order over the resources that reached a
+// provisioned-or-later state — the safe teardown order (dependents before
+// dependencies).
 function reverseDependencyOrder(
 	plan: DeploymentPlan,
 	states: Map<string, ResourceActorState>,
@@ -116,92 +112,6 @@ function dependentsOf(plan: DeploymentPlan, resourceId: string): string[] {
 		.map((r) => r.name);
 }
 
-function hasLiveResource(
-	snapshot: ResourceActorSnapshot | undefined,
-	recorded: ReturnType<typeof recordedResources>,
-): boolean {
-	return (
-		snapshot !== undefined &&
-		(snapshot.state === "Provisioning" ||
-			snapshot.state === "Provisioned" ||
-			snapshot.state === "Updating" ||
-			snapshot.state === "Destroying" ||
-			snapshot.state === "ReconciliationRequired" ||
-			(snapshot.state === "Failed" &&
-				(snapshot.specHash !== undefined ||
-					recorded.get(snapshot.resourceId)?.hasProvisionedBaseline === true ||
-					recorded.get(snapshot.resourceId)?.specHash !== undefined)))
-	);
-}
-
-function compensationBlockers(
-	plan: DeploymentPlan,
-	events: EventEnvelope[],
-	deploymentId: string,
-): CompensationBlockedResource[] {
-	const recorded = recordedResources(events);
-	const snapshots = new Map(
-		plan.resources.map((resource) => [
-			resource.name,
-			foldResourceActor(events, { ...resource, deploymentId }),
-		]),
-	);
-	const unresolved = new Map<string, CompensationBlockedResource["reason"]>();
-	for (const resource of plan.resources) {
-		const snapshot = snapshots.get(resource.name);
-		if (snapshot === undefined || !hasLiveResource(snapshot, recorded))
-			continue;
-		const destroyingSeq =
-			events
-				.filter(
-					(event) =>
-						event.type === CLOUD_EVENTS.ResourceDestroying &&
-						isJsonObject(event.data) &&
-						event.data.resourceId === resource.name,
-				)
-				.at(-1)?.seq ?? 0;
-		const failure = events
-			.filter(
-				(event) =>
-					event.type === CLOUD_EVENTS.ResourceCompensationFailed &&
-					event.seq > destroyingSeq &&
-					isJsonObject(event.data) &&
-					event.data.resourceId === resource.name,
-			)
-			.at(-1);
-		if (failure === undefined && snapshot.state !== "Destroying") continue;
-		unresolved.set(
-			resource.name,
-			failure !== undefined &&
-				isJsonObject(failure.data) &&
-				failure.data.outcome === "destroy-failed"
-				? "destroy-failed"
-				: "destroy-outcome-unknown",
-		);
-	}
-	const blocked: CompensationBlockedResource[] = [];
-	for (const resource of plan.resources) {
-		const reason = unresolved.get(resource.name);
-		if (reason !== undefined) {
-			blocked.push({ resourceId: resource.name, reason, dependents: [] });
-			continue;
-		}
-		const snapshot = snapshots.get(resource.name);
-		if (snapshot === undefined || !hasLiveResource(snapshot, recorded))
-			continue;
-		const dependents = dependentsOf(plan, resource.name).filter((id) =>
-			unresolved.has(id),
-		);
-		if (dependents.length > 0)
-			blocked.push({
-				resourceId: resource.name,
-				reason: "waiting-for-dependent-destroyed",
-				dependents,
-			});
-	}
-	return blocked;
-}
-
 export async function runCompensation(
 	deps: CompensationDeps,
 	plan: DeploymentPlan,
@@ -209,31 +119,6 @@ export async function runCompensation(
 	triggeringFailure: { resourceId: string; reason: string },
 	ctx: CompensationContext,
 ): Promise<CompensationResult> {
-	if (!triggeringFailure.resourceId.trim() || !triggeringFailure.reason.trim())
-		throw new TypeError("rollback requires a resource and reason");
-	const result = await compensate(
-		deps,
-		plan,
-		deploymentId,
-		triggeringFailure,
-		ctx,
-	);
-	return {
-		...result,
-		blocked:
-			result.status === "needs-human"
-				? compensationBlockers(plan, result.events, deploymentId)
-				: [],
-	};
-}
-
-async function compensate(
-	deps: CompensationDeps,
-	plan: DeploymentPlan,
-	deploymentId: string,
-	triggeringFailure: { resourceId: string; reason: string },
-	ctx: CompensationContext,
-): Promise<Omit<CompensationResult, "blocked">> {
 	plan = structuredClone(plan);
 	triggeringFailure = { ...triggeringFailure };
 	const resourceIds = transitionResourceNames(plan);
@@ -303,7 +188,8 @@ async function compensate(
 				resource.state === "Provisioning" ||
 				resource.state === "Destroying" ||
 				(resource.state === "Failed" &&
-					(resource.hasProvisionedBaseline === true ||
+					(state.legacy ||
+						resource.hasProvisionedBaseline === true ||
 						resource.specHash !== undefined)),
 		);
 		return {
@@ -359,6 +245,8 @@ async function compensate(
 	const byName = new Map(plan.resources.map((r) => [r.name, r]));
 	const destroyedOrder: string[] = [];
 
+	// Walk reverse-dependency order, destroying each provisioned actor once its
+	// live dependents are gone.
 	let progressed = true;
 	while (progressed) {
 		progressed = false;
@@ -392,6 +280,8 @@ async function compensate(
 		for (const resourceId of reverseDependencyOrder(plan, states)) {
 			const state = states.get(resourceId);
 			if (state === "Destroyed") continue;
+			// Only compensate resources that actually got provisioned (an
+			// interrupted in-place update still exists at the provider).
 			if (
 				state !== "Provisioned" &&
 				state !== "Updating" &&
@@ -404,6 +294,7 @@ async function compensate(
 			)
 				continue;
 
+			// Gate: all dependents must already be Destroyed (reverse order).
 			const liveDependents = dependentsOf(plan, resourceId).filter((depId) => {
 				const s = states.get(depId);
 				return (
@@ -443,35 +334,10 @@ async function compensate(
 				},
 			);
 			if (outcome.kind === "failed") {
-				const reason = outcome.reason.trim() || "provider destroy failed";
-				events = await readHistory();
-				const fenceToken = currentFenceToken(deps.store, stream);
-				await emit(
-					deps.store,
-					stream,
-					[
-						resourceCompensationFailed({
-							deploymentId,
-							resourceId,
-							reason,
-							outcome: outcome.outcome,
-						}),
-						incidentEscalationRequested({
-							deploymentId,
-							resourceId,
-							reason: "compensation-failed",
-						}),
-					],
-					{
-						expectedSeq: events.at(-1)?.seq ?? 0,
-						...(fenceToken !== undefined ? { fenceToken } : undefined),
-						...appendOpts,
-					},
-				);
 				events = await readHistory();
 				return { status: "needs-human", destroyedOrder, events };
 			}
-			if (outcome.kind === "destroyed") destroyedOrder.push(resourceId);
+			destroyedOrder.push(resourceId);
 			progressed = true;
 			break;
 		}
@@ -520,7 +386,11 @@ async function compensate(
 		stream,
 		[
 			deploymentTransitionCompleted(transition),
-			deploymentRolledBack({ deploymentId }),
+			deploymentRolledBack({
+				deploymentId,
+				targetSetId: `${deploymentId}-previous-set`,
+				reason: `resource ${transition.triggerResource} crossed no-go threshold: ${transition.reason}`,
+			}),
 		],
 		{
 			expectedSeq: lastSeq,
@@ -530,7 +400,7 @@ async function compensate(
 	);
 	events = await readHistory();
 	const finished = foldDeploymentTransition(events);
-	if (finished.status !== "closed")
+	if (finished.status !== "closed" || finished.legacy)
 		throw new Error("rollback transition completion could not be confirmed");
 	return { status: "rolled-back", destroyedOrder, events };
 }

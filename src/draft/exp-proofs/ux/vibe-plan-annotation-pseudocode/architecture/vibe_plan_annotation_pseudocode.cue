@@ -33,7 +33,7 @@ import "list"
 	issue:               "HOBO-543"
 	phase:               "M1"
 	targetPackagePath:   "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode"
-	proofNotePath:       "urn:hobo:proof:vibe-plan-annotation-pseudocode"
+	proofNotePath:       "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md"
 	designRefs:          [...string] & list.MinItems(1)
 	annotations:         [...#PlanAnnotationFixture] & list.MinItems(6)
 	contractFixtures:    #PlanAnnotationContractFixtures

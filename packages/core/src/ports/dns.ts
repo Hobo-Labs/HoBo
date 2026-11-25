@@ -1,3 +1,14 @@
+/**
+ * Pluggable public/custom DNS management.
+ *
+ * managedBy:
+ *  - "hobo"           → HoBo reconciles entrypoint records via a DnsProvider
+ *  - "cloud-provider" → platform owns the zone; HoBo may only suggest records
+ *  - "none"           → no public DNS ownership
+ *
+ * Public records must target authenticated gateways only (never raw overlay IPs).
+ */
+
 import type { TenantId } from "./tenant.js";
 
 export type DnsManagedBy = "hobo" | "cloud-provider" | "none";
@@ -19,6 +30,7 @@ export interface DnsRecord {
 	readonly type: DnsRecordType;
 	readonly content: string;
 	readonly ttl?: number;
+	/** When true, content is an authenticated gateway hostname / anycast entry. */
 	readonly gatewayTarget: boolean;
 }
 
@@ -27,6 +39,10 @@ export interface PublicDnsConfig {
 	readonly provider: DnsProviderKind;
 	readonly zone?: string;
 	readonly credentials?: Readonly<Record<string, string>>;
+	/**
+	 * Allowed gateway host patterns for public records when managedBy=hobo.
+	 * Example: `*.ts.net`, `*.cloudflareaccess.com`, `*.cfargotunnel.com`.
+	 */
 	readonly allowedGatewaySuffixes?: readonly string[];
 }
 
@@ -44,6 +60,7 @@ export interface DnsProvider {
 
 export interface PublicDnsManager {
 	readonly config: PublicDnsConfig;
+	/** Reconcile entrypoint records when managedBy=hobo; no-op ownership otherwise. */
 	reconcileEntrypoint(input: {
 		readonly tenantId: TenantId;
 		readonly hostname: string;

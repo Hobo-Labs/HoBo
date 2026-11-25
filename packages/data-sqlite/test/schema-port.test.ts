@@ -1,3 +1,5 @@
+// The schema-apply port over a real SQLite file: where a snapshot is written,
+// and that no SQL handed to a phase or a verify is silently left unrun.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -15,6 +17,7 @@ afterEach(() => {
 	for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
+/** A store file holding one table, `t`, with one row. */
 function storeFile(): string {
 	const { dir, remove } = tempDir("hobo-sqlite-schema-");
 	cleanups.push(remove);
@@ -27,6 +30,7 @@ function storeFile(): string {
 	return file;
 }
 
+/** A port as a new process would open it: its own instance, its own state. */
 function port(file: string): SqliteSchemaApplyPort {
 	const opened = createSqliteSchemaApplyPort({ path: file, clock: () => NOW });
 	cleanups.push(() => opened.close());
@@ -42,11 +46,14 @@ function columns(schema: SqliteSchemaApplyPort): string[] {
 describe("schema snapshots", () => {
 	test("a re-run after a crash never snapshots over the pre-migration copy", () => {
 		const file = storeFile();
+		// First run: snapshot, then the migration gets half way and the process
+		// dies. The port instance, and anything it counted, goes with it.
 		const crashed = createSqliteSchemaApplyPort({ path: file });
 		const before = crashed.snapshot();
 		crashed.applyPhase("expand", ["ALTER TABLE t ADD COLUMN half_done TEXT"]);
 		crashed.close();
 		const original = readFileSync(before.ref);
+		// The re-run snapshots again, from a new port.
 		const rerun = port(file);
 		const second = rerun.snapshot();
 		assert.notEqual(second.ref, before.ref);
@@ -54,6 +61,7 @@ describe("schema snapshots", () => {
 			readFileSync(before.ref).equals(original),
 			"the pre-migration snapshot is byte for byte what it was",
 		);
+		// Rolling back to the first snapshot reaches the pre-migration schema.
 		rerun.restore(before);
 		assert.deepEqual(columns(rerun), ["id"]);
 	});
@@ -95,6 +103,7 @@ describe("schema phases", () => {
 			"UPDATE t SET id = id || '-x'",
 		]);
 		assert.equal(backfill.changes, 5);
+		// DDL right after DML used to repeat the DML's count.
 		const expand = schema.applyPhase("expand", [
 			"ALTER TABLE t ADD COLUMN a TEXT",
 		]);
@@ -108,6 +117,7 @@ describe("schema phases", () => {
 				schema.verify("SELECT id FROM t WHERE id = 'absent'; SELECT id FROM t"),
 			{ name: "SqliteDataError", code: "SCHEMA_QUERY_NOT_SINGLE" },
 		);
+		// A terminator, whitespace and comments after the statement are not SQL.
 		assert.deepEqual(
 			schema
 				.verify("SELECT id FROM t ; -- every row\n /* done */ ;\n")

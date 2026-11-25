@@ -1,3 +1,15 @@
+// CampInventory (D19): an event-sourced actor per Camp on
+// `cd-camp-inventory-<id>`, a Camp-set registry on `cd-campset-<name>`, and a
+// canonical snapshot whose digest placement decisions record (I18).
+//
+// Commands: observe, taint, untaint, manage, defineSet, tick.
+// Events:   camp.StatusChanged (full CampStatusRecord; the fold reads only
+//           this), camp.Tainted / camp.Untainted / camp.ManagementChanged
+//           (audit, appended atomically with the StatusChanged they explain),
+//           campset.Defined (CampSetRecord).
+// Projection: an in-memory per-Camp view caught up from the stream before
+//           every command (CAS on the stream revision, retried on conflict),
+//           so several Station replicas stay consistent.
 import {
 	create,
 	type JsonObject,
@@ -10,6 +22,12 @@ import type {
 	EventPosition,
 	PrincipalRef,
 } from "@hobo/core";
+import {
+	Availability,
+	MemberKind,
+	MemberState,
+	parseFleetId,
+} from "@hobo/fleet";
 import {
 	type CampClaimRecord,
 	CampClaimRecordSchema,
@@ -34,6 +52,7 @@ import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../events.js";
 import type {
 	CampId,
 	CampInventory,
+	CampMembers,
 	CampTopology,
 	CampView,
 	CdAction,
@@ -53,6 +72,7 @@ import {
 	defaultStatus,
 	deriveStatus,
 	isAutomaticNoPlace,
+	type MemberLifecycle,
 	negativeSignals,
 	noRunPermitted,
 	sameStatus,
@@ -88,8 +108,23 @@ export type CampInventoryDeps = CdBase & {
 	readonly desired: DesiredStateReader;
 	readonly authorizer: CdAuthorizer;
 	readonly telemetry: TelemetrySink;
+	readonly members?: CampMembers | undefined;
 };
 
+export type { CampMembers };
+
+const MEMBER_NAME_MAX = 63;
+
+export function campMemberName(campId: string): string {
+	const last = campId.slice(campId.lastIndexOf("/") + 1).toLowerCase();
+	const token = last
+		.replace(/[^a-z0-9_-]+/gu, "-")
+		.replace(/^[-_]+/u, "")
+		.slice(0, MEMBER_NAME_MAX);
+	return token === "" ? "camp" : token;
+}
+
+/** Reconcile status events the Station appends on `cd-camp-status-<id>`: each is Station-observed contact. */
 const CONTACT_EVENTS: ReadonlySet<string> = new Set([
 	CD_EVENTS.ReconcileStarted,
 	CD_EVENTS.StatusObserved,
@@ -145,6 +180,11 @@ function contactFromMeta<M>(meta: M): ContactState {
 const latest = (a: number | undefined, b: number | undefined) =>
 	a === undefined ? b : b === undefined ? a : Math.max(a, b);
 
+/**
+ * Merge contact recorded by another replica into this one's: the newest
+ * observation of each kind wins, and credential state follows whichever side
+ * reported the credential last.
+ */
 export function mergeContact(
 	mine: ContactState,
 	recorded: ContactState,
@@ -189,6 +229,7 @@ function canonicalTopology(topology: CampTopology): CampTopology {
 	return { ...topology, regions: [...topology.regions].sort() };
 }
 
+/** The view of a declared Camp with no recorded status: never contacted, hence NO_PLACE (fail closed). */
 function pristine(topology: CampTopology): CampStatusRecord {
 	const derived = deriveStatus({
 		previous: defaultStatus(topology),
@@ -462,6 +503,40 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		return (await d.rails.forCamp(campId))?.failover;
 	}
 
+	async function memberOf(
+		campId: CampId,
+		topology: CampTopology | undefined,
+	): Promise<MemberLifecycle | undefined> {
+		const members = d.members;
+		if (members === undefined || topology === undefined) return undefined;
+		const fleet = members.fleetOf(topology.yardId);
+		if (fleet === undefined) return undefined;
+		const name = campMemberName(campId);
+		const record = (await members.registry.membersOf(parseFleetId(fleet))).find(
+			(entry) =>
+				entry.memberships.some(
+					(membership) =>
+						membership.fleet === fleet && membership.name === name,
+				),
+		);
+		if (record === undefined)
+			return { active: false, reason: "member-missing" };
+		if (record.state === MemberState.SUSPENDED)
+			return { active: false, reason: "member-suspended" };
+		if (record.state === MemberState.REVOKED)
+			return { active: false, reason: "member-revoked" };
+		if (record.kind !== MemberKind.DEVICE) return { active: true, reason: "" };
+		const view = await members.registry.view(parseFleetId(fleet));
+		const observed = view?.members.find(
+			(entry) => entry.memberId === record.memberId,
+		);
+		return {
+			active: true,
+			reason: "",
+			observedLost: observed?.availability === Availability.LOST,
+		};
+	}
+
 	async function rederive(
 		campId: CampId,
 		status: CampStatusRecord,
@@ -469,17 +544,26 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		contact: ContactState,
 		atMs: number,
 	): Promise<CampStatusRecord> {
+		const member = await memberOf(campId, topology);
 		const first = deriveStatus({
 			previous: status,
 			topology,
 			contact,
 			failover: undefined,
 			atMs,
+			member,
 		});
 		const failover = await failoverFor(campId, first.conditions);
 		return failover === undefined
 			? first
-			: deriveStatus({ previous: status, topology, contact, failover, atMs });
+			: deriveStatus({
+					previous: status,
+					topology,
+					contact,
+					failover,
+					atMs,
+					member,
+				});
 	}
 
 	async function authorize(
@@ -511,6 +595,8 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 	async function scan(atMs: number): Promise<Set<string>> {
 		const active = new Set<string>();
 		if (!scanReady) {
+			// Cold start: activity already in the journal is not contact *now*;
+			// recorded contact comes from the last StatusChanged meta instead.
 			for await (const entry of d.store.readAll({ tenant: d.tenant }))
 				scanCursor = entry.position;
 			scanReady = true;
@@ -1072,6 +1158,7 @@ function noRunRefusal(detail: string): ReasonRecord {
 	);
 }
 
+/** Fold a Station-sourced report of a derived condition into contact state. */
 function stationReport(
 	contact: ContactState,
 	condition: CampConditionRecord,

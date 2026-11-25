@@ -1,3 +1,12 @@
+/**
+ * Browser runtime mock — fetches assets and injects the same postMessage
+ * events the VS Code extension would send.
+ *
+ * In Vite dev, it prefers pre-decoded JSON endpoints from middleware.
+ * In plain browser builds, it falls back to decoding PNGs at runtime.
+ *
+ * Only imported in browser runtime; tree-shaken from VS Code webview runtime.
+ */
 
 import { rgbaToHex } from '../../core/src/assets/colorUtils.ts';
 import {
@@ -27,9 +36,11 @@ interface MockPayload {
   layout: unknown;
 }
 
+// ── Module-level state ─────────────────────────────────────────────────────────
 
 let mockPayload: MockPayload | null = null;
 
+// ── PNG decode helpers (browser fallback) ───────────────────────────────────
 
 interface DecodedPng {
   width: number;
@@ -161,11 +172,17 @@ async function decodeFurnitureFromPng(
   return sprites;
 }
 
+// ── Public API ─────────────────────────────────────────────────────────────────
 
+/**
+ * Call before createRoot() in main.tsx.
+ * Fetches all pre-decoded assets from the Vite dev server and stores them
+ * for dispatchMockMessages().
+ */
 export async function initBrowserMock(): Promise<void> {
   console.log('[BrowserMock] Loading assets...');
 
-  const base = import.meta.env.BASE_URL;
+  const base = import.meta.env.BASE_URL; // '/' in dev, '/sub/' with a subpath, './' in production
 
   const [assetIndex, catalog] = await Promise.all([
     fetch(`${base}assets/asset-index.json`).then((r) => r.json()) as Promise<AssetIndex>,
@@ -205,6 +222,8 @@ export async function initBrowserMock(): Promise<void> {
     ? await fetch(`${base}assets/${assetIndex.defaultLayout}`).then((r) => r.json())
     : null;
 
+  // Carpets only have a decoded-JSON endpoint (no PNG fallback / asset-index
+  // entry); empty array is fine — the carpet tab just won't render variants.
   const carpetSets =
     (shouldTryDecoded
       ? await fetchJsonOptional<string[][][][]>(`${base}assets/decoded/carpets.json`)
@@ -225,6 +244,13 @@ export async function initBrowserMock(): Promise<void> {
   );
 }
 
+/**
+ * Call inside a useEffect in App.tsx -- after the window message listener
+ * in useExtensionMessages has been registered.
+ *
+ * Only used in Vite dev mode (npm run dev). In standalone server mode and
+ * VS Code mode, the server/extension sends all state over the transport.
+ */
 export function dispatchMockMessages(): void {
   if (!mockPayload) return;
 
@@ -242,6 +268,9 @@ export function dispatchMockMessages(): void {
     window.dispatchEvent(new MessageEvent('message', { data }));
   }
 
+  // Must match the load order defined in CLAUDE.md:
+  // characterSpritesLoaded -> floorTilesLoaded -> wallTilesLoaded -> carpetTilesLoaded
+  //   -> furnitureAssetsLoaded -> layoutLoaded
   dispatch({ type: 'characterSpritesLoaded', characters });
   dispatch({ type: 'floorTilesLoaded', sprites: floorSprites });
   dispatch({ type: 'wallTilesLoaded', sets: wallSets });

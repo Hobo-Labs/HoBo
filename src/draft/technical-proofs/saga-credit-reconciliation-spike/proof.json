@@ -6,7 +6,12 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md",
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/reliability-observability-cost.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

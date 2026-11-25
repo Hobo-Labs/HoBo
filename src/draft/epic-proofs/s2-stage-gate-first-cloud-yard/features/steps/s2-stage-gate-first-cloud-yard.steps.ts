@@ -74,7 +74,7 @@ Then("the full five-arm S2 stage-gate drill closes green", () => {
     "timelineProjection",
     "yardRestartResume",
   ]);
-  assert.equal(report.evidencePath, "urn:hobo:requirement:stage-2-first-cloud-yard-acceptance");
+  assert.equal(report.evidencePath, "docs/design/stage-2-first-cloud-yard-acceptance.md");
 });
 
 // --- Scenario: Yard killed mid-deploy resumes within the NFR-009 budget ------

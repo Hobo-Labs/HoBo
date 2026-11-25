@@ -64,6 +64,7 @@ interface ExtensionMessageState {
   layoutWasReset: boolean;
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> };
   workspaceFolders: WorkspaceFolder[];
+  /** Distinct folderNames seen across agents this session — source for the Areas folder dropdown. */
   agentFolderNames: string[];
   externalAssetDirectories: string[];
   lastSeenVersion: string;
@@ -72,9 +73,9 @@ interface ExtensionMessageState {
   setWatchAllSessions: (v: boolean) => void;
   alwaysShowLabels: boolean;
   hooksEnabled: boolean;
-  hooksAvailable: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
+  // Areas
   areaMappings: Record<string, string[]>;
   setAreaMappings: (m: Record<string, string[]>) => void;
   showAreas: boolean;
@@ -116,14 +117,15 @@ export function useExtensionMessages(
   const [watchAllSessions, setWatchAllSessions] = useState(false);
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
-  const [hooksAvailable, setHooksAvailable] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
 
+  // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
 
   useEffect(() => {
+    // Buffer agents from existingAgents until layout is loaded
     let pendingAgents: Array<{
       id: number;
       palette?: number;
@@ -132,6 +134,9 @@ export function useExtensionMessages(
       folderName?: string;
     }> = [];
 
+    // Accumulate distinct folderNames seen across agents (never removed during the
+    // session): the source for the Areas folder-mapping dropdown, so a folder stays
+    // editable even after its agents close.
     const noteFolderName = (name?: string) => {
       if (!name) return;
       setAgentFolderNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
@@ -140,6 +145,11 @@ export function useExtensionMessages(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (msg: any) => {
       const os = getOfficeState();
+      // CI / e2e diagnostic: record every received transport message on the
+      // window-side log. The fixture reads window.__pixelAgentsTestHooks.
+      // messageLog and attaches as JSON so CI failures can see the exact
+      // sequence of messages the webview actually processed. Gated on the e2e
+      // harness flag so this unbounded log never grows in a real session.
       if (isE2E && typeof window !== 'undefined') {
         if (!window.__pixelAgentsTestHooks) window.__pixelAgentsTestHooks = {};
         if (!window.__pixelAgentsTestHooks.messageLog) {
@@ -165,6 +175,7 @@ export function useExtensionMessages(
       }
 
       if (msg.type === 'layoutLoaded') {
+        // Skip external layout updates while editor has unsaved changes
         if (layoutReadyRef.current && isEditDirty?.()) {
           console.log('[Webview] Skipping external layout update — editor has unsaved changes');
           return;
@@ -175,8 +186,10 @@ export function useExtensionMessages(
           os.rebuildFromLayout(layout);
           onLayoutLoaded?.(layout);
         } else {
+          // Default layout — snapshot whatever OfficeState built
           onLayoutLoaded?.(os.getLayout());
         }
+        // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {
           os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
         }
@@ -197,15 +210,19 @@ export function useExtensionMessages(
         const teammateParentId = msg.parentAgentId as number | undefined;
         const teamName = msg.teamName as string | undefined;
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        // Don't auto-select teammates (keep focus on lead)
         if (!isTeammate) {
           setSelectedAgent(id);
         }
         if (isTeammate && teammateParentId !== undefined) {
+          // Teammate: inherit parent's palette and workspace folderName (teammate runs
+          // in the same workspace as the lead). Name shown via agentName (teamRoleLabel).
           const parentCh = os.characters.get(teammateParentId);
           const palette = parentCh ? parentCh.palette : undefined;
           const hueShift = parentCh ? parentCh.hueShift : undefined;
           os.addAgent(id, palette, hueShift, undefined, undefined, parentCh?.folderName);
           noteFolderName(parentCh?.folderName);
+          // Set team metadata on the character
           const ch = os.characters.get(id);
           if (ch) {
             ch.leadAgentId = teammateParentId;
@@ -239,6 +256,7 @@ export function useExtensionMessages(
           delete next[id];
           return next;
         });
+        // Remove all sub-agent characters belonging to this agent
         os.removeAllSubagents(id);
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
         os.removeAgent(id);
@@ -249,6 +267,7 @@ export function useExtensionMessages(
           { palette?: number; hueShift?: number; seatId?: string }
         >;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
+        // Buffer agents — they'll be added in layoutLoaded after seats are built
         for (const id of incoming) {
           const m = meta[id];
           pendingAgents.push({
@@ -289,9 +308,18 @@ export function useExtensionMessages(
         const toolName = (msg.toolName as string | undefined) ?? extractToolName(status);
         os.setAgentTool(id, toolName);
         os.setAgentActive(id, true);
+        // Don't clear the permission bubble if the hook already confirmed permission is needed
         if (!permissionActive) {
           os.clearPermissionBubble(id);
         }
+        // Create sub-agent character for Task/Agent tool subtasks.
+        // agentToolStart for Task/Agent is always emitted via JSONL (with the stable
+        // toolu_* id), never from the hook path — handlePreToolUse skips these tools.
+        // runInBackground routing:
+        //   - parent HAS teamName: teammate path (onTeammateDetected) creates the
+        //     teammate; we skip here so we don't spawn a ghost sub-agent alongside.
+        //   - parent has NO teamName: no teammate path exists, so we must still
+        //     create the Subtask sub-character or the background task is invisible.
         const runInBackground = msg.runInBackground as boolean | undefined;
         const parentChar = os.characters.get(id);
         const parentHasTeam = !!parentChar?.teamName;
@@ -328,6 +356,9 @@ export function useExtensionMessages(
           delete next[id];
           return next;
         });
+        // Remove all sub-agent characters belonging to this agent.
+        // Exception: team leads with inline teammates -- their sub-agents represent
+        // real teammates and should only be removed by SubagentStop/subagentClear.
         const clearCh = os.characters.get(id);
         const hasInlineTeammates =
           clearCh?.teamName && clearCh?.isTeamLead && !clearCh?.teamUsesTmux;
@@ -372,6 +403,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'subagentToolPermission') {
         const id = msg.id as number;
         const parentToolId = msg.parentToolId as string;
+        // Show permission bubble on the sub-agent character
         const subId = os.getSubagentId(id, parentToolId);
         if (subId !== null) {
           os.showPermissionBubble(subId);
@@ -389,6 +421,7 @@ export function useExtensionMessages(
           };
         });
         os.clearPermissionBubble(id);
+        // Also clear permission bubbles on all sub-agent characters of this parent
         for (const [subId, meta] of os.subagentMeta) {
           if (meta.parentAgentId === id) {
             os.clearPermissionBubble(subId);
@@ -408,6 +441,9 @@ export function useExtensionMessages(
             [id]: { ...agentSubs, [parentToolId]: [...list, { toolId, status, done: false }] },
           };
         });
+        // Update sub-agent character's tool and active state. The sub-agent was
+        // created by an earlier agentToolStart from JSONL using the same (real)
+        // parentToolId, so this lookup resolves.
         const subId = os.getSubagentId(id, parentToolId);
         if (subId !== null) {
           const subToolName = extractToolName(status);
@@ -446,6 +482,7 @@ export function useExtensionMessages(
           }
           return { ...prev, [id]: next };
         });
+        // Remove sub-agent character
         os.removeSubagent(id, parentToolId);
         setSubagentCharacters((prev) =>
           prev.filter((s) => !(s.parentAgentId === id && s.parentToolId === parentToolId)),
@@ -495,7 +532,6 @@ export function useExtensionMessages(
         const folders = msg.folders as WorkspaceFolder[];
         setWorkspaceFolders(folders);
       } else if (msg.type === 'settingsLoaded') {
-        setHooksAvailable(msg.hooksAvailable !== false);
         const soundOn = msg.soundEnabled as boolean;
         setSoundEnabled(soundOn);
         if (typeof msg.watchAllSessions === 'boolean') {
@@ -531,6 +567,7 @@ export function useExtensionMessages(
           const catalog = msg.catalog as FurnitureAsset[];
           const sprites = msg.sprites as Record<string, string[][]>;
           console.log(`📦 Webview: Loaded ${catalog.length} furniture assets`);
+          // Build dynamic catalog immediately so getCatalogEntry() works when layoutLoaded arrives next
           buildDynamicCatalog({ catalog, sprites });
           setLoadedAssets({ catalog, sprites });
         } catch (err) {
@@ -576,7 +613,6 @@ export function useExtensionMessages(
     setWatchAllSessions,
     alwaysShowLabels,
     hooksEnabled,
-    hooksAvailable,
     setHooksEnabled,
     hooksInfoShown,
     areaMappings,

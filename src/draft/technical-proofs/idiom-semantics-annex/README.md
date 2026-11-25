@@ -5,9 +5,9 @@ conformance lane from golden-IR lowering equivalence.
 
 ## Requirements Source
 
-- `urn:hobo:requirement:wasm-runtime-wit`: `hobo:sdk` plus idiom layers, parity is proven.
-- `urn:hobo:decision:adr-0072`: WIT-first SDK and bounded idiom semantics.
-- `urn:hobo:decision:adr-0093`: semantics annex lane decision.
+- `docs/design/wasm-runtime-wit.md`: `hobo:sdk` plus idiom layers, parity is proven.
+- `docs/design/adr/01-architecture-core.md#adr-0072`: WIT-first SDK and bounded idiom semantics.
+- `docs/design/adr/01-architecture-core.md#adr-0093`: semantics annex lane decision.
 
 ## What This Proves
 
@@ -31,9 +31,11 @@ npm.cmd --prefix src\draft\technical-proofs\idiom-semantics-annex test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Idiom Semantics Annex.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

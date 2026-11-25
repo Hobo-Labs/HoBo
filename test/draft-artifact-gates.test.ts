@@ -61,6 +61,7 @@ async function scaffoldTechnical(
 					technicalProofs: [],
 					epicProofs: [],
 					expProofs: [],
+					designDocs: [],
 				},
 				artifacts: {
 					examples: "examples",
@@ -273,11 +274,11 @@ test("proof backfill records actual proof imports without promoting design docum
 	await mkdir(path.join(root, "src/draft/technical-proofs/named"), {
 		recursive: true,
 	});
-	await mkdir(path.join(root, "docs/guide"), { recursive: true });
-	await writeFile(path.join(root, "docs/guide/old.md"), "# Prior guide\n");
+	await mkdir(path.join(root, "docs/design"), { recursive: true });
+	await writeFile(path.join(root, "docs/design/old.md"), "# Prior design\n");
 	await writeFile(
 		path.join(pkg, "README.md"),
-		"# Example\n\n[Prior guide](../../../../docs/guide/old.md)\n\n```mermaid\na-->b\n```\n",
+		"# Example\n\n[Prior design](../../../../docs/design/old.md)\n\n```mermaid\na-->b\n```\n",
 	);
 	await writeFile(
 		path.join(pkg, "src/index.ts"),
@@ -291,6 +292,7 @@ test("proof backfill records actual proof imports without promoting design docum
 		],
 		epicProofs: [],
 		expProofs: [],
+		designDocs: [],
 	});
 	assert.deepEqual(artifactsFor(workspace, "technical", root).diagrams, []);
 });

@@ -1,6 +1,22 @@
+/**
+ * Killing a migration run at an exact side effect.
+ *
+ * `afterPhase` stops a run only after a phase's fact is journaled — the one
+ * place a crash is harmless. The windows that matter are inside a phase: a
+ * fence was raised and nobody recorded it, authority flipped and the process
+ * died before it heard back, a retire committed and its fact was never
+ * written. A `CrashInjector` sits in front of every port, the journal and the
+ * caller's callbacks, counts side effects, and kills the run at one of them —
+ * either before it ran, or after it ran and before anyone heard back.
+ *
+ * The conformance kit uses it to hold every engine to the same crash windows;
+ * the executor tests use it to sweep every side effect of the reference
+ * engine in turn.
+ */
 import type { MigrationJournal } from "./facts.js";
 import type { EngineBinding } from "./spi.js";
 
+/** The process died. Everything it tries afterwards fails the same way. */
 export class InjectedCrash extends Error {
 	constructor(at: string) {
 		super(`process died at ${at}`);
@@ -9,14 +25,23 @@ export class InjectedCrash extends Error {
 }
 
 export const CRASH_MODES = ["before", "after"] as const;
+/** `before`: the call never ran. `after`: it ran, and nobody heard back. */
 export type CrashMode = (typeof CRASH_MODES)[number];
 
+/** Where a crash falls: the Nth side effect of a run, or the Nth of one name. */
 export interface CrashPoint {
+	/** 1-based. Counted over every side effect, or over those named `effect`. */
 	readonly occurrence: number;
+	/** The side effect's name, e.g. `source.fence.raise`; absent counts them all. */
 	readonly effect?: string;
 	readonly mode: CrashMode;
 }
 
+/**
+ * Counts side effects and kills the run at one of them. Once dead, every
+ * further call through a wrapped port, journal or callback throws: a dead
+ * process does not run its `catch` blocks against the stores either.
+ */
 export class CrashInjector {
 	calls = 0;
 	dead = false;
@@ -36,6 +61,7 @@ export class CrashInjector {
 		return this.#matched === point.occurrence;
 	}
 
+	/** A side effect: counted, and the place a crash can fall. */
 	async effect<T>(name: string, action: () => T | Promise<T>): Promise<T> {
 		if (this.dead) throw new InjectedCrash(name);
 		this.calls += 1;
@@ -46,11 +72,13 @@ export class CrashInjector {
 		throw new InjectedCrash(name);
 	}
 
+	/** A read: not counted, but a dead process cannot make it. */
 	async read<T>(name: string, action: () => T | Promise<T>): Promise<T> {
 		if (this.dead) throw new InjectedCrash(name);
 		return action();
 	}
 
+	/** How many times each side effect ran, by name. */
 	counts(): ReadonlyMap<string, number> {
 		const counts = new Map<string, number>();
 		for (const name of this.trace) {
@@ -60,6 +88,11 @@ export class CrashInjector {
 	}
 }
 
+/**
+ * A binding whose every port goes through `injector`. A side effect is named
+ * `<side>.<port>.<method>` (`source.fence.raise`, `target.native.stop`), with
+ * the one-method ports shortened to `<side>.apply` and `<side>.retire`.
+ */
 export function crashingBinding(
 	binding: EngineBinding,
 	side: string,
@@ -203,6 +236,7 @@ export function crashingBinding(
 	};
 }
 
+/** A journal whose appends are side effects named `journal.append <Fact>`. */
 export function crashingJournal(
 	journal: MigrationJournal,
 	injector: CrashInjector,

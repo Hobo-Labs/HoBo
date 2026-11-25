@@ -1,3 +1,4 @@
+/** Accept ISO timestamps or Unix epoch seconds (Reproducible Builds / CI deps image). */
 export function parseSourceDateEpochMs(sourceDateEpoch: string): number {
 	const raw = sourceDateEpoch.trim();
 	if (!raw) return Number.NaN;

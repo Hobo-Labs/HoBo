@@ -20,6 +20,12 @@ import { slow } from "./support/slow.js";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
 
+/**
+ * The app reads `process.env`. `nodeTypes` gives it the repository's real
+ * `@types/node` (about 140 declaration files, 15-25 CPU s per codegen pass);
+ * otherwise one ambient declaration types it, which is all the refusal cases
+ * need: they assert on what `build` refuses, not on Node's types.
+ */
 async function project(nodeTypes = false): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "hobo-node-app-build-"));
 	await mkdir(join(root, "src/lib"), { recursive: true });
@@ -40,7 +46,7 @@ async function project(nodeTypes = false): Promise<string> {
 		baseUrl: ".",
 		paths: { "~/*": ["src/*"] },
 	};
-
+	// With Node's types the app's own files are still checked; Node's declarations are not ours to check.
 	const compilerOptions = nodeTypes
 		? { ...shared, types: ["node"], skipLibCheck: true }
 		: { ...shared, types: [] };
@@ -194,7 +200,7 @@ describe("plain TypeScript Node app build", () => {
 				expect(
 					await readFile(join(root, ".hobo/build/build-manifest.json"), "utf8"),
 				).toBe(before);
-
+				// The deployment artifact must run after all authored/generated TS sources are gone.
 				await rm(join(root, "src"), { recursive: true, force: true });
 				const consumer = join(root, "isolated-consumer");
 				await mkdir(consumer);
@@ -312,7 +318,7 @@ getAppModule("missing.ts");
 					ok: false,
 					code: "HOBO_BUILD_RUNTIME_INVALID",
 				});
-
+				// The cases share the project, so a refusal must leave it as it found it.
 				await expect(
 					readFile(join(root, ".hobo/build/build-manifest.json")),
 				).rejects.toMatchObject({ code: "ENOENT" });
@@ -332,7 +338,8 @@ getAppModule("missing.ts");
 						["build", "--runtime", "wasm", "--json"],
 						{ cwd: root },
 					);
-
+					// The digest check treats the directory as a mismatch, so the freshness
+					// gate answers with a JSON refusal, as it did before the early refusals.
 					expect(JSON.parse(result.stdout)).toMatchObject({
 						ok: false,
 						code: "HOBO_BUILD_CODEGEN_DRIFT",
@@ -356,7 +363,7 @@ getAppModule("missing.ts");
 						["build", "--runtime", "wasm", "--json"],
 						{ cwd: root },
 					);
-
+					// A stale imprint is no evidence of what the app is, so the gate answers.
 					expect(JSON.parse(result.stdout)).toMatchObject({
 						ok: false,
 						code: "HOBO_BUILD_CODEGEN_DRIFT",

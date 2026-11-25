@@ -31,6 +31,7 @@ import type {
 	Outcome,
 	TelemetrySink,
 } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { CD_METRICS } from "../telemetry/semconv.js";
 import { authzRefusal } from "./errors.js";
 import {
@@ -176,11 +177,9 @@ export function createCdAuthorizer(d: CdAuthorizerDeps): CdDecisionAuthorizer {
 		attributes: Readonly<Record<string, string>>,
 	): void {
 		if (!d.telemetry) return;
-		d.telemetry
-			.metrics([
-				{ name, kind: "counter", value: 1, unit: "1", atMs, attributes },
-			])
-			.catch(() => undefined);
+		emitMetrics(d.telemetry, [
+			{ name, kind: "counter", value: 1, unit: "1", atMs, attributes },
+		]);
 	}
 
 	async function history(
@@ -318,11 +317,6 @@ export function createCdAuthorizer(d: CdAuthorizerDeps): CdDecisionAuthorizer {
 			policyIds = [...evaluation.decision.evidence.policyIds];
 			inputHash = evaluation.decision.evidence.inputHash;
 			violations = evaluation.decision.violations;
-			policyError = violations.some(
-				(violation) =>
-					isText(violation) &&
-					violation.startsWith("policy-rule-evaluation-failed:"),
-			);
 		} catch (error) {
 			policyError = true;
 			effect = "deny";

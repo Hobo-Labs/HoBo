@@ -1,11 +1,20 @@
+/**
+ * AgentRuntime: shared agent lifecycle core for VS Code and standalone modes.
+ *
+ * Owns all infrastructure that both PixelAgentsViewProvider (VS Code) and the
+ * standalone CLI need: timer Maps, file watchers, HookEventHandler, DismissalTracker,
+ * session scanning, and agent removal. Adapters (VS Code, CLI) create an instance
+ * and register platform-specific lifecycle callbacks.
+ *
+ * This is the single source of truth for agent lifecycle wiring. No duplication.
+ */
+
 import * as fs from 'fs';
 import * as path from 'path';
 
-import type { FileProvider, HookProvider } from '../../core/src/provider.js';
-import { SESSION_PROVIDER_PROTOCOL_VERSION } from '../../core/src/provider.js';
+import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { DismissalTracker } from './dismissalTracker.js';
-import type { TranscriptContext } from './fileWatcher.js';
 import {
   adoptExternalSessionFromHook,
   ensureProjectScan,
@@ -14,8 +23,9 @@ import {
   scanForTeammateFiles,
   setAgentRemovalCallback,
   setDismissalTracker,
-  setSessionProvider,
+  setHookProvider as setFileWatcherHookProvider,
   setTeammateRemovalCallback,
+  setTeamProvider,
   startExternalSessionScanning,
   startFileWatching,
   startStaleExternalAgentCheck,
@@ -25,75 +35,68 @@ import { HookEventHandler } from './hookEventHandler.js';
 import { PathSet } from './pathKey.js';
 import { SessionRouter } from './sessionRouter.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
-import { setTranscriptProvider } from './transcriptParser.js';
+import { setHookProvider } from './transcriptParser.js';
 import type { AgentState } from './types.js';
 
+/** Callbacks that adapters register for platform-specific behavior. */
 export interface RuntimeLifecycleCallbacks {
+  /** Called after an agent is removed. Adapters use this to dismiss JSONL files, etc. */
   onAgentRemoved?: (agentId: number, agent: AgentState) => void;
+  /** Called when a teammate is removed. */
   onTeammateRemoved?: (teammateId: number, agent: AgentState, source: string) => void;
 }
 
 export class AgentRuntime {
+  // Per-agent timer Maps (shared by all fileWatcher/hookEventHandler operations)
   readonly fileWatchers = new Map<number, fs.FSWatcher>();
   readonly pollingTimers = new Map<number, ReturnType<typeof setInterval>>();
   readonly waitingTimers = new Map<number, ReturnType<typeof setTimeout>>();
   readonly permissionTimers = new Map<number, ReturnType<typeof setTimeout>>();
   readonly jsonlPollTimers = new Map<number, ReturnType<typeof setInterval>>();
 
+  // Scanning state. PathSet (not Set) so a transcript adopted via hooks is still
+  // recognized as known when a scanner rebuilds the path from the workspace folder
+  // -- the two spellings differ by drive-letter case on Windows.
   readonly knownJsonlFiles = new PathSet();
   readonly projectScanTimer = { current: null as ReturnType<typeof setInterval> | null };
   readonly activeAgentId = { current: null as number | null };
   private externalScanTimer: ReturnType<typeof setInterval> | null = null;
   private staleCheckTimer: ReturnType<typeof setInterval> | null = null;
 
+  // Configuration refs (mutable, shared with scanners)
   readonly watchAllSessions = { current: false };
-  readonly supportsHooks: boolean;
-  readonly hooksEnabled: { current: boolean };
+  readonly hooksEnabled = { current: true };
 
+  // Dependencies
   readonly dismissalTracker = new DismissalTracker();
-  private hookEventHandler: HookEventHandler | null;
+  private hookEventHandler: HookEventHandler;
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
 
   constructor(
     private readonly store: AgentStateStore,
-    private readonly provider: HookProvider | FileProvider<TranscriptContext>,
+    provider: HookProvider,
   ) {
-    if (
-      provider.kind === 'file' &&
-      provider.protocolVersion !== SESSION_PROVIDER_PROTOCOL_VERSION
-    ) {
-      throw new Error(`unsupported file provider protocol version: ${provider.protocolVersion}`);
-    }
-    this.supportsHooks = provider.kind === 'hook';
-    const supportsHooks = this.supportsHooks;
-    let hooksEnabled = supportsHooks;
-    this.hooksEnabled = {
-      get current() {
-        return hooksEnabled;
-      },
-      set current(value: boolean) {
-        hooksEnabled = supportsHooks && value;
-      },
-    };
+    // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
-    setTranscriptProvider(store, provider);
-    setSessionProvider(store, provider);
+    setHookProvider(provider);
+    setFileWatcherHookProvider(provider);
+    if (provider.team) {
+      setTeamProvider(provider.team);
+    }
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
 
-    this.hookEventHandler =
-      provider.kind === 'hook'
-        ? new HookEventHandler(
-            store,
-            this.waitingTimers,
-            this.permissionTimers,
-            provider,
-            new SessionRouter(),
-            this.watchAllSessions,
-          )
-        : null;
+    this.hookEventHandler = new HookEventHandler(
+      store,
+      this.waitingTimers,
+      this.permissionTimers,
+      provider,
+      new SessionRouter(),
+      this.watchAllSessions,
+    );
 
-    this.hookEventHandler?.setLifecycleCallbacks({
+    // Wire hook lifecycle callbacks to shared agent operations
+    this.hookEventHandler.setLifecycleCallbacks({
       onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
         if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
@@ -154,6 +157,8 @@ export class AgentRuntime {
           this.waitingTimers,
           this.permissionTimers,
           () => this.store.persist(),
+          // Don't register inline teammates: they share the lead's sessionId
+          // and registering them would overwrite the lead in the session router.
           undefined,
         );
       },
@@ -176,32 +181,43 @@ export class AgentRuntime {
     });
   }
 
+  /** Register adapter-specific lifecycle callbacks. */
   setLifecycleCallbacks(callbacks: RuntimeLifecycleCallbacks): void {
     this.lifecycleCallbacks = callbacks;
   }
 
+  // ── Hook event routing ──
+
+  /** Route an incoming hook event to the appropriate agent. */
   handleHookEvent(providerId: string, event: Record<string, unknown>): void {
-    this.hookEventHandler?.handleEvent(providerId, event as HookEvent);
+    this.hookEventHandler.handleEvent(providerId, event as HookEvent);
   }
 
+  /** Register an agent with the hook event handler for session->agent mapping. */
   registerAgent(sessionId: string, agentId: number): void {
-    this.hookEventHandler?.registerAgent(sessionId, agentId);
+    this.hookEventHandler.registerAgent(sessionId, agentId);
   }
 
+  /** Unregister an agent from the hook event handler. */
   unregisterAgent(sessionId: string): void {
-    this.hookEventHandler?.unregisterAgent(sessionId);
+    this.hookEventHandler.unregisterAgent(sessionId);
   }
 
+  // ── Agent removal (shared cleanup) ──
+
+  /** Remove an agent: stop watchers, cancel timers, delete from store. */
   removeAgent(id: number): void {
     const agent = this.store.get(id);
     if (!agent) return;
 
+    // Stop JSONL poll timer
     const jpTimer = this.jsonlPollTimers.get(id);
     if (jpTimer) {
       clearInterval(jpTimer);
     }
     this.jsonlPollTimers.delete(id);
 
+    // Stop file watching
     this.fileWatchers.get(id)?.close();
     this.fileWatchers.delete(id);
     const pt = this.pollingTimers.get(id);
@@ -210,15 +226,19 @@ export class AgentRuntime {
     }
     this.pollingTimers.delete(id);
 
+    // Cancel timers
     cancelWaitingTimer(id, this.waitingTimers);
     cancelPermissionTimer(id, this.permissionTimers);
 
+    // Notify adapter before deleting from store
     this.lifecycleCallbacks.onAgentRemoved?.(id, agent);
 
+    // Remove from store (fires agentRemoved event) and persist
     this.store.delete(id);
     this.store.persist();
   }
 
+  /** Remove a single teammate agent. */
   removeTeammate(teammateId: number, source: string): void {
     const agent = this.store.get(teammateId);
     if (!agent) return;
@@ -229,6 +249,7 @@ export class AgentRuntime {
     this.removeAgent(teammateId);
   }
 
+  /** Remove all teammates of a lead agent. */
   removeTeammates(leadId: number): void {
     const teammates: number[] = [];
     for (const [id, agent] of this.store) {
@@ -247,6 +268,9 @@ export class AgentRuntime {
     }
   }
 
+  // ── Scanning ──
+
+  /** Start project-level scanning for a directory. */
   startProjectScan(projectDir: string, onAgentCreated?: (agent: AgentState) => void): void {
     ensureProjectScan(
       projectDir,
@@ -265,6 +289,7 @@ export class AgentRuntime {
     );
   }
 
+  /** Start external session scanning (detects sessions from other terminals). */
   startExternalScanning(projectDir: string): void {
     if (this.externalScanTimer) return;
 
@@ -284,6 +309,7 @@ export class AgentRuntime {
     );
   }
 
+  /** Start stale external agent check (removes agents whose JSONL files are deleted). */
   startStaleCheck(): void {
     if (this.staleCheckTimer) return;
 
@@ -294,6 +320,14 @@ export class AgentRuntime {
     );
   }
 
+  // ── Restore persisted external agents (standalone) ──
+
+  /**
+   * Re-create external agents from the adapter's persistence on startup.
+   * Only external agents are restorable here (no terminal to rebind).
+   * VS Code uses its own restoreAgents() in agentManager.ts to also handle
+   * terminal agents via vscode.window.terminals.
+   */
   restoreExternalAgents(): void {
     const adapter = this.store.getAdapter();
     if (!adapter) return;
@@ -317,11 +351,7 @@ export class AgentRuntime {
 
       const agent: AgentState = {
         id: p.id,
-        sessionId:
-          p.sessionId ||
-          (this.provider.kind === 'file'
-            ? this.provider.sessionIdFromFile(p.jsonlFile)
-            : path.basename(p.jsonlFile, '.jsonl')),
+        sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
         terminalRef: undefined,
         isExternal: true,
         projectDir: p.projectDir,
@@ -366,7 +396,9 @@ export class AgentRuntime {
           this.waitingTimers,
           this.permissionTimers,
         );
-      } catch {}
+      } catch {
+        /* ignore stat errors on restore */
+      }
 
       this.registerAgent(agent.sessionId, agent.id);
 
@@ -383,8 +415,11 @@ export class AgentRuntime {
     this.store.persist();
   }
 
+  // ── Cleanup ──
+
+  /** Clean up all scanners, timers, and agents. Called on shutdown. */
   dispose(): void {
-    this.hookEventHandler?.dispose();
+    this.hookEventHandler.dispose();
 
     if (this.projectScanTimer.current) {
       clearInterval(this.projectScanTimer.current);

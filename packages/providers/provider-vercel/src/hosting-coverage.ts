@@ -12,6 +12,7 @@ import {
 	VERCEL_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
+/** Catalogued Vercel products no resolver realizes. Each is a decision. */
 export const VERCEL_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 	Object.freeze([
 		Object.freeze({
@@ -23,6 +24,7 @@ export const VERCEL_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 		}),
 	]);
 
+/** The I14 coverage document for Vercel. */
 export const VERCEL_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	providerId: "vercel",
 	resolvedProductIds: [...VERCEL_RESOLVED_PRODUCT_IDS],
@@ -31,6 +33,7 @@ export const VERCEL_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	absent: VERCEL_TRAFFIC_ROUTING_ABSENT,
 });
 
+/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product Vercel does not realize. */
 export function vercelProductRefusal(
 	productId: string,
 ): ResolverError | undefined {

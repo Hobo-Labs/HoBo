@@ -22,9 +22,11 @@ The POC covers:
 pnpm --prefix src\draft\broker-environment-publication-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` contains protobuf data shapes and CUE constraints for the publication boundary.
 - `architecture/pacts/` contains the PACT-style consumer/provider fixture for publication.
+- `ARCHITECTURE.md` records parse-don't-validate and event architecture evidence.
 
 ## Scope
 
@@ -36,5 +38,6 @@ snapshot publication boundary needed by HOBO-526.
 
 Run `pnpm --filter @hobo-draft/broker-environment-publication-contract test`
 (Vitest). The suite includes an architecture-evidence check that reads
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) alongside the protobuf, CUE, and PACT
 fixtures and asserts the parse-don't-validate and event-sourcing boundary is
 named.

@@ -28,6 +28,7 @@ import {
 	emptyGreetingReadModel,
 	foldLive,
 	helloBindleFold,
+	helloBindleUpcast,
 	parseReplayCorpus,
 	REPLAY_CORPUS_SEED,
 } from "../src/corpus/replay.js";
@@ -294,25 +295,66 @@ describe("helloBindleFold", () => {
 	});
 });
 
+describe("helloBindleUpcast", () => {
+	it("lifts a v1 greeting.Served from text to message", () => {
+		// The migration the corpus's second case exists to pin: old events stay
+		// replayable forever, so a rename cannot orphan history.
+		const lifted = helloBindleUpcast(
+			event({ v: 1, data: { name: "a", text: "hello" } }) as never,
+			FOLD_CONTEXT,
+		);
+		expect(lifted.v).toBe(2);
+		expect(lifted.data).toEqual({ name: "a", message: "hello" });
+	});
+
+	it("treats a missing version as v1", () => {
+		// `event.v ?? 1`. An envelope written before versioning existed carries
+		// no `v`, and leaving it unlifted would fold a `text` field the current
+		// reader does not know about.
+		const lifted = helloBindleUpcast(
+			event({ v: undefined, data: { name: "a", text: "hello" } }) as never,
+			FOLD_CONTEXT,
+		);
+		expect(lifted.v).toBe(2);
+	});
+
+	it("leaves a v2 event untouched", () => {
+		// Idempotence. An upcaster that re-ran on an already-lifted event would
+		// read `text` as undefined and blank the message.
+		const original = event({ v: 2 });
+		const lifted = helloBindleUpcast(original as never, FOLD_CONTEXT);
+		expect(lifted).toBe(original);
+	});
+
+	it("leaves an unrelated event type untouched even at v1", () => {
+		const original = event({ type: "greeting.Requested", v: 1 });
+		expect(helloBindleUpcast(original as never, FOLD_CONTEXT)).toBe(original);
+	});
+});
+
 describe("foldLive", () => {
-	it("folds current events without mutating them", () => {
-		const events = [event({ data: { name: "a", message: "hello" } })];
-		const state = foldLive(events as never);
+	it("folds in arrival order and does not mutate the input events", () => {
+		// It clones each event before upcasting. Without that, the upcaster would
+		// rewrite the corpus's own events in place and the replay pass would then
+		// see already-lifted input — the two would agree for the wrong reason.
+		const events = [event({ v: 1, data: { name: "a", text: "hello" } })];
+		const state = foldLive(events as never, helloBindleUpcast);
 		expect(state.served).toEqual([{ name: "a", message: "hello" }]);
-		expect(events[0]?.data).toEqual({ name: "a", message: "hello" });
+		expect(events[0]?.v).toBe(1);
+		expect(events[0]?.data).toEqual({ name: "a", text: "hello" });
 	});
 
 	it("returns the empty model for no events", () => {
-		expect(foldLive([])).toEqual(emptyGreetingReadModel());
+		expect(foldLive([], helloBindleUpcast)).toEqual(emptyGreetingReadModel());
 	});
 });
 
 describe("buildReplayCorpus", () => {
-	it("builds the greeting corpora with stable ids", () => {
+	it("builds both cases with stable ids", () => {
 		const corpora = buildReplayCorpus();
 		expect(corpora.map((corpus) => corpus.id)).toEqual([
 			"hello-bindle-greetings",
-			"hello-bindle-repeated-greetings",
+			"hello-bindle-greetings-upcast",
 		]);
 	});
 
@@ -323,6 +365,25 @@ describe("buildReplayCorpus", () => {
 		expect(JSON.stringify(buildReplayCorpus())).toBe(
 			JSON.stringify(buildReplayCorpus()),
 		);
+	});
+
+	it("flags only the upcast case as requiring the upcaster", () => {
+		// The flag is what tells the gate whether the case is exercising the
+		// migration path. Both true would make the plain case's coverage a
+		// mystery; both false would let a broken upcaster pass.
+		const [plain, upcast] = buildReplayCorpus();
+		expect(plain?.requiresUpcaster).toBe(false);
+		expect(upcast?.requiresUpcaster).toBe(true);
+	});
+
+	it("records a v1 body in the upcast case", () => {
+		// The case must actually contain a legacy body, or it proves nothing.
+		const upcast = buildReplayCorpus()[1];
+		const served = upcast?.events.find(
+			(candidate) => candidate.type === "greeting.Served",
+		);
+		expect(served?.v).toBe(1);
+		expect((served?.data as { text?: string })?.text).toBe("hello, legacy");
 	});
 
 	it("gives every event a distinct id and a monotonic timestamp", () => {
@@ -393,6 +454,7 @@ describe("parseReplayCorpus", () => {
 		id: "c-1",
 		description: "d",
 		seed: "s",
+		requiresUpcaster: true,
 		events: [event()],
 		expected: { state: emptyGreetingReadModel(), stateDigest: "a".repeat(64) },
 	};
@@ -400,6 +462,7 @@ describe("parseReplayCorpus", () => {
 	it("lifts a well-formed blob and freezes it", () => {
 		const parsed = parseReplayCorpus(RAW);
 		expect(parsed.id).toBe("c-1");
+		expect(parsed.requiresUpcaster).toBe(true);
 		expect(Object.isFrozen(parsed)).toBe(true);
 	});
 
@@ -446,7 +509,10 @@ describe("parseReplayCorpus", () => {
 		}
 	});
 
-	it("defaults an absent description and seed", () => {
+	it("defaults an absent description, seed and upcaster flag", () => {
+		// Conservative defaults: no description, the standard seed, and *not*
+		// requiring the upcaster — the flag has to be opted into, so a blob that
+		// lost it does not claim to exercise the migration path.
 		const parsed = parseReplayCorpus({
 			id: "c",
 			events: [event()],
@@ -454,6 +520,15 @@ describe("parseReplayCorpus", () => {
 		});
 		expect(parsed.description).toBe("");
 		expect(parsed.seed).toBe(REPLAY_CORPUS_SEED);
+		expect(parsed.requiresUpcaster).toBe(false);
+	});
+
+	it("requires the upcaster flag to be exactly true", () => {
+		// `=== true`, so a truthy string from a hand-edited JSON blob does not
+		// silently turn the flag on.
+		expect(
+			parseReplayCorpus({ ...RAW, requiresUpcaster: "yes" }).requiresUpcaster,
+		).toBe(false);
 	});
 
 	it("round-trips a built corpus through JSON", () => {

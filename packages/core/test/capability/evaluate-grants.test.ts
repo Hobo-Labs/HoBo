@@ -39,6 +39,7 @@ describe("evaluateCapabilityGrants", () => {
 
 		expect(result.ok).toBe(true);
 		expect(
+			// SAFETY: assertion required at this I/O or test boundary.
 			(result.manifest as { resources: JsonObject }).resources.todos,
 		).toEqual(
 			expect.objectContaining({

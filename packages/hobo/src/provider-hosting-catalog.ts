@@ -127,6 +127,8 @@ type ScopeLease = Pick<
 	"binding" | "credentialRef" | "verifyCredentialScope"
 >;
 
+/** Each constructor is the shipped native driver, with version-pinned material
+ * supplied by a verified lease. There is no ambient credential lookup here. */
 export type HostingProviderCatalogEntry =
 	| (Common<Awaited<ReturnType<AwsResolverOptions["resolveCredential"]>>> & {
 			readonly providerId: "aws";
@@ -185,6 +187,7 @@ export type HostingProviderCatalogEntry =
 	| TokenEntry<"npm", Omit<NpmResolverOptions, "resolveCredential">>
 	| (Common<OciRegistryCredential> & {
 			readonly providerId: "oci-registry";
+			/** Source registries pull anonymously or by same-host mount here. */
 			readonly options: Omit<OciRegistryResolverOptions, "resolveCredential">;
 	  })
 	| (TokenEntry<
@@ -194,6 +197,7 @@ export type HostingProviderCatalogEntry =
 				"resolveCredential" | "resolveDeploymentOidcToken"
 			>
 	  > & {
+			/** Pages-deployment mode only: the workflow OIDC token, same account. */
 			readonly deploymentOidcLease?: StringLease;
 	  })
 	| TokenEntry<
@@ -221,11 +225,19 @@ export type HostingProviderCatalogEntry =
 	| ExternalRegistryEntry
 	| ComponentProviderEntry;
 
+/** Registry shape every provider package exports as `<name>ResolverRegistry`. */
 export interface HostingResolverRegistry {
 	get(productId: string): ResourceResolver | undefined;
 	list(): readonly ResourceResolver[];
 }
 
+/**
+ * Hosting providers `@hobo/hobo` does not depend on (convex, flux,
+ * webernetes, railway and browser-wasm). The composition root, which does
+ * depend on them, binds each package's exported `<name>ResolverRegistry`
+ * here; the catalog still pins the verified credential and refuses any
+ * resolver outside the provider's declared delivery coverage.
+ */
 export type ExternalHostingProviderId =
 	| "convex"
 	| "flux"
@@ -234,20 +246,34 @@ export type ExternalHostingProviderId =
 
 export type ExternalRegistryEntry = Common<string> & {
 	readonly providerId: ExternalHostingProviderId;
+	/** Called once with the lease-pinned credential lookup. */
 	readonly createRegistry: (
 		resolveCredential: (credentialRef: string) => Promise<string>,
 	) => HostingResolverRegistry;
 };
 
+/**
+ * An out-of-tree platform realized only by `hobo:resolver` WASM components
+ * (D6). Its resolvers arrive through `extraResolvers`; this entry supplies the
+ * verified credential scope they are executed under.
+ */
 export type ComponentProviderEntry = Common<string> & {
 	readonly providerId: "component";
+	/** The components' `providerId`; never a native catalog id. */
 	readonly componentProviderId: string;
 };
 
 export interface ProductionHostingCatalogOptions {
+	/**
+	 * Component resolvers (`@hobo/resolver-components` output, bound by the
+	 * composition root). Each joins the entry whose native id equals its
+	 * `providerId`, or the `component` entry naming that id. A product a
+	 * shipped resolver already owns is refused, never shadowed.
+	 */
 	readonly extraResolvers?: readonly ResourceResolver[];
 }
 
+// Exact manifest/native mappings; no package-name trimming at the trust boundary.
 const MANIFEST_IDS = Object.freeze({
 	aws: "@hobo/provider-aws",
 	azure: "@hobo/provider-azure",
@@ -275,6 +301,7 @@ const MANIFEST_IDS = Object.freeze({
 
 const COMPONENT_PROVIDER_ID = /^[a-z0-9][a-z0-9.-]{0,62}$/u;
 
+/** How a provider realizes traffic: an exported profile, or a typed refusal. */
 export type ProviderTrafficCoverage =
 	| { readonly kind: "profile"; readonly profileExport: string }
 	| {
@@ -283,13 +310,23 @@ export type ProviderTrafficCoverage =
 			readonly remediation: string;
 	  };
 
+/**
+ * One row of the I14 delivery table: every package under `packages/providers`
+ * resolves to a realization path plus a traffic profile, or is refused with a
+ * typed reason. Provider-level detail (which products, which offerings are
+ * absent) lives in each package's `<NAME>_HOSTING_COVERAGE`.
+ */
+// domain-view: catalog-level I14 row; per-provider wire form is HostingCoverage in packages/providers/provider-*/data-models/hosting_coverage.proto (CUE #HostingCoverage).
 export type ProviderDeliveryCoverage =
 	| {
 			readonly packageName: string;
 			readonly providerId: string;
 			readonly realization: "resolver";
+			/** Exported resolver registry or resolver factory. */
 			readonly resolverExport: string;
+			/** Exported `<NAME>_HOSTING_COVERAGE`, where the package publishes one. */
 			readonly coverageExport?: string;
+			/** Declared products, for packages the catalog binds without importing. */
 			readonly resolvedProductIds?: readonly string[];
 			readonly traffic: ProviderTrafficCoverage;
 	  }
@@ -308,6 +345,7 @@ function hosting(
 	extra: {
 		readonly coverage?: boolean;
 		readonly products?: string[];
+		/** Traffic-profile stem when it differs from the registry stem. */
 		readonly profileStem?: string;
 	} = {},
 ): ProviderDeliveryCoverage {
@@ -376,6 +414,7 @@ function refused(
 const NOT_A_TARGET =
 	"bind a hosting provider for delivery; this package is wired by its own port";
 
+/** The ADR-0182 I14 table: one row per `packages/providers/*` package. */
 export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 	Object.freeze([
 		hosting("aws", "@hobo/provider-aws", "aws"),
@@ -520,6 +559,11 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 		),
 	]);
 
+/**
+ * The typed refusal for delivering to a provider package that has no
+ * realization path (I14), or `undefined` when it has one. Unknown names are
+ * refused too, naming the out-of-tree escape (D6).
+ */
 export function providerDeliveryRefusal(
 	providerIdOrPackage: string,
 ): ResolverError | undefined {
@@ -631,6 +675,7 @@ function privateClaimableKey(lease: StringLease): ClaimableOperationKeyDeriver {
 	};
 }
 
+/** The id a binding is keyed and scoped by: the native id, or the component's. */
 function catalogNativeId(entry: HostingProviderCatalogEntry): string {
 	if (entry.providerId !== "component") return entry.providerId;
 	const id = entry.componentProviderId;
@@ -727,6 +772,8 @@ const OWNED_HOSTING_PRODUCTS = new Set([
 	HETZNER_CLOUD_SERVER_PRODUCT_ID,
 ]);
 
+/** Compile only metadata implemented by the selected native product. The graph
+ * marker records ownership and cannot substitute for observed content identity. */
 export function prepareHostingProviderDesired(
 	providerId: HostingProviderCatalogEntry["providerId"],
 	input: HostingDesiredInput,
@@ -759,6 +806,8 @@ export function prepareHostingProviderDesired(
 		providerId === "upstash"
 	)
 		return result;
+	// Provider-owned desired grammars (WP13 packages, components): the catalog
+	// adds nothing the resolver would have to refuse as undeclared.
 	if (
 		providerId === "convex" ||
 		providerId === "flux" ||
@@ -766,6 +815,7 @@ export function prepareHostingProviderDesired(
 		providerId === "component"
 	)
 		return result;
+	// Promote, never rebuild (I1): these resolvers pin the observed content.
 	if (
 		providerId === "lakebed" ||
 		providerId === "browser-wasm" ||
@@ -780,6 +830,8 @@ export function prepareHostingProviderDesired(
 			throw new Error(
 				`${providerId} hosting requires the approved content digest of the delivered artifact`,
 			);
+		// An OCI image is identified by its manifest digest; the others by
+		// the Freight blob digest (tarball, static-site tree index, capsule).
 		metadata(
 			providerId === "oci-registry" ? "digest" : "artifactDigest",
 			input.contentDigest,
@@ -844,6 +896,9 @@ export function prepareHostingProviderDesired(
 	return result;
 }
 
+/** Build both explicit plan aliases around the same immutable binding. Registry
+ * discovery does not itself admit a financial effect; liability proof remains
+ * mandatory at execution. Unsupported products have no executable resolver. */
 export function createProductionHostingProviderCatalog(
 	entries: readonly HostingProviderCatalogEntry[],
 	options: ProductionHostingCatalogOptions = {},
@@ -1129,6 +1184,8 @@ export function createProductionHostingProviderCatalog(
 			pendingExtras,
 			entry.providerId === "component",
 		);
+		// Keep the primary material snapshot captured above. Secondary credentials
+		// have independent enrollment proofs and must share the approved account.
 		const secondary = [
 			...extras,
 			...(entry.providerId === "digitalocean" && entry.spacesLease
@@ -1166,6 +1223,7 @@ export function createProductionHostingProviderCatalog(
 					throw new Error(
 						"hosting metadata compiler received an unregistered native product",
 					);
+				// Component products carry their own desired grammar (D6).
 				return prepareHostingProviderDesired(
 					shipped.has(input.productId) ? entry.providerId : "component",
 					input,
@@ -1253,11 +1311,13 @@ export function createProductionHostingProviderCatalog(
 	return result;
 }
 
+/** Group component resolvers by provider id, refusing anything not resolver-shaped. */
 function groupExtraResolvers(
 	resolvers: readonly ResourceResolver[],
 ): Map<string, ResourceResolver[]> {
 	const grouped = new Map<string, ResourceResolver[]>();
 	for (const resolver of resolvers) {
+		// Shape check here; core's registry asserts the full resolver contract.
 		createResolverRegistry([resolver]);
 		const list = grouped.get(resolver.providerId) ?? [];
 		list.push(resolver);
@@ -1266,6 +1326,7 @@ function groupExtraResolvers(
 	return grouped;
 }
 
+/** Join a provider's component resolvers to its shipped registry; never shadow. */
 function withExtraResolvers(
 	nativeId: string,
 	registry: HostingResolverRegistry,
@@ -1292,6 +1353,10 @@ function withExtraResolvers(
 	return createResolverRegistry([...registry.list(), ...extras]);
 }
 
+/**
+ * Bind an external provider package's registry under the pinned credential,
+ * refusing resolvers outside its declared delivery coverage (I14).
+ */
 function externalRegistry(
 	providerId: ExternalHostingProviderId,
 	create: ExternalRegistryEntry["createRegistry"],
@@ -1318,32 +1383,77 @@ function externalRegistry(
 	return registry;
 }
 
+// ── Resolver realizers for declared Camps (`@hobo/cd` conductor) ────────────
+//
+// A Camp whose declared `provider` is one of the artifact publication targets
+// below is realized by that provider's shipped resolver: npm package versions
+// (`@hobo/provider-npm`), OCI images by digest (`@hobo/provider-oci-registry`)
+// and GitHub Pages sites (`@hobo/provider-github`). The Camp's labels bind
+// *where* (registry, repository, branch, credential locator); the Freight
+// binds *what* (its artifacts by digest, and per-release directives in its
+// labels). Nothing here reads ambient credentials: the one locator the Camp
+// declares is resolved through the host's CredentialResolver at call time,
+// and no other locator is ever resolved for that Camp.
+
+// public-contract: Camp labels (binding) and Freight labels (directives) the catalog resolver realizer reads.
 export const CATALOG_REALIZER_LABELS = Object.freeze({
 	credentialRef: "hobo.cd/credential-ref",
+	/** Camp: `npmjs`, `github-packages` or a Verdaccio `https://` origin. */
 	npmRegistry: "hobo.cd/npm.registry",
+	/** Camp: `token` or `oidc-trusted-publishing`. */
 	npmAuth: "hobo.cd/npm.auth",
+	/** Camp or Freight (Camp wins): the dist-tag the Camp points at the version. */
 	npmDistTag: "hobo.cd/npm.dist-tag",
+	/** Camp: `required` refuses a package whose Freight carries no Sigstore bundle. */
 	npmProvenance: "hobo.cd/npm.provenance",
+	/** Camp: the registry host the Camp writes to (`ghcr.io`). */
 	ociRegistry: "hobo.cd/oci.registry",
+	/** Camp: the token realm a bearer challenge from that host may name. */
 	ociAuthRealm: "hobo.cd/oci.auth-realm",
+	/** Camp: the (non-secret) basic-auth user name paired with the credential. */
 	ociUsername: "hobo.cd/oci.username",
+	/** Camp and Freight (both apply): comma-separated tags for the digest. */
 	ociTags: "hobo.cd/oci.tags",
+	/**
+	 * Freight (or Camp; Freight wins): a repository on the Camp's registry
+	 * whose blobs an upload may cross-repository mount (the image's base, for
+	 * example). A mount the registry or the credential declines is uploaded.
+	 */
 	ociMountFrom: "hobo.cd/oci.mount-from",
+	/** Camp: `owner/repo` of the Pages site. */
 	githubRepository: "hobo.cd/github.repository",
+	/** Camp: the branch Pages builds from (branch publish mode). */
 	githubPagesBranch: "hobo.cd/github.pages.branch",
+	/** Camp: `/` or `/docs`. */
 	githubPagesPath: "hobo.cd/github.pages.path",
+	/** Freight: the commit message of the published branch commit. */
 	githubCommitMessage: "hobo.cd/github.commit-message",
+	/**
+	 * Camp: `converge` (default) writes the Freight to the target; `observe`
+	 * only re-reads it (resolver `read`, read-only credential scope) and
+	 * reports it ready or not: a channel that qualifies what another Camp
+	 * already published never writes.
+	 */
 	realizeMode: "hobo.cd/realize-mode",
 } as const);
 
+// public-contract: the typed refusal codes of the catalog resolver realizer.
 export const CATALOG_REALIZER_REFUSAL_CODES = Object.freeze([
+	/** A Camp label or a Freight artifact does not bind a valid target: always blocks. */
 	"catalog-binding-invalid",
+	/** npm OIDC trusted publishing of a scoped package (the registry's exchange is unreachable through the transport guard). */
 	"npm-oidc-scoped-unsupported",
+	/** A provenance-required npm Camp and a Freight with no Sigstore bundle for the package. */
 	"npm-provenance-bundle-missing",
 ] as const);
 export type CatalogRealizerRefusalCode =
 	(typeof CATALOG_REALIZER_REFUSAL_CODES)[number];
 
+/**
+ * A refusal of the catalog resolver realizer itself (before any resolver
+ * runs), carrying its own typed code: a misdeclared Camp is never read as a
+ * provider limit, and each provider limit is named exactly.
+ */
 export class CatalogRealizerError extends Error {
 	readonly code: CatalogRealizerRefusalCode;
 	constructor(code: CatalogRealizerRefusalCode, message: string) {
@@ -1355,9 +1465,17 @@ export class CatalogRealizerError extends Error {
 
 export type CatalogRealizeMode = "converge" | "observe";
 
+// public-contract: blob-storage host GHCR may redirect cross-repository mounts to.
+export const GHCR_BLOB_REDIRECT_HOSTS = Object.freeze([
+	"pkg-containers.githubusercontent.com",
+] as const);
+
+// public-contract: the largest image blob the OCI Camp moves from the artifact store.
 export const CATALOG_OCI_MAX_BLOB_BYTES = 2 * 1024 * 1024 * 1024;
+// public-contract: blobs past this size are uploaded in Content-Range chunks of it.
 export const CATALOG_OCI_CHUNK_BYTES = 32 * 1024 * 1024;
 
+// public-contract: the providers the catalog resolver realizer realizes, with their one product.
 export const CATALOG_REALIZED_PRODUCTS = Object.freeze({
 	npm: NPM_PACKAGE_VERSION_PRODUCT_ID,
 	"oci-registry": OCI_REGISTRY_IMAGE_PRODUCT_ID,
@@ -1366,6 +1484,7 @@ export const CATALOG_REALIZED_PRODUCTS = Object.freeze({
 
 export type CatalogRealizedProviderId = keyof typeof CATALOG_REALIZED_PRODUCTS;
 
+/** The realized provider a declared Camp `provider` names (native id or package name). */
 export function catalogRealizedProvider(
 	provider: string,
 ): CatalogRealizedProviderId | undefined {
@@ -1377,6 +1496,7 @@ export function catalogRealizedProvider(
 	return ids.find((id) => provider === id || provider === MANIFEST_IDS[id]);
 }
 
+/** The Freight a Set names, as the realizer reads it (`ArtifactKind` names without prefix). */
 export type CatalogFreight = Readonly<{
 	freightId: string;
 	labels: Readonly<Record<string, string>>;
@@ -1392,14 +1512,22 @@ export type CatalogCampBinding = Readonly<{
 	providerId: CatalogRealizedProviderId;
 	productId: string;
 	credentialRef: string;
+	/** `observe` Camps only read the target (`hobo.cd/realize-mode`). */
 	mode: CatalogRealizeMode;
 	registry: HostingResolverRegistry;
+	/** One resolve request per Freight artifact this provider realizes. */
 	requests(freight: CatalogFreight): readonly ResolveRequest[];
+	/**
+	 * The transport the resolver calls through, given the realizer's
+	 * transport and memory the realizer keeps for this Camp across passes.
+	 */
 	transport?(http: HttpTransport, memory: Set<string>): HttpTransport;
 }>;
 
 export type CatalogCampBindingDeps = Readonly<{
+	/** The CD artifact store (`ArtifactStore.get`). */
 	artifacts: { get(digest: string): Promise<Uint8Array | undefined> };
+	/** The host CredentialResolver, for exactly the Camp's declared locator. */
 	resolveCredential: (ref: string) => Promise<Readonly<Record<string, string>>>;
 }>;
 
@@ -1438,6 +1566,11 @@ function npmRegistryOf(campId: string, value: string): NpmRegistryBinding {
 	);
 }
 
+/**
+ * The resolver binding of one declared Camp, or `undefined` when its provider
+ * is not realized by the catalog resolver realizer. A Camp missing a binding
+ * label is refused (typed), never defaulted to another target.
+ */
 export function catalogCampBinding(
 	camp: Readonly<{
 		campId: string;
@@ -1466,6 +1599,7 @@ export function catalogCampBinding(
 			camp.campId,
 			`${L.realizeMode} must be converge or observe`,
 		);
+	// Only the declared locator: a request for any other is refused.
 	const token = async (ref: string) => {
 		if (ref !== credentialRef)
 			throw new ResolverError(
@@ -1569,6 +1703,9 @@ export function catalogCampBinding(
 			const endpoint = {
 				host,
 				...(realm ? { authRealms: [realm] } : undefined),
+				...(host === "ghcr.io"
+					? { blobRedirectHosts: [...GHCR_BLOB_REDIRECT_HOSTS] }
+					: undefined),
 			};
 			return Object.freeze({
 				providerId,
@@ -1579,6 +1716,9 @@ export function catalogCampBinding(
 					registry: endpoint,
 					sourceRegistries: [],
 					artifactStore: deps.artifacts,
+					// Layers are binary: the realizer runs on a byte transport
+					// (`transport` below) and moves blobs up to the bound from the
+					// artifact store, in chunks past CATALOG_OCI_CHUNK_BYTES.
 					transportBodyEncoding: "latin1",
 					maxBlobBytes: CATALOG_OCI_MAX_BLOB_BYTES,
 					chunkBytes: CATALOG_OCI_CHUNK_BYTES,
@@ -1623,6 +1763,12 @@ export function catalogCampBinding(
 								repository,
 								digest: artifact.digest,
 								tags,
+								// Promote, never rebuild (I1): the content is the
+								// Freight's, by digest: already at the target, or pushed
+								// byte for byte from the HoBo artifact store (manifest,
+								// config and layers, each verified against its digest).
+								// Nothing is rebuilt or substituted; an absent blob is
+								// refused.
 								copyReferrers: false,
 								...(from && from !== repository
 									? { sourceRegistry: host, sourceRepository: from }
@@ -1676,6 +1822,7 @@ export function catalogCampBinding(
 const GIT_BLOBS_PATH =
 	/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/git\/blobs$/u;
 
+/** The git blob id of `bytes` (what GitHub names a blob by). */
 function gitBlobSha(bytes: Uint8Array): string {
 	return createHash("sha1")
 		.update(`blob ${bytes.byteLength}\0`)
@@ -1683,6 +1830,16 @@ function gitBlobSha(bytes: Uint8Array): string {
 		.digest("hex");
 }
 
+/**
+ * A blob upload GitHub already holds is never repeated. Blob creation counts
+ * against GitHub's content-creation secondary limit (80 per minute): a pass
+ * the limit interrupted, or a later pass before the branch head moved, would
+ * otherwise re-POST every blob not on the observed head. `memory` holds the
+ * blob ids GitHub acknowledged across the realizer's passes for this Camp;
+ * any other blob is looked up first (a read, outside that limit) and posted
+ * only when GitHub does not hold it. Blobs are content-addressed, so the
+ * acknowledgement this returns names exactly the bytes the upload carried.
+ */
 export function gitBlobDedupeTransport(
 	inner: HttpTransport,
 	memory: Set<string>,

@@ -11,7 +11,10 @@ describe("trainable silver fuzz", () => {
 		const fn = (input: FuzzValue) => {
 			const text =
 				input && Object(input) === input && "text" in input
-					? String((input as { text?: unknown }).text ?? "")
+					? String(
+							// SAFETY: the object branch establishes a property-bearing input.
+							(input as { text?: unknown }).text ?? "",
+						)
 					: "";
 			return { label: text.includes("invoice") ? "billing" : "other" };
 		};

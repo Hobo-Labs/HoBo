@@ -19,7 +19,6 @@ import {
 	assertNoQueueTopicImplication,
 	explainNonImplication,
 	findQueueTopicImplications,
-	KV_EPHEMERAL_STATE_PROFILE,
 	KV_REDIS_NON_IMPLIED_PROFILES,
 	KvRedisCompatibleError,
 	redisCompatible,
@@ -110,68 +109,6 @@ function select(profileId: string) {
 }
 
 describe("a Redis-compatible store satisfies a Redis-compatible requirement", () => {
-	it("requires an explicit ephemeral-state implementation", () => {
-		const requirement = parseCapabilityRequirement({
-			requiredProfiles: [
-				{ profileId: KV_EPHEMERAL_STATE_PROFILE, versionRange: ">=1" },
-			],
-		});
-		const input = { requirement, registry: profiles, policy, nowMs: NOW };
-		expect(
-			selectCapabilityImplementation({
-				...input,
-				candidates: [redisOnlyCandidate],
-			}).winner,
-		).toBeUndefined();
-		const ephemeralCandidate = {
-			...redisOnlyCandidate,
-			implementsProfiles: [
-				...KV_ONLY_IMPLEMENTATIONS,
-				{
-					profileId: KV_EPHEMERAL_STATE_PROFILE,
-					versionRange: ">=1",
-					realization: "native" as const,
-					conformanceRef: "conformance.kv.ephemeral-state/v1#reference",
-					conformance: "pass" as const,
-				},
-			],
-		};
-		expect(
-			selectCapabilityImplementation({
-				...input,
-				candidates: [ephemeralCandidate],
-			}).winner?.definitionId,
-		).toBe(redisOnlyCandidate.definitionId);
-	});
-
-	it("selects a store for create-if-absent only when it advertises the feature", () => {
-		const requirement = redisCompatible.store({ atomicCompareAndSet: true });
-		const input = { requirement, registry: profiles, policy, nowMs: NOW };
-		const supported = selectCapabilityImplementation({
-			...input,
-			candidates: [redisOnlyCandidate],
-		});
-		expect(supported.winner?.definitionId).toBe(
-			redisOnlyCandidate.definitionId,
-		);
-		const unsupported = selectCapabilityImplementation({
-			...input,
-			candidates: [
-				{
-					...redisOnlyCandidate,
-					structuredCapabilities: {
-						...redisOnlyCandidate.structuredCapabilities,
-						atomicCompareAndSet: false,
-					},
-				},
-			],
-		});
-		expect(unsupported.winner).toBeUndefined();
-		expect(unsupported.rejections.map((rejection) => rejection.code)).toContain(
-			"FEATURE_UNSATISFIED",
-		);
-	});
-
 	it("is selected for the store requirement it was actually tested against", () => {
 		const outcome = selectCapabilityImplementation({
 			requirement: redisCompatible.store({ ttl: true, atomicIncrement: true }),

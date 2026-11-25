@@ -84,27 +84,27 @@ export const DOGFOOD_YARD_ACCEPTANCE = {
   ],
   dependencies: [
     {
-      source: "urn:hobo:requirement:control-plane#plan-04",
+      source: "docs/design/control-plane.md#plan-04",
       reason: "Defines the Yard control plane, self-host bootstrap ordering, and seed-to-real Yard handover.",
     },
     {
-      source: "urn:hobo:requirement:walkthrough",
+      source: "docs/design/walkthrough.md",
       reason: "Defines hosted versus self-hosted HoBo cloud flows and the DevOps self-host journey.",
     },
     {
-      source: "urn:hobo:requirement:developer-experience#plan-07",
+      source: "docs/design/developer-experience.md#plan-07",
       reason: "Defines inspect, logs, status, and command evidence users expect around Yard operations.",
     },
     {
-      source: "urn:hobo:requirement:reliability-observability-cost#plan-05",
+      source: "docs/design/reliability-observability-cost.md#plan-05",
       reason: "Defines telemetry, traces, SLO signals, rollback evidence, and operational status inputs.",
     },
     {
-      source: "urn:hobo:requirement:operators-sre#plan-40",
+      source: "docs/design/operators-sre.md#plan-40",
       reason: "Defines support, SRE, incident, and runbook handoff loops for Yard operations.",
     },
     {
-      source: "urn:hobo:decision:adr-0092",
+      source: "docs/design/adr/01-architecture-core.md#adr-0092",
       reason: "Pins self-host bootstrap as disposable seed Yard, provenance import, and Identity handover.",
     },
   ],

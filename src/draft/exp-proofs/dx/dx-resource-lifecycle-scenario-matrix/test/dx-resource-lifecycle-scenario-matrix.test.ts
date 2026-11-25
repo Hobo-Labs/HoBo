@@ -20,7 +20,7 @@ describe("DX resource lifecycle scenario matrix", () => {
 
     assert.equal(matrix.issue, "HOBO-567");
     assert.equal(matrix.targetPackage, "src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix");
-    assert.equal(matrix.proofNote, "urn:hobo:proof:dx-resource-lifecycle-scenario-matrix");
+    assert.equal(matrix.proofNote, "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md");
     assert.deepEqual(
       matrix.journeys.map((journey) => journey.role),
       REQUIRED_ROLES,

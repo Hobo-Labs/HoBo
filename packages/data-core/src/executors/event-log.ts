@@ -1,3 +1,14 @@
+/**
+ * The three patterns that move data through the event log (ADR-0177
+ * decision 5): `rebuild-and-swap` for projected data, `log-pivot` for an
+ * authoritative store whose authority is moving into the log, and
+ * `stream-handoff` for the journal itself.
+ *
+ * `rebuild-and-swap` is where the event-sourced design pays off. A projected
+ * store was never the truth, so moving it — to another product, another
+ * engine, another paradigm — is a replay into a new sink. There is no capture
+ * leg, no fence, and no translation of stored bytes.
+ */
 import {
 	type DurableEventStore,
 	type EventEnvelope,
@@ -41,12 +52,20 @@ import {
 	type PlannedDetails,
 } from "./runtime.js";
 
+/** Reads the sink's current record for a key, including this batch's writes. */
 export type SinkReader = (
 	tenant: string,
 	key: string,
 ) => Promise<CanonicalRecord | undefined>;
 
+/**
+ * A projection as the executor needs it: a deterministic mapping from one
+ * event to the record mutations it causes. It may read the sink's current
+ * state for the keys it touches, and must do nothing else — no clock, no
+ * randomness, no I/O — so a replay from zero reproduces the sink exactly.
+ */
 export interface ProjectionFold {
+	/** Names the watermark; one projection, one name. */
 	readonly name: string;
 	project(
 		event: EventEnvelope,
@@ -64,6 +83,17 @@ interface ProjectOutcome {
 
 const OVERLAY_SEPARATOR = "\u0000";
 
+/**
+ * Fold one batch of the log into the sink. The batch's mutations and its
+ * watermark land in one `apply`, so a redelivered batch is harmless and a
+ * crash never leaves the sink ahead of its recorded position.
+ *
+ * The apply is conditional on the watermark the batch was read after
+ * (`known`; `null` before the first). A batch is a deterministic function of
+ * that position, so one that still finds it is the next batch whoever applies
+ * it — and one that does not was overtaken, and is refused rather than laid
+ * over what came after.
+ */
 async function projectBatch(
 	log: LogReader,
 	fold: ProjectionFold,
@@ -124,6 +154,7 @@ async function projectToHead(
 	let events = 0;
 	for (let round = 0; round < rounds; round += 1) {
 		const outcome = await projectBatch(log, fold, sink, scope, known, limit);
+		// Only a batch that applied something moved the watermark.
 		if (outcome.events > 0) known = outcome.position;
 		events += outcome.events;
 		if (outcome.caughtUp) {
@@ -133,14 +164,20 @@ async function projectToHead(
 	return { position: known ?? "0", events, caughtUp: false };
 }
 
+// ── rebuild-and-swap ────────────────────────────────────────────────────────
 
 export interface RebuildAndSwapOptions {
 	readonly runtime: MigrationRuntime;
 	readonly log: LogReader;
 	readonly fold: ProjectionFold;
+	/** The new sink. */
 	readonly target: EngineBinding;
 	readonly schema: DatasetSchema;
 	readonly scope: DatasetScope;
+	/**
+	 * The sink being replaced. When given — and fed by the same fold — the two
+	 * are compared by digest before reads move.
+	 */
 	readonly previous?: EngineBinding;
 	readonly previousScope?: DatasetScope;
 	readonly batch?: number;
@@ -150,6 +187,7 @@ export interface RebuildAndSwapOptions {
 	readonly rampSteps?: readonly number[];
 	readonly shiftReads?: (percent: number) => Awaitable<void>;
 	readonly soakDecision?: () => Awaitable<SoakDecision>;
+	/** Reap the old sink. Runs only at finalize. */
 	readonly retirePrevious?: () => Awaitable<void>;
 	readonly plan?: PlannedDetails;
 }
@@ -174,6 +212,8 @@ export async function runRebuildAndSwap(
 			batch,
 			rounds,
 		);
+	// The old sink stays valid until it is reaped, so every phase before
+	// finalize can go back without losing anything.
 	const rollbackAt = (phase: MigrationPhase): RollbackPosture =>
 		phase === "finalize" ? "none" : "lossless";
 	return run.drive(async () => {
@@ -204,6 +244,8 @@ export async function runRebuildAndSwap(
 			for (let attempt = 0; attempt < attempts; attempt += 1) {
 				const outcome = await toHead();
 				const position = outcome.position;
+				// A sink that has not reached the log head proves nothing yet,
+				// with or without an older sink to compare it to.
 				behind = !outcome.caughtUp;
 				if (behind) continue;
 				const target = await requirePort(options.target, "verify").digest({
@@ -211,6 +253,8 @@ export async function runRebuildAndSwap(
 					buckets,
 				});
 				if (options.previous === undefined) {
+					// Nothing to compare against: the evidence is that the sink is
+					// at the log head, and its digest is recorded for later drift checks.
 					return {
 						position,
 						count: target.count,
@@ -272,7 +316,9 @@ export async function runRebuildAndSwap(
 	}, rollbackAt);
 }
 
+// ── log-pivot ───────────────────────────────────────────────────────────────
 
+/** A domain event a captured change is turned into. */
 export interface PivotEvent {
 	readonly streamId: string;
 	readonly type: string;
@@ -291,16 +337,25 @@ type PivotLog = Pick<DurableEventStore, "readAll" | "append" | "read"> & {
 
 export interface LogPivotOptions {
 	readonly runtime: MigrationRuntime;
+	/** The authoritative store being adopted. */
 	readonly source: EngineBinding;
 	readonly schema: DatasetSchema;
 	readonly scope: DatasetScope;
 	readonly log: PivotLog;
+	/**
+	 * The authored re-model: what each captured change means as domain events.
+	 * This is where a cross-paradigm move is written down and reviewed.
+	 */
 	readonly toEvents: (change: ChangeEnvelope) => readonly PivotEvent[];
 	readonly append: PivotAppendContext;
 	readonly fold: ProjectionFold;
 	readonly target: EngineBinding;
 	readonly targetSchema: DatasetSchema;
 	readonly targetScope: DatasetScope;
+	/**
+	 * Move write authority into the log. Idempotent at a head, and a
+	 * compare-and-set on it: see `AuthorityMoveRef` for the router's contract.
+	 */
 	readonly flipAuthority: (flip: AuthorityHandover) => Awaitable<void>;
 	readonly chunkSize?: number;
 	readonly tailBatch?: number;
@@ -333,6 +388,11 @@ async function streamHead(
 	return head;
 }
 
+/**
+ * Append the events one change means. Each carries an idempotency key built
+ * from the change's own identity, so redelivering a change — after a crash,
+ * or because a seed re-ran — appends nothing twice.
+ */
 async function appendChange(
 	context: PivotContext,
 	change: ChangeEnvelope,
@@ -375,6 +435,7 @@ async function appendChange(
 				appended += result.appended.length;
 				break;
 			} catch (error) {
+				// Another writer advanced the stream: re-read the head once.
 				if (
 					attempt === 0 &&
 					error instanceof Error &&
@@ -390,6 +451,7 @@ async function appendChange(
 	return appended;
 }
 
+/** Tail the source's capture into the log until caught up. */
 async function captureToLog(
 	context: PivotContext,
 	start: Position,
@@ -397,6 +459,8 @@ async function captureToLog(
 	const { options, subscription, batch, rounds } = context;
 	const capture = requirePort(options.source, "capture");
 	const marker = requirePort(options.target, "apply");
+	// The capture leg's progress is recorded beside the sink's own watermark,
+	// under the subscription's name, so both survive together.
 	let known: Position | null =
 		(await marker.watermark({
 			dataset: options.targetScope.dataset,
@@ -414,6 +478,8 @@ async function captureToLog(
 		for (const change of read.changes) await appendChange(context, change);
 		changes += read.changes.length;
 		position = read.position;
+		// Conditional on the progress this driver read: a second driver of the
+		// same pivot loses here instead of moving the marker under the first.
 		await marker.apply({
 			dataset: options.targetScope.dataset,
 			changes: [],
@@ -431,9 +497,15 @@ async function captureToLog(
 export async function runLogPivot(
 	options: LogPivotOptions,
 ): Promise<MigrationRunResult> {
+	// Digests are comparable only when the sink keeps the source's own schema;
+	// a re-model changes the records, and then the evidence is positional.
 	const comparable =
 		schemaDigest({ ...options.schema, name: "_" }) ===
 		schemaDigest({ ...options.targetSchema, name: "_" });
+	// A pivot that keeps the schema is verified by digest, so the store being
+	// adopted must be able to give one. Without the port there is nothing to
+	// compare the sink against, and "equal" would be a claim nobody checked;
+	// the run is refused before anything is journaled.
 	if (comparable) requirePort(options.source, "verify");
 	const run = await MigrationRun.open(options.runtime, "log-pivot", {
 		source: options.source.declaration.engine,
@@ -474,12 +546,15 @@ export async function runLogPivot(
 			scope: options.scope,
 			buckets,
 		});
+		// Compare bucket sums over the records themselves; the dataset name
+		// differs by design and is not part of a record digest.
 		return {
 			equal: compareDigests(source, target).equal,
 			count: target.count,
 			digest: target.digest,
 		};
 	};
+	// Authority moves into the log at the flip and does not move back.
 	const rollbackAt = (phase: MigrationPhase): RollbackPosture =>
 		phase === "fence-and-flip" || phase === "finalize" || phase === "soak"
 			? "none"
@@ -557,6 +632,7 @@ export async function runLogPivot(
 			};
 		});
 		await run.phase("fence-and-flip", async () => {
+			// A cutover an earlier run decided is finished, not re-verified.
 			const decided = run.cutOverDecision();
 			const fence = requirePort(options.source, "fence");
 			const raise = () =>
@@ -565,6 +641,9 @@ export async function runLogPivot(
 					reason: `migration ${options.runtime.migrationId}`,
 				});
 			if (decided !== undefined) {
+				// Raising a raised fence answers its token, so a resumed run
+				// gets the token back from the store rather than from the
+				// journal. The journaled decision is what authorizes it.
 				const held = await raise();
 				await options.flipAuthority({
 					migrationId: options.runtime.migrationId,
@@ -573,12 +652,15 @@ export async function runLogPivot(
 				});
 				return decided;
 			}
+			// Journaled before the fence goes up, as a compare-and-set: a
+			// driver that has been superseded stops here.
 			await run.requestFence("source", "fence-and-flip");
 			const grant = await raise();
 			const tail = await captureToLog(context, startPosition);
 			const projected = await project();
 			const verdict = await equalDigests();
 			if (!tail.caughtUp || !projected.caughtUp || !verdict.equal) {
+				// The hold is journaled before the fence is released.
 				const hold = await run.recordHold(
 					"verify",
 					"exact verification under the fence failed; the store remains the authority",
@@ -590,9 +672,11 @@ export async function runLogPivot(
 				});
 				throw hold;
 			}
+			// Decide, record, then act — see the copy executors for why.
 			const decision: JsonObject = {
 				migrationId: options.runtime.migrationId,
 				authority: "log",
+				// The digest, never the token: a journal is evidence.
 				fenceTokenDigest: fenceTokenDigest(grant.fenceToken),
 				count: verdict.count,
 				digest: verdict.digest,
@@ -615,7 +699,16 @@ export async function runLogPivot(
 	}, rollbackAt);
 }
 
+// ── stream-handoff ──────────────────────────────────────────────────────────
 
+/**
+ * The event store port has no identity-preserving import, so a handed-off
+ * event keeps its stream, sequence, type, version, payload, actor, and
+ * tenant, and is given a new id and timestamp by the target store. The
+ * originals travel in `meta.handoff`. This is a real limit, reported on every
+ * handoff rather than discovered later.
+ */
+// public-contract: impedance code reported by every stream handoff.
 export const HANDOFF_IDENTITY_IMPEDANCE = "HANDOFF_EVENT_IDENTITY_REMINTED";
 
 type HandoffTarget = Pick<DurableEventStore, "append" | "readAll" | "read"> & {
@@ -626,8 +719,19 @@ export interface StreamHandoffOptions {
 	readonly runtime: MigrationRuntime;
 	readonly source: LogReader;
 	readonly target: HandoffTarget;
+	/**
+	 * Stop the single writer of the source partition. Partition ownership is
+	 * the runtime's to hand over; this executor only asks for it.
+	 *
+	 * Idempotent: quiescing a quiesced partition answers the same token. The
+	 * journal records only the token's digest, so a resumed run asks again.
+	 */
 	readonly quiesce: () => Awaitable<{ readonly fenceToken: string }>;
 	readonly unquiesce: (fenceToken: string) => Awaitable<void>;
+	/**
+	 * Hand the partition's single writer to the target log. Idempotent at a
+	 * head, and a compare-and-set on it: see `AuthorityMoveRef`.
+	 */
 	readonly flipWriter: (flip: AuthorityHandover) => Awaitable<void>;
 	readonly batch?: number;
 	readonly maxRounds?: number;
@@ -635,11 +739,17 @@ export interface StreamHandoffOptions {
 }
 
 function jsonOf(data: EventEnvelope["data"]): JsonValue {
+	// SAFETY: event payloads are JSON documents; this is the document boundary.
 	return JSON.parse(JSON.stringify(data ?? null)) as JsonValue;
 }
 
 const MODULUS = 2n ** 256n;
 
+/**
+ * Digest of a log's content, independent of which store holds it: stream,
+ * sequence, type, version, payload, actor, and tenant — everything a handoff
+ * preserves, and nothing it does not.
+ */
 export async function eventLogDigest(
 	log: LogReader,
 	batch = 500,
@@ -706,6 +816,7 @@ export async function runStreamHandoff(
 		return head;
 	};
 
+	/** Copy forward until the source has nothing further. */
 	const copy = async (): Promise<{ copied: number; caughtUp: boolean }> => {
 		let copied = 0;
 		for (let round = 0; round < rounds; round += 1) {
@@ -718,6 +829,7 @@ export async function runStreamHandoff(
 				read += 1;
 				cursor = item.position;
 				const head = await targetHead(event.streamId);
+				// Already handed off: an earlier run, or a retry after a crash.
 				if (event.seq <= head) continue;
 				if (event.seq !== head + 1) {
 					throw new DataCoreError(
@@ -805,6 +917,8 @@ export async function runStreamHandoff(
 		await run.phase("verify", async () => {
 			await copy();
 			const verdict = await compare();
+			// Under live writes the source can be a few events ahead here; the
+			// exact comparison is the one made under quiescence below.
 			return {
 				count: verdict.count,
 				digest: verdict.digest,
@@ -822,11 +936,13 @@ export async function runStreamHandoff(
 				});
 				return decided;
 			}
+			// Journaled before the writer is stopped, as a compare-and-set.
 			await run.requestFence("source", "fence-and-flip");
 			const grant = await options.quiesce();
 			const outcome = await copy();
 			const verdict = await compare();
 			if (!outcome.caughtUp || !verdict.equal) {
+				// The hold is journaled before the writer is let go again.
 				const hold = await run.recordHold(
 					"verify",
 					"exact verification under quiescence failed; the source stays the writer",
@@ -837,6 +953,7 @@ export async function runStreamHandoff(
 			}
 			const decision: JsonObject = {
 				migrationId: options.runtime.migrationId,
+				// The digest, never the token: a journal is evidence.
 				fenceTokenDigest: fenceTokenDigest(grant.fenceToken),
 				count: verdict.count,
 				digest: verdict.digest,

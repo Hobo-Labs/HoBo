@@ -3,10 +3,11 @@
 This package proves the M1 Planner slice for HOBO-61. It implements the first
 pure Planner step from:
 
-- `urn:hobo:requirement:control-plane`: collect manifest resources, build bind/link
+- `docs/design/control-plane.md`: collect manifest resources, build bind/link
   dependency edges, and emit a `DeploymentPlan`.
-- `urn:hobo:requirement:platform-engineering`: co-provisioned resources become graph
+- `docs/design/platform-engineering.md`: co-provisioned resources become graph
   nodes with placeholder-wired inputs.
+- `docs/design/architecture.md`: the IfC Collector emits manifest IR consumed
   by the Planner.
 
 ## Contract Surface
@@ -37,9 +38,11 @@ The checks live in
 `src/draft/technical-proofs/planner-dag-skeleton-contract/test/planner.test.ts`.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Planner Dag Skeleton Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "durable-agent",
+  "builtAt": "2026-11-17T18:35:43.672Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "examples/durable-agent/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "c06367a98eb74f88d2586a8ee1a38715bf164cd0f8248b17f9f7dfa9652523ba",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

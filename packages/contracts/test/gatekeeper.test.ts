@@ -121,7 +121,6 @@ interface Ask {
 	readonly secretlessConfig?: unknown;
 	readonly bindingDelivery?: unknown;
 	readonly canMigrate?: unknown;
-	readonly eventUpcasters?: unknown;
 	readonly residency?: unknown;
 }
 

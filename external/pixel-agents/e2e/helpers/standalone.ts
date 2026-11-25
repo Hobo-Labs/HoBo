@@ -24,12 +24,22 @@ export interface StandaloneSession {
   getHostLogs: () => string;
   cleanup: () => Promise<void>;
   drainMessages: () => Promise<RecordedServerMessage[]>;
+  /** Stop the host process, breaking its WebSocket connections, without disposing
+   *  the browser page or its recorded message buffer. Fallback for tests that need
+   *  to observe a real connection drop when `context.setOffline` does not reliably
+   *  close an already-open WebSocket (Chromium-version dependent). */
   stopHost: () => Promise<void>;
+  /** Restart the host on the SAME port after `stopHost`, so the already-connected
+   *  browser page's exponential-backoff retry succeeds again. */
   startHost: () => Promise<void>;
 }
 
 export interface LaunchStandaloneOptions {
+  /** Reuse an existing isolated HOME (for cross-surface multi-server tests).
+   *  A supplied directory is never removed by standalone cleanup. */
   homeDir?: string;
+  /** Reuse an existing workspace. A supplied directory is never removed by
+   *  standalone cleanup. */
   workspaceDir?: string;
 }
 
@@ -76,6 +86,12 @@ async function waitForHttpOk(url: string): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error(`Timed out waiting for ${url}`);
 }
 
+/**
+ * Spawn our standalone CLI (dist/cli.js). The CLI serves both the SPA and the
+ * /ws WebSocket on the same port; tests connect Playwright's chromium to that
+ * single origin. Workspace dir is communicated via process.cwd() since our CLI
+ * doesn't take a --workspace-dir flag.
+ */
 function spawnStandaloneHost(args: {
   homeDir: string;
   hostPort: number;
@@ -119,6 +135,11 @@ async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void>
   }
 }
 
+/**
+ * Install a WebSocket recorder BEFORE page navigation. Proxies window.WebSocket
+ * so every incoming message frame is JSON-parsed and pushed to
+ * window.__pixelAgentsMessages, which drainMessages() reads from.
+ */
 async function installMessageRecorder(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const recordedMessages: unknown[] = [];
@@ -133,6 +154,7 @@ async function installMessageRecorder(page: Page): Promise<void> {
           try {
             recordedMessages.push(JSON.parse(event.data));
           } catch {
+            // Ignore non-JSON frames.
           }
         });
         return socket;
@@ -193,6 +215,8 @@ export async function launchStandalone(
 
   try {
     await page.setViewportSize({ width: 1280, height: 800 });
+    // Mark this as the e2e harness before navigation so the standalone webview
+    // installs its test-only observability hooks (window.__pixelAgentsTestHooks).
     await page.addInitScript(() => {
       (window as unknown as { __PIXEL_AGENTS_E2E?: boolean }).__PIXEL_AGENTS_E2E = true;
     });

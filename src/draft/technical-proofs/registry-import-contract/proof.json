@@ -12,7 +12,8 @@
       "src/draft/technical-proofs/signed-offline-bundle-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

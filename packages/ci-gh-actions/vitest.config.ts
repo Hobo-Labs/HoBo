@@ -1,13 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import { capVitestWorkers } from "../../scripts/ci/vitest-max-workers.mts";
 
 // Files that load Docker, Pact or Dagger tooling (directly or through a
 // helper). They keep vitest's per-file module isolation: their native
 // bindings and engine connections have not been run in a shared worker.
 const ISOLATED = [
 	"contracts/backend-swap.consumer.test.ts",
-	"contracts/local-github.pact.test.ts",
 	"contracts/local-runner.pact.test.ts",
 	"test/ci-store-contract.test.ts",
 	"test/pact-broker.test.ts",
@@ -30,7 +28,6 @@ const common = {
 
 export default defineConfig({
 	test: {
-		maxWorkers: capVitestWorkers(undefined),
 		// Temporary files on tmpfs where there is room: every SQLite store the
 		// tests open commits with an fsync (test/setup/tmpfs-tmpdir.ts).
 		globalSetup: [setup("tmpfs-tmpdir.ts")],

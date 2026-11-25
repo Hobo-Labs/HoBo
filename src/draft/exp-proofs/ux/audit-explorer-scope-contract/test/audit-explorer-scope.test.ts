@@ -35,16 +35,16 @@ test("M0 record maps dependencies to authoritative design and ADR sources", () =
   assert.deepEqual(
     AUDIT_EXPLORER_SCOPE.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:developer-experience#plan-07",
-      "urn:hobo:requirement:developer-experience#plan-49",
-      "urn:hobo:requirement:data-plane#plan-11",
-      "urn:hobo:requirement:contracts-policy-flags#plan-29",
-      "urn:hobo:requirement:ai-native-agent-auth#plan-06",
-      "urn:hobo:requirement:governance-planes#plan-46",
-      "urn:hobo:decision:adr-0046",
-      "urn:hobo:decision:adr-0074",
-      "urn:hobo:decision:adr-0077",
-      "urn:hobo:decision:adr-0050",
+      "docs/design/developer-experience.md#plan-07",
+      "docs/design/developer-experience.md#plan-49",
+      "docs/design/data-plane.md#plan-11",
+      "docs/design/contracts-policy-flags.md#plan-29",
+      "docs/design/ai-native-agent-auth.md#plan-06",
+      "docs/design/governance-planes.md#plan-46",
+      "docs/design/adr/02-identity-security.md#adr-0046",
+      "docs/design/adr/02-identity-security.md#adr-0074",
+      "docs/design/adr/02-identity-security.md#adr-0077",
+      "docs/design/adr/03-data-plane.md#adr-0050",
     ],
   );
 });

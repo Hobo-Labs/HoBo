@@ -40,9 +40,11 @@ vendor, or replace HOBO-284's gated apply path. It proves the containment contra
 that downstream SRE runtime code must preserve.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Runaway Remediation Guard Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

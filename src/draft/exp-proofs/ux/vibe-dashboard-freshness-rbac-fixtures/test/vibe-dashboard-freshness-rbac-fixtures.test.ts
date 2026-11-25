@@ -28,7 +28,7 @@ describe("HOBO-545 dashboard freshness/RBAC fixtures", () => {
     );
     assert.equal(
       proof.proofNote,
-      "urn:hobo:proof:vibe-dashboard-freshness-rbac-fixtures",
+      "docs/design/proofs/vibe-dashboard-freshness-rbac-fixtures/README.md",
     );
     assert.deepEqual(
       proof.fixtures.map((fixture) => fixture.state),

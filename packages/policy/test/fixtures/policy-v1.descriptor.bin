@@ -1,36 +1,0 @@
-
-§
-policy_ir.protohobo.policy.v1"„
-PolicySubject
-kind (	Rkind
-id (	Rid
-roles (	Rroles
-scopes (	Rscopes!
-delegated_by (	RdelegatedBy"4
-PolicyResource
-kind (	Rkind
-id (	Rid"ú
-DecisionRequest%
-schema_version (	RschemaVersion7
-subject (2.hobo.policy.v1.PolicySubjectRsubject
-action (	Raction:
-resource (2.hobo.policy.v1.PolicyResourceRresource
-phase (	Rphase
-
-input_hash (	R	inputHash"h
-DecisionEvidence
-
-policy_ids (	R	policyIds
-
-input_hash (	R	inputHash
-engine (	Rengine"¥
-PolicyDecision%
-schema_version (	RschemaVersion
-effect (	Reffect
-reason (	Rreason<
-evidence (2 .hobo.policy.v1.DecisionEvidenceRevidence"¯
-PolicyDecidedEvent
-id (	Rid
-type (	Rtype9
-request (2.hobo.policy.v1.DecisionRequestRrequest:
-decision (2.hobo.policy.v1.PolicyDecisionRdecisionbproto3

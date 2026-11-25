@@ -8,7 +8,7 @@ Typography carries information, hierarchy, and voice. Improve it inside the esta
 - **Operate + Read:** stability, scanability, and measure come first. A single well-tuned family and fixed role scale are often right.
 - **Native:** follow [ios.md](ios.md) or [android.md](android.md), including platform scaling and accessibility behavior.
 
-Preserve established type families unless the request calls for a new identity; implement and verify any requested change.
+If typography replacement would create a new identity, route through [new-work.md](new-work.md) and update DESIGN.md. Otherwise preserve confirmed families and improve their use.
 
 ## Two isolated assessments
 

@@ -3,10 +3,13 @@ import type {
 	PactResponse,
 	ProviderStub,
 } from "@hobo/contract-harness";
+// The package's json helpers live in src/, not beside this consumer — the
+// anti-slop sweep (#1242) rewrote this import to the by-convention "./json.js"
+// and left the whole contract suite failing at module resolution ever since.
 import {
-	cloneAsJson,
 	isJsonObject,
 	isJsonString,
+	type JsonObject,
 	type JsonValue,
 } from "../../src/json.js";
 
@@ -24,11 +27,12 @@ export class CoreContractSurfaceParseError extends Error {
 }
 
 export function parseCoreContractSurface(body: JsonValue): CoreContractSurface {
-	if (!isJsonObject(body)) {
+	if (!isJsonObject(body) || body === null || Array.isArray(body)) {
 		throw new CoreContractSurfaceParseError("response body must be an object");
 	}
 
-	const record = body;
+	// SAFETY: assertion required at this I/O or test boundary.
+	const record = body as JsonObject;
 	if (record.schemaVersion !== "hobo.core/v1") {
 		throw new CoreContractSurfaceParseError(
 			`unsupported schemaVersion: ${String(record.schemaVersion)}`,
@@ -38,7 +42,10 @@ export function parseCoreContractSurface(body: JsonValue): CoreContractSurface {
 	const eventMappings = record.eventMappings;
 	if (
 		!isJsonObject(eventMappings) ||
-		eventMappings.cloudEventSpecversion !== "1.0"
+		eventMappings === null ||
+		Array.isArray(eventMappings) ||
+		// SAFETY: assertion required at this I/O or test boundary.
+		(eventMappings as JsonObject).cloudEventSpecversion !== "1.0"
 	) {
 		throw new CoreContractSurfaceParseError(
 			"invalid eventMappings.cloudEventSpecversion",
@@ -46,7 +53,13 @@ export function parseCoreContractSurface(body: JsonValue): CoreContractSurface {
 	}
 
 	const publicSurface = record.publicSurface;
-	if (!isJsonObject(publicSurface) || publicSurface.ok !== true) {
+	if (
+		!isJsonObject(publicSurface) ||
+		publicSurface === null ||
+		Array.isArray(publicSurface) ||
+		// SAFETY: assertion required at this I/O or test boundary.
+		(publicSurface as JsonObject).ok !== true
+	) {
 		throw new CoreContractSurfaceParseError("invalid publicSurface.ok");
 	}
 
@@ -74,7 +87,7 @@ export async function fetchCoreContractSurface(
 		);
 	}
 
-	return parseCoreContractSurface(cloneAsJson(response.body));
+	return parseCoreContractSurface(response.body);
 }
 
 export async function fetchUnsupportedSchemaError(
@@ -92,16 +105,18 @@ export async function fetchUnsupportedSchemaError(
 	}
 
 	const body = response.body;
-	if (!isJsonObject(body)) {
+	if (!isJsonObject(body) || body === null || Array.isArray(body)) {
 		throw new Error("error response body must be an object");
 	}
 
-	const error = body.error;
-	if (!isJsonObject(error)) {
+	// SAFETY: assertion required at this I/O or test boundary.
+	const error = (body as JsonObject).error;
+	if (!isJsonObject(error) || error === null || Array.isArray(error)) {
 		throw new Error("error envelope missing");
 	}
 
-	const record = error;
+	// SAFETY: assertion required at this I/O or test boundary.
+	const record = error as JsonObject;
 	if (!isJsonString(record.code) || !isJsonString(record.message)) {
 		throw new Error("error envelope must include code and message");
 	}

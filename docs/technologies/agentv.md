@@ -39,19 +39,19 @@ consumers import `@agentv/core`).
 ## Relevance to HoBo
 
 - **Adopted behind the platform's eval boundary** as the live-eval grader
-  provider: [`@hobo/provider-agentv`](../../packages/providers/provider-agentv/README.md)
+  provider: [`@hobo/provider-agentv`](../../packages/providers/provider-agentv/ADR.md)
   grades **stored** trajectories (no agent re-run) with `@agentv/core`'s
   deterministic runners plus caller-wired custom/LLM graders, emitting the
   core `TrajectoryReward` (`source: "live-eval"`) and a generated
   `AgentVGrade` with the per-metric reward vector — the feedback signal the
   [Microsoft Trace](./microsoft-trace.md)-style optimization loop consumes
-  ([ADR-0025](urn:hobo:decision:adr-0025) engines-behind-ports;
+  ([ADR-0025](../design/adr/03-data-plane.md#adr-0025) engines-behind-ports;
   never on the SDK surface).
 - **Feeds the gated promotion pipeline**: per-trajectory grades aggregate
   via `aggregateEvalResults` (`@hobo/training-pipeline`) into the generated
   `EvalResult` the three-lens promotion gate decides on
-  ([Plan 23](urn:hobo:requirement:generated-stack#plan-23); `eval.Ran` /
-  `eval.GateFailed` facts per [event-families](urn:hobo:requirement:event-families)).
+  ([Plan 23](../design/generated-stack.md#plan-23); `eval.Ran` /
+  `eval.GateFailed` facts per [event-families](../design/event-families.md)).
 - **Gap HoBo owns**: agentV has no always-on online harness or native
   OTel/OpenInference ingestion — HoBo's runtime drives per-trace grading and
   keeps trajectory capture (OTel + OpenInference spans) as its own slice

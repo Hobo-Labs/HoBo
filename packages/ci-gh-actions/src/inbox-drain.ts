@@ -1,8 +1,10 @@
 import type { HostedInboxStore } from "./hosted-runtime.js";
 
+/** Per-delivery processing cap so one poison webhook cannot wedge the worker tick. */
 // public-contract: inbox drain timeout for box worker poll decoupling.
 export const DEFAULT_INBOX_DELIVERY_TIMEOUT_MS = 5_000;
 
+/** Per drain pass budget; admission ticks stay under slow-tick alerting. */
 // public-contract: inbox drain budget for box worker poll decoupling.
 export const DEFAULT_INBOX_DRAIN_BUDGET_MS = 30_000;
 

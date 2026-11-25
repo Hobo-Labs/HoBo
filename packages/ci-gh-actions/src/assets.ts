@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 
+/** The same reviewed bootstrap source is installed in customer repositories. */
 export function relayInstallAssets() {
 	return {
 		workflow: readFileSync(

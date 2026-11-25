@@ -1,3 +1,9 @@
+/**
+ * Cases live in `naming.cases.jsonl`; this file only says what the concern is.
+ *
+ * `describeConcern` also fails if `naming.ts` grows an export with no cases,
+ * which is the hole a hand-written suite leaves open.
+ */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeConcern } from "@hobo/contract-harness";

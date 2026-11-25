@@ -1,3 +1,14 @@
+// createVerificationEngine (D9, I5, I8, I12). Runs a VerificationSpec over its
+// window against health sources, probes and verify suites, and records every
+// sample it decides from on cd-verification-<id>:
+//
+//   start → verification.Started
+//   tick  → rollout.EvidenceObserved (probes and suites as they happen; health
+//           source samples together with the verdict) → verification.Completed
+//
+// The verdict is evaluateVerification(spec, recorded evidence, finished_at),
+// so replay reproduces it exactly. A crash anywhere resumes from the journal:
+// the first tick rediscovers every Started stream without a Completed event.
 import { createHash } from "node:crypto";
 import { create, type JsonValue, toJson } from "@bufbuild/protobuf";
 import type { EventInput, HttpTransport } from "@hobo/core";
@@ -25,8 +36,8 @@ import type {
 	VerificationId,
 	VerifyPort,
 } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { evaluateVerification, thresholdCohort } from "./evaluate.js";
-import { evidenceDigest } from "./evidence.js";
 import {
 	evidenceBody,
 	foldVerification,
@@ -42,12 +53,6 @@ import {
 	type ParsedVerificationSpec,
 	parseVerificationSpec,
 	probeCheckId,
-	SLO_BUDGET_CHECK,
-	SLO_BUDGET_TIME_AFTER_CHECK,
-	SLO_BUDGET_TIME_BEFORE_CHECK,
-	SLO_BURN_CHECK,
-	SLO_BURN_TIME_AFTER_CHECK,
-	SLO_BURN_TIME_BEFORE_CHECK,
 	suiteCheckId,
 	thresholdCheckId,
 } from "./spec.js";
@@ -57,9 +62,11 @@ export type VerificationEngineDeps = CdBase &
 		sources: readonly HealthSource[];
 		suites: VerifyPort;
 		http: HttpTransport;
+		/** Optional metrics sink; the journal is the record, so a failing sink never fails a tick. */
 		telemetry?: TelemetrySink;
 	}>;
 
+/** Source refusals that retrying cannot fix: the check is decided as no data at once. */
 const PERMANENT_SOURCE_CODES: ReadonlySet<string> = new Set([
 	"health-source-unconfigured",
 	"health-source-endpoint-invalid",
@@ -93,6 +100,7 @@ function verificationId(
 			]),
 		)
 		.digest("hex");
+	// SAFETY: a VerificationId is any stable token; this one is content-derived.
 	return `ver-${digest.slice(0, 32)}` as VerificationId;
 }
 
@@ -125,39 +133,6 @@ function queryPlan(
 			);
 		}
 	}
-	if (spec.sloGate?.burnRate && spec.sloGate.remainingBudgetRatio) {
-		const cohort = thresholdCohort(cohortAware);
-		for (const [check, before, after, query] of [
-			[
-				SLO_BURN_CHECK,
-				SLO_BURN_TIME_BEFORE_CHECK,
-				SLO_BURN_TIME_AFTER_CHECK,
-				spec.sloGate.burnRate,
-			],
-			[
-				SLO_BUDGET_CHECK,
-				SLO_BUDGET_TIME_BEFORE_CHECK,
-				SLO_BUDGET_TIME_AFTER_CHECK,
-				spec.sloGate.remainingBudgetRatio,
-			],
-		] as const) {
-			if (query.source === HealthSourceKind.PROMETHEUS) {
-				plans.push({
-					check: before,
-					query: { ...query, query: `timestamp(${query.query})` },
-					cohort,
-				});
-			}
-			plans.push({ check, query, cohort });
-			if (query.source === HealthSourceKind.PROMETHEUS) {
-				plans.push({
-					check: after,
-					query: { ...query, query: `timestamp(${query.query})` },
-					cohort,
-				});
-			}
-		}
-	}
 	return plans;
 }
 
@@ -177,9 +152,10 @@ export function createVerificationEngine(
 		unit: string,
 		attributes: OtelAttributes,
 	) => {
-		d.telemetry
-			?.metrics([{ name, kind, value, unit, atMs: d.now(), attributes }])
-			.catch(() => undefined);
+		if (!d.telemetry) return;
+		emitMetrics(d.telemetry, [
+			{ name, kind, value, unit, atMs: d.now(), attributes },
+		]);
 	};
 	const subject = (
 		state: Pick<VerificationState, "campId" | "freightId">,
@@ -205,6 +181,7 @@ export function createVerificationEngine(
 		})) {
 			const data = jsonOf(entry.event.data);
 			if (isJsonObject(data) && isJsonString(data.verificationId)) {
+				// SAFETY: read back from a Started body this engine wrote.
 				ids.add(data.verificationId as VerificationId);
 			}
 		}
@@ -234,9 +211,8 @@ export function createVerificationEngine(
 		verdict: VerificationVerdict,
 		checks: readonly CheckOutcomeRecord[],
 		reasons: readonly ReasonRecord[],
-		evidence: readonly EvidenceObservationRecord[] = [],
 	): VerificationResultRecord {
-		const result = create(VerificationResultRecordSchema, {
+		return create(VerificationResultRecordSchema, {
 			verificationId: state.id,
 			freightId: state.freightId,
 			campId: state.campId,
@@ -246,15 +222,6 @@ export function createVerificationEngine(
 			finishedAt: iso(atMs),
 			reasons: [...reasons],
 		});
-		if (state.spec?.sloGate)
-			result.evidenceDigest = evidenceDigest({
-				spec: state.spec,
-				cohortAware: state.cohortAware,
-				evidence,
-				startedAtMs: state.startedAtMs,
-				atMs,
-			});
-		return result;
 	}
 
 	function completed(
@@ -392,10 +359,8 @@ export function createVerificationEngine(
 							query: plan.query,
 							campId: state.campId,
 							cohort: plan.cohort,
-							fromMs: plan.check.startsWith("slo:")
-								? Math.max(state.startedAtMs, atMs - Number(spec.windowMs))
-								: state.startedAtMs,
-							toMs: plan.check.startsWith("slo:") ? atMs : windowEndMs,
+							fromMs: state.startedAtMs,
+							toMs: windowEndMs,
 							signal,
 						},
 						ctx,
@@ -432,44 +397,16 @@ export function createVerificationEngine(
 					);
 					continue;
 				}
-				const { values, points } = outcome.value;
-				if (
-					points &&
-					(points.length !== values.length ||
-						values.some((value, index) => {
-							const point = points[index];
-							return (
-								!point ||
-								!Object.is(point.value, value) ||
-								!Number.isSafeInteger(point.observedAtMs) ||
-								point.observedAtMs < 0 ||
-								point.observedAtMs > 8_640_000_000_000_000 ||
-								!point.seriesKey
-							);
-						}))
-				) {
-					reasons.push(
-						reason(
-							"health-source-response-invalid",
-							`invalid observation points for ${plan.check}`,
-							plan.check,
-						),
-					);
-					continue;
-				}
-				for (const [index, value] of values.entries()) {
-					const point = points?.[index];
+				for (const value of outcome.value.values) {
 					sampled.push(
 						create(EvidenceObservationRecordSchema, {
 							campId: state.campId,
 							signal: plan.check,
 							healthy: Number.isFinite(value),
 							value,
-							observedAt: iso(point?.observedAtMs ?? outcome.value.toMs),
+							observedAt: iso(outcome.value.toMs),
 							source: HealthSourceKind[plan.query.source] ?? "",
 							cohort: plan.cohort,
-							seriesKey: point?.seriesKey ?? "",
-							correlationKey: point?.correlationKey ?? "",
 						}),
 					);
 				}
@@ -509,14 +446,10 @@ export function createVerificationEngine(
 					(known) => known.code === item.code && known.subject === item.subject,
 				),
 		);
-		const result = finish(
-			state,
-			atMs,
-			evaluation.verdict,
-			evaluation.checks,
-			[...evaluation.reasons, ...extra],
-			[...state.evidence, ...recordedNow, ...sampled],
-		);
+		const result = finish(state, atMs, evaluation.verdict, evaluation.checks, [
+			...evaluation.reasons,
+			...extra,
+		]);
 		await append(
 			state,
 			[
@@ -549,7 +482,7 @@ export function createVerificationEngine(
 					state.cohortAware === input.cohortAware &&
 					sameSpec
 				) {
-					return state.id;
+					return state.id; // I12: idempotent while running.
 				}
 			}
 			const atMs = ctx.now();
@@ -594,6 +527,7 @@ export function createVerificationEngine(
 				subject(base),
 			);
 			if (!parsed.ok) {
+				// Fail closed and on the record: a refused spec completes FAIL at once.
 				const result = finish(
 					base,
 					atMs,
@@ -631,6 +565,7 @@ export function createVerificationEngine(
 			const state = running.get(id) ?? (await load(id));
 			if (!state) return undefined;
 			if (state.result) return state.result;
+			// Still running: identity and start time, no verdict yet.
 			return create(VerificationResultRecordSchema, {
 				verificationId: state.id,
 				freightId: state.freightId,
@@ -651,6 +586,8 @@ export function createVerificationEngine(
 					const result = await advance(state, ctx);
 					if (result) results.push(result);
 				} catch {
+					// Another writer moved the stream (expected-seq CAS) or the store
+					// failed: drop the cache entry and resume from the journal next tick.
 					running.delete(state.id);
 					const fresh = await load(state.id).catch(() => undefined);
 					if (fresh && !fresh.result) running.set(state.id, fresh);

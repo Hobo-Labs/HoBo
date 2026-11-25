@@ -32,7 +32,7 @@ import {
 	validateRenderedPattern,
 } from "../src/validate.js";
 
-function pattern<T extends object>(overrides?: T) {
+function pattern(overrides: Record<string, unknown> = {}) {
 	return create(PatternManifestSchema, {
 		id: "bindle.api",
 		version: 1,
@@ -46,7 +46,7 @@ function catalog(...patterns: ReturnType<typeof pattern>[]): PatternCatalog {
 	return { root: "/patterns", digest: "sha256:cat", patterns };
 }
 
-function receipt<T extends object>(overrides?: T) {
+function receipt(overrides: Record<string, unknown> = {}) {
 	return create(PatternRenderReceiptSchema, {
 		patternId: "bindle.api",
 		llmCalls: 0,
@@ -141,9 +141,20 @@ describe("validatePatternCatalog", () => {
 		expect(report.ok).toBe(false);
 	});
 
-	it("allows one pattern to repeat its own alias", () => {
+	it("also collides legacy aliases against current ones", () => {
 		const report = validatePatternCatalog({
-			catalog: catalog(pattern({ aliases: ["rest", "rest"] })),
+			catalog: catalog(
+				pattern({ aliases: ["rest"] }),
+				pattern({ id: "bindle.web", legacyAliases: ["rest"] }),
+			),
+		});
+		expect(report.ok).toBe(false);
+	});
+
+	it("allows one pattern to repeat its own alias", () => {
+		// Same id claiming the same alias twice is redundant, not ambiguous.
+		const report = validatePatternCatalog({
+			catalog: catalog(pattern({ aliases: ["rest"], legacyAliases: ["rest"] })),
 		});
 		expect(report.ok).toBe(true);
 	});

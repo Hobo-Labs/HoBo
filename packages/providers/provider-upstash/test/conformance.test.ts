@@ -1,3 +1,19 @@
+/**
+ * The offline conformance run behind `UPSTASH_CONFORMANCE_REF`.
+ *
+ * This is the test that makes the definition's `conformance: "pass"` mean
+ * something, and it is important to be precise about what it establishes. The
+ * provider-neutral suite emits real Redis commands; they travel through the
+ * real `createUpstashRestExecutor`, are encoded as the real REST envelope, and
+ * are answered by the reference Redis implementation from
+ * `@hobo/kv-redis-compatible` rather than by Upstash.
+ *
+ * So it proves the **adapter** implements the profile: command mapping, REST
+ * envelope, reply decoding, error mapping. It does not measure Upstash. The
+ * README says so in the same words, and the conformance ref carries
+ * `offline-reference-store` in its name so a catalog reader cannot mistake one
+ * for the other.
+ */
 import assert from "node:assert/strict";
 import {
 	createReferenceRedisStore,
@@ -24,6 +40,15 @@ import {
 import type { UpstashTransport } from "../src/transport.js";
 import { FAKE_REST_TOKEN, FAKE_REST_URL } from "./fixtures/index.js";
 
+/**
+ * Decode the request body the adapter produced back into a command.
+ *
+ * This is the reference *server's* parse boundary, so it holds the adapter to
+ * the wire contract: a JSON array of strings, nothing else. Accepting a looser
+ * shape here would let an adapter bug — a number left unstringified, a nested
+ * array — pass the suite because the local server happened to be forgiving in
+ * a way the real one is not.
+ */
 function parseCommandBody(body: string | undefined): RedisCommand {
 	const decoded = parseJsonValue(body ?? "null");
 	assert.ok(isJsonArray(decoded), "the REST body must be a JSON array");
@@ -40,6 +65,12 @@ function parseCommandBody(body: string | undefined): RedisCommand {
 	return [verb, ...args];
 }
 
+/**
+ * A transport that answers the Upstash REST contract from a local store.
+ *
+ * Everything on the wire is real: the JSON command array, the bearer header,
+ * the `{"result": …}` / `{"error": …}` envelope. Only the server is local.
+ */
 type ReferenceRestHarness = {
 	readonly transport: UpstashTransport;
 	readonly store: ReferenceStore;
@@ -77,20 +108,27 @@ function createReferenceRestTransport(
 	return { transport, store, authorizations };
 }
 
-function executorOver(
-	transport: UpstashTransport,
-	wait?: (ms: number) => Promise<void>,
-) {
+function executorOver(transport: UpstashTransport) {
 	return createUpstashRestExecutor({
 		transport,
 		restEndpointUrl: FAKE_REST_URL,
 		resolveToken: async () => FAKE_REST_TOKEN,
-		wait,
 	});
 }
 
+/** The reference store's declared value bound, used only by the harness. */
 const REFERENCE_MAX_VALUE_BYTES = 64 * 1024;
 
+/**
+ * The full offline harness: the real adapter, plus the reference *server's*
+ * clock.
+ *
+ * The time control belongs to the server, not to the adapter — a real Upstash
+ * endpoint has a real clock, and `createUpstashRestExecutor` deliberately
+ * exposes no `advanceTime` (pinned by its own test above). Wiring the
+ * reference store's clock in here lets the expiry cases run against a server
+ * whose clock we own, which is the whole point of a reference implementation.
+ */
 type OfflineHarness = {
 	readonly executor: KvRedisExecutor;
 	readonly authorizations: readonly string[];
@@ -100,10 +138,13 @@ function offlineHarness(): OfflineHarness {
 	const { transport, store, authorizations } = createReferenceRestTransport({
 		maxValueBytes: REFERENCE_MAX_VALUE_BYTES,
 	});
-	const rest = executorOver(transport, (ms) => store.advanceTime(ms));
+	const rest = executorOver(transport);
 	return {
 		authorizations,
-		executor: rest,
+		executor: {
+			execute: (command) => rest.execute(command),
+			advanceTime: (ms) => store.advanceTime(ms),
+		},
 	};
 }
 
@@ -146,6 +187,8 @@ describe("createUpstashRestExecutor", () => {
 
 		const reply = await executor.execute(["INCR", "text"]);
 
+		// WRONGTYPE and friends are legitimate Redis replies; the suite
+		// asserts on several of them.
 		assert.equal(reply.kind, "error");
 	});
 
@@ -177,40 +220,11 @@ describe("createUpstashRestExecutor", () => {
 		);
 	});
 
-	it("advances time through its wait boundary", async () => {
+	it("exposes no time control, so expiry is never faked", () => {
 		const { transport } = createReferenceRestTransport();
-		const waits: number[] = [];
-		const executor = executorOver(transport, async (ms) => {
-			waits.push(ms);
-		});
-		await executor.advanceTime?.(250);
-		assert.deepEqual(waits, [250]);
-	});
-
-	it("waits the full duration when it exceeds a timer's maximum delay", async () => {
-		const { transport } = createReferenceRestTransport();
-		const waits: number[] = [];
-		const executor = executorOver(transport, async (ms) => {
-			waits.push(ms);
-		});
-		await executor.advanceTime?.(2_147_483_772);
-		assert.deepEqual(waits, [2_147_483_647, 125]);
-	});
-
-	it("rejects invalid time advancement", async () => {
-		const { transport } = createReferenceRestTransport();
-		for (const duration of [
-			-1,
-			Number.NaN,
-			Number.POSITIVE_INFINITY,
-			Number.MAX_SAFE_INTEGER + 1,
-		]) {
-			await assert.rejects(
-				executorOver(transport).advanceTime?.(duration),
-				(error: Error) =>
-					isProviderError(error) && error.code === "PROVIDER_CONTRACT_CHANGED",
-			);
-		}
+		// A real endpoint has a real clock. Offering `advanceTime` here would
+		// let the suite "prove" TTL behavior it never observed.
+		assert.equal(executorOver(transport).advanceTime, undefined);
 	});
 });
 
@@ -251,6 +265,8 @@ describe("offline conformance", () => {
 			limits: { maxValueBytes: REFERENCE_MAX_VALUE_BYTES },
 		});
 
+		// `incomplete` would be the honest result if a required case could not
+		// run; it maps to `unknown` conformance and fails selection closed.
 		assert.equal(
 			report.outcome,
 			"pass",
@@ -260,11 +276,14 @@ describe("offline conformance", () => {
 	});
 
 	it("degrades to incomplete when the harness has no clock, rather than claiming TTL", async () => {
+		// The property worth pinning is the failure mode: without a time
+		// control the expiry cases are skipped, the run is `incomplete`, and
+		// `incomplete` becomes `unknown` conformance — which selection
+		// rejects. A suite that reported `pass` here would be the bug.
 		const { transport } = createReferenceRestTransport();
 
-		const rest = executorOver(transport);
 		const report = await runKvRedisConformance({
-			executor: { execute: (command) => rest.execute(command) },
+			executor: executorOver(transport),
 			transport: "rest",
 			keyPrefix: "upstash",
 		});
@@ -286,6 +305,9 @@ describe("offline conformance", () => {
 			keyPrefix: "upstash",
 			limits: { maxValueBytes: REFERENCE_MAX_VALUE_BYTES },
 		});
+		// Deliberately projected without the limits: the bound the run proved
+		// is the reference store's, and publishing it would read as a
+		// measurement of Upstash.
 		const capabilities = toStructuredCapabilities(report);
 
 		for (const key of [
@@ -305,6 +327,8 @@ describe("offline conformance", () => {
 				`${key} is advertised, so the run must substantiate it`,
 			);
 		}
+		// Not advertised, because the reference store's bound is the reference
+		// store's, not Upstash's.
 		assert.equal(capabilities.maxValueBytes, undefined);
 		assert.equal(UPSTASH_STRUCTURED_CAPABILITIES.maxValueBytes, undefined);
 	});
@@ -332,6 +356,8 @@ describe("offline conformance", () => {
 	});
 
 	it("names the reference store in the conformance ref, not a live database", () => {
+		// The claim is "this adapter implements the profile", not "Upstash was
+		// measured". A catalog reader has to be able to tell.
 		assert.match(UPSTASH_CONFORMANCE_REF, /offline-reference-store/u);
 	});
 });

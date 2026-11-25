@@ -47,4 +47,4 @@ Dispatcher re-enters Matching when price/policy/reliability signals change. Same
 
 ## Related
 
-[Control plane](/HoBo/system/control-plane/) · [Conductor](/HoBo/primitives/stations/#the-conductor) · [Continuous migration](/HoBo/cicd/migration/) · [Event families](/HoBo/reference/events/)
+[Control plane](/HoBo/architecture/control-plane/) · [Conductor](/HoBo/primitives/stations/#the-conductor) · [Continuous migration](/HoBo/cicd/migration/) · [Event families](/HoBo/reference/events/)

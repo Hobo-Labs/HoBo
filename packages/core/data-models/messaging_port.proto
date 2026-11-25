@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.core.v1;
 
-// Messaging plane wire records (wasi:messaging / topic()).
 // ADR-0138: unified delivery guarantees, consumer groups, DLQ, audit facts.
 // Runtime domain types parse these into branded TS types (parse-don't-validate).
 

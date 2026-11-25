@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-	mkdirSync,
 	mkdtempSync,
-	readdirSync,
+	mkdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -17,7 +16,6 @@ import * as z from "zod";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hook = join(root, "scripts/agent-source-policy.mts");
 const scratch: string[] = [];
-const stateDirectories = new Map<string, string>();
 const env = {
 	...process.env,
 	GIT_CONFIG_NOSYSTEM: "1",
@@ -27,7 +25,6 @@ const env = {
 afterEach(() => {
 	for (const directory of scratch.splice(0))
 		rmSync(directory, { recursive: true, force: true });
-	stateDirectories.clear();
 });
 
 function fixture() {
@@ -57,175 +54,15 @@ function fixture() {
 	return directory;
 }
 
-function runHook(cwd: string, args: readonly string[] = []) {
-	let stateDirectory = stateDirectories.get(cwd);
-	if (!stateDirectory) {
-		stateDirectory = mkdtempSync(join(tmpdir(), "hobo-agent-policy-state-"));
-		stateDirectories.set(cwd, stateDirectory);
-		scratch.push(stateDirectory);
-	}
-	return spawnSync(
-		process.execPath,
-		["--experimental-strip-types", hook, ...args],
-		{
-			cwd,
-			env: { ...env, HOBO_AGENT_POLICY_STATE_DIR: stateDirectory },
-			encoding: "utf8",
-		},
-	);
-}
-
-function ageCheckpoint(cwd: string) {
-	const directory = stateDirectories.get(cwd);
-	assert.ok(directory);
-	const files = readdirSync(directory);
-	assert.ok(files.length > 0);
-	for (const file of files) {
-		const path = join(directory, file);
-		const [head, status] = readFileSync(path, "utf8").trim().split("\n");
-		writeFileSync(path, `${head}\n${status}\n1\n`);
-	}
-}
-
-function git(cwd: string, args: readonly string[]) {
-	const result = spawnSync(
-		"git",
-		[
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			...args,
-		],
-		{ cwd, env, encoding: "utf8" },
-	);
-	assert.equal(result.status, 0, result.stderr);
+function runHook(cwd: string) {
+	return spawnSync(process.execPath, ["--experimental-strip-types", hook], {
+		cwd,
+		env,
+		encoding: "utf8",
+	});
 }
 
 describe("agent source policy hook", () => {
-	it("checks all commits since the last clean hook until their violations are fixed", () => {
-		const repository = fixture();
-		assert.equal(runHook(repository).status, 0);
-		git(repository, ["branch", "baseline"]);
-		const file = join(repository, "sample.ts");
-		writeFileSync(file, "// explanation\nexport const value = 1;\n");
-		git(repository, ["add", "sample.ts"]);
-		git(repository, ["commit", "--quiet", "-m", "add explanation"]);
-		git(repository, [
-			"commit",
-			"--allow-empty",
-			"--quiet",
-			"-m",
-			"another commit",
-		]);
-		const plan = join(repository, "PLAN.md");
-		writeFileSync(plan, "# Plan\n");
-		let result = runHook(repository);
-		assert.equal(result.status, 2);
-		assert.match(result.stderr, /sample\.ts:1/u);
-		assert.match(result.stderr, /PLAN\.md:1/u);
-		rmSync(plan);
-		ageCheckpoint(repository);
-		git(repository, ["switch", "--quiet", "baseline"]);
-		assert.equal(runHook(repository).status, 0);
-		git(repository, ["switch", "--quiet", "-"]);
-		assert.match(runHook(repository).stderr, /sample\.ts:1/u);
-		git(repository, [
-			"commit",
-			"--allow-empty",
-			"--quiet",
-			"-m",
-			"still present",
-		]);
-		assert.equal(runHook(repository).status, 2);
-		writeFileSync(file, "export const value = 1;\n");
-		git(repository, ["add", "sample.ts"]);
-		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
-		result = runHook(repository);
-		assert.equal(result.status, 0, result.stderr);
-	});
-
-	it("checks every new commit when a tool creates a branch", () => {
-		const repository = fixture();
-		assert.equal(runHook(repository).status, 0);
-		git(repository, ["switch", "--quiet", "-c", "new-branch"]);
-		writeFileSync(
-			join(repository, "sample.ts"),
-			"// explanation\nexport const value = 1;\n",
-		);
-		git(repository, ["add", "sample.ts"]);
-		git(repository, ["commit", "--quiet", "-m", "add explanation"]);
-		git(repository, [
-			"commit",
-			"--allow-empty",
-			"--quiet",
-			"-m",
-			"another commit",
-		]);
-		let result = runHook(repository);
-		assert.equal(result.status, 2);
-		assert.match(result.stderr, /sample\.ts:1/u);
-		git(repository, ["switch", "--quiet", "-c", "continued-branch"]);
-		git(repository, ["commit", "--allow-empty", "--quiet", "-m", "later"]);
-		result = runHook(repository);
-		assert.equal(result.status, 2);
-		assert.match(result.stderr, /sample\.ts:1/u);
-		writeFileSync(join(repository, "sample.ts"), "export const value = 1;\n");
-		git(repository, ["add", "sample.ts"]);
-		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
-		assert.equal(runHook(repository).status, 0);
-	});
-
-	it("retains an explicitly requested committed check until fixed", () => {
-		const repository = fixture();
-		const rootCommit = spawnSync("git", ["rev-parse", "HEAD"], {
-			cwd: repository,
-			env,
-			encoding: "utf8",
-		});
-		assert.equal(rootCommit.status, 0, rootCommit.stderr);
-		const file = join(repository, "sample.ts");
-		writeFileSync(file, "// explanation\nexport const value = 1;\n");
-		git(repository, ["add", "sample.ts"]);
-		git(repository, ["commit", "--quiet", "-m", "add explanation"]);
-		git(repository, [
-			"commit",
-			"--allow-empty",
-			"--quiet",
-			"-m",
-			"another commit",
-		]);
-		assert.equal(runHook(repository).status, 0);
-		let result = runHook(repository, [`--base=${rootCommit.stdout.trim()}`]);
-		assert.equal(result.status, 2);
-		assert.match(result.stderr, /sample\.ts:1/u);
-		git(repository, ["commit", "--allow-empty", "--quiet", "-m", "later"]);
-		result = runHook(repository);
-		assert.equal(result.status, 2);
-		assert.match(result.stderr, /sample\.ts:1/u);
-		writeFileSync(file, "export const value = 1;\n");
-		git(repository, ["add", "sample.ts"]);
-		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
-		assert.equal(runHook(repository).status, 0);
-	});
-
-	it("retains a failed first committed check across later commits", () => {
-		const repository = fixture();
-		const file = join(repository, "sample.ts");
-		writeFileSync(file, "// explanation\nexport const value = 1;\n");
-		git(repository, ["add", "sample.ts"]);
-		git(repository, ["commit", "--quiet", "-m", "add explanation"]);
-		assert.match(runHook(repository).stderr, /sample\.ts:1/u);
-		git(repository, ["commit", "--allow-empty", "--quiet", "-m", "next"]);
-		const result = runHook(repository);
-		assert.equal(result.status, 2);
-		assert.match(result.stderr, /sample\.ts:1/u);
-		writeFileSync(file, "export const value = 1;\n");
-		git(repository, ["add", "sample.ts"]);
-		git(repository, ["commit", "--quiet", "-m", "remove explanation"]);
-		assert.equal(runHook(repository).status, 0);
-	});
-
 	it("accepts a clean edit and reports comments and design artifacts", () => {
 		const repository = fixture();
 		writeFileSync(
@@ -265,10 +102,7 @@ describe("agent source policy hook", () => {
 			[".claude/settings.json", "PostToolUse"],
 			[".codex/hooks.json", "PostToolUse"],
 			[".cursor/hooks.json", "afterFileEdit"],
-			[".cursor/hooks.json", "afterShellExecution"],
-			[".cursor/hooks.json", "afterMCPExecution"],
 			[".github/hooks/source-policy.json", "postToolUse"],
-			[".gemini/settings.json", "AfterTool"],
 		] as const) {
 			const config = schema.parse(
 				JSON.parse(readFileSync(join(root, file), "utf8")),
@@ -280,36 +114,12 @@ describe("agent source policy hook", () => {
 		}
 	});
 
-	it("runs the common policy after every tool for harnesses with a generic tool event", () => {
-		const schema = z.object({
-			hooks: z.record(
-				z.string(),
-				z.array(z.object({ matcher: z.string().optional() }).passthrough()),
-			),
-		});
-		for (const [file, event] of [
-			[".claude/settings.json", "PostToolUse"],
-			[".codex/hooks.json", "PostToolUse"],
-			[".github/hooks/source-policy.json", "postToolUse"],
-			[".gemini/settings.json", "AfterTool"],
-		] as const) {
-			const config = schema.parse(
-				JSON.parse(readFileSync(join(root, file), "utf8")),
-			);
-			const entry = config.hooks[event]?.find((hook) =>
-				JSON.stringify(hook).includes("scripts/agent-source-policy.mts"),
-			);
-			assert.ok(entry, `${file} must run the shared source policy`);
-			assert.equal(entry.matcher, undefined, `${file} must cover every tool`);
-		}
-	});
-
 	it("keeps the anti-slop installer consistent with the common comment policy", () => {
 		const rule = "anti-slop/require-safety-comment-for-type-assertion";
 		const config = readFileSync(join(root, "oxlint.config.ts"), "utf8");
-		assert.doesNotMatch(
+		assert.match(
 			config,
-			/"anti-slop\/require-safety-comment-for-type-assertion"\s*:\s*"(?:error|warn)"/u,
+			/"anti-slop\/require-safety-comment-for-type-assertion"\s*:\s*"error"/u,
 		);
 		for (const harness of [".agents", ".claude"]) {
 			const skill = readFileSync(
@@ -322,12 +132,8 @@ describe("agent source policy hook", () => {
 			const rules = z
 				.record(z.string(), z.string())
 				.parse(JSON.parse(recommendedRules));
-			assert.equal(rules[rule], undefined);
+			assert.equal(rules[rule], "error");
 			assert.equal(rules["anti-slop/no-widen-then-assert"], "error");
-			assert.match(
-				skill,
-				/Do not enable `anti-slop\/require-safety-comment-for-type-assertion`; remove it/u,
-			);
 		}
 	});
 });

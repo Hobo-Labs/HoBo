@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProjectionLagConsistencyContractConsumer"
+  },
+  "provider": {
+    "name": "ProjectionLagConsistencyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Projection Lag Consistency Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/projection-lag-consistency-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.projection_lag_consistency_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

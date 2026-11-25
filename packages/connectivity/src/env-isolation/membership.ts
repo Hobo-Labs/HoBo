@@ -1,3 +1,4 @@
+import { type MemberId, MemberState, type RegistryView } from "@hobo/fleet";
 import {
 	ACCESS_EVENTS,
 	type AccessEvent,
@@ -10,19 +11,21 @@ import {
 	SHORT_LIVED_MEMBERSHIP_TTL_SECONDS,
 } from "./types.js";
 
+// public-contract: env membership record schema.
 export const ENV_MEMBERSHIP_SCHEMA = "hobo.env-membership/v1" as const;
 
 export type EnvMembership = Readonly<{
 	schemaVersion: typeof ENV_MEMBERSHIP_SCHEMA;
 	id: string;
 	principalId: string;
-	nodeId?: string;
+	nodeId?: MemberId;
 	isolationClass: IsolationClass;
 	assignedAt: string;
 	assignedBy: string;
 	expiresAt?: string;
 	dualControlRequired: boolean;
 	dualControlApprovers: readonly string[];
+	/** Client-supplied env: tags alone never set this true. */
 	controlPlaneGated: true;
 }>;
 
@@ -30,28 +33,51 @@ export type AssignMembershipInput = Readonly<{
 	principalId: string;
 	isolationClass: IsolationClass;
 	assignedBy: string;
-	nodeId?: string;
+	nodeId?: MemberId;
 	expiresAt?: string;
 	dualControlApprovers?: readonly string[];
+	/** Second approver for production dual control. */
 	secondApprover?: string;
 	now?: string;
 }>;
 
 export class EnvMembershipService {
 	private readonly members = new Map<string, EnvMembership>();
+	private readonly activeNodes = new Set<MemberId>();
 	readonly events: AccessEvent[] = [];
 	private readonly now: () => string;
 	private readonly tenant: string;
+	private readonly registry: RegistryView | undefined;
 	private n = 0;
 
 	constructor(options: {
 		readonly tenant: string;
 		readonly now?: () => string;
+		readonly registry?: RegistryView;
 	}) {
 		this.tenant = options.tenant;
 		this.now = options.now ?? (() => new Date().toISOString());
+		this.registry = options.registry;
 	}
 
+	async refresh(): Promise<void> {
+		const nodes = new Set<MemberId>();
+		for (const record of this.members.values())
+			if (record.nodeId !== undefined) nodes.add(record.nodeId);
+		const active = new Set<MemberId>();
+		for (const node of nodes) {
+			const record = await this.registry?.member(node).catch(() => undefined);
+			if (record?.state === MemberState.ACTIVE) active.add(node);
+		}
+		this.activeNodes.clear();
+		for (const node of active) this.activeNodes.add(node);
+	}
+
+	/**
+	 * Control-plane assign. Production requires dual control (assignedBy + secondApprover).
+	 * Client-side tag self-assignment is rejected by never exposing a path that sets
+	 * controlPlaneGated without assignedBy from the control plane.
+	 */
 	assign(input: AssignMembershipInput): EnvMembership {
 		const t = input.now ?? this.now();
 		const dualRequired = input.isolationClass === "production";
@@ -68,6 +94,7 @@ export class EnvMembershipService {
 			);
 		}
 		if (dualRequired && approvers.includes(input.assignedBy)) {
+			// dual means distinct second party
 			const distinct = approvers.filter((a) => a !== input.assignedBy);
 			if (distinct.length < 1) {
 				throw Object.assign(
@@ -98,7 +125,8 @@ export class EnvMembershipService {
 			dualControlRequired: dualRequired,
 			dualControlApprovers: dualRequired
 				? Object.freeze(approvers.filter((a) => a !== input.assignedBy))
-				: Object.freeze([]),
+				: // SAFETY: assertion required at this I/O or test boundary.
+					Object.freeze([]),
 			controlPlaneGated: true as const,
 		});
 		this.members.set(
@@ -153,6 +181,8 @@ export class EnvMembershipService {
 	): EnvMembership | null {
 		const rec = this.members.get(membershipKey(principalId, isolationClass));
 		if (!rec) return null;
+		if (rec.nodeId !== undefined && !this.activeNodes.has(rec.nodeId))
+			return null;
 		if (isExpired(rec.expiresAt, now ?? this.now())) {
 			this.members.delete(membershipKey(principalId, isolationClass));
 			return null;
@@ -160,6 +190,10 @@ export class EnvMembershipService {
 		return rec;
 	}
 
+	/**
+	 * Resolve principal's active isolation class from control-plane records.
+	 * Prefer production > staging > development > … for multi-membership (rare).
+	 */
 	resolveClass(principalId: string, now?: string): IsolationClass | null {
 		const priority: IsolationClass[] = [
 			"production",
@@ -184,6 +218,10 @@ function membershipKey(principalId: string, cls: IsolationClass): string {
 	return `${principalId}::${cls}`;
 }
 
+/**
+ * Reject free client self-tagging for isolation-critical labels.
+ * Tags may advertise intent; authorization requires control-plane membership.
+ */
 export function assertMembershipIntegrity(input: {
 	readonly claimedClass: IsolationClass | null;
 	readonly membership: EnvMembership | null;

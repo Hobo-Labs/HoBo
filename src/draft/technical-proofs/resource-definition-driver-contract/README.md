@@ -67,16 +67,18 @@ npm.cmd --prefix src\draft\technical-proofs\resource-definition-driver-contract 
 
 Relevant design records:
 
-- `urn:hobo:requirement:platform-engineering`: Resource Definition shape, matching dimensions, mapping
+- `docs/design/platform-engineering.md`: Resource Definition shape, matching dimensions, mapping
   sugar, driver taxonomy, co-provisioning
-- `urn:hobo:requirement:control-plane`: Planner resolves one Resource Definition per resource and
+- `docs/design/control-plane.md`: Planner resolves one Resource Definition per resource and
   providers ship default definitions through equivalence + `realize()`
-- `urn:hobo:decision:01-architecture-core`: ADR-0006 and ADR-0033
+- `docs/design/adr/01-architecture-core.md`: ADR-0006 and ADR-0033
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Resource Definition Driver Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

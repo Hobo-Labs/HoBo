@@ -22,8 +22,8 @@
     "componentizeJs": "0.21.0",
     "wrpc": "0.17.0",
     "wasmCloud": "2.4.0",
-    "policy": "urn:hobo:decision:adr-0024",
-    "baselineDecision": "urn:hobo:decision:adr-0085"
+    "policy": "../../../../docs/design/adr/07-portability-extensibility.md#adr-0024",
+    "baselineDecision": "../../../../docs/design/adr/01-architecture-core.md#adr-0085"
   },
   "witDeps": [
     {

@@ -1,3 +1,5 @@
+// `cue vet` driver for the WP23 CUE agreement tests. Finds `cue` on PATH,
+// else the repo-pinned binary under an ancestor's `.tools/cue/<version>/cue`.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -34,6 +36,7 @@ export type Vet = (
 	value: JsonValue,
 ) => Readonly<{ ok: boolean; error: string }>;
 
+/** A vetter bound to one schema under packages/cd/data-models. */
 export function vetter(schemaFile: string): Vet {
 	const schema = resolve(here, "../../data-models", schemaFile);
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-cd-wp23-cue-"));

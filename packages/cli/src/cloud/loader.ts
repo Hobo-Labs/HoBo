@@ -1,30 +1,16 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
-	applyResourceIdentityLedger,
 	type BindleDefinition,
 	type CollectionContext,
-	CollectionEngineError,
 	type CollectionTarget,
 	collectBindleManifest,
-	evaluateBindingDeliveryGate,
 	type ManifestV1,
-	type ProviderAnnotation,
-	type ResourceIdentityLedger,
 	readCadence,
-	readDependencyConfig,
-	resourceIdentityLedger,
 } from "@hobo/bindles";
-import {
-	isJsonBoolean,
-	isJsonNumber,
-	isJsonObject,
-	isJsonString,
-	type JsonValue,
-} from "../json.js";
+import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 import { BindleImportError } from "../shell/errors.js";
 import {
 	type AppHttpModule,
@@ -51,41 +37,13 @@ export const DEFAULT_COMPONENT_HOST = {
 	version: "46.0.1",
 } as const;
 
-export const RESOURCE_IDENTITY_FILE = "hobo.resource-identities.json";
-
-async function withProjectResourceIdentities(
-	projectDir: string,
-	definition: BindleDefinition,
-): Promise<BindleDefinition> {
-	let content: string;
-	try {
-		content = await readFile(
-			path.join(projectDir, RESOURCE_IDENTITY_FILE),
-			"utf8",
-		);
-	} catch (error) {
-		if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-			return definition;
-		}
-		throw error;
-	}
-	let ledger: ResourceIdentityLedger;
-	try {
-		ledger = JSON.parse(content) as ResourceIdentityLedger;
-	} catch {
-		throw new TypeError(`invalid ${RESOURCE_IDENTITY_FILE}`);
-	}
-	return applyResourceIdentityLedger(definition, ledger);
-}
-
 export async function loadBindleDefinition(
 	projectDir: string,
 ): Promise<BindleDefinition | null> {
 	for (const candidate of BINDLE_SOURCE_CANDIDATES) {
 		if (candidate === "dist/app.js") {
 			const application = await loadTypeScriptHttpDefinition(projectDir);
-			if (application)
-				return withProjectResourceIdentities(projectDir, application);
+			if (application) return application;
 		}
 		const absolute = path.join(projectDir, candidate);
 		if (!existsSync(absolute)) {
@@ -97,6 +55,7 @@ export async function loadBindleDefinition(
 		};
 		let module: BindleModule;
 		try {
+			// SAFETY: ESM namespace from a local bindle source file.
 			module = (await import(pathToFileURL(absolute).href)) as BindleModule;
 		} catch (error) {
 			if (isUncompiledTypeScript(candidate, error)) {
@@ -107,14 +66,13 @@ export async function loadBindleDefinition(
 
 		const definition = module.default ?? module.bindle;
 		if (definition !== undefined && isBindleDefinition(definition))
-			return withProjectResourceIdentities(projectDir, definition);
+			return definition;
 		if (candidate.includes("app.")) {
 			const application = httpDefinitionFromModule(
 				path.basename(projectDir),
 				module,
 			);
-			if (application)
-				return withProjectResourceIdentities(projectDir, application);
+			if (application) return application;
 		}
 	}
 
@@ -133,6 +91,7 @@ function isBindleDefinition<T>(value: T): value is T & BindleDefinition {
 	if (value === null || !isJsonObject(value)) {
 		return false;
 	}
+	// SAFETY: `const candidate = value as {` is required at this I/O or test boundary.
 	const candidate = value as {
 		name?: JsonValue;
 		resources?: JsonValue;
@@ -186,28 +145,6 @@ const DATA_PARADIGM: DataParadigmMap = {
 	secret: "secret",
 };
 
-function environmentFromAnnotations(
-	annotations: readonly ProviderAnnotation[],
-): Record<string, string> {
-	const entries: Array<[string, string]> = [];
-	for (const annotation of annotations) {
-		const values =
-			annotation.option === "env"
-				? annotation.config
-				: annotation.option === "dependency" &&
-						isJsonObject(annotation.config.env)
-					? annotation.config.env
-					: undefined;
-		if (!values) continue;
-		for (const [key, value] of Object.entries(values)) {
-			if (isJsonString(value) || isJsonNumber(value) || isJsonBoolean(value)) {
-				entries.push([key, String(value)]);
-			}
-		}
-	}
-	return Object.fromEntries(entries);
-}
-
 export function targetFromBindleDefinition(
 	definition: BindleDefinition,
 	componentHost: {
@@ -215,79 +152,12 @@ export function targetFromBindleDefinition(
 		readonly version: string;
 	} = DEFAULT_COMPONENT_HOST,
 ): CollectionTarget {
-	const delivery = evaluateBindingDeliveryGate({ definition });
-	if (!delivery.ok) {
-		throw new CollectionEngineError(
-			"HOBO_BINDING_DELIVERY",
-			`${delivery.summary}: ${delivery.reasons.map((reason) => reason.message).join("; ")}`,
-		);
-	}
-	if (
-		definition.deploymentIdentity !== undefined &&
-		definition.deploymentIdentity !== "generated"
-	) {
-		throw new CollectionEngineError(
-			"HOBO_RESOURCE_IDENTITY_INVALID",
-			"unknown Bindle deployment identity mode",
-		);
-	}
-	const resourceIds = new Map<string, string>();
-	const allocatedIds = new Set<string>();
-	for (const [alias, record] of Object.entries(definition.resources)) {
-		const id =
-			definition.deploymentIdentity === "generated"
-				? record.generatedId
-				: alias;
-		const prefix = `res_${record.kind.replaceAll("-", "_")}_`;
-		const validGenerated =
-			id?.startsWith(prefix) &&
-			/^\d{4,}$/u.test(id.slice(prefix.length)) &&
-			Number(id.slice(prefix.length)) > 0;
-		if (
-			!id ||
-			allocatedIds.has(id) ||
-			(definition.deploymentIdentity === "generated" && !validGenerated)
-		) {
-			throw new CollectionEngineError(
-				"HOBO_RESOURCE_IDENTITY_INVALID",
-				`invalid resource identity for ${alias}`,
-			);
-		}
-		resourceIds.set(alias, id);
-		allocatedIds.add(id);
-	}
-	const resourceId = (alias: string): string => {
-		const id = resourceIds.get(alias);
-		if (!id) {
-			throw new CollectionEngineError(
-				"HOBO_RESOURCE_IDENTITY_INVALID",
-				`unknown resource ${alias}`,
-			);
-		}
-		return id;
-	};
-	const hasIdentityData = Object.values(definition.resources).every(
-		(record) =>
-			record.generatedId !== undefined &&
-			record.identityOccurrence !== undefined,
-	);
 	return {
 		bindleId: definition.name,
 		componentHost,
-		...(hasIdentityData
-			? { identityLedger: resourceIdentityLedger(definition) }
-			: undefined),
-		dependencies: definition.edges
-			.filter(
-				(edge) =>
-					!edge.to.startsWith("connector:") &&
-					resourceIds.has(edge.from) &&
-					resourceIds.has(edge.to),
-			)
-			.map((edge) => ({
-				from: resourceId(edge.from),
-				to: resourceId(edge.to),
-			})),
+		dependencies: definition.edges.filter(
+			(edge) => !edge.to.startsWith("connector:"),
+		),
 		define(collect: CollectionContext): void {
 			const backing = new Map<string, ReturnType<CollectionContext["data"]>>();
 
@@ -296,32 +166,18 @@ export function targetFromBindleDefinition(
 					continue;
 				}
 				const paradigm = paradigmFor(record.kind);
-				const env = environmentFromAnnotations(record.annotations);
-				const dependency = readDependencyConfig(record.annotations);
+				// A schedule's cadence travels to the planner on the manifest.
 				const cron = readCadence(record.annotations);
 				const options = {
 					paradigm,
-					...((record.kind === "secret" || record.kind === "cache") &&
-					record.declaredAllow?.length
+					...(record.kind === "secret" && record.declaredAllow?.length
 						? { allow: [...record.declaredAllow] }
-						: undefined),
-					...(Object.keys(env).length > 0 ? { env } : undefined),
-					...(dependency && isJsonString(dependency.connectionString)
-						? { connectionString: dependency.connectionString }
-						: undefined),
-					...(dependency && isJsonObject(dependency.endpoints)
-						? { endpoints: dependency.endpoints }
 						: undefined),
 					...(cron !== undefined
 						? { annotations: { cadence: cron } }
 						: undefined),
 				};
-				backing.set(
-					name,
-					record.kind === "cache"
-						? collect.cache(resourceId(name), options)
-						: collect.data(resourceId(name), options),
-				);
+				backing.set(name, collect.data(name, options));
 			}
 
 			for (const [name, record] of Object.entries(definition.resources)) {
@@ -338,11 +194,7 @@ export function targetFromBindleDefinition(
 						bind[edge.to] = handle;
 					}
 				}
-				const env = environmentFromAnnotations(record.annotations);
-				collect.service(resourceId(name), {
-					...(Object.keys(bind).length > 0 ? { bind } : undefined),
-					...(Object.keys(env).length > 0 ? { env } : undefined),
-				});
+				collect.service(name, Object.keys(bind).length > 0 ? { bind } : {});
 			}
 		},
 	};
@@ -364,13 +216,7 @@ export async function compileProjectManifest(
 	}
 	try {
 		return collectBindleManifest(target).manifest;
-	} catch (error) {
-		if (
-			error instanceof CollectionEngineError &&
-			error.code === "HOBO_BINDING_DELIVERY"
-		) {
-			throw error;
-		}
+	} catch {
 		return null;
 	}
 }

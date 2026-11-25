@@ -1,0 +1,20 @@
+{
+  "layer": "project",
+  "slug": "s1-23-hobo-build",
+  "title": "S1-23 hobo build draft POC (HOBO-613)",
+  "linear": "HOBO-613",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-codegen-cli-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

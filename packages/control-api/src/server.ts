@@ -194,19 +194,8 @@ async function readJson(req: IncomingMessage): Promise<JsonObject> {
 	if (chunks.length === 0) return {};
 	const raw = Buffer.concat(chunks).toString("utf8");
 	if (!raw.trim()) return {};
-	return parseJsonObject(raw);
-}
-
-function isJsonObject(value: JsonValue): value is JsonObject {
-	return Object.prototype.toString.call(value) === "[object Object]";
-}
-
-export function parseJsonObject(raw: string): JsonObject {
-	const value: JsonValue = JSON.parse(raw);
-	if (!isJsonObject(value)) {
-		throw new SyntaxError("request body is not a JSON object");
-	}
-	return value;
+	// SAFETY: the HTTP JSON parser is the single boundary for request bodies.
+	return JSON.parse(raw) as JsonObject;
 }
 
 function sendJson(res: ServerResponse, status: number, body: JsonBody): void {

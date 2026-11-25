@@ -1,20 +1,15 @@
 import type {
 	OverlayNetwork,
-	OverlayProviderKind,
-	PolicyEngine,
 	Tenant,
 	TenantId,
 	TenantIsolationMode,
 } from "@hobo/core";
 import { parseTenantId } from "@hobo/core";
 
-import { createNetbirdOverlay } from "../overlay/netbird.js";
-import { createTailscaleOverlay } from "../overlay/tailscale.js";
-import { createWireguardOverlay } from "../overlay/wireguard.js";
-
 export interface TenantControlPlanePartition {
 	readonly tenantId: TenantId;
 	readonly partitionKey: string;
+	/** Logical stream / store prefix for hard control-plane isolation. */
 	readonly eventStreamPrefix: string;
 	readonly brokerNamespace: string;
 }
@@ -34,6 +29,10 @@ export interface TenantIsolationRegistry {
 		tenantId: TenantId | string,
 	): TenantControlPlanePartition | null;
 	listPlanes(): readonly TenantOverlayPlane[];
+	/**
+	 * Assert two subjects cannot share a hard-isolated plane.
+	 * Soft tenants share the default overlay and rely on PolicyEngine.
+	 */
 	assertNetworkIsolation(
 		a: TenantId | string,
 		b: TenantId | string,
@@ -43,41 +42,40 @@ export interface TenantIsolationRegistry {
 	};
 }
 
+export interface TenantOverlays {
+	readonly shared: OverlayNetwork;
+	readonly forTenant?: (tenant: Tenant) => OverlayNetwork;
+}
+
 export interface TenantIsolationRegistryOptions {
 	readonly defaultMode?: TenantIsolationMode;
-	readonly sharedOverlay?: OverlayNetwork;
-	readonly policy?: PolicyEngine;
-	readonly createOverlayForTenant?: (tenant: Tenant) => OverlayNetwork;
-	readonly overlayProvider?: OverlayProviderKind;
 }
 
-function createOverlayNetwork(
-	provider: OverlayProviderKind | undefined,
-	policy: PolicyEngine | undefined,
-): OverlayNetwork {
-	if (provider === "netbird") return createNetbirdOverlay();
-	if (provider === "tailscale") {
-		return createTailscaleOverlay(policy === undefined ? {} : { policy });
-	}
-	return createWireguardOverlay(policy === undefined ? {} : { policy });
-}
-
+/**
+ * Hard multi-tenant isolation:
+ * - soft: shared OverlayNetwork; isolation is PolicyEngine + IDs
+ * - hard-overlay: dedicated OverlayNetwork instance + overlayNetworkId tags
+ * - hard-control-plane: hard-overlay + dedicated control-plane partition keys
+ */
 export function createTenantIsolationRegistry(
+	overlays: TenantOverlays,
 	options: TenantIsolationRegistryOptions = {},
 ): TenantIsolationRegistry {
 	const defaultMode = options.defaultMode ?? "soft";
-	const shared =
-		options.sharedOverlay ??
-		createOverlayNetwork(options.overlayProvider, options.policy);
+	const shared = overlays.shared;
 
 	const planes = new Map<string, TenantOverlayPlane>();
 	const controlPlanes = new Map<string, TenantControlPlanePartition>();
 
 	function createOverlay(tenant: Tenant): OverlayNetwork {
-		if (options.createOverlayForTenant) {
-			return options.createOverlayForTenant(tenant);
-		}
-		return createOverlayNetwork(options.overlayProvider, options.policy);
+		if (overlays.forTenant === undefined)
+			throw Object.assign(
+				new Error(
+					`tenant ${tenant.id} needs its own overlay for hard isolation; pass overlays.forTenant`,
+				),
+				{ code: "overlay-required" },
+			);
+		return overlays.forTenant(tenant);
 	}
 
 	return {

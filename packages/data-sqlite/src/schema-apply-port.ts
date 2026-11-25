@@ -1,3 +1,11 @@
+/**
+ * Standalone schema-apply port over a SQLite file — the synchronous port the
+ * Trails migration executor has always run on, now owned by the engine
+ * package instead of the runbook engine (ADR-0177 decision 3).
+ *
+ * It opens the file and nothing else: no HoBo metadata tables are created in
+ * a database that is only having its schema evolved.
+ */
 import { DatabaseSync } from "node:sqlite";
 import {
 	createSchemaPort,
@@ -6,6 +14,7 @@ import {
 } from "./engine.js";
 
 export interface CreateSqliteSchemaApplyPortOptions {
+	/** Store file path; `:memory:` is refused (snapshots need a file). */
 	readonly path: string;
 	readonly clock?: () => string;
 }

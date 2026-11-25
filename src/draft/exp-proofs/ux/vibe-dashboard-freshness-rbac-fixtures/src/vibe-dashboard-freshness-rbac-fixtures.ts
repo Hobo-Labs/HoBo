@@ -111,7 +111,7 @@ export interface DashboardFreshnessRbacFixtureProof {
   readonly issue: "HOBO-545";
   readonly phase: "M1";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures";
-  readonly proofNote: "urn:hobo:proof:vibe-dashboard-freshness-rbac-fixtures";
+  readonly proofNote: "docs/design/proofs/vibe-dashboard-freshness-rbac-fixtures/README.md";
   readonly designRefs: readonly string[];
   readonly proofModeLabels: readonly DashboardProofMode[];
   readonly coveragePaths: readonly DashboardFixtureCoveragePath[];
@@ -173,12 +173,12 @@ export const VIBE_DASHBOARD_FRESHNESS_RBAC_FIXTURES = {
   issue: "HOBO-545",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures",
-  proofNote: "urn:hobo:proof:vibe-dashboard-freshness-rbac-fixtures",
+  proofNote: "docs/design/proofs/vibe-dashboard-freshness-rbac-fixtures/README.md",
   designRefs: [
-    "urn:hobo:requirement:deployment-dashboard-topology-explorer",
-    "urn:hobo:requirement:data-plane#plan-32",
-    "urn:hobo:decision:adr-0050",
-    "urn:hobo:decision:adr-0077",
+    "docs/design/deployment-dashboard-topology-explorer.md",
+    "docs/design/data-plane.md#plan-32",
+    "docs/design/adr/03-data-plane.md#adr-0050",
+    "docs/design/adr/02-identity-security.md#adr-0077",
   ],
   proofModeLabels: REQUIRED_DASHBOARD_PROOF_MODES,
   coveragePaths: [
@@ -487,7 +487,7 @@ export function parseDashboardFreshnessRbacFixtures(
   );
   expectLiteral(
     proof.proofNote,
-    "urn:hobo:proof:vibe-dashboard-freshness-rbac-fixtures",
+    "docs/design/proofs/vibe-dashboard-freshness-rbac-fixtures/README.md",
     "proofNote",
   );
 

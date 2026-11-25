@@ -5,7 +5,6 @@ export {
 	COST_SCHEMA,
 	KAFKA_PROVIDER_ID,
 	MANIFEST_SCHEMA,
-	PROVIDER_TERMS,
 	type PublishedManifestDocuments,
 	publishCapabilityManifest,
 } from "./manifest.js";

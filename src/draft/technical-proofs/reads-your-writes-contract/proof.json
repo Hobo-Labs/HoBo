@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "reads-your-writes-contract",
+  "title": "Reads-Your-Writes Contract POC",
+  "linear": "HOBO-85",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/cqrs-command-aggregate-contract",
+      "src/draft/technical-proofs/projection-consistency-reactivity-contract",
+      "src/draft/technical-proofs/reactor-skeleton-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

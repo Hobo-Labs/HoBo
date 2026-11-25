@@ -64,8 +64,6 @@ export function getReadiness(): DaggerReadiness {
 }
 
 export {
-	type BoundDaggerBackendOptions,
-	createBoundDaggerBackend,
 	createDaggerBackend,
 	type DaggerBackendOptions,
 	type DaggerClientPort,

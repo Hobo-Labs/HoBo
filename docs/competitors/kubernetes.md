@@ -118,7 +118,7 @@ cannot serve.
 
 | Kubernetes | Nearest HoBo concept | Honest correspondence |
 | ---------- | -------------------- | --------------------- |
-| Controller reconciliation | HoBo reconcile loop | **Direct descent**, acknowledged in [`lineage.md`](urn:hobo:requirement:lineage) via Crossplane. |
+| Controller reconciliation | HoBo reconcile loop | **Direct descent**, acknowledged in [`lineage.md`](../design/lineage.md) via Crossplane. |
 | Object / desired state | Manifest IR | Close in spirit; HoBo's authority is an event log rather than etcd's current-state store. |
 | **CRD** | Bindle kind | **The closest analog, and instructive.** A CRD adds a type to an API; a Bindle kind adds a capability contract with declared impedance. CRDs inherit tooling; HoBo's kinds inherit portability scoring. |
 | Operator | Provider adapter | Close: both encode how to realize and operate a specific system. |
@@ -150,7 +150,7 @@ State labels follow the research contract: **implemented** = shipped in `package
   model runs with no infrastructure at all. This addresses the entire segment below Kubernetes'
   operational floor, and it is HoBo's clearest structural advantage.
 - **Portability across providers, not just clusters** (*implemented*, with coverage caveats in the
-  [live provider matrix](urn:hobo:requirement:live-provider-matrix)). A Bindle can target a managed cloud
+  [live provider matrix](../design/live-provider-matrix.md)). A Bindle can target a managed cloud
   service, a wasm host, or a cluster.
 - **Portability is scored** (*implemented*, ADR-0144). Kubernetes conformance says an API exists,
   not that behaviour is equivalent — the gap where portability claims actually fail.
@@ -196,7 +196,7 @@ State labels follow the research contract: **implemented** = shipped in `package
   making a new type first-class in the existing API, so it inherits every tool, is why the ecosystem
   compounded.
 - **Standard** — Kubernetes object shapes are spoken at the boundary when rendering, never absorbed
-  as HoBo's internal model, per the governing rule in [`lineage.md`](urn:hobo:requirement:lineage).
+  as HoBo's internal model, per the governing rule in [`lineage.md`](../design/lineage.md).
 - **Not a displace target**, and any HoBo material implying otherwise would be wrong. The claim is
   narrower and more defensible: *Kubernetes is one substrate, not the premise*.
 
@@ -224,7 +224,7 @@ State labels follow the research contract: **implemented** = shipped in `package
 - [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/) — the reconciliation pattern
 - [Custom resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) — CRDs and the extension model
 - [kubernetes/kubernetes](https://github.com/kubernetes/kubernetes) — source, Apache-2.0, CNCF governance
-- HoBo-side: [`design/lineage.md`](urn:hobo:requirement:lineage), ADR-0006, ADR-0031, [live provider matrix](urn:hobo:requirement:live-provider-matrix)
+- HoBo-side: [`design/lineage.md`](../design/lineage.md), ADR-0006, ADR-0031, [live provider matrix](../design/live-provider-matrix.md)
 
 Specific etcd scaling limits, current release-support windows and managed-offering differences vary
 by version and vendor; none is asserted with a number here.

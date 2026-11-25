@@ -24,7 +24,8 @@ extends the HOBO-521 M0 vocabulary into executable fixtures for:
 - The proof stays out of hosted broker runtime, Yard planner, provider adapter, admin UI, and
   Gatekeeper implementation scope.
 
-## Executable evidence
+## Architecture Evidence
+
 - `schema/meta-cloud-broker-artifacts.v1.schema.json` pins the artifact envelope.
 - `architecture/meta_cloud_broker_artifact_contract.proto` defines records and messages.
 - `architecture/meta_cloud_broker_artifact_contract.cue` attaches constraints to every protobuf
@@ -32,6 +33,7 @@ extends the HOBO-521 M0 vocabulary into executable fixtures for:
 - Protobuf, CUE, JSON schema, and TypeScript declarations all use the same `source.issue` plus
   `source.refs` provenance shape so contract evidence cannot drift across views.
 - `architecture/pacts/meta_cloud_broker_artifact_contract.pact.json` records the package boundary.
+- `ARCHITECTURE.md` documents parse-don't-validate and event architecture vocabulary.
 
 ## Verification
 

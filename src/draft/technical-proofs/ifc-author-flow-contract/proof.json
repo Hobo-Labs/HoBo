@@ -14,7 +14,8 @@
     "epicProofs": [],
     "expProofs": [
       "src/draft/exp-proofs/api/xaa-scope-inference-contract"
-    ]
+    ],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

@@ -1,6 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,32 +11,29 @@ import {
 	type RuntimeLocalEventStore,
 } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
-import { deploymentTransitionStarted } from "../src/events.js";
-import type { Executor } from "../src/executor/executor.js";
 import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
 	type DeploymentPlan,
+	deploymentDeployed,
 	deploymentPlanned,
-	deploymentViewProjection,
 	desiredSpecHash,
-	foldResourceActor,
 	type IacProgram,
 	type IacProvider,
-	isConverged,
 	type OrchestratorDeps,
 	orphansToPrune,
 	parseDeploymentMode,
 	planDeploymentChanges,
 	reconcileResource,
-	resourceFailed,
 	resourceProvisioned,
-	resourceProvisioning,
 	runCompensation,
 	runOrchestrator,
 } from "../src/index.js";
-import { isJsonObject } from "../src/json.js";
-import { deploymentPlanHash } from "../src/orchestrator/deployment-transition.js";
+
+// Desired State Reconciliation: `up` is an upsert over the durable log.
+// Re-running an unchanged declaration is a no-op (idempotent deployment), a
+// changed spec updates in place, `down` then `up` re-creates, and `complete`
+// mode prunes what is no longer declared.
 
 let stores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
@@ -56,6 +51,7 @@ function freshStore(): RuntimeLocalEventStore {
 }
 
 function loadPlan(): DeploymentPlan {
+	// SAFETY: fixture JSON is a DeploymentPlan by construction.
 	return JSON.parse(
 		readFileSync(
 			fileURLToPath(
@@ -194,11 +190,6 @@ describe("idempotent deployment", () => {
 		expect(first.changes.summary.create).toBe(plan.resources.length);
 		const applies = iac.calls.length;
 		const before = await drain(store, "deployment:idem");
-		expect(before.at(-1)?.type).toBe("deployment.Deployed");
-		expect(before.at(-1)?.data).toEqual({
-			deploymentId: "idem",
-			resourceIds: plan.resources.map((resource) => resource.name).sort(),
-		});
 
 		const second = await runOrchestrator(deps(store, iac), plan, "idem", {
 			tenant,
@@ -249,155 +240,86 @@ describe("upsert", () => {
 		expect(iac.calls.filter((call) => call.startsWith("destroy:"))).toEqual([]);
 	});
 
-	it("rejects provisioned facts without a recorded desired specification", async () => {
+	it("refuses legacy no-op and update decisions without recorded applied provenance", async () => {
 		const store = freshStore();
+		const iac = recordingIac();
 		const fixture = loadPlan();
-		const resource = fixture.resources.find(
-			(entry) => entry.name === "network",
-		);
-		if (!resource) throw new Error("missing network resource");
-		const plan = { ...fixture, resources: [resource] };
-		await recordPlan(store, "invalid-fact", plan);
-		const stream = "deployment:invalid-fact";
-		const existing = await drain(store, stream);
+		const plan = {
+			...fixture,
+			resources: fixture.resources.filter((r) => r.name === "network"),
+		};
+		await recordPlan(store, "legacy-plan", plan);
+		const stream = "deployment:legacy-plan";
+		const events = await drain(store, stream);
 		await emit(
 			store,
 			stream,
 			[
-				resourceProvisioning({
-					deploymentId: "invalid-fact",
+				resourceProvisioned({
+					deploymentId: "legacy-plan",
 					resourceId: "network",
-					execId: "apply",
-					programHash: `sha256:${"0".repeat(64)}`,
-					specHash: desiredSpecHash(resource),
-					providerId: resource.provider,
-				}),
-				{
-					type: "resource.Provisioned",
-					data: {
-						deploymentId: "invalid-fact",
-						resourceId: "network",
-						outputs: {},
-						execId: "apply",
-					},
-				},
-			],
-			{ expectedSeq: existing.at(-1)?.seq ?? 0, actor, tenant },
-		);
-		const events = await drain(store, stream);
-		expect(() => foldResourceActor(events, resource)).toThrow(
-			"resource fact requires a valid spec hash",
-		);
-		expect(() => planDeploymentChanges(plan, events)).toThrow(
-			"resource fact requires a valid spec hash",
-		);
-		expect(() =>
-			isConverged(
-				{
-					deploymentId: "invalid-fact",
-					resourceId: "network",
-					state: "Provisioned",
-					sequence: 1,
 					outputs: {},
-					deps: resource.deps,
-				},
-				resource,
-			),
-		).toThrow("resource fact requires a valid spec hash");
-	});
-
-	it("stores resource facts and snapshots that satisfy the current contracts", async () => {
-		const store = freshStore();
-		const plan = loadPlan();
-		const resource = plan.resources[0];
-		if (!resource) throw new Error("missing resource");
-		await runOrchestrator(deps(store, recordingIac()), plan, "schema-facts", {
-			tenant,
-			actor,
-		});
-		const events = await drain(store, "deployment:schema-facts");
-		const isResourceFact = (event: EventEnvelope, type: string) =>
-			event.type === type &&
-			isJsonObject(event.data) &&
-			event.data.resourceId === resource.name;
-		const provisioning = events.find((event) =>
-			isResourceFact(event, "resource.Provisioning"),
-		);
-		const provisioned = events.find((event) =>
-			isResourceFact(event, "resource.Provisioned"),
-		);
-		const deployed = events.find(
-			(event) => event.type === "deployment.Deployed",
-		);
-		if (!provisioning || !provisioned || !deployed)
-			throw new Error("missing resource facts");
-		const snapshot = foldResourceActor(events, {
-			...resource,
-			deploymentId: "schema-facts",
-		});
-		const directory = mkdtempSync(join(tmpdir(), "hobo-resource-facts-"));
-		try {
-			const cue =
-				process.env.HOBO_CUE_BIN ||
-				fileURLToPath(
-					new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
-				);
-			const schema = fileURLToPath(
-				new URL("../data-models/cloud.cue", import.meta.url),
-			);
-			const path = join(directory, "record.json");
-			for (const [definition, data] of [
-				["#ResourceProvisioningRecord", provisioning.data],
-				["#ResourceProvisionedRecord", provisioned.data],
-				["#DeploymentDeployedRecord", deployed.data],
-				["#ResourceActorSnapshot", snapshot],
-			] as const) {
-				writeFileSync(path, JSON.stringify(data));
-				execFileSync(cue, ["vet", schema, path, "-d", definition]);
-			}
-			const { specHash: _omitted, ...incomplete } = snapshot;
-			writeFileSync(path, JSON.stringify(incomplete));
-			expect(() =>
-				execFileSync(
-					cue,
-					["vet", schema, path, "-d", "#ResourceActorSnapshot"],
-					{ stdio: "pipe" },
-				),
-			).toThrow();
-		} finally {
-			rmSync(directory, { recursive: true, force: true });
-		}
-	});
-
-	it("does not infer a provisioning provider from a plan", async () => {
-		const store = freshStore();
-		const plan = loadPlan();
-		const resource = plan.resources[0];
-		if (!resource) throw new Error("missing resource");
-		await recordPlan(store, "invalid-provider", plan);
-		const stream = "deployment:invalid-provider";
-		const events = await drain(store, stream);
-		await emit(
-			store,
-			stream,
-			[
-				{
-					type: "resource.Provisioning",
-					data: {
-						deploymentId: "invalid-provider",
-						resourceId: resource.name,
-						execId: "apply",
-						programHash: "program",
-						specHash: desiredSpecHash(resource),
-					},
-				},
+					execId: "legacy",
+				}),
+				deploymentDeployed({
+					deploymentId: "legacy-plan",
+					setId: "legacy-set",
+					resourceIds: ["network"],
+				}),
 			],
 			{ expectedSeq: events.at(-1)?.seq ?? 0, actor, tenant },
 		);
-		const history = await drain(store, stream);
-		expect(() => planDeploymentChanges(plan, history)).toThrow(
-			"resource provisioning requires a provider",
+		const unchanged = await runOrchestrator(
+			deps(store, iac),
+			plan,
+			"legacy-plan",
+			{
+				tenant,
+				actor,
+			},
 		);
+		expect(unchanged.status).toBe("needs-human");
+		expect(unchanged.changes.changes[0]).toMatchObject({
+			action: "retain",
+			reason: expect.stringMatching(/unverified/i),
+		});
+		expect(unchanged.blockedProviderMoves).toMatchObject([
+			{ resource: "network", reason: "specification-unverified" },
+		]);
+		expect(unchanged.blockedProviderMoves?.[0]).not.toHaveProperty("from");
+		expect(iac.calls).toEqual([]);
+
+		const changed = {
+			...plan,
+			resources: plan.resources.map((r) => ({ ...r, region: "new-region" })),
+		};
+		await recordPlan(store, "legacy-plan", changed);
+		const whatIf = planDeploymentChanges(changed, await drain(store, stream));
+		expect(whatIf.changes[0]).toMatchObject({
+			action: "retain",
+			reason: expect.stringMatching(/unverified/i),
+		});
+		const result = await runOrchestrator(
+			deps(store, iac),
+			changed,
+			"legacy-plan",
+			{ tenant, actor },
+		);
+		expect(iac.calls).toEqual([]);
+		expect(result.status).toBe("needs-human");
+		const resource = changed.resources[0];
+		if (!resource) throw new Error("fixture has no resource");
+		expect(
+			await reconcileResource(deps(store, iac), resource, {
+				deploymentId: "legacy-plan",
+				tenant,
+				actor,
+			}),
+		).toMatchObject({
+			kind: "blocked",
+			move: { reason: "specification-unverified" },
+		});
+		expect(iac.calls).toEqual([]);
 	});
 
 	it("sends the changed resource declaration to the provider", async () => {
@@ -510,6 +432,7 @@ describe("upsert", () => {
 		expect(events.filter((e) => e.type === "deployment.Deployed").length).toBe(
 			2,
 		);
+		// The update converges: a third run is a no-op again.
 		iac.calls.length = 0;
 		await runOrchestrator(deps(store, iac), changed, "upsert", {
 			tenant,
@@ -520,474 +443,6 @@ describe("upsert", () => {
 });
 
 describe("create/destroy cycle", () => {
-	it("resumes a started rollback after the event store reopens", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "hobo-rollback-resume-"));
-		let store = createRuntimeLocalEventStore({ dataDir: directory });
-		const iac = recordingIac();
-		const plan = loadPlan();
-		try {
-			await runOrchestrator(deps(store, iac), plan, "resume-rollback", {
-				tenant,
-				actor,
-			});
-			iac.calls.length = 0;
-			const stream = "deployment:resume-rollback";
-			const events = await drain(store, stream);
-			await emit(
-				store,
-				stream,
-				[
-					deploymentTransitionStarted({
-						deploymentId: "resume-rollback",
-						transitionId: randomUUID(),
-						kind: "rollback",
-						planHash: deploymentPlanHash(plan),
-						resourceIds: plan.resources.map((entry) => entry.name).sort(),
-						triggerResource: "web",
-						reason: "operator requested rollback",
-					}),
-				],
-				{ expectedSeq: events.at(-1)?.seq ?? 0, tenant, actor },
-			);
-			const before = await deploymentViewProjection.rebuildFromZero(
-				store,
-				stream,
-			);
-			expect(
-				deploymentViewProjection.get(before, "resume-rollback"),
-			).toMatchObject({
-				status: "rolling-back",
-				rollback: { resourceId: "web", reason: "operator requested rollback" },
-			});
-			store.close();
-			store = createRuntimeLocalEventStore({ dataDir: directory });
-			const result = await runCompensation(
-				deps(store, iac),
-				plan,
-				"resume-rollback",
-				{ resourceId: "web", reason: "operator requested rollback" },
-				{ tenant, actor },
-			);
-			expect(result.status).toBe("rolled-back");
-			expect(result.blocked).toEqual([]);
-			for (const type of [
-				"deployment.TransitionStarted",
-				"deployment.TransitionCompleted",
-				"deployment.RolledBack",
-			])
-				expect(
-					result.events.filter((event) => event.type === type),
-				).toHaveLength(1);
-			const started = result.events.find(
-				(event) => event.type === "deployment.TransitionStarted",
-			);
-			const completed = result.events.find(
-				(event) => event.type === "deployment.RolledBack",
-			);
-			if (!started || !completed) throw new Error("missing rollback facts");
-			expect(started.data).toMatchObject({
-				deploymentId: "resume-rollback",
-				kind: "rollback",
-				triggerResource: "web",
-				reason: "operator requested rollback",
-			});
-			expect(completed.data).toEqual({ deploymentId: "resume-rollback" });
-			const cue =
-				process.env.HOBO_CUE_BIN ||
-				fileURLToPath(
-					new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
-				);
-			const schema = fileURLToPath(
-				new URL("../data-models/cloud.cue", import.meta.url),
-			);
-			const path = join(directory, "rollback.json");
-			for (const [definition, data] of [
-				["#DeploymentTransitionRecord", started.data],
-				["#DeploymentRolledBackRecord", completed.data],
-			] as const) {
-				writeFileSync(path, JSON.stringify(data));
-				execFileSync(cue, ["vet", schema, path, "-d", definition]);
-			}
-			expect(result.destroyedOrder).toEqual([
-				"web",
-				"api",
-				"cache",
-				"database",
-				"network",
-			]);
-			const after = await deploymentViewProjection.rebuildFromZero(
-				store,
-				stream,
-			);
-			expect(
-				deploymentViewProjection.get(after, "resume-rollback")?.status,
-			).toBe("rolled-back");
-		} finally {
-			store.close();
-			rmSync(directory, { recursive: true, force: true });
-		}
-	});
-
-	it("refuses a competing rollback while a destroy is in flight and never repeats it", async () => {
-		const store = freshStore();
-		const fixture = loadPlan();
-		const template = fixture.resources[0];
-		if (!template) throw new Error("missing resource template");
-		const plan = {
-			...fixture,
-			resources: [
-				{ ...template, name: "first", deps: [] },
-				{ ...template, name: "second", deps: [] },
-			],
-		};
-		const attempts: string[] = [];
-		let entered: (() => void) | undefined;
-		const destroying = new Promise<void>((resolve) => {
-			entered = resolve;
-		});
-		let release: (() => void) | undefined;
-		const released = new Promise<void>((resolve) => {
-			release = resolve;
-		});
-		const iac: IacProvider = {
-			...recordingIac(),
-			async destroy(program) {
-				attempts.push(program.resourceId);
-				if (attempts.length === 1) {
-					entered?.();
-					await released;
-				}
-			},
-		};
-		const runtime = deps(store, iac);
-		await runOrchestrator(runtime, plan, "parallel-rollback", {
-			tenant,
-			actor,
-		});
-		const failure = { resourceId: "first", reason: "rollback requested" };
-		const owner = runCompensation(runtime, plan, "parallel-rollback", failure, {
-			tenant,
-			actor,
-		});
-		await destroying;
-		const competitor = await runCompensation(
-			runtime,
-			plan,
-			"parallel-rollback",
-			{ resourceId: "second", reason: "second failure" },
-			{ tenant, actor },
-		).then(
-			(result) => result.status,
-			() => "refused" as const,
-		);
-		expect(competitor).not.toBe("rolled-back");
-		release?.();
-		const result = await owner;
-		expect(result.status).toBe("rolled-back");
-		expect(result.blocked).toEqual([]);
-		expect(attempts.sort()).toEqual(["first", "second"]);
-		const events = await drain(store, "deployment:parallel-rollback");
-		for (const type of [
-			"deployment.TransitionStarted",
-			"deployment.TransitionCompleted",
-			"deployment.RolledBack",
-		])
-			expect(events.filter((event) => event.type === type)).toHaveLength(1);
-		expect(
-			events.filter((event) => event.type === "resource.Destroying"),
-		).toHaveLength(2);
-		expect(
-			events.filter((event) => event.type === "resource.Destroyed"),
-		).toHaveLength(2);
-	}, 10000);
-
-	it("destroys a dependent that failed after provisioning before its dependencies", async () => {
-		const store = freshStore();
-		const iac = recordingIac();
-		const plan = loadPlan();
-		const runtime = deps(store, iac);
-		await runOrchestrator(runtime, plan, "failed-dependent", { tenant, actor });
-		iac.calls.length = 0;
-		const stream = "deployment:failed-dependent";
-		const events = await drain(store, stream);
-		await emit(
-			store,
-			stream,
-			[
-				resourceFailed({
-					deploymentId: "failed-dependent",
-					resourceId: "web",
-					reason: "update failed",
-					classification: "fatal",
-					crossedNoGoThreshold: true,
-				}),
-			],
-			{ expectedSeq: events.at(-1)?.seq ?? 0, tenant, actor },
-		);
-		const result = await runCompensation(
-			runtime,
-			plan,
-			"failed-dependent",
-			{ resourceId: "web", reason: "update failed" },
-			{ tenant, actor },
-		);
-		expect(result.status).toBe("rolled-back");
-		expect(result.blocked).toEqual([]);
-		expect(result.destroyedOrder[0]).toBe("web");
-		expect(iac.calls[0]).toBe("destroy:web");
-		expect(iac.calls).toHaveLength(plan.resources.length);
-		expect(
-			iac.calls.indexOf("destroy:web") < iac.calls.indexOf("destroy:api"),
-		).toBe(true);
-	});
-
-	it("resumes an interrupted destroy only after read-back confirms it is safe", async () => {
-		const store = freshStore();
-		const iac = recordingIac();
-		const plan = loadPlan();
-		const runtime = deps(store, iac);
-		await runOrchestrator(runtime, plan, "interrupted-destroy", {
-			tenant,
-			actor,
-		});
-		iac.calls.length = 0;
-		const crashing: Executor = {
-			async run(program, credential, options) {
-				if (program.action === "destroy")
-					throw new Error("worker crashed during destroy");
-				return runtime.executor.run(program, credential, options);
-			},
-		};
-		const failure = { resourceId: "web", reason: "interrupted" };
-		await expect(
-			runCompensation(
-				{ ...runtime, executor: crashing },
-				plan,
-				"interrupted-destroy",
-				failure,
-				{ tenant, actor },
-			),
-		).rejects.toThrow("worker crashed during destroy");
-		const stream = "deployment:interrupted-destroy";
-		const checked: string[] = [];
-		const result = await runCompensation(
-			{
-				...runtime,
-				verifyResume: async (request) => {
-					checked.push(`${request.action}:${request.resourceId}`);
-					return true;
-				},
-			},
-			plan,
-			"interrupted-destroy",
-			failure,
-			{ tenant, actor },
-		);
-		expect(checked).toEqual(["destroy:web"]);
-		expect(result.status).toBe("rolled-back");
-		expect(result.blocked).toEqual([]);
-		expect(result.destroyedOrder[0]).toBe("web");
-		expect(iac.calls[0]).toBe("destroy:web");
-		const events = await drain(store, stream);
-		expect(
-			events.filter(
-				(event) =>
-					event.type === "resource.Destroying" &&
-					isJsonObject(event.data) &&
-					event.data.resourceId === "web",
-			),
-		).toHaveLength(1);
-		const view = await deploymentViewProjection.rebuildFromZero(store, stream);
-		expect(
-			deploymentViewProjection.get(view, "interrupted-destroy")?.status,
-		).toBe("rolled-back");
-	});
-
-	it("escalates an interrupted destroy whose outcome read-back cannot establish", async () => {
-		const store = freshStore();
-		const iac = recordingIac();
-		const plan = loadPlan();
-		const runtime = deps(store, iac);
-		await runOrchestrator(runtime, plan, "unverified-destroy", {
-			tenant,
-			actor,
-		});
-		iac.calls.length = 0;
-		const crashing: Executor = {
-			async run(program, credential, options) {
-				if (program.action === "destroy")
-					throw new Error("worker crashed during destroy");
-				return runtime.executor.run(program, credential, options);
-			},
-		};
-		const failure = { resourceId: "web", reason: "interrupted" };
-		await expect(
-			runCompensation(
-				{ ...runtime, executor: crashing },
-				plan,
-				"unverified-destroy",
-				failure,
-				{ tenant, actor },
-			),
-		).rejects.toThrow("worker crashed during destroy");
-		const result = await runCompensation(
-			{ ...runtime, verifyResume: async () => false },
-			plan,
-			"unverified-destroy",
-			failure,
-			{ tenant, actor },
-		);
-		expect(result.status).toBe("needs-human");
-		expect(result.destroyedOrder).toEqual([]);
-		expect(result.blocked).toEqual(
-			expect.arrayContaining([
-				{
-					resourceId: "web",
-					reason: "destroy-outcome-unknown",
-					dependents: [],
-				},
-				{
-					resourceId: "api",
-					reason: "waiting-for-dependent-destroyed",
-					dependents: ["web"],
-				},
-			]),
-		);
-		expect(iac.calls).toEqual([]);
-		expect(
-			result.events.filter(
-				(event) => event.type === "incident.EscalationRequested",
-			),
-		).toHaveLength(1);
-		const view = await deploymentViewProjection.rebuildFromZero(
-			store,
-			"deployment:unverified-destroy",
-		);
-		expect(
-			deploymentViewProjection.get(view, "unverified-destroy")?.status,
-		).toBe("needs-human");
-	});
-
-	it("records a failed compensation and escalation once without repeating the destroy", async () => {
-		const store = freshStore();
-		const plan = loadPlan();
-		const attempts: string[] = [];
-		const iac: IacProvider = {
-			...recordingIac(),
-			async destroy(program) {
-				attempts.push(program.resourceId);
-				throw new Error("provider destroy failed");
-			},
-		};
-		const runtime = deps(store, iac);
-		await runOrchestrator(runtime, plan, "failed-destroy", { tenant, actor });
-		const failure = { resourceId: "web", reason: "rollback requested" };
-		const first = await runCompensation(
-			runtime,
-			plan,
-			"failed-destroy",
-			failure,
-			{ tenant, actor },
-		);
-		expect(first.status).toBe("needs-human");
-		expect(first.blocked).toEqual(
-			expect.arrayContaining([
-				{ resourceId: "web", reason: "destroy-failed", dependents: [] },
-				{
-					resourceId: "api",
-					reason: "waiting-for-dependent-destroyed",
-					dependents: ["web"],
-				},
-			]),
-		);
-		const view = await deploymentViewProjection.rebuildFromZero(
-			store,
-			"deployment:failed-destroy",
-		);
-		expect(deploymentViewProjection.get(view, "failed-destroy")?.status).toBe(
-			"needs-human",
-		);
-		expect(attempts).toEqual(["web"]);
-		expect(
-			first.events.filter(
-				(event) => event.type === "resource.CompensationFailed",
-			),
-		).toMatchObject([
-			{
-				data: {
-					deploymentId: "failed-destroy",
-					resourceId: "web",
-					reason: "executor.destroy_failed: provider destroy failed",
-				},
-			},
-		]);
-		expect(
-			first.events.filter(
-				(event) => event.type === "incident.EscalationRequested",
-			),
-		).toMatchObject([
-			{
-				data: {
-					deploymentId: "failed-destroy",
-					resourceId: "web",
-					reason: "compensation-failed",
-				},
-			},
-		]);
-		const directory = mkdtempSync(join(tmpdir(), "hobo-compensation-facts-"));
-		try {
-			const cue =
-				process.env.HOBO_CUE_BIN ||
-				fileURLToPath(
-					new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
-				);
-			const schema = fileURLToPath(
-				new URL("../data-models/cloud.cue", import.meta.url),
-			);
-			const path = join(directory, "record.json");
-			for (const [type, definition] of [
-				["resource.CompensationFailed", "#ResourceCompensationFailedData"],
-				["incident.EscalationRequested", "#IncidentEscalationRequestedData"],
-			] as const) {
-				const fact = first.events.find((event) => event.type === type);
-				if (!fact) throw new Error(`missing ${type}`);
-				writeFileSync(path, JSON.stringify(fact.data));
-				execFileSync(cue, ["vet", schema, path, "-d", definition]);
-			}
-			for (const blocker of first.blocked) {
-				writeFileSync(path, JSON.stringify(blocker));
-				execFileSync(cue, [
-					"vet",
-					schema,
-					path,
-					"-d",
-					"#CompensationBlockedResource",
-				]);
-			}
-		} finally {
-			rmSync(directory, { recursive: true, force: true });
-		}
-		const resumed = await runCompensation(
-			runtime,
-			plan,
-			"failed-destroy",
-			failure,
-			{ tenant, actor },
-		);
-		expect(resumed.status).toBe("needs-human");
-		expect(attempts).toEqual(["web"]);
-		expect(
-			resumed.events.filter(
-				(event) => event.type === "resource.CompensationFailed",
-			),
-		).toHaveLength(1);
-		expect(
-			resumed.events.filter(
-				(event) => event.type === "incident.EscalationRequested",
-			),
-		).toHaveLength(1);
-	});
-
 	it("up after down re-creates every resource", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
@@ -1013,19 +468,6 @@ describe("create/destroy cycle", () => {
 		expect(iac.calls.filter((c) => c.startsWith("apply:")).length).toBe(
 			plan.resources.length,
 		);
-		const secondDown = await runCompensation(
-			d,
-			plan,
-			"cycle",
-			{ resourceId: "*", reason: "operator-requested teardown" },
-			{ tenant, actor },
-		);
-		expect(secondDown.status).toBe("rolled-back");
-		expect(
-			secondDown.events.filter(
-				(event) => event.type === "deployment.RolledBack",
-			),
-		).toHaveLength(2);
 	});
 
 	it("a rolled-back failure does not block the next up", async () => {
@@ -1079,15 +521,7 @@ describe("deployment modes", () => {
 		await emit(
 			store,
 			stream,
-			cyclic.resources.flatMap((resource) => [
-				resourceProvisioning({
-					deploymentId: "orphan-cycle",
-					resourceId: resource.name,
-					execId: resource.name,
-					programHash: "program",
-					providerId: resource.provider,
-					specHash: desiredSpecHash(resource),
-				}),
+			cyclic.resources.map((resource) =>
 				resourceProvisioned({
 					deploymentId: "orphan-cycle",
 					resourceId: resource.name,
@@ -1095,7 +529,7 @@ describe("deployment modes", () => {
 					execId: resource.name,
 					specHash: desiredSpecHash(resource),
 				}),
-			]),
+			),
 			{ expectedSeq: events.at(-1)?.seq ?? 0, actor, tenant },
 		);
 		const result = await runOrchestrator(
@@ -1206,6 +640,7 @@ describe("deployment modes", () => {
 		await recordPlan(store, "modes", plan);
 		await runOrchestrator(deps(store, iac), plan, "modes", { tenant, actor });
 
+		// Drop `web` (a leaf) and `api` (web's dependency) from the declaration.
 		const smaller: DeploymentPlan = {
 			...plan,
 			resources: plan.resources.filter(

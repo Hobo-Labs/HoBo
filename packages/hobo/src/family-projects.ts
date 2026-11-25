@@ -7,7 +7,13 @@ import {
 import { cdProjectDir } from "@hobo/hobo-cd";
 import { ciProjectDir } from "@hobo/hobo-ci";
 
+// Where `hobo ci` and `hobo cd` find their HoBo project: `--project`, then
+// `HOBO_CI_PROJECT` / `HOBO_CD_PROJECT`, then the project HoBo ships for the
+// family, then the working directory when it holds a Bindle.
+
+/** The CI project HoBo ships: `@hobo/hobo-ci` (its `src/bindle.ts`). */
 const BUNDLED_CI_PROJECT: string | undefined = ciProjectDir();
+/** The CD project HoBo ships: `@hobo/hobo-cd` (its `src/bindle.ts`). */
 const BUNDLED_CD_PROJECT: string | undefined = cdProjectDir();
 
 function resolve(

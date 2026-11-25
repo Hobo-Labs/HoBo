@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.convex.local-accountless-preview/v1",
 	"topologyDigest": "sha256:00f3790ebe62e724c87d095a7d2cdf961eb1751e2d854f3961911ad45e24fb95",
-	"resolutionDigest": "sha256:429027313f52f1a11a4f713328b5259cbb39887ab69b70ac61fb01ed15d38e7b",
+	"resolutionDigest": "sha256:536925e936d4a1a9942decae37a77083f88447f595d6686d3242a0bac88a1a5c",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.convex.local-accountless-preview/v1",

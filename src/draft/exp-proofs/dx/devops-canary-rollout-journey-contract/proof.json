@@ -13,7 +13,8 @@
       "src/draft/technical-proofs/slo-promotion-gate-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

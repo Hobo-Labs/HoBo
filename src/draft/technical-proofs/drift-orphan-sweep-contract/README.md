@@ -1,9 +1,9 @@
 # HOBO-373 Drift Orphan Sweep Contract
 
 Independent POC for adversarial drift reconciliation conflicts from
-[Plan 04](urn:hobo:requirement:control-plane#plan-04),
-[ADR-0004](urn:hobo:decision:adr-0004), and
-[ADR-0006](urn:hobo:decision:adr-0006).
+[Plan 04](../../../../docs/design/control-plane.md#plan-04),
+[ADR-0004](../../../../docs/design/adr/01-architecture-core.md#adr-0004), and
+[ADR-0006](../../../../docs/design/adr/01-architecture-core.md#adr-0006).
 
 ## Proof Surface
 
@@ -27,9 +27,11 @@ npm.cmd --prefix src\draft\technical-proofs\drift-orphan-sweep-contract test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Drift Orphan Sweep Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -78,8 +78,8 @@ import {
 	createRegistryFromProviders,
 	foldRegistryStream,
 	type PlannerRegistry,
-	providerRegistrationFacts,
 	type RegistrableProvider,
+	registerProviderFact,
 	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
 import {
@@ -218,7 +218,7 @@ export function toRegistrableProvider(
 }
 
 export interface DefaultYardRuntimeOptions {
-	readonly observeDependency?: YardRuntime["observeDependency"];
+	/** Project whose committed secret-store locator the deploy executor may open. */
 	readonly projectDir?: string;
 	// Durable event-store data directory. Defaults to a fresh OS temp dir
 	// (`hobo-yard-*`; the mocked lane is ephemeral) that this process owns and
@@ -700,7 +700,7 @@ function createYardRuntimeOverStore(
 				environment.CLOUDFLARE_API_TOKEN && environment.CLOUDFLARE_ACCOUNT_ID,
 			) ||
 			Boolean(environment.VERCEL_TOKEN));
-	const runtime: YardRuntime = {
+	return {
 		hostingBudgetRequired,
 		store,
 		actorHost: createInMemoryActorHost(),
@@ -736,9 +736,6 @@ function createYardRuntimeOverStore(
 			base: createRegistryFromProviders([toRegistrableProvider(cloudflare)]),
 		}),
 	};
-	return options.observeDependency
-		? { ...runtime, observeDependency: options.observeDependency }
-		: runtime;
 }
 
 export interface ProductionYardRuntimeOptions
@@ -845,7 +842,7 @@ export async function bootstrapDefaultProviders(
 	for (const provider of providers) {
 		const facts = [];
 		if (!fold.installed.has(provider.id))
-			facts.push(...providerRegistrationFacts(provider));
+			facts.push(registerProviderFact(provider));
 		if (!fold.approved.has(provider.id))
 			facts.push(approveProviderFact(provider.id, "yard/bootstrap"));
 		if (facts.length === 0) continue;

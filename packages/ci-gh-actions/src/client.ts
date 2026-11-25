@@ -17,28 +17,11 @@ import {
 	RepositorySetupRequestSchema,
 	SnapshotSchema,
 } from "@hobo/ci";
-import {
-	FleetReporterStatusListSchema,
-	FleetVerdictSchema,
-} from "./_generated/fleet_verdict_pb.js";
-import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
+import { MemberListSchema } from "@hobo/fleet";
 import {
 	OnboardingOperationSchema,
 	OnboardingPrincipalSchema,
 } from "./_generated/onboarding_pb.js";
-import {
-	FLEET_REPORTERS_PATH,
-	FLEET_VERDICTS_PATH,
-	parseFleetReportersPath,
-	parseFleetVerdictPath,
-} from "./fleet-verdict.js";
-
-export {
-	type MeshNodeReport,
-	type MeshNodeReports,
-	MeshNodeReportsSchema,
-} from "./_generated/mesh_pb.js";
-export { parseMeshNodeReports } from "./mesh-records.js";
 
 type ProtobufInput<Desc extends DescMessage> = NonNullable<
 	Parameters<typeof create<Desc>>[1]
@@ -47,6 +30,8 @@ type ProtobufMessage<Desc extends DescMessage> = ReturnType<
 	typeof create<Desc>
 >;
 
+/** Status is zero for local validation, credentials or transport failures.
+ * Error messages never contain response bodies, tokens or request values. */
 export class CiRelayClientError extends Error {
 	constructor(
 		readonly status: number,
@@ -58,16 +43,6 @@ export class CiRelayClientError extends Error {
 }
 function invalid(message: string): never {
 	throw new CiRelayClientError(0, message);
-}
-function verdictPath(repository: string): string {
-	if (!parseFleetVerdictPath(`${FLEET_VERDICTS_PATH}${repository}`))
-		invalid("invalid repository");
-	return `verdicts/${repository}`;
-}
-function reportersPath(repository: string): string {
-	if (!parseFleetReportersPath(`${FLEET_REPORTERS_PATH}${repository}`))
-		invalid("invalid repository");
-	return `reporters/${repository}`;
 }
 function uuid(id: string): void {
 	if (
@@ -126,6 +101,7 @@ async function responseText(response: Response): Promise<string> {
 			if (chunk.done) break;
 			bytes += chunk.value.byteLength;
 			if (bytes > 2 * 1024 * 1024) {
+				// Disposal is best effort; a stalled source must not stall refusal.
 				void reader.cancel().catch(() => undefined);
 				throw new Error("Relay response is too large");
 			}
@@ -143,6 +119,7 @@ async function responseText(response: Response): Promise<string> {
 	}
 }
 
+/** Account tokens are obtained per operation; tenant routing always uses /self. */
 export function createCiRelayClient(
 	options: {
 		origin: string;
@@ -162,16 +139,12 @@ export function createCiRelayClient(
 		body?: string,
 		match?: string,
 		version: "v1" | "v2" = "v1",
-		root: "accounts/self" | "mesh" | "fleet" = "accounts/self",
+		root: "accounts/self" | "fleet" = "accounts/self",
+		/** Read past fields a newer relay adds, for an answer that is a report, not an instruction. */
 		lenient = false,
-		bearer?: string,
 	): Promise<ProtobufMessage<Desc>> {
 		const headers = new Headers();
-		if (bearer !== undefined) {
-			if (!bearer || /\s/.test(bearer) || bearer.length > 16000)
-				invalid("invalid workflow token");
-			headers.set("Authorization", `Bearer ${bearer}`);
-		} else if (options.ownerSession) {
+		if (options.ownerSession) {
 			headers.set("X-HoBo-Owner-Control", "1");
 		} else {
 			let token: string;
@@ -204,6 +177,7 @@ export function createCiRelayClient(
 			);
 		}
 		function refuseResponse(message: string): never {
+			// Disposal must neither delay nor replace the sanitized refusal.
 			void Promise.resolve()
 				.then(() => response.body?.cancel())
 				.catch(() => undefined);
@@ -277,6 +251,7 @@ export function createCiRelayClient(
 				"v2",
 			);
 		},
+		/** A trusted publisher re-attests a zero-credit rate, not an allocation. */
 		reattestRate(
 			input: {
 				offerId: string;
@@ -369,41 +344,16 @@ export function createCiRelayClient(
 		getLeases() {
 			return request("leases", "GET", SnapshotSchema);
 		},
-		getMeshNodes() {
+		getFleetMembers() {
 			return request(
-				"nodes",
+				"members",
 				"GET",
-				MeshNodeReportsSchema,
-				undefined,
-				undefined,
-				"v1",
-				"mesh",
-				true,
-			);
-		},
-		getFleetVerdict(repository: string) {
-			return request(
-				verdictPath(repository),
-				"GET",
-				FleetVerdictSchema,
+				MemberListSchema,
 				undefined,
 				undefined,
 				"v1",
 				"fleet",
 				true,
-			);
-		},
-		getFleetReporters(repository: string, oidcToken: string) {
-			return request(
-				reportersPath(repository),
-				"GET",
-				FleetReporterStatusListSchema,
-				undefined,
-				undefined,
-				"v1",
-				"fleet",
-				true,
-				oidcToken,
 			);
 		},
 		getLease(id: string) {

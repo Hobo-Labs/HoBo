@@ -14,7 +14,6 @@ message ProviderManifest {
   CapabilitySection capabilities = 4;
   BillingSection billing = 5;
   ApiSection api = 6;
-  ProviderTerms terms = 7;
 }
 
 message ProviderIdentity {
@@ -22,11 +21,6 @@ message ProviderIdentity {
   string display_name = 2;
   string homepage = 3;
   string description = 4;
-}
-
-message ProviderTerms {
-  string url = 1;
-  string reviewed_on = 2;
 }
 
 // Where a transcribed third-party fact came from and the date a human checked it.

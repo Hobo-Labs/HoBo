@@ -99,7 +99,7 @@ the sense that a customer who has it will ask why HoBo needs its own.
 | Kubecost | Nearest HoBo concept | Honest correspondence |
 | -------- | -------------------- | --------------------- |
 | Allocation (OpenCost core) | `MeteringView` showback | Close; see the [OpenCost capture](opencost.md) for the detail. |
-| Savings insight | FinX advisory output ([ADR-0115](urn:hobo:decision:adr-0115)) | Close in role. Kubecost's is shipped and tuned; HoBo's is designed. |
+| Savings insight | FinX advisory output ([ADR-0115](../design/adr/02-identity-security.md#adr-0115)) | Close in role. Kubecost's is shipped and tuned; HoBo's is designed. |
 | Alert / anomaly detection | `cost.AnomalyDetected` / `cost.ForecastUpdated` facts | Close in shape; HoBo's is deterministic and derived from the event log, which is a real difference in explainability. |
 | Budget | Soft/hard budgets, spend caps, runaway-spend breaker (ADR-0039 §2) | **HoBo goes further by design**: Kubecost notifies, HoBo intends to refuse. Notification is shipped; refusal is not. |
 | Federation | Cross-Camp aggregation | Partial. |

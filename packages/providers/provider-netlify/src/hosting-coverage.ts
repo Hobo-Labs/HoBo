@@ -12,8 +12,10 @@ import {
 	NETLIFY_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
+// public-contract: Netlify Functions, catalogued so a request for them is refused by name.
 export const NETLIFY_FUNCTIONS_PRODUCT_ID = "netlify.functions/v1";
 
+/** Catalogued Netlify products no resolver realizes. Each is a decision. */
 export const NETLIFY_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 	Object.freeze([
 		Object.freeze({
@@ -32,6 +34,7 @@ export const NETLIFY_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 		}),
 	]);
 
+/** The I14 coverage document for Netlify. */
 export const NETLIFY_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	providerId: "netlify",
 	resolvedProductIds: [...NETLIFY_RESOLVED_PRODUCT_IDS],
@@ -40,6 +43,7 @@ export const NETLIFY_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	absent: NETLIFY_TRAFFIC_ROUTING_ABSENT,
 });
 
+/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product Netlify does not realize. */
 export function netlifyProductRefusal(
 	productId: string,
 ): ResolverError | undefined {

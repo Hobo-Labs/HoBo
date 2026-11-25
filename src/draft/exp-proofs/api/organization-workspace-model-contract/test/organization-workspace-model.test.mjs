@@ -45,12 +45,12 @@ test("M0 record cites authoritative design and ADR sources", () => {
   assert.deepEqual(
     ORGANIZATION_WORKSPACE_MODEL.dependencies.map((dependency) => dependency.source),
     [
-      "urn:hobo:requirement:architecture#plan-10",
-      "urn:hobo:requirement:developer-experience#plan-07",
-      "urn:hobo:requirement:security-networking#plan-50",
-      "urn:hobo:decision:adr-0074",
-      "urn:hobo:decision:adr-0079",
-      "urn:hobo:decision:adr-0080",
+      "docs/design/architecture.md#plan-10",
+      "docs/design/developer-experience.md#plan-07",
+      "docs/design/security-networking.md#plan-50",
+      "docs/design/adr/02-identity-security.md#adr-0074",
+      "docs/design/adr/02-identity-security.md#adr-0079",
+      "docs/design/adr/02-identity-security.md#adr-0080",
     ],
   );
 });

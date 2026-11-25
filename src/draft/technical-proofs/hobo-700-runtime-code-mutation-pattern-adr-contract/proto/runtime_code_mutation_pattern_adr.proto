@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package hobo.runtime_code_mutation_pattern_adr.v1;
+
+message RuntimeCodeMutationPatternAdrGate {
+  string issue = 1;
+  string pattern_path = 2;
+  string required_adr_link = 3;
+  repeated string retargeted_links = 4;
+  RuntimeCodeMutationPatternAdrState state = 5;
+  repeated string errors = 6;
+}
+
+enum RuntimeCodeMutationPatternAdrState {
+  RUNTIME_CODE_MUTATION_PATTERN_ADR_STATE_UNSPECIFIED = 0;
+  RUNTIME_CODE_MUTATION_PATTERN_ADR_STATE_LINKED = 1;
+  RUNTIME_CODE_MUTATION_PATTERN_ADR_STATE_STALE = 2;
+}

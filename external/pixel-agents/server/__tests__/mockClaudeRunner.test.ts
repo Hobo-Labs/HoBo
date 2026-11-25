@@ -75,6 +75,10 @@ describe('mock-claude-runner hook execution', () => {
     fs.mkdirSync(tmpHome, { recursive: true });
     fs.mkdirSync(workspaceDir, { recursive: true });
 
+    // macOS /var → /private/var symlink: the runner sees the resolved cwd via
+    // process.cwd(), so its project hash and our expected paths must use the
+    // same realpath. Without this, fs.existsSync below sometimes returns false
+    // on the symlinked path even though the file exists on the resolved path.
     tmpHome = fs.realpathSync.native(tmpHome);
     workspaceDir = fs.realpathSync.native(workspaceDir);
   });
@@ -83,6 +87,7 @@ describe('mock-claude-runner hook execution', () => {
     try {
       fs.rmSync(tmpBase, { recursive: true, force: true });
     } catch {
+      /* ignore */
     }
   });
 

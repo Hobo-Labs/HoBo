@@ -33,6 +33,7 @@ export interface LoadedCiProject {
 	readonly environment: ReturnType<typeof selectCiEnvironment>;
 }
 
+/** Load `.hobo/ci.json` plus optional gitignored `.hobo/ci.local.json` from a repo root. */
 export async function loadCiProjectFromDirectory(options: {
 	repositoryRoot: string;
 	configPath?: string;

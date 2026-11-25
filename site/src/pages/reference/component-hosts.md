@@ -53,4 +53,4 @@ Postgres journals, Temporal, Restate, and similar remain future adapters behind 
 
 ## Related
 
-[Capability map](/HoBo/reference/packages/) · [WASM guide](/HoBo/system/wasm/) · [Trail map](/HoBo/guide/status/) · [Conformance](/HoBo/testing/conformance/)
+[Capability map](/HoBo/reference/packages/) · [WASM guide](/HoBo/architecture/wasm/) · [Trail map](/HoBo/guide/status/) · [Conformance](/HoBo/testing/conformance/)

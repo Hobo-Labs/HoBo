@@ -7,7 +7,7 @@ heal/propose/ignore surfaced via `hobo drift` and MCP `get_drift`/`heal`).
 Promotes observability and drift scenarios from
 [`reliability-observability-cost-finops`](../../epic-proofs/reliability-observability-cost-finops/README.md)
 into an independent draft POC per
-[`urn:hobo:requirement:reliability-observability-cost`](urn:hobo:requirement:reliability-observability-cost)
+[`docs/design/reliability-observability-cost.md`](../../../../docs/design/reliability-observability-cost.md)
 Plan 05.
 
 ## What This Proves
@@ -59,9 +59,11 @@ ResourceActor reconcile internals, real CLI/MCP servers, FinOps plane (S6-06).
 pnpm --prefix src/draft/technical-proofs/s6-05-observability-drift-loop-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

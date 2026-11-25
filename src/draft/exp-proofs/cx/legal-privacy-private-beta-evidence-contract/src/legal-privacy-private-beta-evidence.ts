@@ -125,42 +125,42 @@ export const legalPrivacyPrivateBetaEvidence: LegalPrivacyPrivateBetaEvidence = 
     {
       id: "privacy-notice-beta-review",
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
-      evidenceSource: "urn:hobo:requirement:legal-privacy-terms-readiness#m2-private-beta-evidence-gate",
+      evidenceSource: "docs/design/legal-privacy-terms-readiness.md#m2-private-beta-evidence-gate",
       proves: "Private beta can proceed only with reviewed privacy-notice limitations, telemetry purpose, retention posture, and customer messaging.",
       status: "accepted"
     },
     {
       id: "terms-beta-limitation",
       ownerProject: "V1 Legal, Privacy & Terms Readiness",
-      evidenceSource: "urn:hobo:requirement:legal-privacy-terms-readiness#m2-private-beta-evidence-gate",
+      evidenceSource: "docs/design/legal-privacy-terms-readiness.md#m2-private-beta-evidence-gate",
       proves: "Private beta terms remain limited beta language and do not assert public launch or paid GA legal approval.",
       status: "accepted"
     },
     {
       id: "subprocessor-provider-beta-register",
       ownerProject: "Customer Assurance Evidence Packet",
-      evidenceSource: "urn:hobo:requirement:customer-assurance-evidence-packet",
+      evidenceSource: "docs/design/customer-assurance-evidence-packet.md",
       proves: "Subprocessor and provider statements distinguish beta-required, optional, mocked, unsupported, and still-unconfirmed services.",
       status: "accepted"
     },
     {
       id: "data-retention-telemetry-boundary",
       ownerProject: "Compliance Evidence Pack",
-      evidenceSource: "urn:hobo:requirement:tenant-data-lifecycle",
+      evidenceSource: "docs/design/tenant-data-lifecycle.md",
       proves: "Private beta data classes, retention posture, telemetry purpose, deletion/export limitations, and residency sensitivity are visible before pilot use.",
       status: "accepted"
     },
     {
       id: "customer-assurance-support-handoff",
       ownerProject: "V1 Launch Support Desk & Escalation",
-      evidenceSource: "urn:hobo:requirement:support-sla-channels",
+      evidenceSource: "docs/design/support-sla-channels.md",
       proves: "Support and customer assurance questions route to named owners with customer-safe evidence and no unsupported SLA or compliance promise.",
       status: "accepted"
     },
     {
       id: "legal-risk-register",
       ownerProject: "V1 Release Program & Cutline",
-      evidenceSource: "urn:hobo:requirement:go-no-go-decision-record",
+      evidenceSource: "docs/design/go-no-go-decision-record.md",
       proves: "Legal/privacy risks, launch blockers, accepted beta limitations, mitigations, and revisit dates are recorded before beta signoff.",
       status: "accepted"
     }

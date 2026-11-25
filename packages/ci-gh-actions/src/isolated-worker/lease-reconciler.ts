@@ -34,6 +34,7 @@ export type WorkerLeaseReconciliationEvent =
 	| "hobo_ci_lease_reconciliation_failed"
 	| "hobo_ci_memory_without_containers";
 
+/** Max drain wait for leases that never got a live worker container. */
 // public-contract: caps redeploy stall when reservations outlive GitHub or launch.
 export const DEFAULT_NO_CONTAINER_DRAIN_MAX_MS = 30_000;
 
@@ -45,7 +46,9 @@ export type WorkerLeaseReconciliationLog = (
 export type WorkerLeaseReconciliationResult = Readonly<{
 	inventoryKnown: boolean;
 	liveLeaseIds: ReadonlySet<string>;
+	/** Jobs still on a live worker container or in-flight launch this worker owns. */
 	drainJobInFlight: number;
+	/** Memory reserved by the leases that are launching or running. */
 	inUseMemoryMb: number;
 }>;
 
@@ -80,6 +83,7 @@ function hasUnregisteredCreateIdentity(lease: Lease): boolean {
 	);
 }
 
+/** Registration cannot have started while a create is still the durable stage. */
 export function isUnregisteredUncertainCreate(lease: Lease): boolean {
 	return (
 		lease.state === "uncertain" &&
@@ -88,6 +92,7 @@ export function isUnregisteredUncertainCreate(lease: Lease): boolean {
 	);
 }
 
+/** A dispatch interrupted before its create result must retain the same fence. */
 export function isUnregisteredDispatchingCreate(lease: Lease): boolean {
 	return (
 		lease.state === "dispatching" &&
@@ -97,6 +102,7 @@ export function isUnregisteredDispatchingCreate(lease: Lease): boolean {
 	);
 }
 
+/** A durable stop intent is bound to the same isolated host session. */
 export function hasIsolatedStopIntent(lease: Lease): boolean {
 	return (
 		(lease.provider === "kubernetes" || lease.provider === "hobo-box-worker") &&
@@ -109,6 +115,7 @@ export function hasIsolatedStopIntent(lease: Lease): boolean {
 	);
 }
 
+/** A lease that may still be executing a GitHub job; drain must not drop it. */
 export function leaseHoldDuringWorkerDrain(lease: Lease): boolean {
 	if (["running", "dispatched", "claiming"].includes(lease.state)) return true;
 	if (
@@ -140,6 +147,10 @@ export function createWorkerLeaseReconciler(options: {
 	github?: GithubTransport;
 	cancelStaleGithubLease?: (lease: Lease, reason: string) => Promise<boolean>;
 	noContainerDrainMaxMs?: number;
+	/**
+	 * When this returns true, a running container must not be stopped even if it
+	 * is not on the active lease name/id sets (custody record or GitHub job).
+	 */
 	containerCustody?: (input: {
 		container: DockerContainer;
 		leaseId?: string;
@@ -225,6 +236,7 @@ export function createWorkerLeaseReconciler(options: {
 		return container.containerId || container.name;
 	}
 
+	/** Memory reserved by leases that are launching or running. */
 	function reservedMemoryMb(owned: readonly Lease[]): number {
 		return owned
 			.filter((lease) => lease.state !== "reserved" || lease.sandboxName !== "")
@@ -334,6 +346,8 @@ export function createWorkerLeaseReconciler(options: {
 			const ageMs = Number.isFinite(ageBaseMs)
 				? Math.max(0, now() - ageBaseMs)
 				: 0;
+			// A durable stop intent must be reconciled before releasing its hold.
+			// Retry final job observation and settlement after confirmed removal.
 			if (hasIsolatedStopIntent(lease)) {
 				if (!options.settleExited) {
 					liveLeaseIds.add(lease.id);
@@ -366,10 +380,15 @@ export function createWorkerLeaseReconciler(options: {
 					liveLeaseIds.add(lease.id);
 				continue;
 			}
+			// A create can succeed after its reply is lost. A uniquely named,
+			// unregistered container may be bound and stopped by the owning host;
+			// never free its reservation merely because the reply was ambiguous.
 			if (
 				isUnregisteredUncertainCreate(lease) ||
 				isUnregisteredDispatchingCreate(lease)
 			) {
+				// Another process may still be completing a slow create. Preserve
+				// both the orphan grace and the account's configured startup window.
 				const startupMinutes =
 					configuration?.accounts.find(
 						(account) => account.id === lease.accountId,
@@ -382,6 +401,8 @@ export function createWorkerLeaseReconciler(options: {
 				const matches = containers.filter(
 					(candidate) => candidate.name === lease.sandboxName,
 				);
+				// An absent name does not fence a create whose reply was lost: the
+				// provider may still complete it after this inventory snapshot.
 				if (matches.length === 0 && !lease.sandboxSessionId) {
 					liveLeaseIds.add(lease.id);
 					continue;
@@ -415,6 +436,8 @@ export function createWorkerLeaseReconciler(options: {
 					continue;
 				}
 			}
+			// An inconsistent create record is not proof that its provider effect
+			// was absent. Keep its hold rather than requeueing on missing inventory.
 			if (
 				["dispatching", "uncertain"].includes(lease.state) &&
 				["creating", "created"].includes(lease.sandboxStage)

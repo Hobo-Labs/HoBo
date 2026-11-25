@@ -12,10 +12,6 @@
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
 		},
-		"./eventstore": {
-			"types": "./dist/eventstore.d.ts",
-			"default": "./dist/eventstore.js"
-		},
 		"./aws-sigv4": {
 			"types": "./dist/ports/aws-sigv4.d.ts",
 			"default": "./dist/ports/aws-sigv4.js"
@@ -44,7 +40,6 @@
 		"fast-check": "^4.3.0"
 	},
 	"dependencies": {
-		"@bufbuild/protobuf": "2.12.1",
-		"@js-temporal/polyfill": "0.5.1"
+		"@bufbuild/protobuf": "2.12.1"
 	}
 }

@@ -78,6 +78,7 @@ test("stage gate drill declares every mocked service boundary", async () => {
 });
 
 test("architecture artifacts pin protobuf, CUE, Pact, and event-architecture evidence", () => {
+  const architecture = readFileSync(new URL("../architecture.md", import.meta.url), "utf8");
   const proto = readFileSync(
     new URL("../architecture/s5_stage_gate_forge_extensibility.proto", import.meta.url),
     "utf8",
@@ -98,4 +99,11 @@ test("architecture artifacts pin protobuf, CUE, Pact, and event-architecture evi
   assert.equal(pact.consumer.name, "S5StageGateForgeDrill");
   assert.equal(pact.provider.name, "S5StageGateForgeExtensibilityPackage");
   assert.equal(pact.interactions[0].contents.contractsCovered, 4);
+  assert.match(architecture, /parse, don't validate/i);
+  assert.match(architecture, /Command/i);
+  assert.match(architecture, /Event/i);
+  assert.match(architecture, /Actor/i);
+  assert.match(architecture, /event[- ]store/i);
+  assert.match(architecture, /projection/i);
+  assert.match(architecture, /read store/i);
 });

@@ -13,6 +13,7 @@ Gatekeeper-rewritten handoffs fail closed.
 - `rejectAdminReceiptMutation` documents the admin UI boundary: admin changes require a new receipt.
 - `resolveGatekeeperHandoff` lets Gatekeeper block or add obligations without rewriting broker
   mappings.
+- Architecture evidence lives in `ADR.md`, `architecture/*.proto`, `architecture/*.cue`,
   and `architecture/pacts/*.pact.json`.
 
 ## Acceptance Mapping

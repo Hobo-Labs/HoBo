@@ -1,11 +1,11 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-	type ComponentHostEvent,
-	type ParsedComponentDescriptor,
-	type ProviderDescriptor,
-	parseInterfaceId,
+import type {
+	ComponentHostEvent,
+	InterfaceId,
+	ParsedComponentDescriptor,
+	ProviderDescriptor,
 } from "@hobo/core";
 import {
 	createLocalStreamer,
@@ -18,11 +18,17 @@ import {
 	createHoboCli,
 	type DevRuntime,
 } from "../src/index.js";
-import { isJsonObject, isJsonString, type JsonValue } from "../src/json.js";
+import type { JsonValue } from "../src/json.js";
 
-const KV_INTERFACE = parseInterfaceId("wasi:keyvalue/store@0.2.0");
+// S1-19: `hobo dev` boots a runtime-local Camp, collects + links the Bindle,
+// serves it locally, and live-tails the component-host events through the
+// Streamer — fully offline, no network. The ≤ 60 s cold budget is modeled as an
+// assertion on the in-process boot time.
 
-const HTTP_INCOMING = parseInterfaceId("wasi:http/incoming-handler@0.2.0");
+// SAFETY: `const KV_INTERFACE = "wasi:keyvalue/store@0.2.0" as InterfaceId;` is required at this I/O or test boundary.
+const KV_INTERFACE = "wasi:keyvalue/store@0.2.0" as InterfaceId;
+// SAFETY: `const HTTP_INCOMING = "wasi:http/incoming-handler@0.2.0" as InterfaceId;` is required at this I/O or test boundary.
+const HTTP_INCOMING = "wasi:http/incoming-handler@0.2.0" as InterfaceId;
 
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
@@ -38,6 +44,9 @@ const HELLO_BINDLE = {
 	},
 };
 
+// Build a DevRuntime backed by the real runtime-local component host + Streamer.
+// The hello-bindle guest reads a greeting from a KV provider and returns it —
+// proving an end-to-end offline serve with a linked import.
 function makeDevRuntime(): DevRuntime {
 	const events: ComponentHostEvent[] = [];
 	const componentHost = createRuntimeLocalComponentHost({
@@ -51,19 +60,20 @@ function makeDevRuntime(): DevRuntime {
 		imports: [KV_INTERFACE],
 		exports: {
 			[HTTP_INCOMING]: {
-				handle: async (_request: JsonValue, context: JsonValue) => {
-					if (!isJsonObject(context)) throw new TypeError("missing context");
-					const callImport = Object.getOwnPropertyDescriptor(
-						context,
-						"callImport",
-					)?.value;
-					if (!(callImport instanceof Function)) {
-						throw new TypeError("missing callImport");
-					}
-					const greeting = await callImport(KV_INTERFACE, "get", {
+				handle: async (
+					_request: JsonValue,
+					context: {
+						callImport: (
+							importInterface: InterfaceId,
+							operation: string,
+							payload?: JsonValue,
+						) => Promise<JsonValue>;
+					},
+				) => {
+					// SAFETY: `const greeting = (await context.callImport(KV_INTERFACE, "get", {` is required at this I/O or test boundary.
+					const greeting = (await context.callImport(KV_INTERFACE, "get", {
 						key: "greeting",
-					});
-					if (!isJsonString(greeting)) throw new TypeError("expected greeting");
+					})) as string;
 					return { status: 200, headers: [], body: `hello ${greeting}` };
 				},
 			},
@@ -127,7 +137,7 @@ describe("hobo dev boots a runtime-local Camp offline", () => {
 			});
 
 			expect(result.exitCode).toBe(0);
-
+			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
 			const envelope = JSON.parse(result.stdout) as {
 				ok: boolean;
 				verb: string;
@@ -157,7 +167,7 @@ describe("hobo dev boots a runtime-local Camp offline", () => {
 			expect(envelope.data.withinColdBudget).toBe(true);
 			expect(envelope.data.coldBudgetMs).toBe(60_000);
 			expect(envelope.data.bootMs).toBeLessThan(60_000);
-
+			// Live-tailed component-host lifecycle through the Streamer.
 			expect(envelope.data.events).toEqual([
 				"component.Loaded",
 				"link.Established",
@@ -175,7 +185,7 @@ describe("hobo dev boots a runtime-local Camp offline", () => {
 					commands: { dev: createDevCommand({ runtime: makeDevRuntime() }) },
 				});
 				const result = await cli.run(["dev", "--json"], { cwd });
-
+				// SAFETY: `return JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
 				return JSON.parse(result.stdout) as {
 					data: { served: { body: string }; events: string[] };
 				};
@@ -191,7 +201,7 @@ describe("hobo dev boots a runtime-local Camp offline", () => {
 	it("falls back to the shell stub when no runtime is injected", async () => {
 		await withProject(async (cwd) => {
 			const result = await createHoboCli().run(["dev", "--json"], { cwd });
-
+			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
 			const envelope = JSON.parse(result.stdout) as {
 				status: string;
 				code: string;

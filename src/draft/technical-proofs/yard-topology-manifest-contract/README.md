@@ -4,8 +4,9 @@ Independent proof for HOBO-94.
 
 This package pins the M0 Yard topology / connectivity-manifest contract from:
 
-- `urn:hobo:requirement:security-networking#plan-12`: the Junction infers cross-Yard connectivity from member Yard manifests.
-- `urn:hobo:decision:adr-0043`: the Junction folds Yard manifests and emits each Yard its own half without shared mutable state.
+- `docs/design/architecture.md`: `Bindle -> Camp -> Yard -> Junction` scope breadth and Yard provider ownership.
+- `docs/design/security-networking.md#plan-12`: the Junction infers cross-Yard connectivity from member Yard manifests.
+- `docs/design/adr/07-portability-extensibility.md#adr-0043`: the Junction folds Yard manifests and emits each Yard its own half without shared mutable state.
 - `src/draft/technical-proofs/connectivity-tier-ir-contract`: the HOBO-89 `ConnectivityTier` values consumed by cross-Yard links.
 
 The proof covers:
@@ -21,9 +22,11 @@ The proof covers:
 Scope boundary: this POC does not implement Junction folding, DNS realization, provider networking, or `bind` authoring. It only defines and validates the Yard-side manifest consumed by those later slices.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Yard Topology Manifest Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

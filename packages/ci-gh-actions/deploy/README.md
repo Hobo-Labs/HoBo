@@ -131,7 +131,7 @@ non-secret settings:
 The box's routing settings are not environment variables. The slot split (`slots`, `trunkSlots`,
 `trunkLend`), `prCapWithTrunk`, `mergeGroupLeases`, `capacityVolatilityMb`, `trunkHeadroomFleetDeferMs` and
 `jobAdmission` are committed in the `runnerRouting.box` block of `.hobo/ci.json`, which the daemon reads
-from its own checkout once at start ([ADR-0181](urn:hobo:decision:adr-0181), decision 4).
+from its own checkout once at start ([ADR-0181](../../../docs/design/adr/routing-slips.md#adr-0181), decision 4).
 `HOBO_CI_WORKER_SLOTS`, `HOBO_CI_WORKER_TRUNK_SLOTS`, `HOBO_CI_WORKER_TRUNK_LEND`,
 `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK`, `HOBO_CI_WORKER_MERGE_GROUP_LEASES`, `HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB`,
 `HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS`, `HOBO_CI_JOB_ADMISSION`, `HOBO_CI_FLEET_ROUTES` and every
@@ -303,19 +303,6 @@ their contents:
 kubectl create configmap hobo-ci-config --from-file=config.json=/srv/hobo-ci/config.json --from-literal=public-url=https://ci.example.com
 kubectl create secret generic hobo-ci-secrets --from-literal=app-id=12345 --from-file=private-key.pem=/srv/hobo-ci/secrets/private-key.pem --from-file=webhook-secret=/srv/hobo-ci/secrets/webhook-secret --from-file=control-tokens.json=/srv/hobo-ci/secrets/control-tokens.json
 ```
-
-Strict fleet mode is optional. The Kubernetes manifest starts the relay with
-`dist/fleet-v2/serve.js`, which reads the settings below; the image's default
-`dist/main.js`, which Compose runs, ignores them. To enable it, add `strict-fleet-policies.json`
-and `strict-fleet-policies-file=/etc/hobo-ci-strict/strict-fleet-policies.json`
-to `hobo-ci-config`, and add `strict-fleet-database` to `hobo-ci-secrets` with
-the PostgreSQL connection string. `strict-fleet-partition` is optional and
-defaults to `default`. If only one of the database or policy path is set, the
-relay refuses to start. Existing deployments without either setting continue
-with strict fleet mode disabled. When configured, the relay exposes the strict
-start fence and verifies GitHub assignments, but automatic runner provisioning
-is not yet connected to dispatch. The existing fleet readiness scorecard
-predates these changes and does not establish live production readiness.
 
 Replace the manifest's `hobo-ci-relay:local` image with your tested immutable
 registry digest before applying it:

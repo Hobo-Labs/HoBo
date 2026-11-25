@@ -62,7 +62,7 @@ interface TrajectoryIo {
 	readonly reward: number;
 }
 
-export function parseJsonRecord(value: string): JsonObject | null {
+function parseJsonRecord(value: string): JsonObject | null {
 	if (value.length === 0) return null;
 	try {
 		// SAFETY: JSON.parse yields a JSON value at the recorded span I/O boundary.

@@ -83,6 +83,7 @@ describe("Feature: Lint use-training semantic grounding", () => {
 
 describe("architecture evidence", () => {
   it("pins protobuf, CUE, Pact, and ADR boundaries", () => {
+    const adr = readFileSync(new URL("../ADR.md", import.meta.url), "utf8");
     const proto = readFileSync(
       new URL("../architecture/evals_training_promotion_gates.proto", import.meta.url),
       "utf8",
@@ -106,6 +107,13 @@ describe("architecture evidence", () => {
     assert.equal(pact.consumer.name, "EvalsTrainingPromotionGatesConsumer");
     assert.equal(pact.provider.name, "EvalsTrainingPromotionGatesBoundary");
     assert.equal(pact.interactions[0].response.body.ok, true);
+    assert.match(adr, /parse, don't validate/i);
+    assert.match(adr, /Command/i);
+    assert.match(adr, /Event/i);
+    assert.match(adr, /Actor/i);
+    assert.match(adr, /event store/i);
+    assert.match(adr, /projection/i);
+    assert.match(adr, /read store/i);
   });
 });
 

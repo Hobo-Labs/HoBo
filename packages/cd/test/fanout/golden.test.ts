@@ -1,3 +1,8 @@
+// Golden upcaster corpus for the fan-out event bodies (§1 "Every new event
+// body has a golden upcaster corpus entry"). The corpus pins v1 bodies: the
+// scenario must keep writing them byte-for-byte, and every corpus body must
+// keep parsing (an incompatible change needs an upcaster, not a silent edit).
+// Regenerate deliberately with UPDATE_GOLDEN=1.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { JsonValue } from "@bufbuild/protobuf";
@@ -21,6 +26,7 @@ const CORPUS = join(
 	"fanout-events.v1.json",
 );
 
+/** Whether a body of `type` parses with the current fact parsers. */
 const PARSES = new Map<string, (data: JsonValue) => boolean>([
 	[CD_EVENTS.FanoutStarted, (data) => parseStarted(data) !== undefined],
 	[CD_EVENTS.FanoutProgressed, (data) => parseProgressed(data) !== undefined],

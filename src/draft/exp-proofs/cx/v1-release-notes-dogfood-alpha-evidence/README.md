@@ -25,9 +25,11 @@ This POC records a machine-checkable M1 gate in
 npm.cmd --prefix src\draft\exp-proofs\cx\v1-release-notes-dogfood-alpha-evidence test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` - protobuf data shapes and CUE constraints for the M1 gate.
 - `architecture/pacts/` - PACT contract for the gate-read boundary.
+- `ARCHITECTURE.md` - parse-don't-validate and event-architecture evidence.

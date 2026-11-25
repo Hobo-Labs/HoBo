@@ -37,4 +37,4 @@ A portal can absorb the surface developers touch. HoBo must be the control plane
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)

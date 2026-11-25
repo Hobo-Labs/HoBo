@@ -2,6 +2,7 @@ export type SubcommandOptionKind = "value" | "switch";
 
 export type SubcommandOptionValue = string | true;
 
+// public-contract: the parsed subcommand options on CliFlags.
 export type SubcommandOptions = Readonly<Record<string, SubcommandOptionValue>>;
 
 export type VerbSubcommandTable = Readonly<{
@@ -180,20 +181,12 @@ export const SERVE_SUBCOMMANDS: VerbSubcommandTable = table({
 	defaultSubcommand: "control",
 });
 
-export const LOGS_SUBCOMMANDS: VerbSubcommandTable = table({
-	strict: false,
-	options: [flag("follow"), value("lines"), value("tail")],
-	common: ["follow", "lines", "tail"],
-	subcommands: [],
-	defaultSubcommand: "tail",
-});
-
+// public-contract: the verbs whose subcommands declare their own options.
 export const VERB_SUBCOMMANDS: ReadonlyMap<string, VerbSubcommandTable> =
 	new Map([
 		["deploy", DEPLOY_SUBCOMMANDS],
 		["incident", INCIDENT_SUBCOMMANDS],
 		["serve", SERVE_SUBCOMMANDS],
-		["logs", LOGS_SUBCOMMANDS],
 	]);
 
 export function resolveSubcommand(

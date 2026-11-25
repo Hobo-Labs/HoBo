@@ -33,6 +33,7 @@ import type { AreaDefinition, CarpetTile, SpriteData, TileType as TileTypeVal } 
 import { EditTool } from '../types.js';
 import { getWallSetCount, getWallSetPreviewSprite } from '../wallTiles.js';
 
+/** Synthetic category id used to show the carpet sub-panel inside the Furniture tab. */
 const CARPET_CATEGORY_ID = '__carpet__' as const;
 type CarpetCategoryId = typeof CARPET_CATEGORY_ID;
 type FurniturePanelCategory = FurnitureCategory | CarpetCategoryId;
@@ -52,6 +53,7 @@ interface EditorToolbarProps {
   onWallColorChange: (color: ColorValue) => void;
   onWallSetChange: (setIndex: number) => void;
   onSelectedFurnitureColorChange: (color: ColorValue | null) => void;
+  /** Color applied to newly placed furniture (tints the palette + ghost). */
   pickedFurnitureColor: ColorValue | null;
   onPickedFurnitureColorChange: (color: ColorValue | null) => void;
   onFurnitureTypeChange: (type: string) => void;
@@ -59,15 +61,18 @@ interface EditorToolbarProps {
   activePetTypes: number[];
   petCount: number;
   onPetToggle: (petType: number, active: boolean) => void;
+  // Carpet state + handlers
   carpetVariant: number;
   carpetColor: ColorValue;
   carpetAccentColor: ColorValue;
   onCarpetVariantChange: (variant: number) => void;
   onCarpetColorChange: (color: ColorValue) => void;
   onCarpetAccentColorChange: (color: ColorValue) => void;
+  // Area state + handlers
   areas: AreaDefinition[];
   selectedAreaLabel: string | null;
   workspaceFolders: { name: string; path: string }[];
+  /** Whether the Areas tool is offered (layout has areas OR some folder is mappable). */
   areasAvailable: boolean;
   areaMappings: Record<string, string[]>;
   onSelectArea: (label: string | null) => void;
@@ -128,6 +133,7 @@ export function EditorToolbar({
   const [showFurnitureColor, setShowFurnitureColor] = useState(false);
   const [showCarpetColor, setShowCarpetColor] = useState(false);
 
+  // Build dynamic catalog from loaded assets
   useEffect(() => {
     if (loadedAssets) {
       try {
@@ -137,6 +143,7 @@ export function EditorToolbar({
         const success = buildDynamicCatalog(loadedAssets);
         console.log(`[EditorToolbar] Catalog build result: ${success}`);
 
+        // Reset to first available category if current doesn't exist
         const activeCategories = getActiveCategories();
         if (activeCategories.length > 0) {
           const firstCat = activeCategories[0]?.id;
@@ -151,15 +158,17 @@ export function EditorToolbar({
     }
   }, [loadedAssets]);
 
+  // For selected furniture: use existing color or default
   const effectiveColor = selectedFurnitureColor ?? DEFAULT_FURNITURE_COLOR;
 
   const categoryItems =
     activeCategory === CARPET_CATEGORY_ID ? [] : getCatalogByCategory(activeCategory);
 
   const patternCount = getFloorPatternCount();
+  // Wall is TileType 0, floor patterns are 1..patternCount
   const floorPatterns = Array.from({ length: patternCount }, (_, i) => i + 1);
 
-  const thumbSize = 42;
+  const thumbSize = 42; // 2x for items
 
   const isFloorActive = activeTool === EditTool.TILE_PAINT || activeTool === EditTool.EYEDROPPER;
   const isWallActive = activeTool === EditTool.WALL_PAINT;
@@ -167,6 +176,7 @@ export function EditorToolbar({
   const isCarpetActive =
     activeTool === EditTool.CARPET_PAINT || activeTool === EditTool.CARPET_PICK;
   const isAreasActive = activeTool === EditTool.AREA_PAINT;
+  // Furniture button stays "active" while editing carpets — they live inside this panel.
   const isFurnitureActive =
     activeTool === EditTool.FURNITURE_PLACE ||
     activeTool === EditTool.FURNITURE_PICK ||
@@ -174,6 +184,12 @@ export function EditorToolbar({
   const isPetsActive = activeTool === EditTool.PETS;
   const carpetVariantCount = getCarpetSetCount();
 
+  /**
+   * Draw a small carpet patch into the variant thumbnail. Rendering a 2×1 strip
+   * (rather than a single interior tile) means the patch's outer edges resolve
+   * to perimeter marching-squares cases, so the accent trim — which never
+   * appears on the solid interior piece — is visible in the preview.
+   */
   const drawCarpetPreview = (
     ctx: CanvasRenderingContext2D,
     w: number,
@@ -191,6 +207,7 @@ export function EditorToolbar({
     const originX = Math.floor((w - previewCols * tileSize) / 2);
     const originY = Math.floor((h - previewRows * tileSize) / 2);
     const tile: CarpetTile = { variant, color: carpetColor, accentColor: carpetAccentColor };
+    // 2×1 strip; trailing nulls are out of bounds and ignored by tileHasVariant.
     const fake: Array<CarpetTile | null> = [tile, tile];
     for (let jy = 0; jy <= previewRows; jy++) {
       for (let jx = 0; jx <= previewCols; jx++) {
@@ -216,7 +233,7 @@ export function EditorToolbar({
 
   return (
     <div className="absolute bottom-76 left-10 z-10 pixel-panel p-4 flex flex-col-reverse gap-4 max-w-[calc(100vw-20px)]">
-      { }
+      {/* Tool row — at the bottom */}
       <div className="flex gap-4 flex-wrap">
         <Button
           variant={isFurnitureActive ? 'active' : 'default'}
@@ -270,10 +287,10 @@ export function EditorToolbar({
         </Button>
       </div>
 
-      { }
+      {/* Sub-panel: Floor tiles — stacked bottom-to-top via column-reverse */}
       {isFloorActive && (
         <div className="flex flex-col-reverse gap-4">
-          { }
+          {/* Color toggle + Pick — just above tool row */}
           <div className="flex gap-4 items-center">
             <Button
               variant={activeTool === EditTool.EYEDROPPER ? 'active' : 'ghost'}
@@ -293,7 +310,7 @@ export function EditorToolbar({
             </Button>
           </div>
 
-          { }
+          {/* Floor pattern horizontal carousel — below the color controls */}
           <div className="carousel">
             {floorPatterns.map((patIdx) => (
               <ItemSelect
@@ -317,15 +334,15 @@ export function EditorToolbar({
             ))}
           </div>
 
-          { }
+          {/* Color controls (collapsible) — at the top, above the previews. */}
           {showColor && <TileColorBox value={floorColor} onChange={onFloorColorChange} />}
         </div>
       )}
 
-      { }
+      {/* Sub-panel: Wall — stacked bottom-to-top via column-reverse */}
       {isWallActive && (
         <div className="flex flex-col-reverse gap-4">
-          { }
+          {/* Color toggle — just above tool row */}
           <div className="flex gap-4 items-center">
             <Button
               variant={showWallColor ? 'active' : 'default'}
@@ -337,7 +354,7 @@ export function EditorToolbar({
             </Button>
           </div>
 
-          { }
+          {/* Wall set picker — horizontal carousel, below the color controls */}
           {getWallSetCount() > 0 && (
             <div className="carousel">
               {Array.from({ length: getWallSetCount() }, (_, i) => (
@@ -368,12 +385,12 @@ export function EditorToolbar({
             </div>
           )}
 
-          { }
+          {/* Color controls (collapsible) — at the top, above the previews. */}
           {showWallColor && <TileColorBox value={wallColor} onChange={onWallColorChange} />}
         </div>
       )}
 
-      { }
+      {/* Sub-panel: Pets — thumbnail grid above tool row */}
       {isPetsActive && petCount > 0 && (
         <div className="flex flex-col-reverse gap-4">
           <div className="carousel" data-testid="pets-carousel">
@@ -409,7 +426,7 @@ export function EditorToolbar({
         </div>
       )}
 
-      { }
+      {/* Sub-panel: Areas — Add row + card list */}
       {isAreasActive && (
         <div className="flex flex-col-reverse gap-4 pb-2">
           <AreaAddRow areas={areas} onAddArea={onAddArea} />
@@ -417,7 +434,7 @@ export function EditorToolbar({
             Paint areas on the map, then assign workspace folders. Agents will sit in their folder's
             area.
           </div>
-          { }
+          {/* Fixed 4-per-row grid; no overflow clip, or the upward Add-folder dropdown is cut off. */}
           <div className="grid grid-cols-[repeat(4,130px)] gap-4">
             {areas.length === 0 ? (
               <span className="text-xs text-text-muted italic">No areas yet — add one above</span>
@@ -441,10 +458,10 @@ export function EditorToolbar({
         </div>
       )}
 
-      { }
+      {/* Sub-panel: Furniture — stacked bottom-to-top via column-reverse */}
       {isFurnitureActive && (
         <div className="flex flex-col-reverse gap-4">
-          { }
+          {/* Category tabs + contextual Pick button — just above tool row */}
           <div className="flex gap-4 flex-wrap items-center">
             {getActiveCategories().map((cat) => (
               <Button
@@ -453,6 +470,7 @@ export function EditorToolbar({
                 size="sm"
                 onClick={() => {
                   setActiveCategory(cat.id);
+                  // Leaving carpet sub-panel → snap back to FURNITURE_PLACE
                   if (isCarpetActive) {
                     onToolChange(EditTool.FURNITURE_PLACE);
                   }
@@ -500,8 +518,8 @@ export function EditorToolbar({
                 Pick
               </Button>
             )}
-            {
-}
+            {/* Color toggle — available across the whole Furniture tab. Carpet
+                edits main+accent; other categories edit the new-furniture color. */}
             <Button
               variant={
                 (activeCategory === CARPET_CATEGORY_ID ? showCarpetColor : showFurnitureColor)
@@ -524,12 +542,12 @@ export function EditorToolbar({
             </Button>
           </div>
 
-          {
-
-}
+          {/* Carpet sub-panel: variant carousel + compact color controls.
+              Column-reverse stacks the pickers on top, then the variant
+              previews, then the category tabs. */}
           {activeCategory === CARPET_CATEGORY_ID && (
             <>
-              { }
+              {/* Variant carousel — below the color controls */}
               <div className="carousel">
                 {Array.from({ length: carpetVariantCount }, (_, i) => i).map((variantIdx) => (
                   <ItemSelect
@@ -550,8 +568,8 @@ export function EditorToolbar({
                 ))}
               </div>
 
-              {
-}
+              {/* Compact Main/Accent pickers — collapsible, at the top.
+                  Each is a swatch + hex that opens its picker popup on click. */}
               {showCarpetColor && (
                 <div className="flex gap-8 ml-2 mb-6 -mt-6">
                   <div className="flex flex-col gap-2">
@@ -574,8 +592,8 @@ export function EditorToolbar({
             </>
           )}
 
-          {
-}
+          {/* Furniture items grid — hidden when carpet category is active.
+              Thumbnails preview the new-furniture color so you see what places. */}
           {activeCategory !== CARPET_CATEGORY_ID && (
             <div className="carousel">
               {categoryItems.map((entry) => (
@@ -606,8 +624,8 @@ export function EditorToolbar({
             </div>
           )}
 
-          {
-}
+          {/* New-furniture color picker — collapsible, above the palette. Editing
+              an already-placed selection is handled by the panel below. */}
           {activeCategory !== CARPET_CATEGORY_ID && showFurnitureColor && !selectedFurnitureUid && (
             <ColorPicker
               value={pickedFurnitureColor ?? DEFAULT_FURNITURE_COLOR}
@@ -619,7 +637,7 @@ export function EditorToolbar({
         </div>
       )}
 
-      { }
+      {/* Selected furniture color panel — shows when any placed furniture item is selected */}
       {selectedFurnitureUid && (
         <div className="flex flex-col-reverse gap-4">
           <div className="flex gap-4 items-center">
@@ -655,6 +673,13 @@ export function EditorToolbar({
   );
 }
 
+/**
+ * Floor/wall color control: a boxed panel with a "Color" row (carpet-style
+ * swatch + hex that opens the visual picker) and a "Contrast" row. Floors and
+ * walls always colorize, so there's no colorize toggle — just hue/sat/bright
+ * via the popup, plus contrast (which matters since colorizeSprite uses each
+ * pattern pixel's luminance).
+ */
 function TileColorBox({
   value,
   onChange,
@@ -686,6 +711,7 @@ function TileColorBox({
   );
 }
 
+// ── Areas sub-components ───────────────────────────────────────────
 
 function AreaAddRow({
   areas,

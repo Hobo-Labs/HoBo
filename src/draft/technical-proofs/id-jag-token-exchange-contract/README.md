@@ -1,8 +1,8 @@
 # HOBO-54 ID-JAG Token-Exchange Contract
 
 This independent POC pins the outbound Cross-App Access token-exchange wire contract from
-[Plan 6](urn:hobo:requirement:ai-native-agent-auth#plan-06) and
-[ADR-0084](urn:hobo:decision:adr-0084).
+[Plan 6](../../../../docs/design/ai-native-agent-auth.md#plan-06) and
+[ADR-0084](../../../../docs/design/adr/02-identity-security.md#adr-0084).
 
 ## Contract Surface
 
@@ -31,9 +31,11 @@ npm.cmd --prefix src\draft\technical-proofs\id-jag-token-exchange-contract test
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Id Jag Token Exchange Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

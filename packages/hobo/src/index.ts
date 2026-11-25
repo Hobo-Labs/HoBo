@@ -44,12 +44,12 @@ export {
 	collectBindleEnvInjections,
 	HOBO_BINDLE_ENV_HEADER,
 	HOBO_ENV_HEADER_PREFIX,
-	INTERNAL_MESH_HOST,
-	installInternalMesh,
-	internalMeshBase,
-	internalMeshHost,
+	INTERNAL_ROUTER_HOST,
+	installInternalRouter,
+	internalRouterBase,
+	internalRouterHost,
 	isExternalComponent,
-	isInternalMeshHostname,
+	isInternalRouterHostname,
 	listServableEntrypoints,
 	listServableEntrypointsWithReplay,
 	type NamedEndpointInfo,
@@ -68,8 +68,11 @@ export {
 	DEFAULT_BARE_METAL_YARD_NAME,
 	DEFAULT_COMPONENT_HOST,
 	DEFAULT_DEV_PORT,
+	DEFAULT_LOCAL_HOST,
 	defaultHoboHome,
 	initBareMetalYard,
+	LOCAL_HOST_KINDS,
+	type LocalHostKind,
 	loadBareMetalYardConfig,
 	normalizeComponentHostKind,
 	openBareMetalYard,
@@ -101,6 +104,7 @@ export {
 	type RemotePlaceResult,
 } from "./broker-remote-client.js";
 export {
+	collectExplicitProviderPins,
 	collectRequiredRuntimes,
 	createYardBrokerCatalog,
 	defaultComponentHostFromBroker,
@@ -233,7 +237,12 @@ export {
 	type DeployTargetDescription,
 	describeDeployTarget,
 } from "./deploy-preflight.js";
-export { createDerivativeCommand } from "./derivative-command.js";
+export {
+	createDerivativeCommand,
+	type DerivativeCommandDeps,
+	type DerivativeUpcasterStep,
+	type UpcastedEventRecord,
+} from "./derivative-command.js";
 export {
 	createDoctorCommand,
 	type DoctorCommandDeps,
@@ -358,8 +367,10 @@ export {
 	registerLocalSubstrateYards,
 } from "./local-substrates.js";
 export {
+	type LocalCampServeResult,
 	type LocalYardServeResult,
 	serveBindleOnLocalYard,
+	serveProjectOnLocalCamp,
 } from "./local-yard-serve.js";
 export {
 	type BrokerAwareLoginCommandDeps,
@@ -561,6 +572,7 @@ export {
 export {
 	probeWasmHostInstall,
 	serveProjectOnLocalYard,
+	serveProjectOnWasmHost,
 	type WasmHostProbe,
 } from "./wasm-host.js";
 export {

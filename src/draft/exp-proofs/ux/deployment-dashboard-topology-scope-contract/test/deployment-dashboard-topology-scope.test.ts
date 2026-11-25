@@ -43,25 +43,25 @@ test("owning initiatives, design docs, and ADR dependencies are explicit", () =>
 
   assert.ok(
     DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE.designRefs.includes(
-      "urn:hobo:requirement:developer-experience#plan-07",
+      "docs/design/developer-experience.md#plan-07",
     ),
   );
   assert.ok(
     DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE.designRefs.includes(
-      "urn:hobo:requirement:developer-experience#plan-49",
+      "docs/design/developer-experience.md#plan-49",
     ),
   );
   assert.ok(
-    DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE.designRefs.includes("urn:hobo:requirement:data-plane#plan-32"),
+    DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE.designRefs.includes("docs/design/data-plane.md#plan-32"),
   );
   assert.ok(
     DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE.adrRefs.includes(
-      "urn:hobo:decision:adr-0077",
+      "docs/design/adr/02-identity-security.md#adr-0077",
     ),
   );
   assert.ok(
     DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE.adrRefs.includes(
-      "urn:hobo:decision:adr-0050",
+      "docs/design/adr/03-data-plane.md#adr-0050",
     ),
   );
 });

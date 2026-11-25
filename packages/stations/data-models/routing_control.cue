@@ -1,5 +1,6 @@
 package stations
 
+// Protobuf JSON uses lowerCamelCase. Default-valued fields may be absent.
 #RoutingControlStateRecord: {
  service: string & !=""
  tenantId: string & !=""
@@ -7,7 +8,6 @@ package stations
  incumbentBackendId: string & !=""
  revision?: uint32
  stateVersion?: uint32
- budgetSignalCycles?: {[string]: uint32}
  lastSwapAtMs?: number & >=0
  swapTimesMs?: [...number & >=0]
  pendingPlanId?: string

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "multi-cloud-shop",
+  "builtAt": "2026-11-17T18:35:43.699Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "examples/multi-cloud-shop/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "b9bc5e50f7d19249247b838b89f09a69fad8401ce57589743472cd00e896f73a",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

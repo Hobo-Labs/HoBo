@@ -1,0 +1,23 @@
+{
+  "layer": "exp",
+  "slug": "dx-sdk-resilience-scope-contract",
+  "experienceType": "dx",
+  "title": "DX SDK Resilience Scope Contract",
+  "linear": "HOBO-514",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/dx-sdk-resilience-semantics.md",
+      "docs/design/proofs/hobo-514-dx-sdk-resilience/README.md",
+      "docs/design/sdk-contracts.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

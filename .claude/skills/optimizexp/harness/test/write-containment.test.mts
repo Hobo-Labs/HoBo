@@ -194,12 +194,15 @@ describe("OptimizeXP write containment", () => {
 		});
 	});
 
-	it("also protects global paths used by evidence posting", () => {
+	it("also protects global paths used by surveys, review workflows, and evidence posting", () => {
 		fixture((root, outside) => {
 			mkdirSync(path.join(root, ".optimizexp"));
 			writeFileSync(path.join(outside, "sentinel"), "keep workflow bytes\n");
 			symlinkSync(outside, path.join(root, ".optimizexp/runs"), "dir");
 			const results = [
+				invoke(root, "survey", ["--mode=aggregate", "--run=example"]),
+				invokeWorkflow(root, "review-loop", ["--mode", "init", "--run", "example"]),
+				invokeWorkflow(root, "consensus-loop", ["--mode", "init"]),
 				invoke(root, "post-pr-evidence", ["--feature", "example", "--pr", "1"]),
 			];
 			for (const result of results) {
@@ -211,14 +214,21 @@ describe("OptimizeXP write containment", () => {
 		});
 	});
 
-	it("rejects path-like workflow identifiers before writing", () => {
+	it("rejects path-like survey and workflow identifiers before writing and accepts ordinary ids", () => {
 		fixture((root, outside) => {
+			const invalidRun = invoke(root, "survey", ["--mode=aggregate", "--run=../../outside"]);
+			assert.equal(invalidRun.status, 2, invalidRun.stderr);
+			const run = path.join(root, ".optimizexp/runs/run-1");
+			mkdirSync(run, { recursive: true });
 			const invalidReview = invokeWorkflow(root, "review-loop", ["--mode", "init", "--run", "../../outside"]);
 			assert.equal(invalidReview.status, 2, invalidReview.stderr);
 			const invalidCouncil = invokeWorkflow(root, "consensus-loop", ["--mode", "status", "--run", "..", "--review", "example"]);
 			assert.equal(invalidCouncil.status, 2, invalidCouncil.stdout);
 			assert.match(invalidCouncil.stdout, /unsafe-id/);
 			assert.equal(existsSync(path.join(outside, "scope.json")), false);
+			const valid = invoke(root, "survey", ["--mode=aggregate", "--run=run-1"]);
+			assert.equal(valid.status, 0, valid.stderr);
+			assert.equal(existsSync(path.join(run, "survey/aggregate.json")), true);
 		});
 	});
 
@@ -236,16 +246,22 @@ describe("OptimizeXP write containment", () => {
 		});
 	});
 
-	it("rejects unrecognized posting options before side effects", () => {
+	it("rejects unrecognized survey, workflow, and posting options before side effects", () => {
 		fixture((root) => {
 			const results = [
+				invoke(root, "survey", ["--mode", "template", "--run", "example", "--dryrun"]),
 				invoke(root, "post-pr-evidence", ["--feature", "example", "--pr", "1", "--dryrun"]),
+				invokeWorkflow(root, "review-loop", ["--mode", "init", "--run", "example", "--dryrun"]),
+				invokeWorkflow(root, "consensus-loop", ["--mode", "init", "--run", "example", "--dryrun", "yes"]),
 			];
 			for (const result of results) {
 				assert.equal(result.status, 2, `${result.stdout} ${result.stderr}`);
 				assert.match(`${result.stdout} ${result.stderr}`, /Unknown option: --dryrun/);
 				assert.equal(existsSync(path.join(root, ".optimizexp")), false);
 			}
+			const valid = invokeWorkflow(root, "review-loop", ["init", "--run=example", "--personas", "", "--features=", "--projects", ""]);
+			assert.equal(valid.status, 0, valid.stderr);
+			assert.equal(existsSync(path.join(root, ".optimizexp/runs/example/scope.json")), true);
 		});
 	});
 });

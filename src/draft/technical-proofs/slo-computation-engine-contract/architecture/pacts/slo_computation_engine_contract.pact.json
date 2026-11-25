@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SloComputationEngineContractConsumer"
+  },
+  "provider": {
+    "name": "SloComputationEngineContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Slo Computation Engine Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/slo-computation-engine-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.slo_computation_engine_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -7,7 +7,10 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",

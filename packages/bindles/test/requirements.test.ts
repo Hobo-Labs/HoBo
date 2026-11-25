@@ -33,15 +33,6 @@ describe("bindle requirements + provider selection rejection", () => {
 		);
 	});
 
-	it("rejects unknown requirement fields and non-array lists", () => {
-		expect(() => parseBindleRequirements({ requre: ["http"] })).toThrow(
-			/bindle requirements have unknown property: requre/,
-		);
-		expect(() => parseBindleRequirements({ require: "http" })).toThrow(
-			/expected string array/,
-		);
-	});
-
 	it("rejects cloud provider annotations at collection", () => {
 		expect(() =>
 			bindle("shop", (b) => {
@@ -68,6 +59,7 @@ describe("bindle requirements + provider selection rejection", () => {
 				});
 			return { api };
 		});
+		// App Kit default session-replay comes first; env is appended via .with.
 		expect(
 			shop.resources.api?.annotations.some((a) => a.option === "env"),
 		).toBe(true);

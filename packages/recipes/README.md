@@ -139,7 +139,7 @@ control plane acts on.
 A `DeploymentOffer` and its `DeploymentOfferAcceptance` are what turn a human
 consent into a deploy **command**. The Conductor carries the accepted offer and
 consent digests into `BrokerRequest.guest`, and the signed `ResolutionReceipt`
-pins them back ([ADR-0151](urn:hobo:decision:adr-0151)).
+pins them back ([ADR-0151](../../docs/design/adr/07-portability-extensibility.md#adr-0151)).
 From there the claim coordinator **actor** in `@hobo/claims` takes over: it
 accepts commands like `BeginClaimItem` and `VerifyOwnership` and emits the
 `claim.*` **events** (`ClaimItemStarted`, `OwnershipVerified`,

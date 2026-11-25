@@ -1,3 +1,31 @@
+/**
+ * The in-memory actor host — leases, fencing, and event-sourced state.
+ *
+ * A single-writer guarantee is the whole product of an actor host: exactly one
+ * holder may append to an actor's stream at a time. That guarantee is
+ * enforced three ways, and each one exists because the others are not enough
+ * on their own.
+ *
+ * **A live lease blocks acquisition.** Two holders appending concurrently is
+ * the failure the host exists to prevent, so `acquire` refuses while a lease
+ * is unexpired and unreleased — and the refusal names who holds it and until
+ * when, because the caller's next move differs depending on whether the holder
+ * is a live peer or a crashed one.
+ *
+ * **A fence token monotonically increases across handovers.** After a holder
+ * is presumed dead and its lease taken over, the old holder may still be alive
+ * and about to append. The fence is what makes that append fail: it carries a
+ * token the host has already moved past.
+ *
+ * **Expiry is checked at append, not only at acquire.** A holder that took a
+ * lease and then stalled past its TTL is no longer the writer, whatever it
+ * believes. Checking only at acquisition would let a resumed process write
+ * behind whoever took over.
+ *
+ * The clock is manual by construction: a lease host whose tests depend on wall
+ * time would either be slow or flaky, and the expiry behaviour is exactly what
+ * has to be pinned.
+ */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,6 +36,7 @@ import {
 	StaleFenceError,
 } from "../src/actor-host/in-memory.js";
 
+/** A host with a clock the test drives. */
 function host(options: { leaseTtlMs?: number; start?: string } = {}) {
 	const clock = createManualActorClock(options.start);
 	return {
@@ -21,6 +50,7 @@ function host(options: { leaseTtlMs?: number; start?: string } = {}) {
 	};
 }
 
+/** A counter fold, for state tests. */
 const counter = {
 	initialState: { count: 0 },
 	fold: (state: { count: number }, event: { type: string }) =>
@@ -41,11 +71,15 @@ describe("createManualActorClock", () => {
 	});
 
 	it("allows a zero advance", () => {
+		// Advancing by zero is a legitimate no-op in a test that wants to assert
+		// nothing changed at the boundary.
 		const clock = createManualActorClock();
 		expect(clock.advance(0)).toBe(clock.now());
 	});
 
 	it("refuses to move backwards or by a fraction", () => {
+		// A clock that could go backwards would let an expired lease become live
+		// again — the fence would be the only thing left holding the guarantee.
 		const clock = createManualActorClock();
 		for (const delta of [-1, 0.5, Number.NaN]) {
 			expect(() => clock.advance(delta)).toThrow(/non-negative integer/);
@@ -57,6 +91,8 @@ describe("createManualActorClock", () => {
 	});
 
 	it("is frozen so a caller cannot substitute its methods", () => {
+		// The clock is the determinism anchor. A caller replacing `nowMs` would
+		// break expiry for every lease in the host at once.
 		expect(Object.isFrozen(createManualActorClock())).toBe(true);
 	});
 });
@@ -74,6 +110,9 @@ describe("acquire", () => {
 	});
 
 	it("refuses while another holder's lease is live, naming holder and expiry", () => {
+		// The caller's next move differs depending on whether the holder is a
+		// live peer (back off) or one it is waiting out (retry after expiry).
+		// Both facts have to be in the message.
 		const { port } = host();
 		port.acquire("actor:a", { holderId: "worker-1" });
 		expect(() => port.acquire("actor:a", { holderId: "worker-2" })).toThrow(
@@ -85,6 +124,8 @@ describe("acquire", () => {
 	});
 
 	it("refuses a re-acquire by the same holder", () => {
+		// Even the same worker must not hold two leases: the second would bump
+		// the fence and invalidate the first, which the worker is still using.
 		const { port } = host();
 		port.acquire("actor:a", { holderId: "worker-1" });
 		expect(() => port.acquire("actor:a", { holderId: "worker-1" })).toThrow(
@@ -93,6 +134,8 @@ describe("acquire", () => {
 	});
 
 	it("grants a lease on a different key while one is held", () => {
+		// Actors are independent. Serializing across keys would make the host a
+		// global lock.
 		const { port } = host();
 		port.acquire("actor:a", { holderId: "worker-1" });
 		expect(port.acquire("actor:b", { holderId: "worker-2" }).key).toBe(
@@ -101,6 +144,8 @@ describe("acquire", () => {
 	});
 
 	it("grants a lease once the previous one has expired", () => {
+		// This is the recovery path for a crashed holder — without it a dead
+		// worker would strand its actor permanently.
 		const { port, clock } = host({ leaseTtlMs: 1_000 });
 		port.acquire("actor:a", { holderId: "worker-1" });
 		clock.advance(1_000);
@@ -118,6 +163,8 @@ describe("acquire", () => {
 	});
 
 	it("increases the fence token on every handover", () => {
+		// The fence is what makes a resurrected holder's append fail. A reused
+		// token would let it write behind whoever took over.
 		const { port } = host();
 		const tokens: bigint[] = [];
 		for (let i = 0; i < 3; i += 1) {
@@ -129,12 +176,16 @@ describe("acquire", () => {
 	});
 
 	it("refuses an empty key or holder id", () => {
+		// An unnamed actor would collect appends nobody can address; an unnamed
+		// holder makes the conflict message useless.
 		const { port } = host();
 		expect(() => port.acquire("", { holderId: "w" })).toThrow(/key/);
 		expect(() => port.acquire("actor:a", { holderId: "" })).toThrow(/holderId/);
 	});
 
 	it("refuses a non-positive lease TTL at construction", () => {
+		// A zero TTL would expire every lease the instant it was granted,
+		// turning the single-writer guarantee off entirely.
 		for (const ttl of [0, -1, 1.5]) {
 			expect(() => createInMemoryActorHost({ leaseTtlMs: ttl })).toThrow(
 				/leaseTtlMs/,
@@ -145,6 +196,8 @@ describe("acquire", () => {
 
 describe("renew", () => {
 	it("extends the lease from the current time", () => {
+		// Renewal is relative to now, not to the original grant — otherwise a
+		// holder that renewed late would get a shorter extension than asked for.
 		const { port, clock } = host({ leaseTtlMs: 1_000 });
 		const lease = port.acquire("actor:a", { holderId: "w" });
 		clock.advance(500);
@@ -159,6 +212,9 @@ describe("renew", () => {
 	});
 
 	it("refuses to renew an expired lease", () => {
+		// A holder that stalled past its TTL is no longer the writer, whatever
+		// it believes. Renewing would hand the guarantee back to a process
+		// another holder may already have replaced.
 		const { port, clock } = host({ leaseTtlMs: 1_000 });
 		const lease = port.acquire("actor:a", { holderId: "w" });
 		clock.advance(1_000);
@@ -166,6 +222,8 @@ describe("renew", () => {
 	});
 
 	it("refuses to renew a lease another holder has taken over", () => {
+		// The fence has moved past this lease. Renewing it would resurrect a
+		// writer the host has already replaced.
 		const { port, clock } = host({ leaseTtlMs: 1_000 });
 		const first = port.acquire("actor:a", { holderId: "w-1" });
 		clock.advance(1_000);
@@ -190,6 +248,8 @@ describe("release", () => {
 	});
 
 	it("is idempotent", () => {
+		// Release runs from teardown paths that cannot know whether it already
+		// happened. Throwing there would mask the error being unwound from.
 		const { port } = host();
 		const lease = port.acquire("actor:a", { holderId: "w" });
 		expect(() => {
@@ -199,6 +259,9 @@ describe("release", () => {
 	});
 
 	it("does not release a lease another holder now owns", () => {
+		// A late release from a replaced holder must not free the actor out from
+		// under its current writer — that would be a single-writer violation
+		// caused by the cleanup path itself.
 		const { port, clock } = host({ leaseTtlMs: 1_000 });
 		const first = port.acquire("actor:a", { holderId: "w-1" });
 		clock.advance(1_000);
@@ -218,6 +281,8 @@ describe("state — append", () => {
 	}
 
 	it("appends under the lease's fence and holder", () => {
+		// Every record carries who wrote it and under which fence, which is what
+		// makes a stream auditable after a handover.
 		const { state, lease } = withLease();
 		const result = state.append(lease, { type: "incremented" });
 		expect(result).toEqual({
@@ -234,6 +299,8 @@ describe("state — append", () => {
 	});
 
 	it("refuses an append under an expired lease", () => {
+		// Checking only at acquire would let a resumed process write behind
+		// whoever took over while it was stalled.
 		const { state, lease, clock } = withLease({ leaseTtlMs: 1_000 });
 		clock.advance(1_000);
 		expect(() => state.append(lease, { type: "incremented" })).toThrow(
@@ -242,6 +309,8 @@ describe("state — append", () => {
 	});
 
 	it("refuses an append from a fenced-out holder", () => {
+		// The resurrected-holder case. Its token is behind the host's, and that
+		// is exactly what the fence is for.
 		const { state, lease, clock, port } = withLease({ leaseTtlMs: 1_000 });
 		clock.advance(1_000);
 		port.acquire("actor:a", { holderId: "w-2" });
@@ -259,6 +328,8 @@ describe("state — append", () => {
 	});
 
 	it("refuses a lease belonging to a different actor", () => {
+		// A caller holding two leases could otherwise write one actor's events
+		// into the other's stream — a corruption no later read could detect.
 		const { port } = host();
 		const other = port.acquire("actor:b", { holderId: "w" });
 		port.acquire("actor:a", { holderId: "w" });
@@ -268,6 +339,8 @@ describe("state — append", () => {
 	});
 
 	it("refuses an event that is not an object, or has no type", () => {
+		// The type is what the fold dispatches on. An event without one would
+		// be folded as an unknown and silently ignored on every replay.
 		const { state, lease } = withLease();
 		for (const event of [null, "incremented", [], 7] as unknown[]) {
 			expect(() => state.append(lease, event as { type: string })).toThrow(
@@ -278,6 +351,8 @@ describe("state — append", () => {
 	});
 
 	it("copies the event so a caller cannot rewrite an appended record", () => {
+		// The stream is the durable record. A caller mutating the object it
+		// appended would rewrite history after the fact.
 		const { state, lease } = withLease();
 		const event = { type: "incremented", payload: { n: 1 } };
 		state.append(lease, event);
@@ -315,6 +390,8 @@ describe("state — read", () => {
 	});
 
 	it("copies the initial state so two handles do not share it", () => {
+		// A fold that mutates its input would otherwise corrupt the caller's
+		// declared initial state for every later read.
 		const initial = { count: 0 };
 		const { port, lease } = (() => {
 			const h = host();
@@ -337,6 +414,8 @@ describe("state — read", () => {
 	});
 
 	it("shares one stream across two handles for the same actor", () => {
+		// Two callers asking for the same actor's state must see one history —
+		// separate streams would each fold half the events.
 		const { port } = host();
 		const lease = port.acquire("actor:a", { holderId: "w" });
 		port.state("actor:a", counter).append(lease, { type: "incremented" });
@@ -344,6 +423,9 @@ describe("state — read", () => {
 	});
 
 	it("refuses a state handle with no key, no fold, or no initial state", () => {
+		// Each missing piece produces a different silent wrong answer: an
+		// unnamed stream, a fold that cannot run, or a replay that starts from
+		// `undefined`.
 		const { port } = host();
 		expect(() => port.state("", counter)).toThrow(/key/);
 		expect(() =>

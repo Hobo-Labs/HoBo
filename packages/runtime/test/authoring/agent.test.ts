@@ -20,6 +20,7 @@ describe("agent(): durable tool-invoking actor under a deny-by-default ctx", () 
 				},
 			],
 			async run(ctx, input) {
+				// SAFETY: assertion to `(await ctx.tool("search", input)) as string` is required at this boundary.
 				return (await ctx.tool("search", input)) as string;
 			},
 		});
@@ -30,10 +31,12 @@ describe("agent(): durable tool-invoking actor under a deny-by-default ctx", () 
 		expect(handle.result).toBe("results:outage");
 		expect(toolCalls).toBe(1);
 
+		// The tool call is a journaled step (so the agent is replayable).
 		const journal = await engine.journal(handle.runId);
 		const toolStep = journal.find(
 			(event) =>
 				event.type === "run.StepCompleted" &&
+				// SAFETY: assertion to `event.data as { name?: string }` is required at this boundary.
 				(event.data as { name?: string }).name === "tool:search",
 		);
 		expect(toolStep).toBeDefined();
@@ -43,6 +46,7 @@ describe("agent(): durable tool-invoking actor under a deny-by-default ctx", () 
 		const engine = createWorkflowEngine();
 		const support = agent<string, JsonValue>({
 			name: "support",
+			// No token:openai capability declared.
 			async run(ctx, _input) {
 				return ctx.token({ provider: "openai", scope: "chat" });
 			},
@@ -52,6 +56,7 @@ describe("agent(): durable tool-invoking actor under a deny-by-default ctx", () 
 		try {
 			await engine.start(support, "ping");
 		} catch (error) {
+			// SAFETY: assertion to `error as CapabilityDeniedError` is required at this boundary.
 			denial = error as CapabilityDeniedError;
 		}
 

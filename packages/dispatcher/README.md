@@ -1,6 +1,6 @@
 # @hobo/dispatcher
 
-The dispatcher provides deterministic, credit/budget-aware selection across
+The Dispatcher (ADR-0071): deterministic, credit/budget-aware selection across
 registered providers for placement (`match.Decided`), dispatch
 (`dispatch.Decided`), and traffic (`traffic-backend` category — consumed by the
 stations routing control loop).
@@ -20,25 +20,19 @@ stations routing control loop).
   `dispatch.Reservation*` facts.
 - `replayDispatchDecision` replays identical inputs to a byte-identical
   decision fact.
-- `decidePricedDispatch` ranks providers by incremental billed amount using
-  `@hobo/pricing` quotes. `decideCreditDispatch` ranks candidates against credit
-  and budget constraints.
+- **`decideDispatchV2`** (schema `hobo.dispatcher/v2`) ranks registered providers
+  by minimum incremental **billed** amount from `@hobo/pricing` quotes; v1
+  `decideDispatch` continues to use credit ranking.
 
-Credit dispatch defaults to `min-cost`: it minimizes the projected paid amount
-and uses free units to break cost ties. `maximize-credits` first consumes the
-most available free units, then minimizes projected cost. Both objectives reject
-candidates that exceed budget or capacity limits. The selected objective is
-recorded in the decision and retained during replay and reservation retries.
+## Dispatcher v2
 
-## Pricing-backed dispatch
-
-`decidePricedDispatch` uses schema `hobo.dispatcher/priced`. It ranks exact
-`incremental.billed` decimals under the `min-incremental-billed` objective,
-then breaks ties by projected waste, expiry, and provider ID. Rejected, stale,
-partial, unpriced, or cross-currency quotes are excluded. `DispatchCostQuote`
-omits the advisory `allocatedEffective` field. Successful decisions emit a
-`dispatch.Priced` event containing ranked amounts and quote hashes; the full
-quotes remain available in the returned decision.
+`decideDispatchV2` and `@hobo/dispatcher/v2` use schema
+`hobo.dispatcher/v2`. For each candidate's `QuoteScenario`, the adapter calls
+`@hobo/pricing` and ranks exact `incremental.billed` decimals under the
+`min-incremental-billed` objective. Provider ID breaks equal-cost ties.
+Rejected, stale, partial, unpriced, or cross-currency quotes fail closed and
+never fall back to list price. `DispatchCostQuote` omits the advisory
+`allocatedEffective` field. A fixed-fixture SHA-256 golden pins an existing v1 decision; the numeric safety corrections below can change v1 decisions for edge cases.
 
 Overflowing available balances are capped at the largest finite number;
 reservations or settlements that cannot be represented leave the ledger and
@@ -50,10 +44,10 @@ Unavailable pricing is rejected with `PRICING_MODEL_UNAVAILABLE`; supplied
 terms are checked against the candidate provider, tenant, account and product,
 and their model ID and revision accompany the ranked quote and decision fact.
 The checks cover the supplied scenario, not an independently verified IaC
-inventory. Priced dispatch ranks estimates; it does **not** apply a budget,
-reserve funds or authorize a provider call. Every priced dispatch success and rejection
+inventory. The v2 dispatcher ranks estimates; it does **not** apply a budget,
+reserve funds or authorize a provider call. Every v2 success and rejection
 reports `budget: { evaluation: "not-evaluated", reservation: "not-created" }`;
-successful `dispatch.Priced` facts carry the same disclosure. Budgeted hosting still needs the
+successful `dispatch.Decided` facts carry the same disclosure. Budgeted hosting still needs the
 broker's trusted whole-request quote, bound, policy decision and durable hold.
 
 `rankIacTargets` ranks whole-target assessments for one tenant, workload,
@@ -159,10 +153,10 @@ Unavailable pricing is rejected with `PRICING_MODEL_UNAVAILABLE`; supplied
 terms are checked against the candidate provider, tenant, account and product,
 and their model ID and revision accompany the ranked quote and decision fact.
 The checks cover the supplied scenario, not an independently verified IaC
-inventory. Priced dispatch ranks estimates; it does **not** apply a budget,
-reserve funds or authorize a provider call. Every priced dispatch success and rejection
+inventory. The v2 dispatcher ranks estimates; it does **not** apply a budget,
+reserve funds or authorize a provider call. Every v2 success and rejection
 reports `budget: { evaluation: "not-evaluated", reservation: "not-created" }`;
-successful `dispatch.Priced` facts carry the same disclosure. Budgeted hosting still needs the
+successful `dispatch.Decided` facts carry the same disclosure. Budgeted hosting still needs the
 broker's trusted whole-request quote, bound, policy decision and durable hold.
 
 `rankIacTargets` ranks whole-target assessments for one tenant, workload,
@@ -268,7 +262,33 @@ all-in total; it cannot lower the modelled exposure. A caller must supply the
 appropriate account and authoritative quote, including the unit price when it differs from the account list price: missing accounts retain the
 legacy unconstrained selection behavior and do not establish a budget guarantee.
 The combined selection-and-reservation helper uses the account price for both
-steps when present, falling back to the registry price.
+steps when present, falling back to the registry price. It selects the provider
+registration for the requested category, including that registration's dimension.
+When an all-in `estimatedCost` is supplied, selection excludes each provider
+whose budget cannot cover that estimate as well as its calculated cost. New
+decision replay inputs retain the estimate; older inputs without it keep their
+original selection behavior.
+
+New dispatcher tie-breaks use ECMAScript string code-unit order rather than the
+host locale, including equal-expiry credit consumption and v2 provider order.
+When a v1 decision compares distinct strings, its replay input records the
+ordering version. Unversioned historical inputs use the former local collation
+for compatibility and need the original locale to reproduce a tied result. A
+legacy reservation that replays to a different provider is quarantined by the
+history check and needs reconciliation. New pricing quotes also use stable
+ordering; explicitly replayed `pricing-rating/v1` quotes retain their original
+locale-sensitive behavior.
+
+An older helper could reserve a different category when a provider had multiple
+registrations, leaving the intended account without its hold or settlement. The
+helper now checks recorded replay inputs for pending, running, and confirmed
+reservations and returns `ledger-reconciliation-required` when it detects an
+inconsistent category, cost, or binding. It replays those records on each call,
+so the check adds work proportional to retained history. Before admitting work
+after upgrade, reconcile affected holds and provider usage against trusted
+records; the helper cannot reconstruct missing history or authenticate a
+plausible snapshot. Direct ledger calls and records without replay inputs do not
+receive this check, so quarantine them at the admission authority until reviewed.
 
 Pending reservations debit free allowance and rate headroom, occupy one
 concurrency slot, and hold paid exposure. `release` restores those quantities
@@ -295,6 +315,20 @@ Reservation IDs are unique. Identical pending reserve retries return the
 original commitment without another debit; changed payloads fail. Terminal or
 expired IDs cannot authorize new work. The dispatch-and-reserve helper persists
 its replay input in the reservation, so a retry retains the original winner.
+Imported reservations are checked before use: free and rate consumption cannot
+exceed the reservation's units, a reservation can hold at most one concurrency
+slot, and credit entries must be unique and fit the reserved units under the
+ledger's conservative rounding. These checks reject impossible restoration
+amounts; callers must still trust or reconstruct the history proving that the
+recorded quantities were actually deducted.
+
+Ledger sequence values must be nonnegative safe integers. A mutation that would
+exceed `Number.MAX_SAFE_INTEGER` throws before changing the ledger; expiry
+checks space for its time advance and every release before changing either.
+Existing idempotent replays and no-op expiry remain available. Exhaustion also
+stops settlement, so operators must migrate and reconcile the ledger to a wider
+sequence format before continuing; resetting the counter would invalidate its
+fencing guarantee.
 
 `freeHeadroom`, when present, is the aggregate cap; `credits` are its grant
 breakdown, not additional copies of the allowance. Without an aggregate the
@@ -305,13 +339,102 @@ release never makes an expired grant eligible again. Expiry only releases a
 reservation: execution owners must stop or fence work before returning its
 remaining financial exposure to the pool.
 
-See [`contracts/`](./contracts) for the dispatch PACT boundaries.
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
+[`contracts/`](./contracts) for the v1 and v2 PACT boundaries.
 
 ## Budget verification
 
 The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-routing/SKILL.md) describes generated reservation histories, the bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. The legacy number contract is interpreted as decimal values; liabilities round upward and available balances downward when conversion back to numbers requires it. This protects the budget conservatively but can leave tiny residual holds or reject an edge-case request that is exactly affordable in decimal arithmetic. Provider overruns are recorded, and callers remain responsible for authoritative quotes and fencing.
 
 Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. It includes the hard-budget and overflow regression suites and checks weakened models for counterexamples. The skill also documents a separate scratch-mutation command for the overflow and estimate guards. The abstract proof does not establish that the TypeScript implementation refines it or model numeric overflow.
+
+The ordering model checks 48 bounded states. It hides 16 same-state
+transitions; a separate expected counterexample shows why unversioned legacy
+ties can differ between hosts.
+
+```mermaid
+stateDiagram-v2
+  s0: New dispatch
+  s1: Legacy input
+  s2: Legacy decision recorded
+  s3: Ordering choice recorded
+  s4: Legacy decision replayed
+  s5: Same ordering replayed
+  [*] --> s0
+  [*] --> s1
+  s0 --> s3: select and record ordering
+  s1 --> s2: select and record ordering
+  s2 --> s4: replay on another host
+  s3 --> s5: replay on another host
+```
+
+The estimate-routing model checks 98 bounded states, with two providers and a
+shared estimate. Its projection hides 27 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Dispatch requested
+  s1: Affordable provider selected
+  s2: No provider affordable
+  s3: Full exposure held
+  s4: Same decision replayed
+  [*] --> s0
+  s0 --> s1: compare estimate with budgets
+  s0 --> s2: compare estimate with budgets
+  s1 --> s3: reserve full exposure
+  s3 --> s4: replay original inputs
+```
+
+The category-scope model checks 54 bounded states and hides 27 same-state
+transitions. It assumes a mismatched imported record has already been detected.
+
+```mermaid
+stateDiagram-v2
+  s0: Ready to dispatch
+  s1: Inconsistent snapshot
+  s2: One funded start
+  s3: Admission quarantined
+  s4: Second start blocked by budget
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: check history and reserve
+  s1 --> s3: check history and reserve
+  s2 --> s4: check history and reserve
+```
+
+The sequence model explores 88 states with a maximum revision of three and up
+to two pending reservations. Its projection hides 46 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Ledger operation requested
+  s1: Applying expiry
+  s2: Sequence exhausted
+  s3: Replay returned
+  s4: Mutation committed
+  s5: Expiry completed
+  [*] --> s0
+  s0 --> s1: check expiry batch
+  s0 --> s2: check expiry batch or mutate if space remains
+  s0 --> s3: return prior result
+  s0 --> s4: mutate if space remains
+  s1 --> s5: finish expiry
+```
+
+The consumption model checks an abstract free, rate, credit, or slot quantity
+in 129 states. Its projection hides 48 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Snapshot loaded
+  s1: Reservation pending
+  s2: Snapshot rejected
+  s3: Consumption restored
+  [*] --> s0
+  s0 --> s2: validate recorded consumption
+  s0 --> s1: validate recorded consumption
+  s1 --> s3: release once
+```
 
 ### Recovering a blocked IaC route
 

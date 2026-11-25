@@ -19,7 +19,7 @@ test("HOBO-566 record maps the DX backbone to the authoritative design anchors",
   assert.equal(parsed.targetPackage, "src/draft/exp-proofs/dx/dx-backbone-resource-lifecycle-vibe");
   assert.equal(
     parsed.proofNote,
-    "urn:hobo:proof:dx-backbone-resource-lifecycle-vibe",
+    "docs/design/proofs/dx-backbone-resource-lifecycle-vibe/README.md",
   );
   assert.deepEqual(
     parsed.designAnchors.map((anchor) => anchor.source),
@@ -72,7 +72,7 @@ test("each child slice names an isolated exp proof package and a matching design
     assert.match(slice.targetPackage, /^src\/draft\/exp-proofs\/(dx|ux|cx|ax|api)\/[a-z0-9-]+$/);
     assert.equal(
       slice.proofNote,
-      `urn:hobo:proof:${slice.targetPackage.split("/").at(-1)}`,
+      `docs/design/proofs/${slice.targetPackage.split("/").at(-1)}/README.md`,
     );
   }
 });

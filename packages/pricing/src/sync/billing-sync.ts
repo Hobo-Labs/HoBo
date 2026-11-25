@@ -1,7 +1,6 @@
-import { clone, create, toJson } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 import {
 	type ActualCharge,
-	ActualChargeSchema,
 	type Money,
 	MoneySchema,
 	type ReconciliationRecorded,
@@ -18,10 +17,8 @@ import { type FocusImportRejection, importFocusRow } from "./focus-import.js";
 import {
 	type FocusBillingRow,
 	focusBillingRowsToJson,
-	focusBillingRowToJson,
 	type ProviderBillingFetchRequest,
 	type ProviderBillingPort,
-	parseFocusBillingRow,
 	type SyntheticProviderCredentials,
 } from "./provider-port.js";
 
@@ -77,7 +74,8 @@ export type BillingSyncInput = Readonly<{
 	quotedIncrementalBilled: Money;
 	port: ProviderBillingPort;
 	credentials: SyntheticProviderCredentials;
-	knownActualCharges?: readonly ActualCharge[];
+	knownActualIds?: ReadonlySet<string>;
+	allowPartialSnapshot?: boolean;
 }>;
 
 function reject(
@@ -87,19 +85,8 @@ function reject(
 	return { code, message };
 }
 
-function isUtcTimestamp(value: string): boolean {
-	if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(value))
-		return false;
-	const timestamp = Date.parse(value);
-	return (
-		Number.isFinite(timestamp) &&
-		new Date(timestamp).toISOString().slice(0, 19) === value.slice(0, 19)
-	);
-}
-
 function sumBilled(
 	actuals: readonly ActualCharge[],
-	defaultCurrency: string,
 ): Money | BillingSyncRejection {
 	let currency: string | undefined;
 	let total = parseDecimal("0");
@@ -129,20 +116,8 @@ function sumBilled(
 	}
 	return create(MoneySchema, {
 		decimal: formatDecimal(total),
-		currency: currency ?? defaultCurrency,
+		currency: currency ?? "USD",
 	});
-}
-
-function chargeFingerprint(charge: ActualCharge): string {
-	const comparable = clone(ActualChargeSchema, charge);
-	comparable.observedAt = "";
-	return stableHash(
-		toJson(ActualChargeSchema, comparable, { alwaysEmitImplicit: true }),
-	);
-}
-
-function compareText(left: string, right: string): number {
-	return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function varianceAgainstQuote(
@@ -195,52 +170,6 @@ function varianceAgainstQuote(
 export async function runBillingSync(
 	input: BillingSyncInput,
 ): Promise<BillingSyncResult> {
-	const quote = input.quotedIncrementalBilled;
-	if (
-		!/^[A-Z]{3}$/u.test(quote.currency) ||
-		parseDecimal(quote.decimal) === undefined
-	) {
-		return reject("INVALID_SYNC_INPUT", "quoted amount or currency is invalid");
-	}
-	const periodStart = Date.parse(input.periodStart);
-	const periodEnd = Date.parse(input.periodEnd);
-	if (
-		!input.reservationId.trim() ||
-		!input.eventId.trim() ||
-		!isUtcTimestamp(input.syncAt) ||
-		!isUtcTimestamp(input.periodStart) ||
-		!isUtcTimestamp(input.periodEnd) ||
-		periodStart > periodEnd
-	) {
-		return reject("INVALID_SYNC_INPUT", "sync identity or period is invalid");
-	}
-	const knownCharges = input.knownActualCharges ?? [];
-	const seen = new Map<string, string>();
-	for (const charge of knownCharges) {
-		if (
-			!charge.id.trim() ||
-			!charge.agreementId.trim() ||
-			!charge.chargeId.trim() ||
-			charge.billedCost === undefined
-		) {
-			return reject("INVALID_SYNC_INPUT", "known actual charge is incomplete");
-		}
-		if (charge.billedCost.currency !== quote.currency) {
-			return reject(
-				"CROSS_CURRENCY",
-				"known charge and quote currencies differ",
-			);
-		}
-		if (seen.has(charge.id)) {
-			return reject(
-				"DUPLICATE_PROVIDER_CHARGE",
-				`known charge ${charge.id} repeats`,
-			);
-		}
-		seen.set(charge.id, chargeFingerprint(charge));
-	}
-	const knownTotal = sumBilled(knownCharges, quote.currency);
-	if ("code" in knownTotal) return knownTotal;
 	const fetchRequest: ProviderBillingFetchRequest = {
 		syncAt: input.syncAt,
 		periodStart: input.periodStart,
@@ -250,103 +179,63 @@ export async function runBillingSync(
 	const rows = await input.port.fetchFocusRows(fetchRequest);
 	const imported: ActualCharge[] = [];
 	const variances: VarianceFact[] = [];
-	const snapshotCompleteness = "complete" as const;
+	const seen = new Set(input.knownActualIds ?? []);
+	let snapshotCompleteness: "complete" | "partial" = "complete";
 
 	for (const row of rows) {
-		const parsed = parseFocusBillingRow(focusBillingRowToJson(row));
-		if (parsed === undefined) {
-			return reject("INVALID_SYNC_INPUT", "provider billing row is incomplete");
-		}
-		if (parsed.completeness === "partial") {
+		if (row.completeness === "partial" && !input.allowPartialSnapshot) {
 			return reject(
 				"INCOMPLETE_PROVIDER_BILLING",
-				`sync refused partial provider row ${parsed.providerChargeId}`,
+				`sync refused partial provider row ${row.providerChargeId}`,
 			);
 		}
-		const chargeStart = Date.parse(parsed.chargePeriodStart);
-		const chargeEnd = Date.parse(parsed.chargePeriodEnd);
-		if (
-			!isUtcTimestamp(parsed.chargePeriodStart) ||
-			!isUtcTimestamp(parsed.chargePeriodEnd) ||
-			chargeStart > chargeEnd
-		) {
-			return reject("INVALID_SYNC_INPUT", "provider billing period is invalid");
+		if (row.completeness === "partial") {
+			snapshotCompleteness = "partial";
 		}
-		if (chargeStart < periodStart || chargeEnd > periodEnd) {
-			return reject(
-				"INVALID_SYNC_INPUT",
-				`provider charge ${parsed.providerChargeId} falls outside the requested billing period`,
-			);
-		}
-		if (!/^[A-Z]{3}$/u.test(parsed.currency)) {
-			return reject(
-				"INVALID_SYNC_INPUT",
-				"provider billing currency is invalid",
-			);
-		}
-		const mapped = importFocusRow(parsed, input.syncAt);
-		if ("code" in mapped) return mapped;
-		if (mapped.billedCost?.currency !== quote.currency) {
-			return reject(
-				"CROSS_CURRENCY",
-				"actual charge and quote currencies differ",
-			);
-		}
-		const fingerprint = chargeFingerprint(mapped);
-		const previous = seen.get(mapped.id);
-		if (previous !== undefined) {
-			if (previous !== fingerprint) {
-				return reject(
-					"DUPLICATE_PROVIDER_CHARGE",
-					`provider charge ${mapped.id} has conflicting contents`,
-				);
-			}
+		if (seen.has(row.providerChargeId)) {
 			variances.push({
 				kind: "duplicate-suppressed",
-				providerChargeId: parsed.providerChargeId,
-				currency: parsed.currency,
+				providerChargeId: row.providerChargeId,
+				currency: row.currency,
 			});
 			continue;
 		}
-		seen.set(mapped.id, fingerprint);
+		const mapped = importFocusRow(row, input.syncAt);
+		if ("code" in mapped) return mapped;
+		seen.add(mapped.id);
 		imported.push(mapped);
 	}
 
-	imported.sort((left, right) => compareText(left.id, right.id));
-	const total = sumBilled([...knownCharges, ...imported], quote.currency);
+	if (snapshotCompleteness === "partial" && !input.allowPartialSnapshot) {
+		return reject(
+			"INCOMPLETE_PROVIDER_BILLING",
+			"snapshot completeness is partial",
+		);
+	}
+
+	const total = sumBilled(imported);
 	if ("code" in total) return total;
 
 	variances.push(
 		...varianceAgainstQuote(total, input.quotedIncrementalBilled, imported),
 	);
-	variances.sort(
-		(left, right) =>
-			compareText(left.kind, right.kind) ||
-			compareText(left.providerChargeId, right.providerChargeId),
-	);
 
-	const actualCharges = imported.map((charge) =>
-		toJson(ActualChargeSchema, charge, { alwaysEmitImplicit: true }),
-	);
-	const reconciliationPayload: JsonValue = {
-		eventId: input.eventId,
-		occurredAt: input.syncAt,
-		reservationId: input.reservationId,
-		actualCharges,
-	};
-	const reconciliationHash = stableHash(reconciliationPayload);
 	const snapshotBody: JsonValue = {
 		schema: "hobo.pricing.billing-sync.snapshot/v1",
 		syncAt: input.syncAt,
 		completeness: snapshotCompleteness,
 		period: { start: input.periodStart, end: input.periodEnd },
-		imported: actualCharges,
+		importedIds: imported.map((charge) => charge.id).sort(),
 		variances,
-		reconciliationHash,
-		eventId: input.eventId,
-		reservationId: input.reservationId,
 	};
 	const snapshotHash = stableHash(snapshotBody);
+	const reconciliationPayload: JsonValue = {
+		eventId: input.eventId,
+		occurredAt: input.syncAt,
+		reservationId: input.reservationId,
+		actualChargeIds: imported.map((charge) => charge.id).sort(),
+	};
+	const reconciliationHash = stableHash(reconciliationPayload);
 
 	const reconciliation = create(ReconciliationRecordedSchema, {
 		eventId: input.eventId,

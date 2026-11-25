@@ -52,7 +52,7 @@ function profile(seed: ProfileSeed): CapabilityProfileDescriptor {
 		maturity: seed.maturity ?? "stable",
 		sourceRefs: seed.sourceRefs ?? [
 			hoboSource(
-				"urn:hobo:decision:07-portability-extensibility",
+				"docs/design/adr/07-portability-extensibility.md",
 				"HoBo-owned semantics; no external product defines this profile",
 			),
 		],
@@ -380,24 +380,6 @@ const KV: readonly CapabilityProfileDescriptor[] = [
 		],
 	}),
 	profile({
-		id: "kv.ephemeral-state/v1",
-		primitive: "kv",
-		displayName: "Ephemeral state",
-		description:
-			"Loss-tolerant state with expiring writes, versioned updates, and atomic counters.",
-		refines: ["kv.key-value/v1"],
-		features: [
-			bool("atomicIncrement", "Supports atomic counter increments."),
-			bool("atomicCompareAndSet", "Supports atomic create-if-absent."),
-		],
-		sourceRefs: [
-			{
-				url: "https://github.com/Hobo-Labs/HoBo/blob/main/packages/core/src/ports/ephemeral-state.ts",
-				checkedAt: CHECKED,
-			},
-		],
-	}),
-	profile({
 		id: "kv.redis-compatible/v1",
 		primitive: "kv",
 		displayName: "Redis-compatible store",
@@ -406,10 +388,6 @@ const KV: readonly CapabilityProfileDescriptor[] = [
 		refines: ["kv.key-value/v1"],
 		features: [
 			bool("atomicIncrement", "Supports atomic INCR/DECR."),
-			bool(
-				"atomicCompareAndSet",
-				"Supports atomic create-if-absent with SET NX.",
-			),
 			bool("sortedSets", "Supports sorted-set commands."),
 			bool("restTransport", "Exposes an HTTP/REST command transport."),
 		],
@@ -455,7 +433,7 @@ const KV: readonly CapabilityProfileDescriptor[] = [
 		],
 		sourceRefs: [
 			hoboSource(
-				"urn:hobo:decision:03-data-plane-sqlite-default",
+				"docs/design/adr/03-data-plane-sqlite-default.md",
 				"Actor-local journal mirrors ADR-0135 stream-head CAS; not a global EventStore",
 			),
 		],

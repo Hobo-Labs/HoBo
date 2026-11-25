@@ -1,7 +1,7 @@
 # HoBo Package Namespace Map POC
 
 This POC captures the HOBO-58 namespace decision as executable data. It mirrors
-`urn:hobo:requirement:package-namespaces` and gives future boundary lint a concrete
+`docs/design/package-namespaces.md` and gives future boundary lint a concrete
 shape to adopt when the monorepo package graph exists.
 
 ## Run
@@ -28,9 +28,11 @@ npm --prefix src/draft/technical-proofs/hobo-package-namespace-map test
   a managed secret resource and the latter is a config-value reference.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Package Namespace Map.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

@@ -2,7 +2,7 @@ import {
   contentAddressDeploymentSet,
   diffDeploymentSet,
   foldDeploymentProjections,
-} from "./deployment-set-delta.js";
+} from "../../../../../docs/design/proofs/hobo-50-deployment-set-delta/projection-model.ts";
 
 import {
   CURRENT_SCHEMA_VERSION,

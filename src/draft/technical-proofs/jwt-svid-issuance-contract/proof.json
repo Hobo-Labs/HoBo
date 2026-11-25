@@ -11,7 +11,8 @@
       "src/draft/technical-proofs/yard-identity-issuer-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

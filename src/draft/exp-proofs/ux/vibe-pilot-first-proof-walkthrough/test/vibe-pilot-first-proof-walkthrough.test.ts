@@ -27,7 +27,7 @@ test("HOBO-563 walkthrough pins issue, package path, proof path, and HOBO-549 co
   );
   assert.equal(
     parsed.proofPath,
-    "urn:hobo:proof:vibe-pilot-first-proof-walkthrough",
+    "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md",
   );
   assert.equal(parsed.consumedStoryboard.sourceIssue, "HOBO-549");
   assert.deepEqual(parsed.consumedStoryboard.stages, REQUIRED_PILOT_STORYBOARD_STAGES);
@@ -128,7 +128,8 @@ test("parser rejects missing scenario coverage and HOBO-549 stage drift", () => 
         ...VIBE_PILOT_FIRST_PROOF_WALKTHROUGH,
         consumedStoryboard: {
           ...VIBE_PILOT_FIRST_PROOF_WALKTHROUGH.consumedStoryboard,
-          proofPath: "urn:hobo:proof:other" as never,
+          // SAFETY: `proofPath: "docs/design/proofs/other/README.md" as never,` is required at this I/O or test boundary.
+          proofPath: "docs/design/proofs/other/README.md" as never,
         },
       }),
     VibePilotFirstProofWalkthroughParseError,

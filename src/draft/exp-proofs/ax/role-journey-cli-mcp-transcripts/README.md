@@ -55,10 +55,12 @@ Feature: role journey CLI and MCP transcripts
     Then the request is rejected with a specific reason
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - Protobuf: `architecture/role_journey_cli_mcp_transcripts.proto`
 - CUE constraints: `architecture/role_journey_cli_mcp_transcripts.cue`
 - Pact-style fixture: `architecture/pacts/role_journey_cli_mcp_transcripts.pact.json`
+- Package ADR: `ADR.md`
 
 ## Verification
 

@@ -9,7 +9,8 @@
       "src/draft/technical-proofs/no-egress-generation-sandbox-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

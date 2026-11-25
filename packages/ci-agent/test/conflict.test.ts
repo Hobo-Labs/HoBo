@@ -56,6 +56,7 @@ describe("conflict regions", () => {
 		const quoted = "<<<<<<< not a marker\n>>>>>>>>> nine\n";
 		expect(markerSizeFor(["plain\n"])).toBe(7);
 		expect(markerSizeFor([setext, quoted])).toBe(10);
+		// With the longer marker, the file's own seven-character lines are content.
 		const size = 10;
 		const output = `${quoted}${"<".repeat(size)} ours\na\n${"|".repeat(size)} base\n${"=".repeat(size)}\nb\n${">".repeat(size)} theirs\n${setext}`;
 		const segments = parseMergeSegments(output, size);
@@ -100,12 +101,14 @@ describe("conflict regions", () => {
 		expect(fitRegionResolution(region, "x".repeat(5000))).toEqual({
 			refusal: "oversized-resolution",
 		});
+		// A setext underline is ordinary content, not a marker.
 		expect(fitRegionResolution(region, "Title\n=======\n")).toEqual({
 			text: "Title\n=======\n",
 		});
 	});
 
 	it("refuses a replacement that repeats the settled line next to its region", () => {
+		// zdiff3 moved the line both sides share out of the region.
 		const segments = parseMergeSegments(
 			"type P = {\n\tamount: number;\n<<<<<<< ours\n\tcurrency: string;\n||||||| base\n=======\n\tdiscount?: number;\n>>>>>>> theirs\n};\n",
 			7,
@@ -126,6 +129,7 @@ describe("conflict regions", () => {
 		expect(fit("\tcurrency: string;\n\tdiscount?: number;\n")).toEqual({
 			text: "\tcurrency: string;\n\tdiscount?: number;\n",
 		});
+		// A line one side itself starts with is that side's, not a repeat.
 		const [own] = parseMergeSegments(
 			"<<<<<<< ours\n}\nx\n||||||| base\n=======\ny\n>>>>>>> theirs\n",
 			7,
@@ -141,6 +145,7 @@ describe("conflict regions", () => {
 		expect(regionTexts(segments, "one\nTWO both\nthree\nfour\n")).toEqual(
 			new Map([[0, "TWO both\n"]]),
 		);
+		// An empty resolution, and a file whose settled text changed since.
 		expect(regionTexts(segments, "one\nthree\nfour\n")).toEqual(
 			new Map([[0, ""]]),
 		);

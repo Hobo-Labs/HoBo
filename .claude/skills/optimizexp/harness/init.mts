@@ -9,19 +9,17 @@ import { ensureGlobalGitignore, ensureProjectGitignore } from "./lib/gitignore.m
 
 function parseArgs(argv: string[]): Record<string, string> {
 	const args: Record<string, string> = {};
-	const projects: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const key = argv[i];
 		if (key === "--mode") args.mode = argv[++i] ?? "";
-		else if (key === "--projects" || key === "--project") projects.push(argv[++i] ?? "");
-		else if (key === "--all-projects") projects.push("all");
+		else if (key === "--projects" || key === "--project") args.projects = argv[++i] ?? "";
+		else if (key === "--all-projects") args.projects = "all";
 		else if (key === "--force") args.force = "1";
 		else if (key === "--help" || key === "-h") args.help = "1";
 		else if (key === "list-projects" || key === "--list-projects") args.mode = "list-projects";
 		else if (key === "validate-config" || key === "--validate-config") args.mode = "validate-config";
 		else if (key === "ensure-config" || key === "--ensure-config") args.mode = "ensure-config";
 	}
-	if (projects.length) args.projects = projects.join(",");
 	return args;
 }
 

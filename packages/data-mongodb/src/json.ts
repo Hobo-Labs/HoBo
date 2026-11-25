@@ -1,3 +1,10 @@
+/**
+ * Structural guards over JSON values.
+ *
+ * `@hobo/data-core` exports the JSON types but keeps its guards private, and
+ * the repository lints out runtime `typeof`, so the handful this package needs
+ * live here. They are tag checks, identical in meaning to data-core's own.
+ */
 import type { JsonObject, JsonValue } from "@hobo/data-core";
 
 const tagOf = Object.prototype.toString;
@@ -27,10 +34,16 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 	);
 }
 
+/**
+ * True when the text is well-formed Unicode. BSON strings are UTF-8, and an
+ * unpaired surrogate has no UTF-8 encoding: a driver writes U+FFFD in its
+ * place, which is a stored value that differs from the one given.
+ */
 export function isWellFormedText(text: string): boolean {
 	return !/\p{Surrogate}/u.test(text);
 }
 
+/** Recursively freeze a JSON value in place and return it. */
 export function freezeJson<T extends JsonValue>(value: T): T {
 	if (isJsonArray(value)) {
 		for (const item of value) freezeJson(item);

@@ -15,9 +15,11 @@ It covers:
 This is intentionally a contract POC. It does not implement runtime ports, policy/compat events, credit-ledger folding, IaC execution, or orchestration.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Control Plane Event Schema Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

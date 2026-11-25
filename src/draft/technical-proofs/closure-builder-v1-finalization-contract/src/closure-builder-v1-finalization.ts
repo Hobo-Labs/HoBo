@@ -8,21 +8,21 @@ export type ClosureBuilderFinalizationIssue =
   | "HOBO-537"
   | "HOBO-538";
 
-// domain-view:
+// domain-view: parse-produced draft-proof record; its wire form is the ClosureBuilderEvidenceEntry proto message in data-models/.
 export interface ClosureBuilderEvidenceEntry {
   readonly issueId: ClosureBuilderFinalizationIssue;
   readonly linearStatus: "Done";
   readonly proofPath: string;
-  readonly evidenceRef: string;
+  readonly designPath: string;
   readonly acceptedScope: string;
 }
 
-// domain-view:
+// domain-view: parse-produced draft-proof record; its wire form is the ClosureBuilderV1FinalizationRecord proto message in data-models/.
 export interface ClosureBuilderV1FinalizationRecord {
   readonly parentIssue: "HOBO-531";
   readonly authoringPackage: "@hobo/bindles";
   readonly authoringModel: "closure-builder";
-  readonly contractRef: "urn:hobo:requirement:closure-builder-public-api";
+  readonly canonicalDocPath: "docs/design/closure-builder-public-api.md";
   readonly evidence: readonly ClosureBuilderEvidenceEntry[];
 }
 
@@ -59,55 +59,55 @@ export function closureBuilderV1FinalizationRecord(): ClosureBuilderV1Finalizati
     parentIssue: "HOBO-531",
     authoringPackage: "@hobo/bindles",
     authoringModel: "closure-builder",
-    contractRef: "urn:hobo:requirement:closure-builder-public-api",
+    canonicalDocPath: "docs/design/closure-builder-public-api.md",
     evidence: [
       {
         issueId: "HOBO-532",
         linearStatus: "Done",
         proofPath: "src/draft/closure-builder-public-api-contract/README.md",
-        evidenceRef: "urn:hobo:requirement:closure-builder-public-api",
+        designPath: "docs/design/closure-builder-public-api.md",
         acceptedScope: "public API vocabulary, package ownership, app-host boundary, and dependsOn relationship spelling",
       },
       {
         issueId: "HOBO-533",
         linearStatus: "Done",
         proofPath: "src/draft/closure-builder-resource-handles-contract/README.md",
-        evidenceRef: "urn:hobo:requirement:closure-builder-public-api",
+        designPath: "docs/design/closure-builder-public-api.md",
         acceptedScope: "anonymous builder handles, inert workloads, invalid dependency refusal, and dependsOn relationship emission",
       },
       {
         issueId: "HOBO-534",
         linearStatus: "Done",
         proofPath: "src/draft/closure-builder-resource-handles-contract/README.md",
-        evidenceRef: "urn:hobo:requirement:closure-builder-public-api",
+        designPath: "docs/design/closure-builder-public-api.md",
         acceptedScope: "generated resource identity stability and alias/physical-name separation",
       },
       {
         issueId: "HOBO-535",
         linearStatus: "Done",
         proofPath: "src/draft/closure-builder-manifest-lowering-contract/README.md",
-        evidenceRef: "urn:hobo:requirement:closure-builder-public-api",
+        designPath: "docs/design/closure-builder-public-api.md",
         acceptedScope: "closure-builder graph lowering to hobo:sdk calls and hobo.manifest/v1",
       },
       {
         issueId: "HOBO-536",
         linearStatus: "Done",
         proofPath: "src/draft/closure-builder-tooling-contract/README.md",
-        evidenceRef: "urn:hobo:requirement:closure-builder-public-api",
+        designPath: "docs/design/closure-builder-public-api.md",
         acceptedScope: "collection coverage, collect, codegen, and scaffold consumption of closure-builder aliases",
       },
       {
         issueId: "HOBO-537",
         linearStatus: "Done",
         proofPath: "src/draft/closure-builder-author-flow-contract/README.md",
-        evidenceRef: "urn:hobo:requirement:worked-example",
+        designPath: "docs/design/worked-example.md",
         acceptedScope: "end-to-end author flow, public worked example, conformance corpus, and generated alias type proof",
       },
       {
         issueId: "HOBO-538",
         linearStatus: "Done",
         proofPath: "src/draft/closure-builder-resource-handles-contract/README.md",
-        evidenceRef: "urn:hobo:proof:HOBO-538-closure-builder-identity-ledger",
+        designPath: "docs/design/proofs/HOBO-538-closure-builder-identity-ledger/README.md",
         acceptedScope: "collector-owned generated identity ledger for ambiguous same-kind insertion edits",
       },
     ],
@@ -162,11 +162,11 @@ function parseClosureBuilderV1Finalization(raw: JsonValue): ClosureBuilderV1Fina
       { authoringPackage: raw.authoringPackage, authoringModel: raw.authoringModel },
     );
   }
-  if (raw.contractRef !== "urn:hobo:requirement:closure-builder-public-api") {
+  if (raw.canonicalDocPath !== "docs/design/closure-builder-public-api.md") {
     throw new ClosureBuilderV1FinalizationError(
-      "CLOSURE_BUILDER_V1_CONTRACT_REF",
-      "closure-builder finalization must identify the public API contract",
-      { contractRef: raw.contractRef },
+      "CLOSURE_BUILDER_V1_CANONICAL_DOC",
+      "closure-builder finalization must point at the canonical public API design record",
+      { canonicalDocPath: raw.canonicalDocPath },
     );
   }
   if (!Array.isArray(raw.evidence)) {
@@ -190,7 +190,7 @@ function parseClosureBuilderV1Finalization(raw: JsonValue): ClosureBuilderV1Fina
     parentIssue: "HOBO-531",
     authoringPackage: "@hobo/bindles",
     authoringModel: "closure-builder",
-    contractRef: "urn:hobo:requirement:closure-builder-public-api",
+    canonicalDocPath: "docs/design/closure-builder-public-api.md",
     evidence,
   });
 }
@@ -223,11 +223,11 @@ function parseEvidenceEntry(raw: JsonValue): ClosureBuilderEvidenceEntry {
       { issueId: raw.issueId, proofPath: raw.proofPath },
     );
   }
-  if (!isJsonString(raw.evidenceRef) || !/^urn:hobo:(?:requirement|proof):/.test(raw.evidenceRef)) {
+  if (!isJsonString(raw.designPath) || !raw.designPath.startsWith("docs/design/")) {
     throw new ClosureBuilderV1FinalizationError(
-      "CLOSURE_BUILDER_V1_EVIDENCE_REF",
-      "closure-builder child evidence must identify a requirement or proof",
-      { issueId: raw.issueId, evidenceRef: raw.evidenceRef },
+      "CLOSURE_BUILDER_V1_DESIGN_PATH",
+      "closure-builder child evidence must link a design-system record",
+      { issueId: raw.issueId, designPath: raw.designPath },
     );
   }
   if (!isJsonString(raw.acceptedScope) || raw.acceptedScope.trim().length === 0) {
@@ -242,12 +242,13 @@ function parseEvidenceEntry(raw: JsonValue): ClosureBuilderEvidenceEntry {
     issueId: raw.issueId,
     linearStatus: "Done",
     proofPath: raw.proofPath,
-    evidenceRef: raw.evidenceRef,
+    designPath: raw.designPath,
     acceptedScope: raw.acceptedScope,
   };
 }
 
 function isFinalizationIssue(issueId: string): issueId is ClosureBuilderFinalizationIssue {
+  // SAFETY: `return REQUIRED_EVIDENCE.includes(issueId as ClosureBuilderFinalizationIssue);` is required at this I/O or test boundary.
   return REQUIRED_EVIDENCE.includes(issueId as ClosureBuilderFinalizationIssue);
 }
 
@@ -268,10 +269,12 @@ function isRecord(value: JsonValue): value is JsonObject {
 function deepFreeze<T>(value: T): T {
   if (Array.isArray(value)) {
     value.forEach(deepFreeze);
+    // SAFETY: `return Object.freeze(value) as T;` is required at this I/O or test boundary.
     return Object.freeze(value) as T;
   }
   if (isRecord(value)) {
     Object.values(value).forEach(deepFreeze);
+    // SAFETY: `return Object.freeze(value) as T;` is required at this I/O or test boundary.
     return Object.freeze(value) as T;
   }
   return value;

@@ -33,4 +33,4 @@ HoBo must be runnable on one box with no vendor account. These tools define what
 
 ## Navigation
 
-- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md)
+- [All categories](index.md) · [corpus index](../index.md) · [cross-category matrix](../matrix.md) · [gap analysis](../gap-analysis.md)

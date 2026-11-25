@@ -7,14 +7,16 @@
   "references": {
     "technicalProofs": [],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": [
+      "docs/competitors/convex.md",
+      "examples/convex-swaghaus/HOBO.md"
+    ]
   },
   "artifacts": {
     "examples": "examples",
     "notebook": "notebook.ipynb",
-    "diagrams": [
-      "README.md"
-    ]
+    "diagrams": ["README.md"]
   },
   "waivers": []
 }

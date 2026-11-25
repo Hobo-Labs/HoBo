@@ -16,15 +16,15 @@ export type JsonValue =
 	| JsonObject;
 
 export function isJsonString<T>(value: T): value is T & string {
-	return tagOf.call(value) === "[object String]" && Object(value) !== value;
+	return tagOf.call(value) === "[object String]";
 }
 
 export function isJsonBigInt<T>(value: T): value is T & bigint {
-	return tagOf.call(value) === "[object BigInt]" && Object(value) !== value;
+	return tagOf.call(value) === "[object BigInt]";
 }
 
 export function isJsonNumber<T>(value: T): value is T & number {
-	return Number.isFinite(value);
+	return tagOf.call(value) === "[object Number]";
 }
 
 export function isJsonBoolean<T>(value: T): value is T & boolean {
@@ -44,25 +44,19 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 	return tagOf.call(value) === "[object Array]";
 }
 
+/** Clone a domain value across the JSON document boundary. */
 export function cloneAsJson<T>(value: T): JsonValue {
-	try {
-		const encoded = JSON.stringify(value ?? null, (_key, entry) => {
-			const tag = tagOf.call(entry);
-			if (
-				tag === "[object BigInt]" ||
-				(tag === "[object Number]" && !Number.isFinite(entry))
-			)
-				throw new TypeError("value cannot be represented as JSON");
-			return entry;
-		});
-		return parseJsonValue(encoded);
-	} catch {
-		throw new TypeError("value cannot be represented as JSON");
-	}
+	return parseJsonValue(JSON.stringify(value ?? null));
 }
 
 export function parseJsonObject(text: string): JsonObject {
-	const value = parseJsonValue(text);
+	let value: JsonValue;
+	try {
+		// SAFETY: JSON.parse yields a JSON value at this document boundary.
+		value = JSON.parse(text) as JsonValue;
+	} catch {
+		return {};
+	}
 	return isJsonObject(value) ? value : {};
 }
 
@@ -73,11 +67,8 @@ export function asJsonObject<T>(value: T): JsonObject {
 
 export function parseJsonValue(text: string): JsonValue {
 	try {
-		return JSON.parse(text, (_key, value) => {
-			if (tagOf.call(value) === "[object Number]" && !Number.isFinite(value))
-				throw new TypeError("value cannot be represented as JSON");
-			return value;
-		}) as JsonValue;
+		// SAFETY: JSON.parse yields a JSON value at this document boundary.
+		return JSON.parse(text) as JsonValue;
 	} catch {
 		return null;
 	}

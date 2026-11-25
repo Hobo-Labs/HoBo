@@ -89,19 +89,19 @@ export function hasPrototypePollution(
 	value: FuzzValue,
 	seen: WeakSet<object> = new WeakSet(),
 ): boolean {
-	const pending: FuzzValue[] = [value];
-	while (pending.length > 0) {
-		const current = pending.pop();
-		if (!current || Object(current) !== current) continue;
-		const currentObject: object = Object(current);
-		if (seen.has(currentObject)) continue;
-		seen.add(currentObject);
-		if (
-			Object.hasOwn(currentObject, "__proto__") ||
-			Object.hasOwn(currentObject, "constructor")
-		)
-			return true;
-		for (const entry of Object.values(currentObject)) pending.push(entry);
+	if (!value || Object(value) !== value) return false;
+	// SAFETY: Object identity above establishes the WeakSet object contract.
+	const objectValue = value as object;
+	if (seen.has(objectValue)) return false;
+	seen.add(objectValue);
+	if (
+		Object.hasOwn(objectValue, "__proto__") ||
+		Object.hasOwn(objectValue, "constructor")
+	) {
+		return true;
 	}
-	return false;
+	// SAFETY: Object identity above proves this is a non-null object; Object.values reads its properties.
+	return Object.values(value).some((entry) =>
+		hasPrototypePollution(entry, seen),
+	);
 }

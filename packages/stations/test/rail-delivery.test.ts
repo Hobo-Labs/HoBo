@@ -6,6 +6,10 @@ import {
 	railFromBrokerConfig,
 } from "../src/rail.js";
 
+// ADR-0182 D14, D20: the Rail's opaque `delivery` object and the
+// neutral delivery policy. Stations never interprets `delivery`; @hobo/cd
+// parses it as RailDeliveryRecord.
+
 const base = {
 	id: "rail-prod",
 	name: "prod",
@@ -24,6 +28,7 @@ describe("Rail delivery object (D20)", () => {
 		const none = createRail(base);
 		expect(a.contentHash).not.toBe(b.contentHash);
 		expect(a.contentHash).not.toBe(none.contentHash);
+		// Key order inside delivery is not content: the digest is canonical.
 		const reordered = createRail({
 			...base,
 			delivery: { max_fanout_camps: 10, camp_sets: ["edge"] },
@@ -48,22 +53,38 @@ describe("Rail delivery object (D20)", () => {
 		expect(parsed.contentHash).toBe(rail.contentHash);
 	});
 
-	it("preserves the current delivery policy when parsing a Rail", () => {
-		const rail = createRail({
-			...base,
-			deliveryPolicy: {
-				reconcilerMode: "publisher",
-				publisher: { target: "flux", repository: "https://git.example/rail" },
-				syncMode: "manual",
-				prune: true,
-			},
-		});
-		const parsed = parseRail(JSON.parse(JSON.stringify(rail)));
-		expect(parsed.deliveryPolicy).toEqual(rail.deliveryPolicy);
-		expect(parsed.contentHash).toBe(rail.contentHash);
+	it("legacy Rails parse unchanged (no delivery key, same digest)", () => {
+		// A Rail persisted before WP16: no `delivery`, legacy delivery engine.
+		const legacy = {
+			schemaVersion: "hobo.rail/v1",
+			id: "rail-legacy",
+			name: "legacy",
+			version: "1.0.0",
+			contentHash:
+				"sha256:1111111111111111111111111111111111111111111111111111111111111111",
+			stationId: "station-a",
+			activationStatus: "active",
+			isBootstrap: false,
+			policyPacks: ["pack-a"],
+			policyEngine: { kind: "ts" },
+			deliveryPolicy: { engine: "in-proc", syncMode: "auto", prune: false },
+			requiredConnectorKinds: [],
+			approvedProviders: ["local"],
+			obligationDefaults: [],
+			guardrailEnvelope: {},
+			metadata: {},
+			publishedAt: "2026-01-01T00:00:00.000Z",
+		};
+		const parsed = parseRail(legacy);
+		expect("delivery" in parsed).toBe(false);
+		expect(parsed.contentHash).toBe(legacy.contentHash);
+		expect(parsed.id).toBe("rail-legacy");
+		expect(parsed.policyPacks).toEqual(["pack-a"]);
+		expect(parsed.activationStatus).toBe("active");
+		expect(parsed.publishedAt).toBe(legacy.publishedAt);
 	});
 
-	it("a Rail can omit its optional delivery object", () => {
+	it("a Rail created without delivery keeps the pre-WP16 canonical body (no delivery key)", () => {
 		const rail = createRail(base);
 		expect("delivery" in rail).toBe(false);
 	});
@@ -86,17 +107,39 @@ describe("neutral delivery policy (D14)", () => {
 		expect(JSON.stringify(rail.deliveryPolicy)).not.toMatch(/argo|in-proc/);
 	});
 
+	it("maps a legacy argo engine to the argo-cd GitOps publisher", () => {
+		expect(
+			neutralRailDeliveryPolicy({
+				engine: "argo",
+				syncMode: "manual",
+				prune: true,
+			}),
+		).toEqual({
+			reconcilerMode: "publisher",
+			publisher: "argo-cd",
+			syncMode: "manual",
+			prune: true,
+		});
+		expect(
+			neutralRailDeliveryPolicy({
+				engine: "in-proc",
+				syncMode: "auto",
+				prune: false,
+			}),
+		).toEqual({ reconcilerMode: "conductor", syncMode: "auto", prune: false });
+	});
+
 	it("keeps a neutral policy as-is and refuses an unknown mode", () => {
 		expect(
 			neutralRailDeliveryPolicy({
 				reconcilerMode: "publisher",
-				publisher: { target: "flux" },
+				publisher: "flux",
 				syncMode: "auto",
 				prune: false,
 			}),
 		).toEqual({
 			reconcilerMode: "publisher",
-			publisher: { target: "flux" },
+			publisher: "flux",
 			syncMode: "auto",
 			prune: false,
 		});
@@ -106,38 +149,26 @@ describe("neutral delivery policy (D14)", () => {
 		expect(() =>
 			neutralRailDeliveryPolicy({ reconcilerMode: "publisher" }),
 		).toThrow(/publisher/);
-		expect(() =>
-			neutralRailDeliveryPolicy({
-				reconcilerMode: "conductor",
-				syncMode: "invalid",
-			}),
-		).toThrow(/syncMode/);
-		expect(() =>
-			neutralRailDeliveryPolicy({
-				reconcilerMode: "publisher",
-				publisher: { target: "flux", repository: " " },
-			}),
-		).toThrow(/publisher/);
 	});
 
-	it("imports a broker document's publisher policy", () => {
+	it("imports a broker document's argo engine as a publisher", () => {
 		const rail = railFromBrokerConfig("station-a", {
 			brokerId: "acme",
 			delivery: {
-				reconcilerMode: "publisher",
-				publisher: {
-					target: "argo-cd",
-					repository: "https://git.example/rail",
-				},
+				engine: "argo",
 				syncMode: "manual",
 				prune: true,
+				gitopsRepo: "https://git.example/r",
+				destinationNamespace: "ns",
 			},
 		});
 		expect(rail.deliveryPolicy).toEqual({
 			reconcilerMode: "publisher",
-			publisher: { target: "argo-cd", repository: "https://git.example/rail" },
+			publisher: "argo-cd",
 			syncMode: "manual",
 			prune: true,
 		});
+		// destination_namespace is deprecated and never read.
+		expect(JSON.stringify(rail)).not.toContain('"ns"');
 	});
 });

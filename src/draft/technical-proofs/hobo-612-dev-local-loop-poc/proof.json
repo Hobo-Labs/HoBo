@@ -13,7 +13,8 @@
       "src/draft/technical-proofs/runtime-local-component-host"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

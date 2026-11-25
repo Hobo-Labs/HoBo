@@ -5,12 +5,12 @@ NFR-020 agnostic-core boundary lint, centered on the `examples/multi-cloud-shop`
 
 ## Requirements Source
 
-- **NFR-001**: unedited Bindle deploys to multiple
+- `docs/archive/requirements/requirements.md` **NFR-001**: unedited Bindle deploys to multiple
   providers; `bindle()` definition + app `src/` byte-identical across targets; only
   `camp()`/`yard()` mapping varies.
-- **NFR-020**: agnostic core never imports a
+- `docs/archive/requirements/requirements.md` **NFR-020**: agnostic core never imports a
   provider/adapter package; enforced at build time.
-- `urn:hobo:decision:adr-0024`: gated portability over declared
+- `docs/design/adr/07-portability-extensibility.md#adr-0024`: gated portability over declared
   non-portable surface; `multi-cloud-shop` E2E proves identical topology + bindings.
 - `src/draft/epic-proofs/portability-registry-distribution/`: portability registry evidence
   promoted by this lane.
@@ -48,6 +48,8 @@ slice those packages consume after S4-05/S4-06 land.
 pnpm --prefix src/draft/technical-proofs/s4-08-portability-conformance-lane-contract test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` — protobuf data shapes and CUE constraints.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

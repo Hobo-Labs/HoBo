@@ -21,24 +21,6 @@ package stations
 	seq:        uint
 }
 
-#RailDeliveryPublisher: {
-	target: string & =~"\\S"
-	repository?: string & =~"\\S"
-}
-
-#RailDeliveryPolicy: {
-	reconciler_mode: "conductor" | "agent" | "publisher"
-	sync_mode: "auto" | "manual"
-	prune: bool
-	publisher?: #RailDeliveryPublisher
-	if reconciler_mode == "publisher" {
-		publisher: #RailDeliveryPublisher
-	}
-	if reconciler_mode == "conductor" || reconciler_mode == "agent" {
-		publisher?: _|_
-	}
-}
-
 #RailRecord: {
 	id:                   string & !=""
 	name:                 string & !=""
@@ -50,7 +32,6 @@ package stations
 	catalog_snapshot_pin?: string
 	is_bootstrap:         bool
 	published_at:         string & !=""
-	delivery_policy:      #RailDeliveryPolicy
 }
 
 #StationCapabilityRecord: {

@@ -6,10 +6,12 @@
   "references": {
     "technicalProofs": [
       "src/draft/technical-proofs/actor-host-runtime-port-contract",
-      "src/draft/technical-proofs/camp-eventstore-runtime-port-contract"
+      "src/draft/technical-proofs/camp-eventstore-runtime-port-contract",
+      "src/draft/technical-proofs/queue-clock-runtime-port-contract"
     ],
     "epicProofs": [],
-    "expProofs": []
+    "expProofs": [],
+    "designDocs": []
   },
   "artifacts": {
     "examples": "examples",

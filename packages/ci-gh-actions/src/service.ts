@@ -18,14 +18,34 @@ export type RelayServiceLog = Readonly<{
 }>;
 
 export type RelayServiceOptions = {
+	/** The public origin requests are addressed to. */
 	origin: string;
+	/** The origin is an explicitly enabled plain-HTTP loopback one. */
 	allowLoopbackHttp?: boolean;
+	/**
+	 * The relay's HTTP handler. It is handed this service's readiness, so
+	 * `/readyz` and admission follow the probe and the drain.
+	 */
 	handle: (ready: () => boolean) => (request: Request) => Promise<Response>;
+	/** One pass of the relay worker: inbox, lease reconciliation, dispatch. */
 	tick: () => Promise<void>;
+	/**
+	 * An optional second worker (the CI agent) on its own cadence. It runs only
+	 * while the service is ready, one pass at a time, and never delays `tick`:
+	 * a pass can wait minutes on a model while jobs keep being dispatched. A
+	 * failed pass is logged and the next one runs as scheduled. The drain waits
+	 * for a pass in flight.
+	 */
 	agentTick?: () => Promise<void>;
 	agentIntervalMs?: number;
+	/** Releases the store once every accepted request and the worker are done. */
 	close: () => void;
+	/** Paths whose responses stream; see `createNodeRelayHandler`. */
 	streams?: (pathname: string) => boolean;
+	/**
+	 * Ends what would otherwise hold a connection open through the drain: an
+	 * event stream has no last byte to wait for.
+	 */
 	quiesce?: () => Promise<void>;
 	host?: string;
 	port: number;
@@ -43,11 +63,17 @@ function interval(value: number, name: string): number {
 	return value;
 }
 
+/**
+ * Admit deliveries and runner claims only while the host is ready. The
+ * control plane stays reachable, so an account can still be set up while a
+ * provider or the partition is being repaired.
+ */
 export function admitWhenReady(
 	application: HostedRelayApplication,
 	ready: () => boolean,
 ): HostedRelayApplication {
-	return {
+	const startFence = application.startFence;
+	const gated: HostedRelayApplication = {
 		...application,
 		ready: async () => ready(),
 		async ingestWebhook(input) {
@@ -59,8 +85,25 @@ export function admitWhenReady(
 			return application.claim(leaseId, oidc);
 		},
 	};
+	if (!startFence) return gated;
+	return {
+		...gated,
+		async startFence(request: Request) {
+			if (!ready())
+				return Response.json(
+					{ ok: false },
+					{ status: 503, headers: { "Cache-Control": "no-store" } },
+				);
+			return startFence(request);
+		},
+	};
 }
 
+/**
+ * The long-running Node host of the relay: an HTTP server in front of the
+ * shared handler, a timer that drives the worker tick, a cached readiness
+ * probe and a bounded drain of accepted work.
+ */
 export function createRelayService(options: RelayServiceOptions) {
 	if (
 		!Number.isInteger(options.port) ||
@@ -104,7 +147,9 @@ export function createRelayService(options: RelayServiceOptions) {
 	function log(entry: RelayServiceLog): void {
 		try {
 			options.logger?.(Object.freeze(entry));
-		} catch {}
+		} catch {
+			// Logging must never turn a durable operation into an HTTP retry.
+		}
 	}
 	async function unavailable(response: ServerResponse): Promise<void> {
 		response.setHeader("Content-Type", "application/json");
@@ -123,6 +168,7 @@ export function createRelayService(options: RelayServiceOptions) {
 			try {
 				return await handle(request);
 			} catch (error) {
+				// The adapter answers 503 and writes the reason to the failure log.
 				log({ level: "error", event: "service.http_failed" });
 				throw error;
 			}
@@ -130,6 +176,7 @@ export function createRelayService(options: RelayServiceOptions) {
 	});
 	const server = createServer((request, response) => {
 		responses.add(response);
+		// A draining service still answers its probes; it accepts nothing else.
 		const probing =
 			request.method === "GET" &&
 			/\/(?:healthz|readyz)$/.test(request.url ?? "");
@@ -196,6 +243,8 @@ export function createRelayService(options: RelayServiceOptions) {
 			await options.tick();
 		})()
 			.catch(() => {
+				// The next pass retries. Readiness is the probe's to decide: one
+				// delivery GitHub could not answer for is not an outage.
 				log({ level: "error", event: "worker.tick_failed" });
 			})
 			.finally(() => {
@@ -246,6 +295,7 @@ export function createRelayService(options: RelayServiceOptions) {
 		stoppingResult = (async () => {
 			let timeout: ReturnType<typeof setTimeout> | undefined;
 			const drained = (async () => {
+				// A concurrent start must finish listening before close is called.
 				await started?.catch(() => undefined);
 				await options.quiesce?.().catch(() => undefined);
 				const closed = new Promise<void>((resolve) => {

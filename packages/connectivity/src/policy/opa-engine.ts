@@ -22,19 +22,38 @@ import {
 	type RegoLiteDocument,
 } from "./rego-lite.js";
 
+// public-contract: engine id for the OPA/Rego PolicyEngine adapter.
 export const OPA_POLICY_ENGINE_ID = "hobo.policy.opa-rego/v1" as const;
 
 export interface OpaPolicyEngineOptions {
 	readonly metering?: MeteringBus;
+	/**
+	 * OPA REST data URL that accepts POST { input } → { result: { allow?: bool, reasons?: string[] } }.
+	 * Example: http://127.0.0.1:8181/v1/data/hobo/authz/allow
+	 */
 	readonly opaUrl?: string;
 	readonly fetchImpl?: typeof fetch;
+	/** Inline Rego package path for `opa eval` CLI (optional). */
 	readonly regoPackage?: string;
 	readonly regoModulePath?: string;
 	readonly opaBin?: string;
+	/**
+	 * In-process JSON policy document (rego-lite). Used when OPA HTTP/CLI
+	 * unavailable. Default: HOBO_DEFAULT_POLICY_DOCUMENT.
+	 */
 	readonly policyDocument?: RegoLiteDocument;
+	/**
+	 * In-process fallback evaluator used when OPA is unavailable.
+	 * Default: rego-lite document + require:* tag checks.
+	 */
 	readonly fallback?: (request: PolicyRequest) => PolicyDecision;
 }
 
+/**
+ * OPA/Rego PolicyEngine adapter.
+ * Prefers HTTP to a running OPA; falls back to `opa eval` CLI; then in-process
+ * rego-lite document evaluation (tenant-aware, auditable).
+ */
 export function createOpaPolicyEngine(
 	options: OpaPolicyEngineOptions = {},
 ): PolicyEngine {
@@ -57,6 +76,7 @@ export function createOpaPolicyEngine(
 						body: JSON.stringify({ input: toOpaInput(request) }),
 					});
 					if (res.ok) {
+						// SAFETY: assertion required at this I/O or test boundary.
 						const body = (await res.json()) as {
 							result?:
 								| boolean
@@ -68,7 +88,9 @@ export function createOpaPolicyEngine(
 						};
 						decision = fromOpaResult(request, cloneAsJson(body.result));
 					}
-				} catch {}
+				} catch {
+					// fall through
+				}
 			}
 
 			if (decision === null && options.regoModulePath) {
@@ -133,6 +155,7 @@ function fromOpaResult(
 			: denyDecision(OPA_POLICY_ENGINE_ID, request, ["opa:deny"]);
 	}
 	if (result && isJsonObject(result)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const obj = result as {
 			allow?: boolean;
 			reasons?: string[];
@@ -178,6 +201,7 @@ function evalViaOpaCli(
 	);
 	if (result.status !== 0) return null;
 	try {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const parsed = JSON.parse(result.stdout) as {
 			result?: readonly { expressions?: readonly { value?: unknown }[] }[];
 		};
@@ -188,6 +212,9 @@ function evalViaOpaCli(
 	}
 }
 
+/**
+ * In-process fallback: rego-lite document + require:* resource tag checks.
+ */
 export function defaultRegoLikeEval(
 	request: PolicyRequest,
 	document?: RegoLiteDocument,
@@ -220,6 +247,7 @@ export function defaultRegoLikeEval(
 	);
 }
 
+/** Sample Rego module string operators can drop into OPA. */
 export const SAMPLE_HOBO_AUTHZ_REGO = `package hobo.authz
 
 default allow := false

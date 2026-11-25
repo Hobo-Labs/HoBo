@@ -161,6 +161,7 @@ test("Gatekeeper apply-time policy remains outside broker receipt integrity", ()
 });
 
 test("architecture evidence pins protobuf, CUE, and Pact receipt-integrity boundaries", () => {
+  const architecture = readFileSync(new URL("../ADR.md", import.meta.url), "utf8");
   const proto = readFileSync(
     new URL("../architecture/broker_receipt_integrity.proto", import.meta.url),
     "utf8",
@@ -200,6 +201,11 @@ test("architecture evidence pins protobuf, CUE, and Pact receipt-integrity bound
   assert.equal(pact.consumer.name, "YardReceiptVerifier");
   assert.equal(pact.provider.name, "MetaCloudBrokerReceiptAuthority");
   assert.ok(pact.interactions.length >= 2);
+  assert.match(architecture, /parse, don't validate/i);
+  assert.match(architecture, /Protobuf/i);
+  assert.match(architecture, /CUE/i);
+  assert.match(architecture, /PACT/i);
+  assert.match(architecture, /Gatekeeper/i);
 });
 
 function assertRejected(

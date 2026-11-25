@@ -1,3 +1,7 @@
+// CUE constraints for every protobuf type in traffic_cutover.proto, so the
+// architecture guard can confirm the cutover saga data shapes are bounded at
+// parse time. Promoted from the domain-cutover-saga-contract draft proof.
+
 package stations
 
 #CutoverTtlPrecondition: {
@@ -12,10 +16,10 @@ package stations
 }
 
 #CutoverPreconditionRecord: {
-	validation:           #CutoverValidation
-	ttl?:                 #CutoverTtlPrecondition
-	mechanism?:           "weighted" | "dns"
-	incumbent_plan_id?:   string
+	validation:         #CutoverValidation
+	ttl?:               #CutoverTtlPrecondition
+	mechanism?: "weighted" | "dns"
+	incumbent_plan_id?: string
 	incumbent_plan_json?: string
 }
 
@@ -33,12 +37,12 @@ package stations
 }
 
 #TtlLoweredEventData: {
-	service:               string & !=""
-	previous_ttl_seconds:  uint32 & >0
-	lowered_ttl_seconds:   uint32 & >0
-	waited_seconds:        uint32 & >0
+	service:              string & !=""
+	previous_ttl_seconds: uint32 & >0
+	lowered_ttl_seconds:  uint32 & >0
+	waited_seconds:       uint32 & >0
 	effective_rto_seconds: uint32 & >0
-	lowered_at:            string & !=""
+	lowered_at:           string & !=""
 }
 
 #CutoverStartedEventData: {
@@ -52,15 +56,10 @@ package stations
 }
 
 #RampAdvancedEventData: {
-	service: string & !=""
-	percent: uint32 & >0 & <=100
-	{
-		toBackendId: string & !=""
-		planId:      string & !=""
-	} | {
-		to_backend_id: string & !=""
-		plan_id:       string & !=""
-	}
+	service:       string & !=""
+	to_backend_id: string & !=""
+	percent:       uint32 & >0 & <=100
+	plan_id:       string & !=""
 }
 
 #RoutingChangedEventData: {

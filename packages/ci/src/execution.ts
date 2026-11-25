@@ -17,6 +17,7 @@ export type CloseReason = "completed" | "failed" | "cancelled" | "timed_out";
 declare const parsedPipeline: unique symbol;
 export type ParsedPipeline = Pipeline & { readonly [parsedPipeline]: true };
 
+/** A bound source workspace. Closing must stop work before it resolves. */
 export interface PipelineSession {
 	run(step: PipelineStep, signal: AbortSignal): Promise<PipelineStepResult>;
 	artifact(path: string, signal: AbortSignal): Promise<PipelineArtifact>;
@@ -30,6 +31,7 @@ export interface PipelineBackend {
 		signal: AbortSignal,
 		scope?: PipelineExecutionScope,
 	): Promise<PipelineSession>;
+	/** A provider billing/readback authority, independent of command completion and close acknowledgements. */
 	observeFinalUsage?(
 		scope: PipelineUsageScope,
 	): Promise<PipelineUsageObservation | undefined>;
@@ -43,7 +45,9 @@ export interface PipelineUsageScope {
 	readonly externalOperationId: string;
 }
 export interface PipelineExecutionScope extends PipelineUsageScope {
+	/** Call again after asynchronous preflight and immediately before native allocation. */
 	authorizeAllocation(): void;
+	/** Persist the provider identity before acknowledging creation; lost acknowledgements retain the hold. */
 	recordExternalOperationId(id: string): void;
 }
 export interface PipelineUsageObservation
@@ -56,6 +60,7 @@ export interface PipelineUsageObservation
 	readonly billedFreeMinutes: number;
 	readonly paidMicros: number;
 }
+/** Only use for definitive refusal before any execution resource was created. */
 export class BackendUnavailableError extends Error {
 	constructor(message = "backend unavailable before execution") {
 		super(message);
@@ -127,6 +132,7 @@ export function parsePipeline(json: string): ParsedPipeline {
 	Object.freeze(pipeline.steps);
 	Object.freeze(pipeline.artifactPaths);
 	Object.freeze(pipeline.requiredCapabilities);
+	// SAFETY: protobuf parsing, dependent bounds and immutable nested fields establish this derived domain type.
 	return Object.freeze(pipeline) as ParsedPipeline;
 }
 export function parseRelativePath(path: string): string {
@@ -190,6 +196,7 @@ export async function createArtifact(
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 	if (signal.aborted) {
+		// The operation may have synchronously aborted and then rejected: always observe it.
 		void promise.catch(() => undefined);
 		return Promise.reject(signal.reason);
 	}
@@ -201,6 +208,7 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 			.finally(() => signal.removeEventListener("abort", aborted));
 	});
 }
+/** Execute the same parsed pipeline on any compatible bound backend. No cross-provider retry. */
 export async function executePipeline(
 	backend: PipelineBackend,
 	pipeline: ParsedPipeline,
@@ -278,6 +286,7 @@ export async function executePipeline(
 			? "pipeline stopped"
 			: "pipeline execution failed";
 		if (!session && opening) {
+			// A late/ambiguous allocation is never safe to retry on a different provider.
 			result.status = "uncertain";
 			void opening
 				.then(
@@ -306,6 +315,7 @@ export async function executePipeline(
 	}
 	return result;
 }
+// Worker-safe wire exports for backend adapters; this entry never imports the Node ledger.
 export {
 	type Pipeline,
 	type PipelineArtifact,

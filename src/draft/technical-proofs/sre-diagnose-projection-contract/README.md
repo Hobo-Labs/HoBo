@@ -3,7 +3,7 @@
 Independent POC for HOBO-276.
 
 This package models the read-only SRE diagnose step from
-[Plan 40](urn:hobo:requirement:operators-sre#plan-40): an opened Incident is
+[Plan 40](../../../../docs/design/operators-sre.md#plan-40): an opened Incident is
 diagnosed by executing runbook `diagnose` reads against projections, then
 emitting `incident.RootCauseIdentified` when evidence is sufficient.
 
@@ -33,9 +33,11 @@ npm.cmd --prefix src\draft\technical-proofs\sre-diagnose-projection-contract tes
 ```
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Sre Diagnose Projection Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

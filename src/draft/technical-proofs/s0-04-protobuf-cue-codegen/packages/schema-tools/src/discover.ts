@@ -25,6 +25,8 @@ export function discoverDataModelPackages(
     const packageDir = join(packagesRoot, name);
     const dataModelsDir = join(packageDir, "data-models");
     if (!existsSync(dataModelsDir)) continue;
+    // A package opts into codegen by giving its data-models a buf module
+    // marker; bare .proto/.cue folders are documentation-only until they do.
     if (!existsSync(join(dataModelsDir, "buf.yaml"))) continue;
     if (options.filter && !packageDir.startsWith(resolve(options.filter))) continue;
 

@@ -16,7 +16,7 @@ import { createResourceCatalog } from "../../resource-definition-driver-contract
 
 export const S4_STAGE_GATE_SCHEMA = "hobo.s4StageGateMultiCloud/v1";
 export const S4_STAGE_GATE_FIXTURE = MULTI_CLOUD_SHOP_FIXTURE;
-export const S4_ACCEPTANCE_RECORD = "urn:hobo:proof:s4-01-stage-gate-acceptance";
+export const S4_ACCEPTANCE_RECORD = "docs/design/proofs/s4-01-stage-gate-acceptance";
 
 const BASE_TIME = Date.parse("2026-07-02T00:00:00.000Z");
 const TENANT = "acme";

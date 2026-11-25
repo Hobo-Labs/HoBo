@@ -25,7 +25,9 @@ workflow product.
 pnpm.cmd --dir src\draft\technical-proofs\legal-privacy-terms-dogfood-alpha-evidence test
 ```
 
-## Executable evidence
+## Architecture Evidence
+
 - `proto/` defines the data contract for the dogfood/alpha evidence record and gate result.
 - `cue/` constrains required domains, statuses, follow-up behavior, and scope boundaries.
 - `contracts/pacts/` records the release-governance consumer/provider boundary.
+- `ARCHITECTURE.md` records parse-don't-validate derived types and event architecture.

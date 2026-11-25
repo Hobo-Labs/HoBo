@@ -29,7 +29,7 @@
 		"@sqlite.org/sqlite-wasm": "3.49.1-build4"
 	},
 	"scripts": {
-		"build": "tsc -p tsconfig.json && node scripts/copy-sqlite-wasm.mjs",
+		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",

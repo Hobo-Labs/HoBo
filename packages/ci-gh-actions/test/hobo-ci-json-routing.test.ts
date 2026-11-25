@@ -70,6 +70,28 @@ describe("committed .hobo/ci.json routing", () => {
 		expect(route.environment.name).toBe("ci");
 	});
 
+	it("enables Agent37 with its committed external routing pool", () => {
+		const provider = config.environments.ci?.policy.providers.find(
+			(entry) => entry.kind === "agent37",
+		);
+		expect(provider).toMatchObject({
+			id: "agent37-runners",
+			enabled: true,
+			runsOn: "hobo-agent37",
+			capacity: {
+				case: "pool",
+				value: { maxBoxes: 4, template: "agent37-ubuntu@1" },
+			},
+		});
+		expect(document.runnerRouting?.externalPools).toEqual([
+			{
+				labels: ["hobo-agent37"],
+				runnerNamePrefix: "hobo-a37-",
+				maxRunners: 4,
+			},
+		]);
+	});
+
 	it("routes tag pushes to production on the same relay", () => {
 		const context: CiWebhookRoutingContext = {
 			repositoryFullName: "Hobo-Labs/HoBo",

@@ -32,7 +32,7 @@ Out of scope:
 - Protobuf: `architecture/vibe_first_run_activation_rail.proto`
 - CUE constraints: `architecture/vibe_first_run_activation_rail.cue`
 - Pact-style fixture: `architecture/pacts/vibe_first_run_activation_rail.pact.json`
-- Design proof note: `urn:hobo:proof:vibe-first-run-activation-rail`
+- Design proof note: `docs/design/proofs/vibe-first-run-activation-rail/README.md`
 
 Parse, don't validate: `parseVibeFirstRunActivationRail` is the single runtime boundary. Downstream
 workspace, tutorial, plan/diff, dashboard, and support artifacts should consume the branded parsed

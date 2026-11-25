@@ -5,12 +5,14 @@ Independent proof package for HOBO-265.
 It models `.raw(driver => ...)` as an explicitly non-portable, driver-typed read escape hatch over logical projections. Runtime tests prove portability and isolation debt are surfaced, projected-sink writes fail closed, and sinks without raw capability refuse raw calls. The TypeScript fixture proves wrong-driver dialect calls fail at compile time.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Raw Driver Escape Hatch Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.
 
 ## Testing
 

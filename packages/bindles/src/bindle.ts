@@ -1,7 +1,6 @@
 import { isAppKitKind } from "./app-kits.js";
 import {
 	connectorRecordsForBuilder,
-	isConnectorDeclaredBy,
 	withConnectorDeclarations,
 } from "./connector.js";
 import {
@@ -9,20 +8,11 @@ import {
 	externalDependencyAnnotation,
 	wasmComponentDependencyAnnotation,
 } from "./dependencies.js";
-import {
-	isJsonObject,
-	isJsonString,
-	type JsonObject,
-	type JsonValue,
-} from "./json.js";
+import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
 import {
 	assertNoBindleProviderSelection,
 	parseBindleRequirements,
 } from "./requirements.js";
-import {
-	createResourceIdentityAllocator,
-	type ResourceIdentity,
-} from "./resource-identity.js";
 import { defaultAppKitSessionReplayAnnotation } from "./session-replay.js";
 import type {
 	AllowVerbsFor,
@@ -32,7 +22,6 @@ import type {
 	BindleEdge,
 	BindleEntrypoint,
 	BindleHandlerObject,
-	BindleOptions,
 	BindleRequirements,
 	BindleResource,
 	BindleResourceRecord,
@@ -41,13 +30,13 @@ import type {
 	ContainerDependencyOptions,
 	ExternalDependencyOptions,
 	ProviderAnnotation,
-	ResourceIdentityLedger,
 	ResourceKind,
 	WasmComponentDependencyOptions,
 } from "./types.js";
 import { webAppAnnotationFromBinding } from "./webapp.js";
 
 const METADATA_SYMBOL =
+	// SAFETY: assertion required at this I/O or test boundary.
 	(Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");
 const COMPONENT_METADATA = Symbol.for("hobo.component.metadata");
 const TRAINABLE_METADATA = Symbol.for("hobo.trainable.metadata");
@@ -58,6 +47,8 @@ type BindingMetadataBag = ComponentBinding & {
 		| undefined;
 };
 
+/** Default name when authors use nameless `bindle((b) => …)`. */
+// public-contract: nameless Bindles compile to this stable manifest name.
 export const DEFAULT_BINDLE_NAME = "app";
 
 function isBindingMetadataBag(
@@ -84,13 +75,12 @@ function toHandler(
 	binding: ComponentBinding | undefined,
 ): EntrypointFactory | undefined {
 	if (binding === undefined) return undefined;
-	if (!(binding instanceof Function)) {
-		throw new TypeError("bindle component binding must be a function or class");
-	}
 	if (isInstantiableClassBinding(binding)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const Component = binding as new () => BindleHandlerObject;
 		return () => new Component();
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return binding as EntrypointFactory;
 }
 
@@ -100,26 +90,26 @@ type InternalDependency =
 
 interface InternalBindleResource<K extends ResourceKind> {
 	readonly kind: K;
-	readonly identity: ResourceIdentity;
 	declaredAllow: string[];
 	annotations: ProviderAnnotation[];
 	dependencies: Set<InternalDependency>;
 	handler: EntrypointFactory | undefined;
 }
 
+type TrackedBindleResource<K extends ResourceKind> = BindleResource<K> & {
+	readonly __bindleInternal: InternalBindleResource<K>;
+};
+
 function isConnectorBinding(dep: InternalDependency): dep is ConnectorBinding {
 	return "definition" in dep && dep.kind === "connector";
 }
 
-function createBindleResource<K extends ResourceKind, Message = unknown>(
+function createBindleResource<K extends ResourceKind>(
 	kind: K,
-	owned: Map<object, InternalBindleResource<ResourceKind>>,
-	identity: ResourceIdentity,
 	handler?: EntrypointFactory,
-): BindleResource<K, Message> {
+): TrackedBindleResource<K> {
 	const internal: InternalBindleResource<K> = {
 		kind,
-		identity,
 		declaredAllow: [],
 		annotations: isAppKitKind(kind)
 			? [defaultAppKitSessionReplayAnnotation()]
@@ -127,41 +117,40 @@ function createBindleResource<K extends ResourceKind, Message = unknown>(
 		dependencies: new Set(),
 		handler,
 	};
-	const resource: BindleResource<K, Message> = {
+
+	const resource: TrackedBindleResource<K> = {
 		kind,
-		generatedId: identity.generatedId,
-		dependsOn(...deps: BindleDependency[]): BindleResource<K, Message> {
+		__bindleInternal: internal,
+		dependsOn(...deps: BindleDependency[]): BindleResource<K> {
 			for (const dep of deps) {
-				if (!isJsonObject(dep)) {
-					throw new TypeError("bindle dependency must be a builder resource");
-				}
 				if (dep.kind === "connector") {
 					internal.dependencies.add(dep);
 					continue;
 				}
-				const dependency = owned.get(dep);
-				if (!dependency) {
-					throw new TypeError(
-						"bindle dependency must belong to the same builder",
-					);
+				// SAFETY: assertion required at this I/O or test boundary.
+				const tracked = dep as TrackedBindleResource<ResourceKind>;
+				if (tracked.__bindleInternal) {
+					internal.dependencies.add(tracked.__bindleInternal);
 				}
-				internal.dependencies.add(dependency);
 			}
 			return resource;
 		},
-		withReference(...deps: BindleDependency[]): BindleResource<K, Message> {
+		withReference(...deps: BindleDependency[]): BindleResource<K> {
 			return resource.dependsOn(...deps);
 		},
-		allow(...verbs: AllowVerbsFor<K>[]): BindleResource<K, Message> {
+		allow(...verbs: AllowVerbsFor<K>[]): BindleResource<K> {
 			for (const verb of verbs) {
+				// SAFETY: assertion required at this I/O or test boundary.
 				if (!internal.declaredAllow.includes(verb as string)) {
+					// SAFETY: assertion required at this I/O or test boundary.
 					internal.declaredAllow.push(verb as string);
 				}
 			}
 			return resource;
 		},
-		with(...annotations: ProviderAnnotation[]): BindleResource<K, Message> {
+		with(...annotations: ProviderAnnotation[]): BindleResource<K> {
 			for (const annotation of annotations) {
+				// Singleton platform traits: a later .with() replaces, not stacks.
 				if (
 					annotation.option === "session-replay" ||
 					annotation.option === "status-page"
@@ -176,121 +165,70 @@ function createBindleResource<K extends ResourceKind, Message = unknown>(
 		},
 	};
 
-	owned.set(resource, internal);
 	return Object.freeze(resource);
 }
 
-function createBuilder(
-	name: string,
-	ledger: ResourceIdentityLedger | undefined,
-) {
-	const owned = new Map<object, InternalBindleResource<ResourceKind>>();
-	const identities = createResourceIdentityAllocator(name, ledger);
-	const createResource = <K extends ResourceKind, Message = unknown>(
-		kind: K,
-		handler?: EntrypointFactory,
-	) =>
-		createBindleResource<K, Message>(
-			kind,
-			owned,
-			identities.allocate(kind),
-			handler,
-		);
-	const createUnbound = <K extends ResourceKind>(
-		kind: K,
-		args: readonly never[],
-	) => {
-		assertNoFactoryArguments(kind, args);
-		return createResource(kind);
-	};
+function createBuilder(): BindleBuilder {
 	const base = {
-		api: (binding?: ComponentBinding, ...extra: never[]) => {
-			assertNoFactoryArguments("api", extra);
-			return createResource("api", toHandler(binding));
-		},
-		web: (binding?: ComponentBinding, ...extra: never[]) => {
-			assertNoFactoryArguments("web", extra);
-			const resource = createResource("web", toHandler(binding));
+		api: (binding?: ComponentBinding) =>
+			createBindleResource("api", toHandler(binding)),
+		web: (binding?: ComponentBinding) => {
+			const resource = createBindleResource("web", toHandler(binding));
 			const webapp = webAppAnnotationFromBinding(binding);
 			if (webapp) {
 				resource.with(webapp);
 			}
 			return resource;
 		},
-		kv: (...args: never[]) => createUnbound("kv", args),
-		cache: (...args: never[]) => createUnbound("cache", args),
-		bucket: (...args: never[]) => createUnbound("bucket", args),
-		queue: <Message = JsonValue>(...args: never[]) => {
-			assertNoFactoryArguments("queue", args);
-			return createResource<"queue", Message>("queue");
-		},
-		topic: <Message = JsonValue>(...args: never[]) => {
-			assertNoFactoryArguments("topic", args);
-			return createResource<"topic", Message>("topic");
-		},
-		secret: (...args: never[]) => createUnbound("secret", args),
-		data: (...args: never[]) => createUnbound("data", args),
-		schedule: (...args: never[]) => createUnbound("schedule", args),
-		project: (...args: never[]) => createUnbound("project", args),
-		websocket: (binding?: ComponentBinding, ...extra: never[]) => {
-			assertNoFactoryArguments("websocket", extra);
-			return createResource("websocket", toHandler(binding));
-		},
-		job: (binding?: ComponentBinding, ...extra: never[]) => {
-			assertNoFactoryArguments("job", extra);
-			return createResource("job", toHandler(binding));
-		},
-		service: (binding?: ComponentBinding, ...extra: never[]) => {
-			assertNoFactoryArguments("service", extra);
-			return createResource("service", toHandler(binding));
-		},
-		flag: (...args: never[]) => createUnbound("flag", args),
-		auth: (...args: never[]) => createUnbound("auth", args),
-		crypto: (...args: never[]) => createUnbound("crypto", args),
-		notify: (...args: never[]) => createUnbound("notify", args),
-		guardrail: (...args: never[]) => createUnbound("guardrail", args),
-		ui: (binding?: ComponentBinding, ...extra: never[]) => {
-			assertNoFactoryArguments("ui", extra);
-			return createResource("ui", toHandler(binding));
-		},
-		experiment: (...args: never[]) => createUnbound("experiment", args),
-		rollout: (...args: never[]) => createUnbound("rollout", args),
+		kv: () => createBindleResource("kv"),
+		bucket: () => createBindleResource("bucket"),
+		queue: () => createBindleResource("queue"),
+		topic: () => createBindleResource("topic"),
+		secret: () => createBindleResource("secret"),
+		data: () => createBindleResource("data"),
+		schedule: () => createBindleResource("schedule"),
+		project: () => createBindleResource("project"),
+		websocket: (binding?: ComponentBinding) =>
+			createBindleResource("websocket", toHandler(binding)),
+		job: (binding?: ComponentBinding) =>
+			createBindleResource("job", toHandler(binding)),
+		service: (binding?: ComponentBinding) =>
+			createBindleResource("service", toHandler(binding)),
+		flag: () => createBindleResource("flag"),
+		auth: () => createBindleResource("auth"),
+		crypto: () => createBindleResource("crypto"),
+		notify: () => createBindleResource("notify"),
+		guardrail: () => createBindleResource("guardrail"),
+		ui: (binding?: ComponentBinding) =>
+			createBindleResource("ui", toHandler(binding)),
+		experiment: () => createBindleResource("experiment"),
+		rollout: () => createBindleResource("rollout"),
 		external: (options: ExternalDependencyOptions = {}) =>
-			createResource("external").with(
+			// SAFETY: assertion required at this I/O or test boundary.
+			createBindleResource("external").with(
 				externalDependencyAnnotation(options),
 			) as BindleResource<"external">,
 		container: (options: ContainerDependencyOptions) =>
-			createResource("container").with(
+			// SAFETY: assertion required at this I/O or test boundary.
+			createBindleResource("container").with(
 				containerDependencyAnnotation(options),
 			) as BindleResource<"container">,
 		wasmComponent: (options: WasmComponentDependencyOptions) =>
-			createResource("wasm-component").with(
+			// SAFETY: assertion required at this I/O or test boundary.
+			createBindleResource("wasm-component").with(
 				wasmComponentDependencyAnnotation(options),
 			) as BindleResource<"wasm-component">,
 	};
-	return {
-		builder: Object.freeze(withConnectorDeclarations(base)),
-		owned,
-		identities,
-	};
-}
-
-function assertNoFactoryArguments(kind: ResourceKind, args: readonly never[]) {
-	if (args.length > 0) {
-		throw new TypeError(
-			`bindle ${kind} factory does not accept resource names`,
-		);
-	}
+	return Object.freeze(withConnectorDeclarations(base));
 }
 
 function toResourceRecord<K extends ResourceKind>(
 	name: string,
 	internal: InternalBindleResource<K>,
-	generated: boolean,
 ): BindleResourceRecord<K> {
-	const stableId =
-		`${internal.kind}:${generated ? internal.identity.generatedId : name}` as `${K}:${string}`;
-	const record: BindleResourceRecord<K> = {
+	// SAFETY: assertion required at this I/O or test boundary.
+	const stableId = `${internal.kind}:${name}` as `${K}:${string}`;
+	return Object.freeze({
 		kind: internal.kind,
 		name,
 		stableId,
@@ -303,18 +241,7 @@ function toResourceRecord<K extends ResourceKind>(
 				isConnectorBinding(dep) ? `connector:${dep.definition.id}` : dep.kind,
 			),
 		),
-	};
-	Object.defineProperties(record, {
-		generatedId: {
-			value: internal.identity.generatedId,
-			enumerable: generated,
-		},
-		identityOccurrence: {
-			value: internal.identity.occurrence,
-			enumerable: generated,
-		},
 	});
-	return Object.freeze(record);
 }
 
 export function bindle(
@@ -323,13 +250,11 @@ export function bindle(
 export function bindle(
 	name: string,
 	build: (builder: BindleBuilder) => Record<string, BindleResource>,
-	options?: BindleOptions,
 ): BindleDefinition;
 export function bindle(
 	name: string,
 	requirements: Partial<BindleRequirements> | JsonObject,
 	build: (builder: BindleBuilder) => Record<string, BindleResource>,
-	options?: BindleOptions,
 ): BindleDefinition;
 export function bindle(
 	nameOrBuild:
@@ -339,16 +264,12 @@ export function bindle(
 		| ((builder: BindleBuilder) => Record<string, BindleResource>)
 		| Partial<BindleRequirements>
 		| JsonObject,
-	maybeBuildOrOptions?:
-		| ((builder: BindleBuilder) => Record<string, BindleResource>)
-		| BindleOptions,
-	maybeOptions?: BindleOptions,
+	maybeBuild?: (builder: BindleBuilder) => Record<string, BindleResource>,
 ): BindleDefinition {
 	const nameless = nameOrBuild instanceof Function;
 	let name: string;
 	let build: (builder: BindleBuilder) => Record<string, BindleResource>;
 	let requirementsInput: JsonValue | Partial<BindleRequirements> = {};
-	let options: BindleOptions | undefined;
 
 	if (nameless) {
 		name = DEFAULT_BINDLE_NAME;
@@ -360,32 +281,18 @@ export function bindle(
 		name = nameOrBuild;
 		if (buildOrRequirements instanceof Function) {
 			build = buildOrRequirements;
-			if (maybeBuildOrOptions instanceof Function) {
-				throw new TypeError("bindle options must be an object");
-			}
-			options = maybeBuildOrOptions;
 		} else {
 			requirementsInput = buildOrRequirements ?? {};
-			if (!(maybeBuildOrOptions instanceof Function)) {
+			if (!(maybeBuild instanceof Function)) {
 				throw new TypeError("bindle requires a builder function");
 			}
-			build = maybeBuildOrOptions;
-			options = maybeOptions;
+			build = maybeBuild;
 		}
 	}
 
 	let requirements = parseBindleRequirements(requirementsInput);
-	if (options !== undefined && options.identityLedger === undefined) {
-		throw new TypeError(
-			"bindle identity options require a resource identity ledger",
-		);
-	}
-	const { builder, owned, identities } = createBuilder(
-		name,
-		options?.identityLedger,
-	);
+	const builder = createBuilder();
 	const built = build(builder);
-	identities.assertComplete();
 	const connectors = connectorRecordsForBuilder(builder);
 	const resourceByName = new Map<
 		InternalBindleResource<ResourceKind>,
@@ -400,15 +307,12 @@ export function bindle(
 		if (!isJsonString(resourceName) || resourceName.length === 0) {
 			throw new TypeError("bindle resource names must be non-empty strings");
 		}
-		const internal = owned.get(resource);
+		// SAFETY: assertion required at this I/O or test boundary.
+		const tracked = resource as TrackedBindleResource<ResourceKind>;
+		const internal = tracked.__bindleInternal;
 		if (!internal) {
 			throw new TypeError(
-				"bindle build must return resources from the same BindleBuilder",
-			);
-		}
-		if (resourceByName.has(internal)) {
-			throw new TypeError(
-				"bindle resources must have exactly one returned alias",
+				"bindle build must return resources from the BindleBuilder",
 			);
 		}
 		const stableId = `${internal.kind}:${resourceName}`;
@@ -417,39 +321,15 @@ export function bindle(
 		}
 		stableIds.add(stableId);
 		resourceByName.set(internal, resourceName);
-		resources[resourceName] = toResourceRecord(
-			resourceName,
-			internal,
-			options !== undefined,
-		);
-		if (internal.handler) {
-			handlers.set(resourceName, internal.handler);
-			if (options)
-				handlers.set(internal.identity.generatedId, internal.handler);
-		}
-	}
-	if (resourceByName.size !== owned.size) {
-		throw new TypeError("bindle build must return every declared resource");
-	}
-	if (options) {
-		for (const [alias, record] of Object.entries(resources)) {
-			const id = record.generatedId;
-			if (id && id !== alias && Object.hasOwn(resources, id)) {
-				throw new TypeError(
-					`resource alias "${id}" conflicts with a generated ID`,
-				);
-			}
-		}
+		resources[resourceName] = toResourceRecord(resourceName, internal);
+		if (internal.handler) handlers.set(resourceName, internal.handler);
 	}
 
-	for (const [resource, resourceName] of resourceByName) {
-		for (const dep of resource.dependencies) {
+	for (const [resourceName, resource] of Object.entries(built)) {
+		// SAFETY: assertion required at this I/O or test boundary.
+		const tracked = resource as TrackedBindleResource<ResourceKind>;
+		for (const dep of tracked.__bindleInternal.dependencies) {
 			if (isConnectorBinding(dep)) {
-				if (!isConnectorDeclaredBy(builder, dep)) {
-					throw new TypeError(
-						"bindle connector dependency must belong to the same builder",
-					);
-				}
 				edges.push(
 					Object.freeze({
 						from: resourceName,
@@ -459,22 +339,20 @@ export function bindle(
 				continue;
 			}
 			const depName = resourceByName.get(dep);
-			if (!depName) {
-				throw new TypeError(
-					"bindle dependency must be returned by the builder",
-				);
-			}
-			edges.push(Object.freeze({ from: resourceName, to: depName }));
+			if (depName)
+				edges.push(Object.freeze({ from: resourceName, to: depName }));
 		}
 	}
 
+	// Usage is the source of truth: b.web()/b.service() → http (+ wasm unless
+	// containers force oci), b.container() → container + oci. Explicit
+	// require/runtimes only when the author opts in with a non-empty block.
 	if (isEmptyRequirements(requirements)) {
 		requirements = inferRequirementsFromResources(resources);
 	}
 
 	const definition: BindleDefinition = {
 		name,
-		...(options ? { deploymentIdentity: "generated" as const } : undefined),
 		resources: Object.freeze(resources),
 		...(Object.keys(connectors).length > 0 ? { connectors } : undefined),
 		edges: Object.freeze(edges),
@@ -514,7 +392,6 @@ export function inferRequirementsFromResources(
 				runtimes.add("wasm");
 				break;
 			case "kv":
-			case "cache":
 				require.add("kv");
 				break;
 			case "queue":
@@ -546,6 +423,8 @@ export function inferRequirementsFromResources(
 				break;
 		}
 	}
+	// OCI containers imply the Camp host; drop default wasm when oci is present
+	// so nameless Bindles with container+service do not force a wasm runtime.
 	if (runtimes.has("oci")) {
 		runtimes.delete("wasm");
 	}

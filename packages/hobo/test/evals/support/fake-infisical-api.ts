@@ -121,6 +121,22 @@ export async function startFakeInfisical(
 			"",
 		);
 		if (!sessions.has(bearer)) return send(401, { message: "Token expired" });
+		const projectOf = (id: string) => ({
+			id,
+			name: "secrets",
+			slug: "secrets",
+			type: "secret-manager",
+			environments: ["dev", "staging", "prod"].map((slug) => ({
+				name: slug,
+				slug,
+				id: `env-${slug}`,
+			})),
+		});
+		const projectRead = /^\/api\/v1\/projects\/([^/]+)$/u.exec(url.pathname);
+		if (method === "GET" && projectRead !== null)
+			return send(200, { project: projectOf(projectRead[1] ?? "") });
+		if (method === "GET" && url.pathname === "/api/v1/projects")
+			return send(200, { projects: [projectOf("proj-1")] });
 		if (url.pathname === "/api/v1/folders") {
 			if (method === "GET") {
 				const environment = url.searchParams.get("environment") ?? "";

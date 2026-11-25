@@ -13,7 +13,7 @@ this package refuses to be.
 
 ## Refusal interactions
 
-The house style is that a boundary documents how it says no. Three of the six
+The house style is that a boundary documents how it says no. Three of the five
 interactions are refusals:
 
 - `HARNESS_YARD_REQUIRED` — the `ephemeral-camp` lane without a Yard. The

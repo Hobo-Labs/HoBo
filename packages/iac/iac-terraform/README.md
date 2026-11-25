@@ -2,7 +2,7 @@
 
 The HCL-lane `IacProvider` (HOBO-717): **one adapter, two interchangeable
 binaries**. OpenTofu (`tofu`) is the default per
-[control-plane.md §IaC backends](urn:hobo:requirement:control-plane);
+[control-plane.md §IaC backends](../../../docs/design/control-plane.md);
 Terraform (`terraform`) is selectable per engine — they share the
 plan/apply/state protocol, so nothing above the engine seam changes.
 

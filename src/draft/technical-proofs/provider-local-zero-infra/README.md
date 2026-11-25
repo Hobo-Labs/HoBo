@@ -21,14 +21,17 @@ npm.cmd --prefix src\draft\technical-proofs\provider-local-zero-infra test
 
 Relevant design records:
 
-- `urn:hobo:requirement:control-plane`: provider package authoring, local/container provider, and `realize()` emission
-- `urn:hobo:requirement:generated-stack#plan-09`: local-vs-camp conformance tags
-- `urn:hobo:decision:adr-0042`: local-dev fidelity honesty
+- `docs/design/control-plane.md`: provider package authoring, local/container provider, and `realize()` emission
+- `docs/design/architecture.md`: `providers/provider-local` package placement and port layering
+- `docs/design/generated-stack.md#plan-09`: local-vs-camp conformance tags
+- `docs/design/adr/07-portability-extensibility.md#adr-0042`: local-dev fidelity honesty
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Provider Local Zero Infra.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

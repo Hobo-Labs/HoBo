@@ -51,11 +51,11 @@ export const CHAOS_RESILIENCE_TESTS_SCOPE = {
   sourceRefs: [
     "Linear HOBO-439 issue body",
     "docs/patterns/chaos-engineering.md",
-    "urn:hobo:requirement:reliability-observability-cost#plan-05",
-    "urn:hobo:requirement:generated-stack#plan-09",
-    "urn:hobo:requirement:operators-sre#plan-40",
-    "urn:hobo:decision:adr-0047",
-    "urn:hobo:decision:adr-0082",
+    "docs/design/reliability-observability-cost.md#plan-05",
+    "docs/design/generated-stack.md#plan-09",
+    "docs/design/operators-sre.md#plan-40",
+    "docs/design/adr/02-identity-security.md#adr-0047",
+    "docs/design/adr/02-identity-security.md#adr-0082",
   ],
   personas: [
     {

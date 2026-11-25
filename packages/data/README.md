@@ -4,12 +4,12 @@ The CQRS fold kernel for the HoBo data plane (S1-15a): `defineAggregate`
 (write-model fold — command → invariant check → append under optimistic `seq`,
 via an `ActorHost` single-writer lease + fencing) and `defineProjection`
 (read-model fold — materialized views, `rebuildFromZero()`, snapshot cache).
-Includes deterministic poison-event quarantine. Folds consume event records in
-their current form.
+Includes a forward-only upcaster registry and deterministic poison-event
+quarantine.
 
 Reuses the `EventEnvelope` and runtime ports from [`@hobo/core`](../core);
 runs against the real `EventStore` (e.g. `@hobo/runtime-local`) rather than
-reinventing a store.
+reinventing a store. See [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ```ts
 import { defineAggregate, defineProjection, createInMemoryActorHost } from "@hobo/data";
@@ -30,145 +30,5 @@ const result = await orders.execute(
   { id: "1001", totalCents: 4200 },
   { tenant: "t-a", actor: { kind: "user", id: "u1" } },
 );
+// result.seq is the client's reads-your-writes watermark.
 ```
-
-`result.seq` is the client's reads-your-writes watermark.
-
-Projection definitions may provide a `rowSchema` with its WIT record name and
-fields, plus `indexHints` for consumers. The read-model name is derived from
-the schema unless explicitly supplied, in which case it must match. Declaration
-facts and snapshots retain this metadata; index hints do not create indexes.
-Projection snapshots also report `streamSequences`, the highest sequence
-observed in each source stream, including events outside the read set. The
-scalar `seq` is the highest of those values, not a global journal position;
-neither value proves that an arbitrary input contained every earlier event.
-The fold orders events by sequence within each stream, preserves the input's
-interleaving between streams, and rejects duplicate sequences in a stream.
-Deterministic fold failures raise `ProjectionFoldError` with the projection,
-source event location, and original cause. A failure classified as transient is
-returned unchanged for retry.
-
-An aggregate command may stage durable effects with `emitter.stageEffect`.
-The event store must support atomic commits; otherwise the command raises
-`DurableEffectUnavailableError` before its events are appended. Successful
-commands return the store's effect receipts in `result.effects`.
-
-When an aggregate fold rejects an event, `execute` records an
-`aggregate.QuarantineRecorded` fact before running the command, or immediately
-after appending an event emitted by that command. The fact names the original
-event and the affected aggregate fold; other folds can still process that event.
-Replays of the same aggregate skip the recorded event even if its implementation
-changes. `load` raises `UnpersistedQuarantineError` when it encounters an
-unrecorded failure; execute a command to record it under the aggregate lease.
-
-For projection rebuilds, `rebuildWithQuarantine` stores
-`projection.QuarantineRecorded` facts in a separate stream. Pass the store,
-stream ID, tenant, and actor for those records. Rebuilds reuse existing facts,
-verify that each names the same source event, and return the quarantined records
-with the resulting snapshot. Other projections continue to process the original
-events. `rebuildFromZero` remains read-only and reports fold failures directly.
-Malformed quarantine records stop the fold or rebuild; they are not ignored or
-turned into another quarantine record.
-
-`aggregate.inspectQuarantines(store, streamId)` and
-`projection.inspectQuarantines(sourceEvents, quarantineRecords)` test recorded
-events against the current fold using cloned state. A finding identifies an
-event that needs an explicit reprocessing decision. Inspection appends no
-events, and replay continues to skip the recorded event. The fold callbacks
-run during inspection and must not perform side effects.
-
-Aggregate and projection definitions may provide `classifyFailure(error, event)`
-to return `"deterministic"` or `"transient"`. Transient failures are rethrown
-without recording quarantine, so the caller can retry. Other fold failures are
-treated as deterministic by default. If an aggregate fails while folding events
-it just committed, inspect the stream before repeating the command; its events
-and effects may already have been committed.
-
-`readQuarantineReport` reads persisted aggregate, projection, and EventStore
-quarantine facts from a durable event store for a tenant. Findings include the
-source event, affected fold, reason, and quarantine record location. The report
-has bounded scanning and includes `nextPosition` when another page remains;
-pass that position back through `parseEventPosition` to continue. `complete`
-describes the journal observed during the scan.
-
-`createCrossCampProjection` copies an owner's ordered event stream into an
-independent replica event store and folds the copied events with the same
-projection. It can read all streams for a tenant or a named source stream.
-Calls to `append` from either Camp write to the owner. Call `replicate` until
-it reports `caughtUp`, and call it again on the application's polling schedule.
-Each batch and its checkpoint are appended atomically; competing replicators
-retry on sequence conflicts. A new instance can resume from the replica log.
-
-Replica reads and subscriptions include the age of the last completed owner
-read. A partial batch does not advance that time, and a replica with no
-completed read reports `unknown`. The age is measured from the start of the
-owner read with the supplied clock. This bound depends on the owner store's
-`readAll` returning a complete, ordered prefix; it does not account for any
-staleness inside that store. Reads record `projection.ReplicaLagged` and
-`projection.ReplicaRecovered` transitions in the replica stream. Repeated reads
-do not repeat a transition, including after restart. Read or subscribe to that
-stream to observe the transitions; reads detect lag while replication is idle.
-
-`read()` labels a replica view as bounded-staleness by default; set
-`replicaReadClass` to `"eventual"` or pass a read class to `read()` to select
-eventual reads. Both report the observed staleness. After `append`, pass the
-returned event to `readSession(event)` to read from the owner and confirm that
-the write is present. A session read fails if the owner read cannot observe it.
-Replica reads do not offer strong consistency.
-Each replica records its projection, Camps, source, staleness bound, and default
-read class in its event stream. Changing the bound or default read class records
-the new configuration; changing the projection, Camps, or source requires a
-different replica stream. `hobo doctor` reports supported read classes and
-flags a replica that has exceeded its bound without recording a lag signal.
-Before the first completed catch-up, freshness is unknown. If incomplete pulls
-continue beyond the bound, the replica reports an exceeded bound measured from
-the first incomplete pull; `lagSinceMs` identifies that starting point.
-
-## Paginated event views
-
-`createPaginatedEventView` stores row changes in a dedicated EventStore stream as
-`data.Changed` facts. Supply the resource, stream, tenant, actor, and declared
-string or number sort indexes. Rows contain `id`, `streamId`, `seq`, and the
-indexed fields. Updates require a higher source sequence; deletes preserve a
-tombstone sequence. Cursors encode the sort value and row ID, so inserts before
-an issued cursor do not move later pages.
-
-The view rebuilds its sorted indexes in memory from the event stream on open.
-A page reflects the events read so far; separate page requests are not one
-frozen database snapshot. `order(...).watch(...)` pushes changes in its current
-key range, and `loadMore()` extends that range. Watches poll for changes from
-other EventStore connections every 250 ms by default; configure
-`pollIntervalMs` to change this. Await `drain()` to observe subscriber errors,
-call `unsubscribe()` when a watch ends, and call `close()` on the view when it
-is no longer needed.
-
-## Durable projection rebuilds
-
-`createProjectionRebuild` reads an ordered prefix from a durable EventStore and
-materializes rows into sharded journals in a separate physical EventStore.
-Provide a stable source ID, migration ID, projection and schema version, event
-types, row key, row parser, and deterministic fold. The parser must produce
-finite JSON rows and return the same representation when replaying a stored row.
-For a nondeterministic projection, use `recorded-output` mode and list only the
-recorded output event types.
-
-Each `runBatch()` reads a bounded number of source events per shard. Row changes
-and the corresponding source position commit together. Competing workers retry
-on journal conflicts, and a new instance resumes from the committed positions.
-An optional snapshot seeds all shards from a pinned source position; the seed is
-persisted before shard initialization so an interrupted initialization can
-resume. A seed is limited to one EventStore payload and 255 rows per shard. The
-first time all shards catch up, the rebuild records `migration.PhaseApplied` in
-the audit stream with that source position and the backfill strategy.
-
-Use a source position captured from the relevant source stream as the barrier
-for `cutover`. The cutover succeeds only after every shard reaches that position
-and a source read finds no later events. It atomically records
-`migration.CutOver` and `projection.SinkRebound` in the cutover stream. Source
-and journal do not share a transaction: pause writes
-through the cutover or ensure the projection continues consuming the tail.
-Routing must read `activeSink()` to use the recorded sink. Events appended after
-the barrier still require further `runBatch()` calls. A short batch reports the
-prefix read at that time; it does not freeze concurrent writes. `read()`
-reconstructs rows from the shard journals and returns each shard's position,
-which may differ while catching up.

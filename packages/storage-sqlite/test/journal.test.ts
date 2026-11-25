@@ -3,9 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	assertIntegrity,
 	createMemoryNodeSqliteDriver,
 	createNodeSqliteDriver,
+	installLegacyV1Fixture,
+	migrateToCurrent,
+	SCHEMA_VERSION,
 	SqliteJournal,
+	StreamIntegrityError,
 } from "../src/index.js";
 
 const clock = { now: () => "2026-07-27T12:00:00.000Z" };
@@ -146,6 +151,7 @@ describe("SqliteJournal", () => {
 			}),
 		).rejects.toMatchObject({ code: "OPTIMISTIC_SEQUENCE_CONFLICT" });
 
+		// queue effect must not have been committed
 		const leased = j.leaseMessages({
 			queueName: "q",
 			maxMessages: 10,
@@ -188,7 +194,7 @@ describe("SqliteJournal", () => {
 
 	it("preserves bigint fence tokens beyond MAX_SAFE_INTEGER", async () => {
 		const j = journal();
-		const big = 9_007_199_254_740_993n;
+		const big = 9_007_199_254_740_993n; // > MAX_SAFE_INTEGER
 		await j.append("fenced", [{ type: "a.A", data: {} }], {
 			expectedSeq: 0,
 			actor,
@@ -208,7 +214,96 @@ describe("SqliteJournal", () => {
 	});
 });
 
-describe("durable journal", () => {
+describe("migration v1 → v2", () => {
+	it("migrates events, stream heads, snapshots, and is idempotent", () => {
+		const db = createMemoryNodeSqliteDriver();
+		installLegacyV1Fixture(db, {
+			events: [
+				{
+					stream_id: "order:1",
+					seq: 1,
+					id: "01HTESTEVENT00000000000001",
+					type: "order.Created",
+					ts: "2026-01-01T00:00:00.000Z",
+					actor: { kind: "user", id: "u1" },
+					tenant: "t1",
+					project: "p1",
+					lane: null,
+					data: { total: 10 },
+					meta: { idempotencyKey: "create-1" },
+					idempotency_key: "create-1",
+				},
+				{
+					stream_id: "order:1",
+					seq: 2,
+					id: "01HTESTEVENT00000000000002",
+					type: "order.Paid",
+					ts: "2026-01-01T00:01:00.000Z",
+					actor: { kind: "user", id: "u1" },
+					tenant: "t1",
+					data: { amount: 10 },
+					meta: {},
+				},
+			],
+			snapshots: [
+				{
+					stream_id: "order:1",
+					seq: 1,
+					state: { status: "created" },
+					saved_at: "2026-01-01T00:00:30.000Z",
+				},
+			],
+		});
+
+		const report = migrateToCurrent(db, { now: clock.now() });
+		expect(report.toVersion).toBe(SCHEMA_VERSION);
+		expect(report.eventsMigrated).toBe(2);
+		expect(report.streamsMigrated).toBe(1);
+		expect(report.snapshotsMigrated).toBe(1);
+
+		const again = migrateToCurrent(db, { now: clock.now() });
+		expect(again.alreadyCurrent).toBe(true);
+
+		assertIntegrity(db);
+
+		const journal = new SqliteJournal(db, { clock, nativePragmas: false });
+		expect(journal.getStreamHead("order:1")).toEqual({
+			streamId: "order:1",
+			revision: 2,
+			ownerEpoch: 0n,
+		});
+		journal.close();
+	});
+
+	it("fails on noncontiguous legacy stream", () => {
+		const db = createMemoryNodeSqliteDriver();
+		installLegacyV1Fixture(db, {
+			events: [
+				{
+					stream_id: "bad",
+					seq: 1,
+					id: "01HTESTEVENT00000000000011",
+					type: "a.A",
+					ts: "2026-01-01T00:00:00.000Z",
+					actor: { kind: "system", id: "s" },
+					tenant: "t",
+					data: {},
+				},
+				{
+					stream_id: "bad",
+					seq: 3,
+					id: "01HTESTEVENT00000000000012",
+					type: "a.C",
+					ts: "2026-01-01T00:00:01.000Z",
+					actor: { kind: "system", id: "s" },
+					tenant: "t",
+					data: {},
+				},
+			],
+		});
+		expect(() => migrateToCurrent(db)).toThrow(StreamIntegrityError);
+	});
+
 	it("persists on disk reopen", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-sqlite-"));
 		const path = join(dir, "store.sqlite");

@@ -76,7 +76,9 @@ export interface DepsImageEnsurerOptions {
 	readonly fs: DepsImageFileSystemPort;
 	readonly docker: DepsImageDockerPort;
 	readonly processes: DepsImageProcessPort;
+	/** When false, a local build defers with backoff instead of overlapping job leases. */
 	readonly idleForBuild?: () => Promise<boolean>;
+	/** Reserves inode headroom for the build, released in a finally block. */
 	readonly onBuildSlot?: Readonly<{
 		acquire: () => Promise<boolean>;
 		release: () => void;

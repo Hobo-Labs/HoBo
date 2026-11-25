@@ -38,9 +38,11 @@ contract-shape rejection, byte-identical dev/prod contract bytes, deny-by-defaul
 capability guardrails, and the documented JWT verification gap.
 
 
-## Executable evidence
+## Architecture Evidence
+
 This package ships the architecture-guard evidence required by
 `scripts/check-architecture-guardrails.mjs`:
 
 - `architecture/` — protobuf data shapes and CUE constraints for Hobo Auth Consumer Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
+- `ADR.md` — parse-don't-validate and event-architecture evidence.

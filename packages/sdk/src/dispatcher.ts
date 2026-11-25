@@ -1,7 +1,6 @@
 import {
 	createDispatcherRegistry,
 	type DispatcherRegistry,
-	type DispatchObjective,
 	type DispatchProviderInput,
 } from "@hobo/dispatcher";
 
@@ -13,13 +12,23 @@ import {
 } from "./errors.js";
 import { DISPATCHER_DECLARATION_SCHEMA, RUNNER_SCHEMA } from "./schema.js";
 
+// `dispatcher()` WRAPS @hobo/dispatcher: runner declarations lower onto
+// `DispatchProviderInput` records and the declaration carries the engine's own
+// parsed registry (`createDispatcherRegistry`), so `decideDispatch` consumes an
+// SDK-authored fleet directly and records `dispatch.Decided` as usual. The
+// engine's ranking objective is credit-first cost minimization
+// ("maximize-credits"); the SDK accepts the walkthrough's "min-cost" spelling
+// and pins the engine objective alongside it.
+
 export type RunnerKind = "self-hosted" | "github" | "depot" | "blacksmith";
 
+// domain-view: authored CI-runner declaration; wire form is RunnerDeclaration in data-models/sdk.proto.
 export interface RunnerDeclaration {
 	readonly schema: string;
 	readonly kind: RunnerKind;
 	readonly providerId: string;
 	readonly category: "runner";
+	/** Optional outbound relay; omitted for direct local self-hosted execution. */
 	readonly behind?: "relay";
 	readonly listUnitCost: number;
 	readonly switchingCost: number;
@@ -31,24 +40,23 @@ export interface RunnerOptions {
 	switchingCost?: number;
 }
 
-export interface ParsedRunnerOptions {
-	id?: string;
-	listUnitCost: number;
-	switchingCost: number;
-}
-
 export interface SelfHostedRunnerOptions extends RunnerOptions {
 	behind?: "relay";
 }
 
+export type DispatcherObjective = "min-cost" | "maximize-credits";
+
 export interface DispatcherOptions {
-	objective: DispatchObjective;
+	objective: DispatcherObjective;
 }
 
 export interface DispatcherDeclaration {
 	readonly schema: string;
-	readonly objective: DispatchObjective;
+	readonly objective: DispatcherObjective;
+	/** The objective spelling @hobo/dispatcher's decideDispatch accepts. */
+	readonly engineObjective: "maximize-credits";
 	readonly runners: readonly RunnerDeclaration[];
+	/** Parsed candidate registry from @hobo/dispatcher — feed it to decideDispatch. */
 	readonly registry: DispatcherRegistry;
 }
 
@@ -69,15 +77,21 @@ function nonNegative(
 	return value;
 }
 
-export function parseRunnerOptions(
-	options: RunnerOptions,
-): ParsedRunnerOptions {
+function makeRunner(
+	kind: RunnerKind,
+	options: RunnerOptions = {},
+	behind?: "relay",
+): RunnerDeclaration {
 	requireRecord("runner", "options", options);
-	const id =
-		options.id === undefined
-			? undefined
-			: requireNonEmptyString("runner", "options.id", options.id);
-	const parsed: ParsedRunnerOptions = {
+	const providerId =
+		options.id !== undefined
+			? requireNonEmptyString("runner", "options.id", options.id)
+			: `runner.${kind}`;
+	const declaration = {
+		schema: RUNNER_SCHEMA,
+		kind,
+		providerId,
+		category: "runner" as const,
 		listUnitCost: nonNegative(
 			"runner",
 			"options.listUnitCost",
@@ -90,25 +104,6 @@ export function parseRunnerOptions(
 			options.switchingCost,
 			0,
 		),
-	};
-	if (id !== undefined) parsed.id = id;
-	return parsed;
-}
-
-function makeRunner(
-	kind: RunnerKind,
-	options: RunnerOptions = {},
-	behind?: "relay",
-): RunnerDeclaration {
-	const parsed = parseRunnerOptions(options);
-	const providerId = parsed.id ?? `runner.${kind}`;
-	const declaration = {
-		schema: RUNNER_SCHEMA,
-		kind,
-		providerId,
-		category: "runner" as const,
-		listUnitCost: parsed.listUnitCost,
-		switchingCost: parsed.switchingCost,
 	};
 	return behind === undefined
 		? deepFreeze(declaration)
@@ -181,6 +176,7 @@ export function dispatcher(
 	return Object.freeze({
 		schema: DISPATCHER_DECLARATION_SCHEMA,
 		objective,
+		engineObjective: "maximize-credits" as const,
 		runners: Object.freeze([...runners]),
 		registry,
 	});

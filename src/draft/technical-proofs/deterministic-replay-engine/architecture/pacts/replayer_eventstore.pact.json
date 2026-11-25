@@ -1,0 +1,49 @@
+{
+  "consumer": {
+    "name": "DeterministicReplayEngineConsumer"
+  },
+  "provider": {
+    "name": "EventStoreReaderProvider"
+  },
+  "interactions": [
+    {
+      "description": "replayer reads a run stream from EventStore",
+      "request": {
+        "method": "GET",
+        "path": "/streams/run/run-1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "events": [
+            {
+              "streamId": "run/run-1",
+              "seq": 1,
+              "type": "run.Started"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "replayer reads a single event by seq",
+      "request": {
+        "method": "GET",
+        "path": "/streams/run/run-1/events/1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "streamId": "run/run-1",
+          "seq": 1,
+          "type": "run.Started"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

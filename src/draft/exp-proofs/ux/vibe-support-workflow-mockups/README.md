@@ -41,9 +41,11 @@ pnpm.cmd --prefix src\draft\exp-proofs\vibe-support-workflow-mockups test
 | Happy path, blocked path, stale/unknown evidence path, support handoff, accessibility notes, and proof-mode labels are covered. | `scenarioPaths`, `accessibilityNotes`, and proof-mode validation cover all required states and labels. |
 | Scope out remains hard. | `classifySupportWorkflowMockupRequest` rejects helpdesk, ticket automation, customer data, incident command, on-call, production UI, contractual SLA, and proofless launch requests. |
 
-## Executable evidence
+## Architecture Evidence
+
 - `architecture/` - protobuf data shapes and CUE constraints for the mockup
   record. CUE uses the same lower-camel field names as the parsed TypeScript
   boundary.
 - `architecture/pacts/` - Pact-style package boundary fixture that parses
   through `parseVibeSupportWorkflowMockups`.
+- `ADR.md` - parse-don't-validate and event/projection architecture note.

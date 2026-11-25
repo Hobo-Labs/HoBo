@@ -1,23 +1,11 @@
-export {
-	AvailabilityViewRequestSchema,
-	AvailabilityViewSchema,
-} from "./_generated/availability_view_pb.js";
-export {
-	AVAILABILITY_VIEW_VERSION,
-	type AvailabilityBreakdown,
-	type AvailabilityDeployAssessment,
-	type AvailabilityGraph,
-	type AvailabilityIssue,
-	type AvailabilityNode,
-	type AvailabilityNodeEstimate,
-	type AvailabilitySummary,
-	type AvailabilityView,
-	type AvailabilityViewRequest,
-	type AvailabilityWarning,
-	computeAvailabilityView,
-	formatAvailabilityPercent,
-	parseAvailabilityViewRequest,
-} from "./availability-view.js";
+// @hobo/cloud — the Yard control-plane kernel (S2-01) and the Planner (S2-02).
+// A coherent vertical: a Deploy command becomes past-tense facts, the pure
+// Planner resolves them to a content-addressed DeploymentPlan DAG, and the
+// DeploymentView projection reconstructs deployment state from the log.
+
+// Resolved Deployment Set and secret-free projections: the CD inputs that
+// @hobo/cd consumes. The former fixture-only CD plane moved into
+// @hobo/cd reconcilers and realizers.
 export {
 	createResolvedDeploymentSet,
 	type GatekeeperApproval,
@@ -56,25 +44,22 @@ export {
 	deploymentPlanRejected,
 	deploymentRequested,
 	deploymentRolledBack,
+	derivativeUpgradeFailed,
+	derivativeUpgradeStarted,
+	derivativeUpgradeSucceeded,
 	type ExecDiffData,
 	type ExecSucceededData,
 	execDiff,
 	execSucceeded,
 	foldErasedSubjects,
-	type IncidentEscalationRequestedData,
-	incidentEscalationRequested,
 	matchDecided,
 	providerApproved,
 	providerRegistered,
-	type ResourceCompensationFailedData,
 	type ResourceDestroyedData,
 	type ResourceDestroyingData,
 	type ResourceFailedData,
 	type ResourceProvisionedData,
 	type ResourceProvisioningData,
-	resourceCompensationFailed,
-	resourceDefinitionRegistered,
-	resourceDefinitionUpdated,
 	resourceDestroyed,
 	resourceDestroying,
 	resourceFailed,
@@ -149,25 +134,19 @@ export {
 } from "./hosting-transition/model.js";
 export { type LowerOptions, lowerManifest } from "./intent.js";
 export {
-	type BlockedDependency,
-	type CompensationBlockedResource,
 	type CompensationContext,
 	type CompensationDeps,
 	type CompensationResult,
 	changedSinceLastDeployed,
 	classifyResource,
-	createHttpDependencyObserver,
 	currentEpochStart,
 	DEPLOYMENT_MODES,
-	type DependencyObservationRequest,
-	type DependencyObservationStatus,
 	type DeploymentChangeSet,
 	type DeploymentMode,
 	type DesiredSpecHash,
 	desiredSpecHash,
 	destroyResource,
 	foldResourceActor,
-	type HttpDependencyObserverOptions,
 	iacProgramFor,
 	isConverged,
 	type OrchestratorContext,
@@ -324,15 +303,8 @@ export {
 	type CredentialGrantStatus,
 	compactCredentialAuditStream,
 	credentialAuditProjection,
-	getCredentialAuditRow,
 	isCredentialAuditEvent,
 } from "./projections/credential-audit.js";
-export {
-	credentialAuditRowFromJson,
-	credentialAuditRowToJson,
-	decodeCredentialAuditRow,
-	encodeCredentialAuditRow,
-} from "./projections/credential-audit-wire.js";
 export {
 	type DeploymentDecisionRow,
 	type DeploymentViewRow,
@@ -364,7 +336,6 @@ export {
 	type HeldProvider,
 	type PlannerRegistry,
 	parseRegisteredDefinitions,
-	providerRegistrationFacts,
 	type RegistrableCapability,
 	type RegistrableProvider,
 	type RegistryCatalogRow,
@@ -386,4 +357,5 @@ export {
 } from "./registry/resource-definition-vnext.js";
 export { collectStream, currentFenceToken } from "./store/index.js";
 
+// public-contract: package id consumers assert against.
 export const HOBO_CLOUD_PACKAGE = "@hobo/cloud";

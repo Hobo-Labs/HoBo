@@ -23,6 +23,7 @@ names** (WorkOS auth.md, UI tokens, llms.txt) — do not invent house brands for
 | `site/src/styles/global.css` | Implemented visual tokens | `pnpm run design:lint` |
 | `site/public/llms.txt` (+ full dump) | Public agent briefing for the product site | file exists; no internal secrets |
 | Nested `AGENTS.md` | Folder law (`src/draft/**`, etc.) | only when path is in scope |
+| `docs/design/**` | Product design suite | OKF / design lints as needed |
 
 Detail: [agents-md.md](agents-md.md) · [auth.md](auth.md) (WorkOS auth.md) · UI `../ux/design-md.md`.
 
