@@ -69,4 +69,4 @@ jobs:
       - name: Start fence + other fleet-v2 tests
         run: |
           mise exec -- pnpm exec turbo run test --filter=@hobo/ci-gh-actions --continue --output-logs=new-only --concurrency=100% -- \
-            test/fleet-v2-start-fence.test.ts
+            test/fleet-v2-start-fence-handler.test.ts
