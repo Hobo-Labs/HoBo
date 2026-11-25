@@ -27,6 +27,14 @@ const repoCheckoutCli = resolve(
 );
 
 const repository = "Hobo-Labs/HoBo";
+const newlinePath =
+	process.platform === "win32"
+		? "other/deep/line-break.txt"
+		: "other/deep/line\nbreak.txt";
+const trailingSpacePath =
+	process.platform === "win32"
+		? "other/deep/trailing-space.txt"
+		: "other/deep/trailing-space.txt ";
 let temp = "";
 let source = "";
 let mirror = "";
@@ -47,13 +55,15 @@ beforeAll(() => {
 	writeFileSync(join(source, "README.md"), "mirror fixture\n");
 	writeFileSync(join(source, "scripts/ci/ci-trace.mts"), "export {};\n");
 	writeFileSync(join(source, "other/deep/outside-cone.txt"), "outside\n");
-	writeFileSync(join(source, "other/deep/line\nbreak.txt"), "unusual\n");
+	writeFileSync(join(source, newlinePath), "unusual\n");
+	writeFileSync(join(source, trailingSpacePath), "space\n");
 	git(source, [
 		"add",
 		"README.md",
 		"scripts/ci/ci-trace.mts",
 		"other/deep/outside-cone.txt",
-		"other/deep/line\nbreak.txt",
+		newlinePath,
+		trailingSpacePath,
 	]);
 	git(source, [
 		"-c",
@@ -175,6 +185,7 @@ describe("clearSparseCheckoutConfig", () => {
 		git(work, ["checkout", sha]);
 		const outside = join(work, "other/deep/outside-cone.txt");
 		expect(existsSync(outside)).toBe(false);
+		git(work, ["update-index", "--assume-unchanged", "--", trailingSpacePath]);
 		writeFileSync(join(work, "README.md"), "local modification\n");
 		expect(clearSparseCheckoutConfig(work)).toBe(true);
 		expect(readFileSync(join(work, "README.md"), "utf8")).toBe(
@@ -183,9 +194,8 @@ describe("clearSparseCheckoutConfig", () => {
 		expect(existsSync(outside)).toBe(false);
 		git(work, ["checkout", "--force", sha]);
 		expect(readFileSync(outside, "utf8")).toBe("outside\n");
-		expect(readFileSync(join(work, "other/deep/line\nbreak.txt"), "utf8")).toBe(
-			"unusual\n",
-		);
+		expect(readFileSync(join(work, newlinePath), "utf8")).toBe("unusual\n");
+		expect(readFileSync(join(work, trailingSpacePath), "utf8")).toBe("space\n");
 	});
 
 	it("clears sparse config on a blob:none clone without materializing missing blobs", () => {
@@ -205,6 +215,8 @@ describe("clearSparseCheckoutConfig", () => {
 		expect(clearSparseCheckoutConfig(work)).toBe(true);
 		expect(sparseCheckoutEnabled(work)).toBe(false);
 		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(false);
+		git(work, ["checkout", "-f", sha]);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(true);
 	});
 });
 
