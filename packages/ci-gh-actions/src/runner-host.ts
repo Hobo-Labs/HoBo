@@ -57,4 +57,5 @@ export {
 	WORKER_RUNNER_PRESENCE_FILE,
 	type WorkerHostFiles,
 	workerHostFiles,
+	writeWorkerMeshAdvert,
 } from "./runner-host-worker-jobs.js";

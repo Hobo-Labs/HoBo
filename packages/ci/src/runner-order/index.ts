@@ -8,7 +8,7 @@ export {
 	describeDecision,
 	describeSkip,
 	effectiveRelayInputs,
-	type FleetState,
+	type RunnerFleetState,
 	NO_ROUTE_FACTS,
 	noRunnerReason,
 	type RouteFacts,
@@ -31,7 +31,7 @@ export {
 } from "./health.js";
 export {
 	ANY_MACHINE_LABEL,
-	FLEET_LABEL,
+	HOBO_FLEET_LABEL,
 	isUnresolvedAuto,
 	type RelayInputs,
 	RUNNER_INPUT_AUTO,
@@ -76,6 +76,20 @@ export {
 	skipsUnhealthy,
 	stepKey,
 } from "./order.js";
+export type {
+	InsightRunQuery,
+	InsightStore,
+	MachineRegistry,
+	MinutesReader,
+	ProviderHealthStore,
+	RelayChecks,
+	RouteDecisionQuery,
+	RouteFactsSource,
+	RouteJournal,
+	RunnerOrderLookup,
+	RunnerOrderSource,
+	SpendReader,
+} from "./ports.js";
 export {
 	DEFAULT_RUNNER_AUTO_SIZE,
 	GITHUB_HOSTED_SIZES,

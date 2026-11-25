@@ -1341,10 +1341,10 @@ try {
 						terminalJobs: [],
 					},
 				);
-				const { waiting, fleetJobs, ...counts } = summary;
-				if (fleetJobs) {
-					latestFleetJobs = fleetJobs;
-					fleetPickups.remember(fleetJobs);
+				const { waiting, runnerJobs, ...counts } = summary;
+				if (runnerJobs) {
+					latestFleetJobs = runnerJobs;
+					fleetPickups.remember(runnerJobs);
 				}
 				const pruned = (await heldJobPruner?.maybePrune()) ?? 0;
 				if (summary.accepted > 0 || pruned > 0)

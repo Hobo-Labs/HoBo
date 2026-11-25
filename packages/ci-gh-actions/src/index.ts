@@ -48,6 +48,18 @@ export {
 	setRelayFailureEvents,
 } from "./failure-log.js";
 export {
+	composeFleetDaemon,
+	createJitRegistrationMinter,
+	GITHUB_ACTIONS_JOB,
+	type WorkerAdmission,
+	type WorkerAdmissionSample,
+} from "./fleet-daemon.js";
+export {
+	createGithubActionsWorkRunner,
+	createGithubActionsWorkSource,
+	type GithubWorkOptions,
+} from "./fleet-work/index.js";
+export {
 	retireRepositoryVariables,
 	type VariableRetireEvent,
 	type VariableRetireLog,
@@ -131,6 +143,18 @@ export {
 	githubApiUrl,
 } from "./github.js";
 export {
+	actionsMinutesUsed,
+	GITHUB_BURN_WINDOW_HOURS,
+	GITHUB_INCLUDED_COMPUTE_OBSERVED_AT,
+	GITHUB_INCLUDED_COMPUTE_SOURCE,
+	GITHUB_LINUX_USD_PER_MINUTE,
+	GITHUB_MINUTES_CACHE_MS,
+	GithubMinutesReader,
+	type GithubMinutesReaderDeps,
+	githubBilledMinutes,
+	includedMinutesOfPlan,
+} from "./billing-usage.js";
+export {
 	verifyConvertedGithubApp,
 	verifyStoredGithubApp,
 } from "./github-app-manifest-validation.js";
@@ -162,6 +186,16 @@ export {
 	type VerifiedWebhook,
 } from "./http-handler.js";
 export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
+export {
+	foldInsightWebhook,
+	type InsightAttemptStore,
+	InsightIngest,
+	type InsightWebhookFact,
+	type JobWebhookFact,
+	parseInsightWebhook,
+	type RunWebhookFact,
+	UNKNOWN_EVENT,
+} from "./insight-ingest.js";
 export {
 	isIsolatedContainerOffer,
 	isIsolatedHostOffer,
@@ -273,6 +307,8 @@ export {
 	describeWaitingJobs,
 	type FleetJobInProgress,
 	type FleetJobsSeen,
+	type RunnerJobInProgress,
+	type RunnerJobsSeen,
 	type GithubJobPollerOptions,
 	type GithubJobPollSummary,
 	type GithubReadFailure,
@@ -530,6 +566,12 @@ export {
 	type RelayMcpSessions,
 } from "./relay-mcp.js";
 export {
+	createRelayOwnerLogin,
+	type RelayOwnerAccount,
+	type RelayOwnerLogin,
+} from "./relay-owner-login.js";
+export * from "./relay-owner-login-protocol.js";
+export {
 	assertRelayOriginAllowed,
 	CI_PROJECT_LOCAL_OVERRIDE_PATH,
 	type CiJobAdmission,
@@ -578,6 +620,18 @@ export {
 	toOtlpTraces,
 	traceGithubTransport,
 } from "./relay-trace.js";
+export {
+	createRelayWiring,
+	RELAY_WIRING_OFF,
+	type RelayModePass,
+	type RelayWiring,
+	type RelayWiringFlags,
+	type RelayWiringLog,
+	type RelayWiringOptions,
+	relayWiringFlags,
+	relayWiringOn,
+	type WiredConnection,
+} from "./relay-wiring.js";
 export {
 	judgeRoutingSlip,
 	type ParsedRoutingSlip,

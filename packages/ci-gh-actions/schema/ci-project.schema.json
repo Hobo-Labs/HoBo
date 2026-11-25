@@ -66,8 +66,47 @@
     "runnerOrder": {
       "$ref": "#/$defs/RunnerOrder"
     },
+    "fleet": {
+      "$ref": "#/$defs/BoxMemberSettings"
+    },
     "turboCache": {
       "$ref": "#/$defs/TurboCache"
+    },
+    "relayJobs": {
+      "type": "object",
+      "properties": {
+        "answer": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "prTitle": {
+          "type": "object",
+          "properties": {
+            "types": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema127"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "lint": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -1612,11 +1651,83 @@
         }
       ]
     },
+    "BoxMemberSettings": {
+      "type": "object",
+      "properties": {
+        "authorityUrl": {
+          "$ref": "#/$defs/__schema119"
+        },
+        "fleet": {
+          "$ref": "#/$defs/__schema120"
+        },
+        "tenant": {
+          "$ref": "#/$defs/__schema121"
+        },
+        "region": {
+          "$ref": "#/$defs/__schema122"
+        },
+        "memberName": {
+          "$ref": "#/$defs/__schema123"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/__schema124"
+        }
+      },
+      "required": [
+        "authorityUrl",
+        "fleet",
+        "tenant",
+        "region"
+      ],
+      "additionalProperties": false
+    },
+    "__schema119": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^https:\\/\\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:\\/[A-Za-z0-9._~/-]*)?$"
+    },
+    "__schema120": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "__schema121": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+    },
+    "__schema122": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "__schema123": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "__schema124": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/__schema125"
+        },
+        "cache": {
+          "$ref": "#/$defs/__schema125"
+        },
+        "download": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "__schema125": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 1024,
+      "pattern": "^\\/[^\\0]*$"
+    },
     "TurboCache": {
       "type": "object",
       "properties": {
         "api": {
-          "$ref": "#/$defs/__schema119"
+          "$ref": "#/$defs/__schema126"
         }
       },
       "required": [
@@ -1624,7 +1735,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema119": {
+    "__schema126": {
       "anyOf": [
         {
           "type": "string",
@@ -1636,6 +1747,10 @@
           "pattern": "^https:\\/\\/[A-Za-z0-9._:/-]+$"
         }
       ]
+    },
+    "__schema127": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{1,30}$"
     }
   },
   "$id": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",

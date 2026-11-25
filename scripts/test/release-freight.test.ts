@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import {
 	mkdirSync,
 	mkdtempSync,
@@ -9,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
+import { RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS } from "../lib/release-contract-script-build.mts";
 import {
 	announceVerdict,
 	awaitReleasePagesWall,
@@ -29,6 +31,8 @@ import {
 	releaseFreightManifest,
 	releasePagesWallBudgetMs,
 	releaseSource,
+	releaseWorkflowCredentials,
+	releaseWorkflowGithubAppScopeAllowed,
 	siteTree,
 	startReleasePagesWall,
 } from "../ci/create-github-release.mts";
@@ -43,6 +47,50 @@ const source = releaseSource({
 	HOBO_RELEASE_REVISION: COMMIT,
 	GITHUB_REF: "refs/heads/main",
 	GITHUB_RUN_ID: "42",
+});
+
+describe("releaseWorkflowCredentials", () => {
+	it("allows only release-probe and declared release cd-realize camp scopes", () => {
+		expect(releaseWorkflowGithubAppScopeAllowed("release-probe")).toBe(true);
+		expect(
+			releaseWorkflowGithubAppScopeAllowed(
+				"cd-realize:hobo-release-oci/oci-candidate",
+			),
+		).toBe(true);
+		expect(
+			releaseWorkflowGithubAppScopeAllowed("cd-realize:hobo-release-oci"),
+		).toBe(false);
+		expect(releaseWorkflowGithubAppScopeAllowed("registry:evil:pull")).toBe(
+			false,
+		);
+	});
+
+	it("resolves github-app:// for the job repository from GITHUB_TOKEN only", async () => {
+		const credentials = releaseWorkflowCredentials({
+			GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+			GITHUB_TOKEN: "synthetic-job-token",
+		});
+		await expect(
+			credentials.resolve("github-app://Hobo-Labs/HoBo", "release-probe"),
+		).resolves.toEqual({ token: "synthetic-job-token" });
+		await expect(
+			credentials.resolve("github-app://Other/Repo", "release-probe"),
+		).rejects.toThrow(/refuses github-app:\/\/Other\/Repo/u);
+		await expect(
+			credentials.resolve("github-app://Hobo-Labs/HoBo", "evil-scope"),
+		).rejects.toThrow(/scope evil-scope is not allowed/u);
+		await expect(
+			releaseWorkflowCredentials({
+				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+			}).resolve("github-app://Hobo-Labs/HoBo", "release-probe"),
+		).rejects.toThrow(/needs GITHUB_TOKEN/u);
+		await expect(
+			releaseWorkflowCredentials({
+				GITHUB_REPOSITORY: "",
+				GITHUB_TOKEN: "synthetic-job-token",
+			}).resolve("github-app://Hobo-Labs/HoBo", "release-probe"),
+		).rejects.toThrow(/needs GITHUB_REPOSITORY/u);
+	});
 });
 
 describe("releaseFreightManifest", () => {
@@ -275,6 +323,42 @@ describe("classifyRelease", () => {
 				reasons: [{ code: "planning-camp-unknown", message: "" }],
 			}),
 		).toMatchObject({ outcome: "blocked", codes: ["planning-camp-unknown"] });
+	});
+
+	it("redacts runtime-generated credentials from blocked Freight messages", () => {
+		const payload = randomBytes(16).toString("base64url");
+		const synthetic = `eyJhbGciOiJIUzI1NiJ9.${payload}.${randomBytes(24).toString("base64url")}`;
+		const raw = `ghcr publish refused bearer ${synthetic}`;
+		const verdict = classifyRelease("p", {
+			state: "PROMOTION_STATE_ROLLING_OUT",
+			reasons: [],
+			observed: "RECONCILE_STATUS_BLOCKED",
+			observedReasons: [{ code: "RESOLVER_PROVIDER_REJECTED", message: raw }],
+		});
+		expect(verdict?.message).not.toContain(synthetic);
+		expect(verdict?.message).not.toContain(payload);
+		expect(verdict?.message).toMatch(/ghcr publish refused/i);
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			announceVerdict(
+				"oci",
+				"candidate",
+				"f",
+				verdict ?? {
+					outcome: "blocked",
+					codes: [],
+					message: "",
+					promotionId: "p",
+				},
+				{},
+			);
+			expect(error.mock.calls[0]?.[0]).toBeDefined();
+			const line = String(error.mock.calls[0]?.[0]);
+			expect(line).not.toContain(synthetic);
+			expect(line).not.toContain(payload);
+		} finally {
+			error.mockRestore();
+		}
 	});
 });
 
@@ -570,6 +654,18 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		const gate = job("release-pr-gate");
 		expect(gate).toMatch(/needs: \[[^\]]*\brelease-realize\b[^\]]*\]/u);
 		expect(gate).toContain("needs.release-realize.result");
+	});
+
+	it("builds script package dist before release-contract vitest", () => {
+		const contract = job("release-contract");
+		for (const pkg of RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS) {
+			expect(contract).toContain(`--filter=${pkg}`);
+		}
+		before(
+			contract,
+			"Build release-contract script dependencies",
+			"pnpm exec vitest run",
+		);
 	});
 
 	it("runs and triggers on the release Freight CLI tests", () => {

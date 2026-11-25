@@ -239,7 +239,7 @@ export function createAgentVaultBroker(
 			);
 			const proxies = await api.listProxies(project.projectId);
 			const existing = proxies.find(
-				(proxy) => proxy.name === AGENT_VAULT_PROXY_NAME,
+				(entry) => entry.name === AGENT_VAULT_PROXY_NAME,
 			);
 			const started =
 				existing === undefined
@@ -259,7 +259,7 @@ export function createAgentVaultBroker(
 				);
 			proxy = await options
 				.launch({ command, siteUrl, proxyToken: started.proxyToken })
-				.catch((error) =>
+				.catch((error: unknown) =>
 					refuse(
 						"HOBO_AGENT_VAULT_PROXY_FAILED",
 						error instanceof AgentVaultProxyStartError

@@ -116,6 +116,50 @@ export async function ensureStoreCli(
 	return { command: installedPath, installed: true };
 }
 
+function releaseOf(text: string): readonly number[] | undefined {
+	const match = /\b(\d+)\.(\d+)\.(\d+)\b/u.exec(text);
+	return match === null ? undefined : match.slice(1).map(Number);
+}
+
+function atLeast(found: readonly number[], wanted: readonly number[]): boolean {
+	for (const [index, part] of wanted.entries()) {
+		const have = found[index] ?? 0;
+		if (have !== part) return have > part;
+	}
+	return true;
+}
+
+async function servesAgentVault(
+	run: RunCommand,
+	command: string,
+): Promise<boolean> {
+	const answer = await run(command, ["--version"]);
+	const found = releaseOf(answer.stdout);
+	const wanted = releaseOf(INFISICAL_CLI_VERSION) ?? [];
+	return answer.code === 0 && found !== undefined && atLeast(found, wanted);
+}
+
+export async function ensureInfisicalAgentVaultCli(
+	options: EnsureStoreCliOptions,
+): Promise<string> {
+	const found = await ensureStoreCli(INFISICAL_CLI, options);
+	if (await servesAgentVault(options.run, found.command)) return found.command;
+	const installedPath = INFISICAL_CLI.installedPath(options.toolsDir);
+	if (
+		found.command !== installedPath &&
+		(options.exists ?? existsSync)(installedPath) &&
+		(await servesAgentVault(options.run, installedPath))
+	)
+		return installedPath;
+	const result = await INFISICAL_CLI.install(options.run, options.toolsDir);
+	if (result.code !== 0)
+		throw new StoreCliInstallError(
+			INFISICAL_CLI.bin,
+			result.stderr || result.stdout,
+		);
+	return installedPath;
+}
+
 export class StoreCliInstallError extends Error {
 	constructor(
 		readonly bin: string,

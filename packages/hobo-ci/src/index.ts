@@ -1,4 +1,15 @@
 export {
+	type AgentVaultProxyLaunch,
+	type AgentVaultProxyProcess,
+	type AgentVaultProxyRoute,
+	AgentVaultProxyStartError,
+	agentVaultProxyAgentOptions,
+	agentVaultProxyArguments,
+	agentVaultProxyFetch,
+	agentVaultProxyLauncher,
+	type LaunchAgentVaultProxy,
+} from "./agent-vault-proxy.js";
+export {
 	GITHUB_APP_HOSTS,
 	type GithubAppHost,
 	type GithubAppHostResolution,
@@ -230,6 +241,7 @@ export {
 	type Env,
 	type OpenedSecretStore,
 	openSecretStore,
+	type OwnerAgentVault,
 	type SecretStoreDeps,
 	type SecretStoreId,
 	type SecretStoreOpening,
@@ -237,6 +249,7 @@ export {
 export {
 	type CommandEnv,
 	type CommandResult,
+	ensureInfisicalAgentVaultCli,
 	ensureStoreCli,
 	hoboToolsDir,
 	INFISICAL_CLI,

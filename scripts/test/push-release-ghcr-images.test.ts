@@ -79,7 +79,7 @@ describe("release-hobo publish and attest, one image per job", () => {
 		expect(resolver).toContain(
 			"node --no-warnings scripts/ci/ensure-ci-worker-image.mts --resolve-digest",
 		);
-		expect(resolver).toMatch(/timeout-minutes: 5/u);
+		expect(resolver).toMatch(/timeout-minutes: 15/u);
 		expect(resolver).toMatch(
 			/permissions:\n\s+contents: read\n\s+packages: read/u,
 		);

@@ -10,18 +10,37 @@ import type { CommandModule } from "@hobo/cli";
 import {
 	BreakGlassService,
 	CrossEnvGrantStore,
+	type ElevatedCapabilityIssuer,
 	EnvMembershipService,
 	type IsolationClass,
 	mintElevatedAccessCapability,
 	parseIsolationClass,
 } from "@hobo/connectivity";
+import { createInMemoryKms, JwtSvidIssuer } from "@hobo/identity";
 import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
+
+const LOCAL_SVID_ISSUER = "spiffe://hobo.local";
+const SVID_KEY_ID = "presenter-svid-1";
+
+function createLocalSvidIssuer(
+	issuerUrl: string = LOCAL_SVID_ISSUER,
+): ElevatedCapabilityIssuer {
+	const kms = createInMemoryKms();
+	kms.generateRsaKey(SVID_KEY_ID);
+	return new JwtSvidIssuer({
+		issuerUrl,
+		kms,
+		activeKeyId: SVID_KEY_ID,
+		jwksKeyIds: [SVID_KEY_ID],
+	});
+}
 
 export interface AccessCommandDeps {
 	readonly env?: NodeJS.ProcessEnv;
 	readonly membership?: EnvMembershipService;
 	readonly crossEnv?: CrossEnvGrantStore;
 	readonly breakGlass?: BreakGlassService;
+	readonly elevatedIssuer?: ElevatedCapabilityIssuer;
 	readonly now?: () => string;
 }
 
@@ -57,6 +76,9 @@ export function createAccessCommand(
 			const crossEnv = deps.crossEnv ?? new CrossEnvGrantStore({ tenant, now });
 			const breakGlass =
 				deps.breakGlass ?? new BreakGlassService({ tenant, now });
+			const elevatedIssuer = (): ElevatedCapabilityIssuer =>
+				deps.elevatedIssuer ??
+				createLocalSvidIssuer(env.HOBO_SVID_ISSUER ?? LOCAL_SVID_ISSUER);
 
 			// SAFETY: assertion required at this I/O or test boundary.
 			const sub = (args[0] ?? "status") as string;
@@ -138,14 +160,14 @@ export function createAccessCommand(
 						approver,
 						ttlSeconds: duration,
 					});
-					const minted = mintElevatedAccessCapability({
+					const minted = await mintElevatedAccessCapability({
 						subject,
 						isolationClass: targetClass,
 						issuedBy: approver,
 						ttlSeconds: duration,
 						evidence: { kind: "break-glass", ref: granted.id },
 						priorAuthnClass: "development",
-						allowDefaultSecret: true,
+						issuer: elevatedIssuer(),
 						now: now(),
 					});
 					emitProgress(
@@ -215,7 +237,7 @@ export function createAccessCommand(
 					: undefined),
 			});
 
-			const minted = mintElevatedAccessCapability({
+			const minted = await mintElevatedAccessCapability({
 				subject,
 				isolationClass: targetClass,
 				issuedBy: actor,
@@ -225,7 +247,7 @@ export function createAccessCommand(
 					kind: "lower-env-authn",
 					ref: grant.id,
 				},
-				allowDefaultSecret: true,
+				issuer: elevatedIssuer(),
 				now: now(),
 			});
 

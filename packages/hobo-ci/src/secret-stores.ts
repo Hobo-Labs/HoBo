@@ -14,6 +14,7 @@ import {
 	createInfisicalClient,
 	createInfisicalSecretsPort,
 	githubActionsJwtSource,
+	type InfisicalAgentVaultApi,
 	infisicalBindingFromEnv,
 	infisicalSecretRef,
 	oidcAuth,
@@ -72,11 +73,17 @@ import {
 
 export type SecretStoreId = SecretStoreOption["id"];
 
+export type OwnerAgentVault = Readonly<{
+	api: InfisicalAgentVaultApi;
+	siteUrl: string;
+}>;
+
 /** An opened store: the port, and how to name a stored entry without its value. */
 export interface OpenedSecretStore {
 	readonly id: SecretStoreId;
 	readonly port: SecretsPort;
 	readonly reference: (name: string) => string;
+	readonly agentVault?: OwnerAgentVault;
 }
 
 export type SecretStoreOpening =

@@ -6,6 +6,7 @@ import {
 	CampClaimRecordSchema,
 	CampManagement,
 	DepartureAction,
+	ReasonRecordSchema,
 	ReconcileObservationRecordSchema,
 	ReconcilerMode,
 	ReconcileStatus,
@@ -13,6 +14,7 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
 import type { DriftPolicy, Realizer } from "../../src/ports.js";
+import { sanitizeReasons } from "../../src/reconcile/errors.js";
 import {
 	createCampReconciler,
 	createDriftPolicy,
@@ -68,6 +70,7 @@ function harness(
 		id: string,
 		holderId = "host-1",
 		r: Realizer = realizer,
+		t = transport,
 	) =>
 		createCampReconciler({
 			store,
@@ -77,7 +80,7 @@ function harness(
 			mode: ReconcilerMode.CONDUCTOR,
 			campIds: [CAMP],
 			holderId,
-			transport,
+			transport: t,
 			realizer: r,
 			drift: opts.drift ?? createDriftPolicy(),
 			telemetry: sink,
@@ -106,6 +109,343 @@ const V1 = [
 ];
 
 describe("createCampReconciler", () => {
+	it("does not start a pass after cancellation", async () => {
+		const h = harness();
+		const controller = new AbortController();
+		controller.abort();
+		let claims = 0;
+		const transport = {
+			...h.transport,
+			claim: async (...args: Parameters<typeof h.transport.claim>) => {
+				claims++;
+				return h.transport.claim(...args);
+			},
+		};
+		const observation = await h
+			.reconciler("r1", "host-1", h.realizer, transport)
+			.reconcileOnce(CAMP, { ...h.ctx, signal: controller.signal });
+		expect(observation.reasons[0]?.code).toBe("reconcile-cancelled");
+		expect(claims).toBe(0);
+		expect(h.realizer.mutatingCalls).toEqual([]);
+	});
+
+	it.each([
+		"feed",
+		"resolved",
+		"renew",
+		"report",
+	] as const)("does not dispatch a target mutation when cancelled during %s", async (phase) => {
+		const h = harness();
+		const controller = new AbortController();
+		const original = h.transport;
+		const transport = {
+			...original,
+			feed: async function* (...args: Parameters<typeof original.feed>) {
+				for await (const change of original.feed(...args)) yield change;
+				if (phase === "feed") controller.abort();
+			},
+			resolved: async (...args: Parameters<typeof original.resolved>) => {
+				const out = await original.resolved(...args);
+				if (phase === "resolved") controller.abort();
+				return out;
+			},
+			renew: async (...args: Parameters<typeof original.renew>) => {
+				const out = await original.renew(...args);
+				if (phase === "renew") controller.abort();
+				return out;
+			},
+			report: async (...args: Parameters<typeof original.report>) => {
+				const out = await original.report(...args);
+				if (phase === "report") controller.abort();
+				return out;
+			},
+		};
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const observation = await h
+			.reconciler("r1", "host-1", h.realizer, transport)
+			.reconcileOnce(CAMP, { ...h.ctx, signal: controller.signal });
+		expect(observation.reasons.map((entry) => entry.code)).toContain(
+			"reconcile-cancelled",
+		);
+		expect(h.realizer.mutatingCalls).toEqual([]);
+	});
+
+	it("does not mutate after the status report is refused", async () => {
+		const h = harness();
+		const transport = {
+			...h.transport,
+			report: async () => ({
+				ok: false as const,
+				reasons: [create(ReasonRecordSchema, { code: "stale-fence" })],
+			}),
+		};
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const observation = await h
+			.reconciler("r1", "host-1", h.realizer, transport)
+			.reconcileOnce(CAMP, h.ctx);
+		expect(observation.status).toBe(ReconcileStatus.BLOCKED);
+		expect(observation.reasons.map((entry) => entry.code)).toContain(
+			"stale-fence",
+		);
+		expect(h.realizer.mutatingCalls).toEqual([]);
+	});
+
+	it("reports an unknown outcome after an interrupted dispatched mutation", async () => {
+		const h = harness();
+		const controller = new AbortController();
+		const original = h.realizer.converge.bind(h.realizer);
+		h.realizer.converge = async (input, ctx) => {
+			await original(input, ctx);
+			controller.abort();
+			throw new Error("synthetic-private-provider.invalid");
+		};
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const observation = await h
+			.reconciler("r1")
+			.reconcileOnce(CAMP, { ...h.ctx, signal: controller.signal });
+		expect(h.realizer.mutatingCalls).not.toEqual([]);
+		expect(observation.reasons.map((entry) => entry.code)).toContain(
+			"realize-outcome-unknown",
+		);
+		expect(JSON.stringify(observation)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
+	});
+
+	it("normalizes untrusted observation and claim timestamps before reporting", async () => {
+		const h = harness();
+		const marker = "synthetic-private-observation.invalid";
+		h.realizer.observe = async () =>
+			create(ReconcileObservationRecordSchema, {
+				status: ReconcileStatus.BLOCKED,
+				observedAt: marker,
+				claims: [create(CampClaimRecordSchema, { observedAt: marker })],
+			});
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
+		const expected = new Date(h.clock.now()).toISOString();
+		expect(observation.observedAt).toBe(expected);
+		expect(observation.claims[0]?.observedAt).toBe(expected);
+		expect(
+			JSON.stringify({ observation, journal: statusEvents(h.store, CAMP) }),
+		).not.toContain(marker);
+	});
+
+	it.each([
+		"claim",
+		"renew",
+		"report",
+		"checkpoint",
+		"resolved",
+	] as const)("sanitizes returned %s transport refusal details", async (phase) => {
+		const h = harness();
+		const marker = "synthetic-private-transport.invalid";
+		const refusal = {
+			ok: false as const,
+			reasons: [
+				create(ReasonRecordSchema, {
+					code: marker,
+					message: marker,
+					remediation: marker,
+					subject: marker,
+				}),
+			],
+		};
+		const transport = { ...h.transport, [phase]: async () => refusal };
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const observation = await h
+			.reconciler("r1", "host-1", h.realizer, transport)
+			.reconcileOnce(CAMP, h.ctx);
+		expect(observation.status).toBe(ReconcileStatus.BLOCKED);
+		expect(observation.reasons.map((entry) => entry.code)).toContain(
+			"transport-detail-redacted",
+		);
+		expect(
+			JSON.stringify({
+				observation,
+				journal: statusEvents(h.store, CAMP),
+				telemetry: h.sink.points,
+			}),
+		).not.toContain(marker);
+	});
+
+	it("redacts RESOLVER_CREDENTIAL_MISSING provider detail", async () => {
+		const h = harness();
+		const marker = "installation token missing for ghcr.io";
+		h.realizer.observe = async () =>
+			create(ReconcileObservationRecordSchema, {
+				status: ReconcileStatus.BLOCKED,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code: "RESOLVER_CREDENTIAL_MISSING",
+						message: marker,
+						remediation: marker,
+						subject: marker,
+					}),
+				],
+			});
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
+		expect(observation.reasons[0]?.code).toBe("RESOLVER_CREDENTIAL_MISSING");
+		expect(observation.reasons[0]?.message).toBe(
+			"The realizer reported a condition.",
+		);
+		expect(JSON.stringify(observation)).not.toContain(marker);
+	});
+
+	it("replaces resolver refusal detail with a generic operator message", () => {
+		const detail =
+			"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "RESOLVER_PROVIDER_REJECTED",
+					message: detail,
+					remediation: detail,
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message).toBe("The realizer reported a condition.");
+	});
+
+	it("redacts runtime-generated credentials from surfaced resolver detail", () => {
+		const marker = `runtime-${Date.now()}`;
+		const synthetic = `Bearer eyJhbGciOiJIUzI1NiJ9.${marker}.${"y".repeat(40)}`;
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "RESOLVER_CREDENTIAL_MISSING",
+					message: `token rejected: ${synthetic}`,
+					remediation: "x",
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message).toBe("The realizer reported a condition.");
+		expect(JSON.stringify(reason)).not.toContain(synthetic);
+		expect(JSON.stringify(reason)).not.toContain(marker);
+	});
+
+	it("still redacts runner-host detail", () => {
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "runner-host-verify-failed",
+					message: "synthetic-secret",
+					remediation: "x",
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message).toBe("The realizer reported a condition.");
+	});
+
+	it.each([
+		["observe", "realize-blocked", "realize-blocked"],
+		["converge", "realize-blocked", "realize-blocked"],
+		["observe", "catalog-binding-invalid", "catalog-binding-invalid"],
+		[
+			"converge",
+			"npm-provenance-bundle-missing",
+			"npm-provenance-bundle-missing",
+		],
+		["observe", "npm-oidc-scoped-unsupported", "npm-oidc-scoped-unsupported"],
+		["converge", "runner-host-verify-failed", "runner-host-verify-failed"],
+		["observe", "runner-host-rollback-failed", "runner-host-rollback-failed"],
+		["converge", "HOBO_CI_DEPLOY_NOT_READY", "HOBO_CI_DEPLOY_NOT_READY"],
+		[
+			"observe",
+			"synthetic-private-provider.invalid",
+			"realizer-detail-redacted",
+		],
+		[
+			"converge",
+			"runner-host-verify-failed: synthetic-private-provider.invalid",
+			"realizer-detail-redacted",
+		],
+		[
+			"observe",
+			"HOBO_CI_DEPLOY_NOT_READY-synthetic-private-provider.invalid",
+			"realizer-detail-redacted",
+		],
+	] as const)("sanitizes %s realizer reason %s", async (phase, code, expected) => {
+		const h = harness();
+		const marker = "synthetic-private-provider.invalid";
+		h.realizer[phase] = async () =>
+			create(ReconcileObservationRecordSchema, {
+				status: ReconcileStatus.BLOCKED,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code,
+						message: marker,
+						remediation: marker,
+						subject: marker,
+					}),
+				],
+			});
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
+		expect(observation.status).toBe(ReconcileStatus.BLOCKED);
+		expect(observation.reasons[0]).toMatchObject({
+			code: expected,
+			subject: CAMP,
+		});
+		expect(observation.reasons[0]?.remediation).toBeTruthy();
+		const journal = JSON.stringify(
+			statusEvents(h.store, CAMP).map((event) => event.data),
+		);
+		expect(journal).toContain(expected);
+		expect(
+			JSON.stringify({ observation, journal, telemetry: h.sink.points }),
+		).not.toContain(marker);
+	});
+
+	it.each([
+		"runner-host-verify-failed",
+		"realize-outcome-unknown",
+	] as const)("does not accept realizer-only code %s from a transport refusal", async (code) => {
+		const h = harness();
+		const marker = "synthetic-private-transport.invalid";
+		const transport = {
+			...h.transport,
+			claim: async () => ({
+				ok: false as const,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code,
+						message: marker,
+						remediation: marker,
+						subject: marker,
+					}),
+				],
+			}),
+		};
+		const observation = await h
+			.reconciler("r1", "host-1", h.realizer, transport)
+			.reconcileOnce(CAMP, h.ctx);
+		expect(observation.reasons[0]).toMatchObject({
+			code: "transport-detail-redacted",
+			subject: CAMP,
+		});
+		expect(
+			JSON.stringify({ observation, telemetry: h.sink.points }),
+		).not.toContain(marker);
+	});
+
 	it("converges a new Set and reports ReconcileStarted → StatusObserved → Converged on the status stream", async () => {
 		const h = harness();
 		const resolved = resolvedFor(CAMP, V1);
@@ -126,6 +466,99 @@ describe("createCampReconciler", () => {
 			),
 		).toBe(true);
 		expect(h.realizer.mutatingCalls).toEqual(["apply:api", "apply:db"]);
+	});
+
+	it.each([
+		"observe",
+		"converge",
+	] as const)("redacts a thrown %s error from the returned and journaled observation", async (phase) => {
+		const h = harness();
+		const marker = "synthetic-private-provider.invalid";
+		h.realizer[phase] = async () => {
+			throw new Error(marker);
+		};
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const obs = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
+		const recorded = JSON.stringify(
+			statusEvents(h.store, CAMP).map((event) => event.data),
+		);
+		expect(obs.status).toBe(ReconcileStatus.BLOCKED);
+		expect(obs.reasons.map((entry) => entry.code)).toContain(
+			phase === "observe" ? "realize-failed" : "realize-outcome-unknown",
+		);
+		expect(obs.reasons[0]?.remediation).toBeTruthy();
+		expect(JSON.stringify(obs)).not.toContain(marker);
+		expect(recorded).toContain(
+			phase === "observe" ? "realize-failed" : "realize-outcome-unknown",
+		);
+		expect(recorded).not.toContain(marker);
+	});
+
+	it.each([
+		"claim",
+		"renew",
+		"report",
+		"checkpoint",
+		"resolved",
+	] as const)("redacts a backend failure from the %s transport refusal", async (phase) => {
+		const h = harness();
+		const marker = "synthetic-private-journal.invalid";
+		const fail = async () => {
+			throw new Error(marker);
+		};
+		const request = {
+			reconcilerId: asReconciler("r1"),
+			campId: CAMP,
+			holderId: "host-1",
+			ttlMs: 30_000,
+		};
+		const resolved = resolvedFor(CAMP, V1);
+		const set = setFor(CAMP, resolved, 1);
+		const first = await h.transport.claim(request);
+		if (!first.ok) throw new Error("fixture lease refused");
+		const lease = first.value;
+		let result: Awaited<
+			ReturnType<
+				(typeof h.transport)[
+					| "claim"
+					| "renew"
+					| "report"
+					| "checkpoint"
+					| "resolved"]
+			>
+		>;
+		if (phase === "claim") {
+			h.store.claimSubscription = fail;
+			result = await h.transport.claim(request);
+		} else if (phase === "renew") {
+			h.store.renewSubscription = fail;
+			result = await h.transport.renew(lease);
+		} else if (phase === "report") {
+			h.store.append = fail;
+			result = await h.transport.report(
+				lease,
+				create(ReconcileObservationRecordSchema, {
+					campId: CAMP,
+					reconcilerId: lease.reconcilerId,
+					fenceToken: lease.fence.toString(),
+				}),
+			);
+		} else if (phase === "checkpoint") {
+			h.store.commitCheckpoint = fail;
+			result = await h.transport.checkpoint(lease, 1n as never);
+		} else {
+			h.desired.resolved = fail;
+			result = await h.transport.resolved(lease, set);
+		}
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reasons[0]?.code).toBe(
+				phase === "resolved" ? "resolved-set-missing" : "store-unavailable",
+			);
+			expect(result.reasons[0]?.remediation).toBeTruthy();
+		}
+		expect(JSON.stringify(result)).not.toContain(marker);
 	});
 
 	it("I4: two reconcilers with different ids on one Camp — one writes, the other is fenced out", async () => {

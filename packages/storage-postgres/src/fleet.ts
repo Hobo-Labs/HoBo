@@ -38,13 +38,12 @@
  * on the new writer.
  */
 import {
-	assignmentKey,
 	type ContinuityFleetPlan,
 	continuityBudgetCheck,
 	type FleetBudgetCheck,
 	type FleetFinancialModel,
-	readCurrentAssignment,
 } from "@hobo/backend-fleet";
+import { assignmentKey, readCurrentAssignment } from "@hobo/fleet/assignment";
 import type {
 	AppendOptions,
 	AppendResult,

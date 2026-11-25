@@ -834,12 +834,18 @@ importers:
       '@hobo/events':
         specifier: workspace:*
         version: link:../events
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
       '@hobo/policy':
         specifier: workspace:*
         version: link:../policy
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../provider-redaction
       '@hobo/registry':
         specifier: workspace:*
         version: link:../registry
@@ -1129,6 +1135,15 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@hobo/fleet-agent':
+        specifier: workspace:*
+        version: link:../fleet-agent
+      '@hobo/fleet-nats':
+        specifier: workspace:*
+        version: link:../fleet-nats
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../provider-redaction
@@ -1181,6 +1196,9 @@ importers:
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
       pg:
         specifier: 8.22.0
         version: 8.22.0
@@ -2140,6 +2158,9 @@ importers:
       '@hobo/backend-fleet':
         specifier: workspace:*
         version: link:../backend-fleet
+      '@hobo/backend-routing':
+        specifier: workspace:*
+        version: link:../backend-routing
       '@hobo/bindings':
         specifier: workspace:*
         version: link:../bindings
@@ -2164,6 +2185,9 @@ importers:
       '@hobo/ci':
         specifier: workspace:*
         version: link:../ci
+      '@hobo/ci-dashboard':
+        specifier: workspace:*
+        version: link:../ci-dashboard
       '@hobo/ci-gh-actions':
         specifier: workspace:*
         version: link:../ci-gh-actions
@@ -2197,6 +2221,21 @@ importers:
       '@hobo/data':
         specifier: workspace:*
         version: link:../data
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
+      '@hobo/fleet-agent':
+        specifier: workspace:*
+        version: link:../fleet-agent
+      '@hobo/fleet-authority':
+        specifier: workspace:*
+        version: link:../fleet-authority
+      '@hobo/fleet-nats':
+        specifier: workspace:*
+        version: link:../fleet-nats
+      '@hobo/fleet-p2p':
+        specifier: workspace:*
+        version: link:../fleet-p2p
       '@hobo/hobo-cd':
         specifier: workspace:*
         version: link:../hobo-cd
@@ -3935,6 +3974,9 @@ importers:
       '@hobo/data-postgres':
         specifier: workspace:*
         version: link:../data-postgres
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       pg:
         specifier: 8.22.0
         version: 8.22.0
@@ -19590,30 +19632,9 @@ snapshots:
       es-module-lexer: 1.7.0
       oxc-parser: 0.76.0
 
-  '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
-    dependencies:
-      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
-      '@bytecodealliance/wizer': 10.0.0
-      es-module-lexer: 1.7.0
-      oxc-parser: 0.76.0
-    transitivePeerDependencies:
-      - '@emnapi/core'
-      - '@emnapi/runtime'
-
-  '@bytecodealliance/componentize-js@0.21.0':
-    dependencies:
-      '@bytecodealliance/jco': 1.24.3
-      '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
-      '@bytecodealliance/wizer': 10.0.0
-      es-module-lexer: 1.7.0
-      oxc-parser: 0.76.0
-    transitivePeerDependencies:
-      - '@emnapi/core'
-      - '@emnapi/runtime'
-
   '@bytecodealliance/componentize-js@0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
     dependencies:
-      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
+      '@bytecodealliance/jco': 1.24.3
       '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
       '@bytecodealliance/wizer': 10.0.0
       es-module-lexer: 1.7.0
@@ -19672,24 +19693,8 @@ snapshots:
 
   '@bytecodealliance/jco@1.24.3':
     dependencies:
-      '@bytecodealliance/componentize-js': 0.21.0
-      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3'
-      '@bytecodealliance/jco-transpile': 0.3.9
-      '@bytecodealliance/preview2-shim': 0.17.9
-      '@bytecodealliance/preview3-shim': 0.1.2
-      binaryen: 130.0.0
-      commander: 14.0.3
-      mkdirp: 3.0.1
-      ora: 8.2.0
-      terser: 5.48.0
-    transitivePeerDependencies:
-      - '@emnapi/core'
-      - '@emnapi/runtime'
-
-  '@bytecodealliance/jco@1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)':
-    dependencies:
       '@bytecodealliance/componentize-js': 0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)
-      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)'
+      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3'
       '@bytecodealliance/jco-transpile': 0.3.9
       '@bytecodealliance/preview2-shim': 0.17.9
       '@bytecodealliance/preview3-shim': 0.1.2

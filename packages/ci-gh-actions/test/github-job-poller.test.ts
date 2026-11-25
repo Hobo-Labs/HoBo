@@ -164,6 +164,15 @@ class FakeGithub implements GithubTransport {
 			/^\/repos\/Org\/Repo\/actions\/runs\?status=(queued|in_progress)&per_page=50$/.exec(
 				path,
 			);
+		if (
+			path ===
+			"/repos/Org/Repo/actions/runs?status=in_progress&per_page=25&page=1"
+		) {
+			return Response.json(
+				{ workflow_runs: this.runs.in_progress.map((id) => ({ id })) },
+				{ headers },
+			);
+		}
 		if (list?.[1] === "queued" || list?.[1] === "in_progress")
 			return Response.json(
 				{
@@ -372,7 +381,7 @@ describe("GitHub job poller", () => {
 					},
 				],
 			},
-			fleetJobs: {
+			runnerJobs: {
 				completedAt: new Date(NOW).toISOString(),
 				inProgress: [{ label: "hobo", runnerName: "hobo-r2" }],
 			},
@@ -647,7 +656,7 @@ describe("GitHub job poller", () => {
 			now: () => clock,
 		});
 		const summary = await poller.poll();
-		expect(summary.fleetJobs).toEqual({
+		expect(summary.runnerJobs).toEqual({
 			completedAt: new Date(NOW).toISOString(),
 			inProgress: [
 				{
@@ -666,7 +675,7 @@ describe("GitHub job poller", () => {
 		clock += 10_000;
 		const paused = await poller.poll();
 		expect(paused.pausedUntil).toBeDefined();
-		expect(paused.fleetJobs).toBeUndefined();
+		expect(paused.runnerJobs).toBeUndefined();
 	});
 
 	it("pauses until the rate-limit reset instead of hammering GitHub", async () => {
