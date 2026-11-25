@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inMemoryState } from "alchemy";
@@ -64,21 +64,28 @@ export interface BetterAuthHostHarness {
 	readonly stage: string;
 	readonly dotEnv: BetterAuthHostDotEnv;
 	readonly sqlite: ":memory:";
+	readonly sessionStorePath: string;
 	createInMemoryAlchemyState(): ReturnType<typeof inMemoryState>;
 	dispose(): void;
 }
 
 export function createBetterAuthHostHarness(): BetterAuthHostHarness {
 	const directory = mkdtempSync(join(tmpdir(), "hobo-better-auth-host-"));
+	const alchemyHome = join(directory, "alchemy");
+	mkdirSync(alchemyHome, { recursive: true });
+	const relationalDir = join(alchemyHome, "relational");
+	mkdirSync(relationalDir, { recursive: true });
+	const sessionStorePath = join(relationalDir, "session.db");
 	const previousHome = process.env.ALCHEMY_HOME;
 	const previousTelemetry = process.env.ALCHEMY_TELEMETRY_DISABLED;
-	process.env.ALCHEMY_HOME = join(directory, "alchemy");
+	process.env.ALCHEMY_HOME = alchemyHome;
 	process.env.ALCHEMY_TELEMETRY_DISABLED = "1";
 	return {
 		stackName: "better-auth-host",
 		stage: "test",
 		dotEnv: BETTER_AUTH_HOST_DOTENV_FIXTURE,
 		sqlite: ":memory:",
+		sessionStorePath,
 		createInMemoryAlchemyState: () => inMemoryState(),
 		dispose() {
 			if (previousHome === undefined) delete process.env.ALCHEMY_HOME;
