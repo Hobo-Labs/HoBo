@@ -25,7 +25,11 @@ import {
 	copiedSession,
 	startFakeInfisical,
 } from "./support/fake-infisical-api.js";
-import { fakeNeon, fakeVercel } from "./support/fake-providers.js";
+import {
+	fakeNeon,
+	fakeVercel,
+	fakeVercelCli,
+} from "./support/fake-providers.js";
 import { startTlsWorld } from "./support/tls-world.js";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -81,7 +85,17 @@ function virtualClock() {
 async function runSchedule(schedule: Schedule) {
 	const api = await startFakeInfisical("org-1");
 	api.seedJournalFleet();
-	const vercel = fakeVercel();
+	const vercelCli = fakeVercelCli(
+		mkdtempSync(path.join(tmpdir(), "hobo-explore-vercel-")),
+		path.join(
+			REPO,
+			"packages",
+			"cd-vercel",
+			"deploy",
+			"secret-store.binding.json",
+		),
+	);
+	const vercel = fakeVercel(vercelCli.staged);
 	const neon = fakeNeon();
 	const world = await startTlsWorld({
 		"app.infisical.com": api.handle,
@@ -106,6 +120,8 @@ async function runSchedule(schedule: Schedule) {
 		XDG_CONFIG_HOME: config,
 		XDG_STATE_HOME: config,
 		CLAUDE_CODE_REMOTE: "true",
+		HOBO_VERCEL_CLI: vercelCli.cli,
+		GITHUB_HEAD_REF: process.env.GITHUB_HEAD_REF || "hobo-explore",
 		HTTPS_PROXY: world.proxyUrl,
 		HTTP_PROXY: world.proxyUrl,
 		NO_PROXY: "",

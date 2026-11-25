@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
@@ -10,7 +11,24 @@ import {
 	type CdContext,
 	ReconcilerMode,
 } from "@hobo/cd";
-import { createDpopProof, generateAgentKey } from "@hobo/cd/agent";
+import { CredentialRequestSchema } from "@hobo/fleet";
+import {
+	agentKeyFromJwk,
+	generateReconcilerKeys,
+	inProcessDeliveryFleet,
+	reconcilerEnrollment,
+} from "@hobo/cd/agent";
+import { parseTenantId } from "@hobo/core";
+import {
+	ApprovalMode,
+	CoordinationMode,
+	FleetRecordSchema,
+	parseFleetId,
+	parseMemberId,
+	type VerifiedToken,
+} from "@hobo/fleet";
+import { mintDpopProof } from "@hobo/fleet/keys";
+import { createTestAuthority } from "@hobo/fleet/testing";
 import {
 	type CdIssuerSigningKey,
 	type CdIssuerWinner,
@@ -27,6 +45,39 @@ import { injectedCdSvidIssuer } from "../src/cd-svid-issuer.js";
 import { campIdOf, staticTopologyReader } from "../src/cd-topology.js";
 
 const origin = "https://cd.fixture.invalid";
+const fixtureFleetOrigin = "https://authority.fleet.test";
+const fixtureFleetId = parseFleetId("fixture-fleet");
+const fixtureTenant = parseTenantId("test");
+
+async function fixtureDeliveryFleet(now = () => Date.now()) {
+	const composed = await createTestAuthority(now);
+	const station: VerifiedToken = {
+		kind: "person",
+		principal: { kind: "service", id: "cd-station" },
+		tenant: fixtureTenant,
+		tags: ["fleet-admin"],
+		jkt: "cd-station",
+		expiresAtMs: Number.MAX_SAFE_INTEGER,
+	};
+	const defined = await composed.authority.defineFleet(
+		create(FleetRecordSchema, {
+			fleetId: fixtureFleetId,
+			tenant: fixtureTenant,
+			owner: "service:cd-station",
+			coordination: CoordinationMode.MANY_ACTIVE,
+			policy: { approval: ApprovalMode.SINGLE },
+		}),
+		station,
+	);
+	if (!defined.ok) throw new Error(defined.error.message);
+	return inProcessDeliveryFleet({
+		authority: composed.authority,
+		tenant: fixtureTenant,
+		fleet: fixtureFleetId,
+		origin: fixtureFleetOrigin,
+		station,
+	});
+}
 
 function authorities() {
 	const values = new Map<string, string>();
@@ -520,6 +571,7 @@ describe("injected CD SVID issuer", () => {
 			};
 		});
 		const readSecret = vi.fn(async () => undefined);
+		const fleet = await fixtureDeliveryFleet();
 		const campId = campIdOf("fixture", "prod");
 		const topology = staticTopologyReader([
 			{
@@ -543,6 +595,7 @@ describe("injected CD SVID issuer", () => {
 				openSigningKey,
 				readSecret,
 				topology: [topology],
+				fleet,
 			});
 		const access = {
 			kind: "authenticated" as const,
@@ -567,7 +620,8 @@ describe("injected CD SVID issuer", () => {
 				access,
 			});
 			let svid = "";
-			const agentKey = generateAgentKey();
+			const reconcilerKeys = generateReconcilerKeys();
+			const agentSign = agentKeyFromJwk(reconcilerKeys.sign);
 			try {
 				expect(await status(server.port, tls.cert, "/readyz")).toBe(200);
 				expect(await status(server.port, tls.cert, "/v1/cd/camps")).toBe(401);
@@ -597,11 +651,20 @@ describe("injected CD SVID issuer", () => {
 					operator("fixture-a"),
 				);
 				if (!issued.ok) throw new Error(issued.reasons[0]?.code);
+				const agent = await reconcilerEnrollment({
+					keys: reconcilerKeys,
+					token: issued.value.token,
+					tenant: fixtureTenant,
+					fleet: fixtureFleetId,
+					origin: fixtureFleetOrigin,
+					nowMs: Date.now(),
+					agentVersion: "1.0.0",
+				});
 				const enrolled = await first.value.cd.enrollment.enroll(
 					{
-						token: issued.value.token,
-						publicJwk: agentKey.publicJwk,
-						claims: [],
+						request: agent.request,
+						dpopProof: agent.dpopProof,
+						campIds: [campId],
 					},
 					operator("fixture-a"),
 				);
@@ -623,22 +686,32 @@ describe("injected CD SVID issuer", () => {
 						)
 					).ok,
 				).toBe(true);
-				const activated = await first.value.cd.enrollment.activate(
+				const memberId = parseMemberId(id);
+				const credentialUrl = `${fixtureFleetOrigin}/v1/fleet/members/${memberId}/credentials`;
+				const refreshed = await first.value.cd.enrollment.refresh(
 					{
-						reconcilerId: id,
-						dpopProof: createDpopProof({
-							privateJwk: agentKey.privateJwk,
-							method: "POST",
-							url: `${origin}/v1/cd/svid/refresh`,
-							iatSeconds: Math.floor(Date.now() / 1000),
-							jti: "fixture-activate",
+						memberId,
+						request: create(CredentialRequestSchema, {
+							generation: 0,
+							refreshNonce: randomBytes(16),
+							agentVersion: "1.0.0",
+						}),
+						dpopProof: await mintDpopProof(
+							agentSign.signer,
+							agentSign.publicJwk,
+							{
+							htm: "POST",
+							htu: credentialUrl,
+							nowMs: Date.now(),
 						}),
 					},
 					operator("fixture-a"),
 				);
-				if (!activated.ok) throw new Error(activated.reasons[0]?.code);
-				svid = activated.value.svid;
-				expect(sign).toHaveBeenCalled();
+				if (!refreshed.ok)
+					throw new Error(
+						refreshed.reasons.map((r) => `${r.code}: ${r.message}`).join("; "),
+					);
+				svid = refreshed.value.svid;
 			} finally {
 				await server.close();
 			}
@@ -648,12 +721,13 @@ describe("injected CD SVID issuer", () => {
 			if (!restarted.ok) return;
 			try {
 				expect(restarted.value.issuerKeyId).toBe(expectedKey);
-				const proof = createDpopProof({
-					privateJwk: agentKey.privateJwk,
-					method: "GET",
-					url: `${origin}/v1/cd/feed`,
-					iatSeconds: Math.floor(Date.now() / 1000),
-					jti: "fixture-after-restart",
+				const proof = await mintDpopProof(
+					agentSign.signer,
+					agentSign.publicJwk,
+					{
+					htm: "GET",
+					htu: `${origin}/v1/cd/feed`,
+					nowMs: Date.now(),
 					accessToken: svid,
 				});
 				const verified = await restarted.value.cd.enrollment.verify({
