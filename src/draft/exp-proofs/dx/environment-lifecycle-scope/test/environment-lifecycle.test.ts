@@ -37,7 +37,7 @@ test("M0 dependencies map authoritative design sources and owning initiatives", 
     "docs/design/security-networking.md#plan-50",
     "docs/design/support-sla-channels.md",
     "docs/design/backup-restore.md",
-    "docs/design/resource-garbage-collection.md",
+    "https://linear.app/quickdeploy-ai/document/resource-garbage-collection-scope-and-acceptance-archived-62969e85b633",
   ]);
   assert.deepEqual(ENVIRONMENT_LIFECYCLE_SCOPE.adrRefs, [
     "docs/design/adr/02-identity-security.md#adr-0077",

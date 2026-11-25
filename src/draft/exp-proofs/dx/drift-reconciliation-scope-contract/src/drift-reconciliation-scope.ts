@@ -235,7 +235,7 @@ export const DRIFT_RECONCILIATION_SCOPE = Object.freeze({
     "docs/design/reliability-observability-cost.md#plan-05",
     "docs/design/operators-sre.md#plan-40",
     "docs/design/contracts-policy-flags.md#plan-29",
-    "docs/design/resource-garbage-collection.md",
+    "https://linear.app/quickdeploy-ai/document/resource-garbage-collection-scope-and-acceptance-archived-62969e85b633",
     "docs/design/support-sla-channels.md",
   ]),
   adrRefs: Object.freeze([

@@ -13,7 +13,7 @@ script artifact slice.
 
 ## Evidence
 
-- Source record: [`customer-onboarding.md`](../../customer-onboarding.md).
+- Source record: [`customer-onboarding.md`](https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3).
 - Workspace source: [`workspace-onboarding-ux.md`](../../workspace-onboarding-ux.md).
 - Beta feedback source: [`beta-pilot-feedback.md`](../../beta-pilot-feedback.md).
 - Quickstart source: [`resource-lifecycle-quickstart-examples`](../resource-lifecycle-quickstart-examples/README.md).

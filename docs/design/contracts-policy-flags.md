@@ -18,7 +18,7 @@ make pure isolation testing and domain-effect mocks machine-driven; effect
 widening participates in `checkCompatibility` / can-deploy. Resiliency stays
 secondary — visible in Gatekeeper reasons, CLI describe, MCP export, and events —
 and never becomes a primary control-plane noun. Application of retry schedules
-must obey [`dx-sdk-resilience-semantics.md`](./dx-sdk-resilience-semantics.md)
+must obey [`dx-sdk-resilience-semantics.md`](https://linear.app/quickdeploy-ai/document/dx-sdk-resilience-semantics-archived-112e69714185)
 (never retry `policy.Decided` deny or terminal failures; inspection is
 replay-derived). Package surface: `@hobo/contracts` + effect-aware
 `@hobo/contract-harness`.

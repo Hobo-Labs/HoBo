@@ -27,7 +27,7 @@ test("HOBO-514 parent scope has concrete M0 acceptance, design refs, and initiat
   assert.ok(DX_SDK_RESILIENCE_SCOPE_CONTRACT.designRefs.includes("docs/design/README.md"));
   assert.ok(
     DX_SDK_RESILIENCE_SCOPE_CONTRACT.designRefs.includes(
-      "docs/design/dx-sdk-resilience-semantics.md",
+      "https://linear.app/quickdeploy-ai/document/dx-sdk-resilience-semantics-archived-112e69714185",
     ),
   );
   assert.ok(DX_SDK_RESILIENCE_SCOPE_CONTRACT.designRefs.includes("docs/design/sdk-contracts.md"));
