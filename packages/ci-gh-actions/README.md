@@ -2122,9 +2122,10 @@ The title check needs a pull request event (for a `pull_request_target` run
 from a fork, the pull request is found from the run's head) and takes its
 allowed types from the step or from `checks.prTitle.types` in `.hobo/ci.json`.
 The lint check is off unless `checks.lint` is set; it runs `actionlint`,
-`shellcheck`, `oxlint`, `ruff` and `typos` on the commit's archive (read by
-following GitHub's redirect to codeload, see `RelayArchiveAccess`) in a
-sandbox with no network
+`shellcheck`, `oxlint`, `oxfmt`, `ruff`, `zizmor`, and `typos` on the commit's
+archive (read by following GitHub's redirect to codeload, see
+`RelayArchiveAccess`), optionally scoped by a `paths` glob input (including
+`!` exclusions), in a sandbox with no network
 (`createDockerLintSandbox`), five minutes per tool and eight minutes for the
 whole check (the relay renews no job lock, so a slow or hung tool ends as
 "Lint timed out" inside the lock), and reports one result per tool and 50
@@ -2186,3 +2187,28 @@ poller. No relay has run with a flag on against GitHub yet.
 an HTTPS start-fence endpoint before workflow steps run. It requires a bounded
 response with a matching JSON authorization receipt and rejects redirects,
 network failures, and mismatched runner context.
+
+## RelayRunner `runs-on` syntax, Alchemy Domain, and Rivet host
+
+GitHub Actions relay logic stays strictly isolated inside `@hobo/ci-gh-actions`
+(never exposed to neutral `@hobo/ci` or other CI provider packages):
+
+- **Structured `runs-on` parser (`@hobo/ci-gh-actions/domain`)**:
+  `parseGhRunsOn` and `formatGhRunsOn` support `hobo`, `hobo-relay`,
+  `relayrunner`, array forms, and slash-delimited RelayRunner-style overrides
+  such as `hobo/first=depot/size=8/machine=self-hosted,macOS/depot=auto/runs-on=runs-on=123/runner=8cpu-linux-x64/github=ubuntu-24.04`,
+  plus `parseGhRelayInputs` for `hobo-relay` workflow inputs (`first`, `size`,
+  `machine`, provider overrides, and `wait`).
+- **Alchemy Domain (`@hobo/ci-gh-actions/domain`)**:
+  `GhRelayModel` (`GhMachinePool`, `GhRelayRouter`, `GhRelayJob`,
+  `AnswerGhRelayJob` saga, `GhRelayJobQueuedPolicy`, `GhRunnerProtocol` &
+  `GhLintSandbox` externals, and `GhRelayActivityView` / `GhMachinePoolView` /
+  `GhProviderHealthView` materialized views) verified with `Domain.verify` and
+  `Story.make` BDD tests in `test/gh-relay-domain.test.ts`.
+- **Portable Host & Rivet (`@hobo/ci-gh-actions/host`)**:
+  `createGhRelayInMemoryLayer`, `createGhRelaySqliteLayer`,
+  `createGhRelayRivetLayer` (`@alchemy.run/domain/Rivet` Durable Objects), and
+  `createGhPickRunnerRegistry` (RivetKit SQLite pick-runner actor with real-time
+  `relayUpdated` broadcasts and scheduled stale-job rescue), verified in
+  `test/gh-relay-host.test.ts`.
+

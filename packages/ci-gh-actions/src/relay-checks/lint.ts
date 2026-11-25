@@ -5,7 +5,9 @@ export const LINT_TOOLS = [
 	"actionlint",
 	"shellcheck",
 	"oxlint",
+	"oxfmt",
 	"ruff",
+	"zizmor",
 	"typos",
 ] as const;
 export type LintTool = (typeof LINT_TOOLS)[number];
@@ -27,10 +29,12 @@ export const LINT_TOOL_COMMANDS: ReadonlyMap<LintTool, readonly string[]> =
 			],
 		],
 		["oxlint", ["oxlint", "--format", "unix"]],
+		["oxfmt", ["oxfmt", "--check", "."]],
 		[
 			"ruff",
 			["ruff", "check", "--no-cache", "--output-format", "concise", "."],
 		],
+		["zizmor", ["zizmor", "--format", "plain", ".github/workflows"]],
 		["typos", ["typos", "--format", "brief"]],
 	]);
 
@@ -40,6 +44,7 @@ export type LintRun = Readonly<{
 	archive: Uint8Array;
 	timeoutMs: number;
 	network: "none";
+	paths?: readonly string[] | undefined;
 }>;
 
 export type LintRunResult = Readonly<{
@@ -69,6 +74,88 @@ export type LintToolResult = Readonly<{
 
 const FINDING = /^(.+?):(\d+):(\d+):\s*(.+)$/u;
 const NOT_INSTALLED = 127;
+
+export function lintPathsOf(
+	text: string | undefined,
+):
+	| Readonly<{ ok: true; paths: readonly string[] }>
+	| Readonly<{ ok: false; problem: string }> {
+	if (text === undefined || text.trim() === "") return { ok: true, paths: [] };
+	const patterns = [
+		...new Set(
+			text
+				.split(/[\r\n,]+/u)
+				.map((entry) => entry.trim())
+				.filter((entry) => entry !== ""),
+		),
+	];
+	for (const pattern of patterns) {
+		if (pattern.startsWith("/") || pattern.includes(".."))
+			return {
+				ok: false,
+				problem: `the lint path pattern "${pattern}" must be relative to the repository root`,
+			};
+	}
+	return { ok: true, paths: patterns };
+}
+
+function globToRegExp(pattern: string): RegExp {
+	const normalized = pattern.replace(/^\.\//u, "");
+	let regex = "^";
+	for (let index = 0; index < normalized.length; index += 1) {
+		const ch = normalized[index] ?? "";
+		if (ch === "*" && normalized[index + 1] === "*") {
+			if (normalized[index + 2] === "/") {
+				regex += "(?:.*/)?";
+				index += 2;
+			} else {
+				regex += ".*";
+				index += 1;
+			}
+			continue;
+		}
+		if (ch === "*") {
+			regex += "[^/]*";
+			continue;
+		}
+		if (ch === "?") {
+			regex += "[^/]";
+			continue;
+		}
+		regex += ch.replace(/[.+^${}()|[\]\\]/gu, "\\$&");
+	}
+	regex += "$";
+	return new RegExp(regex, "u");
+}
+
+export function matchesLintPaths(
+	file: string,
+	paths: readonly string[],
+): boolean {
+	if (paths.length === 0) return true;
+	const normalized = file.replace(/^\.\//u, "");
+	let matched = false;
+	let sawPositive = false;
+	for (const raw of paths) {
+		if (raw.startsWith("!")) {
+			const negated = raw.slice(1).trim();
+			if (negated !== "" && globToRegExp(negated).test(normalized))
+				matched = false;
+			continue;
+		}
+		sawPositive = true;
+		if (globToRegExp(raw).test(normalized)) matched = true;
+	}
+	if (!sawPositive) {
+		for (const raw of paths) {
+			const negated = raw.slice(1).trim();
+			if (negated !== "" && globToRegExp(negated).test(normalized))
+				return false;
+		}
+		return true;
+	}
+	return matched;
+}
 
 export function lintToolsOf(
 	text: string | undefined,
@@ -132,6 +219,7 @@ export function lintToolResult(
 	tool: LintTool,
 	run: LintRunResult,
 	timeoutMs: number,
+	paths: readonly string[] = [],
 ): LintToolResult {
 	if (run.timedOut)
 		return {
@@ -147,8 +235,15 @@ export function lintToolResult(
 			summary: "is not installed in the sandbox image",
 			findings: [],
 		};
-	const findings = lintFindings(tool, run.output);
-	if (run.exitCode === 0 && findings.length === 0)
+	const allFindings = lintFindings(tool, run.output);
+	const findings =
+		paths.length === 0
+			? allFindings
+			: allFindings.filter((finding) => matchesLintPaths(finding.file, paths));
+	if (
+		(run.exitCode === 0 && findings.length === 0) ||
+		(paths.length > 0 && allFindings.length > 0 && findings.length === 0)
+	)
 		return { tool, passed: true, summary: "passed", findings };
 	if (findings.length > 0)
 		return {
