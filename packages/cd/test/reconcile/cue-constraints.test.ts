@@ -169,6 +169,18 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 				detailKind: "repository-mismatch",
 			}).ok,
 		).toBe(false);
+		const pagesReject = validateReasonStructuredDetail({
+			credentialRef: "github-app://Hobo-Labs/HoBo",
+			requestedScope: "cd-realize:hobo-release/pages-candidate",
+			detailKind: "github-permission-missing",
+		});
+		if (!pagesReject) throw new Error("expected github pages structured fixture");
+		expect(
+			vet(
+				"ReasonStructuredDetail",
+				toJson(ReasonStructuredDetailSchema, pagesReject),
+			).ok,
+		).toBe(true);
 	});
 
 	it("rejects a BLOCKED observation without a reason and a malformed drift kind", () => {

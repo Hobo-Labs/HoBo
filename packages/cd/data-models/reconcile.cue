@@ -40,9 +40,16 @@ package cd
 	detailKind: "repository-mismatch"
 }
 
+#reconcileReasonStructuredGithubPages: {
+	credentialRef: #releaseFreightCredentialRef
+	requestedScope: #releaseFreightScope
+	detailKind: "github-credential-rejected" | "github-permission-missing" | "github-rate-limited" | "github-pages-disabled" | "github-pages-source-mismatch" | "github-ref-not-fast-forward" | "github-pages-build-errored" | "github-pages-deployment-failed" | "github-pages-artifact-unavailable"
+}
+
 #reconcileReasonStructured:
 	#reconcileReasonStructuredScope |
-	#reconcileReasonStructuredRepositoryMismatch
+	#reconcileReasonStructuredRepositoryMismatch |
+	#reconcileReasonStructuredGithubPages
 
 ReasonStructuredDetail: #reconcileReasonStructured
 

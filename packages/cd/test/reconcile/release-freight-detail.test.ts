@@ -14,6 +14,7 @@ import {
 	parseReleaseFreightAuthorMessage,
 	ReleaseFreightBlockedError,
 	releaseFreightLogFragment,
+	releaseFreightVerdictCodesForAnnounce,
 	sanitizeReleaseFreightVerdictCodes,
 	validateReasonStructuredDetail,
 } from "../../src/reconcile/release-freight-detail.js";
@@ -138,17 +139,48 @@ describe("sanitizeObservation release freight structured verdict", () => {
 	});
 });
 
+describe("releaseFreightVerdictCodesForAnnounce", () => {
+	it("recovers resolver codes dropped by lowercase-only filtering", () => {
+		expect(
+			releaseFreightVerdictCodesForAnnounce([], "RESOLVER_PROVIDER_REJECTED"),
+		).toEqual(["RESOLVER_PROVIDER_REJECTED"]);
+	});
+});
+
 describe("sanitizeReleaseFreightVerdictCodes", () => {
 	it("strips invalid and injected code material", () => {
 		expect(
 			sanitizeReleaseFreightVerdictCodes([
 				"realize-failed",
 				"npm-provenance-bundle-missing",
+				"RESOLVER_PROVIDER_REJECTED",
 				"INJECTED\n::error::",
 				"",
 				"Uppercase",
 			]),
-		).toEqual(["realize-failed", "npm-provenance-bundle-missing"]);
+		).toEqual([
+			"realize-failed",
+			"npm-provenance-bundle-missing",
+			"RESOLVER_PROVIDER_REJECTED",
+		]);
+	});
+});
+
+describe("formatReleaseFreightBlockedReason for github pages", () => {
+	it("prints provider, pages-reason, scope, and credential", () => {
+		const detail = validateReasonStructuredDetail({
+			credentialRef: "github-app://Hobo-Labs/HoBo",
+			requestedScope: "cd-realize:hobo-release/pages-candidate",
+			detailKind: "github-permission-missing",
+		});
+		expect(
+			formatReleaseFreightBlockedReason(
+				"RESOLVER_PROVIDER_REJECTED",
+				detail,
+			),
+		).toBe(
+			"RESOLVER_PROVIDER_REJECTED: provider=github pages-reason=github-permission-missing scope=cd-realize:hobo-release/pages-candidate credential=github-app://Hobo-Labs/HoBo",
+		);
 	});
 });
 
