@@ -149,7 +149,7 @@ export interface VibePlanDiffReviewPrototype {
   readonly issue: "HOBO-560";
   readonly phase: "M2";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-plan-diff-review-prototype";
-  readonly proofNote: "docs/design/proofs/vibe-plan-diff-review-prototype/README.md";
+  readonly proofNote: "https://linear.app/quickdeploy-ai/document/plan-diff-review-prototype-proof-archived-5c92d7f5beb8";
   readonly designRefs: readonly string[];
   readonly sourceDependencies: readonly PlanDiffSourceDependency[];
   readonly quickstartFixtureRefs: readonly PlanDiffQuickstartFixtureRef[];
@@ -342,7 +342,7 @@ export const VIBE_PLAN_DIFF_REVIEW_PROTOTYPE = {
   issue: "HOBO-560",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/ux/vibe-plan-diff-review-prototype",
-  proofNote: "docs/design/proofs/vibe-plan-diff-review-prototype/README.md",
+  proofNote: "https://linear.app/quickdeploy-ai/document/plan-diff-review-prototype-proof-archived-5c92d7f5beb8",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f",
     "docs/design/developer-experience.md#plan-07",
@@ -408,7 +408,7 @@ export function parseVibePlanDiffReviewPrototype(value: JsonValue): VibePlanDiff
   );
   expectLiteral(
     prototype.proofNote,
-    "docs/design/proofs/vibe-plan-diff-review-prototype/README.md",
+    "https://linear.app/quickdeploy-ai/document/plan-diff-review-prototype-proof-archived-5c92d7f5beb8",
     "proofNote",
   );
 
