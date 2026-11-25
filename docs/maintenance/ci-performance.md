@@ -805,6 +805,11 @@ with `pnpm exec vitest run`, and `scripts/relevant-check-policy.ts` selects four
 `scripts/test/script-test-runners.test.ts` holds each of those invocations to the runner
 `test:scripts` gives the same file.
 
+GitHub's native `.github/workflows/actions.lock` must be regenerated with
+`gh actions-lock` when verify fails: apply the CI `actions-lock-patch` artifact
+(do not hand-add `actions/cache/restore` or `actions/cache/save` lock keys;
+composites pin restore/save in YAML under the existing `actions/cache@` entry).
+
 ## Checks that went stale on main
 
 No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so these
