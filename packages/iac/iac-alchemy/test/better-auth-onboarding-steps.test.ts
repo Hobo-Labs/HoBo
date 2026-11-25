@@ -26,20 +26,27 @@ describe("better-auth onboarding steps", () => {
 		const database = openBetterAuthSessionStore(harness.sessionStorePath);
 		try {
 			const inputs = parseBetterAuthHostDotEnv(harness.dotEnv);
-			const bundlePlan = planBetterAuthBundle(inputs.configInput, inputs.portsInput);
+			const bundlePlan = planBetterAuthBundle(
+				inputs.configInput,
+				inputs.portsInput,
+			);
 			const migrations = planBetterAuthRelationalMigrations(bundlePlan);
 			const port = createMemorySecretsPort({ id: "secrets:onboarding" });
-			const secretName = campSecretNameFromBetterAuthRef(bundlePlan.config.secretRef);
+			const secretName = campSecretNameFromBetterAuthRef(
+				bundlePlan.config.secretRef,
+				inputs.campAuthority,
+			);
 			await port.put(secretName, SYNTHETIC_SIGNING);
 			const wire = await wireBetterAuthSigningSecret(bundlePlan, port, {
+				campAuthority: inputs.campAuthority,
 				now: "2026-11-25T00:00:00.000Z",
 			});
 			const signedIn = recordSyntheticBetterAuthSignIn(database);
 			expect(migrations.migrationPlan.steps.length).toBeGreaterThan(0);
 			expect(wire.secretRef).toBe(inputs.configInput.secretRef);
-			expect(loadSyntheticBetterAuthSession(database, signedIn.sessionToken)).toEqual(
-				signedIn,
-			);
+			expect(
+				loadSyntheticBetterAuthSession(database, signedIn.sessionToken),
+			).toEqual(signedIn);
 		} finally {
 			database.close();
 			harness.dispose();
