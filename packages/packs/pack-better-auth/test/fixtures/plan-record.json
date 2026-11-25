@@ -10,5 +10,15 @@
 		"relational_bindle": "auth_db",
 		"http_bindle": "auth_api",
 		"signing_secret_ref": "hobo-secret://camp-prod/auth/better-auth-signing-key"
+	},
+	"parsed_config": {
+		"contract": "hobo.auth-adapter/v1",
+		"adapter_id": "better-auth",
+		"base_path": "/api/auth",
+		"secret_ref": "hobo-secret://camp-prod/auth/better-auth-signing-key",
+		"database_profile": "data.relational/v1",
+		"email_and_password_enabled": true,
+		"social_providers": ["github"],
+		"organizations_enabled": true
 	}
 }

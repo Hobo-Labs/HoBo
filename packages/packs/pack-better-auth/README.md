@@ -23,8 +23,8 @@ infrastructure inside the adapter.
 
 ## HONEST SCOPE
 
-- **No `better-auth` dependency** in this package. The npm module is an optional
-  peer installed by the deployed bundle.
+- **No `better-auth` npm dependency** in this package or lockfile slice. Runtime
+  wiring lands in a later stack PR.
 - **No database provisioning, migration apply, or HTTP serving** yet. Relational
   schema planning and bundle gating only; SQL execution and runtime wiring land
   in follow-up PRs per
@@ -38,9 +38,10 @@ package mint **parsed domain types** (`BetterAuthConfig`,
 `BetterAuthBundlePortRefs`, `BetterAuthBundlePlan`). Downstream code never
 re-checks primitive strings; an invalid locator or base path is unrepresentable
 past the parse boundary. `toBetterAuthBundlePlanRecord` projects a plan into
-the durable replay shape. Protobuf records live in
-`data-models/pack_better_auth.proto`, constrained by `pack_better_auth.cue`
-(`claims_mapping_version` is `better-auth-claims/v1`, bindle names allow `_`).
+the durable replay shape, including `parsed_config` with database profile,
+email/password, social providers, and organizations flags. Protobuf records live
+in `data-models/pack_better_auth.proto`, constrained by `pack_better_auth.cue`
+(`claims_mapping_version` is `better-auth-claims/v[1-9]+`, bindle names allow `_`).
 
 ## Commands, events, and durability
 

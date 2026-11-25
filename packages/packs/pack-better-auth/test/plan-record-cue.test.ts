@@ -21,6 +21,9 @@ const CONFIG_INPUT = {
 	basePath: "/api/auth",
 	secretRef: "hobo-secret://camp-prod/auth/better-auth-signing-key",
 	database: { profile: "data.relational/v1" },
+	emailAndPassword: { enabled: true },
+	socialProviders: ["github", "google"],
+	organizations: { enabled: true },
 } as const;
 
 const PORTS = {
@@ -33,27 +36,32 @@ describe("BetterAuthBundlePlanRecord CUE", () => {
 	it("vets a real planBetterAuthBundle record against pack_better_auth.cue", () => {
 		const plan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
 		const record = toBetterAuthBundlePlanRecord(plan);
+		expect(record.parsed_config.social_providers).toEqual(["github", "google"]);
+		expect(record.parsed_config.email_and_password_enabled).toBe(true);
 		const scratch = mkdtempSync(join(tmpdir(), "hobo-pack-better-auth-cue-"));
-		const dataFile = join(scratch, "plan.json");
-		writeFileSync(dataFile, JSON.stringify(record));
-		const result = spawnSync(
-			cueBin,
-			[
-				"vet",
-				"-c",
-				"-d",
-				"#BetterAuthBundlePlanRecord",
-				"pack_better_auth.cue",
-				dataFile,
-			],
-			{ cwd: dataModels, encoding: "utf8" },
-		);
-		if (result.error) {
-			throw result.error;
+		try {
+			const dataFile = join(scratch, "plan.json");
+			writeFileSync(dataFile, JSON.stringify(record));
+			const result = spawnSync(
+				cueBin,
+				[
+					"vet",
+					"-c",
+					"-d",
+					"#BetterAuthBundlePlanRecord",
+					"pack_better_auth.cue",
+					dataFile,
+				],
+				{ cwd: dataModels, encoding: "utf8" },
+			);
+			if (result.error) {
+				throw result.error;
+			}
+			expect(`${result.stdout}${result.stderr}`).toBe("");
+			expect(result.status).toBe(0);
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
 		}
-		expect(`${result.stdout}${result.stderr}`).toBe("");
-		expect(result.status).toBe(0);
-		rmSync(scratch, { recursive: true, force: true });
 	});
 
 	it("fixture documents the snake_case durable record shape", () => {
@@ -61,6 +69,7 @@ describe("BetterAuthBundlePlanRecord CUE", () => {
 			readFileSync(join(here, "fixtures", "plan-record.json"), "utf8"),
 		);
 		expect(fixture.claims_mapping_version).toBe("better-auth-claims/v1");
+		expect(fixture.parsed_config.database_profile).toBe("data.relational/v1");
 		expect(fixture.ports.relational_bindle).toBe("auth_db");
 	});
 });
