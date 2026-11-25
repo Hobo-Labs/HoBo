@@ -1,16 +1,3 @@
-/**
- * Regression guard: a package's tests may only reach workspace packages turbo
- * builds before the task that runs them.
- *
- * `@hobo/runtime`'s `test/authoring/actor.test.ts` imported
- * `../../../runtimes/runtime-local/dist/actor-host/in-memory.js`, and nothing
- * ordered `@hobo/runtime-local#build` before `@hobo/runtime#test`. So
- * `turbo run test --filter=@hobo/runtime` never built it, and the test failed on
- * any checkout where nothing else had. The fixtures below hold the checker to
- * turbo's own graph: which dependency fields it orders, which task an
- * override names, which files a task runs, and every way a test file names a
- * module. The last test holds the repository to zero.
- */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -86,7 +73,6 @@ const base = {
 	"packages/lib/src/index.ts": "export const x = 1;\n",
 };
 
-/** git in `cwd`, unsigned, as a throwaway identity; its trimmed output. */
 function git(cwd: string, ...args: string[]): string {
 	return execFileSync(
 		"git",
@@ -105,7 +91,6 @@ function git(cwd: string, ...args: string[]): string {
 		.trim();
 }
 
-/** The check's CLI on `dir`, with `CI` unset unless given. */
 function cli(dir: string, args: readonly string[], ci?: string) {
 	const env = { ...process.env };
 	delete env.CI;
@@ -131,17 +116,14 @@ const found = (dir: string) =>
 		(item) => `${item.file} [${item.task}] -> ${item.imports}`,
 	);
 
-/** The report's unmodelled entries, as `<file>: <reason>`. */
 const unmodelledIn = (dir: string) =>
 	scanTestWorkspaceDeps(dir).unmodelled.map(
 		(item) => `${item.file}: ${item.reason}`,
 	);
 
-/** The unmodelled entry for an undeclared runtime reach. */
 const reaching = (file: string, names: string, text: string) =>
 	`${file}: reaches ${names} at run time through a path it assembles ("${text}"), which this check cannot follow; declare what it needs in ${REGISTRY}`;
 
-/** A workspace with `packages/runtimes/*`, `@s/rt` in it, and `@s/app` holding `files`. */
 const grouped = (files: Record<string, string>) => ({
 	...base,
 	"pnpm-workspace.yaml": `${base["pnpm-workspace.yaml"]}  - "packages/runtimes/*"\n`,
@@ -218,9 +200,6 @@ describe("importSpecifiersOf", () => {
 	});
 
 	it("reads nothing out of strings, comments or a test's source text, and nothing computed", () => {
-		// runtime-local's link-table and capability-grant-gate tests hold a
-		// Bindle's source as a string, `import { api, kv } from "@hobo/bindles"`
-		// included; they never load @hobo/bindles.
 		const source = [
 			"throw new Error('run: import { x } from \"@s/quoted\"');",
 			'// import { y } from "@s/line-comment";',
@@ -470,9 +449,6 @@ describe("checkTestWorkspaceDeps", () => {
 	});
 
 	it("counts a declaration only with a workspace: specifier, as pnpm 9 leaves link-workspace-packages off", () => {
-		// turbo 2.11.10 on a scratch workspace: `"a": "1.0.0"`, `"^1.0.0"`, `"*"`
-		// and `"link:../a"` schedule no a#build; `"workspace:*"`,
-		// `"workspace:^1.0.0"`, `"workspace:a@*"` and `"workspace:../a"` do.
 		const loads = 'import "../../lib/dist/index.js";\n';
 		const declares = (
 			name: string,
@@ -593,7 +569,6 @@ describe("checkTestWorkspaceDeps", () => {
 						"test:contract:consumer": "vitest run contracts/consumer",
 					},
 				}),
-				// `vitest run` runs this file too, so it needs the build before both tasks.
 				"packages/both/contracts/consumer/a.consumer.pact.test.ts":
 					'import { x } from "../../../lib/dist/index.js";\n',
 			},
@@ -606,15 +581,10 @@ describe("checkTestWorkspaceDeps", () => {
 	});
 
 	it("appends the inherited dependsOn where a package's turbo.json names $TURBO_EXTENDS$, and replaces it where not", () => {
-		// turbo 2.11.10 on a scratch workspace: with the root's `test` on
-		// ["build", "c#build"], a package's `["$TURBO_EXTENDS$", "a#build"]`
-		// schedules a, c and the package's own build, and `["a#build"]` only a.
-		// The inherited list is the root's `<pkg>#test` where it has one.
 		const extend = (dependsOn: string[]) =>
 			JSON.stringify({ extends: ["//"], tasks: { test: { dependsOn } } });
 		const app = (name: string) =>
 			manifest(name, { devDependencies: { "@s/mid": "workspace:*" } });
-		// mid's build is the package's own build's ^build; lib, x and y are named outright.
 		const loads = [
 			'import "../../mid/dist/index.js";',
 			'import "../../lib/dist/index.js";',
@@ -694,13 +664,11 @@ describe("checkTestWorkspaceDeps", () => {
 						"test:contract:consumer": "vitest run contracts/consumer",
 					},
 				}),
-				// The contract test reaches lib through two test/ helpers.
 				"packages/app/contracts/consumer/a.consumer.test.ts":
 					'import { x } from "../../test/helpers/outer.js";\n',
 				"packages/app/test/helpers/outer.ts": 'export * from "./inner";\n',
 				"packages/app/test/helpers/inner.ts":
 					'export { x } from "../../../lib/dist/index.js";\n',
-				// No contract test imports this one, so it runs under test only.
 				"packages/app/test/unit-helper.ts":
 					'export { x } from "../../lib/dist/index.js";\n',
 			},
@@ -787,7 +755,6 @@ describe("checkTestWorkspaceDeps", () => {
 					'export { x } from "../../lib/dist/index.js";\n',
 				"packages/app/test/b.test.ts": 'import "../services/svc.js";\n',
 				"packages/app/services/svc.ts": 'import "../../lib/dist/index.js";\n',
-				// No test imports this one.
 				"packages/app/src/unused.ts": 'import "../../lib/dist/index.js";\n',
 			},
 			(dir) =>
@@ -799,9 +766,6 @@ describe("checkTestWorkspaceDeps", () => {
 	});
 
 	it("classifies a relative reach into a sibling's source by what that source loads", () => {
-		// The sibling's source runs as written, so its own build is not needed:
-		// what it loads is. The draft proof foundations-build-conformance-harness
-		// reaches hobo-monorepo-skeleton-contract's src this way.
 		within(
 			{
 				...base,
@@ -813,7 +777,6 @@ describe("checkTestWorkspaceDeps", () => {
 				"packages/sib/src/plain.ts": 'export * from "./more.js";\n',
 				"packages/sib/src/more.ts": "export const p = 1;\n",
 				"packages/sib/src/needs-dep.ts": 'export * from "@s/dep";\n',
-				// Erased when app's test loads it, whatever sib's tsconfig compiles.
 				"packages/sib/src/types.ts":
 					'import type { D } from "@s/dep";\nexport type E = D;\n',
 				"packages/app/package.json": manifest("@s/app"),
@@ -854,8 +817,6 @@ describe("checkTestWorkspaceDeps", () => {
 			);
 		const lib =
 			'packages/app/package.json: "@s/lib": "catalog:", a catalog this check does not resolve; turbo may order the build it names';
-		// left-pad names no workspace package, so its catalog entry orders nothing,
-		// unless the catalog itself names a workspace package.
 		assert.deepEqual(unmodelled("catalog:\n  left-pad: 1.3.0\n"), [lib]);
 		assert.deepEqual(unmodelled('catalog:\n  left-pad: "workspace:*"\n'), [
 			lib,
@@ -890,8 +851,6 @@ describe("checkTestWorkspaceDeps", () => {
 			},
 			(dir) => {
 				const report = scanTestWorkspaceDeps(dir);
-				// turbo orders "1.2.3" against 1.2.3 and not "1.2.4"; a range or a tag
-				// it decides with a semver parser this check does not have.
 				assert.deepEqual(
 					report.violations.map((item) => `${item.package}: ${item.declared}`),
 					[
@@ -938,7 +897,6 @@ describe("checkTestWorkspaceDeps", () => {
 				git(sub, "add", ".");
 				git(sub, "commit", "-qm", "sub");
 				const subHead = git(sub, "rev-parse", "HEAD");
-				// A gitlink inside the submodule: a submodule of the submodule.
 				git(
 					sub,
 					"update-index",
@@ -999,7 +957,6 @@ describe("checkTestWorkspaceDeps", () => {
 					'import "../src/quiet.js";',
 					"",
 				].join("\n"),
-				// Spawns lib's built CLI by a path it assembles.
 				"packages/app/src/run.ts": [
 					'import { spawn } from "node:child_process";',
 					'import { join } from "node:path";',
@@ -1007,7 +964,6 @@ describe("checkTestWorkspaceDeps", () => {
 					'\tspawn(process.execPath, [join(root, "packages", "lib", "dist", "cli.js")]);',
 					"",
 				].join("\n"),
-				// Links lib's directory into a generated app, which then loads it.
 				"packages/app/src/link.ts": [
 					'import { symlinkSync } from "node:fs";',
 					'import { join } from "node:path";',
@@ -1015,7 +971,6 @@ describe("checkTestWorkspaceDeps", () => {
 					'\tsymlinkSync(join(root, "packages", "lib"), to, "dir");',
 					"",
 				].join("\n"),
-				// Names lib's directory, its own dist/, and loads nothing by a computed path.
 				"packages/app/src/quiet.ts": [
 					'export const docs = "see packages/lib for the API";',
 					'export const own = "packages/app/dist/index.js";',
@@ -1041,9 +996,7 @@ describe("checkTestWorkspaceDeps", () => {
 			grouped({
 				"packages/app/test/url.test.ts": `${SPAWN}spawn(process.execPath, [new URL("../../runtimes/rt/dist/x.js", import.meta.url).pathname]);\n`,
 				"packages/app/test/join.test.ts": `${SPAWN}${JOIN}const packagesDir = join(process.cwd(), "packages");\nspawn(process.execPath, [join(packagesDir, "runtimes", "rt", "dist", "x.js")]);\n`,
-				// Its directory's last segment alone still names it.
 				"packages/app/test/last.test.ts": `${SPAWN}${JOIN}spawn(process.execPath, [join(process.cwd(), "rt", "dist", "x.js")]);\n`,
-				// A segment between the anchor and the package is not part of its directory.
 				"packages/app/test/other.test.ts": `${SPAWN}spawn(process.execPath, ["../../vendor/runtimes/rt/dist/x.js"]);\n`,
 			}),
 			(dir) =>
@@ -1069,10 +1022,7 @@ describe("checkTestWorkspaceDeps", () => {
 			grouped({
 				"packages/app/test/link.test.ts": `${symlink}import { fileURLToPath } from "node:url";\nsymlinkSync(fileURLToPath(new URL("../../lib", import.meta.url)), "/tmp/x/lib", "dir");\n`,
 				"packages/app/test/grouped.test.ts": `${symlink}${JOIN}symlinkSync(join(process.cwd(), "..", "runtimes", "rt"), "/tmp/x/rt", "dir");\n`,
-				// A bare segment that happens to be a package's directory name is
-				// not a path to it, nor is one segment after a computed root.
 				"packages/app/test/bare.test.ts": `${symlink}${JOIN}symlinkSync("lib", "/tmp/x/lib", "dir");\nsymlinkSync(join(process.cwd(), "lib"), "/tmp/x/lib", "dir");\n`,
-				// Nothing here links or loads, so naming the directory reaches nothing.
 				"packages/app/test/quiet.test.ts":
 					'export const lib = new URL("../../lib", import.meta.url);\n',
 			}),
@@ -1097,17 +1047,11 @@ describe("checkTestWorkspaceDeps", () => {
 				"packages/app/test/join.test.ts": `${SPAWN}${JOIN}const name = "lib";\nspawn(process.execPath, [join(process.cwd(), "packages", name, "dist", "bin.js")]);\n`,
 				"packages/app/test/template.test.ts": `${SPAWN}${JOIN}const name = "lib";\nspawn(process.execPath, [join(process.cwd(), \`packages/\${name}/dist/bin.js\`)]);\n`,
 				"packages/app/test/group.test.ts": `${SPAWN}${JOIN}const name = "rt";\nspawn(process.execPath, [join(process.cwd(), "..", "runtimes", name, "dist", "x.js")]);\n`,
-				// The scope a workspace package's name is under is a group of packages.
 				"packages/app/test/scope.test.ts": `${symlink}${JOIN}export const link = (from: string, name: string) => symlinkSync(from, join("/tmp/x", \`node_modules/@s/\${name}\`), "dir");\n`,
-				// Relative to the file, ../../ is packages/.
 				"packages/app/test/climb.test.ts": `${symlink}for (const name of ["lib"]) symlinkSync(fileURLToPath(new URL(\`../../\${name}\`, import.meta.url)), "/tmp/x", "dir");\n`,
-				// A named package followed by a computed segment may be its dist/.
 				"packages/app/test/sub.test.ts": `${SPAWN}${JOIN}export const run = (file: string) => spawn(process.execPath, [join(process.cwd(), "packages", "lib", file)]);\n`,
-				// A computed package's tracked file needs no build.
 				"packages/app/test/manifest.test.ts": `${SPAWN}${JOIN}spawn("true");\nexport const manifest = (name: string) => join(process.cwd(), "packages", name, "package.json");\n`,
-				// A glob's literal * is not a computed segment, nor a computed root.
 				"packages/app/test/glob.test.ts": `${SPAWN}spawn("true");\nexport const globs = ["packages/*/dist/**", "*/lib/dist/x.js"];\n`,
-				// Nothing here links or loads, so a directory it computes reaches nothing.
 				"packages/app/test/quiet.test.ts": `${JOIN}export const dir = (name: string) => join(process.cwd(), "packages", name);\n`,
 			}),
 			(dir) =>
@@ -1143,7 +1087,6 @@ describe("checkTestWorkspaceDeps", () => {
 	});
 
 	it("knows a child process or a copy by a method, an alias, promisify, cpSync and fs.promises.cp", () => {
-		// A sibling's directory, which counts only in a file that runs or loads.
 		const lib = `${JOIN}const libDir = join(process.cwd(), "packages", "lib");\n`;
 		const ns = 'import * as cp from "node:child_process";\n';
 		const files = {
@@ -1157,10 +1100,7 @@ describe("checkTestWorkspaceDeps", () => {
 			"h-cp-sync": `import { cpSync } from "node:fs";\n${lib}cpSync(libDir, "/tmp/x", { recursive: true });\n`,
 			"i-fs-promises": `import * as fs from "node:fs";\n${lib}await fs.promises.cp(libDir, "/tmp/x", { recursive: true });\n`,
 			"j-fsp": `import { cp } from "node:fs/promises";\n${lib}await cp(libDir, "/tmp/x", { recursive: true });\n`,
-			// RegExp's exec runs nothing.
 			"k-regexp": `${lib}export const match = /lib/u.exec(libDir);\nconst re = /x/u;\nre.exec(libDir);\n`,
-			// A package name, or a scope and a computed name, at a string's start
-			// is a module name, not a path, though the file copies.
 			"l-names": `import { cpSync } from "node:fs";\ncpSync("/a", "/b", { recursive: true });\nexport const pkg = (app: string) => ({ name: \`@s/app-\${app}\`, dependencies: { "@s/lib": "workspace:*" } });\n`,
 		};
 		within(
@@ -1200,8 +1140,6 @@ describe("checkTestWorkspaceDeps", () => {
 			"f-file-url": run(
 				'new URL("file:///repo/packages/lib/dist/x.js").pathname',
 			),
-			// Anywhere in an absolute path only a package's whole directory names
-			// it: a stub tree under a temporary root is not lib.
 			"g-stub": run('"/tmp/stub/lib/dist/bin.js"'),
 		};
 		const computed = "a package it names by a computed segment";
@@ -1255,12 +1193,10 @@ describe("checkTestWorkspaceDeps", () => {
 			`${SPAWN}${JOIN}spawn(process.execPath, [join(process.cwd(), ${path})]);\n`;
 		within(
 			grouped({
-				// web compiles to build/, so its build/ is a reach and its dist/ is not.
 				"packages/web/package.json": manifest("@s/web"),
 				"packages/web/tsconfig.json": JSON.stringify({
 					compilerOptions: { outDir: "build" },
 				}),
-				// wk's build names a project, which extends a base that sets outDir.
 				"packages/wk/package.json": manifest("@s/wk", {
 					scripts: { build: "tsc -p tsconfig.build.json", test: "vitest run" },
 				}),
@@ -1378,8 +1314,6 @@ describe("checkTestWorkspaceDeps", () => {
 					(item) => `${item.file}: ${item.reason}`,
 				),
 			);
-		// An empty list, or one naming only the file's own package, silences
-		// the reach it declares.
 		const uncovered = `${REGISTRY}: "packages/app/src/run.ts" reaches @s/lib ("*/packages/lib/dist/cli.js"), and its entry does not name "@s/lib#build"`;
 		assert.deepEqual(staleIn([]), [empty, uncovered]);
 		assert.deepEqual(staleIn(["@s/app#build"]), [empty, uncovered]);
@@ -1392,8 +1326,6 @@ describe("checkTestWorkspaceDeps", () => {
 	});
 
 	it("refuses a declaration whose needs leave out a package the reader sees it reach", () => {
-		// run.ts reaches hobo's dist/ and its own package's; app's test orders
-		// lib and hobo, so only what the entry names can fail it.
 		const declared = (needs: string[]) => ({
 			...base,
 			"turbo.json": turbo({
@@ -1419,12 +1351,10 @@ describe("checkTestWorkspaceDeps", () => {
 					...report.stale.map((item) => `${item.file}: ${item.reason}`),
 				];
 			});
-		// The review's R2: a need is named, but not the package reached.
 		assert.deepEqual(problems(["@s/lib#build"]), [
 			`${REGISTRY}: "packages/app/src/run.ts" reaches @s/hobo ("*/packages/hobo/dist/bin.js"), and its entry does not name "@s/hobo#build"`,
 		]);
 		assert.deepEqual(problems(["@s/hobo#build"]), []);
-		// A need with no reach the reader can see stays allowed.
 		assert.deepEqual(problems(["@s/hobo#build", "@s/lib#build"]), []);
 		within(declared(["@s/lib#build"]), (dir) => {
 			const run = cli(dir, []);
@@ -1434,7 +1364,6 @@ describe("checkTestWorkspaceDeps", () => {
 	});
 
 	it("reads a path that climbs out of its temporary root, or a temporary directory made outside one, as a real reach", () => {
-		// The review's fixtures: each hides a real reach of hobo behind a stub.
 		const head =
 			'import { spawn } from "node:child_process";\nimport { mkdtempSync, symlinkSync } from "node:fs";\nimport { tmpdir } from "node:os";\nimport { join } from "node:path";\nimport { fileURLToPath } from "node:url";\nconst repoRoot = fileURLToPath(new URL("../../..", import.meta.url));\n';
 		const stubOnly = [
@@ -1460,7 +1389,6 @@ describe("checkTestWorkspaceDeps", () => {
 						devDependencies: { "@s/lib": "workspace:*" },
 					}),
 					"packages/app/test/a.test.ts": `${head}${body}`,
-					// An empty registry declares nothing, as no registry does.
 					[REGISTRY]: JSON.stringify({ reaches: reaches ?? [] }),
 				},
 				(dir) => {
@@ -1534,7 +1462,6 @@ describe("checkTestWorkspaceDeps", () => {
 				problems(body, reaches).some((problem) => problem.includes("@s/hobo")),
 				`${label}: the reach of @s/hobo is not seen`,
 			);
-		// What stays under a temporary root is still a stub.
 		const stubs: [string, string][] = [
 			[
 				"CTRL a true stub tree",
@@ -1552,9 +1479,6 @@ describe("checkTestWorkspaceDeps", () => {
 	it("accepts a stubOnly entry for a file whose only reaches are stub trees under a temporary root", () => {
 		const fs =
 			'import { mkdtempSync, writeFileSync } from "node:fs";\nimport { mkdtemp } from "node:fs/promises";\nimport { tmpdir } from "node:os";\n';
-		// Four ways to root a path at a temporary directory, all stubs of lib: a
-		// name bound to mkdtempSync, tmpdir() in a template, an awaited mkdtemp,
-		// and a /tmp/ literal.
 		const stub = `${fs}${JOIN}const root = mkdtempSync(join(tmpdir(), "x-"));\nwriteFileSync(join(root, "packages", "lib", "dist", "bin.js"), "");\nwriteFileSync(\`\${tmpdir()}/packages/lib/dist/x.js\`, "");\nwriteFileSync(join(await mkdtemp("/tmp/y-"), "packages", "lib", "dist", "y.js"), "");\nwriteFileSync("/tmp/z/packages/lib/dist/z.js", "");\n`;
 		const entry = (fields: {
 			readonly stubOnly: boolean;
@@ -1586,7 +1510,6 @@ describe("checkTestWorkspaceDeps", () => {
 					];
 				},
 			);
-		// Undeclared, a stub reach still fails: the reader may misjudge a root.
 		assert.deepEqual(report({ "packages/app/test/stub.test.ts": stub }), [
 			reaching(
 				"packages/app/test/stub.test.ts",
@@ -1598,7 +1521,6 @@ describe("checkTestWorkspaceDeps", () => {
 			report({ "packages/app/test/stub.test.ts": stub, ...entry(reason) }),
 			[],
 		);
-		// A real reach beside the stubs refuses the entry.
 		assert.deepEqual(
 			report({
 				"packages/app/test/stub.test.ts": `${stub}export const real = join(process.cwd(), "packages", "lib", "dist", "cli.js");\n`,
@@ -1608,8 +1530,6 @@ describe("checkTestWorkspaceDeps", () => {
 				`${REGISTRY}: "packages/app/test/stub.test.ts" is marked stubOnly, but reaches @s/lib ("*/packages/lib/dist/cli.js") outside a temporary root`,
 			],
 		);
-		// So does a name bound to a temporary directory in one place and to
-		// another directory in another: it is not visibly a stub.
 		assert.deepEqual(
 			report({
 				"packages/app/test/stub.test.ts": `${fs}${JOIN}export function a() {\n\tconst root = mkdtempSync(join(tmpdir(), "x-"));\n\treturn join(root, "packages", "lib", "dist", "a.js");\n}\nexport function b() {\n\tconst root = process.cwd();\n\treturn root;\n}\n`,
@@ -1619,8 +1539,6 @@ describe("checkTestWorkspaceDeps", () => {
 				`${REGISTRY}: "packages/app/test/stub.test.ts" is marked stubOnly, but reaches @s/lib ("*/packages/lib/dist/a.js") outside a temporary root`,
 			],
 		);
-		// A reason is required, and needs are not allowed.
-		// A refused entry declares nothing, so the reach is undeclared too.
 		for (const [fields, problem] of [
 			[{ stubOnly: true }, 'is stubOnly and needs a non-empty "reason"'],
 			[
@@ -1676,7 +1594,6 @@ describe("checkTestWorkspaceDeps", () => {
 	});
 
 	it("counts a need on a file's own package where another package's test loads the file", () => {
-		// packages/a/test/helpers.ts, which a#test and b#test both load.
 		const helper = (
 			target: string,
 			needs: string[] | undefined,
@@ -1691,7 +1608,6 @@ describe("checkTestWorkspaceDeps", () => {
 				"packages/a/test/helpers.ts": `${SPAWN}${JOIN}export const run = (root: string) => spawn(process.execPath, [join(root, "packages", "${target}", "dist", "x.js")]);\n`,
 				"packages/a/test/a.test.ts": 'import "./helpers.js";\n',
 				"packages/b/test/b.test.ts": 'import "../../a/test/helpers.js";\n',
-				// An empty registry declares nothing, as no registry does.
 				[REGISTRY]: JSON.stringify({
 					reaches:
 						needs === undefined
@@ -1711,20 +1627,16 @@ describe("checkTestWorkspaceDeps", () => {
 			});
 		};
 		const bOnA = { "@s/b#test": { dependsOn: ["build", "@s/a#build"] } };
-		// H1: a's own build is another package's for b#test, so it counts.
 		assert.deepEqual(helper("a", ["@s/a#build"], bOnA), []);
-		// H1b: undeclared, the reach fails.
 		assert.deepEqual(helper("a", undefined, bOnA), [
 			`reaches @s/a at run time through a path it assembles ("*/packages/a/dist/x.js"), which this check cannot follow; declare what it needs in ${REGISTRY}`,
 		]);
-		// H2: a#test is not ordered on hobo's build.
 		assert.deepEqual(
 			helper("hobo", ["@s/hobo#build"], {
 				"@s/b#test": { dependsOn: ["build", "@s/hobo#build"] },
 			}),
 			["violation @s/a#test -> @s/hobo"],
 		);
-		// H3: hobo is ordered for both, but the entry names lib only.
 		const both = { dependsOn: ["build", "@s/hobo#build", "@s/lib#build"] };
 		assert.deepEqual(
 			helper("hobo", ["@s/lib#build"], {
@@ -1832,7 +1744,6 @@ describe("checkTestWorkspaceDeps", () => {
 				},
 				(dir) => scanTestWorkspaceDeps(dir).unmodelled.map((item) => item.file),
 			);
-		// pnpm 10 reads overrides from pnpm-workspace.yaml; they are not a catalog.
 		assert.deepEqual(
 			unmodelled(
 				'catalog:\n  left-pad: 1.3.0\noverrides:\n  "@s/lib": "workspace:*"\n',
@@ -1854,7 +1765,6 @@ describe("checkTestWorkspaceDeps", () => {
 			{
 				...base,
 				"packages/app/package.json": manifest("@s/app"),
-				// A checkout whose .git points at nothing.
 				"external/sub/.git": "gitdir: /nonexistent/hobo-test-deps\n",
 			},
 			(dir) => {
@@ -1951,7 +1861,6 @@ describe("checkTestWorkspaceDeps", () => {
 					"/*",
 					"!/packages/app/test/left-out-*",
 				);
-				// A gitlink with no checkout behind it: a submodule never initialised.
 				const head = git("rev-parse", "HEAD").toString().trim();
 				git(
 					"update-index",

@@ -160,9 +160,6 @@ describe("workspace test shards", () => {
 
 	it("partitions every workspace that has a test task for a repo-wide plan and rejects invalid shards", () => {
 		const plan: TestPlan = { mode: "all", reason: "global input" };
-		// The fixture tree's own task graph. A repo-wide plan is partitioned
-		// from the graph, not from the workspace list: packages/none has no
-		// test task here, so no shard carries it.
 		const tested = repo.workspaces
 			.map((ws) => ws.dir)
 			.filter((dir) => dir !== "packages/none");
@@ -175,8 +172,6 @@ describe("workspace test shards", () => {
 			{ taskId: "@t/lib#build", task: "build", directory: "packages/lib" },
 		];
 		const durations = { defaultSeconds: 1, seconds: new Map<string, number>() };
-		// Main plans past the parallel cap when a shard would outrun its time
-		// limit (finding 117), so the split must hold at those counts too.
 		for (const count of [4, 8, 16]) {
 			const shards: ReturnType<typeof shardTestPlan>[] = [];
 			for (let index = 0; index < count; index++)
@@ -189,9 +184,6 @@ describe("workspace test shards", () => {
 			assert.deepEqual([...full].sort(), [...tested].sort(), `${count} shards`);
 			assert.equal(new Set(full).size, full.length, `${count} shards`);
 		}
-		// A test task in a directory the workspace list does not know would be
-		// dropped from every shard; the plan is refused instead. So is a graph
-		// with no test task at all.
 		for (const broken of [
 			() => [
 				...graph([]),
@@ -234,9 +226,6 @@ describe("workspace test shards", () => {
 
 describe("workspace test shards on this repository", () => {
 	it("carries every workspace turbo would test in exactly one shard", () => {
-		// The real workspace list against the real task graph: the pair main's
-		// repo-wide shards are planned from. A package whose test task turbo
-		// knows but workspace discovery does not would fail the plan on main.
 		const tasks = turboTestGraph([]);
 		const tested = [
 			...new Set(
@@ -584,8 +573,6 @@ describe("--plan-shards", () => {
 			},
 		);
 
-	// The workflow takes stdout as the matrix and falls back to eight shards
-	// on anything else, so a stray line here would go unnoticed.
 	it("prints the shard list alone on stdout and the plan on stderr", () => {
 		const scopedPlan = plan("--plan-shards=8", "docs/ci/performance.md\n");
 		assert.equal(scopedPlan.status, 0, scopedPlan.stderr);
@@ -622,7 +609,6 @@ function scoped(plan: TestPlan) {
 	};
 }
 
-/** `repo` with more files: each case adds only what it is about. */
 function extend(base: Repo, more: Readonly<Record<string, string>>): Repo {
 	const added = new Map(Object.entries(more));
 	return {
@@ -632,11 +618,6 @@ function extend(base: Repo, more: Readonly<Record<string, string>>): Repo {
 	};
 }
 
-/**
- * A root vitest config with setup files, merged by a package whose `test`
- * script builds first. Neither package depends on what changes, so both are
- * bystanders, asked only whether their config reaches the path.
- */
 const rootConfigRepo: Repo = {
 	...extend(repo, {
 		"vitest.config.ts": [
@@ -686,7 +667,6 @@ describe("a bystander whose test script is not plain vitest", () => {
 			subsets: { "packages/none": ["test/x.test.ts"] },
 			skipped: [],
 		});
-		// `packages/tool` (`node --test`) reaches neither and stays out.
 		assert.deepEqual(
 			scoped(planDependentTests(["docs/other.md"], rootConfigRepo)),
 			{ full: [], subsets: {}, skipped: [] },
@@ -725,11 +705,6 @@ describe("a bare ./ or ../ literal", () => {
 		);
 	});
 
-	/**
-	 * Whether a test importing a lib module made of `source` runs when a lib
-	 * file changes that nothing imports: `src/feat/a.ts` sits under both `./`
-	 * and `../` of the module, and `src/index.ts` does not import it.
-	 */
 	const reads = (source: string) => {
 		const tree = extend(repo, {
 			"packages/lib/src/feat/form.ts": `${source}\n`,
@@ -755,16 +730,13 @@ describe("a bare ./ or ../ literal", () => {
 		'spawnSync("node", ["x"], { cwd: "../" });',
 		'const path = (n: string) => "../" + n;',
 		"const root = path.resolve(here, `../`);",
-		// A replacement is a value, and the value may be a path.
 		'const t = (s: string) => s.replace(/^src/u, "./");',
 		'const t = (s: string) => s.replaceAll(sep, "../");',
 		'const t = (s: string) => s.replace("@/", "../");',
 		'const t = (s: string) =>\n\ts.replace(\n\t\t"@/",\n\t\t"../",\n\t);',
 		'const text = readFileSync(new URL(s.replace("@/", "../"), import.meta.url));',
-		// A trailing comment is not code: it cannot make a string test.
 		'const root = join(here, // was: root ===\n\t"../");',
 		'const root = join(here, // not s.startsWith(\n\t"../");',
-		// A path call inside a string test still reads the directory.
 		'const inside = (p: string) => p.startsWith(resolve(here, "../"));',
 		'const listed = (n: string) => readdirSync("./").includes(n);',
 		'const roots = ["./", "../"].map((dir) => readdirSync(join(here, dir)));',
@@ -790,19 +762,16 @@ describe("a bare ./ or ../ literal", () => {
 			'switch (s) {\n\tcase "./":\n\tcase "../":\n\t\tbreak;\n}',
 		])
 			assert.equal(reads(source), false, source);
-		// A trailing comment between the call and its argument hides nothing.
 		for (const source of [
 			'const t = (s: string) => s.startsWith( // relative\n\t"./");',
 			'const t = (s: string) =>\n\ts === // the root\n\t"../";',
 			'const t = (s: string) => "../" // the root\n\t=== s;',
 		])
 			assert.equal(reads(source), false, source);
-		// `//` inside a string is not a comment.
 		assert.equal(
 			reads('const roots = [\n\t"compared with === //",\n\t"../",\n];'),
 			true,
 		);
-		// The same literal one token away from a string test is kept.
 		for (const source of [
 			'const t = (s: string) => s.startsWith(join(here, "../"));',
 			'const t = (s: string) => s.replace(readFileSync(a, "utf8"), "../");',
@@ -814,8 +783,6 @@ describe("a bare ./ or ../ literal", () => {
 	});
 
 	it("stays a directory edge where the directory holds an index file", () => {
-		// `packages/lib/src/index.ts` exists and does not import `feat/a.ts`:
-		// an edge to it would lose every other file under `src/`.
 		const tree = extend(repo, {
 			"packages/lib/src/feat/root.ts":
 				'export const root = new URL("../", import.meta.url);\n',
@@ -836,8 +803,6 @@ describe("a bare ./ or ../ literal", () => {
 });
 
 describe("a package's manifest and build config", () => {
-	// `@t/top` imports `@t/app`, which imports `@t/lib/client`; `packages/none`
-	// imports lib's source by relative path and declares nothing.
 	const built: Repo = {
 		...extend(repo, {
 			"packages/lib/package.json": manifest("@t/lib", "vitest run", {
@@ -892,7 +857,6 @@ describe("a package's manifest and build config", () => {
 				scoped(planDependentTests([path], built)),
 				importersOfLib,
 			);
-			// A tsconfig no script builds with is the package's own business.
 			assert.deepEqual(
 				scoped(
 					planDependentTests(["packages/lib/tsconfig.unused.json"], built),
@@ -919,7 +883,6 @@ describe("a package's manifest and build config", () => {
 					"./feat/*": "./dist/feat/*.js",
 				},
 			}),
-			// JSONC, as tsconfig files are.
 			"packages/lib/tsconfig.json":
 				'{\n\t// shared options\n\t"extends": "./config/tsconfig.shared.json",\n}\n',
 			"packages/lib/config/tsconfig.shared.json":
@@ -929,7 +892,6 @@ describe("a package's manifest and build config", () => {
 			"packages/lib/config/tsconfig.unused.json": "{}\n",
 			"packages/lib/turbo.json": '{ "extends": ["//"] }\n',
 			"packages/lib/tsup.config.ts": "export default {};\n",
-			// No lib script runs vite: `vitest run` is not it.
 			"packages/lib/vite.config.ts": "export default {};\n",
 			"packages/app/package.json": manifest("@t/app", "vitest run", {
 				scripts: { test: "vitest run", build: "tsc -b && vite build" },
@@ -950,7 +912,6 @@ describe("a package's manifest and build config", () => {
 		] as const)
 			it(`runs everything that imports the package when ${what} changes`, () => {
 				assert.deepEqual(plan(`packages/lib/${path}`), importersOfLib);
-				// Neither named nor extended, and a bundler no script runs.
 				for (const own of ["config/tsconfig.unused.json", "vite.config.ts"])
 					assert.deepEqual(
 						plan(`packages/lib/${own}`).subsets["packages/top"],
@@ -969,7 +930,6 @@ describe("a package's manifest and build config", () => {
 	});
 
 	it("does not count a directory read as entering the package", () => {
-		// `data.test.ts` reads `../../lib/fixtures`: lib's data, not its build.
 		const plan = (path: string) =>
 			scoped(planDependentTests([path], built)).subsets["packages/app"] ?? [];
 		assert.ok(
@@ -996,9 +956,6 @@ describe("a package's manifest and build config", () => {
 });
 
 describe("the walk's cost", () => {
-	// The planner reads stdin under a 20 s guard in read-stdin.test.ts, on a
-	// runner that is also type-checking: its work has to stay proportional to
-	// the tree, not to tree × workspaces.
 	const packages = Array.from(
 		{ length: 40 },
 		(_, index) => `packages/p${index}`,
@@ -1028,7 +985,6 @@ describe("the walk's cost", () => {
 				return super.has(path);
 			}
 		}
-		// Each read of a workspace's `dir` is one comparison against a path.
 		const workspaces = packages.map((dir) => ({
 			get dir() {
 				workspaceReads++;
@@ -1049,7 +1005,6 @@ describe("the walk's cost", () => {
 		const { tree, workspaceReads } = counting();
 		const plan = scoped(planDependentTests(["docs/other.md"], tree));
 		assert.deepEqual(plan, { full: [], subsets: {}, skipped: [] });
-		// 2 081 files in 40 packages: a scan per path is over 40 000 reads.
 		assert.ok(workspaceReads() < 20_000, `${workspaceReads()} workspace reads`);
 	});
 
@@ -1057,7 +1012,6 @@ describe("the walk's cost", () => {
 		const { tree, lookups } = counting();
 		const plan = scoped(planDependentTests(["docs/guide.md"], tree));
 		assert.equal(plan.full.length, 40);
-		// 2 000 tests name `docs/guide.md`; each package's 50 name its index.
 		assert.ok((lookups.get("docs/guide.md") ?? 0) < 20, "docs/guide.md");
 		assert.ok(
 			(lookups.get("packages/p0/src/index.ts") ?? 0) < 10,
@@ -1141,8 +1095,6 @@ describe("planDependentTests", () => {
 	});
 
 	it("runs a changed package whole even when only a test or a doc changed", () => {
-		// Its tests read siblings by names the walk cannot follow, such as
-		// `readPackageFile("README.md")` or a scan of the test directory.
 		for (const changed of [
 			"packages/app/test/pure.test.ts",
 			"packages/conf/README.md",
@@ -1154,8 +1106,6 @@ describe("planDependentTests", () => {
 
 	it("runs the whole workspace for a workspace-wide input or an empty diff", () => {
 		assert.equal(planDependentTests(["pnpm-lock.yaml"], repo).mode, "all");
-		// Beside a package path the lockfile widens nothing: that rule is
-		// affected-lanes.mts's.
 		assert.deepEqual(
 			planDependentTests(
 				["pnpm-lock.yaml", "packages/lib/src/worker.ts"],
@@ -1177,7 +1127,6 @@ describe("planDependentTests", () => {
 			scriptsOnly,
 		);
 		assert.equal(plan.mode, "scoped");
-		// Without the reader the same diff widens, as it did in merge groups.
 		assert.equal(
 			planDependentTests(["package.json", "docs/guide.md"], repo).mode,
 			"all",
@@ -1293,11 +1242,6 @@ describe("planCommands", () => {
 	};
 
 	it("builds once from turbo's test graph, then runs each subset's test task alone", () => {
-		// A subset that built with `turbo run build` and then ran vitest itself
-		// skipped `@hobo/hobo#test`'s `@hobo/adapter-hono#build`, and main failed
-		// tests the PR run passed. One that passed its files through `turbo run
-		// test` rebuilt its whole graph uncached, because turbo hashes the
-		// pass-through into every task of the run.
 		assert.deepEqual(
 			planCommands(plan, ["--anon-profile=p.json"], "1", graph),
 			[
@@ -1547,8 +1491,6 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	const plan = (path: string) =>
 		scoped(planDependentTests([path], (tree ??= readRepo())));
 
-	// The packages whose `vitest.config.ts` merges the root config to leave the
-	// `*.deep.test.ts` tier out of `test` (docs/design/provider-redaction.md).
 	const tiered = [
 		"packages/auth-md",
 		"packages/claims",
@@ -1569,7 +1511,6 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	];
 	const withTiered = (...others: string[]) => [...tiered, ...others].sort();
 
-	// Suites that merge the root config without a deep tier to leave out:
 	const merging = [
 		"packages/cli",
 		"packages/hobo",
@@ -1585,8 +1526,6 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	] as const)
 		it(`runs the suites whose config reaches ${path}`, () => {
 			const planned = plan(path);
-			// A list of names, not a count: it changes only when a package starts
-			// or stops reaching the root config, and then this says what to edit.
 			assert.deepEqual(
 				planned,
 				{ full, subsets: {}, skipped: [] },
@@ -1595,8 +1534,6 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		});
 
 	it("runs a test that imports another package's source by relative path", () => {
-		// `packages/stations` imports `../../broker/src/budget-signals.js` and
-		// declares no dependency on @hobo/broker.
 		assert.ok(
 			plan("packages/broker/src/budget-signals.ts").subsets[
 				"packages/stations"
@@ -1606,7 +1543,6 @@ describe("the repository's own plans", { concurrency: true }, () => {
 
 	for (const dir of ["packages/core", "packages/cli", "packages/policy"])
 		it(`runs the dependents of ${dir} when its manifest or tsconfig changes`, () => {
-			// What importing the package selects: a change to its source entry.
 			const manifestOf = JSON.parse(
 				(tree ??= readRepo()).read(`${dir}/package.json`) ?? "{}",
 			);
@@ -1630,11 +1566,6 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		});
 
 	it("plans a generated @hobo/core leaf by what imports it, not by core's `./`", () => {
-		// No module of @hobo/core imports this generated file. `startsWith("./")`
-		// in core's plugin-manifest.ts once read as an edge to all of
-		// `packages/core/src`, so core's entry reached the file and every
-		// importer of @hobo/core ran. No package is counted here: the workspace
-		// grows, and a count went red on every unrelated addition.
 		const leaf = "packages/core/src/_generated/actor_host_port_pb.ts";
 		const repo = (tree ??= readRepo());
 		assert.ok(
@@ -1657,7 +1588,6 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		);
 		const { full, skipped } = plan(leaf);
 		assert.ok(full.includes("packages/core"));
-		// Dependents that import @hobo/core and whose tests name nothing wider.
 		for (const dir of [
 			"packages/broker",
 			"packages/contracts",
