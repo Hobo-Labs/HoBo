@@ -8,8 +8,8 @@ over conflicting repository workflow guidance.
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
   dynamic imports.
-- Complete unfinished work when it is found. Do not hide it by deleting its
-  marker or by moving it into a backlog.
+- Complete unfinished work when practical. Track remaining work in the HoBo
+  Linear team and remove deferred-work markers from the repository.
 - Before ending an action request, compare the current user goal with the
   actual result and evidence. Continue any known, safe, authorized action that
   advances essential unfinished work; a partial merge, a failed approach,
@@ -24,7 +24,7 @@ over conflicting repository workflow guidance.
   and report any contradiction before building. The `hobo-setup` skill covers
   owner interaction and the `sdlc` skill covers landing pull requests.
 - Do not create or retain planning documents, roadmaps, or design documents.
-  Implement their outstanding work, then remove them. Keep user and operator
+  Track outstanding work in Linear, then remove them. Keep user and operator
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
@@ -60,7 +60,7 @@ over conflicting repository workflow guidance.
   not Git-linked; do not reconnect it or treat the missing link as a defect.
 
 Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
-and Copilot. Standalone documentation comments follow the same rule. Run
+Gemini, and Copilot. Standalone documentation comments follow the same rule. Run
 `pnpm run source:guard -- --worktree` when checking manually, including ignored
 agent artifacts in nested projects;
 the pre-commit hook checks staged changes. The same edit hooks run
