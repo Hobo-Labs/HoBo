@@ -19,7 +19,7 @@ drift, and support-bundle behavior.
   - [`developer-experience.md#plan-07`](../../developer-experience.md#plan-07)
   - [`data-plane.md#plan-11`](../../data-plane.md#plan-11)
   - [`support-debug-tools.md`](../../support-debug-tools.md)
-  - [`drift-reconciliation.md`](../../drift-reconciliation.md)
+  - [`drift-reconciliation.md`](https://linear.app/quickdeploy-ai/document/drift-reconciliation-scope-and-acceptance-archived-a98b68b1b67c)
   - [`audit-explorer.md`](../../audit-explorer.md)
   - [`dx-resource-lifecycle-scenario-matrix`](../../../../src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix/README.md)
   - [`cli-mcp-parity-resource-lifecycle-contracts`](../../../../src/draft/exp-proofs/ax/cli-mcp-parity-resource-lifecycle-contracts/README.md)

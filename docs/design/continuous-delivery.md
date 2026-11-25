@@ -135,7 +135,7 @@ only thing that mutates a delivery target (I2).
 
 Camps are `MANAGED` (the default) or `OBSERVE_ONLY`, which reads, reports and
 evaluates posture but never applies. Drift is detected from observations and
-routed through the same Delta path ([drift-reconciliation.md](./drift-reconciliation.md));
+routed through the same Delta path ([drift-reconciliation.md](https://linear.app/quickdeploy-ai/document/drift-reconciliation-scope-and-acceptance-archived-a98b68b1b67c));
 fields owned by target-side controllers, such as autoscaler replica counts, are
 retained rather than treated as drift.
 

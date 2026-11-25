@@ -110,7 +110,7 @@ DriftReport; remediation is routed as a proposed diff (`drift.DiffProposed`) req
 approval (`drift.RemediationRouted`). Autonomous remediation is deferred to the Operators & SRE
 lane.
 
-**Rationale:** Consistent with [`drift-reconciliation.md`](./drift-reconciliation.md), which
+**Rationale:** Consistent with [`drift-reconciliation.md`](https://linear.app/quickdeploy-ai/document/drift-reconciliation-scope-and-acceptance-archived-a98b68b1b67c), which
 defines reconciliation states including `detected`, `classified`, `source-of-truth-pinned`,
 `proposed`, and `reconciling` — with explicit approval before apply. Stage 2 must prove governed
 deploy and compensation rollback before introducing autonomous heal loops.

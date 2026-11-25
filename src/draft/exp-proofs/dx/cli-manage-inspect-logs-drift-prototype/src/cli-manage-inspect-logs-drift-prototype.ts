@@ -96,7 +96,7 @@ export const CLI_MANAGE_TRANSCRIPT_PROTOTYPE: ManageTranscriptPrototype = {
     "docs/design/developer-experience.md#plan-07",
     "docs/design/data-plane.md#plan-11",
     "docs/design/support-debug-tools.md",
-    "docs/design/drift-reconciliation.md",
+    "https://linear.app/quickdeploy-ai/document/drift-reconciliation-scope-and-acceptance-archived-a98b68b1b67c",
     "docs/design/audit-explorer.md",
     "src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix/README.md",
     "src/draft/exp-proofs/ax/cli-mcp-parity-resource-lifecycle-contracts/README.md",
