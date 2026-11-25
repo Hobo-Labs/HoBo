@@ -10,9 +10,11 @@ import {
 	type Agent37RunnerRegion,
 } from "./agent37.js";
 import {
+	createInMemoryHostingerRunnerRegistry,
 	HostingerRunner,
 	HostingerRunnerProvider,
 	type HostingerRunnerProviderOptions,
+	type HostingerRunnerRegistry,
 } from "./hostinger.js";
 import {
 	LocalRunner,
@@ -46,8 +48,9 @@ export interface AlchemyRunnerBackendOptions {
 		readonly registry: LocalRunnerRegistry;
 		readonly maxConcurrency: number;
 	};
-	readonly hostinger?: HostingerRunnerProviderOptions & {
-		readonly machineIdForPool: (poolId: string) => string;
+	readonly hostinger?: Omit<HostingerRunnerProviderOptions, "registry"> & {
+		readonly registry?: HostingerRunnerRegistry;
+		readonly maxConcurrency: number;
 		readonly credentialLocator: string;
 		readonly apiOrigin?: string;
 	};
@@ -97,6 +100,8 @@ export function createAlchemyRunnerBackend(
 		}
 	>();
 	const runnerIdToJobId = new Map<string, string>();
+	const hostingerRegistry =
+		options.hostinger?.registry ?? createInMemoryHostingerRunnerRegistry();
 
 	return {
 		async provisionRunner(input) {
@@ -144,17 +149,21 @@ export function createAlchemyRunnerBackend(
 					throw new Error("hostinger runner provider not configured");
 				}
 				const hostinger = options.hostinger;
-				const providers = HostingerRunnerProvider(hostinger);
-				const machineId = hostinger.machineIdForPool(input.poolId);
+				const providers = HostingerRunnerProvider({
+					...hostinger,
+					registry: hostingerRegistry,
+				});
+				const machineId = input.poolId;
 				const stack = Stack(
 					`runner-hostinger-${input.jobId}`,
 					{ providers, state },
 					Effect.gen(function* () {
-						const resource = yield* HostingerRunner(input.poolId, {
+						const resource = yield* HostingerRunner(input.jobId, {
 							jobId: input.jobId,
 							machineId,
 							hostname: `${input.poolId}.hostinger`,
 							labels: [input.label],
+							maxConcurrency: hostinger.maxConcurrency,
 							credentialLocator: hostinger.credentialLocator,
 							...(hostinger.apiOrigin !== undefined
 								? { apiOrigin: hostinger.apiOrigin }

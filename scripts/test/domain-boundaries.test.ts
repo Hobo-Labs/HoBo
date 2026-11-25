@@ -31,6 +31,11 @@ describe("checkDomainBoundaries", () => {
 	it("passes on the real repository and covers all four Alchemy Domain models", () => {
 		const report = checkDomainBoundaries(repoRoot);
 		assert.deepEqual(report.violations, []);
+		assert.ok(
+			report.checkedFiles.some((file) =>
+				file.startsWith("packages/ci/src/host/"),
+			),
+		);
 		assert.ok(report.checkedModels.includes("packages/ci"));
 		assert.ok(report.checkedModels.includes("packages/cd"));
 		assert.ok(report.checkedModels.includes("packages/broker"));
@@ -86,6 +91,25 @@ describe("checkDomainBoundaries", () => {
 			writeFileSync(
 				join(domainDir, "secret.ts"),
 				'import * as Domain from "@alchemy.run/domain";\nimport * as Schema from "effect/Schema";\nexport const Bad = Domain.Event("Bad", { apiKey: Schema.String, token: Schema.String });\n',
+			);
+
+			const report = checkDomainBoundaries(root);
+			assert.equal(report.violations.length, 2);
+			assert.ok(
+				report.violations.every(
+					(violation) => violation.rule === "domain-no-secret-fields",
+				),
+			);
+		});
+	});
+
+	it("detects quoted JSON secret-shaped schema keys", () => {
+		withTempWorkspace((root) => {
+			const domainDir = join(root, "packages", "sample", "src", "domain");
+			mkdirSync(domainDir, { recursive: true });
+			writeFileSync(
+				join(domainDir, "secret.ts"),
+				'import * as Domain from "@alchemy.run/domain";\nimport * as Schema from "effect/Schema";\nexport const Bad = Domain.Event("Bad", { "token": Schema.String, "api_key": Schema.String });\n',
 			);
 
 			const report = checkDomainBoundaries(root);

@@ -29,9 +29,63 @@ export class HostingerRunnerError extends Data.TaggedError(
 	readonly code:
 		| "HOSTINGER_ROUTE_REFUSED"
 		| "HOSTINGER_MACHINE_INVALID"
-		| "HOSTINGER_TRANSPORT_FAILED";
+		| "HOSTINGER_TRANSPORT_FAILED"
+		| "HOSTINGER_CONCURRENCY_EXCEEDED";
 	readonly message: string;
 }> {}
+
+export interface HostingerRunnerRegistry {
+	readonly registerSlot: (input: {
+		readonly machineId: string;
+		readonly jobId: string;
+		readonly labels: readonly string[];
+		readonly maxConcurrency: number;
+	}) => Promise<{ readonly runnerId: string; readonly shouldPowerOn: boolean }>;
+	readonly releaseSlot: (
+		runnerId: string,
+	) => Promise<{ readonly remainingOnMachine: number }>;
+}
+
+export function createInMemoryHostingerRunnerRegistry(): HostingerRunnerRegistry & {
+	readonly activeRunnerIds: () => readonly string[];
+} {
+	const active = new Map<string, string>();
+	const slotsByMachine = new Map<string, Set<string>>();
+	return {
+		async registerSlot(input) {
+			const slots = slotsByMachine.get(input.machineId) ?? new Set<string>();
+			if (slots.size >= input.maxConcurrency) {
+				throw new HostingerRunnerError({
+					code: "HOSTINGER_CONCURRENCY_EXCEEDED",
+					message: `hostinger runner pool ${input.machineId} exceeded maxConcurrency ${input.maxConcurrency}`,
+				});
+			}
+			const shouldPowerOn = slots.size === 0;
+			const runnerId = `hostinger:${input.jobId}:${input.machineId}`;
+			active.set(runnerId, input.machineId);
+			slots.add(runnerId);
+			slotsByMachine.set(input.machineId, slots);
+			return { runnerId, shouldPowerOn };
+		},
+		async releaseSlot(runnerId) {
+			const machineId = active.get(runnerId);
+			active.delete(runnerId);
+			if (machineId === undefined) {
+				return { remainingOnMachine: 0 };
+			}
+			const slots = slotsByMachine.get(machineId);
+			slots?.delete(runnerId);
+			const remainingOnMachine = slots?.size ?? 0;
+			if (remainingOnMachine === 0) {
+				slotsByMachine.delete(machineId);
+			}
+			return { remainingOnMachine };
+		},
+		activeRunnerIds() {
+			return [...active.keys()].sort();
+		},
+	};
+}
 
 export interface HostingerRunnerTransportRequest {
 	readonly method: "GET" | "POST";
@@ -58,6 +112,7 @@ export interface HostingerRunnerProps {
 	readonly machineId: string;
 	readonly hostname: string;
 	readonly labels: readonly string[];
+	readonly maxConcurrency: number;
 	readonly powerAction?: HostingerRunnerPowerAction;
 	readonly credentialLocator: string;
 	readonly apiOrigin?: string;
@@ -124,6 +179,7 @@ export function guardedHostingerRunnerTransport(
 export interface HostingerRunnerProviderOptions {
 	readonly resolveCredential: OwnerCredentialResolver;
 	readonly transport: HostingerRunnerTransport;
+	readonly registry: HostingerRunnerRegistry;
 	readonly defaultApiOrigin?: string;
 }
 
@@ -149,6 +205,12 @@ export function HostingerRunnerProvider(
 					return yield* new HostingerRunnerError({
 						code: "HOSTINGER_MACHINE_INVALID",
 						message: `invalid Hostinger machine id: ${news.machineId}`,
+					});
+				}
+				if (news.maxConcurrency < 1) {
+					return yield* new HostingerRunnerError({
+						code: "HOSTINGER_MACHINE_INVALID",
+						message: "hostinger runner requires maxConcurrency >= 1",
 					});
 				}
 				if (
@@ -179,6 +241,38 @@ export function HostingerRunnerProvider(
 						labels: [...news.labels],
 						state: output.state,
 						actionId: output.actionId,
+						credentialLocator: locator,
+					};
+				}
+				const registered = yield* Effect.tryPromise({
+					try: () =>
+						options.registry.registerSlot({
+							machineId: news.machineId,
+							jobId: news.jobId,
+							labels: news.labels,
+							maxConcurrency: news.maxConcurrency,
+						}),
+					catch: (cause): HostingerRunnerError | RunnerCredentialError =>
+						cause instanceof HostingerRunnerError
+							? cause
+							: new HostingerRunnerError({
+									code: "HOSTINGER_TRANSPORT_FAILED",
+									message:
+										cause instanceof Error
+											? cause.message
+											: "hostinger runner registration failed",
+								}),
+				});
+				const registeredRunnerId = registered.runnerId;
+				if (!registered.shouldPowerOn) {
+					return {
+						runnerId: registeredRunnerId,
+						tier: "hostinger" as const,
+						machineId: news.machineId,
+						hostname: news.hostname,
+						labels: [...news.labels],
+						state: "running",
+						actionId: `${news.machineId}:shared`,
 						credentialLocator: locator,
 					};
 				}
@@ -214,7 +308,7 @@ export function HostingerRunnerProvider(
 					});
 				}
 				return {
-					runnerId,
+					runnerId: registeredRunnerId,
 					tier: "hostinger" as const,
 					machineId: news.machineId,
 					hostname: response.body.hostname ?? news.hostname,
@@ -227,6 +321,20 @@ export function HostingerRunnerProvider(
 		delete: ({ output, olds }) =>
 			Effect.gen(function* () {
 				if (output === undefined) return;
+				const released = yield* Effect.tryPromise({
+					try: () => options.registry.releaseSlot(output.runnerId),
+					catch: (cause): HostingerRunnerError =>
+						cause instanceof HostingerRunnerError
+							? cause
+							: new HostingerRunnerError({
+									code: "HOSTINGER_TRANSPORT_FAILED",
+									message:
+										cause instanceof Error
+											? cause.message
+											: "hostinger runner release failed",
+								}),
+				});
+				if (released.remainingOnMachine > 0) return;
 				const locator = parseOwnerCredentialLocator(
 					olds?.credentialLocator ?? output.credentialLocator,
 				);
@@ -247,17 +355,8 @@ export function HostingerRunnerProvider(
 								accept: "application/json",
 							},
 						}),
-					catch: (cause): HostingerRunnerError | RunnerCredentialError =>
-						cause instanceof HostingerRunnerError
-							? cause
-							: new HostingerRunnerError({
-									code: "HOSTINGER_TRANSPORT_FAILED",
-									message:
-										cause instanceof Error
-											? cause.message
-											: "hostinger runner delete failed",
-								}),
-				});
+					catch: () => undefined,
+				}).pipe(Effect.ignore);
 			}),
 	});
 }
