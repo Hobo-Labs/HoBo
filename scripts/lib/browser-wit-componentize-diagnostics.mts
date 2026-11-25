@@ -49,7 +49,6 @@ export async function resolvePreview2ShimFromComponentizeRoot(
 	}
 	try {
 		const manifestPath = path.join(path.dirname(entry), "..", "package.json");
-		// SAFETY: `JSON.parse` is unknown; only optional `version` is read, then string-gated.
 		const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
 			version?: unknown;
 		};
@@ -58,7 +57,6 @@ export async function resolvePreview2ShimFromComponentizeRoot(
 		) {
 			return { version: "unknown", packagePath: path.dirname(manifestPath) };
 		}
-		// SAFETY: `manifest.version` was verified to be a string above.
 		return {
 			version: manifest.version as string,
 			packagePath: path.dirname(manifestPath),

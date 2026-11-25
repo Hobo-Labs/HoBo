@@ -36,7 +36,6 @@ it("executes the durable topic bus and client after reopening a real Rivet regis
 						process.kill(-child.pid, "SIGKILL");
 					else child.kill("SIGKILL");
 				} catch (error) {
-					// SAFETY: Node process-signalling errors expose errno at this boundary.
 					if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
 				}
 			};

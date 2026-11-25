@@ -51,7 +51,6 @@ describe("spawnFailClosedCode", () => {
 describe("exitSpawnFailClosed", () => {
 	it("exits 1 on signal", () => {
 		const exit = vi.spyOn(process, "exit");
-		// SAFETY: vitest mock must match process.exit arity; implementation throws to capture code.
 		exit.mockImplementation(((code) => {
 			throw new Error(`exit:${code}`);
 		}) as typeof process.exit);

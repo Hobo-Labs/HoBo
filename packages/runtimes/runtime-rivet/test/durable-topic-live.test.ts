@@ -36,7 +36,6 @@ it("executes the partial topic actor and client on a real Rivet 3 engine", {
 						process.kill(-child.pid, "SIGKILL");
 					else child.kill("SIGKILL");
 				} catch (error) {
-					// SAFETY: Node process-signalling errors expose errno at this boundary.
 					if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
 				}
 			};

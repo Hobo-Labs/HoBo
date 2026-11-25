@@ -29,7 +29,6 @@ export function parseBrowserWitComponentizeProof(
 	if (Object.prototype.toString.call(workRootRaw) !== "[object String]") {
 		throw new Error("componentize proof workRoot is invalid");
 	}
-	// SAFETY: `toString` gate ensures `workRootRaw` is a string.
 	const workRoot = workRootRaw as string;
 	if (
 		workRoot.length === 0 ||
@@ -41,7 +40,6 @@ export function parseBrowserWitComponentizeProof(
 	if (Object.prototype.toString.call(digestRaw) !== "[object String]") {
 		throw new Error("componentize proof componentDigest is invalid");
 	}
-	// SAFETY: `toString` gate ensures `digestRaw` is a string.
 	const componentDigest = digestRaw as string;
 	if (!/^sha256:[0-9a-f]{64}$/u.test(componentDigest)) {
 		throw new Error("componentize proof componentDigest is invalid");
@@ -50,14 +48,12 @@ export function parseBrowserWitComponentizeProof(
 	if (Object.prototype.toString.call(finishedAtRaw) !== "[object String]") {
 		throw new Error("componentize proof finishedAt is missing");
 	}
-	// SAFETY: `toString` gate ensures `finishedAtRaw` is a string.
 	const finishedAt = finishedAtRaw as string;
 	if (finishedAt.length === 0) {
 		throw new Error("componentize proof finishedAt is missing");
 	}
 	return {
 		workRoot,
-		// SAFETY: digest shape was verified by the regexp above.
 		componentDigest: componentDigest as `sha256:${string}`,
 		finishedAt,
 	};

@@ -37,7 +37,6 @@ it("typechecks packed runtime and WIT packages in a hoisted consumer", async () 
 				],
 				{ cwd: packagePath, timeout: 60_000 },
 			);
-			// SAFETY: npm's local pack --json response supplies an array of generated archive filenames.
 			const parsed = JSON.parse(stdout) as { filename: string }[];
 			const archive = parsed[0]?.filename;
 			if (archive === undefined) throw new Error("missing package archive");
