@@ -13,7 +13,7 @@ proofs as architecture evidence.
 ## Branch Evidence
 
 - Issue: S3-01 (HOBO-627)
-- Source M0 record: [`stage-3-agent-autonomy-acceptance.md`](../../stage-3-agent-autonomy-acceptance.md)
+- Source M0 record: [`stage-3-agent-autonomy-acceptance.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/stage-3-agent-autonomy-acceptance.md)
 - Promoted epic proofs:
   - [`identity-auth-secrets-cross-app-access-xaa`](../../../../src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa/README.md)
   - [`cli-mcp-developer-experience`](../../../../src/draft/epic-proofs/cli-mcp-developer-experience/README.md)
@@ -27,7 +27,7 @@ proofs as architecture evidence.
 
 | Issue acceptance | Proof |
 |---|---|
-| Stage-3 acceptance record with scope in/out, resolved hooks, and runnable gate | [`stage-3-agent-autonomy-acceptance.md`](../../stage-3-agent-autonomy-acceptance.md) restates the roadmap gate verbatim, cites FR-020..FR-023 and NFR-005, resolves three open hooks, and blocks S3-02..S3-09 until accepted. |
+| Stage-3 acceptance record with scope in/out, resolved hooks, and runnable gate | [`stage-3-agent-autonomy-acceptance.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/stage-3-agent-autonomy-acceptance.md) restates the roadmap gate verbatim, cites FR-020..FR-023 and NFR-005, resolves three open hooks, and blocks S3-02..S3-09 until accepted. |
 | Design index row makes the record discoverable | [`index.md`](../../index.md) includes `stage-3-agent-autonomy-acceptance.md`. |
 | Traceability row links issue, design record, and proofs | [`traceability.md`](../../traceability.md) maps S3-01 to the acceptance record and promoted epic proofs. |
 | Brokered tokens, keyless ladder, and credential audit | [`identity-auth-secrets-cross-app-access-xaa`](../../../../src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa/README.md) |

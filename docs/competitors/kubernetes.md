@@ -118,7 +118,7 @@ cannot serve.
 
 | Kubernetes | Nearest HoBo concept | Honest correspondence |
 | ---------- | -------------------- | --------------------- |
-| Controller reconciliation | HoBo reconcile loop | **Direct descent**, acknowledged in [`lineage.md`](../design/lineage.md) via Crossplane. |
+| Controller reconciliation | HoBo reconcile loop | **Direct descent**, acknowledged in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) via Crossplane. |
 | Object / desired state | Manifest IR | Close in spirit; HoBo's authority is an event log rather than etcd's current-state store. |
 | **CRD** | Bindle kind | **The closest analog, and instructive.** A CRD adds a type to an API; a Bindle kind adds a capability contract with declared impedance. CRDs inherit tooling; HoBo's kinds inherit portability scoring. |
 | Operator | Provider adapter | Close: both encode how to realize and operate a specific system. |
@@ -196,7 +196,7 @@ State labels follow the research contract: **implemented** = shipped in `package
   making a new type first-class in the existing API, so it inherits every tool, is why the ecosystem
   compounded.
 - **Standard** — Kubernetes object shapes are spoken at the boundary when rendering, never absorbed
-  as HoBo's internal model, per the governing rule in [`lineage.md`](../design/lineage.md).
+  as HoBo's internal model, per the governing rule in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md).
 - **Not a displace target**, and any HoBo material implying otherwise would be wrong. The claim is
   narrower and more defensible: *Kubernetes is one substrate, not the premise*.
 
@@ -224,7 +224,7 @@ State labels follow the research contract: **implemented** = shipped in `package
 - [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/) — the reconciliation pattern
 - [Custom resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) — CRDs and the extension model
 - [kubernetes/kubernetes](https://github.com/kubernetes/kubernetes) — source, Apache-2.0, CNCF governance
-- HoBo-side: [`design/lineage.md`](../design/lineage.md), ADR-0006, ADR-0031, [live provider matrix](../design/live-provider-matrix.md)
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md), ADR-0006, ADR-0031, [live provider matrix](../design/live-provider-matrix.md)
 
 Specific etcd scaling limits, current release-support windows and managed-offering differences vary
 by version and vendor; none is asserted with a number here.

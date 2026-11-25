@@ -274,7 +274,7 @@ when more of this was design; where a claim is still design-only it says so. See
 
 ## Better-together / integration posture
 
-- **Borrow** — the posture [`lineage.md`](../design/lineage.md) already records, and this capture
+- **Borrow** — the posture [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) already records, and this capture
   reaffirms it: the Recipe (an operator-owned, environment-bound realization behind a
   developer-facing Resource Type) and the developer/operator separation are taken deliberately. The
   section below states exactly what HoBo adds on top.
@@ -314,7 +314,7 @@ Radius's **Recipe** — an operator-owned, environment-bound, IaC-backed impleme
 - [Radius documentation](https://docs.radapp.io/concepts/) — Applications, Environments, Resource Types, Recipes, Connections, application graph
 - [radapp.io](https://radapp.io/) — positioning and project status
 - [radius-project/radius](https://github.com/radius-project/radius) — source, Apache-2.0 licence, CNCF Sandbox status
-- HoBo-side: [`design/lineage.md`](../design/lineage.md), [`standards/oam`](../standards/oam.md), and the plan/ADR references cited inline throughout this capture
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md), [`standards/oam`](../standards/oam.md), and the plan/ADR references cited inline throughout this capture
 
 This capture was first written before the research contract existed and was restructured to it on
 2026-08-19; its original research is preserved. Recipe-catalog breadth and current adoption evidence

@@ -69,7 +69,7 @@ HoBo is an **AI-native meta-cloud** — a meta cloud-orchestration layer that is
 ### What HoBo borrows (deliberately)
 
 > The full aggregate portrait — every influence with posture, borrowing, and
-> divergence — lives in [`lineage.md`](./lineage.md); this list stays the
+> divergence — lives in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md); this list stays the
 > founding-borrow summary.
 - **From Vercel Workflows:** the durable `workflow`/`step` feel and the **runtime** ports/adapters for the runtime.
 - **From Lakebed:** ruthless onboarding, machine-readable contracts (`llms.txt`), server authority — and we extend "machine-readable" from the app to *operations* (MCP).

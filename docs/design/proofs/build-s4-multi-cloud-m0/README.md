@@ -12,7 +12,7 @@ This proof backs the Stage 4 (Multi-Cloud) M0 acceptance record and productioniz
 ## Branch Evidence
 
 - Issue: HOBO-637 (S4-01)
-- Source M0 record: [Stage 4 Multi-Cloud Acceptance & Productionization Plan](../../stage-4-multi-cloud-acceptance.md)
+- Source M0 record: [Stage 4 Multi-Cloud Acceptance & Productionization Plan](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/stage-4-multi-cloud-acceptance.md)
 - Pattern reference: [HOBO-524 Post-Core Cross-Cutting Delta Pattern](../hobo-524-post-core-cross-cutting-delta-pattern/README.md)
 
 ### Promoted epic proofs (focused gates)

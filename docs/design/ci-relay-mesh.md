@@ -712,5 +712,4 @@ publisher.
 
 [Hosted CI Relay Without Durable State](./hosted-relay-stateless.md) ·
 [Runner queue runbook](../../packages/ci/RUNNER-QUEUE.md) ·
-[CI runner balancing example](./ci-runner-balancing-example.md) ·
 [Shared budget policy](./shared-budget-policy.md)

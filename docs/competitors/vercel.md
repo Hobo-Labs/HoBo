@@ -309,7 +309,7 @@ Framed respectfully: Vercel proved the durable-execution DX and the pluggable-ru
 
 ## Better-together / integration posture
 
-- **Borrow** — already recorded in [`lineage.md`](../design/lineage.md): the durable
+- **Borrow** — already recorded in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md): the durable
   `workflow`/`step` authoring feel from the Workflow SDK. This capture reaffirms it and adds a
   second: **immutable deployment plus alias promotion** is a cleaner promotion model than most.
 - **Benchmark** — preview deployments set the industry expectation; HoBo's ephemeral Camps are
@@ -333,7 +333,7 @@ Framed respectfully: Vercel proved the durable-execution DX and the pluggable-ru
 
 - [vercel.com/docs](https://vercel.com/docs) — projects, deployments, previews, functions, Fluid compute, `vercel.json`, Edge Network, Workflow SDK, AI stack
 - [vercel.com](https://vercel.com/) — positioning and pricing (vendor material)
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records the Workflow SDK as a borrow-source
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records the Workflow SDK as a borrow-source
 
 This capture predates the research contract and was restructured to it on 2026-08-19 with its
 original research preserved. Current AI-stack capabilities and pricing were not re-verified in this

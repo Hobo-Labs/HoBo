@@ -15,7 +15,7 @@ The goal is to make later coding-agent work precise: the next proof package is
 `src/draft/technical-proofs/resilience-semantics-annex`, and the public claim is bounded to
 durable WIT calls, manifest IR, and replayable event facts.
 
-**Contract-surface visibility:** [ADR-0136](./adr/03-data-plane-effects-resiliency.md)
+**Contract-surface visibility:** [ADR-0136](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md)
 attaches optional `ResilienceProfile` metadata to BoundaryContracts and exposes
 EffectSpec for side-effect isolation. The thin `applyResilienceProfile` applicator
 in `@hobo/contracts` **must** obey the never-retry and deterministic-schedule

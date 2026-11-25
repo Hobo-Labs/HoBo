@@ -72,7 +72,7 @@ the model HoBo's authoring surface descends from.
 
 ## How it competes with HoBo
 
-Nitric is recorded in [`lineage.md`](../design/lineage.md) as a **pillar** — HoBo's IfC-default
+Nitric is recorded in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) as a **pillar** — HoBo's IfC-default
 authoring and the `.allow()` least-privilege instinct come from here.
 
 | Contested HoBo surface | The contest |
@@ -453,7 +453,7 @@ draft/proof material; **design-only** = design intent. See the
 
 ## Better-together / integration posture
 
-- **Borrow** — already done and recorded in [`lineage.md`](../design/lineage.md): the IfC-default
+- **Borrow** — already done and recorded in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md): the IfC-default
   authoring model and `.allow()` least-privilege. This capture reaffirms both and adds a third worth
   considering: **inferring the graph by running the program** is a genuinely different collection
   strategy from parsing a manifest, with real trade-offs on both sides.
@@ -477,7 +477,7 @@ draft/proof material; **design-only** = design intent. See the
 
 - [nitric.io/docs](https://nitric.io/docs) — resources, `.allow()`, collection, providers, membrane
 - [nitrictech/nitric](https://github.com/nitrictech/nitric) — source and provider implementations
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Nitric as a pillar influence
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records Nitric as a pillar influence
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current resource-catalog maturity and provider coverage were not

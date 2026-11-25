@@ -63,7 +63,7 @@ should design against.
   for unified attribution, and that is a design claim rather than an implemented one.
 - **Automation needs a declared risk budget.** CAST AI's spot and bin-packing automation is safe only
   against a workload that has stated what it tolerates — external support for `ResilienceProfile`
-  living on the contract ([ADR-0136](../design/adr/03-data-plane-effects-resiliency.md)).
+  living on the contract ([ADR-0136](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md)).
 
 ## Where this leaves HoBo
 
