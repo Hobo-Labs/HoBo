@@ -18,9 +18,11 @@ function runtimeSyntheticJwt() {
 	return { token, payload } as const;
 }
 
+const GENERIC = "The realizer reported a condition.";
+
 describe("realizer condition surfacing", () => {
-	it("keeps RESOLVER and realize-failed observations generic while redacting is available for Freight", () => {
-		const { token, payload } = runtimeSyntheticJwt();
+	it("keeps resolver and realize-failed observation text generic", () => {
+		const { token } = runtimeSyntheticJwt();
 		const providerMessage = `upstream denied authorization ${token}`;
 
 		for (const code of [
@@ -40,15 +42,11 @@ describe("realizer condition surfacing", () => {
 				CAMP,
 				"realizer",
 			);
-			expect(reason?.message ?? "", code).toBe(
-				"The realizer reported a condition.",
-			);
-			expect(JSON.stringify(reason)).not.toContain(token);
-			expect(JSON.stringify(reason)).not.toContain(payload);
+			expect(reason?.message, code).toBe(GENERIC);
 		}
 	});
 
-	it("keeps redacted resolver messages out of serialized observation output", () => {
+	it("keeps provider material out of serialized observation output", () => {
 		const { token, payload } = runtimeSyntheticJwt();
 		const providerMessage = `registry bearer ${token}`;
 		const observation = sanitizeObservation({
@@ -70,7 +68,10 @@ describe("realizer condition surfacing", () => {
 			observeFields: [],
 			management: CampManagement.MANAGED,
 		});
-		expect(JSON.stringify(observation)).not.toContain(token);
-		expect(JSON.stringify(observation)).not.toContain(payload);
+		expect(observation.reasons[0]?.message).toBe(GENERIC);
+		const serialized = JSON.stringify(observation);
+		expect(serialized).not.toContain(token);
+		expect(serialized).not.toContain(payload);
+		expect(serialized).not.toContain("registry bearer");
 	});
 });

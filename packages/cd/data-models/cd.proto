@@ -6,11 +6,18 @@ package hobo.cd.v1;
 
 // ── Shared ──────────────────────────────────────────────────────────────────
 
+message ReasonStructuredDetail {
+  string credential_ref = 1;
+  string requested_scope = 2;
+  string detail_kind = 3;
+}
+
 message ReasonRecord {
   string code = 1;
   string message = 2;
   string remediation = 3;
   string subject = 4;
+  ReasonStructuredDetail structured = 5;
 }
 
 message SelectorRecord {

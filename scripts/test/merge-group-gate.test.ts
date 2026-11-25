@@ -1015,7 +1015,11 @@ describe("release required gate", () => {
 		);
 		assert.equal(helper(script), helper(prGate));
 		assert.match(gate, /name: HoBo release PR gate \(required\)/u);
-		assert.match(gate, /needs: \[route, release-contract, release-realize\]/u);
+		assert.match(
+			gate,
+			/needs: \[route, release-contract, release-realize, release-pages-browser-wit-smoke\]/u,
+		);
+		assert.match(gate, /BROWSER_WIT_SMOKE_RESULT/u);
 		assert.doesNotMatch(gate, /release-hobo-integration|INTEGRATION_RESULT/u);
 	});
 
@@ -1024,6 +1028,7 @@ describe("release required gate", () => {
 		const routes = ["success", "failure", "skipped", ""];
 		const flags = ["true", "false", "TRUE", ""];
 		const realizes = ["success", "failure", "skipped"];
+		const browserWitSmokes = ["success", "failure", "skipped"];
 		const lists = [
 			'["release-contract"]',
 			'["ci-guard","release-contract"]',
@@ -1038,37 +1043,41 @@ describe("release required gate", () => {
 				for (const route of routes)
 					for (const flag of flags)
 						for (const list of lists)
-							for (const realize of realizes) {
-								const run = spawnSync("bash", ["-c", script], {
-									env: {
-										...process.env,
-										CONTRACT_RESULT: contract,
-										REALIZE_RESULT: realize,
-										ROUTE_RESULT: route,
-										ATTESTED: flag,
-										ATTESTED_JOBS: list,
-									},
-								});
-								const attested =
-									route === "success" &&
-									flag === "true" &&
-									list.includes('"release-contract"');
-								const expected =
-									route === "success" &&
-									realize === "success" &&
-									(contract === "success" ||
-										(contract === "skipped" && attested));
-								const label = JSON.stringify({
-									contract,
-									route,
-									flag,
-									list,
-									realize,
-								});
-								assert.equal(run.status === 0, expected, label);
-								if (contract === "failure" || contract === "cancelled")
-									assert.notEqual(run.status, 0, label);
-							}
+							for (const realize of realizes)
+								for (const browserWitSmoke of browserWitSmokes) {
+									const run = spawnSync("bash", ["-c", script], {
+										env: {
+											...process.env,
+											CONTRACT_RESULT: contract,
+											REALIZE_RESULT: realize,
+											BROWSER_WIT_SMOKE_RESULT: browserWitSmoke,
+											ROUTE_RESULT: route,
+											ATTESTED: flag,
+											ATTESTED_JOBS: list,
+										},
+									});
+									const attested =
+										route === "success" &&
+										flag === "true" &&
+										list.includes('"release-contract"');
+									const expected =
+										route === "success" &&
+										realize === "success" &&
+										browserWitSmoke === "success" &&
+										(contract === "success" ||
+											(contract === "skipped" && attested));
+									const label = JSON.stringify({
+										contract,
+										route,
+										flag,
+										list,
+										realize,
+										browserWitSmoke,
+									});
+									assert.equal(run.status === 0, expected, label);
+									if (contract === "failure" || contract === "cancelled")
+										assert.notEqual(run.status, 0, label);
+								}
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

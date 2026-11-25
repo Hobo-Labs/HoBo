@@ -30,6 +30,7 @@ import {
 	type Realizer,
 	type ReasonRecord,
 	ReasonRecordSchema,
+	type ReasonStructuredDetail,
 	type ReconcileObservationRecord,
 	ReconcileObservationRecordSchema,
 	type ReconcilerId,
@@ -58,7 +59,7 @@ import {
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
 import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
-import { createDriftPolicy } from "@hobo/cd/reconcile";
+import { createDriftPolicy, releaseFreightRefusalOf } from "@hobo/cd/reconcile";
 import { definitionDigest } from "@hobo/cd/sources";
 import {
 	RUNNER_FLEET_BINDLE,
@@ -886,17 +887,40 @@ export function withRunnerHostRealization(
 
 /** A thrown resolver refusal (or any failure) as a typed code and message. */
 function refusalOf(error: Error) {
-	return {
-		code:
-			error instanceof ResolverError || error instanceof CatalogRealizerError
-				? error.code
-				: "realize-failed",
-		message: error.message,
-	};
+	const refused = releaseFreightRefusalOf(error);
+	const code =
+		error instanceof ResolverError || error instanceof CatalogRealizerError
+			? error.code
+			: refused.code;
+	if (refused.structured) {
+		return {
+			code,
+			message: error.message,
+			structured: refused.structured,
+		};
+	}
+	return { code, message: error.message };
 }
 
-function realizerReason(code: string, message: string, remediation: string) {
-	return create(ReasonRecordSchema, { code, message, remediation });
+function realizerReason(
+	code: string,
+	message: string,
+	remediation: string,
+	structured?: ReasonStructuredDetail,
+) {
+	if (structured) {
+		return create(ReasonRecordSchema, {
+			code,
+			message,
+			remediation,
+			structured,
+		});
+	}
+	return create(ReasonRecordSchema, {
+		code,
+		message,
+		remediation,
+	});
 }
 
 /**
@@ -1078,7 +1102,11 @@ export function createCatalogResolverRealizer(
 
 	function blocked(
 		input: RealizeInput,
-		{ code, message }: Readonly<{ code: string; message: string }>,
+		refusal: Readonly<{
+			code: string;
+			message: string;
+			structured?: ReasonStructuredDetail;
+		}>,
 		resources: Parameters<typeof observation>[3] = [],
 	): ReconcileObservationRecord {
 		return observation(
@@ -1086,9 +1114,10 @@ export function createCatalogResolverRealizer(
 			ReconcileStatus.BLOCKED,
 			[
 				realizerReason(
-					code,
-					message,
+					refusal.code,
+					refusal.message,
 					"Fix the cause the resolver names; the next pass re-observes and is idempotent.",
+					refusal.structured,
 				),
 			],
 			resources,
