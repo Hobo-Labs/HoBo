@@ -179,16 +179,15 @@ function isResolverErrorCode(code: string): code is ResolverErrorCode {
 	return false;
 }
 
-function providerTextSafeAfterRedaction(text: string): boolean {
-	const trimmed = text.trim();
-	if (!trimmed) return false;
-	if (JWT_DETECTOR.test(trimmed) || PRIVATE_KEY_DETECTOR.test(trimmed))
-		return false;
-	return true;
-}
-
 export function redactRealizerConditionText(message: string): string {
-	return redactProviderText(message);
+	const redacted = redactProviderText(message).trim();
+	if (
+		!redacted ||
+		JWT_DETECTOR.test(redacted) ||
+		PRIVATE_KEY_DETECTOR.test(redacted)
+	)
+		return "The realizer reported a condition.";
+	return redacted;
 }
 
 function surfaceRealizerConditionMessage(entry: ReasonRecord): string {
@@ -199,10 +198,7 @@ function surfaceRealizerConditionMessage(entry: ReasonRecord): string {
 		(isResolverErrorCode(entry.code) &&
 			RESOLVER_ERROR_CODES.includes(entry.code));
 	if (!surface) return "The realizer reported a condition.";
-	const redacted = redactRealizerConditionText(raw);
-	if (!providerTextSafeAfterRedaction(redacted))
-		return "The realizer reported a condition.";
-	return redacted;
+	return "The realizer reported a condition.";
 }
 
 export function sanitizeReasons(

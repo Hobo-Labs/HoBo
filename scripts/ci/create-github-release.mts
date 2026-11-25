@@ -41,6 +41,7 @@ import { join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { redactRealizerConditionText } from "../lib/redact-operator-condition.mts";
+import { camps } from "../../release/hobo-release.delivery.ts";
 
 // ── Release Freight ─────────────────────────────────────────────────────────
 
@@ -357,11 +358,22 @@ export type ReleaseCredentials = Readonly<{
 }>;
 
 const GITHUB_APP_REF = "github-app://";
-const RELEASE_GITHUB_APP_SCOPE =
-	/^release-probe$|^cd-realize:[A-Za-z0-9._-]+$/u;
+
+export function releaseWorkflowGithubAppScopes(): ReadonlySet<string> {
+	return new Set([
+		"release-probe",
+		...camps.map((camp) => `cd-realize:${camp.campId}`),
+	]);
+}
 
 export function releaseWorkflowGithubAppScopeAllowed(scope: string): boolean {
-	return RELEASE_GITHUB_APP_SCOPE.test(scope.trim());
+	return releaseWorkflowGithubAppScopes().has(scope.trim());
+}
+
+function releaseWorkflowLogFragment(text: string): string {
+	return redactRealizerConditionText(text)
+		.replaceAll(/[\r\n]/gu, " ")
+		.trim();
 }
 
 export function releaseWorkflowCredentials(
@@ -925,8 +937,10 @@ export function announceVerdict(
 ): boolean {
 	const line = `release Freight ${family} ${freightId} -> ${releaseCampId(family, channel)}: ${verdict.outcome} (${verdict.codes.join(", ") || "none"})`;
 	const allowed = verdict.outcome === "qualified";
-	if (!allowed) console.error(`::error::${line} ${verdict.message}`);
-	else console.log(line);
+	if (!allowed) {
+		const detail = releaseWorkflowLogFragment(verdict.message);
+		console.error(detail ? `::error::${line} ${detail}` : `::error::${line}`);
+	} else console.log(line);
 	if (env.GITHUB_STEP_SUMMARY)
 		appendFileSync(env.GITHUB_STEP_SUMMARY, `- ${line}\n`);
 	return allowed;

@@ -50,11 +50,16 @@ const source = releaseSource({
 });
 
 describe("releaseWorkflowCredentials", () => {
-	it("allows only release-probe and cd-realize camp scopes for github-app", () => {
+	it("allows only release-probe and declared release cd-realize camp scopes", () => {
 		expect(releaseWorkflowGithubAppScopeAllowed("release-probe")).toBe(true);
 		expect(
-			releaseWorkflowGithubAppScopeAllowed("cd-realize:hobo-release-oci"),
+			releaseWorkflowGithubAppScopeAllowed(
+				"cd-realize:hobo-release-oci/oci-candidate",
+			),
 		).toBe(true);
+		expect(
+			releaseWorkflowGithubAppScopeAllowed("cd-realize:hobo-release-oci"),
+		).toBe(false);
 		expect(releaseWorkflowGithubAppScopeAllowed("registry:evil:pull")).toBe(
 			false,
 		);

@@ -19,7 +19,7 @@ function runtimeSyntheticJwt() {
 }
 
 describe("realizer condition surfacing", () => {
-	it("redacts runtime-generated credentials from RESOLVER and realize-failed messages", () => {
+	it("keeps RESOLVER and realize-failed observations generic while redacting is available for Freight", () => {
 		const { token, payload } = runtimeSyntheticJwt();
 		const providerMessage = `upstream denied authorization ${token}`;
 
@@ -40,9 +40,11 @@ describe("realizer condition surfacing", () => {
 				CAMP,
 				"realizer",
 			);
-			expect(reason?.message ?? "", code).not.toContain(token);
-			expect(reason?.message ?? "", code).not.toContain(payload);
-			expect(reason?.message ?? "", code).toMatch(/upstream denied/i);
+			expect(reason?.message ?? "", code).toBe(
+				"The realizer reported a condition.",
+			);
+			expect(JSON.stringify(reason)).not.toContain(token);
+			expect(JSON.stringify(reason)).not.toContain(payload);
 		}
 	});
 
@@ -68,9 +70,7 @@ describe("realizer condition surfacing", () => {
 			observeFields: [],
 			management: CampManagement.MANAGED,
 		});
-		const serialized = JSON.stringify(observation);
-		expect(serialized).not.toContain(token);
-		expect(serialized).not.toContain(payload);
-		expect(observation.reasons[0]?.message).toMatch(/registry/i);
+		expect(JSON.stringify(observation)).not.toContain(token);
+		expect(JSON.stringify(observation)).not.toContain(payload);
 	});
 });

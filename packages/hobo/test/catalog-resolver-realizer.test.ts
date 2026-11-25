@@ -71,7 +71,7 @@ it.each(
 
 it.each(
 	RESOLVER_ERROR_CODES,
-)("surfaces resolver code %s with the provider message", (code) => {
+)("replaces resolver code %s provider detail with a generic operator message", (code) => {
 	const providerMessage =
 		"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
 	const observation = sanitizeObservation({
@@ -94,7 +94,10 @@ it.each(
 		management: CampManagement.MANAGED,
 	});
 	expect(observation.reasons[0]?.code).toBe(code);
-	expect(observation.reasons[0]?.message).toBe(providerMessage);
+	expect(observation.reasons[0]?.message).toBe(
+		"The realizer reported a condition.",
+	);
+	expect(JSON.stringify(observation)).not.toContain("pkg-containers");
 });
 
 it.each(
@@ -122,11 +125,12 @@ it.each(
 		observeFields: [],
 		management: CampManagement.MANAGED,
 	});
-	const message = observation.reasons[0]?.message ?? "";
 	expect(observation.reasons[0]?.code).toBe(code);
-	expect(message).not.toContain(synthetic);
-	expect(message).not.toContain(tail);
-	expect(message).toMatch(/registry refused/i);
+	expect(observation.reasons[0]?.message).toBe(
+		"The realizer reported a condition.",
+	);
+	expect(JSON.stringify(observation)).not.toContain(synthetic);
+	expect(JSON.stringify(observation)).not.toContain(tail);
 });
 
 function camp(provider: string, labels: Record<string, string>) {
