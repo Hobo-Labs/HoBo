@@ -34,3 +34,26 @@ reads the routing slip at `refs/hobo/routing-slip` with `contents: read`
   journals, do not count these images as part of the train.
 
 `scripts/test/fleet-release-workflow.test.ts` holds the job to this description.
+
+## Release Freight realize
+
+[`create-github-release.mts`](create-github-release.mts) opens release CD with
+`releaseWorkflowCredentials`: camps that declare `github-app://<owner>/<repo>`
+locators authorize through the workflow job `GITHUB_TOKEN` only when
+`GITHUB_REPOSITORY` is set and matches the locator case-insensitively and the
+resolver scope is `release-probe` or `cd-realize:<campId>` (`releaseWorkflowGithubAppScopeAllowed`).
+Blocked release verdicts and `::error::` lines run operator reason text through
+`scripts/lib/redact-operator-condition.mts` (`@hobo/provider-redaction`) before
+aggregation or logging. The `release-contract` job builds those workspace
+packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
+`scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
+checkouts have `dist/` without pulling `@hobo/cd` source into the scripts lane.
+Hermetic checks live in
+[`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
+Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
+
+[`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
+resolution contracts are exercised in
+[`scripts/test/ensure-ci-worker-image.test.ts`](../test/ensure-ci-worker-image.test.ts).
+Release `--resolve-digest` pins the worker only when `docker image inspect` lists
+exactly one matching `RepoDigests` entry for `ghcr.io/<repo>/hobo-ci-worker@sha256:<64 lowercase hex>`.

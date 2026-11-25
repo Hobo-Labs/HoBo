@@ -40,6 +40,8 @@ import {
 import { join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { redactRealizerConditionText } from "../lib/redact-operator-condition.mts";
+import { camps } from "../../release/hobo-release.delivery.ts";
 
 // ── Release Freight ─────────────────────────────────────────────────────────
 
@@ -295,7 +297,9 @@ export function classifyRelease(
 		return {
 			outcome: "blocked",
 			codes,
-			message: (at.observedReasons ?? []).map((r) => r.message).join("; "),
+			message: redactRealizerConditionText(
+				(at.observedReasons ?? []).map((r) => r.message ?? "").join("; "),
+			),
 			promotionId,
 		};
 	}
@@ -305,7 +309,9 @@ export function classifyRelease(
 			codes: codesOf(at.reasons).length
 				? codesOf(at.reasons)
 				: [at.state.toLowerCase()],
-			message: (at.reasons ?? []).map((r) => r.message).join("; "),
+			message: redactRealizerConditionText(
+				(at.reasons ?? []).map((r) => r.message ?? "").join("; "),
+			),
 			promotionId,
 		};
 	return undefined;
@@ -350,6 +356,58 @@ export type ReleaseCredentials = Readonly<{
 		scope: string,
 	): Promise<Readonly<Record<string, string>>>;
 }>;
+
+const GITHUB_APP_REF = "github-app://";
+
+export function releaseWorkflowGithubAppScopes(): ReadonlySet<string> {
+	return new Set([
+		"release-probe",
+		...camps.map((camp) => `cd-realize:${camp.campId}`),
+	]);
+}
+
+export function releaseWorkflowGithubAppScopeAllowed(scope: string): boolean {
+	return releaseWorkflowGithubAppScopes().has(scope.trim());
+}
+
+function releaseWorkflowLogFragment(text: string): string {
+	return redactRealizerConditionText(text)
+		.replaceAll(/[\r\n]/gu, " ")
+		.trim();
+}
+
+export function releaseWorkflowCredentials(
+	env: Readonly<Record<string, string | undefined>>,
+): ReleaseCredentials {
+	const repository = env.GITHUB_REPOSITORY?.trim() ?? "";
+	return {
+		async resolve(ref, scope) {
+			if (!ref.startsWith(GITHUB_APP_REF))
+				throw new Error(
+					`release Freight does not resolve credential ${ref} (${scope})`,
+				);
+			if (!releaseWorkflowGithubAppScopeAllowed(scope))
+				throw new Error(
+					`release Freight refuses ${ref}: scope ${scope} is not allowed for workflow github-app credentials`,
+				);
+			if (!repository)
+				throw new Error(
+					`release Freight needs GITHUB_REPOSITORY to authorize ${ref} (${scope})`,
+				);
+			const repo = ref.slice(GITHUB_APP_REF.length);
+			if (repo.toLowerCase() !== repository.toLowerCase())
+				throw new Error(
+					`release Freight refuses ${ref}: expected github-app://${repository}`,
+				);
+			const token = env.GITHUB_TOKEN?.trim();
+			if (!token)
+				throw new Error(
+					`release Freight needs GITHUB_TOKEN to authorize ${ref} (${scope})`,
+				);
+			return { token };
+		},
+	};
+}
 
 export type ReleaseCdSeams = Readonly<{
 	http?: ReleaseHttpTransport;
@@ -484,9 +542,8 @@ export async function openReleaseCd(options: {
 		topologyFiles: [RELEASE_DELIVERY_MODULE],
 		http,
 		...(options.seams?.now ? { now: options.seams.now } : undefined),
-		...(options.seams?.credentials
-			? { credentials: options.seams.credentials }
-			: undefined),
+		credentials:
+			options.seams?.credentials ?? releaseWorkflowCredentials(options.env),
 	});
 	if (!opened.ok)
 		throw new Error(
@@ -880,8 +937,10 @@ export function announceVerdict(
 ): boolean {
 	const line = `release Freight ${family} ${freightId} -> ${releaseCampId(family, channel)}: ${verdict.outcome} (${verdict.codes.join(", ") || "none"})`;
 	const allowed = verdict.outcome === "qualified";
-	if (!allowed) console.error(`::error::${line} ${verdict.message}`);
-	else console.log(line);
+	if (!allowed) {
+		const detail = releaseWorkflowLogFragment(verdict.message);
+		console.error(detail ? `::error::${line} ${detail}` : `::error::${line}`);
+	} else console.log(line);
 	if (env.GITHUB_STEP_SUMMARY)
 		appendFileSync(env.GITHUB_STEP_SUMMARY, `- ${line}\n`);
 	return allowed;

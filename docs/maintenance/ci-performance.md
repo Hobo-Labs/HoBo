@@ -23,10 +23,15 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   runner's own content-keyed image, else a GHCR pull with the job token
   (`packages: read`), and `build.sh` only when neither has it. Tag releases resolve
   the worker tag to one immutable digest in `release-toolchain-image` before either
-  matrix starts. A supplied `HOBO_CI_WORKER_IMAGE_REF` must be this repository's
+  matrix starts. `--resolve-digest` waits until the version tag is pullable from GHCR,
+  pins the digest from that pulled image, and confirms the digest ref pulls, so release
+  never races `ci-deps-publish.yml`'s
+  worker push on a green main run. That job's timeout is 15 minutes so the wait can
+  use the full `HOBO_CI_WORKER_PULL_BUDGET_SEC`. A supplied `HOBO_CI_WORKER_IMAGE_REF` must be this repository's
   immutable `hobo-ci-worker` digest (`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:<64 lowercase hex>`);
   an empty or invalid value fails the job instead of falling back to the version
-  tag, and only an absent variable uses the version tag. Build and publish legs pull that digest under one overall
+  tag, and only an absent variable uses the version tag. Materialization with a
+  supplied digest ref never falls back to the mutable version tag. Build and publish legs pull that digest under one overall
   `HOBO_CI_WORKER_PULL_BUDGET_SEC` deadline (540 seconds in release), with at most
   four attempts and exponential backoff plus jitter instead of 120-second
   per-attempt kills; their ensure steps have a 10-minute bound. The
