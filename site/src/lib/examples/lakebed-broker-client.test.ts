@@ -38,7 +38,6 @@ describe("lakebed broker client", () => {
 		const result = await provisionLakebedStationViaBroker({
 			stationId: "st-1",
 			pageUrl: "http://localhost:4321/HoBo/examples/",
-			// SAFETY: vitest mock stands in for fetch at this test boundary.
 			fetchImpl: fetchImpl as typeof fetch,
 		});
 		expect(result.stationUrl).toContain("lakebed.app");
