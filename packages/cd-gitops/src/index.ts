@@ -8,6 +8,11 @@ export {
 	parsePublisherConfig,
 } from "./config.js";
 export {
+	cdEngineRegistrations,
+	createCdEngineRegistryFromGitops,
+	mergePublisherRegistryIntoCdEngines,
+} from "./engine-registry.js";
+export {
 	argoVerdict,
 	ENGINE_CREDENTIAL_SCOPE,
 	type EngineVerdict,
@@ -37,11 +42,6 @@ export {
 	type PublisherRegistry,
 	publisherTarget,
 } from "./publisher.js";
-export {
-	cdEngineRegistrations,
-	createCdEngineRegistryFromGitops,
-	mergePublisherRegistryIntoCdEngines,
-} from "./engine-registry.js";
 export {
 	canonicalJson,
 	type EngineDocumentRef,
