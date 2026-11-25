@@ -91,7 +91,7 @@ export const VIBE_LAUNCH_ASSET_REFRESH_PLAN: VibeLaunchAssetRefreshPlan = {
   targetPackagePath: "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan",
   proofNotePath: "docs/design/proofs/vibe-launch-asset-refresh-plan/README.md",
   sourceRefs: [
-    "docs/design/launch-demo-golden-path.md",
+    "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
     "docs/design/launch-messaging-claims.md",
     "src/draft/exp-proofs/dx/launch-demo-golden-path-contract/README.md",
     "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples/README.md",
@@ -153,7 +153,7 @@ export const VIBE_LAUNCH_ASSET_REFRESH_PLAN: VibeLaunchAssetRefreshPlan = {
       label: "launch demo and messaging docs",
       sourceOwner: "Example Apps",
       proofMode: "reference fixture",
-      evidenceSource: "docs/design/launch-demo-golden-path.md",
+      evidenceSource: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
       freshnessRule: "Current when acceptance, owner routing, public-claim boundary, and proof-mode vocabulary match the executable proofs.",
       refreshTrigger: "Acceptance, owner, scope, proof note, claim register, or known-limitation boundary changes.",
       validationRoute: "Docs owner updates design records and proof notes in the same branch as asset refresh changes.",

@@ -321,7 +321,7 @@ export const VIBE_REPRESENTATIVE_A11Y_USABILITY_CHECKS: VibeRepresentativeA11yUs
     "docs/design/docs-portal.md",
     "docs/design/support-workflow.md",
     "docs/design/publisher-portal.md",
-    "docs/design/launch-demo-golden-path.md",
+    "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
     "docs/design/proofs/vibe-accessibility-usability-checklist/README.md",
     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],

@@ -26,7 +26,7 @@ export const launchMessagingClaimRegister = {
         "Launch demos can use accepted example-app proof modes to separate live behavior from reference or simulated evidence.",
       state: "simulated-reference",
       evidenceOwner: "Example Apps",
-      evidenceSource: "docs/design/example-apps.md#m0-acceptance-record",
+      evidenceSource: "https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9#m0-acceptance-record",
       riskRating: "medium",
       publicationDisposition: "candidate",
     },

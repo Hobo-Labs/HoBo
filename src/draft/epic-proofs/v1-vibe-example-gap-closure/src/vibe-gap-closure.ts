@@ -439,12 +439,12 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-555", "snapshot launch demo storyboard and proof-mode asset map", "V1 Launch Site, Messaging & Demo Assets", "M5", 3, [
       "storyboard",
       "asset map",
-    ], ["docs/design/launch-demo-golden-path.md", "docs/design/launch-messaging-claims.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084", "docs/design/launch-messaging-claims.md"]),
     child("HOBO-556", "screenshot, recording manifest, command transcript, and fixture refresh plan", "V1 Launch Site, Messaging & Demo Assets", "M5", 3, [
       "recording manifest",
       "transcript",
       "fixtures",
-    ], ["docs/design/launch-demo-golden-path.md", "docs/design/launch-messaging-claims.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084", "docs/design/launch-messaging-claims.md"]),
     child("HOBO-557", "CLI transcript and MCP tool pseudocode examples for six role journeys", "CLI, MCP & Developer Experience", "M1", 3, [
       "transcript",
       "pseudocode",

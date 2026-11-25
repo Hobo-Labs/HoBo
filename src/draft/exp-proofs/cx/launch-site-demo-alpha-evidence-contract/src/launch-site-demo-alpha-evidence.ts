@@ -88,7 +88,7 @@ export const launchSiteDemoAlphaEvidence: LaunchSiteDemoAlphaEvidenceRecord = {
       id: "live-recording-is-alpha-slot",
       ownerProject: "V1 Launch Site, Messaging & Demo Assets",
       state: "accepted-risk",
-      evidenceSource: "docs/design/launch-demo-golden-path.md#required-assets",
+      evidenceSource: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084#required-assets",
       mitigation: "Alpha proof may reserve the recording-manifest slot, but public launch copy waits for live accepted recording evidence.",
     },
   ],
@@ -119,7 +119,7 @@ export const launchSiteDemoAlphaEvidence: LaunchSiteDemoAlphaEvidenceRecord = {
       ownerProject: "Example Apps",
       readinessDomain: "productization",
       cutlineCategory: "v1-blocker.productization",
-      source: "docs/design/launch-demo-golden-path.md#required-assets",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084#required-assets",
     },
     {
       id: "dogfood-alpha-recording-operations",
@@ -153,7 +153,7 @@ export const launchSiteDemoAlphaEvidence: LaunchSiteDemoAlphaEvidenceRecord = {
     {
       id: "demo-golden-path",
       ownerProject: "Example Apps",
-      source: "docs/design/launch-demo-golden-path.md#command-path",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084#command-path",
       proofMode: "reference-fixture",
       status: "accepted",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -161,7 +161,7 @@ export const launchSiteDemoAlphaEvidence: LaunchSiteDemoAlphaEvidenceRecord = {
     {
       id: "recording-manifest-slot",
       ownerProject: "V1 Launch Site, Messaging & Demo Assets",
-      source: "docs/design/launch-demo-golden-path.md#required-assets",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084#required-assets",
       proofMode: "live-recording",
       status: "accepted-risk",
       acceptanceBullet: "Blockers and accepted risks are recorded.",

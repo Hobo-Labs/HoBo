@@ -107,7 +107,7 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
     {
       id: "golden-path-demo-assets",
       ownerProject: "Example Apps",
-      source: "docs/design/launch-demo-golden-path.md#required-assets",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084#required-assets",
       proofMode: "reference-fixture",
       status: "accepted-risk",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -188,7 +188,7 @@ export const launchSiteReleaseCandidateEvidence: LaunchSiteReleaseCandidateEvide
       ownerProject: "Example Apps",
       readinessDomain: "productization",
       cutlineCategory: "v1-blocker.productization",
-      source: "docs/design/launch-demo-golden-path.md#required-assets",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084#required-assets",
     },
     {
       id: "dogfood-operations-evidence",

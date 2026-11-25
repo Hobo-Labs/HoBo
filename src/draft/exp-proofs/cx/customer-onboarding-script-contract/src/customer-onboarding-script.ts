@@ -114,7 +114,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       reason: "Defines first-run activation stages, stalled states, and support handoff fields consumed by pilot scripts.",
     },
     {
-      source: "docs/design/example-apps.md",
+      source: "https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9",
       reason: "Supplies accepted sample-app proof modes when a pilot chooses a sample project instead of a real project.",
     },
     {
@@ -122,7 +122,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       reason: "Defines comparable feedback intake and release-candidate exit rules for private-beta evidence.",
     },
     {
-      source: "docs/design/launch-demo-golden-path.md",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
       reason: "Keeps launch demo assets separate from customer onboarding while reusing proof-mode language.",
     },
     {
@@ -189,7 +189,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Choose the accepted sample path or a customer-owned project and record why the choice is supportable.",
       expectedEvidence: "Sample-or-real project decision with proof mode, data boundary, and unsupported-state note.",
       proofMode: "design-record",
-      source: "docs/design/example-apps.md",
+      source: "https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9",
     },
     {
       id: "first-deploy",
@@ -197,7 +197,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Attempt the first deploy path only inside accepted proof boundaries and record command/output evidence or refusal.",
       expectedEvidence: "First deploy evidence link, refusal, or blocker category with proof mode.",
       proofMode: "reference-fixture",
-      source: "docs/design/launch-demo-golden-path.md",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
     },
     {
       id: "failure-recovery",

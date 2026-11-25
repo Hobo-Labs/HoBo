@@ -80,7 +80,7 @@ export const launchSitePrivateBetaEvidence = {
     {
       id: "golden-path-demo",
       ownerProject: "Example Apps",
-      evidenceSource: "docs/design/launch-demo-golden-path.md",
+      evidenceSource: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
       proves: "Snapshop demo command path and proof modes are available for private beta launch assets.",
       status: "accepted"
     },
