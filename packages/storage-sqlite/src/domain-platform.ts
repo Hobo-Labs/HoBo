@@ -341,7 +341,10 @@ export function createSqliteDomainPlatform(
 										if (existingReceiptRow !== undefined) {
 											const parsed: SendResult = decodeAccepted(
 												JSON.parse(
-													asText(existingReceiptRow.receipt_json, "receipt_json"),
+													asText(
+														existingReceiptRow.receipt_json,
+														"receipt_json",
+													),
 												),
 											);
 											return parsed;
@@ -426,8 +429,7 @@ export function createSqliteDomainPlatform(
 											if (existing?.commandId === meta.commandId) {
 												return Effect.succeed(existing.at);
 											}
-											const at =
-												"at" in due ? due.at : now() + due.afterMillis;
+											const at = "at" in due ? due.at : now() + due.afterMillis;
 											const record = {
 												commandId: meta.commandId,
 												at,
