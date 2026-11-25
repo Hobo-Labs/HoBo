@@ -312,7 +312,7 @@ describe("releaseCampRealizeScope", () => {
 });
 
 describe("releaseBlockedRealizerMessage", () => {
-	it("labels each blocked reason with its code and redacted resolver text", () => {
+	it("labels blocked reasons with stable codes and structured credential-scope fields", () => {
 		expect(
 			releaseBlockedRealizerMessage([
 				{
@@ -321,9 +321,42 @@ describe("releaseBlockedRealizerMessage", () => {
 						"release Freight refuses github-app://Hobo-Labs/HoBo: scope cd-realize:hobo-release/pages-candidate is not allowed for workflow github-app credentials",
 				},
 			]),
-		).toMatch(
-			/realize-failed: release Freight refuses.*pages-candidate is not allowed/u,
+		).toBe(
+			"realize-failed: credential=github-app://Hobo-Labs/HoBo scope=cd-realize:hobo-release/pages-candidate scope-not-allowed",
 		);
+	});
+
+	it("falls back to codes alone for non-release provider text", () => {
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "RESOLVER_PROVIDER_REJECTED",
+					message:
+						"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com",
+				},
+			]),
+		).toBe("RESOLVER_PROVIDER_REJECTED");
+	});
+});
+
+describe("release credential scope during catalog realizes", () => {
+	it("matches pipeline logical camp ids the catalog resolver passes to credentials.resolve", async () => {
+		const pages = camps.find(
+			(camp) => camp.logicalId === "hobo-release/pages-candidate",
+		);
+		expect(pages).toBeDefined();
+		const credentials = releaseWorkflowCredentials({
+			GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+			GITHUB_TOKEN: "synthetic-job-token",
+		});
+		const catalogScope = `cd-realize:${pages!.logicalId}`;
+		const physicalScope = `cd-realize:${pages!.campId}`;
+		await expect(
+			credentials.resolve(`github-app://${"Hobo-Labs/HoBo"}`, catalogScope),
+		).resolves.toEqual({ token: "synthetic-job-token" });
+		await expect(
+			credentials.resolve(`github-app://${"Hobo-Labs/HoBo"}`, physicalScope),
+		).rejects.toThrow(/scope .* not allowed/u);
 	});
 });
 
@@ -393,7 +426,7 @@ describe("classifyRelease", () => {
 		});
 		expect(verdict?.message).not.toContain(synthetic);
 		expect(verdict?.message).not.toContain(payload);
-		expect(verdict?.message).toMatch(/ghcr publish refused/i);
+		expect(verdict?.message).toBe("RESOLVER_PROVIDER_REJECTED");
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
 			announceVerdict(

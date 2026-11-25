@@ -274,7 +274,7 @@ describe("createCampReconciler", () => {
 		).not.toContain(marker);
 	});
 
-	it("surfaces RESOLVER_CREDENTIAL_MISSING operator detail", async () => {
+	it("reports RESOLVER_CREDENTIAL_MISSING with generic operator text", async () => {
 		const h = harness();
 		const marker = "installation token missing for ghcr.io";
 		h.realizer.observe = async () =>
@@ -293,10 +293,12 @@ describe("createCampReconciler", () => {
 		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
 		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
 		expect(observation.reasons[0]?.code).toBe("RESOLVER_CREDENTIAL_MISSING");
-		expect(observation.reasons[0]?.message).toBe(marker);
+		expect(observation.reasons[0]?.message).toBe(
+			"The realizer reported a condition.",
+		);
 	});
 
-	it("surfaces redacted resolver refusal detail for operators", () => {
+	it("reports RESOLVER_PROVIDER_REJECTED with generic operator text", () => {
 		const detail =
 			"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
 		const [reason] = sanitizeReasons(
@@ -311,10 +313,10 @@ describe("createCampReconciler", () => {
 			CAMP,
 			"realizer",
 		);
-		expect(reason?.message).toMatch(/pkg-containers\.githubusercontent\.com/u);
+		expect(reason?.message).toBe("The realizer reported a condition.");
 	});
 
-	it("redacts runtime-generated credentials from surfaced resolver detail", () => {
+	it("drops runtime-generated credentials from surfaced resolver messages", () => {
 		const marker = `runtime-${Date.now()}`;
 		const synthetic = `Bearer eyJhbGciOiJIUzI1NiJ9.${marker}.${"y".repeat(40)}`;
 		const [reason] = sanitizeReasons(
@@ -329,7 +331,7 @@ describe("createCampReconciler", () => {
 			CAMP,
 			"realizer",
 		);
-		expect(reason?.message).toMatch(/token rejected/u);
+		expect(reason?.message).toBe("The realizer reported a condition.");
 		expect(JSON.stringify(reason)).not.toContain(synthetic);
 		expect(JSON.stringify(reason)).not.toContain(marker);
 	});

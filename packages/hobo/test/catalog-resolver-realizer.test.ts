@@ -71,7 +71,7 @@ it.each(
 
 it.each(
 	RESOLVER_ERROR_CODES,
-)("surfaces redacted resolver code %s provider detail without private hosts", (code) => {
+)("replaces resolver code %s provider detail with a generic operator message", (code) => {
 	const providerMessage =
 		"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
 	const observation = sanitizeObservation({
@@ -94,9 +94,10 @@ it.each(
 		management: CampManagement.MANAGED,
 	});
 	expect(observation.reasons[0]?.code).toBe(code);
-	expect(observation.reasons[0]?.message ?? "").toMatch(
-		/registry ghcr\.io redirected a blob read/u,
+	expect(observation.reasons[0]?.message).toBe(
+		"The realizer reported a condition.",
 	);
+	expect(JSON.stringify(observation)).not.toContain("pkg-containers");
 });
 
 it.each(
@@ -125,8 +126,8 @@ it.each(
 		management: CampManagement.MANAGED,
 	});
 	expect(observation.reasons[0]?.code).toBe(code);
-	expect(observation.reasons[0]?.message ?? "").toMatch(
-		/registry refused .*ghcr\.io/u,
+	expect(observation.reasons[0]?.message).toBe(
+		"The realizer reported a condition.",
 	);
 	expect(JSON.stringify(observation)).not.toContain(synthetic);
 	expect(JSON.stringify(observation)).not.toContain(tail);

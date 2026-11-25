@@ -18,14 +18,17 @@ function runtimeSyntheticJwt() {
 	return { token, payload } as const;
 }
 
+const GENERIC = "The realizer reported a condition.";
+
 describe("realizer condition surfacing", () => {
-	it("surfaces redacted resolver detail without credential material", () => {
-		const { token, payload } = runtimeSyntheticJwt();
+	it("keeps resolver and realize-failed observation text generic", () => {
+		const { token } = runtimeSyntheticJwt();
 		const providerMessage = `upstream denied authorization ${token}`;
 
 		for (const code of [
 			"RESOLVER_PROVIDER_REJECTED",
 			"RESOLVER_CREDENTIAL_MISSING",
+			"realize-failed",
 		] as const) {
 			const [reason] = sanitizeReasons(
 				[
@@ -39,35 +42,11 @@ describe("realizer condition surfacing", () => {
 				CAMP,
 				"realizer",
 			);
-			expect(reason?.message ?? "", code).toMatch(
-				/upstream denied authorization/u,
-			);
-			expect(JSON.stringify(reason)).not.toContain(token);
-			expect(JSON.stringify(reason)).not.toContain(payload);
+			expect(reason?.message, code).toBe(GENERIC);
 		}
 	});
 
-	it("keeps realize-failed observations redacted when a message carries secret material", () => {
-		const { token, payload } = runtimeSyntheticJwt();
-		const providerMessage = `upstream denied authorization ${token}`;
-		const [reason] = sanitizeReasons(
-			[
-				create(ReasonRecordSchema, {
-					code: "realize-failed",
-					message: providerMessage,
-					remediation: providerMessage,
-					subject: CAMP,
-				}),
-			],
-			CAMP,
-			"realizer",
-		);
-		expect(reason?.message ?? "").toMatch(/upstream denied authorization/u);
-		expect(JSON.stringify(reason)).not.toContain(token);
-		expect(JSON.stringify(reason)).not.toContain(payload);
-	});
-
-	it("keeps redacted resolver messages out of serialized observation output", () => {
+	it("keeps provider material out of serialized observation output", () => {
 		const { token, payload } = runtimeSyntheticJwt();
 		const providerMessage = `registry bearer ${token}`;
 		const observation = sanitizeObservation({
@@ -89,6 +68,7 @@ describe("realizer condition surfacing", () => {
 			observeFields: [],
 			management: CampManagement.MANAGED,
 		});
+		expect(observation.reasons[0]?.message).toBe(GENERIC);
 		expect(JSON.stringify(observation)).not.toContain(token);
 		expect(JSON.stringify(observation)).not.toContain(payload);
 	});

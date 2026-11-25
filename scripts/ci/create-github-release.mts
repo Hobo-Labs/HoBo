@@ -40,7 +40,6 @@ import {
 import { join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { redactRealizerConditionText } from "../lib/redact-operator-condition.mts";
 import { camps } from "../../release/hobo-release.delivery.ts";
 
 // ── Release Freight ─────────────────────────────────────────────────────────
@@ -275,14 +274,46 @@ const TERMINAL = new Set([
 const codesOf = (reasons: readonly CdReason[] | undefined) =>
 	(reasons ?? []).map((r) => r.code ?? "").filter((c) => c !== "");
 
+const RELEASE_FREIGHT_SCOPE_NOT_ALLOWED =
+	/^release Freight refuses (\S+): scope (\S+) is not allowed for workflow github-app credentials$/u;
+const RELEASE_FREIGHT_CREDENTIAL_UNRESOLVED =
+	/^release Freight does not resolve credential (\S+) \(([^)]+)\)$/u;
+const RELEASE_FREIGHT_REPO_MISMATCH =
+	/^release Freight refuses (\S+): expected github-app:\/\/(\S+)$/u;
+const RELEASE_FREIGHT_MISSING_REPOSITORY =
+	/^release Freight needs GITHUB_REPOSITORY to authorize (\S+) \(([^)]+)\)$/u;
+const RELEASE_FREIGHT_MISSING_TOKEN =
+	/^release Freight needs GITHUB_TOKEN to authorize (\S+) \(([^)]+)\)$/u;
+
+export function releaseStructuredBlockedDetail(
+	message: string,
+): string | undefined {
+	const text = message.trim();
+	const scopeDenied = RELEASE_FREIGHT_SCOPE_NOT_ALLOWED.exec(text);
+	if (scopeDenied)
+		return `credential=${scopeDenied[1]} scope=${scopeDenied[2]} scope-not-allowed`;
+	const unresolved = RELEASE_FREIGHT_CREDENTIAL_UNRESOLVED.exec(text);
+	if (unresolved)
+		return `credential=${unresolved[1]} scope=${unresolved[2]} credential-unresolved`;
+	const repoMismatch = RELEASE_FREIGHT_REPO_MISMATCH.exec(text);
+	if (repoMismatch)
+		return `credential=${repoMismatch[1]} expected-repository=${repoMismatch[2]} repository-mismatch`;
+	const missingRepository = RELEASE_FREIGHT_MISSING_REPOSITORY.exec(text);
+	if (missingRepository)
+		return `credential=${missingRepository[1]} scope=${missingRepository[2]} missing-GITHUB_REPOSITORY`;
+	const missingToken = RELEASE_FREIGHT_MISSING_TOKEN.exec(text);
+	if (missingToken)
+		return `credential=${missingToken[1]} scope=${missingToken[2]} missing-GITHUB_TOKEN`;
+	return undefined;
+}
+
 export function releaseBlockedRealizerMessage(
 	reasons: readonly CdReason[] | undefined,
 ): string {
 	const parts = (reasons ?? []).map((reason) => {
 		const code = reason.code?.trim() || "unknown";
-		const redacted = redactRealizerConditionText(reason.message ?? "");
-		if (redacted === "The realizer reported a condition.") return code;
-		return `${code}: ${redacted}`;
+		const structured = releaseStructuredBlockedDetail(reason.message ?? "");
+		return structured ? `${code}: ${structured}` : code;
 	});
 	if (parts.length === 0) return "The realizer reported a condition.";
 	return parts.join("; ");
@@ -320,9 +351,7 @@ export function classifyRelease(
 			codes: codesOf(at.reasons).length
 				? codesOf(at.reasons)
 				: [at.state.toLowerCase()],
-			message: redactRealizerConditionText(
-				(at.reasons ?? []).map((r) => r.message ?? "").join("; "),
-			),
+			message: releaseBlockedRealizerMessage(at.reasons),
 			promotionId,
 		};
 	return undefined;
@@ -387,9 +416,7 @@ export function releaseWorkflowGithubAppScopeAllowed(scope: string): boolean {
 }
 
 function releaseWorkflowLogFragment(text: string): string {
-	return redactRealizerConditionText(text)
-		.replaceAll(/[\r\n]/gu, " ")
-		.trim();
+	return text.replaceAll(/[\r\n]/gu, " ").trim();
 }
 
 export function releaseWorkflowCredentials(
