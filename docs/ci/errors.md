@@ -753,10 +753,6 @@ deploy/delivery.ts: {loaded.code}: {loaded.message}. {loaded.remediation}
 ```
 
 ```text
-deploy/delivery.ts declares the relay:finalize-promotion hook on {…}: that ref is reserved for hobo ci deploy's own process-local injection, never a delivery file or a shared pipeline record. Remove the hook; the run that carries a finalizer injects it only into its own promotion driver.
-```
-
-```text
 The relay finalizer needs exactly one {pipeline}/{node} pipeline node; found {finalizationTargets}.
 ```
 
