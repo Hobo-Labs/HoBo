@@ -34,3 +34,40 @@ reads the routing slip at `refs/hobo/routing-slip` with `contents: read`
   journals, do not count these images as part of the train.
 
 `scripts/test/fleet-release-workflow.test.ts` holds the job to this description.
+
+## Release Freight realize
+
+[`create-github-release.mts`](create-github-release.mts) opens release CD with
+`releaseWorkflowCredentials`: camps that declare `github-app://<owner>/<repo>`
+locators authorize through the workflow job `GITHUB_TOKEN` only when
+`GITHUB_REPOSITORY` is set and matches the locator case-insensitively and the
+resolver scope is `release-probe` or `cd-realize:<campId>` (`releaseWorkflowGithubAppScopeAllowed`).
+Blocked release verdicts and `::error::` lines run operator reason text through
+`scripts/lib/redact-operator-condition.mts` (`@hobo/provider-redaction`) before
+aggregation or logging. The `release-contract` job builds those workspace
+packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
+`scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
+checkouts have `dist/` without pulling `@hobo/cd` source into the scripts lane.
+Hermetic checks live in
+[`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
+Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
+
+Pages release sparse checkout lists directory cones only in `RELEASE_PAGES_SPARSE_PATHS`
+(`examples` covers `examples/browser-runtime/wit/station.wit`); `hobo-checkout` routes
+nested file paths through `sparse-checkout add`, not cone `set`. The release-pages job also
+passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts always run
+`sparse-checkout add` plus `git checkout HEAD --` for `examples/browser-runtime/wit`
+(even when a reused runner worktree already has the path), verify `station.wit` matches
+`HEAD` by blob id, log `ls -la` on the wit tree, and fail closed when the file is absent,
+empty, or stale. [`build-release-site-prebuild.mts`](build-release-site-prebuild.mts)
+re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately before turbo
+builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) (via
+[`browser-wit-componentize-sandbox.mts`](../lib/browser-wit-componentize-sandbox.mts))
+copies that wit tree into the temp `hobo-browser-wit-*` workRoot and passes the
+sandbox path to `componentize-js`, because WASI preopens only the guest temp dir (run 45546344117).
+
+[`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
+resolution contracts are exercised in
+[`scripts/test/ensure-ci-worker-image.test.ts`](../test/ensure-ci-worker-image.test.ts).
+Release `--resolve-digest` pins the worker only when `docker image inspect` lists
+exactly one matching `RepoDigests` entry for `ghcr.io/<repo>/hobo-ci-worker@sha256:<64 lowercase hex>`.

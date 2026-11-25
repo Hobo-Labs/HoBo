@@ -231,6 +231,8 @@ env:
     pnpm-workspace.yaml
     turbo.json
     tsconfig.base.json
+  RELEASE_PAGES_MATERIALIZE_PATHS: |
+    examples/browser-runtime/wit
 
 jobs:
   route:
@@ -416,6 +418,10 @@ jobs:
       - name: Shell syntax (changed scripts)
         if: github.event_name != 'push'
         run: pnpm run lint:shell:changed -- --base=HEAD^1
+      - name: Build release-contract script dependencies
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/provider-redaction
+          --output-logs=new-only --concurrency=${{ env.HOBO_TURBO_CONCURRENCY }}
       - name: npm scope map + OCI manifest contract
         id: release_contract_tests
         run: >-
@@ -866,7 +872,7 @@ jobs:
       )
     needs: [route, release-main-train-gate, release-contract]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
@@ -1513,6 +1519,7 @@ jobs:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
+          materialize-paths: ${{ env.RELEASE_PAGES_MATERIALIZE_PATHS }}
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
       # The gate answered before this job waited for a runner and for the

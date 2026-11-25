@@ -14,6 +14,7 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
 import type { DriftPolicy, Realizer } from "../../src/ports.js";
+import { sanitizeReasons } from "../../src/reconcile/errors.js";
 import {
 	createCampReconciler,
 	createDriftPolicy,
@@ -273,6 +274,85 @@ describe("createCampReconciler", () => {
 		).not.toContain(marker);
 	});
 
+	it("redacts RESOLVER_CREDENTIAL_MISSING provider detail", async () => {
+		const h = harness();
+		const marker = "installation token missing for ghcr.io";
+		h.realizer.observe = async () =>
+			create(ReconcileObservationRecordSchema, {
+				status: ReconcileStatus.BLOCKED,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code: "RESOLVER_CREDENTIAL_MISSING",
+						message: marker,
+						remediation: marker,
+						subject: marker,
+					}),
+				],
+			});
+		const resolved = resolvedFor(CAMP, V1);
+		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
+		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
+		expect(observation.reasons[0]?.code).toBe("RESOLVER_CREDENTIAL_MISSING");
+		expect(observation.reasons[0]?.message).toBe(
+			"The realizer reported a condition.",
+		);
+		expect(JSON.stringify(observation)).not.toContain(marker);
+	});
+
+	it("replaces resolver refusal detail with a generic operator message", () => {
+		const detail =
+			"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "RESOLVER_PROVIDER_REJECTED",
+					message: detail,
+					remediation: detail,
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message).toBe("The realizer reported a condition.");
+	});
+
+	it("redacts runtime-generated credentials from surfaced resolver detail", () => {
+		const marker = `runtime-${Date.now()}`;
+		const synthetic = `Bearer eyJhbGciOiJIUzI1NiJ9.${marker}.${"y".repeat(40)}`;
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "RESOLVER_CREDENTIAL_MISSING",
+					message: `token rejected: ${synthetic}`,
+					remediation: "x",
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message).toBe("The realizer reported a condition.");
+		expect(JSON.stringify(reason)).not.toContain(synthetic);
+		expect(JSON.stringify(reason)).not.toContain(marker);
+	});
+
+	it("still redacts runner-host detail", () => {
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "runner-host-verify-failed",
+					message: "synthetic-secret",
+					remediation: "x",
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message).toBe("The realizer reported a condition.");
+	});
+
 	it.each([
 		["observe", "realize-blocked", "realize-blocked"],
 		["converge", "realize-blocked", "realize-blocked"],
@@ -286,7 +366,6 @@ describe("createCampReconciler", () => {
 		["converge", "runner-host-verify-failed", "runner-host-verify-failed"],
 		["observe", "runner-host-rollback-failed", "runner-host-rollback-failed"],
 		["converge", "HOBO_CI_DEPLOY_NOT_READY", "HOBO_CI_DEPLOY_NOT_READY"],
-		["observe", "RESOLVER_CREDENTIAL_MISSING", "RESOLVER_CREDENTIAL_MISSING"],
 		[
 			"observe",
 			"synthetic-private-provider.invalid",

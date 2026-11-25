@@ -2,7 +2,12 @@
 // and every blocked observation carries a stable code plus a remediation an
 // operator or agent can act on.
 import { create } from "@bufbuild/protobuf";
-import { RESOLVER_ERROR_CODES } from "@hobo/core";
+import { RESOLVER_ERROR_CODES, type ResolverErrorCode } from "@hobo/core";
+import {
+	JWT_DETECTOR,
+	PRIVATE_KEY_DETECTOR,
+	redactProviderText,
+} from "@hobo/provider-redaction";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import { AGENT_FAILURES } from "../agent/errors.js";
 import { FEED_FAILURES } from "../feed/errors.js";
@@ -167,6 +172,35 @@ const SAFE_REALIZER_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
 	],
 ]);
 
+function isResolverErrorCode(code: string): code is ResolverErrorCode {
+	for (const allowed of RESOLVER_ERROR_CODES) {
+		if (allowed === code) return true;
+	}
+	return false;
+}
+
+export function redactRealizerConditionText(message: string): string {
+	const redacted = redactProviderText(message).trim();
+	if (
+		!redacted ||
+		JWT_DETECTOR.test(redacted) ||
+		PRIVATE_KEY_DETECTOR.test(redacted)
+	)
+		return "The realizer reported a condition.";
+	return redacted;
+}
+
+function surfaceRealizerConditionMessage(entry: ReasonRecord): string {
+	const raw = entry.message.trim();
+	if (!raw) return "The realizer reported a condition.";
+	const surface =
+		entry.code === "realize-failed" ||
+		(isResolverErrorCode(entry.code) &&
+			RESOLVER_ERROR_CODES.includes(entry.code));
+	if (!surface) return "The realizer reported a condition.";
+	return "The realizer reported a condition.";
+}
+
 export function sanitizeReasons(
 	entries: readonly ReasonRecord[],
 	subject: string,
@@ -186,7 +220,7 @@ export function sanitizeReasons(
 			code: remediation === undefined ? fallback : entry.code,
 			message:
 				source === "realizer"
-					? "The realizer reported a condition."
+					? surfaceRealizerConditionMessage(entry)
 					: "The reconciler transport reported a condition.",
 			remediation: remediation ?? RECONCILE_FAILURES[fallback],
 			subject,
