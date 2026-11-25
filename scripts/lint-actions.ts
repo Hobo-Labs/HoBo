@@ -668,6 +668,99 @@ function lintWorkflowYamlStrict(
 	}
 }
 
+export const REQUIRED_PULL_REQUEST_TYPES = [
+	"opened",
+	"synchronize",
+	"reopened",
+	"ready_for_review",
+] as const;
+
+const PULL_REQUEST_DRAFT_GATE = new RegExp(
+	String.raw`pull_request\.draft\s*==\s*false`,
+);
+
+function pullRequestOnNode(doc: ReturnType<typeof parseDocument>) {
+	const on = doc.get("on");
+	if (!on) return undefined;
+	if (on.has?.("pull_request")) return on.get("pull_request");
+	if (Array.isArray(on.items)) {
+		for (const entry of on.items) {
+			if (entry?.has?.("pull_request")) return entry.get("pull_request");
+		}
+	}
+	return undefined;
+}
+
+function jobBlockHasDraftGate(block: readonly string[]): boolean {
+	return block.some((line) => PULL_REQUEST_DRAFT_GATE.test(line));
+}
+
+function draftGateEntryJobs(
+	file: string,
+	jobIds: readonly string[],
+): readonly string[] {
+	if (jobIds.includes("route")) return ["route"];
+	if (file === "actions-lock.yml") return ["actions-lock"];
+	if (file === "release-hobo-pr.yml") return ["release-integration"];
+	if (file === "dev-env-smoke.yml" || file === "examples-e2e.yml")
+		return jobIds;
+	return [];
+}
+
+function lintPullRequestDraftPolicy(
+	errors: string[],
+	file: string,
+	text: string,
+): void {
+	const doc = parseDocument(text);
+	const pr = pullRequestOnNode(doc);
+	if (pr === undefined || pr === null) return;
+
+	const typesNode = pr.get?.("types");
+	const types: string[] =
+		typesNode?.items?.map((item: { value: string }) => String(item.value)) ??
+		[];
+	const effective =
+		types.length > 0 ? types : ["opened", "synchronize", "reopened"];
+	for (const required of REQUIRED_PULL_REQUEST_TYPES) {
+		if (!effective.includes(required)) {
+			errors.push(
+				`${file}: pull_request.types must include ${required} (have: ${effective.join(", ")})`,
+			);
+		}
+	}
+
+	const lines = text.split(/\r?\n/);
+	const jobsIndex = lines.findIndex((line) => line === "jobs:");
+	if (jobsIndex === -1) return;
+	const jobIds = lines
+		.slice(jobsIndex + 1)
+		.filter((line) => /^  [A-Za-z0-9_-]+:$/.test(line))
+		.map((line) => line.slice(2, -1));
+	const gateJobs = draftGateEntryJobs(file, jobIds);
+	if (gateJobs.length === 0) {
+		errors.push(
+			`${file}: pull_request workflow must gate draft runs on route or its entry job`,
+		);
+		return;
+	}
+	for (const jobId of gateJobs) {
+		const start = lines.findIndex(
+			(line, index) => index > jobsIndex && line === `  ${jobId}:`,
+		);
+		if (start === -1) continue;
+		const nextJob = lines.findIndex(
+			(line, index) => index > start && /^  [A-Za-z0-9_-]+:$/.test(line),
+		);
+		const block = lines.slice(start, nextJob === -1 ? lines.length : nextJob);
+		if (!jobBlockHasDraftGate(block)) {
+			errors.push(
+				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs (github.event.pull_request.draft == false)`,
+			);
+		}
+	}
+}
+
 function lintLocalActionsNeedCheckoutFirst(
 	errors: string[],
 	file: string,
@@ -733,6 +826,7 @@ function lintWorkflowYaml(
 	requireDisabledJobs: boolean,
 ) {
 	lintWorkflowYamlStrict(errors, file, text);
+	if (!requireDisabledJobs) lintPullRequestDraftPolicy(errors, file, text);
 	lintRouting(errors, file, text);
 	if (file === probeFile && !requireDisabledJobs) {
 		lintProbeWorkflow(errors, text);

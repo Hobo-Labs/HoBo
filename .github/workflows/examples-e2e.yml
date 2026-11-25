@@ -3,7 +3,7 @@ name: HoBo Examples E2E
 on:
   pull_request:
     branches: [main]
-    types: [labeled]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:
@@ -15,9 +15,10 @@ jobs:
   hello-bindle-fixture:
     name: hello-bindle sandbox fixture (simulate)
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
+      (github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
-      contains(github.event.pull_request.labels.*.name, 'hobo/e2e')
+      contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
@@ -55,6 +56,7 @@ jobs:
     name: hello-bindle fixture quarantine (simulate)
     if: >-
       github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
       contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')
     runs-on: hobo
     timeout-minutes: 20
