@@ -4,7 +4,6 @@ import {
 	ReconcileObservationRecordSchema,
 	ReconcileStatus,
 } from "../../src/_generated/cd_pb.js";
-import type { PublisherPort } from "../../src/ports.js";
 import {
 	CD_ENGINE_KIND,
 	createCdEngineRegistry,
@@ -12,6 +11,7 @@ import {
 	LEGACY_PUBLISHER_TARGET,
 	registrationsFromPublisherPorts,
 } from "../../src/compose/engines.js";
+import type { PublisherPort } from "../../src/ports.js";
 
 function fakePublisher(target: string): PublisherPort {
 	return Object.freeze({

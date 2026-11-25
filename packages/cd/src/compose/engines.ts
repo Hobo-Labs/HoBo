@@ -5,8 +5,7 @@ export const CD_ENGINE_KIND = Object.freeze({
 	GITOPS_PUBLISHER: "gitops-publisher",
 } as const);
 
-export type CdEngineKind =
-	(typeof CD_ENGINE_KIND)[keyof typeof CD_ENGINE_KIND];
+export type CdEngineKind = (typeof CD_ENGINE_KIND)[keyof typeof CD_ENGINE_KIND];
 
 export const LEGACY_PUBLISHER_TARGET: ReadonlyMap<string, string> = new Map([
 	["argo", "argo-cd"],

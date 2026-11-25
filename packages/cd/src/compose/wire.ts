@@ -73,6 +73,11 @@ import type {
 import { placedCampsFrom } from "../promotion/placed.js";
 import type { PromotionServiceDeps } from "../promotion/service.js";
 import { emitMetrics } from "../telemetry/advisory.js";
+import {
+	type CdEngineRegistration,
+	type CdEngineRegistry,
+	createCdEngineRegistry,
+} from "./engines.js";
 import { ComposeError } from "./errors.js";
 import {
 	unconfiguredFanoutCost,
@@ -81,11 +86,6 @@ import {
 	unconfiguredTraffic,
 	unroutedNotifications,
 } from "./fail-closed.js";
-import {
-	createCdEngineRegistry,
-	type CdEngineRegistry,
-	type CdEngineRegistration,
-} from "./engines.js";
 import { lateBound } from "./late.js";
 import { createRailDeliveryReader, type RailCatalog } from "./rails.js";
 
