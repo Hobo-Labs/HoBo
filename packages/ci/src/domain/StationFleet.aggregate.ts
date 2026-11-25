@@ -3,11 +3,17 @@ import * as Schema from "effect/Schema";
 import {
 	JobDispatchId,
 	JobRequirements,
+	NonEmptyReason,
+	NonNegativeCount,
+	NonNegativeMicros,
+	PayerId,
 	PoolRole,
+	PositiveConcurrency,
 	RunnerPoolHealth,
 	RunnerPoolId,
 	RunnerPoolSpec,
 	RunnerTier,
+	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
@@ -15,16 +21,24 @@ import {
 export class NoEligibleRunnerPool extends Domain.Rejection(
 	"NoEligibleRunnerPool",
 	{
-		reasons: Schema.Array(Schema.String),
+		reasons: Schema.Array(NonEmptyReason),
 	},
 ) {}
 
 export class BudgetCeilingExceeded extends Domain.Rejection(
 	"BudgetCeilingExceeded",
 	{
-		exposureMicros: Schema.Int,
-		requestedMicros: Schema.Int,
-		ceilingMicros: Schema.Int,
+		exposureMicros: NonNegativeMicros,
+		requestedMicros: NonNegativeMicros,
+		ceilingMicros: NonNegativeMicros,
+	},
+) {}
+
+export class BudgetCeilingBelowExposure extends Domain.Rejection(
+	"BudgetCeilingBelowExposure",
+	{
+		exposureMicros: NonNegativeMicros,
+		ceilingMicros: NonNegativeMicros,
 	},
 ) {}
 
@@ -43,7 +57,7 @@ export class UnknownRunnerPool extends Domain.Rejection("UnknownRunnerPool", {
 export class StationBudgetConfigured extends Domain.Event(
 	"StationBudgetConfigured",
 	{
-		ceilingMicros: Schema.NullOr(Schema.Int),
+		ceilingMicros: Schema.NullOr(NonNegativeMicros),
 	},
 ) {}
 
@@ -65,25 +79,25 @@ export class BalancedSlotReserved extends Domain.Event("BalancedSlotReserved", {
 	jobId: JobDispatchId,
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
-	runsOn: Schema.String,
-	payer: Schema.String,
-	reservedMicros: Schema.Int,
+	runsOn: RunsOnLabel,
+	payer: PayerId,
+	reservedMicros: NonNegativeMicros,
 }) {}
 
 export class BalancedSlotReleased extends Domain.Event("BalancedSlotReleased", {
 	slotId: SlotId,
 	jobId: JobDispatchId,
 	poolId: RunnerPoolId,
-	payer: Schema.String,
-	reservedMicros: Schema.Int,
-	settledMicros: Schema.Int,
+	payer: PayerId,
+	reservedMicros: NonNegativeMicros,
+	settledMicros: NonNegativeMicros,
 }) {}
 
 export class BalancedSlotReleaseSkipped extends Domain.Event(
 	"BalancedSlotReleaseSkipped",
 	{
 		slotId: SlotId,
-		reason: Schema.String,
+		reason: NonEmptyReason,
 	},
 ) {}
 
@@ -92,10 +106,10 @@ export class ConfigureStationBudget extends Domain.Command(
 	{
 		target: StationId,
 		input: {
-			ceilingMicros: Schema.NullOr(Schema.Int),
+			ceilingMicros: Schema.NullOr(NonNegativeMicros),
 		},
 		events: [StationBudgetConfigured],
-		rejects: [],
+		rejects: [BudgetCeilingBelowExposure],
 	},
 	{ description: "Set or clear the hard spend ceiling for a CI station." },
 ) {}
@@ -150,8 +164,8 @@ export class ReserveBalancedSlot extends Domain.Command(
 			slotId: SlotId,
 			poolId: RunnerPoolId,
 			tier: RunnerTier,
-			runsOn: Schema.String,
-			reservedMicros: Schema.Int,
+			runsOn: RunsOnLabel,
+			reservedMicros: NonNegativeMicros,
 		},
 	},
 	{
@@ -166,7 +180,7 @@ export class ReleaseBalancedSlot extends Domain.Command(
 		target: StationId,
 		input: {
 			slotId: SlotId,
-			settledMicros: Schema.Int,
+			settledMicros: NonNegativeMicros,
 		},
 		events: [BalancedSlotReleased, BalancedSlotReleaseSkipped],
 		rejects: [],
@@ -181,12 +195,12 @@ const PoolEntry = Schema.Struct({
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
 	role: PoolRole,
-	runsOn: Schema.String,
-	concurrency: Schema.Int,
-	activeJobs: Schema.Int,
-	costPerMinuteMicros: Schema.Int,
-	payer: Schema.String,
-	payerBudgetMicros: Schema.NullOr(Schema.Int),
+	runsOn: RunsOnLabel,
+	concurrency: PositiveConcurrency,
+	activeJobs: NonNegativeCount,
+	costPerMinuteMicros: NonNegativeMicros,
+	payer: PayerId,
+	payerBudgetMicros: Schema.NullOr(NonNegativeMicros),
 	isolated: Schema.Boolean,
 	docker: Schema.Boolean,
 	publicRepositories: Schema.Boolean,
@@ -200,25 +214,28 @@ const ActiveReservation = Schema.Struct({
 	jobId: JobDispatchId,
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
-	runsOn: Schema.String,
-	payer: Schema.String,
-	reservedMicros: Schema.Int,
+	runsOn: RunsOnLabel,
+	payer: PayerId,
+	reservedMicros: NonNegativeMicros,
 });
 
 const PayerExposureEntry = Schema.Struct({
-	payer: Schema.String,
-	exposureMicros: Schema.Int,
+	payer: PayerId,
+	exposureMicros: NonNegativeMicros,
 });
 
-const StationFleetState = Schema.Struct({
-	ceilingMicros: Schema.NullOr(Schema.Int),
-	exposureMicros: Schema.Int,
-	nextSlotSeq: Schema.Int,
+export const StationFleetState = Schema.Struct({
+	ceilingMicros: Schema.NullOr(NonNegativeMicros),
+	exposureMicros: NonNegativeMicros,
+	nextSlotSeq: NonNegativeCount,
 	pools: Schema.Array(PoolEntry),
 	payerExposure: Schema.Array(PayerExposureEntry),
 	reservations: Schema.Array(ActiveReservation),
 });
-type StationFleetState = typeof StationFleetState.Type;
+export type StationFleetState = typeof StationFleetState.Type;
+
+const ZERO_MICROS = NonNegativeMicros.make(0);
+const ZERO_COUNT = NonNegativeCount.make(0);
 
 const ROLE_PRIORITY = {
 	primary: 0,
@@ -234,21 +251,32 @@ const TIER_PRIORITY = {
 	github: 4,
 } as const satisfies Record<RunnerTier, number>;
 
-function payerExposureFor(state: StationFleetState, payer: string): number {
+function toNonNegativeMicros(value: number): NonNegativeMicros {
+	return NonNegativeMicros.make(value <= 0 ? 0 : value);
+}
+
+function toNonNegativeCount(value: number): NonNegativeCount {
+	return NonNegativeCount.make(value <= 0 ? 0 : value);
+}
+
+function payerExposureFor(
+	state: StationFleetState,
+	payer: PayerId,
+): NonNegativeMicros {
 	return (
 		state.payerExposure.find((entry) => entry.payer === payer)
-			?.exposureMicros ?? 0
+			?.exposureMicros ?? ZERO_MICROS
 	);
 }
 
 function updatePayerExposure(
 	entries: readonly {
-		readonly payer: string;
-		readonly exposureMicros: number;
+		readonly payer: PayerId;
+		readonly exposureMicros: NonNegativeMicros;
 	}[],
-	payer: string,
+	payer: PayerId,
 	deltaMicros: number,
-): Array<{ payer: string; exposureMicros: number }> {
+): Array<{ payer: PayerId; exposureMicros: NonNegativeMicros }> {
 	const existing = entries.find((entry) => entry.payer === payer);
 	if (!existing) {
 		return [
@@ -256,26 +284,28 @@ function updatePayerExposure(
 				payer: entry.payer,
 				exposureMicros: entry.exposureMicros,
 			})),
-			{ payer, exposureMicros: Math.max(0, deltaMicros) },
+			{ payer, exposureMicros: toNonNegativeMicros(deltaMicros) },
 		];
 	}
 	return entries.map((entry) =>
 		entry.payer === payer
 			? {
 					payer: entry.payer,
-					exposureMicros: Math.max(0, entry.exposureMicros + deltaMicros),
+					exposureMicros: toNonNegativeMicros(
+						entry.exposureMicros + deltaMicros,
+					),
 				}
 			: { payer: entry.payer, exposureMicros: entry.exposureMicros },
 	);
 }
 
 function utilizationRatio(pool: PoolEntry): number {
-	return pool.concurrency > 0 ? pool.activeJobs / pool.concurrency : 1;
+	return pool.activeJobs / pool.concurrency;
 }
 
 function compareCandidates(
-	left: { readonly pool: PoolEntry; readonly costMicros: number },
-	right: { readonly pool: PoolEntry; readonly costMicros: number },
+	left: { readonly pool: PoolEntry; readonly costMicros: NonNegativeMicros },
+	right: { readonly pool: PoolEntry; readonly costMicros: NonNegativeMicros },
 ): number {
 	const roleDiff =
 		ROLE_PRIORITY[left.pool.role] - ROLE_PRIORITY[right.pool.role];
@@ -295,8 +325,8 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 	state: StationFleetState,
 	initial: {
 		ceilingMicros: null,
-		exposureMicros: 0,
-		nextSlotSeq: 0,
+		exposureMicros: ZERO_MICROS,
+		nextSlotSeq: ZERO_COUNT,
 		pools: [],
 		payerExposure: [],
 		reservations: [],
@@ -309,9 +339,20 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 		ReleaseBalancedSlot,
 	],
 	decide: {
-		ConfigureStationBudget: (_state, cmd) => [
-			new StationBudgetConfigured({ ceilingMicros: cmd.ceilingMicros }),
-		],
+		ConfigureStationBudget: (state, cmd) => {
+			if (
+				cmd.ceilingMicros !== null &&
+				cmd.ceilingMicros < state.exposureMicros
+			) {
+				return new BudgetCeilingBelowExposure({
+					exposureMicros: state.exposureMicros,
+					ceilingMicros: cmd.ceilingMicros,
+				});
+			}
+			return [
+				new StationBudgetConfigured({ ceilingMicros: cmd.ceilingMicros }),
+			];
+		},
 		RegisterRunnerPool: (_state, cmd) => [
 			new RunnerPoolRegistered({ spec: cmd.spec }),
 		],
@@ -338,48 +379,50 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 			}
 
 			const excluded = new Set(cmd.excludedPoolIds);
-			const reasons: string[] = [];
-			const eligible: Array<{ pool: PoolEntry; costMicros: number }> = [];
+			const reasons: NonEmptyReason[] = [];
+			const eligible: Array<{
+				pool: PoolEntry;
+				costMicros: NonNegativeMicros;
+			}> = [];
 			let budgetBlocked:
 				| {
-						readonly requestedMicros: number;
-						readonly ceilingMicros: number;
-						readonly exposureMicros: number;
+						readonly requestedMicros: NonNegativeMicros;
+						readonly ceilingMicros: NonNegativeMicros;
+						readonly exposureMicros: NonNegativeMicros;
 				  }
 				| undefined;
 
 			for (const pool of state.pools) {
 				if (excluded.has(pool.poolId)) {
-					reasons.push(`${pool.poolId}:excluded`);
+					reasons.push(NonEmptyReason.make(`${pool.poolId}:excluded`));
 					continue;
 				}
 				if (!pool.enabled) {
-					reasons.push(`${pool.poolId}:disabled`);
+					reasons.push(NonEmptyReason.make(`${pool.poolId}:disabled`));
 					continue;
 				}
 				if (pool.health !== "healthy") {
-					reasons.push(`${pool.poolId}:${pool.health}`);
+					reasons.push(NonEmptyReason.make(`${pool.poolId}:${pool.health}`));
 					continue;
 				}
 				if (pool.activeJobs >= pool.concurrency) {
-					reasons.push(`${pool.poolId}:saturated`);
+					reasons.push(NonEmptyReason.make(`${pool.poolId}:saturated`));
 					continue;
 				}
 				if (cmd.requirements.needsDocker && !pool.docker) {
-					reasons.push(`${pool.poolId}:no-docker`);
+					reasons.push(NonEmptyReason.make(`${pool.poolId}:no-docker`));
 					continue;
 				}
 				if (cmd.requirements.isolationRequired && !pool.isolated) {
-					reasons.push(`${pool.poolId}:not-isolated`);
+					reasons.push(NonEmptyReason.make(`${pool.poolId}:not-isolated`));
 					continue;
 				}
 				if (cmd.requirements.publicRepository && !pool.publicRepositories) {
-					reasons.push(`${pool.poolId}:private-only`);
+					reasons.push(NonEmptyReason.make(`${pool.poolId}:private-only`));
 					continue;
 				}
 
-				const costMicros = Math.max(
-					0,
+				const costMicros = NonNegativeMicros.make(
 					cmd.requirements.minutes * pool.costPerMinuteMicros,
 				);
 				if (
@@ -391,7 +434,7 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 						requestedMicros: costMicros,
 						ceilingMicros: state.ceilingMicros,
 					};
-					reasons.push(`${pool.poolId}:station-budget`);
+					reasons.push(NonEmptyReason.make(`${pool.poolId}:station-budget`));
 					continue;
 				}
 				const currentPayerExposure = payerExposureFor(state, pool.payer);
@@ -404,7 +447,7 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 						requestedMicros: costMicros,
 						ceilingMicros: pool.payerBudgetMicros,
 					};
-					reasons.push(`${pool.poolId}:payer-budget`);
+					reasons.push(NonEmptyReason.make(`${pool.poolId}:payer-budget`));
 					continue;
 				}
 				eligible.push({ pool, costMicros });
@@ -447,7 +490,7 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 				return [
 					new BalancedSlotReleaseSkipped({
 						slotId: cmd.slotId,
-						reason: "slot-not-active",
+						reason: NonEmptyReason.make("slot-not-active"),
 					}),
 				];
 			}
@@ -458,7 +501,7 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 					poolId: reservation.poolId,
 					payer: reservation.payer,
 					reservedMicros: reservation.reservedMicros,
-					settledMicros: Math.max(0, cmd.settledMicros),
+					settledMicros: cmd.settledMicros,
 				}),
 			];
 		},
@@ -474,7 +517,7 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 			);
 			const nextEntry: PoolEntry = {
 				...event.spec,
-				activeJobs: existing?.activeJobs ?? 0,
+				activeJobs: existing?.activeJobs ?? ZERO_COUNT,
 				health: existing?.health ?? "healthy",
 				enabled: existing?.enabled ?? true,
 			};
@@ -495,8 +538,10 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 		}),
 		BalancedSlotReserved: (state, event) => ({
 			...state,
-			nextSlotSeq: state.nextSlotSeq + 1,
-			exposureMicros: state.exposureMicros + event.reservedMicros,
+			nextSlotSeq: NonNegativeCount.make(state.nextSlotSeq + 1),
+			exposureMicros: NonNegativeMicros.make(
+				state.exposureMicros + event.reservedMicros,
+			),
 			payerExposure: updatePayerExposure(
 				state.payerExposure,
 				event.payer,
@@ -504,7 +549,10 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 			),
 			pools: state.pools.map((pool) =>
 				pool.poolId === event.poolId
-					? { ...pool, activeJobs: pool.activeJobs + 1 }
+					? {
+							...pool,
+							activeJobs: NonNegativeCount.make(pool.activeJobs + 1),
+						}
 					: pool,
 			),
 			reservations: [
@@ -524,7 +572,7 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 			const delta = event.settledMicros - event.reservedMicros;
 			return {
 				...state,
-				exposureMicros: Math.max(0, state.exposureMicros + delta),
+				exposureMicros: toNonNegativeMicros(state.exposureMicros + delta),
 				payerExposure: updatePayerExposure(
 					state.payerExposure,
 					event.payer,
@@ -532,7 +580,7 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 				),
 				pools: state.pools.map((pool) =>
 					pool.poolId === event.poolId
-						? { ...pool, activeJobs: Math.max(0, pool.activeJobs - 1) }
+						? { ...pool, activeJobs: toNonNegativeCount(pool.activeJobs - 1) }
 						: pool,
 				),
 				reservations: state.reservations.filter(
@@ -552,8 +600,8 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 				slotId: reserved?.slotId ?? SlotId.make("slot-unassigned"),
 				poolId: reserved?.poolId ?? RunnerPoolId.make("pool-unassigned"),
 				tier: reserved?.tier ?? "github",
-				runsOn: reserved?.runsOn ?? "ubuntu-24.04",
-				reservedMicros: reserved?.reservedMicros ?? 0,
+				runsOn: reserved?.runsOn ?? RunsOnLabel.make("ubuntu-24.04"),
+				reservedMicros: reserved?.reservedMicros ?? ZERO_MICROS,
 			};
 		},
 	},

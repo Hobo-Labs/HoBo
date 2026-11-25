@@ -1,14 +1,24 @@
 import * as Domain from "@alchemy.run/domain";
 import * as Schema from "effect/Schema";
 import {
+	ApproverId,
 	CampTargetId,
 	CdPromotionId,
 	CdPromotionPhase,
 	FreightDigest,
+	NonEmptyReason,
+	RealizationRef,
 } from "./ids.js";
 
 export class PromotionAlreadyStarted extends Domain.Rejection(
 	"PromotionAlreadyStarted",
+	{
+		phase: CdPromotionPhase,
+	},
+) {}
+
+export class PromotionNotPendingApproval extends Domain.Rejection(
+	"PromotionNotPendingApproval",
 	{
 		phase: CdPromotionPhase,
 	},
@@ -28,8 +38,22 @@ export class ApprovalRequiredBeforeRealize extends Domain.Rejection(
 	},
 ) {}
 
+export class RealizationRequiredBeforeVerify extends Domain.Rejection(
+	"RealizationRequiredBeforeVerify",
+	{
+		phase: CdPromotionPhase,
+	},
+) {}
+
 export class VerificationRequiredBeforeComplete extends Domain.Rejection(
 	"VerificationRequiredBeforeComplete",
+	{
+		phase: CdPromotionPhase,
+	},
+) {}
+
+export class RollbackRequiresRealization extends Domain.Rejection(
+	"RollbackRequiresRealization",
 	{
 		phase: CdPromotionPhase,
 	},
@@ -42,33 +66,33 @@ export class CdPromotionRequested extends Domain.Event("CdPromotionRequested", {
 }) {}
 
 export class CdPromotionApproved extends Domain.Event("CdPromotionApproved", {
-	approver: Schema.String,
+	approver: ApproverId,
 	campId: CampTargetId,
 	freightDigest: FreightDigest,
 }) {}
 
 export class CdPromotionRealized extends Domain.Event("CdPromotionRealized", {
-	realizationRef: Schema.String,
+	realizationRef: RealizationRef,
 }) {}
 
 export class CdPromotionVerified extends Domain.Event("CdPromotionVerified", {
 	passed: Schema.Boolean,
-	summary: Schema.String,
+	summary: NonEmptyReason,
 }) {}
 
 export class CdPromotionCompleted extends Domain.Event("CdPromotionCompleted", {
-	realizationRef: Schema.String,
+	realizationRef: RealizationRef,
 }) {}
 
 export class CdPromotionRolledBack extends Domain.Event(
 	"CdPromotionRolledBack",
 	{
-		reason: Schema.String,
+		reason: NonEmptyReason,
 	},
 ) {}
 
 export class CdPromotionFailed extends Domain.Event("CdPromotionFailed", {
-	reason: Schema.String,
+	reason: NonEmptyReason,
 }) {}
 
 export class RequestCdPromotion extends Domain.Command(
@@ -83,7 +107,10 @@ export class RequestCdPromotion extends Domain.Command(
 		events: [CdPromotionRequested],
 		rejects: [PromotionAlreadyStarted],
 	},
-	{ description: "Start a CD promotion lifecycle for a camp and freight digest." },
+	{
+		description:
+			"Start a CD promotion lifecycle for a camp and freight digest.",
+	},
 ) {}
 
 export class ApproveCdPromotion extends Domain.Command(
@@ -91,10 +118,10 @@ export class ApproveCdPromotion extends Domain.Command(
 	{
 		target: CdPromotionId,
 		input: {
-			approver: Schema.String,
+			approver: ApproverId,
 		},
 		events: [CdPromotionApproved],
-		rejects: [PromotionAlreadyFinal],
+		rejects: [PromotionNotPendingApproval, PromotionAlreadyFinal],
 	},
 	{ description: "Record an operator approval for a pending CD promotion." },
 ) {}
@@ -104,7 +131,7 @@ export class RecordCdRealization extends Domain.Command(
 	{
 		target: CdPromotionId,
 		input: {
-			realizationRef: Schema.String,
+			realizationRef: RealizationRef,
 		},
 		events: [CdPromotionRealized],
 		rejects: [ApprovalRequiredBeforeRealize, PromotionAlreadyFinal],
@@ -118,12 +145,15 @@ export class RecordCdVerification extends Domain.Command(
 		target: CdPromotionId,
 		input: {
 			passed: Schema.Boolean,
-			summary: Schema.String,
+			summary: NonEmptyReason,
 		},
 		events: [CdPromotionVerified],
-		rejects: [PromotionAlreadyFinal],
+		rejects: [RealizationRequiredBeforeVerify, PromotionAlreadyFinal],
 	},
-	{ description: "Record verification gate evaluation for a realized promotion." },
+	{
+		description:
+			"Record verification gate evaluation for a realized promotion.",
+	},
 ) {}
 
 export class CompleteCdPromotion extends Domain.Command(
@@ -142,10 +172,10 @@ export class RollbackCdPromotion extends Domain.Command(
 	{
 		target: CdPromotionId,
 		input: {
-			reason: Schema.String,
+			reason: NonEmptyReason,
 		},
 		events: [CdPromotionRolledBack],
-		rejects: [PromotionAlreadyFinal],
+		rejects: [RollbackRequiresRealization, PromotionAlreadyFinal],
 	},
 	{ description: "Record rollback compensation for an unverified promotion." },
 ) {}
@@ -155,7 +185,7 @@ export class FailCdPromotion extends Domain.Command(
 	{
 		target: CdPromotionId,
 		input: {
-			reason: Schema.String,
+			reason: NonEmptyReason,
 		},
 		events: [CdPromotionFailed],
 		rejects: [],
@@ -163,34 +193,86 @@ export class FailCdPromotion extends Domain.Command(
 	{ description: "Mark a promotion as failed after unrecoverable error." },
 ) {}
 
-const CdPromotionState = Schema.Struct({
-	phase: CdPromotionPhase,
-	campId: Schema.NullOr(CampTargetId),
-	freightDigest: Schema.NullOr(FreightDigest),
-	requiresApproval: Schema.Boolean,
-	approver: Schema.NullOr(Schema.String),
-	realizationRef: Schema.NullOr(Schema.String),
-	verificationPassed: Schema.Boolean,
-	failureReason: Schema.NullOr(Schema.String),
-});
+export const CdPromotionState = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("PendingApproval", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+	}),
+	Schema.TaggedStruct("Approved", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+	}),
+	Schema.TaggedStruct("Realized", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: RealizationRef,
+	}),
+	Schema.TaggedStruct("Verified", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: RealizationRef,
+		summary: NonEmptyReason,
+	}),
+	Schema.TaggedStruct("Completed", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: RealizationRef,
+	}),
+	Schema.TaggedStruct("RolledBack", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: RealizationRef,
+		reason: NonEmptyReason,
+	}),
+	Schema.TaggedStruct("Failed", {
+		campId: Schema.NullOr(CampTargetId),
+		freightDigest: Schema.NullOr(FreightDigest),
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: Schema.NullOr(RealizationRef),
+		reason: NonEmptyReason,
+	}),
+]);
+export type CdPromotionState = typeof CdPromotionState.Type;
 
-function isFinalPhase(phase: CdPromotionPhase): boolean {
-	return phase === "completed" || phase === "rolled-back" || phase === "failed";
+function phaseOf(state: CdPromotionState): CdPromotionPhase {
+	switch (state._tag) {
+		case "Idle":
+			return "idle";
+		case "PendingApproval":
+			return "pending-approval";
+		case "Approved":
+			return "approved";
+		case "Realized":
+			return "realized";
+		case "Verified":
+			return "verified";
+		case "Completed":
+			return "completed";
+		case "RolledBack":
+			return "rolled-back";
+		case "Failed":
+			return "failed";
+	}
+}
+
+function isFinalState(state: CdPromotionState): boolean {
+	return (
+		state._tag === "Completed" ||
+		state._tag === "RolledBack" ||
+		state._tag === "Failed"
+	);
 }
 
 export class CdPromotion extends Domain.Aggregate("CdPromotion", {
 	id: CdPromotionId,
 	state: CdPromotionState,
-	initial: {
-		phase: "idle" as const,
-		campId: null,
-		freightDigest: null,
-		requiresApproval: false,
-		approver: null,
-		realizationRef: null,
-		verificationPassed: false,
-		failureReason: null,
-	},
+	initial: { _tag: "Idle" },
 	commands: [
 		RequestCdPromotion,
 		ApproveCdPromotion,
@@ -202,8 +284,8 @@ export class CdPromotion extends Domain.Aggregate("CdPromotion", {
 	],
 	decide: {
 		RequestCdPromotion: (state, cmd) => {
-			if (state.phase !== "idle") {
-				return new PromotionAlreadyStarted({ phase: state.phase });
+			if (state._tag !== "Idle") {
+				return new PromotionAlreadyStarted({ phase: phaseOf(state) });
 			}
 			return [
 				new CdPromotionRequested({
@@ -214,11 +296,11 @@ export class CdPromotion extends Domain.Aggregate("CdPromotion", {
 			];
 		},
 		ApproveCdPromotion: (state, cmd) => {
-			if (isFinalPhase(state.phase)) {
-				return new PromotionAlreadyFinal({ phase: state.phase });
+			if (isFinalState(state)) {
+				return new PromotionAlreadyFinal({ phase: phaseOf(state) });
 			}
-			if (state.campId === null || state.freightDigest === null) {
-				return new PromotionAlreadyFinal({ phase: state.phase });
+			if (state._tag !== "PendingApproval") {
+				return new PromotionNotPendingApproval({ phase: phaseOf(state) });
 			}
 			return [
 				new CdPromotionApproved({
@@ -229,17 +311,20 @@ export class CdPromotion extends Domain.Aggregate("CdPromotion", {
 			];
 		},
 		RecordCdRealization: (state, cmd) => {
-			if (isFinalPhase(state.phase)) {
-				return new PromotionAlreadyFinal({ phase: state.phase });
+			if (isFinalState(state)) {
+				return new PromotionAlreadyFinal({ phase: phaseOf(state) });
 			}
-			if (state.requiresApproval && state.approver === null) {
-				return new ApprovalRequiredBeforeRealize({ phase: state.phase });
+			if (state._tag !== "Approved") {
+				return new ApprovalRequiredBeforeRealize({ phase: phaseOf(state) });
 			}
 			return [new CdPromotionRealized({ realizationRef: cmd.realizationRef })];
 		},
 		RecordCdVerification: (state, cmd) => {
-			if (isFinalPhase(state.phase)) {
-				return new PromotionAlreadyFinal({ phase: state.phase });
+			if (isFinalState(state)) {
+				return new PromotionAlreadyFinal({ phase: phaseOf(state) });
+			}
+			if (state._tag !== "Realized") {
+				return new RealizationRequiredBeforeVerify({ phase: phaseOf(state) });
 			}
 			return [
 				new CdPromotionVerified({
@@ -249,64 +334,137 @@ export class CdPromotion extends Domain.Aggregate("CdPromotion", {
 			];
 		},
 		CompleteCdPromotion: (state) => {
-			if (isFinalPhase(state.phase)) {
-				return new PromotionAlreadyFinal({ phase: state.phase });
+			if (isFinalState(state)) {
+				return new PromotionAlreadyFinal({ phase: phaseOf(state) });
 			}
-			if (!state.verificationPassed || state.realizationRef === null) {
-				return new VerificationRequiredBeforeComplete({ phase: state.phase });
+			if (state._tag !== "Verified") {
+				return new VerificationRequiredBeforeComplete({
+					phase: phaseOf(state),
+				});
 			}
 			return [
 				new CdPromotionCompleted({ realizationRef: state.realizationRef }),
 			];
 		},
 		RollbackCdPromotion: (state, cmd) => {
-			if (isFinalPhase(state.phase)) {
-				return new PromotionAlreadyFinal({ phase: state.phase });
+			if (isFinalState(state)) {
+				return new PromotionAlreadyFinal({ phase: phaseOf(state) });
+			}
+			if (state._tag !== "Realized" && state._tag !== "Verified") {
+				return new RollbackRequiresRealization({ phase: phaseOf(state) });
 			}
 			return [new CdPromotionRolledBack({ reason: cmd.reason })];
 		},
-		FailCdPromotion: (_state, cmd) => [
-			new CdPromotionFailed({ reason: cmd.reason }),
-		],
+		FailCdPromotion: (state, cmd) =>
+			isFinalState(state)
+				? []
+				: [new CdPromotionFailed({ reason: cmd.reason })],
 	},
 	evolve: {
-		CdPromotionRequested: (state, event) => ({
-			...state,
-			phase: event.requiresApproval
-				? ("pending-approval" as const)
-				: ("approved" as const),
+		CdPromotionRequested: (_state, event) =>
+			event.requiresApproval
+				? {
+						_tag: "PendingApproval" as const,
+						campId: event.campId,
+						freightDigest: event.freightDigest,
+					}
+				: {
+						_tag: "Approved" as const,
+						campId: event.campId,
+						freightDigest: event.freightDigest,
+						approver: null,
+					},
+		CdPromotionApproved: (_state, event) => ({
+			_tag: "Approved" as const,
 			campId: event.campId,
 			freightDigest: event.freightDigest,
-			requiresApproval: event.requiresApproval,
-		}),
-		CdPromotionApproved: (state, event) => ({
-			...state,
-			phase: "approved" as const,
 			approver: event.approver,
 		}),
-		CdPromotionRealized: (state, event) => ({
-			...state,
-			phase: "realized" as const,
-			realizationRef: event.realizationRef,
-		}),
-		CdPromotionVerified: (state, event) => ({
-			...state,
-			phase: event.passed ? ("verified" as const) : state.phase,
-			verificationPassed: event.passed,
-		}),
-		CdPromotionCompleted: (state) => ({
-			...state,
-			phase: "completed" as const,
-		}),
-		CdPromotionRolledBack: (state, event) => ({
-			...state,
-			phase: "rolled-back" as const,
-			failureReason: event.reason,
-		}),
-		CdPromotionFailed: (state, event) => ({
-			...state,
-			phase: "failed" as const,
-			failureReason: event.reason,
-		}),
+		CdPromotionRealized: (state, event) =>
+			state._tag === "Approved"
+				? {
+						_tag: "Realized" as const,
+						campId: state.campId,
+						freightDigest: state.freightDigest,
+						approver: state.approver,
+						realizationRef: event.realizationRef,
+					}
+				: state,
+		CdPromotionVerified: (state, event) =>
+			state._tag === "Realized" && event.passed
+				? {
+						_tag: "Verified" as const,
+						campId: state.campId,
+						freightDigest: state.freightDigest,
+						approver: state.approver,
+						realizationRef: state.realizationRef,
+						summary: event.summary,
+					}
+				: state,
+		CdPromotionCompleted: (state, event) =>
+			state._tag === "Verified"
+				? {
+						_tag: "Completed" as const,
+						campId: state.campId,
+						freightDigest: state.freightDigest,
+						approver: state.approver,
+						realizationRef: event.realizationRef,
+					}
+				: state,
+		CdPromotionRolledBack: (state, event) =>
+			state._tag === "Realized" || state._tag === "Verified"
+				? {
+						_tag: "RolledBack" as const,
+						campId: state.campId,
+						freightDigest: state.freightDigest,
+						approver: state.approver,
+						realizationRef: state.realizationRef,
+						reason: event.reason,
+					}
+				: state,
+		CdPromotionFailed: (state, event) => {
+			switch (state._tag) {
+				case "Idle":
+					return {
+						_tag: "Failed" as const,
+						campId: null,
+						freightDigest: null,
+						approver: null,
+						realizationRef: null,
+						reason: event.reason,
+					};
+				case "PendingApproval":
+					return {
+						_tag: "Failed" as const,
+						campId: state.campId,
+						freightDigest: state.freightDigest,
+						approver: null,
+						realizationRef: null,
+						reason: event.reason,
+					};
+				case "Approved":
+					return {
+						_tag: "Failed" as const,
+						campId: state.campId,
+						freightDigest: state.freightDigest,
+						approver: state.approver,
+						realizationRef: null,
+						reason: event.reason,
+					};
+				case "Realized":
+				case "Verified":
+				case "Completed":
+				case "RolledBack":
+				case "Failed":
+					return {
+						_tag: "Failed" as const,
+						campId: state.campId,
+						freightDigest: state.freightDigest,
+						approver: state.approver,
+						realizationRef: state.realizationRef,
+						reason: event.reason,
+					};
+			}
+		},
 	},
 }) {}

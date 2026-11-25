@@ -13,10 +13,12 @@ import {
 	ExecuteCdPromotionLive,
 } from "./ExecuteCdPromotion.saga.js";
 import {
+	ApproverId,
 	CampTargetId,
-	CdFanoutPhase,
-	CdPromotionPhase,
 	FreightDigest,
+	NonEmptyReason,
+	NonNegativeCount,
+	RealizationRef,
 } from "./ids.js";
 
 export class StartCdPromotionPolicy extends Domain.Policy(
@@ -48,114 +50,234 @@ export const StartCdPromotionPolicyLive = StartCdPromotionPolicy.toLayer(
 	}),
 );
 
-const PromotionStatusState = Schema.Struct({
-	phase: CdPromotionPhase,
-	campId: Schema.NullOr(CampTargetId),
-	freightDigest: Schema.NullOr(FreightDigest),
-	approver: Schema.NullOr(Schema.String),
-	realizationRef: Schema.NullOr(Schema.String),
-	verificationPassed: Schema.Boolean,
-	failureReason: Schema.NullOr(Schema.String),
-});
+export const CdPromotionStatusState = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("PendingApproval", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+	}),
+	Schema.TaggedStruct("Approved", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+	}),
+	Schema.TaggedStruct("Realized", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: RealizationRef,
+	}),
+	Schema.TaggedStruct("Verified", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: RealizationRef,
+		summary: NonEmptyReason,
+	}),
+	Schema.TaggedStruct("Completed", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: RealizationRef,
+	}),
+	Schema.TaggedStruct("RolledBack", {
+		campId: CampTargetId,
+		freightDigest: FreightDigest,
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: RealizationRef,
+		reason: NonEmptyReason,
+	}),
+	Schema.TaggedStruct("Failed", {
+		campId: Schema.NullOr(CampTargetId),
+		freightDigest: Schema.NullOr(FreightDigest),
+		approver: Schema.NullOr(ApproverId),
+		realizationRef: Schema.NullOr(RealizationRef),
+		reason: NonEmptyReason,
+	}),
+]);
+export type CdPromotionStatusState = typeof CdPromotionStatusState.Type;
 
 export class CdPromotionStatusView extends Domain.View(
 	"CdPromotionStatusView",
 	{
 		from: [CdPromotion],
 		key: CdPromotion,
-		state: PromotionStatusState,
-		initial: {
-			phase: "idle" as const,
-			campId: null,
-			freightDigest: null,
-			approver: null,
-			realizationRef: null,
-			verificationPassed: false,
-			failureReason: null,
-		},
+		state: CdPromotionStatusState,
+		initial: { _tag: "Idle" },
 		evolve: {
-			CdPromotionRequested: (state, event) => ({
-				...state,
-				phase: event.requiresApproval
-					? ("pending-approval" as const)
-					: ("approved" as const),
+			CdPromotionRequested: (_state, event) =>
+				event.requiresApproval
+					? {
+							_tag: "PendingApproval" as const,
+							campId: event.campId,
+							freightDigest: event.freightDigest,
+						}
+					: {
+							_tag: "Approved" as const,
+							campId: event.campId,
+							freightDigest: event.freightDigest,
+							approver: null,
+						},
+			CdPromotionApproved: (_state, event) => ({
+				_tag: "Approved" as const,
 				campId: event.campId,
 				freightDigest: event.freightDigest,
-			}),
-			CdPromotionApproved: (state, event) => ({
-				...state,
-				phase: "approved" as const,
 				approver: event.approver,
 			}),
-			CdPromotionRealized: (state, event) => ({
-				...state,
-				phase: "realized" as const,
-				realizationRef: event.realizationRef,
-			}),
-			CdPromotionVerified: (state, event) => ({
-				...state,
-				phase: event.passed ? ("verified" as const) : state.phase,
-				verificationPassed: event.passed,
-			}),
-			CdPromotionCompleted: (state) => ({
-				...state,
-				phase: "completed" as const,
-			}),
-			CdPromotionRolledBack: (state, event) => ({
-				...state,
-				phase: "rolled-back" as const,
-				failureReason: event.reason,
-			}),
-			CdPromotionFailed: (state, event) => ({
-				...state,
-				phase: "failed" as const,
-				failureReason: event.reason,
-			}),
+			CdPromotionRealized: (state, event) =>
+				state._tag === "Approved"
+					? {
+							_tag: "Realized" as const,
+							campId: state.campId,
+							freightDigest: state.freightDigest,
+							approver: state.approver,
+							realizationRef: event.realizationRef,
+						}
+					: state,
+			CdPromotionVerified: (state, event) =>
+				state._tag === "Realized" && event.passed
+					? {
+							_tag: "Verified" as const,
+							campId: state.campId,
+							freightDigest: state.freightDigest,
+							approver: state.approver,
+							realizationRef: state.realizationRef,
+							summary: event.summary,
+						}
+					: state,
+			CdPromotionCompleted: (state, event) =>
+				state._tag === "Verified"
+					? {
+							_tag: "Completed" as const,
+							campId: state.campId,
+							freightDigest: state.freightDigest,
+							approver: state.approver,
+							realizationRef: event.realizationRef,
+						}
+					: state,
+			CdPromotionRolledBack: (state, event) =>
+				state._tag === "Realized" || state._tag === "Verified"
+					? {
+							_tag: "RolledBack" as const,
+							campId: state.campId,
+							freightDigest: state.freightDigest,
+							approver: state.approver,
+							realizationRef: state.realizationRef,
+							reason: event.reason,
+						}
+					: state,
+			CdPromotionFailed: (state, event) => {
+				switch (state._tag) {
+					case "Idle":
+						return {
+							_tag: "Failed" as const,
+							campId: null,
+							freightDigest: null,
+							approver: null,
+							realizationRef: null,
+							reason: event.reason,
+						};
+					case "PendingApproval":
+						return {
+							_tag: "Failed" as const,
+							campId: state.campId,
+							freightDigest: state.freightDigest,
+							approver: null,
+							realizationRef: null,
+							reason: event.reason,
+						};
+					case "Approved":
+						return {
+							_tag: "Failed" as const,
+							campId: state.campId,
+							freightDigest: state.freightDigest,
+							approver: state.approver,
+							realizationRef: null,
+							reason: event.reason,
+						};
+					case "Realized":
+					case "Verified":
+					case "Completed":
+					case "RolledBack":
+					case "Failed":
+						return {
+							_tag: "Failed" as const,
+							campId: state.campId,
+							freightDigest: state.freightDigest,
+							approver: state.approver,
+							realizationRef: state.realizationRef,
+							reason: event.reason,
+						};
+				}
+			},
 		},
 	},
 ) {}
 
-const FanoutStatusState = Schema.Struct({
-	phase: CdFanoutPhase,
-	totalCamps: Schema.Int,
-	succeededCount: Schema.Int,
-	failedCount: Schema.Int,
-	haltReason: Schema.NullOr(Schema.String),
-});
+export const CdFanoutStatusState = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("Running", {
+		totalCamps: NonNegativeCount,
+		succeededCount: NonNegativeCount,
+		failedCount: NonNegativeCount,
+	}),
+	Schema.TaggedStruct("Completed", {
+		totalCamps: NonNegativeCount,
+		succeededCount: NonNegativeCount,
+		failedCount: NonNegativeCount,
+	}),
+	Schema.TaggedStruct("Halted", {
+		totalCamps: NonNegativeCount,
+		succeededCount: NonNegativeCount,
+		failedCount: NonNegativeCount,
+		haltReason: NonEmptyReason,
+	}),
+]);
+export type CdFanoutStatusState = typeof CdFanoutStatusState.Type;
 
 export class CdFanoutStatusView extends Domain.View("CdFanoutStatusView", {
 	from: [CdFanout],
 	key: CdFanout,
-	state: FanoutStatusState,
-	initial: {
-		phase: "idle" as const,
-		totalCamps: 0,
-		succeededCount: 0,
-		failedCount: 0,
-		haltReason: null,
-	},
+	state: CdFanoutStatusState,
+	initial: { _tag: "Idle" },
 	evolve: {
-		CdFanoutStarted: (state, event) => ({
-			...state,
-			phase: "running" as const,
-			totalCamps: event.campIds.length,
+		CdFanoutStarted: (_state, event) => ({
+			_tag: "Running" as const,
+			totalCamps: NonNegativeCount.make(event.campIds.length),
+			succeededCount: NonNegativeCount.make(0),
+			failedCount: NonNegativeCount.make(0),
 		}),
-		CdFanoutCampUpdated: (state, event) => ({
-			...state,
-			succeededCount: event.succeeded
-				? state.succeededCount + 1
-				: state.succeededCount,
-			failedCount: event.succeeded ? state.failedCount : state.failedCount + 1,
-		}),
-		CdFanoutHalted: (state, event) => ({
-			...state,
-			phase: "halted" as const,
-			haltReason: event.reason,
-		}),
-		CdFanoutCompleted: (state) => ({
-			...state,
-			phase: "completed" as const,
-		}),
+		CdFanoutCampUpdated: (state, event) =>
+			state._tag === "Running"
+				? {
+						...state,
+						succeededCount: NonNegativeCount.make(
+							event.succeeded ? state.succeededCount + 1 : state.succeededCount,
+						),
+						failedCount: NonNegativeCount.make(
+							event.succeeded ? state.failedCount : state.failedCount + 1,
+						),
+					}
+				: state,
+		CdFanoutHalted: (state, event) =>
+			state._tag === "Running"
+				? {
+						_tag: "Halted" as const,
+						totalCamps: state.totalCamps,
+						succeededCount: state.succeededCount,
+						failedCount: state.failedCount,
+						haltReason: event.reason,
+					}
+				: state,
+		CdFanoutCompleted: (state) =>
+			state._tag === "Running"
+				? {
+						_tag: "Completed" as const,
+						totalCamps: state.totalCamps,
+						succeededCount: state.succeededCount,
+						failedCount: state.failedCount,
+					}
+				: state,
 	},
 }) {}
 
@@ -169,7 +291,7 @@ export class CdRelease extends Domain.Model(
 	},
 	{
 		description:
-			"Continuous delivery promotion, verification, rollback compensation, and wave fanout model.",
+			"Continuous delivery promotion, verification, fail-closed rollback compensation, and wave fanout model.",
 	},
 ) {}
 
@@ -186,7 +308,8 @@ export class CdReleaseApi extends Domain.Api(
 		views: ["CdPromotionStatusView", "CdFanoutStatusView"],
 	},
 	{
-		description: "Control API for HoBo CD promotions and multi-camp wave fanout.",
+		description:
+			"Control API for HoBo CD promotions and multi-camp wave fanout.",
 	},
 ) {}
 

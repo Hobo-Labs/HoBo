@@ -8,6 +8,7 @@ import {
 	StationFleetCoordinator,
 	StationFleetCoordinatorLive,
 } from "../src/cluster/index.js";
+import { PositiveMinutes } from "../src/domain/index.js";
 
 const clusterTestLayer = StationFleetCoordinatorLive.pipe(
 	Layer.provideMerge(TestRunner.layer),
@@ -97,7 +98,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 						client.DispatchJob({
 							jobId: `job-burst-${idx + 1}`,
 							requirements: {
-								minutes: 5,
+								minutes: PositiveMinutes.make(5),
 								needsDocker: true,
 								isolationRequired: true,
 								publicRepository: false,
@@ -112,7 +113,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 				const deduped = yield* client.DispatchJob({
 					jobId: "job-burst-1",
 					requirements: {
-						minutes: 5,
+						minutes: PositiveMinutes.make(5),
 						needsDocker: true,
 						isolationRequired: true,
 						publicRepository: false,
@@ -181,7 +182,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 					const lease = yield* client.DispatchJob({
 						jobId: "job-expiring",
 						requirements: {
-							minutes: 5,
+							minutes: PositiveMinutes.make(5),
 							needsDocker: true,
 							isolationRequired: true,
 							publicRepository: true,
@@ -193,7 +194,9 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 					yield* Layer.build(reaperLayer);
 					yield* Layer.build(cronLayer);
 					yield* Effect.sleep("25 millis");
-					const manualReap = yield* client.ReapExpiredLeases({ nowMs: clockMs });
+					const manualReap = yield* client.ReapExpiredLeases({
+						nowMs: clockMs,
+					});
 					const after = yield* client.FleetSnapshot();
 					return { lease, manualReap, after };
 				}).pipe(Effect.provide(clusterTestLayer)),
@@ -203,8 +206,8 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 		expect(result.lease.tier).toBe("boat");
 		expect(result.after.activeLeases).toBe(0);
 		expect(result.after.exposureMicros).toBe(0);
-		expect(reaped.length + result.manualReap.reapedSlotIds.length).toBeGreaterThanOrEqual(
-			1,
-		);
+		expect(
+			reaped.length + result.manualReap.reapedSlotIds.length,
+		).toBeGreaterThanOrEqual(1);
 	});
 });

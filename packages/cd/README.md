@@ -46,6 +46,8 @@ typed failures and a **Runbook** section; `konsistent` enforces the README).
 | `@hobo/cd/posture` | `src/posture/` | Policy bindings, shadow decisions, posture service (D24, D25, I22, I23) |
 | `@hobo/cd/compose` | `src/compose/` | Composition used by `@hobo/hobo` |
 | `@hobo/cd/testing` | `src/testing/` | Reusable in-process doubles for CD boundaries |
+| `@hobo/cd/domain` | `src/domain/` | `@alchemy.run/domain` `CdRelease` command/event aggregates, fail-closed promotion saga, materialized views and projections, snapshots, and read store API (`CdReleaseApi`) |
+| `@hobo/cd/host` | `src/host/` | Portable runtime hosting for `CdRelease` over `Domain.InMemory`, `@hobo/storage-sqlite` event store, `@alchemy.run/domain/Rivet` Durable Objects, and RivetKit SQLite promotion gate actors |
 
 `src/adapters/` is a flat folder of single-file adapters onto other HoBo
 packages, each owned with the module that uses it: `planning`, `gatekeeper`,

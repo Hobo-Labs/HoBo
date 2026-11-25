@@ -5,10 +5,15 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { Activity, Workflow } from "effect/workflow";
 import {
+	ExternalRunnerId,
 	JobDispatchId,
 	JobRequirements,
+	NonEmptyReason,
+	NonNegativeMicros,
+	PositiveAttempts,
 	RunnerPoolId,
 	RunnerTier,
+	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
@@ -34,17 +39,18 @@ import {
 } from "./StationFleet.aggregate.js";
 
 const MAX_DISPATCH_ATTEMPTS = 6;
+const ZERO_MICROS = NonNegativeMicros.make(0);
 
 const ReserveSuccess = Schema.Struct({
 	slotId: SlotId,
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
-	runsOn: Schema.String,
-	reservedMicros: Schema.Int,
+	runsOn: RunsOnLabel,
+	reservedMicros: NonNegativeMicros,
 });
 
 const ProvisionSuccess = Schema.Struct({
-	externalRunnerId: Schema.String,
+	externalRunnerId: ExternalRunnerId,
 });
 
 const ReserveRejection = Schema.Union([
@@ -60,16 +66,17 @@ const ProvisionFailure = Schema.Union([
 
 const BindRejection = Schema.Union([JobNotQueued, StartBindingConflict]);
 
-const TaggedFailure = Schema.Struct({ _tag: Schema.String });
+const TaggedFailure = Schema.Struct({ _tag: Schema.NonEmptyString });
 const decodeTaggedFailure = Schema.decodeUnknownOption(TaggedFailure);
 
-function failureReason<E>(cause: Cause.Cause<E>): string {
+function failureReason<E>(cause: Cause.Cause<E>): NonEmptyReason {
 	const failure = Cause.findErrorOption(cause);
 	if (failure._tag === "Some") {
 		const decoded = decodeTaggedFailure(failure.value);
-		if (decoded._tag === "Some") return decoded.value._tag;
+		if (decoded._tag === "Some") return NonEmptyReason.make(decoded.value._tag);
 	}
-	return Cause.pretty(cause);
+	const pretty = Cause.pretty(cause).trim();
+	return NonEmptyReason.make(pretty.length > 0 ? pretty : "dispatch-failed");
 }
 
 export class DispatchJob extends Domain.Saga(
@@ -143,7 +150,7 @@ export const DispatchJobLive = DispatchJob.toLayer(
 									stationId,
 									new ReleaseBalancedSlot({
 										slotId: reserved.slotId,
-										settledMicros: 0,
+										settledMicros: ZERO_MICROS,
 									}),
 								)
 								.pipe(Effect.asVoid),
@@ -175,7 +182,7 @@ export const DispatchJobLive = DispatchJob.toLayer(
 								stationId,
 								new ReleaseBalancedSlot({
 									slotId,
-									settledMicros: 0,
+									settledMicros: ZERO_MICROS,
 								}),
 							)
 							.pipe(Effect.asVoid),
@@ -197,7 +204,7 @@ export const DispatchJobLive = DispatchJob.toLayer(
 								slotId,
 								runsOn,
 								externalRunnerId: provisioned.success.externalRunnerId,
-								attempts: attempt,
+								attempts: PositiveAttempts.make(attempt),
 							}),
 						)
 						.pipe(Effect.map((receipt) => receipt.version)),
@@ -207,7 +214,9 @@ export const DispatchJobLive = DispatchJob.toLayer(
 			}
 
 			return yield* new NoEligibleRunnerPool({
-				reasons: excludedPoolIds.map((poolId) => `${poolId}:provision-failed`),
+				reasons: excludedPoolIds.map((poolId) =>
+					NonEmptyReason.make(`${poolId}:provision-failed`),
+				),
 			});
 		});
 	}),

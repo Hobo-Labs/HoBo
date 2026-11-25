@@ -1,13 +1,25 @@
 export { CiFleet, CiFleetApi, CiFleetHandlers } from "./CiFleet.model.js";
 export { DispatchJob, DispatchJobLive } from "./DispatchJob.saga.js";
 export {
+	ExternalRunnerId,
+	JobConclusion,
 	JobDispatchId,
+	JobDispatchStatusTag,
 	JobRequirements,
+	NonEmptyReason,
+	NonNegativeCount,
+	NonNegativeMicros,
+	PayerId,
 	PoolRole,
+	PositiveAttempts,
+	PositiveConcurrency,
+	PositiveMinutes,
+	PositiveSeconds,
 	RunnerPoolHealth,
 	RunnerPoolId,
 	RunnerPoolSpec,
 	RunnerTier,
+	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
@@ -21,6 +33,7 @@ export {
 	JobDispatchExpired,
 	JobDispatchFailed,
 	JobDispatchObserved,
+	JobDispatchState,
 	JobNotBound,
 	JobNotQueued,
 	ObserveJobDispatch,
@@ -42,6 +55,7 @@ export {
 	BalancedSlotReleased,
 	BalancedSlotReleaseSkipped,
 	BalancedSlotReserved,
+	BudgetCeilingBelowExposure,
 	BudgetCeilingExceeded,
 	ConfigureStationBudget,
 	DuplicateJobReservation,
@@ -54,6 +68,12 @@ export {
 	SetRunnerPoolHealth,
 	StationBudgetConfigured,
 	StationFleet,
+	StationFleetState,
 	UnknownRunnerPool,
 } from "./StationFleet.aggregate.js";
-export { FleetCapacityView, RoutingAuditView } from "./views.js";
+export {
+	FleetCapacityState,
+	FleetCapacityView,
+	RoutingAuditState,
+	RoutingAuditView,
+} from "./views.js";

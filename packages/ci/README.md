@@ -917,12 +917,20 @@ yet, and no relay writes the provider-health file today. The wiring, in
 
 ## Alchemy Domain: `CiFleet` (`@hobo/ci/domain`)
 
-`@hobo/ci/domain` models multi-tier CI runner balancing as an `@alchemy.run/domain` bounded context:
+`@hobo/ci/domain` models multi-tier CI runner balancing as an `@alchemy.run/domain` bounded context with branded Effect schemas (`StationId`, `RunnerPoolId`, `JobDispatchId`, `SlotId`, `NonNegativeMicros`, `PositiveConcurrency`, `PositiveMinutes`, `PositiveSeconds`, `PositiveAttempts`) and discriminated tagged-union states:
 
-- **Aggregates**: `StationFleet` balances traffic across `local`, `hostinger`, `agent37`, `boat`, and `github` runner tiers by role, lowest utilization ratio, lowest cost per minute, and deterministic tier priority while enforcing station and payer budget ceilings; `JobDispatch` enforces immutable start-binding (`StartBindingConflict`) and queue expiry.
+- **Aggregates**: `StationFleet` balances traffic across `local`, `hostinger`, `agent37`, `boat`, and `github` runner tiers by role, lowest utilization ratio, lowest cost per minute, and deterministic tier priority while enforcing station and payer budget ceilings (`BudgetCeilingExceeded`, `BudgetCeilingBelowExposure`); `JobDispatch` enforces immutable start-binding (`StartBindingConflict`) and queue expiry through typed command/event transitions.
 - **Saga & External System**: `DispatchJob` executes multi-tier failover across tiers through the `RunnerBackend` `Domain.ExternalSystem` with compensation-safe slot release (`ReleaseBalancedSlot`) on provisioning or bind failures.
-- **Views & API**: `FleetCapacityView`, `RoutingAuditView`, and `CiFleetApi` expose typed read models and in-process/hosted command dispatch.
+- **Views & API**: `FleetCapacityView`, discriminated `RoutingAuditView` (`Unobserved | Queued | Bound | Completed | Failed | Expired`), and `CiFleetApi` expose materialized views and projections, snapshots, and read store queries alongside in-process and HTTP command dispatch.
 - **Superseded persistence removed**: `PostgresStrictFleetStore` and its Testcontainers harness were removed from `fleet-v2` in favor of the `CiFleet` domain model.
+
+## Portable & Rivet Hosting (`@hobo/ci/host`)
+
+`@hobo/ci/host` composes `CiFleet` onto portable runtime platforms outside `src/domain/`:
+
+- **Rivet Durable Objects**: `createCiFleetRivetLayer` hosts every `CiFleet` aggregate, view, policy, and saga instance on `@alchemy.run/domain/Rivet` (`DomainRivet.layerDurableObjects`) with per-actor SQLite event store and alarm scheduling.
+- **RivetKit Lease Actor**: `createCiStationLeaseRegistry` defines the `stationLease` RivetKit actor backed by embedded SQLite, live `leaseUpdated` event broadcasts, and scheduled lease expiry verified via `rivetkit/test` (`setupTest`).
+- **Portable Hosts**: `createCiFleetInMemoryLayer` (`Domain.InMemory`) and `createCiFleetSqliteLayer` (`@hobo/storage-sqlite` `createSqliteDomainPlatform`) run identical command/event, snapshot, and materialized view behavior locally and over HTTP (`Domain.protocolHttp`).
 
 ## Effect Cluster Fleet Coordination (`@hobo/ci/cluster`)
 
@@ -930,5 +938,6 @@ yet, and no relay writes the provider-health file today. The wiring, in
 
 - **`StationFleetCoordinator` Entity**: serializes allocation per station shard (`concurrency: 1`) with `ClusterSchema.Persisted` RPCs (`ConfigureBudget`, `RegisterPool`, `DispatchJob` keyed by `jobId`, `CompleteJob`, `ReapExpiredLeases`) and `FleetSnapshot`.
 - **`createFleetLeaseReaperSingleton` (`Singleton.make`)** and **`createFleetHealthSweepCron` (`ClusterCron.make`)**: run single-active lease reaping and non-overlapping scheduled fleet sweeps.
+
 
 

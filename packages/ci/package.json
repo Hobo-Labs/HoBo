@@ -87,11 +87,15 @@
     "./cluster": {
       "types": "./dist/cluster/index.d.ts",
       "default": "./dist/cluster/index.js"
+    },
+    "./host": {
+      "types": "./dist/host/index.d.ts",
+      "default": "./dist/host/index.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.domain-tests.json",
     "lint": "biome check .",
     "test": "vitest run"
   },
@@ -104,13 +108,29 @@
     "@hobo/dispatcher": "workspace:*",
     "@hobo/fleet": "workspace:*",
     "@hobo/pricing": "workspace:*",
+    "@hobo/storage-sqlite": "workspace:*",
     "effect": "4.1.4",
     "zod": "^4.1.13"
   },
+  "peerDependencies": {
+    "@alchemy.run/rivet": "2.0.0-beta.87",
+    "rivetkit": "3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@alchemy.run/rivet": {
+      "optional": true
+    },
+    "rivetkit": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@alchemy.run/rivet": "2.0.0-beta.87",
+    "@effect/platform-node": "4.1.4",
     "@types/pg": "8.15.5",
     "fast-check": "^4.3.0",
     "pg": "8.22.0",
+    "rivetkit": "3.0.0",
     "testcontainers": "11.8.1"
   }
 }

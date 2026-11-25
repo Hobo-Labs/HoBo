@@ -1,18 +1,22 @@
 import * as Domain from "@alchemy.run/domain";
 import { Story } from "@alchemy.run/domain/Story";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
+import * as Exit from "effect/Exit";
+import type * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 import {
 	BalancedSlotReleased,
 	BalancedSlotReserved,
 	BindRunnerStart,
+	BudgetCeilingBelowExposure,
 	BudgetCeilingExceeded,
 	CiFleet,
-	CiFleetApi,
 	CiFleetHandlers,
 	CompleteJobDispatch,
+	ConfigureStationBudget,
 	DispatchJob,
+	ExternalRunnerId,
 	FleetCapacityView,
 	JobDispatch,
 	JobDispatchCompleted,
@@ -21,13 +25,25 @@ import {
 	JobDispatchId,
 	JobDispatchObserved,
 	JobNotQueued,
+	JobRequirements,
+	NonEmptyReason,
+	NonNegativeCount,
+	NonNegativeMicros,
 	ObserveJobDispatch,
+	PayerId,
+	PositiveAttempts,
+	PositiveConcurrency,
+	PositiveMinutes,
+	PositiveSeconds,
+	type RoutingAuditState,
 	RoutingAuditView,
 	RunnerBackend,
 	RunnerCapacityExhausted,
 	RunnerPoolId,
 	RunnerPoolRegistered,
+	RunnerPoolSpec,
 	RunnerStartBound,
+	RunsOnLabel,
 	SlotId,
 	StartBindingConflict,
 	StationBudgetConfigured,
@@ -46,10 +62,10 @@ const LOCAL_POOL = {
 	poolId: RunnerPoolId.make("local-devbox"),
 	tier: "local" as const,
 	role: "primary" as const,
-	runsOn: "hobo-local-host",
-	concurrency: 2,
-	costPerMinuteMicros: 0,
-	payer: "local",
+	runsOn: RunsOnLabel.make("hobo-local-host"),
+	concurrency: PositiveConcurrency.make(2),
+	costPerMinuteMicros: NonNegativeMicros.make(0),
+	payer: PayerId.make("local"),
 	payerBudgetMicros: null,
 	isolated: false,
 	docker: true,
@@ -60,10 +76,10 @@ const HOSTINGER_POOL = {
 	poolId: RunnerPoolId.make("hostinger-vps-1"),
 	tier: "hostinger" as const,
 	role: "primary" as const,
-	runsOn: "hobo-hostinger",
-	concurrency: 2,
-	costPerMinuteMicros: 0,
-	payer: "hostinger",
+	runsOn: RunsOnLabel.make("hobo-hostinger"),
+	concurrency: PositiveConcurrency.make(2),
+	costPerMinuteMicros: NonNegativeMicros.make(0),
+	payer: PayerId.make("hostinger"),
 	payerBudgetMicros: null,
 	isolated: true,
 	docker: true,
@@ -74,11 +90,11 @@ const AGENT37_POOL = {
 	poolId: RunnerPoolId.make("agent37-vm"),
 	tier: "agent37" as const,
 	role: "overflow" as const,
-	runsOn: "hobo-agent37",
-	concurrency: 2,
-	costPerMinuteMicros: 2_000,
-	payer: "agent37",
-	payerBudgetMicros: 50_000,
+	runsOn: RunsOnLabel.make("hobo-agent37"),
+	concurrency: PositiveConcurrency.make(2),
+	costPerMinuteMicros: NonNegativeMicros.make(2_000),
+	payer: PayerId.make("agent37"),
+	payerBudgetMicros: NonNegativeMicros.make(50_000),
 	isolated: true,
 	docker: true,
 	publicRepositories: true,
@@ -88,25 +104,25 @@ const GITHUB_POOL = {
 	poolId: RunnerPoolId.make("github-hosted"),
 	tier: "github" as const,
 	role: "last-resort" as const,
-	runsOn: "ubuntu-24.04",
-	concurrency: 10,
-	costPerMinuteMicros: 8_000,
-	payer: "github",
-	payerBudgetMicros: 200_000,
+	runsOn: RunsOnLabel.make("ubuntu-24.04"),
+	concurrency: PositiveConcurrency.make(10),
+	costPerMinuteMicros: NonNegativeMicros.make(8_000),
+	payer: PayerId.make("github"),
+	payerBudgetMicros: NonNegativeMicros.make(200_000),
 	isolated: true,
 	docker: true,
 	publicRepositories: true,
 };
 
 const PRIVATE_JOB = {
-	minutes: 5,
+	minutes: PositiveMinutes.make(5),
 	needsDocker: true,
 	isolationRequired: false,
 	publicRepository: false,
 };
 
 const PUBLIC_ISOLATED_JOB = {
-	minutes: 5,
+	minutes: PositiveMinutes.make(5),
 	needsDocker: true,
 	isolationRequired: true,
 	publicRepository: true,
@@ -115,7 +131,9 @@ const PUBLIC_ISOLATED_JOB = {
 function registeredAllTiers() {
 	return Story.given(
 		station,
-		new StationBudgetConfigured({ ceilingMicros: 150_000 }),
+		new StationBudgetConfigured({
+			ceilingMicros: NonNegativeMicros.make(150_000),
+		}),
 		new RunnerPoolRegistered({ spec: LOCAL_POOL }),
 		new RunnerPoolRegistered({ spec: HOSTINGER_POOL }),
 		new RunnerPoolRegistered({ spec: AGENT37_POOL }),
@@ -123,9 +141,87 @@ function registeredAllTiers() {
 	);
 }
 
+type RunnerBackendService = Layer.Success<
+	ReturnType<typeof RunnerBackend.toLayer>
+>;
+
+function runRunnerBackendConformance(
+	adapterName: string,
+	layer: Layer.Layer<RunnerBackendService>,
+) {
+	describe(`RunnerBackend adapter conformance: ${adapterName}`, () => {
+		it("provisions and releases a runner through the typed ExternalSystem contract", async () => {
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const backend = yield* RunnerBackend;
+					const provisioned = yield* backend.provisionRunner({
+						stationId: station.id,
+						jobId: JobDispatchId.make("job-conformance-1"),
+						poolId: LOCAL_POOL.poolId,
+						tier: LOCAL_POOL.tier,
+						runsOn: LOCAL_POOL.runsOn,
+						slotId: SlotId.make("slot-conformance-1"),
+					});
+					const released = yield* backend.releaseRunner({
+						stationId: station.id,
+						slotId: SlotId.make("slot-conformance-1"),
+					});
+					return { provisioned, released };
+				}).pipe(Effect.provide(layer)),
+			);
+
+			expect(result.provisioned.externalRunnerId.length).toBeGreaterThan(0);
+			expect(result.released.released).toBe(true);
+		});
+	});
+}
+
 describe("CiFleet Alchemy Domain model", () => {
 	it("passes Domain.verify with zero structural definition errors", () => {
 		expect(Domain.verify(CiFleet)).toEqual([]);
+	});
+
+	it("enforces branded domain types and discriminated views at compile time and schema decode boundaries", () => {
+		const checkCompileTimeConstraints = (audit: RoutingAuditState) => {
+			// @ts-expect-error raw string is not a branded StationId
+			const badStation: StationId = "station-raw";
+			// @ts-expect-error raw number is not a branded NonNegativeMicros
+			const badMicros: NonNegativeMicros = 100;
+			// @ts-expect-error raw number is not a branded PositiveMinutes
+			const badMinutes: PositiveMinutes = 5;
+			// @ts-expect-error invalid status tag is rejected by closed JobDispatchStatusTag
+			const badRejection = new JobNotQueued({ currentState: "Unknown" });
+			// @ts-expect-error poolId does not exist on unnarrowed RoutingAuditState union
+			const unnarrowedPool = audit.poolId;
+			return [badStation, badMicros, badMinutes, badRejection, unnarrowedPool];
+		};
+		expect(checkCompileTimeConstraints).toBeTypeOf("function");
+
+		const decodeMicros = Schema.decodeUnknownExit(NonNegativeMicros);
+		const decodePoolSpec = Schema.decodeUnknownExit(RunnerPoolSpec);
+		const decodeJobReq = Schema.decodeUnknownExit(JobRequirements);
+		const decodeSeconds = Schema.decodeUnknownExit(PositiveSeconds);
+
+		expect(Exit.isFailure(decodeMicros(-1))).toBe(true);
+		expect(Exit.isFailure(decodeSeconds(0))).toBe(true);
+		expect(
+			Exit.isFailure(
+				decodeJobReq({
+					minutes: 0,
+					needsDocker: true,
+					isolationRequired: false,
+					publicRepository: false,
+				}),
+			),
+		).toBe(true);
+		expect(
+			Exit.isFailure(
+				decodePoolSpec({
+					...LOCAL_POOL,
+					concurrency: 0,
+				}),
+			),
+		).toBe(true);
 	});
 
 	it("balances jobs across local, Hostinger, Agent37, and GitHub-hosted pools by utilization and tier", async () => {
@@ -164,17 +260,17 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: LOCAL_POOL.poolId,
 						tier: "local",
 						runsOn: LOCAL_POOL.runsOn,
-						payer: "local",
-						reservedMicros: 0,
+						payer: LOCAL_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: LOCAL_POOL.poolId,
 					tier: "local",
-					jobId: job1.id,
+					slotId: SlotId.make("slot-1-local-devbox"),
 				}),
 				Story.succeed(RunnerBackend.provisionRunner, {
-					externalRunnerId: "local-runner-1",
+					externalRunnerId: ExternalRunnerId.make("local-1"),
 				}),
 				Story.then(
 					job1,
@@ -184,8 +280,8 @@ describe("CiFleet Alchemy Domain model", () => {
 						tier: "local",
 						slotId: SlotId.make("slot-1-local-devbox"),
 						runsOn: LOCAL_POOL.runsOn,
-						externalRunnerId: "local-runner-1",
-						attempts: 1,
+						externalRunnerId: ExternalRunnerId.make("local-1"),
+						attempts: PositiveAttempts.make(1),
 					}),
 				),
 				Story.when(
@@ -212,17 +308,17 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: HOSTINGER_POOL.poolId,
 						tier: "hostinger",
 						runsOn: HOSTINGER_POOL.runsOn,
-						payer: "hostinger",
-						reservedMicros: 0,
+						payer: HOSTINGER_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: HOSTINGER_POOL.poolId,
 					tier: "hostinger",
-					jobId: job2.id,
+					slotId: SlotId.make("slot-2-hostinger-vps-1"),
 				}),
 				Story.succeed(RunnerBackend.provisionRunner, {
-					externalRunnerId: "hostinger-runner-1",
+					externalRunnerId: ExternalRunnerId.make("hostinger-1"),
 				}),
 				Story.then(
 					job2,
@@ -232,8 +328,8 @@ describe("CiFleet Alchemy Domain model", () => {
 						tier: "hostinger",
 						slotId: SlotId.make("slot-2-hostinger-vps-1"),
 						runsOn: HOSTINGER_POOL.runsOn,
-						externalRunnerId: "hostinger-runner-1",
-						attempts: 1,
+						externalRunnerId: ExternalRunnerId.make("hostinger-1"),
+						attempts: PositiveAttempts.make(1),
 					}),
 				),
 				Story.when(
@@ -260,17 +356,17 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: LOCAL_POOL.poolId,
 						tier: "local",
 						runsOn: LOCAL_POOL.runsOn,
-						payer: "local",
-						reservedMicros: 0,
+						payer: LOCAL_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: LOCAL_POOL.poolId,
 					tier: "local",
-					jobId: job3.id,
+					slotId: SlotId.make("slot-3-local-devbox"),
 				}),
 				Story.succeed(RunnerBackend.provisionRunner, {
-					externalRunnerId: "local-runner-2",
+					externalRunnerId: ExternalRunnerId.make("local-2"),
 				}),
 				Story.then(
 					job3,
@@ -280,8 +376,8 @@ describe("CiFleet Alchemy Domain model", () => {
 						tier: "local",
 						slotId: SlotId.make("slot-3-local-devbox"),
 						runsOn: LOCAL_POOL.runsOn,
-						externalRunnerId: "local-runner-2",
-						attempts: 1,
+						externalRunnerId: ExternalRunnerId.make("local-2"),
+						attempts: PositiveAttempts.make(1),
 					}),
 				),
 				Story.when(
@@ -308,17 +404,17 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: HOSTINGER_POOL.poolId,
 						tier: "hostinger",
 						runsOn: HOSTINGER_POOL.runsOn,
-						payer: "hostinger",
-						reservedMicros: 0,
+						payer: HOSTINGER_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: HOSTINGER_POOL.poolId,
 					tier: "hostinger",
-					jobId: job4.id,
+					slotId: SlotId.make("slot-4-hostinger-vps-1"),
 				}),
 				Story.succeed(RunnerBackend.provisionRunner, {
-					externalRunnerId: "hostinger-runner-2",
+					externalRunnerId: ExternalRunnerId.make("hostinger-2"),
 				}),
 				Story.then(
 					job4,
@@ -328,8 +424,8 @@ describe("CiFleet Alchemy Domain model", () => {
 						tier: "hostinger",
 						slotId: SlotId.make("slot-4-hostinger-vps-1"),
 						runsOn: HOSTINGER_POOL.runsOn,
-						externalRunnerId: "hostinger-runner-2",
-						attempts: 1,
+						externalRunnerId: ExternalRunnerId.make("hostinger-2"),
+						attempts: PositiveAttempts.make(1),
 					}),
 				),
 				Story.when(
@@ -356,17 +452,17 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: AGENT37_POOL.poolId,
 						tier: "agent37",
 						runsOn: AGENT37_POOL.runsOn,
-						payer: "agent37",
-						reservedMicros: 10_000,
+						payer: AGENT37_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(10_000),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: AGENT37_POOL.poolId,
 					tier: "agent37",
-					jobId: job5.id,
+					slotId: SlotId.make("slot-5-agent37-vm"),
 				}),
 				Story.succeed(RunnerBackend.provisionRunner, {
-					externalRunnerId: "agent37-runner-1",
+					externalRunnerId: ExternalRunnerId.make("agent37-1"),
 				}),
 				Story.then(
 					job5,
@@ -376,8 +472,8 @@ describe("CiFleet Alchemy Domain model", () => {
 						tier: "agent37",
 						slotId: SlotId.make("slot-5-agent37-vm"),
 						runsOn: AGENT37_POOL.runsOn,
-						externalRunnerId: "agent37-runner-1",
-						attempts: 1,
+						externalRunnerId: ExternalRunnerId.make("agent37-1"),
+						attempts: PositiveAttempts.make(1),
 					}),
 				),
 				Story.when(
@@ -404,17 +500,17 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: AGENT37_POOL.poolId,
 						tier: "agent37",
 						runsOn: AGENT37_POOL.runsOn,
-						payer: "agent37",
-						reservedMicros: 10_000,
+						payer: AGENT37_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(10_000),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: AGENT37_POOL.poolId,
 					tier: "agent37",
-					jobId: job6.id,
+					slotId: SlotId.make("slot-6-agent37-vm"),
 				}),
 				Story.succeed(RunnerBackend.provisionRunner, {
-					externalRunnerId: "agent37-runner-2",
+					externalRunnerId: ExternalRunnerId.make("agent37-2"),
 				}),
 				Story.then(
 					job6,
@@ -424,8 +520,8 @@ describe("CiFleet Alchemy Domain model", () => {
 						tier: "agent37",
 						slotId: SlotId.make("slot-6-agent37-vm"),
 						runsOn: AGENT37_POOL.runsOn,
-						externalRunnerId: "agent37-runner-2",
-						attempts: 1,
+						externalRunnerId: ExternalRunnerId.make("agent37-2"),
+						attempts: PositiveAttempts.make(1),
 					}),
 				),
 				Story.when(
@@ -452,17 +548,17 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: GITHUB_POOL.poolId,
 						tier: "github",
 						runsOn: GITHUB_POOL.runsOn,
-						payer: "github",
-						reservedMicros: 40_000,
+						payer: GITHUB_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(40_000),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: GITHUB_POOL.poolId,
 					tier: "github",
-					jobId: job7.id,
+					slotId: SlotId.make("slot-7-github-hosted"),
 				}),
 				Story.succeed(RunnerBackend.provisionRunner, {
-					externalRunnerId: "gh-runner-1",
+					externalRunnerId: ExternalRunnerId.make("github-1"),
 				}),
 				Story.then(
 					job7,
@@ -472,24 +568,24 @@ describe("CiFleet Alchemy Domain model", () => {
 						tier: "github",
 						slotId: SlotId.make("slot-7-github-hosted"),
 						runsOn: GITHUB_POOL.runsOn,
-						externalRunnerId: "gh-runner-1",
-						attempts: 1,
+						externalRunnerId: ExternalRunnerId.make("github-1"),
+						attempts: PositiveAttempts.make(1),
 					}),
 				),
 				Story.view(FleetCapacityView, station, {
-					exposureMicros: 60_000,
+					exposureMicros: NonNegativeMicros.make(60_000),
 				}),
 				Story.view(RoutingAuditView, job7, {
-					status: "bound",
+					_tag: "Bound",
 					tier: "github",
 					poolId: GITHUB_POOL.poolId,
-					attempts: 1,
+					attempts: PositiveAttempts.make(1),
 				}),
 			),
 		);
 	});
 
-	it("compensates reserved slot and fails over from Hostinger to Agent37 to GitHub-hosted on capacity exhaustion", async () => {
+	it("fails over across tiers with slot compensation and reconciles settled spend on completion", async () => {
 		const job = JobDispatch.ref(JobDispatchId.make("job-failover"));
 
 		await Effect.runPromise(
@@ -519,19 +615,18 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: HOSTINGER_POOL.poolId,
 						tier: "hostinger",
 						runsOn: HOSTINGER_POOL.runsOn,
-						payer: "hostinger",
-						reservedMicros: 0,
+						payer: HOSTINGER_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: HOSTINGER_POOL.poolId,
-					tier: "hostinger",
 				}),
 				Story.fail(
 					RunnerBackend.provisionRunner,
 					new RunnerCapacityExhausted({
 						poolId: HOSTINGER_POOL.poolId,
-						reason: "vps-saturated",
+						reason: NonEmptyReason.make("hostinger-busy"),
 					}),
 				),
 				Story.then(
@@ -540,9 +635,9 @@ describe("CiFleet Alchemy Domain model", () => {
 						slotId: SlotId.make("slot-1-hostinger-vps-1"),
 						jobId: job.id,
 						poolId: HOSTINGER_POOL.poolId,
-						payer: "hostinger",
-						reservedMicros: 0,
-						settledMicros: 0,
+						payer: HOSTINGER_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
+						settledMicros: NonNegativeMicros.make(0),
 					}),
 					new BalancedSlotReserved({
 						slotId: SlotId.make("slot-2-agent37-vm"),
@@ -550,19 +645,18 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: AGENT37_POOL.poolId,
 						tier: "agent37",
 						runsOn: AGENT37_POOL.runsOn,
-						payer: "agent37",
-						reservedMicros: 10_000,
+						payer: AGENT37_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(10_000),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: AGENT37_POOL.poolId,
-					tier: "agent37",
 				}),
 				Story.fail(
 					RunnerBackend.provisionRunner,
 					new RunnerCapacityExhausted({
 						poolId: AGENT37_POOL.poolId,
-						reason: "quota-busy",
+						reason: NonEmptyReason.make("agent37-quota"),
 					}),
 				),
 				Story.then(
@@ -571,9 +665,9 @@ describe("CiFleet Alchemy Domain model", () => {
 						slotId: SlotId.make("slot-2-agent37-vm"),
 						jobId: job.id,
 						poolId: AGENT37_POOL.poolId,
-						payer: "agent37",
-						reservedMicros: 10_000,
-						settledMicros: 0,
+						payer: AGENT37_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(10_000),
+						settledMicros: NonNegativeMicros.make(0),
 					}),
 					new BalancedSlotReserved({
 						slotId: SlotId.make("slot-3-github-hosted"),
@@ -581,16 +675,15 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: GITHUB_POOL.poolId,
 						tier: "github",
 						runsOn: GITHUB_POOL.runsOn,
-						payer: "github",
-						reservedMicros: 40_000,
+						payer: GITHUB_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(40_000),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
 					poolId: GITHUB_POOL.poolId,
-					tier: "github",
 				}),
 				Story.succeed(RunnerBackend.provisionRunner, {
-					externalRunnerId: "gh-runner-fallback",
+					externalRunnerId: ExternalRunnerId.make("gh-runner-99"),
 				}),
 				Story.then(
 					job,
@@ -600,17 +693,26 @@ describe("CiFleet Alchemy Domain model", () => {
 						tier: "github",
 						slotId: SlotId.make("slot-3-github-hosted"),
 						runsOn: GITHUB_POOL.runsOn,
-						externalRunnerId: "gh-runner-fallback",
-						attempts: 3,
+						externalRunnerId: ExternalRunnerId.make("gh-runner-99"),
+						attempts: PositiveAttempts.make(3),
 					}),
 				),
-				Story.view(FleetCapacityView, station, {
-					exposureMicros: 40_000,
-				}),
+				Story.when(
+					station,
+					new ConfigureStationBudget({
+						ceilingMicros: NonNegativeMicros.make(20_000),
+					}),
+				),
+				Story.rejected(
+					new BudgetCeilingBelowExposure({
+						exposureMicros: NonNegativeMicros.make(40_000),
+						ceilingMicros: NonNegativeMicros.make(20_000),
+					}),
+				),
 				Story.when(
 					job,
 					new CompleteJobDispatch({
-						settledMicros: 24_000,
+						settledMicros: NonNegativeMicros.make(24_000),
 						conclusion: "succeeded",
 					}),
 				),
@@ -619,7 +721,7 @@ describe("CiFleet Alchemy Domain model", () => {
 					new JobDispatchCompleted({
 						stationId: station.id,
 						slotId: SlotId.make("slot-3-github-hosted"),
-						settledMicros: 24_000,
+						settledMicros: NonNegativeMicros.make(24_000),
 						conclusion: "succeeded",
 					}),
 				),
@@ -634,37 +736,75 @@ describe("CiFleet Alchemy Domain model", () => {
 						slotId: SlotId.make("slot-3-github-hosted"),
 						jobId: job.id,
 						poolId: GITHUB_POOL.poolId,
-						payer: "github",
-						reservedMicros: 40_000,
-						settledMicros: 24_000,
+						payer: GITHUB_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(40_000),
+						settledMicros: NonNegativeMicros.make(24_000),
 					}),
 				),
 				Story.view(FleetCapacityView, station, {
-					exposureMicros: 24_000,
+					exposureMicros: NonNegativeMicros.make(24_000),
 				}),
 				Story.view(RoutingAuditView, job, {
-					status: "completed",
-					settledMicros: 24_000,
+					_tag: "Completed",
+					tier: "github",
+					attempts: PositiveAttempts.make(3),
+					settledMicros: NonNegativeMicros.make(24_000),
+					conclusion: "succeeded",
 				}),
 			),
 		);
 	});
 
-	it("rejects conflicting start rebinds and enforces budget ceiling failures", async () => {
-		const job = JobDispatch.ref(JobDispatchId.make("job-conflict"));
-		const overBudgetJob = JobDispatch.ref(
-			JobDispatchId.make("job-over-budget"),
-		);
+	it("enforces hard station spend cap and start-binding immutability", async () => {
+		const cappedJob = JobDispatch.ref(JobDispatchId.make("job-capped"));
+		const boundJob = JobDispatch.ref(JobDispatchId.make("job-bound"));
 
 		await Effect.runPromise(
 			story(
 				Story.given(
 					station,
-					new StationBudgetConfigured({ ceilingMicros: 5_000 }),
-					new RunnerPoolRegistered({ spec: AGENT37_POOL }),
+					new StationBudgetConfigured({
+						ceilingMicros: NonNegativeMicros.make(10_000),
+					}),
+					new RunnerPoolRegistered({ spec: GITHUB_POOL }),
 				),
+				Story.when(
+					cappedJob,
+					new ObserveJobDispatch({
+						stationId: station.id,
+						requirements: PUBLIC_ISOLATED_JOB,
+						deadlineSeconds: null,
+					}),
+				),
+				Story.then(
+					cappedJob,
+					new JobDispatchObserved({
+						stationId: station.id,
+						requirements: PUBLIC_ISOLATED_JOB,
+						deadlineSeconds: null,
+					}),
+				),
+				Story.then(
+					cappedJob,
+					new JobDispatchFailed({
+						reason: NonEmptyReason.make("BudgetCeilingExceeded"),
+					}),
+				),
+				Story.saga(DispatchJob, cappedJob, {
+					_tag: "Rejected",
+					rejection: new BudgetCeilingExceeded({
+						exposureMicros: NonNegativeMicros.make(0),
+						requestedMicros: NonNegativeMicros.make(40_000),
+						ceilingMicros: NonNegativeMicros.make(10_000),
+					}),
+				}),
+				Story.view(RoutingAuditView, cappedJob, {
+					_tag: "Failed",
+					stationId: station.id,
+					reason: NonEmptyReason.make("BudgetCeilingExceeded"),
+				}),
 				Story.given(
-					job,
+					boundJob,
 					new JobDispatchObserved({
 						stationId: station.id,
 						requirements: PRIVATE_JOB,
@@ -672,64 +812,37 @@ describe("CiFleet Alchemy Domain model", () => {
 					}),
 					new RunnerStartBound({
 						stationId: station.id,
-						poolId: AGENT37_POOL.poolId,
-						tier: "agent37",
-						slotId: SlotId.make("slot-original"),
-						runsOn: AGENT37_POOL.runsOn,
-						externalRunnerId: "runner-original",
-						attempts: 1,
+						poolId: LOCAL_POOL.poolId,
+						tier: "local",
+						slotId: SlotId.make("slot-1-local-devbox"),
+						runsOn: LOCAL_POOL.runsOn,
+						externalRunnerId: ExternalRunnerId.make("local-1"),
+						attempts: PositiveAttempts.make(1),
 					}),
 				),
 				Story.when(
-					job,
+					boundJob,
 					new BindRunnerStart({
-						poolId: AGENT37_POOL.poolId,
-						tier: "agent37",
-						slotId: SlotId.make("slot-hijack"),
-						runsOn: AGENT37_POOL.runsOn,
-						externalRunnerId: "runner-hijack",
-						attempts: 2,
+						poolId: GITHUB_POOL.poolId,
+						tier: "github",
+						slotId: SlotId.make("slot-2-github-hosted"),
+						runsOn: GITHUB_POOL.runsOn,
+						externalRunnerId: ExternalRunnerId.make("gh-2"),
+						attempts: PositiveAttempts.make(2),
 					}),
 				),
 				Story.rejected(
 					new StartBindingConflict({
-						boundSlotId: SlotId.make("slot-original"),
-						boundPoolId: AGENT37_POOL.poolId,
-						attemptedSlotId: SlotId.make("slot-hijack"),
+						boundSlotId: SlotId.make("slot-1-local-devbox"),
+						boundPoolId: LOCAL_POOL.poolId,
+						attemptedSlotId: SlotId.make("slot-2-github-hosted"),
 					}),
 				),
-				Story.when(
-					overBudgetJob,
-					new ObserveJobDispatch({
-						stationId: station.id,
-						requirements: PRIVATE_JOB,
-						deadlineSeconds: null,
-					}),
-				),
-				Story.then(
-					overBudgetJob,
-					new JobDispatchObserved({
-						stationId: station.id,
-						requirements: PRIVATE_JOB,
-						deadlineSeconds: null,
-					}),
-					new JobDispatchFailed({
-						reason: "BudgetCeilingExceeded",
-					}),
-				),
-				Story.saga(DispatchJob, overBudgetJob, {
-					_tag: "Rejected",
-					rejection: new BudgetCeilingExceeded({
-						exposureMicros: 0,
-						requestedMicros: 10_000,
-						ceilingMicros: 5_000,
-					}),
-				}),
 			),
 		);
 	});
 
-	it("expires queued jobs when queue deadline elapses and serves in-process CiFleetApi", async () => {
+	it("expires queued jobs when queue deadline elapses and compensates late provisioning", async () => {
 		const expiredJob = JobDispatch.ref(JobDispatchId.make("job-deadline"));
 		const slowStory = Story.make(CiFleet, {
 			layer: CiFleetHandlers,
@@ -745,7 +858,7 @@ describe("CiFleet Alchemy Domain model", () => {
 					new ObserveJobDispatch({
 						stationId: station.id,
 						requirements: PRIVATE_JOB,
-						deadlineSeconds: 30,
+						deadlineSeconds: PositiveSeconds.make(30),
 					}),
 				),
 				Story.then(
@@ -753,7 +866,7 @@ describe("CiFleet Alchemy Domain model", () => {
 					new JobDispatchObserved({
 						stationId: station.id,
 						requirements: PRIVATE_JOB,
-						deadlineSeconds: 30,
+						deadlineSeconds: PositiveSeconds.make(30),
 					}),
 				),
 				Story.then(
@@ -764,8 +877,8 @@ describe("CiFleet Alchemy Domain model", () => {
 						poolId: LOCAL_POOL.poolId,
 						tier: "local",
 						runsOn: LOCAL_POOL.runsOn,
-						payer: "local",
-						reservedMicros: 0,
+						payer: LOCAL_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
 					}),
 				),
 				Story.call(RunnerBackend.provisionRunner, {
@@ -774,10 +887,12 @@ describe("CiFleet Alchemy Domain model", () => {
 				Story.advance("31 seconds"),
 				Story.then(
 					expiredJob,
-					new JobDispatchExpired({ reason: "queue-deadline-elapsed" }),
+					new JobDispatchExpired({
+						reason: NonEmptyReason.make("queue-deadline-elapsed"),
+					}),
 				),
 				Story.succeed(RunnerBackend.provisionRunner, {
-					externalRunnerId: "late-runner",
+					externalRunnerId: ExternalRunnerId.make("late-runner"),
 				}),
 				Story.then(
 					station,
@@ -785,49 +900,97 @@ describe("CiFleet Alchemy Domain model", () => {
 						slotId: SlotId.make("slot-1-local-devbox"),
 						jobId: expiredJob.id,
 						poolId: LOCAL_POOL.poolId,
-						payer: "local",
-						reservedMicros: 0,
-						settledMicros: 0,
+						payer: LOCAL_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
+						settledMicros: NonNegativeMicros.make(0),
 					}),
 				),
 				Story.saga(DispatchJob, expiredJob, {
 					_tag: "Rejected",
 					rejection: new JobNotQueued({ currentState: "Expired" }),
 				}),
+				Story.view(RoutingAuditView, expiredJob, {
+					_tag: "Expired",
+					stationId: station.id,
+					reason: NonEmptyReason.make("queue-deadline-elapsed"),
+				}),
+				Story.view(FleetCapacityView, station, {
+					pools: [
+						{
+							poolId: LOCAL_POOL.poolId,
+							tier: "local",
+							role: "primary",
+							runsOn: LOCAL_POOL.runsOn,
+							concurrency: LOCAL_POOL.concurrency,
+							activeJobs: NonNegativeCount.make(0),
+							dispatchedCount: NonNegativeCount.make(1),
+							health: "healthy",
+							enabled: true,
+						},
+					],
+				}),
 			),
 		);
+	});
 
-		const RunnerBackendStub = RunnerBackend.toLayer(
+	runRunnerBackendConformance(
+		"stateless-stub",
+		RunnerBackend.toLayer(
 			Effect.succeed({
 				provisionRunner: ({ slotId }) =>
-					Effect.succeed({ externalRunnerId: `ext-${slotId}` }),
+					Effect.succeed({
+						externalRunnerId: ExternalRunnerId.make(`stub-${slotId}`),
+					}),
+				releaseRunner: () => Effect.succeed({ released: true }),
+			}),
+		),
+	);
+
+	runRunnerBackendConformance(
+		"stateful-pool-tracker",
+		RunnerBackend.toLayer(
+			Effect.sync(() => {
+				const active = new Map<string, ExternalRunnerId>();
+				return {
+					provisionRunner: ({ tier, slotId }) =>
+						Effect.sync(() => {
+							const id = ExternalRunnerId.make(`${tier}:${slotId}`);
+							active.set(slotId, id);
+							return { externalRunnerId: id };
+						}),
+					releaseRunner: ({ slotId }) =>
+						Effect.sync(() => {
+							const existed = active.delete(slotId);
+							return { released: existed };
+						}),
+				};
+			}),
+		),
+	);
+
+	it("fails closed with ExternalSystemSchemaError when an adapter returns schema-drifting data", async () => {
+		const DriftedBackend = RunnerBackend.toLayer(
+			Effect.succeed({
+				provisionRunner: () =>
+					Effect.sync(() => JSON.parse('{"externalRunnerId":""}')),
 				releaseRunner: () => Effect.succeed({ released: true }),
 			}),
 		);
 
-		const World = CiFleet.layer(CiFleetHandlers).pipe(
-			Layer.provide(Layer.mergeAll(Domain.InMemory, RunnerBackendStub)),
-		);
-
-		const capacity = await Effect.runPromise(
+		const exit = await Effect.runPromiseExit(
 			Effect.gen(function* () {
-				const client = yield* CiFleetApi.clientInProcess;
-				yield* client.ConfigureStationBudget(station.id, {
-					ceilingMicros: 100_000,
-				});
-				yield* client.RegisterRunnerPool(station.id, { spec: LOCAL_POOL });
-				const receipt = yield* client.SetRunnerPoolHealth(station.id, {
+				const backend = yield* RunnerBackend;
+				return yield* backend.provisionRunner({
+					stationId: station.id,
+					jobId: JobDispatchId.make("job-drift"),
 					poolId: LOCAL_POOL.poolId,
-					health: "healthy",
-					enabled: true,
+					tier: "local",
+					runsOn: LOCAL_POOL.runsOn,
+					slotId: SlotId.make("slot-drift"),
 				});
-				return yield* client.FleetCapacityView.get(station.id, {
-					atLeast: receipt,
-				});
-			}).pipe(Effect.scoped, Effect.provide(World)),
+			}).pipe(Effect.provide(DriftedBackend)),
 		);
 
-		expect(capacity?.pools).toHaveLength(1);
-		expect(capacity?.pools[0]?.poolId).toBe(LOCAL_POOL.poolId);
+		expect(Exit.isFailure(exit)).toBe(true);
 	});
 });
