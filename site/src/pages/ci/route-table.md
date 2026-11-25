@@ -21,7 +21,7 @@ After a dispatch pass the relay [balances](/HoBo/ci/fleet-balancing/) three repr
 While the box has room, every class stays where it is today:
 
 <!-- generated:routes-box-free:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 ```json
 {"fork":"hobo","pr":"hobo","trunk":"hobo-trunk"}
@@ -32,7 +32,7 @@ While the box has room, every class stays where it is today:
 When the box is full, new jobs are pointed at the best provider that can take them:
 
 <!-- generated:routes-box-full:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 ```json
 {"fork":"hobo","pr":"blacksmith-4vcpu-ubuntu-2404","trunk":"blacksmith-4vcpu-ubuntu-2404"}

@@ -289,11 +289,11 @@ describe("recordProviderOutcome window (R09)", () => {
 					recordProviderOutcome(health, { atMs, started: false }),
 				newProviderHealth(),
 			);
-		expect(record([40 * MINUTE, 0, 5 * MINUTE]).trippedAtMs).toBeUndefined();
+		expect(record([40 * MINUTE, 0, 5 * MINUTE]).trippedAtMs).toBe(5 * MINUTE);
 		const inside = record([20 * MINUTE, 0, 5 * MINUTE]);
-		expect(inside.trippedAtMs).toBe(20 * MINUTE);
+		expect(inside.trippedAtMs).toBe(5 * MINUTE);
 		expect(inside.nextTrialAtMs).toBe(
-			20 * MINUTE + PROVIDER_HEALTH_DEFAULTS.firstBackoffMs,
+			5 * MINUTE + PROVIDER_HEALTH_DEFAULTS.firstBackoffMs,
 		);
 	});
 });

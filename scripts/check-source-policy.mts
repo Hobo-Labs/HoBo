@@ -64,6 +64,7 @@ const AST_GREP = join(
 );
 const GENERATED_OR_VENDOR =
 	/^(?:external\/|tools\/oxlint\/anti-slop\/)|(?:^|\/)(?:_generated|dist|node_modules)\//u;
+const WIT_JCO_GENERATED = /^packages\/wit\/src\/generated\//u;
 const DIRECTIVE =
 	/^(?:\/\/go:[A-Za-z][A-Za-z0-9_]*\b|\/\/(?:line|export|extern)\s|\/\/ (?:#cgo|\+build)\s|(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|buf:(?:lint|breaking):|atlas:(?:nolint|lint|txmode|delimiter|assert)\b|cue:generate\b|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:))/iu;
 const VITE_DIRECTIVE = /^\/\*\s*@vite-ignore\s*\*\/$/u;
@@ -469,6 +470,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 	const violations: Violation[] = [];
 	for (const file of files) {
 		if (GENERATED_OR_VENDOR.test(file)) continue;
+		if (WIT_JCO_GENERATED.test(file)) continue;
 		const sourceFile = sourcePath(file);
 		if (
 			((isExperiencePlanningArtifact(sourceFile) ||

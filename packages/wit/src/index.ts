@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import {
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+	parseJsonValue,
+} from "./json.js";
 
 const PIN_ID_RE =
 	/^(?<namespace>[a-z0-9-]+):(?<packageName>[a-z0-9-]+)\/(?<interfaceName>[a-z0-9-]+)@(?<version>[0-9]+\.[0-9]+\.[0-9]+)@(?<stability>stable|preview|experimental|deprecated)$/;
@@ -9,15 +17,10 @@ const PACKAGE_RE = /^\s*package\s+([\w-]+:[\w-]+)(?:@([\w.+-]+))?\s*;/m;
 const INTERFACE_RE = /^\s*interface\s+([\w-]+)\s*\{([\s\S]*?)^\s*\}/gm;
 const WORLD_RE = /^\s*world\s+([\w-]+)\s*\{([\s\S]*?)^\s*\}/m;
 const IMPORT_EXPORT_RE = /^\s*(import|export)\s+([^;]+)\s*;/gm;
-const FUNC_RE = /^\s*([\w-]+):\s*func\s*\(([^)]*)\)\s*(?:->\s*([^;]+))?;/gm;
+const FUNC_RE =
+	/^\s*([\w-]+):\s*(async\s+)?func\s*\(([^)]*)\)\s*(?:->\s*([^;]+))?;/gm;
 
-const STABILITY_VALUES = new Set([
-	"stable",
-	"preview",
-	"experimental",
-	"deprecated",
-]);
-
+// public-contract: package name that owns the HoBo WIT definitions.
 export const HOBO_WIT_PACKAGE = "@hobo/wit";
 
 export type StabilityTier =
@@ -63,6 +66,7 @@ export type ToolchainLock = Readonly<{
 
 export type FunctionSignature = Readonly<{
 	name: string;
+	async: boolean;
 	params: readonly { name: string; type: string }[];
 	result: string;
 }>;
@@ -121,12 +125,11 @@ export class WitDigestMismatchError extends Error {
 export const EXPECTED_ROUND_TRIP_INTERFACES = Object.freeze([
 	"wasi:keyvalue/store@0.2.0",
 	"wasi:blobstore/blobstore@0.2.0",
-	"wasi:messaging/messaging@0.2.0",
 	"wasi:config/store@0.2.0",
 	"wasi:logging/logging@0.2.0",
 ]);
 
-const ROUND_TRIP_FIXTURES = new Map<string, Record<string, unknown>>([
+const ROUND_TRIP_FIXTURES = new Map<string, JsonObject>([
 	[
 		"wasi:keyvalue/store@0.2.0",
 		{ key: "tenant-a/user-1", value: [115, 101, 115, 115, 105, 111, 110] },
@@ -139,23 +142,6 @@ const ROUND_TRIP_FIXTURES = new Map<string, Record<string, unknown>>([
 			digest:
 				"sha256:9a3c0a8a4ce0ce91d8ff1d357f179aef9f1e4a46358b82b223be99f6e6f9f1e1",
 			size: 128,
-		},
-	],
-	[
-		"wasi:messaging/messaging@0.2.0",
-		{
-			id: "msg_001",
-			subject: "orders.created",
-			payload: [
-				123, 34, 111, 114, 100, 101, 114, 73, 100, 34, 58, 34, 111, 114, 100,
-				95, 49, 50, 51, 34, 125,
-			],
-			attributes: [
-				[
-					"traceparent",
-					"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
-				],
-			],
 		},
 	],
 	[
@@ -185,16 +171,12 @@ const ROUND_TRIP_WIT_SNIPPETS = new Map<string, readonly string[]>([
 		"wasi:blobstore/blobstore@0.2.0",
 		["content-type: string", "digest: string", "size: u64"],
 	],
-	[
-		"wasi:messaging/messaging@0.2.0",
-		["payload: list<u8>", "attributes: list<tuple<string, string>>"],
-	],
 	["wasi:config/store@0.2.0", ["value-ref: string", "sensitivity: string"]],
 	["wasi:logging/logging@0.2.0", ["fields: list<field>"]],
 ]);
 
 export function parseInterfacePin(raw: string): InterfacePin {
-	if (typeof raw !== "string" || raw.length === 0) {
+	if (!isJsonString(raw) || raw.length === 0) {
 		throw new Error("wit.pin.invalid: empty pin id");
 	}
 
@@ -210,8 +192,10 @@ export function parseInterfacePin(raw: string): InterfacePin {
 		!packageName ||
 		!interfaceName ||
 		!version ||
-		!stability ||
-		!STABILITY_VALUES.has(stability)
+		(stability !== "stable" &&
+			stability !== "preview" &&
+			stability !== "experimental" &&
+			stability !== "deprecated")
 	) {
 		throw new Error(`wit.pin.invalid: malformed pin id ${raw}`);
 	}
@@ -222,23 +206,21 @@ export function parseInterfacePin(raw: string): InterfacePin {
 		packageName,
 		interfaceName,
 		version,
-		stability: stability as StabilityTier,
+		stability,
 		path: "",
 		sha256: "",
 	});
 }
 
 export async function loadToolchainLock(path: string): Promise<ToolchainLock> {
-	const raw = JSON.parse(await readFile(path, "utf8")) as Record<
-		string,
-		unknown
-	>;
+	const raw = parseJsonValue(await readFile(path, "utf8"));
 	return parseToolchainLock(raw);
 }
 
-export function parseToolchainLock(
-	raw: Record<string, unknown>,
-): ToolchainLock {
+export function parseToolchainLock<T>(raw: T): ToolchainLock {
+	if (!isJsonObject(raw)) {
+		throw new Error("wit.lock.invalid: lock must be an object");
+	}
 	if (raw.schema !== "hobo.wit-toolchain-lock/v1") {
 		throw new Error(
 			"wit.lock.invalid: schema must be hobo.wit-toolchain-lock/v1",
@@ -260,7 +242,7 @@ export function parseToolchainLock(
 
 	const smokeSource = raw.smoke_generators ?? raw.smokeGenerators;
 	const smokeGenerators = Array.isArray(smokeSource)
-		? smokeSource.map((entry: unknown, index: number) =>
+		? smokeSource.map((entry: JsonValue, index: number) =>
 				parseGeneratorPin(entry, `smoke_generators[${index}]`),
 			)
 		: [];
@@ -268,14 +250,14 @@ export function parseToolchainLock(
 	const compatFloor = parseCompatFloor(raw.compat_floor ?? raw.compatFloor);
 	const witDepsSource = raw.wit_deps ?? raw.witDeps;
 	const witDeps = Array.isArray(witDepsSource)
-		? witDepsSource.map((entry: unknown, index: number) =>
+		? witDepsSource.map((entry: JsonValue, index: number) =>
 				parseInterfacePinRecord(entry, index),
 			)
 		: [];
 
 	const guards = Array.isArray(raw.guards)
 		? raw.guards.map((guard) => {
-				if (typeof guard !== "string" || guard.length === 0) {
+				if (!isJsonString(guard) || guard.length === 0) {
 					throw new Error("wit.lock.invalid: guard must be non-empty string");
 				}
 				return guard;
@@ -302,7 +284,7 @@ export async function verifyVendoredWit(
 	for (const pin of lock.witDeps) {
 		const filePath = join(rootDir, pin.path);
 		const source = await readFile(filePath, "utf8");
-		assertVendoredWitShape(pin, source);
+		assertVendoredWitSurface(pin, source);
 
 		const actualSha256 = digestSource(source);
 		if (actualSha256 !== pin.sha256) {
@@ -349,8 +331,9 @@ export function extractWitContract(witSource: string) {
 			}
 			functions.push({
 				name: fnName,
-				params: parseParams(functionMatch[2] ?? ""),
-				result: normalizeType(functionMatch[3] ?? "_"),
+				async: functionMatch[2] !== undefined,
+				params: parseParams(functionMatch[3] ?? ""),
+				result: normalizeType(functionMatch[4] ?? "_"),
 			});
 		}
 
@@ -459,10 +442,10 @@ export async function roundTripFixture(
 	if (fixture === undefined) {
 		throw new Error(`wasi_roundtrip.missing_fixture: ${interfaceRef}`);
 	}
-	const input = clone(fixture);
-	assertRoundTripFixtureShape(interfaceRef, input);
+	const input = structuredClone(fixture);
+	assertRoundTripFixture(interfaceRef, input);
 	const encoded = canonicalJson(input);
-	const decoded = JSON.parse(encoded);
+	const decoded = parseJsonValue(encoded);
 
 	return {
 		interfaceRef,
@@ -476,22 +459,25 @@ export function digestSource(source: string): string {
 	return `sha256:${createHash("sha256").update(source.replace(/\r\n/g, "\n"), "utf8").digest("hex")}`;
 }
 
-function parseGeneratorPin(raw: unknown, label: string): GeneratorPin {
-	if (!raw || typeof raw !== "object") {
+function parseGeneratorPin(
+	raw: JsonValue | undefined,
+	label: string,
+): GeneratorPin {
+	if (!isJsonObject(raw)) {
 		throw new Error(`wit.lock.invalid: ${label} must be an object`);
 	}
 
-	const entry = raw as Record<string, unknown>;
-	if (typeof entry.name !== "string" || entry.name.length === 0) {
+	const entry = raw;
+	if (!isJsonString(entry.name) || entry.name.length === 0) {
 		throw new Error(`wit.lock.invalid: ${label}.name required`);
 	}
 	if (
-		typeof entry.version !== "string" ||
+		!isJsonString(entry.version) ||
 		!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(entry.version)
 	) {
 		throw new Error(`wit.lock.invalid: ${label}.version must be exact semver`);
 	}
-	if (typeof entry.role !== "string" || entry.role.length === 0) {
+	if (!isJsonString(entry.role) || entry.role.length === 0) {
 		throw new Error(`wit.lock.invalid: ${label}.role required`);
 	}
 
@@ -502,12 +488,12 @@ function parseGeneratorPin(raw: unknown, label: string): GeneratorPin {
 	});
 }
 
-function parseCompatFloor(raw: unknown): CompatFloor {
-	if (!raw || typeof raw !== "object") {
+function parseCompatFloor(raw: JsonValue | undefined): CompatFloor {
+	if (!isJsonObject(raw)) {
 		throw new Error("wit.lock.invalid: compat_floor required");
 	}
 
-	const floor = raw as Record<string, unknown>;
+	const floor = raw;
 	const wasmtime = readExactVersion(floor, "wasmtime");
 	const componentizeJs = readExactVersion(
 		floor,
@@ -516,12 +502,11 @@ function parseCompatFloor(raw: unknown): CompatFloor {
 	);
 	const wrpc = readExactVersion(floor, "wrpc");
 	const wasmCloud = readExactVersion(floor, "wasm_cloud", "wasmCloud");
-	const defaultTransport =
-		typeof floor.default_transport === "string"
-			? floor.default_transport
-			: typeof floor.defaultTransport === "string"
-				? floor.defaultTransport
-				: "wrpc@0.17.0+nats";
+	const defaultTransport = isJsonString(floor.default_transport)
+		? floor.default_transport
+		: isJsonString(floor.defaultTransport)
+			? floor.defaultTransport
+			: "wrpc@0.17.0+nats";
 
 	return Object.freeze({
 		wasmtime,
@@ -532,25 +517,26 @@ function parseCompatFloor(raw: unknown): CompatFloor {
 	});
 }
 
-function parseInterfacePinRecord(raw: unknown, index: number): InterfacePin {
-	if (!raw || typeof raw !== "object") {
+function parseInterfacePinRecord(
+	raw: JsonValue | undefined,
+	index: number,
+): InterfacePin {
+	if (!isJsonObject(raw)) {
 		throw new Error(`wit.lock.invalid: wit_deps[${index}] must be an object`);
 	}
 
-	const entry = raw as Record<string, unknown>;
-	const id =
-		typeof entry.id === "string"
-			? entry.id
-			: typeof entry.interface === "string"
-				? `${entry.interface}@${entry.stability ?? "preview"}`
-				: "";
+	const entry = raw;
+	const id = isJsonString(entry.id)
+		? entry.id
+		: isJsonString(entry.interface)
+			? `${entry.interface}@${entry.stability ?? "preview"}`
+			: "";
 
 	const parsed = parseInterfacePin(id);
-	const path = typeof entry.path === "string" ? entry.path : "";
-	const sha256 =
-		typeof entry.sha256 === "string"
-			? entry.sha256
-			: String(entry.digest ?? "");
+	const path = isJsonString(entry.path) ? entry.path : "";
+	const sha256 = isJsonString(entry.sha256)
+		? entry.sha256
+		: String(entry.digest ?? "");
 
 	if (!path.startsWith("wit/") || !path.endsWith(".wit")) {
 		throw new Error(
@@ -570,13 +556,10 @@ function parseInterfacePinRecord(raw: unknown, index: number): InterfacePin {
 	});
 }
 
-function readExactVersion(
-	floor: Record<string, unknown>,
-	...keys: string[]
-): string {
+function readExactVersion(floor: JsonObject, ...keys: string[]): string {
 	for (const key of keys) {
 		const value = floor[key];
-		if (typeof value === "string" && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(value)) {
+		if (isJsonString(value) && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(value)) {
 			return value;
 		}
 	}
@@ -585,7 +568,7 @@ function readExactVersion(
 	);
 }
 
-function assertVendoredWitShape(pin: InterfacePin, source: string) {
+function assertVendoredWitSurface(pin: InterfacePin, source: string) {
 	const packageDecl = `package ${pin.namespace}:${pin.packageName}@${pin.version};`;
 	const surfaceDecl =
 		pin.path === "wit/hobo-sdk.wit"
@@ -741,6 +724,7 @@ function normalizeInterfaces(
 			functions: [...details.functions]
 				.map((fn) => ({
 					name: fn.name,
+					async: fn.async,
 					params: fn.params.map((param) => ({
 						name: param.name,
 						type: normalizeType(param.type),
@@ -776,18 +760,18 @@ function uniqueSorted(values: readonly string[]) {
 	return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
-function canonicalJson(value: unknown): string {
+function canonicalJson(value: JsonValue): string {
 	return JSON.stringify(canonicalize(value));
 }
 
-function canonicalize(value: unknown): unknown {
+function canonicalize(value: JsonValue): JsonValue {
 	if (Array.isArray(value)) {
 		return value.map(canonicalize);
 	}
 
-	if (value && typeof value === "object") {
+	if (isJsonObject(value)) {
 		return Object.fromEntries(
-			Object.entries(value as Record<string, unknown>)
+			Object.entries(value)
 				.sort(([left], [right]) => left.localeCompare(right))
 				.map(([key, nested]) => [key, canonicalize(nested)]),
 		);
@@ -796,86 +780,79 @@ function canonicalize(value: unknown): unknown {
 	return value;
 }
 
-function clone<T>(value: T): T {
-	return JSON.parse(canonicalJson(value)) as T;
-}
+function assertRoundTripFixture(interfaceRef: string, value: JsonObject) {
+	const validators = new Map<string, () => void>([
+		[
+			"wasi:keyvalue/store@0.2.0",
+			() => {
+				assertString(value.key, "keyvalue.key");
+				assertByteList(value.value, "keyvalue.value");
+			},
+		],
+		[
+			"wasi:blobstore/blobstore@0.2.0",
+			() => {
+				assertString(value.name, "blobstore.name");
+				assertString(value["content-type"], "blobstore.content-type");
+				assertString(value.digest, "blobstore.digest");
+				assertInteger(value.size, "blobstore.size");
+			},
+		],
+		[
+			"wasi:config/store@0.2.0",
+			() => {
+				assertString(value.key, "config.key");
+				assertString(value["value-ref"], "config.value-ref");
+				assertString(value.sensitivity, "config.sensitivity");
+			},
+		],
+		[
+			"wasi:logging/logging@0.2.0",
+			() => {
+				assertString(value.level, "logging.level");
+				assertString(value.message, "logging.message");
+				if (!Array.isArray(value.fields)) {
+					throw new Error("wasi_roundtrip.invalid_shape: logging.fields");
+				}
+				for (const field of value.fields) {
+					if (!isJsonObject(field)) {
+						throw new Error("wasi_roundtrip.invalid_shape: logging.field");
+					}
+					assertString(field.key, "logging.field.key");
+					assertString(field.value, "logging.field.value");
+				}
+			},
+		],
+	]);
 
-function assertRoundTripFixtureShape(
-	interfaceRef: string,
-	value: Record<string, unknown>,
-) {
-	const validators: Record<string, () => void> = {
-		"wasi:keyvalue/store@0.2.0": () => {
-			assertString(value.key, "keyvalue.key");
-			assertByteList(value.value, "keyvalue.value");
-		},
-		"wasi:blobstore/blobstore@0.2.0": () => {
-			assertString(value.name, "blobstore.name");
-			assertString(value["content-type"], "blobstore.content-type");
-			assertString(value.digest, "blobstore.digest");
-			assertInteger(value.size, "blobstore.size");
-		},
-		"wasi:messaging/messaging@0.2.0": () => {
-			assertString(value.id, "messaging.id");
-			assertString(value.subject, "messaging.subject");
-			assertByteList(value.payload, "messaging.payload");
-			assertTupleList(value.attributes, "messaging.attributes");
-		},
-		"wasi:config/store@0.2.0": () => {
-			assertString(value.key, "config.key");
-			assertString(value["value-ref"], "config.value-ref");
-			assertString(value.sensitivity, "config.sensitivity");
-		},
-		"wasi:logging/logging@0.2.0": () => {
-			assertString(value.level, "logging.level");
-			assertString(value.message, "logging.message");
-			if (!Array.isArray(value.fields)) {
-				throw new Error("wasi_roundtrip.invalid_shape: logging.fields");
-			}
-			for (const field of value.fields) {
-				assertString((field as { key: string }).key, "logging.field.key");
-				assertString((field as { value: string }).value, "logging.field.value");
-			}
-		},
-	};
-
-	const validator = validators[interfaceRef];
+	const validator = validators.get(interfaceRef);
 	if (!validator) {
 		throw new Error(`wasi_roundtrip.unlinked_interface: ${interfaceRef}`);
 	}
 	validator();
 }
 
-function assertString(value: unknown, field: string) {
-	if (typeof value !== "string" || value.length === 0) {
+function assertString(value: JsonValue | undefined, field: string) {
+	if (!isJsonString(value) || value.length === 0) {
 		throw new Error(`wasi_roundtrip.invalid_shape: ${field}`);
 	}
 }
 
-function assertInteger(value: unknown, field: string) {
-	if (!Number.isInteger(value) || (value as number) < 0) {
+function assertInteger(value: JsonValue | undefined, field: string) {
+	if (!isJsonNumber(value) || !Number.isInteger(value) || value < 0) {
 		throw new Error(`wasi_roundtrip.invalid_shape: ${field}`);
 	}
 }
 
-function assertByteList(value: unknown, field: string) {
-	if (
-		!Array.isArray(value) ||
-		value.some((item) => !Number.isInteger(item) || item < 0 || item > 255)
-	) {
-		throw new Error(`wasi_roundtrip.invalid_shape: ${field}`);
-	}
-}
-
-function assertTupleList(value: unknown, field: string) {
+function assertByteList(value: JsonValue | undefined, field: string) {
 	if (
 		!Array.isArray(value) ||
 		value.some(
 			(item) =>
-				!Array.isArray(item) ||
-				item.length !== 2 ||
-				typeof item[0] !== "string" ||
-				typeof item[1] !== "string",
+				!isJsonNumber(item) ||
+				!Number.isInteger(item) ||
+				item < 0 ||
+				item > 255,
 		)
 	) {
 		throw new Error(`wasi_roundtrip.invalid_shape: ${field}`);

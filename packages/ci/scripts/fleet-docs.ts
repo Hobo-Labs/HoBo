@@ -14,20 +14,11 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type BudgetPolicy, parseBudgetPolicy } from "@hobo/core";
 import { isQuoteVector, QuoteEngine } from "@hobo/pricing";
 import {
-	balanceFleet,
 	FLEET_REFUSAL_CODES,
-	type FleetBalance,
-	type FleetBalanceInput,
-	type FleetDemand,
-	type FleetMemberState,
-	fleetRoutesVariableValue,
-	fleetRouteTable,
 	RUNNER_FINANCIAL_MODELS,
 	type RunnerFinancialModel,
-	type RunnerModelId,
 	runnerQuoteScenario,
 } from "../src/fleet/index.js";
 
@@ -45,89 +36,13 @@ const AT = new Date(
 )
 	.toISOString()
 	.replace(".000Z", "Z");
-const BOX_SLOTS = 3;
 
 const PAGES = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"../../../site/src/pages",
 );
 
-function policy(limitMicros: number): BudgetPolicy {
-	return parseBudgetPolicy({
-		schemaVersion: "hobo.budget-policy/v1",
-		tenantId: "acme",
-		budgetId: "ci",
-		periodId: "2026-11",
-		revision: "docs-001",
-		workloads: ["ci"],
-		currency: "USD",
-		limitMicros,
-		objective: "min-cost",
-		enforcement: "conservative",
-		periodKind: "manual",
-		constraints: [],
-	});
-}
-
-/** The whole catalog as one fleet: connected, healthy, plans already open. */
-function fleet(
-	overrides: Partial<Record<RunnerModelId, Partial<FleetMemberState>>> = {},
-): FleetMemberState[] {
-	return RUNNER_FINANCIAL_MODELS.map((model) => {
-		const isBox = model.id === "hobo-box";
-		const member: FleetMemberState = {
-			model,
-			enabled: true,
-			activeJobs: 0,
-			healthy: true,
-			commercial: { subscribed: true },
-			payer: model.provider,
-			payerExposureMicros: 0,
-			servesLabels: isBox ? ["hobo-trunk"] : [],
-		};
-		const sized = isBox ? { ...member, concurrency: BOX_SLOTS } : member;
-		return { ...sized, ...overrides[model.id] };
-	});
-}
-
-const BOX_FULL = { "hobo-box": { activeJobs: BOX_SLOTS } } as const;
-
-const PULL_REQUEST: FleetDemand = {
-	id: "acme/app:1001:1:1",
-	minutes: 20,
-	repository: { visibility: "public", ownerType: "organization" },
-	forkPullRequest: false,
-	needsDocker: true,
-	isolationRequired: true,
-};
-
-function decide(
-	members: readonly FleetMemberState[],
-	demand: FleetDemand,
-	overrides: Partial<FleetBalanceInput> = {},
-): FleetBalance {
-	return balanceFleet({
-		members,
-		demand,
-		policy: policy(50_000_000),
-		exposureMicros: 0,
-		activeWork: 0,
-		now: AT,
-		allowNewProviderAgreements: false,
-		...overrides,
-	});
-}
-
 // ------------------------------------------------------------ formatting
-
-const NAMES = new Map<string, string>(
-	RUNNER_FINANCIAL_MODELS.map((model) => [model.id, model.displayName]),
-);
-
-function usd(micros: number): string {
-	if (micros === 0) return "$0";
-	return `$${(micros / 1_000_000).toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
-}
 
 function table(header: readonly string[], rows: readonly string[][]): string {
 	return [
@@ -138,33 +53,6 @@ function table(header: readonly string[], rows: readonly string[][]): string {
 }
 
 const yesNo = (value: boolean) => (value ? "yes" : "no");
-
-function decision(result: FleetBalance): string {
-	const ranking =
-		result.ranking.length === 0
-			? "No member is admitted. The job waits on the label it has."
-			: table(
-					["Rank", "Member", "Tier", "Job asks for", "Adds to the bill"],
-					result.ranking.map((choice, index) => [
-						String(index + 1),
-						NAMES.get(choice.memberId) ?? choice.memberId,
-						choice.role,
-						`\`${choice.runsOn}\``,
-						choice.usesAllowance
-							? `${usd(choice.incrementalBilledMicros)} (included minutes)`
-							: usd(choice.incrementalBilledMicros),
-					]),
-				);
-	const refusals = table(
-		["Not chosen", "Code", "Why"],
-		result.refusals.map((refusal) => [
-			NAMES.get(refusal.memberId) ?? refusal.memberId,
-			`\`${refusal.code}\``,
-			refusal.reason,
-		]),
-	);
-	return result.refusals.length === 0 ? ranking : `${ranking}\n\n${refusals}`;
-}
 
 // -------------------------------------------------------------- fragments
 
@@ -329,48 +217,8 @@ function pricing(): string {
 	);
 }
 
-function routes(members: readonly FleetMemberState[]): string {
-	const demand = {
-		minutes: PULL_REQUEST.minutes,
-		repository: PULL_REQUEST.repository,
-		needsDocker: true,
-	};
-	const routed = fleetRouteTable({
-		members,
-		classes: [
-			{
-				name: "pr",
-				hoboLabel: "hobo",
-				demand: { ...demand, forkPullRequest: false, isolationRequired: true },
-			},
-			{
-				name: "fork",
-				hoboLabel: "hobo",
-				demand: { ...demand, forkPullRequest: true, isolationRequired: true },
-			},
-			{
-				name: "trunk",
-				hoboLabel: "hobo-trunk",
-				demand: { ...demand, forkPullRequest: false, isolationRequired: true },
-			},
-		],
-		policy: policy(50_000_000),
-		exposureMicros: 0,
-		activeWork: 0,
-		now: AT,
-		allowNewProviderAgreements: false,
-	});
-	return `\`\`\`json\n${fleetRoutesVariableValue(routed)}\n\`\`\``;
-}
-
 /** Fragment id to markdown, grouped by the page that holds it. */
 export function renderFleetDocs() {
-	const privateTrunk: FleetDemand = {
-		...PULL_REQUEST,
-		id: "acme/app:1002:1:1",
-		repository: { visibility: "private", ownerType: "organization" },
-		isolationRequired: false,
-	};
 	return {
 		"reference/errors.md": {
 			"ci-fleet-codes": table(
@@ -388,27 +236,6 @@ export function renderFleetDocs() {
 			capabilities: capabilities(),
 			pricing: pricing(),
 			sources: sources(),
-		},
-		"ci/fleet-balancing.md": {
-			"box-free": decision(decide(fleet(), PULL_REQUEST)),
-			"box-full": decision(decide(fleet(BOX_FULL), PULL_REQUEST)),
-			"private-trunk": decision(decide(fleet(BOX_FULL), privateTrunk)),
-			queued: decision(
-				decide(fleet(BOX_FULL), { ...PULL_REQUEST, queuedOnLabel: "hobo" }),
-			),
-			"budget-spent": decision(
-				decide(fleet(BOX_FULL), PULL_REQUEST, {
-					policy: policy(5_000_000),
-					exposureMicros: 5_000_000,
-				}),
-			),
-			"box-unhealthy": decision(
-				decide(fleet({ "hobo-box": { healthy: false } }), PULL_REQUEST),
-			),
-		},
-		"ci/route-table.md": {
-			"routes-box-free": routes(fleet()),
-			"routes-box-full": routes(fleet(BOX_FULL)),
 		},
 	};
 }

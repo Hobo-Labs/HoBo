@@ -9,25 +9,6 @@ describe("HoBo CI docs pages", () => {
 			expect(page.current, page.path).toBe(page.next);
 	});
 
-	it("demonstrate the decisions the pages describe in prose", () => {
-		const balancing = renderFleetDocs()["ci/fleet-balancing.md"];
-		const first = (fragment: string) =>
-			fragment.split("\n").find((line) => line.startsWith("| 1 |"));
-		expect(first(balancing["box-free"])).toContain("HoBo box worker");
-		expect(first(balancing["box-full"])).toContain("Blacksmith runner");
-		expect(first(balancing["private-trunk"])).toContain(
-			"Remote actions-runner-controller scale set",
-		);
-		expect(first(balancing.queued)).toContain("| `hobo` |");
-		expect(balancing.queued).toContain("`fleet.label-bound`");
-		expect(balancing["budget-spent"]).toContain("`budget.policy.exhausted`");
-		expect(balancing["box-unhealthy"]).toContain("`fleet.unhealthy`");
-		const routes = renderFleetDocs()["ci/route-table.md"];
-		expect(routes["routes-box-free"]).toContain(
-			'{"fork":"hobo","pr":"hobo","trunk":"hobo-trunk"}',
-		);
-	});
-
 	it("lists every refusal code the fleet can raise in the errors reference", () => {
 		const reference =
 			renderFleetDocs()["reference/errors.md"]["ci-fleet-codes"];

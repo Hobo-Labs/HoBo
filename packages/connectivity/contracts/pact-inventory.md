@@ -20,3 +20,4 @@ All external and package integration boundaries are exercised through
 
 - Pure algorithms (SigV4 math, DPoP ES256, JWT-SVID claims, rego-lite parse) are still unit-tested under `test/pure/` for cryptographic correctness; they do **not** replace boundary contracts.
 - All HTTP clients accept injectable `fetchImpl` and must be driven by PACT in consumer tests — no ad-hoc fetch stubs outside `createPactFetch`.
+- The overlay credential minters' consumer pacts (Tailscale auth keys, NetBird setup keys) live with their tests in `../test/minters/pacts/` (`tailscale-auth-keys.pact.json`, `netbird-setup-keys.pact.json`), driven by `test/minters/minters.pact.test.ts`. They are consumer-only until provider-recorded interactions are committed under `../test/minters/recorded/` (assumption A13; see the root `fleet-fallbacks.json`).

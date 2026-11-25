@@ -316,7 +316,13 @@ describe("durable workflow: journal, restart, replay", () => {
 	});
 
 	it("makes ctx.sleep deterministic under replay", async () => {
-		const engine = createWorkflowEngine();
+		let now = 1_000;
+		const engine = createWorkflowEngine({
+			clock: { now: () => new Date(now).toISOString(), nowMs: () => now },
+			wait: async (delay) => {
+				now += delay;
+			},
+		});
 		const wf = defineWorkflow<{ id: string }, { at: string; slept: boolean }>({
 			name: "delayed",
 			async run(ctx) {
@@ -327,10 +333,8 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 		});
 
-		const start = Date.now();
 		const handle = await engine.start(wf, { id: "order-3" });
-		// The durable timer is journaled, not a wall-clock wait.
-		expect(Date.now() - start).toBeLessThan(1000);
+		expect(now).toBe(11_000);
 
 		const journal = await engine.journal(handle.runId);
 		const sleepEvent = journal.find(
@@ -2539,38 +2543,38 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(compensations).toBe(1);
 	});
 
-	it("refuses run.* appends after a terminal fact is already in the journal", async () => {
+	it("refuses run.* appends after its parent returns with a step outstanding", async () => {
 		const engine = createWorkflowEngine();
 		let release!: () => void;
 		const gate = new Promise<void>((resolve) => {
 			release = resolve;
 		});
-		let lateStep: Promise<string> | undefined;
+		let lateStep: Promise<unknown> = Promise.resolve();
 		const wf = defineWorkflow({
 			name: "late-step",
 			async run(ctx) {
-				lateStep = ctx.step("slow", async () => {
-					await gate;
-					return "slow";
-				});
-				void lateStep;
+				lateStep = ctx
+					.step("slow", async () => {
+						await gate;
+						return "slow";
+					})
+					.catch((error) => error);
 				return "fast";
 			},
 		});
-		const handle = await engine.start(wf, {}, { runId: "late-step" });
-		expect(handle.status).toBe("completed");
-		expect(handle.result).toBe("fast");
+		await expect(engine.start(wf, {}, { runId: "late-step" })).rejects.toThrow(
+			/outstanding/,
+		);
+		const journalAtReturn = await engine.journal("late-step");
 		release();
-		await expect(lateStep).rejects.toThrow(
-			"events after terminal for late-step",
-		);
+		expect(await lateStep).toBeInstanceOf(Error);
 		const journal = await engine.journal("late-step");
-		const terminalIndex = journal.findIndex(
-			(event) => event.type === "run.Completed" || event.type === "run.Failed",
-		);
-		expect(terminalIndex).toBeGreaterThanOrEqual(0);
-		for (const event of journal.slice(terminalIndex + 1)) {
-			expect(event.type.startsWith("run.")).toBe(false);
-		}
+		expect(journal).toEqual(journalAtReturn);
+		expect(
+			journal.some(
+				(event) =>
+					event.type === "run.Completed" || event.type === "run.Failed",
+			),
+		).toBe(false);
 	});
 });
