@@ -116,9 +116,12 @@ export class DispatchOverrunReconciliationRequired extends Domain.Rejection(
 	},
 ) {}
 
-export class DispatchOverrunCleared extends Domain.Event("DispatchOverrunCleared", {
-	reason: NonEmptyReason,
-}) {}
+export class DispatchOverrunCleared extends Domain.Event(
+	"DispatchOverrunCleared",
+	{
+		reason: NonEmptyReason,
+	},
+) {}
 
 export class DispatchAccountConfigured extends Domain.Event(
 	"DispatchAccountConfigured",
@@ -609,7 +612,10 @@ export class DispatchAccount extends Domain.Aggregate("DispatchAccount", {
 				});
 			}
 			const exposureAfterConfirm =
-				state.spentMicros + state.heldMicros - hold.reservedMicros + cmd.settledMicros;
+				state.spentMicros +
+				state.heldMicros -
+				hold.reservedMicros +
+				cmd.settledMicros;
 			if (
 				state.budgetCapMicros !== null &&
 				exposureAfterConfirm > state.budgetCapMicros
