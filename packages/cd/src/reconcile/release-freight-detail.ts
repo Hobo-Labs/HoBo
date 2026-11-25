@@ -84,6 +84,28 @@ function isValidStructuredScope(
 	return isValidReleaseFreightScope(requestedScope);
 }
 
+export type ReleaseFreightStructuredInput = Readonly<{
+	credentialRef: string;
+	requestedScope: string;
+	detailKind: string;
+}>;
+
+export function releaseFreightStructuredFromFields(
+	fields: ReleaseFreightStructuredInput,
+): ReasonStructuredDetail | undefined {
+	const credentialRef = fields.credentialRef.trim();
+	const requestedScope = fields.requestedScope.trim();
+	const detailKind = fields.detailKind.trim();
+	if (!credentialRef || !requestedScope || !detailKind) return undefined;
+	return validateReasonStructuredDetail(
+		create(ReasonStructuredDetailSchema, {
+			credentialRef,
+			requestedScope,
+			detailKind,
+		}),
+	);
+}
+
 export function validateReasonStructuredDetail(
 	detail: ReasonStructuredDetail | undefined,
 ): ReasonStructuredDetail | undefined {

@@ -74,6 +74,7 @@ export {
 	releaseFreightLogFragment,
 	releaseFreightLogLooksSensitive,
 	releaseFreightRefusalOf,
+	releaseFreightStructuredFromFields,
 	validateReasonStructuredDetail,
 } from "./release-freight-detail.js";
 export {
