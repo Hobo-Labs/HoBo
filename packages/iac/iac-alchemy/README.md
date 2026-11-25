@@ -731,7 +731,10 @@ restart (SQLite file reopen), and brokered signing-secret re-resolution so
 session rows and cookie integrity survive host recycle.
 `test/better-auth-cross-box-session.test.ts` shares one file-backed session
 database across two Alchemy host harness instances (two boxes, one relational
-URL). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+URL).
+`test/better-auth-onboarding-steps.test.ts` chains the executable onboarding
+evidence steps (construction config → bundle plan → migrations → broker wire →
+first session). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
 fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
 state, and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort` broker
 wire (synthetic signing material only; no live Worker/D1 deploy).
