@@ -46,13 +46,10 @@ export type BetterAuthSecretRefScheme =
 
 const MAX_LOCATOR_LENGTH = 2048;
 
-/** C0 controls and DEL. Scanned rather than matched by regex: a control
- * character inside a regex literal is itself a lint hazard, and a locator that
- * carries one is almost always a log-forging attempt. */
 function hasControlCharacter(value: string): boolean {
 	for (const character of value) {
 		const code = character.codePointAt(0) ?? 0;
-		if (code < 0x20 || code === 0x7f) return true;
+		if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true;
 	}
 	return false;
 }
@@ -147,6 +144,13 @@ export function parseBetterAuthSecretRef<T>(input: T): BetterAuthSecretRef {
 	if (authority.includes("@")) {
 		refuseInline("secretRef authority embeds userinfo credentials");
 	}
+	if (
+		!/^[A-Za-z0-9._~-]+$/u.test(authority) ||
+		authority === "." ||
+		authority === ".."
+	) {
+		refuseLocator("secretRef authority must be an unreserved URI component");
+	}
 	if (/\s/u.test(rest)) {
 		refuseLocator("secretRef contains whitespace");
 	}
@@ -158,6 +162,15 @@ export function parseBetterAuthSecretRef<T>(input: T): BetterAuthSecretRef {
 	if (extraFragments.length > 1) {
 		refuseLocator("secretRef carries more than one fragment separator");
 	}
+	if (extraFragments.length === 1) {
+		const field = extraFragments[0] ?? "";
+		if (
+			!["vault", "op", "infisical", "hobo-secret"].includes(scheme) ||
+			!/^[A-Za-z0-9._-]+$/u.test(field)
+		) {
+			refuseLocator("secretRef fragment is not a supported field selector");
+		}
+	}
 	if (path.length === 0) {
 		refuseLocator("secretRef path segment is empty");
 	}
@@ -165,9 +178,14 @@ export function parseBetterAuthSecretRef<T>(input: T): BetterAuthSecretRef {
 		refuseLocator("secretRef path must not carry a query string");
 	}
 	for (const segment of path.split("/")) {
-		if (segment === "" || segment === "." || segment === "..") {
+		if (
+			segment === "" ||
+			segment === "." ||
+			segment === ".." ||
+			!/^[A-Za-z0-9._~-]+$/u.test(segment)
+		) {
 			refuseLocator(
-				"secretRef path must not contain empty or traversal segments",
+				"secretRef path must contain only unreserved, non-traversal segments",
 			);
 		}
 	}

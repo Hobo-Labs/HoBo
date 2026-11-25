@@ -15,8 +15,46 @@ interface ConfigOverrides {
 }
 
 function syntheticPemLikeSecretRef(): string {
-	const begin = ["-", "B", "E", "G", "I", "N", " ", "P", "R", "I", "V", "A", "T", "E", " ", "K", "E", "Y", "-"];
-	const end = ["-", "E", "N", "D", " ", "P", "R", "I", "V", "A", "T", "E", " ", "K", "E", "Y", "-"];
+	const begin = [
+		"-",
+		"B",
+		"E",
+		"G",
+		"I",
+		"N",
+		" ",
+		"P",
+		"R",
+		"I",
+		"V",
+		"A",
+		"T",
+		"E",
+		" ",
+		"K",
+		"E",
+		"Y",
+		"-",
+	];
+	const end = [
+		"-",
+		"E",
+		"N",
+		"D",
+		" ",
+		"P",
+		"R",
+		"I",
+		"V",
+		"A",
+		"T",
+		"E",
+		" ",
+		"K",
+		"E",
+		"Y",
+		"-",
+	];
 	return `${begin.join("")}${crypto.randomUUID().replaceAll("-", "")}${end.join("")}`;
 }
 
@@ -136,6 +174,17 @@ describe("parseBetterAuthConfig", () => {
 		[{ secretRef: "vault://authority" }, "no path segment"],
 		[{ secretRef: "vault://authority/auth/../../etc" }, "path traversal"],
 		[{ secretRef: "VAULT://authority/auth/key" }, "uppercase scheme"],
+		[
+			{ secretRef: "hobo-secret://camp/auth/key\u0080" },
+			"C1 control character",
+		],
+		[{ secretRef: "vault://camp/auth/%2e%2e/key" }, "escaped path segment"],
+		[{ secretRef: "vault://camp?name=other/auth/key" }, "query in authority"],
+		[
+			{ secretRef: "aws-sm://camp/auth/key#field" },
+			"unsupported field selector",
+		],
+		[{ secretRef: "vault://camp/auth/key#" }, "empty field selector"],
 		[{ secretRef: 42 }, "not a string"],
 	])("rejects %j as a malformed locator (%s)", (overrides) => {
 		expect(codeOf(() => parseBetterAuthConfig(config(overrides)))).toBe(

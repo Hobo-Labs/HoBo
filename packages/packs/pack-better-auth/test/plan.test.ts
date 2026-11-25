@@ -16,7 +16,7 @@ const CONFIG_INPUT = {
 	emailAndPassword: { enabled: true },
 	socialProviders: ["github"],
 	organizations: { enabled: true },
-} as const;
+};
 
 const CONFIG = parseBetterAuthConfig(CONFIG_INPUT);
 

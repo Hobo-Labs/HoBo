@@ -21,7 +21,10 @@ infrastructure inside the adapter.
 - `fixtures/better-auth-schema-ir.ts` — canonical Better Auth table shapes for
   governed data-plane migrations (not adapter-private DDL).
 - `secrets.ts` — `wireBetterAuthSigningSecret`: camp `SecretsPort` resolution at
-  bundle init; wire record carries locators only (ADR-0161 / ADR-0113).
+  bundle init; the caller supplies the selected camp's authority, and only an
+  unfragmented `hobo-secret` locator for that authority is accepted. Other
+  providers need their own matching resolver. The wire record carries locators
+  only (ADR-0161 / ADR-0113).
 
 ## HONEST SCOPE
 

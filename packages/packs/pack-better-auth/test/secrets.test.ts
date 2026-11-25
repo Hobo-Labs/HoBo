@@ -7,7 +7,7 @@ import { planBetterAuthBundle } from "../src/plan.js";
 import {
 	campSecretNameFromBetterAuthRef,
 	wireBetterAuthSigningSecret,
-} from "../src/secrets.js";
+} from "../src/index.js";
 
 const CONFIG_INPUT = {
 	basePath: "/api/auth",
@@ -16,7 +16,7 @@ const CONFIG_INPUT = {
 	emailAndPassword: { enabled: true },
 	socialProviders: ["github"],
 	organizations: { enabled: true },
-} as const;
+};
 
 const PORTS = {
 	relationalBindle: "auth_db",
@@ -30,10 +30,14 @@ const SYNTHETIC_SIGNING =
 describe("wireBetterAuthSigningSecret", () => {
 	it("resolves a brokered locator without returning material on the wire record", async () => {
 		const port = createMemorySecretsPort();
-		const name = campSecretNameFromBetterAuthRef(PORTS.signingSecretRef);
+		const name = campSecretNameFromBetterAuthRef(
+			PORTS.signingSecretRef,
+			"camp-prod",
+		);
 		await port.put(name, SYNTHETIC_SIGNING);
 		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
 		const wire = await wireBetterAuthSigningSecret(bundlePlan, port, {
+			campAuthority: "camp-prod",
 			now: "2026-11-25T00:00:00.000Z",
 		});
 		expect(wire.secretRef).toBe(PORTS.signingSecretRef);
@@ -45,22 +49,52 @@ describe("wireBetterAuthSigningSecret", () => {
 	it("refuses when custody does not hold the signing secret", async () => {
 		const port = createMemorySecretsPort();
 		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
-		await expect(wireBetterAuthSigningSecret(bundlePlan, port)).rejects.toMatchObject(
-			{
-				code: "BETTER_AUTH_SIGNING_SECRET_UNRESOLVED",
-			} satisfies Partial<BetterAuthBundlePlanError>,
-		);
+		await expect(
+			wireBetterAuthSigningSecret(bundlePlan, port, {
+				campAuthority: "camp-prod",
+			}),
+		).rejects.toMatchObject({
+			code: "BETTER_AUTH_SIGNING_SECRET_UNRESOLVED",
+		} satisfies Partial<BetterAuthBundlePlanError>);
 	});
 
-	it("refuses brokered material shorter than the entropy floor", async () => {
+	it("refuses brokered material shorter than the minimum length", async () => {
 		const port = createMemorySecretsPort();
-		const name = campSecretNameFromBetterAuthRef(PORTS.signingSecretRef);
+		const name = campSecretNameFromBetterAuthRef(
+			PORTS.signingSecretRef,
+			"camp-prod",
+		);
 		await port.put(name, "too-short");
 		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
-		await expect(wireBetterAuthSigningSecret(bundlePlan, port)).rejects.toMatchObject(
-			{
-				code: "BETTER_AUTH_SIGNING_SECRET_WEAK",
-			} satisfies Partial<BetterAuthBundlePlanError>,
-		);
+		await expect(
+			wireBetterAuthSigningSecret(bundlePlan, port, {
+				campAuthority: "camp-prod",
+			}),
+		).rejects.toMatchObject({
+			code: "BETTER_AUTH_SIGNING_SECRET_WEAK",
+		} satisfies Partial<BetterAuthBundlePlanError>);
+	});
+
+	it.each([
+		["wrong camp", "hobo-secret://another-camp/auth/better-auth-signing-key"],
+		["another provider", "vault://camp-prod/auth/better-auth-signing-key"],
+		[
+			"field selector",
+			"hobo-secret://camp-prod/auth/better-auth-signing-key#value",
+		],
+	])("refuses a locator with a %s before accessing custody", async (_case, locator) => {
+		const port = createMemorySecretsPort();
+		const input = { ...CONFIG_INPUT, secretRef: locator };
+		const ref = parseBetterAuthConfig(input).secretRef;
+		const bundlePlan = planBetterAuthBundle(input, {
+			...PORTS,
+			signingSecretRef: ref,
+		});
+		await port.put("auth/better-auth-signing-key", SYNTHETIC_SIGNING);
+		await expect(
+			wireBetterAuthSigningSecret(bundlePlan, port, {
+				campAuthority: "camp-prod",
+			}),
+		).rejects.toMatchObject({ code: "BETTER_AUTH_BUNDLE_PORT_INVALID" });
 	});
 });
