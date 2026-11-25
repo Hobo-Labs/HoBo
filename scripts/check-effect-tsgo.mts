@@ -27,7 +27,7 @@ export const ROOT_EFFECT_TSCONFIG_FILES = [
 
 export function isRootEffectTsconfigPath(filePath: string): boolean {
 	const normalized = toPosix(filePath).replace(/^\.\//u, "");
-	return (ROOT_EFFECT_TSCONFIG_FILES as readonly string[]).includes(normalized);
+	return ROOT_EFFECT_TSCONFIG_FILES.some((entry) => entry === normalized);
 }
 
 function toPosix(pathValue: string): string {

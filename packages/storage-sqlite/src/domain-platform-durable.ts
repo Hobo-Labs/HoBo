@@ -383,27 +383,24 @@ type WorkflowClockTimerPayload = {
 const parseWorkflowClockTimerPayload = (
 	json: string,
 ): WorkflowClockTimerPayload => {
-	const parsed: unknown = JSON.parse(json);
+	const parsed = JSON.parse(json);
 	if (
 		parsed === null ||
-		typeof parsed !== "object" ||
-		!("kind" in parsed) ||
-		parsed.kind !== "clock"
+		!Object.hasOwn(parsed, "kind") ||
+		parsed.kind !== "clock" ||
+		!Object.hasOwn(parsed, "workflowName") ||
+		!Object.hasOwn(parsed, "executionId") ||
+		!Object.hasOwn(parsed, "deferredName") ||
+		!Object.hasOwn(parsed, "durationMillis")
 	) {
 		throw new DomainPersistenceError("domain_workflow_timers.payload", 0);
 	}
-	const record = parsed as unknown as {
-		workflowName: unknown;
-		executionId: unknown;
-		deferredName: unknown;
-		durationMillis: unknown;
-	};
 	return {
 		kind: "clock",
-		workflowName: asText(record.workflowName, "workflowName"),
-		executionId: asText(record.executionId, "executionId"),
-		deferredName: asText(record.deferredName, "deferredName"),
-		durationMillis: asNumber(record.durationMillis, "durationMillis"),
+		workflowName: asText(parsed.workflowName, "workflowName"),
+		executionId: asText(parsed.executionId, "executionId"),
+		deferredName: asText(parsed.deferredName, "deferredName"),
+		durationMillis: asNumber(parsed.durationMillis, "durationMillis"),
 	};
 };
 
@@ -536,9 +533,9 @@ export function makeSqliteBackedWorkflowEngine(
 				const journalKey = `${instance.workflow._tag}/${instance.executionId}/${activity.name}/${attempt}`;
 				const row = loadJournalStmt.get(modelName, journalKey);
 				if (row !== undefined) {
-					const exit = JSON.parse(
-						asText(row.exit_json, "exit_json"),
-					) as Exit.Exit<unknown, unknown>;
+					const encoded = JSON.parse(asText(row.exit_json, "exit_json"));
+					// SAFETY: exit_json is written only by this module from Complete activity exits.
+					const exit = encoded as Exit.Exit<unknown, unknown>;
 					return new Workflow.Complete({ exit });
 				}
 				const result = yield* inner.activityExecute(activity, attempt);

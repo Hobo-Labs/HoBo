@@ -125,12 +125,10 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 			completedAtMs,
 		}) {
 			const flagReconciliation = (reason: NonEmptyReason) =>
-				routes
-					.send(key, new FlagCutoverReconciliation({ reason }))
-					.pipe(
-						Effect.catchTag("CutoverPreconditionRefused", () => Effect.void),
-						Effect.asVoid,
-					);
+				routes.send(key, new FlagCutoverReconciliation({ reason })).pipe(
+					Effect.catchTag("CutoverPreconditionRefused", () => Effect.void),
+					Effect.asVoid,
+				);
 			const lowered = yield* Activity.make({
 				name: "lower-dns-ttl",
 				success: Schema.Struct({

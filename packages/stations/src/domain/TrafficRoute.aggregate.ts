@@ -566,9 +566,7 @@ export class TrafficRoute extends Domain.Aggregate("TrafficRoute", {
 					reason: "incumbent-not-registered",
 				});
 			}
-			return [
-				new CutoverReconciliationRequired({ reason: cmd.reason }),
-			];
+			return [new CutoverReconciliationRequired({ reason: cmd.reason })];
 		},
 		ResolveTrafficCutoverReconciliation: (state, cmd) => {
 			if (state._tag !== "ReconciliationRequired") {
