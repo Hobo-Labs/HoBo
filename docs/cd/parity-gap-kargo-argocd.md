@@ -89,7 +89,7 @@ HoBo vocabulary is documented in `docs/competitors/kargo.md`. This table adds
 | **Implicit Argo CD health wait** | Publisher `observe()` + rollout converge | **partial** | GitOps publisher waits for sync/health; no Kargo `argocd-wait` step semantics or sync-window attribution (manual vs auto). |
 | **Manual Freight approval** | `freight.Approved` | **pass** | Policy-gated, expiring; audited in journal. |
 | **Auto-promotion Newest / MatchUpstream / MatchNode** | `AUTO_PROMOTION_*` on pipeline nodes | **pass** | Proto (`AUTO_PROMOTION_MATCH_NODE` et al.), controller, fan-out catch-up tests (`packages/cd/test/pipelines/`, `fanout/`). |
-| **Auto-promotion holds** | — | **not-built** | Kargo sets hold keys on Stages and blocks auto-promotion while a manual promotion for **non-candidate** Freight is in flight (until cleared or timed out). HoBo `PipelineController` has no hold key / tick-skip path yet (`packages/cd/src/pipelines/controller.ts`; P4). |
+| **Auto-promotion holds** | — | **not-built** | Kargo records `status.autoPromotionHolds` per freight request **after a successful manual** promote of **non-candidate** Freight; the pin suspends auto-promotion for that request until the request's **current** candidate is manually promoted again (or project auto-promotion is disabled). Failed promotions do not set or clear holds; there is no in-flight window and no timeout ([working with Stages](https://docs.kargo.io/user-guide/how-to-guides/working-with-stages)). HoBo has no durable hold + tick-skip path yet (`packages/cd/src/pipelines/controller.ts`; P4). |
 | **Project-level auto-promotion toggle** | Per-node `auto_promotion` only | **partial** | Kargo `ProjectConfig` gates who may enable auto-promotion. HoBo uses pipeline node fields + `pipeline.apply` authz; no project-wide admin-only switch. |
 | **Promotion template + steps** | Promotion saga + typed hooks | **met-differently** | No `git-clone`, `git-commit`, `argocd-update`, OCI copy, Helm, etc. Hooks: `RUNBOOK`, `NOTIFY`, `SUITE` only (ADR-0182 D4; `packages/cd/src/promotion/README.md`). |
 | **Stage / promotion variables + `${{ }}` expressions** | — | **intentional-gap** | Kargo Stage `spec.vars` and promotion expressions. HoBo has no expression runtime (ADR-0182 D4; rejected in ADR-0182 consequences). |
@@ -113,7 +113,7 @@ HoBo vocabulary is documented in `docs/competitors/kargo.md`. This table adds
 
 These stay within ADR-0182 (typed hooks, pull GitOps, no expression runtime):
 
-1. **Auto-promotion holds** and promote-by-origin UX (hold semantics without expression language).
+1. **Auto-promotion holds** (durable per-request pin after successful manual non-candidate promote) and promote-by-origin UX — without expression language.
 2. **Multi-origin freight slots** per node (or an equivalent) with independent auto-promotion candidates.
 3. **GitOps observation depth**: sync-window timeouts and manual-vs-automated sync attribution in `observe()` results (not a new `argocd-update` hook kind — D4 hook set is closed until amended).
 4. **Promotion graph visibility** at least at CLI/MCP parity (API exists; product surface trails Kargo UI).
@@ -199,12 +199,12 @@ green before handoff. Later PRs update row states in this file when they land.
 | **P1** | `docs/cd/*` (this audit) + index links | Baseline |
 | **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Cross-cutting: `CdEngineRegistry` — **implemented** (`engines.ts`, `cd-gitops` bridge) |
 | **P3** | `packages/cd-argocd`: read/observe PACT + RUNBOOK observation hooks | Argo read adapter; partial `argocd-wait` semantics |
-| **P4** | Pipeline: auto-promotion **holds** + promote-by-origin | Kargo holds row |
+| **P4** | Pipeline: durable auto-promotion **holds** (Kargo-style post-success pin + tick skip) + promote-by-origin | Kargo holds row |
 | **P5** | Pipeline: multi-origin slots per node | `requestedFreight` / origin slots row |
 | **P6** | Publisher: Argo **sync-wave** annotations in render | Sync waves partial row (syncPolicy already in render when `autoSync`) |
 | **P7** | CLI/MCP: promotion graph + freight timeline first-class | Promotion UI partial |
 | **P8** | Hosted tick hardening (`cd-vercel` / compose) if needed | Optional formalization row — only if product accepts |
-| **P9** | Production observation link: Git publisher → Argo CONVERGED | built-not-proven Argo (+ Flux publisher) channel rows |
+| **P9** | Production observation link: Git publisher → Argo CONVERGED | built-not-proven Argo channel rows |
 
 Additional engines (e.g. Octopus) follow the same registry pattern only if product
 rejects the **intentional-gap** on a second promotion brain.
