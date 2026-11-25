@@ -335,7 +335,6 @@ export async function reuseVerifiedRuntime(
 		if (
 			error instanceof Error &&
 			"code" in error &&
-			// SAFETY: assertion required at this I/O boundary.
 			(error as NodeJS.ErrnoException).code === "ENOENT"
 		) {
 			return null;
@@ -365,9 +364,7 @@ async function resolveToolchain(): Promise<{
 		"package.json",
 	);
 	const [jco, esbuild, esbuildManifest] = await Promise.all([
-		// SAFETY: toolchain entries are loaded from resolved package paths.
 		import(pathToFileURL(jcoEntry).href) as Promise<JcoModule>,
-		// SAFETY: toolchain entries are loaded from resolved package paths.
 		import(pathToFileURL(esbuildEntry).href) as Promise<EsbuildModule>,
 		readPackageVersion(esbuildManifestPath),
 	]);
@@ -406,14 +403,12 @@ async function calculateBuildDigest(
 }
 
 async function readPackageVersion(packageJsonPath: string): Promise<string> {
-	// SAFETY: assertion required at this I/O boundary.
 	const manifest = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
 		version?: unknown;
 	};
 	if (Object.prototype.toString.call(manifest.version) !== "[object String]") {
 		throw new Error(`Toolchain package has no version: ${packageJsonPath}`);
 	}
-	// SAFETY: `manifest.version` was verified to be a string above.
 	return manifest.version as string;
 }
 

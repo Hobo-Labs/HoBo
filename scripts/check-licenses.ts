@@ -1,34 +1,6 @@
-/**
- * Licence-compliance gate.
- *
- * Two halves, both cheap enough to run in the ordinary local gate:
- *
- *  1. OUTBOUND — every workspace manifest declares a `license`, and every
- *     PUBLISHABLE package (no `"private": true`) additionally ships a LICENSE
- *     file that is actually packed. npm only includes what `files` lists, so a
- *     LICENSE on disk that is missing from `files` would still publish a
- *     tarball with no licence grant — both halves are checked.
- *
- *  2. INBOUND — every third-party dependency resolves to a licence on the
- *     allowlist. An unknown or copyleft licence in an MIT project is a real
- *     problem and the repo previously had no gate that would notice.
- *
- * The inbound half separates PRODUCTION from DEVELOPMENT dependencies, because
- * the obligations are genuinely different: a weak-copyleft library linked into
- * a published package is a distribution question, while the same library used
- * by a build tool that never ships is not. Production offenders fail the gate;
- * development offenders are reported but do not fail, since nothing about them
- * is distributed.
- *
- * Inbound checking needs an installed `node_modules`; when it is absent the
- * inbound half reports SKIPPED rather than passing silently, so a green run
- * never implies coverage it did not have.
- */
-
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-// SPDX identifiers permitted for third-party dependencies. Permissive only:
 const ALLOWED = new Set([
 	"0BSD",
 	"Apache-2.0",
@@ -48,8 +20,6 @@ const ALLOWED = new Set([
 	"Zlib",
 ]);
 
-// Packages whose manifest metadata does not resolve to a usable SPDX id but
-// whose actual LICENSE text was read by hand on 2026-07-27. In every case the
 const REVIEWED_EXCEPTIONS = new Map<string, string>([
 	[
 		"@bytecodealliance/componentize-js",
@@ -155,7 +125,6 @@ function checkOutbound(): void {
 		if (!existsSync(licenseFile)) {
 			fail(`${name}: publishable but has no LICENSE file at ${licenseFile}`);
 		}
-		// `files` is an allowlist — a LICENSE not listed there is not packed.
 		if (manifest.files && !manifest.files.includes("LICENSE")) {
 			fail(
 				`${name}: "LICENSE" missing from "files" (${JSON.stringify(manifest.files)}), so it would not be packed`,
@@ -168,7 +137,6 @@ function checkOutbound(): void {
 	);
 }
 
-/** Normalise the several shapes a package.json license field takes in the wild. */
 function licenseIdsOf(manifest: Manifest): string[] {
 	const raw = manifest.license ?? manifest.licenses;
 	const collect = (value: LicenseField | undefined): string[] => {
@@ -177,8 +145,6 @@ function licenseIdsOf(manifest: Manifest): string[] {
 		if (isLicenseText(value)) return [value];
 		return value.type === undefined ? [] : [value.type];
 	};
-	// Split SPDX expressions ("(MIT OR Apache-2.0)", "MIT AND ISC") into terms,
-	// then drop any `WITH <exception>` suffix: an SPDX exception grants
 	return collect(raw)
 		.flatMap((expr) => expr.split(/\s+(?:OR|AND)\s+/i))
 		.map((id) => (id.replace(/[()]/g, "").split(/\s+WITH\s+/i)[0] ?? "").trim())
@@ -280,7 +246,6 @@ function checkInbound(): void {
 					bucket.set(id, "no licence declared");
 					continue;
 				}
-				// A dual-licensed package passes if ANY term is allowed.
 				if (!ids.some((licenseId) => ALLOWED.has(licenseId))) {
 					bucket.set(id, ids.join(" / "));
 				}
