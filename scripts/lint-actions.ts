@@ -675,11 +675,34 @@ export const REQUIRED_PULL_REQUEST_TYPES = [
 	"ready_for_review",
 ] as const;
 
-export const REQUIRED_JOB_DRAFT_IF_RE =
-	/github\.event_name\s*!=\s*['"]pull_request['"]\s*\|\|\s*github\.event\.pull_request\.draft\s*==\s*false/;
+export const CANONICAL_ENTRY_JOB_DRAFT_IF =
+	"github.event_name != 'pull_request' || github.event.pull_request.draft == false";
 
-const REQUIRED_JOB_DRAFT_IF_MESSAGE =
-	"job-level if must be github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+export const REQUIRED_JOB_DRAFT_IF_MESSAGE = `job-level if must be ${CANONICAL_ENTRY_JOB_DRAFT_IF}`;
+
+const ALLOWLISTED_ENTRY_JOB_DRAFT_IF = new Map<string, string>([
+	[
+		"examples-e2e.yml:hello-bindle-fixture-quarantine",
+		"github.event_name == 'pull_request' && github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')",
+	],
+	[
+		"examples-e2e.yml:hello-bindle-fixture",
+		"(github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))",
+	],
+]);
+
+export function normalizeDraftIfExpression(expression: string): string {
+	return expression
+		.replaceAll('"pull_request"', "'pull_request'")
+		.replaceAll('"false"', "'false'")
+		.replaceAll(/\s+/g, " ")
+		.trim();
+}
+
+function expectedEntryJobDraftIf(file: string, jobId: string): string {
+	const allowlisted = ALLOWLISTED_ENTRY_JOB_DRAFT_IF.get(`${file}:${jobId}`);
+	return allowlisted ?? CANONICAL_ENTRY_JOB_DRAFT_IF;
+}
 
 function pullRequestOnNode(doc: ReturnType<typeof parseDocument>) {
 	const on = doc.get("on");
@@ -726,10 +749,16 @@ function extractJobLevelIf(block: readonly string[]): string | undefined {
 	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
 	const ifAt = header.findIndex((line) => line.startsWith("    if:"));
 	if (ifAt === -1) return undefined;
-	const tail = header
-		.slice(ifAt)
-		.filter((entry, index) => index === 0 || entry.startsWith("      "));
-	const folded = tail
+	const lines = [header[ifAt] ?? ""];
+	const first = lines[0];
+	if (/^\s*if:\s*>-/.test(first)) {
+		for (let index = ifAt + 1; index < header.length; index += 1) {
+			const line = header[index] ?? "";
+			if (/^    [A-Za-z0-9_-]+:/.test(line)) break;
+			if (line.startsWith("      ")) lines.push(line);
+		}
+	}
+	const folded = lines
 		.map((line, index) => {
 			if (index === 0) {
 				return line
@@ -747,35 +776,18 @@ function extractJobLevelIf(block: readonly string[]): string | undefined {
 		.trim();
 }
 
-const PR_ONLY_JOB_DRAFT_IF_EVENT =
-	/github\.event_name\s*==\s*['"]pull_request['"]/;
-const PR_ONLY_JOB_DRAFT_IF_DRAFT =
-	/github\.event\.pull_request\.draft\s*==\s*false/;
-
-function prOnlyJobDraftGate(expression: string): boolean {
-	return (
-		PR_ONLY_JOB_DRAFT_IF_EVENT.test(expression) &&
-		PR_ONLY_JOB_DRAFT_IF_DRAFT.test(expression)
-	);
-}
-
 export function jobLevelIfHasRequiredDraftGate(
-	block: readonly string[],
-	workflowHasTrunkEvent: boolean,
+	file: string,
 	jobId: string,
+	block: readonly string[],
 ): boolean {
 	const expression = extractJobLevelIf(block);
 	if (expression === undefined) return false;
-	if (REQUIRED_JOB_DRAFT_IF_RE.test(expression)) return true;
-	if (jobId === "route") return false;
-	if (
-		workflowHasTrunkEvent &&
-		isPullRequestOnlyJob(block, workflowHasTrunkEvent) &&
-		prOnlyJobDraftGate(expression)
-	) {
-		return true;
-	}
-	return false;
+	const expected = expectedEntryJobDraftIf(file, jobId);
+	return (
+		normalizeDraftIfExpression(expression) ===
+		normalizeDraftIfExpression(expected)
+	);
 }
 
 export function draftGateEntryJobs(
@@ -818,7 +830,6 @@ function lintPullRequestDraftPolicy(
 		.filter((line) => /^  [A-Za-z0-9_-]+:$/.test(line))
 		.map((line) => line.slice(2, -1));
 	const gateJobs = draftGateEntryJobs(file, jobIds);
-	const workflowHasTrunkEvent = hasTrunkEvent(lines, jobsIndex);
 	if (gateJobs.length === 0) {
 		errors.push(
 			`${file}: pull_request workflow must gate draft runs on route or its entry job`,
@@ -834,7 +845,7 @@ function lintPullRequestDraftPolicy(
 			(line, index) => index > start && /^  [A-Za-z0-9_-]+:$/.test(line),
 		);
 		const block = lines.slice(start, nextJob === -1 ? lines.length : nextJob);
-		if (!jobLevelIfHasRequiredDraftGate(block, workflowHasTrunkEvent, jobId)) {
+		if (!jobLevelIfHasRequiredDraftGate(file, jobId, block)) {
 			errors.push(
 				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs (${REQUIRED_JOB_DRAFT_IF_MESSAGE})`,
 			);

@@ -561,11 +561,11 @@ test("trunk-label-routing requires plain hobo on PR-only jobs, including folded 
 on:
 ${pullRequestTrigger}  workflow_dispatch:
 jobs:
-  build:
+  hello-bindle-fixture-quarantine:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.draft == false &&
-      contains(github.event.pull_request.labels.*.name, 'hobo/e2e')
+      contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')
     runs-on: ${runsOn}
     steps:
       - run: true
