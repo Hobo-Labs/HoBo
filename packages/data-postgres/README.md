@@ -570,19 +570,24 @@ It opens no connection. A host gives it one `SqlExecutor` per backend (a
 opaque id for each. Nothing in it knows how many backends there are or what any
 of them is called.
 
-The engine-neutral parts — the assignment entry and its rules, majority,
-`resolveAssignment`, `readCurrentAssignment`, `proposeAssignment`,
-`bootstrapAssignment`, `completeAssignment`, `overrideAssignment`, the backend
-id and failure classes, billing periods and usage units, and `decideFleet` with
-its models and policy — live in
-[`@hobo/backend-fleet`](../backend-fleet/README.md) since ADR-0179 phase 4c, so
-the hosted relay's cache fleet can use them without this package. This package
-re-exports them under the names below (`PostgresFleetAssignment` is
-`FleetAssignment`, and so on) and keeps what is PostgreSQL's: the SQL replica
-(`sqlAssignmentReplica`, whose register classifies failures with
-`classifyFleetFailure`), control tables, usage rows, replication and
-reconcile. A parse failure in a moved part is a `BackendFleetError` with the
-same code and message it had as a `PostgresDataError`.
+The engine-neutral parts live elsewhere, and this package no longer
+re-exports them: the assignment register (the `AssignmentEntry` record and its
+rules, majority, `resolveAssignment`, `readCurrentAssignment`,
+`proposeAssignment`, `bootstrapAssignment`, `completeAssignment`,
+`overrideAssignment`, membership epochs), member names (`parseMemberName`),
+`Health`, observations and the one-active loop (`createOneActiveFleet`) are in
+`@hobo/fleet` (`@hobo/fleet/assignment`, `@hobo/fleet/observation`); billing
+periods, usage units and `decideFleet` with its models and policy are in
+[`@hobo/backend-routing`](../backend-routing/README.md). This package keeps
+what is PostgreSQL's: the SQL replica (`sqlAssignmentReplica`, whose register
+classifies failures as `Health` with `classifyFleetFailure`), control tables,
+usage rows, replication, the Postgres observer and `reconcileFleet`. A backend
+is a `PostgresBackend` (its name in the fleet and its executor).
+
+The package barrel exports this module's `Fleet*` and `FLEET_*` names with a
+`Postgres` / `POSTGRES_` prefix (`PostgresFleetLayout`, `PostgresFleetEvent`,
+`POSTGRES_FLEET_USAGE_UNITS` and the rest), so `fleet` names stay with the
+fleet packages (`fleet:vocabulary` rule 9).
 
 Every statement the fleet sends casts its result columns to `text`, so the port
 does not depend on how a driver decodes a `bigint` or a `timestamptz`.
@@ -599,14 +604,24 @@ assignment register: never copied to, never a writer. A writer and one standby
 are two members, and losing either leaves no majority, so a fleet of two holds
 rather than fail over by itself. One witness on a third failure domain makes
 the majority for the cost of a few rows; `continuityShortfalls` in
-`@hobo/backend-fleet` reports a fleet with no quorum.
+`@hobo/backend-routing` reports a fleet with no quorum.
 
 ### The assignment register: who the writer is
 
 Each backend keeps a small append-only log table (the name comes from
 `parseFleetLayout`). An entry names the writer for one **epoch**:
 
-`(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by)`
+`(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by, members)`
+
+`members` is a nullable `text[]`: the sorted member set an entry carries once
+the fleet runs with `membershipEpochs`, so that adding or
+removing a backend is itself a decided epoch. It is null on every entry
+written without them, which the configured backends decide, as before;
+`ensureFleetControlTables` adds the column to a log created before it existed.
+An immutable journal's log table has no `members` column, and its runtime
+role may not add one, so the journal reads and writes it through
+`sqlAssignmentReplica(backend, layout, { members: false })`, which never
+names the column and refuses an entry that carries a member set.
 
 An epoch is **decided** when a majority of the *configured* backends hold the
 same entry for it. The **current assignment** is the highest decided epoch.
@@ -669,10 +684,13 @@ odd count.
   backends down and include overrides fired at random, 26 ended that way: 25
   were fleets of two or four, one a fleet of five, none a fleet of three.
 
-`test/fleet-assignment.test.ts` checks the invariants after every step of 400
-seeded interleavings of concurrent proposers, completers and overrides against
-an in-memory fleet of two to five backends that go down and come back,
-including writes that were applied but whose answer was lost.
+The register's own interleaving tests (400 seeded interleavings of concurrent
+proposers, completers and overrides against an in-memory fleet of two to five
+backends that go down and come back) moved with it to
+`packages/fleet/test/assignment/register.test.ts`. Here,
+`test/fleet-replica.test.ts` runs `runReplicaConformance` of
+`@hobo/fleet/testing` against the SQL replica over an `SqlExecutor` double
+(`test/fleet-sql-double.ts`) and pins the `members` column;
 `contracts/pacts/postgres-fleet.pact.json` is the boundary contract for one
 backend's log and for a majority read; `test/fleet-contract.test.ts` replays it.
 
@@ -777,12 +795,14 @@ standby ranked, so one log line of its result explains the decision.
 | `failover` (unplanned) | The writer has been failing for at least `failoverAfterMs`, and a reachable, schema-current standby has lag within `rpoMs` | up to the promoted standby's lag |
 | `hold` | The writer is failing and it is too early, or no standby is within the objective; or a switch is in flight | nothing, and nothing moves |
 
-**Observations** (`PostgresFleetObservation`): health (`reachable`, or the
-failure class `unreachable`, `quota-exhausted`, `auth`, `unknown` from
-`classifyFleetFailure`), probe latency, how long it has been failing, whether
-its schema matches the writer's, its standby lag, and measured usage.
+**Observations** are the fleet's `NamedObservation`s (`@hobo/fleet`): health
+(`Health.REACHABLE`, or the class `UNREACHABLE`, `QUOTA_EXHAUSTED`, `AUTH`,
+`UNKNOWN` from `classifyFleetFailure`), probe latency, how long it has been
+failing, `ready` (its schema matches the writer's), its lag, and measured
+usage. Whether a standby is healthy enough is `eligibleForActive`'s answer;
+`decideFleet` reports a standby that is not ready as `schema-not-current`.
 
-**Financial model** (`PostgresFleetFinancialModel`): a fixed monthly fee, and
+**Financial model** (`FleetFinancialModel` of `@hobo/backend-routing`): a fixed monthly fee, and
 allowances each in a named unit (`operations`, `compute-hours`,
 `storage-bytes`) with what happens beyond (`hard-stop`, `metered` with a price,
 or `unknown`), plus the evidence source and the day somebody read it. This
@@ -820,7 +840,14 @@ older than `rpoMs` the answer is `hold`. Promoting anyway is
 
 `reconcileFleet(options)` is the only thing that changes who the writer is. A
 host calls it on a schedule and injects `now`, `sleep`, the executors, the
-schema seam and the budget check. Every tick, in order:
+schema seam and the budget check. It is a caller of the one-active loop every
+one-active fleet shares (`createOneActiveFleet` of `@hobo/fleet/assignment`):
+the loop repairs the register, pins or changes the member set when
+`membershipEpochs` is on, observes every backend through the Postgres
+observer (steps 2 to 4), asks `decideFleet` as its `chooseAction`, and seals
+the fleet for a move; the reconcile settles the register before it and
+finishes what it sealed after it. The report carries the loop's
+`OneActiveTick` as `tick`. Every tick, in order:
 
 1. **Settle the assignment.** Complete an interrupted entry, repair short
    logs, write the first entry of an empty fleet (the first configured backend
@@ -843,13 +870,15 @@ schema seam and the budget check. Every tick, in order:
 4. **Measure**: standby lag from each watermark, operations from each usage
    counter, storage from the database size.
 5. **Decide** with `decideFleet`.
-6. **Act** through the assignment register.
+6. **Act** through the assignment register: the loop seals; a switch is then
+   finished here (wait, copy, activate or unseal) and a failover activated at
+   once.
 
 | Move | Entries written | What bounds the loss |
 |---|---|---|
 | Planned switch | `sealed = true, target = T`; wait `leaseMs + graceMs`; copy once more; `active = T` | A delayed in-flight write can land after the final copy and be lost; a transaction-boundary fence is required |
 | Switch that cannot finish | `sealed = true, target = T`; the final copy fails; `active = old writer` again (`switch-aborted:<why>`) | Nothing: the old writer never stopped being the source |
-| Unplanned failover | `active = T, loss_window_ms = T's lag` | Writes after T's snapshot are lost; delayed writes on the old writer are not included in `loss_window_ms` |
+| Unplanned failover | `sealed = true, target = T` with no writer; then `active = T, loss_window_ms = T's lag` (`failover-complete`) | Writes after T's snapshot are lost; delayed writes on the old writer are not included in `loss_window_ms` |
 
 A backend that returns after losing the writer role holds an entry saying it
 was the writer. Its log is repaired with the decided entries it missed, and it
@@ -934,9 +963,9 @@ that the rest of the package accepts as-is:
 | a log position | `parseLsn` | a 64-bit location | another engine's position being compared as text, or `9/0` sorting after `10/0` |
 | `pgoutput` bytes | `decodePgOutputTransactions` | whole `PgOutputTransaction`s | a partial transaction, a change for an undescribed relation, or an unknown message being skipped |
 | an executor result | `createPgExecutor` | a text-only `PostgresRow` | a driver-parsed number or `Date` slipping past the cast-everything rule |
-| table prefixes | `parseFleetLayout` | `FleetLayout` | a control table that replication would copy, or an identifier that is not plain |
-| a log row or a proposal | `parseFleetAssignment` | `PostgresFleetAssignment` | a sealed entry with no target, a target on an unsealed entry, a negative loss window |
-| a plan's numbers | `parseFleetFinancialModel` | `PostgresFleetFinancialModel` | a metered allowance without a price, two allowances for one unit, numbers with no source or date |
+| table prefixes | `parseFleetLayout` | `FleetLayout` (exported as `PostgresFleetLayout`) | a control table that replication would copy, or an identifier that is not plain |
+| a log row or a proposal | `parseAssignmentEntry` (`@hobo/fleet/assignment`) | `AssignmentEntry` | a sealed entry with no target, a target on an unsealed entry, a negative loss window, an unsorted or inconsistent member set |
+| a plan's numbers | `parseFleetFinancialModel` (`@hobo/backend-routing`) | `FleetFinancialModel` | a metered allowance without a price, two allowances for one unit, numbers with no source or date |
 | policy settings | `parseFleetPolicy` | `FleetPolicy` | a negative objective, a hysteresis factor below 1 |
 
 `buildPgDumpArgv` and its siblings take the parsed target, never the raw fields,

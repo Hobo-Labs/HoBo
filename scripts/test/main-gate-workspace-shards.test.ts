@@ -17,7 +17,13 @@ describe("main full gate workspace sharding", () => {
 		const runnerImage = workflow.indexOf("  ci-runner-image:", routeStart);
 		assert.ok(routeStart > -1);
 		const route = workflow.slice(routeStart, runnerImage);
-		assert.match(route, /packages\/ci\/src\/fleet-overflow\.ts/u);
+		assert.match(route, /scripts\/ci\/route-runner\.mts/u);
+		const trusted = route.indexOf("path: .ci-trusted");
+		assert.ok(trusted > -1);
+		assert.doesNotMatch(
+			route.slice(0, trusted),
+			/packages\/ci\/src\/fleet-overflow\.ts/u,
+		);
 		assert.doesNotMatch(route, /packages\/ci\/src\/fleet\/capacity\.ts/u);
 	});
 

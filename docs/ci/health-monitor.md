@@ -50,7 +50,7 @@ an unreadable comparison, or a comparison past GitHub's 300-file list with no re
 
 **Route notices.** Each route decision prints one `hobo-ci-route` notice, version 2:
 `{"v":2,"workflow","tier","runner","slip","why","refusedBy"}`, optionally with
-`mergeGroupHostedProbe` (`idle`, `summary`) on merge-group Fabric decisions; unknown fields are ignored. `slip` is `used` (the routing slip was consulted;
+`mergeGroupHostedProbe` (`idle`, `summary`, and on saturated hosted probes `trunkIdle`, `trunkSummary`, `runnerPageIdleTrunk`) on merge-group Fabric decisions; unknown fields are ignored. `runnerPageIdleTrunk` is observability only: it says the fetched runner page showed an online, unbusy `hobo-trunk` runner, but it never admits the batch to the trunk. Merge-group Fabric requires a verified Broker claim before any `hobo-trunk` route; without it the batch stays on `ubuntu-24.04`. The `fleet-probe` job named `hobo picks a job up` asks for plain `hobo` while the online trunk runners carry `hobo-trunk`, so a stuck `hobo` probe is not evidence those runners are busy. `slip` is `used` (the routing slip was consulted;
 `why` is the relay's reason, such as `fleet-open` or `no-capacity`; `refusedBy: queue` shows a fleet slip
 overruled because GitHub did not confirm timely pickup), `fallback` (no slip could be used and the
 queue rule decided; `why` says which: `no routing slip`, `slip expired`, `slip malformed`, `slip names another

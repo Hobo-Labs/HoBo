@@ -1,0 +1,66 @@
+# `@hobo/fleet-nats`
+
+Every NATS interaction of HoBo Fleet, and the only package that
+imports a NATS client. NATS runs in operator mode with an account per tenant;
+devices get per-connection user credentials minted by the authority's auth
+callout from scoped signing keys whose permission templates are fixed to the
+member id; every listener uses TLS. The bus is never trusted: anything that
+grants trust is a signed envelope verified against the pinned trust record.
+
+Operating it: [the fleet runbooks](../../docs/maintenance/fleet/index.md).
+
+## Entry points
+
+| Entry point | Does |
+|---|---|
+| `provisionTopology` | Creates a tenant account, its static users, scoped signing keys, streams and buckets |
+| `createNatsBusConnector` | Connects a device and returns its `FleetBus` |
+| `connectAuthorityBus` | Connects the authority and returns its `AuthorityBus` |
+| `startCalloutResponder` | Answers NATS auth callouts with credentials scoped to the member |
+| `createJournalEventStore` | A `FleetEventStore` on the `FLEET_JOURNAL` stream (high-availability profile) |
+| `createBusRelayTransport` | A `FleetTransport` relayed over `fleet.relay.<to>.<session>` |
+
+## Parts
+
+Each part has its own README next to its code.
+
+- **Bus** — [`src/bus/README.md`](src/bus/README.md).
+  `provisionTopology`, `createNatsBusConnector`, `connectAuthorityBus` and
+  `startCalloutResponder` over narrow client ports, with the real
+  `@nats-io` client as the default. The authority static user's per-stream
+  `$JS.API` grants use one wildcard per stream so its JWT fits nats-server's
+  4 KiB control line.
+- **Journal event store** — [`src/journal/README.md`](src/journal/README.md).
+  `createJournalEventStore` on `FLEET_JOURNAL`: one message per append with
+  `Nats-Expected-Last-Subject-Sequence` as the compare-and-set, the fencing
+  epoch stored with each batch, and idempotency keys enforced across replicas.
+- **Bus-relay transport** — [`src/relay/README.md`](src/relay/README.md).
+  `createBusRelayTransport`: sessions as end-to-end encrypted messages on
+  `fleet.relay.<to>.<relaySessionId>`, transport identity
+  `relay:<SEAL public key>`, credit-based flow control (1 MiB unread, 128 KiB
+  messages), authorised by the grant before anything reaches the handler.
+
+## Gates
+
+- **TypeScript:** `pnpm --filter @hobo/fleet-nats run build`.
+- **Protobuf + CUE:** `data-models/fleet_nats.proto` holds this package's local
+  connection settings and `fleet_nats.cue` constrains them; the fleet's
+  records are `@hobo/fleet`'s. Parse, don't validate: settings and every record
+  read from the bus are parsed derived types (`@hobo/fleet` ids and verified
+  envelopes); nothing unparsed leaves an adapter.
+- **PACT:** `contracts/` (a placeholder until the callout and bus pacts land).
+- **Conformance:** the bus passes `runBusConformance` and the journal store
+  `runJournalConformance` from `@hobo/fleet/testing`.
+- **Integration:** `*.integration.test.ts` run against `nats-server` 2.15.3
+  (`HOBO_FLEET_NATS_SERVER_BIN`, or `nats-server` on `PATH`).
+
+## Architecture placement
+
+An adapter package at layer 3. It handles no command of its own: the
+authority's commands append `fleet.*` events to the event store, and this
+package carries them. The journal event store is one stream on which every
+append is one message with `Nats-Expected-Last-Subject-Sequence` as the
+compare-and-set. Each device's subscriptions are an actor's mailbox. The
+`fleet-registry` and `fleet-views` key-value buckets are the read stores of the
+authority's projections (materialized views); they hold no snapshot that is not
+rebuilt by replay of the event store.

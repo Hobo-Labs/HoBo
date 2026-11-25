@@ -72,6 +72,8 @@ import { createDriftCommand } from "./drift-command.js";
 import { createEraseCommand } from "./erase-command.js";
 import { resolveCdProject, resolveCiProject } from "./family-projects.js";
 import { createFeatureCommand } from "./feature-command.js";
+import { createFleetCommand } from "./fleet-command.js";
+import { createFleetRuntime } from "./fleet-runtime.js";
 import { createGenerateCommand } from "./generate-command.js";
 import type { createProductionHostingExecution } from "./hosting-execution.js";
 import { createIdentityCommand } from "./identity-command.js";
@@ -410,6 +412,9 @@ export function createComposedHoboCli(
 							}),
 				fallback: deploy,
 			}),
+			fleet: createFleetCommand((progress) =>
+				createFleetRuntime({ env: process.env, progress }),
+			),
 			build: createBuildCommand({ requireRealComponentize: true }),
 			// Local loop: open the Yard, place the Bindle into a Camp, run the Camp's
 			// component host (services__* + bindle env + external-only TCP).

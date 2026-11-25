@@ -25,11 +25,33 @@ package cd
 // `<class>` or `<class>:<field>[,<field>...]` (src/reconcile/retained.ts).
 #reconcileDriftKind: "" | =~"^(modified|deleted|orphan|external|[a-z][a-z-]*)(:[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*)?$"
 
+#releaseFreightCredentialRef: string & !~"[\\r\\n]" & =~"^(github-app://[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}|owner://[A-Z][A-Z0-9_]{0,63})$"
+#releaseFreightScope: string & !~"[\\r\\n]" & (=~"^release-probe$" | =~"^cd-realize:[a-z0-9][a-z0-9-]{0,62}(/[a-z0-9][a-z0-9-]{0,62})?$")
+
+#reconcileReasonStructuredScope: {
+	credentialRef: #releaseFreightCredentialRef
+	requestedScope: #releaseFreightScope
+	detailKind: "scope-not-allowed" | "credential-unresolved" | "missing-GITHUB_REPOSITORY" | "missing-GITHUB_TOKEN"
+}
+
+#reconcileReasonStructuredRepositoryMismatch: {
+	credentialRef: #releaseFreightCredentialRef
+	requestedScope: #releaseFreightCredentialRef
+	detailKind: "repository-mismatch"
+}
+
+#reconcileReasonStructured:
+	#reconcileReasonStructuredScope |
+	#reconcileReasonStructuredRepositoryMismatch
+
+ReasonStructuredDetail: #reconcileReasonStructured
+
 #reconcileReason: {
 	code:         =~"^[a-z][a-z0-9-]*$"
 	message?:     string
 	remediation?: string
 	subject?:     string
+	structured?:  #reconcileReasonStructured
 }
 
 #ReconcilerRecord: {

@@ -175,7 +175,7 @@ const MACHINE_HEAD = [
 	"Last seen",
 ];
 
-export type FleetSummary = Readonly<{
+export type RunnerFleetSummary = Readonly<{
 	took: number;
 	full: number;
 	off: number;
@@ -183,9 +183,9 @@ export type FleetSummary = Readonly<{
 	lastAtMs: number | undefined;
 }>;
 
-export function fleetSummary(
+export function runnerFleetSummary(
 	routes: readonly RunnerRouteEvent[],
-): FleetSummary {
+): RunnerFleetSummary {
 	let took = 0;
 	let full = 0;
 	let off = 0;
@@ -233,7 +233,7 @@ export function renderRunners(model: RunnersModel): string {
 	const adopted = machines.filter(
 		(machine) => machine.signerKeyId === ADOPTED_RUNNER_SIGNER,
 	);
-	const fleet = fleetSummary(model.routes);
+	const fleet = runnerFleetSummary(model.routes);
 	const fleetBody =
 		fleet.lastAtMs === undefined
 			? empty("No recent route decision mentions the HoBo fleet.")

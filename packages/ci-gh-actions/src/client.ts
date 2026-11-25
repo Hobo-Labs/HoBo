@@ -17,18 +17,11 @@ import {
 	RepositorySetupRequestSchema,
 	SnapshotSchema,
 } from "@hobo/ci";
-import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
+import { MemberListSchema } from "@hobo/fleet";
 import {
 	OnboardingOperationSchema,
 	OnboardingPrincipalSchema,
 } from "./_generated/onboarding_pb.js";
-
-export {
-	type MeshNodeReport,
-	type MeshNodeReports,
-	MeshNodeReportsSchema,
-} from "./_generated/mesh_pb.js";
-export { parseMeshNodeReports } from "./mesh-records.js";
 
 type ProtobufInput<Desc extends DescMessage> = NonNullable<
 	Parameters<typeof create<Desc>>[1]
@@ -146,7 +139,7 @@ export function createCiRelayClient(
 		body?: string,
 		match?: string,
 		version: "v1" | "v2" = "v1",
-		root: "accounts/self" | "mesh" = "accounts/self",
+		root: "accounts/self" | "fleet" = "accounts/self",
 		/** Read past fields a newer relay adds, for an answer that is a report, not an instruction. */
 		lenient = false,
 	): Promise<ProtobufMessage<Desc>> {
@@ -351,21 +344,15 @@ export function createCiRelayClient(
 		getLeases() {
 			return request("leases", "GET", SnapshotSchema);
 		},
-		/**
-		 * The relay mesh's nodes as the relay sees them: availability,
-		 * capacity and trust, with a capacity summary. A relay with no mesh
-		 * answers `mesh: "not-configured"`. Needs the `policy:read` scope.
-		 */
-		getMeshNodes() {
+		getFleetMembers() {
 			return request(
-				"nodes",
+				"members",
 				"GET",
-				MeshNodeReportsSchema,
+				MemberListSchema,
 				undefined,
 				undefined,
 				"v1",
-				"mesh",
-				// A newer relay may add fields; the nodes are still shown.
+				"fleet",
 				true,
 			);
 		},

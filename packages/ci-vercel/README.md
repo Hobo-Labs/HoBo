@@ -739,10 +739,20 @@ ADR-0179 phase 4c ([Options routed by budget](../../docs/design/hosted-relay-sta
 `createCacheFleet` ([`src/cache-fleet.ts`](src/cache-fleet.ts)) puts every
 bound cache behind one `EphemeralStatePort`.
 
-- **One active member, from the register.** The fleet's assignment log is kept
-  on every member in `hobo-ci:<env>:fleet:assignment`
-  (`ephemeralAssignmentReplica` in [`@hobo/backend-fleet`](../backend-fleet/README.md))
-  and the active member is the majority-decided current entry. An instance
+- **A local-mode fleet.** The caches are the members of a `ONE_ACTIVE` fleet
+  built in the process with `createLocalFleet` ([`@hobo/fleet`](../fleet/README.md)
+  `/membership`): one `BACKEND` member per bound cache, in configured order,
+  each declared under the owner's `AUTO_OWNER` approval and so `ACTIVE` at
+  once, with unique names (the cache ids). Its policy carries
+  `failover_after_ms` from the marks and `membership_epochs` from
+  `membershipEpochs` in `HOBO_CI_CACHE_OFFERS_JSON`, false unless set (it is
+  turned on at the last cutover step). No authority, bus or network is
+  involved; `test/cache-fleet-isolation.test.ts` fails any network call.
+- **One active member, from the register.** `createOneActiveFleet`
+  (`@hobo/fleet/assignment`) runs the loop and answers which member is
+  active. The fleet's assignment log is kept on every member in
+  `hobo-ci:<env>:fleet:assignment` (`ephemeralAssignmentReplica`) and the
+  active member is the majority-decided current entry. An instance
   caches the answer for a minute, counted from when its read started. With a
   single member there is no register and nothing is read. An empty register
   is bootstrapped with the first configured member, the same bytes from every
@@ -771,12 +781,18 @@ bound cache behind one `EphemeralStatePort`.
   tables (`EPHEMERAL_STATE_COMMAND_COST`, `LIBSQL_EPHEMERAL_COST`,
   `VERCEL_BLOB_EPHEMERAL_COST`) by the mix of port calls this instance
   routed; and `routeFleetByBudget` decides: free, then prepaid, then the
-  cheapest pay-as-you-go; leave the active member at **90%** projected of an
+  cheapest pay-as-you-go (`routeFleetByBudget` of
+  [`@hobo/backend-routing`](../backend-routing/README.md) is the loop's
+  `chooseAction`); leave the active member at **90%** projected of an
   allowance it would stop at, take another only below **80%**, so a member
   left for its allowance is not taken back until the next month; a move for
   preference alone only to a cheaper tier or month, after an hour on the
   current one; a failover when the active member has failed for 10 seconds
-  (the tick probes it three times, five seconds apart). Each decision is one
+  (the tick probes it three times, five seconds apart). The tick returns a
+  `OneActiveTick` (`single`, `bootstrap`, `activate`, `sealed-waiting`,
+  `reseal`, `keep`, `hold`, `switch`, `failover`, `no-majority`,
+  `undecided`, or `membership` once membership epochs are on). The loop logs
+  `hobo_fleet_assignment_tick`, and each decision is one
   `hobo_ci_cache_fleet_decision` line: action, epoch, active, target,
   reasons, eligible members and each member's projected percentage and cost.
 - **Offers.** Defaults ([`src/cache-offers.ts`](src/cache-offers.ts)) are the
@@ -824,6 +840,13 @@ table is in [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#keys-values-and-t
   deployment, 24 hours. Missing is `starting`; a failure newer than the last
   success, or no success for 45 minutes, is `failing`, and `/readyz` answers
   503.
+- **No fleet verdicts.** The relay keeps no verdict, reporter state or
+  allowance: a runner's health is its own `Observation` as a member of fleet
+  `hobo`, read through `@hobo/fleet/client`. The keys
+  `HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING` and
+  `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` are retired, not settings: the
+  loader drops them before it parses the configuration, so a config service
+  that still holds one starts the relay as if it did not.
 - **Sessions, OAuth `state`, App installation**: `createStatelessAppOnboarding`
   from `@hobo/ci-gh-actions`. Records are named by an HMAC under a key derived
   from `HOBO_CI_SESSION_KEY` and, where they hold a credential, sealed with
@@ -1216,9 +1239,11 @@ This relay no longer serves fleet verdicts. `GET`/`PUT /v1/fleet/verdicts/{owner
 `GET /v1/fleet/reporters/{owner}/{repo}` answer 404, nothing is kept on the cache for them, and the
 reporter enrollment, kill switch and daily allowance are gone
 ([ADR-0181](../../docs/design/adr/routing-slips.md#adr-0181), which supersedes ADR-0180's hosted
-transport). The box relay hands each run
-its route instead, as a routing slip at `refs/hobo/routing-slip`, which the route job reads with its own
-`GITHUB_TOKEN`; nothing on this relay is asked.
+transport). Routing reads each runner's own `Observation` as a member of fleet `hobo`, through
+`@hobo/fleet/client` (see [No fleet verdicts](#the-stateless-relay) above), and the box relay hands
+each run its route as a routing slip at `refs/hobo/routing-slip`, which the route job reads with its
+own `GITHUB_TOKEN`; nothing on this relay is asked. Operating the fleet itself is covered by the
+[fleet runbooks](../../docs/maintenance/fleet/index.md).
 
 `HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING` and
 `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` are retired keys: their `RelayRuntimeConfig` fields are

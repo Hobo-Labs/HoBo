@@ -546,15 +546,6 @@ fleet's policy in `@hobo/data-postgres` (`src/fleet/`):
   allowance or is no longer affordable under the budget, and a *failover* when
   it is quota-exhausted or unreachable past a threshold.
 
-Those pieces never mention SQL. Phase 4c moved them, with `fleetMajority`,
-the failure classes and the billing-period helpers, from `@hobo/data-postgres`
-into [`@hobo/backend-fleet`](../../packages/backend-fleet/README.md), which
-`@hobo/data-postgres` re-exports; a new package rather than `@hobo/core`,
-because it is a policy with its own records and pact, not a port. Next to
-`decideFleet`, which moves only when the writer is in trouble and judges a
-standby by copy lag, it adds `routeFleetByBudget` for a fleet whose state may
-be lost: it also moves to a cheaper member, and has no lag to judge.
-
 **As built (phase 4c).** The log lives in `hobo-ci:<env>:fleet:assignment` on
 every member, one `FleetAssignmentLog` value of the newest 32 entries;
 `accept` is a read, the register's rules, and `putIfAbsent` or

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateMeshIdentity } from "@hobo/ci/mesh";
+import { generateMachineIdentity } from "@hobo/ci";
 import { InMemoryMachineRegistry } from "@hobo/ci/runner-order/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { RUNNER_VERSION } from "../src/bootstrap.js";
@@ -236,7 +236,7 @@ describe("a macOS machine", () => {
 						ownerLogin: "octocat",
 						isolation: options.isolation,
 					},
-					identity: generateMeshIdentity().identity,
+					identity: generateMachineIdentity().identity,
 					sink: registryAdvertSink(registry, {
 						accountId: "local",
 						ownerId: "42",

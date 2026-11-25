@@ -8,12 +8,12 @@ import { parseResolvedSet } from "../../src/agent/http-transport.js";
 import {
 	createHttpTransport,
 	FeedRefusedError,
-	generateAgentKey,
 	parseStationOrigin,
 } from "../../src/agent/index.js";
 import type { ReconcilerLease } from "../../src/ports.js";
 import { asCamp, asReconciler, resolvedFor } from "../feed/fakes.js";
 import { collect } from "../feed/harness.js";
+import { freshSignJwk } from "./fleet-fixture.js";
 
 const now = Date.UTC(2026, 0, 1);
 const marker = "synthetic-private-provider-detail";
@@ -39,7 +39,7 @@ function transport(http: HttpTransport, svid = token()) {
 		baseUrl: "https://station.test",
 		http,
 		reconcilerId,
-		privateJwk: generateAgentKey().privateJwk,
+		privateJwk: freshSignJwk(),
 		svid,
 		now: () => now,
 	});
@@ -110,7 +110,7 @@ describe("agent HTTP refusal privacy", () => {
 		expect(JSON.stringify(result)).not.toContain(marker);
 	});
 
-	it("redacts an error while constructing the outbound proof", async () => {
+	it("redacts an error from the SVID credential source", async () => {
 		let requests = 0;
 		const client = createHttpTransport({
 			baseUrl: "https://station.test",
@@ -119,12 +119,11 @@ describe("agent HTTP refusal privacy", () => {
 				return response("{}", 200);
 			},
 			reconcilerId,
-			privateJwk: {
-				get kty(): string {
-					throw new Error(marker);
-				},
-			},
+			privateJwk: freshSignJwk(),
 			svid: token(),
+			credential: async () => {
+				throw new Error(marker);
+			},
 			now: () => now,
 		});
 		const result = await client.renew(lease);
@@ -457,24 +456,23 @@ describe("agent HTTP refusal privacy", () => {
 		).rejects.toMatchObject({ code: "response-invalid" });
 	});
 
-	it("retains the SVID-expiry recovery branch with sanitized refusals", async () => {
+	it("recovers a lapsed SVID from the credential source with sanitized refusals", async () => {
 		let calls = 0;
-		const client = transport(
-			async () => {
+		const sent: string[] = [];
+		const fresh = token();
+		const client = createHttpTransport({
+			baseUrl: "https://station.test",
+			http: async (request) => {
 				calls++;
-				if (calls === 1) return response(refusal("svid-expired"), 401);
-				if (calls === 2)
-					return response(
-						JSON.stringify({
-							ok: true,
-							value: { svid: token(), expiresAtMs: now + 60 * 60_000 },
-						}),
-						200,
-					);
+				sent.push(request.headers.authorization ?? "");
 				return response(refusal("lease-held"), 409);
 			},
-			token(now + 1_000),
-		);
+			reconcilerId,
+			privateJwk: freshSignJwk(),
+			svid: token(now - 1_000),
+			credential: async () => fresh,
+			now: () => now,
+		});
 		const result = await client.claim({
 			reconcilerId,
 			campId,
@@ -484,28 +482,33 @@ describe("agent HTTP refusal privacy", () => {
 		expect(result.ok).toBe(false);
 		if (result.ok) throw new Error("Expected refusal.");
 		expect(result.reasons[0]?.code).toBe("lease-held");
-		expect(calls).toBe(3);
+		expect(calls).toBe(1);
+		expect(sent).toEqual([`DPoP ${fresh}`]);
 		expect(JSON.stringify(result)).not.toContain(marker);
 	});
 
 	it("does not request the feed after cancellation during SVID refresh", async () => {
 		const controller = new AbortController();
 		const requests: string[] = [];
-		const client = transport(async (request) => {
-			requests.push(new URL(request.url).pathname);
-			controller.abort();
-			return response(
-				JSON.stringify({
-					ok: true,
-					value: { svid: token(), expiresAtMs: now + 60 * 60_000 },
-				}),
-				200,
-			);
-		}, "");
+		const client = createHttpTransport({
+			baseUrl: "https://station.test",
+			http: async (request) => {
+				requests.push(new URL(request.url).pathname);
+				return response('event: end\ndata: {"reason":"caught-up"}\n\n', 200);
+			},
+			reconcilerId,
+			privateJwk: freshSignJwk(),
+			svid: "",
+			credential: async () => {
+				controller.abort();
+				return token();
+			},
+			now: () => now,
+		});
 		expect(
 			await collect(client.feed({ lease, signal: controller.signal })),
 		).toEqual([]);
-		expect(requests).toEqual(["/v1/cd/svid/refresh"]);
+		expect(requests).toEqual([]);
 	});
 
 	it("tracks only the current lease fence per Camp without an old release clearing it", async () => {

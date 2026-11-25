@@ -53,14 +53,6 @@ this estimate is not a hard billing cap or proof of the globally cheapest price.
 A publisher must obtain and refresh provider-specific rates and free balances;
 no live Vercel inventory or price verification is built into this package.
 
-## Strict fleet starts
-
-The SQLite and PostgreSQL fleet stores commit one start authorization per job
-attempt. A retry for the same claim and runner returns the existing receipt only
-while the assignment, credential, controller incarnation, offer, capacity group,
-and execution profile remain eligible. Revoking an offer or worker prevents a
-later retry from authorizing a start.
-
 ## Event cursor
 
 Every lease and job change is appended to the partition's event journal inside
@@ -135,6 +127,12 @@ its store is the [cache store](../ci-gh-actions/README.md#relay-cache-store) in
 `@hobo/ci-gh-actions`. The PostgreSQL store (`PostgresCiStore`), its schema and
 migrations were removed in phase 7 of that design. The rules below hold for
 both stores.
+
+The budget-authority tests in `test/shared-budget*.test.ts` run against a real
+PostgreSQL server (pg-mem cannot prove row locks). `HOBO_TEST_POSTGRES_URL`
+names one; when it is unset, the Vitest global setup
+(`test/support/postgres-global-setup.ts`) starts an ephemeral local cluster from
+PostgreSQL 16+ server binaries on a private Unix socket and removes it after the run.
 
 The signed webhook body is hashed independently of GitHub's unsigned delivery
 ID and event headers. Exact byte-identical bodies for one installation received
@@ -269,11 +267,11 @@ Validation: `pnpm --filter @hobo/ci build`, `pnpm --filter @hobo/ci test`,
 
 A local box is also a tier in runner routing: when the fleet is not taking
 jobs, a run's jobs ask an enrolled local box (`hobo-local-host`) before they
-ask GitHub-hosted runners. `selectFleetBackend` orders the fleet, ARC, the
+ask GitHub-hosted runners. `selectRunnerTier` orders the hobo fleet, ARC, the
 local box, then GitHub-hosted; see "Runner routing" in
 [RUNNER-QUEUE.md](RUNNER-QUEUE.md).
 
-`selectFleetVerification` keeps that runner order and can select an opt-in
+`selectRunnerVerification` keeps that runner order and can select an opt-in
 local signoff only after all enabled runner tiers are known unavailable. It
 waits on unknown capacity when no runner is available, and always waits on
 malformed or contradictory observations. This is a separate
@@ -578,26 +576,25 @@ path, cancellation and bounded-file artifact handling for Actions and ADO. It
 inherits only host plumbing and explicit step environments. The Worker-safe
 `@hobo/ci/execution` entrypoint remains free of Node process/filesystem imports.
 
-## Relay mesh
+## Runner routing
 
-`@hobo/ci/mesh` holds the claiming core for a relay with no central node. `rankNodes(job, nodes, now)`
-orders the nodes a job fits (a free slot and enough free memory for that job) by weighted rendezvous hashing over how many copies of it each could start, scaled by the share of its recent jobs each node delivered (`./mesh/reliability.ts`: a decayed score that falls when a node drops jobs and recovers when it stops), and
-`claimTurn(...)` tells one node whether to start a runner now or how long to wait for its turn. Both
-are pure functions; the box worker in `@hobo/ci-gh-actions` calls them when `HOBO_CI_NATS_URL` is set.
+Choosing a runner *provider* by tier and cost is routing, not a fleet, so it
+lives here under `src/runner-routing/` with `Runner` names:
+`balanceRunnerProviders` ranks every connected provider for a job (eligibility,
+then the price the pricing engine quotes, then the budget policy) and gives a
+coded refusal for the rest; `runnerProvidersFromAccount` builds the providers
+from an account's offers and leases, and reads the hobo provider's health and
+active jobs from the hobo fleet's `FleetCapacity` when the caller passes
+`hoboCapacity`; `selectRunnerTier` and the other helpers in `tiers.ts` order the
+hobo fleet, ARC, a local box and GitHub-hosted. `memoryAdmitHeadroom` and
+`memoryAdmitParallelCount` (`src/admission/memory.ts`) answer whether a job's
+memory fits a host now. The generated parts of the docs site's runner routing
+pages come from `scripts/runner-routing-docs.ts`.
 
-- **Trust** (`./mesh/trust.ts`): a node's Ed25519 identity, the signature over a fixed encoding of
-  its advertisement (node id and expiry included), and what a reader makes of it: `trusted` when the
-  key is in the mesh's set, `unverified` when it is not or the node does not sign, `invalid` when the
-  signature fails. `createTrustedMeshBoard` signs on the way out and assesses on the way in. `fitJob`
-  never fits a job to an `invalid` node, and with `requireTrusted` only to trusted ones.
-- **Reports** (`./mesh/report.ts`): `meshNodeReport` turns one advertisement into what a person or an
-  agent is shown (state `live`, `unhealthy` or `lost` and since when, capacity, trust, reliability);
-  `createMeshNodeTracker` keeps a node that stopped advertising on the list as `lost`; and
-  `meshLabelStates` counts, per runner label, the nodes a reader ranks and their free slots.
-
-A signature says which key wrote an advertisement, not what software the node runs. The design, its
-failure table, the trust model's limits and the remaining increments are in
-[CI Relay Mesh](../../docs/design/ci-relay-mesh.md).
+The compute mesh that used to live here (`@hobo/ci/mesh`: ranking, claiming,
+reliability, reports and the hand-edited trusted-key list) is gone. Ranking,
+claims, observation and member identity are `@hobo/fleet`'s; the hobo fleet's
+verdict replaces the repository variables the relay used to publish.
 
 ## HoBo's own builds as Freight
 
@@ -684,7 +681,11 @@ an owner, so its changes need code-owner review when the `main` ruleset
 requires it. Dependabot
 ([`.github/dependabot.yml`](../../.github/dependabot.yml)) proposes npm, Actions
 and Docker version updates only after a 7-day cooldown and regenerates the
-lockfile with each Actions bump. Secrets are scanned with Betterleaks (pinned
+lockfile with each Actions bump. The state-machine verification job in
+`hobo-ci.yml` and the pricing model checks in `pricing-ci.yml` install Temurin
+Java 21 with `actions/setup-java` v6.3.0
+(`d1374f8ac74474200d16ef8ecee22c7ae7a51880`), pinned in both workflows,
+`actions.lock` and `scripts/action-pin-allowlist.json`. Secrets are scanned with Betterleaks (pinned
 in `mise.toml`, config `.betterleaks.toml`): staged changes in the pre-commit
 hook (`pnpm run secrets:staged`), history in the main gate.
 
@@ -728,107 +729,6 @@ stateDiagram-v2
   [*] --> ReadObservations
   ReadObservations --> Admitted: highest exposure fits
   ReadObservations --> Refused: highest exposure exceeds budget
-```
-
-## Strict fleet start-binding retries
-
-The transactional fleet stores return a prior start receipt only for the same
-claim, slot, credential, runner name, and execution profile while the claim is
-still authorized or running. Terminal and uncertain claims cannot authorize a
-new start. Eligibility is checked on the original authorization; a matching
-lost-response retry is a receipt for that committed authorization.
-
-The GitHub assignment lookup, optional start handler, and hook are not yet wired into the
-production controller, so these store guarantees alone do not make strict CI
-runner starts available. See the [fleet operator guide](../../docs/ci/fleet-enrollment.md).
-
-An unclaimed runner slot that becomes uncertain retains its reservation.
-After a trusted controller confirms teardown, it can retry the
-`uncertain` → `released` transition with `{ teardownConfirmed: true }`; an
-identical retry does not release capacity twice. A claimed uncertain slot is
-released through execution settlement instead. The store records the release,
-but trusts the controller's assertion and does not itself verify provider
-teardown evidence.
-
-Before enabling admission after an upgrade, quarantine and reconcile slots
-already marked uncertain by an older version. That version may have released
-their reservations; this change cannot reconstruct whether those runners still
-exist or restore the missing accounting automatically.
-
-Fleet capacity values and other fleet counters use the unsigned 32-bit wire
-range. PostgreSQL startup widens legacy signed columns under its schema lock;
-the database user must have permission to alter those tables. Capacity revisions never wrap: at
-the wire limit, further changes, including capacity releases, fail atomically.
-Do not reset a revision, because a stale reservation could become valid again.
-Recovering an exhausted group requires a future revision-format migration and
-operator reconciliation.
-
-Effect-delivery fences also stop at the wire limit and never wrap. An effect
-whose fence is exhausted cannot be claimed again; do not reset the fence,
-because an old worker token could then be reused. Observation sequences cannot
-advance beyond their wire limit either. These limits require future format
-migrations and reconciliation for continued operation.
-
-The [start-binding verification skill](../../.agents/skills/verify-ci-start-binding/SKILL.md)
-checks the store boundary and records its assumptions. This projection of its
-bounded model hides 824 same-label steps from 1,844 explored steps; a rejection
-can be followed by a different valid request, and finishing can occur after a
-rejected retry if an earlier request already authorized that job.
-
-```mermaid
-stateDiagram-v2
-  Waiting: Awaiting a request or execution finished
-  Rejected: Start rejected
-  Authorized: Start authorized
-  [*] --> Waiting
-  Waiting --> Rejected: request does not match or cannot start
-  Waiting --> Authorized: request commits or repeats the same authorization
-  Rejected --> Authorized: request commits or repeats the same authorization
-  Authorized --> Rejected: request does not match or cannot start
-  Authorized --> Waiting: execution finishes
-  Rejected --> Waiting: execution finishes
-```
-
-The [capacity verification skill](../../.agents/skills/verify-ci-capacity/SKILL.md)
-checks stale reservations and revision exhaustion. The following projection
-shows two jobs using one capacity snapshot; it hides one same-label step from
-five modeled steps.
-
-```mermaid
-stateDiagram-v2
-  [*] --> ReadCapacity
-  ReadCapacity --> ReservationRecorded: reserve one slot
-  ReservationRecorded --> StaleRefused: refuse stale capacity view
-```
-
-The [uncertain-capacity verification skill](../../.agents/skills/verify-ci-uncertain-capacity/SKILL.md)
-models recovery and checks the stores. The projection hides five same-label
-steps from 14 modeled steps.
-
-```mermaid
-stateDiagram-v2
-  [*] --> Reserved
-  Reserved --> Uncertain: runner status becomes uncertain
-  Uncertain --> Ready: teardown confirmed
-  Uncertain --> SettlementPending: teardown confirmed
-  SettlementPending --> Ready: execution status recorded
-  Ready --> Released: release reserved capacity
-```
-
-The [fleet-delivery verification skill](../../.agents/skills/verify-ci-fleet-delivery/SKILL.md)
-checks delivery fences and ambiguous dispatch. The projection hides 60
-same-label steps from 90 modeled steps.
-
-```mermaid
-stateDiagram-v2
-  [*] --> Ready
-  Ready --> Held: claim delivery with a new fence
-  Held --> Retry: delivery expires
-  Retry --> Held: claim delivery with a new fence
-  Held --> Exhausted: delivery expires at the fence limit
-  Held --> Dispatching: worker starts external dispatch
-  Dispatching --> Reconcile: delivery expires during dispatch
-  Dispatching --> Confirmed: active worker confirms effect
 ```
 
 The [CI budget-window verification skill](../../.agents/skills/verify-ci-budget-window/SKILL.md)
@@ -913,9 +813,9 @@ A connected machine is kept in a machine registry (ADR-0183). The rules are in
 `src/runner-order/machine-registry.ts`; `@hobo/ci/runner-order/machine-registry-sqlite`
 keeps them in the host's SQLite file (ADR-0135).
 
-- A machine signs each advert with its mesh identity key (Ed25519), and the
-  advert names that key. The key is pinned on first use (TOFU); it is not
-  checked against the mesh's trusted-key set. An advert for the same id under
+- A machine signs each advert with its machine identity key (Ed25519,
+  `generateMachineIdentity` and `machineIdentityFromPem` in `@hobo/ci`), and the advert names that key. The key is pinned
+  on first use (TOFU); no trusted-key set vouches for it. An advert for the same id under
   another key, or from another account, is refused and gives a
   `machine.taken_over` event; it stays refused until the owner removes the
   machine. The SQLite store refuses such a move inside its own write.
@@ -968,12 +868,12 @@ it cannot read, so a missing measurement never blocks a step.
   provider: settled leases first, at what the ledger charged; then each
   finished job no settled lease covers, at its label's list rate for the
   minutes it ran (`listPriceOfJob`). A label with no list rate adds nothing.
-- **List prices.** `HOSTED_LIST_PRICES` in `src/fleet/models.ts` gives every
+- **List prices.** `HOSTED_LIST_PRICES` in `src/runner-routing/models.ts` gives every
   routable hosted provider a per-minute rate for each size the runner-order
   catalog routes to, with the vendor page, the day it was read and how long it
   holds. RunsOn has none: it charges a yearly licence and AWS bills the
   machines to the owner, which the entry records as its reason. These rates
-  price spend only; they do not take part in fleet balancing.
+  price spend only; they do not take part in runner balancing.
 - **Provider health.** `SqliteProviderHealthStore`
   (`@hobo/ci/runner-order/provider-health-sqlite`) keeps one
   `ProviderHealthRecord` per runner type in a SQLite file, so a tripped type

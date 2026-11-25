@@ -8,12 +8,12 @@ export {
 	describeDecision,
 	describeSkip,
 	effectiveRelayInputs,
-	type FleetState,
 	NO_ROUTE_FACTS,
 	noRunnerReason,
 	type RouteFacts,
 	type RouteRetry,
 	RUNNER_SKIP_REASONS,
+	type RunnerFleetState,
 	type RunnerSkipReason,
 } from "./decide.js";
 export {
@@ -31,7 +31,7 @@ export {
 } from "./health.js";
 export {
 	ANY_MACHINE_LABEL,
-	FLEET_LABEL,
+	HOBO_FLEET_LABEL,
 	isUnresolvedAuto,
 	type RelayInputs,
 	RUNNER_INPUT_AUTO,

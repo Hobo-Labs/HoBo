@@ -13,13 +13,13 @@ export interface OverlayIdentity {
 	readonly overlayIps: readonly string[];
 	readonly tags: readonly string[];
 	readonly tenantId: TenantId;
+	readonly memberId?: string;
 }
 
 export interface OverlayJoinOptions {
 	readonly tenantId: TenantId;
 	readonly hostname: string;
 	readonly tags: readonly string[];
-	/** Auth key / enrollment token — never logged. */
 	readonly authKey?: string;
 	readonly emitProgress?: (message: string) => void;
 }

@@ -3,7 +3,7 @@ import {
 	createImmutableJournal,
 	type ImmutableJournalMember,
 	type ImmutableJournalOptions,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import type { HttpTransport, TransportRequest } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
