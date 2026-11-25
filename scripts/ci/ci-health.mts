@@ -4,7 +4,6 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
 
-/** The signals, in the order the report lists them. */
 export const SIGNALS = ["H1", "H2", "H3", "H6", "H8", "H11"] as const;
 export type Signal = (typeof SIGNALS)[number];
 
@@ -17,10 +16,8 @@ export const SIGNAL_NAMES = {
 	H11: "relay stale",
 } as const satisfies Readonly<Record<Signal, string>>;
 
-/** Runs read per window; past this the report says `truncated`. */
 export const MAX_RUNS = 100;
 export const REQUEST_BUDGET = 350;
-/** The window when no earlier report exists. */
 export const DEFAULT_WINDOW_MS = 2 * 60 * 60 * 1000;
 export const DEFAULT_STALL_MINUTES = 30;
 export const DEFAULT_PAID_MINUTES_PER_WINDOW = 150;
@@ -31,17 +28,13 @@ export const REPORT_FILE = "ci-health-report.json";
 export const ISSUE_LABEL = "ci-health";
 export const RELAY_INPUTS_FILE = "relay-inputs.json";
 
-/** The route job of every routed workflow, and the main gate's plan job that asks again. */
 export const ROUTE_JOB = "Route runners";
 export const PLAN_JOB = "Main workspace plan";
-/** Waits on its concurrency group, not on a runner. */
 export const STALL_EXCLUDED_JOBS: ReadonlySet<string> = new Set([
 	"Main full gate",
 ]);
-/** Hosted whatever the fleet does: the route job, the probe's gate, the gates, this monitor. */
 export const PAID_EXCLUDED_JOBS: ReadonlySet<string> = new Set([
 	ROUTE_JOB,
-	// The fleet probe's gate: reads whether a local box is enrolled, in seconds.
 	"local box enrolled",
 	"PR impact gate",
 	"HoBo release PR gate (required)",
@@ -55,24 +48,11 @@ export const HOSTED_LABEL = "ubuntu-24.04";
 
 export const NOTICE_TITLE = "hobo-ci-route";
 export const FALLBACK_TITLE = "hobo-ci-route-fallback";
-/**
- * How the route script's own fallback warning starts (`SLIP_FALLBACK_PREFIX`
- * in `route-runner.mts`): no slip could be used and the queue decided. The
- * notice carries why, so H1 counts only the warnings that say the route did
- * not run at all.
- */
 export const SLIP_FALLBACK_PREFIX = "routing slip not used";
-/**
- * The fallbacks that mean the relay has no current slip (`ABSENT_SLIP_WHYS`
- * in `route-runner.mts`): H3. Any other fallback is a slip that was there
- * and could not be used, or could not be read: H2.
- */
 export const ABSENT_SLIP_WHYS: ReadonlySet<string> = new Set([
 	"no routing slip",
 	"slip expired",
 ]);
-
-// --- JSON, read at the boundary ---
 
 export type JsonValue =
 	| null
@@ -88,19 +68,16 @@ interface JsonObject {
 const tagOf = Object.prototype.toString;
 
 function asObject(value: JsonValue | undefined): JsonObject | undefined {
-	// SAFETY: the tag check proves a plain object, which JSON.parse only produces as a JsonObject.
 	return tagOf.call(value) === "[object Object]"
 		? (value as JsonObject)
 		: undefined;
 }
 function asText(value: JsonValue | undefined): string | undefined {
-	// SAFETY: the tag check proves a string primitive.
 	return tagOf.call(value) === "[object String]"
 		? (value as string)
 		: undefined;
 }
 function asNumber(value: JsonValue | undefined): number | undefined {
-	// SAFETY: the tag check proves a number primitive.
 	return tagOf.call(value) === "[object Number]"
 		? (value as number)
 		: undefined;
@@ -109,10 +86,8 @@ function asList(value: JsonValue | undefined): readonly JsonValue[] {
 	return Array.isArray(value) ? value : [];
 }
 
-/** `JSON.parse`, or nothing when the text is not JSON. */
 export function parseJson(text: string): JsonValue | undefined {
 	try {
-		// SAFETY: a JSON document is a JsonValue by construction.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;
@@ -131,7 +106,6 @@ export type WorkflowJob = Readonly<{
 	status: string;
 	conclusion: string;
 	labels: readonly string[];
-	/** Empty until a runner takes the job. */
 	runnerName: string;
 	htmlUrl: string;
 	createdAt: string;
@@ -155,20 +129,17 @@ export type RelayFreshness =
 	  }>
 	| Readonly<{ kind: "unknown"; why: string }>;
 
-/** One run of the window: the run, its jobs, and the route annotations by job id. */
 export type RunPages = Readonly<{
 	run: WorkflowRun;
 	jobs: readonly WorkflowJob[];
 	annotations: ReadonlyMap<number, readonly Annotation[]>;
 }>;
 
-/** Everything one window's runs left behind. */
 export type WindowData = Readonly<{
 	runs: readonly RunPages[];
 	relay: RelayFreshness;
 }>;
 
-/** The runs of a `GET /repos/{r}/actions/runs` page. */
 export function parseRuns(page: JsonValue | undefined): WorkflowRun[] {
 	return asList(asObject(page)?.workflow_runs).flatMap((entry) => {
 		const run = asObject(entry);
@@ -184,7 +155,6 @@ export function parseRuns(page: JsonValue | undefined): WorkflowRun[] {
 	});
 }
 
-/** The jobs of a `GET /repos/{r}/actions/runs/{id}/jobs` page. */
 export function parseJobs(page: JsonValue | undefined): WorkflowJob[] {
 	return asList(asObject(page)?.jobs).flatMap((entry) => {
 		const job = asObject(entry);
@@ -207,7 +177,6 @@ export function parseJobs(page: JsonValue | undefined): WorkflowJob[] {
 	});
 }
 
-/** A `GET /repos/{r}/check-runs/{id}/annotations` answer. */
 export function parseAnnotations(page: JsonValue | undefined): Annotation[] {
 	return asList(page).flatMap((entry) => {
 		const annotation = asObject(entry);
@@ -223,25 +192,20 @@ export function parseAnnotations(page: JsonValue | undefined): Annotation[] {
 	});
 }
 
-// --- The report ---
-
 export type SignalState = "breach" | "clear" | "unknown";
 
 export type SignalResult = Readonly<{
 	state: SignalState;
 	summary: string;
-	/** Links or short lines, at most ten. */
 	evidence: readonly string[];
 }>;
 
-/** A route notice (v2): what became of the slip (`used`, `fallback`, `unasked`) and why. */
 export type RouteNotice = Readonly<{
 	slip: string;
 	why: string;
 	refusedBy: string;
 }>;
 
-/** What took a run off the fleet, for the paid-minutes split. */
 export type Refusal = "slip" | "queue" | "none" | "fallback" | "unrouted";
 
 export type RefusalMinutes = {
@@ -268,9 +232,7 @@ export type HealthReport = Readonly<{
 	windowEnd: string;
 	generatedAt: string;
 	dryRun: boolean;
-	/** `failed`: the window could not be read; it is read again next time. */
 	outcome: "clear" | "breach" | "failed";
-	/** Why the run failed; empty otherwise. */
 	failure: string;
 	truncated: boolean;
 	runs: number;
@@ -288,8 +250,6 @@ export type PreviousReport = Readonly<{
 	windowEnd: string;
 }>;
 
-// --- Pure: from parsed pages to a report ---
-
 function ms(iso: string): number | undefined {
 	const value = Date.parse(iso);
 	return Number.isFinite(value) ? value : undefined;
@@ -303,7 +263,6 @@ function plural(count: number, word: string): string {
 	return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-/** A `hobo-ci-route` notice's record, or nothing when it is not one. */
 export function parseRouteNotice(message: string): RouteNotice | undefined {
 	const record = asObject(parseJson(message));
 	const slip = asText(record?.slip);
@@ -315,7 +274,6 @@ export function parseRouteNotice(message: string): RouteNotice | undefined {
 	};
 }
 
-/** The jobs whose check runs carry the route step's annotations. */
 export function routeCheckRuns(
 	jobs: readonly WorkflowJob[],
 ): readonly WorkflowJob[] {
@@ -336,13 +294,11 @@ export type RouteEvidence = Readonly<{
 export function routeEvidence(pages: RunPages): RouteEvidence {
 	const notices: RouteNotice[] = [];
 	const fallbacks: string[] = [];
-	// The route job first, then the plan job's second ask.
 	const checks = [...routeCheckRuns(pages.jobs)].sort(
 		(a, b) => Number(b.name === ROUTE_JOB) - Number(a.name === ROUTE_JOB),
 	);
 	for (const job of checks)
 		for (const annotation of pages.annotations.get(job.id) ?? []) {
-			// A slip fallback is not the route failing: its notice says why.
 			if (
 				annotation.title === FALLBACK_TITLE &&
 				!annotation.message.startsWith(SLIP_FALLBACK_PREFIX)
@@ -369,7 +325,6 @@ export function signalH1(evidence: readonly RouteEvidence[]): SignalResult {
 	};
 }
 
-/** More than 5% of at least 20 slips read, or every one of at least 5, could not be used. */
 export function h2Breaches(unusable: number, read: number): boolean {
 	return (
 		(read >= 20 && unusable / read > 0.05) || (read >= 5 && unusable === read)
@@ -394,7 +349,6 @@ export function signalH2(evidence: readonly RouteEvidence[]): SignalResult {
 	};
 }
 
-/** Runs the queue routed because the relay has no current slip: none written, or expired. */
 export function signalH3(evidence: readonly RouteEvidence[]): SignalResult {
 	const hits = evidence.filter((entry) =>
 		entry.notices.some(
@@ -415,7 +369,6 @@ export function signalH3(evidence: readonly RouteEvidence[]): SignalResult {
 	};
 }
 
-/** How long a job waited for a runner, or has been waiting; nothing for a job that never asked. */
 export function waitedMs(job: WorkflowJob, nowMs: number): number | undefined {
 	if (job.conclusion === "skipped") return undefined;
 	const created = ms(job.createdAt);
@@ -456,7 +409,6 @@ export function signalH6(
 	};
 }
 
-/** What took a run off the fleet: a fallback, else the last route notice, else nothing routed it. */
 export function runRefusal(entry: RouteEvidence): Refusal {
 	if (entry.fallbacks.length > 0) return "fallback";
 	const last = entry.notices.at(-1);
@@ -466,7 +418,6 @@ export function runRefusal(entry: RouteEvidence): Refusal {
 	return "none";
 }
 
-/** Billed minutes of one GitHub-hosted job: rounded up per job, as GitHub bills. */
 export function paidMinutes(job: WorkflowJob): number {
 	if (!job.labels.includes(HOSTED_LABEL)) return 0;
 	if (PAID_EXCLUDED_JOBS.has(job.name) || !job.runnerName) return 0;
@@ -573,7 +524,6 @@ export function evaluate(input: EvaluateInput): HealthReport {
 	};
 }
 
-/** The report as Markdown, for the step summary and the console. */
 export function renderReport(report: HealthReport): string {
 	const lines = [
 		`## CI health: ${report.outcome}${report.dryRun ? " (dry run)" : ""}`,
@@ -601,7 +551,6 @@ export function renderReport(report: HealthReport): string {
 	return `${lines.join("\n")}\n`;
 }
 
-/** Open issues are matched on everything up to the colon. */
 export function issuePrefix(signal: Signal): string {
 	return `[ci-health] ${signal}:`;
 }
@@ -646,9 +595,6 @@ export function parseRelayOrigin(text: string): string | undefined {
 	return url.origin;
 }
 
-// --- The previous report, from the newest uploaded artifact ---
-
-/** The first `.json` file in a zip archive, found through its central directory. */
 export function readJsonFromZip(zip: Buffer): JsonValue | undefined {
 	const eocd = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
 	if (eocd < 0) return undefined;
@@ -684,19 +630,15 @@ export function parsePreviousReport(
 	return { windowEnd: new Date(end).toISOString() };
 }
 
-// --- Fetching, within the budget ---
-
 export class RateLimited extends Error {}
 export class BudgetSpent extends Error {}
 
 export type GithubRequest = Readonly<{ method: "GET" | "POST"; body: string }>;
 
 export type Http = Readonly<{
-	/** GitHub's REST API: a path below the API root; JSON out. */
 	github(path: string, request?: GithubRequest): Promise<JsonValue | undefined>;
 	raw(url: string, headers: HeadersInit): Promise<Response>;
 	requests(): number;
-	/** The GitHub token, for the archive download; empty when there is none. */
 	token: string;
 }>;
 
@@ -751,7 +693,6 @@ export function createHttp(options: HttpOptions): Http {
 	};
 }
 
-/** The newest uploaded report, or nothing when there is none or it cannot be read. */
 export async function readPreviousReport(
 	http: Http,
 	repository: string,
@@ -789,7 +730,6 @@ export async function readPreviousReport(
 	}
 }
 
-/** Reads the window's runs, their jobs, and the route annotations. */
 export async function readWindow(
 	http: Http,
 	repository: string,
@@ -899,7 +839,6 @@ export async function readRelayFreshness(
 
 export type IssueOptions = Readonly<{ assignee: string; runUrl: string }>;
 
-/** Opens an issue per breached signal, or comments on the open one with its prefix. Never closes. */
 export async function raiseIssues(
 	http: Http,
 	repository: string,
@@ -917,7 +856,6 @@ export async function raiseIssues(
 	).flatMap((entry) => {
 		const issue = asObject(entry);
 		const number = asNumber(issue?.number);
-		// The issues list also returns pull requests; they are not ours.
 		if (number === undefined || issue?.pull_request !== undefined) return [];
 		return [{ number, title: asText(issue?.title) ?? "" }];
 	});
@@ -951,8 +889,6 @@ export async function raiseIssues(
 				),
 			});
 		} catch (error) {
-			// An assignee GitHub will not take (an organization, no access) is
-			// not a reason to stay silent.
 			if (
 				!options.assignee ||
 				!(error instanceof Error ? error.message : String(error)).includes(
@@ -971,8 +907,6 @@ export async function raiseIssues(
 	}
 	return done;
 }
-
-// --- Entry ---
 
 function positive(value: string | undefined, fallback: number): number {
 	const parsed = Number(value);
@@ -1019,12 +953,6 @@ const defaultIo = (): MainIo => ({
 	relayInputs: readText(RELAY_INPUTS_FILE),
 });
 
-/**
- * Exit codes: 0 clear (or a dry run that read its window), 1 a breach, 2 the
- * window could not be read (rate limit, budget, API failure) or the issues
- * could not be written. A run that could not read its window opens no issue
- * and does not move the window.
- */
 export async function main(
 	argv: readonly string[] = process.argv.slice(2),
 	env: NodeJS.ProcessEnv = process.env,
@@ -1072,7 +1000,6 @@ export async function main(
 			dryRun,
 		});
 	} catch (error) {
-		// The window does not move: the next run reads it again.
 		report = {
 			v: 1,
 			repository,
