@@ -36,8 +36,7 @@ function parseControllerArgs(raw: string): string[] {
 	try {
 		const parsed = ControllerArgs.safeParse(JSON.parse(raw));
 		if (parsed.success) return parsed.data;
-	} catch {
-	}
+	} catch {}
 	return fail(
 		"HOBO_CI_CONTROLLER_ARGS must be a JSON array of up to 16 strings",
 	);

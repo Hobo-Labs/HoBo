@@ -490,8 +490,7 @@ export function createRolloutOrchestrator(
 			const predecessor =
 				current.predecessorSetId === ""
 					? undefined
-					:
-						await d.desired.get(current.predecessorSetId as SetId);
+					: await d.desired.get(current.predecessorSetId as SetId);
 			if (!predecessor)
 				return [
 					await append(

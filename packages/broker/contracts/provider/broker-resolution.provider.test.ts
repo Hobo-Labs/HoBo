@@ -104,10 +104,9 @@ describe("HoBo Broker resolve surface — provider verification of the pact", ()
 					expectedRejection.reasons[0].code,
 				);
 			}
-			const expectedTypes =
-				(interaction.response.body.events as Array<{ type: string }>).map(
-					(event) => event.type,
-				);
+			const expectedTypes = (
+				interaction.response.body.events as Array<{ type: string }>
+			).map((event) => event.type);
 			const actualTypes = (response.body.events as Array<{ type: string }>).map(
 				(event) => event.type,
 			);

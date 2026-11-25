@@ -235,8 +235,7 @@ function resolvePluginPackage(specifier: string) {
 						packageJsonPath = candidate;
 						break;
 					}
-				} catch {
-				}
+				} catch {}
 				const parent = path.dirname(dir);
 				if (parent === dir) {
 					throw new PluginLoadError(

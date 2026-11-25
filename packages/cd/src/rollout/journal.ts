@@ -63,8 +63,7 @@ const CURRENT: ReadonlySet<string> = new Set(Object.values(LEDGER_TYPES));
 const LEGACY_PREFIXES = ["cd.rollout.", "cdrollout."] as const;
 
 export function ledgerType(type: string): RolloutLedgerType | undefined {
-	if (CURRENT.has(type))
-		return type as RolloutLedgerType;
+	if (CURRENT.has(type)) return type as RolloutLedgerType;
 	for (const prefix of LEGACY_PREFIXES) {
 		if (!type.startsWith(prefix)) continue;
 		const fact = type.slice(prefix.length);

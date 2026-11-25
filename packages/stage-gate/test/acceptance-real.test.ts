@@ -95,6 +95,5 @@ describe.skipIf(!SELECTED)("the release gate against a real ai-bdd", () => {
 });
 
 describe.skipIf(SELECTED)("the release gate against a real ai-bdd", () => {
-	it.skip("is selected by HOBO_AI_BDD_CMD (see the header of this file)", () => {
-	});
+	it.skip("is selected by HOBO_AI_BDD_CMD (see the header of this file)", () => {});
 });

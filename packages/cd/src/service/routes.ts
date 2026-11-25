@@ -198,8 +198,7 @@ const DIGEST = /^sha256:[0-9a-f]{1,64}$/;
 
 export function parseDigest(raw: string, subject: string): Outcome<Digest> {
 	return DIGEST.test(raw)
-		?
-			{ ok: true, value: raw as Digest }
+		? { ok: true, value: raw as Digest }
 		: serviceRefusal(
 				"query-invalid",
 				`${subject} must be a sha256:<hex> digest`,

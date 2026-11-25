@@ -7,8 +7,7 @@ import {
 import type { FanoutId } from "../../src/ports.js";
 import { campsOfDecision, placedCampsFrom } from "../../src/promotion/index.js";
 
-const asFanoutId = (id: string): FanoutId =>
-	id as FanoutId;
+const asFanoutId = (id: string): FanoutId => id as FanoutId;
 
 const decision = (id: string, node = "prod") =>
 	create(PlacementDecisionRecordSchema, {

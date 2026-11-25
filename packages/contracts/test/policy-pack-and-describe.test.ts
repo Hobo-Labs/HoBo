@@ -91,9 +91,7 @@ describe("evaluatePolicyPack", () => {
 
 	it("drops packId and packVersion on the way into the Policy IR", () => {
 		const result = evaluatePolicyPack({ request: REQUEST });
-		expect(
-			(result.decision.evidence as JsonObject).packId,
-		).toBeUndefined();
+		expect((result.decision.evidence as JsonObject).packId).toBeUndefined();
 		expect(
 			(result.decision.evidence as JsonObject).packVersion,
 		).toBeUndefined();

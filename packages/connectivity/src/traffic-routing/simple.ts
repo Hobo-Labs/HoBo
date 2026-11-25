@@ -61,8 +61,7 @@ export function createSimpleTrafficRouting(options?: {
 						outcome: realized === "full" ? "apply" : "degraded",
 					}),
 				);
-			} catch {
-			}
+			} catch {}
 			return result;
 		},
 		async status(planId) {

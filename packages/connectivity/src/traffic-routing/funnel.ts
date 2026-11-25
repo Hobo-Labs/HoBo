@@ -323,6 +323,5 @@ async function meter(
 				outcome,
 			}),
 		);
-	} catch {
-	}
+	} catch {}
 }

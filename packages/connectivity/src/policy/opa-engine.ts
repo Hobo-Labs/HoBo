@@ -69,8 +69,7 @@ export function createOpaPolicyEngine(
 						};
 						decision = fromOpaResult(request, cloneAsJson(body.result));
 					}
-				} catch {
-				}
+				} catch {}
 			}
 
 			if (decision === null && options.regoModulePath) {

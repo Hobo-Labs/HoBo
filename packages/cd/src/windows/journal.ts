@@ -120,8 +120,7 @@ export async function appendOnce(
 			);
 			const event = result.appended[0] ?? result.deduped[0];
 			if (event) return event;
-		} catch {
-		}
+		} catch {}
 	}
 	return undefined;
 }

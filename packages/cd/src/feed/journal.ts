@@ -178,8 +178,7 @@ export function createFeedJournal(
 				holderId: leaseHolder(lease.reconcilerId, lease.holderId),
 				fenceToken: lease.fence,
 			});
-		} catch {
-		}
+		} catch {}
 	}
 
 	async function statusSeq(stream: string): Promise<number> {

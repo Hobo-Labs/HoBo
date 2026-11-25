@@ -354,8 +354,7 @@ export function createDurableLifecycleGate(
 				await options.store.snapshot(streamId, value, current.seq + 1, {
 					fenceToken: lease.fenceToken,
 				});
-			} catch {
-			}
+			} catch {}
 		}
 	}
 	async function authorize(

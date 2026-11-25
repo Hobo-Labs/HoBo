@@ -47,8 +47,7 @@ export async function runExampleFixture(
 		if (id !== undefined) {
 			fixtureId = id;
 		}
-	} catch {
-	}
+	} catch {}
 
 	if (opts.phase === "deploy-and-assert") {
 		const contract = createHoboCiFabricContract({

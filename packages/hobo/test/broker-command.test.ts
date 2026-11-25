@@ -174,12 +174,11 @@ describe("hobo broker — the Conductor on the CLI", () => {
 			emitProgress: () => {},
 		} as never);
 		expect(result.ok).toBe(true);
-		const receipt =
-			(
-				result.data as {
-					receipt: { placements: Array<{ resourceId: string }> };
-				}
-			).receipt;
+		const receipt = (
+			result.data as {
+				receipt: { placements: Array<{ resourceId: string }> };
+			}
+		).receipt;
 		expect(receipt.placements.map((p) => p.resourceId).sort()).toEqual([
 			"api",
 			"media",

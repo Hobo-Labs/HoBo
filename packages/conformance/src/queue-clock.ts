@@ -132,8 +132,7 @@ async function provesAtLeastOnceRetry(
 			attempts += 1;
 			throw new Error("transient");
 		});
-	} catch {
-	}
+	} catch {}
 	await runtime.queue.handle(queue, async () => {
 		attempts += 1;
 	});

@@ -120,8 +120,7 @@ function normalizeResourceDescriptor(
 	const descriptor =
 		layout.toDescriptor instanceof Function
 			? layout.toDescriptor()
-			:
-				asResourceDescriptor(resource);
+			: asResourceDescriptor(resource);
 	if (!isPlainObject(descriptor)) {
 		throw new TypeError("Bindle resources must be descriptor objects");
 	}

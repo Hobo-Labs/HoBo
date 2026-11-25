@@ -242,10 +242,7 @@ export function createBoundaryRouter(): BoundaryRouter {
 				if (options.contract) {
 					await verifyContract(name, handler, options.contract);
 				}
-				state.bridges.set(
-					options.session ?? "",
-					handler as never,
-				);
+				state.bridges.set(options.session ?? "", handler as never);
 			},
 			unbridge(session) {
 				if (session === undefined) state.bridges.clear();

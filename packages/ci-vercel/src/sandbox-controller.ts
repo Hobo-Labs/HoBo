@@ -211,8 +211,7 @@ export function createSandboxController(options: {
 			failure.status = status;
 		try {
 			options.reportFailure?.(failure);
-		} catch {
-		}
+		} catch {}
 	}
 	async function recoverRunner(lease: Lease): Promise<number | undefined> {
 		let runnerId: number | undefined;
@@ -282,8 +281,7 @@ export function createSandboxController(options: {
 				{ bytes: report.bytes, calls: report.calls },
 				now(),
 			);
-		} catch {
-		}
+		} catch {}
 	}
 	async function stopProxy(
 		id: string,

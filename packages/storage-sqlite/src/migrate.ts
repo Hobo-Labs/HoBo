@@ -317,8 +317,7 @@ function migrateLegacyV1ToV2(db: SqliteDriver, now: string): MigrationReport {
 	} catch (error) {
 		try {
 			db.rollback();
-		} catch {
-		}
+		} catch {}
 		if (
 			error instanceof MigrationFailureError ||
 			error instanceof StreamIntegrityError ||

@@ -101,8 +101,7 @@ export function serviceRefusal(
 export function statusOf(refusal: Refusal): number {
 	const code = refusal.reasons[0]?.code ?? "";
 	return Object.hasOwn(SERVICE_FAILURES, code)
-		?
-			SERVICE_FAILURES[code as ServiceFailureCode].status
+		? SERVICE_FAILURES[code as ServiceFailureCode].status
 		: 400;
 }
 

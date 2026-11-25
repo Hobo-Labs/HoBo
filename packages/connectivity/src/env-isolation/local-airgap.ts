@@ -135,8 +135,7 @@ export function assertLocalNamedEndpointBackend(input: {
 					reason: `local mode backend host ${u.hostname} is not loopback`,
 				};
 			}
-		} catch {
-		}
+		} catch {}
 	}
 	return { ok: true };
 }

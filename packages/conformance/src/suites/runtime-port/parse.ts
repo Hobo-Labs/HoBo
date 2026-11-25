@@ -44,14 +44,9 @@ export function parseRuntimePortReport(
 		backend: String(source.backend ?? ""),
 		status,
 		checks: Object.freeze(
-			Array.isArray(source.checks)
-				?
-					(source.checks as never)
-				: [],
+			Array.isArray(source.checks) ? (source.checks as never) : [],
 		),
-		failures: Object.freeze(
-			failures as never,
-		),
+		failures: Object.freeze(failures as never),
 		coverage: Object.freeze({
 			local: Object.freeze({
 				status: local.status === "pass" ? "pass" : "fail",

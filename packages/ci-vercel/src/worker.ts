@@ -46,8 +46,7 @@ export function reportWorkerFailure(
 	}
 	try {
 		console.error(JSON.stringify(event));
-	} catch {
-	}
+	} catch {}
 }
 
 export async function withRepairStage<T>(

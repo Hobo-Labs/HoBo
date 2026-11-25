@@ -117,8 +117,7 @@ export function createRelayService(options: RelayServiceOptions) {
 	function log(entry: RelayServiceLog): void {
 		try {
 			options.logger?.(Object.freeze(entry));
-		} catch {
-		}
+		} catch {}
 	}
 	async function unavailable(response: ServerResponse): Promise<void> {
 		response.setHeader("Content-Type", "application/json");

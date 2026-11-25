@@ -70,8 +70,7 @@ function loadProfileDefaultStation(
 			session?: { principal?: { kind?: string; id?: string }; tenant?: string };
 		};
 		if (raw.defaultStation?.id) return { id: raw.defaultStation.id };
-	} catch {
-	}
+	} catch {}
 	return undefined;
 }
 
@@ -95,8 +94,7 @@ function loadProfileActor(hoboHome: string): ManagementActor {
 					tenant: raw.session.tenant ?? "local",
 				};
 			}
-		} catch {
-		}
+		} catch {}
 	}
 	return { kind: "user", id: "user:local", tenant: "local" };
 }

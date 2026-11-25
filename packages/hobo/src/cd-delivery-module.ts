@@ -91,8 +91,7 @@ export function parseDeliveryModule(
 ): DeliveryModuleOutcome {
 	const root =
 		typeof exports.default === "object" && exports.default !== null
-			?
-				(exports.default as Record<string, unknown>)
+			? (exports.default as Record<string, unknown>)
 			: exports;
 	const known = new Set<string>([
 		...Object.keys(DELIVERY_MODULE_EXPORTS),

@@ -275,8 +275,7 @@ export function createInProcessTransport(
 					holderId: leaseHolder(lease.reconcilerId, lease.holderId),
 					fenceToken: lease.fence,
 				});
-			} catch {
-			}
+			} catch {}
 		},
 		feed,
 		async resolved(lease, set: SetRecord) {

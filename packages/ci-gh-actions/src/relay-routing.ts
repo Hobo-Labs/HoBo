@@ -213,8 +213,7 @@ export function inferJobAdmission(
 		try {
 			const host = new URL(environment.relayOrigin).hostname;
 			if (host === "127.0.0.1" || host === "localhost") return "pull";
-		} catch {
-		}
+		} catch {}
 	}
 	return "push";
 }

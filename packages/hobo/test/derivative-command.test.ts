@@ -234,12 +234,11 @@ describe("createDerivativeCommand", () => {
 				expect(result.ok).toBe(false);
 				expect(result.status).toBe("upgrade_failed");
 				expect(result.code).toBe("HOBO_DERIVATIVE_UPGRADE_FAILED");
-				const conformance =
-					(
-						result.data as {
-							conformance: { ok: boolean; errors: string[] };
-						}
-					).conformance;
+				const conformance = (
+					result.data as {
+						conformance: { ok: boolean; errors: string[] };
+					}
+				).conformance;
 				expect(conformance.ok).toBe(false);
 				expect(conformance.errors.length).toBeGreaterThan(0);
 				expect(conformance.errors[0]).toMatch(/cannot rename missing field/);

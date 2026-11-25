@@ -82,7 +82,6 @@ describe("a Bindle that selects a provider", () => {
 });
 
 describe("describing a context that does not exist yet", () => {
-
 	async function rejectionWithNoYard(campId?: string) {
 		const options = {
 			definition: providerPinned(),

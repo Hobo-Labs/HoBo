@@ -76,8 +76,7 @@ function inMemoryIac(): IacProvider {
 		async apply(program: IacProgram) {
 			return { endpoint: `${program.resourceId}.local` };
 		},
-		async destroy() {
-		},
+		async destroy() {},
 		async refresh() {
 			return { drift: false, observed: {} };
 		},

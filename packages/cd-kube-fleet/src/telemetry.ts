@@ -47,8 +47,7 @@ export function createMeter(
 			const batch = points.splice(0, points.length);
 			try {
 				await sink.metrics(batch);
-			} catch {
-			}
+			} catch {}
 		},
 	});
 }

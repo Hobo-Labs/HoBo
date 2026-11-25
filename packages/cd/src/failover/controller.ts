@@ -805,8 +805,7 @@ export function createFailoverController(
 		const promotion =
 			f.promotionId === ""
 				? undefined
-				:
-					await d.promotions.get(f.promotionId as PromotionId);
+				: await d.promotions.get(f.promotionId as PromotionId);
 		if (
 			f.state === FailoverState.REPLACING ||
 			f.state === FailoverState.VERIFYING

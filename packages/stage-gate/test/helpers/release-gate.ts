@@ -172,8 +172,7 @@ export function killQuietly(pid: number): void {
 	if (!Number.isInteger(pid) || pid <= 0) return;
 	try {
 		process.kill(pid, "SIGKILL");
-	} catch {
-	}
+	} catch {}
 }
 
 export function sha256Of(path: string): string {

@@ -558,8 +558,7 @@ export function createHostedRelayRuntime(options: {
 					);
 					return "foreign-runner" as const;
 				}
-			} catch {
-			}
+			} catch {}
 			try {
 				const recheck = await (await relay()).processWebhook(
 					Buffer.from(input.rawBody),

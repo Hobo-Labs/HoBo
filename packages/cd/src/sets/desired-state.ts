@@ -156,8 +156,7 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			await d.telemetry.metrics([
 				{ name, kind, value, unit, atMs: d.now(), attributes },
 			]);
-		} catch {
-		}
+		} catch {}
 	}
 
 	async function readStream(streamId: string): Promise<EventEnvelope[]> {
@@ -209,9 +208,7 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 	async function resolved(set: SetRecord): Promise<CanonicalResolvedSet> {
 		const attributes = { "hobo.cd.camp": set.campId };
 		try {
-			const bytes = await d.artifacts.get(
-				set.resolvedSetDigest as Digest,
-			);
+			const bytes = await d.artifacts.get(set.resolvedSetDigest as Digest);
 			if (bytes === undefined) {
 				throw new DesiredStateError(
 					"resolved-set-missing",

@@ -69,8 +69,7 @@ export function createArtifactJournal(
 					{ expectedSeq: current.seq, actor: principal, tenant: d.tenant },
 				);
 				return result.appended.length > 0;
-			} catch {
-			}
+			} catch {}
 		}
 		throw new ArtifactStoreError(
 			ARTIFACT_REASON.journalConflict,

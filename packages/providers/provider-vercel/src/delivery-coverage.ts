@@ -269,8 +269,7 @@ export function instrumentResolvers(
 					attributes,
 				},
 			]);
-		} catch {
-		}
+		} catch {}
 	}
 	async function measured<T>(
 		resolver: ResourceResolver,

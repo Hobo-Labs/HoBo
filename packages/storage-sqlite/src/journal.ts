@@ -132,8 +132,7 @@ export class SqliteJournal {
 		} else {
 			try {
 				this.db.exec("PRAGMA foreign_keys = ON");
-			} catch {
-			}
+			} catch {}
 		}
 
 		migrateToCurrent(this.db, { now: options.now ?? this.clock.now() });
@@ -412,8 +411,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -686,8 +684,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -793,8 +790,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -949,8 +945,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -1062,8 +1057,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -1187,8 +1181,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-			}
+			} catch {}
 			throw error;
 		}
 	}

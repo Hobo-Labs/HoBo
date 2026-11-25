@@ -240,8 +240,7 @@ export function createNetbirdOverlay(options?: {
 						},
 					}),
 				);
-			} catch {
-			}
+			} catch {}
 			return {
 				enabled: false,
 				confirmed: false,

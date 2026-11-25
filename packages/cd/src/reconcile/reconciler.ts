@@ -137,8 +137,7 @@ export function createCampReconciler(d: CampReconcilerDeps): CampReconciler {
 	async function metric(points: readonly OtelMetricPoint[]): Promise<void> {
 		try {
 			await d.telemetry.metrics(points);
-		} catch {
-		}
+		} catch {}
 	}
 
 	function point(

@@ -42,9 +42,7 @@ describe("trainable gold/silver stress", () => {
 		const fn = (input: FuzzValue) => {
 			const text =
 				input && Object(input) === input && "text" in input
-					? String(
-							(input as { text?: unknown }).text ?? "",
-						)
+					? String((input as { text?: unknown }).text ?? "")
 					: "";
 			return { label: text.includes("invoice") ? "billing" : "other" };
 		};

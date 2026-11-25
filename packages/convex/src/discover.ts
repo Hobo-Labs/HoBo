@@ -98,8 +98,7 @@ export async function discoverConvexEnv(
 			if (!text.includes("WORKOS")) {
 				generalEnv = generalEnv.filter((key) => !key.includes("WORKOS"));
 			}
-		} catch {
-		}
+		} catch {}
 	}
 
 	return Object.freeze({

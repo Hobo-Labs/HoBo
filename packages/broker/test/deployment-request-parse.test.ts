@@ -333,9 +333,7 @@ describe("buildDeploymentRequestFromParts", () => {
 	});
 
 	it("defaults the owner tenant to local", () => {
-		expect(
-			(build() as { ownerTenantId?: string }).ownerTenantId,
-		).toBe("local");
+		expect((build() as { ownerTenantId?: string }).ownerTenantId).toBe("local");
 	});
 
 	it("honours a stated owner tenant", () => {

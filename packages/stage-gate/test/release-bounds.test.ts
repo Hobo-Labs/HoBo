@@ -130,8 +130,7 @@ describe("the release gate bounds ai-bdd", () => {
 				killQuietly(browser);
 				try {
 					if (fake.pid !== undefined) process.kill(-fake.pid, "SIGKILL");
-				} catch {
-				}
+				} catch {}
 			}
 		},
 		TIMEOUT,

@@ -55,8 +55,7 @@ export function stationInit(
 		};
 		mkdirSync(ctx.hoboHome, { recursive: true });
 		writeFileSync(profilePath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-	} catch {
-	}
+	} catch {}
 	ctx.setOccupyMode(result.stationId, "idle");
 	return okResult(
 		result.created

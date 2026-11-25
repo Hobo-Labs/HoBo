@@ -52,10 +52,7 @@ export function trainable(first: any, second?: any): any {
 			const name = String(context.name);
 			return createTrainableDecorator(
 				granularOptionsFor(name, context.metadata, name),
-			)(
-				first as never,
-				second as never,
-			);
+			)(first as never, second as never);
 		}
 		finalizeTrainableClass(
 			first as new () => object,

@@ -93,8 +93,7 @@ const SCHEMA_PHASES = ["expand", "backfill", "contract"] as const;
 
 function isSchemaPhase(value: JsonValue | undefined): value is SchemaPhase {
 	return (
-		isJsonString(value) &&
-		(SCHEMA_PHASES as readonly string[]).includes(value)
+		isJsonString(value) && (SCHEMA_PHASES as readonly string[]).includes(value)
 	);
 }
 

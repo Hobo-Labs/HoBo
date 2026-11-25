@@ -281,10 +281,7 @@ export function requireMember<TValue, T extends string>(
 	field: string,
 	allowed: readonly T[],
 ): T {
-	if (
-		!isJsonString(value) ||
-		!(allowed as readonly string[]).includes(value)
-	) {
+	if (!isJsonString(value) || !(allowed as readonly string[]).includes(value)) {
 		throw new AnonymousConformanceError(
 			caseId,
 			`${field} must be one of ${allowed.join(", ")}`,

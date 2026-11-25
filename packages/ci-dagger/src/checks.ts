@@ -161,8 +161,7 @@ export async function runDaggerChecks(
 					try {
 						process.kill(-child.pid, stopSignal);
 						return;
-					} catch {
-					}
+					} catch {}
 				}
 				child.kill(stopSignal);
 			};

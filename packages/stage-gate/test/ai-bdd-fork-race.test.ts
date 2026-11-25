@@ -29,8 +29,7 @@ function survivors(token: string): number[] {
 			if (readFileSync(`/proc/${entry}/cmdline`, "utf8").includes(token)) {
 				found.push(Number(entry));
 			}
-		} catch {
-		}
+		} catch {}
 	}
 	return found;
 }

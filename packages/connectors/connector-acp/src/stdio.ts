@@ -73,8 +73,7 @@ export async function connectAcpAgentOverStdio(
 	if (!child.stdin || !child.stdout) {
 		throw new AcpAgentSpawnError(options.command, "no stdio pipes");
 	}
-	child.on("error", () => {
-	});
+	child.on("error", () => {});
 
 	const rawPair = {
 		input: Writable.toWeb(child.stdin),
