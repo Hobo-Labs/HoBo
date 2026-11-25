@@ -1,8 +1,5 @@
 name: PR supersession
 
-# Closes open pull requests whose head commit another open pull request's head,
-# or main, already contains, with a comment naming the one that carries it.
-# Branches are kept. GitHub-hosted: it reads git history only, loads no package.
 on:
   push:
     branches: [main]
@@ -43,5 +40,5 @@ jobs:
       - name: Close superseded pull requests
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PR_SUPERSESSION_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
+          PR_SUPERSESSION_DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || inputs.dry-run }}
         run: node scripts/ci/pr-supersession.mts
