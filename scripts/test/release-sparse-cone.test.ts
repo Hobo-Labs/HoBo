@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { releaseOciInputSparseCones } from "../ci/release-oci-affected.mts";
@@ -7,6 +7,7 @@ import {
 	coneCoversPath,
 	filePathsRequiredByReleaseOciContractTests,
 	formatSparseCheckoutBlock,
+	hoboReleasePagesMaterializePaths,
 	hoboReleasePagesSparseCones,
 	hoboReleaseSparseCones,
 	requiredPathsForHoboReleaseContract,
@@ -487,6 +488,52 @@ describe("release workflow sparse-checkout sync", () => {
 			cones,
 			requiredPathsForHoboReleasePages(),
 		);
+	});
+
+	it("release-pages materializes wit after examples cone (run 45531803775)", () => {
+		const split = splitSparseCheckoutPaths(hoboReleasePagesSparseCones());
+		expect(split.directoryCones).toContain("examples");
+		const materialize = hoboReleasePagesMaterializePaths();
+		expect(materialize).toEqual(["examples/browser-runtime/wit"]);
+		expect(
+			coneCoversPath(split.directoryCones, "examples/browser-runtime/wit"),
+		).toBe(true);
+		const hoboWorkflow = readFileSync(
+			join(root, ".github/workflows/release-hobo.yml"),
+			"utf8",
+		);
+		const materializeEnv = parseWorkflowEnvMultiline(
+			hoboWorkflow,
+			"RELEASE_PAGES_MATERIALIZE_PATHS",
+		);
+		expect(materializeEnv).toEqual([...materialize]);
+		const releasePages = hoboWorkflow.slice(
+			hoboWorkflow.indexOf("\n  release-pages:"),
+		);
+		expect(releasePages).toMatch(
+			/materialize-paths: \$\{\{ env\.RELEASE_PAGES_MATERIALIZE_PATHS \}\}/,
+		);
+		expect(
+			existsSync(join(root, "examples/browser-runtime/wit/station.wit")),
+		).toBe(true);
+	});
+
+	it("hobo-checkout materialize step fails closed when wit tree stays absent", () => {
+		const action = readFileSync(
+			join(root, ".github/actions/hobo-checkout/action.yml"),
+			"utf8",
+		);
+		expect(action).toMatch(/Materialize required sparse paths/);
+		expect(action).toMatch(/materialize-paths:/);
+		const block = action.slice(
+			action.indexOf("Materialize required sparse paths"),
+		);
+		expect(block).toMatch(/sparse checkout did not materialize required path/);
+		expect(block).toMatch(/sparse checkout missing \$\{wit_file\}/);
+		expect(block).toMatch(
+			/git sparse-checkout add --skip-checks -- "\$target"/,
+		);
+		expect(block).toMatch(/git checkout HEAD -- "\$target"/);
 	});
 
 	it("hobo-checkout rejects nested file paths in cone initialization", () => {

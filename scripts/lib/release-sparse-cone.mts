@@ -115,6 +115,14 @@ export function hoboReleaseSparseCones(repoRoot: string): readonly string[] {
 	]);
 }
 
+export const HOBO_RELEASE_PAGES_MATERIALIZE_PATHS = [
+	"examples/browser-runtime/wit",
+] as const;
+
+export function hoboReleasePagesMaterializePaths(): readonly string[] {
+	return Object.freeze([...HOBO_RELEASE_PAGES_MATERIALIZE_PATHS]);
+}
+
 /** gh-pages release job (no root vitest). */
 export function hoboReleasePagesSparseCones(): readonly string[] {
 	return Object.freeze([
