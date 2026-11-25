@@ -7,6 +7,7 @@ import type {
 } from "@hobo/core";
 import { isJsonObject, type JsonValue } from "../json.js";
 
+// public-contract: stable exported contract literal
 export const CAMP_EVENTSTORE_RUNTIME_PORT_CONTRACT_VERSION =
 	"hobo.camp-eventstore-runtime-port/v1";
 

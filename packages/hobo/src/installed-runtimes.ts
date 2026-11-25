@@ -10,6 +10,7 @@ import {
 	runtimeInstallIdToHost,
 } from "./runtime-catalog.js";
 
+// public-contract: stable exported contract literal
 export const INSTALLED_RUNTIMES_SCHEMA = "hobo.installed-runtimes/v1" as const;
 
 export interface InstalledRuntimesState {

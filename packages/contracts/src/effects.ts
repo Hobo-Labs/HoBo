@@ -7,6 +7,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+// public-contract: stable exported contract literal
 export const EFFECT_SPEC_SCHEMA_VERSION = "hobo.effect-spec/v1";
 // public-contract: schema version for captured EffectManifest exports (ADR-0136).
 export const EFFECT_MANIFEST_SCHEMA_VERSION = "hobo.effect-manifest/v1";

@@ -1,5 +1,6 @@
 import type { JsonObject } from "./json.js";
 
+// public-contract: stable exported contract literal
 export const CLOUDFLARE_PROVIDER_TARGET = "cloudflare";
 
 export type TypedOptionBlock = {

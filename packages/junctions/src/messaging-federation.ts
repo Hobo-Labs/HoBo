@@ -1,5 +1,6 @@
 import type { JunctionDefinition } from "./types.js";
 
+// public-contract: Cross-Yard topic / actor-signal federation plan via Junctions (ADR-0138)
 export const JUNCTION_MESSAGING_FEDERATED_EVENT =
 	"messaging.federated" as const;
 

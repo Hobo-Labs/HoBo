@@ -7,8 +7,11 @@ import {
 
 export type PayloadCodec = "json-v1" | "protobuf-v1";
 
+// public-contract: default journal payload codec id.
 export const DEFAULT_PAYLOAD_CODEC: PayloadCodec = "json-v1";
+// public-contract: default stream metadata codec id.
 export const DEFAULT_METADATA_CODEC: PayloadCodec = "json-v1";
+// public-contract: default actor state codec id.
 export const DEFAULT_STATE_CODEC: PayloadCodec = "json-v1";
 
 export class UnsupportedCodecError extends Error {

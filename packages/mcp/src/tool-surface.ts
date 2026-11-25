@@ -2,7 +2,9 @@ import { CANONICAL_VERBS } from "@hobo/cli";
 
 type CanonicalVerb = (typeof CANONICAL_VERBS)[number];
 
+// public-contract: S3-01 — the MCP tool surface is DERIVED from @hobo/cli's CANONICAL_VERBS, not hand-maintained. Every tool maps 1:1 to a canonical CLI verb and dispatches
 export const MCP_TOOL_PORT = "hobo:mcp";
+// public-contract: MCP tool dispatch verb for CLI parity.
 export const MCP_TOOL_CALL_VERB = "call";
 
 // domain-view: the required-capability triple; its wire form is

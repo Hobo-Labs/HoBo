@@ -6,8 +6,11 @@ import {
 } from "./contract-ir.js";
 import { isJsonString, type JsonValue } from "./json.js";
 
+// public-contract: can-deploy compatibility gate schema version.
 export const CAN_DEPLOY_SCHEMA_VERSION = "hobo.can-deploy/v1";
+// public-contract: compat gate passed fact name.
 export const COMPAT_GATE_PASSED = "compat.GatePassed";
+// public-contract: compat gate failed fact name.
 export const COMPAT_GATE_FAILED = "compat.GateFailed";
 
 export interface ResourcePlanRef {

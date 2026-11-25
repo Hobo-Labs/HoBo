@@ -8,6 +8,7 @@ import {
 
 import type { ManifestHash } from "../manifest/index.js";
 
+// public-contract: stable exported contract literal
 export const COLLECTION_EVENT_SOURCE = "hobo.collector" as const;
 
 export type CollectionEventType =

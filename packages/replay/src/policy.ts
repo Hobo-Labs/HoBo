@@ -2,6 +2,7 @@ import { defaultPrivacyPolicy, type PrivacyPolicy } from "./types.js";
 
 // public-contract: OpenFeature / env keys for progressive recording control.
 export const REPLAY_FLAG_KEY = "hobo.session-replay" as const;
+// public-contract: stable exported contract literal
 export const REPLAY_ENV_KILL = "HOBO_REPLAY" as const;
 
 export type RecordingDecision = Readonly<{

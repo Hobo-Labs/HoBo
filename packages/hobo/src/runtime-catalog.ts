@@ -10,7 +10,9 @@ export const RUNTIME_PROVIDER_IDS = {
 	"cloud-native": "@hobo/runtime-cloud-native",
 } as const;
 
+// public-contract: WASM sandbox provider package id for runtime installs.
 export const WASM_SANDBOX_PROVIDER_ID = "@hobo/provider-wasm-sandbox" as const;
+// public-contract: OCI runtime provider package id for runtime installs.
 export const OCI_PROVIDER_ID = "@hobo/provider-oci" as const;
 
 export const RUNTIME_INSTALL_IDS = [

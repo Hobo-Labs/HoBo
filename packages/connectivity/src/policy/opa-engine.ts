@@ -222,6 +222,7 @@ export function defaultRegoLikeEval(
 	);
 }
 
+// public-contract: stable exported contract literal
 export const SAMPLE_HOBO_AUTHZ_REGO = `package hobo.authz
 
 default allow := false

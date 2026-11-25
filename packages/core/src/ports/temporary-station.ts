@@ -1,4 +1,3 @@
-// public-contract: temporary Environment Station schema id consumers pin.
 import {
 	isJsonNumber,
 	isJsonObject,
@@ -7,6 +6,7 @@ import {
 	type JsonValue,
 } from "../json.js";
 
+// public-contract: temporary Environment Station schema id consumers pin.
 export const TEMPORARY_ENVIRONMENT_STATION_SCHEMA =
 	"hobo.temporary-environment-station/v1" as const;
 

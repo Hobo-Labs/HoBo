@@ -13,7 +13,8 @@ detect_framework() {
         return
     fi
 
-    local content=$(cat "$pkg_json")
+    local content
+    content=$(cat "$pkg_json")
 
     has_dep_exact() {
         echo "$content" | grep -q "\"$1\""

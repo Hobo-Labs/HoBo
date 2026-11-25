@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { JsonBag } from "./json.js";
 
+// public-contract: stable exported contract literal
 export const WASM_COMPONENT_MEDIA_TYPE =
 	"application/vnd.wasm.component.v1+wasm" as const;
 

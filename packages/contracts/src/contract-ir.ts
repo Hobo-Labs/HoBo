@@ -17,6 +17,7 @@ import {
 	validateResilienceAgainstEffects,
 } from "./resilience.js";
 
+// public-contract: stable exported contract literal
 export const CONTRACT_IR_SCHEMA_VERSION = "hobo.contract-ir/v1";
 
 export const CONTRACT_MODES = Object.freeze([

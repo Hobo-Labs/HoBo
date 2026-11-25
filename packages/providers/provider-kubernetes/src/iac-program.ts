@@ -7,6 +7,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+// public-contract: stable exported contract literal
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
 // public-contract: the IacProgram kind discriminator.
 export const IAC_PROGRAM_KIND = "iac-program";

@@ -2,6 +2,7 @@ import type { ProviderPort } from "@hobo/core";
 import { createPortDescriptor } from "@hobo/core";
 import type { JsonValue } from "./json.js";
 
+// public-contract: stable exported contract literal
 export const IAC_PULUMI_INTERFACE = "hobo:iac/provider";
 
 // domain-view: the IaC provider port shape adapters satisfy. Kept in this

@@ -8,6 +8,7 @@ import {
 } from "@hobo/policy";
 import type { JsonObject } from "./json.js";
 
+// public-contract: stable exported contract literal
 export const POLICY_PACK_ENGINE_ID = "hobo.contracts/policy-pack@0.1.0";
 
 export type PolicyEffect =

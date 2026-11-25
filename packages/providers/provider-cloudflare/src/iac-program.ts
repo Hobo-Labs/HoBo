@@ -7,9 +7,13 @@ import {
 	parseJsonValue,
 } from "./json.js";
 
+// public-contract: Cloudflare IaC program API version.
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
+// public-contract: Cloudflare IaC program resource kind.
 export const IAC_PROGRAM_KIND = "iac-program";
+// public-contract: default IaC engine provider id.
 export const IAC_PROVIDER = "pulumi";
+// public-contract: Cloudflare-specific IaC provider id.
 export const CLOUDFLARE_IAC_PROVIDER = "cloudflare";
 
 // domain-view: structural mirror of the iac-pulumi resource DTO; the generated
