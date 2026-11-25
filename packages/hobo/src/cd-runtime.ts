@@ -31,6 +31,7 @@ import {
 	type RealizeInput,
 	type Realizer,
 	type ReasonRecord,
+	type ReasonStructuredDetail,
 	ReasonRecordSchema,
 	type ReconcileObservationRecord,
 	ReconcileObservationRecordSchema,
@@ -60,7 +61,7 @@ import {
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
 import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
-import { createDriftPolicy } from "@hobo/cd/reconcile";
+import { createDriftPolicy, releaseFreightRefusalOf } from "@hobo/cd/reconcile";
 import { definitionDigest } from "@hobo/cd/sources";
 import {
 	RUNNER_FLEET_BINDLE,
@@ -915,17 +916,29 @@ export function withRunnerHostRealization(
 
 /** A thrown resolver refusal (or any failure) as a typed code and message. */
 function refusalOf(error: Error) {
+	const refused = releaseFreightRefusalOf(error);
 	return {
 		code:
 			error instanceof ResolverError || error instanceof CatalogRealizerError
 				? error.code
-				: "realize-failed",
+				: refused.code,
 		message: error.message,
+		...(refused.structured ? { structured: refused.structured } : {}),
 	};
 }
 
-function realizerReason(code: string, message: string, remediation: string) {
-	return create(ReasonRecordSchema, { code, message, remediation });
+function realizerReason(
+	code: string,
+	message: string,
+	remediation: string,
+	structured?: ReasonStructuredDetail,
+) {
+	return create(ReasonRecordSchema, {
+		code,
+		message,
+		remediation,
+		...(structured ? { structured } : {}),
+	});
 }
 
 /**
@@ -1107,7 +1120,11 @@ export function createCatalogResolverRealizer(
 
 	function blocked(
 		input: RealizeInput,
-		{ code, message }: Readonly<{ code: string; message: string }>,
+		refusal: Readonly<{
+			code: string;
+			message: string;
+			structured?: ReasonStructuredDetail;
+		}>,
 		resources: Parameters<typeof observation>[3] = [],
 	): ReconcileObservationRecord {
 		return observation(
@@ -1115,9 +1132,10 @@ export function createCatalogResolverRealizer(
 			ReconcileStatus.BLOCKED,
 			[
 				realizerReason(
-					code,
-					message,
+					refusal.code,
+					refusal.message,
 					"Fix the cause the resolver names; the next pass re-observes and is idempotent.",
+					refusal.structured,
 				),
 			],
 			resources,
