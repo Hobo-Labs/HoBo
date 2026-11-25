@@ -61,7 +61,11 @@ import {
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
 import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
-import { createDriftPolicy, releaseFreightRefusalOf } from "@hobo/cd/reconcile";
+import {
+	createDriftPolicy,
+	releaseFreightRefusalOf,
+	releaseFreightStructuredFromFields,
+} from "@hobo/cd/reconcile";
 import { definitionDigest } from "@hobo/cd/sources";
 import {
 	RUNNER_FLEET_BINDLE,
@@ -89,6 +93,7 @@ import {
 	ResolverError,
 } from "@hobo/core";
 import type { CdIssuerSigningKey } from "@hobo/hobo-cd";
+import { GithubPagesRefusal } from "@hobo/provider-github";
 import type { Yard } from "@hobo/yards";
 import { agentRealizer } from "./cd-agent.js";
 import {
@@ -1060,7 +1065,10 @@ export function withRunnerHostRealization(
 }
 
 /** A thrown resolver refusal (or any failure) as a typed code and message. */
-function refusalOf(error: Error) {
+function refusalOf(
+	error: Error,
+	ctx?: Readonly<{ campId: string; credentialRef: string }>,
+) {
 	const refused = releaseFreightRefusalOf(error);
 	const code =
 		error instanceof ResolverError || error instanceof CatalogRealizerError
@@ -1072,6 +1080,16 @@ function refusalOf(error: Error) {
 			message: error.message,
 			structured: refused.structured,
 		};
+	}
+	if (error instanceof GithubPagesRefusal && ctx) {
+		const structured = releaseFreightStructuredFromFields({
+			credentialRef: ctx.credentialRef,
+			requestedScope: `cd-realize:${ctx.campId}`,
+			detailKind: error.reason,
+		});
+		if (structured) {
+			return { code, message: error.message, structured };
+		}
 	}
 	return { code, message: error.message };
 }
@@ -1268,7 +1286,10 @@ export function createCatalogResolverRealizer(
 		} catch (error) {
 			return blocked(
 				input,
-				refusalOf(error instanceof Error ? error : new Error(String(error))),
+				refusalOf(error instanceof Error ? error : new Error(String(error)), {
+					campId: input.campId,
+					credentialRef: binding.credentialRef,
+				}),
 				resources,
 			);
 		}
