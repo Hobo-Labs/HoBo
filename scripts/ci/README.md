@@ -4,6 +4,16 @@ Scripts the GitHub workflows under `.github/workflows/` run. Each script's
 header comment is its reference; this page collects the ones whose contract
 spans several files.
 
+## Hosted Playwright (Fabric overflow)
+
+When a Fabric workspace test shard lands on `ubuntu-24.04`, `ci-runner-preflight`
+with `browser: true` always restores or installs the lockfile-pinned chromium
+headless shell. The zip is cached under `actions/cache/restore` and
+`actions/cache/save` keyed by the lockfile, ci-runner contract, and install
+scripts, then unpacked into `${RUNNER_TEMP}/hobo-pw-browsers` with
+`PLAYWRIGHT_BROWSERS_PATH` pointing at that directory (never `/opt/pw-browsers`).
+Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers`.
+
 ## Routing
 
 `route-runner.mts` is the route job of the six routed workflows. It runs on a
