@@ -12,7 +12,7 @@ Source issue: HOBO-488.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/launch-demo-golden-path-contract`](../../src/draft/exp-proofs/dx/launch-demo-golden-path-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-488-launch-demo-golden-path`](./proofs/hobo-488-launch-demo-golden-path/README.md).
+[`proofs/hobo-488-launch-demo-golden-path`](https://linear.app/quickdeploy-ai/document/hobo-488-launch-demo-golden-path-proof-archived-4471c114f762).
 
 ## M0 Acceptance Record
 

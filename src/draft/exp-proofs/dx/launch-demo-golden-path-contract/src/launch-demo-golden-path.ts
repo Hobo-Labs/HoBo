@@ -182,7 +182,7 @@ export const launchDemoGoldenPath = {
       kind: "screenshots",
       owner: "demo maintainer",
       proofMode: "live-product",
-      source: "docs/design/proofs/hobo-488-launch-demo-golden-path/README.md#required-assets",
+      source: "https://linear.app/quickdeploy-ai/document/hobo-488-launch-demo-golden-path-proof-archived-4471c114f762",
       refreshTrigger: "Any screen, command wording, output, or proof-mode label changes.",
     },
     {
