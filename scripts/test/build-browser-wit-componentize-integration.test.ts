@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,9 +10,13 @@ const worker = path.join(
 	import.meta.dirname,
 	"browser-wit-production-build-worker.mts",
 );
+const waspDist = path.join(repoRoot, "packages/wasp/dist/index.js");
+const catalogDepsReady = existsSync(waspDist);
 
 describe("browser WIT production build integration", () => {
-	it("buildBrowserWitRuntime on production env (release entry)", async () => {
+	const runIntegration = catalogDepsReady ? it : it.skip;
+
+	runIntegration("buildBrowserWitRuntime on production env (release entry)", async () => {
 		const xdg = await mkdtemp(path.join(tmpdir(), "browser-wit-xdg-"));
 		const result = spawnSync(process.execPath, ["--import", "tsx", worker], {
 			cwd: repoRoot,

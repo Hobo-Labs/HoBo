@@ -79,7 +79,8 @@ export function logBrowserWitComponentizeToolchain(
 	toolchain: BrowserWitComponentizeToolchain,
 	context: {
 		sourcePath: string;
-		witPath: string;
+		hostWitPath: string;
+		componentizeWitPath: string;
 		workRoot: string;
 	},
 ): void {
@@ -87,7 +88,7 @@ export function logBrowserWitComponentizeToolchain(
 		`browser-wit: toolchain jco@${toolchain.versions.jco} componentize-js@${toolchain.versions.componentizeJs} esbuild@${toolchain.versions.esbuild} (resolved ${toolchain.componentizePackageRoot})\n`,
 	);
 	process.stderr.write(
-		`browser-wit: componentize canonical paths workRoot=${context.workRoot} source=${context.sourcePath} wit=${context.witPath} (wizer --mapdir=/::dirname(source))\n`,
+		`browser-wit: componentize canonical paths workRoot=${context.workRoot} source=${context.sourcePath} hostWit=${context.hostWitPath} componentizeWit=${context.componentizeWitPath} (chdir workRoot; wizer --mapdir=/::workRoot)\n`,
 	);
 }
 

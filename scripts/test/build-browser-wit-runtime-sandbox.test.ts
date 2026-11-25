@@ -35,9 +35,11 @@ describe("browser WIT componentize sandbox", () => {
 			path.join(repoRoot, "site/scripts/build-browser-wit-runtime.mts"),
 			"utf8",
 		);
-		expect(source).toMatch(/witPath:\s*hostWitPath/);
+		expect(source).toMatch(/witPath:\s*SANDBOX_WIT_DIR_NAME/);
+		expect(source).toMatch(/process\.chdir\(workRoot\)/);
+		expect(source).toMatch(/sourcePath:\s*BROWSER_WIT_GUEST_SOURCE_NAME/);
 		expect(source).toMatch(/sourcePath:\s*hostSourcePath/);
-		expect(source).not.toMatch(/process\.chdir\(workRoot\)/);
+		expect(source).toMatch(/process\.chdir\(previousWorkingDirectory\)/);
 		expect(source).toMatch(/await resolveComponentizeHostWitPath/);
 		expect(source).toMatch(/copyHostWitTreeIntoWorkRoot/);
 		expect(source).toMatch(/assertSandboxWitBeforeComponentize/);

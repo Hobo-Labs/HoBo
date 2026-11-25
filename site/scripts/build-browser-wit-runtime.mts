@@ -17,9 +17,11 @@ import { logBrowserWitReleaseEnvironment } from "../../scripts/lib/browser-wit-c
 import {
 	assertGuestSourceUnderWorkRoot,
 	assertSandboxWitBeforeComponentize,
+	BROWSER_WIT_GUEST_SOURCE_NAME,
 	copyHostWitTreeIntoWorkRoot,
 	guestSourcePathInWorkRoot,
 	resolveComponentizeHostWitPath,
+	SANDBOX_WIT_DIR_NAME,
 } from "../../scripts/lib/browser-wit-componentize-sandbox.mts";
 import {
 	logBrowserWitComponentizeToolchain,
@@ -170,7 +172,8 @@ export async function buildBrowserWitRuntime(
 			{
 				workRoot,
 				sourcePath: hostSourcePath,
-				witPath: hostWitPath,
+				hostWitPath,
+				componentizeWitPath: SANDBOX_WIT_DIR_NAME,
 			},
 		);
 		process.stderr.write("browser-wit: componentizing real guest\n");
@@ -185,13 +188,20 @@ export async function buildBrowserWitRuntime(
 			"utf8",
 		);
 		const cacheHome = process.env.XDG_CACHE_HOME;
-		const built = await toolchain.componentize.componentize({
-			env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
-			sourcePath: hostSourcePath,
-			witPath: hostWitPath,
-			worldName: "browser-station",
-			disableFeatures: ["random", "clocks", "stdio", "http"],
-		});
+		const previousWorkingDirectory = process.cwd();
+		process.chdir(workRoot);
+		let built: { component: Uint8Array };
+		try {
+			built = await toolchain.componentize.componentize({
+				env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
+				sourcePath: BROWSER_WIT_GUEST_SOURCE_NAME,
+				witPath: SANDBOX_WIT_DIR_NAME,
+				worldName: "browser-station",
+				disableFeatures: ["random", "clocks", "stdio", "http"],
+			});
+		} finally {
+			process.chdir(previousWorkingDirectory);
+		}
 		const componentDigest = sha256(built.component);
 		process.stderr.write("browser-wit: transpiling component for browser\n");
 		const transpiled = await toolchain.jco.transpile(built.component, {
