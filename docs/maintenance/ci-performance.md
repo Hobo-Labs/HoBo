@@ -811,7 +811,9 @@ with `pnpm exec vitest run`, and `scripts/relevant-check-policy.ts` selects four
 and `actions/cache/save` pins instead of monolithic `actions/cache`. Regenerate
 `.github/workflows/actions.lock` with `gh actions-lock migrate` (or hand-update the workflow entry
 and `dependencies`) and mirror the same SHAs in `scripts/action-pin-allowlist.json` so offline
-`pnpm run actions:lint` and CI `gh actions-lock --verify` stay aligned.
+`pnpm run actions:lint` and CI `gh actions-lock --verify` stay aligned. Workflows that
+only pull `ci-runner-preflight` (for example `ci-deps-publish.yml`) need the same
+restore/save pins in their workflow section.
 
 ## Checks that went stale on main
 

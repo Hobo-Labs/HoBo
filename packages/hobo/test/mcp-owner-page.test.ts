@@ -468,61 +468,64 @@ describe("HoBo's relay owner page", () => {
 	it.skipIf(browser === undefined)(
 		"seals the relay address so only this HoBo server reads it, then shows the GitHub code for the owner only",
 		async () => {
-		const pages = createOwnerPages();
-		const opened = await pages.openRelay("/synthetic/project");
-		const out = await sealRelayInBrowser(opened.html, RELAY);
-		expect(out.path).toBe(`${OWNER_PAGE_COLLECTION}/${opened.page}`);
-		expect(out.data.sealed).not.toContain("relay.hobo.test");
-		await expect(pages.unseal(out.data.sealed)).rejects.toMatchObject({
-			reason: "unknown-page",
-		});
+			const pages = createOwnerPages();
+			const opened = await pages.openRelay("/synthetic/project");
+			const out = await sealRelayInBrowser(opened.html, RELAY);
+			expect(out.path).toBe(`${OWNER_PAGE_COLLECTION}/${opened.page}`);
+			expect(out.data.sealed).not.toContain("relay.hobo.test");
+			await expect(pages.unseal(out.data.sealed)).rejects.toMatchObject({
+				reason: "unknown-page",
+			});
 
-		const again = await pages.openRelay("/synthetic/project");
-		const sealed = await sealRelayInBrowser(again.html, RELAY);
-		const sessions = createRelayOwnerSessions({
-			fetch: async (input) =>
-				String(input) === `${RELAY}/v1/owner-login/device`
-					? Response.json({
-							device_code: "D".repeat(52),
-							user_code: "WXYZ-1234",
-							verification_uri: "https://github.com/login/device",
-							expires_in: 900,
-							interval: 5,
-						})
-					: Response.json({ error: "authorization_pending" }, { status: 400 }),
-			sleep: () => new Promise<void>(() => undefined),
-			now: Date.now,
-		});
-		const app = createStoreChoiceApp({
-			cwd: "/synthetic/project",
-			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
-			pages,
-			relayLogin: createRelayLoginTool({ relay: sessions, pages }),
-		});
-		const result = await app.callTool(
-			"relay_login",
-			{ sealed: sealed.data.sealed },
-			NO_STORE_CHOICE_SUPPORT,
-			undefined,
-		);
-		const confirmation = z
-			.object({ status: z.literal("confirm-page"), html: z.string() })
-			.parse(result.structuredContent);
-		expect(confirmation.html).toContain("WXYZ-1234");
-		expect(confirmation.html).toContain("https://github.com/login/device");
-		expect(JSON.stringify(result.content)).not.toContain("WXYZ-1234");
-		expect(JSON.stringify(result)).not.toContain("relay.hobo.test");
-		expect(
-			(
-				await app.callTool(
-					"relay_login",
-					{},
-					NO_STORE_CHOICE_SUPPORT,
-					undefined,
-				)
-			).structuredContent,
-		).toEqual({ status: "pending" });
-		sessions.close();
+			const again = await pages.openRelay("/synthetic/project");
+			const sealed = await sealRelayInBrowser(again.html, RELAY);
+			const sessions = createRelayOwnerSessions({
+				fetch: async (input) =>
+					String(input) === `${RELAY}/v1/owner-login/device`
+						? Response.json({
+								device_code: "D".repeat(52),
+								user_code: "WXYZ-1234",
+								verification_uri: "https://github.com/login/device",
+								expires_in: 900,
+								interval: 5,
+							})
+						: Response.json(
+								{ error: "authorization_pending" },
+								{ status: 400 },
+							),
+				sleep: () => new Promise<void>(() => undefined),
+				now: Date.now,
+			});
+			const app = createStoreChoiceApp({
+				cwd: "/synthetic/project",
+				locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+				pages,
+				relayLogin: createRelayLoginTool({ relay: sessions, pages }),
+			});
+			const result = await app.callTool(
+				"relay_login",
+				{ sealed: sealed.data.sealed },
+				NO_STORE_CHOICE_SUPPORT,
+				undefined,
+			);
+			const confirmation = z
+				.object({ status: z.literal("confirm-page"), html: z.string() })
+				.parse(result.structuredContent);
+			expect(confirmation.html).toContain("WXYZ-1234");
+			expect(confirmation.html).toContain("https://github.com/login/device");
+			expect(JSON.stringify(result.content)).not.toContain("WXYZ-1234");
+			expect(JSON.stringify(result)).not.toContain("relay.hobo.test");
+			expect(
+				(
+					await app.callTool(
+						"relay_login",
+						{},
+						NO_STORE_CHOICE_SUPPORT,
+						undefined,
+					)
+				).structuredContent,
+			).toEqual({ status: "pending" });
+			sessions.close();
 		},
 	);
 
