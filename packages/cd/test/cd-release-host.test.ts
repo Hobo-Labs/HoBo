@@ -296,4 +296,32 @@ describe("@hobo/cd/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 			await engine.stop();
 		}
 	}, 20_000);
+
+	it("rejects unvalidated promotion gate open input at the Rivet boundary", async (testCtx) => {
+		const engine = await startLocalRivetTestEngine();
+		const registry = createCdPromotionGateRegistry({
+			endpoint: engine.endpoint,
+			token: engine.token,
+			httpHost: engine.httpHost,
+			httpPort: engine.httpPort,
+			startEngine: false,
+			noWelcome: true,
+			shutdown: { gracePeriodMs: 2_000, disableSignalHandlers: true },
+		});
+		try {
+			const { client } = await setupTest(testCtx, registry);
+			const conn = client.promotionGate.getOrCreate(["yard-invalid"]).connect();
+			await expect(
+				conn.openGate({
+					promotionId: "",
+					campId: "",
+					freightDigest: "",
+					deadlineMs: -1,
+				} as never),
+			).rejects.toThrow();
+			await conn.dispose();
+		} finally {
+			await engine.stop();
+		}
+	});
 });

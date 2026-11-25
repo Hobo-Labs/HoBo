@@ -8,9 +8,12 @@ import {
 	type GhLintSandbox,
 	GhRelay,
 	GhRelayHandlers,
-	type GhRelayJobId,
-	type GhRepoSlug,
-	type GhRunnerLabel,
+	GhRelayJobId,
+	type GhRelayJobId as GhRelayJobIdType,
+	GhRepoSlug,
+	type GhRepoSlug as GhRepoSlugType,
+	GhRunnerLabel,
+	type GhRunnerLabel as GhRunnerLabelType,
 	type GhRunnerProtocol,
 } from "../domain/index.js";
 import {
@@ -123,11 +126,22 @@ export interface GhPickRunnerEvent {
 }
 
 export interface EnqueuePickRunnerInput {
-	readonly jobId: GhRelayJobId;
-	readonly repository: GhRepoSlug;
-	readonly runsOn: GhRunnerLabel;
+	readonly jobId: GhRelayJobIdType;
+	readonly repository: GhRepoSlugType;
+	readonly runsOn: GhRunnerLabelType;
 	readonly rescueAfterMs: number;
 }
+
+const EnqueuePickRunnerInputSchema = Schema.Struct({
+	jobId: GhRelayJobId,
+	repository: GhRepoSlug,
+	runsOn: GhRunnerLabel,
+	rescueAfterMs: Schema.Int,
+});
+
+const decodeEnqueuePickRunnerInput = Schema.decodeUnknownSync(
+	EnqueuePickRunnerInputSchema,
+);
 
 export interface ClaimPickRunnerInput {
 	readonly jobId: GhRelayJobId;
@@ -189,8 +203,9 @@ export function createGhPickRunnerRegistry(
 		actions: {
 			enqueueJob: async (
 				c,
-				input: EnqueuePickRunnerInput,
+				raw: unknown,
 			): Promise<GhPickRunnerJobRecord> => {
+				const input = decodeEnqueuePickRunnerInput(raw);
 				const existingRows = decodePickRunnerRows(
 					await c.db.execute(
 						"SELECT job_id, repository, runs_on, status, node_id, chosen_runner, queued_at_ms, rescue_at_ms FROM gh_pick_runner_jobs WHERE job_id = ?",

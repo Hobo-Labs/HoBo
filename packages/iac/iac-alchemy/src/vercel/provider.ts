@@ -398,8 +398,14 @@ export function VercelAliasProvider(options: VercelCloudProviderOptions) {
 							message: cause instanceof Error ? cause.message : String(cause),
 						}),
 				});
+				const aliasId =
+					output !== undefined &&
+					output.deploymentId === news.deploymentId &&
+					output.domain === news.domain
+						? output.aliasId
+						: assigned.aliasId;
 				return {
-					aliasId: output?.aliasId ?? assigned.aliasId,
+					aliasId,
 					deploymentId: news.deploymentId,
 					domain: news.domain,
 					url: assigned.url,
