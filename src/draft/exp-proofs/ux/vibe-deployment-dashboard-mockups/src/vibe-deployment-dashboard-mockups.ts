@@ -98,7 +98,7 @@ type VibeDeploymentDashboardMockups = {
   readonly issue: "HOBO-544";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups";
-  readonly proofPath: "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-544-vibe-deployment-dashboard-mockups-proof-archived-c7a9a2365dc0";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly DashboardQuickstartFixtureReference[];
   readonly personas: readonly DashboardMockupPersona[];
@@ -240,7 +240,7 @@ export const VIBE_DEPLOYMENT_DASHBOARD_MOCKUPS: VibeDeploymentDashboardMockups =
   issue: "HOBO-544",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups",
-  proofPath: "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-544-vibe-deployment-dashboard-mockups-proof-archived-c7a9a2365dc0",
   designRefs: [
     "docs/design/deployment-dashboard-topology-explorer.md",
     "docs/design/developer-experience.md#plan-07",
@@ -401,7 +401,7 @@ export function validateVibeDeploymentDashboardMockups(
   if (mockups.packagePath !== "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (mockups.proofPath !== "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md") {
+  if (mockups.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-544-vibe-deployment-dashboard-mockups-proof-archived-c7a9a2365dc0") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(mockups.personas, REQUIRED_DASHBOARD_MOCKUP_PERSONAS)) {

@@ -169,7 +169,7 @@ export const MARKETPLACE_DISCOVERY_PROTOTYPE: MarketplaceDiscoveryPrototype = {
     "docs/design/capability-review-approval.md",
     "docs/design/marketplace-publisher-trust-evidence.md",
     "docs/design/support-workflow.md",
-    "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-546-vibe-marketplace-installability-mockups-proof-archived-051fb04f0b9d",
     "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
@@ -177,7 +177,7 @@ export const MARKETPLACE_DISCOVERY_PROTOTYPE: MarketplaceDiscoveryPrototype = {
     {
       issue: "HOBO-546",
       packagePath: "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups",
-      proofPath: "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
+      proofPath: "https://linear.app/quickdeploy-ai/document/hobo-546-vibe-marketplace-installability-mockups-proof-archived-051fb04f0b9d",
     },
     {
       issue: "HOBO-547",

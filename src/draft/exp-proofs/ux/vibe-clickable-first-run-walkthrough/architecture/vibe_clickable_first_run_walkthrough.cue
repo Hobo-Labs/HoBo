@@ -66,7 +66,7 @@ package architecture_evidence
 	issue:                             "HOBO-559"
 	phase:                             "M2"
 	package_path:                      "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough"
-	proof_path:                        "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md"
+	proof_path:                        "https://linear.app/quickdeploy-ai/document/hobo-559-vibe-clickable-first-run-walkthrough-proof-archived-8d94c3fef237"
 	design_refs:                       [...string]
 	consumed_activation_rail:            #VibeClickableFirstRunConsumedActivationRail
 	consumed_workspace_project_states: #VibeClickableFirstRunConsumedWorkspaceProjectStates

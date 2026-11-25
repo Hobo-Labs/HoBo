@@ -108,7 +108,7 @@ export type VibeClickableFirstRunWalkthrough = {
   readonly issue: "HOBO-559";
   readonly phase: "M2";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough";
-  readonly proofPath: "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-559-vibe-clickable-first-run-walkthrough-proof-archived-8d94c3fef237";
   readonly designRefs: readonly string[];
   readonly consumedActivationRail: ConsumedActivationRail;
   readonly consumedWorkspaceProjectStates: ConsumedWorkspaceProjectStates;
@@ -130,7 +130,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
   issue: "HOBO-559",
   phase: "M2",
   packagePath: "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough",
-  proofPath: "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-559-vibe-clickable-first-run-walkthrough-proof-archived-8d94c3fef237",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc",
@@ -165,7 +165,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
         quickstartFixtureId: "rlq-define-object-graph-v1",
       },
       proofMode: "live",
-      docsHandoff: "docs/design/proofs/vibe-docs-portal-ia-states/README.md#getting-started",
+      docsHandoff: "https://linear.app/quickdeploy-ai/document/hobo-551-vibe-docs-portal-ia-states-proof-archived-a08c53c65533#getting-started",
       supportHandoff: "support receives invite context only when access prerequisite blocks entry",
       accessibilityNote: "Workspace entry exposes keyboard focus order and text status, not color-only invite state.",
     },
@@ -199,7 +199,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
         quickstartFixtureId: "rlq-plan-safe-preview-v1",
       },
       proofMode: "simulated",
-      docsHandoff: "docs/design/proofs/vibe-plan-review-states/README.md#blocked",
+      docsHandoff: "https://linear.app/quickdeploy-ai/document/hobo-542-vibe-plan-review-states-proof-archived-22175c3b581c#blocked",
       supportHandoff: "support handoff includes plan id, blocker owner, and customer-safe refusal wording",
       accessibilityNote: "Plan preview announces blocked versus safe states in plain language.",
     },
@@ -270,7 +270,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
       surface: "docs-portal",
       trigger: "user needs getting-started or architecture context during workspace entry",
       owner: "docs portal owner",
-      evidenceAnchor: "docs/design/proofs/vibe-docs-portal-ia-states/README.md",
+      evidenceAnchor: "https://linear.app/quickdeploy-ai/document/hobo-551-vibe-docs-portal-ia-states-proof-archived-a08c53c65533",
       customerSafeMessage: "Docs link references fixture evidence; no live tenant data is exposed.",
     },
     {
@@ -298,7 +298,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
   supportHandoffEvidence: {
     severity: "SEV3 first-run workflow blocked",
     redactionState: "customer-safe redacted snapshop fixture evidence only",
-    evidenceLink: "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
+    evidenceLink: "https://linear.app/quickdeploy-ai/document/hobo-559-vibe-clickable-first-run-walkthrough-proof-archived-8d94c3fef237",
     nextUpdateCondition:
       "support updates customer when owner route accepts evidence or blocker status changes",
   },
@@ -368,7 +368,7 @@ export function validateVibeClickableFirstRunWalkthrough(
   if (walkthrough.packagePath !== "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (walkthrough.proofPath !== "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md") {
+  if (walkthrough.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-559-vibe-clickable-first-run-walkthrough-proof-archived-8d94c3fef237") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
 
@@ -532,7 +532,8 @@ function validateHandoffRoutes(routes: readonly HandoffRoute[], errors: Validati
         errors.push({ code: "missing-handoff-field", message: `${route.surface}.${field} must not be empty` });
       }
     }
-    if (!route.evidenceAnchor.startsWith("docs/design/proofs/")) {
+    if (!route.evidenceAnchor.startsWith("docs/design/proofs/") &&
+        !route.evidenceAnchor.startsWith("https://linear.app/quickdeploy-ai/document/")) {
       errors.push({
         code: "invalid-handoff-anchor",
         message: `${route.surface} evidence anchor must point to a proof note`,

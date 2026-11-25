@@ -107,7 +107,7 @@ type VibePublisherPortalReviewMockups = {
   readonly issue: "HOBO-548";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups";
-  readonly proofPath: "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-548-vibe-publisher-portal-review-mockups-proof-archived-ccb8a2907844";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly PublisherPortalQuickstartFixtureReference[];
   readonly personas: readonly PublisherPortalPersona[];
@@ -229,7 +229,7 @@ export const VIBE_PUBLISHER_PORTAL_REVIEW_MOCKUPS: VibePublisherPortalReviewMock
   issue: "HOBO-548",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups",
-  proofPath: "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-548-vibe-publisher-portal-review-mockups-proof-archived-ccb8a2907844",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/publisher-portal-scope-and-acceptance-archived-a198804cd060",
     "docs/design/capability-review-approval.md",
@@ -414,7 +414,7 @@ export function validateVibePublisherPortalReviewMockups(
   if (mockups.packagePath !== "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (mockups.proofPath !== "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md") {
+  if (mockups.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-548-vibe-publisher-portal-review-mockups-proof-archived-ccb8a2907844") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(mockups.personas, REQUIRED_PUBLISHER_PORTAL_PERSONAS)) {

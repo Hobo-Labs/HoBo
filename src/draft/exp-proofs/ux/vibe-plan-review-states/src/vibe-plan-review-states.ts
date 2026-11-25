@@ -100,7 +100,7 @@ type VibePlanReviewStates = {
   readonly issue: "HOBO-542";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-plan-review-states";
-  readonly proofPath: "docs/design/proofs/vibe-plan-review-states/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-542-vibe-plan-review-states-proof-archived-22175c3b581c";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly PlanReviewQuickstartFixtureRef[];
   readonly personas: readonly PlanReviewPersona[];
@@ -305,7 +305,7 @@ export const VIBE_PLAN_REVIEW_STATES: VibePlanReviewStates = {
   issue: "HOBO-542",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-plan-review-states",
-  proofPath: "docs/design/proofs/vibe-plan-review-states/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-542-vibe-plan-review-states-proof-archived-22175c3b581c",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f",
     "docs/design/developer-experience.md#plan-07",
@@ -415,7 +415,7 @@ export function validateVibePlanReviewStates(
   if (states.packagePath !== "src/draft/exp-proofs/ux/vibe-plan-review-states") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (states.proofPath !== "docs/design/proofs/vibe-plan-review-states/README.md") {
+  if (states.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-542-vibe-plan-review-states-proof-archived-22175c3b581c") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(states.personas, REQUIRED_PLAN_REVIEW_PERSONAS)) {

@@ -63,7 +63,7 @@ package architecture_evidence
 	issue:               "HOBO-551"
 	phase:               "M1"
 	package_path:        "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states"
-	proof_path:          "docs/design/proofs/vibe-docs-portal-ia-states/README.md"
+	proof_path:          "https://linear.app/quickdeploy-ai/document/hobo-551-vibe-docs-portal-ia-states-proof-archived-a08c53c65533"
 	design_refs:         [...string]
 	audience_paths:      [...#VibeDocsPortalAudiencePath]
 	content_inventory:   [...#VibeDocsPortalContentInventoryEntry]

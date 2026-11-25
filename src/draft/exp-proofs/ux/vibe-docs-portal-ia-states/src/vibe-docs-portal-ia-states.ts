@@ -113,7 +113,7 @@ type VibeDocsPortalIaStates = {
   readonly issue: "HOBO-551";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states";
-  readonly proofPath: "docs/design/proofs/vibe-docs-portal-ia-states/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-551-vibe-docs-portal-ia-states-proof-archived-a08c53c65533";
   readonly designRefs: readonly string[];
   readonly audiencePaths: readonly AudiencePath[];
   readonly contentInventory: readonly ContentInventoryEntry[];
@@ -386,7 +386,7 @@ export const VIBE_DOCS_PORTAL_IA_STATES: VibeDocsPortalIaStates = {
   issue: "HOBO-551",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states",
-  proofPath: "docs/design/proofs/vibe-docs-portal-ia-states/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-551-vibe-docs-portal-ia-states-proof-archived-a08c53c65533",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce",
     "docs/design/developer-experience.md#plan-07",
@@ -510,7 +510,7 @@ export function validateVibeDocsPortalIaStates(
   if (states.packagePath !== "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (states.proofPath !== "docs/design/proofs/vibe-docs-portal-ia-states/README.md") {
+  if (states.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-551-vibe-docs-portal-ia-states-proof-archived-a08c53c65533") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
 

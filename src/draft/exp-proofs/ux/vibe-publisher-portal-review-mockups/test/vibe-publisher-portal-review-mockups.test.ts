@@ -28,7 +28,7 @@ test("HOBO-548 proof pins issue, phase, package path, proof path, personas, and 
   assert.equal(parsed.issue, "HOBO-548");
   assert.equal(parsed.phase, "M1");
   assert.equal(parsed.packagePath, "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups");
-  assert.equal(parsed.proofPath, "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md");
+  assert.equal(parsed.proofPath, "https://linear.app/quickdeploy-ai/document/hobo-548-vibe-publisher-portal-review-mockups-proof-archived-ccb8a2907844");
   assert.deepEqual(parsed.personas, REQUIRED_PUBLISHER_PORTAL_PERSONAS);
   assert.deepEqual(
     parsed.mockups.map((mockup) => mockup.state),

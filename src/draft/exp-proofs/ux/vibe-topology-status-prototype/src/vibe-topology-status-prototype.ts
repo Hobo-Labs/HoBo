@@ -258,7 +258,7 @@ export const VIBE_TOPOLOGY_STATUS_PROTOTYPE = {
     "docs/design/deployment-dashboard-topology-explorer.md",
     "docs/design/developer-experience.md#plan-07",
     "docs/design/data-plane.md#plan-32",
-    "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-544-vibe-deployment-dashboard-mockups-proof-archived-c7a9a2365dc0",
     "docs/design/proofs/vibe-dashboard-freshness-rbac-fixtures/README.md",
     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
