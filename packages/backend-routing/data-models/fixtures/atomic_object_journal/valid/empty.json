@@ -1,0 +1,15 @@
+{
+  "contract": "hobo.atomic-object-journal/v1",
+  "fleetId": "fleet",
+  "anchorDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "member": {
+    "id": "member",
+    "provider": "vercel",
+    "accountId": "account",
+    "resourceId": "store",
+    "incarnation": "generation"
+  },
+  "initializationId": "fresh",
+  "entries": [],
+  "documents": []
+}

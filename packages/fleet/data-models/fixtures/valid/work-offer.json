@@ -1,0 +1,38 @@
+{
+  "workKey": "github:acme/app:run/123/job/456",
+  "workDigest": "5f2b8e0c9d1a4b3c7e6f8a9b0c1d2e3f",
+  "kind": "github-job",
+  "fleet": "ci",
+  "label": "hobo",
+  "needs": {
+    "memoryMb": 4096,
+    "diskMb": 20480,
+    "platform": {
+      "os": "linux",
+      "arch": "x64"
+    },
+    "labels": [
+      "hobo",
+      "linux-x64"
+    ],
+    "docker": true,
+    "minSandbox": "SANDBOX_TIER_S1_CONTAINER"
+  },
+  "trustClass": "TRUST_CLASS_ORG",
+  "author": "github:1234",
+  "origin": "WORK_ORIGIN_INTERNAL",
+  "repository": "acme/app",
+  "ref": "refs/heads/main",
+  "workflowDigest": "sha256:abababababababababababababababababababababababababababababababab",
+  "queuedAt": "2026-11-12T10:00:00.000Z",
+  "expiresAt": "2026-11-12T10:20:00.000Z",
+  "dispatcher": "dev_fedcba9876543210fedcba9876543210",
+  "residency": {
+    "classifications": [
+      "internal"
+    ],
+    "allowedJurisdictions": [
+      "eu"
+    ]
+  }
+}

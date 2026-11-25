@@ -1,0 +1,14 @@
+{
+	"extends": "../../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"types": ["node"]
+	},
+	"include": [
+		"test/rivet-http-queue.test.ts",
+		"test/rivet-http-queue-live.test.ts",
+		"test/rivet-http-queue-live.mts",
+		"model/check-rivet-http-queue.mts"
+	]
+}

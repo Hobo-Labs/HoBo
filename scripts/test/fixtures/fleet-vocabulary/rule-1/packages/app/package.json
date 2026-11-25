@@ -1,0 +1,5 @@
+{
+	"name": "fixture-app",
+	"private": true,
+	"dependencies": { "@nats-io/jetstream": "3.4.0" }
+}
