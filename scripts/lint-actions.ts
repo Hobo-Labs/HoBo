@@ -675,9 +675,11 @@ export const REQUIRED_PULL_REQUEST_TYPES = [
 	"ready_for_review",
 ] as const;
 
-const PULL_REQUEST_DRAFT_GATE = new RegExp(
-	String.raw`pull_request\.draft\s*==\s*false`,
-);
+export const REQUIRED_JOB_DRAFT_IF_RE =
+	/github\.event_name\s*!=\s*['"]pull_request['"]\s*\|\|\s*github\.event\.pull_request\.draft\s*==\s*false/;
+
+const REQUIRED_JOB_DRAFT_IF_MESSAGE =
+	"job-level if must be github.event_name != 'pull_request' || github.event.pull_request.draft == false";
 
 function pullRequestOnNode(doc: ReturnType<typeof parseDocument>) {
 	const on = doc.get("on");
@@ -691,11 +693,92 @@ function pullRequestOnNode(doc: ReturnType<typeof parseDocument>) {
 	return undefined;
 }
 
-function jobBlockHasDraftGate(block: readonly string[]): boolean {
-	return block.some((line) => PULL_REQUEST_DRAFT_GATE.test(line));
+function workflowHasPullRequestTrigger(
+	doc: ReturnType<typeof parseDocument>,
+	text: string,
+): boolean {
+	const on = doc.get("on");
+	if (on === null || on === undefined) {
+		return /^\s*pull_request:/m.test(text);
+	}
+	if (on.value === "pull_request") return true;
+	if (on.has?.("pull_request")) return true;
+	if (Array.isArray(on.items)) {
+		for (const entry of on.items) {
+			if (entry?.value === "pull_request") return true;
+			if (entry?.has?.("pull_request")) return true;
+		}
+	}
+	return /^\s*pull_request:/m.test(text);
 }
 
-function draftGateEntryJobs(
+function pullRequestTypesFromNode(
+	pr: ReturnType<typeof pullRequestOnNode>,
+): string[] {
+	if (pr === undefined || pr === null) return [];
+	const typesNode = pr.get("types");
+	if (!typesNode?.items) return [];
+	return typesNode.items.map((item: { value: string }) => String(item.value));
+}
+
+function extractJobLevelIf(block: readonly string[]): string | undefined {
+	const stepsAt = block.findIndex((line) => line === "    steps:");
+	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
+	const ifAt = header.findIndex((line) => line.startsWith("    if:"));
+	if (ifAt === -1) return undefined;
+	const tail = header
+		.slice(ifAt)
+		.filter((entry, index) => index === 0 || entry.startsWith("      "));
+	const folded = tail
+		.map((line, index) => {
+			if (index === 0) {
+				return line
+					.replace(/^\s*if:\s*/, "")
+					.replace(/^>-\s*/, "")
+					.trim();
+			}
+			return line.trim();
+		})
+		.join(" ");
+	return folded
+		.replace(/^\$\{\{\s*/, "")
+		.replace(/\s*\}\}$/, "")
+		.replaceAll(/\s+/g, " ")
+		.trim();
+}
+
+const PR_ONLY_JOB_DRAFT_IF_EVENT =
+	/github\.event_name\s*==\s*['"]pull_request['"]/;
+const PR_ONLY_JOB_DRAFT_IF_DRAFT =
+	/github\.event\.pull_request\.draft\s*==\s*false/;
+
+function prOnlyJobDraftGate(expression: string): boolean {
+	return (
+		PR_ONLY_JOB_DRAFT_IF_EVENT.test(expression) &&
+		PR_ONLY_JOB_DRAFT_IF_DRAFT.test(expression)
+	);
+}
+
+export function jobLevelIfHasRequiredDraftGate(
+	block: readonly string[],
+	workflowHasTrunkEvent: boolean,
+	jobId: string,
+): boolean {
+	const expression = extractJobLevelIf(block);
+	if (expression === undefined) return false;
+	if (REQUIRED_JOB_DRAFT_IF_RE.test(expression)) return true;
+	if (jobId === "route") return false;
+	if (
+		workflowHasTrunkEvent &&
+		isPullRequestOnlyJob(block, workflowHasTrunkEvent) &&
+		prOnlyJobDraftGate(expression)
+	) {
+		return true;
+	}
+	return false;
+}
+
+export function draftGateEntryJobs(
 	file: string,
 	jobIds: readonly string[],
 ): readonly string[] {
@@ -713,13 +796,10 @@ function lintPullRequestDraftPolicy(
 	text: string,
 ): void {
 	const doc = parseDocument(text);
-	const pr = pullRequestOnNode(doc);
-	if (pr === undefined || pr === null) return;
+	if (!workflowHasPullRequestTrigger(doc, text)) return;
 
-	const typesNode = pr.get?.("types");
-	const types: string[] =
-		typesNode?.items?.map((item: { value: string }) => String(item.value)) ??
-		[];
+	const pr = pullRequestOnNode(doc);
+	const types = pullRequestTypesFromNode(pr);
 	const effective =
 		types.length > 0 ? types : ["opened", "synchronize", "reopened"];
 	for (const required of REQUIRED_PULL_REQUEST_TYPES) {
@@ -738,6 +818,7 @@ function lintPullRequestDraftPolicy(
 		.filter((line) => /^  [A-Za-z0-9_-]+:$/.test(line))
 		.map((line) => line.slice(2, -1));
 	const gateJobs = draftGateEntryJobs(file, jobIds);
+	const workflowHasTrunkEvent = hasTrunkEvent(lines, jobsIndex);
 	if (gateJobs.length === 0) {
 		errors.push(
 			`${file}: pull_request workflow must gate draft runs on route or its entry job`,
@@ -753,9 +834,9 @@ function lintPullRequestDraftPolicy(
 			(line, index) => index > start && /^  [A-Za-z0-9_-]+:$/.test(line),
 		);
 		const block = lines.slice(start, nextJob === -1 ? lines.length : nextJob);
-		if (!jobBlockHasDraftGate(block)) {
+		if (!jobLevelIfHasRequiredDraftGate(block, workflowHasTrunkEvent, jobId)) {
 			errors.push(
-				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs (github.event.pull_request.draft == false)`,
+				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs (${REQUIRED_JOB_DRAFT_IF_MESSAGE})`,
 			);
 		}
 	}
