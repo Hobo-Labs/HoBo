@@ -2,16 +2,6 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/**
- * Validates the competitor corpus against docs/competitors/metadata-contract.md,
- * and regenerates the derived matrix + freshness ledger with --fix. What it
- * writes into the repo never depends on the day it runs; how old a capture is
- * is read off the clock at check time and only reported (see `staleCaptures`).
- *
- * Deliberately dependency-free: the front matter we own is a fixed, flat shape,
- * so a scoped parser beats adding a YAML runtime dependency for docs linting.
- */
-
 export type Problem = { file: string; line: number; message: string };
 
 export const CATEGORIES = [
@@ -84,7 +74,6 @@ export const SURFACES = [
 	"ecosystem",
 ] as const;
 
-/** Section headings every canonical capture must carry (research contract §1-12). */
 export const REQUIRED_SECTIONS = [
 	"What it is",
 	"Core primitives",
@@ -100,7 +89,6 @@ export const REQUIRED_SECTIONS = [
 	"Sources",
 ] as const;
 
-/** Files under docs/competitors/ that are navigation or synthesis, not captures. */
 const NON_CAPTURE = new Set([
 	"index.md",
 	"matrix.md",
@@ -126,7 +114,6 @@ export type Competitor = {
 	status: string;
 	research_date: string;
 	sources: string[];
-	/** "v1" once the capture has been rewritten to the twelve-section research contract. */
 	contract?: string | undefined;
 	file: string;
 };
@@ -215,11 +202,6 @@ export function frontMatter(
 	return { body: text.slice(match[0].length), raw: parseBlock(match[1] ?? "") };
 }
 
-/**
- * Parses the `competitor:` mapping out of a front-matter block: scalars,
- * inline `[a, b]` sequences, and `- item` block sequences. Anything else is
- * left alone — other front-matter keys are not ours to interpret.
- */
 export function parseBlock(source: string): Raw {
 	const lines = source.split(/\r?\n/);
 	const start = lines.findIndex((line) => /^competitor:\s*$/.test(line));
@@ -231,13 +213,6 @@ export function parseBlock(source: string): Raw {
 		if (!/^\s/.test(line)) break; // dedent: end of the competitor mapping
 		const item = /^\s+-\s+(.*)$/.exec(line);
 		if (item && key) {
-			// Only a key opened as an empty sequence (`sources:` with nothing on
-			// the line) accumulates items. A `- item` under a *scalar* key is
-			// malformed input, and blindly pushing crashed the whole gate with
-			// `raw[key].push is not a function` — a TypeError instead of a
-			// reported problem. The scalar stands and the stray item is dropped;
-			// the required-field checks downstream report anything genuinely
-			// missing, which is where a parse error belongs.
 			const current = getRaw(raw, key);
 			if (Array.isArray(current)) current.push(unquote(item[1] ?? ""));
 			continue;
@@ -342,7 +317,6 @@ function parseCompetitor(
 	const basename = path.basename(file, ".md");
 	if (slug !== basename)
 		push(`competitor.slug "${slug}" must match the filename "${basename}"`);
-	// SAFETY: assertion to `as string)) ` is required at this boundary.
 	if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug as string))
 		push(`competitor.slug "${slug}" is not a valid slug`);
 
@@ -357,37 +331,26 @@ function parseCompetitor(
 					`competitor.${field} "${value}" is not one of: ${allowed.join(", ")}`,
 				);
 	};
-	// SAFETY: assertion to `ories as string[], CAT` is required at this boundary.
 	enumCheck(categories as string[], CATEGORIES, "categories");
-	// SAFETY: assertion to `ry as string], CA` is required at this boundary.
 	enumCheck([primary as string], CATEGORIES, "primary_category");
-	// SAFETY: assertion to `tness as string], DI` is required at this boundary.
 	enumCheck([directness as string], DIRECTNESS, "directness");
-	// SAFETY: assertion to `re as string[], POS` is required at this boundary.
 	enumCheck(posture as string[], POSTURES, "posture");
-	// SAFETY: assertion to `ces as string[], SUR` is required at this boundary.
 	enumCheck(surfaces as string[], SURFACES, "hobo_surface");
-	// SAFETY: assertion to `nce as string], EV` is required at this boundary.
 	enumCheck([evidence as string], EVIDENCE, "evidence");
-	// SAFETY: assertion to `s as string], ST` is required at this boundary.
 	enumCheck([status as string], STATUSES, "status");
 
-	// SAFETY: assertion to `ry as string)) ` is required at this boundary.
 	if (!(categories as string[]).includes(primary as string))
 		push(
 			`competitor.primary_category "${primary}" must also appear in categories`,
 		);
-	// SAFETY: assertion to `ories as string[]).len` is required at this boundary.
 	if (new Set(categories as string[]).size !== (categories as string[]).length)
 		push("competitor.categories contains duplicates");
 
-	// SAFETY: assertion to `rchDate as string)) ` is required at this boundary.
 	if (!/^\d{4}-\d{2}-\d{2}$/.test(researchDate as string))
 		push(`competitor.research_date "${researchDate}" must be YYYY-MM-DD`);
 	else if (Date.parse(`${researchDate}T00:00:00Z`) > Date.now())
 		push(`competitor.research_date "${researchDate}" is in the future`);
 
-	// SAFETY: assertion to `es as string[]) i` is required at this boundary.
 	for (const source of sources as string[])
 		if (!source.startsWith("https://"))
 			push(`competitor.sources entry "${source}" must be an https:// URL`);
@@ -396,30 +359,18 @@ function parseCompetitor(
 		push(`competitor.contract "${contract}" must be "v1" when present`);
 
 	return {
-		// SAFETY: assertion to `as string, /` is required at this boundary.
 		slug: slug as string,
-		// SAFETY: assertion to `as string, a` is required at this boundary.
 		name: name as string,
 		aliases: arr(raw.aliases) ?? [],
-		// SAFETY: assertion to `ry as string, /` is required at this boundary.
 		primary_category: primary as string,
-		// SAFETY: assertion to `ories as string[], /` is required at this boundary.
 		categories: categories as string[],
-		// SAFETY: assertion to `tness as string, /` is required at this boundary.
 		directness: directness as string,
-		// SAFETY: assertion to `as string, /` is required at this boundary.
 		role: role as string,
-		// SAFETY: assertion to `re as string[], /` is required at this boundary.
 		posture: posture as string[],
-		// SAFETY: assertion to `ces as string[], /` is required at this boundary.
 		hobo_surface: surfaces as string[],
-		// SAFETY: assertion to `nce as string, /` is required at this boundary.
 		evidence: evidence as string,
-		// SAFETY: assertion to `s as string, /` is required at this boundary.
 		status: status as string,
-		// SAFETY: assertion to `rchDate as string, /` is required at this boundary.
 		research_date: researchDate as string,
-		// SAFETY: assertion to `es as string[], c` is required at this boundary.
 		sources: sources as string[],
 		contract,
 		file,
@@ -436,10 +387,6 @@ function checkSections(
 		.filter((line) => /^#{2,3}\s/.test(line))
 		.map((line) => line.replace(/^#+\s*/, "").toLowerCase());
 	for (const section of REQUIRED_SECTIONS) {
-		// The competitor-strengths heading names the product, and captures shorten
-		// long product names in headings ("Harness" for "Harness Platform"), so match
-		// the shape rather than the exact name — but never let HoBo's own heading
-		// satisfy it.
 		if (section === "Where <competitor> is stronger") {
 			if (
 				!headings.some(
@@ -456,7 +403,6 @@ function checkSections(
 			continue;
 		}
 		const needle = section.toLowerCase();
-		// SAFETY: assertion to `split(" is stronger")[0] as string; if ` is required at this boundary.
 		const key = needle.split(" is stronger")[0] as string;
 		if (!headings.some((heading) => heading.includes(key)))
 			problems.push({
@@ -475,7 +421,6 @@ function checkLinks(
 ) {
 	const dir = path.dirname(path.join(root, file));
 	for (const match of text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
-		// SAFETY: assertion to `] as string; if ` is required at this boundary.
 		const target = match[1] as string;
 		if (/^(https?:|mailto:|#)/.test(target)) continue;
 		const [rel] = target.split("#");
@@ -493,14 +438,6 @@ function checkLinks(
 	}
 }
 
-/**
- * The committed matrix is a pure function of the front matter. It used to print
- * each capture's age in days, and mark one stale past 180, so the file went out
- * of date the day after it was generated and `lint:docs` failed until someone
- * regenerated it. The ledger now lists the researched date and the contract
- * state, oldest first; the age against today's date is `staleCaptures`'s job,
- * run by the check itself.
- */
 export function renderMatrix(competitors: Competitor[]) {
 	const rows = [...competitors].sort((a, b) => a.slug.localeCompare(b.slug));
 	const lines: string[] = [];
@@ -544,15 +481,9 @@ export type StaleCapture = {
 	slug: string;
 	name: string;
 	research_date: string;
-	/** Whole days between the researched date and the clock. */
 	age: number;
 };
 
-/**
- * The captures researched more than `STALE_AFTER_DAYS` before `now`, oldest
- * first. The clock is a parameter so the policy can be tested; the check passes
- * the wall clock. Nothing derived from it is written to a committed file.
- */
 export function staleCaptures(
 	competitors: readonly Competitor[],
 	now: number,
@@ -570,7 +501,6 @@ export function staleCaptures(
 		.sort((a, b) => b.age - a.age || a.slug.localeCompare(b.slug));
 }
 
-/** Category slug -> display title, mirroring the Linear project milestones. */
 export const CATEGORY_TITLES = {
 	"platform-orchestrators": "Comprehensive Platform Orchestrators",
 	"portable-application-models": "Portable Application Models & Control Planes",
@@ -662,12 +592,10 @@ export function renderCategoryIndex(competitors: Competitor[]) {
 export async function checkCompetitorDocs(options: {
 	root: string;
 	fix?: boolean;
-	/** Injectable clock for the staleness report; defaults to the wall clock. */
 	now?: number;
 }): Promise<{
 	problems: Problem[];
 	competitors: Competitor[];
-	/** Captures past the staleness line on `now`. A report, never a problem. */
 	stale: StaleCapture[];
 }> {
 	const { root, fix = false } = options;
@@ -700,15 +628,11 @@ export async function checkCompetitorDocs(options: {
 		}
 		const competitor = parseCompetitor(rel, parsed.raw, problems, text);
 		if (!competitor) continue;
-		// Legacy captures predate the twelve-section contract. They are tracked as
-		// pre-v1 in the ledger and rewritten by their own research issue rather than
-		// being flattened into a generated summary to satisfy a heading check.
 		if (competitor.contract === "v1")
 			checkSections(competitor, parsed.body, problems);
 		competitors.push(competitor);
 	}
 
-	// Slugs and aliases share one namespace so an old name can never resolve two ways.
 	const seen = new Map<string, string>();
 	for (const competitor of competitors)
 		for (const key of [competitor.slug, ...competitor.aliases]) {
@@ -722,7 +646,6 @@ export async function checkCompetitorDocs(options: {
 			else seen.set(key.toLowerCase(), competitor.file);
 		}
 
-	// Category pages: every member linked, no non-member linked.
 	const categoryDir = path.join(dir, "categories");
 	for (const category of CATEGORIES) {
 		const members = competitors.filter((competitor) =>
@@ -744,7 +667,6 @@ export async function checkCompetitorDocs(options: {
 		const linked = new Set(
 			[...text.matchAll(/\]\(\.\.\/([a-z0-9-]+)\.md(?:#[^)]*)?\)/g)]
 				.flatMap((match) => (match[1] === undefined ? [] : [match[1]]))
-				// Navigation links back to the corpus index/matrix/etc. are not rows.
 				.filter((slug) => !NON_CAPTURE.has(`${slug}.md`)),
 		);
 		for (const member of members)
@@ -773,7 +695,6 @@ export async function checkCompetitorDocs(options: {
 
 	for (const entry of listFiles(categoryDir)) {
 		const slug = entry.replace(/\.md$/, "");
-		// SAFETY: assertion to `nly string[]).includes(slug)) ` is required at this boundary.
 		if (slug !== "index" && !(CATEGORIES as readonly string[]).includes(slug))
 			problems.push({
 				file: `docs/competitors/categories/${entry}`,
@@ -789,7 +710,6 @@ export async function checkCompetitorDocs(options: {
 			);
 	}
 
-	// Derived views must match the front-matter facts.
 	const syncGenerated = (
 		file: string,
 		name: string,
@@ -859,15 +779,6 @@ export async function checkCompetitorDocs(options: {
 	};
 }
 
-/**
- * The CLI body, as a function rather than a top-level `if`.
- *
- * Extracted so it can be tested: as an inline block it was unreachable from any
- * test, which left the exit code, the problem formatting and the summary line —
- * the parts CI and every human actually read — as the single largest untested
- * region of this file. Returns the exit code instead of calling `process.exit`
- * so a test can assert it without tearing down the runner.
- */
 export async function main(options: {
 	root: string;
 	argv: readonly string[];
