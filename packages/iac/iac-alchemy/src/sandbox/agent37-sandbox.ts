@@ -316,6 +316,23 @@ export function Agent37SandboxProvider(options: Agent37SandboxProviderOptions) {
 					news.credentialLocator,
 					news.credentialConfigKey,
 				);
+				if (output !== undefined) {
+					yield* Effect.tryPromise({
+						try: () =>
+							options.client.deleteSandbox({
+								sandboxId: output.sandboxId,
+								authorizationHeader,
+							}),
+						catch: (cause) =>
+							new Agent37SandboxError({
+								code: "AGENT37_SANDBOX_FAILED",
+								message:
+									cause instanceof Error
+										? cause.message
+										: "agent37 sandbox replace delete failed",
+							}),
+					});
+				}
 				const created = yield* Effect.tryPromise({
 					try: () =>
 						options.client.createSandbox({

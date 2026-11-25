@@ -160,8 +160,9 @@ wired the same way in Claude Code, Codex, Cursor and Copilot, also applies
 - It refuses unfiltered repo-wide test and verification sweeps (`pnpm test`,
   `pnpm run test:unit`, `pnpm run test:all`, `pnpm run check:all`,
   `pnpm run verify:full`, `pnpm run verify:extended`, `pnpm run validate:final`,
-  `mise run test:unit`, unfiltered `turbo run test`, and unfiltered root
-  `vitest run`) so agents run only tests related to their changes (`pnpm --filter <pkg> exec vitest run <file>`,
+  `mise run test:unit`, unfiltered `turbo run test`, unfiltered
+  `turbo run build test`, and unfiltered root `vitest run`) so agents run
+  only tests related to their changes (`pnpm --filter <pkg> exec vitest run <file>`,
   `pnpm --filter <pkg> test`, `pnpm exec turbo run test --filter=./packages/<pkg>`,
   `pnpm run test:changed`, `pnpm run test:affected`, or
   `pnpm run agent:check -- --staged`). Prefixing the command with

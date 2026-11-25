@@ -83,7 +83,7 @@ function packageJsonViolations(
 	packageName: string,
 	text: string,
 ): string | null {
-	if (!text.includes("alchemy")) return null;
+	if (!containsReference(text)) return null;
 	if (!DISPATCHER_ALCHEMY_DOMAIN_BDD_ONLY.has(packageName)) {
 		return "package.json";
 	}
@@ -224,6 +224,25 @@ it("allows only @alchemy.run/domain imports in dispatcher", () => {
 			'import * as Domain from "@alchemy.run/domain";\nimport { Story } from "@alchemy.run/domain/Story";',
 		);
 		expect(references(root, ["dispatcher"])).toEqual([]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+it("fails when dispatcher package.json uses JSON-escaped Alchemy dependency keys", () => {
+	const root = mkdtempSync(
+		join(tmpdir(), "hobo-provider-isolation-dispatcher-escape-"),
+	);
+	try {
+		const path = join(root, "packages", "dispatcher");
+		mkdirSync(join(path, "src"), { recursive: true });
+		writeFileSync(
+			join(path, "package.json"),
+			'{"dependencies":{"@\\u0061lchemy.run/rivet":"0.1.0"}}',
+		);
+		expect(references(root, ["dispatcher"])).toEqual([
+			"packages/dispatcher/package.json",
+		]);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

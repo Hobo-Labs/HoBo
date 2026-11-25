@@ -2,7 +2,7 @@ import * as Domain from "@alchemy.run/domain";
 import type { Handler, TriggerOf } from "@alchemy.run/domain/Policy";
 import * as Effect from "effect/Effect";
 import { DispatchJob } from "./DispatchJob.saga.js";
-import { NonEmptyReason, NonNegativeMicros } from "./ids.js";
+import { NonEmptyReason, NonNegativeMicros, PositiveSeconds } from "./ids.js";
 import {
 	ExpireJobDispatch,
 	JobDispatch,
@@ -14,6 +14,7 @@ import { RunnerBackend } from "./RunnerBackend.external.js";
 import { ReleaseBalancedSlot, StationFleet } from "./StationFleet.aggregate.js";
 
 const ZERO_MICROS = NonNegativeMicros.make(0);
+const UNBOUNDED_QUEUE_GUARD_SECONDS = PositiveSeconds.make(86_400);
 
 export class JobObservedPolicy extends Domain.Policy(
 	"JobObservedPolicy",
@@ -36,15 +37,15 @@ export const JobObservedPolicyLive = JobObservedPolicy.toLayer(
 				stationId: event.stationId,
 				requirements: event.requirements,
 			});
-			if (event.deadlineSeconds !== null) {
-				yield* jobs.schedule(
-					source,
-					new ExpireJobDispatch({
-						reason: NonEmptyReason.make("queue-deadline-elapsed"),
-					}),
-					{ after: `${event.deadlineSeconds} seconds` },
-				);
-			}
+			const expirySeconds =
+				event.deadlineSeconds ?? UNBOUNDED_QUEUE_GUARD_SECONDS;
+			yield* jobs.schedule(
+				source,
+				new ExpireJobDispatch({
+					reason: NonEmptyReason.make("queue-deadline-elapsed"),
+				}),
+				{ after: `${expirySeconds} seconds` },
+			);
 		});
 	}),
 );
