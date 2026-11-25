@@ -4,6 +4,16 @@ Scripts the GitHub workflows under `.github/workflows/` run. Each script's
 header comment is its reference; this page collects the ones whose contract
 spans several files.
 
+## Hosted Playwright (Fabric overflow)
+
+When a Fabric workspace test shard lands on `ubuntu-24.04`, `ci-runner-preflight`
+with `browser: true` always restores or installs the lockfile-pinned chromium
+headless shell. The zip is cached under `actions/cache/restore` and
+`actions/cache/save` keyed by the lockfile, ci-runner contract, and install
+scripts, then unpacked into `${RUNNER_TEMP}/hobo-pw-browsers` with
+`PLAYWRIGHT_BROWSERS_PATH` pointing at that directory (never `/opt/pw-browsers`).
+Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers`.
+
 ## Routing
 
 `route-runner.mts` is the route job of the six routed workflows. It runs on a
@@ -46,7 +56,12 @@ resolver scope is `release-probe` or `cd-realize:<logicalCampId>` (for example
 `releaseWorkflowGithubAppScopeAllowed`).
 Blocked release verdicts and `::error::` lines use
 `releaseFreightLogFragment` from `@hobo/cd/reconcile` (`@hobo/provider-redaction`
-detectors, fail closed) before aggregation or logging. The `release-contract` job builds those workspace
+detectors, fail closed) before aggregation or logging.
+`announceVerdict` keeps resolver codes (`releaseFreightVerdictCodesForAnnounce`)
+and structured GitHub Pages refusal detail on `::error::` lines instead of
+`blocked (none)`. The `Record, promote and publish` step of `release-hobo.yml`
+passes `GITHUB_TOKEN: ${{ github.token }}` so Pages realize uses the job-scoped
+token with `contents: write`, not `secrets.GITHUB_TOKEN`. The `release-contract` job builds those workspace
 packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
 `scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
 checkouts have `dist/` without pulling `@hobo/cd` source into the scripts lane.
