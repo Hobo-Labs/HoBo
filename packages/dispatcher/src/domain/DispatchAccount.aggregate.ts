@@ -116,6 +116,13 @@ export class DispatchOverrunReconciliationRequired extends Domain.Rejection(
 	},
 ) {}
 
+export class DispatchOverrunCleared extends Domain.Event(
+	"DispatchOverrunCleared",
+	{
+		reason: NonEmptyReason,
+	},
+) {}
+
 export class DispatchAccountConfigured extends Domain.Event(
 	"DispatchAccountConfigured",
 	{
@@ -283,6 +290,7 @@ export class ConfirmReservation extends Domain.Command(
 			ReservationNotConfirmable,
 			UsageEvidenceRequired,
 			SettlementExceedsHold,
+			BudgetCapExceeded,
 		],
 	},
 	{
@@ -304,6 +312,22 @@ export class ExpirePendingReservations extends Domain.Command(
 	{
 		description:
 			"Atomically expire all pending reservations whose deadline has passed at or before nowMs.",
+	},
+) {}
+
+export class ClearDispatchOverrun extends Domain.Command(
+	"ClearDispatchOverrun",
+	{
+		target: ScopedAccountId,
+		input: {
+			reason: NonEmptyReason,
+		},
+		events: [DispatchOverrunCleared],
+		rejects: [AccountNotConfigured],
+	},
+	{
+		description:
+			"Clear overrun reconciliation after spend is reconciled with the hard budget cap so new reservations may proceed.",
 	},
 ) {}
 
@@ -386,6 +410,7 @@ export class DispatchAccount extends Domain.Aggregate("DispatchAccount", {
 		ReleaseReservation,
 		ConfirmReservation,
 		ExpirePendingReservations,
+		ClearDispatchOverrun,
 	],
 	decide: {
 		ConfigureDispatchAccount: (state, cmd, { id }) => {
@@ -586,6 +611,22 @@ export class DispatchAccount extends Domain.Aggregate("DispatchAccount", {
 					settledMicros: cmd.settledMicros,
 				});
 			}
+			const exposureAfterConfirm =
+				state.spentMicros +
+				state.heldMicros -
+				hold.reservedMicros +
+				cmd.settledMicros;
+			if (
+				state.budgetCapMicros !== null &&
+				exposureAfterConfirm > state.budgetCapMicros
+			) {
+				return new BudgetCapExceeded({
+					spentMicros: state.spentMicros,
+					heldMicros: state.heldMicros,
+					requiredMicros: decodeNonNegativeMicros(cmd.settledMicros),
+					budgetCapMicros: state.budgetCapMicros,
+				});
+			}
 			return [
 				new DispatchReservationConfirmed({
 					reservationId: cmd.reservationId,
@@ -653,6 +694,19 @@ export class DispatchAccount extends Domain.Aggregate("DispatchAccount", {
 				}),
 			];
 		},
+		ClearDispatchOverrun: (state, cmd, { id }) => {
+			if (state._tag === "Unconfigured") {
+				return new AccountNotConfigured({ accountId: id });
+			}
+			if (!state.overrunSeen) {
+				return [];
+			}
+			return [
+				new DispatchOverrunCleared({
+					reason: cmd.reason,
+				}),
+			];
+		},
 	},
 	evolve: {
 		DispatchAccountConfigured: (state, event) => ({
@@ -665,9 +719,18 @@ export class DispatchAccount extends Domain.Aggregate("DispatchAccount", {
 			spentMicros:
 				state._tag === "Configured" ? state.spentMicros : ZERO_MICROS,
 			heldMicros: state._tag === "Configured" ? state.heldMicros : ZERO_MICROS,
-			overrunSeen: state._tag === "Configured" ? state.overrunSeen : false,
+			overrunSeen: false,
 			reservations: state._tag === "Configured" ? state.reservations : [],
 		}),
+		DispatchOverrunCleared: (state) => {
+			if (state._tag !== "Configured") {
+				return state;
+			}
+			return {
+				...state,
+				overrunSeen: false,
+			};
+		},
 		DispatchReserved: (state, event) => {
 			if (state._tag !== "Configured") {
 				return state;
