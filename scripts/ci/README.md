@@ -46,7 +46,12 @@ resolver scope is `release-probe` or `cd-realize:<logicalCampId>` (for example
 `releaseWorkflowGithubAppScopeAllowed`).
 Blocked release verdicts and `::error::` lines use
 `releaseFreightLogFragment` from `@hobo/cd/reconcile` (`@hobo/provider-redaction`
-detectors, fail closed) before aggregation or logging. The `release-contract` job builds those workspace
+detectors, fail closed) before aggregation or logging.
+`announceVerdict` keeps resolver codes (`releaseFreightVerdictCodesForAnnounce`)
+and structured GitHub Pages refusal detail on `::error::` lines instead of
+`blocked (none)`. The `Record, promote and publish` step of `release-hobo.yml`
+passes `GITHUB_TOKEN: ${{ github.token }}` so Pages realize uses the job-scoped
+token with `contents: write`, not `secrets.GITHUB_TOKEN`. The `release-contract` job builds those workspace
 packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
 `scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
 checkouts have `dist/` without pulling `@hobo/cd` source into the scripts lane.
