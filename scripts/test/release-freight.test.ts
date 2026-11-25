@@ -573,9 +573,7 @@ describe("announceVerdict", () => {
 				{},
 			);
 			const line = String(error.mock.calls.at(-1)?.[0] ?? "");
-			expect(line).toContain(
-				"blocked (RESOLVER_PROVIDER_REJECTED)",
-			);
+			expect(line).toContain("blocked (RESOLVER_PROVIDER_REJECTED)");
 			expect(line).toContain("pages-reason=github-permission-missing");
 			expect(line).not.toContain("blocked (none)");
 		} finally {
