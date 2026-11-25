@@ -100,7 +100,7 @@ export type VibeMarketplaceInstallabilityMockups = {
   readonly issue: "HOBO-546";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups";
-  readonly proofPath: "docs/design/proofs/vibe-marketplace-installability-mockups/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-546-vibe-marketplace-installability-mockups-proof-archived-051fb04f0b9d";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly MarketplaceQuickstartFixtureReference[];
   readonly personas: readonly MarketplacePersona[];
@@ -246,7 +246,7 @@ export const VIBE_MARKETPLACE_INSTALLABILITY_MOCKUPS: VibeMarketplaceInstallabil
   issue: "HOBO-546",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups",
-  proofPath: "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-546-vibe-marketplace-installability-mockups-proof-archived-051fb04f0b9d",
   designRefs: [
     "docs/design/marketplace-ux.md",
     "docs/design/marketplace-publisher-trust-evidence.md",
@@ -417,7 +417,7 @@ export function validateVibeMarketplaceInstallabilityMockups(
   if (mockups.packagePath !== "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (mockups.proofPath !== "docs/design/proofs/vibe-marketplace-installability-mockups/README.md") {
+  if (mockups.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-546-vibe-marketplace-installability-mockups-proof-archived-051fb04f0b9d") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(mockups.personas, REQUIRED_MARKETPLACE_PERSONAS)) {

@@ -49,7 +49,7 @@ package architecture_evidence
 	issue:               "HOBO-544"
 	phase:               "M1"
 	package_path:        "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups"
-	proof_path:          "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md"
+	proof_path:          "https://linear.app/quickdeploy-ai/document/hobo-544-vibe-deployment-dashboard-mockups-proof-archived-c7a9a2365dc0"
 	design_refs:         [...string]
 	quickstart_fixture_refs: [...#VibeDeploymentDashboardQuickstartFixtureReference]
 	personas:            [...string]

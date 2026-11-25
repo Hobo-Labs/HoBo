@@ -10,7 +10,7 @@ package vibe_marketplace_installability_mockups
 	issue: "HOBO-546"
 	phase: "M1"
 	packagePath: "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups"
-	proofPath: "docs/design/proofs/vibe-marketplace-installability-mockups/README.md"
+	proofPath: "https://linear.app/quickdeploy-ai/document/hobo-546-vibe-marketplace-installability-mockups-proof-archived-051fb04f0b9d"
 	designRefs: [...string]
 	quickstartFixtureRefs: [...#MarketplaceQuickstartFixtureReference]
 	personas: [...#MarketplacePersona]

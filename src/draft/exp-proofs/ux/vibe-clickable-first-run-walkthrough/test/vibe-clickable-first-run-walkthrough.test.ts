@@ -32,7 +32,7 @@ test("HOBO-559 walkthrough pins issue, package path, proof path, and M1 source c
   );
   assert.equal(
     parsed.proofPath,
-    "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-559-vibe-clickable-first-run-walkthrough-proof-archived-8d94c3fef237",
   );
   assert.equal(parsed.consumedActivationRail.sourceIssue, "HOBO-540");
   assert.equal(parsed.consumedWorkspaceProjectStates.sourceIssue, "HOBO-541");
@@ -59,7 +59,7 @@ test("walkthrough consumes HOBO-540 activation rail and HOBO-541 workspace/proje
     assert.match(step.clickableAction, /snapshop|workspace|project|plan|recover|proof|fixture/i);
     assert.match(step.snapshopFixture.snapshopContext, /snapshop/i);
     assert.match(step.snapshopFixture.quickstartFixtureId, /^rlq-[a-z0-9-]+-v[0-9]+$/);
-    assert.match(step.docsHandoff, /^docs\/design\/proofs\//);
+    assert.match(step.docsHandoff, /^(?:docs\/design\/proofs\/|https:\/\/linear\.app\/quickdeploy-ai\/document\/)/);
     assert.match(step.supportHandoff, /support|owner|route|redact/i);
   }
 });
@@ -88,9 +88,19 @@ test("docs and support handoff routes cover portal, tutorials, troubleshooting, 
 
   for (const route of parsed.handoffRoutes) {
     assert.match(route.trigger, /workspace|project|blocked|stale|recovery|support|tutorial/i);
-    assert.match(route.evidenceAnchor, /^docs\/design\/proofs\//);
+    assert.match(route.evidenceAnchor, /^(?:docs\/design\/proofs\/|https:\/\/linear\.app\/quickdeploy-ai\/document\/)/);
     assert.match(route.customerSafeMessage, /fixture|simulated|redact|support|docs|owner|evidence/i);
   }
+});
+
+test("handoff evidence rejects unrelated URLs", () => {
+  const routes = VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH.handoffRoutes.map((route, index) =>
+    index === 0 ? { ...route, evidenceAnchor: "https://example.com/unrelated" } : route,
+  );
+  assert.throws(
+    () => parseVibeClickableFirstRunWalkthrough({ ...VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH, handoffRoutes: routes }),
+    VibeClickableFirstRunWalkthroughParseError,
+  );
 });
 
 test("proof modes, support handoff, accessibility, and evidence states are explicit", () => {

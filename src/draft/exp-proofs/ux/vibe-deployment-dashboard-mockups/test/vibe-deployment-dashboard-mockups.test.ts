@@ -25,7 +25,7 @@ test("HOBO-544 mockup contract pins issue, package path, proof path, personas, a
   );
   assert.equal(
     parsed.proofPath,
-    "docs/design/proofs/vibe-deployment-dashboard-mockups/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-544-vibe-deployment-dashboard-mockups-proof-archived-c7a9a2365dc0",
   );
   assert.deepEqual(VIBE_DEPLOYMENT_DASHBOARD_MOCKUPS.personas, REQUIRED_DASHBOARD_MOCKUP_PERSONAS);
   assert.deepEqual(

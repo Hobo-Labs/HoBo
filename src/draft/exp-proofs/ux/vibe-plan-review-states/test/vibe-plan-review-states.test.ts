@@ -21,7 +21,7 @@ test("HOBO-542 plan review contract pins issue, package path, proof path, person
   assert.equal(parsed.issue, "HOBO-542");
   assert.equal(parsed.phase, "M1");
   assert.equal(parsed.packagePath, "src/draft/exp-proofs/ux/vibe-plan-review-states");
-  assert.equal(parsed.proofPath, "docs/design/proofs/vibe-plan-review-states/README.md");
+  assert.equal(parsed.proofPath, "https://linear.app/quickdeploy-ai/document/hobo-542-vibe-plan-review-states-proof-archived-22175c3b581c");
   assert.deepEqual(parsed.personas, REQUIRED_PLAN_REVIEW_PERSONAS);
   assert.deepEqual(
     parsed.reviewSurfaces.map((surface) => surface.id),

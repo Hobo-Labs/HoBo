@@ -18,7 +18,7 @@ package architecture_evidence
 #VibePlanReviewStatesRecord: {
 	issue:        "HOBO-542"
 	package_path: "src/draft/exp-proofs/ux/vibe-plan-review-states"
-	proof_path:   "docs/design/proofs/vibe-plan-review-states/README.md"
+	proof_path:   "https://linear.app/quickdeploy-ai/document/hobo-542-vibe-plan-review-states-proof-archived-22175c3b581c"
 	states: [...#VibePlanReviewState]
 	quickstart_fixture_ids: [...string & =~"^rlq-[a-z0-9-]+-v[0-9]+$"]
 }

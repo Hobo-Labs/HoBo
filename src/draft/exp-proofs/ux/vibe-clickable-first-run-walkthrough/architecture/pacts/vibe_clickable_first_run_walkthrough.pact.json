@@ -18,7 +18,7 @@
           "issue": "HOBO-559",
           "phase": "M2",
           "packagePath": "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough",
-          "proofPath": "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
+          "proofPath": "https://linear.app/quickdeploy-ai/document/hobo-559-vibe-clickable-first-run-walkthrough-proof-archived-8d94c3fef237",
           "consumedActivationRail": {
             "sourceIssue": "HOBO-540",
             "packagePath": "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
