@@ -7,11 +7,14 @@ import {
 	BudgetCapBelowLiabilities,
 	BudgetCapExceeded,
 	type BuildMachineAccountId,
+	ClearDispatchOverrun,
 	ConfigureDispatchAccount,
 	ConfirmReservation,
 	DispatchAccount,
 	DispatchAccountConfigured,
 	DispatchAccountView,
+	DispatchOverrunCleared,
+	DispatchOverrunReconciliationRequired,
 	DispatchReservationConfirmed,
 	DispatchReservationReleased,
 	DispatchReservationStarted,
@@ -612,6 +615,188 @@ describe("@hobo/dispatcher/domain DispatchRouting (static invariants + BDD)", ()
 					heldMicros: MICROS(0),
 					availableBudgetMicros: MICROS(170_000),
 					activeReservationCount: UNITS(0),
+					overrunSeen: false,
+				}),
+			),
+		);
+	});
+
+	it("bounds running settlement to the hard cap, blocks reserves after overrun until cleared, and reconfigure clears overrunSeen", async () => {
+		const runnerAccount = DispatchAccount.ref(
+			scopedAccountId("runner", ProviderId.make("github")),
+		);
+		const overrunRes = ReservationId.make("res-overrun");
+		const reconcileReason = NonEmptyReason.make("cap-reconciled");
+		const evidence = UsageEvidenceRef.make("usage:overrun");
+
+		await Effect.runPromise(
+			story(
+				Story.when(
+					runnerAccount,
+					new ConfigureDispatchAccount({
+						listUnitMicros: MICROS(100_000),
+						freeHeadroom: UNITS(0),
+						rateHeadroom: UNITS(5),
+						concurrencyHeadroom: SLOTS(2),
+						budgetCapMicros: MICROS(200_000),
+					}),
+				),
+				Story.then(
+					runnerAccount,
+					new DispatchAccountConfigured({
+						listUnitMicros: MICROS(100_000),
+						freeHeadroom: UNITS(0),
+						rateHeadroom: UNITS(5),
+						concurrencyHeadroom: SLOTS(2),
+						budgetCapMicros: MICROS(200_000),
+					}),
+				),
+				Story.when(
+					runnerAccount,
+					new ReserveDispatch({
+						reservationId: overrunRes,
+						units: POS_UNITS(1),
+						estimatedMicros: MICROS(100_000),
+						expiresAtMs: null,
+					}),
+				),
+				Story.then(
+					runnerAccount,
+					new DispatchReserved({
+						reservationId: overrunRes,
+						hold: decodeActiveReservationHold({
+							units: POS_UNITS(1),
+							freeUnits: UNITS(0),
+							paidUnits: UNITS(1),
+							reservedMicros: MICROS(100_000),
+							concurrencySlots: SLOTS(1),
+						}),
+						expiresAtMs: null,
+						freeHeadroomAfter: UNITS(0),
+						rateHeadroomAfter: UNITS(4),
+						concurrencyHeadroomAfter: SLOTS(1),
+						heldMicrosAfter: MICROS(100_000),
+					}),
+				),
+				Story.when(
+					runnerAccount,
+					new StartReservation({ reservationId: overrunRes }),
+				),
+				Story.then(
+					runnerAccount,
+					new DispatchReservationStarted({ reservationId: overrunRes }),
+				),
+				Story.when(
+					runnerAccount,
+					new ConfirmReservation({
+						reservationId: overrunRes,
+						settledMicros: MICROS(250_000),
+						usageEvidenceRef: evidence,
+					}),
+				),
+				Story.rejected(
+					new BudgetCapExceeded({
+						spentMicros: MICROS(0),
+						heldMicros: MICROS(100_000),
+						requiredMicros: MICROS(250_000),
+						budgetCapMicros: MICROS(200_000),
+					}),
+				),
+				Story.when(
+					runnerAccount,
+					new ConfirmReservation({
+						reservationId: overrunRes,
+						settledMicros: MICROS(150_000),
+						usageEvidenceRef: evidence,
+					}),
+				),
+				Story.then(
+					runnerAccount,
+					new DispatchReservationConfirmed({
+						reservationId: overrunRes,
+						settledMicros: MICROS(150_000),
+						overrun: true,
+						usageEvidenceRef: evidence,
+						concurrencyHeadroomAfter: SLOTS(2),
+						spentMicrosAfter: MICROS(150_000),
+						heldMicrosAfter: MICROS(0),
+					}),
+				),
+				Story.when(
+					runnerAccount,
+					new ReserveDispatch({
+						reservationId: ReservationId.make("blocked"),
+						units: POS_UNITS(1),
+						estimatedMicros: MICROS(0),
+						expiresAtMs: null,
+					}),
+				),
+				Story.rejected(
+					new DispatchOverrunReconciliationRequired({
+						accountId: scopedAccountId("runner", ProviderId.make("github")),
+					}),
+				),
+				Story.when(
+					runnerAccount,
+					new ClearDispatchOverrun({ reason: reconcileReason }),
+				),
+				Story.then(
+					runnerAccount,
+					new DispatchOverrunCleared({ reason: reconcileReason }),
+				),
+				Story.when(
+					runnerAccount,
+					new ConfigureDispatchAccount({
+						listUnitMicros: MICROS(100_000),
+						freeHeadroom: UNITS(0),
+						rateHeadroom: UNITS(4),
+						concurrencyHeadroom: SLOTS(2),
+						budgetCapMicros: MICROS(300_000),
+					}),
+				),
+				Story.then(
+					runnerAccount,
+					new DispatchAccountConfigured({
+						listUnitMicros: MICROS(100_000),
+						freeHeadroom: UNITS(0),
+						rateHeadroom: UNITS(4),
+						concurrencyHeadroom: SLOTS(2),
+						budgetCapMicros: MICROS(300_000),
+					}),
+				),
+				Story.when(
+					runnerAccount,
+					new ReserveDispatch({
+						reservationId: ReservationId.make("after-clear"),
+						units: POS_UNITS(1),
+						estimatedMicros: MICROS(100_000),
+						expiresAtMs: null,
+					}),
+				),
+				Story.then(
+					runnerAccount,
+					new DispatchReserved({
+						reservationId: ReservationId.make("after-clear"),
+						hold: decodeActiveReservationHold({
+							units: POS_UNITS(1),
+							freeUnits: UNITS(0),
+							paidUnits: UNITS(1),
+							reservedMicros: MICROS(100_000),
+							concurrencySlots: SLOTS(1),
+						}),
+						expiresAtMs: null,
+						freeHeadroomAfter: UNITS(0),
+						rateHeadroomAfter: UNITS(3),
+						concurrencyHeadroomAfter: SLOTS(1),
+						heldMicrosAfter: MICROS(100_000),
+					}),
+				),
+				Story.view(DispatchAccountView, runnerAccount, {
+					_tag: "Configured",
+					spentMicros: MICROS(150_000),
+					heldMicros: MICROS(100_000),
+					availableBudgetMicros: MICROS(50_000),
+					activeReservationCount: UNITS(1),
 					overrunSeen: false,
 				}),
 			),

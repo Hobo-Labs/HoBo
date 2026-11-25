@@ -35,6 +35,7 @@ import {
 	PromoteFailoverStandby,
 	ProposeBudgetSwitch,
 	SwitchTargetMatchesActive,
+	SwitchUtilizationThresholdNotReached,
 	type TypedFleetAllowance,
 } from "../src/domain/index.js";
 
@@ -136,6 +137,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 		const fleetId = FleetId.make("cache-fleet-prod");
 		const fleet = FleetAssignment.ref(fleetId);
 		const prefReason = NonEmptyReason.make("preferred-free");
+		const capReason = NonEmptyReason.make("target below budget cap");
 		const exhaustReason = NonEmptyReason.make("commands projected 90%");
 		const abortReason = NonEmptyReason.make("copy-replica-timeout");
 		const downReason = NonEmptyReason.make("writer-unreachable");
@@ -225,6 +227,51 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 				),
 				Story.rejected(
 					new FleetSwitchAlreadyInFlight({ active: BLOB, target: UPSTASH }),
+				),
+				Story.when(fleet, new AbortSealedSwitch({ reason: abortReason })),
+				Story.then(
+					fleet,
+					new FleetSwitchAborted({
+						active: BLOB,
+						abortedTarget: UPSTASH,
+						reason: abortReason,
+					}),
+				),
+				Story.when(
+					fleet,
+					new ProposeBudgetSwitch({
+						target: UPSTASH,
+						cause: "budget-cap",
+						reason: capReason,
+						observedUtilization: decodeUnitFraction(0.85),
+						nowMs: EPOCH(62_500),
+					}),
+				),
+				Story.rejected(
+					new SwitchUtilizationThresholdNotReached({
+						observedUtilization: decodeUnitFraction(0.85),
+						requiredUtilization: DEFAULT_MARKS.switchBackBelow,
+					}),
+				),
+				Story.when(
+					fleet,
+					new ProposeBudgetSwitch({
+						target: UPSTASH,
+						cause: "budget-cap",
+						reason: capReason,
+						observedUtilization: decodeUnitFraction(0.75),
+						nowMs: EPOCH(62_600),
+					}),
+				),
+				Story.then(
+					fleet,
+					new FleetSwitchSealed({
+						from: BLOB,
+						target: UPSTASH,
+						cause: "budget-cap",
+						reason: capReason,
+						sealedAtMs: EPOCH(62_600),
+					}),
 				),
 				Story.when(fleet, new AbortSealedSwitch({ reason: abortReason })),
 				Story.then(
