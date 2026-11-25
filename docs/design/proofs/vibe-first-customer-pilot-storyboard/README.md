@@ -14,7 +14,7 @@ script artifact slice.
 ## Evidence
 
 - Source record: [`customer-onboarding.md`](https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3).
-- Workspace source: [`workspace-onboarding-ux.md`](../../workspace-onboarding-ux.md).
+- Workspace source: [`workspace-onboarding-ux.md`](https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35).
 - Beta feedback source: [`beta-pilot-feedback.md`](../../beta-pilot-feedback.md).
 - Quickstart source: [`resource-lifecycle-quickstart-examples`](../resource-lifecycle-quickstart-examples/README.md).
 - Executable proof: [`vibe-first-customer-pilot-storyboard`](../../../../src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard/README.md).

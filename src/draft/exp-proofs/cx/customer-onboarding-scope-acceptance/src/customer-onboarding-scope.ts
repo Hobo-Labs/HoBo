@@ -60,7 +60,7 @@ export const CUSTOMER_ONBOARDING_SCOPE = {
   sourceRefs: [
     "Linear HOBO-449 issue body",
     "https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3",
-    "docs/design/workspace-onboarding-ux.md",
+    "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "https://linear.app/quickdeploy-ai/document/persona-operating-profile-and-recommendation-memory-archived-e3cb2a547f5c",
     "https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203",
     "docs/design/beta-pilot-feedback.md",

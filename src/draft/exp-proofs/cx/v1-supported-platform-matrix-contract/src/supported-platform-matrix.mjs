@@ -158,7 +158,7 @@ export const V1_SUPPORTED_PLATFORM_MATRIX = {
       reason: "Support needs unsupported environment routing and debug evidence.",
     },
     {
-      source: "docs/design/workspace-onboarding-ux.md",
+      source: "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
       reason: "Workspace onboarding owns browser-visible first-run and responsive UX expectations.",
     },
     {

@@ -138,7 +138,7 @@ export const VIBE_FIRST_CUSTOMER_PILOT_STORYBOARD: VibeFirstCustomerPilotStorybo
   proofPath: "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3",
-    "docs/design/workspace-onboarding-ux.md",
+    "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "docs/design/beta-pilot-feedback.md",
     "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
     "docs/design/launch-support-escalation.md",

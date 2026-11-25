@@ -86,7 +86,7 @@ every UI remediation.
 
 ## Authoritative Dependencies
 
-- [Workspace & Onboarding UX](./workspace-onboarding-ux.md) names onboarding surfaces and explicitly
+- [Workspace & Onboarding UX](https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35) names onboarding surfaces and explicitly
   scopes accessibility audit output out of workspace M0.
 - [Launch Blocker Taxonomy](./launch-blocker-taxonomy.md) defines decision classes and exception
   boundaries.

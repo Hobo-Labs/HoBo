@@ -33,7 +33,7 @@ export const PRODUCT_NOTIFICATION_TAXONOMY = {
     "docs/design/adr/03-data-plane.md#adr-0059",
     "docs/design/launch-support-escalation.md",
     "docs/design/billing-launch-policy.md",
-    "docs/design/workspace-onboarding-ux.md",
+    "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
   ],
   scopeIn: [
     "Required v1 lifecycle notification classes and owner routing.",

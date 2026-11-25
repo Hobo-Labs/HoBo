@@ -132,7 +132,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`launch-messaging-claims.md`](./launch-messaging-claims.md) | Productization M0 evidence register for launch claims and demo assets | — |
 | [`v1-critical-path-dependencies.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/v1-critical-path-dependencies.md) | Productization M0 dependency map for beta and GA release critical path blockers | — |
 | [`outcome-activation-rail.md`](https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc) | Productization M0 scope and acceptance for the v1 outcome activation rail | — |
-| [`workspace-onboarding-ux.md`](./workspace-onboarding-ux.md) | Productization M0 scope and acceptance for Workspace & Onboarding UX | — |
+| [`workspace-onboarding-ux.md`](https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35) | Productization M0 scope and acceptance for Workspace & Onboarding UX | — |
 | [`customer-onboarding.md`](https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3) | Productization M0 scope and acceptance for Customer Onboarding pilot entry, first-run success criteria, support handoffs, and follow-up gates | — |
 | [`accessibility-usability-launch-baseline.md`](./accessibility-usability-launch-baseline.md) | Productization M0 launch baseline for accessibility, usability, evidence, and exception boundaries | — |
 | [`release-notes-upgrade-guide.md`](./release-notes-upgrade-guide.md) | V1 release notes and upgrade-guide outline contract | — |

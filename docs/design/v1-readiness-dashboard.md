@@ -57,5 +57,5 @@ legal/privacy, documentation, and operations projects.
 - [Launch Blocker Taxonomy](./launch-blocker-taxonomy.md) defines blocker and accepted-risk classes.
 - [Pre-Launch Outcome Contract](https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203#surface-mapping) maps launch
   go/no-go consumers.
-- [Workspace Onboarding UX](./workspace-onboarding-ux.md#owning-initiative-dependencies) already routes
+- [Workspace Onboarding UX](https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35#owning-initiative-dependencies) already routes
   onboarding gaps to the readiness dashboard and cutline project.

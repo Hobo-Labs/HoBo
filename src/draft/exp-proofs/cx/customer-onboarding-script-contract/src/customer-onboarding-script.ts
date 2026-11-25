@@ -110,7 +110,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
   },
   dependencies: [
     {
-      source: "docs/design/workspace-onboarding-ux.md",
+      source: "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
       reason: "Defines first-run activation stages, stalled states, and support handoff fields consumed by pilot scripts.",
     },
     {
@@ -181,7 +181,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Create or join the workspace, confirm organization/project context, and record the first blocked or ready state.",
       expectedEvidence: "Workspace setup note with owner, state, missing prerequisite, and safe next action.",
       proofMode: "reference-fixture",
-      source: "docs/design/workspace-onboarding-ux.md",
+      source: "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     },
     {
       id: "project-choice",

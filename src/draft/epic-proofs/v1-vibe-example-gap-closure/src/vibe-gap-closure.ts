@@ -379,11 +379,11 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-540", "first-run activation rail mockups and state model", "Workspace & Onboarding UX", "M1", 3, [
       "mockups",
       "state model",
-    ], ["docs/design/workspace-onboarding-ux.md", "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc"]),
+    ], ["https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35", "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc"]),
     child("HOBO-541", "workspace/project empty, blocked, recovery, and value-proof states", "Workspace & Onboarding UX", "M1", 3, [
       "mockups",
       "state model",
-    ], ["docs/design/workspace-onboarding-ux.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35"]),
     child("HOBO-542", "plan review mockups for safe, blocked, destructive, stale, and unknown evidence", "Plan/Diff Viewer", "M1", 3, [
       "mockups",
       "wireframes",
@@ -456,7 +456,7 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-559", "clickable first-run walkthrough with snapshot fixtures", "Workspace & Onboarding UX", "M2", 5, [
       "clickable prototype",
       "fixtures",
-    ], ["docs/design/workspace-onboarding-ux.md", "docs/design/worked-example.md#plan-19"]),
+    ], ["https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35", "docs/design/worked-example.md#plan-19"]),
     child("HOBO-560", "deterministic plan/diff review prototype over golden fixtures", "Plan/Diff Viewer", "M2", 5, [
       "reference prototype",
       "fixtures",
@@ -472,7 +472,7 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-563", "pilot workspace-to-first-proof walkthrough with blocker routing", "Customer Onboarding", "M2", 5, [
       "clickable prototype",
       "fixtures",
-    ], ["https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3", "docs/design/workspace-onboarding-ux.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3", "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35"]),
     child("HOBO-564", "support case prototype with redacted evidence pack", "Support Workflow", "M2", 5, [
       "reference prototype",
       "fixtures",

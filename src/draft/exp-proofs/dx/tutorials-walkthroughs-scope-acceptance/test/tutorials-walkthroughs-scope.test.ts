@@ -42,7 +42,7 @@ test("M0 record maps dependencies to authoritative design sources", () => {
       "docs/design/worked-example.md#plan-19",
       "docs/design/developer-experience.md#plan-07",
       "https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9",
-      "docs/design/workspace-onboarding-ux.md",
+      "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
       "docs/design/adr/07-portability-extensibility.md#adr-0064",
     ],
   );

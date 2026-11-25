@@ -132,7 +132,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
   packagePath: "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough",
   proofPath: "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
   designRefs: [
-    "docs/design/workspace-onboarding-ux.md",
+    "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc",
     "docs/design/walkthrough.md",
     "docs/design/proofs/vibe-first-run-activation-rail/README.md",
