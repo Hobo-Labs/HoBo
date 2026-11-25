@@ -1,5 +1,4 @@
 import type { Delivery } from "@alchemy.run/domain/Platform";
-import type { JsonValue } from "@hobo/core";
 import * as Effect from "effect/Effect";
 import type * as Semaphore from "effect/Semaphore";
 import { asNumber, asText, type SqliteDriver, type SqliteRunResult } from "./driver.js";
@@ -288,7 +287,7 @@ export interface SqliteWorkflowHost {
 	readonly died: (
 		workflow: string,
 		executionId: string,
-		defect: JsonValue,
+		defect: unknown,
 	) => void;
 }
 
