@@ -18,7 +18,6 @@ const shared = [
 	"core",
 	"bindles",
 	"cloud",
-	"dispatcher",
 	"policy",
 	"pricing",
 	"provider-manifest",

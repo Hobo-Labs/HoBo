@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createOwnerStoreSecretProvider } from "../src/environments/index.js";
 import { createAlchemyTestHarness } from "../src/test-harness/index.js";
 import {
+	DualCloudBudgetRouterError,
 	declareVercelServiceStack,
 	selectDualCloudBudgetTarget,
 	type VercelCloudApiClient,
@@ -28,6 +29,7 @@ describe("@hobo/iac-alchemy/vercel custom cloud provider & Cloudflare budget rou
 				return {
 					deploymentId: `dpl_${input.serviceName}_1`,
 					url: `https://${input.serviceName}.vercel.example.test`,
+					state: "READY" as const,
 				};
 			},
 			deleteDeployment: async (input) => {
@@ -171,5 +173,37 @@ describe("@hobo/iac-alchemy/vercel custom cloud provider & Cloudflare budget rou
 		});
 		expect(heldByHysteresis.selectedProvider).toBe("cloudflare");
 		expect(heldByHysteresis.reason).toBe("incumbent-held-hysteresis");
+
+		expect(() =>
+			selectDualCloudBudgetTarget({
+				budgetCeilingMicros: 1_000_000,
+				offers: [
+					{
+						provider: "vercel",
+						backendId: "vercel-iad1",
+						endpointUrl: "https://relay.vercel.example.test",
+						remainingCreditsMicros: 0,
+						estimatedMonthlyCostMicros: 35_000_000,
+						healthy: true,
+					},
+				],
+			}),
+		).toThrow(DualCloudBudgetRouterError);
+
+		expect(() =>
+			selectDualCloudBudgetTarget({
+				budgetCeilingMicros: 50_000_000,
+				offers: [
+					{
+						provider: "vercel",
+						backendId: "vercel-iad1",
+						endpointUrl: "https://relay.vercel.example.test",
+						remainingCreditsMicros: 0,
+						estimatedMonthlyCostMicros: 10_000_000,
+						healthy: false,
+					},
+				],
+			}),
+		).toThrow(DualCloudBudgetRouterError);
 	});
 });

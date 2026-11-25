@@ -1,5 +1,6 @@
 export {
 	type BudgetRoutingDecision,
+	DualCloudBudgetRouterError,
 	type DualCloudEdgeProvider,
 	type DualCloudServiceOffer,
 	declareVercelServiceStack,
@@ -15,6 +16,7 @@ export {
 	VercelCloudProviderError,
 	type VercelCloudProviderOptions,
 	VercelCloudProviders,
+	type VercelDeploymentState,
 	type VercelGitLinkPolicy,
 	VercelProject,
 	type VercelProjectAttr,

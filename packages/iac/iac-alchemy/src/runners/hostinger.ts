@@ -9,6 +9,9 @@ import {
 	resolveOwnerCredential,
 } from "./owner-credentials.js";
 
+// public-contract: pinned Hostinger API origin fleet transports allowlist against.
+export const HOSTINGER_PINNED_API_ORIGIN = "https://developers.hostinger.com";
+const HOSTINGER_API_HOST = "developers.hostinger.com";
 const HOSTINGER_VIRTUAL_MACHINES_PATH = "/api/vps/v1/virtual-machines";
 const HOSTINGER_MACHINE_ID = /^[1-9][0-9]{0,18}$/u;
 const HOSTINGER_POWER_ACTIONS = ["start", "restart"] as const;
@@ -84,13 +87,23 @@ export function isAllowedHostingerFleetRoute(
 	method: "GET" | "POST",
 	url: string,
 ): boolean {
+	let parsed: URL;
 	try {
-		const path = new URL(url).pathname;
-		if (method === "GET") return path === HOSTINGER_VIRTUAL_MACHINES_PATH;
-		return method === "POST" && HOSTINGER_POWER_ROUTE.test(path);
+		parsed = new URL(url);
 	} catch {
 		return false;
 	}
+	if (parsed.protocol !== "https:") return false;
+	if (parsed.username.length > 0 || parsed.password.length > 0) return false;
+	if (parsed.host !== HOSTINGER_API_HOST) return false;
+	const path = parsed.pathname;
+	if (method === "GET") return path === HOSTINGER_VIRTUAL_MACHINES_PATH;
+	return method === "POST" && HOSTINGER_POWER_ROUTE.test(path);
+}
+
+export function resolveHostingerFleetUrl(path: string): string {
+	const suffix = path.startsWith("/") ? path : `/${path}`;
+	return `${HOSTINGER_PINNED_API_ORIGIN}${suffix}`;
 }
 
 export function guardedHostingerRunnerTransport(
@@ -117,8 +130,16 @@ export function HostingerRunnerProvider(
 	options: HostingerRunnerProviderOptions,
 ) {
 	const guarded = guardedHostingerRunnerTransport(options.transport);
-	const defaultOrigin =
-		options.defaultApiOrigin ?? "https://developers.hostinger.com";
+	const configuredOrigin = options.defaultApiOrigin;
+	if (
+		configuredOrigin !== undefined &&
+		configuredOrigin !== HOSTINGER_PINNED_API_ORIGIN
+	) {
+		throw new HostingerRunnerError({
+			code: "HOSTINGER_ROUTE_REFUSED",
+			message: `hostinger runner api origin must be ${HOSTINGER_PINNED_API_ORIGIN}`,
+		});
+	}
 
 	return Provider.succeed(HostingerRunner, {
 		reconcile: ({ news }) =>
@@ -129,14 +150,24 @@ export function HostingerRunnerProvider(
 						message: `invalid Hostinger machine id: ${news.machineId}`,
 					});
 				}
+				if (
+					news.apiOrigin !== undefined &&
+					news.apiOrigin !== HOSTINGER_PINNED_API_ORIGIN
+				) {
+					return yield* new HostingerRunnerError({
+						code: "HOSTINGER_ROUTE_REFUSED",
+						message: `hostinger runner api origin must be ${HOSTINGER_PINNED_API_ORIGIN}`,
+					});
+				}
 				const locator = parseOwnerCredentialLocator(news.credentialLocator);
 				const credential = yield* resolveOwnerCredential(
 					options.resolveCredential,
 					locator,
 				);
 				const action = news.powerAction ?? "start";
-				const origin = news.apiOrigin ?? defaultOrigin;
-				const url = `${origin}${HOSTINGER_VIRTUAL_MACHINES_PATH}/${news.machineId}/${action}`;
+				const url = resolveHostingerFleetUrl(
+					`${HOSTINGER_VIRTUAL_MACHINES_PATH}/${news.machineId}/${action}`,
+				);
 				const response = yield* Effect.tryPromise({
 					try: () =>
 						guarded({

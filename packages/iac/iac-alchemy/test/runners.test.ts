@@ -106,6 +106,21 @@ describe("Alchemy v2 runner providers", () => {
 		expect(JSON.stringify(stateRecords)).not.toContain(secretMaterial);
 	});
 
+	it("refuses Hostinger fleet routes that only match pathname on a foreign host or carry userinfo", () => {
+		expect(
+			isAllowedHostingerFleetRoute(
+				"POST",
+				"https://evil.example.test/api/vps/v1/virtual-machines/99/start",
+			),
+		).toBe(false);
+		expect(
+			isAllowedHostingerFleetRoute(
+				"POST",
+				"https://token:secret@developers.hostinger.com/api/vps/v1/virtual-machines/99/start",
+			),
+		).toBe(false);
+	});
+
 	it("refuses non-fleet Hostinger routes before transport execution", async () => {
 		expect(
 			isAllowedHostingerFleetRoute(
@@ -178,6 +193,7 @@ describe("Alchemy v2 runner providers", () => {
 			Effect.gen(function* () {
 				const local = yield* LocalRunner("mac-studio", {
 					machineId: "mac-studio",
+					jobId: "job-mac-studio",
 					labels: ["hobo-fleet", "local"],
 					maxConcurrency: 2,
 				});
@@ -200,10 +216,10 @@ describe("Alchemy v2 runner providers", () => {
 		const runtimeLayer = Layer.merge(Alchemist.layer(), providers);
 		const deployed = await runStack(stack, runtimeLayer, "deploy");
 		expect(deployed).toEqual({
-			localId: "local:mac-studio",
+			localId: "local:job-mac-studio",
 			agent37Id: "agent37:sbx-101",
 		});
-		expect(localRegistry.activeRunnerIds()).toEqual(["local:mac-studio"]);
+		expect(localRegistry.activeRunnerIds()).toEqual(["local:job-mac-studio"]);
 		expect(JSON.stringify(stateRecords)).not.toContain(secretMaterial);
 
 		await runStack(stack, runtimeLayer, "destroy");
@@ -211,7 +227,38 @@ describe("Alchemy v2 runner providers", () => {
 		expect(deletedSandboxes).toEqual(["sbx-101"]);
 	});
 
-	it("bridges all four runner tiers through createAlchemyRunnerBackend", async () => {
+	it("enforces local pool maxConcurrency without allowing a second job when the pool is full", async () => {
+		const localRegistry = createInMemoryLocalRunnerRegistry();
+		const backend = createAlchemyRunnerBackend({
+			local: { registry: localRegistry, maxConcurrency: 1 },
+		});
+		const first = await backend.provisionRunner({
+			jobId: "job-a",
+			poolId: "shared-pool",
+			tier: "local",
+			label: "hobo-fleet",
+		});
+		expect(first.runnerId).toBe("local:job-a");
+		await expect(
+			backend.provisionRunner({
+				jobId: "job-b",
+				poolId: "shared-pool",
+				tier: "local",
+				label: "hobo-fleet",
+			}),
+		).rejects.toThrow("exceeded maxConcurrency");
+		await backend.releaseRunner({ runnerId: first.runnerId, tier: "local" });
+		const second = await backend.provisionRunner({
+			jobId: "job-b",
+			poolId: "shared-pool",
+			tier: "local",
+			label: "hobo-fleet",
+		});
+		expect(second.runnerId).toBe("local:job-b");
+		await backend.releaseRunner({ runnerId: second.runnerId, tier: "local" });
+	});
+
+	it("bridges runner tiers through createAlchemyRunnerBackend with jobId-keyed ids and refuses unconfigured github", async () => {
 		const localRegistry = createInMemoryLocalRunnerRegistry();
 		const deletedSandboxes: string[] = [];
 		const backend = createAlchemyRunnerBackend({
@@ -264,20 +311,37 @@ describe("Alchemy v2 runner providers", () => {
 			tier: "agent37",
 			label: "hobo-fleet",
 		});
-		const githubRunner = await backend.provisionRunner({
-			jobId: "job-4",
-			poolId: "gh-ubuntu",
-			tier: "github",
-			label: "ubuntu-latest",
-		});
-
-		expect(localRunner.runnerId).toBe("local:local-box");
+		expect(localRunner.runnerId).toBe("local:job-1");
 		expect(hostingerRunner.runnerId).toBe("hostinger:77001");
 		expect(agent37Runner.runnerId).toBe("agent37:sbx-77");
-		expect(githubRunner.runnerId).toBe("github:gh-ubuntu:job-4");
+		await expect(
+			backend.provisionRunner({
+				jobId: "job-4",
+				poolId: "gh-ubuntu",
+				tier: "github",
+				label: "ubuntu-latest",
+			}),
+		).rejects.toThrow("github runner provider not configured");
+
+		const concurrentLocal = await backend.provisionRunner({
+			jobId: "job-5",
+			poolId: "local-box",
+			tier: "local",
+			label: "hobo-fleet",
+		});
+		expect(concurrentLocal.runnerId).toBe("local:job-5");
+		expect(localRegistry.activeRunnerIds().sort()).toEqual([
+			"local:job-1",
+			"local:job-5",
+		]);
 
 		await backend.releaseRunner({
 			runnerId: localRunner.runnerId,
+			tier: "local",
+		});
+		expect(localRegistry.activeRunnerIds()).toEqual(["local:job-5"]);
+		await backend.releaseRunner({
+			runnerId: concurrentLocal.runnerId,
 			tier: "local",
 		});
 		await backend.releaseRunner({
@@ -286,5 +350,70 @@ describe("Alchemy v2 runner providers", () => {
 		});
 		expect(localRegistry.activeRunnerIds()).toEqual([]);
 		expect(deletedSandboxes).toEqual(["sbx-77"]);
+	});
+
+	it("reconciles Agent37 orphan sandboxes with the same name before and after provision", async () => {
+		const deletedSandboxes: string[] = [];
+		const listedSandboxes = [
+			{ sandboxId: "sbx-orphan", name: "burst-1" },
+			{ sandboxId: "sbx-other", name: "other" },
+		];
+		const stateRecords: NonNullable<Parameters<typeof inMemoryState>[0]> = {};
+		const state = inMemoryState(stateRecords);
+		const providers = Agent37RunnerProvider({
+			resolveCredential: async () => "agent37-key",
+			client: {
+				createSandbox: async () => ({
+					sandboxId: "sbx-fresh",
+					status: "running",
+					endpointUrl: "https://sbx-fresh.agent37.invalid",
+				}),
+				deleteSandbox: async ({ sandboxId }) => {
+					deletedSandboxes.push(sandboxId);
+				},
+				listSandboxes: async () => listedSandboxes,
+			},
+		});
+		const runtimeLayer = Layer.merge(Alchemist.layer(), providers);
+		const initialStack = Stack(
+			"agent37-orphan-reconcile",
+			{ providers, state },
+			Effect.gen(function* () {
+				const runner = yield* Agent37Runner("burst-1", {
+					name: "burst-1",
+					template: "ubuntu-runner",
+					instanceType: "vm",
+					region: "us",
+					cpu: 4,
+					memoryGb: 8,
+					labels: ["hobo-fleet"],
+					credentialLocator: "owner://AGENT37_FLEET",
+				});
+				return { runnerId: runner.runnerId };
+			}),
+		);
+		const replacedStack = Stack(
+			"agent37-orphan-reconcile",
+			{ providers, state },
+			Effect.gen(function* () {
+				const runner = yield* Agent37Runner("burst-1", {
+					name: "burst-1",
+					template: "ubuntu-runner",
+					instanceType: "performance",
+					region: "us",
+					cpu: 8,
+					memoryGb: 16,
+					labels: ["hobo-fleet"],
+					credentialLocator: "owner://AGENT37_FLEET",
+				});
+				return { runnerId: runner.runnerId };
+			}),
+		);
+		const initial = await runStack(initialStack, runtimeLayer, "deploy");
+		expect(initial.runnerId).toBe("agent37:sbx-fresh");
+		expect(deletedSandboxes).toContain("sbx-orphan");
+		const replaced = await runStack(replacedStack, runtimeLayer, "deploy");
+		expect(replaced.runnerId).toBe("agent37:sbx-fresh");
+		expect(deletedSandboxes.filter((id) => id === "sbx-fresh").length).toBe(1);
 	});
 });

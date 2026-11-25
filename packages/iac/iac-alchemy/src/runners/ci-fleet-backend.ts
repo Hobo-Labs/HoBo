@@ -92,15 +92,17 @@ export function createAlchemyRunnerBackend(
 		string,
 		{
 			readonly tier: AlchemyRunnerTier;
+			readonly runnerId: string;
 			readonly destroy: () => Promise<void>;
 		}
 	>();
+	const runnerIdToJobId = new Map<string, string>();
 
 	return {
 		async provisionRunner(input) {
 			if (input.tier === "github") {
 				if (options.github === undefined) {
-					return { runnerId: `github:${input.poolId}:${input.jobId}` };
+					throw new Error("github runner provider not configured");
 				}
 				return options.github.dispatchHostedRunner(input);
 			}
@@ -115,8 +117,9 @@ export function createAlchemyRunnerBackend(
 					`runner-local-${input.jobId}`,
 					{ providers, state },
 					Effect.gen(function* () {
-						const resource = yield* LocalRunner(input.poolId, {
+						const resource = yield* LocalRunner(input.jobId, {
 							machineId: input.poolId,
+							jobId: input.jobId,
 							labels: [input.label],
 							maxConcurrency: local.maxConcurrency,
 						});
@@ -126,12 +129,14 @@ export function createAlchemyRunnerBackend(
 				const runtimeLayer = Layer.merge(Alchemist.layer(), providers);
 				const deployed = await runRunnerStack(stack, runtimeLayer, "deploy");
 				const runnerId = deployed.runnerId;
-				stackStates.set(runnerId, {
+				stackStates.set(input.jobId, {
 					tier: "local",
+					runnerId,
 					destroy: async () => {
 						await runRunnerStack(stack, runtimeLayer, "destroy");
 					},
 				});
+				runnerIdToJobId.set(runnerId, input.jobId);
 				return { runnerId };
 			}
 			if (input.tier === "hostinger") {
@@ -160,12 +165,14 @@ export function createAlchemyRunnerBackend(
 				const runtimeLayer = Layer.merge(Alchemist.layer(), providers);
 				const deployed = await runRunnerStack(stack, runtimeLayer, "deploy");
 				const runnerId = deployed.runnerId;
-				stackStates.set(runnerId, {
+				stackStates.set(input.jobId, {
 					tier: "hostinger",
+					runnerId,
 					destroy: async () => {
 						await runRunnerStack(stack, runtimeLayer, "destroy");
 					},
 				});
+				runnerIdToJobId.set(runnerId, input.jobId);
 				return { runnerId };
 			}
 			if (options.agent37 === undefined) {
@@ -193,19 +200,24 @@ export function createAlchemyRunnerBackend(
 			const runtimeLayer = Layer.merge(Alchemist.layer(), providers);
 			const deployed = await runRunnerStack(stack, runtimeLayer, "deploy");
 			const runnerId = deployed.runnerId;
-			stackStates.set(runnerId, {
+			stackStates.set(input.jobId, {
 				tier: "agent37",
+				runnerId,
 				destroy: async () => {
 					await runRunnerStack(stack, runtimeLayer, "destroy");
 				},
 			});
+			runnerIdToJobId.set(runnerId, input.jobId);
 			return { runnerId };
 		},
 		async releaseRunner(input) {
-			const tracked = stackStates.get(input.runnerId);
+			const jobId = runnerIdToJobId.get(input.runnerId);
+			if (jobId === undefined) return;
+			const tracked = stackStates.get(jobId);
 			if (tracked === undefined) return;
-			stackStates.delete(input.runnerId);
 			await tracked.destroy();
+			stackStates.delete(jobId);
+			runnerIdToJobId.delete(input.runnerId);
 		},
 	};
 }

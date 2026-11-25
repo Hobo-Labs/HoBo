@@ -65,6 +65,14 @@ export interface VercelServiceDeploymentProps {
 	readonly credentialConfigKey?: string;
 }
 
+export type VercelDeploymentState =
+	| "BUILDING"
+	| "ERROR"
+	| "INITIALIZING"
+	| "QUEUED"
+	| "READY"
+	| "CANCELED";
+
 export interface VercelServiceDeploymentAttr {
 	readonly deploymentId: string;
 	readonly projectId: string;
@@ -73,8 +81,9 @@ export interface VercelServiceDeploymentAttr {
 	readonly url: string;
 	readonly runtime: VercelRuntimeKind;
 	readonly regions: readonly string[];
+	readonly routes: readonly string[];
 	readonly target: "production" | "preview";
-	readonly state: "READY";
+	readonly state: VercelDeploymentState;
 	readonly gitLink: "disabled";
 	readonly provider: "vercel";
 }
@@ -132,7 +141,11 @@ export interface VercelCloudApiClient {
 		readonly regions: readonly string[];
 		readonly target: "production" | "preview";
 		readonly authorizationHeader: string;
-	}) => Promise<{ readonly deploymentId: string; readonly url: string }>;
+	}) => Promise<{
+		readonly deploymentId: string;
+		readonly url: string;
+		readonly state: VercelDeploymentState;
+	}>;
 	readonly deleteDeployment: (input: {
 		readonly deploymentId: string;
 		readonly authorizationHeader: string;
@@ -151,6 +164,14 @@ export interface VercelCloudApiClient {
 export interface VercelCloudProviderOptions {
 	readonly client: VercelCloudApiClient;
 	readonly resolveCredential?: OwnerCredentialResolver;
+}
+
+function sameStringArray(
+	left: readonly string[],
+	right: readonly string[],
+): boolean {
+	if (left.length !== right.length) return false;
+	return left.every((value, index) => value === right[index]);
 }
 
 function resolveVercelAuthorization(
@@ -223,6 +244,14 @@ export function VercelProjectProvider(options: VercelCloudProviderOptions) {
 				);
 				const framework = news.framework ?? output?.framework ?? "other";
 				const regions = news.regions ?? output?.regions ?? ["iad1"];
+				if (
+					output !== undefined &&
+					output.name === news.name &&
+					output.framework === framework &&
+					sameStringArray(output.regions, regions)
+				) {
+					return output;
+				}
 				const upserted = yield* Effect.tryPromise({
 					try: async () =>
 						await options.client.upsertProject({
@@ -239,7 +268,7 @@ export function VercelProjectProvider(options: VercelCloudProviderOptions) {
 						}),
 				});
 				return {
-					projectId: output?.projectId ?? upserted.projectId,
+					projectId: upserted.projectId,
 					name: news.name,
 					framework,
 					regions: [...regions],
@@ -278,11 +307,15 @@ export function VercelServiceDeploymentProvider(
 				const runtime = news.runtime ?? "nodejs22.x";
 				const regions = news.regions ?? ["iad1"];
 				const target = news.target ?? "production";
+				const routes = news.routes ?? [];
 				if (
 					output !== undefined &&
 					output.projectId === news.projectId &&
 					output.artifactDigest === news.artifactDigest &&
-					output.runtime === runtime
+					output.runtime === runtime &&
+					output.target === target &&
+					sameStringArray(output.regions, regions) &&
+					sameStringArray(output.routes, routes)
 				) {
 					return output;
 				}
@@ -315,8 +348,9 @@ export function VercelServiceDeploymentProvider(
 					url: deployed.url,
 					runtime,
 					regions: [...regions],
+					routes: [...routes],
 					target,
-					state: "READY" as const,
+					state: deployed.state,
 					gitLink: "disabled" as const,
 					provider: "vercel" as const,
 				};
