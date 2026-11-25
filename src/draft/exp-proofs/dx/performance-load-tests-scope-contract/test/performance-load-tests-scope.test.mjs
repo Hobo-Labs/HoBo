@@ -37,7 +37,7 @@ test("M0 record maps dependencies to authoritative design sources", () => {
     PERFORMANCE_LOAD_TESTS_SCOPE.dependencies.map((dependency) => dependency.source),
     [
       "docs/design/reliability-observability-cost.md#plan-05",
-      "docs/design/e2e-test-matrix.md",
+      "https://linear.app/quickdeploy-ai/document/e2e-test-matrix-scope-and-acceptance-archived-599c0572bef7",
       "docs/design/launch-e2e-persona-matrix.md",
       "docs/design/pre-launch-outcome-contract.md",
       "docs/design/adr/02-identity-security.md#adr-0045",
