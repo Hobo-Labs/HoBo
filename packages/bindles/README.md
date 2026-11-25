@@ -7,7 +7,7 @@ Manifest scope `policy` metadata survives parsing and canonical serialization. B
 limits and contract-effect/resilience references therefore participate in the manifest
 hash; removing or changing them changes the deployment input. Malformed policy objects
 are rejected. Financial enforcement belongs to the hosting planner and shared authority
-([budgeted hosting transitions](../../docs/design/hosting-budget-transitions.md)).
+([budgeted hosting transitions](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/hosting-budget-transitions.md)).
 
 Use `b.project()` for an infrastructure project that owns or groups other
 resources. It is a deployment dependency, not an HTTP entrypoint; use `b.web()`
