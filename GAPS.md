@@ -154,10 +154,10 @@ in the history of commit `d7bbc39c`.
 | GAP-031 | P1 | MED | ✔/🧯 | ADR-0122 rules WireGuard the portable mesh floor, but no WireGuard adapter exists — `@hobo/connectivity` ships tailscale/netbird only, defaults to tailscale, and `parseOverlay` silently coerces unknown providers to tailscale; three doc surfaces overclaimed Tailscale as "adopted/Tailscale-first". | `packages/connectivity/src/config.ts:38,177-179` · `docs/design/adr/07-portability-extensibility.md:451` · `docs/technologies/tailscale.md:40` | Docs downgraded to ADR-0122's actual posture same-pass (tailscale.md, lineage.md, technologies/index.md). 🧯 code: add a `wireguard` OverlayProviderKind as the default floor and make `parseOverlay` reject unknown values. |
 | GAP-032 | L-CONS | MED | ✔ | `packages/code/bin/hobo-code.mjs` (84-line spawnSync dispatcher) was committed JS outside ADR-0126's only sanctioned exception path, and ADR-0139 recorded no exception for it. | `packages/code/bin/hobo-code.mjs:1-12` · `docs/design/adr/01-architecture-core.md:477-489` | The proposed remediation was to compile the bin or amend the exception. `packages/code` left `main` on 2026-11-08 and was later retired from `feature/hobo-code`; removing the affected package closes this gap without a bin conversion. |
 | GAP-033 | L-CONS | MED | ✔ | ADR-0139 §5 shipped a monetization surface (sponsored wait/status, default ON) in `@hobo/code` without citing the ADR-0064/0107/0110 monetization boundary trio. | `docs/design/adr/03-data-plane.md:641` · `packages/code/src/finops.ts:11-18` | Same-pass: boundary parenthetical added to ADR-0139 §5 routing the surface through ADR-0107 lane 2 (product's own offering; app-facing removal untouched). |
-| GAP-034 | P4 | MED | 🧯 | ADR-0129 §5 requires every execution-host/cloud adapter to declare a `terms` reference with `reviewedOn`, but only the three runner adapters carry one; `ProviderTerms` is a runner-local type and no gate reads `reviewedOn`. | `docs/design/adr/07-portability-extensibility.md:493` · `packages/providers/runner-github/src/manifest.ts:64-73` | Lift `ProviderTerms` into the core Capability Manifest, populate cloud providers, add a `reviewedOn` staleness check to the standards gate. |
+| GAP-034 | P4 | MED | 🧯 | ADR-0129 §5 requires every execution-host/cloud adapter to declare a `terms` reference with `reviewedOn`, but only the three runner adapters carry one; `ProviderTerms` is a runner-local type and no gate reads `reviewedOn`. | `docs/design/adr/07-portability-extensibility.md:493` · `packages/providers/runner-github/src/manifest.ts:64-73` | Unverified; tracked in [HOBO-844](https://linear.app/quickdeploy-ai/issue/HOBO-844/reconcile-provider-terms-review-metadata). |
 | GAP-035 | L-DRIFT | MED | ✔ | ADR-0143 §5 and the connectivity provider doc specified a `declareOfferings()` function no code implements — shipped adapters export profile constants. | `docs/design/adr/07-portability-extensibility.md:592` · `packages/providers/provider-aws/src/traffic-routing-offerings.ts:11` | Same-pass: both docs restated in terms of the exported `TrafficRoutingProviderProfile` constant contract. |
-| GAP-036 | P5 | MED | ✔/🧯 | ADR-0144 §2's auditability rests on `resourcedef.Registered/Updated` events that nothing emits — the family existed only in the docs catalog. | `docs/design/adr/07-portability-extensibility.md:616` · zero `resourcedef` hits in packages/ | Same-pass: event-families row marked design-only with the gap named. 🧯 emit the facts from the registry/catalog write path (`@hobo/registry` ingest is the natural emitter). |
-| GAP-037 | P5 | MED | ✔/🧯 | ADR-0138 §6 promises replayable messaging audit facts, but `messaging.*` was absent from the canonical event catalog and the 10 shipped literals violate `aggregate.PastTenseFact` naming (`messaging.topic.created`, `messaging.dead_lettered`, …). | `packages/core/src/ports/messaging.ts:102-114` · `docs/design/event-families.md:10` | Same-pass: family row added carrying the current literals + divergence note. 🧯 rename the literals to past-tense facts in core + provider-kafka (breaking, needs an upcaster). |
+| GAP-036 | P5 | MED | ✔/🧯 | ADR-0144 §2's auditability rests on `resourcedef.Registered/Updated` events that nothing emits — the family existed only in the docs catalog. | `docs/design/adr/07-portability-extensibility.md:616` · zero `resourcedef` hits in packages/ | Same-pass: event-families row marked design-only with the gap named. 🧯 tracked in [HOBO-845](https://linear.app/quickdeploy-ai/issue/HOBO-845/reconcile-resource-definition-registration-event-gap). |
+| GAP-037 | P5 | MED | ✔/🧯 | ADR-0138 §6 promises replayable messaging audit facts, but `messaging.*` was absent from the canonical event catalog and the 10 shipped literals violate `aggregate.PastTenseFact` naming (`messaging.topic.created`, `messaging.dead_lettered`, …). | `packages/core/src/ports/messaging.ts:102-114` · `docs/design/event-families.md:10` | Same-pass: family row added carrying the current literals + divergence note. 🧯 tracked in [HOBO-843](https://linear.app/quickdeploy-ai/issue/HOBO-843/reconcile-messaging-event-names-with-the-event-catalog). |
 | GAP-039 | L-DRIFT | LOW | ✔ | ADR-0125 §1 claimed the conformance suite asserts decorator↔wrapper manifest-fact equivalence; the equivalence lives in `packages/runtime` unit tests and `@hobo/conformance` has no such suite. | `docs/design/adr/03-data-plane.md:579` · `packages/runtime/test/training.test.ts:190` | Same-pass: ADR restated as "asserted by the runtime package's tests; conformance suite registration remains open". |
 
 ## Drift register
@@ -198,50 +198,7 @@ required beyond mapping) · **deliberate-undocumented** (evidently intentional b
 - **Evidence:** `docs/competitors/nomad.md#primitive-mapping` · `docs/design/adr/01-architecture-core.md#adr-0031` · `docs/design/vision.md:48-64` · `docs/competitors/index.md:8` · `docs/design/control-plane.md:118` · `docs/competitors/gap-analysis.md:23`
 - **Effort:** M · **Delivery:** ✔ [HOBO-666](https://linear.app/quickdeploy-ai/issue/HOBO-666) — ADR-0106 in `docs/design/adr/01-architecture-core.md`
 
-**Action**
-
-Remediation for cand-04 (P1 drift, deliberate-undocumented): record the Nomad evaluation/displacement as an ADR and make the Nomad lineage visible (two-way links) inside the design suite. Documentation-only; the Nomad→wasmCloud pivot is affirmed, never reversed. Amend 7 existing files; create NO new files (so no new OKF frontmatter is needed anywhere).
-
-1. C:/src/hobo/docs/design/adr/01-architecture-core.md — ADD a new ADR section (this is the correct theme file: architecture/runtime/matching). Append it as the last `## ADR-NNNN` section of the file. Use the NEXT FREE GLOBAL ADR ID: take the highest `| NNNN |` row in docs/design/adr/index.md and add 1 (0105 at drafting time — re-verify before writing; NEVER renumber existing ADRs). House style: `## ADR-NNNN`, then a bold one-line decision, numbered points, then `### Consequences` with (+)/(−) bullets. Outline:
-   - `## ADR-NNNN` — bold decision line: "Nomad evaluated and displaced: self-hosted wasmCloud + Matching + Dispatcher subsume the scheduler pillar; Nomad is accepted-future as a deploy-target/host adapter, rejected as the foundation."
-   - Point 1 — The evaluation: Nomad (+ Nomad Pack) was assessed as a direct scheduler/runtime/control-plane competitor and candidate substrate; full capture + parity tracker in [`../../competitors/nomad.md#primitive-mapping`](../../competitors/nomad.md#primitive-mapping).
-   - Point 2 — Why displaced: the pillar is subsumed by self-hosted wasmCloud as host of record ([ADR-0031](#adr-0031)), deterministic Matching for placement ([ADR-0033](#adr-0033)), and the Dispatcher for execution-host routing ([ADR-0071](#adr-0071)); one sentence each on what replaces jobspec/placement/allocation (cite the nomad.md Core-model mapping rows: jobspec→Manifest IR, allocation→match.Decided, drivers→component-host/OCI adapters).
-   - Point 3 — Disposition of Nomad-as-provider (closes the floated-but-undispositioned question in nomad.md#positioning): **accepted-future** as a Camp deploy-target/host adapter (component-host-in-container scheduled by Nomad, or an OCI driver adapter, generatable by the generation pipeline like any adapter); **rejected** as HoBo's scheduler foundation or a core dependency. Not in the seed provider set.
-   - `### Consequences` — (+) lineage auditable, one-way mapping becomes two-way, brownfield Nomad shops have a stated path; (−) one more adapter surface if/when accepted-future is exercised.
-
-2. C:/src/hobo/docs/design/adr/index.md (NO frontmatter — it has none; keep it that way) — add one row to the `## Index` table: `| NNNN | Nomad evaluated & displaced: wasmCloud + Matching + Dispatcher subsume the scheduler pillar; Nomad = accepted-future deploy-target adapter | [architecture-core](01-architecture-core.md#adr-NNNN) |`.
-
-3. C:/src/hobo/docs/design/traceability.md — add one ADR coverage row next to the ADR-0031/0033 rows, matching the existing format: `| ADR-NNNN | [architecture-core](./adr/01-architecture-core.md#adr-NNNN) | Nomad displacement is a documentation-only lineage record; coverage is the existing Matching and Dispatcher slice families that subsume the scheduler pillar. | <reuse the HOBO-N ids from the ADR-0033 row (HOBO-55, HOBO-61, HOBO-64, HOBO-78, HOBO-81, HOBO-86) plus the Linear issue ID created for this remediation> |`. Required: scripts/validate-traceability.ts fails if any ADR in adr/index.md is absent from this file.
-
-4. C:/src/hobo/docs/design/adr/01-architecture-core.md, ADR-0031 (§ starting line ~76) — add one cross-reference sentence at the end of the ADR-0031 intro paragraph (before point 1): "Nomad was the evaluated scheduler alternative this decision displaces — see [ADR-NNNN](#adr-NNNN) and the [Nomad parity tracker](../../competitors/nomad.md#primitive-mapping)."
-
-5. C:/src/hobo/docs/design/vision.md — two edits in Plan 17: (a) add a Nomad row to the landscape table (lines 48–64), inserted directly above the wasmCloud row, matching the 7 columns: `| **Nomad + Nomad Pack** | Workload scheduler/orchestrator | ✅ (schedule-anywhere; backing services stay environment-specific) | task drivers + custom plugins | HCL jobspecs → allocations | no | ✅ |`. (b) In "The gap:" paragraph (line ~66), extend the clause about wasm runtimes/orchestrators to also name schedulers: after "(Aspire) solve *runtime/wiring*" add "— and schedulers (Nomad) solve *placement* —"; and append a pointer sentence mirroring the Nitric one: "(Detailed Nomad capture + parity in [`docs/competitors/nomad`](../competitors/nomad.md#primitive-mapping); displacement recorded in [ADR-NNNN](./adr/01-architecture-core.md#adr-NNNN).)"
-
-6. C:/src/hobo/docs/design/control-plane.md, §"Intended providers & deploy targets (non-limiting)" (line ~118, the "Self-host / deploy targets" bullet at line ~122) — append a disposition sentence to that bullet: "**Nomad** (existing HashiCorp-shop clusters) is **accepted-future** as a deploy-target/host adapter — a `component-host`-in-container or OCI driver scheduled by Nomad, generatable like any adapter — and **rejected** as HoBo's scheduler foundation ([ADR-NNNN](./adr/01-architecture-core.md#adr-NNNN), [Nomad parity](../competitors/nomad.md#primitive-mapping))."
-
-7. C:/src/hobo/docs/design/index.md (index.md: MUST keep NO frontmatter) — extend the "**Competitor references** live in [`../competitors/`](../competitors/)." line (line ~118): "Displaced-alternative lineage is recorded as ADRs — e.g. the Nomad scheduler pillar ([ADR-NNNN](./adr/01-architecture-core.md#adr-NNNN), parity in [`../competitors/nomad.md`](../competitors/nomad.md#primitive-mapping))."
-
-8. C:/src/hobo/docs/competitors/nomad.md — make the mapping two-way: in the `## HoBo mapping` intro blockquote (line 155), append: "The displacement decision — why self-hosted wasmCloud ([ADR-0031](../design/adr/01-architecture-core.md#adr-0031)) + Matching ([ADR-0033](../design/adr/01-architecture-core.md#adr-0033)) + Dispatcher ([ADR-0071](../design/adr/01-architecture-core.md#adr-0071)) subsume the scheduler pillar, and Nomad's accepted-future deploy-target disposition — is recorded in [ADR-NNNN](../design/adr/01-architecture-core.md#adr-NNNN)." Also in `## Positioning` (line 18), after "target as a provider/host adapter", add "(dispositioned accepted-future in [ADR-NNNN](../design/adr/01-architecture-core.md#adr-NNNN))". Keep the existing OKF frontmatter untouched.
-
-9. C:/src/hobo/docs/competitors/gap-analysis.md — one-line pointer only (do NOT add a Nomad column to the comparison matrix; scope creep): in the intro blockquote (line 10), add Nomad to the competitor list: "[Nomad](nomad.md)" alongside Aspire/Nitric/Humanitec, with "(scheduler pillar displaced — [ADR-NNNN](../design/adr/01-architecture-core.md#adr-NNNN))".
-
-Replace every "NNNN" above with the same single next-free ADR ID before committing.
-
-**Acceptance**
-
-All commands run from C:/src/hobo with pnpm.
-
-1. `pnpm run docs:okf` — passes (no frontmatter added to index.md files; nomad.md/traceability.md frontmatter untouched; no new docs files created).
-2. `pnpm run docs:design-lint` — passes: the new `#adr-NNNN` references are indexed (adr/index.md row present), and all new relative links/anchors resolve (../../competitors/nomad.md#primitive-mapping from adr/, ../competitors/nomad.md#primitive-mapping from design/, ../design/adr/01-architecture-core.md#adr-NNNN from competitors/).
-3. `node --import tsx scripts/validate-traceability.ts` — passes: the traceability gate (this is the real script; there is no dedicated pnpm alias) finds ADR-NNNN in docs/design/traceability.md, no numbering gap is introduced (ID = max existing + 1), and the "Accepted / current" statement is intact.
-4. `pnpm agent:check -- --staged` — passes with all nine edits staged (touching docs/design/adr/** and docs/design/index.md auto-triggers the traceability check via scripts/relevant-check-policy.ts, plus the staged doc linters).
-5. Drift-closure spot checks: `pnpm run search -- -l "Nomad" docs/design` returns at least vision.md, control-plane.md, index.md, traceability.md, adr/01-architecture-core.md, adr/index.md (design suite is no longer zero-Nomad); `pnpm run search -- "nomad.md#hobo-mapping" docs/design` returns ≥3 hits (back-links exist); vision.md landscape table has exactly one new Nomad row (16 product rows total).
-6. Cross-links updated (the hub/index set): docs/design/adr/index.md (new ADR row), docs/design/traceability.md (new ADR coverage row), docs/design/index.md (competitor-lineage back-link), docs/competitors/nomad.md (forward link to the new ADR — mapping now two-way), docs/competitors/gap-analysis.md (intro pointer). docs/competitors/index.md needs NO change (already links nomad.md).
-7. Content assertions: the new ADR names Nomad as the displaced alternative, cites ADR-0031 + ADR-0033 + ADR-0071 as the subsuming decisions, and dispositions Nomad-as-provider as accepted-future (adapter) / rejected (foundation); control-plane.md §Intended providers contains the same disposition wording; nowhere does any edit weaken or reverse the wasmCloud default.
-
-**Guardrails**
-
-Never propose reversing or reopening the Nomad→wasmCloud pivot — the new ADR records history and disposition, not a re-evaluation. Never renumber or edit the decision content of existing ADRs (the only ADR-0031 change is one additive cross-reference sentence). Do not create any new files (no new ADR file — the ADR is a section in the existing theme file 01-architecture-core.md; if a file were ever created under docs/ it would need OKF YAML frontmatter with non-empty type:, and index.md files must never gain frontmatter). Do not add a Nomad column to the gap-analysis comparison matrix or new rows to the nomad.md mapping tables — pointer sentences only. Keep all links relative .md links with correct depth (../../competitors/ from adr/, ../competitors/ from design/, ../design/ from competitors/). Use one single next-free global ADR ID everywhere; verify it against adr/index.md at write time instead of trusting 0105. Land all nine edits in one commit so docs:design-lint (unindexed-ADR-reference check) and validate-traceability.ts never see a partial state; conventional scoped commit, e.g. `docs(adr): record Nomad evaluation, displacement, and deploy-target disposition`.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-001-historical-remediation-plan-f6db9bbb559e).
 
 ### REM-002 (for DRIFT-002)
 
@@ -249,51 +206,7 @@ Never propose reversing or reopening the Nomad→wasmCloud pivot — the new ADR
 - **Evidence:** `docs/design/billing-launch-policy.md:41-61` · `docs/design/usage-to-invoice-reconciliation.md:50-56` · `docs/design/tax-currency-receipt-obligations.md:48-66` · `docs/design/entitlements-plan-limits.md:106-112` · `docs/design/adr/07-portability-extensibility.md:299` · `docs/archive/requirements/requirements.md:165`
 - **Effort:** M · **Delivery:** ✔ [HOBO-667](https://linear.app/quickdeploy-ai/issue/HOBO-667) — ADR-0107 in `docs/design/adr/07-portability-extensibility.md`
 
-**Action**
-
-Remediation for cand-16 (L-DRIFT, deliberate-undocumented): record one boundary ADR that legitimizes the first-party hosted-business commercialization records in docs/design/ while keeping ADR-0064's product-surface cut intact, then point ADR-0064, the archived requirements, and the four commercial design docs at it. All edits are documentation-only; no file is created except one new ADR *section* inside an existing theme file.
-
-1. AMEND C:/src/hobo/docs/design/adr/07-portability-extensibility.md — add a new ADR section.
-   - ID: take the next free global ADR ID (highest existing is ADR-0104; verify with `grep -o 'ADR-[0-9]\{4\}' docs/design/adr/*.md | sort -u | tail -1` and use highest+1; referred to below as ADR-0NNN). NEVER renumber existing ADRs.
-   - Placement: insert the `## ADR-0NNN` section immediately after the ADR-0103 Consequences block and immediately before the `## Open / proposed decisions (ADR-Pn)` heading (line ~342). Follow house style: `## ADR-0NNN` heading, then a bold one-line title, then `### Context` / `### Decision` / `### Consequences`.
-   - Section outline:
-     - `## ADR-0NNN` + bold title: "Hosted-business commercialization records are design-scope productization; the product billing surface stays removed (boundary to ADR-0064)." — one-line decision statement.
-     - `### Context` — ADR-0064 removed business/monetization from HoBo's product surface ("no first-party commercial toolkit to maintain"), yet first-party commercial-launch design for HoBo-the-hosted-business now lives in docs/design/ — billing plans/credits/invoice lifecycle (billing-launch-policy.md), the deterministic meter.UsageRecorded -> invoice.LineItem reconciliation contract (usage-to-invoice-reconciliation.md), tax/currency/receipt posture (tax-currency-receipt-obligations.md), and workspace plan tiers/entitlements (entitlements-plan-limits.md) — with the boundary asserted only per-doc, recorded in no ADR.
-     - `### Decision` — numbered: (1) commercial-launch policies for HoBo-the-hosted-business (plans, prepaid credits, invoice lifecycle states, tax/currency/receipt posture, entitlements/plan tiers, usage-to-invoice reconciliation contracts) are IN design scope as productization records; (2) the product `billing` port, app-facing monetization (chargeback/invoicing/tax/rev-share/subscriptions for customer apps), and all money-movement machinery stay REMOVED per ADR-0064; (3) the routing test for future docs: "does this monetize the customer's app or generated stack (out per ADR-0064) or HoBo's own hosted offering (in, as a policy/productization record only — never implementation machinery)?"; (4) every hosted-business commercial doc must cite this ADR in its Authoritative Dependencies section.
-     - `### Consequences` — (+) per-doc scope disclaimers now have a single citable decision; (+) ADR-0064's competitive cut (vs Convex/Lakebed/Nitric) is unchanged; (↔) the archived-requirements business-model statement is re-pointed here.
-
-2. AMEND C:/src/hobo/docs/design/adr/07-portability-extensibility.md line 299 (ADR-0064 Consequences bullet). Current text ends "...no first-party commercial toolkit to maintain (commercialization is out of design scope)." Rewrite the parenthetical to: "(no first-party commercial toolkit in the product; commercialization of HoBo-the-hosted-business is recorded as design-scope productization policy per [ADR-0NNN](#adr-0nnn))". Do not change anything else in ADR-0064.
-
-3. AMEND C:/src/hobo/docs/design/adr/index.md — add one row to the `## Index` table in numeric position (after the 0104 row): `| 0NNN | Hosted-business commercialization records are design-scope productization; the product billing surface stays removed | [portability-extensibility](07-portability-extensibility.md#adr-0nnn) |`. index.md must have NO YAML frontmatter (it has none today — do not add any).
-
-4. AMEND C:/src/hobo/docs/archive/requirements/requirements.md line 165 (section "7 Business model"). Replace the sentence "Commercialization (pricing, billing, invoicing, tax) is **out of scope of these design docs** ([ADR-0064](../design/adr/08-scope-and-requirements.md#adr-0064))" with: "Commercialization of the product surface (a `billing` port, app-facing invoicing/tax/rev-share) is **out of design scope** ([ADR-0064](../design/adr/07-portability-extensibility.md#adr-0064)); commercial-launch policies for HoBo-the-hosted-business (plans, credits, invoices, tax posture, entitlements) are design-scope productization records ([ADR-0NNN](../design/adr/07-portability-extensibility.md#adr-0nnn))". Note the existing link path `08-scope-and-requirements.md` is stale (file no longer exists) — fix it to `07-portability-extensibility.md` as shown. Touch only this paragraph; leave other stale archive links alone.
-
-5. AMEND the four design docs so each per-doc disclaimer cites the new ADR (one bullet each, in the existing "Authoritative Dependencies" section; keep relative-link style used in each file):
-   - C:/src/hobo/docs/design/billing-launch-policy.md (~line 82): extend the existing ADR-0064 bullet to also cite `[ADR-0NNN](./adr/07-portability-extensibility.md#adr-0nnn)` as the decision that makes this launch-readiness policy record design-scope.
-   - C:/src/hobo/docs/design/usage-to-invoice-reconciliation.md (Authoritative Dependencies, ~lines 76-86; it currently cites only ADR-0039): add a bullet: `[ADR-0NNN](./adr/07-portability-extensibility.md#adr-0nnn)` records that this reconciliation contract is a hosted-business productization record while the product billing surface stays removed per `[ADR-0064](./adr/07-portability-extensibility.md#adr-0064)`.
-   - C:/src/hobo/docs/design/tax-currency-receipt-obligations.md (~line 109): extend the existing ADR-0064 bullet to also cite ADR-0NNN.
-   - C:/src/hobo/docs/design/entitlements-plan-limits.md (~line 187): extend the existing ADR-0064 bullet ("keeps business monetization outside HoBo core") to also cite ADR-0NNN for the plan-tier/entitlement productization records.
-
-No new docs/ files are created, so no new OKF frontmatter is needed; if the implementer chooses to create any new doc instead, it must carry OKF YAML frontmatter with a non-empty `type:` field. The Nomad->wasmCloud pivot is untouched and must not be revisited.
-
-**Acceptance**
-
-Checklist (run from C:/src/hobo):
-1. New ADR section exists in docs/design/adr/07-portability-extensibility.md with the next free global ID, placed before the "Open / proposed decisions (ADR-Pn)" heading; no existing ADR was renumbered or moved: `git diff --stat` shows only the 7 files named in the action.
-2. ID uniqueness: `grep -o 'ADR-[0-9]\{4\}' docs/design/adr/*.md | sort | uniq -d` prints nothing new for the chosen ID (each ADR ID appears in exactly one theme-doc section heading plus references).
-3. docs/design/adr/index.md gained exactly one table row for the new ADR and still has no YAML frontmatter (`head -1 docs/design/adr/index.md` is the `# Architecture Decision Records` heading, not `---`).
-4. ADR-0064's consequence line (07-portability-extensibility.md, ~line 299) now cites the new ADR; the ADR-0064 Decision text is unchanged.
-5. docs/archive/requirements/requirements.md line ~165 cites both ADR-0064 (via the corrected path ../design/adr/07-portability-extensibility.md#adr-0064) and the new ADR; no other archive lines changed.
-6. Each of billing-launch-policy.md, usage-to-invoice-reconciliation.md, tax-currency-receipt-obligations.md, entitlements-plan-limits.md cites the new ADR in its Authoritative Dependencies section with a valid relative link (./adr/07-portability-extensibility.md#adr-0nnn).
-7. Runnable gates (all must pass):
-   - `pnpm run docs:okf`  (OKF frontmatter check — must stay green; no frontmatter was added to index.md)
-   - `pnpm run docs:design-lint`  (the docs/design traceability gate: scripts/check-design-docs.ts validates relative links, anchors, and ADR references against the ADR index — this catches a missing index row or bad #adr-0nnn anchor)
-   - `git add -A && pnpm agent:check -- --staged`  (staged relevant-checks runner)
-Cross-links/hubs that must gain links: docs/design/adr/index.md (new Index-table row — the only hub update required; no new files means docs/design/index.md and docs/index.md need no changes).
-
-**Guardrails**
-
-Documentation-only: touch exactly the 7 named files; no src/, no scripts/, no package.json changes. Never renumber, retitle, or relocate existing ADRs; the new ADR is appended as a section inside docs/design/adr/07-portability-extensibility.md (the scope theme doc — do NOT create a new ADR file, and do NOT resurrect 08-scope-and-requirements.md). Determine the next free global ADR ID at implementation time from the actual files (highest existing +1; ADR-0104 was highest when this was drafted) — do not reuse or guess. index.md files must have NO frontmatter; any genuinely new docs/ file (none planned) needs OKF YAML frontmatter with non-empty type:. Keep all links relative .md links with lowercase #adr-0nnn anchors. Do not expand scope: no re-opening of ADR-0064's product-surface cut (the `billing` port and money-movement stay removed), no reversal of the Nomad->wasmCloud pivot, no edits to archive files beyond the single business-model paragraph at requirements.md:165, and no new implementation tasks or M1-M4 issues.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-002-historical-remediation-plan-67afda901fd1).
 
 ### REM-003 (for DRIFT-003)
 
@@ -301,45 +214,7 @@ Documentation-only: touch exactly the 7 named files; no src/, no scripts/, no pa
 - **Evidence:** `docs/design/marketplace-payout-hooks.md:79-89` · `docs/design/marketplace-payout-hooks.md:51-52` · `docs/design/adr/07-portability-extensibility.md:294` · `docs/design/adr/07-portability-extensibility.md:170` · `docs/design/adr/07-portability-extensibility.md:282` · `docs/design/tax-currency-receipt-obligations.md:66`
 - **Effort:** M · **Delivery:** ✔ [HOBO-668](https://linear.app/quickdeploy-ai/issue/HOBO-668) — ADR-0110 in `docs/design/adr/07-portability-extensibility.md`
 
-**Action**
-
-Resolve drift cand-02 by recording the marketplace-commercialization boundary as a new ADR (option "record the boundary", NOT "strike the records" — marketplace-payout-hooks.md and tax-currency-receipt-obligations.md are load-bearing rows in docs/design/index.md lines 57/67 and feed billing/tax/support handoffs, so archiving them would orphan many cross-links; the docs already disclaim monetization, the only missing artifact is the decision record). All changes are amendments to existing files; create NO new files.
-
-1. AMEND docs/design/adr/07-portability-extensibility.md — insert a new ADR section immediately after the ADR-0103 section (ends ~line 340) and BEFORE the "## Open / proposed decisions (ADR-Pn)" heading (line 342). Heading must be exactly "## ADR-0105" using the next free global ADR ID (0105 as of commit 59e387ae — before writing, re-verify max ID in docs/design/adr/index.md and use max+1). Title line (bold, matching house style): "Marketplace payout-readiness is a launch-gated commercial-operations record, not reinstated marketplace monetization." Section outline:
-   - "### Context" — ADR-0064 §2 removed the product `billing` port and the marketplace monetize/rev-share lifecycle; ADR-0062 §5 reaffirmed "No monetization … no commercial tiers"; ADR-0063 frames monetization as a positioning anti-goal. Meanwhile productization M0 records entered docs/design/ (marketplace-payout-hooks.md payout state machine incl. `approved-for-payout`; tax-currency-receipt-obligations.md publisher tax-document posture and billing-reconciliation handoffs) with no amending decision record — the gap GAPS.md finding cand-02 confirmed.
-   - "### Decision" — 4 numbered points: (1) ADR-0064's product-scope cut stands unchanged — no `billing` port, no rev-share machinery, no commercial tiers in the meta-cloud product or Registry distribution; this ADR amends nothing in that cut. (2) Name two distinct lanes: the product-capability lane (removed by ADR-0064) vs the hosted-HoBo commercial-operations lane — M0 launch-posture/acceptance records for operating hosted HoBo as a business (billing-launch-policy.md, tax-currency-receipt-obligations.md, marketplace-payout-hooks.md); lane-2 records define vocabulary, evidence fields, owner handoffs, and limitations only, and may never add ports, events, or runtime surface. (3) Marketplace publisher payout readiness is a deferred, evidence-gated launch capability in lane 2: the payout-readiness state table is scope vocabulary; `approved-for-payout` asserts evidence sufficiency, never settlement or money movement; M1-M4 execution stays blocked behind the marketplace-payout-hooks.md Follow-Up Gate plus an explicit v1-cutline decision. (4) Boundary test going forward: any record that would add a `billing` port, money movement, rev-share policy, or commercial tiers to the product surface requires amending ADR-0064 first; every lane-2 record must cite this ADR and register its customer-visible limitation in known-limitations-register.md.
-   - "### Consequences" — (+) the anti-goal wording and the payout-readiness records no longer contradict; drift is closed with a decision record. (−) actually shipping payouts later still requires a real amending ADR plus legal/tax/provider evidence — this ADR does not pre-approve it.
-
-2. AMEND docs/design/adr/07-portability-extensibility.md, ADR-0064 "### Consequences" (~line 297-300): append ONE new bullet — "(↔) Hosted-business commercial-operations records (billing launch policy, tax/currency/receipt posture, marketplace payout readiness) are governed by [ADR-0105](#adr-0105): launch-posture documentation for hosted HoBo, not a reinstated `billing` port or rev-share machinery." Do not alter ADR-0064's Context/Decision text.
-
-3. AMEND docs/design/adr/index.md — append one row to the Index table after the 0104 row: "| 0105 | Marketplace payout-readiness is a launch-gated commercial-operations record, not reinstated monetization | [portability-extensibility](07-portability-extensibility.md#adr-0105) |". This file has no YAML frontmatter — keep it that way.
-
-4. AMEND docs/design/traceability.md — add one row to the ADR table (same shape as the ADR-0095 row at line 353): "| ADR-0105 | [portability-extensibility](./adr/07-portability-extensibility.md#adr-0105) | Marketplace payout readiness stays a deferred commercial-operations posture, distinct from the billing/rev-share product scope ADR-0064 removed. | HOBO-420, HOBO-513 |". Required: scripts/validate-traceability.ts fails with "ADR-0105 missing from traceability report" otherwise.
-
-5. AMEND docs/design/known-limitations-register.md — add one row to the "Initial V1 Entries" table: Limitation "Marketplace publisher payouts and revenue share are not v1 capabilities" | State `deferred` | Affected persona "Publisher owner and marketplace operator" | User-visible impact "Listings may surface payout-readiness states, but no payout execution, settlement, tax documents, or revenue share is promised in v1" | Workaround "None; payout commitments route to the Capability Review & Approval owner" | Owner "Marketplace Payout Hooks" | Follow-up "HOBO-420" | Handoffs "Release notes, docs portal, support scripts, launch messaging".
-
-6. AMEND docs/design/marketplace-payout-hooks.md — in "## Authoritative Dependencies" (after the existing ADR-0064 bullet at lines 106-107), add: "[ADR-0105](./adr/07-portability-extensibility.md#adr-0105) records that payout readiness is a launch-gated commercial-operations posture and does not reinstate the marketplace monetize/rev-share scope removed by ADR-0064." Add one closing sentence to "## M0 Acceptance Record" citing the same link as the governing boundary decision.
-
-7. AMEND docs/design/tax-currency-receipt-obligations.md — in "## Authoritative Dependencies" (lines 105-113), add a bullet: "[ADR-0105](./adr/07-portability-extensibility.md#adr-0105) governs the marketplace payout tax-document posture as a deferred commercial-operations limitation, not product billing scope."
-
-8. AMEND GAPS.md — under "## Remediations" add "### REM-004" (use the next free REM-NNN; the section is empty as of 59e387ae) containing Action (one-paragraph summary of items 1-7), Acceptance criteria (the commands below), Effort M, and Delivery link (the Linear issue / PR once created). In the "## Drift register" table, set cand-02's Status to 🧯 (remediation documented) with the Remediation column pointing at REM-004; flip to ✔ only when the ADR lands.
-
-**Acceptance**
-
-All commands run from repo root C:/src/hobo, exit 0:
-1. `pnpm run docs:okf` — OKF frontmatter check passes (no new docs created; index.md stays frontmatter-free; amended docs keep their existing non-empty `type:` frontmatter).
-2. `node --import tsx scripts/validate-traceability.ts` — the traceability gate (this exact script; there is no package.json alias). It cross-checks every `| NNNN |` row in docs/design/adr/index.md against a literal `ADR-NNNN` mention in docs/design/traceability.md and validates all relative .md links in traceability.md, so steps 3+4 must land together.
-3. `pnpm agent:check -- --staged` — with all edits staged; because docs/design/adr/ is touched, scripts/relevant-check-policy.ts (line 74/149) auto-includes the traceability gate in this run.
-Structural checks:
-4. `rg -n "adr-0105" docs/design` (substitute the actual next-free ID) shows hits in: adr/07-portability-extensibility.md (self-anchor + ADR-0064 cross-ref), adr/index.md, traceability.md, marketplace-payout-hooks.md, tax-currency-receipt-obligations.md.
-5. `rg -n "^## ADR-" docs/design/adr/07-portability-extensibility.md` — exactly one new heading; all pre-existing ADR headings/IDs unchanged; new section sits before "## Open / proposed decisions (ADR-Pn)".
-6. known-limitations-register.md "Initial V1 Entries" table has the new `deferred` payout row with all 8 columns filled.
-7. `git diff` over ADR-0064 shows only an appended Consequences bullet — no edits to its Context/Decision.
-Cross-links that must gain entries: docs/design/adr/index.md (Index table row), docs/design/traceability.md (ADR table row), GAPS.md (REM-004 entry + cand-02 drift-register status 🧯 with Remediation link). No changes needed to docs/design/index.md (both amended design docs are already listed at lines 57 and 67).
-
-**Guardrails**
-
-1. Never renumber, retitle, or rewrite any existing ADR; new ADRs take the next free global ID — verify max ID in docs/design/adr/index.md at write time (0105 as of commit 59e387ae) rather than trusting this text. 2. The new ADR must NOT weaken ADR-0064: it may not authorize payout execution, settlement, provider/KYC integration, a `billing` port, commercial tiers, or rev-share policy — it only names the lane split and the amend-first gate. 3. Do not strike or rewrite the payout state table or scope tables in marketplace-payout-hooks.md / tax-currency-receipt-obligations.md; this remediation takes the record-the-boundary option, not the archive option. 4. Create no new files: the ADR lives inside the existing theme file docs/design/adr/07-portability-extensibility.md (which already carries valid OKF frontmatter); if a new docs/ file were ever created instead, it would need OKF YAML frontmatter with a non-empty `type:`, and index.md files must have NO frontmatter. 5. All links are relative .md links: `#adr-0105` inside the theme file, `07-portability-extensibility.md#adr-0105` from adr/index.md, `./adr/07-portability-extensibility.md#adr-0105` from traceability.md and the two design docs. 6. Documentation-level change only — no code, no schema, no runtime surface; do not touch the Nomad→wasmCloud pivot (accepted, out of scope). 7. Land items 3 and 4 in the same commit or the traceability gate fails the build.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-003-historical-remediation-plan-216b573ed4f5).
 
 ### REM-004 (for GAP-001)
 
@@ -347,62 +222,7 @@ Cross-links that must gain entries: docs/design/adr/index.md (Index table row), 
 - **Evidence:** `docs/design/adr/01-architecture-core.md#adr-0031` · `docs/design/control-plane.md:121` · `docs/design/authoring-resources-wiring.md:161` · `docs/design/reliability-observability-cost.md:56` · `docs/design/platform-engineering.md:174` · `docs/design/wasm-runtime-wit.md:95`
 - **Effort:** M · **Delivery:** [HOBO-669](https://linear.app/quickdeploy-ai/issue/HOBO-669) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-Documentation-only remediation for cand-01 (in-Camp node-level scheduling has no owner). Six files amended, no new files created (so no new OKF frontmatter and no docs/design/index.md change needed). The Nomad->wasmCloud pivot is accepted; this maps Nomad's scheduler competence onto the existing component-host seam.
-
-1) C:/src/hobo/docs/design/adr/01-architecture-core.md — append ONE new ADR at the very end of the file, using the next free global ADR ID (verify against the index table in docs/design/adr/index.md; ADR-0104 was the highest at drafting time, so expect ADR-0105 — never renumber or edit existing ADRs). Follow the house format exactly (see ADR-0031 at line 76 as the template): `## ADR-NNNN` heading, one bold decision line, an intro paragraph, numbered points, then `### Consequences` with one (+) and one (−) bullet.
-   - Bold decision line: "In-Camp workload scheduling: the component-host scheduler seam — wadm on the default self-hosted wasmCloud lattice, substrate-delegated elsewhere."
-   - Intro paragraph: state the gap being closed — the Dispatcher (ADR-0071) decides WHICH provider/Camp hosts a resource, and actor-key placement (Plan 5) covers grains, but nothing owned which lattice host runs each service-component instance inside a Camp; this ADR names that owner per component-host adapter.
-   - Point 1 — Scheduling is a named responsibility of the `component-host` port (extends ADR-0031 §1): every component-host adapter must declare its scheduler of record. Do NOT mint a new WIT interface and do NOT reuse the name `hobo:scheduler` (already the cron-trigger port, wasm-runtime-wit.md:166); the seam is internal to the adapter.
-   - Point 2 — Default host (self-hosted wasmCloud): the scheduler of record is **wadm** (wasmCloud Application Deployment Manager) — the wadm-equivalent question resolves to wadm itself. HoBo renders each `component.v1` manifest-IR entry into a wadm/OAM application manifest; the `scaling {min,max}` annotation renders to a wadm spreadscaler (min/max instances), and spread/anti-affinity renders to spreadscaler spread requirements over host labels.
-   - Point 3 — Per-substrate delegation: (a) k8s substrate = two-level scheduling — the k8s scheduler places wasmCloud host pods (nodes/bin-packing at pod level), wadm places components onto those hosts; (b) Coolify/Docker and bare-metal/VPS = lattice-native — wadm schedules across the statically registered host set (these substrates supply no scheduler of their own); (c) wasm-in-container zero-infra floor = no lattice — `scaling` renders to the substrate's replica primitive (k8s Deployment replicas / Coolify service scale); (d) provider-native (Cloudflare Workers) = provider scheduler owns placement; non-mappable scheduling annotations are inert and flagged by `hobo doctor` as host lock-in (same model as host-`.with()`, ADR-0031 §5).
-   - Point 4 — The consumer of `scaling {min,max}` is therefore the Camp's component-host adapter (never the app, never the Yard Planner); conformance (`@hobo/conformance/component-host`, Plan 9) gains named assertions: min instances maintained, max never exceeded, and re-placement on host loss within a bounded window.
-   - Point 5 — Explicit disposition of the remaining semantics, each labeled designed / delegated / deferred: bin-packing + failure-domain spread = **delegated** (wadm spreadscaler on the lattice; k8s scheduler for host pods); host drain = **designed** (cordon host, re-place components via lattice link late-binding, then remove; on k8s, compose with node drain); preemption, oversubscription, and capacity reservation = **deferred**, each recorded in the ADR-Pn open-decisions list (see file 5 below). Scheduling decisions stay deterministic + replayable per ADR-0033 (reconciliation, no on-path solver/LLM).
-   - Point 6 — Boundary statement: actor-key placement (consistent-hash leases, reliability-observability-cost.md Plan 5) is a distinct, unchanged mechanism for grains; this ADR governs service-component instances only.
-
-2) C:/src/hobo/docs/design/wasm-runtime-wit.md — insert a new h3 section titled `### In-Camp scheduling & placement ([ADR-NNNN](./adr/01-architecture-core.md#adr-nnnn))` between the existing `### Component-host portability` section (ends line 106) and `### Security substrate` (line 108). Outline (bullets under the h3, matching the doc's style):
-   - **The scheduler seam** — one line: scheduling is part of the `component-host` port; each adapter names its scheduler of record (ADR-NNNN).
-   - **Default: wadm on the wasmCloud lattice** — manifest IR -> wadm/OAM manifest; `scaling {min,max}` -> spreadscaler; spread -> host labels.
-   - **Per-substrate delegation table** — a small markdown table with columns Substrate | Scheduler of record | How `scaling` is realized, rows: k8s (two-level), Coolify/Docker, bare-metal, wasm-in-container floor, provider-native (Cloudflare Workers).
-   - **Semantics disposition** — one line per semantic (bin-packing, spread/anti-affinity, host drain, preemption, oversubscription, capacity reservation) with its designed/delegated/deferred label and the ADR-Pn pointer for deferred ones.
-   - **Not actor placement** — one line distinguishing this from Plan 5 actor-key leases, with a relative link to ./reliability-observability-cost.md#plan-05.
-
-3) Cross-link edits (one sentence each, keep relative .md links):
-   - C:/src/hobo/docs/design/control-plane.md line 121 ("**Runtime hosts (`component-host`).**" bullet): append "In-Camp instance scheduling is owned per host adapter — wadm on the default lattice, substrate-delegated elsewhere ([ADR-NNNN](./adr/01-architecture-core.md#adr-nnnn))."
-   - C:/src/hobo/docs/design/authoring-resources-wiring.md line 161 (annotations paragraph): after "First-party annotations (health, lifetime, replicas, scaling, residency) are typed and provider-neutral." append a sentence naming the consumer: "`scaling {min,max}` is consumed by the Camp's `component-host` scheduler ([ADR-NNNN](./adr/01-architecture-core.md#adr-nnnn))."
-   - C:/src/hobo/docs/design/reliability-observability-cost.md line 61 ("**Placement:** consistent-hashing…" bullet): append "(actor-key placement only — service-component instance scheduling is the `component-host` scheduler seam, [ADR-NNNN](./adr/01-architecture-core.md#adr-nnnn))".
-   - C:/src/hobo/docs/design/platform-engineering.md lines 174–177 (Workload Profile section): add a bullet noting a profile may carry scheduling constraints (spread/anti-affinity, drain policy) realized per substrate by the component-host scheduler ([ADR-NNNN](../design is wrong — use ./adr/01-architecture-core.md#adr-nnnn since platform-engineering.md sits in docs/design/)).
-
-4) C:/src/hobo/docs/design/adr/index.md — add one row to the Index table after the 0104 row: `| NNNN | In-Camp workload scheduling: the component-host scheduler seam (wadm default; substrate-delegated) | [architecture-core](01-architecture-core.md#adr-nnnn) |`. This file must keep NO frontmatter.
-
-5) C:/src/hobo/docs/design/adr/07-portability-extensibility.md — under `## Open / proposed decisions (ADR-Pn)` (line 342), append one line per deferred semantic using the next free ADR-Pn IDs (P5 is highest at drafting time, so expect P6–P8): preemption policy for in-Camp scheduling; oversubscription/density limits per component-host; capacity reservation semantics — each linking `[ADR-NNNN](01-architecture-core.md#adr-nnnn)` and `[Plan 20](../wasm-runtime-wit.md#plan-20)`.
-
-6) C:/src/hobo/docs/design/traceability.md — (a) add a row after the ADR-0104 row (line 362): `| ADR-NNNN | [architecture-core](./adr/01-architecture-core.md#adr-nnnn) | In-Camp scheduling is owned by the component-host scheduler seam: wadm on the default self-hosted wasmCloud lattice, substrate-delegated on k8s/floor/provider-native; scaling annotation consumer named; preemption/oversubscription/capacity-reservation deferred to ADR-Pn. | HOBO-<this issue's ID> |` (use the Linear issue ID assigned to this remediation); (b) update "Counted ADRs: 93 numbered entries" (line 366) to 94; (c) update "Explicit numbering gaps through `ADR-0104`" (line 370) to the new max ID (gap list itself unchanged).
-
-7) Register bookkeeping in C:/src/hobo/GAPS.md: add a `### REM-004` entry under `## Remediations` (Action = this plan, Acceptance, Effort M, Delivery link = the Linear issue / PR), and set the cand-01 Gap-register row Remediation cell to link `#rem-004` with status 🧯.
-
-**Acceptance**
-
-Checklist (all commands from C:/src/hobo):
-1. `pnpm run docs:okf` passes (no frontmatter regressions; index.md files still have none; amended docs keep their existing `type:` frontmatter untouched).
-2. `pnpm agent:check -- --staged` passes with all changed files staged — because docs/design/adr/** and docs/design/traceability.md are touched, this automatically runs the traceability gate (`scripts/relevant-check-policy.ts:74,149`).
-3. Traceability gate directly (its real name — there is no package.json alias): `node --import tsx scripts/validate-traceability.ts` exits 0. This requires: the new ADR-NNNN appears in docs/design/traceability.md, and the numbering-gap statement still covers every unassigned ID.
-4. `pnpm run lint:docs:staged` passes (link validity across the edited docs).
-5. Cross-link audit: the new ADR anchor `#adr-nnnn` (lowercase) resolves from all five referrers — wasm-runtime-wit.md new section, control-plane.md:121, authoring-resources-wiring.md:161, reliability-observability-cost.md:61, platform-engineering.md Workload Profiles — and docs/design/adr/index.md gained exactly one new row.
-6. Content assertions: `grep -ri wadm docs/design/` now returns hits in wasm-runtime-wit.md, adr/01-architecture-core.md, and control-plane.md; the string `hobo:scheduler` was NOT reused for the new seam; every one of {bin-packing, spread/anti-affinity, preemption, oversubscription, host drain, capacity reservation} appears in the new ADR with an explicit designed/delegated/deferred label; each "deferred" item has a matching new ADR-Pn line in docs/design/adr/07-portability-extensibility.md#open--proposed-decisions-adr-pn.
-7. No existing ADR heading, ID, or anchor was modified (git diff shows only appends in adr/01-architecture-core.md and adr/index.md table).
-8. GAPS.md: cand-01 row references REM-004; REM-004 links the Linear issue.
-
-**Guardrails**
-
-- Documentation only: no code, no schema, no new WIT files. Do not create any new docs/ file — all changes are amendments to the six named files.
-- Never renumber, reword, or reorder existing ADRs; the new ADR is append-only at the end of docs/design/adr/01-architecture-core.md. Take the next free global ADR ID by checking the index table max at execution time (ADR-0104 at drafting time); same for ADR-Pn (P5 at drafting time).
-- Do not re-litigate or reverse the Nomad->wasmCloud pivot; frame the ADR as making the Nomad-scheduler->HoBo mapping explicit on the accepted architecture.
-- Naming hazard: `hobo:scheduler` is the existing cron-trigger WIT port (wasm-runtime-wit.md:166) — never use that name for the placement seam; do not mint any new `hobo:*` WIT interface in this remediation.
-- Do not contradict ADR-0071 (Dispatcher owns cross-provider/cross-Camp placement) or ADR-0033 (deterministic, no on-path solver/LLM): the new ADR is strictly the intra-Camp layer and must say so.
-- Do not invent new event families or conformance suite names; extend the existing `@hobo/conformance/component-host` suite and existing Plan 11 event-sourcing language only.
-- Keep all links relative `.md` links with lowercase anchors (`#adr-nnnn`); docs/design/adr/index.md and any index.md must have NO YAML frontmatter; do not touch frontmatter of amended docs.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-004-historical-remediation-plan-80be309717d4).
 
 ### REM-005 (for GAP-002)
 
@@ -410,50 +230,7 @@ Checklist (all commands from C:/src/hobo):
 - **Evidence:** `docs/design/vision.md:68-77` · `docs/design/vision.md:48-64` · `README.md:47` · `GAPS.md:20-26` · `docs/design/traceability.md:10-27`
 - **Effort:** M · **Delivery:** [HOBO-670](https://linear.app/quickdeploy-ai/issue/HOBO-670) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-REM for cand-03 (pillar L-CONS, gap, MED) — promote the five-pillar intent lineage into the design suite. Amend three existing files; create NO new files and NO new ADRs.
-
-FILE 1 — C:/src/hobo/docs/design/vision.md (amend; do not touch YAML frontmatter):
-(a) In the "### What HoBo borrows (deliberately)" list (currently lines 68–77), insert a new bullet immediately after the "**From .NET Aspire:**" bullet:
-- **From HashiCorp Nomad (founding pillar; runtime since pivoted):** heterogeneous workload orchestration/scheduling, bin-packing-style placement, and federation — realized in HoBo through the self-hosted wasmCloud lattice default ([ADR-0031](./adr/01-architecture-core.md#adr-0031)) and the Junction ⊃ Yard ⊃ Camp scopes; the Nomad→wasmCloud pivot is an accepted decision, with the full concept-by-concept mapping in [`docs/competitors/nomad`](../competitors/nomad.md#primitive-mapping).
-(b) Insert a new h3 subsection titled exactly "### Intent lineage (five pillars)" immediately BEFORE the "### Defensible differentiators (the moat)" heading (i.e., after the adjacent-products blockquote that ends the borrows section). Outline:
-  - Intro paragraph (2 sentences): quote the original composed intent verbatim — "HashiCorp Nomad + .NET Aspire + Nitric with some FinOps and agent-native experiences." — and state that this subsection is the canonical intent→design map; note the ongoing audit register lives at [`GAPS.md`](../../GAPS.md).
-  - Table with columns "Pillar | Original contribution | Where it lives in the design", five rows:
-    P1 Nomad | heterogeneous workload orchestration/scheduling, bin-packing placement, federation | [`control-plane.md`](./control-plane.md#plan-04), [`platform-engineering.md`](./platform-engineering.md#plan-25), [`adr/01-architecture-core.md`](./adr/01-architecture-core.md); accepted wasmCloud pivot ([ADR-0031](./adr/01-architecture-core.md#adr-0031)), mapping in [`../competitors/nomad.md`](../competitors/nomad.md#primitive-mapping)
-    P2 Aspire | local-dev orchestration, app composition/wiring, dev dashboard, polyglot DX | [`developer-experience.md`](./developer-experience.md#plan-07), [`sdk-api.md`](./sdk-api.md#plan-02), [`authoring-resources-wiring.md`](./authoring-resources-wiring.md#plan-21), [`../competitors/aspire.md`](../competitors/aspire.md)
-    P3 Nitric | cloud-agnostic Infrastructure-from-Code, portable resource ports, `.allow()` least privilege | [`authoring-resources-wiring.md`](./authoring-resources-wiring.md#plan-21), [`wasm-runtime-wit.md`](./wasm-runtime-wit.md#plan-20), [`../competitors/nitric.md`](../competitors/nitric.md)
-    P4 FinOps | cost as a first-class input: estimates, budgets, showback, cost-aware placement | [`reliability-observability-cost.md`](./reliability-observability-cost.md#plan-05), [`finops-budget-routing-control-plane.md`](./finops-budget-routing-control-plane.md), [ADR-0071](./adr/01-architecture-core.md#adr-0071)
-    P5 Agent-native | agents as first-class principals and operators: identity, MCP, Crew, generation | [`ai-native-agent-auth.md`](./ai-native-agent-auth.md#plan-06), [`operators-sre.md`](./operators-sre.md#plan-40), [`generated-stack.md`](./generated-stack.md#plan-23)
-  - Closing sentence: one line stating the only accepted intent-level pivot is Nomad's scheduler/runtime role moving to wasmCloud, and that intent-pillar coverage is traced in [`traceability.md`](./traceability.md#intent-pillar-coverage).
-
-FILE 2 — C:/src/hobo/docs/design/traceability.md (amend; ADDITIVE ONLY — delete or reword nothing; do not touch frontmatter):
-Insert a new h2 section titled exactly "## Intent Pillar Coverage" immediately after the "## Coverage Rules" section and before "## Cross-Plan User Story Evidence" (currently line 32). Outline:
-  - Intro line (1 sentence): pillars come from the founding intent recorded in [`vision.md`](./vision.md#intent-lineage-five-pillars); the audit register is [`GAPS.md`](../../GAPS.md).
-  - Table with columns "Pillar | Design home | Plan/ADR anchors | Implementation evidence", five rows (reuse links from FILE 1's table for "Design home"): P1 Nomad → PLAN-04, PLAN-25, ADR-0031 → Control Plane: Planner, Matching & Orchestrator epic row; P2 Aspire → PLAN-07, PLAN-02, PLAN-21 → CLI, MCP & Developer Experience epic row; P3 Nitric → PLAN-21, PLAN-20, ADR-0069 → SDK & Authoring (IfC / bindles) epic row; P4 FinOps → PLAN-05, ADR-0071 → Reliability, Observability & Cost (FinOps) epic row; P5 Agent-native → PLAN-06, PLAN-40, PLAN-23 → Identity, Auth, Secrets & Cross-App Access (XAA) epic row. (These epic rows already exist in this file's Cross-Plan table — name them textually, no new links required in that column.)
-
-FILE 3 — C:/src/hobo/GAPS.md (amend, append-only conventions):
-Under "## Intent & pillars", after the existing table, add one pointer line: "Promoted into the design suite (REM for cand-03): [`docs/design/vision.md` — Intent lineage (five pillars)](docs/design/vision.md#intent-lineage-five-pillars) and [`docs/design/traceability.md` — Intent Pillar Coverage](docs/design/traceability.md#intent-pillar-coverage)." Then update the cand-03 register row/remediation status per the register's status key (🧯 → ✔ once these edits land).
-
-No index/hub changes are required (no new files). Optionally, the vision.md row in docs/design/index.md "Covers" cell may append ", intent lineage" — cosmetic only; index.md must keep NO frontmatter either way.
-
-**Acceptance**
-
-Checklist (run from C:/src/hobo):
-1. docs/design/vision.md contains heading "### Intent lineage (five pillars)" placed before "### Defensible differentiators (the moat)", quotes the verbatim phrase "HashiCorp Nomad + .NET Aspire + Nitric with some FinOps and agent-native experiences.", has a 5-row pillar table, and a new "From HashiCorp Nomad" bullet in the borrows list linking ../competitors/nomad.md#primitive-mapping (anchor verified to exist: "## HoBo mapping", docs/competitors/nomad.md line 153).
-2. docs/design/traceability.md contains "## Intent Pillar Coverage" between "## Coverage Rules" and "## Cross-Plan User Story Evidence"; `git diff -- docs/design/traceability.md` shows only added lines (no deletions) — the validator requires all existing ADR-NNNN/PLAN-NN tokens, the "Accepted / current" string, and >=50 HOBO-N references to survive.
-3. GAPS.md "Intent & pillars" section gains the pointer line to both new anchors; cand-03 status updated per the register status key.
-4. Every new relative link resolves on disk: ./control-plane.md, ./platform-engineering.md, ./adr/01-architecture-core.md, ./developer-experience.md, ./sdk-api.md, ./authoring-resources-wiring.md, ./wasm-runtime-wit.md, ./reliability-observability-cost.md, ./finops-budget-routing-control-plane.md, ./ai-native-agent-auth.md, ./operators-sre.md, ./generated-stack.md, ../competitors/nomad.md, ../competitors/aspire.md, ../competitors/nitric.md, ../../GAPS.md (all confirmed present).
-5. Validation commands (all must exit 0):
-   - pnpm run docs:okf
-   - node --import tsx scripts/validate-traceability.ts   (the real traceability gate — package.json defines no named script for it; this is the exact invocation from README's core gate list, and it link-checks traceability.md)
-   - pnpm agent:check -- --staged   (with the three edited files staged)
-   - Recommended extras since docs/design/ is touched: pnpm run docs:design-lint and pnpm run lint:docs:staged
-6. Cross-links to update: none beyond FILE 3 (no new files, so docs/design/index.md and docs/index.md need no new rows); README.md line 47 already links GAPS.md.
-
-**Guardrails**
-
-1. The Nomad→wasmCloud pivot is ACCEPTED — the lineage text must present it as a settled decision (cite ADR-0031 and ../competitors/nomad.md#primitive-mapping); never propose re-adopting Nomad as scheduler/runtime or re-litigating the choice. 2. Documentation-level only: amend the three named files; create no new files, no new ADRs, never renumber existing ADRs (if a future decision record were ever needed it takes the next free global ADR ID in one of the four theme files under docs/design/adr/ — this remediation needs none). 3. traceability.md and GAPS.md edits are strictly additive (GAPS.md IDs stable, rejected candidates never deleted); do not remove or reword any existing traceability rows, ADR/PLAN tokens, or the "Accepted / current" audit sentence. 4. Do not modify the OKF YAML frontmatter of vision.md or traceability.md (both already carry non-empty type: Reference); GAPS.md and any index.md must remain frontmatter-free. 5. Use exactly the heading strings "### Intent lineage (five pillars)" and "## Intent Pillar Coverage" so the anchors #intent-lineage-five-pillars and #intent-pillar-coverage referenced from GAPS.md and vision.md resolve. 6. Keep all links relative .md links as specified; no absolute paths or bare directory links.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-005-historical-remediation-plan-6af621b4552f).
 
 ### REM-006 (for GAP-003)
 
@@ -461,62 +238,7 @@ Checklist (run from C:/src/hobo):
 - **Evidence:** `docs/competitors/nomad.md:190` · `docs/competitors/nomad.md:174` · `docs/competitors/nomad.md:178` · `docs/design/platform-engineering.md:50` · `docs/design/control-plane.md:227`
 - **Effort:** M · **Delivery:** ✔ [HOBO-671](https://linear.app/quickdeploy-ai/issue/HOBO-671) — nomad.md tracker re-audited; `platform-engineering.md#node-placement-and-system-workloads-iteration-hooks` added.
 
-**Action**
-
-Amend 3 existing files; create no new files and no new ADR.
-
-1. `C:/src/hobo/docs/design/platform-engineering.md` — insert ONE new h3 subsection inside the Plan 25 section, between the end of "### The selection algorithm — deterministic, on-path" (after the "AI/solvers are advisory, off the deploy path" paragraph, currently line 82) and "### Mapping is sugar over default definitions" (currently line 84). Do not alter any existing heading text (other docs link into this file by anchor). Exact heading (keep punctuation-free so the anchor is deterministic):
-
-`### Node placement and system workloads (iteration hooks)`  → anchor `#node-placement-and-system-workloads-iteration-hooks`
-
-Outline:
-- Intro paragraph (2–3 sentences): Matching selects WHICH Resource Definition realizes a resource; it does not yet express Nomad-class node-level placement. These surfaces are explicitly NOT yet designed and are recorded here so the competitor parity tracker ([Nomad mapping](../competitors/nomad.md#primitive-mapping)) cannot silently overclaim; tracked as gap cand-05 in [`GAPS.md`](../../GAPS.md) and Linear issue HOBO-XXX (replace XXX with the ID of the issue you are executing).
-- Bullet **Affinity / anti-affinity / topology spread** — soft/hard co-location and distribution across nodes/zones/Camps. Nearest existing constructs today: Planner step 4 "Region & colocation" ([Plan 4](./control-plane.md#plan-04)) and matching criteria; a first-class construct (matching-dimension extension or in-Camp scheduler hints) is planned, no committed design yet.
-- Bullet **System (per-node) workloads** — Nomad system jobs run one instance per eligible node/node class; HoBo's sketch is Yard/operator/system Bindles per Camp or node class, with no design text yet.
-- Bullet **Raw-exec / Java / QEMU legacy hosts** — OCI/container/VM adapters are designed as provider choices ([Plan 20](./wasm-runtime-wit.md#plan-20), [Plan 4](./control-plane.md#plan-04), BuildProvider packer/firecracker); a non-containerized raw-exec host adapter has no design coverage yet.
-- Closing line: when a design pass (see gap cand-01 in the same register) lands real affinity/spread constructs, upgrade the tracker rows and replace the relevant bullet with a design/ADR anchor. *2026-08-03 note:* the offering-resolution port, `@hobo/dispatcher`, and the stations routing control loop are adjacent groundwork but are **not** an affinity/spread constraint language — the tracker rows stay 🔜.
-
-2. `C:/src/hobo/docs/competitors/nomad.md` — three edits in the "HoBo mapping" section:
-   a. Line 190 ("Operations, security, and rollout" table): change status ✅ → 🔜 and rewrite the row to:
-   `| Constraints/affinities/spread | Context-matching selects Resource Definitions (designed); node-level affinity/anti-affinity/topology-spread constructs not yet designed | 🔜 | [25](../design/platform-engineering.md#plan-25), [iteration hook](../design/platform-engineering.md#node-placement-and-system-workloads-iteration-hooks) |`
-   b. "Workload and resource catalog" table (lines 170–184): add a fourth column `HoBo doc` (extend header + divider row) with these exact cell values, all anchors already used elsewhere in this file except the new iteration-hook anchor:
-   - Service jobs → `[20](../design/wasm-runtime-wit.md#plan-20)`
-   - Batch jobs → `[21](../design/authoring-resources-wiring.md#plan-21), [02](../design/sdk-api.md#plan-02)`
-   - System jobs → `[iteration hook](../design/platform-engineering.md#node-placement-and-system-workloads-iteration-hooks)` (status stays 🔜)
-   - Periodic jobs → `[21](../design/authoring-resources-wiring.md#plan-21)`
-   - Parameterized/dispatch jobs → `[02](../design/sdk-api.md#plan-02), [11](../design/data-plane.md#plan-11)`
-   - Docker workloads → `[20](../design/wasm-runtime-wit.md#plan-20), [04](../design/control-plane.md#plan-04)`
-   - Raw exec / Java / QEMU → `[04](../design/control-plane.md#plan-04), [iteration hook](../design/platform-engineering.md#node-placement-and-system-workloads-iteration-hooks)` and amend its "HoBo equivalent" cell to `Host/runtime adapters selected by Matching; OCI/VM adapters designed, raw-exec host adapter not yet designed` (status stays ↔)
-   - Dynamic ports/network blocks → `[21](../design/authoring-resources-wiring.md#plan-21), [12](../design/security-networking.md#plan-12)`
-   - CSI/host volumes → `[21](../design/authoring-resources-wiring.md#plan-21)`
-   - Nomad Variables/templates → `[21](../design/authoring-resources-wiring.md#plan-21)`
-   - Consul service discovery → `[21](../design/authoring-resources-wiring.md#plan-21)`
-   - Vault secrets → `[21](../design/authoring-resources-wiring.md#plan-21)`
-   - Autoscaler → `[05](../design/reliability-observability-cost.md#plan-05), [40](../design/operators-sre.md#plan-40)`
-   c. Update the mapping-section legend line 155 blockquote: append one sentence — "Rows with no committed design text anchor to an explicit iteration hook, never to a bare status."
-
-3. `C:/src/hobo/GAPS.md` — in the "Gap register" table, set the cand-05 row Status to ✔ remediated (the register maintainer seeds the row 🧯 with this entry; the executing agent flips it) and put in the Remediation column: "nomad.md statuses re-audited; affinity/spread downgraded to 🔜; workload-catalog table gained a HoBo doc column; gaps anchored to platform-engineering.md iteration-hook subsection (HOBO-XXX)."
-
-No index/hub files need new links: no files are created (`docs/competitors/index.md` already links nomad.md and its `#hobo-mapping` anchor; the new subsection is inside an existing Plan 25 doc, so `docs/design/index.md` is unchanged). No OKF frontmatter work: both amended docs already carry non-empty `type:` frontmatter; no index.md is touched.
-
-**Acceptance**
-
-Checklist (run from C:/src/hobo):
-1. `pnpm run docs:okf` — passes (frontmatter untouched; no new files).
-2. `pnpm run lint:docs` — passes; this is the gate that validates the relative links/anchors from docs/competitors/nomad.md into docs/design/platform-engineering.md, so it proves the new `#node-placement-and-system-workloads-iteration-hooks` anchor slug is exactly right.
-3. `pnpm agent:check -- --staged` — passes (routes lint:docs:staged + docs:coverage for the staged docs changes).
-4. Traceability gate: there is NO package.json alias — the real command is `node --import tsx scripts/validate-traceability.ts`, wired via scripts/relevant-check-policy.ts into `pnpm agent:check` and auto-triggered only by changes under docs/design/adr/, docs/design/traceability.md, docs/design/index.md, or docs/design/proofs/. This remediation touches docs/design/platform-engineering.md (not a trigger path) and adds no ADR/plan, so run it once explicitly as a no-regression check: `node --import tsx scripts/validate-traceability.ts` — must pass unchanged.
-5. Content checks: `grep -n "Constraints/affinities/spread" docs/competitors/nomad.md` shows 🔜 (no ✅ on that row); `grep -c "node-placement-and-system-workloads-iteration-hooks" docs/competitors/nomad.md` ≥ 3 (spread row + System jobs row + Raw exec row); every row of the "Workload and resource catalog" table has a non-empty fourth column; `grep -rniE "affinit|spread" docs/design/platform-engineering.md` now hits the iteration-hook subsection.
-6. Cross-links to update verified: GAPS.md cand-05 row updated; docs/competitors/index.md and docs/design/index.md intentionally unchanged (confirm no dangling references via check 2).
-
-**Guardrails**
-
-- Do not re-litigate or reverse the Nomad→wasmCloud pivot; this fix only makes the parity tracker honest.
-- Documentation-level only: create no ADR, no new plan anchor, no new file. If the separate cand-01 design pass later adds real affinity/spread constructs, THAT pass records the decision as a new ADR at the next free global ADR ID in the appropriate theme file under docs/design/adr/ — never pre-allocate an ID here, never renumber existing ADRs.
-- Only downgrade or anchor statuses; never upgrade a row to ✅/➕ in this fix.
-- The new subsection must read as an explicit iteration hook (not-yet-designed), not speculative design: no new backticked `family.Event` tokens (the event-family linter fails any family absent from docs/design/event-families.md), no new WIT interfaces, no new heading changes to existing sections (external docs link into platform-engineering.md by anchor, e.g. #plan-25 and #matching-specificity-scored-selection).
-- Preserve exact table column counts and pipe alignment in both nomad.md tables; keep all relative links `.md`-relative (../design/... from docs/competitors, ../../GAPS.md from docs/design).
-- Replace every HOBO-XXX placeholder with the real Linear issue ID of the issue being executed before committing; commit as a single conventional docs-scoped commit.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-006-historical-remediation-plan-a4ebcf3bdc0e).
 
 ### REM-007 (for GAP-004)
 
@@ -524,60 +246,7 @@ Checklist (run from C:/src/hobo):
 - **Evidence:** `docs/design/developer-experience.md#the-inner-loop-hobo-dev` · `docs/design/cli-spec.md:22` · `docs/design/wasm-runtime-wit.md:19` · [HOBO-122 proof](https://linear.app/quickdeploy-ai/document/hobo-122-dev-loop-proof-archived-d4ba66511f44) · `docs/competitors/aspire.md:465` · `docs/design/sdk-api.md:292`
 - **Effort:** M · **Delivery:** ✔ [HOBO-672](https://linear.app/quickdeploy-ai/issue/HOBO-672) — ADR-0109 in `docs/design/adr/07-portability-extensibility.md`
 
-**Action**
-
-Document the polyglot dev-loop matrix for `hobo dev`. All edits are documentation-level; no new docs/ files are created (so no new OKF frontmatter is needed; do not touch existing frontmatter). "ADR-NNNN" below means the next free global ADR ID: derive it as (max 4-digit ID in the table in `docs/design/adr/index.md`) + 1 — at audit time the max was 0104, but re-derive at execution; never renumber existing ADRs.
-
-1. AMEND `docs/design/adr/07-portability-extensibility.md` — append a new `## ADR-NNNN` section (place it after the last numbered ADR section and before the "Open / proposed decisions (ADR-Pn)" section), in the house style used by ADR-0042 (bold one-line title, then h3 Context / Decision / Consequences):
-   - Title line: **Polyglot inner loop: per-toolchain watch lanes, replay-based state preservation, and OCI-fallback services under `hobo dev`.**
-   - `### Context` — 4-6 sentences: Plan 07's inner loop and the HOBO-122 proof ([HOBO-122 proof](https://linear.app/quickdeploy-ai/document/hobo-122-dev-loop-proof-archived-d4ba66511f44)) specify hot reload / codegen-in-watch / sub-minute boot in TypeScript terms only; Plan 20 declares "any language, one artifact" (Rust via cargo-component, Go via TinyGo, Python via componentize-py, C# via componentize-dotnet, and an OCI-container fallback); the Aspire tracker (`docs/competitors/aspire.md`, "DCP (local Go orchestrator)" row) marks the dev loop designed-at-parity — but no doc says how a non-TS component or a fallback container participates in the loop.
-   - `### Decision` — 5 numbered points:
-     1. **State preservation is runtime-side and toolchain-neutral.** `hobo dev` run state lives in the event log under `.hobo/` and is restored by replay (Plan 07 inner-loop point 2); a reload for ANY lane = swap the recompiled artifact + replay. In-memory, non-event-sourced state is never preserved for any lane (already true for TS).
-     2. **Each workload lane declares a watch-recompile path and a latency class** (`fast` <2s · `medium` 2-15s · `slow` >15s), surfaced by `hobo dev` per service exactly like the ADR-0042 fidelity labels. The normative matrix lives in Plan 07 (relative link to `../developer-experience.md#plan-07`).
-     3. **Codegen-in-watch is layered per idiom layer (ADR-0072):** a WIT edit regenerates bindings for every registered idiom layer (jco guest-types for TS, wit-bindgen for Rust/Go/Python/C#); TS-only inputs (Zod schemas, `.allow()`, `bind` edges) regenerate only the checked-in `_generated/` TS artifacts (ADR-0037); regeneration is debounced per lane.
-     4. **OCI-fallback services DO run under `hobo dev`**, via the developer's local container runtime (Docker/Podman) through the same OCI pipeline (Plan 21), with **restart-on-change** (no hot reload, no in-memory state preservation — only event-log-backed state survives). If no container runtime is present, `hobo doctor` flags it and the service can run as a contract-backed `hobo stub` instead — an honest degraded mode, never a silent skip.
-     5. **Proof-scope honesty:** only the TS lane is proof-backed (HOBO-122); every other lane is design-pinned and each matrix cell carries `proven | design-pinned`; a lane's cell may not claim `proven` without its own proof under `docs/design/proofs/`.
-   - `### Consequences` — (+) the polyglot promise of Plan 20 now has a specified inner loop with honest per-lane labels, reusing replay + the ADR-0042 label pattern (net-new surface = a latency-class label + a container restart-on-change policy); (−) non-TS lanes are unproven until dedicated proof slices land, and slow lanes (NativeAOT C#, image rebuilds) make "sub-minute boot" a per-lane promise, not a universal one.
-
-2. AMEND `docs/design/developer-experience.md` — inside `## Plan 07`, in the `#### The inner loop (`hobo dev`)` section, insert a new h5 subsection AFTER the HOBO-520 resilience paragraph (ends "...out of this slice.") and BEFORE the existing `##### Local-dev fidelity — what's real vs simulated vs Camp-only ([ADR-0042](...))` heading:
-   - Heading: `##### Per-workload dev loop — TS, non-TS components, and OCI-fallback services ([ADR-NNNN](./adr/07-portability-extensibility.md#adr-nnnn))`
-   - One intro paragraph: state preservation is replay-based and therefore toolchain-neutral; lanes differ only in recompile latency and which generated artifacts refresh; `hobo dev` surfaces a per-lane latency class like the fidelity labels.
-   - The normative matrix, one row per lane, columns: **Workload lane | Watch → recompile path | Latency class | Run state across reload | Regenerated artifacts | Under `hobo dev`? | Status**:
-     - TS/JS (`jco` + `componentize-js`): transpile + re-componentize on save | fast | preserved (replay from `.hobo/`) | `_generated/` TS clients on WIT/Zod/`.allow()`/`bind` edits | yes | **proven** ([HOBO-122 proof](https://linear.app/quickdeploy-ai/document/hobo-122-dev-loop-proof-archived-d4ba66511f44))
-     - Rust (`cargo-component`): debounced `cargo component build` | medium | preserved (replay) | wit-bindgen bindings on WIT edits (+ `_generated/` TS only if the WIT changed) | yes | design-pinned
-     - Go (TinyGo): debounced `tinygo build` to component | medium | preserved (replay) | same as Rust | yes | design-pinned
-     - Python (`componentize-py`): re-componentize on save | medium | preserved (replay) | same as Rust | yes | design-pinned
-     - C#/.NET (`componentize-dotnet`, NativeAOT-LLVM): debounced rebuild | slow | preserved (replay) | same as Rust | yes | design-pinned
-     - OCI-fallback container: image rebuild (or bind-mount) + restart-on-change via local Docker/Podman through the same OCI pipeline ([Plan 21](./authoring-resources-wiring.md#plan-21)) | slow | **not preserved in-memory** — only event-log-backed state | none (no idiom layer) | yes, restart-on-change; without a container runtime, `hobo doctor` flags it and the service runs as a `hobo stub` | design-pinned
-   - Closing sentence: only the TS lane is proof-backed; the others are design-pinned pending their own proof slices (per ADR-NNNN point 5).
-
-3. AMEND `docs/design/adr/index.md` — add one row at the end of the ID table: `| NNNN | Polyglot inner loop: per-toolchain watch lanes, replay-based state preservation & OCI-fallback under `hobo dev` | [portability-extensibility](07-portability-extensibility.md#adr-nnnn) |`. Do not touch any other row. (index.md has no frontmatter — keep it that way.)
-
-4. AMEND `docs/design/traceability.md` — two edits: (a) add an `ADR-NNNN` row at the end of the `## ADR Coverage` table: source `[portability-extensibility](./adr/07-portability-extensibility.md#adr-nnnn)`, coverage assertion ~"Polyglot dev-loop lanes are pinned with replay-based state preservation, per-lane latency classes, layered codegen-in-watch, and a restart-on-change local container policy; only the TS lane is proof-backed." primary issues: HOBO-122, HOBO-156, HOBO-392; (b) in `## ADR Numbering and Status Audit`, bump the "Counted ADRs: N numbered entries" count by 1 and change "Explicit numbering gaps through `ADR-0104`" to reference ADR-NNNN. Do not alter the "Accepted / current" status-policy sentence.
-
-5. AMEND `docs/design/wasm-runtime-wit.md` — directly after the `### Build pipeline (per language)` table (after the line "`@hobo/componentize` wraps these; output is a component pushed as an **OCI artifact**..."), add one sentence: each toolchain adapter also implements `@hobo/componentize`'s watch contract; per-lane watch-recompile latency classes and reload semantics under `hobo dev` are pinned in [ADR-NNNN](./adr/07-portability-extensibility.md#adr-nnnn) with the matrix in [Plan 07](./developer-experience.md#plan-07).
-
-6. AMEND `docs/design/cli-spec.md` — in the Canonical CLI Verbs table, extend the `dev` row's Semantics cell (keep it a single table line): append "Every workload lane participates: wasm components in any supported language recompile in-watch and OCI-fallback services restart-on-change per the dev-loop matrix (ADR-NNNN)." Leave the Implementation-issues column unchanged.
-
-7. AMEND `docs/competitors/aspire.md` — in the "Runtime, deploy & ops" table: (a) the "DCP (local Go orchestrator)" row (~line 465): add `[07](../design/developer-experience.md#plan-07)` to the HoBo-doc cell; keep status ✅ ONLY because every matrix cell now has specified behavior — if the executor defers any lane instead of specifying it, downgrade this row's status to 🔜; (b) the "Polyglot (Python/Node/Go/Java/Rust)" row (~line 470): add the same `[07]` link so the polyglot parity claim points at the dev-loop matrix.
-
-**Acceptance**
-
-Checklist (all must pass):
-1. `docs/design/adr/07-portability-extensibility.md` contains a new `## ADR-NNNN` section with the 5 decisions above; NNNN = next free global ID (max ID in `docs/design/adr/index.md` + 1); no existing ADR section edited or renumbered; the anchor `#adr-nnnn` (lowercase) resolves.
-2. `docs/design/developer-experience.md` Plan 07 inner-loop section has the new h5 with a 6-row matrix covering exactly the four disputed dimensions per lane: watch-recompile path + latency class, run-state preservation across reload, which generated artifacts regenerate, and whether/how OCI-fallback containers run under `hobo dev`. TS row cites the HOBO-122 proof; all non-TS rows say design-pinned; the container row states restart-on-change + no in-memory state preservation + the `hobo doctor`/`hobo stub` degraded mode.
-3. Cross-links valid in both directions: developer-experience.md ↔ ADR-NNNN; wasm-runtime-wit.md → ADR-NNNN and → Plan 07; cli-spec.md `dev` row mentions ADR-NNNN; aspire.md DCP and Polyglot rows link `../design/developer-experience.md#plan-07`.
-4. Hub/index files updated: `docs/design/adr/index.md` gains the ADR-NNNN row; `docs/design/traceability.md` gains the ADR-NNNN coverage row AND the bumped "Counted ADRs" count and "gaps through ADR-NNNN" line. (`docs/design/index.md` needs no change — no new doc or plan was added.)
-5. Validation commands (run from repo root, all green):
-   - `pnpm run docs:okf`
-   - `pnpm agent:check -- --staged` (with all changed files staged; this auto-includes the design-doc lint and, because `docs/design/adr/` + `docs/design/traceability.md` are touched, the traceability gate)
-   - `node --import tsx scripts/validate-traceability.ts` — the real traceability gate (there is no package.json alias for it; it is invoked via `scripts/relevant-check-policy.ts` and directly per CONTRIBUTING.md). It fails if ADR-NNNN is in `adr/index.md` but missing from `traceability.md`.
-   - Optional belt-and-braces: `pnpm run docs:design-lint` (relative-link + ADR-reference validation).
-6. Register bookkeeping (cross-link): in `GAPS.md`, flip the cand-06 Gap-register row to 🧯 and add the `### REM-` entry under `## Remediations` (Action = this entry, Effort = M, Delivery link = the PR that applies it).
-
-**Guardrails**
-
-Documentation-only: no `src/` changes, no watch tooling implemented, no new proofs written (the HOBO-122 proof's Scope Guard stays authoritative — do not edit [HOBO-122 proof](https://linear.app/quickdeploy-ai/document/hobo-122-dev-loop-proof-archived-d4ba66511f44)). Never renumber or rewrite existing ADRs; the new ADR is appended with the next free global ID into one of the four theme files (07-portability-extensibility.md), and index.md files stay frontmatter-free. Do not re-litigate or weaken the Nomad→wasmCloud pivot or the wasm-first default — containers remain the fallback, not a peer runtime. Do not mark any non-TS lane "proven"; do not invent new CLI verbs, flags, or event families (`family.Event` strings trigger the event-family lint against docs/design/event-families.md); the only new named surface is the per-lane latency-class label and the container restart-on-change policy. Keep all links relative `.md` links with correct anchors; keep existing OKF YAML frontmatter on amended docs untouched.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-007-historical-remediation-plan-8df987f8b2f9).
 
 ### REM-008 (for GAP-005)
 
@@ -585,51 +254,7 @@ Documentation-only: no `src/` changes, no watch tooling implemented, no new proo
 - **Evidence:** `docs/design/developer-experience.md:22` · `docs/design/developer-experience.md:42` · `docs/design/developer-experience.md:49` · `docs/design/walkthrough.md:138` · `docs/design/deployment-dashboard-topology-explorer.md#scope-out-and-non-goals` · `docs/competitors/aspire.md:360-381`
 - **Effort:** M · **Delivery:** [HOBO-673](https://linear.app/quickdeploy-ai/issue/HOBO-673) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-REM for cand-07 — specify the `hobo dev` local dashboard (serving mode, read path, local views, local telemetry, offline). Documentation-only; 6 existing files amended, no new doc files created.
-
-1. AMEND `docs/design/developer-experience.md` (Plan 07). Insert a new h3 section immediately after the "### Local-dashboard & link views (integrated)" table (currently ends line 52) and before "### CLI & developer experience" (line 54):
-
-   ### Local dashboard (`hobo dev`) — one-line intro: the same dashboard app, served locally with no Yard/Gateway/auth; decision pinned in ADR-NNNN (see step 2).
-   Body as five bold-led paragraphs (house style — no h4s needed):
-   - **Serving mode.** During `hobo dev` the dashboard is NOT the Yard-Bindle web resource from "Tech & structure" — the same Next.js app ships as a static build bundled with the CLI and is served by `runtime-local` on `localhost:<port>` (printed by `hobo dev`). One app, two serving modes: hosted = web resource in the Yard Bindle behind the Gateway; local = CLI-bundled static assets over runtime-local. Link ADR-NNNN.
-   - **Read path.** Locally the dashboard reads `runtime-local` projections directly through the same read-API shape the Gateway exposes hosted-side — no Gateway, no Yard, no auth (localhost-only), extending the existing "inspect/logs work against localhost with no auth" promise (link ../walkthrough.md is not needed; cite #the-inner-loop-hobo-dev item 3).
-   - **Locally available views.** Enumerate which views render in dev: Deployments timeline (local runs), Topology/link map (from the collected manifest, Plan 21), Run inspector (`.hobo/` replay), Local emulation panel, WIT-call traces. Registry browser, Cost/FinOps, Drift, and Agent credential audit are Camp-backed and render as unavailable-with-reason using the ADR-0042 fidelity labels (`real|simulated|mocked|camp-only`) — never as silently empty panels.
-   - **Local telemetry (Aspire parity).** `runtime-local` exposes a local OTLP ingest endpoint (any local process can point `OTEL_EXPORTER_OTLP_ENDPOINT` at it, matching the Aspire standalone-dashboard sink — link ../competitors/aspire.md#dashboard-dcp--observability); per-resource logs and traces render locally in the same views; metrics render with honest fidelity labels (provider latency/egress/cost stay `mocked` per [ADR-0042](./adr/07-portability-extensibility.md#adr-0042)). Dev-time first — not production monitoring (Plan 5 owns prod telemetry).
-   - **Offline behavior.** Fully offline: projections rebuild from the `.hobo/` event log, no cloud reads, no phone-home (consistent with the in-boundary OTel collector posture, ADR-0036).
-
-2. AMEND `docs/design/adr/07-portability-extensibility.md`. Add a new `## ADR-NNNN` section directly after ADR-0042 (ends line 206), where NNNN = the next free global ADR ID — highest existing is ADR-0104, so verify against `docs/design/adr/index.md` and take the next unused number; NEVER renumber existing ADRs. Title: **"Local dashboard serving mode & local telemetry for `hobo dev`."** House format:
-   ### Context — 1 para: Plan 07 says the dashboard is a Next.js web resource in the Yard Bindle reading via the Gateway, but `hobo dev` runs with no Yard/Gateway; Aspire's per-resource logs/traces/metrics/resource-graph local dashboard (docs/competitors/aspire.md) is the P2 pillar reference; without a decided serving mode the local dashboard is unbuildable.
-   ### Decision — 4 numbered points: (1) CLI-bundled static build of the SAME app, served by runtime-local on localhost ("Self-host = hosted UI" extends to "local = same app, different read source"); rejected alternative recorded: deploying the dashboard as a runtime-local-hosted web resource (couples the inner loop to a self-deploy). (2) Direct reads of runtime-local projections via the Gateway-shaped read API, localhost-only, no auth. (3) runtime-local embeds an OTLP ingest endpoint; logs/traces render locally, metrics carry ADR-0042 fidelity labels; deferrals (if any) must be explicit per-view labels, not omissions. (4) Fully offline; `.hobo/` is the only store.
-   ### Consequences — (+) local DX parity with Aspire without a Yard; one dashboard codebase. (−) CLI binary carries the dashboard assets; the local read API must track the Gateway read-API shape (drift risk, covered by conformance tagging local per ADR-0042).
-
-3. AMEND `docs/design/adr/index.md` — add one row to the Index table in numeric order: `| NNNN | Local dashboard serving mode & local telemetry for \`hobo dev\` | [portability-extensibility](07-portability-extensibility.md#adr-nnnn) |`. This file has NO frontmatter — do not add any.
-
-4. AMEND `docs/design/traceability.md` — (a) add an ADR row matching house format: `| ADR-NNNN | [portability-extensibility](./adr/07-portability-extensibility.md#adr-nnnn) | Local dashboard during \`hobo dev\` is the CLI-bundled hosted app served by runtime-local, reading local projections with no Gateway/Yard/auth, with local OTLP ingest and ADR-0042 fidelity labels. | HOBO-<this remediation's Linear issue; use HOBO-410 if not yet minted> |`; (b) update the sentence "Explicit numbering gaps through `ADR-0104`" (line ~370) to reference the new highest ID (gap list unchanged if NNNN is contiguous).
-
-5. AMEND `docs/design/deployment-dashboard-topology-explorer.md` — add a new h2 `## Gap Routing` section between "Owning Initiative Dependencies" and "Evidence Required For M1" (Scope In already claims gap routing exists but no section does). One lead-in line ("Adjacent gaps route to their owning initiative; the Owning Initiative Dependencies table names the owners.") plus a table with one row: Gap = "Local `hobo dev` dashboard: serving mode, local read path, local telemetry, offline behavior"; Routed to = `[developer-experience.md#local-dashboard-hobo-dev](./developer-experience.md#local-dashboard-hobo-dev)` and `[ADR-NNNN](./adr/07-portability-extensibility.md#adr-nnnn)`; Owner = Developer Experience / CLI / MCP; Boundary = "local dev surface is out of this M0's scope; this record only routes it".
-
-6. AMEND `docs/competitors/aspire.md` — in "### Dashboard, DCP & observability" (line 360), extend the existing HoBo cross-reference sentence ("Note the scope gap HoBo closes…") with one clause linking the local-dev parity answer: HoBo's local `hobo dev` dashboard equivalent (serving mode, per-resource logs/traces/metrics, OTLP sink) is specified in [Plan 07 §Local dashboard](../design/developer-experience.md#local-dashboard-hobo-dev).
-
-7. AMEND `GAPS.md` — on delivery, flip the cand-07 Gap register row 🧯 → ✔ and set the REM entry's Delivery link to the merged PR.
-
-Anchor note: GitHub-style anchor for the new h3 "### Local dashboard (`hobo dev`)" is `#local-dashboard-hobo-dev` — verify the rendered anchor before finalizing cross-links (backticks and parens are stripped, spaces become dashes).
-
-**Acceptance**
-
-- [ ] New ADR uses the next free global ID (verify highest in docs/design/adr/index.md — ADR-0104 at time of writing); no existing ADR renumbered or moved; no new files under docs/design/adr/ (the four theme files + index.md only).
-- [ ] Plan 07's new "Local dashboard (`hobo dev`)" section answers all five questions from the finding: serving mode, read path (no Gateway/Yard/auth), which views are local vs Camp-backed, per-resource logs/traces/metrics locally (OTLP ingest or explicit per-view deferral label), offline behavior.
-- [ ] Cross-link web is closed: developer-experience.md §Local dashboard ↔ new ADR ↔ aspire.md #dashboard-dcp--observability; deployment-dashboard-topology-explorer.md §Gap Routing → developer-experience.md#local-dashboard-hobo-dev; all links relative `.md` links that resolve.
-- [ ] adr/index.md gains the new row and still has NO YAML frontmatter; no new docs/ files are created (so no new OKF frontmatter needed), and no existing frontmatter `type:` fields are emptied.
-- [ ] traceability.md has the new ADR row and the updated "Explicit numbering gaps through ADR-…" sentence.
-- [ ] Run and pass: `pnpm run docs:okf`
-- [ ] Run and pass (with all changes staged): `pnpm agent:check -- --staged` — because docs/design/adr/ and docs/design/traceability.md are touched, this fires the traceability gate `node --import tsx scripts/validate-traceability.ts` (wired via scripts/relevant-check-policy.ts line 149; there is no direct package.json alias) plus lint:docs:staged and docs:coverage. If iterating, the gate can also be run directly: `node --import tsx scripts/validate-traceability.ts`.
-- [ ] GAPS.md cand-07 row status updated with the delivery link once merged.
-
-**Guardrails**
-
-Documentation-only — no code, no dashboard implementation, no CLI changes (cli-spec.md deliberately untouched: the dashboard is a projection surface, not a new verb; do not add one). Do not reverse or re-litigate the Nomad→wasmCloud pivot. Do not renumber or edit existing ADR sections beyond appending the new one. Keep the decision consistent with existing commitments: ADR-0042 fidelity labels (`real|simulated|mocked|camp-only`) must gate every locally-rendered metric, and the "Self-host = hosted UI" principle means ONE dashboard app, never a fork. Mirror Aspire's honesty: local telemetry is dev-time first, not production monitoring (Plan 5/Plan 49 own prod surfaces — do not expand them). The M0 record's Scope Out must stay intact — the new Gap Routing section routes the local-dashboard work outward; it must not pull implementation into HOBO-410's M0 scope. index.md files never gain frontmatter. If the next free ADR ID is not 0105 at execution time, take whatever is actually next — never guess from this entry.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-008-historical-remediation-plan-d493c0e7b5bf).
 
 ### REM-009 (for GAP-006)
 
@@ -637,58 +262,7 @@ Documentation-only — no code, no dashboard implementation, no CLI changes (cli
 - **Evidence:** `docs/design/adr/07-portability-extensibility.md#adr-0041` · `docs/design/developer-experience.md:158` · `docs/design/authoring-resources-wiring.md:146-159` · `docs/design/adr/07-portability-extensibility.md:195` · `docs/competitors/aspire.md:84-93`
 - **Effort:** M · **Delivery:** [HOBO-674](https://linear.app/quickdeploy-ai/issue/HOBO-674) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-Amend 6 existing files (no new files, no new ADR ID — this extends ADR-0042 and ADR-0041 in place, which ADR-0042's own Consequences call "ongoing discipline"):
-
-1. docs/design/adr/07-portability-extensibility.md — ADR-0042 section (starts line 178):
-   a. Under "### Decision", append a new point 3 after point 2 (line 186): "**Non-HoBo dependencies get explicit `hobo dev` semantics — never an undefined seam.**" with two sub-bullets:
-      - **`external`/adopted resources ([ADR-0041](#adr-0041))** default to **mock (honest seam)**: `hobo dev` serves the binding as a **contract-backed stub** — the same auto-served `mock` boundary mode as [Plan 23](../generated-stack.md#plan-23) stubs / [ADR-0076](02-identity-security.md#adr-0076) (generated from the resource's recorded contract/traces, no hand-written mock). Opt-in real connection via `hobo dev --connect <resource>` resolves the real endpoint using the dev-only credential sources of [Plan 21](../authoring-resources-wiring.md#plan-21) (`.env.local`/OS keychain, audited as `secret.Accessed { camp: "local", source: "dev" }`, never satisfying a production `can-deploy`); a static-key connection remains a counted zero-secret exception per ADR-0041 §2. If no contract is recorded and `--connect` is not given, `hobo dev` **fails that resource with remediation** (record a contract, pass `--connect`, or verify in a Camp) — never a silent empty stub.
-      - **`addContainer(...)` workloads ([Plan 21](../authoring-resources-wiring.md#plan-21))** are **simulate (real locally)**: `hobo dev` runs the built image on the local container engine (Docker/Podman) with the **same env-injection convention as deploy** (`ConnectionStrings__<name>` / `services__<name>__<endpoint>__<i>`), honoring `waitFor`/`withHttpHealthCheck` ordering; wasm-on-OCI images run on `runtime-local`'s component host with no container engine needed. Without a container engine, the workload's fidelity **degrades to `camp-only` with an explicit label + remediation**, surfaced by `hobo dev` and `hobo verify` — never silently skipped.
-   b. In "#### The fidelity matrix", insert two rows after the "Embedding / search" row (line 196), keeping the exact 3-column shape (| Prod behavior | Local fidelity | Why |):
-      `| \`addContainer(...)\` workloads | **simulate** | local container engine runs the image with deploy-identical env injection ([Plan 21](../authoring-resources-wiring.md#plan-21)); degrades to labeled **camp-only** without Docker/Podman |`
-      `| \`external\`/adopted resources | **mock** (honest seam) | outside the conformance boundary ([ADR-0041](#adr-0041)); contract-backed stub by default ([Plan 23](../generated-stack.md#plan-23)/[ADR-0076](02-identity-security.md#adr-0076) \`mock\` mode), \`--connect\` opt-in real, fail-with-remediation otherwise |`
-   c. In ADR-0042 "### Consequences", extend the (−) bullet with: "…, container-engine detection + the `--connect` opt-in add a small CLI surface, and the `external` stub is only as faithful as the recorded contract."
-
-2. Same file — ADR-0041 §Decision point 2 (line 131): append one sentence at the end of the paragraph: "Local dev against an `external` resource has **defined `hobo dev` semantics** — contract-backed stub by default, explicit `--connect` opt-in to the real endpoint, fail-with-remediation otherwise ([ADR-0042](#adr-0042) fidelity matrix)."
-
-3. docs/design/developer-experience.md — "Local-dev fidelity" subsection (lines 148–152): append to the **Simulate** bullet: ", `addContainer` workloads (local container engine, deploy-identical env injection; labeled camp-only without one)"; append to the **Mock** bullet: ", `external`/adopted resources (contract-backed stub; `hobo dev --connect` opt-in real; fail-with-remediation if neither)". Also extend the Brownfield bullet in "#### Onboarding paths" (line 158) with: "— locally, `hobo dev` stubs still-`external` resources from their recorded contracts or connects via `--connect` ([ADR-0042](./adr/07-portability-extensibility.md#adr-0042))".
-
-4. docs/design/authoring-resources-wiring.md — after the BuildProvider sentence closing the `addContainer` block (line 159), add one paragraph: "**Local dev (`hobo dev`):** an `addContainer` workload runs on the local container engine with the same env-injection convention as deploy (`ConnectionStrings__<name>` / `services__<name>__<endpoint>__<i>`); wasm-on-OCI images run on `runtime-local` with no container engine. Fidelity is labeled per the [ADR-0042](./adr/07-portability-extensibility.md#adr-0042) matrix — simulate with an engine present, labeled camp-only without one."
-
-5. docs/design/traceability.md — line 304 (ADR-0042 row): extend the description cell with "…including `hobo dev` semantics for `external`/adopted resources (contract-backed stub / opt-in `--connect`) and `addContainer` workloads (local container engine, deploy-identical env injection)". Leave the HOBO-issue column unchanged.
-
-6. docs/competitors/aspire.md — "### Composition & wiring" HoBo-mapping table (lines 444–456): add one row:
-   `| \`AddContainer\` local run / \`ExternalServiceResource\` / \`AddConnectionString\` (BYO) | \`addContainer\` runs under \`hobo dev\` (local engine, same env convention); \`external\` resource = contract-backed stub or \`--connect\` | ✅ | [ADR-0042](../design/adr/07-portability-extensibility.md#adr-0042), [ADR-0041](../design/adr/07-portability-extensibility.md#adr-0041) |`
-
-Section outline (all amendments to existing sections — no new docs, so no new OKF frontmatter and no index.md changes needed):
-- ADR-0042 › Decision › new point 3 "Non-HoBo dependencies get explicit hobo dev semantics" — defines the dev default per kind.
-- ADR-0042 › The fidelity matrix › +2 rows — external/adopted (mock) and addContainer (simulate).
-- ADR-0041 › Decision §2 — one cross-link sentence to ADR-0042.
-- Plan 7 › Local-dev fidelity + Onboarding paths › extended bullets — surface the new labels where developers read them.
-- Plan 21 (authoring-resources-wiring) › addContainer block › new "Local dev" paragraph — states hobo dev runs containers locally.
-- traceability.md › ADR-0042 row — description updated to cover the new rows.
-- competitors/aspire.md › HoBo mapping › +1 parity row — closes the AddContainer/ExternalService/AddConnectionString comparison the finding cites (aspire.md:84-93).
-
-**Acceptance**
-
-Checklist:
-1. `pnpm run docs:okf` passes (no frontmatter was added/removed; index.md files untouched).
-2. `pnpm agent:check -- --staged` passes with all six files staged (routes docs lint/case/freshness lanes).
-3. docs/design/ is touched, so the traceability gate must pass: `node --import tsx scripts/validate-traceability.ts` (validates every ADR ID in docs/design/adr/index.md appears in docs/design/traceability.md and numbering is contiguous — amendments add no ID, so this must stay green).
-4. Optional but listed in .github/pull_request_template.md for ADR/design-term changes: `pnpm run docs:design-lint`.
-5. Content checks: `rg -n "addContainer" docs/design/adr/07-portability-extensibility.md` hits the ADR-0042 matrix; `rg -n "external\`/adopted" docs/design/adr/07-portability-extensibility.md` hits both the Decision point and the matrix row; `rg -n "\-\-connect" docs/design/developer-experience.md docs/design/adr/07-portability-extensibility.md` returns ≥3 hits; the ADR-0042 fidelity matrix still renders as a 3-column table (| Prod behavior | Local fidelity | Why |).
-6. Cross-link validity (relative .md links, lowercase anchors): within 07-portability-extensibility.md use `#adr-0041`/`#adr-0042`; sibling ADR file as `02-identity-security.md#adr-0076`; from adr/ up one level as `../generated-stack.md#plan-23` and `../authoring-resources-wiring.md#plan-21`; from developer-experience.md/authoring-resources-wiring.md as `./adr/07-portability-extensibility.md#adr-0042`; from docs/competitors/aspire.md as `../design/adr/07-portability-extensibility.md#adr-0042`.
-Cross-links that must be updated (no index/hub files gain links since no files are created): ADR-0041 → ADR-0042 (new sentence), developer-experience.md Plan 7 → ADR-0042 (extended bullets already link the ADR in the heading — keep it), authoring-resources-wiring.md → ADR-0042 (new paragraph), traceability.md ADR-0042 row, competitors/aspire.md HoBo-mapping row → ADR-0041/ADR-0042.
-
-**Guardrails**
-
-- Amend in place; NEVER renumber, reorder, or delete existing ADRs. No new ADR ID is required for this remediation. If the implementer instead opts for a standalone ADR, it must take the next free global ADR ID (grep max `ADR-\d{4}` across docs/design/adr/ — currently ADR-0104 is the highest observed — and verify at drafting time), live in the 07-portability-extensibility.md theme file, and add both a docs/design/adr/index.md row and a docs/design/traceability.md row or scripts/validate-traceability.ts fails.
-- Keep the ADR-0042 fidelity vocabulary fixed: `real | simulated | mocked | camp-only` labels and the simulate/mock/camp-only matrix terms — do not invent a new fidelity class.
-- Secure-by-default must hold: the `external` dev default is the contract-backed stub, never an automatic real connection; do not weaken ADR-0041's honesty stance (external stays a PortabilityReport entry + counted zero-secret exception).
-- Do not touch the Nomad→wasmCloud pivot, ADR-0031 host decisions, or the closed gap-analysis row #17 (it stays closed; this strengthens it).
-- Documentation only — no code, no scripts, no schema changes. index.md files must not gain frontmatter; no new files means no OKF frontmatter work.
-- Keep all links relative `.md` links with lowercase `#adr-00nn`/`#plan-nn` anchors; do not convert any to absolute paths or URLs.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-009-historical-remediation-plan-3b3b1a8fbbc3).
 
 ### REM-010 (for GAP-007)
 
@@ -696,60 +270,7 @@ Cross-links that must be updated (no index/hub files gain links since no files a
 - **Evidence:** `docs/design/authoring-resources-wiring.md:43` · `docs/design/authoring-resources-wiring.md:72` · `docs/design/authoring-resources-wiring.md:168` · `docs/design/wasm-runtime-wit.md:128` · `docs/design/wasm-runtime-wit.md:150` · `docs/design/adr/03-data-plane.md:461`
 - **Effort:** M · **Delivery:** [HOBO-675](https://linear.app/quickdeploy-ai/issue/HOBO-675) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-All paths relative to repo root C:\src\hobo. No new standalone doc files are created (so no new OKF frontmatter is needed); one new ADR is appended to an existing theme file plus surgical edits to six existing docs and two index/registry docs.
-
-STEP 0 — compute the next free ADR ID (do not guess): run `grep -rho "^## ADR-[0-9]\{4\}" docs/design/adr/*.md | sort -u | tail -5` and cross-check the numeric rows in docs/design/adr/index.md; the new ID is max+1, zero-padded to 4 digits (as of 2026-07-01 the max heading is ADR-0104, so the ID is likely 0105 — but always recompute). Below it is written ADR-XXXX; its anchor is #adr-xxxx (lowercase).
-
-STEP 1 — CREATE the new ADR: append to the END of docs/design/adr/03-data-plane.md (after the current last section, ADR-0100 "generateProvider correctness…"). Outline:
-- `## ADR-XXXX` then bold title line: "**`hobo:data` is the canonical WIT port of the `data()` resource; `wasi:sql` is driver-level; `hobo:sql` is retired; `hobo:database/*` is a frozen proof alias.**"
-- `### Context` — names the three divergent spellings: Plan 21's catalog maps `data()` → `hobo:data` ([Plan 21](../authoring-resources-wiring.md#plan-21) rows + manifest-IR example), Plan 20's self-described canonical port catalog instead lists a superseded `sql` resource over `wasi:sql`(+`hobo:sql`) and never defines `hobo:data` ([Plan 20](../wasm-runtime-wit.md#plan-20)), and [ADR-0100](#adr-0100)/the HOBO-211 generation proofs target `hobo:database/postgres@0.1.0`; cites [ADR-0052](#adr-0052)'s "`data`, not `sql`" decision as the settled semantics this ADR gives one naming spine to.
-- `### Decision` — numbered:
-  1. `hobo:data` is the canonical app-facing WIT port the `data()` resource links against, with paradigm sub-interfaces `hobo:data/relational · hobo:data/document · hobo:data/graph · hobo:data/vector · hobo:data/key-value` (exactly the ADR-0052 paradigm taxonomy; the key-value *paradigm* sub-port is distinct from the `kv()` resource over `wasi:keyvalue`). Key functions map 1:1 to the `.allow()` verbs: `read(key/query)`, `write(record)`, `query(predicate)` (the predicate DSL shared with `hobo:projection`/`hobo:search`, [Plan 32](../data-plane.md#plan-32)), `admin(migration-plan ops)`.
-  2. Port relationships stated once: `hobo:projection` stays the projection/fold port and `hobo:search` the query-extension port ([ADR-0034](#adr-0034)); `hobo:data` is the resource-level port a `data()` link resolves to, and a paradigm sub-interface is what a provider exports.
-  3. There is no `sql` resource. `wasi:sql` is demoted to a driver-level reused interface that a `hobo:data/relational` provider/sink driver MAY realize its mapping over (consistent with Plan 32 §Projection events & ports).
-  4. `hobo:sql` is retired as a WIT port name (it was never defined); the relational idiom layer is the `@hobo/sql` npm package ([ADR-0081](#adr-0081)), which lowers through `hobo:data` — package name unchanged.
-  5. `hobo:database/postgres@0.1.0` is the frozen provider-target id used by ADR-0100 and the HOBO-211/HOBO-324 reference proofs/fixtures; it names a Postgres provider of `hobo:data/relational`. Proof code under src/draft is NOT rewritten; new docs must use `hobo:data/relational`.
-  6. Plan 20's interface catalog is the single authoritative registry of port names; any resource→port row elsewhere must link a port defined there. Include a small naming-map table: resource `data()` → canonical port `hobo:data` → sub-interfaces → underlying reused WASI (`wasi:sql` for relational drivers) → legacy aliases (`sql` resource · `hobo:sql` · `hobo:database/*`).
-- `### Consequences` — (+) the resource→WIT-port spine for the data block is defined at one authoritative row and all four names reconcile; (−) the frozen `hobo:database/*` alias survives in historical proofs/fixtures and must be read through the naming map.
-Optionally (allowed, not required): add ONE italic naming-note line inside ADR-0100's Context — "*Naming note: `hobo:database/postgres@0.1.0` is the frozen reference-proof port id; the canonical catalog name is `hobo:data/relational` ([ADR-XXXX](#adr-xxxx)).*" Do not alter ADR-0100's Decision text.
-
-STEP 2 — AMEND docs/design/wasm-runtime-wit.md (Plan 20), four edits:
-(a) line 27 "Reused" bullet: change "`wasi:sql`," to "`wasi:sql` (driver-level under `hobo:data/relational`, [ADR-XXXX](./adr/03-data-plane.md#adr-xxxx)),".
-(b) line 128 building-block table: replace the row `| SQL | \`wasi:sql\` (+ \`hobo:sql\`, [Plan 32](./data-plane.md#plan-32)) |` with `| Data (relational/document/graph/vector/kv) | \`hobo:data\` — paradigm sub-interfaces \`relational · document · graph · vector · key-value\` ([ADR-XXXX](./adr/03-data-plane.md#adr-xxxx)); relational realizable over draft \`wasi:sql\` ([Plan 32](./data-plane.md#plan-32)) |`.
-(c) line 150 reused-WASI table: replace `| \`wasi:sql\` | \`sql\` | connection + query (draft; HoBo \`hobo:sql\` fills gaps) |` with `| \`wasi:sql\` | \`data\` (relational; driver-level) | draft; a \`hobo:data/relational\` provider/sink driver may realize its mapping over it — not an app-facing catalog port ([ADR-XXXX](./adr/03-data-plane.md#adr-xxxx)) |`.
-(d) hobo:* interface table (lines 156–182): insert a new row after the `hobo:embed` row (line 169): `| \`hobo:data\` | canonical port of the \`data()\` resource ([Plan 21](./authoring-resources-wiring.md#plan-21)/[ADR-0052](./adr/03-data-plane.md#adr-0052)/[ADR-XXXX](./adr/03-data-plane.md#adr-xxxx)) — one abstract data dep; paradigm sub-interfaces \`relational · document · graph · vector · key-value\`, each a provider export | \`read(key/query)\`, \`write(record)\`, \`query(predicate)\` (predicate DSL shared with \`hobo:projection\`/\`hobo:search\`), \`admin\` (migration-plan ops, [Plan 32](./data-plane.md#plan-32)); relational sub-port realizable over draft \`wasi:sql\` |`.
-
-STEP 3 — AMEND docs/design/authoring-resources-wiring.md (Plan 21): in the line-43 Data row and line-72 Nitric-parity Data row, expand "`hobo:data` (paradigm sub-ports)" to "`hobo:data` (sub-interfaces `relational · document · graph · vector · key-value`, [ADR-XXXX](./adr/03-data-plane.md#adr-xxxx))". Leave the manifest-IR example (lines 168/172) as-is — it is now defined.
-
-STEP 4 — AMEND docs/design/data-plane.md (Plan 32): line 208 and lines 490/492 — replace each "the `sql` resource"/"relational **`sql`** resources" with "a relational `data` resource (`hobo:data/relational`, [ADR-XXXX](./adr/03-data-plane.md#adr-xxxx))" (keep surrounding sentence intact); line 466 — replace "(today on the `database` port)" with "(today on `hobo:data/relational`, the relational data sub-interface — [ADR-XXXX](./adr/03-data-plane.md#adr-xxxx))".
-
-STEP 5 — AMEND docs/competitors/nitric.md line 312: replace `| \`sql\` | \`wasi:sql\` / \`hobo:sql\` | ✅ |` with `| \`sql\` | \`hobo:data/relational\` (realizable over draft \`wasi:sql\`) ([ADR-XXXX](../design/adr/03-data-plane.md#adr-xxxx)) | ✅ |`.
-
-STEP 6 — AMEND enumerations: docs/design/control-plane.md line 140 — replace "`wasi:sql`" with "`hobo:data`"; docs/technologies/openstack.md line 38 — replace "`wasi:sql`" with "`hobo:data`".
-
-STEP 7 — REGISTER the ADR: (a) docs/design/adr/index.md — add row `| XXXX | \`hobo:data\` is the canonical data() port; wasi:sql driver-level, hobo:sql retired, hobo:database/* frozen alias | [data-plane](03-data-plane.md#adr-xxxx) |` following the existing table format (this file must keep NO frontmatter); (b) docs/design/traceability.md — add an ADR row `| ADR-XXXX | [data-plane](./adr/03-data-plane.md#adr-xxxx) | Canonical data-port naming spine: hobo:data + paradigm sub-interfaces; wasi:sql demoted to driver level; hobo:sql retired; hobo:database/* frozen proof alias. | HOBO-<this remediation's Linear issue id> |` in the ADR table near ADR-0100/0104, and update the prose "Explicit numbering gaps through ADR-0104" to reference the new max ID.
-
-Do NOT touch: any file under src/draft (all `hobo:database/postgres@0.1.0` hits there are frozen proof artifacts), docs/design/proofs/hobo-324-llm-fill/index.md, [HOBO-232 proof](https://linear.app/quickdeploy-ai/document/hobo-232-relational-projection-sink-proof-archived-6dfbd23264b3) (its `wasi:sql/query@0.2.0` driver-level lowering is consistent with the demotion), and ADR-0032/ADR-0052/ADR-0081 decision text.
-
-**Acceptance**
-
-Checklist (run from C:\src\hobo):
-1. `pnpm run docs:okf` — passes; all amended docs keep their existing OKF frontmatter (`type: Reference`), docs/design/adr/index.md still has NO frontmatter.
-2. `pnpm agent:check -- --staged` — passes with everything staged. Because docs/design/adr/** and docs/design/traceability.md are touched, this auto-runs the traceability gate; it can also be run directly as `node --import tsx scripts/validate-traceability.ts` (there is no dedicated package.json script for it — it is selected by scripts/relevant-check-policy.ts). It requires the new ADR id to appear in BOTH docs/design/adr/index.md (as a `| XXXX |` row) and docs/design/traceability.md.
-3. Grep assertions:
-   - `grep -rn "hobo:sql" docs/` → 0 hits.
-   - `grep -n "| SQL |" docs/design/wasm-runtime-wit.md` → 0 hits; `grep -c "hobo:data" docs/design/wasm-runtime-wit.md` → ≥ 3 (building-block row + hobo:* catalog row + reused-wasi note).
-   - `grep -rn "wasi:sql" docs/` → every remaining hit is in a driver-level context (Plan 20 demoted rows, data-plane.md sink-driver line 466, proofs/hobo-232) — none presents `wasi:sql` as an app-facing resource port.
-   - `grep -rln "hobo:database" docs/` → only docs/design/adr/03-data-plane.md (ADR-0100 + the new ADR's alias map) and docs/design/proofs/hobo-324-llm-fill/index.md (frozen).
-   - `git status --porcelain -- src/draft` → empty (no proof code touched).
-4. Cross-link validity: the new ADR's relative links resolve (../wasm-runtime-wit.md#plan-20, ../authoring-resources-wiring.md#plan-21, ../data-plane.md#plan-32, #adr-0052, #adr-0081, #adr-0100); anchors `#adr-xxxx` used in wasm-runtime-wit.md, authoring-resources-wiring.md, data-plane.md, control-plane.md, competitors/nitric.md all point at docs/design/adr/03-data-plane.md. Cross-links that MUST gain entries: docs/design/adr/index.md (new ADR row) and docs/design/traceability.md (new ADR row + "gaps through ADR-…" max bumped). docs/design/index.md needs no change (no new plan/doc file).
-5. Spine consistency spot-check: the Plan 21 catalog Data row, the Plan 20 building-block table, the Plan 20 hobo:* table, and the manifest-IR example (`"port": "hobo:data"`, `"links": [{"import": "hobo:data", ...}]`) now all name the same `hobo:data` port with the same five sub-interfaces.
-
-**Guardrails**
-
-Documentation-level only — no code, no WIT files, nothing under src/draft changes; `hobo:database/postgres@0.1.0` stays byte-frozen in all proofs/fixtures and in ADR-0100's Decision text (at most one italic naming-note line added to ADR-0100's Context). Never renumber or rewrite existing ADRs (ADR-0032/0052/0081/0100 decision text untouched); the new ADR takes the next free global ID computed by grep, not guessed. Do not rename the `@hobo/sql` npm package — only the never-defined `hobo:sql` WIT *port* name is retired (the package is an ADR-0081 idiom layer that lowers through `hobo:data`). Do not reverse or re-litigate the Nomad→wasmCloud pivot or ADR-0052's "`data`, not `sql`" decision — this remediation only fixes naming/definition, not semantics. Keep all links relative `.md` links; index.md files must have no frontmatter; do not add frontmatter-bearing new files (none are needed). Preserve markdown table column counts when editing rows (use `·` separators, never `|`, inside cells).
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-010-historical-remediation-plan-b49c7117775b).
 
 ### REM-011 (for GAP-008)
 
