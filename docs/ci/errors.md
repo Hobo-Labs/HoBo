@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-141 codes.
+142 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -135,6 +135,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
+| [`HOBO_CI_OWNER_CHOICE_CHANGED`](#hobo_ci_owner_choice_changed) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_RERUN_AMBIGUOUS`](#hobo_ci_rerun_ambiguous) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_RUNNER_ORDER_INVALID`](#hobo_ci_runner_order_invalid) | `packages/hobo/src/ci-route.ts` |
@@ -1711,6 +1712,20 @@ The GitHub request timed out. A rerun may already have been accepted; inspect th
 ```
 
 What to do: follow the message.
+
+### HOBO_CI_OWNER_CHOICE_CHANGED
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message:
+
+```text
+The owner changed the selected store while this operation was running.
+```
+
+What to do:
+
+- Run hobo ci up again for the selected store.
 
 ### HOBO_CI_RELAY_ERROR
 

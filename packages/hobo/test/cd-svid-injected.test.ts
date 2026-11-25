@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
 import { tmpdir } from "node:os";
@@ -11,7 +11,6 @@ import {
 	type CdContext,
 	ReconcilerMode,
 } from "@hobo/cd";
-import { CredentialRequestSchema } from "@hobo/fleet";
 import {
 	agentKeyFromJwk,
 	generateReconcilerKeys,
@@ -22,6 +21,7 @@ import { parseTenantId } from "@hobo/core";
 import {
 	ApprovalMode,
 	CoordinationMode,
+	CredentialRequestSchema,
 	FleetRecordSchema,
 	parseFleetId,
 	parseMemberId,
@@ -700,10 +700,11 @@ describe("injected CD SVID issuer", () => {
 							agentSign.signer,
 							agentSign.publicJwk,
 							{
-							htm: "POST",
-							htu: credentialUrl,
-							nowMs: Date.now(),
-						}),
+								htm: "POST",
+								htu: credentialUrl,
+								nowMs: Date.now(),
+							},
+						),
 					},
 					operator("fixture-a"),
 				);
@@ -725,11 +726,12 @@ describe("injected CD SVID issuer", () => {
 					agentSign.signer,
 					agentSign.publicJwk,
 					{
-					htm: "GET",
-					htu: `${origin}/v1/cd/feed`,
-					nowMs: Date.now(),
-					accessToken: svid,
-				});
+						htm: "GET",
+						htu: `${origin}/v1/cd/feed`,
+						nowMs: Date.now(),
+						accessToken: svid,
+					},
+				);
 				const verified = await restarted.value.cd.enrollment.verify({
 					method: "GET",
 					path: "/v1/cd/feed",

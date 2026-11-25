@@ -414,7 +414,11 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 	it("still reports no private form when no owner page is wired", async () => {
 		const app = createStoreChoiceApp({
 			cwd: "/synthetic/project",
-			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+			locatorFor: () => ({
+				...guards,
+				read: async () => ({}),
+				write: async () => {},
+			}),
 		});
 		const shown = await app.callTool(
 			CHOOSE_SECRET_STORE_TOOL,
@@ -548,7 +552,11 @@ describe("HoBo's relay owner page", () => {
 		const pages = createOwnerPages();
 		const app = createStoreChoiceApp({
 			cwd: "/synthetic/project",
-			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+			locatorFor: () => ({
+				...guards,
+				read: async () => ({}),
+				write: async () => {},
+			}),
 			pages,
 			relayLogin: createRelayLoginTool({
 				relay: createRelayOwnerSessions({

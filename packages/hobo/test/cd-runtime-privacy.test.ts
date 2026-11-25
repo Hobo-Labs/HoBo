@@ -8,9 +8,7 @@ import { openCdStore } from "../src/cd-store.js";
 
 const marker = "synthetic-private-marker";
 
-async function inFixture(
-	run: (home: string) => Promise<void>,
-): Promise<void> {
+async function inFixture(run: (home: string) => Promise<void>): Promise<void> {
 	const home = await mkdtemp(join(tmpdir(), `${marker}-`));
 	try {
 		await run(home);
@@ -203,7 +201,10 @@ describe("CD runtime startup privacy", () => {
 
 	it("sanitizes a topology reader failure during service startup and closes the journal", async () => {
 		await inFixture(async (home) => {
-			const journal = await openCdStore({ backend: "memory" }, { now: Date.now });
+			const journal = await openCdStore(
+				{ backend: "memory" },
+				{ now: Date.now },
+			);
 			let closed = false;
 			const opened = await openCdRuntime({
 				env: {},

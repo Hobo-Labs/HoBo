@@ -52,13 +52,13 @@ import {
 	withRelaySession,
 } from "./owner-store-session.js";
 import {
-	createRelayOwnerSessions,
-	type RelayLoginDeps,
-} from "./relay-owner-session.js";
-import {
 	OwnerWriteGuardUnavailableError,
 	ownerWriteGuard,
 } from "./owner-write-guard.js";
+import {
+	createRelayOwnerSessions,
+	type RelayLoginDeps,
+} from "./relay-owner-session.js";
 
 interface OwnerWriteRoot {
 	active: boolean;
