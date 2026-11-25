@@ -123,6 +123,23 @@ describe("source policy", () => {
 		);
 	});
 
+	it("rejects explanations attached to lint directives", () => {
+		const text = [
+			"// oxlint-disable-next-line no-console",
+			"console.log(1);",
+			"// oxlint-disable-next-line no-console -- explanation",
+			"console.log(2);",
+			"/* eslint-disable no-console -- explanation */",
+			"console.log(3);",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("x.ts", text, new Set([1, 3, 5])).map(
+				(item) => item.line,
+			),
+			[3, 5],
+		);
+	});
+
 	it("accepts Vite dynamic import directives without exempting deferred work or lookalikes", () => {
 		const text = [
 			"export const loaded = import(/* @vite-ignore */ modulePath);",

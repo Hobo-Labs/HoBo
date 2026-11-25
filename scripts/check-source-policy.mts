@@ -68,6 +68,8 @@ const DIRECTIVE =
 	/^(?:\/\/go:[A-Za-z][A-Za-z0-9_]*\b|\/\/(?:line|export|extern)\s|\/\/ (?:#cgo|\+build)\s|(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|buf:(?:lint|breaking):|atlas:(?:nolint|lint|txmode|delimiter|assert)\b|cue:generate\b|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:))/iu;
 const VITE_DIRECTIVE = /^\/\*\s*@vite-ignore\s*\*\/$/u;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
+const LINT_EXPLANATION =
+	/^(?:\/\/|\/\*+)\s*(?:eslint|oxlint)-(?:disable|enable)(?:-next-line|-line)?\b[^\r\n]*?\s--\s*\S/iu;
 
 function git(args: string[]): string {
 	return execFileSync("git", ["--literal-pathspecs", ...args], {
@@ -398,6 +400,7 @@ export function commentViolations(
 		if (first === 1 && comment.text.startsWith("#!")) return [];
 		if (
 			!DEFERRED.test(comment.text) &&
+			!LINT_EXPLANATION.test(comment.text) &&
 			(DIRECTIVE.test(comment.text) || VITE_DIRECTIVE.test(comment.text))
 		)
 			return [];
