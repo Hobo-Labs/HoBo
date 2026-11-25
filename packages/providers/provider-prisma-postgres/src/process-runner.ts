@@ -43,8 +43,7 @@ export function createNodeProcessRunner(
 					try {
 						if (process.platform === "win32") child.kill("SIGKILL");
 						else process.kill(-child.pid, "SIGKILL");
-					} catch {
-					}
+					} catch {}
 				}
 				function fail(message: string) {
 					if (done) return;
