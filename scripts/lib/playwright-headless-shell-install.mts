@@ -4,7 +4,6 @@ import {
 	constants,
 	existsSync,
 	mkdirSync,
-	readFileSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
@@ -16,7 +15,6 @@ import {
 import {
 	ensurePlaywrightHeadlessShellArchive,
 	headlessShellArchFromHost,
-	headlessShellArchiveSpec,
 } from "./playwright-headless-shell-archive.mts";
 
 export const HOSTED_PLAYWRIGHT_BROWSERS_ROOT = join(
@@ -88,16 +86,7 @@ export function unzipPlaywrightHeadlessShellArchive(
 			`playwright headless-shell install missing executable under ${installDir}`,
 		);
 	}
-	try {
-		accessSync(executable, constants.X_OK);
-	} catch {
-		const mode = spawnSync("chmod", ["+x", executable], { encoding: "utf8" });
-		if (mode.status !== 0) {
-			throw new Error(
-				`playwright headless-shell executable is not runnable: ${executable}`,
-			);
-		}
-	}
+	accessSync(executable, constants.X_OK);
 }
 
 export type InstallHostedPlaywrightOptions = Readonly<{
@@ -124,14 +113,4 @@ export function installHostedPlaywrightHeadlessShell(
 		);
 	}
 	return installDir;
-}
-
-export function playwrightBrowsersCacheKeyInputs(): string {
-	const parts = PLAYWRIGHT_BROWSERS_CACHE_HASH_INPUTS.map((rel) =>
-		readFileSync(rel, "utf8"),
-	);
-	const spec = headlessShellArchiveSpec(
-		headlessShellArchFromHost(process.arch),
-	);
-	return `${parts.join("\n")}\n${spec.revision}\n${spec.digest}`;
 }

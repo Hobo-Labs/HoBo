@@ -24,6 +24,13 @@ inputs:
       that use it.
     required: false
     default: ""
+  save-playwright-cache:
+    description: >-
+      When `true` on a GitHub-hosted browser job, persist the Playwright
+      headless-shell install after a cache miss. Matrix shards should set this
+      on shard 0 only so parallel saves do not race on a cold key.
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -80,7 +87,7 @@ runs:
         echo "PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH}" >> "$GITHUB_ENV"
         echo "hosted toolchain: Playwright headless shell at ${PLAYWRIGHT_BROWSERS_PATH}"
     - name: Save Playwright headless shell (hosted)
-      if: inputs.browser == 'true' && runner.environment == 'github-hosted' && steps.playwright_browser_cache.outputs.cache-hit != 'true'
+      if: inputs.browser == 'true' && inputs.save-playwright-cache == 'true' && runner.environment == 'github-hosted' && steps.playwright_browser_cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
         path: ${{ runner.temp }}/hobo-pw-browsers

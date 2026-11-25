@@ -303,7 +303,8 @@
 				{
 					"uses": "$/.github/actions/ci-runner-preflight",
 					"with": {
-						"browser": "true"
+						"browser": "true",
+						"save-playwright-cache": "${{ matrix.shard == 0 && 'true' || 'false' }}"
 					},
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"

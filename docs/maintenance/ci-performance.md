@@ -810,6 +810,10 @@ GitHub's native `.github/workflows/actions.lock` must be regenerated with
 (do not hand-add `actions/cache/restore` or `actions/cache/save` lock keys;
 composites pin restore/save in YAML under the existing `actions/cache@` entry).
 
+Hosted Fabric workspace shards pass `save-playwright-cache: true` on
+`matrix.shard == 0` only so parallel shards do not race on a cold Playwright
+browser cache save (the same pattern as Turbo cache save on shard 0).
+
 ## Checks that went stale on main
 
 No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so these

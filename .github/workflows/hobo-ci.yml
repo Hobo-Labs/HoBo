@@ -759,6 +759,7 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
+          save-playwright-cache: ${{ matrix.shard == 0 && 'true' || 'false' }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
@@ -1902,6 +1903,7 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
+          save-playwright-cache: ${{ matrix.shard == 0 && 'true' || 'false' }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
