@@ -63,7 +63,7 @@ empty, or stale. [`build-release-site-prebuild.mts`](build-release-site-prebuild
 re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately before turbo
 builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) copies the wit tree
 into a workspace-local work root (`.cache/browser-wit-componentize/`, then `realpath`), not `os.tmpdir()`,
-before componentize. [`browser-wit-componentize-diagnostics.mts`](../lib/browser-wit-componentize-diagnostics.mts)
+and passes `station.wit` (not the wit directory) to `componentize-js` before componentize. [`browser-wit-componentize-diagnostics.mts`](../lib/browser-wit-componentize-diagnostics.mts)
 logs `componentize-js` / `preview2-shim` resolution, `TMPDIR`, `/tmp` mount metadata, runner identity,
 and container hints on the release path. Host `readFile` on sandbox `station.wit` passing while
 componentize fails indicates a **host vs WASI/preview2-shim view mismatch** (not only sparse checkout:

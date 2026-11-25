@@ -53,8 +53,14 @@ describe("browser WIT componentize sandbox", () => {
 		try {
 			const sandbox = componentizeWitDirUnderWorkRoot(workRoot);
 			await mkdir(sandbox, { recursive: true });
+			await writeFile(
+				path.join(sandbox, "station.wit"),
+				"package browser:station;\n",
+				"utf8",
+			);
 			const resolved = await resolveComponentizeHostWitPath(sandbox);
 			expect(path.isAbsolute(resolved)).toBe(true);
+			expect(path.basename(resolved)).toBe("station.wit");
 			expect(witPathIsUnderWorkRoot(resolved, workRoot)).toBe(true);
 		} finally {
 			await import("node:fs/promises").then((fs) =>

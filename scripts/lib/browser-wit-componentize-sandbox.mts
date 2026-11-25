@@ -13,7 +13,7 @@ export function componentizeWitDirUnderWorkRoot(workRoot: string): string {
 export async function resolveComponentizeHostWitPath(
 	sandboxWitDir: string,
 ): Promise<string> {
-	return realpath(path.resolve(sandboxWitDir));
+	return realpath(path.join(path.resolve(sandboxWitDir), "station.wit"));
 }
 
 export function guestSourcePathInWorkRoot(workRoot: string): string {
