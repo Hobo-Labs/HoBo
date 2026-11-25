@@ -3,7 +3,7 @@
 This proof covers the M3 hardening slice for runtime-local component-host
 fuel, epoch, and resource-limit interruption. It backs
 [PLAN-20](../../wasm-runtime-wit.md#plan-20), [ADR-0031](../../adr/01-architecture-core.md#adr-0031),
-and the follow-up called out by the [HOBO-17 proof](../hobo-17-runtime-local-component-host/index.md).
+and the follow-up called out by the [HOBO-17 proof](https://linear.app/quickdeploy-ai/document/hobo-17-proof-record-archived-be882d50ee18).
 
 ## Scope
 
