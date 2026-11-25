@@ -19,6 +19,13 @@ export async function resolveComponentizeHostWitPath(
 	return realpath(path.join(path.resolve(sandboxWitDir), "station.wit"));
 }
 
+export async function readInlineComponentizeWit(
+	sandboxWitDir: string,
+): Promise<string> {
+	const stationWit = await resolveComponentizeHostWitPath(sandboxWitDir);
+	return readFile(stationWit, "utf8");
+}
+
 export function guestSourcePathInWorkRoot(workRoot: string): string {
 	return path.join(workRoot, BROWSER_WIT_GUEST_SOURCE_NAME);
 }

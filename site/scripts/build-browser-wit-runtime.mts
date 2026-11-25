@@ -13,15 +13,18 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { logBrowserWitReleaseEnvironment } from "../../scripts/lib/browser-wit-componentize-diagnostics.mts";
+import {
+	logBrowserWitComponentizeSplicerContext,
+	logBrowserWitReleaseEnvironment,
+} from "../../scripts/lib/browser-wit-componentize-diagnostics.mts";
 import {
 	assertGuestSourceUnderWorkRoot,
 	assertSandboxWitBeforeComponentize,
 	BROWSER_WIT_GUEST_SOURCE_NAME,
 	copyHostWitTreeIntoWorkRoot,
 	guestSourcePathInWorkRoot,
+	readInlineComponentizeWit,
 	resolveComponentizeHostWitPath,
-	COMPONENTIZE_WIT_PATH,
 } from "../../scripts/lib/browser-wit-componentize-sandbox.mts";
 import {
 	logBrowserWitComponentizeToolchain,
@@ -53,7 +56,7 @@ const WIT_WORLD = "hobo:try/browser-station@0.1.0" as const;
 interface ToolchainModule {
 	componentize(options: {
 		sourcePath: string;
-		witPath: string;
+		witWorld: string;
 		worldName: string;
 		disableFeatures: string[];
 		env?: { XDG_CACHE_HOME: string } | undefined;
@@ -163,6 +166,7 @@ export async function buildBrowserWitRuntime(
 				versions: toolchain.versions,
 			},
 		});
+		const inlineWit = await readInlineComponentizeWit(sandboxWitDir);
 		logBrowserWitComponentizeToolchain(
 			{
 				componentize: toolchain.componentize,
@@ -173,9 +177,18 @@ export async function buildBrowserWitRuntime(
 				workRoot,
 				sourcePath: hostSourcePath,
 				hostWitPath,
-				componentizeWitPath: COMPONENTIZE_WIT_PATH,
+				componentizeWitPath: "wit/station.wit",
+				witDelivery: "inline-witWorld",
 			},
 		);
+		await logBrowserWitComponentizeSplicerContext({
+			workRoot,
+			guestRelativePath: BROWSER_WIT_GUEST_SOURCE_NAME,
+			hostWitPath,
+			inlineWitBytes: Buffer.byteLength(inlineWit, "utf8"),
+			componentizeJsVersion: toolchain.versions.componentizeJs,
+			witDelivery: "inline-witWorld",
+		});
 		process.stderr.write("browser-wit: componentizing real guest\n");
 		await writeFile(
 			browserWitComponentizeProofPath(REPO_ROOT),
@@ -195,7 +208,7 @@ export async function buildBrowserWitRuntime(
 			built = await toolchain.componentize.componentize({
 				env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
 				sourcePath: BROWSER_WIT_GUEST_SOURCE_NAME,
-				witPath: COMPONENTIZE_WIT_PATH,
+				witWorld: inlineWit,
 				worldName: "browser-station",
 				disableFeatures: ["random", "clocks", "stdio", "http"],
 			});

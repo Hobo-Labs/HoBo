@@ -30,21 +30,22 @@ describe("browser WIT componentize sandbox", () => {
 		).toBe(true);
 	});
 
-	it("build script passes host-resolved absolute wit and source paths, without chdir", () => {
+	it("build script uses inline witWorld for splicer (no witPath file read)", () => {
 		const source = readFileSync(
 			path.join(repoRoot, "site/scripts/build-browser-wit-runtime.mts"),
 			"utf8",
 		);
-		expect(source).toMatch(/witPath:\s*COMPONENTIZE_WIT_PATH/);
+		expect(source).toMatch(/readInlineComponentizeWit/);
+		expect(source).toMatch(/witWorld:\s*inlineWit/);
+		expect(source).not.toMatch(/witPath:\s*/);
 		expect(source).toMatch(/process\.chdir\(workRoot\)/);
 		expect(source).toMatch(/sourcePath:\s*BROWSER_WIT_GUEST_SOURCE_NAME/);
-		expect(source).toMatch(/sourcePath:\s*hostSourcePath/);
-		expect(source).toMatch(/process\.chdir\(previousWorkingDirectory\)/);
 		expect(source).toMatch(/await resolveComponentizeHostWitPath/);
 		expect(source).toMatch(/copyHostWitTreeIntoWorkRoot/);
 		expect(source).toMatch(/assertSandboxWitBeforeComponentize/);
 		expect(source).toMatch(/createBrowserWitComponentizeWorkRoot/);
 		expect(source).toMatch(/logBrowserWitReleaseEnvironment/);
+		expect(source).toMatch(/logBrowserWitComponentizeSplicerContext/);
 		expect(source).not.toMatch(/mkdtemp\(path\.join\(tmpdir\(\)/);
 	});
 

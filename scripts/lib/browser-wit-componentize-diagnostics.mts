@@ -137,6 +137,42 @@ export async function logBrowserWitReleaseEnvironment(context: {
 	process.stderr.write(
 		`browser-wit: XDG_CACHE_HOME=${process.env.XDG_CACHE_HOME ?? "(unset)"}\n`,
 	);
+	process.stderr.write(
+		`browser-wit: node=${process.version} platform=${process.platform} arch=${process.arch} cwd=${process.cwd()}\n`,
+	);
+}
+
+export async function logBrowserWitComponentizeSplicerContext(context: {
+	readonly workRoot: string;
+	readonly guestRelativePath: string;
+	readonly hostWitPath: string;
+	readonly inlineWitBytes: number;
+	readonly componentizeJsVersion: string;
+	readonly witDelivery: "inline-witWorld" | "witPath";
+}): Promise<void> {
+	const witStat = await describePath(context.hostWitPath);
+	let witReadable = "no";
+	try {
+		const bytes = await readFile(context.hostWitPath);
+		witReadable = `yes ${bytes.byteLength}b`;
+	} catch (error) {
+		witReadable = `no (${error instanceof Error ? error.message : String(error)})`;
+	}
+	process.stderr.write(
+		`browser-wit: splicer delivery=${context.witDelivery} inlineBytes=${context.inlineWitBytes} hostWitStat=${witStat} hostRead=${witReadable}\n`,
+	);
+	process.stderr.write(
+		`browser-wit: splicer expects componentize-js@${context.componentizeJsVersion}; wizer preopens (typical) --dir=<sourcesDir> --mapdir=/::<sourcesDir> (not host workRoot); spliceBindings reads wit via witPath on host unless witWorld is inline\n`,
+	);
+	process.stderr.write(
+		`browser-wit: componentize guest sourcePath=${context.guestRelativePath} chdir workRoot=${context.workRoot} (wizer guest sees sourcesDir only)\n`,
+	);
+	const actionsRunner = existsSync("/opt/actions-runner")
+		? "present"
+		: "absent";
+	process.stderr.write(
+		`browser-wit: hobo-runner markers actions-runner=${actionsRunner} RUNNER_NAME=${process.env.RUNNER_NAME ?? "(unset)"}\n`,
+	);
 }
 
 async function describePath(target: string): Promise<string> {

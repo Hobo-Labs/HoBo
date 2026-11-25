@@ -3,14 +3,19 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+export interface BrowserWitComponentizeOptions {
+	sourcePath: string;
+	worldName: string;
+	disableFeatures: string[];
+	witWorld?: string;
+	witPath?: string;
+	env?: { XDG_CACHE_HOME: string } | undefined;
+}
+
 export interface BrowserWitComponentizeModule {
-	componentize(options: {
-		sourcePath: string;
-		witPath: string;
-		worldName: string;
-		disableFeatures: string[];
-		env?: { XDG_CACHE_HOME: string } | undefined;
-	}): Promise<{ component: Uint8Array }>;
+	componentize(options: BrowserWitComponentizeOptions): Promise<{
+		component: Uint8Array;
+	}>;
 }
 
 export interface BrowserWitToolchainVersions {
@@ -82,13 +87,14 @@ export function logBrowserWitComponentizeToolchain(
 		hostWitPath: string;
 		componentizeWitPath: string;
 		workRoot: string;
+		witDelivery: "inline-witWorld" | "witPath";
 	},
 ): void {
 	process.stderr.write(
 		`browser-wit: toolchain jco@${toolchain.versions.jco} componentize-js@${toolchain.versions.componentizeJs} esbuild@${toolchain.versions.esbuild} (resolved ${toolchain.componentizePackageRoot})\n`,
 	);
 	process.stderr.write(
-		`browser-wit: componentize canonical paths workRoot=${context.workRoot} source=${context.sourcePath} hostWit=${context.hostWitPath} componentizeWit=${context.componentizeWitPath} (chdir workRoot; wizer --mapdir=/::workRoot)\n`,
+		`browser-wit: componentize paths workRoot=${context.workRoot} source=${context.sourcePath} hostWit=${context.hostWitPath} delivery=${context.witDelivery} legacyRef=${context.componentizeWitPath}\n`,
 	);
 }
 
