@@ -223,7 +223,6 @@ export function captureAlchemySourceFence(
 			sourceDigest: fields.sourceDigest,
 			environmentDigest: fields.environmentDigest,
 			proofRef: fields.proofRef,
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the runtime guard above established that the host verifier is callable.
 			verify: fields.verify as AlchemySourceFence["verify"],
 		});
 	} catch {

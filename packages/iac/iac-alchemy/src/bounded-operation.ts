@@ -25,7 +25,6 @@ function descriptor(
 	configurable = false,
 	writable = false,
 ): PropertyDescriptor {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fresh null-prototype record contains only descriptor data.
 	const result = create(null) as PropertyDescriptor;
 	result.value = value;
 	result.enumerable = enumerable;
@@ -50,7 +49,6 @@ export interface BoundedDeadline {
 export type BoundedValue<T> = Readonly<{ value: T }>;
 
 function box<T>(value: T): BoundedValue<T> {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the sole field is defined on a fresh null-prototype object.
 	const result = create(null) as { value: T };
 	define(result, "value", descriptor(value, true));
 	return freeze(result);

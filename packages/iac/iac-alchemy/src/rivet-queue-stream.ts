@@ -85,7 +85,6 @@ export function rivetQueueObserveNative<T>(
 	if (
 		!observeOrdinaryPromise(
 			value,
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the caller validates the value before making a policy decision.
 			(observed) => result.resolve(observed as T),
 			() => result.reject(undefined),
 		)
@@ -133,7 +132,6 @@ export function cancelRivetQueueStream(
 		cancelStream === undefined
 	)
 		throw streamErrors.invalid;
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the captured native cancellation method returns a Promise<void>.
 	return apply(cancelStream, body, []) as Promise<void>;
 }
 
@@ -513,7 +511,6 @@ export function readRivetQueueStream(
 		!observeOrdinaryPromise(
 			work,
 			(value) => {
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: run constructs only a bounded Uint8Array result.
 				output.resolve(value as Uint8Array);
 			},
 			() => output.reject(streamErrors[code]),

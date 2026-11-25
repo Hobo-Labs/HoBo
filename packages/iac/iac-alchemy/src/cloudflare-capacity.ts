@@ -19,7 +19,6 @@ export interface CloudflareNativeLease {
 
 export function reserveCloudflareNative(): CloudflareNativeLease | undefined {
 	if (outstanding >= CLOUDFLARE_NATIVE_MAX_OUTSTANDING) return undefined;
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: only this module creates and recognizes opaque lease tokens.
 	const lease = freeze(create(null)) as CloudflareNativeLease;
 	apply(set, leases, [lease, "active"]);
 	outstanding++;
