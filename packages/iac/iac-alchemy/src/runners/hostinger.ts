@@ -53,8 +53,7 @@ export function createInMemoryHostingerRunnerRegistry(): HostingerRunnerRegistry
 	const slotsByMachine = new Map<string, Set<string>>();
 	return {
 		async registerSlot(input) {
-			const slots =
-				slotsByMachine.get(input.machineId) ?? new Set<string>();
+			const slots = slotsByMachine.get(input.machineId) ?? new Set<string>();
 			if (slots.size >= input.maxConcurrency) {
 				throw new HostingerRunnerError({
 					code: "HOSTINGER_CONCURRENCY_EXCEEDED",
@@ -211,8 +210,7 @@ export function HostingerRunnerProvider(
 				if (news.maxConcurrency < 1) {
 					return yield* new HostingerRunnerError({
 						code: "HOSTINGER_MACHINE_INVALID",
-						message:
-							"hostinger runner requires maxConcurrency >= 1",
+						message: "hostinger runner requires maxConcurrency >= 1",
 					});
 				}
 				if (

@@ -394,9 +394,9 @@ describe("Alchemy v2 runner providers", () => {
 			"hostinger:job-a:88001",
 			"hostinger:job-b:88001",
 		]);
-		expect(
-			hostingerUrls.filter((url) => url.endsWith("/start")).length,
-		).toBe(1);
+		expect(hostingerUrls.filter((url) => url.endsWith("/start")).length).toBe(
+			1,
+		);
 
 		await backend.releaseRunner({
 			runnerId: first.runnerId,
@@ -408,9 +408,7 @@ describe("Alchemy v2 runner providers", () => {
 			runnerId: second.runnerId,
 			tier: "hostinger",
 		});
-		expect(hostingerUrls.filter((url) => url.endsWith("/stop")).length).toBe(
-			1,
-		);
+		expect(hostingerUrls.filter((url) => url.endsWith("/stop")).length).toBe(1);
 		expect(hostingerRegistry.activeRunnerIds()).toEqual([]);
 	});
 
