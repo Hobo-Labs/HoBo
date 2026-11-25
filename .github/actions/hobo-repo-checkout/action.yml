@@ -139,6 +139,14 @@ runs:
         rm -f "${GIT_CONFIG_SYSTEM}"
         echo "GIT_CONFIG_SYSTEM=" >> "$GITHUB_ENV"
         echo "HOBO_CI_GIT_MIRROR_RESOLVED=" >> "$GITHUB_ENV"
+    - name: Disable prior sparse cone before full remote checkout
+      if: steps.mirror_checkout.outcome != 'success'
+      shell: bash
+      run: |
+        set -euo pipefail
+        node --experimental-strip-types --no-warnings \
+          "${GITHUB_ACTION_PATH}/../hobo-checkout/repo-checkout.mts" \
+          --prepare-full-worktree
     - name: Backoff before remote checkout retry
       if: env.HOBO_CI_GIT_MIRROR_RESOLVED == '' || steps.mirror_checkout.outcome != 'success'
       shell: bash

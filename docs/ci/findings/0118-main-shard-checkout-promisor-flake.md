@@ -21,6 +21,7 @@ Trunk workspace shards used a bare `actions/checkout` with `clean: false` after 
 - Wired into **main workspace test shards**, **PR workspace shards**, **PR affected lanes**, and **main full gate (finish)** checkout.
 - `scripts/actions:lint` accepts `hobo-repo-checkout` as a checkout source for repo-local composites.
 - Workflow jobs prepend pinned sparse `actions/checkout` for `.github/actions` so GitHub-hosted fallbacks can load `hobo-repo-checkout`; the composite runs with `bootstrap-composite-actions: false` after that.
+- **`hobo-repo-checkout` disables any prior sparse cone** (`--prepare-full-worktree`) before remote checkout attempts so a successful `actions/checkout` cannot leave only `.github/actions` on disk while the marker check fails closed (Fabric run [45695300131](https://github.com/Hobo-Labs/HoBo/actions/runs/45695300131), job `139495478301`, **2025-11-25**).
 
 ## Measure
 

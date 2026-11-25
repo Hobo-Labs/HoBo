@@ -37,6 +37,19 @@ describe("hobo-repo-checkout wiring", () => {
 		expect(block).toContain("submodules: recursive");
 	});
 
+	it("disables a prior sparse cone before remote checkout attempts", () => {
+		expect(action).toContain(
+			"Disable prior sparse cone before full remote checkout",
+		);
+		expect(action).toContain("--prepare-full-worktree");
+		const disableSparse = action.indexOf(
+			"Disable prior sparse cone before full remote checkout",
+		);
+		const remote = action.indexOf("Remote checkout (attempt 1)");
+		expect(disableSparse).toBeGreaterThan(-1);
+		expect(disableSparse).toBeLessThan(remote);
+	});
+
 	it("clears mirror git config before remote retries after mirror failure", () => {
 		expect(action).toContain(
 			"Disable box git mirror after mirror checkout failure",

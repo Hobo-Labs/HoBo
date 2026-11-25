@@ -13,7 +13,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	checkoutFromBareMirror,
 	classifyCheckoutTransportError,
+	disableSparseCheckoutIfActive,
 	mirrorObjectsPath,
+	sparseCheckoutEnabled,
 	submodulesEnabledFromCliArg,
 	writeAlternates,
 } from "../../.github/actions/hobo-checkout/repo-checkout.mts";
@@ -103,6 +105,21 @@ describe("checkoutFromBareMirror", () => {
 			retryDelaysMs: [0],
 		});
 		expect(result.ok).toBe(true);
+		expect(existsSync(join(work, "scripts/ci/ci-trace.mts"))).toBe(true);
+	});
+});
+
+describe("disableSparseCheckoutIfActive", () => {
+	it("materializes a full tree after a cone limited to .github/actions", () => {
+		const work = join(temp, "work-resolve-actions-cone");
+		execFileSync("git", ["clone", "--no-checkout", source, work]);
+		git(work, ["sparse-checkout", "init", "--cone"]);
+		git(work, ["sparse-checkout", "set", ".github/actions"]);
+		git(work, ["checkout", sha]);
+		expect(existsSync(join(work, "scripts/ci/ci-trace.mts"))).toBe(false);
+		expect(sparseCheckoutEnabled(work)).toBe(true);
+		expect(disableSparseCheckoutIfActive(work)).toBe(true);
+		expect(sparseCheckoutEnabled(work)).toBe(false);
 		expect(existsSync(join(work, "scripts/ci/ci-trace.mts"))).toBe(true);
 	});
 });

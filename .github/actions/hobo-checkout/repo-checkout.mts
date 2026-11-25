@@ -164,6 +164,28 @@ export function submodulesEnabledFromCliArg(value: string): boolean {
 	return value === "true" || value === "recursive";
 }
 
+export function sparseCheckoutEnabled(
+	cwd: string,
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	const inside = git(cwd, ["rev-parse", "--is-inside-work-tree"], env);
+	if (!inside.ok || inside.stdout.trim() !== "true") {
+		return false;
+	}
+	const config = git(cwd, ["config", "--get", "core.sparseCheckout"], env);
+	return config.ok && config.stdout.trim() === "true";
+}
+
+export function disableSparseCheckoutIfActive(
+	cwd: string,
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	if (!sparseCheckoutEnabled(cwd, env)) {
+		return true;
+	}
+	return git(cwd, ["sparse-checkout", "disable"], env).ok;
+}
+
 function parseArgs(args: readonly string[]) {
 	let sha = "";
 	let mirror = "";
@@ -172,9 +194,12 @@ function parseArgs(args: readonly string[]) {
 	let fetchDepth: number | undefined;
 	let submodules = false;
 	let marker = "";
+	let prepareFullWorktree = false;
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
-		if (arg === "--sha") sha = args[++i] ?? "";
+		if (arg === "--prepare-full-worktree") {
+			prepareFullWorktree = true;
+		} else if (arg === "--sha") sha = args[++i] ?? "";
 		else if (arg === "--mirror") mirror = args[++i] ?? "";
 		else if (arg === "--origin") origin = args[++i] ?? "";
 		else if (arg === "--workdir") workDir = args[++i] ?? workDir;
@@ -186,7 +211,16 @@ function parseArgs(args: readonly string[]) {
 		}
 		else if (arg === "--marker") marker = args[++i] ?? "";
 	}
-	return { sha, mirror, origin, workDir, fetchDepth, submodules, marker };
+	return {
+		sha,
+		mirror,
+		origin,
+		workDir,
+		fetchDepth,
+		submodules,
+		marker,
+		prepareFullWorktree,
+	};
 }
 
 function mirrorCheckoutOptionsFromParsed(
@@ -210,6 +244,16 @@ function mirrorCheckoutOptionsFromParsed(
 
 function runCli(args: readonly string[]): number {
 	const parsed = parseArgs(args);
+	if (parsed.prepareFullWorktree) {
+		const workDir = resolve(parsed.workDir);
+		const wasActive = sparseCheckoutEnabled(workDir);
+		if (!disableSparseCheckoutIfActive(workDir)) {
+			console.log("hobo_ci_sparse_disable=fail");
+			return 1;
+		}
+		console.log(`hobo_ci_sparse_disable=ok was_active=${wasActive}`);
+		return 0;
+	}
 	if (!/^[0-9a-f]{40}$/i.test(parsed.sha)) {
 		console.log("hobo_ci_repo_checkout=fail reason=invalid-sha");
 		return 1;
