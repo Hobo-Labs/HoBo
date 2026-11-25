@@ -18,3 +18,19 @@ message BetterAuthBundlePlanRecord {
   string route_pattern = 7;
   BetterAuthBundlePortRefsRecord ports = 8;
 }
+
+message BetterAuthRelationalMigrationRecord {
+  string pack_id = 1;
+  string relational_bindle = 2;
+  string database_profile = 3;
+  string migration_plan_contract = 4;
+  string migration_plan_digest = 5;
+  uint32 expand_step_count = 6;
+}
+
+message BetterAuthSigningSecretWireRecord {
+  string secret_ref = 1;
+  string secret_scheme = 2;
+  string secrets_port_id = 3;
+  string resolved_at_iso = 4;
+}

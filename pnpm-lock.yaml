@@ -2790,9 +2790,15 @@ importers:
       '@hobo/auth-adapter-contract':
         specifier: workspace:*
         version: link:../../auth-adapter-contract
+      '@hobo/bindings':
+        specifier: workspace:*
+        version: link:../../bindings
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../../identity
     devDependencies:
       '@types/node':
         specifier: ^22.15.29
