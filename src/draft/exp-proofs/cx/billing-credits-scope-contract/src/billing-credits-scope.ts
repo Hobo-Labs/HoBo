@@ -266,7 +266,7 @@ export const BILLING_CREDITS_SCOPE: BillingCreditsScope = {
       kind: "commercial-scope-map",
       owner: "Billing & Credits",
       proofMode: "design-record",
-      source: "docs/design/billing-credits.md#commercial-scope-map",
+      source: "https://linear.app/quickdeploy-ai/document/billing-and-credits-scope-and-acceptance-archived-fb833b27ebac",
       proves: "Trial, paid plan, manual invoice, prepaid credit, correction, suspension, and unsupported commercial states have owners and boundaries.",
     },
     {
