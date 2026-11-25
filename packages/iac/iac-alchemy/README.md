@@ -735,10 +735,12 @@ URL).
 `test/better-auth-onboarding-steps.test.ts` chains the executable onboarding
 evidence steps (construction config → bundle plan → migrations → broker wire →
 first session).
-`test/better-auth-secret-providers.test.ts` models stage-scoped DotEnv and
-optional Infisical layers for auth-stack CI (later-overrides-earlier merge).
-`test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
-fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
+`test/better-auth-secret-providers.test.ts` models Alchemy-style secret-provider
+**ordering** for auth-stack CI (construction-key merge only; **no** committed
+`.env` files or live Infisical — synthetic fixtures and memory `SecretsPort`
+only). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+fixture: construction-time `HOBO_AUTH_*` frozen construction records (dotenv-
+shaped naming only), in-memory Alchemy
 state, and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort` broker
 wire (synthetic signing material only; no live Worker/D1 deploy).
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated

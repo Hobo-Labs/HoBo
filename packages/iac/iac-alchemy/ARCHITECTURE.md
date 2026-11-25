@@ -31,7 +31,8 @@ RivetKit 3 runtime package. The suite is the regression gate when routing,
 admission, or provider pins change on `main`.
 
 `test/better-auth-host-harness.test.ts` is the incremental Alchemy-auth stack
-fixture: construction-time `HOBO_AUTH_*` dotenv-shaped config, in-memory Alchemy
+fixture: construction-time `HOBO_AUTH_*` frozen records (dotenv-shaped naming;
+no `.env` files), in-memory Alchemy
 state, local SQLite posture (`:memory:`), and `@hobo/pack-better-auth` planning
 plus camp `SecretsPort` broker wire — no live Worker/D1 deploy yet.
 
@@ -47,5 +48,6 @@ visible on box B.
 scenario per onboarding claim (config, plan, migrations, signing wire, session).
 
 `test/better-auth-secret-providers.test.ts` is the stack-9 gate: stage-scoped
-DotEnv plus optional Infisical provider ordering and dotenv layer merge for
-auth-stack CI hosts.
+Construction-key provider-order labels (`dotenv` / `infisical`) plus merge
+semantics for auth-stack CI hosts — test fixtures only, not Alchemy DotEnv or
+committed `.env` files.
