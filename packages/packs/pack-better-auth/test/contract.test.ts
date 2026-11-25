@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
 	isJsonArray,
+	isJsonBoolean,
 	isJsonNumber,
 	isJsonObject,
 	isJsonString,
@@ -24,6 +25,7 @@ type PactCase = {
 	readonly expectSuccess: boolean;
 	readonly configInput: JsonObject;
 	readonly ports: BetterAuthBundlePortRefs;
+	readonly forExecution: boolean;
 	readonly expectedPackId?: string;
 	readonly expectedDescriptorId?: string;
 	readonly expectedClaimsVersion?: string;
@@ -77,6 +79,11 @@ function parsePackPactCases(text: string): readonly PactCase[] {
 		if (!isJsonObject(configInput) || !isJsonObject(portsInput)) continue;
 		const ports = parsePortRefs(portsInput);
 		if (ports === null) continue;
+		const optionsInput = body.options;
+		let forExecution = false;
+		if (isJsonObject(optionsInput) && isJsonBoolean(optionsInput.forExecution)) {
+			forExecution = optionsInput.forExecution;
+		}
 		if (status === 200) {
 			const packId = responseBody.packId;
 			const descriptorId = responseBody.descriptorId;
@@ -95,6 +102,7 @@ function parsePackPactCases(text: string): readonly PactCase[] {
 				expectSuccess: true,
 				configInput,
 				ports,
+				forExecution,
 				expectedPackId: packId,
 				expectedDescriptorId: descriptorId,
 				expectedClaimsVersion: claimsMappingVersion,
@@ -107,6 +115,7 @@ function parsePackPactCases(text: string): readonly PactCase[] {
 			expectSuccess: false,
 			configInput,
 			ports,
+			forExecution,
 		});
 	}
 	return Object.freeze(cases);
@@ -119,13 +128,17 @@ const pactFile = join(
 const pactCases = parsePackPactCases(readFileSync(pactFile, "utf8"));
 
 describe("pack-better-auth-bundle-plan pact", () => {
+	it("loads every interaction from the pact file", () => {
+		expect(pactCases.length).toBeGreaterThan(0);
+	});
+
 	for (const pactCase of pactCases) {
 		it(pactCase.description, () => {
 			if (pactCase.expectSuccess) {
 				const plan = planBetterAuthBundle(
 					pactCase.configInput,
 					pactCase.ports,
-					{ forExecution: false },
+					{ forExecution: pactCase.forExecution },
 				);
 				expect(plan.packId).toBe(pactCase.expectedPackId);
 				expect(plan.descriptorId).toBe(pactCase.expectedDescriptorId);

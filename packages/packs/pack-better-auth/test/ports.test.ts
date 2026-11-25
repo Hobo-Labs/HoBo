@@ -4,6 +4,7 @@ import {
 	BetterAuthConfigError,
 	parseBetterAuthSecretRef,
 } from "@hobo/auth-adapter-contract";
+import { BetterAuthBundlePlanError } from "../src/errors.js";
 import { parseBetterAuthBundlePortRefs } from "../src/ports.js";
 
 describe("parseBetterAuthBundlePortRefs", () => {
@@ -29,5 +30,15 @@ describe("parseBetterAuthBundlePortRefs", () => {
 			signingSecretRef: "hobo-secret://camp-prod/auth/signing-key",
 		});
 		expect(refs.relationalBindle).toBe("auth_db");
+	});
+
+	it("refuses bindle names outside the DNS label grammar", () => {
+		expect(() =>
+			parseBetterAuthBundlePortRefs({
+				relationalBindle: "Auth_DB",
+				httpBindle: "auth_api",
+				signingSecretRef: "hobo-secret://camp-prod/auth/signing-key",
+			}),
+		).toThrow(BetterAuthBundlePlanError);
 	});
 });
