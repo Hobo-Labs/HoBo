@@ -15,11 +15,11 @@ export {
 	PositiveConcurrency,
 	PositiveMinutes,
 	PositiveSeconds,
+	RunnerLabel,
 	RunnerPoolHealth,
 	RunnerPoolId,
 	RunnerPoolSpec,
 	RunnerTier,
-	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";

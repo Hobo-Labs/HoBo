@@ -15,7 +15,7 @@ const clusterTestLayer = StationFleetCoordinatorLive.pipe(
 );
 
 describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
-	it("balances jobs across local, hostinger, agent37, boat, and github tiers without double allocation under concurrency", async () => {
+	it("balances jobs across local, hostinger, agent37, boat, and hosted tiers without double allocation under concurrency", async () => {
 		const outcome = await Effect.runPromise(
 			Effect.gen(function* () {
 				const makeClient = yield* StationFleetCoordinator.client;
@@ -27,7 +27,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 						poolId: "local-dev",
 						tier: "local" as const,
 						role: "primary" as const,
-						runsOn: "hobo-local",
+						runnerLabel: "hobo-local",
 						concurrency: 2,
 						costPerMinuteMicros: 0,
 						payer: "local",
@@ -40,7 +40,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 						poolId: "hostinger-eu",
 						tier: "hostinger" as const,
 						role: "primary" as const,
-						runsOn: "hobo-hostinger",
+						runnerLabel: "hobo-hostinger",
 						concurrency: 2,
 						costPerMinuteMicros: 500,
 						payer: "hostinger",
@@ -53,7 +53,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 						poolId: "agent37-sandbox",
 						tier: "agent37" as const,
 						role: "overflow" as const,
-						runsOn: "hobo-agent37",
+						runnerLabel: "hobo-agent37",
 						concurrency: 2,
 						costPerMinuteMicros: 2_000,
 						payer: "agent37",
@@ -66,7 +66,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 						poolId: "boat-sandbox",
 						tier: "boat" as const,
 						role: "overflow" as const,
-						runsOn: "hobo-boat",
+						runnerLabel: "hobo-boat",
 						concurrency: 2,
 						costPerMinuteMicros: 2_000,
 						payer: "boat",
@@ -76,13 +76,13 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 						publicRepositories: true,
 					},
 					{
-						poolId: "github-ubuntu",
-						tier: "github" as const,
+						poolId: "hosted-linux-pool",
+						tier: "hosted" as const,
 						role: "last-resort" as const,
-						runsOn: "ubuntu-24.04",
+						runnerLabel: "hosted-linux",
 						concurrency: 2,
 						costPerMinuteMicros: 8_000,
-						payer: "github",
+						payer: "hosted",
 						payerBudgetMicros: 200_000,
 						isolated: true,
 						docker: true,
@@ -129,7 +129,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 
 		const tiers = new Set(outcome.dispatches.map((entry) => entry.tier));
 		expect(tiers).toEqual(
-			new Set(["local", "hostinger", "agent37", "boat", "github"]),
+			new Set(["local", "hostinger", "agent37", "boat", "hosted"]),
 		);
 		expect(new Set(outcome.dispatches.map((entry) => entry.slotId)).size).toBe(
 			10,
@@ -169,7 +169,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 							poolId: "boat-ci-1",
 							tier: "boat",
 							role: "primary",
-							runsOn: "hobo-boat",
+							runnerLabel: "hobo-boat",
 							concurrency: 1,
 							costPerMinuteMicros: 1_000,
 							payer: "boat",

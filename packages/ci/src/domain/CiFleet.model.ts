@@ -21,7 +21,7 @@ export class CiFleet extends Domain.Model(
 	},
 	{
 		description:
-			"Balanced CI runner dispatch across local, Hostinger, Agent37, and GitHub-hosted pools.",
+			"Balanced CI runner dispatch across local, Hostinger, Agent37, Boat, and hosted pools.",
 	},
 ) {}
 

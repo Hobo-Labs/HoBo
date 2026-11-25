@@ -75,8 +75,3 @@ export const ciUpstashBlobCacheBindle = bindle(
 export const ciRunnerBindle = bindle("hobo-ci-runner", (b) => ({
 	runner: b.job().allow("submit"),
 }));
-
-/** GitHub supplies a verified App/JIT API; an isolated host runs the jobs. */
-export const ciGithubAppBindle = bindle("hobo-ci-github-app", (b) => ({
-	app: b.api(),
-}));

@@ -108,6 +108,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
+    "@hobo/bindles": "workspace:*",
     "@hobo/broker": "workspace:*",
     "@hobo/ci": "workspace:*",
     "@hobo/core": "workspace:*",

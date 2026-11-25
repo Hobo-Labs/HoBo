@@ -17,12 +17,18 @@ from changing that metadata.
 | [`@hobo/ci-cf`](../ci-cf/README.md) | Implemented native Cloudflare CI adapter |
 | [`@hobo/ci-ado`](../ci-ado/README.md) | Local command checks and self-hosted Azure Pipelines configuration |
 
-`@hobo/ci/app` exports the SDK Bindles for the CI relay and its cache,
-configuration and runner peers. The relay declares a project, an object-store
-member, its API, queues and repair schedule in dependency order. A host places
-each peer in its provider's Yard and connects it through a Junction; the Bindles
-do not choose a provider or authorize a deployment. The repair schedule's
-declared cadence publishes to the relay's repair queue, not a separate endpoint.
+`@hobo/ci/app` exports the provider-neutral SDK Bindles for the CI relay and its
+cache, configuration and runner peers. GitHub App and GitHub Actions runner
+declarations (`ciGithubAppBindle`, Actions relay routing, and `runs-on` parsing)
+live in `@hobo/ci-gh-actions`; `@hobo/ci/domain`, `@hobo/ci/cluster`,
+`@hobo/ci/host`, `@hobo/ci/app`, and non-GitHub CI adapters (`@hobo/ci-ado`,
+`@hobo/ci-cf`, `@hobo/ci-dagger`) remain provider-neutral (`RunnerLabel` and
+`"hosted"` tier) and are verified by `test/github-boundary.test.ts`. The relay
+declares a project, an object-store member, its API, queues and repair schedule
+in dependency order. A host places each peer in its provider's Yard and connects
+it through a Junction; the Bindles do not choose a provider or authorize a
+deployment. The repair schedule's declared cadence publishes to the relay's
+repair queue, not a separate endpoint.
 
 The legacy allocation and sandbox quote implementations live behind
 `@hobo/pricing/legacy`. The original `src/accounting.ts` and

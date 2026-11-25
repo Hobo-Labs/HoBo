@@ -16,10 +16,10 @@ export type JobDispatchId = typeof JobDispatchId.Type;
 export const SlotId = Schema.NonEmptyString.pipe(Schema.brand("SlotId"));
 export type SlotId = typeof SlotId.Type;
 
-export const RunsOnLabel = Schema.NonEmptyString.pipe(
-	Schema.brand("RunsOnLabel"),
+export const RunnerLabel = Schema.NonEmptyString.pipe(
+	Schema.brand("RunnerLabel"),
 );
-export type RunsOnLabel = typeof RunsOnLabel.Type;
+export type RunnerLabel = typeof RunnerLabel.Type;
 
 export const PayerId = Schema.NonEmptyString.pipe(Schema.brand("PayerId"));
 export type PayerId = typeof PayerId.Type;
@@ -69,7 +69,7 @@ export const RunnerTier = Schema.Literals([
 	"hostinger",
 	"agent37",
 	"boat",
-	"github",
+	"hosted",
 ]);
 export type RunnerTier = typeof RunnerTier.Type;
 
@@ -104,7 +104,7 @@ export const RunnerPoolSpec = Schema.Struct({
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
 	role: PoolRole,
-	runsOn: RunsOnLabel,
+	runnerLabel: RunnerLabel,
 	concurrency: PositiveConcurrency,
 	costPerMinuteMicros: NonNegativeMicros,
 	payer: PayerId,
