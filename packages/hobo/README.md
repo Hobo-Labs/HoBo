@@ -270,6 +270,10 @@ does not imply a hosted HoBo broker or relay requirement.
 offers offline help. Command-specific tests exercise successful operations and
 refusals; help alone does not establish deployment readiness.
 
+`test/agent-plugin-bundle.test.ts` imports `scripts/check-agent-plugin.ts`, so
+this package keeps `@hobo/agent-skills` in `devDependencies` for Vitest module
+resolution when the agent-plugin scan helpers run from `@hobo/hobo` tests.
+
 Remote placement and claim endpoints must remain on the selected broker's
 origin and contain no URL credentials (`HOBO_BROKER_ENDPOINT_UNSAFE`). Anonymous
 session discovery may use a separate HTTPS host, but placement credentials and
