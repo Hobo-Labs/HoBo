@@ -3,13 +3,18 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Activity } from "effect/workflow";
 import {
-	CloudBackendId,
-	CloudProviderKind,
+	CloudBackendTarget,
+	EpochMs,
+	NonEmptyReason,
+	ProgressiveRampPlan,
+	RampWeightPercent,
 	TrafficRouteId,
+	TtlSeconds,
 } from "./ids.js";
 import {
 	CompleteTrafficCutover,
 	CutoverNotInProgress,
+	CutoverPreconditionRefused,
 	FlagCutoverReconciliation,
 	RecordRampStep,
 	RecordTtlLowered,
@@ -20,7 +25,7 @@ import {
 export class RoutingMutationAmbiguous extends Domain.Rejection(
 	"RoutingMutationAmbiguous",
 	{
-		reason: Schema.String,
+		reason: NonEmptyReason,
 	},
 ) {}
 
@@ -30,42 +35,40 @@ export class TrafficRoutingBackend extends Domain.ExternalSystem(
 		lowerTtl: {
 			args: {
 				routeId: TrafficRouteId,
-				ttlSeconds: Schema.Int,
+				ttlSeconds: TtlSeconds,
 			},
 			success: {
-				appliedTtlSeconds: Schema.Int,
+				appliedTtlSeconds: TtlSeconds,
 			},
 			error: [RoutingMutationAmbiguous],
 		},
 		applyWeight: {
 			args: {
 				routeId: TrafficRouteId,
-				toProvider: CloudProviderKind,
-				toBackendId: CloudBackendId,
-				weightPercent: Schema.Int,
+				to: CloudBackendTarget,
+				weightPercent: RampWeightPercent,
 			},
 			success: {
-				appliedWeightPercent: Schema.Int,
+				appliedWeightPercent: RampWeightPercent,
 			},
 			error: [RoutingMutationAmbiguous],
 		},
 		observeHealth: {
 			args: {
 				routeId: TrafficRouteId,
-				toProvider: CloudProviderKind,
-				toBackendId: CloudBackendId,
-				weightPercent: Schema.Int,
+				to: CloudBackendTarget,
+				weightPercent: RampWeightPercent,
 			},
 			success: {
 				healthy: Schema.Boolean,
-				summary: Schema.String,
+				summary: NonEmptyReason,
 			},
 			error: [RoutingMutationAmbiguous],
 		},
 		restoreIncumbent: {
 			args: {
 				routeId: TrafficRouteId,
-				reason: Schema.String,
+				reason: NonEmptyReason,
 			},
 			success: {
 				restored: Schema.Boolean,
@@ -80,17 +83,16 @@ export class ExecuteProgressiveCutover extends Domain.Saga(
 	{
 		key: TrafficRouteId,
 		input: {
-			toProvider: CloudProviderKind,
-			toBackendId: CloudBackendId,
-			rampSteps: Schema.Array(Schema.Int),
-			lowTtlSeconds: Schema.Int,
-			completedAtMs: Schema.Int,
+			to: CloudBackendTarget,
+			rampPlan: ProgressiveRampPlan,
+			lowTtlSeconds: TtlSeconds,
+			completedAtMs: EpochMs,
 		},
-		rejects: [CutoverNotInProgress],
+		rejects: [CutoverNotInProgress, CutoverPreconditionRefused],
 	},
 	{
 		description:
-			"Lower DNS TTL, ramp traffic progressively across Vercel and Cloudflare with health checks, roll back on unhealthy probes, and fail closed to reconciliation on ambiguous noRollback errors.",
+			"Lower DNS TTL, ramp traffic progressively across cloud targets with health probes, roll back on unhealthy probes, and fail closed to reconciliation on ambiguous noRollback errors.",
 	},
 ) {}
 
@@ -101,15 +103,14 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 
 		return Effect.fn(function* ({
 			key,
-			toProvider,
-			toBackendId,
-			rampSteps,
+			to,
+			rampPlan,
 			lowTtlSeconds,
 			completedAtMs,
 		}) {
 			const lowered = yield* Activity.make({
 				name: "lower-dns-ttl",
-				success: Schema.Struct({ appliedTtlSeconds: Schema.Int }),
+				success: Schema.Struct({ appliedTtlSeconds: TtlSeconds }),
 				error: RoutingMutationAmbiguous,
 				execute: backend.lowerTtl({
 					routeId: key,
@@ -132,7 +133,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 
 			yield* Activity.make({
 				name: "record-ttl-lowered",
-				error: CutoverNotInProgress,
+				error: Schema.Union([CutoverNotInProgress, CutoverPreconditionRefused]),
 				execute: routes
 					.send(
 						key,
@@ -143,16 +144,14 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 					.pipe(Effect.asVoid),
 			});
 
-			const steps = rampSteps.length > 0 ? rampSteps : [10, 50, 100];
-			for (const weightPercent of steps) {
+			for (const weightPercent of rampPlan) {
 				const applied = yield* Activity.make({
 					name: `apply-weight-${weightPercent}`,
-					success: Schema.Struct({ appliedWeightPercent: Schema.Int }),
+					success: Schema.Struct({ appliedWeightPercent: RampWeightPercent }),
 					error: RoutingMutationAmbiguous,
 					execute: backend.applyWeight({
 						routeId: key,
-						toProvider,
-						toBackendId,
+						to,
 						weightPercent,
 					}),
 				}).pipe(Effect.result);
@@ -174,7 +173,10 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 
 				yield* Activity.make({
 					name: `record-ramp-${weightPercent}`,
-					error: CutoverNotInProgress,
+					error: Schema.Union([
+						CutoverNotInProgress,
+						CutoverPreconditionRefused,
+					]),
 					execute: routes
 						.send(
 							key,
@@ -189,13 +191,12 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 					name: `observe-health-${weightPercent}`,
 					success: Schema.Struct({
 						healthy: Schema.Boolean,
-						summary: Schema.String,
+						summary: NonEmptyReason,
 					}),
 					error: RoutingMutationAmbiguous,
 					execute: backend.observeHealth({
 						routeId: key,
-						toProvider,
-						toBackendId,
+						to,
 						weightPercent,
 					}),
 				}).pipe(Effect.result);
@@ -216,7 +217,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 				}
 
 				if (!health.success.healthy) {
-					yield* Activity.make({
+					const restored = yield* Activity.make({
 						name: `restore-incumbent-${weightPercent}`,
 						success: Schema.Struct({ restored: Schema.Boolean }),
 						error: RoutingMutationAmbiguous,
@@ -224,7 +225,24 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 							routeId: key,
 							reason: health.success.summary,
 						}),
-					}).pipe(Effect.ignore);
+					}).pipe(Effect.result);
+
+					if (restored._tag === "Failure" || !restored.success.restored) {
+						const reason =
+							restored._tag === "Failure"
+								? restored.failure.reason
+								: NonEmptyReason.make(
+										`incumbent-restoration-unconfirmed:${health.success.summary}`,
+									);
+						yield* Activity.make({
+							name: `flag-restore-reconciliation-${weightPercent}`,
+							execute: routes
+								.send(key, new FlagCutoverReconciliation({ reason }))
+								.pipe(Effect.asVoid),
+						});
+						return;
+					}
+
 					yield* Activity.make({
 						name: `record-rollback-${weightPercent}`,
 						error: CutoverNotInProgress,
@@ -241,7 +259,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 
 			yield* Activity.make({
 				name: "complete-cutover",
-				error: CutoverNotInProgress,
+				error: Schema.Union([CutoverNotInProgress, CutoverPreconditionRefused]),
 				execute: routes
 					.send(key, new CompleteTrafficCutover({ completedAtMs }))
 					.pipe(Effect.asVoid),
