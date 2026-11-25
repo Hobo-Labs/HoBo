@@ -15,6 +15,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | Agent tooling | [`agent-tooling.md`](./agent-tooling.md) | Local agent-tooling setup, trust boundaries, data-egress notes, and maintenance expectations. |
 | CI performance | [`ci/performance.md`](./ci/performance.md) | Where HoBo CI Fabric wall time goes on the self-hosted box, the fixes landed, and what is left for a five-minute run. |
 | Automations | [`automations/hobo-issue-worker.md`](./automations/hobo-issue-worker.md) | How issue-worker automation should interpret design docs and report changes. |
+| Alchemy auth audit | [`maintenance/alchemy-auth-secrets-onboarding-audit.md`](./maintenance/alchemy-auth-secrets-onboarding-audit.md) | Maps Alchemy auth/secrets/Better Auth/Domain/testing docs to HoBo's current auth, secrets, and onboarding code (2026-11-25). |
 
 ## Reference directories outside `docs/`
 
