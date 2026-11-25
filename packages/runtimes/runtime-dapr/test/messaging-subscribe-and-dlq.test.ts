@@ -29,14 +29,12 @@ function busFor(options: { metering?: MeteringBus } = {}) {
 	return createDaprMessaging(base);
 }
 
-/** Publish `count` messages onto one topic. */
 async function publish(
 	bus: ReturnType<typeof busFor>,
 	count: number,
 	topic = "events",
 ) {
 	for (let index = 0; index < count; index += 1) {
-		// SAFETY: the fixture uses wire-shaped topic names.
 		await bus.publish(topic as never, { index });
 	}
 }
@@ -45,7 +43,6 @@ describe("a handler that succeeds", () => {
 	it("acks each message it handled", async () => {
 		const bus = busFor();
 		await publish(bus, 2);
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		const result = await bus.subscribe(
 			"events" as never,
 			"g1" as never,
@@ -55,24 +52,19 @@ describe("a handler that succeeds", () => {
 	});
 
 	it("does not redeliver an acked message", async () => {
-		// The point of acking. A message handled and then redelivered would be
-		// processed twice by an application that believes it is at-least-once.
 		const bus = busFor();
 		await publish(bus, 1);
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		await bus.subscribe(
 			"events" as never,
 			"g1" as never,
 			async () => undefined,
 		);
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		const again = await bus.consume("events" as never, "g1" as never);
 		expect(again).toHaveLength(0);
 	});
 
 	it("handles nothing when there is nothing to handle", async () => {
 		const bus = busFor();
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		expect(
 			await bus.subscribe(
 				"events" as never,
@@ -83,11 +75,8 @@ describe("a handler that succeeds", () => {
 	});
 
 	it("records an ack on the event log", async () => {
-		// The log is how a dead letter is found later; acks share it so the
-		// full lifecycle of a message is in one place.
 		const bus = busFor();
 		await publish(bus, 1);
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		await bus.subscribe(
 			"events" as never,
 			"g1" as never,
@@ -103,7 +92,6 @@ describe("a handler that throws", () => {
 	it("does not count the message as handled", async () => {
 		const bus = busFor();
 		await publish(bus, 1);
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		const result = await bus.subscribe(
 			"events" as never,
 			"g1" as never,
@@ -115,14 +103,10 @@ describe("a handler that throws", () => {
 	});
 
 	it("keeps delivering the rest of the batch", async () => {
-		// One bad message must not cost the whole batch — otherwise a single
-		// poison payload stalls every message that happened to arrive with it.
 		const bus = busFor();
 		await publish(bus, 3);
 		const seen: number[] = [];
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		await bus.subscribe("events" as never, "g1" as never, async (message) => {
-			// SAFETY: the fixture publishes exactly this body shape.
 			const body = message.body as { index: number };
 			seen.push(body.index);
 			if (body.index === 0) throw new Error("poison");
@@ -131,23 +115,17 @@ describe("a handler that throws", () => {
 	});
 
 	it("leaves the message available for another attempt", async () => {
-		// Dropping on first failure would lose data to a downstream timeout —
-		// the commonest handler failure and the one most likely to succeed next
-		// time.
 		const bus = busFor();
 		await publish(bus, 1);
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		await bus.subscribe("events" as never, "g1" as never, async () => {
 			throw new Error("downstream timeout");
 		});
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		expect(await bus.consume("events" as never, "g1" as never)).toHaveLength(1);
 	});
 
 	it("records the failure on the event log", async () => {
 		const bus = busFor();
 		await publish(bus, 1);
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		await bus.subscribe("events" as never, "g1" as never, async () => {
 			throw new Error("downstream timeout");
 		});
@@ -236,11 +214,8 @@ describe("exhausted deliveries", () => {
 
 describe("acking a message the consumer does not hold", () => {
 	it("refuses an unknown message id", async () => {
-		// Either a double-ack or a forged id; both would release a lease
-		// someone else owns.
 		const bus = busFor();
 		await expect(
-			// SAFETY: the fixture uses wire-shaped ids.
 			bus.ack("no-such-message" as never, "no-such-lease" as never),
 		).rejects.toThrow(MessagingDeliveryError);
 	});
@@ -248,7 +223,6 @@ describe("acking a message the consumer does not hold", () => {
 	it("refuses a nack for an unknown message id", async () => {
 		const bus = busFor();
 		await expect(
-			// SAFETY: the fixture uses wire-shaped ids.
 			bus.nack("no-such-message" as never, "no-such-lease" as never, "why"),
 		).rejects.toThrow(MessagingDeliveryError);
 	});
@@ -256,17 +230,13 @@ describe("acking a message the consumer does not hold", () => {
 	it("names the message it could not find", async () => {
 		const bus = busFor();
 		await expect(
-			// SAFETY: the fixture uses wire-shaped ids.
 			bus.ack("no-such-message" as never, "no-such-lease" as never),
 		).rejects.toThrow(/no-such-message/);
 	});
 
 	it("refuses a second ack for a message already acked", async () => {
-		// The double-ack case specifically: the lease is gone, and a second ack
-		// would release whatever holds it next.
 		const bus = busFor();
 		await publish(bus, 1);
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		const batch = await bus.consume("events" as never, "g1" as never);
 		const message = batch[0];
 		if (!message) throw new Error("expected a message");
@@ -297,8 +267,6 @@ describe("metering", () => {
 	});
 
 	it("reports nothing for a consume that returned no messages", async () => {
-		// Quantity zero is not a billable event. Emitting it would fill the
-		// meter with noise from idle pollers and make real usage harder to see.
 		const emitted: UsageEvent[] = [];
 		const bus = busFor({
 			metering: createMeteringBus([
@@ -310,13 +278,11 @@ describe("metering", () => {
 				},
 			]),
 		});
-		// SAFETY: the fixture uses wire-shaped topic and group names.
 		await bus.consume("events" as never, "g1" as never);
 		expect(emitted).toStrictEqual([]);
 	});
 
 	it("publishes without a meter wired", async () => {
-		// Metering is optional; a bus with no meter still has to carry traffic.
 		const bus = busFor();
 		await expect(publish(bus, 1)).resolves.toBeUndefined();
 	});
