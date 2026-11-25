@@ -23,6 +23,7 @@ Trunk workspace shards used a bare `actions/checkout` with `clean: false` after 
 - Workflow jobs prepend pinned sparse `actions/checkout` for `.github/actions` so GitHub-hosted fallbacks can load `hobo-repo-checkout`; the composite runs with `bootstrap-composite-actions: false` after that.
 - **`hobo-repo-checkout` clears any prior sparse cone** (`--prepare-full-worktree` via `clearSparseCheckoutConfig`, without `git sparse-checkout disable` blob materialization) before remote checkout attempts so a successful `actions/checkout` cannot leave only `.github/actions` on disk while the marker check fails closed (Fabric run [45695300131](https://github.com/Hobo-Labs/HoBo/actions/runs/45695300131), job `139495478301`, **2025-11-25**). The prepare step uses `continue-on-error` plus `rm -rf .git` when clearing fails so promisor transport flakes still reach the three remote checkout retries.
 - Sparse preparation also clears the index's skip-worktree flags without checking out files. The following full checkout can then materialize paths outside the old cone, including when it selects the same commit.
+- Sparse detection uses Git's boolean parsing, so equivalent settings such as `yes` are handled the same as `true`.
 
 ## Measure
 

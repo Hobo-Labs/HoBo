@@ -140,6 +140,19 @@ describe("disableSparseCheckoutIfActive", () => {
 });
 
 describe("clearSparseCheckoutConfig", () => {
+	it("recognizes a Git boolean alias for sparse checkout", () => {
+		const work = join(temp, "work-sparse-boolean-alias");
+		execFileSync("git", ["clone", "--no-checkout", source, work]);
+		git(work, ["sparse-checkout", "init", "--cone"]);
+		git(work, ["sparse-checkout", "set", "scripts/ci"]);
+		git(work, ["checkout", sha]);
+		git(work, ["config", "--worktree", "core.sparseCheckout", "yes"]);
+		expect(sparseCheckoutEnabled(work)).toBe(true);
+		expect(clearSparseCheckoutConfig(work)).toBe(true);
+		git(work, ["checkout", "--force", sha]);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(true);
+	});
+
 	it("lets the next full checkout materialize paths excluded by the old cone", () => {
 		const work = join(temp, "work-next-full-checkout");
 		execFileSync("git", ["clone", "--no-checkout", source, work]);

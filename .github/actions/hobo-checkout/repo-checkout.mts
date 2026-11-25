@@ -172,7 +172,11 @@ export function sparseCheckoutEnabled(
 	if (!inside.ok || inside.stdout.trim() !== "true") {
 		return false;
 	}
-	const config = git(cwd, ["config", "--get", "core.sparseCheckout"], env);
+	const config = git(
+		cwd,
+		["config", "--bool", "--get", "core.sparseCheckout"],
+		env,
+	);
 	return config.ok && config.stdout.trim() === "true";
 }
 
