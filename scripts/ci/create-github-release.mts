@@ -320,7 +320,8 @@ export function releaseBlockedRealizerMessage(
 		);
 		if (parsed) {
 			const structured = releaseFreightStructuredFromFields(parsed);
-			if (structured) return formatReleaseFreightBlockedReason(code, structured);
+			if (structured)
+				return formatReleaseFreightBlockedReason(code, structured);
 		}
 		return code;
 	});
