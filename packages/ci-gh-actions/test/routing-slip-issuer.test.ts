@@ -355,7 +355,7 @@ describe("the issuer (ADR-0181, decisions 1-2)", () => {
 		expect(api.commits()).toHaveLength(1);
 	});
 
-	it("only the mesh leader writes", async () => {
+	it("only the slip leader writes", async () => {
 		const api = gitApi();
 		const nodes = ["box-a", "box-b", "box-c"];
 		const leader = (id: string) => async () => [...nodes].sort()[0] === id;
@@ -454,10 +454,43 @@ describe("the budget", () => {
 describe("the box's committed routing policy (ADR-0181, decision 4)", () => {
 	const root = fileURLToPath(new URL("../../..", import.meta.url));
 
-	it("reads runnerRouting from the checkout, and it equals the code's defaults", () => {
+	it("reads runnerRouting from the checkout; it defaults but for the agent37 pool", () => {
 		const read = readBoxRoutingPolicy(root);
 		expect(read.source).toBe("committed");
-		expect(read.policy).toEqual(DEFAULT_RUNNER_ROUTING);
+		const { externalPools: committedPools, ...committed } = read.policy;
+		const { externalPools: fallbackPools, ...fallback } =
+			DEFAULT_RUNNER_ROUTING;
+		expect(committed).toEqual(fallback);
+		expect(fallbackPools).toEqual([]);
+		expect(committedPools).toEqual([
+			{
+				labels: ["hobo-agent37"],
+				runnerNamePrefix: "hobo-a37-",
+				maxRunners: 4,
+			},
+		]);
+	});
+
+	it("enables an external pool only through the committed project policy", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-routing-"));
+		const hobo = join(dir, ".hobo");
+		mkdirSync(hobo);
+		const externalPools = [
+			{
+				labels: ["hobo-agent37"],
+				runnerNamePrefix: "hobo-a37-",
+				maxRunners: 4,
+			},
+		];
+		writeFileSync(
+			join(hobo, "ci.json"),
+			JSON.stringify({
+				runnerRouting: { ...DEFAULT_RUNNER_ROUTING, externalPools },
+			}),
+		);
+		expect(readBoxRoutingPolicy(dir).policy.externalPools).toEqual(
+			externalPools,
+		);
 	});
 
 	it("a checkout without the block runs on the defaults; a bad block refuses to start", () => {
@@ -481,7 +514,7 @@ describe("the box's committed routing policy (ADR-0181, decision 4)", () => {
 				HOBO_CI_WORKER_SLOTS: "4",
 				HOBO_CI_FLEET_VERDICT_MODE: "report",
 				HOBO_CI_JOB_ADMISSION: "",
-				HOBO_CI_NATS_URL: "nats://mesh:4222",
+				HOBO_CI_RELAY_TRACE: "1",
 				MAIN_WORKSPACE_PARALLEL_CAP: "2",
 			}),
 		).toEqual([

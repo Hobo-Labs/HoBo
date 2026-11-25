@@ -96,6 +96,32 @@ function delivery(id = 1) {
 	};
 }
 
+it("does not admit strict starts while the service is unready", async () => {
+	let ready = false;
+	const startFence = vi.fn(async () => Response.json({ ok: true }));
+	const app = admitWhenReady(
+		{
+			ingestWebhook: async () => "accepted",
+			claim: async () => Response.json({}),
+			control: async () => undefined,
+			ready: async () => true,
+			startFence,
+		},
+		() => ready,
+	);
+	const handle = createRelayHandler({
+		application: app,
+		webhookSecret: SECRET,
+	});
+	const request = () =>
+		new Request("https://ci.example/v2/fleet/start-fence", { method: "POST" });
+	expect((await handle(request())).status).toBe(503);
+	expect(startFence).not.toHaveBeenCalled();
+	ready = true;
+	expect((await handle(request())).status).toBe(200);
+	expect(startFence).toHaveBeenCalledOnce();
+});
+
 it("gates startup and permissions, and caches readiness probes", async () => {
 	const gate = deferred();
 	finish.push(gate.resolve);

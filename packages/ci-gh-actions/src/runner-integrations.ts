@@ -7,19 +7,6 @@ import {
 } from "@hobo/provider-redaction";
 import { z } from "zod";
 
-/**
- * Third-party GitHub Actions runner providers HoBo CI can route jobs to.
- *
- * The config only ever holds references. Each provider is limited to the auth
- * methods it really supports (checked against the provider docs listed below):
- * - `github-app`: the provider's GitHub App is installed on the org; the app
- *   mints short-lived per-job runner tokens. No credential ever exists in the repo.
- * - `oidc`: the workflow exchanges its GitHub OIDC token (`id-token: write`) for a
- *   short-lived provider token through a trust relationship. Nothing is stored.
- * - `device`: an interactive browser/device ceremony run by the provider CLI.
- * - `secret-ref`: last-resort fallback. The config names where a secret lives
- *   (`github-secret:NAME` or `env:NAME`); the value itself is never accepted.
- */
 export const RUNNER_INTEGRATION_PROVIDERS = [
 	"blacksmith",
 	"depot",
@@ -186,7 +173,7 @@ export function redactSecrets(
 	);
 }
 
-export const SECRET_REFERENCE = /^(?:github-secret|env):[A-Z][A-Z0-9_]{0,63}$/;
+export const SECRET_REFERENCE = /^owner:\/\/[A-Z][A-Z0-9_]{0,63}$/;
 
 export const RunnerIntegrationSchema = z
 	.object({
@@ -328,7 +315,7 @@ export function buildRunnerIntegration(
 	for (const [key, entry] of flagged)
 		if (entry !== undefined && looksLikeSecret(entry))
 			throw new Error(
-				`--${key} looks like a raw credential. Pass a reference such as github-secret:NAME; never a secret value.`,
+				`--${key} looks like a raw credential. Pass a reference such as owner://NAME; never a secret value.`,
 			);
 	const method = options.auth ?? profile.authMethods[0];
 	if (!method) throw new Error("provider has no auth method");
@@ -336,7 +323,7 @@ export function buildRunnerIntegration(
 	if (method === "secret-ref")
 		auth.secretRef =
 			options.secretRef ??
-			`github-secret:${profile.fallbackSecret ?? "PROVIDER_TOKEN"}`;
+			`owner://${profile.fallbackSecret ?? "PROVIDER_TOKEN"}`;
 	if (options.projectId) auth.projectId = options.projectId;
 	const entry: RunnerIntegration = {
 		id: options.id ?? provider,

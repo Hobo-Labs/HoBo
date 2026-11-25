@@ -2,5 +2,5 @@
   "id": "blacksmith",
   "provider": "blacksmith",
   "runsOn": ["blacksmith-2vcpu-ubuntu-2404"],
-  "auth": { "method": "secret-ref", "secretRef": "github-secret:BLACKSMITH_TOKEN" }
+  "auth": { "method": "secret-ref", "secretRef": "owner://BLACKSMITH_TOKEN" }
 }

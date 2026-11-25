@@ -69,12 +69,7 @@ export async function runNativeKafkaPath(tenantId = "acme"): Promise<{
 	const batch = await bus.consume(topic, "workers" as never, {
 		maxMessages: 10,
 	});
-	for (const m of batch) bus.ack(m.messageId, m.leaseId);
-	// SAFETY: `if (typeof (bus as { flush?: () => Promise<void> }).flush === "function") {` is required at this I/O or test boundary.
-	if ((bus as { flush?: () => Promise<void> }).flush instanceof Function) {
-		// SAFETY: `await (bus as { flush: () => Promise<void> }).flush();` is required at this I/O or test boundary.
-		await (bus as { flush: () => Promise<void> }).flush();
-	}
+	for (const m of batch) await bus.ack(m.messageId, m.leaseId);
 	return {
 		messaging: bus,
 		published: 2,

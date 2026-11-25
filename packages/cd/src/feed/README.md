@@ -34,13 +34,24 @@ carry `fence` and positions as decimal strings (64-bit safe). The contract is
   `Last-Event-ID`, so nothing is skipped or repeated.
 - Frames start after the Camp's committed checkpoint (or `Last-Event-ID`).
   The first feed of a lease (`redeliver=1`) re-delivers the current change
-  when nothing newer exists, so a restarted agent re-observes the target.
+  when nothing newer exists, so a restarted agent re-observes the target. If a
+  response is cancelled or malformed before a valid end, the next feed may
+  redeliver the current change; consumers must tolerate at-least-once delivery.
 - The resolved set is inline when its blob is ≤ 256 KiB and verifies against
   its digest; otherwise only the digest is sent and the agent fetches
   `blobs/{digest}`. The agent accepts bytes only if they hash to the Set's
-  `resolved_set_digest` and their `contentHash`/`campId` match the Set.
+  `resolved_set_digest` and their `contentHash`/`campId` match the Set. Its
+  bounded inline cache may evict a Set and fetch its verified blob later.
 - Management: OBSERVE_ONLY from the spec stream or the declared topology wins.
   `observe_fields` come from `PostureService.observeFields`.
+
+Iterator failures end the stream with a fixed error and no successful end frame.
+After aborting a feed, the handler waits at most five seconds for its iterator
+to close; a timeout also fails the stream. Sources must honor cancellation to
+release their own resources, and agents resume from their last checkpoint.
+The agent does not process a response after cancellation. Its current HTTP
+transport has no cancellation signal, so an already dispatched request may
+remain in flight until it completes or times out.
 
 ## Event architecture
 

@@ -28,12 +28,12 @@ function launchMeasurement(overrides: JsonObject = {}) {
 	};
 }
 
-function attestedDocument(
+async function attestedDocument(
 	overrides: { measurement?: JsonObject; claimed?: JsonObject } = {},
 ) {
 	const attestor = createFixtureHostAttestor({ hostId: "host-firecracker-1" });
 	return {
-		document: attestor.createDocument({
+		document: await attestor.createDocument({
 			launchMeasurement: launchMeasurement(overrides.measurement),
 			claimed: overrides.claimed ?? {
 				tenant: "tenant-a",
@@ -50,7 +50,7 @@ describe("S3-02 identity acceptance (BDD)", () => {
 			issuerUrl: ISSUER_URL,
 			genesisKeyId: "yard-genesis-2026-07",
 		});
-		const { document, hostPublicKeys } = attestedDocument();
+		const { document, hostPublicKeys } = await attestedDocument();
 
 		const result = await service.issueSvidFromAttestation({
 			attestationDocument: document,
@@ -91,7 +91,7 @@ describe("S3-02 identity acceptance (BDD)", () => {
 			ttlSeconds: 900,
 			renewalGraceSeconds: 300,
 		});
-		const { document, hostPublicKeys } = attestedDocument();
+		const { document, hostPublicKeys } = await attestedDocument();
 		const audience = "hobo-broker";
 		const issued = await service.issueSvidFromAttestation({
 			attestationDocument: document,
@@ -158,7 +158,7 @@ describe("S3-02 identity adversarial guards", () => {
 			issuerUrl: ISSUER_URL,
 			genesisKeyId: "yard-genesis-2026-07",
 		});
-		const { document, hostPublicKeys } = attestedDocument();
+		const { document, hostPublicKeys } = await attestedDocument();
 		const tampered = {
 			...document,
 			hostSignature: { ...document.hostSignature, value: "00".repeat(32) },
@@ -188,7 +188,7 @@ describe("S3-02 identity adversarial guards", () => {
 			issuerUrl: ISSUER_URL,
 			genesisKeyId: "yard-genesis-2026-07",
 		});
-		const { document, hostPublicKeys } = attestedDocument({
+		const { document, hostPublicKeys } = await attestedDocument({
 			claimed: { tenant: "tenant-evil" },
 		});
 
@@ -218,7 +218,7 @@ describe("S3-02 identity adversarial guards", () => {
 			ttlSeconds: 900,
 			renewalGraceSeconds: 300,
 		});
-		const { document, hostPublicKeys } = attestedDocument();
+		const { document, hostPublicKeys } = await attestedDocument();
 		const issued = await service.issueSvidFromAttestation({
 			attestationDocument: document,
 			requestedScope: {
@@ -254,7 +254,7 @@ describe("S3-02 identity adversarial guards", () => {
 			issuerUrl: ISSUER_URL,
 			genesisKeyId: "yard-genesis-2026-07",
 		});
-		const { document, hostPublicKeys } = attestedDocument({
+		const { document, hostPublicKeys } = await attestedDocument({
 			measurement: {
 				issuedAt: "2026-06-25T14:50:00.000Z",
 				expiresAt: "2026-06-25T14:59:00.000Z",

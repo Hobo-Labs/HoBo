@@ -19,9 +19,10 @@
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
-		"@hobo/backend-fleet": "workspace:*",
+		"@hobo/backend-routing": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"@hobo/data-postgres": "workspace:*",
+		"@hobo/fleet": "workspace:*",
 		"pg": "8.22.0"
 	},
 	"devDependencies": {

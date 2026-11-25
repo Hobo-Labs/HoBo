@@ -28,30 +28,6 @@ export {
 	createConnectivityHostHandler,
 } from "./connectivity-host.js";
 export {
-	accessTokenHash,
-	createDpopJtiCache,
-	type DpopJtiCache,
-	type DpopKeyPair,
-	exportDpopPrivateJwk,
-	generateDpopKeyPair,
-	importDpopKeyPair,
-	type JsonWebKeyPublic,
-	type MintDpopProofInput,
-	mintDpopProof,
-	type VerifiedDpopProof,
-	verifyDpopProof,
-} from "./crypto/dpop.js";
-export {
-	DEFAULT_SVID_HMAC_SECRET,
-	generateSvidIssuerKeys,
-	type JwtSvidClaims,
-	type MintedJwtSvid,
-	mintJwtSvid,
-	resolveSvidHmacSecret,
-	spiffeIdForAgent,
-	verifyJwtSvid,
-} from "./crypto/jwt-svid.js";
-export {
 	type AwsCredentials,
 	createRoute53SigV4Signer,
 	hmac,
@@ -89,6 +65,9 @@ export {
 	type JunctionAgent,
 	type JunctionAgentConfig,
 	type JunctionAgentRole,
+	type JunctionAgentStart,
+	type JunctionFleet,
+	type JunctionFleetAgent,
 } from "./junction-agent.js";
 export {
 	attachNamedEndpoints,
@@ -130,6 +109,11 @@ export {
 	createInMemoryMeteringSink,
 	createLogMeteringSink,
 } from "./metering/sinks.js";
+export {
+	createNetbirdCredentialMinter,
+	createTailscaleCredentialMinter,
+	type OverlayMinterOptions,
+} from "./minters/index.js";
 export { createNetbirdOverlay } from "./overlay/netbird.js";
 export {
 	createNetbirdApiClient,
@@ -149,6 +133,7 @@ export {
 	type TailscaleApiOptions,
 	type TailscaleSplitDnsMap,
 } from "./overlay/tailscale-api.js";
+export { createOverlayTransport } from "./overlay-transport.js";
 // Privileged Access Gateway (optional Station capability) — full secretless brokers.
 export * from "./pam/index.js";
 export {
@@ -197,6 +182,7 @@ export {
 	type TenantIsolationRegistry,
 	type TenantIsolationRegistryOptions,
 	type TenantOverlayPlane,
+	type TenantOverlays,
 	tenantFromSlug,
 } from "./tenancy/isolation.js";
 export {

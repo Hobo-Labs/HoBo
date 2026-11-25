@@ -181,13 +181,6 @@ describe("the repair read's confinement", () => {
 				"src",
 				"ci-secret-store-connect.ts",
 			),
-			path.join(
-				repoRoot,
-				"packages",
-				"hobo",
-				"test",
-				"ci-relay-deploy-credential.test.ts",
-			),
 			path.join(repoRoot, "scripts", "ci", "hosting-evidence.mts"),
 		]);
 	});

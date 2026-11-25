@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as joinPath } from "node:path";
 
 import {
 	createUsageEvent,
@@ -16,6 +19,17 @@ import {
 	type TenantId,
 } from "@hobo/core";
 
+function withSecretFile<T>(secret: string, use: (path: string) => T): T {
+	const dir = mkdtempSync(joinPath(tmpdir(), "hobo-overlay-"));
+	try {
+		const path = joinPath(dir, "auth-key");
+		writeFileSync(path, secret, { mode: 0o600, flag: "wx" });
+		return use(path);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
 export type TailscaleRunner = (
 	args: readonly string[],
 	env?: NodeJS.ProcessEnv,
@@ -32,10 +46,6 @@ export function createTailscaleOverlay(options?: {
 	readonly run?: TailscaleRunner;
 	/** Default MagicDNS domains for hierarchical overlay names. */
 	readonly defaultMagicDnsDomains?: readonly string[];
-	/**
-	 * Tailscale API key for control-plane MagicDNS split DNS.
-	 * Also read from env TS_API_KEY / HOBO_TS_API_KEY when unset.
-	 */
 	readonly apiKey?: string;
 	readonly tailnet?: string;
 	readonly apiBase?: string;
@@ -141,16 +151,17 @@ export function createTailscaleOverlay(options?: {
 			}
 
 			if (join.authKey) {
-				const up = run([
-					"up",
-					"--authkey",
-					join.authKey,
-					"--hostname",
-					join.hostname,
-					"--advertise-tags",
-					tags.join(","),
-					"--accept-dns=true",
-				]);
+				const up = withSecretFile(join.authKey, (path) =>
+					run([
+						"up",
+						`--auth-key=file:${path}`,
+						"--hostname",
+						join.hostname,
+						"--advertise-tags",
+						tags.join(","),
+						"--accept-dns=true",
+					]),
+				);
 				if (!up.ok) {
 					notes.push(
 						`tailscale up failed: ${up.stderr.trim() || up.stdout.trim()}`,
@@ -158,7 +169,7 @@ export function createTailscaleOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"no authKey provided; assuming existing tailscale session (set HOBO_TAILSCALE_AUTHKEY to enroll)",
+					"no authKey provided; assuming existing tailscale session (enroll this device to receive an OverlayJoin from the fleet authority)",
 				);
 			}
 
@@ -263,10 +274,7 @@ export function createTailscaleOverlay(options?: {
 			}
 
 			// 2) Control-plane API: push split DNS for hierarchical hobo zones.
-			const apiKey =
-				options?.apiKey ??
-				process.env.TS_API_KEY ??
-				process.env.HOBO_TS_API_KEY;
+			const apiKey = options?.apiKey;
 			if (apiKey) {
 				try {
 					const { createTailscaleApiClient } = await import(
@@ -297,7 +305,7 @@ export function createTailscaleOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"controlPlaneApplied=false: TS_API_KEY/HOBO_TS_API_KEY unset",
+					"controlPlaneApplied=false: owner://TS_API_KEY unset (no apiKey from the owner's store)",
 				);
 			}
 

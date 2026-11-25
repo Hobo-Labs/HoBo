@@ -206,10 +206,12 @@ describe("CI deps image build contract", () => {
 
 	it("imports the registry cache and exports it on publisher builds only with containerd", () => {
 		includes(build, "deps_uses_containerd_image_store()");
+		includes(build, "deps_build_supports_registry_cache()");
 		includes(build, "docker info --format '{{json .DriverStatus}}'");
 		includes(build, "*io.containerd.snapshotter*");
+		includes(build, "grep -q -- '--cache-to'");
 		const detection = build.indexOf(
-			"if deps_uses_containerd_image_store; then",
+			"if deps_uses_containerd_image_store && deps_build_supports_registry_cache; then",
 		);
 		const cacheImport = build.indexOf(
 			'cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")',
@@ -225,6 +227,10 @@ describe("CI deps image build contract", () => {
 			'if [[ "${HOBO_CI_DEPS_EXPORT_BUILDCACHE:-0}" == "1" ]]; then',
 		);
 		includes(build, '"${cache_args[@]}"');
+		includes(
+			build,
+			"deps registry cache import skipped: docker build lacks --cache-to",
+		);
 		includes(build, "deps registry cache import skipped: classic image store");
 	});
 

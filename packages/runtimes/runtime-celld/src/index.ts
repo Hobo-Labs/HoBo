@@ -5,6 +5,7 @@ export {
 } from "./host.js";
 export {
 	CELLD_ON_FLUX,
+	CELLD_OVERLAYS,
 	type CelldCasProbe,
 	CelldConfigError,
 	type CelldOverlay,

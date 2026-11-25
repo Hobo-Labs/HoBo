@@ -32,6 +32,14 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(cwd, { recursive: true, force: true }));
 
+const githubAppInstallation = {
+	async resolve(ref: string) {
+		if (ref !== "github-app://Hobo-Labs/HoBo")
+			throw new Error(`no installation for ${ref}`);
+		return { token: GITHUB_TOKEN };
+	},
+};
+
 function input(
 	subcommand: string,
 	values: Record<string, string | boolean>,
@@ -47,6 +55,7 @@ function input(
 		prompt: async () => "",
 		now: () => 1_700_000_000_000,
 		bindingStore: ownerStoreStandIn(cwd),
+		credentials: githubAppInstallation,
 		...(fetch !== undefined ? { fetch } : undefined),
 	};
 }
@@ -66,7 +75,7 @@ const IDS = {
 const IMMUTABLE_SUB =
 	"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials";
 const LEGACY_SUB = "repo:Hobo-Labs/HoBo:ref:refs/heads/main";
-const GITHUB_TOKEN = "synthetic-github-token";
+const GITHUB_TOKEN = "synthetic-installation-token";
 const OWNER_TOKEN = "synthetic-infisical-owner-token";
 
 /** GitHub's REST API for the relay repository (the shapes of the pact in @hobo/secret-store-claim). */
@@ -90,6 +99,11 @@ function github(
 		seen.push(`${init?.method ?? "GET"} ${url.host}${url.pathname}`);
 		if (url.host !== "api.github.com")
 			return Response.json({}, { status: 404 });
+		if (
+			new Headers(init?.headers).get("authorization") !==
+			`Bearer ${GITHUB_TOKEN}`
+		)
+			return Response.json({ message: "Bad credentials" }, { status: 401 });
 		if (url.pathname === "/repos/Hobo-Labs/HoBo")
 			return Response.json({
 				id: 1274791462,
@@ -138,12 +152,39 @@ function withInfisicalPatch(base: Fetch) {
 	return { fetch, patches };
 }
 
-const GH_ENV = { GH_TOKEN: GITHUB_TOKEN };
-
 describe("hobo ci secret-store connect", () => {
+	it("refuses without HoBo's GitHub App installation token, naming hobo ci app create, and reads no GitHub token from the environment", async () => {
+		const gh = github();
+		const { credentials: _owner, ...withoutSession } = input(
+			"connect",
+			IDS,
+			{ GH_TOKEN: GITHUB_TOKEN, GITHUB_TOKEN },
+			gh.fetch,
+		);
+		for (const attempt of [
+			withoutSession,
+			{
+				...withoutSession,
+				credentials: {
+					async resolve(): Promise<Record<string, string>> {
+						throw new Error("no App credentials in the store");
+					},
+				},
+			},
+		]) {
+			const result = await runCiSecretStore(attempt);
+			expect(result.ok).toBe(false);
+			expect(result.code).toBe("HOBO_CI_SECRET_STORE_GITHUB_APP_REQUIRED");
+			expect(result.message).toContain("hobo ci app create");
+			expect(result.message).toContain("choose_secret_store");
+			expect(JSON.stringify(result)).not.toContain(GITHUB_TOKEN);
+		}
+		expect(gh.seen).toEqual([]);
+	});
+
 	it("records the ids the owner pasted as the relay's binding, coordinates only", async () => {
 		const result = await runCiSecretStore(
-			input("connect", IDS, GH_ENV, github().fetch),
+			input("connect", IDS, {}, github().fetch),
 		);
 		expect(result).toMatchObject({
 			ok: true,
@@ -170,9 +211,7 @@ describe("hobo ci secret-store connect", () => {
 
 	it("names the deploy trust GitHub's tokens need: the immutable subject and the pinned ids, never the legacy subject", async () => {
 		const gh = github();
-		const result = await runCiSecretStore(
-			input("connect", IDS, GH_ENV, gh.fetch),
-		);
+		const result = await runCiSecretStore(input("connect", IDS, {}, gh.fetch));
 		expect(result.data).toMatchObject({
 			deployTrust: {
 				identity: "hobo-ci-writer",
@@ -207,7 +246,7 @@ describe("hobo ci secret-store connect", () => {
 
 	it("fails closed, with the remediation, when GitHub does not say which subject the tokens carry", async () => {
 		const result = await runCiSecretStore(
-			input("connect", IDS, GH_ENV, github({ use_default: true }).fetch),
+			input("connect", IDS, {}, github({ use_default: true }).fetch),
 		);
 		expect(result).toMatchObject({
 			ok: false,
@@ -228,7 +267,7 @@ describe("hobo ci secret-store connect", () => {
 					...IDS,
 					"deploy-credential-identity-id": IDS["deploy-identity-id"],
 				},
-				GH_ENV,
+				{},
 				github().fetch,
 			),
 		);
@@ -248,7 +287,7 @@ describe("hobo ci secret-store connect", () => {
 					...IDS,
 					"deploy-credential-identity-id": IDS["relay-identity-id"],
 				},
-				GH_ENV,
+				{},
 				github().fetch,
 			),
 		);
@@ -263,7 +302,7 @@ describe("hobo ci secret-store connect", () => {
 	it("needs the repository whose tokens the deploy identity trusts", async () => {
 		const { repo: _unused, ...ids } = IDS;
 		const result = await runCiSecretStore(
-			input("connect", ids, GH_ENV, github().fetch),
+			input("connect", ids, {}, github().fetch),
 		);
 		expect(result.code).toBe("HOBO_CI_SECRET_STORE_USAGE");
 		expect(result.message).toContain("--repo");
@@ -272,14 +311,14 @@ describe("hobo ci secret-store connect", () => {
 
 describe("hobo ci secret-store connect, re-run against an existing store", () => {
 	it("updates the existing GitHub Actions identities' OIDC trust in place with the owner's token, creating nothing", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const infisical = withInfisicalPatch(github().fetch);
 		// The re-run needs no ids: it repairs the binding already committed.
 		const result = await runCiSecretStore(
 			input(
 				"connect",
 				{ repo: "Hobo-Labs/HoBo" },
-				{ ...GH_ENV, INFISICAL_TOKEN: OWNER_TOKEN },
+				{ INFISICAL_TOKEN: OWNER_TOKEN },
 				infisical.fetch,
 			),
 		);
@@ -333,13 +372,13 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 	});
 
 	it("keeps the binding and fails typed when Infisical refuses the update", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const before = readFileSync(path.join(cwd, OWNER_STORE_BINDING), "utf8");
 		const result = await runCiSecretStore(
 			input(
 				"connect",
 				{ ...IDS, "deploy-identity-id": "other-identity", yes: true },
-				{ ...GH_ENV, INFISICAL_TOKEN: OWNER_TOKEN },
+				{ INFISICAL_TOKEN: OWNER_TOKEN },
 				withInfisicalPatch(github().fetch).fetch,
 			),
 		);
@@ -359,13 +398,13 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 	});
 
 	it("preserves a pending claim while repairing deploy trust", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const file = path.join(cwd, OWNER_STORE_BINDING);
 		const pending = JSON.parse(readFileSync(file, "utf8"));
 		pending.claimState = "pending";
 		writeFileSync(file, JSON.stringify(pending));
 		const result = await runCiSecretStore(
-			input("connect", { repo: "Hobo-Labs/HoBo" }, GH_ENV, github().fetch),
+			input("connect", { repo: "Hobo-Labs/HoBo" }, {}, github().fetch),
 		);
 		expect(result.ok).toBe(true);
 		expect(readSecretStoreBinding(readFileSync(file, "utf8")).claimState).toBe(
@@ -375,14 +414,9 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 
 	it("refuses to swap the deploy project alone without --yes, so a trust-relevant coordinate cannot change silently", async () => {
 		const gh = github().fetch;
-		await runCiSecretStore(input("connect", IDS, GH_ENV, gh));
+		await runCiSecretStore(input("connect", IDS, {}, gh));
 		const swapped = await runCiSecretStore(
-			input(
-				"connect",
-				{ ...IDS, "deploy-project-id": "other-deploy" },
-				GH_ENV,
-				gh,
-			),
+			input("connect", { ...IDS, "deploy-project-id": "other-deploy" }, {}, gh),
 		);
 		expect(swapped.code).toBe("HOBO_CI_SECRET_STORE_BINDING_EXISTS");
 		expect(
@@ -391,7 +425,7 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 					input(
 						"connect",
 						{ ...IDS, "deploy-project-id": "other-deploy", yes: true },
-						GH_ENV,
+						{},
 						gh,
 					),
 				)
@@ -402,7 +436,7 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 	it("names what is missing, refuses one identity for both, and keeps an existing binding", async () => {
 		const gh = github().fetch;
 		const missing = await runCiSecretStore(
-			input("connect", { team: IDS.team }, GH_ENV, gh),
+			input("connect", { team: IDS.team }, {}, gh),
 		);
 		expect(missing.code).toBe("HOBO_CI_SECRET_STORE_USAGE");
 		expect(missing.message).toContain("--project-id");
@@ -410,14 +444,14 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 			input(
 				"connect",
 				{ ...IDS, "deploy-identity-id": "relay-identity" },
-				GH_ENV,
+				{},
 				gh,
 			),
 		);
 		expect(same.code).toBe("HOBO_CI_SECRET_STORE_BINDING_INVALID");
-		await runCiSecretStore(input("connect", IDS, GH_ENV, gh));
+		await runCiSecretStore(input("connect", IDS, {}, gh));
 		// The same ids again is a repair, not a replacement.
-		expect((await runCiSecretStore(input("connect", IDS, GH_ENV, gh))).ok).toBe(
+		expect((await runCiSecretStore(input("connect", IDS, {}, gh))).ok).toBe(
 			true,
 		);
 		expect(
@@ -426,7 +460,7 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 					input(
 						"connect",
 						{ ...IDS, "deploy-identity-id": "other-identity" },
-						GH_ENV,
+						{},
 						gh,
 					),
 				)
@@ -438,7 +472,7 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 					input(
 						"connect",
 						{ ...IDS, "deploy-identity-id": "other-identity", yes: true },
-						GH_ENV,
+						{},
 						gh,
 					),
 				)
@@ -470,7 +504,7 @@ describe("hobo ci secret-store connect, a binding recorded before the deploy cre
 	it("keeps the legacy binding credential-free while repairing the writer trust", async () => {
 		legacyBinding();
 		const result = await runCiSecretStore(
-			input("connect", { repo: "Hobo-Labs/HoBo" }, GH_ENV, github().fetch),
+			input("connect", { repo: "Hobo-Labs/HoBo" }, {}, github().fetch),
 		);
 		expect(result).toMatchObject({
 			ok: true,
@@ -497,7 +531,7 @@ describe("hobo ci secret-store connect, a binding recorded before the deploy cre
 					"deploy-credential-identity-id": "deploy-credential-identity",
 					yes: true,
 				},
-				{ ...GH_ENV, INFISICAL_TOKEN: OWNER_TOKEN },
+				{ INFISICAL_TOKEN: OWNER_TOKEN },
 				infisical.fetch,
 			),
 		);
@@ -529,7 +563,7 @@ describe("hobo ci secret-store connect, secretless first", () => {
 			...ids
 		} = IDS;
 		const result = await runCiSecretStore(
-			input("connect", ids, GH_ENV, github().fetch),
+			input("connect", ids, {}, github().fetch),
 		);
 		expect(result).toMatchObject({
 			ok: true,
@@ -550,7 +584,7 @@ describe("hobo ci secret-store without the owner's store session", () => {
 			const { bindingStore, ...withoutSession } = input(
 				subcommand,
 				subcommand === "connect" ? IDS : {},
-				GH_ENV,
+				{},
 				github().fetch,
 			);
 			expect(bindingStore).toBeDefined();
@@ -852,7 +886,7 @@ describe("hobo ci secret-store verify", () => {
 			"deploy-credential-identity-id": _reader,
 			...ids
 		} = IDS;
-		await runCiSecretStore(input("connect", ids, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", ids, {}, github().fetch));
 		const fake = infisical(200, ["HOBO_CI_PUBLIC_URL"]);
 		const result = await runCiSecretStore(
 			input("verify", {}, { ...actions, VERCEL_OIDC_TOKEN: JWT }, fake.fetch),
@@ -877,7 +911,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails an unfiltered verification when relay OIDC is unavailable", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(200, ["VERCEL_TOKEN"]);
 		const result = await runCiSecretStore(
 			input("verify", {}, actions, fake.fetch),
@@ -951,7 +985,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("passes only after every configured identity proves its scope", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(200, ["VERCEL_TOKEN"]);
 		const result = await runCiSecretStore(
 			input("verify", {}, { ...actions, VERCEL_OIDC_TOKEN: JWT }, fake.fetch),
@@ -980,7 +1014,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("runs only the selected GitHub identity and rejects an unknown selection before OIDC", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		for (const [identity, identityId, audience] of [
 			["reader", "deploy-credential-identity", READER_AUDIENCE],
 			["writer", "deploy-identity", WRITER_AUDIENCE],
@@ -1066,7 +1100,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("does not return the deploy credential to a writer session, even at the reader's path", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(200, ["VERCEL_TOKEN"]);
 		const result = await runCiSecretStore(
 			input("verify", { identity: "writer" }, actions, fake.fetch),
@@ -1082,7 +1116,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails the reader that can also list the relay folder, so an over-scoped grant cannot pass for least privilege", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(200, ["VERCEL_TOKEN"], undefined, false);
 		const result = await runCiSecretStore(
 			input("verify", {}, actions, fake.fetch),
@@ -1101,7 +1135,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails the reader when the relay-folder listing ends in anything but an authorization refusal, so a store error cannot pass for least privilege", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(200, ["VERCEL_TOKEN"], undefined, true, 503);
 		const result = await runCiSecretStore(
 			input("verify", {}, actions, fake.fetch),
@@ -1114,7 +1148,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails the reader when the relay-folder listing cannot run at all, not only when Infisical answers", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const base = infisical(200, ["VERCEL_TOKEN"]);
 		const unreachable: Fetch = async (request, init) => {
 			if (String(request).includes("projectId=proj-runtime"))
@@ -1130,7 +1164,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("does not mistake an unauthenticated 401 for project isolation and revokes both issued sessions", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(200, ["VERCEL_TOKEN"], undefined, true, 401);
 		const result = await runCiSecretStore(
 			input("verify", {}, actions, fake.fetch),
@@ -1148,7 +1182,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails a reader whose membership is anything other than exactly one Viewer role", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		for (const roles of ["member", ["viewer", "admin"]] as const) {
 			const fake = infisical(
 				200,
@@ -1171,7 +1205,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails a writer that can read the deploy credential project", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(
 			200,
 			["VERCEL_TOKEN"],
@@ -1193,7 +1227,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails writer isolation on 401, 503, and network errors instead of treating them as 403", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		for (const status of [401, 503]) {
 			const fake = infisical(
 				200,
@@ -1236,7 +1270,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails closed when any direct-read or membership check is allowed or inconclusive", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		for (const [probe, identity] of [
 			["readerRelayRead", "reader"],
 			["readerRelayMembership", "reader"],
@@ -1290,7 +1324,7 @@ describe("hobo ci secret-store verify", () => {
 	}, 30_000);
 
 	it("fails when the credential value read is refused and revokes both sessions without leaking either token", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(
 			200,
 			["VERCEL_TOKEN"],
@@ -1338,7 +1372,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("refuses a listing whose bearer token no login issued, so a read cannot be attributed to nothing", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(200, ["VERCEL_TOKEN"]);
 		const foreign = await fake.fetch(
 			"https://app.infisical.com/api/v4/secrets?projectId=proj-deploy&environment=prod&secretPath=%2F&viewSecretValue=false",
@@ -1385,7 +1419,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("reuses one OIDC workload JWT per audience for sign-in and claim hints", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		let jwtFetches = 0;
 		const audiences: string[] = [];
 		const fake = infisical(401, []);
@@ -1409,7 +1443,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("refuses a pending binding without the writer subject before requesting OIDC", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const file = path.join(cwd, OWNER_STORE_BINDING);
 		const pending = JSON.parse(readFileSync(file, "utf8"));
 		pending.claimState = "pending";
@@ -1433,7 +1467,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("says the token's subject differs from the recorded trust without showing either subject", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const denied = await runCiSecretStore(
 			input(
 				"verify",
@@ -1462,7 +1496,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails by name when the OIDC trust does not match", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const denied = await runCiSecretStore(
 			input("verify", {}, actions, infisical(401, []).fetch),
 		);
@@ -1475,7 +1509,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("checks hobo-ci-relay where Vercel's OIDC token is present and refuses its deploy-project access", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(200, ["HOBO_CI_PUBLIC_URL"]);
 		const result = await runCiSecretStore(
 			input(
@@ -1500,7 +1534,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails a relay identity that can read the deploy credential project", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		const fake = infisical(
 			200,
 			["HOBO_CI_PUBLIC_URL"],
@@ -1520,7 +1554,7 @@ describe("hobo ci secret-store verify", () => {
 	});
 
 	it("fails relay isolation on 401, 503, and network errors instead of treating them as 403", async () => {
-		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		await runCiSecretStore(input("connect", IDS, {}, github().fetch));
 		for (const status of [401, 503]) {
 			const fake = infisical(
 				200,

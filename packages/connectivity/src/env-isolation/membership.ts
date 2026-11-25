@@ -1,7 +1,4 @@
-/**
- * High-integrity control-plane env membership.
- * Isolation-critical env: tags cannot be self-assigned by clients.
- */
+import { type MemberId, MemberState, type RegistryView } from "@hobo/fleet";
 import {
 	ACCESS_EVENTS,
 	type AccessEvent,
@@ -21,7 +18,7 @@ export type EnvMembership = Readonly<{
 	schemaVersion: typeof ENV_MEMBERSHIP_SCHEMA;
 	id: string;
 	principalId: string;
-	nodeId?: string;
+	nodeId?: MemberId;
 	isolationClass: IsolationClass;
 	assignedAt: string;
 	assignedBy: string;
@@ -36,7 +33,7 @@ export type AssignMembershipInput = Readonly<{
 	principalId: string;
 	isolationClass: IsolationClass;
 	assignedBy: string;
-	nodeId?: string;
+	nodeId?: MemberId;
 	expiresAt?: string;
 	dualControlApprovers?: readonly string[];
 	/** Second approver for production dual control. */
@@ -46,17 +43,34 @@ export type AssignMembershipInput = Readonly<{
 
 export class EnvMembershipService {
 	private readonly members = new Map<string, EnvMembership>();
+	private readonly activeNodes = new Set<MemberId>();
 	readonly events: AccessEvent[] = [];
 	private readonly now: () => string;
 	private readonly tenant: string;
+	private readonly registry: RegistryView | undefined;
 	private n = 0;
 
 	constructor(options: {
 		readonly tenant: string;
 		readonly now?: () => string;
+		readonly registry?: RegistryView;
 	}) {
 		this.tenant = options.tenant;
 		this.now = options.now ?? (() => new Date().toISOString());
+		this.registry = options.registry;
+	}
+
+	async refresh(): Promise<void> {
+		const nodes = new Set<MemberId>();
+		for (const record of this.members.values())
+			if (record.nodeId !== undefined) nodes.add(record.nodeId);
+		const active = new Set<MemberId>();
+		for (const node of nodes) {
+			const record = await this.registry?.member(node).catch(() => undefined);
+			if (record?.state === MemberState.ACTIVE) active.add(node);
+		}
+		this.activeNodes.clear();
+		for (const node of active) this.activeNodes.add(node);
 	}
 
 	/**
@@ -160,10 +174,6 @@ export class EnvMembershipService {
 		);
 	}
 
-	/**
-	 * Lookup active membership. Expired → absent (fail-closed).
-	 * Client-supplied env:production without a record does not authorize.
-	 */
 	getActive(
 		principalId: string,
 		isolationClass: IsolationClass,
@@ -171,6 +181,8 @@ export class EnvMembershipService {
 	): EnvMembership | null {
 		const rec = this.members.get(membershipKey(principalId, isolationClass));
 		if (!rec) return null;
+		if (rec.nodeId !== undefined && !this.activeNodes.has(rec.nodeId))
+			return null;
 		if (isExpired(rec.expiresAt, now ?? this.now())) {
 			this.members.delete(membershipKey(principalId, isolationClass));
 			return null;

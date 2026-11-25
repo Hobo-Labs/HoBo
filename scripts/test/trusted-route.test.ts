@@ -45,7 +45,6 @@ describe("base-controlled attestation verification", () => {
 				"scripts/ci/runner-routing.mts",
 				"scripts/ci/attestation.mts",
 				"scripts/ci/verify-attestation.mts",
-				"packages/ci/src/fleet-overflow.ts",
 			])
 				assert.ok(sparse.split(/\s+/u).includes(path), path);
 			const routeStep = steps.find((step) => step?.id === "route");
@@ -80,7 +79,6 @@ describe("base-controlled attestation verification", () => {
 				".hobo/ci.json",
 				"scripts/ci/route-runner.mts",
 				"scripts/ci/runner-routing.mts",
-				"packages/ci/src/fleet-overflow.ts",
 			])
 				assert.ok(sparse.split(/\s+/u).includes(path), path);
 			assert.equal(
@@ -190,7 +188,6 @@ describe("base-controlled attestation verification", () => {
 			for (const path of [
 				"scripts/ci/route-runner.mts",
 				"scripts/ci/runner-routing.mts",
-				"packages/ci/src/fleet-overflow.ts",
 			]) {
 				const dest = join(trusted, path);
 				mkdirSync(join(dest, ".."), { recursive: true });

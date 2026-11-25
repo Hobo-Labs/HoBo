@@ -12,6 +12,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { assertReleasePagesBrowserRuntimeWit } from "../lib/release-pages-wit.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
@@ -29,6 +30,8 @@ export function releaseSitePrebuildTurboArgs(): string[] {
 }
 
 function main(): void {
+	const checkoutRef = process.env.HOBO_RELEASE_CHECKOUT_REF?.trim() || "HEAD";
+	assertReleasePagesBrowserRuntimeWit(root, checkoutRef);
 	const args = releaseSitePrebuildTurboArgs();
 	const result = spawnSync("pnpm", args, { cwd: root, stdio: "inherit" });
 	if (result.status !== 0) {

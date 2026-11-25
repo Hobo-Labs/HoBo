@@ -49,6 +49,39 @@ const create = (app: HostedRelayApplication) =>
 	});
 
 describe("relay HTTP boundary", () => {
+	it("serves strict starts only through a configured handler and never caches receipts", async () => {
+		const url = "https://ci.example.test/v2/fleet/start-fence";
+		const post = () => new Request(url, { method: "POST", body: "request" });
+		expect((await create(application())(post())).status).toBe(503);
+		let calls = 0;
+		const handle = create(
+			application({
+				startFence: async (request) => {
+					calls++;
+					expect(await request.text()).toBe("request");
+					return Response.json(
+						{ ok: true },
+						{ headers: { "Cache-Control": "public" } },
+					);
+				},
+			}),
+		);
+		expect((await handle(new Request(url))).status).toBe(405);
+		const response = await handle(post());
+		expect(response.status).toBe(200);
+		expect(response.headers.get("cache-control")).toBe("no-store");
+		expect(calls).toBe(1);
+		const failed = create(
+			application({
+				startFence: async () => {
+					throw new Error("secret");
+				},
+			}),
+		);
+		const unavailable = await failed(post());
+		expect(unavailable.status).toBe(503);
+		expect(await unavailable.text()).not.toContain("secret");
+	});
 	it("rejects mismatched and ambiguous event headers before admission", async () => {
 		let admitted = 0;
 		const handle = create(

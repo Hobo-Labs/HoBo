@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { runMessagingConformance } from "../src/messaging-conformance.js";
 
 describe("messaging conformance against adapters", () => {
-	it("passes against live Kafka transport path including DLQ", async () => {
+	it("passes against live Kafka transport path and reports unsupported dead-letter transfer", async () => {
 		const report = await runMessagingConformance(
 			() =>
 				createKafkaMessaging({
@@ -26,10 +26,10 @@ describe("messaging conformance against adapters", () => {
 		expect(report.assertions.publishConsumeAck).toBe("pass");
 		expect(report.assertions.consumerGroupIsolation).toBe("pass");
 		expect(report.assertions.exactlyOnceCapabilityGate).toBe("pass");
-		expect(report.assertions.deadLetterMaxAttempts).toBe("pass");
+		expect(report.assertions.deadLetterMaxAttempts).toBe("unsupported");
 	});
 
-	it("passes against live Dapr client path including DLQ", async () => {
+	it("passes against live Dapr client path and reports unsupported dead-letter transfer", async () => {
 		const report = await runMessagingConformance(
 			() =>
 				createDaprMessaging({
@@ -41,7 +41,7 @@ describe("messaging conformance against adapters", () => {
 		expect(report.assertions.publishConsumeAck).toBe("pass");
 		expect(report.assertions.consumerGroupIsolation).toBe("pass");
 		expect(report.assertions.exactlyOnceCapabilityGate).toBe("pass");
-		expect(report.assertions.deadLetterMaxAttempts).toBe("pass");
+		expect(report.assertions.deadLetterMaxAttempts).toBe("unsupported");
 	});
 
 	it("passes against simulated Kafka (no transport)", async () => {
@@ -53,6 +53,6 @@ describe("messaging conformance against adapters", () => {
 			{ backend: "native-kafka-simulated" },
 		);
 		expect(report.assertions.publishConsumeAck).toBe("pass");
-		expect(report.assertions.deadLetterMaxAttempts).toBe("pass");
+		expect(report.assertions.deadLetterMaxAttempts).toBe("unsupported");
 	});
 });

@@ -17,6 +17,7 @@ import { after, describe, it } from "node:test";
 import {
 	cacheDirOf,
 	entryHash,
+	lacksRemoteTurboCacheTier,
 	localReadOnly,
 	parseRunTasks,
 	planPrune,
@@ -42,6 +43,7 @@ function withoutCacheEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 		TURBO_CACHE: _cache,
 		TURBO_CACHE_DIR: _dir,
 		HOBO_TURBO_CACHE_SHARED: _shared,
+		HOBO_TURBO_CACHE_RUN_SHARED: _runShared,
 		...rest
 	} = env;
 	return rest;
@@ -149,6 +151,31 @@ describe("turbo-cache-prune", () => {
 		assert.equal(planPrune(files("aa", 0), [miss("bb")], NOW, 7).save, false);
 	});
 
+	it("saves only newly written entries for a shared run", () => {
+		const root = workspace(
+			[...ENTRY("aa"), ...ENTRY("bb")],
+			new Map([
+				[
+					"run.json",
+					JSON.stringify({
+						tasks: [
+							{ hash: "aa", cache: { status: "HIT" } },
+							{ hash: "bb", cache: { status: "MISS" } },
+						],
+					}),
+				],
+			]),
+		);
+		assert.equal(
+			prune(root, { HOBO_TURBO_CACHE_RUN_SHARED: "1" }),
+			"save=true\n",
+		);
+		assert.deepEqual(
+			readdirSync(join(root, ".turbo", "cache")).sort(),
+			ENTRY("bb").sort(),
+		);
+	});
+
 	it("deletes nothing and saves nothing without run summaries", () => {
 		assert.deepEqual(planPrune(files("aa", 30), [], NOW, 7), {
 			keep: [],
@@ -239,6 +266,15 @@ describe("turbo-cache-prune", () => {
 		assert.equal(localReadOnly({}), false);
 	});
 
+	it("detects a remote tier in TURBO_CACHE", () => {
+		assert.equal(lacksRemoteTurboCacheTier({}), true);
+		assert.equal(lacksRemoteTurboCacheTier({ TURBO_CACHE: "local:rw" }), true);
+		assert.equal(
+			lacksRemoteTurboCacheTier({ TURBO_CACHE: "local:rw,remote:ro" }),
+			false,
+		);
+	});
+
 	it("prunes the shared host cache by the same rule and never asks to save it", () => {
 		const root = workspace(
 			[],
@@ -262,6 +298,7 @@ describe("turbo-cache-prune", () => {
 			prune(root, {
 				TURBO_CACHE_DIR: shared,
 				HOBO_TURBO_CACHE_SHARED: "1",
+				HOBO_TURBO_CACHE_RUN_SHARED: "1",
 			}),
 			"save=false\n",
 		);

@@ -1,12 +1,12 @@
 ---
 layout: ../../layouts/Docs.astro
-title: Fleet balancing
+title: Runner routing
 description: "How HoBo CI picks a runner provider for a job: eligibility, price ranked by the Dispatcher, then the budget policy, shown on worked decisions."
 ---
 
-# Fleet balancing
+# Runner routing
 
-Given a job and the providers an account has connected, the balancer returns **every provider that could take the job, best first**, and a **coded reason** for each one that could not. Nothing is chosen silently.
+Runner routing chooses a runner *provider* for a job by tier and cost; it is routing, not a fleet. Given a job and the providers an account has connected, the balancer returns **every provider that could take the job, best first**, and a **coded reason** for each one that could not. Nothing is chosen silently.
 
 ## Same path as placement
 
@@ -39,7 +39,7 @@ Each table is the balancer's **real output** for a 20-minute job: the whole cata
 A pull request on a public, organization-owned repository. The box is first because it is already paid for; everything after it is what the job would fall to.
 
 <!-- generated:box-free:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -77,7 +77,7 @@ A pull request on a public, organization-owned repository. The box is first beca
 The box drops out with `fleet.capacity`. The cheapest rented provider that may serve a public repository takes the job: Blacksmith, because the job fits inside its included minutes.
 
 <!-- generated:box-full:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -115,7 +115,7 @@ The box drops out with `fleet.capacity`. The cheapest rented provider that may s
 A private repository's trunk job does not need its own machine, so the shared ARC cluster is allowed, and wins: rented-tier capacity that adds nothing to the bill.
 
 <!-- generated:private-trunk:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -153,7 +153,7 @@ A private repository's trunk job does not need its own machine, so the shared AR
 The job is queued on the label `hobo`. A queued job cannot change its label, so every label provider is out with `fleet.label-bound`; only injected capacity can still reach it.
 
 <!-- generated:queued:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -191,7 +191,7 @@ The job is queued on the label `hobo`. A queued job cannot change its label, so 
 A $5 budget with $5 committed. Every provider that would add to the bill is refused by the budget policy, and the job falls through to capacity that costs nothing.
 
 <!-- generated:budget-spent:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -229,7 +229,7 @@ A $5 budget with $5 committed. Every provider that would add to the bill is refu
 The box has free slots, but its [host health](/HoBo/ci/host-health/) is critical. It is skipped with `fleet.unhealthy`.
 
 <!-- generated:box-unhealthy:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -268,7 +268,7 @@ Three families, all stable. The full list with retry guidance is in [Errors & co
 
 | Family | Raised by | Example |
 |---|---|---|
-| `fleet.` | The fleet's own eligibility and ceilings | `fleet.capacity` |
+| `fleet.` | Runner routing's own eligibility and ceilings (the prefix is kept for compatibility) | `fleet.capacity` |
 | `pricing.` | The pricing engine, with its own code after the prefix | an expired rate |
 | `budget.` | The budget policy, with its own code after the prefix | `budget.policy.exhausted` |
 
@@ -278,14 +278,17 @@ The balancer is a pure function in `@hobo/ci`: no I/O, no clock.
 
 ```ts
 import {
-  balanceFleet,
-  fleetAccountExposure,
-  fleetBudgetPolicy,
-  fleetMembersFromAccount,
+  balanceRunnerProviders,
+  runnerAccountExposure,
+  runnerBudgetPolicy,
+  runnerProvidersFromAccount,
 } from "@hobo/ci";
 
-const decision = balanceFleet({
-  members: fleetMembersFromAccount(account, leases, { poolLabel: "hobo" }),
+const decision = balanceRunnerProviders({
+  members: runnerProvidersFromAccount(account, leases, {
+    poolLabel: "hobo",
+    hoboCapacity: verdict.capacity, // optional: the hobo fleet's FleetCapacity
+  }),
   demand: {
     id: "acme/app:1001:1:1",
     minutes: 20,
@@ -294,8 +297,8 @@ const decision = balanceFleet({
     needsDocker: true,
     isolationRequired: true,
   },
-  policy: fleetBudgetPolicy(account),
-  ...fleetAccountExposure(account, leases),
+  policy: runnerBudgetPolicy(account),
+  ...runnerAccountExposure(account, leases),
   now: new Date().toISOString(),
   allowNewProviderAgreements: false,
 });
@@ -305,15 +308,15 @@ decision.ranking; // every admitted provider, best first
 decision.refusals; // [{ memberId, code, reason }]
 ```
 
-`fleetMembersFromAccount` builds the fleet from the offers an account really has. The **offer** supplies what was observed for that account: rate, included minutes, ceiling. The **model** supplies what does not vary by account: rounding, plan fee, eligibility, tier.
+`runnerProvidersFromAccount` builds the provider list from the offers an account really has. Given the hobo fleet's `FleetCapacity` from its fleet verdict, the hobo provider's health and active jobs are read from it rather than from the relay's own leases. The **offer** supplies what was observed for that account: rate, included minutes, ceiling. The **model** supplies what does not vary by account: rounding, plan fee, eligibility, tier.
 
 ## What balancing is not
 
 - Not admission of a queued job: a job already waiting on `hobo` is still admitted in the existing box → ARC → GitHub order. The balancer decides ahead of the queue.
 - Not a launcher: Agent37, Modal and Boat sandboxes appear in these decisions because they are modelled, but no host driver starts a runner on them yet.
-- Not a health monitor for rented providers: only the box reports its health.
+- Not a health monitor for rented providers: only the hobo fleet reports its health, through its capacity.
 - Not a way to open paid plans: placing a job never subscribes to anything unless policy allows it.
 
 ## Related
 
-[Providers](/HoBo/ci/providers/) · [Route table](/HoBo/ci/route-table/) · [Host health](/HoBo/ci/host-health/) · [Continuous migration](/HoBo/cicd/migration/)
+[Providers](/HoBo/ci/providers/) · [Runner routes](/HoBo/ci/route-table/) · [Host health](/HoBo/ci/host-health/) · [Continuous migration](/HoBo/cicd/migration/)

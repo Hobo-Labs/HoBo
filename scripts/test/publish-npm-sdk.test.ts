@@ -67,9 +67,15 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 			{ workspace: "@hobo/core", public: "@hobo-labs/core", file: "core.tgz" },
 		],
 	};
+	const ownerNpm = (token: string, asked: string[] = []) => ({
+		async resolve(ref: string) {
+			asked.push(ref);
+			return { token };
+		},
+	});
 	const base = {
 		stagingDir: "/tmp/x",
-		token: "npm_fixtureToken",
+		credentials: ownerNpm("npm_fixtureToken"),
 		releaseRef: "v0.0.0-alpha.9",
 		freightHome: "/tmp/cd",
 	};
@@ -84,7 +90,7 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 			publishNpmSdkArtifacts(
 				{
 					stagingDir: base.stagingDir,
-					token: base.token,
+					credentials: base.credentials,
 					releaseRef: base.releaseRef,
 				},
 				{
@@ -99,17 +105,30 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 		expect(signed).toEqual([]);
 	});
 
-	it("refuses without NPM_TOKEN: a scoped name cannot use npm's OIDC exchange, and there is no other publisher", async () => {
+	it("refuses without the owner store's npm token: a scoped name cannot use npm's OIDC exchange, and there is no other publisher", async () => {
+		const deps = {
+			stage: () => staged,
+			whoami: () => {},
+			qualify: async () => qualified,
+		};
+		const asked: string[] = [];
 		await expect(
 			publishNpmSdkArtifacts(
-				{ ...base, token: " " },
-				{
-					stage: () => staged,
-					whoami: () => {},
-					qualify: async () => qualified,
-				},
+				{ ...base, credentials: ownerNpm(" ", asked) },
+				deps,
 			),
-		).rejects.toThrow(/set NPM_TOKEN/);
+		).rejects.toThrow(/owner:\/\/NPM_TOKEN.*choose_secret_store/);
+		expect(asked).toEqual(["owner://NPM_TOKEN"]);
+		await expect(
+			publishNpmSdkArtifacts(
+				{
+					stagingDir: base.stagingDir,
+					releaseRef: base.releaseRef,
+					freightHome: base.freightHome,
+				},
+				deps,
+			),
+		).rejects.toThrow(/never reads from the environment/);
 	});
 
 	it("checks the publisher before anything is signed or recorded", async () => {
@@ -171,6 +190,7 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 		});
 		expect(signed).toEqual(["@hobo-labs/core@0.0.0-alpha.9"]);
 		expect(input?.family).toBe("npm");
+		expect(input?.seams?.credentials).toBe(base.credentials);
 		expect(input?.labels?.["hobo.cd/npm.dist-tag"]).toBe("alpha");
 		expect(
 			input?.stored?.map(({ name, kind, mediaType }) => ({

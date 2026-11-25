@@ -12,16 +12,12 @@ const execute = promisify(execFile);
 it.each([
 	true,
 	false,
-])("uses an independent upstream provider version in the deployment CLI (configured=%s)", async (configured) => {
+])("gates deployment on the verified local relay contract (verified=%s)", async (verified) => {
 	const selected: string[][] = [];
 	const server = createServer((request, response) => {
 		const query = new URL(request.url ?? "", "http://localhost").searchParams;
 		const versions = query.getAll("q[][version]");
 		selected.push(versions);
-		const isGithub = query
-			.getAll("q[][pacticipant]")
-			.includes("GitHubActionsRest");
-		const verified = !isGithub || versions[1] === "upstream-build";
 		response.setHeader("Content-Type", "application/json");
 		response.end(
 			JSON.stringify({
@@ -48,20 +44,15 @@ it.each([
 			"--version",
 			"hobo-build",
 		];
-		if (configured) args.push("--github-version", "upstream-build");
 		const env: NodeJS.ProcessEnv = {
 			...process.env,
 			PACT_BROKER_TOKEN: "",
 			NO_PROXY: `127.0.0.1,localhost,${process.env.NO_PROXY ?? ""}`,
 		};
-		delete env.HOBO_CI_GITHUB_PACT_VERSION;
 		const operation = execute(process.execPath, args, { env, timeout: 15000 });
-		if (configured) await expect(operation).resolves.toHaveProperty("stdout");
+		if (verified) await expect(operation).resolves.toHaveProperty("stdout");
 		else await expect(operation).rejects.toThrow(/Pact deployment blocked/);
-		expect(selected).toEqual([
-			["hobo-build", "hobo-build"],
-			["hobo-build", configured ? "upstream-build" : "unverified"],
-		]);
+		expect(selected).toEqual([["hobo-build", "hobo-build"]]);
 	} finally {
 		await new Promise<void>((done) => server.close(() => done()));
 	}

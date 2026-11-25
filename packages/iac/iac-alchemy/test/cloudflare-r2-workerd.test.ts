@@ -14,6 +14,18 @@ it("runs the actual bounded object client and proxy over workerd R2 and service 
 		path: "cloudflare-r2-protocol.js",
 		contents: source("cloudflare-r2-protocol"),
 	};
+	const dependencies = [
+		"async-boundary",
+		"cloudflare-capacity",
+		"cloudflare-native-promise",
+		"cloudflare-native-await",
+		"cloudflare-byte-stream",
+		"cloudflare-web-options",
+	].map((name) => ({
+		type: "ESModule" as const,
+		path: `${name}.js`,
+		contents: source(name),
+	}));
 	const app = `import { createCloudflareR2Store } from './cloudflare-r2-client.js';
 	import { cloudflareR2Digest } from './cloudflare-r2-protocol.js';
 	export default {async fetch(request,env) {
@@ -38,6 +50,7 @@ it("runs the actual bounded object client and proxy over workerd R2 and service 
 			contents: source("cloudflare-r2-proxy"),
 		},
 		protocol,
+		...dependencies,
 	];
 	const workerd = new Miniflare({
 		compatibilityDate: "2026-01-01",
@@ -52,6 +65,7 @@ it("runs the actual bounded object client and proxy over workerd R2 and service 
 						contents: source("cloudflare-r2-client"),
 					},
 					protocol,
+					...dependencies,
 				],
 				serviceBindings: { PROXY: "proxy", READER: "reader" },
 			},
@@ -83,7 +97,8 @@ it("runs the actual bounded object client and proxy over workerd R2 and service 
 		});
 		const get = (path: string) =>
 			workerd.dispatchFetch(`http://localhost${path}`);
-		expect((await get("/write")).status).toBe(204);
+		const written = await get("/write");
+		expect(written.status, await written.clone().text()).toBe(204);
 		expect(await (await get("/read")).json()).toMatchObject({
 			name: "雪",
 			contentType: "text/plain; charset=utf-8",

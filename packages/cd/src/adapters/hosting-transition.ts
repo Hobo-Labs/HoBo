@@ -30,7 +30,7 @@ import {
 	ResourceObservationSchema,
 } from "../_generated/cd_pb.js";
 import type { CdContext, RealizeInput, Realizer } from "../ports.js";
-import { messageOf, reason } from "../reconcile/errors.js";
+import { reason } from "../reconcile/errors.js";
 
 /** The coordinator operations this realizer drives. */
 export type HostingCoordinator = Readonly<{
@@ -117,8 +117,9 @@ export function transitionStatus(
 		state.phase === HostingTransitionPhase.RESTORED
 	)
 		return blockedVerdict(
-			state.blockedReason ||
-				`hosting transition ${HostingTransitionPhase[state.phase]}`,
+			state.phase === HostingTransitionPhase.RESTORED
+				? "The hosting transition restored the source; the new version did not take effect."
+				: "The hosting transition is blocked.",
 			subject,
 		);
 	return CONVERGING;
@@ -181,9 +182,13 @@ export function createHostingTransitionRealizer(
 			try {
 				const state = await coordinatorFor(input).load(plan.transitionId);
 				return observationFor(input, plan, state);
-			} catch (error) {
+			} catch {
 				return observationFor(input, plan, undefined, [
-					reason("realize-failed", messageOf(error), input.campId),
+					reason(
+						"realize-failed",
+						"The hosting transition could not complete.",
+						input.campId,
+					),
 				]);
 			}
 		},
@@ -216,9 +221,13 @@ export function createHostingTransitionRealizer(
 					if (state.version === before && state.phase === phase) break;
 				}
 				return observationFor(input, plan, state);
-			} catch (error) {
+			} catch {
 				return observationFor(input, plan, undefined, [
-					reason("realize-failed", messageOf(error), input.campId),
+					reason(
+						"realize-failed",
+						"The hosting transition could not complete.",
+						input.campId,
+					),
 				]);
 			}
 		},

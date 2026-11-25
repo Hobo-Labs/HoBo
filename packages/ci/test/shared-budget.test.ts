@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clone, create } from "@bufbuild/protobuf";
 import {
+	type AsyncBudgetAdmissionAuthority,
 	BudgetAdmissionDeniedError,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
@@ -18,6 +19,7 @@ import {
 	parseBudgetPolicy,
 	parseBudgetPolicyJson,
 } from "@hobo/core";
+import fc from "fast-check";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -188,6 +190,22 @@ function durable() {
 		() => second.close(),
 	);
 	return { first, second, path };
+}
+function asyncBudgetAuthority(
+	first: ReturnType<typeof createSqliteBudgetAdmissionAuthority>,
+	claim: typeof first.claimExecution,
+): AsyncBudgetAdmissionAuthority {
+	return {
+		persistence: first.persistence,
+		read: async (at) => first.read(at),
+		lookup: async (id) => first.lookup(id),
+		reserve: async (input) => first.reserve(input),
+		claimExecution: async (input) => claim(input),
+		uncertain: async (id) => first.uncertain(id),
+		settle: async (id, actual, evidence) => first.settle(id, actual, evidence),
+		release: async (id, unused, evidence) =>
+			first.release(id, unused, evidence),
+	};
 }
 function hosting(
 	authority: ReturnType<typeof createSqliteBudgetAdmissionAuthority>,
@@ -464,11 +482,12 @@ describe("CI bridge to the shared hosting financial authority", () => {
 			now: () => NOW,
 		});
 		hooks.reserve(row);
+		expect(checks).toEqual([NOW, NOW]);
 		valid = false;
 		expect(() => hooks.claim(row)).toThrow(
 			"trustworthy provider liability bound",
 		);
-		expect(checks).toEqual([NOW, NOW]);
+		expect(checks).toEqual([NOW, NOW, NOW]);
 		expect(first.lookup(ciReservationId(row))?.executionDigest).toBe("");
 	});
 	it("refuses a strict-to-conservative host override", () => {
@@ -530,6 +549,341 @@ describe("CI bridge to the shared hosting financial authority", () => {
 			/stale|pinned common budget policy|trustworthy provider liability bound/,
 		);
 		expect(providerEffects).toBe(0);
+		expect(first.lookup(ciReservationId(row))?.executionDigest).toBe(
+			ciExecutionDigest(row),
+		);
+		expect(first.read(NOW).reservedMicros).toBe(60);
+	});
+	it.each([
+		["sync", "reserve"],
+		["sync", "claim"],
+		["async", "reserve"],
+		["async", "claim"],
+	] as const)("never treats a %s post-%s callback denial as fallback-safe", async (kind, operation) => {
+		const { first } = durable();
+		const row = lease();
+		row.budgetPolicyDigest = policy("strict");
+		let committed = false;
+		const reserve = (command: Parameters<typeof first.reserve>[0]) => {
+			const result = first.reserve(command);
+			if (operation === "reserve") committed = true;
+			return result;
+		};
+		const claim = (command: Parameters<typeof first.claimExecution>[0]) => {
+			const result = first.claimExecution(command);
+			if (operation === "claim") committed = true;
+			return result;
+		};
+		const options = {
+			quoteLease,
+			now: () => NOW,
+			verifyProviderLiabilityBound: () => {
+				if (committed)
+					throw new BudgetAdmissionDeniedError(
+						"policy.denied",
+						"callback denied",
+					);
+				return true;
+			},
+		};
+		const hooks =
+			kind === "sync"
+				? createCiSharedBudgetHooks({
+						...options,
+						authority: { ...first, reserve, claimExecution: claim },
+					})
+				: createCiAsyncSharedBudgetHooks({
+						...options,
+						authority: {
+							...asyncBudgetAuthority(first, claim),
+							reserve: async (input) => reserve(input),
+						},
+					});
+		if (operation === "claim") await hooks.reserve(row);
+		let failure: Error | undefined;
+		try {
+			await (operation === "reserve" ? hooks.reserve(row) : hooks.claim(row));
+		} catch (error) {
+			if (error instanceof Error) failure = error;
+			else throw error;
+		}
+		expect(failure?.message).toMatch(/committed; reconcile/);
+		expect(failure).not.toBeInstanceOf(BudgetAdmissionDeniedError);
+		expect(first.lookup(ciReservationId(row))?.executionDigest).toBe(
+			operation === "claim" ? ciExecutionDigest(row) : "",
+		);
+		expect(first.read(NOW).reservedMicros).toBe(60);
+	});
+	it.each([
+		["sync", "quote"],
+		["sync", "native-bound"],
+		["sync", "coverage"],
+		["async", "quote"],
+		["async", "native-bound"],
+		["async", "coverage"],
+	] as const)("rechecks %s reservation evidence for %s after commit", async (kind, invalidated) => {
+		const { first } = durable();
+		const row = lease();
+		row.budgetPolicyDigest = policy("strict");
+		row.reservedFreeMinutes = 0.5;
+		let now = NOW;
+		let valid = true;
+		const reserve = (command: Parameters<typeof first.reserve>[0]) => {
+			const result = first.reserve(command);
+			if (invalidated === "quote") now = UNTIL;
+			else valid = false;
+			return result;
+		};
+		const options = {
+			quoteLease,
+			now: () => now,
+			verifyProviderLiabilityBound: () =>
+				invalidated !== "native-bound" || valid,
+			verifyAllocationCoverage: (
+				candidate: Lease,
+				quote: HostingQuote,
+				ledger: BudgetLedgerSnapshot,
+			) =>
+				(invalidated !== "coverage" || valid) &&
+				runnerCoverage(candidate, quote, ledger),
+		};
+		const hooks =
+			kind === "sync"
+				? createCiSharedBudgetHooks({
+						...options,
+						authority: { ...first, reserve },
+					})
+				: createCiAsyncSharedBudgetHooks({
+						...options,
+						authority: {
+							...asyncBudgetAuthority(first, first.claimExecution),
+							reserve: async (input) => reserve(input),
+						},
+					});
+		let failure: Error | undefined;
+		try {
+			await hooks.reserve(row);
+		} catch (error) {
+			if (error instanceof Error) failure = error;
+			else throw error;
+		}
+		expect(failure?.message).toMatch(
+			/stale|trustworthy provider liability bound|allocation coverage/,
+		);
+		expect(failure).not.toBeInstanceOf(BudgetAdmissionDeniedError);
+		expect(first.lookup(ciReservationId(row))?.executionDigest).toBe("");
+		expect(first.read(NOW).reservedMicros).toBe(60);
+	});
+	it.each([
+		"sync",
+		"async",
+	] as const)("rechecks the full fixed-window duration after a %s parent reservation waits", async (kind) => {
+		await fc.assert(
+			fc.asyncProperty(
+				fc.oneof(
+					fc.constantFrom(
+						[0, 0] as const,
+						[0, 1] as const,
+						[1000, 1000] as const,
+						[1000, 1001] as const,
+					),
+					fc.tuple(
+						fc.integer({ min: 0, max: 5000 }),
+						fc.integer({ min: 0, max: 5000 }),
+					),
+				),
+				async ([slackMs, delayMs]) => {
+					const directory = mkdtempSync(
+						join(tmpdir(), "hobo-ci-reserve-window-"),
+					);
+					const first = createSqliteBudgetAdmissionAuthority({
+						path: join(directory, "parent.sqlite"),
+						snapshot: snapshot(),
+						now: () => NOW,
+					});
+					try {
+						const row = lease();
+						row.budgetPolicyDigest = canonicalBudgetPolicyJson(
+							parseBudgetPolicyJson(
+								JSON.stringify({
+									...parseBudgetPolicyJson(policy("strict")),
+									periodKind: "fixed-window",
+									periodStartsAtMs: Date.parse(NOW) - 1,
+									periodEndsAtMs: Date.parse(NOW) + 60000 + slackMs,
+								}),
+							),
+						);
+						let now = NOW;
+						const reserve = (command: Parameters<typeof first.reserve>[0]) => {
+							const result = first.reserve(command);
+							now = new Date(Date.parse(NOW) + delayMs).toISOString();
+							return result;
+						};
+						const options = {
+							quoteLease,
+							now: () => now,
+							verifyProviderLiabilityBound: () => true,
+						};
+						const hooks =
+							kind === "sync"
+								? createCiSharedBudgetHooks({
+										...options,
+										authority: { ...first, reserve },
+									})
+								: createCiAsyncSharedBudgetHooks({
+										...options,
+										authority: {
+											...asyncBudgetAuthority(first, first.claimExecution),
+											reserve: async (input) => reserve(input),
+										},
+									});
+						if (delayMs <= slackMs)
+							await expect(
+								Promise.resolve(hooks.reserve(row)),
+							).resolves.toBeDefined();
+						else {
+							let failure: Error | undefined;
+							try {
+								await hooks.reserve(row);
+							} catch (error) {
+								if (error instanceof Error) failure = error;
+								else throw error;
+							}
+							expect(failure?.message).toMatch(/budget.policy.period/);
+							expect(failure).not.toBeInstanceOf(BudgetAdmissionDeniedError);
+						}
+						expect(first.lookup(ciReservationId(row))?.executionDigest).toBe(
+							"",
+						);
+						expect(first.read(NOW).reservedMicros).toBe(60);
+					} finally {
+						first.close();
+						rmSync(directory, { recursive: true, force: true });
+					}
+				},
+			),
+			{ seed: 614455, numRuns: 40 },
+		);
+	}, 60_000);
+	it.each([
+		"sync",
+		"async",
+	] as const)("rechecks the full fixed-window duration after a %s parent claim waits", async (kind) => {
+		await fc.assert(
+			fc.asyncProperty(
+				fc.oneof(
+					fc.constantFrom(
+						[0, 0] as const,
+						[0, 1] as const,
+						[1000, 1000] as const,
+						[1000, 1001] as const,
+					),
+					fc.tuple(
+						fc.integer({ min: 0, max: 5000 }),
+						fc.integer({ min: 0, max: 5000 }),
+					),
+				),
+				async ([slackMs, delayMs]) => {
+					const directory = mkdtempSync(join(tmpdir(), "hobo-ci-window-"));
+					const first = createSqliteBudgetAdmissionAuthority({
+						path: join(directory, "parent.sqlite"),
+						snapshot: snapshot(),
+						now: () => NOW,
+					});
+					try {
+						const row = lease();
+						row.budgetPolicyDigest = canonicalBudgetPolicyJson(
+							parseBudgetPolicyJson(
+								JSON.stringify({
+									...parseBudgetPolicyJson(policy("strict")),
+									periodKind: "fixed-window",
+									periodStartsAtMs: Date.parse(NOW) - 1,
+									periodEndsAtMs: Date.parse(NOW) + 60000 + slackMs,
+								}),
+							),
+						);
+						let now = NOW;
+						const claim = (
+							command: Parameters<typeof first.claimExecution>[0],
+						) => {
+							const result = first.claimExecution(command);
+							now = new Date(Date.parse(NOW) + delayMs).toISOString();
+							return result;
+						};
+						const sync = { ...first, claimExecution: claim };
+						const asyncAuthority = asyncBudgetAuthority(first, claim);
+						const options = {
+							quoteLease,
+							now: () => now,
+							verifyProviderLiabilityBound: () => true,
+						};
+						const hooks =
+							kind === "sync"
+								? createCiSharedBudgetHooks({ ...options, authority: sync })
+								: createCiAsyncSharedBudgetHooks({
+										...options,
+										authority: asyncAuthority,
+									});
+						await hooks.reserve(row);
+						if (delayMs <= slackMs)
+							await expect(
+								Promise.resolve(hooks.claim(row)),
+							).resolves.toBeDefined();
+						else
+							await expect(async () => hooks.claim(row)).rejects.toThrow(
+								/budget.policy.period/,
+							);
+						expect(first.lookup(ciReservationId(row))?.executionDigest).toBe(
+							ciExecutionDigest(row),
+						);
+						expect(first.read(NOW).reservedMicros).toBe(60);
+					} finally {
+						first.close();
+						rmSync(directory, { recursive: true, force: true });
+					}
+				},
+			),
+			{ seed: 614454, numRuns: 40 },
+		);
+	}, 60_000);
+	it.each([
+		"sync",
+		"async",
+	] as const)("rechecks allocation coverage after a %s claim", async (kind) => {
+		const { first } = durable();
+		const row = lease();
+		row.budgetPolicyDigest = policy("strict");
+		row.reservedFreeMinutes = 0.5;
+		let coverageValid = true;
+		const claim = (command: Parameters<typeof first.claimExecution>[0]) => {
+			const result = first.claimExecution(command);
+			coverageValid = false;
+			return result;
+		};
+		const options = {
+			quoteLease,
+			now: () => NOW,
+			verifyProviderLiabilityBound: () => true,
+			verifyAllocationCoverage: (
+				candidate: Lease,
+				quote: HostingQuote,
+				ledger: BudgetLedgerSnapshot,
+			) => coverageValid && runnerCoverage(candidate, quote, ledger),
+		};
+		const hooks =
+			kind === "sync"
+				? createCiSharedBudgetHooks({
+						...options,
+						authority: { ...first, claimExecution: claim },
+					})
+				: createCiAsyncSharedBudgetHooks({
+						...options,
+						authority: asyncBudgetAuthority(first, claim),
+					});
+		await hooks.reserve(row);
+		await expect(async () => hooks.claim(row)).rejects.toThrow(
+			/allocation coverage/,
+		);
 		expect(first.lookup(ciReservationId(row))?.executionDigest).toBe(
 			ciExecutionDigest(row),
 		);
@@ -1012,6 +1366,109 @@ it.skipIf(!process.env.HOBO_TEST_POSTGRES_URL)(
 			spentMicros: 80,
 			reservedMicros: 40,
 		});
+	},
+);
+
+it.skipIf(!process.env.HOBO_TEST_POSTGRES_URL)(
+	"keeps a PostgreSQL reservation held when lock delay consumes the funded window",
+	async () => {
+		const pool = new Pool({
+			connectionString: process.env.HOBO_TEST_POSTGRES_URL,
+		});
+		livePools.push(pool);
+		const base = snapshot();
+		if (!base.identity) throw new Error("fixture identity missing");
+		base.identity.budgetId = randomUUID();
+		const row = lease();
+		row.budgetId = base.identity.budgetId;
+		row.budgetPolicyDigest = canonicalBudgetPolicyJson(
+			parseBudgetPolicyJson(
+				JSON.stringify({
+					...parseBudgetPolicyJson(policy("strict")),
+					budgetId: row.budgetId,
+					periodKind: "fixed-window",
+					periodStartsAtMs: Date.parse(NOW) - 1,
+					periodEndsAtMs: Date.parse(NOW) + 60000,
+				}),
+			),
+		);
+		const parent = createPostgresBudgetAdmissionAuthority({
+			pool,
+			snapshot: base,
+			now: () => NOW,
+		});
+		let now = NOW;
+		const authority: AsyncBudgetAdmissionAuthority = {
+			...parent,
+			async reserve(command) {
+				const result = await parent.reserve(command);
+				now = new Date(Date.parse(NOW) + 1).toISOString();
+				return result;
+			},
+		};
+		const hooks = createCiAsyncSharedBudgetHooks({
+			authority,
+			quoteLease,
+			now: () => now,
+			verifyProviderLiabilityBound: () => true,
+		});
+		await expect(hooks.reserve(row)).rejects.toThrow(/budget.policy.period/);
+		expect((await parent.lookup(ciReservationId(row)))?.executionDigest).toBe(
+			"",
+		);
+		expect((await parent.read(NOW)).reservedMicros).toBe(60);
+	},
+);
+
+it.skipIf(!process.env.HOBO_TEST_POSTGRES_URL)(
+	"keeps a PostgreSQL claim held when lock delay consumes the funded window",
+	async () => {
+		const pool = new Pool({
+			connectionString: process.env.HOBO_TEST_POSTGRES_URL,
+		});
+		livePools.push(pool);
+		const base = snapshot();
+		if (!base.identity) throw new Error("fixture identity missing");
+		base.identity.budgetId = randomUUID();
+		const row = lease();
+		row.budgetId = base.identity.budgetId;
+		row.budgetPolicyDigest = canonicalBudgetPolicyJson(
+			parseBudgetPolicyJson(
+				JSON.stringify({
+					...parseBudgetPolicyJson(policy("strict")),
+					budgetId: row.budgetId,
+					periodKind: "fixed-window",
+					periodStartsAtMs: Date.parse(NOW) - 1,
+					periodEndsAtMs: Date.parse(NOW) + 60000,
+				}),
+			),
+		);
+		const parent = createPostgresBudgetAdmissionAuthority({
+			pool,
+			snapshot: base,
+			now: () => NOW,
+		});
+		let now = NOW;
+		const authority: AsyncBudgetAdmissionAuthority = {
+			...parent,
+			async claimExecution(command) {
+				const result = await parent.claimExecution(command);
+				now = new Date(Date.parse(NOW) + 1).toISOString();
+				return result;
+			},
+		};
+		const hooks = createCiAsyncSharedBudgetHooks({
+			authority,
+			quoteLease,
+			now: () => now,
+			verifyProviderLiabilityBound: () => true,
+		});
+		await hooks.reserve(row);
+		await expect(hooks.claim(row)).rejects.toThrow(/budget.policy.period/);
+		expect((await parent.lookup(ciReservationId(row)))?.executionDigest).toBe(
+			ciExecutionDigest(row),
+		);
+		expect((await parent.read(NOW)).reservedMicros).toBe(60);
 	},
 );
 

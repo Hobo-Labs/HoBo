@@ -4,6 +4,8 @@ import {
 	CI_PROJECT_PROVIDERS_SCHEMA_REF,
 	CiProjectProviderSchema,
 } from "./project-providers.js";
+import { RelayJobsSettingsSchema } from "./relay-answer/ci-file.js";
+import { ChecksBlock } from "./relay-checks/config.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
 import { RunnerOrderDocumentSchema } from "./runner-order-config.js";
 import { RunnerRoutingSchema } from "./runner-routing.js";
@@ -229,6 +231,39 @@ export const TurboCacheSchema = z
 	})
 	.strict()
 	.meta({ id: "TurboCache" });
+const absoluteHostPath = z
+	.string()
+	.min(2)
+	.max(1024)
+	.regex(/^\/[^\0]*$/u);
+
+export const BoxMemberSettingsSchema = z
+	.object({
+		authorityUrl: z
+			.string()
+			.max(2048)
+			.regex(
+				/^https:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:\/[A-Za-z0-9._~/-]*)?$/u,
+			),
+		fleet: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/u),
+		tenant: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u),
+		region: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/u),
+		memberName: z
+			.string()
+			.regex(/^[a-z0-9][a-z0-9_-]{0,62}$/u)
+			.optional(),
+		sandbox: z
+			.object({
+				runtime: absoluteHostPath.optional(),
+				cache: absoluteHostPath.optional(),
+				download: z.boolean().optional(),
+			})
+			.strict()
+			.optional(),
+	})
+	.strict()
+	.meta({ id: "BoxMemberSettings" });
+
 export const CiProjectDocumentSchema = z
 	.object({
 		$schema: z.string().max(2048).optional(),
@@ -264,6 +299,7 @@ export const CiProjectDocumentSchema = z
 		runnerRouting: RunnerRoutingSchema.optional(),
 
 		runnerOrder: RunnerOrderDocumentSchema.optional(),
+		fleet: BoxMemberSettingsSchema.optional(),
 		/**
 		 * The shared Turborepo cache (`.github/actions/turbo-cache`). `api` is
 		 * the base URL of a self-hosted cache server
@@ -272,6 +308,8 @@ export const CiProjectDocumentSchema = z
 		 * repository variable carries it (ADR-0181).
 		 */
 		turboCache: TurboCacheSchema.optional(),
+		relayJobs: RelayJobsSettingsSchema.optional(),
+		checks: ChecksBlock.optional(),
 	})
 	.strict();
 
@@ -373,8 +411,11 @@ export function resolveCiProjectReferences(
 		integrations: _integrations,
 		agent: _agent,
 		runnerRouting: _runnerRouting,
+		fleet: _fleet,
 		runnerOrder: _runnerOrder,
 		turboCache: _turboCache,
+		relayJobs: _relayJobs,
+		checks: _checks,
 		...document
 	} = input;
 	return expand(z.json().parse(document), 0);

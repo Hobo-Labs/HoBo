@@ -7,6 +7,7 @@ import {
 	HookPoint,
 	type HookRecord,
 	HookRecordSchema,
+	ReasonRecordSchema,
 } from "../../src/_generated/cd_pb.js";
 import { createHookRunner, HOOK_REASON } from "../../src/adapters/hooks.js";
 import {
@@ -109,6 +110,48 @@ describe("hook runner", () => {
 		expect(r.notify.sent.map((s) => s.channel)).toEqual(["ops"]);
 	});
 
+	it.each([
+		[HookKind.RUNBOOK, "returned"],
+		[HookKind.RUNBOOK, "thrown"],
+		[HookKind.SUITE, "returned"],
+		[HookKind.SUITE, "thrown"],
+	] as const)("redacts a private hook failure", async (kind, mode) => {
+		const marker = "synthetic-private-provider.invalid";
+		const run = async () => {
+			if (mode === "thrown") throw new Error(marker);
+			return {
+				ok: false as const,
+				reasons: [
+					create(ReasonRecordSchema, { code: "fixture", message: marker }),
+				],
+			};
+		};
+		const hooks = createHookRunner({
+			runbooks: { run },
+			suites: { run },
+			notify: new FakeNotify(),
+			telemetry: new RecordingTelemetry(),
+		});
+		const out = await hooks.run(
+			{
+				hooks: [hook(kind, HookPoint.BEFORE_APPLY, "fixture")],
+				point: HookPoint.BEFORE_APPLY,
+				subject,
+			},
+			context(() => T0),
+		);
+		expect(out.ok).toBe(false);
+		if (!out.ok) {
+			expect(out.reasons[0]?.code).toBe(
+				kind === HookKind.SUITE
+					? HOOK_REASON.suiteFailed
+					: HOOK_REASON.runbookFailed,
+			);
+			expect(out.reasons[0]?.remediation).toBeTruthy();
+		}
+		expect(JSON.stringify(out)).not.toContain(marker);
+	});
+
 	it("NOTIFY is best-effort; an unknown kind fails the point", async () => {
 		const r = runner();
 		r.notify.notify = async () => {
@@ -142,6 +185,35 @@ describe("Trails adapter", () => {
 	const freight = create(FreightRecordSchema, {
 		freightId: "f1",
 		manifest: { labels: { [MIGRATION_LABEL]: "orders-v2" } },
+	});
+
+	it.each([
+		"thrown",
+		"blocked",
+	] as const)("redacts a private migration failure", async (mode) => {
+		const marker = "synthetic-private-provider.invalid";
+		const trails = createTrailsMigrations({
+			execute: async () => {
+				if (mode === "thrown") throw new Error(marker);
+				return {
+					status: "held",
+					dualWindowOpen: false,
+					blockedReasons: [marker],
+				};
+			},
+		});
+		const out = await trails.run(
+			{ migrationId: "fixture", campId: camp("dev-1"), phase: "contract" },
+			context(() => T0),
+		);
+		expect(out.ok).toBe(false);
+		if (!out.ok) {
+			expect(out.reasons[0]?.code).toBe(
+				mode === "thrown" ? TRAILS_REASON.error : TRAILS_REASON.held,
+			);
+			expect(out.reasons[0]?.remediation).toBeTruthy();
+		}
+		expect(JSON.stringify(out)).not.toContain(marker);
 	});
 
 	it("reads the migration from the Freight label by default", async () => {

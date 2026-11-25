@@ -574,6 +574,21 @@ export function selectRelevantChecks(
 		checks.push({
 			command: "pnpm",
 			args: [
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				...draftWorkspaces.map((workspace) => `--filter=./${workspace}^...`),
+				"--output-logs=new-only",
+				turboConcurrencyArg(),
+			],
+			reason:
+				"build the workspace packages changed proofs import before running their examples",
+			serial: true,
+		});
+		checks.push({
+			command: "pnpm",
+			args: [
 				"run",
 				staged ? "draft:artifacts:staged" : "draft:artifacts",
 				"--",
@@ -738,6 +753,7 @@ export function selectRelevantChecks(
 				file === "scripts/test/read-stdin.test.ts" ||
 				file === "scripts/test/job-scope.test.ts" ||
 				file === "scripts/ci/job-scope.mts" ||
+				file === "scripts/ci/state-machine-scope.mts" ||
 				file === "scripts/ci/dependent-tests.mts" ||
 				file === "scripts/ci/impact-classifier.mts",
 		)
@@ -753,6 +769,51 @@ export function selectRelevantChecks(
 			],
 			reason:
 				"changed-path stdin readers must keep surviving a late writer on a non-blocking pipe (EAGAIN)",
+		});
+	}
+
+	if (
+		files.some(
+			(file) =>
+				file === "scripts/ci/state-machine-scope.mts" ||
+				file === "scripts/test/state-machine-scope.test.ts" ||
+				file === "scripts/ci/job-scope.mts" ||
+				file === "scripts/ci/affected-lanes.mts" ||
+				file === "scripts/verify-all-state-machines.sh" ||
+				file === "scripts/verify-state-machine.sh" ||
+				file.startsWith(".agents/skills/verify-"),
+		)
+	) {
+		checks.push({
+			command: "node",
+			args: [
+				"--import",
+				"tsx",
+				"--test",
+				"scripts/test/state-machine-scope.test.ts",
+			],
+			reason:
+				"the PR impact plan skips state-machine verification only when no changed path reaches the verification skills",
+		});
+	}
+
+	if (
+		files.some(
+			(file) =>
+				file === "scripts/verify-all-state-machines.sh" ||
+				file === "scripts/test/verify-all-state-machines.test.ts",
+		)
+	) {
+		checks.push({
+			command: "node",
+			args: [
+				"--import",
+				"tsx",
+				"--test",
+				"scripts/test/verify-all-state-machines.test.ts",
+			],
+			reason:
+				"the aggregate state-machine verifier must keep its selection, shards and bounded parallel jobs",
 		});
 	}
 
@@ -795,7 +856,14 @@ export function selectRelevantChecks(
 		});
 	}
 
-	if (behaviorChanged) {
+	const parityChanged = touchedAny([
+		/^features\/hobo-ci-parity\//u,
+		/^docs\/ci\/parity-scorecard\.md$/u,
+		/^scripts\/ci\/parity-scorecard\.mts$/u,
+		/^packages\/(ci|ci-gh-actions|ci-dashboard)\/(src|test\/support)\//u,
+		/^packages\/hobo\/(src\/ci-|test\/support\/ci-)/u,
+	]);
+	if (behaviorChanged || parityChanged) {
 		checks.push({
 			command: "pnpm",
 			args: [
@@ -809,6 +877,10 @@ export function selectRelevantChecks(
 				// packages from source; their dependencies resolve through dist/.
 				"--filter=@hobo/conformance^...",
 				"--filter=@hobo/example-cd-conformance-kit^...",
+				"--filter=@hobo/hobo^...",
+				"--filter=@hobo/ci-gh-actions^...",
+				"--filter=@hobo/ci-dashboard^...",
+				"--filter=@hobo/fleet-authority...",
 				"--output-logs=new-only",
 				"--concurrency=100%",
 			],
@@ -816,12 +888,20 @@ export function selectRelevantChecks(
 				"behavior steps import the proofs' and root steps' workspace dependencies from dist, which a scoped run has not built",
 			serial: true,
 		});
+	}
+	if (behaviorChanged)
 		checks.push({
 			command: "pnpm",
 			args: ["run", "test:behavior"],
 			reason: "browser-driven behavior specs; never full-stack E2E",
 		});
-	}
+	if (parityChanged)
+		checks.push({
+			command: "pnpm",
+			args: ["run", "ci:parity-scorecard:check"],
+			reason:
+				"the parity scorecard is generated from the parity scenarios and must not go stale",
+		});
 	if (visualChanged)
 		checks.push({
 			command: "pnpm",

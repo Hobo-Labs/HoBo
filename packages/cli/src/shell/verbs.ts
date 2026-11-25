@@ -70,6 +70,12 @@ export const CANONICAL_VERBS: readonly Verb[] = [
 			"Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy",
 	},
 	{
+		name: "fleet",
+		role: "control plane",
+		summary:
+			"Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)",
+	},
+	{
 		name: "incident",
 		role: "delivery",
 		summary: "CD failure disposition: A2H handoff or sandboxed self-heal",
@@ -245,6 +251,7 @@ export const projectScopedVerbs = new Set(
 
 				"ci",
 				"cd",
+				"fleet",
 				"claim",
 				"identity",
 				"trails",
@@ -370,7 +377,17 @@ Usage:
   hobo ci diagnose [run]           Why a run's jobs failed, and whether a re-run is likely to help
   hobo ci route                    Answer one relay job against the runner order and show the walk
                                    (see route options)
+  hobo ci machine status [<id>]    Connected machines: online, paused, busy slots, sharing
+  hobo ci machine pause <id>       Take no new jobs on a machine; running jobs finish (resume undoes it)
+  hobo ci machine share <id> <who> Take jobs for only_me or anyone who may read the repository
+  hobo ci machine remove <id>      Forget a machine and its key at once
+  hobo ci machine connect --repo <owner/name>
+                                   Run jobs routed to this computer, each in a fresh container; Ctrl-C drains
   hobo ci status                  Inspect the relay connection
+  hobo ci provider-health          Hosted runner types the relay stopped routing to; clear <provider> <label> lets one through
+  hobo ci activity                 Each relay job from the relay's journal: where it ran and why (--since, --runner, --outcome)
+  hobo ci usage                    Billed minutes, short jobs, minutes kept off GitHub and the included minutes left (--source github)
+  hobo ci performance              Workflow, job and runner times against ubuntu-latest, and the signals by slice and day
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
   hobo ci secret-store plan       Choose the relay's config/secret store for this deployment
@@ -395,7 +412,6 @@ Connection options:
   --remote <name>              Select the Git remote
   --repo <owner/repository>    Select a GitHub repository explicitly
   --relay <https-origin>      Select the HoBo CI relay
-  --token-file <path>         Read the account credential from a file
   --installation-id <id>      Select an installed GitHub App
   --accept-all-matching-jobs  Allow isolated runners for matching repository jobs
   -y, --yes                   Skip the connection confirmation
@@ -420,7 +436,7 @@ Integration options (hobo ci connect <provider>):
   --runs-on <label>           Runner label (repeatable)
   --org <github-org>          GitHub organization the provider app is installed on
   --project-id <id>           Depot project for OIDC trust relationships
-  --secret-ref <ref>          github-secret:NAME or env:NAME (a reference, never a value)
+  --secret-ref <ref>          owner://NAME in the owner's store (a reference, never a value)
   --id <name>                 Integration id (default: provider)
   --config <path>             Alternate ci.json path
   --dry-run                   Print the entry without writing
@@ -530,9 +546,11 @@ Run options:
 unstructured; use --grep for text filtering.
 
 Use runs-on: hobo in a GitHub Actions workflow, then push a commit.
-Authentication: HOBO_CI_ACCOUNT_TOKEN, HOBO_CI_ACCOUNT_TOKEN_FILE or --token-file.
+Authentication: owner://HOBO_CI_ACCOUNT_TOKEN from the owner's store session
+(HoBo MCP choose_secret_store); no token file or environment variable is read.
 Relay selection: --relay or HOBO_CI_RELAY_URL on first connection. Run commands
-use the authenticated GitHub CLI (gh). Credentials are never written to the
+read GitHub with installation tokens of HoBo's GitHub App (hobo ci app create)
+minted from the owner's store session. Credentials are never written to the
 repository. Use --json, --format json or -F json for machine-readable output.
 HoBo runs existing Actions workflows; Vercel's Turbo task tags and invocation
 IDs do not apply.
@@ -567,8 +585,10 @@ Promotion:
   hobo deploy preview create <freight> --source-camp <camp> | preview list
   hobo deploy verify show <verification-id>
   hobo deploy metrics [--window-ms <ms>]
-Agents (double opt-in):
+Agents (double opt-in; a reconciler is a fleet device with role RECONCILER):
   hobo deploy agent token|enroll|approve-key|accept|run|revoke
+  aliases of hobo fleet token create|enroll --token-file|member approve|
+  member accept|run|member revoke; --token <value> is refused
 Fleet and policy:
   hobo deploy campset define|list
   hobo deploy camp list|show|taint|untaint|manage
@@ -725,6 +745,7 @@ Example:
 
 Usage:
   hobo login [global flags] [--home <path>] [--broker <uri>]
+  hobo login --relay <https-origin>
 
 Role: ${verb.role}
 ${statusLine}
@@ -732,8 +753,14 @@ Obtain a dev session/identity context and persist it to .hobo/session.json
 so hobo up / hobo down run under it. --broker targets a remote Conductor
 endpoint (--broker-uri is an accepted alias).
 
+--relay signs in to an already configured HoBo CI relay instead: the owner
+confirms one code at GitHub, and the session lives only in this process's
+memory; nothing is written. hobo ci and hobo cd take --relay <https-origin>
+to sign in the same way when a credential is first needed.
+
 Example:
   hobo login
+  hobo login --relay https://relay.example
 `;
 	}
 
