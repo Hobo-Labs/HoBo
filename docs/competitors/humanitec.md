@@ -245,7 +245,7 @@ Drivers are the core extension (HTTP PUT/DELETE implementing the driver interfac
 ## How it competes with HoBo
 
 Humanitec is the **direct architectural ancestor** of HoBo's matching layer, and remains its most
-direct competitor on that surface. [`lineage.md`](../design/lineage.md) records it as a
+direct competitor on that surface. [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records it as a
 pillar-adjacent borrow-source, and this capture does not soften that: the Resource
 Definitions + Matching + Drivers + Sets/Deltas engine is the shape HoBo adopted.
 
@@ -371,7 +371,7 @@ for HoBo's honest coverage caveats.
 
 - **Borrow** — already done, and worth stating plainly: Resource Definitions + Matching, the Driver
   taxonomy, Deployment Sets/Deltas, and the Agent's outbound-only tunnel are all recorded as
-  borrow-sources in [`lineage.md`](../design/lineage.md). Humanitec is the single largest influence
+  borrow-sources in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md). Humanitec is the single largest influence
   on HoBo's platform-engineering layer.
 - **Displace** — for the buyer who wants an orchestrator, this is the incumbent to unseat, on
   auditability, runtime breadth and openness rather than on the core abstraction.

@@ -64,7 +64,7 @@ The mental model has three pieces:
 
 The mental model is **the same API everywhere, with the implementation swapped by configuration**.
 An application calls "save state"; which store answers is a YAML file. That is the goal HoBo shares,
-and [`lineage.md`](../design/lineage.md) records Dapr as the closest architectural analog.
+and [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records Dapr as the closest architectural analog.
 
 ## How it competes with HoBo
 
@@ -225,7 +225,7 @@ the [live provider matrix](../design/live-provider-matrix.md) for HoBo's honest 
 
 ## Better-together / integration posture
 
-- **Borrow** — recorded in [`lineage.md`](../design/lineage.md): the building-block goal is HoBo's
+- **Borrow** — recorded in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md): the building-block goal is HoBo's
   goal. This capture adds a second borrow worth making explicit — **declarative resiliency policy**
   is a shipped precedent for HoBo's `ResilienceProfile` (ADR-0136).
 - **Standard** — the building-block vocabulary is worth speaking at the boundary.
@@ -250,7 +250,7 @@ the [live provider matrix](../design/live-provider-matrix.md) for HoBo's honest 
 
 - [docs.dapr.io](https://docs.dapr.io/) and [building blocks](https://docs.dapr.io/concepts/building-blocks-concept/) — building blocks, components, sidecar, actors, workflows, resiliency
 - [dapr/dapr](https://github.com/dapr/dapr) — source, CNCF graduated project
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Dapr as the closest architectural analog
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records Dapr as the closest architectural analog
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current component catalog size and per-building-block maturity were not

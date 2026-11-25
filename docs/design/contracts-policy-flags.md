@@ -9,7 +9,7 @@ tags: [hobo, design]
 
 This capability doc covers three planes — contracts (the `can-deploy` gate), the policy plane (decisions, obligations & gates), and feature flags & progressive delivery.
 
-### Effects on contracts + visible resiliency ([ADR-0136](./adr/03-data-plane-effects-resiliency.md))
+### Effects on contracts + visible resiliency ([ADR-0136](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md))
 
 Boundary contracts may declare an optional **EffectSpec** (Verse-inspired purity
 lattice + domain I/O effects) and an optional **ResilienceProfile** (secondary

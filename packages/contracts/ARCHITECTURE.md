@@ -21,7 +21,7 @@ is that dimension.
   machine-readable reasons; a removed field a consumer depends on is a breaking
   change, an added field is safe. Optional **EffectSpec** (Verse-inspired purity
   lattice + domain I/O effects) and **ResilienceProfile** (secondary resiliency
-  metadata) fields are first-class ([ADR-0136](../../docs/design/adr/03-data-plane-effects-resiliency.md));
+  metadata) fields are first-class ([ADR-0136](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md));
   effect widening is breaking when effects are declared. Lattice helpers live in
   [`src/effects.ts`](./src/effects.ts); resiliency applicator in
   [`src/resilience.ts`](./src/resilience.ts); describe/export in

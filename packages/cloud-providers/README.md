@@ -151,7 +151,7 @@ per entry. No prices or free-tier allowances are recorded. Amazon Aurora DSQL
 is recorded in `POSTGRES_BACKEND_EXCLUSIONS` rather than given a provider id,
 because it is PostgreSQL-compatible rather than PostgreSQL. The full table, the
 naming decision and the sources' date are in
-[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
+[`docs/design/postgres-backend-catalog.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/postgres-backend-catalog.md).
 
 ## Self-hosted PostgreSQL: which registered providers could host it
 
@@ -183,7 +183,7 @@ publish `*_HOST_FORMS`: cited, per-product statements about products
 they already declare, read here unchanged. An `undetermined` is resolved by
 citing the missing facets in that provider's host forms, never by
 special-casing the provider here. Citations per facet are in
-[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
+[`docs/design/postgres-backend-catalog.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/postgres-backend-catalog.md).
 
 ## HONEST SCOPE
 

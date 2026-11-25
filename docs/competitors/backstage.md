@@ -71,7 +71,7 @@ decision that produced Roadie and Red Hat Developer Hub as businesses.
 
 ## How it competes with HoBo
 
-Backstage is **complementary by construction**, and [`lineage.md`](../design/lineage.md) already
+Backstage is **complementary by construction**, and [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) already
 records the posture: a portal HoBo should feed, not replace.
 
 | Contested HoBo surface | The contest |
@@ -350,7 +350,7 @@ Credit where due: **Backstage's plugin ecosystem (140+ marketplace + large commu
 
 - [backstage.io](https://backstage.io/) and [what is Backstage](https://backstage.io/docs/overview/what-is-backstage/) — framework positioning, catalog, TechDocs, templates, plugins
 - [backstage/backstage](https://github.com/backstage/backstage) — source, Apache-2.0, CNCF project status
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Backstage as a complementary portal, not a rival
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records Backstage as a complementary portal, not a rival
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current plugin-ecosystem size, release cadence and the Spotify Portal

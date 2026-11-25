@@ -213,7 +213,7 @@ as gated saga steps over a real store (ADR-0032 §3-4), delivered as
    [ADR-0177](./adr/03-data-plane.md#adr-0177):** the SQLite binding moved to
    `@hobo/data-sqlite`, `@hobo/data-postgres` and `@hobo/data-mongodb` implement the same
    `@hobo/data-core` contract, and `@hobo/trails` imports no engine
-   ([data-engines-continuous-migration](./data-engines-continuous-migration.md)).
+   ([data-engines-continuous-migration](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md)).
 
 ## M3 Release Candidate Evidence
 
@@ -260,12 +260,12 @@ Accepted state: schema-evolution safety is a CI gate, and the evidence mapping i
    SQLite-shaped fixtures — is addressed by [ADR-0177](./adr/03-data-plane.md#adr-0177): real
    change capture for PostgreSQL (logical decoding) and MongoDB (change streams) behind one
    engine contract, each run against the engine conformance kit on a live server
-   ([data-engines-continuous-migration §9](./data-engines-continuous-migration.md#9-verification)).
+   ([data-engines-continuous-migration §9](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md#9-verification)).
    Those live lanes now run in CI (the `Live data engines` job: on pull requests whose diff
    reaches them, or on a manual dispatch); what remains carried is that the job is not in the merge queue's
    required set. The intermittent failure once seen in the live PostgreSQL lane has a root cause and
    a fix — a capture slot is now proven decodable before use — with one residual, the table-sync
-   slots PostgreSQL creates itself ([§10](./data-engines-continuous-migration.md#10-honest-limits)).
+   slots PostgreSQL creates itself ([§10](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md#10-honest-limits)).
 
 ## Follow-Up Gate
 

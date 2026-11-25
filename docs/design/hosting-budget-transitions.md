@@ -14,7 +14,7 @@ guarantees and required constraint measurements.
 This contract closes the gap between the [FinOps decision pipeline](./finops-budget-routing-control-plane.md),
 [Yard-first placement](./adr/yard-first-placement.md), and an executed cloud-hosting transition.
 It applies to hosting platforms and their dependent resources. The design composes
-[ADR-0136 effects and resilience](./adr/03-data-plane-effects-resiliency.md),
+[ADR-0136 effects and resilience](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md),
 [ADR-0071 credit-aware selection](./adr/01-architecture-core.md#adr-0071), the
 existing policy plane, core durable event store, and Trails' state-transfer evidence.
 

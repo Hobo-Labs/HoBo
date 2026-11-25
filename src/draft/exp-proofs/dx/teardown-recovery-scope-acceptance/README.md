@@ -4,7 +4,7 @@ Executable M0 proof for HOBO-444, defining Teardown & Recovery scope and accepta
 design or implementation work fans out.
 
 The authoritative design record is
-[`docs/design/teardown-recovery.md`](../../../../docs/design/teardown-recovery.md).
+[teardown and recovery scope](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/teardown-recovery.md).
 
 ## Focused Gate
 
