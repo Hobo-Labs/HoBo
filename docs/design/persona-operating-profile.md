@@ -12,7 +12,7 @@ Source issue: HOBO-507.
 Executable proof lives in
 [`src/draft/technical-proofs/persona-operating-profile-contract`](../../src/draft/technical-proofs/persona-operating-profile-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-507-persona-operating-profile`](./proofs/hobo-507-persona-operating-profile/README.md).
+[`proofs/hobo-507-persona-operating-profile`](https://linear.app/quickdeploy-ai/document/hobo-507-persona-operating-profile-proof-archived-83c72919260b).
 
 ## M0 Acceptance Record
 

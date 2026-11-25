@@ -12,7 +12,7 @@ Source issue: HOBO-505.
 Executable proof lives in
 [`src/draft/exp-proofs/ux/accessibility-usability-launch-baseline-contract`](../../src/draft/exp-proofs/ux/accessibility-usability-launch-baseline-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-505-accessibility-usability-launch-baseline`](./proofs/hobo-505-accessibility-usability-launch-baseline/README.md).
+[`proofs/hobo-505-accessibility-usability-launch-baseline`](https://linear.app/quickdeploy-ai/document/hobo-505-accessibility-and-usability-launch-baseline-proof-archived-aaa15a838c76).
 
 ## M0 Acceptance Record
 

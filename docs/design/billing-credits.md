@@ -12,7 +12,7 @@ Source issue: HOBO-418.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/billing-credits-scope-contract`](../../src/draft/exp-proofs/cx/billing-credits-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-418-billing-credits`](./proofs/hobo-418-billing-credits/README.md).
+[`proofs/hobo-418-billing-credits`](https://linear.app/quickdeploy-ai/document/hobo-418-billing-and-credits-scope-proof-archived-af0752545995).
 
 ## M0 Acceptance Record
 

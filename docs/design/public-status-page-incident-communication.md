@@ -12,7 +12,7 @@ Source issue: HOBO-497.
 Executable proof lives in
 [`src/draft/technical-proofs/public-status-page-incident-communication-contract`](../../src/draft/technical-proofs/public-status-page-incident-communication-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-497-public-status-page-incident-communication`](./proofs/hobo-497-public-status-page-incident-communication/README.md).
+[`proofs/hobo-497-public-status-page-incident-communication`](https://linear.app/quickdeploy-ai/document/hobo-497-public-status-page-incident-communication-proof-archived-5d9ecff8e8b1).
 
 ## M0 Acceptance Record
 

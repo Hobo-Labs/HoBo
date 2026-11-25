@@ -12,7 +12,7 @@ Source issue: HOBO-443.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/resource-garbage-collection-scope-acceptance`](../../src/draft/exp-proofs/dx/resource-garbage-collection-scope-acceptance/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-443-resource-garbage-collection`](./proofs/hobo-443-resource-garbage-collection/README.md).
+[`proofs/hobo-443-resource-garbage-collection`](https://linear.app/quickdeploy-ai/document/hobo-443-resource-garbage-collection-proof-archived-164f32cddd54).
 
 ## M0 Acceptance Record
 

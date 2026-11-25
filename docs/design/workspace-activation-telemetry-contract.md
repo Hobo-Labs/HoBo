@@ -12,7 +12,7 @@ Source issue: HOBO-486.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/workspace-activation-telemetry-contract`](../../src/draft/exp-proofs/cx/workspace-activation-telemetry-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-486-workspace-activation-telemetry`](./proofs/hobo-486-workspace-activation-telemetry/README.md).
+[`proofs/hobo-486-workspace-activation-telemetry`](https://linear.app/quickdeploy-ai/document/hobo-486-workspace-activation-telemetry-proof-archived-760a9ba7ee90).
 
 ## M0 Acceptance Record
 
