@@ -27,7 +27,7 @@ test("HOBO-563 walkthrough pins issue, package path, proof path, and HOBO-549 co
   );
   assert.equal(
     parsed.proofPath,
-    "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-563-vibe-pilot-first-proof-walkthrough-proof-archived-1e8feb2e1840",
   );
   assert.equal(parsed.consumedStoryboard.sourceIssue, "HOBO-549");
   assert.deepEqual(parsed.consumedStoryboard.stages, REQUIRED_PILOT_STORYBOARD_STAGES);

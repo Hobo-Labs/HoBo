@@ -51,7 +51,7 @@ package architecture_evidence
 	issue:                    "HOBO-563"
 	phase:                    "M2"
 	package_path:             "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough"
-	proof_path:               "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md"
+	proof_path:               "https://linear.app/quickdeploy-ai/document/hobo-563-vibe-pilot-first-proof-walkthrough-proof-archived-1e8feb2e1840"
 	design_refs:              [...string]
 	consumed_storyboard:      #VibePilotFirstProofConsumedStoryboard
 	steps:                    [...#VibePilotFirstProofWalkthroughStep]

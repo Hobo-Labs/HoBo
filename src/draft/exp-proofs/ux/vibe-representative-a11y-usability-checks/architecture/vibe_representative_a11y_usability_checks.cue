@@ -36,7 +36,7 @@ package vibe_representative_a11y_usability_checks
 	issue:       "HOBO-565"
 	phase:       "M2"
 	packagePath: "src/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks"
-	proofPath:   "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md"
+	proofPath:   "https://linear.app/quickdeploy-ai/document/hobo-565-vibe-representative-a11y-usability-checks-proof-archived-fdb735638204"
 	designRefs: [...string]
 	sourceIssues: [#SourceIssue, ...#SourceIssue]
 	quickstartFixtureRefs: [...#RepresentativeQuickstartFixtureReference]

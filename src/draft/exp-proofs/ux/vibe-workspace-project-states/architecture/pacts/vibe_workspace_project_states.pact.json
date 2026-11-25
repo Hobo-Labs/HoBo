@@ -26,7 +26,7 @@
           "issue": "HOBO-541",
           "phase": "M1",
           "targetPackage": "src/draft/exp-proofs/ux/vibe-workspace-project-states",
-          "proofNote": "docs/design/proofs/vibe-workspace-project-states/README.md",
+          "proofNote": "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2",
           "designRefs": [
             "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
             "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc",
@@ -524,7 +524,7 @@
     },
     "hobo": {
       "issue": "HOBO-541",
-      "proof": "docs/design/proofs/vibe-workspace-project-states/README.md"
+      "proof": "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2"
     }
   }
 }

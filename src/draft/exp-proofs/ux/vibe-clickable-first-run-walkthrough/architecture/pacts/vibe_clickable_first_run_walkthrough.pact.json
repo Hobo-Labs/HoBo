@@ -22,12 +22,12 @@
           "consumedActivationRail": {
             "sourceIssue": "HOBO-540",
             "packagePath": "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
-            "proofPath": "docs/design/proofs/vibe-first-run-activation-rail/README.md"
+            "proofPath": "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6"
           },
           "consumedWorkspaceProjectStates": {
             "sourceIssue": "HOBO-541",
             "packagePath": "src/draft/exp-proofs/ux/vibe-workspace-project-states",
-            "proofPath": "docs/design/proofs/vibe-workspace-project-states/README.md"
+            "proofPath": "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2"
           },
           "scenarioPaths": [
             { "id": "happy-path" },

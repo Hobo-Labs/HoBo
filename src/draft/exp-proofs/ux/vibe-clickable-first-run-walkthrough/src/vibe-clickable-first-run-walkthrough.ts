@@ -46,14 +46,14 @@ type WorkspaceProjectState = (typeof WORKSPACE_PROJECT_STATES)[number];
 type ConsumedActivationRail = {
   readonly sourceIssue: "HOBO-540";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail";
-  readonly proofPath: "docs/design/proofs/vibe-first-run-activation-rail/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6";
   readonly stages: readonly ActivationRailStage[];
 };
 
 type ConsumedWorkspaceProjectStates = {
   readonly sourceIssue: "HOBO-541";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-workspace-project-states";
-  readonly proofPath: "docs/design/proofs/vibe-workspace-project-states/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2";
   readonly states: readonly WorkspaceProjectState[];
 };
 
@@ -135,20 +135,20 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
     "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc",
     "docs/design/walkthrough.md",
-    "docs/design/proofs/vibe-first-run-activation-rail/README.md",
-    "docs/design/proofs/vibe-workspace-project-states/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6",
+    "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2",
     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   consumedActivationRail: {
     sourceIssue: "HOBO-540",
     packagePath: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
-    proofPath: "docs/design/proofs/vibe-first-run-activation-rail/README.md",
+    proofPath: "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6",
     stages: ACTIVATION_RAIL_STAGES,
   },
   consumedWorkspaceProjectStates: {
     sourceIssue: "HOBO-541",
     packagePath: "src/draft/exp-proofs/ux/vibe-workspace-project-states",
-    proofPath: "docs/design/proofs/vibe-workspace-project-states/README.md",
+    proofPath: "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2",
     states: WORKSPACE_PROJECT_STATES,
   },
   steps: [
@@ -399,7 +399,7 @@ function validateConsumedActivationRail(
   if (consumed.packagePath !== "src/draft/exp-proofs/ux/vibe-first-run-activation-rail") {
     errors.push({ code: "wrong-consumed-rail-package", message: "HOBO-540 package path drifted" });
   }
-  if (consumed.proofPath !== "docs/design/proofs/vibe-first-run-activation-rail/README.md") {
+  if (consumed.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6") {
     errors.push({ code: "wrong-consumed-rail-proof", message: "HOBO-540 proof path drifted" });
   }
   if (!arraysEqual(consumed.stages, ACTIVATION_RAIL_STAGES)) {
@@ -423,7 +423,7 @@ function validateConsumedWorkspaceProjectStates(
   if (consumed.packagePath !== "src/draft/exp-proofs/ux/vibe-workspace-project-states") {
     errors.push({ code: "wrong-consumed-state-package", message: "HOBO-541 package path drifted" });
   }
-  if (consumed.proofPath !== "docs/design/proofs/vibe-workspace-project-states/README.md") {
+  if (consumed.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2") {
     errors.push({ code: "wrong-consumed-state-proof", message: "HOBO-541 proof path drifted" });
   }
   if (!arraysEqual(consumed.states, WORKSPACE_PROJECT_STATES)) {

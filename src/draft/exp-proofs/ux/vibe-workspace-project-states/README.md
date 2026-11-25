@@ -36,7 +36,7 @@ future surface may use it; this proof never calls a live provider.
 | --- | --- |
 | Mockups/wireframes cover empty, ready, blocked, recovering, failed, and value-proven states. | `WORKSPACE_PROJECT_STATES` and `listWorkspaceProjectWireframes` require one wireframe record per state. |
 | Deterministic fixture records workspace, project, provider-readiness, blocker owner, safe next action, and evidence link fields. | `WorkspaceProjectStateFixture` and parser assertions require those fields for every row. |
-| Target package and proof note paths are fixed. | Parser requires `src/draft/exp-proofs/ux/vibe-workspace-project-states` and `docs/design/proofs/vibe-workspace-project-states/README.md`. |
+| Target package and proof note paths are fixed. | Parser requires `src/draft/exp-proofs/ux/vibe-workspace-project-states` and `https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2`. |
 | Covers happy path, blocked path, stale/unknown evidence, support handoff, accessibility notes, and proof modes. | `REQUIRED_JOURNEY_COVERAGE`, `REQUIRED_PROOF_MODES`, fixture coverage, and tests prove those sets. |
 | Adversarial scope-out stays explicit. | `classifyWorkspaceProjectStateScope` rejects live providers, customer data, launch claims, account/auth/billing, and production UI. |
 

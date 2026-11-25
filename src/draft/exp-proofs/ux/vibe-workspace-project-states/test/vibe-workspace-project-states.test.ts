@@ -18,7 +18,7 @@ describe("vibe workspace/project state proof", () => {
 
     assert.equal(model.issue, "HOBO-541");
     assert.equal(model.targetPackage, "src/draft/exp-proofs/ux/vibe-workspace-project-states");
-    assert.equal(model.proofNote, "docs/design/proofs/vibe-workspace-project-states/README.md");
+    assert.equal(model.proofNote, "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2");
     assert.deepEqual(
       model.fixtures.map((fixture) => fixture.state),
       WORKSPACE_PROJECT_STATES,

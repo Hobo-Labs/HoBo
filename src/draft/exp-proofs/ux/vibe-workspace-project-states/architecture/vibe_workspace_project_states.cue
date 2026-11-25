@@ -91,7 +91,7 @@ import "list"
 	issue:         "HOBO-541"
 	phase:         "M1"
 	targetPackage: "src/draft/exp-proofs/ux/vibe-workspace-project-states"
-	proofNote:     "docs/design/proofs/vibe-workspace-project-states/README.md"
+	proofNote:     "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2"
 	designRefs:    [...string] & list.MinItems(1)
 	scopeOut: [
 		"account service implementation",
