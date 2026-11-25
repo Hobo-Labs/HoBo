@@ -186,6 +186,44 @@ export function disableSparseCheckoutIfActive(
 	return git(cwd, ["sparse-checkout", "disable"], env).ok;
 }
 
+function gitDirPath(cwd: string, env: NodeJS.ProcessEnv): string | null {
+	const resolved = resolve(cwd);
+	const inside = git(resolved, ["rev-parse", "--is-inside-work-tree"], env);
+	if (!inside.ok || inside.stdout.trim() !== "true") {
+		return null;
+	}
+	const gitDir = git(resolved, ["rev-parse", "--git-dir"], env);
+	if (!gitDir.ok) {
+		return null;
+	}
+	return resolve(resolved, gitDir.stdout.trim());
+}
+
+export function clearSparseCheckoutConfig(
+	cwd: string,
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	if (!sparseCheckoutEnabled(cwd, env)) {
+		return true;
+	}
+	const gitDir = gitDirPath(cwd, env);
+	if (!gitDir) {
+		return false;
+	}
+	const info = join(gitDir, "info");
+	for (const name of ["sparse-checkout", "sparse-checkout-cone"] as const) {
+		const path = join(info, name);
+		if (existsSync(path)) {
+			rmSync(path);
+		}
+	}
+	for (const scope of ["--worktree", "--local"] as const) {
+		git(cwd, ["config", scope, "--unset", "core.sparseCheckout"], env);
+		git(cwd, ["config", scope, "--unset", "core.sparseCheckoutCone"], env);
+	}
+	return sparseCheckoutEnabled(cwd, env) === false;
+}
+
 function parseArgs(args: readonly string[]) {
 	let sha = "";
 	let mirror = "";
@@ -246,8 +284,15 @@ function runCli(args: readonly string[]): number {
 	const parsed = parseArgs(args);
 	if (parsed.prepareFullWorktree) {
 		const workDir = resolve(parsed.workDir);
+		const inside = git(workDir, ["rev-parse", "--is-inside-work-tree"], {
+			...process.env,
+		});
+		if (!inside.ok || inside.stdout.trim() !== "true") {
+			console.log("hobo_ci_sparse_disable=fail");
+			return 1;
+		}
 		const wasActive = sparseCheckoutEnabled(workDir);
-		if (!disableSparseCheckoutIfActive(workDir)) {
+		if (!clearSparseCheckoutConfig(workDir)) {
 			console.log("hobo_ci_sparse_disable=fail");
 			return 1;
 		}

@@ -8,17 +8,23 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	checkoutFromBareMirror,
 	classifyCheckoutTransportError,
+	clearSparseCheckoutConfig,
 	disableSparseCheckoutIfActive,
 	mirrorObjectsPath,
 	sparseCheckoutEnabled,
 	submodulesEnabledFromCliArg,
 	writeAlternates,
 } from "../../.github/actions/hobo-checkout/repo-checkout.mts";
+
+const repoCheckoutCli = resolve(
+	import.meta.dirname,
+	"../../.github/actions/hobo-checkout/repo-checkout.mts",
+);
 
 const repository = "Hobo-Labs/HoBo";
 let temp = "";
@@ -37,9 +43,16 @@ beforeAll(() => {
 	mkdirSync(source);
 	git(source, ["init", "-b", "main"]);
 	mkdirSync(join(source, "scripts", "ci"), { recursive: true });
+	mkdirSync(join(source, "other", "deep"), { recursive: true });
 	writeFileSync(join(source, "README.md"), "mirror fixture\n");
 	writeFileSync(join(source, "scripts/ci/ci-trace.mts"), "export {};\n");
-	git(source, ["add", "README.md", "scripts/ci/ci-trace.mts"]);
+	writeFileSync(join(source, "other/deep/outside-cone.txt"), "outside\n");
+	git(source, [
+		"add",
+		"README.md",
+		"scripts/ci/ci-trace.mts",
+		"other/deep/outside-cone.txt",
+	]);
 	git(source, [
 		"-c",
 		"user.name=HoBo Test",
@@ -110,17 +123,82 @@ describe("checkoutFromBareMirror", () => {
 });
 
 describe("disableSparseCheckoutIfActive", () => {
-	it("materializes a full tree after a cone limited to .github/actions", () => {
+	it("materializes a full tree after a cone limited to scripts/ci", () => {
 		const work = join(temp, "work-resolve-actions-cone");
 		execFileSync("git", ["clone", "--no-checkout", source, work]);
 		git(work, ["sparse-checkout", "init", "--cone"]);
-		git(work, ["sparse-checkout", "set", ".github/actions"]);
+		git(work, ["sparse-checkout", "set", "scripts/ci"]);
 		git(work, ["checkout", sha]);
-		expect(existsSync(join(work, "scripts/ci/ci-trace.mts"))).toBe(false);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(false);
 		expect(sparseCheckoutEnabled(work)).toBe(true);
 		expect(disableSparseCheckoutIfActive(work)).toBe(true);
 		expect(sparseCheckoutEnabled(work)).toBe(false);
-		expect(existsSync(join(work, "scripts/ci/ci-trace.mts"))).toBe(true);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(true);
+	});
+});
+
+describe("clearSparseCheckoutConfig", () => {
+	it("clears sparse config on a blob:none clone without materializing missing blobs", () => {
+		const work = join(temp, "work-blob-none-sparse");
+		execFileSync("git", [
+			"clone",
+			"--filter=blob:none",
+			"--no-checkout",
+			`file://${source}`,
+			work,
+		]);
+		git(work, ["sparse-checkout", "init", "--cone"]);
+		git(work, ["sparse-checkout", "set", "scripts/ci"]);
+		git(work, ["checkout", sha]);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(false);
+		expect(sparseCheckoutEnabled(work)).toBe(true);
+		expect(clearSparseCheckoutConfig(work)).toBe(true);
+		expect(sparseCheckoutEnabled(work)).toBe(false);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(false);
+	});
+});
+
+describe("prepare-full-worktree CLI", () => {
+	it("exits 0 and clears sparse config inside an active sparse worktree", () => {
+		const work = join(temp, "work-cli-sparse-ok");
+		execFileSync("git", ["clone", "--no-checkout", source, work]);
+		git(work, ["sparse-checkout", "init", "--cone"]);
+		git(work, ["sparse-checkout", "set", "scripts/ci"]);
+		git(work, ["checkout", sha]);
+		const result = spawnSync(
+			"node",
+			[
+				"--experimental-strip-types",
+				"--no-warnings",
+				repoCheckoutCli,
+				"--prepare-full-worktree",
+				"--workdir",
+				work,
+			],
+			{ encoding: "utf8" },
+		);
+		expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
+		expect(result.stdout).toContain("hobo_ci_sparse_disable=ok");
+		expect(sparseCheckoutEnabled(work)).toBe(false);
+	});
+
+	it("exits 1 outside a git worktree", () => {
+		const work = mkdtempSync(join(tmpdir(), "hobo-prepare-full-no-git-"));
+		const result = spawnSync(
+			"node",
+			[
+				"--experimental-strip-types",
+				"--no-warnings",
+				repoCheckoutCli,
+				"--prepare-full-worktree",
+				"--workdir",
+				work,
+			],
+			{ encoding: "utf8" },
+		);
+		expect(result.status).toBe(1);
+		expect(result.stdout).toContain("hobo_ci_sparse_disable=fail");
+		rmSync(work, { recursive: true, force: true });
 	});
 });
 
