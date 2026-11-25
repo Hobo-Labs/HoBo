@@ -60,6 +60,48 @@ function native() {
 }
 
 describe("bounded R2 application client", () => {
+	it("inspects typed-array length without a mutable getter call property", async () => {
+		const n = native();
+		const service = {
+			fetch: (request: Request) =>
+				cloudflareR2Proxy.fetch(request, {
+					HOBO_R2_ALLOW: "write",
+					HOBO_R2_BUCKET: n.binding,
+				}),
+		};
+		const store = createCloudflareR2Store(service, ["write"]);
+		const body = new Uint8Array([3, 4]);
+		const object = {
+			name: "x",
+			contentType: "text/plain",
+			size: body.length,
+			digest: await cloudflareR2Digest(body.buffer),
+			body,
+		};
+		const getter = Object.getOwnPropertyDescriptor(
+			Object.getPrototypeOf(Uint8Array.prototype),
+			"byteLength",
+		)?.get;
+		if (getter === undefined) throw new Error("missing typed-array getter");
+		const original = Object.getOwnPropertyDescriptor(getter, "call");
+		let traps = 0;
+		Object.defineProperty(getter, "call", {
+			configurable: true,
+			get() {
+				traps++;
+				throw new Error("getter trap");
+			},
+		});
+		try {
+			await store.write(object);
+		} finally {
+			if (original === undefined) Reflect.deleteProperty(getter, "call");
+			else Object.defineProperty(getter, "call", original);
+		}
+		expect(traps).toBe(0);
+		expect(n.calls).toEqual(["put:x"]);
+	});
+
 	it("round-trips bytes and object metadata through the private proxy", async () => {
 		const n = native();
 		const service = {
@@ -204,8 +246,12 @@ describe("bounded R2 application client", () => {
 
 	it("cancels invalid and late response streams without retrying", async () => {
 		vi.useFakeTimers();
+		vi.resetModules();
+		const { createCloudflareR2Store: timedStore } = await import(
+			"../src/cloudflare-r2-client.js"
+		);
 		let cancelled = false;
-		const invalid = createCloudflareR2Store(
+		const invalid = timedStore(
 			{
 				fetch: async () =>
 					new Response(
@@ -225,7 +271,7 @@ describe("bounded R2 application client", () => {
 		expect(cancelled).toBe(true);
 		let resolveResponse: (response: Response) => void = () => {};
 		let lateCancelled = false;
-		const late = createCloudflareR2Store(
+		const late = timedStore(
 			{
 				fetch: () =>
 					new Promise<Response>((resolve) => {
@@ -285,9 +331,13 @@ describe("bounded R2 application client", () => {
 
 	it("returns unknown for stalled writes and cancels stalled reads", async () => {
 		vi.useFakeTimers();
+		vi.resetModules();
+		const { createCloudflareR2Store: timedStore } = await import(
+			"../src/cloudflare-r2-client.js"
+		);
 		let calls = 0;
 		let aborted = false;
-		const stalled = createCloudflareR2Store(
+		const stalled = timedStore(
 			{
 				fetch: async (request: Request) => {
 					calls++;
@@ -313,7 +363,7 @@ describe("bounded R2 application client", () => {
 			"x-hobo-r2-size": "0",
 			"x-hobo-r2-digest": `sha256:${"a".repeat(64)}`,
 		};
-		const reader = createCloudflareR2Store(
+		const reader = timedStore(
 			{
 				fetch: async () =>
 					new Response(

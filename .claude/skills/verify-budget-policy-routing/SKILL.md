@@ -9,7 +9,7 @@ description: Verify credit and hard-budget dispatch selection and reservation ac
 
 **Why:** Wrong routing can either launch paid work without an adequate hold or refuse work the customer can afford.
 
-**Review basis:** commit `3fd4f5882a97942fc0f200b03d8dab2200e529b9`, with the overflow and estimate-admission checks from commit `5dc79aef9991b305ba59b28c3c3fda4a4f36a1c1`. Before the corrections, the implementation failed on exact-cent affordability, a positive charge rounded to zero, sequence exhaustion, and excessive imported consumption. A same-provider registration in a different category could previously direct holds to the wrong account, allowing repeated paid work without debiting the selected budget. The corrected implementation and focused checks pass; rerun them on the current source before relying on that result. The Z3 proofs apply only to their arithmetic abstractions, not to JavaScript numbers or the implementation as a whole.
+**Review basis:** commit `3fd4f5882a97942fc0f200b03d8dab2200e529b9`. Before the corrections, the implementation failed on exact-cent affordability, a positive charge rounded to zero, sequence exhaustion, and excessive imported consumption. A same-provider registration in a different category could previously direct holds to the wrong account, allowing repeated paid work without debiting the selected budget. The corrected implementation and focused checks pass; rerun them on the current source before relying on that result. The Z3 proofs apply only to their arithmetic abstractions, not to JavaScript numbers or the implementation as a whole.
 
 ## Covered code
 

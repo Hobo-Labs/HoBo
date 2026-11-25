@@ -1,0 +1,7 @@
+default:
+  paths:
+    - "features/hobo-ci-parity/*.feature"
+  import:
+    - "features/hobo-ci-parity/steps/**/*.ts"
+  tags: "not @pending and not @met-differently"
+  publishQuiet: true

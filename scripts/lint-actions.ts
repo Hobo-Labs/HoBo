@@ -31,14 +31,14 @@ const activeCiFiles = new Set([
 	"ci-deps-publish.yml",
 	"examples-e2e.yml",
 	"dev-env-smoke.yml",
-	"fleet-enrollment.yml",
 	"pricing-ci.yml",
-	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
 	"relay-deploy.yml",
 	"release-hobo.yml",
 	"release-hobo-pr.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
+	"fleet-integration.yml",
+	"fleet-enrollment.yml",
 ]);
 /**
  * The probe: one job per self-hosted label, there only to be picked up, so the
@@ -209,23 +209,16 @@ const SHARD_RUNS_ON =
  * `runnerRouting` in `.hobo/ci.json`.
  */
 const ROUTING_VARIABLE = /vars\.HOBO_CI_/;
-/** ADR-0181's routing list, exhaustively, with the retired fleet channels. */
 export const ROUTING_NAMES: readonly string[] = [
 	"HOBO_CI_ROUTE",
 	"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
 	"HOBO_CI_ROUTE_MAX_QUEUED",
 	"HOBO_CI_TRUNK_RUNNER",
-	"HOBO_CI_LOCAL_RUNNER",
 	"HOBO_CI_INCLUDE_OWN_RUN",
 	"HOBO_CI_ATTESTED",
-	"HOBO_CI_FLEET_ROUTES",
-	"HOBO_CI_FLEET_STATE",
-	"HOBO_CI_FLEET_CAPACITY",
-	"HOBO_CI_FLEET_VERDICT_[A-Z0-9_]+",
-	"HOBO_CI_FLEET_REPORTER_ID",
-	"HOBO_CI_FLEET_EXTERNAL_POOLS_JSON",
-	"HOBO_CI_FLEET_REPORTERS_JSON",
-	"HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB",
+	"HOBO_CI_FLEET_[A-Z0-9_]+",
+	"HOBO_CI_LOCAL_[A-Z0-9_]+",
+	"HOBO_CI_(?:NATS|MESH)_[A-Z0-9_]+",
 	"HOBO_CI_NODE_CPU_PERCENT",
 	"HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS",
 	"HOBO_CI_WORKER_SLOTS",

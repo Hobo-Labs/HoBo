@@ -1,5 +1,4 @@
 import { createServer, type Server } from "node:http";
-import type { BindleDefinition } from "@hobo/bindles";
 import { loadBindleDefinition } from "@hobo/cli";
 import {
 	attachNamedEndpoints,
@@ -23,8 +22,8 @@ import {
 	type ComponentEndpoint,
 	collectBindleEnvInjections,
 	type FetchHandler,
-	installInternalMesh,
-	internalMeshBase,
+	installInternalRouter,
+	internalRouterBase,
 	listServableEntrypoints,
 	serviceDiscoveryKey,
 } from "./bare-metal-host.js";
@@ -103,31 +102,34 @@ function componentDescriptor(
 	id: string,
 	handler: FetchHandler,
 ): ParsedComponentDescriptor {
-	const handle = async (httpReq: HttpRequest): Promise<HttpResponse> => {
-		const req = httpReq;
-		const webReq = new Request(`http://component.local${req.path}`, {
-			method: req.method,
-			headers: Object.fromEntries(req.headers),
-			...(req.body && req.method !== "GET" && req.method !== "HEAD"
-				? { body: req.body }
-				: undefined),
-		});
-		const webRes = await handler(webReq);
-		return {
-			status: webRes.status,
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: assertion required at this I/O or test boundary.
-			headers: [...webRes.headers.entries()] as [string, string][],
-			body: Buffer.from(await webRes.arrayBuffer()).toString("latin1"),
-		};
-	};
 	return {
 		parsed: true,
 		id,
 		imports: [],
 		exports: {
 			[HTTP_INCOMING_HANDLER]: {
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the heterogeneous export table is read back through the matching HttpIncomingHandler contract by runtime-local.
-				handle: handle as never,
+				// SAFETY: the export table is heterogeneous by design -- each
+				// interface has its own argument shape, and `ComponentExport`
+				// describes the table, not this entry. The host reads it back through
+				// the matching handler type (`HttpIncomingHandler` in runtime-local),
+				// than a claim that the signatures line up.
+				handle: (async (httpReq: HttpRequest): Promise<HttpResponse> => {
+					const req = httpReq;
+					const webReq = new Request(`http://component.local${req.path}`, {
+						method: req.method,
+						headers: Object.fromEntries(req.headers),
+						...(req.body && req.method !== "GET" && req.method !== "HEAD"
+							? { body: req.body }
+							: undefined),
+					});
+					const webRes = await handler(webReq);
+					return {
+						status: webRes.status,
+						// SAFETY: assertion required at this I/O or test boundary.
+						headers: [...webRes.headers.entries()] as [string, string][],
+						body: Buffer.from(await webRes.arrayBuffer()).toString("latin1"),
+					};
+				}) as never,
 			},
 		},
 	};
@@ -190,7 +192,6 @@ async function listen(
  */
 export async function serveBindleOnLocalYard(options: {
 	readonly projectDir: string;
-	readonly definition?: BindleDefinition;
 	readonly yard?: BareMetalYard;
 	readonly port?: number;
 	readonly hoboHome?: string;
@@ -214,8 +215,7 @@ export async function serveBindleOnLocalYard(options: {
 		`hobo dev: local Yard '${yardHandle.config.name}' placing Camp (component host=local, engine=${engineInfo.source} ${engineInfo.version})`,
 	);
 
-	const definition =
-		options.definition ?? (await loadBindleDefinition(options.projectDir));
+	const definition = await loadBindleDefinition(options.projectDir);
 	if (definition === null) {
 		ownedYard?.close();
 		throw new Error(
@@ -276,7 +276,7 @@ export async function serveBindleOnLocalYard(options: {
 			return httpResponseToWeb(httpRes);
 		});
 	}
-	const uninstallMesh = installInternalMesh(privateHandlers, {
+	const uninstallMesh = installInternalRouter(privateHandlers, {
 		bindleName: definition.name,
 	});
 
@@ -284,7 +284,7 @@ export async function serveBindleOnLocalYard(options: {
 	const serviceDiscovery: Record<string, string> = {};
 
 	for (const entry of privateEntries) {
-		const url = internalMeshBase(definition.name, entry.name);
+		const url = internalRouterBase(definition.name, entry.name);
 		const key = serviceDiscoveryKey(entry.name);
 		endpoints.push({
 			resourceName: entry.name,

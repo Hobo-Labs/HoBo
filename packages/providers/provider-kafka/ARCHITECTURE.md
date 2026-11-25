@@ -13,7 +13,7 @@ Parse, don't validate: derived domain types (`KafkaClusterSpec`, `KafkaTopicReso
 ## Messaging — event architecture
 
 - **Command** — realize Kafka cluster/topic Resource Definitions; publish/consume on the Messaging port.
-- **Event** — `messaging.topic.created`, `messaging.published`, `messaging.consumed`, `messaging.acked`, `messaging.dead_lettered`, metering `messaging.publish` / `messaging.consume`.
+- **Event** — `messaging.topic.created`, `messaging.published`, `messaging.consumed`, `messaging.acked`, `messaging.delivery.exhausted`, metering `messaging.publish` / `messaging.consume`.
 - **Actor** — none owned here; actor placement is Runtime (`native` | `dapr`).
 - **Event store** — messaging audit log on the adapter; control-plane facts join Camp EventStore.
 - **Materialized view / projection** — consumer-group cursor (acked + inflight leases).

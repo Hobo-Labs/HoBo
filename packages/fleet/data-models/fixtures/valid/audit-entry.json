@@ -1,0 +1,11 @@
+{
+  "sequence": 1,
+  "previousHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "eventType": "fleet.MemberActivated",
+  "eventId": "ev_01",
+  "subject": "member.dev_0123456789abcdef0123456789abcdef",
+  "actor": "github:1234",
+  "at": "2026-11-12T10:00:00.000Z",
+  "dataDigest": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+  "subjectSequence": 4
+}

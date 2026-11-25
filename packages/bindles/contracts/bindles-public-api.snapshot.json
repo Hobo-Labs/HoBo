@@ -66,7 +66,7 @@
       "kind": "resource-factory",
       "signature": "topic(name: string): ResourceHandle<\"topic\", \"publish\" | \"subscribe\">",
       "portRef": [
-        "wasi:messaging"
+        "hobo:durable-messaging"
       ],
       "allowVerbs": [
         "publish",

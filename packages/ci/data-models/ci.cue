@@ -1,5 +1,7 @@
 package ci
 
+import "list"
+
 #SandboxAllowance: {
  cpuVcpuMs: int & >=0
  memoryMbMs: int & >=0
@@ -44,7 +46,7 @@ package ci
 }
 #Offer: {
  id: string & !=""
- provider: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops"
+ provider: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops" | "agent37"
  providerAccountId: string & !=""
  enabled: bool
  runsOn: string & !=""
@@ -59,6 +61,7 @@ package ci
  bridgeAcknowledged: bool
  backend?: "" | "gh-actions" | "dagger" | "cf" | "sandbox" | "ado" | "isolated-container"
  if provider == "azure-devops" {backend: "ado"}
+ if provider == "agent37" {backend: "gh-actions"}
  if backend != _|_ {
   if backend == "ado" {provider: "azure-devops"}
   if backend == "sandbox" {provider: "vercel"}
@@ -218,7 +221,7 @@ package ci
 #SequencedCiEvent: {seq: int & >0, event: #CiEvent}
 #CiEventPage: {events?: [...#SequencedCiEvent], cursor?: int & >=0, more?: bool, truncated?: bool}
 
-#Ci: #FleetRoutes | #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult
+#Ci: #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult
 
 #PipelineStep: {id: string & !="", argv: [string & !="", ...string], cwd: string, env: [string & !="__proto__"]: string}
 #Pipeline: {
@@ -280,19 +283,52 @@ package ci
 // Desired policy does not contain runtime-owned balances, observations or leases.
 #CiPolicyProvider: {
  id: string & =~"^[A-Za-z0-9_-]{1,80}$"
- kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare"
+ kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare" | "agent37"
  connectionRef: string & !=""
  runsOn: string & =~"^[A-Za-z0-9_.-]{1,100}$"
  enabled?: bool
  scaleSet?: #CiPolicyKubernetesScaleSet
  engine?: #CiPolicyDaggerEngine
+ pool?: #CiPolicyAgent37Pool
  location?: "vercel" | "local" | "remote"
  if kind == "local" {runsOn: "hobo-local-host"}
- // Mirror packages/ci/src/fleet-overflow.ts isGithubLatestLabel — never ubuntu-latest for github.
  if kind == "github" {runsOn: != "ubuntu-latest"}
- if scaleSet != _|_ {kind: "kubernetes", engine?: _|_}
- if engine != _|_ {kind: "kubernetes"}
+ if scaleSet != _|_ {kind: "kubernetes", engine?: _|_, pool?: _|_}
+ if engine != _|_ {kind: "kubernetes", pool?: _|_}
+ if kind == "agent37" {pool: #CiPolicyAgent37Pool}
+ if kind != "agent37" {pool?: _|_}
  if kind != "vercel" {location?: _|_}
+}
+#CiPolicyAgent37Size: {
+ disk: int & >=1 & <=1024
+} & ({cpu: 2, memory: 4} | {cpu: 4, memory: 8} | {cpu: 4, memory: 16} | {cpu: 4, memory: 32} | {cpu: 8, memory: 64})
+#CiPolicyAgent37NetworkHostname: string & =~"^.{1,253}$" & =~"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+#CiPolicyAgent37NetworkWildcard: string & =~"^\\*\\..{1,251}$" & =~"^\\*\\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.){2,}[a-z]{2,63}$" & !~"^\\*\\.[^.]+\\.[a-z]{2}\\.[a-z]{2}$"
+#CiPolicyAgent37NetworkName: #CiPolicyAgent37NetworkHostname | #CiPolicyAgent37NetworkWildcard
+#CiPolicyAgent37Network: {allow: [...#CiPolicyAgent37NetworkName] & list.MinItems(1) & list.MaxItems(100) & list.UniqueItems()}
+#CiPolicyAgent37Budget: {limitMicros: int & >=0 & <=9007199254740991, period: "month", maxCreatesPerHour: int & >=1 & <=10000}
+#CiPolicyAgent37Pool: {
+ minBoxes: int & >=0 & <=1000
+ maxBoxes: int & >0 & >=minBoxes & <=1000
+ type: "default" | "vm" | "performance"
+ size: #CiPolicyAgent37Size
+ region: "us" | "eu" | "ap-south"
+ template: string & =~"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}@[1-9][0-9]{0,19}$"
+ idleTtlSeconds: int & >=60 & <=3600
+ jobTimeoutSeconds: int & >=1 & <=19800
+ labels: [...(string & =~"^[A-Za-z0-9_.-]{1,100}$" & !~"(?i)^hobo$")] & list.MinItems(1) & list.MaxItems(16) & list.UniqueItems()
+ network: #CiPolicyAgent37Network
+ budget: #CiPolicyAgent37Budget
+ allowAboveFreeTier: bool | *false
+ if region != "us" {type: "vm" | "performance"}
+ if type == "default" {region: "us", size: {cpu: 2 | 4}}
+ if allowAboveFreeTier == false {
+  if size.memory == 4 {maxBoxes: <=8}
+  if size.memory == 8 {maxBoxes: <=4}
+  if size.memory == 16 {maxBoxes: <=2}
+  if size.memory == 32 {maxBoxes: <=1}
+  if size.memory == 64 {maxBoxes: <=0}
+ }
 }
 #CiPolicyKubernetesScaleSet: {
  name: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
@@ -336,15 +372,4 @@ package ci
  if periodKind == "fixed-window" {periodStartsAtMs: int & >=0, periodEndsAtMs: int & >periodStartsAtMs}
  if periodKind == "manual" {periodStartsAtMs?: _|_, periodEndsAtMs?: _|_}
  constraints?: [...{key: string & !="", workload: string & !="", unit: string & !="", maximum: int & >=0 & <=9007199254740991, target?: string}]
-}
-
-// The HOBO_CI_FLEET_ROUTES repository variable: job class to runs-on label.
-// The three classes the relay publishes are always present; a workflow indexes
-// the value directly, so it is a flat object and not a wrapped message.
-#FleetRouteLabel: string & =~"^[A-Za-z0-9_.-]{1,100}$" & !~"^(?i)ubuntu-latest$"
-#FleetRoutes: {
- pr: #FleetRouteLabel
- fork: #FleetRouteLabel
- trunk: #FleetRouteLabel
- [=~"^[a-z][a-z0-9-]{0,39}$"]: #FleetRouteLabel
 }

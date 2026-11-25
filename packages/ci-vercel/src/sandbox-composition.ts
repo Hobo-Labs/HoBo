@@ -16,6 +16,11 @@ import {
 import { APIError } from "@vercel/sandbox";
 import { z } from "zod";
 import {
+	type Agent37SandboxDriverOptions,
+	createAgent37SandboxDriver,
+	parseAgent37NetworkAllow,
+} from "./agent37-sandbox.js";
+import {
 	createIsolatedSandbox,
 	discoverIsolatedSandbox,
 	inspectIsolatedCommand,
@@ -64,29 +69,56 @@ export interface SandboxCompositionStore
 /** The port the proxy VM listens on, exposed through the Sandbox gateway. */
 const PROXY_PORT = 3000;
 
-/** The Vercel Sandbox drivers; tests pass stand-ins. */
-export const VERCEL_SANDBOX_DRIVERS: Readonly<{
+export type SandboxProviderKind = "vercel" | "agent37";
+
+export interface SandboxDrivers {
 	driver: IsolatedSandboxDriver;
-	proxyDriver: SandboxProxyDriver;
-}> = Object.freeze({
-	driver: {
-		create: createIsolatedSandbox,
-		discover: discoverIsolatedSandbox,
-		prepare: prepareIsolatedSandbox,
-		start: startIsolatedSandbox,
-		inspect: inspectIsolatedCommand,
-		stop: stopIsolatedSandbox,
-	},
-	proxyDriver: {
-		create: createProxySandbox,
-		start: startProxySandbox,
-		bind: bindProxySandbox,
-		discover: discoverProxySandbox,
-		meter: (name: string, sessionId: string, token: string) =>
-			meterProxySandbox(name, sessionId, PROXY_PORT, token),
-		stop: stopProxySandbox,
-	},
-});
+	proxyDriver?: SandboxProxyDriver | undefined;
+}
+
+export const VERCEL_SANDBOX_DRIVERS: Readonly<Required<SandboxDrivers>> =
+	Object.freeze({
+		driver: {
+			create: createIsolatedSandbox,
+			discover: discoverIsolatedSandbox,
+			prepare: prepareIsolatedSandbox,
+			start: startIsolatedSandbox,
+			inspect: inspectIsolatedCommand,
+			stop: stopIsolatedSandbox,
+		},
+		proxyDriver: {
+			create: createProxySandbox,
+			start: startProxySandbox,
+			bind: bindProxySandbox,
+			discover: discoverProxySandbox,
+			meter: (name: string, sessionId: string, token: string) =>
+				meterProxySandbox(name, sessionId, PROXY_PORT, token),
+			stop: stopProxySandbox,
+		},
+	});
+
+export function parseSandboxProvider(
+	env: NodeJS.ProcessEnv,
+): SandboxProviderKind {
+	const provider = env.HOBO_CI_SANDBOX_PROVIDER;
+	if (provider === undefined || provider === "") return "vercel";
+	if (provider === "vercel" || provider === "agent37") return provider;
+	throw new Error("invalid sandbox provider");
+}
+
+export function createAgent37SandboxDrivers(
+	options: Agent37SandboxDriverOptions,
+	domains?: readonly string[],
+): SandboxDrivers {
+	const pool =
+		domains === undefined
+			? options.pool
+			: {
+					...options.pool,
+					network: { allow: parseAgent37NetworkAllow(domains) },
+				};
+	return { driver: createAgent37SandboxDriver({ ...options, pool }) };
+}
 
 /** Sandbox execution is opt-in until deployment-specific platform limits and
  * identity claims are verified. No public PR is admitted without this host. */
@@ -95,17 +127,25 @@ export function createSandboxComposition(options: {
 	publicOrigin: string;
 	store: SandboxCompositionStore;
 	github: GithubTransport;
-	drivers?: typeof VERCEL_SANDBOX_DRIVERS | undefined;
+	sandboxProvider?: SandboxProviderKind | undefined;
+	agent37?: Agent37SandboxDriverOptions | undefined;
+	drivers?: SandboxDrivers | undefined;
 	now?: (() => string) | undefined;
 }) {
 	const { env, store, github } = options;
-	const drivers = options.drivers ?? VERCEL_SANDBOX_DRIVERS;
 	if (!env.HOBO_CI_SANDBOX_ENABLED) return undefined;
 	if (env.HOBO_CI_SANDBOX_ENABLED !== "1")
 		throw new Error("invalid sandbox enablement");
+	const provider = options.sandboxProvider ?? parseSandboxProvider(env);
 	const domains = z
 		.array(z.string())
 		.parse(JSON.parse(required(env, "HOBO_CI_SANDBOX_DOMAINS_JSON")));
+	let drivers: SandboxDrivers;
+	if (options.drivers) drivers = options.drivers;
+	else if (provider === "agent37") {
+		if (!options.agent37) throw new Error("agent37 sandbox driver unavailable");
+		drivers = createAgent37SandboxDrivers(options.agent37, domains);
+	} else drivers = VERCEL_SANDBOX_DRIVERS;
 	const plan = env.HOBO_CI_SANDBOX_PLAN ?? "hobby";
 	if (plan !== "hobby" && plan !== "pro" && plan !== "enterprise")
 		throw new Error("invalid sandbox plan");

@@ -57,10 +57,6 @@ export interface CompleteExecutionInput {
 	teardownConfirmed: boolean;
 }
 
-export interface RunnerSlotTransitionOptions {
-	teardownConfirmed?: boolean;
-}
-
 export interface StrictFleetStore {
 	initialize(): Promise<void>;
 	createIncarnation(incarnation: ParsedControllerIncarnation): Promise<void>;
@@ -77,7 +73,6 @@ export interface StrictFleetStore {
 		expected: RunnerSlotState,
 		next: RunnerSlotState,
 		externalRunnerId?: string,
-		options?: RunnerSlotTransitionOptions,
 	): Promise<RunnerSlot>;
 	claimEffect(input: EffectClaimInput): Promise<WorkerDelivery>;
 	renewEffectDelivery(

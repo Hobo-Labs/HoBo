@@ -1,29 +1,29 @@
 ---------------------- MODULE PricingEligibility ----------------------
 EXTENDS Naturals
-CONSTANTS CheckCompleteness, PartialIneligible, RequireEligible
-VARIABLES completeness, allowPartial, metadataLost, phase, eligibility
-vars == <<completeness,allowPartial,metadataLost,phase,eligibility>>
-Init == /\ completeness \in {"complete","partial","unknown"}
+VARIABLES version, completeness, allowPartial, metadataLost, phase, eligibility
+vars == <<version,completeness,allowPartial,metadataLost,phase,eligibility>>
+Init == /\ version \in {"old","v9"} /\ completeness \in {"complete","partial","unknown"}
         /\ allowPartial \in BOOLEAN /\ metadataLost \in BOOLEAN
         /\ phase = "received" /\ eligibility = "none"
 Quote == /\ phase = "received"
-         /\ LET valid == ~CheckCompleteness \/ completeness \in {"complete","partial"}
+         /\ LET valid == IF version = "v9" THEN completeness \in {"complete","partial"} ELSE TRUE
                 allowed == completeness = "complete" \/ allowPartial
             IN /\ phase' = IF valid /\ allowed THEN "quoted" ELSE "rejected"
                /\ eligibility' = IF ~(valid /\ allowed) THEN "none"
                     ELSE IF metadataLost THEN "missing"
-                    ELSE IF PartialIneligible /\ completeness = "partial" THEN "ineligible" ELSE "eligible"
-         /\ UNCHANGED <<completeness,allowPartial,metadataLost>>
+                    ELSE IF version = "v9" /\ completeness = "partial" THEN "ineligible" ELSE "eligible"
+         /\ UNCHANGED <<version,completeness,allowPartial,metadataLost>>
 Dispatch == /\ phase = "quoted"
-            /\ phase' = IF (IF RequireEligible THEN eligibility = "eligible" ELSE eligibility # "ineligible")
+            /\ phase' = IF (IF version = "v9" THEN eligibility = "eligible" ELSE eligibility # "ineligible")
                          THEN "selected" ELSE "not-selected"
-            /\ UNCHANGED <<completeness,allowPartial,metadataLost,eligibility>>
+            /\ UNCHANGED <<version,completeness,allowPartial,metadataLost,eligibility>>
 Done == /\ phase \in {"rejected","selected","not-selected"} /\ UNCHANGED vars
 Next == Quote \/ Dispatch \/ Done
 Spec == Init /\ [][Next]_vars
-TypeOK == /\ completeness \in {"complete","partial","unknown"}
+TypeOK == /\ version \in {"old","v9"} /\ completeness \in {"complete","partial","unknown"}
           /\ allowPartial \in BOOLEAN /\ metadataLost \in BOOLEAN
           /\ phase \in {"received","quoted","rejected","selected","not-selected"}
           /\ eligibility \in {"none","missing","eligible","ineligible"}
-SelectionSafe == phase = "selected" => completeness = "complete" /\ eligibility = "eligible"
+CurrentSelectionSafe == version = "v9" /\ phase = "selected" => completeness = "complete" /\ eligibility = "eligible"
+AllSelectionSafe == phase = "selected" => completeness = "complete" /\ eligibility = "eligible"
 =============================================================================

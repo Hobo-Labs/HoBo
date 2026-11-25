@@ -98,7 +98,7 @@ backend that still meets the policy; `on-failure` moves only when the writer
 fails), `backupEveryMs`/`backupsKept`, and `monthlyBudgetMicros`. A policy
 that cannot keep its promise is refused (`restore` with no standby and no
 backup; a recovery point under a second with standbys). The trait names no
-provider; `continuityFleetPlan` in `@hobo/backend-fleet` turns it into the
+provider; `continuityFleetPlan` in `@hobo/backend-routing` turns it into the
 fleet's policy, the standbys placement asks for and the copy cadence. Schema:
 `data-models/bindles.{proto,cue}` `ContinuityPolicy`.
 

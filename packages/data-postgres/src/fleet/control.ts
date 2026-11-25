@@ -1,18 +1,9 @@
-/**
- * The fleet's own tables, created on every backend.
- *
- * Three small tables, all under the layout's control prefix so replication
- * never copies them: the assignment log, the standby's watermark, and the
- * per-period usage counters. Creation is serialised by an advisory lock
- * because concurrent `CREATE TABLE IF NOT EXISTS` statements can still collide
- * in the catalog.
- */
 import { FLEET_LOCK_CLASS, type FleetLayout } from "./layout.js";
-import { type FleetBackend, inTransaction, quoteIdentifier } from "./sql.js";
+import { inTransaction, type PostgresBackend, quoteIdentifier } from "./sql.js";
 
 /** Create the control tables on one backend. Safe to repeat and to race. */
 export async function ensureFleetControlTables(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 ): Promise<void> {
 	await inTransaction(backend.executor, "BEGIN", async (session) => {
@@ -29,9 +20,13 @@ export async function ensureFleetControlTables(
 			loss_window_ms bigint CHECK (loss_window_ms >= 0),
 			decided_at timestamptz NOT NULL,
 			decided_by text NOT NULL,
+			members text[],
 			CHECK (sealed = (target IS NOT NULL)),
 			CHECK (NOT sealed OR target IS DISTINCT FROM active)
 		)`);
+		await session.query(
+			`ALTER TABLE ${layout.assignmentTable} ADD COLUMN IF NOT EXISTS members text[]`,
+		);
 		// Older fleets used `target IS DISTINCT FROM active` unconditionally.
 		// It rejects the supported unsealed/no-writer state (both are NULL).
 		// Replace only that exact old check, under the existing DDL lock and in

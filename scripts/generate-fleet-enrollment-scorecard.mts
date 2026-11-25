@@ -149,7 +149,7 @@ const verified162 = new Map<string, string>([
 	],
 	[
 		"Stale worker renews or acknowledges",
-		"rejects stale delivery tokens across generated lease histories",
+		"does not mutate for stale worker renewal or acknowledgement",
 	],
 	[
 		"Worker observation sequence regresses",
@@ -157,7 +157,11 @@ const verified162 = new Map<string, string>([
 	],
 	[
 		"Capacity sequence changes before commit",
-		"rejects a stale revision even when capacity remains",
+		"rejects admission when the capacity sequence changed",
+	],
+	[
+		"Policy changes during admission",
+		"rejects an old policy snapshot during admission",
 	],
 	[
 		"Completion delivered twice",

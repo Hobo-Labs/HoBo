@@ -38,7 +38,7 @@ The `Failed to create bin ... ENOENT` warnings on shard 5 are not a cause. A pas
 
 The live data lane started its servers in 70 s (16 s on GitHub-hosted). The suites then ran 10–40 times slower than on GitHub-hosted (`@hobo/data-sqlite` took 173 s against 4 s). During `@hobo/data-postgres`, mongod aborted:
 
-```
+```text
 WiredTiger error ... "__posix_directory_sync:256:/data/db/: directory-sync: open","error_str":"Too many open files","error_code":24
 Fatal assertion ... aborting after fassert() failure
 ```

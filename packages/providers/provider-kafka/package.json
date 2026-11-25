@@ -4,7 +4,7 @@
 	"license": "MIT",
 	"type": "module",
 	"private": true,
-	"description": "HoBo Kafka capability provider: wasi:messaging export, Resource Definitions, secretless credential brokering, local Redpanda path (ADR-0138).",
+	"description": "HoBo Kafka messaging client, Resource Definitions, secretless credential brokering, and local Redpanda path.",
 	"files": [
 		"LICENSE",
 		"dist"

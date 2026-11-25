@@ -19,8 +19,10 @@ workflows:
     '.github/workflows/examples-e2e.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
         - 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
-    '.github/workflows/fleet-enrollment.yml':
+    '.github/workflows/fleet-integration.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+        - 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
+        - 'jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949'
     '.github/workflows/fleet-probe.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
         - 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
@@ -32,8 +34,7 @@ workflows:
     '.github/workflows/hobo-ci.yml':
         - 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
-        - 'actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333'
-        - 'actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00'
+        - 'actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880'
         - 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
         - 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
     '.github/workflows/hosting-evidence.yml':
@@ -45,7 +46,7 @@ workflows:
     '.github/workflows/pricing-ci.yml':
         - 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
-        - 'actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00'
+        - 'actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880'
         - 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
     '.github/workflows/relay-deploy.yml':
         - 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
@@ -110,9 +111,9 @@ dependencies:
         commit: 'sha1-9000827ccba6bdab643e8b6fd33ac0654aef8333'
         owner_id: 44036562
         repo_id: 192626254
-    'actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00':
-        ref: 'v4.7.1'
-        commit: 'sha1-c5195efecf7bdfc987ee8bae7a71cb8b11521c00'
+    'actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880':
+        ref: 'v6.3.0'
+        commit: 'sha1-d1374f8ac74474200d16ef8ecee22c7ae7a51880'
         owner_id: 44036562
         repo_id: 196057608
     'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1':

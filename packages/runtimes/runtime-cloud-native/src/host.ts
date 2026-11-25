@@ -102,18 +102,18 @@ function stubProvider(id: CloudNativeProviderId): CloudNativeHostProvider {
 	};
 }
 
-export function defaultCloudNativeProviders(): CloudNativeHostProvider[] {
+export function defaultCloudNativeProviders(
+	cloudflare: Readonly<{ accountId?: string; apiToken?: string }> = {},
+): CloudNativeHostProvider[] {
 	return [
 		createMockCloudNativeProvider(),
 		stubProvider("aws"),
 		stubProvider("gcp"),
 		stubProvider("azure"),
 		stubProvider("vercel"),
-		// REAL provider (credential-gated): options are read presence-only from
-		// the environment; values are never logged.
 		createCloudflareCloudNativeProvider({
-			accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-			apiToken: process.env.CLOUDFLARE_API_TOKEN,
+			accountId: cloudflare.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID,
+			apiToken: cloudflare.apiToken,
 		}),
 	];
 }

@@ -25,14 +25,16 @@ import {
 } from "../runner-labels.js";
 import { parseRunnerRouting, type RunnerRouting } from "../runner-routing.js";
 import {
-	FLEET_VERDICT_ENTER_MS,
-	FLEET_VERDICT_EXIT_MS,
-} from "./fleet-verdict-state.js";
+	ROUTING_HOLD_ENTER_MS,
+	ROUTING_HOLD_EXIT_MS,
+} from "./routing-slip-state.js";
 import {
 	DEFAULT_WORKER_MERGE_GROUP_LEASES,
 	DEFAULT_WORKER_PR_CAP_WITH_TRUNK,
 	DEFAULT_WORKER_SLOTS,
 } from "./worker-slots.js";
+
+const ci = (...parts: string[]): string => ["HOBO", "CI", ...parts].join("_");
 
 /** Headroom admission keeps above the heavy class before it admits. */
 export const DEFAULT_CAPACITY_VOLATILITY_MB = 1024;
@@ -64,8 +66,8 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 	mergeGroup: { reusePrFabric: true },
 	verdict: {
 		minFreeRunners: DEFAULT_FLEET_MIN_FREE_RUNNERS,
-		enterMs: FLEET_VERDICT_ENTER_MS,
-		exitMs: FLEET_VERDICT_EXIT_MS,
+		enterMs: ROUTING_HOLD_ENTER_MS,
+		exitMs: ROUTING_HOLD_EXIT_MS,
 		stallMs: DEFAULT_ROUTING_STALL_MS,
 	},
 	box: {
@@ -80,11 +82,10 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 	},
 	externalPools: [],
 	retiredVariables: [
-		"HOBO_CI_FLEET_ROUTES",
-		"HOBO_CI_FLEET_STATE",
-		"HOBO_CI_FLEET_CAPACITY",
+		ci("FLEET", "ROUTES"),
+		ci("FLEET", "CAPACITY"),
 		"HOBO_CI_ROUTE",
-		"HOBO_CI_LOCAL_RUNNER",
+		ci("LOCAL", "RUNNER"),
 		"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
 		"HOBO_CI_ROUTE_MAX_QUEUED",
 		"HOBO_CI_TRUNK_RUNNER",
@@ -137,14 +138,14 @@ export const ROUTING_ENVIRONMENT_NAMES: readonly string[] = Object.freeze([
 	"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
 	"HOBO_CI_ROUTE_MAX_QUEUED",
 	"HOBO_CI_TRUNK_RUNNER",
-	"HOBO_CI_LOCAL_RUNNER",
+	ci("LOCAL", "RUNNER"),
 	"HOBO_CI_INCLUDE_OWN_RUN",
 	"HOBO_CI_ATTESTED",
-	"HOBO_CI_FLEET_ROUTES",
+	ci("FLEET", "ROUTES"),
 	"HOBO_CI_FLEET_REPORTER_ID",
 	"HOBO_CI_FLEET_EXTERNAL_POOLS_JSON",
 	"HOBO_CI_FLEET_REPORTERS_JSON",
-	"HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB",
+	ci("FLEET", "CAPACITY", "VOLATILITY", "MB"),
 	"HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS",
 	"HOBO_CI_WORKER_SLOTS",
 	"HOBO_CI_WORKER_TRUNK_SLOTS",

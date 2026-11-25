@@ -58,13 +58,16 @@ import "list"
 	destination_namespace?: string
 }
 
-#ConnectorKind: "github-app" | "pulumi" | "azure" | "vercel" | "cloudflare" | "custom"
+#ConnectorKind: "github-app" | "pulumi" | "azure" | "vercel" | "cloudflare" | "agent37" | "custom"
 
 #ConnectorConfig: {
 	id:           string & !=""
 	kind:         #ConnectorKind
 	display_name: string & !=""
 	settings: {[string]: string}
+	if kind == "agent37" {
+		settings: workspaceId: string & !=""
+	}
 	// A reference into the token broker / secret store, never a raw secret.
 	credential_ref?: string
 	enabled:         bool | *true

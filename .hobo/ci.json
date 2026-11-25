@@ -41,10 +41,15 @@
       "trunkHeadroomFleetDeferMs": 45000,
       "jobAdmission": "pull"
     },
-    "externalPools": [],
+    "externalPools": [
+      {
+        "labels": ["hobo-agent37"],
+        "runnerNamePrefix": "hobo-a37-",
+        "maxRunners": 4
+      }
+    ],
     "retiredVariables": [
       "HOBO_CI_FLEET_ROUTES",
-      "HOBO_CI_FLEET_STATE",
       "HOBO_CI_FLEET_CAPACITY",
       "HOBO_CI_ROUTE",
       "HOBO_CI_LOCAL_RUNNER",
@@ -177,6 +182,41 @@
               "namespace": "arc-runners",
               "minRunners": 0,
               "maxRunners": 4
+            }
+          },
+          {
+            "id": "agent37-runners",
+            "kind": "agent37",
+            "connectionRef": "agent37-ci",
+            "runsOn": "hobo-agent37",
+            "enabled": true,
+            "pool": {
+              "minBoxes": 0,
+              "maxBoxes": 4,
+              "type": "vm",
+              "size": { "cpu": 2, "memory": 4, "disk": 20 },
+              "region": "us",
+              "template": "agent37-ubuntu@1",
+              "idleTtlSeconds": 600,
+              "jobTimeoutSeconds": 1800,
+              "labels": ["hobo-agent37"],
+              "network": {
+                "allow": [
+                  "github.com",
+                  "api.github.com",
+                  "codeload.github.com",
+                  "objects.githubusercontent.com",
+                  "pkg-containers.githubusercontent.com",
+                  "*.actions.githubusercontent.com",
+                  "ghcr.io",
+                  "registry.npmjs.org"
+                ]
+              },
+              "budget": {
+                "limitMicros": 2000000,
+                "period": "month",
+                "maxCreatesPerHour": 60
+              }
             }
           }
         ],

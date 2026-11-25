@@ -24,7 +24,8 @@
 				"merge_tests": "${{ steps.merge-group-base.outputs.tests }}",
 				"merge_scope": "${{ steps.merge-group-base.outputs.scope }}",
 				"pr_base": "${{ steps.scm-base.outputs.base }}",
-				"shards": "${{ steps.shard-plan.outputs.shards }}"
+				"shards": "${{ steps.shard-plan.outputs.shards }}",
+				"state_machines": "${{ steps.state-machine-scope.outputs.needed }}"
 			},
 			"steps": [
 				{
@@ -80,6 +81,17 @@
 						"EVENT_NAME": "${{ github.event_name }}",
 						"PR_BASE": "${{ steps.scm-base.outputs.base }}",
 						"MERGE_TESTS": "${{ steps.merge-group-base.outputs.tests }}",
+						"MERGE_BASE": "${{ steps.merge-group-base.outputs.base }}"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Decide whether state-machine verification is needed",
+					"id": "state-machine-scope",
+					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) BASE=\"$PR_BASE\" ;;\n  *) BASE=\"$MERGE_BASE\" ;;\nesac\nneeded=true\nif [ -n \"$BASE\" ] && git cat-file -e \"${BASE}^{commit}\" 2>/dev/null; then\n  answer=\"$(git diff --name-only \"$BASE\" HEAD |\n    node --experimental-strip-types --no-warnings scripts/ci/state-machine-scope.mts)\" || answer=\"\"\n  if [ \"$answer\" = \"false\" ]; then needed=false; fi\nfi\necho \"state-machine verification needed: ${needed}\"\necho \"needed=${needed}\" >> \"$GITHUB_OUTPUT\"\n",
+					"env": {
+						"EVENT_NAME": "${{ github.event_name }}",
+						"PR_BASE": "${{ steps.scm-base.outputs.base }}",
 						"MERGE_BASE": "${{ steps.merge-group-base.outputs.base }}"
 					},
 					"local": "run"
@@ -284,6 +296,11 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
+					"name": "Test from a detached HEAD, as the merge queue does",
+					"run": "git checkout --quiet --detach HEAD",
+					"local": "run"
+				},
+				{
 					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
@@ -329,7 +346,7 @@
 				},
 				{
 					"name": "Workspace tests",
-					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  merge_group) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\n  *) echo \"Unexpected event: $EVENT_NAME\" >&2; exit 1 ;;\nesac\nif [ \"$EVENT_NAME\" = \"merge_group\" ] && [ -n \"$MERGE_TREE\" ]; then\n  proven=\"$(node --experimental-strip-types --no-warnings scripts/ci/proven-tree.mts \\\n    --proven=\"$MERGE_BASE\" --tree=\"$MERGE_TREE\" --base=\"$MERGE_GROUP_BASE\")\" || proven=\"\"\n  if [ \"$proven\" != \"$MERGE_BASE\" ]; then BASE=\"$MERGE_GROUP_BASE\"; TESTS=\"all\"; fi\nfi\ncase \"$TESTS\" in\n  affected)\n    # Changed packages run whole; their dependents run only the tests\n    # whose import closure reaches a change. A missing base is an error.\n    if [ -z \"$BASE\" ] || ! git cat-file -e \"${BASE}^{commit}\"; then\n      echo \"Merge-group base is missing or unreachable\" >&2\n      exit 1\n    fi\n    git diff --name-only \"$BASE\" HEAD |\n      node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n        --base=\"$BASE\" --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  all)\n    printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  *) echo \"Invalid or missing merge-group test scope: $TESTS\" >&2; exit 1 ;;\nesac\n",
+					"run": "set -euo pipefail\nunset GITHUB_HEAD_REF GITHUB_BASE_REF\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  merge_group) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\n  *) echo \"Unexpected event: $EVENT_NAME\" >&2; exit 1 ;;\nesac\nif [ \"$EVENT_NAME\" = \"merge_group\" ] && [ -n \"$MERGE_TREE\" ]; then\n  proven=\"$(node --experimental-strip-types --no-warnings scripts/ci/proven-tree.mts \\\n    --proven=\"$MERGE_BASE\" --tree=\"$MERGE_TREE\" --base=\"$MERGE_GROUP_BASE\")\" || proven=\"\"\n  if [ \"$proven\" != \"$MERGE_BASE\" ]; then BASE=\"$MERGE_GROUP_BASE\"; TESTS=\"all\"; fi\nfi\ncase \"$TESTS\" in\n  affected)\n    # Changed packages run whole; their dependents run only the tests\n    # whose import closure reaches a change. A missing base is an error.\n    if [ -z \"$BASE\" ] || ! git cat-file -e \"${BASE}^{commit}\"; then\n      echo \"Merge-group base is missing or unreachable\" >&2\n      exit 1\n    fi\n    git diff --name-only \"$BASE\" HEAD |\n      node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n        --base=\"$BASE\" --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  all)\n    printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  *) echo \"Invalid or missing merge-group test scope: $TESTS\" >&2; exit 1 ;;\nesac\n",
 					"env": {
 						"EVENT_NAME": "${{ github.event_name }}",
 						"PR_BASE": "${{ needs.pr_gate_plan.outputs.pr_base }}",
@@ -353,7 +370,7 @@
 				},
 				{
 					"name": "Save Turbo cache",
-					"if": "always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'",
+					"if": "always() && (github.event_name == 'merge_group' || matrix.shard == 0) && steps.turbo-prune.outputs.save != 'false'",
 					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
@@ -509,6 +526,11 @@
 					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
+					"name": "Test from a detached HEAD, as the merge queue does",
+					"run": "git checkout --quiet --detach HEAD",
+					"local": "run"
+				},
+				{
 					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
@@ -561,38 +583,39 @@
 					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
-					"name": "Build current sources for local attestation",
-					"if": "steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS != 'true'",
-					"run": "set -euo pipefail\nBASE=\"$(git rev-parse --verify HEAD^1 2>/dev/null || true)\"\nif [ -z \"$BASE\" ]; then\n  echo \"Scripts-test build base is empty\" >&2\n  exit 1\nfi\nnode --import tsx scripts/ci/scripts-test-imports.mts \\\n  > \"$RUNNER_TEMP/scripts-tests-import-filters\"\nmapfile -t IMPORTED < \"$RUNNER_TEMP/scripts-tests-import-filters\"\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$BASE\" \\\n    > \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\nmapfile -t AFFECTED < \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\npnpm exec turbo run build \\\n  \"${IMPORTED[@]}\" \\\n  \"${AFFECTED[@]}\" \\\n  --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\n",
-					"local": "run"
-				},
-				{
-					"name": "Download scripts-test build outputs",
+					"name": "Build the packages the scripts tests import",
 					"if": "steps.scope.outputs.run == 'true'",
-					"uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
-					"with": {
-						"name": "scripts-tests-dist-${{ github.run_id }}",
-						"path": "${{ runner.temp }}"
-					},
-					"local": "skip",
-					"reason": "CI supplies the artifact; the preceding local step builds current sources"
-				},
-				{
-					"name": "Extract scripts-test build outputs",
-					"if": "steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS == 'true'",
-					"run": "set -euo pipefail\nARCHIVE=\"$RUNNER_TEMP/scripts-tests-dist.tar\"\ntest -s \"$ARCHIVE\"\ntar -xf \"$ARCHIVE\" -C .\n",
-					"timeout-minutes": 3,
+					"run": "set -euo pipefail\nBASE=\"$(git rev-parse --verify HEAD^1 2>/dev/null || true)\"\nif [ -z \"$BASE\" ]; then\n  echo \"Scripts-test build base is empty\" >&2\n  exit 1\nfi\nnode --import tsx scripts/ci/scripts-test-imports.mts \\\n  > \"$RUNNER_TEMP/scripts-tests-import-filters\"\nmapfile -t IMPORTED < \"$RUNNER_TEMP/scripts-tests-import-filters\"\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$BASE\" \\\n    > \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\nmapfile -t AFFECTED < \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\npnpm exec turbo run build \\\n  \"${IMPORTED[@]}\" \\\n  \"${AFFECTED[@]}\" \\\n  --output-logs=new-only --concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}\n",
 					"local": "run"
 				},
 				{
 					"name": "Scripts tests",
 					"if": "steps.scope.outputs.run == 'true'",
-					"run": "pnpm run test:scripts --shard=\"$SHARD/$SHARD_TOTAL\"",
+					"run": "env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF pnpm run test:scripts --shard=\"$SHARD/$SHARD_TOTAL\"",
 					"env": {
 						"SHARD": "${{ strategy.job-index }}",
 						"SHARD_TOTAL": "${{ strategy.job-total }}"
 					},
 					"local": "run"
+				},
+				{
+					"name": "Prune Turbo cache",
+					"id": "turbo-prune",
+					"if": "always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
+				},
+				{
+					"name": "Save Turbo cache",
+					"if": "always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'",
+					"uses": "$/.github/actions/turbo-cache",
+					"with": {
+						"mode": "save"
+					},
+					"local": "skip",
+					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
 					"name": "CI trace",
@@ -809,6 +832,7 @@
 			"workflowEnv": {
 				"RELEASE_SPARSE_PATHS": ".github\nscripts\ntest/setup\npackages\nrelease\ndeploy\nsite\nexternal\nmedia\nexamples\nsrc\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n",
 				"HOBO_RELEASE_TURBO_BASE": "origin/main",
+				"RELEASE_PAGES_MATERIALIZE_PATHS": "examples/browser-runtime/wit\n",
 				"RELEASE_PAGES_SPARSE_PATHS": ".github\nscripts\nsite\npackages\ndocs\nrelease\nexternal\nexamples\nmedia\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n"
 			},
 			"env": {},
@@ -852,9 +876,14 @@
 					"local": "run"
 				},
 				{
+					"name": "Build release-contract script dependencies",
+					"run": "pnpm exec turbo run build --filter=@hobo/provider-redaction --filter=@hobo/cd --output-logs=new-only --concurrency=${{ env.HOBO_TURBO_CONCURRENCY }}",
+					"local": "run"
+				},
+				{
 					"name": "npm scope map + OCI manifest contract",
 					"id": "release_contract_tests",
-					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-contract-vitest -- pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-git-tag.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-pages-stale.test.ts scripts/test/release-relevant-push.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/nbgv-release-version.test.ts scripts/test/release-freight.test.ts scripts/test/release-freight-cli.test.ts scripts/test/deploy-site.test.ts",
+					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-contract-vitest -- pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-git-tag.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-pages-stale.test.ts scripts/test/release-relevant-push.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/build-release-browser-wit-on-runner.test.ts scripts/test/nbgv-release-version.test.ts scripts/test/release-freight.test.ts scripts/test/release-freight-cli.test.ts scripts/test/deploy-site.test.ts",
 					"local": "run"
 				},
 				{

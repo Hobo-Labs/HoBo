@@ -149,6 +149,16 @@ export const AGENT_FAILURES = Object.freeze({
 		remediation:
 			"The proof key does not match the SVID's `cnf.jkt` or the enrolled key; sign with the enrolled private key.",
 	},
+	"fleet-unavailable": {
+		status: 503,
+		remediation:
+			"The Station has no fleet authority configured; configure the Yard's fleet (`members` / `fleet` in the Station composition) and retry.",
+	},
+	"fleet-refused": {
+		status: 403,
+		remediation:
+			"The fleet authority refused the step; the message names the fleet's error code. Check the member with `hobo fleet member list`.",
+	},
 	"store-unavailable": {
 		status: 503,
 		remediation:

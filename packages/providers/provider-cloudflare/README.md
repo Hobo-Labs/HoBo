@@ -298,7 +298,7 @@ const outcome = await registry.get("cloudflare.r2/v1")?.reconcile(
   {
     ref: { slot: "bucket", productId: "cloudflare.r2/v1", logicalId: "app-uploads" },
     desired: {},
-    credentialRef: "env://CLOUDFLARE_API_TOKEN",
+    credentialRef: "owner://CLOUDFLARE_API_TOKEN",
   },
   transport,
 );
@@ -322,7 +322,7 @@ diagnostic and left for a human.
 
 ### Credentials are locators
 
-`credentialRef` is a locator (`env://CLOUDFLARE_API_TOKEN`,
+`credentialRef` is a locator (`owner://CLOUDFLARE_API_TOKEN`,
 `secret://camp/cf-token`), and the resolver refuses anything that looks like the
 material itself (`RESOLVER_CREDENTIAL_NOT_A_REF`) — a raw token in a request
 record is a token in the event log. A blank or unresolvable ref is

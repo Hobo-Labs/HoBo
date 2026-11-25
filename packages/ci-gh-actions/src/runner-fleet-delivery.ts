@@ -1,27 +1,10 @@
-/**
- * HoBo's own runner fleet, delivered by HoBo CD (ADR-0182).
- *
- * The hosts that run HoBo's self-hosted GitHub Actions runners (the box
- * worker, mesh nodes and local runners serving `hobo`, `hobo-trunk` and
- * `hobo-local-host`) are Camps of one Yard. This module turns a declared host
- * list into what `@hobo/cd` reads, as plain records in protobuf JSON form
- * (`packages/cd/data-models/cd.proto`), so `hobo deploy pipeline apply --file
- * packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.json` applies them:
- *
- * - a Camp set for the `hobo-ci-runner-fleet` Bindle, selected by label;
- * - an OCI Freight source that polls GHCR for the worker image's release tags
- *   (`scripts/ci/push-ci-runner-image-ghcr.mts` publishes them);
- * - a Placement with a pilot group, and a pipeline node that fans out
- *   PROGRESSIVE_PER_GROUP: the pilot first and mandatory, a failure budget of
- *   one host, a quorum, and departing hosts left running (ORPHAN).
- *
- * It also maps what the mesh already reports about each host (its signed
- * advertisement: health, expiry, served labels) to Camp inventory conditions
- * and claims, from the health source. Nothing here changes job routing.
- *
- * It holds data and pure functions only: no I/O, no clock but the one given.
- */
-import type { MeshNode } from "@hobo/ci/mesh";
+import {
+	Availability,
+	type FleetMemberView,
+	Health,
+	MemberKind,
+	MemberState,
+} from "@hobo/fleet";
 import { z } from "zod";
 import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
@@ -45,15 +28,9 @@ export const RUNNER_FLEET_PROVIDER = "self-hosted";
 // public-contract: the id of the runner fleet's declared Station Rail.
 export const RUNNER_FLEET_RAIL = "hobo-ci-runner-fleet";
 // public-contract: credential locator the CD Station resolves to read GHCR (never stored).
-export const RUNNER_IMAGE_CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";
+export const RUNNER_IMAGE_CREDENTIAL_REF = "owner://HOBO_CI_GHCR_READ_TOKEN";
 // public-contract: the Freight artifact a container-mode controller runs (the worker image).
 export const RUNNER_IMAGE_ARTIFACT = "hobo-ci-worker";
-/**
- * The single-file releases a process-mode controller runs, one per program:
- * the box worker daemon (box workers and mesh nodes) and the local runner.
- * `scripts/build-controller-release.mts` builds them under these names and
- * writes `index.<artifact>.json` for each.
- */
 // public-contract: Freight artifact names and runner-host realization parameter keys of the controller releases.
 export const RUNNER_RELEASE_ARTIFACTS = Object.freeze({
 	workerRelease: "hobo-ci-worker-release",
@@ -96,7 +73,7 @@ export function servedLabelClaims(
 }
 const DEFINED_BY = "packages/ci-gh-actions/deploy/runner-fleet";
 const HOST_ID = /^[a-z0-9][a-z0-9-]{0,62}$/u;
-const HOST_KINDS = ["box-worker", "mesh-node", "local-runner"] as const;
+const HOST_KINDS = ["box-worker", "fleet-device", "developer-device"] as const;
 const RINGS = ["pilot", "fleet"] as const;
 
 /** A pilot host must keep taking jobs this long on new Freight before the rest move. */
@@ -112,7 +89,6 @@ export type ServedRunnerLabel = (typeof SERVED_LABELS)[number];
 
 // domain-view: one parsed runner host (the derived type every builder takes).
 export type RunnerHost = Readonly<{
-	/** The host's mesh node id; the Camp is `hobo-ci-runners/<id>`. */
 	id: string;
 	kind: RunnerHostKind;
 	runnerLabels: readonly ServedRunnerLabel[];
@@ -129,7 +105,9 @@ export type RunnerHostsOutcome =
 	  }>;
 
 const HostEntry = z.object({
-	id: z.string().regex(HOST_ID, "not a lowercase host id (the mesh node id)"),
+	id: z
+		.string()
+		.regex(HOST_ID, "not a lowercase host id (the device name in fleet hobo)"),
 	kind: z.enum(HOST_KINDS),
 	runnerLabels: z.array(z.enum(SERVED_LABELS)).min(1),
 	ring: z.enum(RINGS).default("fleet"),
@@ -171,12 +149,12 @@ export function parseRunnerHosts(text: string): RunnerHostsOutcome {
 		seen.add(host.id);
 		const local = host.runnerLabels.includes(LOCAL_HOST_LABEL);
 		if (
-			host.kind === "local-runner" &&
+			host.kind === "developer-device" &&
 			host.runnerLabels.some((l) => l !== LOCAL_HOST_LABEL)
 		)
-			problems.push(`${at}: a local-runner serves only hobo-local-host`);
-		if (host.kind !== "local-runner" && local)
-			problems.push(`${at}: only a local-runner serves hobo-local-host`);
+			problems.push(`${at}: a developer-device serves only hobo-local-host`);
+		if (host.kind !== "developer-device" && local)
+			problems.push(`${at}: only a developer-device serves hobo-local-host`);
 	}
 	if (parsed.data.length > 1 && !parsed.data.some((h) => h.ring === "pilot"))
 		problems.push(
@@ -196,7 +174,7 @@ export function parseRunnerHosts(text: string): RunnerHostsOutcome {
 }
 
 const REMEDIATION =
-	"Fix packages/ci-gh-actions/deploy/runner-fleet/hosts.json: one entry per runner host with its mesh node id (lowercase), kind, the runner labels it serves and its ring, and exactly one pilot when there is more than one host.";
+	"Fix packages/ci-gh-actions/deploy/runner-fleet/hosts.json: one entry per runner host with its device name in fleet hobo (lowercase), kind, the runner labels it serves and its ring, and exactly one pilot when there is more than one host.";
 
 export const campIdOf = (host: Pick<RunnerHost, "id">): string =>
 	`${RUNNER_FLEET_YARD}/${host.id}`;
@@ -574,14 +552,6 @@ export type RunnerFreightArtifact = Readonly<{
 	coordinate: string;
 }>;
 
-/**
- * The runner-host row's realization parameters for one Freight: `image`, the
- * worker image pinned by its manifest digest (what a container-mode host
- * pulls), and, when the Freight carries them, each controller release as
- * `<artifact>@sha256:<sha256 of its bytes>` (what a process-mode host
- * stages: `workerRelease` on a box worker or mesh node, `localRunnerRelease`
- * on a local runner). Undefined when the Freight has no digest-pinned image.
- */
 export function runnerHostRealizationParameters(
 	artifacts: readonly RunnerFreightArtifact[],
 ):
@@ -615,7 +585,7 @@ export function runnerHostReferenceParameter(
 	mode: "container" | "process",
 ): "image" | RunnerReleaseParameter {
 	if (mode === "container") return "image";
-	return kind === "local-runner" ? "localRunnerRelease" : "workerRelease";
+	return kind === "developer-device" ? "localRunnerRelease" : "workerRelease";
 }
 
 type ConditionStatus =
@@ -645,26 +615,20 @@ export type RunnerCampObservation = Readonly<{
 	}>[];
 }>;
 
-/**
- * What the mesh reports about each declared host, as Camp inventory
- * observations from the health source. A fresh advertisement is contact
- * (REACHABLE) and a live mesh lease (LEASED, until it expires); `healthy`
- * (not draining, host not critical) is READY. A host with no advertisement is
- * UNKNOWN, never assumed healthy. The served labels are claims: they narrow
- * (a host that stopped serving a declared label reads as inconsistent) and
- * never grant.
- */
 export function runnerFleetCampObservations(
 	hosts: readonly RunnerHost[],
-	nodes: readonly MeshNode[],
+	members: readonly FleetMemberView[],
 	nowMs: number,
 ): readonly RunnerCampObservation[] {
-	const byId = new Map(nodes.map((node) => [node.id, node]));
+	const byName = new Map(
+		members
+			.filter((member) => member.kind === MemberKind.DEVICE)
+			.map((member) => [member.name, member]),
+	);
 	const observedAt = new Date(nowMs).toISOString();
 	return hosts.map((host) => {
-		const node = byId.get(host.id);
-		const since =
-			node?.sinceMs === undefined ? "" : new Date(node.sinceMs).toISOString();
+		const member = byName.get(host.id);
+		const since = member?.since ?? "";
 		const condition = (
 			type: RunnerCampObservation["conditions"][number]["type"],
 			status: ConditionStatus,
@@ -677,56 +641,66 @@ export function runnerFleetCampObservations(
 				reason,
 				since,
 			});
+		const live =
+			member !== undefined &&
+			member.state === MemberState.ACTIVE &&
+			member.availability !== Availability.LOST &&
+			member.availability !== Availability.UNSPECIFIED;
 		let conditions: RunnerCampObservation["conditions"];
-		if (!node)
+		if (!member || member.availability === Availability.UNSPECIFIED)
 			conditions = [
 				condition(
 					"CAMP_CONDITION_TYPE_REACHABLE",
 					"CONDITION_STATUS_UNKNOWN",
-					"mesh-advert-missing",
+					"member-missing",
 				),
 				condition(
 					"CAMP_CONDITION_TYPE_LEASED",
 					"CONDITION_STATUS_UNKNOWN",
-					"mesh-advert-missing",
+					"member-missing",
 				),
 				condition(
 					"CAMP_CONDITION_TYPE_READY",
 					"CONDITION_STATUS_UNKNOWN",
-					"mesh-advert-missing",
+					"member-missing",
 				),
 			];
-		else if (node.validUntilMs <= nowMs)
+		else if (!live) {
+			const reason =
+				member.state === MemberState.ACTIVE
+					? "member-lost"
+					: `member-${MemberState[member.state].toLowerCase()}`;
 			conditions = [
 				condition(
 					"CAMP_CONDITION_TYPE_REACHABLE",
 					"CONDITION_STATUS_FALSE",
-					"mesh-advert-expired",
+					reason,
 				),
 				condition(
 					"CAMP_CONDITION_TYPE_LEASED",
 					"CONDITION_STATUS_FALSE",
-					"mesh-lease-expired",
+					reason,
 				),
 				condition(
 					"CAMP_CONDITION_TYPE_READY",
 					"CONDITION_STATUS_FALSE",
-					"mesh-advert-expired",
+					reason,
 				),
 			];
-		else
+		} else
 			conditions = [
 				condition(
 					"CAMP_CONDITION_TYPE_REACHABLE",
 					"CONDITION_STATUS_TRUE",
-					"mesh-advert-fresh",
+					"member-live",
 				),
 				condition(
 					"CAMP_CONDITION_TYPE_LEASED",
 					"CONDITION_STATUS_TRUE",
-					`mesh-lease-valid-until:${new Date(node.validUntilMs).toISOString()}`,
+					`member-last-seen:${member.lastSeen}`,
 				),
-				node.healthy
+				member.availability === Availability.LIVE &&
+				member.health === Health.REACHABLE
 					? condition(
 							"CAMP_CONDITION_TYPE_READY",
 							"CONDITION_STATUS_TRUE",
@@ -738,16 +712,15 @@ export function runnerFleetCampObservations(
 							"runner-host-draining-or-pressured",
 						),
 			];
-		const claims =
-			node && node.validUntilMs > nowMs
-				? servedLabelClaims(node.labels).map((claim) =>
-						Object.freeze({
-							...claim,
-							reportedBy: `mesh:${node.id}`,
-							observedAt,
-						}),
-					)
-				: [];
+		const claims = live
+			? servedLabelClaims(member.labels).map((claim) =>
+					Object.freeze({
+						...claim,
+						reportedBy: `fleet:${member.memberId}`,
+						observedAt,
+					}),
+				)
+			: [];
 		return Object.freeze({
 			campId: campIdOf(host),
 			source: "SIGNAL_SOURCE_HEALTH_SOURCE" as const,

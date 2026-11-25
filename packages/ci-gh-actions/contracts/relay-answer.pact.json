@@ -1,0 +1,480 @@
+{
+  "consumer": {
+    "name": "HoboRelayAnswerer"
+  },
+  "provider": {
+    "name": "GithubActionsRestApi"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "evidence": "Hand-authored consumer expectations of the GitHub REST calls the relay-mode answerer makes (docs.github.com/en/rest/actions/workflow-jobs, workflow-runs, self-hosted-runners, repos/contents and pulls, read 2026-11-17). Mocked transport only; no provider verification or captured traffic."
+  },
+  "interactions": [
+    {
+      "description": "read .hobo/ci.json at the default branch",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/contents/.hobo%2Fci.json"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "type": "file",
+          "path": ".hobo/ci.json",
+          "encoding": "base64",
+          "content": "eyJyZWxheUpvYnMiOnsiYW5zd2VyIjp0cnVlfSwicnVubmVyT3JkZXIiOnsic3RlcHMiOlt7ImtleSI6ImdpdGh1YiJ9XX19"
+        }
+      }
+    },
+    {
+      "description": "read whether the relay job is still queued",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/jobs/70001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "id": 70001,
+          "run_id": 5001,
+          "run_attempt": 1,
+          "name": "title",
+          "status": "queued",
+          "labels": [
+            "hobo-relay"
+          ]
+        }
+      }
+    },
+    {
+      "description": "create a one-job runner on the repository",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/octo/app/actions/runners/generate-jitconfig",
+        "body": {
+          "name": "hobo-relay-5001-70001-1",
+          "runner_group_id": 1,
+          "labels": [
+            "hobo-relay"
+          ],
+          "work_folder": "_hobo_relay"
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "runner": {
+            "id": 31,
+            "name": "hobo-relay-5001-70001-1",
+            "os": "unknown",
+            "status": "offline",
+            "busy": false,
+            "labels": [
+              {
+                "id": 1,
+                "name": "hobo-relay",
+                "type": "custom"
+              }
+            ]
+          },
+          "encoded_jit_config": "e30="
+        }
+      }
+    },
+    {
+      "description": "delete the one-job runner on the repository",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/repos/octo/app/actions/runners/31"
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "description": "list the repository's queued runs",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs",
+        "query": "status=queued&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 1,
+          "workflow_runs": [
+            {
+              "id": 5001,
+              "status": "queued"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "list the repository's runs in progress",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs",
+        "query": "status=in_progress&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 0,
+          "workflow_runs": []
+        }
+      }
+    },
+    {
+      "description": "list the latest jobs of a queued run",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs/5001/jobs",
+        "query": "filter=latest&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 2,
+          "jobs": [
+            {
+              "id": 70001,
+              "run_id": 5001,
+              "run_attempt": 1,
+              "name": "title",
+              "status": "queued",
+              "labels": [
+                "hobo-relay"
+              ],
+              "created_at": "2026-11-17T09:00:00Z"
+            },
+            {
+              "id": 70002,
+              "run_id": 5001,
+              "run_attempt": 1,
+              "name": "build",
+              "status": "queued",
+              "labels": [
+                "ubuntu-24.04"
+              ],
+              "created_at": "2026-11-17T09:00:00Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "the repository refuses a one-job runner",
+      "providerStates": [
+        {
+          "name": "the repository octo/app refuses one-job runners, and the organization octo takes them"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/octo/app/actions/runners/generate-jitconfig",
+        "body": {
+          "name": "hobo-relay-5001-70001-1",
+          "runner_group_id": 1,
+          "labels": [
+            "hobo-relay"
+          ],
+          "work_folder": "_hobo_relay"
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "message": "Resource not accessible by integration"
+        }
+      }
+    },
+    {
+      "description": "create a one-job runner on the organization",
+      "providerStates": [
+        {
+          "name": "the repository octo/app refuses one-job runners, and the organization octo takes them"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/orgs/octo/actions/runners/generate-jitconfig",
+        "body": {
+          "name": "hobo-relay-5001-70001-1",
+          "runner_group_id": 1,
+          "labels": [
+            "hobo-relay"
+          ],
+          "work_folder": "_hobo_relay"
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "runner": {
+            "id": 32,
+            "name": "hobo-relay-5001-70001-1",
+            "os": "unknown",
+            "status": "offline",
+            "busy": false,
+            "labels": [
+              {
+                "id": 1,
+                "name": "hobo-relay",
+                "type": "custom"
+              }
+            ]
+          },
+          "encoded_jit_config": "e30="
+        }
+      }
+    },
+    {
+      "description": "delete the one-job runner on the organization",
+      "providerStates": [
+        {
+          "name": "the repository octo/app refuses one-job runners, and the organization octo takes them"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/orgs/octo/actions/runners/32"
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "description": "a runner with the same name fences the job",
+      "providerStates": [
+        {
+          "name": "a runner named hobo-relay-5001-70001-1 already exists"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/octo/app/actions/runners/generate-jitconfig",
+        "body": {
+          "name": "hobo-relay-5001-70001-1",
+          "runner_group_id": 1,
+          "labels": [
+            "hobo-relay"
+          ],
+          "work_folder": "_hobo_relay"
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "message": "Already exists - A runner with the same name already exists."
+        }
+      }
+    },
+    {
+      "description": "a job GitHub no longer has reads as gone",
+      "providerStates": [
+        {
+          "name": "job 70001 is no longer on GitHub"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/jobs/70001"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "message": "Not Found"
+        }
+      }
+    },
+    {
+      "description": "a failed read of the job is no answer",
+      "providerStates": [
+        {
+          "name": "GitHub cannot answer for job 70001 just now"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/jobs/70001"
+      },
+      "response": {
+        "status": 502,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "message": "Server Error"
+        }
+      }
+    },
+    {
+      "description": "list the repository's runners",
+      "providerStates": [
+        {
+          "name": "run 5001 has completed, and its relay runner 31 was left behind offline"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runners",
+        "query": "per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 1,
+          "runners": [
+            {
+              "id": 31,
+              "name": "hobo-relay-5001-70001-1",
+              "os": "unknown",
+              "status": "offline",
+              "busy": false,
+              "labels": [
+                {
+                  "id": 1,
+                  "name": "hobo-relay",
+                  "type": "custom"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "list the organization's runners",
+      "providerStates": [
+        {
+          "name": "run 5001 has completed, and its relay runner 31 was left behind offline"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/orgs/octo/actions/runners",
+        "query": "per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 0,
+          "runners": []
+        }
+      }
+    },
+    {
+      "description": "read whether the leftover runner's run has ended",
+      "providerStates": [
+        {
+          "name": "run 5001 has completed, and its relay runner 31 was left behind offline"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs/5001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "id": 5001,
+          "status": "completed",
+          "conclusion": "success"
+        }
+      }
+    },
+    {
+      "description": "delete the leftover runner",
+      "providerStates": [
+        {
+          "name": "run 5001 has completed, and its relay runner 31 was left behind offline"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/repos/octo/app/actions/runners/31"
+      },
+      "response": {
+        "status": 204
+      }
+    }
+  ]
+}

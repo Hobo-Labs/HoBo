@@ -1,0 +1,8 @@
+{
+  "submissionId": "sub_01",
+  "workDigest": "5f2b8e0c9d1a4b3c7e6f8a9b0c1d2e3f",
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "status": "RECEIPT_STATUS_SUCCEEDED",
+  "outputDigest": "sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "updatedAt": "2026-11-12T10:20:00.000Z"
+}

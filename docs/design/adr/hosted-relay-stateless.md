@@ -162,16 +162,6 @@ create an Aiven free Valkey service and store its connection URL in the config
 service (an optional cache-fleet member, not a prerequisite). Details, sources, the cost table at measured volume and the phases
 (2b, 4b–4e, 5): [Options routed by budget](../hosted-relay-stateless.md#options-routed-by-budget).
 
-*Phase 4c, implemented.* The engine-neutral parts moved to
-[`@hobo/backend-fleet`](../../../packages/backend-fleet/README.md), which
-`@hobo/data-postgres` re-exports. The assignment log is kept in one key of
-every cache backend (`ephemeralAssignmentReplica`), the active backend is
-read from it by majority, a move is sealed for longer than twice the minute
-an instance caches that answer before the target is activated, and the
-repair tick routes by budget (`routeFleetByBudget`: switch at 90% projected,
-back only below 80%). With no majority the relay refuses admissions
-retryably. Details: [Exactly one cache at a time](../hosted-relay-stateless.md#exactly-one-cache-at-a-time).
-
 *Phase 5, implemented.* The repair scanners (missed deliveries, queued jobs)
 run on the cache with a lock per scanner and App, cursors and minute
 windows; worker health is TTL'd evidence in the cache that reads as

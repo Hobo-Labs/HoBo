@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package fixture.fleet;
+
+message MemberRecord {
+  string id = 1;
+}

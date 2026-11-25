@@ -121,7 +121,7 @@ export function checkWorkspace(
 			const prepare = spawnSync("pnpm", ["run", "draft:prepare"], {
 				cwd: abs,
 				encoding: "utf8",
-				timeout: 120_000,
+				timeout: 600_000,
 				env: { ...process.env, NODE_OPTIONS: "" },
 			});
 			if (prepare.error || prepare.status !== 0) {

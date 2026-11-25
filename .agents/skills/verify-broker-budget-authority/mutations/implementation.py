@@ -29,7 +29,7 @@ cases = [
     ("ambiguous commit result", authority, "committed !== null && Object(committed) === committed", "committed instanceof Promise", properties, ambiguous, True),
     ("uncertain commit reuse", authority, "if (commitOutcomeUncertain)", "if (false && commitOutcomeUncertain)", properties, ambiguous, True),
     ("thrown commit reuse", authority, "} catch (error) {\n\t\t\tcommitOutcomeUncertain = true;\n\t\t\tthrow new Error", "} catch (error) {\n\t\t\tcommitOutcomeUncertain = false;\n\t\t\tthrow new Error", denials, "rejects reuse after a durable commit failure while retaining its cause", False),
-    ("commit failure reported as denial", authority, 'throw new Error("budget commit outcome uncertain; reopen the authority", {\n\t\t\t\tcause: error,\n\t\t\t});', "throw error;", denials, "does not classify a commit exception as a denial", False),
+    ("commit failure reported as denial", authority, 'throw new Error("budget commit outcome uncertain; reopen the authority", {\n\t\t\t\tcause: error,\n\t\t\t});', "throw error;", denials, "does not classify a commit exception as a denial", True),
     ("unresolved exposure", authority, "current.unresolvedMicros,\n\t\t\t\t\tcurrent.recoveryReserveMicros", "0,\n\t\t\t\t\tcurrent.recoveryReserveMicros", properties, admission, True),
     ("provider holds", authority, "account.reservedMicros,\n\t\t\t\t\t\taccount.externalCommittedMicros", "0,\n\t\t\t\t\t\taccount.externalCommittedMicros", properties, dimensions, True),
     ("entitlement holds", authority, "add(bucket.reservedUnits, claim.units)", "add(0, claim.units)", properties, dimensions, True),

@@ -8,11 +8,9 @@ export const PULUMI_STATE_PASSPHRASE_MISSING =
 /** Select a stable caller-supplied key, or a process-only key for disposable state. */
 export function statePassphrase(
 	explicit: string | undefined,
-	legacyEnvironment: string | undefined,
 	ephemeralState: boolean | undefined,
 ): string | undefined {
-	const supplied = explicit ?? legacyEnvironment;
-	if (supplied) return supplied;
+	if (explicit) return explicit;
 	return ephemeralState ? randomBytes(32).toString("base64url") : undefined;
 }
 

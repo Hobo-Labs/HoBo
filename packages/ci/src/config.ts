@@ -71,6 +71,7 @@ export function parseConfiguration(json: string): Configuration {
 				(offer.provider === "cloudflare" && offer.backend !== "cf") ||
 				(offer.provider === "vercel" && offer.backend !== "sandbox") ||
 				(offer.backend === "sandbox" && offer.provider !== "vercel") ||
+				(offer.provider === "agent37" && offer.backend !== "gh-actions") ||
 				(offer.provider === "hobo-box-worker" &&
 					offer.backend !== "isolated-container") ||
 				(offer.provider === "kubernetes" &&
@@ -97,6 +98,7 @@ export function parseConfiguration(json: string): Configuration {
 					"cloudflare",
 					"vercel",
 					"azure-devops",
+					"agent37",
 				].includes(offer.provider)
 			)
 				throw new Error("unsupported provider");

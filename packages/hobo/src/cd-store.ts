@@ -97,7 +97,7 @@ async function openFleet(
 		{ cdJournalContinuity, journalMemberModels },
 	] = await Promise.all([
 		import("@hobo/storage-postgres"),
-		import("@hobo/backend-fleet"),
+		import("@hobo/backend-routing"),
 		import("@hobo/hobo-cd"),
 	]);
 	const plan = continuityFleetPlan(cdJournalContinuity());

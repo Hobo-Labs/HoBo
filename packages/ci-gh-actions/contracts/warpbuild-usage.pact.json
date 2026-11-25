@@ -1,0 +1,43 @@
+{
+  "consumer": { "name": "HoBoCiProviderUsageSync" },
+  "provider": { "name": "WarpBuildReportsApi" },
+  "interactions": [
+    {
+      "description": "read this month's CI billing summary",
+      "providerState": "the organization's CI jobs cost $42.50 this month",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/reports/billing/ci",
+        "query": { "start_date": ["2026-11-01T00:00:00.000Z"], "end_date": ["2026-11-17T12:00:00.000Z"], "per_page": ["1"] },
+        "headers": { "accept": "application/json", "authorization": "Bearer warpbuild-usage-token" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "organization_id": "org-test",
+          "summary": { "total_cost": 42.5, "total_jobs": 310, "total_runner_cost": 41.25, "total_snapshot_cost": 1.25 },
+          "jobs": {
+            "items": [
+              { "billed_time": 300, "execution_time": 288, "job_name": "test", "repo": "octo/app", "run_id": "101", "runner_cost": 0.04, "runner_id": "r-1", "runner_label": "warp-ubuntu-2404-x64-4x", "snapshot": false, "snapshot_cost": 0, "stack": "", "stack_kind": "", "timestamp": "2026-11-17T11:00:00Z", "total_cost": 0.04, "vcs_job_id": "9001" }
+            ],
+            "next": 2, "page": 1, "per_page": 1, "total_pages": 310, "total_rows": 310
+          },
+          "chart": { "bucket_interval_seconds": 86400, "daily": [], "group_by": "repo" },
+          "available_filters": { "job_names": ["test"], "repos": ["octo/app"], "runner_labels": ["warp-ubuntu-2404-x64-4x"], "snapshot": [false], "stack_ids": [] }
+        }
+      }
+    },
+    {
+      "description": "a revoked key is refused",
+      "providerState": "the API key was revoked",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/reports/billing/ci",
+        "query": { "start_date": ["2026-11-01T00:00:00.000Z"], "end_date": ["2026-11-17T12:00:00.000Z"], "per_page": ["1"] },
+        "headers": { "accept": "application/json", "authorization": "Bearer warpbuild-revoked-token" }
+      },
+      "response": { "status": 401, "body": { "message": "unauthorized" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

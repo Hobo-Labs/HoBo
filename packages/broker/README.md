@@ -17,6 +17,9 @@ charges before settlement. Run them with
 `HOBO_TLA_TOOLS=/path/to/tla2tools-1.7.4.jar node --experimental-strip-types scripts/check-iac-models.ts`
 from the repository root. The tool is the immutable
 [TLA+ 1.7.4 release](https://github.com/tlaplus/tlaplus/releases/tag/v1.7.4) `tla2tools.jar`;
+the durable-topic, messaging settlement and exhaustion, Rivet queue, KV, HTTP
+and namespace, Cloudflare grant and secret, and topic-bus model checkers require
+the same jar;
 the runner verifies its pinned SHA256 digest and limits each checker invocation to
 60 seconds, a 512 MiB Java heap and 16 MiB per captured output stream. A timeout,
 resource failure or signal-terminated process fails the check. The host must
@@ -1604,7 +1607,7 @@ be swapped without touching the brokering pipeline:
 | Contracts | `GatePlane` (can-deploy compatibility) | `@hobo/contracts` Gatekeeper (PACT-style boundary semantics) | an external Pact broker verification feed (port-compatible) |
 | Billing | `BillingPlane` | in-process budget holds, spend-cap and quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` checks a complete eligible pricing quote and a host-attested liability bound |
 | Delivery | `DeliveryPlane` | `createDeliveryPlane` — in-process conductor only; agent/publisher policies fail closed with `delivery-plane-unwired` | `createReconcilerDeliveryPlane({ requestPromotion })` — every receipt is delivered through `@hobo/cd` (ADR-0182: D14), fail-closed, pinned by `broker_delivery_cd.pact.json`. GitOps rendering (Argo CD `Application`, Flux `Kustomization`) moved to `@hobo/cd-gitops` |
-| Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `custom` configs | an external connector catalog |
+| Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `agent37`, `custom` configs; Agent37 requires `workspaceId`, and its optional origins are fixed to `https://api.agent37.com` and `https://sandbox.agent37.app` | an external connector catalog |
 
 Beyond M0, this package also ships:
 

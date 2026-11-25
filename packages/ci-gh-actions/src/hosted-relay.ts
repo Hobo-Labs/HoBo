@@ -32,8 +32,6 @@ import {
 	isMainWorkspaceShardJob,
 	TRUNK_RANK,
 } from "./admission-order.js";
-import type { FleetCapacityWitness } from "./fleet-absorb.js";
-import { fleetPeerAbsorbSlots, fleetWitnessFields } from "./fleet-absorb.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -79,6 +77,11 @@ import {
 } from "./main-shard-parallel-admission.js";
 import type { OfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
+import {
+	type PeerCapacityWitness,
+	peerAbsorbSlotsOf,
+	peerWitnessFields,
+} from "./peer-capacity.js";
 import {
 	type RunnerLabel,
 	servedRunnerLabel,
@@ -321,10 +324,9 @@ export class HostedRelay {
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
 			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
 			headroomFleetDeferMs?: number;
-			/** Free slots on this box and the rest of the fleet; dispatch reads it. */
 			fleetCapacity?: Readonly<{
 				snapshot: () => Promise<
-					FleetCapacityWitness & { hoboFreeSlots: number }
+					PeerCapacityWitness & { hoboFreeSlots: number }
 				>;
 			}>;
 			/** Shared witness reruns for jobs bound to offline peer box JIT runners. */
@@ -596,8 +598,7 @@ export class HostedRelay {
 			holdReason: decision.holdReason ?? "",
 			deferMs: decision.deferMs,
 			shardIndex: decision.shardIndex,
-			arcFreeSlots: decision.arcFreeSlots,
-			meshFreeSlots: decision.meshFreeSlots,
+			fleetFreeSlots: decision.fleetFreeSlots,
 			peerAbsorbSlots: decision.peerAbsorbSlots,
 		};
 		if (decision.hoboFreeSlots !== undefined) {
@@ -610,15 +611,15 @@ export class HostedRelay {
 	}
 
 	private fleetPeerSlots(
-		fleetWitness: FleetCapacityWitness | undefined,
+		fleetWitness: PeerCapacityWitness | undefined,
 	): number {
-		return fleetPeerAbsorbSlots(fleetWitness);
+		return peerAbsorbSlotsOf(fleetWitness);
 	}
 
 	/** Drop reservations that never reached dispatch so fleet runners can absorb custody. */
 	private async releaseBlockedUnlaunchedReservations(
 		pendingDemand: number,
-		fleetWitness: FleetCapacityWitness | undefined,
+		fleetWitness: PeerCapacityWitness | undefined,
 	): Promise<void> {
 		const policy = this.options.unlaunchedReservationRelease;
 		if (!policy || policy.launchSlots <= 0) return;
@@ -683,7 +684,7 @@ export class HostedRelay {
 
 	private async releaseTrunkHeadroomFleetReservations(
 		active: readonly Lease[],
-		fleetWitness: FleetCapacityWitness | undefined,
+		fleetWitness: PeerCapacityWitness | undefined,
 	): Promise<void> {
 		const baseDeferMs = this.headroomFleetDeferMs();
 		const peerSlots = this.fleetPeerSlots(fleetWitness);
@@ -728,8 +729,7 @@ export class HostedRelay {
 					waitedMs: release.waitedMs,
 					nonLocalFreeSlots: peerSlots,
 					hoboFreeSlots: fleetWitness?.hoboFreeSlots ?? -1,
-					arcFreeSlots: fleetWitness?.arcFreeSlots ?? -1,
-					meshFreeSlots: fleetWitness?.meshFreeSlots ?? -1,
+					fleetFreeSlots: fleetWitness?.fleetFreeSlots ?? -1,
 					releaseCount,
 				}),
 			);
@@ -1438,7 +1438,7 @@ export class HostedRelay {
 		this.shardAdmissionHoldLogged.clear();
 		const reservationRevision = await this.refreshConfig();
 		const queued = await this.options.store.pendingJobs();
-		let fleetWitness: FleetCapacityWitness | undefined;
+		let fleetWitness: PeerCapacityWitness | undefined;
 		try {
 			fleetWitness = await this.options.fleetCapacity?.snapshot();
 		} catch {
@@ -1692,7 +1692,7 @@ export class HostedRelay {
 									action: "defer",
 									waitedMs,
 									waitReason: "cpu-contention",
-									...fleetWitnessFields(fleetWitness),
+									...peerWitnessFields(fleetWitness),
 								});
 								waitingTrunk.add(
 									this.reportTrunkWait(job, "fleet-capacity", {

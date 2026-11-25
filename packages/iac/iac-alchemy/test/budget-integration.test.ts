@@ -16,6 +16,9 @@ import {
 	hostingQuoteDigest,
 	type IacFinancialServicesOptions,
 	IacTargetLiabilityEvidenceSchema,
+	type IacUnpricedAuthorizationInput,
+	IacUnpricedPolicyProofSchema,
+	IacUnpricedScopeProofSchema,
 } from "../../../broker/src/index.js";
 import { createDirectRoutePort } from "../../../dispatcher/src/iac-route.js";
 import { createSqliteIacRouteAuthority } from "../../../dispatcher/src/iac-route-sqlite.js";
@@ -68,9 +71,12 @@ afterEach(() => {
 	rmSync(directory, { recursive: true, force: true });
 });
 
-function fixture(withPricing: boolean) {
+function fixture(withPricing: boolean, allowUnpriced = false) {
 	let effects = 0;
 	let liabilityRequests = 0;
+	let exposureAtEffect:
+		| { reservedMicros: number; unbounded: number }
+		| undefined;
 	const stack = Stack(
 		"Demo",
 		{
@@ -78,6 +84,11 @@ function fixture(withPricing: boolean) {
 				reconcile: ({ news }) =>
 					Effect.sync(() => {
 						effects++;
+						const snapshot = authority.read(NOW);
+						exposureAtEffect = {
+							reservedMicros: snapshot.reservedMicros,
+							unbounded: snapshot.unboundedExposureCount,
+						};
 						return { id: `widget-${news.size}` };
 					}),
 				delete: () => Effect.void,
@@ -89,10 +100,17 @@ function fixture(withPricing: boolean) {
 			return {};
 		}),
 	);
-	const authority = createSqliteBudgetAdmissionAuthority({
+	const authorityOptions: Parameters<
+		typeof createSqliteBudgetAdmissionAuthority
+	>[0] = {
 		path: join(directory, "budget.sqlite"),
 		now: () => NOW,
 		iacPricedSettlementTrust: { verify: () => false },
+		unpricedScopeTrust: {
+			verify: (proof) => proof.signature === "scope-signature",
+			isCurrent: (proof) => proof.signature === "scope-signature",
+			settlement: () => false,
+		},
 		snapshot: create(BudgetLedgerSnapshotSchema, {
 			identity: {
 				tenantId: "tenant-a",
@@ -110,10 +128,36 @@ function fixture(withPricing: boolean) {
 				}),
 			],
 		}),
-	});
+	};
+	const authority = createSqliteBudgetAdmissionAuthority(authorityOptions);
 	const scenario = makeScenario({
 		charges: [perUnitCharge("runtime", "minute", "0.25")],
 		candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
+	});
+	const authorizeUnpriced = (input: IacUnpricedAuthorizationInput) => ({
+		gate: { effect: "allow" as const, reasons: [], events: [] },
+		proof: create(IacUnpricedPolicyProofSchema, {
+			requestDigest: input.requestDigest,
+			inventoryHash: input.inventoryHash,
+			identity: input.identity,
+			policyHash: "policy:1",
+			effect: "allow",
+			evidenceRef: "unpriced-approval:1",
+			obligationsSatisfied: true,
+			observedAt: "2026-01-01T00:00:00Z",
+			validUntil: END,
+		}),
+		scopeProof: create(IacUnpricedScopeProofSchema, {
+			identity: input.identity,
+			providerAccountIds: ["account-a"],
+			authorityRef: "scope-authority",
+			evidenceRef: "exclusive:1",
+			ownershipEpoch: "epoch:1",
+			observedAt: "2026-01-01T00:00:00Z",
+			exclusiveUntilSettled: true,
+			noSharedEntitlements: true,
+			signature: "scope-signature",
+		}),
 	});
 	const financialOptions: IacFinancialServicesOptions = {
 		authority,
@@ -151,10 +195,13 @@ function fixture(withPricing: boolean) {
 			}),
 		}),
 	};
+	const configuredOptions: IacFinancialServicesOptions = allowUnpriced
+		? { ...financialOptions, unpriced: { authorize: authorizeUnpriced } }
+		: financialOptions;
 	const financial = createIacFinancialServices(
 		withPricing
 			? {
-					...financialOptions,
+					...configuredOptions,
 					pricing: {
 						modelId: "terms",
 						revision: "1",
@@ -162,7 +209,7 @@ function fixture(withPricing: boolean) {
 						bindings: [{ resourceId: "widget", candidateIndex: 0 }],
 					},
 				}
-			: financialOptions,
+			: configuredOptions,
 	);
 	const routeAuthority = createSqliteIacRouteAuthority({
 		path: join(directory, "route.sqlite"),
@@ -225,7 +272,11 @@ function fixture(withPricing: boolean) {
 		provider,
 		authority,
 		routeAuthority,
+		scenario,
+		reopenAuthority: () =>
+			createSqliteBudgetAdmissionAuthority(authorityOptions),
 		effects: () => effects,
+		exposureAtEffect: () => exposureAtEffect,
 		liabilityRequests: () => liabilityRequests,
 	};
 }
@@ -275,7 +326,57 @@ describe("external Alchemy pricing with the HoBo budget authority", () => {
 				budget: { evaluation: "allowed", reservation: "held" },
 			});
 			expect(f.effects()).toBe(1);
+			expect(f.exposureAtEffect()).toEqual({
+				reservedMicros: 1_500_000,
+				unbounded: 0,
+			});
 			expect(f.authority.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			f.authority.close();
+			f.routeAuthority.close();
+		}
+	});
+
+	it("excludes unknown pricing from ranking but permits explicit unpriced admission with a durable exposure hold", async () => {
+		const f = fixture(false, true);
+		try {
+			const assessment = await f.provider.assessPricing(program);
+			const { action, at, horizon } = f.scenario;
+			const ranking = rankIacTargets({
+				tenantId: "tenant-a",
+				workloadRef: "workload:1",
+				action,
+				at,
+				horizon,
+				candidates: [
+					{
+						workloadRef: "workload:1",
+						inventory: assessment.inventory,
+						pricing: assessment.pricing,
+					},
+				],
+			});
+			expect(ranking).toMatchObject({
+				ranking: [],
+				rejected: [{ targetId: "yard-a", code: "PRICING_MODEL_UNAVAILABLE" }],
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+			const result = await f.provider.applyWithAdmission(program, "request-1");
+			expect(result.admission).toMatchObject({
+				status: "admitted",
+				budget: { evaluation: "bypassed", reservation: "held" },
+				reservation: { unboundedExposure: true },
+			});
+			expect(f.liabilityRequests()).toBe(0);
+			expect(f.effects()).toBe(1);
+			expect(f.exposureAtEffect()).toEqual({ reservedMicros: 0, unbounded: 1 });
+			expect(f.authority.read(NOW).unboundedExposureCount).toBe(1);
+			const reopened = f.reopenAuthority();
+			try {
+				expect(reopened.read(NOW).unboundedExposureCount).toBe(1);
+			} finally {
+				reopened.close();
+			}
 		} finally {
 			f.authority.close();
 			f.routeAuthority.close();

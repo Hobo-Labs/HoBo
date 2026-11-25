@@ -18,6 +18,7 @@ import type {
 	Refusal,
 	TelemetrySink,
 } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { isJsonArray, isJsonObject, jsonOf } from "./json.js";
 
 /**
@@ -92,7 +93,7 @@ export function parseTime(value: string): number | undefined {
  * Emit metric points. Telemetry is advisory (the journal is the record), so a
  * failing sink never turns a committed command into an error a caller retries.
  */
-export function emit(
+export async function emit(
 	sink: TelemetrySink | undefined,
 	points: readonly Readonly<{
 		name: string;
@@ -102,9 +103,9 @@ export function emit(
 		atMs: number;
 		attributes: OtelAttributes;
 	}>[],
-): void {
+): Promise<void> {
 	if (sink === undefined || points.length === 0) return;
-	sink.metrics(points).catch(() => undefined);
+	await emitMetrics(sink, points);
 }
 
 /** True when an append failed only because another writer moved the stream head. */

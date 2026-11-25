@@ -331,12 +331,14 @@ describe("what the workspace environment is pinned to", () => {
 		expect(other.envVarsSeen[0]?.PULUMI_CONFIG_PASSPHRASE).not.toBe(seen[0]);
 	});
 
-	it("keeps an explicit config passphrase", async () => {
+	it("never takes the state passphrase from the caller's environment", async () => {
 		const fake = fakeAutomation();
 		await engine(fake, { PULUMI_CONFIG_PASSPHRASE: "secret" }).preview(
 			program(),
 		);
-		expect(fake.envVarsSeen[0]?.PULUMI_CONFIG_PASSPHRASE).toBe("secret");
+		const seen = fake.envVarsSeen[0]?.PULUMI_CONFIG_PASSPHRASE;
+		expect(seen).not.toBe("secret");
+		expect(seen).toMatch(/^[A-Za-z0-9_-]{40,}$/u);
 	});
 
 	it("selects the `hobo` stack in a per-resource directory", async () => {

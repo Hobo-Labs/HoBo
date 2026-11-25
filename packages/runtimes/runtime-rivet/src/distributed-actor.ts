@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { types as utilTypes } from "node:util";
 import type {
 	AsyncActorLease,
 	AsyncActorLeaseHost,
@@ -98,12 +99,18 @@ function validName(value: string): boolean {
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: RPC receipts may be malformed, mutable or contain accessors; copy only bounded own data properties. */
 function readDecision(input: unknown): RemoteDecision | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			utilTypes.isProxy(input) ||
+			Array.isArray(input)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
+		Object.setPrototypeOf(properties, null);
 		const value = (key: string): unknown => {
 			const property = properties[key];
-			if (property === undefined || !("value" in property))
+			if (property === undefined || !Object.hasOwn(property, "value"))
 				throw new Error("invalid receipt");
 			return property.value;
 		};
@@ -162,9 +169,15 @@ function readSnapshot(
 	  }
 	| undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			utilTypes.isProxy(input) ||
+			Array.isArray(input)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
+		Object.setPrototypeOf(properties, null);
 		const status = properties.status;
 		const revision = properties.revision;
 		const nextRevision = properties.nextRevision;
@@ -172,10 +185,10 @@ function readSnapshot(
 		const events = properties.events;
 		if (
 			status === undefined ||
-			!("value" in status) ||
+			!Object.hasOwn(status, "value") ||
 			status.value !== "ok" ||
 			revision === undefined ||
-			!("value" in revision) ||
+			!Object.hasOwn(revision, "value") ||
 			typeof revision.value !== "number" ||
 			!Number.isSafeInteger(revision.value) ||
 			revision.value < 0 ||
@@ -183,14 +196,15 @@ function readSnapshot(
 				revision.value !== request.throughRevision) ||
 			revision.value < request.afterRevision ||
 			nextRevision === undefined ||
-			!("value" in nextRevision) ||
+			!Object.hasOwn(nextRevision, "value") ||
 			typeof nextRevision.value !== "number" ||
 			!Number.isSafeInteger(nextRevision.value) ||
 			hasMore === undefined ||
-			!("value" in hasMore) ||
+			!Object.hasOwn(hasMore, "value") ||
 			typeof hasMore.value !== "boolean" ||
 			events === undefined ||
-			!("value" in events) ||
+			!Object.hasOwn(events, "value") ||
+			utilTypes.isProxy(events.value) ||
 			!Array.isArray(events.value) ||
 			events.value.length > request.limit ||
 			nextRevision.value !== request.afterRevision + events.value.length ||
@@ -200,6 +214,7 @@ function readSnapshot(
 		)
 			return undefined;
 		const descriptors = Object.getOwnPropertyDescriptors(events.value);
+		Object.setPrototypeOf(descriptors, null);
 		const result: { eventId: string; event: FoldEvent }[] = [];
 		let bytes = 0;
 		const ids = new Set<string>();
@@ -207,32 +222,34 @@ function readSnapshot(
 			const item = descriptors[String(index)];
 			if (
 				item === undefined ||
-				!("value" in item) ||
+				!Object.hasOwn(item, "value") ||
 				typeof item.value !== "object" ||
 				item.value === null ||
+				utilTypes.isProxy(item.value) ||
 				Array.isArray(item.value)
 			)
 				return undefined;
 			const fields = Object.getOwnPropertyDescriptors(item.value);
+			Object.setPrototypeOf(fields, null);
 			const eventId = fields.eventId;
 			const event = fields.event;
 			if (
 				eventId === undefined ||
-				!("value" in eventId) ||
+				!Object.hasOwn(eventId, "value") ||
 				typeof eventId.value !== "string" ||
 				!validName(eventId.value) ||
 				ids.has(eventId.value) ||
 				event === undefined ||
-				!("value" in event)
+				!Object.hasOwn(event, "value")
 			)
 				return undefined;
 			const encoded = encodeDistributedEvent(event.value);
 			if (encoded === undefined) return undefined;
 			bytes += Buffer.byteLength(encoded);
 			if (bytes > 524_288) return undefined;
+			// SAFETY: the canonical encoder accepts only a bounded valid FoldEvent.
 			result.push({
 				eventId: eventId.value,
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the canonical encoder accepts only a bounded valid FoldEvent.
 				event: JSON.parse(encoded) as FoldEvent,
 			});
 			ids.add(eventId.value);
@@ -425,7 +442,7 @@ export function createRivetDistributedJournal(
 			const encoded = encodeDistributedEvent(event);
 			if (encoded === undefined)
 				throw new TypeError("invalid Rivet journal event");
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the canonical encoder validates the bounded event before copying it.
+			// SAFETY: the canonical encoder validates the bounded event before copying it.
 			const snapshot = JSON.parse(encoded) as FoldEvent;
 			const remote = handle(key);
 			const proof = await authorize(key, "append", {

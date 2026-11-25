@@ -1,0 +1,17 @@
+{
+  "id": "agent37",
+  "provider": "agent37",
+  "providerAccountId": "agent37-ci",
+  "enabled": false,
+  "runsOn": "hobo-agent37",
+  "freeMinutes": 0,
+  "priceMicrosPerMinute": 522,
+  "budgetMicros": 2000000,
+  "spentMicros": 0,
+  "concurrency": 4,
+  "observedAt": "2026-11-20T00:00:00Z",
+  "validUntil": "2026-12-20T00:00:00Z",
+  "sourceUrl": "https://www.agent37.com/docs/agents-api/instance-sizing",
+  "bridgeAcknowledged": true,
+  "backend": "gh-actions"
+}

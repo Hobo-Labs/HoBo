@@ -11,7 +11,7 @@ import { BrokerParseError } from "../src/policies.js";
 import type { BrokerCatalog } from "../src/types.js";
 
 describe("parseConnectorConfig", () => {
-	it("parses each well-known connector kind with its required settings", async () => {
+	it("parses each well-known connector kind with its required settings", () => {
 		const githubApp = parseConnectorConfig({
 			id: "conn-github",
 			kind: "github-app",
@@ -54,9 +54,54 @@ describe("parseConnectorConfig", () => {
 				settings: { accountId: "acct-1" },
 			}).kind,
 		).toBe("cloudflare");
+		expect(
+			parseConnectorConfig({
+				id: "agent37-ci",
+				kind: "agent37",
+				displayName: "Agent37 CI",
+				settings: {
+					workspaceId: "ws_example",
+					apiOrigin: "https://api.agent37.com",
+					execOrigin: "https://sandbox.agent37.app",
+				},
+				credentialRef: "secret-store:ci/AGENT37_API_KEY",
+			}),
+		).toMatchObject({
+			kind: "agent37",
+			settings: { workspaceId: "ws_example" },
+			credentialRef: "secret-store:ci/AGENT37_API_KEY",
+		});
 	});
 
-	it("refuses unknown kinds and missing required settings", async () => {
+	it.each(
+		Object.entries({
+			apiOrigin: "api.agent37.com",
+			execOrigin: "sandbox.agent37.app",
+		}),
+	)("restricts Agent37 %s to its credentialed HTTPS origin", (setting, host) => {
+		for (const value of [
+			"not-a-url",
+			`http://${host}`,
+			"https://attacker.example.com",
+			`https://api-key@example.com@${host}`,
+			`https://${host}/v1`,
+			`https://${host}/?token=secret`,
+			`https://${host}/#secret`,
+			null,
+			{ host },
+		]) {
+			expect(() =>
+				parseConnectorConfig({
+					id: "agent37-ci",
+					kind: "agent37",
+					displayName: "Agent37 CI",
+					settings: { workspaceId: "ws_example", [setting]: value },
+				}),
+			).toThrow(/invalid-connector-origin/);
+		}
+	});
+
+	it("refuses unknown kinds and missing required settings", () => {
 		expect(() =>
 			parseConnectorConfig({
 				id: "conn-x",
@@ -72,6 +117,18 @@ describe("parseConnectorConfig", () => {
 				settings: { appId: "12345" },
 			}),
 		).toThrow(/connector-settings-missing/);
+		for (const settings of [{}, { workspaceId: "" }, { workspaceId: 37 }]) {
+			expect(() =>
+				parseConnectorConfig({
+					id: "agent37-ci",
+					kind: "agent37",
+					displayName: "Agent37 CI",
+					settings,
+				}),
+			).toThrow(
+				/connector-settings-missing: agent37 requires settings workspaceId/,
+			);
+		}
 	});
 });
 

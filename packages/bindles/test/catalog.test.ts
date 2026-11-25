@@ -56,7 +56,7 @@ const expectedCatalog = [
 	{ factory: "queue", portRef: ["hobo:queue"], verbs: ["enqueue", "dequeue"] },
 	{
 		factory: "topic",
-		portRef: ["wasi:messaging"],
+		portRef: ["hobo:durable-messaging"],
 		verbs: ["publish", "subscribe"],
 	},
 	{

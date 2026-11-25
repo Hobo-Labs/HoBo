@@ -5,6 +5,7 @@
 	"description": "Technical proof: unified Messaging + native Kafka + optional Dapr ActorHost/pubsub (ADR-0138).",
 	"scripts": {
 		"test": "vitest run --root .",
+		"draft:prepare": "pnpm exec turbo run build --filter=@hobo-draft/messaging-dapr-kafka^... --output-logs=errors-only",
 		"bench": "vitest bench --root . --run"
 	},
 	"dependencies": {

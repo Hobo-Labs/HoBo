@@ -24,6 +24,7 @@ export type HostedRelayApplication = Readonly<{
 	startFence?(request: Request): Promise<Response>;
 	/** The relay's MCP server (`createRelayMcp`); a host without one answers 404. */
 	mcp?(request: Request): Promise<Response>;
+	page?(request: Request): Promise<Response | undefined>;
 }>;
 
 /** An engine a host reports in health but this relay does not serve. */
@@ -279,12 +280,8 @@ export function createRelayHandler(options: {
 			(path.startsWith("/v1/app-registration/") ||
 				path.startsWith("/v1/accounts/self/") ||
 				path.startsWith("/v2/accounts/self/") ||
-				// The mesh's node list; the control plane authenticates it like
-				// the account API's other reads.
+				path === "/v1/fleet/members" ||
 				path === "/v1/mesh/nodes" ||
-				// Fleet verdicts (ADR-0180): read by anyone, reported by an
-				// enrolled reporter's signature; reporter status, read by a
-				// workflow of the repository with its OIDC token.
 				path.startsWith("/v1/fleet/verdicts/") ||
 				path.startsWith("/v1/fleet/reporters/") ||
 				path === "/v1/fleet/start-fence") &&
@@ -311,6 +308,24 @@ export function createRelayHandler(options: {
 				reportRelayFailure(
 					"hobo_ci_mcp_failed",
 					{ method: request.method },
+					error instanceof Error ? error : undefined,
+				);
+				return json(503, { error: "service unavailable" });
+			}
+		}
+		if (
+			(request.method === "GET" || request.method === "HEAD") &&
+			options.application.page
+		) {
+			try {
+				const response = await options.application.page(
+					mounted === undefined ? request : remount(request, url, path),
+				);
+				if (response) return response;
+			} catch (error) {
+				reportRelayFailure(
+					"hobo_ci_page_failed",
+					{ method: request.method, route: failureRoute(path) },
 					error instanceof Error ? error : undefined,
 				);
 				return json(503, { error: "service unavailable" });
