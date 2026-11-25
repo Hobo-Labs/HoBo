@@ -50,6 +50,9 @@ detectors, fail closed) before aggregation or logging. The `release-contract` jo
 packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
 `scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
 checkouts have `dist/` without pulling `@hobo/cd` source into the scripts lane.
+When `scripts/ci/attested-jobs.json` changes, bump `SHADOW_PLAN_BLOB` in
+`attestation.mts` to the git blob id
+`scripts/test/attested-jobs.test.ts` asserts.
 Hermetic checks live in
 [`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
 Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
