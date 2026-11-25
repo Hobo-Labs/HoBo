@@ -485,12 +485,7 @@ Historical remediation instructions: [Linear archive](https://linear.app/quickde
 - **Evidence:** `docs/competitors/gap-analysis.md:31` · `docs/competitors/gap-analysis.md:34` · `docs/competitors/gap-analysis.md:72` · `docs/competitors/gap-analysis.md:138` · `docs/design/generated-stack.md:352`
 - **Effort:** M · **Delivery:** ✔ [HOBO-687](https://linear.app/quickdeploy-ai/issue/HOBO-687) — historical open-question ledger + link retargets
 
-**Action**
-
-Remediation for cand-27 (traceability-anchor rot between gap-analysis.md and generated-stack.md's open questions). Strategy per the sketch's first option: restore the stable historical question IDs as a resolution ledger inside Plan 09, re-point every Q-ID cross-reference at it, and banner the two gap-analysis sections that still read as current state. No new ADR is needed (no architectural decision — pure traceability repair). Four files amended, zero created.
-
-FILE 1 — AMEND C:/src/hobo/docs/design/generated-stack.md
-Insert a new h3 at end of file, directly after the last bullet of "### Open design questions" (currently line 352-365; last bullet is the "Low-risk auto threshold" item):
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-022-historical-remediation-plan-c20e73800c90).
 
 ### Historical open-question ledger
 (heading must be exactly this text — the repo's slugifier produces the anchor `#historical-open-question-ledger`, which every re-pointed link below targets)
@@ -566,22 +561,7 @@ Historical remediation instructions: [Linear archive](https://linear.app/quickde
 - **Evidence:** `docs/design/authoring-resources-wiring.md:150-151` · `docs/design/developer-experience.md:135-139` · `docs/design/control-plane.md:57-67`
 - **Effort:** M · **Delivery:** ✔ [HOBO-694](https://linear.app/quickdeploy-ai/issue/HOBO-694) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-Documentation + executable proof (no new ADR):
-
-1. `docs/design/developer-experience.md` — Plan 07 inner-loop section gains `##### Local multi-service orchestration — lifecycle annotations under hobo dev` with a normative matrix naming local lifecycle behavior for each Plan 21 annotation class (`bind`, endpoints, env/args, storage, lifetime, explicit startup, `waitFor`, `waitForCompletion`, health, replicas, scaling, residency).
-2. `src/draft/technical-proofs/local-dev-orchestration-contract/` — independent POC proving dependency-gated startup, health/job gates, explicit startup, parallel roots, lazy env resolution, local replica labels, reverse shutdown order, and cycle detection.
-3. [HOBO-694 proof](https://linear.app/quickdeploy-ai/document/hobo-694-local-dev-orchestration-proof-archived-f080783e1f3a) + `docs/design/traceability.md` HOBO-694 / PLAN-07 rows.
-
-**Acceptance**
-
-1. Plan 07 inner-loop section names local lifecycle behavior for each annotation class.
-2. `pnpm run docs:design-lint` + `pnpm agent:check -- --staged` pass.
-
-**Guardrails**
-
-Docs-first; Nomad→wasmCloud pivot accepted — never reverse. No production `runtime-local` or CLI daemon implementation in this slice.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-026-historical-remediation-plan-3a82cab11785).
 
 ### REM-027 (for GAP-019)
 
@@ -589,14 +569,7 @@ Docs-first; Nomad→wasmCloud pivot accepted — never reverse. No production `r
 - **Evidence:** `docs/design/finops-budget-routing-control-plane.md:22-36` · `docs/design/control-plane.md:14-28`
 - **Effort:** M · **Delivery:** ✔ [HOBO-696](https://linear.app/quickdeploy-ai/issue/HOBO-696) — manifest→ResourceIntent bridge in finops + control-plane docs; proof at `src/draft/technical-proofs/manifest-resource-intent-bridge-contract/`
 
-**Action**
-
-Add a bridge subsection to `finops-budget-routing-control-plane.md` and `control-plane.md` Planner section: map manifest IR / Matching output / `hobo plan` preview → `ResourceIntent` construction, DecisionGraph emission, and DX dry-run surface. One sequence diagram or numbered pipeline acceptable.
-
-**Acceptance**
-
-1. Both docs cite the same bridge; grep `ResourceIntent` in control-plane + authoring returns hits.
-2. Gates green per REM-026.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-027-historical-remediation-plan-08c13d3ab25f).
 
 ### REM-028 (for GAP-020)
 
@@ -604,28 +577,7 @@ Add a bridge subsection to `finops-budget-routing-control-plane.md` and `control
 - **Evidence:** `docs/design/adr/02-identity-security.md:285-295` · `docs/design/reliability-observability-cost.md:175-177`
 - **Effort:** M · **Delivery:** ✔ [HOBO-693](https://linear.app/quickdeploy-ai/issue/HOBO-693) — Plan 21 FinOps inline-budget section + ADR-0039 `costAvailabilityProfile` alignment + `inline-budget-authoring` proof
 
-**Action**
-
-Docs-first remediation with an executable exp-proof (no new ADR — ADR-0039 already decided the profile shape).
-
-1. `docs/design/authoring-resources-wiring.md` — add `### FinOps — inline budget & cost-availability` (anchor `#finops-inline-budget--cost-availability`) before the DNS section: scope-declaration table (`budget`, `spendCapUsd`, `costAvailabilityProfile`), inline Camp policy example, `hobo plan` Cost & budget surfacing (projected cost, headroom, tier preview, JSON envelope fields), manifest IR `policy` sketch, and link to the exp-proof.
-
-2. `docs/design/adr/02-identity-security.md` — ADR-0039 §4: rename the example helper from `costAvailability(` to `costAvailabilityProfile(`; add one cross-link sentence pointing at Plan 21 `#finops-inline-budget--cost-availability`. Do not reword other decision bullets.
-
-3. CREATE `src/draft/exp-proofs/dx/inline-budget-authoring/` — independent POC proving declaration normalization + plan budget surfacing (human + JSON) against mocked MeteringView/policy fixtures; link from Plan 21.
-
-4. CREATE `docs/design/proofs/hobo-693-inline-budget-authoring/index.md` — proof record mapping acceptance bullets to test names.
-
-**Acceptance**
-
-1. Plan 21 documents inline `budget()`, `costAvailabilityProfile()`, and agent `spendCapUsd` declarations plus `hobo plan` Cost & budget surfacing.
-2. ADR-0039 §4 example uses `costAvailabilityProfile(` and links back to Plan 21.
-3. `src/draft/exp-proofs/dx/inline-budget-authoring` tests pass.
-4. Gates green.
-
-**Guardrails**
-
-Documentation-first: do not implement policy-engine or MeteringView runtime. Do not create a new ADR or renumber existing ADRs. Keep relative `.md` links valid. The exp-proof is contract-only over mocked seams.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-028-historical-remediation-plan-3863eeaa8169).
 
 ### REM-029 (for GAP-021)
 
@@ -633,35 +585,7 @@ Documentation-first: do not implement policy-engine or MeteringView runtime. Do 
 - **Evidence:** `docs/design/governance-planes.md:118-119` · `docs/design/reliability-observability-cost.md:210-216`
 - **Effort:** M · **Delivery:** ✔ [HOBO-695](https://linear.app/quickdeploy-ai/issue/HOBO-695) — `TokenBudget` object + `evaluateInferenceTokenBudget` gate seam in governance + Plan 05; glossary row; executable draft POC
 
-**Action**
-
-1. Amend `docs/design/governance-planes.md` — insert **Per-token inference budgets** subsection (object JSON, authoring, gate seam, post-call metering, spend-breaker coupling) before "The four lenses" under AI safety & model governance; link proof index + draft POC.
-2. Amend `docs/design/reliability-observability-cost.md` — extend **Budgets, caps & guardrails** with inference token budget bullet; extend **Metering** dimension list with `inference-tokens-input` / `inference-tokens-output` and OpenInference source; disambiguate from auth `token.*`.
-3. Amend `docs/design/glossary.md` — insert **Token budget** row alphabetically between `The notify port` and `WIT interface`.
-4. Add proof index `docs/design/proofs/hobo-695-token-budget-governance/index.md` linking acceptance to the draft POC.
-5. Add draft POC `src/draft/technical-proofs/token-budget-governance-contract/` (protobuf/CUE/PACT evidence + `evaluateInferenceTokenBudget` contract tests).
-
-Do NOT create a new ADR (extends ADR-0039/Plan 05 in place). Do NOT implement production MeteringView projection, policy engine, or model runtime.
-
-**Acceptance**
-
-Checklist:
-1. Design docs define `TokenBudget` object fields (scope, period, input/output/total soft+hard limits) and `evaluateInferenceTokenBudget` pre-inference gate seam with seq-pinned `MeteringView`, `policy.Decided`, and `inference.BudgetGateEvaluated`.
-2. Docs explicitly distinguish LLM inference tokens from auth `token.*` credential events.
-3. Glossary gains exactly one **Token budget** row; no duplicate terms.
-4. Draft POC tests cover soft warn, hard deny, missing metering fail-closed, and scope-evasion guard.
-5. Gates green (see commands below).
-
-Runnable validation commands (from repo root):
-- `pnpm run docs:okf`
-- `pnpm run docs:design-lint`
-- `pnpm --prefix src/draft/technical-proofs/token-budget-governance-contract test`
-- `pnpm agent:check -- --staged`
-- `node --import tsx scripts/validate-traceability.ts`
-
-**Guardrails**
-
-Primary delivery is documentation; the draft POC is an independent contract proof only. Touch only the files listed in Action. Preserve existing OKF frontmatter. Use relative `.md` links. Do not edit `traceability.md` or `adr/index.md` unless a gate requires it.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-029-historical-remediation-plan-4e41be92e1c2).
 
 ### REM-030 (for GAP-022)
 
@@ -669,14 +593,7 @@ Primary delivery is documentation; the draft POC is an independent contract proo
 - **Evidence:** `docs/design/launch-messaging-claims.md:63` · `docs/design/known-limitations-register.md:38-44`
 - **Effort:** S · **Delivery:** [HOBO-697](https://linear.app/quickdeploy-ai/issue/HOBO-697)
 
-**Action**
-
-Add known-limitations rows for built-in Crew autonomy scope (owner, workaround, customer-facing wording alignment with launch-messaging-claims.md).
-
-**Acceptance**
-
-1. Register contains ≥1 Crew/MCP limitation row with owner + workaround.
-2. `pnpm run docs:design-lint` passes.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-030-historical-remediation-plan-556d4cb427fb).
 
 ### REM-031 (for GAP-023)
 
@@ -684,14 +601,7 @@ Add known-limitations rows for built-in Crew autonomy scope (owner, workaround, 
 - **Evidence:** `docs/patterns/runtime-code-mutation-persistence.md:37-46` · `docs/patterns/gitops-runbook-promotion.md:44`
 - **Effort:** M · **Delivery:** ✔ [HOBO-698](https://linear.app/quickdeploy-ai/issue/HOBO-698) — PR #772; link-guard proof at `src/draft/technical-proofs/patterns-standards-cross-links/`
 
-**Action**
-
-Bulk-fix relative links in `docs/patterns/*.md` and audit `docs/standards/*.md`: map `forge-generated-stack.md`→`generated-stack.md`, `event-model.md`→`data-plane.md#plan-11`, `verification.md`→`generated-stack.md#plan-09`, ADR theme file renames per current `docs/design/adr/index.md`.
-
-**Acceptance**
-
-1. `pnpm run docs:design-lint` passes on patterns + standards paths (or documented follow-up if lint scope excludes — note in issue).
-2. Zero links to nonexistent `forge-generated-stack.md` / `event-model.md` under patterns.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-031-historical-remediation-plan-6d7d6dd2d7cd).
 
 ### REM-032 (for GAP-024)
 
@@ -723,14 +633,7 @@ Do not touch `docs/design/` files. No new ADR. Preserve OKF frontmatter on `hobo
 - **Evidence:** `docs/competitors/dapr.md:50,54,121`
 - **Effort:** S · **Delivery:** ✔ [HOBO-699](https://linear.app/quickdeploy-ai/issue/HOBO-699) — dapr.md Bindings/Distributed lock downgraded to 🔜 with design anchors; guard at `src/draft/exp-proofs/dx/dapr-parity-anchor-audit/`
 
-**Action**
-
-Downgrade/fix `dapr.md` HoBo-mapping rows: Bindings → partial (name blob-events/triggers/schedule/api adapters); Distributed lock → ◐ actor-lease only unless `hobo:lock` added. Add executable guard at `src/draft/exp-proofs/dx/dapr-parity-anchor-audit/`.
-
-**Acceptance**
-
-1. No ✅ on Bindings or Distributed lock without design anchor.
-2. Gates green.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-033-historical-remediation-plan-99a5f2e3e552).
 
 ### REM-034 (for GAP-026)
 
@@ -738,14 +641,7 @@ Downgrade/fix `dapr.md` HoBo-mapping rows: Bindings → partial (name blob-event
 - **Evidence:** `docs/competitors/aspire.md:471`
 - **Effort:** S · **Delivery:** ✔ [HOBO-705](https://linear.app/quickdeploy-ai/issue/HOBO-705) — `Aspire.Hosting.Testing` row is ◐ at `aspire.md:471` with a whole-graph-harness iteration hook; acceptance (no ✅ without harness spec) satisfied.
 
-**Action**
-
-Change `Aspire.Hosting.Testing` row to ➕ or ◐; point to `@hobo/conformance` + epic proofs as partial; note missing DistributedApplicationTestingBuilder equivalent.
-
-**Acceptance**
-
-1. Row status not ✅ without whole-graph harness spec.
-2. Gates green.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-034-historical-remediation-plan-b622b62450c0).
 
 ### REM-035 (for GAP-027)
 
@@ -753,14 +649,7 @@ Change `Aspire.Hosting.Testing` row to ➕ or ◐; point to `@hobo/conformance` 
 - **Evidence:** `docs/competitors/aspire.md:452` · `docs/design/control-plane.md:57-67`
 - **Effort:** S · **Delivery:** ✔ [HOBO-703](https://linear.app/quickdeploy-ai/issue/HOBO-703)
 
-**Action**
-
-Downgrade WaitFor/WaitForCompletion row to ◐ in `aspire.md`; align with REM-026 local/deploy semantics once documented.
-
-**Acceptance**
-
-1. Tracker row ◐ or notes health/readiness gap.
-2. Gates green.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-035-historical-remediation-plan-b3b3e024e40a).
 
 ### REM-036 (for GAP-028)
 
@@ -768,14 +657,7 @@ Downgrade WaitFor/WaitForCompletion row to ◐ in `aspire.md`; align with REM-02
 - **Evidence:** `docs/patterns/runtime-code-mutation-persistence.md:37` · `docs/design/generated-stack.md:35`
 - **Effort:** S · **Delivery:** ✔ [HOBO-700](https://linear.app/quickdeploy-ai/issue/HOBO-700) — pattern doc cites ADR-0048, reframes write-back as decided; guard at `src/draft/technical-proofs/hobo-700-runtime-code-mutation-pattern-adr-contract/`
 
-**Action**
-
-Update pattern doc intro: cite ADR-0048 answer; reframe "unanswered" as historical; fix cross-links per REM-031 mapping. Add executable guard at `src/draft/technical-proofs/hobo-700-runtime-code-mutation-pattern-adr-contract/`.
-
-**Acceptance**
-
-1. Pattern doc links ADR-0048; no "unanswered" without deferral pointer.
-2. Gates green.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-036-historical-remediation-plan-34155401bf33).
 
 ### REM-037 (for DRIFT-009)
 
@@ -783,15 +665,7 @@ Update pattern doc intro: cite ADR-0048 answer; reframe "unanswered" as historic
 - **Evidence:** `docs/design/architecture.md:171` · `docs/design/stage-6-production-hardening-acceptance.md:71` · `docs/design/adr/07-portability-extensibility.md:293-300`
 - **Effort:** M · **Delivery:** ✔ [HOBO-704](https://linear.app/quickdeploy-ai/issue/HOBO-704) — all four docs affirm app/UI generation IN scope (ADR-0056/0064 keep list); `UI-layer generation…out…ADR-0064` grep clean in `docs/design/`; pinned by proof [HOBO-704 proof](https://linear.app/quickdeploy-ai/document/hobo-704-adr-0064-ui-generation-citation-remediation-archived-cfc726defefa).
 
-**Action**
-
-Fix mis-citations in architecture.md, stage-6 scope-out, worked-example.md, gap-analysis.md: replace "UI-layer generation out (ADR-0064)" with correct boundary — **business/monetization out; app generation IN per ADR-0064 §1 + ADR-0056**. Do not amend ADR-0064 decision text.
-
-**Acceptance**
-
-1. grep `UI-layer generation.*out.*ADR-0064` in docs/design returns zero false negatives.
-2. All four files cite ADR-0056/0064 keep list where UI generation mentioned.
-3. Gates green.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-037-historical-remediation-plan-deb3329af507).
 
 ### REM-038 (for DRIFT-010)
 
@@ -799,25 +673,7 @@ Fix mis-citations in architecture.md, stage-6 scope-out, worked-example.md, gap-
 - **Evidence:** `docs/design/stage-6-production-hardening-acceptance.md:65,96` · `docs/design/adr/07-portability-extensibility.md:295`
 - **Effort:** S · **Delivery:** ✔ [HOBO-701](https://linear.app/quickdeploy-ai/issue/HOBO-701) — split Scope In + Evidence Required tables
 
-**Action**
-
-Amend `docs/design/stage-6-production-hardening-acceptance.md` only (plus the S6-01 proof README row count and this GAPS.md register update):
-
-1. In **Scope In**, replace the single "Governance planes" row with two rows:
-   - **`notify` port (cloud messaging)** — `packages/cloud`; cites ADR-0059 + ADR-0064 §3; explicitly states it is **not** a Plan 46 governance plane.
-   - **Governance planes (Plan 46)** — `packages/cloud`, `packages/registry`, `packages/policy`; classification/residency/retention, guardrails, Registry distribution per Plan 46 ADRs — **no** `notify` mention.
-2. In **Evidence Required**, mirror the same split: one row for `notify` port evidence, one for Plan 46 governance-plane evidence.
-3. Update the lane count from six to seven in the Scope In intro and in `docs/design/proofs/build-s6-01-stage6-acceptance/README.md`.
-
-**Acceptance**
-
-1. Scope In table has distinct `notify` port and Governance planes (Plan 46) rows; neither row bundles both concerns.
-2. Evidence Required table mirrors the split.
-3. `pnpm run docs:okf`, `pnpm run docs:design-lint`, `pnpm agent:check -- --staged` green.
-
-**Guardrails**
-
-Documentation-only. Do not amend ADR-0064 decision text. Preserve relative links and OKF frontmatter.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-038-historical-remediation-plan-d1bb73ae018b).
 
 ### REM-039 (for GAP-029)
 
