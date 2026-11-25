@@ -123,7 +123,7 @@ what evidence M1 must prove, and which adjacent initiatives own publication or r
   release note, limitation, upgrade, and rollback guidance expectations.
 - [Release Artifact Provenance & Retention](./release-artifact-provenance-retention.md) supplies
   artifact identity, provenance, retention, invalidation, and support/debug access evidence.
-- [Compatibility Matrix](./compatibility-matrix.md) supplies supported browser, device, platform,
+- [Compatibility Matrix](https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00) supplies supported browser, device, platform,
   CLI/bootstrap, and known unsupported-state evidence.
 - [Beta Pilot & Feedback Loop](./beta-pilot-feedback.md) supplies beta cohort, feedback, and
   release-candidate exit evidence.
