@@ -137,7 +137,7 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
     {
       id: "compatibility-surface-map",
       ownerProject: "Compatibility Matrix",
-      source: "docs/design/compatibility-matrix.md",
+      source: "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Blockers and accepted risks are recorded.",
@@ -223,7 +223,7 @@ export const releaseNotesReleaseCandidateEvidence: ReleaseNotesReleaseCandidateE
       ownerProject: "Compatibility Matrix",
       readinessDomain: "compatibility",
       cutlineCategory: "v1-blocker.productization",
-      source: "docs/design/compatibility-matrix.md",
+      source: "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00",
     },
   ],
   followUps: [

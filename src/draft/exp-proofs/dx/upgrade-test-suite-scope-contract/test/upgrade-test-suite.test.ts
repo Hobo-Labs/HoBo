@@ -31,7 +31,7 @@ test("M0 record states goal, personas, scope, non-goals, and boundaries", () => 
 test("dependencies map authoritative design sources and owning initiatives", () => {
   assert.deepEqual(UPGRADE_TEST_SUITE_SCOPE.designRefs, [
     "docs/design/release-notes-upgrade-guide.md",
-    "docs/design/compatibility-matrix.md",
+    "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00",
     "docs/design/backup-restore.md",
     "docs/design/bootstrap-installer.md",
     "docs/design/tenant-data-lifecycle.md",

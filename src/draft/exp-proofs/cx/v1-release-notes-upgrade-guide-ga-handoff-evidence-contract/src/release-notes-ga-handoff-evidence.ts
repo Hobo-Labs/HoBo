@@ -149,7 +149,7 @@ export const releaseNotesGaHandoffEvidence: ReleaseNotesGaHandoffEvidenceRecord 
     {
       id: "compatibility-known-limitation-register",
       ownerProject: "Compatibility Matrix",
-      source: "docs/design/compatibility-matrix.md",
+      source: "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "Blockers and accepted risks are recorded.",
@@ -247,7 +247,7 @@ export const releaseNotesGaHandoffEvidence: ReleaseNotesGaHandoffEvidenceRecord 
       ownerProject: "Compatibility Matrix",
       readinessDomain: "compatibility",
       cutlineCategory: "v1-blocker.productization",
-      source: "docs/design/compatibility-matrix.md",
+      source: "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00",
     },
     {
       id: "upgrade-rollback-ga-readiness",

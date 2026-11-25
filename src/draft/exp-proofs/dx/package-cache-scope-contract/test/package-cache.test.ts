@@ -34,7 +34,7 @@ test("dependencies map authoritative design sources and owning initiatives", () 
     "docs/design/release-artifact-provenance-retention.md",
     "docs/design/sbom-vulnerability-notice-evidence.md",
     "docs/design/bootstrap-installer.md",
-    "docs/design/compatibility-matrix.md",
+    "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00",
     "docs/design/security-verification.md",
     "docs/design/support-sla-channels.md",
     "docs/design/tenant-data-lifecycle.md",

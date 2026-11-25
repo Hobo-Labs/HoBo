@@ -65,7 +65,7 @@ test("M0 dependencies map authoritative design sources and owning initiatives", 
   assert.deepEqual(RELEASE_CHANNELS_SCOPE.designRefs, [
     "docs/design/release-notes-upgrade-guide.md",
     "docs/design/release-artifact-provenance-retention.md",
-    "docs/design/compatibility-matrix.md",
+    "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00",
     "docs/design/beta-pilot-feedback.md",
     "docs/design/launch-messaging-claims.md",
     "docs/design/support-sla-channels.md",

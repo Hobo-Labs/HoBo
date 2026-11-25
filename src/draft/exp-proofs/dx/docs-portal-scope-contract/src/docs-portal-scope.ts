@@ -79,7 +79,7 @@ const VALID_PROOF_MODES = new Set<ProofMode>([
 const REQUIRED_DEPENDENCIES = [
   "docs/design/developer-experience.md#plan-07",
   "docs/design/release-notes-upgrade-guide.md",
-  "docs/design/compatibility-matrix.md",
+  "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00",
   "docs/design/launch-messaging-claims.md",
   "docs/design/support-sla-channels.md",
   "docs/design/launch-support-escalation.md",
@@ -204,7 +204,7 @@ export const DOCS_PORTAL_SCOPE: DocsPortalScope = {
       reason: "Defines release-note, upgrade, compatibility, known-limitation, rollback, migration, and support-contact inputs the portal must route without rewriting final copy.",
     },
     {
-      source: "docs/design/compatibility-matrix.md",
+      source: "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00",
       reason: "Defines browser, device, platform, CLI bootstrap, unsupported environment, and limitation evidence that customer-facing docs may publish.",
     },
     {
@@ -288,7 +288,7 @@ export const DOCS_PORTAL_SCOPE: DocsPortalScope = {
       customerVisible: true,
       ownerRoute: "Compatibility Matrix",
       customerMessage: "Supported browser, device, platform, and CLI bootstrap statements must cite compatibility evidence.",
-      proofSource: "docs/design/compatibility-matrix.md#evidence-source-map",
+      proofSource: "https://linear.app/quickdeploy-ai/document/supported-browser-device-and-platform-matrix-archived-75c4c61aed00#evidence-source-map",
     },
     {
       id: "known-limitations",
