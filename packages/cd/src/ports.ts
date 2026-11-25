@@ -17,7 +17,6 @@ import type {
 	TenantId,
 	TrafficRoutingOfferingId,
 } from "@hobo/core";
-import type { JwtSvidIssuer } from "@hobo/identity";
 import type {
 	CredentialRequest,
 	CredentialResponse,

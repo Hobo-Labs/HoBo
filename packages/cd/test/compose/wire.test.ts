@@ -157,17 +157,17 @@ describe("wireContinuousDelivery", () => {
 	});
 
 	it("binds agent proofs to the configured service origin", () => {
-		const issuer = {} as never;
+		const fleet = {} as never;
 		wireContinuousDelivery(
 			input(log, calls, {
 				publicOrigin: "https://cd.example.test",
-				agentIssuer: issuer,
+				fleet,
 			}),
 		);
 		expect(argsOf(calls, "createAgentEnrollment").publicOrigin).toBe(
 			"https://cd.example.test",
 		);
-		expect(argsOf(calls, "createAgentEnrollment").issuer).toBe(issuer);
+		expect(argsOf(calls, "createAgentEnrollment").fleet).toBe(fleet);
 	});
 
 	it("binds the placed-Camps reader and the fan-out aggregate gate into the promotion service (D20, D21)", async () => {

@@ -175,7 +175,7 @@ describe("CD runtime startup privacy", () => {
 							name: "fixture-hub",
 							kind: "HUB_KIND_OCM",
 							apiBaseUrl: "https://hub.fixture.invalid",
-							credentialRef: "env://FIXTURE_CREDENTIAL",
+							credentialRef: "owner://FIXTURE_CREDENTIAL",
 							auth: "KUBE_AUTH_BEARER",
 						},
 						clusters: [{ campId: "fixture/cluster", cluster: "fixture" }],
