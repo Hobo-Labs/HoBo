@@ -69,13 +69,19 @@ export interface BetterAuthHostHarness {
 	dispose(): void;
 }
 
-export function createBetterAuthHostHarness(): BetterAuthHostHarness {
+export function createBetterAuthHostHarness(options?: {
+	readonly sharedSessionStorePath?: string;
+}): BetterAuthHostHarness {
 	const directory = mkdtempSync(join(tmpdir(), "hobo-better-auth-host-"));
 	const alchemyHome = join(directory, "alchemy");
 	mkdirSync(alchemyHome, { recursive: true });
-	const relationalDir = join(alchemyHome, "relational");
-	mkdirSync(relationalDir, { recursive: true });
-	const sessionStorePath = join(relationalDir, "session.db");
+	const sessionStorePath =
+		options?.sharedSessionStorePath ??
+		(() => {
+			const relationalDir = join(alchemyHome, "relational");
+			mkdirSync(relationalDir, { recursive: true });
+			return join(relationalDir, "session.db");
+		})();
 	const previousHome = process.env.ALCHEMY_HOME;
 	const previousTelemetry = process.env.ALCHEMY_TELEMETRY_DISABLED;
 	process.env.ALCHEMY_HOME = alchemyHome;
