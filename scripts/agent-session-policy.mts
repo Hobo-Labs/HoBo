@@ -347,18 +347,22 @@ function matchBroadTurbo(tokens: readonly string[]): string | undefined {
 		);
 	});
 	if (hasNarrowFlag) return undefined;
+	const tasks: string[] = [];
 	while (index < tokens.length) {
 		const token = tokens[index] ?? "";
 		if (token.startsWith("-")) {
 			index += 1;
 			continue;
 		}
-		if (BROAD_TEST_SCRIPTS.has(token.toLowerCase())) {
-			return `turbo ${token}`;
-		}
-		return undefined;
+		tasks.push(token.toLowerCase());
+		index += 1;
 	}
-	return undefined;
+	if (tasks.length === 0) return undefined;
+	if (tasks.includes("build") && tasks.includes("test")) {
+		return "turbo run build test";
+	}
+	const broad = tasks.find((task) => BROAD_TEST_SCRIPTS.has(task));
+	return broad === undefined ? undefined : `turbo ${broad}`;
 }
 
 function matchBroadVitest(tokens: readonly string[]): string | undefined {

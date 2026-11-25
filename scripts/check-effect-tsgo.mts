@@ -83,10 +83,14 @@ export function selectEffectTsgoTargets(
 	return targets;
 }
 
-function listChangedFiles(
+export type ChangedFilesRead =
+	| Readonly<{ ok: true; files: readonly string[] }>
+	| Readonly<{ ok: false }>;
+
+export function readChangedFiles(
 	rootDir: string,
 	mode: { readonly staged: boolean; readonly base: string | undefined },
-): readonly string[] {
+): ChangedFilesRead {
 	const gitArgs = mode.staged
 		? ["diff", "--cached", "--name-only", "--diff-filter=ACMR"]
 		: mode.base !== undefined
@@ -98,12 +102,15 @@ function listChangedFiles(
 		shell: false,
 	});
 	if (result.status !== 0) {
-		return [];
+		return { ok: false };
 	}
-	return result.stdout
-		.split(/\r?\n/u)
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0);
+	return {
+		ok: true,
+		files: result.stdout
+			.split(/\r?\n/u)
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0),
+	};
 }
 
 function effectTsgoBin(rootDir: string): string {
@@ -177,11 +184,18 @@ function main(argv: readonly string[]): number {
 		.find((arg) => arg.startsWith("--base="))
 		?.slice("--base=".length);
 	const explicitPackages = parseExplicitPackages(argv);
-	const files =
+	const changed =
 		explicitPackages.length > 0
-			? resolveExplicitPackagePaths(rootDir, explicitPackages)
-			: listChangedFiles(rootDir, { staged, base });
-	const targets = selectEffectTsgoTargets(rootDir, files);
+			? {
+					ok: true as const,
+					files: resolveExplicitPackagePaths(rootDir, explicitPackages),
+				}
+			: readChangedFiles(rootDir, { staged, base });
+	if (!changed.ok) {
+		console.error("effect-tsgo: git failed to list changed files");
+		return 2;
+	}
+	const targets = selectEffectTsgoTargets(rootDir, changed.files);
 
 	if (targets.length === 0) {
 		if (explicitPackages.length > 0) {

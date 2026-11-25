@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
 	packageUsesEffect,
+	readChangedFiles,
 	resolveExplicitPackagePaths,
 	selectEffectTsgoTargets,
 	workspaceDirForPath,
@@ -20,6 +21,16 @@ function withTempWorkspace(run: (root: string) => void): void {
 }
 
 describe("check-effect-tsgo target selection", () => {
+	it("fails closed when git cannot list changed files", () => {
+		assert.deepEqual(
+			readChangedFiles(join(tmpdir(), "no-such-repo-root"), {
+				staged: false,
+				base: undefined,
+			}),
+			{ ok: false },
+		);
+	});
+
 	it("resolves both top-level and nested workspace package paths", () => {
 		assert.equal(
 			workspaceDirForPath("packages/ci/src/index.ts"),

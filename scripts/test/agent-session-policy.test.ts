@@ -287,6 +287,8 @@ describe("refusing broad full-repo test sweeps by default", () => {
 			"npm test",
 			"mise run test:unit",
 			"pnpm exec turbo run test",
+			"turbo run build test",
+			"pnpm exec turbo run build test",
 			"turbo run test --concurrency=100%",
 			"pnpm exec vitest run",
 			"vitest run --reporter=dot",

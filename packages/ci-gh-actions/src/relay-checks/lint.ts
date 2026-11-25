@@ -1,16 +1,12 @@
 import type { RelayJobAnnotation } from "@hobo/ci";
+import {
+	GH_DEFAULT_LINT_TOOLS,
+	GH_LINT_TOOLS,
+	type GhLintTool,
+} from "../domain/ids.js";
 
-// public-contract: the tools the lint check runs, in the order it runs them.
-export const LINT_TOOLS = [
-	"actionlint",
-	"shellcheck",
-	"oxlint",
-	"oxfmt",
-	"ruff",
-	"zizmor",
-	"typos",
-] as const;
-export type LintTool = (typeof LINT_TOOLS)[number];
+export const LINT_TOOLS = GH_LINT_TOOLS;
+export type LintTool = GhLintTool;
 
 export const LINT_TOOL_TIMEOUT_MS = 5 * 60_000;
 export const LINT_CHECK_BUDGET_MS = 8 * 60_000;
@@ -163,7 +159,7 @@ export function lintToolsOf(
 	| Readonly<{ ok: true; tools: readonly LintTool[] }>
 	| Readonly<{ ok: false; problem: string }> {
 	if (text === undefined || text.trim() === "")
-		return { ok: true, tools: LINT_TOOLS };
+		return { ok: true, tools: [...GH_DEFAULT_LINT_TOOLS] };
 	const named = [
 		...new Set(
 			text
@@ -188,7 +184,7 @@ export function lintToolsOf(
 	};
 }
 
-export function lintFindings(
+function gccStyleLintFindings(
 	tool: LintTool,
 	output: string,
 ): readonly LintFinding[] {
@@ -205,6 +201,193 @@ export function lintFindings(
 		});
 	}
 	return findings;
+}
+
+function oxfmtLintFindings(
+	tool: LintTool,
+	output: string,
+): readonly LintFinding[] {
+	const gcc = gccStyleLintFindings(tool, output);
+	if (gcc.length > 0) return gcc;
+	const findings: LintFinding[] = [];
+	for (const raw of output.split(/\r?\n/u)) {
+		const line = raw.trim();
+		if (line === "") continue;
+		if (
+			line.startsWith("Checking formatting") ||
+			line.startsWith("Finished in") ||
+			line.startsWith("All matched files") ||
+			line.startsWith("Format issues found") ||
+			line.startsWith("No config found")
+		)
+			continue;
+		const fileOnly = /^([^:]+?)(?:\s+\(\d+ms\))?\s*$/u.exec(line);
+		if (fileOnly?.[1] === undefined) continue;
+		const file = fileOnly[1].replace(/^\.\//u, "");
+		if (!/[./]/u.test(file)) continue;
+		findings.push({
+			tool,
+			file,
+			line: 1,
+			column: 1,
+			message: "formatting differs",
+		});
+	}
+	return findings;
+}
+
+type JsonValue =
+	| null
+	| boolean
+	| number
+	| string
+	| readonly JsonValue[]
+	| { readonly [key: string]: JsonValue };
+
+function jsonObject(
+	value: JsonValue | undefined,
+): { readonly [key: string]: JsonValue } | undefined {
+	if (value === undefined || value === null || Array.isArray(value))
+		return undefined;
+	if (Object.getPrototypeOf(value) !== Object.prototype) return undefined;
+	// SAFETY: Null, arrays, and non-plain objects are rejected above.
+	return value as { readonly [key: string]: JsonValue };
+}
+
+function jsonArray(
+	value: JsonValue | undefined,
+): readonly JsonValue[] | undefined {
+	if (value === undefined) return undefined;
+	return Array.isArray(value) ? value : undefined;
+}
+
+function jsonString(value: JsonValue | undefined): string | undefined {
+	if (Object.prototype.toString.call(value) !== "[object String]") {
+		return undefined;
+	}
+	// SAFETY: The [object String] tag means the JSON leaf is a string primitive.
+	return value as string;
+}
+
+function jsonNumber(value: JsonValue | undefined): number | undefined {
+	if (Object.prototype.toString.call(value) !== "[object Number]") {
+		return undefined;
+	}
+	// SAFETY: The [object Number] tag means the JSON leaf is a number primitive.
+	return value as number;
+}
+
+function parseLintToolJson(text: string): JsonValue | undefined {
+	try {
+		// SAFETY: JSON.parse returns only JSON-serializable leaves encoded as JsonValue.
+		return JSON.parse(text) as JsonValue;
+	} catch {
+		return undefined;
+	}
+}
+
+function zizmorJsonFindings(
+	tool: LintTool,
+	rows: readonly JsonValue[],
+): readonly LintFinding[] {
+	const findings: LintFinding[] = [];
+	for (const row of rows) {
+		const record = jsonObject(row);
+		if (record === undefined) continue;
+		const ident = jsonString(record.ident) ?? "finding";
+		const desc = jsonString(record.desc) ?? ident;
+		const locations = jsonArray(record.locations) ?? [];
+		const location = locations
+			.map((entry) => jsonObject(entry))
+			.find((entry) => entry !== undefined);
+		if (location === undefined) continue;
+		let file = "";
+		let line = 1;
+		let column = 1;
+		const concrete = jsonObject(location.concrete);
+		const concreteLocation = jsonObject(concrete?.location);
+		const start = jsonObject(concreteLocation?.start_point);
+		if (start !== undefined) {
+			const rowIndex = jsonNumber(start.row);
+			const columnIndex = jsonNumber(start.column);
+			if (rowIndex !== undefined) line = rowIndex + 1;
+			if (columnIndex !== undefined) column = columnIndex + 1;
+		}
+		const symbolic = jsonObject(location.symbolic);
+		const key = jsonObject(symbolic?.key);
+		const local = jsonObject(key?.Local);
+		const verbatim = jsonString(local?.verbatim_path);
+		if (verbatim !== undefined) file = verbatim.replace(/^\.\//u, "");
+		if (file === "") continue;
+		findings.push({ tool, file, line, column, message: desc });
+	}
+	return findings;
+}
+
+function zizmorSarifFindings(
+	tool: LintTool,
+	document: { readonly [key: string]: JsonValue },
+): readonly LintFinding[] {
+	const runs = jsonArray(document.runs) ?? [];
+	const run = runs
+		.map((entry) => jsonObject(entry))
+		.find((entry) => entry !== undefined);
+	if (run === undefined) return [];
+	const results = jsonArray(run.results) ?? [];
+	const findings: LintFinding[] = [];
+	for (const resultValue of results) {
+		const result = jsonObject(resultValue);
+		if (result === undefined) continue;
+		const messageRecord = jsonObject(result.message);
+		const message = jsonString(messageRecord?.text) ?? "finding";
+		const locations = jsonArray(result.locations) ?? [];
+		const location = locations
+			.map((entry) => jsonObject(entry))
+			.find((entry) => entry !== undefined);
+		if (location === undefined) continue;
+		const physical = jsonObject(location.physicalLocation);
+		const artifact = jsonObject(physical?.artifactLocation);
+		const region = jsonObject(physical?.region);
+		const uri = jsonString(artifact?.uri);
+		const file = uri === undefined ? "" : uri.replace(/^\.\//u, "");
+		if (file === "") continue;
+		findings.push({
+			tool,
+			file,
+			line: jsonNumber(region?.startLine) ?? 1,
+			column: jsonNumber(region?.startColumn) ?? 1,
+			message,
+		});
+	}
+	return findings;
+}
+
+function zizmorLintFindings(
+	tool: LintTool,
+	output: string,
+): readonly LintFinding[] {
+	const trimmed = output.trim();
+	if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+		return gccStyleLintFindings(tool, output);
+	}
+	const parsed = parseLintToolJson(trimmed);
+	if (parsed === undefined) return gccStyleLintFindings(tool, output);
+	const array = jsonArray(parsed);
+	if (array !== undefined) return zizmorJsonFindings(tool, array);
+	const document = jsonObject(parsed);
+	if (document !== undefined && jsonArray(document.runs) !== undefined) {
+		return zizmorSarifFindings(tool, document);
+	}
+	return gccStyleLintFindings(tool, output);
+}
+
+export function lintFindings(
+	tool: LintTool,
+	output: string,
+): readonly LintFinding[] {
+	if (tool === "oxfmt") return oxfmtLintFindings(tool, output);
+	if (tool === "zizmor") return zizmorLintFindings(tool, output);
+	return gccStyleLintFindings(tool, output);
 }
 
 function lastLine(output: string): string {
