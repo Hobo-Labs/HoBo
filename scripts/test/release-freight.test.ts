@@ -9,7 +9,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { parseReleaseFreightAuthorMessage } from "../../packages/cd/src/reconcile/release-freight-detail.ts";
+import {
+	formatReleaseFreightBlockedReason,
+	parseReleaseFreightAuthorMessage,
+	validateReasonStructuredDetail,
+} from "../../packages/cd/src/reconcile/release-freight-detail.ts";
 import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
 import { RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS } from "../lib/release-contract-script-build.mts";
 import {
@@ -545,6 +549,62 @@ describe("announceVerdict", () => {
 		}
 	});
 
+	it("keeps resolver codes and structured pages detail on blocked announce lines", () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const structured = validateReasonStructuredDetail({
+				credentialRef: "github-app://Hobo-Labs/HoBo",
+				requestedScope: "cd-realize:hobo-release/pages-candidate",
+				detailKind: "github-permission-missing",
+			});
+			const message = formatReleaseFreightBlockedReason(
+				"RESOLVER_PROVIDER_REJECTED",
+				structured,
+			);
+			announceVerdict(
+				"pages",
+				"candidate",
+				"sha256:16c0e556b941adea70a6f24569e8059c79dff6098acd780b2369ce1c32804bb4",
+				{
+					outcome: "blocked",
+					codes: ["RESOLVER_PROVIDER_REJECTED"],
+					message,
+				},
+				{},
+			);
+			const line = String(error.mock.calls.at(-1)?.[0] ?? "");
+			expect(line).toContain(
+				"blocked (RESOLVER_PROVIDER_REJECTED)",
+			);
+			expect(line).toContain("pages-reason=github-permission-missing");
+			expect(line).not.toContain("blocked (none)");
+		} finally {
+			error.mockRestore();
+		}
+	});
+
+	it("recovers resolver code when verdict codes were sanitized empty", () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			announceVerdict(
+				"pages",
+				"candidate",
+				"f",
+				{
+					outcome: "blocked",
+					codes: [],
+					message: "RESOLVER_PROVIDER_REJECTED",
+				},
+				{},
+			);
+			const line = String(error.mock.calls[0]?.[0] ?? "");
+			expect(line).toContain("RESOLVER_PROVIDER_REJECTED");
+			expect(line).not.toContain("(none)");
+		} finally {
+			error.mockRestore();
+		}
+	});
+
 	it("redacts raw promotion-refused and drive-error text in error lines", () => {
 		const payload = randomBytes(14).toString("base64url");
 		const synthetic = `eyJhbGciOiJIUzI1NiJ9.${payload}.${randomBytes(22).toString("base64url")}`;
@@ -983,5 +1043,15 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		);
 		expect(job("release-tag")).toMatch(/permissions:\n\s+contents: write\n/u);
 		expect(workflow).not.toMatch(/secrets\.HOBO_RELEASE_CD/u);
+	});
+
+	it("binds Pages deploy to the job GITHUB_TOKEN with contents:write", () => {
+		const block = job("release-pages");
+		expect(block).toMatch(
+			/Record, promote and publish the Pages site[\s\S]*?GITHUB_TOKEN: \$\{\{ github\.token \}\}/u,
+		);
+		expect(block).not.toMatch(
+			/Record, promote and publish the Pages site[\s\S]*?GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u,
+		);
 	});
 });
