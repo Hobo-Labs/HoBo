@@ -317,6 +317,7 @@ export function makeDomainScheduleStore(
 	};
 }
 
+/* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: SqliteWorkflowHost mirrors Effect InMemoryWorkflows Host callbacks; failures and defects arrive untyped from the workflow engine. */
 export interface SqliteWorkflowHost {
 	readonly now: () => number;
 	readonly enqueue: (
@@ -337,6 +338,7 @@ export interface SqliteWorkflowHost {
 		defect: WorkflowDiedDefect,
 	) => void;
 }
+/* oxlint-enable anti-slop/no-unknown-parameters */
 
 export function makeSqliteBackedWorkflowEngine(
 	modelName: string,
