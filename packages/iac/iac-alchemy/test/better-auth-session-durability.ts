@@ -1,6 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { Schema } from "effect";
+
+const isNonEmptyString = Schema.is(Schema.NonEmptyString);
 
 export interface SyntheticBetterAuthSession {
 	readonly sessionId: string;
@@ -58,42 +61,39 @@ export function recordSyntheticBetterAuthSignIn(
 	});
 }
 
-interface SqliteSessionRow {
-	readonly id: string;
-	readonly token: string;
-	readonly userId: string;
-	readonly expiresAt: string;
-}
-
 export function loadSyntheticBetterAuthSession(
 	database: DatabaseSync,
 	sessionToken: string,
 ): SyntheticBetterAuthSession | null {
 	const maybeRow = database
-		.prepare(`SELECT id, token, userId, expiresAt FROM session WHERE token = ? LIMIT 1`)
+		.prepare(
+			`SELECT id, token, userId, expiresAt FROM session WHERE token = ? LIMIT 1`,
+		)
 		.get(sessionToken);
 	if (maybeRow === null || maybeRow === undefined) {
 		return null;
 	}
-	// SAFETY: `StatementSync.get` returns a row object whose keys match this SELECT list.
-	const row = maybeRow as SqliteSessionRow;
+	const { id, token, userId, expiresAt } = maybeRow;
 	if (
-		row.id.length === 0 ||
-		row.token.length === 0 ||
-		row.userId.length === 0 ||
-		row.expiresAt.length === 0
+		!isNonEmptyString(id) ||
+		!isNonEmptyString(token) ||
+		!isNonEmptyString(userId) ||
+		!isNonEmptyString(expiresAt)
 	) {
 		return null;
 	}
 	return Object.freeze({
-		sessionId: row.id,
-		sessionToken: row.token,
-		userId: row.userId,
-		expiresAtIso: row.expiresAt,
+		sessionId: id,
+		sessionToken: token,
+		userId,
+		expiresAtIso: expiresAt,
 	});
 }
 
-export function simulateProcessRestart(path: string, database: DatabaseSync): DatabaseSync {
+export function simulateProcessRestart(
+	path: string,
+	database: DatabaseSync,
+): DatabaseSync {
 	closeBetterAuthSessionStore(database);
 	return openBetterAuthSessionStore(path);
 }
