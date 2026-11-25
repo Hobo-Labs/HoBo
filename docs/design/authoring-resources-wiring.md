@@ -217,7 +217,7 @@ prod.policy({
 
 Resources and handlers may carry a **`priority`** label (`critical` \| `standard` \| `low`) so degradation tiers shed lowest-priority load first. The profile's `budgetUsd` may be omitted when a sibling `budget.hardLimitUsd` is present — the policy normalizer treats them as the same period cap.
 
-**`hobo plan` surfacing.** Plan preview is read-only and surfaces FinOps declarations alongside per-resource cost estimates ([Plan 7](./developer-experience.md#plan-07), [HOBO-125 proof](./proofs/hobo-125-plan-preview/index.md)). After the resource table, `hobo plan` emits a **Cost & budget** block:
+**`hobo plan` surfacing.** Plan preview is read-only and surfaces FinOps declarations alongside per-resource cost estimates ([Plan 7](./developer-experience.md#plan-07), [HOBO-125 proof](https://linear.app/quickdeploy-ai/document/hobo-125-plan-preview-proof-archived-03b922efb56c)). After the resource table, `hobo plan` emits a **Cost & budget** block:
 
 ```text
 Cost & budget (camp prod, monthly)

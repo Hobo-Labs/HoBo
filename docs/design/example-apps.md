@@ -12,7 +12,7 @@ Source issue: HOBO-435.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/example-apps-scope-acceptance`](../../src/draft/exp-proofs/dx/example-apps-scope-acceptance/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-435-example-apps-scope`](./proofs/hobo-435-example-apps-scope/index.md).
+[`proofs/hobo-435-example-apps-scope`](https://linear.app/quickdeploy-ai/document/hobo-435-example-apps-m0-scope-proof-archived-5cef4d82aff9).
 
 ## M0 Acceptance Record
 

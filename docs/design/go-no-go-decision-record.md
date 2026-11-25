@@ -12,7 +12,7 @@ Source issue: HOBO-483.
 Executable proof lives in
 [`src/draft/technical-proofs/go-no-go-decision-record-contract`](../../src/draft/technical-proofs/go-no-go-decision-record-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-483-go-no-go-decision-record`](./proofs/hobo-483-go-no-go-decision-record/index.md).
+[`proofs/hobo-483-go-no-go-decision-record`](https://linear.app/quickdeploy-ai/document/hobo-483-gono-go-decision-record-proof-archived-a3b102ee59e6).
 
 ## M0 Acceptance Record
 

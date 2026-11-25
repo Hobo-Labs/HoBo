@@ -12,7 +12,7 @@ Source issue: HOBO-436.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/tutorials-walkthroughs-scope-acceptance`](../../src/draft/exp-proofs/dx/tutorials-walkthroughs-scope-acceptance/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-436-tutorials-walkthroughs-scope`](./proofs/hobo-436-tutorials-walkthroughs-scope/index.md).
+[`proofs/hobo-436-tutorials-walkthroughs-scope`](https://linear.app/quickdeploy-ai/document/hobo-436-tutorials-and-walkthroughs-m0-scope-proof-archived-c34e07340f54).
 
 ## M0 Acceptance Record
 

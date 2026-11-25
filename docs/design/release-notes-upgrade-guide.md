@@ -93,7 +93,7 @@ Source issue: HOBO-473.
 Executable proof lives in
 [`../../src/draft/exp-proofs/cx/v1-release-notes-upgrade-guide-release-candidate-evidence-contract`](../../src/draft/exp-proofs/cx/v1-release-notes-upgrade-guide-release-candidate-evidence-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-473-release-notes-release-candidate`](./proofs/hobo-473-release-notes-release-candidate/index.md).
+[`proofs/hobo-473-release-notes-release-candidate`](https://linear.app/quickdeploy-ai/document/hobo-473-release-notes-release-candidate-evidence-archived-eb35a777f61f).
 
 The M3 gate records release-note evidence for:
 
@@ -118,7 +118,7 @@ Source issue: HOBO-480.
 Executable proof lives in
 [`../../src/draft/exp-proofs/cx/v1-release-notes-upgrade-guide-ga-handoff-evidence-contract`](../../src/draft/exp-proofs/cx/v1-release-notes-upgrade-guide-ga-handoff-evidence-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-480-release-notes-ga-handoff`](./proofs/hobo-480-release-notes-ga-handoff/index.md).
+[`proofs/hobo-480-release-notes-ga-handoff`](https://linear.app/quickdeploy-ai/document/hobo-480-release-notes-ga-handoff-evidence-archived-6f626fa1e7b1).
 
 The M4 gate records GA release-note and upgrade-guide handoff evidence for:
 
