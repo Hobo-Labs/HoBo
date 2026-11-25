@@ -278,49 +278,7 @@ Historical remediation instructions: [Linear archive](https://linear.app/quickde
 - **Evidence:** `docs/competitors/nitric.md:311` · `docs/design/authoring-resources-wiring.md:42` · `docs/design/authoring-resources-wiring.md:225` · `docs/design/wasm-runtime-wit.md:151`
 - **Effort:** M · **Delivery:** ✔ [HOBO-676](https://linear.app/quickdeploy-ai/issue/HOBO-676) — ADR-0113 in `docs/design/adr/02-identity-security.md`; `hobo:secrets` canonical definition in `docs/design/wasm-runtime-wit.md`
 
-**Action**
-
-Remediation for cand-10 — Option A of the sketch: DEFINE `hobo:secrets` as a thin versioned-secrets extension over `wasi:config/store` so the "secret (versioned)" ✅ parity rows become true. Chosen over dropping the claim because the `hobo:secrets` alias is already load-bearing in four tables (docs/competitors/nitric.md:311, docs/competitors/dapr.md:52, docs/design/authoring-resources-wiring.md:42 and :71) and Plan 21 (authoring-resources-wiring.md:225) already commits to a managed `secret()` store resource distinct from `secretRef`. All edits are docs-only; NO new doc file is created, so no new OKF frontmatter is needed.
-
-1. C:/src/hobo/docs/design/adr/02-identity-security.md — ADD one new ADR section at the end of the file (this theme owns secrets: ADR-0023, ADR-0027, ADR-0038 live here). Use the NEXT FREE GLOBAL ADR ID: read the max ID from the table in docs/design/adr/index.md and take max+1 — do not guess and never renumber existing ADRs. Heading `## ADR-00XX` (anchor `#adr-00xx`), title "Versioned managed secrets: `hobo:secrets` as a version-model extension over `wasi:config/store`". Section outline (h3s, matching neighboring ADRs):
-   - "Context" — Nitric's secret API is versioned (put returns a version; access reads latest or a pinned version); HoBo's parity tables claim `wasi:config`/`hobo:secrets` ✅ but the Plan 20 interface catalog defines no `hobo:secrets` and no version model; `wasi:config/store` is a flat latest-value read surface.
-   - "Decision" — define `hobo:secrets@0.1.0` (stability tier `experimental` per ADR-0075) as the WIT port behind the `secret(name)` catalog resource: `put(name, value) -> version-id`; `access(name) -> (version-id, value)` (latest); `access-version(name, version-id) -> value` (pinned); `list-versions(name) -> list<version-id>`. `wasi:config/store` remains the read-only latest-value view for config-style consumption. `.allow()` verb set stays exactly `put`,`access` — version pinning is an argument to access, not a new verb, so IAM/link/token inference (Plan 21's three effects) is unchanged. `secret.Accessed` audit events carry the resolved version-id. Cloud equivalence: AWS Secrets Manager version stages / Azure Key Vault secret versions / GCP Secret Manager versions.
-   - "Relationship to secretless-first" — `secret()`/`hobo:secrets` is the Nitric-parity managed-store surface, NOT a new default; `fromBinding`/`secretRef` and SVID-brokered tokens (ADR-0008/0023/0027) remain the default path; state this explicitly.
-   - "Consequences" — honest ✅ parity; one more `hobo:*` interface to conform; version model must survive provider mapping.
-   - "Alternatives considered" — (a) drop the "(versioned)" claim and alias (rejected: alias already referenced by Nitric AND Dapr parity tables; Nitric parity is a P3 pillar target); (b) fold versioning into `wasi:config` (rejected: not in the standard's shape).
-2. C:/src/hobo/docs/design/adr/index.md — add one row to the `## Index` table: `| 00XX | Versioned managed secrets: hobo:secrets over wasi:config/store | [identity-security](02-identity-security.md#adr-00xx) |`. This file has no YAML frontmatter — keep it that way.
-3. C:/src/hobo/docs/design/traceability.md — add a row for `ADR-00XX` in the ADR coverage table (mirror the ADR-0084 row shape at line ~342): theme link `./adr/02-identity-security.md#adr-00xx`, coverage assertion "versioned put/access/list round-trip with pinned-version reads proven against the secrets port conformance suite", issue family: the Identity, Auth, Secrets & XAA epic family (reference the Linear issue created from this remediation once it exists, plus existing HOBO coverage listed for ADR-0027). Required or `scripts/validate-traceability.ts` fails on the missing ID.
-4. C:/src/hobo/docs/design/wasm-runtime-wit.md (Plan 20) —
-   a. Canonical catalog table (~line 127): change `| Secrets | wasi:config/store |` to `| Secrets | wasi:config/store + hobo:secrets (versioned) ([ADR-00XX](./adr/02-identity-security.md#adr-00xx)) |`.
-   b. "Reused WASI interfaces" table (~line 151): amend the `wasi:config/store` row note to "config + latest-secret access; version model added by `hobo:secrets`".
-   c. "HoBo-authored interfaces (`hobo:*`)" table (~lines 155–183): add row `| hobo:secrets | versioned managed secrets (Nitric parity) over wasi:config/store ([Plan 21](./authoring-resources-wiring.md#plan-21)/[ADR-00XX](./adr/02-identity-security.md#adr-00xx)) | put(name,value) -> version-id, access(name) -> latest, access-version(name,version), list-versions(name) |`.
-   d. New h3 subsection after "Preview wasi:websocket + the hobo:websocket extension" (follow that precedent, ~line 201): `### hobo:secrets — versioned secrets over wasi:config ([ADR-00XX](...))` — 1 short paragraph (why: parity + audit-by-version; experimental tier; secretless-first unchanged) + a ~15-line ```wit fenced sketch of `package hobo:secrets@0.1.0;` with the four functions and `type version-id = string`.
-5. C:/src/hobo/docs/design/authoring-resources-wiring.md (Plan 21) —
-   a. Catalog row line 42: port cell → `wasi:config/store` + `hobo:secrets` (versioned); verbs cell → `put`,`access` *(access = latest or pinned version)*.
-   b. Nitric building-block parity table row line 71: same port/verb cell update.
-   c. Under "### Configuration & secretless secrets" (after the `secretRef` bullet, ~line 225): add one paragraph "**Versioned managed secrets (`secret()` + `hobo:secrets`).**" — put yields a new version, access reads latest or a pinned version, `secret.Accessed` records the version-id, and this is the parity/managed-store surface while secretless brokering stays the default; link `[Plan 20](./wasm-runtime-wit.md#plan-20)` and the new ADR.
-6. C:/src/hobo/docs/competitors/nitric.md line 311 — update the row to `| `secret` (versioned) | `wasi:config/store` + `hobo:secrets` (put -> version, access latest|pinned) | ✅ |` so the claim points at the now-defined port; the section-level link to Plan 21 at line 318 already covers the doc pointer.
-7. C:/src/hobo/docs/competitors/dapr.md line 52 — extend the row's link cell to also cite `[Plan 20](../design/wasm-runtime-wit.md#plan-20)` next to the existing Plan 21 link (the port now has a canonical home).
-8. C:/src/hobo/GAPS.md — per register rules (remediations documented, not applied): add/update the cand-10 row in "## Gap register" with Status 🧯 and Remediation column pointing to the new ADR anchor (`docs/design/adr/02-identity-security.md#adr-00xx`) and this file list; append the finding to the current iteration's log section.
-
-**Acceptance**
-
-- [ ] `hobo:secrets` has a canonical definition in docs/design/wasm-runtime-wit.md: a row in the hobo:* interfaces table, updated Secrets rows in the canonical-catalog and reused-WASI tables, and a WIT sketch subsection with put->version-id, access (latest), access-version (pinned), list-versions.
-- [ ] New ADR exists in docs/design/adr/02-identity-security.md under the next free global ID (taken from the max in docs/design/adr/index.md, not guessed); no existing ADR renumbered or edited.
-- [ ] docs/design/adr/index.md gains exactly one index row for the new ADR and still has NO YAML frontmatter.
-- [ ] docs/design/traceability.md gains an ADR-00XX row with a testable coverage assertion (validate-traceability requires every indexed ADR present and no gaps up to the max ID).
-- [ ] .allow() verbs for secret remain exactly put,access in both Plan 21 tables; version pinning documented as an access argument.
-- [ ] docs/competitors/nitric.md:311 and docs/competitors/dapr.md:52 rows link to the defined port; all relative links resolve (nitric/dapr use ../design/ prefixes; design-suite files use ./ and ./adr/ prefixes).
-- [ ] GAPS.md cand-10 row status is 🧯 with the remediation pointer; no rows deleted or renumbered.
-- [ ] Runnable checks pass from repo root:
-  - `pnpm run docs:okf`
-  - `pnpm agent:check -- --staged` (with the edits staged — this also triggers the traceability gate because docs/design/adr/ is touched, per scripts/relevant-check-policy.ts)
-  - `node --import tsx scripts/validate-traceability.ts` (the traceability gate directly — there is no dedicated pnpm alias; this is the real script wired into agent:check)
-  - optional belt-and-braces: `pnpm run docs:design-lint`
-
-**Guardrails**
-
-Documentation-level only: no .wit files, no code under src/, no changes to .agents//.claude//scripts/. Do not reverse or re-litigate the Nomad->wasmCloud pivot. Never renumber existing ADRs; the new ADR takes the next free global ID read from docs/design/adr/index.md at edit time. Do not weaken secretless-first (ADR-0008/0023/0027): the ADR must explicitly frame hobo:secrets as the parity/managed-store surface, with fromBinding/secretRef brokering staying the default — do not present versioned secrets as the recommended path. Do not add verbs beyond put,access (would ripple through IAM/link/token-inference prose in Plan 21 and Plan 6). Mark hobo:secrets stability `experimental` and pin `hobo:secrets@0.1.0` per the ADR-0075 tier/versioning conventions already in Plan 20. index.md files must have no frontmatter; existing non-index files touched here already carry OKF frontmatter — do not remove or alter their `type:` fields. Keep every cross-doc link relative and verify anchors (#plan-20, #plan-21, #adr-00xx) resolve. In GAPS.md, only append/update — IDs are stable, rejected/confirmed rows are never deleted.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-011-historical-remediation-plan-278ceb261295).
 
 ### REM-012 (for GAP-009)
 
@@ -328,49 +286,7 @@ Documentation-level only: no .wit files, no code under src/, no changes to .agen
 - **Evidence:** `docs/design/authoring-resources-wiring.md:37` · `docs/design/authoring-resources-wiring.md:65` · `docs/competitors/nitric.md:146` · `docs/competitors/nitric.md:306`
 - **Effort:** M · **Delivery:** [HOBO-677](https://linear.app/quickdeploy-ai/issue/HOBO-677) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-All changes are amendments to existing docs — no new files, so no new OKF frontmatter is needed. Reuse the `auth()` port (Plan 6 §6.7) as the single auth machinery; do NOT invent a Nitric-style parallel `oidcRule` object. Resolve the `hobo:http` dangling reference by DEFINING it (the `hobo:websocket` thin-extension precedent, ADR-0075), not removing it — removal would orphan `docs/design/authoring-resources-wiring.md:37`, `:65` and `docs/competitors/nitric.md:306`.
-
-1) `docs/design/adr/02-identity-security.md` — append a new ADR section at the END of the file, using the next free global ADR ID (0105 at time of writing; confirm by checking the highest `## ADR-NNNN` across the four theme files before assigning; NEVER renumber existing ADRs). Heading `## ADR-<next>` + bold title: "Route-level API security via the auth() port; hobo:http as the thin routing/security extension over wasi:http". Use the h3 Context/Decision/Consequences shape (match ADR-0023 in the same file):
-   - ### Context — Plan 21's catalog rows (authoring-resources-wiring.md:37, :65) name "route-level security" as the api resource's only verb model and nitric.md claims parity, but no design text specifies the per-route security authoring surface (Nitric's oidcRule/securityRule-per-route and `.use()` middleware have no HoBo equivalent), and the referenced `hobo:http` port is undefined in Plan 20's canonical interface catalog. The policy plane already presumes an "auth middleware" obligation exists (contracts-policy-flags.md:137, walkthrough.md:612, glossary.md:50 "Obligation").
-   - ### Decision — five numbered points: (1) an `api()` declares its security by BINDING the `auth()` port (Plan 6 §6.7), api-level default + per-route override — e.g. `api("main", { security: appAuth })`; per-route: route options `{ auth: appAuth.require({ audience, claims }) }` or explicit `{ auth: "public" }` opt-out; Nitric's `oidcRule({audiences, issuer})` maps to `auth.oidc(...)` provider declarations, `securityRule('name')`-per-route maps to the per-route binding. (2) A middleware seam — `app.use(fn)` and per-route middleware as ordinary handler composition; the policy plane's "require auth middleware" obligation (Plan 29) targets this seam. (3) Lowering: route security lands in the manifest IR as per-route entries under the api resource — sketch `"routes": [{ "method", "path", "security": { "authRef": "appAuth", "audience", "claims" } | "public" }]` — consumed by the gateway adapter (edge enforcement) and by `hobo:http` (in-component verify → `ctx.user` via `hobo:auth.verify`); deny-by-default: a route with neither a route rule nor an api-level default is `exposes: public` and the policy plane may mutate (attach auth middleware) or deny it at plan time. (4) `hobo:http` is a thin extension over `wasi:http` (same pattern as `hobo:websocket`/ADR-0075): route registration metadata, per-route security binding, middleware chain, principal binding. (5) Unlike Nitric (security rules not enforced in local dev — a documented Nitric gap), HoBo route rules ARE enforced in `hobo dev` via the ADR-0070 contract-asserted dev principal.
-   - ### Consequences — (+) closes the Nitric parity gap with a strictly stronger local-dev story; one auth machinery (no duplicate oidcRule surface); route security is auditable in the manifest IR. (−) every gateway/provider adapter must honor per-route rules; `hobo:http` becomes a versioned WIT interface to maintain.
-
-2) `docs/design/authoring-resources-wiring.md` (Plan 21) — insert a new h3 section `### Route-level API security` immediately after the "### Handlers, events & triggers (parity with Nitric \"services\")" section (i.e., between current lines 117 and 119). Outline:
-   - (intro paragraph) — the api resource's verb model is route-level security, defined here; links to the new ADR and Plan 6 §6.7.
-   - **Declaring security (api-level default, per-route override)** — TS code sample: `const app = api("main", { security: appAuth }); app.get("/protected", handler); app.get("/health", { auth: "public" }, handler); app.post("/admin", { auth: appAuth.require({ claims: { role: "admin" } }) }, handler);` — one sentence on the Nitric oidcRule/securityRule mapping.
-   - **Middleware seam** — `app.use(fn)` / per-route middleware; note this is the "auth middleware" obligation target ([Plan 29](./contracts-policy-flags.md#plan-29)).
-   - **Lowering to the manifest IR** — jsonc sketch of per-route `security` entries under the api resource (mirror the ADR sketch); note gateway + `hobo:http` enforcement points ([Plan 20](./wasm-runtime-wit.md#plan-20)).
-   - **Deny-by-default and local dev** — unannotated route with no api default = `exposes: public` → policy mutate/deny at plan time; enforced in `hobo dev` (ADR-0070), unlike Nitric.
-   Also amend the two catalog cells: line 37 and line 65 — change `route-level security` to `route-level security (below)` linking `#route-level-api-security`, and append the new ADR link in the line-37 row's equivalence column or the cell itself (match the style of other rows that cite ADRs).
-
-3) `docs/design/wasm-runtime-wit.md` (Plan 20) — two edits: (a) in the "HoBo-authored interfaces (`hobo:*`)" table, insert a `hobo:http` row adjacent to `hobo:websocket` (current line 164): Purpose = "**thin extension** over `wasi:http` (new-ADR link; same pattern as `hobo:websocket`/ADR-0075) — route registration + per-route security the bare interface won't carry ([Plan 21](./authoring-resources-wiring.md#plan-21))"; Key functions = "`route(method,path,opts)` registration metadata, per-route `require-auth(auth-ref,audience,claims)`/`public`, middleware chain, `ctx.user` binding via `hobo:auth.verify`". (b) In the building-block table, amend line 121 `| APIs / HTTP | wasi:http/incoming-handler, .../outgoing-handler |` to append `(+ hobo:http)` so Plan 20's catalog matches Plan 21's rows 37/65.
-
-4) `docs/design/ai-native-agent-auth.md` (Plan 6 §6.7) — under "**Client & server surface.**" (after the "Server:" bullet, current line 229) add one bullet: "**Route-level enforcement:** the `api()` resource binds this `auth()` port per api/route — authoring surface and manifest-IR lowering owned by [Plan 21](./authoring-resources-wiring.md#route-level-api-security) (new-ADR link); route rules are enforced in `hobo dev` via the contract-asserted dev principal ([ADR-0070](./adr/02-identity-security.md#adr-0070))." Do not restate Plan 21 content — Plan 6 owns verification/principal semantics, Plan 21 owns the authoring surface.
-
-5) `docs/design/adr/index.md` — add one row to the Index table in numeric order: `| <next-id> | Route-level API security via the auth() port; hobo:http thin extension over wasi:http | [identity-security](02-identity-security.md#adr-<next-id>) |`. This file must remain WITHOUT frontmatter (it has none today — keep it that way).
-
-6) `docs/design/traceability.md` — add an `ADR-<next-id>` row to the ADR table right after the ADR-0104 row (line ~362), format: `| ADR-<next-id> | [identity-security](./adr/02-identity-security.md#adr-<next-id>) | Route-level API security is covered by api/route auth-binding authoring, manifest-IR route-security lowering, hobo:http conformance, and local-dev enforcement slices. | <HOBO-N of the Linear issue this remediation becomes; interim: HOBO-34, HOBO-63 auth slice family> |`. Also update the prose at line ~370 "Explicit numbering gaps through `ADR-0104`" to name the new max ID. Keep the "Accepted / current" status statement intact (the validator greps for it).
-
-7) `docs/competitors/nitric.md` — in the "Permissions, security, providers" mapping table (lines ~322-329): amend the "OIDC API auth" row (line 325) HoBo-doc column to also cite `[21](../design/authoring-resources-wiring.md#route-level-api-security)` and the new ADR; add one new row `| oidcRule/securityRule per route + .use() middleware | api/route security via the auth() binding + middleware seam; **enforced in local dev** (Nitric's is not) | ➕ | [21](../design/authoring-resources-wiring.md#route-level-api-security), [06](../design/ai-native-agent-auth.md#plan-06) |`. Line 306 (`api` → `hobo:http`/`wasi:http`) needs no text change — it becomes valid once Plan 20 defines the port.
-
-8) `GAPS.md` — when the cand-11 register row exists on this branch, flip its status to 🧯 (remediation documented) and link the Linear issue; do not apply the doc edits in the same pass that records the remediation.
-
-**Acceptance**
-
-Checklist (run from repo root, C:/src/hobo):
-1. `pnpm run docs:okf` — passes; all touched docs keep valid OKF frontmatter with non-empty `type:` (no new files, so no new frontmatter; `docs/design/adr/index.md` still has NO frontmatter).
-2. Stage all touched files, then `pnpm agent:check -- --staged` — passes. Because `docs/design/adr/**` and `docs/design/traceability.md` are staged, this triggers the traceability gate.
-3. Traceability gate directly (the real command — there is no dedicated package.json script; relevant-check-policy.ts invokes it): `node --import tsx scripts/validate-traceability.ts` — passes: the new ADR-<next-id> appears in both `docs/design/adr/index.md` and `docs/design/traceability.md`, no undocumented numbering gap, and the "Accepted / current" statement is intact.
-4. Grep checks: `hobo:http` now resolves — `grep -n "hobo:http" docs/design/wasm-runtime-wit.md` shows the new interface-table row; both Plan 21 cells (authoring-resources-wiring.md:37, :65) link `#route-level-api-security`; the anchor `### Route-level API security` exists in authoring-resources-wiring.md; `docs/design/ai-native-agent-auth.md` §6.7 contains the "Route-level enforcement" bullet linking that anchor.
-5. Exactly one new `## ADR-` heading was added (next free global ID, appended to `docs/design/adr/02-identity-security.md`); no existing ADR ID changed — verify with `git diff -U0 docs/design/adr/ | grep "^-## ADR-"` returning nothing.
-6. Cross-links to update (all relative .md links, verified by step 2's staged lint lane): docs/design/adr/index.md (new row), docs/design/traceability.md (new ADR row + max-ID prose), docs/competitors/nitric.md (line-325 row + one new mapping row), docs/design/ai-native-agent-auth.md (§6.7 bullet), docs/design/wasm-runtime-wit.md (lines ~121 and ~164), docs/design/authoring-resources-wiring.md (lines 37, 65 + new section).
-7. Content assertions a reviewer can check in <5 min: the new Plan 21 section answers (a) how a route declares its security requirement (api-level default + per-route override + public opt-out), (b) the middleware seam and its identity with the Plan 29 "auth middleware" obligation, (c) how it lowers to the manifest IR (per-route `security` entries) and where it is enforced (gateway + hobo:http), (d) that rules are enforced in `hobo dev` (differentiating from Nitric's documented local-enforcement gap).
-
-**Guardrails**
-
-Documentation-level only: no code, no .wit files, no schema/scripts changes. Never renumber or edit existing ADR IDs; the new ADR takes the next free global ID (0105 at time of writing — re-verify the highest `## ADR-NNNN` across the four theme files before assigning) and goes in `docs/design/adr/02-identity-security.md` (identity/security theme). Do not reverse or re-litigate the Nomad→wasmCloud pivot. Do not create a parallel Nitric-style `oidcRule` authoring object — route security must bind the existing `auth()` port (Plan 6 §6.7) so there is one auth machinery. Define `hobo:http` rather than removing the reference (removal orphans Plan 21 rows 37/65 and nitric.md:306); model it on the `hobo:websocket` thin-extension precedent (ADR-0075). Plan 21 owns the authoring surface + IR lowering; Plan 6 owns verification/principal semantics — cross-link, never duplicate prose. Keep all links relative `.md` links with kebab-case anchors matching actual headings. `docs/design/adr/index.md` and other index.md files must have no YAML frontmatter. Do not edit `_generated/` or archived requirements. Commit as a conventional scoped docs commit; remediation is documented on the branch, not merged/applied to close the gap in the same pass.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-012-historical-remediation-plan-171248ddb0ea).
 
 ### REM-013 (for GAP-010)
 
@@ -434,42 +350,7 @@ Historical remediation instructions: [Linear archive](https://linear.app/quickde
 - **Evidence:** `docs/design/ai-native-agent-auth.md:35` · `docs/design/ai-native-agent-auth.md:78` · `docs/design/adr/02-identity-security.md:37` · `docs/design/security-networking.md:30` · `docs/design/generated-stack.md:177`
 - **Effort:** M · **Delivery:** [HOBO-685](https://linear.app/quickdeploy-ai/issue/HOBO-685) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-Amend three existing design docs (no new files, no new ADR ID — this extends an existing accepted ADR's decision text and lifts an already-proven invariant into design prose).
-
-1. `docs/design/adr/02-identity-security.md` — ADR-0023, Decision item 3 (currently line 37: "**AI generation is hardened against prompt injection** — source docs/OpenAPI fed to generation pipeline are scanned/sanitized; the signed provenance includes a scrub report; conformance runs with **no egress** as a hard requirement. (TR-083)"). Replace that single list item with a two-part rule, keeping the "(TR-083)" citation and the item's position in the 1–9 list:
-   - (a) Generation-pipeline inputs — keep the existing sentence verbatim (scanned/sanitized, scrub report in signed provenance, no-egress conformance).
-   - (b) Discovery-time manifest prose — Registry-served Capability Manifest prose (`signs.md`/`llms.txt` and free-text description fields in `index.json`/`capabilities.json`/`auth.json`, [Plan 6](../ai-native-agent-auth.md#plan-06) §6.1) is **untrusted input in any agent context** (planning, operating, or generation). State explicitly: the Registry signature (ADR-0009) authenticates *who published* the manifest, not that its prose is safe to obey; agent-facing surfaces returning manifest content (e.g. `search_registry`) deliver it as **inert data** — embedded instructions can never expand an agent's authority, because tool contracts ([Plan 29](../contracts-policy-flags.md#plan-29)), the deny-by-default policy plane, and scoped tokens bound every action regardless of prose content, proven for the MCP surface by the [HOBO-194 hardening proof](../proofs/hobo-194-mcp-server-hardening/index.md).
-
-2. `docs/design/ai-native-agent-auth.md` — two small additions to Plan 06:
-   - §6.1 (Capability Manifest): add one bullet to the existing Discovery / Preference order / Thematic anchor bullet list (after "Thematic anchor", ~line 78): "**Trust boundary:** `signs.md`/`llms.txt` and manifest description fields are untrusted input wherever an agent reads them — the signature authenticates the publisher, not the safety of the prose; instructions inside a manifest never widen what an agent may do ([ADR-0023](./adr/02-identity-security.md#adr-0023) item 3, [Plan 12](./security-networking.md#plan-12) threat table)."
-   - §6.4 (MCP control surface): after the paragraph "MCP auth uses the same Identity/SVID model…" (~line 155), add a short bolded invariant paragraph: "**Inert-tool-output invariant.** Every MCP tool result — including `search_registry` results carrying Capability Manifest prose — is inert data: a tool output can never schedule, authorize, or widen a follow-up tool call beyond the agent's existing grant; prompt-injected content in a result is recorded but powerless ([ADR-0023](./adr/02-identity-security.md#adr-0023) item 3; proven in [HOBO-194](./proofs/hobo-194-mcp-server-hardening/index.md))."
-
-3. `docs/design/security-networking.md` — Plan 12 threat model table (lines 24–32): add ONE new row immediately after the existing "generation pipeline plugins (AI-generated)" row (line 30), keeping that row unchanged: `| **Capability Manifest prose** (signs.md / llms.txt / auth.json descriptions) | prompt injection at discovery time — a malicious or compromised provider manifest steering planning/operating agents | classified untrusted input in every agent context ([ADR-0023](./adr/02-identity-security.md#adr-0023) item 3); Registry signature verifies publisher, not prose; inert-tool-output invariant — a tool result cannot trigger an out-of-scope follow-up call ([Plan 6](./ai-native-agent-auth.md#plan-06) §6.4, [HOBO-194 proof](./proofs/hobo-194-mcp-server-hardening/index.md)) |`
-
-No index/hub updates needed: no new files are created, so `docs/design/index.md`, `docs/design/adr/index.md`, and `docs/design/traceability.md` need no edits (ADR-0023 already appears in the traceability report and the ADR index; the validator only requires ID presence). All three amended files already carry valid OKF frontmatter.
-
-**Acceptance**
-
-- [ ] ADR-0023 Decision item 3 in `docs/design/adr/02-identity-security.md` now covers BOTH generation-pipeline inputs and Registry-served manifest prose (`signs.md`/`llms.txt`/JSON description fields) as untrusted input in any agent context, retains "(TR-083)", and links to Plan 6, Plan 29, and `../proofs/hobo-194-mcp-server-hardening/index.md`.
-- [ ] `docs/design/ai-native-agent-auth.md` §6.1 has the new "Trust boundary" bullet and §6.4 has the "Inert-tool-output invariant" paragraph, each cross-linking ADR-0023 and (for §6.4) `./proofs/hobo-194-mcp-server-hardening/index.md`.
-- [ ] `docs/design/security-networking.md` Plan 12 threat table has the new "Capability Manifest prose" row; the existing "generation pipeline plugins" row is unchanged.
-- [ ] No files created or renamed; no ADR renumbered; no frontmatter added to any `index.md`.
-- [ ] All new relative links resolve (targets exist: `docs/design/proofs/hobo-194-mcp-server-hardening/index.md`, `docs/design/adr/02-identity-security.md`, `docs/design/ai-native-agent-auth.md`, `docs/design/security-networking.md`, `docs/design/contracts-policy-flags.md`).
-- [ ] Run: `pnpm run docs:okf` (passes).
-- [ ] Run: `pnpm agent:check -- --staged` (passes; because `docs/design/adr/` is touched this automatically runs the traceability gate).
-- [ ] Run the traceability gate directly: `node --import tsx scripts/validate-traceability.ts` (passes — package.json has no named traceability script; this is the real gate wired through `scripts/relevant-check-policy.ts` line 149).
-
-**Guardrails**
-
-- Amend ADR-0023 in place (extend Decision item 3); do NOT mint a new ADR ID, renumber, or reorder the existing 1–9 decision list, and do not touch any other ADR section.
-- Do not restate or re-open the refuted broader prompt-injection claim: the amendment classifies manifest prose as untrusted and states the existing inert-output invariant — it must not invent new mitigation mechanisms or imply tool contracts/policy plane are insufficient.
-- Keep the existing Plan 12 "generation pipeline plugins" threat row byte-identical; only add the new row.
-- Do not edit `docs/design/traceability.md`, `docs/design/index.md`, or `docs/design/adr/index.md` — they are not required for this change and edits risk tripping the traceability validator's exact-string checks (e.g. "Accepted / current").
-- Preserve OKF frontmatter untouched in all three amended files; never add frontmatter to any `index.md`.
-- Documentation-only: no changes under `src/draft/` (the HOBO-194 proof is cited, not modified) and nothing touching the Nomad→wasmCloud pivot.
-- Use exactly the relative link paths given in the action (they are correct from each file's directory: `../proofs/...` from `docs/design/adr/`, `./proofs/...` from `docs/design/`).
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-020-historical-remediation-plan-e4f5db3cf8c4).
 
 ### REM-021 (for DRIFT-007)
 
@@ -609,23 +490,7 @@ Historical remediation instructions: [Linear archive](https://linear.app/quickde
 - **Evidence:** `docs/automations/hobo-issue-worker.md:147-155` · `docs/archive/requirements/requirements.md:162` · `docs/design/ai-native-agent-auth.md:114-116` · `docs/design/adr/02-identity-security.md#adr-0094`
 - **Effort:** S · **Delivery:** ✔ [HOBO-702](https://linear.app/quickdeploy-ai/issue/HOBO-702) — agent-native guardrails mapping table + executable proof at `src/draft/technical-proofs/issue-worker-guardrail-mapping-contract/`
 
-**Action**
-
-Documentation-only for design suite: amend `docs/automations/hobo-issue-worker.md` and add an executable mapping proof under `src/draft/technical-proofs/issue-worker-guardrail-mapping-contract/`.
-
-1. `docs/automations/hobo-issue-worker.md` — insert `## Agent-native guardrails (BR-011, Plan 06)` after **Codex automation settings** with a mapping table citing BR-011, FR-022, Plan 06, Plan 29, and ADR-0094; retag the embedded prompt `GUARDRAILS` header to reference the mapping.
-2. `src/draft/technical-proofs/issue-worker-guardrail-mapping-contract/` — independent POC pinning the mapping as executable contract evidence.
-3. `GAPS.md` — add GAP-024 register row and this REM-032 section.
-
-**Acceptance**
-
-1. `docs/automations/hobo-issue-worker.md` cites BR-011 and Plan 06 guardrails with the mapping table.
-2. Draft proof tests pass and assert the automation doc cites BR-011/Plan 06 guardrails.
-3. `pnpm run docs:okf` and `pnpm agent:check -- --staged` pass.
-
-**Guardrails**
-
-Do not touch `docs/design/` files. No new ADR. Preserve OKF frontmatter on `hobo-issue-worker.md`. Relative `.md` links only.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-032-historical-remediation-plan-cabe5cd02199).
 
 ### REM-033 (for GAP-025)
 
