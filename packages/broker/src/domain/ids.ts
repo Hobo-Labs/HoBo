@@ -8,6 +8,9 @@ export type BudgetAccountId = typeof BudgetAccountId.Type;
 export const BudgetHoldId = Schema.String.pipe(Schema.brand("BudgetHoldId"));
 export type BudgetHoldId = typeof BudgetHoldId.Type;
 
+export const BudgetEpochMs = Schema.Int;
+export type BudgetEpochMs = typeof BudgetEpochMs.Type;
+
 export const ProviderConnectionId = Schema.String.pipe(
 	Schema.brand("ProviderConnectionId"),
 );

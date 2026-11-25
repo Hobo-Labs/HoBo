@@ -1,6 +1,6 @@
 import * as Domain from "@alchemy.run/domain";
 import * as Schema from "effect/Schema";
-import { BudgetAccountId, BudgetHoldId } from "./ids.js";
+import { BudgetAccountId, BudgetEpochMs, BudgetHoldId } from "./ids.js";
 
 export class BudgetLimitExceeded extends Domain.Rejection(
 	"BudgetLimitExceeded",
@@ -52,6 +52,29 @@ export class UncertainBudgetHoldNotSettleable extends Domain.Rejection(
 	},
 ) {}
 
+export class SettlementExceedsHold extends Domain.Rejection(
+	"SettlementExceedsHold",
+	{
+		holdId: BudgetHoldId,
+		reservedMicros: Schema.Int,
+		settledMicros: Schema.Int,
+	},
+) {}
+
+export class BudgetHoldNotReleasable extends Domain.Rejection(
+	"BudgetHoldNotReleasable",
+	{
+		holdId: BudgetHoldId,
+	},
+) {}
+
+export class BudgetHoldNotResolvable extends Domain.Rejection(
+	"BudgetHoldNotResolvable",
+	{
+		holdId: BudgetHoldId,
+	},
+) {}
+
 export class BudgetCeilingConfigured extends Domain.Event(
 	"BudgetCeilingConfigured",
 	{
@@ -64,6 +87,24 @@ export class BudgetHoldReserved extends Domain.Event("BudgetHoldReserved", {
 	holdId: BudgetHoldId,
 	providerId: Schema.String,
 	amountMicros: Schema.Int,
+	expiresAtMs: Schema.NullOr(BudgetEpochMs),
+}) {}
+
+export class BudgetHoldReleased extends Domain.Event("BudgetHoldReleased", {
+	holdId: BudgetHoldId,
+	reason: Schema.String,
+	releasedMicros: Schema.Int,
+}) {}
+
+export class BudgetHoldResolved extends Domain.Event("BudgetHoldResolved", {
+	holdId: BudgetHoldId,
+	evidenceRef: Schema.String,
+}) {}
+
+export class BudgetHoldsExpired extends Domain.Event("BudgetHoldsExpired", {
+	nowMs: BudgetEpochMs,
+	expiredHoldIds: Schema.NonEmptyArray(BudgetHoldId),
+	releasedMicros: Schema.Int,
 }) {}
 
 export class BudgetHoldSettled extends Domain.Event("BudgetHoldSettled", {
@@ -121,6 +162,7 @@ export class ReserveBudgetHold extends Domain.Command(
 			holdId: BudgetHoldId,
 			providerId: Schema.String,
 			amountMicros: Schema.Int,
+			expiresAtMs: Schema.NullOr(BudgetEpochMs),
 		},
 		events: [BudgetHoldReserved, BudgetAlertThresholdCrossed],
 		rejects: [
@@ -149,11 +191,62 @@ export class SettleBudgetHold extends Domain.Command(
 			UnknownBudgetHold,
 			UncertainBudgetHoldNotSettleable,
 			BudgetNegativeAmountRejected,
+			SettlementExceedsHold,
 		],
 	},
 	{
 		description:
 			"Settle a budget hold against observed spend and emit threshold recovery if exposure drops.",
+	},
+) {}
+
+export class ReleaseBudgetHold extends Domain.Command(
+	"ReleaseBudgetHold",
+	{
+		target: BudgetAccountId,
+		input: {
+			holdId: BudgetHoldId,
+			reason: Schema.String,
+		},
+		events: [BudgetHoldReleased, BudgetAlertThresholdRecovered],
+		rejects: [UnknownBudgetHold, BudgetHoldNotReleasable],
+	},
+	{
+		description:
+			"Release an unused, reconciled hold and restore headroom without realizing spend.",
+	},
+) {}
+
+export class ResolveBudgetHold extends Domain.Command(
+	"ResolveBudgetHold",
+	{
+		target: BudgetAccountId,
+		input: {
+			holdId: BudgetHoldId,
+			evidenceRef: Schema.String,
+		},
+		events: [BudgetHoldResolved],
+		rejects: [UnknownBudgetHold, BudgetHoldNotResolvable],
+	},
+	{
+		description:
+			"Clear uncertainty on a hold after external reconciliation so it can settle or release.",
+	},
+) {}
+
+export class ExpireBudgetHolds extends Domain.Command(
+	"ExpireBudgetHolds",
+	{
+		target: BudgetAccountId,
+		input: {
+			nowMs: BudgetEpochMs,
+		},
+		events: [BudgetHoldsExpired, BudgetAlertThresholdRecovered],
+		rejects: [BudgetAccountNotConfigured],
+	},
+	{
+		description:
+			"Atomically expire active holds whose deadline has passed at or before nowMs.",
 	},
 ) {}
 
@@ -179,6 +272,7 @@ const ActiveHoldEntry = Schema.Struct({
 	providerId: Schema.String,
 	amountMicros: Schema.Int,
 	uncertain: Schema.Boolean,
+	expiresAtMs: Schema.NullOr(BudgetEpochMs),
 });
 
 const BudgetAccountState = Schema.Struct({
@@ -205,6 +299,9 @@ export class BudgetAccount extends Domain.Aggregate("BudgetAccount", {
 		ConfigureBudgetAccount,
 		ReserveBudgetHold,
 		SettleBudgetHold,
+		ReleaseBudgetHold,
+		ResolveBudgetHold,
+		ExpireBudgetHolds,
 		MarkBudgetHoldUncertain,
 	],
 	decide: {
@@ -265,6 +362,7 @@ export class BudgetAccount extends Domain.Aggregate("BudgetAccount", {
 				holdId: cmd.holdId,
 				providerId: cmd.providerId,
 				amountMicros: amount,
+				expiresAtMs: cmd.expiresAtMs,
 			});
 			if (
 				!state.alertActive &&
@@ -295,6 +393,13 @@ export class BudgetAccount extends Domain.Aggregate("BudgetAccount", {
 					amountMicros: cmd.settledMicros,
 				});
 			}
+			if (cmd.settledMicros > hold.amountMicros) {
+				return new SettlementExceedsHold({
+					holdId: hold.holdId,
+					reservedMicros: hold.amountMicros,
+					settledMicros: cmd.settledMicros,
+				});
+			}
 			const settledAmount = cmd.settledMicros;
 			const nextExposure =
 				state.settledMicros +
@@ -319,6 +424,88 @@ export class BudgetAccount extends Domain.Aggregate("BudgetAccount", {
 				];
 			}
 			return [settledEvent];
+		},
+		ReleaseBudgetHold: (state, cmd) => {
+			const hold = state.holds.find((item) => item.holdId === cmd.holdId);
+			if (hold === undefined) {
+				return new UnknownBudgetHold({ holdId: cmd.holdId });
+			}
+			if (hold.uncertain) {
+				return new BudgetHoldNotReleasable({ holdId: cmd.holdId });
+			}
+			const nextHeldMicros = Math.max(0, state.heldMicros - hold.amountMicros);
+			const nextExposure = state.settledMicros + nextHeldMicros;
+			const released = new BudgetHoldReleased({
+				holdId: hold.holdId,
+				reason: cmd.reason,
+				releasedMicros: hold.amountMicros,
+			});
+			if (
+				state.alertActive &&
+				state.alertThresholdMicros !== null &&
+				nextExposure < state.alertThresholdMicros
+			) {
+				return [
+					released,
+					new BudgetAlertThresholdRecovered({
+						exposureMicros: nextExposure,
+						thresholdMicros: state.alertThresholdMicros,
+					}),
+				];
+			}
+			return [released];
+		},
+		ResolveBudgetHold: (state, cmd) => {
+			const hold = state.holds.find((item) => item.holdId === cmd.holdId);
+			if (hold === undefined) {
+				return new UnknownBudgetHold({ holdId: cmd.holdId });
+			}
+			if (!hold.uncertain) {
+				return new BudgetHoldNotResolvable({ holdId: cmd.holdId });
+			}
+			return [
+				new BudgetHoldResolved({
+					holdId: cmd.holdId,
+					evidenceRef: cmd.evidenceRef,
+				}),
+			];
+		},
+		ExpireBudgetHolds: (state, cmd, { id }) => {
+			if (state.ceilingMicros === null) {
+				return new BudgetAccountNotConfigured({ accountId: id });
+			}
+			const due = state.holds.filter(
+				(item) => item.expiresAtMs !== null && item.expiresAtMs <= cmd.nowMs,
+			);
+			const [first, ...rest] = due;
+			if (first === undefined) {
+				return [];
+			}
+			let releasedMicros = 0;
+			for (const entry of due) {
+				releasedMicros += entry.amountMicros;
+			}
+			const nextHeldMicros = Math.max(0, state.heldMicros - releasedMicros);
+			const nextExposure = state.settledMicros + nextHeldMicros;
+			const expired = new BudgetHoldsExpired({
+				nowMs: cmd.nowMs,
+				expiredHoldIds: [first.holdId, ...rest.map((entry) => entry.holdId)],
+				releasedMicros,
+			});
+			if (
+				state.alertActive &&
+				state.alertThresholdMicros !== null &&
+				nextExposure < state.alertThresholdMicros
+			) {
+				return [
+					expired,
+					new BudgetAlertThresholdRecovered({
+						exposureMicros: nextExposure,
+						thresholdMicros: state.alertThresholdMicros,
+					}),
+				];
+			}
+			return [expired];
 		},
 		MarkBudgetHoldUncertain: (state, cmd) => {
 			const hold = state.holds.find((item) => item.holdId === cmd.holdId);
@@ -352,9 +539,35 @@ export class BudgetAccount extends Domain.Aggregate("BudgetAccount", {
 					providerId: event.providerId,
 					amountMicros: event.amountMicros,
 					uncertain: false,
+					expiresAtMs: event.expiresAtMs,
 				},
 			],
 		}),
+		BudgetHoldReleased: (state, event) => ({
+			...state,
+			heldMicros: Math.max(0, state.heldMicros - event.releasedMicros),
+			holds: state.holds.filter((item) => item.holdId !== event.holdId),
+		}),
+		BudgetHoldResolved: (state, event) => ({
+			...state,
+			holds: state.holds.map((item) =>
+				item.holdId === event.holdId ? { ...item, uncertain: false } : item,
+			),
+		}),
+		BudgetHoldsExpired: (state, event) => {
+			const expired = new Set(event.expiredHoldIds);
+			let releasedMicros = 0;
+			for (const entry of state.holds) {
+				if (expired.has(entry.holdId)) {
+					releasedMicros += entry.amountMicros;
+				}
+			}
+			return {
+				...state,
+				heldMicros: Math.max(0, state.heldMicros - releasedMicros),
+				holds: state.holds.filter((item) => !expired.has(item.holdId)),
+			};
+		},
 		BudgetHoldSettled: (state, event) => ({
 			...state,
 			settledMicros: state.settledMicros + event.settledMicros,
