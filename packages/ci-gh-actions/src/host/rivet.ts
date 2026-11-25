@@ -319,6 +319,9 @@ export function createGhPickRunnerRegistry(
 				if (existing === undefined || existing.status !== "queued") {
 					return { rescued: false, jobId };
 				}
+				if (Date.now() < existing.rescue_at_ms) {
+					return { rescued: false, jobId };
+				}
 				await c.db.execute(
 					"UPDATE gh_pick_runner_jobs SET status = 'rescued' WHERE job_id = ? AND status = 'queued'",
 					jobId,

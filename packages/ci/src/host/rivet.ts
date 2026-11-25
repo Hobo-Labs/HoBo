@@ -7,12 +7,16 @@ import { db } from "rivetkit/db";
 import {
 	CiFleet,
 	CiFleetHandlers,
-	type JobDispatchId,
-	type NonNegativeMicros,
+	JobDispatchId,
+	type JobDispatchId as JobDispatchIdType,
+	NonNegativeMicros,
+	type NonNegativeMicros as NonNegativeMicrosType,
 	type RunnerBackend,
-	type RunnerPoolId,
+	RunnerPoolId,
+	type RunnerPoolId as RunnerPoolIdType,
 	type RunnerTier,
-	type SlotId,
+	SlotId,
+	type SlotId as SlotIdType,
 } from "../domain/index.js";
 
 export type RunnerBackendService = Layer.Success<
@@ -80,18 +84,38 @@ export interface CiStationLeaseEvent {
 }
 
 export interface AcquireCiLeaseInput {
-	readonly slotId: SlotId;
-	readonly jobId: JobDispatchId;
-	readonly poolId: RunnerPoolId;
+	readonly slotId: SlotIdType;
+	readonly jobId: JobDispatchIdType;
+	readonly poolId: RunnerPoolIdType;
 	readonly tier: RunnerTier;
-	readonly reservedMicros: NonNegativeMicros;
+	readonly reservedMicros: NonNegativeMicrosType;
 	readonly ttlMs: number;
 }
 
+const AcquireCiLeaseInputSchema = Schema.Struct({
+	slotId: SlotId,
+	jobId: JobDispatchId,
+	poolId: RunnerPoolId,
+	tier: Schema.Literals(["local", "hostinger", "agent37", "boat", "hosted"]),
+	reservedMicros: NonNegativeMicros,
+	ttlMs: Schema.Int,
+});
+
+const decodeAcquireCiLeaseInput = Schema.decodeSync(AcquireCiLeaseInputSchema);
+
 export interface CompleteCiLeaseInput {
-	readonly slotId: SlotId;
-	readonly settledMicros: NonNegativeMicros;
+	readonly slotId: SlotIdType;
+	readonly settledMicros: NonNegativeMicrosType;
 }
+
+const CompleteCiLeaseInputSchema = Schema.Struct({
+	slotId: SlotId,
+	settledMicros: NonNegativeMicros,
+});
+
+const decodeCompleteCiLeaseInput = Schema.decodeSync(
+	CompleteCiLeaseInputSchema,
+);
 
 function toLeaseRecord(row: typeof LeaseRowSchema.Type): CiStationLeaseRecord {
 	return {
@@ -146,10 +170,11 @@ export function createCiStationLeaseRegistry(
 				c,
 				input: AcquireCiLeaseInput,
 			): Promise<CiStationLeaseRecord> => {
+				const validated = decodeAcquireCiLeaseInput(input);
 				const existingRows = decodeLeaseRows(
 					await c.db.execute(
 						"SELECT slot_id, job_id, pool_id, tier, reserved_micros, status, settled_micros, created_at_ms, expires_at_ms FROM ci_station_leases WHERE job_id = ?",
-						input.jobId,
+						validated.jobId,
 					),
 				);
 				const existing = existingRows[0];
@@ -158,32 +183,32 @@ export function createCiStationLeaseRegistry(
 				}
 
 				const nowMs = Date.now();
-				const ttlMs = Math.max(10, Math.trunc(input.ttlMs));
+				const ttlMs = Math.max(10, Math.trunc(validated.ttlMs));
 				const expiresAtMs = nowMs + ttlMs;
 				await c.db.execute(
 					`INSERT INTO ci_station_leases
 						(slot_id, job_id, pool_id, tier, reserved_micros, status, settled_micros, created_at_ms, expires_at_ms)
 					VALUES (?, ?, ?, ?, ?, 'active', 0, ?, ?)`,
-					input.slotId,
-					input.jobId,
-					input.poolId,
-					input.tier,
-					input.reservedMicros,
+					validated.slotId,
+					validated.jobId,
+					validated.poolId,
+					validated.tier,
+					validated.reservedMicros,
 					nowMs,
 					expiresAtMs,
 				);
 				const lease: CiStationLeaseRecord = {
-					slotId: input.slotId,
-					jobId: input.jobId,
-					poolId: input.poolId,
-					tier: input.tier,
-					reservedMicros: input.reservedMicros,
+					slotId: validated.slotId,
+					jobId: validated.jobId,
+					poolId: validated.poolId,
+					tier: validated.tier,
+					reservedMicros: validated.reservedMicros,
 					status: "active",
 					settledMicros: 0,
 					createdAtMs: nowMs,
 					expiresAtMs,
 				};
-				await c.schedule.after(ttlMs, "expireLease", input.slotId);
+				await c.schedule.after(ttlMs, "expireLease", validated.slotId);
 				c.broadcast("leaseUpdated", { action: "acquired", lease });
 				return lease;
 			},
@@ -191,10 +216,11 @@ export function createCiStationLeaseRegistry(
 				c,
 				input: CompleteCiLeaseInput,
 			): Promise<CiStationLeaseRecord | null> => {
+				const validated = decodeCompleteCiLeaseInput(input);
 				const rows = decodeLeaseRows(
 					await c.db.execute(
 						"SELECT slot_id, job_id, pool_id, tier, reserved_micros, status, settled_micros, created_at_ms, expires_at_ms FROM ci_station_leases WHERE slot_id = ?",
-						input.slotId,
+						validated.slotId,
 					),
 				);
 				const existing = rows[0];
@@ -203,13 +229,13 @@ export function createCiStationLeaseRegistry(
 
 				await c.db.execute(
 					"UPDATE ci_station_leases SET status = 'completed', settled_micros = ? WHERE slot_id = ? AND status = 'active'",
-					input.settledMicros,
-					input.slotId,
+					validated.settledMicros,
+					validated.slotId,
 				);
 				const updated: CiStationLeaseRecord = {
 					...toLeaseRecord(existing),
 					status: "completed",
-					settledMicros: input.settledMicros,
+					settledMicros: validated.settledMicros,
 				};
 				c.broadcast("leaseUpdated", { action: "completed", lease: updated });
 				return updated;
@@ -226,6 +252,9 @@ export function createCiStationLeaseRegistry(
 				);
 				const existing = rows[0];
 				if (existing === undefined || existing.status !== "active") {
+					return { expired: false, slotId };
+				}
+				if (Date.now() < existing.expires_at_ms) {
 					return { expired: false, slotId };
 				}
 				await c.db.execute(

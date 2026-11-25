@@ -260,6 +260,17 @@ describe("@hobo/cd/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 				});
 
 				await conn.openGate({
+					promotionId: CdPromotionId.make("promo-rivet-premature"),
+					campId: CampTargetId.make("camp-ap-south"),
+					freightDigest: FreightDigest.make("sha256:rivet-premature"),
+					deadlineMs: 60_000,
+				});
+				const premature = await conn.expireGate(
+					CdPromotionId.make("promo-rivet-premature"),
+				);
+				expect(premature.expired).toBe(false);
+
+				await conn.openGate({
 					promotionId: CdPromotionId.make("promo-rivet-expiring"),
 					campId: CampTargetId.make("camp-eu-west"),
 					freightDigest: FreightDigest.make("sha256:rivet-v2"),

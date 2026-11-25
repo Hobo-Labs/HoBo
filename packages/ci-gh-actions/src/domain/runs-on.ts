@@ -135,8 +135,7 @@ function splitStructuredSegments(spec: string): readonly string[] {
 		if (trimmed === "") continue;
 		const previous = merged.at(-1);
 		if (
-			previous !== undefined &&
-			previous.toLowerCase().startsWith("runs-on=runs-on=") &&
+			previous?.toLowerCase().startsWith("runs-on=runs-on=") &&
 			!parseLeadingKey(trimmed)
 		) {
 			merged[merged.length - 1] = `${previous}/${trimmed}`;

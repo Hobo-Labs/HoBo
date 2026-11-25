@@ -256,6 +256,9 @@ export function createCdPromotionGateRegistry(
 				if (existing === undefined || existing.status !== "pending") {
 					return { expired: false, promotionId };
 				}
+				if (Date.now() < existing.deadline_at_ms) {
+					return { expired: false, promotionId };
+				}
 				await c.db.execute(
 					"UPDATE cd_promotion_gates SET status = 'expired', summary = 'verification-deadline-elapsed' WHERE promotion_id = ? AND status = 'pending'",
 					promotionId,
