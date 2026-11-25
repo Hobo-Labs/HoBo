@@ -825,6 +825,8 @@ checks failed on main before anyone saw them:
 - **`fleet-enrollment.yml` in `actions.lock`.** The fleet enrollment workflow pins only
   `actions/checkout`; after #1688 the lockfile omitted that workflow until the merge forward,
   which made the standalone actions-lock job fail while the scorecard workflow still ran.
+  `ci-runner-preflight` also restores the turbo cache through `actions/cache`, so the workflow
+  lock entry must list that pin or the scorecard and strict-store jobs fail before checkout.
   The strict-store job targets `test/fleet-v2-start-fence-handler.test.ts`, matching the
   handler suite shipped in `@hobo/ci-gh-actions`.
 - **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
