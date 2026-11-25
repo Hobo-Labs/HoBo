@@ -44,9 +44,9 @@ locators authorize through the workflow job `GITHUB_TOKEN` only when
 resolver scope is `release-probe` or `cd-realize:<logicalCampId>` (for example
 `cd-realize:hobo-release/pages-candidate`, matching pipeline promotion ids;
 `releaseWorkflowGithubAppScopeAllowed`).
-Blocked release verdicts and `::error::` lines run operator reason text through
-`scripts/lib/redact-operator-condition.mts` (`@hobo/provider-redaction`) before
-aggregation or logging. The `release-contract` job builds those workspace
+Blocked release verdicts and `::error::` lines use
+`releaseFreightLogFragment` from `@hobo/cd/reconcile` (`@hobo/provider-redaction`
+detectors, fail closed) before aggregation or logging. The `release-contract` job builds those workspace
 packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
 `scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
 checkouts have `dist/` without pulling `@hobo/cd` source into the scripts lane.

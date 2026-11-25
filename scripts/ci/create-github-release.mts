@@ -41,6 +41,13 @@ import { join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { camps } from "../../release/hobo-release.delivery.ts";
+import {
+	formatReleaseFreightBlockedReason,
+	ReleaseFreightBlockedError,
+	parseReleaseFreightAuthorMessage,
+	releaseFreightLogFragment,
+	validateReasonStructuredDetail,
+} from "../../packages/cd/src/reconcile/release-freight-detail.ts";
 
 // ── Release Freight ─────────────────────────────────────────────────────────
 
@@ -227,7 +234,15 @@ export function releaseDeclaration(family: ReleaseFamily) {
 }
 
 // A `hobo deploy` result envelope, read structurally (protobuf JSON data).
-type CdReason = { readonly code?: string; readonly message?: string };
+type CdReason = {
+	readonly code?: string;
+	readonly message?: string;
+	readonly structured?: {
+		readonly credentialRef?: string;
+		readonly requestedScope?: string;
+		readonly detailKind?: string;
+	};
+};
 type CdPromotion = {
 	readonly promotionId?: string;
 	readonly freightId?: string;
@@ -274,49 +289,52 @@ const TERMINAL = new Set([
 const codesOf = (reasons: readonly CdReason[] | undefined) =>
 	(reasons ?? []).map((r) => r.code ?? "").filter((c) => c !== "");
 
-const RELEASE_FREIGHT_SCOPE_NOT_ALLOWED =
-	/^release Freight refuses (\S+): scope (\S+) is not allowed for workflow github-app credentials$/u;
-const RELEASE_FREIGHT_CREDENTIAL_UNRESOLVED =
-	/^release Freight does not resolve credential (\S+) \(([^)]+)\)$/u;
-const RELEASE_FREIGHT_REPO_MISMATCH =
-	/^release Freight refuses (\S+): expected github-app:\/\/(\S+)$/u;
-const RELEASE_FREIGHT_MISSING_REPOSITORY =
-	/^release Freight needs GITHUB_REPOSITORY to authorize (\S+) \(([^)]+)\)$/u;
-const RELEASE_FREIGHT_MISSING_TOKEN =
-	/^release Freight needs GITHUB_TOKEN to authorize (\S+) \(([^)]+)\)$/u;
-
-export function releaseStructuredBlockedDetail(
-	message: string,
-): string | undefined {
-	const text = message.trim();
-	const scopeDenied = RELEASE_FREIGHT_SCOPE_NOT_ALLOWED.exec(text);
-	if (scopeDenied)
-		return `credential=${scopeDenied[1]} scope=${scopeDenied[2]} scope-not-allowed`;
-	const unresolved = RELEASE_FREIGHT_CREDENTIAL_UNRESOLVED.exec(text);
-	if (unresolved)
-		return `credential=${unresolved[1]} scope=${unresolved[2]} credential-unresolved`;
-	const repoMismatch = RELEASE_FREIGHT_REPO_MISMATCH.exec(text);
-	if (repoMismatch)
-		return `credential=${repoMismatch[1]} expected-repository=${repoMismatch[2]} repository-mismatch`;
-	const missingRepository = RELEASE_FREIGHT_MISSING_REPOSITORY.exec(text);
-	if (missingRepository)
-		return `credential=${missingRepository[1]} scope=${missingRepository[2]} missing-GITHUB_REPOSITORY`;
-	const missingToken = RELEASE_FREIGHT_MISSING_TOKEN.exec(text);
-	if (missingToken)
-		return `credential=${missingToken[1]} scope=${missingToken[2]} missing-GITHUB_TOKEN`;
-	return undefined;
+function cdReasonStructured(
+	reason: CdReason,
+): ReturnType<typeof validateReasonStructuredDetail> {
+	if (!reason.structured) return undefined;
+	return validateReasonStructuredDetail({
+		credentialRef: reason.structured.credentialRef,
+		requestedScope: reason.structured.requestedScope,
+		detailKind: reason.structured.detailKind,
+	});
 }
 
 export function releaseBlockedRealizerMessage(
 	reasons: readonly CdReason[] | undefined,
 ): string {
+	const allowed = releaseWorkflowGithubAppScopes();
 	const parts = (reasons ?? []).map((reason) => {
 		const code = reason.code?.trim() || "unknown";
-		const structured = releaseStructuredBlockedDetail(reason.message ?? "");
-		return structured ? `${code}: ${structured}` : code;
+		const structured = cdReasonStructured(reason);
+		if (structured)
+			return formatReleaseFreightBlockedReason(code, structured);
+		const parsed = parseReleaseFreightAuthorMessage(
+			reason.message ?? "",
+			allowed,
+		);
+		if (parsed)
+			return formatReleaseFreightBlockedReason(
+				code,
+				validateReasonStructuredDetail({
+					credentialRef: parsed.credentialRef,
+					requestedScope: parsed.requestedScope,
+					detailKind: parsed.detailKind,
+				}),
+			);
+		return code;
 	});
 	if (parts.length === 0) return "The realizer reported a condition.";
 	return parts.join("; ");
+}
+
+function releaseOperatorBlockedMessage(
+	reasons: readonly CdReason[] | undefined,
+	fallbackCode: string,
+): string {
+	const line = releaseBlockedRealizerMessage(reasons);
+	if (line !== "The realizer reported a condition.") return line;
+	return fallbackCode;
 }
 
 /**
@@ -415,10 +433,6 @@ export function releaseWorkflowGithubAppScopeAllowed(scope: string): boolean {
 	return releaseWorkflowGithubAppScopes().has(scope.trim());
 }
 
-function releaseWorkflowLogFragment(text: string): string {
-	return text.replaceAll(/[\r\n]/gu, " ").trim();
-}
-
 export function releaseWorkflowCredentials(
 	env: Readonly<Record<string, string | undefined>>,
 ): ReleaseCredentials {
@@ -426,26 +440,36 @@ export function releaseWorkflowCredentials(
 	return {
 		async resolve(ref, scope) {
 			if (!ref.startsWith(GITHUB_APP_REF))
-				throw new Error(
-					`release Freight does not resolve credential ${ref} (${scope})`,
+				throw new ReleaseFreightBlockedError(
+					"credential-unresolved",
+					ref,
+					scope,
 				);
 			if (!releaseWorkflowGithubAppScopeAllowed(scope))
-				throw new Error(
-					`release Freight refuses ${ref}: scope ${scope} is not allowed for workflow github-app credentials`,
+				throw new ReleaseFreightBlockedError(
+					"scope-not-allowed",
+					ref,
+					scope,
 				);
 			if (!repository)
-				throw new Error(
-					`release Freight needs GITHUB_REPOSITORY to authorize ${ref} (${scope})`,
+				throw new ReleaseFreightBlockedError(
+					"missing-GITHUB_REPOSITORY",
+					ref,
+					scope,
 				);
 			const repo = ref.slice(GITHUB_APP_REF.length);
 			if (repo.toLowerCase() !== repository.toLowerCase())
-				throw new Error(
-					`release Freight refuses ${ref}: expected github-app://${repository}`,
+				throw new ReleaseFreightBlockedError(
+					"repository-mismatch",
+					ref,
+					`${GITHUB_APP_REF}${repository}`,
 				);
 			const token = env.GITHUB_TOKEN?.trim();
 			if (!token)
-				throw new Error(
-					`release Freight needs GITHUB_TOKEN to authorize ${ref} (${scope})`,
+				throw new ReleaseFreightBlockedError(
+					"missing-GITHUB_TOKEN",
+					ref,
+					scope,
 				);
 			return { token };
 		},
@@ -925,7 +949,10 @@ export async function promoteReleaseFreight(
 					codes.length > 0
 						? codes
 						: [requested.code ?? "release-promotion-refused"],
-				message: requested.message ?? "",
+				message: releaseOperatorBlockedMessage(
+					requested.data?.reasons,
+					requested.code ?? "release-promotion-refused",
+				),
 			};
 		} else {
 			const drivePasses = async (): Promise<ReleaseVerdict | undefined> => {
@@ -955,10 +982,12 @@ export async function promoteReleaseFreight(
 		}
 	} catch (error) {
 		if (!(error instanceof ReleasePromotionWallError)) throw error;
+		const timeoutDetail = releaseFreightLogFragment(error.message);
 		verdict = {
 			outcome: "blocked",
 			codes: [RELEASE_PROMOTION_TIMEOUT],
-			message: error.message,
+			message:
+				timeoutDetail.length > 0 ? timeoutDetail : RELEASE_PROMOTION_TIMEOUT,
 			...(promotionId ? { promotionId } : undefined),
 		};
 	}
@@ -981,7 +1010,7 @@ export function announceVerdict(
 	const line = `release Freight ${family} ${freightId} -> ${releaseCampId(family, channel)}: ${verdict.outcome} (${verdict.codes.join(", ") || "none"})`;
 	const allowed = verdict.outcome === "qualified";
 	if (!allowed) {
-		const detail = releaseWorkflowLogFragment(verdict.message);
+		const detail = releaseFreightLogFragment(verdict.message);
 		console.error(detail ? `::error::${line} ${detail}` : `::error::${line}`);
 	} else console.log(line);
 	if (env.GITHUB_STEP_SUMMARY)
