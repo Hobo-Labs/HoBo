@@ -8,25 +8,33 @@ import {
 	CompleteCdPromotion,
 	FailCdPromotion,
 	PromotionAlreadyFinal,
+	RealizationRequiredBeforeVerify,
 	RecordCdRealization,
 	RecordCdVerification,
 	RollbackCdPromotion,
+	RollbackRequiresRealization,
 	VerificationRequiredBeforeComplete,
 } from "./CdPromotion.aggregate.js";
-import { CampTargetId, CdPromotionId, FreightDigest } from "./ids.js";
+import {
+	CampTargetId,
+	CdPromotionId,
+	FreightDigest,
+	NonEmptyReason,
+	RealizationRef,
+} from "./ids.js";
 
 export class CampRealizationFailed extends Domain.Rejection(
 	"CampRealizationFailed",
 	{
 		campId: CampTargetId,
-		reason: Schema.String,
+		reason: NonEmptyReason,
 	},
 ) {}
 
 export class VerificationGateFailed extends Domain.Rejection(
 	"VerificationGateFailed",
 	{
-		summary: Schema.String,
+		summary: NonEmptyReason,
 	},
 ) {}
 
@@ -38,7 +46,7 @@ export class CdCampRealizer extends Domain.ExternalSystem("CdCampRealizer", {
 			freightDigest: FreightDigest,
 		},
 		success: {
-			realizationRef: Schema.String,
+			realizationRef: RealizationRef,
 		},
 		error: [CampRealizationFailed],
 	},
@@ -46,7 +54,7 @@ export class CdCampRealizer extends Domain.ExternalSystem("CdCampRealizer", {
 		args: {
 			promotionId: CdPromotionId,
 			campId: CampTargetId,
-			realizationRef: Schema.String,
+			realizationRef: RealizationRef,
 		},
 		success: {
 			rolledBack: Schema.Boolean,
@@ -62,11 +70,11 @@ export class CdVerificationGate extends Domain.ExternalSystem(
 			args: {
 				promotionId: CdPromotionId,
 				campId: CampTargetId,
-				realizationRef: Schema.String,
+				realizationRef: RealizationRef,
 			},
 			success: {
 				passed: Schema.Boolean,
-				summary: Schema.String,
+				summary: NonEmptyReason,
 			},
 			error: [VerificationGateFailed],
 		},
@@ -74,12 +82,16 @@ export class CdVerificationGate extends Domain.ExternalSystem(
 ) {}
 
 const RealizationResultSchema = Schema.Struct({
-	realizationRef: Schema.String,
+	realizationRef: RealizationRef,
 });
 
 const VerificationResultSchema = Schema.Struct({
 	passed: Schema.Boolean,
-	summary: Schema.String,
+	summary: NonEmptyReason,
+});
+
+const RollbackResultSchema = Schema.Struct({
+	rolledBack: Schema.Boolean,
 });
 
 export class ExecuteCdPromotion extends Domain.Saga(
@@ -92,13 +104,15 @@ export class ExecuteCdPromotion extends Domain.Saga(
 		},
 		rejects: [
 			ApprovalRequiredBeforeRealize,
+			RealizationRequiredBeforeVerify,
+			RollbackRequiresRealization,
 			PromotionAlreadyFinal,
 			VerificationRequiredBeforeComplete,
 		],
 	},
 	{
 		description:
-			"Realize a camp deployment, evaluate verification gates, and automatically roll back on verification failure.",
+			"Realize a camp deployment, evaluate verification gates, and fail closed when rollback compensation fails.",
 	},
 ) {}
 
@@ -161,7 +175,10 @@ export const ExecuteCdPromotionLive = ExecuteCdPromotion.toLayer(
 						: evaluated.success.summary;
 				yield* Activity.make({
 					name: "record-verification-failure",
-					error: PromotionAlreadyFinal,
+					error: Schema.Union([
+						RealizationRequiredBeforeVerify,
+						PromotionAlreadyFinal,
+					]),
 					execute: promotions
 						.send(
 							key,
@@ -169,19 +186,53 @@ export const ExecuteCdPromotionLive = ExecuteCdPromotion.toLayer(
 						)
 						.pipe(Effect.asVoid),
 				});
-				yield* Activity.make({
+				const rolledBack = yield* Activity.make({
 					name: "compensate-rollback-camp",
-					success: Schema.Struct({ rolledBack: Schema.Boolean }),
+					success: RollbackResultSchema,
 					error: CampRealizationFailed,
 					execute: realizer.rollbackCamp({
 						promotionId: key,
 						campId,
 						realizationRef,
 					}),
-				}).pipe(Effect.ignore);
+				}).pipe(Effect.result);
+
+				if (rolledBack._tag === "Failure") {
+					yield* Activity.make({
+						name: "record-rollback-failure",
+						execute: promotions
+							.send(
+								key,
+								new FailCdPromotion({
+									reason: NonEmptyReason.make(
+										`rollback-failed:${rolledBack.failure.reason}`,
+									),
+								}),
+							)
+							.pipe(Effect.asVoid),
+					});
+					return;
+				}
+				if (!rolledBack.success.rolledBack) {
+					yield* Activity.make({
+						name: "record-rollback-unconfirmed",
+						execute: promotions
+							.send(
+								key,
+								new FailCdPromotion({
+									reason: NonEmptyReason.make(`rollback-unconfirmed:${reason}`),
+								}),
+							)
+							.pipe(Effect.asVoid),
+					});
+					return;
+				}
 				yield* Activity.make({
 					name: "record-rollback",
-					error: PromotionAlreadyFinal,
+					error: Schema.Union([
+						RollbackRequiresRealization,
+						PromotionAlreadyFinal,
+					]),
 					execute: promotions
 						.send(key, new RollbackCdPromotion({ reason }))
 						.pipe(Effect.asVoid),
@@ -191,7 +242,10 @@ export const ExecuteCdPromotionLive = ExecuteCdPromotion.toLayer(
 
 			yield* Activity.make({
 				name: "record-verification-success",
-				error: PromotionAlreadyFinal,
+				error: Schema.Union([
+					RealizationRequiredBeforeVerify,
+					PromotionAlreadyFinal,
+				]),
 				execute: promotions
 					.send(
 						key,

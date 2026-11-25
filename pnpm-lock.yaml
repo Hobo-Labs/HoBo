@@ -817,7 +817,7 @@ importers:
     dependencies:
       '@alchemy.run/domain':
         specifier: 2.0.0-beta.87
-        version: 2.0.0-beta.87(02c6a16fa1fc84c2aea0df96e864b99d)
+        version: 2.0.0-beta.87(0295389591c14fbf665a31ae76962c21)
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
@@ -851,6 +851,9 @@ importers:
       '@hobo/stations':
         specifier: workspace:*
         version: link:../stations
+      '@hobo/storage-sqlite':
+        specifier: workspace:*
+        version: link:../storage-sqlite
       '@hobo/trust':
         specifier: workspace:*
         version: link:../trust
@@ -861,6 +864,12 @@ importers:
         specifier: 5.0.1
         version: 5.0.1
     devDependencies:
+      '@alchemy.run/rivet':
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4))(@cloudflare/workers-types@5.20261117.1)(@electric-sql/pglite@0.4.3)(@libsql/client@0.18.0)(@types/pg@8.15.5)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(effect@4.1.4)(encoding@0.1.13)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(sql.js@1.14.1)(ws@8.23.0)
+      '@effect/platform-node':
+        specifier: 4.1.4
+        version: 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
       '@hobo/conformance':
         specifier: workspace:*
         version: link:../conformance
@@ -870,6 +879,9 @@ importers:
       fast-check:
         specifier: ^4.3.0
         version: 4.9.0
+      rivetkit:
+        specifier: 3.0.0
+        version: 3.0.0(@cloudflare/workers-types@5.20261117.1)(@electric-sql/pglite@0.4.3)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.23.0)
 
   packages/cd-gitops:
     dependencies:
@@ -19325,17 +19337,6 @@ snapshots:
       '@distilled.cloud/cloudflare': 1.0.0-rc.20(effect@4.1.4)
       '@effect/sql-pg': 4.1.5(effect@4.1.4)
 
-  '@alchemy.run/domain@2.0.0-beta.87(02c6a16fa1fc84c2aea0df96e864b99d)':
-    dependencies:
-      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
-      effect: 4.1.4
-    optionalDependencies:
-      '@alchemy.run/cloudflare': 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.1.5(effect@4.1.4))(@types/node@26.0.1)(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)(pg@8.22.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
-      '@alchemy.run/effect-cluster': 2.0.0-beta.87(bca70aea922265cd0bd316d98ab4883a)
-      '@alchemy.run/rivet': 2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.23.0)
-      '@distilled.cloud/cloudflare': 1.0.0-rc.20(effect@4.1.4)
-      '@effect/sql-pg': 4.1.5(effect@4.1.4)
-
   '@alchemy.run/domain@2.0.0-beta.87(bc6fce7f91c15cb7fb76390d495ee58b)':
     dependencies:
       alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
@@ -19631,54 +19632,6 @@ snapshots:
       - sqlite3
       - utf-8-validate
       - ws
-
-  '@alchemy.run/rivet@2.0.0-beta.87(@alchemy.run/docker@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4))(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(drizzle-kit@0.31.11)(effect@4.1.4)(pg@8.22.0)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.23.0)':
-    dependencies:
-      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
-      '@distilled.cloud/rivet': 1.0.0-rc.20(effect@4.1.4)
-      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
-      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0)
-      effect: 4.1.4
-      rivetkit: 3.0.0(@types/pg@8.15.5)(drizzle-kit@0.31.11)(pg@8.22.0)(ws@8.23.0)
-    optionalDependencies:
-      '@alchemy.run/docker': 2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/sql.js'
-      - '@upstash/redis'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bufferutil
-      - bun-types
-      - drizzle-kit
-      - encoding
-      - eventsource
-      - expo-sqlite
-      - gel
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - redis
-      - sql.js
-      - sqlite3
-      - utf-8-validate
-      - ws
-    optional: true
 
   '@alchemy.run/sigil@0.1.0-alpha.4(@types/react@19.2.18)':
     optionalDependencies:

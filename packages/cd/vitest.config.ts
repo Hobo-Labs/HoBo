@@ -5,5 +5,10 @@ export default defineConfig({
 		environment: "node",
 		include: ["test/**/*.test.ts", "contracts/**/*.test.ts"],
 		maxWorkers: capVitestWorkers(undefined),
+		server: {
+			deps: {
+				inline: [/@alchemy\.run\//, /\/alchemy\//],
+			},
+		},
 	},
 });
