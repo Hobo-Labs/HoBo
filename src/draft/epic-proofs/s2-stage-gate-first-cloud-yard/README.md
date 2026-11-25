@@ -64,4 +64,4 @@ node --import tsx src/draft/epic-proofs/s2-stage-gate-first-cloud-yard/scripts/r
 
 ## Maintenance
 
-Docs-only companion: `docs/design/proofs/hobo-626-s2-stage-gate-first-cloud-yard/README.md`.
+Docs-only companion: [HOBO-626 proof](https://linear.app/quickdeploy-ai/document/hobo-626-s2-stage-gate-proof-archived-2ef6d840da80).
