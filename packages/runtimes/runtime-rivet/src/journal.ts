@@ -67,6 +67,12 @@ CREATE TABLE IF NOT EXISTS hobo_actor_head (
   revision INTEGER NOT NULL,
   owner_epoch INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS hobo_actor_lease (
+  stream_id TEXT PRIMARY KEY,
+  holder_id TEXT NOT NULL,
+  owner_epoch INTEGER NOT NULL,
+  expires_at_ms INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS hobo_events (
   stream_id TEXT NOT NULL,
   seq INTEGER NOT NULL,
@@ -108,6 +114,20 @@ export interface ActorLocalJournal {
 	close(): void;
 	transaction<T>(fn: () => T): T;
 	head(streamId: string): { revision: number; ownerEpoch: bigint };
+	acquireLease(
+		streamId: string,
+		holderId: string,
+		nowMs: number,
+		ttlMs: number,
+	): { fenceToken: bigint; expiresAtMs: number } | undefined;
+	releaseLease(streamId: string, holderId: string, fenceToken: bigint): boolean;
+	appendLeased(
+		streamId: string,
+		holderId: string,
+		fenceToken: bigint,
+		nowMs: number,
+		facts: readonly JournalFact[],
+	): { revision: number } | undefined;
 	append(
 		streamId: string,
 		expectedRevision: number,
@@ -117,10 +137,12 @@ export interface ActorLocalJournal {
 	acceptCommand(input: AcceptCommandInput): AcceptCommandResult;
 	claimNext(streamId: string): InboxCommand | undefined;
 	markCommitted(streamId: string, commandId: string): void;
-	/**
-	 * Append facts, mark inbox committed, and stage outbox rows in one txn.
-	 * External I/O stays outside this call.
-	 */
+	rejectCommand(
+		streamId: string,
+		commandId: string,
+		resultJson: string,
+	): boolean;
+
 	commitCommand(input: {
 		readonly streamId: string;
 		readonly commandId: string;
@@ -144,6 +166,11 @@ export interface ActorLocalJournal {
 		digest: string,
 		payloadJson: string,
 	): void;
+	markOutboxDelivered(
+		streamId: string,
+		effectId: string,
+		digest: string,
+	): boolean;
 	pendingOutbox(streamId: string): readonly {
 		effectId: string;
 		digest: string;
@@ -171,6 +198,19 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 	const insertHead = db.prepare(
 		`INSERT OR IGNORE INTO hobo_actor_head(stream_id, revision, owner_epoch)
      VALUES (?, 0, 0)`,
+	);
+	const getLease = db.prepare(
+		`SELECT holder_id, owner_epoch, expires_at_ms FROM hobo_actor_lease WHERE stream_id = ?`,
+	);
+	const putLease = db.prepare(
+		`INSERT INTO hobo_actor_lease(stream_id, holder_id, owner_epoch, expires_at_ms) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(stream_id) DO UPDATE SET holder_id = excluded.holder_id, owner_epoch = excluded.owner_epoch, expires_at_ms = excluded.expires_at_ms`,
+	);
+	const removeLease = db.prepare(
+		`DELETE FROM hobo_actor_lease WHERE stream_id = ? AND holder_id = ? AND owner_epoch = ?`,
+	);
+	const updateOwnerEpoch = db.prepare(
+		`UPDATE hobo_actor_head SET owner_epoch = ? WHERE stream_id = ?`,
 	);
 	const casHead = db.prepare(
 		`UPDATE hobo_actor_head SET revision = ?
@@ -202,7 +242,7 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		`SELECT command_id, digest, command_type, payload_json, expected_revision,
             status, attempt, result_json
      FROM hobo_inbox
-     WHERE stream_id = ? AND status IN ('persisted', 'processing')
+     WHERE stream_id = ? AND status IN ('persisted', 'processing', 'committed')
      ORDER BY command_id ASC LIMIT 1`,
 	);
 	const claimInbox = db.prepare(
@@ -213,18 +253,115 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		`UPDATE hobo_inbox SET status = 'committed'
      WHERE stream_id = ? AND command_id = ?`,
 	);
+	const commitInboxWithReceipt = db.prepare(
+		`UPDATE hobo_inbox SET status = 'committed', result_json = ?
+     WHERE stream_id = ? AND command_id = ? AND status IN ('persisted', 'processing')`,
+	);
+	const rejectInbox = db.prepare(
+		`UPDATE hobo_inbox SET status = 'failed-terminal', result_json = ?
+     WHERE stream_id = ? AND command_id = ? AND status IN ('persisted', 'processing')`,
+	);
 	const completeInbox = db.prepare(
 		`UPDATE hobo_inbox SET status = 'completed', result_json = ?
      WHERE stream_id = ? AND command_id = ?`,
 	);
 	const insertOutbox = db.prepare(
-		`INSERT OR IGNORE INTO hobo_outbox(stream_id, effect_id, digest, payload_json, status)
+		`INSERT INTO hobo_outbox(stream_id, effect_id, digest, payload_json, status)
      VALUES (?, ?, ?, ?, 'pending')`,
 	);
 	const listOutbox = db.prepare(
 		`SELECT effect_id, digest, payload_json FROM hobo_outbox
-     WHERE stream_id = ? AND status = 'pending'`,
+     WHERE stream_id = ? AND status = 'pending' ORDER BY effect_id`,
 	);
+	const getOutbox = db.prepare(
+		`SELECT digest, payload_json, status FROM hobo_outbox WHERE stream_id = ? AND effect_id = ?`,
+	);
+	const acknowledgeOutbox = db.prepare(
+		`UPDATE hobo_outbox SET status = 'delivered' WHERE stream_id = ? AND effect_id = ? AND digest = ? AND status = 'pending'`,
+	);
+
+	function stageOutboxEffect(
+		streamId: string,
+		effectId: string,
+		digest: string,
+		payloadJson: string,
+	): void {
+		if (!streamId.trim() || !effectId.trim() || !digest.trim())
+			throw new RivetJournalError(
+				"PARSE",
+				"outbox stream, effect id, and digest are required",
+			);
+		try {
+			JSON.parse(payloadJson);
+		} catch {
+			throw new RivetJournalError("PARSE", "outbox payload must be valid JSON");
+		}
+		const existing = getOutbox.get(streamId, effectId);
+		if (existing) {
+			if (existing.digest !== digest || existing.payload_json !== payloadJson)
+				throw new RivetJournalError(
+					"DIGEST_MISMATCH",
+					`outbox effect ${effectId} digest mismatch`,
+				);
+			if (existing.status !== "pending" && existing.status !== "delivered")
+				throw new RivetJournalError(
+					"PARSE",
+					`invalid outbox status for ${effectId}`,
+				);
+			return;
+		}
+		insertOutbox.run(streamId, effectId, digest, payloadJson);
+	}
+
+	function leaseEpoch(value: SqliteValue | undefined): bigint {
+		let epoch: bigint;
+		if (isJsonBigInt(value)) epoch = value;
+		else if (isJsonNumber(value) && Number.isSafeInteger(value))
+			epoch = BigInt(value);
+		else if (isJsonString(value) && /^\d+$/u.test(value)) epoch = BigInt(value);
+		else throw new RivetJournalError("PARSE", "invalid actor lease epoch");
+		if (epoch < 0n || epoch > BigInt(Number.MAX_SAFE_INTEGER))
+			throw new RivetJournalError("PARSE", "actor lease epoch is out of range");
+		return epoch;
+	}
+
+	function appendAtRevision(
+		streamId: string,
+		expectedRevision: number,
+		facts: readonly JournalFact[],
+	) {
+		insertHead.run(streamId);
+		const head = getHead.get(streamId);
+		const current = asNumber(head?.revision);
+		if (current !== expectedRevision)
+			throw new RivetJournalError(
+				"STALE_REVISION",
+				`expected revision ${expectedRevision}, found ${current}`,
+			);
+		let seq = current;
+		for (const fact of facts) {
+			seq += 1;
+			insertEvent.run(
+				streamId,
+				seq,
+				fact.eventId,
+				fact.type,
+				fact.payload,
+				fact.metadataJson,
+				fact.causationId ?? null,
+				fact.correlationId ?? null,
+				fact.tenant,
+				fact.project ?? null,
+				fact.lane ?? null,
+			);
+		}
+		if (casHead.run(seq, streamId, current).changes !== 1)
+			throw new RivetJournalError(
+				"STALE_REVISION",
+				`cas failed at revision ${current}`,
+			);
+		return { revision: seq };
+	}
 
 	const mapInbox = (row: SqliteRow): InboxCommand => ({
 		commandId: String(row.command_id),
@@ -257,55 +394,70 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		},
 		head(streamId) {
 			insertHead.run(streamId);
-			// SAFETY: node:sqlite returns a row bag at this driver boundary.
-			const row = getHead.get(streamId) as SqliteRow | undefined;
+
+			const row = getHead.get(streamId);
 			return {
 				revision: asNumber(row?.revision),
 				ownerEpoch: asBigInt(row?.owner_epoch),
 			};
 		},
-		append(streamId, expectedRevision, facts) {
+		acquireLease(streamId, holderId, nowMs, ttlMs) {
+			if (
+				!streamId.trim() ||
+				!holderId.trim() ||
+				!Number.isSafeInteger(nowMs) ||
+				!Number.isSafeInteger(ttlMs) ||
+				ttlMs <= 0 ||
+				!Number.isSafeInteger(nowMs + ttlMs)
+			)
+				throw new RivetJournalError("PARSE", "invalid actor lease request");
 			return this.transaction(() => {
 				insertHead.run(streamId);
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
-				const headRow = getHead.get(streamId) as SqliteRow | undefined;
-				const current = asNumber(headRow?.revision);
-				if (current !== expectedRevision) {
+				const held = getLease.get(streamId);
+				if (held && asNumber(held.expires_at_ms) > nowMs) return undefined;
+				const head = getHead.get(streamId);
+				const fenceToken = leaseEpoch(head?.owner_epoch) + 1n;
+				if (fenceToken > BigInt(Number.MAX_SAFE_INTEGER))
 					throw new RivetJournalError(
-						"STALE_REVISION",
-						`expected revision ${expectedRevision}, found ${current}`,
+						"PARSE",
+						"actor lease epoch is exhausted",
 					);
-				}
-				let seq = current;
-				for (const fact of facts) {
-					seq += 1;
-					insertEvent.run(
-						streamId,
-						seq,
-						fact.eventId,
-						fact.type,
-						fact.payload,
-						fact.metadataJson,
-						fact.causationId ?? null,
-						fact.correlationId ?? null,
-						fact.tenant,
-						fact.project ?? null,
-						fact.lane ?? null,
-					);
-				}
-				const updated = casHead.run(seq, streamId, current);
-				if (updated.changes !== 1) {
-					throw new RivetJournalError(
-						"STALE_REVISION",
-						`cas failed at revision ${current}`,
-					);
-				}
-				return { revision: seq };
+				const expiresAtMs = nowMs + ttlMs;
+				updateOwnerEpoch.run(fenceToken, streamId);
+				putLease.run(streamId, holderId, fenceToken, expiresAtMs);
+				return { fenceToken, expiresAtMs };
 			});
 		},
+		releaseLease(streamId, holderId, fenceToken) {
+			return this.transaction(
+				() => removeLease.run(streamId, holderId, fenceToken).changes === 1,
+			);
+		},
+		appendLeased(streamId, holderId, fenceToken, nowMs, facts) {
+			if (!Number.isSafeInteger(nowMs))
+				throw new RivetJournalError("PARSE", "invalid actor lease clock");
+			return this.transaction(() => {
+				const held = getLease.get(streamId);
+				const head = getHead.get(streamId);
+				if (
+					!held ||
+					!head ||
+					held.holder_id !== holderId ||
+					leaseEpoch(held.owner_epoch) !== fenceToken ||
+					leaseEpoch(head.owner_epoch) !== fenceToken ||
+					asNumber(held.expires_at_ms) <= nowMs
+				)
+					return undefined;
+				return appendAtRevision(streamId, asNumber(head.revision), facts);
+			});
+		},
+		append(streamId, expectedRevision, facts) {
+			return this.transaction(() =>
+				appendAtRevision(streamId, expectedRevision, facts),
+			);
+		},
 		readFacts(streamId, fromSeq = 1) {
-			// SAFETY: node:sqlite returns row bags at this driver boundary.
-			const rows = readEvents.all(streamId, fromSeq) as SqliteRow[];
+			const rows = readEvents.all(streamId, fromSeq);
 			return rows.map((row) => ({
 				seq: asNumber(row.seq),
 				eventId: String(row.event_id),
@@ -325,10 +477,7 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		},
 		acceptCommand(input) {
 			return this.transaction(() => {
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
-				const existing = getInbox.get(input.streamId, input.commandId) as
-					| SqliteRow
-					| undefined;
+				const existing = getInbox.get(input.streamId, input.commandId);
 				if (existing) {
 					if (String(existing.digest) !== input.digest) {
 						throw new RivetJournalError(
@@ -357,13 +506,17 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		},
 		claimNext(streamId) {
 			return this.transaction(() => {
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
-				const row = nextInbox.get(streamId) as SqliteRow | undefined;
+				const row = nextInbox.get(streamId);
 				if (!row) return undefined;
 				const commandId = String(row.command_id);
 				claimInbox.run(streamId, commandId);
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
-				const claimed = getInbox.get(streamId, commandId) as SqliteRow;
+
+				const claimed = getInbox.get(streamId, commandId);
+				if (!claimed)
+					throw new RivetJournalError(
+						"INBOX_CONFLICT",
+						`claimed command ${commandId} is missing`,
+					);
 				return mapInbox(claimed);
 			});
 		},
@@ -372,11 +525,31 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 				commitInbox.run(streamId, commandId);
 			});
 		},
+		rejectCommand(streamId, commandId, resultJson) {
+			return this.transaction(
+				() => rejectInbox.run(resultJson, streamId, commandId).changes === 1,
+			);
+		},
 		commitCommand(input) {
 			return this.transaction(() => {
+				const inbox = getInbox.get(input.streamId, input.commandId);
+				if (
+					!inbox ||
+					(parseInboxStatus(inbox.status) !== "persisted" &&
+						parseInboxStatus(inbox.status) !== "processing")
+				)
+					throw new RivetJournalError(
+						"INBOX_CONFLICT",
+						`command ${input.commandId} is not pending`,
+					);
+				if (asNumber(inbox.expected_revision) !== input.expectedRevision)
+					throw new RivetJournalError(
+						"INBOX_CONFLICT",
+						`command ${input.commandId} expected revision does not match its inbox entry`,
+					);
 				insertHead.run(input.streamId);
-				// SAFETY: node:sqlite returns a row bag at this driver boundary.
-				const commitHead = getHead.get(input.streamId) as SqliteRow | undefined;
+
+				const commitHead = getHead.get(input.streamId);
 				const current = asNumber(commitHead?.revision);
 				if (current !== input.expectedRevision) {
 					throw new RivetJournalError(
@@ -408,9 +581,18 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 						`cas failed at revision ${current}`,
 					);
 				}
-				commitInbox.run(input.streamId, input.commandId);
+				const committed = commitInboxWithReceipt.run(
+					JSON.stringify({ revision: seq }),
+					input.streamId,
+					input.commandId,
+				);
+				if (committed.changes !== 1)
+					throw new RivetJournalError(
+						"INBOX_CONFLICT",
+						`command ${input.commandId} is not pending`,
+					);
 				for (const effect of input.effects ?? []) {
-					insertOutbox.run(
+					stageOutboxEffect(
 						input.streamId,
 						effect.effectId,
 						effect.digest,
@@ -426,18 +608,39 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 			});
 		},
 		loadCommand(streamId, commandId) {
-			// SAFETY: node:sqlite returns a row bag at this driver boundary.
-			const row = getInbox.get(streamId, commandId) as SqliteRow | undefined;
+			const row = getInbox.get(streamId, commandId);
 			return row ? mapInbox(row) : undefined;
 		},
 		stageOutbox(streamId, effectId, digest, payloadJson) {
 			this.transaction(() => {
-				insertOutbox.run(streamId, effectId, digest, payloadJson);
+				stageOutboxEffect(streamId, effectId, digest, payloadJson);
+			});
+		},
+		markOutboxDelivered(streamId, effectId, digest) {
+			return this.transaction(() => {
+				if (acknowledgeOutbox.run(streamId, effectId, digest).changes === 1)
+					return true;
+				const existing = getOutbox.get(streamId, effectId);
+				if (!existing)
+					throw new RivetJournalError(
+						"INBOX_CONFLICT",
+						`outbox effect ${effectId} is missing`,
+					);
+				if (existing.digest !== digest)
+					throw new RivetJournalError(
+						"DIGEST_MISMATCH",
+						`outbox effect ${effectId} digest mismatch`,
+					);
+				if (existing.status !== "delivered")
+					throw new RivetJournalError(
+						"PARSE",
+						`invalid outbox status for ${effectId}`,
+					);
+				return false;
 			});
 		},
 		pendingOutbox(streamId) {
-			// SAFETY: node:sqlite returns row bags at this driver boundary.
-			const rows = listOutbox.all(streamId) as SqliteRow[];
+			const rows = listOutbox.all(streamId);
 			return rows.map((row) => ({
 				effectId: String(row.effect_id),
 				digest: String(row.digest),
