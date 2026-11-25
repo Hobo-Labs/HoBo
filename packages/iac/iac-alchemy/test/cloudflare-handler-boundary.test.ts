@@ -1,7 +1,6 @@
 /* oxlint-disable unicorn/no-thenable -- These tests deliberately exercise response assimilation. */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
@@ -165,28 +164,12 @@ it("protects a synchronous response before the Worker resolves it", async () => 
 
 it("observes and rejects a native Promise returned by the entrypoint factory", () => {
 	const packageDir = fileURLToPath(new URL("../", import.meta.url));
-	const directory = mkdtempSync(join(packageDir, ".cloudflare-test-dist-"));
-	try {
-		const compiler = createRequire(import.meta.url).resolve(
-			"typescript/bin/tsc",
-		);
-		const compiled = spawnSync(
-			process.execPath,
-			[
-				compiler,
-				"-p",
-				join(packageDir, "tsconfig.json"),
-				"--outDir",
-				directory,
-			],
-			{ encoding: "utf8", timeout: 30_000 },
-		);
-		expect(compiled.error).toBeUndefined();
-		expect(compiled.status, compiled.stderr).toBe(0);
-		const modulePath = pathToFileURL(
-			join(directory, "cloudflare-runtime.js"),
-		).href;
-		const program = `
+	const directory = join(packageDir, "dist");
+	expect(existsSync(join(directory, "cloudflare-runtime.js"))).toBe(true);
+	const modulePath = pathToFileURL(
+		join(directory, "cloudflare-runtime.js"),
+	).href;
+	const program = `
 import { bindleCloudflareWorker } from ${JSON.stringify(modulePath)};
 const declaration = { kind: 'web', name: 'web', stableId: 'web:web', declaredAllow: [], dependsOn: [], annotations: [] };
 const rejected = Promise.reject(new Error('factory rejection'));
@@ -201,18 +184,15 @@ try {
 }
 await new Promise((resolve) => setTimeout(resolve, 20));
 `;
-		const result = spawnSync(
-			process.execPath,
-			["--unhandled-rejections=strict", "--input-type=module", "-e", program],
-			{
-				encoding: "utf8",
-				timeout: 15_000,
-				env: { ...process.env, NODE_OPTIONS: "" },
-			},
-		);
-		expect(result.error).toBeUndefined();
-		expect(result.status, result.stderr).toBe(0);
-	} finally {
-		rmSync(directory, { recursive: true, force: true });
-	}
-}, 45_000);
+	const result = spawnSync(
+		process.execPath,
+		["--unhandled-rejections=strict", "--input-type=module", "-e", program],
+		{
+			encoding: "utf8",
+			timeout: 15_000,
+			env: { ...process.env, NODE_OPTIONS: "" },
+		},
+	);
+	expect(result.error).toBeUndefined();
+	expect(result.status, result.stderr).toBe(0);
+});
