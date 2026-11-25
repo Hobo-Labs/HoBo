@@ -1,7 +1,11 @@
 import type { Host as InMemoryWorkflowHost } from "@alchemy.run/domain/InMemoryWorkflows";
 import type { Delivery } from "@alchemy.run/domain/Platform";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import type * as Semaphore from "effect/Semaphore";
+import { Workflow, WorkflowEngine } from "effect/workflow";
+import * as DurableDeferred from "effect/workflow/DurableDeferred";
 import {
 	asNumber,
 	asText,
@@ -45,6 +49,22 @@ CREATE TABLE IF NOT EXISTS domain_workflow_pending_runs (
 	model_name TEXT NOT NULL,
 	run_key TEXT NOT NULL,
 	PRIMARY KEY (model_name, run_key)
+);
+
+CREATE TABLE IF NOT EXISTS domain_workflow_executions (
+	model_name TEXT NOT NULL,
+	workflow_name TEXT NOT NULL,
+	execution_id TEXT NOT NULL,
+	payload_json TEXT NOT NULL,
+	parent_json TEXT,
+	PRIMARY KEY (model_name, workflow_name, execution_id)
+);
+
+CREATE TABLE IF NOT EXISTS domain_workflow_activity_journal (
+	model_name TEXT NOT NULL,
+	journal_key TEXT NOT NULL,
+	exit_json TEXT NOT NULL,
+	PRIMARY KEY (model_name, journal_key)
 );
 `;
 
@@ -239,6 +259,15 @@ export interface DomainScheduleStore {
 		instanceId: string,
 		scheduleName: string,
 	): PersistedScheduleRecord | undefined;
+	listActive(
+		modelName: string,
+		aggregateName?: string,
+	): ReadonlyArray<{
+		readonly aggregateName: string;
+		readonly instanceId: string;
+		readonly scheduleName: string;
+		readonly record: PersistedScheduleRecord;
+	}>;
 }
 
 export function makeDomainScheduleStore(
@@ -257,6 +286,11 @@ export function makeDomainScheduleStore(
 	const cancelStmt = driver.prepare(
 		`UPDATE domain_schedules SET cancelled = 1
 			WHERE model_name = ? AND aggregate_name = ? AND instance_id = ? AND schedule_name = ?`,
+	);
+	const listActiveStmt = driver.prepare(
+		`SELECT aggregate_name, instance_id, schedule_name, command_id, due_at, command_json, meta_json, cancelled
+			FROM domain_schedules
+			WHERE model_name = ? AND cancelled = 0 AND (? IS NULL OR aggregate_name = ?)`,
 	);
 
 	const rowToRecord = (row: {
@@ -314,8 +348,61 @@ export function makeDomainScheduleStore(
 						cancelled: row.cancelled,
 					});
 		},
+		listActive(modelName, aggregateName) {
+			const filter = aggregateName ?? null;
+			const rows = listActiveStmt.all(modelName, filter, filter);
+			return rows.map((row) => ({
+				aggregateName: asText(row.aggregate_name, "aggregate_name"),
+				instanceId: asText(row.instance_id, "instance_id"),
+				scheduleName: asText(row.schedule_name, "schedule_name"),
+				record: rowToRecord({
+					command_id: row.command_id,
+					due_at: row.due_at,
+					command_json: row.command_json,
+					meta_json: row.meta_json,
+					cancelled: row.cancelled,
+				}),
+			}));
+		},
 	};
 }
+
+export interface SqliteBackedWorkflowEngine {
+	readonly engine: WorkflowEngine.WorkflowEngine["Service"];
+	readonly resumeDurableSideEffects: Effect.Effect<void>;
+}
+
+type WorkflowClockTimerPayload = {
+	readonly kind: "clock";
+	readonly workflowName: string;
+	readonly executionId: string;
+	readonly deferredName: string;
+	readonly durationMillis: number;
+};
+
+const parseWorkflowClockTimerPayload = (
+	json: string,
+): WorkflowClockTimerPayload => {
+	const parsed = JSON.parse(json);
+	if (
+		parsed === null ||
+		!Object.hasOwn(parsed, "kind") ||
+		parsed.kind !== "clock" ||
+		!Object.hasOwn(parsed, "workflowName") ||
+		!Object.hasOwn(parsed, "executionId") ||
+		!Object.hasOwn(parsed, "deferredName") ||
+		!Object.hasOwn(parsed, "durationMillis")
+	) {
+		throw new DomainPersistenceError("domain_workflow_timers.payload", 0);
+	}
+	return {
+		kind: "clock",
+		workflowName: asText(parsed.workflowName, "workflowName"),
+		executionId: asText(parsed.executionId, "executionId"),
+		deferredName: asText(parsed.deferredName, "deferredName"),
+		durationMillis: asNumber(parsed.durationMillis, "durationMillis"),
+	};
+};
 
 /* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: SqliteWorkflowHost mirrors Effect InMemoryWorkflows Host callbacks; failures and defects arrive untyped from the workflow engine. */
 export interface SqliteWorkflowHost {
@@ -346,13 +433,16 @@ export function makeSqliteBackedWorkflowEngine(
 	host: SqliteWorkflowHost,
 	makeEngine: (
 		wrapped: SqliteWorkflowHost,
-	) => import("effect/workflow").WorkflowEngine.WorkflowEngine["Service"],
-): import("effect/workflow").WorkflowEngine.WorkflowEngine["Service"] {
+	) => WorkflowEngine.WorkflowEngine["Service"],
+): SqliteBackedWorkflowEngine {
 	const insertPendingStmt = driver.prepare(
 		"INSERT OR IGNORE INTO domain_workflow_pending_runs (model_name, run_key) VALUES (?, ?)",
 	);
 	const deletePendingStmt = driver.prepare(
 		"DELETE FROM domain_workflow_pending_runs WHERE model_name = ? AND run_key = ?",
+	);
+	const listPendingStmt = driver.prepare(
+		"SELECT run_key FROM domain_workflow_pending_runs WHERE model_name = ?",
 	);
 	const upsertTimerStmt = driver.prepare(
 		`INSERT OR REPLACE INTO domain_workflow_timers (model_name, timer_key, fire_at, payload_json)
@@ -361,6 +451,26 @@ export function makeSqliteBackedWorkflowEngine(
 	const deleteTimerStmt = driver.prepare(
 		"DELETE FROM domain_workflow_timers WHERE model_name = ? AND timer_key = ?",
 	);
+	const listTimersStmt = driver.prepare(
+		"SELECT timer_key, fire_at, payload_json FROM domain_workflow_timers WHERE model_name = ?",
+	);
+	const loadTimerStmt = driver.prepare(
+		"SELECT fire_at, payload_json FROM domain_workflow_timers WHERE model_name = ? AND timer_key = ?",
+	);
+	const upsertExecutionStmt = driver.prepare(
+		`INSERT OR REPLACE INTO domain_workflow_executions
+			(model_name, workflow_name, execution_id, payload_json, parent_json)
+			VALUES (?, ?, ?, ?, ?)`,
+	);
+	const loadJournalStmt = driver.prepare(
+		"SELECT exit_json FROM domain_workflow_activity_journal WHERE model_name = ? AND journal_key = ?",
+	);
+	const upsertJournalStmt = driver.prepare(
+		`INSERT OR REPLACE INTO domain_workflow_activity_journal (model_name, journal_key, exit_json)
+			VALUES (?, ?, ?)`,
+	);
+
+	const workflowsByTag = new Map<string, Workflow.Any>();
 
 	const wrapped: SqliteWorkflowHost = {
 		...host,
@@ -378,12 +488,12 @@ export function makeSqliteBackedWorkflowEngine(
 			}),
 		timer: (key, at, fire) =>
 			Effect.gen(function* () {
-				const result = upsertTimerStmt.run(
-					modelName,
-					key,
-					at,
-					JSON.stringify({ at }),
-				);
+				const existing = loadTimerStmt.get(modelName, key);
+				const payload =
+					existing === undefined
+						? JSON.stringify({ kind: "wake", at })
+						: asText(existing.payload_json, "payload_json");
+				const result = upsertTimerStmt.run(modelName, key, at, payload);
 				assertSqlitePersisted(result, "domain_workflow_timers.upsert");
 				const wrappedFire = fire.pipe(
 					Effect.ensuring(
@@ -396,5 +506,119 @@ export function makeSqliteBackedWorkflowEngine(
 			}),
 	};
 
-	return makeEngine(wrapped);
+	const inner = makeEngine(wrapped);
+
+	const engine: WorkflowEngine.WorkflowEngine["Service"] = {
+		...inner,
+		register: (workflow, execute) =>
+			Effect.gen(function* () {
+				workflowsByTag.set(workflow._tag, workflow);
+				yield* inner.register(workflow, execute);
+			}),
+		execute: (workflow, options) =>
+			Effect.gen(function* () {
+				const result = upsertExecutionStmt.run(
+					modelName,
+					workflow._tag,
+					options.executionId,
+					JSON.stringify(options.payload),
+					null,
+				);
+				assertSqlitePersisted(result, "domain_workflow_executions.upsert");
+				return yield* inner.execute(workflow, options);
+			}),
+		activityExecute: (activity, attempt) =>
+			Effect.gen(function* () {
+				const instance = yield* WorkflowEngine.WorkflowInstance;
+				const journalKey = `${instance.workflow._tag}/${instance.executionId}/${activity.name}/${attempt}`;
+				const row = loadJournalStmt.get(modelName, journalKey);
+				if (row !== undefined) {
+					const encoded = JSON.parse(asText(row.exit_json, "exit_json"));
+					// SAFETY: exit_json is written only by this module from Complete activity exits.
+					const exit = encoded as Exit.Exit<unknown, unknown>;
+					return new Workflow.Complete({ exit });
+				}
+				const result = yield* inner.activityExecute(activity, attempt);
+				if (result._tag === "Complete") {
+					upsertJournalStmt.run(
+						modelName,
+						journalKey,
+						JSON.stringify(result.exit),
+					);
+				}
+				return result;
+			}),
+		scheduleClock: (workflow, options) =>
+			Effect.gen(function* () {
+				const timerKey = `${workflow._tag}/${options.executionId}/${options.clock.name}`;
+				const existing = loadTimerStmt.get(modelName, timerKey);
+				if (existing !== undefined) return;
+				const durationMillis = Duration.toMillis(options.clock.duration);
+				const fireAt = host.now() + durationMillis;
+				const payload: WorkflowClockTimerPayload = {
+					kind: "clock",
+					workflowName: workflow._tag,
+					executionId: options.executionId,
+					deferredName: options.clock.deferred.name,
+					durationMillis,
+				};
+				const written = upsertTimerStmt.run(
+					modelName,
+					timerKey,
+					fireAt,
+					JSON.stringify(payload),
+				);
+				assertSqlitePersisted(written, "domain_workflow_timers.clock");
+				const wake = engine.deferredDone(options.clock.deferred, {
+					workflowName: workflow._tag,
+					executionId: options.executionId,
+					deferredName: options.clock.deferred.name,
+					exit: Exit.void,
+				});
+				yield* host.timer(
+					timerKey,
+					fireAt,
+					Effect.forkDetach(wake).pipe(Effect.asVoid),
+				);
+			}),
+	};
+
+	const resumeDurableSideEffects = Effect.gen(function* () {
+		for (const row of listPendingStmt.all(modelName)) {
+			const runKey = asText(row.run_key, "run_key");
+			const slash = runKey.indexOf("/");
+			if (slash <= 0) continue;
+			const workflowName = runKey.slice(0, slash);
+			const executionId = runKey.slice(slash + 1);
+			const workflow = workflowsByTag.get(workflowName);
+			if (workflow === undefined) continue;
+			yield* engine.resume(workflow, executionId);
+		}
+		for (const row of listTimersStmt.all(modelName)) {
+			const timerKey = asText(row.timer_key, "timer_key");
+			const fireAt = asNumber(row.fire_at, "fire_at");
+			let payload: WorkflowClockTimerPayload;
+			try {
+				payload = parseWorkflowClockTimerPayload(
+					asText(row.payload_json, "payload_json"),
+				);
+			} catch {
+				continue;
+			}
+			const deferred = DurableDeferred.make(payload.deferredName);
+			const wake = engine.deferredDone(deferred, {
+				workflowName: payload.workflowName,
+				executionId: payload.executionId,
+				deferredName: payload.deferredName,
+				exit: Exit.void,
+			});
+			yield* host.timer(
+				timerKey,
+				fireAt,
+				Effect.forkDetach(wake).pipe(Effect.asVoid),
+			);
+		}
+	});
+
+	return { engine, resumeDurableSideEffects };
 }
