@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { type Browser, chromium } from "playwright";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { STORE_OWNER_ENTRIES_TOOL } from "../src/mcp-owner-entries.js";
 import {
@@ -31,12 +31,26 @@ const saved = z.object({
 	data: z.object({ sealed: z.string(), at: z.number() }),
 });
 
-let browser: Browser;
+const STRICT =
+	process.env.CI === "true" || process.env.HOBO_REQUIRE_BROWSER === "1";
 
 function chromiumBinary(): string | undefined {
+	const fromEnv = process.env.PLAYWRIGHT_CHROMIUM_PATH?.trim();
+	if (fromEnv && existsSync(fromEnv)) return fromEnv;
 	if (existsSync(chromium.executablePath())) return undefined;
-	const root = process.env.PLAYWRIGHT_BROWSERS_PATH ?? "/opt/pw-browsers";
-	if (!existsSync(root)) return undefined;
+	const root = process.env.PLAYWRIGHT_BROWSERS_PATH;
+	if (root === undefined || root === "" || !existsSync(root)) return undefined;
+	const headlessBuild = readdirSync(root)
+		.filter((name) => /^chromium_headless_shell-\d+$/u.test(name))
+		.sort()
+		.at(-1);
+	if (headlessBuild !== undefined) {
+		return ["chrome-headless-shell-linux64", "chrome-headless-shell-linux"]
+			.map((dir) =>
+				path.join(root, headlessBuild, dir, "chrome-headless-shell"),
+			)
+			.find((candidate) => existsSync(candidate));
+	}
 	const build = readdirSync(root)
 		.filter((name) => /^chromium-\d+$/u.test(name))
 		.sort()
@@ -47,23 +61,44 @@ function chromiumBinary(): string | undefined {
 		.find((candidate) => existsSync(candidate));
 }
 
-beforeAll(async () => {
-	const executablePath = chromiumBinary();
-	browser = await chromium.launch(
-		executablePath === undefined ? {} : { executablePath },
+async function launchBrowser(): Promise<Browser | undefined> {
+	for (const executablePath of [chromiumBinary(), undefined]) {
+		if (executablePath !== undefined && !existsSync(executablePath)) continue;
+		try {
+			return await chromium.launch(
+				executablePath === undefined ? {} : { executablePath },
+			);
+		} catch {}
+	}
+	return undefined;
+}
+
+const browser = await launchBrowser();
+if (browser === undefined && STRICT) {
+	throw new Error(
+		"mcp-owner-page.test.ts needs Playwright's Chromium (CI or HOBO_REQUIRE_BROWSER=1): run `pnpm exec playwright install chromium-headless-shell` or set PLAYWRIGHT_CHROMIUM_PATH",
 	);
-});
+}
+if (browser === undefined)
+	console.warn(
+		"mcp-owner-page.test.ts skipped: no Playwright Chromium (set PLAYWRIGHT_CHROMIUM_PATH)",
+	);
 
 afterAll(async () => {
-	await browser.close();
+	await browser?.close();
 });
+
+function launchedBrowser(): Browser {
+	if (browser === undefined) throw new Error("skipped without a browser");
+	return browser;
+}
 
 async function submitInBrowser(
 	html: string,
 	fill: Readonly<Record<string, string>>,
 	store: string,
 ): Promise<z.infer<typeof saved>> {
-	const page = await browser.newPage();
+	const page = await launchedBrowser().newPage();
 	try {
 		await page.route(ORIGIN, (route) =>
 			route.fulfill({ contentType: "text/html", body: html }),
@@ -107,7 +142,7 @@ async function submitInBrowser(
 	}
 }
 
-describe("HoBo's owner page", () => {
+describe.skipIf(browser === undefined)("HoBo's owner page", () => {
 	it("seals the owner's answer in the browser so only this HoBo server opens it", async () => {
 		const pages = createOwnerPages();
 		const opened = await pages.open("/synthetic/project");
@@ -175,7 +210,9 @@ describe("HoBo's owner page", () => {
 	});
 });
 
-describe("choose_secret_store on a host without forms or MCP Apps", () => {
+describe.skipIf(browser === undefined)(
+	"choose_secret_store on a host without forms or MCP Apps",
+	() => {
 	it("hands the agent HoBo's page, then records the sealed answer and deposits the sign-in", async () => {
 		const deposited = new Map<string, string>();
 		const written: Record<string, string>[] = [];
@@ -349,13 +386,14 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 			status: "secure-form-unavailable",
 		});
 	});
-});
+	},
+);
 
 async function sealRelayInBrowser(
 	html: string,
 	relay: string,
 ): Promise<z.infer<typeof saved>> {
-	const page = await browser.newPage();
+	const page = await launchedBrowser().newPage();
 	try {
 		await page.route(ORIGIN, (route) =>
 			route.fulfill({ contentType: "text/html", body: html }),
@@ -396,7 +434,7 @@ async function sealRelayInBrowser(
 	}
 }
 
-describe("HoBo's relay owner page", () => {
+describe.skipIf(browser === undefined)("HoBo's relay owner page", () => {
 	const RELAY = "https://relay.hobo.test";
 
 	it("seals the relay address so only this HoBo server reads it, then shows the GitHub code for the owner only", async () => {

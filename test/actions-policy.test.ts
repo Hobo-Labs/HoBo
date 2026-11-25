@@ -104,6 +104,39 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 	);
 });
 
+test("Fabric browser jobs decide Playwright or install pinned Chromium on hosted runners", async () => {
+	const workflow = await readFile(
+		new URL("../.github/workflows/hobo-ci.yml", import.meta.url),
+		"utf8",
+	);
+	const preflight = await readFile(
+		new URL(
+			"../.github/actions/ci-runner-preflight/action.yml",
+			import.meta.url,
+		),
+		"utf8",
+	);
+	assert.match(
+		workflow,
+		/main_workspace_tests:[\s\S]*Decide Playwright install[\s\S]*browser: \$\{\{ steps\.playwright\.outputs\.needed \}\}/,
+	);
+	assert.match(
+		workflow,
+		/workspace_tests:[\s\S]*Decide Playwright install[\s\S]*browser: \$\{\{ steps\.playwright\.outputs\.needed \}\}/,
+	);
+	assert.match(preflight, /Restore Playwright headless shell \(hosted\)/);
+	assert.match(
+		preflight,
+		/actions\/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9/,
+	);
+	assert.match(
+		preflight,
+		/playwright-chromium-headless-shell-\$\{\{ hashFiles\('pnpm-lock.yaml', 'scripts\/lib\/ci-runner-contract\.mts'\) \}\}/,
+	);
+	assert.match(preflight, /install-hosted-playwright-browser\.mts/);
+	assert.doesNotMatch(preflight, /PLAYWRIGHT_BROWSERS_PATH=\/opt\/pw-browsers/);
+});
+
 test("workflow conditions never read the secrets context", async () => {
 	const directory = new URL("../.github/workflows/", import.meta.url);
 	const files = (await readdir(directory)).filter((name) =>

@@ -58,8 +58,34 @@ runs:
       shell: bash
       env:
         RUNNER_ENVIRONMENT: ${{ runner.environment }}
-        HOBO_CI_HOSTED_BROWSER: ${{ inputs.browser }}
       run: bash "${GITHUB_ACTION_PATH}/hosted-toolchain.sh"
+    - name: Restore Playwright headless shell (hosted)
+      if: inputs.browser == 'true' && runner.environment == 'github-hosted'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      id: playwright_browser_cache
+      with:
+        path: ${{ runner.temp }}/hobo-pw-browsers
+        key: playwright-chromium-headless-shell-${{ hashFiles('pnpm-lock.yaml', 'scripts/lib/ci-runner-contract.mts') }}-${{ runner.arch }}-v1
+        restore-keys: |
+          playwright-chromium-headless-shell-${{ hashFiles('pnpm-lock.yaml', 'scripts/lib/ci-runner-contract.mts') }}-${{ runner.arch }}-
+          playwright-chromium-headless-shell-${{ runner.arch }}-
+    - name: Install Playwright headless shell (hosted)
+      if: inputs.browser == 'true' && runner.environment == 'github-hosted'
+      shell: bash
+      env:
+        HOBO_CI_PLAYWRIGHT_BROWSERS_ROOT: ${{ runner.temp }}/hobo-pw-browsers
+      run: |
+        set -euo pipefail
+        export PLAYWRIGHT_BROWSERS_PATH="${HOBO_CI_PLAYWRIGHT_BROWSERS_ROOT}"
+        node --experimental-strip-types --no-warnings scripts/ci/install-hosted-playwright-browser.mts
+        echo "PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH}" >> "$GITHUB_ENV"
+        echo "hosted toolchain: Playwright headless shell at ${PLAYWRIGHT_BROWSERS_PATH}"
+    - name: Save Playwright headless shell (hosted)
+      if: inputs.browser == 'true' && runner.environment == 'github-hosted' && steps.playwright_browser_cache.outputs.cache-hit != 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ runner.temp }}/hobo-pw-browsers
+        key: playwright-chromium-headless-shell-${{ hashFiles('pnpm-lock.yaml', 'scripts/lib/ci-runner-contract.mts') }}-${{ runner.arch }}-v1
     - name: Scope the job's mise tools
       shell: bash
       env:

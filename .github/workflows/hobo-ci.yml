@@ -756,9 +756,40 @@ jobs:
           bootstrap-composite-actions: "false"
       - name: Test from a detached HEAD, as the merge queue does
         run: git checkout --quiet --detach HEAD
+      - name: Decide Playwright install
+        id: playwright
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ needs.pr_gate_plan.outputs.pr_base }}
+          MERGE_TESTS: ${{ needs.pr_gate_plan.outputs.merge_tests }}
+          MERGE_BASE: ${{ needs.pr_gate_plan.outputs.merge_base }}
+        run: |
+          set -euo pipefail
+          shard="${{ strategy.job-index }}/${{ strategy.job-total }}"
+          case "$EVENT_NAME" in
+            pull_request)
+              if [ -z "$PR_BASE" ] || ! git cat-file -e "${PR_BASE}^{commit}"; then
+                needed="false"
+              else
+                needed="$(git diff --name-only "$PR_BASE" HEAD | node --experimental-strip-types --no-warnings scripts/ci/job-needs-playwright-browser.mts --shard="$shard" --tests=affected --base="$PR_BASE")"
+              fi
+              ;;
+            merge_group)
+              if [ "$MERGE_TESTS" = "all" ]; then
+                needed="$(printf '' | node --experimental-strip-types --no-warnings scripts/ci/job-needs-playwright-browser.mts --shard="$shard" --tests=all")"
+              elif [ -n "$MERGE_BASE" ] && git cat-file -e "${MERGE_BASE}^{commit}"; then
+                needed="$(git diff --name-only "$MERGE_BASE" HEAD | node --experimental-strip-types --no-warnings scripts/ci/job-needs-playwright-browser.mts --shard="$shard" --tests=affected --base="$MERGE_BASE")"
+              else
+                needed="false"
+              fi
+              ;;
+            *) needed="false" ;;
+          esac
+          echo "needed=${needed}" >> "$GITHUB_OUTPUT"
+          echo "workspace shard Playwright install: ${needed}"
       - uses: $/.github/actions/ci-runner-preflight
         with:
-          browser: "true"
+          browser: ${{ steps.playwright.outputs.needed }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
@@ -1899,7 +1930,26 @@ jobs:
       - name: Check deps layer match
         id: deps-layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Decide Playwright install
+        id: playwright
+        env:
+          MAIN_TESTS: ${{ needs.main-gate-plan.outputs.main_tests }}
+          MAIN_BASE: ${{ needs.main-gate-plan.outputs.main_base }}
+        run: |
+          set -euo pipefail
+          shard="${{ strategy.job-index }}/${{ strategy.job-total }}"
+          if [ "$MAIN_TESTS" = "all" ]; then
+            needed="$(printf '' | node --experimental-strip-types --no-warnings scripts/ci/job-needs-playwright-browser.mts --shard="$shard" --tests=all)"
+          elif [ -n "$MAIN_BASE" ] && git cat-file -e "${MAIN_BASE}^{commit}"; then
+            needed="$(git diff --name-only "$MAIN_BASE" HEAD | node --experimental-strip-types --no-warnings scripts/ci/job-needs-playwright-browser.mts --shard="$shard" --tests=affected --base="$MAIN_BASE")"
+          else
+            needed="false"
+          fi
+          echo "needed=${needed}" >> "$GITHUB_OUTPUT"
+          echo "main workspace shard Playwright install: ${needed}"
       - uses: $/.github/actions/ci-runner-preflight
+        with:
+          browser: ${{ steps.playwright.outputs.needed }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
