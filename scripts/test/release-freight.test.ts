@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { parseReleaseFreightAuthorMessage } from "../../packages/cd/src/reconcile/release-freight-detail.ts";
 import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
 import { RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS } from "../lib/release-contract-script-build.mts";
 import {
@@ -30,6 +31,8 @@ import {
 	releaseDriveFor,
 	releaseFreightManifest,
 	releasePagesWallBudgetMs,
+	releaseBlockedRealizerMessage,
+	releaseCampRealizeScope,
 	releaseSource,
 	releaseWorkflowCredentials,
 	releaseWorkflowGithubAppScopeAllowed,
@@ -54,7 +57,17 @@ describe("releaseWorkflowCredentials", () => {
 		expect(releaseWorkflowGithubAppScopeAllowed("release-probe")).toBe(true);
 		expect(
 			releaseWorkflowGithubAppScopeAllowed(
+				"cd-realize:hobo-release/oci-candidate",
+			),
+		).toBe(true);
+		expect(
+			releaseWorkflowGithubAppScopeAllowed(
 				"cd-realize:hobo-release-oci/oci-candidate",
+			),
+		).toBe(false);
+		expect(
+			releaseWorkflowGithubAppScopeAllowed(
+				"cd-realize:hobo-release/pages-candidate",
 			),
 		).toBe(true);
 		expect(
@@ -75,21 +88,27 @@ describe("releaseWorkflowCredentials", () => {
 		).resolves.toEqual({ token: "synthetic-job-token" });
 		await expect(
 			credentials.resolve("github-app://Other/Repo", "release-probe"),
-		).rejects.toThrow(/refuses github-app:\/\/Other\/Repo/u);
+		).rejects.toMatchObject({ detailKind: "repository-mismatch" });
 		await expect(
 			credentials.resolve("github-app://Hobo-Labs/HoBo", "evil-scope"),
-		).rejects.toThrow(/scope evil-scope is not allowed/u);
+		).rejects.toMatchObject({ detailKind: "scope-not-allowed" });
+		await expect(
+			credentials.resolve(
+				"github-app://Hobo-Labs/HoBo",
+				"cd-realize:hobo-release/pages-candidate",
+			),
+		).resolves.toEqual({ token: "synthetic-job-token" });
 		await expect(
 			releaseWorkflowCredentials({
 				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
 			}).resolve("github-app://Hobo-Labs/HoBo", "release-probe"),
-		).rejects.toThrow(/needs GITHUB_TOKEN/u);
+		).rejects.toMatchObject({ detailKind: "missing-GITHUB_TOKEN" });
 		await expect(
 			releaseWorkflowCredentials({
 				GITHUB_REPOSITORY: "",
 				GITHUB_TOKEN: "synthetic-job-token",
 			}).resolve("github-app://Hobo-Labs/HoBo", "release-probe"),
-		).rejects.toThrow(/needs GITHUB_REPOSITORY/u);
+		).rejects.toMatchObject({ detailKind: "missing-GITHUB_REPOSITORY" });
 	});
 });
 
@@ -281,6 +300,129 @@ describe("release topology names", () => {
 	});
 });
 
+describe("releaseCampRealizeScope", () => {
+	it("uses logical Camp ids so conductor scopes match pipeline promotion ids", () => {
+		const pages = camps.find(
+			(camp) => camp.logicalId === "hobo-release/pages-candidate",
+		);
+		expect(pages).toBeDefined();
+		expect(releaseCampRealizeScope(pages ?? camps[0]!)).toBe(
+			"cd-realize:hobo-release/pages-candidate",
+		);
+	});
+});
+
+describe("releaseBlockedRealizerMessage", () => {
+	it("labels blocked reasons with stable codes and structured credential-scope fields", () => {
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "realize-failed",
+					message:
+						"release Freight refuses github-app://Hobo-Labs/HoBo: scope cd-realize:hobo-release/pages-candidate is not allowed for workflow github-app credentials",
+				},
+			]),
+		).toBe(
+			"realize-failed: credential=github-app://Hobo-Labs/HoBo scope=cd-realize:hobo-release/pages-candidate scope-not-allowed",
+		);
+	});
+
+	it("rejects injected legacy author strings (Muse probes)", () => {
+		const npmToken = `npm_${randomBytes(12).toString("hex")}`;
+		const jwtPayload = randomBytes(16).toString("base64url");
+		const jwt = `eyJhbGciOiJIUzI1NiJ9.${jwtPayload}.${randomBytes(20).toString("base64url")}`;
+		const injectedScope = [
+			"cd-realize:hobo-release/pages-candidate",
+			"::error::INJECTED",
+			npmToken,
+		].join("\n");
+		const allowed = new Set([
+			"release-probe",
+			"cd-realize:hobo-release/pages-candidate",
+		]);
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "realize-failed",
+					message: `release Freight refuses ${npmToken}: scope cd-realize:hobo-release/pages-candidate is not allowed for workflow github-app credentials`,
+				},
+			]),
+		).toBe("realize-failed");
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "realize-failed",
+					message: `release Freight refuses github-app://Hobo-Labs/HoBo: scope ${jwt} is not allowed for workflow github-app credentials`,
+				},
+			]),
+		).toBe("realize-failed");
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "realize-failed",
+					message: `release Freight refuses github-app://Hobo-Labs/HoBo: scope ${injectedScope} is not allowed for workflow github-app credentials`,
+				},
+			]),
+		).toBe("realize-failed");
+		expect(
+			parseReleaseFreightAuthorMessage(
+				`release Freight refuses github-app://Hobo-Labs/HoBo: scope ${injectedScope} is not allowed for workflow github-app credentials`,
+				allowed,
+			),
+		).toBeUndefined();
+	});
+
+	it("uses typed structured fields without parsing author text", () => {
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "realize-failed",
+					structured: {
+						credentialRef: "github-app://Hobo-Labs/HoBo",
+						requestedScope: "cd-realize:hobo-release/pages-candidate",
+						detailKind: "scope-not-allowed",
+					},
+				},
+			]),
+		).toBe(
+			"realize-failed: credential=github-app://Hobo-Labs/HoBo scope=cd-realize:hobo-release/pages-candidate scope-not-allowed",
+		);
+	});
+
+	it("falls back to codes alone for non-release provider text", () => {
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "RESOLVER_PROVIDER_REJECTED",
+					message:
+						"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com",
+				},
+			]),
+		).toBe("RESOLVER_PROVIDER_REJECTED");
+	});
+});
+
+describe("release credential scope during catalog realizes", () => {
+	it("matches pipeline logical camp ids the catalog resolver passes to credentials.resolve", async () => {
+		const pages = camps.find(
+			(camp) => camp.logicalId === "hobo-release/pages-candidate",
+		);
+		expect(pages).toBeDefined();
+		const credentials = releaseWorkflowCredentials({
+			GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+			GITHUB_TOKEN: "synthetic-job-token",
+		});
+		const catalogScope = `cd-realize:${pages!.logicalId}`;
+		const physicalScope = `cd-realize:${pages!.campId}`;
+		await expect(
+			credentials.resolve(`github-app://${"Hobo-Labs/HoBo"}`, catalogScope),
+		).resolves.toEqual({ token: "synthetic-job-token" });
+		await expect(
+			credentials.resolve(`github-app://${"Hobo-Labs/HoBo"}`, physicalScope),
+		).rejects.toMatchObject({ detailKind: "scope-not-allowed" });
+	});
+});
+
 describe("classifyRelease", () => {
 	it("qualifies only a promoted release", () => {
 		expect(
@@ -347,7 +489,7 @@ describe("classifyRelease", () => {
 		});
 		expect(verdict?.message).not.toContain(synthetic);
 		expect(verdict?.message).not.toContain(payload);
-		expect(verdict?.message).toMatch(/ghcr publish refused/i);
+		expect(verdict?.message).toBe("RESOLVER_PROVIDER_REJECTED");
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
 			announceVerdict(
@@ -373,6 +515,74 @@ describe("classifyRelease", () => {
 });
 
 describe("announceVerdict", () => {
+	it("omits short opaque bearer and connection-string material from ::error:: lines", () => {
+		const opaque = randomBytes(16).toString("hex");
+		const basic = Buffer.from(`svc:${opaque}`).toString("base64");
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			for (const message of [
+				`Bearer ${opaque}`,
+				`Authorization: Basic ${basic}`,
+				`postgres://u:${opaque}@db.local:5432/x`,
+				`secret=sk_${opaque}`,
+				`bot xoxb-${opaque}`,
+			]) {
+				announceVerdict(
+					"oci",
+					"candidate",
+					"f",
+					{ outcome: "blocked", codes: ["realize-failed"], message },
+					{},
+				);
+			}
+			for (const call of error.mock.calls) {
+				const line = String(call[0]);
+				expect(line).not.toContain(opaque);
+				expect(line).not.toMatch(/Bearer\s+\S+/u);
+			}
+		} finally {
+			error.mockRestore();
+		}
+	});
+
+	it("redacts raw promotion-refused and drive-error text in error lines", () => {
+		const payload = randomBytes(14).toString("base64url");
+		const synthetic = `eyJhbGciOiJIUzI1NiJ9.${payload}.${randomBytes(22).toString("base64url")}`;
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			announceVerdict(
+				"pages",
+				"candidate",
+				"f",
+				{
+					outcome: "blocked",
+					codes: ["release-promotion-refused"],
+					message: `promotion refused bearer ${synthetic}`,
+				},
+				{},
+			);
+			announceVerdict(
+				"pages",
+				"candidate",
+				"f",
+				{
+					outcome: "blocked",
+					codes: [RELEASE_PROMOTION_TIMEOUT],
+					message: `wall expired with ghp_${"a".repeat(36)}`,
+				},
+				{},
+			);
+			for (const call of error.mock.calls) {
+				const line = String(call[0]);
+				expect(line).not.toContain(synthetic);
+				expect(line).not.toContain(payload);
+				expect(line).not.toMatch(/ghp_[A-Za-z0-9]+/u);
+			}
+		} finally {
+			error.mockRestore();
+		}
+	});
+
 	it("allows only a qualified verdict, for every family", () => {
 		const log = vi.spyOn(console, "log").mockImplementation(() => {});
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});

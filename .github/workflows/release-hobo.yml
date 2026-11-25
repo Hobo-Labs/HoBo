@@ -424,7 +424,8 @@ jobs:
         run: pnpm run lint:shell:changed -- --base=HEAD^1
       - name: Build release-contract script dependencies
         run: >-
-          pnpm exec turbo run build --filter=@hobo/provider-redaction
+          pnpm exec turbo run build
+          --filter=@hobo/provider-redaction --filter=@hobo/cd
           --output-logs=new-only --concurrency=${{ env.HOBO_TURBO_CONCURRENCY }}
       - name: npm scope map + OCI manifest contract
         id: release_contract_tests

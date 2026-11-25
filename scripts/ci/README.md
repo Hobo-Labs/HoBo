@@ -41,13 +41,18 @@ reads the routing slip at `refs/hobo/routing-slip` with `contents: read`
 `releaseWorkflowCredentials`: camps that declare `github-app://<owner>/<repo>`
 locators authorize through the workflow job `GITHUB_TOKEN` only when
 `GITHUB_REPOSITORY` is set and matches the locator case-insensitively and the
-resolver scope is `release-probe` or `cd-realize:<campId>` (`releaseWorkflowGithubAppScopeAllowed`).
-Blocked release verdicts and `::error::` lines run operator reason text through
-`scripts/lib/redact-operator-condition.mts` (`@hobo/provider-redaction`) before
-aggregation or logging. The `release-contract` job builds those workspace
+resolver scope is `release-probe` or `cd-realize:<logicalCampId>` (for example
+`cd-realize:hobo-release/pages-candidate`, matching pipeline promotion ids;
+`releaseWorkflowGithubAppScopeAllowed`).
+Blocked release verdicts and `::error::` lines use
+`releaseFreightLogFragment` from `@hobo/cd/reconcile` (`@hobo/provider-redaction`
+detectors, fail closed) before aggregation or logging. The `release-contract` job builds those workspace
 packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
 `scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
 checkouts have `dist/` without pulling `@hobo/cd` source into the scripts lane.
+When `scripts/ci/attested-jobs.json` changes, bump `SHADOW_PLAN_BLOB` in
+`attestation.mts` to the git blob id
+`scripts/test/attested-jobs.test.ts` asserts.
 Hermetic checks live in
 [`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
 Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
@@ -63,7 +68,7 @@ empty, or stale. [`build-release-site-prebuild.mts`](build-release-site-prebuild
 re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately before turbo
 builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) copies the wit tree
 into a workspace-local work root (`.cache/browser-wit-componentize/`, then `realpath`), not `os.tmpdir()`,
-and passes `station.wit` (not the wit directory) to `componentize-js` before componentize. [`browser-wit-componentize-diagnostics.mts`](../lib/browser-wit-componentize-diagnostics.mts)
+and passes `station.wit` inline as `witWorld` to `componentize-js` before componentize. [`browser-wit-componentize-diagnostics.mts`](../lib/browser-wit-componentize-diagnostics.mts)
 logs `componentize-js` / `preview2-shim` resolution, `TMPDIR`, `/tmp` mount metadata, runner identity,
 and container hints on the release path. Host `readFile` on sandbox `station.wit` passing while
 componentize fails indicates a **host vs WASI/preview2-shim view mismatch** (not only sparse checkout:
