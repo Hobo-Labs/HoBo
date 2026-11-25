@@ -94,7 +94,9 @@ function workspaceDeps(manifestPath: string): readonly string[] {
 	return names;
 }
 
-export function buildCiNeutralImportAllowlist(repoRoot: string): ReadonlySet<string> {
+export function buildCiNeutralImportAllowlist(
+	repoRoot: string,
+): ReadonlySet<string> {
 	const packagesDir = join(repoRoot, "packages");
 	const nameByFolder = loadPackageNameByFolder(packagesDir);
 	const seedFolder = "ci";
@@ -115,7 +117,9 @@ export function buildCiNeutralImportAllowlist(repoRoot: string): ReadonlySet<str
 		if (name === undefined) continue;
 		const folder = folderByName.get(name);
 		if (folder === undefined) continue;
-		for (const dep of workspaceDeps(join(packagesDir, folder, "package.json"))) {
+		for (const dep of workspaceDeps(
+			join(packagesDir, folder, "package.json"),
+		)) {
 			if (!allow.has(dep)) {
 				allow.add(dep);
 				queue.push(dep);

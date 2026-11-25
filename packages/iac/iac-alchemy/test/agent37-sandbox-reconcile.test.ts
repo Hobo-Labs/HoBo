@@ -5,8 +5,8 @@ import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 import {
 	Agent37Sandbox,
-	Agent37SandboxProvider,
 	type Agent37SandboxApiClient,
+	Agent37SandboxProvider,
 } from "../src/sandbox/agent37-sandbox.js";
 
 function runStack<Output, Req, LayerError>(
