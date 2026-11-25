@@ -24,7 +24,7 @@ description: Verify credit and hard-budget dispatch selection and reservation ac
 - `packages/dispatcher/test/dispatch-routing-domain.test.ts`: `Domain.verify(DispatchRouting)`, compile-time `@ts-expect-error` negative proofs, schema boundary checks, deterministic selection checks, and executable `Story.make` BDD scenarios.
 - `packages/dispatcher/src/dispatcher.ts`, `src/dispatcher-v2.ts`, `src/money.ts`, `src/order.ts`: legacy wire-compatible dispatcher and decimal conversion layer.
 - `packages/dispatcher/data-models/dispatch.cue` and `dispatch.proto`: wire numeric domain.
-- `packages/dispatcher/test/budget-routing.property.test.ts`, `budget-safety.test.ts`, `money-overflow.test.ts`, `budget-category-scope.test.ts`, `budget-estimate-routing.test.ts`, `dispatcher-locale.test.ts`, `dispatcher-v1-byte-identical.test.ts`: legacy compatibility and overflow regression suites.
+- `packages/dispatcher/test/budget-routing.property.test.ts`, `budget-safety.test.ts`, `money-overflow.test.ts`, `ledger-sequence-safety.test.ts`, `ledger-consumption-safety.test.ts`, `budget-category-scope.test.ts`, `budget-estimate-routing.test.ts`, `dispatcher-locale.test.ts`, `dispatcher-v1-byte-identical.test.ts`: legacy compatibility and overflow regression suites.
 
 ## Run
 

@@ -20,6 +20,7 @@ export const SwitchSealedFleetView = Schema.TaggedStruct("SwitchSealed", {
 	epoch: EpochNumber,
 	active: FleetMemberName,
 	target: FleetMemberName,
+	decidedAtMs: EpochMs,
 	sealedAtMs: EpochMs,
 	reason: NonEmptyReason,
 });
@@ -56,6 +57,7 @@ export class FleetAssignmentView extends Domain.View("FleetAssignmentView", {
 				epoch: state.epoch,
 				active: state.active,
 				target: event.target,
+				decidedAtMs: state.decidedAtMs,
 				sealedAtMs: event.sealedAtMs,
 				reason: event.reason,
 			};
@@ -74,7 +76,7 @@ export class FleetAssignmentView extends Domain.View("FleetAssignmentView", {
 				_tag: "Active" as const,
 				epoch: state.epoch,
 				active: state.active,
-				decidedAtMs: state.sealedAtMs,
+				decidedAtMs: state.decidedAtMs,
 			};
 		},
 		FleetFailoverPromoted: (_state, event) => ({

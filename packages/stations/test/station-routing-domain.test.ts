@@ -18,6 +18,7 @@ import {
 	decodeLoweredTtlEvidence,
 	decodeNonNegativeCount,
 	decodeNonNegativeMs,
+	decodeNonNegativeSeconds,
 	decodePositiveSwapLimit,
 	decodeProgressiveRampPlan,
 	decodeRampWeightPercent,
@@ -78,21 +79,21 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 			decodeLoweredTtlEvidence({
 				previousTtlSeconds: TTL_300,
 				loweredTtlSeconds: TTL_300,
-				waitedSeconds: decodeNonNegativeMs(300),
+				waitedSeconds: decodeNonNegativeSeconds(300),
 			}),
 		).toThrow();
 		expect(() =>
 			decodeLoweredTtlEvidence({
 				previousTtlSeconds: TTL_300,
 				loweredTtlSeconds: TTL_30,
-				waitedSeconds: decodeNonNegativeMs(120),
+				waitedSeconds: decodeNonNegativeSeconds(120),
 			}),
 		).toThrow();
 		expect(
 			decodeLoweredTtlEvidence({
 				previousTtlSeconds: TTL_300,
 				loweredTtlSeconds: TTL_30,
-				waitedSeconds: decodeNonNegativeMs(300),
+				waitedSeconds: decodeNonNegativeSeconds(300),
 			}),
 		).toEqual({
 			previousTtlSeconds: 300,
@@ -502,6 +503,118 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 						reason: "reconciliation-pending",
 					}),
 				),
+				Story.when(
+					reconcileRoute,
+					new RegisterTrafficIncumbent({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+					}),
+				),
+				Story.rejected(
+					new CutoverPreconditionRefused({
+						reason: "reconciliation-pending",
+					}),
+				),
+			),
+		);
+	});
+
+	it("fails closed to ReconciliationRequired when incumbent restoration fails or is unconfirmed during rollback", async () => {
+		const routeId = TrafficRouteId.make("route-failed-restore");
+		const route = TrafficRoute.ref(routeId);
+		const policy = {
+			cooldownMs: decodeNonNegativeMs(0),
+			maxSwapsPerWindow: decodePositiveSwapLimit(4),
+		};
+		const canaryFailure = NonEmptyReason.make("canary-5xx-burst");
+		const restoreFailure = NonEmptyReason.make("dns-restore-timeout");
+		const shiftReason = NonEmptyReason.make("budget-shift");
+
+		await Effect.runPromise(
+			story(
+				Story.when(
+					route,
+					new RegisterTrafficIncumbent({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+					}),
+				),
+				Story.then(
+					route,
+					new TrafficIncumbentRegistered({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+					}),
+				),
+				Story.when(
+					route,
+					new ProposeBudgetMigration({
+						to: CLOUDFLARE_TARGET,
+						reason: shiftReason,
+						nowMs: decodeEpochMs(1_000),
+						preconditionsMet: true,
+					}),
+				),
+				Story.then(
+					route,
+					new BudgetMigrationProposed({
+						from: VERCEL_TARGET,
+						to: CLOUDFLARE_TARGET,
+						reason: shiftReason,
+						proposedAtMs: decodeEpochMs(1_000),
+					}),
+				),
+				Story.call(TrafficRoutingBackend.lowerTtl, {
+					routeId,
+					ttlSeconds: TTL_30,
+				}),
+				Story.succeed(TrafficRoutingBackend.lowerTtl, {
+					appliedTtlSeconds: TTL_30,
+				}),
+				Story.then(route, new CutoverTtlLowered({ ttlSeconds: TTL_30 })),
+				Story.call(TrafficRoutingBackend.applyWeight, {
+					routeId,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_10,
+				}),
+				Story.succeed(TrafficRoutingBackend.applyWeight, {
+					appliedWeightPercent: WEIGHT_10,
+				}),
+				Story.then(
+					route,
+					new CutoverRampAdvanced({
+						targetWeightPercent: WEIGHT_10,
+						to: CLOUDFLARE_TARGET,
+					}),
+				),
+				Story.call(TrafficRoutingBackend.observeHealth, {
+					routeId,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_10,
+				}),
+				Story.succeed(TrafficRoutingBackend.observeHealth, {
+					healthy: false,
+					summary: canaryFailure,
+				}),
+				Story.call(TrafficRoutingBackend.restoreIncumbent, {
+					routeId,
+					reason: canaryFailure,
+				}),
+				Story.fail(
+					TrafficRoutingBackend.restoreIncumbent,
+					new RoutingMutationAmbiguous({ reason: restoreFailure }),
+				),
+				Story.then(
+					route,
+					new CutoverReconciliationRequired({ reason: restoreFailure }),
+				),
+				Story.view(TrafficRoutingView, route, {
+					_tag: "ReconciliationRequired",
+					reason: restoreFailure,
+				}),
 			),
 		);
 	});

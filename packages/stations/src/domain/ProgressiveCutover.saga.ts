@@ -14,6 +14,7 @@ import {
 import {
 	CompleteTrafficCutover,
 	CutoverNotInProgress,
+	CutoverPreconditionRefused,
 	FlagCutoverReconciliation,
 	RecordRampStep,
 	RecordTtlLowered,
@@ -87,7 +88,7 @@ export class ExecuteProgressiveCutover extends Domain.Saga(
 			lowTtlSeconds: TtlSeconds,
 			completedAtMs: EpochMs,
 		},
-		rejects: [CutoverNotInProgress],
+		rejects: [CutoverNotInProgress, CutoverPreconditionRefused],
 	},
 	{
 		description:
@@ -132,7 +133,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 
 			yield* Activity.make({
 				name: "record-ttl-lowered",
-				error: CutoverNotInProgress,
+				error: Schema.Union([CutoverNotInProgress, CutoverPreconditionRefused]),
 				execute: routes
 					.send(
 						key,
@@ -172,7 +173,10 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 
 				yield* Activity.make({
 					name: `record-ramp-${weightPercent}`,
-					error: CutoverNotInProgress,
+					error: Schema.Union([
+						CutoverNotInProgress,
+						CutoverPreconditionRefused,
+					]),
 					execute: routes
 						.send(
 							key,
@@ -213,7 +217,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 				}
 
 				if (!health.success.healthy) {
-					yield* Activity.make({
+					const restored = yield* Activity.make({
 						name: `restore-incumbent-${weightPercent}`,
 						success: Schema.Struct({ restored: Schema.Boolean }),
 						error: RoutingMutationAmbiguous,
@@ -221,7 +225,24 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 							routeId: key,
 							reason: health.success.summary,
 						}),
-					}).pipe(Effect.ignore);
+					}).pipe(Effect.result);
+
+					if (restored._tag === "Failure" || !restored.success.restored) {
+						const reason =
+							restored._tag === "Failure"
+								? restored.failure.reason
+								: NonEmptyReason.make(
+										`incumbent-restoration-unconfirmed:${health.success.summary}`,
+									);
+						yield* Activity.make({
+							name: `flag-restore-reconciliation-${weightPercent}`,
+							execute: routes
+								.send(key, new FlagCutoverReconciliation({ reason }))
+								.pipe(Effect.asVoid),
+						});
+						return;
+					}
+
 					yield* Activity.make({
 						name: `record-rollback-${weightPercent}`,
 						error: CutoverNotInProgress,
@@ -238,7 +259,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 
 			yield* Activity.make({
 				name: "complete-cutover",
-				error: CutoverNotInProgress,
+				error: Schema.Union([CutoverNotInProgress, CutoverPreconditionRefused]),
 				execute: routes
 					.send(key, new CompleteTrafficCutover({ completedAtMs }))
 					.pipe(Effect.asVoid),

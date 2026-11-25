@@ -3,6 +3,8 @@ import { Story } from "@alchemy.run/domain/Story";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 import {
+	AccountHasActiveReservations,
+	BudgetCapBelowLiabilities,
 	BudgetCapExceeded,
 	type BuildMachineAccountId,
 	ConfigureDispatchAccount,
@@ -74,8 +76,8 @@ describe("@hobo/dispatcher/domain DispatchRouting (static invariants + BDD)", ()
 		).toThrow();
 		expect(() =>
 			decodeActiveReservationHold({
-				units: POS_UNITS(1),
-				freeUnits: UNITS(1),
+				units: POS_UNITS(2),
+				freeUnits: UNITS(2),
 				paidUnits: UNITS(0),
 				reservedMicros: MICROS(0),
 				concurrencySlots: SLOTS(2),
@@ -542,6 +544,22 @@ describe("@hobo/dispatcher/domain DispatchRouting (static invariants + BDD)", ()
 				),
 				Story.when(
 					runnerAccount,
+					new ConfigureDispatchAccount({
+						listUnitMicros: MICROS(100_000),
+						freeHeadroom: UNITS(5),
+						rateHeadroom: UNITS(10),
+						concurrencyHeadroom: SLOTS(3),
+						budgetCapMicros: MICROS(250_000),
+					}),
+				),
+				Story.rejected(
+					new AccountHasActiveReservations({
+						accountId: scopedAccountId("runner", ProviderId.make("github")),
+						activeCount: UNITS(1),
+					}),
+				),
+				Story.when(
+					runnerAccount,
 					new ExpirePendingReservations({ nowMs: EPOCH(5_000) }),
 				),
 				Story.then(
@@ -553,6 +571,23 @@ describe("@hobo/dispatcher/domain DispatchRouting (static invariants + BDD)", ()
 						rateHeadroomAfter: UNITS(8),
 						concurrencyHeadroomAfter: SLOTS(3),
 						heldMicrosAfter: MICROS(0),
+					}),
+				),
+				Story.when(
+					runnerAccount,
+					new ConfigureDispatchAccount({
+						listUnitMicros: MICROS(100_000),
+						freeHeadroom: UNITS(0),
+						rateHeadroom: UNITS(8),
+						concurrencyHeadroom: SLOTS(3),
+						budgetCapMicros: MICROS(50_000),
+					}),
+				),
+				Story.rejected(
+					new BudgetCapBelowLiabilities({
+						spentMicros: MICROS(80_000),
+						heldMicros: MICROS(0),
+						requestedCapMicros: MICROS(50_000),
 					}),
 				),
 				Story.view(DispatchAccountView, runnerAccount, {

@@ -70,6 +70,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 		expect(() => decodeUnitFraction(1.5)).toThrow();
 		expect(() => decodeUnitFraction(0)).toThrow();
 		expect(() => decodeFleetMemberName("INVALID UPPER")).toThrow();
+		expect(() => decodeFleetMemberName("redis.primary")).toThrow();
 		expect(() =>
 			decodeFleetRouteDecision({
 				_tag: "Switch",

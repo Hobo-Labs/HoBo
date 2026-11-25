@@ -1,5 +1,7 @@
 export {
+	AccountHasActiveReservations,
 	AccountNotConfigured,
+	BudgetCapBelowLiabilities,
 	BudgetCapExceeded,
 	ConfigureDispatchAccount,
 	ConfiguredDispatchAccount,
@@ -7,7 +9,7 @@ export {
 	ConfirmReservation,
 	DispatchAccount,
 	DispatchAccountConfigured,
-	type DispatchAccountState,
+	DispatchAccountState,
 	DispatchReservationConfirmed,
 	DispatchReservationReleased,
 	DispatchReservationStarted,
@@ -78,7 +80,7 @@ export {
 export {
 	CandidateExclusionReason,
 	DispatchCandidateSnapshot,
-	type DispatchSelectionOutcome,
+	DispatchSelectionOutcome,
 	type DispatchSelectionRequest,
 	NoEligibleDispatchCandidate,
 	RankedEligibleCandidate,

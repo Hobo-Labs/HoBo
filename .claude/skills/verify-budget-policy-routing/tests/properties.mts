@@ -16,6 +16,8 @@ const args = [
 	"test/budget-routing.property.test.ts",
 	"test/budget-safety.test.ts",
 	"test/money-overflow.test.ts",
+	"test/ledger-sequence-safety.test.ts",
+	"test/ledger-consumption-safety.test.ts",
 	"test/budget-category-scope.test.ts",
 	"test/budget-estimate-routing.test.ts",
 	"test/dispatcher-locale.test.ts",

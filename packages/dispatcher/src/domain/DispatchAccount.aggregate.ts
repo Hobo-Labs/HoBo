@@ -25,6 +25,23 @@ export class AccountNotConfigured extends Domain.Rejection(
 	},
 ) {}
 
+export class AccountHasActiveReservations extends Domain.Rejection(
+	"AccountHasActiveReservations",
+	{
+		accountId: ScopedAccountId,
+		activeCount: NonNegativeUnits,
+	},
+) {}
+
+export class BudgetCapBelowLiabilities extends Domain.Rejection(
+	"BudgetCapBelowLiabilities",
+	{
+		spentMicros: NonNegativeMicros,
+		heldMicros: NonNegativeMicros,
+		requestedCapMicros: NonNegativeMicros,
+	},
+) {}
+
 export class DuplicateReservation extends Domain.Rejection(
 	"DuplicateReservation",
 	{
@@ -160,7 +177,7 @@ export class ConfigureDispatchAccount extends Domain.Command(
 			budgetCapMicros: Schema.NullOr(NonNegativeMicros),
 		},
 		events: [DispatchAccountConfigured],
-		rejects: [],
+		rejects: [AccountHasActiveReservations, BudgetCapBelowLiabilities],
 	},
 	{
 		description:
@@ -349,15 +366,38 @@ export class DispatchAccount extends Domain.Aggregate("DispatchAccount", {
 		ExpirePendingReservations,
 	],
 	decide: {
-		ConfigureDispatchAccount: (_state, cmd) => [
-			new DispatchAccountConfigured({
-				listUnitMicros: cmd.listUnitMicros,
-				freeHeadroom: cmd.freeHeadroom,
-				rateHeadroom: cmd.rateHeadroom,
-				concurrencyHeadroom: cmd.concurrencyHeadroom,
-				budgetCapMicros: cmd.budgetCapMicros,
-			}),
-		],
+		ConfigureDispatchAccount: (state, cmd, { id }) => {
+			if (state._tag === "Configured") {
+				const activeCount = state.reservations.filter(
+					(entry) => entry._tag === "Pending" || entry._tag === "Running",
+				).length;
+				if (activeCount > 0) {
+					return new AccountHasActiveReservations({
+						accountId: id,
+						activeCount: decodeNonNegativeUnits(activeCount),
+					});
+				}
+				if (
+					cmd.budgetCapMicros !== null &&
+					cmd.budgetCapMicros < state.spentMicros + state.heldMicros
+				) {
+					return new BudgetCapBelowLiabilities({
+						spentMicros: state.spentMicros,
+						heldMicros: state.heldMicros,
+						requestedCapMicros: cmd.budgetCapMicros,
+					});
+				}
+			}
+			return [
+				new DispatchAccountConfigured({
+					listUnitMicros: cmd.listUnitMicros,
+					freeHeadroom: cmd.freeHeadroom,
+					rateHeadroom: cmd.rateHeadroom,
+					concurrencyHeadroom: cmd.concurrencyHeadroom,
+					budgetCapMicros: cmd.budgetCapMicros,
+				}),
+			];
+		},
 		ReserveDispatch: (state, cmd, { id }) => {
 			if (state._tag === "Unconfigured") {
 				return new AccountNotConfigured({ accountId: id });

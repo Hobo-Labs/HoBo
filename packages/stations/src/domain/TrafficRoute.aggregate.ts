@@ -101,7 +101,7 @@ export class RegisterTrafficIncumbent extends Domain.Command(
 			policy: StabilityPolicy,
 		},
 		events: [TrafficIncumbentRegistered],
-		rejects: [],
+		rejects: [CutoverPreconditionRefused],
 	},
 	{
 		description:
@@ -140,7 +140,7 @@ export class RecordTtlLowered extends Domain.Command(
 			ttlSeconds: TtlSeconds,
 		},
 		events: [CutoverTtlLowered],
-		rejects: [CutoverNotInProgress],
+		rejects: [CutoverNotInProgress, CutoverPreconditionRefused],
 	},
 	{
 		description:
@@ -156,7 +156,7 @@ export class RecordRampStep extends Domain.Command(
 			targetWeightPercent: RampWeightPercent,
 		},
 		events: [CutoverRampAdvanced],
-		rejects: [CutoverNotInProgress],
+		rejects: [CutoverNotInProgress, CutoverPreconditionRefused],
 	},
 	{
 		description: "Record an observed healthy traffic weight ramp step.",
@@ -171,7 +171,7 @@ export class CompleteTrafficCutover extends Domain.Command(
 			completedAtMs: EpochMs,
 		},
 		events: [CutoverCompleted],
-		rejects: [CutoverNotInProgress],
+		rejects: [CutoverNotInProgress, CutoverPreconditionRefused],
 	},
 	{
 		description:
@@ -295,13 +295,25 @@ export class TrafficRoute extends Domain.Aggregate("TrafficRoute", {
 		FlagCutoverReconciliation,
 	],
 	decide: {
-		RegisterTrafficIncumbent: (_state, cmd) => [
-			new TrafficIncumbentRegistered({
-				incumbent: cmd.incumbent,
-				ttlSeconds: cmd.ttlSeconds,
-				policy: cmd.policy,
-			}),
-		],
+		RegisterTrafficIncumbent: (state, cmd) => {
+			if (state._tag === "ReconciliationRequired") {
+				return new CutoverPreconditionRefused({
+					reason: "reconciliation-pending",
+				});
+			}
+			if (state._tag === "TtlLowering" || state._tag === "Ramping") {
+				return new CutoverPreconditionRefused({
+					reason: "cutover-already-in-progress",
+				});
+			}
+			return [
+				new TrafficIncumbentRegistered({
+					incumbent: cmd.incumbent,
+					ttlSeconds: cmd.ttlSeconds,
+					policy: cmd.policy,
+				}),
+			];
+		},
 		ProposeBudgetMigration: (state, cmd) => {
 			switch (state._tag) {
 				case "Unregistered":
@@ -358,14 +370,24 @@ export class TrafficRoute extends Domain.Aggregate("TrafficRoute", {
 			}
 		},
 		RecordTtlLowered: (state, cmd) => {
-			if (state._tag !== "TtlLowering" && state._tag !== "Ramping") {
+			if (state._tag !== "TtlLowering") {
 				return new CutoverNotInProgress({ phase: state._tag });
+			}
+			if (cmd.ttlSeconds >= state.ttlSeconds) {
+				return new CutoverPreconditionRefused({
+					reason: "ttl-not-lowered",
+				});
 			}
 			return [new CutoverTtlLowered({ ttlSeconds: cmd.ttlSeconds })];
 		},
 		RecordRampStep: (state, cmd) => {
-			if (state._tag !== "TtlLowering" && state._tag !== "Ramping") {
+			if (state._tag !== "Ramping") {
 				return new CutoverNotInProgress({ phase: state._tag });
+			}
+			if (cmd.targetWeightPercent <= state.targetWeightPercent) {
+				return new CutoverPreconditionRefused({
+					reason: "ramp-not-monotonic",
+				});
 			}
 			return [
 				new CutoverRampAdvanced({
@@ -377,6 +399,11 @@ export class TrafficRoute extends Domain.Aggregate("TrafficRoute", {
 		CompleteTrafficCutover: (state, cmd) => {
 			if (state._tag !== "Ramping") {
 				return new CutoverNotInProgress({ phase: state._tag });
+			}
+			if (state.targetWeightPercent !== 100) {
+				return new CutoverPreconditionRefused({
+					reason: "ramp-incomplete",
+				});
 			}
 			return [
 				new CutoverCompleted({

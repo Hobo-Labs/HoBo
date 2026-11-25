@@ -44,6 +44,11 @@ export const NonNegativeMs = Schema.Int.check(
 ).pipe(Schema.brand("NonNegativeMs"));
 export type NonNegativeMs = typeof NonNegativeMs.Type;
 
+export const NonNegativeSeconds = Schema.Int.check(
+	Schema.isGreaterThanOrEqualTo(0),
+).pipe(Schema.brand("NonNegativeSeconds"));
+export type NonNegativeSeconds = typeof NonNegativeSeconds.Type;
+
 export const EpochMs = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).pipe(
 	Schema.brand("EpochMs"),
 );
@@ -94,7 +99,7 @@ export type ProgressiveRampPlan = typeof ProgressiveRampPlan.Type;
 export const LoweredTtlEvidence = Schema.Struct({
 	previousTtlSeconds: TtlSeconds,
 	loweredTtlSeconds: TtlSeconds,
-	waitedSeconds: NonNegativeMs,
+	waitedSeconds: NonNegativeSeconds,
 })
 	.check(
 		Schema.makeFilter(
@@ -127,12 +132,16 @@ export const CutoverRefusalReason = Schema.Literals([
 	"reconciliation-pending",
 	"target-matches-incumbent",
 	"preconditions-failed",
+	"ttl-not-lowered",
+	"ramp-not-monotonic",
+	"ramp-incomplete",
 ]);
 export type CutoverRefusalReason = typeof CutoverRefusalReason.Type;
 
 export const decodeTtlSeconds = Schema.decodeSync(TtlSeconds);
 export const decodeRampWeightPercent = Schema.decodeSync(RampWeightPercent);
 export const decodeNonNegativeMs = Schema.decodeSync(NonNegativeMs);
+export const decodeNonNegativeSeconds = Schema.decodeSync(NonNegativeSeconds);
 export const decodeEpochMs = Schema.decodeSync(EpochMs);
 export const decodeNonNegativeCount = Schema.decodeSync(NonNegativeCount);
 export const decodePositiveSwapLimit = Schema.decodeSync(PositiveSwapLimit);

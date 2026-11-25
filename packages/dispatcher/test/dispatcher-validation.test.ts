@@ -76,7 +76,7 @@ describe("parseCreditLedgerView wire boundary", () => {
 });
 
 describe("createDispatcherRegistry", () => {
-	it("indexes only registered providers by category", () => {
+	it("indexes only registered providers by category and rejects non-array lists", () => {
 		const registry = createDispatcherRegistry([
 			runner("a"),
 			runner("b", { registered: false }),
@@ -84,10 +84,31 @@ describe("createDispatcherRegistry", () => {
 		expect(registry.records).toHaveLength(2);
 		expect(registry.byCategory.get("runner")).toHaveLength(1);
 		expect(registry.schema).toMatch(/\.registry$/u);
+		expect(createDispatcherRegistry().records).toEqual([]);
+		// SAFETY: runtime boundary check against non-array input.
+		expect(() => createDispatcherRegistry({} as never)).toThrow(TypeError);
 	});
 });
 
-describe("decideDispatch decision record", () => {
+describe("decideDispatch refusals and decision record", () => {
+	it("refuses malformed requests, categories, units, and unknown objectives", () => {
+		// SAFETY: runtime boundary check against null request.
+		expect(() => decideDispatch(null as never)).toThrow(TypeError);
+		expect(() => dispatch({ dispatchId: undefined })).toThrow(
+			/request\.dispatchId/u,
+		);
+		expect(() => dispatch({ category: undefined })).toThrow(TypeError);
+		expect(() => dispatch({ category: "gpu" })).toThrow(TypeError);
+		for (const units of [0, -1, "10"]) {
+			expect(() => dispatch({ units })).toThrow(TypeError);
+		}
+		expect(dispatch({ units: undefined }).ok).toBe(true);
+		expect(dispatch({ units: null }).ok).toBe(true);
+		expect(() => dispatch({ objective: "minimize-latency" })).toThrow(
+			TypeError,
+		);
+	});
+
 	it("fails cleanly with empty ranking when no registered candidates exist", () => {
 		const decision = dispatch({
 			registry: createDispatcherRegistry([runner("a", { registered: false })]),
@@ -112,6 +133,10 @@ describe("decideDispatch decision record", () => {
 		expect(decision.dispatchEvent.data.ledgerInput.reservationId).toBe(
 			"reservation-intent-d1",
 		);
+		expect(
+			dispatch({ reservationId: "r-explicit" }).dispatchEvent.data.ledgerInput
+				.reservationId,
+		).toBe("r-explicit");
 		expect(decision.dispatchEvent.data.candidates).toHaveLength(2);
 		expect(decision.dispatchEvent.data.candidates[0]?.rationale).toBeTruthy();
 		expect(decision.replayInput.ledgerView).not.toBe(input);

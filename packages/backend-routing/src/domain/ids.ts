@@ -4,7 +4,7 @@ export const FleetId = Schema.NonEmptyString.pipe(Schema.brand("FleetId"));
 export type FleetId = typeof FleetId.Type;
 
 export const FleetMemberName = Schema.String.check(
-	Schema.isPattern(/^[a-z0-9][a-z0-9._-]{0,63}$/u),
+	Schema.isPattern(/^[a-z0-9][a-z0-9_-]{0,62}$/u),
 ).pipe(Schema.brand("FleetMemberName"));
 export type FleetMemberName = typeof FleetMemberName.Type;
 

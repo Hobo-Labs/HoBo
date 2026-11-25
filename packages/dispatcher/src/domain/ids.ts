@@ -149,11 +149,11 @@ export const ActiveReservationHold = Schema.Struct({
 		Schema.makeFilter(
 			(hold) =>
 				hold.freeUnits + hold.paidUnits === hold.units &&
-				hold.concurrencySlots <= hold.units,
+				hold.concurrencySlots <= 1,
 			{
 				title: "ActiveReservationHold",
 				description:
-					"Free plus paid units must equal reserved units and concurrency slots cannot exceed reserved units.",
+					"Free plus paid units must equal reserved units and concurrency slots must be at most 1.",
 			},
 		),
 	)

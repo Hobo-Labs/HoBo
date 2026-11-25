@@ -2,12 +2,11 @@
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
 		"noEmit": true,
-		"rootDir": "src",
 		"types": ["node"],
 		"strict": true,
 		"noImplicitAny": true,
 		"noUncheckedIndexedAccess": true,
 		"exactOptionalPropertyTypes": true
 	},
-	"include": ["src/domain"]
+	"include": ["src/domain", "test/dispatch-routing-domain.test.ts"]
 }

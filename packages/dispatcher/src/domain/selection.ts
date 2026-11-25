@@ -170,8 +170,11 @@ export function selectDispatchCandidate(
 			compareCodeUnits(left.providerId, right.providerId),
 	);
 
-	excluded.sort((left, right) =>
-		compareCodeUnits(left.providerId, right.providerId),
+	excluded.sort(
+		(left, right) =>
+			compareCodeUnits(left.providerId, right.providerId) ||
+			compareCodeUnits(left.accountId, right.accountId) ||
+			compareCodeUnits(left.reason, right.reason),
 	);
 
 	const [winner, ...rest] = eligible;
