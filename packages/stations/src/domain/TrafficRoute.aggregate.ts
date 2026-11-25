@@ -277,7 +277,10 @@ const INITIAL_TRAFFIC_ROUTE_STATE: TrafficRouteState = {
 	_tag: "Unregistered",
 };
 
-function sameTarget(left: CloudBackendTarget, right: CloudBackendTarget): boolean {
+function sameTarget(
+	left: CloudBackendTarget,
+	right: CloudBackendTarget,
+): boolean {
 	return left.provider === right.provider && left.backendId === right.backendId;
 }
 

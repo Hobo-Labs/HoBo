@@ -72,9 +72,7 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 		expect(() =>
 			decodeProgressiveRampPlan([WEIGHT_50, WEIGHT_10, WEIGHT_100]),
 		).toThrow();
-		expect(() =>
-			decodeProgressiveRampPlan([WEIGHT_10, WEIGHT_50]),
-		).toThrow();
+		expect(() => decodeProgressiveRampPlan([WEIGHT_10, WEIGHT_50])).toThrow();
 		expect(() =>
 			decodeLoweredTtlEvidence({
 				previousTtlSeconds: TTL_300,
@@ -391,7 +389,10 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 				Story.succeed(TrafficRoutingBackend.lowerTtl, {
 					appliedTtlSeconds: TTL_30,
 				}),
-				Story.then(rollbackRoute, new CutoverTtlLowered({ ttlSeconds: TTL_30 })),
+				Story.then(
+					rollbackRoute,
+					new CutoverTtlLowered({ ttlSeconds: TTL_30 }),
+				),
 				Story.call(TrafficRoutingBackend.applyWeight, {
 					routeId: rollbackRouteId,
 					to: VERCEL_TARGET,
