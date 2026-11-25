@@ -27,6 +27,5 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 }
 
 export function parseJsonValue(text: string): JsonValue {
-	// SAFETY: JSON.parse returns a JSON value at this document boundary.
 	return JSON.parse(text) as JsonValue;
 }

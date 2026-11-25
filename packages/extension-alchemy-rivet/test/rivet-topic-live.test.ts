@@ -33,7 +33,6 @@ it("runs the Alchemy-selected topic entrypoint in a standalone Rivet process", {
 						process.kill(-child.pid, "SIGKILL");
 					else child.kill("SIGKILL");
 				} catch (error) {
-					// SAFETY: process signaling errors carry Node's errno code.
 					if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
 				}
 			};

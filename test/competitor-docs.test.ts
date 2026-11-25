@@ -88,7 +88,6 @@ async function withCorpus(
 			"docs/competitors/index.md": CORPUS_INDEX,
 			"docs/competitors/matrix.md": MATRIX,
 			"docs/competitors/categories/index.md": CATEGORY_INDEX,
-			// The vocabulary is closed, so every category needs a page even when empty.
 			...Object.fromEntries(
 				CATEGORIES.map((category) => [
 					`docs/competitors/categories/${category}.md`,
@@ -156,7 +155,6 @@ test("requires primary_category to be a declared category", async () => {
 			categories: "[infrastructure-from-code, runtime-substrates]",
 		}),
 	});
-	// It is a declared category here, so this variant must pass that particular rule.
 	assert.ok(!found.some((message) => message.includes("must also appear")));
 
 	const missing = await messages({

@@ -174,8 +174,6 @@ test("design doc checker rejects event families missing from the catalog", async
 	});
 });
 
-// Cold-CI machines run the doc linters far slower than local dev boxes;
-// give the real-repo lint sweep room instead of flaking at the 5s default.
 test("repository design docs pass link, ADR, glossary, and event-family lint", {
 	timeout: 120_000,
 }, async () => {

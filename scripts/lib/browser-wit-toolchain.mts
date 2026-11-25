@@ -60,7 +60,6 @@ export async function resolveBrowserWitComponentizeToolchain(
 	);
 	const [componentize, jcoManifest, componentizeManifest, esbuildManifest] =
 		await Promise.all([
-			// SAFETY: import target is resolved from @hobo/runtime-wasm's dependency graph.
 			import(
 				pathToFileURL(componentizeEntry).href
 			) as Promise<BrowserWitComponentizeModule>,
@@ -102,6 +101,5 @@ async function readPackageVersion(packageJsonPath: string): Promise<string> {
 	if (Object.prototype.toString.call(manifest.version) !== "[object String]") {
 		throw new Error(`Toolchain package has no version: ${packageJsonPath}`);
 	}
-	// SAFETY: `manifest.version` was verified to be a string above.
 	return manifest.version as string;
 }
