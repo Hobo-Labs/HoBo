@@ -8,4 +8,7 @@ message BetterAuthConfigRecord {
   string base_path = 3;
   string secret_ref = 4;
   string database_profile = 5;
+  bool email_and_password_enabled = 6;
+  repeated string social_providers = 7;
+  bool organizations_enabled = 8;
 }
