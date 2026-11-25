@@ -1196,6 +1196,30 @@ export function applyWorkflowPlan(
 	return { source: rewritten, changed, refused };
 }
 
+export type WorkflowRestoreResult = Readonly<{
+	source: string;
+	restored: number;
+}>;
+
+const RESTORE_RUNS_ON_LINE =
+	/^([ \t]*runs-on:[ \t]*)(['"]?)([^#\r\n]+?)\2([ \t]+#[ \t]*was[ \t]+([^\r\n]+?)[ \t]*)(\r?)$/u;
+
+export function restoreWorkflowPlan(source: string): WorkflowRestoreResult {
+	let restored = 0;
+	const lines = source.split("\n").map((line) => {
+		const match = RESTORE_RUNS_ON_LINE.exec(line);
+		if (!match) return line;
+		const lead = match[1] ?? "";
+		const quote = match[2] ?? "";
+		const original = (match[5] ?? "").trim();
+		const cr = match[6] ?? "";
+		if (original.length === 0) return line;
+		restored += 1;
+		return `${lead}${labelText(original, quote)}${cr}`;
+	});
+	return { source: lines.join("\n"), restored };
+}
+
 export function describeWorkflowSkip(reason: WorkflowSkipReason): string {
 	switch (reason) {
 		case "reusable_workflow":

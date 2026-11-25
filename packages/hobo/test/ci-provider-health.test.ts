@@ -108,6 +108,19 @@ describe("hobo ci provider-health (R09)", () => {
 		expect(again.stdout).toContain("has no record to clear");
 	});
 
+	it("clears all tripped runner types for a provider when label is omitted", async () => {
+		const { cli, home, path } = await setup();
+		await tripDepot(path);
+		const cleared = await cli.run(["ci", "provider-health", "clear", "depot"], {
+			cwd: home,
+		});
+		expect(cleared.exitCode).toBe(0);
+		expect(cleared.stdout).toContain("Cleared depot:depot-ubuntu-24.04");
+		const store = new SqliteProviderHealthStore(path);
+		expect((await store.unhealthy(NOW)).size).toBe(0);
+		store.close();
+	});
+
 	it("refuses an unknown provider and a malformed call", async () => {
 		const { cli, home } = await setup();
 		const unknown = await cli.run(

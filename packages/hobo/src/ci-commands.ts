@@ -4,6 +4,7 @@ import { CI_ACTIVITY_COMMAND } from "./ci-activity.js";
 import { CI_MACHINE_CONNECT_COMMAND } from "./ci-machine-connect.js";
 import { CI_PERFORMANCE_COMMAND } from "./ci-performance.js";
 import { CI_PROVIDER_HEALTH_COMMAND } from "./ci-provider-health.js";
+import { CI_RUNNERS_COMMAND } from "./ci-runners.js";
 import { CI_USAGE_COMMAND } from "./ci-usage.js";
 
 export type CiLocalRepository = Readonly<{
@@ -32,6 +33,7 @@ export type CiCommand = Readonly<{
 
 export const CI_COMMANDS: readonly CiCommand[] = [
 	CI_MACHINE_CONNECT_COMMAND,
+	CI_RUNNERS_COMMAND,
 	CI_PROVIDER_HEALTH_COMMAND,
 	CI_ACTIVITY_COMMAND,
 	CI_USAGE_COMMAND,

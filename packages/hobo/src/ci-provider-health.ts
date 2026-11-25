@@ -16,7 +16,7 @@ import type { CiCommand, CiCommandContext } from "./ci-commands.js";
 import { defaultHoboHome } from "./hobo-home.js";
 
 const USAGE =
-	"Usage: hobo ci provider-health [--db <path>]\n       hobo ci provider-health clear <provider> <label> [--db <path>]";
+	"Usage: hobo ci provider-health [--db <path>]\n       hobo ci provider-health clear <provider> [<label>] [--db <path>]";
 
 export function providerHealthDbPath(
 	args: readonly string[],
@@ -82,7 +82,7 @@ async function list(path: string, nowMs: number): Promise<CommandResult> {
 async function clear(
 	path: string,
 	provider: string,
-	label: string,
+	label: string | undefined,
 ): Promise<CommandResult> {
 	const known = HOSTED_RUNNER_PROVIDERS.find((entry) => entry === provider);
 	if (!known)
@@ -92,20 +92,57 @@ async function clear(
 			code: "HOBO_CLI_USAGE",
 			message: `"${provider}" is not a hosted provider. Use one of: ${HOSTED_RUNNER_PROVIDERS.join(", ")}.`,
 		};
-	const key = providerHealthKey(known, label);
+	if (label !== undefined) {
+		const key = providerHealthKey(known, label);
+		if (!existsSync(path))
+			return {
+				message: `${key} has no record to clear; it is healthy.`,
+				data: { path, key, cleared: false },
+			};
+		const store = new SqliteProviderHealthStore(path);
+		try {
+			const cleared = await store.clear(key);
+			return {
+				message: cleared
+					? `Cleared ${key}; the next job may use it.`
+					: `${key} has no record to clear; it is healthy.`,
+				data: { path, key, cleared },
+			};
+		} finally {
+			store.close();
+		}
+	}
 	if (!existsSync(path))
 		return {
-			message: `${key} has no record to clear; it is healthy.`,
-			data: { path, key, cleared: false },
+			message: `${known} has no record to clear; it is healthy.`,
+			data: { path, provider: known, clearedKeys: [], cleared: false },
+		};
+	const prefix = `${known}:`;
+	const keys = readProviderHealthRecords(path)
+		.map((record) => record.key)
+		.filter((key) => key.startsWith(prefix));
+	if (keys.length === 0)
+		return {
+			message: `${known} has no record to clear; it is healthy.`,
+			data: { path, provider: known, clearedKeys: [], cleared: false },
 		};
 	const store = new SqliteProviderHealthStore(path);
+	const clearedKeys: string[] = [];
 	try {
-		const cleared = await store.clear(key);
+		for (const key of keys) {
+			if (await store.clear(key)) clearedKeys.push(key);
+		}
 		return {
-			message: cleared
-				? `Cleared ${key}; the next job may use it.`
-				: `${key} has no record to clear; it is healthy.`,
-			data: { path, key, cleared },
+			message:
+				clearedKeys.length > 0
+					? `Cleared ${clearedKeys.join(", ")}; the next job may use ${known}.`
+					: `${known} has no record to clear; it is healthy.`,
+			data: {
+				path,
+				provider: known,
+				clearedKeys,
+				cleared: clearedKeys.length > 0,
+			},
 		};
 	} finally {
 		store.close();
@@ -117,7 +154,7 @@ async function run(context: CiCommandContext): Promise<CommandResult> {
 	const words = positional(context.args);
 	if (words.length === 0) return list(path, context.now());
 	const [verb, provider, label] = words;
-	if (verb === "clear" && provider && label && words.length === 3)
+	if (verb === "clear" && provider && (words.length === 2 || words.length === 3))
 		return clear(path, provider.toLowerCase(), label);
 	return { ok: false, status: "usage", code: "HOBO_CLI_USAGE", message: USAGE };
 }
@@ -125,6 +162,6 @@ async function run(context: CiCommandContext): Promise<CommandResult> {
 export const CI_PROVIDER_HEALTH_COMMAND: CiCommand = {
 	name: "provider-health",
 	summary:
-		"List hosted runner types the relay has stopped routing to; clear <provider> <label> lets one through again.",
+		"List hosted runner types the relay has stopped routing to; clear <provider> [<label>] lets them through again.",
 	run,
 };
