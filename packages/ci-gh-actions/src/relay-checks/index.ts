@@ -40,10 +40,12 @@ export {
 	type LintToolResult,
 	lintAnnotations,
 	lintFindings,
+	lintPathsOf,
 	lintSpan,
 	lintSummary,
 	lintToolResult,
 	lintToolsOf,
+	matchesLintPaths,
 } from "./lint.js";
 export {
 	ARCHIVE_DOWNLOAD_HOST,

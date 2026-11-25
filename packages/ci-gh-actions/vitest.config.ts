@@ -8,22 +8,23 @@ const ISOLATED = [
 	"contracts/backend-swap.consumer.test.ts",
 	"contracts/local-runner.pact.test.ts",
 	"test/ci-store-contract.test.ts",
+	"test/gh-relay-host.test.ts",
 	"test/pact-broker.test.ts",
 ];
 
 const setup = (name: string) =>
 	fileURLToPath(new URL(`./test/setup/${name}`, import.meta.url));
 
-// What both projects run with. The projects do not `extends: true` the root,
-// so the root's globalSetup runs once for the run, not once per project.
 const common = {
 	environment: "node",
-	// Native CLI startup shares CPU with other workspace suites in the final gate.
 	testTimeout: Number(process.env.HOBO_TEST_TIMEOUT ?? 10_000),
 	hookTimeout: Number(process.env.HOBO_TEST_TIMEOUT ?? 10_000),
-	// A spy a test leaves behind is undone before the next one, which matters
-	// once files share a worker.
 	restoreMocks: true,
+	server: {
+		deps: {
+			inline: [/@alchemy\.run\//, /\/alchemy\//],
+		},
+	},
 } as const;
 
 export default defineConfig({

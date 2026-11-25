@@ -20,6 +20,7 @@ import {
 	type LintSandbox,
 	type LintToolResult,
 	lintAnnotations,
+	lintPathsOf,
 	lintSpan,
 	lintSummary,
 	lintToolResult,
@@ -39,7 +40,7 @@ const CHECK_INPUTS: ReadonlyMap<RelayCheckName, readonly string[]> = new Map<
 	readonly string[]
 >([
 	["pr-title", ["types"]],
-	["lint", ["tools"]],
+	["lint", ["tools", "paths"]],
 ]);
 
 const PULL_REQUEST_EVENTS: ReadonlySet<string> = new Set([
@@ -283,6 +284,9 @@ class Checks {
 		const tools = lintToolsOf(step.inputs.get("tools"));
 		if (!tools.ok)
 			return failed("lint", `The lint check failed: ${tools.problem}.`);
+		const paths = lintPathsOf(step.inputs.get("paths"));
+		if (!paths.ok)
+			return failed("lint", `The lint check failed: ${paths.problem}.`);
 		const budgetMs = this.budgetMs;
 		const startedAt = performance.now();
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -338,6 +342,7 @@ class Checks {
 							archive,
 							timeoutMs,
 							network: "none",
+							...(paths.paths.length > 0 ? { paths: paths.paths } : undefined),
 						}),
 					);
 					if (
@@ -353,7 +358,7 @@ class Checks {
 						});
 						continue;
 					}
-					results.push(lintToolResult(tool, run, this.timeoutMs));
+					results.push(lintToolResult(tool, run, this.timeoutMs, paths.paths));
 				} catch (error) {
 					results.push({
 						tool,
