@@ -12,7 +12,7 @@ import {
 	copyHostWitTreeIntoWorkRoot,
 	guestSourcePathInWorkRoot,
 	resolveComponentizeHostWitPath,
-	witPathIsUnderWorkRoot,
+	sandboxWitDirIsUnderWorkRoot,
 } from "../lib/browser-wit-componentize-sandbox.mts";
 
 const repoRoot = path.join(import.meta.dirname, "..", "..");
@@ -21,9 +21,9 @@ const hostWitDir = path.join(repoRoot, "examples", "browser-runtime", "wit");
 describe("browser WIT componentize sandbox", () => {
 	it("repo wit path is outside a temp workRoot", () => {
 		const workRoot = path.join(tmpdir(), "hobo-browser-wit-test");
-		expect(witPathIsUnderWorkRoot(hostWitDir, workRoot)).toBe(false);
+		expect(sandboxWitDirIsUnderWorkRoot(hostWitDir, workRoot)).toBe(false);
 		expect(
-			witPathIsUnderWorkRoot(
+			sandboxWitDirIsUnderWorkRoot(
 				componentizeWitDirUnderWorkRoot(workRoot),
 				workRoot,
 			),
@@ -38,8 +38,8 @@ describe("browser WIT componentize sandbox", () => {
 		expect(source).toMatch(/readInlineComponentizeWit/);
 		expect(source).toMatch(/witWorld:\s*inlineWit/);
 		expect(source).not.toMatch(/witPath:\s*/);
-		expect(source).toMatch(/process\.chdir\(workRoot\)/);
-		expect(source).toMatch(/sourcePath:\s*BROWSER_WIT_GUEST_SOURCE_NAME/);
+		expect(source).not.toMatch(/process\.chdir\(/);
+		expect(source).toMatch(/sourcePath:\s*hostSourcePath/);
 		expect(source).toMatch(/await resolveComponentizeHostWitPath/);
 		expect(source).toMatch(/copyHostWitTreeIntoWorkRoot/);
 		expect(source).toMatch(/assertSandboxWitBeforeComponentize/);
@@ -63,7 +63,7 @@ describe("browser WIT componentize sandbox", () => {
 			const resolved = await resolveComponentizeHostWitPath(sandbox);
 			expect(path.isAbsolute(resolved)).toBe(true);
 			expect(path.basename(resolved)).toBe("station.wit");
-			expect(witPathIsUnderWorkRoot(resolved, workRoot)).toBe(true);
+			expect(sandboxWitDirIsUnderWorkRoot(resolved, workRoot)).toBe(true);
 		} finally {
 			await import("node:fs/promises").then((fs) =>
 				fs.rm(workRoot, { recursive: true, force: true }),
@@ -104,7 +104,7 @@ describe("browser WIT componentize sandbox", () => {
 		}
 	});
 
-	it("rejects componentize witPath outside workRoot even when host tree exists", async () => {
+	it("rejects componentize sandbox wit outside workRoot even when host tree exists", async () => {
 		const workRoot = await mkdtemp(path.join(tmpdir(), "hobo-wit-sandbox-"));
 		try {
 			await expect(

@@ -6,8 +6,6 @@ import { assertReleasePagesBrowserRuntimeWit } from "./release-pages-wit.mts";
 
 export const SANDBOX_WIT_DIR_NAME = "wit" as const;
 export const SANDBOX_WIT_STATION_FILE = "station.wit" as const;
-export const COMPONENTIZE_WIT_PATH =
-	`${SANDBOX_WIT_DIR_NAME}/${SANDBOX_WIT_STATION_FILE}` as const;
 export const BROWSER_WIT_GUEST_SOURCE_NAME = "station-guest.mjs" as const;
 
 export function componentizeWitDirUnderWorkRoot(workRoot: string): string {
@@ -52,17 +50,17 @@ export function assertGuestSourceUnderWorkRoot(
 	}
 }
 
-export function witPathIsUnderWorkRoot(
-	witPath: string,
+export function sandboxWitDirIsUnderWorkRoot(
+	sandboxWitDir: string,
 	workRoot: string,
 ): boolean {
 	let resolvedWit: string;
 	let resolvedRoot: string;
 	try {
-		resolvedWit = realpathSync.native(path.resolve(witPath));
+		resolvedWit = realpathSync.native(path.resolve(sandboxWitDir));
 		resolvedRoot = realpathSync.native(path.resolve(workRoot));
 	} catch {
-		resolvedWit = path.resolve(witPath);
+		resolvedWit = path.resolve(sandboxWitDir);
 		resolvedRoot = path.resolve(workRoot);
 	}
 	const rootPrefix = resolvedRoot.endsWith(path.sep)
@@ -90,9 +88,9 @@ export async function assertSandboxWitBeforeComponentize(
 	hostWitDir: string,
 	gitRef = "HEAD",
 ): Promise<void> {
-	if (!witPathIsUnderWorkRoot(sandboxWitDir, workRoot)) {
+	if (!sandboxWitDirIsUnderWorkRoot(sandboxWitDir, workRoot)) {
 		throw new Error(
-			`browser-wit: componentize witPath must live under workRoot (${workRoot}); got ${sandboxWitDir}`,
+			`browser-wit: componentize sandbox wit dir must live under workRoot (${workRoot}); got ${sandboxWitDir}`,
 		);
 	}
 	const stationWit = path.join(sandboxWitDir, "station.wit");

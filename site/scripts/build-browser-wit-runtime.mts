@@ -174,8 +174,6 @@ export async function buildBrowserWitRuntime(
 				workRoot,
 				sourcePath: hostSourcePath,
 				hostWitPath,
-				componentizeWitPath: "wit/station.wit",
-				witDelivery: "inline-witWorld",
 			},
 		);
 		process.stderr.write("browser-wit: componentizing real guest\n");
@@ -190,20 +188,14 @@ export async function buildBrowserWitRuntime(
 			"utf8",
 		);
 		const cacheHome = process.env.XDG_CACHE_HOME;
-		const previousWorkingDirectory = process.cwd();
-		process.chdir(workRoot);
 		let built: { component: Uint8Array };
-		try {
-			built = await toolchain.componentize.componentize({
-				env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
-				sourcePath: BROWSER_WIT_GUEST_SOURCE_NAME,
-				witWorld: inlineWit,
-				worldName: "browser-station",
-				disableFeatures: ["random", "clocks", "stdio", "http"],
-			});
-		} finally {
-			process.chdir(previousWorkingDirectory);
-		}
+		built = await toolchain.componentize.componentize({
+			env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
+			sourcePath: hostSourcePath,
+			witWorld: inlineWit,
+			worldName: "browser-station",
+			disableFeatures: ["random", "clocks", "stdio", "http"],
+		});
 		const componentDigest = sha256(built.component);
 		process.stderr.write("browser-wit: transpiling component for browser\n");
 		const transpiled = await toolchain.jco.transpile(built.component, {
@@ -430,9 +422,10 @@ function sha256(bytes: Uint8Array): `sha256:${string}` {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
+const scriptEntry = process.argv[1];
 if (
-	process.argv[1] !== undefined &&
-	pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url
+	scriptEntry !== undefined &&
+	pathToFileURL(path.resolve(scriptEntry)).href === import.meta.url
 ) {
 	const result = await buildBrowserWitRuntime();
 	process.stdout.write(`${JSON.stringify(result)}\n`);
