@@ -52,6 +52,7 @@ export default defineConfig({
 		{
 			files: [
 				"packages/*/src/domain/**/*.ts",
+				"packages/*/src/host/**/*.ts",
 				"packages/ci/src/cluster/**/*.ts",
 				"packages/iac/iac-alchemy/src/**/*.ts",
 			],
