@@ -1,6 +1,11 @@
 ### hobo — HoBo's own MCP server (this repo)
 
 Source: extracted from the HoBo repository's `docs/agent-tooling.md`, section "hobo — HoBo's own MCP server (this repo)"; re-extract when that section changes. Commands marked **repo-only** need the HoBo repository checkout.
+
+After the canonical text below changes, re-extract
+`hobo-setup/references/agent-tooling.md` in the repo skill mirrors and portable
+plugin so `agent-plugin:check` stays green.
+
 `.mcp.json`, `.codex/config.toml`, and `.cursor/mcp.json` register the server from source without keys. The host must start the launcher within its intended trusted HoBo checkout: the launcher cannot identify which sibling checkout the host trusted. The Codex and Cursor launchers resolve that Git worktree root and refuse an ambiguous nested Git checkout. For a HoBo checkout nested inside another repository, configure the host to run `node --import tsx packages/hobo/src/bin/hobo-mcp.ts` with its working directory set to the HoBo checkout's absolute root. Install the workspace dependencies and run `pnpm exec turbo run build --filter=@hobo/hobo...` before starting an agent session in a fresh checkout; the source launcher imports built workspace packages. Codex loads the project configuration in a trusted project when the session starts. Registration alone does not establish that the host supports a private owner form. The server exposes the CLI verbs and secret capture used by the **hobo-deploy** skill. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript without printing owner settings; it accepts transcript paths only and rejects operator flags that would weaken the audit.
 
 `plugins/hobo/` is the portable Agent Plugins v1.0.0 plugin, not the monorepo checkout root. In a HoBo checkout, `pnpm run agent-plugin:build` bundles the MCP server with esbuild into the gitignored `plugins/hobo/bin/hobo-mcp.mjs`; outside GitHub Actions it requires `HOBO_AGENT_PLUGIN_LOCAL_BUILD=1`, a clean working tree (including untracked files outside gitignore), and a matching reviewed commit for non-publishing PR builds. `pnpm run agent-plugin:check` requires `HOBO_AGENT_PLUGIN_LOCAL_CHECK=1` outside CI, checks plugin conformance, skill sync, applies `@hobo/agent-skills` strict frontmatter rules to repo-owned skills (every `.agents/skills` directory with a `SKILL.md` that is not listed in `skills-lock.json`), and drifts against this `agent-tooling.md` extract (mirrored under `hobo-setup/references/agent-tooling.md` in the repo skill, Claude mirror, and portable plugin). On `refs/heads/main`, checks require `GH_TOKEN` for the verification step and `pnpm run agent-plugin:check -- --verify-attestation`; attestation verification pins repository, workflow, ref, and GitHub OIDC issuer identity, and PR and merge-group bundles are marked non-publishing and never accepted as main provenance. CI validates the plugin in dedicated steps: PR and merge-group jobs run `agent-plugin:build` and unflagged `agent-plugin:check`, while main's `agent-plugin-provenance` job publishes bundle provenance and `main-gate`'s attestation step runs `agent-plugin:build` and `agent-plugin:check -- --verify-attestation` with step-scoped `GH_TOKEN`; `check:all` and `verify:full` do not run the plugin check. Main-gate sparse checkout includes `plugins` so the main-gate checks can read plugin sources. See `plugins/hobo/README.md` for the plugin layout and usage.
@@ -56,8 +61,15 @@ credential locators `owner://<NAME>` (`env://<NAME>` is refused) from that sessi
 `HOSTINGER_API_TOKEN` from the owner's store without the value reaching the
 agent; `hobo ci fleet status|restart|start` (the `ci` tool with
 `args: ["fleet", ...]`) reads the same `owner://HOSTINGER_API_TOKEN` to list and
-power-cycle the CI fleet's Hostinger VPS, and refuses with
-`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until the session holds it;
+power-cycle the CI fleet's Hostinger VPS, or, for an Infisical store without
+that entry, calls Hostinger through Infisical Agent Vault: HoBo runs the
+`infisical agent-vault proxy` itself on loopback for the owner's one Agent
+Vault project whose `http` service covers `developers.hostinger.com` (the
+signed-in identity must be an Agent Vault admin there or hold an access
+bundle with the service), so the token stays in Agent Vault; it refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until one of the two is in place, and
+with `HOBO_AGENT_VAULT_PROJECT_AMBIGUOUS` when the identity reaches several
+Agent Vault projects;
 `hobo ci fleet caches --plan|--apply|--status` (`args: ["fleet", "caches", ...]`)
 reads the ARC cluster's kubeconfig as `owner://HOSTINGER_ARC_KUBECONFIG` the
 same way to mount and prewarm the scale sets' node pnpm store and image cache;
@@ -84,3 +96,4 @@ Its `connected` status indicates that the binding was read; it does not verify
 owner authentication. `writable` reflects an active writer session. The
 adapter accepts a writer identifier in tool arguments and returns store
 references, so it is not the private owner setup described by the setup skill.
+
