@@ -8,6 +8,17 @@ message BetterAuthBundlePortRefsRecord {
   string signing_secret_ref = 3;
 }
 
+message BetterAuthParsedConfigRecord {
+  string contract = 1;
+  string adapter_id = 2;
+  string base_path = 3;
+  string secret_ref = 4;
+  string database_profile = 5;
+  bool email_and_password_enabled = 6;
+  repeated string social_providers = 7;
+  bool organizations_enabled = 8;
+}
+
 message BetterAuthBundlePlanRecord {
   string pack_id = 1;
   string descriptor_id = 2;
@@ -17,4 +28,5 @@ message BetterAuthBundlePlanRecord {
   string base_path = 6;
   string route_pattern = 7;
   BetterAuthBundlePortRefsRecord ports = 8;
+  BetterAuthParsedConfigRecord parsed_config = 9;
 }
