@@ -5,7 +5,7 @@
 	--feet: calc(var(--H) * 0.107);
 	--base: calc(var(--H) * 0.14);
 	--line: calc(var(--H) * 0.75 + 8px);
-	--ps: 0.78; /* props against Bo */
+	--ps: 0.78;
 	--grain: var(--border-strong);
 	--rim: transparent;
 	--art-filter: none;
