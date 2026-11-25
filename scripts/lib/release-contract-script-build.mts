@@ -1,5 +1,6 @@
 export const RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS = [
 	"@hobo/provider-redaction",
+	"@hobo/cd",
 ] as const;
 
 export function releaseContractScriptTurboFilters(): readonly string[] {

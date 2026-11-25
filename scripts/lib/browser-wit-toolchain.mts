@@ -7,8 +7,7 @@ export interface BrowserWitComponentizeOptions {
 	sourcePath: string;
 	worldName: string;
 	disableFeatures: string[];
-	witWorld?: string;
-	witPath?: string;
+	witWorld: string;
 	env?: { XDG_CACHE_HOME: string } | undefined;
 }
 
@@ -85,16 +84,14 @@ export function logBrowserWitComponentizeToolchain(
 	context: {
 		sourcePath: string;
 		hostWitPath: string;
-		componentizeWitPath: string;
 		workRoot: string;
-		witDelivery: "inline-witWorld" | "witPath";
 	},
 ): void {
 	process.stderr.write(
 		`browser-wit: toolchain jco@${toolchain.versions.jco} componentize-js@${toolchain.versions.componentizeJs} esbuild@${toolchain.versions.esbuild} (resolved ${toolchain.componentizePackageRoot})\n`,
 	);
 	process.stderr.write(
-		`browser-wit: componentize paths workRoot=${context.workRoot} source=${context.sourcePath} hostWit=${context.hostWitPath} delivery=${context.witDelivery} legacyRef=${context.componentizeWitPath}\n`,
+		`browser-wit: componentize paths workRoot=${context.workRoot} source=${context.sourcePath} hostWit=${context.hostWitPath} delivery=inline-witWorld\n`,
 	);
 }
 

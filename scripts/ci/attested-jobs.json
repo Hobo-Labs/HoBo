@@ -881,7 +881,7 @@
 				},
 				{
 					"name": "Build release-contract script dependencies",
-					"run": "pnpm exec turbo run build --filter=@hobo/provider-redaction --output-logs=new-only --concurrency=${{ env.HOBO_TURBO_CONCURRENCY }}",
+					"run": "pnpm exec turbo run build --filter=@hobo/provider-redaction --filter=@hobo/cd --output-logs=new-only --concurrency=${{ env.HOBO_TURBO_CONCURRENCY }}",
 					"local": "run"
 				},
 				{
