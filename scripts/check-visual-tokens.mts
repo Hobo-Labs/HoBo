@@ -18,7 +18,7 @@ type PackageInfo = { webUi: boolean; webFramework: boolean };
 export type VisualTokenProject = { rel: string; reason: string };
 
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-export const WEB_UI_ROOTS = ["site", "packages/control-yard"] as const;
+export const WEB_UI_ROOTS = ["site"] as const;
 export const WEB_FRAMEWORK_DEPS = new Set([
 	"astro",
 	"next",
@@ -401,11 +401,6 @@ function checkProject(repoRoot: string, project: VisualTokenProject): string[] {
 				return checkCssThemes(
 					readSource(repoRoot, contract["connect-ui"].palette),
 					contract["connect-ui"],
-				);
-			case contract["control-yard"].project:
-				return checkCssThemes(
-					readSource(repoRoot, contract["control-yard"].palette),
-					contract["control-yard"],
 				);
 			case contract.mcp.project: {
 				const source = embeddedStyle(
