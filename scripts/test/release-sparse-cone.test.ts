@@ -532,9 +532,7 @@ describe("release workflow sparse-checkout sync", () => {
 		expect(block).toMatch(/sparse checkout missing or empty/);
 		expect(block).toMatch(/does not match HEAD/);
 		expect(block).toMatch(/ls -la "\$path"/);
-		expect(block).not.toMatch(
-			/if \[ -e "\$target" \]; then[\s\S]*return 0/,
-		);
+		expect(block).not.toMatch(/if \[ -e "\$target" \]; then[\s\S]*return 0/);
 		expect(block).toMatch(
 			/git sparse-checkout add --skip-checks -- "\$target"/,
 		);
