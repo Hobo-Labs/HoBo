@@ -325,6 +325,17 @@ export class FleetAssignment extends Domain.Aggregate("FleetAssignment", {
 					});
 				}
 			}
+			if (cmd.cause === "budget-cap") {
+				if (
+					cmd.observedUtilization === null ||
+					cmd.observedUtilization >= state.marks.switchBackBelow
+				) {
+					return new SwitchUtilizationThresholdNotReached({
+						observedUtilization: cmd.observedUtilization,
+						requiredUtilization: state.marks.switchBackBelow,
+					});
+				}
+			}
 			if (
 				cmd.cause === "preference" &&
 				cmd.nowMs < state.decidedAtMs + state.marks.minDwellMs

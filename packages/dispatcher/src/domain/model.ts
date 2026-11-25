@@ -80,7 +80,16 @@ export class DispatchAccountView extends Domain.View("DispatchAccountView", {
 					state._tag === "Configured"
 						? state.activeReservationCount
 						: ZERO_UNITS,
-				overrunSeen: state._tag === "Configured" ? state.overrunSeen : false,
+				overrunSeen: false,
+			};
+		},
+		DispatchOverrunCleared: (state) => {
+			if (state._tag !== "Configured") {
+				return state;
+			}
+			return {
+				...state,
+				overrunSeen: false,
 			};
 		},
 		DispatchReserved: (state, event) => {
@@ -193,6 +202,7 @@ export class DispatchRoutingApi extends Domain.Api(
 			"ReleaseReservation",
 			"ConfirmReservation",
 			"ExpirePendingReservations",
+			"ClearDispatchOverrun",
 		],
 		views: ["DispatchAccountView"],
 	},
