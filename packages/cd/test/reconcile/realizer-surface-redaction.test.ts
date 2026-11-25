@@ -39,7 +39,9 @@ describe("realizer condition surfacing", () => {
 				CAMP,
 				"realizer",
 			);
-			expect(reason?.message ?? "", code).toMatch(/upstream denied authorization/u);
+			expect(reason?.message ?? "", code).toMatch(
+				/upstream denied authorization/u,
+			);
 			expect(JSON.stringify(reason)).not.toContain(token);
 			expect(JSON.stringify(reason)).not.toContain(payload);
 		}

@@ -199,7 +199,8 @@ function surfaceRealizerConditionMessage(entry: ReasonRecord): string {
 			RESOLVER_ERROR_CODES.includes(entry.code));
 	if (!surface) return "The realizer reported a condition.";
 	const redacted = redactRealizerConditionText(raw);
-	return redacted === "The realizer reported a condition." && entry.code !== "realize-failed"
+	return redacted === "The realizer reported a condition." &&
+		entry.code !== "realize-failed"
 		? "The realizer reported a condition."
 		: redacted;
 }

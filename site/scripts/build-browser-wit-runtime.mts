@@ -17,7 +17,6 @@ import { logBrowserWitReleaseEnvironment } from "../../scripts/lib/browser-wit-c
 import {
 	assertGuestSourceUnderWorkRoot,
 	assertSandboxWitBeforeComponentize,
-	BROWSER_WIT_GUEST_SOURCE_NAME,
 	copyHostWitTreeIntoWorkRoot,
 	guestSourcePathInWorkRoot,
 	readInlineComponentizeWit,
