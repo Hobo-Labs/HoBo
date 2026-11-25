@@ -231,6 +231,8 @@ env:
     pnpm-workspace.yaml
     turbo.json
     tsconfig.base.json
+  RELEASE_PAGES_MATERIALIZE_PATHS: |
+    examples/browser-runtime/wit
 
 jobs:
   route:
@@ -1517,6 +1519,7 @@ jobs:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
+          materialize-paths: ${{ env.RELEASE_PAGES_MATERIALIZE_PATHS }}
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
       # The gate answered before this job waited for a runner and for the
