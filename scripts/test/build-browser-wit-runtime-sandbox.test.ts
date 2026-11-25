@@ -5,19 +5,21 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-	assertComponentizeWitPathIsGuestRelative,
+	assertGuestSourceUnderWorkRoot,
 	assertSandboxWitBeforeComponentize,
-	componentizeGuestRelativeWitPath,
+	BROWSER_WIT_GUEST_SOURCE_NAME,
 	componentizeWitDirUnderWorkRoot,
 	copyHostWitTreeIntoWorkRoot,
+	guestSourcePathInWorkRoot,
+	resolveComponentizeHostWitPath,
 	witPathIsUnderWorkRoot,
 } from "../lib/browser-wit-componentize-sandbox.mts";
 
 const repoRoot = path.join(import.meta.dirname, "..", "..");
 const hostWitDir = path.join(repoRoot, "examples", "browser-runtime", "wit");
 
-describe("browser WIT componentize sandbox (runs 45546344117, 45552772772)", () => {
-	it("repo wit path is outside a temp workRoot (WASI cannot preopen it)", () => {
+describe("browser WIT componentize sandbox", () => {
+	it("repo wit path is outside a temp workRoot", () => {
 		const workRoot = path.join(tmpdir(), "hobo-browser-wit-test");
 		expect(witPathIsUnderWorkRoot(hostWitDir, workRoot)).toBe(false);
 		expect(
@@ -28,31 +30,38 @@ describe("browser WIT componentize sandbox (runs 45546344117, 45552772772)", () 
 		).toBe(true);
 	});
 
-	it("build script passes guest-relative witPath inside workRoot, not repo or absolute paths", () => {
+	it("build script passes host-resolved absolute wit and source paths, without chdir", () => {
 		const source = readFileSync(
 			path.join(repoRoot, "site/scripts/build-browser-wit-runtime.mts"),
 			"utf8",
 		);
-		expect(source).toMatch(/witPath:\s*guestWitPath/);
-		expect(source).not.toMatch(/witPath:\s*WIT_DIR/);
-		expect(source).not.toMatch(/witPath:\s*sandboxWitDir/);
-		expect(source).toMatch(/process\.chdir\(workRoot\)/);
+		expect(source).toMatch(/witPath:\s*hostWitPath/);
+		expect(source).toMatch(/sourcePath:\s*hostSourcePath/);
+		expect(source).not.toMatch(/process\.chdir\(workRoot\)/);
+		expect(source).toMatch(/resolveComponentizeHostWitPath/);
 		expect(source).toMatch(/copyHostWitTreeIntoWorkRoot/);
-		expect(source).toMatch(/assertSandboxWitBeforeComponentize/);
+		expect(source).toMatch(/logBrowserWitComponentizeToolchain/);
 	});
 
-	it("rejects absolute witPath for componentize (run 45552772772)", () => {
+	it("resolveComponentizeHostWitPath returns an absolute path under workRoot", () => {
 		const workRoot = path.join(tmpdir(), "hobo-browser-wit-test");
-		const absolute = componentizeWitDirUnderWorkRoot(workRoot);
-		expect(path.isAbsolute(absolute)).toBe(true);
-		expect(() => assertComponentizeWitPathIsGuestRelative(absolute)).toThrow(
-			/not absolute/,
-		);
-		const relative = componentizeGuestRelativeWitPath();
-		expect(path.isAbsolute(relative)).toBe(false);
+		const sandbox = componentizeWitDirUnderWorkRoot(workRoot);
+		const resolved = resolveComponentizeHostWitPath(sandbox);
+		expect(path.isAbsolute(resolved)).toBe(true);
+		expect(witPathIsUnderWorkRoot(resolved, workRoot)).toBe(true);
+	});
+
+	it("guest source must use the fixed name under workRoot", () => {
+		const workRoot = path.join(tmpdir(), "guest-under-root");
+		const guest = guestSourcePathInWorkRoot(workRoot);
+		expect(path.basename(guest)).toBe(BROWSER_WIT_GUEST_SOURCE_NAME);
+		expect(() => assertGuestSourceUnderWorkRoot(guest, workRoot)).not.toThrow();
 		expect(() =>
-			assertComponentizeWitPathIsGuestRelative(relative),
-		).not.toThrow();
+			assertGuestSourceUnderWorkRoot(
+				path.join(workRoot, "other.mjs"),
+				workRoot,
+			),
+		).toThrow(/must be station-guest\.mjs/);
 	});
 
 	it("copies host wit into workRoot and asserts before componentize", async () => {

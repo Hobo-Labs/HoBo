@@ -14,11 +14,16 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
-	assertComponentizeWitPathIsGuestRelative,
+	assertGuestSourceUnderWorkRoot,
 	assertSandboxWitBeforeComponentize,
-	componentizeGuestRelativeWitPath,
 	copyHostWitTreeIntoWorkRoot,
+	guestSourcePathInWorkRoot,
+	resolveComponentizeHostWitPath,
 } from "../../scripts/lib/browser-wit-componentize-sandbox.mts";
+import {
+	logBrowserWitComponentizeToolchain,
+	resolveBrowserWitComponentizeToolchain,
+} from "../../scripts/lib/browser-wit-toolchain.mts";
 import { loadExamplesCatalog } from "../src/lib/examples/catalog.js";
 import { buildBrowserStationGuestSource } from "../src/lib/examples/runtime/guest-source.js";
 import {
@@ -114,15 +119,15 @@ export async function buildBrowserWitRuntime(
 	process.once("SIGTERM", interrupt);
 
 	try {
-		const guestPath = path.join(workRoot, "station-guest.mjs");
+		const guestPath = guestSourcePathInWorkRoot(workRoot);
 		await writeFile(guestPath, guestSource, "utf8");
 		const gitRef =
 			process.env.HOBO_RELEASE_CHECKOUT_REF?.trim() ||
 			process.env.GITHUB_SHA?.trim() ||
 			"HEAD";
 		const sandboxWitDir = await copyHostWitTreeIntoWorkRoot(WIT_DIR, workRoot);
-		const guestWitPath = componentizeGuestRelativeWitPath();
-		assertComponentizeWitPathIsGuestRelative(guestWitPath);
+		const hostWitPath = resolveComponentizeHostWitPath(sandboxWitDir);
+		assertGuestSourceUnderWorkRoot(guestPath, workRoot);
 		await assertSandboxWitBeforeComponentize(
 			sandboxWitDir,
 			workRoot,
@@ -130,25 +135,28 @@ export async function buildBrowserWitRuntime(
 			WIT_DIR,
 			gitRef,
 		);
-		process.stderr.write(
-			`browser-wit: componentizing real guest (witPath=${guestWitPath} under ${workRoot})\n`,
+		const hostSourcePath = path.resolve(guestPath);
+		logBrowserWitComponentizeToolchain(
+			{
+				componentize: toolchain.componentize,
+				componentizePackageRoot: toolchain.componentizePackageRoot,
+				versions: toolchain.versions,
+			},
+			{
+				workRoot,
+				sourcePath: hostSourcePath,
+				witPath: hostWitPath,
+			},
 		);
+		process.stderr.write("browser-wit: componentizing real guest\n");
 		const cacheHome = process.env.XDG_CACHE_HOME;
-		const guestSourcePath = path.basename(guestPath);
-		const previousCwd = process.cwd();
-		let built: { component: Uint8Array };
-		try {
-			process.chdir(workRoot);
-			built = await toolchain.componentize.componentize({
-				env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
-				sourcePath: guestSourcePath,
-				witPath: guestWitPath,
-				worldName: "browser-station",
-				disableFeatures: ["random", "clocks", "stdio", "http"],
-			});
-		} finally {
-			process.chdir(previousCwd);
-		}
+		const built = await toolchain.componentize.componentize({
+			env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
+			sourcePath: hostSourcePath,
+			witPath: hostWitPath,
+			worldName: "browser-station",
+			disableFeatures: ["random", "clocks", "stdio", "http"],
+		});
 		const componentDigest = sha256(built.component);
 		process.stderr.write("browser-wit: transpiling component for browser\n");
 		const transpiled = await toolchain.jco.transpile(built.component, {
@@ -289,6 +297,7 @@ export async function reuseVerifiedRuntime(
 
 async function resolveToolchain(): Promise<{
 	readonly componentize: ToolchainModule;
+	readonly componentizePackageRoot: string;
 	readonly jco: JcoModule;
 	readonly jcoEntry: string;
 	readonly esbuild: EsbuildModule;
@@ -297,35 +306,31 @@ async function resolveToolchain(): Promise<{
 	const runtimeRequire = createRequire(
 		path.join(REPO_ROOT, "packages", "runtimes", "runtime-wasm", "package.json"),
 	);
+	const componentizeToolchain =
+		await resolveBrowserWitComponentizeToolchain(REPO_ROOT);
 	const jcoEntry = runtimeRequire.resolve("@bytecodealliance/jco");
-	const jcoManifestPath = path.join(path.dirname(jcoEntry), "..", "package.json");
-	const componentizeRoot = path.join(
-		path.dirname(jcoManifestPath),
-		"..",
-		"componentize-js",
-	);
-	const componentizeEntry = path.join(componentizeRoot, "src", "componentize.js");
-	const componentizeManifestPath = path.join(componentizeRoot, "package.json");
 	const esbuildEntry = runtimeRequire.resolve("esbuild");
-	const esbuildManifestPath = path.join(path.dirname(esbuildEntry), "..", "package.json");
-	const [jco, componentize, esbuild, jcoManifest, componentizeManifest, esbuildManifest] =
+	const esbuildManifestPath = path.join(
+		path.dirname(esbuildEntry),
+		"..",
+		"package.json",
+	);
+	const [jco, esbuild, esbuildManifest] = await Promise.all([
 		// SAFETY: toolchain entries are loaded from resolved package paths.
-		await Promise.all([
-			import(pathToFileURL(jcoEntry).href) as Promise<JcoModule>,
-			import(pathToFileURL(componentizeEntry).href) as Promise<ToolchainModule>,
-			import(pathToFileURL(esbuildEntry).href) as Promise<EsbuildModule>,
-			readPackageVersion(jcoManifestPath),
-			readPackageVersion(componentizeManifestPath),
-			readPackageVersion(esbuildManifestPath),
-		]);
+		import(pathToFileURL(jcoEntry).href) as Promise<JcoModule>,
+		// SAFETY: toolchain entries are loaded from resolved package paths.
+		import(pathToFileURL(esbuildEntry).href) as Promise<EsbuildModule>,
+		readPackageVersion(esbuildManifestPath),
+	]);
 	return {
 		jco,
 		jcoEntry,
-		componentize,
+		componentize: componentizeToolchain.componentize,
+		componentizePackageRoot: componentizeToolchain.componentizePackageRoot,
 		esbuild,
 		versions: {
-			jco: jcoManifest,
-			componentizeJs: componentizeManifest,
+			jco: componentizeToolchain.versions.jco,
+			componentizeJs: componentizeToolchain.versions.componentizeJs,
 			esbuild: esbuildManifest,
 		},
 	};

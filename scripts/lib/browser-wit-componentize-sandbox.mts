@@ -4,29 +4,41 @@ import path from "node:path";
 import { assertReleasePagesBrowserRuntimeWit } from "./release-pages-wit.mts";
 
 export const SANDBOX_WIT_DIR_NAME = "wit" as const;
-
-export function componentizeGuestRelativeWitPath(): string {
-	return SANDBOX_WIT_DIR_NAME;
-}
-
-export function assertComponentizeWitPathIsGuestRelative(
-	witPath: string,
-): void {
-	if (path.isAbsolute(witPath)) {
-		throw new Error(
-			`browser-wit: componentize witPath must be relative to the guest workRoot (WASI mapdir), not absolute: ${witPath}`,
-		);
-	}
-	const normalized = path.normalize(witPath);
-	if (normalized.startsWith("..") || path.isAbsolute(normalized)) {
-		throw new Error(
-			`browser-wit: componentize witPath must stay inside guest workRoot: ${witPath}`,
-		);
-	}
-}
+export const BROWSER_WIT_GUEST_SOURCE_NAME = "station-guest.mjs" as const;
 
 export function componentizeWitDirUnderWorkRoot(workRoot: string): string {
 	return path.join(workRoot, SANDBOX_WIT_DIR_NAME);
+}
+
+export function resolveComponentizeHostWitPath(sandboxWitDir: string): string {
+	return path.resolve(sandboxWitDir);
+}
+
+export function guestSourcePathInWorkRoot(workRoot: string): string {
+	return path.join(workRoot, BROWSER_WIT_GUEST_SOURCE_NAME);
+}
+
+export function assertGuestSourceUnderWorkRoot(
+	sourcePath: string,
+	workRoot: string,
+): void {
+	const resolvedSource = path.resolve(sourcePath);
+	const resolvedRoot = path.resolve(workRoot);
+	const relative = path.relative(resolvedRoot, resolvedSource);
+	if (
+		relative === "" ||
+		relative.startsWith("..") ||
+		path.isAbsolute(relative)
+	) {
+		throw new Error(
+			`browser-wit: componentize sourcePath must live under workRoot (${workRoot}); got ${sourcePath}`,
+		);
+	}
+	if (path.basename(resolvedSource) !== BROWSER_WIT_GUEST_SOURCE_NAME) {
+		throw new Error(
+			`browser-wit: componentize guest source must be ${BROWSER_WIT_GUEST_SOURCE_NAME} under workRoot`,
+		);
+	}
 }
 
 export function witPathIsUnderWorkRoot(

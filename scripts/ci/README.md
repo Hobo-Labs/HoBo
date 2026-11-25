@@ -62,11 +62,15 @@ passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts always run
 empty, or stale. [`build-release-site-prebuild.mts`](build-release-site-prebuild.mts)
 re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately before turbo
 builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) (via
-[`browser-wit-componentize-sandbox.mts`](../lib/browser-wit-componentize-sandbox.mts))
-copies that wit tree into the temp `hobo-browser-wit-*` workRoot and passes the
-guest-relative `wit` path with `chdir(workRoot)` so `componentize-js` wizer
-`--mapdir=/::workRoot` can open it (absolute host paths fail in WASI after
-copy; runs 45546344117, 45552772772).
+[`browser-wit-componentize-sandbox.mts`](../lib/browser-wit-componentize-sandbox.mts) and
+[`browser-wit-toolchain.mts`](../lib/browser-wit-toolchain.mts)) copies that wit tree into
+the temp `hobo-browser-wit-*` workRoot, logs resolved `componentize-js` / `jco` versions, and
+passes **host-absolute** `witPath` and `sourcePath` into the same `componentize-js` entry the
+release build resolves under `@hobo/runtime-wasm`. Wizer `--mapdir=/::dirname(source)` only
+preopens the JS source directory; `witPath` is read host-side (`maybeWindowsPath` → `path.resolve`).
+Release `ENOENT` failures traced to sparse wit trees or stale runner worktrees (#2995–#2997), not
+absolute `/tmp/.../wit` paths. Relative `wit` without a matching cwd fails (`os error 44`); the build
+does not mutate `process.cwd`.
 
 [`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
 resolution contracts are exercised in
