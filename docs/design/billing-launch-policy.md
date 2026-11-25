@@ -67,7 +67,7 @@ provider integration boundaries, and legal/privacy blockers.
 | Terms of service | V1 Legal, Privacy & Terms Readiness | Blocker | HOBO-405 |
 | Refund policy | V1 Legal, Privacy & Terms Readiness | Blocker | HOBO-405 |
 | Billing-data retention | V1 Legal, Privacy & Terms Readiness | Limitation | [Plan 46](./governance-planes.md#plan-46) |
-| Tax, currency, and receipts | Billing & Credits | Blocker | [HOBO-513 tax/currency/receipt obligations](./tax-currency-receipt-obligations.md) |
+| Tax, currency, and receipts | Billing & Credits | Blocker | [HOBO-513 tax/currency/receipt obligations](https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8) |
 
 ## Scope Out And Non-Goals
 
@@ -87,7 +87,7 @@ provider integration boundaries, and legal/privacy blockers.
   [ADR-0039](./adr/02-identity-security.md#adr-0039) own metering, showback, quotas, and cost
   safety.
 - [Plan 46](./governance-planes.md#plan-46) owns legal/privacy evidence posture.
-- [HOBO-513](./tax-currency-receipt-obligations.md) owns tax, currency, receipt, invoice metadata,
+- [HOBO-513](https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8) owns tax, currency, receipt, invoice metadata,
   and unsupported-jurisdiction posture.
 
 ## Evidence Required For M1

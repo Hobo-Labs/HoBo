@@ -92,7 +92,7 @@ every UI remediation.
   boundaries.
 - [Beta Pilot Feedback](./beta-pilot-feedback.md) routes usability feedback to Product UX and
   launch cutline owners.
-- [Pre-Launch Outcome Contract](./pre-launch-outcome-contract.md) maps launch evidence into
+- [Pre-Launch Outcome Contract](https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203) maps launch evidence into
   plan/diff, go/no-go, telemetry, support, and release-note surfaces.
 - [AI Generation Safety Launch Posture](./ai-generation-launch-posture.md) keeps generated UI as a
   proposal until UX and accessibility evidence accepts it.

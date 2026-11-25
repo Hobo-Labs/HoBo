@@ -39,7 +39,7 @@ test("M0 record maps dependencies to authoritative design sources", () => {
       "docs/design/capability-review-approval.md",
       "docs/design/org-catalogs.md",
       "docs/design/billing-launch-policy.md",
-      "docs/design/tax-currency-receipt-obligations.md",
+      "https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8",
       "docs/design/launch-support-escalation.md",
       "docs/design/adr/07-portability-extensibility.md#adr-0064",
     ],

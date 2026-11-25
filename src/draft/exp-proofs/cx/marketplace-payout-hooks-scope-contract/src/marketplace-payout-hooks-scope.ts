@@ -165,7 +165,7 @@ export const MARKETPLACE_PAYOUT_HOOKS_SCOPE: MarketplacePayoutHooksScope = {
       reason: "Defines commercial billing lifecycle and provider boundaries while keeping money movement and payment providers out of this issue.",
     },
     {
-      source: "docs/design/tax-currency-receipt-obligations.md",
+      source: "https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8",
       reason: "Defines tax, currency, receipt, invoice metadata, and marketplace payout tax-document limitations.",
     },
     {
@@ -239,7 +239,7 @@ export const MARKETPLACE_PAYOUT_HOOKS_SCOPE: MarketplacePayoutHooksScope = {
       kind: "tax-identity-handoff",
       owner: "billing/compliance owner",
       proofMode: "compliance-review",
-      source: "docs/design/tax-currency-receipt-obligations.md#launch-mode-mapping",
+      source: "https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8#launch-mode-mapping",
       proves: "Tax identity and payout-document requirements are explicit handoffs, not implemented in payout scope.",
     },
     {
@@ -323,7 +323,7 @@ export function validateMarketplacePayoutHooksScope(scope: MarketplacePayoutHook
     "docs/design/capability-review-approval.md",
     "docs/design/org-catalogs.md",
     "docs/design/billing-launch-policy.md",
-    "docs/design/tax-currency-receipt-obligations.md",
+    "https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8",
     "docs/design/launch-support-escalation.md",
     "docs/design/adr/07-portability-extensibility.md#adr-0064",
   ];

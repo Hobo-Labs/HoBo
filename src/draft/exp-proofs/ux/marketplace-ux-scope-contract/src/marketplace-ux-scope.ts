@@ -141,7 +141,7 @@ export const MARKETPLACE_UX_SCOPE = {
       reason: "Names Marketplace UX as the owner for install, trust, warning, and review flow accessibility evidence.",
     },
     {
-      source: "docs/design/product-notifications-lifecycle.md",
+      source: "https://linear.app/quickdeploy-ai/document/product-notifications-and-lifecycle-communications-archived-d1866ae22816",
       reason: "Defines marketplace and publisher lifecycle notification ownership and support-visible delivery evidence for later communication work.",
     },
     {
@@ -289,7 +289,7 @@ export const MARKETPLACE_UX_SCOPE = {
       kind: "support-handoff-export",
       owner: "support operator",
       proofMode: "support-handoff",
-      source: "docs/design/product-notifications-lifecycle.md#required-notification-classes",
+      source: "https://linear.app/quickdeploy-ai/document/product-notifications-and-lifecycle-communications-archived-d1866ae22816#required-notification-classes",
       proves: "Blocked, deprecated, yanked, unsupported, and lifecycle messages have owner and support-visible evidence.",
     },
     {
@@ -356,7 +356,7 @@ export function validateMarketplaceUxScope(scope) {
     "docs/design/capability-review-approval.md",
     "docs/design/org-catalogs.md",
     "docs/design/accessibility-usability-launch-baseline.md",
-    "docs/design/product-notifications-lifecycle.md",
+    "https://linear.app/quickdeploy-ai/document/product-notifications-and-lifecycle-communications-archived-d1866ae22816",
     "docs/design/launch-messaging-claims.md",
     "docs/design/adr/07-portability-extensibility.md#adr-0062",
     "docs/design/adr/02-identity-security.md#adr-0074",

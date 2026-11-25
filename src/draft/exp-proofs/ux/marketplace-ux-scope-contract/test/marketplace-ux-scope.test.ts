@@ -40,7 +40,7 @@ test("M0 record maps dependencies to authoritative design sources", () => {
       "docs/design/capability-review-approval.md",
       "docs/design/org-catalogs.md",
       "docs/design/accessibility-usability-launch-baseline.md",
-      "docs/design/product-notifications-lifecycle.md",
+      "https://linear.app/quickdeploy-ai/document/product-notifications-and-lifecycle-communications-archived-d1866ae22816",
       "docs/design/launch-messaging-claims.md",
       "docs/design/adr/07-portability-extensibility.md#adr-0062",
       "docs/design/adr/02-identity-security.md#adr-0074",

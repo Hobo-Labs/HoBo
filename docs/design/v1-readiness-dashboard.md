@@ -55,7 +55,7 @@ legal/privacy, documentation, and operations projects.
 - [V1 cutline proof](../../src/draft/technical-proofs/v1-cutline-contract/README.md) defines launch scope
   boundaries.
 - [Launch Blocker Taxonomy](./launch-blocker-taxonomy.md) defines blocker and accepted-risk classes.
-- [Pre-Launch Outcome Contract](./pre-launch-outcome-contract.md#surface-mapping) maps launch
+- [Pre-Launch Outcome Contract](https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203#surface-mapping) maps launch
   go/no-go consumers.
 - [Workspace Onboarding UX](./workspace-onboarding-ux.md#owning-initiative-dependencies) already routes
   onboarding gaps to the readiness dashboard and cutline project.

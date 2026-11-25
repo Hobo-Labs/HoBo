@@ -122,7 +122,7 @@ customer-visible publication gate, but still inherits the scope boundary.
   and publication boundaries.
 - [Support SLA & Channels](./support-sla-channels.md) defines support channel coverage,
   response-target language, unsupported request routing, and owner signoff boundaries.
-- [Product Notifications and Lifecycle Communications](./product-notifications-lifecycle.md)
+- [Product Notifications and Lifecycle Communications](https://linear.app/quickdeploy-ai/document/product-notifications-and-lifecycle-communications-archived-d1866ae22816)
   defines product lifecycle notification classes, preference/delivery evidence, and notification
   ownership boundaries.
 - [Launch Messaging Claims](./launch-messaging-claims.md) defines launch claims, limitation copy,

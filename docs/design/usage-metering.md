@@ -110,7 +110,7 @@ M1 usage designs must account for these attribution dimensions before implementa
   metering evidence must preserve without building a new runtime.
 - [billing-launch-policy.md](./billing-launch-policy.md) defines launch billing boundaries consumed
   as reconciliation handoff, while invoice/payment work remains out of scope.
-- [tax-currency-receipt-obligations.md](./tax-currency-receipt-obligations.md) defines legal/tax
+- [tax-currency-receipt-obligations.md](https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8) defines legal/tax
   boundaries that metering must not silently absorb inside M0.
 - [ADR-0039](./adr/02-identity-security.md#adr-0039) separates showback and quota policy from
   billing-engine implementation.

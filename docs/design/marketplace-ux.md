@@ -113,7 +113,7 @@ the result, and which adjacent initiatives remain out of scope.
   policy pins, and support handoffs consumed by marketplace filters.
 - [Accessibility and Usability Launch Baseline](./accessibility-usability-launch-baseline.md) names
   Marketplace UX as the owner for install, trust, warning, and review flow accessibility evidence.
-- [Product Notifications and Lifecycle Communications](./product-notifications-lifecycle.md) defines
+- [Product Notifications and Lifecycle Communications](https://linear.app/quickdeploy-ai/document/product-notifications-and-lifecycle-communications-archived-d1866ae22816) defines
   marketplace and publisher lifecycle notification ownership and support-visible delivery evidence.
 - [Launch Messaging Claims](./launch-messaging-claims.md) requires launch claims to have evidence
   owner, source, risk, and state before public publication.

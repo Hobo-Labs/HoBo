@@ -62,7 +62,7 @@ export const CUSTOMER_ONBOARDING_SCOPE = {
     "docs/design/customer-onboarding.md",
     "docs/design/workspace-onboarding-ux.md",
     "https://linear.app/quickdeploy-ai/document/persona-operating-profile-and-recommendation-memory-archived-e3cb2a547f5c",
-    "docs/design/pre-launch-outcome-contract.md",
+    "https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203",
     "docs/design/beta-pilot-feedback.md",
     "docs/design/support-sla-channels.md",
   ],

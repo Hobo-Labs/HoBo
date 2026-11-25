@@ -79,7 +79,7 @@ around required reviewers or turn missing evidence into a launch claim.
 ## Design Links
 
 - [V1 cutline proof](../../src/draft/technical-proofs/v1-cutline-contract/README.md) defines launch scope boundaries.
-- [Pre-launch outcome contract](./pre-launch-outcome-contract.md#surface-mapping) maps outcome
+- [Pre-launch outcome contract](https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203#surface-mapping) maps outcome
   evidence into launch go/no-go decisions.
 - [ADR-0023](./adr/02-identity-security.md#adr-0023) preserves secure-by-default behavior.
 - [ADR-0045](./adr/02-identity-security.md#adr-0045) keeps SLO and error-budget gates explicit.

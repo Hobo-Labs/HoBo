@@ -93,9 +93,9 @@ see the next step, owner, accepted limitation, and proof source for the onboardi
   customer onboarding consumes.
 - [Persona Operating Profile](https://linear.app/quickdeploy-ai/document/persona-operating-profile-and-recommendation-memory-archived-e3cb2a547f5c) owns minimal profile fields and
   recommendation boundaries.
-- [Pre-Launch Outcome Contract](./pre-launch-outcome-contract.md) owns the customer-visible
+- [Pre-Launch Outcome Contract](https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203) owns the customer-visible
   outcome baseline and success signal.
-- [Launch E2E Persona Matrix](./launch-e2e-persona-matrix.md) owns persona journey evidence
+- [Launch E2E Persona Matrix](https://linear.app/quickdeploy-ai/document/launch-e2e-persona-matrix-archived-3f08fe802ba7) owns persona journey evidence
   thresholds for beta and GA readiness.
 - [Beta Pilot Feedback](./beta-pilot-feedback.md) owns pilot eligibility, structured feedback, and
   blocker triage.

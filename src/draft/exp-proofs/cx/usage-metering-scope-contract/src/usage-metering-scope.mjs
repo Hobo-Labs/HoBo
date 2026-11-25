@@ -97,7 +97,7 @@ export const USAGE_METERING_SCOPE = {
       reason: "Defines launch billing boundaries consumed as reconciliation handoff, while invoice/payment work remains out of scope.",
     },
     {
-      source: "docs/design/tax-currency-receipt-obligations.md",
+      source: "https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8",
       reason: "Defines legal/tax boundaries that metering must not silently absorb inside M0.",
     },
     {
@@ -281,7 +281,7 @@ export function validateUsageMeteringScope(scope) {
     "docs/design/reliability-observability-cost.md#plan-05",
     "docs/design/data-plane.md#plan-11",
     "docs/design/billing-launch-policy.md",
-    "docs/design/tax-currency-receipt-obligations.md",
+    "https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8",
     "docs/design/adr/02-identity-security.md#adr-0039",
     "docs/design/adr/01-architecture-core.md#adr-0071",
   ];

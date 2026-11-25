@@ -102,7 +102,7 @@ which claims remain launch limitations.
   evidence that payout readiness consumes without taking catalog scope.
 - [Billing Launch Policy](./billing-launch-policy.md) defines commercial billing lifecycle and
   provider boundaries while keeping money movement and payment providers out of this issue.
-- [Tax, Currency, Receipt Obligations](./tax-currency-receipt-obligations.md) defines tax, currency,
+- [Tax, Currency, Receipt Obligations](https://linear.app/quickdeploy-ai/document/tax-currency-receipt-and-invoice-compliance-obligations-archived-8b309bd4bfd8) defines tax, currency,
   receipt, invoice metadata, and marketplace payout tax-document limitations.
 - [Launch Support Escalation](./launch-support-escalation.md) defines customer-safe support
   escalation and gap-routing posture for payout holds, unsupported states, and release blockers.
