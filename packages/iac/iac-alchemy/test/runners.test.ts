@@ -80,6 +80,7 @@ describe("Alchemy v2 runner providers", () => {
 			{ providers, state },
 			Effect.gen(function* () {
 				const runner = yield* HostingerRunner("hv-1", {
+					jobId: "job-hv-1",
 					machineId: "42001",
 					hostname: "runner-hv-1.hostinger",
 					labels: ["hobo-fleet", "hostinger"],
@@ -95,7 +96,7 @@ describe("Alchemy v2 runner providers", () => {
 		const runtimeLayer = Layer.merge(Alchemist.layer(), providers);
 		const outputs = await runStack(stack, runtimeLayer, "deploy");
 		expect(outputs).toEqual({
-			runnerId: "hostinger:42001",
+			runnerId: "hostinger:job-hv-1:42001",
 			actionId: "act-42001",
 			credentialLocator: "owner://HOSTINGER_FLEET",
 		});
@@ -312,7 +313,7 @@ describe("Alchemy v2 runner providers", () => {
 			label: "hobo-fleet",
 		});
 		expect(localRunner.runnerId).toBe("local:job-1");
-		expect(hostingerRunner.runnerId).toBe("hostinger:77001");
+		expect(hostingerRunner.runnerId).toBe("hostinger:job-2:77001");
 		expect(agent37Runner.runnerId).toBe("agent37:sbx-77");
 		await expect(
 			backend.provisionRunner({

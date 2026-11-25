@@ -151,6 +151,7 @@ export function createAlchemyRunnerBackend(
 					{ providers, state },
 					Effect.gen(function* () {
 						const resource = yield* HostingerRunner(input.poolId, {
+							jobId: input.jobId,
 							machineId,
 							hostname: `${input.poolId}.hostinger`,
 							labels: [input.label],

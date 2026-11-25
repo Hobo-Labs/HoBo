@@ -14,7 +14,7 @@ export const HOSTINGER_PINNED_API_ORIGIN = "https://developers.hostinger.com";
 const HOSTINGER_API_HOST = "developers.hostinger.com";
 const HOSTINGER_VIRTUAL_MACHINES_PATH = "/api/vps/v1/virtual-machines";
 const HOSTINGER_MACHINE_ID = /^[1-9][0-9]{0,18}$/u;
-const HOSTINGER_POWER_ACTIONS = ["start", "restart"] as const;
+const HOSTINGER_POWER_ACTIONS = ["start", "restart", "stop"] as const;
 export type HostingerRunnerPowerAction =
 	(typeof HOSTINGER_POWER_ACTIONS)[number];
 
@@ -54,6 +54,7 @@ export type HostingerRunnerTransport = (
 ) => Promise<HostingerRunnerTransportResponse>;
 
 export interface HostingerRunnerProps {
+	readonly jobId: string;
 	readonly machineId: string;
 	readonly hostname: string;
 	readonly labels: readonly string[];
@@ -142,7 +143,7 @@ export function HostingerRunnerProvider(
 	}
 
 	return Provider.succeed(HostingerRunner, {
-		reconcile: ({ news }) =>
+		reconcile: ({ news, output }) =>
 			Effect.gen(function* () {
 				if (!HOSTINGER_MACHINE_ID.test(news.machineId)) {
 					return yield* new HostingerRunnerError({
@@ -164,6 +165,23 @@ export function HostingerRunnerProvider(
 					options.resolveCredential,
 					locator,
 				);
+				const runnerId = `hostinger:${news.jobId}:${news.machineId}`;
+				if (
+					output !== undefined &&
+					output.runnerId === runnerId &&
+					output.machineId === news.machineId
+				) {
+					return {
+						runnerId,
+						tier: "hostinger" as const,
+						machineId: news.machineId,
+						hostname: output.hostname,
+						labels: [...news.labels],
+						state: output.state,
+						actionId: output.actionId,
+						credentialLocator: locator,
+					};
+				}
 				const action = news.powerAction ?? "start";
 				const url = resolveHostingerFleetUrl(
 					`${HOSTINGER_VIRTUAL_MACHINES_PATH}/${news.machineId}/${action}`,
@@ -196,7 +214,7 @@ export function HostingerRunnerProvider(
 					});
 				}
 				return {
-					runnerId: `hostinger:${news.machineId}`,
+					runnerId,
 					tier: "hostinger" as const,
 					machineId: news.machineId,
 					hostname: response.body.hostname ?? news.hostname,
@@ -206,6 +224,40 @@ export function HostingerRunnerProvider(
 					credentialLocator: locator,
 				};
 			}),
-		delete: () => Effect.void,
+		delete: ({ output, olds }) =>
+			Effect.gen(function* () {
+				if (output === undefined) return;
+				const locator = parseOwnerCredentialLocator(
+					olds?.credentialLocator ?? output.credentialLocator,
+				);
+				const credential = yield* resolveOwnerCredential(
+					options.resolveCredential,
+					locator,
+				);
+				const url = resolveHostingerFleetUrl(
+					`${HOSTINGER_VIRTUAL_MACHINES_PATH}/${output.machineId}/stop`,
+				);
+				yield* Effect.tryPromise({
+					try: () =>
+						guarded({
+							method: "POST",
+							url,
+							headers: {
+								authorization: `Bearer ${credential}`,
+								accept: "application/json",
+							},
+						}),
+					catch: (cause): HostingerRunnerError | RunnerCredentialError =>
+						cause instanceof HostingerRunnerError
+							? cause
+							: new HostingerRunnerError({
+									code: "HOSTINGER_TRANSPORT_FAILED",
+									message:
+										cause instanceof Error
+											? cause.message
+											: "hostinger runner delete failed",
+								}),
+				});
+			}),
 	});
 }
