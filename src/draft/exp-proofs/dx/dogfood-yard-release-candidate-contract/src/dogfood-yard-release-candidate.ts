@@ -92,7 +92,7 @@ export const dogfoodYardReleaseCandidateEvidence: DogfoodYardReleaseCandidateEvi
     {
       id: "m1-dogfood-alpha-cutline",
       ownerProject: "V1 Release Program & Cutline",
-      source: "docs/design/proofs/hobo-454-v1-cutline-dogfood-alpha/index.md",
+      source: "https://linear.app/quickdeploy-ai/document/hobo-454-v1-cutline-dogfoodalpha-proof-archived-e0d623e7c535",
       proofMode: "design-record",
       status: "accepted",
       acceptanceBullet: "Cross-project dependencies are reflected in the release cutline.",
