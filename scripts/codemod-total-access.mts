@@ -192,7 +192,6 @@ function rewriteFile(file: string): RewriteCount {
 		applied += 1;
 	}
 
-	// biome merges the two lines and leaves `import { must, must }`, a parse
 	const existing = new RegExp(
 		`import \\{([^}]*)\\} from "${importSpecifier(file).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}";`,
 		"u",
