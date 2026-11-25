@@ -55,8 +55,13 @@ Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../pac
 Pages release sparse checkout lists directory cones only in `RELEASE_PAGES_SPARSE_PATHS`
 (`examples` covers `examples/browser-runtime/wit/station.wit`); `hobo-checkout` routes
 nested file paths through `sparse-checkout add`, not cone `set`. The release-pages job also
-passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts force `git checkout` for
-`examples/browser-runtime/wit` and fail closed when `station.wit` is still absent.
+passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts always run
+`sparse-checkout add` plus `git checkout HEAD --` for `examples/browser-runtime/wit`
+(even when a reused runner worktree already has the path), verify `station.wit` matches
+`HEAD` by blob id, log `ls -la` on the wit tree, and fail closed when the file is absent,
+empty, or stale. [`build-release-site-prebuild.mts`](build-release-site-prebuild.mts)
+re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately before turbo
+builds site `examples:runtime`.
 
 [`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
 resolution contracts are exercised in
