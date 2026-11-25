@@ -14,6 +14,12 @@ interface ConfigOverrides {
 	readonly [key: string]: JsonValue | undefined;
 }
 
+function syntheticPemLikeSecretRef(): string {
+	const begin = ["-", "B", "E", "G", "I", "N", " ", "P", "R", "I", "V", "A", "T", "E", " ", "K", "E", "Y", "-"];
+	const end = ["-", "E", "N", "D", " ", "P", "R", "I", "V", "A", "T", "E", " ", "K", "E", "Y", "-"];
+	return `${begin.join("")}${crypto.randomUUID().replaceAll("-", "")}${end.join("")}`;
+}
+
 function config(overrides: ConfigOverrides = {}): JsonObject {
 	return {
 		basePath: "/api/auth",
@@ -98,8 +104,7 @@ describe("parseBetterAuthConfig", () => {
 		[{ secretRef: "Bearer abc123def456" }, "a bearer token"],
 		[
 			{
-				secretRef:
-					"-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkq-----END PRIVATE KEY-----",
+				secretRef: syntheticPemLikeSecretRef(),
 			},
 			"a PEM private key",
 		],

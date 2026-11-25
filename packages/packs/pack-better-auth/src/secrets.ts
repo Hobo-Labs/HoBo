@@ -1,7 +1,7 @@
 import {
 	type BetterAuthSecretRef,
 	betterAuthSecretRefScheme,
-} from "@hobo/adapter-better-auth";
+} from "@hobo/auth-adapter-contract";
 import { parseSecretRef } from "@hobo/bindings";
 import { requireNoPlaintextConformance, type SecretsPort } from "@hobo/identity";
 

@@ -1,0 +1,14 @@
+{
+	"pack_id": "pack.better-auth/v1",
+	"descriptor_id": "better-auth",
+	"claims_mapping_version": "better-auth-claims/v1",
+	"required_ports": ["hobo:data/relational", "hobo:http", "hobo:secrets"],
+	"adapter_id": "better-auth",
+	"base_path": "/api/auth",
+	"route_pattern": "/api/auth/*",
+	"ports": {
+		"relational_bindle": "auth_db",
+		"http_bindle": "auth_api",
+		"signing_secret_ref": "hobo-secret://camp-prod/auth/better-auth-signing-key"
+	}
+}
