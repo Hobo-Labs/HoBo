@@ -12,15 +12,15 @@ Source issue: HOBO-403.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/dogfood-yard-acceptance-contract`](../../src/draft/exp-proofs/dx/dogfood-yard-acceptance-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-403-dogfood-yard-acceptance`](./proofs/hobo-403-dogfood-yard-acceptance/README.md).
+[`proofs/hobo-403-dogfood-yard-acceptance`](https://linear.app/quickdeploy-ai/document/hobo-403-dogfood-yard-acceptance-proof-archived-c9e4c247f13f).
 M1 dogfood/alpha evidence proof lives in
 [`src/draft/exp-proofs/dx/dogfood-yard-m1-evidence-contract`](../../src/draft/exp-proofs/dx/dogfood-yard-m1-evidence-contract/README.md)
 and is summarized in
-[`proofs/hobo-455-dogfood-yard-m1-evidence`](./proofs/hobo-455-dogfood-yard-m1-evidence/README.md).
+[`proofs/hobo-455-dogfood-yard-m1-evidence`](https://linear.app/quickdeploy-ai/document/hobo-455-dogfood-yard-m1-evidence-proof-archived-e8feea257a8e).
 M2 private beta evidence is proven in
 [`src/draft/exp-proofs/dx/dogfood-yard-private-beta-evidence-contract`](../../src/draft/exp-proofs/dx/dogfood-yard-private-beta-evidence-contract/README.md)
 and summarized in
-[`proofs/hobo-462-dogfood-yard-private-beta`](./proofs/hobo-462-dogfood-yard-private-beta/README.md).
+[`proofs/hobo-462-dogfood-yard-private-beta`](https://linear.app/quickdeploy-ai/document/hobo-462-dogfood-yard-private-beta-evidence-proof-archived-382f21766393).
 
 ## M0 Acceptance Record
 
@@ -105,7 +105,7 @@ private local setup, hidden customer data, or unbounded "it worked once" claims.
 HOBO-469 adds the M3 release-candidate evidence gate for this project. Executable proof lives in
 [`src/draft/exp-proofs/dx/dogfood-yard-release-candidate-contract`](../../src/draft/exp-proofs/dx/dogfood-yard-release-candidate-contract/README.md),
 with branch evidence summarized in
-[`proofs/hobo-469-dogfood-yard-release-candidate`](./proofs/hobo-469-dogfood-yard-release-candidate/README.md).
+[`proofs/hobo-469-dogfood-yard-release-candidate`](https://linear.app/quickdeploy-ai/document/hobo-469-dogfood-yard-release-candidate-proof-archived-452fd7a6cd6d).
 
 The M3 gate records owner-mapped release-candidate evidence for the dogfood scenario ledger,
 support/debug readiness, rollback and restore drill fixtures, and the v1 cutline handoff. It also

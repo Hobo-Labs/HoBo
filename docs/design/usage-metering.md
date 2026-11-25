@@ -12,7 +12,7 @@ Source issue: HOBO-417.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/usage-metering-scope-contract`](../../src/draft/exp-proofs/cx/usage-metering-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-417-usage-metering`](./proofs/hobo-417-usage-metering/README.md).
+[`proofs/hobo-417-usage-metering`](https://linear.app/quickdeploy-ai/document/hobo-417-usage-metering-m0-proof-archived-4ee95086b6fe).
 
 ## M0 Acceptance Record
 

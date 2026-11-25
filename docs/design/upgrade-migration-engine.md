@@ -12,7 +12,7 @@ Source issue: HOBO-430.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/upgrade-migration-scope-contract`](../../src/draft/exp-proofs/cx/upgrade-migration-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-430-upgrade-migration`](./proofs/hobo-430-upgrade-migration/README.md).
+[`proofs/hobo-430-upgrade-migration`](https://linear.app/quickdeploy-ai/document/hobo-430-upgrade-and-migration-engine-m0-proof-archived-d90ef7d65903).
 
 ## M0 Acceptance Record
 

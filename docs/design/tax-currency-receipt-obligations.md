@@ -12,7 +12,7 @@ Source issue: HOBO-513.
 Executable proof lives in
 [`src/draft/technical-proofs/tax-currency-receipt-obligations-contract`](../../src/draft/technical-proofs/tax-currency-receipt-obligations-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-513-tax-currency-receipt-obligations`](./proofs/hobo-513-tax-currency-receipt-obligations/README.md).
+[`proofs/hobo-513-tax-currency-receipt-obligations`](https://linear.app/quickdeploy-ai/document/hobo-513-tax-currency-receipt-obligations-proof-archived-e7cd56b220c9).
 
 ## M0 Acceptance Record
 

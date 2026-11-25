@@ -12,7 +12,7 @@ Source issue: HOBO-433.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/upgrade-test-suite-scope-contract`](../../src/draft/exp-proofs/dx/upgrade-test-suite-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-433-upgrade-test-suite`](./proofs/hobo-433-upgrade-test-suite/README.md).
+[`proofs/hobo-433-upgrade-test-suite`](https://linear.app/quickdeploy-ai/document/hobo-433-upgrade-test-suite-m0-scope-proof-archived-894611f25a2e).
 
 ## M0 Acceptance Record
 
