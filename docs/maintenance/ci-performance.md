@@ -805,16 +805,6 @@ with `pnpm exec vitest run`, and `scripts/relevant-check-policy.ts` selects four
 `scripts/test/script-test-runners.test.ts` holds each of those invocations to the runner
 `test:scripts` gives the same file.
 
-## Hosted overflow and `actions.lock` cache splits
-
-`ci-runner-preflight` installs Playwright on GitHub-hosted runners with split `actions/cache/restore`
-and `actions/cache/save` pins instead of monolithic `actions/cache`. Regenerate
-`.github/workflows/actions.lock` with `gh actions-lock migrate` (or hand-update the workflow entry
-and `dependencies`) and mirror the same SHAs in `scripts/action-pin-allowlist.json` so offline
-`pnpm run actions:lint` and CI `gh actions-lock --verify` stay aligned. Workflows that
-only pull `ci-runner-preflight` (for example `ci-deps-publish.yml`) need the same
-restore/save pins in their workflow section.
-
 ## Checks that went stale on main
 
 No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so these
