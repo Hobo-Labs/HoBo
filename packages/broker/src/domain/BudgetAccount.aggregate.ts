@@ -105,10 +105,7 @@ export class ConfigureBudgetAccount extends Domain.Command(
 			alertThresholdMicros: Schema.Int,
 		},
 		events: [BudgetCeilingConfigured],
-		rejects: [
-			BudgetCeilingBelowLiabilities,
-			BudgetNegativeAmountRejected,
-		],
+		rejects: [BudgetCeilingBelowLiabilities, BudgetNegativeAmountRejected],
 	},
 	{
 		description:

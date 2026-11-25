@@ -572,11 +572,14 @@ export class DispatchAccount extends Domain.Aggregate("DispatchAccount", {
 					status: existing._tag,
 				});
 			}
-			if (cmd.usageEvidenceRef === null) {
+			if (existing._tag === "Running" && cmd.usageEvidenceRef === null) {
 				return new UsageEvidenceRequired({ reservationId: cmd.reservationId });
 			}
 			const { hold } = existing;
-			if (cmd.settledMicros > hold.reservedMicros) {
+			if (
+				existing._tag === "Pending" &&
+				cmd.settledMicros > hold.reservedMicros
+			) {
 				return new SettlementExceedsHold({
 					reservationId: cmd.reservationId,
 					reservedMicros: hold.reservedMicros,

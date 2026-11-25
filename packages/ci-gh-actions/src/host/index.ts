@@ -7,8 +7,10 @@ import {
 import * as Layer from "effect/Layer";
 import { GhRelay, GhRelayHandlers } from "../domain/index.js";
 import type { GhLintSandboxService, GhRunnerProtocolService } from "./rivet.js";
-import type { GhRelayRouteFactsService } from "./route-facts.js";
-import { GhRelayRouteFactsFailClosed } from "./route-facts.js";
+import {
+	GhRelayRouteFactsFailClosed,
+	type GhRelayRouteFactsService,
+} from "./route-facts.js";
 
 export {
 	type AnswerPickRunnerInput,
@@ -24,7 +26,10 @@ export {
 	type GhRelayRivetHostOptions,
 	type GhRunnerProtocolService,
 } from "./rivet.js";
-export { GhRelayRouteFactsFailClosed } from "./route-facts.js";
+export {
+	createGhRelayRouteFactsFromStore,
+	GhRelayRouteFactsFailClosed,
+} from "./route-facts.js";
 
 export function createGhRelayInMemoryLayer<
 	ProtoErr,

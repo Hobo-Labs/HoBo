@@ -37,6 +37,7 @@ import {
 	ReservationNotReleasable,
 	ReserveDispatch,
 	type RunnerAccountId,
+	SettlementExceedsHold,
 	StartReservation,
 	scopedAccountId,
 	selectDispatchCandidate,
@@ -432,6 +433,21 @@ describe("@hobo/dispatcher/domain DispatchRouting (static invariants + BDD)", ()
 						rateHeadroomAfter: UNITS(8),
 						concurrencyHeadroomAfter: SLOTS(2),
 						heldMicrosAfter: MICROS(100_000),
+					}),
+				),
+				Story.when(
+					runnerAccount,
+					new ConfirmReservation({
+						reservationId: resTwo,
+						settledMicros: MICROS(150_000),
+						usageEvidenceRef: null,
+					}),
+				),
+				Story.rejected(
+					new SettlementExceedsHold({
+						reservationId: resTwo,
+						settledMicros: MICROS(150_000),
+						reservedMicros: MICROS(100_000),
 					}),
 				),
 				Story.when(
