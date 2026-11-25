@@ -19,7 +19,9 @@
 	},
 	"dependencies": {
 		"@hobo/adapter-better-auth": "workspace:*",
-		"@hobo/core": "workspace:*"
+		"@hobo/bindings": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/identity": "workspace:*"
 	},
 	"peerDependencies": {
 		"better-auth": ">=1.7.5"

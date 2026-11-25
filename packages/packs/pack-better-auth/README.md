@@ -20,6 +20,8 @@ infrastructure inside the adapter.
   to the pinned Better Auth `SchemaIr` fixture — expand-only on first deploy.
 - `fixtures/better-auth-schema-ir.ts` — canonical Better Auth table shapes for
   governed data-plane migrations (not adapter-private DDL).
+- `secrets.ts` — `wireBetterAuthSigningSecret`: camp `SecretsPort` resolution at
+  bundle init; wire record carries locators only (ADR-0161 / ADR-0113).
 
 ## HONEST SCOPE
 

@@ -2774,9 +2774,15 @@ importers:
       '@hobo/adapter-better-auth':
         specifier: workspace:*
         version: link:../../adapters/adapter-better-auth
+      '@hobo/bindings':
+        specifier: workspace:*
+        version: link:../../bindings
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../../identity
       better-auth:
         specifier: '>=1.7.5'
         version: 1.7.28(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.11)(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20261117.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(kysely@0.29.9)(pg@8.22.0)(sql.js@1.14.1))(mongodb@6.21.0(socks@2.8.9))(pg@8.22.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.9)(vue@3.5.45(typescript@6.0.3))

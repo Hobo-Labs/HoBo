@@ -27,3 +27,10 @@ message BetterAuthRelationalMigrationRecord {
   string migration_plan_digest = 5;
   uint32 expand_step_count = 6;
 }
+
+message BetterAuthSigningSecretWireRecord {
+  string secret_ref = 1;
+  string secret_scheme = 2;
+  string secrets_port_id = 3;
+  string resolved_at_iso = 4;
+}
