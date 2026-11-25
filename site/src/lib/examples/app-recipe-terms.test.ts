@@ -8,10 +8,6 @@ import {
 } from "./app-recipe-terms.js";
 import type { RecipeTerm } from "./recipe-terms.js";
 
-// What the Ship board promises a visitor before they press Deploy. The tests
-// that matter here are the refusals: an app nothing can host must not be shown
-// somebody else's terms, and the ranking must favour the visitor rather than
-// the deployment that is most convenient to run.
 
 function exampleWith(
 	resources: Readonly<Record<string, "kv" | "queue">>,
@@ -35,7 +31,6 @@ function exampleWith(
 			})),
 		},
 	};
-	// SAFETY: test fixture is a partial catalog entry consumed by terms ranking helpers.
 	return example as never;
 }
 

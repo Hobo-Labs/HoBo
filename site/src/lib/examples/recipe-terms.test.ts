@@ -9,9 +9,6 @@ import {
 	summarizeTerms,
 } from "./recipe-terms.js";
 
-// The console is allowed to render claim terms; it is not allowed to invent
-// them. That holds only while the checked-in artifact still matches what
-// `@hobo/recipes` says, so the drift check is the load-bearing test here.
 
 describe("the recipe-terms artifact", () => {
 	it("matches what the shipped recipes currently declare", () => {
@@ -26,8 +23,6 @@ describe("the recipe-terms artifact", () => {
 	it("gives a claim a deadline and a consent, or asks for neither", () => {
 		for (const term of RECIPE_TERMS) {
 			if (term.claimActionCount === 0) {
-				// A purely local preview creates nothing to hand over, so there
-				// is nothing to consent to and no clock to run out.
 				expect(term.earliestClaimDeadlineMs).toBeNull();
 				continue;
 			}

@@ -1,7 +1,3 @@
-/**
- * Pick the git base Main full gate uses for affected workspace tests: last green
- * main push on HoBo CI Fabric when reachable, else the push parent, else HEAD~1.
- */
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
@@ -51,11 +47,7 @@ export async function fetchLastGreenMainSha(
 ): Promise<string | undefined> {
 	const [owner, repo] = options.repository.split("/");
 	if (!owner || !repo) return undefined;
-	// Runs of this one workflow: the repository-wide list mixes in every other
-	// workflow's push runs, which could crowd the last green one out of the page.
 	const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(options.workflowBasename)}/runs?branch=main&event=push&status=completed&per_page=30`;
-	// Every caller falls back without a last green commit (push parent, the push's
-	// own range), so a slow, refused or unreadable answer is "none", never a throw.
 	try {
 		const response = await options.fetch(url, {
 			signal: AbortSignal.timeout(15_000),
@@ -66,7 +58,6 @@ export async function fetchLastGreenMainSha(
 			},
 		});
 		if (!response.ok) return undefined;
-		// SAFETY: GitHub REST `workflow_runs` entries expose the fields `WorkflowRunRow` uses; extras are ignored.
 		const body = (await response.json()) as {
 			workflow_runs?: WorkflowRunRow[];
 		};
