@@ -1,4 +1,4 @@
-import { parseBetterAuthConfig } from "@hobo/adapter-better-auth";
+import { parseBetterAuthConfig } from "@hobo/auth-adapter-contract";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
