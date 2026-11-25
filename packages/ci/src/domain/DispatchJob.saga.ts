@@ -11,9 +11,9 @@ import {
 	NonEmptyReason,
 	NonNegativeMicros,
 	PositiveAttempts,
+	RunnerLabel,
 	RunnerPoolId,
 	RunnerTier,
-	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
@@ -45,7 +45,7 @@ const ReserveSuccess = Schema.Struct({
 	slotId: SlotId,
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
-	runsOn: RunsOnLabel,
+	runnerLabel: RunnerLabel,
 	reservedMicros: NonNegativeMicros,
 });
 
@@ -97,7 +97,7 @@ export class DispatchJob extends Domain.Saga(
 	},
 	{
 		description:
-			"Balance and provision a runner across local, Hostinger, Agent37, and GitHub-hosted pools with failover and compensation.",
+			"Balance and provision a runner across local, Hostinger, Agent37, Boat, and hosted pools with failover and compensation.",
 	},
 ) {}
 
@@ -158,7 +158,7 @@ export const DispatchJobLive = DispatchJob.toLayer(
 					),
 				);
 
-				const { slotId, poolId, tier, runsOn } = reservation;
+				const { slotId, poolId, tier, runnerLabel } = reservation;
 
 				const provisioned = yield* Activity.make({
 					name: `provision-runner-${attempt}`,
@@ -169,7 +169,7 @@ export const DispatchJobLive = DispatchJob.toLayer(
 						jobId: key,
 						poolId,
 						tier,
-						runsOn,
+						runnerLabel,
 						slotId,
 					}),
 				}).pipe(Effect.result);
@@ -202,7 +202,7 @@ export const DispatchJobLive = DispatchJob.toLayer(
 								poolId,
 								tier,
 								slotId,
-								runsOn,
+								runnerLabel,
 								externalRunnerId: provisioned.success.externalRunnerId,
 								attempts: PositiveAttempts.make(attempt),
 							}),

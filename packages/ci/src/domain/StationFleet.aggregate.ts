@@ -9,11 +9,11 @@ import {
 	PayerId,
 	PoolRole,
 	PositiveConcurrency,
+	RunnerLabel,
 	RunnerPoolHealth,
 	RunnerPoolId,
 	RunnerPoolSpec,
 	RunnerTier,
-	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
@@ -79,7 +79,7 @@ export class BalancedSlotReserved extends Domain.Event("BalancedSlotReserved", {
 	jobId: JobDispatchId,
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
-	runsOn: RunsOnLabel,
+	runnerLabel: RunnerLabel,
 	payer: PayerId,
 	reservedMicros: NonNegativeMicros,
 }) {}
@@ -126,7 +126,7 @@ export class RegisterRunnerPool extends Domain.Command(
 	},
 	{
 		description:
-			"Register a local, Hostinger, Agent37, or GitHub-hosted runner pool on a CI station.",
+			"Register a local, Hostinger, Agent37, Boat, or hosted runner pool on a CI station.",
 	},
 ) {}
 
@@ -164,13 +164,13 @@ export class ReserveBalancedSlot extends Domain.Command(
 			slotId: SlotId,
 			poolId: RunnerPoolId,
 			tier: RunnerTier,
-			runsOn: RunsOnLabel,
+			runnerLabel: RunnerLabel,
 			reservedMicros: NonNegativeMicros,
 		},
 	},
 	{
 		description:
-			"Atomically balance and reserve a runner slot across local, Hostinger, Agent37, and GitHub-hosted pools within budget.",
+			"Atomically balance and reserve a runner slot across local, Hostinger, Agent37, Boat, and hosted pools within budget.",
 	},
 ) {}
 
@@ -195,7 +195,7 @@ const PoolEntry = Schema.Struct({
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
 	role: PoolRole,
-	runsOn: RunsOnLabel,
+	runnerLabel: RunnerLabel,
 	concurrency: PositiveConcurrency,
 	activeJobs: NonNegativeCount,
 	costPerMinuteMicros: NonNegativeMicros,
@@ -214,7 +214,7 @@ const ActiveReservation = Schema.Struct({
 	jobId: JobDispatchId,
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
-	runsOn: RunsOnLabel,
+	runnerLabel: RunnerLabel,
 	payer: PayerId,
 	reservedMicros: NonNegativeMicros,
 });
@@ -248,7 +248,7 @@ const TIER_PRIORITY = {
 	hostinger: 1,
 	agent37: 2,
 	boat: 3,
-	github: 4,
+	hosted: 4,
 } as const satisfies Record<RunnerTier, number>;
 
 function toNonNegativeMicros(value: number): NonNegativeMicros {
@@ -476,7 +476,7 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 					jobId: cmd.jobId,
 					poolId: chosen.pool.poolId,
 					tier: chosen.pool.tier,
-					runsOn: chosen.pool.runsOn,
+					runnerLabel: chosen.pool.runnerLabel,
 					payer: chosen.pool.payer,
 					reservedMicros: chosen.costMicros,
 				}),
@@ -562,7 +562,7 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 					jobId: event.jobId,
 					poolId: event.poolId,
 					tier: event.tier,
-					runsOn: event.runsOn,
+					runnerLabel: event.runnerLabel,
 					payer: event.payer,
 					reservedMicros: event.reservedMicros,
 				},
@@ -599,8 +599,8 @@ export class StationFleet extends Domain.Aggregate("StationFleet", {
 			return {
 				slotId: reserved?.slotId ?? SlotId.make("slot-unassigned"),
 				poolId: reserved?.poolId ?? RunnerPoolId.make("pool-unassigned"),
-				tier: reserved?.tier ?? "github",
-				runsOn: reserved?.runsOn ?? RunsOnLabel.make("ubuntu-24.04"),
+				tier: reserved?.tier ?? "hosted",
+				runnerLabel: reserved?.runnerLabel ?? RunnerLabel.make("hosted-linux"),
 				reservedMicros: reserved?.reservedMicros ?? ZERO_MICROS,
 			};
 		},

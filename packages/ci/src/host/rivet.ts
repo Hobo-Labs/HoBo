@@ -52,7 +52,7 @@ const LeaseRowSchema = Schema.Struct({
 	slot_id: Schema.NonEmptyString,
 	job_id: Schema.NonEmptyString,
 	pool_id: Schema.NonEmptyString,
-	tier: Schema.Literals(["local", "hostinger", "agent37", "boat", "github"]),
+	tier: Schema.Literals(["local", "hostinger", "agent37", "boat", "hosted"]),
 	reserved_micros: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	status: LeaseStatusSchema,
 	settled_micros: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
