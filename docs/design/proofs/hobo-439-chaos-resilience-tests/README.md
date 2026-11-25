@@ -9,7 +9,7 @@ tags: [hobo, design]
 
 HOBO-439 is proven by the focused M0 contract at
 [`src/draft/exp-proofs/dx/chaos-resilience-tests-scope-acceptance`](../../../../src/draft/exp-proofs/dx/chaos-resilience-tests-scope-acceptance/README.md)
-and the durable scope record at [chaos-resilience-tests.md](../../chaos-resilience-tests.md).
+and the durable scope record at [chaos-resilience-tests.md](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/chaos-resilience-tests.md).
 
 ## Acceptance Evidence
 

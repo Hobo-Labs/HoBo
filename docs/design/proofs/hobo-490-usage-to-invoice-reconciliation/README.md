@@ -11,7 +11,7 @@ timestamp: 2026-06-30T00:00:00Z
 HOBO-490 is proven by the focused M1 contract at
 [`src/draft/technical-proofs/usage-to-invoice-reconciliation-contract`](../../../../src/draft/technical-proofs/usage-to-invoice-reconciliation-contract/README.md)
 and the durable design record at
-[`usage-to-invoice-reconciliation.md`](../../usage-to-invoice-reconciliation.md).
+[`usage-to-invoice-reconciliation.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/usage-to-invoice-reconciliation.md).
 
 ## Acceptance Evidence
 

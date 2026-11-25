@@ -419,6 +419,47 @@ function isExperiencePlanningArtifact(file: string): boolean {
 	);
 }
 
+function isRelocationOnly(args: readonly string[], file: string): boolean {
+	const patch = git([
+		...args,
+		"--no-color",
+		"--no-ext-diff",
+		"--unified=0",
+		"--",
+		file,
+	]);
+	const removed: string[] = [];
+	const added: string[] = [];
+	for (const line of patch.split("\n")) {
+		if (line.startsWith("--- ") || line.startsWith("+++ ")) continue;
+		if (line.startsWith("-")) removed.push(line.slice(1));
+		if (line.startsWith("+")) added.push(line.slice(1));
+	}
+	const links = /\]\(([^)]+)\)/gu;
+	for (const line of added) {
+		const index = removed.findIndex((previous) => {
+			if (previous.replace(links, "]()") !== line.replace(links, "]()"))
+				return false;
+			const oldTargets = [...previous.matchAll(links)].map((match) => match[1]);
+			const newTargets = [...line.matchAll(links)].map((match) => match[1]);
+			return (
+				oldTargets.length === newTargets.length &&
+				oldTargets.some((target, i) => target !== newTargets[i]) &&
+				newTargets.every(
+					(target, i) =>
+						target === oldTargets[i] ||
+						/^https:\/\/(?:linear\.app\/|github\.com\/Hobo-Labs\/HoBo\/blob\/[\da-f]{40}\/)/u.test(
+							target ?? "",
+						),
+				)
+			);
+		});
+		if (index < 0) return false;
+		removed.splice(index, 1);
+	}
+	return true;
+}
+
 function addsLines(args: readonly string[], file: string): boolean {
 	return (
 		addedLineNumbers(
@@ -474,7 +515,8 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			((isExperiencePlanningArtifact(sourceFile) ||
 				/\.mdx?$/iu.test(sourceFile)) &&
 				parents.every((parent) => parent.files.has(file)) &&
-				(untracked.includes(file) || addsLines(args, file))) ||
+				(untracked.includes(file) ||
+					(addsLines(args, file) && !isRelocationOnly(args, file)))) ||
 			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(sourceFile)
 		) {
 			const reason = documentViolation(file, contents(mode, file));

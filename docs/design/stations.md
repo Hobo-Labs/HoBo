@@ -103,7 +103,7 @@ and `@hobo/cd` parses it as `RailDeliveryRecord`:
 Rails published before the field existed have no `delivery` and keep their
 behavior. The neutral `deliveryPolicy` now names a reconciler mode
 (`conductor`, `agent`, `publisher`) instead of an engine
-([delivery-policy-upgrade.md](./delivery-policy-upgrade.md)). Rail versions
+([delivery-policy-upgrade.md](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/delivery-policy-upgrade.md)). Rail versions
 themselves are delivered as Freight ([continuous-delivery.md](./continuous-delivery.md)).
 
 ## 6. Open items
