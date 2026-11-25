@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
@@ -63,28 +62,12 @@ it("refuses a native promise whose species was replaced without invoking it", ()
 
 it("keeps the exact fulfilled object boxed when Promise and Object prototypes change", () => {
 	const packageDir = fileURLToPath(new URL("../", import.meta.url));
-	const directory = mkdtempSync(join(packageDir, ".cloudflare-test-dist-"));
-	try {
-		const compiler = createRequire(import.meta.url).resolve(
-			"typescript/bin/tsc",
-		);
-		const compiled = spawnSync(
-			process.execPath,
-			[
-				compiler,
-				"-p",
-				join(packageDir, "tsconfig.json"),
-				"--outDir",
-				directory,
-			],
-			{ encoding: "utf8", timeout: 30_000 },
-		);
-		expect(compiled.error).toBeUndefined();
-		expect(compiled.status, compiled.stderr).toBe(0);
-		const modulePath = pathToFileURL(
-			join(directory, "cloudflare-native-await.js"),
-		).href;
-		const program = `
+	const directory = join(packageDir, "dist");
+	expect(existsSync(join(directory, "cloudflare-native-await.js"))).toBe(true);
+	const modulePath = pathToFileURL(
+		join(directory, "cloudflare-native-await.js"),
+	).href;
+	const program = `
 import { awaitCloudflareNative } from ${JSON.stringify(modulePath)};
 const value = {};
 const native = Promise.resolve(value);
@@ -107,19 +90,16 @@ finally {
 }
 process.stdout.write(JSON.stringify({ same, calls }));
 `;
-		const result = spawnSync(
-			process.execPath,
-			["--input-type=module", "-e", program],
-			{
-				encoding: "utf8",
-				timeout: 15_000,
-				env: { ...process.env, NODE_OPTIONS: "" },
-			},
-		);
-		expect(result.error).toBeUndefined();
-		expect(result.status, result.stderr).toBe(0);
-		expect(JSON.parse(result.stdout)).toEqual({ same: true, calls: 0 });
-	} finally {
-		rmSync(directory, { recursive: true, force: true });
-	}
-}, 45_000);
+	const result = spawnSync(
+		process.execPath,
+		["--input-type=module", "-e", program],
+		{
+			encoding: "utf8",
+			timeout: 15_000,
+			env: { ...process.env, NODE_OPTIONS: "" },
+		},
+	);
+	expect(result.error).toBeUndefined();
+	expect(result.status, result.stderr).toBe(0);
+	expect(JSON.parse(result.stdout)).toEqual({ same: true, calls: 0 });
+});
