@@ -305,6 +305,23 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(sent).toEqual([]);
 	});
 
+	it("ignores malformed opt-in probe settings on a dry run that uses neither", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING, "--dry-run"], {
+			fetch,
+			env: {
+				VERCEL_TOKEN: TOKEN,
+				HOBO_CI_RELAY_STAGED_PRODUCTION: "not-a-boolean",
+				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "not-a-boolean",
+			},
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_PLANNED",
+		});
+		expect(sent).toEqual([]);
+	});
+
 	it("refuses a production deploy Vercel would build from git, in a dry run too: it carries no store coordinates", async () => {
 		const { fetch, sent } = unreachable();
 		for (const mode of [["--dry-run"], []]) {
@@ -1268,6 +1285,58 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(preview.exitCode).toBe(1);
 		expect(preview.envelope).toMatchObject({
 			code: "HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("ignores a malformed staged-production setting when staged production is not used", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				"--build",
+				"prebuilt",
+				"--wait",
+			],
+			{
+				fetch,
+				env: {
+					VERCEL_TOKEN: TOKEN,
+					VERCEL_TEAM_ID: TEAM,
+					...ORIGINS,
+					HOBO_CI_RELAY_STAGED_PRODUCTION: "not-a-boolean",
+				},
+			},
+		);
+		expect(ran.envelope).not.toMatchObject({
+			message: expect.stringContaining(
+				"HOBO_CI_RELAY_STAGED_PRODUCTION accepts only true or false",
+			),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses a malformed preview-OIDC setting only on the protected preview path", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch,
+			env: {
+				VERCEL_TOKEN: TOKEN,
+				VERCEL_TEAM_ID: TEAM,
+				HOBO_CI_RELAY_PREVIEW_URL: "https://relay-preview.example.test",
+				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "not-a-boolean",
+			},
+		});
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CLI_USAGE",
+			message: expect.stringContaining(
+				"HOBO_CI_RELAY_PREVIEW_PROBE_OIDC accepts only true or false",
+			),
 		});
 		expect(sent).toEqual([]);
 	});

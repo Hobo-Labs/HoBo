@@ -97,6 +97,69 @@ describe("promote and rollback", () => {
 		).resolves.toBeUndefined();
 	});
 
+	it("polls a queued promotion until the production read-back names it", async () => {
+		const transport = scripted([
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_live" } },
+			}),
+			reply(202, {}),
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_live" } },
+			}),
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_staged1" } },
+			}),
+		]);
+		const sleeps: number[] = [];
+		const client = createVercelClient({
+			token: TOKEN,
+			fetch: transport.fetch,
+			sleep: async (ms) => {
+				sleeps.push(ms);
+			},
+		});
+		await expect(
+			client.promoteDeployment(PROJECT, "dpl_staged1"),
+		).resolves.toBeUndefined();
+		expect(transport.sent.map((request) => request.init.method)).toEqual([
+			"GET",
+			"POST",
+			"GET",
+			"GET",
+		]);
+		expect(sleeps).toEqual([1000]);
+	});
+
+	it("polls through a read-back with no production assignment yet", async () => {
+		const transport = scripted([
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_live" } },
+			}),
+			reply(202, {}),
+			reply(200, { id: PROJECT, targets: {} }),
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_staged1" } },
+			}),
+		]);
+		const sleeps: number[] = [];
+		const client = createVercelClient({
+			token: TOKEN,
+			fetch: transport.fetch,
+			sleep: async (ms) => {
+				sleeps.push(ms);
+			},
+		});
+		await expect(
+			client.promoteDeployment(PROJECT, "dpl_staged1"),
+		).resolves.toBeUndefined();
+		expect(sleeps).toEqual([1000]);
+	});
+
 	it("fails typed when Vercel refuses the promotion, without the token", async () => {
 		const transport = scripted([
 			reply(200, {

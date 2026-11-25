@@ -71,18 +71,28 @@ export function hookPointName(point: HookPoint): string {
 	return POINT_NAME.get(point) ?? "unspecified";
 }
 
+const FORWARDED_REASON_CODES: ReadonlySet<string> = new Set([
+	...Object.values(HOOK_REASON),
+	"compose-runbook-unconfigured",
+	"compose-suite-unconfigured",
+]);
+
 function forwardedCodes(
 	reasons: readonly ReasonRecord[],
 	point: HookPoint,
 	subject: HookSubject,
 ): ReasonRecord[] {
-	return reasons.map((forwarded) =>
-		reason(
-			forwarded.code,
-			`A hook reported ${forwarded.code} at ${hookPointName(point)}.`,
-			"Inspect the hook's own report for the cause.",
-			subject.campId,
-		),
+	return reasons.flatMap((forwarded) =>
+		FORWARDED_REASON_CODES.has(forwarded.code)
+			? [
+					reason(
+						forwarded.code,
+						`A hook reported ${forwarded.code} at ${hookPointName(point)}.`,
+						"Inspect the hook's own report for the cause.",
+						subject.campId,
+					),
+				]
+			: [],
 	);
 }
 

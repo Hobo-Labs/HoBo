@@ -497,6 +497,7 @@ export type PromoteRequest = Readonly<{
 	freightId: FreightId;
 	targets: readonly CampId[];
 	idempotencyKey: string;
+	driverOnly?: boolean;
 	pipeline?: string;
 	node?: string;
 	sourceCampId?: CampId;
@@ -507,6 +508,11 @@ export type PromoteRequest = Readonly<{
 	intent?: DeltaIntent;
 	/** How an up promotion handles resources absent from its declaration. */
 	deploymentMode?: "incremental" | "complete";
+}>;
+
+export type PromotionTickOptions = Readonly<{
+	promotionId?: PromotionId;
+	allowDriverOnly?: boolean;
 }>;
 
 export interface PromotionService {
@@ -532,7 +538,7 @@ export interface PromotionService {
 		query?: Readonly<{ campId?: CampId; limit?: number }>,
 	): Promise<readonly PromotionRecord[]>;
 	/** Advance in-flight sagas from journal state. Safe to repeat. */
-	tick(ctx: CdContext): Promise<void>;
+	tick(ctx: CdContext, options?: PromotionTickOptions): Promise<void>;
 }
 
 export interface PreviewEnvironments {

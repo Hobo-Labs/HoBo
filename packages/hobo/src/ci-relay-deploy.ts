@@ -597,10 +597,6 @@ export async function runCiRelayDeploy(
 	const previewProbeOidcSetting = booleanEnvironment(
 		"HOBO_CI_RELAY_PREVIEW_PROBE_OIDC",
 	);
-	if (stagedProductionSetting === null || previewProbeOidcSetting === null)
-		return usage(
-			"HOBO_CI_RELAY_STAGED_PRODUCTION and HOBO_CI_RELAY_PREVIEW_PROBE_OIDC accept only true or false.",
-		);
 	const stagedProduction =
 		target === "production" && stagedProductionSetting === true;
 	const protectedPreview =
@@ -912,6 +908,8 @@ export async function runCiRelayDeploy(
 			"hobo ci deploy --target production needs --sha <commit>: production takes exactly the commit preview verified, and a ref alone names no commit.",
 		);
 	const wait = values.wait === true;
+	if (stagedProduction && stagedProductionSetting === null)
+		return usage("HOBO_CI_RELAY_STAGED_PRODUCTION accepts only true or false.");
 	const origin = RELAY_VERIFY_ORIGIN[target];
 	const originGiven = env[origin]?.trim() ?? "";
 	if (wait && !HTTPS_ORIGIN.test(originGiven)) {
@@ -929,6 +927,17 @@ export async function runCiRelayDeploy(
 		target === "preview" &&
 		wait &&
 		(prebuilt || !HTTPS_ORIGIN.test(originGiven));
+	if (
+		target === "preview" &&
+		wait &&
+		sha !== undefined &&
+		HTTPS_ORIGIN.test(originGiven) &&
+		!recordVerifiedPreview &&
+		previewProbeOidcSetting === null
+	)
+		return usage(
+			"HOBO_CI_RELAY_PREVIEW_PROBE_OIDC accepts only true or false.",
+		);
 
 	const deployToken = await readRelayDeployToken({
 		...(input.ownerCredentials !== undefined
@@ -961,6 +970,7 @@ export async function runCiRelayDeploy(
 	const client = createVercelClient({
 		token,
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+		...(input.sleep !== undefined ? { sleep: input.sleep } : undefined),
 		...(teamId !== undefined && teamId !== "" ? { teamId } : undefined),
 	});
 	// The conductor's Vercel side: the git deployment of the commit the
@@ -1636,6 +1646,11 @@ export async function runCiRelayDeploy(
 		? delivered.report
 		: (delivered.report ?? undefined);
 	const deliveryData = delivery !== undefined ? { delivery } : undefined;
+	const finalizerRollback = delivered.ok
+		? undefined
+		: delivered.realization?.code === "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED"
+			? delivered.realization.data?.rollback
+			: undefined;
 	if (
 		prebuilt &&
 		target === "production" &&
@@ -1660,40 +1675,122 @@ export async function runCiRelayDeploy(
 		target === "production" &&
 		!delivered.ok &&
 		prebuiltState.promotedFrom !== undefined &&
-		prebuiltState.promoted !== undefined
+		prebuiltState.promoted !== undefined &&
+		finalizerRollback === undefined &&
+		delivered.realization?.code !== "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED"
 	) {
 		const failedWith = delivered.realization?.code ?? delivered.code;
 		const restore = prebuiltState.promotedFrom;
+		const failedDeployment = prebuiltState.promoted;
+		let current: string | undefined;
+		let currentReadError: Error | undefined;
+		try {
+			current = await client.getProductionDeploymentId(
+				prebuiltState.projectId ?? project,
+			);
+		} catch (error) {
+			if (error instanceof VercelProductionDeploymentMissingError)
+				current = undefined;
+			else
+				currentReadError =
+					error instanceof Error
+						? error
+						: new Error("current production deployment could not be established");
+		}
+		if (currentReadError !== undefined)
+			return {
+				ok: false,
+				code: "HOBO_CI_DEPLOY_ROLLBACK_FAILED",
+				message: withoutToken(
+					`Production verification of ${failedDeployment} failed (${failedWith}), and the current production deployment could not be established (${currentReadError.message}); promote ${restore} by hand if production still serves ${failedDeployment}.`,
+				),
+				data: {
+					command: "ci deploy",
+					failedDeployment,
+					rollbackTarget: restore,
+					...deliveryData,
+				},
+			};
+		if (current !== failedDeployment)
+			return {
+				ok: false,
+				code: delivered.realization?.code ?? delivered.code,
+				message: withoutToken(
+					`${delivered.realization?.message ?? delivered.message} Production traffic names ${current ?? "no deployment"}, not ${failedDeployment}; no rollback was sent.`,
+				),
+				data: {
+					command: "ci deploy",
+					failedDeployment,
+					currentProduction: current,
+					...deliveryData,
+				},
+			};
 		try {
 			await client.rollbackProduction(
 				prebuiltState.projectId ?? project,
 				restore,
-				`hobo ci deploy: ${prebuiltState.promoted} failed production verification (${failedWith})`,
+				`hobo ci deploy: ${failedDeployment} failed production verification (${failedWith})`,
 			);
 		} catch (error) {
 			return {
 				ok: false,
 				code: "HOBO_CI_DEPLOY_ROLLBACK_FAILED",
 				message: withoutToken(
-					`Production verification of ${prebuiltState.promoted} failed (${failedWith}), and rolling production back to ${restore} failed too: ${error instanceof Error ? error.message : "unknown error"}. Roll back by hand: vercel rollback ${restore}.`,
+					`Production verification of ${failedDeployment} failed (${failedWith}), and rolling production back to ${restore} failed too: ${error instanceof Error ? error.message : "unknown error"}. Roll back by hand: vercel rollback ${restore}.`,
 				),
 				data: {
 					command: "ci deploy",
-					failedDeployment: prebuiltState.promoted,
+					failedDeployment,
 					rollbackTarget: restore,
 					...deliveryData,
 				},
 			};
 		}
+		let rolledBack: string | undefined;
+		try {
+			rolledBack = await client.getProductionDeploymentId(
+				prebuiltState.projectId ?? project,
+			);
+		} catch (error) {
+			if (!(error instanceof VercelProductionDeploymentMissingError))
+				return {
+					ok: false,
+					code: "HOBO_CI_DEPLOY_ROLLBACK_FAILED",
+					message: withoutToken(
+						`Production verification of ${failedDeployment} failed (${failedWith}); rollback to ${restore} was attempted, but its outcome could not be established. Inspect production before retrying.`,
+					),
+					data: {
+						command: "ci deploy",
+						failedDeployment,
+						rollbackTarget: restore,
+						...deliveryData,
+					},
+				};
+		}
+		if (rolledBack !== restore)
+			return {
+				ok: false,
+				code: "HOBO_CI_DEPLOY_ROLLBACK_FAILED",
+				message: withoutToken(
+					`Production verification of ${failedDeployment} failed (${failedWith}); rollback to ${restore} did not leave production serving ${restore} (production serves ${rolledBack ?? "no deployment"}). Promote ${restore} by hand if needed.`,
+				),
+				data: {
+					command: "ci deploy",
+					failedDeployment,
+					rollbackTarget: restore,
+					currentProduction: rolledBack,
+					...deliveryData,
+				},
+			};
 		return {
 			ok: false,
 			code: "HOBO_CI_DEPLOY_ROLLED_BACK",
 			message: withoutToken(
-				`Production verification of ${prebuiltState.promoted} failed (${failedWith}: ${delivered.realization?.message ?? delivered.message}); production was rolled back to ${restore}, the deployment it served before.`,
+				`Production verification of ${failedDeployment} failed (${failedWith}: ${delivered.realization?.message ?? delivered.message}); production was rolled back to ${restore}, the deployment it served before.`,
 			),
 			data: {
 				command: "ci deploy",
-				failedDeployment: prebuiltState.promoted,
+				failedDeployment,
 				rolledBackTo: restore,
 				...deliveryData,
 			},

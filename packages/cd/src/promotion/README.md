@@ -16,6 +16,13 @@ journal and the ports allow; the compensation path runs ON_FAILURE hooks and
 rolls the environment group back. `tick` resumes any promotion from its
 journal, so a crash anywhere resumes by re-reading facts.
 
+`driverOnly: true` marks a promotion whose finalization belongs to one driver.
+The journal stores the `hobo.cd/driver-only:` prefix without changing the
+promotion id. Its initial request and generic ticks leave it pending;
+`tick(ctx, { promotionId, allowDriverOnly: true })` advances only the owning
+promotion, so a generic `tick` cannot bypass `AFTER_QUALIFIED` finalization.
+Reusing the key with a different `driverOnly` value fails idempotency reuse.
+
 | # | Step (per Camp) | Port | Recorded as |
 |---|---|---|---|
 | 1 | authorize (`promote`, `rail.promote`, `preview.create`) | `CdAuthorizer` | refusal, or `proposal=true` for proposal-only principals |
@@ -168,7 +175,7 @@ never re-checks:
 | `gatekeeper.ts` | `DeployGate`, `FanoutAggregateGate` | `evaluateGatekeeper` with the Camp's enforced Rail pack (binding, else Station Rail, else permissive default); can-deploy fails closed on unknown running versions; unverified provenance and stale trust evidence deny; residency over declared Yard regions; ownership conflicts (I22); windows passed through; candidate Rail evaluated in shadow and recorded through `ShadowRecorder` (D24). |
 | `approval.ts` | `ApprovalPort` | A2H handoff (NotificationPort) decided by an authorized human; CloudEvents webhook approver with an HMAC-SHA256 signed callback; the decision records the authenticated caller principal, and the body's `approver` only as an `unverified-approver=` claim. Subjects `promotion:<id>/<scope>`. |
 | `trails.ts` | `TrailsMigrations` | Bound to `@hobo/trails` `executeDataMigration` by composition; label `hobo.cd/data-migration`. |
-| `hooks.ts` | `HookRunner`, `NotificationPort` | RUNBOOK → `RunbookExecutor` (`createRunbookExecutor` in `@hobo/hobo`), SUITE → `VerifyPort`, NOTIFY → CloudEvents structured mode. NOTIFY is best-effort. |
+| `hooks.ts` | `HookRunner`, `NotificationPort` | RUNBOOK → `RunbookExecutor` (`createRunbookExecutor` in `@hobo/hobo`), SUITE → `VerifyPort`, NOTIFY → CloudEvents structured mode. NOTIFY is best-effort. Hook failures forward only codes declared by `HOOK_REASON` and the fail-closed unconfigured runbook/suite codes; unregistered codes are filtered. |
 
 ## Contracts and proofs
 

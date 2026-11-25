@@ -753,11 +753,7 @@ deploy/delivery.ts: {loaded.code}: {loaded.message}. {loaded.remediation}
 ```
 
 ```text
-deploy/delivery.ts declares the relay:finalize-promotion hook on {…}: that ref is reserved for hobo ci deploy's own injection, never a delivery file. Remove the hook; the run that carries a finalizer injects it.
-```
-
-```text
-Pipeline {pipeline}/{node} already carries the relay:finalize-promotion hook a staged run injected (pipeline records are append-once, so it stays), and this run has no finalizer: production would deploy, verify and then stop unfinalized. Run with HOBO_CI_RELAY_STAGED_PRODUCTION=true, which finalizes the promotion it drove.
+deploy/delivery.ts declares the relay:finalize-promotion hook on {…}: that ref is reserved for hobo ci deploy's own process-local injection, never a delivery file or a shared pipeline record. Remove the hook; the run that carries a finalizer injects it only into its own promotion driver.
 ```
 
 ```text

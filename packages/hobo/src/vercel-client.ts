@@ -320,6 +320,7 @@ export interface VercelClientOptions {
 	readonly teamId?: string;
 	// The API base URL. Defaults to https://api.vercel.com (override for tests).
 	readonly baseUrl?: string;
+	readonly sleep?: (ms: number) => Promise<void>;
 }
 
 export interface VercelClient {
@@ -367,6 +368,8 @@ export interface VercelClient {
 }
 
 const DEFAULT_BASE_URL = "https://api.vercel.com";
+const PROMOTION_CONFIRMATION_ATTEMPTS = 24;
+const PROMOTION_CONFIRMATION_INTERVAL_MS = 1000;
 
 // The global `fetch` presented through the injectable `VercelFetch` shape. Node
 // 18+ and modern runtimes expose a global `fetch`; we adapt it without importing
@@ -1133,6 +1136,9 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	}
 	const secrets = tokenPatterns(token);
 	const fetchImpl = options.fetch ?? globalFetch;
+	const sleep =
+		options.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
 	const teamId = normalizeVercelTeamId(options.teamId);
 	const query = teamQuery(teamId);
@@ -1342,11 +1348,24 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 				`${baseUrl}/v10/projects/${encodeURIComponent(projectData.id)}/promote/${encodeURIComponent(deploymentId)}${query}`,
 			);
 			if (!response.ok) throw await failure(what, response, secrets);
-			const observed = productionDeploymentId(
-				await readProjectRecord(reference),
-			);
-			if (observed !== deploymentId)
-				throw new VercelPromotionUnconfirmedError(observed);
+			let observed: string | undefined;
+			for (
+				let attempt = 0;
+				attempt < PROMOTION_CONFIRMATION_ATTEMPTS;
+				attempt += 1
+			) {
+				try {
+					observed = productionDeploymentId(await readProjectRecord(reference));
+				} catch (error) {
+					if (!(error instanceof VercelProductionDeploymentMissingError))
+						throw error;
+					observed = undefined;
+				}
+				if (observed === deploymentId) return;
+				if (attempt + 1 < PROMOTION_CONFIRMATION_ATTEMPTS)
+					await sleep(PROMOTION_CONFIRMATION_INTERVAL_MS);
+			}
+			throw new VercelPromotionUnconfirmedError(observed);
 		},
 		async rollbackProduction(
 			project: string,

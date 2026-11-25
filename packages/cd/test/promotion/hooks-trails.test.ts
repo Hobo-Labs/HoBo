@@ -152,6 +152,41 @@ describe("hook runner", () => {
 		expect(JSON.stringify(out)).not.toContain(marker);
 	});
 
+	it("filters reason codes the hook contract does not define", async () => {
+		const hooks = createHookRunner({
+			runbooks: new FakeRunbooks(),
+			suites: {
+				run: async () => ({
+					ok: false as const,
+					reasons: [
+						create(ReasonRecordSchema, { code: "unregistered-code" }),
+						create(ReasonRecordSchema, { code: HOOK_REASON.notifyFailed }),
+						create(ReasonRecordSchema, {
+							code: "compose-suite-unconfigured",
+						}),
+					],
+				}),
+			},
+			notify: new FakeNotify(),
+			telemetry: new RecordingTelemetry(),
+		});
+		const out = await hooks.run(
+			{
+				hooks: [hook(HookKind.SUITE, HookPoint.AFTER_QUALIFIED, "fixture")],
+				point: HookPoint.AFTER_QUALIFIED,
+				subject,
+			},
+			context(() => T0),
+		);
+		expect(out.ok).toBe(false);
+		if (!out.ok)
+			expect(out.reasons.map((entry) => entry.code)).toEqual([
+				HOOK_REASON.suiteFailed,
+				HOOK_REASON.notifyFailed,
+				"compose-suite-unconfigured",
+			]);
+	});
+
 	it("NOTIFY is best-effort; an unknown kind fails the point", async () => {
 		const r = runner();
 		r.notify.notify = async () => {

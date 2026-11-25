@@ -332,11 +332,15 @@ pointing at `hobo cd up`. Vercel's Git integration is never connected.
 `HOBO_CI_RELAY_STAGED_PRODUCTION=true` makes `hobo ci deploy --target
 production --wait --sha <commit>` stage production instead: the deployment is
 created without assigning domains, its `/healthz` and `/readyz` are verified
-on the deployment itself, and only then does HoBo promote it, confirm with a
-fresh production read that the staged candidate is serving, and check the
-public origin `HOBO_CI_RELAY_PUBLIC_URL` (required, `https`) before the deploy
-deadline. Staged promotion needs a distinct previous production deployment,
-recorded in the CD handover. When live verification fails, the command fails
+on the deployment itself, and only then does HoBo promote it, poll production
+reads until the staged candidate is confirmed serving, and check the public
+origin `HOBO_CI_RELAY_PUBLIC_URL` (required, `https`) before the deploy
+deadline. The finalization hook runs only in the driving `hobo ci deploy`
+process; it is never written into the shared pipeline record that `hobo serve
+cd` and non-staged deliveries drive. Its promotion is driver-only, so another
+CD driver leaves it pending instead of advancing past that finalizer. Staged promotion needs a distinct previous
+production deployment, recorded in the CD handover. When live verification
+fails, the command fails
 with `HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED`; if production still names the
 rejected candidate, HoBo re-promotes the previous deployment first and reports
 `data.rollback` as `completed`, `failed`, `superseded` (a concurrent promotion
