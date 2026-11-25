@@ -45,3 +45,7 @@ visible on box B.
 
 `test/better-auth-onboarding-steps.test.ts` is the stack-8 gate: one Vitest
 scenario per onboarding claim (config, plan, migrations, signing wire, session).
+
+`test/better-auth-secret-providers.test.ts` is the stack-9 gate: stage-scoped
+DotEnv plus optional Infisical provider ordering and dotenv layer merge for
+auth-stack CI hosts.

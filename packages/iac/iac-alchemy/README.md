@@ -734,7 +734,10 @@ database across two Alchemy host harness instances (two boxes, one relational
 URL).
 `test/better-auth-onboarding-steps.test.ts` chains the executable onboarding
 evidence steps (construction config → bundle plan → migrations → broker wire →
-first session). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+first session).
+`test/better-auth-secret-providers.test.ts` models stage-scoped DotEnv and
+optional Infisical layers for auth-stack CI (later-overrides-earlier merge).
+`test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
 fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
 state, and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort` broker
 wire (synthetic signing material only; no live Worker/D1 deploy).
